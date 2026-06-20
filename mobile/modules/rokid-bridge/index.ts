@@ -100,6 +100,16 @@ export type RokidIntegrationStatus = {
   lastCustomViewOpenCallbackSuccess?: boolean;
   lastCustomViewOpenCallbackErrorCode?: string;
   lastCustomViewOpenCallbackAt?: string;
+  activeRecordType?: string;
+  audioStreamChunkCount?: number;
+  audioStreamByteCount?: number;
+  lastAudioEventAt?: string;
+  lastAudioEventType?: string;
+  lastAudioRecordType?: string;
+  lastAudioCodec?: number;
+  lastAudioChannels?: number;
+  lastAudioChunkBytes?: number;
+  lastAudioTimestamp?: string;
   sessionMode?: RokidSessionMode;
   sdkClassProbe?: Record<string, boolean>;
   reason?: string;

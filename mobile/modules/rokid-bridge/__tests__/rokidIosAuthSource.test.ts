@@ -90,6 +90,20 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toContain('payload["authDiagnosticTimeline"] = authDiagnosticTimeline');
   });
 
+  it('subscribes to Rokid audio stream events and exposes privacy-safe audio diagnostics', () => {
+    expect(source).toContain('CxrClient.shared.audioEventPublisher');
+    expect(source).toContain('private static func handleAudioEvent(_ event: RGCxrClientAudioEvent)');
+    expect(source).toContain('audio_event_started');
+    expect(source).toContain('audio_event_stream');
+    expect(source).toContain('dataEvent.data.count');
+    expect(source).toContain('payload["audioStreamChunkCount"] = audioStreamChunkCount');
+    expect(source).toContain('payload["audioStreamByteCount"] = audioStreamByteCount');
+    expect(source).toContain('payload["lastAudioEventType"] = lastAudioEventType');
+    expect(source).toContain('payload["lastAudioTimestamp"] = String(lastAudioTimestamp)');
+    expect(source).toContain('Privacy: never log or forward raw PCM bytes here');
+    expect(source).not.toContain('dataEvent.data.base64EncodedString');
+  });
+
   it('prints native diagnostic timestamps in Beijing UTC+8 time', () => {
     expect(source).toContain('beijingTimeZone');
     expect(source).toContain('TimeZone(secondsFromGMT: 8 * 60 * 60)');

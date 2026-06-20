@@ -69,6 +69,16 @@ public class RokidBridgeModule: Module {
   private static var lastCustomViewOpenCallbackSuccess: Bool?
   private static var lastCustomViewOpenCallbackErrorCode: String?
   private static var lastCustomViewOpenCallbackAt: String?
+  private static var activeRecordType: String?
+  private static var audioStreamChunkCount = 0
+  private static var audioStreamByteCount = 0
+  private static var lastAudioEventAt: String?
+  private static var lastAudioEventType: String?
+  private static var lastAudioRecordType: String?
+  private static var lastAudioCodec: Int32?
+  private static var lastAudioChannels: UInt32?
+  private static var lastAudioChunkBytes: Int?
+  private static var lastAudioTimestamp: UInt64?
   private static let customViewOpenSettleDelaySeconds: TimeInterval = 2.0
   private static let authDiagnosticTimelineLimit = 40
   private static var authDiagnosticTimeline: [String] = []
@@ -272,6 +282,32 @@ public class RokidBridgeModule: Module {
     }
     if let lastCustomViewOpenCallbackAt {
       payload["lastCustomViewOpenCallbackAt"] = lastCustomViewOpenCallbackAt
+    }
+    payload["audioStreamChunkCount"] = audioStreamChunkCount
+    payload["audioStreamByteCount"] = audioStreamByteCount
+    if let activeRecordType {
+      payload["activeRecordType"] = activeRecordType
+    }
+    if let lastAudioEventAt {
+      payload["lastAudioEventAt"] = lastAudioEventAt
+    }
+    if let lastAudioEventType {
+      payload["lastAudioEventType"] = lastAudioEventType
+    }
+    if let lastAudioRecordType {
+      payload["lastAudioRecordType"] = lastAudioRecordType
+    }
+    if let lastAudioCodec {
+      payload["lastAudioCodec"] = lastAudioCodec
+    }
+    if let lastAudioChannels {
+      payload["lastAudioChannels"] = lastAudioChannels
+    }
+    if let lastAudioChunkBytes {
+      payload["lastAudioChunkBytes"] = lastAudioChunkBytes
+    }
+    if let lastAudioTimestamp {
+      payload["lastAudioTimestamp"] = String(lastAudioTimestamp)
     }
     payload["companionAppName"] = companionAppName
     payload["companionServerScheme"] = companionServerScheme
@@ -855,6 +891,7 @@ public class RokidBridgeModule: Module {
         detail: "type=\(type); evidence=\(lastCustomViewSessionEvidenceReason ?? "unknown"); bleConnected=\(iosBleConnected()); device=\(iosBleDeviceName() ?? currentDeviceName ?? "unknown")"
       )
     }
+    prepareAudioDiagnosticsForStart(type: type, codec: codec, mode: mode)
     CxrClient.shared.startRecord(type, codec: audioCodec(codec), mode: audioMode(mode))
     return ["ok": true]
     #else
@@ -868,12 +905,73 @@ public class RokidBridgeModule: Module {
   private static func stopRecord(type: String) -> [String: Any] {
     #if canImport(RGCxrClient)
     CxrClient.shared.stopRecord(type)
+    lastAudioEventAt = isoTimestamp()
+    lastAudioEventType = "record_stop_requested"
+    activeRecordType = nil
+    recordAuthDiagnostic(
+      "audio_record_stop_requested",
+      detail: "type=\(type); chunks=\(audioStreamChunkCount); totalBytes=\(audioStreamByteCount)"
+    )
     return ["ok": true]
     #else
     _ = type
     return ["ok": false, "reason": "ios_sdk_not_linked"]
     #endif
   }
+
+  #if canImport(RGCxrClient)
+  private static func prepareAudioDiagnosticsForStart(type: String, codec: String, mode: String) {
+    activeRecordType = type
+    audioStreamChunkCount = 0
+    audioStreamByteCount = 0
+    lastAudioEventAt = isoTimestamp()
+    lastAudioEventType = "record_start_requested"
+    lastAudioRecordType = type
+    lastAudioCodec = nil
+    lastAudioChannels = nil
+    lastAudioChunkBytes = nil
+    lastAudioTimestamp = nil
+    recordAuthDiagnostic(
+      "audio_record_start_requested",
+      detail: "type=\(type); codec=\(codec); mode=\(mode)"
+    )
+  }
+
+  private static func handleAudioEvent(_ event: RGCxrClientAudioEvent) {
+    switch event {
+    case .started(let startEvent):
+      activeRecordType = startEvent.type
+      audioStreamChunkCount = 0
+      audioStreamByteCount = 0
+      lastAudioEventAt = isoTimestamp()
+      lastAudioEventType = "started"
+      lastAudioRecordType = startEvent.type
+      lastAudioCodec = startEvent.codec
+      lastAudioChannels = startEvent.channels
+      lastAudioChunkBytes = nil
+      lastAudioTimestamp = nil
+      recordAuthDiagnostic(
+        "audio_event_started",
+        detail: "type=\(startEvent.type); codec=\(startEvent.codec); channels=\(startEvent.channels)"
+      )
+    case .stream(let dataEvent):
+      let byteCount = dataEvent.data.count
+      audioStreamChunkCount += 1
+      audioStreamByteCount += byteCount
+      lastAudioEventAt = isoTimestamp()
+      lastAudioEventType = "stream"
+      lastAudioChunkBytes = byteCount
+      lastAudioTimestamp = dataEvent.timestamp
+      // Privacy: never log or forward raw PCM bytes here; diagnostics only expose counters and sizes.
+      if audioStreamChunkCount <= 3 || audioStreamChunkCount % 20 == 0 {
+        recordAuthDiagnostic(
+          "audio_event_stream",
+          detail: "bytes=\(byteCount); chunks=\(audioStreamChunkCount); totalBytes=\(audioStreamByteCount); timestamp=\(dataEvent.timestamp); type=\(lastAudioRecordType ?? activeRecordType ?? "unknown")"
+        )
+      }
+    }
+  }
+  #endif
 
   private static func customViewOpenSettleCommandAccepted() -> Bool {
     if RokidBridgeModule.customViewRunning {
@@ -1340,6 +1438,12 @@ public class RokidBridgeModule: Module {
       .receive(on: DispatchQueue.main)
       .sink { event in
         RokidBridgeModule.handleAuthorizationEvent(event)
+      }
+      .store(in: &RokidBridgeModule.cancellables)
+    CxrClient.shared.audioEventPublisher
+      .receive(on: DispatchQueue.main)
+      .sink { event in
+        RokidBridgeModule.handleAudioEvent(event)
       }
       .store(in: &RokidBridgeModule.cancellables)
     RGCxrClientBLE.shared.connectionStatePublisher

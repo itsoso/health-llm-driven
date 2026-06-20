@@ -147,7 +147,23 @@ def route_rokid_voice_command(transcript: str, *, context: str = "rokid_health")
     """Map a bounded Rokid transcript into a whitelisted mobile client action."""
     text = (transcript or "").strip().lower()
 
-    if _contains_any(text, ("拍一下", "拍这餐", "拍一下这餐", "记录这餐", "记录午饭", "记录晚饭", "记录早餐", "热量")):
+    if _contains_any(
+        text,
+        (
+            "拍一下",
+            "拍这餐",
+            "拍一下这餐",
+            "记录这餐",
+            "记录这顿",
+            "记录这顿饭",
+            "记录这一顿",
+            "记录这一餐",
+            "记录午饭",
+            "记录晚饭",
+            "记录早餐",
+            "热量",
+        ),
+    ):
         return _voice_command(
             intent="food_photo",
             event_intent="food",

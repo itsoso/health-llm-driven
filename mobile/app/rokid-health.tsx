@@ -448,6 +448,45 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
     }
     lines.push(`CXR-L API: ${parts.join(' · ')}`);
   }
+  if (
+    typeof status.audioStreamChunkCount === 'number'
+    || typeof status.audioStreamByteCount === 'number'
+    || status.lastAudioEventType
+    || status.activeRecordType
+  ) {
+    const parts: string[] = [];
+    if (status.lastAudioEventType) {
+      parts.push(`event=${status.lastAudioEventType}`);
+    }
+    if (status.activeRecordType) {
+      parts.push(`active=${status.activeRecordType}`);
+    }
+    if (status.lastAudioRecordType) {
+      parts.push(`type=${status.lastAudioRecordType}`);
+    }
+    if (typeof status.audioStreamChunkCount === 'number') {
+      parts.push(`chunks=${status.audioStreamChunkCount}`);
+    }
+    if (typeof status.audioStreamByteCount === 'number') {
+      parts.push(`bytes=${status.audioStreamByteCount}`);
+    }
+    if (typeof status.lastAudioChunkBytes === 'number') {
+      parts.push(`lastChunk=${status.lastAudioChunkBytes}`);
+    }
+    if (typeof status.lastAudioCodec === 'number') {
+      parts.push(`codec=${status.lastAudioCodec}`);
+    }
+    if (typeof status.lastAudioChannels === 'number') {
+      parts.push(`channels=${status.lastAudioChannels}`);
+    }
+    if (status.lastAudioTimestamp) {
+      parts.push(`ts=${status.lastAudioTimestamp}`);
+    }
+    if (status.lastAudioEventAt) {
+      parts.push(formatRokidLogTimestamp(status.lastAudioEventAt));
+    }
+    lines.push(`Rokid audio: ${parts.join(' · ')}`);
+  }
   if (typeof status.lastCustomViewPayloadBytes === 'number' || status.lastCustomViewPayloadHash) {
     const parts: string[] = [];
     if (typeof status.lastCustomViewPayloadBytes === 'number') {

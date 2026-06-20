@@ -1197,6 +1197,16 @@ describe('RokidHealthScreen', () => {
       lastAuthorizationStateAfterReset: 'not_authenticated',
       lastAuthorizationStateBeforeAuthenticate: 'not_authenticated',
       authorizationConfigSummary: 'server=rokidai://connect; callback=cxrl://auth/callback; timeout=180s',
+      activeRecordType: 'reva_voice_command',
+      audioStreamChunkCount: 3,
+      audioStreamByteCount: 9600,
+      lastAudioEventType: 'stream',
+      lastAudioRecordType: 'reva_voice_command',
+      lastAudioCodec: 0,
+      lastAudioChannels: 1,
+      lastAudioChunkBytes: 3200,
+      lastAudioTimestamp: '123456789',
+      lastAudioEventAt: '2026-06-19T00:02:02Z',
       authDiagnosticTimeline: [
         '2026-06-18T23:59:00Z #auth-3 request_started appName=Reva; scopes=device_control,audio_stream',
         '2026-06-18T23:59:01Z #auth-3 config_refreshed server=rokidai://connect; callback=cxrl://auth/callback; timeout=180s',
@@ -1217,6 +1227,7 @@ describe('RokidHealthScreen', () => {
       expect(screen.getByText('授权 attempt: auth-3 · #3 · phase=authenticate_failed · duration=180012ms')).toBeTruthy();
       expect(screen.getByText('SDK state: beforeReset=not_authenticated · afterReset=not_authenticated · beforeAuth=not_authenticated')).toBeTruthy();
       expect(screen.getByText('Auth config: server=rokidai://connect; callback=cxrl://auth/callback; timeout=180s')).toBeTruthy();
+      expect(screen.getByText('Rokid audio: event=stream · active=reva_voice_command · type=reva_voice_command · chunks=3 · bytes=9600 · lastChunk=3200 · codec=0 · channels=1 · ts=123456789 · 2026-06-19T08:02:02+08:00')).toBeTruthy();
       expect(screen.getByText('Callback schemes: accepted=cxrl, life.executor.health.rokid · configured=cxrl · source=info_plist')).toBeTruthy();
       expect(screen.getByText('Native: 2026-06-19T08:02:01+08:00 #auth-3 authenticate_failed Error Domain=RGCxrClientAuthError Code=-1')).toBeTruthy();
     });
