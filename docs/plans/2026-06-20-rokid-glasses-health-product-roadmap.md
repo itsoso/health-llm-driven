@@ -89,6 +89,8 @@ Public references:
 
 ## 3. Current Main Baseline
 
+> ⚠️ Reality check (2026-06-20 device evidence). The CXR-L **command channel is currently non-functional on hardware**. On a real device with BLE connected and authorization granted, `openCustomView` returns `rokid_custom_view_open_callback_missing` with `rawNotify=none` / `running=false` (the SDK callback never fires and no notify comes back), and `installApp` returns `rokid_pushup_app_install_failed`. The assets listed below exist as code, but **none of the three product wedges can run end-to-end today**. Read all of §3 as "wired in code, unproven on hardware" until Phase 0 closes. A pending fix (re-subscribe the CustomView notify cmds on BLE (re)connect, commit `5e3d1ea2`) is in EAS build #167 awaiting device verification; if it still shows `rawNotify=none`, the silence is below the bridge layer (companion / firmware / session) — see §13 and Phase 0.
+
 `main` already has enough infrastructure to plan against real repo assets.
 
 ### 3.1 Mobile bridge
@@ -173,7 +175,7 @@ This route avoids pretending iOS has a pose stream callback when the public iOS 
 - `submitRokidVoiceCommand()`;
 - `executeRokidVoiceClientAction()`.
 
-The bridge also exposes `onRokidTranscript` through native event emitters. The remaining product risk is not whether a spec exists; it is whether the target hardware and SDK reliably deliver transcript events and whether the client action closes the loop without phone taps.
+The bridge **declares** an `onRokidTranscript` event (`Events("onRokidTranscript")`) and the backend `/ambient/rokid-voice-commands` intent router exists — but the native side **never emits the event** (`sendEvent` count = 0; there is no audio→transcript step). The SDK exposes a raw `audioEventPublisher`, but the bridge neither subscribes to it nor runs any ASR. So the voice loop is broken at the source: speech is never turned into a transcript, the JS listener never fires, and no command executes. The remaining work is therefore **not** "verify the callback on hardware" — it is to **implement the transcript source first**: on-device ASR (`SFSpeechRecognizer` over the SDK audio stream) or a glasses-side ASR transcript delivered via the notify channel. Until that exists there is nothing for Phase 2 to verify.
 
 ### 3.6 Diagnostics baseline
 
@@ -193,7 +195,7 @@ This should become the user-visible and QA-visible capability truth table for al
 
 The next work should close these gaps in order:
 
-1. Voice command spec and client service exist, but real hardware transcript callback and phone-free action execution still need proof.
+1. Voice command spec, mobile client service, and backend intent router exist, but the **native transcript source is unimplemented** (the `onRokidTranscript` event is declared but never emitted; no ASR, no audio-stream consumer). This must be **built**, not merely proven, before phone-free voice execution is even testable.
 2. Food photo path needs draft confirmation and nutrition write-back, not just visual input submission.
 3. Push-up path needs a hardware verification checklist and explicit "test event -> live rep -> saved workout" acceptance flow.
 4. Display and non-display Rokid SKUs need different UX fallback rules.
@@ -521,6 +523,8 @@ Product fallback rules:
 
 ## 7. Data Contracts
 
+> Complexity-budget guard. Do **not** persist any new first-class object below until Phase 0 proves the relevant channel. Until then reuse the existing ambient draft objects only (`VisualInputEvent`, ambient audio input, `GlanceCard`). Each new persisted object (`VisualContextCapture`, `RokidVoiceCommand`, `RokidMovementSession`, `RokidMovementEvent`) must pass the first-class-object admission Gate in `docs/specs/reva-product-governance-spec.md` before it is built. The shapes below are target/long-term contracts, not a build list — modelling them ahead of a proven channel is exactly the premature-design the complexity budget forbids.
+
 ### 7.1 Visual Capture
 
 The existing `VisualInputEvent` can support v1. Long-term contract:
@@ -646,8 +650,11 @@ Duration: 1 week.
 
 Goal: stop guessing what the current device/SDK can do.
 
+Phase 0 is a **hard go/no-go** — it can invalidate or re-scope Phases 1-6, all of which are gated on the CXR command channel actually responding on the target hardware. As of 2026-06-20 the channel is silent (`openCustomView` → `callback_missing` / `rawNotify=none`; `installApp` → failed) even with BLE connected and authorized, so Phase 0 starts from "core channel failing", not "almost done". Do not start Phases 1/3/4 as glasses-native until Phase 0 returns GO.
+
 Tasks:
 
+- **First**: confirm or refute the current failure. With EAS build #167 (notify re-subscribe fix, commit `5e3d1ea2`), re-run `openCustomView` on the target device and record whether `rawNotify` becomes non-`none`. If it stays `none`, the silence is below the bridge → assemble the support package and escalate to Rokid per `docs/plans/2026-06-18-rokid-cxrl-auth-debugging-lessons.md` §6.
 - Add `RokidCapabilityMatrix` to bridge status.
 - Record exact device model, firmware, Hi Rokid version, SDK dependency mode, authorization state, CustomView state.
 - Standardize the existing diagnostics into a "copy capability report" action on the Rokid health screen.
@@ -662,9 +669,11 @@ Tasks:
   - query/open push-up app;
   - receive test event.
 
-Exit gate:
+Exit gate (a go/no-go decision, not just documentation):
 
 - For each target device, the team can say exactly which capabilities are proven, missing, or unknown.
+- **GO**: CustomView and photo (ideally also a transcript source) are proven on at least one target SKU → proceed to Phase 1+.
+- **NO-GO / re-scope**: if CustomView is `not_supported`, or the command channel stays silent after the pending fix, downgrade Rokid to the §16 "optional capture adapter" (voice/photo trigger → phone/watch confirmation) and do not start Phases 1, 3, or 4 as glasses-native.
 
 ### Phase 1: Food Photo Golden Path
 
@@ -922,8 +931,10 @@ Required evidence:
 
 | Risk | Impact | Mitigation |
 |---|---|---|
+| **CXR command channel silent despite BLE connected (current 2026-06-20 state)** | Blocks every glasses-native wedge — `openCustomView`/`installApp` get no callback/notify | Phase 0 go/no-go; pending notify-resubscribe fix (build #167); if unresolved, escalate to Rokid with the §6 support package and re-scope to capture adapter. |
+| **Companion app (Rokid AI / Hi Rokid) BLE contention** | iOS allows one central per peripheral → the CXR link/notify can be starved, or may require a specific companion state | Document whether the companion must be running or fully quit; surface companion state in the capability matrix; resolve as a Phase 0 finding. |
 | iOS SDK binary/toolchain mismatch | Blocks direct iOS SDK features | Keep bridge opt-in, Android-first for real app path, document exact build mode. |
-| Transcript callback not available | Voice control cannot be fully native | Use Mobile/Watch voice fallback and treat Rokid as trigger until callback is proven. |
+| Transcript callback not available | Voice control cannot be fully native | Use Mobile/Watch voice fallback and treat Rokid as trigger until callback is proven. **Note: the transcript source is currently unimplemented, not just unproven (see §3.5).** |
 | Display and non-display SKU confusion | Broken UX on Style | Capability matrix and fallback rules. |
 | Food image estimates are wrong | Bad nutrition record | Draft-first, confidence, confirmation, easy edit, no phantom writes. |
 | Push-up camera angle poor | Low rep accuracy | Visibility score, "adjust view" prompt, deterministic quality thresholds. |
