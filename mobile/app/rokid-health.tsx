@@ -162,6 +162,19 @@ function captureActionForVisualIntent(visualIntent?: string) {
   return CAPTURE_ACTIONS.find((action) => action.intent === 'food_scan');
 }
 
+function isRokidNativeChannelNotReady(reason?: string) {
+  if (!reason) {
+    return false;
+  }
+  const normalized = reason.toLowerCase();
+  return normalized.includes('rokid_custom_view_not_ready')
+    || normalized.includes('rokid_custom_view_not_running_after_open')
+    || normalized.includes('rokid_custom_view_open_callback_missing')
+    || normalized.includes('rokid_glasses_ble_not_connected')
+    || normalized.includes('rokid_capture_failed')
+    || normalized.includes('rokid_record_failed');
+}
+
 function transcriptText(event: RokidTranscriptEvent) {
   const value = event.transcript ?? event.text;
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
@@ -453,6 +466,15 @@ export default function RokidHealthScreen() {
     glanceQuery.refetch();
   };
 
+  const openMobileFoodCameraFallback = (action: (typeof CAPTURE_ACTIONS)[number]) => {
+    setCaptureState({
+      status: 'submitted',
+      actionTitle: action.title,
+      message: '眼镜拍照不可用，已切到手机拍照记录。',
+    });
+    router.push('/diet?capture=photo' as any);
+  };
+
   const settleRokidAuthorizationStatus = async (attempts: number) => {
     let latest = statusQuery.data;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -595,9 +617,12 @@ export default function RokidHealthScreen() {
           // Best-effort cleanup; keep the original start failure visible.
         }
       }
+      const reason = error instanceof Error ? error.message : 'voice_control_failed';
       setVoiceState({
         status: 'failed',
-        message: `Rokid 语音控制失败: ${error instanceof Error ? error.message : 'voice_control_failed'}`,
+        message: isRokidNativeChannelNotReady(reason)
+          ? '眼镜原生语音依赖 CustomView，目前不可用。先用下方入口继续：手机拍餐或本地俯卧撑。'
+          : `Rokid 语音控制失败: ${reason}`,
       });
     }
   };
@@ -627,13 +652,20 @@ export default function RokidHealthScreen() {
     setCaptureState({ status: 'capturing', actionTitle: action.title, message: `${action.title}提交中...` });
     try {
       if (status?.platform === 'ios' && status.capabilitiesReady !== true) {
+        if (action.intent === 'food_scan') {
+          openMobileFoodCameraFallback(action);
+          return;
+        }
         throw new Error('rokid_custom_view_not_ready');
       }
       const captureResult = await takeRokidPhotoBase64({ width: 1024, height: 768, quality: 80 });
       if (captureResult.ok === false) {
-        throw new Error(
-          typeof captureResult.reason === 'string' ? captureResult.reason : 'rokid_capture_failed',
-        );
+        const reason = typeof captureResult.reason === 'string' ? captureResult.reason : 'rokid_capture_failed';
+        if (action.intent === 'food_scan' && isRokidNativeChannelNotReady(reason)) {
+          openMobileFoodCameraFallback(action);
+          return;
+        }
+        throw new Error(reason);
       }
       const imageBase64 = readString(captureResult, ['base64', 'imageBase64', 'image_base64']);
       const imageByteLength = readNumber(captureResult, ['byteLength', 'byte_length', 'size']);
@@ -991,6 +1023,28 @@ export default function RokidHealthScreen() {
               {voiceState.message}
             </Text>
           ) : null}
+          {voiceState.status === 'failed' ? (
+            <View style={styles.fallbackActions}>
+              <Pressable
+                onPress={() => router.push('/diet?capture=photo' as any)}
+                style={({ pressed }) => [styles.fallbackButton, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="手机拍餐"
+              >
+                <Ionicons name="camera-outline" size={16} color={c.brand} />
+                <Text style={txt.fallbackButton}>手机拍餐</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => router.push('/rokid-pushup-coach' as any)}
+                style={({ pressed }) => [styles.fallbackButton, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="本地俯卧撑"
+              >
+                <Ionicons name="body-outline" size={16} color={c.brand} />
+                <Text style={txt.fallbackButton}>本地俯卧撑</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.panel}>
@@ -1345,6 +1399,24 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  fallbackActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  fallbackButton: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: radii.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.separator,
+    backgroundColor: c.fill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingHorizontal: spacing.sm,
+  },
 });
 
 const createTxt = (c: ColorPalette) => ({
@@ -1377,5 +1449,6 @@ const createTxt = (c: ColorPalette) => ({
   captureMessage: { fontSize: 12, fontWeight: '700', lineHeight: 17, marginTop: spacing.sm } as TextStyle,
   featureTitle: { fontSize: 14, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   featureDetail: { fontSize: 12, lineHeight: 17, color: c.labelSecondary, marginTop: 2 } as TextStyle,
+  fallbackButton: { fontSize: 12, fontWeight: '800', color: c.brand, textAlign: 'center' } as TextStyle,
   technical: { fontSize: 11, color: c.labelTertiary, marginTop: spacing.sm, lineHeight: 16 } as TextStyle,
 });

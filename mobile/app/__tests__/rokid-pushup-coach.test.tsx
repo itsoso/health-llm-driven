@@ -9,12 +9,15 @@ const mockUpdateRokidCustomView = jest.fn();
 const mockOpenRokidApp = jest.fn();
 const mockQueryRokidApp = jest.fn();
 const mockInstallBundledRokidApp = jest.fn();
+const mockInstallRokidAppFromFileUri = jest.fn();
 const mockStopRokidApp = jest.fn();
 const mockCreateRokidPushupSession = jest.fn();
 const mockFinishRokidPushupSession = jest.fn();
 const mockListRokidPushupEvents = jest.fn();
 const mockPost = jest.fn();
 const mockInvalidateRecordMutation = jest.fn();
+const mockGetDocumentAsync = jest.fn();
+const mockDownloadAsync = jest.fn();
 
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
@@ -34,7 +37,17 @@ jest.mock('../../modules/rokid-bridge', () => ({
   openRokidApp: (...args: any[]) => mockOpenRokidApp(...args),
   queryRokidApp: (...args: any[]) => mockQueryRokidApp(...args),
   installBundledRokidApp: (...args: any[]) => mockInstallBundledRokidApp(...args),
+  installRokidAppFromFileUri: (...args: any[]) => mockInstallRokidAppFromFileUri(...args),
   stopRokidApp: (...args: any[]) => mockStopRokidApp(...args),
+}));
+
+jest.mock('expo-document-picker', () => ({
+  getDocumentAsync: (...args: any[]) => mockGetDocumentAsync(...args),
+}));
+
+jest.mock('expo-file-system/legacy', () => ({
+  cacheDirectory: 'file://cache/',
+  downloadAsync: (...args: any[]) => mockDownloadAsync(...args),
 }));
 
 jest.mock('../../services/rokidPushupSession', () => {
@@ -76,11 +89,14 @@ describe('RokidPushupCoachScreen', () => {
     });
     mockQueryRokidApp.mockResolvedValue({ ok: true, installed: true });
     mockInstallBundledRokidApp.mockResolvedValue({ ok: true, installed: true });
+    mockInstallRokidAppFromFileUri.mockResolvedValue({ ok: true, installed: true });
     mockOpenRokidApp.mockResolvedValue({ ok: true, opened: true });
     mockStopRokidApp.mockResolvedValue({ ok: true, stopped: true });
     mockListRokidPushupEvents.mockResolvedValue([]);
     mockPost.mockResolvedValue({ data: { id: 123 } });
     mockInvalidateRecordMutation.mockResolvedValue(undefined);
+    mockDownloadAsync.mockResolvedValue({ status: 200, uri: 'file://cache/rokid-pushup-glasses.apk' });
+    mockGetDocumentAsync.mockResolvedValue({ canceled: true, assets: [] });
   });
 
   it('installs the bundled glasses APK before starting real pose recognition when the app is missing', async () => {
@@ -173,6 +189,51 @@ describe('RokidPushupCoachScreen', () => {
       expect(mockFinishRokidPushupSession).toHaveBeenCalledWith(7);
       expect(mockStopRokidApp).toHaveBeenCalledWith('life.executor.health.rokid.pushup');
       expect(screen.getByText('眼镜端识别已停止')).toBeTruthy();
+    });
+  });
+
+  it('keeps local counting and saving available when Rokid app installation is cancelled', async () => {
+    mockQueryRokidApp.mockResolvedValue({ ok: true, installed: false });
+    mockInstallBundledRokidApp.mockResolvedValue({
+      ok: false,
+      reason: 'rokid_apk_resource_missing',
+    });
+    mockDownloadAsync.mockRejectedValue(new Error('download failed'));
+    mockGetDocumentAsync.mockResolvedValue({ canceled: true, assets: [] });
+
+    const screen = renderWithProviders(<RokidPushupCoachScreen />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动眼镜识别'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/眼镜识别暂不可用/)).toBeTruthy();
+      expect(screen.getAllByText(/本地计数/).length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('+1 校准'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('1')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('保存本组'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/daily-health/exercise', expect.objectContaining({
+        exercise_type: '俯卧撑',
+        reps: 1,
+        sets: 1,
+      }));
+      expect(screen.getByText('已保存')).toBeTruthy();
     });
   });
 });

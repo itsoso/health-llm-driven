@@ -72,6 +72,26 @@ function resultReason(result: Record<string, unknown>, fallback: string) {
   return typeof result.reason === 'string' ? result.reason : fallback;
 }
 
+function isRokidPushupNativeSetupFailure(reason?: string) {
+  if (!reason) {
+    return false;
+  }
+  const normalized = reason.toLowerCase();
+  return normalized.includes('rokid_apk')
+    || normalized.includes('rokid_app_probe_failed')
+    || normalized.includes('rokid_pushup_app_install')
+    || normalized.includes('rokid_pushup_app_open_failed')
+    || normalized.includes('rokid_pushup_session_open_url_missing');
+}
+
+function formatRealPushupSessionIssue(reason?: string) {
+  const fallback = reason ?? 'rokid_pushup_real_session_failed';
+  if (!isRokidPushupNativeSetupFailure(fallback)) {
+    return fallback;
+  }
+  return `眼镜识别暂不可用: ${fallback}。先用下方「+1 校准」本地计数，本组仍可保存。`;
+}
+
 export default function RokidPushupCoachScreen() {
   const router = useRouter();
   const qc = useQueryClient();
@@ -314,7 +334,9 @@ export default function RokidPushupCoachScreen() {
       }
       setGlassesAppInstalled('missing');
       setRealSessionState('failed');
-      setRealSessionMessage(error instanceof Error ? error.message : 'rokid_pushup_app_install_failed');
+      setRealSessionMessage(formatRealPushupSessionIssue(
+        error instanceof Error ? error.message : 'rokid_pushup_app_install_failed',
+      ));
     }
   }, [acquireGlassesAppInstall]);
 
@@ -357,7 +379,9 @@ export default function RokidPushupCoachScreen() {
       setRealSessionMessage('眼镜端识别已启动, 等待姿态数据...');
     } catch (error) {
       setRealSessionState('failed');
-      setRealSessionMessage(error instanceof Error ? error.message : 'rokid_pushup_real_session_failed');
+      setRealSessionMessage(formatRealPushupSessionIssue(
+        error instanceof Error ? error.message : 'rokid_pushup_real_session_failed',
+      ));
     }
   }, [coach.targetReps, ensureGlassesAppInstalled]);
 
@@ -678,7 +702,10 @@ export default function RokidPushupCoachScreen() {
         </View>
 
         <View style={styles.panel}>
-          <Text style={txt.sectionTitle}>校准采样</Text>
+          <Text style={txt.sectionTitle}>本地计数 / 校准采样</Text>
+          <Text style={txt.localModeHint}>
+            眼镜识别不可用时，先用「+1 校准」本地计数，本组仍可保存。
+          </Text>
           <View style={styles.sampleGrid}>
             <PoseButton
               label="下放"
@@ -942,6 +969,7 @@ const createTxt = (c: ColorPalette) => ({
   sectionTitle: { fontSize: 15, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   sessionState: { fontSize: 12, fontWeight: '800' } as TextStyle,
   sessionMessage: { fontSize: 12, lineHeight: 17, color: c.labelSecondary, marginTop: spacing.sm } as TextStyle,
+  localModeHint: { fontSize: 12, lineHeight: 17, color: c.labelSecondary, marginTop: 4 } as TextStyle,
   primaryButton: { fontSize: 14, fontWeight: '800', color: '#fff' } as TextStyle,
   secondaryButton: { fontSize: 13, fontWeight: '800', color: c.brand } as TextStyle,
   poseButtonText: { fontSize: 13, fontWeight: '800' } as TextStyle,

@@ -265,6 +265,38 @@ describe('RokidHealthScreen', () => {
     });
   });
 
+  it('keeps mobile fallback actions available when Rokid voice control cannot bind to CustomView', async () => {
+    mockStartRokidVoiceCommandCapture.mockResolvedValueOnce({
+      ok: false,
+      reason: 'rokid_custom_view_not_ready',
+    });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/眼镜原生语音依赖 CustomView/)).toBeTruthy();
+      expect(screen.getByText('手机拍餐')).toBeTruthy();
+      expect(screen.getByText('本地俯卧撑')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByText('手机拍餐'));
+
+    expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo');
+    expect(mockOpenRokidRevaCustomView).not.toHaveBeenCalledWith({
+      title: 'Reva 语音控制',
+      body: '正在等待明确语音指令',
+      priority: 'voice',
+    });
+  });
+
   it('ignores late Rokid transcripts after the voice session starts stopping', async () => {
     let resolveStop: (value: Record<string, unknown>) => void = () => undefined;
     mockStopRokidVoiceCommandCapture.mockReturnValueOnce(
@@ -1040,7 +1072,7 @@ describe('RokidHealthScreen', () => {
     });
   });
 
-  it('blocks iOS photo capture until the customView scene is running', async () => {
+  it('falls back to the mobile food camera when iOS CustomView capture is not ready', async () => {
     mockGetRokidIntegrationStatus.mockResolvedValue({
       platform: 'ios',
       bridgeAvailable: true,
@@ -1075,7 +1107,8 @@ describe('RokidHealthScreen', () => {
     await waitFor(() => {
       expect(mockTakeRokidPhotoBase64).not.toHaveBeenCalled();
       expect(mockSubmitRokidVisualInput).not.toHaveBeenCalled();
-      expect(screen.getByText('食物视觉记录失败: rokid_custom_view_not_ready')).toBeTruthy();
+      expect(screen.getByText('眼镜拍照不可用，已切到手机拍照记录。')).toBeTruthy();
+      expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo');
     });
   });
 });
