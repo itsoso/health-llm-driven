@@ -1078,6 +1078,20 @@ export default function RokidHealthScreen() {
       if (recordResult.ok === false) {
         throw new Error(typeof recordResult.reason === 'string' ? recordResult.reason : 'rokid_record_failed');
       }
+      // council #2(不假装成功):ASR 未就绪(语音/麦克风权限被拒、识别器不可用)时,麦克风在录但
+      // 永远不会产生 transcript → 别显"已开启"造成"启动了却没反应"。停掉无用录音、明确告知原因。
+      if (recordResult.speechRecognitionReady === false) {
+        await stopRokidVoiceCommandCapture().catch(() => undefined);
+        const reason =
+          typeof recordResult.speechRecognitionReason === 'string' && recordResult.speechRecognitionReason
+            ? recordResult.speechRecognitionReason
+            : 'speech_recognition_unavailable';
+        setVoiceState({
+          status: 'failed',
+          message: `语音识别未就绪(${reason}):请在 设置 → Reva 里允许"语音识别"和"麦克风",再重试。`,
+        });
+        return;
+      }
       recordingStarted = true;
       removeVoiceTranscriptListener();
       voiceTranscriptSubscriptionRef.current = addRokidTranscriptListener((event) => {
