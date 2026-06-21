@@ -69,6 +69,8 @@ type GlassesAppInstallSnapshot = {
 const ROKID_PUSHUP_APK_CACHE_NAME = 'rokid-pushup-glasses.apk';
 const ROKID_PUSHUP_APK_DOWNLOAD_MAX_ATTEMPTS = 3;
 const ROKID_PUSHUP_APK_MIN_BYTES = 50 * 1024 * 1024;
+const ROKID_PUSHUP_APK_INSTALL_PENDING_LOG_INTERVAL_MS = 30 * 1000;
+const ROKID_PUSHUP_APK_INSTALL_NATIVE_TIMEOUT_MS = 25 * 60 * 1000;
 
 // 模块级:眼镜端 App 的安装是后台进行的——用户可离开本页,安装(下载 94MB + 传到眼镜)
 // 继续跑;再次进入/点击时复用这个 in-flight promise,不重启下载。组件卸载不影响它。
@@ -135,7 +137,7 @@ function appendGlassesAppInstallDiagnostic(message: string) {
   glassesAppInstallSnapshot = {
     ...glassesAppInstallSnapshot,
     diagnostics: [
-      ...glassesAppInstallSnapshot.diagnostics.slice(-17),
+      ...glassesAppInstallSnapshot.diagnostics.slice(-39),
       `${formatBeijingTimestamp()} ${message}`,
     ],
   };
@@ -255,6 +257,40 @@ async function captureRokidInstallStatusDiagnostic(
   } catch (error) {
     appendDiagnostic(`native_status_failed phase=${phase}; ${errorMessage(error, 'unknown')}`);
     return null;
+  }
+}
+
+async function waitForNativeInstallWithDiagnostics<T>(
+  operationName: string,
+  operation: () => Promise<T>,
+  appendDiagnostic: (message: string) => void,
+) {
+  const startedAt = Date.now();
+  const installPromise = operation();
+  installPromise.catch(() => undefined);
+
+  const pendingTimer = setInterval(() => {
+    appendDiagnostic(
+      `${operationName}_pending elapsedMs=${Date.now() - startedAt}; timeoutMs=${ROKID_PUSHUP_APK_INSTALL_NATIVE_TIMEOUT_MS}`,
+    );
+  }, ROKID_PUSHUP_APK_INSTALL_PENDING_LOG_INTERVAL_MS);
+
+  let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeoutTimer = setTimeout(() => {
+      const elapsedMs = Date.now() - startedAt;
+      appendDiagnostic(`${operationName}_timeout elapsedMs=${elapsedMs}; timeoutMs=${ROKID_PUSHUP_APK_INSTALL_NATIVE_TIMEOUT_MS}`);
+      reject(new Error(`rokid_app_install_timeout; operation=${operationName}; timeoutMs=${ROKID_PUSHUP_APK_INSTALL_NATIVE_TIMEOUT_MS}`));
+    }, ROKID_PUSHUP_APK_INSTALL_NATIVE_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([installPromise, timeoutPromise]);
+  } finally {
+    clearInterval(pendingTimer);
+    if (timeoutTimer) {
+      clearTimeout(timeoutTimer);
+    }
   }
 }
 
@@ -488,10 +524,15 @@ export default function RokidPushupCoachScreen() {
     setRealSessionMessage(installMessage);
     appendInstallDiagnostic(`install_file_uri_start fileUri=${downloadedUri}; package=${ROKID_PUSHUP_APP_PACKAGE}`);
     const installStartedAt = Date.now();
-    const fileInstall = await installRokidAppFromFileUri({
-      fileUri: downloadedUri,
-      packageName: ROKID_PUSHUP_APP_PACKAGE,
-    });
+    await captureRokidInstallStatusDiagnostic('before_file_install', appendInstallDiagnostic);
+    const fileInstall = await waitForNativeInstallWithDiagnostics(
+      'install_file_uri',
+      () => installRokidAppFromFileUri({
+        fileUri: downloadedUri,
+        packageName: ROKID_PUSHUP_APP_PACKAGE,
+      }),
+      appendInstallDiagnostic,
+    );
     appendInstallDiagnostic(`install_file_uri_result durationMs=${Date.now() - installStartedAt}; ${compactResult(fileInstall)}`);
     if (!readResultOk(fileInstall) || fileInstall.installed === false) {
       const status = await captureRokidInstallStatusDiagnostic('after_file_install_failure', appendInstallDiagnostic);
@@ -563,10 +604,16 @@ export default function RokidPushupCoachScreen() {
     if (asset.name && !asset.name.toLowerCase().endsWith('.apk')) {
       throw new Error('rokid_apk_file_required');
     }
-    const installResult = await installRokidAppFromFileUri({
-      fileUri: asset.uri,
-      packageName: ROKID_PUSHUP_APP_PACKAGE,
-    });
+    appendInstallDiagnostic(`manual_install_file_uri_start fileUri=${asset.uri}; package=${ROKID_PUSHUP_APP_PACKAGE}`);
+    await captureRokidInstallStatusDiagnostic('before_manual_file_install', appendInstallDiagnostic);
+    const installResult = await waitForNativeInstallWithDiagnostics(
+      'manual_install_file_uri',
+      () => installRokidAppFromFileUri({
+        fileUri: asset.uri,
+        packageName: ROKID_PUSHUP_APP_PACKAGE,
+      }),
+      appendInstallDiagnostic,
+    );
     if (!readResultOk(installResult) || installResult.installed === false) {
       const status = await captureRokidInstallStatusDiagnostic('after_manual_file_install_failure', appendInstallDiagnostic);
       throw new Error(resultInstallFailureDetail(installResult, 'rokid_pushup_app_install_failed', status));

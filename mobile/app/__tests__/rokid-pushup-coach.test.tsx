@@ -345,6 +345,48 @@ describe('RokidPushupCoachScreen', () => {
     });
   });
 
+  it('logs install heartbeat while the native APK transfer is still pending', async () => {
+    jest.useFakeTimers();
+    let resolveInstall: ((result: { ok: boolean; installed: boolean }) => void) | undefined;
+    try {
+      mockQueryRokidApp.mockReset();
+      mockQueryRokidApp.mockResolvedValue({ ok: true, installed: true });
+      mockInstallBundledRokidApp.mockResolvedValue({
+        ok: false,
+        reason: 'rokid_apk_resource_missing',
+      });
+      mockInstallRokidAppFromFileUri.mockReturnValue(new Promise((resolve) => {
+        resolveInstall = resolve;
+      }));
+
+      const screen = renderWithProviders(<RokidPushupCoachScreen />);
+
+      await act(async () => {
+        fireEvent.press(screen.getByText('安装/更新眼镜端 App'));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        jest.advanceTimersByTime(30_000);
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText(/install_file_uri_pending/)).toBeTruthy();
+      expect(screen.getByText(/native_status phase=before_file_install/)).toBeTruthy();
+
+      await act(async () => {
+        resolveInstall?.({ ok: true, installed: true });
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText('眼镜端应用已安装到眼镜 ✓(已在眼镜端验证)')).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('shows and copies install diagnostics across download, install, and confirmation phases', async () => {
     mockQueryRokidApp.mockReset();
     mockQueryRokidApp.mockResolvedValue({ ok: true, installed: true });
