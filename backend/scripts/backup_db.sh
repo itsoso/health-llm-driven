@@ -13,6 +13,9 @@
 # ============================================
 
 set -euo pipefail
+# council #1(L3 隐私):本备份现在确实含 genetic_raw_*(force-RLS)基因原始数据,文件/目录必须 0600/0700,
+# 否则 ECS 上任何本地用户可读基因字节。umask 077 让本脚本新建的文件默认 0600、目录 0700。
+umask 077
 
 # 配置（从 .env 读取或使用默认值）
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,11 +28,27 @@ DATABASE_URL="${DATABASE_URL:-postgresql://health_user:health2026@localhost:5432
 
 BACKUP_DIR="/opt/health-app/backups"
 TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
-DB_NAME=$(echo "$DATABASE_URL" | sed 's|.*/||')
+# council #2:去路径前缀 + 末尾 ?query/#frag(否则带 sslmode 等参数时 DB_NAME 变 'health_db?sslmode=...'
+# → pg_dump 静默失败/连错库)。再断言是合法标识符,解析不出就 fail-loud。
+DB_NAME=$(echo "$DATABASE_URL" | sed 's|.*/||; s|[?#].*||')
+if [[ ! "$DB_NAME" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+    echo "[$(date)] ❌ 无法从 DATABASE_URL 解析出合法 DB 名(得到 '$DB_NAME'),中止"
+    exit 1
+fi
+# council #3:本脚本靠本地 socket + postgres superuser peer auth;DATABASE_URL 指向远程/托管 DB
+# (RDS/ApsaraDB)时 postgres 系统用户无凭据 → 失败。显式断言本地,远程请用其工具,别静默坏。
+_NETLOC="${DATABASE_URL#*://}"; _NETLOC="${_NETLOC#*@}"; DB_HOST="${_NETLOC%%[:/]*}"
+case "$DB_HOST" in
+    localhost|127.0.0.1|::1|"") ;;
+    *)
+        echo "[$(date)] ❌ backup_db.sh 仅支持本地 PostgreSQL(postgres superuser + socket peer auth),DATABASE_URL host='$DB_HOST' 非本地,中止"
+        exit 1 ;;
+esac
 BACKUP_FILE="${BACKUP_DIR}/${DB_NAME}_${TIMESTAMP}.sql.gz"
 
-# 确保备份目录存在
+# 确保备份目录存在,且仅 owner 可读(收紧历史遗留的 0755 目录)——里面是 L3 基因数据
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 
 echo "[$(date)] 开始备份 ${DB_NAME}..."
 
@@ -45,8 +64,9 @@ echo "[$(date)] 开始备份 ${DB_NAME}..."
 # set -o pipefail 已开:pg_dump 非零退出会让整条管道失败,if 诚实捕获,不被 gzip 的 0 掩盖。
 cd /tmp
 if sudo -u postgres pg_dump "$DB_NAME" | gzip > "$BACKUP_FILE"; then
+    chmod 600 "$BACKUP_FILE"   # council #1 双保险:含基因数据的备份必须 0600(即便 umask 被改)
     SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
-    echo "[$(date)] ✅ 备份成功: ${BACKUP_FILE} (${SIZE})"
+    echo "[$(date)] ✅ 备份成功: ${BACKUP_FILE} (${SIZE}, 0600)"
 else
     echo "[$(date)] ❌ 备份失败!"
     rm -f "$BACKUP_FILE"
