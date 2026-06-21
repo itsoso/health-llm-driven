@@ -1576,7 +1576,17 @@ export default function RokidHealthScreen() {
   const handleVisualCapture = async (action: (typeof CAPTURE_ACTIONS)[number]) => {
     setCaptureState({ status: 'capturing', actionTitle: action.title, message: `${action.title}提交中...` });
     try {
-      if (status?.platform === 'ios' && status.capabilitiesReady !== true) {
+      let latestStatus = status;
+      try {
+        const refreshed = await statusQuery.refetch();
+        latestStatus = refreshed.data ?? latestStatus;
+      } catch {
+        // If status refresh fails, continue with the last known state and native timeout fallback.
+      }
+      if (
+        latestStatus?.platform === 'ios' &&
+        (latestStatus.capabilitiesReady !== true || latestStatus.iosBleConnected === false)
+      ) {
         if (action.intent === 'food_scan') {
           await openMobileFoodCameraFallback(action);
           return;
@@ -1683,7 +1693,7 @@ export default function RokidHealthScreen() {
       }));
       if (reply) {
         setVoiceState({ status: 'listening', message: reply });
-        await updateVoiceCustomView(reply);
+        void updateVoiceCustomView(reply);
       }
       await executeRokidVoiceClientAction(response, {
         captureFoodPhoto: async ({ visualIntent }) => {

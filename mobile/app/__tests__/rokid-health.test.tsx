@@ -630,6 +630,76 @@ describe('RokidHealthScreen', () => {
     });
   });
 
+  it('executes phone-camera food capture when phone-mic voice routing succeeds but CustomView feedback hangs', async () => {
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: false,
+      iosBleDeviceName: 'Glasses_0077',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+    mockOpenRokidRevaCustomView.mockResolvedValueOnce({
+      ok: false,
+      reason: 'rokid_glasses_ble_not_connected',
+      customViewRunning: false,
+      capabilitiesReady: false,
+    });
+    mockUpdateRokidCustomView.mockImplementation(() => new Promise(() => undefined));
+    mockSubmitRokidVoiceCommand.mockResolvedValueOnce({
+      command: {
+        intent: 'food_photo',
+        client_action: 'capture_food_photo',
+        voice_reply: '我来拍这餐, 识别后会生成待确认的热量和营养记录。',
+        parameters: { visual_intent: 'food_scan' },
+      },
+    });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockVoiceStart).toHaveBeenCalledWith('zh-CN');
+    });
+
+    await act(async () => {
+      mockVoiceOnSpeechResults?.({ value: ['记录这顿餐'] });
+      mockVoiceOnSpeechEnd?.();
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockLaunchCamera).toHaveBeenCalled();
+      expect(mockTakeRokidPhotoBase64).not.toHaveBeenCalled();
+      expect(mockSubmitRokidVisualInput).toHaveBeenCalledWith(expect.objectContaining({
+        intent: 'food_scan',
+        meta: expect.objectContaining({
+          manual_confirm_required: true,
+          capture_source: 'phone_camera_fallback',
+        }),
+      }));
+    });
+  });
+
   it('ignores late Rokid transcripts after the voice session starts stopping', async () => {
     let resolveStop: (value: Record<string, unknown>) => void = () => undefined;
     mockStopRokidVoiceCommandCapture.mockReturnValueOnce(
