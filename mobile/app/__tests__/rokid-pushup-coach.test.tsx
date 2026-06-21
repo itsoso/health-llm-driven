@@ -392,4 +392,64 @@ describe('RokidPushupCoachScreen', () => {
       expect(screen.getByText(/完全退出 Reva/)).toBeTruthy();
     });
   });
+
+  it('preserves background download diagnostics after leaving the page and distinguishes install failure from download failure', async () => {
+    let progressHandler: ((progress: {
+      totalBytesWritten: number;
+      totalBytesExpectedToWrite: number;
+    }) => void) | undefined;
+    let resolveDownload: ((result: { status: number; uri: string }) => void) | undefined;
+
+    mockQueryRokidApp.mockResolvedValue({ ok: true, installed: false });
+    mockInstallBundledRokidApp.mockResolvedValue({
+      ok: false,
+      reason: 'rokid_apk_resource_missing',
+    });
+    mockInstallRokidAppFromFileUri.mockResolvedValue({
+      ok: false,
+      installed: false,
+      reason: 'rokid_app_install_rejected',
+      cxrInitializationMode: 'customApp',
+      iosBleConnected: true,
+    });
+    mockCreateDownloadResumable.mockImplementation((_url, _target, _options, onProgress) => {
+      progressHandler = onProgress;
+      return {
+        downloadAsync: () => new Promise((resolve) => {
+          resolveDownload = resolve;
+        }),
+      };
+    });
+
+    const firstScreen = renderWithProviders(<RokidPushupCoachScreen />);
+
+    await act(async () => {
+      fireEvent.press(firstScreen.getByText('安装/更新眼镜端 App'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockCreateDownloadResumable).toHaveBeenCalled();
+    });
+
+    firstScreen.unmount();
+
+    await act(async () => {
+      progressHandler?.({
+        totalBytesWritten: 72 * 1024 * 1024,
+        totalBytesExpectedToWrite: 94513327,
+      });
+      resolveDownload?.({ status: 200, uri: 'file://cache/rokid-pushup-glasses.apk' });
+      await flushAsyncUpdates();
+    });
+
+    const secondScreen = renderWithProviders(<RokidPushupCoachScreen />);
+
+    await waitFor(() => {
+      expect(secondScreen.getByText(/下载已完成，但安装到眼镜失败/)).toBeTruthy();
+      expect(secondScreen.getByText(/download_complete/)).toBeTruthy();
+      expect(secondScreen.getByText(/install_file_uri_result/)).toBeTruthy();
+      expect(secondScreen.queryByText(/眼镜端 App 下载失败/)).toBeNull();
+    });
+  });
 });
