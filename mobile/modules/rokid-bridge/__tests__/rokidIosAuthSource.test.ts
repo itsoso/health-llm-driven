@@ -187,6 +187,8 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toContain('customViewOpenSettleCommandAccepted()');
     expect(source).toContain('markCustomViewOpenUnconfirmedIfNeeded(commandAccepted: settledCommandAccepted)');
     expect(source).toContain('rokid_custom_view_open_callback_missing');
+    expect(source).toContain('open_callback_missing_ble_connected');
+    expect(source).toMatch(/rokid_custom_view_open_callback_missing[\s\S]+markCustomViewSessionEvidence\("open_callback_missing_ble_connected"\)/);
     expect(source).toContain('rokid_custom_view_not_running_after_open');
     expect(source).toMatch(/if !success \|\| RokidBridgeModule\.customViewRunning \{[\s\S]+resolveCustomViewOpenPromiseIfNeeded\(promise, state: resolutionState, commandAccepted: success\)/);
     expect(source).toMatch(/let settledCommandAccepted =[\s\S]+customViewOpenSettleCommandAccepted\(\)[\s\S]+custom_view_open_settled[\s\S]+resolveCustomViewOpenPromiseIfNeeded\(promise, state: resolutionState, commandAccepted: settledCommandAccepted\)/);

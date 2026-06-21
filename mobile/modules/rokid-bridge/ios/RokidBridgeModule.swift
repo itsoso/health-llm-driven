@@ -1539,6 +1539,10 @@ public class RokidBridgeModule: Module {
     #if ROKID_CXRL_CALLBACK_API
     if RokidBridgeModule.lastCustomViewOpenCommandAccepted == nil {
       RokidBridgeModule.lastCustomViewOpenError = "rokid_custom_view_open_callback_missing; running=false; rawNotify=\(rawNotify); iosBleConnected=\(iosBleConnected()); device=\(deviceName)"
+      // Some CXR-L 1.0.1 sessions render the CustomView on glasses but never
+      // deliver open callback/running notify. Keep the command marked
+      // unconfirmed, but allow media APIs to attempt against the visible view.
+      RokidBridgeModule.markCustomViewSessionEvidence("open_callback_missing_ble_connected")
       RokidBridgeModule.pendingCustomViewPayload = nil
       return
     }
