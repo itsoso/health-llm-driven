@@ -742,24 +742,25 @@ public class RokidBridgeModule: Module {
       ])
       return
     }
-    guard RokidBridgeModule.hasCustomViewMediaSession() else {
-      promise.resolve([
-        "ok": false,
-        "reason": "rokid_custom_view_not_ready",
-        "customViewRunning": RokidBridgeModule.customViewRunning,
-        "customViewSessionEvidence": RokidBridgeModule.hasCustomViewSessionEvidence(),
-        "iosBleConnected": iosBleConnected(),
-        "iosBleDeviceName": iosBleDeviceName() ?? currentDeviceName ?? "",
-      ])
-      return
-    }
-
+    let sessionEvidence = RokidBridgeModule.hasCustomViewSessionEvidence()
+    recordAuthDiagnostic(
+      "photo_capture_requested",
+      detail: "width=\(width); height=\(height); quality=\(quality); running=\(RokidBridgeModule.customViewRunning); evidence=\(sessionEvidence); bleConnected=true; device=\(iosBleDeviceName() ?? currentDeviceName ?? "unknown")"
+    )
     CxrClient.shared.takePhotoWithData(width: width, height: height, quality: quality) { data in
+      RokidBridgeModule.recordAuthDiagnostic(
+        "photo_capture_received",
+        detail: "byteLength=\(data.count); running=\(RokidBridgeModule.customViewRunning); evidence=\(RokidBridgeModule.hasCustomViewSessionEvidence()); device=\(iosBleDeviceName() ?? currentDeviceName ?? "unknown")"
+      )
       promise.resolve([
         "ok": true,
         "base64": data.base64EncodedString(),
         "mimeType": "image/jpeg",
         "byteLength": data.count,
+        "customViewRunning": RokidBridgeModule.customViewRunning,
+        "customViewSessionEvidence": RokidBridgeModule.hasCustomViewSessionEvidence(),
+        "iosBleConnected": iosBleConnected(),
+        "iosBleDeviceName": iosBleDeviceName() ?? currentDeviceName ?? "",
       ])
     }
     #else

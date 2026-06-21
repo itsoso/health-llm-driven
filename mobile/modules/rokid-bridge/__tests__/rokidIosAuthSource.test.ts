@@ -136,6 +136,17 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).not.toMatch(/guard RokidBridgeModule\.customViewRunning else \{[\s\S]+startRecord/);
   });
 
+  it('does not block glasses photo capture when CustomView evidence is missing but BLE is connected', () => {
+    const takePhotoBody = source.slice(
+      source.indexOf('private static func takePhotoBase64'),
+      source.indexOf('private static func queryApp'),
+    );
+    expect(takePhotoBody).toContain('guard iosBleConnected() else');
+    expect(takePhotoBody).not.toContain('guard RokidBridgeModule.hasCustomViewMediaSession() else');
+    expect(takePhotoBody).toContain('CxrClient.shared.takePhotoWithData(width: width, height: height, quality: quality)');
+    expect(takePhotoBody).toContain('photo_capture_requested');
+  });
+
   it('does not block Rokid recording when iOS Speech is unavailable after the audio session is confirmed', () => {
     expect(source).toContain('speech_recognition_not_ready_recording_continues');
     expect(source).toContain('CxrClient.shared.startRecord(type, codec: audioCodec(codec), mode: audioMode(mode))');
