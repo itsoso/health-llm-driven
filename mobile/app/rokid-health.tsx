@@ -2081,7 +2081,15 @@ export default function RokidHealthScreen() {
           {voiceState.status === 'failed' ? (
             <View style={styles.fallbackActions}>
               <Pressable
-                onPress={() => router.push('/diet?capture=photo' as any)}
+                onPress={() => {
+                  // council #1 R4(round2,Codex 抓到我上轮漏的第二处):手动兜底按钮也必须走 Rokid
+                  // 草稿流(openMobileFoodCameraFallback → submitRokidFoodDraft,manual_confirm_required),
+                  // 不能深链 /diet?capture=photo —— 那条 diet.tsx 立即 createDietRecord 自动入库。
+                  const foodAction = captureActionForVisualIntent('food_scan');
+                  if (foodAction) {
+                    void openMobileFoodCameraFallback(foodAction);
+                  }
+                }}
                 style={({ pressed }) => [styles.fallbackButton, pressed && styles.pressed]}
                 accessibilityRole="button"
                 accessibilityLabel="手机拍餐"

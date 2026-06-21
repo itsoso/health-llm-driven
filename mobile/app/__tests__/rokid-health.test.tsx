@@ -1113,6 +1113,60 @@ describe('RokidHealthScreen', () => {
     expect(mockStopRokidVoiceCommandCapture).toHaveBeenCalled();
   });
 
+  it('routes the manual fallback button (voice failed) into the R4-safe draft, not diet auto-write', async () => {
+    // council #1 R4 round2(Codex 抓到上轮漏的第二处):语音失败时的"手机拍餐"兜底按钮也必须走草稿流,
+    // 不能深链 /diet?capture=photo(diet.tsx 立即 createDietRecord 自动入库)。
+    // 先让 startVoiceControl 抛错(不可恢复、无 evidence)→ voiceState='failed' → 渲染兜底按钮。
+    mockOpenRokidRevaCustomView.mockResolvedValueOnce({
+      ok: false,
+      reason: 'rokid_unrecoverable_open_error',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      customViewSessionEvidence: false,
+    });
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      platform: 'ios',
+      bridgeAvailable: true,
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      customViewSessionEvidence: false,
+      iosBleConnected: false,
+    });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('手机拍餐')).toBeTruthy();
+    });
+
+    mockLaunchCamera.mockClear();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('手机拍餐'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockLaunchCamera).toHaveBeenCalled();
+      expect(mockSubmitRokidVisualInput).toHaveBeenCalledWith(expect.objectContaining({
+        meta: expect.objectContaining({
+          manual_confirm_required: true,
+          capture_source: 'phone_camera_fallback',
+        }),
+      }));
+      expect(mockPush).not.toHaveBeenCalledWith('/diet?capture=photo');
+    });
+  });
+
   it('shows the iOS authorization and customView steps before capture is available', async () => {
     mockGetRokidIntegrationStatus.mockResolvedValue({
       platform: 'ios',
