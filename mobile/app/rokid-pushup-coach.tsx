@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import * as DocumentPicker from 'expo-document-picker';
@@ -83,6 +84,32 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+function formatBeijingTimestamp(date = new Date()) {
+  return `${date.toLocaleString('sv-SE', {
+    timeZone: 'Asia/Shanghai',
+    hour12: false,
+  }).replace(' ', 'T')}+08:00`;
+}
+
+function formatBytes(bytes?: number | null) {
+  if (!bytes || bytes <= 0) {
+    return 'unknown';
+  }
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+  }
+  if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(1)}KB`;
+  }
+  return `${bytes}B`;
+}
+
+function compactResult(result: Record<string, unknown>) {
+  return Object.entries(result)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join('; ');
+}
+
 function isRokidPushupNativeSetupFailure(reason?: string) {
   if (!reason) {
     return false;
@@ -126,9 +153,32 @@ export default function RokidPushupCoachScreen() {
   }, []);
   const [realSession, setRealSession] = useState<RokidPushupSession | null>(null);
   const [realSessionMessage, setRealSessionMessage] = useState('');
+  const [installDiagnostics, setInstallDiagnostics] = useState<string[]>([]);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const lastRokidEventIdRef = useRef(0);
   const pollInFlightRef = useRef(false);
+
+  const appendInstallDiagnostic = useCallback((message: string) => {
+    setInstallDiagnostics((prev) => [
+      ...prev.slice(-17),
+      `${formatBeijingTimestamp()} ${message}`,
+    ]);
+  }, []);
+
+  const copyInstallDiagnostics = useCallback(async () => {
+    await Clipboard.setStringAsync([
+      'Rokid Pushup Install Diagnostics',
+      `generated_at=${formatBeijingTimestamp()}`,
+      `package=${ROKID_PUSHUP_APP_PACKAGE}`,
+      `apk_url=${ROKID_PUSHUP_APK_DOWNLOAD_URL}`,
+      `state=${realSessionState}`,
+      `glassesAppInstalled=${glassesAppInstalled}`,
+      `message=${realSessionMessage || 'n/a'}`,
+      '',
+      ...installDiagnostics,
+    ].join('\n'));
+    setRealSessionMessage('安装调试信息已复制');
+  }, [glassesAppInstalled, installDiagnostics, realSessionMessage, realSessionState]);
 
   const pushViewToGlasses = useCallback(async (nextCoach: PushupCoachState, force = false) => {
     if (!force && sessionState !== 'opened') {
@@ -168,37 +218,70 @@ export default function RokidPushupCoachScreen() {
 
   const installDownloadedGlassesApp = useCallback(async () => {
     setRealSessionMessage('眼镜端应用未内置, 正在从 health 下载 (约90MB, 较慢, 请勿退出)...');
+    appendInstallDiagnostic(`download_start url=${ROKID_PUSHUP_APK_DOWNLOAD_URL}`);
     let downloadedUri: string;
     try {
       const target = `${FileSystem.cacheDirectory ?? ''}${ROKID_PUSHUP_APK_CACHE_NAME}`;
-      const dl = await FileSystem.downloadAsync(ROKID_PUSHUP_APK_DOWNLOAD_URL, target);
+      let lastProgressLogAt = 0;
+      const startedAt = Date.now();
+      const download = FileSystem.createDownloadResumable(
+        ROKID_PUSHUP_APK_DOWNLOAD_URL,
+        target,
+        {},
+        (progress) => {
+          const written = progress.totalBytesWritten ?? 0;
+          const expected = progress.totalBytesExpectedToWrite ?? 0;
+          const now = Date.now();
+          if (now - lastProgressLogAt < 2500 && written !== expected) {
+            return;
+          }
+          lastProgressLogAt = now;
+          appendInstallDiagnostic(`download_progress written=${written}; expected=${expected}; human=${formatBytes(written)}/${formatBytes(expected)}`);
+          if (expected > 0) {
+            setRealSessionMessage(`眼镜端应用下载中: ${formatBytes(written)} / ${formatBytes(expected)}...`);
+          }
+        },
+      );
+      const dl = await download.downloadAsync();
+      if (!dl) {
+        throw new Error('rokid_apk_download_empty_result');
+      }
       if (dl.status !== 200) {
         throw new Error(`rokid_apk_download_http_${dl.status}; url=${ROKID_PUSHUP_APK_DOWNLOAD_URL}`);
       }
       downloadedUri = dl.uri;
+      const info = await FileSystem.getInfoAsync(downloadedUri);
+      const size = info.exists && typeof info.size === 'number' ? info.size : null;
+      appendInstallDiagnostic(`download_complete status=${dl.status}; uri=${downloadedUri}; size=${size ?? 'unknown'}; human=${formatBytes(size)}; durationMs=${Date.now() - startedAt}`);
     } catch (error) {
       const detail = errorMessage(error, 'download_failed');
+      appendInstallDiagnostic(`download_failed ${detail}`);
       if (detail.startsWith('rokid_apk_download_')) {
         throw new Error(detail);
       }
       throw new Error(`rokid_apk_download_failed; url=${ROKID_PUSHUP_APK_DOWNLOAD_URL}; error=${detail}`);
     }
     setRealSessionMessage('下载完成, 正在把眼镜端应用传到眼镜安装...');
+    appendInstallDiagnostic(`install_file_uri_start fileUri=${downloadedUri}; package=${ROKID_PUSHUP_APP_PACKAGE}`);
+    const installStartedAt = Date.now();
     const fileInstall = await installRokidAppFromFileUri({
       fileUri: downloadedUri,
       packageName: ROKID_PUSHUP_APP_PACKAGE,
     });
+    appendInstallDiagnostic(`install_file_uri_result durationMs=${Date.now() - installStartedAt}; ${compactResult(fileInstall)}`);
     if (!readResultOk(fileInstall) || fileInstall.installed === false) {
       throw new Error(resultReason(fileInstall, 'rokid_pushup_app_install_failed'));
     }
-  }, []);
+  }, [appendInstallDiagnostic]);
 
   const installBundledOrDownloadedGlassesApp = useCallback(async () => {
+    appendInstallDiagnostic(`bundle_install_start resource=${ROKID_PUSHUP_APK_RESOURCE_NAME}.${ROKID_PUSHUP_APK_RESOURCE_EXTENSION}`);
     const installResult = await installBundledRokidApp({
       resourceName: ROKID_PUSHUP_APK_RESOURCE_NAME,
       resourceExtension: ROKID_PUSHUP_APK_RESOURCE_EXTENSION,
       packageName: ROKID_PUSHUP_APP_PACKAGE,
     });
+    appendInstallDiagnostic(`bundle_install_result ${compactResult(installResult)}`);
     if (readResultOk(installResult) && installResult.installed !== false) {
       return;
     }
@@ -208,12 +291,13 @@ export default function RokidPushupCoachScreen() {
     }
     // IPA 没内置 APK 时,从 health 公开目录下载到本地缓存,再用 file uri 传到眼镜安装。
     await installDownloadedGlassesApp();
-  }, [installDownloadedGlassesApp]);
+  }, [appendInstallDiagnostic, installDownloadedGlassesApp]);
 
   const confirmGlassesAppInstalled = useCallback(async () => {
     // 眼镜端确认:installed===true 才算装上;安装在眼镜上可能还在收尾,重试几次再判失败(council P2)。
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const probe = await queryRokidApp(ROKID_PUSHUP_APP_PACKAGE);
+      appendInstallDiagnostic(`query_app_attempt attempt=${attempt + 1}/3; ${compactResult(probe)}`);
       if (readResultOk(probe) && probe.installed === true) {
         return;
       }
@@ -222,7 +306,7 @@ export default function RokidPushupCoachScreen() {
       }
     }
     throw new Error('rokid_pushup_app_install_not_confirmed');
-  }, []);
+  }, [appendInstallDiagnostic]);
 
   // 安装核心: bundled → 从 health 下载; 装完在眼镜端 strict 验证(带重试)。
   const performGlassesAppInstall = useCallback(async () => {
@@ -265,12 +349,17 @@ export default function RokidPushupCoachScreen() {
   const acquireGlassesAppInstall = useCallback(() => {
     const now = Date.now();
     if (glassesAppInstallInFlight && now - glassesAppInstallStartedAt < GLASSES_APP_INSTALL_TIMEOUT_MS) {
+      appendInstallDiagnostic(`install_reuse_in_flight ageMs=${now - glassesAppInstallStartedAt}`);
       return glassesAppInstallInFlight;
     }
     glassesAppInstallStartedAt = now;
+    appendInstallDiagnostic(`install_singleton_start timeoutMs=${GLASSES_APP_INSTALL_TIMEOUT_MS}`);
     const timed = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(
-        () => reject(new Error('rokid_apk_install_timeout')),
+        () => {
+          appendInstallDiagnostic(`install_timeout timeoutMs=${GLASSES_APP_INSTALL_TIMEOUT_MS}`);
+          reject(new Error('rokid_apk_install_timeout'));
+        },
         GLASSES_APP_INSTALL_TIMEOUT_MS,
       );
       performGlassesAppInstall().then(
@@ -292,7 +381,7 @@ export default function RokidPushupCoachScreen() {
     });
     glassesAppInstallInFlight = promise;
     return promise;
-  }, [performGlassesAppInstall]);
+  }, [appendInstallDiagnostic, performGlassesAppInstall]);
 
   const refreshGlassesAppInstalled = useCallback(async () => {
     const inFlight = glassesAppInstallInFlight;
@@ -337,6 +426,7 @@ export default function RokidPushupCoachScreen() {
   }, [acquireGlassesAppInstall]);
 
   const installGlassesApp = useCallback(async () => {
+    setInstallDiagnostics([]);
     setRealSessionState('installing');
     setRealSessionMessage(
       glassesAppInstallInFlight
@@ -719,6 +809,25 @@ export default function RokidPushupCoachScreen() {
             <Text style={txt.secondaryButton}>手动选择 APK 安装</Text>
           </Pressable>
           {realSessionMessage ? <Text style={txt.sessionMessage}>{realSessionMessage}</Text> : null}
+          {installDiagnostics.length > 0 ? (
+            <View style={styles.installDiagnosticsBox}>
+              <View style={styles.sectionHeader}>
+                <Text style={txt.installDiagnosticsTitle}>安装诊断</Text>
+                <Pressable
+                  onPress={copyInstallDiagnostics}
+                  style={({ pressed }) => [styles.copyDiagnosticsButton, pressed && styles.pressed]}
+                  accessibilityRole="button"
+                  accessibilityLabel="复制 Rokid 俯卧撑安装日志"
+                >
+                  <Ionicons name="copy-outline" size={14} color={c.brand} />
+                  <Text style={txt.copyDiagnosticsButton}>复制安装日志</Text>
+                </Pressable>
+              </View>
+              {installDiagnostics.slice(-8).map((line) => (
+                <Text key={line} style={txt.installDiagnosticsLine}>{line}</Text>
+              ))}
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.panel}>
@@ -982,6 +1091,27 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     paddingHorizontal: spacing.md,
     marginTop: spacing.sm,
   },
+  installDiagnosticsBox: {
+    marginTop: spacing.md,
+    borderRadius: radii.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.separator,
+    backgroundColor: c.fill,
+    padding: spacing.md,
+    gap: 6,
+  },
+  copyDiagnosticsButton: {
+    minHeight: 30,
+    borderRadius: radii.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.separator,
+    backgroundColor: c.bgCard,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: spacing.sm,
+  },
   sampleGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1027,9 +1157,12 @@ const createTxt = (c: ColorPalette) => ({
   sectionTitle: { fontSize: 15, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   sessionState: { fontSize: 12, fontWeight: '800' } as TextStyle,
   sessionMessage: { fontSize: 12, lineHeight: 17, color: c.labelSecondary, marginTop: spacing.sm } as TextStyle,
+  installDiagnosticsTitle: { fontSize: 13, fontWeight: '800', color: c.labelPrimary } as TextStyle,
+  installDiagnosticsLine: { fontSize: 11, lineHeight: 15, color: c.labelSecondary, fontFamily: 'IBMPlexMono-Regular' } as TextStyle,
   localModeHint: { fontSize: 12, lineHeight: 17, color: c.labelSecondary, marginTop: 4 } as TextStyle,
   primaryButton: { fontSize: 14, fontWeight: '800', color: '#fff' } as TextStyle,
   secondaryButton: { fontSize: 13, fontWeight: '800', color: c.brand } as TextStyle,
+  copyDiagnosticsButton: { fontSize: 12, fontWeight: '800', color: c.brand } as TextStyle,
   poseButtonText: { fontSize: 13, fontWeight: '800' } as TextStyle,
   score: { fontSize: 42, fontWeight: '900', color: c.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
   scoreUnit: { fontSize: 14, fontWeight: '800', color: c.labelSecondary, marginBottom: 8, marginLeft: 4 } as TextStyle,

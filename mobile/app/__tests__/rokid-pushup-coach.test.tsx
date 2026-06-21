@@ -17,7 +17,10 @@ const mockListRokidPushupEvents = jest.fn();
 const mockPost = jest.fn();
 const mockInvalidateRecordMutation = jest.fn();
 const mockGetDocumentAsync = jest.fn();
-const mockDownloadAsync = jest.fn();
+const mockCreateDownloadResumable = jest.fn();
+const mockDownloadResumableDownloadAsync = jest.fn();
+const mockGetInfoAsync = jest.fn();
+const mockSetClipboardStringAsync = jest.fn();
 
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
@@ -47,7 +50,12 @@ jest.mock('expo-document-picker', () => ({
 
 jest.mock('expo-file-system/legacy', () => ({
   cacheDirectory: 'file://cache/',
-  downloadAsync: (...args: any[]) => mockDownloadAsync(...args),
+  createDownloadResumable: (...args: any[]) => mockCreateDownloadResumable(...args),
+  getInfoAsync: (...args: any[]) => mockGetInfoAsync(...args),
+}));
+
+jest.mock('expo-clipboard', () => ({
+  setStringAsync: (...args: any[]) => mockSetClipboardStringAsync(...args),
 }));
 
 jest.mock('../../services/rokidPushupSession', () => {
@@ -96,8 +104,19 @@ describe('RokidPushupCoachScreen', () => {
     mockListRokidPushupEvents.mockResolvedValue([]);
     mockPost.mockResolvedValue({ data: { id: 123 } });
     mockInvalidateRecordMutation.mockResolvedValue(undefined);
-    mockDownloadAsync.mockResolvedValue({ status: 200, uri: 'file://cache/rokid-pushup-glasses.apk' });
+    mockCreateDownloadResumable.mockImplementation((_url, _target, _options, onProgress) => ({
+      downloadAsync: () => {
+        onProgress?.({
+          totalBytesWritten: 94513327,
+          totalBytesExpectedToWrite: 94513327,
+        });
+        return mockDownloadResumableDownloadAsync();
+      },
+    }));
+    mockDownloadResumableDownloadAsync.mockResolvedValue({ status: 200, uri: 'file://cache/rokid-pushup-glasses.apk' });
+    mockGetInfoAsync.mockResolvedValue({ exists: true, uri: 'file://cache/rokid-pushup-glasses.apk', size: 94513327 });
     mockGetDocumentAsync.mockResolvedValue({ canceled: true, assets: [] });
+    mockSetClipboardStringAsync.mockResolvedValue(undefined);
   });
 
   it('installs the bundled glasses APK before starting real pose recognition when the app is missing', async () => {
@@ -199,7 +218,7 @@ describe('RokidPushupCoachScreen', () => {
       ok: false,
       reason: 'rokid_apk_resource_missing',
     });
-    mockDownloadAsync.mockRejectedValue(new Error('download failed'));
+    mockDownloadResumableDownloadAsync.mockRejectedValue(new Error('download failed'));
     mockGetDocumentAsync.mockResolvedValue({ canceled: true, assets: [] });
 
     const screen = renderWithProviders(<RokidPushupCoachScreen />);
@@ -246,7 +265,7 @@ describe('RokidPushupCoachScreen', () => {
       ok: false,
       reason: 'rokid_apk_resource_missing',
     });
-    mockDownloadAsync.mockResolvedValue({ status: 200, uri: 'file://cache/rokid-pushup-glasses.apk' });
+    mockDownloadResumableDownloadAsync.mockResolvedValue({ status: 200, uri: 'file://cache/rokid-pushup-glasses.apk' });
 
     const screen = renderWithProviders(<RokidPushupCoachScreen />);
 
@@ -256,9 +275,11 @@ describe('RokidPushupCoachScreen', () => {
     });
 
     await waitFor(() => {
-      expect(mockDownloadAsync).toHaveBeenCalledWith(
+      expect(mockCreateDownloadResumable).toHaveBeenCalledWith(
         'https://health.executor.life/rokid-pushup-glasses.apk',
         'file://cache/rokid-pushup-glasses.apk',
+        {},
+        expect.any(Function),
       );
       expect(mockInstallRokidAppFromFileUri).toHaveBeenCalledWith({
         fileUri: 'file://cache/rokid-pushup-glasses.apk',
@@ -267,6 +288,40 @@ describe('RokidPushupCoachScreen', () => {
       expect(screen.getByText('眼镜端应用已安装到眼镜 ✓(已在眼镜端验证)')).toBeTruthy();
     });
     expect(mockGetDocumentAsync).not.toHaveBeenCalled();
+  });
+
+  it('shows and copies install diagnostics across download, install, and confirmation phases', async () => {
+    mockQueryRokidApp.mockReset();
+    mockQueryRokidApp.mockResolvedValue({ ok: true, installed: true });
+    mockInstallBundledRokidApp.mockResolvedValue({
+      ok: false,
+      reason: 'rokid_apk_resource_missing',
+    });
+
+    const screen = renderWithProviders(<RokidPushupCoachScreen />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('安装/更新眼镜端 App'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/安装诊断/)).toBeTruthy();
+      expect(screen.getByText(/download_start/)).toBeTruthy();
+      expect(screen.getByText(/download_complete/)).toBeTruthy();
+      expect(screen.getByText(/install_file_uri_result/)).toBeTruthy();
+      expect(screen.getByText(/query_app_attempt/)).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('复制安装日志'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockSetClipboardStringAsync).toHaveBeenCalledWith(expect.stringContaining('download_start'));
+      expect(mockSetClipboardStringAsync).toHaveBeenCalledWith(expect.stringContaining('install_file_uri_result'));
+    });
   });
 
   it('opens the file picker only from the manual APK install action', async () => {
@@ -300,7 +355,7 @@ describe('RokidPushupCoachScreen', () => {
       ok: false,
       reason: 'rokid_apk_resource_missing',
     });
-    mockDownloadAsync.mockResolvedValue({ status: 404, uri: 'file://cache/rokid-pushup-glasses.apk' });
+    mockDownloadResumableDownloadAsync.mockResolvedValue({ status: 404, uri: 'file://cache/rokid-pushup-glasses.apk' });
     mockGetDocumentAsync.mockResolvedValue({ canceled: true, assets: [] });
 
     const screen = renderWithProviders(<RokidPushupCoachScreen />);
@@ -311,7 +366,7 @@ describe('RokidPushupCoachScreen', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/rokid_apk_download_http_404/)).toBeTruthy();
+      expect(screen.getAllByText(/rokid_apk_download_http_404/).length).toBeGreaterThan(0);
     });
     expect(mockGetDocumentAsync).not.toHaveBeenCalled();
   });
