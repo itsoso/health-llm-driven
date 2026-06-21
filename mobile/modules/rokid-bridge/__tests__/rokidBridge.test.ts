@@ -485,6 +485,11 @@ describe('rokid-bridge JS facade', () => {
         recommendedSurface: 'manual',
       }),
       expect.objectContaining({
+        id: 'camera_capture',
+        state: 'degraded',
+        recommendedSurface: 'rokid_glasses',
+      }),
+      expect.objectContaining({
         id: 'custom_app_open',
         state: 'degraded',
         recommendedSurface: 'rokid_glasses',

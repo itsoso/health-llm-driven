@@ -472,9 +472,11 @@ export function buildRokidCapabilityGateway(
       : bridgeReady || customAppSupported
         ? 'degraded'
         : 'blocked';
+  const captureAttemptReady = bridgeReady && sdkLinked && (!ios || (authorized && bleReady));
+  const captureHardBlocked = networkPreconditionFailure || !captureAttemptReady;
   const captureState: RokidCapabilityState = captureReady
     ? 'ready'
-    : networkPreconditionFailure
+    : captureHardBlocked
       ? 'blocked'
       : 'degraded';
   const voiceState: RokidCapabilityState =
@@ -515,14 +517,16 @@ export function buildRokidCapabilityGateway(
     {
       id: 'camera_capture',
       label: '眼镜拍照采集',
-      state: captureReady ? 'ready' : customViewState === 'blocked' ? 'blocked' : 'degraded',
+      state: captureState,
       detail: captureReady
         ? '拍照能力可用。'
-        : networkPreconditionFailure
-          ? '眼镜 CXR 数据通道未就绪; 饮食记录先走手机拍照兜底。'
-          : 'Rokid iOS 拍照依赖会话构建; 饮食记录应保持手机拍照兜底。',
+        : captureHardBlocked
+          ? networkPreconditionFailure
+            ? '眼镜 CXR 数据通道未就绪; 饮食记录会先走手机拍照兜底。'
+            : '需要先完成 SDK、授权和眼镜蓝牙链路前置条件。'
+          : '饮食记录默认先尝试眼镜拍照; 失败或超时再手机拍照兜底。',
       source: 'RGCxrClient.takePhoto',
-      recommendedSurface: captureReady ? 'rokid_glasses' : 'mobile',
+      recommendedSurface: captureState === 'blocked' ? 'mobile' : 'rokid_glasses',
       priority: 40,
     },
     {

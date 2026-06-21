@@ -120,7 +120,7 @@ const CAPTURE_ACTIONS: {
   detail: string;
   intent: RokidVisualIntent;
 }[] = [
-  { icon: 'fast-food-outline', title: '食物视觉记录', detail: '拍菜单 / 餐盘后生成饮食草稿', intent: 'food_scan' },
+  { icon: 'fast-food-outline', title: '食物视觉记录', detail: '优先眼镜拍餐盘, 失败后手机兜底', intent: 'food_scan' },
   { icon: 'nutrition-outline', title: '补剂标签扫描', detail: 'OCR 后进入补剂待确认队列', intent: 'supplement_scan' },
   { icon: 'medkit-outline', title: '用药标签扫描', detail: '只做识别和安全提示, 不自动改药', intent: 'medication_scan' },
 ] as const;
@@ -315,6 +315,24 @@ async function takeRokidPhotoBase64WithTimeout(options: {
 
 function hasRokidAudioSession(result?: Partial<RokidIntegrationStatus> | Record<string, unknown> | null) {
   return result?.customViewRunning === true || result?.capabilitiesReady === true;
+}
+
+function hasRokidGlassesCaptureHardBlocker(status?: Partial<RokidIntegrationStatus> | null) {
+  if (!status || status.platform !== 'ios') {
+    return false;
+  }
+  if (status.bridgeAvailable === false || status.sdkLinked === false) {
+    return true;
+  }
+  if (status.authorizationState && status.authorizationState !== 'authenticated') {
+    return true;
+  }
+  if (status.iosBleConnected === false) {
+    return true;
+  }
+  const openError = status.lastCustomViewOpenError?.toLowerCase() ?? '';
+  const rawNotify = status.lastCustomViewRawNotify?.toLowerCase() ?? '';
+  return openError.includes('rokid_glasses_no_network') || rawNotify.includes('subcmd=nonetwork');
 }
 
 function hasRokidCustomViewSessionEvidence(result?: Partial<RokidIntegrationStatus> | Record<string, unknown> | null) {
@@ -693,7 +711,14 @@ function displayRouteLabel(state: RokidCapabilityState) {
 }
 
 function captureRouteLabel(gateway: RokidCapabilityGateway) {
-  return gateway.summary.capture === 'ready' ? '眼镜拍照' : '手机拍照兜底';
+  switch (gateway.summary.capture) {
+    case 'ready':
+      return '眼镜拍照';
+    case 'degraded':
+      return '眼镜拍照优先';
+    default:
+      return '手机拍照兜底';
+  }
 }
 
 function movementRouteLabel(gateway: RokidCapabilityGateway) {
@@ -1585,7 +1610,7 @@ export default function RokidHealthScreen() {
       }
       if (
         latestStatus?.platform === 'ios' &&
-        (latestStatus.capabilitiesReady !== true || latestStatus.iosBleConnected === false)
+        hasRokidGlassesCaptureHardBlocker(latestStatus)
       ) {
         if (action.intent === 'food_scan') {
           await openMobileFoodCameraFallback(action);

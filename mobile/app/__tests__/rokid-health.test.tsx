@@ -1004,6 +1004,55 @@ describe('RokidHealthScreen', () => {
     });
   });
 
+  it('tries glasses food capture first when iOS BLE is connected even before CustomView running is confirmed', async () => {
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      lastCustomViewOpenError: 'rokid_custom_view_open_callback_missing; running=false; rawNotify=none; iosBleConnected=true; device=Glasses_0077',
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('主动触发 食物视觉记录')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('主动触发 食物视觉记录'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockTakeRokidPhotoBase64).toHaveBeenCalledWith({
+        width: 1024,
+        height: 768,
+        quality: 80,
+      });
+      expect(mockLaunchCamera).not.toHaveBeenCalled();
+      expect(mockSubmitRokidVisualInput).toHaveBeenCalledWith(expect.objectContaining({
+        intent: 'food_scan',
+        meta: expect.objectContaining({
+          capture_source: 'rokid_glasses',
+        }),
+      }));
+    });
+  });
+
   it('does not double-route an over-captured glasses transcript (记录这一餐 → 记录这一餐明天天气)', async () => {
     // council #3:iOS 过度捕获让同一句先出 "记录这一餐",随后被环境音拖长成 "记录这一餐明天天气"。
     // 两条是不同字符串 → 旧逻辑会各自路由 → 两次拍照/草稿。去重后只路由一次。
@@ -1235,7 +1284,7 @@ describe('RokidHealthScreen', () => {
       expect(screen.getByText('能力路由')).toBeTruthy();
       expect(screen.getByText('推荐路径: 眼镜端 App 优先')).toBeTruthy();
       expect(screen.getByText('运动: 眼镜端 App 优先')).toBeTruthy();
-      expect(screen.getByText('饮食: 手机拍照兜底')).toBeTruthy();
+      expect(screen.getByText('饮食: 眼镜拍照优先')).toBeTruthy();
       expect(screen.getByText('显示: CXR-L 阻塞')).toBeTruthy();
       expect(screen.getByText(/CXR-L CustomView 静默/)).toBeTruthy();
       expect(screen.getByText(/眼镜端 App 优先，CXR-L 安装\/启动失败时可用本地计数兜底。/)).toBeTruthy();
@@ -1793,7 +1842,7 @@ describe('RokidHealthScreen', () => {
     });
   });
 
-  it('falls back to the mobile food camera when iOS CustomView capture is not ready', async () => {
+  it('falls back to the mobile food camera when the iOS glasses BLE link is explicitly disconnected', async () => {
     mockGetRokidIntegrationStatus.mockResolvedValue({
       platform: 'ios',
       bridgeAvailable: true,
@@ -1802,6 +1851,8 @@ describe('RokidHealthScreen', () => {
       mode: 'sdk_probe',
       sdkLinked: true,
       authorizationState: 'authenticated',
+      iosBleConnected: false,
+      iosBleDeviceName: 'Glasses_0077',
       sessionMode: 'customView',
       customViewRunning: false,
       capabilitiesReady: false,
