@@ -39,6 +39,7 @@ public class RokidBridgeModule: Module {
   private static let querySchemes = ["rokidai"]
   private static var didConfigureAuthentication = false
   private static var didInitializeCustomView = false
+  private static var didInitializeCustomApp = false
   private static var didBindRuntimeEvents = false
   private static var customViewRunning = false
   private static var customViewDisplayInferred = false
@@ -250,7 +251,6 @@ public class RokidBridgeModule: Module {
   }
 
   private static func integrationStatusPayload() -> [String: Any] {
-    ensureCustomViewInitialized()
     let installed = canOpenHiRokid()
     var payload: [String: Any] = [:]
     payload["platform"] = "ios"
@@ -754,27 +754,39 @@ public class RokidBridgeModule: Module {
 
   private static func queryApp(packageName: String, promise: Promise) {
     #if canImport(RGCxrClient)
-    ensureCustomViewInitialized()
+    guard ensureCustomAppInitialized(packageName: packageName) else {
+      var response = customAppDiagnostics(
+        packageName: packageName,
+        operation: "queryApp",
+        reason: "rokid_cxrl_wrong_session_mode"
+      )
+      response["ok"] = false
+      response["installed"] = false
+      response["relaunchRequired"] = true
+      promise.resolve(response)
+      return
+    }
     guard CxrClient.shared.auth.isAuthenticated() else {
-      promise.resolve(["ok": false, "installed": false, "reason": "rokid_not_authorized"])
+      var response = customAppDiagnostics(packageName: packageName, operation: "queryApp", reason: "rokid_not_authorized")
+      response["ok"] = false
+      response["installed"] = false
+      promise.resolve(response)
       return
     }
 
     #if ROKID_CXRL_CALLBACK_API
     CxrClient.shared.queryApp { installed in
-      promise.resolve([
-        "ok": true,
-        "installed": installed,
-        "packageName": packageName,
-      ])
+      var response = customAppDiagnostics(packageName: packageName, operation: "queryApp")
+      response["ok"] = true
+      response["installed"] = installed
+      promise.resolve(response)
     }
     #else
     CxrClient.shared.queryApp(packageName: packageName) { installed in
-      promise.resolve([
-        "ok": true,
-        "installed": installed,
-        "packageName": packageName,
-      ])
+      var response = customAppDiagnostics(packageName: packageName, operation: "queryApp")
+      response["ok"] = true
+      response["installed"] = installed
+      promise.resolve(response)
     }
     #endif
     #else
@@ -790,21 +802,37 @@ public class RokidBridgeModule: Module {
     promise: Promise
   ) {
     #if canImport(RGCxrClient)
-    ensureCustomViewInitialized()
+    guard ensureCustomAppInitialized(packageName: packageName) else {
+      var response = customAppDiagnostics(
+        packageName: packageName,
+        operation: "installBundledApp",
+        reason: "rokid_cxrl_wrong_session_mode"
+      )
+      response["ok"] = false
+      response["installed"] = false
+      response["relaunchRequired"] = true
+      promise.resolve(response)
+      return
+    }
     guard CxrClient.shared.auth.isAuthenticated() else {
-      promise.resolve(["ok": false, "installed": false, "reason": "rokid_not_authorized"])
+      var response = customAppDiagnostics(packageName: packageName, operation: "installBundledApp", reason: "rokid_not_authorized")
+      response["ok"] = false
+      response["installed"] = false
+      promise.resolve(response)
       return
     }
     guard let apkURL = Bundle.main.url(forResource: resourceName, withExtension: resourceExtension) ??
       Bundle.main.url(forResource: resourceName, withExtension: resourceExtension, subdirectory: "RokidApps") else {
-      promise.resolve([
-        "ok": false,
-        "installed": false,
-        "reason": "rokid_apk_resource_missing",
-        "resourceName": resourceName,
-        "resourceExtension": resourceExtension,
-        "packageName": packageName,
-      ])
+      var response = customAppDiagnostics(
+        packageName: packageName,
+        operation: "installBundledApp",
+        reason: "rokid_apk_resource_missing"
+      )
+      response["ok"] = false
+      response["installed"] = false
+      response["resourceName"] = resourceName
+      response["resourceExtension"] = resourceExtension
+      promise.resolve(response)
       return
     }
     installAppAtPath(
@@ -823,9 +851,23 @@ public class RokidBridgeModule: Module {
 
   private static func installAppFileUri(fileUri: String, packageName: String, promise: Promise) {
     #if canImport(RGCxrClient)
-    ensureCustomViewInitialized()
+    guard ensureCustomAppInitialized(packageName: packageName) else {
+      var response = customAppDiagnostics(
+        packageName: packageName,
+        operation: "installAppFileUri",
+        reason: "rokid_cxrl_wrong_session_mode"
+      )
+      response["ok"] = false
+      response["installed"] = false
+      response["relaunchRequired"] = true
+      promise.resolve(response)
+      return
+    }
     guard CxrClient.shared.auth.isAuthenticated() else {
-      promise.resolve(["ok": false, "installed": false, "reason": "rokid_not_authorized"])
+      var response = customAppDiagnostics(packageName: packageName, operation: "installAppFileUri", reason: "rokid_not_authorized")
+      response["ok"] = false
+      response["installed"] = false
+      promise.resolve(response)
       return
     }
     let path: String
@@ -849,27 +891,45 @@ public class RokidBridgeModule: Module {
 
   private static func uninstallApp(packageName: String, promise: Promise) {
     #if canImport(RGCxrClient)
-    ensureCustomViewInitialized()
+    guard ensureCustomAppInitialized(packageName: packageName) else {
+      var response = customAppDiagnostics(
+        packageName: packageName,
+        operation: "uninstallApp",
+        reason: "rokid_cxrl_wrong_session_mode"
+      )
+      response["ok"] = false
+      response["uninstalled"] = false
+      response["relaunchRequired"] = true
+      promise.resolve(response)
+      return
+    }
     guard CxrClient.shared.auth.isAuthenticated() else {
-      promise.resolve(["ok": false, "uninstalled": false, "reason": "rokid_not_authorized"])
+      var response = customAppDiagnostics(packageName: packageName, operation: "uninstallApp", reason: "rokid_not_authorized")
+      response["ok"] = false
+      response["uninstalled"] = false
+      promise.resolve(response)
       return
     }
 
     #if ROKID_CXRL_CALLBACK_API
     CxrClient.shared.uninstallApp { uninstalled in
-      promise.resolve([
-        "ok": uninstalled,
-        "uninstalled": uninstalled,
-        "packageName": packageName,
-      ])
+      var response = customAppDiagnostics(packageName: packageName, operation: "uninstallApp")
+      response["ok"] = uninstalled
+      response["uninstalled"] = uninstalled
+      if !uninstalled {
+        response["reason"] = "rokid_app_uninstall_rejected"
+      }
+      promise.resolve(response)
     }
     #else
     CxrClient.shared.uninstallApp(packageName) { uninstalled in
-      promise.resolve([
-        "ok": uninstalled,
-        "uninstalled": uninstalled,
-        "packageName": packageName,
-      ])
+      var response = customAppDiagnostics(packageName: packageName, operation: "uninstallApp")
+      response["ok"] = uninstalled
+      response["uninstalled"] = uninstalled
+      if !uninstalled {
+        response["reason"] = "rokid_app_uninstall_rejected"
+      }
+      promise.resolve(response)
     }
     #endif
     #else
@@ -880,29 +940,49 @@ public class RokidBridgeModule: Module {
 
   private static func openApp(packageName: String, activityName: String, url: String, promise: Promise) {
     #if canImport(RGCxrClient)
-    ensureCustomViewInitialized()
+    guard ensureCustomAppInitialized(packageName: packageName) else {
+      var response = customAppDiagnostics(
+        packageName: packageName,
+        operation: "openApp",
+        reason: "rokid_cxrl_wrong_session_mode"
+      )
+      response["ok"] = false
+      response["opened"] = false
+      response["activityName"] = activityName
+      response["relaunchRequired"] = true
+      promise.resolve(response)
+      return
+    }
     guard CxrClient.shared.auth.isAuthenticated() else {
-      promise.resolve(["ok": false, "opened": false, "reason": "rokid_not_authorized"])
+      var response = customAppDiagnostics(packageName: packageName, operation: "openApp", reason: "rokid_not_authorized")
+      response["ok"] = false
+      response["opened"] = false
+      response["activityName"] = activityName
+      promise.resolve(response)
       return
     }
 
     #if ROKID_CXRL_CALLBACK_API
     CxrClient.shared.openApp(activityName: activityName, url: url) { opened in
-      promise.resolve([
-        "ok": opened,
-        "opened": opened,
-        "packageName": packageName,
-        "activityName": activityName,
-      ])
+      var response = customAppDiagnostics(packageName: packageName, operation: "openApp")
+      response["ok"] = opened
+      response["opened"] = opened
+      response["activityName"] = activityName
+      if !opened {
+        response["reason"] = "rokid_app_open_rejected"
+      }
+      promise.resolve(response)
     }
     #else
     CxrClient.shared.openApp(packageName: packageName, activityName: activityName, url: url) { opened in
-      promise.resolve([
-        "ok": opened,
-        "opened": opened,
-        "packageName": packageName,
-        "activityName": activityName,
-      ])
+      var response = customAppDiagnostics(packageName: packageName, operation: "openApp")
+      response["ok"] = opened
+      response["opened"] = opened
+      response["activityName"] = activityName
+      if !opened {
+        response["reason"] = "rokid_app_open_rejected"
+      }
+      promise.resolve(response)
     }
     #endif
     #else
@@ -915,27 +995,45 @@ public class RokidBridgeModule: Module {
 
   private static func stopApp(packageName: String, promise: Promise) {
     #if canImport(RGCxrClient)
-    ensureCustomViewInitialized()
+    guard ensureCustomAppInitialized(packageName: packageName) else {
+      var response = customAppDiagnostics(
+        packageName: packageName,
+        operation: "stopApp",
+        reason: "rokid_cxrl_wrong_session_mode"
+      )
+      response["ok"] = false
+      response["stopped"] = false
+      response["relaunchRequired"] = true
+      promise.resolve(response)
+      return
+    }
     guard CxrClient.shared.auth.isAuthenticated() else {
-      promise.resolve(["ok": false, "stopped": false, "reason": "rokid_not_authorized"])
+      var response = customAppDiagnostics(packageName: packageName, operation: "stopApp", reason: "rokid_not_authorized")
+      response["ok"] = false
+      response["stopped"] = false
+      promise.resolve(response)
       return
     }
 
     #if ROKID_CXRL_CALLBACK_API
     CxrClient.shared.stopApp { stopped in
-      promise.resolve([
-        "ok": stopped,
-        "stopped": stopped,
-        "packageName": packageName,
-      ])
+      var response = customAppDiagnostics(packageName: packageName, operation: "stopApp")
+      response["ok"] = stopped
+      response["stopped"] = stopped
+      if !stopped {
+        response["reason"] = "rokid_app_stop_rejected"
+      }
+      promise.resolve(response)
     }
     #else
     CxrClient.shared.stopApp(packageName) { stopped in
-      promise.resolve([
-        "ok": stopped,
-        "stopped": stopped,
-        "packageName": packageName,
-      ])
+      var response = customAppDiagnostics(packageName: packageName, operation: "stopApp")
+      response["ok"] = stopped
+      response["stopped"] = stopped
+      if !stopped {
+        response["reason"] = "rokid_app_stop_rejected"
+      }
+      promise.resolve(response)
     }
     #endif
     #else
@@ -1519,6 +1617,28 @@ public class RokidBridgeModule: Module {
   #endif
 
   #if canImport(RGCxrClient)
+  private static func customAppDiagnostics(
+    packageName: String,
+    operation: String,
+    reason: String? = nil
+  ) -> [String: Any] {
+    var response: [String: Any] = [:]
+    response["packageName"] = packageName
+    response["operation"] = operation
+    response["authorizationState"] = authorizationState()
+    response["cxrClientInitialized"] = cxrClientInitialized()
+    response["cxrInitializationMode"] = cxrInitializationMode()
+    response["cxrInitializationOutcome"] = cxrInitializationOutcome
+    response["iosBleConnected"] = iosBleConnected()
+    if let deviceName = iosBleDeviceName() ?? currentDeviceName {
+      response["iosBleDeviceName"] = deviceName
+    }
+    if let reason {
+      response["reason"] = reason
+    }
+    return response
+  }
+
   private static func installAppAtPath(
     _ path: String,
     packageName: String,
@@ -1526,28 +1646,40 @@ public class RokidBridgeModule: Module {
     promise: Promise
   ) {
     guard FileManager.default.fileExists(atPath: path) else {
-      promise.resolve([
-        "ok": false,
-        "installed": false,
-        "reason": "rokid_apk_file_missing",
-        "packageName": packageName,
-      ])
+      var response = customAppDiagnostics(
+        packageName: packageName,
+        operation: "installApp",
+        reason: "rokid_apk_file_missing"
+      )
+      response["ok"] = false
+      response["installed"] = false
+      promise.resolve(response)
       return
     }
 
     let attributes = try? FileManager.default.attributesOfItem(atPath: path)
     let byteLength = (attributes?[.size] as? NSNumber)?.uint64Value
     let fileName = URL(fileURLWithPath: path).lastPathComponent
+    recordAuthDiagnostic(
+      "custom_app_install_invoked",
+      detail: "source=\(source); package=\(packageName); file=\(fileName); bytes=\(byteLength.map { String($0) } ?? "unknown"); mode=\(cxrInitializationMode()); bleConnected=\(iosBleConnected()); device=\(iosBleDeviceName() ?? currentDeviceName ?? "unknown")"
+    )
     CxrClient.shared.installApp(path) { installed in
-      var response: [String: Any] = [:]
+      var response = customAppDiagnostics(packageName: packageName, operation: "installApp")
       response["ok"] = installed
       response["installed"] = installed
-      response["packageName"] = packageName
       response["source"] = source
       response["apkFileName"] = fileName
       if let byteLength {
         response["byteLength"] = byteLength
       }
+      if !installed {
+        response["reason"] = "rokid_app_install_rejected"
+      }
+      recordAuthDiagnostic(
+        "custom_app_install_callback",
+        detail: "installed=\(installed); source=\(source); package=\(packageName); mode=\(cxrInitializationMode()); bleConnected=\(iosBleConnected()); device=\(iosBleDeviceName() ?? currentDeviceName ?? "unknown")"
+      )
       promise.resolve(response)
     }
   }
@@ -1776,6 +1908,60 @@ public class RokidBridgeModule: Module {
     } else {
       DispatchQueue.main.sync(execute: initializeConfigureAndBind)
     }
+    #endif
+  }
+
+  private static func ensureCustomAppInitialized(packageName: String) -> Bool {
+    #if canImport(RGCxrClient)
+    var ready = false
+    let initializeConfigureAndBind = {
+    #if ROKID_CXRL_CALLBACK_API
+      let initializedBefore = CxrClient.isInitialized
+      let modeBefore = cxrInitializationMode()
+      if initializedBefore && modeBefore != "customApp" {
+        RokidBridgeModule.cxrInitializationOutcome = "failure_already_initialized:\(modeBefore)"
+        recordAuthDiagnostic(
+          "cxr_initialize_custom_app_blocked",
+          detail: "before=\(initializedBefore); requestedMode=customApp; existingMode=\(modeBefore); package=\(packageName)"
+        )
+        ready = false
+      } else if !RokidBridgeModule.didInitializeCustomApp || !initializedBefore {
+        let outcome = CxrClient.initialize(
+          mode: .customApp,
+          options: RGCxrClientInitializationOptions(appDisplayName: nil, pageName: packageName)
+        )
+        let outcomeDescription = cxrInitializeOutcomeDescription(outcome)
+        let initializedAfter = CxrClient.isInitialized
+        let modeAfter = cxrInitializationMode()
+        RokidBridgeModule.cxrInitializationOutcome = outcomeDescription
+        RokidBridgeModule.didInitializeCustomApp = initializedAfter && modeAfter == "customApp"
+        recordAuthDiagnostic(
+          "cxr_initialize_custom_app",
+          detail: "before=\(initializedBefore); outcome=\(outcomeDescription); after=\(initializedAfter); mode=\(modeAfter); pageName=\(packageName)"
+        )
+        ready = RokidBridgeModule.didInitializeCustomApp
+      } else {
+        ready = cxrInitializationMode() == "customApp"
+      }
+    #else
+      if !RokidBridgeModule.didInitializeCustomApp {
+        RokidBridgeModule.cxrInitializationOutcome = "legacy_client_no_initialize_api"
+        RokidBridgeModule.didInitializeCustomApp = true
+      }
+      ready = true
+    #endif
+      configureAuthentication()
+      bindRuntimeEvents()
+    }
+    if Thread.isMainThread {
+      initializeConfigureAndBind()
+    } else {
+      DispatchQueue.main.sync(execute: initializeConfigureAndBind)
+    }
+    return ready
+    #else
+    _ = packageName
+    return false
     #endif
   }
 

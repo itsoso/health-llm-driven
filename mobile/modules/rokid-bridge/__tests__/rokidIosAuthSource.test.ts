@@ -240,6 +240,40 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).not.toContain('return true\n    #else\n    return false\n    #endif\n  }\n\n  private static func cxrInitializationMode()');
   });
 
+  it('uses CustomApp session initialization and explicit diagnostics for glasses app lifecycle APIs', () => {
+    expect(source).toContain('private static var didInitializeCustomApp = false');
+    expect(source).toContain('private static func ensureCustomAppInitialized(packageName: String) -> Bool');
+    expect(source).toContain('mode: .customApp');
+    expect(source).toContain('pageName: packageName');
+    expect(source).toContain('rokid_cxrl_wrong_session_mode');
+    expect(source).toContain('customAppDiagnostics');
+
+    const customAppMethods = [
+      'queryApp',
+      'installBundledApp',
+      'installAppFileUri',
+      'uninstallApp',
+      'openApp',
+      'stopApp',
+    ];
+
+    for (const methodName of customAppMethods) {
+      const method = source.match(new RegExp(`private static func ${methodName}[\\s\\S]+?(?=\\n  private static func|\\n  #if canImport\\(RGCxrClient\\)|\\n  private static let|\\n  private static var|\\n\\})`))?.[0] ?? '';
+      expect(method).toContain('ensureCustomAppInitialized(packageName: packageName)');
+      expect(method).not.toContain('ensureCustomViewInitialized()');
+    }
+
+    expect(source).toContain('response["cxrInitializationMode"] = cxrInitializationMode()');
+    expect(source).toContain('response["iosBleConnected"] = iosBleConnected()');
+    expect(source).toContain('response["authorizationState"] = authorizationState()');
+  });
+
+  it('keeps integration status passive so health screen refresh does not lock the SDK into CustomView mode', () => {
+    const method = source.match(/private static func integrationStatusPayload\(\) -> \[String: Any\] \{[\s\S]+?\n  \}/)?.[0] ?? '';
+    expect(method).not.toContain('ensureCustomViewInitialized()');
+    expect(method).toContain('payload["cxrInitializationMode"] = cxrInitializationMode()');
+  });
+
   it('allows pinning a refreshed Rokid iOS binary framework as a first-class local pod', () => {
     expect(podspec).toContain('ROKID_IOS_CLIENT_FRAMEWORK_PATH');
     expect(podspec).toContain('Rokid vendored framework not found');

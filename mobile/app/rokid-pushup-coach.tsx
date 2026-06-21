@@ -80,6 +80,18 @@ function resultReason(result: Record<string, unknown>, fallback: string) {
   return typeof result.reason === 'string' ? result.reason : fallback;
 }
 
+function resultFailureDetail(result: Record<string, unknown>, fallback: string) {
+  const reason = resultReason(result, fallback);
+  if (reason === 'rokid_cxrl_wrong_session_mode') {
+    const mode = typeof result.cxrInitializationMode === 'string'
+      ? result.cxrInitializationMode
+      : 'unknown';
+    const relaunchRequired = result.relaunchRequired === true ? 'true' : 'false';
+    return `${reason}; currentMode=${mode}; relaunchRequired=${relaunchRequired}`;
+  }
+  return reason;
+}
+
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
@@ -116,6 +128,7 @@ function isRokidPushupNativeSetupFailure(reason?: string) {
   }
   const normalized = reason.toLowerCase();
   return normalized.includes('rokid_apk')
+    || normalized.includes('rokid_cxrl_wrong_session_mode')
     || normalized.includes('rokid_app_probe_failed')
     || normalized.includes('rokid_pushup_app_install')
     || normalized.includes('rokid_pushup_app_open_failed')
@@ -129,6 +142,10 @@ function formatRealPushupSessionIssue(reason?: string) {
   }
   if (fallback.includes('rokid_apk_download_http_') || fallback.includes('rokid_apk_download_failed')) {
     return `眼镜端 App 下载失败: ${fallback}。已改为不自动弹文件选择器；可重试自动下载，或使用「手动选择 APK 安装」。本地计数仍可保存。`;
+  }
+  if (fallback.includes('rokid_cxrl_wrong_session_mode')) {
+    const mode = fallback.match(/currentMode=([^;]+)/)?.[1] ?? 'unknown';
+    return `Rokid CXR-L 当前已在 ${mode} 会话，无法安装或启动眼镜端 App。请完全退出 Reva（从后台划掉）后，直接进入「Rokid 俯卧撑计数」再点安装/启动；不要先打开 Reva 眼镜视图。本地计数仍可保存。`;
   }
   return `眼镜识别暂不可用: ${fallback}。先用下方「+1 校准」本地计数，本组仍可保存。`;
 }
@@ -270,7 +287,7 @@ export default function RokidPushupCoachScreen() {
     });
     appendInstallDiagnostic(`install_file_uri_result durationMs=${Date.now() - installStartedAt}; ${compactResult(fileInstall)}`);
     if (!readResultOk(fileInstall) || fileInstall.installed === false) {
-      throw new Error(resultReason(fileInstall, 'rokid_pushup_app_install_failed'));
+      throw new Error(resultFailureDetail(fileInstall, 'rokid_pushup_app_install_failed'));
     }
   }, [appendInstallDiagnostic]);
 
@@ -285,7 +302,7 @@ export default function RokidPushupCoachScreen() {
     if (readResultOk(installResult) && installResult.installed !== false) {
       return;
     }
-    const bundledReason = resultReason(installResult, 'rokid_pushup_app_install_failed');
+    const bundledReason = resultFailureDetail(installResult, 'rokid_pushup_app_install_failed');
     if (bundledReason !== 'rokid_apk_resource_missing') {
       throw new Error(bundledReason);
     }
@@ -339,7 +356,7 @@ export default function RokidPushupCoachScreen() {
       packageName: ROKID_PUSHUP_APP_PACKAGE,
     });
     if (!readResultOk(installResult) || installResult.installed === false) {
-      throw new Error(resultReason(installResult, 'rokid_pushup_app_install_failed'));
+      throw new Error(resultFailureDetail(installResult, 'rokid_pushup_app_install_failed'));
     }
     await confirmGlassesAppInstalled();
   }, [confirmGlassesAppInstalled]);
@@ -413,7 +430,7 @@ export default function RokidPushupCoachScreen() {
     if (!options?.force) {
       const appProbe = await queryRokidApp(ROKID_PUSHUP_APP_PACKAGE);
       if (!readResultOk(appProbe)) {
-        throw new Error(resultReason(appProbe, 'rokid_app_probe_failed'));
+        throw new Error(resultFailureDetail(appProbe, 'rokid_app_probe_failed'));
       }
       if (appProbe.installed === true) {
         return;
@@ -505,7 +522,7 @@ export default function RokidPushupCoachScreen() {
         url: session.open_url,
       });
       if (!readResultOk(opened) || opened.opened === false) {
-        throw new Error(resultReason(opened, 'rokid_pushup_app_open_failed'));
+        throw new Error(resultFailureDetail(opened, 'rokid_pushup_app_open_failed'));
       }
       lastRokidEventIdRef.current = 0;
       setRealSession(session);

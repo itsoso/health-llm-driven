@@ -370,4 +370,26 @@ describe('RokidPushupCoachScreen', () => {
     });
     expect(mockGetDocumentAsync).not.toHaveBeenCalled();
   });
+
+  it('explains when the Rokid SDK is already locked into the wrong CXR session mode', async () => {
+    mockQueryRokidApp.mockResolvedValue({
+      ok: false,
+      installed: false,
+      reason: 'rokid_cxrl_wrong_session_mode',
+      cxrInitializationMode: 'customView',
+      relaunchRequired: true,
+    });
+
+    const screen = renderWithProviders(<RokidPushupCoachScreen />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动眼镜识别'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Rokid CXR-L 当前已在 customView 会话/)).toBeTruthy();
+      expect(screen.getByText(/完全退出 Reva/)).toBeTruthy();
+    });
+  });
 });
