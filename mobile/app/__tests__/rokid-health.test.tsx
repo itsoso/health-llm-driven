@@ -478,17 +478,18 @@ describe('RokidHealthScreen', () => {
     });
   });
 
-  it('falls back to phone microphone when CustomView only has weak display evidence', async () => {
+  it('tries native Rokid voice capture when CustomView has display evidence even before running is confirmed', async () => {
     mockOpenRokidRevaCustomView.mockResolvedValueOnce({
       ok: false,
       reason: 'ios_ble_connected; open_callback_error_code=nil; device=Glasses_0077',
       customViewRunning: false,
       capabilitiesReady: false,
+      iosBleConnected: true,
       customViewSessionEvidence: true,
       customViewDisplayInferred: true,
       lastCustomViewSessionEvidenceReason: 'open_callback_false_nil_error_ble_connected',
     });
-    mockGetRokidIntegrationStatus.mockResolvedValueOnce({
+    mockGetRokidIntegrationStatus.mockResolvedValue({
       platform: 'ios',
       bridgeAvailable: true,
       hiRokidInstalled: true,
@@ -502,6 +503,13 @@ describe('RokidHealthScreen', () => {
       customViewSessionEvidence: true,
       customViewDisplayInferred: true,
       capabilitiesReady: false,
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
     });
     const screen = renderWithProviders(<RokidHealthScreen />);
 
@@ -515,15 +523,13 @@ describe('RokidHealthScreen', () => {
     });
 
     await waitFor(() => {
-      expect(mockStartRokidVoiceCommandCapture).not.toHaveBeenCalled();
-      expect(mockVoiceStart).toHaveBeenCalledWith('zh-CN');
-      expect(screen.getByText(/已切到手机麦克风/)).toBeTruthy();
-      expect(screen.getByText(/手机麦克风兜底已开启/)).toBeTruthy();
+      expect(mockStartRokidVoiceCommandCapture).toHaveBeenCalledTimes(1);
+      expect(mockVoiceStart).not.toHaveBeenCalled();
+      expect(screen.getByText('Rokid 语音控制已开启')).toBeTruthy();
     });
 
     await act(async () => {
-      mockVoiceOnSpeechResults?.({ value: ['记录'] });
-      mockVoiceOnSpeechEnd?.();
+      await rokidTranscriptListener?.({ transcript: '记录', final: true, capturedAt: '2026-06-20T23:20:00+08:00' });
       await flushAsyncUpdates();
     });
 
@@ -532,11 +538,10 @@ describe('RokidHealthScreen', () => {
         transcript: '记录这餐',
         confidence: undefined,
         context: 'rokid_health',
-        capturedAt: expect.any(String),
+        capturedAt: '2026-06-20T23:20:00+08:00',
         meta: {
           source_surface: 'rokid_health_mode',
-          source_event: 'phone_mic_fallback',
-          fallback_reason: 'rokid_audio_session_not_ready',
+          source_event: 'rokid_transcript',
           raw_transcript: '记录',
           transcript_normalized_by: 'rokid_health_short_food_record',
         },

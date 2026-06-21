@@ -314,7 +314,17 @@ async function takeRokidPhotoBase64WithTimeout(options: {
 }
 
 function hasRokidAudioSession(result?: Partial<RokidIntegrationStatus> | Record<string, unknown> | null) {
-  return result?.customViewRunning === true || result?.capabilitiesReady === true;
+  if (!result) {
+    return false;
+  }
+  if (result.customViewRunning === true || result.capabilitiesReady === true) {
+    return true;
+  }
+  const hasBleState = typeof result.iosBleConnected === 'boolean';
+  if (hasBleState && result.iosBleConnected !== true) {
+    return false;
+  }
+  return hasRokidCustomViewSessionEvidence(result);
 }
 
 function hasRokidGlassesCaptureHardBlocker(status?: Partial<RokidIntegrationStatus> | null) {
@@ -507,6 +517,7 @@ function buildVoiceSelfCheck(
   const speechDenied = status?.speechAuthorizationStatus === 'denied'
     || status?.speechAuthorizationStatus === 'restricted';
   const phoneFallbackActive = voiceState.status === 'listening' && voiceDebug.fallbackMode === 'phone_mic';
+  const bleDisconnected = status?.platform === 'ios' && status?.iosBleConnected === false;
 
   let summary = '等待启动 Rokid 语音控制';
   if (voiceState.status === 'failed') {
@@ -555,14 +566,26 @@ function buildVoiceSelfCheck(
     {
       id: 'audio',
       title: '音频流',
-      status: chunks > 0 && bytes > 0 ? 'pass' : recordingRequested ? 'fail' : 'info',
-      detail: `${chunks} chunks · ${bytes} bytes`,
+      status: chunks > 0 && bytes > 0
+        ? 'pass'
+        : phoneFallbackActive
+          ? 'warn'
+          : recordingRequested
+            ? 'fail'
+            : 'info',
+      detail: phoneFallbackActive
+        ? `眼镜流未就绪,手机麦兜底 · ${chunks} chunks · ${bytes} bytes`
+        : bleDisconnected
+          ? `眼镜蓝牙未连接 · ${chunks} chunks · ${bytes} bytes`
+          : `${chunks} chunks · ${bytes} bytes`,
     },
     {
       id: 'speech',
       title: 'iOS Speech',
       status: transcript
         ? 'pass'
+        : phoneFallbackActive
+          ? 'warn'
         : speechDenied
           ? 'fail'
           : chunks > 0 && bytes > 0
@@ -570,6 +593,8 @@ function buildVoiceSelfCheck(
             : 'info',
       detail: transcript
         ? `转写: ${transcript}`
+        : phoneFallbackActive
+          ? `手机麦克风监听中 · ${voiceDebug.fallbackLastPartial ?? '等待语音'}`
         : speechDenied
           ? `Speech 权限不可用: ${status?.speechAuthorizationStatus}`
           : status?.lastSpeechError

@@ -122,12 +122,18 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).not.toContain('dataEvent.data.base64EncodedString');
   });
 
-  it('requires a confirmed CustomView running session before starting Rokid audio capture', () => {
+  it('allows Rokid media capture when BLE is connected and CustomView has session evidence', () => {
     expect(source).toContain('rokid_audio_session_not_ready');
+    expect(source).toContain('rokid_glasses_ble_not_connected');
     expect(source).toContain('record_start_rejected');
     expect(source).toContain('audio_record_start_rejected');
-    expect(source).toMatch(/guard RokidBridgeModule\.customViewRunning else \{[\s\S]+reason": "rokid_audio_session_not_ready"[\s\S]+return/);
-    expect(source).not.toContain('record_start_with_inferred_custom_view');
+    expect(source).toContain('private static func hasCustomViewMediaSession() -> Bool');
+    expect(source).toMatch(/guard iosBleConnected\(\) else \{[\s\S]+reason": "rokid_glasses_ble_not_connected"[\s\S]+return/);
+    expect(source).toMatch(/guard RokidBridgeModule\.hasCustomViewMediaSession\(\) else \{[\s\S]+reason": "rokid_audio_session_not_ready"[\s\S]+return/);
+    expect(source).toContain('return CxrClient.shared.auth.isAuthenticated()');
+    expect(source).toContain('&& iosBleConnected()');
+    expect(source).toContain('&& RokidBridgeModule.hasCustomViewSessionEvidence()');
+    expect(source).not.toMatch(/guard RokidBridgeModule\.customViewRunning else \{[\s\S]+startRecord/);
   });
 
   it('does not block Rokid recording when iOS Speech is unavailable after the audio session is confirmed', () => {

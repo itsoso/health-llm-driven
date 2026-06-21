@@ -731,8 +731,26 @@ public class RokidBridgeModule: Module {
       promise.resolve(["ok": false, "reason": "rokid_not_authorized"])
       return
     }
-    guard RokidBridgeModule.customViewRunning else {
-      promise.resolve(["ok": false, "reason": "rokid_custom_view_not_ready"])
+    guard iosBleConnected() else {
+      promise.resolve([
+        "ok": false,
+        "reason": "rokid_glasses_ble_not_connected",
+        "customViewRunning": RokidBridgeModule.customViewRunning,
+        "customViewSessionEvidence": RokidBridgeModule.hasCustomViewSessionEvidence(),
+        "iosBleConnected": false,
+        "iosBleDeviceName": iosBleDeviceName() ?? currentDeviceName ?? "",
+      ])
+      return
+    }
+    guard RokidBridgeModule.hasCustomViewMediaSession() else {
+      promise.resolve([
+        "ok": false,
+        "reason": "rokid_custom_view_not_ready",
+        "customViewRunning": RokidBridgeModule.customViewRunning,
+        "customViewSessionEvidence": RokidBridgeModule.hasCustomViewSessionEvidence(),
+        "iosBleConnected": iosBleConnected(),
+        "iosBleDeviceName": iosBleDeviceName() ?? currentDeviceName ?? "",
+      ])
       return
     }
 
@@ -1049,14 +1067,33 @@ public class RokidBridgeModule: Module {
       promise.resolve(["ok": false, "reason": "rokid_not_authorized"])
       return
     }
-    guard RokidBridgeModule.customViewRunning else {
+    guard iosBleConnected() else {
       lastAudioEventAt = isoTimestamp()
       lastAudioEventType = "record_start_rejected"
       lastAudioRecordType = type
       activeRecordType = nil
       recordAuthDiagnostic(
         "audio_record_start_rejected",
-        detail: "reason=rokid_audio_session_not_ready; running=\(RokidBridgeModule.customViewRunning); evidence=\(RokidBridgeModule.hasCustomViewSessionEvidence()); bleConnected=\(iosBleConnected()); device=\(iosBleDeviceName() ?? currentDeviceName ?? "unknown")"
+        detail: "reason=rokid_glasses_ble_not_connected; running=\(RokidBridgeModule.customViewRunning); evidence=\(RokidBridgeModule.hasCustomViewSessionEvidence()); bleConnected=false; device=\(iosBleDeviceName() ?? currentDeviceName ?? "unknown")"
+      )
+      promise.resolve([
+        "ok": false,
+        "reason": "rokid_glasses_ble_not_connected",
+        "customViewRunning": RokidBridgeModule.customViewRunning,
+        "customViewSessionEvidence": RokidBridgeModule.hasCustomViewSessionEvidence(),
+        "iosBleConnected": false,
+        "iosBleDeviceName": iosBleDeviceName() ?? currentDeviceName ?? "",
+      ])
+      return
+    }
+    guard RokidBridgeModule.hasCustomViewMediaSession() else {
+      lastAudioEventAt = isoTimestamp()
+      lastAudioEventType = "record_start_rejected"
+      lastAudioRecordType = type
+      activeRecordType = nil
+      recordAuthDiagnostic(
+        "audio_record_start_rejected",
+        detail: "reason=rokid_audio_session_not_ready; running=\(RokidBridgeModule.customViewRunning); evidence=\(RokidBridgeModule.hasCustomViewSessionEvidence()); bleConnected=true; device=\(iosBleDeviceName() ?? currentDeviceName ?? "unknown")"
       )
       promise.resolve([
         "ok": false,
@@ -2380,6 +2417,16 @@ public class RokidBridgeModule: Module {
     #endif
   }
 
+  private static func hasCustomViewMediaSession() -> Bool {
+    #if canImport(RGCxrClient)
+    return CxrClient.shared.auth.isAuthenticated()
+      && iosBleConnected()
+      && RokidBridgeModule.hasCustomViewSessionEvidence()
+    #else
+    return false
+    #endif
+  }
+
   private static func markCustomViewSessionEvidence(_ reason: String) {
     customViewDisplayInferred = true
     lastCustomViewSessionEvidenceAt = isoTimestamp()
@@ -2398,7 +2445,7 @@ public class RokidBridgeModule: Module {
 
   private static func capabilitiesReady() -> Bool {
     #if canImport(RGCxrClient)
-    return CxrClient.shared.auth.isAuthenticated() && RokidBridgeModule.customViewRunning
+    return RokidBridgeModule.hasCustomViewMediaSession()
     #else
     return false
     #endif
