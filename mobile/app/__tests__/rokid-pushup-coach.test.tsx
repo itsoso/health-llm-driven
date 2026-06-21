@@ -223,6 +223,33 @@ describe('RokidPushupCoachScreen', () => {
     });
   });
 
+  it('does not claim "已停止" when stopRokidApp is rejected (council R3: no fake success)', async () => {
+    // 原生 stopApp 被拒时是 resolve {ok:false}(不抛)。旧代码不检查 ok → 即便被拒也显"已停止"。
+    mockListRokidPushupEvents.mockResolvedValue([]);
+    mockStopRokidApp.mockResolvedValue({ ok: false, reason: 'rokid_app_stop_rejected' });
+    const screen = renderWithProviders(<RokidPushupCoachScreen />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动眼镜识别'));
+      await flushAsyncUpdates();
+    });
+    await waitFor(() => {
+      expect(mockOpenRokidApp).toHaveBeenCalled();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('停止'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockStopRokidApp).toHaveBeenCalledWith('life.executor.health.rokid.pushup');
+      // 不假装成功:停止被拒 → 不得显"已停止",应落失败态并暴露原因
+      expect(screen.queryByText('眼镜端识别已停止')).toBeNull();
+      expect(screen.getByText(/rokid_app_stop_rejected|rokid_pushup_app_stop_failed/)).toBeTruthy();
+    });
+  });
+
   it('keeps local counting and saving available when the public APK download fails', async () => {
     mockQueryRokidApp.mockResolvedValue({ ok: true, installed: false });
     mockInstallBundledRokidApp.mockResolvedValue({

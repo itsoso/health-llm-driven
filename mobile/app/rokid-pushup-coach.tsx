@@ -294,6 +294,29 @@ async function waitForNativeInstallWithDiagnostics<T>(
   }
 }
 
+// council R3 #2:query/open/stop 等单发原生调用没有超时 —— BLE 掉线/眼镜崩时 SDK 回调永不来,
+// JS promise 永不 resolve,UI 永久卡(检测中/启动中/停止中)。统一包一层超时,超时抛
+// rokid_app_<op>_timeout,由调用方既有 try/catch 落到 unknown/failed,而非卡死(同 takePhoto 无超时挂死的修法)。
+const ROKID_PUSHUP_OP_TIMEOUT_MS = 15000;
+async function withRokidAppOpTimeout<T>(opName: string, op: () => Promise<T>): Promise<T> {
+  const opPromise = op();
+  opPromise.catch(() => undefined);
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`rokid_app_${opName}_timeout; timeoutMs=${ROKID_PUSHUP_OP_TIMEOUT_MS}`)),
+      ROKID_PUSHUP_OP_TIMEOUT_MS,
+    );
+  });
+  try {
+    return await Promise.race([opPromise, timeoutPromise]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 function isRokidPushupNativeSetupFailure(reason?: string) {
   if (!reason) {
     return false;
@@ -562,7 +585,7 @@ export default function RokidPushupCoachScreen() {
   const confirmGlassesAppInstalled = useCallback(async () => {
     // 眼镜端确认:installed===true 才算装上;安装在眼镜上可能还在收尾,重试几次再判失败(council P2)。
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const probe = await queryRokidApp(ROKID_PUSHUP_APP_PACKAGE);
+      const probe = await withRokidAppOpTimeout('query', () => queryRokidApp(ROKID_PUSHUP_APP_PACKAGE));
       appendInstallDiagnostic(`query_app_attempt attempt=${attempt + 1}/3; ${compactResult(probe)}`);
       if (readResultOk(probe) && probe.installed === true) {
         return;
@@ -636,6 +659,12 @@ export default function RokidPushupCoachScreen() {
       const timer = setTimeout(
         () => {
           appendInstallDiagnostic(`install_timeout timeoutMs=${GLASSES_APP_INSTALL_TIMEOUT_MS}`);
+          // council R3:超时也要把快照置 failed,否则停在 installing/downloading 显示陈旧"安装中"
+          setGlassesAppInstallSnapshot({
+            phase: 'failed',
+            message: '',
+            error: 'rokid_apk_install_timeout',
+          });
           reject(new Error('rokid_apk_install_timeout'));
         },
         GLASSES_APP_INSTALL_TIMEOUT_MS,
@@ -685,7 +714,7 @@ export default function RokidPushupCoachScreen() {
       setGlassesAppInstalled((prev) => (prev === 'installed' ? prev : 'checking'));
     }
     try {
-      const probe = await queryRokidApp(ROKID_PUSHUP_APP_PACKAGE);
+      const probe = await withRokidAppOpTimeout('query', () => queryRokidApp(ROKID_PUSHUP_APP_PACKAGE));
       if (!mountedRef.current) {
         return;
       }
@@ -699,7 +728,7 @@ export default function RokidPushupCoachScreen() {
 
   const ensureGlassesAppInstalled = useCallback(async (options?: { force?: boolean }) => {
     if (!options?.force) {
-      const appProbe = await queryRokidApp(ROKID_PUSHUP_APP_PACKAGE);
+      const appProbe = await withRokidAppOpTimeout('query', () => queryRokidApp(ROKID_PUSHUP_APP_PACKAGE));
       if (!readResultOk(appProbe)) {
         throw new Error(resultFailureDetail(appProbe, 'rokid_app_probe_failed'));
       }
@@ -786,11 +815,12 @@ export default function RokidPushupCoachScreen() {
       if (!session.open_url) {
         throw new Error('rokid_pushup_session_open_url_missing');
       }
-      const opened = await openRokidApp({
+      const openUrl = session.open_url; // 闭包内会丢失上面 guard 的窄化,先固化为 string
+      const opened = await withRokidAppOpTimeout('open', () => openRokidApp({
         packageName: ROKID_PUSHUP_APP_PACKAGE,
         activityName: ROKID_PUSHUP_APP_ACTIVITY,
-        url: session.open_url,
-      });
+        url: openUrl,
+      }));
       if (!readResultOk(opened) || opened.opened === false) {
         throw new Error(resultFailureDetail(opened, 'rokid_pushup_app_open_failed'));
       }
@@ -813,7 +843,12 @@ export default function RokidPushupCoachScreen() {
       if (realSession) {
         await finishRokidPushupSession(realSession.id);
       }
-      await stopRokidApp(ROKID_PUSHUP_APP_PACKAGE);
+      // council R3 #1(不假装成功):stopRokidApp 被拒时是 resolve {ok:false}(不抛),旧代码不检查 ok
+      // → 即使停止被拒也显"已停止"。现检查 ok + 包超时,被拒/超时落 failed 态而非假成功。
+      const stopped = await withRokidAppOpTimeout('stop', () => stopRokidApp(ROKID_PUSHUP_APP_PACKAGE));
+      if (!readResultOk(stopped)) {
+        throw new Error(resultFailureDetail(stopped, 'rokid_pushup_app_stop_failed'));
+      }
       setRealSessionState('idle');
       setRealSession(null);
       setRealSessionMessage('眼镜端识别已停止');
