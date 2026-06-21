@@ -1322,7 +1322,7 @@ describe('RokidHealthScreen', () => {
     await waitFor(() => {
       expect(screen.getByText('能力路由')).toBeTruthy();
       expect(screen.getByText('推荐路径: 手机兜底')).toBeTruthy();
-      expect(screen.getByText('运动: 本地计数兜底')).toBeTruthy();
+      expect(screen.getByText('运动: 眼镜端 App 优先')).toBeTruthy();
       expect(screen.getByText('饮食: 手机拍照兜底')).toBeTruthy();
       expect(screen.getByText(/Rokid 眼镜网络未就绪/)).toBeTruthy();
       expect(screen.queryByText(/未收到 callback\/notify/)).toBeNull();

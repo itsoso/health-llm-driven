@@ -722,7 +722,9 @@ function captureRouteLabel(gateway: RokidCapabilityGateway) {
 }
 
 function movementRouteLabel(gateway: RokidCapabilityGateway) {
-  return gateway.summary.movement === 'ready' ? '眼镜端 App 优先' : '本地计数兜底';
+  return gateway.summary.movement === 'ready' || gateway.summary.movement === 'degraded'
+    ? '眼镜端 App 优先'
+    : '本地计数兜底';
 }
 
 function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
