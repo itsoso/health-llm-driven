@@ -452,7 +452,13 @@ def create_food_diet_record_from_visual_event(
     *,
     flush: bool = True,
 ) -> Optional[DietRecord]:
-    """Write a DietRecord when a Rokid food visual event already has nutrition."""
+    """Turn a food visual event into a diet draft (R4: AI vision never auto-confirms).
+
+    Default: mark the event as ``needs_confirmation`` / ``diet_draft`` and return
+    ``None`` — the user confirms via ``POST /diet/records``. A DietRecord is only
+    written when ``meta.confirmed_by_user`` is set (an explicit user-confirmation
+    signal, NOT recognizer confidence).
+    """
     if event.intent != "food_scan" or not isinstance(event.recognition_result, dict):
         return None
 
@@ -489,18 +495,20 @@ def create_food_diet_record_from_visual_event(
     primary_name = _food_name(foods[0])[:100]
     confidence = event.confidence or _as_float(recognition.get("confidence")) or _average_food_confidence(foods)
 
-    # R4(医疗安全):食物/饮食是用户确认类写入,采集端不自动落"已确认"记录。
-    # 调用方要求确认(meta.manual_confirm_required)、或识别置信缺失/不足(< 0.9)时,
-    # 只把事件标记为待确认草稿、不写 DietRecord;由用户在饮食页确认后再落库
-    # (避免识别错 → 静默写错一条饮食记录,council 标定的 R4 违规)。
-    manual_confirm_required = bool(meta.get("manual_confirm_required"))
-    if manual_confirm_required or confidence is None or confidence < 0.9:
+    # R4(医疗安全):AI 视觉识别的食物=草稿,不能靠"识别置信度"自动落"已确认"饮食记录。
+    # 默认只把事件标记为待确认草稿(diet_draft)、不写 DietRecord;由用户在饮食页
+    # (POST /diet/records,见 visual_next_action)显式确认后再落库。
+    # 唯一允许在这里写 DietRecord 的口子是 meta.confirmed_by_user —— 一个明确的
+    # 用户确认信号(不是识别器置信度);采集端/眼镜端默认不带该信号,因此默认草稿。
+    # (council 标定的 R4 违规:识别错 → 静默写错一条已确认饮食记录。)
+    confirmed_by_user = bool(meta.get("confirmed_by_user"))
+    if not confirmed_by_user:
         event.status = "needs_confirmation"
         event.target_type = "diet_draft"
         event.safety_result = {
             **(event.safety_result if isinstance(event.safety_result, dict) else {}),
             "manual_confirmation_required": True,
-            "reason": "manual_confirm_required" if manual_confirm_required else "low_confidence",
+            "reason": "ai_visual_recognition_requires_user_confirmation",
             "confidence": confidence,
             "nutrition_from_recognition": True,
         }
@@ -536,7 +544,7 @@ def create_food_diet_record_from_visual_event(
     event.target_id = record.id
     event.safety_result = {
         **(event.safety_result if isinstance(event.safety_result, dict) else {}),
-        "manual_confirmation_recommended": bool(meta.get("manual_confirm_required")),
+        "confirmed_by_user": True,
         "nutrition_from_recognition": True,
     }
     return record

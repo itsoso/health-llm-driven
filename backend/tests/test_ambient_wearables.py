@@ -398,8 +398,11 @@ def test_rokid_visual_food_scan_with_manual_confirm_does_not_autosave(client, db
     assert event.safety_result.get("manual_confirmation_required") is True
 
 
-def test_rokid_visual_food_scan_high_confidence_autosaves_diet_record(client, db):
-    """没要求确认 + 高置信(>=0.9)才允许自动落库。"""
+def test_rokid_visual_food_scan_high_confidence_does_not_autosave(client, db):
+    """R4: 高置信(>=0.9)也不能自动落"已确认"饮食记录 —— AI 视觉识别一律先草稿。
+
+    置信度不是确认信号。没有显式 confirmed_by_user → 即便 0.95 也只是 diet_draft。
+    """
     from app.models.ambient_wearable import VisualInputEvent
     from app.models.daily_health import DietRecord
 
@@ -437,18 +440,77 @@ def test_rokid_visual_food_scan_high_confidence_autosaves_diet_record(client, db
                 "total_fiber": 4,
             },
             "confidence": 0.95,
+            # 没有 meta.confirmed_by_user,也没有 manual_confirm_required —— 模拟"裸 meta"绕过
+        },
+    )
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    event = db.query(VisualInputEvent).filter(VisualInputEvent.user_id == user.id).one()
+
+    # R4 安全默认:高置信 ≠ 用户确认。绝不能静默写一条已确认 DietRecord。
+    assert db.query(DietRecord).filter(DietRecord.user_id == user.id).count() == 0
+    assert event.status == "needs_confirmation"
+    assert event.target_type == "diet_draft"
+    assert body["event"]["target_type"] != "diet_record"
+    assert event.safety_result.get("manual_confirmation_required") is True
+    assert event.safety_result.get("reason") == "ai_visual_recognition_requires_user_confirmation"
+
+
+def test_rokid_visual_food_scan_writes_record_only_on_explicit_user_confirmation(client, db):
+    """显式 meta.confirmed_by_user=True 才是合法的写"已确认"记录的口子。"""
+    from app.models.ambient_wearable import VisualInputEvent
+    from app.models.daily_health import DietRecord
+
+    user, headers = _auth(db)
+
+    resp = client.post(
+        "/api/v1/ambient/visual-inputs",
+        headers=headers,
+        json={
+            "intent": "food_scan",
+            "source": "rokid_glasses",
+            "device_type": "glasses",
+            "image_uri": "private://rokid/meal-004.jpg",
+            "ocr_text": "牛肉面",
+            "recognition_result": {
+                "success": True,
+                "foods": [
+                    {
+                        "name": "牛肉面",
+                        "quantity": 1,
+                        "unit": "碗",
+                        "calories": 620,
+                        "protein": 32,
+                        "carbs": 78,
+                        "fat": 20,
+                        "fiber": 4,
+                        "confidence": 0.62,
+                    }
+                ],
+                "meal_type": "lunch",
+                "total_calories": 620,
+                "total_protein": 32,
+                "total_carbs": 78,
+                "total_fat": 20,
+                "total_fiber": 4,
+            },
+            "confidence": 0.62,
+            "meta": {"confirmed_by_user": True},
         },
     )
 
     assert resp.status_code == 201, resp.text
     event = db.query(VisualInputEvent).filter(VisualInputEvent.user_id == user.id).one()
     record = db.query(DietRecord).filter(DietRecord.user_id == user.id).one()
+    # 用户已确认:置信度即便低(0.62)也按用户意愿落库。
     assert event.status == "processed"
     assert event.target_type == "diet_record"
     assert event.target_id == record.id
     assert record.food_name == "牛肉面"
     assert record.calories == 620
-    assert record.ai_confidence == 0.95
+    assert record.ai_confidence == 0.62
+    assert event.safety_result.get("confirmed_by_user") is True
 
 
 def test_rokid_glance_cards_are_short_lived_and_user_scoped(client, db):
