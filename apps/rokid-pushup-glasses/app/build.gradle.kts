@@ -25,7 +25,8 @@ android {
             // CXR-L sideloads the APK outside Play/App Store. Use a stable local
             // signing config while keeping release semantics: not debuggable.
             signingConfig = signingConfigs.getByName("debug")
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

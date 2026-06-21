@@ -68,11 +68,11 @@ type GlassesAppInstallSnapshot = {
 
 const ROKID_PUSHUP_APK_CACHE_NAME = 'rokid-pushup-glasses.apk';
 const ROKID_PUSHUP_APK_DOWNLOAD_MAX_ATTEMPTS = 3;
-const ROKID_PUSHUP_APK_MIN_BYTES = 30 * 1024 * 1024;
+const ROKID_PUSHUP_APK_MIN_BYTES = 15 * 1024 * 1024;
 const ROKID_PUSHUP_APK_INSTALL_PENDING_LOG_INTERVAL_MS = 30 * 1000;
 const ROKID_PUSHUP_APK_INSTALL_NATIVE_TIMEOUT_MS = 25 * 60 * 1000;
 
-// 模块级:眼镜端 App 的安装是后台进行的——用户可离开本页,安装(下载约48MB + 传到眼镜)
+// 模块级:眼镜端 App 的安装是后台进行的——用户可离开本页,安装(下载约20MB + 传到眼镜)
 // 继续跑;再次进入/点击时复用这个 in-flight promise,不重启下载。组件卸载不影响它。
 let glassesAppInstallInFlight: Promise<void> | null = null;
 let glassesAppInstallStartedAt = 0;
@@ -440,7 +440,7 @@ export default function RokidPushupCoachScreen() {
   }, [coach, pushViewToGlasses]);
 
   const installDownloadedGlassesApp = useCallback(async () => {
-    const downloadMessage = '眼镜端应用未内置, 正在从 health 下载 (约48MB, 可离开本页, 后台继续)...';
+    const downloadMessage = '眼镜端应用未内置, 正在从 health 下载 (约20MB, 可离开本页, 后台继续)...';
     setGlassesAppInstallSnapshot({ phase: 'downloading', message: downloadMessage, error: null });
     setRealSessionMessage(downloadMessage);
     appendInstallDiagnostic(`download_start url=${ROKID_PUSHUP_APK_DOWNLOAD_URL}`);
