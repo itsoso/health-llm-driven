@@ -68,11 +68,11 @@ type GlassesAppInstallSnapshot = {
 
 const ROKID_PUSHUP_APK_CACHE_NAME = 'rokid-pushup-glasses.apk';
 const ROKID_PUSHUP_APK_DOWNLOAD_MAX_ATTEMPTS = 3;
-const ROKID_PUSHUP_APK_MIN_BYTES = 50 * 1024 * 1024;
+const ROKID_PUSHUP_APK_MIN_BYTES = 30 * 1024 * 1024;
 const ROKID_PUSHUP_APK_INSTALL_PENDING_LOG_INTERVAL_MS = 30 * 1000;
 const ROKID_PUSHUP_APK_INSTALL_NATIVE_TIMEOUT_MS = 25 * 60 * 1000;
 
-// 模块级:眼镜端 App 的安装是后台进行的——用户可离开本页,安装(下载 94MB + 传到眼镜)
+// 模块级:眼镜端 App 的安装是后台进行的——用户可离开本页,安装(下载约48MB + 传到眼镜)
 // 继续跑;再次进入/点击时复用这个 in-flight promise,不重启下载。组件卸载不影响它。
 let glassesAppInstallInFlight: Promise<void> | null = null;
 let glassesAppInstallStartedAt = 0;
@@ -83,7 +83,7 @@ let glassesAppInstallSnapshot: GlassesAppInstallSnapshot = {
   error: null,
 };
 const glassesAppInstallListeners = new Set<(snapshot: GlassesAppInstallSnapshot) => void>();
-// 94MB apk 经弱网下载 + BLE 传眼镜可能很慢,但单例必须有上限——否则下载/BLE 传输/picker 永不 settle
+// APK 经弱网下载 + BLE/Hi Rokid 传眼镜可能很慢,但单例必须有上限——否则下载/BLE 传输/picker 永不 settle
 // 会把整个安装流程永久锁死(council P1)。超时后下次 acquire 会重起。
 const GLASSES_APP_INSTALL_TIMEOUT_MS = 30 * 60 * 1000;
 
@@ -318,7 +318,7 @@ function formatRealPushupSessionIssue(reason?: string) {
     return `眼镜端 App 下载失败: ${fallback}。已改为不自动弹文件选择器；可重试自动下载，或使用「手动选择 APK 安装」。本地计数仍可保存。`;
   }
   if (fallback.includes('rokid_app_install_rejected') || fallback.includes('rokid_pushup_app_install_not_confirmed')) {
-    return `下载已完成，但安装到眼镜失败: ${fallback}。请保持 Rokid AI / Hi Rokid 前台、眼镜蓝牙在线后重试；也可以用「手动选择 APK 安装」。本地计数仍可保存。`;
+    return `下载已完成，但安装到眼镜失败: ${fallback}。请保持手机 Wi‑Fi 开启、Rokid AI / Hi Rokid 前台、眼镜蓝牙在线后重试；也可以用「手动选择 APK 安装」。本地计数仍可保存。`;
   }
   if (fallback.includes('rokid_cxrl_wrong_session_mode')) {
     const mode = fallback.match(/currentMode=([^;]+)/)?.[1] ?? 'unknown';
@@ -440,7 +440,7 @@ export default function RokidPushupCoachScreen() {
   }, [coach, pushViewToGlasses]);
 
   const installDownloadedGlassesApp = useCallback(async () => {
-    const downloadMessage = '眼镜端应用未内置, 正在从 health 下载 (约90MB, 可离开本页, 后台继续)...';
+    const downloadMessage = '眼镜端应用未内置, 正在从 health 下载 (约48MB, 可离开本页, 后台继续)...';
     setGlassesAppInstallSnapshot({ phase: 'downloading', message: downloadMessage, error: null });
     setRealSessionMessage(downloadMessage);
     appendInstallDiagnostic(`download_start url=${ROKID_PUSHUP_APK_DOWNLOAD_URL}`);
@@ -622,7 +622,7 @@ export default function RokidPushupCoachScreen() {
   }, [appendInstallDiagnostic, confirmGlassesAppInstalled]);
 
   // 单例 + 超时:后台安装 survive 导航;任何入口(安装按钮 / 启动识别)都复用同一进行中的安装,
-  // 不重启 94MB 下载(council P2:startReal 之前会重复下载)。必须有超时,否则永不 settle 会锁死流程。
+  // 不重启 APK 下载(council P2:startReal 之前会重复下载)。必须有超时,否则永不 settle 会锁死流程。
   const acquireGlassesAppInstall = useCallback(() => {
     const now = Date.now();
     if (glassesAppInstallInFlight && now - glassesAppInstallStartedAt < GLASSES_APP_INSTALL_TIMEOUT_MS) {
@@ -709,7 +709,7 @@ export default function RokidPushupCoachScreen() {
     }
     setRealSessionState('installing');
     setRealSessionMessage(options?.force ? '正在更新眼镜端应用...' : '正在安装眼镜端应用...');
-    // 复用进行中的单例安装,不重起 94MB 下载;含 strict 验证
+    // 复用进行中的单例安装,不重起 APK 下载;含 strict 验证
     await acquireGlassesAppInstall();
   }, [acquireGlassesAppInstall]);
 

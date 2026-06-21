@@ -193,7 +193,7 @@ Rep event：
 1. 安装带 Rokid SDK 的 Reva iOS 包。
 2. 在 Reva 完成 CXR-L 授权。
 3. 打开 Reva 的 Rokid 俯卧撑页，点“安装/更新眼镜端 App”。
-4. 若 iOS 包已内置 APK, Reva 直接通过 CXR-L `installApp(path)` 上传安装; 否则从 iPhone Files 选择 `app-debug.apk`。
+4. 若 iOS 包已内置 APK, Reva 直接通过 CXR-L `installApp(path)` 上传安装; 否则从 iPhone Files 选择 `app-release.apk`。
 5. 点“启动眼镜识别”。
 6. iOS 调用 `queryApp`，必须返回 installed。
 7. iOS 调用 `openApp`，眼镜端 App 前台启动。

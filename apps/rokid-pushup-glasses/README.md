@@ -9,13 +9,13 @@ and posts pose/rep events back to Reva when launched with a Reva session URL.
 ```bash
 cd apps/rokid-pushup-glasses
 ANDROID_HOME="$HOME/Library/Android/sdk" ./scripts/download-pose-model.sh
-ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew assembleDebug
+ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew assembleRelease
 ```
 
-Debug APK:
+Install APK:
 
 ```text
-app/build/outputs/apk/debug/app-debug.apk
+app/build/outputs/apk/release/app-release.apk
 ```
 
 ## Install on Rokid Glasses
@@ -29,7 +29,7 @@ Use this when USB / ADB cannot see the glasses through the charging case.
 ```bash
 cd apps/rokid-pushup-glasses
 ANDROID_HOME="$HOME/Library/Android/sdk" ./scripts/download-pose-model.sh
-ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew assembleDebug
+ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew assembleRelease
 ```
 
 2. Make the APK available to Reva iOS in one of two ways:
@@ -37,7 +37,7 @@ ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew assembleDebug
 - Bundled native build: set `REVA_ROKID_PUSHUP_APK_PATH` to the APK path before
   running Expo prebuild / EAS local build. The iOS config plugin copies it as
   `rokid-pushup-glasses.apk`.
-- Files fallback: AirDrop or save `app-debug.apk` to iPhone Files, then use
+- Files fallback: AirDrop or save `app-release.apk` to iPhone Files, then use
   Reva > Rokid 俯卧撑计数 > 安装/更新眼镜端 App and select the APK.
 
 3. In Reva iOS:
@@ -52,7 +52,7 @@ ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew assembleDebug
 
 ```bash
 adb devices
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
 The package and entry activity are:

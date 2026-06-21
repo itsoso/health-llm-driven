@@ -9,7 +9,7 @@ export const ROKID_PUSHUP_APP_PACKAGE = 'life.executor.health.rokid.pushup';
 export const ROKID_PUSHUP_APP_ACTIVITY = '.MainActivity';
 export const ROKID_PUSHUP_APK_RESOURCE_NAME = 'rokid-pushup-glasses';
 export const ROKID_PUSHUP_APK_RESOURCE_EXTENSION = 'apk';
-// 眼镜端识别 APK 太大(~94MB)无法进 IPA/git;托管在 health 公开免登录目录,
+// 眼镜端识别 APK 托管在 health 公开免登录目录,
 // app 在 bundled 缺失时从这里下载 → installAppFileUri 装到眼镜。可用 env 覆盖。
 export const ROKID_PUSHUP_APK_DOWNLOAD_URL =
   process.env.EXPO_PUBLIC_ROKID_PUSHUP_APK_URL
