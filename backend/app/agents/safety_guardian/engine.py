@@ -111,6 +111,7 @@ def _load_rule_modules() -> None:
         symptoms,
         cardiac,
         problem_red_lines,
+        guidance_red_lines,
     )
 
 

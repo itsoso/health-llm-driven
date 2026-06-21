@@ -136,6 +136,65 @@ class VisualInputEvent(Base):
     )
 
 
+class MealMonitoringSession(Base):
+    """A 准视频 (periodic-sampling) meal monitoring session.
+
+    During a meal the client samples one frame every ~5s; each frame is stored
+    as a ``VisualInputEvent`` linked back here via ``meta.meal_session_id``. At
+    finish the session's frames are batch-analyzed into a DRAFT food/nutrition
+    summary (R4: draft+confirm, never confidence-autowrite) plus an OBSERVATIONAL
+    post-meal nutrition summary.
+
+    Raw frame images are deleted at ``raw_media_delete_at`` (+7d); only the
+    analysis notes / summary persist after that.
+    """
+
+    __tablename__ = "meal_monitoring_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    # active -> analyzing -> needs_confirmation -> confirmed | aborted
+    status = Column(String(30), nullable=False, default="active", index=True)
+    source = Column(String(50), nullable=False, default="rokid_glasses")
+    device_type = Column(String(40), nullable=False, default="glasses")
+
+    started_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+        index=True,
+    )
+    ended_at = Column(DateTime(timezone=True), nullable=True)
+    consent_at = Column(DateTime(timezone=True), nullable=True)
+
+    frame_count = Column(Integer, nullable=False, default=0)
+    privacy_class = Column(String(30), nullable=False, default="health_l3")
+    # Raw frame images must be purged at this time (privacy: +7d default).
+    raw_media_delete_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    raw_media_deleted_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Observational draft + post-meal summary (no raw images, safe to persist).
+    summary = Column(JSONColumn, nullable=True)
+
+    write_intent_id = Column(Integer, ForeignKey("write_intents.id"), nullable=True, index=True)
+    target_type = Column(String(50), nullable=True)
+    target_id = Column(Integer, nullable=True)
+    meta = Column(JSONColumn, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    __table_args__ = (
+        Index("idx_meal_sessions_user_status", "user_id", "status"),
+        Index("idx_meal_sessions_user_started", "user_id", "started_at"),
+    )
+
+
 class GlanceCard(Base):
     """A short-lived, glanceable action prompt for glasses or other surfaces."""
 

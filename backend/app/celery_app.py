@@ -164,6 +164,14 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=3, minute=0),  # 凌晨3点
     },
 
+    # 每日 03:05 清除过期餐食监控原始帧图像 (L3 隐私, +7d TTL)
+    # 紧随 03:00 数据清理, 让 finished-but-unconfirmed / abandoned session 的
+    # 原始 base64 / image_uri 到期后真正归零 (唯一兜底路径)。
+    "purge-meal-raw-media": {
+        "task": "app.tasks.maintenance.purge_expired_meal_raw_media",
+        "schedule": crontab(hour=3, minute=5),  # 凌晨3:05
+    },
+
     # 每日数据完整性巡检(系统自我监控:量纲错/层断连/空目标静默损坏自曝)
     "data-integrity-scan": {
         "task": "app.tasks.data_integrity_scan.data_integrity_scan",

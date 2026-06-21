@@ -229,3 +229,68 @@ class HearingHealthTaskResponse(BaseModel):
 class HearingHealthTaskEnvelope(BaseModel):
     task: HearingHealthTaskResponse
     write_intent: Optional[Dict[str, Any]]
+
+
+# ─────────────────────── Meal monitoring (准视频) ───────────────────────
+
+
+class MealSessionStartCreate(BaseModel):
+    consent: bool = Field(..., description="必须为 true —— 显式同意周期采样这餐")
+    source: str = Field(default="rokid_glasses", max_length=50)
+    device_type: str = Field(default="glasses", max_length=40)
+    meta: Optional[Dict[str, Any]] = None
+
+
+class MealFrameCreate(BaseModel):
+    image_base64: Optional[str] = Field(default=None, description="单帧图像 base64(可选, 与 image_uri 二选一)")
+    image_uri: Optional[str] = Field(default=None, max_length=1000)
+    captured_at: Optional[datetime] = None
+    # 客户端若已在端上跑过识别, 可直接带 recognition_result 省一次后端 vision 调用
+    recognition_result: Optional[Dict[str, Any]] = None
+    meta: Optional[Dict[str, Any]] = None
+
+
+class MealSessionConfirmCreate(BaseModel):
+    confirm: bool = Field(default=True, description="显式用户确认才落 DietRecord(R4 草稿门)")
+    meal_type: Optional[str] = Field(default=None, max_length=20)
+
+
+class MealSessionResponse(BaseModel):
+    id: int
+    status: str
+    source: str
+    device_type: str
+    frame_count: int
+    privacy_class: str
+    started_at: datetime
+    ended_at: Optional[datetime]
+    consent_at: Optional[datetime]
+    raw_media_delete_at: Optional[datetime]
+    raw_media_deleted_at: Optional[datetime]
+    target_type: Optional[str]
+    target_id: Optional[int]
+    summary: Optional[Dict[str, Any]] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MealFrameResponse(BaseModel):
+    frame_event_id: int
+    session_id: int
+    frame_count: int
+    status: str
+
+
+class MealSessionFinishResponse(BaseModel):
+    session: MealSessionResponse
+    summary: Dict[str, Any]
+
+
+class MealSessionConfirmResponse(BaseModel):
+    session: MealSessionResponse
+    diet_record_id: Optional[int] = None
+
+
+class MealSessionAbortResponse(BaseModel):
+    session: MealSessionResponse

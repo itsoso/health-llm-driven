@@ -37,6 +37,26 @@ def cleanup_expired_data():
     }
 
 
+@celery_app.task(name="app.tasks.maintenance.purge_expired_meal_raw_media")
+def purge_expired_meal_raw_media():
+    """每日 03:05 清除过期的餐食监控原始帧图像 (L3 隐私).
+
+    ``MealMonitoringSession`` 的原始帧 (``VisualInputEvent.image_uri`` /
+    ``meta.image_base64``) 在 ``raw_media_delete_at`` (+7d) 后必须物理删除。
+    finished-but-unconfirmed / abandoned 的 session 永不调 confirm/abort,
+    所以唯一的归零路径就是这个定时巡检。分析笔记 (recognition_result) 保留。
+
+    Fail-loud: 异常向上抛 (会被 Celery 标记任务失败 + 进日志), 绝不静默吞掉 —
+    隐私清理失败必须被看见。
+    """
+    from app.services.meal_monitoring import purge_expired_raw_media
+
+    with SessionLocal() as db:
+        purged = purge_expired_raw_media(db)
+        logger.info(f"[meal raw-media purge] purged raw media for {purged} session(s)")
+        return {"sessions_purged": purged}
+
+
 @celery_app.task
 def health_check():
     """

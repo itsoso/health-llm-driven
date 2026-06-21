@@ -4,7 +4,7 @@ P0 covers hearables first: short audio transcript events and hearing-health
 tasks. Device-specific adapters should feed this API instead of bypassing the
 Health OS routing layer.
 """
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
@@ -20,6 +20,14 @@ from app.schemas.ambient import (
     HearingHealthTaskCreate,
     HearingHealthTaskEnvelope,
     HearingHealthTaskResponse,
+    MealFrameCreate,
+    MealFrameResponse,
+    MealSessionAbortResponse,
+    MealSessionConfirmCreate,
+    MealSessionConfirmResponse,
+    MealSessionFinishResponse,
+    MealSessionResponse,
+    MealSessionStartCreate,
     RokidVoiceCommandCreate,
     RokidVoiceCommandResponse,
     RokidVoiceCommandResult,
@@ -27,6 +35,7 @@ from app.schemas.ambient import (
     VisualInputEventResponse,
 )
 from app.services import ambient_wearables as svc
+from app.services import meal_monitoring as meal_svc
 
 router = APIRouter(prefix="/ambient", tags=["ambient-wearables"])
 
@@ -228,3 +237,153 @@ def list_hearing_health_tasks(
         .all()
     )
     return [HearingHealthTaskResponse.model_validate(t) for t in tasks]
+
+
+# ─────────────────────── Meal monitoring (准视频) ───────────────────────
+
+
+@router.post(
+    "/meal-sessions",
+    response_model=MealSessionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def start_meal_session(
+    body: MealSessionStartCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    try:
+        session = meal_svc.start_session(
+            db,
+            current_user.id,
+            consent=body.consent,
+            source=body.source,
+            device_type=body.device_type,
+            meta=body.meta,
+        )
+    except meal_svc.MealThrottleError as e:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=e.reason)
+    except meal_svc.MealSessionError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return MealSessionResponse.model_validate(session)
+
+
+@router.post(
+    "/meal-sessions/{session_id}/frames",
+    response_model=MealFrameResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def append_meal_frame(
+    session_id: int,
+    body: MealFrameCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    try:
+        event = meal_svc.append_frame(
+            db,
+            current_user.id,
+            session_id,
+            image_base64=body.image_base64,
+            image_uri=body.image_uri,
+            captured_at=body.captured_at,
+            recognition_result=body.recognition_result,
+            meta=body.meta,
+        )
+    except meal_svc.MealThrottleError as e:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=e.reason)
+    except meal_svc.MealSessionNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+    except meal_svc.MealSessionState as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    session = meal_svc.get_session(db, current_user.id, session_id)
+    return MealFrameResponse(
+        frame_event_id=event.id,
+        session_id=session_id,
+        frame_count=session.frame_count,
+        status=session.status,
+    )
+
+
+@router.post(
+    "/meal-sessions/{session_id}/finish",
+    response_model=MealSessionFinishResponse,
+)
+async def finish_meal_session(
+    session_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    try:
+        summary = await meal_svc.finish_session(db, current_user.id, session_id)
+    except meal_svc.MealSessionNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+    except meal_svc.MealSessionState as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    session = meal_svc.get_session(db, current_user.id, session_id)
+    return MealSessionFinishResponse(
+        session=MealSessionResponse.model_validate(session),
+        summary=summary,
+    )
+
+
+@router.post(
+    "/meal-sessions/{session_id}/confirm",
+    response_model=MealSessionConfirmResponse,
+)
+def confirm_meal_session(
+    session_id: int,
+    body: MealSessionConfirmCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    if not body.confirm:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="confirm must be true")
+    try:
+        session, record = meal_svc.confirm_session(
+            db, current_user.id, session_id, meal_type=body.meal_type
+        )
+    except meal_svc.MealSessionNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+    except meal_svc.MealSessionState as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    return MealSessionConfirmResponse(
+        session=MealSessionResponse.model_validate(session),
+        diet_record_id=record.id if record else None,
+    )
+
+
+@router.post(
+    "/meal-sessions/{session_id}/abort",
+    response_model=MealSessionAbortResponse,
+)
+def abort_meal_session(
+    session_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Abort a non-confirmed session: status -> aborted + raw media purged.
+
+    R4/privacy: lets the user (or a client teardown) end a session that will
+    never be confirmed, so its raw frames don't linger until the +7d TTL sweep.
+    """
+    try:
+        session = meal_svc.abort_session(db, current_user.id, session_id)
+    except meal_svc.MealSessionNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+    except meal_svc.MealSessionState as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    return MealSessionAbortResponse(session=MealSessionResponse.model_validate(session))
+
+
+@router.get("/meal-sessions/{session_id}", response_model=MealSessionResponse)
+def get_meal_session(
+    session_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    try:
+        session = meal_svc.get_session(db, current_user.id, session_id)
+    except meal_svc.MealSessionNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+    return MealSessionResponse.model_validate(session)

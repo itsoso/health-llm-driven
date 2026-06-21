@@ -376,6 +376,10 @@ class AcuteHealthState(BaseModel):
     training_guardrail: Optional[str] = None
     # 用户已登记健康问题的个性化红线(builder 从 active HealthProblem 投影)
     problem_red_lines: List["ProblemRedLine"] = Field(default_factory=list)
+    # 待校验的 AI 生成指导/总结文本(R4):仅由 guidance 校验路径(如餐食监控 finish)
+    # 临时塞入,供 safety rules guidance_red_lines.py 扫描量化处方/命令式越界。
+    # builder 永远不填充它 —— 默认空 = 全部存量 safety 评估路径行为零变化。
+    pending_guidance_texts: List[str] = Field(default_factory=list)
 
 
 class WorkoutSummary(BaseModel):

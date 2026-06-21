@@ -21,7 +21,7 @@
                                                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │                              Backend: FastAPI (Python 3.12)                          │
-│                  health-api.executor.life · 156 API 路由 · 256 services              │
+│                  health-api.executor.life · 156 API 路由 · 259 services              │
 │  ┌───────────┐  ┌──────────┐  ┌─────────────────┐  ┌────────────────────┐            │
 │  │ Auth+JWT  │  │ Router   │  │ Orchestrator    │  │ Agent Executor     │            │
 │  │           │  │ dispatch │  │ (13 specialist) │  │ (tool-calling LLM) │            │
@@ -43,7 +43,7 @@
          ▼           ▼                ▼                    ▼                  ▼
   ┌──────────┐ ┌──────────┐  ┌─────────────┐    ┌──────────────────┐  ┌─────────────┐
   │ Postgres │ │  Redis   │  │  Celery     │    │  LLM Providers   │  │  3rd-party  │
-  │ (多表)   │ │ (cache + │  │ (58 任务)   │    │ openai-proxy /   │  │ Garmin API  │
+  │ (多表)   │ │ (cache + │  │ (59 任务)   │    │ openai-proxy /   │  │ Garmin API  │
   │          │ │  pubsub) │  │ worker+beat │    │ tokenplan (qwen/ │  │ qweather    │
   │          │ │          │  │             │    │ glm/deepseek/    │  │ APNs        │
   │          │ │          │  │             │    │ minimax) / kimi  │  │ Telegram    │
@@ -53,7 +53,7 @@
 
 **简述**:
 - 单租户 AI 健康管理平台(目前)。iPhone App 是**口袋执行入口**, Mac App 是**桌面执行与导入工作台**, Web 是辅助(计划重定位为家庭/医生视图, 见 FUTURE_ROADMAP.md)。
-- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 13 个 Specialist + Safety Guardian (10 类 59 条规则) + Digital Twin (15 分区状态视图).
+- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 13 个 Specialist + Safety Guardian (11 类 61 条规则) + Digital Twin (15 分区状态视图).
 - 数据源: Garmin 腕表为主, 加 Withings / CGM / 化验 / 基因 / 环境 / 补剂 / 药物 / Telegram 语音入口.
 - Swift 原生 Mac P0 方案见 `docs/plans/2026-05-23-swift-native-mac-health-agent.md`; Mac 只做原生 UX、文件导入、任务和 trace 查看, 后端仍是唯一健康推理与数据源。
 
@@ -63,7 +63,7 @@
 
 | 端 | Stack | 位置 | 规模 |
 |---|---|---|---|
-| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 156 API 路由, 256 services, 97 models, 58 Celery 任务 |
+| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 156 API 路由, 259 services, 97 models, 59 Celery 任务 |
 | **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 57 路由 |
 | **Mac Desktop** | Swift 6 + SwiftUI + URLSession async/await + Keychain + MenuBarExtra | `apps/mac/` | 原生桌面 P0: Today / Agent / Record / Import / Jobs / Trace |
 | **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 68 页 |
@@ -98,7 +98,7 @@
 | 目录 | 职责 |
 |------|------|
 | `backend/app/twin/` | Digital Health Twin 构建、缓存、格式化 |
-| `backend/app/agents/safety_guardian/` | 59 条安全规则引擎(不依赖 LLM) |
+| `backend/app/agents/safety_guardian/` | 61 条安全规则引擎(不依赖 LLM) |
 | `backend/app/agents/recovery_coach/` | Readiness 评分 (Garmin training_readiness 优先, 否则自算 5 维) |
 | `backend/app/agents/movement_coach/` | ACWR + 训练处方 (Garmin training_status 映射优先) |
 | `backend/app/agents/fuel_strategist/` | TDEE-缺口 + 基因驱动饮食 |
@@ -116,7 +116,7 @@
 |------|------|
 | `backend/app/api/*.py` | 156 条 API 路由 |
 | `backend/app/services/*.py` | 205 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/`;多源去重见 `device_source_priority` + `garmin_daily_merged`) |
-| `backend/app/tasks/*.py` | 58 Celery 异步任务 |
+| `backend/app/tasks/*.py` | 59 Celery 异步任务 |
 | `frontend/src/app/*/page.tsx` | 68 Web 页 |
 | `frontend/src/components/*.tsx` | Web 组件 |
 | `mobile/app/` | 102 RN 路由 + Tab 导航 |
@@ -163,7 +163,7 @@
 ┌────────────────────────────────────────────────────────────────┐
 │  13 Specialists                                               │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │ SafetyGuardian  — 59 条确定性规则, 不调 LLM             │   │
+│  │ SafetyGuardian  — 61 条确定性规则, 不调 LLM             │   │
 │  │   vitals.py (12) labs.py (7) ddi.py (7) dsi.py (7)     │   │
 │  │   pgx.py (10) training_load.py (3) cgm.py (6)           │   │
 │  ├─────────────────────────────────────────────────────────┤   │
@@ -225,7 +225,8 @@
 - `pgx.py` (10): 9 条手写(CYP2D6/CYP2C19/SLCO1B1/G6PD/HLA-B*5701/DPYD/ALDH2/MTHFR/VKORC1) + 1 条 CPIC Level-A 表驱动规则, 表数据在 `pgx_cpic_table.py`(纯数据, 无 @register): TPMT/NUDT15/UGT1A1/HLA-B*15:02/HLA-A*31:01/HLA-B*58:01/CYP2C19/CYP2D6/CYP2C9/CYP3A5/CYP2B6/RYR1/CACNA1S
 - `training_load.py` (3): ACWR 过载/欠训练/零运动
 - `cgm.py` (6): 低血糖/高血糖/TIR/CV/GLP-1 联动
-- `symptoms.py`/`cardiac.py`/`problem_red_lines.py`: 症状急症 + ECG 房颤 + 数据驱动红线
+- `symptoms.py` (5)/`cardiac.py` (1)/`problem_red_lines.py` (1): 症状急症 + ECG 房颤 + 数据驱动红线
+- `guidance_red_lines.py` (2): R4 越界拦截——扫描 AI 生成的指导/总结文本里的量化/命令式饮食处方(CRITICAL)与命令式体态/训练指令(HIGH);读 `twin.acute.pending_guidance_texts`(仅 guidance 校验路径临时塞入, builder 永不填充), 与 `services/guidance_validator.py` 共享正则
 
 数字由 `scripts/check_doc_drift.py` 校验, 规则增删时同步更新本表 + CLAUDE.md + 该脚本。
 
@@ -429,7 +430,7 @@ APNs topic 用 `ios_bundle_id` per-device (绑定 token 时上报), 防 `DeviceT
 
 ---
 
-## 九、Celery 调度(58 个任务)
+## 九、Celery 调度(59 个任务)
 
 `backend/app/celery_app.py` (北京时区 `Asia/Shanghai`, Redis broker):
 
@@ -440,6 +441,7 @@ APNs topic 用 `ios_bundle_id` per-device (绑定 token 时上报), 防 `DeviceT
 | 09:10 | `reorder_scan.scan_reorder_nudges` | 复购检测(P3-D1): 补剂按依从消耗 + 库存估剩余天数 ≤7 → 提议补货 `reorder_nudge` write_intent + 稀缺门推送(**不下单**, 财务面是 P5/D2) |
 | 每小时 | `garmin_sync.sync_all_users` | 所有用户 Garmin 数据拉新 + 触发异常检测/Safety/workout 分析 |
 | 03:00 | `cleanup.cleanup_old_logs` | 清 old notification logs / expired tokens |
+| 03:05 | `maintenance.purge_expired_meal_raw_media` | 餐食监控原始帧图像 +7d TTL 到期物理删除(L3 隐私; finished-but-unconfirmed / abandoned session 的唯一归零路径, fail-loud) |
 | 06:00 | `daily_health_plan.generate_for_all` | 生成每日健康计划 |
 | 07:30 | `morning_briefing.send_for_all` | 晨间语音简报推送 |
 | 08:00 | `reminders.send_plan_reminder` | 计划执行提醒 |
