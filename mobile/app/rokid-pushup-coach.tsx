@@ -67,6 +67,8 @@ type GlassesAppInstallSnapshot = {
 };
 
 const ROKID_PUSHUP_APK_CACHE_NAME = 'rokid-pushup-glasses.apk';
+const ROKID_PUSHUP_APK_DOWNLOAD_MAX_ATTEMPTS = 3;
+const ROKID_PUSHUP_APK_MIN_BYTES = 50 * 1024 * 1024;
 
 // 模块级:眼镜端 App 的安装是后台进行的——用户可离开本页,安装(下载 94MB + 传到眼镜)
 // 继续跑;再次进入/点击时复用这个 in-flight promise,不重启下载。组件卸载不影响它。
@@ -79,9 +81,9 @@ let glassesAppInstallSnapshot: GlassesAppInstallSnapshot = {
   error: null,
 };
 const glassesAppInstallListeners = new Set<(snapshot: GlassesAppInstallSnapshot) => void>();
-// 94MB apk 经 BLE 传眼镜可能很慢,但单例必须有上限——否则下载/BLE 传输/picker 永不 settle
+// 94MB apk 经弱网下载 + BLE 传眼镜可能很慢,但单例必须有上限——否则下载/BLE 传输/picker 永不 settle
 // 会把整个安装流程永久锁死(council P1)。超时后下次 acquire 会重起。
-const GLASSES_APP_INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
+const GLASSES_APP_INSTALL_TIMEOUT_MS = 30 * 60 * 1000;
 
 export function __resetRokidPushupInstallStateForTests() {
   glassesAppInstallInFlight = null;
@@ -189,6 +191,17 @@ function resultInstallFailureDetail(
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
+}
+
+function isRetryableRokidApkDownloadFailure(detail: string) {
+  const normalized = detail.toLowerCase();
+  if (/rokid_apk_download_http_4\d\d/.test(normalized)) {
+    return false;
+  }
+  if (normalized.includes('rokid_apk_download_too_small')) {
+    return false;
+  }
+  return true;
 }
 
 function formatBeijingTimestamp(date = new Date()) {
@@ -395,55 +408,80 @@ export default function RokidPushupCoachScreen() {
     setGlassesAppInstallSnapshot({ phase: 'downloading', message: downloadMessage, error: null });
     setRealSessionMessage(downloadMessage);
     appendInstallDiagnostic(`download_start url=${ROKID_PUSHUP_APK_DOWNLOAD_URL}`);
-    let downloadedUri: string;
-    try {
-      const target = `${FileSystem.cacheDirectory ?? ''}${ROKID_PUSHUP_APK_CACHE_NAME}`;
+    let downloadedUri: string | null = null;
+    const target = `${FileSystem.cacheDirectory ?? ''}${ROKID_PUSHUP_APK_CACHE_NAME}`;
+    let lastErrorDetail = 'download_failed';
+    for (let attempt = 1; attempt <= ROKID_PUSHUP_APK_DOWNLOAD_MAX_ATTEMPTS; attempt += 1) {
       let lastProgressLogAt = 0;
       const startedAt = Date.now();
-      const download = FileSystem.createDownloadResumable(
-        ROKID_PUSHUP_APK_DOWNLOAD_URL,
-        target,
-        {},
-        (progress) => {
-          const written = progress.totalBytesWritten ?? 0;
-          const expected = progress.totalBytesExpectedToWrite ?? 0;
-          const now = Date.now();
-          if (now - lastProgressLogAt < 2500 && written !== expected) {
-            return;
-          }
-          lastProgressLogAt = now;
-          appendInstallDiagnostic(`download_progress written=${written}; expected=${expected}; human=${formatBytes(written)}/${formatBytes(expected)}`);
-          if (expected > 0) {
-            const progressMessage = `眼镜端应用下载中: ${formatBytes(written)} / ${formatBytes(expected)}...`;
-            setGlassesAppInstallSnapshot({ phase: 'downloading', message: progressMessage });
-            if (mountedRef.current) {
-              setRealSessionMessage(progressMessage);
+      if (attempt > 1) {
+        appendInstallDiagnostic(`download_retry attempt=${attempt}/${ROKID_PUSHUP_APK_DOWNLOAD_MAX_ATTEMPTS}; previous=${lastErrorDetail}`);
+        const retryMessage = `下载中断, 正在第 ${attempt}/${ROKID_PUSHUP_APK_DOWNLOAD_MAX_ATTEMPTS} 次重试...`;
+        setGlassesAppInstallSnapshot({ phase: 'downloading', message: retryMessage });
+        if (mountedRef.current) {
+          setRealSessionMessage(retryMessage);
+        }
+      }
+      appendInstallDiagnostic(`download_attempt_start attempt=${attempt}/${ROKID_PUSHUP_APK_DOWNLOAD_MAX_ATTEMPTS}; target=${target}`);
+      try {
+        const download = FileSystem.createDownloadResumable(
+          ROKID_PUSHUP_APK_DOWNLOAD_URL,
+          target,
+          {},
+          (progress) => {
+            const written = progress.totalBytesWritten ?? 0;
+            const expected = progress.totalBytesExpectedToWrite ?? 0;
+            const now = Date.now();
+            if (now - lastProgressLogAt < 2500 && written !== expected) {
+              return;
             }
-          }
-        },
-      );
-      const dl = await download.downloadAsync();
-      if (!dl) {
-        throw new Error('rokid_apk_download_empty_result');
+            lastProgressLogAt = now;
+            appendInstallDiagnostic(`download_progress attempt=${attempt}/${ROKID_PUSHUP_APK_DOWNLOAD_MAX_ATTEMPTS}; written=${written}; expected=${expected}; human=${formatBytes(written)}/${formatBytes(expected)}`);
+            if (expected > 0) {
+              const progressMessage = `眼镜端应用下载中: ${formatBytes(written)} / ${formatBytes(expected)}...`;
+              setGlassesAppInstallSnapshot({ phase: 'downloading', message: progressMessage });
+              if (mountedRef.current) {
+                setRealSessionMessage(progressMessage);
+              }
+            }
+          },
+        );
+        const dl = await download.downloadAsync();
+        if (!dl) {
+          throw new Error('rokid_apk_download_empty_result');
+        }
+        if (dl.status !== 200) {
+          throw new Error(`rokid_apk_download_http_${dl.status}; url=${ROKID_PUSHUP_APK_DOWNLOAD_URL}`);
+        }
+        downloadedUri = dl.uri;
+        const info = await FileSystem.getInfoAsync(downloadedUri);
+        const size = info.exists && typeof info.size === 'number' ? info.size : null;
+        if (size !== null && size < ROKID_PUSHUP_APK_MIN_BYTES) {
+          throw new Error(`rokid_apk_download_too_small; size=${size}; min=${ROKID_PUSHUP_APK_MIN_BYTES}; url=${ROKID_PUSHUP_APK_DOWNLOAD_URL}`);
+        }
+        appendInstallDiagnostic(`download_complete attempt=${attempt}/${ROKID_PUSHUP_APK_DOWNLOAD_MAX_ATTEMPTS}; status=${dl.status}; uri=${downloadedUri}; size=${size ?? 'unknown'}; human=${formatBytes(size)}; durationMs=${Date.now() - startedAt}`);
+        setGlassesAppInstallSnapshot({
+          phase: 'downloaded',
+          message: 'APK 已下载完成, 准备传到眼镜安装...',
+        });
+        break;
+      } catch (error) {
+        const detail = errorMessage(error, 'download_failed');
+        lastErrorDetail = detail;
+        appendInstallDiagnostic(`download_attempt_failed attempt=${attempt}/${ROKID_PUSHUP_APK_DOWNLOAD_MAX_ATTEMPTS}; ${detail}`);
+        const canRetry = attempt < ROKID_PUSHUP_APK_DOWNLOAD_MAX_ATTEMPTS && isRetryableRokidApkDownloadFailure(detail);
+        if (canRetry) {
+          continue;
+        }
+        appendInstallDiagnostic(`download_failed attempts=${attempt}/${ROKID_PUSHUP_APK_DOWNLOAD_MAX_ATTEMPTS}; ${detail}`);
+        if (detail.startsWith('rokid_apk_download_')) {
+          throw new Error(detail);
+        }
+        throw new Error(`rokid_apk_download_failed; url=${ROKID_PUSHUP_APK_DOWNLOAD_URL}; error=${detail}`);
       }
-      if (dl.status !== 200) {
-        throw new Error(`rokid_apk_download_http_${dl.status}; url=${ROKID_PUSHUP_APK_DOWNLOAD_URL}`);
-      }
-      downloadedUri = dl.uri;
-      const info = await FileSystem.getInfoAsync(downloadedUri);
-      const size = info.exists && typeof info.size === 'number' ? info.size : null;
-      appendInstallDiagnostic(`download_complete status=${dl.status}; uri=${downloadedUri}; size=${size ?? 'unknown'}; human=${formatBytes(size)}; durationMs=${Date.now() - startedAt}`);
-      setGlassesAppInstallSnapshot({
-        phase: 'downloaded',
-        message: 'APK 已下载完成, 准备传到眼镜安装...',
-      });
-    } catch (error) {
-      const detail = errorMessage(error, 'download_failed');
-      appendInstallDiagnostic(`download_failed ${detail}`);
-      if (detail.startsWith('rokid_apk_download_')) {
-        throw new Error(detail);
-      }
-      throw new Error(`rokid_apk_download_failed; url=${ROKID_PUSHUP_APK_DOWNLOAD_URL}; error=${detail}`);
+    }
+    if (!downloadedUri) {
+      throw new Error('rokid_apk_download_empty_result');
     }
     const installMessage = '下载完成, 正在把眼镜端应用传到眼镜安装...';
     setGlassesAppInstallSnapshot({ phase: 'installing', message: installMessage });

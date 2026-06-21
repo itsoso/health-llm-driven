@@ -301,6 +301,50 @@ describe('RokidPushupCoachScreen', () => {
     expect(mockGetDocumentAsync).not.toHaveBeenCalled();
   });
 
+  it('retries the public APK download after a transient iOS TLS failure', async () => {
+    mockQueryRokidApp.mockReset();
+    mockQueryRokidApp.mockResolvedValue({ ok: true, installed: true });
+    mockInstallBundledRokidApp.mockResolvedValue({
+      ok: false,
+      reason: 'rokid_apk_resource_missing',
+    });
+    let downloadAttempts = 0;
+    mockCreateDownloadResumable.mockImplementation((_url, _target, _options, onProgress) => ({
+      downloadAsync: () => {
+        downloadAttempts += 1;
+        if (downloadAttempts === 1) {
+          onProgress?.({
+            totalBytesWritten: 76251100,
+            totalBytesExpectedToWrite: 94513327,
+          });
+          return Promise.reject(new Error('Unable to download file: Error Domain=NSURLErrorDomain Code=-1200 "TLS错误导致安全连接失败。"'));
+        }
+        onProgress?.({
+          totalBytesWritten: 94513327,
+          totalBytesExpectedToWrite: 94513327,
+        });
+        return Promise.resolve({ status: 200, uri: 'file://cache/rokid-pushup-glasses.apk' });
+      },
+    }));
+
+    const screen = renderWithProviders(<RokidPushupCoachScreen />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('安装/更新眼镜端 App'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockCreateDownloadResumable).toHaveBeenCalledTimes(2);
+      expect(screen.getByText(/download_retry attempt=2\/3/)).toBeTruthy();
+      expect(mockInstallRokidAppFromFileUri).toHaveBeenCalledWith({
+        fileUri: 'file://cache/rokid-pushup-glasses.apk',
+        packageName: 'life.executor.health.rokid.pushup',
+      });
+      expect(screen.getByText('眼镜端应用已安装到眼镜 ✓(已在眼镜端验证)')).toBeTruthy();
+    });
+  });
+
   it('shows and copies install diagnostics across download, install, and confirmation phases', async () => {
     mockQueryRokidApp.mockReset();
     mockQueryRokidApp.mockResolvedValue({ ok: true, installed: true });
