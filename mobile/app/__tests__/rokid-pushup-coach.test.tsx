@@ -11,6 +11,7 @@ const mockQueryRokidApp = jest.fn();
 const mockInstallBundledRokidApp = jest.fn();
 const mockInstallRokidAppFromFileUri = jest.fn();
 const mockStopRokidApp = jest.fn();
+const mockGetRokidIntegrationStatus = jest.fn();
 const mockCreateRokidPushupSession = jest.fn();
 const mockFinishRokidPushupSession = jest.fn();
 const mockListRokidPushupEvents = jest.fn();
@@ -42,6 +43,7 @@ jest.mock('../../modules/rokid-bridge', () => ({
   installBundledRokidApp: (...args: any[]) => mockInstallBundledRokidApp(...args),
   installRokidAppFromFileUri: (...args: any[]) => mockInstallRokidAppFromFileUri(...args),
   stopRokidApp: (...args: any[]) => mockStopRokidApp(...args),
+  getRokidIntegrationStatus: (...args: any[]) => mockGetRokidIntegrationStatus(...args),
 }));
 
 jest.mock('expo-document-picker', () => ({
@@ -101,6 +103,15 @@ describe('RokidPushupCoachScreen', () => {
     mockInstallRokidAppFromFileUri.mockResolvedValue({ ok: true, installed: true });
     mockOpenRokidApp.mockResolvedValue({ ok: true, opened: true });
     mockStopRokidApp.mockResolvedValue({ ok: true, stopped: true });
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      nativeBuildNumber: '179',
+      nativeAppVersion: '1.3.0',
+      sdkLinked: true,
+      cxrInitializationMode: 'customApp',
+      authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
+    });
     mockListRokidPushupEvents.mockResolvedValue([]);
     mockPost.mockResolvedValue({ data: { id: 123 } });
     mockInvalidateRecordMutation.mockResolvedValue(undefined);
@@ -450,6 +461,44 @@ describe('RokidPushupCoachScreen', () => {
       expect(secondScreen.getByText(/download_complete/)).toBeTruthy();
       expect(secondScreen.getByText(/install_file_uri_result/)).toBeTruthy();
       expect(secondScreen.queryByText(/眼镜端 App 下载失败/)).toBeNull();
+    });
+  });
+
+  it('infers install rejection when old native bridge returns installed=false without a reason', async () => {
+    mockQueryRokidApp.mockResolvedValue({ ok: true, installed: false });
+    mockInstallBundledRokidApp.mockResolvedValue({
+      ok: false,
+      reason: 'rokid_apk_resource_missing',
+    });
+    mockInstallRokidAppFromFileUri.mockResolvedValue({
+      ok: false,
+      installed: false,
+      apkFileName: 'rokid-pushup-glasses.apk',
+      byteLength: 94513327,
+    });
+    mockGetRokidIntegrationStatus.mockResolvedValue({
+      nativeBuildNumber: '176',
+      nativeAppVersion: '1.3.0',
+      sdkLinked: true,
+      cxrInitializationMode: 'customView',
+      authorizationState: 'authenticated',
+      iosBleConnected: true,
+      iosBleDeviceName: 'Glasses_0077',
+    });
+
+    const screen = renderWithProviders(<RokidPushupCoachScreen />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('安装/更新眼镜端 App'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/下载已完成，但安装到眼镜失败/)).toBeTruthy();
+      expect(screen.getByText(/rokid_app_install_rejected_without_reason/)).toBeTruthy();
+      expect(screen.getByText(/native_status phase=after_file_install_failure/)).toBeTruthy();
+      expect(screen.getAllByText(/nativeBuild=176/).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/requiredBuild>=179/).length).toBeGreaterThan(0);
     });
   });
 });

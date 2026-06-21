@@ -19,6 +19,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 
 import {
   closeRokidCustomView,
+  getRokidIntegrationStatus,
   installBundledRokidApp,
   installRokidAppFromFileUri,
   openRokidCustomView,
@@ -26,6 +27,7 @@ import {
   queryRokidApp,
   stopRokidApp,
   updateRokidCustomView,
+  type RokidIntegrationStatus,
 } from '../modules/rokid-bridge';
 import { invalidateRecordMutation } from '../applib/queryKeys';
 import { radii, spacing } from '../constants/theme';
@@ -166,6 +168,25 @@ function resultFailureDetail(result: Record<string, unknown>, fallback: string) 
   return reason;
 }
 
+function nativeBuildNeedsCustomAppFix(status?: Partial<RokidIntegrationStatus> | null) {
+  const build = Number.parseInt(status?.nativeBuildNumber ?? '', 10);
+  return Number.isFinite(build) && build < 179;
+}
+
+function resultInstallFailureDetail(
+  result: Record<string, unknown>,
+  fallback: string,
+  status?: Partial<RokidIntegrationStatus> | null,
+) {
+  const detail = resultFailureDetail(result, fallback);
+  if (detail === fallback && result.installed === false) {
+    const nativeBuild = status?.nativeBuildNumber ?? 'unknown';
+    const requiredBuild = nativeBuildNeedsCustomAppFix(status) ? '; requiredBuild>=179' : '';
+    return `rokid_app_install_rejected_without_reason; nativeBuild=${nativeBuild}${requiredBuild}`;
+  }
+  return detail;
+}
+
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
@@ -196,6 +217,34 @@ function compactResult(result: Record<string, unknown>) {
     .join('; ');
 }
 
+function compactRokidInstallStatus(status: Partial<RokidIntegrationStatus>) {
+  const nativeBuild = status.nativeBuildNumber ?? 'unknown';
+  const requiredBuild = nativeBuildNeedsCustomAppFix(status) ? '; requiredBuild>=179' : '';
+  return [
+    `nativeBuild=${nativeBuild}${requiredBuild}`,
+    `version=${status.nativeAppVersion ?? 'unknown'}`,
+    `sdkLinked=${String(status.sdkLinked ?? 'unknown')}`,
+    `cxrMode=${status.cxrInitializationMode ?? 'unknown'}`,
+    `auth=${status.authorizationState ?? 'unknown'}`,
+    `bleConnected=${String(status.iosBleConnected ?? 'unknown')}`,
+    `bleDevice=${status.iosBleDeviceName ?? 'unknown'}`,
+  ].join('; ');
+}
+
+async function captureRokidInstallStatusDiagnostic(
+  phase: string,
+  appendDiagnostic: (message: string) => void,
+) {
+  try {
+    const status = await getRokidIntegrationStatus();
+    appendDiagnostic(`native_status phase=${phase}; ${compactRokidInstallStatus(status)}`);
+    return status;
+  } catch (error) {
+    appendDiagnostic(`native_status_failed phase=${phase}; ${errorMessage(error, 'unknown')}`);
+    return null;
+  }
+}
+
 function isRokidPushupNativeSetupFailure(reason?: string) {
   if (!reason) {
     return false;
@@ -204,6 +253,7 @@ function isRokidPushupNativeSetupFailure(reason?: string) {
   return normalized.includes('rokid_apk')
     || normalized.includes('rokid_cxrl_wrong_session_mode')
     || normalized.includes('rokid_app_install_rejected')
+    || normalized.includes('rokid_app_install_rejected_without_reason')
     || normalized.includes('rokid_app_probe_failed')
     || normalized.includes('rokid_pushup_app_install')
     || normalized.includes('rokid_pushup_app_open_failed')
@@ -406,7 +456,8 @@ export default function RokidPushupCoachScreen() {
     });
     appendInstallDiagnostic(`install_file_uri_result durationMs=${Date.now() - installStartedAt}; ${compactResult(fileInstall)}`);
     if (!readResultOk(fileInstall) || fileInstall.installed === false) {
-      throw new Error(resultFailureDetail(fileInstall, 'rokid_pushup_app_install_failed'));
+      const status = await captureRokidInstallStatusDiagnostic('after_file_install_failure', appendInstallDiagnostic);
+      throw new Error(resultInstallFailureDetail(fileInstall, 'rokid_pushup_app_install_failed', status));
     }
   }, [appendInstallDiagnostic]);
 
@@ -479,10 +530,11 @@ export default function RokidPushupCoachScreen() {
       packageName: ROKID_PUSHUP_APP_PACKAGE,
     });
     if (!readResultOk(installResult) || installResult.installed === false) {
-      throw new Error(resultFailureDetail(installResult, 'rokid_pushup_app_install_failed'));
+      const status = await captureRokidInstallStatusDiagnostic('after_manual_file_install_failure', appendInstallDiagnostic);
+      throw new Error(resultInstallFailureDetail(installResult, 'rokid_pushup_app_install_failed', status));
     }
     await confirmGlassesAppInstalled();
-  }, [confirmGlassesAppInstalled]);
+  }, [appendInstallDiagnostic, confirmGlassesAppInstalled]);
 
   // 单例 + 超时:后台安装 survive 导航;任何入口(安装按钮 / 启动识别)都复用同一进行中的安装,
   // 不重启 94MB 下载(council P2:startReal 之前会重复下载)。必须有超时,否则永不 settle 会锁死流程。
