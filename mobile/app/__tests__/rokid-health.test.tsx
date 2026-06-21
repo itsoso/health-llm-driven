@@ -25,6 +25,8 @@ const mockVoiceStop = jest.fn().mockResolvedValue(undefined);
 const mockVoiceDestroy = jest.fn().mockResolvedValue(undefined);
 const mockVoiceRemoveAllListeners = jest.fn();
 const mockSetAudioModeAsync = jest.fn().mockResolvedValue(undefined);
+const mockRequestCameraPermissions = jest.fn();
+const mockLaunchCamera = jest.fn();
 const mockTranscriptSubscriptionRemove = jest.fn();
 let rokidTranscriptListener: ((event: any) => void | Promise<void>) | null = null;
 let mockVoiceOnSpeechPartialResults: ((event: { value?: string[] }) => void) | undefined;
@@ -83,6 +85,11 @@ jest.mock('expo-clipboard', () => ({
 
 jest.mock('expo-audio', () => ({
   setAudioModeAsync: (...args: any[]) => mockSetAudioModeAsync(...args),
+}));
+
+jest.mock('expo-image-picker', () => ({
+  requestCameraPermissionsAsync: (...args: any[]) => mockRequestCameraPermissions(...args),
+  launchCameraAsync: (...args: any[]) => mockLaunchCamera(...args),
 }));
 
 jest.mock('@react-native-voice/voice', () => {
@@ -205,6 +212,11 @@ describe('RokidHealthScreen', () => {
     });
     mockSetClipboardStringAsync.mockResolvedValue(undefined);
     mockSubmitRokidVisualInput.mockResolvedValue({ id: 'visual-001' });
+    mockRequestCameraPermissions.mockResolvedValue({ granted: true });
+    mockLaunchCamera.mockResolvedValue({
+      canceled: false,
+      assets: [{ base64: 'phone-jpeg-base64', uri: 'file:///phone/meal.jpg' }],
+    });
     mockGetRokidDeviceValidationSteps.mockImplementation((status) => [
       {
         id: 'ios_sdk_linked',
@@ -894,9 +906,9 @@ describe('RokidHealthScreen', () => {
     });
   });
 
-  it('falls back to the mobile camera when the glasses photo never returns (capture timeout)', async () => {
+  it('falls back to the mobile camera (draft, not auto-write) when the glasses photo never returns', async () => {
     // 眼镜拍了照但照片经 BLE 回传卡住 → native promise 永不 resolve, 包装器超时返回 rokid_photo_timeout。
-    // 不能永久挂在"提交中": 应降级到手机拍照, 让这餐仍能记录。
+    // council #1 R4: 降级到手机相机, 但仍走 Rokid 草稿流(manual_confirm_required), 绝不深链 diet 自动入库。
     mockTakeRokidPhotoBase64.mockResolvedValueOnce({ ok: false, reason: 'rokid_photo_timeout' });
     const screen = renderWithProviders(<RokidHealthScreen />);
 
@@ -910,9 +922,76 @@ describe('RokidHealthScreen', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('眼镜拍照不可用，已切到手机拍照记录。')).toBeTruthy();
-      expect(mockRecognizeFood).not.toHaveBeenCalled();
+      expect(mockLaunchCamera).toHaveBeenCalled();
+      expect(mockSubmitRokidVisualInput).toHaveBeenCalledWith(expect.objectContaining({
+        intent: 'food_scan',
+        meta: expect.objectContaining({
+          manual_confirm_required: true,
+          capture_source: 'phone_camera_fallback',
+        }),
+      }));
+      expect(mockPush).not.toHaveBeenCalledWith('/diet?capture=photo');
     });
+  });
+
+  it('does not double-route an over-captured glasses transcript (记录这一餐 → 记录这一餐明天天气)', async () => {
+    // council #3:iOS 过度捕获让同一句先出 "记录这一餐",随后被环境音拖长成 "记录这一餐明天天气"。
+    // 两条是不同字符串 → 旧逻辑会各自路由 → 两次拍照/草稿。去重后只路由一次。
+    mockSubmitRokidVoiceCommand.mockResolvedValue({
+      command: {
+        intent: 'food_photo',
+        client_action: 'capture_food_photo',
+        voice_reply: '开始拍照记录这餐',
+        parameters: { visual_intent: 'food_scan' },
+      },
+    });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    expect(rokidTranscriptListener).toBeTruthy();
+
+    await act(async () => {
+      await rokidTranscriptListener?.({ transcript: '记录这一餐', final: true, capturedAt: '2026-06-20T23:20:00+08:00' });
+      await flushAsyncUpdates();
+      await rokidTranscriptListener?.({ transcript: '记录这一餐明天天气', final: true, capturedAt: '2026-06-20T23:20:02+08:00' });
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockSubmitRokidVoiceCommand).toHaveBeenCalledTimes(1);
+      expect(mockTakeRokidPhotoBase64).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('stops native Rokid recording on unmount to avoid background L3 audio capture', async () => {
+    // council #2 隐私:启动语音后离屏/卸载必须停原生录音,否则眼镜仍在采 L3 音频且无停止入口。
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    mockStopRokidVoiceCommandCapture.mockClear();
+
+    await act(async () => {
+      screen.unmount();
+      await flushAsyncUpdates();
+    });
+
+    expect(mockStopRokidVoiceCommandCapture).toHaveBeenCalled();
   });
 
   it('shows the iOS authorization and customView steps before capture is available', async () => {
@@ -1678,9 +1757,15 @@ describe('RokidHealthScreen', () => {
 
     await waitFor(() => {
       expect(mockTakeRokidPhotoBase64).not.toHaveBeenCalled();
-      expect(mockSubmitRokidVisualInput).not.toHaveBeenCalled();
-      expect(screen.getByText('眼镜拍照不可用，已切到手机拍照记录。')).toBeTruthy();
-      expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo');
+      // council #1 R4: 用手机相机但仍走 Rokid 草稿流, 不再 router.push('/diet?capture=photo')(那条自动入库)
+      expect(mockLaunchCamera).toHaveBeenCalled();
+      expect(mockSubmitRokidVisualInput).toHaveBeenCalledWith(expect.objectContaining({
+        meta: expect.objectContaining({
+          manual_confirm_required: true,
+          capture_source: 'phone_camera_fallback',
+        }),
+      }));
+      expect(mockPush).not.toHaveBeenCalledWith('/diet?capture=photo');
     });
   });
 });

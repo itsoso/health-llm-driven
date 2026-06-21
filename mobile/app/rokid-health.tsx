@@ -16,6 +16,7 @@ import Voice, {
   type SpeechResultsEvent,
 } from '@react-native-voice/voice';
 import * as Clipboard from 'expo-clipboard';
+import * as ImagePicker from 'expo-image-picker';
 import { setAudioModeAsync } from 'expo-audio';
 import { Stack, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -125,6 +126,9 @@ const CAPTURE_ACTIONS: {
 ] as const;
 
 const PHONE_VOICE_FALLBACK_SILENCE_MS = 1800;
+// council #3 去重窗口:过度捕获会让同一句话产生多个 final("记录"→"记录这一餐"→"记录这一餐明天天气"),
+// 在该窗口内、与上次已路由转写相互包含的,视为同一句,跳过 → 防止一句话触发多次拍照/草稿。
+const ROKID_VOICE_ROUTE_DEDUP_MS = 8000;
 const ROKID_VOICE_NORMALIZER_VERSION = 'short-food-record-v2';
 
 function statusLabel(status?: RokidIntegrationStatus) {
@@ -972,6 +976,9 @@ export default function RokidHealthScreen() {
   const phoneVoiceFallbackSilenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const phoneVoiceFallbackLatestTextRef = useRef('');
   const phoneVoiceFallbackLastSubmittedRef = useRef('');
+  // council #3:命令处理中(拍照/路由)期间忽略新转写;并记录上次已路由转写做包含去重。
+  const voiceCommandInFlightRef = useRef(false);
+  const lastRoutedTranscriptRef = useRef<{ text: string; at: number } | null>(null);
 
   const statusQuery = useQuery({
     queryKey: ['rokid-health', 'status'],
@@ -1105,6 +1112,8 @@ export default function RokidHealthScreen() {
     phoneVoiceFallbackLatestTextRef.current = '';
     phoneVoiceFallbackLastSubmittedRef.current = '';
     voiceListeningRef.current = true;
+    lastRoutedTranscriptRef.current = null;
+    voiceCommandInFlightRef.current = false;
     setVoiceDebug((prev) => ({
       ...prev,
       fallbackMode: 'phone_mic',
@@ -1186,6 +1195,13 @@ export default function RokidHealthScreen() {
     phoneVoiceFallbackActiveRef.current = false;
     clearPhoneVoiceFallbackTimer();
     Voice.destroy().then(() => Voice.removeAllListeners()).catch(() => undefined);
+    // council #2 隐私(L3 音频):卸载/离屏时若眼镜语音会话仍在录,必须停掉原生录音 + SFSpeech,
+    // 否则离开本屏后眼镜仍在采集 L3 音频、且无可见的停止入口。removeVoiceTranscriptListener 只摘 JS
+    // 监听器,不会停原生 CxrClient.startRecord(见 stopRecord → CxrClient.stopRecord + finishSpeechRecognitionSession)。
+    if (voiceListeningRef.current) {
+      voiceListeningRef.current = false;
+      void stopRokidVoiceCommandCapture().catch(() => undefined);
+    }
   }, []);
 
   const updateVoiceCustomView = async (body: string, priority = 'voice') => {
@@ -1231,13 +1247,109 @@ export default function RokidHealthScreen() {
     Alert.alert('已复制', 'Rokid 语音自检信息已复制。');
   };
 
-  const openMobileFoodCameraFallback = (action: (typeof CAPTURE_ACTIONS)[number]) => {
+  // 共享草稿提交:眼镜或手机相机拍到的食物图都走这里 —— 一律 manual_confirm_required:true,
+  // 后端落 needs_confirmation 草稿,绝不自动写 DietRecord(council #1 R4)。
+  const submitRokidFoodDraft = async (
+    action: (typeof CAPTURE_ACTIONS)[number],
+    opts: { imageBase64?: string; imageUri?: string; imageSha256?: string; imageByteLength?: number; captureSource: string },
+  ) => {
+    const capturedAt = new Date().toISOString();
+    const meta: Record<string, unknown> = {
+      privacy_mode: privacyMode,
+      source_surface: 'rokid_health_mode',
+      raw_media_retained: false,
+      manual_confirm_required: true,
+      meal_type: guessMealType(new Date(capturedAt)),
+      capture_source: opts.captureSource,
+    };
+    if (typeof opts.imageByteLength === 'number') {
+      meta.image_byte_length = opts.imageByteLength;
+    }
+
+    let recognitionResult: Record<string, unknown> | undefined;
+    let foodRecognition: FoodRecognitionResponse | undefined;
+    let confidence: number | undefined;
+    if (action.intent === 'food_scan' && opts.imageBase64) {
+      try {
+        const recognition = await recognizeFood(opts.imageBase64);
+        foodRecognition = recognition;
+        recognitionResult = recognition as unknown as Record<string, unknown>;
+        confidence = recognitionConfidence(recognition);
+        meta.recognition_source = 'diet_recognize';
+      } catch (error) {
+        meta.recognition_error = error instanceof Error ? error.message : 'food_recognition_failed';
+      }
+    }
+
+    // council #6 不假装成功:食物拍照既无识别结果、也无可持久化图像引用 → 没有用户可确认的草稿,
+    // 不要显示"已提交草稿"。明确报失败。
+    if (action.intent === 'food_scan' && !recognitionResult && !opts.imageUri && !opts.imageSha256) {
+      setCaptureState({
+        status: 'failed',
+        actionTitle: action.title,
+        message: '拍照识别失败,未生成可确认的草稿,请重试',
+      });
+      return;
+    }
+
+    const submitResult = await submitRokidVisualInput({
+      intent: action.intent,
+      imageUri: opts.imageUri,
+      imageSha256: opts.imageSha256,
+      recognitionResult,
+      confidence,
+      capturedAt,
+      privacyClass: 'health_l3',
+      meta,
+    });
+    const nutritionSummary = action.intent === 'food_scan'
+      ? foodRecognitionSummary(foodRecognition)
+      : undefined;
+    const savedDietRecord = action.intent === 'food_scan' && isSavedDietRecordResponse(submitResult);
+    if (savedDietRecord) {
+      await queryClient.invalidateQueries({ queryKey: ['diet'] });
+    }
     setCaptureState({
       status: 'submitted',
       actionTitle: action.title,
-      message: '眼镜拍照不可用，已切到手机拍照记录。',
+      message: savedDietRecord
+        ? `已保存饮食记录${nutritionSummary ? `：${nutritionSummary}` : ''}`
+        : `已提交${action.title}草稿${nutritionSummary ? `：${nutritionSummary}` : ''}`,
     });
-    router.push('/diet?capture=photo' as any);
+  };
+
+  // council #1 R4:眼镜拍照不可用时用手机相机,但仍走 Rokid 草稿流(needs_confirmation)。
+  // 不再深链到 /diet?capture=photo —— 那条 diet.tsx 会立即 createDietRecord 入库,逃离 draft+confirm。
+  const openMobileFoodCameraFallback = async (action: (typeof CAPTURE_ACTIONS)[number]) => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        setCaptureState({ status: 'failed', actionTitle: action.title, message: '需要相机权限才能用手机拍照记录' });
+        return;
+      }
+      setCaptureState({
+        status: 'capturing',
+        actionTitle: action.title,
+        message: '眼镜拍照不可用,已切到手机相机(拍完仍需你确认后入库)…',
+      });
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.6, base64: true });
+      if (result.canceled || !result.assets?.[0]?.base64) {
+        setCaptureState({ status: 'idle', actionTitle: action.title, message: '已取消手机拍照' });
+        return;
+      }
+      const asset = result.assets[0];
+      await submitRokidFoodDraft(action, {
+        imageBase64: asset.base64 ?? undefined,
+        imageUri: asset.uri,
+        captureSource: 'phone_camera_fallback',
+      });
+    } catch (error) {
+      setCaptureState({
+        status: 'failed',
+        actionTitle: action.title,
+        message: `手机拍照失败: ${error instanceof Error ? error.message : 'capture_failed'}`,
+      });
+    }
   };
 
   const settleRokidAuthorizationStatus = async (attempts: number) => {
@@ -1412,6 +1524,8 @@ export default function RokidHealthScreen() {
         void handleVoiceTranscript(event);
       });
       voiceListeningRef.current = true;
+      lastRoutedTranscriptRef.current = null;
+      voiceCommandInFlightRef.current = false;
       setVoiceState({ status: 'listening', message: 'Rokid 语音控制已开启' });
     } catch (error) {
       voiceListeningRef.current = false;
@@ -1464,7 +1578,7 @@ export default function RokidHealthScreen() {
     try {
       if (status?.platform === 'ios' && status.capabilitiesReady !== true) {
         if (action.intent === 'food_scan') {
-          openMobileFoodCameraFallback(action);
+          await openMobileFoodCameraFallback(action);
           return;
         }
         throw new Error('rokid_custom_view_not_ready');
@@ -1478,64 +1592,18 @@ export default function RokidHealthScreen() {
       if (captureResult.ok === false) {
         const reason = typeof captureResult.reason === 'string' ? captureResult.reason : 'rokid_capture_failed';
         if (action.intent === 'food_scan' && isRokidNativeChannelNotReady(reason)) {
-          openMobileFoodCameraFallback(action);
+          await openMobileFoodCameraFallback(action);
           return;
         }
         throw new Error(reason);
       }
-      const imageBase64 = readString(captureResult, ['base64', 'imageBase64', 'image_base64']);
       const imageByteLength = readNumber(captureResult, ['byteLength', 'byte_length', 'size']);
-      const capturedAt = new Date().toISOString();
-      const meta: Record<string, unknown> = {
-        privacy_mode: privacyMode,
-        source_surface: 'rokid_health_mode',
-        raw_media_retained: false,
-        manual_confirm_required: true,
-        meal_type: guessMealType(new Date(capturedAt)),
-      };
-      if (typeof imageByteLength === 'number') {
-        meta.image_byte_length = imageByteLength;
-      }
-
-      let recognitionResult: Record<string, unknown> | undefined;
-      let foodRecognition: FoodRecognitionResponse | undefined;
-      let confidence: number | undefined;
-      if (action.intent === 'food_scan' && imageBase64) {
-        try {
-          const recognition = await recognizeFood(imageBase64);
-          foodRecognition = recognition;
-          recognitionResult = recognition as unknown as Record<string, unknown>;
-          confidence = recognitionConfidence(recognition);
-          meta.recognition_source = 'diet_recognize';
-        } catch (error) {
-          meta.recognition_error = error instanceof Error ? error.message : 'food_recognition_failed';
-        }
-      }
-
-      const submitResult = await submitRokidVisualInput({
-        intent: action.intent,
+      await submitRokidFoodDraft(action, {
+        imageBase64: readString(captureResult, ['base64', 'imageBase64', 'image_base64']),
         imageUri: readString(captureResult, ['imageUri', 'image_uri', 'uri', 'localUri', 'path']),
         imageSha256: readValidSha256(captureResult),
-        recognitionResult,
-        confidence,
-        capturedAt,
-        privacyClass: 'health_l3',
-        meta,
-      });
-      const nutritionSummary = action.intent === 'food_scan'
-        ? foodRecognitionSummary(foodRecognition)
-        : undefined;
-      const savedDietRecord = action.intent === 'food_scan' && isSavedDietRecordResponse(submitResult);
-      if (savedDietRecord) {
-        await queryClient.invalidateQueries({ queryKey: ['diet'] });
-      }
-
-      setCaptureState({
-        status: 'submitted',
-        actionTitle: action.title,
-        message: savedDietRecord
-          ? `已保存饮食记录${nutritionSummary ? `：${nutritionSummary}` : ''}`
-          : `已提交${action.title}草稿${nutritionSummary ? `：${nutritionSummary}` : ''}`,
+        imageByteLength: typeof imageByteLength === 'number' ? imageByteLength : undefined,
+        captureSource: 'rokid_glasses',
       });
     } catch (error) {
       setCaptureState({
@@ -1557,6 +1625,25 @@ export default function RokidHealthScreen() {
     if (!rawTranscript) {
       return;
     }
+    // council #3 去重:① 命令处理中(拍照/路由)忽略新转写;② 对"同一句话的多个 final"
+    // (与上次已路由转写相互包含、且在短窗内)去重 —— 防止过度捕获把一句话路由成多次拍照/草稿。
+    // 眼镜路径此前完全没有去重(手机路径只按精确文本去重,对增长式 final 无效)。
+    if (voiceCommandInFlightRef.current) {
+      return;
+    }
+    const routedAt = Date.now();
+    const lastRouted = lastRoutedTranscriptRef.current;
+    if (
+      lastRouted &&
+      routedAt - lastRouted.at < ROKID_VOICE_ROUTE_DEDUP_MS &&
+      (rawTranscript === lastRouted.text ||
+        rawTranscript.includes(lastRouted.text) ||
+        lastRouted.text.includes(rawTranscript))
+    ) {
+      return;
+    }
+    lastRoutedTranscriptRef.current = { text: rawTranscript, at: routedAt };
+    voiceCommandInFlightRef.current = true;
     const normalizedTranscript = normalizeRokidHealthTranscript(rawTranscript);
     const transcript = normalizedTranscript.transcript;
 
@@ -1641,6 +1728,9 @@ export default function RokidHealthScreen() {
         status: 'failed',
         message: `Rokid 语音指令失败: ${message}`,
       });
+    } finally {
+      // council #3:命令处理结束(成功或失败)后解锁,允许下一条明确指令。
+      voiceCommandInFlightRef.current = false;
     }
   }
 
