@@ -124,12 +124,18 @@ def start_session(
     return session
 
 
-def get_session(db: Session, user_id: int, session_id: int) -> MealMonitoringSession:
-    session = (
-        db.query(MealMonitoringSession)
-        .filter(MealMonitoringSession.id == session_id)
-        .first()
+def get_session(
+    db: Session, user_id: int, session_id: int, *, for_update: bool = False
+) -> MealMonitoringSession:
+    query = db.query(MealMonitoringSession).filter(
+        MealMonitoringSession.id == session_id
     )
+    if for_update:
+        # council #2: lock the session row so append_frame and abort_session
+        # serialize — prevents a frame inserted after abort's purge query but
+        # before its commit from surviving the purge (Postgres; SQLite no-ops).
+        query = query.with_for_update()
+    session = query.first()
     if session is None:
         raise MealSessionNotFound("session not found")
     if session.user_id != user_id:
@@ -155,7 +161,7 @@ def append_frame(
     silent drop). The frame is stored draft (``status='captured'``) and linked
     back to the session via ``meta.meal_session_id``.
     """
-    session = get_session(db, user_id, session_id)
+    session = get_session(db, user_id, session_id, for_update=True)
     if session.status not in _ACTIVE_STATUSES:
         raise MealSessionState(f"cannot add frames to a {session.status} session")
     if session.frame_count >= MAX_FRAMES_PER_SESSION:
@@ -367,7 +373,7 @@ def confirm_session(
 
 
 def abort_session(db: Session, user_id: int, session_id: int) -> MealMonitoringSession:
-    session = get_session(db, user_id, session_id)
+    session = get_session(db, user_id, session_id, for_update=True)
     if session.status == "confirmed":
         raise MealSessionState("cannot abort a confirmed session")
     session.status = "aborted"

@@ -341,13 +341,43 @@ def test_beat_schedule_has_meal_raw_media_purge():
 # ─────────────────────── guidance: rules run over PRE-sanitization text ──────
 
 
+def test_post_meal_summary_includes_daily_context(db, monkeypatch):
+    """council #1 regression: build_twin must receive db (was called build_twin(user_id, ...)
+    → user_id landed in the db param → TypeError → swallowed at INFO → the documented
+    daily-context lines never shipped). With a twin + FuelStrategist findings, the
+    observational daily-context lines must appear in the summary text."""
+    import app.services.meal_analysis as meal_analysis
+
+    class _Finding:
+        summary = "营养观察"
+        findings = [
+            {"type": "energy", "remaining_kcal": 300},
+            {"type": "protein", "target_g": 120, "today_g": 80},
+        ]
+
+    class _Fuel:
+        def run(self, twin, ctx):
+            return _Finding()
+
+    monkeypatch.setattr("app.twin.builder.build_twin", lambda d, uid, use_cache=True: object())
+    monkeypatch.setattr(
+        "app.agents.fuel_strategist.strategist.FuelStrategistSpecialist", _Fuel
+    )
+
+    out = meal_analysis.post_meal_observational_summary(db, 1, {"calories": 620, "protein": 32})
+    assert "今日还剩约 300 kcal 空间" in out["text"]
+    assert "今日蛋白还差约 40g" in out["text"]
+    # still observational, never imperative
+    assert "别吃" not in out["text"] and "必须" not in out["text"]
+
+
 def test_finish_summary_alerts_on_prescription_even_when_stripped(client, db, monkeypatch):
     """If the post-meal text contains a prescription, the client gets the SANITIZED
     text BUT the guidance red-line rules still fire (run over raw text) so the
     stripped prescription is auditable, not silently swallowed."""
     import app.services.meal_analysis as meal_analysis
 
-    def _prescriptive_summary(user_id, totals):
+    def _prescriptive_summary(db, user_id, totals):
         return {
             "text": "这餐约 620 kcal。建议每天吃 50 克坚果, 别吃米饭。",
             "fuel_summary": "",

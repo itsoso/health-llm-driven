@@ -150,6 +150,7 @@ async def analyze_frames(
 
 
 def post_meal_observational_summary(
+    db: Session,
     user_id: int,
     totals: Dict[str, Optional[float]],
 ) -> Dict[str, Any]:
@@ -173,7 +174,7 @@ def post_meal_observational_summary(
         from app.agents.fuel_strategist.strategist import FuelStrategistSpecialist
         from app.twin.builder import build_twin
 
-        twin = build_twin(user_id, use_cache=False)
+        twin = build_twin(db, user_id, use_cache=False)
         finding = FuelStrategistSpecialist().run(twin, {})
         fuel_findings = finding.findings or []
         fuel_summary = finding.summary or ""
@@ -191,8 +192,12 @@ def post_meal_observational_summary(
                     parts.append(f"今日蛋白还差约 {int(tgt - today)}g")
     except Exception as e:  # noqa: BLE001
         # Daily context is best-effort; the meal-only summary still stands.
-        # We DO NOT pretend the daily context succeeded — record it.
-        logger.info(f"[meal_monitoring] daily-context summary skipped: {e}")
+        # WARNING (not INFO): for an authenticated user with diet data this branch
+        # should almost always succeed, so a skip is worth surfacing — a silent INFO
+        # is how this feature previously died unnoticed (build_twin called with wrong args).
+        logger.warning(
+            f"[meal_monitoring] daily-context summary skipped (FuelStrategist/twin unavailable): {e}"
+        )
         fuel_summary = ""
 
     base = " · ".join(parts) if parts else "这餐未能估算营养(图像识别为空)"
@@ -269,7 +274,7 @@ def build_finish_summary(
     vision_calls: int,
 ) -> Dict[str, Any]:
     """Assemble the DRAFT finish summary (R4 observational, sanitized)."""
-    post_meal = post_meal_observational_summary(user_id, totals)
+    post_meal = post_meal_observational_summary(db, user_id, totals)
     raw_text = post_meal["text"]
     sanitized = sanitize_guidance(raw_text)
     # Run the guidance red-line rules over the PRE-sanitization text so a
