@@ -10,6 +10,8 @@ public enum CalendarSurfaceScope: String, CaseIterable, Identifiable, Sendable {
 }
 
 public enum CalendarSurfaceLayout {
+    public static let beijingTimeZone: TimeZone = TimeZone(identifier: "Asia/Shanghai")!
+
     public struct Window: Equatable, Sendable {
         public let scope: CalendarSurfaceScope
         public let anchor: Date
@@ -22,6 +24,22 @@ public enum CalendarSurfaceLayout {
             self.start = start
             self.end = end
         }
+    }
+
+    public static func beijingCalendar(locale: Locale? = nil) -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = beijingTimeZone
+        calendar.locale = locale
+        calendar.firstWeekday = 2
+        return calendar
+    }
+
+    public static func beijingYMD(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = beijingTimeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
 
     public static func window(

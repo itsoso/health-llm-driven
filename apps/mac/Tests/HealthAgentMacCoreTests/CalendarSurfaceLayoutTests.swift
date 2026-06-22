@@ -43,6 +43,17 @@ final class CalendarSurfaceLayoutTests: XCTestCase {
         XCTAssertEqual(Self.ymd(CalendarSurfaceLayout.moved(anchor, scope: .year, offset: -1, calendar: calendar)), "2025-06-22")
     }
 
+    func testBeijingCalendarKeepsChinaDayAcrossSystemTimezoneBoundary() throws {
+        let anchor = try XCTUnwrap(Self.date("2026-06-21T20:30:00Z")) // 2026-06-22 04:30 in Beijing.
+        let calendar = CalendarSurfaceLayout.beijingCalendar(locale: Locale(identifier: "zh_CN"))
+
+        let day = CalendarSurfaceLayout.window(scope: .day, anchor: anchor, calendar: calendar)
+
+        XCTAssertEqual(Self.ymd(day.start, timeZone: CalendarSurfaceLayout.beijingTimeZone), "2026-06-22")
+        XCTAssertEqual(CalendarSurfaceLayout.beijingYMD(day.start), "2026-06-22")
+        XCTAssertEqual(calendar.timeZone.identifier, "Asia/Shanghai")
+    }
+
     private static var utcMondayCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
@@ -54,11 +65,11 @@ final class CalendarSurfaceLayoutTests: XCTestCase {
         ISO8601DateFormatter().date(from: value)
     }
 
-    private static func ymd(_ date: Date?) -> String? {
+    private static func ymd(_ date: Date?, timeZone: TimeZone = TimeZone(identifier: "UTC")!) -> String? {
         guard let date else { return nil }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.timeZone = timeZone
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
     }

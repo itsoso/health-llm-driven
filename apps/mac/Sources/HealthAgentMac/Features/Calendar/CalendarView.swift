@@ -28,10 +28,7 @@ struct CalendarView: View {
     private var language: AppLanguage { AppLanguage(storedValue: appLanguageRaw) }
 
     private var uiCalendar: Calendar {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.locale = Locale(identifier: language == .zh ? "zh_CN" : "en_US")
-        calendar.firstWeekday = 2
-        return calendar
+        CalendarSurfaceLayout.beijingCalendar(locale: Locale(identifier: language == .zh ? "zh_CN" : "en_US"))
     }
 
     private var currentWindow: CalendarSurfaceLayout.Window {
@@ -822,6 +819,7 @@ struct CalendarView: View {
     private var weekdaySymbols: [String] {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: language == .zh ? "zh_CN" : "en_US")
+        formatter.timeZone = CalendarSurfaceLayout.beijingTimeZone
         let symbols = formatter.shortStandaloneWeekdaySymbols ?? []
         guard symbols.count == 7 else { return [] }
         let start = max(0, uiCalendar.firstWeekday - 1)
@@ -920,6 +918,7 @@ struct CalendarView: View {
         case .year:
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: language == .zh ? "zh_CN" : "en_US")
+            formatter.timeZone = CalendarSurfaceLayout.beijingTimeZone
             formatter.dateFormat = language == .zh ? "yyyy年" : "yyyy"
             return formatter.string(from: window.anchor)
         }
@@ -941,6 +940,7 @@ struct CalendarView: View {
     private func dateTitle(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: language == .zh ? "zh_CN" : "en_US")
+        formatter.timeZone = CalendarSurfaceLayout.beijingTimeZone
         formatter.dateFormat = language == .zh ? "yyyy年M月d日" : "MMM d, yyyy"
         return formatter.string(from: date)
     }
@@ -948,6 +948,7 @@ struct CalendarView: View {
     private func shortDateTitle(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: language == .zh ? "zh_CN" : "en_US")
+        formatter.timeZone = CalendarSurfaceLayout.beijingTimeZone
         formatter.dateFormat = language == .zh ? "M月d日" : "MMM d"
         return formatter.string(from: date)
     }
@@ -955,6 +956,7 @@ struct CalendarView: View {
     private func monthTitle(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: language == .zh ? "zh_CN" : "en_US")
+        formatter.timeZone = CalendarSurfaceLayout.beijingTimeZone
         formatter.dateFormat = language == .zh ? "yyyy年MM月" : "MMMM yyyy"
         return formatter.string(from: date)
     }
@@ -962,6 +964,7 @@ struct CalendarView: View {
     private func weekdayLabel(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: language == .zh ? "zh_CN" : "en_US")
+        formatter.timeZone = CalendarSurfaceLayout.beijingTimeZone
         formatter.dateFormat = "EEE"
         return formatter.string(from: date)
     }
@@ -973,6 +976,7 @@ struct CalendarView: View {
     private func timeLabel(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = CalendarSurfaceLayout.beijingTimeZone
         formatter.dateFormat = "HH:mm"
         return formatter.string(from: date)
     }
@@ -981,6 +985,7 @@ struct CalendarView: View {
         if let date = Self.parseISODate(value) {
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: language == .zh ? "zh_CN" : "en_US")
+            formatter.timeZone = CalendarSurfaceLayout.beijingTimeZone
             formatter.dateFormat = language == .zh ? "M月d日 HH:mm" : "MMM d HH:mm"
             return formatter.string(from: date)
         }
@@ -991,6 +996,7 @@ struct CalendarView: View {
         guard let value, let date = Self.parseISODate(value) else { return value }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: language == .zh ? "zh_CN" : "en_US")
+        formatter.timeZone = CalendarSurfaceLayout.beijingTimeZone
         formatter.dateFormat = language == .zh ? "M月d日 HH:mm" : "MMM d HH:mm"
         return formatter.string(from: date)
     }
@@ -1037,10 +1043,7 @@ struct CalendarView: View {
     }
 
     private static func ymd(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+        CalendarSurfaceLayout.beijingYMD(date)
     }
 
     private static func parseISODate(_ value: String?) -> Date? {
