@@ -17,11 +17,17 @@ import * as Haptics from 'expo-haptics';
 
 import { revaColors as C } from '../../constants/revaTheme';
 import { Card, Chip, Icon, PlanItem, SectionLabel } from '../reva/RevaKit';
-import { useCompleteAgendaItem, useTodayTimeline } from '../../hooks/useTodayTimeline';
+import {
+  useCompleteAgendaItem,
+  useSkipAgendaItem,
+  useTodayTimeline,
+} from '../../hooks/useTodayTimeline';
+import type { AgendaSkipReason } from '../../services/agenda';
 import type {
   TimelineCompleteRef,
   TodayTimelineItem,
 } from '../../services/todayTimeline';
+import SkipReasonSheet from './SkipReasonSheet';
 
 const MAX_VISIBLE = 6;
 const MOBILITY_WORDS = ['拉伸', '柔韧'];
@@ -87,9 +93,12 @@ export default function RevaTimelineStrip() {
   const router = useRouter();
   const { data, isLoading, isError } = useTodayTimeline();
   const complete = useCompleteAgendaItem();
+  const skip = useSkipAgendaItem();
   const [expand, setExpand] = useState(false);
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [pendingRef, setPendingRef] = useState<string | null>(null);
+  // 跳过原因抽屉:记住当前正在跳过的项(选完原因再发请求)。
+  const [skipTarget, setSkipTarget] = useState<TodayTimelineItem | null>(null);
 
   const toggleOpen = useCallback((id: string) => {
     Haptics.selectionAsync().catch(() => {});
@@ -143,6 +152,45 @@ export default function RevaTimelineStrip() {
       });
     },
     [complete, pendingRef],
+  );
+
+  // 「跳过」入口:打开原因抽屉(不立刻发请求,让用户先选/跳过原因)。
+  const onSkipPress = useCallback(
+    (item: TodayTimelineItem) => {
+      if (!item.complete_ref) return;
+      if (pendingRef) return; // action-lock:有在途完成请求时不开
+      Haptics.selectionAsync().catch(() => {});
+      setSkipTarget(item);
+    },
+    [pendingRef],
+  );
+
+  // 抽屉里选完原因(或「不填原因」→ undefined)→ 记录「没做 + 为什么」。
+  const onSkipPick = useCallback(
+    (reason: AgendaSkipReason | undefined) => {
+      const item = skipTarget;
+      setSkipTarget(null);
+      const ref = item?.complete_ref;
+      if (!ref) return;
+      const key = refKey(ref);
+      setPendingRef(key);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      skip.mutate(
+        { source: ref, skipReason: reason },
+        {
+          onSuccess: () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+            setPendingRef(null);
+          },
+          onError: () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+            Alert.alert('跳过失败', '没有保存成功,请稍后重试。');
+            setPendingRef(null);
+          },
+        },
+      );
+    },
+    [skip, skipTarget],
   );
 
   const items = useMemo(() => data?.items ?? [], [data]);
@@ -207,8 +255,8 @@ export default function RevaTimelineStrip() {
                 last={last && !(isRisk(item) || domain || completable)}
                 onToggle={onToggle}
               />
-              {/* 行动子区:风险标红 chip / 「开始」引导 / 完成 pending 指示 */}
-              {isRisk(item) || domain || pending ? (
+              {/* 行动子区:风险标红 chip / 「开始」引导 / 跳过(带原因)/ 完成 pending 指示 */}
+              {isRisk(item) || domain || completable || pending ? (
                 <View style={[styles.subRow, last && { borderBottomWidth: 0 }]}>
                   {isRisk(item) ? <Chip status="risk">需关注</Chip> : null}
                   {pending ? (
@@ -216,6 +264,17 @@ export default function RevaTimelineStrip() {
                       <ActivityIndicator size="small" color={C.green500} />
                       <Text style={styles.pendingText}>保存中</Text>
                     </View>
+                  ) : null}
+                  {/* 跳过:可完成项才给(没做 + 为什么 → P6 学习闭环)。靠右,「开始」之前。 */}
+                  {completable && !pending ? (
+                    <Pressable
+                      style={[styles.skipBtn, !domain && styles.skipBtnRight]}
+                      onPress={() => onSkipPress(item)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`跳过 ${item.title}`}
+                    >
+                      <Text style={styles.skipText}>跳过</Text>
+                    </Pressable>
                   ) : null}
                   {domain && !done ? (
                     <Pressable
@@ -241,6 +300,13 @@ export default function RevaTimelineStrip() {
           </Pressable>
         ) : null}
       </Card>
+
+      <SkipReasonSheet
+        visible={skipTarget !== null}
+        title={skipTarget?.title}
+        onPick={onSkipPick}
+        onClose={() => setSkipTarget(null)}
+      />
     </View>
   );
 }
@@ -267,6 +333,17 @@ const styles = StyleSheet.create({
     marginLeft: 'auto',
   },
   startText: { color: C.greenOn, fontWeight: '700', fontSize: 12.5 },
+  skipBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: C.lineStrong,
+    backgroundColor: C.surface,
+  },
+  // 没有「开始」按钮时,跳过自己靠右(否则由 startBtn 的 marginLeft:auto 一起带到右侧)。
+  skipBtnRight: { marginLeft: 'auto' },
+  skipText: { color: C.ink2, fontWeight: '600', fontSize: 12.5 },
   pendingPill: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   pendingText: { fontSize: 12, color: C.ink3 },
   moreRow: {
