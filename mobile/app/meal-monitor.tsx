@@ -20,6 +20,7 @@ import {
 import { MealDraftSummary } from '../components/meal/MealDraftSummary';
 import {
   MEAL_SESSION_MAX_FRAMES,
+  canAttemptRokidMealPhoto,
   type MealSessionSource,
 } from '../services/mealMonitoring';
 import { useMealCapture, type MealCaptureResult } from '../hooks/useMealCapture';
@@ -76,10 +77,7 @@ export default function MealMonitorScreen() {
     let glassesReady = false;
     try {
       const status = await getRokidIntegrationStatus();
-      glassesReady = status?.platform === 'ios'
-        && status?.sdkLinked === true
-        && status?.iosBleConnected !== false
-        && status?.customViewRunning === true;
+      glassesReady = canAttemptRokidMealPhoto(status);
     } catch {
       glassesReady = false;
     }

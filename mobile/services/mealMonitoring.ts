@@ -1,4 +1,5 @@
 import api from './api';
+import type { RokidIntegrationStatus } from '../modules/rokid-bridge';
 
 /**
  * Meal monitoring (餐食监控) client — periodic photo sampling → batch analysis →
@@ -102,6 +103,26 @@ export interface AbortMealSessionResponse {
 
 /** Client-side throttle ceiling — backend rejects the 31st frame with 429. */
 export const MEAL_SESSION_MAX_FRAMES = 30;
+
+/**
+ * Meal photo capture should prefer Rokid when the native bridge is usable.
+ *
+ * CustomView running/evidence is diagnostic only here: the iOS bridge can still
+ * attempt camera capture on an authenticated BLE-linked session, and JS keeps a
+ * timeout fallback to the phone camera if the SDK does not return an image.
+ */
+export function canAttemptRokidMealPhoto(status?: Partial<RokidIntegrationStatus> | null): boolean {
+  if (!status || status.platform !== 'ios') {
+    return false;
+  }
+  if (status.bridgeAvailable === false || status.sdkLinked !== true) {
+    return false;
+  }
+  if (status.authorizationState && status.authorizationState !== 'authenticated') {
+    return false;
+  }
+  return status.iosBleConnected !== false;
+}
 
 export async function startMealSession(input: {
   consent: boolean;
