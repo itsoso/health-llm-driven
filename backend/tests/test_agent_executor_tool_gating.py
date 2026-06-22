@@ -263,3 +263,109 @@ async def test_unreliable_manual_model_uses_fallback_for_tools_then_selected_mod
     assert rendered == "GLM FINAL"
     assert done["model"] == "glm-5.2"
     assert done["tools_used"] == ["environment_check"]
+
+
+@pytest.mark.asyncio
+async def test_provider_error_fallback_for_tools_returns_to_manual_model_for_final(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    """If Claude tool streaming falls back to Qwen, final synthesis still uses Claude."""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    provider_calls = []
+    qwen_stream_calls = {"n": 0}
+
+    class FakeClaudeProvider:
+        model = "commercial/Claude-Opus-4.7"
+
+        async def chat_stream(self, **kwargs):
+            provider_calls.append({
+                "model": self.model,
+                "has_tools": bool(kwargs.get("tools")),
+            })
+            if kwargs.get("tools"):
+                raise RuntimeError("langbridge tool streaming unavailable")
+            yield {"type": "content", "text": "CLAUDE FINAL"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+    class FakeQwenProvider:
+        model = "qwen3.7-max"
+
+        async def chat_stream(self, **kwargs):
+            provider_calls.append({
+                "model": self.model,
+                "has_tools": bool(kwargs.get("tools")),
+            })
+            qwen_stream_calls["n"] += 1
+            if qwen_stream_calls["n"] == 1:
+                yield {
+                    "type": "tool_calls",
+                    "tool_calls": [{
+                        "id": "env-1",
+                        "type": "function",
+                        "function": {
+                            "name": "environment_check",
+                            "arguments": json.dumps({"location": "北京"}),
+                        },
+                    }],
+                }
+                yield {"type": "finish", "finish_reason": "tool_calls"}
+                return
+            yield {"type": "content", "text": "QWEN FINAL"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+    async def fake_execute_tool(name, args, token):
+        assert name == "environment_check"
+        return "北京当前 19C 小雨，湿度 92%"
+
+    monkeypatch.setattr("app.services.agent_executor.settings.llm_provider", "tokenplan")
+    monkeypatch.setattr("app.services.agent_executor.settings.agent_base_url", None)
+    monkeypatch.setattr("app.services.agent_executor.settings.agent_api_key", None)
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools",
+        lambda: [{
+            "type": "function",
+            "function": {
+                "name": "environment_check",
+                "description": "Check local environment",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }],
+    )
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id",
+        lambda model_id: FakeClaudeProvider() if model_id == "claude-opus-4.7" else FakeQwenProvider(),
+    )
+    monkeypatch.setattr("app.services.llm.factory.create_llm_provider", lambda _kind: FakeQwenProvider())
+    monkeypatch.setattr("app.services.llm.pii_scrub.wrap_provider_pii_scrub", lambda p: p)
+    monkeypatch.setattr("app.services.llm.usage_tracker.wrap_provider", lambda p: p)
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="来北京之后有点头疼，怎么办？",
+            user_auth_token="test-token",
+            extra_context=json.dumps({"client": "mac", "model_id": "claude-opus-4.7"}),
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = events[-1]["data"]
+
+    assert provider_calls == [
+        {"model": "commercial/Claude-Opus-4.7", "has_tools": True},
+        {"model": "qwen3.7-max", "has_tools": True},
+        {"model": "commercial/Claude-Opus-4.7", "has_tools": False},
+    ]
+    assert rendered == "CLAUDE FINAL"
+    assert done["model"] == "commercial/Claude-Opus-4.7"
+    assert done["tools_used"] == ["environment_check"]

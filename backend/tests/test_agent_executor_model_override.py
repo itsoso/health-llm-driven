@@ -15,6 +15,15 @@ def test_extract_model_id_from_mac_extra_context_accepts_registry_id():
     assert _extract_model_id_from_extra_context(extra_context) == "qwen3.6-plus"
 
 
+def test_extract_model_id_from_mac_extra_context_maps_provider_model_alias():
+    extra_context = json.dumps({
+        "client": "mac",
+        "model_id": "commercial/Claude-Opus-4.7",
+    })
+
+    assert _extract_model_id_from_extra_context(extra_context) == "claude-opus-4.7"
+
+
 def test_extract_model_id_from_extra_context_rejects_invalid_values():
     assert _extract_model_id_from_extra_context('{"model_id": "../bad"}') is None
     assert _extract_model_id_from_extra_context("not json") is None

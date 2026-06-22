@@ -105,6 +105,16 @@ def _extract_model_id_from_extra_context(extra_context: Optional[str]) -> Option
         return None
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/+-]{0,120}", model_id):
         return None
+    try:
+        from app.services.llm import model_registry
+
+        if model_registry.get_model(model_id):
+            return model_id
+        for entry in model_registry.MODELS:
+            if entry.model == model_id:
+                return entry.id
+    except Exception:  # noqa: BLE001
+        pass
     return model_id
 
 
@@ -1110,6 +1120,7 @@ class AgentExecutor:
         self._request_model_id: Optional[str] = None
         self._prefer_fast_record_model = False
         self._last_provider_model_name: Optional[str] = None
+        self._request_model_tool_fallback_used = False
 
     async def _run_multi_model_stream(
         self,
@@ -1317,6 +1328,7 @@ class AgentExecutor:
         start_time = time.time()
         self._current_user_id = user_id
         self._request_model_id = _extract_model_id_from_extra_context(extra_context)
+        self._request_model_tool_fallback_used = False
         self._prefer_fast_record_model = (
             not images
             and not file_base64
@@ -2352,6 +2364,8 @@ class AgentExecutor:
 
         if tool_executed_count <= 0 or not self._request_model_id or self._prefer_fast_record_model:
             return False
+        if self._request_model_tool_fallback_used:
+            return True
         try:
             from app.services.llm.model_registry import is_reliable_tool_caller
 
@@ -2440,6 +2454,8 @@ class AgentExecutor:
             logger.warning(
                 "[agent_executor] 选定 provider chat() 失败,回退 tokenplan: %s", e
             )
+            if pass_tools and self._request_model_id:
+                self._request_model_tool_fallback_used = True
             from app.services.llm.factory import create_llm_provider
             from app.services.llm.pii_scrub import wrap_provider_pii_scrub
             from app.services.llm.usage_tracker import wrap_provider
@@ -2508,6 +2524,8 @@ class AgentExecutor:
             logger.warning(
                 "[agent_executor] 选定 provider chat_stream() 失败,回退 tokenplan: %s", e
             )
+            if pass_tools and self._request_model_id:
+                self._request_model_tool_fallback_used = True
             from app.services.llm.factory import create_llm_provider
             from app.services.llm.pii_scrub import wrap_provider_pii_scrub
             from app.services.llm.usage_tracker import wrap_provider
