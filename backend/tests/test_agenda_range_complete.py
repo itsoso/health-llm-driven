@@ -47,3 +47,21 @@ def test_complete_nonexistent_protocol_400(client, auth_user_and_headers):
     r = client.post("/api/v1/agenda/complete", headers=h,
                     json={"object_type": "health_protocol", "object_id": 999999})
     assert r.status_code == 400
+
+
+def test_today_mode_smart_routes_to_smart_agenda(client, auth_user_and_headers, monkeypatch):
+    _, h = auth_user_and_headers
+    from app.services import agenda_service
+
+    monkeypatch.setattr(agenda_service, "smart_today", lambda db, uid, followup_within_days=14, max_items=3: {
+        "agenda_date": "2026-06-22",
+        "mode": "smart",
+        "source_count": 4,
+        "smart": {"top_items": [{"id": "smart_health_problem_1_checkup"}]},
+    }, raising=False)
+
+    r = client.get("/api/v1/agenda/today?mode=smart&max_items=1", headers=h)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["mode"] == "smart"
+    assert r.json()["smart"]["top_items"][0]["id"] == "smart_health_problem_1_checkup"

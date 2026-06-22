@@ -16,8 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { spacing, radii, shadows } from '../constants/theme';
-import { useAgendaToday, useCompleteAgendaItem, useSeedDemo } from '../hooks/useAgenda';
-import { isProtocolActionable, MANUAL_CAPTURE, type AgendaItem } from '../services/agenda';
+import { useAgendaToday, useCompleteAgendaItem, useSeedDemo, useSmartAgendaToday } from '../hooks/useAgenda';
+import { isProtocolActionable, MANUAL_CAPTURE, type AgendaItem, type SmartAgendaItem } from '../services/agenda';
 import { agendaItemPresentation, agendaSummary } from '../utils/agendaPresentation';
 
 const TONE_COLOR: Record<string, string> = {
@@ -32,9 +32,11 @@ export default function AgendaScreen() {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const { data, isLoading, isError, refetch, isRefetching } = useAgendaToday();
+  const { data: smartData, isLoading: smartLoading } = useSmartAgendaToday(3);
   const complete = useCompleteAgendaItem();
   const seed = useSeedDemo();
   const summary = agendaSummary(data?.items ?? []);
+  const smartItems = smartData?.smart?.top_items ?? [];
 
   const onComplete = (item: AgendaItem) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -91,6 +93,9 @@ export default function AgendaScreen() {
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />}
         >
+          {smartLoading || smartItems.length > 0 ? (
+            <SmartAgendaPanel items={smartItems} loading={smartLoading} styles={styles} />
+          ) : null}
           {data && data.items.length > 0 ? (
             <View style={styles.summaryRow}>
               <SummaryPill label="待执行" value={summary.actionable} color={c.brand} />
@@ -132,6 +137,64 @@ export default function AgendaScreen() {
         </ScrollView>
       )}
     </SafeAreaView>
+  );
+}
+
+function surfaceLabel(surface: string): string {
+  if (surface === 'watch') return 'Watch';
+  if (surface === 'rokid') return 'Rokid';
+  if (surface === 'mac') return 'Mac';
+  return '手机';
+}
+
+function SmartAgendaPanel({
+  items,
+  loading,
+  styles,
+}: {
+  items: SmartAgendaItem[];
+  loading: boolean;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return (
+    <View style={styles.smartPanel}>
+      <View style={styles.smartHeader}>
+        <View style={styles.smartTitleRow}>
+          <Ionicons name="sparkles-outline" size={18} color="#0E8F66" />
+          <Text style={styles.smartTitle}>智能优先处理</Text>
+        </View>
+        <Text style={styles.smartMeta}>{items.length > 0 ? `${items.length} 项` : '生成中'}</Text>
+      </View>
+      {loading && items.length === 0 ? (
+        <View style={styles.smartLoading}>
+          <ActivityIndicator size="small" color="#0E8F66" />
+          <Text style={styles.smartMuted}>正在按风险、时间窗和执行端排序…</Text>
+        </View>
+      ) : (
+        items.map((item, index) => (
+          <View key={item.id} style={styles.smartItem}>
+            <View style={styles.smartIndex}>
+              <Text style={styles.smartIndexText}>{index + 1}</Text>
+            </View>
+            <View style={styles.smartBody}>
+              <View style={styles.smartItemHeader}>
+                <Text style={styles.smartItemTitle}>{item.title}</Text>
+                <View style={styles.surfaceBadge}>
+                  <Text style={styles.surfaceBadgeText}>{surfaceLabel(item.surface.primary)}</Text>
+                </View>
+              </View>
+              <Text style={styles.smartLine}>{item.why_now}</Text>
+              <Text style={styles.smartAction}>{item.do_now}</Text>
+              {Array.isArray(item.verify_by?.metrics) ? (
+                <Text style={styles.smartVerify}>
+                  验证: {(item.verify_by.metrics as string[]).join(' / ')}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        ))
+      )}
+    </View>
   );
 }
 
@@ -239,6 +302,48 @@ function createStyles(c: ColorPalette) {
     retry: { color: c.brand, fontSize: 14, marginTop: spacing.sm },
     list: { padding: spacing.lg, gap: spacing.md },
     summaryRow: { flexDirection: 'row', gap: spacing.sm },
+    smartPanel: {
+      backgroundColor: c.bgCard,
+      borderRadius: radii.lg,
+      padding: spacing.lg,
+      gap: spacing.md,
+      ...shadows.subtle,
+    },
+    smartHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    smartTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+    smartTitle: { fontSize: 17, fontWeight: '800', color: c.labelPrimary },
+    smartMeta: { fontSize: 12, fontWeight: '700', color: c.labelTertiary },
+    smartLoading: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    smartMuted: { fontSize: 13, color: c.labelSecondary, flex: 1 },
+    smartItem: {
+      flexDirection: 'row',
+      gap: spacing.md,
+      paddingTop: spacing.md,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.separator,
+    },
+    smartIndex: {
+      width: 28,
+      height: 28,
+      borderRadius: radii.full,
+      backgroundColor: 'rgba(14,143,102,0.12)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    smartIndexText: { fontSize: 13, fontWeight: '800', color: '#0E8F66' },
+    smartBody: { flex: 1, gap: 4 },
+    smartItemHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    smartItemTitle: { flex: 1, fontSize: 15, fontWeight: '800', color: c.labelPrimary },
+    surfaceBadge: {
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 4,
+      borderRadius: radii.full,
+      backgroundColor: 'rgba(14,143,102,0.10)',
+    },
+    surfaceBadgeText: { fontSize: 11, fontWeight: '800', color: '#0E8F66' },
+    smartLine: { fontSize: 13, color: c.labelSecondary, lineHeight: 18 },
+    smartAction: { fontSize: 13, fontWeight: '700', color: c.labelPrimary, lineHeight: 18 },
+    smartVerify: { fontSize: 12, color: c.labelTertiary, lineHeight: 16 },
     card: {
       flexDirection: 'row', alignItems: 'center', backgroundColor: c.bgCard,
       borderRadius: radii.lg, padding: spacing.lg, gap: spacing.md, ...shadows.subtle,

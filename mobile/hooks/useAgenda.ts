@@ -1,15 +1,24 @@
 /** 今日议程 React Query 封装(消费 /agenda/today + 双轨完成 + 跳过)。 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  getAgendaToday, completeAgendaItem, skipProtocol, seedDemo, type AgendaSource,
+  getAgendaToday, getSmartAgendaToday, completeAgendaItem, skipProtocol, seedDemo, type AgendaSource,
 } from '../services/agenda';
 
 const AGENDA_TODAY_KEY = ['agenda', 'today'];
+const AGENDA_SMART_TODAY_KEY = ['agenda', 'today', 'smart'];
 
 export function useAgendaToday() {
   return useQuery({
     queryKey: AGENDA_TODAY_KEY,
     queryFn: getAgendaToday,
+    staleTime: 60_000,
+  });
+}
+
+export function useSmartAgendaToday(maxItems = 3) {
+  return useQuery({
+    queryKey: [...AGENDA_SMART_TODAY_KEY, maxItems],
+    queryFn: () => getSmartAgendaToday(maxItems),
     staleTime: 60_000,
   });
 }
@@ -22,7 +31,7 @@ export function useCompleteAgendaItem() {
       track?: 'protocol' | 'manual';
       value?: Record<string, unknown>;
     }) => completeAgendaItem(source, track, value),
-    onSuccess: () => qc.invalidateQueries({ queryKey: AGENDA_TODAY_KEY }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['agenda'] }),
   });
 }
 
@@ -31,7 +40,7 @@ export function useSkipProtocol() {
   return useMutation({
     mutationFn: ({ protocolId, reason }: { protocolId: number; reason?: string }) =>
       skipProtocol(protocolId, reason),
-    onSuccess: () => qc.invalidateQueries({ queryKey: AGENDA_TODAY_KEY }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['agenda'] }),
   });
 }
 
@@ -39,6 +48,6 @@ export function useSeedDemo() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: seedDemo,
-    onSuccess: () => qc.invalidateQueries({ queryKey: AGENDA_TODAY_KEY }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['agenda'] }),
   });
 }

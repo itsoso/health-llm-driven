@@ -9,7 +9,7 @@ import api from './api';
 
 export interface AgendaSource {
   object_type: string; // health_protocol / health_problem
-  object_id: number;
+  object_id: number | string;
 }
 
 export interface AgendaItem {
@@ -36,8 +36,49 @@ export interface AgendaToday {
   items: AgendaItem[];
 }
 
+export interface SmartAgendaItem {
+  id: string;
+  type: string;
+  title: string;
+  status: string;
+  time?: string | null;
+  time_window?: string;
+  priority: number;
+  rank_score?: number;
+  rank_reason?: Record<string, unknown>;
+  source: AgendaSource;
+  why_now: string;
+  do_now: string;
+  verify_by: Record<string, unknown>;
+  replan_policy: Record<string, string>;
+  surface: { primary: string; alternates?: string[] };
+  autonomy_tier: string;
+  can_complete: boolean;
+  can_snooze: boolean;
+  can_skip: boolean;
+  confidence?: string | number | null;
+  claim_boundary?: string | null;
+}
+
+export interface SmartAgendaToday extends AgendaToday {
+  mode: 'smart';
+  source_count: number;
+  smart: {
+    generated_by?: string;
+    ranking?: string;
+    top_items: SmartAgendaItem[];
+  };
+}
+
 export async function getAgendaToday(): Promise<AgendaToday> {
   const resp = await api.get<AgendaToday>('/agenda/today');
+  return resp.data;
+}
+
+export async function getSmartAgendaToday(maxItems = 3): Promise<SmartAgendaToday> {
+  const resp = await api.get<SmartAgendaToday>('/agenda/today', {
+    params: { mode: 'smart', max_items: maxItems },
+  });
   return resp.data;
 }
 

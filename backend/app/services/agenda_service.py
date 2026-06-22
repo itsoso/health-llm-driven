@@ -17,12 +17,14 @@ from sqlalchemy.orm import Session
 
 from app.services import health_protocol_service as proto_svc
 from app.services import health_problem_service as prob_svc
+from app.services.daily_operating_plan import build_daily_operating_plan
 from app.utils.timezone import get_user_today
 
 logger = logging.getLogger(__name__)
 
 # 时间窗排序(投影展示顺序)
 _TW_ORDER = {"morning": 0, "noon": 1, "afternoon": 2, "evening": 3, "bedtime": 4, "anytime": 5}
+_TERMINAL_STATUSES = {"completed", "done", "verified", "skipped", "failed", "auto_observed"}
 
 
 def _agenda_item(**kw) -> Dict[str, Any]:
@@ -279,6 +281,235 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
         "agenda_date": str(get_user_today(db, user_id)),
         "count": len(items),
         "items": items,
+    }
+
+
+def _when_bucket(when: str | None) -> str:
+    """Daily Plan 的 when 字段 → 议程时间窗。"""
+    mapping = {
+        "morning": "morning",
+        "breakfast": "morning",
+        "noon": "noon",
+        "lunch": "noon",
+        "afternoon": "afternoon",
+        "daytime": "afternoon",
+        "meals": "noon",
+        "evening": "evening",
+        "dinner": "evening",
+        "bedtime": "bedtime",
+        "sleep": "bedtime",
+        "today": "anytime",
+        "in_progress": "anytime",
+    }
+    return mapping.get(str(when or "").strip().lower(), "anytime")
+
+
+def _surface_for(item: Dict[str, Any]) -> Dict[str, Any]:
+    typ = item.get("type")
+    source_type = (item.get("source") or {}).get("object_type")
+    if typ in {"movement", "training"}:
+        return {"primary": "watch", "alternates": ["mobile", "rokid"]}
+    if typ in {"nutrition", "diet"}:
+        return {"primary": "mobile", "alternates": ["rokid", "watch"]}
+    if typ in {"hydration", "medication", "supplement", "sleep"}:
+        return {"primary": "watch", "alternates": ["mobile"]}
+    if typ == "checkup" or source_type == "health_problem":
+        return {"primary": "mobile", "alternates": ["mac", "watch"]}
+    return {"primary": "mobile", "alternates": ["watch"]}
+
+
+def _smart_id(item: Dict[str, Any]) -> str:
+    source = item.get("source") or {}
+    object_type = source.get("object_type") or item.get("type") or "item"
+    object_id = source.get("object_id") or item.get("action_key") or item.get("title") or "unknown"
+    return f"smart_{object_type}_{object_id}"
+
+
+def _rank_score(item: Dict[str, Any]) -> int:
+    source_type = (item.get("source") or {}).get("object_type")
+    score = int(item.get("priority") or 0)
+    score += {
+        "overdue": 40,
+        "due": 25,
+        "pending": 10,
+        "info": 5,
+    }.get(str(item.get("status") or ""), 0)
+    score += {
+        "health_problem": 20,
+        "daily_plan_action": 10,
+        "health_protocol": 5,
+        "training_decision": 5,
+    }.get(str(source_type or ""), 0)
+    return score
+
+
+def _why_now(item: Dict[str, Any]) -> str:
+    status = item.get("status")
+    detail = item.get("detail")
+    if status == "overdue":
+        return f"已逾期，需要优先处理。{detail or ''}".strip()
+    if status == "due":
+        return f"复查到期，需要安排检查或确认已完成。{detail or ''}".strip()
+    if item.get("why"):
+        return str(item["why"])
+    typ = item.get("type")
+    if typ == "training":
+        return detail or "恢复状态提示今天需要调整训练安排。"
+    if typ == "data_quality":
+        return detail or "设备数据存在偏离，需要先核对后再做健康判断。"
+    if typ == "correction":
+        return detail or "近期执行结果提示需要调整原计划。"
+    return detail or "今天的健康议程项，适合在当前时间窗处理。"
+
+
+def _do_now(item: Dict[str, Any]) -> str:
+    title = item.get("title") or "这项行动"
+    typ = item.get("type")
+    if typ == "checkup":
+        return f"安排/确认: {title}"
+    if typ in {"data_quality", "correction", "training"}:
+        return f"查看并确认: {title}"
+    return f"执行: {title}"
+
+
+def _verify_by(item: Dict[str, Any], fallback_verification: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    verification = item.get("verification")
+    if isinstance(verification, dict) and verification:
+        return dict(verification)
+    metric_key = item.get("metric_key")
+    if metric_key:
+        return {
+            "metrics": [metric_key],
+            "target_value": item.get("target_value"),
+            "window_days": 1 if item.get("when") in {"morning", "today"} else 7,
+        }
+    if item.get("type") == "checkup":
+        return {"metrics": ["follow_up_completed"], "window_days": 14}
+    if fallback_verification:
+        return dict(fallback_verification)
+    return {"metrics": ["completion_event"], "window_days": 1}
+
+
+def _replan_policy(item: Dict[str, Any]) -> Dict[str, str]:
+    if item.get("type") == "checkup":
+        return {
+            "on_skip": "capture_reason_then_reschedule",
+            "on_miss": "escalate_next_business_day",
+            "on_complete": "refresh_followup_cycle",
+        }
+    return {
+        "on_skip": "capture_reason_then_reschedule",
+        "on_miss": "move_to_next_available_window",
+        "on_complete": "observe_metric_change",
+    }
+
+
+def _daily_plan_action_items(db: Session, user_id: int) -> tuple[List[Dict[str, Any]], Dict[str, Any] | None]:
+    try:
+        plan = build_daily_operating_plan(db, user_id, plan_date=get_user_today(db, user_id))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("agenda: Daily Operating Plan 生成失败, smart agenda 跳过行动项: %s", e)
+        return [], None
+
+    plan_verification = plan.get("verification") if isinstance(plan, dict) else None
+    actions = plan.get("actions") if isinstance(plan, dict) else []
+    items: List[Dict[str, Any]] = []
+    for action in actions or []:
+        if not isinstance(action, dict):
+            continue
+        action_key = str(action.get("action_key") or action.get("title") or "unknown")
+        domain = action.get("domain") or "daily_plan"
+        items.append(_agenda_item(
+            type=domain,
+            title=action.get("title") or action_key,
+            status="pending",
+            time_window=_when_bucket(action.get("when")),
+            priority=65,
+            why=action.get("why"),
+            when=action.get("when"),
+            metric_key=action.get("metric_key"),
+            target_value=action.get("target_value"),
+            evidence_level=action.get("evidence_level"),
+            evidence_tier=action.get("evidence_tier"),
+            confidence=action.get("confidence"),
+            claim_boundary=action.get("claim_boundary"),
+            verification=action.get("verification"),
+            action_key=action_key,
+            source={"object_type": "daily_plan_action", "object_id": action_key},
+        ))
+    return items, plan_verification if isinstance(plan_verification, dict) else None
+
+
+def _to_smart_item(
+    item: Dict[str, Any],
+    *,
+    fallback_verification: Dict[str, Any] | None,
+) -> Dict[str, Any]:
+    score = _rank_score(item)
+    status = item.get("status") or "pending"
+    return {
+        "id": _smart_id(item),
+        "type": item.get("type"),
+        "title": item.get("title"),
+        "status": status,
+        "time": item.get("time"),
+        "time_window": item.get("time_window") or "anytime",
+        "priority": item.get("priority") or 0,
+        "rank_score": score,
+        "rank_reason": {
+            "status": status,
+            "priority": item.get("priority") or 0,
+            "source": (item.get("source") or {}).get("object_type"),
+        },
+        "source": item.get("source") or {},
+        "why_now": _why_now(item),
+        "do_now": _do_now(item),
+        "verify_by": _verify_by(item, fallback_verification),
+        "replan_policy": _replan_policy(item),
+        "surface": _surface_for(item),
+        "autonomy_tier": "confirm" if item.get("type") == "checkup" else "suggest",
+        "can_complete": status in {"pending", "due", "overdue"},
+        "can_snooze": status in {"pending", "due", "overdue", "info"},
+        "can_skip": status in {"pending", "info"},
+        "confidence": item.get("confidence"),
+        "claim_boundary": item.get("claim_boundary"),
+    }
+
+
+def smart_today(
+    db: Session,
+    user_id: int,
+    followup_within_days: int = 14,
+    max_items: int = 3,
+) -> Dict[str, Any]:
+    """智能今日议程:普通 agenda + Daily Plan 行动 → 可执行、可验证、可重排的 top list。"""
+    base = today(db, user_id, followup_within_days=followup_within_days)
+    base_items = list(base.get("items") or [])
+    daily_items, plan_verification = _daily_plan_action_items(db, user_id)
+    candidates = base_items + daily_items
+    smart_items = [
+        _to_smart_item(item, fallback_verification=plan_verification)
+        for item in candidates
+        if str(item.get("status") or "") not in _TERMINAL_STATUSES
+    ]
+    smart_items.sort(key=lambda item: (
+        -int(item.get("rank_score") or 0),
+        _TW_ORDER.get(item.get("time_window"), 9),
+        str(item.get("title") or ""),
+    ))
+    max_items = max(1, min(int(max_items or 3), 10))
+    top_items = smart_items[:max_items]
+    return {
+        "agenda_date": base.get("agenda_date") or str(get_user_today(db, user_id)),
+        "mode": "smart",
+        "source_count": len(candidates),
+        "count": len(top_items),
+        "items": base_items,
+        "smart": {
+            "generated_by": "deterministic_smart_agenda_v1",
+            "ranking": "priority_status_source_v1",
+            "top_items": top_items,
+        },
     }
 
 

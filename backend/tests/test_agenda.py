@@ -108,3 +108,64 @@ def test_data_quality_item_none_when_no_divergence(monkeypatch):
     monkeypatch.setattr(builder, "build_twin",
                         lambda db, uid, use_cache=True: _twin_with_divergence())
     assert agenda_service._data_quality_item(None, 1) is None
+
+
+def test_smart_today_returns_ranked_executable_contract(monkeypatch):
+    """Smart Agenda 把普通议程 + Daily Plan 行动投影成统一可执行合同。"""
+    from app.services import agenda_service
+
+    monkeypatch.setattr(agenda_service, "today", lambda db, uid, followup_within_days=14: {
+        "agenda_date": "2026-06-22",
+        "count": 2,
+        "items": [
+            {
+                "type": "hydration",
+                "title": "喝完 2000ml 水杯",
+                "status": "pending",
+                "time_window": "anytime",
+                "priority": 50,
+                "source": {"object_type": "health_protocol", "object_id": 7},
+            },
+            {
+                "type": "checkup",
+                "title": "复查:ApoB",
+                "status": "overdue",
+                "time_window": "anytime",
+                "priority": 95,
+                "detail": "ApoB + LDL-C",
+                "source": {"object_type": "health_problem", "object_id": 9},
+            },
+        ],
+    })
+    monkeypatch.setattr(agenda_service, "build_daily_operating_plan", lambda db, uid, plan_date=None: {
+        "plan_date": "2026-06-22",
+        "actions": [
+            {
+                "action_key": "movement.moderate_activity",
+                "domain": "movement",
+                "title": "累计 35-45 分钟中等强度活动",
+                "why": "对齐每周 150 分钟中等强度活动的代谢健康目标。",
+                "when": "daytime",
+                "metric_key": "custom",
+                "target_value": "150min_weekly",
+                "confidence": "high",
+                "verification": {"window_days": 7, "metrics": ["weight", "waist_cm"]},
+            }
+        ],
+    }, raising=False)
+
+    body = agenda_service.smart_today(None, 1, max_items=3)
+
+    assert body["mode"] == "smart"
+    assert body["source_count"] == 3
+    top = body["smart"]["top_items"]
+    assert len(top) == 3
+    assert top[0]["source"]["object_type"] == "health_problem"
+    assert top[0]["why_now"].startswith("已逾期")
+    daily = next(i for i in top if i["source"]["object_type"] == "daily_plan_action")
+    assert daily["id"] == "smart_daily_plan_action_movement.moderate_activity"
+    assert daily["why_now"] == "对齐每周 150 分钟中等强度活动的代谢健康目标。"
+    assert daily["do_now"].startswith("执行: 累计 35-45")
+    assert daily["verify_by"]["metrics"] == ["weight", "waist_cm"]
+    assert daily["replan_policy"]["on_skip"] == "capture_reason_then_reschedule"
+    assert daily["surface"]["primary"] in {"mobile", "watch", "rokid"}
