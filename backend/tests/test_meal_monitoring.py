@@ -312,6 +312,32 @@ def test_purge_expired_raw_media_hook(client, db):
     assert all(f.image_uri is None for f in frames)
 
 
+# ─────────────────────── celery wiring: task registered + beat scheduled ─────
+
+
+def test_purge_task_importable_and_registered():
+    """The raw-media purge Celery task must be importable and registered, else the
+    beat entry below would point at a task that never runs."""
+    from app.tasks.maintenance import purge_expired_meal_raw_media  # noqa: F401
+    from app.celery_app import celery_app
+
+    assert "app.tasks.maintenance.purge_expired_meal_raw_media" in celery_app.tasks
+
+
+def test_beat_schedule_has_meal_raw_media_purge():
+    """The L3 raw-media TTL has exactly one backstop: the daily beat task. If this
+    entry is missing, raw base64 meal photos for finished-but-unconfirmed /
+    abandoned sessions linger forever. Assert the schedule wiring stays intact."""
+    from celery.schedules import crontab
+    from app.celery_app import celery_app
+
+    entry = celery_app.conf.beat_schedule.get("purge-meal-raw-media")
+    assert entry is not None
+    assert entry["task"] == "app.tasks.maintenance.purge_expired_meal_raw_media"
+    # daily, aligned just after the 03:00 data-cleanup task
+    assert entry["schedule"] == crontab(hour=3, minute=5)
+
+
 # ─────────────────────── guidance: rules run over PRE-sanitization text ──────
 
 

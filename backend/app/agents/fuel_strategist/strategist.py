@@ -162,15 +162,6 @@ def _gene_nudges(twin: HealthTwin) -> List[Dict[str, str]]:
 
     return nudges
 
-    gstp1 = by_gene.get("GSTP1")
-    if gstp1 and (gstp1.get("risk_level") or "").lower() in ("medium", "high"):
-        nudges.append({
-            "gene": "GSTP1",
-            "tip": "Phase II解毒酶效率低→多吃十字花科蔬菜(西兰花/萝卜硫素)支持肝脏解毒。",
-        })
-
-    return nudges[:5]
-
 
 # ─────────────────────── Specialist ────────────────────
 
