@@ -29,6 +29,8 @@ class ModelEntry:
     speed_tier: str       # fast / balanced / reasoning
     note: str = ""        # 可选: 一句话特点
     requires_env: tuple[str, ...] = ()   # 这个 model 需要哪些 env 才能用
+    capabilities: tuple[str, ...] = ("text_generation",)
+    chat_selectable: bool = True
     reliable_tool_calling: bool = True
     # ↑ 该模型做 function-calling 是否可靠 (吐合规的 tool_calls, 而非把工具调用
     #   写成文本 / 弯引号 JSON / [claim:] 泄漏)。False = 经验上不稳, 需要工具的
@@ -41,55 +43,198 @@ MODELS: List[ModelEntry] = [
     # ──── 阿里百炼 TokenPlan (国内直连, 套餐固定计费) ────
     # 全部走同一 base_url (token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1,
     # OpenAI 协议兼容) + 同一 TOKENPLAN_API_KEY, 只换 model 字段。
-    # 2026-06-11: 按 Owner 选择,对话 picker 只保留下面 5 个套餐模型 + langbridge 商用 3 个;
-    # 其余 (qwen3.6-plus/flash, deepseek-v4-flash, deepseek-v3.2, kimi-k2.5, glm-5,
-    # openai-proxy gpt-4o*, moonshot kimi-k2) 下线。用户旧偏好若指向已删 id 会优雅降级到
-    # 默认 (见 factory.create_provider_for_user)。
+    # 2026-06-22: Owner 指定新版白名单。文字/视觉模型进入 chat picker; image-only 模型
+    # 只进目录,不进 chat picker,避免被误当聊天模型调用。
+    ModelEntry(
+        id="qwen3.7-plus",
+        label="Qwen3.7 Plus · 千问",
+        provider="tokenplan",
+        model="qwen3.7-plus",
+        speed_tier="balanced",
+        note="文本生成 / 推理 / 视觉理解",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation", "reasoning", "vision_understanding"),
+    ),
     ModelEntry(
         id="qwen3.7-max",
-        label="Qwen3.7 Max 推理 · 阿里",
+        label="Qwen3.7 Max · 千问",
         provider="tokenplan",
         model="qwen3.7-max",
         speed_tier="reasoning",
-        note="千问旗舰推理, 深度强 (套餐内)",
+        note="文本生成 / 推理",
         requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation", "reasoning"),
+    ),
+    ModelEntry(
+        id="qwen3.6-plus",
+        label="Qwen3.6 Plus · 千问",
+        provider="tokenplan",
+        model="qwen3.6-plus",
+        speed_tier="balanced",
+        note="文本生成 / 推理 / 视觉理解",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation", "reasoning", "vision_understanding"),
+    ),
+    ModelEntry(
+        id="qwen3.6-flash",
+        label="Qwen3.6 Flash · 千问",
+        provider="tokenplan",
+        model="qwen3.6-flash",
+        speed_tier="fast",
+        note="文本生成 / 推理 / 视觉理解",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation", "reasoning", "vision_understanding"),
+    ),
+    ModelEntry(
+        id="qwen-image-2.0",
+        label="Qwen Image 2.0 · 千问",
+        provider="tokenplan",
+        model="qwen-image-2.0",
+        speed_tier="balanced",
+        note="图片生成",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("image_generation",),
+        chat_selectable=False,
+        reliable_tool_calling=False,
+    ),
+    ModelEntry(
+        id="qwen-image-2.0-pro",
+        label="Qwen Image 2.0 Pro · 千问",
+        provider="tokenplan",
+        model="qwen-image-2.0-pro",
+        speed_tier="reasoning",
+        note="图片生成",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("image_generation",),
+        chat_selectable=False,
+        reliable_tool_calling=False,
+    ),
+    ModelEntry(
+        id="wan2.7-image",
+        label="Wan2.7 Image · 万相",
+        provider="tokenplan",
+        model="wan2.7-image",
+        speed_tier="balanced",
+        note="图片生成",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("image_generation",),
+        chat_selectable=False,
+        reliable_tool_calling=False,
+    ),
+    ModelEntry(
+        id="wan2.7-image-pro",
+        label="Wan2.7 Image Pro · 万相",
+        provider="tokenplan",
+        model="wan2.7-image-pro",
+        speed_tier="reasoning",
+        note="图片生成",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("image_generation",),
+        chat_selectable=False,
+        reliable_tool_calling=False,
     ),
     ModelEntry(
         id="deepseek-v4-pro",
-        label="DeepSeek V4 Pro 推理 · 阿里直连",
+        label="DeepSeek V4 Pro",
         provider="tokenplan",
         model="deepseek-v4-pro",
         speed_tier="reasoning",
-        note="V4 旗舰推理, 中文强 (套餐内)",
+        note="文本生成 / 推理",
         requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation", "reasoning"),
+    ),
+    ModelEntry(
+        id="deepseek-v4-flash",
+        label="DeepSeek V4 Flash",
+        provider="tokenplan",
+        model="deepseek-v4-flash",
+        speed_tier="fast",
+        note="文本生成 / 推理",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation", "reasoning"),
+    ),
+    ModelEntry(
+        id="deepseek-v3.2",
+        label="DeepSeek V3.2",
+        provider="tokenplan",
+        model="deepseek-v3.2",
+        speed_tier="balanced",
+        note="文本生成 / 推理",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation", "reasoning"),
+    ),
+    ModelEntry(
+        id="kimi-k2.7-code",
+        label="Kimi K2.7 Code · 月之暗面",
+        provider="tokenplan",
+        model="kimi-k2.7-code",
+        speed_tier="reasoning",
+        note="文本生成 / 推理 / 视觉理解",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation", "reasoning", "vision_understanding"),
     ),
     ModelEntry(
         id="kimi-k2.6",
-        label="Kimi K2.6 · 月之暗面 (阿里直连)",
+        label="Kimi K2.6 · 月之暗面",
         provider="tokenplan",
         model="kimi-k2.6",
         speed_tier="balanced",
-        note="推理 + 视觉, 长上下文, 现进套餐",
+        note="文本生成 / 推理 / 视觉理解",
         requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation", "reasoning", "vision_understanding"),
+    ),
+    ModelEntry(
+        id="kimi-k2.5",
+        label="Kimi K2.5 · 月之暗面",
+        provider="tokenplan",
+        model="kimi-k2.5",
+        speed_tier="balanced",
+        note="文本生成 / 推理 / 视觉理解",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation", "reasoning", "vision_understanding"),
+    ),
+    ModelEntry(
+        id="glm-5.2",
+        label="GLM-5.2 · 智谱AI",
+        provider="tokenplan",
+        model="glm-5.2",
+        speed_tier="balanced",
+        note="文本生成",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation",),
+        reliable_tool_calling=False,
     ),
     ModelEntry(
         id="glm-5.1",
-        label="GLM-5.1 · 智谱 (阿里直连)",
+        label="GLM-5.1 · 智谱AI",
         provider="tokenplan",
         model="glm-5.1",
         speed_tier="balanced",
-        note="智谱新版, 文本生成 (套餐内); 工具调用不稳 (历史 bug #147/#161)",
+        note="文本生成; 工具调用不稳 (历史 bug #147/#161)",
         requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation",),
+        reliable_tool_calling=False,
+    ),
+    ModelEntry(
+        id="glm-5",
+        label="GLM-5 · 智谱AI",
+        provider="tokenplan",
+        model="glm-5",
+        speed_tier="fast",
+        note="文本生成; 工具调用不稳",
+        requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation",),
         reliable_tool_calling=False,
     ),
     ModelEntry(
         id="minimax-m2.5",
-        label="MiniMax M2.5 · 阿里直连",
+        label="MiniMax M2.5",
         provider="tokenplan",
         model="MiniMax-M2.5",
         speed_tier="reasoning",
-        note="推理模型, 通过 TokenPlan 套餐; 工具调用经验不稳",
+        note="文本生成 / 推理; 工具调用经验不稳",
         requires_env=("TOKENPLAN_API_KEY",),
+        capabilities=("text_generation", "reasoning"),
         reliable_tool_calling=False,
     ),
 
@@ -136,13 +281,17 @@ def get_model(model_id: str) -> Optional[ModelEntry]:
     return None
 
 
-def list_models(only_available: bool = False) -> List[ModelEntry]:
-    """返回模型列表. only_available=True 时过滤掉 env 缺失的."""
+def list_models(only_available: bool = False, include_non_chat: bool = False) -> List[ModelEntry]:
+    """返回 chat 可选模型列表.
+
+    include_non_chat=True 时也返回图片生成等非聊天模型;only_available=True 时过滤 env 缺失的。
+    """
+    models = [m for m in MODELS if include_non_chat or m.chat_selectable]
     if not only_available:
-        return list(MODELS)
+        return list(models)
     from app.config import settings
     out: List[ModelEntry] = []
-    for m in MODELS:
+    for m in models:
         ok = all(_env_present(e, settings) for e in m.requires_env)
         if ok:
             out.append(m)

@@ -12,7 +12,7 @@ import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.api.admin import get_admin_user
@@ -285,6 +285,8 @@ class ModelInfo(BaseModel):
     model: str
     speed_tier: str
     note: str = ""
+    capabilities: list[str] = Field(default_factory=list)
+    chat_selectable: bool = True
     available: bool       # env 是否齐全
     is_active: bool       # 当前选中的
 
@@ -300,7 +302,7 @@ class ModelListResponse(BaseModel):
 def list_available_models(admin: User = Depends(get_admin_user)):
     """列出所有注册的模型 + 可用性 + 当前选中."""
     from app.services.llm.model_registry import MODELS, get_active_model_id, list_models
-    available_ids = {m.id for m in list_models(only_available=True)}
+    available_ids = {m.id for m in list_models(only_available=True, include_non_chat=True)}
     active = get_active_model_id()
 
     out = []
@@ -312,6 +314,8 @@ def list_available_models(admin: User = Depends(get_admin_user)):
             model=m.model,
             speed_tier=m.speed_tier,
             note=m.note,
+            capabilities=list(m.capabilities),
+            chat_selectable=m.chat_selectable,
             available=m.id in available_ids,
             is_active=(active == m.id),
         ))
@@ -356,6 +360,8 @@ def select_model(req: SelectModelRequest, admin: User = Depends(get_admin_user))
     entry = get_model(req.model_id)
     if not entry:
         raise HTTPException(404, f"未注册的 model: {req.model_id}")
+    if not entry.chat_selectable:
+        raise HTTPException(400, f"模型 {req.model_id} 是非聊天模型,不能设为全局 chat provider")
 
     # 验 env 齐全
     from app.services.llm.model_registry import _env_present

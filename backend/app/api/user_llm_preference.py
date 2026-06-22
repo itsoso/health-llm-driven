@@ -36,6 +36,7 @@ class ModelOption(BaseModel):
     model: str
     speed_tier: str
     note: str = ""
+    capabilities: List[str] = Field(default_factory=list)
 
 
 class PreferenceResponse(BaseModel):
@@ -68,7 +69,7 @@ def _list_options() -> List[ModelOption]:
     return [
         ModelOption(
             id=m.id, label=m.label, provider=m.provider, model=m.model,
-            speed_tier=m.speed_tier, note=m.note,
+            speed_tier=m.speed_tier, note=m.note, capabilities=list(m.capabilities),
         )
         for m in list_models(only_available=True)
     ]
