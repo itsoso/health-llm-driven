@@ -65,6 +65,9 @@ class UserProfile(Base):
     # === 锻炼时点偏好(timing-solver 据此在空窗排锻炼块)===
     workout_pref_window = Column(String(20), nullable=True)  # morning/midday/evening/any(None=不排锻炼块)
     workout_target_minutes = Column(Integer, nullable=True)  # 目标锻炼时长(分钟);缺省走 DEFAULT_WORKOUT_MINUTES
+    # P4 锻炼链(opt-in):开启后把单锻炼块展开成「预检→锻炼→拉伸→淋浴→按摩→餐→复盘」链式议程,
+    # 每步落一条可完成 HealthProtocol。NULL/False = 维持既有单锻炼项(无回归)。须同时有 workout_pref_window。
+    workout_chain_enabled = Column(Boolean, nullable=True)  # None/False=旧单项;True=展开锻炼链
 
     # === 地理位置（用于天气/空气质量） ===
     city = Column(String(100), nullable=True)  # 所在城市

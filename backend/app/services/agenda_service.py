@@ -218,12 +218,30 @@ def _day_schedule_workout_item(db: Session, user_id: int) -> Dict[str, Any] | No
 
 def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str, Any]:
     """今日统一议程:协议待办 + 近 N 天到期复查。按优先级(高在前)+ 时间窗排序。"""
+    from app.services import workout_chain_service as wcs
+
     items: List[Dict[str, Any]] = []
 
-    # 1) 协议今日待办(三域)
+    # 0) P4 锻炼链(opt-in):链 ON → 先幂等物化链协议(commit),再由下方 today_status 投影。
+    chain_on = wcs.is_workout_chain_enabled(db, user_id)
+    if chain_on:
+        wcs.maybe_materialize_workout_chain(db, user_id)
+
+    # 1) 协议今日待办(链协议也走这条:它们就是 HealthProtocol,自动流入)
     for p in proto_svc.today_status(db, user_id):
         if not p.get("is_due_today"):
             continue
+        iq = p.get("implied_quantity") or {}
+        # 链指针(additive,仅链协议带;非链协议这些键缺省 None → 行为零变化)。
+        chain_kw = {}
+        if isinstance(iq, dict) and iq.get("chain_id"):
+            chain_kw = {
+                "chain_id": iq.get("chain_id"),
+                "chain_step": iq.get("chain_step"),
+                "chain_role": iq.get("chain_role"),
+                "prev_protocol_id": iq.get("prev_protocol_id"),
+                "next_protocol_id": iq.get("next_protocol_id"),
+            }
         items.append(_agenda_item(
             type=p["domain"],
             title=p["name"],
@@ -232,6 +250,7 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
             priority=50,
             can_default_complete=p.get("can_default_complete"),
             source={"object_type": "health_protocol", "object_id": p["protocol_id"]},
+            **chain_kw,
         ))
 
     # 2) 今日训练决策灯(只读建议项)
@@ -239,10 +258,12 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
     if ti is not None:
         items.append(ti)
 
-    # 2.5) timing-solver 当日锻炼块(cut 6)→ 带精确时点的 movement 项 / Red 休息项
-    wk = _day_schedule_workout_item(db, user_id)
-    if wk is not None:
-        items.append(wk)
+    # 2.5) timing-solver 当日锻炼块(cut 6)→ 带精确时点的 movement 项 / Red 休息项。
+    # 链 ON 时跳过:锻炼已展开成链协议(上方 today_status 已投影),不再叠加旧单锻炼项(避免双份)。
+    if not chain_on:
+        wk = _day_schedule_workout_item(db, user_id)
+        if wk is not None:
+            items.append(wk)
 
     # 3) 跨源数据质量(设备读数冲突)→ data_quality 提示
     dq = _data_quality_item(db, user_id)

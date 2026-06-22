@@ -229,6 +229,69 @@ def _maybe_workout_item(profile, ctx: DayContext, rx: Optional[dict] = None) -> 
     )
 
 
+def build_workout_chain_steps(db, user_id: int) -> Optional[dict]:
+    """P4 锻炼链:据已算好的 rx + ctx 产出链步描述符(供 agenda 物化成 N 条 HealthProtocol)。
+
+    **复用 _maybe_workout_item 的同款 rx/ctx/pick_workout_start 计算**(不另起一套门控):
+    - rx 由 workout_prescription 算好(ACWR×readiness×ACTN3 + 急性休息门控)。
+    - readiness=Red / rx.intensity=="rest" → build_workout_chain 内部走降级(只拉伸/可选淋浴)。
+    - 无 workout_pref_window → None(不建链)。
+    - 当日无合适锻炼空档 且 非降级 → None(MVP 不强塞,与 _maybe_workout_item 一致)。
+
+    返回 {chain_id, steps} 或 None。chain_id 按 (user, date) 稳定 → 跨刷新同 id → 幂等去重。
+    """
+    from app.models.user_profile import UserProfile
+    from app.services.workout_chain_service import build_workout_chain
+    from datetime import date as _date
+
+    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    pref = getattr(profile, "workout_pref_window", None) if profile else None
+    if not pref:
+        return None
+
+    rx = workout_prescription(db, user_id)
+
+    # readiness 灯(与 build_day_schedule 同源:仅 poor→Red)。失败/无信号 → 不门控。
+    ctx = _day_context(profile)
+    try:
+        zone = _latest_readiness_zone(db, user_id)
+        if zone:
+            ctx.readiness = zone
+    except Exception:  # noqa: BLE001 — readiness 读取失败不阻塞链,留默认灯
+        pass
+
+    dur = (rx or {}).get("duration_min") \
+        or (getattr(profile, "workout_target_minutes", None) if profile else None) \
+        or DEFAULT_WORKOUT_MINUTES
+
+    is_rest = bool(rx and rx.get("intensity") == "rest")
+    if not is_rest:
+        # 非降级:落锻炼起点(与 _maybe_workout_item 同款,Red 下不设 workout_start)。
+        start = pick_workout_start(ctx, pref, dur)
+        if start is None:
+            return None  # 当日无空档,不建链(MVP 不强塞)
+        if ctx.readiness != RED:
+            ctx.workout_start = _to_hhmm(start)
+        else:
+            # Red 但非急性 rest:与 _maybe_workout_item 一致——锻炼会被剔,走降级链(只拉伸)。
+            is_rest = True
+            if rx is None:
+                rx = {}
+            rx["intensity"] = "rest"
+            rx.setdefault("guidance", "今日恢复就绪度偏低,建议改为轻度拉伸/休息。")
+
+    # 围训练餐对齐(改 ctx.meals)——与纯核心排程同款,保证链 meal 步时点合理。
+    if ctx.workout_start:
+        from app.services.schedule_diet_sleep import align_post_workout_meal
+        align_post_workout_meal(ctx, workout_minutes=dur)
+
+    steps = build_workout_chain(rx, ctx, workout_minutes=dur)
+    if not steps:
+        return None
+    chain_id = f"workout_chain:{user_id}:{_date.today().isoformat()}"
+    return {"chain_id": chain_id, "steps": steps}
+
+
 def _latest_readiness_zone(db, user_id: int) -> Optional[str]:
     """最近一条带 training_readiness_level 的 garmin 行 → solver readiness 灯(仅 poor→Red)。"""
     from app.models.daily_health import GarminData

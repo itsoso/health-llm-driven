@@ -97,7 +97,7 @@ def _map_agenda_item(item: Dict[str, Any]) -> Dict[str, Any]:
     # subtitle 优先 detail(议程项的人话说明),否则用 time_window/状态兜底
     subtitle = item.get("detail")
 
-    return {
+    out = {
         "id": f"agenda_{object_type}_{src.get('object_id')}_{itype}",
         "kind": kind,
         "time_window": item.get("time_window") or "anytime",
@@ -117,6 +117,17 @@ def _map_agenda_item(item: Dict[str, Any]) -> Dict[str, Any]:
         "severity": None,
         "proof": None,
     }
+    # P4 锻炼链指针(additive,仅链协议带;非链项不出现这些键 → 客户端行为零变化)。
+    # 客户端据此把同一 chain_id 的步按 chain_step 串成一条链渲染/排序。
+    if item.get("chain_id"):
+        out["chain"] = {
+            "chain_id": item.get("chain_id"),
+            "chain_step": item.get("chain_step"),
+            "chain_role": item.get("chain_role"),
+            "prev_protocol_id": item.get("prev_protocol_id"),
+            "next_protocol_id": item.get("next_protocol_id"),
+        }
+    return out
 
 
 def _map_observation(ev) -> Dict[str, Any]:

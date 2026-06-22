@@ -58,6 +58,11 @@ class HealthProtocol(Base):
     source_model = Column(String(50))                  # 协议完成落到哪张业务表(water_records / medication_logs / diet_records)
     source_id = Column(Integer)                        # 链接的具体业务记录 id(如 Medication.id),完成时写真实记录
 
+    # P4 锻炼链幂等键(可空):非链协议恒 NULL(不受约束、行为零变化);链协议 = "{chain_id}:{chain_step}"。
+    # 配下方 partial unique index 作 DB 级幂等backstop:并发两次 GET /agenda 物化同一步 → 第二条
+    # 撞唯一约束 IntegrityError → 回滚重读(对齐 _claim_today_event 模式),不靠应用层读-检查-写。
+    chain_key = Column(String(120))
+
     notes = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -68,6 +73,11 @@ class HealthProtocol(Base):
     __table_args__ = (
         Index("ix_health_protocols_user_status", "user_id", "status"),
         Index("ix_health_protocols_user_domain", "user_id", "domain"),
+        # 链步幂等:每用户每 (chain_id, chain_step) 至多一条。partial(仅 chain_key 非空)→
+        # 不约束普通协议(chain_key=NULL),pg 与 sqlite 均支持 partial unique index。
+        Index("uq_health_protocols_user_chain_key", "user_id", "chain_key",
+              unique=True, sqlite_where=chain_key.isnot(None),
+              postgresql_where=chain_key.isnot(None)),
     )
 
 
