@@ -28,6 +28,8 @@ from app.models.desktop_job import DesktopJob
 from app.models.health_analysis_cache import HealthAnalysisCache
 from app.models.supplement import SupplementProduct, SupplementDefinition, SupplementRecord
 from app.models.supplement_inventory import SupplementInventory
+# P5(D2)复购下单 — 财务一等对象 ReorderIntent(SCAFFOLD,不真下单;独立于 WriteIntent)
+from app.models.reorder_intent import ReorderIntent
 # HabitDefinition/HabitRecord — DEPRECATED: router disabled, models retained for DB compat only
 # from app.models.habit import HabitDefinition, HabitRecord
 from app.models.weight import WeightRecord
@@ -179,6 +181,7 @@ __all__ = [
     "SupplementDefinition",
     "SupplementRecord",
     "SupplementInventory",
+    "ReorderIntent",
     # "HabitDefinition",  # DEPRECATED
     # "HabitRecord",      # DEPRECATED
     "WeightRecord",

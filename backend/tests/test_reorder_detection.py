@@ -1,6 +1,7 @@
 """P3(D1)复购检测测试 —— 消耗估算 / 剩余天数 / 阈值 / restock / IDOR / 扫描幂等 / confirm 不下单。
 
-边界回归:reorder_nudge 的 confirm 只 acknowledge,绝不下单(无电商 skill 调用、无 ReorderIntent)。
+边界回归:reorder_nudge 的 confirm 只 acknowledge,绝不下单(无电商 skill 调用、不建 ReorderIntent
+财务一等对象 —— 后者由 P5/D2 引入,P3 这条提醒路径与它完全隔离)。
 """
 import uuid
 from datetime import date, timedelta
@@ -302,9 +303,10 @@ def test_confirm_reorder_nudge_is_acknowledge_only(db, monkeypatch):
     assert res["status"] == "executed"
     assert res["executed_ref"] == "acknowledged"  # 仅确认知悉,无订单引用
 
-    # 没有任何 ReorderIntent 一等对象被创建(P3 不存在该模型 / 该表)
-    from app.models import __all__ as model_names
-    assert "ReorderIntent" not in model_names
+    # P3 的 reorder_nudge confirm 路径绝不触碰财务一等对象:不建任何 ReorderIntent。
+    # (ReorderIntent 由 P5/D2 引入,但 P3 这条「提醒」路径与它完全隔离 —— acknowledge-only。)
+    from app.models.reorder_intent import ReorderIntent
+    assert db.query(ReorderIntent).count() == 0
 
 
 class _ctx:
