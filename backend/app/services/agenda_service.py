@@ -537,19 +537,45 @@ def range_view(db: Session, user_id: int, days: int = 7) -> Dict[str, Any]:
     }
 
 
+# 经议程统一完成路由支持的来源(供上游 complete_by_ref 在物化前先验,避免给
+# 不支持的来源凭空物化一条议程 HealthEvent)。新增 source 完成路径时同步扩这里。
+SUPPORTED_COMPLETE_TYPES = ("health_protocol", "medication", "supplement")
+
+
 def complete_item(
     db: Session, user_id: int, object_type: str, object_id: int,
     track: str = "protocol", value: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """统一完成路由:按 agenda item 的 source.object_type 路由到对应 source 的完成。
 
-    health_protocol → 双轨完成(写真实业务记录)。其余来源(复查/safety)后续接通;
+    health_protocol → 双轨完成(写真实业务记录)。med/supplement → 复用 log_medication。
     不支持的来源显式报错(不静默假装完成,守 Rule #1)。
     """
     if object_type == "health_protocol":
         ev = proto_svc.complete_protocol(db, object_id, user_id, track=track, value=value)
         if ev is None:
-            raise ValueError("协议不存在")
+            # 协议不存在 / 非本人 → LookupError(端点转 404,与 med/supplement 一致)。
+            raise LookupError("协议不存在")
         return {"object_type": object_type, "object_id": object_id,
                 "status": ev.status, "track": ev.track}
+    if object_type in ("medication", "supplement"):
+        # 药与补剂同存 medications 表;object_id 即 medication_id,无独立补剂写路径。
+        # 复用 log_medication(已幂等: uq_medlog_med_date_time;commit=False 把领域写并入
+        # 调用方单次事务,与 complete_protocol 用药分支同款,不 fork 写路径)。
+        from app.services.medication_service import medication_service
+        from app.utils.timezone import get_china_now
+        med = medication_service.get_medication(db, object_id, user_id)
+        if med is None:
+            # 资源不存在 / 非本人 → LookupError(端点转 404,守跨用户隔离)。
+            raise LookupError("medication not found")
+        # 手工轨可带用户实际剂量(actual_dosage):记的是「用户报告实际服了多少」这一依从事实,
+        # 不是处方/调量(R4)。缺省 None → log_medication 按医嘱默认记录。
+        actual_dosage = (value or {}).get("actual_dosage")
+        log = medication_service.log_medication(
+            db, user_id, object_id,
+            taken_time=get_china_now().strftime("%H:%M"),
+            status="taken", actual_dosage=actual_dosage, commit=False,
+        )
+        return {"object_type": object_type, "object_id": object_id,
+                "wrote": True, "log_id": log.id}
     raise ValueError(f"不支持经议程完成的来源: {object_type}")

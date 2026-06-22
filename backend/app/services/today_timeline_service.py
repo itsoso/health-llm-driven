@@ -85,7 +85,9 @@ def _map_agenda_item(item: Dict[str, Any]) -> Dict[str, Any]:
     object_type = src.get("object_type")
     status = item.get("status")
 
-    can_complete = status == "pending" and object_type == "health_protocol"
+    can_complete = status == "pending" and object_type in (
+        "health_protocol", "medication", "supplement",
+    )
     complete_ref = (
         {"object_type": object_type, "object_id": src.get("object_id")}
         if (object_type is not None and src.get("object_id") is not None)

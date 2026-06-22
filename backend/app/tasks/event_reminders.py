@@ -266,9 +266,10 @@ def scan_event_reminders():
                     # 点推送落到与该 kind 相关的页面 (认不出则省略, 回首页)。
                     deep_link = deeplink_for(kind)
                     complete_ref = it.get("complete_ref")
-                    # 可完成的行动项 → 带 AGENDA_ACTION 类目 + 闭环完成端点引用,
-                    # 让推送上的「完成」按钮能调 POST /timeline/events/{id}/complete
-                    # (客户端按 complete_ref 经脊柱物化的 HealthEvent 完成;handler 后续增量接)。
+                    # 可完成的行动项 → 带 AGENDA_ACTION 类目 + 闭环完成端点。
+                    # 推送上的「完成」按钮直接拿 complete_ref 当 body POST /api/v1/agenda/complete
+                    # (该端点懒物化议程 HealthEvent 再闭环完成,无需先知道 event_id;
+                    # 不在此 Celery 任务里物化,保持 producer 写轻量)。
                     data = {
                         "category": "AGENDA_ACTION" if complete_ref else "PRE_EVENT_REMINDER",
                         "reminder_type": "pre_event",
@@ -277,7 +278,7 @@ def scan_event_reminders():
                     }
                     if complete_ref:
                         data["complete_ref"] = complete_ref
-                        data["complete_endpoint"] = "/api/v1/timeline/events/{event_id}/complete"
+                        data["complete_endpoint"] = "/api/v1/agenda/complete"
                     if deep_link:
                         data["deep_link"] = deep_link
                     try:

@@ -10,6 +10,7 @@ from app.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user_required
 from app.services import agenda_service
+from app.models.health_protocol import SKIP_REASONS
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +44,12 @@ async def agenda_range(
 
 
 class AgendaComplete(BaseModel):
-    object_type: str            # health_protocol(其余来源后续接通)
+    object_type: str            # health_protocol / medication / supplement
     object_id: int
-    track: str = "protocol"     # protocol / manual
+    track: str = "protocol"     # protocol / manual(仅 health_protocol 用;med/supp 忽略)
     value: Optional[Dict[str, Any]] = None
+    status: str = "done"        # done | skipped
+    skip_reason: Optional[str] = None  # status=skipped 时必带,枚举见 SKIP_REASONS
 
 
 @router.post("/complete")
@@ -55,9 +58,51 @@ async def agenda_complete(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    """统一完成路由:按来源类型路由到对应 source 的完成(写真实业务记录)。"""
+    """统一完成路由:经议程脊柱闭环完成(翻 HealthEvent 生命周期 + 双轨回写真实 source)。
+
+    懒物化:complete_by_ref 按 {object_type, object_id} 找/建议程 HealthEvent 再完成,
+    所以本端点既写真实记录、又熄灭首页脊柱项,且支持 skipped(带 skip_reason)。
+    幂等(双击一次效果)。强制 user_id 隔离(跨用户 / 不存在 → 404)。
+    回写失败 → 422(不假装成功)。
+    """
+    from app.services import timeline_agenda_service as tas
+
+    if data.status not in ("done", "skipped"):
+        raise HTTPException(status_code=400, detail="status 仅支持 done 或 skipped")
+    if data.status == "skipped" and data.skip_reason is not None and data.skip_reason not in SKIP_REASONS:
+        raise HTTPException(
+            status_code=400, detail=f"未知 skip_reason(应为 {list(SKIP_REASONS)})")
+
     try:
-        return agenda_service.complete_item(
-            db, current_user.id, data.object_type, data.object_id, data.track, data.value)
+        result = tas.complete_by_ref(
+            db, current_user.id, data.object_type, data.object_id,
+            status=data.status, skip_reason=data.skip_reason,
+            track=data.track, value=data.value,
+        )
+    except LookupError:
+        # 真实 source 不存在 / 非本人 → 404(不跨用户写、不假装成功)。
+        raise HTTPException(status_code=404, detail="完成来源不存在")
+    except tas.AgendaEventNotFound:
+        raise HTTPException(status_code=404, detail="议程事件不存在")
+    except tas.AgendaCompleteError as e:
+        # 真实 source 回写失败 → 让客户端感知(不静默吞、不假装完成)。
+        raise HTTPException(status_code=422, detail=f"完成回写失败: {e}")
     except ValueError as e:
+        # 不支持的 object_type / 非法 status / skip_reason → 400(显式失败,不静默)。
         raise HTTPException(status_code=400, detail=str(e))
+
+    # 响应为旧 shape 的超集:保留 object_type/object_id,叠加生命周期 + 回写事实,
+    # 让只「成功即失效缓存」的存量 mobile 调用方不破。
+    # wrote=本次是否真做了领域写:done 且产出 source_write → True;skipped / 幂等终态
+    # 短路(无 source_write)→ False(不二次回写,守去重)。
+    source_write = result.get("source_write")
+    return {
+        "object_type": data.object_type,
+        "object_id": data.object_id,
+        "event_id": result.get("event_id"),
+        "agenda_status": result.get("agenda_status"),
+        "skip_reason": result.get("skip_reason"),
+        "wrote": source_write is not None,
+        "idempotent": bool(result.get("idempotent")),
+        "source_write": source_write,
+    }

@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Dict, Optional
 
 from sqlalchemy.exc import IntegrityError
@@ -129,6 +129,63 @@ def materialize_agenda_event(
     return ev
 
 
+def _action_kind_for(object_type: str) -> str:
+    """complete_ref.object_type → 行动种类(action_kind)。
+
+    与 _DOMAIN_TO_KIND / today_timeline 的 kind 标注保持一致:medication/supplement
+    各自成 kind(客户端据此分类),health_protocol 等其余沿用其字面类型。
+    """
+    return _DOMAIN_TO_KIND.get(object_type, object_type)
+
+
+def complete_by_ref(
+    db: Session,
+    user_id: int,
+    object_type: str,
+    object_id: int,
+    *,
+    status: str = "done",
+    skip_reason: Optional[str] = None,
+    track: Optional[str] = None,
+    value: Optional[Dict[str, Any]] = None,
+    title: Optional[str] = None,
+    scheduled_for: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    """按 {object_type, object_id} 闭环完成(push + mobile 手里就这俩键)。
+
+    懒物化:先查当日同 source 的议程 HealthEvent,没有就现物化一条(pending),
+    再委托既有 `complete_agenda_event` 做生命周期翻态 + 双轨回写真实 source。
+    所有不变量(单次事务、幂等、回写失败不翻 done 且 422)都由 complete_agenda_event 守。
+
+    title 不传则 None —— confirmed_data.title 对药即药名(L3),但已核实 HealthEvent.
+    confirmed_data 不进任何 Twin/LLM/orchestrator/export 读路径,存它是受限且与既有
+    health_events 一致的;不要把 confirmed_data 引入任何 LLM/Twin 读路径。
+    """
+    from app.services.agenda_service import SUPPORTED_COMPLETE_TYPES
+    from app.utils.timezone import get_user_now, get_user_today
+
+    if status == "done" and object_type not in SUPPORTED_COMPLETE_TYPES:
+        # 物化前先验:不支持的来源 → ValueError(端点转 400),不给它凭空物化议程行
+        # (skipped 是纯生命周期项,无须回写,不受此限)。
+        raise ValueError(f"不支持经议程完成的来源: {object_type}")
+
+    ref = {"object_type": object_type, "object_id": object_id}
+    today = get_user_today(db, user_id)
+    ev = find_agenda_event(db, user_id, ref, today)
+    if ev is None:
+        ev = materialize_agenda_event(
+            db, user_id,
+            action_kind=_action_kind_for(object_type),
+            title=title or "",
+            complete_ref=ref,
+            scheduled_for=scheduled_for or get_user_now(db, user_id),
+        )
+    return complete_agenda_event(
+        db, user_id, ev.id, status=status, skip_reason=skip_reason,
+        track=track, value=value,
+    )
+
+
 class AgendaEventNotFound(Exception):
     """议程 HealthEvent 不存在或不属于该用户(→ 404,跨用户隔离)。"""
 
@@ -144,6 +201,8 @@ def complete_agenda_event(
     *,
     status: str = "done",
     skip_reason: Optional[str] = None,
+    track: Optional[str] = None,
+    value: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """闭环完成一个议程 HealthEvent。
 
@@ -152,6 +211,10 @@ def complete_agenda_event(
     3) status=done 且有 complete_ref → 经 agenda_service.complete_item 双轨回写真实 source。
        回写失败向上抛(AgendaCompleteError),HealthEvent 生命周期**不**翻 done(不假装)。
     4) 翻 agenda_status + completed_at,写统一 completed/skipped 事实。
+
+    track / value 可选:不传(既有 event_id 端点调用方)→ 沿用 ref 内的 track、无手工量,
+    行为与改前完全一致;传入(统一 /agenda/complete 手工轨)→ 把用户实际量/剂量透传给
+    complete_item(否则会静默丢失用户填的 volume_ml / actual_dosage)。
     """
     if status not in ("done", "skipped"):
         raise ValueError(f"未知 status: {status}(应为 done|skipped)")
@@ -179,13 +242,18 @@ def complete_agenda_event(
         ref = ev.complete_ref
         object_type = ref.get("object_type")
         object_id = ref.get("object_id")
-        track = ref.get("track") or "protocol"
+        # track 优先用显式入参(统一完成端点的手工/协议轨),回退 ref 内的 track,再回退协议轨。
+        effective_track = track or ref.get("track") or "protocol"
         if object_type is not None and object_id is not None:
             from app.services import agenda_service
             try:
                 write_result = agenda_service.complete_item(
-                    db, user_id, object_type, int(object_id), track=track,
+                    db, user_id, object_type, int(object_id),
+                    track=effective_track, value=value,
                 )
+            except LookupError:
+                # 资源不存在 / 非本人 → 上抛(端点转 404,跨用户隔离),不翻 done、不假装。
+                raise
             except ValueError as e:
                 # 不支持经议程完成的来源 / source 不存在 → 让调用方感知(不假装完成)。
                 raise AgendaCompleteError(str(e)) from e
@@ -193,7 +261,9 @@ def complete_agenda_event(
     # 生命周期翻态(回写已成功,或本就是 skip / 无 complete_ref 的纯生命周期项)。
     ev.agenda_status = status
     ev.skip_reason = skip_reason if status == "skipped" else None
-    ev.completed_at = datetime.now()
+    # completed_at 列是 DateTime(timezone=True);写 tz-aware now,别用 naive datetime.now()
+    # (PG 会按 server tz 解释 naive 值,SQLite 则裸存,跨源比较会漂)。
+    ev.completed_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(ev)
     logger.info(

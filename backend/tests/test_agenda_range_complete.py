@@ -25,12 +25,22 @@ def test_range_excludes_far_checkup(client, auth_user_and_headers):
 
 
 def test_complete_via_agenda_routes_to_protocol(client, auth_user_and_headers):
+    """/agenda/complete 现走议程脊柱闭环:翻 HealthEvent 生命周期 + 双轨回写真实记录。
+
+    响应是旧 shape 超集(object_type/object_id 保留)+ 生命周期(agenda_status/event_id/
+    wrote/idempotent)。协议真实记录仍落库 → today 反映完成。
+    """
     _, h = auth_user_and_headers
     pid = client.post("/api/v1/protocols/seed/water-cup", headers=h).json()["id"]
     r = client.post("/api/v1/agenda/complete", headers=h,
                     json={"object_type": "health_protocol", "object_id": pid, "track": "protocol"})
-    assert r.status_code == 200 and r.json()["status"] == "completed"
-    # today 反映完成
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["object_type"] == "health_protocol" and body["object_id"] == pid
+    assert body["agenda_status"] == "done"
+    assert body["wrote"] is True
+    assert isinstance(body["event_id"], int)
+    # today 反映完成(协议真实记录已落库)
     items = client.get("/api/v1/agenda/today", headers=h).json()["items"]
     assert next(i for i in items if i["type"] == "hydration")["status"] == "completed"
 
@@ -42,11 +52,12 @@ def test_complete_unsupported_source_400(client, auth_user_and_headers):
     assert r.status_code == 400
 
 
-def test_complete_nonexistent_protocol_400(client, auth_user_and_headers):
+def test_complete_nonexistent_protocol_404(client, auth_user_and_headers):
+    """协议不存在 / 非本人 → 404(not-found,与 med/supplement 一致);不静默假装成功。"""
     _, h = auth_user_and_headers
     r = client.post("/api/v1/agenda/complete", headers=h,
                     json={"object_type": "health_protocol", "object_id": 999999})
-    assert r.status_code == 400
+    assert r.status_code == 404
 
 
 def test_today_mode_smart_routes_to_smart_agenda(client, auth_user_and_headers, monkeypatch):
