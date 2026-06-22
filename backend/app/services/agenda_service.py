@@ -542,29 +542,67 @@ def range_view(db: Session, user_id: int, days: int = 7) -> Dict[str, Any]:
 SUPPORTED_COMPLETE_TYPES = ("health_protocol", "medication", "supplement")
 
 
+def ensure_source_exists(db: Session, user_id: int, object_type: str, object_id: int) -> None:
+    """物化前先验来源所有权/存在性(F1:done 与 skip 同标准)。
+
+    - 不支持的来源 → ValueError(端点转 400,不给它凭空物化议程行)。
+    - 来源不存在 / 非本人 → LookupError(端点转 404,守跨用户隔离)。
+
+    不写任何记录,纯校验。complete_by_ref 在懒物化前调它,确保 skip 也不会给
+    外人/不存在/不支持的 ref 物化幻影议程 HealthEvent。
+    """
+    if object_type == "health_protocol":
+        if proto_svc.get_protocol(db, object_id, user_id) is None:
+            raise LookupError("协议不存在")
+        return
+    if object_type in ("medication", "supplement"):
+        from app.services.medication_service import medication_service
+        if medication_service.get_medication(db, object_id, user_id) is None:
+            raise LookupError("medication not found")
+        return
+    raise ValueError(f"不支持经议程完成的来源: {object_type}")
+
+
 def complete_item(
     db: Session, user_id: int, object_type: str, object_id: int,
     track: str = "protocol", value: Dict[str, Any] | None = None,
     taken_time: str | None = None,
+    status: str = "done",
+    skip_reason: str | None = None,
 ) -> Dict[str, Any]:
-    """统一完成路由:按 agenda item 的 source.object_type 路由到对应 source 的完成。
+    """统一完成/跳过路由:按 agenda item 的 source.object_type 路由到对应 source。
 
-    health_protocol → 双轨完成(写真实业务记录)。med/supplement → 复用 log_medication。
+    done 与 skipped **共用同一写路径**(不 fork),只是落库的 status/track 不同:
+    - health_protocol:done → complete_protocol(双轨写真实业务记录);
+      skipped → skip_protocol(写 HealthProtocolEvent status=skipped,单行 uq_hpe_protocol_date)。
+    - med/supplement:done → MedicationLog(taken);skipped → MedicationLog(skipped)。
+      两者落同一 uq_medlog_med_date_time 槽(status-agnostic 唯一约束)→ 先跳后服可
+      **supersede**(更新同槽行 skipped→taken),不撞约束、不落第二条。
+
     不支持的来源显式报错(不静默假装完成,守 Rule #1)。
 
     taken_time(可选,med/supplement 用):由调用方给确定性服药时点槽(如议程项 scheduled_for
     的 "HH:MM"),让 uq_medlog_med_date_time 在重复完成时真兜底;缺省回退中国时区 now。
     """
+    if status not in ("done", "skipped"):
+        raise ValueError(f"未知 status: {status}(应为 done|skipped)")
+
     if object_type == "health_protocol":
+        if status == "skipped":
+            ev = proto_svc.skip_protocol(db, object_id, user_id, reason=skip_reason)
+            if ev is None:
+                raise LookupError("协议不存在")
+            return {"object_type": object_type, "object_id": object_id,
+                    "status": ev.status, "wrote": False}
         ev = proto_svc.complete_protocol(db, object_id, user_id, track=track, value=value)
         if ev is None:
             # 协议不存在 / 非本人 → LookupError(端点转 404,与 med/supplement 一致)。
             raise LookupError("协议不存在")
         return {"object_type": object_type, "object_id": object_id,
-                "status": ev.status, "track": ev.track}
+                "status": ev.status, "track": ev.track, "wrote": True}
     if object_type in ("medication", "supplement"):
         # 药与补剂同存 medications 表;object_id 即 medication_id,无独立补剂写路径。
-        # 复用 log_medication(已幂等: uq_medlog_med_date_time;commit=False 把领域写并入
+        # done/skipped 都经 medication_service 写同一 uq_medlog 槽(commit=False 把领域写并入
         # 调用方单次事务,与 complete_protocol 用药分支同款,不 fork 写路径)。
         from app.services.medication_service import medication_service
         from app.utils.timezone import get_china_now
@@ -572,14 +610,23 @@ def complete_item(
         if med is None:
             # 资源不存在 / 非本人 → LookupError(端点转 404,守跨用户隔离)。
             raise LookupError("medication not found")
-        # 手工轨可带用户实际剂量(actual_dosage):记的是「用户报告实际服了多少」这一依从事实,
-        # 不是处方/调量(R4)。缺省 None → log_medication 按医嘱默认记录。
-        actual_dosage = (value or {}).get("actual_dosage")
         # 确定性服药时点槽(议程项 scheduled_for):同项重复完成落同一 uq_medlog 槽 → DB 兜底去重。
         slot = taken_time or get_china_now().strftime("%H:%M")
-        log = medication_service.log_medication(
-            db, user_id, object_id,
-            taken_time=slot,
+        if status == "skipped":
+            # 漏服事实:落 MedicationLog(skipped)。同槽 supersede 让「先服后跳」也能改写。
+            log = medication_service.upsert_medication_log(
+                db, user_id, object_id, taken_time=slot,
+                status="skipped", skip_reason=skip_reason, commit=False,
+            )
+            return {"object_type": object_type, "object_id": object_id,
+                    "wrote": False, "log_id": log.id}
+        # 手工轨可带用户实际剂量(actual_dosage):记的是「用户报告实际服了多少」这一依从事实,
+        # 不是处方/调量(R4)。缺省 None → 按医嘱默认记录。
+        actual_dosage = (value or {}).get("actual_dosage")
+        # supersede:先跳后服 → 把同槽 skipped 行翻成 taken(uq_medlog 是 status-agnostic,
+        # 不能再 INSERT 第二条;同时也兜住「先服后服」幂等)。
+        log = medication_service.upsert_medication_log(
+            db, user_id, object_id, taken_time=slot,
             status="taken", actual_dosage=actual_dosage, commit=False,
         )
         return {"object_type": object_type, "object_id": object_id,

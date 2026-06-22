@@ -95,16 +95,18 @@ async def agenda_complete(
 
     # 响应为旧 shape 的超集:保留 object_type/object_id,叠加生命周期 + 回写事实,
     # 让只「成功即失效缓存」的存量 mobile 调用方不破。
-    # wrote=本次是否真做了领域写:done 且产出 source_write → True;skipped / 幂等终态
-    # 短路(无 source_write)→ False(不二次回写,守去重)。
+    # wrote=本次是否真做了「完成/服用」领域写:done 回写真实记录 → True;skipped 现在也写
+    # 源行(漏服事实/HealthProtocolEvent skipped),但它**不是依从完成** → wrote=False
+    # (源行各分支自报 wrote);幂等终态短路(无 source_write)→ False(不二次回写,守去重)。
     source_write = result.get("source_write")
+    wrote = bool(source_write and source_write.get("wrote"))
     return {
         "object_type": data.object_type,
         "object_id": data.object_id,
         "event_id": result.get("event_id"),
         "agenda_status": result.get("agenda_status"),
         "skip_reason": result.get("skip_reason"),
-        "wrote": source_write is not None,
+        "wrote": wrote,
         "idempotent": bool(result.get("idempotent")),
         "source_write": source_write,
     }

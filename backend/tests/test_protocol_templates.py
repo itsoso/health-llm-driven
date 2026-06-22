@@ -288,6 +288,50 @@ def test_no_red_flag_not_suppressed(db, auth_user_and_headers):
     assert len([it for it in items if it["kind"] == "protocol"]) == 1
 
 
+# ─────────────── F3: 红旗门 fail-CLOSED + push 正文带 caveat ───────────────
+
+def test_nasal_red_flag_fails_closed_on_query_error(db, auth_user_and_headers, monkeypatch):
+    """F3(a):症状查询抛异常(安全状态不可验证)→ nasal_red_flag_active 返回 True(抑制)。
+
+    这是禁忌抑制门,必须 fail-CLOSED:宁可漏推一次良性提醒,不在不可知安全态下推禁忌 nudge。
+    """
+    from app.tasks.event_reminders import _collect_timed_items
+    import app.services.protocol_templates as pt
+
+    user, _ = auth_user_and_headers
+    seed_behavior_protocols(db, user.id, keys=["nasal_wash_morning"])
+
+    # 让症状查询路径抛异常(模拟缺列 / DB 抖动)。SymptomEntry 在该模块函数内 import,
+    # patch 模型属性触发查询构建即炸。
+    class _Boom:
+        def __getattr__(self, name):
+            raise RuntimeError("simulated symptom query failure")
+
+    monkeypatch.setattr(pt, "SymptomEntry", _Boom(), raising=False)
+    # 注意:nasal_red_flag_active 在函数体内 `from app.models.symptom_entry import SymptomEntry`,
+    # 故 patch 真实模型模块上的符号。
+    import app.models.symptom_entry as se_mod
+    monkeypatch.setattr(se_mod, "SymptomEntry", _Boom(), raising=False)
+
+    assert nasal_red_flag_active(db, user.id) is True, "查询异常必须 fail-closed 抑制(返回 True)"
+    # 抑制传导到提醒桥:洗鼻项不被收集。
+    items = _collect_timed_items(db, user.id, date.today())
+    assert [it for it in items if it["kind"] == "protocol"] == [], \
+        "红旗门 fail-closed → 洗鼻提醒不被收集"
+
+
+def test_nasal_push_body_carries_caveat():
+    """F3(b):洗鼻协议推送正文必须带禁忌 caveat(安全字符串随通知传播,不依赖检测)。"""
+    from app.tasks.event_reminders import _push_body
+
+    _, body = _push_body("protocol", "晨起洗鼻", 0, template_key="nasal_wash_morning")
+    assert "请勿洗鼻" in body and "咨询医生" in body, f"洗鼻 push 正文缺禁忌 caveat: {body!r}"
+
+    # 非洗鼻协议(如睡前放松)不强加洗鼻 caveat。
+    _, body2 = _push_body("protocol", "睡前放松", 0, template_key="sleep_winddown")
+    assert "请勿洗鼻" not in body2
+
+
 # ─────────────────────── ⑦ R4 措辞闸 ───────────────────────
 
 # 命令式量化剂量: "300-500 ml" / "2000 IU" / "服用 5 mg" 这类裸处方数值。

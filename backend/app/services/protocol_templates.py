@@ -203,15 +203,16 @@ def seed_behavior_protocols(
 
 
 def nasal_red_flag_active(db: Session, user_id: int) -> bool:
-    """该用户当前是否有洗鼻禁忌红旗(鼻出血/鼻痛/发热/术后)活跃。
+    """该用户当前是否有洗鼻禁忌红旗(鼻出血/鼻痛/发热/术后)活跃 —— **fail-CLOSED**。
 
-    fail-SAFE 设计(§3):用**定向查询**读近 72h 症状 + active 病程文本(绝不调 build_twin
-    —— build_twin 自开 SessionLocal、跑生产库,在请求/celery 事务里看不到当前数据且可能
-    撞缺列,见 memory)。任一关键词命中 → True(抑制洗鼻提醒)。
+    用**定向查询**读近 72h 症状 + active 病程文本(绝不调 build_twin —— build_twin 自开
+    SessionLocal、跑生产库,在请求/celery 事务里看不到当前数据且可能撞缺列,见 memory)。
+    任一关键词命中 → True(抑制洗鼻提醒)。
 
-    返回 False 的两种含义:① 确实无红旗;② 无法判定(查询异常)。两者都 → 不抑制
-    (不过度抑制一个良性的生理盐水提醒;禁忌 caveat 已固定写在 advisory_note 里,
-    home 卡始终可见)。异常**记 warning,不静默吞**。
+    **安全门必须 fail-CLOSED(F3)**:这是禁忌抑制门,不是普通增强。任一查询异常 →
+    安全状态不可验证 → 返回 True(抑制),宁可漏推一次良性的生理盐水提醒,也绝不在
+    无法确认安全的情况下主动推一个可能禁忌的 nudge。异常**记 warning,不静默吞**。
+    返回 False 仅当两路查询都成功且确实无红旗。
     """
     blob_parts: List[str] = []
     try:
@@ -229,7 +230,9 @@ def nasal_red_flag_active(db: Session, user_id: int) -> bool:
         )
         blob_parts += [r[0] for r in rows if r and r[0]]
     except Exception as e:  # noqa: BLE001
-        logger.warning("[ProtocolTemplate] 症状查询失败 user=%s: %s", user_id, e)
+        # fail-CLOSED:症状状态不可验证 → 抑制(不在不可知安全态下推禁忌 nudge)。
+        logger.warning("[ProtocolTemplate] 症状查询失败 user=%s,fail-closed 抑制: %s", user_id, e)
+        return True
 
     try:
         from app.models.illness import IllnessEpisode
@@ -245,7 +248,9 @@ def nasal_red_flag_active(db: Session, user_id: int) -> bool:
         )
         blob_parts += [r[0] for r in rows if r and r[0]]
     except Exception as e:  # noqa: BLE001
-        logger.warning("[ProtocolTemplate] 病程查询失败 user=%s: %s", user_id, e)
+        # fail-CLOSED:病程状态不可验证 → 抑制。
+        logger.warning("[ProtocolTemplate] 病程查询失败 user=%s,fail-closed 抑制: %s", user_id, e)
+        return True
 
     if not blob_parts:
         return False

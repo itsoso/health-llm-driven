@@ -198,6 +198,114 @@ class MedicationService:
             db.flush()
         return log
 
+    def upsert_medication_log(
+        self,
+        db: Session,
+        user_id: int,
+        medication_id: int,
+        taken_time: str,
+        status: str = "taken",
+        skip_reason: Optional[str] = None,
+        actual_dosage: Optional[str] = None,
+        notes: Optional[str] = None,
+        commit: bool = False,
+    ) -> MedicationLog:
+        """同槽 upsert 服药/漏服记录(supersede 语义)。
+
+        uq_medlog_med_date_time 是 (药, 日期, 时点) 唯一且 **status-agnostic** ——
+        同一确定性槽至多一行。普通 INSERT(log_medication)在「先跳后服」会撞约束。
+        本方法改为 **find-then-update**:
+
+        - 同槽已有行 → 原地改 status/skip_reason/actual_dosage(skipped→taken 的 supersede,
+          以及 taken→taken / skipped→skipped 的幂等)。绝不落第二条 → 依从计数不虚高。
+        - 同槽无行 → INSERT;并发竞态(另一事务刚插同槽)撞 IntegrityError → 重读那行再原地改。
+
+        commit=False(议程闭环路径默认):只 flush,提交权交回调用方单次事务;
+        IntegrityError 后只能重读(不 rollback,以免撤掉调用方未提交的状态转移)。
+        commit=True:自带提交 + 失败回滚重试(独立调用方)。
+
+        守不变量:① 同槽至多一条(去重)② skipped→taken 可 supersede(用户先跳后服记成服)
+        ③ 同槽已有 **taken** 行又来一次 taken(不同议程事件的重复完成,= 同一剂双领)→ 不静默
+           合并:落到 INSERT 撞 uq_medlog → 上抛 IntegrityError,让调用方 fail-loud(守
+           「至多一条依从、回写失败不翻 done」;同事件重复完成由上游议程原子 claim 已短路)。
+        ④ 写库失败向上抛(fail-loud,不假装成功)。
+        """
+        slot = taken_time if taken_time else None
+
+        def _find_same_slot() -> Optional[MedicationLog]:
+            q = db.query(MedicationLog).filter(
+                MedicationLog.user_id == user_id,
+                MedicationLog.medication_id == medication_id,
+                MedicationLog.taken_date == date.today(),
+            )
+            if slot is None:
+                q = q.filter(MedicationLog.taken_time.is_(None))
+            else:
+                q = q.filter(MedicationLog.taken_time == slot)
+            return q.order_by(MedicationLog.id.desc()).first()
+
+        def _apply(row: MedicationLog) -> None:
+            row.status = status
+            row.skip_reason = skip_reason
+            if actual_dosage is not None:
+                row.actual_dosage = actual_dosage
+            if notes is not None:
+                row.notes = notes
+
+        existing = _find_same_slot()
+        # 仅在「现有行非 taken」(pending/skipped→supersede)或「现有行与目标同为 skipped」(幂等)
+        # 时原地改;现有行已是 taken 又要再 taken → 不 supersede,落 INSERT 撞约束 fail-loud
+        # (同一剂被两条不同议程事件双领的残留缝隙,守至多一条依从)。
+        if existing is not None and existing.status != "taken":
+            _apply(existing)
+            if commit:
+                db.commit()
+                db.refresh(existing)
+            else:
+                db.flush()
+            logger.info(
+                f"[Medication] upsert(supersede): user={user_id}, med={medication_id}, "
+                f"slot={slot}, {existing.status!r}→{status!r}"
+            )
+            return existing
+
+        log = MedicationLog(
+            user_id=user_id,
+            medication_id=medication_id,
+            taken_date=date.today(),
+            taken_time=slot,
+            status=status,
+            skip_reason=skip_reason,
+            actual_dosage=actual_dosage,
+            notes=notes,
+        )
+        db.add(log)
+        if commit:
+            # 独立调用方:并发同槽 INSERT 撞 → rollback 重读原地改(commit 路径可安全 rollback)。
+            try:
+                db.commit()
+                db.refresh(log)
+            except IntegrityError:
+                db.rollback()
+                existing = _find_same_slot()
+                if existing is None:  # 撞唯一约束却查不到 → 反常,fail loud
+                    raise
+                _apply(existing)
+                db.commit()
+                db.refresh(existing)
+                return existing
+        else:
+            # commit=False(议程闭环路径):find 已确认无同槽行,故此 INSERT 不应撞约束。
+            # 若仍撞(两条议程行真并发首插同一确定性槽)→ flush 抛 IntegrityError 不在此吞:
+            # 让调用方(complete_agenda_event)整事务回滚 + 转 AgendaCompleteError → 422,
+            # 守「至多一条依从、回写失败不翻 done」(test_two_agenda_events...fails_loud)。
+            db.flush()
+        logger.info(
+            f"[Medication] upsert(insert): user={user_id}, med={medication_id}, "
+            f"slot={slot}, status={status}"
+        )
+        return log
+
     def get_today_status(
         self,
         db: Session,

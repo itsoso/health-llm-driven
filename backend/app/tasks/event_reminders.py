@@ -88,8 +88,18 @@ def _schedule_kind(domain: str) -> str:
     return domain
 
 
-def _push_body(kind: str, title: str, lead: int) -> tuple[str, str]:
-    """生成 (推送标题, 正文)。hedged,无剂量/处方/因果断言。"""
+# 洗鼻禁忌 caveat:F3(b)——把安全字符串嵌进通知正文本身,使其随通知传播,
+# 不依赖红旗检测(检测 fail-closed 已抑制,但漏判时这条 caveat 仍随推送到达)。
+_NASAL_PUSH_CAVEAT = "(鼻出血/明显疼痛/发热/术后请勿洗鼻并咨询医生)"
+_NASAL_TEMPLATE_KEYS = ("nasal_wash_morning", "nasal_wash_evening")
+
+
+def _push_body(kind: str, title: str, lead: int, template_key: str | None = None) -> tuple[str, str]:
+    """生成 (推送标题, 正文)。hedged,无剂量/处方/因果断言。
+
+    template_key:行为协议项的模板键。洗鼻模板的正文必须随带禁忌 caveat(F3),
+    让安全字符串与通知一同送达,不依赖红旗检测路径。
+    """
     if kind == "meeting":
         return ("📅 日程提醒", f"「{title}」{lead} 分钟后开始,可以开始收尾了。")
     if kind == "medication":
@@ -100,7 +110,10 @@ def _push_body(kind: str, title: str, lead: int) -> tuple[str, str]:
         return ("🏃 运动提醒", f"{title} 计划在 {lead} 分钟后开始,留点时间热身。")
     if kind == "protocol":
         # 到点轻推(lead=0):只提示「该做了」,完成与否由用户决定。无量、无处方、无因果。
-        return ("✅ 健康提醒", f"现在可以做「{title}」了,完成后点一下确认。")
+        body = f"现在可以做「{title}」了,完成后点一下确认。"
+        if template_key in _NASAL_TEMPLATE_KEYS:
+            body += _NASAL_PUSH_CAVEAT
+        return ("✅ 健康提醒", body)
     return ("⏰ 提醒", f"{title} 大约 {lead} 分钟后开始。")
 
 
@@ -111,6 +124,11 @@ def _complete_ref_for(schedule_id: str | None, kind: str) -> dict | None:
     据此给 push 一个自描述的 complete_ref,让点完成的客户端能调
     POST /timeline/events/{id}/complete(经脊柱物化的 HealthEvent;handler 后续增量接)。
     认不出格式 → None(不假装能完成,守 Rule #1)。
+
+    TODO(F5b,多剂闭环前必做):complete_ref 只带 {object_type, object_id},无剂量槽。
+    一日两次(BID)药的两次到点提醒都用同一 complete_ref → 第二剂在 complete_by_ref
+    被同日去重幂等短路 → 依从 under-count。接 BID/多剂提醒前,这里须把当次剂量槽
+    (如 `{..., "slot": "HH:MM"}`)编进 complete_ref。当前**不声称多剂依从已闭环**。
     """
     if not schedule_id or ":" not in str(schedule_id):
         return None
@@ -228,6 +246,7 @@ def _collect_timed_items(db, user_id: int, today: date) -> list[dict]:
                 "title": st.get("name") or "健康行动",
                 "start_min": start_min,
                 "lead": LEAD_MINUTES.get("protocol", 0),  # 0 = 到点推
+                "template_key": tkey,  # 洗鼻模板 → 推送正文带禁忌 caveat(F3)
                 # 显式 complete_ref(不走 med-only 的 _complete_ref_for):
                 # 客户端「完成/跳过」按钮直接拿它 POST /agenda/complete。
                 "complete_ref": {"object_type": "health_protocol", "object_id": pid},
@@ -332,7 +351,8 @@ def scan_event_reminders():
                     if not _try_mark_sent(db, user_id, it["item_key"], today, kind):
                         continue
 
-                    title, body = _push_body(kind, it["title"], it["lead"])
+                    title, body = _push_body(
+                        kind, it["title"], it["lead"], template_key=it.get("template_key"))
                     # 点推送落到与该 kind 相关的页面 (认不出则省略, 回首页)。
                     deep_link = deeplink_for(kind)
                     complete_ref = it.get("complete_ref")

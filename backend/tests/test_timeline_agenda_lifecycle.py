@@ -3,7 +3,7 @@
 钉死闭环修复点 —— point-in-time 提醒 → 点完成 → 首页脊柱项熄灭 + 计入 past.completed:
 ① 物化:可完成的脊柱行动项带 first-class HealthEvent event_id(供客户端调完成端点)
 ② 完成 done:翻 HealthEvent done + 双轨回写真实 source(WaterIntake 真落库)+ 脊柱项熄灭
-③ 完成 skipped:翻 skipped + 带 skip_reason,不回写
+③ 完成 skipped:翻 skipped + 带 skip_reason,写源 SKIP 事实(防 re-nag)但不写完成记录(F2)
 ④ 幂等:双击只一次效果(idempotent=True,不二次回写)
 ⑤ 跨用户隔离:完成别人的 event → 404
 ⑥ past 投影:含晨间简报 + 异常,且 critical/medical-grade 异常被排除,洞察标 association_only
@@ -74,9 +74,15 @@ def test_complete_done_dual_track_writes_and_turns_off(client, db, auth_user_and
     assert spine2["past"]["completed_count"] >= 1
 
 
-def test_complete_skipped_with_reason_no_writeback(client, db, auth_user_and_headers):
-    """完成 skipped:翻 skipped + 带 skip_reason,不回写真实 source。"""
+def test_complete_skipped_writes_skip_fact_not_completion(client, db, auth_user_and_headers):
+    """完成 skipped:翻 skipped + 带 skip_reason。
+
+    F2 行为变更:skip 现在**写源 SKIP 事实**(HealthProtocolEvent status=skipped)→
+    today_status 翻 skipped → 不 re-nag、跨视图一致。但绝不写「完成」记录(无 WaterIntake)。
+    source_write 反映的是 skip 事实(status=skipped),不是依从完成。
+    """
     from app.models.daily_health import WaterIntake
+    from app.models.health_protocol import HealthProtocolEvent
 
     user, h = auth_user_and_headers
     _seed_water_protocol(client, h)
@@ -90,9 +96,24 @@ def test_complete_skipped_with_reason_no_writeback(client, db, auth_user_and_hea
     body = r.json()
     assert body["agenda_status"] == "skipped"
     assert body["skip_reason"] == "forgot"
-    assert body["source_write"] is None
+    # F2:source_write 现在指向 skip 事实(status=skipped),不再 None。
+    assert body["source_write"] is not None
+    assert body["source_write"]["status"] == "skipped"
+
+    # 仍绝不写「完成」记录(漏做不能记成依从)。
     after = db.query(WaterIntake).filter(WaterIntake.user_id == user.id).count()
-    assert after == before, "skip 不应回写真实 source"
+    assert after == before, "skip 不应回写完成记录(WaterIntake)"
+
+    # 源 SKIP 事实确实落库:HealthProtocolEvent status=skipped(供 today_status 翻态防 re-nag)。
+    skipped_evs = (
+        db.query(HealthProtocolEvent)
+        .filter(
+            HealthProtocolEvent.user_id == user.id,
+            HealthProtocolEvent.status == "skipped",
+        )
+        .all()
+    )
+    assert len(skipped_evs) == 1 and skipped_evs[0].skip_reason == "forgot"
 
 
 def test_complete_is_idempotent(client, db, auth_user_and_headers):

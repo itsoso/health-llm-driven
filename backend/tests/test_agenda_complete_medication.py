@@ -174,7 +174,13 @@ def test_two_agenda_events_same_med_second_completion_fails_loud(db, auth_user_a
 
     r1 = tas.complete_agenda_event(db, user.id, ev1.id, status="done")
     assert r1["agenda_status"] == "done"
-    assert len(_taken_logs(db, user.id, med.id)) == 1
+    logs1 = _taken_logs(db, user.id, med.id)
+    assert len(logs1) == 1
+    # F4 回归闸:taken_time 必须是议程项 scheduled_for 的确定性槽("09:00"),不是 wall-clock now。
+    # 把 _slot_time 改回 now() 后这条断言会红(测试在 09:00 之外的时刻跑时 now() != "09:00")。
+    assert logs1[0].taken_time == sched.strftime("%H:%M") == "09:00", (
+        "taken_time 必须取 scheduled_for 的确定性槽(非 wall-clock now);"
+        "若 _slot_time 退回 now() 此断言变红")
 
     # 第二条:同槽 → 领域唯一约束撞 → 422 fail-loud,不落第二条 taken。
     with pytest.raises(tas.AgendaCompleteError):
@@ -182,6 +188,55 @@ def test_two_agenda_events_same_med_second_completion_fails_loud(db, auth_user_a
     db.refresh(ev2)
     assert ev2.agenda_status == "pending", "回写失败必须不翻 done(fail-loud)"
     assert len(_taken_logs(db, user.id, med.id)) == 1, "至多一条依从,不得虚高"
+
+
+def test_slot_straddles_minute_boundary_single_taken(db, auth_user_and_headers, monkeypatch):
+    """F4 钟表跨界硬闸:第一次完成在 08:59:5x、第二次在 09:00:0x(wall-clock 跨分钟),但
+    两次都是 **同一议程事件**(同 scheduled_for)→ 必须恰一条 taken。
+
+    若 _slot_time 退回 wall-clock now():两次 taken_time 分别落 "08:59" / "09:00" 两个不同
+    uq_medlog 槽 → 两条 taken(虚高依从)→ 本测试红。确定性槽则两次都落 scheduled_for 的
+    "09:00",同槽幂等 → 恰一条。
+    """
+    from datetime import datetime
+
+    import app.utils.timezone as tz
+    from app.models.health_event import HealthEvent
+    from app.services import timeline_agenda_service as tas
+
+    user, _ = auth_user_and_headers
+    med = _seed_med(db, user.id)
+    ref = {"object_type": "medication", "object_id": med.id}
+    sched = datetime(2026, 6, 22, 9, 0, 0)  # 议程项代表时点 09:00
+
+    ev = HealthEvent(
+        user_id=user.id, event_type=tas.AGENDA_EVENT_TYPE, source="agenda",
+        agenda_status="pending", action_kind="medication", complete_ref=ref,
+        scheduled_for=sched, event_time=sched, association_only=False,
+    )
+    db.add(ev)
+    db.commit()
+    db.refresh(ev)
+
+    # 钟表桩:把 wall-clock 钉在 08:59:55(≠ scheduled_for 的 09:00)。若 _slot_time 退回
+    # get_china_now(),taken_time 会落 "08:59" → 下面的 "09:00" 断言变红。确定性槽不受钟表影响。
+    monkeypatch.setattr(tz, "get_china_now", lambda: datetime(2026, 6, 22, 8, 59, 55))
+
+    r1 = tas.complete_agenda_event(db, user.id, ev.id, status="done")
+    assert r1["agenda_status"] == "done"
+    logs = _taken_logs(db, user.id, med.id)
+    assert len(logs) == 1
+    assert logs[0].taken_time == "09:00", (
+        "taken_time 必须是 scheduled_for 的确定性槽 09:00,不随 wall-clock(此处桩成 08:59)漂;"
+        "_slot_time 退回 now() → 此断言红")
+
+    # 时间推进过分钟边界后再次完成同一事件 → 议程终态短路(幂等),仍恰一条 taken(确定性槽)。
+    monkeypatch.setattr(tz, "get_china_now", lambda: datetime(2026, 6, 22, 9, 0, 5))
+    r2 = tas.complete_agenda_event(db, user.id, ev.id, status="done")
+    assert r2["idempotent"] is True
+    logs = _taken_logs(db, user.id, med.id)
+    assert len(logs) == 1, "同议程项跨分钟两次完成必恰一条 taken(确定性槽)"
+    assert logs[0].taken_time == "09:00"
 
 
 # ─────────────────────────── ③ skipped(不回写)───────────────────────────
@@ -294,3 +349,177 @@ def test_complete_unsupported_type_400_no_silent_success(client, db, auth_user_a
     r = client.post("/api/v1/agenda/complete", headers=h, json={
         "object_type": "health_problem", "object_id": 1, "status": "done"})
     assert r.status_code == 400, r.text
+
+
+# ─────────────── F1: skip 与 done 同校验(不给非法 ref 物化幻影议程行)───────────────
+
+def _agenda_event_count(db, user_id: int) -> int:
+    from app.models.health_event import HealthEvent
+    from app.services import timeline_agenda_service as tas
+    return (
+        db.query(HealthEvent)
+        .filter(
+            HealthEvent.user_id == user_id,
+            HealthEvent.event_type == tas.AGENDA_EVENT_TYPE,
+        )
+        .count()
+    )
+
+
+def test_skip_foreign_medication_404_no_phantom_event(client, db, auth_user_and_headers):
+    """F1:skip 别人的 med → 404(物化前先验所有权),且不凭空物化议程 HealthEvent。"""
+    owner, _ = auth_user_and_headers
+    med = _seed_med(db, owner.id)
+
+    from app.services.auth import auth_service
+    from app.models.user import User
+
+    attacker = User(username="attacker_f1", email="attacker_f1@test.com",
+                    hashed_password="x", name="他者", is_active=True, is_approved=True)
+    db.add(attacker)
+    db.commit()
+    db.refresh(attacker)
+    token = auth_service.create_access_token({"sub": str(attacker.id)})
+    h_attacker = {"Authorization": f"Bearer {token}"}
+
+    before = _agenda_event_count(db, attacker.id)
+    r = client.post("/api/v1/agenda/complete", headers=h_attacker, json={
+        "object_type": "medication", "object_id": med.id, "status": "skipped",
+        "skip_reason": "no_supply"})
+
+    assert r.status_code == 404, r.text
+    # 不给外人 ref 物化任何议程行(此前 skip 漏先验会落幻影行)。
+    assert _agenda_event_count(db, attacker.id) == before
+    # owner 侧也无任何 skipped MedicationLog 被写。
+    from app.models.medication import MedicationLog
+    assert db.query(MedicationLog).filter(
+        MedicationLog.medication_id == med.id).count() == 0
+
+
+def test_skip_nonexistent_medication_404(client, db, auth_user_and_headers):
+    """F1:skip 不存在的 med id → 404(物化前先验存在性)。"""
+    user, h = auth_user_and_headers
+    before = _agenda_event_count(db, user.id)
+    r = client.post("/api/v1/agenda/complete", headers=h, json={
+        "object_type": "medication", "object_id": 999999, "status": "skipped",
+        "skip_reason": "forgot"})
+    assert r.status_code == 404, r.text
+    assert _agenda_event_count(db, user.id) == before
+
+
+def test_skip_unsupported_type_400_no_phantom_event(client, db, auth_user_and_headers):
+    """F1:skip 不支持的 object_type → 400(不静默物化议程行)。"""
+    user, h = auth_user_and_headers
+    before = _agenda_event_count(db, user.id)
+    r = client.post("/api/v1/agenda/complete", headers=h, json={
+        "object_type": "health_problem", "object_id": 1, "status": "skipped",
+        "skip_reason": "no_time"})
+    assert r.status_code == 400, r.text
+    assert _agenda_event_count(db, user.id) == before
+
+
+# ─────────────── F2: skip 写源行 + 后 done supersede ───────────────
+
+def _all_logs(db, user_id: int, med_id: int):
+    return (
+        db.query(MedicationLog)
+        .filter(
+            MedicationLog.user_id == user_id,
+            MedicationLog.medication_id == med_id,
+            MedicationLog.taken_date == get_china_today(),
+        )
+        .all()
+    )
+
+
+def test_skip_writes_source_skip_log(client, db, auth_user_and_headers):
+    """F2:经 /agenda/complete skip 一味 med → 落一条 MedicationLog(status=skipped)源行。
+
+    此前 skip 只翻 HealthEvent 生命周期、不写源行 → today_status 仍 pending → re-nag。
+    """
+    user, h = auth_user_and_headers
+    med = _seed_med(db, user.id)
+
+    r = client.post("/api/v1/agenda/complete", headers=h, json={
+        "object_type": "medication", "object_id": med.id,
+        "status": "skipped", "skip_reason": "no_supply"})
+    assert r.status_code == 200, r.text
+    assert r.json()["agenda_status"] == "skipped"
+    assert r.json()["wrote"] is False  # skip 不是依从完成
+
+    logs = _all_logs(db, user.id, med.id)
+    assert len(logs) == 1
+    assert logs[0].status == "skipped"
+    assert logs[0].skip_reason == "no_supply"
+    # 不写 taken(漏服不能记成依从)。
+    assert len(_taken_logs(db, user.id, med.id)) == 0
+
+
+def test_skip_then_done_same_day_supersedes_to_taken(client, db, auth_user_and_headers):
+    """F2 supersede(Claude B + Codex 共同要求):8am 跳过、9am 实服 → 必须能记成 taken。
+
+    源行(MedicationLog)同槽只一条,终态 taken,无双行、无 422。
+    """
+    user, h = auth_user_and_headers
+    med = _seed_med(db, user.id)
+
+    r1 = client.post("/api/v1/agenda/complete", headers=h, json={
+        "object_type": "medication", "object_id": med.id,
+        "status": "skipped", "skip_reason": "no_supply"})
+    assert r1.status_code == 200 and r1.json()["agenda_status"] == "skipped"
+
+    # 后到的真实 done 必须 supersede 掉 skip,不被议程终态短路、不被源唯一约束 422。
+    r2 = client.post("/api/v1/agenda/complete", headers=h, json={
+        "object_type": "medication", "object_id": med.id, "status": "done"})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["agenda_status"] == "done"
+    assert r2.json()["wrote"] is True
+
+    logs = _all_logs(db, user.id, med.id)
+    assert len(logs) == 1, "skip→done 同槽 supersede:源行恰一条,不双行"
+    assert logs[0].status == "taken", "先跳后服必须记成已服"
+
+
+def test_done_then_skip_does_not_downgrade(client, db, auth_user_and_headers):
+    """F2 边界:已 done 不可被随后的 skip 降级成漏服(守 R4:已服不可改写)。"""
+    user, h = auth_user_and_headers
+    med = _seed_med(db, user.id)
+
+    r1 = client.post("/api/v1/agenda/complete", headers=h, json={
+        "object_type": "medication", "object_id": med.id, "status": "done"})
+    assert r1.status_code == 200 and r1.json()["agenda_status"] == "done"
+
+    r2 = client.post("/api/v1/agenda/complete", headers=h, json={
+        "object_type": "medication", "object_id": med.id,
+        "status": "skipped", "skip_reason": "forgot"})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["agenda_status"] == "done", "已 done 拒绝降级成 skipped(幂等返回 done)"
+
+    logs = _all_logs(db, user.id, med.id)
+    assert len(logs) == 1 and logs[0].status == "taken"
+
+
+def test_skip_before_reminder_not_recollected(db, auth_user_and_headers):
+    """F2:协议在到点推送前被 skip → today_status 翻 skipped → _collect_timed_items 不再收集
+    (no re-nag)。这是 skip 写源行(HealthProtocolEvent)带来的跨视图一致。"""
+    from app.services.protocol_templates import seed_behavior_protocols
+    from app.services import timeline_agenda_service as tas
+    from app.tasks.event_reminders import _collect_timed_items
+    from datetime import date
+
+    user, _ = auth_user_and_headers
+    seed_behavior_protocols(db, user.id, keys=["nasal_wash_morning"])
+    from app.models.health_protocol import HealthProtocol
+    p = next(
+        pp for pp in db.query(HealthProtocol).filter(HealthProtocol.user_id == user.id).all()
+        if (pp.implied_quantity or {}).get("template_key") == "nasal_wash_morning"
+    )
+
+    # 推送前 skip(经统一 /agenda/complete 路径 → 写 HealthProtocolEvent skipped 源行)。
+    tas.complete_by_ref(
+        db, user.id, "health_protocol", p.id, status="skipped", skip_reason="no_time")
+    db.commit()
+
+    items = _collect_timed_items(db, user.id, date.today())
+    proto = [it for it in items if it["kind"] == "protocol"]
+    assert proto == [], "skip 后协议不应再被提醒桥收集(today_status 已 skipped)"
