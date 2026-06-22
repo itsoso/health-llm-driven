@@ -10,6 +10,7 @@ final class HealthAgentMacCoreTests: XCTestCase {
             "today",
             "agenda",
             "timeline",
+            "calendar",
             "agent",
             "record",
             "data",

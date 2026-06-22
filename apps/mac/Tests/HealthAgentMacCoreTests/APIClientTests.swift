@@ -81,6 +81,39 @@ final class APIClientTests: XCTestCase {
         }
     }
 
+    func testAPIClientPutEncodesJSONBody() async throws {
+        struct Patch: Encodable {
+            let syncEnabled: Bool
+
+            enum CodingKeys: String, CodingKey {
+                case syncEnabled = "sync_enabled"
+            }
+        }
+        struct Response: Decodable, Equatable {
+            let ok: Bool
+        }
+
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "PUT")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/calendar/sources/7")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+            let body = try XCTUnwrap(request.bodyDataForTesting)
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(object["sync_enabled"] as? Bool, false)
+            let data = #"{"ok":true}"#.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = APIClient(
+            baseURL: URL(string: "https://example.test/api/v1")!,
+            tokenProvider: StaticTokenProvider(token: "token-123"),
+            session: URLSession(configuration: .ephemeralWithStub)
+        )
+
+        let response: Response = try await client.put("calendar/sources/7", body: Patch(syncEnabled: false))
+
+        XCTAssertEqual(response, Response(ok: true))
+    }
+
     func testServerErrorNeverLeaksRawHTMLBody() async throws {
         // A 502 from nginx returns an HTML page; the user must never see it.
         URLProtocolStub.handler = { request in

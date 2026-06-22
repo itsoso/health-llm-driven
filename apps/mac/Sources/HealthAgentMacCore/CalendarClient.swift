@@ -55,6 +55,101 @@ public struct CalendarEvent: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+public struct CalendarSource: Codable, Equatable, Identifiable, Sendable {
+    public let id: Int
+    public let provider: String
+    public let name: String
+    public let color: String?
+    public let writable: Bool
+    public let syncEnabled: Bool
+    public let lastSyncAt: String?
+    public let lastError: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case provider
+        case name
+        case color
+        case writable
+        case syncEnabled = "sync_enabled"
+        case lastSyncAt = "last_sync_at"
+        case lastError = "last_error"
+    }
+
+    public init(
+        id: Int,
+        provider: String,
+        name: String,
+        color: String? = nil,
+        writable: Bool = false,
+        syncEnabled: Bool,
+        lastSyncAt: String? = nil,
+        lastError: String? = nil
+    ) {
+        self.id = id
+        self.provider = provider
+        self.name = name
+        self.color = color
+        self.writable = writable
+        self.syncEnabled = syncEnabled
+        self.lastSyncAt = lastSyncAt
+        self.lastError = lastError
+    }
+}
+
+public struct CalendarSourceCreateRequest: Encodable, Equatable, Sendable {
+    public let provider: String
+    public let name: String
+    public let url: String
+    public let color: String?
+    public let username: String?
+    public let password: String?
+
+    public init(
+        provider: String,
+        name: String,
+        url: String,
+        color: String? = nil,
+        username: String? = nil,
+        password: String? = nil
+    ) {
+        self.provider = provider
+        self.name = name
+        self.url = url
+        self.color = color
+        self.username = username
+        self.password = password
+    }
+}
+
+public struct CalendarSourceUpdateRequest: Encodable, Equatable, Sendable {
+    public let name: String?
+    public let color: String?
+    public let syncEnabled: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case color
+        case syncEnabled = "sync_enabled"
+    }
+
+    public init(name: String? = nil, color: String? = nil, syncEnabled: Bool? = nil) {
+        self.name = name
+        self.color = color
+        self.syncEnabled = syncEnabled
+    }
+}
+
+public struct CalendarSourceSyncResult: Codable, Equatable, Sendable {
+    public let synced: Int?
+    public let error: String?
+}
+
+public struct CalendarSyncResult: Codable, Equatable, Sendable {
+    public let sources: [String: CalendarSourceSyncResult]
+    public let count: Int
+}
+
 public final class CalendarClient: Sendable {
     private let apiClient: APIClient
 
@@ -67,4 +162,26 @@ public final class CalendarClient: Sendable {
         let query = "calendar/events?from=\(from)&to=\(to)"
         return try await apiClient.get(query)
     }
+
+    public func listSources() async throws -> [CalendarSource] {
+        try await apiClient.get("calendar/sources")
+    }
+
+    public func addSource(_ request: CalendarSourceCreateRequest) async throws -> CalendarSource {
+        try await apiClient.post("calendar/sources", body: request)
+    }
+
+    public func updateSource(id: Int, patch: CalendarSourceUpdateRequest) async throws -> CalendarSource {
+        try await apiClient.put("calendar/sources/\(id)", body: patch)
+    }
+
+    public func deleteSource(id: Int) async throws {
+        try await apiClient.delete("calendar/sources/\(id)")
+    }
+
+    public func sync() async throws -> CalendarSyncResult {
+        try await apiClient.post("calendar/sync", body: CalendarEmptyRequest())
+    }
 }
+
+private struct CalendarEmptyRequest: Encodable {}

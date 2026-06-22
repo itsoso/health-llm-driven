@@ -91,6 +91,14 @@ public final class APIClient: @unchecked Sendable {
         return try await decode(data: data, response: response)
     }
 
+    public func put<T: Decodable, Body: Encodable>(_ path: String, body: Body) async throws -> T {
+        var request = try await makeRequest(path: path, method: "PUT")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try encoder.encode(body)
+        let (data, response) = try await session.data(for: request)
+        return try await decode(data: data, response: response)
+    }
+
     /// Uploads a single file as `multipart/form-data` and decodes the JSON
     /// response. Used by endpoints like `/prescriptions/recognize` that take an
     /// image file under one form field. The boundary is generated per-call so
