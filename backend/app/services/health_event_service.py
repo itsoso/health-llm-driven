@@ -24,12 +24,19 @@ RECORD_TYPE_MAP = {
 
 # 可由可穿戴/设备自动闭环的事件类型 → 协议域。只用于唯一匹配的被动协议;
 # 明确 EventSource.config.health_protocol_id 时优先走配置。
+# COMPLETION 设备观察动词(device_observation_service)也走此表唯一匹配:
+#   nasal_wash_completed→respiratory、pushup_set_completed→training/activity/exercise、
+#   hand_sanitize_completed→activity。eye_break_completed 故意不在此(无 eye/eyecare
+#   协议域,PROTOCOL_DOMAINS 无该值),只接受 payload 显式 protocol_id,绝不臆造域。
 EVENT_PROTOCOL_DOMAINS = {
     "exercise": ("training", "activity"),
     "workout": ("training", "activity"),
     "activity": ("activity", "training"),
     "sleep": ("sleep",),
     "water": ("hydration",),
+    "nasal_wash_completed": ("respiratory",),
+    "pushup_set_completed": ("training", "activity", "exercise"),
+    "hand_sanitize_completed": ("activity",),
 }
 
 PROTOCOL_ID_KEYS = ("health_protocol_id", "protocol_id", "auto_observe_protocol_id")

@@ -157,6 +157,7 @@ from app.api import (
     desktop,
     ambient,
     rokid,
+    device_observation,
 )
 
 api_router = APIRouter()
@@ -319,6 +320,7 @@ api_router.include_router(client_events.router)
 api_router.include_router(desktop.router)
 api_router.include_router(ambient.router)
 api_router.include_router(rokid.router)
+api_router.include_router(device_observation.router)
 
 # ── Environment & Context ──────────────────────────────────────────
 api_router.include_router(environment.router, tags=["environment"])
