@@ -213,6 +213,8 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <SettingRow icon="notifications-outline" label="推送通知"
             onPress={() => router.push('/notification-settings' as any)} />
+          <SettingRow icon="eye-outline" label="科学用眼 (20-20-20)"
+            onPress={() => router.push('/eye-care' as any)} />
           <SettingRow icon="volume-high-outline" label="语音风格"
             onPress={() => router.push('/voice-style' as any)} />
           <SettingRow icon="mic-outline" label="Siri 语音记录"

@@ -12,6 +12,7 @@ import { queryClient, persistOptions } from '../applib/queryClient';
 import { AuthProvider, useAuth } from '../hooks/useAuth';
 import { ToastProvider } from '../hooks/useToast';
 import { useNotifications } from '../hooks/useNotifications';
+import { useEyeBreakReminders } from '../hooks/useEyeBreakReminders';
 import { useBiometricLock } from '../hooks/useBiometricLock';
 import { useGPSAutoRefresh } from '../hooks/useGPSAutoRefresh';
 import NotificationBanner from '../components/notifications/NotificationBanner';
@@ -63,6 +64,9 @@ function AppContent() {
 
   useNotifications(isAuthenticated);
   useGPSAutoRefresh(isAuthenticated);
+  // 科学用眼 20-20-20: 根级挂一次, 让「滚动当日重排」在 App 回前台时跑,
+  // 无需用户停留在设置屏 (eye-care.tsx 另用同一 hook 做 UI 状态)。
+  useEyeBreakReminders(isAuthenticated);
 
   // iOS BackgroundFetch — best-effort 后台位置刷新. 已授权才注册.
   // 这里跑 effect 是因为权限授予 (通过 onboarding modal) 后才能注册.
@@ -125,6 +129,7 @@ function AppContent() {
         <Stack.Screen name="family" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="location" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="voice-style" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="eye-care" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="doctor-loop" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="monthly-reports" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="ai-profile" options={{ headerShown: false, presentation: 'modal' }} />
