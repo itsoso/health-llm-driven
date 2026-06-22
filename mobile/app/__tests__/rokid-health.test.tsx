@@ -809,6 +809,17 @@ describe('RokidHealthScreen', () => {
       expect(mockUpdateRokidCustomView).toHaveBeenCalledWith(expect.stringContaining('开始拍照记录这餐'));
       expect(screen.getByText('开始拍照记录这餐')).toBeTruthy();
     });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('复制调试信息'));
+      await flushAsyncUpdates();
+    });
+
+    const copied = mockSetClipboardStringAsync.mock.calls.at(-1)?.[0] as string;
+    expect(copied).toContain('photo.phase=submitted');
+    expect(copied).toContain('photo.source=rokid_glasses');
+    expect(copied).toContain('photo.bytes=2048');
+    expect(copied).not.toContain('jpeg-base64');
   });
 
   it('shows a saved diet record summary after voice-triggered food photo recognition', async () => {

@@ -87,6 +87,18 @@ type VoiceDebugState = {
   fallbackLastSource?: string;
   fallbackLastEventAt?: string;
   fallbackError?: string;
+  photoPhase?: string;
+  photoSource?: string;
+  photoRequestedAt?: string;
+  photoResultAt?: string;
+  photoByteLength?: number;
+  photoMimeType?: string;
+  photoHasBase64?: boolean;
+  photoHasImageUri?: boolean;
+  photoHasSha256?: boolean;
+  photoError?: string;
+  photoDraftStatus?: string;
+  photoSummary?: string;
 };
 
 type VoiceSelfCheckStatus = 'pass' | 'warn' | 'fail' | 'info';
@@ -514,6 +526,7 @@ function buildVoiceSelfCheck(
     || status?.lastCustomViewOpenCommandAccepted === true;
   const transcript = status?.lastSpeechTranscript || voiceDebug.lastTranscript;
   const commandAction = voiceDebug.lastCommandAction;
+  const photoPhase = voiceDebug.photoPhase;
   const speechDenied = status?.speechAuthorizationStatus === 'denied'
     || status?.speechAuthorizationStatus === 'restricted';
   const phoneFallbackActive = voiceState.status === 'listening' && voiceDebug.fallbackMode === 'phone_mic';
@@ -627,6 +640,20 @@ function buildVoiceSelfCheck(
           ? '已有转写，等待命令服务返回'
           : '等待明确语音指令，例如“记录这顿饭”',
     },
+    ...(commandAction === 'capture_food_photo' || photoPhase ? [{
+      id: 'photo',
+      title: '拍照链路',
+      status: photoPhase === 'submitted' || photoPhase === 'native_received'
+        ? 'pass' as const
+        : photoPhase === 'native_failed' || photoPhase === 'failed'
+          ? 'fail' as const
+          : photoPhase
+            ? 'warn' as const
+            : 'warn' as const,
+      detail: photoPhase
+        ? `${photoPhase}${voiceDebug.photoSource ? ` · ${voiceDebug.photoSource}` : ''}${typeof voiceDebug.photoByteLength === 'number' ? ` · ${voiceDebug.photoByteLength} bytes` : ''}${voiceDebug.photoError ? ` · ${voiceDebug.photoError}` : ''}`
+        : '命令已路由, 等待进入拍照 handler',
+    }] : []),
   ];
 
   return { summary, items };
@@ -699,6 +726,18 @@ function buildRokidVoiceDebugText(
     `route.lastAt=${debugValue(voiceDebug.lastCommandAt)}`,
     `route.lastReply=${debugValue(voiceDebug.lastCommandReply)}`,
     `route.lastError=${debugValue(voiceDebug.lastCommandError)}`,
+    `photo.phase=${debugValue(voiceDebug.photoPhase)}`,
+    `photo.source=${debugValue(voiceDebug.photoSource)}`,
+    `photo.requestedAt=${debugValue(voiceDebug.photoRequestedAt ? formatRokidLogTimestamp(voiceDebug.photoRequestedAt) : undefined)}`,
+    `photo.resultAt=${debugValue(voiceDebug.photoResultAt ? formatRokidLogTimestamp(voiceDebug.photoResultAt) : undefined)}`,
+    `photo.bytes=${debugValue(voiceDebug.photoByteLength)}`,
+    `photo.mime=${debugValue(voiceDebug.photoMimeType)}`,
+    `photo.hasBase64=${debugValue(voiceDebug.photoHasBase64)}`,
+    `photo.hasImageUri=${debugValue(voiceDebug.photoHasImageUri)}`,
+    `photo.hasSha256=${debugValue(voiceDebug.photoHasSha256)}`,
+    `photo.error=${debugValue(voiceDebug.photoError)}`,
+    `photo.draft=${debugValue(voiceDebug.photoDraftStatus)}`,
+    `photo.summary=${debugValue(voiceDebug.photoSummary)}`,
     '',
     '[self_check]',
     ...selfCheck.items.map((item) => `${item.status} ${item.title}: ${item.detail}`),
@@ -1336,12 +1375,13 @@ export default function RokidHealthScreen() {
     // council #6 不假装成功:食物拍照既无识别结果、也无可持久化图像引用 → 没有用户可确认的草稿,
     // 不要显示"已提交草稿"。明确报失败。
     if (action.intent === 'food_scan' && !recognitionResult && !opts.imageUri && !opts.imageSha256) {
+      const message = '拍照识别失败,未生成可确认的草稿,请重试';
       setCaptureState({
         status: 'failed',
         actionTitle: action.title,
-        message: '拍照识别失败,未生成可确认的草稿,请重试',
+        message,
       });
-      return;
+      return { ok: false, message, nutritionSummary: undefined };
     }
 
     const submitResult = await submitRokidVisualInput({
@@ -1361,21 +1401,40 @@ export default function RokidHealthScreen() {
     if (savedDietRecord) {
       await queryClient.invalidateQueries({ queryKey: ['diet'] });
     }
+    const message = savedDietRecord
+      ? `已保存饮食记录${nutritionSummary ? `：${nutritionSummary}` : ''}`
+      : `已提交${action.title}草稿${nutritionSummary ? `：${nutritionSummary}` : ''}`;
     setCaptureState({
       status: 'submitted',
       actionTitle: action.title,
-      message: savedDietRecord
-        ? `已保存饮食记录${nutritionSummary ? `：${nutritionSummary}` : ''}`
-        : `已提交${action.title}草稿${nutritionSummary ? `：${nutritionSummary}` : ''}`,
+      message,
     });
+    return {
+      ok: true,
+      message,
+      nutritionSummary,
+      savedDietRecord,
+    };
   };
 
   // council #1 R4:眼镜拍照不可用时用手机相机,但仍走 Rokid 草稿流(needs_confirmation)。
   // 不再深链到 /diet?capture=photo —— 那条 diet.tsx 会立即 createDietRecord 入库,逃离 draft+confirm。
   const openMobileFoodCameraFallback = async (action: (typeof CAPTURE_ACTIONS)[number]) => {
     try {
+      setVoiceDebug((prev) => ({
+        ...prev,
+        photoPhase: prev.photoPhase === 'native_failed' || prev.photoPhase === 'blocked' ? 'phone_fallback' : prev.photoPhase,
+        photoSource: 'phone_camera_fallback',
+      }));
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
+        setVoiceDebug((prev) => ({
+          ...prev,
+          photoPhase: 'failed',
+          photoSource: 'phone_camera_fallback',
+          photoResultAt: new Date().toISOString(),
+          photoError: 'phone_camera_permission_denied',
+        }));
         setCaptureState({ status: 'failed', actionTitle: action.title, message: '需要相机权限才能用手机拍照记录' });
         return;
       }
@@ -1386,20 +1445,55 @@ export default function RokidHealthScreen() {
       });
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.6, base64: true });
       if (result.canceled || !result.assets?.[0]?.base64) {
+        setVoiceDebug((prev) => ({
+          ...prev,
+          photoPhase: 'cancelled',
+          photoSource: 'phone_camera_fallback',
+          photoResultAt: new Date().toISOString(),
+          photoError: undefined,
+        }));
         setCaptureState({ status: 'idle', actionTitle: action.title, message: '已取消手机拍照' });
         return;
       }
       const asset = result.assets[0];
-      await submitRokidFoodDraft(action, {
+      setVoiceDebug((prev) => ({
+        ...prev,
+        photoPhase: 'phone_received',
+        photoSource: 'phone_camera_fallback',
+        photoResultAt: new Date().toISOString(),
+        photoByteLength: asset.base64 ? Math.round(asset.base64.length * 0.75) : undefined,
+        photoMimeType: 'image/jpeg',
+        photoHasBase64: Boolean(asset.base64),
+        photoHasImageUri: Boolean(asset.uri),
+        photoHasSha256: false,
+        photoError: undefined,
+      }));
+      const draftResult = await submitRokidFoodDraft(action, {
         imageBase64: asset.base64 ?? undefined,
         imageUri: asset.uri,
         captureSource: 'phone_camera_fallback',
       });
+      setVoiceDebug((prev) => ({
+        ...prev,
+        photoPhase: draftResult.ok ? 'submitted' : 'failed',
+        photoSource: 'phone_camera_fallback',
+        photoDraftStatus: draftResult.ok ? 'submitted' : 'failed',
+        photoSummary: draftResult.nutritionSummary ?? draftResult.message,
+        photoError: draftResult.ok ? undefined : draftResult.message,
+      }));
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'capture_failed';
+      setVoiceDebug((prev) => ({
+        ...prev,
+        photoPhase: 'failed',
+        photoSource: 'phone_camera_fallback',
+        photoResultAt: new Date().toISOString(),
+        photoError: message,
+      }));
       setCaptureState({
         status: 'failed',
         actionTitle: action.title,
-        message: `手机拍照失败: ${error instanceof Error ? error.message : 'capture_failed'}`,
+        message: `手机拍照失败: ${message}`,
       });
     }
   };
@@ -1627,6 +1721,22 @@ export default function RokidHealthScreen() {
 
   const handleVisualCapture = async (action: (typeof CAPTURE_ACTIONS)[number]) => {
     setCaptureState({ status: 'capturing', actionTitle: action.title, message: `${action.title}提交中...` });
+    const startedAt = new Date().toISOString();
+    setVoiceDebug((prev) => ({
+      ...prev,
+      photoPhase: 'starting',
+      photoSource: 'rokid_glasses',
+      photoRequestedAt: startedAt,
+      photoResultAt: undefined,
+      photoByteLength: undefined,
+      photoMimeType: undefined,
+      photoHasBase64: undefined,
+      photoHasImageUri: undefined,
+      photoHasSha256: undefined,
+      photoError: undefined,
+      photoDraftStatus: undefined,
+      photoSummary: undefined,
+    }));
     try {
       let latestStatus = status;
       try {
@@ -1640,6 +1750,12 @@ export default function RokidHealthScreen() {
         hasRokidGlassesCaptureHardBlocker(latestStatus)
       ) {
         if (action.intent === 'food_scan') {
+          setVoiceDebug((prev) => ({
+            ...prev,
+            photoPhase: 'blocked',
+            photoError: 'rokid_capture_hard_blocker',
+            photoResultAt: new Date().toISOString(),
+          }));
           await openMobileFoodCameraFallback(action);
           return;
         }
@@ -1650,9 +1766,32 @@ export default function RokidHealthScreen() {
         actionTitle: action.title,
         message: `正在从眼镜拍照并回传(BLE 较慢,请稍候)…`,
       });
-      const captureResult = await takeRokidPhotoBase64WithTimeout({ width: 1024, height: 768, quality: 80 });
+      setVoiceDebug((prev) => ({
+        ...prev,
+        photoPhase: 'native_requesting',
+        photoSource: 'rokid_glasses',
+        photoRequestedAt: new Date().toISOString(),
+        photoError: undefined,
+      }));
+      let captureResult: Record<string, unknown>;
+      try {
+        captureResult = await takeRokidPhotoBase64WithTimeout({ width: 1024, height: 768, quality: 80 });
+      } finally {
+        try {
+          await statusQuery.refetch();
+        } catch {
+          // Native photo timeline refresh is diagnostic only; capture result remains the source of truth.
+        }
+      }
       if (captureResult.ok === false) {
         const reason = typeof captureResult.reason === 'string' ? captureResult.reason : 'rokid_capture_failed';
+        setVoiceDebug((prev) => ({
+          ...prev,
+          photoPhase: 'native_failed',
+          photoSource: 'rokid_glasses',
+          photoResultAt: new Date().toISOString(),
+          photoError: reason,
+        }));
         if (action.intent === 'food_scan' && isRokidNativeChannelNotReady(reason)) {
           await openMobileFoodCameraFallback(action);
           return;
@@ -1660,18 +1799,47 @@ export default function RokidHealthScreen() {
         throw new Error(reason);
       }
       const imageByteLength = readNumber(captureResult, ['byteLength', 'byte_length', 'size']);
-      await submitRokidFoodDraft(action, {
-        imageBase64: readString(captureResult, ['base64', 'imageBase64', 'image_base64']),
-        imageUri: readString(captureResult, ['imageUri', 'image_uri', 'uri', 'localUri', 'path']),
-        imageSha256: readValidSha256(captureResult),
+      const imageBase64 = readString(captureResult, ['base64', 'imageBase64', 'image_base64']);
+      const imageUri = readString(captureResult, ['imageUri', 'image_uri', 'uri', 'localUri', 'path']);
+      const imageSha256 = readValidSha256(captureResult);
+      setVoiceDebug((prev) => ({
+        ...prev,
+        photoPhase: 'native_received',
+        photoSource: 'rokid_glasses',
+        photoResultAt: new Date().toISOString(),
+        photoByteLength: typeof imageByteLength === 'number' ? imageByteLength : undefined,
+        photoMimeType: readString(captureResult, ['mimeType', 'mime_type', 'contentType']),
+        photoHasBase64: Boolean(imageBase64),
+        photoHasImageUri: Boolean(imageUri),
+        photoHasSha256: Boolean(imageSha256),
+        photoError: undefined,
+      }));
+      const draftResult = await submitRokidFoodDraft(action, {
+        imageBase64,
+        imageUri,
+        imageSha256,
         imageByteLength: typeof imageByteLength === 'number' ? imageByteLength : undefined,
         captureSource: 'rokid_glasses',
       });
+      setVoiceDebug((prev) => ({
+        ...prev,
+        photoPhase: draftResult.ok ? 'submitted' : 'failed',
+        photoDraftStatus: draftResult.ok ? 'submitted' : 'failed',
+        photoSummary: draftResult.nutritionSummary ?? draftResult.message,
+        photoError: draftResult.ok ? undefined : draftResult.message,
+      }));
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'capture_failed';
+      setVoiceDebug((prev) => ({
+        ...prev,
+        photoPhase: 'failed',
+        photoResultAt: new Date().toISOString(),
+        photoError: message,
+      }));
       setCaptureState({
         status: 'failed',
         actionTitle: action.title,
-        message: `${action.title}失败: ${error instanceof Error ? error.message : 'capture_failed'}`,
+        message: `${action.title}失败: ${message}`,
       });
     }
   };
