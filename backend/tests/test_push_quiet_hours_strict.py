@@ -53,6 +53,17 @@ def _make_user(db, username="strict_user"):
     return user
 
 
+def _set_quiet_hours(db, user_id: int, *, start: str, end: str) -> None:
+    settings = (
+        db.query(UserNotificationSetting)
+        .filter(UserNotificationSetting.user_id == user_id)
+        .first()
+    )
+    settings.quiet_hours_start = start
+    settings.quiet_hours_end = end
+    db.commit()
+
+
 @pytest.mark.parametrize("severity", ["medium", "high"])
 @pytest.mark.asyncio
 async def test_quiet_hours_delays_non_critical_severities(db, severity):
@@ -96,6 +107,69 @@ async def test_quiet_hours_delays_non_critical_severities(db, severity):
     assert log.scheduled_at.minute == 30
     # 还是同一天的 08:30 (因为 fake_now 是 03:00 之前)
     assert log.scheduled_at.day == fake_now.day
+
+
+@pytest.mark.asyncio
+async def test_morning_floor_delays_reminders_before_8_even_if_user_quiet_hours_end_earlier(db):
+    """普通 push 在 08:00 前不发送,即使用户 quiet_hours_end 配得更早。"""
+    user = _make_user(db, username="morning_floor")
+    _set_quiet_hours(db, user.id, start="22:00", end="07:00")
+    svc = PushService(db)
+
+    fake_now = datetime(2026, 5, 12, 7, 59, 0)
+    with patch("app.services.notification.push_service.get_china_now", return_value=fake_now), \
+         patch.object(PushService, "_send_ios", new=AsyncMock(return_value={"success": True})):
+        result = await svc.send_notification(
+            user_id=user.id,
+            notification_type="reminder",
+            title="早晨提醒",
+            content="08:00 前不应发出。",
+        )
+
+    assert result["success"] is False
+    assert result["reason"] == "delayed_for_quiet_hours"
+    delayed = (
+        db.query(NotificationLog)
+        .filter(
+            NotificationLog.user_id == user.id,
+            NotificationLog.status == NotificationStatus.DELAYED.value,
+        )
+        .one()
+    )
+    assert delayed.scheduled_at.hour == 8
+    assert delayed.scheduled_at.minute == 0
+
+
+@pytest.mark.asyncio
+async def test_morning_floor_delays_cross_midnight_quiet_hours_until_8(db):
+    """晚上进入静默后,即使用户 quiet_hours_end=07:00, delayed 也不能排到 08:00 前。"""
+    user = _make_user(db, username="morning_floor_midnight")
+    _set_quiet_hours(db, user.id, start="22:00", end="07:00")
+    svc = PushService(db)
+
+    fake_now = datetime(2026, 5, 12, 23, 30, 0)
+    with patch("app.services.notification.push_service.get_china_now", return_value=fake_now), \
+         patch.object(PushService, "_send_ios", new=AsyncMock(return_value={"success": True})):
+        result = await svc.send_notification(
+            user_id=user.id,
+            notification_type="reminder",
+            title="夜间提醒",
+            content="应延迟到明早 08:00。",
+        )
+
+    assert result["success"] is False
+    assert result["reason"] == "delayed_for_quiet_hours"
+    delayed = (
+        db.query(NotificationLog)
+        .filter(
+            NotificationLog.user_id == user.id,
+            NotificationLog.status == NotificationStatus.DELAYED.value,
+        )
+        .one()
+    )
+    assert delayed.scheduled_at.day == 13
+    assert delayed.scheduled_at.hour == 8
+    assert delayed.scheduled_at.minute == 0
 
 
 @pytest.mark.asyncio

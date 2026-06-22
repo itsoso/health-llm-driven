@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 
 QuietHoursPolicy = Literal["delay", "bypass", "drop"]
 
+MORNING_PUSH_FLOOR = "08:00"
+DEFAULT_QUIET_HOURS_START = "22:00"
+DEFAULT_QUIET_HOURS_END = "08:30"
+
 
 # H1-B: severity 排序 (低 → 高). 其他字面量默认 0.
 _SEVERITY_ORDER = {
@@ -75,6 +79,48 @@ def _allows_telegram_fallback(notification_type: str) -> bool:
     """Global Telegram chat is an operator fallback, not a per-user reminder channel."""
 
     return notification_type not in _TELEGRAM_FALLBACK_BLOCKED_TYPES
+
+
+def _hhmm_to_minutes(value: Optional[str], fallback: str) -> int:
+    try:
+        raw = value or fallback
+        h, m = (int(x) for x in raw.split(":"))
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            raise ValueError(raw)
+        return h * 60 + m
+    except Exception:
+        h, m = (int(x) for x in fallback.split(":"))
+        return h * 60 + m
+
+
+def _is_time_in_window(current: int, start: int, end: int) -> bool:
+    if start > end:
+        return current >= start or current < end
+    return start <= current < end
+
+
+def _next_local_time(now: datetime, minutes: int) -> datetime:
+    candidate = now.replace(
+        hour=minutes // 60,
+        minute=minutes % 60,
+        second=0,
+        microsecond=0,
+    )
+    if candidate <= now:
+        candidate += timedelta(days=1)
+    return candidate
+
+
+def _not_before_morning_floor(candidate: datetime, floor_minutes: int) -> datetime:
+    candidate_min = candidate.hour * 60 + candidate.minute
+    if candidate_min >= floor_minutes:
+        return candidate
+    return candidate.replace(
+        hour=floor_minutes // 60,
+        minute=floor_minutes % 60,
+        second=0,
+        microsecond=0,
+    )
 
 
 def _advice_candidate_from_push(
@@ -191,24 +237,21 @@ class PushService:
             return new_settings
 
     def is_quiet_hours(self, user_id: int) -> bool:
-        """检查当前是否在免打扰时段。默认 22:00–08:30（跨午夜）。"""
+        """检查当前是否在免打扰时段。普通 push 08:00 前一律延迟。"""
         settings = self.get_user_settings(user_id)
+
+        now = get_china_now()
+        current_min = now.hour * 60 + now.minute
+        floor_min = _hhmm_to_minutes(MORNING_PUSH_FLOOR, "08:00")
+        if current_min < floor_min:
+            return True
+
         if not settings:
             return False
 
-        now = get_china_now()
-        current_time = now.strftime("%H:%M")
-
-        start = settings.quiet_hours_start or "22:00"
-        end = settings.quiet_hours_end or "08:30"
-
-        # 处理跨越午夜的情况
-        if start > end:
-            # 例如 22:00 - 08:30
-            return current_time >= start or current_time < end
-        else:
-            # 例如 01:00 - 06:00
-            return start <= current_time < end
+        start = _hhmm_to_minutes(settings.quiet_hours_start, DEFAULT_QUIET_HOURS_START)
+        end = _hhmm_to_minutes(settings.quiet_hours_end, DEFAULT_QUIET_HOURS_END)
+        return _is_time_in_window(current_min, start, end)
 
     def next_quiet_hours_end(self, user_id: int) -> datetime:
         """计算下一次静默时段结束的本地时间.
@@ -219,17 +262,30 @@ class PushService:
         但实际只在 is_quiet_hours()=True 时才调本函数, 所以"今天 end"或"明天 end"都成立.
         """
         settings = self.get_user_settings(user_id)
-        end_str = (settings.quiet_hours_end if settings else None) or "08:30"
-        try:
-            h, m = (int(x) for x in end_str.split(":"))
-        except Exception:
-            h, m = 8, 30
         now = get_china_now()
-        candidate = now.replace(hour=h, minute=m, second=0, microsecond=0)
-        # 若候选时间已过 (例如现在是 09:00, end=08:30), 推到次日同时刻
-        if candidate <= now:
-            candidate += timedelta(days=1)
-        return candidate
+        current_min = now.hour * 60 + now.minute
+        floor_min = _hhmm_to_minutes(MORNING_PUSH_FLOOR, "08:00")
+        candidates: list[datetime] = []
+
+        if current_min < floor_min:
+            candidates.append(_next_local_time(now, floor_min))
+
+        end = _hhmm_to_minutes(
+            settings.quiet_hours_end if settings else None,
+            DEFAULT_QUIET_HOURS_END,
+        )
+        if settings:
+            start = _hhmm_to_minutes(settings.quiet_hours_start, DEFAULT_QUIET_HOURS_START)
+            if _is_time_in_window(current_min, start, end):
+                candidates.append(
+                    _not_before_morning_floor(_next_local_time(now, end), floor_min)
+                )
+
+        if candidates:
+            return max(candidates)
+
+        # 兼容旧语义: 非静默时段被直接调用时, 返回下一次 quiet_hours_end。
+        return _not_before_morning_floor(_next_local_time(now, end), floor_min)
 
     def can_send_notification(
         self,
