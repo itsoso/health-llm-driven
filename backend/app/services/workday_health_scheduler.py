@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.models.daily_health import GarminData
 from app.models.health_protocol import HealthProtocol
 from app.services import recovery_decision
+from app.services import workday_microbreak_safety as microbreak_safety
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +50,32 @@ def _readiness_tone(score: Optional[int]) -> str:
     return "red"
 
 
+def _post_meal_arrival_spec(base: Dict[str, Any], reason: str) -> WorkdayActionSpec:
+    """§8.3 餐后 <60min:把 arrival 的俯卧撑换成步行(green/yellow tone 也避开俯卧撑)。"""
+    return WorkdayActionSpec(
+        slot="arrival",
+        domain="activity",
+        name="到公司后轻松步行 5 分钟",
+        time_window="morning",
+        implied_quantity={
+            **base,
+            "slot": "arrival",
+            "exercise_type": "walk",
+            "duration_min": 5,
+            "intensity": "easy",
+            "downgraded_from": "pushups",
+            "safety_gate": "after_meal_less_than_60_min",
+            "safety_reason": reason,
+        },
+    )
+
+
 def _specs_for_tone(
     tone: str,
     score: Optional[int],
     *,
     readiness_source: str,
+    gate: Optional[microbreak_safety.MicrobreakGateDecision] = None,
 ) -> List[WorkdayActionSpec]:
     base = {
         "readiness_score": score,
@@ -61,9 +83,23 @@ def _specs_for_tone(
         "readiness_source": readiness_source,
         "planner": _SOURCE_PREFIX,
     }
+    if gate is not None:
+        base["safety_action"] = gate.action
+        if gate.reason:
+            base["safety_reason"] = gate.reason
+    # §8.3 餐后 <60min:tone 是 green/yellow(本应给俯卧撑)时,把 arrival 换成步行。
+    # tone == red 时 arrival 本就不是俯卧撑(就绪度降级已生效),无需再换。
+    post_meal_swap = (
+        gate is not None
+        and gate.avoid_pushups
+        and not gate.is_reject
+        and tone in {"green", "yellow"}
+    )
     if tone == "green":
-        return [
-            WorkdayActionSpec(
+        arrival = (
+            _post_meal_arrival_spec(base, gate.reason if gate else "")
+            if post_meal_swap
+            else WorkdayActionSpec(
                 slot="arrival",
                 domain="training",
                 name="到公司后俯卧撑 12 个",
@@ -75,7 +111,10 @@ def _specs_for_tone(
                     "reps": 12,
                     "intensity": "micro",
                 },
-            ),
+            )
+        )
+        return [
+            arrival,
             WorkdayActionSpec(
                 slot="post_lunch",
                 domain="exercise",
@@ -146,8 +185,10 @@ def _specs_for_tone(
                 },
             ),
         ]
-    return [
-        WorkdayActionSpec(
+    yellow_arrival = (
+        _post_meal_arrival_spec(base, gate.reason if gate else "")
+        if post_meal_swap
+        else WorkdayActionSpec(
             slot="arrival",
             domain="training",
             name="到公司后上斜俯卧撑 6 个",
@@ -160,7 +201,10 @@ def _specs_for_tone(
                 "intensity": "low",
                 "downgraded_from": "pushups",
             },
-        ),
+        )
+    )
+    return [
+        yellow_arrival,
         WorkdayActionSpec(
             slot="post_lunch",
             domain="exercise",
@@ -233,6 +277,29 @@ def _find_slot_protocol(db: Session, user_id: int, slot: str) -> Optional[Health
     return rows[0] if rows else None
 
 
+def _archive_all_workday_protocols(db: Session, user_id: int) -> int:
+    """§8.3 reject 分支:把今天已生成的工间微运动协议全部归档,不再投影到 agenda。
+
+    安全完整性:reject 必须保证**没有任何**本系统的工间运动协议存活(否则急性症状用户
+    仍可能在手表 agenda 看到「俯卧撑」—— under-alarm)。因此用两条谓词的并集兜底:
+      - notes 前缀 `workday_scheduler:v0:`(创建时写入)
+      - implied_quantity.planner == 同前缀(即便 notes 被人为改写也能命中)
+    幂等:只查 active;已归档的不再计数。
+    """
+    rows = db.query(HealthProtocol).filter(
+        HealthProtocol.user_id == user_id,
+        HealthProtocol.status == "active",
+    ).all()
+    archived = 0
+    for protocol in rows:
+        notes_hit = bool(protocol.notes and protocol.notes.startswith(f"{_SOURCE_PREFIX}:"))
+        planner_hit = (protocol.implied_quantity or {}).get("planner") == _SOURCE_PREFIX
+        if notes_hit or planner_hit:
+            protocol.status = "archived"
+            archived += 1
+    return archived
+
+
 def _apply_spec(
     protocol: HealthProtocol,
     spec: WorkdayActionSpec,
@@ -261,7 +328,38 @@ def generate_today(db: Session, user_id: int, *, day: Optional[date] = None) -> 
     """
     day = day or date.today()
     score, tone, readiness_source = _readiness_gate(db, user_id, day)
-    specs = _specs_for_tone(tone, score, readiness_source=readiness_source)
+
+    # §8.3 确定性安全闸门(reject / mobility 降级 / pushups)。
+    gate = microbreak_safety.evaluate(db, user_id, readiness_tone=tone, day=day)
+
+    # acute_symptom → reject:不给任何微运动 nudge,归档今天已生成的协议。
+    if gate.is_reject:
+        archived = _archive_all_workday_protocols(db, user_id)
+        db.commit()
+        logger.info(
+            # 不记录 gate.reason(含匹配到的症状关键词,属 Tier 级敏感健康数据,AGENTS.md §5);
+            # 只记信号类型供运维,具体理由仅随响应返回给本人。
+            "[workday_scheduler] microbreak rejected user=%s signals=%s archived=%s",
+            user_id,
+            gate.safety_signals,
+            archived,
+        )
+        return {
+            "date": day.isoformat(),
+            "readiness_score": score,
+            "readiness_tone": tone,
+            "readiness_source": readiness_source,
+            "microbreak_status": "rejected",
+            "safety_reason": gate.reason,
+            "safety_signals": gate.safety_signals,
+            "created": 0,
+            "updated": 0,
+            "archived": archived,
+            "protocol_ids": [],
+            "actions": [],
+        }
+
+    specs = _specs_for_tone(tone, score, readiness_source=readiness_source, gate=gate)
     created = 0
     updated = 0
     protocols: List[HealthProtocol] = []
@@ -294,6 +392,9 @@ def generate_today(db: Session, user_id: int, *, day: Optional[date] = None) -> 
         "readiness_score": score,
         "readiness_tone": tone,
         "readiness_source": readiness_source,
+        "microbreak_status": "downgraded" if gate.avoid_pushups else "offered",
+        "safety_reason": gate.reason,
+        "safety_signals": gate.safety_signals,
         "created": created,
         "updated": updated,
         "protocol_ids": [p.id for p in protocols],
