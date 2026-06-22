@@ -187,6 +187,12 @@ function handleNotificationResponse(response: Notifications.NotificationResponse
 // 唯一一次写;不 deep-link 进任何自动写屏)→ invalidate 首页两个 query key,让该项「熄灭」。
 // 失败在 LISTENER 边界吞掉(fire-and-forget 通知动作的正确姿势),但会先 log,
 // 与既有后台 handler 一致(用户可回 app 再操作)。
+function normalizeAgendaActionObjectId(raw: number | string): number | null {
+  if (typeof raw === 'number' && Number.isInteger(raw)) return raw;
+  if (typeof raw === 'string' && /^\d+$/.test(raw.trim())) return Number(raw);
+  return null;
+}
+
 export async function handleAgendaAction(
   status: 'done' | 'skipped',
   data?: Record<string, any>,
@@ -195,10 +201,21 @@ export async function handleAgendaAction(
     | { object_type?: string; object_id?: number | string }
     | undefined;
   if (!ref?.object_type || ref.object_id == null) return;
+  const objectId = normalizeAgendaActionObjectId(ref.object_id);
+  if (objectId == null) {
+    console.warn('[useNotifications] invalid agenda object_id', ref);
+    await emitClientEvent('agenda_action_failed', {
+      reason: 'invalid_object_id',
+      object_type: ref.object_type,
+      object_id: ref.object_id,
+      status,
+    });
+    return;
+  }
 
   try {
     await completeAgendaItem(
-      { object_type: ref.object_type, object_id: ref.object_id },
+      { object_type: ref.object_type, object_id: objectId },
       'protocol',
       undefined,
       { status },
@@ -211,6 +228,13 @@ export async function handleAgendaAction(
   } catch (err) {
     // Background action failed — log at the listener boundary, user can complete in-app later.
     console.warn('[useNotifications] agenda action failed', err);
+    await emitClientEvent('agenda_action_failed', {
+      reason: 'request_failed',
+      object_type: ref.object_type,
+      object_id: objectId,
+      status,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 

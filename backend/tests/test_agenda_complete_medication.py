@@ -212,6 +212,18 @@ def test_complete_skipped_bad_reason_400(client, db, auth_user_and_headers):
     assert r.status_code == 400
 
 
+def test_complete_skipped_requires_reason(client, db, auth_user_and_headers):
+    user, h = auth_user_and_headers
+    med = _seed_med(db, user.id)
+
+    r = client.post("/api/v1/agenda/complete", headers=h, json={
+        "object_type": "medication", "object_id": med.id,
+        "status": "skipped"})
+
+    assert r.status_code == 400
+    assert "skip_reason" in r.text
+
+
 # ─────────────────────────── ④ 跨用户隔离 ───────────────────────────
 
 def test_complete_other_users_medication_404(client, db, auth_user_and_headers):

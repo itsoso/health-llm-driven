@@ -98,6 +98,31 @@ def test_idempotent_double_post_one_log(client, db):
     assert len(logs) == 1, f"幂等被破坏:写了 {len(logs)} 条,依从被灌水"
 
 
+def test_complete_medication_action_id_writes_one_log(client, db):
+    """Watch 可直接完成 medication complete_ref,不再只支持 health_protocol。"""
+    user = _mk_user(db)
+    med = Medication(user_id=user.id, name="二甲双胍", dosage="500mg")
+    db.add(med)
+    db.commit()
+    db.refresh(med)
+
+    r = client.post(
+        f"/api/v1/watch/actions/agenda-medication-{med.id}/complete",
+        headers=_headers(user),
+    )
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["object_type"] == "medication"
+    assert body["object_id"] == med.id
+    assert body["status"] == "completed"
+    assert body["written"] == "medication_log"
+    logs = db.query(MedicationLog).filter(MedicationLog.user_id == user.id).all()
+    assert len(logs) == 1
+    assert logs[0].medication_id == med.id
+    assert logs[0].status == "taken"
+
+
 def test_skip_protocol_action_marks_today_skipped(client, db):
     """Watch 跳过按钮 → 只写协议事件,不落用药/补剂等领域完成记录。"""
     user = _mk_user(db)

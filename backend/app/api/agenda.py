@@ -69,6 +69,8 @@ async def agenda_complete(
 
     if data.status not in ("done", "skipped"):
         raise HTTPException(status_code=400, detail="status 仅支持 done 或 skipped")
+    if data.status == "skipped" and not data.skip_reason:
+        raise HTTPException(status_code=400, detail="status=skipped 时必须提供 skip_reason")
     if data.status == "skipped" and data.skip_reason is not None and data.skip_reason not in SKIP_REASONS:
         raise HTTPException(
             status_code=400, detail=f"未知 skip_reason(应为 {list(SKIP_REASONS)})")

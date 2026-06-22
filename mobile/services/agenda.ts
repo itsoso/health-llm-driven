@@ -111,11 +111,17 @@ export interface CompleteAgendaOptions {
 // TODO regenerate after backend deploy → 换成 components['schemas']['AgendaComplete']
 interface AgendaCompletePayload {
   object_type: string;
-  object_id: number | string;
+  object_id: number;
   status: AgendaCompleteStatus;
   skip_reason?: AgendaSkipReason | null;
   track: 'protocol' | 'manual';
   value?: Record<string, unknown> | null;
+}
+
+function normalizeAgendaObjectId(raw: number | string): number {
+  if (typeof raw === 'number' && Number.isInteger(raw)) return raw;
+  if (typeof raw === 'string' && /^\d+$/.test(raw.trim())) return Number(raw);
+  throw new Error('agenda object_id must be numeric');
 }
 
 /**
@@ -132,14 +138,14 @@ export async function completeAgendaItem(
   const status: AgendaCompleteStatus = options?.status ?? 'done';
   const payload: AgendaCompletePayload = {
     object_type: source.object_type,
-    object_id: source.object_id,
+    object_id: normalizeAgendaObjectId(source.object_id),
     status,
     track,
     value: value ?? null,
   };
-  // 仅在跳过且提供原因时携带 skip_reason(避免给 done 路径塞无意义字段)。
-  if (status === 'skipped' && options?.skipReason) {
-    payload.skip_reason = options.skipReason;
+  // skipped 必须有原因;通知后台动作没有上下文时默认 no_time,避免无原因跳过污染分析。
+  if (status === 'skipped') {
+    payload.skip_reason = options?.skipReason ?? 'no_time';
   }
   const resp = await api.post('/agenda/complete', payload);
   return resp.data;

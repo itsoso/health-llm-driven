@@ -20,8 +20,8 @@ from app.api.deps import get_current_user_required
 from app.database import get_db
 from app.models.symptom_entry import SymptomEntry
 from app.models.user import User
-from app.services import agenda_service
 from app.services import health_protocol_service as proto_svc
+from app.services import timeline_agenda_service as tas
 from app.services import workday_health_scheduler
 from app.services.watch_summary import build_watch_summary
 from app.twin import builder
@@ -61,6 +61,15 @@ def _parse_action_id(action_id: str) -> tuple[str, int]:
     return m.group("ot"), int(m.group("oid"))
 
 
+def _written_label(object_type: str, object_id: int, user_id: int, db: Session) -> str:
+    if object_type == "health_protocol":
+        p = proto_svc.get_protocol(db, object_id, user_id)
+        return _WRITTEN_BY_SOURCE_MODEL.get(p.source_model, "none") if p else "none"
+    if object_type in ("medication", "supplement"):
+        return "medication_log"
+    return "none"
+
+
 @router.get("/summary")
 async def watch_summary(
     current_user: User = Depends(get_current_user_required),
@@ -96,37 +105,37 @@ async def complete_action(
     """腕上「一键已做」→ 完成到点项,完成事实落真实业务表(用药/补剂依从)。
 
     - user_id 取自 token(绝不信任客户端)。
-    - action_id 解析失败 / 非 health_protocol 源 → 400(fail loud)。
-    - 协议不存在或非本人(IDOR)→ 404。
+    - action_id 解析失败 / 不支持来源 → 400(fail loud)。
+    - source 不存在或非本人(IDOR)→ 404。
     - 幂等:首次「非完成→完成」才落领域记录;重复 POST 不重复写。
     - 请求内禁 build_twin(本端点只操作协议/领域表)。
     """
     object_type, object_id = _parse_action_id(action_id)
 
-    if object_type != "health_protocol":
-        raise HTTPException(status_code=400, detail="该来源不支持腕上完成")
-
     try:
-        result = agenda_service.complete_item(
-            db, current_user.id, object_type, object_id, track="protocol", value=None
+        result = tas.complete_by_ref(
+            db, current_user.id, object_type, object_id,
+            status="done", track="protocol", value=None,
         )
     except LookupError:
-        # 协议不存在 / 非本人(含 IDOR)→ 404(complete_item 对 not-found 统一抛 LookupError)。
-        raise HTTPException(status_code=404, detail="协议不存在")
+        # source 不存在 / 非本人(含 IDOR)→ 404。
+        raise HTTPException(status_code=404, detail="完成来源不存在")
+    except tas.AgendaEventNotFound:
+        raise HTTPException(status_code=404, detail="议程事件不存在")
+    except tas.AgendaCompleteError as e:
+        raise HTTPException(status_code=422, detail=f"完成回写失败: {e}")
     except ValueError as e:
-        # 不支持的来源等显式拒绝 → 400(此端点已先挡非 health_protocol,留作纵深防御)。
+        # 不支持的来源等显式拒绝 → 400。
         raise HTTPException(status_code=400, detail=str(e))
-
-    # written 标签由协议 source_model 推导(user 过滤,IDOR 安全;不进 build_twin)
-    p = proto_svc.get_protocol(db, object_id, current_user.id)
-    written = _WRITTEN_BY_SOURCE_MODEL.get(p.source_model, "none") if p else "none"
 
     return {
         "action_id": action_id,
-        "object_type": result["object_type"],
-        "object_id": result["object_id"],
+        "object_type": object_type,
+        "object_id": object_id,
         "status": "completed",
-        "written": written,
+        "written": _written_label(object_type, object_id, current_user.id, db),
+        "event_id": result.get("event_id"),
+        "idempotent": bool(result.get("idempotent")),
     }
 
 

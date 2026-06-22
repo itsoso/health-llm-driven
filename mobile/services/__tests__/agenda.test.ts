@@ -90,7 +90,7 @@ describe('agenda service', () => {
       });
     });
 
-    it('skipped without a reason omits skip_reason entirely', async () => {
+    it('skipped without a reason defaults to no_time', async () => {
       await completeAgendaItem(
         { object_type: 'supplement', object_id: 3 },
         'protocol',
@@ -98,8 +98,18 @@ describe('agenda service', () => {
         { status: 'skipped' },
       );
 
-      expect(mockApi.post.mock.calls[0][1]).not.toHaveProperty('skip_reason');
-      expect(mockApi.post.mock.calls[0][1]).toMatchObject({ status: 'skipped' });
+      expect(mockApi.post.mock.calls[0][1]).toMatchObject({
+        status: 'skipped',
+        skip_reason: 'no_time',
+      });
+    });
+
+    it('rejects non-numeric object_id before posting completion payload', async () => {
+      await expect(
+        completeAgendaItem({ object_type: 'medication', object_id: 'med_7' }),
+      ).rejects.toThrow('agenda object_id must be numeric');
+
+      expect(mockApi.post).not.toHaveBeenCalled();
     });
 
     it('keeps manual-track value passthrough alongside status', async () => {

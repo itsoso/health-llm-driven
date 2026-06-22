@@ -22,6 +22,7 @@ export type ClientEventName =
   | 'watch_action_snoozed'
   | 'watch_action_skipped'
   | 'watch_action_failed'
+  | 'agenda_action_failed'
   // N-of-1 闭环北极星 (2026-06-17) — 已验证闭环数
   | 'verified_loop';              // meta: { cycle_id, verdict_count, total } 复查产出 ≥1 非 pending 裁决
 
@@ -38,6 +39,7 @@ export type ClientEventName =
  * - starter_chips_shown: { keys: string[], source: 'chat' }
  * - starter_chip_clicked: { key: string, priority: number, position: number, source: 'chat' }
  * - watch_action_*: { action_id: string, kind: string, priority_tier?: 'P0'|'P1'|'P2'|'P3'|'P4', reason?: string }
+ * - agenda_action_failed: { reason: string, object_type?: string, object_id?: unknown, status?: string }
  */
 export async function emitClientEvent(
   name: ClientEventName,

@@ -49,9 +49,11 @@ jest.mock('../../services/notificationRoutes', () => ({ resolveNotificationRoute
 import { handleAgendaAction } from '../useNotifications';
 import { completeAgendaItem } from '../../services/agenda';
 import { queryClient } from '../../applib/queryClient';
+import { emitClientEvent } from '../../services/clientEvents';
 
 const mockCompleteAgendaItem = completeAgendaItem as jest.Mock;
 const mockInvalidateQueries = queryClient.invalidateQueries as jest.Mock;
+const mockEmitClientEvent = emitClientEvent as jest.Mock;
 
 const REF = { object_type: 'health_protocol', object_id: 42 };
 
@@ -88,16 +90,37 @@ describe('handleAgendaAction (AGENDA_ACTION background action)', () => {
     expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['agenda', 'today'] });
   });
 
-  it('passes string object_id through unchanged (e.g. daily_plan_action keys)', async () => {
+  it('numeric string object_id is coerced before completing', async () => {
     await handleAgendaAction('done', {
-      complete_ref: { object_type: 'medication', object_id: 'med_7' },
+      complete_ref: { object_type: 'medication', object_id: '7' },
     });
     expect(mockCompleteAgendaItem).toHaveBeenCalledWith(
-      { object_type: 'medication', object_id: 'med_7' },
+      { object_type: 'medication', object_id: 7 },
       'protocol',
       undefined,
       { status: 'done' },
     );
+  });
+
+  it('non-numeric object_id is rejected and recorded without posting', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await handleAgendaAction('done', {
+      complete_ref: { object_type: 'medication', object_id: 'med_7' },
+    });
+
+    expect(mockCompleteAgendaItem).not.toHaveBeenCalled();
+    expect(mockInvalidateQueries).not.toHaveBeenCalled();
+    expect(mockEmitClientEvent).toHaveBeenCalledWith(
+      'agenda_action_failed',
+      expect.objectContaining({
+        reason: 'invalid_object_id',
+        object_type: 'medication',
+        object_id: 'med_7',
+      }),
+    );
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('no complete_ref → does nothing (no service call, no invalidation)', async () => {
@@ -119,6 +142,14 @@ describe('handleAgendaAction (AGENDA_ACTION background action)', () => {
 
     // failure surfaced via log, not a thrown error; no invalidation on failure
     expect(warn).toHaveBeenCalled();
+    expect(mockEmitClientEvent).toHaveBeenCalledWith(
+      'agenda_action_failed',
+      expect.objectContaining({
+        reason: 'request_failed',
+        object_type: 'health_protocol',
+        object_id: 42,
+      }),
+    );
     expect(mockInvalidateQueries).not.toHaveBeenCalled();
     warn.mockRestore();
   });
