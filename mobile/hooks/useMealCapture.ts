@@ -49,7 +49,14 @@ export interface MealCaptureResult {
 }
 
 export interface UseMealCaptureOptions {
+  /** Static fallback source. Prefer `sourceProvider` when the real source is only known at capture time. */
   source?: MealSessionSource;
+  /**
+   * Resolves the actual source at startSession time (read fresh, not snapshotted at hook init).
+   * Use this when the source can flip before the session starts (e.g. glasses → phone fallback),
+   * so the session + frames are persisted with the source actually used. Falls back to `source`.
+   */
+  sourceProvider?: () => MealSessionSource | undefined;
   /** Min spacing between frame captures (ms). The await on captureFrame already paces; this is a floor. */
   minIntervalMs?: number;
   /** Capture exactly one frame. Should await glasses photo, fall back to phone ImagePicker. */
@@ -75,8 +82,13 @@ function delay(ms: number): Promise<void> {
 }
 
 export function useMealCapture(options: UseMealCaptureOptions) {
-  const { source, captureFrame } = options;
+  const { source, sourceProvider, captureFrame } = options;
   const minIntervalMs = options.minIntervalMs ?? DEFAULT_MIN_INTERVAL_MS;
+
+  // Read the source fresh at startSession time so a glasses→phone flip before start
+  // is reflected in the persisted session, instead of a stale hook-init snapshot.
+  const sourceProviderRef = useRef(sourceProvider);
+  sourceProviderRef.current = sourceProvider;
 
   const [state, setState] = useState<MealCaptureState>({
     phase: 'idle',
@@ -94,10 +106,17 @@ export function useMealCapture(options: UseMealCaptureOptions) {
   const monitoringRef = useRef(false);
   const sessionIdRef = useRef<number | null>(null);
   const loopRunningRef = useRef(false);
+  // Live mirror of `phase` for the unmount path: a finished-pending-confirm session
+  // (phase 'draft'/'confirming') must NOT be auto-aborted, or the same session would
+  // be both finished (→needs_confirmation) and aborted (→aborted), so confirm can never run.
+  const phaseRef = useRef<MealCapturePhase>('idle');
   const captureFrameRef = useRef(captureFrame);
   captureFrameRef.current = captureFrame;
 
   const patch = useCallback((next: Partial<MealCaptureState>) => {
+    if (next.phase != null) {
+      phaseRef.current = next.phase;
+    }
     setState((prev) => ({ ...prev, ...next }));
   }, []);
 
@@ -195,7 +214,9 @@ export function useMealCapture(options: UseMealCaptureOptions) {
         isBusy: true,
       });
       try {
-        const session = await startMealSession({ consent: true, source });
+        // Resolve the real source now (provider wins over the static fallback).
+        const resolvedSource = sourceProviderRef.current?.() ?? source;
+        const session = await startMealSession({ consent: true, source: resolvedSource });
         sessionIdRef.current = session.id;
         monitoringRef.current = true;
         patch({
@@ -297,17 +318,27 @@ export function useMealCapture(options: UseMealCaptureOptions) {
   }, [patch]);
 
   /**
-   * Fire-and-forget abort for unmount/navigate-away while active — purges raw
-   * frames immediately. Mirrors rokid-health unmount cleanup. Safe to call when
-   * the session is already terminal (no session id → noop).
+   * Fire-and-forget abort for unmount/navigate-away while *actively capturing* —
+   * purges raw frames immediately. Mirrors rokid-health unmount cleanup.
+   *
+   * Only sessions still in an abortable phase (starting/monitoring/finishing) are
+   * aborted here. A finished-pending-confirm session (draft/confirming) is left
+   * alone: aborting it would conflict with the finish→needs_confirmation terminal
+   * state and block the confirm path. Abandoning such a session instead relies on
+   * the backend +7d TTL purge. Safe to call when already terminal (no session id → noop).
    */
   const abortOnUnmount = useCallback(() => {
     const sessionId = sessionIdRef.current;
     monitoringRef.current = false;
-    sessionIdRef.current = null;
-    if (sessionId != null) {
-      void abortMealSession(sessionId).catch(() => undefined);
+    const abortablePhase =
+      phaseRef.current === 'starting' ||
+      phaseRef.current === 'monitoring' ||
+      phaseRef.current === 'finishing';
+    if (sessionId == null || !abortablePhase) {
+      return;
     }
+    sessionIdRef.current = null;
+    void abortMealSession(sessionId).catch(() => undefined);
   }, []);
 
   useEffect(() => () => abortOnUnmount(), [abortOnUnmount]);

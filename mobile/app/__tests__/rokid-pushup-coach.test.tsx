@@ -15,6 +15,7 @@ const mockGetRokidIntegrationStatus = jest.fn();
 const mockCreateRokidPushupSession = jest.fn();
 const mockFinishRokidPushupSession = jest.fn();
 const mockListRokidPushupEvents = jest.fn();
+const mockGetRokidPushupSessionReview = jest.fn();
 const mockPost = jest.fn();
 const mockInvalidateRecordMutation = jest.fn();
 const mockGetDocumentAsync = jest.fn();
@@ -69,6 +70,7 @@ jest.mock('../../services/rokidPushupSession', () => {
     createRokidPushupSession: (...args: any[]) => mockCreateRokidPushupSession(...args),
     finishRokidPushupSession: (...args: any[]) => mockFinishRokidPushupSession(...args),
     listRokidPushupEvents: (...args: any[]) => mockListRokidPushupEvents(...args),
+    getRokidPushupSessionReview: (...args: any[]) => mockGetRokidPushupSessionReview(...args),
   };
 });
 
@@ -113,6 +115,15 @@ describe('RokidPushupCoachScreen', () => {
       iosBleDeviceName: 'Glasses_0077',
     });
     mockListRokidPushupEvents.mockResolvedValue([]);
+    mockGetRokidPushupSessionReview.mockResolvedValue({
+      session_id: 7,
+      session_quality: { reps: 5, avg_quality_score: 88, event_count: 5 },
+      training_context: null,
+      observations: ['节奏稳定。'],
+      teaching_links: [],
+      guidance_alerts: [],
+      disclaimer: '仅供参考。',
+    });
     mockPost.mockResolvedValue({ data: { id: 123 } });
     mockInvalidateRecordMutation.mockResolvedValue(undefined);
     mockCreateDownloadResumable.mockImplementation((_url, _target, _options, onProgress) => ({
@@ -575,6 +586,97 @@ describe('RokidPushupCoachScreen', () => {
       expect(secondScreen.getByText(/install_file_uri_result/)).toBeTruthy();
       expect(secondScreen.queryByText(/眼镜端 App 下载失败/)).toBeNull();
     });
+  });
+
+  it('ignores a stale post-save review response and a late response after unmount (#10)', async () => {
+    // Reach a running real session with reps so 保存本组 triggers the review fetch.
+    mockListRokidPushupEvents
+      .mockResolvedValueOnce([
+        {
+          id: 11,
+          session_id: 7,
+          user_id: 3,
+          event_type: 'rep',
+          reps: 5,
+          phase: 'up',
+          quality_score: 88,
+          payload: { suggestion: '保持稳定节奏。' },
+          occurred_at: '2026-06-19T12:00:00Z',
+          created_at: '2026-06-19T12:00:00Z',
+        },
+      ])
+      .mockResolvedValue([]);
+
+    // Each review fetch returns a controllable deferred so we can resolve out of order.
+    const deferreds: { resolve: (v: any) => void }[] = [];
+    mockGetRokidPushupSessionReview.mockReset();
+    mockGetRokidPushupSessionReview.mockImplementation(
+      () => new Promise((resolve) => deferreds.push({ resolve })),
+    );
+
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const screen = renderWithProviders(<RokidPushupCoachScreen />);
+
+      await act(async () => {
+        fireEvent.press(screen.getByText('启动眼镜识别'));
+        await flushAsyncUpdates();
+      });
+      await waitFor(() => {
+        expect(screen.getByText('5')).toBeTruthy();
+      });
+
+      // First save → review fetch #1 (deferred, in-flight).
+      await act(async () => {
+        fireEvent.press(screen.getByText('保存本组'));
+        await flushAsyncUpdates();
+      });
+      // Second save → review fetch #2 supersedes #1.
+      await act(async () => {
+        fireEvent.press(screen.getByText('已保存'));
+        await flushAsyncUpdates();
+      });
+
+      expect(deferreds.length).toBe(2);
+
+      // Resolve the STALE first fetch last — its content must be dropped (reqId mismatch).
+      await act(async () => {
+        deferreds[0].resolve({
+          session_id: 7,
+          session_quality: { reps: 5, avg_quality_score: 88, event_count: 5 },
+          training_context: null,
+          observations: ['STALE 不该出现的复盘'],
+          teaching_links: [],
+          guidance_alerts: [],
+          disclaimer: '仅供参考。',
+        });
+        await flushAsyncUpdates();
+      });
+      expect(screen.queryByText(/STALE 不该出现的复盘/)).toBeNull();
+
+      // Unmount, then resolve the latest fetch — late response must not setState on a
+      // gone component (no console.error about unmounted updates).
+      screen.unmount();
+      await act(async () => {
+        deferreds[1].resolve({
+          session_id: 7,
+          session_quality: { reps: 5, avg_quality_score: 88, event_count: 5 },
+          training_context: null,
+          observations: ['LATE 卸载后不该 setState'],
+          teaching_links: [],
+          guidance_alerts: [],
+          disclaimer: '仅供参考。',
+        });
+        await flushAsyncUpdates();
+      });
+
+      const unmountedSetState = errorSpy.mock.calls.find((args) =>
+        String(args[0]).includes("can't perform a React state update on an unmounted"),
+      );
+      expect(unmountedSetState).toBeUndefined();
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it('infers install rejection when old native bridge returns installed=false without a reason', async () => {

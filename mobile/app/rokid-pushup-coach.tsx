@@ -378,6 +378,11 @@ export default function RokidPushupCoachScreen() {
   const [reviewState, setReviewState] = useState<'idle' | 'loading' | 'loaded' | 'failed'>('idle');
   const lastRokidEventIdRef = useRef(0);
   const pollInFlightRef = useRef(false);
+  // Dedup + staleness guard for the post-save session review fetch: each fetch bumps
+  // this id; only the latest response is allowed to land. Prevents a slow earlier
+  // fetch from overwriting a newer one, and (with mountedRef) drops late responses
+  // after unmount instead of setStating on a gone component.
+  const reviewReqIdRef = useRef(0);
 
   const applyInstallSnapshot = useCallback((snapshot: GlassesAppInstallSnapshot) => {
     setInstallDiagnostics(snapshot.diagnostics);
@@ -986,13 +991,21 @@ export default function RokidPushupCoachScreen() {
       void pushViewToGlasses(savedCoach);
       // 赛后复盘:仅眼镜会话有 session id 可复盘。复盘失败不影响已保存的记录(不假装成功)。
       if (realSession) {
+        const reqId = (reviewReqIdRef.current += 1);
         setReviewState('loading');
         getRokidPushupSessionReview(realSession.id)
           .then((review) => {
+            // Drop stale (superseded by a newer save) or post-unmount responses.
+            if (!mountedRef.current || reviewReqIdRef.current !== reqId) {
+              return;
+            }
             setPushupReview(review);
             setReviewState('loaded');
           })
           .catch(() => {
+            if (!mountedRef.current || reviewReqIdRef.current !== reqId) {
+              return;
+            }
             setReviewState('failed');
           });
       }

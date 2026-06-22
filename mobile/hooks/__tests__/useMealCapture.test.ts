@@ -177,6 +177,104 @@ describe('useMealCapture', () => {
     expect(mockAbort).toHaveBeenCalledWith(7);
   });
 
+  it('does NOT abort a finished (needs_confirmation) session on unmount (finish↔abort race)', async () => {
+    const captureFrame = jest.fn(async () => okFrame());
+    mockAppend.mockResolvedValue({ frame_event_id: 1, session_id: 7, frame_count: 1, status: 'active' } as never);
+    mockFinish.mockResolvedValue({
+      session: { id: 7, status: 'needs_confirmation', frame_count: 1 },
+      summary: {
+        session_id: 7,
+        status: 'needs_confirmation',
+        target: 'diet_draft',
+        frame_count: 1,
+        foods: [],
+        totals: {},
+        observational_summary: '草稿',
+        guidance_alerts: [],
+        disclaimer: '仅供参考。',
+        draft_diet_record: { food_items: [] },
+      },
+    } as never);
+
+    const { result, unmount } = renderHook(() => useMealCapture({ captureFrame, minIntervalMs: 0 }));
+
+    await act(async () => {
+      await result.current.startSession(true);
+    });
+    await waitFor(() => expect(result.current.state.frameCount).toBeGreaterThan(0));
+
+    await act(async () => {
+      await result.current.finish();
+    });
+    expect(result.current.state.phase).toBe('draft');
+
+    await act(async () => {
+      unmount();
+    });
+
+    // Same session must never be both finished (→needs_confirmation) and aborted
+    // (→aborted): the unmount path must leave the finished-pending-confirm session alone.
+    expect(mockAbort).not.toHaveBeenCalled();
+  });
+
+  it('still aborts a draft session when the user explicitly abandons it', async () => {
+    const captureFrame = jest.fn(async () => okFrame());
+    mockAppend.mockResolvedValue({ frame_event_id: 1, session_id: 7, frame_count: 1, status: 'active' } as never);
+    mockFinish.mockResolvedValue({
+      session: { id: 7, status: 'needs_confirmation', frame_count: 1 },
+      summary: {
+        session_id: 7,
+        status: 'needs_confirmation',
+        target: 'diet_draft',
+        frame_count: 1,
+        foods: [],
+        totals: {},
+        observational_summary: '草稿',
+        guidance_alerts: [],
+        disclaimer: '仅供参考。',
+        draft_diet_record: { food_items: [] },
+      },
+    } as never);
+
+    const { result } = renderHook(() => useMealCapture({ captureFrame, minIntervalMs: 0 }));
+
+    await act(async () => {
+      await result.current.startSession(true);
+    });
+    await waitFor(() => expect(result.current.state.frameCount).toBeGreaterThan(0));
+    await act(async () => {
+      await result.current.finish();
+    });
+    expect(result.current.state.phase).toBe('draft');
+
+    // Explicit user abort of a draft session must still purge the raw frames.
+    await act(async () => {
+      await result.current.abort();
+    });
+
+    expect(mockAbort).toHaveBeenCalledWith(7);
+    expect(result.current.state.phase).toBe('idle');
+  });
+
+  it('uses sourceProvider read at startSession time (source metadata drift)', async () => {
+    const captureFrame = jest.fn(async () => okFrame());
+    // The provider is read fresh at start; flipping it to 'phone' before start runs
+    // must make the session persist as 'phone', not a hook-init snapshot.
+    const sourceBox: { value: 'rokid_glasses' | 'phone' } = { value: 'rokid_glasses' };
+
+    const { result } = renderHook(() =>
+      useMealCapture({ captureFrame, minIntervalMs: 0, sourceProvider: () => sourceBox.value }),
+    );
+
+    sourceBox.value = 'phone';
+
+    await act(async () => {
+      await result.current.startSession(true);
+    });
+
+    expect(mockStart).toHaveBeenCalledWith({ consent: true, source: 'phone' });
+  });
+
   it('stops with the real reason when a capture is cancelled (no fake success)', async () => {
     const captureFrame = jest.fn(async (): Promise<MealCaptureResult> => ({ frame: null, reason: '已取消拍照，停止采样' }));
 

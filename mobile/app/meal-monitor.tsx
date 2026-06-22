@@ -70,17 +70,21 @@ export default function MealMonitorScreen() {
   const [phoneFallbackActive, setPhoneFallbackActive] = useState(false);
   const sourceRef = useRef<MealSessionSource>('rokid_glasses');
 
+  // 眼镜是否就绪(BLE 直连 + SDK + 授权)。start 前与每帧前都用它判断源,避免源元数据漂移。
+  const probeGlassesReady = useCallback(async (): Promise<boolean> => {
+    try {
+      const status = await getRokidIntegrationStatus();
+      return canAttemptRokidMealPhoto(status);
+    } catch {
+      return false;
+    }
+  }, []);
+
   // 顺序采样:每帧先试眼镜拍照,失败/超时/眼镜未就绪 → 手机相机兜底(像 rokid-health)。
   const captureFrame = useCallback(async (): Promise<MealCaptureResult> => {
     const capturedAt = new Date().toISOString();
     // 1) 眼镜可用时优先眼镜拍照。
-    let glassesReady = false;
-    try {
-      const status = await getRokidIntegrationStatus();
-      glassesReady = canAttemptRokidMealPhoto(status);
-    } catch {
-      glassesReady = false;
-    }
+    const glassesReady = await probeGlassesReady();
     if (glassesReady) {
       const result = await takeRokidPhotoBase64WithTimeout({ width: 1024, height: 768, quality: 80 });
       if (result.ok !== false) {
@@ -108,10 +112,11 @@ export default function MealMonitorScreen() {
     return {
       frame: { imageBase64: asset.base64 ?? undefined, imageUri: asset.uri, capturedAt },
     };
-  }, []);
+  }, [probeGlassesReady]);
 
   const { state, startSession, finish, confirm, abort, abortOnUnmount } = useMealCapture({
-    source: sourceRef.current,
+    // 读取实时 ref(start 时已按真实就绪态设置),避免 hook 初始化时的快照漂移。
+    sourceProvider: () => sourceRef.current,
     captureFrame,
   });
 
@@ -129,8 +134,15 @@ export default function MealMonitorScreen() {
     if (!consentGiven) {
       return;
     }
-    void startSession(true);
-  }, [consentGiven, startSession]);
+    void (async () => {
+      // Determine the real source before the session is created so it (and its
+      // frames) are persisted with the source actually used — not a stale default.
+      const glassesReady = await probeGlassesReady();
+      sourceRef.current = glassesReady ? 'rokid_glasses' : 'phone';
+      setPhoneFallbackActive(!glassesReady);
+      await startSession(true);
+    })();
+  }, [consentGiven, probeGlassesReady, startSession]);
 
   const onConfirm = useCallback(() => {
     void confirm();
