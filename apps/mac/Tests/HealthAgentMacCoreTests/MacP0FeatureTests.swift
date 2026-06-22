@@ -39,21 +39,31 @@ final class MacP0FeatureTests: XCTestCase {
     func testAgentModelCatalogIncludesAliyunTokenPlanModels() {
         let options = AgentModelCatalog.defaultOptions
         let optionIDs = Set(options.map(\.id))
+        let latestTokenPlanChatModelIDs = [
+            "qwen3.7-plus",
+            "qwen3.7-max",
+            "qwen3.6-plus",
+            "qwen3.6-flash",
+            "deepseek-v4-pro",
+            "deepseek-v4-flash",
+            "deepseek-v3.2",
+            "kimi-k2.7-code",
+            "kimi-k2.6",
+            "kimi-k2.5",
+            "glm-5.2",
+            "glm-5.1",
+            "glm-5",
+            "minimax-m2.5",
+        ]
 
-        XCTAssertTrue(optionIDs.contains("qwen3.6-plus"))
-        XCTAssertTrue(optionIDs.contains("minimax-m2.5"))
-        XCTAssertTrue(optionIDs.contains("glm-5"))
-        XCTAssertTrue(optionIDs.contains("deepseek-v3.2"))
-        // 2026-06-02 套餐刷新新增的对话模型
-        XCTAssertTrue(optionIDs.contains("qwen3.7-max"))
-        XCTAssertTrue(optionIDs.contains("qwen3.6-flash"))
-        XCTAssertTrue(optionIDs.contains("deepseek-v4-pro"))
-        XCTAssertTrue(optionIDs.contains("deepseek-v4-flash"))
-        XCTAssertTrue(optionIDs.contains("kimi-k2.6"))
-        XCTAssertTrue(optionIDs.contains("glm-5.1"))
+        for modelID in latestTokenPlanChatModelIDs {
+            XCTAssertTrue(optionIDs.contains(modelID), "\(modelID) should be in Mac model picker")
+        }
         // 图像生成模型不进对话 picker
         XCTAssertFalse(optionIDs.contains("qwen-image-2.0"))
+        XCTAssertFalse(optionIDs.contains("qwen-image-2.0-pro"))
         XCTAssertFalse(optionIDs.contains("wan2.7-image"))
+        XCTAssertFalse(optionIDs.contains("wan2.7-image-pro"))
         XCTAssertEqual(options.first(where: { $0.id == "qwen3.6-plus" })?.provider, "阿里 TokenPlan")
         XCTAssertEqual(optionIDs.count, options.count)
     }
