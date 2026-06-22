@@ -36,6 +36,7 @@ from app.celery_app import celery_app
 from app.database import SessionLocal
 from app.services.notification.deeplinks import deeplink_for
 from app.services.notification.push_service import PushService
+from app.services.protocol_learning_loop import NUDGE_DEFAULT_PER_WEEK
 from app.utils.async_helpers import run_async
 from app.utils.timezone import get_china_now
 
@@ -300,6 +301,39 @@ def _candidate_user_ids(db, today: date) -> list[int]:
     return sorted(ids)
 
 
+def _protocol_throttled(db, user_id: int, protocol_id: int, item_key: str, today: date) -> bool:
+    """P6 节流(R15:只 SUPPRESS,绝不抬全局预算,绝不碰 P0):本周该协议轻推已达上限?
+
+    上限 = protocol_nudge_throttle(慢性跳过的 P1 协议被收紧,但永不低于 1/周;P0/用药域恒
+    返回默认 → 永不被收紧)。本周已发次数 = 近 7 天 SentEventReminder 里该 item_key 的去重日数。
+    fail-open:任何异常 → False(不抑制,退回既有行为)。
+    """
+    try:
+        from app.models.sent_event_reminder import SentEventReminder
+        from app.services.protocol_self_correction import protocol_nudge_throttle
+
+        cap = protocol_nudge_throttle(db, user_id, protocol_id)
+        if cap >= NUDGE_DEFAULT_PER_WEEK:
+            return False  # 默认/未收紧 → 不抑制(省一次计数查询)
+        week_start = today - timedelta(days=6)
+        sent_this_week = (
+            db.query(SentEventReminder.id)
+            .filter(
+                SentEventReminder.user_id == user_id,
+                SentEventReminder.item_key == item_key,
+                SentEventReminder.remind_date >= week_start,
+            )
+            .count()
+        )
+        return sent_this_week >= cap
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[event-reminder] 节流计算失败 user=%s proto=%s, fail-open: %s",
+            user_id, protocol_id, e,
+        )
+        return False
+
+
 def _try_mark_sent(db, user_id: int, item_key: str, remind_date: date, kind: str) -> bool:
     """先占坑去重: INSERT 成功 → True(本次该推);UniqueConstraint 冲突 → False(已推过)。"""
     from app.models.sent_event_reminder import SentEventReminder
@@ -351,6 +385,16 @@ def scan_event_reminders():
                     # 稀缺门(R15): 不通过则不推。
                     if not can_notify_proactively(db, user_id, tier=tier):
                         continue
+
+                    # P6 节流(R15:只 SUPPRESS,绝不抬全局预算/绝不碰 P0):慢性跳过的行为
+                    # 协议本周轻推已达上限 → 这一条省掉(永不低于 1/周)。只对协议项生效。
+                    if kind == "protocol":
+                        cref = it.get("complete_ref") or {}
+                        pid = cref.get("object_id")
+                        if pid is not None and _protocol_throttled(
+                            db, user_id, int(pid), it["item_key"], today
+                        ):
+                            continue
 
                     # 幂等占坑: 已推过则跳过。
                     if not _try_mark_sent(db, user_id, it["item_key"], today, kind):

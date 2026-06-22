@@ -108,12 +108,20 @@ def _self_correction_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
         from app.services.protocol_self_correction import (
             detect_outcome_corrections,
             detect_self_corrections,
+            suggest_protocol_adjustments,
         )
         skip_corr = detect_self_corrections(db, user_id)
         outcome_corr = detect_outcome_corrections(db, user_id)
     except Exception as e:  # noqa: BLE001
         logger.warning("agenda: 自纠偏计算失败,跳过: %s", e)
         return []
+
+    # P6 学习闭环调参建议(SUGGEST-ONLY,carry field_delta)。独立降级:失败不拖垮其余项。
+    adjustments: List[Dict[str, Any]] = []
+    try:
+        adjustments = suggest_protocol_adjustments(db, user_id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("agenda: 学习闭环调参建议计算失败,跳过: %s", e)
 
     items = [
         _agenda_item(
@@ -141,6 +149,21 @@ def _self_correction_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
             source={"object_type": "outcome_correction", "object_id": user_id},
         )
         for c in outcome_corr
+    ]
+    # P6:人体工学调参建议作 correction 项,携带 field_delta(用户点 apply 才生效)。
+    items += [
+        _agenda_item(
+            type="correction",
+            title=f"提醒可调整:{d['name']}",
+            status="info",
+            time_window="anytime",
+            priority=71,                      # 略低于结果趋势/跳过纠偏(人体工学非急)
+            detail=d["message"],
+            suggestion=d["message"],
+            field_delta=d,                    # {protocol_id, field, from, to, confidence, ...}
+            source={"object_type": "health_protocol", "object_id": d["protocol_id"]},
+        )
+        for d in adjustments
     ]
     return items
 

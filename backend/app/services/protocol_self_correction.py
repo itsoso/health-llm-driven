@@ -68,6 +68,183 @@ def detect_self_corrections(db: Session, user_id: int) -> List[Dict[str, Any]]:
     return out
 
 
+# ── P6 学习闭环:聚合 14 天信号 → 人体工学调参建议(SUGGEST-ONLY)──────────
+# R4 硬门:用药/补剂域只允许调时间/冷却/曝光面/节奏,**绝不**触碰量/剂量。
+# 这些域键一旦出现在 field_delta 里即视为违规(配对守门测试 + run_loop 后置断言)。
+_DOSE_DOMAINS = ("medication", "supplement")
+# 绝不允许成为 field_delta.field 的「量/剂量」键(R4):
+_DOSE_FORBIDDEN_FIELDS = frozenset(
+    {"implied_quantity", "dosage", "actual_dosage", "drug", "dose"}
+)
+_LEARN_WINDOW_DAYS = 14
+
+
+def _protocol_priority_tier(domain: str) -> str:
+    """协议域 → 通知预算 tier(对齐 event_reminders._KIND_TIER)。
+
+    用药 = P0(处方/关键提醒,学习闭环绝不收紧);其余 = P1(可省轻推)。
+    """
+    return "P0" if domain == "medication" else "P1"
+
+
+def _expired_count(db: Session, user_id: int, protocol_id: int, since: date) -> int:
+    """该协议近窗内议程 HealthEvent 被判 expired 的次数(逾期未完成信号)。失败 → 0。"""
+    try:
+        from datetime import datetime as _dt
+        from app.models.health_event import HealthEvent
+        day_start = _dt.combine(since, _dt.min.time())
+        rows = db.query(HealthEvent.complete_ref).filter(
+            HealthEvent.user_id == user_id,
+            HealthEvent.event_type == "agenda_action",
+            HealthEvent.agenda_status == "expired",
+            HealthEvent.scheduled_for >= day_start,
+        ).all()
+        n = 0
+        for (ref,) in rows:
+            ref = ref or {}
+            if (ref.get("object_type") == "health_protocol"
+                    and ref.get("object_id") == protocol_id):
+                n += 1
+        return n
+    except Exception as e:  # noqa: BLE001
+        logger.warning("learning-loop expired 计数失败 proto=%s: %s", protocol_id, e)
+        return 0
+
+
+def _proactive_conversion(db: Session, user_id: int) -> tuple[int, float | None]:
+    """用户级主动触达 → 后续完成的粗代理(诚实:遥测 metric=kind 不带 protocol_id)。
+
+    返回 (近窗 protocol 类轻推事件数, 触达后有完成的占比%)。门槛由 loop 层把控
+    (≥3 事件 / ≥10%,对齐 lag_association)。任何失败 → (0, None),不臆测。
+    """
+    try:
+        from datetime import UTC, datetime as _dt, timedelta as _td
+        from app.models.agent_audit_log import AgentAuditLog
+        cutoff = _dt.now(UTC) - _td(days=_LEARN_WINDOW_DAYS)
+        rows = db.query(AgentAuditLog).filter(
+            AgentAuditLog.user_id == user_id,
+            AgentAuditLog.action == "proactive_trigger",
+            AgentAuditLog.created_at >= cutoff,
+        ).all()
+        events = 0
+        for r in rows:
+            detail = r.result_detail or {}
+            if detail.get("metric") == "protocol" or detail.get("kind") == "pre_event":
+                events += 1
+        if events == 0:
+            return (0, None)
+        # 完成基准:近窗内协议完成事件数 / 触达事件数(粗代理,跨协议聚合)。
+        completed = db.query(HealthProtocolEvent.id).filter(
+            HealthProtocolEvent.user_id == user_id,
+            HealthProtocolEvent.status.in_(("completed", "auto_observed")),
+            HealthProtocolEvent.event_date >= (date.today() - timedelta(days=_LEARN_WINDOW_DAYS - 1)),
+        ).count()
+        pct = round(min(completed / events, 1.0) * 100.0, 1)
+        return (events, pct)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("learning-loop proactive 转化计算失败 user=%s: %s", user_id, e)
+        return (0, None)
+
+
+def suggest_protocol_adjustments(db: Session, user_id: int) -> List[Dict[str, Any]]:
+    """P6 学习闭环入口:聚合每条活跃协议 14 天信号 → 人体工学调参建议(SUGGEST-ONLY)。
+
+    **不写库、不调药量**:返回的 field_delta 一律是建议(applied=False),用户点一下
+    (/protocols/{id}/apply-adjustment)才生效。R4 硬门:用药/补剂域只调时间/冷却/
+    曝光面/节奏,绝不触碰量/剂量(下方断言 + 守门测试兜底)。
+
+    每聚合**仅看本 user_id** 的事件(L3 隔离:绝不跨用户合并跳过先验)。
+    """
+    from app.services.protocol_learning_loop import (
+        ProtocolCounters, run_loop, ALLOWED_FIELDS,
+    )
+
+    since = date.today() - timedelta(days=_LEARN_WINDOW_DAYS - 1)
+    protos = db.query(HealthProtocol).filter(
+        HealthProtocol.user_id == user_id,
+        HealthProtocol.status == "active",
+    ).all()
+
+    proactive_events, proactive_pct = _proactive_conversion(db, user_id)
+
+    counters: List[ProtocolCounters] = []
+    for p in protos:
+        evs = db.query(HealthProtocolEvent).filter(
+            HealthProtocolEvent.protocol_id == p.id,
+            HealthProtocolEvent.user_id == user_id,
+            HealthProtocolEvent.event_date >= since,
+        ).all()
+        completed = sum(1 for e in evs if e.status in ("completed", "auto_observed"))
+        skipped = sum(1 for e in evs if e.status == "skipped")
+        snoozed = sum(1 for e in evs if e.status == "snoozed")
+        reasons = [e.skip_reason for e in evs if e.status == "skipped" and e.skip_reason]
+        dominant = Counter(reasons).most_common(1)[0][0] if reasons else None
+        counters.append(ProtocolCounters(
+            protocol_id=p.id,
+            domain=p.domain,
+            name=p.name,
+            priority_tier=_protocol_priority_tier(p.domain),
+            time_window=p.time_window or "anytime",
+            cadence=p.cadence or "daily",
+            completed=completed,
+            skipped=skipped,
+            snoozed=snoozed,
+            expired=_expired_count(db, user_id, p.id, since),
+            dominant_skip_reason=dominant,
+            proactive_events=proactive_events,
+            proactive_followed_pct=proactive_pct,
+        ))
+
+    result = run_loop(counters)
+    out = result.deltas_as_dicts()
+    # R4 最后一道闸:任何 field 落在量/剂量键集合即视为违规,整批拒绝(fail loud)。
+    for d in out:
+        fld = d.get("field")
+        if fld in _DOSE_FORBIDDEN_FIELDS or fld not in ALLOWED_FIELDS:
+            raise ValueError(f"R4 违规:学习闭环产出了量/剂量字段 {fld!r}")
+    return out
+
+
+def protocol_nudge_throttle(db: Session, user_id: int, protocol_id: int) -> int:
+    """单协议的每周轻推上限(R15:只能 SPEND FEWER,永不低于 floor,绝不收紧 P0)。
+
+    供 event_reminders 在每分钟扫描时**廉价**调用:只取该协议 14 天的跳过/逾期计数,
+    走纯策略 nudge_throttle。P0(用药域)恒返回默认(关键提醒不被收紧)。
+    任何失败 → 返回默认(fail-open:不因学习闭环坏掉而漏推)。
+    """
+    from app.services.protocol_learning_loop import (
+        ProtocolCounters, nudge_throttle, NUDGE_DEFAULT_PER_WEEK,
+    )
+    try:
+        p = db.query(HealthProtocol).filter(
+            HealthProtocol.id == protocol_id,
+            HealthProtocol.user_id == user_id,
+            HealthProtocol.status == "active",
+        ).first()
+        if p is None:
+            return NUDGE_DEFAULT_PER_WEEK
+        since = date.today() - timedelta(days=_LEARN_WINDOW_DAYS - 1)
+        evs = db.query(HealthProtocolEvent).filter(
+            HealthProtocolEvent.protocol_id == protocol_id,
+            HealthProtocolEvent.user_id == user_id,
+            HealthProtocolEvent.event_date >= since,
+        ).all()
+        skipped = sum(1 for e in evs if e.status == "skipped")
+        c = ProtocolCounters(
+            protocol_id=protocol_id,
+            domain=p.domain,
+            name=p.name,
+            priority_tier=_protocol_priority_tier(p.domain),
+            skipped=skipped,
+            expired=_expired_count(db, user_id, protocol_id, since),
+        )
+        return nudge_throttle(c)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("learning-loop throttle 计算失败 proto=%s: %s", protocol_id, e)
+        from app.services.protocol_learning_loop import NUDGE_DEFAULT_PER_WEEK
+        return NUDGE_DEFAULT_PER_WEEK
+
+
 # ── 跨数据源纠偏(R14 续):结果趋势驱动,非协议跳过 ──────────────────
 _TREND_WINDOW_DAYS = 14
 _WEIGHT_MIN_POINTS = 6          # 体重需更多点(日波动 1–2kg,4 点易假阳)

@@ -180,12 +180,14 @@ def complete_by_ref(
     today = get_user_today(db, user_id)
     ev = find_agenda_event(db, user_id, ref, today)
     if ev is None:
-        # 懒物化的 scheduled_for 取「整点」(minute/second 归零),不取裸 now:并发懒物化
-        # 在同一小时内算出同一 scheduled_for → 同一 _slot_time → 万一并发建了两条议程行,
-        # 完成时也会落同一 uq_medlog 槽被 DB 唯一约束兜住(配合 complete_agenda_event 的
-        # 原子 claim,把重复领域写收敛到至多一条)。
+        # F5a:懒物化的 scheduled_for 钉到「当日稳定 token」(用户今日 00:00),不取整点更不取
+        # 裸 now。整点(hour 级)在并发跨整点边界(10:59:59 vs 11:00:00)会算出不同
+        # scheduled_for → 不同 _slot_time → 两条议程行 + 两个 medlog 槽 → 依从重计。钉到午夜
+        # 后,同一 (user, ref, day) 的并发懒物化恒得同一 scheduled_for → 同一 _slot_time,
+        # 配合 complete_agenda_event 的原子 claim + uq_medlog 唯一约束,重复领域写收敛到至多
+        # 一条(对齐链协议 chain_key 的「稳定 token」先例)。显式 scheduled_for(多剂等)优先。
         slot_dt = scheduled_for or get_user_now(db, user_id).replace(
-            minute=0, second=0, microsecond=0)
+            hour=0, minute=0, second=0, microsecond=0)
         ev = materialize_agenda_event(
             db, user_id,
             action_kind=_action_kind_for(object_type),

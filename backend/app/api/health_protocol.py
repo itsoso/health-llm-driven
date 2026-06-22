@@ -77,14 +77,20 @@ async def corrections(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    """协议自纠偏建议(R14):协议连续跳过 + 结果趋势恶化(体重↑/鼻炎↑)→ 调整建议。"""
+    """协议自纠偏建议(R14):协议连续跳过 + 结果趋势恶化(体重↑/鼻炎↑)→ 调整建议。
+
+    `adjustments`(P6 学习闭环):每协议 14 天信号聚合 → 人体工学调参建议
+    (时间窗/冷却/曝光面/节奏),**SUGGEST-ONLY**(用户点 apply-adjustment 才生效)。
+    """
     from app.services.protocol_self_correction import (
         detect_outcome_corrections,
         detect_self_corrections,
+        suggest_protocol_adjustments,
     )
     return {
         "skip_based": detect_self_corrections(db, current_user.id),
         "outcome_based": detect_outcome_corrections(db, current_user.id),
+        "adjustments": suggest_protocol_adjustments(db, current_user.id),
     }
 
 
@@ -190,6 +196,34 @@ async def skip(
     if ev is None:
         raise HTTPException(status_code=404, detail="协议不存在")
     return {"protocol_id": protocol_id, "status": ev.status, "skip_reason": ev.skip_reason, "event_date": str(ev.event_date)}
+
+
+class AdjustmentApply(BaseModel):
+    field: str                          # time_window / cadence / surface / cooldown
+    to_value: Any                       # 绝不接受量/剂量(service 层 R4 守门)
+
+
+@router.post("/{protocol_id}/apply-adjustment")
+async def apply_adjustment(
+    protocol_id: int,
+    data: AdjustmentApply,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """用户显式应用一条 P6 学习闭环建议(默认 suggest-only;此端点 = opt-in 写)。
+
+    R4 硬门在 service 层:只允许 time_window/cadence/surface/cooldown,任何量/剂量
+    字段一律 400。用药/补剂域不接受经此改节奏(F5b/R13)。
+    """
+    try:
+        p = svc.apply_adjustment(
+            db, protocol_id, current_user.id, data.field, data.to_value
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if p is None:
+        raise HTTPException(status_code=404, detail="协议不存在")
+    return svc.serialize_protocol(p)
 
 
 @router.post("/{protocol_id}/archive")

@@ -239,6 +239,39 @@ def test_slot_straddles_minute_boundary_single_taken(db, auth_user_and_headers, 
     assert logs[0].taken_time == "09:00"
 
 
+def test_lazy_materialize_pins_scheduled_for_to_midnight(db, auth_user_and_headers, monkeypatch):
+    """F5a 哨兵:complete_by_ref 懒物化时 scheduled_for 钉到「当日 00:00」稳定 token,
+    不随 wall-clock 小时漂。
+
+    回归前的 hour-级整点 token:两个并发首物化跨整点边界(10:59 vs 11:00)算出不同
+    scheduled_for → 两条议程行 / 两个 medlog 槽 → 依从重计。钉午夜后,同日同 ref 的懒物化
+    恒得同一 scheduled_for(00:00)。本测试断言 scheduled_for 的 minute/second 归零且 hour=0
+    —— 若退回 .replace(minute=0,...)(仍带当前 hour),hour!=0 时此断言红。
+    """
+    from datetime import datetime
+
+    import app.utils.timezone as tz
+    from app.services import timeline_agenda_service as tas
+
+    user, _ = auth_user_and_headers
+    med = _seed_med(db, user.id)
+
+    # wall-clock 钉在 10:59:30(非整点 0 时)→ 若仍按整点 token,scheduled_for.hour 会是 10。
+    monkeypatch.setattr(tz, "get_user_now", lambda *a, **k: datetime(2026, 6, 22, 10, 59, 30))
+
+    tas.complete_by_ref(db, user.id, "medication", med.id, status="done")
+
+    ev = tas.find_agenda_event(
+        db, user.id, {"object_type": "medication", "object_id": med.id},
+        tz.get_user_today(db, user.id),
+    )
+    assert ev is not None
+    assert ev.scheduled_for.hour == 0, (
+        f"F5a:懒物化 scheduled_for 必须钉到当日 00:00(稳定 token),实得 "
+        f"{ev.scheduled_for!r};退回整点 token → hour=10 此断言红")
+    assert ev.scheduled_for.minute == 0 and ev.scheduled_for.second == 0
+
+
 # ─────────────────────────── ③ skipped(不回写)───────────────────────────
 
 def test_complete_medication_skipped_no_writeback(client, db, auth_user_and_headers):

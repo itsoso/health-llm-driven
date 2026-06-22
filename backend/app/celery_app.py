@@ -44,6 +44,7 @@ celery_app = Celery(
         "app.tasks.longevity_watch",
         "app.tasks.trajectory_watch",
         "app.tasks.adherence_watch",
+        "app.tasks.protocol_learning",
         "app.tasks.data_integrity_scan",
         "app.tasks.calendar_tasks",
         "app.tasks.event_reminders",
@@ -364,6 +365,13 @@ celery_app.conf.beat_schedule = {
     "adherence-watch-weekly": {
         "task": "app.tasks.adherence_watch.adherence_watch",
         "schedule": crontab(hour=10, minute=40, day_of_week=0),  # 北京 周日 10:40
+    },
+
+    # P6 学习闭环: 每周日 10:50 聚合协议完成/跳过/逾期 → 人体工学调参建议(SUGGEST-ONLY,
+    # 落审计不推送不改协议不调药量;建议在 /corrections + 议程呈现,用户点 apply 才生效)
+    "protocol-learning-watch-weekly": {
+        "task": "app.tasks.protocol_learning.protocol_learning_watch",
+        "schedule": crontab(hour=10, minute=50, day_of_week=0),  # 北京 周日 10:50
     },
 
     # P3(D1)每日复购扫描:补剂快用完 → 提议补货 write_intent + 稀缺门推送(不下单)

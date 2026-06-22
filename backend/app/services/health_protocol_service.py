@@ -621,6 +621,66 @@ def create_water_cup_protocol(db: Session, user_id: int) -> HealthProtocol:
     })
 
 
+# ── P6 学习闭环:用户显式应用一条人体工学调参(SUGGEST → APPLY,不劫持)──────
+# 只允许应用这些「人体工学」字段;**绝不**改量/剂量(R4)或医疗升级节奏(R13)。
+_APPLIABLE_FIELDS = ("time_window", "cadence", "surface", "cooldown")
+# 用药/补剂域:绝不让 apply 触碰任何量/剂量键(即便客户端伪造 field 名)。
+_APPLY_FORBIDDEN_FIELDS = frozenset(
+    {"implied_quantity", "dosage", "actual_dosage", "drug", "dose"}
+)
+_TIME_WINDOWS = ("morning", "noon", "afternoon", "evening", "bedtime", "anytime")
+_CADENCES = ("daily", "weekly", "monthly", "quarterly", "annual", "per_meal_slot")
+
+
+def apply_adjustment(
+    db: Session, protocol_id: int, user_id: int, field: str, to_value: Any,
+) -> Optional[HealthProtocol]:
+    """用户显式应用一条学习闭环建议(default 是 suggest-only,这里是 opt-in 的写)。
+
+    R4 硬门:
+      - field 必须 ∈ _APPLIABLE_FIELDS,且绝不在量/剂量键集合内。
+      - **任何** field 落在 _APPLY_FORBIDDEN_FIELDS → ValueError(端点转 400)。
+      - surface / cooldown 是「提醒人体工学」语义,不改协议本体的医疗字段:落到
+        notes 备注(供提醒侧读),绝不动 implied_quantity / source_* / cadence 的量义。
+    R13:绝不在此改 HealthProblem.follow_up / red_lines(那是医疗升级,不归本函数)。
+    返回 None = 协议不存在(端点转 404)。
+    """
+    if field in _APPLY_FORBIDDEN_FIELDS:
+        raise ValueError(f"R4 拒绝:不允许通过学习闭环修改量/剂量字段 {field!r}")
+    if field not in _APPLIABLE_FIELDS:
+        raise ValueError(f"未知/不可应用字段: {field!r}(应为 {_APPLIABLE_FIELDS})")
+
+    p = get_protocol(db, protocol_id, user_id)
+    if not p:
+        return None
+
+    if field == "time_window":
+        tw = str(to_value)
+        if tw not in _TIME_WINDOWS:
+            raise ValueError(f"未知 time_window: {tw}")
+        p.time_window = tw
+    elif field == "cadence":
+        # R4/R13:用药/补剂域不接受经学习闭环改节奏(多剂塌剂歧义 F5b + 量义敏感)。
+        if p.domain in ("medication", "supplement"):
+            raise ValueError("用药/补剂域不允许经学习闭环调整节奏(F5b/R13)")
+        cad = str(to_value)
+        if cad not in _CADENCES:
+            raise ValueError(f"未知 cadence: {cad}")
+        p.cadence = cad
+    elif field in ("surface", "cooldown"):
+        # 提醒人体工学:不改协议本体医疗字段,只在 notes 留一条机器可读的提醒偏好。
+        prefs = (p.notes or "")
+        tag = f"[learn:{field}={to_value}]"
+        if tag not in prefs:
+            p.notes = (prefs + (" " if prefs else "") + tag)[:1000]
+
+    db.commit()
+    db.refresh(p)
+    logger.info(f"[Protocol] 应用学习调参: user={user_id} protocol={protocol_id} "
+                f"field={field} to={to_value}")
+    return p
+
+
 def serialize_protocol(p: HealthProtocol) -> Dict[str, Any]:
     return {
         "id": p.id, "domain": p.domain, "name": p.name, "mechanism": p.mechanism,
