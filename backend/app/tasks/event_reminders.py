@@ -31,6 +31,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.celery_app import celery_app
 from app.database import SessionLocal
+from app.services.notification.deeplinks import deeplink_for
 from app.services.notification.push_service import PushService
 from app.utils.async_helpers import run_async
 from app.utils.timezone import get_china_now
@@ -237,18 +238,23 @@ def scan_event_reminders():
                         continue
 
                     title, body = _push_body(kind, it["title"], it["lead"])
+                    # 点推送落到与该 kind 相关的页面 (认不出则省略, 回首页)。
+                    deep_link = deeplink_for(kind)
+                    data = {
+                        "category": "PRE_EVENT_REMINDER",
+                        "reminder_type": "pre_event",
+                        "kind": kind,
+                        "item_key": it["item_key"],
+                    }
+                    if deep_link:
+                        data["deep_link"] = deep_link
                     try:
                         run_async(push_service.send_notification(
                             user_id=user_id,
                             notification_type="reminder",
                             title=title,
                             content=body,
-                            data={
-                                "category": "PRE_EVENT_REMINDER",
-                                "reminder_type": "pre_event",
-                                "kind": kind,
-                                "item_key": it["item_key"],
-                            },
+                            data=data,
                         ))
                         sent += 1
                     except Exception as e:  # noqa: BLE001

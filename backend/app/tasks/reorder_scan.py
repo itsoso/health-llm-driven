@@ -18,6 +18,7 @@ import logging
 from app.celery_app import celery_app
 from app.database import SessionLocal
 from app.models.supplement_inventory import SupplementInventory
+from app.services.notification.deeplinks import deeplink_for
 from app.services import reorder_detection
 from app.services import write_intent_service as svc
 from app.utils.async_helpers import run_async
@@ -62,12 +63,16 @@ def scan_reorder_nudges():
                     else:
                         title = "几种补剂快用完了"
                         content = f"有 {n} 种补剂库存不多了,看看要不要补货。"
+                    data = {"kind": "reorder", "low_count": n}
+                    deep_link = deeplink_for("reorder")
+                    if deep_link:
+                        data["deep_link"] = deep_link
                     run_async(push_service.send_notification(
                         user_id=user_id,
                         notification_type="reminder",
                         title=title,
                         content=content,
-                        data={"kind": "reorder", "low_count": n},
+                        data=data,
                         severity="info",
                     ))
                     notified += 1

@@ -194,6 +194,21 @@ async def post_sync_reasoning(
 
             from app.services.notification.push_service import PushService
             from app.services.notification.evidence_policy import build_notification_evidence_data_for_user
+            from app.services.notification.deeplinks import deeplink_for
+
+            # 点 ai_advice 推送时按内容落到饮食 / 健身页 (判不出领域则省略, 回首页)。
+            blob = f"{title}\n{message}"
+            if any(w in blob for w in ("饮食", "营养", "吃", "餐", "蛋白")):
+                domain = "nutrition"
+            elif any(w in blob for w in ("运动", "训练", "锻炼", "跑步", "强度", "拉伸")):
+                domain = "exercise"
+            else:
+                domain = ""
+            existing_data = {"source": "agent_loop", "severity": severity}
+            advice_link = deeplink_for("ai_advice", domain=domain)
+            if advice_link:
+                existing_data["deep_link"] = advice_link
+
             push_svc = PushService(db)
             await push_svc.send_notification(
                 user_id=user_id,
@@ -205,7 +220,7 @@ async def post_sync_reasoning(
                     user_id=user_id,
                     notification_type="ai_advice",
                     source="agent_loop",
-                    existing_data={"source": "agent_loop", "severity": severity},
+                    existing_data=existing_data,
                 ),
             )
             _increment_push_count(user_id)
