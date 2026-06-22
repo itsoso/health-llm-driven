@@ -43,8 +43,8 @@ MODELS: List[ModelEntry] = [
     # ──── 阿里百炼 TokenPlan (国内直连, 套餐固定计费) ────
     # 全部走同一 base_url (token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1,
     # OpenAI 协议兼容) + 同一 TOKENPLAN_API_KEY, 只换 model 字段。
-    # 2026-06-22: Owner 指定新版白名单。文字/视觉模型进入 chat picker; image-only 模型
-    # 只进目录,不进 chat picker,避免被误当聊天模型调用。
+    # 2026-06-22: Owner 指定新版白名单。仅每个品牌最高级对话模型进入 chat picker;
+    # lower chat variants 和 image-only 模型只进目录,不进 picker。
     ModelEntry(
         id="qwen3.7-plus",
         label="Qwen3.7 Plus · 千问",
@@ -74,6 +74,7 @@ MODELS: List[ModelEntry] = [
         note="文本生成 / 推理 / 视觉理解",
         requires_env=("TOKENPLAN_API_KEY",),
         capabilities=("text_generation", "reasoning", "vision_understanding"),
+        chat_selectable=False,
     ),
     ModelEntry(
         id="qwen3.6-flash",
@@ -84,6 +85,7 @@ MODELS: List[ModelEntry] = [
         note="文本生成 / 推理 / 视觉理解",
         requires_env=("TOKENPLAN_API_KEY",),
         capabilities=("text_generation", "reasoning", "vision_understanding"),
+        chat_selectable=False,
     ),
     ModelEntry(
         id="qwen-image-2.0",
@@ -162,6 +164,7 @@ MODELS: List[ModelEntry] = [
         note="文本生成 / 推理",
         requires_env=("TOKENPLAN_API_KEY",),
         capabilities=("text_generation", "reasoning"),
+        chat_selectable=False,
     ),
     ModelEntry(
         id="kimi-k2.7-code",
@@ -182,6 +185,7 @@ MODELS: List[ModelEntry] = [
         note="文本生成 / 推理 / 视觉理解",
         requires_env=("TOKENPLAN_API_KEY",),
         capabilities=("text_generation", "reasoning", "vision_understanding"),
+        chat_selectable=False,
     ),
     ModelEntry(
         id="kimi-k2.5",
@@ -192,6 +196,7 @@ MODELS: List[ModelEntry] = [
         note="文本生成 / 推理 / 视觉理解",
         requires_env=("TOKENPLAN_API_KEY",),
         capabilities=("text_generation", "reasoning", "vision_understanding"),
+        chat_selectable=False,
     ),
     ModelEntry(
         id="glm-5.2",
@@ -213,6 +218,7 @@ MODELS: List[ModelEntry] = [
         note="文本生成; 工具调用不稳 (历史 bug #147/#161)",
         requires_env=("TOKENPLAN_API_KEY",),
         capabilities=("text_generation",),
+        chat_selectable=False,
         reliable_tool_calling=False,
     ),
     ModelEntry(
@@ -224,6 +230,7 @@ MODELS: List[ModelEntry] = [
         note="文本生成; 工具调用不稳",
         requires_env=("TOKENPLAN_API_KEY",),
         capabilities=("text_generation",),
+        chat_selectable=False,
         reliable_tool_calling=False,
     ),
     ModelEntry(

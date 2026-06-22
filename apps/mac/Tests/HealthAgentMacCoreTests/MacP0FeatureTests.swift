@@ -39,32 +39,44 @@ final class MacP0FeatureTests: XCTestCase {
     func testAgentModelCatalogIncludesAliyunTokenPlanModels() {
         let options = AgentModelCatalog.defaultOptions
         let optionIDs = Set(options.map(\.id))
-        let latestTokenPlanChatModelIDs = [
+        let shownManualModelIDs = [
+            "commercial/Claude-Opus-4.7",
+            "commercial/Gemini-3.1-Pro-Preview",
+            "commercial/GPT-5.5",
             "qwen3.7-plus",
             "qwen3.7-max",
-            "qwen3.6-plus",
-            "qwen3.6-flash",
             "deepseek-v4-pro",
             "deepseek-v4-flash",
-            "deepseek-v3.2",
             "kimi-k2.7-code",
-            "kimi-k2.6",
-            "kimi-k2.5",
             "glm-5.2",
-            "glm-5.1",
-            "glm-5",
             "minimax-m2.5",
         ]
+        let hiddenLowerModelIDs = [
+            "commercial/GPT-5.4",
+            "commercial/GPT-5.1",
+            "commercial/DeepSeek-R1",
+            "commercial/DeepSeek-V3.2",
+            "qwen3.6-plus",
+            "qwen3.6-flash",
+            "deepseek-v3.2",
+            "kimi-k2.6",
+            "kimi-k2.5",
+            "glm-5.1",
+            "glm-5",
+        ]
 
-        for modelID in latestTokenPlanChatModelIDs {
+        for modelID in shownManualModelIDs {
             XCTAssertTrue(optionIDs.contains(modelID), "\(modelID) should be in Mac model picker")
+        }
+        for modelID in hiddenLowerModelIDs {
+            XCTAssertFalse(optionIDs.contains(modelID), "\(modelID) should not be in Mac model picker")
         }
         // 图像生成模型不进对话 picker
         XCTAssertFalse(optionIDs.contains("qwen-image-2.0"))
         XCTAssertFalse(optionIDs.contains("qwen-image-2.0-pro"))
         XCTAssertFalse(optionIDs.contains("wan2.7-image"))
         XCTAssertFalse(optionIDs.contains("wan2.7-image-pro"))
-        XCTAssertEqual(options.first(where: { $0.id == "qwen3.6-plus" })?.provider, "阿里 TokenPlan")
+        XCTAssertEqual(options.first(where: { $0.id == "qwen3.7-plus" })?.provider, "阿里 TokenPlan")
         XCTAssertEqual(optionIDs.count, options.count)
     }
 

@@ -31,6 +31,26 @@ IMAGE_ONLY = {
     "wan2.7-image-pro",
 }
 
+TOP_CHAT_MODELS = {
+    "qwen3.7-plus",
+    "qwen3.7-max",
+    "deepseek-v4-pro",
+    "deepseek-v4-flash",
+    "kimi-k2.7-code",
+    "glm-5.2",
+    "minimax-m2.5",
+}
+
+HIDDEN_CHAT_VARIANTS = {
+    "qwen3.6-plus",
+    "qwen3.6-flash",
+    "deepseek-v3.2",
+    "kimi-k2.6",
+    "kimi-k2.5",
+    "glm-5.1",
+    "glm-5",
+}
+
 LOW_VERSION_MODELS = {
     "qwen2.5",
     "qwen3.5",
@@ -64,6 +84,13 @@ def test_image_generation_models_are_not_chat_selectable():
         assert by_id[model_id].chat_selectable is False
         assert "image_generation" in by_id[model_id].capabilities
         assert model_id not in chat_ids
+
+
+def test_only_top_tokenplan_chat_models_are_chat_selectable():
+    chat_ids = {m.id for m in reg.list_models(only_available=False)}
+
+    assert TOP_CHAT_MODELS.issubset(chat_ids)
+    assert chat_ids.isdisjoint(HIDDEN_CHAT_VARIANTS)
 
 
 def test_low_version_models_are_not_registered():
