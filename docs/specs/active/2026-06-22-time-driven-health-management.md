@@ -13,6 +13,70 @@
 作息、日历、身体状态、安全规则、设备观察和外部技能能力投影成 `HealthAgendaItem`,
 并通过提醒、硬件、技能或人工确认产生 `ExecutionEvent` 和复盘。
 
+## 1.5 Reconciliation & Build Status（Claude A · 2026-06-22）
+
+> 本节把已落地的「执行层闭环基础」与本 spec 对齐,并回答 §18 的 must-decide 开放问题。
+> **本 spec 仍是时间驱动健康管理的权威路线图**;以下只补「已建什么 + 三个开放问题的裁决 + 脊柱 seam 对齐」,
+> 不改写下游章节。结论:Codex 的本 spec 与已建的 Increment 1 **互补、非冲突** —— 本 spec 描述
+> 「协议→投影→设备观察→外部意图」的**输入/编排侧**,Increment 1 已建其中的**执行/闭环侧**(= 本 spec §7 的
+> `-> ExecutionEvent -> Review` 段)。
+
+### 1.5.1 已构建:执行层闭环（= 本 spec 的 ExecutionEvent + 闭环段）
+
+Increment 1 已合并 main(`f1ca1802`,未部署),实现了 §7 流水线
+「`HealthAgendaItem timeline -> ... -> ExecutionEvent -> Review`」的执行/闭环段:
+
+- **first-class HealthEvent agenda 生命周期** —— 扩展 `health_events`:`agenda_status`(pending→done/skipped/expired)
+  + `scheduled_for` + `action_kind` + `complete_ref`,与既有 fact-stream `status` 枚举正交。即 §9.2 的
+  「reuse ExecutionEvent if schema sufficient」:**执行事实统一落在 HealthEvent,不另起 ExecutionEvent 表**。
+- **闭环完成端点** `POST /api/v1/timeline/events/{id}/complete` `{status, skip_reason?}` —— 翻转生命周期
+  + 委托既有双轨 `agenda_service.complete_item` dispatcher 写真实源 + 幂等 + JWT 用户隔离 + 写失败返 422
+  (不假装成功)。这是 §13 user flow 的 confirm/skip 落点。`skip_reason ∈ {no_time, forgot, no_supply,
+  too_tired, wrong_place, too_hard, unwell, social}` —— 直接喂 §14 P6 learning loop。
+- **past 投影**(`timeline_past_service`)—— 简报/异常进 timeline past,**复用 critical/medical_grade 排除**
+  + `association_only`(相关非因果),即 §11 医疗边界 + non-goals 排除卡。
+- **到点推送 data** 带 `category:AGENDA_ACTION` + `complete_ref` + `complete_endpoint` —— §9.1 的
+  `execution.confirmation_required` 在通知侧的承载,使「推送→一键完成→首页熄灯」闭环可达。
+- 测试 12/12 + 全套 3912 绿;doc-drift 绿。
+
+### 1.5.2 §18 开放问题裁决(must-decide before P1)
+
+1. **协议模板存哪(DB/code/hybrid)** → **hybrid**:9 个协议模板做成**代码常量**(同 SafetyGuardian 规则的工程惯例
+   —— 可 version、可测、随部署走),seed 成**用户级 `HealthProtocol` DB 实例**(可个性化覆盖 timing/cadence)。
+   Appendix A 临床默认值作为 seed 源。理由:模板是确定性逻辑(归 Agent 层),实例是可变业务(归 DB)。
+2. **DeviceObservation 新模型 vs 折进 ExecutionEvent** → **统一折进 HealthEvent 流**:设备原始信号
+   (`posture_bad`/`screen_focus_started`…)= HealthEvent(observation 类,带 `provider`/`event_type`/`confidence`/payload);
+   完成信号(`eye_break_completed`…)→ 翻转对应 agenda HealthEvent 的生命周期。`POST /device-observations` 作为
+   **薄 ingest**,内部落 HealthEvent。**一个事件模型、一条脊柱**,避免 ExecutionEvent / DeviceObservation /
+   HealthEvent 三套并存。(Increment 1 已把执行事实落在 HealthEvent,此裁决与之一致。)
+3. **首个 eye/screen-focus 信号由谁产** → **P1 先 Mobile 计时器 + 人工确认**(零硬件依赖,先把先验闭环跑通);
+   **P2/P3** 接 Mac screen-focus adapter / Rokid 作为真实信号源。不阻塞 P1。
+
+### 1.5.3 脊柱 seam 对齐(`/schedule/today` vs `/timeline/today`)
+
+保持**两层、不重复**:
+- `/schedule/today`(`day_schedule_service` + `timing_solver` 输出)= **上游**;§9.1 的富字段
+  (`trigger`/`surface`/`chain`/`execution`/`safety`)在此 item 上产出。
+- `/timeline/today`(`today_timeline_service`:agenda 未来 + past + outcome + 已加的 HealthEvent 生命周期)
+  = **首页脊柱**,home 渲染只读它。§9.1 富字段经 agenda 投影流入 timeline 项。
+
+**首页只有一个脊柱面**(`/timeline/today`);`/schedule/today` 是其上游 solver,不直接喂 home。
+
+### 1.5.4 合并后路线图(本 spec §14 P0-P6 ⇄ Increment 编号)
+
+| 状态 | 阶段 | 内容 |
+|---|---|---|
+| ✅ 已建 | (= §7 ExecutionEvent + loop) | HealthEvent agenda 生命周期 + 完成端点 + past 投影(Increment 1) |
+| ⏭ 前置 | 横切 | **移动端闭环按钮 handler**(推送→解析 event_id→调 complete→首页熄灯)+ §9.1 富字段渲染 —— P1 的前提,否则协议有提醒但点了不熄灯 |
+| ⬜ 下一步 | §14 P1 | 协议模板(`eye_20_20_20`/`work_microbreak`/`nasal_wash`/`sleep_winddown`)→ 投影进 schedule/agenda → 经已建 complete 端点人工确认 |
+| ⬜ | §14 P2 | 通用 DeviceObservation(折进 HealthEvent)+ 镜像 Rokid 俯卧撑 + Mac screen-focus |
+| ⬜ | §14 P3 | 坐姿/用眼硬件 adapter(Rokid/camera,本地特征、不传原始帧) |
+| ⬜ | §14 P4 | workout chain(前检查/训练/拉伸/洗澡/按摩/餐/同步) |
+| ⬜ | §14 P5 | external intents(food_order/doctor_booking/alarm,全 manual_confirm,**永不自动支付/不存支付凭证**)—— 复用 `write_intent_service`/`reorder_intent_service` |
+| ⬜ | §14 P6 | learning loop(completion/skip 聚合 → 调 burden/cooldown/timing) |
+
+> 安全前置:Increment 1 基础在跑 P1 catalog 前需过一轮 safety-privacy review(R4 不诊断/不开方、R15 通知预算、用户隔离、§11 边界)。
+
 ## 2. Problem
 
 当前用户想要的不只是“今天几点吃药”。
@@ -947,3 +1011,4 @@ Can defer:
 | Date | Change | Reason |
 |---|---|---|
 | 2026-06-22 | Initial draft | Define time-driven health management as a unified Personal Health OS layer. |
+| 2026-06-22 | Add §1.5 Reconciliation & Build Status | 对齐已建 Increment 1(HealthEvent 执行层闭环 = 本 spec ExecutionEvent 段);裁决 §18 三个开放问题;统一脊柱 seam(`/timeline/today` 为首页脊柱);给出 P0-P6 ⇄ Increment 合并路线图。Codex 输入侧 spec 与 Claude 已建执行侧互补。 |
