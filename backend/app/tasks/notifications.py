@@ -12,6 +12,7 @@ from app.database import SessionLocal
 from app.models.user import User
 from app.models.notification import UserNotificationSetting
 from app.models.smart_plan import WeeklyPlan
+from app.services.notification.deeplinks import deeplink_for
 from app.services.notification.evidence_policy import build_notification_evidence_data
 from app.services.notification.push_service import PushService
 from app.utils.timezone import get_china_now
@@ -750,7 +751,11 @@ def daily_anomaly_check():
                                         notification_type="health_alert",
                                         title=f"⚠️ {alert.title}",
                                         content=alert.message[:120],
-                                        data={"screen": "alerts"},
+                                        data={
+                                            "screen": "alerts",  # legacy fallback
+                                            "deep_link": deeplink_for("health_alert"),
+                                            "rule_id": alert.rule_id,
+                                        },
                                         severity=alert.severity.label,
                                     ))
                             logger.info(f"[Safety Guardian] 用户 {user_id} 已推送告警")
