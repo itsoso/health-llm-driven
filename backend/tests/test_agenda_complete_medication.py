@@ -111,6 +111,79 @@ def test_complete_medication_idempotent_single_log(client, db, auth_user_and_hea
     assert len(_taken_logs(db, user.id, med.id)) == 1
 
 
+def test_domain_write_idempotent_across_minute_boundary(db, auth_user_and_headers):
+    """对抗:两次完成的领域写跨分钟(taken_time 槽不同时本会各落一条)→ 仍恰好一条 taken。
+
+    复现 safety review 抓的 HIGH:此前 taken_time 用 wall-clock now,跨分钟两写绕过
+    uq_medlog_med_date_time → 两条 MedicationLog → 虚高依从。修法是 taken_time 取议程
+    项 scheduled_for 的确定性槽(同项两次完成必落同一槽,DB 唯一约束兜住)。
+    这里在 complete_item 层直打两次(同一确定性 slot),验只落一条。
+    """
+    from app.services import agenda_service
+
+    user, _ = auth_user_and_headers
+    med = _seed_med(db, user.id)
+
+    # 同一确定性槽(模拟同一议程项的 scheduled_for "09:00"),两次领域写。
+    r1 = agenda_service.complete_item(
+        db, user.id, "medication", med.id, taken_time="09:00")
+    db.commit()
+    assert r1["wrote"] is True
+
+    # 第二次同槽写 → uq_medlog_med_date_time 撞 → log_medication 重读返回既有行,不落第二条。
+    # (commit=True 路径有 IntegrityError 重读兜底;此处显式走 commit=True 默认。)
+    from app.services.medication_service import medication_service
+    log2 = medication_service.log_medication(
+        db, user.id, med.id, taken_time="09:00", status="taken")
+    assert log2.id == r1["log_id"], "同槽重写必须重读既有行,不得落第二条"
+    assert len(_taken_logs(db, user.id, med.id)) == 1
+
+
+def test_two_agenda_events_same_med_second_completion_fails_loud(db, auth_user_and_headers):
+    """对抗:并发物化出两条同 med 同日议程行(无 DB 唯一约束的残留缝隙)。
+
+    完成第一条 → 落一条 taken;完成第二条(同 scheduled_for → 同确定性槽)→ 领域唯一约束撞
+    → 422(AgendaCompleteError),整事务回滚,**不**翻 done、**不**落第二条 taken。
+    即:就算议程层漏防出两行,领域层 DB 唯一约束 + fail-loud 仍守住「至多一条依从」。
+    """
+    from datetime import datetime
+
+    import pytest
+
+    from app.models.health_event import HealthEvent
+    from app.services import timeline_agenda_service as tas
+
+    user, _ = auth_user_and_headers
+    med = _seed_med(db, user.id)
+    ref = {"object_type": "medication", "object_id": med.id}
+    sched = datetime(2026, 6, 22, 9, 0, 0)
+
+    # 直接造两条同 ref 同 scheduled_for 的 pending 议程行(绕过 find 去重,模拟并发竞态)。
+    def _mk():
+        ev = HealthEvent(
+            user_id=user.id, event_type=tas.AGENDA_EVENT_TYPE, source="agenda",
+            agenda_status="pending", action_kind="medication", complete_ref=ref,
+            scheduled_for=sched, event_time=sched, association_only=False,
+        )
+        db.add(ev)
+        db.commit()
+        db.refresh(ev)
+        return ev
+
+    ev1, ev2 = _mk(), _mk()
+
+    r1 = tas.complete_agenda_event(db, user.id, ev1.id, status="done")
+    assert r1["agenda_status"] == "done"
+    assert len(_taken_logs(db, user.id, med.id)) == 1
+
+    # 第二条:同槽 → 领域唯一约束撞 → 422 fail-loud,不落第二条 taken。
+    with pytest.raises(tas.AgendaCompleteError):
+        tas.complete_agenda_event(db, user.id, ev2.id, status="done")
+    db.refresh(ev2)
+    assert ev2.agenda_status == "pending", "回写失败必须不翻 done(fail-loud)"
+    assert len(_taken_logs(db, user.id, med.id)) == 1, "至多一条依从,不得虚高"
+
+
 # ─────────────────────────── ③ skipped(不回写)───────────────────────────
 
 def test_complete_medication_skipped_no_writeback(client, db, auth_user_and_headers):

@@ -158,6 +158,9 @@ def complete_agenda_event(
         )
     except tas.AgendaEventNotFound:
         raise HTTPException(status_code=404, detail="议程事件不存在")
+    except LookupError:
+        # 回写来源(协议/药)已不存在 / 非本人 → 404(complete_item 对 not-found 抛 LookupError)。
+        raise HTTPException(status_code=404, detail="完成来源不存在")
     except tas.AgendaCompleteError as e:
         # 真实 source 回写失败 → 让客户端感知(不静默吞、不假装完成)。
         raise HTTPException(status_code=422, detail=f"完成回写失败: {e}")

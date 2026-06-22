@@ -110,9 +110,12 @@ async def complete_action(
         result = agenda_service.complete_item(
             db, current_user.id, object_type, object_id, track="protocol", value=None
         )
-    except ValueError:
-        # 仅 health_protocol 走到这里 → 唯一 ValueError 是「协议不存在/非本人」(含 IDOR)
+    except LookupError:
+        # 协议不存在 / 非本人(含 IDOR)→ 404(complete_item 对 not-found 统一抛 LookupError)。
         raise HTTPException(status_code=404, detail="协议不存在")
+    except ValueError as e:
+        # 不支持的来源等显式拒绝 → 400(此端点已先挡非 health_protocol,留作纵深防御)。
+        raise HTTPException(status_code=400, detail=str(e))
 
     # written 标签由协议 source_model 推导(user 过滤,IDOR 安全;不进 build_twin)
     p = proto_svc.get_protocol(db, object_id, current_user.id)

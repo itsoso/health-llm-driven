@@ -21,6 +21,7 @@ import logging
 from datetime import date, datetime, timezone
 from typing import Any, Dict, Optional
 
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -173,12 +174,18 @@ def complete_by_ref(
     today = get_user_today(db, user_id)
     ev = find_agenda_event(db, user_id, ref, today)
     if ev is None:
+        # 懒物化的 scheduled_for 取「整点」(minute/second 归零),不取裸 now:并发懒物化
+        # 在同一小时内算出同一 scheduled_for → 同一 _slot_time → 万一并发建了两条议程行,
+        # 完成时也会落同一 uq_medlog 槽被 DB 唯一约束兜住(配合 complete_agenda_event 的
+        # 原子 claim,把重复领域写收敛到至多一条)。
+        slot_dt = scheduled_for or get_user_now(db, user_id).replace(
+            minute=0, second=0, microsecond=0)
         ev = materialize_agenda_event(
             db, user_id,
             action_kind=_action_kind_for(object_type),
             title=title or "",
             complete_ref=ref,
-            scheduled_for=scheduled_for or get_user_now(db, user_id),
+            scheduled_for=slot_dt,
         )
     return complete_agenda_event(
         db, user_id, ev.id, status=status, skip_reason=skip_reason,
@@ -207,10 +214,19 @@ def complete_agenda_event(
     """闭环完成一个议程 HealthEvent。
 
     1) 用户隔离取行:不存在 / 非本人 → AgendaEventNotFound(端点转 404)。
-    2) 幂等:已是终态(done/skipped)→ 直接返回当前态,不二次回写(双击一次效果)。
+    2) 幂等 / 并发(D1,对齐 complete_protocol):领域记录的落库由 **DB 原子状态转移**门控,
+       不靠应用层读-检查-写。用
+           UPDATE health_events SET agenda_status=:status WHERE id=:id
+             AND agenda_status NOT IN ('done','skipped')
+       抢转移:仅当本事务 rowcount==1(真把 pending 翻成终态)才回写领域记录;rowcount==0
+       (并发/双击/重放里别人已完成)→ 不二次回写,重读返回 idempotent=True(双击一次效果)。
+       这堵住「两个并发 POST 各读到 pending → 各写一条 MedicationLog → 虚高依从污染
+       DDI/PGx/SafetyGuardian」(历史教训:依从写回的幂等必须 DB 兜底)。
     3) status=done 且有 complete_ref → 经 agenda_service.complete_item 双轨回写真实 source。
-       回写失败向上抛(AgendaCompleteError),HealthEvent 生命周期**不**翻 done(不假装)。
-    4) 翻 agenda_status + completed_at,写统一 completed/skipped 事实。
+       回写失败抛(AgendaCompleteError/LookupError),整个事务回滚(连状态转移一起撤),
+       HealthEvent 生命周期**不**翻 done(不假装,fail-loud)。
+    4) taken_time 用议程事件的 scheduled_for(确定性槽),不用 wall-clock now —— 同一议程项
+       两次完成必落同一 uq_medlog_med_date_time 槽,DB 唯一约束二次兜底;跨分钟也不漏。
 
     track / value 可选:不传(既有 event_id 端点调用方)→ 沿用 ref 内的 track、无手工量,
     行为与改前完全一致;传入(统一 /agenda/complete 手工轨)→ 把用户实际量/剂量透传给
@@ -233,9 +249,38 @@ def complete_agenda_event(
     if ev is None:
         raise AgendaEventNotFound(f"议程事件不存在: id={event_id}")
 
-    # 幂等:已终态直接返回(双击 / 重放 → 一次效果)。
+    # 快路幂等:已终态直接返回(无需进 DB 抢转移)。
     if ev.agenda_status in ("done", "skipped"):
         return _serialize(ev, idempotent=True)
+
+    # 原子 claim:仅当从「非终态」翻成本次终态才算抢到状态转移(并发至多一个 rowcount==1)。
+    completed_at = datetime.now(timezone.utc)  # 列为 DateTime(timezone=True),写 tz-aware。
+    res = db.execute(
+        update(HealthEvent)
+        .where(
+            HealthEvent.id == ev.id,
+            HealthEvent.user_id == user_id,
+            HealthEvent.agenda_status.notin_(("done", "skipped")),
+        )
+        .values(
+            agenda_status=status,
+            skip_reason=skip_reason if status == "skipped" else None,
+            completed_at=completed_at,
+        )
+    )
+    won_transition = res.rowcount == 1
+
+    if not won_transition:
+        # 没抢到 → 并发里别人已完成 / 已是终态。撤本次空转,重读返回 idempotent(一次效果)。
+        db.rollback()
+        again = (
+            db.query(HealthEvent)
+            .filter(HealthEvent.id == event_id, HealthEvent.user_id == user_id)
+            .first()
+        )
+        if again is None:  # 理论不至于
+            raise AgendaEventNotFound(f"议程事件不存在: id={event_id}")
+        return _serialize(again, idempotent=True)
 
     write_result: Optional[Dict[str, Any]] = None
     if status == "done" and ev.complete_ref:
@@ -247,23 +292,25 @@ def complete_agenda_event(
         if object_type is not None and object_id is not None:
             from app.services import agenda_service
             try:
+                # 仅抢到转移的事务回写领域记录;失败 → 整事务回滚(状态转移一并撤),不假装。
                 write_result = agenda_service.complete_item(
                     db, user_id, object_type, int(object_id),
                     track=effective_track, value=value,
+                    taken_time=_slot_time(ev),
                 )
             except LookupError:
-                # 资源不存在 / 非本人 → 上抛(端点转 404,跨用户隔离),不翻 done、不假装。
+                # 资源不存在 / 非本人 → 回滚 + 上抛(端点转 404,跨用户隔离),不翻 done。
+                db.rollback()
                 raise
             except ValueError as e:
-                # 不支持经议程完成的来源 / source 不存在 → 让调用方感知(不假装完成)。
+                # 不支持经议程完成的来源 / source 不存在 → 回滚 + 让调用方感知(不假装完成)。
+                db.rollback()
                 raise AgendaCompleteError(str(e)) from e
+            except IntegrityError as e:
+                # 领域唯一约束撞(同槽并发/重放)→ 回滚 + 当回写失败上抛,绝不静默二写。
+                db.rollback()
+                raise AgendaCompleteError(f"领域记录唯一约束冲突: {e}") from e
 
-    # 生命周期翻态(回写已成功,或本就是 skip / 无 complete_ref 的纯生命周期项)。
-    ev.agenda_status = status
-    ev.skip_reason = skip_reason if status == "skipped" else None
-    # completed_at 列是 DateTime(timezone=True);写 tz-aware now,别用 naive datetime.now()
-    # (PG 会按 server tz 解释 naive 值,SQLite 则裸存,跨源比较会漂)。
-    ev.completed_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(ev)
     logger.info(
@@ -273,6 +320,20 @@ def complete_agenda_event(
     out = _serialize(ev, idempotent=False)
     out["source_write"] = write_result
     return out
+
+
+def _slot_time(ev: HealthEvent) -> str:
+    """议程事件 → 确定性 taken_time("HH:MM")。
+
+    用 scheduled_for(议程项的代表时点)而非 wall-clock now:同一议程项两次完成落同一
+    uq_medlog_med_date_time 槽,让 DB 唯一约束真兜住二次写;多剂(不同 scheduled_for)
+    仍各自成槽不误伤。无 scheduled_for 时回退 event_time,再回退中国时区 now。
+    """
+    slot = ev.scheduled_for or ev.event_time
+    if slot is not None:
+        return slot.strftime("%H:%M")
+    from app.utils.timezone import get_china_now
+    return get_china_now().strftime("%H:%M")
 
 
 def _serialize(ev: HealthEvent, *, idempotent: bool) -> Dict[str, Any]:

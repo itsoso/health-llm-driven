@@ -545,11 +545,15 @@ SUPPORTED_COMPLETE_TYPES = ("health_protocol", "medication", "supplement")
 def complete_item(
     db: Session, user_id: int, object_type: str, object_id: int,
     track: str = "protocol", value: Dict[str, Any] | None = None,
+    taken_time: str | None = None,
 ) -> Dict[str, Any]:
     """统一完成路由:按 agenda item 的 source.object_type 路由到对应 source 的完成。
 
     health_protocol → 双轨完成(写真实业务记录)。med/supplement → 复用 log_medication。
     不支持的来源显式报错(不静默假装完成,守 Rule #1)。
+
+    taken_time(可选,med/supplement 用):由调用方给确定性服药时点槽(如议程项 scheduled_for
+    的 "HH:MM"),让 uq_medlog_med_date_time 在重复完成时真兜底;缺省回退中国时区 now。
     """
     if object_type == "health_protocol":
         ev = proto_svc.complete_protocol(db, object_id, user_id, track=track, value=value)
@@ -571,9 +575,11 @@ def complete_item(
         # 手工轨可带用户实际剂量(actual_dosage):记的是「用户报告实际服了多少」这一依从事实,
         # 不是处方/调量(R4)。缺省 None → log_medication 按医嘱默认记录。
         actual_dosage = (value or {}).get("actual_dosage")
+        # 确定性服药时点槽(议程项 scheduled_for):同项重复完成落同一 uq_medlog 槽 → DB 兜底去重。
+        slot = taken_time or get_china_now().strftime("%H:%M")
         log = medication_service.log_medication(
             db, user_id, object_id,
-            taken_time=get_china_now().strftime("%H:%M"),
+            taken_time=slot,
             status="taken", actual_dosage=actual_dosage, commit=False,
         )
         return {"object_type": object_type, "object_id": object_id,
