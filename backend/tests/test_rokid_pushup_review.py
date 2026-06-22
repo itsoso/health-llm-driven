@@ -190,6 +190,28 @@ def test_review_sanitizes_and_alerts_imperative_movement_phrase(
     assert "guidance_red_lines.movement_imperative_red_line" in rule_ids
 
 
+def test_movement_context_logs_degradation_at_warning(monkeypatch, caplog):
+    """council #13: a twin/MovementCoach failure must log at WARNING, not INFO —
+    silent INFO is how this feature quietly died. The degradation still returns
+    (None, None) (no fake success)."""
+    import logging
+
+    def _boom(db, user_id):
+        raise RuntimeError("twin build failed")
+
+    monkeypatch.setattr("app.twin.builder.build_twin", _boom)
+
+    with caplog.at_level(logging.WARNING, logger="app.services.rokid_pushup_review"):
+        result = review_svc._movement_context(db=None, user_id=1)
+
+    assert result == (None, None)  # degrade, never pretend success
+    warnings = [
+        r for r in caplog.records
+        if r.levelno == logging.WARNING and "movement context unavailable" in r.message
+    ]
+    assert warnings, "degradation must be logged at WARNING level"
+
+
 def test_compute_session_quality_handles_missing_scores():
     """Pure aggregation: no quality scores → avg None, reps from max, count kept."""
     from app.models.rokid_pushup import RokidPushupEvent

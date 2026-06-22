@@ -466,6 +466,233 @@ def test_cross_user_abort_is_not_found(client, db):
     assert resp.status_code == 404, resp.text
 
 
+# ─────────────────────── council #6: aborted sessions don't count to quota ──
+
+
+def test_aborted_sessions_excluded_from_daily_quota(client, db):
+    """council #6: abort is the privacy-friendly exit (immediate purge). 5 quick
+    aborts must NOT lock the user out for 24h — only non-aborted sessions count."""
+    user, headers = _auth(db)
+    for _ in range(5):
+        sid = _start(client, headers).json()["id"]
+        abort = client.post(f"/api/v1/ambient/meal-sessions/{sid}/abort", headers=headers)
+        assert abort.status_code == 200, abort.text
+    # 6th start after 5 aborts must still succeed (not 429)
+    sixth = _start(client, headers)
+    assert sixth.status_code == 201, sixth.text
+
+
+def test_active_sessions_still_count_to_daily_quota(client, db):
+    """Regression guard: the quota still triggers for non-aborted sessions, so #6
+    didn't disable the throttle entirely."""
+    user, headers = _auth(db)
+    for _ in range(5):
+        assert _start(client, headers).status_code == 201
+    sixth = _start(client, headers)
+    assert sixth.status_code == 429, sixth.text
+
+
+# ─────────────────────── council #5: purge timestamp set on confirm/abort ───
+
+
+def test_confirm_sets_raw_media_deleted_at(client, db):
+    """council #5: confirm must set raw_media_deleted_at (not only the Celery
+    sweep) so the audit shows raw images were purged AND the daily sweep stops
+    re-scanning this session forever."""
+    user, headers = _auth(db)
+    sid = _start(client, headers).json()["id"]
+    frame_resp = client.post(
+        f"/api/v1/ambient/meal-sessions/{sid}/frames",
+        headers=headers,
+        json={"image_base64": "ZmFrZS1pbWFnZS1ieXRlcw==", "recognition_result": _recognition()},
+    )
+    frame_id = frame_resp.json()["frame_event_id"]
+    client.post(f"/api/v1/ambient/meal-sessions/{sid}/finish", headers=headers)
+    client.post(
+        f"/api/v1/ambient/meal-sessions/{sid}/confirm", headers=headers, json={"confirm": True}
+    )
+    db.expire_all()
+    session = db.query(MealMonitoringSession).filter(MealMonitoringSession.id == sid).one()
+    assert session.raw_media_deleted_at is not None
+    frame = db.query(VisualInputEvent).filter(VisualInputEvent.id == frame_id).one()
+    assert "image_base64" not in (frame.meta or {})
+
+
+def test_abort_sets_raw_media_deleted_at(client, db):
+    """council #5: abort must also set raw_media_deleted_at."""
+    user, headers = _auth(db)
+    sid = _start(client, headers).json()["id"]
+    frame_resp = client.post(
+        f"/api/v1/ambient/meal-sessions/{sid}/frames",
+        headers=headers,
+        json={"image_base64": "ZmFrZS1pbWFnZS1ieXRlcw==", "recognition_result": _recognition()},
+    )
+    frame_id = frame_resp.json()["frame_event_id"]
+    client.post(f"/api/v1/ambient/meal-sessions/{sid}/abort", headers=headers)
+    db.expire_all()
+    session = db.query(MealMonitoringSession).filter(MealMonitoringSession.id == sid).one()
+    assert session.raw_media_deleted_at is not None
+    frame = db.query(VisualInputEvent).filter(VisualInputEvent.id == frame_id).one()
+    assert "image_base64" not in (frame.meta or {})
+
+
+def test_purged_session_not_rescanned_by_sweep(client, db):
+    """council #5: after confirm sets raw_media_deleted_at, the daily sweep
+    (filters raw_media_deleted_at.is_(None)) must skip the session."""
+    from datetime import datetime, timedelta, timezone
+    from app.services import meal_monitoring as meal_svc
+
+    user, headers = _auth(db)
+    sid = _start(client, headers).json()["id"]
+    client.post(
+        f"/api/v1/ambient/meal-sessions/{sid}/frames",
+        headers=headers,
+        json={"image_base64": "ZmFrZQ==", "recognition_result": _recognition()},
+    )
+    client.post(f"/api/v1/ambient/meal-sessions/{sid}/finish", headers=headers)
+    client.post(
+        f"/api/v1/ambient/meal-sessions/{sid}/confirm", headers=headers, json={"confirm": True}
+    )
+    # force the TTL into the past — the sweep would pick it up if not already purged
+    session = db.query(MealMonitoringSession).filter(MealMonitoringSession.id == sid).one()
+    session.raw_media_delete_at = datetime.now(timezone.utc) - timedelta(days=1)
+    db.commit()
+    purged = meal_svc.purge_expired_raw_media(db)
+    assert purged == 0  # already purged at confirm; sweep skips it
+
+
+# ─────────────────────── council #7: DietRecord dated to capture, not confirm ─
+
+
+async def test_confirm_dates_record_to_capture_day_not_confirm_day(client, db):
+    """council #7: a cross-day confirm (shot yesterday, confirmed today) must land
+    the DietRecord on the capture day, not the confirm day."""
+    from datetime import datetime, timedelta, timezone
+    from app.services import meal_monitoring as meal_svc
+
+    user, headers = _auth(db)
+    session = meal_svc.start_session(db, user.id, consent=True)
+    # frame captured ~yesterday 23:50 Beijing (15:50 UTC the day before)
+    captured = datetime.now(timezone.utc) - timedelta(days=1)
+    meal_svc.append_frame(
+        db, user.id, session.id, recognition_result=_recognition(), captured_at=captured
+    )
+    # backdate the session start too, so the fallback path is also correct
+    session.started_at = captured
+    db.commit()
+
+    await meal_svc.finish_session(db, user.id, session.id)
+    _, record = meal_svc.confirm_session(db, user.id, session.id)
+    assert record is not None
+    # record_date must match the capture day (Beijing), not today
+    from app.services.ambient_wearables import _BEIJING_TZ
+
+    expected = captured.astimezone(_BEIJING_TZ).date()
+    assert record.record_date == expected
+
+
+# ─────────────────────── council #3: finish never leaves session stuck ──────
+
+
+async def test_finish_analysis_failure_resets_to_active_and_raises(client, db, monkeypatch):
+    """council #3: if analyze_frames raises, the session must reset to 'active'
+    (so the user can retry finish) and the error surfaces — never stuck 'analyzing'."""
+    import app.services.meal_analysis as meal_analysis
+    from app.services import meal_monitoring as meal_svc
+
+    async def _boom(db, user_id, session_id, frames):
+        raise RuntimeError("vision provider down")
+
+    monkeypatch.setattr(meal_analysis, "analyze_frames", _boom)
+
+    user, headers = _auth(db)
+    session = meal_svc.start_session(db, user.id, consent=True)
+    meal_svc.append_frame(db, user.id, session.id, recognition_result=_recognition())
+
+    import pytest
+
+    with pytest.raises(meal_svc.MealSessionAnalysisError):
+        await meal_svc.finish_session(db, user.id, session.id)
+    db.expire_all()
+    refreshed = db.query(MealMonitoringSession).filter(
+        MealMonitoringSession.id == session.id
+    ).one()
+    assert refreshed.status == "active"  # not stuck in 'analyzing'
+    assert refreshed.ended_at is None
+
+
+def test_finish_analysis_failure_returns_503_not_stuck(client, db, monkeypatch):
+    """council #3 via the route: analysis failure surfaces as 503 (recoverable),
+    and the session is left confirmable-after-retry, not stuck."""
+    import app.services.meal_analysis as meal_analysis
+
+    async def _boom(db, user_id, session_id, frames):
+        raise RuntimeError("vision provider down")
+
+    monkeypatch.setattr(meal_analysis, "analyze_frames", _boom)
+
+    user, headers = _auth(db)
+    sid = _start(client, headers).json()["id"]
+    client.post(
+        f"/api/v1/ambient/meal-sessions/{sid}/frames",
+        headers=headers,
+        json={"recognition_result": _recognition()},
+    )
+    resp = client.post(f"/api/v1/ambient/meal-sessions/{sid}/finish", headers=headers)
+    assert resp.status_code == 503, resp.text
+    # session is back to active — a retry (with working vision) is possible
+    got = client.get(f"/api/v1/ambient/meal-sessions/{sid}", headers=headers)
+    assert got.json()["status"] == "active"
+
+
+# ─────────────────────── council #4: confirm-after-abort is 409, no write ───
+
+
+def test_confirm_after_abort_is_409_and_writes_nothing(client, db):
+    """council #4: once a session is aborted, confirm must 409 (not write a
+    DietRecord against purged frames). With for_update locking, abort wins."""
+    user, headers = _auth(db)
+    sid = _start(client, headers).json()["id"]
+    client.post(
+        f"/api/v1/ambient/meal-sessions/{sid}/frames",
+        headers=headers,
+        json={"recognition_result": _recognition()},
+    )
+    client.post(f"/api/v1/ambient/meal-sessions/{sid}/finish", headers=headers)
+    # abort first
+    abort = client.post(f"/api/v1/ambient/meal-sessions/{sid}/abort", headers=headers)
+    assert abort.status_code == 200, abort.text
+    # confirm now must 409 and write nothing
+    confirm = client.post(
+        f"/api/v1/ambient/meal-sessions/{sid}/confirm", headers=headers, json={"confirm": True}
+    )
+    assert confirm.status_code == 409, confirm.text
+    assert db.query(DietRecord).filter(DietRecord.user_id == user.id).count() == 0
+
+
+async def test_finish_uses_for_update_lock(db):
+    """council #4: finish_session must lock the row (for_update) so it serializes
+    against concurrent confirm/abort. Assert get_session is called with the lock."""
+    from unittest.mock import patch
+    from app.services import meal_monitoring as meal_svc
+
+    user, _ = _auth(db)
+    session = meal_svc.start_session(db, user.id, consent=True)
+    meal_svc.append_frame(db, user.id, session.id, recognition_result=_recognition())
+
+    real_get = meal_svc.get_session
+    calls = []
+
+    def _spy(db_, uid, sid, *, for_update=False):
+        calls.append(for_update)
+        return real_get(db_, uid, sid, for_update=for_update)
+
+    with patch.object(meal_svc, "get_session", _spy):
+        await meal_svc.finish_session(db, user.id, session.id)
+    # the initial state-transition read must take the lock
+    assert calls[0] is True
+
+
 def test_finish_runs_backend_vision_when_frame_lacks_recognition(client, db, monkeypatch):
     """Frames with an inline image but no recognition_result are run through the
     existing vision provider, and each vision call is audited."""
@@ -488,3 +715,126 @@ def test_finish_runs_backend_vision_when_frame_lacks_recognition(client, db, mon
     assert summary["vision_calls"] == 1
     assert len(summary["foods"]) == 1
     assert summary["foods"][0]["name"] == "米饭"
+
+
+# ─────────────────────── council #11: /visual-inputs food_scan throttle ─────
+
+
+def _visual_food_scan(client, headers, *, confirmed=False):
+    meta = {"confirmed_by_user": True} if confirmed else None
+    return client.post(
+        "/api/v1/ambient/visual-inputs",
+        headers=headers,
+        json={
+            "intent": "food_scan",
+            "source": "rokid_glasses",
+            "device_type": "glasses",
+            "image_uri": f"private://rokid/{uuid.uuid4().hex}.jpg",
+            "recognition_result": _recognition(),
+            "confidence": 0.8,
+            **({"meta": meta} if meta else {}),
+        },
+    )
+
+
+def test_visual_input_food_scan_throttle_returns_429(client, db):
+    """council #11: the single-shot /visual-inputs food_scan path had no throttle.
+    Over the daily cap it must 429 (fail-loud), not silently keep writing."""
+    from app.services.meal_monitoring import MAX_FOOD_SCANS_PER_DAY
+
+    user, headers = _auth(db)
+    for i in range(MAX_FOOD_SCANS_PER_DAY):
+        ok = _visual_food_scan(client, headers)
+        assert ok.status_code == 201, f"scan {i} failed: {ok.text}"
+    over = _visual_food_scan(client, headers)
+    assert over.status_code == 429, over.text
+    assert "food-scan limit" in over.json()["detail"]
+
+
+def test_visual_input_throttle_is_per_user(client, db):
+    """council #11: the throttle is per-user — user B is unaffected by user A's cap."""
+    from app.services.meal_monitoring import MAX_FOOD_SCANS_PER_DAY, MealThrottleError, check_food_scan_quota
+
+    user_a, headers_a = _auth(db)
+    user_b, headers_b = _auth(db)
+    for _ in range(MAX_FOOD_SCANS_PER_DAY):
+        assert _visual_food_scan(client, headers_a).status_code == 201
+    assert _visual_food_scan(client, headers_a).status_code == 429
+    # B's quota is independent
+    assert _visual_food_scan(client, headers_b).status_code == 201
+    # service-level check confirms isolation: A over, B clear
+    import pytest
+
+    with pytest.raises(MealThrottleError):
+        check_food_scan_quota(db, user_a.id)
+    check_food_scan_quota(db, user_b.id)  # no raise
+
+
+def test_visual_input_non_food_scan_not_throttled(client, db):
+    """council #11: the throttle only applies to food_scan — other intents are
+    unaffected (don't break label/medication scans)."""
+    from app.services.meal_monitoring import MAX_FOOD_SCANS_PER_DAY
+
+    user, headers = _auth(db)
+    for _ in range(MAX_FOOD_SCANS_PER_DAY):
+        assert _visual_food_scan(client, headers).status_code == 201
+    # food_scan is now capped, but a label_scan still goes through
+    label = client.post(
+        "/api/v1/ambient/visual-inputs",
+        headers=headers,
+        json={
+            "intent": "label_scan",
+            "source": "rokid_glasses",
+            "device_type": "glasses",
+            "ocr_text": "营养成分表",
+        },
+    )
+    assert label.status_code == 201, label.text
+
+
+# ─────────────────────── council #2: direct-confirmed write is audited ──────
+
+
+def test_visual_input_direct_confirmed_write_is_audited(client, db):
+    """council #2: confirmed_by_user on /visual-inputs is the sanctioned R4 write
+    gate (kept), but it bypasses the meal-session summary. An audit row must be
+    written so the direct-confirmed write isn't invisible."""
+    from app.models.agent_audit_log import AgentAuditLog
+
+    user, headers = _auth(db)
+    resp = _visual_food_scan(client, headers, confirmed=True)
+    assert resp.status_code == 201, resp.text
+    # DietRecord written (R4 gate honored)
+    assert db.query(DietRecord).filter(DietRecord.user_id == user.id).count() == 1
+    # AND an audit row marks the direct-confirmed write
+    audit_rows = (
+        db.query(AgentAuditLog)
+        .filter(
+            AgentAuditLog.user_id == user.id,
+            AgentAuditLog.action == "direct_confirmed_food_write",
+        )
+        .all()
+    )
+    assert len(audit_rows) == 1
+    assert audit_rows[0].agent_type == "ambient_visual_input"
+
+
+def test_visual_input_unconfirmed_food_scan_not_audited_as_direct_write(client, db):
+    """council #2: a non-confirmed food_scan (draft) must NOT emit the
+    direct-confirmed audit entry — only explicit confirmed_by_user does."""
+    from app.models.agent_audit_log import AgentAuditLog
+
+    user, headers = _auth(db)
+    resp = _visual_food_scan(client, headers, confirmed=False)
+    assert resp.status_code == 201, resp.text
+    # draft path: no DietRecord
+    assert db.query(DietRecord).filter(DietRecord.user_id == user.id).count() == 0
+    rows = (
+        db.query(AgentAuditLog)
+        .filter(
+            AgentAuditLog.user_id == user.id,
+            AgentAuditLog.action == "direct_confirmed_food_write",
+        )
+        .count()
+    )
+    assert rows == 0

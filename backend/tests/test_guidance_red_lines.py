@@ -147,6 +147,10 @@ _ZH_SOFT_DIET_LEAKS = [
     "建议你避免高糖食物",
     "把蛋白质提高到每天120克",
     "下一餐请勿摄入超过50克脂肪",
+    # council #12: long noun-phrase gap between "把" and the verb (> old {0,12})
+    # used to leak through the fixed-quantifier "把…{0,12}…克" pattern.
+    "把你的身体状态允许的蛋白量逐步提升至120克",
+    "把每天的碳水化合物摄入总量严格控制到200克以内",
 ]
 
 _ZH_SOFT_MOVEMENT_LEAKS = [

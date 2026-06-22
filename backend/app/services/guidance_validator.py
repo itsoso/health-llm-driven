@@ -50,7 +50,14 @@ _PRESCRIPTIVE_QTY = [
     re.compile(rf"(?:吃|补|摄入|喝|服用)[^。；;\n]{{0,6}}{_QUANTITY}[^。；;\n]{{0,4}}(?:每(?:天|日|餐|顿))"),
     re.compile(rf"(?:避免|限制|控制|减少)[^。；;\n]{{0,8}}{_QUANTITY}"),
     # 中文软祈使: "把蛋白质提高到每天120克" / "下一餐请勿摄入超过50克脂肪" / "降到X克"
-    re.compile(rf"把[^。；;\n]{{0,12}}(?:提高|提升|增加|降|减|控制|限制)(?:到|至|在)?[^。；;\n]{{0,8}}{_QUANTITY}"),
+    # council #12: the old fixed {0,12} gap between "把" and the verb missed longer
+    # noun phrases ("把你的身体状态允许的蛋白量逐步提升至120克", gap > 12). Widen the
+    # lead-in to {0,40} (lazy) and require an explicit 到/至/到达-style target marker
+    # so observational text ("今日蛋白还差35g" — no "把") stays clean.
+    re.compile(
+        rf"把[^。；;!?！？\n]{{0,40}}?(?:提高|提升|增加|降低?|减少?|控制|限制)"
+        rf"(?:到|至|在)[^。；;!?！？\n]{{0,10}}?{_QUANTITY}"
+    ),
     re.compile(rf"(?:请勿|不得|不要|别)[^。；;\n]{{0,8}}(?:摄入|吃|喝|超过)[^。；;\n]{{0,8}}{_QUANTITY}"),
     # 英文量化处方: "Eat 50g of nuts", "consume 200g protein", "limit intake to 500 calories"
     re.compile(

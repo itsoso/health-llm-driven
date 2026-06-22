@@ -135,6 +135,16 @@ def create_visual_input(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
+    # council #11: throttle the single-shot food_scan path per user/day (it had no
+    # limit, unlike the meal-session path). 429 over-limit — fail-loud, never drop.
+    if body.intent == "food_scan":
+        try:
+            meal_svc.check_food_scan_quota(db, current_user.id)
+        except meal_svc.MealThrottleError as e:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=e.reason
+            )
+
     event = svc.create_visual_input_event(
         db,
         current_user.id,
@@ -151,6 +161,31 @@ def create_visual_input(
         meta=body.meta,
     )
     svc.create_food_diet_record_from_visual_event(db, current_user.id, event)
+
+    # council #2: confirmed_by_user on /visual-inputs IS the sanctioned R4 write
+    # gate (single-shot path), so we keep it — but it bypasses the meal-session
+    # finish summary + guidance/safety pass, so a direct-confirmed write would
+    # otherwise be invisible. Log an audit entry so it's traceable.
+    meta = body.meta if isinstance(body.meta, dict) else {}
+    if body.intent == "food_scan" and meta.get("confirmed_by_user"):
+        from app.agents import audit
+
+        audit._write(
+            db,
+            user_id=current_user.id,
+            agent_type="ambient_visual_input",
+            action="direct_confirmed_food_write",
+            result_summary=(
+                f"visual-input {event.id} direct-confirmed food write "
+                "(bypassed meal-session finish summary)"
+            ),
+            result_detail={
+                "visual_input_event_id": event.id,
+                "target_type": event.target_type,
+                "source": body.source,
+            },
+        )
+
     db.commit()
     db.refresh(event)
     return AmbientVisualInputResponse(
@@ -320,6 +355,12 @@ async def finish_meal_session(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
     except meal_svc.MealSessionState as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except meal_svc.MealSessionAnalysisError as e:
+        # council #3: analysis failed but the session was reset to 'active' — this
+        # is recoverable, the client may retry finish. 503, not a stuck 'analyzing'.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)
+        )
     session = meal_svc.get_session(db, current_user.id, session_id)
     return MealSessionFinishResponse(
         session=MealSessionResponse.model_validate(session),

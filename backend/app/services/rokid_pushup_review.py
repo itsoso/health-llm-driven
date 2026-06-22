@@ -93,12 +93,16 @@ def _movement_context(db: Session, user_id: int) -> tuple[Optional[Dict[str, Any
                 ctx["readiness_zone"] = zone
         except Exception as e:  # noqa: BLE001
             # Readiness is optional context for MovementCoach; record and continue.
-            logger.info(f"[rokid_review] recovery readiness skipped: {e}")
+            # WARNING, not INFO: a silently-INFO'd degradation is how this feature
+            # quietly died before — make degradations visible in prod logs.
+            logger.warning(f"[rokid_review] recovery readiness skipped: {e}")
 
         finding = MovementCoachSpecialist().run(twin, ctx)
     except Exception as e:  # noqa: BLE001
         # Twin build / specialist failure → degrade, do NOT pretend success.
-        logger.info(f"[rokid_review] movement context unavailable: {e}")
+        # WARNING, not INFO: silent INFO is how this feature died (matches the
+        # meal_analysis fix). Degradation must be loud in prod logs.
+        logger.warning(f"[rokid_review] movement context unavailable: {e}")
         return None, None
 
     raw = finding.raw or {}

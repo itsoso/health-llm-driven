@@ -1,28 +1,15 @@
 """Meal monitoring (准视频 periodic-sampling) service.
 
 Flow (R4: RECORD + FOLLOW-UP only, never diagnose/prescribe/adjust):
+start -> frame(s) -> finish (batch vision -> DRAFT) -> confirm (writes DietRecord
+via the existing R4 draft gate, ONLY on explicit user confirm) / abort (purge).
 
-  start  -> POST /ambient/meal-sessions          (requires explicit consent)
-  frame  -> POST /ambient/meal-sessions/{id}/frames   (one base64 frame, throttled)
-  finish -> POST /ambient/meal-sessions/{id}/finish   (batch vision -> DRAFT)
-  confirm-> POST /ambient/meal-sessions/{id}/confirm  (writes DietRecord via the
-            existing R4 draft gate, ONLY on explicit user confirm)
-
-Frames are stored as ``VisualInputEvent`` rows linked back via
-``meta.meal_session_id`` — we reuse that draft-stated table instead of a heavy
-new frames table. The session row only tracks lifecycle, consent, frame count,
-raw-media TTL and the observational summary.
-
-Throttle: <= MAX_FRAMES_PER_SESSION frames per session and
-<= MAX_SESSIONS_PER_DAY sessions per user/day. Over-limit raises
-``MealThrottleError`` (mapped to 429) — never a silent drop.
-
-Privacy: raw frame images (``VisualInputEvent.image_uri``) are purged at the
-session's ``raw_media_delete_at`` (+7d). Analysis notes / summary persist.
-
-Every vision call + frame ingest writes an ``agent_audit_log`` row (not a silent
-batch). The post-meal summary text is run through ``guidance_validator`` AND the
-SafetyGuardian guidance red-line rules before it is returned.
+Frames are ``VisualInputEvent`` rows linked via ``meta.meal_session_id`` (reuse the
+draft-stated table, no heavy frames table). Throttle: <= MAX_FRAMES_PER_SESSION
+per session, <= MAX_SESSIONS_PER_DAY per user/day -> ``MealThrottleError`` (429),
+never a silent drop. Raw frame images are purged at ``raw_media_delete_at`` (+7d)
+or inline on confirm/abort (see ``meal_privacy``); analysis notes persist. Every
+vision call + frame ingest writes an ``agent_audit_log`` row.
 """
 from __future__ import annotations
 
@@ -37,12 +24,21 @@ from app.models.ambient_wearable import MealMonitoringSession, VisualInputEvent
 from app.models.daily_health import DietRecord
 from app.services import ambient_wearables as ambient_svc
 from app.services import meal_analysis
+from app.services.meal_privacy import (
+    purge_expired_raw_media,  # re-exported (Celery task / tests use this name)
+    purge_raw_media as _purge_raw_media,
+)
 
 logger = logging.getLogger(__name__)
 
 MAX_FRAMES_PER_SESSION = 30
 MAX_SESSIONS_PER_DAY = 5
 RAW_MEDIA_TTL_DAYS = 7
+# council #11: single-shot /visual-inputs food_scan path has no session lifecycle,
+# so it needs its own per-user/day cap (the meal-session path is throttled by
+# MAX_SESSIONS_PER_DAY × MAX_FRAMES_PER_SESSION). Cap generously — this is the
+# casual "snap one photo" path, not a video stream.
+MAX_FOOD_SCANS_PER_DAY = 50
 
 _ACTIVE_STATUSES = {"active", "analyzing"}
 
@@ -67,6 +63,11 @@ class MealSessionState(MealSessionError):
     """Operation invalid for the current session status (mapped to 409)."""
 
 
+class MealSessionAnalysisError(MealSessionError):
+    """Finish-time analysis failed; session reset to 'active' so finish can be
+    retried (mapped to 503). Never leaves the session stuck in 'analyzing'."""
+
+
 # ─────────────────────── lifecycle ───────────────────────
 
 
@@ -85,11 +86,16 @@ def start_session(
 
     now = datetime.now(timezone.utc)
     day_start = now - timedelta(days=1)
+    # council #6: exclude `aborted` sessions from the quota. abort is the
+    # privacy-friendly exit (immediate raw-media purge); counting abandons
+    # against MAX_SESSIONS_PER_DAY would let 5 quick aborts lock the user out
+    # for 24h. Only sessions the user actually carried forward count.
     today_count = (
         db.query(MealMonitoringSession)
         .filter(
             MealMonitoringSession.user_id == user_id,
             MealMonitoringSession.started_at >= day_start,
+            MealMonitoringSession.status != "aborted",
         )
         .count()
     )
@@ -122,6 +128,31 @@ def start_session(
         result_detail={"session_id": session.id, "source": source},
     )
     return session
+
+
+def check_food_scan_quota(db: Session, user_id: int) -> None:
+    """Throttle the single-shot ``/visual-inputs`` food_scan path per user/day.
+
+    council #11: this path has no session lifecycle and was completely
+    unthrottled — a buggy/abusive client could write unbounded VisualInputEvent
+    rows (and, with confirmed_by_user, DietRecords). Raises ``MealThrottleError``
+    (mapped to 429) over-limit — never a silent drop. Counts this user's
+    food_scan visual-inputs in the last 24h.
+    """
+    day_start = datetime.now(timezone.utc) - timedelta(days=1)
+    today_count = (
+        db.query(VisualInputEvent)
+        .filter(
+            VisualInputEvent.user_id == user_id,
+            VisualInputEvent.intent == "food_scan",
+            VisualInputEvent.created_at >= day_start,
+        )
+        .count()
+    )
+    if today_count >= MAX_FOOD_SCANS_PER_DAY:
+        raise MealThrottleError(
+            f"daily food-scan limit reached ({MAX_FOOD_SCANS_PER_DAY}/24h)"
+        )
 
 
 def get_session(
@@ -220,6 +251,29 @@ def list_frames(db: Session, user_id: int, session_id: int) -> List[VisualInputE
     )
 
 
+def _representative_capture_time(
+    db: Session, user_id: int, session_id: int
+) -> Optional[datetime]:
+    """Earliest frame ``captured_at`` for a session (the meal's actual shot time).
+
+    Used to date the confirmed DietRecord to when the food was captured, not when
+    the user got around to confirming it. Returns ``None`` when there are no frames
+    with a capture time (caller falls back to the session's ``started_at``).
+    """
+    row = (
+        db.query(VisualInputEvent.captured_at)
+        .filter(
+            VisualInputEvent.user_id == user_id,
+            VisualInputEvent.target_type == "meal_frame",
+            VisualInputEvent.target_id == session_id,
+            VisualInputEvent.captured_at.isnot(None),
+        )
+        .order_by(VisualInputEvent.captured_at.asc())
+        .first()
+    )
+    return row[0] if row else None
+
+
 # ─────────────────────── batch analysis ───────────────────────
 
 
@@ -242,7 +296,10 @@ async def finish_session(
     Analysis details live in ``meal_analysis`` (kept separate for the complexity
     budget). Returns the draft summary dict (also persisted to ``session.summary``).
     """
-    session = get_session(db, user_id, session_id)
+    # council #4: lock the session row so finish serializes against a concurrent
+    # confirm/abort — without it, finish could read a stale snapshot and overwrite
+    # a confirm's/abort's state transition.
+    session = get_session(db, user_id, session_id, for_update=True)
     if session.status == "confirmed":
         raise MealSessionState("session already confirmed")
     if session.status == "aborted":
@@ -252,22 +309,46 @@ async def finish_session(
     session.ended_at = datetime.now(timezone.utc)
     db.commit()
 
-    frames = list_frames(db, user_id, session_id)
-    per_frame, vision_calls = await meal_analysis.analyze_frames(
-        db, user_id, session_id, frames
-    )
-    foods = meal_analysis.dedup_foods(per_frame)
-    totals = meal_analysis.meal_totals(foods)
+    # council #3: if analysis raises, never leave the session stuck in
+    # 'analyzing' (the user could neither confirm — 409 — nor would think to
+    # abort). Reset to 'active' so finish can be retried, then re-raise a
+    # recoverable error. Fail-loud: the caller surfaces the failure, we don't
+    # fake a summary.
+    try:
+        frames = list_frames(db, user_id, session_id)
+        per_frame, vision_calls = await meal_analysis.analyze_frames(
+            db, user_id, session_id, frames
+        )
+        foods = meal_analysis.dedup_foods(per_frame)
+        totals = meal_analysis.meal_totals(foods)
 
-    summary = meal_analysis.build_finish_summary(
-        db,
-        user_id,
-        session_id,
-        foods=foods,
-        totals=totals,
-        frame_count=len(frames),
-        vision_calls=vision_calls,
-    )
+        summary = meal_analysis.build_finish_summary(
+            db,
+            user_id,
+            session_id,
+            foods=foods,
+            totals=totals,
+            frame_count=len(frames),
+            vision_calls=vision_calls,
+        )
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        recover = get_session(db, user_id, session_id, for_update=True)
+        if recover.status == "analyzing":
+            recover.status = "active"
+            recover.ended_at = None
+            db.commit()
+        audit._write(
+            db,
+            user_id=user_id,
+            agent_type="meal_monitoring",
+            action="session_finish_failed",
+            result_summary=f"session {session_id} analysis failed, reset to active: {exc}",
+            result_detail={"session_id": session_id, "error": str(exc)},
+        )
+        raise MealSessionAnalysisError(
+            f"meal analysis failed for session {session_id}; retry finish"
+        ) from exc
 
     session.status = "needs_confirmation"
     session.summary = summary
@@ -310,7 +391,10 @@ def confirm_session(
     ``meta.confirmed_by_user`` — the ONLY sanctioned write path. The session's
     deduped foods/totals become the recognition payload for that gate.
     """
-    session = get_session(db, user_id, session_id)
+    # council #4: lock the row so confirm serializes against a concurrent
+    # abort/finish — without the lock, confirm could read a stale snapshot and
+    # write a DietRecord while abort is purging (or vice versa).
+    session = get_session(db, user_id, session_id, for_update=True)
     if session.status != "needs_confirmation":
         raise MealSessionState(
             f"can only confirm a needs_confirmation session (is {session.status})"
@@ -337,6 +421,12 @@ def confirm_session(
     confirm_meta: Dict[str, Any] = {"confirmed_by_user": True, "meal_session_id": session_id}
     if meal_type:
         confirm_meta["meal_type"] = meal_type
+    # council #7: the DietRecord's record_date / meal_type / meal_time are derived
+    # from the confirm event's captured_at (see create_food_diet_record_from_visual_event).
+    # Default-now() would land a cross-day confirm (shot 23:50, confirmed 00:10) on
+    # the wrong day. Use the actual capture time — the earliest frame's captured_at,
+    # falling back to the session's started_at.
+    captured_at = _representative_capture_time(db, user_id, session_id) or session.started_at
     event = ambient_svc.create_visual_input_event(
         db,
         user_id,
@@ -344,6 +434,7 @@ def confirm_session(
         source=session.source,
         device_type=session.device_type,
         recognition_result=recognition,
+        captured_at=captured_at,
         target_type="meal_session_confirm",
         target_id=session_id,
         meta=confirm_meta,
@@ -357,6 +448,10 @@ def confirm_session(
     session.target_type = "diet_record"
     session.target_id = record.id if record else None
     _purge_raw_media(db, user_id, session_id)  # confirmed: raw frames no longer needed
+    # council #5: record WHEN raw media was purged so (a) the audit trail shows
+    # the L3 images were deleted and (b) the daily Celery sweep stops re-scanning
+    # this session forever (it filters on raw_media_deleted_at.is_(None)).
+    session.raw_media_deleted_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(session)
 
@@ -379,6 +474,9 @@ def abort_session(db: Session, user_id: int, session_id: int) -> MealMonitoringS
     session.status = "aborted"
     session.ended_at = datetime.now(timezone.utc)
     _purge_raw_media(db, user_id, session_id)
+    # council #5: same as confirm — mark the purge time so the audit trail is
+    # complete and the daily sweep doesn't re-scan this aborted session forever.
+    session.raw_media_deleted_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(session)
     audit._write(
@@ -392,61 +490,7 @@ def abort_session(db: Session, user_id: int, session_id: int) -> MealMonitoringS
     return session
 
 
-# ─────────────────────── privacy: raw-media purge ───────────────────────
-
-
-def _purge_raw_media(db: Session, user_id: int, session_id: int) -> int:
-    """Strip raw frame images for a session's frames. Returns frames purged.
-
-    Removes ``image_uri`` and any inline base64 from ``meta`` — analysis notes
-    (recognition_result) persist, raw images do not.
-    """
-    frames = (
-        db.query(VisualInputEvent)
-        .filter(
-            VisualInputEvent.user_id == user_id,
-            VisualInputEvent.target_type == "meal_frame",
-            VisualInputEvent.target_id == session_id,
-        )
-        .all()
-    )
-    purged = 0
-    for frame in frames:
-        changed = False
-        if frame.image_uri is not None:
-            frame.image_uri = None
-            changed = True
-        if isinstance(frame.meta, dict) and "image_base64" in frame.meta:
-            new_meta = {k: v for k, v in frame.meta.items() if k != "image_base64"}
-            new_meta["raw_media_purged"] = True
-            frame.meta = new_meta
-            changed = True
-        if changed:
-            purged += 1
-    return purged
-
-
-def purge_expired_raw_media(db: Session, now: Optional[datetime] = None) -> int:
-    """Cleanup hook: purge raw frame images for sessions past raw_media_delete_at.
-
-    Wired minimally — intended to be called by a Celery beat task. Returns the
-    number of sessions purged. Fail-loud: exceptions propagate to the caller.
-    """
-    now = now or datetime.now(timezone.utc)
-    due = (
-        db.query(MealMonitoringSession)
-        .filter(
-            MealMonitoringSession.raw_media_delete_at.isnot(None),
-            MealMonitoringSession.raw_media_delete_at <= now,
-            MealMonitoringSession.raw_media_deleted_at.is_(None),
-        )
-        .all()
-    )
-    count = 0
-    for session in due:
-        _purge_raw_media(db, session.user_id, session.id)
-        session.raw_media_deleted_at = now
-        count += 1
-    if count:
-        db.commit()
-    return count
+# Raw-media purge logic lives in ``meal_privacy`` (complexity budget — the cohesive
+# L3 image lifecycle concern). ``purge_expired_raw_media`` is re-exported above for
+# the stable ``meal_monitoring.purge_expired_raw_media`` entry point (Celery / tests);
+# ``_purge_raw_media`` is the internal alias used by confirm/abort.
