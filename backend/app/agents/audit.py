@@ -423,6 +423,49 @@ def log_watch_complete(
         return None
 
 
+def log_reorder_intent(
+    db: Session,
+    user_id: int,
+    *,
+    intent_id: int,
+    supplement_id: int,
+    quantity: int,
+    outcome: str,
+    kuaishou_order_id: Optional[str] = None,
+) -> Optional[int]:
+    """P5(D2)复购下单逐笔确认的取证审计(财务面,可追溯可撤销)。
+
+    确认下单是 human-in-the-loop 的财务动作,必须可追溯到「谁在何时确认了哪个复购意图、
+    结果如何」。action='reorder_confirm';agent_type='reorder_intent'。
+    outcome ∈ {skill_not_ready(本期), order_placed, order_failed, cap_blocked}。
+    旁路,失败不抛(返回 None),不阻断 confirm 主流程。**无 PII**:只记 user_id + 对象 id。
+    """
+    if user_id is None:
+        return None
+    try:
+        summary = (
+            f"reorder_intent={intent_id} supplement={supplement_id} "
+            f"qty={quantity} outcome={outcome}"
+        )
+        return _write(
+            db,
+            user_id=user_id,
+            agent_type="reorder_intent",
+            action="reorder_confirm",
+            result_summary=summary,
+            result_detail={
+                "intent_id": intent_id,
+                "supplement_id": supplement_id,
+                "quantity": quantity,
+                "outcome": outcome,
+                "kuaishou_order_id": kuaishou_order_id,
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[audit] log_reorder_intent 失败 (跳过): {e}")
+        return None
+
+
 def _write(
     db: Session,
     user_id: int,
