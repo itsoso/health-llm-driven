@@ -6,6 +6,7 @@ import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { bindIOSToken } from '../services/notifications';
 import { emitClientEvent } from '../services/clientEvents';
+import { resolveNotificationRoute } from '../services/notificationRoutes';
 
 const SILENT_SCREENS = new Set(['home']);
 
@@ -137,7 +138,7 @@ function handleNotificationResponse(response: Notifications.NotificationResponse
     return;
   }
   if (actionId === 'VIEW_PROGRESS') {
-    const link = (data?.deep_link as string | undefined) ?? '/intervention-cycle';
+    const link = resolveNotificationRoute(data) ?? '/intervention-cycle';
     try { router.push(link as any); } catch { router.push('/(tabs)' as any); }
     return;
   }
@@ -149,35 +150,15 @@ function handleNotificationResponse(response: Notifications.NotificationResponse
     deep_link: data?.deep_link ?? data?.deeplink ?? null,
   });
 
-  // Handle tap-to-open routing
-  // Priority: data.deep_link (arbitrary path + query) > data.screen (legacy predefined)
-  const deepLink = data?.deep_link as string | undefined;
-  if (deepLink) {
-    try { router.push(deepLink as any); } catch { router.push('/(tabs)' as any); }
-    return;
-  }
-
-  const screen = data?.screen as string | undefined;
-  switch (screen) {
-    case 'alerts':
-      router.push('/(tabs)/alerts' as any);
-      break;
-    case 'record':
-      router.push('/(tabs)/record' as any);
-      break;
-    case 'chat':
-      router.push('/(tabs)/chat' as any);
-      break;
-    case 'diet':
-      router.push('/diet' as any);
-      break;
-    case 'sleep':
-      router.push('/sleep' as any);
-      break;
-    case 'home':
-    default:
-      router.push('/(tabs)' as any);
-      break;
+  // Handle tap-to-open routing.
+  // resolveNotificationRoute centralises both forms (plain expo-router path + custom-scheme URL)
+  // and the legacy data.screen enum; same helper backs the history feed (notification-history.tsx).
+  // Always fall back to home on any miss / bad link — never crash on a user tap.
+  const route = resolveNotificationRoute(data);
+  try {
+    router.push((route ?? '/(tabs)') as any);
+  } catch {
+    router.push('/(tabs)' as any);
   }
 }
 
