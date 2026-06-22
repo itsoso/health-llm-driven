@@ -1,8 +1,11 @@
 """P1-B 事件前提醒(pre-event reminders)。
 
 在排程项 / 日历事件**开始前**按类提前量推送一次,让用户有缓冲。每分钟扫描:
-对每个有今日排程/日历项的用户,收集带时刻的项(排程 med/supplement/movement/diet +
-今日 CalendarEvent 会议),命中提前量窗口就推。
+对每个有今日排程/日历/协议项的用户,收集带时刻的项(排程 med/supplement/movement/diet +
+今日 CalendarEvent 会议 + 到期未完成的行为协议),命中提前量窗口就推。
+
+行为协议(健康协议层)走 lead=0 的「到点轻推」(非 pre-event 提前量),tier 恒 P1
+(绝不消耗 P0 预算);洗鼻类遇活跃禁忌红旗(鼻出血/鼻痛/发热/术后)抑制提醒(§3)。
 
 提前量(分钟,常量;后续可做成 per-user 配置):
     会议/日历 = 10、服药 = 15、补剂 = 15、锻炼(workout) = 20、餐(diet) = 0、睡眠 = 0。
@@ -46,14 +49,29 @@ LEAD_MINUTES: dict[str, int] = {
     "movement": 20,     # 锻炼/workout
     "diet": 0,          # 餐 — 由既有分时提醒覆盖
     "sleep": 0,         # 睡前 — 由既有睡眠提醒覆盖
+    "protocol": 0,      # 行为协议 = 到点轻推(due-time nudge),无 pre-event 提前量
 }
 
 # 类 → 通知预算 tier(R15)。会议/服药较高优先级(P0),其余可忽略(P1)。
+# protocol(行为轻推)显式 P1:绝不消耗 P0 周预算(P0 留给处方/异常生命体征)。
 _KIND_TIER: dict[str, str] = {
     "meeting": "P0",
     "medication": "P0",
     "supplement": "P1",
     "movement": "P1",
+    "protocol": "P1",
+}
+
+# 行为协议的 coarse time_window → 该日的 HH:MM 到点时刻(start_min 来源)。
+# "anytime" 不在表内 → 无固定到点,跳过(不做到点提醒,避免无谓打扰)。
+# bedtime=21:30:落在默认免打扰(22:00 起)之前,否则睡前轻推会被静默门吞掉成 no-op;
+# 也契合「睡前 30–60 分钟开始放松」的提前量(safety review 观察)。
+_TIME_WINDOW_TO_HHMM: dict[str, str] = {
+    "morning": "08:00",
+    "noon": "12:00",
+    "afternoon": "15:00",
+    "evening": "19:00",
+    "bedtime": "21:30",
 }
 
 
@@ -80,6 +98,9 @@ def _push_body(kind: str, title: str, lead: int) -> tuple[str, str]:
         return ("🌿 补剂提醒", f"{title} 大约 {lead} 分钟后到点,可以准备一下。")
     if kind == "movement":
         return ("🏃 运动提醒", f"{title} 计划在 {lead} 分钟后开始,留点时间热身。")
+    if kind == "protocol":
+        # 到点轻推(lead=0):只提示「该做了」,完成与否由用户决定。无量、无处方、无因果。
+        return ("✅ 健康提醒", f"现在可以做「{title}」了,完成后点一下确认。")
     return ("⏰ 提醒", f"{title} 大约 {lead} 分钟后开始。")
 
 
@@ -175,12 +196,52 @@ def _collect_timed_items(db, user_id: int, today: date) -> list[dict]:
         except Exception as e:  # noqa: BLE001
             logger.warning("[event-reminder] 日历事件读取失败 user=%s: %s", user_id, e)
 
+    # 3) 行为协议(健康协议层)— 到期 + 今日 pending + 有固定到点时间窗 → 到点轻推。
+    try:
+        from app.services import health_protocol_service as hp_svc
+        from app.services.protocol_templates import nasal_red_flag_active
+
+        nasal_suppressed: bool | None = None  # 懒求值,仅当确有洗鼻项才查
+        for st in hp_svc.today_status(db, user_id):
+            if not st.get("is_due_today") or st.get("today_status") != "pending":
+                continue
+            tw = st.get("time_window")
+            hhmm = _TIME_WINDOW_TO_HHMM.get(tw or "")
+            if hhmm is None:   # anytime / 未知 → 无固定到点,不推
+                continue
+            start_min = _to_minutes(hhmm)
+            if start_min is None:
+                continue
+            iq = st.get("implied_quantity") or {}
+            tkey = iq.get("template_key") or ""
+            # §3 红旗抑制:洗鼻模板遇活跃禁忌(鼻出血/鼻痛/发热/术后)→ 跳过提醒。
+            # caveat 已固定在 advisory_note(home 卡仍可见),这里只抑制主动推送。
+            if tkey in ("nasal_wash_morning", "nasal_wash_evening"):
+                if nasal_suppressed is None:
+                    nasal_suppressed = nasal_red_flag_active(db, user_id)
+                if nasal_suppressed:
+                    continue
+            pid = st.get("protocol_id")
+            items.append({
+                "item_key": f"protocol:{pid}",
+                "kind": "protocol",
+                "title": st.get("name") or "健康行动",
+                "start_min": start_min,
+                "lead": LEAD_MINUTES.get("protocol", 0),  # 0 = 到点推
+                # 显式 complete_ref(不走 med-only 的 _complete_ref_for):
+                # 客户端「完成/跳过」按钮直接拿它 POST /agenda/complete。
+                "complete_ref": {"object_type": "health_protocol", "object_id": pid},
+            })
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[event-reminder] 协议读取失败 user=%s: %s", user_id, e)
+
     return items
 
 
 def _candidate_user_ids(db, today: date) -> list[int]:
-    """有今日排程/日历项的候选用户: 活跃用药/补剂用户 ∪ 今日有会议的用户。"""
+    """候选用户: 活跃用药/补剂用户 ∪ 今日有会议的用户 ∪ 有活跃协议的用户。"""
     from app.models.calendar_sync import CalendarEvent
+    from app.models.health_protocol import HealthProtocol
     from app.models.medication import Medication
 
     ids: set[int] = set()
@@ -201,6 +262,15 @@ def _candidate_user_ids(db, today: date) -> list[int]:
         .distinct()
     )
     for (uid,) in rows:
+        if uid is not None:
+            ids.add(uid)
+
+    # 有活跃 HealthProtocol 的用户(到点行为轻推由 _collect_timed_items 的协议源产出)。
+    for (uid,) in (
+        db.query(HealthProtocol.user_id)
+        .filter(HealthProtocol.status == "active")
+        .distinct()
+    ):
         if uid is not None:
             ids.add(uid)
     return sorted(ids)

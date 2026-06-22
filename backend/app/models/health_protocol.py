@@ -21,9 +21,12 @@ from app.database import Base
 
 
 # 域:覆盖 PRD §5 双轨表的环节
+# "respiratory" 为行为协议层(P1a)新增:覆盖洗鼻等上气道护理行为。
+# 仅作 domain 字面值(列为 String(20),非 DB enum;长度 11 字符在限内),无 schema 变更。
 PROTOCOL_DOMAINS = (
     "hydration", "diet", "sleep", "training", "medication",
     "supplement", "measurement", "mood", "activity", "exercise", "checkup",
+    "respiratory",
 )
 # 机制:量为何隐式
 PROTOCOL_MECHANISMS = ("fixed_container", "pre_commit", "passive_device", "environment_default")

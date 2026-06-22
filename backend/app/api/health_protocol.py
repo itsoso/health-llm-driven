@@ -97,6 +97,30 @@ async def seed_water_cup(
     return svc.serialize_protocol(svc.create_water_cup_protocol(db, current_user.id))
 
 
+class BehaviorSeed(BaseModel):
+    keys: Optional[List[str]] = None   # None = 播种全部行为模板;否则只播指定 key
+
+
+@router.post("/seed/behavior")
+async def seed_behavior(
+    data: Optional[BehaviorSeed] = None,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """启用/回填行为协议(洗鼻晨/晚 + 睡前放松)。幂等:重复播种不重建。
+
+    病情相关(如鼻炎用户开洗鼻)→ 显式启用入口,非 onboarding 全员自动播种。
+    body 可选 {keys?: string[]};缺省播种全部模板。未知 key → 400。
+    """
+    from app.services.protocol_templates import seed_behavior_protocols
+
+    keys = data.keys if data is not None else None
+    try:
+        return seed_behavior_protocols(db, current_user.id, keys)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 class MealTemplate(BaseModel):
     name: str
     meal_type: Optional[str] = None
