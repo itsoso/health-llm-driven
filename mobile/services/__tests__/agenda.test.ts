@@ -4,7 +4,7 @@ jest.mock('../api', () => ({
 }));
 
 import api from '../api';
-import { getSmartAgendaToday } from '../agenda';
+import { completeAgendaItem, getSmartAgendaToday } from '../agenda';
 
 const mockApi = api as unknown as {
   get: jest.Mock;
@@ -53,5 +53,69 @@ describe('agenda service', () => {
     });
     expect(agenda.mode).toBe('smart');
     expect(agenda.smart.top_items[0].surface.primary).toBe('watch');
+  });
+
+  describe('completeAgendaItem', () => {
+    beforeEach(() => mockApi.post.mockResolvedValue({ data: { wrote: true } }));
+
+    it('defaults to status done (existing callers unchanged, no skip_reason)', async () => {
+      await completeAgendaItem({ object_type: 'health_protocol', object_id: 42 });
+
+      expect(mockApi.post).toHaveBeenCalledWith('/agenda/complete', {
+        object_type: 'health_protocol',
+        object_id: 42,
+        status: 'done',
+        track: 'protocol',
+        value: null,
+      });
+      // done path must NOT carry skip_reason
+      expect(mockApi.post.mock.calls[0][1]).not.toHaveProperty('skip_reason');
+    });
+
+    it('passes status skipped + skip_reason when skipping', async () => {
+      await completeAgendaItem(
+        { object_type: 'medication', object_id: 7 },
+        'protocol',
+        undefined,
+        { status: 'skipped', skipReason: 'forgot' },
+      );
+
+      expect(mockApi.post).toHaveBeenCalledWith('/agenda/complete', {
+        object_type: 'medication',
+        object_id: 7,
+        status: 'skipped',
+        skip_reason: 'forgot',
+        track: 'protocol',
+        value: null,
+      });
+    });
+
+    it('skipped without a reason omits skip_reason entirely', async () => {
+      await completeAgendaItem(
+        { object_type: 'supplement', object_id: 3 },
+        'protocol',
+        undefined,
+        { status: 'skipped' },
+      );
+
+      expect(mockApi.post.mock.calls[0][1]).not.toHaveProperty('skip_reason');
+      expect(mockApi.post.mock.calls[0][1]).toMatchObject({ status: 'skipped' });
+    });
+
+    it('keeps manual-track value passthrough alongside status', async () => {
+      await completeAgendaItem(
+        { object_type: 'health_protocol', object_id: 9 },
+        'manual',
+        { volume_ml: 500 },
+      );
+
+      expect(mockApi.post).toHaveBeenCalledWith('/agenda/complete', {
+        object_type: 'health_protocol',
+        object_id: 9,
+        status: 'done',
+        track: 'manual',
+        value: { volume_ml: 500 },
+      });
+    });
   });
 });

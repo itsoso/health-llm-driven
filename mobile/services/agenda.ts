@@ -82,18 +82,66 @@ export async function getSmartAgendaToday(maxItems = 3): Promise<SmartAgendaToda
   return resp.data;
 }
 
-/** 统一完成:按 source 路由(协议→双轨写真实记录)。track 默认协议轨;手工轨带 value(量/剂量)。 */
+/** done = 记录完成(写真实业务记录);skipped = 记录未做(R14 带可选失败原因)。 */
+export type AgendaCompleteStatus = 'done' | 'skipped';
+
+/** R14 跳过原因枚举(对齐后端 agenda/complete 的 skip_reason 校验)。 */
+export type AgendaSkipReason =
+  | 'no_time'
+  | 'forgot'
+  | 'no_supply'
+  | 'too_tired'
+  | 'wrong_place'
+  | 'too_hard'
+  | 'unwell'
+  | 'social';
+
+export interface CompleteAgendaOptions {
+  /** 默认 'done'。'skipped' 走 R14 跳过路径。 */
+  status?: AgendaCompleteStatus;
+  /** 仅 status==='skipped' 时携带;省略=不带原因。 */
+  skipReason?: AgendaSkipReason;
+}
+
+// 契约护栏:POST /agenda/complete 请求体出口 payload。
+// 注:types/api.generated.ts 的 components['schemas']['AgendaComplete'] 是后端
+// f845ff9f 上线**前**生成的旧 shape(只有 object_type/object_id/track/value),
+// 尚无 status/skip_reason 字段 —— 现在用它标注会把新字段判成 excess-property(假红)。
+// 后端部署后需 `npm run generate-types` 重新生成,再把下面手写接口换成 schema 标注。
+// TODO regenerate after backend deploy → 换成 components['schemas']['AgendaComplete']
+interface AgendaCompletePayload {
+  object_type: string;
+  object_id: number | string;
+  status: AgendaCompleteStatus;
+  skip_reason?: AgendaSkipReason | null;
+  track: 'protocol' | 'manual';
+  value?: Record<string, unknown> | null;
+}
+
+/**
+ * 统一完成/跳过:按 source 路由(协议→双轨写真实记录)。
+ * status 默认 'done'(所有既有调用方零改动);'skipped' 走 R14 跳过路径,可带 skipReason。
+ * track 默认协议轨;手工轨带 value(量/剂量)。
+ */
 export async function completeAgendaItem(
   source: AgendaSource,
   track: 'protocol' | 'manual' = 'protocol',
   value?: Record<string, unknown>,
+  options?: CompleteAgendaOptions,
 ): Promise<unknown> {
-  const resp = await api.post('/agenda/complete', {
+  const status: AgendaCompleteStatus = options?.status ?? 'done';
+  const payload: AgendaCompletePayload = {
     object_type: source.object_type,
     object_id: source.object_id,
+    status,
     track,
     value: value ?? null,
-  });
+  };
+  // 仅在跳过且提供原因时携带 skip_reason(避免给 done 路径塞无意义字段)。
+  if (status === 'skipped' && options?.skipReason) {
+    payload.skip_reason = options.skipReason;
+  }
+  const resp = await api.post('/agenda/complete', payload);
   return resp.data;
 }
 

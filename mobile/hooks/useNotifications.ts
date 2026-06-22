@@ -7,6 +7,8 @@ import { router } from 'expo-router';
 import { bindIOSToken } from '../services/notifications';
 import { emitClientEvent } from '../services/clientEvents';
 import { resolveNotificationRoute } from '../services/notificationRoutes';
+import { queryClient } from '../applib/queryClient';
+import { completeAgendaItem } from '../services/agenda';
 
 const SILENT_SCREENS = new Set(['home']);
 
@@ -117,12 +119,30 @@ async function registerNotificationCategories() {
   await Notifications.setNotificationCategoryAsync('INTERVENTION_CYCLE', [
     { identifier: 'VIEW_PROGRESS', buttonTitle: '查看进展', options: { opensAppToForeground: true } },
   ]);
+  // 统一议程提醒(用药/补剂/协议到点): 完成 / 跳过, 后台经 /agenda/complete 写依从事实,
+  // 无需打开 app。默认点按通知体仍走 deep_link(resolveNotificationRoute)。
+  await Notifications.setNotificationCategoryAsync('AGENDA_ACTION', [
+    { identifier: 'COMPLETE', buttonTitle: '完成', options: { opensAppToForeground: false } },
+    { identifier: 'SKIP', buttonTitle: '跳过', options: { opensAppToForeground: false } },
+  ]);
 }
 
 function handleNotificationResponse(response: Notifications.NotificationResponse) {
   const notification = response.notification;
   const actionId = response.actionIdentifier;
   const data = notification.request.content.data as Record<string, any> | undefined;
+
+  // AGENDA_ACTION 的两颗按钮 COMPLETE / SKIP → 统一议程闭环完成/跳过。
+  // 注意 'SKIP' 与 supplement/medication 旧 quick-action 共用同一 identifier,
+  // 所以这里按 data.category / complete_ref 区分(AGENDA_ACTION 才有 complete_ref),
+  // 不能只看 actionId, 否则会偷走旧 quick-action 的 SKIP。
+  if (
+    (actionId === 'COMPLETE' || actionId === 'SKIP') &&
+    (data?.category === 'AGENDA_ACTION' || data?.complete_ref)
+  ) {
+    handleAgendaAction(actionId === 'COMPLETE' ? 'done' : 'skipped', data);
+    return;
+  }
 
   // Handle actionable notification buttons (background actions)
   if (actionId === 'TAKEN' || actionId === 'SKIP') {
@@ -159,6 +179,38 @@ function handleNotificationResponse(response: Notifications.NotificationResponse
     router.push((route ?? '/(tabs)') as any);
   } catch {
     router.push('/(tabs)' as any);
+  }
+}
+
+// 统一议程闭环: AGENDA_ACTION 通知的「完成 / 跳过」后台动作。
+// 读 data.complete_ref ({object_type, object_id}) → POST /agenda/complete(显式录依从,
+// 唯一一次写;不 deep-link 进任何自动写屏)→ invalidate 首页两个 query key,让该项「熄灭」。
+// 失败在 LISTENER 边界吞掉(fire-and-forget 通知动作的正确姿势),但会先 log,
+// 与既有后台 handler 一致(用户可回 app 再操作)。
+export async function handleAgendaAction(
+  status: 'done' | 'skipped',
+  data?: Record<string, any>,
+) {
+  const ref = data?.complete_ref as
+    | { object_type?: string; object_id?: number | string }
+    | undefined;
+  if (!ref?.object_type || ref.object_id == null) return;
+
+  try {
+    await completeAgendaItem(
+      { object_type: ref.object_type, object_id: ref.object_id },
+      'protocol',
+      undefined,
+      { status },
+    );
+    // 首页时间线 + 议程缓存失效 → 已完成/已跳过的项从列表里消失。
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['timeline', 'today'] }),
+      queryClient.invalidateQueries({ queryKey: ['agenda', 'today'] }),
+    ]);
+  } catch (err) {
+    // Background action failed — log at the listener boundary, user can complete in-app later.
+    console.warn('[useNotifications] agenda action failed', err);
   }
 }
 
