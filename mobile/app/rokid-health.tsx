@@ -2189,6 +2189,21 @@ export default function RokidHealthScreen() {
         <View style={styles.panel}>
           <Text style={txt.sectionTitle}>捕获动作</Text>
           <Text style={txt.sectionHint}>每次点击只触发一次拍照, 生成待确认草稿; 不连续录音、不后台拍摄。</Text>
+          <Pressable
+            onPress={() => router.push('/meal-monitor' as any)}
+            style={({ pressed }) => [styles.featureRow, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="监控这餐"
+          >
+            <View style={styles.featureIcon}>
+              <Ionicons name="restaurant-outline" size={18} color={c.brand} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={txt.featureTitle}>监控这餐</Text>
+              <Text style={txt.featureDetail}>周期采样多帧 → 批量分析 → 餐后观察草稿, 确认后才入库。</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
+          </Pressable>
           {CAPTURE_ACTIONS.map((action) => (
             <Pressable
               key={action.title}
