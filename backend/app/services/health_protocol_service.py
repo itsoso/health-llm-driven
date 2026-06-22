@@ -15,24 +15,8 @@ from app.models.health_protocol import (
     HealthProtocol, HealthProtocolEvent,
     PROTOCOL_DOMAINS, PROTOCOL_MECHANISMS, SKIP_REASONS,
 )
-from app.utils.timezone import get_china_today
 
 logger = logging.getLogger(__name__)
-
-
-def _today(db: Session, user_id: int) -> date:
-    """协议「今日」一律取**中国时区**(UTC+8 硬编码)今天,不取 ``date.today()``。
-
-    ``date.today()`` / ``get_user_today`` 的兜底都跟**运行环境 OS 时区**走(CI runner 是 UTC,
-    生产服务器是 Asia/Shanghai),在午夜边界会与查询/断言侧用的确定性中国日基准
-    (``get_china_today`` / ``MedicationLog.taken_date == get_china_today()``)差一天:
-      - 完成写入(complete_protocol, date.today)与自动观测(原本取 UTC event date)落到不同
-        ``event_date`` → 同一协议当天两条 HealthProtocolEvent(双写虚高依从,污染 DDI/PGx);
-      - 或写到「昨天」而当日查询读不到 → 依从 under-count。
-    ``get_china_today()`` 是 UTC+8 硬编码、与机器/CI 的 OS 时区**无关**,与 Celery(Asia/Shanghai)
-    及测试断言同一基准。全部 today 派生收口到此,让写/读/收敛键确定一致。
-    """
-    return get_china_today()
 
 
 def create_protocol(db: Session, user_id: int, data: Dict[str, Any]) -> HealthProtocol:
@@ -170,7 +154,7 @@ def _effective_today_status(ev: Optional[HealthProtocolEvent]) -> str:
 
 def today_status(db: Session, user_id: int) -> List[Dict[str, Any]]:
     """今日各活跃协议的待办 + 完成态(双轨任一轨完成都算)。"""
-    today = _today(db, user_id)
+    today = date.today()
     out: List[Dict[str, Any]] = []
     for p in list_protocols(db, user_id, active_only=True):
         ev = _today_event(db, p.id, user_id, today)
@@ -246,7 +230,7 @@ def complete_protocol(
         raise ValueError(f"未知 track: {track}")
     if track == "manual" and not p.manual_track_allowed:
         raise ValueError("该协议未开放手工轨")
-    day = day or _today(db, user_id)
+    day = day or date.today()
     ev = _claim_today_event(db, protocol_id, user_id, day)
 
     # 原子 claim:仅当从「非完成」翻成「完成」才算本事务抢到状态转移。
@@ -312,7 +296,7 @@ def auto_observe_protocol(
     p = get_protocol(db, protocol_id, user_id)
     if not p or p.status != "active":
         return None
-    day = day or _today(db, user_id)
+    day = day or date.today()
     ev = _claim_today_event(db, protocol_id, user_id, day)
 
     if ev.status in ("completed", "auto_observed"):
@@ -580,7 +564,7 @@ def skip_protocol(
         return None
     if reason is not None and reason not in SKIP_REASONS:
         raise ValueError(f"未知 skip_reason: {reason}(应为 {SKIP_REASONS})")
-    day = day or _today(db, user_id)
+    day = day or date.today()
     ev = _today_event(db, protocol_id, user_id, day)
     if ev is None:
         ev = HealthProtocolEvent(user_id=user_id, protocol_id=protocol_id, event_date=day)
@@ -603,7 +587,7 @@ def snooze_protocol(
         return None
     if minutes < 5 or minutes > 240:
         raise ValueError("snooze 分钟数需在 5-240 之间")
-    day = day or _today(db, user_id)
+    day = day or date.today()
     ev = _claim_today_event(db, protocol_id, user_id, day)
     if ev.status in ("completed", "auto_observed"):
         raise ValueError("已完成的协议不能稍后")

@@ -31,7 +31,6 @@ from sqlalchemy.orm import Session
 
 from app.models.health_protocol import HealthProtocol
 from app.services.timing_solver import _to_hhmm, _to_min
-from app.utils.timezone import get_china_today
 
 logger = logging.getLogger(__name__)
 
@@ -260,11 +259,7 @@ def ensure_workout_chain_protocols(
     两遍:① 逐步建缺失行(撞约束即重读)② UPDATE prev/next_protocol_id 链接。
     用户隔离:创建与查询都按 user_id 过滤(对齐 create_postmeal_walk_protocol)。
     """
-    # trigger_date 必须与 _is_due_today 的 today 基准一致(get_china_today,UTC+8 硬编码):
-    # _is_due_today 对 event_triggered 协议判 trigger_date == today.isoformat();今日协议查询
-    # 已统一到 get_china_today。若这里用 date.today()(OS 时区,CI=UTC)在午夜边界会比中国日早
-    # 一天 → 链协议 is_due_today=False → 整条链不投影进议程(链静默丢失)。
-    chain_date = chain_date or get_china_today()
+    chain_date = chain_date or date.today()
     trigger_date = chain_date.isoformat()
 
     # 既有同链协议(按 chain_key 索引)——一次性查,避免每步 N+1。

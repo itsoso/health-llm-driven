@@ -429,7 +429,11 @@ async def test_flush_delayed_pushes_processes_due(db):
     user = _make_user(db, username="flush_user")
     svc = PushService(db)
 
-    now = get_china_now()
+    # 钉死墙钟到白天非静默、且过 08:00 morning-floor 的时点:flush 重发会再过一遍静默/晨间闸,
+    # 若用真实 get_china_now() 在北京 00:00–08:00(CI 跑在此窗口时)会被 morning-floor 再延迟
+    # → succeeded=0 随墙钟夜间确定性失败。本测试只验"到点 flush、未到点跳过",与时段无关。
+    fake_now = datetime(2026, 5, 12, 14, 0, 0)
+    now = fake_now
 
     # 已到点的 delayed log
     log_due = NotificationLog(
@@ -456,7 +460,8 @@ async def test_flush_delayed_pushes_processes_due(db):
     db.add_all([log_due, log_future])
     db.commit()
 
-    with patch.object(PushService, "_send_ios", new=AsyncMock(return_value={"success": True})):
+    with patch("app.services.notification.push_service.get_china_now", return_value=fake_now), \
+            patch.object(PushService, "_send_ios", new=AsyncMock(return_value={"success": True})):
         result = await svc.flush_delayed_pushes()
 
     assert result["flushed"] == 1
@@ -473,7 +478,10 @@ async def test_flush_delayed_pushes_dedups_same_title(db):
     """历史上已经排队的重复 delayed, flush 时也只真正发第一条。"""
     user = _make_user(db, username="flush_dedup_sleep")
     svc = PushService(db)
-    now = get_china_now()
+    # 钉死墙钟到白天(见 test_flush_delayed_pushes_processes_due 注释):否则北京 00:00–08:00
+    # flush 重发被 morning-floor 再延迟 → succeeded=0 随墙钟夜间失败。本测试只验去重。
+    fake_now = datetime(2026, 5, 12, 14, 0, 0)
+    now = fake_now
 
     logs = [
         NotificationLog(
@@ -501,7 +509,8 @@ async def test_flush_delayed_pushes_dedups_same_title(db):
     db.commit()
 
     send_mock = AsyncMock(return_value={"success": True})
-    with patch.object(PushService, "_send_ios", new=send_mock):
+    with patch("app.services.notification.push_service.get_china_now", return_value=fake_now), \
+            patch.object(PushService, "_send_ios", new=send_mock):
         result = await svc.flush_delayed_pushes()
 
     assert result["flushed"] == 2

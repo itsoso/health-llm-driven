@@ -43,11 +43,14 @@ jobs:
           SECRET_KEY: test-secret-key-32-chars-minimum!!
           GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
           DATABASE_URL: "sqlite:///:memory:"
-          # 生产/Celery/全部业务时区基准是 Asia/Shanghai(get_china_today/get_china_now)。
-          # GitHub runner 默认 UTC,会让 `date.today()`(随 OS 时区)与确定性中国日基准在每天
-          # 16:00–24:00 UTC(= 次日 00:00–08:00 北京)的窗口差一天,使依赖"今日"键的依从/协议/
-          # 议程测试随 CI 触发时刻随机变红(午夜边界 flake)。钉到 Asia/Shanghai 让 CI 与生产
-          # 同一时区基准,这类 boundary flake 消除(测试断言用的 date.today()==get_china_today())。
+          # 生产/Celery/全部业务时区基准是 Asia/Shanghai(get_china_today/get_china_now/date.today)。
+          # GitHub runner 默认 UTC,使 `date.today()`(随 OS 时区)与确定性中国日基准在每天
+          # 16:00–24:00 UTC(= 次日 00:00–08:00 北京)的窗口差一天,让依赖"今日"键的依从/协议/
+          # 议程/用药测试随 CI 触发时刻随机变红(午夜边界 flake;同一 commit 换时刻就绿)。这些
+          # 断言两两冲突(test_log_taken 要 date.today()、test_agenda_complete_medication 要
+          # get_china_today()),只在 date.today()==get_china_today() 即 runner=Asia/Shanghai 时
+          # 同时成立 —— 与生产服务器时区一致。钉到 Asia/Shanghai 让 CI 与生产同基准,消除该类
+          # boundary flake(不改任何断言)。
           TZ: Asia/Shanghai
         # --maxfail=5 而非 -x:-x 第一个红就停,会掩盖同时存在的多个真红,
         # 分支保护下导致"修一个又冒一个"的死锁(见 memory 教训)。允许暴露最多 5 个。

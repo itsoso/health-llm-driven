@@ -104,6 +104,15 @@ def _workouts(db: Session, user_id: int, since: datetime) -> List[TimelineEvent]
                 sub_bits.append(f"{mins} 分钟")
             if w.avg_heart_rate:
                 sub_bits.append(f"均心率 {w.avg_heart_rate}")
+            # start_time 是 **UTC** 时点(Garmin/Apple 同步均存 UTC;SQLite 读回常丢 tzinfo)。
+            # 标成 tz-aware UTC,下游(build_today_spine)才能正确 astimezone 到本地判「今天」——
+            # 否则 naive 被当本地挂钟,跨午夜(北京)会把 UTC 挂钟误判成本地日 → 当日 workout 漏进 past。
+            # 无 start_time 时回退 workout_date 当日 0 点(本地日,保持 naive,不强加时区)。
+            occurred = w.start_time
+            if occurred is not None and occurred.tzinfo is None:
+                occurred = occurred.replace(tzinfo=timezone.utc)
+            if occurred is None:
+                occurred = datetime.combine(w.workout_date or date.today(), datetime.min.time())
             out.append(TimelineEvent(
                 id=f"workout_{w.id}",
                 source="workout",
@@ -111,7 +120,7 @@ def _workouts(db: Session, user_id: int, since: datetime) -> List[TimelineEvent]
                 subtitle=" · ".join(sub_bits) if sub_bits else None,
                 icon="fitness-outline",
                 color="#0A8F8F",
-                occurred_at=w.start_time or datetime.combine(w.workout_date or date.today(), datetime.min.time()),
+                occurred_at=occurred,
                 deep_link=f"workout-detail?id={w.id}",
                 severity=None,
             ))

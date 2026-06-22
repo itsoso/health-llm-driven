@@ -208,7 +208,12 @@ class TestTwinIntegration:
                               hrv=v, resting_heart_rate=55))
         db.commit()
 
-        twin = HealthTwin(meta=TwinMeta(user_id=u.id, generated_at=datetime.utcnow()))
+        # generated_at.date() 必须 == 数据 end(_fill_personal_baseline 用它当 ref_date 框窗口)。
+        # 旧 fixture 用 datetime.utcnow() → 北京 00:00–08:00 跑时 UTC 日比 end(date.today())早一天
+        # → 窗口排除当日那条 42.0 突降值 → latest 取成 60.0 → is_deviation 误判 False(墙钟夜间失败)。
+        # 钉到 end 的午夜,与种子数据同基准,跨时区/跨午夜都稳。
+        twin = HealthTwin(meta=TwinMeta(
+            user_id=u.id, generated_at=datetime.combine(end, datetime.min.time())))
         _fill_personal_baseline(db, u.id, twin, set())
 
         pbs = twin.physiological.personal_baselines

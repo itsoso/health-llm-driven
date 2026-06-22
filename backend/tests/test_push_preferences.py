@@ -173,6 +173,11 @@ class TestTelegramFallback:
     def test_reminders_do_not_fall_back_to_global_telegram_chat(self, db, monkeypatch):
         _mk_settings(db, user_id=3, reminder_enabled=True, ios_push_enabled=False, wechat_enabled=False)
         monkeypatch.setattr(PushService, "telegram", property(lambda self: TestTelegramFallback._ConfiguredTelegram()))
+        # 钉死墙钟到白天:即便 quiet_hours_policy=bypass,reminder 仍受 08:00 morning-floor 约束
+        # (f7793136),北京 00:00–08:00 跑会被延迟 → reason 变 'delayed_for_quiet_hours' 而非
+        # '没有可用的推送渠道',随墙钟夜间确定性失败。本测试只验 telegram fallback 路由,与时段无关。
+        import app.services.notification.push_service as _push_mod
+        monkeypatch.setattr(_push_mod, "get_china_now", lambda: datetime(2026, 5, 12, 14, 0, 0))
 
         result = asyncio.run(PushService(db).send_notification(
             user_id=3,
@@ -189,6 +194,9 @@ class TestTelegramFallback:
     def test_health_alerts_can_still_use_global_telegram_fallback(self, db, monkeypatch):
         _mk_settings(db, user_id=3, ios_push_enabled=False, wechat_enabled=False)
         monkeypatch.setattr(PushService, "telegram", property(lambda self: TestTelegramFallback._ConfiguredTelegram()))
+        # 钉死墙钟到白天(见上一测试注释):morning-floor 在北京凌晨会延迟 bypass push → success=False。
+        import app.services.notification.push_service as _push_mod
+        monkeypatch.setattr(_push_mod, "get_china_now", lambda: datetime(2026, 5, 12, 14, 0, 0))
 
         # quiet_hours_policy="bypass": 本测试只验 telegram fallback 路由, 不验静默时段。
         # 不加的话, #6 (be3b17ac) 起 warning 级 health_alert 在 22:00–08:30 会走延迟分支
@@ -220,6 +228,10 @@ class TestDelayedPushFlush:
             ios_device_token="apns-token",
             wechat_enabled=False,
         )
+        # 钉死墙钟到白天非静默、且过 08:00 morning-floor 的时点:flush 重发会再过静默/晨间闸,
+        # 北京 00:00–08:00 跑会被 morning-floor 再延迟 → flushed/succeeded=0(墙钟夜间失败)。
+        # scheduled_at 必须相对同一 fake_now(否则 scheduled_at <= now 判定随真实墙钟漂移)。
+        fake_now = datetime(2026, 5, 12, 14, 0, 0)
         delayed = NotificationLog(
             user_id=3,
             notification_type=NotificationType.REMINDER.value,
@@ -228,12 +240,14 @@ class TestDelayedPushFlush:
             content="该准备睡觉了",
             data={"reminder_id": 99, "reminder_type": "sleep"},
             status=NotificationStatus.DELAYED.value,
-            scheduled_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+            scheduled_at=fake_now - timedelta(minutes=1),
         )
         db.add(delayed)
         db.commit()
         monkeypatch.setattr(PushService, "telegram", property(lambda self: TestTelegramFallback._ConfiguredTelegram()))
         monkeypatch.setattr(PushService, "_send_ios", self._ok_ios)
+        import app.services.notification.push_service as _push_mod
+        monkeypatch.setattr(_push_mod, "get_china_now", lambda: fake_now)
 
         result = asyncio.run(PushService(db).flush_delayed_pushes())
 

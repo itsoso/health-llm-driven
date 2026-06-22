@@ -130,7 +130,8 @@ def _minutes_since_last_meal(db: Session, user_id: int, *, now_local: datetime, 
     combine(今天) 会落到**未来** → 此前被丢弃、退回 created_at(=刚写库的 now)→ 误算「餐后 0 分钟」
     → 绿态也被错降级。修法:① 查询同时覆盖昨天+今天的 record_date(production 跨午夜餐
     record_date=昨天;测试 fixture 用 now_local.date()=今天);② meal_time 的挂钟候选同时尝试
-    「餐日」与「餐日-1」两天,取**不晚于 now+skew 的最近一个**(真实餐时点必是 now 之前)。
+    「餐日」与「餐日-1」两天,取**不晚于 now+skew 的最近一个**;③ meal_time 优先于 created_at,
+    二者绝不混用 max(否则刚写库的 created_at≈now 盖过昨晚真实餐时点)。
     """
     from app.models.daily_health import DietRecord
 
@@ -156,17 +157,17 @@ def _minutes_since_last_meal(db: Session, user_id: int, *, now_local: datetime, 
 
     meal_dts: List[datetime] = []
     for meal_time, created_at in rows:
-        # meal_time(用户记录的真实进餐挂钟)优先;created_at(写库时刻)仅在缺 meal_time 时兜底
-        # —— 二者绝不混用 max,否则刚写库的 created_at(≈now)会盖过昨晚真实餐时点 → 误算餐后 0 分钟。
         chosen: Optional[datetime] = None
         if isinstance(meal_time, time):
             # 挂钟时点可能属于「今天」也可能属于「昨天」(跨午夜)。两天都试,取不晚于 now+skew
             # 的**最近**一个 —— 真实餐时点必在 now 之前;昨晚 23:09 在清晨即落到 day-1。
-            wall_candidates = [
-                datetime.combine(d, meal_time)
-                for d in (day, day - timedelta(days=1))
+            valid_wall = [
+                c for c in (
+                    datetime.combine(day, meal_time),
+                    datetime.combine(day - timedelta(days=1), meal_time),
+                )
+                if c <= cap
             ]
-            valid_wall = [c for c in wall_candidates if c <= cap]
             if valid_wall:
                 chosen = max(valid_wall)
         if chosen is None:
