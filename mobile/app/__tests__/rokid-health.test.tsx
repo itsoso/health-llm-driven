@@ -606,6 +606,53 @@ describe('RokidHealthScreen', () => {
     });
   });
 
+  it('restarts phone microphone fallback after an unclear command routes to clarify', async () => {
+    mockStartRokidVoiceCommandCapture.mockResolvedValueOnce({
+      ok: false,
+      reason: 'rokid_audio_session_not_ready',
+    });
+    mockSubmitRokidVoiceCommand.mockResolvedValueOnce({
+      command: {
+        intent: 'unknown',
+        client_action: 'clarify',
+        voice_reply: '这句我还不能安全执行。你可以说记录这餐、开始俯卧撑, 或指导我运动。',
+      },
+    });
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockVoiceStart).toHaveBeenCalledWith('zh-CN');
+      expect(mockVoiceStart).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      mockVoiceOnSpeechResults?.({ value: ['钢铁侠吧'] });
+      mockVoiceOnSpeechEnd?.();
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockSubmitRokidVoiceCommand).toHaveBeenCalledWith(expect.objectContaining({
+        transcript: '钢铁侠吧',
+        context: 'rokid_health',
+        meta: expect.objectContaining({
+          source_event: 'phone_mic_fallback',
+        }),
+      }));
+      expect(mockVoiceStop).toHaveBeenCalled();
+      expect(mockVoiceStart).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('starts phone microphone fallback when native Rokid voice capture cannot bind to a session', async () => {
     mockStartRokidVoiceCommandCapture.mockResolvedValueOnce({
       ok: false,

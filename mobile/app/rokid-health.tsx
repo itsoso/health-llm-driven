@@ -421,6 +421,17 @@ function transcriptCapturedAt(event: RokidTranscriptEvent) {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+function isPhoneMicFallbackTranscript(event: RokidTranscriptEvent) {
+  return event.meta?.source_event === 'phone_mic_fallback';
+}
+
+function phoneMicFallbackReason(event: RokidTranscriptEvent, fallbackReason?: string) {
+  const value = event.meta?.fallback_reason;
+  return typeof value === 'string' && value.length > 0
+    ? value
+    : fallbackReason ?? 'rokid_audio_session_not_ready';
+}
+
 function shouldRouteTranscript(event: RokidTranscriptEvent) {
   return event.partial !== true && event.isFinal !== false && event.is_final !== false && event.final !== false;
 }
@@ -1878,6 +1889,9 @@ export default function RokidHealthScreen() {
     const transcript = normalizedTranscript.transcript;
 
     const capturedAt = transcriptCapturedAt(event);
+    const shouldRestartPhoneFallbackOnClarify = isPhoneMicFallbackTranscript(event);
+    const restartPhoneFallbackReason = phoneMicFallbackReason(event, voiceDebug.fallbackReason);
+    let restartPhoneFallback = false;
     setVoiceDebug((prev) => ({
       ...prev,
       lastTranscript: transcript,
@@ -1904,9 +1918,11 @@ export default function RokidHealthScreen() {
       });
       const command = response.command;
       const reply = command?.voice_reply || command?.display_text;
+      const commandAction = command?.client_action ?? command?.intent ?? 'unknown';
+      restartPhoneFallback = shouldRestartPhoneFallbackOnClarify && commandAction === 'clarify';
       setVoiceDebug((prev) => ({
         ...prev,
-        lastCommandAction: command?.client_action ?? command?.intent ?? 'unknown',
+        lastCommandAction: commandAction,
         lastCommandAt: new Date().toISOString(),
         lastCommandReply: reply,
         lastCommandError: undefined,
@@ -1961,6 +1977,22 @@ export default function RokidHealthScreen() {
     } finally {
       // council #3:命令处理结束(成功或失败)后解锁,允许下一条明确指令。
       voiceCommandInFlightRef.current = false;
+      if (restartPhoneFallback && voiceListeningRef.current && phoneVoiceFallbackActiveRef.current) {
+        try {
+          await startPhoneVoiceFallback(restartPhoneFallbackReason);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'phone_voice_fallback_restart_failed';
+          setVoiceDebug((prev) => ({
+            ...prev,
+            fallbackError: message,
+            fallbackLastEventAt: new Date().toISOString(),
+          }));
+          setVoiceState({
+            status: 'failed',
+            message: `手机麦克风语音重启失败: ${message}`,
+          });
+        }
+      }
     }
   }
 
