@@ -33,7 +33,6 @@ INTERRUPTED_COMPLETION_NOTICE = "\n\n[回复因长度限制中断，请让我接
 AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
 BEIJING_TZ = timezone(timedelta(hours=8))
 COMPACT_EMPTY_RETRY_SYSTEM_CHAR_LIMIT = 760
-FAST_RECORD_MODEL_ID = "glm-5.1"
 
 
 # ──── 多模型综合分析 (参考 browser-llm-driven / LangBridge 平台) ────
@@ -2268,29 +2267,9 @@ class AgentExecutor:
         provider 路由完全一致 (fast-record / request-model / user-pref / OpenClaw
         tool-stripping)。返回 (provider, pass_tools)。
         """
-        # Pure record/CRUD turns are latency-sensitive and do not need a
-        # reasoning model just to extract tool arguments. Keep explicit
-        # per-request model overrides intact; otherwise route to the fast
-        # TokenPlan model even if the user's default is Qwen3.6.
         provider = None
         # 本回合最终会用到的 model_id (仅在能确定时填), 供工具能力门控判定。
         effective_model_id: Optional[str] = None
-        if self._prefer_fast_record_model and not self._request_model_id:
-            try:
-                from app.services.llm.factory import create_provider_for_model_id
-                provider = create_provider_for_model_id(FAST_RECORD_MODEL_ID)
-                effective_model_id = FAST_RECORD_MODEL_ID
-                logger.info(
-                    "[agent_executor] fast record model routing user=%s model=%s",
-                    self._current_user_id,
-                    FAST_RECORD_MODEL_ID,
-                )
-            except Exception as e:  # noqa: BLE001
-                logger.warning(
-                    "[agent_executor] fast record model unavailable, fallback to user provider: %s",
-                    e,
-                )
-                provider = None
 
         # Mac/桌面端手动路由: extra_context.model_id 是 model_registry 里的 id,
         # 只影响本次请求, 不改 user_profile 持久偏好.
@@ -2328,8 +2307,8 @@ class AgentExecutor:
         # ──── 工具调用能力门控 (从源头减少弱模型吐坏工具调用; #147/#161 兜底解析仍在) ────
         # 仅当本回合确实要传 tools 且已确定的 effective_model 不可靠时, 才换一个可靠模型。
         # 拿不准 (effective_model_id=None / 未注册) → 保守不动, 依赖兜底解析。
-        # **fast-record 高频路径不门控**:它图 glm-5.1 的快+便宜,记录每次回退到商用模型
-        # 会显著涨成本/延迟;其工具参数提取由 #147/#161 兜底解析覆盖,已够稳。
+        # fast-record 只压缩 prompt / 自动确认, 不再偷偷切模型。为避免用户显式选择的
+        # 模型又被工具门控改掉, 该路径继续依赖 #147/#161 的兜底解析。
         if pass_tools and not self._prefer_fast_record_model:
             gated = self._gate_tool_provider(effective_model_id)
             if gated is not None:

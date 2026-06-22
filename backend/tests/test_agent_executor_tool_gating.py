@@ -5,7 +5,6 @@
 """
 from unittest.mock import MagicMock
 
-import app.services.agent_executor as ae
 from app.services.agent_executor import AgentExecutor
 from app.services.llm import model_registry as reg
 
@@ -138,24 +137,24 @@ def test_gate_keeps_unreliable_when_no_reliable_fallback(monkeypatch):
     assert pass_tools
 
 
-def test_fast_record_not_gated_keeps_cheap_model(monkeypatch):
-    """fast-record 高频路径**不门控**:保留 glm-5.1(快+便宜),不回退商用模型。
-
-    其工具参数提取由 #147/#161 兜底解析覆盖;记录每次回退商用会显著涨成本/延迟。
-    """
-    sentinel_unreliable = MagicMock(name="glm_provider")
-    sentinel_reliable = MagicMock(name="claude_provider")
+def test_fast_record_uses_default_provider_instead_of_hidden_glm(monkeypatch):
+    """fast-record only compacts prompts; it must not silently switch to GLM-5.1."""
+    sentinel_default = MagicMock(name="default_provider")
+    created_model_ids = []
 
     def fake_create(model_id):
-        return sentinel_unreliable if model_id == ae.FAST_RECORD_MODEL_ID else sentinel_reliable
+        created_model_ids.append(model_id)
+        return MagicMock(name=f"{model_id}_provider")
 
     import app.services.llm.factory as factory
     monkeypatch.setattr(factory, "create_provider_for_model_id", fake_create)
-    monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **k: "claude-opus-4.7")
+    monkeypatch.setattr(factory, "get_llm_provider", lambda: sentinel_default)
+    monkeypatch.setattr(reg, "get_active_model_id", lambda: None)
 
     ex = _executor()
     ex._prefer_fast_record_model = True
 
     provider, pass_tools = ex._resolve_chat_provider([{"type": "function"}])
-    assert provider is sentinel_unreliable, "fast-record 应保留 glm-5.1,不被门控"
+    assert provider is sentinel_default
+    assert created_model_ids == []
     assert pass_tools

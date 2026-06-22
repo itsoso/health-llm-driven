@@ -7,7 +7,6 @@ from app.models.blood_pressure import BloodPressureRecord
 from app.models.user_profile import UserProfile
 from app.models.openclaw import OpenClawMessage
 from app.services.agent_executor import (
-    FAST_RECORD_MODEL_ID,
     INTERRUPTED_COMPLETION_NOTICE,
     AgentExecutor,
     _completion_status_from_finish_reason,
@@ -143,8 +142,8 @@ async def test_agent_call_llm_omits_empty_tools_for_commercial_retries(db, auth_
 
 
 @pytest.mark.asyncio
-async def test_agent_call_llm_routes_pure_record_turns_to_fast_model(db, auth_user_and_headers, monkeypatch):
-    """Pure record turns should not pay Qwen reasoning latency for tool extraction."""
+async def test_agent_call_llm_keeps_user_model_for_pure_record_turns(db, auth_user_and_headers, monkeypatch):
+    """Pure record turns may use compact prompts, but must not override the user's model."""
     user, _headers = auth_user_and_headers
     db.add(UserProfile(user_id=user.id, llm_model_id="qwen3.6-plus"))
     db.commit()
@@ -153,10 +152,11 @@ async def test_agent_call_llm_routes_pure_record_turns_to_fast_model(db, auth_us
     executor._current_user_id = user.id
     executor._prefer_fast_record_model = True
     created_model_ids = []
+    created_user_provider_for = []
     captured_messages = []
 
     class FakeProvider:
-        model = FAST_RECORD_MODEL_ID
+        model = "qwen3.6-plus"
 
         async def chat(self, **kwargs):
             captured_messages.append(kwargs["messages"])
@@ -166,17 +166,26 @@ async def test_agent_call_llm_routes_pure_record_turns_to_fast_model(db, auth_us
         created_model_ids.append(model_id)
         return FakeProvider()
 
+    def fake_create_provider_for_user(user_id, _db):
+        created_user_provider_for.append(user_id)
+        return FakeProvider()
+
     monkeypatch.setattr(
         "app.services.llm.factory.create_provider_for_model_id",
         fake_create_provider_for_model_id,
+    )
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_user",
+        fake_create_provider_for_user,
     )
     monkeypatch.setattr("app.services.agent_executor.settings.agent_base_url", None)
     monkeypatch.setattr("app.services.agent_executor.settings.agent_api_key", None)
 
     await executor._call_llm([{"role": "user", "content": "记录晚餐牛肉饭"}], [])
 
-    assert created_model_ids == [FAST_RECORD_MODEL_ID]
-    assert executor._last_provider_model_name == FAST_RECORD_MODEL_ID
+    assert created_model_ids == []
+    assert created_user_provider_for == [user.id]
+    assert executor._last_provider_model_name == "qwen3.6-plus"
     assert len(captured_messages[0]) == 2
     assert "健康记录工具路由器" in captured_messages[0][0]["content"]
     assert captured_messages[0][1]["content"] == "记录晚餐牛肉饭"
