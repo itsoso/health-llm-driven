@@ -7,6 +7,7 @@ user_id 一律取自 token(不信任客户端)。
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required
@@ -50,7 +51,54 @@ async def list_write_intents(
     except Exception as e:  # P3(D1)复购提醒生成失败 → 降级, 不阻塞读列表
         logger.warning(f"[write-intents] reorder 生成失败(降级,仍返回现有): {e}")
         db.rollback()
+    try:
+        svc.generate_doctor_booking_drafts(db, current_user.id)
+    except Exception as e:  # P5 医生预约草稿生成失败 → 降级, 不阻塞读列表
+        logger.warning(f"[write-intents] doctor-booking 生成失败(降级,仍返回现有): {e}")
+        db.rollback()
     return {"items": svc.list_pending(db, current_user.id)}
+
+
+class ProposeExternalActionBody(BaseModel):
+    kind: str = Field(description="外部动作类型: alarm_set / food_order / doctor_booking")
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = None
+    payload: dict | None = None
+
+
+@router.post("")
+async def propose_write_intent(
+    body: ProposeExternalActionBody,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """提一个外部动作写意图(propose;全 manual_confirm,确认才执行)。
+
+    服务端 kind 白名单(alarm_set/food_order/doctor_booking),未知 kind → 422。
+    food_order 摘要先过 R4 守门(guidance_validator)再落库。幂等:同 (user,kind,target)
+    已有 pending → 返回既有 id。**不在此下单/预约/支付** —— 仅记意图,确认是另一步。
+    """
+    try:
+        wi = svc.propose_external_action(
+            db,
+            current_user.id,
+            kind=body.kind,
+            title=body.title,
+            description=body.description,
+            payload=body.payload,
+        )
+    except ValueError as e:  # 未知 kind → 422(服务端白名单门控)
+        raise HTTPException(status_code=422, detail=str(e))
+    if wi is None:  # 幂等:已有 pending → 返回既有
+        existing = next(
+            (
+                it for it in svc.list_pending(db, current_user.id)
+                if it["kind"] == body.kind
+            ),
+            None,
+        )
+        return {"intent": existing, "idempotent": True}
+    return {"intent": svc._view(wi), "idempotent": False}
 
 
 @router.post("/{intent_id}/confirm")

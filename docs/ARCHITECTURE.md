@@ -21,7 +21,7 @@
                                                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │                              Backend: FastAPI (Python 3.12)                          │
-│                  health-api.executor.life · 158 API 路由 · 270 services            │
+│                  health-api.executor.life · 158 API 路由 · 271 services            │
 │  ┌───────────┐  ┌──────────┐  ┌─────────────────┐  ┌────────────────────┐            │
 │  │ Auth+JWT  │  │ Router   │  │ Orchestrator    │  │ Agent Executor     │            │
 │  │           │  │ dispatch │  │ (13 specialist) │  │ (tool-calling LLM) │            │
@@ -63,7 +63,7 @@
 
 | 端 | Stack | 位置 | 规模 |
 |---|---|---|---|
-| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 158 API 路由, 270 services, 98 models, 59 Celery 任务 |
+| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 158 API 路由, 271 services, 98 models, 59 Celery 任务 |
 | **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 57 路由 |
 | **Mac Desktop** | Swift 6 + SwiftUI + URLSession async/await + Keychain + MenuBarExtra | `apps/mac/` | 原生桌面 P0: Today / Agent / Record / Import / Jobs / Trace |
 | **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 68 页 |
@@ -353,6 +353,7 @@ Celery beat (每小时) → garmin_sync.sync_user_garmin_data(user_id)
 | **Operating Plan** | `/daily-plan` | `/daily-plan/me` 当前用户每日代谢健康操作计划; action 携带 `evidence_tier/confidence/claim_boundary` |
 | **Fitness (P2)** | `/fitness` | `/fitness/weekly-plan` (T2 周健身计划:系统起草→确认排程) `/fitness/exercise-guide` (动作图文指导,确定性数据集) |
 | **Reorder/Commerce (P5/D2)** | `/reorder-intents` | 财务一等对象 `ReorderIntent`(复购下单,**SCAFFOLD 不真下单**):`POST /reorder-intents` (propose) `GET` (list) `/{id}/confirm` (T3 逐笔强确认→调快手电商 skill;**skill 契约未就绪→501**,意图停 user_confirmed,绝不 order_placed/扣款) `/{id}/cancel`。skill 网关 `services/kuaishou_skill_gateway.py::place_order` 恒抛 NotImplementedError(财务硬门可证惰性) |
+| **Write 层/External Action (P5)** | `/write-intents` | 写意图账本(系统起草→用户确认才执行,全 `trust_tier=manual_confirm` 不自治):`GET` (list,顺带跑各生成器含 `generate_doctor_booking_drafts`) `POST` (propose 外部动作,服务端 kind 白名单 alarm_set/food_order/doctor_booking,未知→422)`/{id}/confirm` `/{id}/dismiss`。external-action kinds:`alarm_set`(确认→建 SmartReminder,设备到点触发,后端只记录)、`doctor_booking`(扫 `ReviewSchedule` due 行→草稿,确认→「去 X 科预约复查」提醒,**不真挂号**)、`food_order`(**DRAFT ONLY**,确认惰性 acknowledged,**不下单/不付款/不存支付凭据**;摘要过 `guidance_validator` R4 守门)。inert 网关 `services/food_order_skill_gateway.py::place_order` 恒抛 NotImplementedError(财务路径可证惰性);全 R15 P1,绝不 P0 |
 | **Reminders/Notifications** | `/notification` `/smart-reminder` | `/bind/ios` `/bind/wechat` `/logs` |
 | **Voice/Briefing** | `/tts` `/briefing` `/pre-workout` `/clarification` | `/tts/synthesize` (CosyVoice 代理), briefing voice script |
 | **Admin** | `/admin` `/admin/llm` `/admin/observability` | `/admin/llm/models` `/admin/llm/select-model` `/admin/llm/benchmark/{id}` |

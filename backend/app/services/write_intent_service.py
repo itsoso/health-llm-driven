@@ -133,6 +133,16 @@ def confirm(db: Session, user_id: int, intent_id: int) -> Dict[str, Any]:
     )
     db.commit()
     db.refresh(wi)
+    # P5 外部动作(food_order 财务相邻 → audit_required;doctor_booking/alarm_set 也记)。
+    # 旁路审计:失败不抛、不回滚已确认的写意图(取证写不能反噬主流程)。
+    if wi.kind in ("food_order", "doctor_booking", "alarm_set"):
+        from app.agents import audit
+
+        outcome = "drafted_acknowledged" if ref == "acknowledged" else "reminder_created"
+        audit.log_external_action_intent(
+            db, wi.user_id, intent_id=wi.id, kind=wi.kind, outcome=outcome,
+            target_type=wi.target_type, target_id=wi.target_id,
+        )
     return {"id": wi.id, "status": "executed", "executed_ref": ref, "idempotent": False}
 
 
@@ -345,6 +355,65 @@ def _execute(db: Session, wi: WriteIntent) -> str:
         # 本期不调任何电商 skill、不建 ReorderIntent —— 那是 PRD §3.D2(P5)的财务面,
         # 要过 governance 一等对象 Gate + 财务安全评审。这里 confirm 只把意图标记为已处理。
         # D2 落地时,会把这里的 acknowledge 换成「调快手电商 OpenClaw skill 下单」(仍逐笔强确认)。
+        return "acknowledged"
+    if wi.kind == "alarm_set":
+        # P5 external-action:闹钟设置。确认 → 建一条 SmartReminder(后端只**记录**提醒,
+        # 实际闹钟由设备/客户端到点触发)。良性写,零 R4 面(无饮食/训练/诊断措辞)。
+        # 不假装成功:executed_ref 带上 reminder id,客户端据此把意图与设备闹钟关联;
+        # 客户端设备侧闹钟设置失败应自行回报(本端只承诺"已记录提醒",不冒充"已上闹钟")。
+        p = wi.payload or {}
+        rem = SmartReminder(
+            user_id=wi.user_id,
+            title=wi.title,
+            message=wi.description or (p.get("label") or "闹钟提醒"),
+            remind_at=_parse_dt(p.get("alarm_time")) or (datetime.now(timezone.utc) + timedelta(hours=8)),
+            priority="normal",
+            status="pending",
+            source="health_assistant",
+            extra_data={
+                "write_intent_id": wi.id,
+                "kind": wi.kind,
+                "alarm_time": p.get("alarm_time"),
+                "label": p.get("label"),
+            },
+        )
+        db.add(rem)
+        db.flush()
+        return f"smart_reminder:{rem.id}"
+    if wi.kind == "doctor_booking":
+        # P5 external-action:医生预约。确认 → 建一条「去 <科室> 预约 <项目> 复查」提醒。
+        # **不做真挂号**(out of scope,需外部挂号 skill + 账号绑定 + 安全评审);只产出物流
+        # 提醒(纯逻辑、非诊断,R4 安全)。预约本身仍由用户线下/院方 App 完成。
+        p = wi.payload or {}
+        dept = p.get("department") or "对应科室"
+        item = p.get("item_name") or "复查项目"
+        rem = SmartReminder(
+            user_id=wi.user_id,
+            title=wi.title,
+            message=wi.description or f"去{dept}预约{item}复查",
+            remind_at=_parse_dt(p.get("remind_at")) or _remind_at_for(p.get("next_due_date"), False),
+            priority="normal",
+            status="pending",
+            source="health_assistant",
+            extra_data={
+                "write_intent_id": wi.id,
+                "target_type": wi.target_type,
+                "target_id": wi.target_id,
+                "kind": wi.kind,
+                "department": p.get("department"),
+                "hospital": p.get("hospital"),
+                "item_name": p.get("item_name"),
+            },
+        )
+        db.add(rem)
+        db.flush()
+        return f"smart_reminder:{rem.id}"
+    if wi.kind == "food_order":
+        # P5 external-action:外卖下单 —— **DRAFT ONLY,确认即惰性(acknowledge)**。
+        # 财务硬边界:此分支**绝不**下单、绝不付款、绝不触碰任何支付字段、绝不调外卖网关。
+        # 仓库里唯一能"下单"的入口是 food_order_skill_gateway.place_order,它恒抛
+        # NotImplementedError —— 本分支根本不调它(财务路径在代码上可证为惰性 inert)。
+        # 真实下单待外卖 OpenClaw skill 就绪 + 财务安全评审后,才会逐笔强确认接入。
         return "acknowledged"
     raise ValueError(f"unknown write_intent kind: {wi.kind}")
 
@@ -605,6 +674,137 @@ def generate_adherence_nudge(db: Session, user_id: int) -> int:
             description=_DESC, source="adherence_gap",
             target_type="supplement", target_id=supp.id,
             payload={"item_type": "supplement", "name": supp.name},
+            commit=False,
+        )
+        if wi is not None:
+            created += 1
+
+    db.commit()
+    return created
+
+
+# ─────────────────── P5 external-action intents(food_order/doctor_booking/alarm_set)───────────────────
+
+# 外部动作 kind 白名单(propose_external_action 服务端门控,未知 kind → ValueError,端点 422)。
+_EXTERNAL_ACTION_KINDS = frozenset({"alarm_set", "food_order", "doctor_booking"})
+
+# L4 硬门:支付凭据类 key 绝不进 WriteIntent.payload(后端永不存支付凭据)。
+# 这是代码级护栏(非仅约定):任一 payload key 命中 → 落库前 ValueError(端点 422,fail-loud)。
+# 子串匹配,覆盖大小写/常见变体(card_no / payment_token / 支付密码 …)。
+_PAYMENT_KEY_SUBSTRINGS = (
+    "payment", "card", "cvv", "bank", "alipay", "wechat_pay", "wechatpay",
+    "credential", "password", "passwd", "secret", "支付", "银行卡", "密码",
+)
+
+
+def _reject_payment_keys(payload: Dict[str, Any]) -> None:
+    """L4:扫 payload 顶层 key,命中支付凭据类子串 → ValueError(端点 422)。绝不静默丢弃。"""
+    for k in payload:
+        kl = str(k).lower()
+        if any(s in kl for s in _PAYMENT_KEY_SUBSTRINGS):
+            raise ValueError(f"payment-credential key not allowed in payload: {k}")
+
+
+def propose_external_action(
+    db: Session,
+    user_id: int,
+    *,
+    kind: str,
+    title: str,
+    description: Optional[str] = None,
+    payload: Optional[Dict[str, Any]] = None,
+    target_type: Optional[str] = None,
+    target_id: Optional[int] = None,
+    commit: bool = True,
+) -> Optional[WriteIntent]:
+    """提一个外部动作写意图(propose→confirm 生命周期,全 manual_confirm,不自治)。
+
+    服务端 kind 白名单:kind ∉ _EXTERNAL_ACTION_KINDS → ValueError(端点转 422)。
+    food_order 的 user-visible 摘要先过 R4 守门(guidance_validator):若 LLM 生成的摘要
+    里混进量化/命令式饮食处方(「必须吃X克蛋白」),在**落库前**被 strip/soften,违规记
+    payload['guidance_violations'] 审计(fail-loud,绝不静默改写)。
+    propose 本身保持幂等(同 user+kind+target 已有 pending → None)、trust_tier=manual_confirm。
+    """
+    if kind not in _EXTERNAL_ACTION_KINDS:
+        raise ValueError(f"unknown external-action kind: {kind}")
+
+    safe_payload = dict(payload or {})
+    _reject_payment_keys(safe_payload)  # L4:支付凭据类 key → ValueError(端点 422),fail-loud
+    if kind == "food_order":
+        # R4 防御纵深:外卖摘要里的营养"估算"是描述性的(标注估算来源),绝不能是量化饮食处方。
+        # 把 user_visible_summary 过 guidance_validator,命中即 strip/soften + 记违规(fail-loud)。
+        from app.services.guidance_validator import sanitize_guidance
+
+        raw = safe_payload.get("user_visible_summary")
+        if raw:
+            res = sanitize_guidance(raw)
+            safe_payload["user_visible_summary"] = res.text
+            if res.flagged:
+                safe_payload["guidance_violations"] = res.violations
+
+    return propose(
+        db,
+        user_id,
+        kind=kind,
+        title=title,
+        description=description,
+        source="external_action",
+        target_type=target_type,
+        target_id=target_id,
+        payload=safe_payload,
+        commit=commit,
+    )
+
+
+def generate_doctor_booking_drafts(db: Session, user_id: int, within_days: int = 30) -> int:
+    """复查到期召回(医生预约草稿):扫该用户 due 的 ReviewSchedule → 提议「doctor_booking」写意图。
+
+    过滤:status ∈ {pending, overdue} ∧ is_active ∧ user_id == 调用方(IDOR)∧ next_due_date
+    在 [today-逾期, today+within_days] 窗内。同 (kind,target) 当天已提过 → 不重复(防刷屏)。
+    摘要是纯物流(「复查到期,可预约 X 科」),非诊断。NO 真挂号 —— 确认只建提醒(见 _execute)。
+    返回新建提议数。
+    """
+    from datetime import date as _date
+
+    from app.models.family_health import ReviewSchedule
+
+    today = _date.today()
+    horizon = today + timedelta(days=within_days)
+    rows = (
+        db.query(ReviewSchedule)
+        .filter(
+            ReviewSchedule.user_id == user_id,           # IDOR:只扫调用方自己的复查计划
+            ReviewSchedule.is_active.is_(True),
+            ReviewSchedule.status.in_(("pending", "overdue")),
+            ReviewSchedule.next_due_date <= horizon,     # 已逾期(<today)也含,催预约
+        )
+        .all()
+    )
+
+    created = 0
+    for rs in rows:
+        if _proposed_same_day_local(db, user_id, "doctor_booking", "review_schedule", rs.id):
+            continue
+        dept = rs.department or "对应科室"
+        item = rs.item_name or "复查项目"
+        overdue = rs.next_due_date < today
+        title = f"复查到期:{item}" if not overdue else f"复查已逾期:{item}"
+        # 纯物流描述(R4 安全):只说"到期可预约 X 科",绝不下诊断("你得了 X")。
+        desc = f"{item} 复查到期,可预约{dept}" + (f"({rs.hospital})" if rs.hospital else "") + "。"
+        wi = propose_external_action(
+            db,
+            user_id,
+            kind="doctor_booking",
+            title=title,
+            description=desc,
+            target_type="review_schedule",
+            target_id=rs.id,
+            payload={
+                "department": rs.department,
+                "hospital": rs.hospital,
+                "item_name": rs.item_name,
+                "next_due_date": rs.next_due_date.isoformat() if rs.next_due_date else None,
+            },
             commit=False,
         )
         if wi is not None:

@@ -60,6 +60,11 @@ _KIND_TIER: dict[str, str] = {
     "supplement": "P1",
     "movement": "P1",
     "protocol": "P1",
+    # P5 external-action 提醒(由 write_intent confirm 物化为 SmartReminder)的通知预算 tier。
+    # 全部 P1:R15 下绝不消耗 P0 周预算(P0 留给处方/异常生命体征);闹钟/外卖/预约非急症。
+    "alarm_set": "P1",
+    "food_order": "P1",
+    "doctor_booking": "P1",
 }
 
 # 行为协议的 coarse time_window → 该日的 HH:MM 到点时刻(start_min 来源)。

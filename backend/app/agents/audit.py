@@ -466,6 +466,50 @@ def log_reorder_intent(
         return None
 
 
+def log_external_action_intent(
+    db: Session,
+    user_id: int,
+    *,
+    intent_id: int,
+    kind: str,
+    outcome: str,
+    target_type: Optional[str] = None,
+    target_id: Optional[int] = None,
+) -> Optional[int]:
+    """P5 外部动作意图(food_order / doctor_booking / alarm_set)确认的取证审计。
+
+    food_order 是财务相邻动作(audit_required),确认是 human-in-the-loop:必须可追溯到
+    「谁在何时确认了哪个外部动作意图、结果如何」。action='external_action_confirm';
+    agent_type='external_action_intent'。
+    outcome ∈ {drafted_acknowledged(food_order 本期惰性), reminder_created(alarm_set/
+    doctor_booking)}。旁路,失败不抛(返回 None),不阻断 confirm 主流程。
+    **无 PII / 无支付凭据**:只记 user_id + kind + 对象 id。
+    """
+    if user_id is None:
+        return None
+    try:
+        summary = (
+            f"external_action intent={intent_id} kind={kind} outcome={outcome}"
+        )
+        return _write(
+            db,
+            user_id=user_id,
+            agent_type="external_action_intent",
+            action="external_action_confirm",
+            result_summary=summary,
+            result_detail={
+                "intent_id": intent_id,
+                "kind": kind,
+                "outcome": outcome,
+                "target_type": target_type,
+                "target_id": target_id,
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[audit] log_external_action_intent 失败 (跳过): {e}")
+        return None
+
+
 def _write(
     db: Session,
     user_id: int,
