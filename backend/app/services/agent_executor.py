@@ -1452,6 +1452,11 @@ class AgentExecutor:
             for round_idx in range(MAX_TOOL_ROUNDS):
                 # 真流式调用 LLM：content delta 实时 yield 给客户端,同时累积 tool_calls。
                 # _call_llm_stream 内部已做 provider 路由 + failover (镜像 _call_llm)。
+                round_tools = (
+                    []
+                    if self._should_synthesize_with_requested_model_after_tools(tool_executed_count)
+                    else tools
+                )
                 _round_start = time.time()
                 streamed_text = ""
                 streamed_tool_calls: List[Dict[str, Any]] = []
@@ -1462,7 +1467,7 @@ class AgentExecutor:
                 # 并撤回已发标记 —— 这段 JSON 后面会被恢复成真正的 tool_call (content 置空),
                 # 绝不能泄漏给用户。结构化 tool_calls 的正常模型不受影响。
                 inline_suppressed = False
-                async for evt in self._call_llm_stream(messages, tools):
+                async for evt in self._call_llm_stream(messages, round_tools):
                     etype = evt.get("type")
                     if etype == "content":
                         delta = evt.get("text") or ""
@@ -1472,9 +1477,9 @@ class AgentExecutor:
                         if (
                             not inline_suppressed
                             and not streamed_tool_calls
-                            and tools
+                            and round_tools
                             and (
-                                _extract_inline_tool_call(streamed_text, tools)
+                                _extract_inline_tool_call(streamed_text, round_tools)
                                 # 括号标记 `[工具调用: ...` 可能正在逐 token 形成,`)` 还没到
                                 # → 上面的精确解析此刻 match 不到。一旦看到标记前缀就提前抑制,
                                 # 避免裸标记被逐 delta 泄漏(即便最终参数解析不出也不外漏)。
@@ -1528,7 +1533,7 @@ class AgentExecutor:
                 logger.info(f"LLM response type={type(response).__name__}, is_dict={isinstance(response, dict)}, has_tool_calls={isinstance(response, dict) and bool(response.get('tool_calls'))}, preview={str(response)[:200]}")
 
                 if isinstance(response, dict) and not response.get("tool_calls"):
-                    inline_tool_call = _extract_inline_tool_call(response.get("content") or "", tools)
+                    inline_tool_call = _extract_inline_tool_call(response.get("content") or "", round_tools)
                     if inline_tool_call:
                         logger.warning(
                             "[agent_executor] recovered inline tool JSON as tool_call: %s",
@@ -1547,7 +1552,7 @@ class AgentExecutor:
                 if (
                     isinstance(response, dict)
                     and not response.get("tool_calls")
-                    and _is_botched_text_tool_call(response.get("content") or "", tools)
+                    and _is_botched_text_tool_call(response.get("content") or "", round_tools)
                 ):
                     botched = response.get("content") or ""
                     if round_idx < MAX_TOOL_ROUNDS - 1:
@@ -1684,6 +1689,10 @@ class AgentExecutor:
                     # 纯文本回复 — 最终答案。本轮 content 已在上面逐 delta 真流式
                     # 下发给客户端 (streamed_to_client)。这里只补 interrupted notice
                     # 后缀 + full_reply,不再切 20-char 假块重发。
+                    if self._last_provider_model_name:
+                        # done.model 表示最终用户可见答案的模型。工具门控 fallback
+                        # 只负责拿数据,不能覆盖用户手动选择模型的最终归属。
+                        model_name = self._last_provider_model_name
                     if isinstance(response, str):
                         # 已经是完整文本（理论上流式路径不会进这里,保险留着）
                         final_text = response
@@ -1792,6 +1801,8 @@ class AgentExecutor:
                 })
                 _round_start = time.time()
                 response = await self._call_llm(messages, [])
+                if self._last_provider_model_name:
+                    model_name = self._last_provider_model_name
                 if isinstance(response, dict):
                     final_finish_reason = response.get("finish_reason") or final_finish_reason
                 llm_rounds_ms.append(int((time.time() - _round_start) * 1000))
@@ -2335,6 +2346,18 @@ class AgentExecutor:
             return None
         from app.services.llm.model_registry import get_active_model_id
         return get_active_model_id()
+
+    def _should_synthesize_with_requested_model_after_tools(self, tool_executed_count: int) -> bool:
+        """After fallback tool calls, let the user's manual model own the final answer."""
+
+        if tool_executed_count <= 0 or not self._request_model_id or self._prefer_fast_record_model:
+            return False
+        try:
+            from app.services.llm.model_registry import is_reliable_tool_caller
+
+            return not is_reliable_tool_caller(self._request_model_id)
+        except Exception:  # noqa: BLE001
+            return False
 
     def _gate_tool_provider(self, effective_model_id: Optional[str]):
         """若 effective_model 做工具调用不可靠, 返回一个可靠模型的 provider; 否则 None。

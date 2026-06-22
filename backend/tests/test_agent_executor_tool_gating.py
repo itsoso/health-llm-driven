@@ -3,7 +3,10 @@
 从源头减少弱模型 (glm-5.1 等) 吐坏工具调用: 需要工具的回合若选中不可靠模型,
 门控到可靠模型; #147/#161 的兜底解析仍是安全网, 这里不碰。
 """
+import json
 from unittest.mock import MagicMock
+
+import pytest
 
 from app.services.agent_executor import AgentExecutor
 from app.services.llm import model_registry as reg
@@ -158,3 +161,105 @@ def test_fast_record_uses_default_provider_instead_of_hidden_glm(monkeypatch):
     assert provider is sentinel_default
     assert created_model_ids == []
     assert pass_tools
+
+
+@pytest.mark.asyncio
+async def test_unreliable_manual_model_uses_fallback_for_tools_then_selected_model_for_final(
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    """Manual GLM can borrow Qwen for tool calls, but final synthesis must stay GLM."""
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    provider_calls = []
+    qwen_stream_calls = {"n": 0}
+
+    class FakeProvider:
+        def __init__(self, model_id):
+            self.model = model_id
+
+        async def chat_stream(self, **kwargs):
+            provider_calls.append({
+                "model": self.model,
+                "has_tools": bool(kwargs.get("tools")),
+            })
+            if self.model == "qwen3.7-max":
+                qwen_stream_calls["n"] += 1
+                if qwen_stream_calls["n"] == 1:
+                    yield {
+                        "type": "tool_calls",
+                        "tool_calls": [{
+                            "id": "env-1",
+                            "type": "function",
+                            "function": {
+                                "name": "environment_check",
+                                "arguments": json.dumps({"location": "北京"}),
+                            },
+                        }],
+                    }
+                    yield {"type": "finish", "finish_reason": "tool_calls"}
+                    return
+                yield {"type": "content", "text": "QWEN FINAL"}
+                yield {"type": "finish", "finish_reason": "stop"}
+                return
+
+            assert self.model == "glm-5.2"
+            assert not kwargs.get("tools")
+            yield {"type": "content", "text": "GLM FINAL"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+    async def fake_execute_tool(name, args, token):
+        assert name == "environment_check"
+        return "北京当前 19C 小雨，湿度 92%"
+
+    monkeypatch.setattr("app.services.agent_executor.settings.llm_provider", "tokenplan")
+    monkeypatch.setattr("app.services.agent_executor.settings.agent_base_url", None)
+    monkeypatch.setattr("app.services.agent_executor.settings.agent_api_key", None)
+    monkeypatch.setattr(
+        "app.services.agent_executor.get_health_tools",
+        lambda: [{
+            "type": "function",
+            "function": {
+                "name": "environment_check",
+                "description": "Check local environment",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }],
+    )
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_model_id",
+        lambda model_id: FakeProvider(model_id),
+    )
+    monkeypatch.setattr(
+        reg,
+        "pick_reliable_tool_model_id",
+        lambda **_kwargs: "qwen3.7-max",
+    )
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="来北京之后有点头疼，怎么办？",
+            user_auth_token="test-token",
+            extra_context=json.dumps({"client": "mac", "model_id": "glm-5.2"}),
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = events[-1]["data"]
+
+    assert provider_calls == [
+        {"model": "qwen3.7-max", "has_tools": True},
+        {"model": "glm-5.2", "has_tools": False},
+    ]
+    assert rendered == "GLM FINAL"
+    assert done["model"] == "glm-5.2"
+    assert done["tools_used"] == ["environment_check"]
