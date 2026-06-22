@@ -66,8 +66,8 @@ Increment 1 已合并 main(`f1ca1802`,未部署),实现了 §7 流水线
 
 | 状态 | 阶段 | 内容 |
 |---|---|---|
-| ✅ 已建 | (= §7 ExecutionEvent + loop) | HealthEvent agenda 生命周期 + 完成端点 + past 投影(Increment 1) |
-| ⏭ 前置 | 横切 | **移动端闭环按钮 handler**(推送→解析 event_id→调 complete→首页熄灯)+ §9.1 富字段渲染 —— P1 的前提,否则协议有提醒但点了不熄灯 |
+| ✅ 已建 | (= §7 ExecutionEvent + loop) | HealthEvent agenda 生命周期 + 完成端点 + past 投影(Increment 1, `f1ca1802`) |
+| ✅ 已建 | 横切·闭环 | **完成回路打通**:`complete_item` 加 medication/supplement 分支(与药同表,复用幂等 `log_medication`)+ `complete_by_ref` 核(懒物化 + 经 `complete_agenda_event` 单事务 + DB 原子认领防虚高依从)+ `can_complete` 扩到药/补剂 + 修推送 `complete_endpoint` 占位符 → `/agenda/complete`(后端 `f845ff9f`);**移动端 AGENDA_ACTION 推送类目 + 完成/跳过 handler**(`mobile/hooks/useNotifications.ts`,JS-only 可 OTA,前端 `4d940a79`)。安全 re-review **GO**;6 不变量复核;对抗测试真红保护幂等。 |
 | ⬜ 下一步 | §14 P1 | 协议模板(`eye_20_20_20`/`work_microbreak`/`nasal_wash`/`sleep_winddown`)→ 投影进 schedule/agenda → 经已建 complete 端点人工确认 |
 | ⬜ | §14 P2 | 通用 DeviceObservation(折进 HealthEvent)+ 镜像 Rokid 俯卧撑 + Mac screen-focus |
 | ⬜ | §14 P3 | 坐姿/用眼硬件 adapter(Rokid/camera,本地特征、不传原始帧) |
@@ -75,7 +75,9 @@ Increment 1 已合并 main(`f1ca1802`,未部署),实现了 §7 流水线
 | ⬜ | §14 P5 | external intents(food_order/doctor_booking/alarm,全 manual_confirm,**永不自动支付/不存支付凭证**)—— 复用 `write_intent_service`/`reorder_intent_service` |
 | ⬜ | §14 P6 | learning loop(completion/skip 聚合 → 调 burden/cooldown/timing) |
 
-> 安全前置:Increment 1 基础在跑 P1 catalog 前需过一轮 safety-privacy review(R4 不诊断/不开方、R15 通知预算、用户隔离、§11 边界)。
+> 安全前置:Increment 1 基础在跑 P1 catalog 前需过一轮 safety-privacy review(R4 不诊断/不开方、R15 通知预算、用户隔离、§11 边界)。**已完成**(2026-06-22):基础 + 完成回路 APPROVE_WITH_FIXES → 修幂等 HIGH(`uq_medlog_med_date_time` + DB 原子认领 + 确定性 taken_time)→ re-review **GO**。
+>
+> **上线顺序(未部署,用户做真机验证)**:① 后端先部署(`./deploy.sh -b`,带 `/agenda/complete` 的 status/skip_reason)→ ② `cd mobile && npm run generate-types`(当前 `api.generated.ts` 仍是部署前 shape,缺 status/skip_reason,客户端已 hand-typed + TODO 标注)→ ③ 移动端 OTA(JS-only)→ ④ 真机验证「推送→完成/跳过→首页熄灯」。后端未部署前先 OTA:done 仍可用(后端默认 done),skip 会被旧后端忽略 → 必须后端先行。
 
 ## 2. Problem
 
@@ -1012,3 +1014,4 @@ Can defer:
 |---|---|---|
 | 2026-06-22 | Initial draft | Define time-driven health management as a unified Personal Health OS layer. |
 | 2026-06-22 | Add §1.5 Reconciliation & Build Status | 对齐已建 Increment 1(HealthEvent 执行层闭环 = 本 spec ExecutionEvent 段);裁决 §18 三个开放问题;统一脊柱 seam(`/timeline/today` 为首页脊柱);给出 P0-P6 ⇄ Increment 合并路线图。Codex 输入侧 spec 与 Claude 已建执行侧互补。 |
+| 2026-06-22 | 完成回路打通(后端 `f845ff9f` + 移动端 `4d940a79`)| med/supplement 完成不再 422:`complete_item` 加分支(复用幂等 `log_medication`)+ `complete_by_ref` 核 + `can_complete` 扩展 + 修推送端点占位符 + AGENDA_ACTION 推送 handler(完成/跳过)。safety re-review GO;幂等 HIGH 已修(DB 原子认领 + 确定性 taken_time)。§1.5.4 路线图前置项 → 已建。未部署。 |
