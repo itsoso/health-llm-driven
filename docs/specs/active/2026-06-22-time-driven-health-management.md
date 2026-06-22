@@ -68,8 +68,9 @@ Increment 1 已合并 main(`f1ca1802`,未部署),实现了 §7 流水线
 |---|---|---|
 | ✅ 已建 | (= §7 ExecutionEvent + loop) | HealthEvent agenda 生命周期 + 完成端点 + past 投影(Increment 1, `f1ca1802`) |
 | ✅ 已建 | 横切·闭环 | **完成回路打通**:`complete_item` 加 medication/supplement 分支(与药同表,复用幂等 `log_medication`)+ `complete_by_ref` 核(懒物化 + 经 `complete_agenda_event` 单事务 + DB 原子认领防虚高依从)+ `can_complete` 扩到药/补剂 + 修推送 `complete_endpoint` 占位符 → `/agenda/complete`(后端 `f845ff9f`);**移动端 AGENDA_ACTION 推送类目 + 完成/跳过 handler**(`mobile/hooks/useNotifications.ts`,JS-only 可 OTA,前端 `4d940a79`)。安全 re-review **GO**;6 不变量复核;对抗测试真红保护幂等。 |
-| ⬜ 下一步 | §14 P1 | 协议模板(`eye_20_20_20`/`work_microbreak`/`nasal_wash`/`sleep_winddown`)→ 投影进 schedule/agenda → 经已建 complete 端点人工确认 |
-| ⬜ | §14 P2 | 通用 DeviceObservation(折进 HealthEvent)+ 镜像 Rokid 俯卧撑 + Mac screen-focus |
+| 🟡 进行中 | §14 P1a | **协议模板地基 + 两个 clock-fit 协议已建**(后端 `c93077e8`):`protocol_templates.py` 代码常量注册表(`nasal_wash_morning`/`nasal_wash_evening`/`sleep_winddown`)+ 幂等 `seed_behavior_protocols` + `POST /protocols/seed/behavior`(按需启用,非全员 auto-seed)+ 提醒桥(`time_window→HH:MM`、protocol 源进 `_collect_timed_items`、候选用户并集、**P1 tier 绝不 P0**、`AGENDA_ACTION` 接已发的完成/跳过)+ 安全门(nasal 红旗抑制 fail-safe、警示语恒在、R4 措辞、无量化剂量)。安全 self-review **GO**(对抗:鼻出血时推 nasal / 删警示 / 占 P0 全防住;bedtime 22:00→21:30 修静默)。64+167 测试绿,doc-drift 绿。`respiratory` 加入 `PROTOCOL_DOMAINS`。 |
+| ⬜ 下一步 | §14 P1b | `eye_20_20_20`(P1 形态=移动端 20-20-20 本地通知计时器,非后端协议;真 screen-focus 信号属 P2)+ `work_microbreak`(已部分由 `workday_health_scheduler` 覆盖 → 审计/加 §8.3 安全门:readiness 红→改 mobility/rest、餐后<60min→免俯卧撑、急症→拒)。**真 intra-day interval/recurrence + §7.2 protocols→`solve_day_schedule` 是这两个需要的更深重构,随 P1b/P2 一起做(模型当前无 interval cadence)**。 |
+| ⬜ | §14 P2 | 通用 DeviceObservation(折进 HealthEvent)+ 镜像 Rokid 俯卧撑 + Mac screen-focus(eye 真信号源) |
 | ⬜ | §14 P3 | 坐姿/用眼硬件 adapter(Rokid/camera,本地特征、不传原始帧) |
 | ⬜ | §14 P4 | workout chain(前检查/训练/拉伸/洗澡/按摩/餐/同步) |
 | ⬜ | §14 P5 | external intents(food_order/doctor_booking/alarm,全 manual_confirm,**永不自动支付/不存支付凭证**)—— 复用 `write_intent_service`/`reorder_intent_service` |
@@ -1015,3 +1016,4 @@ Can defer:
 | 2026-06-22 | Initial draft | Define time-driven health management as a unified Personal Health OS layer. |
 | 2026-06-22 | Add §1.5 Reconciliation & Build Status | 对齐已建 Increment 1(HealthEvent 执行层闭环 = 本 spec ExecutionEvent 段);裁决 §18 三个开放问题;统一脊柱 seam(`/timeline/today` 为首页脊柱);给出 P0-P6 ⇄ Increment 合并路线图。Codex 输入侧 spec 与 Claude 已建执行侧互补。 |
 | 2026-06-22 | 完成回路打通(后端 `f845ff9f` + 移动端 `4d940a79`)| med/supplement 完成不再 422:`complete_item` 加分支(复用幂等 `log_medication`)+ `complete_by_ref` 核 + `can_complete` 扩展 + 修推送端点占位符 + AGENDA_ACTION 推送 handler(完成/跳过)。safety re-review GO;幂等 HIGH 已修(DB 原子认领 + 确定性 taken_time)。§1.5.4 路线图前置项 → 已建。未部署。 |
+| 2026-06-22 | P1a 协议模板地基(后端 `c93077e8`)| `protocol_templates.py` 注册表(nasal_wash×2 + sleep_winddown)+ 幂等 seeding + `/protocols/seed/behavior` + 提醒桥(`time_window→HH:MM`、protocol 进 `_collect_timed_items`、P1 tier)+ nasal 红旗 fail-safe 抑制 + R4 措辞。`respiratory` 入 PROTOCOL_DOMAINS。safety self-review GO。64+167 测试绿。未部署。P1b(eye 移动计时器 + microbreak 安全门)与 §7.2 recurrence 重构待做。 |
