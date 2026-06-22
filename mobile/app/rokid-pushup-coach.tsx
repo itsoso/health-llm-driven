@@ -50,8 +50,10 @@ import {
   applyRokidPushupEventToCoach,
   createRokidPushupSession,
   finishRokidPushupSession,
+  getRokidPushupSessionReview,
   listRokidPushupEvents,
   type RokidPushupSession,
+  type RokidPushupSessionReview,
 } from '../services/rokidPushupSession';
 
 type RokidSessionState = 'idle' | 'opening' | 'opened' | 'failed';
@@ -372,6 +374,8 @@ export default function RokidPushupCoachScreen() {
   const [realSessionMessage, setRealSessionMessage] = useState('');
   const [installDiagnostics, setInstallDiagnostics] = useState<string[]>([]);
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [pushupReview, setPushupReview] = useState<RokidPushupSessionReview | null>(null);
+  const [reviewState, setReviewState] = useState<'idle' | 'loading' | 'loaded' | 'failed'>('idle');
   const lastRokidEventIdRef = useRef(0);
   const pollInFlightRef = useRef(false);
 
@@ -980,11 +984,23 @@ export default function RokidPushupCoachScreen() {
       };
       setCoach(savedCoach);
       void pushViewToGlasses(savedCoach);
+      // 赛后复盘:仅眼镜会话有 session id 可复盘。复盘失败不影响已保存的记录(不假装成功)。
+      if (realSession) {
+        setReviewState('loading');
+        getRokidPushupSessionReview(realSession.id)
+          .then((review) => {
+            setPushupReview(review);
+            setReviewState('loaded');
+          })
+          .catch(() => {
+            setReviewState('failed');
+          });
+      }
     } catch (error) {
       setSaveState('failed');
       Alert.alert('保存失败', error instanceof Error ? error.message : '俯卧撑记录保存失败。');
     }
-  }, [coach, pushViewToGlasses, qc]);
+  }, [coach, pushViewToGlasses, qc, realSession]);
 
   const progress = Math.min(coach.reps / coach.targetReps, 1);
   const sessionTone = sessionState === 'opened'
@@ -1273,6 +1289,35 @@ export default function RokidPushupCoachScreen() {
             </Text>
           </Pressable>
         </View>
+
+        {reviewState !== 'idle' ? (
+          <View style={styles.panel}>
+            <Text style={txt.sectionTitle}>赛后复盘</Text>
+            {reviewState === 'loading' ? (
+              <Text style={txt.saveHint}>正在生成观察性复盘...</Text>
+            ) : reviewState === 'failed' ? (
+              <Text style={txt.saveHint}>复盘暂不可用(记录已保存)。</Text>
+            ) : pushupReview ? (
+              <>
+                <Text style={txt.saveHint}>
+                  本组 {pushupReview.session_quality.reps} 个
+                  {pushupReview.session_quality.avg_quality_score != null
+                    ? ` · 平均质量分 ${Math.round(pushupReview.session_quality.avg_quality_score)}`
+                    : ''}
+                </Text>
+                {pushupReview.observations.map((obs, i) => (
+                  <Text key={`obs-${i}`} style={txt.saveHint}>· {obs}</Text>
+                ))}
+                {pushupReview.teaching_links.map((link) => (
+                  <Text key={link.key} style={txt.saveHint}>📖 {link.title}</Text>
+                ))}
+                {pushupReview.disclaimer ? (
+                  <Text style={[txt.saveHint, { opacity: 0.6 }]}>{pushupReview.disclaimer}</Text>
+                ) : null}
+              </>
+            ) : null}
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );

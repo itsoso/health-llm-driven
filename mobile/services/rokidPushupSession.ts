@@ -77,6 +77,32 @@ export async function finishRokidPushupSession(sessionId: number) {
   return response.data as { session: RokidPushupSession };
 }
 
+// 赛后复盘(观察性,R4 安全):session 质量 + MovementCoach 训练负荷上下文 + 教学链接。
+// 字段与后端 RokidPushupSessionReviewResponse 对齐;后端部署后可 npm run generate-types 替换为生成类型。
+export type RokidPushupSessionReview = {
+  session_id: number;
+  session_quality: { reps: number; avg_quality_score: number | null; event_count: number };
+  training_context: {
+    acwr?: number | null;
+    training_status?: string | null;
+    readiness_zone?: string | null;
+    today_intensity?: string | null;
+  } | null;
+  observations: string[];
+  teaching_links: { key: string; title: string; url?: string | null }[];
+  guidance_alerts: unknown[];
+  guidance_sanitized?: boolean;
+  guidance_violations?: string[];
+  disclaimer: string;
+};
+
+export async function getRokidPushupSessionReview(
+  sessionId: number,
+): Promise<RokidPushupSessionReview> {
+  const response = await api.get(`/devices/rokid/pushup-sessions/${sessionId}/review`);
+  return response.data as RokidPushupSessionReview;
+}
+
 export function rokidPushupEventToPoseSample(event: RokidPushupEvent): PushupPoseSample | null {
   if (event.event_type !== 'pose') {
     return null;
