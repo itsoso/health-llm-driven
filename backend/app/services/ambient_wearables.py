@@ -434,7 +434,10 @@ def _normalize_meal_type(value: Any) -> Optional[str]:
 
 
 def _infer_meal_type(captured_at: datetime) -> str:
-    local = captured_at.astimezone(_BEIJING_TZ) if captured_at.tzinfo else captured_at.replace(tzinfo=_BEIJING_TZ)
+    # naive captured_at 按 UTC 解释(库里以 UTC naive 存),再转北京判餐段;
+    # 旧实现把 naive 当北京挂钟 → 早 8h,跨午夜/餐段边界会错判餐型。
+    aware = captured_at if captured_at.tzinfo else captured_at.replace(tzinfo=timezone.utc)
+    local = aware.astimezone(_BEIJING_TZ)
     hour = local.hour
     if 5 <= hour < 10:
         return MealType.BREAKFAST.value
@@ -485,11 +488,17 @@ def create_food_diet_record_from_visual_event(
         or _normalize_meal_type(meta.get("meal_type"))
         or _infer_meal_type(event.captured_at)
     )
-    local_captured = (
-        event.captured_at.astimezone(_BEIJING_TZ)
-        if event.captured_at and event.captured_at.tzinfo
-        else event.captured_at
-    )
+    # captured_at 在库里以 **UTC naive** 存(全仓 datetime.now(UTC) 写入,SQLite/PG 读回常丢 tzinfo)。
+    # naive 必须按 UTC 解释再转北京,否则把 UTC 挂钟当北京挂钟用 → 午夜边界(如昨晚 23:50 北京=
+    # 15:50Z)record_date 落到错误的一天(council #7 的跨天确认要求落在拍摄当日)。
+    if event.captured_at is not None:
+        aware_captured = (
+            event.captured_at if event.captured_at.tzinfo
+            else event.captured_at.replace(tzinfo=timezone.utc)
+        )
+        local_captured = aware_captured.astimezone(_BEIJING_TZ)
+    else:
+        local_captured = None
     record_date = local_captured.date() if local_captured else datetime.now(_BEIJING_TZ).date()
     meal_time = local_captured.time().replace(tzinfo=None) if local_captured else None
     primary_name = _food_name(foods[0])[:100]

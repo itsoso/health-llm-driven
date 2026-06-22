@@ -8,6 +8,7 @@ from sqlalchemy import desc, func
 from sqlalchemy.exc import IntegrityError
 
 from app.models.medication import Medication, MedicationLog, medication_timing_label
+from app.utils.timezone import get_china_today
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +167,7 @@ class MedicationService:
         log = MedicationLog(
             user_id=user_id,
             medication_id=medication_id,
-            taken_date=date.today(),
+            taken_date=get_china_today(),
             taken_time=taken_time,
             status=status,
             skip_reason=skip_reason,
@@ -236,7 +237,7 @@ class MedicationService:
             q = db.query(MedicationLog).filter(
                 MedicationLog.user_id == user_id,
                 MedicationLog.medication_id == medication_id,
-                MedicationLog.taken_date == date.today(),
+                MedicationLog.taken_date == get_china_today(),
             )
             if slot is None:
                 q = q.filter(MedicationLog.taken_time.is_(None))
@@ -272,7 +273,7 @@ class MedicationService:
         log = MedicationLog(
             user_id=user_id,
             medication_id=medication_id,
-            taken_date=date.today(),
+            taken_date=get_china_today(),
             taken_time=slot,
             status=status,
             skip_reason=skip_reason,
@@ -313,7 +314,7 @@ class MedicationService:
     ) -> List[Dict[str, Any]]:
         """获取今日服药状态"""
         logger.info(f"[Medication] 获取今日状态: user={user_id}")
-        today = date.today()
+        today = get_china_today()
 
         # 获取活跃药品
         meds = self.list_medications(db, user_id, active_only=True)

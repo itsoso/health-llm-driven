@@ -419,12 +419,19 @@ class HealthEventService:
             "auto_confirm_threshold": auto_threshold,
             "observed_at": event.event_time.isoformat() if event.event_time else None,
         }
+        # day 必须与 complete_protocol 同一基准(get_china_today,UTC+8 硬编码),否则设备闭环
+        # 路径里 complete_by_ref→complete_protocol 写的终态事件与这里的自动观测落到不同 event_date
+        # → 同一协议当天两条 HealthProtocolEvent(双写虚高依从)。原本用 event.event_time 的 UTC
+        # date,在午夜边界会与确定性中国日差一天 → 收敛失败。统一收口到 get_china_today
+        # (与 complete_protocol._today 同源,与机器/CI 的 OS 时区无关)。
+        from app.utils.timezone import get_china_today
+
         observed = protocol_service.auto_observe_protocol(
             self.db,
             protocol_id,
             event.user_id,
             value=value,
-            day=(event.event_time or datetime.now(timezone.utc)).date(),
+            day=get_china_today(),
             commit=False,
         )
         if observed is None or observed.status != "auto_observed":

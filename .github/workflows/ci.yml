@@ -43,6 +43,12 @@ jobs:
           SECRET_KEY: test-secret-key-32-chars-minimum!!
           GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
           DATABASE_URL: "sqlite:///:memory:"
+          # 生产/Celery/全部业务时区基准是 Asia/Shanghai(get_china_today/get_china_now)。
+          # GitHub runner 默认 UTC,会让 `date.today()`(随 OS 时区)与确定性中国日基准在每天
+          # 16:00–24:00 UTC(= 次日 00:00–08:00 北京)的窗口差一天,使依赖"今日"键的依从/协议/
+          # 议程测试随 CI 触发时刻随机变红(午夜边界 flake)。钉到 Asia/Shanghai 让 CI 与生产
+          # 同一时区基准,这类 boundary flake 消除(测试断言用的 date.today()==get_china_today())。
+          TZ: Asia/Shanghai
         # --maxfail=5 而非 -x:-x 第一个红就停,会掩盖同时存在的多个真红,
         # 分支保护下导致"修一个又冒一个"的死锁(见 memory 教训)。允许暴露最多 5 个。
         # --timeout=120(thread):repo 偶发 asyncio 事件循环污染会让某个 @pytest.mark.asyncio
@@ -56,6 +62,7 @@ jobs:
           SECRET_KEY: test-secret-key-32-chars-minimum!!
           GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
           DATABASE_URL: "sqlite:///:memory:"
+          TZ: Asia/Shanghai
         run: python scripts/check_doc_drift.py
 
       - name: Eval Golden Set (safety + insight + retrieval, no LLM cost)
@@ -64,6 +71,7 @@ jobs:
           SECRET_KEY: test-secret-key-32-chars-minimum!!
           GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
           DATABASE_URL: "sqlite:///:memory:"
+          TZ: Asia/Shanghai
         # 软 gate: 失败不阻塞合并, 仅暴露 regression 列表给 PR review
         # orchestrator suite 不在此跑 (会调真实 LLM, 应手动 / 夜间触发)
         # retrieval: 端到端验证 agent 工具真去查 DB + 返回对的数据 (内存 SQLite, 无 LLM)

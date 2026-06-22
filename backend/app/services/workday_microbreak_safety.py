@@ -119,12 +119,18 @@ def _has_acute_symptom(db: Session, user_id: int) -> Optional[str]:
 
 
 def _minutes_since_last_meal(db: Session, user_id: int, *, now_local: datetime, day: date) -> Optional[int]:
-    """今天最后一餐距 now_local 的分钟数;无今日饮食记录 → None。
+    """最近一餐距 now_local 的分钟数;无可定位的近餐 → None。
 
     全程用**本地挂钟 naive**比较(now_local + meal_time 同一 Asia/Shanghai 挂钟):
-      - meal_time(Time, 本地挂钟)→ combine(day, meal_time) naive
+      - meal_time(Time, 本地挂钟)→ combine(<餐日>, meal_time) naive
       - 缺 meal_time → 退回 created_at(tz-aware UTC)→ 转本地 naive 近似
-    仅看"今天"的记录(餐后窗口语义)。允许 5 分钟时钟抖动容差,避免刚记完的餐被当成未来丢弃。
+    允许 5 分钟时钟抖动容差,避免刚记完的餐被当成未来丢弃。
+
+    午夜边界修复(BLOCKING):清晨(now_local 刚过午夜)做闸门时,昨晚的餐 meal_time(如 23:09)
+    combine(今天) 会落到**未来** → 此前被丢弃、退回 created_at(=刚写库的 now)→ 误算「餐后 0 分钟」
+    → 绿态也被错降级。修法:① 查询同时覆盖昨天+今天的 record_date(production 跨午夜餐
+    record_date=昨天;测试 fixture 用 now_local.date()=今天);② meal_time 的挂钟候选同时尝试
+    「餐日」与「餐日-1」两天,取**不晚于 now+skew 的最近一个**(真实餐时点必是 now 之前)。
     """
     from app.models.daily_health import DietRecord
 
@@ -132,7 +138,7 @@ def _minutes_since_last_meal(db: Session, user_id: int, *, now_local: datetime, 
         db.query(DietRecord.meal_time, DietRecord.created_at)
         .filter(
             DietRecord.user_id == user_id,
-            DietRecord.record_date == day,
+            DietRecord.record_date.in_([day - timedelta(days=1), day]),
         )
         .all()
     )
@@ -140,6 +146,7 @@ def _minutes_since_last_meal(db: Session, user_id: int, *, now_local: datetime, 
         return None
 
     skew = timedelta(minutes=5)
+    cap = now_local + skew
 
     def _created_local(created_at: Optional[datetime]) -> Optional[datetime]:
         if not isinstance(created_at, datetime):
@@ -149,17 +156,25 @@ def _minutes_since_last_meal(db: Session, user_id: int, *, now_local: datetime, 
 
     meal_dts: List[datetime] = []
     for meal_time, created_at in rows:
-        # 每行取两个候选:meal_time 组合(本地挂钟)+ created_at(写入时间近似)。
-        # 优先 meal_time;若它落到未来(跨午夜挂钟回绕)则退回 created_at,避免静默丢餐。
-        candidates: List[datetime] = []
+        # meal_time(用户记录的真实进餐挂钟)优先;created_at(写库时刻)仅在缺 meal_time 时兜底
+        # —— 二者绝不混用 max,否则刚写库的 created_at(≈now)会盖过昨晚真实餐时点 → 误算餐后 0 分钟。
+        chosen: Optional[datetime] = None
         if isinstance(meal_time, time):
-            candidates.append(datetime.combine(day, meal_time))
-        created_local = _created_local(created_at)
-        valid = [c for c in candidates if c <= now_local + skew]
-        if not valid and created_local is not None and created_local <= now_local + skew:
-            valid = [created_local]
-        if valid:
-            meal_dts.append(min(max(valid), now_local))
+            # 挂钟时点可能属于「今天」也可能属于「昨天」(跨午夜)。两天都试,取不晚于 now+skew
+            # 的**最近**一个 —— 真实餐时点必在 now 之前;昨晚 23:09 在清晨即落到 day-1。
+            wall_candidates = [
+                datetime.combine(d, meal_time)
+                for d in (day, day - timedelta(days=1))
+            ]
+            valid_wall = [c for c in wall_candidates if c <= cap]
+            if valid_wall:
+                chosen = max(valid_wall)
+        if chosen is None:
+            created_local = _created_local(created_at)
+            if created_local is not None and created_local <= cap:
+                chosen = created_local
+        if chosen is not None:
+            meal_dts.append(min(chosen, now_local))
     if not meal_dts:
         return None
     last = max(meal_dts)
