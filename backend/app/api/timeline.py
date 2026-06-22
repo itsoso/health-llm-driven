@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required, get_db
@@ -45,16 +45,17 @@ class CompleteRef(BaseModel):
 
 
 class ProofRef(BaseModel):
-    metric: str
-    label: str
-    delta: str
+    # 归因项带完整 metric/label/delta;简报/异常这类纯洞察项只带 association_only。
+    metric: Optional[str] = None
+    label: Optional[str] = None
+    delta: Optional[str] = None
     direction: Optional[str] = None
     association_only: bool = True  # 时序关联,非因果(PRD R9)
 
 
 class TodaySpineItem(BaseModel):
     id: str
-    kind: str  # action / checkup / advisory / outcome / observation
+    kind: str  # action / checkup / advisory / outcome / observation / insight
     time_window: str
     title: str
     subtitle: Optional[str] = None
@@ -64,6 +65,9 @@ class TodaySpineItem(BaseModel):
     priority: int
     can_complete: bool
     complete_ref: Optional[CompleteRef] = None
+    # 物化后的 first-class HealthEvent id —— 客户端用它调闭环完成端点。
+    event_id: Optional[int] = None
+    action_kind: Optional[str] = None
     deep_link: Optional[str] = None
     severity: Optional[str] = None
     proof: Optional[ProofRef] = None
@@ -95,10 +99,71 @@ def get_today_spine(
 ):
     """统一今日时间线:未来该做(议程)+ 今日已发生(观测)+ 结果归因。
 
-    只读投影,组合 agenda_service + events_timeline_service。完成动作走 /agenda/complete。
+    只读投影,组合 agenda_service + events_timeline_service。完成动作走
+    POST /timeline/events/{id}/complete(闭环:翻 HealthEvent 生命周期 + 双轨回写)。
     强制 user_id 隔离(PRD §7 不变量)。
     """
     return build_today_spine(db, current_user.id)
+
+
+# ===== 闭环完成端点(把脊柱项熄灭的唯一写路径)=====
+
+class CompleteAgendaEventRequest(BaseModel):
+    status: str = Field(default="done", description="done | skipped")
+    skip_reason: Optional[str] = Field(
+        default=None,
+        description="status=skipped 时可带:no_time/forgot/no_supply/too_tired/"
+                    "wrong_place/too_hard/unwell/social",
+    )
+
+
+class SourceWriteRef(BaseModel):
+    object_type: str
+    object_id: int
+    status: Optional[str] = None
+    track: Optional[str] = None
+
+
+class CompleteAgendaEventResponse(BaseModel):
+    event_id: int
+    agenda_status: str  # done | skipped
+    action_kind: Optional[str] = None
+    title: Optional[str] = None
+    skip_reason: Optional[str] = None
+    completed_at: Optional[str] = None
+    complete_ref: Optional[CompleteRef] = None
+    idempotent: bool  # True = 已是终态(双击/重放),本次无二次回写
+    source_write: Optional[SourceWriteRef] = None
+
+
+@router.post("/events/{event_id}/complete", response_model=CompleteAgendaEventResponse)
+def complete_agenda_event(
+    event_id: int,
+    request: CompleteAgendaEventRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """闭环完成一个议程 HealthEvent(THE fix)。
+
+    翻 HealthEvent 生命周期 (pending → done|skipped) **并** 经 agenda_service.complete_item
+    双轨回写真实 source(用药/协议/...)。幂等(双击 → 一次效果)。强制 user_id 隔离
+    (跨用户 → 404)。回写失败 → 422,不假装成功。
+    """
+    from app.services import timeline_agenda_service as tas
+
+    try:
+        result = tas.complete_agenda_event(
+            db, current_user.id, event_id,
+            status=request.status, skip_reason=request.skip_reason,
+        )
+    except tas.AgendaEventNotFound:
+        raise HTTPException(status_code=404, detail="议程事件不存在")
+    except tas.AgendaCompleteError as e:
+        # 真实 source 回写失败 → 让客户端感知(不静默吞、不假装完成)。
+        raise HTTPException(status_code=422, detail=f"完成回写失败: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return CompleteAgendaEventResponse(**result)
 
 
 @router.get("", response_model=TimelineResponse)

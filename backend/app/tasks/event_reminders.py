@@ -83,10 +83,32 @@ def _push_body(kind: str, title: str, lead: int) -> tuple[str, str]:
     return ("⏰ 提醒", f"{title} 大约 {lead} 分钟后开始。")
 
 
+def _complete_ref_for(schedule_id: str | None, kind: str) -> dict | None:
+    """day-schedule item id → 闭环完成的 source 引用(complete_ref)。
+
+    timing_adapter 把药/补剂都编成 `med:{medication_id}`(同存 medications 表,domain 区分)。
+    据此给 push 一个自描述的 complete_ref,让点完成的客户端能调
+    POST /timeline/events/{id}/complete(经脊柱物化的 HealthEvent;handler 后续增量接)。
+    认不出格式 → None(不假装能完成,守 Rule #1)。
+    """
+    if not schedule_id or ":" not in str(schedule_id):
+        return None
+    prefix, _, raw_id = str(schedule_id).partition(":")
+    try:
+        object_id = int(raw_id)
+    except (ValueError, TypeError):
+        return None
+    if prefix == "med":
+        # 药与补剂同表;按提醒类(kind)区分 object_type,客户端据此走对应完成 UI。
+        return {"object_type": kind, "object_id": object_id}
+    return None
+
+
 def _collect_timed_items(db, user_id: int, today: date) -> list[dict]:
     """收集该用户今日带时刻的项: 排程(med/supplement/movement/diet) + 会议。
 
-    返回 [{item_key, kind, title, start_min(int), lead(int)}],只含 lead>0 的可提醒项。
+    返回 [{item_key, kind, title, start_min(int), lead(int), complete_ref}],
+    只含 lead>0 的可提醒项。complete_ref 为闭环完成的 source 引用(可为 None)。
     """
     items: list[dict] = []
 
@@ -103,12 +125,14 @@ def _collect_timed_items(db, user_id: int, today: date) -> list[dict]:
             start_min = _to_minutes(s.get("time", ""))
             if start_min is None:
                 continue
+            sched_id = s.get("id")
             items.append({
-                "item_key": str(s.get("id") or f"{kind}:?"),
+                "item_key": str(sched_id or f"{kind}:?"),
                 "kind": kind,
                 "title": s.get("title") or "",
                 "start_min": start_min,
                 "lead": lead,
+                "complete_ref": _complete_ref_for(sched_id, kind),
             })
     except Exception as e:  # noqa: BLE001
         logger.warning("[event-reminder] build_day_schedule 失败 user=%s: %s", user_id, e)
@@ -146,6 +170,7 @@ def _collect_timed_items(db, user_id: int, today: date) -> list[dict]:
                     "title": title,
                     "start_min": start_min,
                     "lead": lead,
+                    "complete_ref": None,  # 会议不走议程完成
                 })
         except Exception as e:  # noqa: BLE001
             logger.warning("[event-reminder] 日历事件读取失败 user=%s: %s", user_id, e)
@@ -240,12 +265,19 @@ def scan_event_reminders():
                     title, body = _push_body(kind, it["title"], it["lead"])
                     # 点推送落到与该 kind 相关的页面 (认不出则省略, 回首页)。
                     deep_link = deeplink_for(kind)
+                    complete_ref = it.get("complete_ref")
+                    # 可完成的行动项 → 带 AGENDA_ACTION 类目 + 闭环完成端点引用,
+                    # 让推送上的「完成」按钮能调 POST /timeline/events/{id}/complete
+                    # (客户端按 complete_ref 经脊柱物化的 HealthEvent 完成;handler 后续增量接)。
                     data = {
-                        "category": "PRE_EVENT_REMINDER",
+                        "category": "AGENDA_ACTION" if complete_ref else "PRE_EVENT_REMINDER",
                         "reminder_type": "pre_event",
                         "kind": kind,
                         "item_key": it["item_key"],
                     }
+                    if complete_ref:
+                        data["complete_ref"] = complete_ref
+                        data["complete_endpoint"] = "/api/v1/timeline/events/{event_id}/complete"
                     if deep_link:
                         data["deep_link"] = deep_link
                     try:

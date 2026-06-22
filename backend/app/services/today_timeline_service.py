@@ -107,6 +107,10 @@ def _map_agenda_item(item: Dict[str, Any]) -> Dict[str, Any]:
         "priority": int(item.get("priority") or 0),
         "can_complete": can_complete,
         "complete_ref": complete_ref,
+        # 物化后的 first-class HealthEvent id —— 客户端用它调闭环完成端点。
+        # 只在 can_complete 的行动项上物化(见 build_today_spine);其余为 None。
+        "event_id": None,
+        "action_kind": itype,
         "deep_link": None,
         "severity": None,
         "proof": None,
@@ -127,6 +131,8 @@ def _map_observation(ev) -> Dict[str, Any]:
         "priority": 0,
         "can_complete": False,
         "complete_ref": None,
+        "event_id": None,
+        "action_kind": None,
         "deep_link": ev.deep_link,
         "severity": ev.severity,
         "proof": None,
@@ -185,6 +191,8 @@ def _outcome_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
             "priority": 60,  # 归因项介于协议(50)与建议项之间,首页可见但不抢复查
             "can_complete": False,
             "complete_ref": None,
+            "event_id": None,
+            "action_kind": None,
             "deep_link": None,
             "severity": None,
             "proof": proof,
@@ -246,6 +254,12 @@ def build_today_spine(db: Session, user_id: int) -> Dict[str, Any]:
     agenda_items = agenda.get("items", [])
     items: List[Dict[str, Any]] = [_map_agenda_item(it) for it in agenda_items]
 
+    # 1.5) 把可完成的行动项物化成 first-class HealthEvent(闭环修复点):
+    #      为每个 can_complete 项写/复用一条议程 HealthEvent,把 event_id 回填到 item ——
+    #      客户端用它调 POST /timeline/events/{id}/complete。物化失败只降级该项的
+    #      可完成性(保留为只读项),不拖垮整条脊柱。
+    _attach_event_ids(db, user_id, items, now)
+
     # past.completed_count 口径:今日 agenda 里已完成/已自动观测的协议数。
     # 用 agenda 而非 build_timeline,因为 agenda 直接反映"今天该做且已闭环"的协议状态,
     # build_timeline 的事件不区分完成与否。
@@ -270,6 +284,11 @@ def build_today_spine(db: Session, user_id: int) -> Dict[str, Any]:
         logger.exception("[today_timeline] build_timeline failed for user=%s", user_id)
         raise
 
+    # 3.5) 全天产出回溯(简报 7:30 + 异常 23:00)→ past.events(insight)。
+    #      过同一道 critical/medical-grade 闸 + 标 association_only(见 timeline_past_service)。
+    #      回溯增强项,失败降级不拖垮 past。
+    past_events.extend(_past_projection_items(db, user_id, today))
+
     # 排序:(-priority, 时间窗顺序),复用 agenda 的 _TW_ORDER
     items.sort(key=lambda x: (-x["priority"], _TW_ORDER.get(x.get("time_window"), 9)))
 
@@ -286,3 +305,73 @@ def build_today_spine(db: Session, user_id: int) -> Dict[str, Any]:
         "past": {"completed_count": completed_count, "events": past_events},
         "counts": counts,
     }
+
+
+# 时间窗 → 当日代表性时刻(物化 HealthEvent.scheduled_for 用;非精确,仅供排序/过期)。
+_WINDOW_HOUR = {
+    "morning": 9, "noon": 12, "afternoon": 15,
+    "evening": 19, "bedtime": 22, "anytime": 12,
+}
+
+
+def _attach_event_ids(
+    db: Session, user_id: int, items: List[Dict[str, Any]], now: datetime,
+) -> None:
+    """为 can_complete 的行动项物化 first-class HealthEvent,回填 event_id。
+
+    物化幂等(timeline_agenda_service 内部同日去重)。若该议程 HealthEvent 已被完成
+    (agenda_status in done/skipped),把脊柱项的状态翻成对应终态 + can_complete=False
+    —— 这正是闭环:完成写一处统一事实,脊柱下次读到就熄灭。
+    单项物化失败只降级该项(can_complete=False),不抛(不拖垮整条脊柱)。
+    """
+    from app.services import timeline_agenda_service as tas
+
+    for it in items:
+        if not it.get("can_complete"):
+            continue
+        ref = it.get("complete_ref")
+        if not ref or ref.get("object_type") is None or ref.get("object_id") is None:
+            continue
+        hour = _WINDOW_HOUR.get(it.get("time_window"), 12)
+        scheduled_for = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+        try:
+            ev = tas.materialize_agenda_event(
+                db, user_id,
+                action_kind=it.get("action_kind") or "action",
+                title=it.get("title") or "",
+                complete_ref=dict(ref),
+                scheduled_for=scheduled_for,
+            )
+        except Exception as e:  # noqa: BLE001 — 物化失败只降级该项,不拖垮脊柱
+            logger.warning(
+                "[today_timeline] materialize agenda event failed user=%s ref=%s: %s",
+                user_id, ref, e,
+            )
+            it["can_complete"] = False
+            continue
+        it["event_id"] = ev.id
+        # 已闭环 → 脊柱项熄灭(翻终态,不可再完成)。
+        if ev.agenda_status in ("done", "skipped"):
+            it["status"] = "completed" if ev.agenda_status == "done" else "skipped"
+            it["can_complete"] = False
+
+
+def _past_projection_items(
+    db: Session, user_id: int, on_date,
+) -> List[Dict[str, Any]]:
+    """全天产出(简报 + 异常)→ past insight 项,补齐脊柱项的统一字段。"""
+    from app.services import timeline_past_service as tps
+
+    raw: List[Dict[str, Any]] = []
+    try:
+        raw.extend(tps.briefing_past_items(db, user_id, on_date))
+        raw.extend(tps.anomaly_past_items(db, user_id, on_date))
+    except Exception as e:  # noqa: BLE001 — 回溯增强项,失败降级不拖垮 past
+        logger.warning("[today_timeline] past projection failed user=%s: %s", user_id, e)
+        return []
+
+    for it in raw:
+        it.setdefault("event_id", None)
+        it.setdefault("action_kind", None)
+        it.pop("occurred_at", None)  # 脊柱 item 不含 occurred_at(past 已按当日聚合)
+    return raw

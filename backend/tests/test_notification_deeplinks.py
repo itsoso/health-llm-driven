@@ -95,7 +95,11 @@ def _captured_data(push_mock) -> dict:
 
 
 def test_event_reminder_push_carries_deep_link(db):
-    """医疗 pre_event 提醒: push data 带 deep_link=/(tabs)/record。"""
+    """医疗 pre_event 提醒: push data 带 deep_link=/(tabs)/record。
+
+    Increment 1 起,可完成的行动项(med/supplement)还带 complete_ref + AGENDA_ACTION
+    类目 + complete_endpoint(供推送上的「完成」按钮调闭环完成端点)。
+    """
     _make_user(db)
     db.add(Medication(id=1, user_id=1, name="雷贝拉唑", category="处方药", is_active=True))
     db.commit()
@@ -121,7 +125,10 @@ def test_event_reminder_push_carries_deep_link(db):
     # 既有字段保留, 没被替换。
     assert data["kind"] == "medication"
     assert data["item_key"] == "med:1"
-    assert data["category"] == "PRE_EVENT_REMINDER"
+    # 可完成的用药行动项 → 闭环类目 + complete_ref + 完成端点(Increment 1)。
+    assert data["category"] == "AGENDA_ACTION"
+    assert data["complete_ref"] == {"object_type": "medication", "object_id": 1}
+    assert "complete_endpoint" in data
 
 
 def test_reorder_nudge_push_carries_deep_link(db):
