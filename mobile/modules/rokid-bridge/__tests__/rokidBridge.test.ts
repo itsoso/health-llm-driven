@@ -105,6 +105,7 @@ describe('rokid-bridge JS facade', () => {
         base64: 'jpeg-base64',
         mimeType: 'image/jpeg',
       }),
+      prepareCustomAppSession: jest.fn().mockResolvedValue({ ok: true, cxrInitializationMode: 'customApp' }),
       queryApp: jest.fn().mockResolvedValue({ ok: true, installed: true }),
       installBundledApp: jest.fn().mockResolvedValue({ ok: true, installed: true }),
       installAppFileUri: jest.fn().mockResolvedValue({ ok: true, installed: true }),
@@ -148,6 +149,10 @@ describe('rokid-bridge JS facade', () => {
       ok: true,
       base64: 'jpeg-base64',
     });
+    await expect(bridge.prepareRokidCustomAppSession('life.executor.health.rokid.pushup')).resolves.toEqual({
+      ok: true,
+      cxrInitializationMode: 'customApp',
+    });
     await expect(bridge.queryRokidApp('life.executor.health.rokid.pushup')).resolves.toEqual({
       ok: true,
       installed: true,
@@ -185,6 +190,7 @@ describe('rokid-bridge JS facade', () => {
     expect(native.updateCustomView).toHaveBeenCalledWith('{"type":"text","text":"稍后"}');
     expect(native.closeCustomView).toHaveBeenCalledWith('{"id":"drink-water"}');
     expect(native.takePhotoBase64).toHaveBeenCalledWith(1024, 768, 80);
+    expect(native.prepareCustomAppSession).toHaveBeenCalledWith('life.executor.health.rokid.pushup');
     expect(native.queryApp).toHaveBeenCalledWith('life.executor.health.rokid.pushup');
     expect(native.installBundledApp).toHaveBeenCalledWith(
       'rokid-pushup-glasses',
@@ -236,6 +242,10 @@ describe('rokid-bridge JS facade', () => {
     await expect(bridge.queryRokidApp('life.executor.health.rokid.pushup')).resolves.toEqual({
       ok: false,
       installed: false,
+      reason: 'native_bridge_unavailable',
+    });
+    await expect(bridge.prepareRokidCustomAppSession('life.executor.health.rokid.pushup')).resolves.toEqual({
+      ok: false,
       reason: 'native_bridge_unavailable',
     });
     await expect(bridge.installBundledRokidApp({

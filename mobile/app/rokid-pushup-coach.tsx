@@ -24,6 +24,7 @@ import {
   installRokidAppFromFileUri,
   openRokidCustomView,
   openRokidApp,
+  prepareRokidCustomAppSession,
   queryRokidApp,
   stopRokidApp,
   updateRokidCustomView,
@@ -420,6 +421,24 @@ export default function RokidPushupCoachScreen() {
     }
   }, []);
 
+  const preparePushupCustomAppSession = useCallback(async () => {
+    appendInstallDiagnostic(`prepare_custom_app_session_start package=${ROKID_PUSHUP_APP_PACKAGE}`);
+    const result = await withRokidAppOpTimeout(
+      'prepare_custom_app',
+      () => prepareRokidCustomAppSession(ROKID_PUSHUP_APP_PACKAGE),
+    );
+    appendInstallDiagnostic(`prepare_custom_app_session_result ${compactResult(result)}`);
+    if (readResultOk(result)) {
+      return result;
+    }
+    const reason = resultFailureDetail(result, 'rokid_custom_app_prepare_failed');
+    if (reason === 'native_bridge_unavailable') {
+      appendInstallDiagnostic('prepare_custom_app_session_legacy_continue reason=native_bridge_unavailable');
+      return result;
+    }
+    throw new Error(reason);
+  }, [appendInstallDiagnostic]);
+
   const copyInstallDiagnostics = useCallback(async () => {
     await Clipboard.setStringAsync([
       'Rokid Pushup Install Diagnostics',
@@ -573,6 +592,7 @@ export default function RokidPushupCoachScreen() {
   }, [appendInstallDiagnostic]);
 
   const installBundledOrDownloadedGlassesApp = useCallback(async () => {
+    await preparePushupCustomAppSession();
     appendInstallDiagnostic(`bundle_install_start resource=${ROKID_PUSHUP_APK_RESOURCE_NAME}.${ROKID_PUSHUP_APK_RESOURCE_EXTENSION}`);
     const installResult = await installBundledRokidApp({
       resourceName: ROKID_PUSHUP_APK_RESOURCE_NAME,
@@ -589,11 +609,12 @@ export default function RokidPushupCoachScreen() {
     }
     // IPA 没内置 APK 时,从 health 公开目录下载到本地缓存,再用 file uri 传到眼镜安装。
     await installDownloadedGlassesApp();
-  }, [appendInstallDiagnostic, installDownloadedGlassesApp]);
+  }, [appendInstallDiagnostic, installDownloadedGlassesApp, preparePushupCustomAppSession]);
 
   const confirmGlassesAppInstalled = useCallback(async () => {
     // 眼镜端确认:installed===true 才算装上;安装在眼镜上可能还在收尾,重试几次再判失败(council P2)。
     for (let attempt = 0; attempt < 3; attempt += 1) {
+      await preparePushupCustomAppSession();
       const probe = await withRokidAppOpTimeout('query', () => queryRokidApp(ROKID_PUSHUP_APP_PACKAGE));
       appendInstallDiagnostic(`query_app_attempt attempt=${attempt + 1}/3; ${compactResult(probe)}`);
       if (readResultOk(probe) && probe.installed === true) {
@@ -604,7 +625,7 @@ export default function RokidPushupCoachScreen() {
       }
     }
     throw new Error('rokid_pushup_app_install_not_confirmed');
-  }, [appendInstallDiagnostic]);
+  }, [appendInstallDiagnostic, preparePushupCustomAppSession]);
 
   // 安装核心: bundled → 从 health 下载; 装完在眼镜端 strict 验证(带重试)。
   const performGlassesAppInstall = useCallback(async () => {
@@ -636,6 +657,7 @@ export default function RokidPushupCoachScreen() {
     if (asset.name && !asset.name.toLowerCase().endsWith('.apk')) {
       throw new Error('rokid_apk_file_required');
     }
+    await preparePushupCustomAppSession();
     appendInstallDiagnostic(`manual_install_file_uri_start fileUri=${asset.uri}; package=${ROKID_PUSHUP_APP_PACKAGE}`);
     await captureRokidInstallStatusDiagnostic('before_manual_file_install', appendInstallDiagnostic);
     const installResult = await waitForNativeInstallWithDiagnostics(
@@ -651,7 +673,7 @@ export default function RokidPushupCoachScreen() {
       throw new Error(resultInstallFailureDetail(installResult, 'rokid_pushup_app_install_failed', status));
     }
     await confirmGlassesAppInstalled();
-  }, [appendInstallDiagnostic, confirmGlassesAppInstalled]);
+  }, [appendInstallDiagnostic, confirmGlassesAppInstalled, preparePushupCustomAppSession]);
 
   // 单例 + 超时:后台安装 survive 导航;任何入口(安装按钮 / 启动识别)都复用同一进行中的安装,
   // 不重启 APK 下载(council P2:startReal 之前会重复下载)。必须有超时,否则永不 settle 会锁死流程。
@@ -723,6 +745,7 @@ export default function RokidPushupCoachScreen() {
       setGlassesAppInstalled((prev) => (prev === 'installed' ? prev : 'checking'));
     }
     try {
+      await preparePushupCustomAppSession();
       const probe = await withRokidAppOpTimeout('query', () => queryRokidApp(ROKID_PUSHUP_APP_PACKAGE));
       if (!mountedRef.current) {
         return;
@@ -733,10 +756,11 @@ export default function RokidPushupCoachScreen() {
         setGlassesAppInstalled('unknown');
       }
     }
-  }, []);
+  }, [preparePushupCustomAppSession]);
 
   const ensureGlassesAppInstalled = useCallback(async (options?: { force?: boolean }) => {
     if (!options?.force) {
+      await preparePushupCustomAppSession();
       const appProbe = await withRokidAppOpTimeout('query', () => queryRokidApp(ROKID_PUSHUP_APP_PACKAGE));
       if (!readResultOk(appProbe)) {
         throw new Error(resultFailureDetail(appProbe, 'rokid_app_probe_failed'));
@@ -749,7 +773,7 @@ export default function RokidPushupCoachScreen() {
     setRealSessionMessage(options?.force ? '正在更新眼镜端应用...' : '正在安装眼镜端应用...');
     // 复用进行中的单例安装,不重起 APK 下载;含 strict 验证
     await acquireGlassesAppInstall();
-  }, [acquireGlassesAppInstall]);
+  }, [acquireGlassesAppInstall, preparePushupCustomAppSession]);
 
   const installGlassesApp = useCallback(async () => {
     setRealSessionState('installing');
@@ -1174,8 +1198,8 @@ export default function RokidPushupCoachScreen() {
                   <Text style={txt.copyDiagnosticsButton}>复制安装日志</Text>
                 </Pressable>
               </View>
-              {installDiagnostics.slice(-8).map((line) => (
-                <Text key={line} style={txt.installDiagnosticsLine}>{line}</Text>
+              {installDiagnostics.slice(-16).map((line, index) => (
+                <Text key={`${index}-${line}`} style={txt.installDiagnosticsLine}>{line}</Text>
               ))}
             </View>
           ) : null}

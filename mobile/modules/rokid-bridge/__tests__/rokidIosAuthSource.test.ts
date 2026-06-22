@@ -255,8 +255,31 @@ describe('RokidBridge iOS auth callback source', () => {
     expect(source).toContain('CxrClient.initializationMode');
     expect(source).toContain('cxr_initialize');
     expect(source).toContain('cxr_client_not_initialized');
-    expect(source).toMatch(/startAuthorizationAttempt\(scopes: scopes, appName: appName\)[\s\S]+ensureCustomViewInitialized\(\)[\s\S]+guard cxrClientInitialized\(\)/);
+    expect(source).toMatch(/startAuthorizationAttempt\(scopes: scopes, appName: appName\)[\s\S]+ensurePreferredCxrSessionInitialized\(\)[\s\S]+guard cxrClientInitialized\(\)/);
     expect(source).not.toContain('return true\n    #else\n    return false\n    #endif\n  }\n\n  private static func cxrInitializationMode()');
+  });
+
+  it('supports preparing CustomApp mode before auth callbacks so pushup install is not locked into CustomView', () => {
+    expect(source).toContain('AsyncFunction("prepareCustomAppSession")');
+    expect(source).toContain('preferredCxrSessionMode');
+    expect(source).toContain('preferredCustomAppPackageName');
+    expect(source).toContain('ensurePreferredCxrSessionInitialized()');
+    expect(source).toContain('prepareCustomAppSession(packageName:');
+    expect(source).toMatch(/private static func requestAuthorization[\s\S]+ensurePreferredCxrSessionInitialized\(\)[\s\S]+guard cxrClientInitialized\(\)/);
+
+    const callbackBody = source.slice(
+      source.indexOf('fileprivate static func isExpectedAuthCallback'),
+      source.indexOf('fileprivate static func observeOpenURL'),
+    );
+    expect(callbackBody).toContain('ensurePreferredCxrSessionInitialized()');
+    expect(callbackBody).not.toContain('ensureCustomViewInitialized()');
+
+    const handleBody = source.slice(
+      source.indexOf('fileprivate static func handleOpenURL'),
+      source.indexOf('private static func sdkClassProbe'),
+    );
+    expect(handleBody).toContain('ensurePreferredCxrSessionInitialized()');
+    expect(handleBody).not.toContain('ensureCustomViewInitialized()');
   });
 
   it('uses CustomApp session initialization and explicit diagnostics for glasses app lifecycle APIs', () => {

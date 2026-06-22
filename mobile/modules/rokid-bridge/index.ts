@@ -77,6 +77,8 @@ export type RokidIntegrationStatus = {
   cxrClientInitialized?: boolean;
   cxrInitializationMode?: 'customView' | 'customApp' | 'unknown' | string;
   cxrInitializationOutcome?: string;
+  preferredCxrSessionMode?: 'customView' | 'customApp' | string;
+  preferredCustomAppPackageName?: string;
   authorizationState?: RokidAuthorizationState;
   iosBleConnected?: boolean;
   iosBleDeviceName?: string;
@@ -223,6 +225,7 @@ type RokidNativeModule = {
   updateCustomView?: (view: string) => Promise<Record<string, unknown>>;
   closeCustomView?: (view: string) => Promise<Record<string, unknown>>;
   takePhotoBase64?: (width: number, height: number, quality: number) => Promise<Record<string, unknown>>;
+  prepareCustomAppSession?: (packageName: string) => Promise<Record<string, unknown>>;
   queryApp?: (packageName: string) => Promise<Record<string, unknown>>;
   installBundledApp?: (
     resourceName: string,
@@ -862,6 +865,14 @@ export async function takeRokidPhotoBase64(options?: {
     options?.height ?? 768,
     options?.quality ?? 80,
   );
+}
+
+export async function prepareRokidCustomAppSession(packageName: string): Promise<Record<string, unknown>> {
+  const native = getNativeBridge();
+  if (!native?.prepareCustomAppSession) {
+    return { ok: false, reason: 'native_bridge_unavailable' };
+  }
+  return native.prepareCustomAppSession(packageName);
 }
 
 export async function queryRokidApp(packageName: string): Promise<Record<string, unknown>> {

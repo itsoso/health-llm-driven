@@ -41,6 +41,8 @@ public class RokidBridgeModule: Module {
   private static var didInitializeCustomView = false
   private static var didInitializeCustomApp = false
   private static var didBindRuntimeEvents = false
+  private static var preferredCxrSessionMode: String?
+  private static var preferredCustomAppPackageName: String?
   private static var customViewRunning = false
   private static var customViewDisplayInferred = false
   private static var cxrInitializationOutcome = "not_started"
@@ -201,6 +203,10 @@ public class RokidBridgeModule: Module {
 
     AsyncFunction("takePhotoBase64") { (width: Int, height: Int, quality: Int, promise: Promise) in
       RokidBridgeModule.takePhotoBase64(width: width, height: height, quality: quality, promise: promise)
+    }
+
+    AsyncFunction("prepareCustomAppSession") { (packageName: String) -> [String: Any] in
+      RokidBridgeModule.prepareCustomAppSession(packageName: packageName)
     }
 
     AsyncFunction("queryApp") { (packageName: String, promise: Promise) in
@@ -449,6 +455,12 @@ public class RokidBridgeModule: Module {
     payload["cxrClientInitialized"] = cxrClientInitialized()
     payload["cxrInitializationMode"] = cxrInitializationMode()
     payload["cxrInitializationOutcome"] = cxrInitializationOutcome
+    if let preferredCxrSessionMode {
+      payload["preferredCxrSessionMode"] = preferredCxrSessionMode
+    }
+    if let preferredCustomAppPackageName {
+      payload["preferredCustomAppPackageName"] = preferredCustomAppPackageName
+    }
     if let lastCallbackUrl {
       payload["lastCallbackUrl"] = lastCallbackUrl
     }
@@ -482,7 +494,7 @@ public class RokidBridgeModule: Module {
   private static func requestAuthorization(scopes: [String], appName: String, promise: Promise) {
     #if canImport(RGCxrClient)
     startAuthorizationAttempt(scopes: scopes, appName: appName)
-    ensureCustomViewInitialized()
+    ensurePreferredCxrSessionInitialized()
     recordAuthDiagnostic(
       "cxr_initialization_state",
       detail: "initialized=\(cxrClientInitialized()); mode=\(cxrInitializationMode()); outcome=\(cxrInitializationOutcome)"
@@ -561,6 +573,29 @@ public class RokidBridgeModule: Module {
     _ = scopes
     _ = appName
     promise.resolve(["ok": false, "reason": "ios_sdk_not_linked"])
+    #endif
+  }
+
+  private static func prepareCustomAppSession(packageName: String) -> [String: Any] {
+    #if canImport(RGCxrClient)
+    let ready = ensureCustomAppInitialized(packageName: packageName)
+    var response = customAppDiagnostics(
+      packageName: packageName,
+      operation: "prepareCustomAppSession",
+      reason: ready ? nil : "rokid_cxrl_wrong_session_mode"
+    )
+    response["ok"] = ready
+    if !ready {
+      response["relaunchRequired"] = true
+    }
+    recordAuthDiagnostic(
+      "custom_app_session_prepared",
+      detail: "package=\(packageName); ready=\(ready); initialized=\(cxrClientInitialized()); mode=\(cxrInitializationMode()); outcome=\(cxrInitializationOutcome)"
+    )
+    return response
+    #else
+    _ = packageName
+    return ["ok": false, "reason": "ios_sdk_not_linked"]
     #endif
   }
 
@@ -1919,6 +1954,8 @@ public class RokidBridgeModule: Module {
 
   private static func ensureCustomViewInitialized() {
     #if canImport(RGCxrClient)
+    preferredCxrSessionMode = "customView"
+    preferredCustomAppPackageName = nil
     let initializeConfigureAndBind = {
     #if ROKID_CXRL_CALLBACK_API
       let initializedBefore = CxrClient.isInitialized
@@ -1955,6 +1992,8 @@ public class RokidBridgeModule: Module {
 
   private static func ensureCustomAppInitialized(packageName: String) -> Bool {
     #if canImport(RGCxrClient)
+    preferredCxrSessionMode = "customApp"
+    preferredCustomAppPackageName = packageName
     var ready = false
     let initializeConfigureAndBind = {
     #if ROKID_CXRL_CALLBACK_API
@@ -2004,6 +2043,16 @@ public class RokidBridgeModule: Module {
     #else
     _ = packageName
     return false
+    #endif
+  }
+
+  private static func ensurePreferredCxrSessionInitialized() {
+    #if canImport(RGCxrClient)
+    if preferredCxrSessionMode == "customApp", let packageName = preferredCustomAppPackageName, !packageName.isEmpty {
+      _ = ensureCustomAppInitialized(packageName: packageName)
+    } else {
+      ensureCustomViewInitialized()
+    }
     #endif
   }
 
@@ -2514,7 +2563,7 @@ public class RokidBridgeModule: Module {
     }
 
     #if canImport(RGCxrClient)
-    ensureCustomViewInitialized()
+    ensurePreferredCxrSessionInitialized()
     if CxrClient.shared.auth.canHandleURL(url) {
       return true
     }
@@ -2557,7 +2606,7 @@ public class RokidBridgeModule: Module {
     recordAuthDiagnostic("callback_received", detail: urlFingerprint(url))
 
     #if canImport(RGCxrClient)
-    ensureCustomViewInitialized()
+    ensurePreferredCxrSessionInitialized()
     let handledByAuth = CxrClient.shared.auth.handleCallback(url: url)
     let handledByClient = CxrClient.shared.handleOpenURL(url)
     let handled = handledByAuth || handledByClient || CxrClient.shared.auth.isAuthenticated()

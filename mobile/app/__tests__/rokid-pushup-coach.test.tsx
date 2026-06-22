@@ -6,6 +6,7 @@ const mockBack = jest.fn();
 const mockCloseRokidCustomView = jest.fn();
 const mockOpenRokidCustomView = jest.fn();
 const mockUpdateRokidCustomView = jest.fn();
+const mockPrepareRokidCustomAppSession = jest.fn();
 const mockOpenRokidApp = jest.fn();
 const mockQueryRokidApp = jest.fn();
 const mockInstallBundledRokidApp = jest.fn();
@@ -39,6 +40,7 @@ jest.mock('../../modules/rokid-bridge', () => ({
   closeRokidCustomView: (...args: any[]) => mockCloseRokidCustomView(...args),
   openRokidCustomView: (...args: any[]) => mockOpenRokidCustomView(...args),
   updateRokidCustomView: (...args: any[]) => mockUpdateRokidCustomView(...args),
+  prepareRokidCustomAppSession: (...args: any[]) => mockPrepareRokidCustomAppSession(...args),
   openRokidApp: (...args: any[]) => mockOpenRokidApp(...args),
   queryRokidApp: (...args: any[]) => mockQueryRokidApp(...args),
   installBundledRokidApp: (...args: any[]) => mockInstallBundledRokidApp(...args),
@@ -94,6 +96,7 @@ describe('RokidPushupCoachScreen', () => {
     mockOpenRokidCustomView.mockResolvedValue({ ok: true });
     mockUpdateRokidCustomView.mockResolvedValue({ ok: true });
     mockCloseRokidCustomView.mockResolvedValue({ ok: true });
+    mockPrepareRokidCustomAppSession.mockResolvedValue({ ok: true, cxrInitializationMode: 'customApp' });
     mockCreateRokidPushupSession.mockResolvedValue({
       id: 7,
       target_reps: 20,
@@ -155,6 +158,7 @@ describe('RokidPushupCoachScreen', () => {
     });
 
     await waitFor(() => {
+      expect(mockPrepareRokidCustomAppSession).toHaveBeenCalledWith('life.executor.health.rokid.pushup');
       expect(mockInstallBundledRokidApp).toHaveBeenCalledWith({
         resourceName: 'rokid-pushup-glasses',
         resourceExtension: 'apk',
@@ -168,6 +172,9 @@ describe('RokidPushupCoachScreen', () => {
       expect(screen.getByText('眼镜端识别已启动, 等待姿态数据...')).toBeTruthy();
     });
 
+    expect(mockPrepareRokidCustomAppSession.mock.invocationCallOrder[0]).toBeLessThan(
+      mockQueryRokidApp.mock.invocationCallOrder[0],
+    );
     expect(mockQueryRokidApp).toHaveBeenCalledTimes(2);
   });
 
@@ -507,7 +514,7 @@ describe('RokidPushupCoachScreen', () => {
   });
 
   it('explains when the Rokid SDK is already locked into the wrong CXR session mode', async () => {
-    mockQueryRokidApp.mockResolvedValue({
+    mockPrepareRokidCustomAppSession.mockResolvedValue({
       ok: false,
       installed: false,
       reason: 'rokid_cxrl_wrong_session_mode',
@@ -526,6 +533,9 @@ describe('RokidPushupCoachScreen', () => {
       expect(screen.getByText(/Rokid CXR-L 当前已在 customView 会话/)).toBeTruthy();
       expect(screen.getByText(/完全退出 Reva/)).toBeTruthy();
     });
+    expect(mockQueryRokidApp).not.toHaveBeenCalled();
+    expect(mockInstallBundledRokidApp).not.toHaveBeenCalled();
+    expect(mockCreateDownloadResumable).not.toHaveBeenCalled();
   });
 
   it('preserves background download diagnostics after leaving the page and distinguishes install failure from download failure', async () => {
