@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { getLogs, type NotificationLog } from '../services/notifications';
+import { resolveNotificationRoute } from '../services/notificationRoutes';
 import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, useTheme } from '../hooks/useTheme';
 
@@ -65,9 +66,15 @@ function collapseMultiChannel(logs: NotificationLog[]): Array<NotificationLog & 
   return buckets;
 }
 
+/**
+ * 历史行的目的地: 走与活推送同一个 resolveNotificationRoute (含 scheme 归一 + legacy screen).
+ * 该 log 的 deep_link 既可能在 data.deep_link, 也可能在顶层列 log.deep_link — 合并后再解析.
+ * 解析不出再退到 workout_analysis 的 workout_id 兜底; 都没有 → null (行不可点).
+ */
 function getLogDeepLink(log: NotificationLog): string | null {
-  const explicit = log.deep_link || log.data?.deep_link;
-  if (typeof explicit === 'string' && explicit.trim()) return explicit;
+  const merged = { ...(log.data ?? {}), deep_link: log.deep_link ?? log.data?.deep_link };
+  const route = resolveNotificationRoute(merged);
+  if (route) return route;
   if (log.notification_type === 'workout_analysis' && log.data?.workout_id) {
     return `/workout-detail?id=${log.data.workout_id}`;
   }
