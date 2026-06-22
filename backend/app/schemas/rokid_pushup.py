@@ -93,3 +93,36 @@ class RokidPushupEventListResponse(BaseModel):
 
 class RokidPushupSessionFinishResponse(BaseModel):
     session: RokidPushupSessionResponse
+
+
+class RokidPushupSessionQuality(BaseModel):
+    reps: int
+    avg_quality_score: Optional[float] = None
+    event_count: int
+
+
+class RokidPushupTrainingContext(BaseModel):
+    acwr: Optional[float] = None
+    training_status: Optional[str] = None
+    readiness_zone: Optional[str] = None
+    today_intensity: Optional[str] = None
+
+
+class RokidPushupTeachingLink(BaseModel):
+    key: str
+    title: str
+    url: Optional[str] = None
+
+
+class RokidPushupSessionReviewResponse(BaseModel):
+    """赛后复盘 (R4 观察性). guidance_alerts 为可审计的越界拦截记录。"""
+
+    session_id: int
+    session_quality: RokidPushupSessionQuality
+    training_context: Optional[RokidPushupTrainingContext] = None
+    observations: list[str]
+    teaching_links: list[RokidPushupTeachingLink]
+    guidance_alerts: list[Dict[str, Any]]
+    guidance_sanitized: bool
+    guidance_violations: list[str]
+    disclaimer: str

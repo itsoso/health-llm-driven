@@ -16,8 +16,10 @@ from app.schemas.rokid_pushup import (
     RokidPushupSessionCreateResponse,
     RokidPushupSessionFinishResponse,
     RokidPushupSessionResponse,
+    RokidPushupSessionReviewResponse,
 )
 from app.services import rokid_pushup as svc
+from app.services import rokid_pushup_review as review_svc
 
 router = APIRouter(prefix="/devices/rokid", tags=["rokid"])
 
@@ -155,3 +157,25 @@ def finish_rokid_pushup_session(
     return RokidPushupSessionFinishResponse(
         session=RokidPushupSessionResponse.model_validate(session),
     )
+
+
+@router.get(
+    "/pushup-sessions/{session_id}/review",
+    response_model=RokidPushupSessionReviewResponse,
+)
+def get_rokid_pushup_session_review(
+    session_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """赛后复盘 (R4 观察性): 本组质量指标 + 训练负荷上下文 + 动作要领链接。
+
+    用户隔离: 非本人或不存在的 session → 404。无足够训练负荷数据时降级返回
+    session_quality + 中性观察, 不伪造成功也不 500。
+    """
+    session = svc.get_owned_session(db, session_id=session_id, user_id=current_user.id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="pushup session not found")
+    events = svc.list_all_events(db, session_id=session.id, user_id=current_user.id)
+    review = review_svc.build_review(db, current_user.id, session, events)
+    return RokidPushupSessionReviewResponse(**review)

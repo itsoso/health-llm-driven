@@ -98,6 +98,24 @@ def list_events(
     )
 
 
+def list_all_events(
+    db: Session,
+    *,
+    session_id: int,
+    user_id: int,
+) -> list[RokidPushupEvent]:
+    """All events for one owned session, ascending — used by the post-session review."""
+    return (
+        db.query(RokidPushupEvent)
+        .filter(
+            RokidPushupEvent.session_id == session_id,
+            RokidPushupEvent.user_id == user_id,
+        )
+        .order_by(RokidPushupEvent.id.asc())
+        .all()
+    )
+
+
 def finish_session(session: RokidPushupSession) -> RokidPushupSession:
     session.status = "finished"
     session.ended_at = datetime.now(UTC)
