@@ -123,6 +123,11 @@ def _not_before_morning_floor(candidate: datetime, floor_minutes: int) -> dateti
     )
 
 
+def _is_before_morning_floor(now: datetime) -> bool:
+    floor_min = _hhmm_to_minutes(MORNING_PUSH_FLOOR, "08:00")
+    return now.hour * 60 + now.minute < floor_min
+
+
 def _advice_candidate_from_push(
     *,
     user_id: int,
@@ -388,6 +393,14 @@ class PushService:
         effective_quiet_policy: QuietHoursPolicy = resolve_quiet_hours_policy(
             severity, quiet_hours_policy, respect_quiet_hours
         )
+        # 用户明确要求 08:00 前不要 push。这里比普通 quiet-hours 更硬:
+        # 非 critical 即使显式 bypass, 也先延迟到 morning floor; critical 仍保留安全穿透。
+        if (
+            effective_quiet_policy == "bypass"
+            and _severity_rank(severity) < _severity_rank("critical")
+            and _is_before_morning_floor(get_china_now())
+        ):
+            effective_quiet_policy = "delay"
 
         # WSCLA 深链注入: data 带 action_card_id → 自动生成 health://card/{id} 深链.
         # 客户端点击通知 → 调 P1-5 click endpoint 回写 push_clicked_at, 然后跳卡片详情页.

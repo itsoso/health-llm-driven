@@ -173,6 +173,38 @@ async def test_morning_floor_delays_cross_midnight_quiet_hours_until_8(db):
 
 
 @pytest.mark.asyncio
+async def test_morning_floor_overrides_non_critical_bypass_before_8(db):
+    """08:00 前普通 push 即使显式 bypass,也不能立即发送。"""
+    user = _make_user(db, username="morning_floor_bypass")
+    _set_quiet_hours(db, user.id, start="22:00", end="07:00")
+    svc = PushService(db)
+
+    fake_now = datetime(2026, 5, 12, 7, 30, 0)
+    with patch("app.services.notification.push_service.get_china_now", return_value=fake_now), \
+         patch.object(PushService, "_send_ios", new=AsyncMock(return_value={"success": True})):
+        result = await svc.send_notification(
+            user_id=user.id,
+            notification_type="reminder",
+            title="显式 bypass 早晨提醒",
+            content="08:00 前仍不应发出。",
+            quiet_hours_policy="bypass",
+        )
+
+    assert result["success"] is False
+    assert result["reason"] == "delayed_for_quiet_hours"
+    delayed = (
+        db.query(NotificationLog)
+        .filter(
+            NotificationLog.user_id == user.id,
+            NotificationLog.status == NotificationStatus.DELAYED.value,
+        )
+        .one()
+    )
+    assert delayed.scheduled_at.hour == 8
+    assert delayed.scheduled_at.minute == 0
+
+
+@pytest.mark.asyncio
 async def test_quiet_hours_critical_bypasses_immediately(db):
     """critical 健康告警穿透静默时段立即推送 (2026-05-30 反转"严格不打扰").
 
@@ -313,7 +345,7 @@ async def test_quiet_hours_policy_bypass_sends_immediately(db):
     user = _make_user(db, username="qh_bypass")
     svc = PushService(db)
 
-    fake_now = datetime(2026, 5, 12, 3, 0, 0)
+    fake_now = datetime(2026, 5, 12, 22, 30, 0)
     with patch("app.services.notification.push_service.get_china_now", return_value=fake_now), \
          patch.object(PushService, "_send_ios", new=AsyncMock(return_value={"success": True})):
         result = await svc.send_notification(
