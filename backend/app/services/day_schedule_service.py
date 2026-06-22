@@ -242,7 +242,7 @@ def build_workout_chain_steps(db, user_id: int) -> Optional[dict]:
     """
     from app.models.user_profile import UserProfile
     from app.services.workout_chain_service import build_workout_chain
-    from datetime import date as _date
+    from app.utils.timezone import get_user_today
 
     profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
     pref = getattr(profile, "workout_pref_window", None) if profile else None
@@ -288,7 +288,9 @@ def build_workout_chain_steps(db, user_id: int) -> Optional[dict]:
     steps = build_workout_chain(rx, ctx, workout_minutes=dur)
     if not steps:
         return None
-    chain_id = f"workout_chain:{user_id}:{_date.today().isoformat()}"
+    # chain_id 按「中国日」(用户 today)稳定 —— 别用进程 date.today()(UTC 进程下会在午夜
+    # 边界把同一中国日拆成两套链)。与协议/议程「今天」基准一致 → 跨刷新同 id → 幂等去重。
+    chain_id = f"workout_chain:{user_id}:{get_user_today(db, user_id).isoformat()}"
     return {"chain_id": chain_id, "steps": steps}
 
 

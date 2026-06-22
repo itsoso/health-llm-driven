@@ -99,6 +99,12 @@ def materialize_agenda_event(
 
     幂等:同 (user, complete_ref, scheduled_date) 至多一条。并发首建竞态由重查兜底
     (无 DB 唯一约束 —— 议程行可由多入口物化,用「查→建→撞了重查」而非约束,避免误杀)。
+
+    TODO(council-deferred,F5a;本批不实现 —— 需冻结模型改 + 双库迁移,超本批范围):
+    应用层「查→建→撞了重查」在高并发懒物化下理论上仍可能漏挤进重复 agenda 生命周期行
+    (无 DB 唯一约束兜底)。依从统计本身另有 HealthProtocolEvent / medlog 的唯一约束兜底,
+    不会因议程行重复而虚高,故非阻断。彻底修法 = 给 (user_id, complete_ref-key, scheduled_date)
+    加 partial unique index(配 pg+sqlite 双迁移),属 council 推迟的通用 F5a 项,另开 PR。
     """
     on_date = scheduled_for.date()
     existing = find_agenda_event(db, user_id, complete_ref, on_date)

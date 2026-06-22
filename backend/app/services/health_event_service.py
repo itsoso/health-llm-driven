@@ -491,8 +491,11 @@ class HealthEventService:
             return None
 
         from app.services import health_protocol_service as protocol_service
+        from app.utils.timezone import to_china_date
 
-        today = (event.event_time or datetime.now(timezone.utc)).date()
+        # event_time 是 UTC(naive/aware)→ 归一到中国日历日再比 due。上海午夜边界
+        # (16:30Z = 上海次日 00:30)若用裸 .date()(UTC 基准)会匹配错日 / 关不上当日协议。
+        today = to_china_date(event.event_time or datetime.now(timezone.utc))
         candidates = self.db.query(HealthProtocol).filter(
             HealthProtocol.user_id == event.user_id,
             HealthProtocol.status == "active",

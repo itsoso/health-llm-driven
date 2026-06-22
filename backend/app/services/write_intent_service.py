@@ -690,19 +690,34 @@ _EXTERNAL_ACTION_KINDS = frozenset({"alarm_set", "food_order", "doctor_booking"}
 
 # L4 硬门:支付凭据类 key 绝不进 WriteIntent.payload(后端永不存支付凭据)。
 # 这是代码级护栏(非仅约定):任一 payload key 命中 → 落库前 ValueError(端点 422,fail-loud)。
-# 子串匹配,覆盖大小写/常见变体(card_no / payment_token / 支付密码 …)。
+# 子串匹配,覆盖大小写/常见变体(card_no / card_number / payment_token / paymentMethod /
+# payment_method / cvv / cvc / account_number / routing / iban / 支付密码 …)。任意层级命中即拒。
+# 注:不收 bare "pan"(误伤 plan/japan/expand/company);card_number 已被 "card" 覆盖。
 _PAYMENT_KEY_SUBSTRINGS = (
-    "payment", "card", "cvv", "bank", "alipay", "wechat_pay", "wechatpay",
+    "payment", "card", "cvv", "cvc", "bank", "alipay", "wechat_pay", "wechatpay",
+    "account_number", "accountnumber", "routing", "iban",
     "credential", "password", "passwd", "secret", "支付", "银行卡", "密码",
 )
 
 
-def _reject_payment_keys(payload: Dict[str, Any]) -> None:
-    """L4:扫 payload 顶层 key,命中支付凭据类子串 → ValueError(端点 422)。绝不静默丢弃。"""
-    for k in payload:
-        kl = str(k).lower()
-        if any(s in kl for s in _PAYMENT_KEY_SUBSTRINGS):
-            raise ValueError(f"payment-credential key not allowed in payload: {k}")
+def _reject_payment_keys(value: Any) -> None:
+    """L4:**递归**扫整份 payload(dict + list/tuple,任意深度),命中支付凭据类子串的 key
+    → ValueError(端点 422)。整份 payload 会落库,故支付凭据嵌在任意层级都必须在落库前拒绝
+    (历史:只扫顶层 key 时 {"checkout":{"payment_token": "tok_…"}} 会把 L4 支付材料持久化进
+    write_intents.payload —— §11 支付凭据 L4,本 feature 绝不存)。绝不静默丢弃。
+
+    按设计是 **key 级** 门控:本 feature 契约是后端根本不经手支付材料(payload 是系统起草的
+    food_order/booking 物流摘要,非自由凭据录入面)。把凭据藏进 value(如 note 字段塞 token 串)
+    属契约外误用,不在本门射程内——value 级启发式扫描会有损/误伤,不是这里的合同。"""
+    if isinstance(value, dict):
+        for k, v in value.items():
+            kl = str(k).lower()
+            if any(s in kl for s in _PAYMENT_KEY_SUBSTRINGS):
+                raise ValueError(f"payment-credential key not allowed in payload: {k}")
+            _reject_payment_keys(v)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _reject_payment_keys(item)
 
 
 def propose_external_action(

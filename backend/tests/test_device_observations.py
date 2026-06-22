@@ -246,6 +246,43 @@ def test_user_isolation_list_and_cross_user_completion(client, db, auth_user_and
 
 # ─────────────────── 5. 认证必需 ───────────────────
 
+# ─────────────────── 4b. 中国日边界(date 基准回归)───────────────────
+
+def test_list_observations_date_filter_uses_china_day_boundary(db, auth_user_and_headers):
+    """GET ?date 用中国日(非 UTC 日)归一 event_time。
+
+    16:30Z = 上海次日 00:30 —— 若按 UTC 日(.date())过滤,该观察会被归到前一天,
+    用户查「中国今天」却查不到。归一到中国日后,它应落在中国的次日。
+    """
+    from datetime import date, datetime, timezone
+
+    from app.models.health_event import EventStatus
+    from app.services.device_observation_service import list_observations
+
+    user, _ = auth_user_and_headers
+    # UTC 6/23 16:30 == 上海 6/24 00:30
+    utc_evt = datetime(2026, 6, 23, 16, 30, tzinfo=timezone.utc)
+    ev = HealthEvent(
+        user_id=user.id,
+        event_type="posture_ok",
+        source="rokid",
+        confidence=0.9,
+        event_time=utc_evt,
+        status=EventStatus.auto_confirmed,
+    )
+    db.add(ev)
+    db.commit()
+    db.refresh(ev)
+
+    # 按 UTC 日(6/23)查 → 不应命中(已归中国日 6/24)
+    utc_day_hits = list_observations(db, user.id, on_date=date(2026, 6, 23))
+    assert all(o.id != ev.id for o in utc_day_hits), "应按中国日归一,不归到 UTC 日 6/23"
+
+    # 按中国日(6/24)查 → 命中
+    china_day_hits = list_observations(db, user.id, on_date=date(2026, 6, 24))
+    assert any(o.id == ev.id for o in china_day_hits), "中国日 6/24 应命中该观察"
+
+
 def test_auth_required(client, db):
     """无 token → 401(摄入与查询都要认证)。"""
     r = client.post(

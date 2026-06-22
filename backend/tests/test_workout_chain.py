@@ -294,3 +294,40 @@ def test_chain_materialize_db_error_degrades_not_500(db, auth_user_and_headers, 
     assert "items" in result, "链物化失败时主议程仍须正常返回(不可 500)"
     # session 已被 rollback 恢复:后续查询不再抛 PendingRollbackError。
     assert db.query(HealthProtocol).filter(HealthProtocol.user_id == user.id).count() >= 0
+
+
+# ─────────────────────── 7. chain_id / trigger_date 用「中国日」基准 ───────────────────────
+
+def test_chain_id_and_trigger_date_use_china_day_basis(
+    db, auth_user_and_headers, stub_rx, monkeypatch
+):
+    """chain_id + trigger_date 必须从 get_user_today(中国日)派生,不用进程 date.today()。
+
+    钉住中国日基准:把 get_user_today 固定成一个确定日期,断言 chain_id 与每步 trigger_date
+    都用该日 —— 防 UTC 进程下午夜边界把同一中国日拆成两套链(改回 date.today() 时,本测试
+    在非该日的环境下即红)。
+    """
+    import datetime as _dt
+
+    from app.utils import timezone as tz_util
+
+    user, _ = auth_user_and_headers
+    _set_profile(db, user.id, chain_enabled=True)
+    stub_rx("moderate")
+
+    fixed_day = _dt.date(2026, 6, 24)
+    # 两个出口(day_schedule_service.build_workout_chain_steps 与
+    # workout_chain_service.ensure_workout_chain_protocols)都懒导入 get_user_today,
+    # 故直接打源模块属性,两处都走同一钉死日。
+    monkeypatch.setattr(tz_util, "get_user_today", lambda db, uid: fixed_day)
+
+    agenda_service.today(db, user.id)  # 触发链物化
+
+    chain = _chain_protocols(db, user.id)
+    assert chain, "应物化出链协议"
+    # chain_id 用中国日
+    chain_ids = {p.implied_quantity["chain_id"] for p in chain}
+    assert chain_ids == {f"workout_chain:{user.id}:{fixed_day.isoformat()}"}
+    # 每步 trigger_date 也用同一中国日(与 chain_id 同基准,不会拆两套链)
+    trigger_dates = {p.implied_quantity.get("trigger_date") for p in chain}
+    assert trigger_dates == {fixed_day.isoformat()}

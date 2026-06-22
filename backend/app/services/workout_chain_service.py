@@ -223,16 +223,17 @@ def _workout_implied(rx: Optional[dict], minutes: int) -> Dict[str, Any]:
 
 def _post_implied(role: str) -> Dict[str, Any]:
     """锻炼后链 implied_quantity:只通用对冲措辞,无量化处方(R4)。"""
+    # R4(保守措辞):后链步只给 advisory,不下功效断言(「缓解/帮助」→「可能有助于/可作为…」)。
     if role == "stretch":
         return {"exercise_type": "stretch", "duration_min": 10, "intensity": "easy",
-                "guidance": "锻炼后做约 10 分钟拉伸放松,缓解肌肉紧张(非硬性指标)。"}
+                "guidance": "锻炼后可做约 10 分钟拉伸,作为放松收尾(非硬性指标)。"}
     if role == "shower":
-        return {"guidance": "锻炼后温水淋浴,帮助放松(注意水温适中)。"}
+        return {"guidance": "锻炼后可温水淋浴作为放松收尾(注意水温适中)。"}
     if role == "massage":
-        return {"guidance": "如有条件可做放松按摩/筋膜放松,缓解酸痛(可选)。"}
+        return {"guidance": "如有条件,可做放松按摩/筋膜放松作为收尾(可选)。"}
     if role == "meal":
         return {"meal_type": "加餐",
-                "guidance": "训练后那一餐适当补充优质蛋白与碳水,帮助恢复(非克数处方)。"}
+                "guidance": "训练后那一餐可适当补充优质蛋白与碳水,可能有助于恢复(非克数处方)。"}
     if role == "review":
         return {"guidance": "回看今天锻炼链的完成情况。"}
     return {}
@@ -259,7 +260,12 @@ def ensure_workout_chain_protocols(
     两遍:① 逐步建缺失行(撞约束即重读)② UPDATE prev/next_protocol_id 链接。
     用户隔离:创建与查询都按 user_id 过滤(对齐 create_postmeal_walk_protocol)。
     """
-    chain_date = chain_date or date.today()
+    # trigger_date 按「中国日」(用户 today),不用进程 date.today() —— UTC 进程下午夜边界
+    # 会与 chain_id 的日不一致,致同一中国日材料化两套链。与 chain_id 同基准。
+    if chain_date is None:
+        from app.utils.timezone import get_user_today
+
+        chain_date = get_user_today(db, user_id)
     trigger_date = chain_date.isoformat()
 
     # 既有同链协议(按 chain_key 索引)——一次性查,避免每步 N+1。

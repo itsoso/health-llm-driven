@@ -200,6 +200,31 @@ def test_food_order_payment_key_in_payload_rejected_fail_loud(db):
     assert [it for it in svc.list_pending(db, u.id) if it["kind"] == "food_order"] == []
 
 
+def test_food_order_nested_payment_key_rejected_fail_loud(db):
+    """L4 硬门(递归):支付凭据类 key 嵌在 payload 任意深度(dict/list 内)→ 落库前 ValueError
+    (端点 422),绝不持久化。整份 payload 会落库,故必须递归扫,不能只看顶层 key。"""
+    u = _mk_user(db)
+    nested_payloads = [
+        # 嵌套 dict
+        {"dish": "面", "checkout": {"payment_token": "tok_live_123"}},
+        # 更深一层
+        {"dish": "面", "order": {"billing": {"card_number": "4111111111111111"}}},
+        # 嵌在 list 里的 dict
+        {"dish": "面", "items": [{"name": "饭"}, {"cvv": "123"}]},
+        # 驼峰变体(paymentMethod)
+        {"dish": "面", "meta": {"paymentMethod": "visa"}},
+        # 中文支付密码嵌套
+        {"dish": "面", "checkout": {"支付密码": "6789"}},
+    ]
+    for bad in nested_payloads:
+        with pytest.raises(ValueError):
+            svc.propose_external_action(
+                db, u.id, kind="food_order", title="外卖", payload=bad,
+            )
+    # 没有任何带嵌套支付 key 的意图落库
+    assert [it for it in svc.list_pending(db, u.id) if it["kind"] == "food_order"] == []
+
+
 def test_food_order_gateway_has_no_payment_param():
     """contract 守门:place_order 签名里绝无任何支付凭据形参。"""
     import inspect

@@ -183,5 +183,9 @@ def list_observations(
     )
     out = [r for r in rows if r.event_type in OBSERVATION_EVENT_TYPES]
     if on_date is not None:
-        out = [r for r in out if r.event_time and r.event_time.date() == on_date]
+        from app.utils.timezone import to_china_date
+
+        # event_time 是 UTC;on_date 是用户视角的「中国日」。归一到中国日历日再比,
+        # 否则上海午夜边界(16:30Z = 上海次日)会把观察归错日。与 due-协议匹配同一基准。
+        out = [r for r in out if r.event_time and to_china_date(r.event_time) == on_date]
     return out[:limit]
