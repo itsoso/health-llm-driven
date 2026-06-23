@@ -165,6 +165,22 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertEqual(html, "")
     }
 
+    func testImageGalleryRendersOnlySafeHTTPImages() {
+        let html = ChatTranscriptHTML.imageGalleryHTML(urls: [
+            "https://example.test/api/v1/upload/files/chat/dinner.jpg",
+            "javascript:alert(1)",
+            "file:///tmp/private.png",
+            "ftp://example.test/private.png",
+        ])
+
+        XCTAssertTrue(html.contains("attachment-images"))
+        XCTAssertTrue(html.contains("<img"))
+        XCTAssertTrue(html.contains("src=\"https://example.test/api/v1/upload/files/chat/dinner.jpg\""))
+        XCTAssertFalse(html.contains("javascript:"))
+        XCTAssertFalse(html.contains("file:///"))
+        XCTAssertFalse(html.contains("ftp://"))
+    }
+
     func testMetaFooterOmitsEmptySourcesAndToolsBlocks() {
         // 有模型行,但 sources/tools 空 → 只出 meta-line,不出 details / meta-tools
         let html = ChatTranscriptHTML.metaFooterHTML(

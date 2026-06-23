@@ -136,6 +136,25 @@
   }
   .body th { font-weight: 600; background: var(--code-bg); }
   .body .streaming-text { white-space: pre-wrap; }
+  .attachment-images {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(92px, 140px));
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .attachment-image-link {
+    display: block;
+    overflow: hidden;
+    border-radius: 10px;
+    border: 1px solid var(--table-border);
+    background: var(--code-bg);
+  }
+  .attachment-image {
+    display: block;
+    width: 100%;
+    max-height: 180px;
+    object-fit: cover;
+  }
 
   /* meta footer (模型 · 轮数 · 耗时 / 数据源 / Skill) — 低调灰、小字号,不喧宾夺主 */
   .meta-footer {

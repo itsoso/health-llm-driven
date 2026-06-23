@@ -52,7 +52,9 @@ final class AgentConversationHistoryTests: XCTestCase {
             {
               "id": 42, "title": "睡眠分析", "total_messages": 3, "mode": "agent",
               "messages": [
-                {"id": 1, "role": "user", "content": "我昨晚没睡好", "created_at": "2026-06-12 09:00:00+00:00"},
+                {"id": 1, "role": "user", "content": "我昨晚没睡好",
+                 "image_url": "[\\"/api/v1/upload/files/chat/dinner.jpg\\", \\"https://cdn.example.test/meal.png\\"]",
+                 "created_at": "2026-06-12 09:00:00+00:00"},
                 {"id": 2, "role": "assistant", "content": "了解,我们看看你的睡眠数据", "created_at": "2026-06-12 09:01:00+00:00"},
                 {"id": 3, "role": "system", "content": "internal", "created_at": "2026-06-12 09:02:00+00:00"}
               ]
@@ -68,6 +70,10 @@ final class AgentConversationHistoryTests: XCTestCase {
         XCTAssertEqual(messages.count, 2)
         XCTAssertEqual(messages[0].role, .user)
         XCTAssertEqual(messages[0].content, "我昨晚没睡好")
+        XCTAssertEqual(messages[0].remoteImageURLs, [
+            "https://example.test/api/v1/upload/files/chat/dinner.jpg",
+            "https://cdn.example.test/meal.png",
+        ])
         XCTAssertEqual(messages[1].role, .assistant)
     }
 

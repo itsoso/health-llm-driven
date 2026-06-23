@@ -57,6 +57,11 @@ public final class APIClient: @unchecked Sendable {
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
 
+    /// Backend root used to resolve resource URLs returned by history APIs.
+    /// Requests still go through `makeRequest`; this is only for already-public
+    /// upload URLs such as `/api/v1/upload/files/chat/...`.
+    var resourceBaseURL: URL { baseURL }
+
     public init(
         baseURL: URL = APIEndpoint.defaultBaseURL,
         tokenProvider: AuthTokenProviding,

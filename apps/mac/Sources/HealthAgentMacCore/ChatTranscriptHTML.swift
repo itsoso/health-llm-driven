@@ -195,6 +195,28 @@ public enum ChatTranscriptHTML {
         return "<div class=\"meta-footer\">" + sections.joined() + "</div>"
     }
 
+    // MARK: - Attached images
+
+    /// Renders public image attachments as a small gallery. URLs are treated as
+    /// untrusted input: only http/https URLs are emitted, and every attribute is
+    /// escaped before entering the HTML fragment.
+    public static func imageGalleryHTML(urls: [String]) -> String {
+        let items = urls.compactMap { raw -> String? in
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let url = URL(string: trimmed),
+                  let scheme = url.scheme?.lowercased(),
+                  ["http", "https"].contains(scheme) else {
+                return nil
+            }
+            let escaped = escape(url.absoluteString)
+            return """
+            <a class="attachment-image-link" href="\(escaped)" target="_blank" rel="noopener noreferrer"><img class="attachment-image" src="\(escaped)" loading="lazy" alt="attached image"></a>
+            """
+        }
+        guard !items.isEmpty else { return "" }
+        return "<div class=\"attachment-images\">" + items.joined() + "</div>"
+    }
+
     // MARK: - Message envelope JSON (Swift → JS bridge)
 
     /// 一条消息喂给 JS 端的数据。`bodyHTML` 已是安全转义后的 HTML 片段。

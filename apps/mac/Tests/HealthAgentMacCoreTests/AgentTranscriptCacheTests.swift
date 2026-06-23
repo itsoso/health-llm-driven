@@ -15,6 +15,14 @@ final class AgentTranscriptCacheTests: XCTestCase {
         AgentChatMessage(id: id, role: .assistant, content: content)
     }
 
+    private func user(
+        _ content: String,
+        id: UUID = UUID(),
+        remoteImageURLs: [String] = []
+    ) -> AgentChatMessage {
+        AgentChatMessage(id: id, role: .user, content: content, remoteImageURLs: remoteImageURLs)
+    }
+
     // 同样输入重复渲染 → 结果一致(缓存命中不破坏内容)。
     func testIdempotentOnUnchangedInputs() {
         let vm = AgentChatViewModel()
@@ -96,5 +104,21 @@ final class AgentTranscriptCacheTests: XCTestCase {
         XCTAssertEqual(grown.count, 2)
         XCTAssertTrue(grown[0].bodyHTML.contains("first"))
         XCTAssertTrue(grown[1].bodyHTML.contains("second"))
+    }
+
+    func testUserMessageRendersRemoteImageThumbnails() {
+        let vm = AgentChatViewModel()
+        vm.messages = [
+            user("记录晚餐\n[附图: 1张]", remoteImageURLs: [
+                "https://example.test/api/v1/upload/files/chat/dinner.jpg"
+            ])
+        ]
+
+        let html = vm.renderedTranscript()[0].bodyHTML
+
+        XCTAssertTrue(html.contains("attachment-images"))
+        XCTAssertTrue(html.contains("<img"))
+        XCTAssertTrue(html.contains("src=\"https://example.test/api/v1/upload/files/chat/dinner.jpg\""))
+        XCTAssertTrue(html.contains("记录晚餐"))
     }
 }

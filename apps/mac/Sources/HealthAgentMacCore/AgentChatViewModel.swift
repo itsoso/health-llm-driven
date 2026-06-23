@@ -10,6 +10,10 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
     public let id: UUID
     public let role: AgentChatRole
     public var content: String
+    /// Public image URLs attached to this historical message. Mobile/web persist
+    /// uploaded chat images in the backend; Mac uses these URLs when replaying
+    /// the same conversation from `/agent/conversations/{id}`.
+    public var remoteImageURLs: [String]
 
     // MARK: 每条消息级 meta(助手回复 footer 用;流式 done 回填)
     /// 实际生成本条回复的模型名(后端 done.model)。
@@ -40,11 +44,13 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         llmRounds: Int? = nil,
         sourcesUsed: [String] = [],
         toolsUsed: [String] = [],
-        completionStatus: String? = nil
+        completionStatus: String? = nil,
+        remoteImageURLs: [String] = []
     ) {
         self.id = id
         self.role = role
         self.content = content
+        self.remoteImageURLs = remoteImageURLs
         self.model = model
         self.elapsedMs = elapsedMs
         self.llmRounds = llmRounds
@@ -55,7 +61,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
 
     // 显式 Codable:历史快照(老版本无这些字段)用 decodeIfPresent 容错;数组缺失 → 空。
     private enum CodingKeys: String, CodingKey {
-        case id, role, content, model, elapsedMs, llmRounds, sourcesUsed, toolsUsed, completionStatus
+        case id, role, content, remoteImageURLs, model, elapsedMs, llmRounds, sourcesUsed, toolsUsed, completionStatus
     }
 
     public init(from decoder: Decoder) throws {
@@ -63,6 +69,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.id = try c.decode(UUID.self, forKey: .id)
         self.role = try c.decode(AgentChatRole.self, forKey: .role)
         self.content = try c.decode(String.self, forKey: .content)
+        self.remoteImageURLs = try c.decodeIfPresent([String].self, forKey: .remoteImageURLs) ?? []
         self.model = try c.decodeIfPresent(String.self, forKey: .model)
         self.elapsedMs = try c.decodeIfPresent(Int.self, forKey: .elapsedMs)
         self.llmRounds = try c.decodeIfPresent(Int.self, forKey: .llmRounds)
@@ -1087,6 +1094,7 @@ public final class AgentChatViewModel {
             if message.role == .user {
                 // 用户消息纯文本:转义 + 换行保留,不解析 markdown。
                 bodyHTML = "<p class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</p>"
+                    + ChatTranscriptHTML.imageGalleryHTML(urls: message.remoteImageURLs)
             } else if isStreamingThis {
                 // 流式态:plain 文本(避免每 60ms 用更长全文重 parse markdown 的 O(n²))。
                 bodyHTML = "<div class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</div>"

@@ -78,7 +78,7 @@ public final class AgentConversationClient: AgentConversationRemoteSourcing, @un
         let response: BackendConversationDetail = try await apiClient.get(
             "agent/conversations/\(conversationID)"
         )
-        return response.messages.compactMap { Self.message(from: $0) }
+        return response.messages.compactMap { Self.message(from: $0, baseURL: apiClient.resourceBaseURL) }
     }
 
     public func deleteConversation(conversationID: Int) async throws {
@@ -111,7 +111,7 @@ public final class AgentConversationClient: AgentConversationRemoteSourcing, @un
         )
     }
 
-    static func message(from dto: BackendConversationMessage) -> AgentChatMessage? {
+    static func message(from dto: BackendConversationMessage, baseURL: URL = APIEndpoint.defaultBaseURL) -> AgentChatMessage? {
         guard let role = mapRole(dto.role) else {
             // Skip system / tool rows the desktop transcript doesn't render.
             return nil
@@ -119,8 +119,76 @@ public final class AgentConversationClient: AgentConversationRemoteSourcing, @un
         return AgentChatMessage(
             id: deterministicID(forMessageID: dto.id),
             role: role,
-            content: dto.content ?? ""
+            content: dto.content ?? "",
+            remoteImageURLs: imageURLStrings(from: dto.image_url, baseURL: baseURL)
         )
+    }
+
+    static func imageURLStrings(from raw: String?, baseURL: URL) -> [String] {
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return [] }
+
+        let candidates: [String]
+        if let data = trimmed.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) {
+            if let array = json as? [String] {
+                candidates = array
+            } else if let string = json as? String {
+                candidates = [string]
+            } else {
+                candidates = []
+            }
+        } else {
+            candidates = [trimmed]
+        }
+
+        var seen = Set<String>()
+        return candidates.compactMap { candidate in
+            guard let resolved = resolveImageURL(candidate, baseURL: baseURL),
+                  seen.insert(resolved).inserted else {
+                return nil
+            }
+            return resolved
+        }
+    }
+
+    private static func resolveImageURL(_ raw: String, baseURL: URL) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let absolute = URL(string: trimmed), absolute.scheme != nil {
+            return allowedHTTPURLString(absolute)
+        }
+
+        let referenceBase: URL
+        if trimmed.hasPrefix("/") {
+            referenceBase = originURL(from: baseURL)
+        } else {
+            referenceBase = baseURL.absoluteString.hasSuffix("/")
+                ? baseURL
+                : baseURL.appendingPathComponent("")
+        }
+        guard let resolved = URL(string: trimmed, relativeTo: referenceBase)?.absoluteURL else {
+            return nil
+        }
+        return allowedHTTPURLString(resolved)
+    }
+
+    private static func originURL(from url: URL) -> URL {
+        var components = URLComponents()
+        components.scheme = url.scheme
+        components.host = url.host
+        components.port = url.port
+        return components.url ?? url
+    }
+
+    private static func allowedHTTPURLString(_ url: URL) -> String? {
+        guard let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              url.host != nil else {
+            return nil
+        }
+        return url.absoluteString
     }
 
     private static func mapRole(_ raw: String) -> AgentChatRole? {

@@ -116,6 +116,7 @@ final class AgentStreamClientTests: XCTestCase {
         """
         let msg = try JSONDecoder().decode(AgentChatMessage.self, from: Data(legacy.utf8))
         XCTAssertEqual(msg.content, "旧回答")
+        XCTAssertEqual(msg.remoteImageURLs, [])
         XCTAssertNil(msg.model)
         XCTAssertEqual(msg.sourcesUsed, [])
         XCTAssertEqual(msg.toolsUsed, [])
@@ -131,7 +132,8 @@ final class AgentStreamClientTests: XCTestCase {
             llmRounds: 2,
             sourcesUsed: ["kb"],
             toolsUsed: ["health_query"],
-            completionStatus: "complete"
+            completionStatus: "complete",
+            remoteImageURLs: ["https://example.test/api/v1/upload/files/chat/dinner.jpg"]
         )
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(AgentChatMessage.self, from: data)
