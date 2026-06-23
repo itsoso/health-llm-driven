@@ -142,6 +142,14 @@ describe('SettingsScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/longevity-next');
   });
 
+  it('opens the privacy policy instead of rendering a dead row', () => {
+    const { getByText } = render(<SettingsScreen />);
+
+    fireEvent.press(getByText('隐私政策'));
+
+    expect(mockPush).toHaveBeenCalledWith('/privacy-policy');
+  });
+
   it('does not show negative Garmin sync age when server time is ahead', () => {
     mockGarminStatus = {
       bound: true,

@@ -45,7 +45,6 @@ export default function GoalsScreen() {
 
   const renderItem = ({ item }: { item: GoalResponse }) => (
     <GoalCard goal={item}
-      onPress={() => {}}
       onUpdateProgress={() => setSelectedGoal(item)} />
   );
 

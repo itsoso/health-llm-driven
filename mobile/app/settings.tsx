@@ -236,7 +236,8 @@ export default function SettingsScreen() {
           <SettingRow icon="bug-outline" label="App 诊断"
             onPress={() => router.push('/app-diagnostics' as any)} />
           <SettingRow icon="information-circle-outline" label="版本" value="1.0.0" />
-          <SettingRow icon="shield-checkmark-outline" label="隐私政策" onPress={() => {}} />
+          <SettingRow icon="shield-checkmark-outline" label="隐私政策"
+            onPress={() => router.push('/privacy-policy' as any)} />
         </View>
 
         {/* Logout */}

@@ -71,9 +71,10 @@ jest.mock('../../hooks/useTheme', () => ({
 jest.mock('../../components/goals/GoalCard', () => {
   const React = require('react');
   const { Text, View } = require('react-native');
-  const MockGoalCard = ({ goal }: any) => (
+  const MockGoalCard = ({ goal, onPress }: any) => (
     <View>
       <Text>{goal.title}</Text>
+      <Text>{onPress ? 'goal-card-has-onpress' : 'goal-card-static'}</Text>
     </View>
   );
   MockGoalCard.displayName = 'MockGoalCard';
@@ -110,5 +111,12 @@ describe('GoalsScreen', () => {
     expect(getByText('今日动作')).toBeTruthy();
     expect(getAllByText('每周 4 次 Zone2 有氧').length).toBeGreaterThan(0);
     expect(getByText('今天完成 30 分钟低强度有氧')).toBeTruthy();
+  });
+
+  it('does not attach a dead tap handler to goal cards without a detail route', async () => {
+    const { getByText, queryByText } = render(<GoalsScreen />);
+
+    await waitFor(() => expect(getByText('goal-card-static')).toBeTruthy());
+    expect(queryByText('goal-card-has-onpress')).toBeNull();
   });
 });
