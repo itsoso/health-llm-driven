@@ -63,6 +63,21 @@ export const revaSemantic = {
 
 export type RevaStatus = keyof typeof revaSemantic;
 
+/**
+ * Timeline driver semantics — 「为什么这项在这」的内联标记。
+ * 后端 HealthEvent.driver(plan_driven / time_driven / event_driven)+ work block。
+ * 每类一个 3px 色条 + chip(fg/bg/line):规划=紫、时间=青、事件=珊瑚、工作块=中性灰。
+ * 与 normal/caution/risk 三步临床语义正交(那套表达「健康好不好」,这套表达「来源是什么」)。
+ */
+export const revaDriver = {
+  plan_driven: { fg: '#6D4AAE', bg: '#EFEAF8', line: '#DBCEF0', label: '规划', icon: 'list' }, // 紫
+  time_driven: { fg: '#1E8A8A', bg: '#E0F2F1', line: '#BFE5E3', label: '定时', icon: 'clock' }, // 青/teal
+  event_driven: { fg: '#D5503A', bg: '#FBE8E4', line: '#F3CDC4', label: '触发', icon: 'bolt' }, // 珊瑚/橙红
+  work: { fg: '#5C6660', bg: '#F1EFE8', line: '#E0DDD3', label: '工作', icon: 'briefcase' }, // 中性灰
+} as const;
+
+export type RevaDriver = keyof typeof revaDriver;
+
 // ── Font families (bundle via expo-font; see header note) ──────────────────
 export const revaFonts = {
   sans: 'Manrope', // Latin UI / headlines

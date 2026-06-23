@@ -38,6 +38,9 @@ const ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
   'circle-help': 'help-circle-outline', 'arrow-up': 'arrow-up', heart: 'heart-outline',
   play: 'play', 'refresh-cw': 'refresh', 'alert-triangle': 'warning-outline',
   package: 'cube-outline',
+  // Timeline driver chips: plan / time / event / work block.
+  list: 'list-outline', clock: 'time-outline', bolt: 'flash-outline',
+  briefcase: 'briefcase-outline',
 };
 
 export function Icon({ name, size = 22, color = C.ink2 }: { name: string; size?: number; color?: string }) {
