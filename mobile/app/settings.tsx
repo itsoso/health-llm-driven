@@ -142,9 +142,9 @@ export default function SettingsScreen() {
           <SettingRow icon="trending-up" label="结果追踪"
             onPress={() => router.push('/my-progress' as any)} />
           <SettingRow icon="hourglass-outline" label="生物年龄"
-            onPress={() => router.push('/medical-exams' as any)} />
+            onPress={() => router.push('/biological-age' as any)} />
           <SettingRow icon="leaf-outline" label="抗衰下一步"
-            onPress={() => router.push('/indicator-history?type=weight' as any)} />
+            onPress={() => router.push('/longevity-next' as any)} />
           <SettingRow icon="git-compare-outline" label="设备一致性"
             onPress={() => router.push('/device-sources' as any)} />
           <SettingRow icon="analytics-outline" label="健康轨迹分析"

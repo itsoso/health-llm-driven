@@ -132,6 +132,16 @@ describe('SettingsScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/app-diagnostics');
   });
 
+  it('opens dedicated longevity analysis pages from settings', () => {
+    const { getByText } = render(<SettingsScreen />);
+
+    fireEvent.press(getByText('生物年龄'));
+    fireEvent.press(getByText('抗衰下一步'));
+
+    expect(mockPush).toHaveBeenCalledWith('/biological-age');
+    expect(mockPush).toHaveBeenCalledWith('/longevity-next');
+  });
+
   it('does not show negative Garmin sync age when server time is ahead', () => {
     mockGarminStatus = {
       bound: true,
