@@ -16,6 +16,9 @@ import {
 import { setOnUnauthorized } from '../services/api';
 import { saveTokenToSharedKeychain } from '../modules/shared-keychain';
 
+const TOKEN_RESTORE_ATTEMPTS = 3;
+const TOKEN_RESTORE_RETRY_MS = 150;
+
 interface AuthState {
   user: User | null;
   token: string | null;
@@ -34,6 +37,21 @@ const AuthContext = createContext<AuthState>({
   logout: async () => {},
 });
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function restoreSavedToken(): Promise<string | null> {
+  for (let attempt = 0; attempt < TOKEN_RESTORE_ATTEMPTS; attempt += 1) {
+    const saved = await getToken();
+    if (saved) return saved;
+    if (attempt < TOKEN_RESTORE_ATTEMPTS - 1) {
+      await sleep(TOKEN_RESTORE_RETRY_MS);
+    }
+  }
+  return null;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -51,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let mounted = true;
     (async () => {
       try {
-        const saved = await getToken();
+        const saved = await restoreSavedToken();
         if (saved && mounted) {
           setToken(saved);
           // 冷启动回灌 token 到 App Group UserDefaults + 共享 keychain,

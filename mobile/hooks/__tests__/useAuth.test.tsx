@@ -52,6 +52,22 @@ describe('useAuth update resilience', () => {
     await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('auth'));
   });
 
+  it('keeps the app authenticated when token storage is briefly unavailable after an update', async () => {
+    (getToken as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce('tok_saved');
+    (fetchCurrentUser as jest.Mock).mockResolvedValueOnce({ id: 3, username: 'q' });
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('auth'));
+    expect(getToken).toHaveBeenCalledTimes(2);
+  });
+
   it('does not force guest state from a global incidental 401 while a token is loaded', async () => {
     (getToken as jest.Mock).mockResolvedValueOnce('tok_saved');
     (fetchCurrentUser as jest.Mock).mockResolvedValueOnce({ id: 3, username: 'q' });
