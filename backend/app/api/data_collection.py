@@ -176,7 +176,7 @@ def get_credential_status(
         last = cred.last_sync_at
         if last.tzinfo is None:
             last = last.replace(tzinfo=timezone.utc)
-        minutes_since = int((now - last).total_seconds() / 60)
+        minutes_since = max(0, int((now - last).total_seconds() / 60))
 
     # health 判定
     if not cred.credentials_valid:

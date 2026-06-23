@@ -303,6 +303,9 @@ function GarminStatusRow({
   const txt = useMemo(() => createTxt(c), [c]);
   const health = status?.health as 'healthy' | 'stale' | 'error' | 'unbound' | undefined;
   const mins = status?.minutes_since_last_sync as number | null | undefined;
+  const safeMins = typeof mins === 'number' && Number.isFinite(mins)
+    ? Math.max(0, Math.floor(mins))
+    : null;
 
   const dot =
     health === 'healthy' ? s.success.solid :
@@ -319,10 +322,11 @@ function GarminStatusRow({
       if (!status.credentials_valid) return '凭证失效';
       return `${status.error_count} 次失败`;
     }
-    if (mins == null) return '从未同步';
-    if (mins < 60) return `${mins} 分钟前`;
-    if (mins < 60 * 24) return `${Math.floor(mins / 60)} 小时前`;
-    return `${Math.floor(mins / (60 * 24))} 天前`;
+    if (safeMins == null) return '从未同步';
+    if (safeMins < 1) return '刚刚同步';
+    if (safeMins < 60) return `${safeMins} 分钟前`;
+    if (safeMins < 60 * 24) return `${Math.floor(safeMins / 60)} 小时前`;
+    return `${Math.floor(safeMins / (60 * 24))} 天前`;
   })();
 
   return (

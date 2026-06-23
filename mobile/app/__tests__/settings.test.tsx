@@ -4,6 +4,7 @@ import { fireEvent, render } from '@testing-library/react-native';
 
 const mockBack = jest.fn();
 const mockPush = jest.fn();
+let mockGarminStatus: any = { health: 'healthy', minutes_since_last_sync: 3 };
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ back: mockBack, push: mockPush, canGoBack: () => false }),
@@ -21,7 +22,7 @@ jest.mock('@tanstack/react-query', () => ({
       };
     }
     if (key.includes('garminStatus')) {
-      return { data: { health: 'healthy', minutes_since_last_sync: 3 }, refetch: jest.fn() };
+      return { data: mockGarminStatus, refetch: jest.fn() };
     }
     return { data: null, refetch: jest.fn() };
   },
@@ -89,6 +90,7 @@ import SettingsScreen from '../settings';
 describe('SettingsScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGarminStatus = { health: 'healthy', minutes_since_last_sync: 3 };
   });
 
   it('surfaces GPS and city positioning as one explicit clickable entry', () => {
@@ -128,5 +130,19 @@ describe('SettingsScreen', () => {
 
     expect(mockPush).toHaveBeenCalledWith('/rokid-diagnostics');
     expect(mockPush).toHaveBeenCalledWith('/app-diagnostics');
+  });
+
+  it('does not show negative Garmin sync age when server time is ahead', () => {
+    mockGarminStatus = {
+      bound: true,
+      health: 'healthy',
+      last_sync_at: '2026-06-23T12:50:00+08:00',
+      minutes_since_last_sync: -471,
+    };
+
+    const { getByText, queryByText } = render(<SettingsScreen />);
+
+    expect(queryByText('-471 分钟前')).toBeNull();
+    expect(getByText('刚刚同步')).toBeTruthy();
   });
 });
