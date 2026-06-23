@@ -71,6 +71,8 @@ class TodaySpineItem(BaseModel):
     deep_link: Optional[str] = None
     severity: Optional[str] = None
     proof: Optional[ProofRef] = None
+    # 驱动分类(plan_driven/time_driven/event_driven)+ 工作块 kind=work,供首页时间线内联标注。
+    driver: Optional[str] = None
 
 
 class TodayPast(BaseModel):

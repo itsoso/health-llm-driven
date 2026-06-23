@@ -92,6 +92,19 @@ def test_due_protocol_and_today_workout(client, db, auth_user_and_headers):
     assert any(o["kind"] == "observation" and o["id"].startswith("workout_") for o in obs)
 
 
+def test_driver_survives_response_model(client, auth_user_and_headers):
+    """driver 必须穿过 TodaySpineItem response_model 到客户端 —— service 有但 schema
+    没声明会被 FastAPI 静默剥离(本测试盯端点响应,非 service dict)。"""
+    _, h = auth_user_and_headers
+    client.post("/api/v1/protocols/seed/water-cup", headers=h)
+    r = client.get("/api/v1/timeline/today", headers=h)
+    assert r.status_code == 200
+    actions = [it for it in r.json()["items"] if it["kind"] == "action"]
+    assert actions, "应有 due 协议 action item"
+    assert "driver" in actions[0], "driver 被 response_model 剥离 —— TodaySpineItem 需声明该字段"
+    assert actions[0]["driver"] == "plan_driven"
+
+
 def test_auto_observed_protocol_counts_as_completed_not_actionable(client, db, auth_user_and_headers):
     """可穿戴自动观测完成应计入今日完成数,但不再是可点击待办。"""
     from app.services import health_protocol_service as proto_svc
