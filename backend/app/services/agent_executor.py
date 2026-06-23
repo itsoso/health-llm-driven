@@ -1121,6 +1121,27 @@ class AgentExecutor:
         self._prefer_fast_record_model = False
         self._last_provider_model_name: Optional[str] = None
         self._request_model_tool_fallback_used = False
+        self._model_fallback_reasons: List[str] = []
+        self._tool_model_names: List[str] = []
+
+    def _display_model_name_for_id(self, model_id: Optional[str]) -> Optional[str]:
+        if not model_id:
+            return None
+        try:
+            from app.services.llm.model_registry import get_model
+
+            entry = get_model(model_id)
+            return entry.model if entry else model_id
+        except Exception:  # noqa: BLE001
+            return model_id
+
+    def _record_model_fallback_reason(self, reason: str) -> None:
+        if reason and reason not in self._model_fallback_reasons:
+            self._model_fallback_reasons.append(reason)
+
+    def _record_tool_model_name(self, model_name: Optional[str]) -> None:
+        if model_name and model_name not in self._tool_model_names:
+            self._tool_model_names.append(model_name)
 
     async def _run_multi_model_stream(
         self,
@@ -1146,6 +1167,8 @@ class AgentExecutor:
         self._current_user_id = user_id
         self._prefer_fast_record_model = False
         self._last_provider_model_name = None
+        self._model_fallback_reasons = []
+        self._tool_model_names = []
         sources_used: list = ["多模型综合 (Claude Opus 4.7 · GPT-5.5 · Gemini 3.1 Pro)"]
         model_label = "Claude Opus 4.7 + GPT-5.5 + Gemini 3.1 Pro (综合)"
 
@@ -1279,6 +1302,10 @@ class AgentExecutor:
             ai_msg.meta = {
                 "elapsed_ms": elapsed_ms,
                 "model": model_label,
+                "selected_model": model_label,
+                "answer_model": model_label,
+                "tool_models": [],
+                "fallback_reasons": [],
                 "sources_used": sources_used,
                 "mode": "multi_model",
             }
@@ -1291,6 +1318,10 @@ class AgentExecutor:
             "message_id": ai_msg.id,
             "elapsed_ms": elapsed_ms,
             "model": model_label,
+            "selected_model": model_label,
+            "answer_model": model_label,
+            "tool_models": [],
+            "fallback_reasons": [],
             "sources_used": sources_used,
             "mode": "multi_model",
         }}
@@ -1329,6 +1360,8 @@ class AgentExecutor:
         self._current_user_id = user_id
         self._request_model_id = _extract_model_id_from_extra_context(extra_context)
         self._request_model_tool_fallback_used = False
+        self._model_fallback_reasons = []
+        self._tool_model_names = []
         self._prefer_fast_record_model = (
             not images
             and not file_base64
@@ -1585,6 +1618,7 @@ class AgentExecutor:
 
                 # 检查是否有 tool_call
                 if isinstance(response, dict) and response.get("tool_calls"):
+                    self._record_tool_model_name(self._last_provider_model_name or model_name)
                     tool_calls = response["tool_calls"]
                     text_content = response.get("content") or ""
 
@@ -1858,6 +1892,10 @@ class AgentExecutor:
         elapsed_ms = int((time.time() - start_time) * 1000)
         llm_ms_total = sum(llm_rounds_ms)
         completion_status = _completion_status_from_finish_reason(final_finish_reason)
+        answer_model = model_name
+        selected_model = self._display_model_name_for_id(self._request_model_id) or answer_model
+        tool_models = list(self._tool_model_names)
+        fallback_reasons = list(self._model_fallback_reasons)
         evidence_cards = []
         try:
             evidence_card = self._build_system_knowledge_evidence_card(user_id, message)
@@ -1890,6 +1928,10 @@ class AgentExecutor:
                 "llm_rounds": len(llm_rounds_ms),
                 "llm_rounds_ms": llm_rounds_ms,
                 "model": model_name,
+                "selected_model": selected_model,
+                "answer_model": answer_model,
+                "tool_models": tool_models,
+                "fallback_reasons": fallback_reasons,
                 "sources_used": sources_used,
                 "tools_used": tools_used,
                 "cards": evidence_cards,
@@ -1911,6 +1953,10 @@ class AgentExecutor:
                 "llm_rounds": len(llm_rounds_ms),
                 "llm_rounds_ms": llm_rounds_ms,
                 "model": model_name,
+                "selected_model": selected_model,
+                "answer_model": answer_model,
+                "tool_models": tool_models,
+                "fallback_reasons": fallback_reasons,
                 "sources_used": sources_used,
                 "tools_used": tools_used,
                 "mode": "agent",
@@ -2408,6 +2454,10 @@ class AgentExecutor:
             "[agent_executor] tool task on unreliable model %s -> fallback to %s (user=%s)",
             effective_model_id, fallback_id, self._current_user_id,
         )
+        if effective_model_id == self._request_model_id:
+            self._record_model_fallback_reason("selected_model_tool_unreliable")
+        else:
+            self._record_model_fallback_reason("preferred_model_tool_unreliable")
         return provider
 
     async def _call_llm(
@@ -2456,6 +2506,7 @@ class AgentExecutor:
             )
             if pass_tools and self._request_model_id:
                 self._request_model_tool_fallback_used = True
+                self._record_model_fallback_reason("selected_model_tool_chat_failed")
             from app.services.llm.factory import create_llm_provider
             from app.services.llm.pii_scrub import wrap_provider_pii_scrub
             from app.services.llm.usage_tracker import wrap_provider
@@ -2526,6 +2577,7 @@ class AgentExecutor:
             )
             if pass_tools and self._request_model_id:
                 self._request_model_tool_fallback_used = True
+                self._record_model_fallback_reason("selected_model_tool_stream_failed")
             from app.services.llm.factory import create_llm_provider
             from app.services.llm.pii_scrub import wrap_provider_pii_scrub
             from app.services.llm.usage_tracker import wrap_provider

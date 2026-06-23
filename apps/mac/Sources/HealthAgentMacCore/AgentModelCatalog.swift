@@ -16,9 +16,9 @@ public struct AgentModelOption: Equatable, Identifiable, Sendable {
 
 public enum AgentModelCatalog {
     public static let defaultOptions: [AgentModelOption] = [
-        AgentModelOption(id: "commercial/Claude-Opus-4.7", title: "Claude Opus 4.7", provider: "LangBridge", tier: "Top"),
-        AgentModelOption(id: "commercial/Gemini-3.1-Pro-Preview", title: "Gemini 3.1 Pro", provider: "LangBridge", tier: "Top"),
-        AgentModelOption(id: "commercial/GPT-5.5", title: "GPT-5.5", provider: "LangBridge", tier: "Top"),
+        AgentModelOption(id: "claude-opus-4.7", title: "Claude Opus 4.7", provider: "LangBridge", tier: "Top"),
+        AgentModelOption(id: "gemini-3.1-pro", title: "Gemini 3.1 Pro", provider: "LangBridge", tier: "Top"),
+        AgentModelOption(id: "gpt-5.5", title: "GPT-5.5", provider: "LangBridge", tier: "Top"),
         // 阿里 TokenPlan 套餐对话模型 (2026-06-22) — id 必须与后端 model_registry 对齐。
         // 图像生成模型 (qwen-image-2.0 / wan2.7-image) 非对话, 不进 picker。
         AgentModelOption(id: "qwen3.7-plus", title: "Qwen3.7 Plus", provider: "阿里 TokenPlan", tier: "Vision"),
@@ -29,4 +29,17 @@ public enum AgentModelCatalog {
         AgentModelOption(id: "glm-5.2", title: "GLM-5.2", provider: "阿里 TokenPlan", tier: "Balanced"),
         AgentModelOption(id: "minimax-m2.5", title: "MiniMax M2.5", provider: "阿里 TokenPlan", tier: "Reasoning"),
     ]
+
+    public static func canonicalID(for id: String) -> String {
+        switch id {
+        case "commercial/Claude-Opus-4.7":
+            return "claude-opus-4.7"
+        case "commercial/Gemini-3.1-Pro-Preview":
+            return "gemini-3.1-pro"
+        case "commercial/GPT-5.5":
+            return "gpt-5.5"
+        default:
+            return id
+        }
+    }
 }

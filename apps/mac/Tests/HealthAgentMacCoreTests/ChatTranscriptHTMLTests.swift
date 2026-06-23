@@ -115,6 +115,10 @@ final class ChatTranscriptHTMLTests: XCTestCase {
     func testMetaFooterRendersModelRoundsElapsed() {
         let html = ChatTranscriptHTML.metaFooterHTML(
             model: "commercial/Claude-Opus-4.7",
+            selectedModel: "commercial/Claude-Opus-4.7",
+            answerModel: "commercial/Claude-Opus-4.7",
+            toolModels: ["qwen3.7-max"],
+            fallbackReasons: ["selected_model_tool_stream_failed"],
             elapsedMs: 3500,
             llmRounds: 3,
             sourcesUsed: [],
@@ -123,7 +127,9 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertTrue(html.contains("meta-footer"))
         XCTAssertTrue(html.contains("3.5s"))
         XCTAssertTrue(html.contains("3 轮"))
-        XCTAssertTrue(html.contains("commercial/Claude-Opus-4.7"))
+        XCTAssertTrue(html.contains("回答 commercial/Claude-Opus-4.7"))
+        XCTAssertTrue(html.contains("工具 qwen3.7-max"))
+        XCTAssertTrue(html.contains("工具调用临时切到可靠模型"))
     }
 
     func testMetaFooterOmitsSingleRound() {

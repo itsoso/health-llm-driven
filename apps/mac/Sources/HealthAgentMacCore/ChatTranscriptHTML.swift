@@ -150,6 +150,10 @@ public enum ChatTranscriptHTML {
     /// 视觉调性对齐 mobile ChatBubble:低调灰、小字号、数据源用 `<details>` 折叠。
     public static func metaFooterHTML(
         model: String?,
+        selectedModel: String? = nil,
+        answerModel: String? = nil,
+        toolModels: [String] = [],
+        fallbackReasons: [String] = [],
         elapsedMs: Int?,
         llmRounds: Int?,
         sourcesUsed: [String],
@@ -157,7 +161,7 @@ public enum ChatTranscriptHTML {
     ) -> String {
         var sections: [String] = []
 
-        // 第一行:耗时 · N 轮 · 模型(各自缺则跳过;整行全缺则不输出)。
+        // 第一行:耗时 · N 轮 · 回答模型 · 工具模型(各自缺则跳过;整行全缺则不输出)。
         var lineParts: [String] = []
         if let elapsedMs, elapsedMs > 0 {
             let seconds = Double(elapsedMs) / 1000.0
@@ -166,11 +170,30 @@ public enum ChatTranscriptHTML {
         if let llmRounds, llmRounds > 1 {
             lineParts.append(escape("\(llmRounds) 轮"))
         }
-        if let model, !model.trimmingCharacters(in: .whitespaces).isEmpty {
+        let selected = selectedModel?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let answer = (answerModel ?? model)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let selected, !selected.isEmpty, let answer, !answer.isEmpty, selected != answer {
+            lineParts.append(escape("选择 \(selected)"))
+        }
+        if let answer, !answer.isEmpty {
+            lineParts.append(escape("回答 \(answer)"))
+        } else if let model, !model.trimmingCharacters(in: .whitespaces).isEmpty {
             lineParts.append(escape(model))
+        }
+        let toolModelNames = toolModels.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        if !toolModelNames.isEmpty {
+            lineParts.append(escape("工具 \(toolModelNames.joined(separator: ", "))"))
         }
         if !lineParts.isEmpty {
             sections.append("<div class=\"meta-line\">" + lineParts.joined(separator: " · ") + "</div>")
+        }
+
+        let fallbackLabels = fallbackReasons
+            .map(fallbackReasonLabel)
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        if !fallbackLabels.isEmpty {
+            let chips = fallbackLabels.map { "<span class=\"meta-chip\">\(escape($0))</span>" }.joined()
+            sections.append("<div class=\"meta-tools\"><span class=\"meta-tools-label\">路由</span>\(chips)</div>")
         }
 
         // 数据源:可折叠 <details>(默认收起),summary 显示「引用 N 项数据」。
@@ -193,6 +216,17 @@ public enum ChatTranscriptHTML {
 
         guard !sections.isEmpty else { return "" }
         return "<div class=\"meta-footer\">" + sections.joined() + "</div>"
+    }
+
+    private static func fallbackReasonLabel(_ reason: String) -> String {
+        switch reason {
+        case "selected_model_tool_unreliable", "selected_model_tool_stream_failed", "selected_model_tool_chat_failed":
+            return "工具调用临时切到可靠模型"
+        case "preferred_model_tool_unreliable":
+            return "偏好模型工具调用临时切到可靠模型"
+        default:
+            return reason
+        }
     }
 
     // MARK: - Attached images

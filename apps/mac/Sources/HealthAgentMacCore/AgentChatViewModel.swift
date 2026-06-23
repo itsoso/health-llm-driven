@@ -18,6 +18,14 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
     // MARK: 每条消息级 meta(助手回复 footer 用;流式 done 回填)
     /// 实际生成本条回复的模型名(后端 done.model)。
     public var model: String?
+    /// 用户本轮选择的模型(后端 done.selected_model;可能与工具模型不同)。
+    public var selectedModel: String?
+    /// 最终生成用户可见答案的模型(后端 done.answer_model)。
+    public var answerModel: String?
+    /// 实际产生结构化 tool_calls 的模型列表(后端 done.tool_models)。
+    public var toolModels: [String]
+    /// 选定模型转向工具模型/fallback provider 的原因(后端 done.fallback_reasons)。
+    public var fallbackReasons: [String]
     /// 端到端耗时(毫秒,后端 done.elapsed_ms)。
     public var elapsedMs: Int?
     /// LLM 调用轮数(后端 done.llm_rounds);>1 才有展示意义。
@@ -32,6 +40,8 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
     /// 是否有任何可展示的 meta(footer 是否需要渲染)。
     public var hasMeta: Bool {
         model != nil || elapsedMs != nil || (llmRounds ?? 0) > 1
+            || selectedModel != nil || answerModel != nil
+            || !toolModels.isEmpty || !fallbackReasons.isEmpty
             || !sourcesUsed.isEmpty || !toolsUsed.isEmpty
     }
 
@@ -40,6 +50,10 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         role: AgentChatRole,
         content: String,
         model: String? = nil,
+        selectedModel: String? = nil,
+        answerModel: String? = nil,
+        toolModels: [String] = [],
+        fallbackReasons: [String] = [],
         elapsedMs: Int? = nil,
         llmRounds: Int? = nil,
         sourcesUsed: [String] = [],
@@ -52,6 +66,10 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.content = content
         self.remoteImageURLs = remoteImageURLs
         self.model = model
+        self.selectedModel = selectedModel
+        self.answerModel = answerModel
+        self.toolModels = toolModels
+        self.fallbackReasons = fallbackReasons
         self.elapsedMs = elapsedMs
         self.llmRounds = llmRounds
         self.sourcesUsed = sourcesUsed
@@ -61,7 +79,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
 
     // 显式 Codable:历史快照(老版本无这些字段)用 decodeIfPresent 容错;数组缺失 → 空。
     private enum CodingKeys: String, CodingKey {
-        case id, role, content, remoteImageURLs, model, elapsedMs, llmRounds, sourcesUsed, toolsUsed, completionStatus
+        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, sourcesUsed, toolsUsed, completionStatus
     }
 
     public init(from decoder: Decoder) throws {
@@ -71,6 +89,10 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.content = try c.decode(String.self, forKey: .content)
         self.remoteImageURLs = try c.decodeIfPresent([String].self, forKey: .remoteImageURLs) ?? []
         self.model = try c.decodeIfPresent(String.self, forKey: .model)
+        self.selectedModel = try c.decodeIfPresent(String.self, forKey: .selectedModel)
+        self.answerModel = try c.decodeIfPresent(String.self, forKey: .answerModel)
+        self.toolModels = try c.decodeIfPresent([String].self, forKey: .toolModels) ?? []
+        self.fallbackReasons = try c.decodeIfPresent([String].self, forKey: .fallbackReasons) ?? []
         self.elapsedMs = try c.decodeIfPresent(Int.self, forKey: .elapsedMs)
         self.llmRounds = try c.decodeIfPresent(Int.self, forKey: .llmRounds)
         self.sourcesUsed = try c.decodeIfPresent([String].self, forKey: .sourcesUsed) ?? []
@@ -618,7 +640,7 @@ public final class AgentChatViewModel {
     }
 
     public func selectModel(_ id: String?) {
-        selectedModelID = id
+        selectedModelID = id.map(AgentModelCatalog.canonicalID)
     }
 
     public func prepareDraft(_ text: String) {
@@ -780,16 +802,20 @@ public final class AgentChatViewModel {
                     ))
                 case .toolDetails(let toolEvent):
                     applyToolEvent(toolEvent)
-                case .done(let id, _, let completionStatus, let model, let sourcesUsed, let toolsUsed, let elapsedMs, let llmRounds):
+                case .done(let id, _, let completionStatus, let model, let selectedModel, let answerModel, let toolModels, let fallbackReasons, let sourcesUsed, let toolsUsed, let elapsedMs, let llmRounds):
                     conversationID = id ?? conversationID
                     lastCompletionStatus = completionStatus
-                    lastModel = model
+                    lastModel = answerModel ?? model
                     lastSourcesUsed = sourcesUsed
                     // 把 meta 回填到「正在流式的那条消息对象」(按 assistantID 定位),
                     // 不只更全局 —— footer 是每条消息级渲染。先 flush 残留 token 再写 meta。
                     flushPendingTokens()
                     if let idx = messages.firstIndex(where: { $0.id == assistantID }) {
                         messages[idx].model = model
+                        messages[idx].selectedModel = selectedModel
+                        messages[idx].answerModel = answerModel
+                        messages[idx].toolModels = toolModels
+                        messages[idx].fallbackReasons = fallbackReasons
                         messages[idx].elapsedMs = elapsedMs
                         messages[idx].llmRounds = llmRounds
                         messages[idx].sourcesUsed = sourcesUsed
@@ -1106,6 +1132,10 @@ public final class AgentChatViewModel {
             if message.role == .assistant && !isStreamingThis && message.hasMeta {
                 footerHTML = ChatTranscriptHTML.metaFooterHTML(
                     model: message.model,
+                    selectedModel: message.selectedModel,
+                    answerModel: message.answerModel,
+                    toolModels: message.toolModels,
+                    fallbackReasons: message.fallbackReasons,
                     elapsedMs: message.elapsedMs,
                     llmRounds: message.llmRounds,
                     sourcesUsed: message.sourcesUsed,

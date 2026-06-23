@@ -55,7 +55,9 @@ final class AgentConversationHistoryTests: XCTestCase {
                 {"id": 1, "role": "user", "content": "我昨晚没睡好",
                  "image_url": "[\\"/api/v1/upload/files/chat/dinner.jpg\\", \\"https://cdn.example.test/meal.png\\"]",
                  "created_at": "2026-06-12 09:00:00+00:00"},
-                {"id": 2, "role": "assistant", "content": "了解,我们看看你的睡眠数据", "created_at": "2026-06-12 09:01:00+00:00"},
+                {"id": 2, "role": "assistant", "content": "了解,我们看看你的睡眠数据",
+                 "meta": {"model": "commercial/Claude-Opus-4.7", "selected_model": "commercial/Claude-Opus-4.7", "answer_model": "commercial/Claude-Opus-4.7", "tool_models": ["qwen3.7-max"], "fallback_reasons": ["selected_model_tool_stream_failed"], "elapsed_ms": 3300, "llm_rounds": 2, "sources_used": ["系统知识库"], "tools_used": ["health_query"], "completion_status": "complete"},
+                 "created_at": "2026-06-12 09:01:00+00:00"},
                 {"id": 3, "role": "system", "content": "internal", "created_at": "2026-06-12 09:02:00+00:00"}
               ]
             }
@@ -75,6 +77,16 @@ final class AgentConversationHistoryTests: XCTestCase {
             "https://cdn.example.test/meal.png",
         ])
         XCTAssertEqual(messages[1].role, .assistant)
+        XCTAssertEqual(messages[1].model, "commercial/Claude-Opus-4.7")
+        XCTAssertEqual(messages[1].selectedModel, "commercial/Claude-Opus-4.7")
+        XCTAssertEqual(messages[1].answerModel, "commercial/Claude-Opus-4.7")
+        XCTAssertEqual(messages[1].toolModels, ["qwen3.7-max"])
+        XCTAssertEqual(messages[1].fallbackReasons, ["selected_model_tool_stream_failed"])
+        XCTAssertEqual(messages[1].elapsedMs, 3300)
+        XCTAssertEqual(messages[1].llmRounds, 2)
+        XCTAssertEqual(messages[1].sourcesUsed, ["系统知识库"])
+        XCTAssertEqual(messages[1].toolsUsed, ["health_query"])
+        XCTAssertEqual(messages[1].completionStatus, "complete")
     }
 
     func testConversationClientParsesPythonAndISODates() {

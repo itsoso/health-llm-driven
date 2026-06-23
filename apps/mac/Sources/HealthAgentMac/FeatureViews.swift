@@ -160,8 +160,12 @@ struct AgentChatView: View {
     private func applyPersistedModelSelection() {
         viewModel.multiModel = (modelStrategy == "default3")
         if modelStrategy == "manual", !persistedModelID.isEmpty {
-            if viewModel.selectedModelID != persistedModelID {
-                viewModel.selectModel(persistedModelID)
+            let canonicalID = AgentModelCatalog.canonicalID(for: persistedModelID)
+            if canonicalID != persistedModelID {
+                persistedModelID = canonicalID
+            }
+            if viewModel.selectedModelID != canonicalID {
+                viewModel.selectModel(canonicalID)
             }
         } else if viewModel.selectedModelID != nil {
             viewModel.selectModel(nil)

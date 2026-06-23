@@ -29,6 +29,47 @@ struct BackendConversationMessage: Decodable, Sendable {
     let content: String?
     let image_url: String?
     let created_at: String?
+    let meta: BackendConversationMessageMeta?
+}
+
+struct BackendConversationMessageMeta: Decodable, Sendable {
+    let model: String?
+    let selectedModel: String?
+    let answerModel: String?
+    let toolModels: [String]
+    let fallbackReasons: [String]
+    let elapsedMs: Int?
+    let llmRounds: Int?
+    let sourcesUsed: [String]
+    let toolsUsed: [String]
+    let completionStatus: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case model
+        case selectedModel = "selected_model"
+        case answerModel = "answer_model"
+        case toolModels = "tool_models"
+        case fallbackReasons = "fallback_reasons"
+        case elapsedMs = "elapsed_ms"
+        case llmRounds = "llm_rounds"
+        case sourcesUsed = "sources_used"
+        case toolsUsed = "tools_used"
+        case completionStatus = "completion_status"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        model = try? c.decode(String.self, forKey: .model)
+        selectedModel = try? c.decode(String.self, forKey: .selectedModel)
+        answerModel = try? c.decode(String.self, forKey: .answerModel)
+        toolModels = (try? c.decode([String].self, forKey: .toolModels)) ?? []
+        fallbackReasons = (try? c.decode([String].self, forKey: .fallbackReasons)) ?? []
+        elapsedMs = try? c.decode(Int.self, forKey: .elapsedMs)
+        llmRounds = try? c.decode(Int.self, forKey: .llmRounds)
+        sourcesUsed = (try? c.decode([String].self, forKey: .sourcesUsed)) ?? []
+        toolsUsed = (try? c.decode([String].self, forKey: .toolsUsed)) ?? []
+        completionStatus = try? c.decode(String.self, forKey: .completionStatus)
+    }
 }
 
 struct BackendConversationDetail: Decodable, Sendable {
@@ -120,6 +161,16 @@ public final class AgentConversationClient: AgentConversationRemoteSourcing, @un
             id: deterministicID(forMessageID: dto.id),
             role: role,
             content: dto.content ?? "",
+            model: dto.meta?.model,
+            selectedModel: dto.meta?.selectedModel,
+            answerModel: dto.meta?.answerModel,
+            toolModels: dto.meta?.toolModels ?? [],
+            fallbackReasons: dto.meta?.fallbackReasons ?? [],
+            elapsedMs: dto.meta?.elapsedMs,
+            llmRounds: dto.meta?.llmRounds,
+            sourcesUsed: dto.meta?.sourcesUsed ?? [],
+            toolsUsed: dto.meta?.toolsUsed ?? [],
+            completionStatus: dto.meta?.completionStatus,
             remoteImageURLs: imageURLStrings(from: dto.image_url, baseURL: baseURL)
         )
     }

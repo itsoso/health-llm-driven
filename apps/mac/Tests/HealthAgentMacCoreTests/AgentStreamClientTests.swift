@@ -38,7 +38,7 @@ final class AgentStreamClientTests: XCTestCase {
 
     func testParserParsesToolsUsedElapsedAndRoundsInDone() throws {
         let payload = """
-        data: {"event":"done","data":{"conversation_id":5,"message_id":3,"completion_status":"complete","model":"m","sources_used":["kb"],"tools_used":["health_query","health_record"],"elapsed_ms":4200,"llm_rounds":2}}
+        data: {"event":"done","data":{"conversation_id":5,"message_id":3,"completion_status":"complete","model":"commercial/Claude-Opus-4.7","selected_model":"commercial/Claude-Opus-4.7","answer_model":"commercial/Claude-Opus-4.7","tool_models":["qwen3.7-max"],"fallback_reasons":["selected_model_tool_stream_failed"],"sources_used":["kb"],"tools_used":["health_query","health_record"],"elapsed_ms":4200,"llm_rounds":2}}
 
         """
         let events = try AgentStreamParser.parse(payload)
@@ -47,7 +47,11 @@ final class AgentStreamClientTests: XCTestCase {
                 conversationID: 5,
                 messageID: 3,
                 completionStatus: "complete",
-                model: "m",
+                model: "commercial/Claude-Opus-4.7",
+                selectedModel: "commercial/Claude-Opus-4.7",
+                answerModel: "commercial/Claude-Opus-4.7",
+                toolModels: ["qwen3.7-max"],
+                fallbackReasons: ["selected_model_tool_stream_failed"],
                 sourcesUsed: ["kb"],
                 toolsUsed: ["health_query", "health_record"],
                 elapsedMs: 4200,
@@ -87,6 +91,10 @@ final class AgentStreamClientTests: XCTestCase {
                 messageID: 1,
                 completionStatus: "complete",
                 model: "commercial/Claude-Opus-4.7",
+                selectedModel: "commercial/Claude-Opus-4.7",
+                answerModel: "commercial/Claude-Opus-4.7",
+                toolModels: ["qwen3.7-max"],
+                fallbackReasons: ["selected_model_tool_stream_failed"],
                 sourcesUsed: ["系统知识库"],
                 toolsUsed: ["health_query"],
                 elapsedMs: 3300,
@@ -101,6 +109,10 @@ final class AgentStreamClientTests: XCTestCase {
         XCTAssertEqual(assistant?.role, .assistant)
         // meta 写进了「那条消息对象」,不只是全局
         XCTAssertEqual(assistant?.model, "commercial/Claude-Opus-4.7")
+        XCTAssertEqual(assistant?.selectedModel, "commercial/Claude-Opus-4.7")
+        XCTAssertEqual(assistant?.answerModel, "commercial/Claude-Opus-4.7")
+        XCTAssertEqual(assistant?.toolModels, ["qwen3.7-max"])
+        XCTAssertEqual(assistant?.fallbackReasons, ["selected_model_tool_stream_failed"])
         XCTAssertEqual(assistant?.elapsedMs, 3300)
         XCTAssertEqual(assistant?.llmRounds, 2)
         XCTAssertEqual(assistant?.sourcesUsed, ["系统知识库"])
@@ -574,7 +586,7 @@ final class AgentStreamClientTests: XCTestCase {
         let context = try XCTUnwrap(service.extraContext)
         let data = try XCTUnwrap(context.data(using: .utf8))
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(json["model_id"] as? String, "commercial/Gemini-3.1-Pro-Preview")
+        XCTAssertEqual(json["model_id"] as? String, "gemini-3.1-pro")
         XCTAssertEqual(json["web_search_requested"] as? Bool, true)
         let attachments = try XCTUnwrap(json["attachments"] as? [[String: Any]])
         XCTAssertEqual(attachments.first?["source_kind"] as? String, "genome_txt")

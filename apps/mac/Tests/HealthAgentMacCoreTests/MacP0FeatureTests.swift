@@ -40,9 +40,9 @@ final class MacP0FeatureTests: XCTestCase {
         let options = AgentModelCatalog.defaultOptions
         let optionIDs = Set(options.map(\.id))
         let shownManualModelIDs = [
-            "commercial/Claude-Opus-4.7",
-            "commercial/Gemini-3.1-Pro-Preview",
-            "commercial/GPT-5.5",
+            "claude-opus-4.7",
+            "gemini-3.1-pro",
+            "gpt-5.5",
             "qwen3.7-plus",
             "qwen3.7-max",
             "deepseek-v4-pro",
@@ -56,6 +56,9 @@ final class MacP0FeatureTests: XCTestCase {
             "commercial/GPT-5.1",
             "commercial/DeepSeek-R1",
             "commercial/DeepSeek-V3.2",
+            "commercial/Claude-Opus-4.7",
+            "commercial/Gemini-3.1-Pro-Preview",
+            "commercial/GPT-5.5",
             "qwen3.6-plus",
             "qwen3.6-flash",
             "deepseek-v3.2",

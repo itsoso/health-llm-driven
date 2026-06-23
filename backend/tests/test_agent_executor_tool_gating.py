@@ -262,6 +262,10 @@ async def test_unreliable_manual_model_uses_fallback_for_tools_then_selected_mod
     ]
     assert rendered == "GLM FINAL"
     assert done["model"] == "glm-5.2"
+    assert done["selected_model"] == "glm-5.2"
+    assert done["answer_model"] == "glm-5.2"
+    assert done["tool_models"] == ["qwen3.7-max"]
+    assert done["fallback_reasons"] == ["selected_model_tool_unreliable"]
     assert done["tools_used"] == ["environment_check"]
 
 
@@ -368,4 +372,8 @@ async def test_provider_error_fallback_for_tools_returns_to_manual_model_for_fin
     ]
     assert rendered == "CLAUDE FINAL"
     assert done["model"] == "commercial/Claude-Opus-4.7"
+    assert done["selected_model"] == "commercial/Claude-Opus-4.7"
+    assert done["answer_model"] == "commercial/Claude-Opus-4.7"
+    assert done["tool_models"] == ["qwen3.7-max"]
+    assert done["fallback_reasons"] == ["selected_model_tool_stream_failed"]
     assert done["tools_used"] == ["environment_check"]
