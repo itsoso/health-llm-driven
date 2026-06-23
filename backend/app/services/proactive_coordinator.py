@@ -21,7 +21,8 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.agent_audit_log import AgentAuditLog
-from app.utils.timezone import get_user_now
+from app.services.caldav_sync import today_busy_blocks
+from app.utils.timezone import get_china_now, get_user_now
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,24 @@ def _in_quiet_hours(db: Session, user_id: int) -> bool:
         return False
 
 
+def _in_busy_window(db: Session, user_id: int) -> bool:
+    """当前(北京时刻)是否落在今日某个日历忙碌块内 → 日程感知静默 P1/P2。
+
+    只用 ``today_busy_blocks`` 的粗粒度 (HH:MM,HH:MM) 接缝(已剥 title/PII),绝不读日历标题。
+    忙碌块是北京时刻,故用 get_china_now 比较(与块同时区)。
+    fail-soft:无凭据/同步失败/查询抛错 → False(当「不忙」正常推,别因日历坏把所有 nudge 静默)。
+    """
+    try:
+        now_hhmm = get_china_now().strftime("%H:%M")
+        for start, end in today_busy_blocks(db, user_id):
+            if start <= now_hhmm < end:  # [start, end),与忙碌块语义一致
+                return True
+        return False
+    except Exception as e:  # noqa: BLE001 — fail-soft:日历坏不静默,不崩
+        logger.warning("[proactive] busy-window check failed user=%s: %s", user_id, e)
+        return False
+
+
 def can_notify_proactively(db: Session, user_id: int, tier: str = "P1") -> bool:
     """三级打扰预算 gate(R15)。tier 默认 P1(兼容既有 watcher)。
 
@@ -99,8 +118,13 @@ def can_notify_proactively(db: Session, user_id: int, tier: str = "P1") -> bool:
                 return True
             return proactive_notifications_sent(db, user_id, tier="P0") < p0_budget
 
-        # P1:静默时段不推;白天受全局上限(上面已查)
-        return not _in_quiet_hours(db, user_id)
+        # P1:静默时段不推;日程感知——忙碌窗内静默(P0 已在上方穿透,不受影响);
+        # 白天非忙时受全局上限(上面已查)。
+        if _in_quiet_hours(db, user_id):
+            return False
+        if _in_busy_window(db, user_id):
+            return False
+        return True
     except Exception as e:  # noqa: BLE001
         # 刻意 fail-open(健康告警宁可多推不可漏),但失败必须可观测。P2 已在上面拦掉。
         logger.warning(

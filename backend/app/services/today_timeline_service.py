@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.services import agenda_service
 from app.services.agenda_service import _TW_ORDER  # 复用议程时间窗排序
+from app.services.caldav_sync import today_busy_blocks
 from app.services.events_timeline_service import build_timeline
 from app.utils.timezone import get_user_timezone
 
@@ -76,6 +77,35 @@ def _kind_for(item: Dict[str, Any]) -> str:
     return "action"
 
 
+# 常驻承诺协议的周期(预定计划 = plan_driven)。event_triggered 是信号触发 = event_driven。
+_PLAN_CADENCES = {"daily", "weekly", "monthly", "quarterly", "annual"}
+
+
+def _derive_driver(item: Dict[str, Any]) -> str:
+    """timeline item → 三驱标记(纯展示,不影响调度/完成/安全)。
+
+    判据(设计 §契约1,按数据里实际可分的字段):
+    - cadence=="event_triggered" → event_driven(餐后步行等信号触发的临时项)。
+    - advisory 类(训练决策灯 / 数据质量 / 自纠偏 / 基线漂移,status=="info")→ event_driven
+      (这些项由当下信号/事件点亮,非常驻承诺)。
+    - 常驻承诺协议(用药/补剂/饮水/训练,cadence∈{daily,weekly,monthly,quarterly,annual})→ plan_driven。
+    - 复查(checkup,health_problem 来源,预定到期)→ plan_driven。
+    - 歧义(有常驻 source object 但 cadence 缺失)→ plan_driven(设计钦定:歧义偏 plan)。
+
+    注:当前 agenda 数据里没有独立的「晨起就绪/睡前流程」系统时刻卡 ——
+    这些概念若落地也是 cadence=daily 的常驻协议,会归 plan_driven;无干净的 time_driven
+    判据,故 time_driven 暂不从现有项派生(留作未来系统时刻卡的标记)。
+    """
+    cadence = item.get("cadence")
+    if cadence == "event_triggered":
+        return "event_driven"
+    # advisory:由信号/事件点亮的只读建议项
+    if item.get("type") in _ADVISORY_TYPES and item.get("status") == "info":
+        return "event_driven"
+    # 其余(常驻协议 / 复查 / 歧义)→ plan_driven
+    return "plan_driven"
+
+
 def _map_agenda_item(item: Dict[str, Any]) -> Dict[str, Any]:
     """把一个 agenda item 映射成统一时间线 item(未来/现在项)。"""
     itype = item.get("type") or "anytime"
@@ -100,6 +130,7 @@ def _map_agenda_item(item: Dict[str, Any]) -> Dict[str, Any]:
     out = {
         "id": f"agenda_{object_type}_{src.get('object_id')}_{itype}",
         "kind": kind,
+        "driver": _derive_driver(item),
         "time_window": item.get("time_window") or "anytime",
         "title": item.get("title") or "",
         "subtitle": subtitle,
@@ -135,6 +166,7 @@ def _map_observation(ev) -> Dict[str, Any]:
     return {
         "id": ev.id,
         "kind": "observation",
+        "driver": "event_driven",  # 已发生的观测 = 事件
         "time_window": "anytime",
         "title": ev.title,
         "subtitle": ev.subtitle,
@@ -195,6 +227,7 @@ def _outcome_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
         items.append({
             "id": f"outcome_{c.id}",
             "kind": "outcome",
+            "driver": "plan_driven",  # 协议期内归因 = 计划驱动的结果
             "time_window": "anytime",
             "title": f"协议期内{metric_label}向好",
             "subtitle": c.title,
@@ -253,6 +286,76 @@ def _build_proof(c) -> Optional[Dict[str, Any]]:
     return {"metric": metric, "label": label, "delta": delta, "direction": direction, "association_only": True}
 
 
+def _busy_window(start_hhmm: str) -> str:
+    """忙碌块 start HH:MM → 时间窗(与 _current_window 同词表,供排序插对位置)。"""
+    try:
+        h = int(start_hhmm.split(":")[0])
+    except (ValueError, IndexError, AttributeError):
+        return "anytime"
+    if h < 11:
+        return "morning"
+    if h < 14:
+        return "noon"
+    if h < 17:
+        return "afternoon"
+    if h < 20:
+        return "evening"
+    if h < 23:
+        return "bedtime"
+    return "anytime"
+
+
+def _busy_minutes(start_hhmm: str, end_hhmm: str) -> Optional[int]:
+    """(HH:MM,HH:MM) → 时长分钟;解析失败 → None(标题降级为"忙碌")。"""
+    try:
+        sh, sm = (int(x) for x in start_hhmm.split(":"))
+        eh, em = (int(x) for x in end_hhmm.split(":"))
+        mins = (eh * 60 + em) - (sh * 60 + sm)
+        return mins if mins > 0 else None
+    except (ValueError, AttributeError):
+        return None
+
+
+def _work_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
+    """今日工作块(CalDAV busy block)→ kind=work 时间线项。
+
+    **隐私硬边界**:只用 ``today_busy_blocks`` 的粗粒度 (HH:MM,HH:MM) 接缝(已剥
+    title/PII);work item **绝不含**日历标题/encrypted_title/location/uid。
+    fail-soft:无凭据/无 block/查询抛错 → 不含 work item,不崩。
+    """
+    try:
+        blocks = today_busy_blocks(db, user_id)
+    except Exception as e:  # noqa: BLE001 — fail-soft:日历坏不崩,无 work item
+        logger.warning("[today_timeline] busy blocks load failed user=%s: %s", user_id, e)
+        return []
+
+    items: List[Dict[str, Any]] = []
+    icon, color = _style_for("checkup")  # 复用日历色系(calendar-outline / 蓝)
+    for start, end in blocks:
+        mins = _busy_minutes(start, end)
+        title = f"工作 · {mins}min" if mins is not None else "忙碌"
+        items.append({
+            "id": f"work_{start}_{end}",
+            "kind": "work",
+            "driver": "plan_driven",  # 日历 = 预定承诺
+            "time_window": _busy_window(start),
+            "title": title,           # 仅时长/通用词,绝无日历标题
+            "subtitle": None,
+            "icon": icon,
+            "color": color,
+            "status": None,
+            "priority": 40,           # 居协议(50)之下,不抢健康待办
+            "can_complete": False,
+            "complete_ref": None,
+            "event_id": None,
+            "action_kind": None,
+            "deep_link": None,
+            "severity": None,
+            "proof": None,
+        })
+    return items
+
+
 def build_today_spine(db: Session, user_id: int) -> Dict[str, Any]:
     """组合今日统一时间线(只读投影)。
 
@@ -282,6 +385,10 @@ def build_today_spine(db: Session, user_id: int) -> Dict[str, Any]:
 
     # 2) 结果归因项(best-effort 增强)
     items.extend(_outcome_items(db, user_id))
+
+    # 2.5) 今日工作块(CalDAV busy block)→ kind=work 工作域项(无标题,fail-soft)。
+    #      跨域护城河:把工作日程合进日脊柱;隐私只用粗粒度 busy 接缝。
+    items.extend(_work_items(db, user_id))
 
     # 3) 过去项(今日已发生)→ past.events(observation)
     past_events: List[Dict[str, Any]] = []

@@ -271,6 +271,7 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
             status=p["today_status"],            # pending/completed/skipped
             time_window=p.get("time_window") or "anytime",
             priority=50,
+            cadence=p.get("cadence"),            # 透传给时间线 driver 派生(纯展示,不影响调度)
             can_default_complete=p.get("can_default_complete"),
             source={"object_type": "health_protocol", "object_id": p["protocol_id"]},
             **chain_kw,
