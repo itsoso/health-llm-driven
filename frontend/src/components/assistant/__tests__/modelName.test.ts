@@ -7,8 +7,8 @@ describe('prettyModelName', () => {
     expect(prettyModelName('claude-sonnet-4.5')).toBe('Claude Sonnet');
     expect(prettyModelName('gpt-5.5')).toBe('GPT-5');
     expect(prettyModelName('gemini-3.1-pro')).toBe('Gemini Pro');
-    expect(prettyModelName('tokenplan/qwen-max')).toBe('Qwen');
-    expect(prettyModelName('deepseek-v3')).toBe('DeepSeek');
+    expect(prettyModelName('tokenplan/qwen3.7-plus')).toBe('Qwen');
+    expect(prettyModelName('deepseek-v4-pro')).toBe('DeepSeek');
   });
 
   it('gracefully cleans unknown ids', () => {

@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { spacing, radii, shadows } from '../../constants/theme';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import { canonicalModelId, sanitizeModelOptions } from '../../services/llmModelCatalog';
 
 export interface ModelOption {
   id: string;
@@ -58,10 +59,12 @@ export default function LlmModelPicker({
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
   const [visible, setVisible] = useState(false);
+  const visibleOptions = useMemo(() => sanitizeModelOptions(options), [options]);
+  const activeModelId = canonicalModelId(currentModelId);
 
   const selectModel = (modelId: string | null) => {
     setVisible(false);
-    onSelect(modelId);
+    onSelect(canonicalModelId(modelId));
   };
   const isHeader = variant === 'header';
 
@@ -130,7 +133,7 @@ export default function LlmModelPicker({
             </View>
 
             <TouchableOpacity
-              style={[styles.option, currentModelId === null && styles.optionActive]}
+              style={[styles.option, activeModelId === null && styles.optionActive]}
               onPress={() => selectModel(null)}
               activeOpacity={0.75}
             >
@@ -138,18 +141,18 @@ export default function LlmModelPicker({
                 <Text style={txt.optionTitle}>系统默认</Text>
                 <Text style={txt.optionMeta} numberOfLines={1}>使用管理员全局配置或服务器默认模型</Text>
               </View>
-              {currentModelId === null && <Ionicons name="checkmark-circle" size={18} color={c.brand} />}
+              {activeModelId === null && <Ionicons name="checkmark-circle" size={18} color={c.brand} />}
             </TouchableOpacity>
 
             <View style={styles.divider} />
 
             <ScrollView style={styles.optionList} showsVerticalScrollIndicator={false}>
-              {options.length === 0 ? (
+              {visibleOptions.length === 0 ? (
                 <View style={styles.empty}>
                   <Text style={txt.empty}>暂无可用模型</Text>
                 </View>
-              ) : options.map(option => {
-                const active = option.id === currentModelId;
+              ) : visibleOptions.map(option => {
+                const active = option.id === activeModelId;
                 const tierColor = TIER_COLOR[option.speed_tier] || c.labelTertiary;
                 return (
                   <TouchableOpacity

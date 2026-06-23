@@ -12,6 +12,12 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/services/api/client';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import {
+  canonicalModelId,
+  isAdvancedChatModelId,
+  sanitizeLlmPreference,
+  sanitizeModelOptions,
+} from '@/components/assistant/modelCatalog';
 
 interface ModelOption {
   id: string;
@@ -45,7 +51,7 @@ function LlmPreferenceInner() {
   const load = useCallback(() => {
     setLoading(true);
     api.get('/me/llm-preference')
-      .then(r => setData(r.data))
+      .then(r => setData(sanitizeLlmPreference(r.data)))
       .catch(e => setErr(e?.response?.data?.detail || e?.message || '加载失败'))
       .finally(() => setLoading(false));
   }, []);
@@ -53,14 +59,17 @@ function LlmPreferenceInner() {
   useEffect(() => { load(); }, [load]);
 
   const pick = useCallback(async (model_id: string | null) => {
-    if (data?.model_id === model_id) return;
-    setSaving(model_id || '__reset__');
+    const canonical = canonicalModelId(model_id);
+    const nextModelId = canonical && isAdvancedChatModelId(canonical) ? canonical : null;
+    if (data?.model_id === nextModelId) return;
+    setSaving(nextModelId || '__reset__');
     setErr(null);
     try {
-      const r = await api.put<PreferenceResponse>('/me/llm-preference', { model_id });
-      setData(r.data);
-      const lbl = model_id
-        ? r.data.options.find(o => o.id === model_id)?.label || model_id
+      const r = await api.put<PreferenceResponse>('/me/llm-preference', { model_id: nextModelId });
+      const pref = sanitizeLlmPreference(r.data);
+      setData(pref);
+      const lbl = nextModelId
+        ? pref.options.find(o => o.id === nextModelId)?.label || nextModelId
         : '系统默认';
       // 2026-05-14 FIX-6: 切换后做自检
       try {
@@ -105,7 +114,8 @@ function LlmPreferenceInner() {
   }
   if (!data) return null;
 
-  const activeId = data.model_id;
+  const visibleOptions = sanitizeModelOptions(data.options);
+  const activeId = data.model_id && visibleOptions.some(m => m.id === data.model_id) ? data.model_id : null;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-6">
@@ -131,7 +141,7 @@ function LlmPreferenceInner() {
           <div className="text-[11px] text-slate-500 uppercase">当前我的选择</div>
           <div className="mt-1 text-lg font-semibold">
             {activeId
-              ? data.options.find(m => m.id === activeId)?.label || activeId
+              ? visibleOptions.find(m => m.id === activeId)?.label || activeId
               : '系统默认'}
           </div>
           <div className="text-xs text-slate-500 mt-1">
@@ -152,11 +162,11 @@ function LlmPreferenceInner() {
 
         {/* 选项 */}
         <div className="space-y-2">
-          {data.options.length === 0 ? (
+          {visibleOptions.length === 0 ? (
             <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 text-sm text-slate-500 text-center">
               暂无可用模型, 请联系管理员配置 API Key.
             </div>
-          ) : data.options.map(m => {
+          ) : visibleOptions.map(m => {
             const isActive = m.id === activeId;
             const isSaving = saving === m.id;
             return (

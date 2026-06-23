@@ -141,13 +141,13 @@ describe('ChatScreen', () => {
 
   it('uses a short readable model label in the chat header', async () => {
     mockLlmPreference = {
-      model_id: 'qwen3.6-plus',
+      model_id: 'qwen3.7-plus',
       options: [
         {
-          id: 'qwen3.6-plus',
-          label: 'Qwen3.6 Plus 推理 · 阿里',
+          id: 'qwen3.7-plus',
+          label: 'Qwen3.7 Plus 推理 · 阿里',
           provider: '阿里',
-          model: 'qwen3.6-plus',
+          model: 'qwen3.7-plus',
           speed_tier: 'reasoning',
           note: '',
         },
@@ -157,15 +157,23 @@ describe('ChatScreen', () => {
     const { getByText, queryByText } = render(<ChatScreen />);
 
     await waitFor(() => {
-      expect(getByText('Qwen3.6 Plus')).toBeTruthy();
+      expect(getByText('Qwen3.7 Plus')).toBeTruthy();
     });
-    expect(queryByText('Qwen3.6 Plus 推理 · 阿里')).toBeNull();
+    expect(queryByText('Qwen3.7 Plus 推理 · 阿里')).toBeNull();
   });
 
   it('opens model switching from the top-left header instead of the more sheet', async () => {
     mockLlmPreference = {
-      model_id: 'qwen3.6-plus',
+      model_id: 'qwen3.7-plus',
       options: [
+        {
+          id: 'qwen3.7-plus',
+          label: 'Qwen3.7 Plus 推理 · 阿里',
+          provider: '阿里',
+          model: 'qwen3.7-plus',
+          speed_tier: 'reasoning',
+          note: '',
+        },
         {
           id: 'qwen3.6-plus',
           label: 'Qwen3.6 Plus 推理 · 阿里',
@@ -180,7 +188,7 @@ describe('ChatScreen', () => {
     const { getByLabelText, getByText, queryByText } = render(<ChatScreen />);
 
     await waitFor(() => {
-      expect(getByLabelText('切换 AI 模型，当前 Qwen3.6 Plus')).toBeTruthy();
+      expect(getByLabelText('切换 AI 模型，当前 Qwen3.7 Plus')).toBeTruthy();
     });
 
     await act(async () => {
@@ -189,9 +197,10 @@ describe('ChatScreen', () => {
     expect(queryByText('切换 AI 模型')).toBeNull();
 
     await act(async () => {
-      fireEvent.press(getByLabelText('切换 AI 模型，当前 Qwen3.6 Plus'));
+      fireEvent.press(getByLabelText('切换 AI 模型，当前 Qwen3.7 Plus'));
     });
     expect(getByText('切换 AI 模型')).toBeTruthy();
+    expect(queryByText('Qwen3.6 Plus 推理 · 阿里')).toBeNull();
   });
 
   it('keeps the header voice action as continuous voice conversation', async () => {

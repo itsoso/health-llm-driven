@@ -27,6 +27,12 @@ import LlmModelPicker, { ModelOption } from '@/components/assistant/LlmModelPick
 import ConversationHistoryRail from '@/components/assistant/ConversationHistoryRail';
 import { api } from '@/services/api/client';
 import { buildSelectedChatShareText } from '@/components/assistant/shareSelection';
+import {
+  canonicalModelId,
+  isAdvancedChatModelId,
+  sanitizeLlmPreference,
+  sanitizeModelOptions,
+} from '@/components/assistant/modelCatalog';
 
 const DEFAULT_SUGGESTIONS = [
   '分析我最近的代谢健康',
@@ -100,22 +106,26 @@ function AIAssistantInner() {
     let cancelled = false;
     api.get('/me/llm-preference').then(r => {
       if (cancelled) return;
-      const id = r.data?.model_id as string | null;
-      const opt = id ? r.data?.options?.find((o: any) => o.id === id) : null;
-      setLlmOptions(r.data?.options || []);
+      const pref = sanitizeLlmPreference(r.data);
+      const id = pref.model_id;
+      const opt = id ? pref.options.find((o: any) => o.id === id) : null;
+      setLlmOptions(pref.options || []);
       setLlmPref({ label: opt?.label || (id ? id : null), model_id: id });
     }).catch(() => { /* 401/403 静默 */ });
     return () => { cancelled = true; };
   }, []);
 
   const selectModel = async (modelId: string | null) => {
-    if (llmPref.model_id === modelId || llmSaving) return;
-    setLlmSaving(modelId || '__default__');
+    const canonical = canonicalModelId(modelId);
+    const nextModelId = canonical && isAdvancedChatModelId(canonical) ? canonical : null;
+    if (llmPref.model_id === nextModelId || llmSaving) return;
+    setLlmSaving(nextModelId || '__default__');
     setLlmError(null);
     try {
-      const res = await api.put('/me/llm-preference', { model_id: modelId });
-      const options = (res.data?.options || []) as ModelOption[];
-      const activeId = res.data?.model_id as string | null;
+      const res = await api.put('/me/llm-preference', { model_id: nextModelId });
+      const pref = sanitizeLlmPreference(res.data);
+      const options = sanitizeModelOptions((pref.options || []) as ModelOption[]);
+      const activeId = pref.model_id;
       const active = activeId ? options.find(o => o.id === activeId) : null;
       setLlmOptions(options);
       setLlmPref({ model_id: activeId, label: active?.label || (activeId ? activeId : null) });

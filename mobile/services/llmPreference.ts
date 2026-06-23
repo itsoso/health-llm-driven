@@ -1,4 +1,5 @@
 import api from './api';
+import { canonicalModelId, isAdvancedChatModelId, sanitizeLlmPreference } from './llmModelCatalog';
 
 export interface ModelOption {
   id: string;
@@ -16,10 +17,12 @@ export interface PreferenceResponse {
 
 export async function getLlmPreference(): Promise<PreferenceResponse> {
   const res = await api.get<PreferenceResponse>('/me/llm-preference');
-  return res.data;
+  return sanitizeLlmPreference(res.data);
 }
 
 export async function updateLlmPreference(modelId: string | null): Promise<PreferenceResponse> {
-  const res = await api.put<PreferenceResponse>('/me/llm-preference', { model_id: modelId });
-  return res.data;
+  const canonical = canonicalModelId(modelId);
+  const nextModelId = canonical && isAdvancedChatModelId(canonical) ? canonical : null;
+  const res = await api.put<PreferenceResponse>('/me/llm-preference', { model_id: nextModelId });
+  return sanitizeLlmPreference(res.data);
 }

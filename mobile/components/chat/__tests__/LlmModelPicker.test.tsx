@@ -5,20 +5,28 @@ import LlmModelPicker, { ModelOption } from '../LlmModelPicker';
 
 const options: ModelOption[] = [
   {
-    id: 'qwen-max',
-    label: 'Qwen Max',
+    id: 'qwen3.7-plus',
+    label: 'Qwen3.7 Plus',
     provider: 'tokenplan',
-    model: 'qwen-max',
-    speed_tier: 'balanced',
-    note: '均衡模型',
+    model: 'qwen3.7-plus',
+    speed_tier: 'reasoning',
+    note: '千问最新多模态模型',
   },
   {
-    id: 'minimax-m25',
+    id: 'minimax-m2.5',
     label: 'MiniMax M2.5',
     provider: 'tokenplan',
-    model: 'minimax-m25',
-    speed_tier: 'fast',
-    note: '快速回复',
+    model: 'MiniMax-M2.5',
+    speed_tier: 'reasoning',
+    note: 'MiniMax 最新推理模型',
+  },
+  {
+    id: 'qwen3.6-plus',
+    label: 'Qwen3.6 Plus',
+    provider: 'tokenplan',
+    model: 'qwen3.6-plus',
+    speed_tier: 'reasoning',
+    note: '旧版本, 不应展示',
   },
 ];
 
@@ -27,26 +35,26 @@ describe('Mobile LlmModelPicker', () => {
     const onSelect = jest.fn();
     const { getByLabelText, getByText } = render(
       <LlmModelPicker
-        currentLabel="Qwen Max"
-        currentModelId="qwen-max"
+        currentLabel="Qwen3.7 Plus"
+        currentModelId="qwen3.7-plus"
         options={options}
         savingModelId={null}
         onSelect={onSelect}
       />,
     );
 
-    fireEvent.press(getByLabelText('切换 AI 模型，当前 Qwen Max'));
+    fireEvent.press(getByLabelText('切换 AI 模型，当前 Qwen3.7 Plus'));
     fireEvent.press(getByText('MiniMax M2.5'));
 
-    expect(onSelect).toHaveBeenCalledWith('minimax-m25');
+    expect(onSelect).toHaveBeenCalledWith('minimax-m2.5');
   });
 
   it('stays openable while a reply is streaming', () => {
     const onSelect = jest.fn();
     const { getByLabelText, getByText } = render(
       <LlmModelPicker
-        currentLabel="Qwen Max"
-        currentModelId="qwen-max"
+        currentLabel="Qwen3.7 Plus"
+        currentModelId="qwen3.7-plus"
         options={options}
         savingModelId={null}
         disabled
@@ -54,9 +62,26 @@ describe('Mobile LlmModelPicker', () => {
       />,
     );
 
-    fireEvent.press(getByLabelText('切换 AI 模型，当前 Qwen Max'));
+    fireEvent.press(getByLabelText('切换 AI 模型，当前 Qwen3.7 Plus'));
     fireEvent.press(getByText('MiniMax M2.5'));
 
-    expect(onSelect).toHaveBeenCalledWith('minimax-m25');
+    expect(onSelect).toHaveBeenCalledWith('minimax-m2.5');
+  });
+
+  it('hides lower-version models from stale option payloads', () => {
+    const onSelect = jest.fn();
+    const { getByLabelText, queryByText } = render(
+      <LlmModelPicker
+        currentLabel="Qwen3.7 Plus"
+        currentModelId="qwen3.7-plus"
+        options={options}
+        savingModelId={null}
+        onSelect={onSelect}
+      />,
+    );
+
+    fireEvent.press(getByLabelText('切换 AI 模型，当前 Qwen3.7 Plus'));
+
+    expect(queryByText('Qwen3.6 Plus')).toBeNull();
   });
 });

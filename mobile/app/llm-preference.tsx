@@ -21,6 +21,12 @@ import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import api from '../services/api';
+import {
+  canonicalModelId,
+  isAdvancedChatModelId,
+  sanitizeLlmPreference,
+  sanitizeModelOptions,
+} from '../services/llmModelCatalog';
 import { useAuth } from '../hooks/useAuth';
 import { spacing, radii } from '../constants/theme';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
@@ -62,16 +68,20 @@ export default function LlmPreferenceScreen() {
 
   const { data, isLoading, isRefetching, refetch, error } = useQuery<PreferenceResponse>({
     queryKey: ['llm-preference'],
-    queryFn: () => api.get('/me/llm-preference').then(r => r.data),
+    queryFn: () => api.get('/me/llm-preference').then(r => sanitizeLlmPreference(r.data)),
     staleTime: 30_000,
   });
 
   const updateMut = useMutation({
-    mutationFn: (model_id: string | null) =>
-      api.put<PreferenceResponse>('/me/llm-preference', { model_id }),
-    onSuccess: async (resp, model_id) => {
+    mutationFn: (model_id: string | null) => {
+      const canonical = canonicalModelId(model_id);
+      const nextModelId = canonical && isAdvancedChatModelId(canonical) ? canonical : null;
+      return api.put<PreferenceResponse>('/me/llm-preference', { model_id: nextModelId });
+    },
+    onSuccess: async (resp) => {
+      const pref = sanitizeLlmPreference(resp.data);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      qc.setQueryData(['llm-preference'], resp.data);
+      qc.setQueryData(['llm-preference'], pref);
       // 2026-05-14 FIX-6: 切换后做自检, 让用户眼见为实
       try {
         const test = await api.post<{
@@ -132,7 +142,8 @@ export default function LlmPreferenceScreen() {
     );
   }
 
-  const activeId = data.model_id;
+  const visibleOptions = sanitizeModelOptions(data.options);
+  const activeId = data.model_id && visibleOptions.some(m => m.id === data.model_id) ? data.model_id : null;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -153,7 +164,7 @@ export default function LlmPreferenceScreen() {
           <Text style={txt.sectionLabel}>当前我的选择</Text>
           <Text style={txt.activeLabel}>
             {activeId
-              ? data.options.find(m => m.id === activeId)?.label || activeId
+              ? visibleOptions.find(m => m.id === activeId)?.label || activeId
               : '系统默认'}
           </Text>
           <Text style={txt.hint}>
@@ -173,7 +184,7 @@ export default function LlmPreferenceScreen() {
         </View>
 
         {/* 可选模型列表 */}
-        {data.options.map(m => (
+        {visibleOptions.map(m => (
           <TouchableOpacity
             key={m.id}
             style={[styles.modelCard, m.id === activeId && styles.modelCardActive]}
@@ -197,7 +208,7 @@ export default function LlmPreferenceScreen() {
           </TouchableOpacity>
         ))}
 
-        {data.options.length === 0 && (
+        {visibleOptions.length === 0 && (
           <Text style={[txt.empty, { textAlign: 'center', marginTop: spacing.md }]}>
             暂无可用模型, 请联系管理员配置 API Key.
           </Text>

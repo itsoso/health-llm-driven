@@ -18,6 +18,11 @@ import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import api from '../services/api';
+import {
+  canonicalModelId,
+  isAdvancedChatModelId,
+  sanitizeModelOptions,
+} from '../services/llmModelCatalog';
 import { spacing, radii } from '../constants/theme';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 
@@ -77,7 +82,11 @@ export default function AdminLlmScreen() {
   });
 
   const selectMut = useMutation({
-    mutationFn: (model_id: string | null) => api.post('/admin/llm/select-model', { model_id }),
+    mutationFn: (model_id: string | null) => {
+      const canonical = canonicalModelId(model_id);
+      const nextModelId = canonical && isAdvancedChatModelId(canonical) ? canonical : null;
+      return api.post('/admin/llm/select-model', { model_id: nextModelId });
+    },
     onSuccess: (resp, model_id) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       qc.invalidateQueries({ queryKey: ['admin-llm-models'] });
@@ -130,6 +139,9 @@ export default function AdminLlmScreen() {
     );
   }
 
+  const visibleModels = sanitizeModelOptions(data.models);
+  const activeId = canonicalModelId(data.active_id);
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
@@ -149,10 +161,10 @@ export default function AdminLlmScreen() {
           <Text style={txt.sectionLabel}>当前生效</Text>
           <Text style={txt.activeLabel}>
             {data.active_id
-              ? data.models.find(m => m.id === data.active_id)?.label || data.active_id
+              ? visibleModels.find(m => m.id === activeId)?.label || activeId || data.active_id
               : `默认 (${data.fallback_provider} · ${data.fallback_model})`}
           </Text>
-          {data.active_id && (
+          {activeId && (
             <TouchableOpacity
               style={styles.resetBtn}
               onPress={() => selectMut.mutate(null)}
@@ -164,19 +176,20 @@ export default function AdminLlmScreen() {
         </View>
 
         {/* 模型列表 */}
-        {data.models.map(m => {
+        {visibleModels.map(m => {
           const bench = benchmarks[m.id];
           const isBenching = benchingId === m.id;
+          const isActive = m.is_active || m.id === activeId;
           return (
             <TouchableOpacity
               key={m.id}
-              style={[styles.modelCard, m.is_active && styles.modelCardActive, !m.available && styles.modelCardDisabled]}
+              style={[styles.modelCard, isActive && styles.modelCardActive, !m.available && styles.modelCardDisabled]}
               onPress={() => {
                 if (!m.available) {
                   Alert.alert('不可用', '该模型缺少 API Key, 请先在 .env 配置');
                   return;
                 }
-                if (m.is_active) return;
+                if (isActive) return;
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                 selectMut.mutate(m.id);
               }}
@@ -189,7 +202,7 @@ export default function AdminLlmScreen() {
                   </Text>
                 </View>
                 <Text style={txt.modelLabel}>{m.label}</Text>
-                {m.is_active && (
+                {isActive && (
                   <Ionicons name="checkmark-circle" size={18} color={c.brand} style={{ marginLeft: 'auto' }} />
                 )}
                 {!m.available && (

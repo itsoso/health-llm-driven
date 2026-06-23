@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Brain, Check, ChevronDown, Loader2 } from 'lucide-react';
+import { canonicalModelId, sanitizeModelOptions } from './modelCatalog';
 
 export interface ModelOption {
   id: string;
@@ -43,6 +44,8 @@ export default function LlmModelPicker({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const visibleOptions = sanitizeModelOptions(options);
+  const activeModelId = canonicalModelId(currentModelId);
 
   useEffect(() => {
     if (!open) return;
@@ -57,7 +60,7 @@ export default function LlmModelPicker({
 
   const selectModel = (modelId: string | null) => {
     setOpen(false);
-    onSelect(modelId);
+    onSelect(canonicalModelId(modelId));
   };
 
   return (
@@ -95,26 +98,26 @@ export default function LlmModelPicker({
             type="button"
             onClick={() => selectModel(null)}
             className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left transition-colors ${
-              currentModelId === null ? 'bg-teal-500/10 text-teal-200' : 'text-zinc-200 hover:bg-white/[0.07]'
+              activeModelId === null ? 'bg-teal-500/10 text-teal-200' : 'text-zinc-200 hover:bg-white/[0.07]'
             }`}
           >
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-medium">系统默认</span>
               <span className="block truncate text-xs text-zinc-500">使用管理员全局配置或服务器默认模型</span>
             </span>
-            {currentModelId === null && <Check className="h-4 w-4 text-teal-300" />}
+            {activeModelId === null && <Check className="h-4 w-4 text-teal-300" />}
           </button>
 
           <div className="my-2 h-px bg-white/[0.08]" />
 
           <div className="max-h-80 overflow-y-auto">
-            {options.length === 0 ? (
+            {visibleOptions.length === 0 ? (
               <div className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-center text-xs text-zinc-500">
                 暂无可用模型
               </div>
             ) : (
-              options.map(option => {
-                const active = option.id === currentModelId;
+              visibleOptions.map(option => {
+                const active = option.id === activeModelId;
                 return (
                   <button
                     key={option.id}
