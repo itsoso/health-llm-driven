@@ -1,12 +1,13 @@
 /**
- * RevaWeatherCard —— 首页天气卡(前置到 hero 下方,环境是重要日常信息)。
+ * RevaWeatherRow —— 首页天气一行(2026-06-23 收成单行 pill)。
  *
- * 第 1 行:[图标] {城市} · {温度}° {天气}        [空气等级 Chip]
- * 第 2 行:湿度 X% · AQI N · PM2.5 N μg/m³(PM2.5 用 mono 数字,空气质量关键指标)
+ * 默认一行:[图标] {城市} · {温度}° {天气}        [空气等级 Chip] [展开 v]
+ * 点「展开」→ 露出第二段:湿度 / AQI / PM2.5 + 明日预报(收起回单行)。
+ * 点行其余位置 → 进 /location 设置位置。
  * 复用 EnvironmentCard 的 env query keys(['env','weather'|'aqi'|'location'])→ React Query 去重。
- * 整卡无数据 → 不渲染。点击进 /location。
+ * 整卡无数据 → 不渲染。
  */
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -62,6 +63,7 @@ function aqiLabel(aqi: number | undefined): string {
 
 export default function RevaWeatherRow() {
   const router = useRouter();
+  const [expanded, setExpanded] = useState(false);
 
   const weatherQ = useQuery<WeatherInner | null>({
     queryKey: ['env', 'weather'],
@@ -153,46 +155,69 @@ export default function RevaWeatherRow() {
   if (a?.aqi != null) metrics.push({ label: 'AQI', value: `${a.aqi}` });
   if (a?.pm25 != null) metrics.push({ label: 'PM2.5', value: `${a.pm25}` });
 
+  // 展开里是否有可看的内容(没有 → 不画展开箭头,单纯一行进位置)。
+  const hasMore = metrics.length > 0 || tomorrow != null;
+
   return (
-    <Pressable
-      style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
-      onPress={() => router.push('/location' as any)}
-      accessibilityRole="button"
-      accessibilityLabel="天气与空气质量,点击设置位置"
-    >
+    <View style={styles.card}>
+      {/* 默认单行:城市 · 温度 · 天气 + 空气 chip(点空白进位置) + 展开箭头 */}
       <View style={styles.topRow}>
-        <Icon name="sun" size={17} color={C.ink2} />
-        <Text style={styles.topText} numberOfLines={1}>
-          {top || '环境同步中'}
-        </Text>
-        <Chip status={aqiStatus(a?.aqi)}>{aqiLabel(a?.aqi)}</Chip>
-      </View>
-      {metrics.length > 0 ? (
-        <View style={styles.metricsRow}>
-          {metrics.map((m, idx) => (
-            <View key={m.label} style={styles.metric}>
-              {idx > 0 ? <Text style={styles.dot}>·</Text> : null}
-              <Text style={styles.metricLabel}>{m.label}</Text>
-              <Text style={styles.metricValue}>{m.value}</Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
-      {tomorrow ? (
-        <View style={styles.forecastRow}>
-          <Text style={styles.forecastLabel}>明日</Text>
-          <Text style={styles.forecastTemp}>
-            {Math.round(tomorrow.temp_max)}° / {Math.round(tomorrow.temp_min)}°
+        <Pressable
+          style={({ pressed }) => [styles.topMain, pressed && { opacity: 0.7 }]}
+          onPress={() => router.push('/location' as any)}
+          accessibilityRole="button"
+          accessibilityLabel="天气与空气质量,点击设置位置"
+        >
+          <Icon name="sun" size={17} color={C.ink2} />
+          <Text style={styles.topText} numberOfLines={1}>
+            {top || '环境同步中'}
           </Text>
-          {tomorrow.weather ? (
-            <Text style={styles.forecastWeather} numberOfLines={1}>
-              {tomorrow.weather}
-              {tomorrow.humidity != null ? ` · 湿度 ${tomorrow.humidity}%` : ''}
-            </Text>
+          <Chip status={aqiStatus(a?.aqi)}>{aqiLabel(a?.aqi)}</Chip>
+        </Pressable>
+        {hasMore ? (
+          <Pressable
+            style={({ pressed }) => [styles.expandBtn, pressed && { opacity: 0.6 }]}
+            onPress={() => setExpanded((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel={expanded ? '收起天气详情' : '展开天气详情'}
+            hitSlop={8}
+          >
+            <Icon name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={C.ink3} />
+          </Pressable>
+        ) : null}
+      </View>
+
+      {/* 展开:湿度 / AQI / PM2.5 + 明日预报 */}
+      {expanded && hasMore ? (
+        <View style={styles.detail}>
+          {metrics.length > 0 ? (
+            <View style={styles.metricsRow}>
+              {metrics.map((m, idx) => (
+                <View key={m.label} style={styles.metric}>
+                  {idx > 0 ? <Text style={styles.dot}>·</Text> : null}
+                  <Text style={styles.metricLabel}>{m.label}</Text>
+                  <Text style={styles.metricValue}>{m.value}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+          {tomorrow ? (
+            <View style={styles.forecastRow}>
+              <Text style={styles.forecastLabel}>明日</Text>
+              <Text style={styles.forecastTemp}>
+                {Math.round(tomorrow.temp_max)}° / {Math.round(tomorrow.temp_min)}°
+              </Text>
+              {tomorrow.weather ? (
+                <Text style={styles.forecastWeather} numberOfLines={1}>
+                  {tomorrow.weather}
+                  {tomorrow.humidity != null ? ` · 湿度 ${tomorrow.humidity}%` : ''}
+                </Text>
+              ) : null}
+            </View>
           ) : null}
         </View>
       ) : null}
-    </Pressable>
+    </View>
   );
 }
 
@@ -204,10 +229,24 @@ const styles = StyleSheet.create({
     borderColor: C.line,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    gap: 8,
+    gap: 10,
   },
   topRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  topMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 },
   topText: { flex: 1, minWidth: 0, fontSize: 14.5, color: C.ink1, fontWeight: '600' },
+  expandBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detail: {
+    gap: 8,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+  },
   metricsRow: { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', gap: 7 },
   metric: { flexDirection: 'row', alignItems: 'baseline', gap: 5 },
   dot: { color: C.ink4, fontSize: 12, marginRight: 2 },
@@ -217,9 +256,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: 7,
-    paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.line,
   },
   forecastLabel: { fontSize: 12, color: C.ink3 },
   forecastTemp: { fontFamily: 'IBMPlexMono', fontSize: 13, fontWeight: '600', color: C.ink1 },

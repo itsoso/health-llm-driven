@@ -10,14 +10,16 @@
  * 数据缺失走"待记录"占位, 不掩盖空状态.
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
@@ -31,6 +33,8 @@ import { useDashboardData, useLatestGarmin } from '../../hooks/useDashboardData'
 import { useMedicationReminders } from '../../hooks/useMedicationReminders';
 import { useBehaviorLoopReminders } from '../../hooks/useBehaviorLoopReminders';
 import { useActiveCycle } from '../../hooks/useHealthOs';
+import { useCompleteAgendaItem, useTodayTimeline } from '../../hooks/useTodayTimeline';
+import type { TodayTimelineItem } from '../../services/todayTimeline';
 import { garminSleepHours, garminDeepSleepHours, type GarminDailyRow } from '../../types/garmin';
 import {
   getDailyOperatingPlan,
@@ -43,7 +47,6 @@ import BodyStatsRow from '../../components/home/BodyStatsRow';
 import RevaGreetingHeader from '../../components/home/RevaGreetingHeader';
 import RevaHeroCard from '../../components/home/RevaHeroCard';
 import WriteIntentCard from '../../components/home/WriteIntentCard';
-import WeeklyFitnessPlanCard from '../../components/home/WeeklyFitnessPlanCard';
 import RevaTimelineStrip from '../../components/home/RevaTimelineStrip';
 import RevaCycleStrip from '../../components/home/RevaCycleStrip';
 import RevaWeatherRow from '../../components/home/RevaWeatherRow';
@@ -68,8 +71,6 @@ interface TwinSnapshot {
   body_fat_pct?: number | null;
   vo2max?: number | null;
 }
-
-type InterventionDomainKey = 'diet' | 'sleep' | 'movement' | 'supplement' | 'emotion';
 
 export default function TodayScreen() {
   const router = useRouter();
@@ -100,6 +101,12 @@ export default function TodayScreen() {
     queryFn: getDailyOperatingPlan,
     staleTime: 60 * 1000,
   });
+
+  // 时间感知「现在该做什么」单一真相源:后端 /timeline/today 的 now(指向最相关一项,非清晨第一项)。
+  // Hero 据此渲染(标题/why/时点 + 内联完成);时间线 body 复用同一 query(React Query 去重)。
+  const timelineQuery = useTodayTimeline();
+  const completeNow = useCompleteAgendaItem();
+  const [heroCompleting, setHeroCompleting] = useState(false);
 
   const dashboardQuery = useDashboardData();
 
@@ -145,6 +152,8 @@ export default function TodayScreen() {
         qc.invalidateQueries({ queryKey: ['safety', 'me'] }),
         qc.invalidateQueries({ queryKey: ['twin', 'me'] }),
         qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] }),
+        qc.invalidateQueries({ queryKey: ['timeline', 'today'] }),
+        qc.invalidateQueries({ queryKey: ['agenda', 'today'] }),
         qc.invalidateQueries({ queryKey: ['dashboard'] }),
         qc.invalidateQueries({ queryKey: ['env', 'weather'] }),
         qc.invalidateQueries({ queryKey: ['env', 'aqi'] }),
@@ -167,8 +176,17 @@ export default function TodayScreen() {
   );
 
   const twinSnap = pickTwinSnapshot(twinQuery.data, garmin);
+
+  // ── Hero now-action:读 /timeline/today 的 now(时间感知最相关项),非清晨第一项。 ──
+  // now 是 items 里某一行的 id;同时兜底在 past.events 里找(理论上 now 只指向未完成项)。
+  const timeline = timelineQuery.data;
+  const nowItem: TodayTimelineItem | null = useMemo(() => {
+    if (!timeline?.now) return null;
+    const all = [...(timeline.items ?? []), ...(timeline.past?.events ?? [])];
+    return all.find((it) => it.id === timeline.now) ?? null;
+  }, [timeline]);
+
   const nextAction = (dailyPlanQuery.data?.actions ?? []).find((a) => Boolean(a?.title)) ?? null;
-  const actionLeverLabel = buildActionLeverLabel(nextAction, criticalAlerts.length);
 
   const openPlanAction = useCallback(
     (action: DailyPlanAction) => {
@@ -186,11 +204,40 @@ export default function TodayScreen() {
     [router],
   );
 
-  // Hero 行动:有 nextAction → 走其专属落点;否则补齐今天记录。
+  // Hero 行动落点:有 now-item → 优先其 deep_link;无深链则回退 dailyPlan 落点路由;
+  // 都没有(空态)→ 补齐今天记录。
   const onHeroAction = useCallback(() => {
+    if (nowItem?.deep_link) {
+      const link = nowItem.deep_link;
+      router.push((link.startsWith('/') ? link : `/${link}`) as any);
+      return;
+    }
     if (nextAction) openPlanAction(nextAction);
     else router.push('/(tabs)/record' as any);
-  }, [nextAction, openPlanAction, router]);
+  }, [nowItem, nextAction, openPlanAction, router]);
+
+  // Hero 内联「完成」:走时间线 now-item 的 complete_ref(复用 /agenda/complete 双轨写真实记录)。
+  // action-lock(heroCompleting)防双击;失败给 Alert 反馈,不静默吞。
+  const heroCanComplete = Boolean(
+    nowItem?.can_complete && nowItem?.complete_ref && nowItem?.status !== 'completed',
+  );
+  const onHeroComplete = useCallback(() => {
+    const ref = nowItem?.complete_ref;
+    if (!ref || heroCompleting) return;
+    setHeroCompleting(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    completeNow.mutate(ref, {
+      onSuccess: () => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        setHeroCompleting(false);
+      },
+      onError: () => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        Alert.alert('完成失败', '没有保存成功,请稍后重试。');
+        setHeroCompleting(false);
+      },
+    });
+  }, [nowItem, heroCompleting, completeNow]);
 
   // ── Vitals 数据 ──
   const vitalsProps = {
@@ -226,8 +273,15 @@ export default function TodayScreen() {
     readinessScore != null && !!twinSnap.readiness_date && twinSnap.readiness_date < _todayStr;
   // 问候名:取 /profile/me 昵称(无 → 不带名,只问候)。不引入 auth 依赖。
   const profileName: string | null = dashboardQuery.data?.profile?.nickname ?? null;
-  // Hero「现在只做一件事」:有 nextAction → 其标题 + lever + openPlanAction;否则退化成「补齐今天记录」走 /record。
-  const heroActionTitle = nextAction?.title ?? '补齐今天记录';
+
+  // Hero now-action 显示值:全部直接透传后端 timeline 的 now-item(R4:不在前端造处方/诊断措辞)。
+  // 风险时 lever 标「风险」,否则用 now-item 的 time_window 中文化作为 lever。空态标题给「补齐今天记录」。
+  const heroHasNow = nowItem != null;
+  const heroNowTitle = nowItem?.title ?? '补齐今天记录';
+  const heroNowSubtitle = shortSubtitle(nowItem?.subtitle);
+  const heroNowTime = nowItem?.scheduled_for ?? null;
+  const heroNowLever =
+    criticalAlerts.length > 0 ? '现在该做 · 风险' : windowLever(nowItem?.time_window);
 
   // 字体没 load 时给个 ActivityIndicator(参考 app/reva.tsx),避免 mono 数字闪烁。
   if (!revaFontsLoaded) {
@@ -248,23 +302,26 @@ export default function TodayScreen() {
         {/* 1 · 问候头 */}
         <RevaGreetingHeader name={profileName} />
 
-        {/* 2 · 深绿 Hero(就绪环 + 现在只做一件事) */}
+        {/* 2 · 深绿 Hero(时间感知「现在该做什么」now-action + 支撑就绪环) */}
         <RevaHeroCard
           readiness={readinessScore}
           stale={readinessStale}
           asOf={twinSnap.readiness_date}
-          actionTitle={heroActionTitle}
-          actionLever={actionLeverLabel}
+          hasNow={heroHasNow}
+          nowTitle={heroNowTitle}
+          nowSubtitle={heroNowSubtitle}
+          nowTime={heroNowTime}
+          nowLever={heroNowLever}
+          canComplete={heroCanComplete}
+          completing={heroCompleting}
           onPressAction={onHeroAction}
+          onComplete={onHeroComplete}
         />
 
         {/* 待你确认(Write 层 v0:Agent 提议替你写一件事,确认才执行;空态不渲染) */}
         <WriteIntentCard />
 
-        {/* 本周健身计划入口(C1;空态/无计划不渲染) */}
-        <WeeklyFitnessPlanCard />
-
-        {/* 3 · 天气 + 空气(前置:环境是重要日常信息,含 PM2.5) */}
+        {/* 3 · 天气一行(城市 · 温度 · 天气 · 空气 chip;点击展开/进位置) */}
         <RevaWeatherRow />
 
         {/* 4 · 今日时间线 strip(自取数) */}
@@ -371,27 +428,26 @@ function isBodyMeasurementAction(action?: DailyPlanAction | null): boolean {
   return /体重|腰围|weight|waist|bmi/.test(haystack);
 }
 
-function buildActionLeverLabel(action?: DailyPlanAction | null, criticalCount = 0): string {
-  if (criticalCount > 0) return '现在只做 · 风险';
-  if (!action) return '现在只做';
-  if (isBodyMeasurementAction(action) || action.domain === 'measurement') return '现在只做 · 记录';
-  const d = classifyInterventionDomain(action);
-  if (d === 'diet') return '现在只做 · 饮食';
-  if (d === 'sleep') return '现在只做 · 睡眠';
-  if (d === 'movement') return '现在只做 · 运动';
-  if (d === 'supplement') return '现在只做 · 补剂';
-  if (d === 'emotion') return '现在只做 · 情绪';
-  return '现在只做';
+// Hero now-action lever:把 timeline now-item 的 time_window 中文化(无 → 「现在该做」)。
+// R4:lever 只表达「什么时间窗」,不造处方/诊断措辞。
+function windowLever(window?: string | null): string {
+  switch (window) {
+    case 'morning': return '现在该做 · 上午';
+    case 'noon': return '现在该做 · 中午';
+    case 'afternoon': return '现在该做 · 下午';
+    case 'evening': return '现在该做 · 傍晚';
+    case 'bedtime': return '现在该做 · 睡前';
+    default: return '现在该做';
+  }
 }
 
-function classifyInterventionDomain(action: DailyPlanAction): InterventionDomainKey | null {
-  const h = `${action.domain ?? ''} ${action.action_key ?? ''} ${action.title ?? ''} ${action.why ?? ''} ${action.metric_key ?? ''}`.toLowerCase();
-  if (/supplement|补剂|镁|维生素|鱼油|益生菌/.test(h)) return 'supplement';
-  if (/mood|emotion|mental|stress|breath|情绪|压力|呼吸|焦虑|冥想/.test(h)) return 'emotion';
-  if (/sleep|bed|睡眠|入睡|上床|血氧|spo2|hrv|恢复/.test(h)) return 'sleep';
-  if (/movement|exercise|workout|walk|run|zone|运动|训练|步行|跑|vo2|max|体脂/.test(h)) return 'movement';
-  if (/nutrition|diet|meal|protein|water|food|饮食|蛋白|热量|饮水|午餐|晚餐|早餐/.test(h)) return 'diet';
-  return null;
+// subtitle 一眼扫:只取第一个分句(到首个 ; ; , , 。 . 止),完整内容留给点击进详情。
+function shortSubtitle(raw: string | null | undefined): string | undefined {
+  if (!raw) return undefined;
+  const s = raw.trim();
+  if (!s) return undefined;
+  const cut = s.search(/[;；,，。.]/);
+  return (cut > 0 ? s.slice(0, cut) : s).trim() || undefined;
 }
 
 const styles = StyleSheet.create({

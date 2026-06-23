@@ -9,6 +9,8 @@ let mockTwinData: Record<string, unknown> = {};
 let mockSafetyAlerts: any[] = [];
 let mockActiveCycle: any = null;
 let mockRefetchingKeys = new Set<string>();
+// 时间线 now-item:Hero 现在读 /timeline/today 的 now(时间感知最相关项),不再读清晨第一项。
+let mockTimeline: any = null;
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush }),
@@ -32,6 +34,9 @@ jest.mock('@tanstack/react-query', () => ({
     }
     if (key.includes('daily-plan')) {
       return { data: { actions: mockDailyPlanActions }, isLoading: false, isRefetching };
+    }
+    if (key.includes('timeline')) {
+      return { data: mockTimeline, isLoading: false, isError: false, isRefetching };
     }
     if (key.includes('intervention-cycle')) {
       return { data: mockActiveCycle, isLoading: false, isRefetching };
@@ -105,7 +110,20 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     mockSafetyAlerts = [];
     mockActiveCycle = null;
     mockRefetchingKeys = new Set<string>();
+    mockTimeline = null;
   });
+
+  // 构造一个最小的 /timeline/today 响应:now 指向给定 item。
+  function makeTimeline(item: any) {
+    return {
+      date: '2026-06-23',
+      current_window: 'noon',
+      now: item.id,
+      items: [item],
+      past: { completed_count: 0, events: [] },
+      counts: { actionable: 1, overdue: 0, info: 0 },
+    };
+  }
 
   // ── #1 Hero readiness uses the real Garmin Training Readiness, not body_battery ──
 
@@ -132,44 +150,86 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(getAllByText('待同步').length).toBeGreaterThanOrEqual(1);
   });
 
-  // ── Hero "现在只做一件事" lever (driven by next action) ──
+  // ── Hero 时间感知 now-action (driven by /timeline/today now,不再是清晨第一项) ──
 
-  it('labels a measurement task as a record lever and shows its title in the Hero', () => {
-    mockDailyPlanActions = [
-      { action_key: 'measurement.weight_waist_morning', domain: 'measurement', title: '晨起记录体重和腰围' },
-    ];
-    const { getByText } = render(<TodayScreen />);
-    expect(getByText('现在只做 · 记录')).toBeTruthy();
-    expect(getByText('晨起记录体重和腰围')).toBeTruthy();
-  });
-
-  it('names a lifestyle intervention lever by its strategy domain', () => {
-    mockDailyPlanActions = [
-      { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
-    ];
-    const { getByText } = render(<TodayScreen />);
-    expect(getByText('现在只做 · 饮食')).toBeTruthy();
-    expect(getByText('提高早餐蛋白')).toBeTruthy();
+  it('renders the timeline now-item title / why / time in the Hero', () => {
+    mockTimeline = makeTimeline({
+      id: 'med-7',
+      kind: 'action',
+      time_window: 'noon',
+      scheduled_for: '12:30',
+      title: '服用二甲双胍',
+      subtitle: '随午餐服用,减少肠胃反应',
+      icon: 'medical-outline',
+      color: '#1F8A5B',
+      status: 'pending',
+      priority: 1,
+      can_complete: true,
+      complete_ref: { object_type: 'health_protocol', object_id: 7 },
+      deep_link: null,
+      severity: null,
+      proof: null,
+    });
+    const { getByText, getAllByText } = render(<TodayScreen />);
+    // 同一 now-item 既高亮在 Hero,也仍留在下方时间线 strip(同一 query 喂两处)→ 标题出现两次。
+    expect(getAllByText('服用二甲双胍').length).toBeGreaterThanOrEqual(1);
+    expect(getAllByText('随午餐服用').length).toBeGreaterThanOrEqual(1); // shortSubtitle 取首分句
+    // 时点 + lever 是 Hero 独有。
+    expect(getByText('12:30')).toBeTruthy();
+    expect(getByText('现在该做 · 中午')).toBeTruthy();
   });
 
   it('shows a risk lever when a critical alert exists', () => {
     mockSafetyAlerts = [{ severity: 'high', title: '夜间血氧持续偏低' }];
+    mockTimeline = makeTimeline({
+      id: 'act-1',
+      kind: 'action',
+      time_window: 'morning',
+      scheduled_for: null,
+      title: '复测夜间血氧',
+      subtitle: null,
+      icon: 'pulse-outline',
+      color: '#D5503A',
+      status: 'pending',
+      priority: 1,
+      can_complete: false,
+      complete_ref: null,
+      deep_link: null,
+      severity: 'high',
+      proof: null,
+    });
     const { getByText } = render(<TodayScreen />);
-    expect(getByText('现在只做 · 风险')).toBeTruthy();
+    expect(getByText('现在该做 · 风险')).toBeTruthy();
   });
 
-  it('routes the Hero action to the record tab when there is no plan', () => {
-    const { getByLabelText } = render(<TodayScreen />);
-    fireEvent.press(getByLabelText('现在只做一件事:补齐今天记录'));
+  it('renders the graceful empty state and routes to record when there is no now-item', () => {
+    // 无 timeline now → Hero 空态「今天的事都安排好了」+「补齐今天记录」入口。
+    const { getByText, getByLabelText } = render(<TodayScreen />);
+    expect(getByText('今天的事都安排好了')).toBeTruthy();
+    fireEvent.press(getByLabelText('补齐今天记录'));
     expect(mockPush).toHaveBeenCalledWith('/(tabs)/record');
   });
 
-  it('routes a nutrition Hero action to the diet plan', () => {
-    mockDailyPlanActions = [
-      { action_key: 'nutrition.protein_target', domain: 'nutrition', title: '提高早餐蛋白' },
-    ];
+  it('routes the Hero now-action to its deep link when present', () => {
+    mockTimeline = makeTimeline({
+      id: 'act-9',
+      kind: 'action',
+      time_window: 'noon',
+      scheduled_for: '12:00',
+      title: '提高早餐蛋白',
+      subtitle: '目标 30g',
+      icon: 'restaurant-outline',
+      color: '#1F8A5B',
+      status: 'pending',
+      priority: 1,
+      can_complete: false,
+      complete_ref: null,
+      deep_link: '/diet-plan',
+      severity: null,
+      proof: null,
+    });
     const { getByLabelText } = render(<TodayScreen />);
-    fireEvent.press(getByLabelText('现在只做一件事:提高早餐蛋白'));
+    fireEvent.press(getByLabelText('现在该做:提高早餐蛋白'));
     expect(mockPush).toHaveBeenCalledWith('/diet-plan');
   });
 
