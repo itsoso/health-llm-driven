@@ -14,7 +14,14 @@ export type TimelineKind =
   | 'observation'
   | 'outcome'
   | 'checkup'
-  | 'advisory';
+  | 'advisory'
+  | 'work'; // CalDAV busy block(无标题,仅时长)
+
+// 后端 HealthEvent.driver —— 「为什么这项在这」。
+// plan_driven=预定计划(协议/用药/复查/日历) / time_driven=按时触发(系统时刻卡,暂未派生)
+// / event_driven=事件触发(餐后步行 / 训练灯 / 数据质量 / 观测)。
+// 非驱动行(缺省)→ null;前端不画驱动 chip(优雅降级)。
+export type TimelineDriver = 'plan_driven' | 'time_driven' | 'event_driven';
 
 export type TimelineWindow =
   | 'morning'
@@ -45,6 +52,8 @@ export interface TodayTimelineItem {
   id: string;
   kind: TimelineKind;
   time_window: TimelineWindow;
+  // 真实时点 HH:MM(用药/补剂/锻炼块/工作块);无确定时点 → null(按 time_window 排)。
+  scheduled_for?: string | null;
   title: string;
   subtitle: string | null;
   icon: string; // Ionicons name
@@ -56,12 +65,19 @@ export interface TodayTimelineItem {
   deep_link: string | null;
   severity: string | null;
   proof: TimelineProof | null;
+  // 驱动来源标记(后端 HealthEvent.driver);缺省/null → 不画驱动 chip。
+  driver?: TimelineDriver | null;
 }
 
 export interface TodayTimelineResponse {
   date: string;
   current_window: string;
-  /** 未来/现在该做的(action/checkup/advisory/outcome) */
+  /**
+   * 时间感知的「现在该做什么」单项 id —— 指向 items 里的一行(当下/下一项,非清晨第一项)。
+   * null = 今天没有可完成的下一步。首页 hero 据此渲染「现在该做什么」。
+   */
+  now?: string | null;
+  /** 未来/现在该做的,按 scheduled_for 时间升序(action/checkup/advisory/outcome/work) */
   items: TodayTimelineItem[];
   /** 今天已发生(observation) */
   past: {

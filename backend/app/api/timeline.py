@@ -55,8 +55,11 @@ class ProofRef(BaseModel):
 
 class TodaySpineItem(BaseModel):
     id: str
-    kind: str  # action / checkup / advisory / outcome / observation / insight
+    kind: str  # action / checkup / advisory / outcome / observation / insight / work
     time_window: str
+    # 真实时点(HH:MM,timing_solver 求解的用药/补剂/锻炼块 / CalDAV busy 起点);
+    # 无确定时点(协议、归因、记录提醒等)→ None,按 time_window 兜底排序。
+    scheduled_for: Optional[str] = None
     title: str
     subtitle: Optional[str] = None
     icon: str
@@ -89,6 +92,9 @@ class TodayCounts(BaseModel):
 class TodaySpineResponse(BaseModel):
     date: str
     current_window: str  # morning|noon|afternoon|evening|bedtime|anytime
+    # now:时间感知的「现在该做什么」单项 id —— 指向 items 里的一行(当下/下一项,
+    # 非清晨第一项)。null = 今天没有可完成的下一步(全完成/无待办)。首页 hero 据此渲染。
+    now: Optional[str] = None
     items: List[TodaySpineItem]
     past: TodayPast
     counts: TodayCounts

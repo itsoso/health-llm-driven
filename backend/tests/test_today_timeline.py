@@ -10,7 +10,7 @@ from datetime import date, datetime, timezone
 
 from app.services.today_timeline_service import build_today_spine
 
-TOP_KEYS = {"date", "current_window", "items", "past", "counts"}
+TOP_KEYS = {"date", "current_window", "now", "items", "past", "counts"}
 COUNT_KEYS = {"actionable", "overdue", "info"}
 
 

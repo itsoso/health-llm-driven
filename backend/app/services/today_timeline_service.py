@@ -22,6 +22,11 @@ from app.services import agenda_service
 from app.services.agenda_service import _TW_ORDER  # 复用议程时间窗排序
 from app.services.caldav_sync import today_busy_blocks
 from app.services.events_timeline_service import build_timeline
+from app.services.today_spine_meds import (
+    med_supplement_items,
+    select_now_item,
+    sort_key,
+)
 from app.utils.timezone import get_user_timezone
 
 logger = logging.getLogger(__name__)
@@ -132,6 +137,9 @@ def _map_agenda_item(item: Dict[str, Any]) -> Dict[str, Any]:
         "kind": kind,
         "driver": _derive_driver(item),
         "time_window": item.get("time_window") or "anytime",
+        # scheduled_for:议程项若带 solver 求解的精确时点(如锻炼块 time=HH:MM)则透传;
+        # 否则 None(无确定时点 → 时间窗排序兜底,排在带时点项之后)。
+        "scheduled_for": item.get("time") or None,
         "title": item.get("title") or "",
         "subtitle": subtitle,
         "icon": icon,
@@ -168,6 +176,7 @@ def _map_observation(ev) -> Dict[str, Any]:
         "kind": "observation",
         "driver": "event_driven",  # 已发生的观测 = 事件
         "time_window": "anytime",
+        "scheduled_for": None,
         "title": ev.title,
         "subtitle": ev.subtitle,
         "icon": ev.icon,
@@ -229,6 +238,7 @@ def _outcome_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
             "kind": "outcome",
             "driver": "plan_driven",  # 协议期内归因 = 计划驱动的结果
             "time_window": "anytime",
+            "scheduled_for": None,
             "title": f"协议期内{metric_label}向好",
             "subtitle": c.title,
             "icon": "trophy-outline",
@@ -339,6 +349,7 @@ def _work_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
             "kind": "work",
             "driver": "plan_driven",  # 日历 = 预定承诺
             "time_window": _busy_window(start),
+            "scheduled_for": start,   # busy block 起点(HH:MM)→ 时间线按时点插对位置
             "title": title,           # 仅时长/通用词,绝无日历标题
             "subtitle": None,
             "icon": icon,
@@ -370,10 +381,35 @@ def build_today_spine(db: Session, user_id: int) -> Dict[str, Any]:
     agenda_items = agenda.get("items", [])
     items: List[Dict[str, Any]] = [_map_agenda_item(it) for it in agenda_items]
 
+    # 1.1) 用药 + 补剂(medications 表)→ 带真实时点的行动项(统一脊柱核心缺口修复)。
+    #      此前 meds 不进脊柱 → 首页回退 legacy 卡;现把 day_schedule(时点)× today_status
+    #      (完成度)组合进来。去重:已被 agenda 协议项以同 complete_ref 覆盖的不重复并入
+    #      (协议来源 object_type=health_protocol,与 medication/supplement 是不同 ref,
+    #       天然不撞;此处用 complete_ref 集合统一防御未来交叉)。
+    covered_refs = {
+        (it["complete_ref"]["object_type"], it["complete_ref"]["object_id"])
+        for it in items
+        if it.get("complete_ref")
+    }
+    for med_item in med_supplement_items(db, user_id):
+        ref = med_item.get("complete_ref")
+        key = (ref["object_type"], ref["object_id"]) if ref else None
+        if key and key in covered_refs:
+            continue  # 已由协议项覆盖 → 不双份
+        if key:
+            covered_refs.add(key)
+        items.append(med_item)
+
+    # NB:脊柱不调 build_daily_operating_plan —— 它请求内 transitively 调 build_twin
+    # (自开 SessionLocal、绕过请求事务)且写 DailyOperatingPlan 行,破坏「只读投影」不变量;
+    # 其测量提醒又是常驻通用项,并入只增噪。记录/测量提醒由首页各自入口承载,脊柱只投真实
+    # 「今日承诺」(协议 + 用药/补剂 + 复查 + 工作块 + 已发生观测 + 归因)。
+
     # 1.5) 把可完成的行动项物化成 first-class HealthEvent(闭环修复点):
     #      为每个 can_complete 项写/复用一条议程 HealthEvent,把 event_id 回填到 item ——
     #      客户端用它调 POST /timeline/events/{id}/complete。物化失败只降级该项的
-    #      可完成性(保留为只读项),不拖垮整条脊柱。
+    #      可完成性(保留为只读项),不拖垮整条脊柱。med/supplement 也走同一物化(ensure_source
+    #      _exists 支持 medication/supplement)→ 不 fork 完成路径。
     _attach_event_ids(db, user_id, items, now)
 
     # past.completed_count 口径:今日 agenda 里已完成/已自动观测的协议数。
@@ -409,8 +445,13 @@ def build_today_spine(db: Session, user_id: int) -> Dict[str, Any]:
     #      回溯增强项,失败降级不拖垮 past。
     past_events.extend(_past_projection_items(db, user_id, today))
 
-    # 排序:(-priority, 时间窗顺序),复用 agenda 的 _TW_ORDER
-    items.sort(key=lambda x: (-x["priority"], _TW_ORDER.get(x.get("time_window"), 9)))
+    # 排序:带真实时点(scheduled_for)的项按时间升序在前,无时点项按时间窗兜底,
+    # 同时段内按优先级降序(见 today_spine_meds.sort_key)。统一时间轴 —— 一份按时间排好的议程。
+    items.sort(key=sort_key)
+
+    # now-marker:时间感知地挑「现在该做什么」单项 id(当下/下一项,非清晨第一项)。
+    # 在排序与 _attach_event_ids(可能把已完成项熄灭)之后选,保证候选是当前真实待办。
+    now_item_id = select_now_item(items, now)
 
     counts = {
         "actionable": sum(1 for it in items if it["can_complete"]),
@@ -421,6 +462,9 @@ def build_today_spine(db: Session, user_id: int) -> Dict[str, Any]:
     return {
         "date": str(today),
         "current_window": _current_window(now),
+        # now:首页 hero 据此渲染「现在该做什么」(单项 id,指向 items 里的一行)。
+        # null = 今天没有可完成的下一步(全完成/无待办)。
+        "now": now_item_id,
         "items": items,
         "past": {"completed_count": completed_count, "events": past_events},
         "counts": counts,
@@ -452,8 +496,20 @@ def _attach_event_ids(
         ref = it.get("complete_ref")
         if not ref or ref.get("object_type") is None or ref.get("object_id") is None:
             continue
-        hour = _WINDOW_HOUR.get(it.get("time_window"), 12)
-        scheduled_for = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+        # scheduled_for:优先用项自带的真实时点(med/supplement 带 timing_solver 的 HH:MM)——
+        # 让物化的 HealthEvent.scheduled_for 与完成时落的 taken_time 槽对齐(同槽去重)。
+        # 无真实时点(协议项)→ 回退时间窗代表时刻(整点,与既有协议物化行为一致)。
+        real_hhmm = it.get("scheduled_for")
+        if real_hhmm:
+            try:
+                rh, rm = (int(x) for x in str(real_hhmm).split(":")[:2])
+                scheduled_for = now.replace(hour=rh, minute=rm, second=0, microsecond=0)
+            except (ValueError, AttributeError):
+                hour = _WINDOW_HOUR.get(it.get("time_window"), 12)
+                scheduled_for = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+        else:
+            hour = _WINDOW_HOUR.get(it.get("time_window"), 12)
+            scheduled_for = now.replace(hour=hour, minute=0, second=0, microsecond=0)
         try:
             ev = tas.materialize_agenda_event(
                 db, user_id,
@@ -493,5 +549,6 @@ def _past_projection_items(
     for it in raw:
         it.setdefault("event_id", None)
         it.setdefault("action_kind", None)
+        it.setdefault("scheduled_for", None)
         it.pop("occurred_at", None)  # 脊柱 item 不含 occurred_at(past 已按当日聚合)
     return raw
