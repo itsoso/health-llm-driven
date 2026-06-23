@@ -915,6 +915,26 @@ public final class AgentChatViewModel {
             conversationHistory = merged
             conversationStore?.saveConversations(merged)
             historyNotice = nil
+
+            // Keep the visible transcript in sync with other devices. The list
+            // endpoint intentionally omits messages, so after reconciling the
+            // list we must load detail for the currently open remote chat. On a
+            // fresh Mac install with no local cache, auto-open the newest remote
+            // conversation so the phone transcript appears without a manual tap.
+            guard !isStreaming else { return }
+            let target: AgentConversationSnapshot?
+            if let currentConversationSnapshotID,
+               let current = merged.first(where: { $0.id == currentConversationSnapshotID }) {
+                target = current
+            } else if currentConversationSnapshotID == nil, messages.isEmpty, let latest = merged.first {
+                loadConversation(latest)
+                target = latest
+            } else {
+                target = nil
+            }
+            if let target {
+                await fetchAndApplyConversationDetail(target, remoteSource: remoteSource)
+            }
         } catch APIError.unauthorized {
             // 401 already cleared the token + posted authSessionExpired; the app
             // root drops to login. Keep the cache visible meanwhile.
@@ -932,13 +952,20 @@ public final class AgentChatViewModel {
     /// used and a notice is shown.
     public func openConversation(_ conversation: AgentConversationSnapshot) async {
         loadConversation(conversation)
-        guard conversation.messages.isEmpty,
-              let conversationID = conversation.conversationID,
+        guard conversation.conversationID != nil,
               let remoteSource else {
             return
         }
         isLoadingHistory = true
         defer { isLoadingHistory = false }
+        await fetchAndApplyConversationDetail(conversation, remoteSource: remoteSource)
+    }
+
+    private func fetchAndApplyConversationDetail(
+        _ conversation: AgentConversationSnapshot,
+        remoteSource: AgentConversationRemoteSourcing
+    ) async {
+        guard let conversationID = conversation.conversationID else { return }
         do {
             let detail = try await remoteSource.fetchDetail(conversationID: conversationID)
             // The user may have navigated away while the fetch was in flight.

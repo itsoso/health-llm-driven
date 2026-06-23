@@ -164,6 +164,77 @@ final class AgentConversationHistoryTests: XCTestCase {
     }
 
     @MainActor
+    func testRefreshAutoLoadsLatestRemoteConversationWhenNoLocalCache() async {
+        let remoteSnapshot = AgentConversationSnapshot(
+            id: AgentConversationClient.deterministicID(forConversationID: 42),
+            conversationID: 42,
+            title: "手机会话",
+            messages: []
+        )
+        let store = InMemoryConversationStore(seed: [])
+        let remote = FakeRemoteSource()
+        remote.list = [remoteSnapshot]
+        remote.detailByID[42] = [
+            .init(role: .user, content: "手机上的问题"),
+            .init(role: .assistant, content: "手机上的回答"),
+        ]
+        let model = AgentChatViewModel(conversationStore: store, remoteSource: remote)
+
+        await model.refreshConversationHistory()
+
+        XCTAssertEqual(remote.fetchedDetailIDs, [42])
+        XCTAssertEqual(model.currentConversationID, remoteSnapshot.id)
+        XCTAssertEqual(model.messages.map(\.content), ["手机上的问题", "手机上的回答"])
+        XCTAssertNil(model.historyNotice)
+    }
+
+    @MainActor
+    func testRefreshUpdatesCurrentCachedConversationFromBackendDetail() async {
+        let convID = 42
+        let id = AgentConversationClient.deterministicID(forConversationID: convID)
+        let cached = AgentConversationSnapshot(id: id, conversationID: convID, title: "chat", messages: [
+            .init(role: .user, content: "本地旧问题"),
+            .init(role: .assistant, content: "本地旧回答"),
+        ])
+        let store = InMemoryConversationStore(seed: [cached])
+        let remote = FakeRemoteSource()
+        remote.list = [AgentConversationSnapshot(id: id, conversationID: convID, title: "chat", messages: [])]
+        remote.detailByID[convID] = [
+            .init(role: .user, content: "手机新增问题"),
+            .init(role: .assistant, content: "手机新增回答"),
+        ]
+        let model = AgentChatViewModel(conversationStore: store, remoteSource: remote)
+
+        await model.refreshConversationHistory()
+
+        XCTAssertEqual(remote.fetchedDetailIDs, [convID])
+        XCTAssertEqual(model.messages.map(\.content), ["手机新增问题", "手机新增回答"])
+        XCTAssertEqual(store.saved.last?.first?.messages.map(\.content), ["手机新增问题", "手机新增回答"])
+    }
+
+    @MainActor
+    func testOpenConversationRefreshesCachedTranscriptFromBackendDetail() async {
+        let convID = 42
+        let id = AgentConversationClient.deterministicID(forConversationID: convID)
+        let cached = AgentConversationSnapshot(id: id, conversationID: convID, title: "chat", messages: [
+            .init(role: .user, content: "本地旧问题")
+        ])
+        let store = InMemoryConversationStore(seed: [])
+        let remote = FakeRemoteSource()
+        remote.detailByID[convID] = [
+            .init(role: .user, content: "手机上的新问题"),
+            .init(role: .assistant, content: "手机上的新回答"),
+        ]
+        let model = AgentChatViewModel(conversationStore: store, remoteSource: remote)
+
+        await model.openConversation(cached)
+
+        XCTAssertEqual(remote.fetchedDetailIDs, [convID])
+        XCTAssertEqual(model.messages.map(\.content), ["手机上的新问题", "手机上的新回答"])
+        XCTAssertNil(model.historyNotice)
+    }
+
+    @MainActor
     func testRefreshPreservesCachedTranscriptUnderMessagelessBackendList() async {
         let convID = 42
         let id = AgentConversationClient.deterministicID(forConversationID: convID)
@@ -188,10 +259,12 @@ final class AgentConversationHistoryTests: XCTestCase {
         await model.refreshConversationHistory()
 
         XCTAssertEqual(model.conversationHistory[1].messages.count, 2)
-        // Opening it shows the cached transcript immediately, no detail fetch needed.
+        // Opening still tries to sync detail; if that fails, cached transcript is
+        // the visible fallback instead of silently showing an empty chat.
+        remote.detailError = APIError.httpStatus(503, nil)
         await model.openConversation(model.conversationHistory[1])
         XCTAssertEqual(model.messages.first?.content, "cached question")
-        XCTAssertNil(model.historyNotice)
+        XCTAssertNotNil(model.historyNotice)
     }
 
     @MainActor
@@ -256,6 +329,7 @@ private final class FakeRemoteSource: AgentConversationRemoteSourcing, @unchecke
     var listError: Error?
     var detailByID: [Int: [AgentChatMessage]] = [:]
     var detailError: Error?
+    var fetchedDetailIDs: [Int] = []
     var deletedIDs: [Int] = []
     var renamed: [(Int, String)] = []
 
@@ -265,6 +339,7 @@ private final class FakeRemoteSource: AgentConversationRemoteSourcing, @unchecke
     }
 
     func fetchDetail(conversationID: Int) async throws -> [AgentChatMessage] {
+        fetchedDetailIDs.append(conversationID)
         if let detailError { throw detailError }
         return detailByID[conversationID] ?? []
     }
