@@ -257,13 +257,16 @@ def test_lazy_materialize_pins_scheduled_for_to_midnight(db, auth_user_and_heade
     med = _seed_med(db, user.id)
 
     # wall-clock 钉在 10:59:30(非整点 0 时)→ 若仍按整点 token,scheduled_for.hour 会是 10。
-    monkeypatch.setattr(tz, "get_user_now", lambda *a, **k: datetime(2026, 6, 22, 10, 59, 30))
+    # complete_by_ref 现按中国时区(get_china_now/get_china_today)取 today-basis,故桩这两个
+    # (而非 get_user_now)—— 二者钉到同一天,否则 find 会错日落空、本哨兵失效。
+    monkeypatch.setattr(tz, "get_china_now", lambda: datetime(2026, 6, 22, 10, 59, 30))
+    monkeypatch.setattr(tz, "get_china_today", lambda: datetime(2026, 6, 22, 10, 59, 30).date())
 
     tas.complete_by_ref(db, user.id, "medication", med.id, status="done")
 
     ev = tas.find_agenda_event(
         db, user.id, {"object_type": "medication", "object_id": med.id},
-        tz.get_user_today(db, user.id),
+        tz.get_china_today(),
     )
     assert ev is not None
     assert ev.scheduled_for.hour == 0, (

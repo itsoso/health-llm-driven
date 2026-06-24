@@ -92,6 +92,36 @@ def test_glasses_can_ingest_pose_events_and_owner_can_poll(client, auth_user_and
     assert poll_after_res.json()["events"] == []
 
 
+def test_glasses_can_ingest_session_state_events(client, auth_user_and_headers):
+    _, headers = auth_user_and_headers
+    create_res = client.post(
+        "/api/v1/devices/rokid/pushup-sessions",
+        json={"target_reps": 12},
+        headers=headers,
+    )
+    session = create_res.json()
+
+    event_res = client.post(
+        f"/api/v1/devices/rokid/pushup-sessions/{session['id']}/events",
+        headers={"X-Reva-Rokid-Session-Token": session["ingest_token"]},
+        json={
+            "event_type": "session_state",
+            "payload": {
+                "state": "session_ready",
+                "message": "Reva session #7",
+                "detail": "target_reps=20",
+                "session_id": session["id"],
+            },
+        },
+    )
+
+    assert event_res.status_code == 201
+    event = event_res.json()
+    assert event["event_type"] == "session_state"
+    assert event["payload"]["state"] == "session_ready"
+    assert event["payload"]["session_id"] == session["id"]
+
+
 def test_pushup_session_events_are_user_scoped(client, db, auth_user_and_headers):
     _, owner_headers = auth_user_and_headers
     _, other_token = create_authenticated_user(db)

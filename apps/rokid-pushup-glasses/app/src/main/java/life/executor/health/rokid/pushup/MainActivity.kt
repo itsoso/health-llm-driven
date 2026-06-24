@@ -3,6 +3,8 @@ package life.executor.health.rokid.pushup
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -54,6 +56,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         viewModel.configure(intent?.dataString)
+        reportNetworkStatus()
 
         setContent {
             MaterialTheme {
@@ -68,6 +71,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         viewModel.configure(intent.dataString)
+        reportNetworkStatus()
         requestCameraOrStart()
     }
 
@@ -78,6 +82,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestCameraOrStart() {
+        reportNetworkStatus()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             startCamera()
         } else {
@@ -86,6 +91,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startCamera() {
+        reportNetworkStatus()
         viewModel.onCameraStatus("相机启动中")
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener(
@@ -119,6 +125,25 @@ class MainActivity : ComponentActivity() {
         }
         provider.bindToLifecycle(this, selector, analysis)
         viewModel.onCameraStatus("相机已启动")
+    }
+
+    private fun reportNetworkStatus() {
+        val manager = getSystemService(ConnectivityManager::class.java)
+        val network = manager?.activeNetwork
+        val capabilities = network?.let { manager.getNetworkCapabilities(it) }
+        val hasInternet = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        val validated = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+        val transport = when {
+            capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true -> "wifi"
+            capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true -> "cellular"
+            capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) == true -> "ethernet"
+            capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH) == true -> "bluetooth"
+            capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_USB) == true -> "usb"
+            else -> "unknown"
+        }
+        val connected = hasInternet && validated
+        val detail = "transport=$transport; internet=$hasInternet; validated=$validated"
+        viewModel.onNetworkStatus(connected = connected, detail = detail)
     }
 }
 
@@ -222,6 +247,7 @@ private fun Footer(state: RevaPushupUiState) {
     ) {
         StatusDot(text = state.cameraStatus, color = Color(0xFF34D399))
         StatusDot(text = state.analyzerStatus, color = Color(0xFFA78BFA))
+        StatusDot(text = state.networkStatus, color = Color(0xFFFBBF24))
         StatusDot(text = state.cxrStatus, color = Color(0xFF38BDF8))
     }
 }

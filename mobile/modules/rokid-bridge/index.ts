@@ -205,6 +205,15 @@ export type RokidEventSubscription = {
   remove: () => void;
 };
 
+export const ROKID_NATIVE_CALL_TIMEOUT_MS = {
+  authorization: 185_000,
+  customView: 12_000,
+  photo: 25_000,
+  customAppCommand: 30_000,
+  customAppInstall: 30 * 60_000,
+  audioRecord: 12_000,
+} as const;
+
 type RokidBridgeEvents = {
   [ROKID_TRANSCRIPT_EVENT]: (event: RokidTranscriptEvent) => void;
 };
@@ -251,6 +260,7 @@ type RevaCustomViewOptions = {
 
 const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 const ISO_TIMESTAMP_PATTERN = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})/;
+const COMPANION_BLE_SUSPECTED_WINDOW_MS = 10 * 60 * 1000;
 
 function pad2(value: number) {
   return String(value).padStart(2, '0');
@@ -350,6 +360,31 @@ function hasBlePendingRetry(status?: Partial<RokidIntegrationStatus> | null) {
     || includesAny(status?.lastCustomViewOpenError, ['pending_retry_on_ble_connect']);
 }
 
+function hasRecentCompanionOpen(status?: Partial<RokidIntegrationStatus> | null) {
+  if (!status?.lastOpenUrlFingerprint || !status.lastOpenUrlAt) {
+    return false;
+  }
+  const openedAtMs = Date.parse(status.lastOpenUrlAt);
+  if (!Number.isFinite(openedAtMs)) {
+    return false;
+  }
+  const ageMs = Date.now() - openedAtMs;
+  return ageMs >= -60_000 && ageMs <= COMPANION_BLE_SUSPECTED_WINDOW_MS;
+}
+
+export function isRokidBleBlockedByCompanionSuspected(
+  status?: Partial<RokidIntegrationStatus> | null,
+) {
+  const platform = status?.platform ?? Platform.OS;
+  const companionReady = status?.hiRokidInstalled === true || status?.canOpenHiRokid === true;
+  return platform === 'ios'
+    && status?.authorizationState === 'authenticated'
+    && status?.iosBleConnected === false
+    && companionReady
+    && hasBlePendingRetry(status)
+    && hasRecentCompanionOpen(status);
+}
+
 function unavailableStatus(platform: string, reason = 'native_bridge_unavailable'): RokidIntegrationStatus {
   return {
     platform,
@@ -360,6 +395,42 @@ function unavailableStatus(platform: string, reason = 'native_bridge_unavailable
     sdkArtifacts: ROKID_SDK_ARTIFACTS,
     reason,
   };
+}
+
+function nativeTimeoutResult(
+  operation: string,
+  timeoutMs: number,
+  fallback?: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ok: false,
+    ...fallback,
+    reason: 'rokid_native_call_timeout',
+    operation,
+    timeoutMs,
+  };
+}
+
+function withRokidNativeTimeout(
+  operation: string,
+  promise: Promise<Record<string, unknown>>,
+  timeoutMs: number,
+  fallback?: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<Record<string, unknown>>((resolve) => {
+    timer = setTimeout(() => {
+      resolve(nativeTimeoutResult(operation, timeoutMs, fallback));
+    }, timeoutMs);
+  });
+  return Promise.race([
+    promise.finally(() => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }),
+    timeout,
+  ]);
 }
 
 function getNativeBridge(): RokidNativeModule | null {
@@ -406,6 +477,7 @@ export function buildRokidCapabilityGateway(
   const silentCustomView = hasSilentCustomViewFailure(status);
   const customViewCompletionFailureWithNotify = hasCustomViewCompletionFailureWithNotify(status);
   const pendingCustomView = hasBlePendingRetry(status);
+  const companionBleSuspected = isRokidBleBlockedByCompanionSuspected(status);
   const customAppSupported = status?.customAppSupported !== false;
   const nativeState: RokidCapabilityState = bridgeReady && sdkLinked
     ? 'ready'
@@ -422,6 +494,8 @@ export function buildRokidCapabilityGateway(
   }
   if (networkPreconditionFailure) {
     blockers.push('Rokid 眼镜网络未就绪: 请确认眼镜已连 WiFi、手机和眼镜同网或 companion 已建立数据通道。');
+  } else if (companionBleSuspected) {
+    blockers.push('Rokid companion 疑似仍占用眼镜蓝牙: iOS 一次只能一个 central。请完全退出/划掉 Rokid AI / Hi Rokid 后回 Reva 刷新。');
   } else if (silentCustomView) {
     blockers.push('CXR-L CustomView 静默: openCustomView 未收到 callback/notify, 不应再阻塞运动和饮食主流程。');
   } else if (customViewCompletionFailureWithNotify) {
@@ -439,6 +513,9 @@ export function buildRokidCapabilityGateway(
   } else if (!authorized) {
     customViewState = 'degraded';
     customViewDetail = '等待 CXR-L 授权。';
+  } else if (companionBleSuspected) {
+    customViewState = 'degraded';
+    customViewDetail = '疑似 companion 仍占用眼镜蓝牙, 等待释放 central 后自动重试。';
   } else if (pendingCustomView) {
     customViewState = 'degraded';
     customViewDetail = 'CustomView 已排队, 等待眼镜蓝牙链路恢复后重试。';
@@ -503,7 +580,11 @@ export function buildRokidCapabilityGateway(
       id: 'glasses_ble',
       label: '眼镜蓝牙链路',
       state: bleReady ? 'ready' : authorized ? 'degraded' : 'unknown',
-      detail: bleReady ? '眼镜链路可用。' : 'Rokid AI / Hi Rokid 可能仍占用或眼镜未在线。',
+      detail: bleReady
+        ? '眼镜链路可用。'
+        : companionBleSuspected
+          ? '疑似 Rokid AI / Hi Rokid 仍占用眼镜蓝牙; 请完全退出 companion 后回 Reva 刷新。'
+          : 'Rokid AI / Hi Rokid 可能仍占用或眼镜未在线。',
       source: 'RGCxrClientBLE.connectionStatePublisher',
       recommendedSurface: 'rokid_glasses',
       priority: 20,
@@ -631,6 +712,7 @@ export function getRokidDeviceValidationSteps(
   const authorized = status?.authorizationState === 'authenticated';
   const bleDevice = status?.iosBleDeviceName || status?.currentDeviceName;
   const glassesBleConnected = platform !== 'ios' || status?.iosBleConnected === true;
+  const companionBleSuspected = isRokidBleBlockedByCompanionSuspected(status);
   const customViewRunning = status?.customViewRunning === true;
   const captureReady = status?.capabilitiesReady === true;
   const iosClient = status?.sdkArtifacts?.iosClient ?? ROKID_SDK_ARTIFACTS.iosClient;
@@ -670,6 +752,8 @@ export function getRokidDeviceValidationSteps(
       title: '眼镜蓝牙链路',
       detail: glassesBleConnected
         ? `Rokid CXR-L 已连接眼镜蓝牙链路${bleDevice ? `: ${bleDevice}` : ''}。`
+        : companionBleSuspected
+          ? `疑似 Rokid AI / Hi Rokid 仍占用眼镜蓝牙 central${bleDevice ? `: ${bleDevice}` : ''}。请从系统后台完全划掉 Rokid AI / Hi Rokid, 再回 Reva 刷新。`
         : `Rokid CXR-L 还未连接到眼镜蓝牙链路${bleDevice ? `: ${bleDevice}` : ''}。授权完成后请「完全退出」Rokid AI / Hi Rokid(它会独占眼镜蓝牙, 一次只能一个 App 连眼镜), 再回 Reva 刷新。`,
       actionLabel: '打开 Rokid AI / Hi Rokid',
       done: glassesBleConnected,
@@ -746,9 +830,13 @@ export async function requestRokidAuthorization(options?: {
   if (!native?.requestAuthorization) {
     return { ok: false, reason: 'native_bridge_unavailable' };
   }
-  return native.requestAuthorization(
-    options?.scopes ?? ['device_control', 'audio_stream'],
-    options?.appName ?? 'Reva',
+  return withRokidNativeTimeout(
+    'requestAuthorization',
+    native.requestAuthorization(
+      options?.scopes ?? ['device_control', 'audio_stream'],
+      options?.appName ?? 'Reva',
+    ),
+    ROKID_NATIVE_CALL_TIMEOUT_MS.authorization,
   );
 }
 
@@ -765,7 +853,11 @@ export async function openRokidCustomView(view: string): Promise<Record<string, 
   if (!native?.openCustomView) {
     return { ok: false, reason: 'native_bridge_unavailable' };
   }
-  return native.openCustomView(view);
+  return withRokidNativeTimeout(
+    'openCustomView',
+    native.openCustomView(view),
+    ROKID_NATIVE_CALL_TIMEOUT_MS.customView,
+  );
 }
 
 export function createRokidRevaCustomViewLayout(options?: RevaCustomViewOptions): string {
@@ -840,7 +932,11 @@ export async function updateRokidCustomView(view: string): Promise<Record<string
   if (!native?.updateCustomView) {
     return { ok: false, reason: 'native_bridge_unavailable' };
   }
-  return native.updateCustomView(view);
+  return withRokidNativeTimeout(
+    'updateCustomView',
+    native.updateCustomView(view),
+    ROKID_NATIVE_CALL_TIMEOUT_MS.customView,
+  );
 }
 
 export async function closeRokidCustomView(view: string): Promise<Record<string, unknown>> {
@@ -848,7 +944,11 @@ export async function closeRokidCustomView(view: string): Promise<Record<string,
   if (!native?.closeCustomView) {
     return { ok: false, reason: 'native_bridge_unavailable' };
   }
-  return native.closeCustomView(view);
+  return withRokidNativeTimeout(
+    'closeCustomView',
+    native.closeCustomView(view),
+    ROKID_NATIVE_CALL_TIMEOUT_MS.customView,
+  );
 }
 
 export async function takeRokidPhotoBase64(options?: {
@@ -860,10 +960,14 @@ export async function takeRokidPhotoBase64(options?: {
   if (!native?.takePhotoBase64) {
     return { ok: false, reason: 'native_bridge_unavailable' };
   }
-  return native.takePhotoBase64(
-    options?.width ?? 1024,
-    options?.height ?? 768,
-    options?.quality ?? 80,
+  return withRokidNativeTimeout(
+    'takePhotoBase64',
+    native.takePhotoBase64(
+      options?.width ?? 1024,
+      options?.height ?? 768,
+      options?.quality ?? 80,
+    ),
+    ROKID_NATIVE_CALL_TIMEOUT_MS.photo,
   );
 }
 
@@ -872,7 +976,11 @@ export async function prepareRokidCustomAppSession(packageName: string): Promise
   if (!native?.prepareCustomAppSession) {
     return { ok: false, reason: 'native_bridge_unavailable' };
   }
-  return native.prepareCustomAppSession(packageName);
+  return withRokidNativeTimeout(
+    'prepareCustomAppSession',
+    native.prepareCustomAppSession(packageName),
+    ROKID_NATIVE_CALL_TIMEOUT_MS.customAppCommand,
+  );
 }
 
 export async function queryRokidApp(packageName: string): Promise<Record<string, unknown>> {
@@ -880,7 +988,12 @@ export async function queryRokidApp(packageName: string): Promise<Record<string,
   if (!native?.queryApp) {
     return { ok: false, installed: false, reason: 'native_bridge_unavailable' };
   }
-  return native.queryApp(packageName);
+  return withRokidNativeTimeout(
+    'queryApp',
+    native.queryApp(packageName),
+    ROKID_NATIVE_CALL_TIMEOUT_MS.customAppCommand,
+    { installed: false },
+  );
 }
 
 export async function installBundledRokidApp(options: {
@@ -892,10 +1005,15 @@ export async function installBundledRokidApp(options: {
   if (!native?.installBundledApp) {
     return { ok: false, installed: false, reason: 'native_bridge_unavailable' };
   }
-  return native.installBundledApp(
-    options.resourceName,
-    options.resourceExtension ?? 'apk',
-    options.packageName,
+  return withRokidNativeTimeout(
+    'installBundledApp',
+    native.installBundledApp(
+      options.resourceName,
+      options.resourceExtension ?? 'apk',
+      options.packageName,
+    ),
+    ROKID_NATIVE_CALL_TIMEOUT_MS.customAppInstall,
+    { installed: false },
   );
 }
 
@@ -907,7 +1025,12 @@ export async function installRokidAppFromFileUri(options: {
   if (!native?.installAppFileUri) {
     return { ok: false, installed: false, reason: 'native_bridge_unavailable' };
   }
-  return native.installAppFileUri(options.fileUri, options.packageName);
+  return withRokidNativeTimeout(
+    'installAppFileUri',
+    native.installAppFileUri(options.fileUri, options.packageName),
+    ROKID_NATIVE_CALL_TIMEOUT_MS.customAppInstall,
+    { installed: false },
+  );
 }
 
 export async function uninstallRokidApp(packageName: string): Promise<Record<string, unknown>> {
@@ -915,7 +1038,12 @@ export async function uninstallRokidApp(packageName: string): Promise<Record<str
   if (!native?.uninstallApp) {
     return { ok: false, uninstalled: false, reason: 'native_bridge_unavailable' };
   }
-  return native.uninstallApp(packageName);
+  return withRokidNativeTimeout(
+    'uninstallApp',
+    native.uninstallApp(packageName),
+    ROKID_NATIVE_CALL_TIMEOUT_MS.customAppCommand,
+    { uninstalled: false },
+  );
 }
 
 export async function openRokidApp(options: {
@@ -927,7 +1055,12 @@ export async function openRokidApp(options: {
   if (!native?.openApp) {
     return { ok: false, opened: false, reason: 'native_bridge_unavailable' };
   }
-  return native.openApp(options.packageName, options.activityName, options.url);
+  return withRokidNativeTimeout(
+    'openApp',
+    native.openApp(options.packageName, options.activityName, options.url),
+    ROKID_NATIVE_CALL_TIMEOUT_MS.customAppCommand,
+    { opened: false },
+  );
 }
 
 export async function stopRokidApp(packageName: string): Promise<Record<string, unknown>> {
@@ -935,7 +1068,12 @@ export async function stopRokidApp(packageName: string): Promise<Record<string, 
   if (!native?.stopApp) {
     return { ok: false, stopped: false, reason: 'native_bridge_unavailable' };
   }
-  return native.stopApp(packageName);
+  return withRokidNativeTimeout(
+    'stopApp',
+    native.stopApp(packageName),
+    ROKID_NATIVE_CALL_TIMEOUT_MS.customAppCommand,
+    { stopped: false },
+  );
 }
 
 export async function startRokidRecord(options?: {
@@ -947,10 +1085,14 @@ export async function startRokidRecord(options?: {
   if (!native?.startRecord) {
     return { ok: false, reason: 'native_bridge_unavailable' };
   }
-  return native.startRecord(
-    options?.type ?? 'interaction',
-    options?.codec ?? 'pcm',
-    options?.mode ?? 'rokidOmni',
+  return withRokidNativeTimeout(
+    'startRecord',
+    native.startRecord(
+      options?.type ?? 'interaction',
+      options?.codec ?? 'pcm',
+      options?.mode ?? 'rokidOmni',
+    ),
+    ROKID_NATIVE_CALL_TIMEOUT_MS.audioRecord,
   );
 }
 
@@ -959,7 +1101,11 @@ export async function stopRokidRecord(type = 'interaction'): Promise<Record<stri
   if (!native?.stopRecord) {
     return { ok: false, reason: 'native_bridge_unavailable' };
   }
-  return native.stopRecord(type);
+  return withRokidNativeTimeout(
+    'stopRecord',
+    native.stopRecord(type),
+    ROKID_NATIVE_CALL_TIMEOUT_MS.audioRecord,
+  );
 }
 
 export function addRokidTranscriptListener(

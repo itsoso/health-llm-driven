@@ -29,6 +29,7 @@ export type RokidAudioIntent =
 
 export type SubmitRokidVisualInput = {
   intent: RokidVisualIntent;
+  operationId?: string;
   imageUri?: string;
   imageSha256?: string;
   ocrText?: string;
@@ -53,6 +54,7 @@ export type SubmitRokidVisualInputResponse = {
 
 export type SubmitRokidAudioInput = {
   intent: RokidAudioIntent;
+  operationId?: string;
   transcript: string;
   confidence?: number;
   capturedAt?: string;
@@ -61,6 +63,9 @@ export type SubmitRokidAudioInput = {
 };
 
 export async function submitRokidVisualInput(input: SubmitRokidVisualInput): Promise<SubmitRokidVisualInputResponse> {
+  const meta = input.operationId
+    ? { ...(input.meta ?? {}), operation_id: input.operationId }
+    : input.meta;
   const response = await api.post<SubmitRokidVisualInputResponse>('/ambient/visual-inputs', {
     intent: input.intent,
     source: ROKID_SURFACE,
@@ -72,12 +77,15 @@ export async function submitRokidVisualInput(input: SubmitRokidVisualInput): Pro
     confidence: input.confidence,
     captured_at: input.capturedAt,
     privacy_class: input.privacyClass ?? ROKID_PRIVACY_CLASS,
-    meta: input.meta,
+    meta,
   });
   return response.data;
 }
 
 export async function submitRokidAudioInput(input: SubmitRokidAudioInput) {
+  const meta = input.operationId
+    ? { ...(input.meta ?? {}), operation_id: input.operationId }
+    : input.meta;
   const response = await api.post('/ambient/audio-inputs', {
     intent: input.intent,
     transcript: input.transcript,
@@ -86,7 +94,7 @@ export async function submitRokidAudioInput(input: SubmitRokidAudioInput) {
     confidence: input.confidence,
     captured_at: input.capturedAt,
     privacy_class: input.privacyClass ?? ROKID_PRIVACY_CLASS,
-    meta: input.meta,
+    meta,
   });
   return response.data;
 }

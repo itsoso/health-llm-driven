@@ -43,4 +43,18 @@ class PushupEventPayloadTest {
         assertTrue(json.contains("\"quality_score\":88.0"))
         assertTrue(json.contains("\"suggestion\":\"继续保持\""))
     }
+
+    @Test
+    fun serializesSessionStateForRevaIngestSchema() {
+        val json = PushupEventPayload.sessionState(
+            state = "ingest_failed",
+            message = "HTTP 403",
+            detail = "token_rejected",
+        ).toJson()
+
+        assertTrue(json.contains("\"event_type\":\"session_state\""))
+        assertTrue(json.contains("\"state\":\"ingest_failed\""))
+        assertTrue(json.contains("\"message\":\"HTTP 403\""))
+        assertTrue(json.contains("\"detail\":\"token_rejected\""))
+    }
 }

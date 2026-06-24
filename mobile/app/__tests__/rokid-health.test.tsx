@@ -19,6 +19,9 @@ const mockRecognizeFood = jest.fn();
 const mockStartRokidVoiceCommandCapture = jest.fn();
 const mockStopRokidVoiceCommandCapture = jest.fn();
 const mockSubmitRokidVoiceCommand = jest.fn();
+const mockCreateRokidOperation = jest.fn();
+const mockAppendRokidOperationEvent = jest.fn();
+const mockUploadRokidDiagnostics = jest.fn();
 const mockSetClipboardStringAsync = jest.fn();
 const mockVoiceStart = jest.fn().mockResolvedValue(undefined);
 const mockVoiceStop = jest.fn().mockResolvedValue(undefined);
@@ -44,6 +47,7 @@ jest.mock('../../modules/rokid-bridge', () => {
   return {
     formatRokidLogTimestamp: actual.formatRokidLogTimestamp,
     buildRokidCapabilityGateway: actual.buildRokidCapabilityGateway,
+    isRokidBleBlockedByCompanionSuspected: actual.isRokidBleBlockedByCompanionSuspected,
     getRokidIntegrationStatus: (...args: any[]) => mockGetRokidIntegrationStatus(...args),
     getRokidDeviceValidationSteps: (...args: any[]) => mockGetRokidDeviceValidationSteps(...args),
     openRokidRevaCustomView: (...args: any[]) => mockOpenRokidRevaCustomView(...args),
@@ -78,6 +82,16 @@ jest.mock('../../services/rokidVoiceControl', () => ({
   stopRokidVoiceCommandCapture: (...args: any[]) => mockStopRokidVoiceCommandCapture(...args),
   submitRokidVoiceCommand: (...args: any[]) => mockSubmitRokidVoiceCommand(...args),
 }));
+
+jest.mock('../../services/rokidOperations', () => {
+  const actual = jest.requireActual('../../services/rokidOperations');
+  return {
+    ...actual,
+    createRokidOperation: (...args: any[]) => mockCreateRokidOperation(...args),
+    appendRokidOperationEvent: (...args: any[]) => mockAppendRokidOperationEvent(...args),
+    uploadRokidDiagnostics: (...args: any[]) => mockUploadRokidDiagnostics(...args),
+  };
+});
 
 jest.mock('expo-clipboard', () => ({
   setStringAsync: (...args: any[]) => mockSetClipboardStringAsync(...args),
@@ -203,6 +217,9 @@ describe('RokidHealthScreen', () => {
     mockUpdateRokidCustomView.mockResolvedValue({ ok: true });
     mockStartRokidVoiceCommandCapture.mockResolvedValue({ ok: true });
     mockStopRokidVoiceCommandCapture.mockResolvedValue({ ok: true });
+    mockCreateRokidOperation.mockResolvedValue({ operation_id: 'rokid-test-operation' });
+    mockAppendRokidOperationEvent.mockResolvedValue({ id: 1 });
+    mockUploadRokidDiagnostics.mockResolvedValue({ id: 2 });
     mockSubmitRokidVoiceCommand.mockResolvedValue({
       command: {
         intent: 'unknown',
@@ -389,9 +406,13 @@ describe('RokidHealthScreen', () => {
     expect(copied).toContain('audio.event=record_start_requested');
     expect(copied).toContain('audio.chunks=0');
     expect(copied).toContain('audio.bytes=0');
+    expect(copied).toContain('ble.companionBlockedSuspected=false');
     expect(copied).toContain('customView.error=rokid_custom_view_open_callback_missing');
     expect(copied).not.toContain('base64');
-    expect(alertSpy).toHaveBeenCalledWith('已复制', 'Rokid 语音自检信息已复制。');
+    expect(alertSpy).toHaveBeenCalledWith(
+      '已复制',
+      'Rokid 语音自检信息已复制；本次没有可上传的 operation_id 或上传失败。',
+    );
     alertSpy.mockRestore();
   });
 
@@ -540,6 +561,7 @@ describe('RokidHealthScreen', () => {
         context: 'rokid_health',
         capturedAt: '2026-06-20T23:20:00+08:00',
         meta: {
+          operation_id: expect.any(String),
           source_surface: 'rokid_health_mode',
           source_event: 'rokid_transcript',
           raw_transcript: '记录',
@@ -598,6 +620,7 @@ describe('RokidHealthScreen', () => {
         context: 'rokid_health',
         capturedAt: expect.any(String),
         meta: {
+          operation_id: expect.any(String),
           source_surface: 'rokid_health_mode',
           source_event: 'phone_mic_fallback',
           fallback_reason: 'rokid_audio_session_not_ready',
@@ -830,6 +853,7 @@ describe('RokidHealthScreen', () => {
         context: 'rokid_health',
         capturedAt: '2026-06-19T21:40:00+08:00',
         meta: {
+          operation_id: expect.any(String),
           source_surface: 'rokid_health_mode',
           source_event: 'rokid_transcript',
         },
@@ -977,6 +1001,14 @@ describe('RokidHealthScreen', () => {
   });
 
   it('submits an explicit food photo capture with nutrition recognition as an ambient visual draft', async () => {
+    mockSubmitRokidVisualInput.mockResolvedValueOnce({
+      event: {
+        id: 501,
+        status: 'needs_confirmation',
+        target_type: 'diet_draft',
+        target_id: 601,
+      },
+    });
     const screen = renderWithProviders(<RokidHealthScreen />);
 
     await waitFor(() => {
@@ -1033,6 +1065,14 @@ describe('RokidHealthScreen', () => {
           meal_type: expect.any(String),
           image_byte_length: 2048,
           recognition_source: 'diet_recognize',
+        }),
+      }));
+      expect(mockAppendRokidOperationEvent).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+        eventType: 'food_draft_submitted',
+        payload: expect.objectContaining({
+          visual_input_event_id: 501,
+          target_type: 'diet_draft',
+          target_id: 601,
         }),
       }));
       expect(screen.getByText('已提交食物视觉记录草稿：牛肉面 1碗 · 620kcal · 蛋白32g · 碳水78g · 脂肪20g')).toBeTruthy();

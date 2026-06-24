@@ -8,6 +8,14 @@ from app.api.deps import get_current_user_required
 from app.database import get_db
 from app.models.rokid_pushup import RokidPushupSession
 from app.models.user import User
+from app.schemas.rokid_operation import (
+    RokidDiagnosticUpload,
+    RokidOperationCreate,
+    RokidOperationEventCreate,
+    RokidOperationResponse,
+    RokidOperationTimelineResponse,
+    RokidOperationTraceEventResponse,
+)
 from app.schemas.rokid_pushup import (
     RokidPushupEventCreate,
     RokidPushupEventListResponse,
@@ -18,6 +26,7 @@ from app.schemas.rokid_pushup import (
     RokidPushupSessionResponse,
     RokidPushupSessionReviewResponse,
 )
+from app.services import rokid_operation as operation_svc
 from app.services import rokid_pushup as svc
 from app.services import rokid_pushup_review as review_svc
 
@@ -42,6 +51,102 @@ def _session_open_url(
         "ingest_token": ingest_token,
     })
     return f"reva://rokid/pushup?{query}"
+
+
+@router.post(
+    "/operations",
+    response_model=RokidOperationResponse,
+    response_model_by_alias=False,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_rokid_operation(
+    body: RokidOperationCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    operation = operation_svc.create_or_update_operation(
+        db,
+        user_id=current_user.id,
+        body=body,
+    )
+    db.commit()
+    db.refresh(operation)
+    return RokidOperationResponse.model_validate(operation)
+
+
+@router.post(
+    "/operations/{operation_id}/events",
+    response_model=RokidOperationTraceEventResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def append_rokid_operation_event(
+    operation_id: str,
+    body: RokidOperationEventCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    operation = operation_svc.get_owned_operation(
+        db,
+        operation_id=operation_id,
+        user_id=current_user.id,
+    )
+    if not operation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="rokid operation not found")
+    event = operation_svc.add_operation_event(db, operation=operation, body=body)
+    db.commit()
+    db.refresh(event)
+    return operation_svc.to_trace_event_response(event)
+
+
+@router.get(
+    "/operations/{operation_id}",
+    response_model=RokidOperationTimelineResponse,
+    response_model_by_alias=False,
+)
+def get_rokid_operation_timeline(
+    operation_id: str,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    operation = operation_svc.get_owned_operation(
+        db,
+        operation_id=operation_id,
+        user_id=current_user.id,
+    )
+    if not operation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="rokid operation not found")
+    events = operation_svc.list_operation_events(
+        db,
+        operation_id=operation.operation_id,
+        user_id=current_user.id,
+    )
+    return RokidOperationTimelineResponse(
+        operation=RokidOperationResponse.model_validate(operation),
+        events=events,
+    )
+
+
+@router.post(
+    "/diagnostics",
+    response_model=RokidOperationTraceEventResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def upload_rokid_diagnostics(
+    body: RokidDiagnosticUpload,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    operation = operation_svc.get_owned_operation(
+        db,
+        operation_id=body.operation_id,
+        user_id=current_user.id,
+    )
+    if not operation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="rokid operation not found")
+    event = operation_svc.add_diagnostic_event(db, operation=operation, body=body)
+    db.commit()
+    db.refresh(event)
+    return operation_svc.to_trace_event_response(event)
 
 
 @router.post(

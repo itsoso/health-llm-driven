@@ -11,6 +11,10 @@ data class PushupEventPayload(
     val feedback: String?,
     val suggestion: String?,
     val frameId: Long?,
+    val sessionId: Int? = null,
+    val state: String? = null,
+    val message: String? = null,
+    val detail: String? = null,
 ) {
     fun toJson(): String {
         val fields = mutableListOf<String>()
@@ -28,6 +32,10 @@ data class PushupEventPayload(
         feedback?.let { payloadFields += jsonField("feedback", it) }
         suggestion?.let { payloadFields += jsonField("suggestion", it) }
         frameId?.let { payloadFields += jsonField("frame_id", it) }
+        sessionId?.let { payloadFields += jsonField("session_id", it) }
+        state?.let { payloadFields += jsonField("state", it) }
+        message?.let { payloadFields += jsonField("message", it) }
+        detail?.let { payloadFields += jsonField("detail", it) }
         fields += "\"payload\":{${payloadFields.joinToString(",")}}"
 
         return "{${fields.joinToString(",")}}"
@@ -60,6 +68,29 @@ data class PushupEventPayload(
                 feedback = event.feedback,
                 suggestion = event.suggestion,
                 frameId = null,
+            )
+
+        fun sessionState(
+            state: String,
+            message: String,
+            detail: String? = null,
+            sessionId: Int? = null,
+        ): PushupEventPayload =
+            PushupEventPayload(
+                eventType = "session_state",
+                reps = null,
+                phase = null,
+                elbowAngleDeg = null,
+                shoulderHipAnkleAngleDeg = null,
+                visibility = null,
+                qualityScore = null,
+                feedback = null,
+                suggestion = null,
+                frameId = null,
+                sessionId = sessionId,
+                state = state,
+                message = message,
+                detail = detail,
             )
 
         private fun jsonField(name: String, value: String): String =

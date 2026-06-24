@@ -206,6 +206,49 @@ describe('rokid diagnostics', () => {
     ]));
   });
 
+  it('surfaces suspected companion BLE central contention as a copyable diagnostic row', () => {
+    const check = buildRokidSelfCheck({
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      customViewRunning: false,
+      capabilitiesReady: false,
+      sessionMode: 'customView',
+      iosBleConnected: false,
+      iosBleDeviceName: 'Glasses_0077',
+      customViewPendingRetry: true,
+      companionAppName: 'Rokid AI / Hi Rokid',
+      companionServerScheme: 'rokidai',
+      companionServerHost: 'connect',
+      lastOpenUrlFingerprint: 'rokidai://',
+      lastOpenUrlAt: new Date().toISOString(),
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    });
+
+    expect(check.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'ble_companion_suspected',
+        label: '眼镜蓝牙疑似占用',
+        value: '疑似 Rokid AI / Hi Rokid 仍占用 BLE central',
+        severity: 'warn',
+        detail: 'device=Glasses_0077; action=完全退出/划掉 Rokid AI / Hi Rokid 后回 Reva 刷新',
+      }),
+    ]));
+    expect(check.capabilityGateway.blockers).toContain(
+      'Rokid companion 疑似仍占用眼镜蓝牙: iOS 一次只能一个 central。请完全退出/划掉 Rokid AI / Hi Rokid 后回 Reva 刷新。',
+    );
+  });
+
   it('surfaces the configured and accepted callback schemes used for Rokid auth routing', () => {
     const check = buildRokidSelfCheck({
       platform: 'ios',

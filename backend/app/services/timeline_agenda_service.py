@@ -174,7 +174,7 @@ def complete_by_ref(
     并把 slot 并入 find_agenda_event 的去重键 + _slot_time。**当前不声称多剂依从已闭环。**
     """
     from app.services import agenda_service
-    from app.utils.timezone import get_user_now, get_user_today
+    from app.utils.timezone import get_china_now, get_china_today
 
     # F1:物化前先验对 **所有** status 生效(done 与 skip 同标准)。
     # - 不支持的来源 → ValueError(端点转 400);
@@ -183,16 +183,19 @@ def complete_by_ref(
     agenda_service.ensure_source_exists(db, user_id, object_type, object_id)
 
     ref = {"object_type": object_type, "object_id": object_id}
-    today = get_user_today(db, user_id)
+    # 议程行的「今日」基准用中国时区(UTC+8,OS-TZ 无关),与完成子系统其余 today-basis 对齐
+    # —— 不用 get_user_today(无 profile 时回退 runner OS 时区),避免非 Asia/Shanghai 主机的
+    # 午夜边界上议程 wrapper 与协议事件基准漂移而生出影子重复行。
+    today = get_china_today()
     ev = find_agenda_event(db, user_id, ref, today)
     if ev is None:
-        # F5a:懒物化的 scheduled_for 钉到「当日稳定 token」(用户今日 00:00),不取整点更不取
+        # F5a:懒物化的 scheduled_for 钉到「当日稳定 token」(中国时区今日 00:00),不取整点更不取
         # 裸 now。整点(hour 级)在并发跨整点边界(10:59:59 vs 11:00:00)会算出不同
         # scheduled_for → 不同 _slot_time → 两条议程行 + 两个 medlog 槽 → 依从重计。钉到午夜
         # 后,同一 (user, ref, day) 的并发懒物化恒得同一 scheduled_for → 同一 _slot_time,
         # 配合 complete_agenda_event 的原子 claim + uq_medlog 唯一约束,重复领域写收敛到至多
         # 一条(对齐链协议 chain_key 的「稳定 token」先例)。显式 scheduled_for(多剂等)优先。
-        slot_dt = scheduled_for or get_user_now(db, user_id).replace(
+        slot_dt = scheduled_for or get_china_now().replace(
             hour=0, minute=0, second=0, microsecond=0)
         ev = materialize_agenda_event(
             db, user_id,

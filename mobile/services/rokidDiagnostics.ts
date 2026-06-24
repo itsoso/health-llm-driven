@@ -3,6 +3,7 @@ import {
   formatRokidLogTimestamp,
   getRokidDeviceValidationSteps,
   getRokidIntegrationStatus,
+  isRokidBleBlockedByCompanionSuspected,
   type RokidCapabilityGateway,
   type RokidDeviceValidationStep,
   type RokidIntegrationStatus,
@@ -233,6 +234,7 @@ export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCh
   const companion = passIf(companionReady, 'Rokid companion 可用', 'Rokid companion 未就绪', 'warn');
   const authorization = passIf(authorized, 'CXR-L 已授权', 'CXR-L 未授权', 'warn');
   const session = passIf(sessionReady, '会话能力就绪', '会话未构建完成', 'warn');
+  const companionBleSuspected = isRokidBleBlockedByCompanionSuspected(status);
   const callbackSeen = typeof status.lastCallbackUrl === 'string' && status.lastCallbackUrl.length > 0;
   const callbackHandled = status.lastCallbackHandled === true;
   const callbackValue = callbackHandled
@@ -284,6 +286,13 @@ export function buildRokidSelfCheck(status: RokidIntegrationStatus): RokidSelfCh
         ...companion,
         detail: companionDetail(status, companionReady),
       },
+      ...(companionBleSuspected ? [{
+        id: 'ble_companion_suspected',
+        label: '眼镜蓝牙疑似占用',
+        value: '疑似 Rokid AI / Hi Rokid 仍占用 BLE central',
+        severity: 'warn' as const,
+        detail: `device=${status.iosBleDeviceName ?? status.currentDeviceName ?? 'unknown'}; action=完全退出/划掉 Rokid AI / Hi Rokid 后回 Reva 刷新`,
+      }] : []),
       {
         id: 'authorization',
         label: '授权',

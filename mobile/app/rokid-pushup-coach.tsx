@@ -53,6 +53,7 @@ import {
   finishRokidPushupSession,
   getRokidPushupSessionReview,
   listRokidPushupEvents,
+  rokidPushupSessionStateMessage,
   type RokidPushupSession,
   type RokidPushupSessionReview,
 } from '../services/rokidPushupSession';
@@ -914,6 +915,13 @@ export default function RokidPushupCoachScreen() {
           lastRokidEventIdRef.current,
           ...events.map((event) => event.id),
         );
+        const latestSessionState = [...events]
+          .reverse()
+          .map((event) => ({
+            event,
+            message: rokidPushupSessionStateMessage(event),
+          }))
+          .find((item) => item.message);
         setCoach((prev) => {
           let next = prev;
           for (const event of events) {
@@ -925,7 +933,15 @@ export default function RokidPushupCoachScreen() {
           void pushViewToGlasses(next);
           return next;
         });
-        setRealSessionMessage(`已接收 ${events.length} 条眼镜姿态事件`);
+        if (latestSessionState?.message) {
+          setRealSessionMessage(latestSessionState.message);
+          const state = latestSessionState.event.payload?.state;
+          if (typeof state === 'string' && state.includes('failed')) {
+            setRealSessionState('failed');
+          }
+        } else {
+          setRealSessionMessage(`已接收 ${events.length} 条眼镜姿态事件`);
+        }
       } catch (error) {
         if (!cancelled) {
           setRealSessionMessage(error instanceof Error ? error.message : 'rokid_pushup_event_poll_failed');

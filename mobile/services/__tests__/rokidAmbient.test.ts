@@ -46,6 +46,23 @@ describe('services/rokidAmbient', () => {
     });
   });
 
+  it('threads operation ids through visual capture meta', async () => {
+    mockedApi.post.mockResolvedValueOnce({ data: { event: { id: 102 } } } as never);
+
+    await submitRokidVisualInput({
+      intent: 'food_scan',
+      operationId: 'rokid-food-001',
+      meta: { trigger: 'voice_command' },
+    });
+
+    expect(mockedApi.post).toHaveBeenCalledWith('/ambient/visual-inputs', expect.objectContaining({
+      meta: {
+        trigger: 'voice_command',
+        operation_id: 'rokid-food-001',
+      },
+    }));
+  });
+
   it('submits push-to-talk transcripts as Rokid audio input events', async () => {
     mockedApi.post.mockResolvedValueOnce({ data: { event: { id: 202 } } } as never);
 

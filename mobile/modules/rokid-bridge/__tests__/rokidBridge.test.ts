@@ -1,4 +1,8 @@
 describe('rokid-bridge JS facade', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   const loadModule = (platform: 'android' | 'ios' | 'web', nativeModule?: any) => {
     jest.resetModules();
     const requireNativeModule = jest.fn(() => {
@@ -211,6 +215,83 @@ describe('rokid-bridge JS facade', () => {
     expect(native.startRecord).toHaveBeenCalledWith('food_voice', 'pcm', 'rokidOmni');
     expect(native.stopRecord).toHaveBeenCalledWith('food_voice');
     expect(native.clearAuthorization).toHaveBeenCalledTimes(1);
+  });
+
+  it('settles long-running native CXR-L calls with structured timeout results', async () => {
+    jest.useFakeTimers();
+    const never = jest.fn(() => new Promise<Record<string, unknown>>(() => undefined));
+    const native = {
+      getIntegrationStatus: jest.fn().mockResolvedValue({ platform: 'ios', bridgeAvailable: true }),
+      openHiRokid: jest.fn().mockResolvedValue(true),
+      openCustomView: never,
+      takePhotoBase64: never,
+      queryApp: never,
+      startRecord: never,
+      installAppFileUri: never,
+    };
+    const { bridge } = loadModule('ios', native);
+
+    const calls = [
+      bridge.openRokidCustomView('{"type":"text","text":"喝水"}'),
+      bridge.takeRokidPhotoBase64({ width: 1024, height: 768, quality: 80 }),
+      bridge.queryRokidApp('life.executor.health.rokid.pushup'),
+      bridge.startRokidRecord({ type: 'food_voice', codec: 'pcm', mode: 'rokidOmni' }),
+      bridge.installRokidAppFromFileUri({
+        fileUri: 'file:///tmp/rokid-pushup-glasses.apk',
+        packageName: 'life.executor.health.rokid.pushup',
+      }),
+    ];
+    const settled: boolean[] = calls.map(() => false);
+    const observed = calls.map((call, index) => call.then((result: Record<string, unknown>) => {
+      settled[index] = true;
+      return result;
+    }));
+
+    await jest.runOnlyPendingTimersAsync();
+
+    expect(settled).toEqual([true, true, true, true, true]);
+    await expect(Promise.all(observed)).resolves.toEqual([
+      expect.objectContaining({
+        ok: false,
+        operation: 'openCustomView',
+        reason: 'rokid_native_call_timeout',
+        timeoutMs: expect.any(Number),
+      }),
+      expect.objectContaining({
+        ok: false,
+        operation: 'takePhotoBase64',
+        reason: 'rokid_native_call_timeout',
+        timeoutMs: expect.any(Number),
+      }),
+      expect.objectContaining({
+        ok: false,
+        installed: false,
+        operation: 'queryApp',
+        reason: 'rokid_native_call_timeout',
+        timeoutMs: expect.any(Number),
+      }),
+      expect.objectContaining({
+        ok: false,
+        operation: 'startRecord',
+        reason: 'rokid_native_call_timeout',
+        timeoutMs: expect.any(Number),
+      }),
+      expect.objectContaining({
+        ok: false,
+        installed: false,
+        operation: 'installAppFileUri',
+        reason: 'rokid_native_call_timeout',
+        timeoutMs: expect.any(Number),
+      }),
+    ]);
+    expect(native.openCustomView).toHaveBeenCalledWith('{"type":"text","text":"喝水"}');
+    expect(native.takePhotoBase64).toHaveBeenCalledWith(1024, 768, 80);
+    expect(native.queryApp).toHaveBeenCalledWith('life.executor.health.rokid.pushup');
+    expect(native.startRecord).toHaveBeenCalledWith('food_voice', 'pcm', 'rokidOmni');
+    expect(native.installAppFileUri).toHaveBeenCalledWith(
+      'file:///tmp/rokid-pushup-glasses.apk',
+      'life.executor.health.rokid.pushup',
+    );
   });
 
   it('subscribes to native Rokid transcript events through the JS facade', () => {
@@ -632,6 +713,53 @@ describe('rokid-bridge JS facade', () => {
     expect(gateway.blockers).not.toContain(
       'CXR-L CustomView 静默: openCustomView 未收到 callback/notify, 不应再阻塞运动和饮食主流程。',
     );
+  });
+
+  it('marks companion BLE central contention as a suspected first-class failure state', () => {
+    const { bridge } = loadModule('ios');
+    const status = {
+      platform: 'ios',
+      bridgeAvailable: true,
+      hiRokidInstalled: true,
+      canOpenHiRokid: true,
+      mode: 'sdk_probe',
+      sdkLinked: true,
+      authorizationState: 'authenticated',
+      iosBleConnected: false,
+      iosBleDeviceName: 'Glasses_0077',
+      customViewPendingRetry: true,
+      customViewRunning: false,
+      capabilitiesReady: false,
+      lastOpenUrlFingerprint: 'rokidai://',
+      lastOpenUrlAt: new Date().toISOString(),
+      sdkArtifacts: {
+        clientM: 'com.rokid.cxr:client-m:1.2.2',
+        clientL: 'com.rokid.cxr:client-l:1.0.3',
+        iosClient: 'RGCxrClient:1.0.1',
+        iosClientCandidate: 'RGCxrClient:1.0.2',
+        iosCore: 'RGCoreKit:0.0.2',
+      },
+    };
+
+    expect(bridge.isRokidBleBlockedByCompanionSuspected(status)).toBe(true);
+
+    const gateway = bridge.buildRokidCapabilityGateway(status);
+    expect(gateway.blockers).toContain(
+      'Rokid companion 疑似仍占用眼镜蓝牙: iOS 一次只能一个 central。请完全退出/划掉 Rokid AI / Hi Rokid 后回 Reva 刷新。',
+    );
+    expect(gateway.capabilities).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'glasses_ble',
+        state: 'degraded',
+        detail: '疑似 Rokid AI / Hi Rokid 仍占用眼镜蓝牙; 请完全退出 companion 后回 Reva 刷新。',
+      }),
+    ]));
+
+    const steps = bridge.getRokidDeviceValidationSteps(status);
+    expect(steps.find((step: any) => step.id === 'glasses_ble_connected')).toMatchObject({
+      status: 'next',
+      detail: '疑似 Rokid AI / Hi Rokid 仍占用眼镜蓝牙 central: Glasses_0077。请从系统后台完全划掉 Rokid AI / Hi Rokid, 再回 Reva 刷新。',
+    });
   });
 
   it('keeps the mobile fallback ready when the native bridge is unavailable', () => {

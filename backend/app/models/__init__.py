@@ -134,6 +134,7 @@ from app.models.bedroom_environment import (
 # Write 层意图 (audio/visual/glance 事件 FK 指向 write_intents — 必须在此集中注册,
 # 否则只 `import app.models` 的子进程 (eval runner) 的 create_all 会缺 write_intents 表)
 from app.models.write_intent import WriteIntent
+from app.models.client_event import ClientEvent
 from app.models.ambient_wearable import (
     AudioInputEvent,
     GlanceCard,
@@ -141,6 +142,7 @@ from app.models.ambient_wearable import (
     MealMonitoringSession,
     VisualInputEvent,
 )
+from app.models.rokid_operation import RokidOperation
 from app.models.rokid_pushup import RokidPushupEvent, RokidPushupSession
 from app.models.fitness_plan import FitnessPlan
 
@@ -162,6 +164,8 @@ __all__ = [
     "VisualInputEvent",
     "MealMonitoringSession",
     "GlanceCard",
+    "RokidOperation",
+    "ClientEvent",
     "RokidPushupSession",
     "RokidPushupEvent",
     "DiseaseRecord",

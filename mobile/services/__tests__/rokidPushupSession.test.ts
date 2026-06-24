@@ -12,6 +12,7 @@ import {
   createRokidPushupSession,
   finishRokidPushupSession,
   listRokidPushupEvents,
+  rokidPushupSessionStateMessage,
   rokidPushupEventToPoseSample,
 } from '../rokidPushupSession';
 import { createPushupCoachState } from '../pushupCoach';
@@ -160,5 +161,27 @@ describe('services/rokidPushupSession', () => {
     expect(state.qualityScore).toBe(88);
     expect(state.feedback).toContain('眼镜端已确认');
     expect(state.suggestion).toBe('保持节奏');
+  });
+
+  it('formats glasses session_state events for the mobile coach timeline', () => {
+    expect(rokidPushupSessionStateMessage({
+      id: 5,
+      session_id: 7,
+      user_id: 1,
+      event_type: 'session_state',
+      reps: null,
+      phase: null,
+      elbow_angle_deg: null,
+      shoulder_hip_ankle_angle_deg: null,
+      visibility: null,
+      quality_score: null,
+      payload: {
+        state: 'session_ready',
+        message: 'Reva session #7',
+        detail: 'target_reps=20',
+      },
+      occurred_at: '2026-06-18T12:00:00.000Z',
+      created_at: '2026-06-18T12:00:00.000Z',
+    })).toBe('眼镜端状态: Reva session #7 · target_reps=20');
   });
 });

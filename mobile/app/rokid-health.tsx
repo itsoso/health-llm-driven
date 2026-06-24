@@ -29,6 +29,7 @@ import {
   createRokidRevaCustomViewLayout,
   getRokidDeviceValidationSteps,
   getRokidIntegrationStatus,
+  isRokidBleBlockedByCompanionSuspected,
   openRokidRevaCustomView,
   requestRokidAuthorization,
   takeRokidPhotoBase64,
@@ -47,6 +48,14 @@ import {
   submitRokidVisualInput,
   type RokidVisualIntent,
 } from '../services/rokidAmbient';
+import { buildRokidOperationDiagnostics } from '../services/rokidOperationDiagnostics';
+import {
+  appendRokidOperationEvent,
+  createRokidOperation,
+  createRokidOperationId,
+  uploadRokidDiagnostics,
+  type AppendRokidOperationEventInput,
+} from '../services/rokidOperations';
 import {
   executeRokidVoiceClientAction,
   startRokidVoiceCommandCapture,
@@ -71,6 +80,11 @@ type CaptureState = {
 };
 
 type VoiceDebugState = {
+  operationId?: string;
+  operationCapability?: string;
+  operationUploadStatus?: string;
+  operationUploadError?: string;
+  diagnosticUploadedAt?: string;
   lastTranscript?: string;
   lastRawTranscript?: string;
   lastNormalizedTranscript?: string;
@@ -99,6 +113,18 @@ type VoiceDebugState = {
   photoError?: string;
   photoDraftStatus?: string;
   photoSummary?: string;
+};
+
+type RokidFoodDraftResult = {
+  ok: boolean;
+  message: string;
+  nutritionSummary?: string;
+  savedDietRecord?: boolean;
+  visualInputEventId?: number;
+  visualInputStatus?: string;
+  targetType?: string;
+  targetId?: number;
+  dietRecordId?: number;
 };
 
 type VoiceSelfCheckStatus = 'pass' | 'warn' | 'fail' | 'info';
@@ -542,6 +568,7 @@ function buildVoiceSelfCheck(
     || status?.speechAuthorizationStatus === 'restricted';
   const phoneFallbackActive = voiceState.status === 'listening' && voiceDebug.fallbackMode === 'phone_mic';
   const bleDisconnected = status?.platform === 'ios' && status?.iosBleConnected === false;
+  const companionBleSuspected = isRokidBleBlockedByCompanionSuspected(status);
 
   let summary = '等待启动 Rokid 语音控制';
   if (voiceState.status === 'failed') {
@@ -599,6 +626,8 @@ function buildVoiceSelfCheck(
             : 'info',
       detail: phoneFallbackActive
         ? `眼镜流未就绪,手机麦兜底 · ${chunks} chunks · ${bytes} bytes`
+        : companionBleSuspected
+          ? `疑似 Rokid AI / Hi Rokid 占用眼镜蓝牙 · ${chunks} chunks · ${bytes} bytes`
         : bleDisconnected
           ? `眼镜蓝牙未连接 · ${chunks} chunks · ${bytes} bytes`
           : `${chunks} chunks · ${bytes} bytes`,
@@ -684,6 +713,7 @@ function buildRokidVoiceDebugText(
   selfCheck: ReturnType<typeof buildVoiceSelfCheck>,
   authDiagnosticLines: string[],
 ) {
+  const companionBleSuspected = isRokidBleBlockedByCompanionSuspected(status);
   const lines = [
     'Rokid Voice Self Check',
     `generated_at=${formatRokidLogTimestamp(new Date().toISOString())}`,
@@ -691,6 +721,11 @@ function buildRokidVoiceDebugText(
     `voice.message=${debugValue(voiceState.message)}`,
     `voice.normalizer=${ROKID_VOICE_NORMALIZER_VERSION}`,
     `summary=${selfCheck.summary}`,
+    `operation.id=${debugValue(voiceDebug.operationId)}`,
+    `operation.type=${debugValue(voiceDebug.operationCapability)}`,
+    `operation.uploadStatus=${debugValue(voiceDebug.operationUploadStatus)}`,
+    `operation.uploadError=${debugValue(voiceDebug.operationUploadError)}`,
+    `operation.diagnosticUploadedAt=${debugValue(voiceDebug.diagnosticUploadedAt)}`,
     `build=${debugValue(status?.nativeBuildNumber)}`,
     `version=${debugValue(status?.nativeAppVersion)}`,
     `bundle=${debugValue(status?.bundleIdentifier)}`,
@@ -698,6 +733,7 @@ function buildRokidVoiceDebugText(
     `device=${debugValue(status?.iosBleDeviceName ?? status?.currentDeviceName)}`,
     `auth=${debugValue(status?.authorizationState)}`,
     `ble.connected=${debugValue(status?.iosBleConnected)}`,
+    `ble.companionBlockedSuspected=${debugValue(companionBleSuspected)}`,
     `customView.running=${debugValue(status?.customViewRunning)}`,
     `customView.evidence=${debugValue(status?.customViewSessionEvidence)}`,
     `customView.displayInferred=${debugValue(status?.customViewDisplayInferred)}`,
@@ -864,6 +900,9 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
   if (typeof status.iosBleConnected === 'boolean') {
     const device = status.iosBleDeviceName ? ` · device=${status.iosBleDeviceName}` : '';
     lines.push(`iOS BLE: connected=${status.iosBleConnected}${device}`);
+    if (isRokidBleBlockedByCompanionSuspected(status)) {
+      lines.push('iOS BLE suspected: ble_blocked_by_companion · action=完全退出/划掉 Rokid AI / Hi Rokid 后回 Reva 刷新');
+    }
   }
   if (typeof status.cxrCallbackApiEnabled === 'boolean' || status.cxrNotifySubscriptionMode) {
     const parts: string[] = [];
@@ -1081,6 +1120,7 @@ export default function RokidHealthScreen() {
   // council #3:命令处理中(拍照/路由)期间忽略新转写;并记录上次已路由转写做包含去重。
   const voiceCommandInFlightRef = useRef(false);
   const lastRoutedTranscriptRef = useRef<{ text: string; at: number } | null>(null);
+  const rokidOperationIdRef = useRef<string | undefined>(undefined);
 
   const statusQuery = useQuery({
     queryKey: ['rokid-health', 'status'],
@@ -1112,6 +1152,116 @@ export default function RokidHealthScreen() {
     [status, voiceState, voiceDebug, voiceSelfCheck, authDiagnosticLines],
   );
   const isRefreshing = statusQuery.isRefetching || glanceQuery.isRefetching;
+
+  const currentRokidDeviceName = () =>
+    status?.iosBleDeviceName ?? status?.currentDeviceName ?? 'rokid_glasses';
+
+  const ensureRokidOperation = async (
+    operationType: string,
+    meta: Record<string, unknown> = {},
+    options: { reuseCurrent?: boolean } = {},
+  ) => {
+    const operationId = options.reuseCurrent === false || !rokidOperationIdRef.current
+      ? createRokidOperationId(operationType)
+      : rokidOperationIdRef.current;
+    rokidOperationIdRef.current = operationId;
+    setVoiceDebug((prev) => ({
+      ...prev,
+      operationId,
+      operationCapability: operationType,
+      operationUploadStatus: 'creating',
+      operationUploadError: undefined,
+    }));
+    try {
+      await createRokidOperation({
+        operationId,
+        type: operationType,
+        state: 'running',
+        primarySurface: 'rokid_glasses',
+        meta: {
+          source_surface: 'rokid_health_mode',
+          device: currentRokidDeviceName(),
+          privacy_mode: privacyMode,
+          ...meta,
+        },
+      });
+      setVoiceDebug((prev) => ({
+        ...prev,
+        operationId,
+        operationCapability: operationType,
+        operationUploadStatus: 'ready',
+        operationUploadError: undefined,
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'rokid_operation_create_failed';
+      setVoiceDebug((prev) => ({
+        ...prev,
+        operationId,
+        operationCapability: operationType,
+        operationUploadStatus: 'failed',
+        operationUploadError: message,
+      }));
+    }
+    return operationId;
+  };
+
+  const appendRokidOperationEventSafe = async (
+    operationId: string | undefined,
+    event: AppendRokidOperationEventInput,
+  ) => {
+    if (!operationId) {
+      return;
+    }
+    try {
+      await appendRokidOperationEvent(operationId, event);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'rokid_operation_event_failed';
+      setVoiceDebug((prev) => ({
+        ...prev,
+        operationUploadStatus: 'failed',
+        operationUploadError: message,
+      }));
+    }
+  };
+
+  const uploadRokidVoiceDiagnosticsSafe = async (
+    operationId: string | undefined,
+    summary?: string,
+  ) => {
+    if (!operationId) {
+      return false;
+    }
+    const diagnostics = buildRokidOperationDiagnostics({
+      operationId,
+      status: status as unknown as Record<string, unknown> | undefined,
+      voiceState,
+      voiceDebug,
+      selfCheck: voiceSelfCheck,
+    });
+    try {
+      await uploadRokidDiagnostics({
+        operationId,
+        summary: summary ?? voiceSelfCheck.summary,
+        diagnostics,
+        severity: voiceSelfCheck.items.some((item) => item.status === 'fail') ? 'error' : 'warn',
+      });
+      setVoiceDebug((prev) => ({
+        ...prev,
+        diagnosticUploadedAt: new Date().toISOString(),
+        operationUploadStatus: 'diagnostic_uploaded',
+        operationUploadError: undefined,
+      }));
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'rokid_diagnostic_upload_failed';
+      setVoiceDebug((prev) => ({
+        ...prev,
+        operationUploadStatus: 'failed',
+        operationUploadError: message,
+      }));
+      return false;
+    }
+  };
 
   const removeVoiceTranscriptListener = () => {
     voiceTranscriptSubscriptionRef.current?.remove();
@@ -1345,16 +1495,32 @@ export default function RokidHealthScreen() {
   };
 
   const copyRokidVoiceDebugInfo = async () => {
+    const uploaded = await uploadRokidVoiceDiagnosticsSafe(
+      voiceDebug.operationId ?? rokidOperationIdRef.current,
+      'manual_debug_copy',
+    );
     await Clipboard.setStringAsync(voiceDebugText);
-    Alert.alert('已复制', 'Rokid 语音自检信息已复制。');
+    Alert.alert(
+      '已复制',
+      uploaded
+        ? 'Rokid 语音自检信息已复制，并已上传诊断。'
+        : 'Rokid 语音自检信息已复制；本次没有可上传的 operation_id 或上传失败。',
+    );
   };
 
   // 共享草稿提交:眼镜或手机相机拍到的食物图都走这里 —— 一律 manual_confirm_required:true,
   // 后端落 needs_confirmation 草稿,绝不自动写 DietRecord(council #1 R4)。
   const submitRokidFoodDraft = async (
     action: (typeof CAPTURE_ACTIONS)[number],
-    opts: { imageBase64?: string; imageUri?: string; imageSha256?: string; imageByteLength?: number; captureSource: string },
-  ) => {
+    opts: {
+      imageBase64?: string;
+      imageUri?: string;
+      imageSha256?: string;
+      imageByteLength?: number;
+      captureSource: string;
+      operationId?: string;
+    },
+  ): Promise<RokidFoodDraftResult> => {
     const capturedAt = new Date().toISOString();
     const meta: Record<string, unknown> = {
       privacy_mode: privacyMode,
@@ -1402,9 +1568,23 @@ export default function RokidHealthScreen() {
       recognitionResult,
       confidence,
       capturedAt,
+      operationId: opts.operationId,
       privacyClass: 'health_l3',
       meta,
     });
+    const visualInputEvent = submitResult.event;
+    const visualInputEventId = typeof visualInputEvent?.id === 'number'
+      ? visualInputEvent.id
+      : undefined;
+    const visualInputStatus = typeof visualInputEvent?.status === 'string'
+      ? visualInputEvent.status
+      : undefined;
+    const targetType = typeof visualInputEvent?.target_type === 'string'
+      ? visualInputEvent.target_type
+      : undefined;
+    const targetId = typeof visualInputEvent?.target_id === 'number'
+      ? visualInputEvent.target_id
+      : undefined;
     const nutritionSummary = action.intent === 'food_scan'
       ? foodRecognitionSummary(foodRecognition)
       : undefined;
@@ -1425,13 +1605,43 @@ export default function RokidHealthScreen() {
       message,
       nutritionSummary,
       savedDietRecord,
+      visualInputEventId,
+      visualInputStatus,
+      targetType,
+      targetId,
+      dietRecordId: targetType === 'diet_record' ? targetId : undefined,
     };
   };
 
   // council #1 R4:眼镜拍照不可用时用手机相机,但仍走 Rokid 草稿流(needs_confirmation)。
   // 不再深链到 /diet?capture=photo —— 那条 diet.tsx 会立即 createDietRecord 入库,逃离 draft+confirm。
-  const openMobileFoodCameraFallback = async (action: (typeof CAPTURE_ACTIONS)[number]) => {
+  const openMobileFoodCameraFallback = async (
+    action: (typeof CAPTURE_ACTIONS)[number],
+    operationId?: string,
+  ) => {
+    let resolvedOperationId = operationId;
     try {
+      if (!resolvedOperationId) {
+        resolvedOperationId = await ensureRokidOperation(
+          action.intent === 'food_scan' ? 'capture_food' : `visual_${action.intent}`,
+          {
+            trigger: 'phone_camera_fallback',
+            visual_intent: action.intent,
+          },
+          { reuseCurrent: false },
+        );
+      }
+      await appendRokidOperationEventSafe(resolvedOperationId, {
+        eventType: 'phone_camera_fallback_started',
+        phase: 'photo',
+        severity: 'warn',
+        state: 'running',
+        message: 'Rokid camera unavailable; using phone camera fallback',
+        payload: {
+          visual_intent: action.intent,
+          capture_source: 'phone_camera_fallback',
+        },
+      });
       setVoiceDebug((prev) => ({
         ...prev,
         photoPhase: prev.photoPhase === 'native_failed' || prev.photoPhase === 'blocked' ? 'phone_fallback' : prev.photoPhase,
@@ -1447,6 +1657,13 @@ export default function RokidHealthScreen() {
           photoError: 'phone_camera_permission_denied',
         }));
         setCaptureState({ status: 'failed', actionTitle: action.title, message: '需要相机权限才能用手机拍照记录' });
+        await appendRokidOperationEventSafe(resolvedOperationId, {
+          eventType: 'phone_camera_permission_denied',
+          phase: 'photo',
+          severity: 'block',
+          state: 'failed',
+          message: 'Phone camera permission denied',
+        });
         return;
       }
       setCaptureState({
@@ -1464,6 +1681,13 @@ export default function RokidHealthScreen() {
           photoError: undefined,
         }));
         setCaptureState({ status: 'idle', actionTitle: action.title, message: '已取消手机拍照' });
+        await appendRokidOperationEventSafe(resolvedOperationId, {
+          eventType: 'phone_camera_cancelled',
+          phase: 'photo',
+          severity: 'info',
+          state: 'cancelled',
+          message: 'Phone camera fallback cancelled',
+        });
         return;
       }
       const asset = result.assets[0];
@@ -1483,6 +1707,24 @@ export default function RokidHealthScreen() {
         imageBase64: asset.base64 ?? undefined,
         imageUri: asset.uri,
         captureSource: 'phone_camera_fallback',
+        operationId: resolvedOperationId,
+      });
+      await appendRokidOperationEventSafe(resolvedOperationId, {
+        eventType: draftResult.ok ? 'food_draft_submitted' : 'food_draft_failed',
+        phase: 'draft',
+        severity: draftResult.ok ? 'pass' : 'error',
+        state: draftResult.ok ? 'succeeded' : 'failed',
+        message: draftResult.message,
+        payload: {
+          capture_source: 'phone_camera_fallback',
+          nutrition_summary_present: Boolean(draftResult.nutritionSummary),
+          saved_diet_record: Boolean(draftResult.savedDietRecord),
+          visual_input_event_id: draftResult.visualInputEventId,
+          visual_input_status: draftResult.visualInputStatus,
+          target_type: draftResult.targetType,
+          target_id: draftResult.targetId,
+          diet_record_id: draftResult.dietRecordId,
+        },
       });
       setVoiceDebug((prev) => ({
         ...prev,
@@ -1505,6 +1747,13 @@ export default function RokidHealthScreen() {
         status: 'failed',
         actionTitle: action.title,
         message: `手机拍照失败: ${message}`,
+      });
+      await appendRokidOperationEventSafe(resolvedOperationId, {
+        eventType: 'phone_camera_fallback_failed',
+        phase: 'photo',
+        severity: 'error',
+        state: 'failed',
+        message,
       });
     }
   };
@@ -1730,7 +1979,22 @@ export default function RokidHealthScreen() {
     }
   };
 
-  const handleVisualCapture = async (action: (typeof CAPTURE_ACTIONS)[number]) => {
+  const handleVisualCapture = async (
+    action: (typeof CAPTURE_ACTIONS)[number],
+    operationIdOverride?: string,
+  ) => {
+    if (operationIdOverride) {
+      rokidOperationIdRef.current = operationIdOverride;
+    }
+    const operationType = action.intent === 'food_scan' ? 'capture_food' : `visual_${action.intent}`;
+    const operationId = await ensureRokidOperation(
+      operationType,
+      {
+        trigger: operationIdOverride ? 'voice_command' : 'manual_capture',
+        visual_intent: action.intent,
+      },
+      { reuseCurrent: Boolean(operationIdOverride) },
+    );
     setCaptureState({ status: 'capturing', actionTitle: action.title, message: `${action.title}提交中...` });
     const startedAt = new Date().toISOString();
     setVoiceDebug((prev) => ({
@@ -1748,6 +2012,18 @@ export default function RokidHealthScreen() {
       photoDraftStatus: undefined,
       photoSummary: undefined,
     }));
+    await appendRokidOperationEventSafe(operationId, {
+      eventType: 'visual_capture_requested',
+      phase: 'photo',
+      severity: 'info',
+      state: 'running',
+      message: `${action.title} requested`,
+      payload: {
+        visual_intent: action.intent,
+        preferred_source: 'rokid_glasses',
+      },
+      occurredAt: startedAt,
+    });
     try {
       let latestStatus = status;
       try {
@@ -1767,7 +2043,20 @@ export default function RokidHealthScreen() {
             photoError: 'rokid_capture_hard_blocker',
             photoResultAt: new Date().toISOString(),
           }));
-          await openMobileFoodCameraFallback(action);
+          await appendRokidOperationEventSafe(operationId, {
+            eventType: 'rokid_camera_blocked',
+            phase: 'photo',
+            severity: 'warn',
+            state: 'running',
+            message: 'Rokid camera hard blocker detected; using fallback',
+            payload: {
+              visual_intent: action.intent,
+              platform: latestStatus.platform,
+              ble_connected: latestStatus.iosBleConnected,
+              last_custom_view_error: latestStatus.lastCustomViewOpenError,
+            },
+          });
+          await openMobileFoodCameraFallback(action, operationId);
           return;
         }
         throw new Error('rokid_custom_view_not_ready');
@@ -1803,8 +2092,19 @@ export default function RokidHealthScreen() {
           photoResultAt: new Date().toISOString(),
           photoError: reason,
         }));
+        await appendRokidOperationEventSafe(operationId, {
+          eventType: 'rokid_photo_failed',
+          phase: 'photo',
+          severity: 'warn',
+          state: action.intent === 'food_scan' && isRokidNativeChannelNotReady(reason) ? 'running' : 'failed',
+          message: reason,
+          payload: {
+            capture_source: 'rokid_glasses',
+            fallback_available: action.intent === 'food_scan',
+          },
+        });
         if (action.intent === 'food_scan' && isRokidNativeChannelNotReady(reason)) {
-          await openMobileFoodCameraFallback(action);
+          await openMobileFoodCameraFallback(action, operationId);
           return;
         }
         throw new Error(reason);
@@ -1825,12 +2125,44 @@ export default function RokidHealthScreen() {
         photoHasSha256: Boolean(imageSha256),
         photoError: undefined,
       }));
+      await appendRokidOperationEventSafe(operationId, {
+        eventType: 'rokid_photo_received',
+        phase: 'photo',
+        severity: 'pass',
+        state: 'running',
+        message: 'Rokid photo returned to iPhone',
+        payload: {
+          capture_source: 'rokid_glasses',
+          byte_length: typeof imageByteLength === 'number' ? imageByteLength : undefined,
+          has_base64: Boolean(imageBase64),
+          has_image_uri: Boolean(imageUri),
+          has_sha256: Boolean(imageSha256),
+        },
+      });
       const draftResult = await submitRokidFoodDraft(action, {
         imageBase64,
         imageUri,
         imageSha256,
         imageByteLength: typeof imageByteLength === 'number' ? imageByteLength : undefined,
         captureSource: 'rokid_glasses',
+        operationId,
+      });
+      await appendRokidOperationEventSafe(operationId, {
+        eventType: draftResult.ok ? 'food_draft_submitted' : 'food_draft_failed',
+        phase: 'draft',
+        severity: draftResult.ok ? 'pass' : 'error',
+        state: draftResult.ok ? 'succeeded' : 'failed',
+        message: draftResult.message,
+        payload: {
+          capture_source: 'rokid_glasses',
+          nutrition_summary_present: Boolean(draftResult.nutritionSummary),
+          saved_diet_record: Boolean(draftResult.savedDietRecord),
+          visual_input_event_id: draftResult.visualInputEventId,
+          visual_input_status: draftResult.visualInputStatus,
+          target_type: draftResult.targetType,
+          target_id: draftResult.targetId,
+          diet_record_id: draftResult.dietRecordId,
+        },
       });
       setVoiceDebug((prev) => ({
         ...prev,
@@ -1852,6 +2184,18 @@ export default function RokidHealthScreen() {
         actionTitle: action.title,
         message: `${action.title}失败: ${message}`,
       });
+      await appendRokidOperationEventSafe(operationId, {
+        eventType: 'visual_capture_failed',
+        phase: 'photo',
+        severity: 'error',
+        state: 'failed',
+        message,
+        payload: {
+          visual_intent: action.intent,
+          capture_source: 'rokid_glasses',
+        },
+      });
+      await uploadRokidVoiceDiagnosticsSafe(operationId, message);
     }
   };
 
@@ -1887,11 +2231,34 @@ export default function RokidHealthScreen() {
     voiceCommandInFlightRef.current = true;
     const normalizedTranscript = normalizeRokidHealthTranscript(rawTranscript);
     const transcript = normalizedTranscript.transcript;
+    const operationId = await ensureRokidOperation(
+      'voice_command',
+      {
+        trigger: 'voice_transcript',
+        transcript_source: isPhoneMicFallbackTranscript(event) ? 'phone_mic_fallback' : 'rokid_transcript',
+        transcript_normalized_by: normalizedTranscript.normalizedBy,
+      },
+      { reuseCurrent: false },
+    );
 
     const capturedAt = transcriptCapturedAt(event);
     const shouldRestartPhoneFallbackOnClarify = isPhoneMicFallbackTranscript(event);
     const restartPhoneFallbackReason = phoneMicFallbackReason(event, voiceDebug.fallbackReason);
     let restartPhoneFallback = false;
+    await appendRokidOperationEventSafe(operationId, {
+      eventType: 'voice_transcript_received',
+      phase: 'voice',
+      severity: 'info',
+      state: 'running',
+      message: 'Voice transcript received',
+      payload: {
+        transcript_source: isPhoneMicFallbackTranscript(event) ? 'phone_mic_fallback' : 'rokid_transcript',
+        raw_transcript: rawTranscript,
+        normalized_transcript: transcript,
+        normalized_by: normalizedTranscript.normalizedBy,
+      },
+      occurredAt: capturedAt,
+    });
     setVoiceDebug((prev) => ({
       ...prev,
       lastTranscript: transcript,
@@ -1910,6 +2277,7 @@ export default function RokidHealthScreen() {
         context: 'rokid_health',
         capturedAt,
         meta: {
+          operation_id: operationId,
           source_surface: 'rokid_health_mode',
           source_event: 'rokid_transcript',
           ...normalizedTranscript.meta,
@@ -1920,6 +2288,30 @@ export default function RokidHealthScreen() {
       const reply = command?.voice_reply || command?.display_text;
       const commandAction = command?.client_action ?? command?.intent ?? 'unknown';
       restartPhoneFallback = shouldRestartPhoneFallbackOnClarify && commandAction === 'clarify';
+      if (commandAction === 'capture_food_photo') {
+        await ensureRokidOperation(
+          'capture_food',
+          {
+            trigger: 'voice_command',
+            client_action: commandAction,
+            visual_intent: command?.parameters?.visual_intent,
+          },
+          { reuseCurrent: true },
+        );
+      }
+      await appendRokidOperationEventSafe(operationId, {
+        eventType: 'voice_command_routed',
+        phase: 'route',
+        severity: commandAction === 'unknown' ? 'warn' : 'pass',
+        state: 'running',
+        message: reply ?? `Voice command routed: ${commandAction}`,
+        payload: {
+          client_action: command?.client_action,
+          intent: command?.intent,
+          route: command?.route,
+          visual_intent: command?.parameters?.visual_intent,
+        },
+      });
       setVoiceDebug((prev) => ({
         ...prev,
         lastCommandAction: commandAction,
@@ -1936,11 +2328,25 @@ export default function RokidHealthScreen() {
           const action = captureActionForVisualIntent(visualIntent);
           if (!action) {
             setVoiceState({ status: 'failed', message: `Rokid 语音指令不支持视觉意图: ${visualIntent}` });
+            await appendRokidOperationEventSafe(operationId, {
+              eventType: 'voice_visual_intent_unsupported',
+              phase: 'route',
+              severity: 'error',
+              state: 'failed',
+              message: `Unsupported visual intent: ${visualIntent}`,
+            });
             return;
           }
-          await handleVisualCapture(action);
+          await handleVisualCapture(action, operationId);
         },
         openPushupCoach: async ({ route }) => {
+          await appendRokidOperationEventSafe(operationId, {
+            eventType: 'pushup_coach_open_requested',
+            phase: 'route',
+            severity: 'info',
+            state: 'running',
+            message: route ?? '/rokid-pushup-coach',
+          });
           router.push((route ?? '/rokid-pushup-coach') as any);
         },
         stopPushupCoach: async ({ route }) => {
@@ -1974,6 +2380,14 @@ export default function RokidHealthScreen() {
         status: 'failed',
         message: `Rokid 语音指令失败: ${message}`,
       });
+      await appendRokidOperationEventSafe(operationId, {
+        eventType: 'voice_command_failed',
+        phase: 'route',
+        severity: 'error',
+        state: 'failed',
+        message,
+      });
+      await uploadRokidVoiceDiagnosticsSafe(operationId, message);
     } finally {
       // council #3:命令处理结束(成功或失败)后解锁,允许下一条明确指令。
       voiceCommandInFlightRef.current = false;

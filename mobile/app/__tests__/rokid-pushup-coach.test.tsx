@@ -241,6 +241,39 @@ describe('RokidPushupCoachScreen', () => {
     });
   });
 
+  it('surfaces glasses session_state events during real pushup polling', async () => {
+    mockListRokidPushupEvents
+      .mockResolvedValueOnce([
+        {
+          id: 12,
+          session_id: 7,
+          user_id: 3,
+          event_type: 'session_state',
+          reps: null,
+          phase: null,
+          payload: {
+            state: 'camera_status',
+            message: '相机已启动',
+            detail: 'back_camera',
+          },
+          occurred_at: '2026-06-19T12:00:00Z',
+          created_at: '2026-06-19T12:00:00Z',
+        },
+      ])
+      .mockResolvedValue([]);
+
+    const screen = renderWithProviders(<RokidPushupCoachScreen />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动眼镜识别'));
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('眼镜端状态: 相机已启动 · back_camera')).toBeTruthy();
+    });
+  });
+
   it('does not claim "已停止" when stopRokidApp is rejected (council R3: no fake success)', async () => {
     // 原生 stopApp 被拒时是 resolve {ok:false}(不抛)。旧代码不检查 ok → 即便被拒也显"已停止"。
     mockListRokidPushupEvents.mockResolvedValue([]);

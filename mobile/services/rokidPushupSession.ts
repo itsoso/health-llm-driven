@@ -116,6 +116,23 @@ export function rokidPushupEventToPoseSample(event: RokidPushupEvent): PushupPos
   };
 }
 
+export function rokidPushupSessionStateMessage(event: RokidPushupEvent): string | null {
+  if (event.event_type !== 'session_state') {
+    return null;
+  }
+  const payload = event.payload ?? {};
+  const state = typeof payload.state === 'string' ? payload.state : 'session_state';
+  const message = typeof payload.message === 'string' && payload.message.trim()
+    ? payload.message.trim()
+    : state;
+  const detail = typeof payload.detail === 'string' && payload.detail.trim()
+    ? payload.detail.trim()
+    : null;
+  return detail
+    ? `眼镜端状态: ${message} · ${detail}`
+    : `眼镜端状态: ${message}`;
+}
+
 export function applyRokidPushupEventToCoach(
   state: PushupCoachState,
   event: RokidPushupEvent,
