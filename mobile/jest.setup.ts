@@ -80,6 +80,7 @@ jest.mock('react-native-svg', () => {
 jest.mock('./modules/shared-keychain', () => ({
   saveTokenToSharedKeychain: jest.fn().mockResolvedValue(true),
   deleteTokenFromSharedKeychain: jest.fn().mockResolvedValue(undefined),
+  readTokenFromSharedKeychain: jest.fn().mockResolvedValue(null),
 }));
 
 jest.mock('react-native-safe-area-context', () => {

@@ -19,6 +19,7 @@ jest.mock('../../services/auth', () => ({
 
 jest.mock('../../modules/shared-keychain', () => ({
   saveTokenToSharedKeychain: jest.fn().mockResolvedValue(0),
+  readTokenFromSharedKeychain: jest.fn().mockResolvedValue(null),
 }));
 
 import { AuthProvider, useAuth } from '../useAuth';

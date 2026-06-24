@@ -24,6 +24,7 @@ jest.mock('../api', () => ({
 jest.mock('../../modules/shared-keychain', () => ({
   saveTokenToSharedKeychain: jest.fn().mockResolvedValue(0),
   deleteTokenFromSharedKeychain: jest.fn().mockResolvedValue(undefined),
+  readTokenFromSharedKeychain: jest.fn().mockResolvedValue(null),
 }));
 
 import {
@@ -35,17 +36,20 @@ import * as SecureStore from 'expo-secure-store';
 import {
   saveTokenToSharedKeychain,
   deleteTokenFromSharedKeychain,
+  readTokenFromSharedKeychain,
 } from '../../modules/shared-keychain';
 
 const mockedApi = api as jest.Mocked<typeof api>;
 const mockedSave = saveTokenToSharedKeychain as jest.MockedFunction<typeof saveTokenToSharedKeychain>;
 const mockedDelete = deleteTokenFromSharedKeychain as jest.MockedFunction<typeof deleteTokenFromSharedKeychain>;
+const mockedReadShared = readTokenFromSharedKeychain as jest.MockedFunction<typeof readTokenFromSharedKeychain>;
 
 describe('services/auth', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedSave.mockResolvedValue(0);
     mockedDelete.mockResolvedValue(undefined);
+    mockedReadShared.mockResolvedValue(null);
   });
 
   describe('login', () => {
@@ -116,6 +120,28 @@ describe('services/auth', () => {
         new Error('SecureStore unavailable'),
       );
       await expect(getToken()).resolves.toBeNull();
+    });
+
+    it('falls back to shared keychain and rehydrates SecureStore when token is missing', async () => {
+      (SecureStore.getItemAsync as jest.Mock).mockResolvedValueOnce(null);
+      mockedReadShared.mockResolvedValueOnce('tok_shared');
+
+      await expect(getToken()).resolves.toBe('tok_shared');
+
+      expect(mockedReadShared).toHaveBeenCalledTimes(1);
+      expect(SecureStore.setItemAsync).toHaveBeenCalledWith(TOKEN_KEY, 'tok_shared');
+    });
+
+    it('falls back to shared keychain when SecureStore read throws', async () => {
+      (SecureStore.getItemAsync as jest.Mock).mockRejectedValueOnce(
+        new Error('SecureStore unavailable during update'),
+      );
+      mockedReadShared.mockResolvedValueOnce('tok_shared_after_error');
+
+      await expect(getToken()).resolves.toBe('tok_shared_after_error');
+
+      expect(mockedReadShared).toHaveBeenCalledTimes(1);
+      expect(SecureStore.setItemAsync).toHaveBeenCalledWith(TOKEN_KEY, 'tok_shared_after_error');
     });
 
     it('isLoggedIn reflects token presence', async () => {

@@ -3,6 +3,7 @@ import api, { TOKEN_KEY } from './api';
 import {
   saveTokenToSharedKeychain,
   deleteTokenFromSharedKeychain,
+  readTokenFromSharedKeychain,
 } from '../modules/shared-keychain';
 
 export interface User {
@@ -39,7 +40,23 @@ export async function logout(): Promise<void> {
 
 export async function getToken(): Promise<string | null> {
   try {
-    return await SecureStore.getItemAsync(TOKEN_KEY);
+    const token = await SecureStore.getItemAsync(TOKEN_KEY);
+    if (token) return token;
+  } catch {
+    // Fall through to the shared native store. iOS updates can transiently
+    // fail SecureStore reads while App Group storage still has the token.
+  }
+
+  try {
+    const sharedToken = await readTokenFromSharedKeychain();
+    if (!sharedToken) return null;
+
+    try {
+      await SecureStore.setItemAsync(TOKEN_KEY, sharedToken);
+    } catch {
+      // Returning the shared token is still better than forcing a logout.
+    }
+    return sharedToken;
   } catch {
     return null;
   }

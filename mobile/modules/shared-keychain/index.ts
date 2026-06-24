@@ -3,6 +3,7 @@ import { Platform } from 'expo-modules-core';
 const noop = {
   saveToken: async (_token: string) => 0,
   deleteToken: async () => {},
+  readToken: async () => null as string | null,
   readDiagnostic: async () => 'native-unavailable',
 };
 
@@ -22,6 +23,11 @@ export async function saveTokenToSharedKeychain(token: string): Promise<number> 
 
 export async function deleteTokenFromSharedKeychain(): Promise<void> {
   return SharedKeychain.deleteToken();
+}
+
+export async function readTokenFromSharedKeychain(): Promise<string | null> {
+  const token = await SharedKeychain.readToken();
+  return typeof token === 'string' && token.length > 0 ? token : null;
 }
 
 /**

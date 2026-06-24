@@ -60,6 +60,32 @@ public class SharedKeychainModule: Module {
             NotificationCenter.default.post(name: SharedKeychainModule.tokenChangedNotification, object: nil)
         }
 
+        AsyncFunction("readToken") { () -> String? in
+            if let defaults = UserDefaults(suiteName: SharedKeychainModule.appGroup),
+               let token = defaults.string(forKey: SharedKeychainModule.tokenKey),
+               !token.isEmpty {
+                return token
+            }
+
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: SharedKeychainModule.service,
+                kSecAttrAccount as String: SharedKeychainModule.tokenKey,
+                kSecAttrAccessGroup as String: SharedKeychainModule.appGroup,
+                kSecReturnData as String: true,
+                kSecMatchLimit as String: kSecMatchLimitOne,
+            ]
+            var result: AnyObject?
+            let status = SecItemCopyMatching(query as CFDictionary, &result)
+            guard status == errSecSuccess,
+                  let data = result as? Data,
+                  let token = String(data: data, encoding: .utf8),
+                  !token.isEmpty else {
+                return nil
+            }
+            return token
+        }
+
         /// 诊断: 主 App 读回自己写到 App Group UserDefaults 的 marker 和 token。
         /// 如果这里读不到, 说明 UserDefaults(suiteName:) 在主 App 进程里就降级了,
         /// 根本没写到真正的 shared container —— Siri 自然也读不到。
