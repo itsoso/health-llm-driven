@@ -12,9 +12,10 @@
 #
 # Env overrides:
 #   IOS_LOCAL_QR_PUBLIC_BASE_URL=https://health.executor.life/mobile-install/ios/<id>
-#   IOS_LOCAL_QR_REMOTE_DIR=/opt/health-app/frontend/public/mobile-install/ios/<id>
+#   IOS_LOCAL_QR_REMOTE_DIR=/opt/health-app-shared/mobile-install/ios/<id>
 #   IOS_LOCAL_QR_TEAM_ID=QA2U724DAN
 #   IOS_LOCAL_QR_SCHEME=HealthPilot
+#   IOS_LOCAL_QR_EXPORT_METHOD=ad-hoc
 
 set -euo pipefail
 
@@ -28,6 +29,7 @@ UPLOAD="${IOS_LOCAL_QR_UPLOAD:-1}"
 BUILD_ID="$(date +%Y%m%d-%H%M%S)-$(git -C "${ROOT}" rev-parse --short HEAD)"
 TEAM_ID="${IOS_LOCAL_QR_TEAM_ID:-QA2U724DAN}"
 SCHEME="${IOS_LOCAL_QR_SCHEME:-HealthPilot}"
+EXPORT_METHOD="${IOS_LOCAL_QR_EXPORT_METHOD:-ad-hoc}"
 
 usage() {
   sed -n '1,24p' "$0"
@@ -127,6 +129,31 @@ require_command() {
   fi
 }
 
+write_export_options() {
+  local method="$1"
+  local path="$2"
+  cat > "${path}" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>method</key>
+  <string>${method}</string>
+  <key>signingStyle</key>
+  <string>automatic</string>
+  <key>teamID</key>
+  <string>${TEAM_ID}</string>
+  <key>compileBitcode</key>
+  <false/>
+  <key>stripSwiftSymbols</key>
+  <true/>
+  <key>uploadSymbols</key>
+  <false/>
+</dict>
+</plist>
+PLIST
+}
+
 if [ -n "${IPA_INPUT}" ]; then
   if [ ! -f "${IPA_INPUT}" ]; then
     echo "IPA not found: ${IPA_INPUT}" >&2
@@ -164,26 +191,7 @@ else
     fi
   fi
 
-  cat > "${EXPORT_OPTIONS}" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>method</key>
-  <string>ad-hoc</string>
-  <key>signingStyle</key>
-  <string>automatic</string>
-  <key>teamID</key>
-  <string>${TEAM_ID}</string>
-  <key>compileBitcode</key>
-  <false/>
-  <key>stripSwiftSymbols</key>
-  <true/>
-  <key>uploadSymbols</key>
-  <false/>
-</dict>
-</plist>
-PLIST
+  write_export_options "${EXPORT_METHOD}" "${EXPORT_OPTIONS}"
 
   echo "==> archive (${SCHEME})"
   xcodebuild \
@@ -198,14 +206,29 @@ PLIST
     DEVELOPMENT_TEAM="${TEAM_ID}" \
     archive 2>&1 | tee "${BUILD_LOG}"
 
-  echo "==> export ad-hoc IPA"
-  xcodebuild \
+  echo "==> export ${EXPORT_METHOD} IPA"
+  if ! xcodebuild \
     -exportArchive \
     -archivePath "${ARCHIVE_PATH}" \
     -exportPath "${EXPORT_DIR}" \
     -exportOptionsPlist "${EXPORT_OPTIONS}" \
     -allowProvisioningUpdates \
-    "${AUTH_ARGS[@]}" 2>&1 | tee -a "${BUILD_LOG}"
+    "${AUTH_ARGS[@]}" 2>&1 | tee -a "${BUILD_LOG}"; then
+    if [ "${EXPORT_METHOD}" = "development" ]; then
+      exit 1
+    fi
+
+    echo "==> ${EXPORT_METHOD} export failed; retry development export" | tee -a "${BUILD_LOG}"
+    EXPORT_METHOD="development"
+    EXPORT_DIR="${OUTPUT_DIR}/export-development"
+    write_export_options "${EXPORT_METHOD}" "${EXPORT_OPTIONS}"
+    xcodebuild \
+      -exportArchive \
+      -archivePath "${ARCHIVE_PATH}" \
+      -exportPath "${EXPORT_DIR}" \
+      -exportOptionsPlist "${EXPORT_OPTIONS}" \
+      -allowProvisioningUpdates 2>&1 | tee -a "${BUILD_LOG}"
+  fi
 
   EXPORTED_IPA="$(find "${EXPORT_DIR}" -maxdepth 1 -name '*.ipa' -print | head -1)"
   if [ -z "${EXPORTED_IPA}" ]; then
@@ -218,7 +241,7 @@ fi
 TMP_UNZIP="$(mktemp -d)"
 trap 'rm -rf "${TMP_UNZIP}"' EXIT
 unzip -q "${IPA_PATH}" -d "${TMP_UNZIP}"
-APP_INFO="$(find "${TMP_UNZIP}/Payload" -maxdepth 3 -name Info.plist -print | head -1)"
+APP_INFO="$(find "${TMP_UNZIP}/Payload" -mindepth 2 -maxdepth 2 -name Info.plist -print | head -1)"
 if [ -z "${APP_INFO}" ]; then
   echo "Cannot find app Info.plist inside ${IPA_PATH}" >&2
   exit 1
@@ -311,11 +334,11 @@ ${INSTALL_URL}
 EOF
 
 if [ "${UPLOAD}" = "1" ]; then
-  if [ -z "${DEPLOY_SERVER:-}" ] || [ -z "${DEPLOY_PATH:-}" ]; then
-    echo "DEPLOY_SERVER/DEPLOY_PATH missing; cannot upload. Re-run with --no-upload for local artifacts only." >&2
+  if [ -z "${DEPLOY_SERVER:-}" ]; then
+    echo "DEPLOY_SERVER missing; cannot upload. Re-run with --no-upload for local artifacts only." >&2
     exit 1
   fi
-  REMOTE_DIR="${IOS_LOCAL_QR_REMOTE_DIR:-${DEPLOY_PATH}/frontend/public/mobile-install/ios/${BUILD_ID}}"
+  REMOTE_DIR="${IOS_LOCAL_QR_REMOTE_DIR:-/opt/health-app-shared/mobile-install/ios/${BUILD_ID}}"
   echo "==> upload to ${DEPLOY_SERVER}:${REMOTE_DIR}"
   ssh "${DEPLOY_SERVER}" "mkdir -p '${REMOTE_DIR}'"
   rsync -az --delete "${OUTPUT_DIR}/" "${DEPLOY_SERVER}:${REMOTE_DIR}/"
