@@ -56,6 +56,14 @@ export interface SmartAgendaItem {
   can_complete: boolean;
   can_snooze: boolean;
   can_skip: boolean;
+  /**
+   * 含糊语音(Rokid「确认/跳过」)可否安全自动完成 —— 后端权威安全门(R4)。
+   * 后端从协议 source_model 派生:完成会写医疗级依从(MedicationLog/SupplementRecord)
+   * 或为复查项 → false。比 domain 更可靠(domain↔source_model 可漂移)。
+   * 可选:旧后端不发该字段时为 undefined,客户端回退到 domain 白名单。
+   * 见 backend agenda_service._is_voice_actionable / rokidVoiceAgenda.ts。
+   */
+  voice_actionable?: boolean;
   confidence?: string | number | null;
   claim_boundary?: string | null;
 }
