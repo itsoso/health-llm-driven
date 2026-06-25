@@ -217,6 +217,19 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
         phys_parts.append(spo2_text)
     if p.vo2max_running is not None:
         phys_parts.append(f"VO2max {p.vo2max_running:.0f}")
+    if p.training_readiness_score is not None:
+        # 训练就绪度(Garmin 官方)+ 厂商自己的简短判读,让 LLM 能解释"为什么是这个数"。
+        # 只用权威的 feedbackShort/Long;不数值化 recoveryTime/hrvWeeklyAverage(原始透传、单位不确定)。
+        rd = f"训练就绪度 {p.training_readiness_score}"
+        factors = p.training_readiness_factors
+        if isinstance(factors, dict):
+            fb = factors.get("feedbackShort") or factors.get("feedbackLong")
+            if isinstance(fb, str) and fb.strip():
+                # feedbackLong 是多句 vendor prose:折叠换行/连续空白 + 截断,
+                # 否则换行会撑断「生理: ...」单行结构、超长会让 prompt 膨胀(与本文件 cap 纪律一致)。
+                fb_clean = " ".join(fb.split())[:120]
+                rd += f"({fb_clean})"
+        phys_parts.append(rd)
     if phys_parts:
         age = _age_label(twin.freshness.garmin)
         lines.append(f"生理{age}: " + ", ".join(phys_parts))
