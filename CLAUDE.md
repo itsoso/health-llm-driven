@@ -15,6 +15,7 @@ Claude Code 读本文件；Cursor 读 `.cursor/rules/00-agents-bootstrap.mdc` �
 | 编码 agent 如何在本仓库导航 / 验证 / 沉淀经验（**操作工具架**,≠ 上面那条产品 HARNESS.md） | `docs/design-agent-operating-harness.md` |
 | iOS / Expo 工作流通用经验（Metro / dev-client / EAS 异步双通道） | `~/work/personal/PRACTICES/mobile-expo-dev-workflow.md` |
 | Expo local native module 手写规则 | `~/work/personal/PRACTICES/expo-local-module-podspec.md` |
+| 改 Rokid CXR-L 集成（`mobile/modules/rokid-bridge/` · `rokid-health.tsx` · `apps/rokid-pushup-glasses/` · `backend/app/api/rokid.py`） | **先读结论**：`docs/plans/2026-06-24-rokid-codex-review-adjudication-conclusion.md`（终裁 + 修复顺序）+ `docs/plans/2026-06-24-rokid-sdk-doc-vs-code-architecture-review.md`（SDK×代码 F1-F5）；**再按需 grep SDK 原文**：`docs/vendor/rokid-cxr-l-sdk/`（CXR-L v1.0.3 官方知识库 32 篇，`README.md` 是索引——别整目录 `@`，会爆上下文） |
 | 新功能起步（四问 + ASCII 数据流） | `~/work/personal/PRACTICES/feature-plan.md` |
 
 > **README.md 关于移动端的描述已过时**（仍写 Capacitor），以本文件 §"移动端构建方向" 为准。
@@ -296,11 +297,11 @@ Collectors + Services (L1) ← Garmin/Withings/CGM/化验/基因/环境/补剂/�
 | LongevitySpecialist | `agents/longevity_specialist/` | PhenoAge(Levine 2018)表型年龄解读 + 缺值列清单 + 委托四件套(抗衰 MVP) |
 | CrossSourceValidator | `agents/cross_source_validator/` | 跨设备(Garmin/Apple Watch/RingConn)同指标差异过大检测(佩戴位移/硬件故障/数据可疑)+ 暂以高优先级源为准 |
 
-**Safety Guardian 规则分类** (`agents/safety_guardian/rules/`, total 61):
+**Safety Guardian 规则分类** (`agents/safety_guardian/rules/`, total 62):
 - `vitals.py` (12): BP/HR/SpO2/stress/sleep 急性阈值
 - `labs.py` (7): 肝酶三联/LDL/HbA1c/eGFR/WBC 模式识别
 - `ddi.py` (7): GLP-1×磺脲、华法林×NSAID、SSRI×MAOI 等
-- `dsi.py` (7): 鱼油×抗凝、钙×铁、维K×华法林、圣约翰草等
+- `dsi.py` (8): 鱼油×抗凝、钙×铁、维K×华法林、圣约翰草、长期抑酸(PPI/P-CAB)×B12/镁/铁化验感知等
 - `pgx.py` (10): 9 条手写(CYP2D6/CYP2C19/SLCO1B1/G6PD/HLA-B*5701/DPYD/ALDH2/MTHFR/VKORC1) + 1 条 CPIC Level-A 表驱动(`pgx_cpic_table.py` 纯数据,无 @register;迭代 TPMT/NUDT15/HLA-B*15:02/HLA-A*31:01/HLA-B*58:01/CYP2C19/CYP2D6/CYP2C9/CYP3A5/CYP2B6/RYR1/CACNA1S)
 - `training_load.py` (3): ACWR 过载/欠训练/零运动
 - `cgm.py` (6): 低血糖/高血糖/TIR/CV/GLP-1 联动
@@ -558,7 +559,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 | 目录 | 职责 |
 |------|------|
 | `backend/app/twin/` | Digital Health Twin 构建 + 缓存 + 格式化 |
-| `backend/app/agents/safety_guardian/` | 61 条安全规则引擎（不依赖 LLM） |
+| `backend/app/agents/safety_guardian/` | 62 条安全规则引擎（不依赖 LLM） |
 | `backend/app/agents/recovery_coach/` | Readiness 评分 + 恢复行动 |
 | `backend/app/agents/fuel_strategist/` | 营养缺口 + 基因驱动饮食 |
 | `backend/app/agents/movement_coach/` | ACWR + 训练处方 |

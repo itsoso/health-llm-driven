@@ -361,6 +361,8 @@ class MedicationService:
                 "meal_anchor": med.meal_anchor,
                 "timing_label": medication_timing_label(med.timing_relation, med.meal_anchor),
                 "category": med.category,
+                # 长期用药安全规则(如 dsi.long_term_acid_suppression)按 start_date 算时长
+                "start_date": med.start_date.isoformat() if med.start_date else None,
                 "total_count": med.times_per_day,
                 "taken_count": taken_count,
                 "skipped_count": skipped_count,

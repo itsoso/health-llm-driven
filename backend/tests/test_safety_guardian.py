@@ -638,6 +638,197 @@ class TestDSIRules:
         assert "dsi.glp1_oral_absorption" in _rule_ids(alerts)
 
 
+class TestLongTermAcidSuppression:
+    """长期抑酸(PPI/P-CAB)× 营养缺乏化验感知规则(dsi)。非处方、确定性、fail-loud。"""
+
+    TODAY = date(2026, 6, 25)
+
+    def _twin_on_ppi(self, start_date):
+        twin = _empty_twin()
+        med = {"name": "伏诺拉生", "kind": "medication"}
+        if start_date is not None:
+            med["start_date"] = start_date
+        twin.medication = MedicationState(active_meds=[med])
+        return twin
+
+    def _pin_today(self, monkeypatch, day=None):
+        monkeypatch.setattr(
+            "app.agents.safety_guardian.rules.dsi.get_china_today",
+            lambda: day or self.TODAY,
+        )
+
+    def test_ppi_long_term_low_b12_fires_medium(self, monkeypatch):
+        self._pin_today(monkeypatch)
+        twin = self._twin_on_ppi("2026-04-01")  # ~12 周 ≥ 8
+        twin.labs = LabsContext(
+            flagged_abnormal=[
+                {"item_name": "维生素B12", "value": 120, "unit": "pmol/L", "reference_range": "180-914"},
+            ],
+            last_exam_date=date(2026, 6, 20),
+        )
+        alerts = evaluate_safety(twin).alerts
+        assert "dsi.long_term_acid_suppression_lab" in _rule_ids(alerts)
+        alert = next(a for a in alerts if a.rule_id == "dsi.long_term_acid_suppression_lab")
+        assert alert.severity == Severity.MEDIUM
+        assert alert.requires_medical_attention is True
+        assert "不是停药建议" in alert.message  # R4 自我声明
+
+    def test_ppi_long_term_no_recent_lab_fires_info(self, monkeypatch):
+        self._pin_today(monkeypatch)
+        twin = self._twin_on_ppi("2026-04-01")
+        twin.labs = LabsContext(last_exam_date=None)  # 无近期化验
+        alerts = evaluate_safety(twin).alerts
+        assert "dsi.long_term_acid_suppression_monitor" in _rule_ids(alerts)
+        alert = next(a for a in alerts if a.rule_id == "dsi.long_term_acid_suppression_monitor")
+        assert alert.severity == Severity.INFO
+
+    def test_ppi_short_term_no_alert(self, monkeypatch):
+        self._pin_today(monkeypatch)
+        twin = self._twin_on_ppi("2026-05-28")  # ~4 周 < 8
+        twin.labs = LabsContext(last_exam_date=None)
+        ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert "dsi.long_term_acid_suppression_lab" not in ids
+        assert "dsi.long_term_acid_suppression_monitor" not in ids
+
+    def test_ppi_no_start_date_no_alert(self, monkeypatch):
+        self._pin_today(monkeypatch)
+        twin = self._twin_on_ppi(None)  # 无 start_date → 不臆测时长
+        twin.labs = LabsContext(last_exam_date=None)
+        ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert "dsi.long_term_acid_suppression_lab" not in ids
+        assert "dsi.long_term_acid_suppression_monitor" not in ids
+
+    def test_ppi_recent_labs_no_low_nutrient_no_alert(self, monkeypatch):
+        # 长期但近期已查、无相关营养异常 → 不唠叨(避免对已查正常者误推)
+        self._pin_today(monkeypatch)
+        twin = self._twin_on_ppi("2026-04-01")
+        twin.labs = LabsContext(
+            flagged_abnormal=[{"item_name": "谷丙转氨酶", "value": 50, "unit": "U/L", "reference_range": "0-40"}],
+            last_exam_date=date(2026, 6, 1),  # 近期
+        )
+        ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert "dsi.long_term_acid_suppression_lab" not in ids
+        assert "dsi.long_term_acid_suppression_monitor" not in ids
+
+    def test_ppi_rule_nonprescriptive_adversarial(self, monkeypatch):
+        self._pin_today(monkeypatch)
+        scenarios = [
+            LabsContext(
+                flagged_abnormal=[{"item_name": "血清镁", "value": 0.5, "unit": "mmol/L", "reference_range": "0.75-1.02"}],
+                last_exam_date=date(2026, 6, 20),
+            ),
+            LabsContext(last_exam_date=None),
+        ]
+        for labs in scenarios:
+            twin = self._twin_on_ppi("2026-04-01")
+            twin.labs = labs
+            alerts = [a for a in evaluate_safety(twin).alerts
+                      if a.rule_id.startswith("dsi.long_term_acid_suppression")]
+            assert alerts, "规则应触发"
+            for a in alerts:
+                blob = (a.message + " " + (a.action or ""))
+                # 禁命令式/处方式表述(允许免责声明里出现"不是停药建议");与 deprescribing
+                # test_disclaimer_never_says_stop 同口径:禁的是 imperative,不是 bare substring。
+                for banned in ["立即停", "请停药", "应停药", "可以停药", "建议停药", "停掉",
+                               "自行停", "自行减", "自行调整", "减量到", "减为", "改成", "换成", "mg"]:
+                    assert banned not in blob, f"R4 越界: '{banned}' in {a.rule_id}"
+
+    def test_ppi_rule_coexists_with_another_dsi_rule(self, monkeypatch):
+        # 与同类别(dsi)另一条规则正交,可同帧共存(防同类别误抑制)
+        self._pin_today(monkeypatch)
+        twin = self._twin_on_ppi("2026-04-01")
+        twin.medication = MedicationState(
+            active_meds=[{"name": "伏诺拉生", "kind": "medication", "start_date": "2026-04-01"},
+                         {"name": "替尔泊肽", "kind": "medication"}]  # GLP-1
+        )
+        twin.supplement = SupplementState(
+            active_supplements=[{"name": "Vitamin B12"}], total_active_count=1
+        )
+        twin.labs = LabsContext(
+            flagged_abnormal=[{"item_name": "维生素B12", "value": 120, "unit": "pmol/L", "reference_range": "180-914"}],
+            last_exam_date=date(2026, 6, 20),
+        )
+        ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert "dsi.long_term_acid_suppression_lab" in ids
+        assert "dsi.glp1_oral_absorption" in ids  # 两条 dsi 规则共存
+
+    def test_ppi_rule_uses_china_today_not_date_today(self, monkeypatch):
+        # start_date 在「真实今天」(2026-06)是未来→date.today() 算负时长→不触发;
+        # 在 mock 京历今天(2027-01-01)是 ~8.7 周→触发。证明规则用 get_china_today。
+        self._pin_today(monkeypatch, day=date(2027, 1, 1))
+        twin = self._twin_on_ppi("2026-11-01")
+        twin.labs = LabsContext(last_exam_date=None)
+        ids = _rule_ids(evaluate_safety(twin).alerts)
+        assert "dsi.long_term_acid_suppression_monitor" in ids, \
+            "规则必须用 get_china_today(mock 2027-01-01),而非 date.today()"
+
+    def test_ppi_fullwidth_tilde_range_low_b12_fires_medium(self, monkeypatch):
+        # 中国 LIS 报告常用全角波浪号 180～914;旧正则漏 → 真低值静默丢(审评 BLOCKING)
+        self._pin_today(monkeypatch)
+        twin = self._twin_on_ppi("2026-04-01")
+        twin.labs = LabsContext(
+            flagged_abnormal=[{"item_name": "维生素B12", "value": 120, "reference_range": "180～914"}],
+            last_exam_date=date(2026, 6, 20),
+        )
+        alerts = evaluate_safety(twin).alerts
+        a = next((x for x in alerts if x.rule_id == "dsi.long_term_acid_suppression_lab"), None)
+        assert a is not None and a.severity == Severity.MEDIUM
+        assert "偏低" in a.message  # 全角范围被正确解析为"确证偏低"
+
+    def test_ppi_unparseable_range_flagged_nutrient_fires_unclear_not_dropped(self, monkeypatch):
+        # 方向不可解析的 flagged-abnormal 营养素不能静默当正常 → 兜底 MEDIUM(方向待医生核读)
+        self._pin_today(monkeypatch)
+        twin = self._twin_on_ppi("2026-04-01")
+        twin.labs = LabsContext(
+            flagged_abnormal=[{"item_name": "血清镁", "value": 0.5, "reference_range": "参考见报告"}],
+            last_exam_date=date(2026, 6, 20),  # 近期(不会落 INFO 分支)
+        )
+        alerts = evaluate_safety(twin).alerts
+        a = next((x for x in alerts if x.rule_id == "dsi.long_term_acid_suppression_lab"), None)
+        assert a is not None and a.severity == Severity.MEDIUM
+        assert "标记为异常" in a.message  # unclear 措辞,不谎称"偏低"
+        assert "偏低" not in a.message
+
+    def test_ppi_transferrin_not_matched_as_ferritin(self, monkeypatch):
+        # 转铁蛋白(transferrin)≠ 铁蛋白(ferritin),不得误配
+        self._pin_today(monkeypatch)
+        twin = self._twin_on_ppi("2026-04-01")
+        twin.labs = LabsContext(
+            flagged_abnormal=[{"item_name": "转铁蛋白", "value": 1.5, "reference_range": "2.0-3.6"}],
+            last_exam_date=date(2026, 6, 20),
+        )
+        assert "dsi.long_term_acid_suppression_lab" not in _rule_ids(evaluate_safety(twin).alerts)
+
+    def test_ppi_urine_magnesium_not_matched(self, monkeypatch):
+        # 尿镁(肾排)≠ 血清镁(缺乏),不得误配
+        self._pin_today(monkeypatch)
+        twin = self._twin_on_ppi("2026-04-01")
+        twin.labs = LabsContext(
+            flagged_abnormal=[{"item_name": "尿镁", "value": 1.0, "reference_range": "3.0-5.0"}],
+            last_exam_date=date(2026, 6, 20),
+        )
+        assert "dsi.long_term_acid_suppression_lab" not in _rule_ids(evaluate_safety(twin).alerts)
+
+    def test_ppi_high_ferritin_not_counted_low(self, monkeypatch):
+        # flagged-HIGH 铁蛋白不得误判为"低"
+        self._pin_today(monkeypatch)
+        twin = self._twin_on_ppi("2026-04-01")
+        twin.labs = LabsContext(
+            flagged_abnormal=[{"item_name": "铁蛋白", "value": 800, "reference_range": "30-400"}],
+            last_exam_date=date(2026, 6, 20),
+        )
+        assert "dsi.long_term_acid_suppression_lab" not in _rule_ids(evaluate_safety(twin).alerts)
+
+    def test_ppi_pcab_caveat_present_for_vonoprazan(self, monkeypatch):
+        # 锚点用户在用伏诺拉生(P-CAB)→ message 必带 P-CAB 数据更少的 caveat
+        self._pin_today(monkeypatch)
+        twin = self._twin_on_ppi("2026-04-01")  # 伏诺拉生
+        twin.labs = LabsContext(last_exam_date=None)
+        a = next((x for x in evaluate_safety(twin).alerts
+                  if x.rule_id == "dsi.long_term_acid_suppression_monitor"), None)
+        assert a is not None and "P-CAB" in a.message
+
+
 # ─────────────────────── PGx rules ────────────────────────
 
 

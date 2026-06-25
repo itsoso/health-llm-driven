@@ -5,12 +5,15 @@
 大多数是"时机错开"级别的提醒（吸收拮抗），少数是真正的风险（鱼油+抗凝）。
 """
 
+import re
+from datetime import date
 from typing import List, Optional
 
 from app.agents.safety_guardian.engine import register
 from app.agents.safety_guardian.rules.ddi import _has_drug_class, _med_names
 from app.agents.safety_guardian.schema import Alert, Severity
 from app.twin.schema import HealthTwin
+from app.utils.timezone import get_china_today
 
 
 # ─────────────────────── 补剂名关键字库 ─────────────────
@@ -292,3 +295,174 @@ def dsi_herbal_bleeding_stack(twin: HealthTwin) -> Optional[Alert]:
         action="术前 1-2 周停用这些草药；观察皮下瘀斑和牙龈出血。",
         data_citation={"bleeding_meds": bleeding_meds, "herbs": herbs},
     )
+
+
+# ─────────── 长期抑酸(PPI/P-CAB)× 营养缺乏 化验感知 ───────────
+
+# 营养素 → (匹配关键词, 排除词)。排除词防分析物混淆:转铁蛋白≠铁蛋白、尿镁≠血清镁。
+# 只匹配 item_name(避免单位 "mg" 误配);血清铁是不稳定标志物,故只认铁蛋白。
+_ACID_SUPPRESSION_NUTRIENTS = {
+    "维生素B12": (["维生素b12", "维生素 b12", "维生素b-12", "b12", "b-12", "钴胺", "cobalamin"], []),
+    "镁": (["血清镁", "血镁", "镁离子", "镁", "magnesium"], ["尿"]),
+    "铁蛋白": (["铁蛋白", "ferritin"], ["转铁"]),
+}
+
+# P-CAB(钾离子竞争性酸阻滞剂,如伏诺拉生)—— 抑酸机制与 PPI 相近,但长期营养数据更少,加 caveat。
+_PCAB_KEYWORDS = ["伏诺拉生", "沃克", "vonoprazan", "p-cab", "pcab"]
+
+
+def _ppi_keywords() -> List[str]:
+    """单一真相源:复用 deprescribing_review 的抑酸药名单(懒导入，避免规则装载期耦合)。"""
+    try:
+        from app.services.deprescribing_review import _CLASS_KEYWORDS
+
+        return list(_CLASS_KEYWORDS.get("抑酸药(PPI/P-CAB)", []))
+    except Exception:  # pragma: no cover - 退化到内置名单，fail-loud 不静默丢规则
+        return ["泮托拉唑", "奥美拉唑", "埃索美拉唑", "雷贝拉唑", "兰索拉唑", "伏诺拉生"]
+
+
+def _is_below_range(value, reference_range) -> Optional[bool]:
+    """value < 参考下限 → True;> 下限/无法判向 → False;不可解析或缺值 → None。"""
+    if value is None or not reference_range:
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    rr = str(reference_range)
+    # lo-hi:兼容多种分隔符(ASCII - ~、全角 ～－、中文 至、en/em dash);收紧数字 token 防误锚
+    m = re.search(r"(\d+(?:\.\d+)?)\s*[-~～–—－至]\s*(\d+(?:\.\d+)?)", rr)
+    if m:
+        return v < float(m.group(1))
+    # 仅下限:≥X / >X / >=X
+    m2 = re.search(r"[≥>＞]\s*=?\s*(\d+(?:\.\d+)?)", rr)
+    if m2:
+        return v < float(m2.group(1))
+    return None  # 不可解析(如 "<X"、纯文字) → 交 unclear 分支兜底,不静默当正常
+
+
+@register
+def long_term_acid_suppression_lab_aware(twin: HealthTwin) -> Optional[Alert]:
+    """长期抑酸(PPI/P-CAB)× B12/镁/铁吸收。化验感知、确定性、**非处方**。
+
+    长期抑制胃酸与 B12/镁/铁吸收下降相关(FDA 2011 镁警示;B12 吸收依赖胃酸)。
+    本规则把胃溃疡愈合模板里"长期 PPI 评估 B12/镁"这句死文字变成活规则:
+    - 长期抑酸 且 近期化验示相关营养素**确证偏低** → MEDIUM,建议带给处方医生复评/监测;
+    - 长期抑酸 但无近期化验 → INFO,建议下次复诊加查 B12/镁。
+    R4:只说"讨论/复评/监测/查",绝不出"停药/减量/剂量"。决策永远在医生。
+    """
+    ppi_kw = _ppi_keywords()
+    ppi_meds = [
+        m for m in (twin.medication.active_meds or [])
+        if any(kw in (m.get("name") or "") for kw in ppi_kw)
+    ]
+    if not ppi_meds:
+        return None
+
+    # 时长:仅用 start_date 算(京历);任一 PPI 缺 start_date 不臆测,取有日期者的最长时长。
+    today = get_china_today()
+    weeks = []
+    for m in ppi_meds:
+        sd = m.get("start_date")
+        d: Optional[date] = None
+        if isinstance(sd, date):
+            d = sd
+        elif isinstance(sd, str) and sd:
+            try:
+                d = date.fromisoformat(sd[:10])
+            except ValueError:
+                d = None
+        if d is not None:
+            weeks.append((today - d).days / 7.0)
+    if not weeks:
+        return None  # 无 start_date → 无法判时长 → 不臆测(fail-closed 对 advisory 是安全方向)
+    weeks_on = max(weeks)
+    if weeks_on < 8:  # = deprescribing LONG_TERM_WEEKS
+        return None
+    weeks_int = int(weeks_on)
+    ppi_names = sorted({m.get("name") for m in ppi_meds if m.get("name")})
+
+    # 营养素分类:low=确证偏低;unclear=被标记异常但方向不可解析。**两者都不能静默丢**——
+    # 不可解析的 flagged-abnormal 营养素进 unclear 兜底,避免漏掉真低值(under-alarm,审评 BLOCKING)。
+    low_nutrients: List[str] = []
+    unclear_nutrients: List[str] = []
+    for item in (twin.labs.flagged_abnormal or []):
+        iname = (item.get("item_name") or "").lower()
+        for label, (kws, excludes) in _ACID_SUPPRESSION_NUTRIENTS.items():
+            if any(kw in iname for kw in kws) and not any(ex in iname for ex in excludes):
+                below = _is_below_range(item.get("value"), item.get("reference_range"))
+                if below is True:
+                    low_nutrients.append(label)
+                elif below is None:  # flagged abnormal 但方向不可解析 → 不当正常
+                    unclear_nutrients.append(label)
+                # below is False(确证不低,如偏高)→ 忽略
+                break
+    low_nutrients = sorted(set(low_nutrients))
+    unclear_nutrients = sorted(set(unclear_nutrients) - set(low_nutrients))
+
+    has_pcab = any(
+        any(k in (m.get("name") or "").lower() for k in _PCAB_KEYWORDS) for m in ppi_meds
+    )
+    pcab_note = (
+        "（注:你在用的是 P-CAB 类强效抑酸药,抑酸机制与 PPI 相近,但长期营养影响的研究数据更少,"
+        "更值得复诊时一并评估。）"
+        if has_pcab
+        else ""
+    )
+
+    if low_nutrients or unclear_nutrients:
+        if low_nutrients:
+            finding = f"近期化验提示 {'、'.join(low_nutrients)} 偏低"
+            title = "长期抑酸 + 营养指标偏低"
+        else:
+            finding = f"近期化验把 {'、'.join(unclear_nutrients)} 标记为异常(具体方向需医生结合报告核读)"
+            title = "长期抑酸 + 营养指标异常"
+        return Alert(
+            rule_id="dsi.long_term_acid_suppression_lab",
+            category="dsi",
+            severity=Severity.MEDIUM,
+            title=title,
+            message=(
+                f"你在用抑酸药（{', '.join(ppi_names)}）已约 {weeks_int} 周（≥8 周），"
+                f"且{finding}。长期抑制胃酸会降低维生素 B12、镁、铁的吸收。"
+                "**这不是停药建议** —— 请把「长期抑酸 + 上述化验情况」带给开药医生，"
+                "由医生判断是否需要复评抑酸方案、定期监测或营养补充。" + pcab_note
+            ),
+            action="下次复诊把「长期抑酸 + 上述化验情况」告诉处方医生，由医生决定复评/监测/补充。",
+            data_citation={
+                "ppi_meds": ppi_names,
+                "weeks_on": weeks_int,
+                "low_nutrients": low_nutrients,
+                "flagged_unclear_nutrients": unclear_nutrients,
+                "has_pcab": has_pcab,
+            },
+            references=[
+                "https://www.fda.gov/drugs/drug-safety-and-availability/fda-drug-safety-communication-low-magnesium-levels-can-be-associated-long-term-use-proton-pump-inhibitors",
+            ],
+            requires_medical_attention=True,
+        )
+
+    # 长期但无近期化验 → 预防性 INFO(用 last_exam_date 作"近期是否查过"的代理;
+    # 无法逐项判"B12 是否查过",故只在确无近期体检/体检过旧时提示，避免对刚查正常者唠叨)
+    last_exam = twin.labs.last_exam_date
+    stale = (last_exam is None) or ((today - last_exam).days > 180)
+    if stale:
+        return Alert(
+            rule_id="dsi.long_term_acid_suppression_monitor",
+            category="dsi",
+            severity=Severity.INFO,
+            title="长期抑酸 —— 建议查 B12/镁",
+            message=(
+                f"你在用抑酸药（{', '.join(ppi_names)}）已约 {weeks_int} 周。长期抑制胃酸"
+                "与维生素 B12、镁、铁吸收下降相关，而你近期没有相关化验记录。"
+                "建议下次复诊或体检时查一下 B12 和镁，便于评估。" + pcab_note
+            ),
+            action="下次体检/复诊加查血清维生素 B12、镁（必要时铁蛋白）。",
+            data_citation={
+                "ppi_meds": ppi_names,
+                "weeks_on": weeks_int,
+                "last_exam_date": last_exam.isoformat() if last_exam else None,
+                "has_pcab": has_pcab,
+            },
+        )
+    return None
