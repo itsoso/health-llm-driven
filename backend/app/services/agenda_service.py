@@ -10,7 +10,7 @@
 只读投影,无副作用(完成/跳过仍走各自 source 的端点)。详见 docs/prd/reva-personal-health-os-prd.md §4 / R1。
 """
 import logging
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Dict, List
 
 from sqlalchemy.orm import Session
@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.services import health_protocol_service as proto_svc
 from app.services import health_problem_service as prob_svc
 from app.services.daily_operating_plan import build_daily_operating_plan
-from app.utils.timezone import get_user_today
+from app.utils.timezone import get_china_today, get_user_today
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,79 @@ _TERMINAL_STATUSES = {"completed", "done", "verified", "skipped", "failed", "aut
 
 def _agenda_item(**kw) -> Dict[str, Any]:
     return kw
+
+
+# 复查去重用器官/系统 token(ReviewSchedule.item_name × HealthProblem.problem_name 共现判同一复查)。
+# 用多字消歧义(心脏/心血管 而非裸「心」—— 否则「心律」会误配「心理」;乳腺/胰腺/胆囊同理)。
+_REVIEW_ORGAN_TOKENS = (
+    "甲状腺", "前列腺", "骨密度", "血糖", "血脂", "血压", "尿酸", "甲功",
+    "胃", "肺", "肝", "肾", "肠", "乳腺", "胰腺", "胆囊", "心脏", "心血管", "脑",
+)
+
+
+def _review_covered_by_problem(rs, existing_checkups: List[Dict[str, Any]], today: date) -> bool:
+    """ReviewSchedule 是否被某条已加入的 HealthProblem 复查覆盖(**同器官 token** + ±30 天)。
+    只认器官 token 共现 —— 不再用科室前缀(消化内科下「肠息肉随访」会误吞「胃镜复查」=漏检 under-alarm)。
+    误判方向受控:仅抑制 ReviewSchedule 派生项,临床锚定的 HealthProblem 那条始终保留;
+    宁可偶尔双重唠叨(器官不共现→两条都留)也不漏掉一个真复查。"""
+    rs_name = rs.item_name or ""
+    rs_date = rs.next_due_date
+    for hp in existing_checkups:
+        hp_title = hp.get("title") or ""           # "复查:胃溃疡(...)"
+        nd = hp.get("next_due")
+        try:
+            hp_date = date.fromisoformat(str(nd)) if nd else None
+        except (ValueError, TypeError):
+            hp_date = None
+        if hp_date is None or abs((rs_date - hp_date).days) > 30:
+            continue
+        if any(tok in rs_name and tok in hp_title for tok in _REVIEW_ORGAN_TOKENS):
+            return True
+    return False
+
+
+def _project_course_reviews(db: Session, user_id: int, items: List[Dict[str, Any]], within_days: int) -> None:
+    """到期 ReviewSchedule(药程结束复查等)投影成 checkup 项,与已加入的 HealthProblem 复查去重。
+    只读;completion 不入 SUPPORTED_COMPLETE_TYPES(display/confirm-only,不进依从写路径)。"""
+    try:
+        from app.models.family_health import ReviewSchedule
+
+        today = get_china_today()
+        cutoff = today + timedelta(days=within_days)
+        rows = (
+            db.query(ReviewSchedule)
+            .filter(
+                ReviewSchedule.user_id == user_id,
+                ReviewSchedule.status != "completed",
+                ReviewSchedule.next_due_date <= cutoff,
+            )
+            .order_by(ReviewSchedule.next_due_date.asc())
+            .all()
+        )
+        if not rows:
+            return
+        existing = [
+            it for it in items
+            if it.get("type") == "checkup"
+            and (it.get("source") or {}).get("object_type") == "health_problem"
+        ]
+        for rs in rows:
+            if _review_covered_by_problem(rs, existing, today):
+                continue
+            overdue = rs.next_due_date < today
+            items.append(_agenda_item(
+                type="checkup",
+                title=f"复查:{rs.item_name}",
+                status="overdue" if overdue else "due",
+                time_window="anytime",
+                priority=90 if (rs.priority in ("high", "urgent")) else 70,
+                detail=(rs.department or None),
+                responsible=rs.department,
+                next_due=str(rs.next_due_date),
+                source={"object_type": "review_schedule", "object_id": rs.id},
+            ))
+    except Exception as e:  # noqa: BLE001 — 投影增强失败不应破坏整条议程
+        logger.warning("agenda: 药程复查投影失败,跳过: %s", e)
 
 
 def _training_item(db: Session, user_id: int) -> Dict[str, Any] | None:
@@ -323,6 +396,10 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
             next_due=f.get("next_due"),
             source={"object_type": "health_problem", "object_id": f["problem_id"]},
         ))
+
+    # 6) 药程结束复查(ReviewSchedule)→ 复查项;与上面 HealthProblem 复查去重
+    #    (同器官/科室 + ±30 天 → HealthProblem 临床锚定胜,抑制本条,避免同一复查双重唠叨)
+    _project_course_reviews(db, user_id, items, within_days=followup_within_days)
 
     items.sort(key=lambda x: (-x["priority"], _TW_ORDER.get(x.get("time_window"), 9)))
     return {

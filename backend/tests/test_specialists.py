@@ -35,6 +35,7 @@ from app.twin.schema import (
     SupplementState,
     TwinMeta,
     AcuteHealthState,
+    ProblemRedLine,
 )
 
 
@@ -440,6 +441,71 @@ class TestRhinitisSpecialist:
         finding = s.run(t, {})
         env_triggers = [f for f in finding.findings if f.get("type") == "env_trigger"]
         assert len(env_triggers) >= 1  # AQI 120 > 100
+
+    # ── LPR 反流共现假说分支(锚点用户:伏诺拉生 + 胃溃疡 Hp- + 鼻症状)──
+
+    @staticmethod
+    def _reflux_twin(sneeze=12, wash=3, ppi="伏诺拉生", problem="胃溃疡(Hp 阴性,胃窦后壁)", extra_meds=None):
+        from app.agents.chronic_specialists import RhinitisSpecialist  # noqa: F401
+        t = _empty_twin()
+        t.behavioral = BehavioralState(sneeze_count_today=sneeze, nasal_wash_count_today=wash)
+        meds = []
+        if ppi:
+            meds.append({"name": ppi, "kind": "medication"})
+        if extra_meds:
+            meds += [{"name": m, "kind": "medication"} for m in extra_meds]
+        if meds:
+            t.medication = MedicationState(active_meds=meds)
+        if problem:
+            t.acute = AcuteHealthState(problem_red_lines=[
+                ProblemRedLine(problem_name=problem, condition="黑便/呕血", action="立即就医", risk_level="P1")
+            ])
+        return t
+
+    def test_reflux_hypothesis_fires_on_cooccurrence(self):
+        from app.agents.chronic_specialists import RhinitisSpecialist
+        finding = RhinitisSpecialist().run(self._reflux_twin(), {})
+        rh = [f for f in finding.findings if f.get("type") == "reflux_hypothesis"]
+        assert len(rh) == 1
+        a = rh[0]
+        assert a["confidence"] == "hypothesis"
+        # 安全框架必须落在 LLM 实际可见的字段:title + summary(orchestrator 序列化器丢弃 message)
+        assert "相关" in a.get("title", "") and "非诊断" in a.get("title", "")
+        assert "非因果" in finding.summary or "非诊断" in finding.summary
+        # message 也带(冗余,审计/前端用)
+        assert "相关" in a["message"]
+        assert "非因果" in a["message"] or "不是诊断" in a["message"]
+        # R4:非处方 + 非诊断(命令式/确诊措辞均禁)—— 覆盖所有 LLM 可见 + 审计字段
+        blob = a.get("title", "") + " " + a["message"] + " " + a.get("action", "")
+        for banned in ["停药", "减量", "立即停", "请停", "你患有", "诊断为", "确诊", "mg"]:
+            assert banned not in blob, f"R4/诊断越界: {banned}"
+
+    def test_no_reflux_hypothesis_without_acid_suppression(self):
+        from app.agents.chronic_specialists import RhinitisSpecialist
+        # 有鼻症状 + 胃溃疡记录,但没在用抑酸药 → 不触发
+        finding = RhinitisSpecialist().run(self._reflux_twin(ppi=None), {})
+        assert not any(f.get("type") == "reflux_hypothesis" for f in finding.findings)
+
+    def test_no_reflux_hypothesis_without_reflux_indicator(self):
+        from app.agents.chronic_specialists import RhinitisSpecialist
+        # 有鼻症状 + 在用伏诺拉生,但无任何反流/上消化道指标 → 不臆测,不触发
+        finding = RhinitisSpecialist().run(self._reflux_twin(problem=None), {})
+        assert not any(f.get("type") == "reflux_hypothesis" for f in finding.findings)
+
+    def test_no_reflux_hypothesis_when_stable(self):
+        from app.agents.chronic_specialists import RhinitisSpecialist
+        # 无鼻症状(stable)即便有抑酸药+胃记录也不触发(避免对无症状者乱关联)
+        finding = RhinitisSpecialist().run(self._reflux_twin(sneeze=0, wash=0), {})
+        assert not any(f.get("type") == "reflux_hypothesis" for f in finding.findings)
+
+    def test_reflux_hypothesis_preserves_severity_and_adherence(self):
+        from app.agents.chronic_specialists import RhinitisSpecialist
+        # 共现 + 在用莫米松 → 假说与既有 severity/依从 finding 并存,severity 不被改写
+        finding = RhinitisSpecialist().run(self._reflux_twin(extra_meds=["莫米松"]), {})
+        sev = [f for f in finding.findings if f.get("type") == "symptom_severity"]
+        assert sev and sev[0]["severity"] == "moderate"  # 未被假说分支改写
+        assert any(f.get("type") == "med_adherence" for f in finding.findings)
+        assert any(f.get("type") == "reflux_hypothesis" for f in finding.findings)
 
 
 # ───────────────────── Chronic: Hypertension ─────────

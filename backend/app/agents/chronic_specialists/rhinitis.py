@@ -38,6 +38,46 @@ def _rhinitis_severity(sneeze: int, wash: int) -> str:
     return "stable"
 
 
+# LPR 反流共现假说用:反流 / 上消化道酸相关指标关键词。
+_REFLUX_INDICATORS = (
+    "反流", "胃食管", "gerd", "lpr", "咽喉反流", "咽部异物", "烧心", "反酸", "嗳气", "胃溃疡",
+)
+
+
+def _acid_suppression_meds(twin: HealthTwin) -> List[str]:
+    """在用的抑酸药(PPI/P-CAB)名单。复用 dsi 规则的单一关键词源(懒导入,避免循环 + 第三份副本)。"""
+    try:
+        from app.agents.safety_guardian.rules.dsi import _PCAB_KEYWORDS, _ppi_keywords
+
+        kws = set(_ppi_keywords()) | set(_PCAB_KEYWORDS)
+    except Exception:  # pragma: no cover - 退化到内置名单,不静默丢分支
+        kws = {"伏诺拉生", "沃克", "vonoprazan", "奥美拉唑", "泮托拉唑", "雷贝拉唑", "兰索拉唑", "埃索美拉唑"}
+    out: List[str] = []
+    for m in (twin.medication.active_meds or []):
+        name = m.get("name") or ""
+        if name and any(k in name for k in kws):
+            out.append(name)
+    return out
+
+
+def _reflux_indicator(twin: HealthTwin) -> Optional[str]:
+    """从已登记病情 / 症状文本 / 慢病条件里找反流/上消化道酸相关指标;返回首个证据串(无→None)。"""
+    def _hit(text: str) -> bool:
+        low = (text or "").lower()
+        return any(ind in (text or "") or ind in low for ind in _REFLUX_INDICATORS)
+
+    for prl in (twin.acute.problem_red_lines or []):
+        if _hit(prl.problem_name or ""):
+            return f"已登记病情「{prl.problem_name}」"
+    for txt in (twin.acute.symptom_texts_all or []):
+        if _hit(txt or ""):
+            return f"症状记录「{(txt or '')[:24]}」"
+    for cond in (twin.chronic.active_conditions or []):
+        if _hit(cond or ""):
+            return f"慢病条件「{cond}」"
+    return None
+
+
 class RhinitisSpecialist:
     name = "rhinitis_specialist"
     category = "chronic"
@@ -129,6 +169,34 @@ class RhinitisSpecialist:
                     ),
                     "action": "今晚洗澡后固定使用鼻喷；如症状持续 > 1 周无改善，考虑加口服抗组胺药。",
                 })
+
+            # LPR 反流共现假说(锚点用户:伏诺拉生 + 胃溃疡 Hp- + 鼻症状)。
+            # 仅在「有鼻症状 + 在用抑酸药 + 有反流/上消化道指标」三者共现时,提一条
+            # **相关非因果、非诊断**的观察,交医生评估。不改 severity、不动莫米松依从、不给任何用药建议。
+            if severity != "stable":
+                acid_meds = _acid_suppression_meds(twin)
+                reflux_ev = _reflux_indicator(twin) if acid_meds else None
+                if acid_meds and reflux_ev:
+                    findings.append({
+                        "type": "reflux_hypothesis",
+                        "confidence": "hypothesis",
+                        # title 是 orchestrator 序列化器真正喂给 LLM 的字段(message 被丢弃),
+                        # 故把「非诊断 / 相关非因果」的安全框架放进 title + summary,确保到达 LLM。
+                        "title": "鼻症状与反流的相关性观察(相关非因果、非诊断,待医生评估)",
+                        "acid_suppression_meds": acid_meds,
+                        "evidence": reflux_ev,
+                        "message": (
+                            f"你在用抑酸药（{'、'.join(acid_meds)}）、有上消化道/反流相关记录"
+                            f"（{reflux_ev}），同时有鼻部症状。咽喉反流(LPR)有时会刺激上气道、"
+                            "表现出类似鼻炎的喷嚏/鼻塞——这只是一个**相关性观察、并非因果判断**,"
+                            "也**不是诊断**。"
+                        ),
+                        "action": (
+                            "下次复诊时,可以把鼻部症状和抑酸/反流治疗的时间关系一并讲给医生,"
+                            "由医生判断是否需要从反流角度评估你的上气道症状。"
+                        ),
+                    })
+                    summary_parts.append("鼻症状可能与反流相关(相关非因果、非诊断,待医生评估)")
 
             # 下一步行动
             actions: List[str] = []
