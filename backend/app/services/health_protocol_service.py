@@ -19,6 +19,18 @@ from app.models.health_protocol import (
 logger = logging.getLogger(__name__)
 
 
+# 医疗级 source_model → 必须配的 domain(结构性不变量,防御纵深)。
+# 议程完成把 medication_logs/supplement_records 当医疗级写(写 MedicationLog / SupplementRecord),
+# 而 Rokid 语音「确认/跳过」门用 domain 白名单(hydration/sleep/mood/activity/respiratory)代理「非医疗写」。
+# 若允许 {domain:"hydration", source_model:"medication_logs"} 的错配协议,它会以非医疗 type 过语音门,
+# 完成时却落真实 MedicationLog —— 绕过 R4 白名单。在创建处钉死配对,把门的安全从「调用点纪律」升成结构性约束。
+_MEDICAL_SOURCE_MODEL_DOMAINS = {
+    "medication_logs": "medication",
+    "supplement_records": "supplement",
+    "diet_records": "diet",
+}
+
+
 def create_protocol(db: Session, user_id: int, data: Dict[str, Any]) -> HealthProtocol:
     domain = data.get("domain")
     if domain not in PROTOCOL_DOMAINS:
@@ -26,6 +38,13 @@ def create_protocol(db: Session, user_id: int, data: Dict[str, Any]) -> HealthPr
     mech = data.get("mechanism")
     if mech is not None and mech not in PROTOCOL_MECHANISMS:
         raise ValueError(f"未知 mechanism: {mech}")
+    source_model = data.get("source_model")
+    required_domain = _MEDICAL_SOURCE_MODEL_DOMAINS.get(source_model)
+    if required_domain is not None and domain != required_domain:
+        raise ValueError(
+            f"source_model={source_model!r} 必须配 domain={required_domain!r}(实得 {domain!r}):"
+            f"医疗级写不得借非医疗 domain 绕过语音/R4 白名单"
+        )
     p = HealthProtocol(
         user_id=user_id,
         domain=domain,
@@ -38,7 +57,7 @@ def create_protocol(db: Session, user_id: int, data: Dict[str, Any]) -> HealthPr
         can_default_complete=bool(data.get("can_default_complete", False)),
         manual_track_allowed=bool(data.get("manual_track_allowed", True)),
         program_id=data.get("program_id"),
-        source_model=data.get("source_model"),
+        source_model=source_model,
         source_id=data.get("source_id"),
         notes=data.get("notes"),
         status="active",
@@ -165,6 +184,10 @@ def today_status(db: Session, user_id: int) -> List[Dict[str, Any]]:
             "domain": p.domain,
             "name": p.name,
             "mechanism": p.mechanism,
+            # 完成时落哪张业务表(water_records / medication_logs / supplement_records / ...);
+            # None = 完成只写协议事件(非医疗级)。下游议程据此判「含糊语音可否安全自动写」,
+            # 比 domain 更权威(domain↔source_model 可漂移)。见 agenda_service._is_voice_actionable。
+            "source_model": p.source_model,
             "implied_quantity": p.implied_quantity,
             "time_window": p.time_window,
             "cadence": p.cadence,

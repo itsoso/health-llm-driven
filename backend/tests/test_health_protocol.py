@@ -217,6 +217,47 @@ def test_period_start_boundaries():
     assert _period_start("daily", d) is None
 
 
+def test_medical_source_model_must_match_domain(client, auth_user_and_headers):
+    """防御纵深:医疗级 source_model 不得借非医疗 domain 绕过语音/R4 白名单。
+
+    错配协议 {domain:"hydration", source_model:"medication_logs"} 会以 type:"hydration"
+    过 Rokid 语音「确认」门,完成时却落真实 MedicationLog → 创建处必须 400 拒绝。
+    """
+    _, h = auth_user_and_headers
+    # hydration + medication_logs → 拒绝
+    bad = client.post("/api/v1/protocols", headers=h, json={
+        "domain": "hydration", "name": "伪装成饮水的服药",
+        "source_model": "medication_logs", "source_id": 1,
+    })
+    assert bad.status_code == 400, bad.text
+    assert "medication_logs" in bad.json()["detail"]
+
+    # 同样钉补剂 / 饮食错配
+    bad2 = client.post("/api/v1/protocols", headers=h, json={
+        "domain": "sleep", "name": "伪装成睡眠的补剂",
+        "source_model": "supplement_records", "source_id": 1,
+    })
+    assert bad2.status_code == 400, bad2.text
+    bad3 = client.post("/api/v1/protocols", headers=h, json={
+        "domain": "mood", "name": "伪装成心情的饮食", "source_model": "diet_records",
+    })
+    assert bad3.status_code == 400, bad3.text
+
+    # 正确配对仍放行(medication+medication_logs)
+    ok = client.post("/api/v1/protocols", headers=h, json={
+        "domain": "medication", "name": "正常服药协议",
+        "source_model": "medication_logs", "source_id": 1,
+    })
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["domain"] == "medication"
+
+    # 非医疗 source_model(water_records)不受此门约束,任意域放行
+    ok2 = client.post("/api/v1/protocols", headers=h, json={
+        "domain": "hydration", "name": "正常饮水协议", "source_model": "water_records",
+    })
+    assert ok2.status_code == 200, ok2.text
+
+
 def test_user_isolation(client, auth_user_and_headers, db):
     from tests.conftest import create_authenticated_user
     user_a, ha = auth_user_and_headers

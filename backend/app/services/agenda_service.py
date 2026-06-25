@@ -273,6 +273,9 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
             priority=50,
             cadence=p.get("cadence"),            # 透传给时间线 driver 派生(纯展示,不影响调度)
             can_default_complete=p.get("can_default_complete"),
+            # 完成落库的目标业务表(权威);供 _to_smart_item 派生 voice_actionable —— 比 domain
+            # 更可靠地判「含糊语音确认会不会写医疗级依从(MedicationLog/SupplementRecord)」。
+            source_model=p.get("source_model"),
             source={"object_type": "health_protocol", "object_id": p["protocol_id"]},
             **chain_kw,
         ))
@@ -485,6 +488,40 @@ def _daily_plan_action_items(db: Session, user_id: int) -> tuple[List[Dict[str, 
     return items, plan_verification if isinstance(plan_verification, dict) else None
 
 
+# 完成时写「医疗级依从事实」的目标业务表 —— 这类协议**永不**可由一句含糊语音("确认")
+# 自动写(R4 / under-alarm 防御:依从数据喂 DDI/PGx,误写后果严重)。权威来源是协议的
+# source_model(_write_domain_record 据它分派),不是 domain —— 二者结构上可漂移
+# (如 hydration-domain 协议带 source_model=medication_logs)。
+_MEDICAL_GRADE_SOURCE_MODELS = frozenset({"medication_logs", "supplement_records"})
+# 复查/随访 domain 协议(source_model 多为 None)也排除:确认复查须用户在手机上显式操作。
+_NON_VOICE_DOMAINS = frozenset({"checkup", "follow_up", "followup"})
+
+
+def _is_voice_actionable(item: Dict[str, Any]) -> bool:
+    """该议程项能否被「一句含糊语音」安全自动完成(R4 安全裁决的权威落点)。
+
+    True 仅当:完成它**不会**写医疗级依从记录,且不是复查项。判定从协议 `source_model`
+    (完成实际落哪张表)派生,而非 domain —— 这把安全决定放在权威真相处,消除客户端
+    domain 白名单与后端写表分派两份清单的漂移风险。
+
+    非协议来源(复查 health_problem / Daily Plan 行动 / 训练灯等)一律 False。
+    autonomy_tier / 各动作 can_* 能力门由调用方(客户端)另判,不在此重复。
+    """
+    source = item.get("source") or {}
+    if source.get("object_type") != "health_protocol":
+        return False
+    # 仅真实「待办」协议项可语音执行。协议自纠偏建议(_self_correction_items)也挂
+    # object_type=health_protocol,但 status="info" 且无 source_model —— 它不是依从待办,
+    # 一句"跳过/稍后"不得动它背后的协议(老 domain 白名单恰好挡住了它,本门必须显式保住)。
+    if (item.get("status") or "") not in {"pending", "due", "overdue"}:
+        return False
+    if (item.get("type") or "") in _NON_VOICE_DOMAINS:
+        return False
+    if item.get("source_model") in _MEDICAL_GRADE_SOURCE_MODELS:
+        return False
+    return True
+
+
 def _to_smart_item(
     item: Dict[str, Any],
     *,
@@ -516,6 +553,10 @@ def _to_smart_item(
         "can_complete": status in {"pending", "due", "overdue"},
         "can_snooze": status in {"pending", "due", "overdue", "info"},
         "can_skip": status in {"pending", "info"},
+        # 含糊语音(Rokid "确认/跳过")可否安全自动完成 —— 权威安全门,从 source_model 派生
+        # (排除 medication_logs/supplement_records 与复查)。客户端据此 gate,domain 白名单
+        # 仅作旧后端缺该字段时的兜底。见 mobile/services/rokidVoiceAgenda.ts。
+        "voice_actionable": _is_voice_actionable(item),
         "confidence": item.get("confidence"),
         "claim_boundary": item.get("claim_boundary"),
     }

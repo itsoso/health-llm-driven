@@ -169,3 +169,77 @@ def test_smart_today_returns_ranked_executable_contract(monkeypatch):
     assert daily["verify_by"]["metrics"] == ["weight", "waist_cm"]
     assert daily["replan_policy"]["on_skip"] == "capture_reason_then_reschedule"
     assert daily["surface"]["primary"] in {"mobile", "watch", "rokid"}
+
+
+# ── voice_actionable:含糊语音(Rokid「确认/跳过」)自动写的权威安全门(R4) ──────────
+# 权威真相 = 协议 source_model(完成实际落哪张表),不是 domain。下面对抗用例钉住:
+# ① 医疗级写表(med/supp)恒 False;② domain↔source_model 漂移时按 source_model 裁决
+#   (hydration domain 但 source_model=medication_logs → 仍 False,这是客户端 domain
+#   白名单会漏的真实漂移场景);③ 非协议来源恒 False。
+
+def _smart(item):
+    from app.services import agenda_service
+    return agenda_service._to_smart_item(item, fallback_verification=None)
+
+
+def _proto_item(**kw):
+    base = {
+        "type": "hydration",
+        "title": "x",
+        "status": "pending",
+        "source": {"object_type": "health_protocol", "object_id": 1},
+    }
+    base.update(kw)
+    return base
+
+
+def test_voice_actionable_true_for_nonmedical_protocols():
+    # 喝水(water_records)/ 饮食(diet_records)/ 无 source_model(只写协议事件)→ 可语音。
+    assert _smart(_proto_item(type="hydration", source_model="water_records"))["voice_actionable"] is True
+    assert _smart(_proto_item(type="diet", source_model="diet_records"))["voice_actionable"] is True
+    assert _smart(_proto_item(type="activity", source_model="exercise_records"))["voice_actionable"] is True
+    assert _smart(_proto_item(type="sleep", source_model=None))["voice_actionable"] is True
+
+
+def test_voice_actionable_false_for_medical_grade_writers():
+    # 用药 / 补剂协议完成会写真实 MedicationLog/SupplementRecord 依从 → 永不可含糊语音自动写。
+    assert _smart(_proto_item(type="medication", source_model="medication_logs"))["voice_actionable"] is False
+    assert _smart(_proto_item(type="supplement", source_model="supplement_records"))["voice_actionable"] is False
+
+
+def test_voice_actionable_invariant_source_model_overrides_domain_drift():
+    """漂移哨兵:domain 在「安全」白名单内,但 source_model 是医疗级 → 必须 False。
+
+    这正是客户端 domain 白名单拦不住的场景:一个 hydration-domain 协议若 source_model=
+    medication_logs,完成它会写 MedicationLog。按 domain 判会放行(漏),按 source_model
+    判才挡住。把安全决定钉在 source_model 上。
+    """
+    drift = _proto_item(type="hydration", source_model="medication_logs")
+    assert _smart(drift)["voice_actionable"] is False
+    drift2 = _proto_item(type="activity", source_model="supplement_records")
+    assert _smart(drift2)["voice_actionable"] is False
+
+
+def test_voice_actionable_false_for_correction_advisory_riding_health_protocol():
+    """回归:协议自纠偏建议挂 object_type=health_protocol(type=correction, status=info),
+    但它是建议、不是依从待办 —— 必须 False,否则语音"跳过"会跳掉它背后的真协议。
+
+    (旧 domain 白名单恰好挡住 correction;换成 source_model 门后必须用 status 门显式保住。)
+    """
+    corr = {
+        "type": "correction",
+        "status": "info",
+        "source": {"object_type": "health_protocol", "object_id": 5},
+        # 注:correction 项无 source_model 键(非医疗级也不应据此放行)。
+    }
+    assert _smart(corr)["voice_actionable"] is False
+
+
+def test_voice_actionable_false_for_checkup_and_nonprotocol_sources():
+    # 复查 domain 协议(source_model 多为 None)也排除 —— 确认复查须手机显式操作。
+    assert _smart(_proto_item(type="checkup", source_model=None))["voice_actionable"] is False
+    # 非协议来源:复查(health_problem)/ Daily Plan 行动 / 训练灯 → 恒 False。
+    assert _smart({"type": "checkup", "status": "overdue",
+                   "source": {"object_type": "health_problem", "object_id": 9}})["voice_actionable"] is False
+    assert _smart({"type": "movement", "status": "pending",
+                   "source": {"object_type": "daily_plan_action", "object_id": "x"}})["voice_actionable"] is False
