@@ -14,18 +14,34 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 from app.orchestrator.schema import Intent, ProposedCard, SpecialistFinding
 from app.twin.schema import HealthTwin
+from app.utils.timezone import get_china_today
 
 logger = logging.getLogger(__name__)
+
+# 腰围读数「够新」窗口:腰围是慢变量,6 个月内视为当前。过期的腰围不信(陈年正常腰围
+# 不能否定当前高 BMI 风险 → 退回 BMI 代理,防 under-alarm)。
+_WAIST_FRESH_DAYS = 180
+
+
+def _waist_is_fresh(last_measured: Optional[date]) -> bool:
+    """腰围读数是否在 _WAIST_FRESH_DAYS 天内。无日期/异常 → False(当过期处理,退回 BMI)。"""
+    if last_measured is None:
+        return False
+    try:
+        return 0 <= (get_china_today() - last_measured).days <= _WAIST_FRESH_DAYS
+    except Exception:  # noqa: BLE001 — 日期类型异常 → 保守当过期,退回 BMI
+        return False
 
 
 def _metabolic_syndrome_criteria(twin: HealthTwin) -> Dict[str, Any]:
     """
     简化代谢综合征评估（IDF/NCEP ATP III 混合）:
-      - 中心性肥胖 (BMI ≥ 28 作为简化替代)
+      - 中心性肥胖 (优先腰围标准 central_obesity_flag;无腰围数据时退回 BMI ≥ 28 代理)
       - 甘油三酯 ≥ 1.7 mmol/L
       - HDL < 1.0 (男) / < 1.3 (女)
       - 血压 ≥ 130/85
@@ -37,8 +53,23 @@ def _metabolic_syndrome_criteria(twin: HealthTwin) -> Dict[str, Any]:
     body = twin.body_composition
     labs = twin.labs
 
-    if body.bmi is not None and body.bmi >= 28:
-        hits.append(f"BMI {body.bmi:.1f}")
+    # 中心性肥胖:IDF/NCEP 用腰围(腹型脂肪),不是 BMI。central_obesity_flag 已按性别腰围阈值算好
+    # (True=超标、False=已测且正常、None=无腰围数据)。但**只信「新鲜」腰围**(≤180 天)——
+    # 陈年「正常」腰围不能否定当前高 BMI 风险(对抗评审 BLOCKING:stale False 会 under-alarm,
+    # 把当前 BMI 驱动的代谢综合征命中静默抹掉)。
+    # - 新鲜 True  → 计(权威);正常体重中心性肥胖在此被抓到,BMI≥28 代理会漏。
+    # - 新鲜 False → 不计(纵 BMI≥28):腰围直接否定腹型肥胖,肌肉型高 BMI 不再误判。
+    # - 过期 / None → 退回 BMI≥28 旧代理,不丢信号。
+    flag = body.central_obesity_flag
+    waist_fresh = _waist_is_fresh(body.last_waist_measured)
+    if flag is True and waist_fresh:
+        whtr = body.waist_to_height_ratio
+        hits.append(f"中心性肥胖（腰围超标{f'，腰高比 {whtr:.2f}' if whtr is not None else ''}）")
+    elif flag is False and waist_fresh:
+        pass  # 新鲜腰围且正常 → 确无中心性肥胖,不退回 BMI(肌肉型高 BMI 不误判)
+    elif body.bmi is not None and body.bmi >= 28:
+        reason = "无腰围" if flag is None else "腰围读数过期"
+        hits.append(f"BMI {body.bmi:.1f}（{reason}，BMI 代理）")
     if labs.triglycerides is not None and labs.triglycerides >= 1.7:
         hits.append(f"甘油三酯 {labs.triglycerides}")
     if labs.hdl is not None and labs.hdl < 1.0:
