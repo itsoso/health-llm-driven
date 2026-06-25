@@ -290,8 +290,9 @@ def send_sleep_reminders():
                     notification_type="reminder",
                     title="💤 睡眠提醒",
                     content=_sleep_reminder_content(db, setting.user_id),
-                    # Sleep reminder 本身就是 bedtime 提醒, 不能被 quiet hours 延迟到次日 08:30。
-                    quiet_hours_policy="bypass",
+                    # Sleep reminder 只适合睡前准备窗口; 若已进入 quiet hours,
+                    # 不穿透 Apple Watch, 也不延迟到次日早上补发过期提醒。
+                    quiet_hours_policy="drop",
                 ))
                 sent_count += 1
             except Exception as e:

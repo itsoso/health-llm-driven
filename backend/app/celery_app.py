@@ -96,10 +96,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour="9,11,13,15,17,19,21,23", minute=1),  # 北京 09/11/13/15/17/19/21/23 点
     },
 
-    # 每日 22:00 发送睡眠提醒
+    # 每日 21:30 发送睡眠提醒: 默认 quiet hours 是 22:00, 提前到睡前准备窗口,
+    # 避免入睡后 Apple Watch 被普通提醒打扰.
     "sleep-reminder": {
         "task": "app.tasks.notifications.send_sleep_reminders",
-        "schedule": crontab(hour=22, minute=0),
+        "schedule": crontab(hour=21, minute=30),
     },
 
     # 每分钟扫描 medications.reminder_times，匹配就推 APNs（用户一键"已服用"）

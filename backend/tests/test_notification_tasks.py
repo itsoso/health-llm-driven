@@ -80,8 +80,8 @@ class TestSendSleepReminders:
     @patch("app.tasks.notifications.SessionLocal")
     @patch("app.tasks.notifications.PushService")
     @patch("app.tasks.notifications.run_async")
-    def test_sleep_reminder_bypasses_quiet_hours(self, mock_run_async, mock_push_cls, mock_session_cls):
-        """睡眠提醒是 bedtime 提醒, 不应被 quiet hours 延迟到第二天早上."""
+    def test_sleep_reminder_drops_during_quiet_hours(self, mock_run_async, mock_push_cls, mock_session_cls):
+        """睡眠提醒命中 quiet hours 时不穿透 Apple Watch, 也不延迟到第二天早上补发."""
         mock_db = MagicMock()
         mock_session_cls.return_value.__enter__ = MagicMock(return_value=mock_db)
         mock_session_cls.return_value.__exit__ = MagicMock(return_value=False)
@@ -95,7 +95,7 @@ class TestSendSleepReminders:
         send_fn = mock_push_cls.return_value.send_notification
         assert send_fn.call_count == 1
         _, kwargs = send_fn.call_args
-        assert kwargs.get("quiet_hours_policy") == "bypass"
+        assert kwargs.get("quiet_hours_policy") == "drop"
 
     def test_sleep_reminder_copy_uses_profile_bedtime_and_stress_sensitive_trait(self, db):
         """睡眠提醒文案应基于真实作息和压力敏感特质, 不硬编码错误睡觉时间."""
@@ -208,8 +208,8 @@ class TestSendPlanMorningReminder:
 
 class TestDueReminderPolicy:
     @patch("app.services.notification.push_scheduler.PushService")
-    def test_due_sleep_reminder_bypasses_quiet_hours(self, mock_push_cls):
-        """用户配置的 sleep reminder 是睡前提醒, 不应被静默时段延迟到第二天 08:30."""
+    def test_due_sleep_reminder_drops_during_quiet_hours(self, mock_push_cls):
+        """用户配置的 sleep reminder 命中静默时段时不穿透 Apple Watch, 也不补发到早上."""
         from app.services.notification.push_scheduler import PushScheduler
 
         reminder = MagicMock(
@@ -228,7 +228,7 @@ class TestDueReminderPolicy:
         asyncio.run(scheduler._send_due_reminders(MagicMock(), push))
 
         kwargs = push.send_notification.call_args.kwargs
-        assert kwargs["quiet_hours_policy"] == "bypass"
+        assert kwargs["quiet_hours_policy"] == "drop"
 
 
 class TestSendPlanEveningSummary:
