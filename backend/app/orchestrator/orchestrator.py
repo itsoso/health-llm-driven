@@ -464,6 +464,7 @@ def _build_synthesis_prompt(
     query: str, twin: HealthTwin, findings: List[SpecialistFinding],
     db: Optional[Session] = None, user_id: Optional[int] = None,
     conflict_arb_block: str = "",
+    realtime_evidence_block: str = "",
     source: Optional[str] = None,
     lite_mode: bool = False,
 ) -> tuple[str, str]:
@@ -673,6 +674,10 @@ def _build_synthesis_prompt(
         user_prompt_parts.append(f"【个人证据矩阵】\n{personal_matrix_text}")
     if system_kb_text:
         user_prompt_parts.append(f"【系统知识库命中】\n{system_kb_text}")
+    if realtime_evidence_block:
+        # IQS 实时检索证据 — 补时效性/外部事实降幻觉; 放系统知识库后、专家裁决前。
+        # 块内已含"不得覆盖个人数据与专家裁决"指令 (见 services/iqs_search._format_block)。
+        user_prompt_parts.append(realtime_evidence_block)
     if credit_text:
         user_prompt_parts.append(f"【Specialist 历史命中率 (近 30 天)】\n{credit_text}")
     if track_text:
@@ -1307,9 +1312,16 @@ async def run_orchestrator(
     lite_mode = not specialists
     perf["lite_mode"] = lite_mode
 
+    # IQS 实时检索 grounding — 非 lite / 非 siri 才取 (flag 关或失败则空, 不阻断)
+    realtime_evidence_block = ""
+    if not lite_mode and req.source != "siri":
+        from app.services.iqs_search import fetch_realtime_evidence
+        realtime_evidence_block = await fetch_realtime_evidence(req.query)
+
     system_prompt, user_prompt = _build_synthesis_prompt(
         req.query, twin, findings, db=db, user_id=user_id,
         conflict_arb_block=conflict_arb_block,
+        realtime_evidence_block=realtime_evidence_block,
         source=req.source,
         lite_mode=lite_mode,
     )
@@ -1719,9 +1731,16 @@ async def stream_orchestrator(
                 lite_mode = not specialists
                 perf["lite_mode"] = lite_mode
 
+                # IQS 实时检索 grounding (与 run_orchestrator 对齐, flag 关/失败则空, 不阻断流)
+                realtime_evidence_block = ""
+                if not lite_mode and req.source != "siri":
+                    from app.services.iqs_search import fetch_realtime_evidence
+                    realtime_evidence_block = await fetch_realtime_evidence(req.query)
+
                 system_prompt, user_prompt = _build_synthesis_prompt(
                     req.query, twin, findings, db=bg_db, user_id=user_id,
                     conflict_arb_block=conflict_arb_block,
+                    realtime_evidence_block=realtime_evidence_block,
                     source=req.source,
                     lite_mode=lite_mode,
                 )

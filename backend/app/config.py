@@ -114,9 +114,12 @@ class Settings(BaseSettings):
     # 空气质量 API 配置 (https://aqicn.org/data-platform/token/)
     aqicn_api_token: Optional[str] = None  # aqicn.org API Token
 
-    # 阿里云智能搜索 (夸克搜索) 配置
+    # 阿里云智能搜索 (夸克搜索 / IQS) 配置
     aliyun_access_key_id: Optional[str] = None
     aliyun_access_key_secret: Optional[str] = None
+    # IQS 实时搜索 grounding 开关 — 合成回答前检索实时证据注入 prompt 降幻觉。
+    # 默认关; 灰度验证后在 prod .env 置 true。需 aliyun_access_key_* 同时配好才生效。
+    aliyun_iqs_grounding_enabled: bool = False
 
     # 和风天气 API 配置 (https://dev.qweather.com/)
     qweather_api_key: Optional[str] = None  # 和风天气 API Key
