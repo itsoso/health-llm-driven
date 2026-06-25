@@ -20,7 +20,10 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import api from '../services/api';
-import { updateManualLocation, refreshDetectedLocation, updateGPSLocation, reverseGeocodeOnDevice } from '../services/location';
+import {
+  updateManualLocation, refreshDetectedLocation, updateGPSLocation, reverseGeocodeOnDevice,
+  getEffectiveTimezone, setManualTimezone, getDeviceTimezone, type EffectiveTimezone,
+} from '../services/location';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { spacing, radii, shadows } from '../constants/theme';
 
@@ -29,6 +32,20 @@ const COMMON_CITIES = [
   '北京', '上海', '广州', '深圳', '杭州', '成都', '南京', '武汉', '西安',
   '天津', '苏州', '重庆', '青岛', '厦门', '长沙', '郑州', '昆明', '香港',
 ];
+
+// 常用时区快选 (IANA). 手动锁定时从这里选, 避免手输错.
+const COMMON_TIMEZONES = [
+  'Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Tokyo', 'Asia/Singapore',
+  'America/Los_Angeles', 'America/New_York', 'Europe/London', 'Europe/Paris',
+  'Australia/Sydney', 'Asia/Dubai',
+];
+
+const TZ_SOURCE_LABEL: Record<string, string> = {
+  manual: '手动锁定',
+  detected: '跟随设备所在地',
+  profile: '配置',
+  default: '默认 (中国)',
+};
 
 function formatProvenance(source: string, staleMin: number | null): string {
   const ageStr = staleMin == null
@@ -85,8 +102,17 @@ export default function LocationScreen() {
     staleTime: 30_000,
   });
 
+  // 生效时区 (跟随设备 / 手动锁定)
+  const { data: tz } = useQuery<EffectiveTimezone>({
+    queryKey: ['effectiveTimezone'],
+    queryFn: getEffectiveTimezone,
+    staleTime: 30_000,
+  });
+
   const [useManual, setUseManual] = useState(false);
   const [cityInput, setCityInput] = useState('');
+  const [tzManual, setTzManual] = useState(false);
+  const [tzInput, setTzInput] = useState('');
 
   // 同步服务端状态到本地 state
   useEffect(() => {
@@ -95,6 +121,14 @@ export default function LocationScreen() {
       setCityInput(data.manual_location?.city || '');
     }
   }, [data?.use_manual_location, data?.manual_location?.city]);
+
+  // 同步时区状态: 有 manual_timezone = 已锁定; 否则默认填生效时区方便切换
+  useEffect(() => {
+    if (tz) {
+      setTzManual(!!tz.manual_timezone);
+      setTzInput(tz.manual_timezone || tz.timezone || '');
+    }
+  }, [tz?.manual_timezone, tz?.timezone]);
 
   const saveMut = useMutation({
     mutationFn: (payload: { use: boolean; city: string }) =>
@@ -174,6 +208,29 @@ export default function LocationScreen() {
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     saveMut.mutate({ use: useManual, city: cityInput.trim() });
+  };
+
+  const tzMut = useMutation({
+    // 手动模式锁定所选时区; 关掉手动 → 传 null 解锁, 恢复自动跟随设备
+    mutationFn: (manualTz: string | null) => setManualTimezone(manualTz),
+    onSuccess: (res) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      qc.invalidateQueries({ queryKey: ['effectiveTimezone'] });
+      qc.invalidateQueries({ queryKey: ['profileLocation'] });
+      Alert.alert('已更新', `生效时区: ${res.timezone}（${TZ_SOURCE_LABEL[res.source] || res.source}）`);
+    },
+    onError: (e: any) => {
+      Alert.alert('保存失败', e?.response?.data?.detail || e?.message || '请稍后再试');
+    },
+  });
+
+  const handleSaveTz = () => {
+    if (tzManual && !tzInput.trim()) {
+      Alert.alert('请选择时区', '手动模式需要指定一个时区');
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    tzMut.mutate(tzManual ? tzInput.trim() : null);
   };
 
   return (
@@ -334,6 +391,70 @@ export default function LocationScreen() {
           <Text style={[txt.hint, { textAlign: 'center', marginTop: spacing.lg }]}>
             {useManual ? '手动模式下 GPS/IP 自动检测被忽略' : 'GPS 精度 > IP 检测,建议有需要时点一下.'}
           </Text>
+
+          {/* 时区: 自动跟随设备所在地 + 手动锁定 */}
+          <View style={styles.card}>
+            <Text style={txt.sectionTitle}>时区</Text>
+            <Text style={txt.currentCity}>{tz?.timezone || 'Asia/Shanghai'}</Text>
+            <Text style={[txt.subLabel, { marginTop: 4 }]}>
+              数据源: {tz ? (TZ_SOURCE_LABEL[tz.source] || tz.source) : '加载中'}
+              {tz?.detected_timezone ? ` · 设备: ${tz.detected_timezone}` : ''}
+            </Text>
+            <Text style={txt.hint}>
+              用药时长、随访到期等「今天」按此时区的日历日计算. 平时自动跟随设备所在地.
+            </Text>
+
+            <View style={[styles.rowBetween, { marginTop: spacing.sm }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={txt.rowLabel}>手动指定时区</Text>
+                <Text style={txt.subLabel}>
+                  开启后固定用你选的时区, 忽略设备检测 (出差不想被带跑时用).
+                </Text>
+              </View>
+              <Switch
+                value={tzManual}
+                onValueChange={(v) => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setTzManual(v);
+                }}
+                trackColor={{ false: c.fill, true: c.brand }}
+                thumbColor="#fff"
+              />
+            </View>
+
+            {tzManual && (
+              <View style={styles.chipsRow}>
+                {COMMON_TIMEZONES.map(z => (
+                  <TouchableOpacity
+                    key={z}
+                    style={[
+                      styles.chip,
+                      tzInput === z && { backgroundColor: c.brandLight, borderColor: c.brand },
+                    ]}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setTzInput(z);
+                    }}
+                  >
+                    <Text style={[txt.chipText, tzInput === z && { color: c.brand }]}>{z}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.primaryBtn, tzMut.isPending && { opacity: 0.6 }]}
+              onPress={handleSaveTz}
+              disabled={tzMut.isPending}
+              activeOpacity={0.7}
+            >
+              {tzMut.isPending ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={txt.primaryBtnLabel}>{tzManual ? '锁定时区' : '保存（自动跟随）'}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       )}
     </SafeAreaView>

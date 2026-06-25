@@ -15,6 +15,7 @@ import { useNotifications } from '../hooks/useNotifications';
 import { useEyeBreakReminders } from '../hooks/useEyeBreakReminders';
 import { useBiometricLock } from '../hooks/useBiometricLock';
 import { useGPSAutoRefresh } from '../hooks/useGPSAutoRefresh';
+import { useDeviceTimezoneSync } from '../hooks/useDeviceTimezoneSync';
 import NotificationBanner from '../components/notifications/NotificationBanner';
 import NetworkBanner from '../components/NetworkBanner';
 import RootErrorBoundary from '../components/RootErrorBoundary';
@@ -64,6 +65,7 @@ function AppContent() {
 
   useNotifications(isAuthenticated);
   useGPSAutoRefresh(isAuthenticated);
+  useDeviceTimezoneSync(isAuthenticated);
   // 科学用眼 20-20-20: 根级挂一次, 让「滚动当日重排」在 App 回前台时跑,
   // 无需用户停留在设置屏 (eye-care.tsx 另用同一 hook 做 UI 状态)。
   useEyeBreakReminders(isAuthenticated);

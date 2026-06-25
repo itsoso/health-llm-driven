@@ -86,3 +86,45 @@ export async function reverseGeocodeOnDevice(lat: number, lon: number): Promise<
     return {};
   }
 }
+
+// ── 时区: 跟随设备地理位置时区 (自动) + 手动锁定 (override) ────────────────
+// 生效优先级 (后端 resolve_timezone_name): manual_timezone → detected_timezone → 默认中国.
+// 用药时长 / 随访到期等"今天"按生效时区的日历日算.
+
+export interface EffectiveTimezone {
+  timezone: string;                                        // 当前生效 IANA 时区
+  source: 'manual' | 'detected' | 'profile' | 'default';   // 来源
+  detected_timezone: string | null;                        // 设备/位置检测到的
+  manual_timezone: string | null;                          // 手动锁定的 (非空=已锁)
+}
+
+/**
+ * 设备当前时区 (IANA, 如 Asia/Shanghai) —— 由系统按地理位置解析.
+ * 纯 JS (Intl), 无 native 依赖. 取不到 / 解析失败返 null (调用方跳过上报).
+ */
+export function getDeviceTimezone(): string | null {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return tz && tz.length > 1 ? tz : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 上报设备时区 → 写 detected_timezone (用户没手动锁定时即生效时区). */
+export async function reportDeviceTimezone(tz: string): Promise<EffectiveTimezone> {
+  const resp = await api.post<EffectiveTimezone>('/profile/me/device-timezone', { timezone: tz });
+  return resp.data;
+}
+
+/** 手动锁定时区; 传 null 解锁, 恢复自动跟随设备. */
+export async function setManualTimezone(tz: string | null): Promise<EffectiveTimezone> {
+  const resp = await api.put<EffectiveTimezone>('/profile/me/manual-timezone', { timezone: tz });
+  return resp.data;
+}
+
+/** 读当前生效时区 + 来源. */
+export async function getEffectiveTimezone(): Promise<EffectiveTimezone> {
+  const resp = await api.get<EffectiveTimezone>('/profile/me/effective-timezone');
+  return resp.data;
+}
