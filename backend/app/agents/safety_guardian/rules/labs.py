@@ -37,6 +37,15 @@ def _as_float(v: Any) -> Optional[float]:
         return None
 
 
+def _uric_acid_umol(raw: float) -> float:
+    """血尿酸归一化到 μmol/L。<25 视为 mg/dL 换算(×59.48);否则当 μmol/L。
+
+    尿酸实测范围:mg/dL ~1-25(极值肿瘤溶解 ~20)、μmol/L ~120-1000。25 是干净分界——
+    边界 [25,50) 对两种单位都不合理(疑数据错),保守当 μmol/L(其值远低于 420,不会假告警)。
+    """
+    return raw * 59.48 if raw < 25 else raw
+
+
 def _find_standard_hba1c(abnormals: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """只匹配标准糖化 (NGSP A1c, code=glucose_hba1c), 排除总糖化 HbA1。
 
@@ -351,6 +360,54 @@ def labs_data_stale(twin: HealthTwin) -> Optional[Alert]:
 
 
 @register
+def uric_acid_high(twin: HealthTwin) -> Optional[Alert]:
+    """高尿酸血症 —— 血尿酸升高(痛风/尿酸性肾病/代谢综合征/心血管风险并存)。
+
+    阈值用《中国高尿酸血症与痛风诊疗指南(2019)》性别中立标准 420 μmol/L(≈7 mg/dL)定义高尿酸血症
+    —— twin.labs 无性别字段,故不用性别特异阈值。单位自动归一见 `_uric_acid_umol`(mg/dL↔μmol/L)。
+    非急症 → 最高 MEDIUM,绝不 CRITICAL。
+    R4:行动为生活方式 + 「降尿酸治疗由医生决定」,不出药名/剂量、不下痛风诊断。
+    """
+    abns = twin.labs.flagged_abnormal or []
+    ua_item = _find_item(abns, ["尿酸", "uric"])
+    ua_raw = _as_float(ua_item.get("value")) if ua_item else _as_float(twin.labs.uric_acid)
+    if ua_raw is None or ua_raw <= 0:
+        return None
+
+    ua = _uric_acid_umol(ua_raw)  # → μmol/L(自动判别 mg/dL)
+    from_flag = ua_item is not None
+
+    if ua >= 540:  # ≈9 mg/dL,显著升高
+        severity = Severity.MEDIUM
+        level = "显著升高"
+        extra = "显著升高会增加痛风急性发作、尿酸性肾结石与肾损伤风险。"
+    elif ua >= 420:  # 高尿酸血症定义
+        severity = Severity.MEDIUM
+        level = "偏高（高尿酸血症)"
+        extra = "高尿酸常与代谢综合征、高血压、心血管风险并存。"
+    elif from_flag and ua >= 360:  # 化验已标异常的临界值(性别敏感参考下沿)
+        severity = Severity.LOW
+        level = "临界偏高"
+        extra = "尚未达高尿酸血症标准,关注趋势。"
+    else:
+        return None
+
+    return Alert(
+        rule_id="labs.uric_acid_high",
+        category="labs",
+        severity=severity,
+        title=f"血尿酸{level}",
+        message=f"血尿酸 {round(ua)} μmol/L（约 {round(ua / 59.48, 1)} mg/dL）。{extra}",
+        action=(
+            "减少高嘌呤摄入(动物内脏/红肉/海鲜/浓肉汤)、限酒(尤其啤酒)与含果糖饮料、每日饮水 2L 以上;"
+            "BMI 偏高者减重。反复关节红肿热痛或已确诊痛风,请就诊风湿科评估是否需要降尿酸治疗(用药由医生决定)。"
+        ),
+        data_citation={"uric_acid_umol_l": round(ua), "raw": ua_raw, "from_flagged": from_flag},
+        references=["中华医学会内分泌学分会《中国高尿酸血症与痛风诊疗指南(2019)》"],
+    )
+
+
+@register
 def uncategorized_abnormal_summary(twin: HealthTwin) -> Optional[Alert]:
     """
     通用 catch-all：对尚未被上面规则识别的异常项做温和提醒。
@@ -368,15 +425,22 @@ def uncategorized_abnormal_summary(twin: HealthTwin) -> Optional[Alert]:
         "淋巴细胞比例", "中性粒细胞比例",
     ]
 
-    def _covered(name: str) -> bool:
+    def _covered(item: Dict[str, Any]) -> bool:
+        name = item.get("item_name") or ""
         if any(kw in name for kw in covered):
             return True
+        # 尿酸: **值感知**去重 —— 只在 uric_acid_high 会触发(归一化 ≥360)时才算已覆盖;
+        # 否则(flagged 但 <360、或低尿酸/数据缺失)让它落到本兜底,**绝不静默丢**(评审 BLOCKING:
+        # 加 "尿酸" 进静态 covered 会把规则不触发的 flagged 尿酸一并抹掉 → under-alarm)。
+        if "尿酸" in name or "uric" in name.lower():
+            ua_raw = _as_float(item.get("value"))
+            return ua_raw is not None and ua_raw > 0 and _uric_acid_umol(ua_raw) >= 360
         # 糖化只把「标准 A1c」算作已覆盖 (hba1c_diabetes_range 处理); 总糖化 HbA1 不是
         # 该规则的指标, 不能因子串「糖化血红蛋白」被当成已覆盖而静默丢弃 —— 让它落到本兜底。
         from app.biomarkers.definitions import resolve_code
         return resolve_code(name) == "glucose_hba1c"
 
-    remaining = [it for it in abns if not _covered(it.get("item_name") or "")]
+    remaining = [it for it in abns if not _covered(it)]
     if not remaining:
         return None
 

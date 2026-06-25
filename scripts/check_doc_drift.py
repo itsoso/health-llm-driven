@@ -38,7 +38,7 @@ FRONTEND = ROOT / "frontend"
 EXPECTED: dict = {
     "safety_rules": {
         "vitals": 12,
-        "labs": 7,
+        "labs": 8,
         "ddi": 7,
         "dsi": 8,
         "pgx": 10,
