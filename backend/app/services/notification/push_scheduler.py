@@ -148,7 +148,7 @@ class PushScheduler:
             message = reminder.message or predefined.get("message", f"📢 {reminder.name}")
 
             try:
-                quiet_hours_policy = "bypass" if reminder.reminder_type == "sleep" else None
+                quiet_hours_policy = "drop" if reminder.reminder_type == "sleep" else None
                 result = await push_service.send_notification(
                     user_id=user_id,
                     notification_type=NotificationType.REMINDER.value,
