@@ -106,6 +106,12 @@ class UserProfile(Base):
     manual_country = Column(String(100), nullable=True)  # 手工输入的国家
     use_manual_location = Column(Boolean, default=False)  # 是否使用手工输入的位置
 
+    # === 时区:用户地理位置时区(自动跟随)+ 手动覆盖 (2026-06-25) ===
+    # 生效时区优先级 manual_timezone → detected_timezone → 旧 timezone → 默认中国
+    # (见 app/utils/timezone.resolve_timezone_name)。旧 `timezone` 列保留为兼容兜底。
+    detected_timezone = Column(String(64), nullable=True)  # 设备/IP 检测到的 IANA 时区,自动跟随当前位置
+    manual_timezone = Column(String(64), nullable=True)    # 用户手动锁定的 IANA 时区;非空=pin,覆盖 detected
+
     # === 用户级 LLM 偏好 (2026-05-13) ===
     # 个人选择 chat 用哪个 LLM 模型 (model_id from app/services/llm/model_registry.py).
     # NULL = 走 admin 全局或 settings.llm_provider 默认; 例如 'qwen3.6-plus' / 'gpt-4o' 等.

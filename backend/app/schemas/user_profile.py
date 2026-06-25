@@ -42,6 +42,24 @@ class ManualLocationUpdate(BaseModel):
     country: Optional[str] = Field(None, description="手工输入的国家")
 
 
+class DeviceTimezoneUpdate(BaseModel):
+    """设备/系统上报的时区(自动跟随地理位置)。mobile 前台/登录时上报。"""
+    timezone: str = Field(..., description="设备 IANA 时区,如 Asia/Shanghai / America/Los_Angeles")
+
+
+class ManualTimezoneUpdate(BaseModel):
+    """用户手动锁定时区。timezone 传 null/空 → 取消锁定,恢复自动跟随设备。"""
+    timezone: Optional[str] = Field(None, description="手动锁定的 IANA 时区;null/空=取消锁定")
+
+
+class EffectiveTimezone(BaseModel):
+    """派生的生效时区 + 来源。"""
+    timezone: str = Field(..., description="当前生效的 IANA 时区")
+    source: str = Field(..., description="manual=手动锁定 / detected=设备检测 / profile=旧字段 / default=默认中国")
+    detected_timezone: Optional[str] = Field(None, description="设备/位置检测到的时区")
+    manual_timezone: Optional[str] = Field(None, description="用户手动锁定的时区(非空=已锁定)")
+
+
 class AssistantDashboardDeviceLayout(BaseModel):
     """单设备首页布局配置"""
     order: List[str] = Field(default_factory=list, description="首页卡片顺序")
@@ -196,6 +214,12 @@ class UserProfileResponse(UserProfileBase):
     # 手工输入位置信息
     manual_location: Optional[ManualLocation] = Field(None, description="手工输入的位置")
     use_manual_location: bool = Field(False, description="是否使用手工输入位置")
+
+    # 时区(自动跟随设备/位置 + 手动覆盖)
+    detected_timezone: Optional[str] = Field(None, description="设备/位置检测到的时区")
+    manual_timezone: Optional[str] = Field(None, description="用户手动锁定的时区(非空=已锁定)")
+    effective_timezone: Optional[str] = Field(None, description="当前生效的 IANA 时区(派生)")
+    timezone_source: Optional[str] = Field(None, description="生效时区来源 manual/detected/profile/default")
 
     created_at: datetime
     updated_at: Optional[datetime] = None

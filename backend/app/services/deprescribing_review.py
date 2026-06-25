@@ -12,6 +12,8 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Optional
 
+from app.utils.timezone import get_china_today
+
 POLYPHARMACY_THRESHOLD = 5
 LONG_TERM_WEEKS = 8  # 长期抑酸/镇静 deprescribing 评估阈值
 
@@ -38,7 +40,7 @@ def review_medications(meds: list[dict[str, Any]], today: Optional[date] = None)
 
     全部 candidate 级,话术统一"请与医生讨论是否可精简"。
     """
-    today = today or date.today()
+    today = today or get_china_today()
     active = [m for m in meds if m.get("name")]
     flags: list[dict[str, Any]] = []
 

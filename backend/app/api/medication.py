@@ -268,11 +268,13 @@ async def get_deprescribing_review(
     """多药梳理 / 减药候选(非建议停药;请与医生讨论是否可精简)。"""
     from app.models.medication import Medication
     from app.services.deprescribing_review import review_medications
+    from app.utils.timezone import get_user_today
     meds = db.query(Medication).filter(
         Medication.user_id == current_user.id, Medication.is_active == True  # noqa: E712
     ).all()
     payload = [{"name": m.name, "start_date": m.start_date, "end_date": m.end_date} for m in meds]
-    return review_medications(payload)
+    # 用药时长/过期判定按用户本地时区的日历日(缺省回退中国时区)
+    return review_medications(payload, today=get_user_today(db, current_user.id))
 
 
 class RegimenInstantiate(BaseModel):

@@ -12,6 +12,7 @@ from app.schemas.user_profile import (
     HealthGoalCreate, HealthGoalUpdate, HealthGoalResponse,
     PrivacySettings, DetectedLocation, ManualLocation, ManualLocationUpdate,
     AssistantDashboardLayouts,
+    DeviceTimezoneUpdate, ManualTimezoneUpdate, EffectiveTimezone,
 )
 from app.api.auth import get_current_user_required
 from datetime import date
@@ -42,6 +43,10 @@ def normalize_assistant_dashboard_layouts(field_value: Any) -> AssistantDashboar
 
 
 def build_profile_response(profile: UserProfile) -> UserProfileResponse:
+    from app.utils.timezone import resolve_timezone_name
+    _eff_tz_name, _eff_tz_source = resolve_timezone_name(
+        profile.manual_timezone, profile.detected_timezone, profile.timezone
+    )
     return UserProfileResponse(
         id=profile.id,
         user_id=profile.user_id,
@@ -100,6 +105,10 @@ def build_profile_response(profile: UserProfile) -> UserProfileResponse:
             country=profile.manual_country
         ) if profile.manual_city or profile.manual_region or profile.manual_country else None,
         use_manual_location=profile.use_manual_location or False,
+        detected_timezone=profile.detected_timezone,
+        manual_timezone=profile.manual_timezone,
+        effective_timezone=_eff_tz_name,
+        timezone_source=_eff_tz_source,
         created_at=profile.created_at,
         updated_at=profile.updated_at,
     )
@@ -176,6 +185,83 @@ async def get_effective_location(
     return resolve_effective_location(profile)
 
 
+def _effective_timezone_payload(profile: UserProfile) -> EffectiveTimezone:
+    from app.utils.timezone import resolve_timezone_name
+    name, source = resolve_timezone_name(
+        profile.manual_timezone, profile.detected_timezone, profile.timezone
+    )
+    return EffectiveTimezone(
+        timezone=name, source=source,
+        detected_timezone=profile.detected_timezone,
+        manual_timezone=profile.manual_timezone,
+    )
+
+
+def _get_or_create_profile(db: Session, user_id: int) -> UserProfile:
+    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    if not profile:
+        profile = UserProfile(user_id=user_id)
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
+    return profile
+
+
+@router.get("/me/effective-timezone", response_model=EffectiveTimezone)
+async def get_effective_timezone(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """生效时区单一事实之主 —— 优先级 manual → detected → 旧 timezone → 默认中国。
+
+    所有读时区的 reader 应走 get_user_timezone(同一优先级);本端点给 mobile / 设置页展示用。
+    """
+    return _effective_timezone_payload(_get_or_create_profile(db, current_user.id))
+
+
+@router.post("/me/device-timezone", response_model=EffectiveTimezone)
+async def report_device_timezone(
+    body: DeviceTimezoneUpdate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """设备/系统上报当前时区(自动跟随地理位置)。
+
+    写入 detected_timezone;只要用户没手动锁定(manual_timezone 为空),它就是生效时区。
+    用户已锁定时仍记录 detected(便于 UI 显示「你在 X,已锁定 Y」),但不改变生效时区。
+    """
+    from app.utils.timezone import is_valid_timezone
+    tz = (body.timezone or "").strip()
+    if not is_valid_timezone(tz):
+        raise HTTPException(status_code=400, detail=f"未知时区: {body.timezone!r}(需 IANA 名,如 Asia/Shanghai)")
+    profile = _get_or_create_profile(db, current_user.id)
+    profile.detected_timezone = tz
+    db.commit()
+    db.refresh(profile)
+    return _effective_timezone_payload(profile)
+
+
+@router.put("/me/manual-timezone", response_model=EffectiveTimezone)
+async def set_manual_timezone(
+    body: ManualTimezoneUpdate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """用户手动锁定/解锁时区。
+
+    timezone 非空 → 锁定(覆盖自动检测);传 null/空 → 解锁,恢复自动跟随设备/位置。
+    """
+    from app.utils.timezone import is_valid_timezone
+    tz = (body.timezone or "").strip()
+    if tz and not is_valid_timezone(tz):
+        raise HTTPException(status_code=400, detail=f"未知时区: {body.timezone!r}(需 IANA 名,如 Asia/Shanghai)")
+    profile = _get_or_create_profile(db, current_user.id)
+    profile.manual_timezone = tz or None
+    db.commit()
+    db.refresh(profile)
+    return _effective_timezone_payload(profile)
+
+
 @router.post("/me/refresh-location")
 async def refresh_my_location(
     request: Request,
@@ -217,6 +303,10 @@ async def refresh_my_location(
         profile.detected_region = location.region
         profile.detected_country = location.country
         profile.detected_source = "ip"
+        # IP 反查也带时区 —— 自动跟随的兜底来源(app 前台上报的设备时区更准,会覆盖它)
+        from app.utils.timezone import is_valid_timezone
+        if is_valid_timezone(location.timezone):
+            profile.detected_timezone = location.timezone
         profile.location_updated_at = datetime.now(UTC)
         profile.last_ip = client_ip
         db.commit()

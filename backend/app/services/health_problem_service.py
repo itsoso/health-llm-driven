@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.models.health_problem import HealthProblem, RISK_LEVELS, PROBLEM_STATUS
+from app.utils.timezone import get_user_today
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +64,12 @@ def set_status(db: Session, problem_id: int, user_id: int, status: str) -> Optio
 
 
 def due_followups(db: Session, user_id: int, within_days: int = 45) -> List[Dict[str, Any]]:
-    """到期/即将到期的随访(follow_up.next_due ≤ today+within_days)→ 投影成议程/提醒源。"""
-    today = date.today()
+    """到期/即将到期的随访(follow_up.next_due ≤ today+within_days)→ 投影成议程/提醒源。
+
+    today 按用户本地时区(UserProfile.timezone,缺省回退中国时区)取,使「逾期/N 天内到期」
+    的判定落在用户自己的日历日边界上。
+    """
+    today = get_user_today(db, user_id)
     cutoff = today + timedelta(days=within_days)
     out: List[Dict[str, Any]] = []
     for p in list_problems(db, user_id, active_only=True):

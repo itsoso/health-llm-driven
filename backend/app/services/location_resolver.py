@@ -190,6 +190,9 @@ def get_fresh_city(
             profile.detected_region = new_loc.region
             profile.detected_country = new_loc.country
             profile.detected_source = "ip"
+            from app.utils.timezone import is_valid_timezone
+            if is_valid_timezone(getattr(new_loc, "timezone", None)):
+                profile.detected_timezone = new_loc.timezone
             profile.location_updated_at = cur
             db.commit()
             # re-resolve 拿规范化后的 city (region 去市/省)
