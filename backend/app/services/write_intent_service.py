@@ -216,7 +216,9 @@ def _execute(db: Session, wi: WriteIntent) -> str:
             title=wi.title,
             message=wi.description or "记得测量并记录",
             remind_at=_parse_dt(p.get("remind_at")) or (datetime.now(timezone.utc) + timedelta(hours=1)),
-            priority="normal",
+            # 自治创建(trust_tier=auto)→ low 优先级:静音 + 尊重勿扰时段(用户未主动确认,
+            # 不该在睡眠窗推带声通知);人确认的仍 normal。
+            priority="low" if wi.trust_tier == "auto" else "normal",
             status="pending",
             source="health_assistant",
             extra_data={

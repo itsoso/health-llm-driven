@@ -56,6 +56,15 @@ async def list_write_intents(
     except Exception as e:  # P5 医生预约草稿生成失败 → 降级, 不阻塞读列表
         logger.warning(f"[write-intents] doctor-booking 生成失败(降级,仍返回现有): {e}")
         db.rollback()
+    # Write 自治(首切片):所有提议生成后,对 allowlisted(仅 measurement_prompt)pending,
+    # gate 全过(默认开 + 非 CRITICAL + 未超每日上限)则无需人确认自动执行;其余仍走人确认。
+    try:
+        from app.services import write_autonomy
+
+        write_autonomy.auto_execute_pending(db, current_user.id)
+    except Exception as e:  # 自治执行失败不阻塞列表(write_autonomy 内部已 fail-safe)
+        logger.warning(f"[write-intents] 自治执行失败(降级,仍返回现有): {e}")
+        db.rollback()
     return {"items": svc.list_pending(db, current_user.id)}
 
 
