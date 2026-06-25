@@ -15,6 +15,9 @@ import logging
 import time
 from datetime import UTC, datetime
 
+from app.agents.safety_guardian.cross_source_annotation import (
+    annotate_cross_source_suspect,
+)
 from app.agents.safety_guardian.engine import evaluate_rules, registry
 from app.agents.safety_guardian.schema import SafetyReport
 from app.twin.schema import HealthTwin
@@ -26,6 +29,9 @@ def evaluate_safety(twin: HealthTwin) -> SafetyReport:
     """对给定 Twin 运行全部规则，返回结构化报告。"""
     t0 = time.monotonic()
     alerts = evaluate_rules(twin)
+
+    # 跨源可疑读数 → 给依据它的 vitals 告警附加复测提示(只加不减,绝不改 severity)。
+    annotate_cross_source_suspect(alerts, twin)
 
     # 按严重度降序（CRITICAL 在最上面）
     alerts.sort(key=lambda a: -int(a.severity))
