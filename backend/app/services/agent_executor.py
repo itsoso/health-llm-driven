@@ -3038,6 +3038,11 @@ class AgentExecutor:
             )
             if check:
                 return check
+            return await self._api_post(
+                f"{base}/water/records/quick?amount={amount_int}",
+                headers,
+                {},
+            )
 
         # 补全 diet 必填字段
         if rtype == "diet":
@@ -3235,11 +3240,6 @@ class AgentExecutor:
             return await self._api_post(f"{base}/illness/episodes", headers, payload)
 
         record_map = {
-            # water 走前面早返路径 (L732), 不会从 record_map 命中, 但保留占位避免后续误判
-            "water": ("/water/records/quick", "POST", {
-                "amount": data.get("amount"),
-                **({"drink_type": data["drink_type"]} if data.get("drink_type") else {}),
-            }),
             "weight": ("/weight/records", "POST", data),
             "blood_pressure": ("/blood-pressure/records", "POST", data),
             "exercise": ("/daily-health/exercise", "POST", data),

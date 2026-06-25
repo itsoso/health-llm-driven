@@ -46,7 +46,7 @@ NUMERIC_RANGES: Dict[str, Dict[str, tuple]] = {
         "diastolic": (30, 150, None),
     },
     "water": {
-        "amount": (10, 5000, 250),             # ml
+        "amount": (10, 5000, None),            # ml; missing amount must stay visible
     },
     "diet": {
         "calories": (0, 10000, None),          # kcal — None 不强制
@@ -203,6 +203,7 @@ def _validate_required(
     """各 record_type 的必填字段. 返回错误文本 (LLM 看到会重试) 或 None."""
     required: Dict[str, list] = {
         "diet": ["food_items"],
+        "water": ["amount"],
         "weight": ["weight"],
         "blood_pressure": ["systolic", "diastolic"],
         "exercise": ["exercise_type"],

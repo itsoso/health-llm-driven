@@ -11,6 +11,59 @@ import pytest
 
 
 @pytest.mark.asyncio
+async def test_water_record_posts_amount_as_query_param(db):
+    """water quick endpoint requires amount in query string, not JSON body."""
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+
+    captured = {}
+
+    async def fake_post(url, headers, payload):
+        captured["url"] = url
+        captured["payload"] = payload
+        return '{"id": 1, "amount": 1000, "drink_type": "水"}'
+
+    with patch.object(executor, "_api_post", new=AsyncMock(side_effect=fake_post)):
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({
+                "record_type": "water",
+                "data": {"amount": 1000, "confirmed": True},
+            }),
+            user_token=None,
+        )
+
+    assert "Error" not in str(result)
+    assert captured["url"].endswith("/water/records/quick?amount=1000")
+    assert captured["payload"] == {}
+
+
+@pytest.mark.asyncio
+async def test_water_record_missing_amount_does_not_default_to_250(db):
+    """Missing water amount must fail before API call instead of writing 250ml."""
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+
+    with patch.object(executor, "_api_post", new=AsyncMock()) as post:
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({
+                "record_type": "water",
+                "data": {"confirmed": True},
+            }),
+            user_token=None,
+        )
+
+    assert "Error" in str(result)
+    assert "amount" in str(result)
+    post.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_symptom_record_does_not_throw_on_missing_amount(db):
     """symptom 数据不带 amount, 应正常调 /symptoms 不抛 KeyError."""
     from app.services.agent_executor import AgentExecutor
