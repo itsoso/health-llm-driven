@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.models.family_health import ReviewSchedule
 from app.models.medication import Medication
+from app.utils.timezone import get_china_today
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ def upcoming_course_completions(db: Session, user_id: int, within_days: int = 45
 
     无 end_date / 已过期太久的不算。按 end_date 升序。
     """
-    today = date.today()
+    today = get_china_today()  # 京历(Asia/Shanghai)边界,与全局一致;原 date.today() 随 runner OS tz 漂
     horizon = today + timedelta(days=within_days)
     meds = (
         db.query(Medication)
@@ -79,6 +80,29 @@ def upcoming_course_completions(db: Session, user_id: int, within_days: int = 45
             ),
         })
     return out
+
+
+def users_with_upcoming_completions(db: Session, within_days: int = 45) -> list[int]:
+    """有在用药且 end_date 落在未来 within_days 内的用户 id(去重)。
+
+    供每日物化任务做「活跃用户」预筛,避免空扫全体用户。窗口与
+    upcoming_course_completions / ensure_review_schedules 共用同一 get_china_today 边界,
+    保证预筛集与逐人物化看到的是同一个「今天」(京历 Asia/Shanghai)。
+    """
+    today = get_china_today()
+    horizon = today + timedelta(days=within_days)
+    rows = (
+        db.query(Medication.user_id)
+        .filter(
+            Medication.is_active == True,  # noqa: E712
+            Medication.end_date.isnot(None),
+            Medication.end_date >= today,
+            Medication.end_date <= horizon,
+        )
+        .distinct()
+        .all()
+    )
+    return [uid for (uid,) in rows]
 
 
 def ensure_review_schedules(db: Session, user_id: int, within_days: int = 45) -> dict[str, int]:

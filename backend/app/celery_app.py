@@ -49,6 +49,7 @@ celery_app = Celery(
         "app.tasks.calendar_tasks",
         "app.tasks.event_reminders",
         "app.tasks.reorder_scan",
+        "app.tasks.course_review_materialize",
     ]
 )
 
@@ -378,6 +379,14 @@ celery_app.conf.beat_schedule = {
     "reorder-scan-daily": {
         "task": "app.tasks.reorder_scan.scan_reorder_nudges",
         "schedule": crontab(hour=9, minute=10),  # 北京 09:10
+    },
+
+    # 每日 06:10 物化「用药疗程结束 → 复查」日历(ReviewSchedule),让议程的药程复查投影有行可显。
+    # 紧随 06:00 daily-plan;ensure_review_schedules 幂等((user_id, item_name, next_due_date)),
+    # 每日重跑安全(不重复建,随疗程推进补建新进窗口的复查)。
+    "materialize-course-reviews": {
+        "task": "app.tasks.course_review_materialize.materialize_course_reviews",
+        "schedule": crontab(hour=6, minute=10),  # 北京 06:10
     },
 }
 
