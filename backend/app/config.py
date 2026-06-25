@@ -114,9 +114,12 @@ class Settings(BaseSettings):
     # 空气质量 API 配置 (https://aqicn.org/data-platform/token/)
     aqicn_api_token: Optional[str] = None  # aqicn.org API Token
 
-    # 阿里云智能搜索 (夸克搜索) 配置
+    # 阿里云智能搜索 (夸克搜索 / IQS) 配置
     aliyun_access_key_id: Optional[str] = None
     aliyun_access_key_secret: Optional[str] = None
+    # IQS 实时搜索 grounding 开关 — 合成回答前检索实时证据注入 prompt 降幻觉。
+    # 默认关; 灰度验证后在 prod .env 置 true。需 aliyun_access_key_* 同时配好才生效。
+    aliyun_iqs_grounding_enabled: bool = False
 
     # 和风天气 API 配置 (https://dev.qweather.com/)
     qweather_api_key: Optional[str] = None  # 和风天气 API Key
@@ -200,6 +203,9 @@ class Settings(BaseSettings):
     # Agent Native 化(RFC 方向一 Phase A): 把 specialist 暴露为 Agent 可自主调用的工具。
     # 默认 False=行为与现状一致(specialist 仍由 orchestrator 编排); 开启进入灰度。
     agent_specialist_tools: bool = False
+    # Write 自治层(Enter-key thesis 首切片): allowlist 仅 measurement_prompt 这类良性可逆非医疗写
+    # 在 gate 全过(非 CRITICAL + 未超每日上限)时无需人确认自动执行。默认 True;一键关回全人确认。
+    write_autonomy_enabled: bool = True
     # 主动触达全局打扰预算:每用户每周跨所有 *_watch 主动推送上限(0=不限)
     proactive_weekly_budget: int = 1
     # R15 三级通知预算:P0 必响应(处方药/复查当天/异常血压)周上限;全局周上限(跨所有 tier)
