@@ -307,7 +307,50 @@ def _build_actions(breakdown: ReadinessBreakdown, twin: HealthTwin) -> List[str]
             "未来 3-5 天显著降低强度，避免伤病风险。"
         )
 
+    # ── 暗信号点亮(纯叙事, 不进 readiness 评分; 全程 None-safe; 仍受下面 4 条上限约束) ──
+    # 作息规律性: Garmin sleep consistency 0-100, <50 视为不规律. 仅当睡眠时长「已知且确实不短」时给——
+    # 阈值取 component>=0.85(≈7h):低于此既可能命中上面的短睡建议(别叠加矛盾信息),也不该
+    # 声称时长 OK(系统自己的短睡建议把目标设在 7.5h,故 7h 以下只说规律性会自相矛盾;时长未知同理跳过).
+    consistency = _safe(twin.physiological.sleep_consistency_score)
+    sleep_dur_comp = comp.get("sleep_duration")
+    duration_known_ok = sleep_dur_comp is not None and sleep_dur_comp >= 0.85
+    if consistency is not None and consistency < 50 and duration_known_ok:
+        actions.append(
+            f"睡眠时长尚可但作息不规律（一致性 {consistency:.0f}/100）：固定起床时间比补觉更能稳住"
+            "自主神经；试着这两天同一时间起床,周末也别赖床太久。"
+        )
+
+    # readiness「为什么是这个数」: 用 Garmin 自己的判读(权威/与手表一致), 退而用语义明确的 sleepScore.
+    driver = _readiness_driver_note(twin)
+    if driver:
+        actions.append(driver)
+
     return actions[:4]  # 限制 4 条，避免信息过载
+
+
+def _readiness_driver_note(twin: HealthTwin) -> Optional[str]:
+    """从 Garmin training_readiness_factors 取一条权威「为什么 readiness 是这个数」。
+
+    优先用 Garmin 自己的 feedback 文案(权威、与手表显示一致、无单位歧义);退而用 sleepScore
+    (语义明确的 0-100 贡献分)。**不解读 recoveryTime / hrvWeeklyAverage**——它们是原始厂商透传、
+    单位不确定(分钟 vs 小时 / ms),数值化叙述会误述,故只在语义确定的字段上说话。
+
+    全程 None-safe:非 dict / 缺键 / 字符串值 → 返回 None(省略该行),绝不抛——这里崩了会被
+    specialist 的外层 except 吞成「恢复评估失败」,静默欠掉整份 recovery 教练(参见 swallow-points 教训)。
+    """
+    factors = getattr(twin.physiological, "training_readiness_factors", None)
+    if not isinstance(factors, dict) or not factors:
+        return None
+    fb = factors.get("feedbackShort") or factors.get("feedbackLong")
+    if isinstance(fb, str) and fb.strip():
+        return f"Garmin 对今天 readiness 的判读：{fb.strip()}"
+    sleep_score = _safe(factors.get("sleepScore"))
+    if sleep_score is not None and sleep_score < 60:
+        return (
+            f"Garmin 拆解：睡眠对今天 readiness 的贡献偏低（睡眠分 {sleep_score:.0f}/100），"
+            "优先补睡眠质量。"
+        )
+    return None
 
 
 # ─────────────────────── 基因恢复修饰 ────────────────────────
