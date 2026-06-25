@@ -70,10 +70,11 @@ class TestNumericRanges:
         v = validate_health_record("blood_pressure", {"systolic": 118, "diastolic": 78})
         assert v["error"] is None
 
-    def test_water_default(self):
-        # amount 缺失 → 用默认 250
+    def test_water_missing_amount_returns_error(self):
+        # amount 缺失不能默认 250,否则弱模型漏参会写错饮水量
         v = validate_health_record("water", {})
-        assert v["data"]["amount"] == 250
+        assert v["error"] is not None
+        assert "amount" in v["error"]
 
     def test_diet_calories_extreme_removed_but_no_error(self):
         # diet calories 超界移除, 但不是 required, 不报 error
@@ -102,10 +103,10 @@ class TestRequiredFields:
         v = validate_health_record("diet", {"food_items": "牛肉面"})
         assert v["error"] is None
 
-    def test_water_no_required_ok(self):
-        # water 没有必填字段, amount 用默认值
+    def test_water_missing_amount_is_required(self):
         v = validate_health_record("water", {})
-        assert v["error"] is None
+        assert v["error"] is not None
+        assert "amount" in v["error"]
 
 
 # ───────────── 引用 ID 越权 ─────────────
