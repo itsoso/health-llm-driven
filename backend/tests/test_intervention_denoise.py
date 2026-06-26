@@ -106,7 +106,7 @@ def test_sparse_lab_floors_confidence_low(db):
     user, _ = create_authenticated_user(db)
     om = _om(db, user.id, code="lipid_apob", baseline=1.2, latest=0.8)  # 非门控? apob 其实门控
     _obs(db, user.id, "lipid_apob", [(0, 1.2), (60, 0.8)])  # 两端各 1 点 → 稀疏
-    st = ics._denoised_status(db, user.id, om)
+    st = ics._denoised_status(db, om.cycle, om)
     assert om.smoothing_method == "none"
     assert om.confidence == "low"  # 稀疏 → 封 low,不臆造趋势
     assert st in ("improving", "flat", "met", "worsening")
@@ -117,7 +117,7 @@ def test_dense_metric_smooths_7d_ma(db):
     om = _om(db, user.id, code="weight", baseline=80.0, latest=75.0)
     pts = [(d, 80.0 - d * 0.08 + (d % 2)) for d in range(0, 61)]  # 每日,密集
     _obs(db, user.id, "weight", pts)
-    ics._denoised_status(db, user.id, om)
+    ics._denoised_status(db, om.cycle, om)
     assert om.smoothing_method == "7d_ma" and (om.sample_n or 0) >= 3
 
 
@@ -127,7 +127,7 @@ def test_ma_lag_divergent_floors_low(db):
     base = [(d, 80.0 + (d % 3)) for d in range(0, 4)]
     recent = [(d, 80.0 + (d % 3)) for d in range(53, 60)]
     _obs(db, user.id, "weight", base + recent + [(60, 110.0)])
-    ics._denoised_status(db, user.id, om)
+    ics._denoised_status(db, om.cycle, om)
     assert om.smoothing_method == "7d_ma" and om.confidence == "low"  # 近期剧烈波动 → 封 low
 
 
@@ -137,7 +137,7 @@ def test_short_cycle_real_change_not_masked_flat(db):
     user, _ = create_authenticated_user(db)
     om = _om(db, user.id, code="weight", baseline=85.0, latest=80.5, latest_day=13)
     _obs(db, user.id, "weight", [(d, 85.0 - d * 0.35) for d in range(0, 14)])
-    st = ics._denoised_status(db, user.id, om)
+    st = ics._denoised_status(db, om.cycle, om)
     assert om.smoothing_method == "none"      # 窗重叠 → 不平滑
     assert st == "improving" and om.significant is True   # 真改善没被误判 flat
     assert om.confidence == "low"             # 短周期不平滑 → 诚实封 low

@@ -28,6 +28,8 @@ from app.services.personal_models.treatment_effect import (
 )
 
 ATTRIBUTION = "temporal_association_not_causation"
+# R16 P3:洗脱期内归因待定的描述式 label(非裁决,只说「暂不归因于当前干预」)。
+_WASHOUT_LABEL = "归因待定:前序干预洗脱期内,本次变化暂不归因于当前干预"
 
 # 非门控 status(producer _metric_status 产出:pending/improving/worsening/flat/met)→ 描述式 verdict。
 _STATUS_TO_VERDICT = {
@@ -46,6 +48,9 @@ def render_outcome_metric(om: Any) -> Dict[str, Any]:
     """
     metric_code = getattr(om, "metric_code", None)
     gated = _is_clinician_gated_code(metric_code or "")
+    # R16 P3:跨周期洗脱期归因(washout_pending=前序干预残留未清,本次变化暂不归因于当前干预)。
+    attribution_state = getattr(om, "attribution_state", None) or "attributable"
+    washout = attribution_state == "washout_pending"
 
     # 原始测量值是事实(用户自己的数据),非裁决 —— 保留;但「变化幅度/方向/裁决」对门控指标中和。
     out: Dict[str, Any] = {
@@ -57,6 +62,7 @@ def render_outcome_metric(om: Any) -> Dict[str, Any]:
         "latest_value": getattr(om, "latest_value", None),
         "requires_clinician": gated,
         "attribution": ATTRIBUTION,
+        "attribution_state": attribution_state,
     }
 
     if gated:
@@ -75,6 +81,17 @@ def render_outcome_metric(om: Any) -> Dict[str, Any]:
     tier = getattr(om, "confidence", None) or "low"
     if verdict == "insufficient_data":
         tier = "low"  # 数据不足绝不给非低置信度
+    # P3 demote-only:洗脱期内 → 不把变化自信归因于当前干预(措辞改归因待定 + 置信度封 low)。
+    if washout:
+        out.update({
+            "status": status,
+            "delta": getattr(om, "delta", None),
+            "delta_pct": getattr(om, "delta_pct", None),
+            "direction": getattr(om, "direction", None),
+            "confidence_tier": "low",
+            "display_label": _WASHOUT_LABEL,
+        })
+        return out
     out.update({
         "status": status,
         "delta": getattr(om, "delta", None),

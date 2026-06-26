@@ -97,11 +97,33 @@ def _metric_status(
     return "improving" if improving else "worsening"
 
 
-def _denoised_status(db: Session, user_id: int, om: OutcomeMetric) -> str:
-    """R16 P2:取该指标观测序列做端点去噪,把去噪 delta + 溯源喂 _metric_status。
+def _apply_washout_attribution(db: Session, cycle: InterventionCycle, om: OutcomeMetric) -> None:
+    """R16 P3:判跨周期洗脱期归因,写 om.attribution_state / washout_until;washout_pending → 置信度封 low。
+
+    严格 demote-only(只降不升);attribution_for_metric 内部已 fail-closed(异常→washout_pending),
+    本层再兜一道:写归因字段出错也 fail-closed 到 washout_pending + low(绝不留 attributable 假绿)。
+    """
+    from app.services import washout_guard
+
+    try:
+        state, washout_until = washout_guard.attribution_for_metric(
+            db, cycle.user_id, cycle, om.metric_code, om.baseline_observed_at
+        )
+        om.attribution_state = state
+        om.washout_until = washout_until
+        if state == washout_guard.WASHOUT_PENDING:
+            om.confidence = "low"  # 归因待定 → 不自信(只降不升;不改测得的方向/status)
+    except Exception as e:  # noqa: BLE001 — fail-closed:出错宁可 washout_pending,绝不默认 attributable
+        logger.warning("[washout] 归因写入失败,fail-closed: metric=%s err=%s", om.metric_code, e)
+        om.attribution_state = washout_guard.WASHOUT_PENDING
+        om.confidence = "low"
+
+
+def _denoised_status(db: Session, cycle: InterventionCycle, om: OutcomeMetric) -> str:
+    """R16 P2 去噪 + P3 洗脱期归因:取观测序列做端点去噪喂 _metric_status,再叠加跨周期洗脱期归因。
 
     密集(两端各 ≥3 点)→ 7 天均值平滑端点;稀疏(化验)→ 不平滑 + 置信度封 low(不臆造趋势)。
-    在 om 上写 smoothing_method / sample_n 溯源。任何异常 → fail-soft 退回原始单点(不臆造去噪结果)。
+    去噪异常 → fail-soft 退回原始单点。随后 P3 跨周期洗脱期归因(washout_pending → 再封 low,只降不升)。
     """
     from app.services import intervention_denoise as dn
     from app.services.biomarker_service import observation_series
@@ -109,7 +131,7 @@ def _denoised_status(db: Session, user_id: int, om: OutcomeMetric) -> str:
     try:
         series = [
             (o.observed_at, o.normalized_value)
-            for o in observation_series(db, user_id, om.metric_code)
+            for o in observation_series(db, cycle.user_id, om.metric_code)
         ]
         d = dn.denoise_endpoints(
             series, om.baseline_observed_at, om.baseline_value,
@@ -117,7 +139,7 @@ def _denoised_status(db: Session, user_id: int, om: OutcomeMetric) -> str:
         )
         om.smoothing_method = d["method"]
         om.sample_n = d["sample_n"]
-        return _metric_status(
+        status = _metric_status(
             om,
             smoothed_delta_pct=dn.smoothed_delta_pct(d),
             smoothing_method=d["method"],
@@ -126,7 +148,10 @@ def _denoised_status(db: Session, user_id: int, om: OutcomeMetric) -> str:
     except Exception:  # noqa: BLE001 — 去噪失败绝不臆造,退回原始单点 delta(legacy 行为)
         logger.warning("[Cycle] 端点去噪失败,退回原始单点 delta: metric=%s", om.metric_code)
         om.smoothing_method = None
-        return _metric_status(om)
+        status = _metric_status(om)
+
+    _apply_washout_attribution(db, cycle, om)  # P3:叠加跨周期洗脱期归因(只降置信度,不改 status)
+    return status
 
 
 def start_metabolic_cycle(
@@ -198,7 +223,7 @@ def record_recheck(db: Session, cycle: InterventionCycle, twin) -> InterventionC
             om.delta = round(om.latest_value - om.baseline_value, 3)
             if abs(om.baseline_value) > 1e-9:
                 om.delta_pct = round(om.delta / abs(om.baseline_value) * 100, 1)
-        om.status = _denoised_status(db, cycle.user_id, om)
+        om.status = _denoised_status(db, cycle, om)
 
     db.commit()
     db.refresh(cycle)

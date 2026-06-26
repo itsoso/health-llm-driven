@@ -67,7 +67,9 @@ def test_intervention_cycle_api_flow(client, db, auth_user_and_headers):
     rr = client.post(f"/api/v1/intervention-cycles/{cid}/recheck", headers=headers)
     assert rr.status_code == 200, rr.text
     outs = {o["metric_code"]: o for o in rr.json()["cycle"]["outcomes"]}
-    assert outs["lipid_ldl"]["status"] == "improving"
+    # R16 P1:LDL 是处方/激素混杂指标 → 门控 clinician_review,不外吐 improving 裁决(UA 非门控,met 保留)
+    assert outs["lipid_ldl"]["status"] == "clinician_review"
+    assert outs["lipid_ldl"]["requires_clinician"] is True
     assert outs["UA"]["status"] == "met"
     assert rr.json()["cycle"]["latest_snapshot_id"] is not None
 

@@ -87,6 +87,11 @@ class OutcomeMetric(Base):
     smoothing_method = Column(String(12))   # 7d_ma / none
     sample_n = Column(Integer)              # 平滑用的点数(两端取小)
 
+    # R16 P3 跨周期洗脱期归因:washout_pending=本周期基线落在前序(跟踪同指标的)干预洗脱期内 →
+    # 残留效应未清,变化暂不归因于本次干预(只降置信度,不改测得方向)。NULL=legacy=attributable。
+    attribution_state = Column(String(16))   # attributable / washout_pending
+    washout_until = Column(Date)             # 残留清除日(前序结束 + 洗脱天数)
+
     baseline_observed_at = Column(DateTime(timezone=True))
     latest_observed_at = Column(DateTime(timezone=True))
 
