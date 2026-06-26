@@ -89,10 +89,11 @@ def test_status_reports_baseline_latest_delta(db):
     # baseline → latest 出现
     assert "3.8" in out and "3.0" in out
     assert "600" in out and "450" in out
-    # delta + 状态中文标注
+    # delta + 状态中文标注(尿酸=非门控,保留裁决 + Δ)
     assert "Δ" in out
-    assert "达标" in out      # LDL 命中目标
-    assert "改善中" in out    # 尿酸朝目标方向但未达标
+    assert "改善中" in out    # 尿酸朝目标方向但未达标(非处方混杂 → 保留描述式裁决)
+    # R16 P1:LDL 是处方/激素混杂指标 → 门控为「需医生评估」,不外吐达标/改善裁决与变化幅度
+    assert "需医生评估" in out
 
 
 # ── start: 两段式确认 ─────────────────────────────────────

@@ -10,6 +10,7 @@ target_metrics 缺省由 default_metabolic_targets() 从当前异常代谢指标
 """
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
 from typing import Optional
 
@@ -18,6 +19,8 @@ from sqlalchemy.orm import Session
 from app.models.intervention_cycle import (
     InterventionCycle, OutcomeMetric, DEFAULT_STOP_CONDITIONS,
 )
+
+logger = logging.getLogger(__name__)
 
 # code -> (默认目标值, 期望方向). 仅用于 default_metabolic_targets 兜底。
 _DEFAULT_TARGET_RULES = {
@@ -48,32 +51,82 @@ def default_metabolic_targets(latest_obs: dict) -> list:
     return specs
 
 
-def _metric_status(om: OutcomeMetric) -> str:
+def _floor_confidence(conf, smoothing_method, ma_lag_divergent) -> Optional[str]:
+    """R16 P2:稀疏(未平滑)或近期剧烈波动 → 置信度封 low(只降不升,不臆造/不静默高置信)。"""
+    if smoothing_method == "none" or ma_lag_divergent:
+        return "low"
+    return conf
+
+
+def _metric_status(
+    om: OutcomeMetric,
+    *,
+    smoothed_delta_pct: Optional[float] = None,
+    smoothing_method: Optional[str] = None,
+    ma_lag_divergent: bool = False,
+) -> str:
     """R16 去噪:目标达成 → met;变化未超 RCV(噪声带内)→ flat;超噪声 → improving/worsening。
 
-    副作用:写 om.significant / om.confidence(去噪 + 诚实置信度)。
+    副作用:写 om.significant / om.confidence。**P2**:有 smoothed_delta_pct(端点去噪后)则用它判
+    显著/方向(单点噪声不再冒充信号);稀疏/MA-lag 背离 → 置信度封 low。不传(legacy / 其它调用方)
+    → 退回原始单点 delta_pct,行为与改前**逐字节一致**。
     """
     from app.services.intervention_significance import classify_change
 
     if om.baseline_value is None or om.latest_value is None:
         om.significant, om.confidence = None, None
         return "pending"
+    eval_delta_pct = smoothed_delta_pct if smoothed_delta_pct is not None else om.delta_pct
     desirable = om.direction or "down"
     if om.target_value is not None:
         if (desirable == "down" and om.latest_value <= om.target_value) or \
            (desirable == "up" and om.latest_value >= om.target_value):
             # 达标即达标,但仍标注本次变化的统计置信度
-            _, om.confidence = classify_change(om.delta_pct, om.metric_code)
+            _, conf = classify_change(eval_delta_pct, om.metric_code)
             om.significant = True
+            om.confidence = _floor_confidence(conf, smoothing_method, ma_lag_divergent)
             return "met"
 
-    significant, confidence = classify_change(om.delta_pct, om.metric_code)
-    om.significant, om.confidence = significant, confidence
+    significant, confidence = classify_change(eval_delta_pct, om.metric_code)
+    om.significant = significant
+    om.confidence = _floor_confidence(confidence, smoothing_method, ma_lag_divergent)
     if not significant:
         return "flat"   # 落在噪声带内(未超 RCV)—— 不臆断见效
-    moved_down = (om.delta or 0) < 0
+    moved_down = (eval_delta_pct or 0) < 0
     improving = (desirable == "down" and moved_down) or (desirable == "up" and not moved_down)
     return "improving" if improving else "worsening"
+
+
+def _denoised_status(db: Session, user_id: int, om: OutcomeMetric) -> str:
+    """R16 P2:取该指标观测序列做端点去噪,把去噪 delta + 溯源喂 _metric_status。
+
+    密集(两端各 ≥3 点)→ 7 天均值平滑端点;稀疏(化验)→ 不平滑 + 置信度封 low(不臆造趋势)。
+    在 om 上写 smoothing_method / sample_n 溯源。任何异常 → fail-soft 退回原始单点(不臆造去噪结果)。
+    """
+    from app.services import intervention_denoise as dn
+    from app.services.biomarker_service import observation_series
+
+    try:
+        series = [
+            (o.observed_at, o.normalized_value)
+            for o in observation_series(db, user_id, om.metric_code)
+        ]
+        d = dn.denoise_endpoints(
+            series, om.baseline_observed_at, om.baseline_value,
+            om.latest_observed_at, om.latest_value,
+        )
+        om.smoothing_method = d["method"]
+        om.sample_n = d["sample_n"]
+        return _metric_status(
+            om,
+            smoothed_delta_pct=dn.smoothed_delta_pct(d),
+            smoothing_method=d["method"],
+            ma_lag_divergent=d["ma_lag_divergent"],
+        )
+    except Exception:  # noqa: BLE001 — 去噪失败绝不臆造,退回原始单点 delta(legacy 行为)
+        logger.warning("[Cycle] 端点去噪失败,退回原始单点 delta: metric=%s", om.metric_code)
+        om.smoothing_method = None
+        return _metric_status(om)
 
 
 def start_metabolic_cycle(
@@ -145,7 +198,7 @@ def record_recheck(db: Session, cycle: InterventionCycle, twin) -> InterventionC
             om.delta = round(om.latest_value - om.baseline_value, 3)
             if abs(om.baseline_value) > 1e-9:
                 om.delta_pct = round(om.delta / abs(om.baseline_value) * 100, 1)
-        om.status = _metric_status(om)
+        om.status = _denoised_status(db, cycle.user_id, om)
 
     db.commit()
     db.refresh(cycle)

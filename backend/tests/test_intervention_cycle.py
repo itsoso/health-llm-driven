@@ -78,7 +78,10 @@ def test_metabolic_cycle_lifecycle(db):
     assert ldl.delta == round(3.3 - 4.5, 3)
     assert ldl.delta_pct is not None and ldl.delta_pct < 0
     assert ldl.status == "improving"
-    assert ldl.significant is True and ldl.confidence in ("moderate", "high")  # R16 去噪
+    # R16 P2:单次复查的 LDL 是稀疏化验(基线+复查各 1 点)→ 端点无法平滑(method=none)→
+    # 置信度封 low(2 个单点不足以高置信;真信号靠 P3/P4 重复测量挣)。变化仍判显著(超 RCV)。
+    assert ldl.significant is True and ldl.confidence == "low"
+    assert ldl.smoothing_method == "none"
     assert ua.latest_value == 370
     assert ua.status == "met"
 

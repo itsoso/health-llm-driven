@@ -82,6 +82,11 @@ class OutcomeMetric(Base):
     significant = Column(Boolean)
     confidence = Column(String(12))
 
+    # R16 P2 端点去噪溯源:7d_ma=两端各 ≥3 点 7 天均值平滑;none=稀疏(化验)未平滑→置信度封 low。
+    # NULL=旧行(未经 P2 去噪)→ 按原始单点 delta(legacy 行为不变)。
+    smoothing_method = Column(String(12))   # 7d_ma / none
+    sample_n = Column(Integer)              # 平滑用的点数(两端取小)
+
     baseline_observed_at = Column(DateTime(timezone=True))
     latest_observed_at = Column(DateTime(timezone=True))
 
