@@ -77,6 +77,17 @@ SOURCE_KIND_ORDER = {
 EVIDENCE_LEVEL_RANK = {"A": 4, "B": 3, "C": 2, "D": 1}
 
 
+def _reviewed_document_filter():
+    return KBDocument.metadata_json["review_status"].as_string() == "reviewed"
+
+
+def _serving_document_filters():
+    return (
+        KBDocument.is_archived.is_(False),
+        _reviewed_document_filter(),
+    )
+
+
 def evidence_level_detail(level: str | None) -> dict[str, str] | None:
     if not level:
         return None
@@ -254,7 +265,7 @@ def get_entity_bundle(db: Session, entity_type: str, entity_id: str) -> dict[str
             KBDocument.doc_type == "entity",
             KBDocument.entity_type == entity_type,
             KBDocument.entity_id == entity_id,
-            KBDocument.is_archived.is_(False),
+            *_serving_document_filters(),
         )
         .first()
     )
@@ -277,12 +288,19 @@ def get_entity_bundle(db: Session, entity_type: str, entity_id: str) -> dict[str
             .filter(
                 KBDocument.doc_id.in_(related_ids),
                 KBDocument.doc_type == "claim",
-                KBDocument.is_archived.is_(False),
+                *_serving_document_filters(),
             )
             .order_by(KBDocument.confidence.desc().nullslast(), KBDocument.doc_id.asc())
             .all()
         )
         linked_claims = dedupe_semantic_claims(linked_claims)
+    linked_claim_ids = {claim.doc_id for claim in linked_claims}
+    response_edges = [
+        edge
+        for edge in edges
+        if (edge.src_doc_id == entity.doc_id and edge.dst_doc_id in linked_claim_ids)
+        or (edge.dst_doc_id == entity.doc_id and edge.src_doc_id in linked_claim_ids)
+    ]
 
     return {
         "entity": serialize_document(entity),
@@ -296,7 +314,7 @@ def get_entity_bundle(db: Session, entity_type: str, entity_id: str) -> dict[str
                 "confidence": edge.confidence,
                 "source_claim_id": edge.source_claim_id,
             }
-            for edge in edges
+            for edge in response_edges
         ],
         "claim_boundary": CLAIM_BOUNDARY,
     }
@@ -320,6 +338,8 @@ def get_claim_bundle(
         return None
     if claim.is_archived and not include_archived:
         return None
+    if not include_archived and (claim.metadata_json or {}).get("review_status") != "reviewed":
+        return None
 
     edges = (
         db.query(KBEdge)
@@ -334,15 +354,22 @@ def get_claim_bundle(
     if neighbor_ids:
         neighbors = (
             db.query(KBDocument)
-            .filter(KBDocument.doc_id.in_(neighbor_ids), KBDocument.is_archived.is_(False))
+            .filter(KBDocument.doc_id.in_(neighbor_ids), *_serving_document_filters())
             .order_by(KBDocument.doc_type.asc(), KBDocument.doc_id.asc())
             .all()
         )
+    neighbor_ids = {neighbor.doc_id for neighbor in neighbors}
+    response_edges = [
+        edge
+        for edge in edges
+        if (edge.src_doc_id == claim.doc_id and edge.dst_doc_id in neighbor_ids)
+        or (edge.dst_doc_id == claim.doc_id and edge.src_doc_id in neighbor_ids)
+    ]
 
     return {
         "claim": serialize_document(claim),
         "neighbors": [serialize_document(neighbor) for neighbor in neighbors],
-        "edges": [_serialize_edge(edge) for edge in edges],
+        "edges": [_serialize_edge(edge) for edge in response_edges],
         "claim_boundary": CLAIM_BOUNDARY,
     }
 
@@ -486,7 +513,7 @@ def search_knowledge(
     normalized_query = (query or "").strip()
     terms = _query_terms(normalized_query)
 
-    docs_query = db.query(KBDocument).filter(KBDocument.is_archived.is_(False))
+    docs_query = db.query(KBDocument).filter(*_serving_document_filters())
     if doc_type:
         docs_query = docs_query.filter(KBDocument.doc_type == doc_type)
     if entity_type:
@@ -539,6 +566,11 @@ def search_knowledge(
             .filter(or_(KBEdge.src_doc_id.in_(seed_ids), KBEdge.dst_doc_id.in_(seed_ids)))
             .all()
         )
+        edges = [
+            edge
+            for edge in edges
+            if edge.src_doc_id in documents_by_id and edge.dst_doc_id in documents_by_id
+        ]
         neighbor_ids = {
             edge.dst_doc_id if edge.src_doc_id in seed_ids else edge.src_doc_id
             for edge in edges
@@ -546,7 +578,7 @@ def search_knowledge(
         if neighbor_ids:
             neighbors = (
                 db.query(KBDocument)
-                .filter(KBDocument.doc_id.in_(neighbor_ids), KBDocument.is_archived.is_(False))
+                .filter(KBDocument.doc_id.in_(neighbor_ids), *_serving_document_filters())
                 .order_by(KBDocument.doc_type.asc(), KBDocument.doc_id.asc())
                 .all()
             )
@@ -626,7 +658,7 @@ def _postgres_fts_rank_documents(
     rank = func.ts_rank_cd(KBDocument.tsv, ts_query)
     query_builder = (
         db.query(KBDocument, rank.label("rank"))
-        .filter(KBDocument.is_archived.is_(False), KBDocument.tsv.op("@@")(ts_query))
+        .filter(*_serving_document_filters(), KBDocument.tsv.op("@@")(ts_query))
     )
     if doc_type:
         query_builder = query_builder.filter(KBDocument.doc_type == doc_type)
@@ -649,7 +681,7 @@ def lookup_for_twin(db: Session, twin: dict[str, Any]) -> dict[str, Any]:
             db.query(KBDocument)
             .filter(
                 KBDocument.doc_type == "entity",
-                KBDocument.is_archived.is_(False),
+                *_serving_document_filters(),
                 or_(*entity_filters),
             )
             .order_by(KBDocument.entity_type.asc(), KBDocument.entity_id.asc())
@@ -659,7 +691,7 @@ def lookup_for_twin(db: Session, twin: dict[str, Any]) -> dict[str, Any]:
     matched_claims = []
     claims = (
         db.query(KBDocument)
-        .filter(KBDocument.doc_type == "claim", KBDocument.is_archived.is_(False))
+        .filter(KBDocument.doc_type == "claim", *_serving_document_filters())
         .order_by(KBDocument.confidence.desc().nullslast(), KBDocument.doc_id.asc())
         .all()
     )
@@ -737,13 +769,13 @@ def _lookup_graph_context_for_entities(
             .filter(
                 KBDocument.doc_id.in_(context_entity_ids),
                 KBDocument.doc_type == "entity",
-                KBDocument.is_archived.is_(False),
+                *_serving_document_filters(),
             )
             .order_by(KBDocument.entity_type.asc(), KBDocument.entity_id.asc())
             .all()
         )
 
-    candidate_entity_ids = context_entity_ids
+    candidate_entity_ids = {entity.doc_id for entity in contextual_entities}
     if not candidate_entity_ids:
         return contextual_entities, []
 
@@ -785,7 +817,7 @@ def _lookup_graph_context_for_entities(
         .filter(
             KBDocument.doc_id.in_(claim_context_by_id.keys()),
             KBDocument.doc_type == "claim",
-            KBDocument.is_archived.is_(False),
+            *_serving_document_filters(),
         )
         .order_by(KBDocument.confidence.desc().nullslast(), KBDocument.doc_id.asc())
         .all()

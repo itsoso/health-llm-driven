@@ -19,6 +19,8 @@ class DietRecordBase(BaseModel):
     meal_type: MealType
     meal_time: Optional[time] = None
     food_items: str  # 食物列表，逗号分隔
+    food_id: Optional[str] = None  # 结构化食物库 ID
+    source: Optional[str] = None  # 营养数据来源
     calories: Optional[float] = None  # 热量 (kcal) - 使用float与数据库一致
     protein: Optional[float] = None  # 蛋白质 (g)
     carbs: Optional[float] = None  # 碳水化合物 (g)
@@ -44,6 +46,8 @@ class DietRecordUpdate(BaseModel):
     meal_type: Optional[MealType] = None
     meal_time: Optional[time] = None
     food_items: Optional[str] = None
+    food_id: Optional[str] = None
+    source: Optional[str] = None
     calories: Optional[float] = None  # 使用float与数据库一致
     protein: Optional[float] = None
     carbs: Optional[float] = None
@@ -141,6 +145,8 @@ class FoodItem(BaseModel):
     fat: Optional[float] = None
     fiber: Optional[float] = None
     confidence: Optional[float] = None
+    food_id: Optional[str] = None
+    source: Optional[str] = None
 
 
 class FoodRecognitionRequest(BaseModel):
@@ -189,6 +195,9 @@ class VoiceFoodDraftItem(BaseModel):
     protein: Optional[float] = None
     carbs: Optional[float] = None
     fat: Optional[float] = None
+    fiber: Optional[float] = None
+    food_id: Optional[str] = None
+    source: Optional[str] = None
 
 
 class VoiceFoodParseResponse(BaseModel):

@@ -94,6 +94,8 @@ def create_diet_record(
             meal_type=meal_type_value,
             food_name=food_name,  # 必填字段
             food_items=record_dict['food_items'],
+            food_id=record_dict.get('food_id'),
+            source=record_dict.get('source'),
             calories=record_dict.get('calories'),
             protein=record_dict.get('protein'),
             carbs=record_dict.get('carbs'),
@@ -157,6 +159,8 @@ def _convert_to_response(record) -> DietRecordResponse:
         meal_type=MealType(record.meal_type) if record.meal_type else MealType.EXTRA,
         meal_time=meal_time,
         food_items=record.food_items or '',
+        food_id=getattr(record, 'food_id', None),
+        source=getattr(record, 'source', None),
         calories=record.calories,
         protein=record.protein,
         carbs=record.carbs,

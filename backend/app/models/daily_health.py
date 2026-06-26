@@ -158,6 +158,8 @@ class DietRecord(Base):
     # 食物信息
     food_name = Column(String, nullable=True)  # 食物名称（旧字段，保留兼容）
     food_items = Column(String, nullable=True)  # 食物列表，逗号分隔
+    food_id = Column(String(120), nullable=True)  # 结构化食物库 ID,用于追溯营养来源
+    source = Column(String(80), nullable=True)  # 营养数据来源,如 china_food_composition/fdc/manual
     quantity = Column(Float)  # 数量
     unit = Column(String)  # 单位（g/ml/份）
 
@@ -187,6 +189,7 @@ class DietRecord(Base):
     __table_args__ = (
         Index('idx_diet_user_date', 'user_id', 'record_date'),
         Index('idx_diet_user_date_meal', 'user_id', 'record_date', 'meal_type'),
+        Index('idx_diet_food_id', 'food_id'),
     )
 
 

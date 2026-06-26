@@ -1,0 +1,92 @@
+[
+  {
+    "food_id": "cfc:chicken_breast",
+    "canonical_name": "鸡胸肉",
+    "aliases": ["鸡胸", "鸡肉", "鸡胸肉熟"],
+    "locale": "zh-CN",
+    "source": "china_food_composition_manual_v1",
+    "source_ref": "owner-curated common-food seed, per 100g edible portion",
+    "nutrients": {
+      "kcal_per_100g": 165.0,
+      "protein_g_per_100g": 31.0,
+      "carbs_g_per_100g": 0.0,
+      "fat_g_per_100g": 3.6,
+      "fiber_g_per_100g": 0.0
+    }
+  },
+  {
+    "food_id": "cfc:white_rice_cooked",
+    "canonical_name": "米饭",
+    "aliases": ["白米饭", "熟米饭", "大米饭"],
+    "locale": "zh-CN",
+    "source": "china_food_composition_manual_v1",
+    "source_ref": "owner-curated common-food seed, per 100g edible portion",
+    "nutrients": {
+      "kcal_per_100g": 116.0,
+      "protein_g_per_100g": 2.6,
+      "carbs_g_per_100g": 25.9,
+      "fat_g_per_100g": 0.3,
+      "fiber_g_per_100g": 0.3
+    }
+  },
+  {
+    "food_id": "cfc:egg_boiled",
+    "canonical_name": "水煮蛋",
+    "aliases": ["鸡蛋", "煮鸡蛋", "白煮蛋"],
+    "locale": "zh-CN",
+    "source": "china_food_composition_manual_v1",
+    "source_ref": "owner-curated common-food seed, per 100g edible portion",
+    "nutrients": {
+      "kcal_per_100g": 155.0,
+      "protein_g_per_100g": 12.6,
+      "carbs_g_per_100g": 1.1,
+      "fat_g_per_100g": 10.6,
+      "fiber_g_per_100g": 0.0
+    }
+  },
+  {
+    "food_id": "cfc:banana",
+    "canonical_name": "香蕉",
+    "aliases": ["香蕉肉"],
+    "locale": "zh-CN",
+    "source": "china_food_composition_manual_v1",
+    "source_ref": "owner-curated common-food seed, per 100g edible portion",
+    "nutrients": {
+      "kcal_per_100g": 89.0,
+      "protein_g_per_100g": 1.1,
+      "carbs_g_per_100g": 22.8,
+      "fat_g_per_100g": 0.3,
+      "fiber_g_per_100g": 2.6
+    }
+  },
+  {
+    "food_id": "cfc:tofu_firm",
+    "canonical_name": "豆腐",
+    "aliases": ["北豆腐", "老豆腐"],
+    "locale": "zh-CN",
+    "source": "china_food_composition_manual_v1",
+    "source_ref": "owner-curated common-food seed, per 100g edible portion",
+    "nutrients": {
+      "kcal_per_100g": 76.0,
+      "protein_g_per_100g": 8.0,
+      "carbs_g_per_100g": 1.9,
+      "fat_g_per_100g": 4.8,
+      "fiber_g_per_100g": 0.3
+    }
+  },
+  {
+    "food_id": "cfc:broccoli_cooked",
+    "canonical_name": "西兰花",
+    "aliases": ["熟西兰花", "西蓝花"],
+    "locale": "zh-CN",
+    "source": "china_food_composition_manual_v1",
+    "source_ref": "owner-curated common-food seed, per 100g edible portion",
+    "nutrients": {
+      "kcal_per_100g": 35.0,
+      "protein_g_per_100g": 2.4,
+      "carbs_g_per_100g": 7.2,
+      "fat_g_per_100g": 0.4,
+      "fiber_g_per_100g": 3.3
+    }
+  }
+]

@@ -3,8 +3,9 @@
 把一段语音转写文本 → 结构化食物草稿(**只产草稿,不写库**;确认走 /diet/records)。
 分层(产品文档 §7):
 1. 规则层(确定性):餐次推断、酒精/甜饮风险标签。
-2. 记忆层:用户常吃食物(近 60 天中位营养)补全缺失营养。
-3. LLM 层:自由文本 → 结构化 foods[](可注入,便于测试;不可用时降级)。
+2. 食物表:命中已审核食物营养表时,先补全可追溯营养。
+3. 记忆层:用户常吃食物(近 60 天中位营养)补全缺失营养。
+4. LLM 层:自由文本 → 结构化 foods[](可注入,便于测试;不可用时降级)。
 
 诚实边界:不追克级精确;LLM 不确定的营养留 None,不编造。低置信 → needs_confirmation
 + 腕上最多 1 个澄清问题。不做诊断、不开方。
@@ -18,6 +19,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.schemas.diet import MealType
+from app.services.food_nutrition_lookup import enrich_foods_from_table
 
 logger = logging.getLogger(__name__)
 
@@ -142,16 +144,24 @@ async def parse_voice_food(
     fn = llm_parse or _llm_parse_foods
     foods, llm_conf = await fn(db, user_id, raw_text)
 
-    # 记忆层补全:LLM 没给营养的,用常吃中位值兜
+    # 食物表优先:LLM 没给营养的,先用可追溯的 per-100g 表补空值
+    enrich_foods_from_table(db, foods)
+
+    # 记忆层补全:食物表未命中/未能补全的,用常吃中位值兜
     freq = _frequent_index(db, user_id)
     for f in foods:
         mem = freq.get((f.get("name") or "").strip())
         if mem:
+            filled_from_memory = False
             for k in ("calories", "protein", "carbs", "fat"):
                 if f.get(k) is None and mem.get(k) is not None:
                     f[k] = mem[k]
+                    filled_from_memory = True
             if f.get("quantity") is None and mem.get("quantity") is not None:
                 f["quantity"], f["unit"] = mem["quantity"], mem.get("unit")
+                filled_from_memory = True
+            if filled_from_memory and f.get("source") is None:
+                f["source"] = "diet_history"
 
     # 降级:LLM 没解析出任何食物 → 整段当一个待确认食物,低置信
     if not foods and raw_text:
