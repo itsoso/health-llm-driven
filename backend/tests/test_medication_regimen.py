@@ -112,6 +112,91 @@ def test_ddi_gate_blocks_critical(client, auth_user_and_headers, db):
     assert db.query(MedicationRegimen).filter(MedicationRegimen.user_id == user.id).count() == 0
 
 
+def test_ddi_gate_blocks_second_nsaid_joining_existing_bleeding(client, auth_user_and_headers, db):
+    """已有华法林 + 布洛芬(ddi.warfarin_bleeding 已在 firing),再引入第二个 NSAID(双氯芬酸)。
+
+    DDI 规则一个 rule_id 只发一条 Alert,不管命中几种药 —— bare rule_id 去重会把 delta 抹成空
+    (该 rule_id 在 before 已存在)→ 漏报 → 第二个 NSAID 静默录入。这是 under-alarm 真 bug。
+    identity 去重(rule_id + 引用药物集合)能识别「新药加入一个已存在的出血相互作用」→ 必须阻断。
+    """
+    user, h = auth_user_and_headers
+    _add_med(db, user.id, "华法林")
+    _add_med(db, user.id, "布洛芬")  # warfarin_bleeding 已经在 firing(华法林+1 个 NSAID)
+    phases = [{"name": "镇痛", "duration_days": 7, "meds": [
+        {"name": "双氯芬酸", "dosage": "50mg", "times_per_day": 2, "timing_relation": "after_meal"}
+    ]}]
+    r = client.post("/api/v1/medication/regimens", headers=h,
+                    json={"phases": phases, "name": "第二个NSAID撞华法林"})
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    assert detail["reason"] == "high_risk_drug_interaction"
+    assert any(a["rule_id"] == "ddi.warfarin_bleeding" for a in detail["safety_alerts"])
+    # 阻断 → 没写库
+    assert db.query(MedicationRegimen).filter(MedicationRegimen.user_id == user.id).count() == 0
+
+
+def test_precheck_surfaces_new_drug_joining_existing_rule(db, auth_user_and_headers):
+    """单测直接钉 precheck_interactions 的修复:已有华法林+布洛芬,引入双氯芬酸 → delta 非空。
+
+    复现评审证明的 repro:precheck_interactions(db, uid, ["双氯芬酸"]) 旧版返回 []，
+    应当 flag 这条 warfarin-bleeding HIGH/requires_medical_attention 相互作用。
+    """
+    from app.services import medication_regimen_service as mrs
+    user, _ = auth_user_and_headers
+    _add_med(db, user.id, "华法林")
+    _add_med(db, user.id, "布洛芬")
+    alerts = mrs.precheck_interactions(db, user.id, ["双氯芬酸"])
+    assert any(a.rule_id == "ddi.warfarin_bleeding" for a in alerts)
+    wb = next(a for a in alerts if a.rule_id == "ddi.warfarin_bleeding")
+    assert wb.requires_medical_attention is True
+
+
+def test_precheck_does_not_resurface_unrelated_existing_interaction(db, auth_user_and_headers):
+    """不过度阻断:已有华法林+布洛芬(出血相互作用),引入一个与之无关的新药(如二甲双胍)
+    → 该出血相互作用**不**应被当作「新药引入」而冒出来(它不涉及候选药)。
+    """
+    from app.services import medication_regimen_service as mrs
+    user, _ = auth_user_and_headers
+    _add_med(db, user.id, "华法林")
+    _add_med(db, user.id, "布洛芬")
+    alerts = mrs.precheck_interactions(db, user.id, ["二甲双胍"])
+    # 二甲双胍不参与华法林出血相互作用 → 不应把这条既有相互作用算到它头上
+    assert all(a.rule_id != "ddi.warfarin_bleeding" for a in alerts)
+
+
+def test_precheck_fails_loud_when_candidate_trips_rule_exception(db, auth_user_and_headers):
+    """引入候选药后若有安全规则**执行异常**(新增失败)→ 不能静默放行。
+
+    医疗写闸门:某条处理新药的规则崩了 → delta 退化成空 → 旧实现会当「无相互作用=安全」
+    放行(under-alarm)。修复后注入 safety.precheck_partial_failure(HIGH,
+    requires_medical_attention)→ 下游阻断阈值兜住。临时往 registry 塞一条「遇候选药即抛」
+    的规则,跑完恢复,避免污染其它测试。
+    """
+    from app.services import medication_regimen_service as mrs
+    from app.agents.safety_guardian.engine import registry
+    from app.agents.safety_guardian.schema import Severity
+    user, _ = auth_user_and_headers
+
+    def _boom(twin):
+        names = [(m.get("name") or "") for m in (twin.medication.active_meds or [])]
+        if any("会炸的新药" in n for n in names):
+            raise RuntimeError("simulated rule crash on candidate")
+        return None
+
+    saved = list(registry._rules)
+    registry.register(_boom)
+    try:
+        alerts = mrs.precheck_interactions(db, user.id, ["会炸的新药"])
+    finally:
+        registry._rules[:] = saved  # 精确还原,clear() 会 nuke 全部规则
+    assert any(
+        a.rule_id == "safety.precheck_partial_failure"
+        and a.severity >= Severity.HIGH
+        and a.requires_medical_attention
+        for a in alerts
+    ), "候选药触发规则异常时必须 fail-loud 注入阻断告警"
+
+
 def test_override_safety_allows_blocked(client, auth_user_and_headers, db):
     user, h = auth_user_and_headers
     _add_med(db, user.id, "舍曲林")

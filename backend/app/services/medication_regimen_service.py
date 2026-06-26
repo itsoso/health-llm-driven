@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.agents.safety_guardian.engine import evaluate_rules  # import 即触发规则注册(engine.py 末尾)
+from app.agents.safety_guardian.engine import evaluate_rules_with_status  # import 即触发规则注册
 from app.agents.safety_guardian.schema import Alert, Severity
 from app.models.medication import Medication, MedicationRegimen, medication_timing_label
 from app.services import regimen_templates
@@ -37,15 +37,65 @@ def _safety_twin(db: Session, user_id: int):
     return twin
 
 
+def _citation_drug_set(citation: Dict[str, Any]) -> frozenset:
+    """递归抽出 data_citation 里所有字符串叶子(规范化小写)。
+
+    DDI 规则的 citation 全是「触发它的具体药名列表」(如
+    {"warfarin": [...], "bleeding_risk_meds": [...]}),把这些药名并成集合,
+    作为 Alert 身份的一部分。before/after 两次评估只差「追加的候选药」,
+    所以任何 citation 集合的变化都归因于候选药 —— 不会引入与候选无关的假阳。
+
+    ⚠️ 约束(扩 `_safety_twin` 分区前必读):本函数抽**全部**字符串叶子是安全的,
+    **仅因为** med-only twin 下只有 DDI 规则会 fire,而 DDI 规则的 citation 只列触发药名。
+    一旦把 supplement/genetic/labs 分区接进 `_safety_twin`,会引入像
+    `dsi.st_johns_wort`(citation 含**全部** active_meds)或长期抑酸监测(citation 含
+    last_exam_date 这类时间派生串)的规则 —— 那时加一个与该相互作用**无关**的候选药也会
+    撑大 citation 集合 → 身份变化 → **过度阻断**(把既有警告误算到无关新药头上)。
+    接全量 twin 的 PR 必须改成「只抽与候选药直接相关的字段」或给这类规则做白名单排除。
+    """
+    out: set = set()
+
+    def _walk(v: Any) -> None:
+        if isinstance(v, str):
+            s = v.strip().lower()
+            if s:
+                out.add(s)
+        elif isinstance(v, (list, tuple, set)):
+            for x in v:
+                _walk(x)
+        elif isinstance(v, dict):
+            for x in v.values():
+                _walk(x)
+
+    _walk(citation)
+    return frozenset(out)
+
+
+def _alert_identity(alert: Alert) -> tuple:
+    """Alert 身份 = rule_id + 它引用到的具体药物集合。
+
+    关键修复:Safety Guardian 的 DDI 规则一个 rule_id 只发**一条** Alert,不论命中
+    几种药(如 ddi.warfarin_bleeding 对华法林 + 任意 NSAID/抗血小板只发一次)。
+    只按 bare rule_id 做 delta,会让「已有华法林+布洛芬(规则已 firing),再引入第二个
+    NSAID 双氯芬酸」落进 before 已存在的 rule_id → delta 为空 → 漏报放行(under-alarm)。
+    把 citation 里的药物集合并进身份:新药加入一个已存在的危险相互作用时,citation 集合
+    变大 → 身份变化 → 仍被识别为「新引入」→ 不漏报;而与候选无关的既有相互作用身份不变
+    → 不会被过度阻断。
+    """
+    return (alert.rule_id, _citation_drug_set(alert.data_citation))
+
+
 def precheck_interactions(
     db: Session,
     user_id: int,
     candidate_names: List[str],
 ) -> List[Alert]:
-    """引入 candidate_names 这些新药会**新触发**哪些安全告警(delta 法)。
+    """引入 candidate_names 这些新药会**新触发或加剧**哪些安全告警(identity-delta 法)。
 
     先对现状跑一遍规则得 baseline,再把候选药塞进 Twin 的 active_meds 跑一遍,
-    返回新增的 Alert(即「就是这些新药引入的」)。按 rule_id 去重。
+    返回身份「新增」的 Alert(即「就是这些新药引入或加入的」)。**按 (rule_id + 引用药物集合)
+    去重**,而非 bare rule_id —— 否则新药加入一个已 firing 的相互作用会被漏报(见
+    `_alert_identity` docstring)。
 
     覆盖范围:当前用轻量 twin(药物分区),主要捕获 **药×药 DDI**(本场景真实风险:
     克拉霉素 CYP3A4 抑制 × 他汀/华法林等)。PGx(需基因)/DSI(需补剂)的引入即校验
@@ -55,7 +105,8 @@ def precheck_interactions(
         return []
 
     twin = _safety_twin(db, user_id)
-    before_ids = {a.rule_id for a in evaluate_rules(twin)}
+    before_alerts, before_failed = evaluate_rules_with_status(twin)
+    before_ids = {_alert_identity(a) for a in before_alerts}
 
     # 把候选新药追加进 medication 分区(只用得到 name;DDI 规则按药名匹配)
     if twin.medication.active_meds is None:
@@ -64,8 +115,36 @@ def precheck_interactions(
         twin.medication.active_meds.append({"name": nm})
     twin.medication.has_any = True
 
-    after = evaluate_rules(twin)
-    delta = [a for a in after if a.rule_id not in before_ids]
+    after_alerts, after_failed = evaluate_rules_with_status(twin)
+    delta = [a for a in after_alerts if _alert_identity(a) not in before_ids]
+
+    # ── fail-loud:别让「评估部分失败」静默退化成「无相互作用=放行」──────────
+    # 这是医疗写闸门。若**追加候选药后**新增了规则执行异常(after_failed > before_failed),
+    # 说明有规则在处理新药时崩了 —— 此刻 delta 为空/不全不能解读成安全(under-alarm)。
+    # 注入一条 fail-safe HIGH advisory,让下游阻断阈值(severity≥HIGH)兜住,交医生评估。
+    # 只对「候选引入的新增失败」兜底(不吃既有 flaky),避免对无关规则噪声过度阻断。
+    if after_failed > before_failed:
+        logger.warning(
+            f"[Regimen] user={user_id} 引入 {candidate_names} 触发 "
+            f"{after_failed - before_failed} 条安全规则执行失败 → 注入 fail-safe 阻断"
+        )
+        delta.append(Alert(
+            rule_id="safety.precheck_partial_failure",
+            category="ddi",
+            severity=Severity.HIGH,
+            title="药物相互作用筛查部分失败",
+            message=(
+                "在校验新引入药物的相互作用时,有安全规则执行异常,本次自动筛查不完整 —— "
+                "无法确认新药是否与你在服药物存在相互作用。出于安全默认从严处理。"
+            ),
+            action="请勿自行录入,先咨询处方医生或药师评估相互作用后再决定。",
+            data_citation={
+                "candidate_names": candidate_names,
+                "newly_failed_rules": after_failed - before_failed,
+            },
+            requires_medical_attention=True,
+        ))
+
     # 按严重度降序,CRITICAL 在前
     delta.sort(key=lambda a: int(a.severity), reverse=True)
     return delta
