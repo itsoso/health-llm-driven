@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.agent_audit_log import AgentAuditLog
 from app.services.caldav_sync import today_busy_blocks
+from app.services.interruption_budget import evaluate_interruption, normalize_tier
 from app.utils.timezone import get_china_now, get_user_now
 
 logger = logging.getLogger(__name__)
@@ -100,33 +101,74 @@ def _in_busy_window(db: Session, user_id: int) -> bool:
         return False
 
 
-def can_notify_proactively(db: Session, user_id: int, tier: str = "P1") -> bool:
+def proactive_notification_decision(
+    db: Session,
+    user_id: int,
+    tier: str = "P1",
+    *,
+    reason: str | None = None,
+    action: str | None = None,
+    fallback_surface: str | None = None,
+) -> dict:
+    """Return the structured proactive interruption decision.
+
+    Existing watchers can keep using ``can_notify_proactively``. New proactive
+    surfaces should pass reason/action/fallback_surface so the notification is
+    explainable and can be rendered on the next-best surface if delayed.
+    """
+    normalized_tier = normalize_tier(tier)
+    global_budget = getattr(settings, "proactive_global_weekly_budget", 15)
+    p0_budget = getattr(settings, "proactive_p0_weekly_budget", 3)
+    sent_global = proactive_notifications_sent(db, user_id)
+    sent_tier = (
+        proactive_notifications_sent(db, user_id, tier=normalized_tier)
+        if normalized_tier == "P0"
+        else 0
+    )
+    in_quiet = _in_quiet_hours(db, user_id) if normalized_tier in {"P0", "P1"} else False
+    in_busy = _in_busy_window(db, user_id) if normalized_tier == "P1" else False
+    return evaluate_interruption(
+        tier=normalized_tier,
+        sent_global=sent_global,
+        global_budget=global_budget,
+        sent_tier=sent_tier,
+        tier_budget=p0_budget if normalized_tier == "P0" else None,
+        in_quiet_hours=in_quiet,
+        in_busy_window=in_busy,
+        reason=reason,
+        action=action,
+        fallback_surface=fallback_surface,
+    )
+
+
+def can_notify_proactively(
+    db: Session,
+    user_id: int,
+    tier: str = "P1",
+    *,
+    reason: str | None = None,
+    action: str | None = None,
+    fallback_surface: str | None = None,
+) -> bool:
     """三级打扰预算 gate(R15)。tier 默认 P1(兼容既有 watcher)。
 
     P2 永不推;全局周上限封顶;P0 受 P0 周上限且穿透静默;P1 静默时段不推。
+    新调用方可传 reason/action/fallback_surface 形成可解释的打扰 contract。
     """
-    if tier == "P2":
-        return False  # 纯日志,永不主动推
     try:
-        global_budget = getattr(settings, "proactive_global_weekly_budget", 15)
-        if global_budget > 0 and proactive_notifications_sent(db, user_id) >= global_budget:
-            return False  # 全局周上限封顶(含 P0)
-
-        if tier == "P0":
-            p0_budget = getattr(settings, "proactive_p0_weekly_budget", 3)
-            if p0_budget <= 0:
-                return True
-            return proactive_notifications_sent(db, user_id, tier="P0") < p0_budget
-
-        # P1:静默时段不推;日程感知——忙碌窗内静默(P0 已在上方穿透,不受影响);
-        # 白天非忙时受全局上限(上面已查)。
-        if _in_quiet_hours(db, user_id):
-            return False
-        if _in_busy_window(db, user_id):
-            return False
-        return True
+        decision = proactive_notification_decision(
+            db,
+            user_id,
+            tier=tier,
+            reason=reason,
+            action=action,
+            fallback_surface=fallback_surface,
+        )
+        return bool(decision["allowed"])
     except Exception as e:  # noqa: BLE001
         # 刻意 fail-open(健康告警宁可多推不可漏),但失败必须可观测。P2 已在上面拦掉。
+        if normalize_tier(tier) == "P2":
+            return False
         logger.warning(
             "[proactive] budget check failed for user=%s tier=%s, failing open: %s",
             user_id, tier, e,

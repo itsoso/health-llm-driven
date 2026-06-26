@@ -72,3 +72,40 @@ def test_tier_counting_isolated(db):
     assert proactive_notifications_sent(db, 1) == 2          # 全部 notified
     assert proactive_notifications_sent(db, 1, tier="P0") == 1
     assert proactive_notifications_sent(db, 1, tier="P1") == 1
+
+
+def test_proactive_decision_exposes_reason_action_and_fallback(db, monkeypatch):
+    monkeypatch.setattr(pc, "_in_quiet_hours", lambda db, uid: True)
+    decision = pc.proactive_notification_decision(
+        db,
+        1,
+        tier="P1",
+        reason="睡前流程已到点",
+        action="延后提醒",
+        fallback_surface="mobile",
+    )
+
+    assert decision["allowed"] is False
+    assert decision["blocked_reason"] == "quiet_hours"
+    assert decision["contract"]["reason"] == "睡前流程已到点"
+    assert decision["contract"]["action"] == "延后提醒"
+    assert decision["contract"]["fallback_surface"] == "mobile"
+    assert decision["contract_complete"] is True
+
+
+def test_p2_decision_does_not_probe_quiet_or_busy_windows(db, monkeypatch):
+    monkeypatch.setattr(
+        pc,
+        "_in_quiet_hours",
+        lambda db, uid: (_ for _ in ()).throw(AssertionError("quiet checked")),
+    )
+    monkeypatch.setattr(
+        pc,
+        "_in_busy_window",
+        lambda db, uid: (_ for _ in ()).throw(AssertionError("busy checked")),
+    )
+
+    decision = pc.proactive_notification_decision(db, 1, tier="P2")
+
+    assert decision["allowed"] is False
+    assert decision["blocked_reason"] == "log_only"
