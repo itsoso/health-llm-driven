@@ -314,6 +314,59 @@ def _score_health_advice(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, 
     }
 
 
+# ============= health agent core golden rubric suite =============
+
+@_register_runner("health_agent_core")
+def _run_health_agent_core_case(case_inputs: Dict[str, Any]) -> Dict[str, Any]:
+    """Offline rubric contract for representative agent flows.
+
+    This suite is the Phase 0 golden-case inventory. It intentionally does not
+    call an LLM yet; it keeps the 50+ case set machine-readable so future
+    AgentExecutor/model runners can be attached without changing the dataset.
+    """
+    return {
+        "query": case_inputs.get("query"),
+        "surface": case_inputs.get("surface"),
+        "context": case_inputs.get("context") or {},
+    }
+
+
+@_register_scorer("health_agent_core")
+def _score_health_agent_core(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    expected = case.expected or {}
+    details: List[str] = []
+
+    if not output.get("query"):
+        details.append("missing query")
+    if output.get("surface") not in {
+        "mobile",
+        "watch",
+        "rokid",
+        "mac",
+        "web",
+        "external_agent",
+    }:
+        details.append(f"unsupported surface={output.get('surface')!r}")
+
+    for key in ("intent", "must_route_to", "required_behaviors", "must_not_include"):
+        if key not in expected:
+            details.append(f"missing expected.{key}")
+
+    if not isinstance(expected.get("required_behaviors"), list) or not expected.get("required_behaviors"):
+        details.append("expected.required_behaviors must be a non-empty list")
+    if not isinstance(expected.get("must_not_include"), list):
+        details.append("expected.must_not_include must be a list")
+
+    passed = not details
+    return {
+        "health_agent_core_rubric": {
+            "passed": passed,
+            "score": 1.0 if passed else 0.0,
+            "details": "; ".join(details) if details else "ok",
+        }
+    }
+
+
 # ============= retrieval suite (端到端: agent 工具真去查 DB) =============
 
 def _ensure_jsonb_sqlite_compiler() -> None:
