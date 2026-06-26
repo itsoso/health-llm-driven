@@ -92,8 +92,17 @@ def _in_busy_window(db: Session, user_id: int) -> bool:
     try:
         now_hhmm = get_china_now().strftime("%H:%M")
         for start, end in today_busy_blocks(db, user_id):
-            if start <= now_hhmm < end:  # [start, end),与忙碌块语义一致
-                return True
+            if start <= end:
+                # 同日窗 [start, end):常规会议块。
+                if start <= now_hhmm < end:
+                    return True
+            else:
+                # 跨午夜窗(end < start,如 23:00–00:30 会议 / 22:00–07:00 睡眠 DND):
+                # now 落在 [start, 24:00) 或 [00:00, end) 都算忙。旧的单条 `start<=now<end`
+                # 对 end<start 恒 False → 跨午夜块永不静默(该忙时仍推 P1)= 真 bug,且让
+                # 23:30–00:29 北京时刻构造跨午夜窗的 busy-window 测试必红(CI 实锤)。
+                if now_hhmm >= start or now_hhmm < end:
+                    return True
         return False
     except Exception as e:  # noqa: BLE001 — fail-soft:日历坏不静默,不崩
         logger.warning("[proactive] busy-window check failed user=%s: %s", user_id, e)

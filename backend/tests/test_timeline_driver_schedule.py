@@ -213,6 +213,29 @@ def test_in_busy_window_false_when_no_blocks(db, monkeypatch):
     assert pc._in_busy_window(db, 1) is False
 
 
+def test_in_busy_window_handles_midnight_wrap(db, monkeypatch):
+    """跨午夜忙碌块(end<start,如 23:00–00:30 会议 / 22:00–07:00 睡眠 DND)在午夜两侧都算忙。
+
+    钉死 get_china_now(不靠墙钟)→ 确定性。修复前 `_in_busy_window` 的单条 `start<=now<end`
+    对 end<start 恒 False → 跨午夜块永不静默(真 bug),且让 23:30–00:29 北京时刻构造跨午夜窗的
+    既有 busy-window 测试必红(CI 在 23:40 实锤)。还原 wrap 分支 → 本测试转红。
+    """
+    monkeypatch.setattr(pc, "today_busy_blocks", lambda d, uid: [("23:00", "00:30")])
+
+    def _at(hhmm):
+        h, m = (int(x) for x in hhmm.split(":"))
+        monkeypatch.setattr(
+            pc, "get_china_now", lambda: datetime(2026, 6, 26, h, m, tzinfo=_BJ)
+        )
+
+    _at("23:40")
+    assert pc._in_busy_window(db, 1) is True, "午夜前侧 [start,24:00) 应算忙"
+    _at("00:15")
+    assert pc._in_busy_window(db, 1) is True, "午夜后侧 [00:00,end) 应算忙"
+    _at("12:00")
+    assert pc._in_busy_window(db, 1) is False, "窗外不算忙"
+
+
 def test_in_busy_window_fail_soft_on_error(db, monkeypatch):
     def _boom(d, uid):
         raise RuntimeError("caldav down")
