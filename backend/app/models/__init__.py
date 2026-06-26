@@ -11,6 +11,7 @@ from app.models.daily_health import (
     SupplementIntake,
     OutdoorActivity
 )
+from app.models.food_nutrition import FoodItem, FoodNutrient
 from app.models.garmin_timeseries import (
     RespirationSample,
     HrvReading,
@@ -172,6 +173,8 @@ __all__ = [
     "GarminData",
     "ExerciseRecord",
     "DietRecord",
+    "FoodItem",
+    "FoodNutrient",
     "WaterIntake",
     "SupplementIntake",
     "OutdoorActivity",

@@ -33,6 +33,7 @@ def test_lookup_for_twin_matches_boolean_goal_conditions(db):
             applies_when=["twin.goals.weight_loss.active == true"],
             sources=["dedao:fengxue-weight-loss"],
             last_confirmed=datetime(2026, 5, 16, tzinfo=UTC),
+            metadata_json={"review_status": "reviewed"},
         )
     )
     db.commit()
@@ -75,6 +76,7 @@ def test_lookup_for_twin_matches_gene_drug_conditions_with_medication_lists(db):
             ],
             sources=["cpic:guideline-cyp2c19-clopidogrel"],
             last_confirmed=datetime(2026, 5, 18, tzinfo=UTC),
+            metadata_json={"review_status": "reviewed"},
         )
     )
     db.commit()
@@ -110,6 +112,7 @@ def test_lookup_for_twin_does_not_match_gene_drug_claim_without_medication_conte
             ],
             sources=["cpic:guideline-cyp2c19-clopidogrel"],
             last_confirmed=datetime(2026, 5, 18, tzinfo=UTC),
+            metadata_json={"review_status": "reviewed"},
         )
     )
     db.commit()
@@ -199,6 +202,7 @@ def test_lookup_for_twin_promotes_contextualized_entity_claims(db):
                 confidence=0.78,
                 evidence_level="B",
                 sources=["dedao:fengxue-gaoniaosuan"],
+                metadata_json={"review_status": "reviewed"},
             ),
             KBDocument(
                 doc_id="entity:condition:hyperuricemia-risk",
@@ -210,6 +214,7 @@ def test_lookup_for_twin_promotes_contextualized_entity_claims(db):
                 confidence=0.76,
                 evidence_level="B",
                 sources=["dedao:fengxue-gaoniaosuan"],
+                metadata_json={"review_status": "reviewed"},
             ),
             KBDocument(
                 doc_id="claim:c_uric_acid_hydration_context",
@@ -222,6 +227,7 @@ def test_lookup_for_twin_promotes_contextualized_entity_claims(db):
                 evidence_level="B",
                 applies_when=[],
                 sources=["dedao:fengxue-gaoniaosuan"],
+                metadata_json={"review_status": "reviewed"},
             ),
         ]
     )
@@ -339,7 +345,8 @@ def test_import_system_kb_artifacts_is_idempotent(tmp_path, db):
         '{"doc_id":"entity:condition:metabolic-health","doc_type":"entity",'
         '"entity_type":"condition","entity_id":"metabolic-health","title":"代谢健康",'
         '"summary":"体重、腰围、血糖、血脂和血压的轨迹管理。",'
-        '"confidence":0.75,"evidence_level":"B","sources":["system:test"]}\n'
+        '"confidence":0.75,"evidence_level":"B","sources":["system:test"],'
+        '"metadata":{"review_status":"reviewed"}}\n'
     )
     (artifact_dir / "claims.jsonl").write_text(
         '{"doc_id":"claim:c_weight_waist_tracking","doc_type":"claim",'
@@ -347,7 +354,8 @@ def test_import_system_kb_artifacts_is_idempotent(tmp_path, db):
         '"title":"体重和腰围晨起记录","summary":"减重和代谢风险管理应跟踪体重与腰围趋势。",'
         '"confidence":0.72,"evidence_level":"B",'
         '"applies_when":["twin.goals.weight_loss.active == true"],'
-        '"sources":["dedao:fengxue-weight-loss"],"decay_rate":"normal"}\n'
+        '"sources":["dedao:fengxue-weight-loss"],"decay_rate":"normal",'
+        '"metadata":{"review_status":"reviewed"}}\n'
     )
     (artifact_dir / "relations.jsonl").write_text(
         '{"src_doc_id":"entity:condition:metabolic-health",'
@@ -359,8 +367,8 @@ def test_import_system_kb_artifacts_is_idempotent(tmp_path, db):
     first = import_system_kb_artifacts(db, artifact_dir, actor="test")
     second = import_system_kb_artifacts(db, artifact_dir, actor="test")
 
-    assert first == {"documents": 2, "edges": 1}
-    assert second == {"documents": 2, "edges": 1}
+    assert first == {"documents": 2, "edges": 1, "skipped_documents": 0, "skipped_edges": 0}
+    assert second == {"documents": 2, "edges": 1, "skipped_documents": 0, "skipped_edges": 0}
     assert db.query(KBDocument).filter(KBDocument.doc_id == "claim:c_weight_waist_tracking").count() == 1
 
 
@@ -378,6 +386,7 @@ def test_format_system_knowledge_for_prompt_is_bounded(db):
             applies_when=["twin.goals.weight_loss.active == true"],
             sources=["dedao:fengxue-weight-loss"],
             last_confirmed=datetime(2026, 5, 16, tzinfo=UTC),
+            metadata_json={"review_status": "reviewed"},
         )
     )
     db.commit()
@@ -408,6 +417,7 @@ def test_lookup_for_twin_matches_longevity_goal_to_aging_hallmark(db):
                 evidence_level="B",
                 sources=["cell:2023-hallmarks-of-aging"],
                 last_confirmed=datetime(2026, 5, 16, tzinfo=UTC),
+                metadata_json={"review_status": "reviewed"},
             ),
             KBDocument(
                 doc_id="claim:c_aging_hallmarks_are_trajectory_taxonomy",
@@ -422,6 +432,7 @@ def test_lookup_for_twin_matches_longevity_goal_to_aging_hallmark(db):
                 recommends_lookup=["entity:aging_hallmark:mitochondrial_dysfunction"],
                 sources=["cell:2023-hallmarks-of-aging"],
                 last_confirmed=datetime(2026, 5, 16, tzinfo=UTC),
+                metadata_json={"review_status": "reviewed"},
             ),
         ]
     )
@@ -469,7 +480,7 @@ def test_attach_system_knowledge_evidence_adds_claim_refs_to_specialist_findings
             applies_when=["twin.wearable.sleep_duration_hours < 6.5"],
             sources=["dedao:fengxue-weight-loss"],
             last_confirmed=datetime(2026, 5, 16, tzinfo=UTC),
-            metadata_json={"domain": "movement"},
+            metadata_json={"review_status": "reviewed", "domain": "movement"},
         )
     )
     db.commit()
@@ -556,7 +567,7 @@ def test_attach_system_knowledge_evidence_does_not_fallback_to_unrelated_twin_cl
             applies_when=["twin.genetics.MTHFR_C677T in [CT, TT]"],
             sources=["dedao:qiuzilong-genetics-07"],
             last_confirmed=datetime(2026, 5, 16, tzinfo=UTC),
-            metadata_json={"domain": "nutrition"},
+            metadata_json={"review_status": "reviewed", "domain": "nutrition"},
         )
     )
     db.commit()

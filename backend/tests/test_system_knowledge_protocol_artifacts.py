@@ -1,7 +1,8 @@
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 
-from app.models.system_knowledge import KBDocument
+from app.models.system_knowledge import KBDocument, KBEdge
 from app.services.system_knowledge_importer import import_system_kb_artifacts
 from app.services.system_knowledge_ingest import IngestResult, write_reviewed_artifacts
 from app.services.system_knowledge_service import get_knowledge_coverage_report, lint_knowledge_base
@@ -11,8 +12,11 @@ def _jsonl(path):
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+SEED_DIR = Path(__file__).resolve().parents[1] / "data/system_kb_v2_seed"
+
+
 def test_seed_artifacts_do_not_leave_orphan_entities(db):
-    import_system_kb_artifacts(db, "data/system_kb_v2_seed", actor="test")
+    import_system_kb_artifacts(db, SEED_DIR, actor="test")
 
     report = lint_knowledge_base(db)
 
@@ -20,7 +24,7 @@ def test_seed_artifacts_do_not_leave_orphan_entities(db):
 
 
 def test_seed_artifacts_meet_external_evidence_target(db):
-    import_system_kb_artifacts(db, "data/system_kb_v2_seed", actor="test")
+    import_system_kb_artifacts(db, SEED_DIR, actor="test")
 
     coverage = get_knowledge_coverage_report(db)
 
@@ -95,7 +99,7 @@ def test_import_system_kb_protocol_artifacts_preserves_contract_metadata(tmp_pat
 
     result = import_system_kb_artifacts(db, artifact_dir, actor="test")
 
-    assert result == {"documents": 3, "edges": 0}
+    assert result == {"documents": 3, "edges": 0, "skipped_documents": 0, "skipped_edges": 0}
     protocol = db.query(KBDocument).filter(KBDocument.doc_id == "protocol:sleep:caffeine_cutoff").one()
     contraindication = db.query(KBDocument).filter(
         KBDocument.doc_id == "contra:training:low_recovery_high_intensity"
@@ -111,6 +115,110 @@ def test_import_system_kb_protocol_artifacts_preserves_contract_metadata(tmp_pat
     assert protocol.metadata_json["paid_source_policy"] == "transformed_summary_only"
     assert contraindication.metadata_json["blocks"] == ["protocol:movement:hiit"]
     assert eval_case.metadata_json["expected"]["must_not_include"] == ["必须吃"]
+
+
+def test_import_system_kb_artifacts_skips_non_reviewed_documents_and_edges(tmp_path, db):
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    (artifact_dir / "entities.jsonl").write_text(
+        json.dumps(
+            {
+                "doc_id": "entity:condition:metabolic-health",
+                "doc_type": "entity",
+                "entity_type": "condition",
+                "entity_id": "metabolic-health",
+                "title": "代谢健康",
+                "summary": "只导入 reviewed 实体。",
+                "metadata": {"review_status": "reviewed"},
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (artifact_dir / "claims.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "doc_id": "claim:c_reviewed_imported",
+                        "doc_type": "claim",
+                        "entity_type": "condition",
+                        "entity_id": "metabolic-health",
+                        "title": "Reviewed imported claim",
+                        "summary": "reviewed claim 可以导入。",
+                        "metadata": {"review_status": "reviewed"},
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "doc_id": "claim:c_draft_skipped",
+                        "doc_type": "claim",
+                        "title": "Draft skipped claim",
+                        "summary": "draft claim 不能进入 serving KB。",
+                        "metadata": {"review_status": "draft"},
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "doc_id": "claim:c_missing_review_skipped",
+                        "doc_type": "claim",
+                        "title": "Missing review skipped claim",
+                        "summary": "缺少 review_status 必须 fail closed。",
+                    },
+                    ensure_ascii=False,
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (artifact_dir / "relations.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "src_doc_id": "entity:condition:metabolic-health",
+                        "dst_doc_id": "claim:c_reviewed_imported",
+                        "relation": "has_claim",
+                        "confidence": 0.9,
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "src_doc_id": "entity:condition:metabolic-health",
+                        "dst_doc_id": "claim:c_draft_skipped",
+                        "relation": "has_claim",
+                        "confidence": 0.9,
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "src_doc_id": "claim:c_missing_review_skipped",
+                        "dst_doc_id": "claim:c_reviewed_imported",
+                        "relation": "related_to",
+                        "confidence": 0.8,
+                    },
+                    ensure_ascii=False,
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = import_system_kb_artifacts(db, artifact_dir, actor="test")
+
+    assert result == {"documents": 2, "edges": 1, "skipped_documents": 2, "skipped_edges": 2}
+    assert db.query(KBDocument).filter(KBDocument.doc_id == "entity:condition:metabolic-health").count() == 1
+    assert db.query(KBDocument).filter(KBDocument.doc_id == "claim:c_reviewed_imported").count() == 1
+    assert db.query(KBDocument).filter(KBDocument.doc_id == "claim:c_draft_skipped").count() == 0
+    assert db.query(KBDocument).filter(KBDocument.doc_id == "claim:c_missing_review_skipped").count() == 0
+    assert db.query(KBEdge).count() == 1
 
 
 def test_write_reviewed_artifacts_outputs_protocol_contract_files(tmp_path):

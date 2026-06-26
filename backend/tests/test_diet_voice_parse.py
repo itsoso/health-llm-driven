@@ -10,6 +10,7 @@ from datetime import date, timedelta
 import pytest
 
 from app.models.daily_health import DietRecord
+from app.models.food_nutrition import FoodItem as FoodCatalogItem, FoodNutrient
 from app.models.user import User
 from app.services import diet_voice_parser as dvp
 
@@ -85,6 +86,42 @@ def test_memory_enriches_missing_nutrition(db, auth):
     assert f["calories"] == 200.0 and f["protein"] == 25.0   # 记忆层补全
 
 
+def test_food_table_enriches_missing_nutrition_before_memory(db, auth):
+    user, _ = auth
+    db.add(FoodCatalogItem(
+        food_id="cfc:chicken_breast",
+        canonical_name="鸡胸肉",
+        aliases=["鸡胸肉", "鸡肉"],
+        locale="zh-CN",
+        source="china_food_composition",
+        source_ref="test-fixture",
+    ))
+    db.add(FoodNutrient(
+        food_id="cfc:chicken_breast",
+        kcal_per_100g=165.0,
+        protein_g_per_100g=31.0,
+        carbs_g_per_100g=0.0,
+        fat_g_per_100g=3.6,
+        fiber_g_per_100g=0.0,
+        source="china_food_composition",
+        source_ref="test-fixture",
+    ))
+    for d in (3, 6):
+        db.add(DietRecord(user_id=user.id, record_date=date.today() - timedelta(days=d),
+                          meal_type="lunch", food_name="鸡胸肉", calories=999.0, protein=1.0))
+    db.commit()
+
+    foods = [{"name": "鸡胸肉", "quantity": 150, "unit": "g", "calories": None, "protein": None}]
+    draft = _run(dvp.parse_voice_food(db, user.id, "午餐吃了鸡胸肉 150g", llm_parse=_stub(foods, 0.9)))
+
+    f = draft["foods"][0]
+    assert f["food_id"] == "cfc:chicken_breast"
+    assert f["source"] == "china_food_composition"
+    assert f["calories"] == 247.5
+    assert f["protein"] == 46.5
+    assert f["fat"] == 5.4
+
+
 def test_degrade_when_llm_empty(db, auth):
     user, _ = auth
     draft = _run(dvp.parse_voice_food(db, user.id, "随便吃了点东西", llm_parse=_stub([], None)))
@@ -140,6 +177,8 @@ def test_watch_voice_confirm_preserves_ai_audit_fields(client, db, auth):
             "protein": 50.7,
             "carbs": 51.8,
             "fat": 5.9,
+            "food_id": "cfc:chicken_breast",
+            "source": "china_food_composition",
             "ai_recognized": 1,
             "ai_confidence": 0.82,
             "notes": "Watch 语音草稿: 午餐吃了鸡胸肉 150g 和米饭一碗 | parser: rules-v1 | confidence: 0.82",
@@ -150,8 +189,12 @@ def test_watch_voice_confirm_preserves_ai_audit_fields(client, db, auth):
     body = r.json()
     assert body["ai_recognized"] == 1
     assert body["ai_confidence"] == 0.82
+    assert body["food_id"] == "cfc:chicken_breast"
+    assert body["source"] == "china_food_composition"
 
     record = db.query(DietRecord).filter(DietRecord.user_id == user.id).one()
     assert record.ai_recognized is True
     assert record.ai_confidence == 0.82
+    assert record.food_id == "cfc:chicken_breast"
+    assert record.source == "china_food_composition"
     assert "parser: rules-v1" in record.notes

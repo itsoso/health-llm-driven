@@ -42,26 +42,52 @@ def import_system_kb_artifacts(db: Session, artifact_dir: str | Path, actor: str
     root = Path(artifact_dir)
     documents = 0
     edges = 0
+    skipped_documents = 0
+    skipped_edges = 0
 
     for file_name in DOC_FILES:
         for payload in _read_jsonl(root / file_name):
+            if not _is_reviewed_payload(payload):
+                _demote_existing_non_reviewed_document(db, payload)
+                skipped_documents += 1
+                continue
             _upsert_document(db, payload)
             documents += 1
 
+    db.flush()
+    reviewed_doc_ids = _reviewed_document_ids(db)
     for payload in _read_jsonl(root / "relations.jsonl"):
+        if (
+            payload.get("src_doc_id") not in reviewed_doc_ids
+            or payload.get("dst_doc_id") not in reviewed_doc_ids
+        ):
+            skipped_edges += 1
+            continue
         _upsert_edge(db, payload)
         edges += 1
 
+    diff = {
+        "artifact_dir": str(root),
+        "documents": documents,
+        "edges": edges,
+        "skipped_documents": skipped_documents,
+        "skipped_edges": skipped_edges,
+    }
     db.add(
         KBAudit(
             doc_id=None,
             op="import_system_kb_artifacts",
             actor=actor,
-            diff={"artifact_dir": str(root), "documents": documents, "edges": edges},
+            diff=diff,
         )
     )
     db.commit()
-    return {"documents": documents, "edges": edges}
+    return {
+        "documents": documents,
+        "edges": edges,
+        "skipped_documents": skipped_documents,
+        "skipped_edges": skipped_edges,
+    }
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -110,6 +136,40 @@ def _upsert_document(db: Session, payload: dict[str, Any]) -> None:
             setattr(existing, key, value)
     else:
         db.add(KBDocument(doc_id=doc_id, **values))
+
+
+def _is_reviewed_payload(payload: dict[str, Any]) -> bool:
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict):
+        return False
+    return metadata.get("review_status") == "reviewed"
+
+
+def _demote_existing_non_reviewed_document(db: Session, payload: dict[str, Any]) -> None:
+    doc_id = payload.get("doc_id")
+    if not doc_id:
+        return
+    existing = db.query(KBDocument).filter(KBDocument.doc_id == doc_id).first()
+    if existing is None:
+        return
+    metadata = dict(existing.metadata_json or {})
+    incoming_metadata = payload.get("metadata")
+    incoming_status = None
+    if isinstance(incoming_metadata, dict):
+        incoming_status = incoming_metadata.get("review_status")
+    metadata["review_status"] = incoming_status or "unreviewed"
+    existing.metadata_json = metadata
+    existing.is_archived = False
+
+
+def _reviewed_document_ids(db: Session) -> set[str]:
+    return {
+        document.doc_id
+        for document in db.query(KBDocument).all()
+        if not document.is_archived
+        and isinstance(document.metadata_json, dict)
+        and document.metadata_json.get("review_status") == "reviewed"
+    }
 
 
 def _upsert_edge(db: Session, payload: dict[str, Any]) -> None:

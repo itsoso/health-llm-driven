@@ -8,8 +8,10 @@ from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
 from app.services.system_knowledge_service import (
     _build_postgres_reindex_statement,
     apply_confidence_decay,
+    attach_system_knowledge_evidence,
     build_evidence_card_for_message,
 )
+from app.orchestrator.schema import SpecialistFinding
 
 
 def _seed_phase0_knowledge(db):
@@ -26,6 +28,7 @@ def _seed_phase0_knowledge(db):
         sources=["dedao:qiuzilong-genetics-07"],
         last_confirmed=datetime(2026, 5, 16, tzinfo=UTC),
         decay_rate="slow",
+        metadata_json={"review_status": "reviewed"},
     )
     claim = KBDocument(
         doc_id="claim:c_mthfr_c677t_hcy_folate_boundary",
@@ -45,6 +48,7 @@ def _seed_phase0_knowledge(db):
         sources=["dedao:qiuzilong-genetics-07", "pubmed:19033271"],
         last_confirmed=datetime(2026, 5, 16, tzinfo=UTC),
         decay_rate="normal",
+        metadata_json={"review_status": "reviewed", "domain": "nutrition"},
     )
     db.add_all([entity, claim])
     db.flush()
@@ -95,6 +99,7 @@ def test_get_entity_deduplicates_semantically_identical_claims(client, db, auth_
         sources=["dedao:duplicate-course"],
         last_confirmed=datetime(2026, 5, 15, tzinfo=UTC),
         decay_rate="normal",
+        metadata_json={"review_status": "reviewed"},
     )
     db.add(duplicate)
     db.flush()
@@ -180,6 +185,115 @@ def test_lookup_for_twin_excludes_archived_or_non_matching_claims(client, db, au
     assert payload["claims"] == []
 
 
+def test_lookup_for_twin_excludes_non_reviewed_claims(client, db, auth_user_and_headers):
+    _user, headers = auth_user_and_headers
+    _seed_phase0_knowledge(db)
+    db.add_all(
+        [
+            KBDocument(
+                doc_id="claim:c_mthfr_draft_should_not_serve",
+                doc_type="claim",
+                entity_type="gene",
+                entity_id="MTHFR",
+                title="Draft MTHFR claim",
+                summary="草稿 claim 即使命中条件也不能进入用户可见 lookup。",
+                confidence=0.99,
+                evidence_level="B",
+                applies_when=[
+                    "twin.genetics.MTHFR_C677T in ['CT', 'TT']",
+                    "twin.labs.homocysteine_umol_l >= 15",
+                ],
+                metadata_json={"review_status": "draft", "domain": "nutrition"},
+            ),
+            KBDocument(
+                doc_id="claim:c_mthfr_missing_review_should_not_serve",
+                doc_type="claim",
+                entity_type="gene",
+                entity_id="MTHFR",
+                title="Missing review MTHFR claim",
+                summary="缺少 review_status 的 claim 必须 fail closed。",
+                confidence=0.98,
+                evidence_level="B",
+                applies_when=[
+                    "twin.genetics.MTHFR_C677T in ['CT', 'TT']",
+                    "twin.labs.homocysteine_umol_l >= 15",
+                ],
+                metadata_json={"domain": "nutrition"},
+            ),
+        ]
+    )
+    db.commit()
+
+    response = client.post(
+        "/api/v1/knowledge/lookup_for_twin",
+        headers=headers,
+        json={
+            "genetics": {"MTHFR_C677T": "TT"},
+            "labs": {"homocysteine_umol_l": 18},
+        },
+    )
+
+    assert response.status_code == 200
+    claim_ids = [claim["doc_id"] for claim in response.json()["claims"]]
+    assert claim_ids == ["claim:c_mthfr_c677t_hcy_folate_boundary"]
+
+
+def test_get_claim_excludes_non_reviewed_claim(client, db, auth_user_and_headers):
+    _user, headers = auth_user_and_headers
+    db.add(
+        KBDocument(
+            doc_id="claim:c_draft_claim_detail",
+            doc_type="claim",
+            title="Draft claim detail",
+            summary="草稿详情不能直接打开。",
+            confidence=0.8,
+            evidence_level="C",
+            metadata_json={"review_status": "draft"},
+        )
+    )
+    db.commit()
+
+    response = client.get("/api/v1/knowledge/claim/claim:c_draft_claim_detail", headers=headers)
+
+    assert response.status_code == 404
+
+
+def test_evidence_resolver_does_not_attach_non_reviewed_claim_refs(db):
+    db.add(
+        KBDocument(
+            doc_id="claim:c_protein_draft_should_not_support",
+            doc_type="claim",
+            entity_type="intervention",
+            entity_id="protein",
+            title="Protein draft claim",
+            summary="蛋白质建议草稿命中 Twin 后也不能成为 evidence_refs。",
+            confidence=0.9,
+            evidence_level="B",
+            applies_when=["twin.goals.weight_loss.active == true"],
+            sources=["system:test"],
+            last_confirmed=datetime(2026, 5, 16, tzinfo=UTC),
+            metadata_json={"review_status": "draft", "domain": "nutrition"},
+        )
+    )
+    db.commit()
+    finding = SpecialistFinding(
+        specialist_name="fuel_strategist",
+        category="nutrition",
+        summary="减重期蛋白质建议",
+        findings=[{"title": "补足蛋白质", "action": "下一餐增加优质蛋白质"}],
+    )
+
+    attach_system_knowledge_evidence(
+        db,
+        {"goals": {"weight_loss": {"active": True}}},
+        [finding],
+    )
+
+    assert finding.evidence_refs == []
+    assert finding.raw["evidence_resolution"]["support_status"] == "model_inference"
+    assert finding.raw["unsupported"] is True
+
+
 def test_build_evidence_card_for_message_detects_mthfr_tt_question(db):
     _seed_phase0_knowledge(db)
 
@@ -205,6 +319,7 @@ def test_build_evidence_card_for_message_detects_9p21_aa_question(db):
         sources=["dedao:qiuzilong-genetics-20"],
         last_confirmed=datetime(2026, 5, 17, tzinfo=UTC),
         decay_rate="normal",
+        metadata_json={"review_status": "reviewed"},
     )
     claim = KBDocument(
         doc_id="claim:c_9p21_cardiovascular_labs_lifestyle_boundary",
@@ -221,6 +336,7 @@ def test_build_evidence_card_for_message_detects_9p21_aa_question(db):
         sources=["dedao:qiuzilong-genetics-20"],
         last_confirmed=datetime(2026, 5, 17, tzinfo=UTC),
         decay_rate="normal",
+        metadata_json={"review_status": "reviewed"},
     )
     db.add_all([entity, claim])
     db.flush()
@@ -338,6 +454,7 @@ def test_search_knowledge_promotes_graph_neighbors_into_results(client, db, auth
             evidence_level="C",
             sources=["dedao:qiuzilong-genetics-07"],
             last_confirmed=datetime(2026, 5, 16, tzinfo=UTC),
+            metadata_json={"review_status": "reviewed"},
         )
     )
     db.flush()
@@ -367,6 +484,54 @@ def test_search_knowledge_promotes_graph_neighbors_into_results(client, db, auth
     )
     assert "graph" in graph_result["retrieval"]["channels"]
     assert graph_result["retrieval"]["graph_distance"] == 1
+
+
+def test_search_knowledge_excludes_non_reviewed_documents_and_graph_context(
+    client, db, auth_user_and_headers
+):
+    _user, headers = auth_user_and_headers
+    _seed_phase0_knowledge(db)
+    db.add(
+        KBDocument(
+            doc_id="claim:c_unreviewed_graph_neighbor",
+            doc_type="claim",
+            title="Unreviewed Graph Neighbor",
+            summary="MTHFR 草稿邻居不应出现在搜索结果或 graph_context。",
+            confidence=0.95,
+            evidence_level="B",
+            metadata_json={"review_status": "draft"},
+        )
+    )
+    db.flush()
+    db.add(
+        KBEdge(
+            src_doc_id="entity:gene:MTHFR",
+            dst_doc_id="claim:c_unreviewed_graph_neighbor",
+            relation="has_claim",
+            confidence=0.8,
+            source_claim_id="claim:c_unreviewed_graph_neighbor",
+        )
+    )
+    db.commit()
+
+    response = client.get(
+        "/api/v1/knowledge/search",
+        headers=headers,
+        params={"q": "MTHFR", "limit": 10},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    result_ids = {item["document"]["doc_id"] for item in payload["results"]}
+    neighbor_ids = {item["doc_id"] for item in payload["graph_context"]["neighbors"]}
+    edge_doc_ids = {
+        edge_doc_id
+        for edge in payload["graph_context"]["edges"]
+        for edge_doc_id in (edge["src_doc_id"], edge["dst_doc_id"])
+    }
+    assert "claim:c_unreviewed_graph_neighbor" not in result_ids
+    assert "claim:c_unreviewed_graph_neighbor" not in neighbor_ids
+    assert "claim:c_unreviewed_graph_neighbor" not in edge_doc_ids
 
 
 def test_search_knowledge_uses_semantic_alias_channel(client, db, auth_user_and_headers):
