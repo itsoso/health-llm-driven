@@ -49,7 +49,11 @@ function movementDomain(item: TodayTimelineItem): 'strength' | 'mobility' | null
 }
 
 function refKey(ref: TimelineCompleteRef): string {
-  return `${ref.object_type}-${ref.object_id}`;
+  // F5b:键并入 slot —— 真多剂(BID)两槽共享 object_type/object_id,action-lock 与
+  // pending 态必须按槽区分,否则完成晨剂会把晚剂也锁住/标 pending。单剂无 slot → 键同改前。
+  return ref.slot
+    ? `${ref.object_type}-${ref.object_id}@${ref.slot}`
+    : `${ref.object_type}-${ref.object_id}`;
 }
 
 function isRisk(item: TodayTimelineItem): boolean {

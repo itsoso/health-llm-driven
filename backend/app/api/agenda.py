@@ -50,6 +50,10 @@ class AgendaComplete(BaseModel):
     value: Optional[Dict[str, Any]] = None
     status: str = "done"        # done | skipped
     skip_reason: Optional[str] = None  # status=skipped 时必带,枚举见 SKIP_REASONS
+    # F5b 多剂闭环:剂量槽 "HH:MM"。仅真多剂(med 的 reminder_times ≥2 个时点)由 push/spine
+    # 项透传该剂的 slot —— 同药不同槽各闭环一条依从,BID 两剂不被同日幂等折成一次。
+    # 单剂/每日一次:不传(None)→ complete_ref 不含 slot 键、行为与改前逐字节相同。
+    slot: Optional[str] = None
 
 
 @router.post("/complete")
@@ -79,7 +83,7 @@ async def agenda_complete(
         result = tas.complete_by_ref(
             db, current_user.id, data.object_type, data.object_id,
             status=data.status, skip_reason=data.skip_reason,
-            track=data.track, value=data.value,
+            track=data.track, value=data.value, slot=data.slot,
         )
     except LookupError:
         # 真实 source 不存在 / 非本人 → 404(不跨用户写、不假装成功)。

@@ -149,6 +149,31 @@ def _complete_ref_for(schedule_id: str | None, kind: str) -> dict | None:
     return None
 
 
+def _med_reminder_slots(db, schedule_id: str | None) -> list[str]:
+    """day-schedule 的 med:{id} 项 → 该药今日的确定排程时点列表(reminder_times)。
+
+    用于 F5b:真多剂(≥2 个时点)在提醒投影层按槽展开。认不出格式 / 取数失败 / 无药 → []
+    (退回单槽路径,不假装多剂)。fail-soft:不拖垮整批提醒收集。
+    """
+    if not schedule_id or not str(schedule_id).startswith("med:"):
+        return []
+    prefix, _, raw_id = str(schedule_id).partition(":")
+    try:
+        med_id = int(raw_id)
+    except (ValueError, TypeError):
+        return []
+    try:
+        from app.models.medication import Medication
+
+        med = db.query(Medication).filter(Medication.id == med_id).first()
+        if med is None:
+            return []
+        return [t for t in (med.reminder_times or []) if t]
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[event-reminder] reminder_times 读取失败 med=%s: %s", med_id, e)
+        return []
+
+
 def _collect_timed_items(db, user_id: int, today: date) -> list[dict]:
     """收集该用户今日带时刻的项: 排程(med/supplement/movement/diet) + 会议。
 
@@ -167,10 +192,36 @@ def _collect_timed_items(db, user_id: int, today: date) -> list[dict]:
             lead = LEAD_MINUTES.get(kind, 0)
             if lead <= 0:
                 continue
+            sched_id = s.get("id")
+            # F5b 多剂提醒:真多剂(med 的 reminder_times ≥2 个确定时点)→ 每槽各发一次提醒,
+            # complete_ref 带该剂的 slot → 闭环时各成独立议程行/uq_medlog 槽,BID 两剂依从各记。
+            # timing_solver 把 BID 折成单项(只取 times[0]),故在提醒投影层按 med 的
+            # reminder_times 展开。单剂/每日一次 → 走下面原单槽路径(item_key/complete_ref
+            # 与改前逐字节相同)。movement/diet 无多剂概念,只 med/supplement 展开。
+            multi_slots = (
+                _med_reminder_slots(db, sched_id)
+                if kind in ("medication", "supplement") else []
+            )
+            if len(multi_slots) >= 2:
+                for slot in multi_slots:
+                    slot_min = _to_minutes(slot)
+                    if slot_min is None:
+                        continue
+                    cref = _complete_ref_for(sched_id, kind)
+                    if cref is not None:
+                        cref = {**cref, "slot": slot}  # 不改 _complete_ref_for 的两键契约
+                    items.append({
+                        "item_key": f"{sched_id}@{slot}",  # 每槽独立去重(SentEventReminder)
+                        "kind": kind,
+                        "title": s.get("title") or "",
+                        "start_min": slot_min,
+                        "lead": lead,
+                        "complete_ref": cref,
+                    })
+                continue
             start_min = _to_minutes(s.get("time", ""))
             if start_min is None:
                 continue
-            sched_id = s.get("id")
             items.append({
                 "item_key": str(sched_id or f"{kind}:?"),
                 "kind": kind,

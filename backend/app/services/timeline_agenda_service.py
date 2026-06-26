@@ -55,9 +55,18 @@ def kind_for_domain(domain: Optional[str]) -> str:
 
 
 def _ref_key(complete_ref: Dict[str, Any]) -> str:
-    """complete_ref → 稳定 item_key(用于同日去重)。"""
+    """complete_ref → 稳定 item_key(用于同日去重)。
+
+    F5b 多剂闭环:当 complete_ref 带剂量槽 ``slot``("HH:MM",仅真多剂 ≥2 排程时点的药才有)
+    时,把它并入去重键 → 同药不同槽各成一条独立议程 HealthEvent + 各自 uq_medlog 槽,
+    BID/多剂依从不再被同日幂等短路成一次。**无 slot(单剂/每日一次)→ 键与改前逐字节相同**
+    —— 不引入 ``slot:null`` 段,守存量单剂行为零变化(byte-identical)。
+    """
     ot = complete_ref.get("object_type")
     oid = complete_ref.get("object_id")
+    slot = complete_ref.get("slot")
+    if slot:
+        return f"{ot}:{oid}@{slot}"
     return f"{ot}:{oid}"
 
 
@@ -157,10 +166,11 @@ def complete_by_ref(
     value: Optional[Dict[str, Any]] = None,
     title: Optional[str] = None,
     scheduled_for: Optional[datetime] = None,
+    slot: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """按 {object_type, object_id} 闭环完成(push + mobile 手里就这俩键)。
+    """按 {object_type, object_id[, slot]} 闭环完成(push + mobile 手里就这俩/仨键)。
 
-    懒物化:先查当日同 source 的议程 HealthEvent,没有就现物化一条(pending),
+    懒物化:先查当日同 source(同 slot)的议程 HealthEvent,没有就现物化一条(pending),
     再委托既有 `complete_agenda_event` 做生命周期翻态 + 双轨回写真实 source。
     所有不变量(单次事务、幂等、回写失败不翻 done 且 422)都由 complete_agenda_event 守。
 
@@ -168,10 +178,11 @@ def complete_by_ref(
     confirmed_data 不进任何 Twin/LLM/orchestrator/export 读路径,存它是受限且与既有
     health_events 一致的;不要把 confirmed_data 引入任何 LLM/Twin 读路径。
 
-    TODO(F5b,多剂闭环前必做):complete_ref 当前仅 {object_type, object_id},不带剂量槽。
-    一日两次(BID)/多剂药的两次提醒会落同一 (user, ref, date) 议程行 → 第二剂被幂等短路
-    → 依从 under-count。接 BID/多剂提醒前,complete_ref 必须扩出剂量槽(如 {..., "slot": "HH:MM"}),
-    并把 slot 并入 find_agenda_event 的去重键 + _slot_time。**当前不声称多剂依从已闭环。**
+    F5b 多剂闭环:``slot``("HH:MM",仅真多剂 ≥2 排程时点的药传)并入 complete_ref 去重键
+    与懒物化 scheduled_for —— 同药不同槽各成独立议程行 + 各自确定性 taken_time 槽(_slot_time
+    取 scheduled_for),BID 两剂各记一条、互不幂等短路;同槽再点 → 同一 HealthEvent + 同一
+    uq_medlog 槽幂等(council 不变量)。**slot=None(单剂/每日一次)→ ref 不含 slot 键、键与
+    懒物化逐字节同改前**(byte-identical 存量行为零变化);不引入 ``slot:null`` 段。
     """
     from app.services import agenda_service
     from app.utils.timezone import get_china_now, get_china_today
@@ -182,7 +193,11 @@ def complete_by_ref(
     # 绝不给外人/不存在/不支持的 ref 凭空物化幻影议程 HealthEvent(skip 此前会漏物化)。
     agenda_service.ensure_source_exists(db, user_id, object_type, object_id)
 
+    # slot 仅真多剂才传:有则并入 ref(去重键 + 懒物化 scheduled_for 都据它分槽);无则 ref
+    # 不含 slot 键 → 单剂/每日一次的 ref、去重键、懒物化 scheduled_for 与改前逐字节相同。
     ref = {"object_type": object_type, "object_id": object_id}
+    if slot:
+        ref["slot"] = slot
     # 议程行的「今日」基准用中国时区(UTC+8,OS-TZ 无关),与完成子系统其余 today-basis 对齐
     # —— 不用 get_user_today(无 profile 时回退 runner OS 时区),避免非 Asia/Shanghai 主机的
     # 午夜边界上议程 wrapper 与协议事件基准漂移而生出影子重复行。
@@ -195,8 +210,9 @@ def complete_by_ref(
         # 后,同一 (user, ref, day) 的并发懒物化恒得同一 scheduled_for → 同一 _slot_time,
         # 配合 complete_agenda_event 的原子 claim + uq_medlog 唯一约束,重复领域写收敛到至多
         # 一条(对齐链协议 chain_key 的「稳定 token」先例)。显式 scheduled_for(多剂等)优先。
-        slot_dt = scheduled_for or get_china_now().replace(
-            hour=0, minute=0, second=0, microsecond=0)
+        # F5b:真多剂(slot 非空)时,scheduled_for 钉到当日 slot 的 HH:MM → _slot_time 落该槽,
+        # 同药不同 slot 得不同 taken_time(各成一条 uq_medlog),BID 两剂各记不互撞。
+        slot_dt = scheduled_for or _midnight_or_slot(slot, get_china_now())
         ev = materialize_agenda_event(
             db, user_id,
             action_kind=_action_kind_for(object_type),
@@ -208,6 +224,21 @@ def complete_by_ref(
         db, user_id, ev.id, status=status, skip_reason=skip_reason,
         track=track, value=value,
     )
+
+
+def _midnight_or_slot(slot: Optional[str], now: datetime) -> datetime:
+    """懒物化 scheduled_for:真多剂(slot="HH:MM")→ 当日该时点;否则当日 00:00 稳定 token。
+
+    单剂/每日一次(slot=None)→ 当日午夜 token,与 F5b 前完全一致(byte-identical)。
+    slot 解析失败 → 也回退午夜 token(不假装能分槽,守稳定性)。
+    """
+    if slot:
+        try:
+            h, m = (int(x) for x in str(slot).split(":")[:2])
+            return now.replace(hour=h, minute=m, second=0, microsecond=0)
+        except (ValueError, AttributeError):
+            pass
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 class AgendaEventNotFound(Exception):

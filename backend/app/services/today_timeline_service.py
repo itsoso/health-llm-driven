@@ -386,14 +386,20 @@ def build_today_spine(db: Session, user_id: int) -> Dict[str, Any]:
     #      (完成度)组合进来。去重:已被 agenda 协议项以同 complete_ref 覆盖的不重复并入
     #      (协议来源 object_type=health_protocol,与 medication/supplement 是不同 ref,
     #       天然不撞;此处用 complete_ref 集合统一防御未来交叉)。
+    # F5b:去重键并入 slot —— 真多剂(BID)的两槽共享 (object_type, object_id) 但 slot 不同,
+    # 是合法的两条独立脊柱行,不能被 ref 去重折成一条(否则又退回 under-count)。单剂无 slot
+    # → 键与改前相同(byte-identical 防御行为)。
+    def _cover_key(ref: Dict[str, Any]):
+        return (ref["object_type"], ref["object_id"], ref.get("slot"))
+
     covered_refs = {
-        (it["complete_ref"]["object_type"], it["complete_ref"]["object_id"])
+        _cover_key(it["complete_ref"])
         for it in items
         if it.get("complete_ref")
     }
     for med_item in med_supplement_items(db, user_id):
         ref = med_item.get("complete_ref")
-        key = (ref["object_type"], ref["object_id"]) if ref else None
+        key = _cover_key(ref) if ref else None
         if key and key in covered_refs:
             continue  # 已由协议项覆盖 → 不双份
         if key:

@@ -109,45 +109,113 @@ def med_supplement_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
         if med_id is None:
             continue
         st = status_by_id.get(med_id)
-        # status_rows 缺该 med(竞态/已停用)→ 保守按 pending(不静默丢一项药)。
-        total = (st or {}).get("total_count") or 1
-        taken = (st or {}).get("taken_count") or 0
-        done = taken >= total
-        scheduled_for = s.get("time")  # timing_solver 求解的真实 HH:MM
+        # F5b:真多剂(reminder_times ≥2 个确定时点)→ 每槽一行(各带 slot);否则单行(无 slot,
+        # 与改前逐字节相同)。timing_solver 把 BID 折成单项(只取 times[0]),这里按 med 的
+        # reminder_times 在投影层展开,让 BID 两剂各成脊柱行(各自闭环、各自 uq_medlog 槽)。
+        slots = [t for t in ((st or {}).get("reminder_times") or []) if t]
+        if len(slots) >= 2:
+            items.extend(_multidose_items(domain, med_id, s, st, slots))
+        else:
+            items.append(_single_item(domain, med_id, s, st))
+    return items
 
-        # subtitle:记录性描述(几点建议 + 今日进度),非处方。R4:不出剂量数字命令。
-        timing_label = (st or {}).get("timing_label")
-        bits: List[str] = []
-        if scheduled_for:
-            bits.append(f"建议 {scheduled_for}")
+
+def _single_item(domain: str, med_id: int, s: Dict[str, Any],
+                 st: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """单剂/每日一次药 → 一条脊柱行(无 slot,与 F5b 前逐字节相同)。"""
+    total = (st or {}).get("total_count") or 1
+    taken = (st or {}).get("taken_count") or 0
+    done = taken >= total
+    scheduled_for = s.get("time")  # timing_solver 求解的真实 HH:MM
+
+    # subtitle:记录性描述(几点建议 + 今日进度),非处方。R4:不出剂量数字命令。
+    timing_label = (st or {}).get("timing_label")
+    bits: List[str] = []
+    if scheduled_for:
+        bits.append(f"建议 {scheduled_for}")
+    if timing_label:
+        bits.append(timing_label)
+    if total > 1:
+        bits.append(f"今日 {taken}/{total}")
+    subtitle = " · ".join(bits) or None
+
+    icon, color = _MED_STYLE[domain]
+    return {
+        "id": f"med_{med_id}",
+        "kind": "action",
+        "driver": "plan_driven",  # 在服药/补剂 = 预定承诺(医嘱/计划)
+        "time_window": _window(scheduled_for),
+        "scheduled_for": scheduled_for,
+        "title": s.get("title") or (st or {}).get("name") or "用药",
+        "subtitle": subtitle,
+        "icon": icon,
+        "color": color,
+        "status": "completed" if done else "pending",
+        "priority": 50,  # 与协议同档(都是今日承诺待办)
+        "can_complete": not done,
+        "complete_ref": {"object_type": domain, "object_id": med_id},
+        "event_id": None,
+        "action_kind": domain,
+        "deep_link": None,
+        "severity": None,
+        "proof": None,
+    }
+
+
+def _multidose_items(domain: str, med_id: int, s: Dict[str, Any],
+                     st: Optional[Dict[str, Any]], slots: List[str]) -> List[Dict[str, Any]]:
+    """真多剂药(reminder_times ≥2)→ 每个排程时点一条脊柱行,各带剂量槽 slot。
+
+    每槽 done = 该槽 HH:MM 有 taken 的 MedicationLog(来自 get_today_status 的 logs)。
+    complete_ref 带 slot → 闭环时各成独立议程 HealthEvent + 各自确定性 taken_time 槽,
+    BID 两剂互不幂等短路;同槽再点 → 同 HealthEvent + 同 uq_medlog 幂等。
+    R4:subtitle 仅记录性(几点 + 今日进度),不出剂量数字命令。
+    """
+    icon, color = _MED_STYLE[domain]
+    name = s.get("title") or (st or {}).get("name") or "用药"
+    timing_label = (st or {}).get("timing_label")
+    total = len(slots)
+    # 该槽是否已服:匹配 taken 日志的 taken_time(确定性槽 = scheduled_for HH:MM)。
+    # 按「当日分钟数」归一化比对,robust 于零填充差异("8:00" vs "08:00")——避免 done 标记
+    # 漏判(纯 UI 显示侧;权威完成态仍由 _attach_event_ids 用 HealthEvent 覆盖,见安全评审 A1)。
+    taken_minutes = {
+        _minutes(log.get("time"))
+        for log in ((st or {}).get("logs") or [])
+        if log.get("status") == "taken"
+    }
+    taken_minutes.discard(None)
+
+    out: List[Dict[str, Any]] = []
+    for slot in slots:
+        done = _minutes(slot) in taken_minutes
+        bits: List[str] = [f"建议 {slot}"]
         if timing_label:
             bits.append(timing_label)
-        if total > 1:
-            bits.append(f"今日 {taken}/{total}")
-        subtitle = " · ".join(bits) or None
-
-        icon, color = _MED_STYLE[domain]
-        items.append({
-            "id": f"med_{med_id}",
+        bits.append(f"今日 {total} 次")
+        subtitle = " · ".join(bits)
+        # id 带 slot 后缀 → 每槽脊柱行各有稳定唯一 id(now-marker / 客户端 key 不撞)。
+        slot_id = slot.replace(":", "")
+        out.append({
+            "id": f"med_{med_id}_{slot_id}",
             "kind": "action",
-            "driver": "plan_driven",  # 在服药/补剂 = 预定承诺(医嘱/计划)
-            "time_window": _window(scheduled_for),
-            "scheduled_for": scheduled_for,
-            "title": s.get("title") or (st or {}).get("name") or "用药",
+            "driver": "plan_driven",
+            "time_window": _window(slot),
+            "scheduled_for": slot,
+            "title": name,
             "subtitle": subtitle,
             "icon": icon,
             "color": color,
             "status": "completed" if done else "pending",
-            "priority": 50,  # 与协议同档(都是今日承诺待办)
+            "priority": 50,
             "can_complete": not done,
-            "complete_ref": {"object_type": domain, "object_id": med_id},
+            "complete_ref": {"object_type": domain, "object_id": med_id, "slot": slot},
             "event_id": None,
             "action_kind": domain,
             "deep_link": None,
             "severity": None,
             "proof": None,
         })
-    return items
+    return out
 
 
 def sort_key(item: Dict[str, Any]):

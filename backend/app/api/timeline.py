@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_required, get_db
@@ -42,6 +42,18 @@ class TimelineResponse(BaseModel):
 class CompleteRef(BaseModel):
     object_type: str
     object_id: int
+    # F5b 多剂闭环:剂量槽 "HH:MM"。仅真多剂(med 的 reminder_times ≥2 个时点)的项带它。
+    slot: Optional[str] = None
+
+    @model_serializer
+    def _ser(self) -> Dict[str, object]:
+        """单剂/每日一次(slot=None)→ 输出仅 {object_type, object_id},与 F5b 前逐字节相同
+        (不出 ``slot:null`` 段,守存量 6 条 exact-dict 断言 + 客户端 shape 零变化)。
+        真多剂 → 追加 slot 键。"""
+        out: Dict[str, object] = {"object_type": self.object_type, "object_id": self.object_id}
+        if self.slot is not None:
+            out["slot"] = self.slot
+        return out
 
 
 class ProofRef(BaseModel):

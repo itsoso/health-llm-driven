@@ -10,6 +10,9 @@ import api from './api';
 export interface AgendaSource {
   object_type: string; // health_protocol / health_problem
   object_id: number | string;
+  // F5b 多剂闭环:剂量槽 "HH:MM"。仅真多剂(后端 reminder_times ≥2 个时点)的项带它,
+  // 透传给 /agenda/complete 让该剂各自闭环;单剂/每日一次省略(行为与改前一致)。
+  slot?: string;
 }
 
 export interface AgendaItem {
@@ -124,6 +127,8 @@ interface AgendaCompletePayload {
   skip_reason?: AgendaSkipReason | null;
   track: 'protocol' | 'manual';
   value?: Record<string, unknown> | null;
+  // F5b:仅真多剂项透传(source.slot 存在时)。后端单剂忽略,additive。
+  slot?: string;
 }
 
 function normalizeAgendaObjectId(raw: number | string): number {
@@ -151,6 +156,10 @@ export async function completeAgendaItem(
     track,
     value: value ?? null,
   };
+  // F5b:真多剂项带 slot → 透传(后端据它分槽闭环各剂);单剂省略 → 行为与改前一致。
+  if (source.slot) {
+    payload.slot = source.slot;
+  }
   // skipped 必须有原因;通知后台动作没有上下文时默认 no_time,避免无原因跳过污染分析。
   if (status === 'skipped') {
     payload.skip_reason = options?.skipReason ?? 'no_time';

@@ -198,7 +198,7 @@ export async function handleAgendaAction(
   data?: Record<string, any>,
 ) {
   const ref = data?.complete_ref as
-    | { object_type?: string; object_id?: number | string }
+    | { object_type?: string; object_id?: number | string; slot?: string }
     | undefined;
   if (!ref?.object_type || ref.object_id == null) return;
   const objectId = normalizeAgendaActionObjectId(ref.object_id);
@@ -215,7 +215,8 @@ export async function handleAgendaAction(
 
   try {
     await completeAgendaItem(
-      { object_type: ref.object_type, object_id: objectId },
+      // F5b:push complete_ref 带 slot 时(真多剂提醒)透传 → 该剂各自闭环;单剂省略。
+      { object_type: ref.object_type, object_id: objectId, slot: ref.slot },
       'protocol',
       undefined,
       { status },

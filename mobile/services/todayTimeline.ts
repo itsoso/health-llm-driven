@@ -36,6 +36,9 @@ export type TimelineDirection = 'up' | 'down';
 export interface TimelineCompleteRef {
   object_type: string;
   object_id: number;
+  // F5b 多剂闭环:剂量槽 "HH:MM"。仅真多剂(后端 reminder_times ≥2 个时点)的项带它;
+  // 单剂/每日一次省略(后端 model_serializer 不输出该键 → 行为与改前一致)。
+  slot?: string;
 }
 
 export interface TimelineProof {
