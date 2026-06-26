@@ -50,6 +50,7 @@ celery_app = Celery(
         "app.tasks.event_reminders",
         "app.tasks.reorder_scan",
         "app.tasks.course_review_materialize",
+        "app.tasks.checkup_plan_materialize",
     ]
 )
 
@@ -387,6 +388,13 @@ celery_app.conf.beat_schedule = {
     "materialize-course-reviews": {
         "task": "app.tasks.course_review_materialize.materialize_course_reviews",
         "schedule": crontab(hour=6, minute=10),  # 北京 06:10
+    },
+
+    # 每日 06:15 物化「按年龄·性别的人群筛查」复查计划(R7,ReviewSchedule),议程投影直接消费。
+    # 幂等(同名未完成项即跳过),只扫有出生日期的用户;advisory 人群筛查,非处方/非诊断。
+    "materialize-checkup-plans": {
+        "task": "app.tasks.checkup_plan_materialize.materialize_checkup_plans",
+        "schedule": crontab(hour=6, minute=15),  # 北京 06:15
     },
 }
 
