@@ -1,0 +1,61 @@
+{
+  "_meta": {
+    "source": "production DB (run via ssh on prod)",
+    "user_id": 0,
+    "generated_at": "2026-06-26T00:00:00Z",
+    "note": "字段结构示例,值均为占位。真实数据由 backend/scripts/export_design_fixture.py --user N 产出,不入库。"
+  },
+  "persona": {
+    "username": "示例用户",
+    "gender": "male",
+    "birth_date": "1985-01-07",
+    "age": 41,
+    "height_cm": 173.0,
+    "city": "杭州",
+    "timezone": "Asia/Shanghai",
+    "occupation": null
+  },
+  "active_medications": [
+    { "name": "示例药物 A", "dosage": "20mg", "frequency": "每日1次", "is_active": true }
+  ],
+  "supplements": [
+    { "name": "示例补剂", "dosage": "1粒" }
+  ],
+  "health_problems": [
+    { "title": "示例慢病", "severity": "P2", "status": "active" }
+  ],
+  "headline": {
+    "training_readiness": "66 (MODERATE)",
+    "resting_hr": 48,
+    "hrv": 51.0,
+    "sleep_score": 96,
+    "sleep_hours": 8.2,
+    "body_battery": 100,
+    "stress": 7,
+    "steps_today": 856,
+    "spo2_avg": 91.0,
+    "vo2max": 47.0,
+    "ldl": 2.43,
+    "total_cholesterol": 4.54,
+    "hdl": 1.5,
+    "triglycerides": 0.64,
+    "fasting_glucose": 5.6,
+    "hba1c": 5.0,
+    "blood_pressure": "119/75",
+    "uric_acid": 299.0,
+    "egfr": 110.0,
+    "phenotypic_age": null,
+    "last_exam_date": "2026-06-11",
+    "aqi": 52,
+    "pm25": 23.0,
+    "temperature_c": 20.0,
+    "humidity_pct": 50.0,
+    "city": "杭州",
+    "active_conditions": ["示例慢病"],
+    "medication_adherence_7d_pct": 58.4,
+    "active_medication_count": 7
+  },
+  "twin": {
+    "_comment": "完整 14 分区快照在此(physiological / labs / cgm / medication / supplement / genetic / environment / behavioral / acute / mental / chronic / goals / ... )。字段以 backend/app/twin/schema.py 为准。示例从略。"
+  }
+}
