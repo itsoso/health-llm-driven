@@ -51,6 +51,7 @@ celery_app = Celery(
         "app.tasks.reorder_scan",
         "app.tasks.course_review_materialize",
         "app.tasks.checkup_plan_materialize",
+        "app.tasks.write_autonomy_worker",
     ]
 )
 
@@ -395,6 +396,15 @@ celery_app.conf.beat_schedule = {
     "materialize-checkup-plans": {
         "task": "app.tasks.checkup_plan_materialize.materialize_checkup_plans",
         "schedule": crontab(hour=6, minute=15),  # 北京 06:15
+    },
+
+    # Write 自治层(B):每 30 分钟扫有 eligible pending(measurement_prompt)的用户,无人确认自动执行。
+    # 把首切片挂在 GET /write-intents 懒路径上的自动执行解耦到后台(无 HTTP 请求事务 → safety gate
+    # 里的 build_twin 安全);allowlist/每日上限原子槽/安全门/priority=low 全不变,与 GET 路径靠
+    # cap 原子槽 + confirm 原子认领去重,不会双写。见 write_autonomy_worker.run_write_autonomy_sweep。
+    "write-autonomy-sweep": {
+        "task": "app.tasks.write_autonomy_worker.run_write_autonomy_sweep",
+        "schedule": crontab(minute="*/30"),  # 每 30 分钟(Asia/Shanghai)
     },
 }
 

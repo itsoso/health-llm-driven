@@ -510,6 +510,51 @@ def log_external_action_intent(
         return None
 
 
+def log_autonomous_write(
+    db: Session,
+    user_id: int,
+    *,
+    intent_id: int,
+    kind: str,
+    executed_ref: Optional[str],
+    trust_tier: str = "auto",
+) -> Optional[int]:
+    """Write 自治层每次"无人确认即写"的取证审计(NIT-3 / 治理一等记录)。
+
+    这是系统**首次**在无人确认下执行写的能力 —— 自治写不能只留一条 WriteIntent
+    (trust_tier=auto, status=executed)作为唯一痕迹,而要有一条**可查询、可审计**的
+    "system wrote without asking" 一等记录:谁(user_id)、哪条意图(intent_id)、什么
+    kind、什么信任档(trust_tier=auto)、产物引用(executed_ref)、何时(created_at)。
+    action='autonomous_write';agent_type='write_autonomy' —— 审计/看板据此聚合自治写。
+
+    旁路,失败不抛(返回 None),**绝不回滚已执行的写意图**(取证写不能反噬主流程)。
+    无 PII:只记 user_id + intent_id + kind + executed_ref。
+    """
+    if user_id is None:
+        return None
+    try:
+        summary = (
+            f"autonomous_write intent={intent_id} kind={kind} "
+            f"tier={trust_tier} ref={executed_ref}"
+        )
+        return _write(
+            db,
+            user_id=user_id,
+            agent_type="write_autonomy",
+            action="autonomous_write",
+            result_summary=summary,
+            result_detail={
+                "intent_id": intent_id,
+                "kind": kind,
+                "trust_tier": trust_tier,
+                "executed_ref": executed_ref,
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[audit] log_autonomous_write 失败 (跳过): {e}")
+        return None
+
+
 def _write(
     db: Session,
     user_id: int,

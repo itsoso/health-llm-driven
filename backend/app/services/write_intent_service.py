@@ -93,8 +93,16 @@ def propose(
     return wi
 
 
-def confirm(db: Session, user_id: int, intent_id: int) -> Dict[str, Any]:
-    """一键确认 → 执行。原子门防双执行;执行失败整体回滚(状态退回 pending,fail loud)。"""
+def confirm(
+    db: Session, user_id: int, intent_id: int, *, trust_tier: Optional[str] = None
+) -> Dict[str, Any]:
+    """一键确认 → 执行。原子门防双执行;执行失败整体回滚(状态退回 pending,fail loud)。
+
+    trust_tier(可选):自治路径(write_autonomy)传 'auto',让信任档**只在赢得原子认领的
+    那一条**(affected==1)上随 status 一起翻成 auto —— 绝不在认领前用旁路 ORM mutation 改
+    trust_tier(否则并发下若另一路先以 manual 执行了同条,本路的 flush 会把它误标成 auto)。
+    默认 None=不改 trust_tier,人确认路径(端点)行为零变化。
+    """
     wi = (
         db.query(WriteIntent)
         .filter(WriteIntent.id == intent_id, WriteIntent.user_id == user_id)
@@ -105,6 +113,9 @@ def confirm(db: Session, user_id: int, intent_id: int) -> Dict[str, Any]:
     if wi.status != "pending":
         return {"id": wi.id, "status": wi.status, "executed_ref": wi.executed_ref, "idempotent": True}
 
+    claim_values: Dict[str, Any] = {"status": "executed", "decided_at": datetime.now(timezone.utc)}
+    if trust_tier is not None:
+        claim_values["trust_tier"] = trust_tier  # 只随赢得认领的那条原子翻档
     affected = (
         db.query(WriteIntent)
         .filter(
@@ -112,16 +123,19 @@ def confirm(db: Session, user_id: int, intent_id: int) -> Dict[str, Any]:
             WriteIntent.user_id == user_id,
             WriteIntent.status == "pending",
         )
-        .update(
-            {"status": "executed", "decided_at": datetime.now(timezone.utc)},
-            synchronize_session=False,
-        )
+        .update(claim_values, synchronize_session=False)
     )
     if affected != 1:
         # 并发双击:别人先 claim 了 → 不重复执行
         db.rollback()
         db.refresh(wi)
         return {"id": wi.id, "status": wi.status, "executed_ref": wi.executed_ref, "idempotent": True}
+
+    # 赢得认领后,把内存对象 trust_tier 同步成已写入 DB 的值(claim 用 synchronize_session=False
+    # 不会回填内存)——_execute 据 wi.trust_tier 分流(如自治产物用 low 优先级)。只在 affected==1
+    # 后同步 → 不破坏"只随赢得认领的那条翻档"的防误标语义。
+    if trust_tier is not None:
+        wi.trust_tier = trust_tier
 
     try:
         ref = _execute(db, wi)

@@ -134,6 +134,8 @@ from app.models.bedroom_environment import (
 # Write 层意图 (audio/visual/glance 事件 FK 指向 write_intents — 必须在此集中注册,
 # 否则只 `import app.models` 的子进程 (eval runner) 的 create_all 会缺 write_intents 表)
 from app.models.write_intent import WriteIntent
+# Write 自治层每日上限硬保证计数表(cap-TOCTOU 封口,见 write_autonomy._reserve_autonomy_slot)
+from app.models.autonomy_daily_counter import AutonomyDailyCounter
 from app.models.client_event import ClientEvent
 from app.models.ambient_wearable import (
     AudioInputEvent,
