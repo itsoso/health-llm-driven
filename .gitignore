@@ -73,3 +73,7 @@ tmp/
 
 # 融资材料(本地, 不入代码库)
 docs/fundraising/
+
+# Design fixtures contain real Tier-5 health data + PII — never commit (keep SAMPLE-* only)
+design/fixtures/*.json
+!design/fixtures/SAMPLE-*.json
