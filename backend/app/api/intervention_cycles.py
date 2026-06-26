@@ -19,6 +19,7 @@ from app.biomarkers import get_definition
 from app.twin.builder import build_twin
 from app.services import intervention_cycle_service as ics
 from app.services.biomarker_sync import sync_indicators_to_biomarkers
+from app.services.personal_models.outcome_readout import render_outcome_metric
 
 router = APIRouter(prefix="/intervention-cycles", tags=["intervention-cycles"])
 
@@ -29,19 +30,13 @@ class StartCycleRequest(BaseModel):
 
 
 def _outcome_dict(om) -> dict:
-    defn = get_definition(om.metric_code)
-    return {
-        "metric_code": om.metric_code,
-        "display": defn.display if defn else om.metric_code,
-        "unit": om.unit,
-        "baseline_value": om.baseline_value,
-        "target_value": om.target_value,
-        "latest_value": om.latest_value,
-        "delta": om.delta,
-        "delta_pct": om.delta_pct,
-        "direction": om.direction,
-        "status": om.status,
-    }
+    # R16 P1:经唯一渲染权威出口 —— 门控(处方/激素)指标中和裸裁决 + 降级 clinician_review,
+    # 非门控带 RCV 置信度 + 相关非因果。修此前裸 status/delta_pct 外吐的 R4 泄漏。
+    out = render_outcome_metric(om)
+    defn = get_definition(om.metric_code)  # 既有 definition 的 display 更丰富,优先
+    if defn and defn.display:
+        out["display"] = defn.display
+    return out
 
 
 def _cycle_dict(c: InterventionCycle) -> dict:

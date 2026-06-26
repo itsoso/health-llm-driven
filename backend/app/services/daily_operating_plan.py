@@ -106,16 +106,11 @@ def _active_cycle_summary(cycle: InterventionCycle | None, *, plan_date: date) -
     primary = _primary_cycle_outcome(cycle)
     primary_metric = None
     if primary is not None:
-        primary_metric = {
-            "metric_code": primary.metric_code,
-            "display": _metric_display(primary.metric_code),
-            "unit": primary.unit,
-            "baseline_value": primary.baseline_value,
-            "target_value": primary.target_value,
-            "latest_value": primary.latest_value,
-            "direction": primary.direction,
-            "status": primary.status,
-        }
+        # R16 P1:经唯一渲染权威出口 —— 门控(处方/激素)指标中和裸 status/direction + 降级
+        # clinician_review,非门控带置信度 + 相关非因果。修此前裸 primary.status 外吐的 R4 泄漏。
+        from app.services.personal_models.outcome_readout import render_outcome_metric
+        primary_metric = render_outcome_metric(primary)
+        primary_metric["display"] = _metric_display(primary.metric_code)  # 保留既有显示名
     return {
         "id": cycle.id,
         "cycle_type": cycle.cycle_type,

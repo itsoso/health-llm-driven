@@ -3491,6 +3491,7 @@ class AgentExecutor:
         """组织当前 active 周期的人话进展摘要 (无周期则友好提示)。"""
         from app.services import intervention_cycle_service as ics
         from app.biomarkers import get_definition
+        from app.services.personal_models.intervention_priors import _is_clinician_gated_code
 
         cycle = ics.get_active_cycle(self.db, user_id)
         if cycle is None:
@@ -3508,7 +3509,6 @@ class AgentExecutor:
             defn = get_definition(om.metric_code)
             name = defn.display if defn else om.metric_code
             unit = om.unit or ""
-            zh = _status_zh.get(om.status, om.status or "待复查")
             if om.baseline_value is None:
                 lines.append(f"- {name}: 基线缺失, 待补化验")
                 continue
@@ -3516,12 +3516,20 @@ class AgentExecutor:
                 tgt = f"(目标 {om.target_value}{unit})" if om.target_value is not None else ""
                 lines.append(f"- {name}: 基线 {om.baseline_value}{unit} {tgt}, 待复查")
                 continue
+            tgt = f", 目标 {om.target_value}{unit}" if om.target_value is not None else ""
+            # R16 P1:处方/激素指标(LDL/糖化/血糖 …)不外吐裸裁决(改善中/变差)与变化幅度
+            # —— 会被反推成「对你有效」的效应裁决(被并行处方药混杂),违 R4。只给事实值 + 需医生评估。
+            if _is_clinician_gated_code(om.metric_code):
+                lines.append(
+                    f"- {name}: {om.baseline_value}{unit} → {om.latest_value}{unit}{tgt} [需医生评估]"
+                )
+                continue
+            zh = _status_zh.get(om.status, om.status or "待复查")
             delta_txt = ""
             if om.delta is not None:
                 sign = "+" if om.delta > 0 else ""
                 pct = f" ({sign}{om.delta_pct}%)" if om.delta_pct is not None else ""
                 delta_txt = f", Δ {sign}{om.delta}{unit}{pct}"
-            tgt = f", 目标 {om.target_value}{unit}" if om.target_value is not None else ""
             lines.append(
                 f"- {name}: {om.baseline_value}{unit} → {om.latest_value}{unit}{delta_txt}{tgt} [{zh}]"
             )
