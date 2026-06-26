@@ -62,15 +62,17 @@ def test_intervention_cycle_api_flow(client, db, auth_user_and_headers):
     ra = client.get("/api/v1/intervention-cycles/active", headers=headers)
     assert ra.json()["cycle"]["id"] == cid
 
-    # 复查 (改善后): LDL 4.5→3.3 = -26.7% 超 RCV~23% 且仍 >目标3.0 → improving;UA 370 ≤380 → met
+    # 复查 (改善后): LDL 4.5→3.3 (超 RCV 仍未达标); UA 370 ≤380 (达标但受降尿酸药混杂 → 门控)
     _ingest(db, user.id, [("低密度脂蛋白", 3.3, "mmol/L"), ("尿酸", 370, "µmol/L")], datetime.date(2026, 6, 1))
     rr = client.post(f"/api/v1/intervention-cycles/{cid}/recheck", headers=headers)
     assert rr.status_code == 200, rr.text
     outs = {o["metric_code"]: o for o in rr.json()["cycle"]["outcomes"]}
-    # R16 P1:LDL 是处方/激素混杂指标 → 门控 clinician_review,不外吐 improving 裁决(UA 非门控,met 保留)
+    # R16 P1:LDL 处方/激素混杂 → 门控 clinician_review,不外吐 improving 裁决。
+    # R16(2026-06-26 扩门控):UA 受降尿酸药(别嘌醇/非布司他)混杂 → 现也门控,即便复查达标也不外吐 met。
     assert outs["lipid_ldl"]["status"] == "clinician_review"
     assert outs["lipid_ldl"]["requires_clinician"] is True
-    assert outs["UA"]["status"] == "met"
+    assert outs["UA"]["status"] == "clinician_review"
+    assert outs["UA"]["requires_clinician"] is True
     assert rr.json()["cycle"]["latest_snapshot_id"] is not None
 
 

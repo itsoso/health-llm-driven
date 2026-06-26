@@ -45,11 +45,16 @@ def _exec(db, user_id, args):
 
 
 def _seed_abnormal_labs(db, user_id):
-    """LDL 3.8(高) + 尿酸 600(男, 高) + ALT 26(正常) → 异常杠杆 LDL/UA。"""
+    """LDL 3.8(高) + 尿酸 600(男, 高) + 甘油三酯 5.0(高) + ALT 26(正常) → 异常杠杆 LDL/UA/TG。
+
+    R16(2026-06-26)扩门控后 LDL 与 UA 都成处方/药物混杂指标(门控),TG(甘油三酯)是
+    生活方式主导的**非门控**指标,留作"保留描述式裁决(改善中 + Δ)"的正例。
+    """
     from app.services.biomarker_service import ingest_exam
     e = _mk_exam(db, user_id, [
         ("低密度脂蛋白", 3.8, "mmol/L"),
         ("尿酸", 600, "µmol/L"),
+        ("甘油三酯", 5.0, "mmol/L"),
         ("谷丙转氨酶", 26, "U/L"),
     ], datetime.date(2026, 3, 1))
     ingest_exam(db, e)
@@ -71,10 +76,12 @@ def test_status_reports_baseline_latest_delta(db):
     cycle = start_metabolic_cycle(db, u.id, twin, days=90, start_date=datetime.date(2026, 3, 1))
     assert cycle.outcomes  # 异常项纳入
 
-    # 复查: LDL 降到 3.0(达标), 尿酸 600→450 = -25% 超 RCV 且仍 >目标380 → 改善中
+    # 复查: LDL 3.8→3.0, 尿酸 600→450 (两者门控→需医生评估), 甘油三酯 5.0→2.0 = -60% 超 RCV(~55%)
+    # 且仍 >目标1.7 → 改善中(非门控保留描述式裁决 + Δ)
     _mk_exam(db, u.id, [
         ("低密度脂蛋白", 3.0, "mmol/L"),
         ("尿酸", 450, "µmol/L"),
+        ("甘油三酯", 2.0, "mmol/L"),
     ], datetime.date(2026, 6, 1))
     from app.services.biomarker_service import ingest_exam
     from app.models.medical_exam import MedicalExam
@@ -86,14 +93,18 @@ def test_status_reports_baseline_latest_delta(db):
 
     out = _exec(db, u.id, {"action": "status"})
     assert "基线 → 最新" in out
-    # baseline → latest 出现
-    assert "3.8" in out and "3.0" in out
-    assert "600" in out and "450" in out
-    # delta + 状态中文标注(尿酸=非门控,保留裁决 + Δ)
+    # baseline → latest 出现(门控指标仍展示用户自己的事实值, 只中和裁决/变化幅度)
+    assert "3.8" in out and "3.0" in out      # LDL
+    assert "600" in out and "450" in out      # UA
+    assert "5.0" in out and "2.0" in out      # TG
+    # 非门控 TG: 保留描述式裁决 + Δ
     assert "Δ" in out
-    assert "改善中" in out    # 尿酸朝目标方向但未达标(非处方混杂 → 保留描述式裁决)
-    # R16 P1:LDL 是处方/激素混杂指标 → 门控为「需医生评估」,不外吐达标/改善裁决与变化幅度
+    assert "改善中" in out    # 甘油三酯朝目标方向但未达标(非门控 → 保留描述式裁决)
+    # R16:LDL + UA 都是处方/药物混杂指标 → 门控为「需医生评估」,不外吐达标/改善裁决与变化幅度
     assert "需医生评估" in out
+    # 防回归:门控的 UA 这一行绝不出"改善中"(它向目标移动了, 旧行为会误报改善)
+    ua_line = next((ln for ln in out.splitlines() if "尿酸" in ln), "")
+    assert ua_line and "需医生评估" in ua_line and "改善中" not in ua_line and "Δ" not in ua_line
 
 
 # ── start: 两段式确认 ─────────────────────────────────────

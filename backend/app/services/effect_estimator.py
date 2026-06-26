@@ -25,6 +25,11 @@
 隐私 (AGENTS.md §5): 只产**结构化效应 + 区间**, 不外泄原始 baseline/latest 值;
 喂 LLM 的 prompt blob 只含 effect/CI/方向/人话结论。
 
+安全 (R16 · R4): 处方/激素/药物混杂指标 (LDL/UA/ALT/AST/GGT/HbA1c/TC/血压… 经
+intervention_priors.is_clinician_gated_metric 判定) —— is_effective 强制 False, 人话结论改
+"请由医生判断" (不含"很可能有效/可建议继续"), 不在无医生时对混杂指标下因果有效性裁决。
+与 treatment_effect 共用**同一门控集** (单一事实源), 防两个估计器门控漂移。
+
 降级: 任何 DB / 数学异常都不抛崩调用方 ——
   - estimate_effect: DB 失败回退到"纯先验" (N=0), 永不 raise。
   - effect_estimate_prompt_blob: 失败静默返回空串 (prompt 注入是旁路)。
@@ -38,6 +43,8 @@ from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional, Sequence
 
 from sqlalchemy.orm import Session
+
+from app.services.personal_models.intervention_priors import is_clinician_gated_metric
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +80,8 @@ class EffectEstimate:
     prior_var: float
     population_n: int              # 贡献人群先验的观测数 (0 = 用了默认先验)
     confidence: str                # low / medium / high
-    is_effective: bool             # CI 在 desirable 方向上排除 0
+    is_effective: bool             # CI 在 desirable 方向上排除 0 (处方/混杂指标强制 False)
+    requires_clinician: bool = False  # R16: 处方/激素/药物混杂指标 → 不下有效裁决, 交医生
     unit: Optional[str] = None
     interpretation: str = ""
 
@@ -189,6 +197,12 @@ def estimate_from_deltas(
     effective = _is_effective(post_mean, ci_low, ci_high, direction)
     conf = _confidence(n, ci_high - ci_low)
 
+    # R16 · R4: 处方/激素/药物混杂指标 —— 即使 CI 在好方向排除 0, 也不在无医生时断言"有效"
+    # (并发处方可能才是真正驱动)。effect/CI 仍留结构化字段, 仅抑制裁决 + 改人话为交医生。
+    requires_clinician = is_clinician_gated_metric(metric_code)
+    if requires_clinician:
+        effective = False
+
     est = EffectEstimate(
         metric_code=metric_code,
         cycle_type=cycle_type,
@@ -204,6 +218,7 @@ def estimate_from_deltas(
         population_n=population_n,
         confidence=conf,
         is_effective=effective,
+        requires_clinician=requires_clinician,
         unit=unit,
     )
     est.interpretation = _interpret(est)
@@ -226,6 +241,15 @@ def _interpret(est: EffectEstimate) -> str:
         return (
             f"{name}: 暂无复查观测, 仅人群先验 (effect≈{eff_s}, {pct}% CI {ci_s}) —— "
             f"尚未在你身上验证, 需先跑复查。"
+        )
+
+    # R16 · R4: 处方/激素/药物混杂指标 —— 删因果有效性裁决, 描述 + 混杂提示 + 交医生
+    # (effect/CI 仍在结构化 to_dict 字段供内部, 不进面向用户/LLM 的人话结论)。
+    if est.requires_clinician:
+        return (
+            f"{name}: 这个周期的变化同期可能受用药等多重因素影响, 本系统不区分; "
+            f"是否有效、是否需要调整方案, 请由医生判断 "
+            f"(基于 {est.n_observations} 次复查; 相关, 非因果, 非医疗诊断)。"
         )
 
     desirable = "降" if est.direction == "down" else "升"
@@ -397,6 +421,10 @@ def effect_estimate_prompt_blob(db: Session, user_id: int) -> str:
         lines.append(
             "- 解读: is_effective=有效 (区间在好的方向排除 0) → 可建议继续; "
             "未确认且置信度够 → 可提议换方案; 置信度低 → 提示继续复查积累, 别下定论。"
+        )
+        lines.append(
+            "- 安全: 标注\"请由医生判断\"的指标 (处方/激素/药物混杂, 如 LDL/尿酸/肝酶/血糖/血压) "
+            "一律不下\"有效\"结论, 不建议据此调药, 以医生为准。"
         )
         lines.append("- 措辞: 这是自我管理实验结论, 非医疗诊断; 重大调整结合医生。")
         return "\n".join(lines)

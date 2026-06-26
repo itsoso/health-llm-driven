@@ -73,8 +73,19 @@ def test_nongated_flat_is_inconclusive():
 
 
 def test_pending_or_none_is_insufficient_low():
-    out = render_outcome_metric(_om(metric_code="alt", status="pending", confidence=None, delta_pct=None))
+    # 非门控指标 (weight): pending → 数据不足/low (alt 已于 R16 扩门控, 改用非门控 code 测此路径)
+    out = render_outcome_metric(_om(metric_code="weight", status="pending", confidence=None, delta_pct=None))
     assert out["display_label"] == "数据不足" and out["confidence_tier"] == "low"
+
+
+def test_gated_metric_pending_is_clinician_review_not_insufficient():
+    """R16 扩门控: 门控指标 (alt/UA/lipid_tc/ggt/ast) 即使 pending/无数据也 fail-closed 到
+    需医生评估 (门控优先于 insufficient), 绝不外吐裸 status/delta。"""
+    for code in ("alt", "ast", "ggt", "UA", "lipid_tc"):
+        out = render_outcome_metric(_om(metric_code=code, status="pending", confidence=None, delta_pct=None))
+        assert out["requires_clinician"] is True, code
+        assert out["display_label"] == "需医生评估", code
+        assert out["delta_pct"] is None and out["status"] == "clinician_review", code
 
 
 def test_every_output_carries_tier_and_attribution():

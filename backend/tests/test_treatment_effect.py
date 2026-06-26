@@ -518,3 +518,97 @@ def test_cross_user_cycle_isolation(client, db, auth_user_and_headers):
     )
     assert resp.status_code == 200
     assert resp.json()["estimates"] == []
+
+
+# --------------------------------------------------------------------------
+# 11. R16 (2026-06-26 · founder/clinician call): 扩展 clinician gate 覆盖药物混杂的
+#     代谢周期默认靶标 —— 门控 TC + UA + ALT + GGT; TG / HDL 仍非门控 (生活方式主导)。
+#     临床依据: TC 跟随已门控的 LDL (他汀混杂); UA 受降尿酸药主导; ALT/GGT 肝酶升高
+#     可能是药物性肝损伤 (DILI) 应交医生 + 多药混杂。
+# --------------------------------------------------------------------------
+@pytest.mark.parametrize("metric_code", [
+    "lipid_tc", "tc", "total_cholesterol",
+    "ua", "uric_acid",
+    "alt", "ggt",
+    # 大小写无关 (collector 可能给大写 canonical code)
+    "UA", "ALT", "GGT",
+])
+def test_r16_confoundable_codes_are_clinician_gated(metric_code):
+    """TC / UA / ALT / GGT (含别名 + 大写) → requires_clinician=True。"""
+    assert get_prior("metabolic_90d", metric_code).requires_clinician is True
+    # 即便落到未知 cycle 的 DEFAULT_PRIOR, 精确集兜底仍门控
+    assert get_prior("some_unknown_cycle", metric_code).requires_clinician is True
+
+
+def test_r16_alt_explicit_prior_flipped_to_clinician_gated():
+    """ALT 显式先验由 requires_clinician=False 上调为 True (与精确集一致, 数据不自相矛盾)。"""
+    from app.services.personal_models.intervention_priors import PRIORS
+
+    p = PRIORS[("metabolic_90d", "alt")]
+    assert p.requires_clinician is True
+    assert p.direction == "down"
+
+
+@pytest.mark.parametrize("metric_code", ["lipid_tg", "lipid_hdl", "tg", "hdl", "triglycerides"])
+def test_r16_lifestyle_lipids_stay_non_gated(metric_code):
+    """TG / HDL 生活方式主导 + 处方低发 → 不门控 (否则废掉周期合法读出 = over-gating 回归)。"""
+    assert get_prior("metabolic_90d", metric_code).requires_clinician is False
+
+
+@pytest.mark.parametrize("metric_code", [
+    "salt_intake",        # 含子串 "alt" —— 不得误门控
+    "watch_steps",        # 含子串 "tc"
+    "match_score",        # 含子串 "tc"
+    "annual_checkup",     # 含子串 "ua"
+    "manual_log",         # 含子串 "ua"
+])
+def test_r16_exact_set_is_not_substring_match(metric_code):
+    """新门控 code 走**精确集**而非子串 —— 含相同字母的无关指标不得被误门控。
+
+    这正是不把短 code (ua/tc/alt/ggt) 放进 _CLINICIAN_GATED_KEYWORDS 子串集的原因。
+    """
+    assert get_prior("metabolic_90d", metric_code).requires_clinician is False
+
+
+@pytest.mark.parametrize("metric_code", ["ua", "uric_acid", "lipid_tc", "alt", "ggt"])
+def test_r16_gated_code_significant_change_routes_clinician_review(metric_code):
+    """门控 code 即使统计判方向 → verdict 一律降级 clinician_review (经 get_prior → estimate_effect)。"""
+    prior = get_prior("metabolic_90d", metric_code)
+    est = estimate_effect(observed_delta=-60.0, prior=prior, metric_code=metric_code)
+    assert est.requires_clinician is True
+    assert est.verdict == "clinician_review"
+    assert est.verdict not in ("improved_in_cycle", "worsened_in_cycle")
+    assert "请由医生判断" in est.message
+    assert est.display_label == "需医生评估"
+
+
+def test_r16_tg_significant_change_is_directional_not_clinician_review():
+    """TG 非门控: 显著改善仍出方向裁决, 不被降级 (over-gating 回归护栏)。"""
+    prior = get_prior("metabolic_90d", "lipid_tg")
+    assert prior.requires_clinician is False
+    est = estimate_effect(observed_delta=-5.0, prior=prior, metric_code="lipid_tg")
+    assert est.verdict in ("improved_in_cycle", "worsened_in_cycle")
+    assert est.verdict != "clinician_review"
+
+
+def test_r16_estimate_cycle_effects_gates_confoundables_not_tg(db, auth_user_and_headers):
+    """端到端 (estimate_cycle_effects): UA/TC/ALT/GGT 行 → clinician_review;
+    TG 行 → 方向裁决, 不被降级。"""
+    user, _ = auth_user_and_headers
+    _make_cycle_with_metrics(
+        db, user.id,
+        baseline_latest_pairs=[
+            ("ua", "umol/L", 480.0, 360.0, "down"),      # Δ -120 → 显著
+            ("lipid_tc", "mmol/L", 9.0, 4.0, "down"),    # Δ -5.0 → 显著
+            ("alt", "U/L", 80.0, 35.0, "down"),          # Δ -45 → 显著
+            ("ggt", "U/L", 90.0, 45.0, "down"),          # Δ -45 → 显著
+            ("lipid_tg", "mmol/L", 6.0, 1.0, "down"),    # Δ -5.0 → 显著 (非门控)
+        ],
+    )
+    results = estimate_cycle_effects(db, user.id)
+    by_code = {r["metric_code"]: r for r in results}
+    for code in ("ua", "lipid_tc", "alt", "ggt"):
+        assert by_code[code]["requires_clinician"] is True, code
+        assert by_code[code]["verdict"] == "clinician_review", code
+    assert by_code["lipid_tg"]["requires_clinician"] is False
+    assert by_code["lipid_tg"]["verdict"] == "improved_in_cycle"

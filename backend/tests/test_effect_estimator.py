@@ -5,6 +5,8 @@
 import uuid
 from datetime import date
 
+import pytest
+
 from app.services.effect_estimator import (
     DEFAULT_PRIOR_MEAN,
     DEFAULT_PRIOR_VAR,
@@ -78,13 +80,14 @@ class TestEstimateFromDeltas:
         assert abs(e3.effect - (-0.6)) < abs(e1.effect - (-0.6))
 
     def test_direction_down_effective(self):
-        # 一致较大下降 → CI 整段 < 0 → down 方向有效
+        # 一致较大下降 → CI 整段 < 0 → down 方向有效 (用非门控指标 weight: 门控指标会被强制降级)
         est = estimate_from_deltas(
-            "lipid_ldl", [-1.2, -1.1, -1.3, -1.2], direction="down",
+            "weight", [-1.2, -1.1, -1.3, -1.2], direction="down",
         )
         assert est.effect < 0
         assert est.ci_high < 0
         assert est.is_effective is True
+        assert est.requires_clinician is False
         assert "有效" in est.interpretation
 
     def test_direction_up_effective(self):
@@ -103,6 +106,35 @@ class TestEstimateFromDeltas:
         )
         assert est.effect < 0
         assert est.is_effective is False
+
+    # ── R16 · R4: 处方/激素/药物混杂指标门控 (与 treatment_effect 共用 is_clinician_gated_metric) ──
+    @pytest.mark.parametrize("metric_code", [
+        "lipid_ldl", "lipid_tc", "glucose_hba1c",   # 经子串关键词门控
+        "UA", "ALT", "AST", "GGT",                   # 经精确集门控 (含大写 canonical code)
+    ])
+    def test_clinician_gated_metric_suppressed_even_when_ci_excludes_zero(self, metric_code):
+        """门控指标即使一致强改善 (CI 整段排除 0) → is_effective 强制 False + 交医生人话,
+        绝不出"很可能有效/可建议继续"。这是 effect_estimator 的 R4 护栏 (LLM 直连此路径)。"""
+        est = estimate_from_deltas(
+            metric_code, [-1.2, -1.1, -1.3, -1.2], direction="down",
+        )
+        # 数学层面 CI 确实排除 0 (证明降级不是因为信号弱)
+        assert est.ci_high < 0
+        assert est.requires_clinician is True
+        assert est.is_effective is False
+        assert "很可能有效" not in est.interpretation
+        assert "可建议继续" not in est.interpretation
+        assert "请由医生判断" in est.interpretation
+
+    def test_non_gated_lipid_tg_stays_effective(self):
+        """TG (非门控, 生活方式主导) 一致改善仍出"有效"裁决 —— over-gating 回归护栏。"""
+        est = estimate_from_deltas(
+            "lipid_tg", [-1.2, -1.1, -1.3, -1.2], direction="down",
+        )
+        assert est.ci_high < 0
+        assert est.requires_clinician is False
+        assert est.is_effective is True
+        assert "很可能有效" in est.interpretation
 
     def test_population_prior_used_when_enough(self):
         # 人群 >= POP_PRIOR_MIN_OBS → 用人群均值作先验 (非默认 0)
@@ -131,7 +163,7 @@ class TestEstimateFromDeltas:
         for k in (
             "metric_code", "direction", "effect", "ci_low", "ci_high", "ci_level",
             "n_observations", "n_cycles", "confidence", "is_effective", "interpretation",
-            "prior_mean", "population_n",
+            "prior_mean", "population_n", "requires_clinician",
         ):
             assert k in d
 
@@ -234,6 +266,7 @@ class TestSummaryAndBlob:
         assert effect_estimates_for_user(db, u.id) == []
 
     def test_prompt_blob_present_when_cycle(self, db):
+        # 非门控指标 (weight): blob 含效应数值的人话结论
         from app.models.intervention_cycle import InterventionCycle, OutcomeMetric
 
         u = _mk_user(db, "ee_blob")
@@ -243,8 +276,8 @@ class TestSummaryAndBlob:
         )
         db.add(cyc); db.commit(); db.refresh(cyc)
         db.add(OutcomeMetric(
-            cycle_id=cyc.id, metric_code="lipid_ldl", unit="mmol/L",
-            baseline_value=5.0, latest_value=3.8, delta=-1.2,
+            cycle_id=cyc.id, metric_code="weight", unit="kg",
+            baseline_value=82.0, latest_value=78.0, delta=-4.0,
             direction="down", status="improving",
         ))
         db.commit()
@@ -252,6 +285,23 @@ class TestSummaryAndBlob:
         blob = effect_estimate_prompt_blob(db, u.id)
         assert "干预效应估计" in blob
         assert "effect=" in blob
+
+    def test_prompt_blob_gates_prescription_metric(self, db):
+        """R4: LLM 直连的 prompt blob 对处方混杂指标 (LDL on statin) 绝不注入"很可能有效"。
+        修复前此路径会告诉他汀用户的 LDL 下降"很可能有效, 可建议继续"。
+
+        注: 不断言"可建议继续"/"请由医生判断"缺失 —— 这两词出现在 blob 末尾的**通用解读脚注**
+        里 (与具体指标无关), 断言它们会变成稻草人。改断言只出现在**门控指标人话行**里的
+        "本系统不区分", 且"很可能有效"(仅出现在 is_effective 裁决行) 整段缺失 —— 后者在还原
+        门控后必红。"""
+        u = _mk_user(db, "ee_blob_rx")
+        # 一致强下降 (统计上 CI 排除 0) 的处方指标 → 还原门控会渲染成"很可能有效"
+        _mk_cycle_with_deltas(db, u.id, "lipid_ldl", [-1.2, -1.1, -1.3, -1.2])
+
+        blob = effect_estimate_prompt_blob(db, u.id)
+        assert "干预效应估计" in blob
+        assert "很可能有效" not in blob          # 还原门控后必红
+        assert "本系统不区分" in blob            # 门控指标人话行渲染了 (脚注无此词, 非稻草人)
 
     def test_prompt_blob_empty_when_no_cycle(self, db):
         u = _mk_user(db, "ee_blobempty")

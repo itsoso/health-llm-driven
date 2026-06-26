@@ -38,11 +38,14 @@ PRIORS: Dict[Tuple[str, str], EffectPrior] = {
         mu_pop=-0.4, tau_pop=0.5, obs_noise=0.3, mcid=0.3,
         evidence_tier="B", requires_clinician=True, direction="down",
     ),
-    # ALT: MASLD 减重 7-10% → 转氨酶下降, 个体差异大; 单次 ALT CV 高 (~10-15 U/L);
-    # MCID 取 10 U/L。ref: AASLD 2025 MASLD; 减重→MASH 缓解。
+    # ALT: MASLD 减重 7-10% → 转氨酶下降 (统计参数仍据此; 单次 CV 高 ~10-15 U/L, MCID 10 U/L;
+    # ref AASLD 2025 MASLD)。R16 安全裁决 (2026-06-26, founder/clinician call): 肝酶**升高**可能
+    # 是药物性肝损伤 (DILI), 应交医生; 且 ALT 受多药混杂 → requires_clinician=True, 即使统计判
+    # 改善/恶化也降级 clinician_review (post_mean/CI 仍留结构化字段供内部)。原 False 是按纯
+    # MASLD 生活方式读出设的, 现按"药物混杂 + DILI 安全信号"上调; 与 _CLINICIAN_GATED_EXACT_CODES 一致。
     ("metabolic_90d", "alt"): EffectPrior(
         mu_pop=-8.0, tau_pop=15.0, obs_noise=10.0, mcid=10.0,
-        evidence_tier="B", requires_clinician=False, direction="down",
+        evidence_tier="B", requires_clinician=True, direction="down",
     ),
     # 体重: 90 天结构化生活方式 ~−3~−5 kg; 体重秤 + 昼夜波动 σ≈0.5 kg; MCID 取 2 kg
     # (保守, 低于 5% 临床缓解阈值但越过测量噪声)。ref: DPP/LookAHEAD 生活方式减重。
@@ -94,16 +97,44 @@ DEFAULT_PRIOR = EffectPrior(
 
 # 处方药 / 激素相关指标关键词 (S3 安全兜底)。即使未登记 (走 DEFAULT_PRIOR), metric_code
 # 命中任一 (子串匹配) → 强制 requires_clinician=True, 防止对处方实验下"有效性裁决"。
+# 注: 这些都是足够长/唯一的子串 (ldl/apob/hba1c/sbp/...), 误伤概率低; 短 code 走下面的精确集。
 _CLINICIAN_GATED_KEYWORDS = (
     "ldl", "apob", "hba1c", "a1c", "glucose_fasting", "fasting_glucose",
     "sbp", "dbp", "bp", "blood_pressure",
     "testosterone", "tsh", "ft4", "cortisol",
 )
 
+# R16 (2026-06-26): 药物混杂的代谢周期默认靶标 —— 精确 code 集 (含别名), **不**用子串。
+# 这些 code 太短, 子串会误伤无关指标 (如 "salt_intake" 命中 "alt"、"watch"/"match" 命中 "tc"、
+# "manual"/"annual" 命中 "ua"), 故按精确 code 匹配。临床依据 (founder/clinician call):
+#   - TC (总胆固醇): 跟随已门控的 LDL, 他汀混杂 → 门控 LDL 不门控 TC 不一致。
+#   - UA (尿酸): 降尿酸药 (别嘌醇/非布司他) 在代谢人群常见且药效主导生活方式。
+#   - ALT/AST/GGT (转氨酶/肝酶): 升高可能是药物性肝损伤 (DILI), 应交医生; 且受多药混杂。
+#     AST 与 ALT 同为转氨酶, DILI 理由对称, 一并门控 (registry code="AST")。
+# 不入此集 (生活方式主导 + 处方低发, 门控会废掉周期合法读出): lipid_tg (甘油三酯)、lipid_hdl。
+_CLINICIAN_GATED_EXACT_CODES = frozenset({
+    "lipid_tc", "tc", "total_cholesterol",
+    "ua", "uric_acid",
+    "alt", "ast",
+    "ggt",
+})
+
 
 def _is_clinician_gated_code(metric_code: str) -> bool:
     code = (metric_code or "").lower()
+    if code in _CLINICIAN_GATED_EXACT_CODES:
+        return True
     return any(kw in code for kw in _CLINICIAN_GATED_KEYWORDS)
+
+
+def is_clinician_gated_metric(metric_code: str) -> bool:
+    """公开单一事实源: metric_code 是否属处方/激素/药物混杂指标。
+
+    任何对个体化"干预效应/有效性"下裁决的估计器 (treatment_effect 经 get_prior、
+    effect_estimator 直接调本函数) 都共用这同一门控集 —— 防止两个估计器门控集漂移
+    (历史教训: 漏路由的高曝光消费端是真正的 R4 泄漏点)。
+    """
+    return _is_clinician_gated_code(metric_code)
 
 
 def get_prior(cycle_type: str, metric_code: str) -> EffectPrior:
