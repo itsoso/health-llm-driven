@@ -114,6 +114,34 @@ def _data_quality_item(db: Session, user_id: int) -> Dict[str, Any] | None:
     )
 
 
+def _wearable_router_quality_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
+    """Wearable Router stale/conflict issues → data_quality agenda items."""
+    try:
+        from app.services import wearable_router
+
+        issues = wearable_router.data_quality_issues(db, user_id, max_items=3)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("agenda: wearable router data_quality 计算失败,跳过: %s", e)
+        return []
+
+    items: List[Dict[str, Any]] = []
+    for issue in issues:
+        items.append(_agenda_item(
+            type="data_quality",
+            title=issue.get("title") or "可穿戴数据待核对",
+            status="info",
+            time_window="anytime",
+            priority=73 if issue.get("kind") == "conflict" else 68,
+            detail=issue.get("message"),
+            metric=issue.get("metric"),
+            issue_kind=issue.get("kind"),
+            severity=issue.get("severity"),
+            wearable_router_issue=issue,
+            source={"object_type": "wearable_router", "object_id": user_id},
+        ))
+    return items
+
+
 def _self_correction_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
     """协议自纠偏(R14)→ 只读建议项(不可完成)。失败降级。"""
     try:
@@ -308,6 +336,8 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
     dq = _data_quality_item(db, user_id)
     if dq is not None:
         items.append(dq)
+    for wq in _wearable_router_quality_items(db, user_id):
+        items.append(wq)
 
     # 4) 协议自纠偏(连续跳过)→ correction 提示(R14,非羞辱式)
     for c in _self_correction_items(db, user_id):
