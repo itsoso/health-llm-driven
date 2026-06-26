@@ -98,6 +98,7 @@ KNOWN_SOURCE_OBJECT_TYPES = frozenset({
     "supplement",
     "training_decision",
     "training_plan",
+    "wearable_router",
     "write_intent",
 })
 
