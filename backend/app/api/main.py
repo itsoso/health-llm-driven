@@ -130,6 +130,7 @@ from app.api import (
     personal_outcome,
     biomarkers,
     intervention_cycles,
+    crossover_experiments,
     monthly_report,
     doctor_report,
     action_card,
@@ -295,6 +296,7 @@ api_router.include_router(personal_models.router)
 api_router.include_router(personal_outcome.router, tags=["personal-outcome"])
 api_router.include_router(biomarkers.router)
 api_router.include_router(intervention_cycles.router)
+api_router.include_router(crossover_experiments.router)
 api_router.include_router(monthly_report.router, tags=["monthly-report"])
 api_router.include_router(doctor_report.router, tags=["doctor-report"])
 api_router.include_router(rhinitis_trend.router, tags=["rhinitis-trend"])

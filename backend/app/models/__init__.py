@@ -124,6 +124,7 @@ from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
 from app.models.twin_snapshot import TwinSnapshot
 from app.models.biomarker_observation import BiomarkerObservation
 from app.models.intervention_cycle import InterventionCycle, OutcomeMetric
+from app.models.crossover_experiment import CrossoverExperiment  # R16 P4 A·B·A·B 交叉实验
 # Apple Watch ECG 房颤筛查信号 (点事件, 独立表)
 from app.models.ecg_observation import EcgObservation
 # 智能卧室环境快照 (家居传感器点事件, §11 不进通用 LLM)
@@ -158,6 +159,7 @@ __all__ = [
     "BiomarkerObservation",
     "InterventionCycle",
     "OutcomeMetric",
+    "CrossoverExperiment",
     "EcgObservation",
     "BedroomEnvironmentSnapshot",
     "BedroomAutomationEvent",
