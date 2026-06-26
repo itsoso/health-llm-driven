@@ -355,6 +355,70 @@ def test_safety_gate_high_tier_suppresses_on_high_alert(db, monkeypatch):
     assert write_autonomy._safety_blocks_autonomy(db, user.id, tier="oops_typo") is True
 
 
+def test_gate_tier_typo_falls_back_to_high_not_critical(db, monkeypatch):
+    """Codex capstone BLOCKING #2(红绿):_GATE_TIER_BY_KIND 里 measurement_prompt 配成拼写错值 →
+    批 reducer 必须 collapse 到更严 HIGH 门(不得落到更松 CRITICAL)。否则 tier 配错就放松了门:
+    内部 _safety_blocks_autonomy 的"未知→HIGH"兜底被绕过(reducer 显式传了 CRITICAL)。
+
+    红绿:把 reducer 改回 `any(==HIGH) else CRITICAL` → 本测试转红(typo→CRITICAL 门放行 HIGH 告警 → 自治执行)。
+    """
+    from app.agents.safety_guardian.schema import Severity
+
+    class _A:
+        def __init__(self, sev):
+            self.severity = sev
+
+    # measurement_prompt 的门档配成拼写错(既非 HIGH 也非 CRITICAL)
+    monkeypatch.setitem(write_autonomy._GATE_TIER_BY_KIND, "measurement_prompt", "oops_typo")
+    # 安全评估:1 条 HIGH 告警、0 规则失败 —— CRITICAL 门放行、HIGH 门抑制(用真 _safety_blocks_autonomy)
+    monkeypatch.setattr(
+        "app.twin.builder.build_twin", lambda db, uid, use_cache=True: object(), raising=False
+    )
+    monkeypatch.setattr(
+        "app.agents.safety_guardian.engine.evaluate_rules_with_status",
+        lambda twin: ([_A(Severity.HIGH)], 0),
+    )
+    user, _ = create_authenticated_user(db)
+    _add_measurement_wi(db, user.id)
+    res = write_autonomy.auto_execute_pending(db, user.id)
+    # typo tier → 必 collapse 到 HIGH 门 → HIGH 告警抑制自治(绝不因配错放松)
+    assert res["auto_executed"] == 0 and res["reason"] == "safety_gate_blocked"
+
+
+def test_cap_slot_not_released_when_confirm_raises_after_commit(db, monkeypatch):
+    """Codex capstone BLOCKING #1(红绿):confirm 在 db.commit() **之后**抛(refresh/旁路闪断)→
+    写已落库(status=executed),自治路径**不得**归还额度,否则并发 sweep 复用槽 → 越 CAP(破"硬保证")。
+
+    红绿:把 except 块改回无条件 `_release_autonomy_slot` → 本测试转红(count 被错误减回 0)。
+    """
+    from app.models.autonomy_daily_counter import AutonomyDailyCounter
+    from app.models.write_intent import WriteIntent as _WI
+    from app.utils.timezone import get_china_today
+
+    _no_critical(monkeypatch)
+    user, _ = create_authenticated_user(db)
+    wi = _add_measurement_wi(db, user.id)
+
+    def _confirm_then_boom(db, uid, iid, trust_tier=None):
+        # 模拟 confirm 的"已提交"效果:翻 executed 并 commit(写落库),再抛(模拟 commit 后 refresh 闪断)。
+        row = db.query(_WI).filter(_WI.id == iid, _WI.user_id == uid).first()
+        row.status = "executed"
+        row.trust_tier = trust_tier or row.trust_tier
+        db.commit()
+        raise RuntimeError("post-commit refresh boom")
+
+    monkeypatch.setattr("app.services.write_intent_service.confirm", _confirm_then_boom)
+
+    res = write_autonomy.auto_execute_pending(db, user.id)
+    # confirm 抛 → 不计成功执行数,但写确实落库 → 额度已消费不归还。
+    assert res["auto_executed"] == 0
+    db.refresh(wi)
+    assert wi.status == "executed", "confirm 在 commit 后抛 → 写已落库"
+    row = db.query(AutonomyDailyCounter).filter_by(user_id=user.id, day=get_china_today()).first()
+    assert row is not None and row.count == 1, \
+        "confirm 在 commit 后抛 → 额度已消费,绝不得归还(保 CAP 硬保证)"
+
+
 # ───────────── (1) 后台 Celery worker:无 HTTP 请求自动执行 measurement_prompt ─────────────
 
 

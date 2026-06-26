@@ -277,7 +277,12 @@ def auto_execute_pending(db: Session, user_id: int) -> Dict[str, Any]:
 
     # 安全门按本批 eligible kind 里**最严**的档位评一次(任一 kind 要 HIGH → 整批用 HIGH)。
     # B v1 仅 measurement_prompt(CRITICAL),故仍是 CRITICAL 门,首切片行为零变化。
-    gate_tier = "HIGH" if any(_gate_tier_for(k) == "HIGH" for k in eligible_kinds) else "CRITICAL"
+    # fail-safe(Codex capstone BLOCKING #2):仅当本批**所有** eligible kind 都显式 'CRITICAL'
+    # 才用更松的 CRITICAL 门;任一 HIGH **或未知/拼写错**的档 → collapse 到更严的 HIGH。
+    # 旧写法 `any(==HIGH) else CRITICAL` 会把 _GATE_TIER_BY_KIND 里的拼写错值(非 HIGH 非 CRITICAL)
+    # 误落到 CRITICAL(更松)分支,且因显式传 'CRITICAL' 绕过 _safety_blocks_autonomy 内部
+    # "未知 tier→HIGH" 的兜底 —— 等于 tier 配错就放松了门。改成"全显式 CRITICAL 才 CRITICAL,否则 HIGH"。
+    gate_tier = "CRITICAL" if all(_gate_tier_for(k) == "CRITICAL" for k in eligible_kinds) else "HIGH"
     # CRITICAL(默认)时按旧 2-参签名调用 —— 兼容存量调用方与既有 monkeypatch(`lambda db, uid: ...`);
     # 仅 HIGH 才显式传 tier(此分支今日无 kind 触发,框架就位待 C)。
     blocked = (
@@ -327,9 +332,26 @@ def auto_execute_pending(db: Session, user_id: int) -> Dict[str, Any]:
         # trust_tier=auto 由 confirm 在赢得原子认领时随 status 一起翻档(不旁路改,防并发误标)。
         try:
             res = write_intent_service.confirm(db, user_id, wi.id, trust_tier="auto")
-        except Exception as e:  # noqa: BLE001 — 单条失败不拖累其余;confirm 已 fail-loud 回滚该条
-            logger.warning("[write_autonomy] auto-confirm wi=%s 失败,跳过: %s", wi.id, e)
-            _release_autonomy_slot(db, user_id, today)  # 未执行 → 归还额度
+        except Exception as e:  # noqa: BLE001 — 单条失败不拖累其余
+            # cap fail-safe(Codex capstone BLOCKING #1):confirm 在 db.commit() **之后**才 refresh,
+            # 若 refresh/旁路在 commit 之后抛 → 写已落库(status=executed + SmartReminder 已建)却异常逃逸。
+            # 无条件归还额度会把**已消费**的槽错误释放 → 并发 sweep 复用 → 越过 CAP(破"硬保证")。
+            # 故归还前用新读核实:仅在确证该 intent **未** executed 时才归还;已执行 / 状态读不到 →
+            # 当已消费,不归还(宁可少执行,绝不超 CAP)。
+            logger.warning("[write_autonomy] auto-confirm wi=%s 失败: %s", wi.id, e)
+            committed = True  # 默认保守:除非新读确证未执行,否则当已消费
+            try:
+                db.rollback()  # 清理可能的脏 session(confirm 的 commit 已持久,rollback 只开新事务)
+                row = (
+                    db.query(WriteIntent.status)
+                    .filter(WriteIntent.id == wi.id, WriteIntent.user_id == user_id)
+                    .first()
+                )
+                committed = bool(row and row[0] == "executed")
+            except Exception:  # noqa: BLE001 — 核实读失败 → 保守当已消费(不归还),不超 CAP
+                committed = True
+            if not committed:
+                _release_autonomy_slot(db, user_id, today)  # 确证未执行 → 归还额度
             continue
         if res.get("status") == "executed" and not res.get("idempotent"):
             executed += 1
