@@ -652,6 +652,98 @@ def _fill_medication(db: Session, user_id: int, twin: HealthTwin, sources: Set[s
         logger.warning(f"[twin] medication 失败: {e}")
 
 
+def fill_medication_safety_partitions(
+    db: Session,
+    user_id: int,
+    twin: HealthTwin,
+    *,
+    raise_on_error: bool = False,
+) -> None:
+    """只填用药安全预检(DDI/PGx/DSI)需要的分区,**全部用传入的请求 db**。
+
+    为什么不走 build_twin(memory project_build_twin_sessionlocal_ignores_db):
+      build_twin 的 Phase-B 并行 filler 各自 `SessionLocal()` 自开**生产引擎**连接、
+      忽略传入 db。请求事务里 flush/commit 的药、在请求内构 twin 时:
+        - 测试/CI:生产引擎指向另一个空 in-memory DB → 看不到任何药 → 预检空跑 = under-alarm;
+        - 生产:在写事务内再开 N=16 个第二连接,既无必要也增加竞争面。
+      故安全预检改用本函数:HealthTwin() + 只填 DDI/PGx/DSI 三类规则实际读的分区,
+      全部走传入 db(看得见请求事务的数据、零第二连接)。
+
+    DDI/PGx/DSI 实际读取(grep ddi.py/pgx.py/dsi.py 确认,改规则读取面前必复核):
+      - medication.active_meds                                    → DDI / DSI
+      - genetic.{drug_sensitivity, risk_variants, protective_variants} → PGx
+      - supplement.active_supplements                             → DSI
+      - labs.{flagged_abnormal, last_exam_date}                   → DSI(长期抑酸×化验感知)
+
+    raise_on_error=True:任一分区填充抛错则向上抛(让调用方置 evaluation_failed,
+      绝不静默把"填充失败"退化成"无药 → 无告警 → 安全")。默认 False 保持 build_twin
+      内既有的旁路降级语义。
+    """
+    sources: Set[str] = set()
+
+    # ① medication.active_meds —— DDI/DSI/PGx 三类规则全部 gate 在此分区上(空药单 →
+    #    所有规则早返回 None → 看似无相互作用 = 安全)。这是最 load-bearing 的分区。
+    #    _fill_medication 自带内部 try/except 旁路降级(供 build_twin 用):读药失败会
+    #    静默留空 active_meds、不抛 —— 那样 raise_on_error 对本分区形同虚设,读药崩溃就
+    #    退化成 under-alarm(与本次要消除的 SessionLocal 盲读同一 bug 类,只是触发源不同)。
+    #    故 raise_on_error 时绕过吞异常 helper、直接 fail-loud 读药(读失败抛 → 调用方
+    #    置 evaluation_failed → 注入 fail-safe advisory,绝不静默当无药)。
+    if raise_on_error:
+        from app.services.medication_service import MedicationService
+
+        active = MedicationService().get_today_status(db, user_id) or []
+        twin.medication.active_meds = active
+        twin.medication.has_any = len(active) > 0
+        if active:
+            sources.add("medication")
+    else:
+        _fill_medication(db, user_id, twin, sources)
+
+    # ② genetic 三类(PGx 读取):用与 _fill_collectors 同一套 collector + classify。
+    try:
+        gen = _collectors.fetch_genetic_variants_categorized(db, user_id)
+        if gen and gen.get("total", 0) > 0:
+            g = twin.genetic
+            g.has_profile = True
+            g.total_variants = gen["total"]
+            g.drug_sensitivity = gen.get("drug_sensitivity", [])
+            g.risk_variants = gen.get("risk", [])
+            g.protective_variants = gen.get("protective", [])
+            _classify_genetic_variants(g)
+            sources.add("genetic")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[twin.safety] genetic 分区填充失败: {e}")
+        if raise_on_error:
+            raise
+
+    # ③ supplement.active_supplements(DSI 读取)。
+    try:
+        supp = _collectors.fetch_supplement_today(db, user_id)
+        twin.supplement = SupplementState(**supp)
+        if supp.get("total_active_count", 0) > 0:
+            sources.add("supplement")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[twin.safety] supplement 分区填充失败: {e}")
+        if raise_on_error:
+            raise
+
+    # ④ labs.{flagged_abnormal, last_exam_date}(DSI 长期抑酸×化验感知读取)。
+    try:
+        abnormal, latest_exam = _collectors.fetch_medical_exam_abnormal(db, user_id)
+        if abnormal:
+            twin.labs.flagged_abnormal = abnormal
+            sources.add("medical_exam")
+        if latest_exam:
+            twin.labs.last_exam_date = latest_exam.get("exam_date")
+            twin.labs.last_exam_type = latest_exam.get("exam_type")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[twin.safety] labs 分区填充失败: {e}")
+        if raise_on_error:
+            raise
+
+    twin.meta.data_sources = sorted(set(twin.meta.data_sources) | sources)
+
+
 # ─────────────────────────── 5. 情绪 7d ──────────────────────────────
 
 

@@ -3,8 +3,6 @@
 钉:① 中文时点标签渲染 ② API 写入/读出带时点 ③ today_status 带 timing_label
 ④ 提醒文案含「饭前/饭后/空腹」(复杂方案如胃溃疡三联无脑化的关键)。
 """
-from types import SimpleNamespace
-
 import app.api.medication as med_api
 from app.agents.safety_guardian.schema import Alert, Severity
 from app.models.medication import medication_timing_label
@@ -75,16 +73,16 @@ def test_medication_without_timing_is_backward_compatible(client, auth_user_and_
 
 
 def test_create_medication_returns_medication_safety_alerts(client, auth_user_and_headers, monkeypatch):
-    """录入药物后立刻返回 PGx/DDI/DSI 提醒,但不混入非用药类安全提醒。"""
+    """录入药物后立刻返回 PGx/DDI/DSI 提醒,但不混入非用药类安全提醒。
+
+    A3 迁移后:预检不再走 build_twin,改用 evaluate_rules_with_status(传入 db 填好的
+    极简 twin)。这里 patch 规则引擎 seam,验证 category 过滤(pgx 保留 / vitals 滤掉)+
+    failed_count=0 时不注入 fail-safe advisory。
+    """
     _, h = auth_user_and_headers
-    calls = {}
 
-    def fake_build_twin(db, user_id, use_cache=True):
-        calls["use_cache"] = use_cache
-        return object()
-
-    def fake_evaluate_safety(twin):
-        return SimpleNamespace(alerts=[
+    def fake_evaluate_rules_with_status(twin):
+        return ([
             Alert(
                 rule_id="pgx.cpic.tpmt_硫唑嘌呤",
                 category="pgx",
@@ -101,10 +99,9 @@ def test_create_medication_returns_medication_safety_alerts(client, auth_user_an
                 title="血压危象",
                 message="这不是用药录入响应应该混入的提醒。",
             ),
-        ])
+        ], 0)
 
-    monkeypatch.setattr(med_api, "build_twin", fake_build_twin, raising=False)
-    monkeypatch.setattr(med_api, "evaluate_safety", fake_evaluate_safety, raising=False)
+    monkeypatch.setattr(med_api, "evaluate_rules_with_status", fake_evaluate_rules_with_status, raising=True)
 
     r = client.post("/api/v1/medication/medications", headers=h, json={
         "name": "硫唑嘌呤", "dosage": "50mg",
@@ -112,7 +109,6 @@ def test_create_medication_returns_medication_safety_alerts(client, auth_user_an
     assert r.status_code == 200, r.text
 
     body = r.json()
-    assert calls["use_cache"] is False
     assert [a["rule_id"] for a in body["safety_alerts"]] == ["pgx.cpic.tpmt_硫唑嘌呤"]
     assert body["safety_alerts"][0]["severity"]["label"] == "critical"
 
@@ -121,11 +117,8 @@ def test_list_and_get_medications_include_safety_alerts(client, auth_user_and_he
     """客户端重进页面/打开详情时也必须能拿到用药安全提醒,不能只在新增/更新响应里出现。"""
     _, h = auth_user_and_headers
 
-    def fake_build_twin(db, user_id, use_cache=True):
-        return object()
-
-    def fake_evaluate_safety(twin):
-        return SimpleNamespace(alerts=[
+    def fake_evaluate_rules_with_status(twin):
+        return ([
             Alert(
                 rule_id="ddi.warfarin_bleeding",
                 category="ddi",
@@ -133,10 +126,9 @@ def test_list_and_get_medications_include_safety_alerts(client, auth_user_and_he
                 title="华法林相互作用",
                 message="出血风险升高。",
             ),
-        ])
+        ], 0)
 
-    monkeypatch.setattr(med_api, "build_twin", fake_build_twin, raising=False)
-    monkeypatch.setattr(med_api, "evaluate_safety", fake_evaluate_safety, raising=False)
+    monkeypatch.setattr(med_api, "evaluate_rules_with_status", fake_evaluate_rules_with_status, raising=True)
 
     created = client.post("/api/v1/medication/medications", headers=h, json={"name": "华法林"})
     assert created.status_code == 200, created.text
