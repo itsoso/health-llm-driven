@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.services import health_protocol_service as proto_svc
 from app.services import health_problem_service as prob_svc
+from app.services import agenda_contract
 from app.services.daily_operating_plan import build_daily_operating_plan
 from app.utils.timezone import get_user_today
 
@@ -24,11 +25,22 @@ logger = logging.getLogger(__name__)
 
 # 时间窗排序(投影展示顺序)
 _TW_ORDER = {"morning": 0, "noon": 1, "afternoon": 2, "evening": 3, "bedtime": 4, "anytime": 5}
-_TERMINAL_STATUSES = {"completed", "done", "verified", "skipped", "failed", "auto_observed"}
+_TERMINAL_STATUSES = agenda_contract.TERMINAL_ITEM_STATUSES
 
 
 def _agenda_item(**kw) -> Dict[str, Any]:
     return kw
+
+
+def _with_contract_metadata(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Attach additive cross-surface Agenda contract fields."""
+    out = dict(item)
+    status = out.get("status") or "pending"
+    out["status_canonical"] = agenda_contract.canonical_item_status(status)
+    out["is_terminal"] = agenda_contract.is_terminal_item_status(status)
+    out["surface"] = out.get("surface") or agenda_contract.surface_contract_for_item(out)
+    out["contract"] = agenda_contract.contract_metadata_for_item(out)
+    return out
 
 
 def _training_item(db: Session, user_id: int) -> Dict[str, Any] | None:
@@ -325,6 +337,7 @@ def today(db: Session, user_id: int, followup_within_days: int = 14) -> Dict[str
         ))
 
     items.sort(key=lambda x: (-x["priority"], _TW_ORDER.get(x.get("time_window"), 9)))
+    items = [_with_contract_metadata(item) for item in items]
     return {
         "agenda_date": str(get_user_today(db, user_id)),
         "count": len(items),
@@ -353,17 +366,7 @@ def _when_bucket(when: str | None) -> str:
 
 
 def _surface_for(item: Dict[str, Any]) -> Dict[str, Any]:
-    typ = item.get("type")
-    source_type = (item.get("source") or {}).get("object_type")
-    if typ in {"movement", "training"}:
-        return {"primary": "watch", "alternates": ["mobile", "rokid"]}
-    if typ in {"nutrition", "diet"}:
-        return {"primary": "mobile", "alternates": ["rokid", "watch"]}
-    if typ in {"hydration", "medication", "supplement", "sleep"}:
-        return {"primary": "watch", "alternates": ["mobile"]}
-    if typ == "checkup" or source_type == "health_problem":
-        return {"primary": "mobile", "alternates": ["mac", "watch"]}
-    return {"primary": "mobile", "alternates": ["watch"]}
+    return agenda_contract.surface_contract_for_item(item)
 
 
 def _smart_id(item: Dict[str, Any]) -> str:
@@ -529,11 +532,14 @@ def _to_smart_item(
 ) -> Dict[str, Any]:
     score = _rank_score(item)
     status = item.get("status") or "pending"
+    status_canonical = agenda_contract.canonical_item_status(status)
     return {
         "id": _smart_id(item),
         "type": item.get("type"),
         "title": item.get("title"),
         "status": status,
+        "status_canonical": status_canonical,
+        "is_terminal": agenda_contract.is_terminal_item_status(status),
         "time": item.get("time"),
         "time_window": item.get("time_window") or "anytime",
         "priority": item.get("priority") or 0,
@@ -549,6 +555,7 @@ def _to_smart_item(
         "verify_by": _verify_by(item, fallback_verification),
         "replan_policy": _replan_policy(item),
         "surface": _surface_for(item),
+        "contract": agenda_contract.contract_metadata_for_item(item),
         "autonomy_tier": "confirm" if item.get("type") == "checkup" else "suggest",
         "can_complete": status in {"pending", "due", "overdue"},
         "can_snooze": status in {"pending", "due", "overdue", "info"},
@@ -576,7 +583,7 @@ def smart_today(
     smart_items = [
         _to_smart_item(item, fallback_verification=plan_verification)
         for item in candidates
-        if str(item.get("status") or "") not in _TERMINAL_STATUSES
+        if not agenda_contract.is_terminal_item_status(item.get("status"))
     ]
     smart_items.sort(key=lambda item: (
         -int(item.get("rank_score") or 0),
