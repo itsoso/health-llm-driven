@@ -9,12 +9,35 @@
 
 Reva 是一个个人健康操作系统（Personal Health OS）：把用户的长期健康数据、医学风险、日常行为和可执行计划汇聚成一个安全约束下的每日健康行动系统，帮助用户持续完成更高杠杆、更可验证的健康改善。
 
+### 1.1 Foundational Worldview
+
+Reva 的底层世界观是：健康不是玄学，也不只是自律。健康是一个由先天参数、物理规律、生物规律、社会环境、个人行为和反馈机制共同驱动的复杂运行时系统。
+
+更准确地说：
+
+- 基因、年龄、性别、家族史和既往病史提供先天参数和边界条件。
+- 睡眠、饮食、运动、药物、补剂、压力、天气、工作节律和社会关系是运行时输入。
+- 体检、可穿戴、症状、CGM、影像、复查和用户反馈是传感器信号。
+- Health Twin 是状态空间。
+- Agenda、Protocol 和 WriteIntent 是控制输入。
+- SafetyGuardian 是不能跨越的安全边界。
+- Outcome Review 和 CausalMemory 是反馈学习系统。
+
+因此，Reva 的目标不是宣称未来被完全决定，也不是做“基因命运论”。未来不能被精确预言，但健康轨迹可以被持续观测、概率预测、提前预警、主动干预和闭环治理。
+
+### 1.2 Product Translation
+
+这个世界观对应的产品定义是：
+
+> Reva 是人的健康运行时治理系统。它持续读取身体状态，识别风险和趋势，选择最有杠杆的控制输入，通过安全门约束执行，再用结果数据验证什么对这个人有效。
+
 它不是：
 
 - 通用健康聊天机器人。
 - 只展示数据的 dashboard。
 - 只记录习惯或打卡的 tracker。
 - 替代医生做诊断、处方、急救或剂量决策的医疗系统。
+- 基因命运论、绝对预测工具或抗衰确定性承诺。
 
 ## 2. Current Product PRD
 
@@ -40,12 +63,13 @@ Reva 是一个个人健康操作系统（Personal Health OS）：把用户的长
 
 ### 2.3 Product Promise
 
-Reva 每天为用户完成四件事：
+Reva 每天为用户完成五件事：
 
 1. 看懂今天身体和风险状态。
-2. 选出最值得做、最安全、最能验证的一件或少数几件健康行动。
-3. 把行动放到最合适的 surface 上执行。
-4. 把执行结果和后续指标变化写回长期健康记忆，用于下一轮决策。
+2. 判断在当前运行时输入下，健康状态可能往哪个方向漂移。
+3. 选出最值得做、最安全、最能验证的一件或少数几件健康行动。
+4. 把行动放到最合适的 surface 上执行。
+5. 把执行结果和后续指标变化写回长期健康记忆，用于下一轮决策。
 
 ### 2.4 North Star
 
@@ -72,6 +96,7 @@ Reva 每天为用户完成四件事：
 ```text
 Data Intake
   -> Health Twin
+  -> Health Trajectory / Prediction Layer
   -> Safety Guardian
   -> Action Ranker
   -> Agenda / Watch Summary / Daily Plan
@@ -105,8 +130,22 @@ Health Twin 是用户当前健康状态的结构化镜像，当前代码中已�
 - Twin 不是展示层，而是决策上下文。
 - Twin 必须能解释：这个结论来自哪个数据源、多久前更新、是否冲突、是否缺失关键数据。
 - Twin 必须能服务日常 action、长期 program、医生沟通和 agent 分析。
+- Twin 必须区分先天参数、当前状态、运行时输入、社会约束和可干预变量，避免把“状态展示”误认为“治理能力”。
 
-### 3.3 Safety Guardian
+### 3.3 Health Trajectory And Prediction Layer
+
+Health Trajectory / Prediction Layer 是把 Health Twin 从“状态快照”升级为“状态空间模型”的关键层。当前系统已有 `health_trajectory.py`、`personal_models` 目录、个人预测模型设计文档、trajectory API 和多处“预测 vs 实际”产品痕迹，下一阶段应把这些收敛成统一产品能力。
+
+产品要求：
+
+- 预测层不是 LLM fine-tune，也不是把个人健康事实写进大模型权重。
+- 预测层优先使用规则、趋势、个人 baseline、可穿戴偏离、临床锚点和小型统计模型。
+- 每个预测必须包含 horizon、confidence、uncertainty、evidence_tier、claim_boundary 和需要补齐的数据。
+- 基因只能提供边界、倾向、禁忌和阈值调谐，不能输出宿命式个体结论。
+- 预测结果必须进入 ActionRanker、Agenda、InterventionCycle 或 Review，而不是变成孤立 dashboard。
+- 低置信预测必须降级为 data_gap、watchlist 或 clinician_review，而不是强行动作。
+
+### 3.4 Safety Guardian
 
 Safety Guardian 是所有健康建议、执行和自动化前的硬约束层。当前系统已经有生命体征、化验、药物相互作用、补剂相互作用、药物基因组、CGM、训练、症状、心脏、问题红线和指导红线等规则族。
 
@@ -115,12 +154,14 @@ Safety Guardian 是所有健康建议、执行和自动化前的硬约束层。�
 - 客户端只能展示安全结论，不能覆盖安全门。
 - 涉及急症、红线、用药、剂量、禁忌、相互作用和高风险训练的路径必须 fail closed。
 - AI 可以生成解释和候选方案，但不能绕过确定性安全规则。
+- 预测越强，安全边界越重要；系统必须明确哪些轨迹只能观察、哪些可以生活方式干预、哪些必须升级医生。
 
-### 3.4 Action Ranker
+### 3.5 Action Ranker
 
 Action Ranker 把候选健康动作按杠杆排序。排序维度应包括：
 
 - 上游性：是否影响多个下游指标或长期风险。
+- 轨迹影响：是否有机会改变未来健康状态的方向，而不是只改善今日体验。
 - 可执行性：今天是否能做。
 - 频率和复利：是否能形成稳定收益。
 - 可验证性：是否能在明确窗口内观察结果。
@@ -134,17 +175,18 @@ Action Ranker 把候选健康动作按杠杆排序。排序维度应包括：
 2. 我现在具体做什么？
 3. 什么时候知道它有没有用？
 
-### 3.5 Agenda
+### 3.6 Agenda
 
 Agenda 是当前产品最重要的统一执行 contract。它应把 HealthProtocol、HealthProblem follow-up、训练 readiness、数据质量、日程、Daily Operating Plan、智能优先级和 Watch summary 收敛成一个可跨 surface 消费的列表。
 
 产品要求：
 
 - Agenda item 必须包含来源、状态、surface、优先级、为什么现在、执行方式、验证窗口和 replan 策略。
+- Agenda item 必须说明它试图改变哪个状态变量、预计影响窗口、成功信号、失败/副作用信号。
 - 完成、跳过、稍后、自动观察、手动补录必须写回统一事件。
 - 医疗级 source model 和高风险行为不能通过语音或轻量入口绕过 domain safety。
 
-### 3.6 Execution Event
+### 3.7 Execution Event
 
 Execution Event 是产品长期资产的关键原子。每次用户执行、跳过、延后、确认、自动观察或复查，都必须沉淀为可追溯事件。
 
@@ -153,7 +195,7 @@ Execution Event 是产品长期资产的关键原子。每次用户执行、跳�
 - 事件要能连接到 HealthProtocol、HealthProblem、HealthProgram、InterventionCycle、WriteIntent 或具体 domain record。
 - 跳过原因不能只做统计，要进入后续自我修正：时间不合适、难度过高、身体不适、无效、提醒太多等都应影响后续排序和通知。
 
-### 3.7 Outcome Review And Causal Memory
+### 3.8 Outcome Review And Causal Memory
 
 当前系统已经有 InterventionCycle、OutcomeMetric、HealthOperatingReview、PersonalOutcomeService 和 CausalMemory 的雏形。它们应共同形成长期闭环：
 
@@ -167,6 +209,7 @@ Execution Event 是产品长期资产的关键原子。每次用户执行、跳�
 
 - 默认只声称 temporal association / observational signal，不轻易声称因果。
 - 当系统建议继续、停止、调整时，必须能引用用户自己的历史数据和安全约束。
+- 用户应能看到自己的“个人健康规律库”：哪些输入经常让某些指标变好或变差，哪些只是低置信观察，哪些需要更多数据。
 
 ## 4. First-Class Product Objects
 
@@ -174,6 +217,8 @@ Execution Event 是产品长期资产的关键原子。每次用户执行、跳�
 |---|---|---|---|
 | HealthTwin | 用户当前健康状态镜像 | `backend/app/services/twin/*` | 成为所有推荐、分析和 surface 展示的上下文源 |
 | SafetyGuardian | 确定性安全门 | `backend/app/agents/safety_guardian/*` | 所有行动、通知和写操作前置安全检查 |
+| HealthTrajectory | 健康轨迹和风险漂移视图 | `backend/app/services/health_trajectory.py` | 把先天底图、临床锚点、实时状态、可干预变量和下一步行动统一起来 |
+| PersonalPrediction | 小型个人预测器 | `backend/app/services/personal_models/*` | 用人群先验 + 个人后验更新输出带不确定度的预测，不 fine-tune LLM |
 | HealthProblem | 被管理的健康问题或风险 | `backend/app/models/health_problem.py` | 承载红线、负责人、复查、升级路径 |
 | HealthProgram | 8-12 周健康改善计划 | `backend/app/models/health_program.py` | 把多个 protocol/action/metric 组织成长期计划 |
 | HealthProtocol | 可重复执行的健康协议 | `backend/app/models/health_protocol.py` | 支持自动观察、手动补录、跳过原因、自我调整 |
@@ -367,6 +412,11 @@ Agent 应服务于 health loop，而不是替代 health loop：
 | FR13 | Wearable Router 统一仲裁 | 客户端展示 winning source、confidence、freshness，不本地裁决 |
 | FR14 | Knowledge 使用 reviewed-first 原则 | 健康知识默认来自受控知识库，运行时 web search 不能成为主权威 |
 | FR15 | 所有用户数据按 user_id/权限隔离 | 健康数据查询、导出、外部 agent 调用都有鉴权和审计 |
+| FR16 | Twin 区分先天参数、状态、运行时输入和可干预变量 | 用户建议不把基因/状态/行为混为一谈 |
+| FR17 | HealthTrajectory 成为预测和治理入口 | 每个轨迹风险都有 horizon、confidence、evidence_tier、claim_boundary 和 next action |
+| FR18 | 预测必须有不确定度和边界 | 低置信预测降级为观察/补数据/医生复核，不直接驱动高风险行动 |
+| FR19 | Agenda 行动表达控制输入语义 | 每个 top action 说明目标状态变量、预期窗口、成功信号和失败信号 |
+| FR20 | 用户可见个人健康规律库 | CausalMemory/OutcomeReview 以“观察性关联”方式呈现个人输入和指标变化 |
 
 ## 8. Non-Functional Requirements
 
@@ -416,6 +466,7 @@ Agent 应服务于 health loop，而不是替代 health loop：
 - 现有 surface 太多，部分 Web/Mobile 页面仍像并列产品，而不是同一 loop 的不同入口。
 - HealthProgram 与 Protocol、Problem、InterventionCycle 的关系还需要更清晰地产品化。
 - Outcome proof 已有服务和模型，但在主 UI 中还不够可见。
+- HealthTrajectory、personal_models、健康预测设计文档和“预测 vs 实际”能力已经存在，但还没有统一为一条主产品线。
 - Agent specialist orchestration 和 toolized specialist 能力并存，长期应向工具化、可评估、可审计迁移。
 - CausalMemory 目前更接近观察性总结，还没有成为用户能直接感知的长期资产。
 - WriteIntent 已有手动确认框架，但距离可扩展的 earned autonomy 还需要分级、权限、撤销和审计体验。
@@ -469,7 +520,19 @@ Reva 的长期系统目标是成为：
 - 数据缺口解释和最小补齐任务。
 - 医生/家庭/导出场景的数据权限模型。
 
-### Pillar 2. Deterministic Safety And Evidence Governance
+### Pillar 2. Health Trajectory And Prediction
+
+目标：把健康从“状态解释”升级为“轨迹预测和运行时治理”。
+
+建设重点：
+
+- Health Twin 明确区分先天参数、当前状态、运行时输入、社会约束和可干预变量。
+- `health_trajectory.py` 成为上游风险漂移和 next action 的统一入口。
+- `personal_models` 只做小型统计预测器：人群先验 + 个人后验更新 + 不确定区间。
+- 先从 Garmin/Apple Health 个人 baseline、异常偏离、8-12 周 InterventionCycle 和预测回测做起。
+- 预测必须进入 Agenda、ActionRanker、Review 或补数据任务，不能变成孤立 dashboard。
+
+### Pillar 3. Deterministic Safety And Evidence Governance
 
 目标：让用户相信 Reva 不会为了 engagement 给出危险建议。
 
@@ -481,7 +544,7 @@ Reva 的长期系统目标是成为：
 - 高风险场景升级医生或急救，而不是继续聊天。
 - 建议证据等级、适用边界和不确定性可见。
 
-### Pillar 3. Daily Action OS
+### Pillar 4. Daily Action OS
 
 目标：让用户每天知道现在做什么，并且真的做完。
 
@@ -494,7 +557,7 @@ Reva 的长期系统目标是成为：
 - 通知预算和情境感知。
 - 不追求提醒多，追求提醒准。
 
-### Pillar 4. N-of-1 Verification And Personal Causal Ledger
+### Pillar 5. N-of-1 Verification And Personal Causal Ledger
 
 目标：从“建议”进化为“对这个用户有效的证据”。
 
@@ -505,7 +568,7 @@ Reva 的长期系统目标是成为：
 - 用噪声-aware 方法解释变化。
 - 长期 CausalMemory 从后台能力变成用户可见资产。
 
-### Pillar 5. Controlled Write And Earned Autonomy
+### Pillar 6. Controlled Write And Earned Autonomy
 
 目标：从只提醒用户，逐步走向低风险、可撤销、可审计的自动执行。
 
@@ -515,7 +578,7 @@ Reva 的长期系统目标是成为：
 - 对日历、提醒、购物清单、预约、复查、家庭通知、医生摘要等外部动作提供可撤销执行。
 - 每个自动化都有权限、审计、回滚和用户解释。
 
-### Pillar 6. Ecosystem And Distribution
+### Pillar 7. Ecosystem And Distribution
 
 目标：在不失控的前提下让 Reva 进入更多用户工作流。
 
@@ -544,6 +607,7 @@ Reva 的长期系统目标是成为：
 - 标记和隐藏 admin/debug/stale daily pages。
 - 明确 Today、Agenda、Capture、Programs、Review 五个主入口。
 - 明确所有新需求必须落到 first-class object 和 verification loop。
+- 明确 Health Runtime Governance 叙事：预测层只服务行动、验证和安全治理。
 
 ### Phase 1. Make One Wedge Work End To End
 
@@ -557,9 +621,11 @@ Reva 的长期系统目标是成为：
 关键交付：
 
 - 首次 onboarding 自动生成 HealthTwin、HealthProblem、Program、Protocol、Agenda。
+- 首次 onboarding 区分先天参数、状态、运行时输入、社会约束和可干预变量。
 - Mobile Today 和 Watch top action 简化到足够清晰。
 - InterventionCycle review 在用户主路径可见。
 - 行动完成、跳过、复测、结果变化形成可读 ledger。
+- HealthTrajectory 风险和个人 baseline 偏离进入 ActionRanker，不再只做解释。
 - 先服务 10-100 个高质量用户，追求真实改善而不是泛化规模。
 
 ### Phase 2. Toolized Agent And Evaluation
@@ -575,6 +641,7 @@ Reva 的长期系统目标是成为：
 - specialist 能力工具化。
 - SafetyGuardian 强制前置和后置检查。
 - 所有 agent 输出映射到对象。
+- 小型个人预测器输出带不确定度的 forecast，LLM 只负责解释、提问和转化为对象。
 - 建立建议质量、风险误判、执行率、结果复测、用户纠正的数据集。
 - 成本和延迟进入产品 SLO。
 
@@ -630,6 +697,8 @@ health_problem_or_goal:
 first_class_object:
 surface_owner:
 core_loop_step:
+state_variable_to_change:
+prediction_or_trajectory_claim:
 safety_gate:
 data_source:
 execution_event:
@@ -644,7 +713,8 @@ rollback_or_archive_plan:
 3. 高风险健康行为不能通过轻量入口绕过 SafetyGuardian。
 4. 日常主路径优先 Mobile/Watch，复杂工作流优先 Mac，Web 退到 history/admin/doctor/family。
 5. Outcome Review 和 CausalMemory 必须从后台能力变成用户可见资产。
-6. 如果一个功能无法提高安全行动完成率、验证闭环、健康结果或信任，它不应进入主路径。
+6. 预测必须带不确定度、证据等级和声明边界；不能把基因或弱关联包装成个体命运。
+7. 如果一个功能无法提高安全行动完成率、验证闭环、健康结果、轨迹治理或信任，它不应进入主路径。
 
 ## 15. Immediate Next Product Decisions
 
@@ -652,9 +722,10 @@ rollback_or_archive_plan:
 
 1. 收敛 surface：Mobile 五入口、Watch 执行器、Mac 工作台、Web 历史/管理。
 2. 做强 Today：一个 top action、why now、do now、verify by。
-3. 做强 12 周闭环：baseline、actions、retest、review、next cycle。
-4. 做强 onboarding：让新用户从报告/设备/目标自动进入 Program 和 Agenda。
-5. 做强 safety/evidence：所有建议有 safety、evidence、uncertainty 和 escalation。
-6. 做强 eval：把 agent 建议质量、执行率、复测率和健康结果纳入持续评估。
+3. 做强 HealthTrajectory：让每个 top action 连接到状态变量、运行时输入和未来漂移风险。
+4. 做强 12 周闭环：baseline、actions、retest、review、next cycle。
+5. 做强 onboarding：让新用户从报告/设备/目标自动进入 Program 和 Agenda。
+6. 做强 safety/evidence：所有建议有 safety、evidence、uncertainty 和 escalation。
+7. 做强 eval：把 agent 建议质量、预测命中率、执行率、复测率和健康结果纳入持续评估。
 
 这比继续新增更多健康功能更重要。当前代码显示 Reva 已经有足够多能力，下一步产品胜负在于收敛、信任、执行和验证。
