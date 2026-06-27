@@ -99,7 +99,73 @@ Feedback
   ExecutionEvent / OutcomeReview / CausalMemory / prediction backtest
 ```
 
-## 4. Phase 0: PRD And Product Language Alignment
+## 4. PRD Implementation Gap Backlog
+
+This section tracks PRD capabilities that are not implemented, only scaffolded, or not yet complete enough to count as product behavior. It is the planning bridge between the PRD and future implementation specs.
+
+Status vocabulary:
+
+| Status | Meaning |
+|---|---|
+| Missing | No meaningful production implementation yet. |
+| Scaffolded | Object/API/service shape exists, but intentionally inert or not wired to user value. |
+| Partial | Some code exists, but the full PRD loop is not complete. |
+| Needs Productization | Backend capability exists, but it is not visible, understandable, or integrated in the daily loop. |
+
+### P0: Core Loop Gaps
+
+| Gap | PRD Capability | Current Evidence | Missing Work | Target Phase |
+|---|---|---|---|---|
+| G0.1 | HealthTrajectory drives daily action selection | `backend/app/services/health_trajectory.py` and `/trajectory/me` exist; tests cover evidence/confidence/claim_boundary | ActionRanker and Agenda do not yet consume trajectory risk as a first-class scoring input; trajectory risk shape lacks a full PRD contract for `state_variable`, `horizon`, `uncertainty`, and `verification_window` | Phase 1 |
+| G0.2 | Today top action explains control-input semantics | Agenda and Watch summary already expose top actions and verification windows | Top action does not consistently show target state variable, expected effect window, success signal, failure/safety signal, and trajectory reason across Mobile/Watch | Phase 1 |
+| G0.3 | Prediction vs actual is a unified review loop | Health consultation predictions, outcome grader, specialist hit-rate and InterventionCycle pieces exist | No unified prediction record contract attached to Agenda/Intervention/Specialist/Problem; Review does not yet show a user-facing “prediction -> actual -> next step” timeline | Phase 2 |
+| G0.4 | PersonalPrediction feeds Twin/Trajectory | `backend/app/services/personal_models/treatment_effect.py` and priors exist | Model outputs are not yet a stable Twin/Trajectory section, are not broadly rendered in Review, and are not used by ActionRanker as structured input | Phase 3 |
+| G0.5 | CausalMemory becomes user-visible personal规律库 | `backend/app/services/causal_memory.py` produces observational summaries with claim boundaries | No primary Mobile/Review surface for “your personal health patterns”; not integrated into Today ranking or program next-step explanations | Phase 2 |
+| G0.6 | First-run onboarding creates the initial health loop | Data upload, reports, genetics, goals, problems, protocols and agenda exist in separate flows | No unified onboarding pipeline that turns uploaded reports/devices/goals into HealthTwin + HealthProblem + HealthProgram + Protocol + first Agenda | Phase 1 |
+
+### P1: Data, Knowledge, Monitoring And Safety Gaps
+
+| Gap | PRD Capability | Current Evidence | Missing Work | Target Phase |
+|---|---|---|---|---|
+| G1.1 | Verified personal data layer with source/freshness/permission contract | Labs, genetics, epigenetic, wearables, symptoms, meds/supplements and reports exist in many modules | A single cross-domain `DataSourceQuality` / provenance contract is still missing for all PRD inputs, including permission, freshness, confidence and user correction | Phase 4 |
+| G1.2 | Reviewed-first professional knowledge across all target domains | System KB, reviewed-only gates, evidence boundaries and many knowledge tests exist | Coverage is uneven across diet, sleep, exercise, supplements, medication, organ-system programs and IoT/environment; user-facing citations/evidence UX are not consistently visible | Phase 2 / Phase 4 |
+| G1.3 | Realtime monitoring includes blood pressure, glucose, SpO2, body battery, environment and devices | Wearable router, device source priority, Garmin/Apple/Ring/Oura paths and bedroom/device observations exist | CGM Libre/Dexcom adapters are still `NotImplementedError`; smart BP/scale and some HealthKit paths are partial/manual; no unified realtime signal contract across health + home/office devices | Phase 4 / Phase 5 |
+| G1.4 | Per-user source preference and conflict arbitration | Wearable arbitration and source priority exist | Some arbitration remains global rather than per-user/per-condition; users cannot consistently override or inspect source preferences from the product | Phase 4 |
+| G1.5 | Trajectory safety event dashboard | SafetyGuardian, proactive coordinator and admin SLOs exist | No dedicated dashboard/audit view for trajectory-driven actions, prediction-driven nudges, false positives, or safety escalation correctness | Phase 4 |
+| G1.6 | Privacy controls for derived memory and predictions | Data isolation, audit and some export/delete paths exist | Users cannot yet pause/delete specific prediction categories, derived CausalMemory, or IoT-derived behavior in a coherent product control center | Phase 4 / Phase 5 |
+
+### P1: Surface And Productization Gaps
+
+| Gap | PRD Capability | Current Evidence | Missing Work | Target Phase |
+|---|---|---|---|---|
+| G1.7 | Mobile converges to Today / Agenda / Capture / Programs / Review | Existing Mobile routes cover these concepts, but many pages still exist as parallel entries | Route metadata and navigation cleanup are still needed; admin/debug/stale daily flows should be hidden or archived from primary navigation | Phase 0 / Phase 1 |
+| G1.8 | Programs become user-facing 8-12 week operating units | `HealthProgram` model/API/tests exist; protocols can attach to programs | Program templates, cross-object progress, Review integration, and organ-system program map are not yet first-class in Mobile Today/Programs | Phase 1 / Phase 2 |
+| G1.9 | Mac remains workbench, Web remains history/admin/family/doctor | Surface ownership doc exists | Some Web/Mobile/Mac workflows still overlap; daily consumer flows need clearer archive/converge decisions after traffic/user validation | Phase 0 / Phase 4 |
+| G1.10 | External agent outputs land in first-class objects | MCP/OpenClaw skills and tool registry exist | Not every external/LLM analysis path is forced to create Problem/Protocol/Agenda/WriteIntent/Review or explicitly mark explain-only | Phase 2 |
+
+### P2: IoT, Environment And Supply-Chain Gaps
+
+| Gap | PRD Capability | Current Evidence | Missing Work | Target Phase |
+|---|---|---|---|---|
+| G2.1 | Bedroom environment closed loop | `BedroomEnvironmentSnapshot`, `BedroomAutomationEvent`, `bedroom_environment_service`, Home Assistant webhook and `bedroom_outcome_analyzer` exist | HomeAssistantAdapter scene allowlist, scene downlink, BedroomSleepProtocol, Agenda projection, Mobile UI and sleep review are not complete | Phase 5 |
+| G2.2 | Device observations close Agenda items without privacy risk | `device_observation` schema/service/API and tests exist; raw media is blocked | More device types, provider auth, user consent UX, Agenda mapping and Review rendering remain incomplete | Phase 5 |
+| G2.3 | Supplement logistics and purchase boundary | Supplement inventory, reorder nudge, deep link and `ReorderIntent` scaffold exist | Real ordering is intentionally inert; OpenClaw/commerce skill contract, account binding, confirmation token, callbacks and financial safety review are pending | Phase 5 |
+| G2.4 | Personalized supplement pairing or production | Supplement recommendation and safety rules exist | No regulated supply-chain model, batch quality, PGx/DDI/DSI approval workflow, manufacturing partner boundary or post-market outcome tracking | Phase 5+ |
+| G2.5 | Office environment and workstation health loop | Device observation supports posture/screen events | Smart desk/chair/screen integrations, privacy UX, ergonomic protocols and outcome linkage are not productized | Phase 5 |
+
+### P2: Organ-System Program Gaps
+
+| Gap | PRD Capability | Current Evidence | Missing Work | Target Phase |
+|---|---|---|---|---|
+| G2.6 | Cardiovascular program | BP, lipids, VO2max, safety and trajectory pieces exist | No cohesive cardiovascular HealthProgram template with protocols, safety gates, retest plan and Review surface | Phase 5 / Organ map |
+| G2.7 | Metabolic/endocrine program | Metabolic cycle, waist, labs and nutrition pieces exist | Needs unified self-serve template, CGM path, meal response integration, retest cadence and program review | Phase 1 / Phase 3 |
+| G2.8 | Sleep/recovery program | Sleep, readiness, HRV and bedroom environment pieces exist | Needs integrated sleep/recovery HealthProgram that joins wearable readiness, bedroom environment and daily training decisions | Phase 5 |
+| G2.9 | Respiratory/allergy program | Rhinitis specialist, environment signals and nasal wash protocol pieces exist | Needs complete respiratory program with AQI/humidity/pollen, medication adherence, nasal wash and escalation rules | Phase 5 |
+| G2.10 | Digestive/liver program | Gastric/liver/PPI/lab pieces exist | Needs digestive/liver program template with medication/supplement interaction review, follow-up and retest plan | Phase 5 |
+| G2.11 | Musculoskeletal and workstation program | Movement/training and posture observations exist | Needs strength/mobility/sarcopenia program and office ergonomics closed loop | Phase 5 |
+| G2.12 | Neurocognitive/mental/social program | Mental, social connection and screen load pieces exist | Needs bounded program shape, red-line handling, consent and review surface | Phase 5 |
+
+## 5. Phase 0: PRD And Product Language Alignment
 
 Timebox: now to 1 week.
 
@@ -124,7 +190,7 @@ Acceptance:
 - PRD explicitly maps HealthTrajectory and PersonalPrediction to first-class product objects.
 - PRD explicitly maps IoT/environment and supply-chain actions to controlled execution objects, not autonomous health judgment.
 
-## 5. Phase 1: Make Trajectory Influence Today
+## 6. Phase 1: Make Trajectory Influence Today
 
 Timebox: 1-4 weeks.
 
@@ -165,7 +231,7 @@ Acceptance:
 - The same item can be completed from Mobile or Watch through the Agenda contract.
 - No new daily route is required.
 
-## 6. Phase 2: Make Prediction Backtesting Visible
+## 7. Phase 2: Make Prediction Backtesting Visible
 
 Timebox: 1-2 months.
 
@@ -194,7 +260,7 @@ Acceptance:
 - Specialist hit-rate or prediction confidence is visible to system maintainers.
 - Low-confidence or confounded metrics are downgraded to clinician_review or inconclusive.
 
-## 7. Phase 3: Personal Prediction Models Without Personal LLM Fine-Tuning
+## 8. Phase 3: Personal Prediction Models Without Personal LLM Fine-Tuning
 
 Timebox: 2-4 months, after enough closed-loop data exists.
 
@@ -220,7 +286,7 @@ Acceptance:
 - Twin or trajectory includes the prediction in a structured section.
 - ActionRanker can use the output without relying on LLM-only reasoning.
 
-## 8. Phase 4: Scale Governance For 10M Users
+## 9. Phase 4: Scale Governance For 10M Users
 
 Timebox: starts after dogfood and paid wedge prove retention and outcome signal.
 
@@ -241,7 +307,7 @@ Acceptance:
 - The user can correct, pause or delete derived predictions/memories.
 - Operators can audit prediction-driven actions without seeing unnecessary raw sensitive data.
 
-## 9. Phase 5: IoT, Environment And Supply Chain Execution
+## 10. Phase 5: IoT, Environment And Supply Chain Execution
 
 Timebox: after Today/Trajectory and Review loops are stable; narrow pilots can start earlier for bedroom environment.
 
@@ -270,7 +336,7 @@ Acceptance:
 - A supplement low-stock loop can propose a replenishment intent without medicalizing the purchase.
 - A device observation can complete or inform an Agenda item without creating an independent recommendation path.
 
-## 10. Organ And System Program Map
+## 11. Organ And System Program Map
 
 Goal: organize health improvement around body systems without losing whole-person interactions.
 
@@ -291,7 +357,7 @@ Rules:
 - No organ-level optimization can override cross-system contraindications.
 - Domain programs must define writable variables, not only outcome metrics.
 
-## 11. Immediate Next Implementation Plan
+## 12. Immediate Next Implementation Plan
 
 The next implementation spec should be small:
 
@@ -315,9 +381,10 @@ Out of scope:
 - IoT device control.
 - Supplement ordering or personalized production.
 
-## 12. Changelog
+## 13. Changelog
 
 | Date | Change | Reason |
 |---|---|---|
 | 2026-06-27 | Initial plan | Align PRD and roadmap around Health Runtime Governance. |
 | 2026-06-27 | Added system substrate, IoT/environment, supply-chain and organ-system planning | Capture expanded system philosophy while preserving safety and execution boundaries. |
+| 2026-06-27 | Added PRD implementation gap backlog | Track PRD capabilities that are missing, scaffolded, partial, or not yet productized. |
