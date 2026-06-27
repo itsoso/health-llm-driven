@@ -11,7 +11,7 @@
  *  - 未授权 → requestPermissions
  *  - 已授权 → 弹菜单 (近 7 天 / 全量回填)
  */
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -26,8 +26,12 @@ import {
   persistHealthKitLastSync,
   type BackfillProgress,
 } from '../services/appleHealth';
-import { spacing } from '../constants/theme';
-import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import {
+  revaColors as C,
+  revaSpacing,
+  revaSemantic,
+  revaFonts,
+} from '../constants/revaTheme';
 
 interface Props {
   onSyncComplete?: () => void;
@@ -36,8 +40,6 @@ interface Props {
 type State = 'idle' | 'syncing' | 'error';
 
 export function AppleHealthRow({ onSyncComplete }: Props) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
   const [state, setState] = useState<State>('idle');
   const [authorized, setAuthorized] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
@@ -62,10 +64,10 @@ export function AppleHealthRow({ onSyncComplete }: Props) {
   }, []);
 
   const dotColor = (() => {
-    if (state === 'syncing') return '#FF9F0A';
-    if (state === 'error') return '#FF453A';
-    if (authorized && lastSyncAt) return '#30D158';
-    return c.labelTertiary;
+    if (state === 'syncing') return revaSemantic.caution.fg;
+    if (state === 'error') return revaSemantic.risk.fg;
+    if (authorized && lastSyncAt) return revaSemantic.normal.fg;
+    return C.ink3;
   })();
 
   const statusText = (() => {
@@ -196,31 +198,31 @@ export function AppleHealthRow({ onSyncComplete }: Props) {
       disabled={state === 'syncing'}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        <Ionicons name="heart-outline" size={18} color={c.labelSecondary} />
+        <Ionicons name="heart-outline" size={18} color={C.ink2} />
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dotColor }} />
       </View>
       <Text style={styles.label}>Apple Health</Text>
-      <Text style={[styles.value, state === 'error' && { color: '#FF453A' }]}>{statusText}</Text>
+      <Text style={[styles.value, state === 'error' && { color: revaSemantic.risk.fg }]}>{statusText}</Text>
       {state === 'syncing' ? (
-        <ActivityIndicator size="small" color={c.labelTertiary} />
+        <ActivityIndicator size="small" color={C.ink3} />
       ) : (
-        <Ionicons name="chevron-forward" size={14} color={c.labelTertiary} />
+        <Ionicons name="chevron-forward" size={14} color={C.ink3} />
       )}
     </TouchableOpacity>
   );
 }
 
-const createStyles = (c: ColorPalette) =>
-  StyleSheet.create({
-    settingRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-      paddingHorizontal: spacing.lg,
-      paddingVertical: 14,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: c.separator,
-    },
-    label: { fontSize: 15, color: c.labelPrimary, flex: 1 },
-    value: { fontSize: 14, color: c.labelTertiary },
-  });
+// Reva 设计语言:暖白 surface 行 / ink 文字 / 三步临床语义状态点。镜像 settings.tsx settingRow。
+const styles = StyleSheet.create({
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: revaSpacing.s5,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: C.line,
+  },
+  label: { fontFamily: revaFonts.sans, fontSize: 15, color: C.ink1, flex: 1 },
+  value: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink3 },
+});

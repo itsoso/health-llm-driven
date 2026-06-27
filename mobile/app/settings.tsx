@@ -6,17 +6,21 @@ import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import api from '../services/api';
+import { connectionStatusSummary, fetchDataConnections } from '../services/dataConnections';
 import { useAuth } from '../hooks/useAuth';
 import { useBiometricLock } from '../hooks/useBiometricLock';
 import { invalidateHealthSnapshot, queryKeys } from '../applib/queryKeys';
-import { spacing, radii, shadows } from '../constants/theme'
-import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaSemantic,
+  revaFonts,
+} from '../constants/revaTheme';
 import { AppleHealthRow } from '../components/AppleHealthRow';
 
 export default function SettingsScreen() {
-  const { c, s } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
   const { logout, user, isAuthenticated } = useAuth();
   const qc = useQueryClient();
@@ -43,6 +47,11 @@ export default function SettingsScreen() {
     queryFn: () => api.get('/data-collection/garmin/me/credential-status').then(r => r.data),
     staleTime: 60_000,
     refetchInterval: 120_000,
+  });
+  const { data: dataConnections } = useQuery({
+    queryKey: ['data-connections'],
+    queryFn: fetchDataConnections,
+    staleTime: 120_000,
   });
 
   const syncGarmin = async () => {
@@ -85,7 +94,7 @@ export default function SettingsScreen() {
       <View style={styles.header}>
         {canGoBack ? (
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
+            <Ionicons name="chevron-back" size={24} color={C.ink1} />
           </TouchableOpacity>
         ) : (
           <View style={styles.backBtn} />
@@ -99,7 +108,7 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <View style={styles.profileRow}>
             <View style={styles.avatar}>
-              <Ionicons name="person" size={24} color={c.brand} />
+              <Ionicons name="person" size={24} color={C.green500} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={txt.name}>{user?.username || (user as any)?.name || '用户'}</Text>
@@ -165,6 +174,9 @@ export default function SettingsScreen() {
             onPress={() => router.push('/rokid-diagnostics' as any)} />
           <SettingRow icon="git-compare-outline" label="数据来源"
             onPress={() => router.push('/device-sources' as any)} />
+          <SettingRow icon="key-outline" label="数据连接与授权"
+            value={connectionStatusSummary(dataConnections)}
+            onPress={() => router.push('/data-connections' as any)} />
         </View>
 
         {/* Health tools */}
@@ -222,10 +234,10 @@ export default function SettingsScreen() {
             onPress={showSiriInfo} />
           {bioSupported && (
             <View style={styles.settingRow}>
-              <Ionicons name="finger-print-outline" size={18} color={c.labelSecondary} />
+              <Ionicons name="finger-print-outline" size={18} color={C.ink2} />
               <Text style={txt.settingLabel}>Face ID 锁定</Text>
               <Switch value={bioEnabled} onValueChange={toggleBio}
-                trackColor={{ false: c.fill, true: c.brand }} thumbColor="#fff" />
+                trackColor={{ false: C.line, true: C.green500 }} thumbColor="#fff" />
             </View>
           )}
         </View>
@@ -242,7 +254,7 @@ export default function SettingsScreen() {
 
         {/* Logout */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
-          <Text style={[txt.logoutText, { color: s.danger.solid }]}>退出登录</Text>
+          <Text style={txt.logoutText}>退出登录</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -250,24 +262,18 @@ export default function SettingsScreen() {
 }
 
 function SettingRow({ icon, label, value, onPress }: { icon: any; label: string; value?: string; onPress?: () => void }) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const Wrapper = onPress ? TouchableOpacity : View;
   return (
     <Wrapper style={styles.settingRow} onPress={onPress} activeOpacity={0.6}>
-      <Ionicons name={icon} size={18} color={c.labelSecondary} />
+      <Ionicons name={icon} size={18} color={C.ink2} />
       <Text style={txt.settingLabel}>{label}</Text>
       <Text style={txt.settingValue}>{value || ''}</Text>
-      {onPress && <Ionicons name="chevron-forward" size={14} color={c.labelTertiary} />}
+      {onPress && <Ionicons name="chevron-forward" size={14} color={C.ink3} />}
     </Wrapper>
   );
 }
 
 function LocationSettingsRow({ city, useManual, onPress }: { city: string; useManual: boolean; onPress: () => void }) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const mode = useManual ? '手动城市' : 'GPS 自动';
 
   return (
@@ -275,7 +281,7 @@ function LocationSettingsRow({ city, useManual, onPress }: { city: string; useMa
       accessibilityRole="button"
       accessibilityLabel={`GPS / 城市定位, 当前城市 ${city}, ${mode}`}>
       <View style={styles.locationIconBox}>
-        <Ionicons name="navigate-outline" size={18} color={c.brand} />
+        <Ionicons name="navigate-outline" size={18} color={C.green500} />
       </View>
       <View style={styles.locationCopy}>
         <Text style={txt.locationTitle} numberOfLines={1}>GPS / 城市定位</Text>
@@ -285,7 +291,7 @@ function LocationSettingsRow({ city, useManual, onPress }: { city: string; useMa
         <Text style={txt.locationCity} numberOfLines={1}>{city}</Text>
         <Text style={txt.locationMode} numberOfLines={1}>{mode}</Text>
       </View>
-      <Ionicons name="chevron-forward" size={14} color={c.labelTertiary} />
+      <Ionicons name="chevron-forward" size={14} color={C.ink3} />
     </TouchableOpacity>
   );
 }
@@ -299,9 +305,6 @@ function GarminStatusRow({
   syncing: boolean;
   onSync: () => void;
 }) {
-  const { c, s } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const health = status?.health as 'healthy' | 'stale' | 'error' | 'unbound' | undefined;
   const mins = status?.minutes_since_last_sync as number | null | undefined;
   const safeMins = typeof mins === 'number' && Number.isFinite(mins)
@@ -309,10 +312,10 @@ function GarminStatusRow({
     : null;
 
   const dot =
-    health === 'healthy' ? s.success.solid :
-    health === 'stale' ? s.warning.solid :
-    health === 'error' ? s.danger.solid :
-    c.labelTertiary;
+    health === 'healthy' ? revaSemantic.normal.fg :
+    health === 'stale' ? revaSemantic.caution.fg :
+    health === 'error' ? revaSemantic.risk.fg :
+    C.ink3;
 
   const statusText = (() => {
     if (syncing) return '同步中...';
@@ -333,59 +336,61 @@ function GarminStatusRow({
   return (
     <TouchableOpacity style={styles.settingRow} onPress={onSync} activeOpacity={0.6} disabled={syncing}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        <Ionicons name="watch-outline" size={18} color={c.labelSecondary} />
+        <Ionicons name="watch-outline" size={18} color={C.ink2} />
         <View style={{
           width: 8, height: 8, borderRadius: 4, backgroundColor: dot,
         }} />
       </View>
       <Text style={txt.settingLabel}>Garmin</Text>
-      <Text style={[txt.settingValue, health === 'error' && { color: s.danger.solid }]}>{statusText}</Text>
-      <Ionicons name={syncing ? 'refresh' : 'chevron-forward'} size={14} color={c.labelTertiary} />
+      <Text style={[txt.settingValue, health === 'error' && { color: revaSemantic.risk.fg }]}>{statusText}</Text>
+      <Ionicons name={syncing ? 'refresh' : 'chevron-forward'} size={14} color={C.ink3} />
     </TouchableOpacity>
   );
 }
 
-const createStyles = (c: ColorPalette) => StyleSheet.create({
-  safe: { flex: 1, backgroundColor: c.bgPrimary },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+// Reva 设计语言(Claude Design handoff):暖白 paper / surface 卡 / ink 文字 / 活力绿 / r-lg 18 / 数字等宽 mono。
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.paper2 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: revaSpacing.s4, paddingVertical: revaSpacing.s2 },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  content: { padding: spacing.lg },
-  card: { backgroundColor: c.bgCard, borderRadius: radii.lg, marginBottom: spacing.md, ...shadows.subtle },
-  profileRow: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: spacing.lg },
-  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: c.brandLight, alignItems: 'center', justifyContent: 'center' },
+  content: { padding: revaSpacing.s5 },
+  card: { backgroundColor: C.surface, borderRadius: revaRadii.lg, marginBottom: revaSpacing.s4, ...revaShadows.sm },
+  profileRow: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: revaSpacing.s5 },
+  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.green50, alignItems: 'center', justifyContent: 'center' },
   settingRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: spacing.lg, paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.separator,
+    paddingHorizontal: revaSpacing.s5, paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line,
   },
   locationRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: spacing.lg, paddingVertical: 13,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.separator,
+    paddingHorizontal: revaSpacing.s5, paddingVertical: 13,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line,
   },
   locationIconBox: {
-    width: 28, height: 28, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: c.brandLight,
+    width: 28, height: 28, borderRadius: revaRadii.sm,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: C.green50,
   },
   locationCopy: { flex: 1, minWidth: 0 },
   locationStatus: { width: 74, alignItems: 'flex-end', gap: 3 },
   logoutBtn: {
-    backgroundColor: c.bgCard, borderRadius: radii.lg,
-    paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg,
-    ...shadows.subtle,
+    backgroundColor: C.surface, borderRadius: revaRadii.lg,
+    paddingVertical: 14, alignItems: 'center', marginTop: revaSpacing.s5,
+    ...revaShadows.sm,
   },
 });
 
-const createTxt = (c: ColorPalette) => ({
-  title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
-  name: { fontSize: 17, fontWeight: '600', color: c.labelPrimary } as TextStyle,
-  email: { fontSize: 13, color: c.labelSecondary, marginTop: 2 } as TextStyle,
-  settingLabel: { fontSize: 15, color: c.labelPrimary, flex: 1 } as TextStyle,
-  settingValue: { fontSize: 14, color: c.labelTertiary } as TextStyle,
-  sectionLabel: { fontSize: 12, fontWeight: '600', letterSpacing: 0.6, color: c.labelTertiary, marginLeft: spacing.xs, marginBottom: spacing.xs, marginTop: spacing.xs } as TextStyle,
-  locationTitle: { fontSize: 15, fontWeight: '700', color: c.labelPrimary, flexShrink: 1 } as TextStyle,
-  locationHint: { fontSize: 12, color: c.labelSecondary, marginTop: 3 } as TextStyle,
-  locationMode: { fontSize: 12, fontWeight: '600', color: c.brand } as TextStyle,
-  locationCity: { fontSize: 13, fontWeight: '600', color: c.labelSecondary } as TextStyle,
-  logoutText: { fontSize: 16, fontWeight: '500' } as TextStyle,
-});
+// 数字/版本号走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。破坏性操作(登出)用 risk 红。
+const txt = {
+  title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1, flex: 1, textAlign: 'center' } as TextStyle,
+  name: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1 } as TextStyle,
+  email: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, marginTop: 2 } as TextStyle,
+  settingLabel: { fontFamily: revaFonts.sans, fontSize: 15, color: C.ink1, flex: 1 } as TextStyle,
+  settingValue: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink3 } as TextStyle,
+  sectionLabel: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '600', letterSpacing: 0.6, color: C.ink3, marginLeft: revaSpacing.s1, marginBottom: revaSpacing.s1, marginTop: revaSpacing.s1 } as TextStyle,
+  locationTitle: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '700', color: C.ink1, flexShrink: 1 } as TextStyle,
+  locationHint: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, marginTop: 3 } as TextStyle,
+  locationMode: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '600', color: C.green500 } as TextStyle,
+  locationCity: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '600', color: C.ink2 } as TextStyle,
+  logoutText: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '500', color: revaSemantic.risk.fg } as TextStyle,
+};
