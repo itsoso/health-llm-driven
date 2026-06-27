@@ -31,6 +31,18 @@ Reva 的底层世界观是：健康不是玄学，也不只是自律。健康是
 
 > Reva 是人的健康运行时治理系统。它持续读取身体状态，识别风险和趋势，选择最有杠杆的控制输入，通过安全门约束执行，再用结果数据验证什么对这个人有效。
 
+### 1.3 System Substrate
+
+Reva 的系统由五层组成：
+
+1. 真实个人数据层：个人基因数据、表观遗传数据、医院检查报告、体检报告、年龄、性别、体重、腰围、既往病史、家族史、用药、补剂、症状和用户目标。所有数据必须保留来源、时间、置信度、权限和用户归属。
+2. 专业知识库层：饮食、睡眠、运动、补剂、药物、慢病、器官系统、环境暴露、检测复查和安全禁忌等领域知识。健康知识默认 reviewed-first，LLM 不能把未审内容包装成权威结论。
+3. 实时监测层：可穿戴设备和家用设备提供心率、血压、血糖、HRV、睡眠、压力、身体电量、血氧、训练负荷、体重、体脂、环境 CO2/PM2.5/温湿度等信号。后端负责 source arbitration、freshness、confidence 和冲突处理。
+4. 大模型推断与工具层：LLM 负责综合解释、提出问题、归纳计划和调用工具；确定性系统负责安全门、排序、状态机、审计和写入。LLM 不能单独做诊断、处方、剂量、红线解除或自动购买决策。
+5. IoT 与环境执行层：空气净化器、除湿器、加湿器、窗帘、灯光、智能血压计、体重计、水杯、床垫、办公座椅、办公屏幕、药盒和补剂库存等设备负责低摩擦采集、环境默认和受控执行。Reva 输出健康意图和场景建议，不做不受审计的任意设备控制。
+
+长期看，Reva 可以按器官和系统组织 program，例如心血管、代谢/内分泌、睡眠/恢复、呼吸/鼻炎、消化/肝胆、肌肉骨骼、神经认知、心理压力、免疫/炎症和口腔健康。但器官系统只是组织方式，不能削弱整体 Health Twin、安全门和跨系统相互作用判断。
+
 它不是：
 
 - 通用健康聊天机器人。
@@ -95,12 +107,15 @@ Reva 每天为用户完成五件事：
 
 ```text
 Data Intake
+  + Domain Knowledge
+  + Realtime Monitoring
   -> Health Twin
   -> Health Trajectory / Prediction Layer
   -> Safety Guardian
+  -> LLM / Tool Synthesis
   -> Action Ranker
-  -> Agenda / Watch Summary / Daily Plan
-  -> Surface Execution
+  -> Agenda / Watch Summary / Daily Plan / WriteIntent
+  -> Surface / IoT / Environment Execution
   -> Execution Event
   -> Outcome Review / Causal Memory
   -> Next Action
@@ -110,9 +125,11 @@ Data Intake
 
 输入包括：
 
-- 体检、化验、影像、指标 OCR、历史报告。
-- Apple Health、Garmin、Oura、CGM、体脂秤、手表、戒指等设备数据。
+- 个人基因、表观遗传、家族史、年龄、性别、既往病史、当前体重/腰围等先天和长期参数。
+- 医院检查报告、体检报告、化验、影像、指标 OCR 和历史报告。
+- Apple Health、Garmin、Oura、CGM、智能血压计、智能体重计、体脂秤、手表、戒指等设备数据。
 - 饮食、饮水、运动、睡眠、症状、情绪、药物、补剂、日程、地点、天气和环境。
+- 家居与办公 IoT 环境信号：CO2、PM2.5、温度、湿度、照度、占用、床上状态、屏幕/坐姿等结构化观察。
 - 用户目标、健康问题、医生建议、复查计划和家庭健康信息。
 
 要求：
@@ -156,7 +173,18 @@ Safety Guardian 是所有健康建议、执行和自动化前的硬约束层。�
 - AI 可以生成解释和候选方案，但不能绕过确定性安全规则。
 - 预测越强，安全边界越重要；系统必须明确哪些轨迹只能观察、哪些可以生活方式干预、哪些必须升级医生。
 
-### 3.5 Action Ranker
+### 3.5 LLM And Tool Synthesis
+
+大模型推断层负责把个人数据、专业知识库、实时信号、历史干预和用户约束综合成可理解、可执行的计划。它的职责是 synthesize，不是替代确定性系统。
+
+产品要求：
+
+- LLM 输出必须转化为 HealthProblem、HealthProgram、HealthProtocol、HealthAgendaItem、WriteIntent、InterventionCycle、Review 或 explain-only 结果。
+- LLM 可以给出饮食、睡眠、运动、补剂、环境和复查建议，但必须附带证据边界、安全状态和验证窗口。
+- 药物、补剂、基因、疾病、怀孕、儿童、肝肾功能、相互作用和红线症状相关建议必须经过 SafetyGuardian。
+- 补剂购买、补货、个性化搭配或未来个性化生产只能作为受控供应链意图，默认 manual_confirm，不得自动下单、不得替代医生处方、不得输出未经审查的疗效承诺。
+
+### 3.6 Action Ranker
 
 Action Ranker 把候选健康动作按杠杆排序。排序维度应包括：
 
@@ -175,7 +203,7 @@ Action Ranker 把候选健康动作按杠杆排序。排序维度应包括：
 2. 我现在具体做什么？
 3. 什么时候知道它有没有用？
 
-### 3.6 Agenda
+### 3.7 Agenda
 
 Agenda 是当前产品最重要的统一执行 contract。它应把 HealthProtocol、HealthProblem follow-up、训练 readiness、数据质量、日程、Daily Operating Plan、智能优先级和 Watch summary 收敛成一个可跨 surface 消费的列表。
 
@@ -186,7 +214,19 @@ Agenda 是当前产品最重要的统一执行 contract。它应把 HealthProtoc
 - 完成、跳过、稍后、自动观察、手动补录必须写回统一事件。
 - 医疗级 source model 和高风险行为不能通过语音或轻量入口绕过 domain safety。
 
-### 3.7 Execution Event
+### 3.8 IoT And Environment Execution
+
+IoT 和环境设备是 Reva 的低摩擦执行层。它们可以帮助用户把健康行动从“记得做”变成“环境默认发生”，例如空气净化、湿度控制、灯光节律、窗帘、睡眠环境、智能水杯、血压/体重自动测量、坐姿提醒、屏幕休息和药盒/补剂库存观察。
+
+产品要求：
+
+- Reva 输出健康意图、场景触发和复盘任务；Home Assistant、厂商 App 或设备生态负责实时设备控制。
+- 所有设备观察必须是结构化标量，不持久化原始图像、音频、视频或隐私过重的媒体。
+- 设备自动化必须有 manual override、审计、降级路径和通知预算。
+- 设备不能自行产生医疗判断；设备数据进入 Health Twin、Agenda 或 Review 前必须带 source、freshness、confidence 和 privacy classification。
+- 高风险设备动作、财务动作和外部购买必须通过 WriteIntent 或独立一等对象逐笔确认。
+
+### 3.9 Execution Event
 
 Execution Event 是产品长期资产的关键原子。每次用户执行、跳过、延后、确认、自动观察或复查，都必须沉淀为可追溯事件。
 
@@ -195,7 +235,7 @@ Execution Event 是产品长期资产的关键原子。每次用户执行、跳�
 - 事件要能连接到 HealthProtocol、HealthProblem、HealthProgram、InterventionCycle、WriteIntent 或具体 domain record。
 - 跳过原因不能只做统计，要进入后续自我修正：时间不合适、难度过高、身体不适、无效、提醒太多等都应影响后续排序和通知。
 
-### 3.8 Outcome Review And Causal Memory
+### 3.10 Outcome Review And Causal Memory
 
 当前系统已经有 InterventionCycle、OutcomeMetric、HealthOperatingReview、PersonalOutcomeService 和 CausalMemory 的雏形。它们应共同形成长期闭环：
 
@@ -216,9 +256,12 @@ Execution Event 是产品长期资产的关键原子。每次用户执行、跳�
 | Object | Product Meaning | Current Code Direction | Long-Term Requirement |
 |---|---|---|---|
 | HealthTwin | 用户当前健康状态镜像 | `backend/app/services/twin/*` | 成为所有推荐、分析和 surface 展示的上下文源 |
+| DomainKnowledgeBase | 专业健康知识与证据层 | `backend/data/system_kb_v2_seed/*`, `system_knowledge_service.py` | 为饮食、睡眠、运动、补剂、药物、慢病和环境建议提供 reviewed-first 证据 |
+| RealtimeHealthSignal | 实时健康与环境信号 | wearable router, device source priority, bedroom/device observations | 统一实时监控数据的新鲜度、置信度、来源和隐私分类 |
 | SafetyGuardian | 确定性安全门 | `backend/app/agents/safety_guardian/*` | 所有行动、通知和写操作前置安全检查 |
 | HealthTrajectory | 健康轨迹和风险漂移视图 | `backend/app/services/health_trajectory.py` | 把先天底图、临床锚点、实时状态、可干预变量和下一步行动统一起来 |
 | PersonalPrediction | 小型个人预测器 | `backend/app/services/personal_models/*` | 用人群先验 + 个人后验更新输出带不确定度的预测，不 fine-tune LLM |
+| OrganSystemProgram | 器官/系统级改善计划 | `HealthProgram`, specialists, health domains | 按心血管、代谢、睡眠恢复、呼吸、消化、肌骨等组织行动，但保持全局安全和相互作用判断 |
 | HealthProblem | 被管理的健康问题或风险 | `backend/app/models/health_problem.py` | 承载红线、负责人、复查、升级路径 |
 | HealthProgram | 8-12 周健康改善计划 | `backend/app/models/health_program.py` | 把多个 protocol/action/metric 组织成长期计划 |
 | HealthProtocol | 可重复执行的健康协议 | `backend/app/models/health_protocol.py` | 支持自动观察、手动补录、跳过原因、自我调整 |
@@ -226,6 +269,8 @@ Execution Event 是产品长期资产的关键原子。每次用户执行、跳�
 | ExecutionEvent | 用户真实执行结果 | protocol events、intervention events、domain records | 成为长期健康 ledger 的核心原子 |
 | InterventionCycle | N-of-1 改善闭环 | `backend/app/models/intervention_cycle.py` | 负责 baseline、目标、复测、显著性和下一步 |
 | WriteIntent | 可控写操作意图 | `backend/app/models/write_intent.py` | 从 manual_confirm 逐步演进到 earned autonomy |
+| IoTActuationIntent | 环境和设备执行意图 | `BedroomAutomationEvent`, `DeviceObservation`, Home Assistant design | 把健康意图转成受控设备场景、观察事件和复盘任务 |
+| SupplyIntent | 补剂/耗材/健康商品供应链意图 | supplement inventory, reorder nudges, `ReorderIntent` scaffold | 只做物流/财务受控动作，逐笔确认，不自动医疗化、不静默下单 |
 | CausalMemory | 观察性长期记忆 | `backend/app/services/causal_memory.py` | 存储“动作 -> 指标变化”的可解释个人证据 |
 | SystemKnowledge | 系统知识和证据层 | `backend/data/system_kb_v2_seed/*` | 以 reviewed knowledge 为主，支持安全可追溯检索 |
 
@@ -417,6 +462,12 @@ Agent 应服务于 health loop，而不是替代 health loop：
 | FR18 | 预测必须有不确定度和边界 | 低置信预测降级为观察/补数据/医生复核，不直接驱动高风险行动 |
 | FR19 | Agenda 行动表达控制输入语义 | 每个 top action 说明目标状态变量、预期窗口、成功信号和失败信号 |
 | FR20 | 用户可见个人健康规律库 | CausalMemory/OutcomeReview 以“观察性关联”方式呈现个人输入和指标变化 |
+| FR21 | 真实个人数据层可追溯 | 基因、表观遗传、报告、体检、年龄性别体重等数据都有来源、时间、权限和置信度 |
+| FR22 | 专业知识库 reviewed-first | 饮食、睡眠、运动、补剂、药物和慢病建议能引用受控知识或明确低置信边界 |
+| FR23 | 实时监测数据统一仲裁 | 心率、血压、血糖、HRV、睡眠、压力、身体电量、血氧和环境信号进入统一 source/freshness/confidence contract |
+| FR24 | IoT 只作为受控执行层 | 空气、湿度、灯光、窗帘、水杯、床垫、座椅、屏幕等设备只能执行健康意图和观察事实，不产生独立医疗判断 |
+| FR25 | 补剂和供应链动作受控 | 补剂建议、库存、补货、购买和未来个性化搭配/生产必须经过 DDI/DSI/PGx、安全审计和 manual_confirm |
+| FR26 | 器官系统 program 统一到全局 Twin | 心血管、代谢、睡眠恢复、呼吸、消化、肌骨、认知心理等 program 不得局部优化破坏全局风险 |
 
 ## 8. Non-Functional Requirements
 
@@ -587,6 +638,18 @@ Reva 的长期系统目标是成为：
 - OpenClaw/MCP skills 成为受控 extension layer。
 - 医生、家人、企业健康和设备合作有不同权限边界。
 - API contract 稳定，客户端只做 surface，不做独立健康裁决。
+
+### Pillar 8. IoT Environment And Supply Chain Execution
+
+目标：把健康行动从“提醒用户”升级为“环境默认 + 设备观察 + 受控供应链执行”。
+
+建设重点：
+
+- 先做高 ROI、低风险的环境闭环：卧室 CO2、PM2.5、湿度、温度、灯光、窗帘和睡眠保护窗口。
+- 智能血压计、体重计、水杯、药盒、床垫和办公设备优先作为自动观察和低摩擦确认，不作为独立判断源。
+- 补剂库存、补货和购买保持物流/财务边界；真实下单必须逐笔确认，不存支付凭据，不自动循环下单。
+- 个性化补剂搭配或未来个性化生产只作为长期受控供应链能力，必须有 reviewed knowledge、相互作用检查、批次质量、法规和审计边界。
+- IoT 设备接入以 Home Assistant / 厂商生态 / 标准协议为控制层，Reva 不做实时家居控制器。
 
 ## 12. Evolution Roadmap
 
