@@ -16,6 +16,7 @@ from app.schemas.onboarding import (
     OnboardingCompleteRequest,
     ProfileData,
 )
+from app.services.onboarding_bootstrap import ensure_initial_health_loop
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
@@ -162,11 +163,13 @@ async def complete_onboarding(
     # 标记完成
     current_user.onboarding_completed = True
     db.commit()
+    health_loop_bootstrap = ensure_initial_health_loop(db, current_user.id)
 
     return {
         "message": "新手引导已完成",
         "onboarding_completed": True,
         "templates_created": templates_created,
+        "health_loop_bootstrap": health_loop_bootstrap,
     }
 
 
