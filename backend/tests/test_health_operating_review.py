@@ -79,6 +79,60 @@ def test_daily_plan_review_summarizes_events_and_metric_changes(client, db, auth
     assert "不评估预测准确性" in backtest["boundary"]
 
 
+def test_daily_plan_review_backtests_prediction_records(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    today = date.today()
+
+    db.add_all([
+        InterventionEvent(
+            user_id=user.id,
+            plan_date=today - timedelta(days=5),
+            action_key="movement.moderate_activity",
+            action_domain="movement",
+            action_title="累计 35-45 分钟中等强度活动",
+            feedback_status="completed",
+            source="daily_plan",
+            action_snapshot={
+                "verification_metric": "waist_cm",
+                "prediction": {
+                    "id": "pred-waist-7d",
+                    "source": "health_trajectory",
+                    "metric": "waist_cm",
+                    "direction": "down",
+                    "horizon_days": 7,
+                    "baseline": 96.0,
+                    "expected_delta": -0.5,
+                    "confidence": "medium",
+                    "claim_boundary": "观察性回测, 不证明单个行动造成指标变化。",
+                },
+            },
+        ),
+        WaistRecord(user_id=user.id, record_date=today - timedelta(days=6), waist_cm=96.0),
+        WaistRecord(user_id=user.id, record_date=today, waist_cm=94.8),
+    ])
+    db.commit()
+
+    resp = client.get("/api/v1/daily-plan/review?window_days=7", headers=headers)
+
+    assert resp.status_code == 200
+    backtest = resp.json()["prediction_backtest"]
+    assert backtest["version"] == "prediction_backtest_v1"
+    assert backtest["status"] == "ready"
+    assert backtest["ready_candidate_count"] == 1
+    assert backtest["summary"]["met"] == 1
+    result = backtest["results"][0]
+    assert result["prediction_id"] == "pred-waist-7d"
+    assert result["metric"] == "waist_cm"
+    assert result["expected_signal"]["direction"] == "down"
+    assert result["actual_result"]["current"] == 94.8
+    assert result["observed_delta"] == -1.2
+    assert result["verdict"] == "met"
+    assert result["confidence_before"] == "medium"
+    assert result["confidence_after"] == "medium"
+    assert result["attribution"] == "prediction_backtest_not_causation"
+    assert "不证明" in result["boundary"]
+
+
 def test_daily_plan_review_is_user_scoped(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
     today = date.today()
