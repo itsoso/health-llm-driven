@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, asdict
 from datetime import date, timedelta
+from statistics import pstdev
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import func
@@ -70,6 +71,32 @@ def _avg(values: List[Optional[float]]) -> Optional[float]:
     if not clean:
         return None
     return round(sum(clean) / len(clean), 2)
+
+
+def _std(values: List[Optional[float]]) -> Optional[float]:
+    """窗口内日间总体标准差(个体内噪声基线)。<2 个有效值 → None(测不出方差)。"""
+    clean = [v for v in values if v is not None]
+    if len(clean) < 2:
+        return None
+    return round(pstdev(clean), 3)
+
+
+def _pool_sd(
+    sd_b: Optional[float], nb: int, sd_a: Optional[float], na: int
+) -> Optional[float]:
+    """把 before/after 两窗口的日间 SD 合成单一个体内噪声估计(按天数加权方差再开方)。
+
+    只用各窗口**内部**的日间波动(不含前后水平差),故合并后仍是噪声而非信号。
+    任一侧缺 SD 用另一侧;两侧都缺 → None(下游退回 RCV% 兜底)。
+    """
+    parts = [(sd, n) for sd, n in ((sd_b, nb), (sd_a, na)) if sd is not None and n]
+    if not parts:
+        return None
+    den = sum(n for _, n in parts)
+    if not den:
+        return None
+    num = sum((sd ** 2) * n for sd, n in parts)
+    return round((num / den) ** 0.5, 3)
 
 
 # ---------------------------------------------------------------------------
@@ -512,18 +539,38 @@ class PersonalOutcomeService:
         after_start = event_date
         after_end = event_date + timedelta(days=window_days)
 
-        def _window_avg(start: date, end: date) -> Dict[str, Optional[float]]:
-            # 多源按日合并 → samples=真实天数, 各指标均值不被多设备重复拉偏
+        # (key, GarminData 列名)
+        _metric_cols = (
+            ("hrv", "hrv"),
+            ("rhr", "resting_heart_rate"),
+            ("sleep_score", "sleep_score"),
+            ("deep_sleep_min", "deep_sleep_duration"),
+            ("steps", "steps"),
+        )
+
+        def _window_stats(start: date, end: date) -> Dict[str, Any]:
+            # 多源按日合并 → samples=真实天数; 每指标既算窗口均值也算窗口内日间 SD(噪声基线)
             from app.services.garmin_daily_merged import merged_daily_rows
             rows = merged_daily_rows(db, user_id, since=start, until=end)
-            return {
-                "hrv": _avg([r.hrv for r in rows]),
-                "rhr": _avg([r.resting_heart_rate for r in rows]),
-                "sleep_score": _avg([r.sleep_score for r in rows]),
-                "deep_sleep_min": _avg([r.deep_sleep_duration for r in rows]),
-                "steps": _avg([r.steps for r in rows]),
-                "samples": len(rows),
-            }
+            out: Dict[str, Any] = {"samples": len(rows)}
+            for key, col in _metric_cols:
+                vals = [getattr(r, col) for r in rows]
+                out[key] = {"mean": _avg(vals), "sd": _std(vals)}
+            return out
+
+        before_stats = _window_stats(before_start, before_end)
+        after_stats = _window_stats(after_start, after_end)
+        # 匹配对照窗口: 事件前再往前推一个等长窗口 → 给诚实地板做 difference-in-differences
+        # (扣事件前既有趋势)+ 回归均值锚点。
+        baseline_stats = _window_stats(
+            before_start - timedelta(days=window_days), before_start - timedelta(days=1)
+        )
+
+        # before/after 保持原 shape({metric: 均值, "samples": 天数}), 前端 personal-outcome 页直接读。
+        before = {k: before_stats[k]["mean"] for k, _ in _metric_cols}
+        before["samples"] = before_stats["samples"]
+        after = {k: after_stats[k]["mean"] for k, _ in _metric_cols}
+        after["samples"] = after_stats["samples"]
 
         return {
             "event_id": event_id,
@@ -531,6 +578,16 @@ class PersonalOutcomeService:
             "detail": detail,
             "event_date": event_date.isoformat(),
             "window_days": window_days,
-            "before": _window_avg(before_start, before_end),
-            "after": _window_avg(after_start, after_end),
+            "before": before,
+            "after": after,
+            # ↓ 诚实地板(causal_memory.notes_from_impact)所需统计上下文: 个体内日间噪声 SD +
+            #   匹配对照窗口均值。纯附加, 不改 before/after 既有 shape。
+            "noise": {
+                k: _pool_sd(
+                    before_stats[k]["sd"], before_stats["samples"],
+                    after_stats[k]["sd"], after_stats["samples"],
+                )
+                for k, _ in _metric_cols
+            },
+            "baseline": {k: baseline_stats[k]["mean"] for k, _ in _metric_cols},
         }
