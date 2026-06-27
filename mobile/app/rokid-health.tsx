@@ -62,6 +62,10 @@ import {
   stopRokidVoiceCommandCapture,
   submitRokidVoiceCommand,
 } from '../services/rokidVoiceControl';
+import {
+  applyRokidVoiceAgendaAction,
+  type RokidAgendaVoiceAction,
+} from '../services/rokidVoiceAgenda';
 import { recognizeFood, type FoodRecognitionResponse } from '../services/diet';
 import { radii, spacing } from '../constants/theme';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
@@ -1468,6 +1472,53 @@ export default function RokidHealthScreen() {
     }
   };
 
+  // 眼镜语音 "确认/跳过/等会" → 解析「当前待办」并经完成回路写真实记录(confirm/skip)或保持
+  // pending(snooze)。安全/R4 边界在 services/rokidVoiceAgenda.ts:只放行非医疗级协议待办(后端
+  // voice_actionable 权威 flag + domain 白名单兜底),用药/补剂/复查不会被含糊语音自动写。这里只
+  // 负责把结果如实播报 + 失效缓存,绝不假装完成:无可用待办 → fail-loud "没有可用语音确认的待处理
+  // 动作";写失败(applyRokidVoiceAgendaAction 上抛)→ 冒泡到外层 catch 走统一失败播报 + 诊断上传。
+  const handleRokidVoiceAgendaAction = async (
+    action: RokidAgendaVoiceAction,
+    operationId: string,
+  ) => {
+    const result = await applyRokidVoiceAgendaAction(action);
+    if (!result.ok) {
+      setVoiceState({ status: 'failed', message: result.message });
+      void updateVoiceCustomView(result.message);
+      await appendRokidOperationEventSafe(operationId, {
+        eventType: 'voice_agenda_action_no_target',
+        phase: 'route',
+        severity: 'warn',
+        state: 'failed',
+        message: result.message,
+        payload: { action },
+      });
+      return;
+    }
+    const verb = action === 'confirm' ? '已确认' : action === 'skip' ? '已跳过' : '稍后再提醒';
+    const message = `${verb}：${result.item.title}`;
+    setVoiceState({ status: 'listening', message });
+    void updateVoiceCustomView(message);
+    await appendRokidOperationEventSafe(operationId, {
+      eventType: 'voice_agenda_action_applied',
+      phase: 'route',
+      severity: 'pass',
+      state: 'running',
+      message,
+      payload: {
+        action,
+        wrote: result.wrote,
+        object_type: result.item.source.object_type,
+        object_id: result.item.source.object_id,
+      },
+    });
+    // confirm/skip 改了真实记录 → 失效议程 / 时间线缓存,让首页脊柱熄灯;snooze 没写,不必失效。
+    if (result.wrote) {
+      await queryClient.invalidateQueries({ queryKey: ['agenda', 'today'] });
+      await queryClient.invalidateQueries({ queryKey: ['timeline', 'today'] });
+    }
+  };
+
   useEffect(() => removeVoiceTranscriptListener, []);
 
   // council 回归修复:'waiting'(已排队)态的文案是在排队瞬间从可能过期的 status 算的
@@ -2362,6 +2413,9 @@ export default function RokidHealthScreen() {
         openGuidedTask: async ({ route }) => {
           router.push(route as any);
         },
+        confirmCurrent: () => handleRokidVoiceAgendaAction('confirm', operationId),
+        skipCurrent: () => handleRokidVoiceAgendaAction('skip', operationId),
+        snoozeCurrent: () => handleRokidVoiceAgendaAction('snooze', operationId),
         clarify: async (commandToClarify) => {
           setVoiceState({
             status: 'listening',

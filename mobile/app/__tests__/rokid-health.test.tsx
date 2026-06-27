@@ -19,6 +19,8 @@ const mockRecognizeFood = jest.fn();
 const mockStartRokidVoiceCommandCapture = jest.fn();
 const mockStopRokidVoiceCommandCapture = jest.fn();
 const mockSubmitRokidVoiceCommand = jest.fn();
+const mockGetSmartAgendaToday = jest.fn();
+const mockCompleteAgendaItem = jest.fn();
 const mockCreateRokidOperation = jest.fn();
 const mockAppendRokidOperationEvent = jest.fn();
 const mockUploadRokidDiagnostics = jest.fn();
@@ -74,6 +76,12 @@ jest.mock('../../services/rokidAmbient', () => ({
 
 jest.mock('../../services/diet', () => ({
   recognizeFood: (...args: any[]) => mockRecognizeFood(...args),
+}));
+
+jest.mock('../../services/agenda', () => ({
+  ...jest.requireActual('../../services/agenda'),
+  getSmartAgendaToday: (...args: any[]) => mockGetSmartAgendaToday(...args),
+  completeAgendaItem: (...args: any[]) => mockCompleteAgendaItem(...args),
 }));
 
 jest.mock('../../services/rokidVoiceControl', () => ({
@@ -934,6 +942,201 @@ describe('RokidHealthScreen', () => {
       expect(screen.getByText('已保存饮食记录：牛肉面 1碗 · 620kcal · 蛋白32g · 碳水78g · 脂肪20g')).toBeTruthy();
       expect(screen.getByText('最近状态: 已保存饮食记录：牛肉面 1碗 · 620kcal · 蛋白32g · 碳水78g · 脂肪20g')).toBeTruthy();
     });
+  });
+
+  const smartProtocolItem = (overrides: Record<string, any> = {}) => ({
+    id: 'smart_health_protocol_1',
+    type: 'hydration',
+    title: '晨间喝水 2000ml',
+    status: 'pending',
+    priority: 50,
+    source: { object_type: 'health_protocol', object_id: 1 },
+    why_now: '',
+    do_now: '',
+    verify_by: {},
+    replan_policy: {},
+    surface: { primary: 'home' },
+    autonomy_tier: 'suggest',
+    voice_actionable: true,
+    can_complete: true,
+    can_snooze: true,
+    can_skip: true,
+    ...overrides,
+  });
+
+  const smartTodayResponse = (topItems: Record<string, any>[]) => ({
+    agenda_date: '2026-06-25',
+    count: topItems.length,
+    items: [],
+    mode: 'smart',
+    source_count: topItems.length,
+    smart: { top_items: topItems },
+  });
+
+  it('confirms the current pending agenda item from a Rokid "确认" voice transcript', async () => {
+    mockSubmitRokidVoiceCommand.mockResolvedValueOnce({
+      command: {
+        intent: 'confirm',
+        client_action: 'confirm_current',
+        voice_reply: '收到, 我会确认当前待处理动作。',
+        requires_confirmation: true,
+      },
+    });
+    mockGetSmartAgendaToday.mockResolvedValueOnce(smartTodayResponse([smartProtocolItem()]));
+    mockCompleteAgendaItem.mockResolvedValueOnce({});
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await act(async () => {
+      await rokidTranscriptListener?.({
+        transcript: '确认',
+        confidence: 0.95,
+        capturedAt: '2026-06-25T09:00:00+08:00',
+      });
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockCompleteAgendaItem).toHaveBeenCalledWith(
+        { object_type: 'health_protocol', object_id: 1 },
+        'protocol',
+        undefined,
+        { status: 'done' },
+      );
+      expect(screen.getByText('已确认：晨间喝水 2000ml')).toBeTruthy();
+    });
+  });
+
+  it('skips the current pending agenda item from a Rokid "跳过" voice transcript', async () => {
+    mockSubmitRokidVoiceCommand.mockResolvedValueOnce({
+      command: {
+        intent: 'skip',
+        client_action: 'skip_current',
+        voice_reply: '已准备跳过当前动作。',
+      },
+    });
+    mockGetSmartAgendaToday.mockResolvedValueOnce(smartTodayResponse([smartProtocolItem()]));
+    mockCompleteAgendaItem.mockResolvedValueOnce({});
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await act(async () => {
+      await rokidTranscriptListener?.({
+        transcript: '跳过',
+        confidence: 0.95,
+        capturedAt: '2026-06-25T09:00:00+08:00',
+      });
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(mockCompleteAgendaItem).toHaveBeenCalledWith(
+        { object_type: 'health_protocol', object_id: 1 },
+        'protocol',
+        undefined,
+        { status: 'skipped' },
+      );
+      expect(screen.getByText('已跳过：晨间喝水 2000ml')).toBeTruthy();
+    });
+  });
+
+  it('snoozes (no write) the current pending agenda item from a Rokid "等会" voice transcript', async () => {
+    mockSubmitRokidVoiceCommand.mockResolvedValueOnce({
+      command: {
+        intent: 'later',
+        client_action: 'snooze_current',
+        voice_reply: '好, 这个动作稍后再提醒。',
+      },
+    });
+    mockGetSmartAgendaToday.mockResolvedValueOnce(smartTodayResponse([smartProtocolItem()]));
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await act(async () => {
+      await rokidTranscriptListener?.({
+        transcript: '等会',
+        confidence: 0.95,
+        capturedAt: '2026-06-25T09:00:00+08:00',
+      });
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('稍后再提醒：晨间喝水 2000ml')).toBeTruthy();
+    });
+    // snooze 不写:完成回路绝不被调用(后端无 snooze 端点,待办保持 pending)。
+    expect(mockCompleteAgendaItem).not.toHaveBeenCalled();
+  });
+
+  it('fail-louds a Rokid "确认" when the only pending item is medical-grade (R4: no vague-voice auto-confirm)', async () => {
+    mockSubmitRokidVoiceCommand.mockResolvedValueOnce({
+      command: {
+        intent: 'confirm',
+        client_action: 'confirm_current',
+        voice_reply: '收到, 我会确认当前待处理动作。',
+        requires_confirmation: true,
+      },
+    });
+    // 当前唯一待办是用药协议(真实议程 shape:object_type=health_protocol, type=medication,
+    // 后端 voice_actionable=false)→ 被安全门排除 → 没有可语音执行的待办。
+    mockGetSmartAgendaToday.mockResolvedValueOnce(
+      smartTodayResponse([
+        smartProtocolItem({
+          title: '二甲双胍 0.5g',
+          type: 'medication',
+          voice_actionable: false,
+          source: { object_type: 'health_protocol', object_id: 7 },
+        }),
+      ]),
+    );
+    const screen = renderWithProviders(<RokidHealthScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('启动语音控制')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('启动语音控制'));
+      await flushAsyncUpdates();
+    });
+
+    await act(async () => {
+      await rokidTranscriptListener?.({
+        transcript: '确认',
+        confidence: 0.95,
+        capturedAt: '2026-06-25T09:00:00+08:00',
+      });
+      await flushAsyncUpdates();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('现在没有可用语音确认的待处理动作，请在手机上查看议程。')).toBeTruthy();
+    });
+    expect(mockCompleteAgendaItem).not.toHaveBeenCalled();
   });
 
   it('routes a Rokid push-up voice transcript into the push-up coach flow', async () => {
