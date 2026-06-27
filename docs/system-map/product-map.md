@@ -3,13 +3,15 @@
 ---
 doc: system-map/product-map
 last-reviewed: 2026-06-27
-generated-source: docs/_generated/system-map.json
+generated-sources:
+  - docs/_generated/system-map.json
+  - docs/_generated/mobile-access-map.json
 authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-inventory.md
 ---
 
 # 产品地图 — 多端 × UI × 业务流 × 系统流
 
-> 计数(mobile/web 路由等)以 [`docs/_generated/system-map.json`](../_generated/system-map.json) 为准;本文给**端 roster、surface 名、业务流、系统流**(叙事,带 last-reviewed)。surface 级 disposition(Keep/Converge/Archive)见 [surface-ownership-inventory](../specs/active/2026-06-26-surface-ownership-inventory.md)。
+> 计数(mobile/web 路由等)以 [`docs/_generated/system-map.json`](../_generated/system-map.json) 为准;Mobile 页面节点、导航边、用户旅程和 IA 评估以 [`docs/_generated/mobile-access-map.json`](../_generated/mobile-access-map.json) 为准。本文给**端 roster、surface 名、业务流、系统流**(叙事,带 last-reviewed)。surface 级 disposition(Keep/Converge/Archive)见 [surface-ownership-inventory](../specs/active/2026-06-26-surface-ownership-inventory.md)。
 
 ## 1. 多端(8 端)
 
@@ -28,7 +30,7 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 
 ## 2. 每端 UI surface(roster;计数见 `_generated`)
 
-- **mobile**(`mobile/app/`,4 可见 tab):今日 `index.tsx` · 私教 `chat.tsx` · 记录 `record.tsx` · 我 `me.tsx`(隐藏:`alerts.tsx`/`journal/`)。日常非 tab:`reva.tsx`/`agenda.tsx`/`timeline.tsx`/`day-schedule.tsx`/`diet.tsx`/`symptom-record.tsx`/`medications.tsx`/`goals.tsx`/`reminders.tsx`/`voice-chat.tsx`;透明化入口:`system-map.tsx`。
+- **mobile**(`mobile/app/`,4 可见 tab):今日 `index.tsx` · 私教 `chat.tsx` · 记录 `record.tsx` · 我 `me.tsx`(隐藏:`alerts.tsx`/`journal/`)。日常非 tab:`reva.tsx`/`agenda.tsx`/`timeline.tsx`/`day-schedule.tsx`/`diet.tsx`/`symptom-record.tsx`/`medications.tsx`/`goals.tsx`/`reminders.tsx`/`voice-chat.tsx`;透明化入口:`system-map.tsx`。全量页面/边/旅程/低曝光评估见 [`mobile-access-map.md`](mobile-access-map.md) 与 `_generated/mobile-access-map.json`。
 - **frontend**(`frontend/src/app/`):dashboard/digital-twin/health-trends/health-report/personal-outcome/admin/review/onboarding/family/… (全量计数 `_generated`)。
 - **mac**(`SidebarDestination.swift` 18 dest):today/agenda/timeline/calendar/agent/record/data/dataSources/prescriptions/liver/healthExtras/genetics/knowledge/workouts/goals/jobs/trace/settings。
 - **watch**(`apps/watch/WatchApp/`,3 屏):`TodayStatusView` · `PushListView` · `QuickRecordView` + complication `RevaComplication.swift`。(对话/记录扩展见 watch §13 实施规划)
@@ -56,4 +58,5 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 
 - 端 roster / surface 名 / 流程改了 → 改本文 + bump `last-reviewed`(product-pipeline S8)。
 - 任何计数 → 改代码后跑 `python scripts/dump_system_map.py`,**别手打进本文**。
+- Mobile 路由、Tab、设置行、静态跳转或用户 journey 改了 → 跑 `python scripts/dump_mobile_access_map.py`,并让 `check_doc_drift.py` 通过。
 - 新端 / 新主流 → 同时更新本文 + surface-ownership-inventory。

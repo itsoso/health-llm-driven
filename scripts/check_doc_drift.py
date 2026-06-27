@@ -380,6 +380,39 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         failures.append(f"  system-map build/compare failed: {e}")
 
+    # 6. Mobile access map: Expo routes + static navigation edges + canonical
+    #    product journeys. This prevents Mobile IA and agent-facing page maps
+    #    from drifting after route or settings changes.
+    try:
+        from dump_mobile_access_map import MOBILE_OUT as MOBILE_ACCESS_MOBILE_OUT
+        from dump_mobile_access_map import OUT as MOBILE_ACCESS_OUT
+        from dump_mobile_access_map import _serialize as serialize_mobile_access
+        from dump_mobile_access_map import _serialize_mobile_ts as serialize_mobile_access_ts
+        from dump_mobile_access_map import build_mobile_access_map
+        fresh_mobile_access_map = build_mobile_access_map()
+        if not MOBILE_ACCESS_OUT.exists():
+            failures.append(
+                "  mobile-access-map: docs/_generated/mobile-access-map.json 缺失, "
+                "跑 python scripts/dump_mobile_access_map.py 生成并提交"
+            )
+        elif MOBILE_ACCESS_OUT.read_text(encoding="utf-8") != serialize_mobile_access(fresh_mobile_access_map):
+            failures.append(
+                "  mobile-access-map: docs/_generated/mobile-access-map.json 与 Mobile 代码不符, "
+                "跑 python scripts/dump_mobile_access_map.py 重新生成并提交"
+            )
+        if not MOBILE_ACCESS_MOBILE_OUT.exists():
+            failures.append(
+                "  mobile-access-map: mobile/constants/mobileAccessMap.generated.ts 缺失, "
+                "跑 python scripts/dump_mobile_access_map.py 生成并提交"
+            )
+        elif MOBILE_ACCESS_MOBILE_OUT.read_text(encoding="utf-8") != serialize_mobile_access_ts(fresh_mobile_access_map):
+            failures.append(
+                "  mobile-access-map: mobile/constants/mobileAccessMap.generated.ts 与 Mobile 代码不符, "
+                "跑 python scripts/dump_mobile_access_map.py 重新生成并提交"
+            )
+    except Exception as e:  # noqa: BLE001
+        failures.append(f"  mobile-access-map build/compare failed: {e}")
+
     if failures:
         print("❌ CLAUDE.md / ARCHITECTURE.md 与代码已漂移：", file=sys.stderr)
         for f in failures:

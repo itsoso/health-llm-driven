@@ -12,11 +12,13 @@ import { Stack, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { radii, spacing } from '../constants/theme';
+import { mobileAccessMapSnapshot } from '../constants/mobileAccessMap.generated';
 import { systemMapSnapshot } from '../constants/systemMap.generated';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme, type ColorPalette, type SemanticPalette } from '../hooks/useTheme';
 
 type CountKey = keyof typeof systemMapSnapshot.counts;
+type MobileAccessCountKey = keyof typeof mobileAccessMapSnapshot.counts;
 type ToneKey = keyof SemanticPalette;
 
 const COUNT_CARDS: Array<{
@@ -43,8 +45,17 @@ const LAYERS = [
 const SOURCE_ROWS = [
   { label: 'Agent 入口', value: 'docs/system-map/INDEX.md' },
   { label: '代码真源', value: 'docs/_generated/system-map.json' },
+  { label: 'Mobile 图谱', value: 'docs/_generated/mobile-access-map.json' },
   { label: '生成器', value: 'scripts/dump_system_map.py' },
+  { label: 'Mobile 图谱生成器', value: 'scripts/dump_mobile_access_map.py' },
   { label: '漂移闸', value: 'scripts/check_doc_drift.py' },
+];
+
+const MOBILE_ACCESS_STATS: Array<{ key: MobileAccessCountKey; label: string }> = [
+  { key: 'routes', label: '页面节点' },
+  { key: 'edges', label: '导航边' },
+  { key: 'journeys', label: '用户旅程' },
+  { key: 'settings_rows', label: '设置入口' },
 ];
 
 export default function SystemMapScreen() {
@@ -105,6 +116,8 @@ export default function SystemMapScreen() {
           ))}
         </View>
 
+        <MobileAccessPanel />
+
         <View style={styles.panel}>
           <View style={styles.panelHeader}>
             <Ionicons name="layers-outline" size={18} color={c.brand} />
@@ -150,6 +163,47 @@ export default function SystemMapScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function MobileAccessPanel() {
+  const { c, s } = useTheme();
+  const styles = useMemo(() => createStyles(c), [c]);
+  const txt = useMemo(() => createTxt(c), [c]);
+  const risk = mobileAccessMapSnapshot.evaluation.settings_hub.risk;
+  const journeys = mobileAccessMapSnapshot.journeys.slice(0, 3);
+
+  return (
+    <View style={styles.panel}>
+      <View style={styles.panelHeader}>
+        <Ionicons name="phone-portrait-outline" size={18} color={c.brand} />
+        <Text style={txt.panelTitle}>Mobile 页面图谱</Text>
+      </View>
+      <Text style={txt.panelBody}>用户动线与访问知识图谱</Text>
+      <View style={styles.accessGrid}>
+        {MOBILE_ACCESS_STATS.map((item) => (
+          <View key={item.key} style={styles.accessStat}>
+            <Text style={txt.accessValue}>{mobileAccessMapSnapshot.counts[item.key]}</Text>
+            <Text style={txt.accessLabel}>{item.label}</Text>
+          </View>
+        ))}
+      </View>
+      <View style={styles.riskRow}>
+        <View style={[styles.riskDot, { backgroundColor: s.warning.solid }]} />
+        <Text style={txt.riskText}>设置 Hub 风险:</Text>
+        <View style={styles.riskPill}>
+          <Text style={txt.riskText}>{risk}</Text>
+        </View>
+      </View>
+      {journeys.map((journey) => (
+        <View key={journey.id} style={styles.journeyRow}>
+          <Text style={txt.journeyTitle}>{journey.title}</Text>
+          <Text style={txt.journeyRoute} numberOfLines={2}>
+            {journey.routes.map((route) => route.label).join(' -> ')}
+          </Text>
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -310,6 +364,32 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     marginTop: spacing.md,
   },
   sourceRowFirst: { paddingTop: 0, borderTopWidth: 0, marginTop: 0 },
+  accessGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
+  accessStat: {
+    width: '48.8%',
+    borderRadius: radii.sm,
+    backgroundColor: c.fill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.separator,
+    padding: spacing.md,
+  },
+  riskRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md },
+  riskDot: { width: 8, height: 8, borderRadius: 4 },
+  riskPill: {
+    borderRadius: radii.full,
+    backgroundColor: c.fill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.separator,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+  },
+  journeyRow: {
+    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: c.separator,
+    marginTop: spacing.md,
+    gap: 4,
+  },
 });
 
 const createTxt = (c: ColorPalette) => ({
@@ -323,6 +403,7 @@ const createTxt = (c: ColorPalette) => ({
   metricValue: { fontSize: 30, fontWeight: '800', color: c.labelPrimary, marginTop: spacing.lg, fontVariant: ['tabular-nums'] } as TextStyle,
   metricLabel: { fontSize: 12, fontWeight: '700', color: c.labelSecondary, marginTop: 2 } as TextStyle,
   panelTitle: { fontSize: 16, fontWeight: '800', color: c.labelPrimary } as TextStyle,
+  panelBody: { fontSize: 13, color: c.labelSecondary, lineHeight: 19 } as TextStyle,
   layerCode: { fontSize: 13, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   layerTitle: { fontSize: 14, fontWeight: '800', color: c.labelPrimary } as TextStyle,
   layerBody: { fontSize: 13, color: c.labelSecondary, lineHeight: 19, marginTop: 3 } as TextStyle,
@@ -330,4 +411,9 @@ const createTxt = (c: ColorPalette) => ({
   sourceLabel: { fontSize: 12, fontWeight: '800', color: c.labelTertiary } as TextStyle,
   sourceValue: { fontSize: 14, fontWeight: '700', color: c.labelPrimary, lineHeight: 19 } as TextStyle,
   generatedNote: { fontSize: 11, color: c.labelTertiary, lineHeight: 16, marginTop: spacing.md } as TextStyle,
+  accessValue: { fontSize: 24, fontWeight: '800', color: c.labelPrimary, fontVariant: ['tabular-nums'] } as TextStyle,
+  accessLabel: { fontSize: 12, fontWeight: '700', color: c.labelSecondary, marginTop: 2 } as TextStyle,
+  riskText: { fontSize: 12, fontWeight: '800', color: c.labelSecondary } as TextStyle,
+  journeyTitle: { fontSize: 13, fontWeight: '800', color: c.labelPrimary } as TextStyle,
+  journeyRoute: { fontSize: 12, color: c.labelSecondary, lineHeight: 17 } as TextStyle,
 });

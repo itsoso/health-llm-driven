@@ -50,6 +50,9 @@ describe('SystemMapScreen', () => {
     expect(getByText('代码派生快照')).toBeTruthy();
     expect(getByTestId('system-map-count-api_routers').props.children).toBe(159);
     expect(getByTestId('system-map-count-mobile_routes').props.children).toBe(92);
+    expect(getByText('Mobile 页面图谱')).toBeTruthy();
+    expect(getByText('用户动线与访问知识图谱')).toBeTruthy();
+    expect(getByText('high_density')).toBeTruthy();
     expect(getByText('SafetyGuardianSpecialist')).toBeTruthy();
     expect(getByText('genetic')).toBeTruthy();
   });
