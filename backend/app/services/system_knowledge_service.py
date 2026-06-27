@@ -1163,6 +1163,7 @@ def system_kb_twin_payload_from_health_twin(twin: Any) -> dict[str, Any]:
     medication = getattr(twin, "medication", None)
     supplement = getattr(twin, "supplement", None)
     goals_state = getattr(twin, "goals", None)
+    acute = getattr(twin, "acute", None)
 
     goals_text = " ".join(
         str(goal.get("name") or goal.get("title") or goal.get("goal_type") or goal)
@@ -1210,6 +1211,23 @@ def system_kb_twin_payload_from_health_twin(twin: Any) -> dict[str, Any]:
             "training_load_7d": getattr(behavioral, "training_load_7d", None),
             "acute_chronic_ratio": getattr(behavioral, "acute_chronic_ratio", None),
             "acwr_zone": getattr(behavioral, "acwr_zone", None),
+        },
+        "acute": {
+            "has_active_illness": bool(getattr(acute, "has_active_illness", False)),
+            "illness_names": getattr(acute, "illness_names", []) if acute is not None else [],
+            "illness_severity_max": getattr(acute, "illness_severity_max", None),
+            "symptoms": (
+                _dedupe_preserve_order(
+                    list(getattr(acute, "recent_symptoms", []) or [])
+                    + list(getattr(acute, "symptom_texts_all", []) or [])
+                )
+                if acute is not None
+                else []
+            ),
+            "suspected_cold": bool(getattr(acute, "suspected_cold", False)),
+            "fever_reported": bool(getattr(acute, "fever_reported", False)),
+            "should_rest_from_training": bool(getattr(acute, "should_rest_from_training", False)),
+            "training_guardrail": getattr(acute, "training_guardrail", None),
         },
         "conditions": {
             "active": getattr(chronic, "active_conditions", []) if chronic is not None else [],
