@@ -14,6 +14,7 @@ import { setAudioModeAsync } from 'expo-audio';
 import Markdown from 'react-native-markdown-display';
 import BrandCircle from './BrandCircle';
 import { renderCard } from './cards';
+import type { CardActionDescriptor, CardActionStyle } from './cards/types';
 import InterventionDraftSheet from '../actions/InterventionDraftSheet';
 import { createMdStylesChat } from '../../constants/markdownStyles';
 import type { ColorPalette } from '../../hooks/useTheme';
@@ -21,6 +22,7 @@ import type { UIMessage } from '../../hooks/useChatEngine';
 import { invalidateQueryKeys, queryKeys } from '../../applib/queryKeys';
 import { createInterventionDraft } from '../../services/actionCards';
 import { saveAssistantReplyAsMemory } from '../../services/chatResultActions';
+import { executeChatCardAction } from '../../services/chatCardActions';
 import { buildInterventionDraft, type InterventionDraft } from '../../services/interventionDraft';
 import { speakWithUserVoice, type SpeakHandle } from '../../services/speakWithUserVoice';
 import AttributionChips from './AttributionChips';
@@ -70,6 +72,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
   const [draft, setDraft] = useState<InterventionDraft | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
   const [showActions, setShowActions] = useState(false);  // 长按显示操作
+  const [cardActionPending, setCardActionPending] = useState<string | null>(null);
   const [speaking, setSpeaking] = useState(false);
   const speechTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechActiveRef = useRef(false);
@@ -124,14 +127,64 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
     };
   }, [clearSpeechTimeout]);
 
+  const handleCardAction = useCallback(async (action: CardActionDescriptor, index: number) => {
+    if (cardActionPending) return;
+    const key = `${action.action}:${index}`;
+    setCardActionPending(key);
+    try {
+      const result = await executeChatCardAction(action, { queryClient: qc });
+      if (result.status === 'executed') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        toast.show('已执行', 'success');
+      } else if (result.status === 'invalid') {
+        toast.show('卡片动作缺少必要信息', 'error');
+      } else {
+        toast.show('这个卡片动作暂不支持', 'info');
+      }
+    } catch {
+      toast.show('执行失败，请稍后重试', 'error');
+    } finally {
+      setCardActionPending(null);
+    }
+  }, [cardActionPending, qc, toast]);
+
   if (item.cardType && item.cardData) {
     const rendered = renderCard({ type: item.cardType, data: item.cardData });
+    const cardActions = item.cardActions ?? [];
     if (rendered) {
       return (
         <View style={[styles.msgRow, styles.msgRowAI]}>
           <View style={{ width: 36 }} />
           <View testID="assistant-card-frame" style={styles.cardFrame}>
             {rendered}
+            {cardActions.length > 0 ? (
+              <View style={styles.cardActionRow}>
+                {cardActions.map((action, index) => {
+                  const label = action.label || defaultCardActionLabel(action.action);
+                  const pending = cardActionPending === `${action.action}:${index}`;
+                  const tone = cardActionTone(action.style);
+                  return (
+                    <Pressable
+                      key={`${action.action}-${index}`}
+                      disabled={!!cardActionPending}
+                      onPress={() => handleCardAction(action, index)}
+                      accessibilityRole="button"
+                      accessibilityLabel={label}
+                      style={({ pressed }) => [
+                        styles.cardActionButton,
+                        { backgroundColor: tone.bg, borderColor: tone.line },
+                        pressed && styles.actionBtnPressed,
+                        pending && styles.cardActionButtonPending,
+                      ]}
+                    >
+                      <Text style={[txt.cardActionButton, { color: tone.fg }]} numberOfLines={1}>
+                        {pending ? '执行中' : label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
           </View>
         </View>
       );
@@ -504,6 +557,20 @@ function ResultActionButton({
   );
 }
 
+function defaultCardActionLabel(action: string): string {
+  if (action === 'complete_agenda') return '完成';
+  if (action === 'skip_agenda') return '跳过';
+  if (action === 'confirm_write_intent') return '确认';
+  if (action === 'dismiss_write_intent') return '忽略';
+  return '执行';
+}
+
+function cardActionTone(style?: CardActionStyle): { fg: string; bg: string; line: string } {
+  if (style === 'destructive') return revaSemantic.risk;
+  if (style === 'secondary') return { fg: C.ink2, bg: C.paper2, line: C.line };
+  return revaSemantic.normal;
+}
+
 function inferActionTitle(text: string): string {
   const firstLine = text
     .split('\n')
@@ -854,6 +921,26 @@ const styles = StyleSheet.create({
   msgRowUser: { justifyContent: 'flex-end' },
   msgRowAI: { justifyContent: 'flex-start' },
   cardFrame: { flex: 1, minWidth: 0, maxWidth: '100%' },
+  cardActionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+  },
+  cardActionButton: {
+    minHeight: 32,
+    minWidth: 72,
+    borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  cardActionButtonPending: { opacity: 0.68 },
   bubble: { maxWidth: '88%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
   bubbleUser: { backgroundColor: C.green500, borderBottomRightRadius: 4 },
   bubbleSelected: {
@@ -942,6 +1029,7 @@ const txt = {
   bubbleUser: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 22, color: '#fff' } as TextStyle,
   // 与 markdownStyles body (fontSize 15 / lineHeight 23) 对齐, 流式→终态切 markdown 时无跳动
   streaming: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 23, color: C.ink1 } as TextStyle,
+  cardActionButton: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '800' } as TextStyle,
   actionBtn: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '700', color: C.green500 } as TextStyle,
   fallback: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 20, color: C.ink2, fontStyle: 'italic' } as TextStyle,
   meta: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3 } as TextStyle,

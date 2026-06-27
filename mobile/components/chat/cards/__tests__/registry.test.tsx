@@ -138,6 +138,35 @@ describe('renderServerCards 防御', () => {
     expect(r.map((c) => c.type)).toEqual(['vitals', 'sleep']);
   });
 
+  it('preserves server action descriptors on known cards', () => {
+    const r = renderServerCards([
+      {
+        type: 'record',
+        data: { type: 'water', detail: '喝水 200ml' },
+        actions: [
+          {
+            action: 'complete_agenda',
+            endpoint: '/agenda/complete',
+            label: '完成',
+            payload: { source: { object_type: 'health_protocol', object_id: 12 } },
+          },
+          { action: 'unsupported_x', label: '忽略' },
+        ],
+      },
+    ]);
+
+    expect(r).toHaveLength(1);
+    expect(r[0].actions).toEqual([
+      {
+        action: 'complete_agenda',
+        endpoint: '/agenda/complete',
+        label: '完成',
+        payload: { source: { object_type: 'health_protocol', object_id: 12 } },
+      },
+      { action: 'unsupported_x', label: '忽略' },
+    ]);
+  });
+
   it('非数组 → []', () => {
     expect(renderServerCards({} as any)).toEqual([]);
     expect(renderServerCards('string' as any)).toEqual([]);

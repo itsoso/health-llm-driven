@@ -37,6 +37,13 @@ describe('restoreMessagesFromHistory', () => {
           cards: [
             {
               type: 'system_knowledge_evidence',
+              actions: [
+                {
+                  action: 'confirm_write_intent',
+                  label: '确认',
+                  payload: { id: 7 },
+                },
+              ],
               data: {
                 entity: { title: 'MTHFR' },
                 claims: [{ title: 'MTHFR C677T 与叶酸转化边界' }],
@@ -65,6 +72,13 @@ describe('restoreMessagesFromHistory', () => {
         entity: { title: 'MTHFR' },
         claims: [{ title: 'MTHFR C677T 与叶酸转化边界' }],
       },
+      cardActions: [
+        {
+          action: 'confirm_write_intent',
+          label: '确认',
+          payload: { id: 7 },
+        },
+      ],
     });
   });
 });

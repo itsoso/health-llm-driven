@@ -11,7 +11,7 @@
  */
 import React from 'react';
 import { View, Dimensions } from 'react-native';
-import type { CardSpec, CardContext, ServerCardDescriptor } from './types';
+import type { CardSpec, CardContext, ServerCardDescriptor, CardActionDescriptor } from './types';
 
 import { VitalsCardSpec } from './VitalsCard';
 import { SleepCardSpec } from './SleepCard';
@@ -79,7 +79,8 @@ export async function dispatchCard(ctx: CardContext): Promise<{ type: string; da
  */
 export function renderCard(descriptor: ServerCardDescriptor): React.ReactElement | null {
   // cards_group: iPad(>= 768) 双列, iPhone 单列
-  if (descriptor.type === 'cards_group' && Array.isArray(descriptor.data?.cards)) {
+  if (descriptor.type === 'cards_group') {
+    if (!Array.isArray(descriptor.data?.cards)) return null;
     const items = (descriptor.data.cards as ServerCardDescriptor[])
       .map((c, i) => ({ key: i, el: renderCard(c) }))
       .filter((x) => x.el != null);
@@ -115,12 +116,30 @@ export function renderCard(descriptor: ServerCardDescriptor): React.ReactElement
   }
 }
 
+function normalizeServerCardActions(actions: unknown): CardActionDescriptor[] | undefined {
+  if (!Array.isArray(actions)) return undefined;
+  const normalized = actions
+    .filter((action): action is Record<string, any> => (
+      action != null && typeof action === 'object' && typeof action.action === 'string'
+    ))
+    .map((action) => ({
+      action: action.action,
+      label: typeof action.label === 'string' ? action.label : undefined,
+      endpoint: typeof action.endpoint === 'string' ? action.endpoint : undefined,
+      payload: action.payload && typeof action.payload === 'object' ? action.payload : undefined,
+      style: ['primary', 'secondary', 'destructive'].includes(action.style) ? action.style : undefined,
+    }));
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 /**
  * 批量渲染后端下发的卡片 (SSE done 事件里的 cards 数组)
  */
-export function renderServerCards(cards?: ServerCardDescriptor[] | null): { type: string; data: any }[] {
+export function renderServerCards(cards?: ServerCardDescriptor[] | null): ServerCardDescriptor[] {
   if (!Array.isArray(cards)) return [];
   return cards.filter((c) => c && typeof c.type === 'string' && CARD_MAP[c.type]).map((c) => ({
-    type: c.type, data: c.data,
+    type: c.type,
+    data: c.data,
+    actions: normalizeServerCardActions(c.actions),
   }));
 }

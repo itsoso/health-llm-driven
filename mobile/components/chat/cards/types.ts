@@ -56,8 +56,22 @@ export interface CardSpec<D = any> {
   render(data: D): React.ReactElement;
 }
 
+export type CardActionStyle = 'primary' | 'secondary' | 'destructive';
+
+export interface CardActionDescriptor {
+  /** Allowlisted action id. Unknown ids must be ignored by the executor. */
+  action: string;
+  /** User-facing button label. */
+  label?: string;
+  /** Optional audit/compatibility field; clients must not POST arbitrary endpoints. */
+  endpoint?: string;
+  payload?: Record<string, any> | null;
+  style?: CardActionStyle;
+}
+
 /** 后端下发的卡片描述 (SSE done 事件里的 cards 字段) */
 export interface ServerCardDescriptor {
   type: string;
   data: any;
+  actions?: CardActionDescriptor[] | null;
 }

@@ -18,6 +18,9 @@ jest.mock('../../../services/speakWithUserVoice', () => ({
 jest.mock('../../../services/chatResultActions', () => ({
   saveAssistantReplyAsMemory: jest.fn(),
 }));
+jest.mock('../../../services/chatCardActions', () => ({
+  executeChatCardAction: jest.fn().mockResolvedValue({ status: 'executed', action: 'complete_agenda' }),
+}));
 jest.mock('../../../hooks/useToast', () => ({
   useToast: () => ({ show: jest.fn() }),
 }));
@@ -72,6 +75,7 @@ jest.mock('../../actions/InterventionDraftSheet', () => {
 
 const ChatBubble = require('../ChatBubble').default;
 const { saveAssistantReplyAsMemory } = require('../../../services/chatResultActions');
+const { executeChatCardAction } = require('../../../services/chatCardActions');
 const { renderCard, __mockCard } = require('../cards');
 
 function renderBubble(content: string) {
@@ -189,6 +193,38 @@ describe('ChatBubble structured summary', () => {
       flex: 1,
       minWidth: 0,
       maxWidth: '100%',
+    });
+  });
+
+  it('renders server card actions and dispatches an allowlisted action', async () => {
+    renderCard.mockReturnValueOnce(__mockCard);
+    const qc = new QueryClient();
+    const action = {
+      action: 'complete_agenda',
+      endpoint: '/agenda/complete',
+      label: '完成',
+      payload: { source: { object_type: 'health_protocol', object_id: 12 } },
+    };
+    const message: UIMessage = {
+      id: 'assistant-action-card',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'record',
+      cardData: { type: 'water', detail: '喝水 200ml' },
+      cardActions: [action],
+    };
+
+    const { getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByText('完成'));
+
+    await waitFor(() => {
+      expect(executeChatCardAction).toHaveBeenCalledWith(action, { queryClient: qc });
     });
   });
 });
