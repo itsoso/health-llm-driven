@@ -1325,6 +1325,12 @@ def _system_kb_genetics_from_health_twin(twin: Any) -> dict[str, Any]:
             out["SLCO1B1"] = genotype or "present"
             if genotype in {"CT", "CC", "TT"}:
                 out["SLCO1B1_rs4149056"] = genotype
+        elif gene == "VKORC1":
+            out["VKORC1"] = genotype or "present"
+            vkorc1_genotype = _normalize_vkorc1_genotype(genotype, result_label, risk_level)
+            if vkorc1_genotype:
+                out["VKORC1_1639G_A"] = vkorc1_genotype
+                out["VKORC1_rs9923231"] = vkorc1_genotype
         elif gene == "HLA-B":
             out["HLA-B"] = genotype or "present"
             if _hla_allele_is_positive("15:02", genotype, result_label, risk_level):
@@ -1454,6 +1460,27 @@ def _infer_dpyd_pgx_status(
     if any(re.sub(r"[\s_]+", "", marker).upper() in normalized for marker in reduced_markers):
         return "intermediate_metabolizer", "1"
     return None, None
+
+
+def _normalize_vkorc1_genotype(genotype: str, result_label: str, risk_level: str) -> str | None:
+    raw = str(genotype or "").strip().upper().replace(" ", "")
+    genotype_aliases = {
+        "AA": "AA",
+        "A/A": "A/A",
+        "AG": "AG",
+        "A/G": "A/G",
+        "GA": "A/G",
+        "G/A": "A/G",
+        "GG": "GG",
+        "G/G": "G/G",
+    }
+    if raw in genotype_aliases:
+        return genotype_aliases[raw]
+
+    text = f"{genotype} {result_label} {risk_level}".lower()
+    if any(token in text for token in ("warfarin sensitive", "华法林敏感", "敏感位点", "sensitive allele")):
+        return "A/G"
+    return None
 
 
 def _hla_allele_is_positive(

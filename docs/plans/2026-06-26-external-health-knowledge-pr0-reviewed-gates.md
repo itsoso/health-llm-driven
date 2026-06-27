@@ -44,9 +44,9 @@ official / curated source
 | --- | ---: |
 | entities | 220 |
 | claims | 420 |
-| relations | 3185 |
-| eval_cases | 13 |
-| contraindications | 12 |
+| relations | 3188 |
+| eval_cases | 14 |
+| contraindications | 13 |
 
 已覆盖的 high-risk golden slice:
 
@@ -56,7 +56,7 @@ official / curated source
 - 运动: 发热/疑似感染时训练目标降级，禁止带病加量。
 - 饮食: 高钠饮食与血压偏高只做食物来源识别和家庭血压趋势，禁止调药或极端限盐。
 - 慢性鼻炎: 鼻喷激素/盐水冲洗/抗组胺依从性复盘，禁止自行升级鼻炎用药或长期依赖减充血剂。
-- 基因/PGx: TPMT/NUDT15 硫嘌呤；CYP2C19 氯吡格雷/PPI；DPYD/氟嘧啶；SLCO1B1/他汀；HLA-B*15:02/卡马西平或奥卡西平。
+- 基因/PGx: TPMT/NUDT15 硫嘌呤；CYP2C19 氯吡格雷/PPI；DPYD/氟嘧啶；SLCO1B1/他汀；HLA-B*15:02/卡马西平或奥卡西平；CYP2C9/VKORC1/华法林。
 
 ## 3. 专业知识库接入策略
 
@@ -176,7 +176,7 @@ official / curated source
 
 按风险优先级:
 
-1. PGx: CYP2C9/VKORC1/华法林；随后补 HLA-A*31:01/卡马西平、HLA-B*58:01/别嘌醇、G6PD/高风险氧化药物。
+1. PGx: HLA-A*31:01/卡马西平、HLA-B*58:01/别嘌醇、G6PD/高风险氧化药物。
 2. 补剂: 维生素 D、镁、Omega-3、咖啡因、益生菌、褪黑素的药物相互作用和禁区。
 3. 胃病: NSAID/抗凝/抗血小板合并胃病风险，长期 PPI 监测闭环。
 4. 睡眠: 失眠 CBT-I 边界、镇静药/酒精/低氧禁区。
