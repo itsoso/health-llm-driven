@@ -34,6 +34,44 @@
 
 **不缺技术。缺的是克制 + 把现有的东西串起来的耐心。**
 
+## 2026-06-27 战略修正:先买留存 runway,再兑现季度护城河
+
+> 来源: [`docs/reports/2026-06-27-competitive-benchmark-and-prd-critique.md`](reports/2026-06-27-competitive-benchmark-and-prd-critique.md) + code-verified PRD。本文 2026-04 的数字和阶段仍有历史价值,但后续执行以本修正为优先级覆盖层。
+
+竞品调研确认方向对,但改变了长期排序:
+
+1. **每日工件先于更多能力**
+   Whoop/Oura 证明留存不是靠用户理解季度 N-of-1 账本,而是靠每天一个稳定的复合判断。Reva 必须先把 `Daily Artifact` 做成主入口:今日状态、一个 top action、最多 3 个证据、完成/跳过/问 Reva。
+
+2. **护城河叙事从"数据越多越强"改为 trust-custodianship + 安全脑 + 证据账本**
+   per-user 数据本身会边际递减,且不可直接迁移给用户 #2。真正可防御的是:用户信任 Reva 托管敏感数据、确定性规则约束 LLM/写入、多年执行/复测/解释形成迁移成本。
+
+3. **CausalMemory 必须诚实**
+   长期记忆默认只能说 observation / hypothesis。只有经过复测、样本数、噪声处理和边界检查后,才可说 validated effect。不能把短窗相关或回归均值包装成因果。
+
+4. **5 分钟 on-ramp 是分发前提**
+   OpenHealth 用更少深度赢得开源 traction,说明"能跑、能看懂、马上感觉到价值"先于深度。Reva 新用户必须在 60-300 秒内看到安全脑、证据卡和一次可完成行动。
+
+5. **创始人 dogfood 不是泛化证据**
+   个人先仍然成立,但 Phase-1 必须加入 5-10 个异质用户作为 blocker。家庭/朋友圈/B 端只有在非创始人 cohort 里仍能生成可用 top action 后再推进。
+
+6. **更多 wearable 仍不优先,但 Signal Contract 优先**
+   不是先接更多设备,而是先把 HealthKit/Garmin/Ring/CGM 等已有信号统一单位、聚合语义、来源优先级、新鲜度和 coverage matrix。没有 AI-ready signal contract,trajectory 和 LLM 都会在同名不同义数据上推理。
+
+因此,2026 年剩余路线的优先级覆盖为:
+
+```text
+Daily Artifact
+  -> 5 分钟 on-ramp
+  -> HealthKit/信号新鲜度 + provenance
+  -> Discoveries/诚实证据账本
+  -> 异质用户验证
+  -> self-serve onboarding
+  -> 家庭/朋友圈/B 端
+```
+
+任何新功能如果不能增强 Daily Artifact、5 分钟 on-ramp、Discoveries、信任托管或异质用户验证,默认后置。
+
 ---
 
 ## 一、现状盘点（2026-04-30 数据）

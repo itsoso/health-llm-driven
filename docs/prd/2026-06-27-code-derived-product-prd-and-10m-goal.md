@@ -4,6 +4,7 @@
 > Updated: 2026-06-27
 > Owner: Reva / Personal Health OS
 > Source basis: repo-wide inventory plus focused reading of `README.md`, `docs/specs/reva-product-governance-spec.md`, `docs/prd/reva-personal-health-os-prd.md`, `docs/prd/2026-06-16-health-leverage-action-os-pdd.md`, `docs/rfc-agent-native-health-os.md`, `docs/ARCHITECTURE.md`, `docs/specs/active/2026-06-26-surface-ownership-inventory.md`, backend domain models/services/APIs/tests, and Mobile/Watch/Mac/Web/OpenClaw/MCP surfaces.
+> Competitive correction: incorporates [`../reports/2026-06-27-competitive-benchmark-and-prd-critique.md`](../reports/2026-06-27-competitive-benchmark-and-prd-critique.md). The long-term strategy now treats Daily Artifact, trust-custodianship, deterministic safety, honest evidence language, heterogeneous-user validation, and 5-minute on-ramp as first-order roadmap constraints.
 
 ## 1. One-Line Product Definition
 
@@ -603,13 +604,14 @@ Reva 的长期目标不是让 1000 万人安装一个健康应用，而是让至
 
 ### 10.2 Long-Term Product Thesis
 
-未来十年，个人健康产品的核心资产会从“内容”和“设备数据展示”转向“个人健康因果执行系统”：
+未来十年，个人健康产品的核心资产会从“内容”和“设备数据展示”转向“可信健康托管 + 每日执行 + 个人证据账本”：
 
 ```text
-Longitudinal Personal Data
+Daily Artifact
+  + Trust-Custodianship
   + Deterministic Safety
   + Evidence-Governed AI
-  + Daily Low-Friction Execution
+  + Low-Friction Execution
   + N-of-1 Outcome Verification
   = Personal Health OS
 ```
@@ -621,9 +623,18 @@ Reva 的长期系统目标是成为：
 - 用户与医生、家庭、设备、agent 和外部服务之间的安全中介。
 - 一个能随时间学习“什么对这个用户有效”的个人健康改善系统。
 
+### 10.3 Competitive Benchmark Correction
+
+竞品调研对长期目标给出四个硬修正：
+
+1. **每日仪式是季度护城河的前门**。Whoop/Oura 的留存证明，用户不是为 90 天后的外环每天回来，而是为每天一个可理解的复合判断回来。Reva 必须把 `Daily Artifact` 做成长期主路径：今日状态、一个 top action、证据、完成/跳过、后续验证。
+2. **护城河不是数据量，而是信任托管**。per-user 纵向数据会边际递减，且不能直接迁移给用户 #2。持久防御来自用户愿意托管更敏感数据、确定性安全脑约束 LLM/写入、以及多年执行/复测/解释形成的迁移成本。
+3. **因果账本必须弱证据弱表达**。N-of-1 是开放空间，也是学术/商业风险区。CausalMemory 默认只能叫 observation 或 hypothesis；只有通过复测、样本数、噪声处理和安全边界后才能叫 validated effect。
+4. **分发需要 5 分钟 on-ramp**。OpenHealth 证明“能跑、能看懂、能马上感觉到价值”先于深度。Reva 必须让新用户在 60-300 秒内看到安全脑、证据卡和一次可执行 top action。
+
 ## 11. Strategic Pillars For 10M Scale
 
-### Pillar 1. Trustworthy Health Data Layer
+### Pillar 1. Trustworthy Health Data Layer And Signal Contract
 
 目标：让用户所有关键健康数据进入一个有来源、有新鲜度、有冲突处理、有权限控制的结构化层。
 
@@ -632,6 +643,8 @@ Reva 的长期系统目标是成为：
 - 更强 onboarding：体检、Apple Health、Garmin/Oura、CGM、药物、补剂、症状、目标。
 - 标准互操作：FHIR Bundle、SMART on FHIR、HealthKit、Garmin/Oura/Withings/CGM、Home Assistant 和后续 provider connectors。
 - DataConnection、ConsentGrant、ProvenanceRecord 和 ConnectorPolicy 成为所有外部来源的统一治理对象。
+- 建立 `SeriesType` 式 Signal Contract：每个指标固定单位、聚合语义、source priority、coverage matrix、freshness 和 privacy class。
+- 建立 ClinicalRecordLibrarian：出院小结、门诊病历、体检 PDF 先 index，再按问题检索证据片段进入 Twin/Chat/Review。
 - source quality score 和 per-user source preference。
 - 数据缺口解释和最小补齐任务。
 - 医生/家庭/导出场景的数据权限模型。
@@ -660,20 +673,21 @@ Reva 的长期系统目标是成为：
 - 高风险场景升级医生或急救，而不是继续聊天。
 - 建议证据等级、适用边界和不确定性可见。
 
-### Pillar 4. Daily Action OS
+### Pillar 4. Daily Artifact And Anti-Habituation OS
 
-目标：让用户每天知道现在做什么，并且真的做完。
+目标：让用户每天知道今天身体状态、为什么、现在做什么，并且真的做完，同时避免 JITAI 习惯化。
 
 建设重点：
 
-- Today 一个 top action。
+- Today/Watch/Chat 共用一个 Daily Artifact：状态判断、一个 top action、最多 3 个证据、confidence/freshness/safety boundary、完成/跳过/问 Reva。
 - Watch/phone/ambient 低摩擦执行。
 - Agenda 跨端统一。
 - 跳过原因驱动调整。
+- capped action count、dynamic availability、投递时机个性化和行动接受率周衰减监控。
 - 通知预算和情境感知。
 - 不追求提醒多，追求提醒准。
 
-### Pillar 5. N-of-1 Verification And Personal Causal Ledger
+### Pillar 5. N-of-1 Verification And Honest Personal Evidence Ledger
 
 目标：从“建议”进化为“对这个用户有效的证据”。
 
@@ -682,7 +696,8 @@ Reva 的长期系统目标是成为：
 - 12 周 InterventionCycle 成为核心用户体验。
 - 每个 program 都有 baseline、target、action、retest、review。
 - 用噪声-aware 方法解释变化。
-- 长期 CausalMemory 从后台能力变成用户可见资产。
+- 长期 CausalMemory 从后台能力变成用户可见资产，但必须用 `observation / hypothesis / validated_effect` 分级表达。
+- Discoveries 体验把“你尝试了 X，指标 Y 出现了什么变化”做成 Chat/Review 卡片，弱证据弱表达。
 
 ### Pillar 6. Controlled Write And Earned Autonomy
 
@@ -694,12 +709,13 @@ Reva 的长期系统目标是成为：
 - 对日历、提醒、购物清单、预约、复查、家庭通知、医生摘要等外部动作提供可撤销执行。
 - 每个自动化都有权限、审计、回滚和用户解释。
 
-### Pillar 7. Ecosystem And Distribution
+### Pillar 7. Ecosystem, Distribution And 5-Minute On-Ramp
 
 目标：在不失控的前提下让 Reva 进入更多用户工作流。
 
 建设重点：
 
+- 5 分钟 on-ramp：合成数据、示例报告、真实 HealthKit 三入口，60-300 秒内展示安全脑、证据卡和 Daily Artifact。
 - OpenClaw/MCP skills 成为受控 extension layer。
 - 医生、家人、企业健康和设备合作有不同权限边界。
 - API contract 稳定，客户端只做 surface，不做独立健康裁决。
@@ -748,6 +764,8 @@ Reva 的长期系统目标是成为：
 - 明确所有新需求必须落到 first-class object 和 verification loop。
 - 明确 Health Runtime Governance 叙事：预测层只服务行动、验证和安全治理。
 - 明确 DataConnection、ConsentGrant、ProvenanceRecord、ConnectorPolicy、ProgramTemplate、EvaluationScenario、SafetyRegressionSuite 进入一等对象清单。
+- 定义 Daily Artifact contract：状态判断、一个 top action、最多 3 个证据、confidence/freshness/safety boundary、完成/跳过/问 Reva。
+- 埋点 action impression、accepted、completed、skipped_reason、delivered_context、week_index，建立抗习惯化观测。
 
 ### Phase 1. Make One Wedge Work End To End
 
@@ -757,19 +775,21 @@ Reva 的长期系统目标是成为：
 
 - 对第一类用户做到“每天打开就有价值”。
 - 完成 12 周 metabolic/recovery/sleep/energy 闭环。
+- 证明系统能离开创始人锚点，对第一批异质用户仍然给出可用 top action。
 
 关键交付：
 
 - 首次 onboarding 自动生成 HealthTwin、HealthProblem、Program、Protocol、Agenda。
 - 首次 onboarding 同时生成或绑定 DataConnection、ConsentGrant、ProvenanceRecord 和最小 ConnectorPolicy。
 - 首次 onboarding 区分先天参数、状态、运行时输入、社会约束和可干预变量。
+- 5 分钟 on-ramp 支持示例报告、合成数据、真实 HealthKit 三入口，并在 60-300 秒内展示安全脑、证据卡和一次 Daily Artifact top action。
 - 至少支持一个 FHIR Bundle/报告导入路径和一个 wearable/device DataConnection 的端到端授权、同步、撤权和 provenance 展示。
-- Mobile Today 和 Watch top action 简化到足够清晰。
+- Mobile Today、Watch 和 Chat 共用 Daily Artifact，而不是各自解释 top action。
 - InterventionCycle review 在用户主路径可见。
 - 行动完成、跳过、复测、结果变化形成可读 ledger。
 - HealthTrajectory 风险和个人 baseline 偏离进入 ActionRanker，不再只做解释。
 - 第一批 metabolic/recovery/sleep ProgramTemplate 可审查、可版本化，并声明适用人群、排除条件、安全门和复测窗口。
-- 先服务 10-100 个高质量用户，追求真实改善而不是泛化规模。
+- 先服务 10-100 个高质量用户，追求真实改善而不是泛化规模；其中第一批必须含 5-10 个与创始人不同的用户，验证系统不把 N=1 假设误推给所有人。
 
 ### Phase 2. Toolized Agent And Evaluation
 
@@ -788,6 +808,8 @@ Reva 的长期系统目标是成为：
 - 建立建议质量、风险误判、执行率、结果复测、用户纠正的数据集。
 - 建立 SyntheticUserTwin、EvaluationScenario 和 SafetyRegressionSuite，作为 agent/ranker/prediction/safety 变更的 release gate。
 - 引入 prediction backtest 与 safety regression 的维护视图，防止模型或 prompt 改动破坏既有边界。
+- 建立 discovery card 和 CausalMemory 证据语言 gate，默认 observation，满足复测/样本数/噪声处理后才可升级 hypothesis 或 validated_effect。
+- 建立 Signal Contract / coverage matrix，使 LLM、trajectory 和 ActionRanker 只消费单位、聚合语义、来源和新鲜度明确的指标。
 - 成本和延迟进入产品 SLO。
 
 ### Phase 3. Self-Serve Growth With Clinical-Grade Trust Boundaries
@@ -801,6 +823,7 @@ Reva 的长期系统目标是成为：
 关键交付：
 
 - 自助 onboarding、设备连接、报告导入和体检解读。
+- ClinicalRecordLibrarian 支持出院小结、门诊病历、体检 PDF 的叙事证据检索，优先服务中国现实数据来源。
 - 家庭/医生协作权限。
 - DataConnection 和 ConsentGrant 支持自助管理、家庭/医生共享、撤权、导出、删除和 connector 故障解释。
 - 多地区隐私、导出、删除、审计和合规机制。
@@ -827,9 +850,9 @@ Reva 的长期系统目标是成为：
 
 | Stage | User Scale | Product Proof | Health Proof | System Proof |
 |---|---:|---|---|---|
-| Dogfood | 10-50 | 每周完成 top action | 至少 1 个 12 周 cycle 有可读结果 | 安全门、agenda、review 可闭环 |
-| Pilot | 100-1,000 | D7/D30 留存，skip reason 可用 | 代谢/睡眠/恢复指标有趋势改善 | agent 输出对象化，成本可控 |
-| Paid Wedge | 1,000-10,000 | 付费和复购 | program completion/retest 成熟 | 数据源、通知、审计稳定 |
+| Dogfood | 10-50 | Daily Artifact D7 使用、每周完成 top action、skip reason 可用 | 至少 1 个 12 周 cycle 有可读结果 | 安全门、agenda、review 可闭环 |
+| Pilot | 100-1,000 | D7/D30 留存、行动接受率周衰减可观测、5 分钟 on-ramp 转化 | 代谢/睡眠/恢复指标有趋势改善 | agent 输出对象化，成本可控 |
+| Paid Wedge | 1,000-10,000 | 付费和复购、异质用户 cohort 仍有可用 top action | program completion/retest 成熟 | 数据源、通知、审计稳定 |
 | Self-Serve | 10 万-100 万 | onboarding 自动化 | 多人群 program 验证 | 多租户、权限、SLO 成熟 |
 | Platform | 100 万-1000 万+ | 成为日常入口 | 大规模改善证据 | 合规、安全、成本、生态可扩展 |
 
@@ -843,6 +866,9 @@ health_problem_or_goal:
 first_class_object:
 surface_owner:
 core_loop_step:
+daily_artifact_impact:
+habituation_guard:
+onramp_impact:
 state_variable_to_change:
 prediction_or_trajectory_claim:
 safety_gate:
@@ -851,6 +877,7 @@ data_connection:
 consent_scope:
 execution_event:
 verification_plan:
+evidence_language:
 evaluation_scenario:
 rollback_or_archive_plan:
 ```
@@ -866,20 +893,26 @@ rollback_or_archive_plan:
 7. 新外部数据源、设备、agent 或 IoT 能力必须先定义 DataConnection、ConsentGrant、ProvenanceRecord 和 ConnectorPolicy。
 8. 新 agent、ranker、prediction、安全门或 ProgramTemplate 变化必须进入 EvaluationScenario / SafetyRegressionSuite。
 9. 如果一个功能无法提高安全行动完成率、验证闭环、健康结果、轨迹治理或信任，它不应进入主路径。
+10. 任何主路径功能都必须说明它如何增强 Daily Artifact、5 分钟 on-ramp 或 Discoveries，否则默认后置。
+11. 任何因果语言都必须经过 evidence_language gate，弱证据只能叫 observation 或 hypothesis。
 
 ## 15. Immediate Next Product Decisions
 
-建议下一阶段只做六类工作：
+建议下一阶段只做十四类工作：
 
 1. 收敛 surface：Mobile 五入口、Watch 执行器、Mac 工作台、Web 历史/管理。
-2. 做强 Today：一个 top action、why now、do now、verify by。
+2. 做强 Daily Artifact：状态判断、一个 top action、why now、do now、verify by、证据、skip reason。
 3. 做强 HealthTrajectory：让每个 top action 连接到状态变量、运行时输入和未来漂移风险。
 4. 做强 12 周闭环：baseline、actions、retest、review、next cycle。
-5. 做强 onboarding：让新用户从报告/设备/目标自动进入 Program 和 Agenda。
-6. 做强 safety/evidence：所有建议有 safety、evidence、uncertainty 和 escalation。
-7. 做强 eval：把 agent 建议质量、预测命中率、执行率、复测率和健康结果纳入持续评估。
-8. 做强 data connection：把 FHIR/SMART、报告导入、wearable、CGM、Home Assistant 统一到 DataConnection/ConsentGrant/ProvenanceRecord。
-9. 做强 ProgramTemplate：先把 metabolic/recovery/sleep 三类 8-12 周计划做成可审查、可版本化模板。
-10. 做强 connector policy：让每个外部连接都有 scope、rate limit、token refresh、失败降级和撤权后删除策略。
+5. 做强 5 分钟 on-ramp：示例报告/合成数据/真实 HealthKit 三入口，让安全脑和 top action 立即可见。
+6. 做强 onboarding：让新用户从报告/设备/目标自动进入 Program 和 Agenda。
+7. 做强 safety/evidence：所有建议有 safety、evidence、uncertainty 和 escalation。
+8. 做强 CausalMemory 诚实表达：observation/hypothesis/validated_effect 分级，弱证据不说因果。
+9. 做强 eval：把 agent 建议质量、预测命中率、执行率、复测率和健康结果纳入持续评估。
+10. 做强 data connection：把 FHIR/SMART、报告导入、wearable、CGM、Home Assistant 统一到 DataConnection/ConsentGrant/ProvenanceRecord。
+11. 做强 signal contract：为 wearable/HealthKit/CGM/环境指标建立 SeriesType、单位、聚合、coverage matrix 和 provenance。
+12. 做强 ProgramTemplate：先把 metabolic/recovery/sleep 三类 8-12 周计划做成可审查、可版本化模板。
+13. 做强 connector policy：让每个外部连接都有 scope、rate limit、token refresh、失败降级和撤权后删除策略。
+14. 做异质用户验证：招 5-10 个非创始人用户作为 Phase-1 blocker，防止 N=1 过拟合。
 
-这比继续新增更多健康功能更重要。当前代码显示 Reva 已经有足够多能力，下一步产品胜负在于收敛、信任、执行和验证。
+这比继续新增更多健康功能更重要。当前代码显示 Reva 已经有足够多能力，下一步产品胜负在于每日可感价值、收敛、信任、执行和验证。
