@@ -183,3 +183,4 @@ official / curated source
 2026-06-27 后续 slice 进展:
 
 - 补剂安全: 圣约翰草/贯叶连翘与抗抑郁药、口服避孕药、华法林、免疫抑制剂、抗病毒药或部分抗肿瘤药同现时，进入医生/药师相互作用复核边界；已按 reviewed claim + contraindication + eval case 形态接入。
+- 补剂安全: 生物素/维生素 B7 与甲状腺功能、肌钙蛋白、激素或其他近期化验场景同现时，进入医生/药师/检验机构检测干扰披露边界；已按 reviewed claim + contraindication + eval case 形态接入。
