@@ -18,6 +18,7 @@ import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { spacing, radii, shadows } from '../constants/theme';
 import { useAgendaToday, useCompleteAgendaItem, useSeedDemo, useSmartAgendaToday } from '../hooks/useAgenda';
 import { isProtocolActionable, MANUAL_CAPTURE, type AgendaItem, type SmartAgendaItem } from '../services/agenda';
+import { buildBoundarySummary, buildTrajectorySummary, buildVerifySummary } from '../services/trajectoryDisplay';
 import { agendaItemPresentation, agendaSummary } from '../utils/agendaPresentation';
 
 const TONE_COLOR: Record<string, string> = {
@@ -147,56 +148,6 @@ function surfaceLabel(surface: string): string {
   return '手机';
 }
 
-function stateVariableLabel(value?: string | null): string | null {
-  if (!value) return null;
-  const labels: Record<string, string> = {
-    waist_cm: '腰围',
-    blood_pressure: '血压',
-    metabolic_labs: '代谢指标',
-    metabolic_health_anchor: '代谢锚点',
-    training_readiness_score: '训练准备度',
-    sleep_score: '睡眠分',
-    sleep_duration_h: '睡眠时长',
-    hrv_status: 'HRV',
-    recovery_capacity_anchor: '恢复锚点',
-    pace_of_aging: '衰老速度代理',
-    biological_age_delta_years: '生物年龄差',
-    methylation_report: '甲基化报告',
-  };
-  return labels[value] ?? value;
-}
-
-function horizonLabel(value?: string | null): string | null {
-  if (!value) return null;
-  const labels: Record<string, string> = {
-    upstream_14d: '14天恢复轨迹',
-    upstream_90d: '90天上游轨迹',
-  };
-  return labels[value] ?? value;
-}
-
-function trajectorySummary(item: SmartAgendaItem): string | null {
-  const target = stateVariableLabel(item.target_state_variable ?? item.trajectory_context?.state_variable);
-  const horizon = horizonLabel(item.trajectory_context?.horizon);
-  if (!target && !horizon) return null;
-  const parts = [];
-  if (target) parts.push(`目标: ${target}`);
-  if (horizon) parts.push(`周期: ${horizon}`);
-  return parts.join(' · ');
-}
-
-function verifySummary(item: SmartAgendaItem): string | null {
-  const metrics = Array.isArray(item.verify_by?.metrics) ? item.verify_by.metrics as string[] : [];
-  const windowDays = typeof item.verify_by?.window_days === 'number'
-    ? item.verify_by.window_days
-    : item.trajectory_context?.verification_window_days;
-  if (metrics.length === 0 && !windowDays) return null;
-  const parts = [];
-  if (metrics.length > 0) parts.push(metrics.map((metric) => stateVariableLabel(metric) ?? metric).join(' / '));
-  if (windowDays) parts.push(`${windowDays}天`);
-  return parts.join(' · ');
-}
-
 function SmartAgendaPanel({
   items,
   loading,
@@ -235,8 +186,11 @@ function SmartAgendaPanel({
               </View>
               <Text style={styles.smartLine}>{item.why_now}</Text>
               <Text style={styles.smartAction}>{item.do_now}</Text>
-              {trajectorySummary(item) ? <Text style={styles.smartTrajectory}>{trajectorySummary(item)}</Text> : null}
-              {verifySummary(item) ? <Text style={styles.smartVerify}>验证: {verifySummary(item)}</Text> : null}
+              {buildTrajectorySummary(item) ? (
+                <Text style={styles.smartTrajectory}>{buildTrajectorySummary(item)}</Text>
+              ) : null}
+              {buildVerifySummary(item) ? <Text style={styles.smartVerify}>验证: {buildVerifySummary(item)}</Text> : null}
+              {buildBoundarySummary(item) ? <Text style={styles.smartBoundary}>{buildBoundarySummary(item)}</Text> : null}
             </View>
           </View>
         ))
@@ -392,6 +346,7 @@ function createStyles(c: ColorPalette) {
     smartAction: { fontSize: 13, fontWeight: '700', color: c.labelPrimary, lineHeight: 18 },
     smartTrajectory: { fontSize: 12, fontWeight: '700', color: '#0E8F66', lineHeight: 16 },
     smartVerify: { fontSize: 12, color: c.labelTertiary, lineHeight: 16 },
+    smartBoundary: { fontSize: 11, color: c.labelTertiary, lineHeight: 15 },
     card: {
       flexDirection: 'row', alignItems: 'center', backgroundColor: c.bgCard,
       borderRadius: radii.lg, padding: spacing.lg, gap: spacing.md, ...shadows.subtle,

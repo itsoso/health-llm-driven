@@ -43,6 +43,20 @@ def _evidence_contract(evidence_tier: str, confidence: str, claim_boundary: str 
     }
 
 
+def _uncertainty_contract(level: str, drivers: List[str]) -> Dict[str, Any]:
+    return {
+        "level": level,
+        "drivers": sorted(set(drivers)),
+    }
+
+
+def _verification_window(days: int, signal: str) -> Dict[str, Any]:
+    return {
+        "days": days,
+        "signal": signal,
+    }
+
+
 def _genetic_baseline(db: Session, user_id: int) -> Dict[str, Any]:
     has_profile = db.query(GeneticProfile.id).filter(GeneticProfile.user_id == user_id).first() is not None
     variants = db.query(GeneticVariant).filter(GeneticVariant.user_id == user_id).all()
@@ -202,6 +216,15 @@ def _metabolic_risk(twin, genetic: Dict[str, Any]) -> Dict[str, Any]:
         state_variable = "metabolic_labs"
     else:
         state_variable = "metabolic_health_anchor"
+    uncertainty_drivers = []
+    if not clinical_signals:
+        uncertainty_drivers.append("clinical_anchor_missing_or_sparse")
+    if "genetic_disease_risk" in signals:
+        uncertainty_drivers.append("genetic_association_not_deterministic")
+    if labs.last_exam_date is None:
+        uncertainty_drivers.append("lab_recency_unknown")
+    if not uncertainty_drivers:
+        uncertainty_drivers.append("short_window_observation")
     return {
         "domain": "metabolic_health",
         "level": level,
@@ -212,6 +235,8 @@ def _metabolic_risk(twin, genetic: Dict[str, Any]) -> Dict[str, Any]:
         "signals": sorted(set(signals)),
         "primary_action": "围绕腰围、蛋白、每周 150 分钟中等强度活动和睡眠节律执行 7 天计划。",
         "modifiable_levers": ["movement", "nutrition", "diet", "sleep", "measurement"],
+        "uncertainty": _uncertainty_contract("medium" if clinical_signals else "high", uncertainty_drivers),
+        "verification_window": _verification_window(7, state_variable),
         "verification_window_days": 7,
         "verification_signal": state_variable,
         **_evidence_contract(evidence_tier, confidence),
@@ -249,6 +274,13 @@ def _recovery_risk(twin, genetic: Dict[str, Any]) -> Dict[str, Any]:
         state_variable = "hrv_status"
     else:
         state_variable = "recovery_capacity_anchor"
+    uncertainty_drivers = []
+    if wearable_signals:
+        uncertainty_drivers.append("wearable_proxy_signal")
+    if any(signal.startswith("genetic_") for signal in signals):
+        uncertainty_drivers.append("genetic_association_not_deterministic")
+    if not signals:
+        uncertainty_drivers.append("wearable_state_missing")
     return {
         "domain": "recovery_capacity",
         "level": "attention" if signals else "unknown",
@@ -259,6 +291,8 @@ def _recovery_risk(twin, genetic: Dict[str, Any]) -> Dict[str, Any]:
         "signals": sorted(set(signals)),
         "primary_action": "今天避免堆高强度, 用 Zone 2、提前晚餐和固定睡眠窗口恢复。",
         "modifiable_levers": ["sleep", "movement", "training", "recovery", "nutrition"],
+        "uncertainty": _uncertainty_contract("medium" if wearable_signals else "high", uncertainty_drivers),
+        "verification_window": _verification_window(7, state_variable),
         "verification_window_days": 7,
         "verification_signal": state_variable,
         **_evidence_contract(
@@ -281,6 +315,8 @@ def _aging_risk(epigenetic: Dict[str, Any], twin) -> Dict[str, Any]:
             "signals": ["methylation_missing"],
             "primary_action": "先用 8-12 周代谢和恢复闭环建立基线, 再接入甲基化长期反馈。",
             "modifiable_levers": ["movement", "nutrition", "sleep", "measurement"],
+            "uncertainty": _uncertainty_contract("high", ["methylation_report_missing", "uses_indirect_proxy_metrics"]),
+            "verification_window": _verification_window(84, "methylation_report"),
             "verification_window_days": 84,
             "verification_signal": "methylation_report",
             **_evidence_contract(
@@ -308,6 +344,8 @@ def _aging_risk(epigenetic: Dict[str, Any], twin) -> Dict[str, Any]:
         "signals": signals,
         "primary_action": "用 8-12 周代谢、睡眠和运动闭环后复测趋势, 不把短期变化当作确定性抗衰成效。",
         "modifiable_levers": ["movement", "nutrition", "sleep", "measurement"],
+        "uncertainty": _uncertainty_contract("high", ["experimental_proxy_metric", "long_retest_window_required"]),
+        "verification_window": _verification_window(84, state_variable),
         "verification_window_days": 84,
         "verification_signal": state_variable,
         **_evidence_contract(

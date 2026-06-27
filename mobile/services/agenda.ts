@@ -45,9 +45,11 @@ export interface TrajectoryContext {
   signals?: string[];
   primary_action?: string | null;
   modifiable_levers?: string[];
+  uncertainty?: { level?: string; drivers?: string[] } | null;
   evidence_tier?: string | null;
   confidence?: string | number | null;
   claim_boundary?: string | null;
+  verification_window?: { days?: number; signal?: string } | null;
   verification_window_days?: number | null;
   verification_signal?: string | null;
 }

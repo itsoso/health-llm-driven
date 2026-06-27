@@ -42,9 +42,11 @@ _TRAJECTORY_CONTEXT_KEYS = (
     "signals",
     "primary_action",
     "modifiable_levers",
+    "uncertainty",
     "evidence_tier",
     "confidence",
     "claim_boundary",
+    "verification_window",
     "verification_window_days",
     "verification_signal",
 )
@@ -544,6 +546,13 @@ def _why_now(item: Dict[str, Any]) -> str:
         return f"已逾期，需要优先处理。{detail or ''}".strip()
     if status == "due":
         return f"复查到期，需要安排检查或确认已完成。{detail or ''}".strip()
+    trajectory = item.get("trajectory_context")
+    if isinstance(trajectory, dict) and trajectory.get("why"):
+        action_why = str(item.get("why") or "").strip()
+        trajectory_why = str(trajectory["why"]).strip()
+        if action_why and action_why != trajectory_why:
+            return f"{trajectory_why} {action_why}"
+        return trajectory_why
     if item.get("why"):
         return str(item["why"])
     typ = item.get("type")
@@ -703,7 +712,11 @@ def _to_smart_item(
             "level": trajectory.get("level"),
             "state_variable": trajectory.get("state_variable"),
             "horizon": trajectory.get("horizon"),
+            "uncertainty_level": (trajectory.get("uncertainty") or {}).get("level")
+            if isinstance(trajectory.get("uncertainty"), dict)
+            else None,
             "verification_signal": trajectory.get("verification_signal"),
+            "verification_window": trajectory.get("verification_window"),
             "verification_window_days": trajectory.get("verification_window_days"),
         }
     rank_reason = {
@@ -718,6 +731,7 @@ def _to_smart_item(
             "state_variable": trajectory.get("state_variable"),
             "confidence": trajectory.get("confidence"),
         }
+    claim_boundary = item.get("claim_boundary") or (trajectory or {}).get("claim_boundary")
     return {
         "id": _smart_id(item),
         "type": item.get("type"),
@@ -746,7 +760,7 @@ def _to_smart_item(
         # 仅作旧后端缺该字段时的兜底。见 mobile/services/rokidVoiceAgenda.ts。
         "voice_actionable": _is_voice_actionable(item),
         "confidence": item.get("confidence"),
-        "claim_boundary": item.get("claim_boundary"),
+        "claim_boundary": claim_boundary,
         "trajectory_context": trajectory,
         "target_state_variable": target_state_variable,
         "verification_signal": verification_signal,

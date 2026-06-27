@@ -206,8 +206,10 @@ def test_smart_today_attaches_trajectory_context_to_daily_plan_actions(monkeypat
                 "why": "腰围和血压提示代谢轨迹需要关注。",
                 "primary_action": "优先执行中等强度活动和腰围复盘。",
                 "confidence": "high",
+                "uncertainty": {"level": "medium", "drivers": ["bp_single_measurement"]},
                 "evidence_tier": "clinical_guideline",
                 "claim_boundary": "用于上游健康管理排序, 不替代医生诊断。",
+                "verification_window": {"days": 7, "signal": "waist_cm"},
                 "verification_window_days": 7,
                 "verification_signal": "waist_cm",
                 "modifiable_levers": ["movement", "nutrition", "sleep"],
@@ -222,7 +224,12 @@ def test_smart_today_attaches_trajectory_context_to_daily_plan_actions(monkeypat
     assert top["trajectory_context"]["domain"] == "metabolic_health"
     assert top["target_state_variable"] == "waist_cm"
     assert top["verification_signal"] == "waist_cm"
+    assert top["why_now"].startswith("腰围和血压提示代谢轨迹需要关注。")
+    assert top["claim_boundary"] == "用于上游健康管理排序, 不替代医生诊断。"
+    assert top["trajectory_context"]["uncertainty"]["level"] == "medium"
+    assert top["trajectory_context"]["verification_window"]["signal"] == "waist_cm"
     assert top["verify_by"]["trajectory"]["horizon"] == "upstream_90d"
+    assert top["verify_by"]["trajectory"]["uncertainty_level"] == "medium"
     assert top["rank_reason"]["trajectory"]["state_variable"] == "waist_cm"
 
 

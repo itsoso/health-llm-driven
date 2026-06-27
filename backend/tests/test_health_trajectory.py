@@ -70,12 +70,17 @@ def test_trajectory_me_combines_baseline_anchors_realtime_and_actions(client, db
     assert all(r["state_variable"] for r in body["trajectory_risks"])
     assert all(r["horizon"] for r in body["trajectory_risks"])
     assert all(isinstance(r["modifiable_levers"], list) for r in body["trajectory_risks"])
+    assert all(r["uncertainty"]["level"] in {"low", "medium", "high"} for r in body["trajectory_risks"])
+    assert all(isinstance(r["uncertainty"]["drivers"], list) for r in body["trajectory_risks"])
+    assert all(r["verification_window"]["days"] >= 0 for r in body["trajectory_risks"])
+    assert all(r["verification_window"]["signal"] for r in body["trajectory_risks"])
     assert all(r["verification_window_days"] >= 0 for r in body["trajectory_risks"])
     assert all(r["verification_signal"] for r in body["trajectory_risks"])
     metabolic = next(r for r in body["trajectory_risks"] if r["domain"] == "metabolic_health")
     assert metabolic["evidence_tier"] == "clinical_guideline"
     assert metabolic["confidence"] == "high"
     assert metabolic["state_variable"] == "waist_cm"
+    assert metabolic["uncertainty"]["level"] == "medium"
     assert "movement" in metabolic["modifiable_levers"]
     assert body["epigenetic_feedback"]["evidence_tier"] == "experimental"
     assert "短期干预成效" in body["epigenetic_feedback"]["claim_boundary"]
