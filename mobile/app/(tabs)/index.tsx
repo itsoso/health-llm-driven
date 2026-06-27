@@ -10,7 +10,7 @@
  * 数据缺失走"待记录"占位, 不掩盖空状态.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -35,17 +35,25 @@ import { useBehaviorLoopReminders } from '../../hooks/useBehaviorLoopReminders';
 import { useActiveCycle } from '../../hooks/useHealthOs';
 import { useCompleteAgendaItem, useTodayTimeline } from '../../hooks/useTodayTimeline';
 import type { TodayTimelineItem } from '../../services/todayTimeline';
+import type { AgendaSource, AgendaSkipReason } from '../../services/agenda';
 import { garminSleepHours, garminDeepSleepHours, type GarminDailyRow } from '../../types/garmin';
 import {
   getDailyOperatingPlan,
   type DailyPlanAction,
 } from '../../services/dailyPlan';
+import {
+  getDailyArtifact,
+  recordDailyArtifactEvent,
+  type DailyArtifact,
+  type DailyArtifactTopAction,
+} from '../../services/dailyArtifact';
 import ActivityRingBar from '../../components/dashboard/ActivityRingBar';
 import VitalsGrid from '../../components/dashboard/VitalsGrid';
 import MedicationCheckin from '../../components/dashboard/MedicationCheckin';
 import BodyStatsRow from '../../components/home/BodyStatsRow';
 import RevaGreetingHeader from '../../components/home/RevaGreetingHeader';
 import RevaHeroCard from '../../components/home/RevaHeroCard';
+import DailyArtifactCard from '../../components/home/DailyArtifactCard';
 import WriteIntentCard from '../../components/home/WriteIntentCard';
 import RevaTimelineStrip from '../../components/home/RevaTimelineStrip';
 import RevaCycleStrip from '../../components/home/RevaCycleStrip';
@@ -81,6 +89,9 @@ export default function TodayScreen() {
   // 否则最后一块(「开始跑步」绿色 CTA)会被 tab bar 半遮盖(硬编码 110 在大安全区机型不够)。
   const tabBarHeight = useFloatingTabBarHeight();
   const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [artifactCompleting, setArtifactCompleting] = useState(false);
+  const [artifactSkipping, setArtifactSkipping] = useState(false);
+  const artifactImpressionKeyRef = useRef<string | null>(null);
 
   const safetyQuery = useQuery({
     queryKey: ['safety', 'me'],
@@ -100,6 +111,12 @@ export default function TodayScreen() {
   const dailyPlanQuery = useQuery({
     queryKey: ['daily-plan', 'me'],
     queryFn: getDailyOperatingPlan,
+    staleTime: 60 * 1000,
+  });
+
+  const dailyArtifactQuery = useQuery({
+    queryKey: ['daily-artifact', 'me'],
+    queryFn: () => getDailyArtifact(),
     staleTime: 60 * 1000,
   });
 
@@ -153,6 +170,7 @@ export default function TodayScreen() {
         qc.invalidateQueries({ queryKey: ['safety', 'me'] }),
         qc.invalidateQueries({ queryKey: ['twin', 'me'] }),
         qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] }),
+        qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] }),
         qc.invalidateQueries({ queryKey: ['timeline', 'today'] }),
         qc.invalidateQueries({ queryKey: ['agenda', 'today'] }),
         qc.invalidateQueries({ queryKey: ['dashboard'] }),
@@ -240,6 +258,97 @@ export default function TodayScreen() {
     });
   }, [nowItem, heroCompleting, completeNow]);
 
+  useEffect(() => {
+    const artifact = dailyArtifactQuery.data;
+    if (!artifact) return;
+    const key = `${artifact.artifact_date}:${artifact.top_action?.id ?? 'empty'}`;
+    if (artifactImpressionKeyRef.current === key) return;
+    artifactImpressionKeyRef.current = key;
+    recordDailyArtifactEvent({
+      eventType: 'impression',
+      artifactDate: artifact.artifact_date,
+      topActionId: artifact.top_action?.id ?? null,
+      deliveredContext: dailyArtifactContext(artifact, 'home'),
+    }).catch(() => {});
+  }, [dailyArtifactQuery.data]);
+
+  const recordArtifactAccepted = useCallback((artifact: DailyArtifact, intent: string) => {
+    recordDailyArtifactEvent({
+      eventType: 'accepted',
+      artifactDate: artifact.artifact_date,
+      topActionId: artifact.top_action?.id ?? null,
+      deliveredContext: dailyArtifactContext(artifact, 'home', { intent }),
+    }).catch(() => {});
+  }, []);
+
+  const onArtifactComplete = useCallback((action: DailyArtifactTopAction) => {
+    if (artifactCompleting) return;
+    const source = agendaSourceFromArtifactAction(action);
+    const artifact = dailyArtifactQuery.data;
+    if (!source || !artifact) {
+      Alert.alert('暂时不能完成', '这条行动还缺少可写入的来源。');
+      return;
+    }
+    setArtifactCompleting(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    completeNow.mutate(source, {
+      onSuccess: () => {
+        recordDailyArtifactEvent({
+          eventType: 'completed',
+          artifactDate: artifact.artifact_date,
+          topActionId: action.id,
+          deliveredContext: dailyArtifactContext(artifact, 'home', { action: 'complete' }),
+        }).catch(() => {});
+        qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] });
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        setArtifactCompleting(false);
+      },
+      onError: () => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        Alert.alert('完成失败', '没有保存成功,请稍后重试。');
+        setArtifactCompleting(false);
+      },
+    });
+  }, [artifactCompleting, completeNow, dailyArtifactQuery.data, qc]);
+
+  const onArtifactSkip = useCallback((reason: AgendaSkipReason, action: DailyArtifactTopAction | null) => {
+    const artifact = dailyArtifactQuery.data;
+    if (!artifact || artifactSkipping) return;
+    setArtifactSkipping(true);
+    recordDailyArtifactEvent({
+      eventType: 'skipped',
+      artifactDate: artifact.artifact_date,
+      topActionId: action?.id ?? null,
+      skipReason: reason,
+      deliveredContext: dailyArtifactContext(artifact, 'home', { action: 'skip' }),
+    }).then(() => {
+      qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] });
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }).catch(() => {
+      Alert.alert('跳过失败', '没有记录成功,请稍后重试。');
+    }).finally(() => {
+      setArtifactSkipping(false);
+    });
+  }, [artifactSkipping, dailyArtifactQuery.data, qc]);
+
+  const onArtifactAskReva = useCallback((artifact: DailyArtifact) => {
+    recordArtifactAccepted(artifact, 'ask_reva');
+    const target = artifact.top_action?.actions?.ask_reva?.target || '/voice-chat?intent=daily_artifact';
+    router.push(target as any);
+  }, [recordArtifactAccepted, router]);
+
+  const onArtifactPressAction = useCallback((action: DailyArtifactTopAction) => {
+    const artifact = dailyArtifactQuery.data;
+    if (artifact) recordArtifactAccepted(artifact, 'open_detail');
+    if (nowItem?.deep_link) {
+      const link = nowItem.deep_link;
+      router.push((link.startsWith('/') ? link : `/${link}`) as any);
+      return;
+    }
+    if (action.source?.object_type) router.push('/timeline' as any);
+    else router.push('/(tabs)/chat' as any);
+  }, [dailyArtifactQuery.data, nowItem, recordArtifactAccepted, router]);
+
   // ── Vitals 数据 ──
   const vitalsProps = {
     // 睡眠时长优先用 Twin 的 sleep_duration_h_latest(已跨源合并、已是小时);
@@ -303,21 +412,33 @@ export default function TodayScreen() {
         {/* 1 · 问候头 */}
         <RevaGreetingHeader name={profileName} />
 
-        {/* 2 · 深绿 Hero(时间感知「现在该做什么」now-action + 支撑就绪环) */}
-        <RevaHeroCard
-          readiness={readinessScore}
-          stale={readinessStale}
-          asOf={twinSnap.readiness_date}
-          hasNow={heroHasNow}
-          nowTitle={heroNowTitle}
-          nowSubtitle={heroNowSubtitle}
-          nowTime={heroNowTime}
-          nowLever={heroNowLever}
-          canComplete={heroCanComplete}
-          completing={heroCompleting}
-          onPressAction={onHeroAction}
-          onComplete={onHeroComplete}
-        />
+        {/* 2 · Daily Artifact(今日状态 + 一个 top action)。接口不可用时回退既有 Hero。 */}
+        {dailyArtifactQuery.data ? (
+          <DailyArtifactCard
+            artifact={dailyArtifactQuery.data}
+            completing={artifactCompleting}
+            skipping={artifactSkipping}
+            onComplete={onArtifactComplete}
+            onSkip={onArtifactSkip}
+            onAskReva={onArtifactAskReva}
+            onPressAction={onArtifactPressAction}
+          />
+        ) : (
+          <RevaHeroCard
+            readiness={readinessScore}
+            stale={readinessStale}
+            asOf={twinSnap.readiness_date}
+            hasNow={heroHasNow}
+            nowTitle={heroNowTitle}
+            nowSubtitle={heroNowSubtitle}
+            nowTime={heroNowTime}
+            nowLever={heroNowLever}
+            canComplete={heroCanComplete}
+            completing={heroCompleting}
+            onPressAction={onHeroAction}
+            onComplete={onHeroComplete}
+          />
+        )}
 
         {/* 待你确认(Write 层 v0:Agent 提议替你写一件事,确认才执行;空态不渲染) */}
         <WriteIntentCard />
@@ -452,6 +573,31 @@ function shortSubtitle(raw: string | null | undefined): string | undefined {
   if (!s) return undefined;
   const cut = s.search(/[;；,，。.]/);
   return (cut > 0 ? s.slice(0, cut) : s).trim() || undefined;
+}
+
+function agendaSourceFromArtifactAction(action: DailyArtifactTopAction): AgendaSource | null {
+  const source = action.actions?.complete?.source ?? action.source;
+  if (!source?.object_type || source.object_id == null) return null;
+  return {
+    object_type: source.object_type,
+    object_id: source.object_id,
+    ...(source.slot ? { slot: source.slot } : {}),
+  };
+}
+
+function dailyArtifactContext(
+  artifact: DailyArtifact,
+  surface: 'home',
+  extra?: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    surface,
+    empty_state: artifact.empty_state,
+    confidence: artifact.confidence,
+    freshness: artifact.freshness?.status ?? null,
+    evidence_count: artifact.evidence.length,
+    ...(extra ?? {}),
+  };
 }
 
 const styles = StyleSheet.create({

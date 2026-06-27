@@ -4,7 +4,9 @@ import { fireEvent, render } from '@testing-library/react-native';
 
 const mockPush = jest.fn();
 const mockInvalidateQueries = jest.fn();
+const mockApiPost = jest.fn();
 let mockDailyPlanActions: unknown[] = [];
+let mockDailyArtifact: any = null;
 let mockTwinData: Record<string, unknown> = {};
 let mockSafetyAlerts: any[] = [];
 let mockActiveCycle: any = null;
@@ -34,6 +36,9 @@ jest.mock('@tanstack/react-query', () => ({
     }
     if (key.includes('daily-plan')) {
       return { data: { actions: mockDailyPlanActions }, isLoading: false, isRefetching };
+    }
+    if (key.includes('daily-artifact')) {
+      return { data: mockDailyArtifact, isLoading: false, isError: false, isRefetching };
     }
     if (key.includes('timeline')) {
       return { data: mockTimeline, isLoading: false, isError: false, isRefetching };
@@ -93,7 +98,7 @@ jest.mock('../../../services/dailyPlan', () => ({
 
 jest.mock('../../../services/api', () => ({
   __esModule: true,
-  default: { get: jest.fn() },
+  default: { get: jest.fn(), post: (...args: any[]) => mockApiPost(...args) },
 }));
 
 // Reva self-fetching strips read their own hooks (timeline / weather). Under the
@@ -106,6 +111,7 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockDailyPlanActions = [];
+    mockDailyArtifact = null;
     mockTwinData = {};
     mockSafetyAlerts = [];
     mockActiveCycle = null;
@@ -208,6 +214,47 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(getByText('今天的事都安排好了')).toBeTruthy();
     fireEvent.press(getByLabelText('补齐今天记录'));
     expect(mockPush).toHaveBeenCalledWith('/(tabs)/record');
+  });
+
+  it('promotes the Daily Artifact as the primary home action when available', () => {
+    mockTimeline = makeTimeline({
+      id: 'act-1',
+      kind: 'action',
+      time_window: 'noon',
+      scheduled_for: '12:00',
+      title: '旧 Hero 行动',
+      subtitle: null,
+      icon: 'restaurant-outline',
+      color: '#1F8A5B',
+      status: 'pending',
+      priority: 1,
+      can_complete: false,
+      complete_ref: null,
+      deep_link: null,
+      severity: null,
+      proof: null,
+    });
+    mockDailyArtifact = {
+      artifact_date: '2026-06-27',
+      empty_state: false,
+      state: { label: '今日最重要行动', tone: 'focused', summary: '先处理餐后窗口。' },
+      top_action: {
+        id: 'walk-10m',
+        title: '午饭后步行 10 分钟',
+        do_now: '穿好鞋,从办公室楼下走一圈。',
+        actions: { complete: { enabled: true }, skip: { requires_reason: true } },
+      },
+      evidence: [{ kind: 'why_now', label: 'Why now', summary: '餐后窗口' }],
+      confidence: 'medium',
+      freshness: { status: 'fresh', sources: ['health_protocol'] },
+      safety_boundary: '这是健康管理行动建议。',
+    };
+
+    const { getByText, queryByLabelText } = render(<TodayScreen />);
+
+    expect(getByText('DAILY ARTIFACT')).toBeTruthy();
+    expect(getByText('午饭后步行 10 分钟')).toBeTruthy();
+    expect(queryByLabelText('现在该做:旧 Hero 行动')).toBeNull();
   });
 
   it('routes the Hero now-action to its deep link when present', () => {
