@@ -4,8 +4,22 @@ import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
 import { EvidenceRefsRow } from './EvidenceRefsRow';
 import type { EvidenceRef } from './EvidenceRefsRow';
-import { useTheme, type ColorPalette } from '../../../hooks/useTheme';
+import { revaColors as C, revaFonts } from '../../../constants/revaTheme';
 import type { CardSpec } from './types';
+
+// 运动类目 accent (粉) + 卡底 tint = 装饰色, 保留字面量 (= legacy pink/tintPink).
+const WORKOUT_ACCENT = '#C2487A';
+const WORKOUT_TINT = '#F7E4EC';
+
+// 每项 stat 的装饰性 hue (时长绿/距离蓝/消耗橙/心率粉/最大心率红/配速紫/步数琥珀) ——
+// 区分指标的色码, 非临床好坏, 保留 Reva 亮色调色板字面量.
+const STAT_DURATION = C.green500;
+const STAT_DISTANCE = '#2A6FDB';
+const STAT_CALORIES = '#C97A2E';
+const STAT_HR = '#C2487A';
+const STAT_MAXHR = '#D5503A';
+const STAT_PACE = '#7C5CBF';
+const STAT_STEPS = '#C98A1E';
 
 interface WorkoutData {
   activity_type?: string;
@@ -65,31 +79,30 @@ function parseDateWindow(q: string): { start: string; end: string } | null {
 }
 
 function Stat({
-  icon, color, label, value, c,
-}: { icon: string; color: string; label: string; value: string; c: ColorPalette }) {
+  icon, color, label, value,
+}: { icon: string; color: string; label: string; value: string }) {
   return (
     <View style={styles.stat}>
       <Ionicons name={icon as any} size={12} color={color} />
-      <Text maxFontSizeMultiplier={1.3} style={[styles.statLabel, { color: c.labelSecondary }]}>{label}</Text>
+      <Text maxFontSizeMultiplier={1.3} style={styles.statLabel}>{label}</Text>
       <Text maxFontSizeMultiplier={1.3} style={[styles.statVal, { color }]}>{value}</Text>
     </View>
   );
 }
 
 export function WorkoutCardView(d: WorkoutData) {
-  const { c } = useTheme();
   const baseTitle = d.activity_type ? `${d.activity_type}分析` : '运动分析';
   const title = d.workout_date ? `${baseTitle} · ${humanizeDate(d.workout_date)}` : baseTitle;
   return (
-    <CardShell icon="fitness" iconColor={c.pink} title={title} bg={c.tintPink}>
+    <CardShell icon="fitness" iconColor={WORKOUT_ACCENT} title={title} bg={WORKOUT_TINT}>
       <View style={styles.grid}>
-        {d.duration_min != null && <Stat icon="time-outline" color={c.brand} label="时长" value={`${d.duration_min}min`} c={c} />}
-        {d.distance_km != null && <Stat icon="navigate-outline" color={c.blue} label="距离" value={`${d.distance_km.toFixed(2)}km`} c={c} />}
-        {d.calories != null && <Stat icon="flame-outline" color={c.orange} label="消耗" value={`${d.calories}kcal`} c={c} />}
-        {d.avg_hr != null && <Stat icon="heart-outline" color={c.pink} label="均心率" value={`${d.avg_hr}bpm`} c={c} />}
-        {d.max_hr != null && <Stat icon="heart" color={c.red} label="最大心率" value={`${d.max_hr}bpm`} c={c} />}
-        {d.avg_pace && <Stat icon="speedometer-outline" color={c.purple} label="配速" value={d.avg_pace} c={c} />}
-        {d.steps != null && <Stat icon="footsteps-outline" color={c.amber} label="步数" value={d.steps.toLocaleString()} c={c} />}
+        {d.duration_min != null && <Stat icon="time-outline" color={STAT_DURATION} label="时长" value={`${d.duration_min}min`} />}
+        {d.distance_km != null && <Stat icon="navigate-outline" color={STAT_DISTANCE} label="距离" value={`${d.distance_km.toFixed(2)}km`} />}
+        {d.calories != null && <Stat icon="flame-outline" color={STAT_CALORIES} label="消耗" value={`${d.calories}kcal`} />}
+        {d.avg_hr != null && <Stat icon="heart-outline" color={STAT_HR} label="均心率" value={`${d.avg_hr}bpm`} />}
+        {d.max_hr != null && <Stat icon="heart" color={STAT_MAXHR} label="最大心率" value={`${d.max_hr}bpm`} />}
+        {d.avg_pace && <Stat icon="speedometer-outline" color={STAT_PACE} label="配速" value={d.avg_pace} />}
+        {d.steps != null && <Stat icon="footsteps-outline" color={STAT_STEPS} label="步数" value={d.steps.toLocaleString()} />}
       </View>
       <EvidenceRefsRow refs={d.evidence_refs} />
     </CardShell>
@@ -173,6 +186,6 @@ export const WorkoutCardSpec: CardSpec<WorkoutData> = {
 const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   stat: { alignItems: 'center', gap: 2, minWidth: 60 },
-  statLabel: { fontSize: 10 } as TextStyle,
-  statVal: { fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  statLabel: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink2 } as TextStyle,
+  statVal: { fontFamily: revaFonts.mono, fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
 });

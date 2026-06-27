@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
-import { useTheme } from '../../../hooks/useTheme';
+import { revaColors as C, revaFonts } from '../../../constants/revaTheme';
 import type { CardSpec } from './types';
 
 interface KnowledgeClaim {
@@ -32,7 +32,6 @@ export function SystemKnowledgeEvidenceCardView({
   claims = [],
   claim_boundary,
 }: KnowledgeEvidenceData) {
-  const { c } = useTheme();
   const firstClaim = claims[0];
   const title = entity?.title || entity?.entity_id || '系统知识库';
   const sources = firstClaim?.sources?.slice(0, 3) || [];
@@ -40,16 +39,16 @@ export function SystemKnowledgeEvidenceCardView({
   return (
     <CardShell
       icon="library"
-      iconColor={c.blue}
+      iconColor={C.blue500}
       title={title}
       badge={evidenceLabel(firstClaim?.evidence_level)}
-      badgeColor={c.blue}
-      bg={c.tintBlue}
+      badgeColor={C.blue500}
+      bg={C.blue50}
     >
       {firstClaim?.title ? (
         <Text
           maxFontSizeMultiplier={1.3}
-          style={[styles.claimTitle, { color: c.labelPrimary }]}
+          style={styles.claimTitle}
           numberOfLines={2}
         >
           {firstClaim.title}
@@ -58,8 +57,8 @@ export function SystemKnowledgeEvidenceCardView({
 
       {typeof firstClaim?.confidence === 'number' ? (
         <View style={styles.confidenceRow}>
-          <Ionicons name="shield-checkmark-outline" size={12} color={c.blue} />
-          <Text maxFontSizeMultiplier={1.3} style={[styles.meta, { color: c.blue }]}>
+          <Ionicons name="shield-checkmark-outline" size={12} color={C.blue500} />
+          <Text maxFontSizeMultiplier={1.3} style={styles.meta}>
             置信度 {Math.round(firstClaim.confidence * 100)}%
           </Text>
         </View>
@@ -70,12 +69,12 @@ export function SystemKnowledgeEvidenceCardView({
           {sources.map((source) => (
             <View
               key={source}
-              style={[styles.sourceChip, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}
+              style={[styles.sourceChip, { backgroundColor: C.paper, borderColor: C.line }]}
             >
-              <Ionicons name="document-text-outline" size={10} color={c.labelSecondary} />
+              <Ionicons name="document-text-outline" size={10} color={C.ink2} />
               <Text
                 maxFontSizeMultiplier={1.3}
-                style={[styles.source, { color: c.labelSecondary }]}
+                style={styles.source}
                 numberOfLines={1}
               >
                 {source}
@@ -88,7 +87,7 @@ export function SystemKnowledgeEvidenceCardView({
       {claim_boundary ? (
         <Text
           maxFontSizeMultiplier={1.3}
-          style={[styles.boundary, { color: c.labelSecondary }]}
+          style={styles.boundary}
           numberOfLines={3}
         >
           {claim_boundary}
@@ -134,21 +133,29 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   claimTitle: {
+    fontFamily: revaFonts.sans,
     fontSize: 13,
     fontWeight: '700',
+    color: C.ink1,
     lineHeight: 18,
   } as TextStyle,
   meta: {
+    fontFamily: revaFonts.mono,
     fontSize: 11,
     fontWeight: '600',
+    color: C.blue500,
   } as TextStyle,
   source: {
+    fontFamily: revaFonts.sans,
     fontSize: 10,
+    color: C.ink2,
     maxWidth: 160,
   } as TextStyle,
   boundary: {
+    fontFamily: revaFonts.sans,
     marginTop: 8,
     fontSize: 10,
+    color: C.ink2,
     lineHeight: 15,
   } as TextStyle,
 });

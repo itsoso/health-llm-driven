@@ -1,12 +1,17 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, Modal, Pressable, ScrollView, TouchableOpacity,
   StyleSheet, Alert, ActivityIndicator, useWindowDimensions,
   TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { spacing, radii } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaSemantic,
+  revaFonts,
+} from '../../constants/revaTheme';
 
 interface Props {
   visible: boolean;
@@ -27,8 +32,6 @@ export default function ConversationSheet({
   currentConversationId, onSelectConversation, onDeleteConversation,
   onRenameConversation, loading, error, onRetry,
 }: Props) {
-  const { c, isDark } = useTheme();
-  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
   const [savingId, setSavingId] = useState<number | null>(null);
@@ -97,13 +100,13 @@ export default function ConversationSheet({
           <Text style={styles.title}>对话历史</Text>
           {loading ? (
             <View style={styles.loadingWrap}>
-              <ActivityIndicator size="small" color={c.brand} />
+              <ActivityIndicator size="small" color={C.green500} />
               <Text style={styles.loadingText}>加载中...</Text>
             </View>
           ) : error ? (
             <View style={styles.loadingWrap}>
-              <Ionicons name="alert-circle-outline" size={28} color={c.red} />
-              <Text style={[styles.loadingText, { color: c.red }]}>{error}</Text>
+              <Ionicons name="alert-circle-outline" size={28} color={revaSemantic.risk.fg} />
+              <Text style={[styles.loadingText, { color: revaSemantic.risk.fg }]}>{error}</Text>
               {onRetry && (
                 <TouchableOpacity onPress={onRetry} style={styles.retryBtn} activeOpacity={0.7}>
                   <Text style={styles.retryBtnText}>重试</Text>
@@ -112,7 +115,7 @@ export default function ConversationSheet({
             </View>
           ) : conversations.length === 0 ? (
             <View style={styles.loadingWrap}>
-              <Ionicons name="chatbubbles-outline" size={28} color={c.labelTertiary} />
+              <Ionicons name="chatbubbles-outline" size={28} color={C.ink3} />
               <Text style={styles.loadingText}>还没有历史对话</Text>
             </View>
           ) : (
@@ -130,7 +133,7 @@ export default function ConversationSheet({
                           autoFocus
                           editable={savingId !== item.id}
                           placeholder="输入标题"
-                          placeholderTextColor={c.labelTertiary}
+                          placeholderTextColor={C.ink3}
                           returnKeyType="done"
                           onSubmitEditing={() => saveRename(item)}
                           style={styles.titleInput}
@@ -143,7 +146,7 @@ export default function ConversationSheet({
                           accessibilityRole="button"
                           accessibilityLabel="保存标题"
                         >
-                          <Ionicons name="checkmark" size={18} color={c.brand} />
+                          <Ionicons name="checkmark" size={18} color={C.green500} />
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={cancelRename}
@@ -152,7 +155,7 @@ export default function ConversationSheet({
                           accessibilityRole="button"
                           accessibilityLabel="取消重命名"
                         >
-                          <Ionicons name="close" size={18} color={c.labelSecondary} />
+                          <Ionicons name="close" size={18} color={C.ink2} />
                         </TouchableOpacity>
                         {!!renameError && <Text style={styles.renameError}>{renameError}</Text>}
                       </View>
@@ -179,7 +182,7 @@ export default function ConversationSheet({
                           accessibilityRole="button"
                           accessibilityLabel="重命名对话"
                         >
-                          <Ionicons name="pencil-outline" size={16} color={c.labelSecondary} />
+                          <Ionicons name="pencil-outline" size={16} color={C.ink2} />
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() => {
@@ -192,7 +195,7 @@ export default function ConversationSheet({
                           accessibilityRole="button"
                           accessibilityLabel="删除对话"
                         >
-                          <Ionicons name="trash-outline" size={16} color={c.red} />
+                          <Ionicons name="trash-outline" size={16} color={revaSemantic.risk.fg} />
                         </TouchableOpacity>
                       </>
                     )}
@@ -207,46 +210,44 @@ export default function ConversationSheet({
   );
 }
 
-function createStyles(c: ColorPalette, _isDark: boolean) {
-  return StyleSheet.create({
-    overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
-    overlayTablet: { justifyContent: 'center', alignItems: 'center' },
-    sheet: {
-      backgroundColor: c.bgCard, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-      paddingHorizontal: spacing.xl, paddingBottom: 40, paddingTop: 8,
-    },
-    sheetTablet: {
-      borderRadius: 20, paddingBottom: spacing.xl,
-    },
-    handle: {
-      width: 36, height: 4, borderRadius: 2, backgroundColor: c.labelQuaternary,
-      alignSelf: 'center', marginBottom: spacing.lg,
-    },
-    title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, marginBottom: 12 },
-    loadingWrap: { alignItems: 'center', paddingVertical: 20, gap: 8 },
-    loadingText: { fontSize: 14, color: c.labelTertiary },
-    row: {
-      paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: c.separator, flexDirection: 'row', alignItems: 'center',
-    },
-    rowActive: { backgroundColor: c.brandLight },
-    rowMain: { flex: 1, minWidth: 0 },
-    rowTitle: { fontSize: 15, color: c.labelPrimary },
-    rowDate: { fontSize: 12, color: c.labelTertiary, marginTop: 2 },
-    iconBtn: { padding: 8 },
-    iconBtnDisabled: { opacity: 0.4 },
-    editWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' },
-    titleInput: {
-      flex: 1, minWidth: 140, minHeight: 36, paddingHorizontal: 10,
-      paddingVertical: 6, borderRadius: radii.sm, borderWidth: StyleSheet.hairlineWidth,
-      borderColor: c.separator, color: c.labelPrimary, backgroundColor: c.bgPrimary,
-      fontSize: 15,
-    },
-    renameError: { width: '100%', color: c.red, fontSize: 12, marginTop: 2 },
-    retryBtn: {
-      marginTop: 8, paddingHorizontal: 16, paddingVertical: 8,
-      borderRadius: radii.md, backgroundColor: c.brand,
-    },
-    retryBtnText: { fontSize: 14, color: '#fff', fontWeight: '500' },
-  });
-}
+const styles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
+  overlayTablet: { justifyContent: 'center', alignItems: 'center' },
+  sheet: {
+    backgroundColor: C.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: revaSpacing.s5, paddingBottom: 40, paddingTop: 8,
+  },
+  sheetTablet: {
+    borderRadius: 20, paddingBottom: revaSpacing.s5,
+  },
+  handle: {
+    width: 36, height: 4, borderRadius: 2, backgroundColor: C.ink4,
+    alignSelf: 'center', marginBottom: revaSpacing.s4,
+  },
+  title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1, marginBottom: 12 },
+  loadingWrap: { alignItems: 'center', paddingVertical: 20, gap: 8 },
+  loadingText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink3 },
+  row: {
+    paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: C.line, flexDirection: 'row', alignItems: 'center',
+  },
+  rowActive: { backgroundColor: C.green50 },
+  rowMain: { flex: 1, minWidth: 0 },
+  rowTitle: { fontFamily: revaFonts.sans, fontSize: 15, color: C.ink1 },
+  rowDate: { fontFamily: revaFonts.mono, fontSize: 12, color: C.ink3, marginTop: 2 },
+  iconBtn: { padding: 8 },
+  iconBtnDisabled: { opacity: 0.4 },
+  editWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' },
+  titleInput: {
+    flex: 1, minWidth: 140, minHeight: 36, paddingHorizontal: 10,
+    paddingVertical: 6, borderRadius: revaRadii.sm, borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line, color: C.ink1, backgroundColor: C.paper,
+    fontFamily: revaFonts.sans, fontSize: 15,
+  },
+  renameError: { fontFamily: revaFonts.sans, width: '100%', color: revaSemantic.risk.fg, fontSize: 12, marginTop: 2 },
+  retryBtn: {
+    marginTop: 8, paddingHorizontal: 16, paddingVertical: 8,
+    borderRadius: revaRadii.md, backgroundColor: C.green500,
+  },
+  retryBtnText: { fontFamily: revaFonts.sans, fontSize: 14, color: '#fff', fontWeight: '500' },
+});

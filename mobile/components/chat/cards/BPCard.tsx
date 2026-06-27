@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CardShell } from './CardShell';
-import { useTheme } from '../../../hooks/useTheme';
+import { revaColors as C, revaSemantic, revaFonts } from '../../../constants/revaTheme';
 import type { CardSpec } from './types';
 
 interface BPData {
@@ -14,7 +14,7 @@ interface BPData {
   category_color: string;
 }
 
-/** ACC/AHA 2017 血压分级. 颜色为医学语义 (红=高/绿=正常), 不随主题切换. */
+/** ACC/AHA 2017 血压分级. 颜色为 6 级医学语义 (红=高/绿=正常), 固定 hex 不随主题切换. */
 function classify(s: number, d: number): { label: string; color: string } {
   if (s >= 180 || d >= 120) return { label: '高血压急症', color: '#AF52DE' };
   if (s >= 140 || d >= 90) return { label: '高血压 2 期', color: '#FF453A' };
@@ -26,35 +26,34 @@ function classify(s: number, d: number): { label: string; color: string } {
 
 export function BPCardView({ systolic, diastolic, pulse, measured_at, category, category_color }: BPData) {
   const router = useRouter();
-  const { c } = useTheme();
   return (
     <CardShell
       icon="heart"
-      iconColor={c.red}
+      iconColor={revaSemantic.risk.fg}
       title="血压"
       badge={category}
       badgeColor={category_color}
-      bg={c.tintRed}
+      bg={revaSemantic.risk.bg}
       onPress={() => router.push({ pathname: '/indicator-history', params: { type: 'blood_pressure' } })}
     >
       <View style={styles.row}>
         <View style={styles.bpBlock}>
           <Text maxFontSizeMultiplier={1.3} style={[styles.bpNum, { color: category_color }]}>
             {systolic}
-            <Text style={[styles.bpSlash, { color: c.labelTertiary }]}> / </Text>
+            <Text style={styles.bpSlash}> / </Text>
             {diastolic}
           </Text>
-          <Text maxFontSizeMultiplier={1.3} style={[styles.unit, { color: c.labelTertiary }]}>mmHg</Text>
+          <Text maxFontSizeMultiplier={1.3} style={styles.unit}>mmHg</Text>
         </View>
         {pulse != null && (
           <View style={styles.pulseBlock}>
-            <Text maxFontSizeMultiplier={1.3} style={[styles.pulseNum, { color: c.labelPrimary }]}>{pulse}</Text>
-            <Text maxFontSizeMultiplier={1.3} style={[styles.pulseLabel, { color: c.labelTertiary }]}>脉搏 bpm</Text>
+            <Text maxFontSizeMultiplier={1.3} style={styles.pulseNum}>{pulse}</Text>
+            <Text maxFontSizeMultiplier={1.3} style={styles.pulseLabel}>脉搏 bpm</Text>
           </View>
         )}
       </View>
       {measured_at && (
-        <Text maxFontSizeMultiplier={1.3} style={[styles.time, { color: c.labelTertiary }]}>{measured_at}</Text>
+        <Text maxFontSizeMultiplier={1.3} style={styles.time}>{measured_at}</Text>
       )}
     </CardShell>
   );
@@ -94,10 +93,10 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   bpBlock: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
   pulseBlock: { alignItems: 'flex-end' },
-  bpNum: { fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  bpSlash: { fontSize: 18, fontWeight: '400' } as TextStyle,
-  unit: { fontSize: 10 } as TextStyle,
-  pulseNum: { fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  pulseLabel: { fontSize: 9 } as TextStyle,
-  time: { fontSize: 10, marginTop: 4 } as TextStyle,
+  bpNum: { fontFamily: revaFonts.mono, fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  bpSlash: { fontFamily: revaFonts.mono, fontSize: 18, fontWeight: '400', color: C.ink3 } as TextStyle,
+  unit: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3 } as TextStyle,
+  pulseNum: { fontFamily: revaFonts.mono, fontSize: 18, fontWeight: '700', color: C.ink1, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  pulseLabel: { fontFamily: revaFonts.sans, fontSize: 9, color: C.ink3 } as TextStyle,
+  time: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink3, marginTop: 4 } as TextStyle,
 });

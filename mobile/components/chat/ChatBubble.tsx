@@ -16,6 +16,7 @@ import BrandCircle from './BrandCircle';
 import { renderCard } from './cards';
 import InterventionDraftSheet from '../actions/InterventionDraftSheet';
 import { createMdStylesChat } from '../../constants/markdownStyles';
+import type { ColorPalette } from '../../hooks/useTheme';
 import type { UIMessage } from '../../hooks/useChatEngine';
 import { invalidateQueryKeys, queryKeys } from '../../applib/queryKeys';
 import { createInterventionDraft } from '../../services/actionCards';
@@ -23,12 +24,34 @@ import { saveAssistantReplyAsMemory } from '../../services/chatResultActions';
 import { buildInterventionDraft, type InterventionDraft } from '../../services/interventionDraft';
 import { speakWithUserVoice, type SpeakHandle } from '../../services/speakWithUserVoice';
 import AttributionChips from './AttributionChips';
-import { radii } from '../../constants/theme';
-import { ColorPalette, useTheme, type SemanticPalette } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaShadows,
+  revaSemantic,
+  revaFonts,
+} from '../../constants/revaTheme';
 import { useToast } from '../../hooks/useToast';
 import { sharePlainText } from '../../utils/share';
 import { buildAiShareMessage } from '../../utils/aiShareText';
 import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/markdownTables';
+
+// 结果操作按钮的装饰性 hue (加入计划绿/保存记忆紫/生成记录青/继续追问蓝) ——
+// 「是哪个动作」的色码, 非临床好坏, 保留 Reva 亮色调色板字面量.
+const ACTION_PURPLE = '#7C5CBF';
+const ACTION_TEAL = '#2F9E8F';
+
+// Markdown 样式走共享 factory (constants/markdownStyles, 4 个屏共用, 不动它的 ColorPalette 契约).
+// Reva light-first → 用映射到 reva token 的精简调色板算一次, 模块级静态 (无 dark 实例态).
+const MD_PALETTE = {
+  labelPrimary: C.ink1,
+  labelSecondary: C.ink2,
+  labelTertiary: C.ink3,
+  brand: C.green500,
+  fill: C.paper2,
+  separator: C.line,
+} as unknown as ColorPalette;
+const MD_STYLES = createMdStylesChat(MD_PALETTE);
 
 interface Props {
   item: UIMessage;
@@ -42,11 +65,7 @@ interface Props {
 
 function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = false, onToggleSelected, onEnterSelection }: Props) {
   const qc = useQueryClient();
-  const { c, isDark, s } = useTheme();
   const toast = useToast();
-  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
-  const txt = useMemo(() => createTxt(c), [c]);
-  const mdStyles = useMemo(() => createMdStylesChat(c), [c]);
   const isUser = item.role === 'user';
   const [draft, setDraft] = useState<InterventionDraft | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -331,13 +350,13 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
             accessibilityState={selectionMode ? { selected } : undefined}
           >
             {structuredSummary ? (
-              <StructuredSummaryCard summary={structuredSummary} c={c} s={s} />
+              <StructuredSummaryCard summary={structuredSummary} />
             ) : null}
             {visibleMarkdown && isStreaming ? (
               // 流式降级: plain text, 保留换行, 不做 markdown 解析/整树渲染
               <Text selectable style={txt.streaming}>{visibleMarkdown}</Text>
             ) : visibleMarkdown ? (
-              <Markdown style={mdStyles}>{renderedMarkdown}</Markdown>
+              <Markdown style={MD_STYLES}>{renderedMarkdown}</Markdown>
             ) : !item.streaming && !displayText ? (
               <Text style={txt.fallback}>抱歉，这条回复没能送达。你可以重新提问。</Text>
             ) : null}
@@ -351,25 +370,25 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
                 <ResultActionButton
                   icon="add-circle-outline"
                   label="加入今日计划"
-                  color={c.brand}
+                  color={C.green500}
                   onPress={openDraft}
                 />
                 <ResultActionButton
                   icon="bookmark-outline"
                   label="保存记忆"
-                  color={c.purple}
+                  color={ACTION_PURPLE}
                   onPress={handleSaveMemory}
                 />
                 <ResultActionButton
                   icon="create-outline"
                   label="生成记录"
-                  color={c.teal}
+                  color={ACTION_TEAL}
                   onPress={handleCreateRecord}
                 />
                 <ResultActionButton
                   icon="chatbubble-ellipses-outline"
                   label="继续追问"
-                  color={c.blue}
+                  color={C.blue500}
                   onPress={handleContinueFollowUp}
                 />
               </View>
@@ -382,7 +401,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
                   accessibilityRole="button"
                   accessibilityLabel="加入健康行动"
                 >
-                  <Ionicons name="add-circle-outline" size={14} color={c.brand} />
+                  <Ionicons name="add-circle-outline" size={14} color={C.green500} />
                   <Text style={txt.actionBtn}>加入行动</Text>
                 </Pressable>
                 <Pressable
@@ -391,18 +410,18 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
                   accessibilityRole="button"
                   accessibilityLabel="复制全文"
                 >
-                  <Ionicons name="copy-outline" size={14} color={c.brand} />
+                  <Ionicons name="copy-outline" size={14} color={C.green500} />
                   <Text style={txt.actionBtn}>复制</Text>
                 </Pressable>
               </View>
             ) : null}
-            {item.streaming && <ActivityIndicator size="small" color={c.brand} style={{ marginTop: 4 }} />}
+            {item.streaming && <ActivityIndicator size="small" color={C.green500} style={{ marginTop: 4 }} />}
             {/* 2026-05-13: 耗时 + 模型名 footer + 🔊 播报按钮 (流式结束才显示) */}
             {!item.streaming && displayText ? (
               <View style={styles.metaRow}>
                 {item.elapsedMs != null ? (
                   <>
-                    <Ionicons name="time-outline" size={10} color={c.labelTertiary} />
+                    <Ionicons name="time-outline" size={10} color={C.ink3} />
                     <Text style={txt.meta}>
                       {(item.elapsedMs / 1000).toFixed(1)}s
                       {item.llmRounds && item.llmRounds > 1 ? ` · ${item.llmRounds} 轮` : ''}
@@ -419,7 +438,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
                     accessibilityLabel="分享"
                     style={({ pressed }) => [styles.speakBtn, pressed && styles.actionBtnPressed]}
                   >
-                    <Ionicons name="share-outline" size={14} color={c.labelSecondary} />
+                    <Ionicons name="share-outline" size={14} color={C.ink2} />
                   </Pressable>
                 ) : null}
                 <Pressable
@@ -432,18 +451,18 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
                   <Ionicons
                     name={speaking ? 'stop-circle' : 'volume-high-outline'}
                     size={14}
-                    color={speaking ? c.brand : c.labelSecondary}
+                    color={speaking ? C.green500 : C.ink2}
                   />
                 </Pressable>
               </View>
             ) : null}
             {/* 2026-05-14 #4: 可解释性 chip — AI 用了什么数据 (默认折叠) */}
             {!item.streaming && item.sourcesUsed && item.sourcesUsed.length > 0 ? (
-              <SourcesChip sources={item.sourcesUsed} c={c} />
+              <SourcesChip sources={item.sourcesUsed} />
             ) : null}
             {/* 2026-06-12: 调用 Skill chips — 本轮用了哪些 Skill/工具 (对齐 mac/web) */}
             {!item.streaming && item.toolsUsed && item.toolsUsed.length > 0 ? (
-              <ToolsChips tools={item.toolsUsed} c={c} />
+              <ToolsChips tools={item.toolsUsed} />
             ) : null}
           </TouchableOpacity>
         )}
@@ -670,42 +689,40 @@ function stripStructuredHealthSummary(text: string): string {
   return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-function statusTone(s: SemanticPalette, status?: string): string {
-  if (!status) return s.neutral.solid;
-  if (/⚠|低|风险|异常|未达标|偏低|偏高|0%/.test(status)) return s.warning.solid;
-  if (/❌|严重|急|失败/.test(status)) return s.danger.solid;
-  if (/✅|正常|优秀|良好|充沛/.test(status)) return s.success.solid;
-  return s.neutral.solid;
+// 指标状态 = 真正的「好坏」语义 → Reva 三步临床色 (warning=caution / danger=risk / success=normal),
+// 中性回退用灰 (= legacy neutral.solid).
+function statusTone(status?: string): string {
+  if (!status) return '#8A968F';
+  if (/⚠|低|风险|异常|未达标|偏低|偏高|0%/.test(status)) return revaSemantic.caution.fg;
+  if (/❌|严重|急|失败/.test(status)) return revaSemantic.risk.fg;
+  if (/✅|正常|优秀|良好|充沛/.test(status)) return revaSemantic.normal.fg;
+  return '#8A968F';
 }
 
 function StructuredSummaryCard({
   summary,
-  c,
-  s,
 }: {
   summary: StructuredHealthSummary;
-  c: ColorPalette;
-  s: SemanticPalette;
 }) {
   return (
-    <View style={[summaryStyles.card, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>
+    <View style={[summaryStyles.card, { backgroundColor: C.paper, borderColor: C.line }]}>
       {summary.metrics.length > 0 ? (
         <>
           <View style={summaryStyles.header}>
-            <Ionicons name="analytics-outline" size={14} color={c.brand} />
-            <Text style={[summaryStyles.title, { color: c.labelPrimary }]}>指标摘要</Text>
+            <Ionicons name="analytics-outline" size={14} color={C.green500} />
+            <Text style={summaryStyles.title}>指标摘要</Text>
           </View>
           <View style={summaryStyles.metrics}>
             {summary.metrics.map(metric => (
               <View key={`${metric.label}-${metric.value}`} style={summaryStyles.metricRow}>
-                <Text style={[summaryStyles.metricLabel, { color: c.labelSecondary }]} numberOfLines={1}>
+                <Text style={summaryStyles.metricLabel} numberOfLines={1}>
                   {metric.label}
                 </Text>
-                <Text style={[summaryStyles.metricValue, { color: c.labelPrimary }]} numberOfLines={1}>
+                <Text style={summaryStyles.metricValue} numberOfLines={1}>
                   {metric.value}
                 </Text>
                 {metric.status ? (
-                  <View style={[summaryStyles.statusDot, { backgroundColor: statusTone(s, metric.status) }]} />
+                  <View style={[summaryStyles.statusDot, { backgroundColor: statusTone(metric.status) }]} />
                 ) : null}
               </View>
             ))}
@@ -714,15 +731,15 @@ function StructuredSummaryCard({
       ) : null}
 
       {summary.advice.length > 0 ? (
-        <View style={[summaryStyles.adviceBlock, summary.metrics.length > 0 && { borderTopColor: c.separator, borderTopWidth: StyleSheet.hairlineWidth }]}>
+        <View style={[summaryStyles.adviceBlock, summary.metrics.length > 0 && { borderTopColor: C.line, borderTopWidth: StyleSheet.hairlineWidth }]}>
           <View style={summaryStyles.header}>
-            <Ionicons name="pin-outline" size={14} color={c.brand} />
-            <Text style={[summaryStyles.title, { color: c.labelPrimary }]}>今日建议</Text>
+            <Ionicons name="pin-outline" size={14} color={C.green500} />
+            <Text style={summaryStyles.title}>今日建议</Text>
           </View>
           {summary.advice.map((item, index) => (
             <View key={`${index}-${item}`} style={summaryStyles.adviceRow}>
-              <Text style={[summaryStyles.adviceIndex, { color: c.brand }]}>{index + 1}</Text>
-              <Text style={[summaryStyles.adviceText, { color: c.labelSecondary }]} numberOfLines={2}>
+              <Text style={summaryStyles.adviceIndex}>{index + 1}</Text>
+              <Text style={summaryStyles.adviceText} numberOfLines={2}>
                 {item}
               </Text>
             </View>
@@ -740,16 +757,17 @@ const resultActionStyles = StyleSheet.create({
   button: {
     width: '48%',
     minHeight: 32,
-    borderRadius: radii.full,
+    borderRadius: revaRadii.pill,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    backgroundColor: 'rgba(120, 120, 128, 0.12)',
+    backgroundColor: C.paper2,
     paddingHorizontal: 9,
   },
   pressed: { opacity: 0.78 },
   label: {
+    fontFamily: revaFonts.sans,
     fontSize: 11,
     fontWeight: '800',
   } as TextStyle,
@@ -770,8 +788,10 @@ const summaryStyles = StyleSheet.create({
     marginBottom: 6,
   },
   title: {
+    fontFamily: revaFonts.sans,
     fontSize: 12,
     fontWeight: '800',
+    color: C.ink1,
   } as TextStyle,
   metrics: {
     gap: 6,
@@ -782,14 +802,18 @@ const summaryStyles = StyleSheet.create({
     gap: 8,
   },
   metricLabel: {
+    fontFamily: revaFonts.sans,
     width: 58,
     fontSize: 12,
     fontWeight: '700',
+    color: C.ink2,
   } as TextStyle,
   metricValue: {
+    fontFamily: revaFonts.mono,
     flex: 1,
     fontSize: 13,
     fontWeight: '800',
+    color: C.ink1,
     fontVariant: ['tabular-nums'] as const,
   } as TextStyle,
   statusDot: {
@@ -807,128 +831,124 @@ const summaryStyles = StyleSheet.create({
     marginTop: 5,
   },
   adviceIndex: {
+    fontFamily: revaFonts.mono,
     width: 18,
     fontSize: 11,
     fontWeight: '900',
+    color: C.green500,
     textAlign: 'center',
   } as TextStyle,
   adviceText: {
+    fontFamily: revaFonts.sans,
     flex: 1,
     fontSize: 12,
     lineHeight: 17,
     fontWeight: '600',
+    color: C.ink2,
   } as TextStyle,
 });
 
-function createStyles(c: ColorPalette, isDark: boolean) {
-  return StyleSheet.create({
-    msgRow: { flexDirection: 'row', marginBottom: 12, alignItems: 'flex-end' },
-    msgRowUser: { justifyContent: 'flex-end' },
-    msgRowAI: { justifyContent: 'flex-start' },
-    cardFrame: { flex: 1, minWidth: 0, maxWidth: '100%' },
-    bubble: { maxWidth: '88%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
-    bubbleUser: { backgroundColor: c.brand, borderBottomRightRadius: 4 },
-    bubbleSelected: {
-      borderWidth: 2,
-      borderColor: c.brand,
-      shadowColor: c.brand,
-      shadowOpacity: 0.16,
-      shadowRadius: 8,
-      elevation: 2,
-    },
-    selectMark: {
-      width: 22,
-      height: 22,
-      borderRadius: 11,
-      borderWidth: 1,
-      borderColor: c.separator,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: 8,
-      marginBottom: 10,
-      backgroundColor: c.bgPrimary,
-    },
-    selectMarkActive: {
-      backgroundColor: c.brand,
-      borderColor: c.brand,
-    },
-    siriBadge: {
-      position: 'absolute',
-      top: -6, right: -6,
-      width: 18, height: 18, borderRadius: 9,
-      backgroundColor: c.brand,
-      borderWidth: 1.5, borderColor: c.bgPrimary,
-      alignItems: 'center', justifyContent: 'center',
-      zIndex: 2,
-    },
-    bubbleAI: {
-      backgroundColor: c.bgCard, borderBottomLeftRadius: 4,
-      ...(isDark
-        ? { borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator }
-        : {
-            shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.06, shadowRadius: 3, elevation: 1,
-          }),
-    },
-    bubbleAIWide: { flex: 1, maxWidth: '94%', flexShrink: 1, alignSelf: 'stretch' },
-    imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 4 },
-    msgImageSingle: { width: 160, height: 120, borderRadius: 10 },
-    msgImageGrid: { width: 72, height: 72, borderRadius: 8 },
-    actionsRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 8,
-      marginTop: 10,
-      paddingTop: 8,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: c.separator,
-    },
-    actionBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      borderRadius: radii.full,
-      backgroundColor: c.brandLight,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-    },
-    resultActionGrid: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 7,
-      marginTop: 10,
-      paddingTop: 8,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: c.separator,
-    },
-    actionBtnPressed: { opacity: 0.82 },
-    speakBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      borderRadius: 999,
-    },
-    metaRow: {
-      flexDirection: 'row', alignItems: 'center', gap: 3,
-      marginTop: 6,
-    },
-  });
-}
+// Reva 设计语言: 用户气泡 green500, AI 气泡 surface + 软阴影 (light-first). 数字/耗时走 mono.
+const styles = StyleSheet.create({
+  msgRow: { flexDirection: 'row', marginBottom: 12, alignItems: 'flex-end' },
+  msgRowUser: { justifyContent: 'flex-end' },
+  msgRowAI: { justifyContent: 'flex-start' },
+  cardFrame: { flex: 1, minWidth: 0, maxWidth: '100%' },
+  bubble: { maxWidth: '88%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
+  bubbleUser: { backgroundColor: C.green500, borderBottomRightRadius: 4 },
+  bubbleSelected: {
+    borderWidth: 2,
+    borderColor: C.green500,
+    shadowColor: C.green500,
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  selectMark: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: C.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+    marginBottom: 10,
+    backgroundColor: C.paper,
+  },
+  selectMarkActive: {
+    backgroundColor: C.green500,
+    borderColor: C.green500,
+  },
+  siriBadge: {
+    position: 'absolute',
+    top: -6, right: -6,
+    width: 18, height: 18, borderRadius: 9,
+    backgroundColor: C.green500,
+    borderWidth: 1.5, borderColor: C.paper,
+    alignItems: 'center', justifyContent: 'center',
+    zIndex: 2,
+  },
+  bubbleAI: {
+    backgroundColor: C.surface, borderBottomLeftRadius: 4,
+    ...revaShadows.sm,
+  },
+  bubbleAIWide: { flex: 1, maxWidth: '94%', flexShrink: 1, alignSelf: 'stretch' },
+  imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 4 },
+  msgImageSingle: { width: 160, height: 120, borderRadius: 10 },
+  msgImageGrid: { width: 72, height: 72, borderRadius: 8 },
+  actionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  resultActionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+  },
+  actionBtnPressed: { opacity: 0.82 },
+  speakBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  metaRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    marginTop: 6,
+  },
+});
 
-function createTxt(c: ColorPalette) {
-  return {
-    bubbleUser: { fontSize: 15, lineHeight: 22, color: '#fff' } as TextStyle,
-    // 与 markdownStyles body (fontSize 15 / lineHeight 23) 对齐, 流式→终态切 markdown 时无跳动
-    streaming: { fontSize: 15, lineHeight: 23, color: c.labelPrimary } as TextStyle,
-    actionBtn: { fontSize: 12, fontWeight: '700', color: c.brand } as TextStyle,
-    fallback: { fontSize: 14, lineHeight: 20, color: c.labelSecondary, fontStyle: 'italic' } as TextStyle,
-    meta: { fontSize: 10, color: c.labelTertiary, fontFamily: 'Courier' } as TextStyle,
-  };
-}
+const txt = {
+  bubbleUser: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 22, color: '#fff' } as TextStyle,
+  // 与 markdownStyles body (fontSize 15 / lineHeight 23) 对齐, 流式→终态切 markdown 时无跳动
+  streaming: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 23, color: C.ink1 } as TextStyle,
+  actionBtn: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '700', color: C.green500 } as TextStyle,
+  fallback: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 20, color: C.ink2, fontStyle: 'italic' } as TextStyle,
+  meta: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3 } as TextStyle,
+};
 
 /** 2026-05-14 #4: 默认折叠 "AI 用了 N 项数据", 点开列出来. */
-function SourcesChip({ sources, c }: { sources: string[]; c: ColorPalette }) {
+function SourcesChip({ sources }: { sources: string[] }) {
   const [open, setOpen] = React.useState(false);
   return (
     <View style={{ marginTop: 6 }}>
@@ -938,26 +958,26 @@ function SourcesChip({ sources, c }: { sources: string[]; c: ColorPalette }) {
           flexDirection: 'row', alignItems: 'center', gap: 4,
           alignSelf: 'flex-start',
           paddingHorizontal: 8, paddingVertical: 3,
-          borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator,
-          backgroundColor: c.fill,
+          borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line,
+          backgroundColor: C.paper2,
         }}
       >
-        <Ionicons name="search-outline" size={11} color={c.labelTertiary} />
-        <Text style={{ fontSize: 11, color: c.labelTertiary }}>
+        <Ionicons name="search-outline" size={11} color={C.ink3} />
+        <Text style={{ fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3 }}>
           AI 用了 {sources.length} 项数据
         </Text>
         <Ionicons
           name={open ? 'chevron-up' : 'chevron-down'}
           size={11}
-          color={c.labelTertiary}
+          color={C.ink3}
         />
       </TouchableOpacity>
       {open && (
         <View style={{ marginTop: 4, marginLeft: 4, gap: 2 }}>
           {sources.map((s, i) => (
             <View key={i} style={{ flexDirection: 'row', gap: 4 }}>
-              <Text style={{ fontSize: 11, color: c.brand, opacity: 0.6 }}>·</Text>
-              <Text style={{ fontSize: 11, color: c.labelTertiary, flex: 1 }}>{s}</Text>
+              <Text style={{ fontFamily: revaFonts.sans, fontSize: 11, color: C.green500, opacity: 0.6 }}>·</Text>
+              <Text style={{ fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, flex: 1 }}>{s}</Text>
             </View>
           ))}
         </View>
@@ -968,7 +988,7 @@ function SourcesChip({ sources, c }: { sources: string[]; c: ColorPalette }) {
 
 /** 2026-06-12: "调用 Skill" — 本轮调用的 Skill/工具名, 横排 chip (对齐 mac/web).
  * 始终展开 (通常 1-3 个), 灰、小、低调, 不抢内容。 */
-function ToolsChips({ tools, c }: { tools: string[]; c: ColorPalette }) {
+function ToolsChips({ tools }: { tools: string[] }) {
   const list = tools.filter(t => t && t.trim());
   if (list.length === 0) return null;
   return (
@@ -978,18 +998,18 @@ function ToolsChips({ tools, c }: { tools: string[]; c: ColorPalette }) {
         marginTop: 6,
       }}
     >
-      <Ionicons name="construct-outline" size={11} color={c.labelTertiary} />
-      <Text style={{ fontSize: 11, color: c.labelTertiary }}>调用 Skill</Text>
+      <Ionicons name="construct-outline" size={11} color={C.ink3} />
+      <Text style={{ fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3 }}>调用 Skill</Text>
       {list.map((t, i) => (
         <View
           key={i}
           style={{
             paddingHorizontal: 7, paddingVertical: 2,
-            borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator,
-            backgroundColor: c.fill,
+            borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line,
+            backgroundColor: C.paper2,
           }}
         >
-          <Text style={{ fontSize: 11, color: c.labelSecondary }}>{t}</Text>
+          <Text style={{ fontFamily: revaFonts.sans, fontSize: 11, color: C.ink2 }}>{t}</Text>
         </View>
       ))}
     </View>

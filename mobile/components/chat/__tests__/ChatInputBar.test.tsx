@@ -4,28 +4,9 @@ import { StyleSheet } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 
 import ChatInputBar from '../ChatInputBar';
+import { revaColors } from '../../../constants/revaTheme';
 
 const mockStartRecording = jest.fn();
-
-const mockThemeColors = {
-  bgPrimary: '#000000',
-  bgCard: '#1C1C1E',
-  labelPrimary: '#F5F5F7',
-  labelSecondary: '#A1A1A6',
-  labelTertiary: '#636366',
-  labelQuaternary: '#48484A',
-  separator: 'rgba(255,255,255,0.12)',
-  brand: '#0EB5B5',
-  red: '#FF453A',
-};
-
-jest.mock('../../../hooks/useTheme', () => ({
-  useTheme: () => ({
-    c: mockThemeColors,
-    isDark: true,
-    scheme: 'dark',
-  }),
-}));
 
 jest.mock('../../../hooks/useMediaPicker', () => ({
   useMediaPicker: () => ({
@@ -77,7 +58,7 @@ describe('ChatInputBar', () => {
     jest.clearAllMocks();
   });
 
-  it('uses themed colors for the attachment menu sheet', () => {
+  it('uses Reva surface color for the attachment menu sheet', () => {
     const { getByLabelText, getByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
@@ -85,7 +66,7 @@ describe('ChatInputBar', () => {
     fireEvent.press(getByLabelText('附件菜单'));
 
     expect(StyleSheet.flatten(getByTestId('attachment-menu-sheet').props.style).backgroundColor)
-      .toBe(mockThemeColors.bgCard);
+      .toBe(revaColors.surface);
   });
 
   it('uses the bottom microphone for voice input instead of voice conversation', () => {

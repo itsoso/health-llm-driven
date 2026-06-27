@@ -6,18 +6,23 @@
  * 而是 AI 拿当前 trust loop 状态 / anomaly / case / memory 主动开场.
  *
  * 设计要点:
- * - 视觉: 半透明 brand 色背景 + sparkles 图标 + 圆角, 让用户认出"这是 AI 主动说的"
+ * - 视觉: surface 卡 + green accent + sparkles 图标 + 圆角, 让用户认出"这是 AI 主动说的"
  * - 交互: 点 quick reply chip = 一键发送回复; 点 deep_link icon = 跳目标页
  * - 退化: opener 为 null → 不渲染, 让 ListEmptyComponent 走默认 SUGGESTIONS
  */
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Pressable, StyleSheet, Text, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import type { ConversationOpener } from '../../services/conversationOpener';
-import { spacing, radii, shadows } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaFonts,
+} from '../../constants/revaTheme';
 
 interface Props {
   opener: ConversationOpener;
@@ -63,10 +68,7 @@ function sourceLabel(source: ConversationOpener['source']): string {
 }
 
 export default function OpenerCard({ opener, onQuickReply }: Props) {
-  const { c, isDark } = useTheme();
   const router = useRouter();
-  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const openerText = formatOpenerText(opener.text);
 
   const onCardPress = () => {
@@ -95,7 +97,7 @@ export default function OpenerCard({ opener, onQuickReply }: Props) {
         <View style={styles.textWrap}>
           <View style={styles.cardHeader}>
             <View style={styles.sourcePill}>
-              <Ionicons name="sparkles" size={11} color={c.brand} />
+              <Ionicons name="sparkles" size={11} color={C.green500} />
               <Text style={txt.source}>{sourceLabel(opener.source)}</Text>
             </View>
           </View>
@@ -103,7 +105,7 @@ export default function OpenerCard({ opener, onQuickReply }: Props) {
         </View>
         {opener.deep_link ? (
           <View style={styles.chevronWrap}>
-            <Ionicons name="chevron-forward" size={15} color={c.labelTertiary} />
+            <Ionicons name="chevron-forward" size={15} color={C.ink3} />
           </View>
         ) : null}
       </Pressable>
@@ -118,7 +120,7 @@ export default function OpenerCard({ opener, onQuickReply }: Props) {
               accessibilityRole="button"
               accessibilityLabel={`一键回复: ${reply}`}
             >
-              <Ionicons name={quickReplyIcon(reply)} size={14} color={c.labelSecondary} />
+              <Ionicons name={quickReplyIcon(reply)} size={14} color={C.ink2} />
               <Text style={txt.chip}>{formatQuickReplyLabel(reply)}</Text>
             </Pressable>
           ))}
@@ -128,89 +130,88 @@ export default function OpenerCard({ opener, onQuickReply }: Props) {
   );
 }
 
-function createStyles(c: ColorPalette, isDark: boolean) {
-  return StyleSheet.create({
-    wrap: {
-      paddingHorizontal: spacing.lg,
-      paddingTop: spacing.lg,
-      gap: spacing.xs,
-    },
-    card: {
-      flexDirection: 'row',
-      alignItems: 'stretch',
-      gap: spacing.sm,
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.md,
-      backgroundColor: c.bgCard,
-      borderRadius: radii.lg,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: isDark ? c.fill : c.separator,
-      ...shadows.subtle,
-    },
-    cardPressed: { opacity: 0.7 },
-    accent: {
-      width: 3,
-      borderRadius: 3,
-      backgroundColor: c.brand,
-      opacity: 0.75,
-    },
-    textWrap: { flex: 1 },
-    cardHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: spacing.xs,
-    },
-    sourcePill: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      borderRadius: radii.full,
-      backgroundColor: c.brandLight,
-    },
-    chevronWrap: {
-      alignSelf: 'center',
-      width: 28,
-      height: 28,
-      borderRadius: 14,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: c.bgPrimary,
-    },
-    chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, paddingLeft: spacing.sm },
-    chip: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      paddingHorizontal: spacing.sm + 2,
-      paddingVertical: 6,
-      backgroundColor: c.bgCard,
-      borderRadius: radii.full,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: c.separator,
-    },
-    chipPressed: { opacity: 0.6 },
-  });
-}
+const styles = StyleSheet.create({
+  wrap: {
+    paddingHorizontal: revaSpacing.s4,
+    paddingTop: revaSpacing.s4,
+    gap: revaSpacing.s1,
+  },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: revaSpacing.s2,
+    paddingHorizontal: revaSpacing.s3,
+    paddingVertical: revaSpacing.s3,
+    backgroundColor: C.surface,
+    borderRadius: revaRadii.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    ...revaShadows.sm,
+  },
+  cardPressed: { opacity: 0.7 },
+  accent: {
+    width: 3,
+    borderRadius: 3,
+    backgroundColor: C.green500,
+    opacity: 0.75,
+  },
+  textWrap: { flex: 1 },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: revaSpacing.s1,
+  },
+  sourcePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+  },
+  chevronWrap: {
+    alignSelf: 'center',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.paper,
+  },
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: revaSpacing.s1, paddingLeft: revaSpacing.s2 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: revaSpacing.s2 + 2,
+    paddingVertical: 6,
+    backgroundColor: C.surface,
+    borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
+  chipPressed: { opacity: 0.6 },
+});
 
-function createTxt(c: ColorPalette) {
-  return {
-    source: {
-      fontSize: 11,
-      color: c.brand,
-      fontWeight: '700',
-    } as TextStyle,
-    body: {
-      fontSize: 15,
-      lineHeight: 21,
-      color: c.labelPrimary,
-      fontWeight: '600',
-    } as TextStyle,
-    chip: {
-      fontSize: 13,
-      color: c.labelSecondary,
-      fontWeight: '600',
-    } as TextStyle,
-  };
-}
+const txt = {
+  source: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    color: C.green500,
+    fontWeight: '700',
+  } as TextStyle,
+  body: {
+    fontFamily: revaFonts.sans,
+    fontSize: 15,
+    lineHeight: 21,
+    color: C.ink1,
+    fontWeight: '600',
+  } as TextStyle,
+  chip: {
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    color: C.ink2,
+    fontWeight: '600',
+  } as TextStyle,
+};

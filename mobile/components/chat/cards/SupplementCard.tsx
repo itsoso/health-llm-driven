@@ -4,8 +4,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
 import { EvidenceRefsRow } from './EvidenceRefsRow';
 import type { EvidenceRef } from './EvidenceRefsRow';
-import { useTheme } from '../../../hooks/useTheme';
+import { revaColors as C, revaSemantic, revaFonts } from '../../../constants/revaTheme';
 import type { CardSpec } from './types';
+
+// 补剂类目 accent (紫) + 卡底 tint = 装饰色, 保留字面量 (= legacy purple/tintPurple).
+const SUPP_ACCENT = '#7C5CBF';
+const SUPP_TINT = '#EDE7F6';
 
 interface SupplementData {
   checked: number;
@@ -15,38 +19,37 @@ interface SupplementData {
 }
 
 export function SupplementCardView({ checked, total, pending_names, evidence_refs }: SupplementData) {
-  const { c } = useTheme();
   const pct = total > 0 ? Math.round((checked / total) * 100) : 0;
-  // 进度颜色 = 完成度语义 (绿/橙/红), 不随主题切换
-  const barColor = pct >= 80 ? '#30D158' : pct >= 50 ? '#FF9F0A' : '#FF453A';
+  // 进度 = 完成度「好坏」语义 → Reva 三步临床色 normal/caution/risk
+  const barColor = pct >= 80 ? revaSemantic.normal.fg : pct >= 50 ? revaSemantic.caution.fg : revaSemantic.risk.fg;
   return (
     <CardShell
       icon="medical"
-      iconColor={c.purple}
+      iconColor={SUPP_ACCENT}
       title="补剂打卡"
       badge={`${checked}/${total}`}
       badgeColor={barColor}
-      bg={c.tintPurple}
+      bg={SUPP_TINT}
     >
-      <View style={[styles.progressTrack, { backgroundColor: c.fill }]}>
+      <View style={[styles.progressTrack, { backgroundColor: C.paper2 }]}>
         <View style={[styles.progressFill, { width: `${pct}%`, backgroundColor: barColor }]} />
       </View>
       {pending_names.length > 0 && (
         <View style={styles.pendingWrap}>
-          <Text maxFontSizeMultiplier={1.3} style={[styles.pendingLabel, { color: c.labelSecondary }]}>
+          <Text maxFontSizeMultiplier={1.3} style={styles.pendingLabel}>
             未打卡：
           </Text>
           <View style={styles.chips}>
             {pending_names.slice(0, 4).map((n) => (
-              <View key={n} style={[styles.chip, { backgroundColor: c.bgPrimary }]}>
-                <Ionicons name="time-outline" size={9} color={c.labelTertiary} />
-                <Text maxFontSizeMultiplier={1.3} style={[styles.chipText, { color: c.labelPrimary }]} numberOfLines={1}>
+              <View key={n} style={[styles.chip, { backgroundColor: C.paper }]}>
+                <Ionicons name="time-outline" size={9} color={C.ink3} />
+                <Text maxFontSizeMultiplier={1.3} style={styles.chipText} numberOfLines={1}>
                   {n}
                 </Text>
               </View>
             ))}
             {pending_names.length > 4 && (
-              <Text maxFontSizeMultiplier={1.3} style={[styles.more, { color: c.labelTertiary }]}>
+              <Text maxFontSizeMultiplier={1.3} style={styles.more}>
                 +{pending_names.length - 4}
               </Text>
             )}
@@ -54,7 +57,7 @@ export function SupplementCardView({ checked, total, pending_names, evidence_ref
         </View>
       )}
       {pending_names.length === 0 && total > 0 && (
-        <Text maxFontSizeMultiplier={1.3} style={[styles.allDone, { color: c.green }]}>
+        <Text maxFontSizeMultiplier={1.3} style={styles.allDone}>
           ✅ 今日补剂已全部打卡
         </Text>
       )}
@@ -105,8 +108,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6, paddingVertical: 2,
     borderRadius: 8,
   },
-  pendingLabel: { fontSize: 10 } as TextStyle,
-  chipText: { fontSize: 10, maxWidth: 80 } as TextStyle,
-  more: { fontSize: 10, alignSelf: 'center' } as TextStyle,
-  allDone: { fontSize: 11, marginTop: 6, fontWeight: '600' } as TextStyle,
+  pendingLabel: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink2 } as TextStyle,
+  chipText: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink1, maxWidth: 80 } as TextStyle,
+  more: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink3, alignSelf: 'center' } as TextStyle,
+  allDone: { fontFamily: revaFonts.sans, fontSize: 11, color: C.green500, marginTop: 6, fontWeight: '600' } as TextStyle,
 });

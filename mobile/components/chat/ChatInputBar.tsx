@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   View, TextInput, TouchableOpacity, StyleSheet, Text,
   Modal, Pressable, ActivityIndicator, TextStyle, ScrollView,
@@ -10,14 +10,16 @@ import * as DocumentPicker from 'expo-document-picker';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
 import { useMediaPicker, type PendingImage } from '../../hooks/useMediaPicker';
 import { useVoiceRecording } from '../../hooks/useVoiceRecording';
-import { spacing } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaSpacing,
+  revaSemantic,
+  revaFonts,
+} from '../../constants/revaTheme';
 
 const CANCEL_THRESHOLD = 80;
 
 function PulsingRing() {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
   const scale = useSharedValue(1);
   React.useEffect(() => {
     scale.value = withRepeat(withTiming(1.4, { duration: 800 }), -1, true);
@@ -39,8 +41,6 @@ interface Props {
 }
 
 export default function ChatInputBar({ onSend, isStreaming, initialText }: Props) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
   const [input, setInput] = useState(initialText ?? '');
   const [showMenu, setShowMenu] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
@@ -135,13 +135,13 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
             <View key={img.uri} style={styles.previewItem}>
               <Image source={{ uri: img.uri }} style={styles.previewImg} />
               <TouchableOpacity style={styles.previewRemove} onPress={() => removeImage(i)} hitSlop={6}>
-                <Ionicons name="close-circle" size={18} color={c.red} />
+                <Ionicons name="close-circle" size={18} color={revaSemantic.risk.fg} />
               </TouchableOpacity>
             </View>
           ))}
           {pendingImages.length < 9 && (
             <TouchableOpacity style={styles.previewAddBtn} onPress={pickImage}>
-              <Ionicons name="add" size={20} color={c.labelSecondary} />
+              <Ionicons name="add" size={20} color={C.ink2} />
             </TouchableOpacity>
           )}
           <Text style={styles.previewCount}>{pendingImages.length}/9</Text>
@@ -175,7 +175,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
       {/* 识别中提示 */}
       {voice.isTranscribing && (
         <View style={styles.transcribingBar}>
-          <ActivityIndicator size="small" color={c.brand} />
+          <ActivityIndicator size="small" color={C.green500} />
           <Text style={styles.transcribingText}>语音识别中...</Text>
         </View>
       )}
@@ -183,7 +183,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
       {/* 输入栏 */}
       <View style={styles.inputBar}>
         <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn} accessibilityLabel="附件菜单">
-          <Ionicons name={showMenu ? 'close' : 'add'} size={22} color={c.labelPrimary} />
+          <Ionicons name={showMenu ? 'close' : 'add'} size={22} color={C.ink1} />
         </TouchableOpacity>
 
         {voiceMode && !canSend ? (
@@ -202,7 +202,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
             <Ionicons
               name="mic"
               size={18}
-              color={voice.isRecording ? '#FF453A' : c.labelSecondary}
+              color={voice.isRecording ? '#FF453A' : C.ink2}
               style={{ marginRight: 4 }}
             />
             <Text style={[
@@ -219,7 +219,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
               ref={textInputRef}
               style={styles.textInput}
               placeholder="有问题，尽管问"
-              placeholderTextColor={c.labelTertiary}
+              placeholderTextColor={C.ink3}
               value={input}
               onChangeText={setInput}
               onSubmitEditing={() => handleSend()}
@@ -251,7 +251,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
             <Ionicons
               name={voiceMode ? 'keypad-outline' : 'mic-outline'}
               size={20}
-              color={voiceMode ? c.labelPrimary : c.brand}
+              color={voiceMode ? C.ink1 : C.green500}
             />
           </TouchableOpacity>
         )}
@@ -277,12 +277,10 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
 }
 
 function MenuItem({ icon, label, desc, onPress }: { icon: any; label: string; desc: string; onPress: () => void }) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
   return (
     <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.6} accessibilityRole="button" accessibilityLabel={label}>
       <View style={styles.menuIconWrap}>
-        <Ionicons name={icon} size={20} color={c.labelPrimary} />
+        <Ionicons name={icon} size={20} color={C.ink1} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.menuLabel}>{label}</Text>
@@ -292,32 +290,33 @@ function MenuItem({ icon, label, desc, onPress }: { icon: any; label: string; de
   );
 }
 
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
+// Reva 设计语言: 暖白 paper 输入栏 / surface 卡 / green500 发送 / ink 文字.
+// 录音蒙层的红色/灰色为固定 mic 录音态语义, 不走主题 token.
+const styles = StyleSheet.create({
   /* ── 输入栏 ── */
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 6,
-    paddingHorizontal: spacing.sm, paddingVertical: 8,
-    backgroundColor: c.bgPrimary,
+    paddingHorizontal: revaSpacing.s2, paddingVertical: 8,
+    backgroundColor: C.paper,
   },
   plusBtn: {
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: c.bgCard, borderWidth: 1, borderColor: c.separator,
+    backgroundColor: C.surface, borderWidth: 1, borderColor: C.line,
     alignItems: 'center', justifyContent: 'center',
   },
   inputWrap: {
     flex: 1, flexDirection: 'row', alignItems: 'flex-end',
-    backgroundColor: c.bgCard, borderRadius: 18,
-    borderWidth: 1, borderColor: c.separator,
+    backgroundColor: C.surface, borderRadius: 18,
+    borderWidth: 1, borderColor: C.line,
     paddingHorizontal: 12, paddingVertical: 4,
   },
   textInput: {
-    flex: 1, fontSize: 15, maxHeight: 90, color: c.labelPrimary,
+    flex: 1, fontFamily: revaFonts.sans, fontSize: 15, maxHeight: 90, color: C.ink1,
     paddingTop: 6, paddingBottom: 6,
   },
   sendBtn: {
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: c.brand,
+    backgroundColor: C.green500,
     alignItems: 'center', justifyContent: 'center',
   },
   modeBtn: {
@@ -326,24 +325,24 @@ function createStyles(c: ColorPalette) {
   },
   voiceInputBtn: {
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: c.bgCard,
+    backgroundColor: C.surface,
     borderWidth: 1,
-    borderColor: c.brand,
+    borderColor: C.green500,
     alignItems: 'center', justifyContent: 'center',
   },
   keyboardBtn: {
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: c.bgCard,
+    backgroundColor: C.surface,
     borderWidth: 1,
-    borderColor: c.separator,
+    borderColor: C.line,
     alignItems: 'center', justifyContent: 'center',
   },
 
   /* ── 按住说话按钮（微信风格） ── */
   holdToTalkBtn: {
     flex: 1, height: 36, borderRadius: 20,
-    backgroundColor: c.bgCard,
-    borderWidth: 1, borderColor: c.separator,
+    backgroundColor: C.surface,
+    borderWidth: 1, borderColor: C.line,
     flexDirection: 'row',
     alignItems: 'center', justifyContent: 'center',
   },
@@ -356,7 +355,7 @@ function createStyles(c: ColorPalette) {
     borderColor: '#FFD0D0',
   },
   holdToTalkText: {
-    fontSize: 15, fontWeight: '500', color: c.labelSecondary,
+    fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '500', color: C.ink2,
   } as TextStyle,
   holdToTalkTextRecording: {
     color: '#FF453A',
@@ -390,11 +389,11 @@ function createStyles(c: ColorPalette) {
     borderWidth: 3, borderColor: 'rgba(255,69,58,0.4)',
   },
   recordingDuration: {
-    fontSize: 28, fontWeight: '700', color: '#fff',
+    fontFamily: revaFonts.mono, fontSize: 28, fontWeight: '700', color: '#fff',
     marginBottom: 8,
   } as TextStyle,
   recordingHint: {
-    fontSize: 14, color: 'rgba(255,255,255,0.7)',
+    fontFamily: revaFonts.sans, fontSize: 14, color: 'rgba(255,255,255,0.7)',
   } as TextStyle,
   recordingHintCancel: {
     color: '#FF453A', fontWeight: '600',
@@ -403,51 +402,50 @@ function createStyles(c: ColorPalette) {
   /* ── 识别中 ── */
   transcribingBar: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: spacing.lg, paddingVertical: 10,
-    backgroundColor: c.bgCard,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.separator,
+    paddingHorizontal: revaSpacing.s4, paddingVertical: 10,
+    backgroundColor: C.surface,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line,
   },
-  transcribingText: { fontSize: 14, color: c.brand } as TextStyle,
+  transcribingText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.green500 } as TextStyle,
 
   /* ── 图片预览 ── */
   previewBar: {
     maxHeight: 72,
-    backgroundColor: c.bgCard,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.separator,
+    backgroundColor: C.surface,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line,
   },
   previewContent: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: spacing.md, paddingVertical: 6,
+    paddingHorizontal: revaSpacing.s3, paddingVertical: 6,
   },
   previewItem: { position: 'relative' },
   previewImg: { width: 52, height: 52, borderRadius: 8 },
   previewRemove: { position: 'absolute', top: -6, right: -6 },
   previewAddBtn: {
     width: 52, height: 52, borderRadius: 8,
-    borderWidth: 1.5, borderColor: c.separator, borderStyle: 'dashed',
+    borderWidth: 1.5, borderColor: C.line, borderStyle: 'dashed',
     alignItems: 'center', justifyContent: 'center',
   },
-  previewCount: { fontSize: 12, color: c.labelTertiary, marginLeft: 4 } as TextStyle,
+  previewCount: { fontFamily: revaFonts.mono, fontSize: 12, color: C.ink3, marginLeft: 4 } as TextStyle,
 
   /* ── 附件菜单 ── */
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
   menuSheet: {
-    backgroundColor: c.bgCard, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingHorizontal: spacing.xl, paddingBottom: 40, paddingTop: 8,
+    backgroundColor: C.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: revaSpacing.s5, paddingBottom: 40, paddingTop: 8,
   },
   menuHandle: {
-    width: 36, height: 4, borderRadius: 2, backgroundColor: c.labelQuaternary,
-    alignSelf: 'center', marginBottom: spacing.lg,
+    width: 36, height: 4, borderRadius: 2, backgroundColor: C.ink4,
+    alignSelf: 'center', marginBottom: revaSpacing.s4,
   },
   menuItem: {
     flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.separator,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line,
   },
   menuIconWrap: {
-    width: 38, height: 38, borderRadius: 12, backgroundColor: c.bgPrimary,
+    width: 38, height: 38, borderRadius: 12, backgroundColor: C.paper,
     alignItems: 'center', justifyContent: 'center',
   },
-  menuLabel: { fontSize: 16, fontWeight: '500', color: c.labelPrimary } as TextStyle,
-  menuDesc: { fontSize: 12, color: c.labelSecondary, marginTop: 1 } as TextStyle,
-  });
-}
+  menuLabel: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '500', color: C.ink1 } as TextStyle,
+  menuDesc: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, marginTop: 1 } as TextStyle,
+});

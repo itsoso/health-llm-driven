@@ -15,9 +15,17 @@ import { View, Text, StyleSheet, TextStyle, Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
-import { radii } from '../../../constants/theme';
-import { useTheme } from '../../../hooks/useTheme';
+import { revaColors as C, revaRadii, revaFonts } from '../../../constants/revaTheme';
 import type { CardSpec } from './types';
+
+// 菜单/饮食类目 accent (橙) + 卡底 tint = 装饰色, 保留字面量 (= legacy orange/tintOrange).
+const MENU_ACCENT = '#C97A2E';
+const MENU_TINT = '#F6E9DA';
+
+// 营养素装饰性 hue (蛋白粉/碳水琥珀/脂肪紫), 区分类目非临床好坏, 保留字面量.
+const MACRO_PINK = '#C2487A';
+const MACRO_AMBER = '#C98A1E';
+const MACRO_PURPLE = '#7C5CBF';
 
 interface MenuItem {
   name: string;
@@ -62,7 +70,6 @@ function buildShareText(d: MenuShareData): string {
 }
 
 export function MenuShareCardView(d: MenuShareData) {
-  const { c } = useTheme();
   const items = Array.isArray(d.items) ? d.items : [];
   const totals = d.totals || {};
 
@@ -78,15 +85,15 @@ export function MenuShareCardView(d: MenuShareData) {
   };
 
   const macros: { label: string; v?: number; color: string; unit: string }[] = [
-    { label: '蛋白', v: totals.protein, color: c.pink, unit: 'g' },
-    { label: '碳水', v: totals.carbs, color: c.amber, unit: 'g' },
-    { label: '脂肪', v: totals.fat, color: c.purple, unit: 'g' },
+    { label: '蛋白', v: totals.protein, color: MACRO_PINK, unit: 'g' },
+    { label: '碳水', v: totals.carbs, color: MACRO_AMBER, unit: 'g' },
+    { label: '脂肪', v: totals.fat, color: MACRO_PURPLE, unit: 'g' },
   ].filter(m => m.v != null);
 
   return (
-    <CardShell icon="restaurant" iconColor={c.orange} title={d.title || '菜单'} bg={c.tintOrange}>
+    <CardShell icon="restaurant" iconColor={MENU_ACCENT} title={d.title || '菜单'} bg={MENU_TINT}>
       {d.reason ? (
-        <Text maxFontSizeMultiplier={1.3} style={[styles.reason, { color: c.labelSecondary }]}>
+        <Text maxFontSizeMultiplier={1.3} style={styles.reason}>
           {d.reason}
         </Text>
       ) : null}
@@ -94,17 +101,17 @@ export function MenuShareCardView(d: MenuShareData) {
       <View style={styles.itemList}>
         {items.map((it, i) => (
           <View key={i} style={styles.itemRow}>
-            <View style={[styles.itemDot, { backgroundColor: c.orange }]} />
-            <Text maxFontSizeMultiplier={1.3} style={[styles.itemName, { color: c.labelPrimary }]} numberOfLines={1} ellipsizeMode="tail">
+            <View style={[styles.itemDot, { backgroundColor: MENU_ACCENT }]} />
+            <Text maxFontSizeMultiplier={1.3} style={styles.itemName} numberOfLines={1} ellipsizeMode="tail">
               {it.name}
             </Text>
             {it.qty ? (
-              <Text maxFontSizeMultiplier={1.3} style={[styles.itemQty, { color: c.labelTertiary }]}>
+              <Text maxFontSizeMultiplier={1.3} style={styles.itemQty}>
                 {it.qty}
               </Text>
             ) : null}
             {it.kcal != null ? (
-              <Text maxFontSizeMultiplier={1.3} style={[styles.itemKcal, { color: c.orange }]}>
+              <Text maxFontSizeMultiplier={1.3} style={styles.itemKcal}>
                 {Math.round(it.kcal)} kcal
               </Text>
             ) : null}
@@ -113,17 +120,17 @@ export function MenuShareCardView(d: MenuShareData) {
       </View>
 
       {totals.kcal != null && (
-        <View style={[styles.totalsRow, { borderTopColor: c.separator }]}>
-          <Text maxFontSizeMultiplier={1.3} style={[styles.totalKcal, { color: c.labelPrimary }]}>
+        <View style={styles.totalsRow}>
+          <Text maxFontSizeMultiplier={1.3} style={styles.totalKcal}>
             {Math.round(totals.kcal)}
-            <Text style={[styles.totalKcalUnit, { color: c.labelTertiary }]}> kcal</Text>
+            <Text style={styles.totalKcalUnit}> kcal</Text>
           </Text>
           {macros.length > 0 && (
             <View style={styles.macros}>
               {macros.map(m => (
                 <View key={m.label} style={styles.macroChip}>
                   <View style={[styles.macroDot, { backgroundColor: m.color }]} />
-                  <Text maxFontSizeMultiplier={1.3} style={[styles.macroLabel, { color: c.labelSecondary }]}>
+                  <Text maxFontSizeMultiplier={1.3} style={styles.macroLabel}>
                     {m.label}
                   </Text>
                   <Text maxFontSizeMultiplier={1.3} style={[styles.macroVal, { color: m.color }]}>
@@ -138,7 +145,7 @@ export function MenuShareCardView(d: MenuShareData) {
 
       <Pressable
         onPress={handleShare}
-        style={({ pressed }) => [styles.shareBtn, { backgroundColor: c.orange }, pressed && { opacity: 0.85 }]}
+        style={({ pressed }) => [styles.shareBtn, { backgroundColor: MENU_ACCENT }, pressed && { opacity: 0.85 }]}
       >
         <Ionicons name="share-social-outline" size={14} color="#fff" />
         <Text maxFontSizeMultiplier={1.2} style={styles.shareText}>分享给家人</Text>
@@ -164,6 +171,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10,
     marginTop: 8, paddingTop: 6,
     borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
   },
   macros: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8 },
   macroChip: { flexDirection: 'row', alignItems: 'center', gap: 3 },
@@ -171,15 +179,15 @@ const styles = StyleSheet.create({
   shareBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     marginTop: 10, paddingVertical: 8,
-    borderRadius: radii.md,
+    borderRadius: revaRadii.md,
   },
-  reason: { fontSize: 12, lineHeight: 17, marginBottom: 4 } as TextStyle,
-  itemName: { flex: 1, minWidth: 0, fontSize: 13, fontWeight: '500' } as TextStyle,
-  itemQty: { flexShrink: 0, fontSize: 11 } as TextStyle,
-  itemKcal: { flexShrink: 0, fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] as const, textAlign: 'right' } as TextStyle,
-  totalKcal: { fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  totalKcalUnit: { fontSize: 11, fontWeight: '400' } as TextStyle,
-  macroLabel: { fontSize: 10 } as TextStyle,
-  macroVal: { fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  shareText: { fontSize: 13, color: '#fff', fontWeight: '700' } as TextStyle,
+  reason: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, color: C.ink2, marginBottom: 4 } as TextStyle,
+  itemName: { fontFamily: revaFonts.sans, flex: 1, minWidth: 0, fontSize: 13, fontWeight: '500', color: C.ink1 } as TextStyle,
+  itemQty: { fontFamily: revaFonts.sans, flexShrink: 0, fontSize: 11, color: C.ink3 } as TextStyle,
+  itemKcal: { fontFamily: revaFonts.mono, flexShrink: 0, fontSize: 11, fontWeight: '600', color: MENU_ACCENT, fontVariant: ['tabular-nums'] as const, textAlign: 'right' } as TextStyle,
+  totalKcal: { fontFamily: revaFonts.mono, fontSize: 18, fontWeight: '800', color: C.ink1, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  totalKcalUnit: { fontFamily: revaFonts.mono, fontSize: 11, fontWeight: '400', color: C.ink3 } as TextStyle,
+  macroLabel: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink2 } as TextStyle,
+  macroVal: { fontFamily: revaFonts.mono, fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  shareText: { fontFamily: revaFonts.sans, fontSize: 13, color: '#fff', fontWeight: '700' } as TextStyle,
 });

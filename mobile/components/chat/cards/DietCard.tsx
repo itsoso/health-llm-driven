@@ -3,8 +3,19 @@ import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { CardShell } from './CardShell';
 import { EvidenceRefsRow } from './EvidenceRefsRow';
 import type { EvidenceRef } from './EvidenceRefsRow';
-import { useTheme, type ColorPalette } from '../../../hooks/useTheme';
+import { revaColors as C, revaFonts } from '../../../constants/revaTheme';
 import type { CardSpec } from './types';
+
+// 饮食类目 accent (橙) + 卡底 tint = 「是饮食卡」装饰色, 保留字面量 (= legacy orange/tintOrange).
+const DIET_ACCENT = '#C97A2E';
+const DIET_TINT = '#F6E9DA';
+
+// 营养素 / 餐次的装饰性 hue (蛋白粉 / 碳水琥珀 / 脂肪紫 / 纤维绿; 早琥珀/午橙/晚紫/加餐青),
+// 区分类目, 非临床好坏, 保留字面量.
+const MACRO_PINK = '#C2487A';
+const MACRO_AMBER = '#C98A1E';
+const MACRO_PURPLE = '#7C5CBF';
+const MACRO_TEAL = '#2F9E8F';
 
 interface DietData {
   calories?: number;
@@ -17,14 +28,12 @@ interface DietData {
   evidence_refs?: EvidenceRef[];
 }
 
-function _mealLabel(c: ColorPalette): Record<string, { label: string; icon: string; color: string }> {
-  return {
-    breakfast: { label: '早餐', icon: '☀️',  color: c.amber },
-    lunch:     { label: '午餐', icon: '🍚', color: c.orange },
-    dinner:    { label: '晚餐', icon: '🌙', color: c.purple },
-    snack:     { label: '加餐', icon: '🍎', color: c.teal },
-  };
-}
+const MEAL_LABELS: Record<string, { label: string; icon: string; color: string }> = {
+  breakfast: { label: '早餐', icon: '☀️', color: MACRO_AMBER },
+  lunch:     { label: '午餐', icon: '🍚', color: DIET_ACCENT },
+  dinner:    { label: '晚餐', icon: '🌙', color: MACRO_PURPLE },
+  snack:     { label: '加餐', icon: '🍎', color: MACRO_TEAL },
+};
 
 function today(): string {
   const d = new Date();
@@ -34,26 +43,24 @@ function today(): string {
 export function DietCardView({
   calories, protein, carbs, fat, fiber, meals_count, meals_by_type, evidence_refs,
 }: DietData) {
-  const { c } = useTheme();
-  const mealLabels = _mealLabel(c);
   const macros = [
-    { label: '蛋白', value: protein, color: c.pink, unit: 'g' },
-    { label: '碳水', value: carbs,   color: c.amber, unit: 'g' },
-    { label: '脂肪', value: fat,     color: c.purple, unit: 'g' },
-    { label: '纤维', value: fiber,   color: c.green, unit: 'g' },
+    { label: '蛋白', value: protein, color: MACRO_PINK, unit: 'g' },
+    { label: '碳水', value: carbs,   color: MACRO_AMBER, unit: 'g' },
+    { label: '脂肪', value: fat,     color: MACRO_PURPLE, unit: 'g' },
+    { label: '纤维', value: fiber,   color: C.green500, unit: 'g' },
   ].filter((m) => m.value != null && m.value > 0);
 
   const hasMeals = meals_by_type && Object.keys(meals_by_type).length > 0;
 
   return (
-    <CardShell icon="restaurant" iconColor={c.orange} title="今日饮食" bg={c.tintOrange}>
+    <CardShell icon="restaurant" iconColor={DIET_ACCENT} title="今日饮食" bg={DIET_TINT}>
       <View style={styles.calRow}>
-        <Text maxFontSizeMultiplier={1.3} style={[styles.cal, { color: c.labelPrimary }]}>
+        <Text maxFontSizeMultiplier={1.3} style={styles.cal}>
           {calories != null ? `${Math.round(calories)}` : '--'}
-          <Text style={[styles.calUnit, { color: c.labelTertiary }]}> kcal</Text>
+          <Text style={styles.calUnit}> kcal</Text>
         </Text>
         {meals_count != null && meals_count > 0 && (
-          <Text maxFontSizeMultiplier={1.3} style={[styles.mealsCount, { color: c.labelTertiary }]}>
+          <Text maxFontSizeMultiplier={1.3} style={styles.mealsCount}>
             {meals_count} 餐
           </Text>
         )}
@@ -64,7 +71,7 @@ export function DietCardView({
           {macros.map((m) => (
             <View key={m.label} style={styles.macro}>
               <View style={[styles.macroDot, { backgroundColor: m.color }]} />
-              <Text maxFontSizeMultiplier={1.3} style={[styles.macroLabel, { color: c.labelSecondary }]}>
+              <Text maxFontSizeMultiplier={1.3} style={styles.macroLabel}>
                 {m.label}
               </Text>
               <Text maxFontSizeMultiplier={1.3} style={[styles.macroVal, { color: m.color }]}>
@@ -80,11 +87,11 @@ export function DietCardView({
           {(['breakfast', 'lunch', 'dinner', 'snack'] as const).map((t) => {
             const cal = meals_by_type?.[t];
             if (cal == null || cal === 0) return null;
-            const meta = mealLabels[t];
+            const meta = MEAL_LABELS[t];
             return (
               <View key={t} style={styles.meal}>
                 <Text maxFontSizeMultiplier={1.3} style={styles.mealIcon}>{meta.icon}</Text>
-                <Text maxFontSizeMultiplier={1.3} style={[styles.mealLabel, { color: c.labelSecondary }]}>
+                <Text maxFontSizeMultiplier={1.3} style={styles.mealLabel}>
                   {meta.label}
                 </Text>
                 <Text maxFontSizeMultiplier={1.3} style={[styles.mealCal, { color: meta.color }]}>
@@ -97,7 +104,7 @@ export function DietCardView({
       )}
 
       {!hasMeals && (!calories || calories === 0) && (
-        <Text maxFontSizeMultiplier={1.3} style={[styles.emptyHint, { color: c.labelTertiary }]}>
+        <Text maxFontSizeMultiplier={1.3} style={styles.emptyHint}>
           今日还没有饮食记录 · 说「我刚吃了…」就能记上
         </Text>
       )}
@@ -150,13 +157,13 @@ const styles = StyleSheet.create({
   macroDot: { width: 6, height: 6, borderRadius: 3 },
   mealsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 8 },
   meal: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  cal: { fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  calUnit: { fontSize: 12, fontWeight: '400' } as TextStyle,
-  mealsCount: { fontSize: 11 } as TextStyle,
-  macroLabel: { fontSize: 10 } as TextStyle,
-  macroVal: { fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  cal: { fontFamily: revaFonts.mono, fontSize: 22, fontWeight: '800', color: C.ink1, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  calUnit: { fontFamily: revaFonts.mono, fontSize: 12, fontWeight: '400', color: C.ink3 } as TextStyle,
+  mealsCount: { fontFamily: revaFonts.mono, fontSize: 11, color: C.ink3 } as TextStyle,
+  macroLabel: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink2 } as TextStyle,
+  macroVal: { fontFamily: revaFonts.mono, fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
   mealIcon: { fontSize: 11 } as TextStyle,
-  mealLabel: { fontSize: 10 } as TextStyle,
-  mealCal: { fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  emptyHint: { fontSize: 11, marginTop: 4 } as TextStyle,
+  mealLabel: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink2 } as TextStyle,
+  mealCal: { fontFamily: revaFonts.mono, fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  emptyHint: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, marginTop: 4 } as TextStyle,
 });

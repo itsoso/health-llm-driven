@@ -2,8 +2,16 @@ import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { CardShell } from './CardShell';
-import { useTheme, type ColorPalette } from '../../../hooks/useTheme';
+import { revaColors as C, revaSemantic, revaFonts } from '../../../constants/revaTheme';
 import type { CardSpec } from './types';
+
+// 睡眠阶段的装饰性 hue (深睡靛蓝 / REM 紫 / 浅睡品紫 / 清醒琥珀) ——「分阶段」色码,
+// 非「好坏」临床语义, 故保留字面量. tintPurple 卡底同理 (= legacy #EDE7F6).
+const STAGE_DEEP = '#5856D6';
+const STAGE_REM = '#7C5CBF';
+const STAGE_LIGHT = '#AF52DE';
+const STAGE_AWAKE = '#C98A1E';
+const CARD_TINT = '#EDE7F6';
 
 interface SleepData {
   score?: number;
@@ -15,13 +23,12 @@ interface SleepData {
 }
 
 function ScoreRing({ score, fillTrack }: { score: number; fillTrack: string }) {
-  const { s } = useTheme();
   const size = 52, sw = 5;
   const r = (size - sw) / 2;
   const circ = 2 * Math.PI * r;
   const off = circ * (1 - Math.min(score / 100, 1));
-  // 睡眠评分语义: ≥80 success / ≥60 warning / else danger
-  const color = score >= 80 ? s.success.solid : score >= 60 ? s.warning.solid : s.danger.solid;
+  // 睡眠评分 = 真正的「好坏」语义 → Reva 三步临床色 normal/caution/risk
+  const color = score >= 80 ? revaSemantic.normal.fg : score >= 60 ? revaSemantic.caution.fg : revaSemantic.risk.fg;
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <Svg width={size} height={size}>
@@ -35,15 +42,15 @@ function ScoreRing({ score, fillTrack }: { score: number; fillTrack: string }) {
   );
 }
 
-function Stage({ label, min, color, c }: { label: string; min?: number; color: string; c: ColorPalette }) {
+function Stage({ label, min, color }: { label: string; min?: number; color: string }) {
   if (min == null) return null;
   const h = Math.floor(min / 60);
   const m = min % 60;
   return (
     <View style={styles.stage}>
       <View style={[styles.stageDot, { backgroundColor: color }]} />
-      <Text maxFontSizeMultiplier={1.3} style={[styles.stageLabel, { color: c.labelSecondary }]}>{label}</Text>
-      <Text maxFontSizeMultiplier={1.3} style={[styles.stageVal, { color: c.labelPrimary }]}>
+      <Text maxFontSizeMultiplier={1.3} style={styles.stageLabel}>{label}</Text>
+      <Text maxFontSizeMultiplier={1.3} style={styles.stageVal}>
         {h > 0 ? `${h}h${m}m` : `${m}m`}
       </Text>
     </View>
@@ -51,22 +58,21 @@ function Stage({ label, min, color, c }: { label: string; min?: number; color: s
 }
 
 export function SleepCardView({ score, duration_h, deep_min, rem_min, light_min, awake_min }: SleepData) {
-  const { c } = useTheme();
   return (
-    <CardShell icon="moon" iconColor={c.purple} title="睡眠分析" bg={c.tintPurple}>
+    <CardShell icon="moon" iconColor={STAGE_REM} title="睡眠分析" bg={CARD_TINT}>
       <View style={styles.row}>
-        {score != null && <ScoreRing score={score} fillTrack={c.fill} />}
+        {score != null && <ScoreRing score={score} fillTrack={C.paper2} />}
         <View style={{ flex: 1, marginLeft: 12 }}>
           {duration_h != null && (
-            <Text maxFontSizeMultiplier={1.3} style={[styles.duration, { color: c.labelPrimary }]}>
+            <Text maxFontSizeMultiplier={1.3} style={styles.duration}>
               {duration_h.toFixed(1)}h
             </Text>
           )}
           <View style={styles.stages}>
-            <Stage label="深睡" min={deep_min} color="#5856D6" c={c} />
-            <Stage label="REM" min={rem_min} color={c.purple} c={c} />
-            <Stage label="浅睡" min={light_min} color="#AF52DE" c={c} />
-            <Stage label="清醒" min={awake_min} color={c.amber} c={c} />
+            <Stage label="深睡" min={deep_min} color={STAGE_DEEP} />
+            <Stage label="REM" min={rem_min} color={STAGE_REM} />
+            <Stage label="浅睡" min={light_min} color={STAGE_LIGHT} />
+            <Stage label="清醒" min={awake_min} color={STAGE_AWAKE} />
           </View>
         </View>
       </View>
@@ -102,8 +108,8 @@ const styles = StyleSheet.create({
   stages: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 },
   stage: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   stageDot: { width: 6, height: 6, borderRadius: 3 },
-  scoreNum: { fontSize: 16, fontWeight: '800', position: 'absolute', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  duration: { fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  stageLabel: { fontSize: 10 } as TextStyle,
-  stageVal: { fontSize: 10, fontWeight: '600', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  scoreNum: { fontFamily: revaFonts.mono, fontSize: 16, fontWeight: '800', position: 'absolute', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  duration: { fontFamily: revaFonts.mono, fontSize: 18, fontWeight: '800', color: C.ink1, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  stageLabel: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink2 } as TextStyle,
+  stageVal: { fontFamily: revaFonts.mono, fontSize: 10, fontWeight: '600', color: C.ink1, fontVariant: ['tabular-nums'] as const } as TextStyle,
 });

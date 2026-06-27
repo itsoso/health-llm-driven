@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
   Platform, TextStyle,
@@ -27,8 +27,14 @@ import { emitClientEvent } from '../../services/clientEvents';
 import { fetchMemoryOpener, type MemoryOpenerItem } from '../../services/memoryOpener';
 import { getLlmPreference, updateLlmPreference, type ModelOption } from '../../services/llmPreference';
 import { recordCardAdherence, recordCardDecision } from '../../services/actionCards';
-import { spacing, radii, shadows } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaSemantic,
+  revaFonts,
+} from '../../constants/revaTheme';
 import { sharePlainText } from '../../utils/share';
 import { buildSelectedChatShareMessage, isShareableChatMessage } from '../../utils/chatShareSelection';
 
@@ -84,9 +90,6 @@ function getSelfReportedAdherence(reply: string): number | null {
 }
 
 export default function ChatScreen() {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const chat = useChatEngine();
   const {
     messages,
@@ -476,7 +479,7 @@ export default function ChatScreen() {
           accessibilityLabel="更多会诊操作"
           accessibilityRole="button"
         >
-          <Ionicons name="ellipsis-horizontal" size={20} color={c.labelSecondary} />
+          <Ionicons name="ellipsis-horizontal" size={20} color={C.ink2} />
         </TouchableOpacity>
       </View>
 
@@ -502,7 +505,7 @@ export default function ChatScreen() {
                   accessibilityLabel="查看和校准 AI 记忆"
                 >
                   <View style={styles.memoryIconWrap}>
-                    <Ionicons name="bookmark-outline" size={14} color={c.brand} />
+                    <Ionicons name="bookmark-outline" size={14} color={C.green500} />
                   </View>
                   <View style={styles.memoryTextWrap}>
                     <View style={styles.memoryHeader}>
@@ -523,7 +526,7 @@ export default function ChatScreen() {
               )}
               <View style={styles.welcome}>
                 <View style={styles.welcomeInline}>
-                  <Ionicons name="sparkles" size={14} color={c.brand} />
+                  <Ionicons name="sparkles" size={14} color={C.green500} />
                   <Text style={txt.welcomeInline} numberOfLines={1}>
                     健康 Agent · {opener ? '或者问我别的' : '会带上你的健康上下文'}
                   </Text>
@@ -547,7 +550,7 @@ export default function ChatScreen() {
                       accessibilityRole="button"
                       accessibilityLabel={`向健康 Agent 提问: ${s.text}`}
                     >
-                      <Ionicons name={s.icon} size={13} color={c.brand} />
+                      <Ionicons name={s.icon} size={13} color={C.green500} />
                       <Text style={txt.sugChipText} numberOfLines={1}>{s.text}</Text>
                     </TouchableOpacity>
                   ))}
@@ -559,12 +562,12 @@ export default function ChatScreen() {
 
         {contextBadge && (
           <View style={styles.contextBanner}>
-            <Ionicons name="link-outline" size={13} color={c.brand} />
+            <Ionicons name="link-outline" size={13} color={C.green500} />
             <Text style={txt.contextBanner} numberOfLines={1}>
               基于 {contextBadge}
             </Text>
             <TouchableOpacity onPress={() => setContextBadge(null)} hitSlop={8}>
-              <Ionicons name="close" size={14} color={c.labelTertiary} />
+              <Ionicons name="close" size={14} color={C.ink3} />
             </TouchableOpacity>
           </View>
         )}
@@ -610,7 +613,7 @@ export default function ChatScreen() {
                 <Text style={txt.toolSheetSub}>把低频操作收在这里</Text>
               </View>
               <TouchableOpacity onPress={() => setToolMenuVisible(false)} hitSlop={8} accessibilityLabel="关闭会诊工具">
-                <Ionicons name="close" size={22} color={c.labelSecondary} />
+                <Ionicons name="close" size={22} color={C.ink2} />
               </TouchableOpacity>
             </View>
             <ToolMenuRow icon="time-outline" label="对话历史" onPress={openHistory} />
@@ -672,10 +675,7 @@ function ToolMenuRow({
   destructive?: boolean;
   onPress: () => void;
 }) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
-  const color = destructive ? c.red : c.labelPrimary;
+  const color = destructive ? revaSemantic.risk.fg : C.ink1;
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -686,22 +686,22 @@ function ToolMenuRow({
     >
       <Ionicons name={icon} size={18} color={color} />
       <Text style={[txt.toolMenuText, { color }]}>{label}</Text>
-      <Ionicons name="chevron-forward" size={14} color={c.labelTertiary} style={{ marginLeft: 'auto' }} />
+      <Ionicons name="chevron-forward" size={14} color={C.ink3} style={{ marginLeft: 'auto' }} />
     </TouchableOpacity>
   );
 }
 
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
-  safe: { flex: 1, backgroundColor: c.bgPrimary },
-  header: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xl, paddingVertical: spacing.md },
+// Reva 设计语言: 暖白 paper 屏底 / surface 卡 / green500 主色 / r-lg 18 / 软阴影. 文字走 Manrope.
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.paper },
+  header: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2, paddingHorizontal: revaSpacing.s5, paddingVertical: revaSpacing.s3 },
   voiceConversationAction: {
     width: 40,
     height: 40,
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: c.brand,
+    backgroundColor: C.green500,
   },
   headerMenuAction: {
     width: 40,
@@ -709,7 +709,7 @@ function createStyles(c: ColorPalette) {
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: c.bgCard,
+    backgroundColor: C.surface,
   },
   historyAction: {
     flexDirection: 'row',
@@ -718,24 +718,24 @@ function createStyles(c: ColorPalette) {
     marginRight: 12,
     paddingHorizontal: 8,
     paddingVertical: 5,
-    borderRadius: radii.sm,
-    backgroundColor: c.bgCard,
+    borderRadius: revaRadii.sm,
+    backgroundColor: C.surface,
   },
-  messageList: { padding: spacing.lg, paddingBottom: 8 },
+  messageList: { padding: revaSpacing.s4, paddingBottom: 8 },
   // P3-3: 会诊页 opener "我记得你 X" banner
   memoryOpener: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: c.bgCard,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderRadius: radii.lg,
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
+    gap: revaSpacing.s2,
+    backgroundColor: C.surface,
+    paddingHorizontal: revaSpacing.s3,
+    paddingVertical: revaSpacing.s3,
+    borderRadius: revaRadii.lg,
+    marginHorizontal: revaSpacing.s4,
+    marginBottom: revaSpacing.s2,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: c.separator,
-    ...shadows.subtle,
+    borderColor: C.line,
+    ...revaShadows.sm,
   },
   memoryOpenerPressed: { opacity: 0.72 },
   memoryIconWrap: {
@@ -744,7 +744,7 @@ function createStyles(c: ColorPalette) {
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: c.brandLight,
+    backgroundColor: C.green50,
   },
   memoryTextWrap: {
     flex: 1,
@@ -765,33 +765,33 @@ function createStyles(c: ColorPalette) {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.28)',
     justifyContent: 'flex-start',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: revaSpacing.s4,
     paddingTop: 82,
   },
   toolSheet: {
-    backgroundColor: c.bgPrimary,
-    borderRadius: radii.xl,
-    padding: spacing.md,
+    backgroundColor: C.paper,
+    borderRadius: revaRadii.xl,
+    padding: revaSpacing.s3,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: c.separator,
-    ...shadows.heavy,
+    borderColor: C.line,
+    ...revaShadows.lg,
   },
   toolSheetHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing.md,
-    paddingBottom: spacing.sm,
+    gap: revaSpacing.s3,
+    paddingBottom: revaSpacing.s2,
   },
   toolMenuRow: {
     minHeight: 46,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: revaSpacing.s2,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: c.separator,
+    borderTopColor: C.line,
   },
-  welcome: { paddingTop: spacing.md, paddingHorizontal: spacing.lg, gap: spacing.sm },
+  welcome: { paddingTop: revaSpacing.s3, paddingHorizontal: revaSpacing.s4, gap: revaSpacing.s2 },
   welcomeInline: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -810,30 +810,30 @@ function createStyles(c: ColorPalette) {
     gap: 5,
     paddingHorizontal: 10,
     paddingVertical: 7,
-    borderRadius: radii.full,
-    backgroundColor: c.bgCard,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: c.separator,
+    borderColor: C.line,
     maxWidth: '100%',
   },
   contextBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    marginHorizontal: spacing.lg, marginBottom: 4,
-    paddingHorizontal: spacing.md, paddingVertical: 6,
-    backgroundColor: c.brandLight, borderRadius: radii.md,
+    marginHorizontal: revaSpacing.s4, marginBottom: 4,
+    paddingHorizontal: revaSpacing.s3, paddingVertical: 6,
+    backgroundColor: C.green50, borderRadius: revaRadii.md,
   },
   shareBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    marginHorizontal: spacing.lg,
+    gap: revaSpacing.s3,
+    marginHorizontal: revaSpacing.s4,
     marginBottom: 8,
-    padding: spacing.md,
-    borderRadius: radii.lg,
-    backgroundColor: c.bgCard,
+    padding: revaSpacing.s3,
+    borderRadius: revaRadii.lg,
+    backgroundColor: C.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: c.separator,
-    ...shadows.subtle,
+    borderColor: C.line,
+    ...revaShadows.sm,
   },
   shareButton: {
     flexDirection: 'row',
@@ -841,31 +841,28 @@ function createStyles(c: ColorPalette) {
     gap: 5,
     paddingHorizontal: 14,
     paddingVertical: 9,
-    borderRadius: radii.full,
-    backgroundColor: c.brand,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green500,
   },
   shareButtonDisabled: {
     opacity: 0.45,
   },
-  });
-}
+});
 
-function createTxt(c: ColorPalette) {
-  return {
-  headerTitle: { fontSize: 20, fontWeight: '800', color: c.labelPrimary } as TextStyle,
-  headerMeta: { fontSize: 12, color: c.labelTertiary, marginTop: 2, fontWeight: '600' } as TextStyle,
-  welcomeInline: { fontSize: 12, color: c.labelSecondary, fontWeight: '700', flexShrink: 1 } as TextStyle,
-  sugChipText: { fontSize: 12, color: c.labelPrimary, fontWeight: '600', flexShrink: 1 } as TextStyle,
-  contextBanner: { fontSize: 12, color: c.brand, flex: 1, fontWeight: '500' } as TextStyle,
-  historyAction: { fontSize: 12, color: c.labelSecondary, fontWeight: '600' } as TextStyle,
-  memoryLabel: { fontSize: 11, color: c.labelTertiary, fontWeight: '700' } as TextStyle,
-  memoryAction: { fontSize: 11, color: c.brand, fontWeight: '700' } as TextStyle,
-  memoryBody: { fontSize: 13, color: c.labelSecondary, lineHeight: 18 } as TextStyle,
-  shareBarTitle: { fontSize: 13, color: c.labelPrimary, fontWeight: '700' } as TextStyle,
-  shareBarSub: { fontSize: 11, color: c.labelTertiary, marginTop: 2 } as TextStyle,
-  shareButton: { fontSize: 13, color: '#fff', fontWeight: '700' } as TextStyle,
-  toolSheetTitle: { fontSize: 17, fontWeight: '800', color: c.labelPrimary } as TextStyle,
-  toolSheetSub: { fontSize: 12, color: c.labelTertiary, marginTop: 2 } as TextStyle,
-  toolMenuText: { fontSize: 15, fontWeight: '700' } as TextStyle,
-  };
-}
+const txt = {
+  headerTitle: { fontFamily: revaFonts.sans, fontSize: 20, fontWeight: '800', color: C.ink1 } as TextStyle,
+  headerMeta: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2, fontWeight: '600' } as TextStyle,
+  welcomeInline: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, fontWeight: '700', flexShrink: 1 } as TextStyle,
+  sugChipText: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink1, fontWeight: '600', flexShrink: 1 } as TextStyle,
+  contextBanner: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green500, flex: 1, fontWeight: '500' } as TextStyle,
+  historyAction: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, fontWeight: '600' } as TextStyle,
+  memoryLabel: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, fontWeight: '700' } as TextStyle,
+  memoryAction: { fontFamily: revaFonts.sans, fontSize: 11, color: C.green500, fontWeight: '700' } as TextStyle,
+  memoryBody: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, lineHeight: 18 } as TextStyle,
+  shareBarTitle: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink1, fontWeight: '700' } as TextStyle,
+  shareBarSub: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, marginTop: 2 } as TextStyle,
+  shareButton: { fontFamily: revaFonts.sans, fontSize: 13, color: '#fff', fontWeight: '700' } as TextStyle,
+  toolSheetTitle: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '800', color: C.ink1 } as TextStyle,
+  toolSheetSub: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,
+  toolMenuText: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '700' } as TextStyle,
+};

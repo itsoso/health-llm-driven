@@ -12,8 +12,14 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { spacing, radii, shadows } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaSemantic,
+  revaFonts,
+} from '../../constants/revaTheme';
 import { canonicalModelId, sanitizeModelOptions } from '../../services/llmModelCatalog';
 
 export interface ModelOption {
@@ -55,9 +61,6 @@ export default function LlmModelPicker({
   variant?: 'default' | 'header';
   onSelect: (modelId: string | null) => void;
 }) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const [visible, setVisible] = useState(false);
   const visibleOptions = useMemo(() => sanitizeModelOptions(options), [options]);
   const activeModelId = canonicalModelId(currentModelId);
@@ -82,13 +85,13 @@ export default function LlmModelPicker({
             <View style={styles.headerTitleRow}>
               <Text style={txt.headerTitle} numberOfLines={1}>健康 Agent</Text>
               {savingModelId ? (
-                <ActivityIndicator size="small" color={c.labelTertiary} />
+                <ActivityIndicator size="small" color={C.ink3} />
               ) : (
-                <Ionicons name="chevron-down" size={14} color={c.labelTertiary} />
+                <Ionicons name="chevron-down" size={14} color={C.ink3} />
               )}
             </View>
             <View style={styles.headerModelRow}>
-              <Ionicons name="hardware-chip-outline" size={11} color={c.labelTertiary} />
+              <Ionicons name="hardware-chip-outline" size={11} color={C.ink3} />
               <Text style={txt.headerModel} numberOfLines={1}>
                 {savingModelId ? '模型切换中...' : currentLabel}
               </Text>
@@ -96,15 +99,15 @@ export default function LlmModelPicker({
           </>
         ) : (
           <>
-            <Ionicons name="hardware-chip-outline" size={15} color={c.brand} />
+            <Ionicons name="hardware-chip-outline" size={15} color={C.green500} />
             <Text style={txt.triggerTitle} numberOfLines={1}>健康 Agent</Text>
             <Text style={txt.triggerModel} numberOfLines={1}>
               {savingModelId ? '切换中...' : currentLabel}
             </Text>
             {savingModelId ? (
-              <ActivityIndicator size="small" color={c.labelTertiary} />
+              <ActivityIndicator size="small" color={C.ink3} />
             ) : (
-              <Ionicons name="chevron-down" size={15} color={c.labelTertiary} />
+              <Ionicons name="chevron-down" size={15} color={C.ink3} />
             )}
           </>
         )}
@@ -128,7 +131,7 @@ export default function LlmModelPicker({
                 hitSlop={8}
                 accessibilityLabel="关闭模型选择"
               >
-                <Ionicons name="close" size={22} color={c.labelSecondary} />
+                <Ionicons name="close" size={22} color={C.ink2} />
               </TouchableOpacity>
             </View>
 
@@ -141,7 +144,7 @@ export default function LlmModelPicker({
                 <Text style={txt.optionTitle}>系统默认</Text>
                 <Text style={txt.optionMeta} numberOfLines={1}>使用管理员全局配置或服务器默认模型</Text>
               </View>
-              {activeModelId === null && <Ionicons name="checkmark-circle" size={18} color={c.brand} />}
+              {activeModelId === null && <Ionicons name="checkmark-circle" size={18} color={C.green500} />}
             </TouchableOpacity>
 
             <View style={styles.divider} />
@@ -153,7 +156,7 @@ export default function LlmModelPicker({
                 </View>
               ) : visibleOptions.map(option => {
                 const active = option.id === activeModelId;
-                const tierColor = TIER_COLOR[option.speed_tier] || c.labelTertiary;
+                const tierColor = TIER_COLOR[option.speed_tier] || C.ink3;
                 return (
                   <TouchableOpacity
                     key={option.id}
@@ -173,7 +176,7 @@ export default function LlmModelPicker({
                       <Text style={txt.optionMeta} numberOfLines={1}>{option.provider} · {option.model}</Text>
                       {!!option.note && <Text style={txt.optionNote} numberOfLines={2}>{option.note}</Text>}
                     </View>
-                    {active && <Ionicons name="checkmark-circle" size={18} color={c.brand} />}
+                    {active && <Ionicons name="checkmark-circle" size={18} color={C.green500} />}
                   </TouchableOpacity>
                 );
               })}
@@ -191,111 +194,107 @@ export default function LlmModelPicker({
   );
 }
 
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
-    root: { flexShrink: 1, maxWidth: '72%' },
-    rootHeader: { flex: 1, maxWidth: undefined, minWidth: 0 },
-    trigger: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      minHeight: 36,
-      paddingHorizontal: 10,
-      paddingVertical: 7,
-      borderRadius: radii.lg,
-      backgroundColor: c.bgCard,
-      ...shadows.subtle,
-    },
-    triggerHeader: {
-      minHeight: 44,
-      paddingHorizontal: 0,
-      paddingVertical: 0,
-      borderRadius: 0,
-      backgroundColor: 'transparent',
-      alignItems: 'flex-start',
-      justifyContent: 'center',
-      flexDirection: 'column',
-      gap: 1,
-      shadowOpacity: 0,
-      elevation: 0,
-    },
-    headerTitleRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 5,
-      maxWidth: '100%',
-    },
-    headerModelRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      maxWidth: '100%',
-    },
-    backdrop: {
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.36)',
-      justifyContent: 'flex-start',
-      paddingHorizontal: spacing.lg,
-      paddingTop: 72,
-    },
-    sheet: {
-      borderRadius: radii.xl,
-      backgroundColor: c.bgPrimary,
-      padding: spacing.md,
-      ...shadows.heavy,
-    },
-    sheetHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: spacing.md,
-      paddingHorizontal: 4,
-      paddingBottom: spacing.sm,
-    },
-    option: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: spacing.sm,
-      borderRadius: radii.lg,
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
-    },
-    optionActive: { backgroundColor: c.brandLight },
-    optionBody: { flex: 1, minWidth: 0 },
-    optionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    tierBadge: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-    divider: { height: StyleSheet.hairlineWidth, backgroundColor: c.separator, marginVertical: spacing.sm },
-    optionList: { maxHeight: 390 },
-    empty: {
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: c.separator,
-      borderRadius: radii.lg,
-      paddingVertical: spacing.xl,
-      alignItems: 'center',
-    },
-    errorBox: {
-      marginTop: spacing.sm,
-      borderRadius: radii.md,
-      backgroundColor: '#FF3B3020',
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
-    },
-  });
-}
+const styles = StyleSheet.create({
+  root: { flexShrink: 1, maxWidth: '72%' },
+  rootHeader: { flex: 1, maxWidth: undefined, minWidth: 0 },
+  trigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: revaRadii.lg,
+    backgroundColor: C.surface,
+    ...revaShadows.sm,
+  },
+  triggerHeader: {
+    minHeight: 44,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    borderRadius: 0,
+    backgroundColor: 'transparent',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    flexDirection: 'column',
+    gap: 1,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    maxWidth: '100%',
+  },
+  headerModelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    maxWidth: '100%',
+  },
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.36)',
+    justifyContent: 'flex-start',
+    paddingHorizontal: revaSpacing.s4,
+    paddingTop: 72,
+  },
+  sheet: {
+    borderRadius: revaRadii.xl,
+    backgroundColor: C.paper,
+    padding: revaSpacing.s3,
+    ...revaShadows.lg,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: revaSpacing.s3,
+    paddingHorizontal: 4,
+    paddingBottom: revaSpacing.s2,
+  },
+  option: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: revaSpacing.s2,
+    borderRadius: revaRadii.lg,
+    paddingHorizontal: revaSpacing.s3,
+    paddingVertical: revaSpacing.s2,
+  },
+  optionActive: { backgroundColor: C.green50 },
+  optionBody: { flex: 1, minWidth: 0 },
+  optionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  tierBadge: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: C.line, marginVertical: revaSpacing.s2 },
+  optionList: { maxHeight: 390 },
+  empty: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    borderRadius: revaRadii.lg,
+    paddingVertical: revaSpacing.s5,
+    alignItems: 'center',
+  },
+  errorBox: {
+    marginTop: revaSpacing.s2,
+    borderRadius: revaRadii.md,
+    backgroundColor: '#FF3B3020',
+    paddingHorizontal: revaSpacing.s3,
+    paddingVertical: revaSpacing.s2,
+  },
+});
 
-function createTxt(c: ColorPalette) {
-  return {
-    headerTitle: { color: c.labelPrimary, fontSize: 20, fontWeight: '800' } as TextStyle,
-    headerModel: { color: c.labelTertiary, fontSize: 12, fontWeight: '600', flexShrink: 1 } as TextStyle,
-    triggerTitle: { color: c.labelPrimary, fontSize: 15, fontWeight: '700' } as TextStyle,
-    triggerModel: { color: c.labelTertiary, fontSize: 13, flexShrink: 1 } as TextStyle,
-    sheetTitle: { color: c.labelPrimary, fontSize: 17, fontWeight: '700' } as TextStyle,
-    sheetSub: { color: c.labelTertiary, fontSize: 12, marginTop: 2 } as TextStyle,
-    optionTitle: { color: c.labelPrimary, fontSize: 15, fontWeight: '600', flexShrink: 1 } as TextStyle,
-    optionMeta: { color: c.labelTertiary, fontSize: 11, marginTop: 3 } as TextStyle,
-    optionNote: { color: c.labelSecondary, fontSize: 12, lineHeight: 16, marginTop: 4 } as TextStyle,
-    tierText: { fontSize: 10, fontWeight: '700' } as TextStyle,
-    empty: { color: c.labelTertiary, fontSize: 13 } as TextStyle,
-    error: { color: c.red, fontSize: 12, lineHeight: 16 } as TextStyle,
-  };
-}
+const txt = {
+  headerTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 20, fontWeight: '800' } as TextStyle,
+  headerModel: { fontFamily: revaFonts.sans, color: C.ink3, fontSize: 12, fontWeight: '600', flexShrink: 1 } as TextStyle,
+  triggerTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 15, fontWeight: '700' } as TextStyle,
+  triggerModel: { fontFamily: revaFonts.sans, color: C.ink3, fontSize: 13, flexShrink: 1 } as TextStyle,
+  sheetTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 17, fontWeight: '700' } as TextStyle,
+  sheetSub: { fontFamily: revaFonts.sans, color: C.ink3, fontSize: 12, marginTop: 2 } as TextStyle,
+  optionTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 15, fontWeight: '600', flexShrink: 1 } as TextStyle,
+  optionMeta: { fontFamily: revaFonts.sans, color: C.ink3, fontSize: 11, marginTop: 3 } as TextStyle,
+  optionNote: { fontFamily: revaFonts.sans, color: C.ink2, fontSize: 12, lineHeight: 16, marginTop: 4 } as TextStyle,
+  tierText: { fontFamily: revaFonts.sans, fontSize: 10, fontWeight: '700' } as TextStyle,
+  empty: { fontFamily: revaFonts.sans, color: C.ink3, fontSize: 13 } as TextStyle,
+  error: { fontFamily: revaFonts.sans, color: revaSemantic.risk.fg, fontSize: 12, lineHeight: 16 } as TextStyle,
+};

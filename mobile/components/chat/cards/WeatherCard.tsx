@@ -2,8 +2,12 @@ import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
-import { useTheme } from '../../../hooks/useTheme';
+import { revaColors as C, revaFonts } from '../../../constants/revaTheme';
 import type { CardSpec } from './types';
+
+// 环境类目 accent (青) + 卡底 tint = 装饰色, 保留字面量 (= legacy teal/tintTeal).
+const ENV_ACCENT = '#2F9E8F';
+const ENV_TINT = '#E0EFEC';
 
 interface WeatherData {
   temperature?: number;
@@ -34,17 +38,16 @@ function exerciseAdvice(aqi?: number, temp?: number): string {
 }
 
 export function WeatherCardView({ temperature, weather, city, aqi, pm25, advice }: WeatherData) {
-  const { c } = useTheme();
-  const q = aqiLabel(aqi, c.labelTertiary);
+  const q = aqiLabel(aqi, C.ink3);
   return (
-    <CardShell icon="partly-sunny" iconColor={c.teal} title={city ? `${city}环境` : '环境'} bg={c.tintTeal}>
+    <CardShell icon="partly-sunny" iconColor={ENV_ACCENT} title={city ? `${city}环境` : '环境'} bg={ENV_TINT}>
       <View style={styles.row}>
         <View style={styles.tempBlock}>
-          <Text maxFontSizeMultiplier={1.3} style={[styles.temp, { color: c.labelPrimary }]}>
+          <Text maxFontSizeMultiplier={1.3} style={styles.temp}>
             {temperature != null ? `${Math.round(temperature)}°` : '--'}
           </Text>
           {weather && (
-            <Text maxFontSizeMultiplier={1.3} style={[styles.weatherLabel, { color: c.labelSecondary }]}>
+            <Text maxFontSizeMultiplier={1.3} style={styles.weatherLabel}>
               {weather}
             </Text>
           )}
@@ -56,7 +59,7 @@ export function WeatherCardView({ temperature, weather, city, aqi, pm25, advice 
             <Text maxFontSizeMultiplier={1.3} style={[styles.aqiLabel, { color: q.color }]}>{q.label}</Text>
           </View>
           {pm25 != null && (
-            <Text maxFontSizeMultiplier={1.3} style={[styles.pm, { color: c.labelTertiary }]}>
+            <Text maxFontSizeMultiplier={1.3} style={styles.pm}>
               PM2.5 {pm25}
             </Text>
           )}
@@ -64,8 +67,8 @@ export function WeatherCardView({ temperature, weather, city, aqi, pm25, advice 
       </View>
       {(advice || aqi != null || temperature != null) && (
         <View style={styles.adviceRow}>
-          <Ionicons name="fitness" size={12} color={c.green} />
-          <Text maxFontSizeMultiplier={1.3} style={[styles.advice, { color: c.labelSecondary }]}>
+          <Ionicons name="fitness" size={12} color={C.green500} />
+          <Text maxFontSizeMultiplier={1.3} style={styles.advice}>
             {advice || exerciseAdvice(aqi, temperature)}
           </Text>
         </View>
@@ -103,10 +106,10 @@ const styles = StyleSheet.create({
   aqiRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   aqiDot: { width: 8, height: 8, borderRadius: 4 },
   adviceRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
-  temp: { fontSize: 26, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  weatherLabel: { fontSize: 12 } as TextStyle,
-  aqiVal: { fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  aqiLabel: { fontSize: 11, fontWeight: '600' } as TextStyle,
-  pm: { fontSize: 10, fontVariant: ['tabular-nums'] as const } as TextStyle,
-  advice: { fontSize: 11 } as TextStyle,
+  temp: { fontFamily: revaFonts.mono, fontSize: 26, fontWeight: '800', color: C.ink1, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  weatherLabel: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2 } as TextStyle,
+  aqiVal: { fontFamily: revaFonts.mono, fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  aqiLabel: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '600' } as TextStyle,
+  pm: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  advice: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink2 } as TextStyle,
 });

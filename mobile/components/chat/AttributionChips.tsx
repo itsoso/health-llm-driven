@@ -20,8 +20,13 @@ import {
   type AttributionItem,
   type AttributionSource,
 } from '../../services/attributionExtract';
-import { spacing, radii } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaSemantic,
+  revaFonts,
+} from '../../constants/revaTheme';
 
 interface Props {
   text: string;
@@ -29,26 +34,25 @@ interface Props {
 
 const MAX_VISIBLE = 4;
 
-function sourceMeta(source: AttributionSource, c: ColorPalette) {
+// 每个数据源一套 accent/bg = 「是哪类来源」的装饰色码 (基因紫/化验绿/在服红/历史蓝/趋势琥珀).
+// 区分来源, 非「好坏」临床语义, 故保留 Reva 亮色调色板字面量 → 无视觉回归.
+function sourceMeta(source: AttributionSource) {
   switch (source) {
     case 'genetic':
-      return { icon: 'git-branch-outline' as const, color: c.purple, bg: c.tintPurple, label: '基因' };
+      return { icon: 'git-branch-outline' as const, color: '#7C5CBF', bg: '#EDE7F6', label: '基因' };
     case 'lab':
-      return { icon: 'flask-outline' as const, color: c.brand, bg: c.brandLight, label: '化验' };
+      return { icon: 'flask-outline' as const, color: C.green500, bg: C.green50, label: '化验' };
     case 'medication':
-      return { icon: 'medical-outline' as const, color: c.red, bg: c.tintRed, label: '在服' };
+      return { icon: 'medical-outline' as const, color: revaSemantic.risk.fg, bg: revaSemantic.risk.bg, label: '在服' };
     case 'history':
-      return { icon: 'time-outline' as const, color: '#0A84FF', bg: c.tintBlue, label: '历史' };
+      return { icon: 'time-outline' as const, color: '#0A84FF', bg: '#E4ECF8', label: '历史' };
     case 'trend':
-      return { icon: 'trending-up-outline' as const, color: c.amber, bg: c.tintAmber, label: '趋势' };
+      return { icon: 'trending-up-outline' as const, color: '#C98A1E', bg: '#F6ECD9', label: '趋势' };
   }
 }
 
 export default function AttributionChips({ text }: Props) {
-  const { c } = useTheme();
   const items = useMemo(() => extractAttributions(text), [text]);
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
 
   if (items.length === 0) return null;
 
@@ -60,10 +64,10 @@ export default function AttributionChips({ text }: Props) {
       <Text style={txt.prefix}>📌 用了你的：</Text>
       <View style={styles.chipsRow}>
         {visible.map((item, idx) => (
-          <Chip key={`${item.source}-${item.label}-${idx}`} item={item} c={c} />
+          <Chip key={`${item.source}-${item.label}-${idx}`} item={item} />
         ))}
         {hiddenCount > 0 ? (
-          <View style={[styles.chip, { backgroundColor: c.bgPrimary }]}>
+          <View style={[styles.chip, { backgroundColor: C.paper }]}>
             <Text style={txt.chipMore}>+{hiddenCount}</Text>
           </View>
         ) : null}
@@ -72,8 +76,8 @@ export default function AttributionChips({ text }: Props) {
   );
 }
 
-function Chip({ item, c }: { item: AttributionItem; c: ColorPalette }) {
-  const meta = sourceMeta(item.source, c);
+function Chip({ item }: { item: AttributionItem }) {
+  const meta = sourceMeta(item.source);
   return (
     <View
       style={[chipStyles.chip, { backgroundColor: meta.bg }]}
@@ -87,43 +91,39 @@ function Chip({ item, c }: { item: AttributionItem; c: ColorPalette }) {
   );
 }
 
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
-    wrap: {
-      marginTop: spacing.sm,
-      paddingTop: spacing.xs,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: c.fill,
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      alignItems: 'center',
-      gap: spacing.xs,
-    },
-    chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
-    chip: {
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 3,
-      borderRadius: radii.full,
-    },
-  });
-}
+const styles = StyleSheet.create({
+  wrap: {
+    marginTop: revaSpacing.s2,
+    paddingTop: revaSpacing.s1,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.paper2,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: revaSpacing.s1,
+  },
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  chip: {
+    paddingHorizontal: revaSpacing.s2,
+    paddingVertical: 3,
+    borderRadius: revaRadii.pill,
+  },
+});
 
-function createTxt(c: ColorPalette) {
-  return {
-    prefix: { fontSize: 11, color: c.labelTertiary } as TextStyle,
-    chipMore: { fontSize: 11, color: c.labelSecondary } as TextStyle,
-  };
-}
+const txt = {
+  prefix: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3 } as TextStyle,
+  chipMore: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink2 } as TextStyle,
+};
 
 const chipStyles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: revaSpacing.s2,
     paddingVertical: 3,
-    borderRadius: radii.full,
+    borderRadius: revaRadii.pill,
     maxWidth: 140,
   },
-  label: { fontSize: 11, fontWeight: '500' } as TextStyle,
+  label: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '500' } as TextStyle,
 });

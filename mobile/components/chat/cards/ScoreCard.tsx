@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { CardShell } from './CardShell';
-import { useTheme } from '../../../hooks/useTheme';
+import { revaColors as C, revaSemantic, revaFonts } from '../../../constants/revaTheme';
 import type { CardSpec } from './types';
 
 interface ScoreData {
@@ -12,26 +12,25 @@ interface ScoreData {
 }
 
 export function ScoreCardView({ score, label, sub }: ScoreData) {
-  const { c } = useTheme();
   const size = 56, sw = 5;
   const r = (size - sw) / 2;
   const circ = 2 * Math.PI * r;
   const off = circ * (1 - Math.min(score / 100, 1));
-  // 评分颜色按语义阶梯 (绿/橙/红), 不随主题切换
-  const scoreColor = score >= 80 ? '#30D158' : score >= 60 ? '#FF9F0A' : '#FF453A';
+  // 评分 = 真正的「好坏」语义 → Reva 三步临床色 normal/caution/risk
+  const scoreColor = score >= 80 ? revaSemantic.normal.fg : score >= 60 ? revaSemantic.caution.fg : revaSemantic.risk.fg;
 
   return (
-    <CardShell icon="sparkles" iconColor={c.brand} title={label || '健康评分'}>
+    <CardShell icon="sparkles" iconColor={C.green500} title={label || '健康评分'}>
       <View style={styles.row}>
         <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
           <Svg width={size} height={size}>
             <Defs>
               <LinearGradient id="scg" x1="0" y1="0" x2="1" y2="1">
-                <Stop offset="0" stopColor={c.brand} />
-                <Stop offset="1" stopColor={c.green} />
+                <Stop offset="0" stopColor={C.green500} />
+                <Stop offset="1" stopColor={C.green500} />
               </LinearGradient>
             </Defs>
-            <Circle cx={size / 2} cy={size / 2} r={r} stroke={c.fill} strokeWidth={sw} fill="none" />
+            <Circle cx={size / 2} cy={size / 2} r={r} stroke={C.paper2} strokeWidth={sw} fill="none" />
             <Circle cx={size / 2} cy={size / 2} r={r} stroke="url(#scg)" strokeWidth={sw} fill="none"
               strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={off}
               transform={`rotate(-90 ${size / 2} ${size / 2})`} />
@@ -39,11 +38,11 @@ export function ScoreCardView({ score, label, sub }: ScoreData) {
           <Text maxFontSizeMultiplier={1.3} style={[styles.scoreNum, { color: scoreColor }]}>{score}</Text>
         </View>
         <View style={{ flex: 1, marginLeft: 14 }}>
-          <Text maxFontSizeMultiplier={1.3} style={[styles.scoreLabel, { color: c.labelPrimary }]}>
+          <Text maxFontSizeMultiplier={1.3} style={styles.scoreLabel}>
             {label || '健康评分'}
           </Text>
           {sub && (
-            <Text maxFontSizeMultiplier={1.3} style={[styles.scoreSub, { color: c.labelTertiary }]}>
+            <Text maxFontSizeMultiplier={1.3} style={styles.scoreSub}>
               {sub}
             </Text>
           )}
@@ -74,7 +73,7 @@ export const ScoreCardSpec: CardSpec<ScoreData> = {
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
-  scoreNum: { fontSize: 18, fontWeight: '800', position: 'absolute', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  scoreLabel: { fontSize: 14, fontWeight: '700' } as TextStyle,
-  scoreSub: { fontSize: 10, marginTop: 2 } as TextStyle,
+  scoreNum: { fontFamily: revaFonts.mono, fontSize: 18, fontWeight: '800', position: 'absolute', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  scoreLabel: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '700', color: C.ink1 } as TextStyle,
+  scoreSub: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink3, marginTop: 2 } as TextStyle,
 });

@@ -1,8 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { radii } from '../../../constants/theme';
-import { useTheme, type ColorPalette } from '../../../hooks/useTheme';
+import { revaColors as C, revaRadii, revaFonts } from '../../../constants/revaTheme';
 import type { CardSpec } from './types';
 
 interface RecordData {
@@ -10,32 +9,30 @@ interface RecordData {
   detail: string;
 }
 
-// 颜色保留 (语义 accent, 亮/暗模式都用); tint 改成主题感知, 暗色自动反色.
-function _icons(c: ColorPalette): Record<string, { icon: string; color: string; bg: string }> {
-  return {
-    water:           { icon: 'water',             color: c.blue,   bg: c.tintBlue },
-    supplement:      { icon: 'medical',           color: c.purple, bg: c.tintPurple },
-    diet:            { icon: 'restaurant',        color: c.orange, bg: c.tintOrange },
-    exercise:        { icon: 'fitness',           color: c.pink,   bg: c.tintPink },
-    weight:          { icon: 'scale',             color: c.brand,  bg: c.brandLight },
-    blood_pressure:  { icon: 'heart',             color: c.red,    bg: c.tintRed },
-    rhinitis:        { icon: 'water',             color: c.teal,   bg: c.tintTeal },
-    checkin:         { icon: 'checkbox',          color: c.green,  bg: c.tintGreen },
-    medication:      { icon: 'flask',             color: c.purple, bg: c.tintPurple },
-    default:         { icon: 'checkmark-circle',  color: c.green,  bg: c.tintGreen },
-  };
-}
+// 每类记录的 accent + tint = 「是哪类记录」的装饰色码 (饮水蓝/补剂紫/饮食橙/运动粉…),
+// 非「好坏」临床语义, 故保留 Reva 亮色调色板字面量 (= legacy color/tint 值) → 无视觉回归.
+const RECORD_ICONS: Record<string, { icon: string; color: string; bg: string }> = {
+  water:           { icon: 'water',             color: '#2A6FDB', bg: '#E4ECF8' },
+  supplement:      { icon: 'medical',           color: '#7C5CBF', bg: '#EDE7F6' },
+  diet:            { icon: 'restaurant',        color: '#C97A2E', bg: '#F6E9DA' },
+  exercise:        { icon: 'fitness',           color: '#C2487A', bg: '#F7E4EC' },
+  weight:          { icon: 'scale',             color: C.green500, bg: C.green50 },
+  blood_pressure:  { icon: 'heart',             color: '#D5503A', bg: '#F7E4E0' },
+  rhinitis:        { icon: 'water',             color: '#2F9E8F', bg: '#E0EFEC' },
+  checkin:         { icon: 'checkbox',          color: C.green500, bg: C.green50 },
+  medication:      { icon: 'flask',             color: '#7C5CBF', bg: '#EDE7F6' },
+  default:         { icon: 'checkmark-circle',  color: C.green500, bg: C.green50 },
+};
 
 export function RecordCardView({ type, detail }: RecordData) {
-  const { c } = useTheme();
-  const cfg = _icons(c)[type] || _icons(c).default;
+  const cfg = RECORD_ICONS[type] || RECORD_ICONS.default;
   return (
-    <View style={[styles.card, { backgroundColor: cfg.bg, borderColor: c.separator }]}>
+    <View style={[styles.card, { backgroundColor: cfg.bg, borderColor: C.line }]}>
       <Ionicons name={cfg.icon as any} size={16} color={cfg.color} />
-      <Text maxFontSizeMultiplier={1.3} style={[styles.text, { color: c.labelPrimary }]}>
+      <Text maxFontSizeMultiplier={1.3} style={styles.text}>
         {detail}
       </Text>
-      <Ionicons name="checkmark-circle" size={14} color={c.green} />
+      <Ionicons name="checkmark-circle" size={14} color={C.green500} />
     </View>
   );
 }
@@ -65,8 +62,8 @@ export const RecordCardSpec: CardSpec<RecordData> = {
 const styles = StyleSheet.create({
   card: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderRadius: radii.md, padding: 10, marginVertical: 4,
+    borderRadius: revaRadii.md, padding: 10, marginVertical: 4,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  text: { fontSize: 13, flex: 1 } as TextStyle,
+  text: { fontFamily: revaFonts.sans, fontSize: 13, flex: 1, color: C.ink1 } as TextStyle,
 });

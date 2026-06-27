@@ -4,8 +4,11 @@ import Svg, { Polyline, Circle as SvgCircle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { CardShell } from './CardShell';
-import { useTheme } from '../../../hooks/useTheme';
+import { revaColors as C, revaSemantic, revaFonts } from '../../../constants/revaTheme';
 import type { CardSpec } from './types';
+
+// 持平趋势 = 中性灰 (无「好坏」), 保留字面量 (= legacy neutral.solid).
+const FLAT = '#8A968F';
 
 interface WeightData {
   current_kg?: number;
@@ -15,7 +18,6 @@ interface WeightData {
 }
 
 function Sparkline({ points }: { points: number[] }) {
-  const { s } = useTheme();
   if (points.length < 2) return null;
   const w = 100, h = 32, pad = 2;
   const min = Math.min(...points), max = Math.max(...points);
@@ -26,8 +28,8 @@ function Sparkline({ points }: { points: number[] }) {
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
   const trend = points[points.length - 1] - points[0];
-  // 趋势语义: 减重 success / 增重 danger / 持平 neutral (solid 明暗一致)
-  const color = trend < -0.1 ? s.success.solid : trend > 0.1 ? s.danger.solid : s.neutral.solid;
+  // 趋势语义: 减重 normal / 增重 risk / 持平 中性灰
+  const color = trend < -0.1 ? revaSemantic.normal.fg : trend > 0.1 ? revaSemantic.risk.fg : FLAT;
   const last = pts.split(' ').pop() || '';
   const [lx, ly] = last.split(',').map(Number);
   return (
@@ -40,21 +42,20 @@ function Sparkline({ points }: { points: number[] }) {
 
 export function WeightCardView({ current_kg, trend_7d, change_7d_kg, bmi }: WeightData) {
   const router = useRouter();
-  const { c, s } = useTheme();
   const up = (change_7d_kg ?? 0) > 0;
   const changeColor = change_7d_kg == null || Math.abs(change_7d_kg) < 0.05
-    ? c.labelTertiary : up ? s.danger.solid : s.success.solid;
+    ? C.ink3 : up ? revaSemantic.risk.fg : revaSemantic.normal.fg;
   return (
     <CardShell
       icon="scale"
-      iconColor={c.brand}
+      iconColor={C.green500}
       title="体重"
-      bg={c.brandLight}
+      bg={C.green50}
       onPress={() => router.push({ pathname: '/indicator-history', params: { type: 'weight' } })}
     >
       <View style={styles.row}>
         <View style={{ flex: 1 }}>
-          <Text maxFontSizeMultiplier={1.3} style={[styles.big, { color: c.labelPrimary }]}>
+          <Text maxFontSizeMultiplier={1.3} style={styles.big}>
             {current_kg != null ? `${current_kg.toFixed(1)}kg` : '--'}
           </Text>
           <View style={styles.sub}>
@@ -67,7 +68,7 @@ export function WeightCardView({ current_kg, trend_7d, change_7d_kg, bmi }: Weig
               </View>
             )}
             {bmi != null && (
-              <Text maxFontSizeMultiplier={1.3} style={[styles.bmi, { color: c.labelTertiary }]}>
+              <Text maxFontSizeMultiplier={1.3} style={styles.bmi}>
                 BMI {bmi.toFixed(1)}
               </Text>
             )}
@@ -112,7 +113,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   sub: { marginTop: 4, gap: 2 },
   changeRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  big: { fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  change: { fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  bmi: { fontSize: 10 } as TextStyle,
+  big: { fontFamily: revaFonts.mono, fontSize: 22, fontWeight: '800', color: C.ink1, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  change: { fontFamily: revaFonts.mono, fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  bmi: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3 } as TextStyle,
 });
