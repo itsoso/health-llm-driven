@@ -1,10 +1,24 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, TextStyle, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Polyline, Circle } from 'react-native-svg';
-import { spacing, radii } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaFonts,
+} from '../../constants/revaTheme';
 import { garminSleepHours, type GarminDailyRow } from '../../types/garmin';
+
+// 每指标的装饰性 hue (睡眠紫 / 心率粉 / HRV 青 / 电量绿) —— 这是「区分指标」的色码,
+// 不是「指标好坏」的三步临床语义,所以不用 revaSemantic。值即 Reva 亮色调色板原值。
+const HUES = {
+  purple: { color: '#7C5CBF', bg: '#EDE7F6' },
+  pink: { color: '#C2487A', bg: '#F7E4EC' },
+  teal: { color: '#2F9E8F', bg: '#E0EFEC' },
+  green: { color: C.green500, bg: C.green50 },
+} as const;
 
 interface Props {
   sleep?: number | null;
@@ -80,9 +94,6 @@ export default function VitalsGrid({
   sleep, deepSleep, sleepScore, heartRate, hrv,
   bodyBatteryCurrent, bodyBatteryMax, garminDays, onTilePress,
 }: Props) {
-  const { c, isDark } = useTheme();
-  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
-
   const days = Array.isArray(garminDays) ? garminDays : [];
 
   // 睡眠单位换算 + 脏数据守卫走 types/garmin 的单一真相源
@@ -94,28 +105,28 @@ export default function VitalsGrid({
   const tiles: TileData[] = [
     {
       key: 'sleep',
-      label: '睡眠', icon: 'moon', color: c.purple, bg: c.tintPurple,
+      label: '睡眠', icon: 'moon', color: HUES.purple.color, bg: HUES.purple.bg,
       value: sleep != null ? sleep.toFixed(1) : '--', unit: 'h',
       sub: sleepScore ? `评分 ${sleepScore}` : (deepSleep != null ? `深睡 ${deepSleep.toFixed(1)}h` : undefined),
       series: sleepSeries,
     },
     {
       key: 'heart_rate',
-      label: '心率', icon: 'heart', color: c.pink, bg: c.tintPink,
+      label: '心率', icon: 'heart', color: HUES.pink.color, bg: HUES.pink.bg,
       value: heartRate != null ? `${heartRate}` : '--', unit: 'bpm',
       sub: '静息心率',
       series: hrSeries,
     },
     {
       key: 'hrv',
-      label: 'HRV', icon: 'pulse', color: c.teal, bg: c.tintTeal,
+      label: 'HRV', icon: 'pulse', color: HUES.teal.color, bg: HUES.teal.bg,
       value: hrv != null ? `${hrv.toFixed(1)}` : '--', unit: 'ms',
       sub: '压力&恢复',
       series: hrvSeries,
     },
     {
       key: 'body_battery',
-      label: '电量', icon: 'battery-charging', color: c.green, bg: c.tintGreen,
+      label: '电量', icon: 'battery-charging', color: HUES.green.color, bg: HUES.green.bg,
       value: bodyBatteryCurrent != null ? `${bodyBatteryCurrent}` : '--', unit: '',
       sub: bodyBatteryMax != null ? `今日峰值 ${bodyBatteryMax}` : '当前',
       series: batterySeries,
@@ -138,17 +149,17 @@ export default function VitalsGrid({
             <View style={[styles.iconDot, { backgroundColor: t.bg }]}>
               <Ionicons name={t.icon as any} size={14} color={t.color} />
             </View>
-            <Text style={styles.label}>{t.label}</Text>
-            {onTilePress && <Ionicons name="chevron-forward" size={12} color={c.labelTertiary} style={{ marginLeft: 'auto' }} />}
+            <Text style={txt.label}>{t.label}</Text>
+            {onTilePress && <Ionicons name="chevron-forward" size={12} color={C.ink3} style={{ marginLeft: 'auto' }} />}
           </View>
           <View style={styles.valueRow}>
-            <Text style={[styles.value, { color: t.color }]}>{t.value}</Text>
-            {t.unit ? <Text style={[styles.unit, { color: t.color }]}>{t.unit}</Text> : null}
+            <Text style={[txt.value, { color: t.color }]}>{t.value}</Text>
+            {t.unit ? <Text style={[txt.unit, { color: t.color }]}>{t.unit}</Text> : null}
           </View>
-          {t.sub && <Text style={styles.sub}>{t.sub}</Text>}
+          {t.sub && <Text style={txt.sub}>{t.sub}</Text>}
           <View style={styles.spark}>
             <Sparkline data={t.series} color={t.color} />
-            {t.series.length >= 2 && <Text style={styles.sparkHint}>近 7 天</Text>}
+            {t.series.length >= 2 && <Text style={txt.sparkHint}>近 7 天</Text>}
           </View>
         </TouchableOpacity>
       ))}
@@ -156,37 +167,35 @@ export default function VitalsGrid({
   );
 }
 
-function createStyles(c: ColorPalette, isDark: boolean) {
-  return StyleSheet.create({
-    grid: {
-      flexDirection: 'row', flexWrap: 'wrap',
-      gap: spacing.md, marginBottom: spacing.md,
-    },
-    tile: {
-      width: '47.5%',
-      backgroundColor: c.bgCard,
-      borderRadius: radii.lg,
-      padding: 14,
-      ...(isDark
-        ? { borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator }
-        : {
-            shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.06, shadowRadius: 3, elevation: 1,
-          }),
-    },
-    tileHeader: {
-      flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6,
-    },
-    iconDot: {
-      width: 24, height: 24, borderRadius: 7,
-      alignItems: 'center', justifyContent: 'center',
-    },
-    valueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 3 },
-    label: { fontSize: 13, fontWeight: '500', color: c.labelSecondary } as TextStyle,
-    value: { fontSize: 26, fontWeight: '800', fontVariant: ['tabular-nums'] as const, letterSpacing: -0.8 } as TextStyle,
-    unit: { fontSize: 13, fontWeight: '500' } as TextStyle,
-    sub: { fontSize: 11, color: c.labelTertiary, marginTop: 2 } as TextStyle,
-    spark: { marginTop: 8, height: 32, justifyContent: 'flex-end' },
-    sparkHint: { fontSize: 9, color: c.labelTertiary, marginTop: 1 } as TextStyle,
-  });
-}
+// Reva 设计语言:暖白 surface / r-lg 18 / 数字等宽 mono。light-first 单态软阴影。
+const styles = StyleSheet.create({
+  grid: {
+    flexDirection: 'row', flexWrap: 'wrap',
+    gap: revaSpacing.s3, marginBottom: revaSpacing.s3,
+  },
+  tile: {
+    width: '47.5%',
+    backgroundColor: C.surface,
+    borderRadius: revaRadii.lg,
+    padding: 14,
+    ...revaShadows.sm,
+  },
+  tileHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6,
+  },
+  iconDot: {
+    width: 24, height: 24, borderRadius: revaRadii.sm,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  valueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 3 },
+  spark: { marginTop: 8, height: 32, justifyContent: 'flex-end' },
+});
+
+// 数字/单位(指标值 / 单位)走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
+const txt = {
+  label: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '500', color: C.ink2 } as TextStyle,
+  value: { fontFamily: revaFonts.mono, fontSize: 26, fontWeight: '800', fontVariant: ['tabular-nums'] as const, letterSpacing: -0.8 } as TextStyle,
+  unit: { fontFamily: revaFonts.mono, fontSize: 13, fontWeight: '500' } as TextStyle,
+  sub: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, marginTop: 2 } as TextStyle,
+  sparkHint: { fontFamily: revaFonts.mono, fontSize: 9, color: C.ink3, marginTop: 1 } as TextStyle,
+};

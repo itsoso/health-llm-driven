@@ -6,11 +6,25 @@
  */
 
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useTheme } from '../../hooks/useTheme';
-import { spacing, radii } from '../../constants/theme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaFonts,
+} from '../../constants/revaTheme';
+
+// 每指标的装饰性 hue (血压粉 / SpO2 蓝 / BMI 绿 / 体脂橙) —— 区分指标的色码,
+// 不是「指标好坏」的三步临床语义。值即 Reva 亮色调色板原值。
+const HUES = {
+  pink: { color: '#C2487A', tint: '#F7E4EC' },
+  blue: { color: C.blue500, tint: C.blue50 },
+  green: { color: C.green500, tint: C.green50 },
+  orange: { color: '#C97A2E', tint: '#F6E9DA' },
+} as const;
 
 export interface BodyStatsValues {
   systolic?: number | null;
@@ -40,7 +54,6 @@ function fmt(n: number | null | undefined, digits = 1): string {
 
 export default function BodyStatsRow({ values }: { values: BodyStatsValues }) {
   const router = useRouter();
-  const { c, isDark } = useTheme();
 
   const hasBp = values.systolic != null && values.diastolic != null;
   const hasSpo2 = values.spo2 != null;
@@ -55,8 +68,8 @@ export default function BodyStatsRow({ values }: { values: BodyStatsValues }) {
       unit: hasBp ? 'mmHg' : undefined,
       hint: '心血管',
       icon: 'heart-outline',
-      color: c.pink,
-      tint: c.tintPink,
+      color: HUES.pink.color,
+      tint: HUES.pink.tint,
       route: '/indicator-history?type=blood_pressure',
       pending: !hasBp,
     },
@@ -67,8 +80,8 @@ export default function BodyStatsRow({ values }: { values: BodyStatsValues }) {
       unit: hasSpo2 ? '%' : undefined,
       hint: '夜间均值',
       icon: 'water-outline',
-      color: c.blue,
-      tint: c.tintBlue,
+      color: HUES.blue.color,
+      tint: HUES.blue.tint,
       route: '/sleep-spo2-analysis',
       pending: !hasSpo2,
     },
@@ -78,8 +91,8 @@ export default function BodyStatsRow({ values }: { values: BodyStatsValues }) {
       value: hasBmi ? fmt(values.bmi) : '待记录',
       hint: hasBmi ? bmiLabel(values.bmi!) : '体重 / 身高',
       icon: 'body-outline',
-      color: c.green,
-      tint: c.tintGreen,
+      color: HUES.green.color,
+      tint: HUES.green.tint,
       route: '/body-measurements?focus=morning',
       pending: !hasBmi,
     },
@@ -90,8 +103,8 @@ export default function BodyStatsRow({ values }: { values: BodyStatsValues }) {
       unit: hasFat ? '%' : undefined,
       hint: '身材反馈',
       icon: 'fitness-outline',
-      color: c.orange,
-      tint: c.tintOrange,
+      color: HUES.orange.color,
+      tint: HUES.orange.tint,
       route: '/body-measurements?focus=morning',
       pending: !hasFat,
     },
@@ -105,20 +118,7 @@ export default function BodyStatsRow({ values }: { values: BodyStatsValues }) {
           onPress={() => router.push(t.route as any)}
           style={({ pressed }) => [
             styles.tile,
-            {
-              backgroundColor: c.bgCard,
-              borderColor: c.separator,
-              opacity: pressed ? 0.78 : 1,
-            },
-            isDark
-              ? null
-              : {
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: 0.05,
-                  shadowRadius: 3,
-                  elevation: 1,
-                },
+            { opacity: pressed ? 0.78 : 1 },
           ]}
           accessibilityRole="button"
           accessibilityLabel={`${t.label} ${t.value}${t.unit ?? ''}`}
@@ -129,9 +129,9 @@ export default function BodyStatsRow({ values }: { values: BodyStatsValues }) {
           <Text
             maxFontSizeMultiplier={1.18}
             style={[
-              styles.value,
+              txt.value,
               {
-                color: t.pending ? c.labelTertiary : c.labelPrimary,
+                color: t.pending ? C.ink3 : C.ink1,
                 fontSize: t.pending ? 12 : t.value.length > 5 ? 14 : 17,
               },
             ]}
@@ -139,19 +139,19 @@ export default function BodyStatsRow({ values }: { values: BodyStatsValues }) {
           >
             {t.value}
             {t.unit && !t.pending ? (
-              <Text style={[styles.unit, { color: c.labelTertiary }]}> {t.unit}</Text>
+              <Text style={[txt.unit, { color: C.ink3 }]}> {t.unit}</Text>
             ) : null}
           </Text>
           <Text
             maxFontSizeMultiplier={1.18}
-            style={[styles.label, { color: c.labelSecondary }]}
+            style={[txt.label, { color: C.ink2 }]}
             numberOfLines={1}
           >
             {t.label}
           </Text>
           <Text
             maxFontSizeMultiplier={1.18}
-            style={[styles.hint, { color: c.labelTertiary }]}
+            style={[txt.hint, { color: C.ink3 }]}
             numberOfLines={1}
           >
             {t.hint}
@@ -169,36 +169,45 @@ function bmiLabel(bmi: number): string {
   return '肥胖';
 }
 
+// Reva 设计语言:暖白 surface / r-lg 18 / 数字等宽 mono / light-first 软阴影。
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
+    gap: revaSpacing.s2,
+    marginBottom: revaSpacing.s3,
   },
   tile: {
     flex: 1,
     minWidth: 0,
-    borderRadius: radii.lg,
+    backgroundColor: C.surface,
+    borderRadius: revaRadii.lg,
     borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
     paddingHorizontal: 10,
     paddingVertical: 11,
     gap: 4,
     alignItems: 'flex-start',
+    ...revaShadows.sm,
   },
   iconWrap: {
     width: 24,
     height: 24,
-    borderRadius: 8,
+    borderRadius: revaRadii.sm,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 2,
   },
+});
+
+// 数字(指标值 / 围度 / 单位)走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
+const txt = {
   value: {
+    fontFamily: revaFonts.mono,
     fontWeight: '800',
     letterSpacing: -0.3,
-    fontVariant: ['tabular-nums'],
-  },
-  unit: { fontSize: 10, fontWeight: '700' },
-  label: { fontSize: 11, fontWeight: '700' },
-  hint: { fontSize: 10, fontWeight: '500' },
-});
+    fontVariant: ['tabular-nums'] as const,
+  } as TextStyle,
+  unit: { fontFamily: revaFonts.mono, fontSize: 10, fontWeight: '700' } as TextStyle,
+  label: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '700' } as TextStyle,
+  hint: { fontFamily: revaFonts.sans, fontSize: 10, fontWeight: '500' } as TextStyle,
+};
