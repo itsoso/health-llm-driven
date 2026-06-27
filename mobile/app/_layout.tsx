@@ -20,8 +20,10 @@ import NotificationBanner from '../components/notifications/NotificationBanner';
 import NetworkBanner from '../components/NetworkBanner';
 import RootErrorBoundary from '../components/RootErrorBoundary';
 import LoginScreen from './login';
+import { useRevaFonts } from '../components/reva/useRevaFonts';
 // Side-effect import: TaskManager.defineTask 必须在 module load 时跑 (React 树挂载前).
 import { registerBackgroundLocationTask } from '../services/backgroundLocationTask';
+import { runHealthKitForegroundRefresh } from '../services/healthKitForegroundRefresh';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import {
   View,
@@ -83,6 +85,21 @@ function AppContent() {
       authenticate();
     }
   }, [authenticate, isLocked, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || Platform.OS !== 'ios') return undefined;
+
+    const syncIfActive = () => {
+      if (AppState.currentState !== 'active') return;
+      void runHealthKitForegroundRefresh(queryClient).catch(() => undefined);
+    };
+
+    syncIfActive();
+    const sub = AppState.addEventListener('change', (status) => {
+      if (status === 'active') syncIfActive();
+    });
+    return () => sub.remove();
+  }, [isAuthenticated]);
 
   if (isLoading) {
     return (
@@ -154,6 +171,8 @@ function AppContent() {
 }
 
 function RootLayout() {
+  useRevaFonts();
+
   // Connect AppState to React Query for auto-refetch on foreground
   useEffect(() => {
     const sub = AppState.addEventListener('change', (status) => {

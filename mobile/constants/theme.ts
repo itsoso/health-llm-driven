@@ -114,7 +114,7 @@ export type SemanticPalette = typeof semanticColors;
 // ── Typography ──────────────────────────────────────────
 
 export const typography = {
-  heroScore: { fontSize: 48, fontWeight: '700' as const, lineHeight: 56 },
+  heroScore: { fontFamily: 'IBMPlexMono', fontSize: 48, fontWeight: '700' as const, lineHeight: 56 },
   titleLarge: { fontSize: 34, fontWeight: '700' as const, lineHeight: 41 },
   titleMedium: { fontSize: 22, fontWeight: '700' as const, lineHeight: 28 },
   titleSmall: { fontSize: 17, fontWeight: '600' as const, lineHeight: 22 },
@@ -122,8 +122,8 @@ export const typography = {
   bodyMedium: { fontSize: 15, fontWeight: '400' as const, lineHeight: 22 },
   bodySmall: { fontSize: 13, fontWeight: '400' as const, lineHeight: 18 },
   caption: { fontSize: 11, fontWeight: '500' as const, lineHeight: 13 },
-  metric: { fontSize: 28, fontWeight: '700' as const, lineHeight: 34, fontVariant: ['tabular-nums'] as const },
-  metricSmall: { fontSize: 20, fontWeight: '700' as const, lineHeight: 24, fontVariant: ['tabular-nums'] as const },
+  metric: { fontFamily: 'IBMPlexMono', fontSize: 28, fontWeight: '700' as const, lineHeight: 34, fontVariant: ['tabular-nums'] as const },
+  metricSmall: { fontFamily: 'IBMPlexMono', fontSize: 20, fontWeight: '700' as const, lineHeight: 24, fontVariant: ['tabular-nums'] as const },
 } as const;
 
 // ── Dynamic Type 上限 ───────────────────────────────────

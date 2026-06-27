@@ -46,6 +46,7 @@ import MedicationCheckin from '../../components/dashboard/MedicationCheckin';
 import BodyStatsRow from '../../components/home/BodyStatsRow';
 import RevaGreetingHeader from '../../components/home/RevaGreetingHeader';
 import RevaHeroCard from '../../components/home/RevaHeroCard';
+import DailyArtifactCard from '../../components/home/DailyArtifactCard';
 import WriteIntentCard from '../../components/home/WriteIntentCard';
 import RevaTimelineStrip from '../../components/home/RevaTimelineStrip';
 import RevaCycleStrip from '../../components/home/RevaCycleStrip';
@@ -56,6 +57,8 @@ import RevaTryEntryCard from '../../components/home/RevaTryEntryCard';
 import { useRevaFonts } from '../../components/reva/useRevaFonts';
 import { revaColors } from '../../constants/revaTheme';
 import { useHomeColdStartTrace } from '../../services/perfTrace';
+import { getHealthKitLastSync } from '../../services/appleHealth';
+import { buildDailyArtifact } from '../../services/dailyArtifact';
 
 interface TwinSnapshot {
   hrv?: number | null;
@@ -101,6 +104,12 @@ export default function TodayScreen() {
     queryKey: ['daily-plan', 'me'],
     queryFn: getDailyOperatingPlan,
     staleTime: 60 * 1000,
+  });
+
+  const healthKitLastSyncQuery = useQuery({
+    queryKey: ['healthkit', 'lastSync'],
+    queryFn: getHealthKitLastSync,
+    staleTime: 30 * 1000,
   });
 
   // 时间感知「现在该做什么」单一真相源:后端 /timeline/today 的 now(指向最相关一项,非清晨第一项)。
@@ -284,6 +293,31 @@ export default function TodayScreen() {
   const heroNowLever =
     criticalAlerts.length > 0 ? '现在该做 · 风险' : windowLever(nowItem?.time_window);
 
+  const dailyArtifact = useMemo(() => buildDailyArtifact({
+    readinessScore,
+    readinessStale,
+    readinessDate: twinSnap.readiness_date,
+    nowItem,
+    fallbackAction: nextAction,
+    sleepHours: twinSnap.sleep_hours ?? sleepHoursRaw,
+    hrv: twinSnap.hrv,
+    spo2: twinSnap.spo2_avg,
+    healthKitLastSyncAt: healthKitLastSyncQuery.data ?? null,
+    safetyAlerts: criticalAlerts,
+  }), [
+    readinessScore,
+    readinessStale,
+    twinSnap.readiness_date,
+    twinSnap.sleep_hours,
+    twinSnap.hrv,
+    twinSnap.spo2_avg,
+    sleepHoursRaw,
+    nowItem,
+    nextAction,
+    healthKitLastSyncQuery.data,
+    criticalAlerts,
+  ]);
+
   // 字体没 load 时给个 ActivityIndicator(参考 app/reva.tsx),避免 mono 数字闪烁。
   if (!revaFontsLoaded) {
     return (
@@ -303,7 +337,17 @@ export default function TodayScreen() {
         {/* 1 · 问候头 */}
         <RevaGreetingHeader name={profileName} />
 
-        {/* 2 · 深绿 Hero(时间感知「现在该做什么」now-action + 支撑就绪环) */}
+        {/* 2 · Daily Artifact:一个 top action + 数据新鲜度 + 证据 */}
+        <DailyArtifactCard
+          artifact={dailyArtifact}
+          completing={heroCompleting}
+          onPressAction={onHeroAction}
+          onComplete={onHeroComplete}
+          onSkip={() => router.push('/agenda' as any)}
+          onAskReva={() => router.push('/(tabs)/chat' as any)}
+        />
+
+        {/* 3 · 深绿 Hero(保留一版过渡,降低与并发 UI 分支合并风险) */}
         <RevaHeroCard
           readiness={readinessScore}
           stale={readinessStale}

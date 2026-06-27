@@ -5,17 +5,21 @@
  * to React Native, using `constants/revaTheme` tokens. Lucide icon names from the
  * design are mapped to @expo/vector-icons (Ionicons) — closest clinical-stroke match.
  */
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, Pressable, StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Animated, { Easing, useAnimatedProps, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Path, Line, Text as SvgText, G, Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import {
   revaColors as C,
+  revaMotion,
   revaRadii,
   revaSemantic,
   revaShadows,
   type RevaStatus,
 } from '../../constants/revaTheme';
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 // ── Status table ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -166,14 +170,31 @@ export function TabBar({ active, onChange, bottomInset = 0 }: { active: RevaTab;
 export function ReadinessRing({ score = 86, size = 104, stroke = 10, dark = true }: { score?: number; size?: number; stroke?: number; dark?: boolean }) {
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
-  const frac = score / 100;
-  const off = circ * (1 - frac);
+  const clampedScore = Math.max(0, Math.min(100, score));
+  const frac = clampedScore / 100;
   const track = dark ? C.focusLine : C.green100;
   const gid = `ring${dark ? 'D' : 'L'}`;
-  // Tip node: arc starts at top (-90°) and sweeps clockwise → end angle.
-  const ang = -Math.PI / 2 + frac * 2 * Math.PI;
-  const cx = size / 2 + r * Math.cos(ang);
-  const cy = size / 2 + r * Math.sin(ang);
+  const progress = useSharedValue(0);
+  const ringProps = useAnimatedProps(() => ({
+    strokeDashoffset: circ * (1 - progress.value),
+  }));
+  const tipProps = useAnimatedProps(() => {
+    // Tip node: arc starts at top (-90°) and sweeps clockwise → end angle.
+    const ang = -Math.PI / 2 + progress.value * 2 * Math.PI;
+    return {
+      cx: size / 2 + r * Math.cos(ang),
+      cy: size / 2 + r * Math.sin(ang),
+    };
+  });
+
+  useEffect(() => {
+    progress.value = 0;
+    progress.value = withTiming(frac, {
+      duration: revaMotion.durSlow,
+      easing: Easing.bezier(...revaMotion.easeOut),
+    });
+  }, [frac, progress]);
+
   return (
     <View style={{ width: size, height: size }}>
       <Svg width={size} height={size}>
@@ -184,16 +205,16 @@ export function ReadinessRing({ score = 86, size = 104, stroke = 10, dark = true
           </LinearGradient>
         </Defs>
         <Circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={stroke} />
-        <Circle
+        <AnimatedCircle
           cx={size / 2} cy={size / 2} r={r} fill="none" stroke={`url(#${gid})`} strokeWidth={stroke}
-          strokeLinecap="round" strokeDasharray={`${circ}`} strokeDashoffset={off}
+          strokeLinecap="round" strokeDasharray={`${circ}`} animatedProps={ringProps}
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
-        <Circle cx={cx} cy={cy} r={stroke / 2 + 1.5} fill={C.greenBright} />
+        <AnimatedCircle animatedProps={tipProps} r={stroke / 2 + 1.5} fill={C.greenBright} />
       </Svg>
       <View style={StyleSheet.absoluteFill}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ fontFamily: 'IBMPlexMono', fontWeight: '500', fontSize: size * 0.33, lineHeight: size * 0.34, color: dark ? C.focusInk1 : C.ink1 }}>{score}</Text>
+          <Text style={{ fontFamily: 'IBMPlexMono', fontWeight: '500', fontSize: size * 0.33, lineHeight: size * 0.34, color: dark ? C.focusInk1 : C.ink1 }}>{Math.round(clampedScore)}</Text>
           <Text style={{ fontFamily: 'IBMPlexMono', fontSize: 9.5, letterSpacing: 1.1, color: dark ? C.focusInk2 : C.ink3 }}>/ 100</Text>
         </View>
       </View>

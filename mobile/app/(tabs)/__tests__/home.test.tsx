@@ -11,6 +11,7 @@ let mockActiveCycle: any = null;
 let mockRefetchingKeys = new Set<string>();
 // 时间线 now-item:Hero 现在读 /timeline/today 的 now(时间感知最相关项),不再读清晨第一项。
 let mockTimeline: any = null;
+let mockHealthKitLastSync: number | null = null;
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush }),
@@ -40,6 +41,9 @@ jest.mock('@tanstack/react-query', () => ({
     }
     if (key.includes('intervention-cycle')) {
       return { data: mockActiveCycle, isLoading: false, isRefetching };
+    }
+    if (key.includes('healthkit:lastSync')) {
+      return { data: mockHealthKitLastSync, isLoading: false, isRefetching };
     }
     return { data: null, isLoading: false, isRefetching: false };
   },
@@ -91,6 +95,10 @@ jest.mock('../../../services/dailyPlan', () => ({
   getDailyOperatingPlan: jest.fn(),
 }));
 
+jest.mock('../../../services/appleHealth', () => ({
+  getHealthKitLastSync: jest.fn(),
+}));
+
 jest.mock('../../../services/api', () => ({
   __esModule: true,
   default: { get: jest.fn() },
@@ -111,6 +119,7 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     mockActiveCycle = null;
     mockRefetchingKeys = new Set<string>();
     mockTimeline = null;
+    mockHealthKitLastSync = null;
   });
 
   // 构造一个最小的 /timeline/today 响应:now 指向给定 item。
@@ -132,12 +141,12 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     mockTwinData = {
       physiological: { training_readiness_score: 93, body_battery_current: 36, sleep_score_latest: 70 },
     };
-    const { getByText } = render(<TodayScreen />);
+    const { getAllByText } = render(<TodayScreen />);
     // ReadinessRing renders the score as text inside the Hero (93, not 36).
-    expect(getByText('93')).toBeTruthy();
+    expect(getAllByText('93').length).toBeGreaterThanOrEqual(1);
     // 93 ≥ 80 → RevaHeroCard readinessTitle '可上强度'. If body_battery 36 had been
     // used, the title would have been '注意恢复' (< 60).
-    expect(getByText('可上强度')).toBeTruthy();
+    expect(getAllByText('可上强度').length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows the Hero "待同步" placeholder when training readiness is missing', () => {
@@ -175,8 +184,45 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(getAllByText('服用二甲双胍').length).toBeGreaterThanOrEqual(1);
     expect(getAllByText('随午餐服用').length).toBeGreaterThanOrEqual(1); // shortSubtitle 取首分句
     // 时点 + lever 是 Hero 独有。
-    expect(getByText('12:30')).toBeTruthy();
+    expect(getAllByText('12:30').length).toBeGreaterThanOrEqual(1);
     expect(getByText('现在该做 · 中午')).toBeTruthy();
+  });
+
+  it('renders the Daily Artifact with freshness and one top action', () => {
+    mockHealthKitLastSync = Date.now() - 10 * 60 * 1000;
+    mockTwinData = {
+      physiological: {
+        training_readiness_score: 88,
+        sleep_duration_h_latest: 7.1,
+        hrv_latest: 49,
+        spo2_avg: 97,
+      },
+    };
+    mockTimeline = makeTimeline({
+      id: 'water-1',
+      kind: 'action',
+      time_window: 'morning',
+      scheduled_for: '08:00',
+      title: '喝 200ml 温水',
+      subtitle: '起床后补水,再开始运动',
+      icon: 'water-outline',
+      color: '#1F8A5B',
+      status: 'pending',
+      priority: 1,
+      can_complete: true,
+      complete_ref: { object_type: 'health_protocol', object_id: 12 },
+      deep_link: null,
+      severity: null,
+      proof: null,
+    });
+
+    const { getByText, getAllByText } = render(<TodayScreen />);
+
+    expect(getByText('今日状态')).toBeTruthy();
+    expect(getByText('今日最重要行动')).toBeTruthy();
+    expect(getAllByText('喝 200ml 温水').length).toBeGreaterThanOrEqual(1);
+    expect(getByText(/分钟前同步/)).toBeTruthy();
+    expect(getByText('安全边界正常')).toBeTruthy();
   });
 
   it('shows a risk lever when a critical alert exists', () => {

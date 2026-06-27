@@ -28,6 +28,36 @@ jest.mock('expo-haptics', () => ({
   ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
 }));
 
+jest.mock('react-native-reanimated', () => {
+  const ReactNative = require('react-native');
+  const id = (value: any) => value;
+  const immediate = (factory: () => unknown) => factory();
+  return {
+    __esModule: true,
+    default: {
+      View: ReactNative.View,
+      Text: ReactNative.Text,
+      Image: ReactNative.Image,
+      ScrollView: ReactNative.ScrollView,
+      FlatList: ReactNative.FlatList,
+      createAnimatedComponent: id,
+    },
+    Easing: {
+      bezier: jest.fn(() => id),
+      linear: id,
+    },
+    runOnJS: (fn: (...args: unknown[]) => unknown) => fn,
+    useAnimatedProps: immediate,
+    useAnimatedStyle: immediate,
+    useSharedValue: (initial: unknown) => ({ value: initial }),
+    withDelay: (_delay: number, animation: unknown) => animation,
+    withRepeat: (animation: unknown) => animation,
+    withSequence: (...animations: unknown[]) => animations[animations.length - 1],
+    withSpring: id,
+    withTiming: id,
+  };
+});
+
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: jest.fn(), back: jest.fn(), replace: jest.fn() }),
   useLocalSearchParams: () => ({}),
