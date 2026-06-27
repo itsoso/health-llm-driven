@@ -358,6 +358,21 @@ non-trivial product work:
 
 The goal is to avoid duplicate, colliding, or soon-superseded work.
 
+### 9.6 Full-Lifecycle Pipeline
+
+When the task is to take a user need all the way to production (need → PRD →
+plan → dev breakdown → tests → deploy → live verification), follow the
+**agent-neutral pipeline contract** in
+[`docs/specs/product-pipeline-contract.md`](product-pipeline-contract.md):
+a two-loop flow (cheap definition loop, expensive delivery loop) with six
+pass/fail gates (G1 Admission, G2 feasibility+safety, G3 tests, G4 safety,
+G5 deploy-health, G6 live verification), a per-feature Dossier
+(`docs/dossiers/<date>-<slug>.md`) as the traceable spine, and explicit
+fail-stops (never carry red or a safety BLOCK downstream). Every agent
+satisfies the same gates with its own tooling. Claude Code's concrete
+orchestration of this contract lives in `.claude/skills/product-pipeline/`;
+other agents follow the contract directly.
+
 ## 10. Model-Agnostic Prompt Block
 
 When handing this repo to any capable model, include or point to this block:
@@ -371,6 +386,10 @@ For new product behavior, map the request to a first-class Health OS object,
 identify the target surface, name the safety boundary, define the verification
 window, and implement only the smallest end-to-end slice. If the request cannot
 strengthen the Health OS core loop, reject, reframe, or mark it as maintenance.
+For end-to-end work (need → production), follow the full-lifecycle pipeline
+contract in docs/specs/product-pipeline-contract.md: two loops, six pass/fail
+gates, a per-feature Dossier as the traceable spine, never carry red or a
+safety BLOCK downstream.
 ```
 
 This prompt is intentionally not vendor-specific. Claude, Codex, Qwen, GLM,

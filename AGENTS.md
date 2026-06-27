@@ -602,6 +602,16 @@ class ExampleModel(Base):
 - 本文件和 `docs/governance/*` 仍然裁决工程安全、测试、部署、隐私、DB、日志和提交规则；产品治理 Spec 只裁决“该不该做、落到哪个产品对象、在哪个 surface 做、如何验证”。
 - 新增非平凡产品行为时，优先使用 [`docs/specs/templates/feature-spec-template.md`](docs/specs/templates/feature-spec-template.md) 创建或更新 Feature Spec。
 
+## 12. 需求→上线 全流程契约(跨 agent 通用，Codex 必读)
+
+把一句用户需求走完整个生命周期（需求 → PRD → 规划 → 需求分解 → 研发 → 测试 → 部署 → 上线验证），或用户说「立项 / 走一遍流程 / 从需求到上线」时，**所有 coding agent（含 Codex / Cursor）必须遵循** agent 中立的流程契约 [`docs/specs/product-pipeline-contract.md`](docs/specs/product-pipeline-contract.md)：
+
+- **双环**：定义环（需求→PRD→规划，便宜可逆）+ 交付环（分解→实现→测试→部署→验证，昂贵有闸）。
+- **6 道可失败 Gate**：G1 准入（§8）/ G2 可行性+安全压测 / G3 测试 / G4 安全 / G5 部署健康分 / G6 上线验证。**任何 Gate 失败必回上游，绝不带红或带安全 BLOCK 往下走。**
+- **Dossier 脊柱**：每 feature 一份 `docs/dossiers/<date>-<slug>.md`，串起全链 + 每道 Gate 裁决（含 REJECT/BLOCK）+ 当前状态，**接手先读它从断点续**。
+- **测试 Gate 硬约束**：跑测试**绝不 `| tail`**（吞退出码 → 带红上线）；部署前集成闸 CI 模式合跑 + 查主干真实色。
+- 每个 agent 用自己的工具满足同一套 Gate。Claude Code 的具体编排在 `.claude/skills/product-pipeline/`；Codex/其他 agent 直接按契约走。
+
 <skills_system priority="1">
 
 ## Available Skills
