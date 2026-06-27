@@ -58,6 +58,21 @@ export interface PredictionBacktestResult {
   boundary?: string | null;
 }
 
+export interface CausalMemoryNote {
+  metric: string;
+  before?: number | null;
+  after?: number | null;
+  pct?: number | null;
+  direction?: string | null;
+  text: string;
+}
+
+export interface CausalMemoryReview {
+  notes: CausalMemoryNote[];
+  evidence_tier: 'observational' | string;
+  claim_boundary: string;
+}
+
 export interface HealthOperatingReview {
   window_days: ReviewWindowDays;
   start_date: string;
@@ -66,6 +81,7 @@ export interface HealthOperatingReview {
   metrics: Record<string, MetricChange>;
   completed_action_keys: string[];
   prediction_backtest?: PredictionBacktestPlaceholder;
+  causal_memory?: CausalMemoryReview;
 }
 
 export async function fetchHealthOperatingReview(
@@ -83,4 +99,10 @@ export function predictionBacktestSummary(backtest?: PredictionBacktestPlacehold
   if (total <= 0) return null;
   const met = backtest.summary?.met ?? backtest.results?.filter((r) => r.verdict === 'met').length ?? 0;
   return `预测回测: ${met}/${total} 支持继续当前策略 · 观察性,非因果`;
+}
+
+export function causalMemorySummary(memory?: CausalMemoryReview | null): string | null {
+  const firstNote = memory?.notes?.find((note) => note.text)?.text;
+  if (!firstNote) return null;
+  return `个人规律: ${firstNote}`;
 }

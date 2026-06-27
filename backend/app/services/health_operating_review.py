@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from datetime import date, timedelta
 from typing import Any, Iterable
@@ -13,10 +14,12 @@ from app.models.daily_health import GarminData
 from app.models.intervention_event import InterventionEvent
 from app.models.waist import WaistRecord
 from app.models.weight import WeightRecord
+from app.services.causal_memory import derive_causal_notes
 
 SUPPORTED_REVIEW_WINDOWS = {7, 30, 90}
 COMPLETED_STATUSES = {"completed", "done", "verified"}
 LOWER_IS_BETTER_METRICS = {"weight", "waist_cm", "systolic_bp", "diastolic_bp"}
+logger = logging.getLogger(__name__)
 
 
 def build_health_operating_review(
@@ -61,6 +64,32 @@ def build_health_operating_review(
             events=events,
             metrics=metrics,
             action_effects=action_effects,
+        ),
+        "causal_memory": _causal_memory_review(db, user_id=user_id, window_days=window_days),
+    }
+
+
+def _causal_memory_review(db: Session, *, user_id: int, window_days: int) -> dict[str, Any]:
+    try:
+        result = derive_causal_notes(db, user_id=user_id, max_events=3, window_days=window_days)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("causal_memory_review_failed user_id=%s error=%s", user_id, str(exc))
+        return {
+            "notes": [],
+            "evidence_tier": "observational",
+            "claim_boundary": "个人规律暂不可用;不生成新的健康建议或临床结论。",
+        }
+
+    notes = result.get("notes") if isinstance(result, dict) else []
+    if not isinstance(notes, list):
+        notes = []
+    return {
+        "notes": notes[:3],
+        "evidence_tier": result.get("evidence_tier", "observational") if isinstance(result, dict) else "observational",
+        "claim_boundary": (
+            result.get("claim_boundary")
+            if isinstance(result, dict) and result.get("claim_boundary")
+            else "事件先于指标变化的时序相关,非证明因果;不替代医学结论。"
         ),
     }
 

@@ -2,6 +2,7 @@
 
 from datetime import date, timedelta
 
+import app.services.health_operating_review as review_svc
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.daily_health import GarminData
 from app.models.intervention_event import InterventionEvent
@@ -179,6 +180,40 @@ def test_daily_plan_review_downgrades_low_confidence_predictions(client, db, aut
     assert result["downgrade_reason"] == "low_confidence_or_confounders"
     assert result["confidence_after"] == "low"
     assert "不能判断干预效果" in result["boundary"]
+
+
+def test_daily_plan_review_surfaces_causal_memory_notes(client, auth_user_and_headers, monkeypatch):
+    user, headers = auth_user_and_headers
+
+    def fake_derive_causal_notes(db, user_id, max_events=5, window_days=30):
+        assert user_id == user.id
+        assert max_events == 3
+        assert window_days == 7
+        return {
+            "notes": [
+                {
+                    "metric": "hrv",
+                    "before": 40.0,
+                    "after": 46.0,
+                    "pct": 0.15,
+                    "direction": "改善",
+                    "text": "「晚餐提前」之后,HRV 从 40.0 → 46.0(改善;7 天窗口,相关非因果)",
+                },
+            ],
+            "evidence_tier": "observational",
+            "claim_boundary": "事件先于指标变化的时序相关,非证明因果;不替代医学结论。",
+        }
+
+    monkeypatch.setattr(review_svc, "derive_causal_notes", fake_derive_causal_notes, raising=False)
+
+    resp = client.get("/api/v1/daily-plan/review?window_days=7", headers=headers)
+
+    assert resp.status_code == 200
+    memory = resp.json()["causal_memory"]
+    assert memory["evidence_tier"] == "observational"
+    assert memory["notes"][0]["metric"] == "hrv"
+    assert "相关非因果" in memory["notes"][0]["text"]
+    assert "非证明因果" in memory["claim_boundary"]
 
 
 def test_daily_plan_review_is_user_scoped(client, db, auth_user_and_headers):

@@ -1,4 +1,4 @@
-import { fetchHealthOperatingReview, predictionBacktestSummary } from '../healthOperatingReview';
+import { causalMemorySummary, fetchHealthOperatingReview, predictionBacktestSummary } from '../healthOperatingReview';
 import api from '../api';
 
 jest.mock('../api', () => ({
@@ -67,5 +67,24 @@ describe('fetchHealthOperatingReview', () => {
     });
 
     expect(summary).toBe('预测回测: 1/1 支持继续当前策略 · 观察性,非因果');
+  });
+
+  it('summarizes causal memory notes as observational personal patterns', () => {
+    const summary = causalMemorySummary({
+      notes: [
+        {
+          metric: 'hrv',
+          before: 40,
+          after: 46,
+          pct: 0.15,
+          direction: '改善',
+          text: '「晚餐提前」之后,HRV 从 40.0 → 46.0(改善;7 天窗口,相关非因果)',
+        },
+      ],
+      evidence_tier: 'observational',
+      claim_boundary: '事件先于指标变化的时序相关,非证明因果;不替代医学结论。',
+    });
+
+    expect(summary).toBe('个人规律: 「晚餐提前」之后,HRV 从 40.0 → 46.0(改善;7 天窗口,相关非因果)');
   });
 });

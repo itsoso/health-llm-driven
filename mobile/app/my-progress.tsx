@@ -23,6 +23,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { fetchMyProgress, type ProgressDashboard, type ProgressCard } from '../services/myProgress';
 import {
+  causalMemorySummary,
   fetchHealthOperatingReview,
   predictionBacktestSummary,
   type HealthOperatingReview,
@@ -275,6 +276,8 @@ function OperatingReviewCard({ review, c }: { review: HealthOperatingReview; c: 
     .filter(row => row.change?.status === 'present' && row.change.delta !== null);
   const predictionSummary = predictionBacktestSummary(review.prediction_backtest);
   const predictionResults = review.prediction_backtest?.results ?? [];
+  const personalPatternSummary = causalMemorySummary(review.causal_memory);
+  const personalPatterns = review.causal_memory?.notes ?? [];
 
   return (
     <View style={[styles.reviewCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -331,6 +334,20 @@ function OperatingReviewCard({ review, c }: { review: HealthOperatingReview; c: 
           ))}
           <Text style={[styles.predictionBoundary, { color: c.labelTertiary }]}>
             {review.prediction_backtest?.boundary}
+          </Text>
+        </View>
+      ) : null}
+
+      {personalPatternSummary ? (
+        <View style={[styles.causalMemory, { backgroundColor: c.fill }]}>
+          <Text style={[styles.causalTitle, { color: c.labelPrimary }]}>{personalPatternSummary}</Text>
+          {personalPatterns.slice(1, 3).map((note, index) => (
+            <Text key={`${note.metric}-${index}`} style={[styles.causalLine, { color: c.labelSecondary }]}>
+              {note.text}
+            </Text>
+          ))}
+          <Text style={[styles.causalBoundary, { color: c.labelTertiary }]}>
+            {review.causal_memory?.claim_boundary}
           </Text>
         </View>
       ) : null}
@@ -474,6 +491,10 @@ const styles = StyleSheet.create({
   predictionTitle: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
   predictionLine: { fontSize: 12, lineHeight: 17 },
   predictionBoundary: { fontSize: 11, lineHeight: 15 },
+  causalMemory: { borderRadius: radii.md, padding: spacing.sm, gap: 4 },
+  causalTitle: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
+  causalLine: { fontSize: 12, lineHeight: 17 },
+  causalBoundary: { fontSize: 11, lineHeight: 15 },
   emptyCard: {
     borderWidth: 1,
     borderRadius: radii.md,
