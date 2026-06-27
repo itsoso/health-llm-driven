@@ -95,4 +95,28 @@ describe('services/rokidVoiceControl', () => {
     expect(handlers.openPushupCoach).toHaveBeenCalledTimes(1);
     expect(handlers.openGuidedTask).toHaveBeenCalledTimes(1);
   });
+
+  it('dispatches confirm/skip/snooze to their wired handlers', async () => {
+    const confirmCurrent = jest.fn().mockResolvedValue(undefined);
+    const skipCurrent = jest.fn().mockResolvedValue(undefined);
+    const snoozeCurrent = jest.fn().mockResolvedValue(undefined);
+    const handlers = { confirmCurrent, skipCurrent, snoozeCurrent };
+
+    await executeRokidVoiceClientAction(
+      { command: { client_action: 'confirm_current', route: null } },
+      handlers,
+    );
+    await executeRokidVoiceClientAction(
+      { command: { client_action: 'skip_current', route: null } },
+      handlers,
+    );
+    await executeRokidVoiceClientAction(
+      { command: { client_action: 'snooze_current', route: null } },
+      handlers,
+    );
+
+    expect(confirmCurrent).toHaveBeenCalledTimes(1);
+    expect(skipCurrent).toHaveBeenCalledTimes(1);
+    expect(snoozeCurrent).toHaveBeenCalledTimes(1);
+  });
 });
