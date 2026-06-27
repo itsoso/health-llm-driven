@@ -52,6 +52,21 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 - **请求流(Web)**:Browser → Next.js rewrites `/api/*` → backend `/api/v1/*`。
 - **Write 自治承重墙**:见 `backend/app/services/write_autonomy.py`(只 `measurement_prompt` 自治,NEVER 集封顶 manual_confirm)。
 
+## 5. 视觉验证(怎么看每端真实页面 · 可重生成方法,不钉静态图)
+
+> 静态截图是最易漂的工件,与 system-map「代码生成真源」原则相悖 → 本节给**重生成方法/命令**,不在库里钉死截图(按需现生成)。`captured-as-of` = 方法本身,非快照。
+
+| 端 | 怎么生成视觉 | 状态(2026-06-27 实测) |
+|---|---|---|
+| **mac**(原生 macOS) | 组件级渲染:`cd apps/mac && swift test --filter HealthAgentMacTests`(snapshot 套件 → `Tests/HealthAgentMacTests/__Snapshots__/` 下 RefreshPanel/WearablePanel/PriorityActionHero/BriefingCard/SpO2WeekCard 等 PNG)。整屏:`swift run HealthAgentMac` 起 app(需登录后端)。 | ✅ `swift build` 绿;snapshot PNG 已 committed,可重录 |
+| **mobile**(iOS) | dev-client + Metro(8082)+ `xcrun simctl io <sim> screenshot`。 | ❌ **模拟器被 Rokid 挡死** —— `modules/rokid-bridge/ios/RokidBridgeModule.swift` 依赖 `RGCxrClient`(框架只有 device 切片)→ `npx expo run:ios <sim>` 必 **exit 65**(实测 83 errors,`cannot find type 'RGCxrClientAudioEvent'`);sim 里旧 build 也因缺 `HealthPilot.debug.dylib` 启动即 dyld 崩。**截图只能走真机**(dev build / TestFlight + Xcode Devices / `xcrun devicectl`),或出一个 Rokid-条件编译排除的 sim build 再走 simctl。**不造假截图。** |
+| **watch** | 同 mobile(原生 watchOS target,真机;sim 同受 Rokid/签名限制)。 | ⚠️ 真机 |
+| **frontend**(Web) | `cd frontend && npm run dev` → 浏览器/Playwright 截。 | ✅ 可本地起 |
+| **mini-program** | 微信开发者工具预览。 | ✅ 工具内 |
+| **rokid-pushup-glasses** | 眼镜真机(CXR-L)。 | ⚠️ 真机 |
+
+**结论(诚实)**:本轮「mac+mobile 走 macOS 模拟器截图」—— mac 非模拟器(原生,snapshot 套件可重生成视觉);**mobile 模拟器路径确认被 Rokid device-only 框架阻断(exit 65),需真机**,这与已知工程约束一致,未伪造。
+
 ## 维护
 
 - 端 roster / surface 名 / 流程改了 → 改本文 + bump `last-reviewed`(product-pipeline S8)。
