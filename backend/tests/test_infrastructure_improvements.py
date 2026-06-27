@@ -25,67 +25,80 @@ class TestGetDbRollback:
     def test_get_db_yields_session(self, db):
         """正常情况下 get_db 应返回可用的 session"""
         gen = get_db()
-        session = next(gen)
-        assert session is not None
-        # 正常结束
         try:
-            next(gen)
-        except StopIteration:
-            pass
+            session = next(gen)
+            assert session is not None
+            # 正常结束
+            try:
+                next(gen)
+            except StopIteration:
+                pass
+        finally:
+            gen.close()  # 任何分支都关掉生成器,绝不泄漏挂起的全局引擎会话给后续测试
 
     def test_get_db_rollback_on_exception(self):
         """get_db 在遇到异常时应自动 rollback"""
         gen = get_db()
-        session = next(gen)
+        try:
+            session = next(gen)
 
-        # 模拟 rollback 和 close
-        original_rollback = session.rollback
-        original_close = session.close
-        rollback_called = False
-        close_called = False
+            # 模拟 rollback 和 close
+            original_rollback = session.rollback
+            original_close = session.close
+            rollback_called = False
+            close_called = False
 
-        def mock_rollback():
-            nonlocal rollback_called
-            rollback_called = True
-            original_rollback()
+            def mock_rollback():
+                nonlocal rollback_called
+                rollback_called = True
+                original_rollback()
 
-        def mock_close():
-            nonlocal close_called
-            close_called = True
-            original_close()
+            def mock_close():
+                nonlocal close_called
+                close_called = True
+                original_close()
 
-        session.rollback = mock_rollback
-        session.close = mock_close
+            session.rollback = mock_rollback
+            session.close = mock_close
 
-        # 向 generator 抛入异常
-        with pytest.raises(ValueError):
-            gen.throw(ValueError, ValueError("test error"), None)
+            # 向 generator 抛入异常。注意必须用单参签名 gen.throw(exc):
+            # Python 3.12 起三参签名 gen.throw(type, value, tb) 已弃用,会在抛入
+            # 生成器*之前*先发 DeprecationWarning —— 若某处把警告升级为错误,该调用
+            # 会抢先抛 DeprecationWarning 而非 ValueError,使生成器停在 yield 处不被
+            # 消费、泄漏一个持全局引擎会话的挂起生成器,污染后续测试。
+            with pytest.raises(ValueError):
+                gen.throw(ValueError("test error"))
 
-        assert rollback_called, "get_db 应在异常时调用 rollback"
-        assert close_called, "get_db 应在 finally 中调用 close"
+            assert rollback_called, "get_db 应在异常时调用 rollback"
+            assert close_called, "get_db 应在 finally 中调用 close"
+        finally:
+            gen.close()  # 兜底:无论上面哪步异常,都不把挂起的生成器/会话泄漏出去
 
     def test_get_db_close_on_normal_exit(self):
         """正常退出时应调用 close 但不调用 rollback"""
         gen = get_db()
-        session = next(gen)
-
-        rollback_called = False
-        original_rollback = session.rollback
-
-        def mock_rollback():
-            nonlocal rollback_called
-            rollback_called = True
-            original_rollback()
-
-        session.rollback = mock_rollback
-
-        # 正常结束
         try:
-            next(gen)
-        except StopIteration:
-            pass
+            session = next(gen)
 
-        assert not rollback_called, "正常退出不应调用 rollback"
+            rollback_called = False
+            original_rollback = session.rollback
+
+            def mock_rollback():
+                nonlocal rollback_called
+                rollback_called = True
+                original_rollback()
+
+            session.rollback = mock_rollback
+
+            # 正常结束
+            try:
+                next(gen)
+            except StopIteration:
+                pass
+
+            assert not rollback_called, "正常退出不应调用 rollback"
+        finally:
+            gen.close()  # 任何分支都关掉生成器,绝不泄漏挂起的全局引擎会话给后续测试
 
 
 # ============================================================
