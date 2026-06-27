@@ -50,6 +50,7 @@ describe('fetchHealthOperatingReview', () => {
       requirements: [],
       boundary: '观察性回测, 不证明单个行动造成指标变化。',
       summary: { met: 1, not_met: 0, inconclusive: 0 },
+      confidence_summary: { high: 0, medium: 1, low: 0 },
       results: [
         {
           prediction_id: 'pred-waist-7d',

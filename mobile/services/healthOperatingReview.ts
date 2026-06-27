@@ -33,6 +33,7 @@ export interface PredictionBacktestPlaceholder {
   requirements: string[];
   boundary: string;
   summary?: { met: number; not_met: number; inconclusive: number };
+  confidence_summary?: { high: number; medium: number; low: number };
   results?: PredictionBacktestResult[];
 }
 
@@ -49,6 +50,7 @@ export interface PredictionBacktestResult {
   actual_result?: { current?: number | string | null; current_date?: string | null };
   observed_delta?: number | null;
   verdict: 'met' | 'not_met' | 'inconclusive' | string;
+  downgrade_reason?: string | null;
   confidence_before?: string | null;
   confidence_after?: string | null;
   explanation?: string | null;

@@ -120,6 +120,7 @@ def test_daily_plan_review_backtests_prediction_records(client, db, auth_user_an
     assert backtest["status"] == "ready"
     assert backtest["ready_candidate_count"] == 1
     assert backtest["summary"]["met"] == 1
+    assert backtest["confidence_summary"]["medium"] == 1
     result = backtest["results"][0]
     assert result["prediction_id"] == "pred-waist-7d"
     assert result["metric"] == "waist_cm"
@@ -131,6 +132,53 @@ def test_daily_plan_review_backtests_prediction_records(client, db, auth_user_an
     assert result["confidence_after"] == "medium"
     assert result["attribution"] == "prediction_backtest_not_causation"
     assert "不证明" in result["boundary"]
+
+
+def test_daily_plan_review_downgrades_low_confidence_predictions(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    today = date.today()
+
+    db.add_all([
+        InterventionEvent(
+            user_id=user.id,
+            plan_date=today - timedelta(days=4),
+            action_key="nutrition.low_sodium",
+            action_domain="nutrition",
+            action_title="晚餐减盐",
+            feedback_status="completed",
+            source="daily_plan",
+            action_snapshot={
+                "verification_metric": "systolic_bp",
+                "prediction": {
+                    "id": "pred-bp-low-confidence",
+                    "source": "specialist_output",
+                    "metric": "systolic_bp",
+                    "direction": "down",
+                    "horizon_days": 7,
+                    "expected_delta": -2,
+                    "confidence": "low",
+                    "confounders": ["single_home_bp_pair"],
+                    "claim_boundary": "低置信观察, 不能判断干预效果。",
+                },
+            },
+        ),
+        BloodPressureRecord(user_id=user.id, record_date=today - timedelta(days=6), systolic=138, diastolic=88),
+        BloodPressureRecord(user_id=user.id, record_date=today, systolic=132, diastolic=84),
+    ])
+    db.commit()
+
+    resp = client.get("/api/v1/daily-plan/review?window_days=7", headers=headers)
+
+    assert resp.status_code == 200
+    backtest = resp.json()["prediction_backtest"]
+    assert backtest["status"] == "ready"
+    assert backtest["summary"]["inconclusive"] == 1
+    assert backtest["confidence_summary"]["low"] == 1
+    result = backtest["results"][0]
+    assert result["verdict"] == "inconclusive"
+    assert result["downgrade_reason"] == "low_confidence_or_confounders"
+    assert result["confidence_after"] == "low"
+    assert "不能判断干预效果" in result["boundary"]
 
 
 def test_daily_plan_review_is_user_scoped(client, db, auth_user_and_headers):

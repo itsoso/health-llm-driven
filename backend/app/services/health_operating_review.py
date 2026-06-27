@@ -140,6 +140,7 @@ def _prediction_backtest(
         )
 
     summary = Counter(result["verdict"] for result in results)
+    confidence_summary = Counter(result["confidence_after"] for result in results)
     return {
         "version": "prediction_backtest_v1",
         "status": "ready",
@@ -155,6 +156,11 @@ def _prediction_backtest(
             "met": summary.get("met", 0),
             "not_met": summary.get("not_met", 0),
             "inconclusive": summary.get("inconclusive", 0),
+        },
+        "confidence_summary": {
+            "high": confidence_summary.get("high", 0),
+            "medium": confidence_summary.get("medium", 0),
+            "low": confidence_summary.get("low", 0),
         },
         "results": results,
         "boundary": "预测回测只比较预期信号与窗口内实际变化, 属观察性复盘, 不证明单个行动造成指标变化。",
@@ -190,6 +196,9 @@ def _prediction_backtest_results(
         expected_signal = _expected_signal(prediction, metric)
         verdict = _prediction_verdict(expected_signal, observed_delta)
         confidence_before = str(prediction.get("confidence") or "low")
+        downgrade_reason = _prediction_downgrade_reason(prediction, confidence_before)
+        if downgrade_reason:
+            verdict = "inconclusive"
         results.append({
             "prediction_id": prediction_id,
             "source": prediction.get("source"),
@@ -206,6 +215,7 @@ def _prediction_backtest_results(
             },
             "observed_delta": observed_delta,
             "verdict": verdict,
+            "downgrade_reason": downgrade_reason,
             "confidence_before": confidence_before,
             "confidence_after": _confidence_after(confidence_before, verdict),
             "explanation": _prediction_explanation(verdict),
@@ -263,6 +273,12 @@ def _prediction_verdict(expected_signal: dict[str, Any], observed_delta: float |
             return "met" if abs(observed_delta) <= tolerance else "not_met"
         return "met" if observed_delta == 0 else "not_met"
     return "inconclusive"
+
+
+def _prediction_downgrade_reason(prediction: dict[str, Any], confidence_before: str) -> str | None:
+    if confidence_before == "low" or prediction.get("confounders"):
+        return "low_confidence_or_confounders"
+    return None
 
 
 def _confidence_after(confidence_before: str, verdict: str) -> str:
