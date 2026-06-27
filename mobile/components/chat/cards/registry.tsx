@@ -24,6 +24,7 @@ import { RecordCardSpec } from './RecordCard';
 import { DietCardSpec } from './DietCard';
 import { WorkoutCardSpec } from './WorkoutCard';
 import { MedicalReportCardSpec } from './MedicalReportCard';
+import { MedicalExamImportResultCardSpec } from './MedicalExamImportResultCard';
 import { MenuShareCardSpec } from './MenuShareCard';
 import { SystemKnowledgeEvidenceCardSpec } from './SystemKnowledgeEvidenceCard';
 
@@ -36,6 +37,7 @@ export const CARD_REGISTRY: CardSpec[] = [
   SupplementCardSpec,
   DietCardSpec,
   WorkoutCardSpec,
+  MedicalExamImportResultCardSpec,
   MedicalReportCardSpec,
   SystemKnowledgeEvidenceCardSpec,
   MenuShareCardSpec,   // 不本地匹配, 仅接受后端下发

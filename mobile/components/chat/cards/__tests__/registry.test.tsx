@@ -88,6 +88,19 @@ describe('renderCard 安全降级', () => {
     expect(r).not.toBeNull();
   });
 
+  it('renders medical exam import result cards from runtime skills', () => {
+    const r = renderCard({
+      type: 'medical_exam_import_result',
+      data: {
+        exam_id: 42,
+        items_count: 28,
+        abnormal_count: 3,
+        source: 'pdf',
+        review_required: true,
+      },
+    });
+    expect(r).not.toBeNull();
+  });
   it('cards_group 1 张子卡 → 直接渲染, 不包 grid', () => {
     const r = renderCard({
       type: 'cards_group',
