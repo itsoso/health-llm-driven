@@ -18,7 +18,7 @@ from app.agents.safety_guardian.engine import (
     evaluate_rules_with_status,
     make_fail_safe_advisory,
 )
-from app.agents.safety_guardian.schema import Alert
+from app.agents.safety_guardian.schema import Alert, Severity
 from app.api.deps import get_current_user_required
 from app.database import get_db
 from app.models.symptom_entry import SymptomEntry
