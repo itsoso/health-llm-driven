@@ -16,7 +16,7 @@ export default function RevaTryEntryCard() {
   const router = useRouter();
   const onPress = () => {
     Haptics.selectionAsync().catch(() => {});
-    router.push('/reva' as any);
+    router.push('/reva-onboarding?mode=demo' as any);
   };
   return (
     <Pressable

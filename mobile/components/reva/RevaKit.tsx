@@ -122,7 +122,7 @@ export function TopBar({ title, sub, mark = true, right, dark }: { title: string
         {mark ? <RevaMark /> : null}
         <View style={{ flex: 1 }}>
           {sub ? <Text style={{ fontSize: 12, fontWeight: '600', color: dark ? C.focusInk2 : C.ink3 }}>{sub}</Text> : null}
-          <Text style={{ fontSize: 21, fontWeight: '800', letterSpacing: -0.4, color: dark ? C.focusInk1 : C.ink1 }} numberOfLines={1}>{title}</Text>
+          <Text style={{ fontSize: 21, fontWeight: '800', letterSpacing: 0, color: dark ? C.focusInk1 : C.ink1 }} numberOfLines={1}>{title}</Text>
         </View>
       </View>
       {right}

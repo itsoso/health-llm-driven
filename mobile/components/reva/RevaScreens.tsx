@@ -235,7 +235,7 @@ export function RiskDetailView({ onBack, onAgent }: { onBack: () => void; onAgen
         <Button variant="secondary" size="sm" icon="chevron-left" onPress={onBack}> </Button>
         <View>
           <Text style={{ fontSize: 12, fontWeight: '600', color: C.ink3 }}>心代谢风险</Text>
-          <Text style={{ fontSize: 18, fontWeight: '800', color: C.ink1, letterSpacing: -0.2 }}>低密度脂蛋白 LDL-C</Text>
+          <Text style={{ fontSize: 18, fontWeight: '800', color: C.ink1, letterSpacing: 0 }}>低密度脂蛋白 LDL-C</Text>
         </View>
       </View>
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32, gap: 20 }}>
@@ -283,14 +283,14 @@ export function OnboardingView({ onDone }: { onDone: () => void }) {
           <>
             <RevaMark size={64} />
             <View>
-              <Text style={{ fontWeight: '800', fontSize: 34, lineHeight: 40, letterSpacing: -0.6, color: C.ink1 }}>体检之后，{'\n'}主动健康的 90 天。</Text>
+              <Text style={{ fontWeight: '800', fontSize: 34, lineHeight: 40, letterSpacing: 0, color: C.ink1 }}>体检之后，{'\n'}主动健康的 90 天。</Text>
               <Text style={{ fontSize: 16, lineHeight: 26, color: C.ink2, marginTop: 16 }}>复元把你的体检异常项，变成每天可执行的小计划，再用手环和复查数据验证它真的在改善。</Text>
             </View>
           </>
         ) : step === 1 ? (
           <View>
             <Chip status="info">第 1 步</Chip>
-            <Text style={{ fontWeight: '800', fontSize: 26, color: C.ink1, marginTop: 14, marginBottom: 6, letterSpacing: -0.3 }}>导入你的体检报告</Text>
+            <Text style={{ fontWeight: '800', fontSize: 26, color: C.ink1, marginTop: 14, marginBottom: 6, letterSpacing: 0 }}>导入你的体检报告</Text>
             <Text style={{ fontSize: 15, color: C.ink2, lineHeight: 23, marginBottom: 20 }}>复元会自动识别异常项，并按心代谢风险排序。</Text>
             <Card pad={0}>
               <View style={[s.planRow, { alignItems: 'center' }]}>
@@ -304,7 +304,7 @@ export function OnboardingView({ onDone }: { onDone: () => void }) {
         ) : (
           <View>
             <Chip status="info">第 2 步</Chip>
-            <Text style={{ fontWeight: '800', fontSize: 26, color: C.ink1, marginTop: 14, marginBottom: 6, letterSpacing: -0.3 }}>连接你的穿戴设备</Text>
+            <Text style={{ fontWeight: '800', fontSize: 26, color: C.ink1, marginTop: 14, marginBottom: 6, letterSpacing: 0 }}>连接你的穿戴设备</Text>
             <Text style={{ fontSize: 15, color: C.ink2, lineHeight: 23, marginBottom: 20 }}>用真实的心率、睡眠、步数校准计划，并验证改善。</Text>
             <Card pad={0}>
               {([['watch', 'Apple Watch', '已连接 · 实时同步', true], ['activity', '华为运动健康', '点击连接', false], ['gauge', 'Garmin Connect', '点击连接', false]] as const).map(([ic, nm, sub, on], i) => (
@@ -327,6 +327,72 @@ export function OnboardingView({ onDone }: { onDone: () => void }) {
   );
 }
 
+// ── Demo on-ramp (isolated, no writes) ─────────────────────────────────
+export function DemoOnRampView({ onDone }: { onDone: () => void }) {
+  return (
+    <View style={{ flex: 1, backgroundColor: C.paper }}>
+      <ScrollView contentContainerStyle={{ padding: 20, paddingTop: 30, paddingBottom: 28, gap: 16 }}>
+        <View style={{ gap: 14 }}>
+          <RevaMark size={46} />
+          <Chip status="info">示例模式 · 不写入你的 Twin</Chip>
+          <Text style={{ fontWeight: '800', fontSize: 30, lineHeight: 36, letterSpacing: 0, color: C.ink1 }}>
+            5 分钟看见 Reva 怎么工作
+          </Text>
+          <Text style={{ fontSize: 15, lineHeight: 23, color: C.ink2 }}>
+            这是一组隔离示例数据,只用于演示安全边界、证据和今日行动闭环。不会写入数据库、Health Twin 或你的真实记录。
+          </Text>
+        </View>
+
+        <Card>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <Icon name="shield-alert" size={20} color="#D5503A" />
+            <Text style={{ fontWeight: '800', fontSize: 17, color: C.ink1 }}>安全脑拦截</Text>
+            <Chip status="risk">R4 边界</Chip>
+          </View>
+          <Text style={{ fontSize: 14, lineHeight: 21, color: C.ink2 }}>
+            示例: 长期 PPI + 睡眠波动 + 用户询问补剂剂量。Reva 只给非处方化提醒,不生成剂量、不替你改药,并提示必要时咨询医生。
+          </Text>
+        </Card>
+
+        <Card>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <Icon name="list-checks" size={20} color={C.green500} />
+            <Text style={{ fontWeight: '800', fontSize: 17, color: C.ink1 }}>证据卡</Text>
+          </View>
+          {([
+            ['Why now', '午餐后 30 分钟是餐后血糖管理窗口。'],
+            ['实时信号', '昨晚睡眠 6.4 小时,今天适合低冲击活动。'],
+            ['如何验证', '记录步行完成,观察餐后困倦和晚间 HRV。'],
+          ] as const).map(([label, text], index) => (
+            <View key={label} style={[s.demoEvidenceRow, index === 2 && { borderBottomWidth: 0 }]}>
+              <Text style={s.demoEvidenceLabel}>{label}</Text>
+              <Text style={s.demoEvidenceText}>{text}</Text>
+            </View>
+          ))}
+        </Card>
+
+        <Card>
+          <Text style={{ fontFamily: 'IBMPlexMono', fontSize: 11, fontWeight: '600', letterSpacing: 0, color: C.green600 }}>
+            DAILY ARTIFACT
+          </Text>
+          <Text style={{ fontWeight: '800', fontSize: 18, color: C.ink1, marginTop: 6 }}>今日最重要行动</Text>
+          <Text style={{ fontSize: 15, lineHeight: 22, color: C.ink2, marginTop: 8 }}>
+            午饭后步行 10 分钟。穿好鞋,从办公室楼下走一圈。
+          </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+            <Chip status="normal">1 个 top action</Chip>
+            <Chip status="info">3 条证据</Chip>
+            <Chip status="normal">可完成 / 可跳过</Chip>
+          </View>
+        </Card>
+      </ScrollView>
+      <View style={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 22, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line }}>
+        <Button size="lg" full onPress={onDone}>进入复元</Button>
+      </View>
+    </View>
+  );
+}
+
 const s = StyleSheet.create({
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.green50, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: C.green600, fontWeight: '700' },
@@ -335,4 +401,7 @@ const s = StyleSheet.create({
   settingRow: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line },
   planRow: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 16, paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line },
   detailHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, backgroundColor: C.paper },
+  demoEvidenceRow: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, paddingVertical: 10, gap: 3 },
+  demoEvidenceLabel: { fontFamily: 'IBMPlexMono', fontSize: 11, fontWeight: '600', letterSpacing: 0, color: C.green600 },
+  demoEvidenceText: { fontSize: 13.5, lineHeight: 20, color: C.ink2 },
 });
