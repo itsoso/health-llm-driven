@@ -96,6 +96,30 @@ def test_top_action_is_highest_priority_pending(db, auth, monkeypatch):
     assert s["agenda"]["pending"] == 2
 
 
+def test_top_action_preserves_trajectory_context_for_watch(db, auth, monkeypatch):
+    user, _ = auth
+    item = _protocol("累计 35-45 分钟中等强度活动", priority=65, domain="movement")
+    item["trajectory_context"] = {
+        "domain": "metabolic_health",
+        "level": "attention",
+        "state_variable": "waist_cm",
+        "horizon": "upstream_90d",
+        "why": "腰围和血压提示代谢轨迹需要关注。",
+        "confidence": "high",
+        "verification_window_days": 7,
+        "verification_signal": "waist_cm",
+    }
+    item["target_state_variable"] = "waist_cm"
+    item["verification_signal"] = "waist_cm"
+    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([item]))
+
+    s = ws.build_watch_summary(db, user.id)
+
+    assert s["top_action"]["trajectory_context"]["state_variable"] == "waist_cm"
+    assert s["top_action"]["target_state_variable"] == "waist_cm"
+    assert s["top_action"]["verification_signal"] == "waist_cm"
+
+
 def test_training_protocol_can_be_top_action_for_watch_micro_movement(db, auth, monkeypatch):
     """训练类 health_protocol 是 Watch-first 工作日微运动的执行对象。"""
     user, _ = auth

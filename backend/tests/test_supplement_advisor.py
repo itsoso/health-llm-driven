@@ -450,3 +450,31 @@ def test_rec_surfaces_ul_ceiling():
     f = s.run(t, {})
     vd = next(x for x in f.findings if x.get("id") == "vdr_vitamin_d")
     assert vd.get("ul_ceiling") == 4000
+
+
+def test_rec_surfaces_ul_ceiling_from_supplement_ingredient_table(db):
+    """reviewed supplement_ingredients 表优先于模块常量, 但仍走同一 UL 护栏."""
+    from app.models.supplement_ingredient import SupplementIngredient
+
+    db.add(SupplementIngredient(
+        ingredient_id="test-vitamin-d3",
+        canonical_name="维生素 D3",
+        aliases=["维生素D3", "Vitamin D3"],
+        ul_amount=3500,
+        ul_unit="IU/day",
+        source="test-reviewed",
+        source_ref="test-case",
+        is_active=True,
+    ))
+    db.commit()
+
+    s = SupplementAdvisorSpecialist()
+    t = _twin_with_genes([
+        {"gene_name": "VDR", "genotype": "TT", "result_label": "reduced"},
+    ])
+    f = s.run(t, {"db": db})
+
+    vd = next(x for x in f.findings if x.get("id") == "vdr_vitamin_d")
+    assert vd.get("ul_ceiling") == 3500
+    assert vd.get("ul_unit") == "IU/day"
+    assert "3500" in vd.get("warning", "")

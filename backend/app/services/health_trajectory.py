@@ -15,6 +15,7 @@ from app.models.genetic_data import GeneticProfile, GeneticVariant
 from app.models.user import User
 from app.services.daily_operating_plan import build_daily_operating_plan
 from app.services.epigenetic_report_service import list_epigenetic_reports
+from app.services.personal_models.personal_prediction import build_personal_predictions
 from app.twin import build_twin
 
 
@@ -40,6 +41,20 @@ def _evidence_contract(evidence_tier: str, confidence: str, claim_boundary: str 
         "evidence_tier": evidence_tier,
         "confidence": confidence,
         "claim_boundary": claim_boundary,
+    }
+
+
+def _uncertainty_contract(level: str, drivers: List[str]) -> Dict[str, Any]:
+    return {
+        "level": level,
+        "drivers": sorted(set(drivers)),
+    }
+
+
+def _verification_window(days: int, signal: str) -> Dict[str, Any]:
+    return {
+        "days": days,
+        "signal": signal,
     }
 
 
@@ -194,13 +209,37 @@ def _metabolic_risk(twin, genetic: Dict[str, Any]) -> Dict[str, Any]:
     level = "high" if high else "attention" if signals else "unknown"
     evidence_tier = "clinical_guideline" if clinical_signals else "genetic_association" if signals else "clinical_guideline"
     confidence = "high" if clinical_signals else "low"
+    if "waist_central_obesity" in signals or "bmi_overweight" in signals:
+        state_variable = "waist_cm"
+    elif "bp_elevated" in signals:
+        state_variable = "blood_pressure"
+    elif any(s in signals for s in {"hba1c_elevated", "triglycerides_elevated", "ldl_elevated"}):
+        state_variable = "metabolic_labs"
+    else:
+        state_variable = "metabolic_health_anchor"
+    uncertainty_drivers = []
+    if not clinical_signals:
+        uncertainty_drivers.append("clinical_anchor_missing_or_sparse")
+    if "genetic_disease_risk" in signals:
+        uncertainty_drivers.append("genetic_association_not_deterministic")
+    if labs.last_exam_date is None:
+        uncertainty_drivers.append("lab_recency_unknown")
+    if not uncertainty_drivers:
+        uncertainty_drivers.append("short_window_observation")
     return {
         "domain": "metabolic_health",
         "level": level,
+        "state_variable": state_variable,
+        "horizon": "upstream_90d",
         "title": "代谢健康轨迹需要关注" if level != "unknown" else "代谢轨迹数据不足",
         "why": "腰围、血压、BMI、血糖血脂或基因信号提示代谢风险轨迹正在形成。" if signals else "缺少足够临床锚点判断代谢轨迹。",
         "signals": sorted(set(signals)),
         "primary_action": "围绕腰围、蛋白、每周 150 分钟中等强度活动和睡眠节律执行 7 天计划。",
+        "modifiable_levers": ["movement", "nutrition", "diet", "sleep", "measurement"],
+        "uncertainty": _uncertainty_contract("medium" if clinical_signals else "high", uncertainty_drivers),
+        "verification_window": _verification_window(7, state_variable),
+        "verification_window_days": 7,
+        "verification_signal": state_variable,
         **_evidence_contract(evidence_tier, confidence),
     }
 
@@ -226,13 +265,37 @@ def _recovery_risk(twin, genetic: Dict[str, Any]) -> Dict[str, Any]:
 
     evidence_tier = "wearable_proxy" if wearable_signals or not signals else "genetic_association"
     confidence = "medium" if wearable_signals else "low"
+    if "training_readiness_low" in signals:
+        state_variable = "training_readiness_score"
+    elif "sleep_score_low" in signals:
+        state_variable = "sleep_score"
+    elif "sleep_duration_low" in signals:
+        state_variable = "sleep_duration_h"
+    elif "hrv_low" in signals:
+        state_variable = "hrv_status"
+    else:
+        state_variable = "recovery_capacity_anchor"
+    uncertainty_drivers = []
+    if wearable_signals:
+        uncertainty_drivers.append("wearable_proxy_signal")
+    if any(signal.startswith("genetic_") for signal in signals):
+        uncertainty_drivers.append("genetic_association_not_deterministic")
+    if not signals:
+        uncertainty_drivers.append("wearable_state_missing")
     return {
         "domain": "recovery_capacity",
         "level": "attention" if signals else "unknown",
+        "state_variable": state_variable,
+        "horizon": "upstream_14d",
         "title": "恢复能力轨迹需要减载" if signals else "恢复轨迹数据不足",
         "why": "睡眠、HRV、训练准备度或恢复相关基因提示今天应优先稳恢复。" if signals else "缺少睡眠/HRV/训练准备度数据。",
         "signals": sorted(set(signals)),
         "primary_action": "今天避免堆高强度, 用 Zone 2、提前晚餐和固定睡眠窗口恢复。",
+        "modifiable_levers": ["sleep", "movement", "training", "recovery", "nutrition"],
+        "uncertainty": _uncertainty_contract("medium" if wearable_signals else "high", uncertainty_drivers),
+        "verification_window": _verification_window(7, state_variable),
+        "verification_window_days": 7,
+        "verification_signal": state_variable,
         **_evidence_contract(
             evidence_tier,
             confidence,
@@ -246,10 +309,17 @@ def _aging_risk(epigenetic: Dict[str, Any], twin) -> Dict[str, Any]:
         return {
             "domain": "aging_pace",
             "level": "unknown",
+            "state_variable": "methylation_report",
+            "horizon": "upstream_90d",
             "title": "衰老速度缺长期反馈",
             "why": "当前没有甲基化报告, 只能用体检、恢复和行为数据做间接追踪。",
             "signals": ["methylation_missing"],
             "primary_action": "先用 8-12 周代谢和恢复闭环建立基线, 再接入甲基化长期反馈。",
+            "modifiable_levers": ["movement", "nutrition", "sleep", "measurement"],
+            "uncertainty": _uncertainty_contract("high", ["methylation_report_missing", "uses_indirect_proxy_metrics"]),
+            "verification_window": _verification_window(84, "methylation_report"),
+            "verification_window_days": 84,
+            "verification_signal": "methylation_report",
             **_evidence_contract(
                 "experimental",
                 "low",
@@ -258,13 +328,27 @@ def _aging_risk(epigenetic: Dict[str, Any], twin) -> Dict[str, Any]:
         }
     signals = _epigenetic_present_signals(epigenetic)
     elevated = any(signal in signals for signal in {"epigenetic_pace_elevated", "biological_age_delta_elevated"})
+    state_variable = (
+        "pace_of_aging"
+        if "epigenetic_pace_elevated" in signals
+        else "biological_age_delta_years"
+        if "biological_age_delta_elevated" in signals
+        else "methylation_report"
+    )
     return {
         "domain": "aging_pace",
         "level": "attention" if elevated else "ok",
+        "state_variable": state_variable,
+        "horizon": "upstream_90d",
         "title": "衰老速度长期反馈需要关注" if elevated else "衰老速度有长期反馈",
         "why": "甲基化报告提示长期代理指标偏高, 只能用于复测节奏和生活方式优先级排序。" if elevated else "甲基化报告已接入, 可作为长期趋势代理指标。",
         "signals": signals,
         "primary_action": "用 8-12 周代谢、睡眠和运动闭环后复测趋势, 不把短期变化当作确定性抗衰成效。",
+        "modifiable_levers": ["movement", "nutrition", "sleep", "measurement"],
+        "uncertainty": _uncertainty_contract("high", ["experimental_proxy_metric", "long_retest_window_required"]),
+        "verification_window": _verification_window(84, state_variable),
+        "verification_window_days": 84,
+        "verification_signal": state_variable,
         **_evidence_contract(
             "experimental",
             "low",
@@ -282,13 +366,60 @@ def _trajectory_risks(twin, genetic: Dict[str, Any], epigenetic: Dict[str, Any])
     return sorted(risks, key=lambda r: (_level_rank(r["level"]), FOCUS_DOMAINS.index(r["domain"])))
 
 
+def _prediction_context(prediction: Dict[str, Any]) -> Dict[str, Any]:
+    keys = (
+        "id",
+        "prediction_type",
+        "metric",
+        "domain",
+        "horizon_days",
+        "expected_signal",
+        "confidence",
+        "uncertainty",
+        "evidence_tier",
+        "claim_boundary",
+        "model_version",
+    )
+    return {key: prediction[key] for key in keys if key in prediction}
+
+
+def _enrich_risks_with_predictions(
+    risks: List[Dict[str, Any]],
+    predictions: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    active_predictions = [
+        prediction
+        for prediction in predictions
+        if prediction.get("confidence") != "low"
+    ]
+    enriched: List[Dict[str, Any]] = []
+    for risk in risks:
+        out = dict(risk)
+        match = next(
+            (
+                prediction
+                for prediction in active_predictions
+                if prediction.get("domain") == risk.get("domain")
+            ),
+            None,
+        )
+        if match:
+            out["personal_prediction_context"] = _prediction_context(match)
+        enriched.append(out)
+    return enriched
+
+
 def build_health_trajectory_snapshot(db: Session, user_id: int) -> Dict[str, Any]:
     """构建当前用户疾病上游健康轨迹快照."""
     twin = build_twin(db, user_id, use_cache=False)
     daily_plan = build_daily_operating_plan(db, user_id)
     genetic = _genetic_baseline(db, user_id)
     epigenetic = _epigenetic_feedback(db, user_id)
-    risks = _trajectory_risks(twin, genetic, epigenetic)
+    predictions = build_personal_predictions(db, user_id)
+    risks = _enrich_risks_with_predictions(
+        _trajectory_risks(twin, genetic, epigenetic),
+        predictions,
+    )
 
     return {
         "user_id": user_id,
@@ -320,6 +451,7 @@ def build_health_trajectory_snapshot(db: Session, user_id: int) -> Dict[str, Any
             "vo2max_running": twin.physiological.vo2max_running,
             "data_sources": twin.meta.data_sources,
         },
+        "personal_predictions": predictions,
         "modifiable_levers": {
             "nutrition": {
                 "calories_today": twin.behavioral.diet_calories_today,

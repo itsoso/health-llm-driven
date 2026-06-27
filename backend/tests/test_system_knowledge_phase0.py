@@ -435,7 +435,7 @@ def test_search_knowledge_returns_lexical_and_graph_context(client, db, auth_use
     assert {"lexical", "fts"} <= set(payload["retrieval_plan"]["channels"])
     assert payload["retrieval_plan"]["lexical_backend"] == "python_bm25_v1"
     assert payload["retrieval_plan"]["fts_backend"] == "sqlite_precomputed_text"
-    assert payload["retrieval_plan"]["vector_backend"] == "alias_overlap_v1"
+    assert payload["retrieval_plan"]["vector_backend"] == "sparse_term_cosine_v1"
     assert payload["retrieval_plan"]["rrf_backend"] == "python_rrf_v1"
     assert {"lexical", "fts"} <= set(payload["results"][0]["retrieval"]["channels"])
     assert payload["results"][0]["retrieval"]["lexical_score"] > 0
@@ -537,6 +537,55 @@ def test_search_knowledge_excludes_non_reviewed_documents_and_graph_context(
 def test_search_knowledge_uses_semantic_alias_channel(client, db, auth_user_and_headers):
     _user, headers = auth_user_and_headers
     _seed_phase0_knowledge(db)
+    db.add(
+        KBDocument(
+            doc_id="claim:c_unreviewed_graph_neighbor",
+            doc_type="claim",
+            title="Unreviewed Graph Neighbor",
+            summary="MTHFR 草稿邻居不应出现在搜索结果或 graph_context。",
+            confidence=0.95,
+            evidence_level="B",
+            metadata_json={"review_status": "draft"},
+        )
+    )
+    db.flush()
+    db.add(
+        KBEdge(
+            src_doc_id="entity:gene:MTHFR",
+            dst_doc_id="claim:c_unreviewed_graph_neighbor",
+            relation="has_claim",
+            confidence=0.8,
+            source_claim_id="claim:c_unreviewed_graph_neighbor",
+        )
+    )
+    db.commit()
+
+    response = client.get(
+        "/api/v1/knowledge/search",
+        headers=headers,
+        params={"q": "MTHFR", "limit": 10},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    result_ids = {item["document"]["doc_id"] for item in payload["results"]}
+    neighbor_ids = {item["doc_id"] for item in payload["graph_context"]["neighbors"]}
+    edge_doc_ids = {
+        edge_doc_id
+        for edge in payload["graph_context"]["edges"]
+        for edge_doc_id in (edge["src_doc_id"], edge["dst_doc_id"])
+    }
+    assert "claim:c_unreviewed_graph_neighbor" not in result_ids
+    assert "claim:c_unreviewed_graph_neighbor" not in neighbor_ids
+    assert "claim:c_unreviewed_graph_neighbor" not in edge_doc_ids
+
+
+def test_search_knowledge_uses_sparse_vector_channel(client, db, auth_user_and_headers):
+    _user, headers = auth_user_and_headers
+    _seed_phase0_knowledge(db)
+    from app.services.system_knowledge_service import reindex_knowledge_documents
+
+    reindex_knowledge_documents(db, actor="test")
 
     response = client.get(
         "/api/v1/knowledge/search",
@@ -553,7 +602,7 @@ def test_search_knowledge_uses_semantic_alias_channel(client, db, auth_user_and_
     )
     assert "vector" in claim_result["retrieval"]["channels"]
     assert claim_result["retrieval"]["vector_score"] > 0
-    assert payload["retrieval_plan"]["vector_backend"] == "alias_overlap_v1"
+    assert payload["retrieval_plan"]["vector_backend"] == "sparse_term_cosine_v1"
 
 
 def test_admin_lint_report_flags_orphans_and_invalid_conditions(client, db, auth_user_and_headers):

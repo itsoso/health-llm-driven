@@ -7,6 +7,7 @@ body text and marks generated content as draft for human review.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import json
@@ -1522,6 +1523,135 @@ def write_reviewed_artifacts(result: IngestResult, output_dir: str | Path) -> di
     return manifest["counts"]
 
 
+def write_draft_artifacts(
+    result: IngestResult,
+    output_dir: str | Path,
+    *,
+    extractor: str,
+    created_at: datetime | None = None,
+    note: str | None = None,
+) -> dict[str, Any]:
+    """Write extracted knowledge as draft-only artifacts for human review."""
+    if not extractor.strip():
+        raise ValueError("extractor is required for draft artifact audit")
+
+    created_at = created_at or datetime.now(tz=UTC)
+    root = Path(output_dir)
+    draft_result = _copy_ingest_result_with_review_status(result, "draft")
+    counts = write_reviewed_artifacts(draft_result, root)
+
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
+    manifest.setdefault("ingest", {})["review_status"] = "draft"
+    manifest["draft_gate"] = {
+        "status": "draft",
+        "extractor": extractor,
+        "created_at": created_at.isoformat(),
+        "requires_review": True,
+        "serving_allowed": False,
+    }
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    draft_manifest: dict[str, Any] = {
+        "artifact_dir": str(root),
+        "status": "draft",
+        "extractor": extractor,
+        "created_at": created_at.isoformat(),
+        "counts": counts,
+        "requires_review": True,
+        "serving_allowed": False,
+    }
+    if note:
+        draft_manifest["note"] = note
+    (root / "draft_manifest.json").write_text(
+        json.dumps(draft_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return draft_manifest
+
+
+def validate_artifact_review_gate(artifact_dir: str | Path) -> dict[str, Any]:
+    """Return whether an artifact directory is eligible for serving import."""
+    root = Path(artifact_dir)
+    documents = _artifact_review_status_counts(root, ARTIFACT_FILES[:-1])
+    relations = _artifact_review_status_counts(root, ("relations.jsonl",))
+    total = documents["total"] + relations["total"]
+
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
+    manifest_status = (manifest.get("review") or {}).get("status") or (manifest.get("ingest") or {}).get(
+        "review_status"
+    )
+
+    blocking_reasons: list[str] = []
+    if total == 0:
+        blocking_reasons.append("empty_artifact_dir")
+    if documents["draft"] or relations["draft"]:
+        blocking_reasons.append("draft_artifacts_present")
+    if documents["missing"] or relations["missing"] or documents["other"] or relations["other"]:
+        blocking_reasons.append("unreviewed_artifacts_present")
+    if manifest_status != "reviewed":
+        blocking_reasons.append("manifest_not_reviewed")
+
+    serving_allowed = not blocking_reasons
+    return {
+        "artifact_dir": str(root),
+        "serving_allowed": serving_allowed,
+        "requires_review": not serving_allowed,
+        "manifest_status": manifest_status,
+        "documents": documents,
+        "relations": relations,
+        "blocking_reasons": blocking_reasons,
+    }
+
+
+def review_draft_artifacts(
+    artifact_dir: str | Path,
+    *,
+    reviewer: str,
+    reviewed_at: datetime | None = None,
+) -> dict[str, Any]:
+    """Promote draft artifacts after human review and attach gate validation."""
+    reviewer = reviewer.strip()
+    if not reviewer:
+        raise ValueError("reviewer is required to promote draft artifacts")
+
+    review_manifest = promote_artifact_review_status(
+        artifact_dir,
+        reviewer=reviewer,
+        reviewed_at=reviewed_at,
+        from_status="draft",
+        to_status="reviewed",
+    )
+    validation = validate_artifact_review_gate(artifact_dir)
+    review_manifest["validation"] = validation
+    review_manifest["serving_allowed"] = validation["serving_allowed"]
+
+    root = Path(artifact_dir)
+    (root / "review_manifest.json").write_text(
+        json.dumps(review_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    draft_manifest_path = root / "draft_manifest.json"
+    if draft_manifest_path.exists():
+        draft_manifest = json.loads(draft_manifest_path.read_text(encoding="utf-8"))
+        draft_manifest["status"] = "reviewed" if validation["serving_allowed"] else "review_blocked"
+        draft_manifest["reviewer"] = reviewer
+        draft_manifest["reviewed_at"] = review_manifest["reviewed_at"]
+        draft_manifest["serving_allowed"] = validation["serving_allowed"]
+        draft_manifest["requires_review"] = not validation["serving_allowed"]
+        draft_manifest_path.write_text(
+            json.dumps(draft_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    return review_manifest
+
+
 def promote_artifact_review_status(
     artifact_dir: str | Path,
     *,
@@ -2062,6 +2192,56 @@ def _write_jsonl(path: Path, rows: Any) -> None:
         "".join(json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n" for row in ordered),
         encoding="utf-8",
     )
+
+
+def _copy_ingest_result_with_review_status(result: IngestResult, status: str) -> IngestResult:
+    copied = IngestResult(
+        source_root=result.source_root,
+        base_artifact_dir=result.base_artifact_dir,
+        pages=_rows_with_review_status(result.pages, status),
+        entities=_rows_with_review_status(result.entities, status),
+        claims=_rows_with_review_status(result.claims, status),
+        archived_claims=_rows_with_review_status(result.archived_claims, status),
+        protocols=_rows_with_review_status(result.protocols, status),
+        contraindications=_rows_with_review_status(result.contraindications, status),
+        eval_cases=_rows_with_review_status(result.eval_cases, status),
+        relations=_rows_with_review_status(result.relations, status),
+        diff=deepcopy(result.diff),
+        manifest=deepcopy(result.manifest),
+        source_stats=deepcopy(result.source_stats),
+    )
+    copied.manifest.setdefault("ingest", {})["review_status"] = status
+    return copied
+
+
+def _rows_with_review_status(rows: list[dict[str, Any]], status: str) -> list[dict[str, Any]]:
+    copied = deepcopy(rows)
+    for row in copied:
+        metadata = row.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+            row["metadata"] = metadata
+        metadata["review_status"] = status
+    return copied
+
+
+def _artifact_review_status_counts(root: Path, file_names: tuple[str, ...]) -> dict[str, int]:
+    counts = {"total": 0, "reviewed": 0, "draft": 0, "missing": 0, "other": 0}
+    for file_name in file_names:
+        for row in _read_jsonl(root / file_name):
+            counts["total"] += 1
+            metadata = row.get("metadata")
+            if not isinstance(metadata, dict) or "review_status" not in metadata:
+                counts["missing"] += 1
+                continue
+            review_status = metadata.get("review_status")
+            if review_status == "reviewed":
+                counts["reviewed"] += 1
+            elif review_status == "draft":
+                counts["draft"] += 1
+            else:
+                counts["other"] += 1
+    return counts
 
 
 def _promote_jsonl_file(path: Path, reviewer: str, reviewed_at: str, from_status: str, to_status: str) -> int:

@@ -147,12 +147,18 @@ def confirm(
     )
     db.commit()
     db.refresh(wi)
-    # P5 外部动作(food_order 财务相邻 → audit_required;doctor_booking/alarm_set 也记)。
+    # P5 外部动作(food_order 财务相邻 → audit_required;doctor_booking/alarm_set/
+    # environment_actuation 也记)。
     # 旁路审计:失败不抛、不回滚已确认的写意图(取证写不能反噬主流程)。
-    if wi.kind in ("food_order", "doctor_booking", "alarm_set"):
+    if wi.kind in ("food_order", "doctor_booking", "alarm_set", "environment_actuation"):
         from app.agents import audit
 
-        outcome = "drafted_acknowledged" if ref == "acknowledged" else "reminder_created"
+        if wi.kind == "food_order":
+            outcome = "drafted_acknowledged"
+        elif wi.kind == "environment_actuation":
+            outcome = "actuation_acknowledged"
+        else:
+            outcome = "reminder_created"
         audit.log_external_action_intent(
             db, wi.user_id, intent_id=wi.id, kind=wi.kind, outcome=outcome,
             target_type=wi.target_type, target_id=wi.target_id,
@@ -431,6 +437,27 @@ def _execute(db: Session, wi: WriteIntent) -> str:
         # NotImplementedError —— 本分支根本不调它(财务路径在代码上可证为惰性 inert)。
         # 真实下单待外卖 OpenClaw skill 就绪 + 财务安全评审后,才会逐笔强确认接入。
         return "acknowledged"
+    if wi.kind == "environment_actuation":
+        # P5 external-action:环境/家居设备下行 —— **ACK + event only**。
+        # 财务/硬件边界:确认后只写 BedroomAutomationEvent(source=reva),作为「用户确认过
+        # 这个受白名单保护的动作」的审计事实;不调用 Home Assistant,不调 webhook,不发任意
+        # service_data。真正 HA 下发需单独接入凭证、设备状态回执和失败补偿。
+        from app.models.bedroom_environment import BedroomAutomationEvent
+
+        p = _normalize_environment_actuation_payload(wi.payload or {})
+        event = BedroomAutomationEvent(
+            user_id=wi.user_id,
+            room_id=p["room_id"],
+            event_type="environment_actuation_confirmed",
+            reason=p.get("reason") or wi.description,
+            command_entity_id=p["command_entity_id"],
+            command_mode=p["command_mode"],
+            source="reva",
+            manual_override=False,
+        )
+        db.add(event)
+        db.flush()
+        return f"bedroom_automation_event:{event.id}"
     raise ValueError(f"unknown write_intent kind: {wi.kind}")
 
 
@@ -702,7 +729,12 @@ def generate_adherence_nudge(db: Session, user_id: int) -> int:
 # ─────────────────── P5 external-action intents(food_order/doctor_booking/alarm_set)───────────────────
 
 # 外部动作 kind 白名单(propose_external_action 服务端门控,未知 kind → ValueError,端点 422)。
-_EXTERNAL_ACTION_KINDS = frozenset({"alarm_set", "food_order", "doctor_booking"})
+_EXTERNAL_ACTION_KINDS = frozenset({
+    "alarm_set",
+    "food_order",
+    "doctor_booking",
+    "environment_actuation",
+})
 
 # L4 硬门:支付凭据类 key 绝不进 WriteIntent.payload(后端永不存支付凭据)。
 # 这是代码级护栏(非仅约定):任一 payload key 命中 → 落库前 ValueError(端点 422,fail-loud)。
@@ -734,6 +766,84 @@ def _reject_payment_keys(value: Any) -> None:
     elif isinstance(value, (list, tuple)):
         for item in value:
             _reject_payment_keys(item)
+
+
+_ENVIRONMENT_ACTUATION_ALLOWED_KEYS = frozenset({
+    "room_id",
+    "reason",
+    "command_entity_id",
+    "entity_id",
+    "command_mode",
+    "mode",
+    "source_snapshot_id",
+    "user_visible_summary",
+    "execution_policy",
+})
+
+_ENVIRONMENT_ACTUATION_ALLOWLIST = {
+    # P5 scaffold:只允许低风险睡眠环境动作,且只是 confirm 后写 ACK/event。
+    # 不接受 Home Assistant service/service_data,避免把本意图变成任意设备执行器。
+    "fan.bedroom_fresh_air": {
+        "room_id": "bedroom",
+        "modes": frozenset({"boost", "low", "off"}),
+    },
+    "humidifier.bedroom": {
+        "room_id": "bedroom",
+        "modes": frozenset({"on", "off", "sleep"}),
+    },
+    "climate.bedroom_ac": {
+        "room_id": "bedroom",
+        "modes": frozenset({"sleep_cool", "sleep_heat", "off"}),
+    },
+    "light.bedroom": {
+        "room_id": "bedroom",
+        "modes": frozenset({"dim", "off"}),
+    },
+}
+
+
+def _normalize_environment_actuation_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """环境设备意图 payload 归一化 + 服务端白名单。
+
+    这是执行边界,不是 UI 校验:只接受 {entity, mode, room, reason...} 这类描述性字段,
+    不接受 HA service/service_data/webhook/token 等任意下发材料。确认后也只 ACK/event。
+    """
+    unknown_keys = set(payload.keys()) - _ENVIRONMENT_ACTUATION_ALLOWED_KEYS
+    if unknown_keys:
+        key = sorted(unknown_keys)[0]
+        raise ValueError(f"unsupported environment-actuation payload key: {key}")
+
+    entity_id = payload.get("command_entity_id") or payload.get("entity_id")
+    command_mode = payload.get("command_mode") or payload.get("mode")
+    if not entity_id:
+        raise ValueError("environment-actuation command_entity_id required")
+    if not command_mode:
+        raise ValueError("environment-actuation command_mode required")
+
+    entity_id = str(entity_id).strip()
+    command_mode = str(command_mode).strip()
+    spec = _ENVIRONMENT_ACTUATION_ALLOWLIST.get(entity_id)
+    if spec is None:
+        raise ValueError(f"environment-actuation entity not allowlisted: {entity_id}")
+    if command_mode not in spec["modes"]:
+        raise ValueError(
+            f"environment-actuation mode not allowlisted: {entity_id}/{command_mode}"
+        )
+
+    room_id = str(payload.get("room_id") or spec["room_id"]).strip()
+    if room_id != spec["room_id"]:
+        raise ValueError(f"environment-actuation room mismatch: {entity_id}/{room_id}")
+
+    normalized = {
+        "room_id": room_id,
+        "command_entity_id": entity_id,
+        "command_mode": command_mode,
+        "execution_policy": "manual_confirm_ack_only",
+    }
+    for key in ("reason", "source_snapshot_id", "user_visible_summary"):
+        if payload.get(key) is not None:
+            normalized[key] = payload[key]
+    return normalized
 
 
 def propose_external_action(
@@ -772,6 +882,8 @@ def propose_external_action(
             safe_payload["user_visible_summary"] = res.text
             if res.flagged:
                 safe_payload["guidance_violations"] = res.violations
+    elif kind == "environment_actuation":
+        safe_payload = _normalize_environment_actuation_payload(safe_payload)
 
     return propose(
         db,

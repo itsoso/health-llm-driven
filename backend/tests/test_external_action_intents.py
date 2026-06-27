@@ -12,6 +12,7 @@ from datetime import date, timedelta
 import pytest
 
 from app.models.family_health import ReviewSchedule
+from app.models.bedroom_environment import BedroomAutomationEvent
 from app.models.smart_reminder import SmartReminder
 from app.models.user import User
 from app.models.write_intent import WriteIntent
@@ -236,6 +237,75 @@ def test_food_order_gateway_has_no_payment_param():
         assert not any(pk in p for p in params), f"payment-ish param in gateway: {pk}"
 
 
+# ═══════════════════════ 3b. environment_actuation(ACK + event only)═══════════════════════
+
+def test_environment_actuation_propose_confirm_records_event_without_dispatch(db):
+    """环境设备下行只落 manual_confirm 意图;确认后只记事件 ACK,不直接调 HA/硬件。"""
+    u = _mk_user(db)
+    wi = svc.propose_external_action(
+        db,
+        u.id,
+        kind="environment_actuation",
+        title="卧室新风增强",
+        description="CO2 偏高时建议增强新风",
+        payload={
+            "room_id": "bedroom",
+            "command_entity_id": "fan.bedroom_fresh_air",
+            "command_mode": "boost",
+            "reason": "CO2 1280ppm 持续 10 分钟",
+        },
+    )
+    assert wi is not None
+    assert wi.trust_tier == "manual_confirm"
+    assert wi.status == "pending"
+
+    res = svc.confirm(db, u.id, wi.id)
+    assert res["status"] == "executed"
+    assert res["executed_ref"].startswith("bedroom_automation_event:")
+    assert db.query(SmartReminder).filter(SmartReminder.user_id == u.id).count() == 0
+
+    event = (
+        db.query(BedroomAutomationEvent)
+        .filter(BedroomAutomationEvent.user_id == u.id)
+        .one()
+    )
+    assert event.source == "reva"
+    assert event.event_type == "environment_actuation_confirmed"
+    assert event.command_entity_id == "fan.bedroom_fresh_air"
+    assert event.command_mode == "boost"
+
+
+def test_environment_actuation_rejects_unallowlisted_entity_or_mode(db):
+    u = _mk_user(db)
+    with pytest.raises(ValueError):
+        svc.propose_external_action(
+            db,
+            u.id,
+            kind="environment_actuation",
+            title="未知设备",
+            payload={
+                "command_entity_id": "switch.random_device",
+                "command_mode": "on",
+            },
+        )
+    with pytest.raises(ValueError):
+        svc.propose_external_action(
+            db,
+            u.id,
+            kind="environment_actuation",
+            title="任意服务调用",
+            payload={
+                "command_entity_id": "fan.bedroom_fresh_air",
+                "command_mode": "turn_on",
+                "service": "homeassistant.turn_on",
+            },
+        )
+    assert [
+        it for it in svc.list_pending(db, u.id)
+        if it["kind"] == "environment_actuation"
+    ] == []
+
+
 # ═══════════════════════ 4. R4 guard(red-green)═══════════════════════
 
 def test_food_order_summary_strips_quantified_diet_prescription(db):
@@ -275,11 +345,21 @@ def test_food_order_observational_summary_untouched(db):
 
 def test_all_external_kinds_are_manual_confirm(db):
     u = _mk_user(db)
-    for kind in ("alarm_set", "food_order", "doctor_booking"):
+    for kind in ("alarm_set", "food_order", "doctor_booking", "environment_actuation"):
+        payload = (
+            {"alarm_time": "2026-06-23T07:00:00"}
+            if kind == "alarm_set"
+            else {
+                "command_entity_id": "fan.bedroom_fresh_air",
+                "command_mode": "boost",
+            }
+            if kind == "environment_actuation"
+            else {}
+        )
         wi = svc.propose_external_action(
             db, u.id, kind=kind, title=f"{kind} t",
             target_type="x", target_id=hash(kind) % 1000,
-            payload={"alarm_time": "2026-06-23T07:00:00"} if kind == "alarm_set" else {},
+            payload=payload,
         )
         assert wi is not None and wi.trust_tier == "manual_confirm"
         assert wi.status == "pending"  # 提议态,不自治执行
@@ -330,7 +410,7 @@ def test_external_action_failed_execute_rolls_back(db):
 def test_external_action_kinds_are_p1_never_p0():
     from app.tasks.event_reminders import _KIND_TIER
 
-    for kind in ("alarm_set", "food_order", "doctor_booking"):
+    for kind in ("alarm_set", "food_order", "doctor_booking", "environment_actuation"):
         assert _KIND_TIER[kind] == "P1"
         assert _KIND_TIER[kind] != "P0"
 
@@ -383,6 +463,24 @@ def test_api_propose_food_order_payment_key_returns_422(client, db):
     r = client.post(
         "/api/v1/write-intents",
         json={"kind": "food_order", "title": "外卖", "payload": {"payment_token": "leak"}},
+        headers=h,
+    )
+    assert r.status_code == 422
+
+
+def test_api_propose_environment_actuation_rejects_unknown_payload(client, db):
+    h = _http_headers(db)
+    r = client.post(
+        "/api/v1/write-intents",
+        json={
+            "kind": "environment_actuation",
+            "title": "任意 HA 调用",
+            "payload": {
+                "command_entity_id": "fan.bedroom_fresh_air",
+                "command_mode": "boost",
+                "service_data": {"entity_id": "fan.bedroom_fresh_air"},
+            },
+        },
         headers=h,
     )
     assert r.status_code == 422

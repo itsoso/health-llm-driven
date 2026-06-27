@@ -3,6 +3,9 @@ import pytest
 from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.models.checkin import CheckinTemplate, DEFAULT_CHECKIN_TEMPLATES
+from app.models.daily_operating_plan import DailyOperatingPlan
+from app.models.health_problem import HealthProblem
+from app.models.health_program import HealthProgram
 from app.services.auth import auth_service
 
 
@@ -247,6 +250,43 @@ class TestComplete:
         )
         db.refresh(user)
         assert user.onboarding_completed is True
+
+    def test_complete_bootstraps_initial_health_loop(self, client, db):
+        """完成引导后生成初始 HealthProblem / HealthProgram / DailyOperatingPlan。"""
+        user, token = _create_user(db)
+        client.post(
+            "/api/v1/onboarding/step5",
+            json={"primary_goal": "sleep"},
+            headers=_auth_header(token),
+        )
+
+        res = client.post(
+            "/api/v1/onboarding/complete",
+            json={"init_default_templates": False},
+            headers=_auth_header(token),
+        )
+
+        assert res.status_code == 200
+        bootstrap = res.json()["health_loop_bootstrap"]
+        assert bootstrap["problem"]["name"] == "睡眠与恢复目标"
+        assert bootstrap["program"]["program_type"] == "sleep"
+        assert bootstrap["daily_plan"]["created"] is True
+        assert bootstrap["claim_boundary"] == "初始闭环来自用户目标和已有数据,不构成诊断或治疗建议。"
+
+        assert db.query(HealthProblem).filter_by(user_id=user.id).count() == 1
+        assert db.query(HealthProgram).filter_by(user_id=user.id).count() == 1
+        assert db.query(DailyOperatingPlan).filter_by(user_id=user.id).count() == 1
+
+        second = client.post(
+            "/api/v1/onboarding/complete",
+            json={"init_default_templates": False},
+            headers=_auth_header(token),
+        ).json()["health_loop_bootstrap"]
+
+        assert second["problem"]["created"] is False
+        assert second["program"]["created"] is False
+        assert db.query(HealthProblem).filter_by(user_id=user.id).count() == 1
+        assert db.query(HealthProgram).filter_by(user_id=user.id).count() == 1
 
 
 class TestSkip:

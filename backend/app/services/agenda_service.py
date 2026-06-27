@@ -19,6 +19,7 @@ from app.services import health_protocol_service as proto_svc
 from app.services import health_problem_service as prob_svc
 from app.services import agenda_contract
 from app.services.daily_operating_plan import build_daily_operating_plan
+from app.services.health_trajectory import build_health_trajectory_snapshot
 from app.utils.timezone import get_china_today, get_user_today
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,29 @@ logger = logging.getLogger(__name__)
 # 时间窗排序(投影展示顺序)
 _TW_ORDER = {"morning": 0, "noon": 1, "afternoon": 2, "evening": 3, "bedtime": 4, "anytime": 5}
 _TERMINAL_STATUSES = agenda_contract.TERMINAL_ITEM_STATUSES
+_ACTIVE_TRAJECTORY_LEVELS = frozenset({"high", "attention"})
+_TRAJECTORY_ACTION_DOMAIN_MAP = {
+    "metabolic_health": frozenset({"movement", "exercise", "training", "activity", "nutrition", "diet", "hydration"}),
+    "recovery_capacity": frozenset({"sleep", "movement", "exercise", "training", "recovery", "nutrition"}),
+    "aging_pace": frozenset({"movement", "exercise", "training", "nutrition", "diet", "sleep", "measurement"}),
+}
+_TRAJECTORY_CONTEXT_KEYS = (
+    "domain",
+    "level",
+    "state_variable",
+    "horizon",
+    "why",
+    "signals",
+    "primary_action",
+    "modifiable_levers",
+    "uncertainty",
+    "evidence_tier",
+    "confidence",
+    "claim_boundary",
+    "verification_window",
+    "verification_window_days",
+    "verification_signal",
+)
 
 
 def _agenda_item(**kw) -> Dict[str, Any]:
@@ -472,6 +496,92 @@ def _when_bucket(when: str | None) -> str:
     return mapping.get(str(when or "").strip().lower(), "anytime")
 
 
+def _trajectory_sort_key(risk: Dict[str, Any]) -> tuple[int, int]:
+    level_order = {"high": 0, "attention": 1}.get(str(risk.get("level") or ""), 9)
+    confidence_order = {"high": 0, "medium": 1, "low": 2}.get(str(risk.get("confidence") or ""), 3)
+    return level_order, confidence_order
+
+
+def _active_trajectory_risks(db: Session, user_id: int) -> List[Dict[str, Any]]:
+    """Return trajectory risks eligible for top-action ranking.
+
+    Low-confidence trajectory risks remain useful data gaps/watchlist material, but
+    should not make an action look urgent in the Agenda.
+    """
+    try:
+        snapshot = build_health_trajectory_snapshot(db, user_id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("agenda: HealthTrajectory 快照生成失败, smart agenda 跳过轨迹排序: %s", e)
+        return []
+
+    risks = snapshot.get("trajectory_risks") if isinstance(snapshot, dict) else []
+    active: List[Dict[str, Any]] = []
+    for risk in risks or []:
+        if not isinstance(risk, dict):
+            continue
+        if risk.get("level") not in _ACTIVE_TRAJECTORY_LEVELS:
+            continue
+        if risk.get("confidence") == "low":
+            continue
+        active.append(risk)
+    active.sort(key=_trajectory_sort_key)
+    return active
+
+
+def _project_trajectory_context(risk: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        key: risk[key]
+        for key in _TRAJECTORY_CONTEXT_KEYS
+        if key in risk and risk[key] is not None
+    }
+
+
+def _verification_metrics(item: Dict[str, Any]) -> set[str]:
+    metrics: set[str] = set()
+    verification = item.get("verification")
+    if isinstance(verification, dict):
+        raw_metrics = verification.get("metrics")
+        if isinstance(raw_metrics, list):
+            metrics.update(str(metric) for metric in raw_metrics if metric)
+    if item.get("metric_key"):
+        metrics.add(str(item["metric_key"]))
+    return metrics
+
+
+def _trajectory_context_for_action(
+    item: Dict[str, Any],
+    trajectory_risks: List[Dict[str, Any]],
+) -> Dict[str, Any] | None:
+    action_domain = str(item.get("domain") or item.get("type") or "").strip().lower()
+    verification_metrics = _verification_metrics(item)
+    for risk in trajectory_risks:
+        risk_domain = str(risk.get("domain") or "").strip()
+        mapped_domains = _TRAJECTORY_ACTION_DOMAIN_MAP.get(risk_domain, frozenset())
+        levers = {str(lever).strip().lower() for lever in risk.get("modifiable_levers") or []}
+        signal = str(risk.get("verification_signal") or risk.get("state_variable") or "")
+        matches_domain = action_domain == risk_domain or action_domain in mapped_domains or action_domain in levers
+        matches_metric = bool(signal and signal in verification_metrics)
+        if matches_domain or matches_metric:
+            return _project_trajectory_context(risk)
+    return None
+
+
+def _attach_trajectory_context(
+    item: Dict[str, Any],
+    trajectory_risks: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    if not trajectory_risks or item.get("trajectory_context"):
+        return item
+    trajectory = _trajectory_context_for_action(item, trajectory_risks)
+    if not trajectory:
+        return item
+    out = dict(item)
+    out["trajectory_context"] = trajectory
+    out["target_state_variable"] = trajectory.get("state_variable")
+    out["verification_signal"] = trajectory.get("verification_signal") or trajectory.get("state_variable")
+    return out
+
+
 def _surface_for(item: Dict[str, Any]) -> Dict[str, Any]:
     return agenda_contract.surface_contract_for_item(item)
 
@@ -498,6 +608,11 @@ def _rank_score(item: Dict[str, Any]) -> int:
         "health_protocol": 5,
         "training_decision": 5,
     }.get(str(source_type or ""), 0)
+    trajectory = item.get("trajectory_context")
+    if isinstance(trajectory, dict) and trajectory:
+        score += {"high": 35, "attention": 24}.get(str(trajectory.get("level") or ""), 0)
+        if trajectory.get("verification_signal") or trajectory.get("state_variable"):
+            score += 4
     return score
 
 
@@ -508,6 +623,13 @@ def _why_now(item: Dict[str, Any]) -> str:
         return f"已逾期，需要优先处理。{detail or ''}".strip()
     if status == "due":
         return f"复查到期，需要安排检查或确认已完成。{detail or ''}".strip()
+    trajectory = item.get("trajectory_context")
+    if isinstance(trajectory, dict) and trajectory.get("why"):
+        action_why = str(item.get("why") or "").strip()
+        trajectory_why = str(trajectory["why"]).strip()
+        if action_why and action_why != trajectory_why:
+            return f"{trajectory_why} {action_why}"
+        return trajectory_why
     if item.get("why"):
         return str(item["why"])
     typ = item.get("type")
@@ -562,7 +684,12 @@ def _replan_policy(item: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
-def _daily_plan_action_items(db: Session, user_id: int) -> tuple[List[Dict[str, Any]], Dict[str, Any] | None]:
+def _daily_plan_action_items(
+    db: Session,
+    user_id: int,
+    *,
+    trajectory_risks: List[Dict[str, Any]] | None = None,
+) -> tuple[List[Dict[str, Any]], Dict[str, Any] | None]:
     try:
         plan = build_daily_operating_plan(db, user_id, plan_date=get_user_today(db, user_id))
     except Exception as e:  # noqa: BLE001
@@ -577,7 +704,7 @@ def _daily_plan_action_items(db: Session, user_id: int) -> tuple[List[Dict[str, 
             continue
         action_key = str(action.get("action_key") or action.get("title") or "unknown")
         domain = action.get("domain") or "daily_plan"
-        items.append(_agenda_item(
+        item = _agenda_item(
             type=domain,
             title=action.get("title") or action_key,
             status="pending",
@@ -594,7 +721,8 @@ def _daily_plan_action_items(db: Session, user_id: int) -> tuple[List[Dict[str, 
             verification=action.get("verification"),
             action_key=action_key,
             source={"object_type": "daily_plan_action", "object_id": action_key},
-        ))
+        )
+        items.append(_attach_trajectory_context(item, trajectory_risks or []))
     return items, plan_verification if isinstance(plan_verification, dict) else None
 
 
@@ -640,6 +768,47 @@ def _to_smart_item(
     score = _rank_score(item)
     status = item.get("status") or "pending"
     status_canonical = agenda_contract.canonical_item_status(status)
+    trajectory = item.get("trajectory_context")
+    if not isinstance(trajectory, dict):
+        trajectory = None
+    target_state_variable = item.get("target_state_variable") or (trajectory or {}).get("state_variable")
+    verification_signal = (
+        item.get("verification_signal")
+        or (trajectory or {}).get("verification_signal")
+        or target_state_variable
+    )
+    verify_by = _verify_by(item, fallback_verification)
+    if trajectory:
+        verify_by = dict(verify_by)
+        metrics = list(verify_by.get("metrics") or [])
+        if verification_signal and verification_signal not in metrics:
+            metrics.append(str(verification_signal))
+            verify_by["metrics"] = metrics
+        verify_by["trajectory"] = {
+            "domain": trajectory.get("domain"),
+            "level": trajectory.get("level"),
+            "state_variable": trajectory.get("state_variable"),
+            "horizon": trajectory.get("horizon"),
+            "uncertainty_level": (trajectory.get("uncertainty") or {}).get("level")
+            if isinstance(trajectory.get("uncertainty"), dict)
+            else None,
+            "verification_signal": trajectory.get("verification_signal"),
+            "verification_window": trajectory.get("verification_window"),
+            "verification_window_days": trajectory.get("verification_window_days"),
+        }
+    rank_reason = {
+        "status": status,
+        "priority": item.get("priority") or 0,
+        "source": (item.get("source") or {}).get("object_type"),
+    }
+    if trajectory:
+        rank_reason["trajectory"] = {
+            "domain": trajectory.get("domain"),
+            "level": trajectory.get("level"),
+            "state_variable": trajectory.get("state_variable"),
+            "confidence": trajectory.get("confidence"),
+        }
+    claim_boundary = item.get("claim_boundary") or (trajectory or {}).get("claim_boundary")
     return {
         "id": _smart_id(item),
         "type": item.get("type"),
@@ -651,15 +820,11 @@ def _to_smart_item(
         "time_window": item.get("time_window") or "anytime",
         "priority": item.get("priority") or 0,
         "rank_score": score,
-        "rank_reason": {
-            "status": status,
-            "priority": item.get("priority") or 0,
-            "source": (item.get("source") or {}).get("object_type"),
-        },
+        "rank_reason": rank_reason,
         "source": item.get("source") or {},
         "why_now": _why_now(item),
         "do_now": _do_now(item),
-        "verify_by": _verify_by(item, fallback_verification),
+        "verify_by": verify_by,
         "replan_policy": _replan_policy(item),
         "surface": _surface_for(item),
         "contract": agenda_contract.contract_metadata_for_item(item),
@@ -672,7 +837,10 @@ def _to_smart_item(
         # 仅作旧后端缺该字段时的兜底。见 mobile/services/rokidVoiceAgenda.ts。
         "voice_actionable": _is_voice_actionable(item),
         "confidence": item.get("confidence"),
-        "claim_boundary": item.get("claim_boundary"),
+        "claim_boundary": claim_boundary,
+        "trajectory_context": trajectory,
+        "target_state_variable": target_state_variable,
+        "verification_signal": verification_signal,
     }
 
 
@@ -684,8 +852,13 @@ def smart_today(
 ) -> Dict[str, Any]:
     """智能今日议程:普通 agenda + Daily Plan 行动 → 可执行、可验证、可重排的 top list。"""
     base = today(db, user_id, followup_within_days=followup_within_days)
-    base_items = list(base.get("items") or [])
-    daily_items, plan_verification = _daily_plan_action_items(db, user_id)
+    trajectory_risks = _active_trajectory_risks(db, user_id)
+    base_items = [_attach_trajectory_context(item, trajectory_risks) for item in list(base.get("items") or [])]
+    daily_items, plan_verification = _daily_plan_action_items(
+        db,
+        user_id,
+        trajectory_risks=trajectory_risks,
+    )
     candidates = base_items + daily_items
     smart_items = [
         _to_smart_item(item, fallback_verification=plan_verification)
@@ -707,7 +880,7 @@ def smart_today(
         "items": base_items,
         "smart": {
             "generated_by": "deterministic_smart_agenda_v1",
-            "ranking": "priority_status_source_v1",
+            "ranking": "trajectory_priority_status_source_v1",
             "top_items": top_items,
         },
     }

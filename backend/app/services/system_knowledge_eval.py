@@ -52,15 +52,17 @@ def _run_eval_case(db: Session, document: KBDocument) -> dict[str, Any]:
         if missing:
             failures.append(f"missing_required_docs={sorted(missing)}")
 
+    lookup_twin = expected.get("lookup_twin") or case_input.get("lookup_twin")
+    required_claim_ids = set(expected.get("required_claim_ids") or [])
+
     search_query = expected.get("search_query") or case_input.get("search_query")
     if search_query and required_doc_ids:
+        search_required_doc_ids = required_doc_ids - required_claim_ids
         found = _search_doc_ids(db, str(search_query))
-        missing_from_search = required_doc_ids - found
+        missing_from_search = search_required_doc_ids - found
         if missing_from_search:
             failures.append(f"search_missing={sorted(missing_from_search)}")
 
-    lookup_twin = expected.get("lookup_twin") or case_input.get("lookup_twin")
-    required_claim_ids = set(expected.get("required_claim_ids") or [])
     if lookup_twin and required_claim_ids:
         found_claims = _lookup_claim_ids(db, lookup_twin)
         missing_claims = required_claim_ids - found_claims

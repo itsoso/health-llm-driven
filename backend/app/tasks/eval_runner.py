@@ -22,6 +22,7 @@ _SUITES = [
     ("insight", "main"),
     ("health_advice", "main"),
     ("health_agent_core", "main"),
+    ("health_runtime", "main"),
     ("retrieval", "main"),
     ("orchestrator", "main"),
 ]

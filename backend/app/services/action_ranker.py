@@ -12,6 +12,13 @@ from typing import Any, Dict, Iterable, List
 
 _CONFIDENCE_WEIGHT = {"low": 0.6, "medium": 0.8, "high": 1.0}
 _TIER_ORDER = {"P0": 0, "P1": 1, "P2": 2, "P3": 3, "P4": 4}
+_TRAJECTORY_LEVEL_BOOST = {"high": 45, "attention": 25}
+_PREDICTION_CONFIDENCE_BOOST = {"medium": 12, "high": 20}
+_PREDICTION_DOMAIN_ACTION_MAP = {
+    "metabolic_health": frozenset({"movement", "exercise", "training", "activity", "nutrition", "diet", "hydration"}),
+    "recovery_capacity": frozenset({"sleep", "movement", "exercise", "training", "recovery", "nutrition"}),
+    "aging_pace": frozenset({"movement", "exercise", "training", "nutrition", "diet", "sleep", "measurement"}),
+}
 
 _DEFAULT_PROFILE: Dict[str, Any] = {
     "upstreamness": 3,
@@ -131,6 +138,41 @@ _KIND_PROFILES: Dict[str, Dict[str, Any]] = {
 }
 
 
+def _confidence_rank(value: str) -> int:
+    return {"low": 0, "medium": 1, "high": 2}.get(str(value or ""), 1)
+
+
+def _verification_metrics(item: Dict[str, Any]) -> set[str]:
+    metrics: set[str] = set()
+    verification = item.get("verification")
+    if isinstance(verification, dict):
+        raw_metrics = verification.get("metrics")
+        if isinstance(raw_metrics, list):
+            metrics.update(str(metric) for metric in raw_metrics if metric)
+    if item.get("metric_key"):
+        metrics.add(str(item["metric_key"]))
+    return metrics
+
+
+def _verification_window_days(item: Dict[str, Any]) -> int | None:
+    verification = item.get("verification")
+    if isinstance(verification, dict):
+        window = verification.get("window_days")
+        if isinstance(window, int) and window >= 0:
+            return window
+    return None
+
+
+def _prediction_matches_item(item: Dict[str, Any], prediction: Dict[str, Any]) -> bool:
+    metric = str(prediction.get("metric") or "")
+    if metric and metric in _verification_metrics(item):
+        return True
+    action_domain = str(item.get("domain") or item.get("type") or "").strip().lower()
+    prediction_domain = str(prediction.get("domain") or "").strip()
+    mapped_domains = _PREDICTION_DOMAIN_ACTION_MAP.get(prediction_domain, frozenset())
+    return bool(action_domain and (action_domain == prediction_domain or action_domain in mapped_domains))
+
+
 def _profile_for(item: Dict[str, Any]) -> Dict[str, Any]:
     profile = dict(_DEFAULT_PROFILE)
     profile.update(_KIND_PROFILES.get(str(item.get("type") or ""), {}))
@@ -143,6 +185,47 @@ def _profile_for(item: Dict[str, Any]) -> Dict[str, Any]:
     if item.get("type") == "training" and item.get("light") == "red":
         profile["priority_tier"] = "P1"
         profile["rationale_short"] = "恢复不足时先降训练强度, 避免过度负荷"
+
+    trajectory = item.get("trajectory_context")
+    if isinstance(trajectory, dict) and trajectory:
+        level = str(trajectory.get("level") or "")
+        boost = _TRAJECTORY_LEVEL_BOOST.get(level, 0)
+        if boost:
+            profile["upstreamness"] = max(int(profile["upstreamness"]), 5)
+            profile["verifiability"] = max(int(profile["verifiability"]), 4)
+            trajectory_confidence = str(trajectory.get("confidence") or "")
+            if _confidence_rank(trajectory_confidence) > _confidence_rank(str(profile["confidence"])):
+                profile["confidence"] = trajectory_confidence
+            window_days = trajectory.get("verification_window_days")
+            if isinstance(window_days, int) and window_days >= 0:
+                profile["verification_window_days"] = window_days
+            why = trajectory.get("why")
+            domain = trajectory.get("domain") or "health"
+            profile["rationale_short"] = (
+                f"{why} 该动作用于{domain}轨迹的上游干预排序。"
+                if why
+                else f"该动作直接服务{domain}轨迹的上游干预排序。"
+            )
+            profile["trajectory_boost"] = boost
+
+    prediction = item.get("personal_prediction_context")
+    if isinstance(prediction, dict) and _prediction_matches_item(item, prediction):
+        confidence = str(prediction.get("confidence") or "")
+        boost = _PREDICTION_CONFIDENCE_BOOST.get(confidence, 0)
+        if boost:
+            profile["verifiability"] = max(int(profile["verifiability"]), 4)
+            if _confidence_rank(confidence) > _confidence_rank(str(profile["confidence"])):
+                profile["confidence"] = confidence
+            window_days = _verification_window_days(item)
+            if window_days is not None:
+                profile["verification_window_days"] = window_days
+            elif isinstance(prediction.get("horizon_days"), int) and prediction["horizon_days"] >= 0:
+                profile["verification_window_days"] = prediction["horizon_days"]
+            metric = prediction.get("metric") or "目标指标"
+            profile["rationale_short"] = (
+                f"个人预测提示 {metric} 适合作为后续验证信号, 该动作进入可回测排序。"
+            )
+            profile["prediction_boost"] = boost
 
     return profile
 
@@ -159,7 +242,9 @@ def _score(item: Dict[str, Any], profile: Dict[str, Any]) -> int:
     friction_penalty = float(profile["friction"]) * 4
     agenda_priority = min(max(int(item.get("priority") or 0), 0), 100)
     tier_boost = max(0, 4 - _TIER_ORDER.get(str(profile["priority_tier"]), 2)) * 30
-    return int(round(leverage - friction_penalty + agenda_priority + tier_boost))
+    trajectory_boost = int(profile.get("trajectory_boost") or 0)
+    prediction_boost = int(profile.get("prediction_boost") or 0)
+    return int(round(leverage - friction_penalty + agenda_priority + tier_boost + trajectory_boost + prediction_boost))
 
 
 def rank_agenda_action(item: Dict[str, Any]) -> Dict[str, Any]:
