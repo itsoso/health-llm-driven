@@ -66,6 +66,7 @@ _KIND_TIER: dict[str, str] = {
     "alarm_set": "P1",
     "food_order": "P1",
     "doctor_booking": "P1",
+    "environment_actuation": "P1",
 }
 
 # 行为协议的 coarse time_window → 该日的 HH:MM 到点时刻(start_min 来源)。

@@ -60,7 +60,12 @@ async def list_write_intents(
 
 
 class ProposeExternalActionBody(BaseModel):
-    kind: str = Field(description="外部动作类型: alarm_set / food_order / doctor_booking")
+    kind: str = Field(
+        description=(
+            "外部动作类型: alarm_set / food_order / doctor_booking / "
+            "environment_actuation"
+        )
+    )
     title: str = Field(min_length=1, max_length=200)
     description: str | None = None
     payload: dict | None = None
@@ -74,7 +79,8 @@ async def propose_write_intent(
 ):
     """提一个外部动作写意图(propose;全 manual_confirm,确认才执行)。
 
-    服务端 kind 白名单(alarm_set/food_order/doctor_booking),未知 kind → 422。
+    服务端 kind 白名单(alarm_set/food_order/doctor_booking/environment_actuation),
+    未知 kind → 422。
     food_order 摘要先过 R4 守门(guidance_validator)再落库。幂等:同 (user,kind,target)
     已有 pending → 返回既有 id。**不在此下单/预约/支付** —— 仅记意图,确认是另一步。
     """
