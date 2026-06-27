@@ -1,10 +1,18 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { supplementApi } from '../../services/records';
-import { spacing, radii } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaFonts,
+} from '../../constants/revaTheme';
+
+// 补剂分区的装饰性 hue (紫) —— 「区分类目」的色码,不是「指标好坏」三步语义,故为局部字面量。
+const SUPP_HUE = { color: '#7C5CBF', bg: '#EDE7F6' } as const;
 
 const timingLabels: Record<string, string> = { morning: '早晨', noon: '中午', evening: '晚上', bedtime: '睡前' };
 const timingOrder = ['morning', 'noon', 'evening', 'bedtime'];
@@ -16,10 +24,6 @@ interface Props {
 }
 
 export default function SupplementCheckin({ supplements, onToggle, onChat }: Props) {
-  const { c, isDark } = useTheme();
-  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
-  const txt = useMemo(() => createTxt(c), [c]);
-
   const [expanded, setExpanded] = useState(false);
   const [localState, setLocalState] = useState<Record<number, boolean>>({});
 
@@ -76,8 +80,8 @@ export default function SupplementCheckin({ supplements, onToggle, onChat }: Pro
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View style={[styles.iconCircle, { backgroundColor: c.tintPurple }]}>
-          <Ionicons name="medical" size={14} color={c.purple} />
+        <View style={[styles.iconCircle, { backgroundColor: SUPP_HUE.bg }]}>
+          <Ionicons name="medical" size={14} color={SUPP_HUE.color} />
         </View>
         <Text style={txt.title}>补剂打卡</Text>
         <View style={styles.badge}>
@@ -118,80 +122,76 @@ export default function SupplementCheckin({ supplements, onToggle, onChat }: Pro
           accessibilityRole="button"
           accessibilityLabel="跟 Agent 调整补剂安排"
         >
-          <Ionicons name="chatbubble-ellipses-outline" size={15} color={c.brand} />
+          <Ionicons name="chatbubble-ellipses-outline" size={15} color={C.green500} />
           <Text style={txt.agentLink}>跟 Agent 调整补剂安排</Text>
-          <Ionicons name="chevron-forward" size={14} color={c.brand} />
+          <Ionicons name="chevron-forward" size={14} color={C.green500} />
         </Pressable>
       )}
     </View>
   );
 }
 
-function createStyles(c: ColorPalette, isDark: boolean) {
-  return StyleSheet.create({
-    card: {
-      backgroundColor: c.bgCard,
-      borderRadius: radii.lg,
-      padding: spacing.lg,
-      marginBottom: spacing.md,
-      ...(isDark
-        ? { borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator }
-        : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 1 }),
-    },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      marginBottom: spacing.md,
-    },
-    iconCircle: {
-      width: 28, height: 28, borderRadius: 8,
-      alignItems: 'center', justifyContent: 'center',
-    },
-    badge: {
-      backgroundColor: c.tintPurple,
-      paddingHorizontal: 8, paddingVertical: 2,
-      borderRadius: 10,
-    },
-    row: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-      paddingVertical: 6,
-    },
-    checkbox: {
-      width: 22, height: 22, borderRadius: 11,
-      borderWidth: 2, borderColor: c.labelQuaternary,
-      alignItems: 'center', justifyContent: 'center',
-    },
-    checkboxChecked: {
-      backgroundColor: c.brand,
-      borderColor: c.brand,
-    },
-    expandBtn: {
-      alignItems: 'center',
-      paddingTop: spacing.sm,
-    },
-    agentLink: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      marginTop: spacing.md,
-      paddingTop: spacing.md,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: c.separator,
-    },
-  });
-}
+// Reva 设计语言:暖白 surface / r-lg 18 / light-first 软阴影。补剂紫为类目装饰色。
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: C.surface,
+    borderRadius: revaRadii.lg,
+    padding: revaSpacing.s4,
+    marginBottom: revaSpacing.s3,
+    ...revaShadows.sm,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: revaSpacing.s3,
+  },
+  iconCircle: {
+    width: 28, height: 28, borderRadius: revaRadii.sm,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  badge: {
+    backgroundColor: SUPP_HUE.bg,
+    paddingHorizontal: 8, paddingVertical: 2,
+    borderRadius: revaRadii.sm,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 6,
+  },
+  checkbox: {
+    width: 22, height: 22, borderRadius: 11,
+    borderWidth: 2, borderColor: C.ink4,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: C.green500,
+    borderColor: C.green500,
+  },
+  expandBtn: {
+    alignItems: 'center',
+    paddingTop: revaSpacing.s2,
+  },
+  agentLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: revaSpacing.s3,
+    paddingTop: revaSpacing.s3,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+  },
+});
 
-function createTxt(c: ColorPalette) {
-  return {
-    title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, flex: 1 } as TextStyle,
-    badge: { fontSize: 12, fontWeight: '600', color: c.purple } as TextStyle,
-    timingLabel: { fontSize: 11, fontWeight: '600', color: c.labelTertiary, marginTop: 8, marginBottom: 4 } as TextStyle,
-    name: { fontSize: 15, color: c.labelPrimary, flex: 1 } as TextStyle,
-    nameChecked: { color: c.labelTertiary, textDecorationLine: 'line-through' } as TextStyle,
-    expand: { fontSize: 13, color: c.brand, fontWeight: '500' } as TextStyle,
-    agentLink: { fontSize: 13, color: c.brand, fontWeight: '600', flex: 1 } as TextStyle,
-  };
-}
+// 数字(打卡计数)走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
+const txt = {
+  title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1, flex: 1 } as TextStyle,
+  badge: { fontFamily: revaFonts.mono, fontSize: 12, fontWeight: '600', color: SUPP_HUE.color } as TextStyle,
+  timingLabel: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '600', color: C.ink3, marginTop: 8, marginBottom: 4 } as TextStyle,
+  name: { fontFamily: revaFonts.sans, fontSize: 15, color: C.ink1, flex: 1 } as TextStyle,
+  nameChecked: { color: C.ink3, textDecorationLine: 'line-through' } as TextStyle,
+  expand: { fontFamily: revaFonts.sans, fontSize: 13, color: C.green500, fontWeight: '500' } as TextStyle,
+  agentLink: { fontFamily: revaFonts.sans, fontSize: 13, color: C.green500, fontWeight: '600', flex: 1 } as TextStyle,
+};

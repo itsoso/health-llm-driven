@@ -32,8 +32,25 @@ import StrengthCard from '../../components/dashboard/StrengthCard';
 import SymptomCard from '../../components/dashboard/SymptomCard';
 import HealthCard from '../../components/design-system/HealthCard';
 import AgentFeedbackLink from '../../components/agent/AgentFeedbackLink';
-import { spacing, radii, shadows } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaSemantic,
+  revaFonts,
+} from '../../constants/revaTheme';
+
+// 快捷记录入口的装饰性 hue (饮食橙 / 身体青 / 声音蓝 / 跑前绿) —— 「区分类目」的色码,
+// 不是「指标好坏」三步语义,故为局部字面量 (同 VitalsGrid 的 HUES)。
+const CAT_HUES = {
+  orange: '#C97A2E',
+  teal: '#2F9E8F',
+  blue: C.blue500,
+  green: C.green500,
+  purple: '#7C5CBF',
+  pink: '#C2487A',
+} as const;
 
 const mealTypeMap: Record<string, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' };
 
@@ -58,9 +75,6 @@ type RecordGapState = {
 export default function RecordScreen() {
   const router = useRouter();
   const qc = useQueryClient();
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const { data, refetch, isRefetching } = useQuery({ queryKey: queryKeys.dashboard, queryFn: fetchDashboardData, staleTime: 60_000 });
   const [bodyDietTab, setBodyDietTab] = useState<'diet' | 'body'>('diet');
   const [weightInput, setWeightInput] = useState('');
@@ -108,7 +122,7 @@ export default function RecordScreen() {
         icon: 'nutrition-outline',
         label: '饮食',
         hint: recordGaps.missingMeal ? '今天还没记餐' : '补充餐食细节',
-        color: c.orange,
+        color: CAT_HUES.orange,
         priority: (recordGaps.isMealWindow && recordGaps.missingMeal) ? 95 : recordGaps.missingMeal ? 62 : 30,
         onPress: () => router.push('/diet' as any),
       },
@@ -117,7 +131,7 @@ export default function RecordScreen() {
         icon: 'body-outline',
         label: '体重腰围',
         hint: recordGaps.missingBody ? '缺少基础指标' : '更新体重血压',
-        color: c.teal,
+        color: CAT_HUES.teal,
         priority: (recordGaps.isMorning && recordGaps.missingBody) ? 100 : recordGaps.missingBody ? 70 : 28,
         onPress: () => router.push('/body-measurements' as any),
       },
@@ -126,7 +140,7 @@ export default function RecordScreen() {
         icon: 'mic-outline',
         label: '声音笔记',
         hint: '不想打字就说',
-        color: c.blue,
+        color: CAT_HUES.blue,
         priority: 24,
         onPress: () => router.push('/voice-chat?intent=journal' as any),
       },
@@ -135,14 +149,14 @@ export default function RecordScreen() {
         icon: 'flash-outline',
         label: '跑前准备',
         hint: '跑前确认状态',
-        color: c.green,
+        color: CAT_HUES.green,
         priority: recordGaps.isPreWorkoutWindow ? 72 : 18,
         onPress: () => router.push('/voice-chat?intent=preworkout&workout_type=running' as any),
       },
     ];
 
     return entries.sort((a, b) => b.priority - a.priority);
-  }, [c.blue, c.green, c.orange, c.teal, recordGaps, router]);
+  }, [recordGaps, router]);
   const recommendedRecord = highFrequencyRecords[0];
   const shouldShowRecommendedRecord = recommendedRecord?.priority >= 60;
 
@@ -207,7 +221,7 @@ export default function RecordScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.green500} />} showsVerticalScrollIndicator={false}>
         <Text style={txt.title}>健康记录</Text>
 
         {/* Quick navigation */}
@@ -244,7 +258,7 @@ export default function RecordScreen() {
               icon="mic-outline"
               label="说一句"
               hint="语音记录"
-              color={c.blue}
+              color={CAT_HUES.blue}
               onPress={() => router.push('/voice-chat?intent=journal' as any)}
               accessibilityLabel="说一句记录健康状态"
             />
@@ -252,7 +266,7 @@ export default function RecordScreen() {
               icon="camera-outline"
               label="拍一下"
               hint="餐食照片"
-              color={c.orange}
+              color={CAT_HUES.orange}
               onPress={() => router.push('/diet?capture=photo' as any)}
               accessibilityLabel="拍一下记录饮食"
             />
@@ -260,7 +274,7 @@ export default function RecordScreen() {
               icon="hand-left-outline"
               label="点一下"
               hint="记录症状"
-              color={c.green}
+              color={CAT_HUES.green}
               onPress={() => router.push('/symptom-record' as any)}
               accessibilityLabel="点一下记录症状"
             />
@@ -279,12 +293,12 @@ export default function RecordScreen() {
           </View>
           <Text style={txt.moreTitle}>更多记录</Text>
           <View style={styles.moreRecordRow} testID="more-records">
-            <MoreRecordBtn icon="document-text-outline" label="化验记录" color={c.brand} onPress={() => router.push('/medical-exams' as any)} />
-            <MoreRecordBtn icon="git-branch-outline" label="基因" color={c.teal} onPress={() => router.push('/genetic-report' as any)} />
-            <MoreRecordBtn icon="moon-outline" label="睡眠" color={c.purple} onPress={() => router.push('/sleep' as any)} />
-            <MoreRecordBtn icon="barbell-outline" label="运动" color={c.pink} onPress={() => router.push('/workout-list' as any)} />
-            <MoreRecordBtn icon="cloud-upload-outline" label="导入档案" color={c.purple} onPress={() => router.push('/import' as any)} />
-            <MoreRecordBtn icon="flag-outline" label="目标" color={c.green} onPress={() => router.push('/goals' as any)} />
+            <MoreRecordBtn icon="document-text-outline" label="化验记录" color={CAT_HUES.green} onPress={() => router.push('/medical-exams' as any)} />
+            <MoreRecordBtn icon="git-branch-outline" label="基因" color={CAT_HUES.teal} onPress={() => router.push('/genetic-report' as any)} />
+            <MoreRecordBtn icon="moon-outline" label="睡眠" color={CAT_HUES.purple} onPress={() => router.push('/sleep' as any)} />
+            <MoreRecordBtn icon="barbell-outline" label="运动" color={CAT_HUES.pink} onPress={() => router.push('/workout-list' as any)} />
+            <MoreRecordBtn icon="cloud-upload-outline" label="导入档案" color={CAT_HUES.purple} onPress={() => router.push('/import' as any)} />
+            <MoreRecordBtn icon="flag-outline" label="目标" color={CAT_HUES.green} onPress={() => router.push('/goals' as any)} />
           </View>
         </View>
 
@@ -303,10 +317,10 @@ export default function RecordScreen() {
           activeOpacity={0.7}
         >
           <View style={styles.runCardContent}>
-            <Text style={styles.runCardTitle}>跑步指导</Text>
-            <Text style={styles.runCardSubtitle}>GPS 实时配速 · 规则引擎 · 跑后复盘</Text>
-            <View style={{ width: 32, height: 32, backgroundColor: c.tintGreen, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="play" size={18} color={c.green} />
+            <Text style={txt.runCardTitle}>跑步指导</Text>
+            <Text style={txt.runCardSubtitle}>GPS 实时配速 · 规则引擎 · 跑后复盘</Text>
+            <View style={{ width: 32, height: 32, backgroundColor: C.green50, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="play" size={18} color={C.green500} />
             </View>
           </View>
         </TouchableOpacity>
@@ -344,10 +358,10 @@ export default function RecordScreen() {
             <View style={styles.tabContent}>
               {/* Nutrition summary */}
               <View style={styles.nutritionRow}>
-                <NutritionCircle label="热量" value={`${totalCal.toFixed(0)}`} unit="kcal" color="#FF6723" />
-                <NutritionCircle label="蛋白质" value={`${totalProtein.toFixed(1)}`} unit="g" color="#FF375F" />
-                <NutritionCircle label="碳水" value={`${totalCarbs.toFixed(1)}`} unit="g" color="#FF9F0A" />
-                <NutritionCircle label="脂肪" value={`${totalFat.toFixed(1)}`} unit="g" color="#BF5AF2" />
+                <NutritionCircle label="热量" value={`${totalCal.toFixed(0)}`} unit="kcal" color="#C97A2E" />
+                <NutritionCircle label="蛋白质" value={`${totalProtein.toFixed(1)}`} unit="g" color="#C2487A" />
+                <NutritionCircle label="碳水" value={`${totalCarbs.toFixed(1)}`} unit="g" color="#C98A1E" />
+                <NutritionCircle label="脂肪" value={`${totalFat.toFixed(1)}`} unit="g" color="#7C5CBF" />
               </View>
               {/* Meal list */}
               {meals.length > 0 ? meals.map((m: any, i: number) => (
@@ -371,7 +385,7 @@ export default function RecordScreen() {
                     <Text style={txt.bodyVal}>{weightStats.current_weight.toFixed(1)}</Text>
                     <Text style={txt.bodyUnit}>kg 体重</Text>
                     {weightStats.weight_change_7d != null && (
-                      <Text style={[txt.bodyChange, { color: weightStats.weight_change_7d <= 0 ? '#30D158' : '#FF453A' }]}>
+                      <Text style={[txt.bodyChange, { color: weightStats.weight_change_7d <= 0 ? revaSemantic.normal.fg : revaSemantic.risk.fg }]}>
                         7天 {weightStats.weight_change_7d > 0 ? '+' : ''}{weightStats.weight_change_7d}
                       </Text>
                     )}
@@ -411,7 +425,7 @@ export default function RecordScreen() {
               />
               {/* Quick record */}
               <View style={styles.quickInputRow}>
-                <TextInput style={styles.quickInput} placeholder="体重 kg" placeholderTextColor={c.labelTertiary}
+                <TextInput style={styles.quickInput} placeholder="体重 kg" placeholderTextColor={C.ink3}
                   keyboardType="decimal-pad" value={weightInput} onChangeText={setWeightInput} />
                 <TouchableOpacity style={styles.quickSaveBtn} onPress={async () => {
                   const w = parseFloat(weightInput);
@@ -425,10 +439,10 @@ export default function RecordScreen() {
                 }} activeOpacity={0.7}><Text style={txt.quickSaveTxt}>记录</Text></TouchableOpacity>
               </View>
               <View style={styles.quickInputRow}>
-                <TextInput style={[styles.quickInput, { flex: 1 }]} placeholder="收缩压" placeholderTextColor={c.labelTertiary}
+                <TextInput style={[styles.quickInput, { flex: 1 }]} placeholder="收缩压" placeholderTextColor={C.ink3}
                   keyboardType="number-pad" value={bpSysInput} onChangeText={setBpSysInput} />
                 <Text style={txt.bpSlash}>/</Text>
-                <TextInput style={[styles.quickInput, { flex: 1 }]} placeholder="舒张压" placeholderTextColor={c.labelTertiary}
+                <TextInput style={[styles.quickInput, { flex: 1 }]} placeholder="舒张压" placeholderTextColor={C.ink3}
                   keyboardType="number-pad" value={bpDiaInput} onChangeText={setBpDiaInput} />
                 <TouchableOpacity style={styles.quickSaveBtn} onPress={async () => {
                   const sys = parseInt(bpSysInput), dia = parseInt(bpDiaInput);
@@ -447,7 +461,7 @@ export default function RecordScreen() {
 
         {/* 8. Medication */}
         {Array.isArray(medications) && medications.length > 0 && (
-          <HealthCard title="用药状态" icon="medical-outline" iconColor={c.brand} iconBg={c.brandLight}>
+          <HealthCard title="用药状态" icon="medical-outline" iconColor={C.green500} iconBg={C.green50}>
             <View style={styles.medList}>
               {medications.map((m: any) => {
                 const lastToday: string | undefined = m.last_taken_time;
@@ -456,7 +470,7 @@ export default function RecordScreen() {
                 const done = m.taken_count >= (m.total_count || 1);
                 return (
                   <TouchableOpacity key={m.medication_id}
-                    style={[styles.medItem, done && { backgroundColor: c.tintGreen }]}
+                    style={[styles.medItem, done && { backgroundColor: C.green50 }]}
                     onPress={async () => {
                       Haptics.impactAsync(done ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light);
                       const now = new Date();
@@ -485,7 +499,7 @@ export default function RecordScreen() {
                     activeOpacity={0.7}
                   >
                     <View style={styles.medLeft}>
-                      <Ionicons name={done ? 'checkmark-circle' : 'medical'} size={18} color={done ? '#30D158' : c.brand} />
+                      <Ionicons name={done ? 'checkmark-circle' : 'medical'} size={18} color={done ? C.green500 : C.green500} />
                       <View style={{ flex: 1 }}>
                         <Text style={txt.medItemName} numberOfLines={1}>{m.name}</Text>
                         <Text style={txt.medItemMeta}>
@@ -495,7 +509,7 @@ export default function RecordScreen() {
                         </Text>
                       </View>
                     </View>
-                    <Ionicons name="add-circle" size={22} color={c.brand} />
+                    <Ionicons name="add-circle" size={22} color={C.green500} />
                   </TouchableOpacity>
                 );
               })}
@@ -507,7 +521,7 @@ export default function RecordScreen() {
         {/* 周趋势已合并到 VitalsGrid 每卡底部 sparkline, 原 TrendMiniCharts 删除避免信息重复 */}
 
         {/* 10. Water (low priority) */}
-        <HealthCard title="饮水" icon="water-outline" iconColor={c.blue} iconBg={c.tintBlue}
+        <HealthCard title="饮水" icon="water-outline" iconColor={C.blue500} iconBg={C.blue50}
           rightAccessory={<Text style={txt.waterTotal}>{waterTotal}/{waterTarget}ml</Text>}>
           <FrequentChipsRow
             label="常喝 · 点一下直接记录"
@@ -532,9 +546,9 @@ export default function RecordScreen() {
             accessibilityRole="button"
             accessibilityLabel="跟 Agent 调整今日饮水"
           >
-            <Ionicons name="chatbubble-ellipses-outline" size={15} color={c.brand} />
+            <Ionicons name="chatbubble-ellipses-outline" size={15} color={C.green500} />
             <Text style={txt.agentLink}>跟 Agent 调整今日饮水</Text>
-            <Ionicons name="chevron-forward" size={14} color={c.brand} />
+            <Ionicons name="chevron-forward" size={14} color={C.green500} />
           </TouchableOpacity>
         </HealthCard>
 
@@ -579,9 +593,6 @@ function RecordFocusCard({
   onPress: () => void;
   onAskAgent: () => void;
 }) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <View style={[styles.recordFocusCard, { borderColor: `${entry.color}55`, backgroundColor: `${entry.color}0F` }]}>
       <View style={styles.recordFocusTop}>
@@ -635,12 +646,9 @@ function CaptureModeBtn({
   accessibilityLabel: string;
   onPress: () => void;
 }) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <TouchableOpacity
-      style={[styles.captureModeBtn, { borderColor: c.separator }]}
+      style={styles.captureModeBtn}
       onPress={onPress}
       activeOpacity={0.72}
       accessibilityRole="button"
@@ -668,9 +676,6 @@ function QuickNavBtn({
   color: string;
   onPress: () => void;
 }) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <TouchableOpacity style={styles.quickNavBtn} onPress={onPress} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel={label}>
       <View style={[styles.quickNavIcon, { backgroundColor: `${color}18` }]}>
@@ -680,18 +685,15 @@ function QuickNavBtn({
         <Text style={txt.quickNavLabel}>{label}</Text>
         <Text style={txt.quickNavHint} numberOfLines={1}>{hint}</Text>
       </View>
-      <Ionicons name="chevron-forward" size={14} color={c.labelQuaternary} />
+      <Ionicons name="chevron-forward" size={14} color={C.ink4} />
     </TouchableOpacity>
   );
 }
 
 function MoreRecordBtn({ icon, label, color, onPress }: { icon: any; label: string; color: string; onPress: () => void }) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <TouchableOpacity
-      style={[styles.moreRecordBtn, { borderColor: c.separator }]}
+      style={styles.moreRecordBtn}
       onPress={onPress}
       activeOpacity={0.72}
       accessibilityRole="button"
@@ -704,9 +706,6 @@ function MoreRecordBtn({ icon, label, color, onPress }: { icon: any; label: stri
 }
 
 function NutritionCircle({ label, value, unit, color }: { label: string; value: string; unit: string; color: string }) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   // 数值显示压缩: ≥100 显示整数 (避免 "125.0" 在圆里换行)
   const display = (() => {
     const n = parseFloat(value);
@@ -730,43 +729,43 @@ function NutritionCircle({ label, value, unit, color }: { label: string; value: 
   );
 }
 
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
-  safe: { flex: 1, backgroundColor: c.bgPrimary },
-  content: { padding: spacing.lg, paddingBottom: 118 },
-  promptStack: { marginBottom: spacing.md },
+// Reva 设计语言:暖 paper 底 / 暖白 surface 卡 / 活力绿 / r-lg 18 / 数字等宽 mono / light-first 软阴影。
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.paper },
+  content: { padding: revaSpacing.s4, paddingBottom: 118 },
+  promptStack: { marginBottom: revaSpacing.s3 },
 
   // Quick navigation
   recordEntryPanel: {
-    backgroundColor: c.bgCard,
-    borderRadius: radii.xl,
-    padding: spacing.md,
-    gap: spacing.md,
-    marginBottom: spacing.lg,
-    ...shadows.subtle,
+    backgroundColor: C.surface,
+    borderRadius: revaRadii.lg,
+    padding: revaSpacing.s3,
+    gap: revaSpacing.s3,
+    marginBottom: revaSpacing.s4,
+    ...revaShadows.sm,
   },
   entryHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  quickNav: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  quickNav: { flexDirection: 'row', flexWrap: 'wrap', gap: revaSpacing.s2 },
   quickNavBtn: {
     width: '48.5%',
     minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 9,
-    backgroundColor: c.bgPrimary,
-    borderRadius: radii.md,
+    backgroundColor: C.paper2,
+    borderRadius: revaRadii.md,
     paddingVertical: 11,
     paddingHorizontal: 10,
   },
-  quickNavIcon: { width: 32, height: 32, borderRadius: radii.sm, alignItems: 'center', justifyContent: 'center' },
+  quickNavIcon: { width: 32, height: 32, borderRadius: revaRadii.sm, alignItems: 'center', justifyContent: 'center' },
   quickNavCopy: { flex: 1, minWidth: 0 },
   recordFocusCard: {
     borderWidth: 1,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    gap: spacing.md,
+    borderRadius: revaRadii.lg,
+    padding: revaSpacing.s3,
+    gap: revaSpacing.s3,
   },
-  recordFocusTop: { flexDirection: 'row', gap: spacing.sm },
+  recordFocusTop: { flexDirection: 'row', gap: revaSpacing.s2 },
   recordFocusIcon: {
     width: 44,
     height: 44,
@@ -775,11 +774,11 @@ function createStyles(c: ColorPalette) {
     justifyContent: 'center',
   },
   recordFocusBody: { flex: 1, minWidth: 0 },
-  recordFocusActions: { flexDirection: 'row', gap: spacing.sm },
+  recordFocusActions: { flexDirection: 'row', gap: revaSpacing.s2 },
   recordFocusPrimary: {
     flex: 1.3,
     minHeight: 42,
-    borderRadius: radii.md,
+    borderRadius: revaRadii.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -789,24 +788,25 @@ function createStyles(c: ColorPalette) {
     flex: 1,
     minHeight: 42,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
+    borderRadius: revaRadii.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: c.bgCard,
+    backgroundColor: C.surface,
   },
-  moreRecordRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  captureModeRow: { flexDirection: 'row', gap: spacing.sm },
+  moreRecordRow: { flexDirection: 'row', flexWrap: 'wrap', gap: revaSpacing.s2 },
+  captureModeRow: { flexDirection: 'row', gap: revaSpacing.s2 },
   captureModeBtn: {
     flex: 1,
     minHeight: 78,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
+    borderColor: C.line,
+    borderRadius: revaRadii.md,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    backgroundColor: c.bgPrimary,
+    backgroundColor: C.paper2,
     paddingHorizontal: 6,
   },
   captureModeIcon: {
@@ -821,119 +821,118 @@ function createStyles(c: ColorPalette) {
     alignItems: 'center',
     gap: 6,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.full,
+    borderColor: C.line,
+    borderRadius: revaRadii.pill,
     paddingHorizontal: 11,
     paddingVertical: 7,
   },
 
   // Tabbed card (body + diet)
   tabCard: {
-    backgroundColor: c.bgCard, borderRadius: radii.xl,
-    marginBottom: spacing.md, overflow: 'hidden', ...shadows.subtle,
+    backgroundColor: C.surface, borderRadius: revaRadii.lg,
+    marginBottom: revaSpacing.s3, overflow: 'hidden', ...revaShadows.sm,
   },
   tabHeader: {
-    flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.separator,
+    flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line,
   },
   tabBtn: { flex: 1, paddingVertical: 12, alignItems: 'center' },
-  tabBtnActive: { borderBottomWidth: 2, borderBottomColor: c.brand },
-  tabContent: { padding: spacing.lg },
+  tabBtnActive: { borderBottomWidth: 2, borderBottomColor: C.green500 },
+  tabContent: { padding: revaSpacing.s4 },
 
   // Nutrition
-  nutritionRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: spacing.md },
+  nutritionRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: revaSpacing.s3 },
   nutriItem: { alignItems: 'center', gap: 3 },
   nutriDot: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
 
   // Meals
   mealRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.separator,
+    paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line,
   },
-  mealDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: c.brand },
+  mealDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: C.green500 },
 
   // Body grid
-  bodyGrid: { flexDirection: 'row', gap: spacing.md, justifyContent: 'center' },
-  bodyCell: { alignItems: 'center', flex: 1, backgroundColor: c.bgPrimary, borderRadius: radii.md, padding: spacing.md },
-  bodyAgentLink: { marginTop: spacing.md },
+  bodyGrid: { flexDirection: 'row', gap: revaSpacing.s3, justifyContent: 'center' },
+  bodyCell: { alignItems: 'center', flex: 1, backgroundColor: C.paper2, borderRadius: revaRadii.md, padding: revaSpacing.s3 },
+  bodyAgentLink: { marginTop: revaSpacing.s3 },
 
   // Medication
   medRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  medChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radii.full, backgroundColor: c.bgPrimary },
+  medChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: revaRadii.pill, backgroundColor: C.paper2 },
   medList: { gap: 6 },
   medItem: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 12, paddingVertical: 10,
-    backgroundColor: c.bgPrimary, borderRadius: radii.md,
+    backgroundColor: C.paper2, borderRadius: revaRadii.md,
   },
   medLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
 
   // Water
-  waterBtnRow: { flexDirection: 'row', gap: spacing.sm },
-  waterBtn: { flex: 1, backgroundColor: c.bgPrimary, borderRadius: radii.md, paddingVertical: 10, alignItems: 'center' },
+  waterBtnRow: { flexDirection: 'row', gap: revaSpacing.s2 },
+  waterBtn: { flex: 1, backgroundColor: C.paper2, borderRadius: revaRadii.md, paddingVertical: 10, alignItems: 'center' },
   agentLink: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    marginTop: spacing.md, paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.separator,
+    marginTop: revaSpacing.s3, paddingTop: revaSpacing.s3,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line,
   },
-  quickInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: spacing.md },
-  quickInput: { flex: 2, backgroundColor: c.bgPrimary, borderRadius: radii.md, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, color: c.labelPrimary },
-  quickSaveBtn: { backgroundColor: c.brand, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 8 },
+  quickInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: revaSpacing.s3 },
+  quickInput: { flex: 2, backgroundColor: C.paper2, borderRadius: revaRadii.md, paddingHorizontal: 12, paddingVertical: 8, fontFamily: revaFonts.mono, fontSize: 14, color: C.ink1 },
+  quickSaveBtn: { backgroundColor: C.green500, borderRadius: revaRadii.md, paddingHorizontal: 14, paddingVertical: 8 },
 
   // Undo
   undoBar: {
-    position: 'absolute', bottom: 100, left: spacing.lg, right: spacing.lg,
-    backgroundColor: '#1C1C1E', borderRadius: radii.full,
+    position: 'absolute', bottom: 100, left: revaSpacing.s4, right: revaSpacing.s4,
+    backgroundColor: C.focusBg, borderRadius: revaRadii.pill,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 10, ...shadows.heavy,
+    paddingHorizontal: 16, paddingVertical: 10, ...revaShadows.lg,
   },
   runCard: {
-    backgroundColor: c.bgCard, borderRadius: radii.md,
-    padding: spacing.md, ...shadows.subtle,
+    backgroundColor: C.surface, borderRadius: revaRadii.md,
+    padding: revaSpacing.s3, ...revaShadows.sm,
   },
   runCardContent: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
-  runCardTitle: { fontSize: 16, fontWeight: '600', color: c.labelPrimary } as TextStyle,
-  runCardSubtitle: { fontSize: 12, color: c.labelSecondary, marginTop: 2 } as TextStyle,
-  });
-}
+});
 
-function createTxt(c: ColorPalette) {
-  return {
-  title: { fontSize: 28, fontWeight: '700', color: c.labelPrimary, marginBottom: spacing.md } as TextStyle,
-  captureModeLabel: { fontSize: 13, fontWeight: '800', color: c.labelPrimary } as TextStyle,
-  captureModeHint: { fontSize: 10, color: c.labelTertiary, fontWeight: '600' } as TextStyle,
-  quickNavLabel: { fontSize: 13, fontWeight: '800', color: c.labelPrimary } as TextStyle,
-  quickNavHint: { fontSize: 10, color: c.labelTertiary, fontWeight: '600', marginTop: 2 } as TextStyle,
-  recordFocusKicker: { fontSize: 12, fontWeight: '800' } as TextStyle,
-  recordFocusTitle: { fontSize: 19, fontWeight: '900', color: c.labelPrimary, marginTop: 2 } as TextStyle,
-  recordFocusHint: { fontSize: 12, lineHeight: 17, color: c.labelSecondary, marginTop: 4 } as TextStyle,
-  recordFocusPrimaryText: { fontSize: 14, fontWeight: '800', color: '#fff' } as TextStyle,
-  recordFocusSecondaryText: { fontSize: 13, fontWeight: '800' } as TextStyle,
-  sectionEyebrow: { fontSize: 16, fontWeight: '800', color: c.labelPrimary } as TextStyle,
-  sectionHint: { fontSize: 12, color: c.labelTertiary, marginTop: 2 } as TextStyle,
-  moreTitle: { fontSize: 12, fontWeight: '700', color: c.labelTertiary } as TextStyle,
-  moreRecordLabel: { fontSize: 12, fontWeight: '600', color: c.labelSecondary } as TextStyle,
-  tabText: { fontSize: 14, fontWeight: '500', color: c.labelTertiary } as TextStyle,
-  tabTextActive: { color: c.brand, fontWeight: '600' } as TextStyle,
-  nutriVal: { fontSize: 16, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  nutriUnit: { fontSize: 10, color: c.labelSecondary } as TextStyle,
-  nutriLabel: { fontSize: 11, fontWeight: '500', color: c.labelTertiary } as TextStyle,
-  mealType: { fontSize: 12, fontWeight: '600', color: c.labelPrimary } as TextStyle,
-  mealFood: { fontSize: 13, color: c.labelSecondary, marginTop: 1 } as TextStyle,
-  mealCal: { fontSize: 13, fontWeight: '600', color: '#FF6723', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  bodyVal: { fontSize: 22, fontWeight: '800', color: c.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
-  bodyUnit: { fontSize: 11, color: c.labelSecondary, marginTop: 2 } as TextStyle,
-  bodyChange: { fontSize: 11, fontWeight: '500', marginTop: 2 } as TextStyle,
-  medName: { fontSize: 13, color: c.labelPrimary, maxWidth: 80 } as TextStyle,
-  medItemName: { fontSize: 14, fontWeight: '500', color: c.labelPrimary } as TextStyle,
-  medItemMeta: { fontSize: 11, color: c.labelTertiary, marginTop: 2 } as TextStyle,
-  waterTotal: { fontSize: 14, fontWeight: '700', color: '#64D2FF' } as TextStyle,
-  waterBtnText: { fontSize: 14, fontWeight: '600', color: c.brand } as TextStyle,
-  agentLink: { fontSize: 13, color: c.brand, fontWeight: '600', flex: 1 } as TextStyle,
-  quickSaveTxt: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
-  bpSlash: { fontSize: 16, color: c.labelTertiary } as TextStyle,
-  empty: { fontSize: 13, color: c.labelTertiary, textAlign: 'center', paddingVertical: 16 } as TextStyle,
-  undoText: { fontSize: 14, color: '#fff' } as TextStyle,
-  undoBtn: { fontSize: 14, fontWeight: '600', color: c.brand } as TextStyle,
-  };
-}
+// 数字/计数/指标值/单位走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
+const txt = {
+  title: { fontFamily: revaFonts.sans, fontSize: 28, fontWeight: '800', letterSpacing: -0.56, color: C.ink1, marginBottom: revaSpacing.s3 } as TextStyle,
+  captureModeLabel: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '800', color: C.ink1 } as TextStyle,
+  captureModeHint: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink3, fontWeight: '600' } as TextStyle,
+  quickNavLabel: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '800', color: C.ink1 } as TextStyle,
+  quickNavHint: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink3, fontWeight: '600', marginTop: 2 } as TextStyle,
+  recordFocusKicker: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '800' } as TextStyle,
+  recordFocusTitle: { fontFamily: revaFonts.sans, fontSize: 19, fontWeight: '900', color: C.ink1, marginTop: 2 } as TextStyle,
+  recordFocusHint: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, color: C.ink2, marginTop: 4 } as TextStyle,
+  recordFocusPrimaryText: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '800', color: '#fff' } as TextStyle,
+  recordFocusSecondaryText: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '800' } as TextStyle,
+  sectionEyebrow: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '800', color: C.ink1 } as TextStyle,
+  sectionHint: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,
+  moreTitle: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '700', color: C.ink3 } as TextStyle,
+  moreRecordLabel: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '600', color: C.ink2 } as TextStyle,
+  tabText: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '500', color: C.ink3 } as TextStyle,
+  tabTextActive: { color: C.green500, fontWeight: '600' } as TextStyle,
+  nutriVal: { fontFamily: revaFonts.mono, fontSize: 16, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  nutriUnit: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink2 } as TextStyle,
+  nutriLabel: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '500', color: C.ink3 } as TextStyle,
+  mealType: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '600', color: C.ink1 } as TextStyle,
+  mealFood: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, marginTop: 1 } as TextStyle,
+  mealCal: { fontFamily: revaFonts.mono, fontSize: 13, fontWeight: '600', color: '#C97A2E', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  bodyVal: { fontFamily: revaFonts.mono, fontSize: 22, fontWeight: '800', color: C.ink1, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  bodyUnit: { fontFamily: revaFonts.mono, fontSize: 11, color: C.ink2, marginTop: 2 } as TextStyle,
+  bodyChange: { fontFamily: revaFonts.mono, fontSize: 11, fontWeight: '500', marginTop: 2 } as TextStyle,
+  medName: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink1, maxWidth: 80 } as TextStyle,
+  medItemName: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '500', color: C.ink1 } as TextStyle,
+  medItemMeta: { fontFamily: revaFonts.mono, fontSize: 11, color: C.ink3, marginTop: 2 } as TextStyle,
+  waterTotal: { fontFamily: revaFonts.mono, fontSize: 14, fontWeight: '700', color: C.blue500 } as TextStyle,
+  waterBtnText: { fontFamily: revaFonts.mono, fontSize: 14, fontWeight: '600', color: C.green500 } as TextStyle,
+  agentLink: { fontFamily: revaFonts.sans, fontSize: 13, color: C.green500, fontWeight: '600', flex: 1 } as TextStyle,
+  quickSaveTxt: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
+  bpSlash: { fontFamily: revaFonts.mono, fontSize: 16, color: C.ink3 } as TextStyle,
+  empty: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink3, textAlign: 'center', paddingVertical: 16 } as TextStyle,
+  undoText: { fontFamily: revaFonts.sans, fontSize: 14, color: '#fff' } as TextStyle,
+  undoBtn: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '600', color: C.greenBright } as TextStyle,
+  runCardTitle: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '600', color: C.ink1 } as TextStyle,
+  runCardSubtitle: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, marginTop: 2 } as TextStyle,
+};

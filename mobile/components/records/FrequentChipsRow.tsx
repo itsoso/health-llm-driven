@@ -8,8 +8,12 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { spacing, radii } from '../../constants/theme';
-import { useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaFonts,
+} from '../../constants/revaTheme';
 
 export interface FrequentChip {
   key: string;
@@ -25,15 +29,13 @@ interface Props {
 }
 
 export default function FrequentChipsRow({ label, icon = 'repeat-outline', chips, onPick }: Props) {
-  const { c } = useTheme();
-
   if (!chips || chips.length === 0) return null;
 
   return (
     <View style={styles.wrapper} testID="frequent-chips-row">
       <View style={styles.titleRow}>
-        <Ionicons name={icon} size={14} color={c.labelSecondary} />
-        <Text maxFontSizeMultiplier={1.4} style={[styles.title, { color: c.labelSecondary }]}>
+        <Ionicons name={icon} size={14} color={C.ink2} />
+        <Text maxFontSizeMultiplier={1.4} style={styles.title}>
           {label}
         </Text>
       </View>
@@ -44,16 +46,16 @@ export default function FrequentChipsRow({ label, icon = 'repeat-outline', chips
             onPress={() => onPick(i)}
             style={({ pressed }) => [
               styles.chip,
-              { backgroundColor: c.bgCard, borderColor: c.separator, opacity: pressed ? 0.7 : 1 },
+              { opacity: pressed ? 0.7 : 1 },
             ]}
             accessibilityRole="button"
             accessibilityLabel={`${chip.title}${chip.meta ? '，' + chip.meta : ''}`}
           >
-            <Text maxFontSizeMultiplier={1.3} style={[styles.chipTitle, { color: c.labelPrimary }]} numberOfLines={1}>
+            <Text maxFontSizeMultiplier={1.3} style={styles.chipTitle} numberOfLines={1}>
               {chip.title}
             </Text>
             {chip.meta ? (
-              <Text maxFontSizeMultiplier={1.3} style={[styles.chipMeta, { color: c.labelTertiary }]} numberOfLines={1}>
+              <Text maxFontSizeMultiplier={1.3} style={styles.chipMeta} numberOfLines={1}>
                 {chip.meta}
               </Text>
             ) : null}
@@ -64,20 +66,23 @@ export default function FrequentChipsRow({ label, icon = 'repeat-outline', chips
   );
 }
 
+// Reva 设计语言:暖白 surface chip / ink 文字 / r-lg 18。chip 标题/量值走 mono 等宽 signature。
 const styles = StyleSheet.create({
-  wrapper: { marginBottom: spacing.sm, gap: 8 },
+  wrapper: { marginBottom: revaSpacing.s2, gap: 8 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 2 },
-  title: { fontSize: 12, fontWeight: '700' },
-  scroll: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: 2, paddingBottom: 2 },
+  title: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '700', color: C.ink2 },
+  scroll: { flexDirection: 'row', gap: revaSpacing.s2, paddingHorizontal: 2, paddingBottom: 2 },
   chip: {
     minWidth: 80,
     maxWidth: 180,
-    borderRadius: radii.lg,
+    borderRadius: revaRadii.lg,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: spacing.md,
+    borderColor: C.line,
+    backgroundColor: C.surface,
+    paddingHorizontal: revaSpacing.s3,
     paddingVertical: 9,
     gap: 3,
   },
-  chipTitle: { fontSize: 13, fontWeight: '700' },
-  chipMeta: { fontSize: 10, fontWeight: '500' },
+  chipTitle: { fontFamily: revaFonts.mono, fontSize: 13, fontWeight: '700', color: C.ink1 },
+  chipMeta: { fontFamily: revaFonts.mono, fontSize: 10, fontWeight: '500', color: C.ink3 },
 });

@@ -1,10 +1,14 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Pressable, StyleSheet, Text, TextStyle, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-import { radii, spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaFonts,
+} from '@/constants/revaTheme';
 import {
   pushChatWithContext,
   type AgentContextPayload,
@@ -27,8 +31,6 @@ export default function AgentFeedbackLink({
   style,
 }: Props) {
   const router = useRouter();
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
 
   return (
     <Pressable
@@ -46,31 +48,31 @@ export default function AgentFeedbackLink({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
     >
-      <Ionicons name="chatbubble-ellipses-outline" size={16} color={c.brand} />
+      <Ionicons name="chatbubble-ellipses-outline" size={16} color={C.green500} />
       <Text style={styles.text}>{label}</Text>
-      <Ionicons name="chevron-forward" size={15} color={c.brand} />
+      <Ionicons name="chevron-forward" size={15} color={C.green500} />
     </Pressable>
   );
 }
 
-function createStyles(c: ReturnType<typeof useTheme>['c']) {
-  return StyleSheet.create({
-    link: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: c.brand,
-      borderRadius: radii.md,
-      backgroundColor: c.brandLight,
-      paddingHorizontal: spacing.md,
-      paddingVertical: 12,
-    },
-    text: {
-      flex: 1,
-      fontSize: 14,
-      fontWeight: '600',
-      color: c.brand,
-    } as TextStyle,
-  });
-}
+// Reva 设计语言:绿色一等强调 link,暖绿底 + 绿边 + 绿字。
+const styles = StyleSheet.create({
+  link: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green500,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.green50,
+    paddingHorizontal: revaSpacing.s3,
+    paddingVertical: 12,
+  },
+  text: {
+    flex: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 14,
+    fontWeight: '600',
+    color: C.green500,
+  } as TextStyle,
+});

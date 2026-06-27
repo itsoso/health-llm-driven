@@ -1,11 +1,19 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { updateCheckin } from '../../services/records';
 import api from '../../services/api';
-import { spacing, radii } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaFonts,
+} from '../../constants/revaTheme';
+
+// 鼻炎计数器的装饰性 hue (洗鼻青 / 喷嚏琥珀) —— 「区分类目」的色码,不是「好坏」三步语义,故为局部字面量。
+const RHIN_HUE = { wash: '#2F9E8F', sneeze: '#C98A1E' } as const;
 
 interface Props {
   checkin: any;
@@ -36,10 +44,6 @@ async function ensureAndLogMed(
 }
 
 export default function RhinitisCard({ checkin, medications, onUpdate }: Props) {
-  const { c, isDark } = useTheme();
-  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
-  const txt = useMemo(() => createTxt(c), [c]);
-
   const sneezeCount = checkin?.sneeze_count || 0;
   const washCount = checkin?.nasal_wash_count || 0;
 
@@ -79,15 +83,15 @@ export default function RhinitisCard({ checkin, medications, onUpdate }: Props) 
       </View>
       <View style={styles.row}>
         <TouchableOpacity style={styles.chip} onPress={() => doAction('nasal_wash_count', washCount + 1)} activeOpacity={0.7}>
-          <Text style={[txt.chipVal, { color: c.teal }]}>{washCount}</Text>
+          <Text style={[txt.chipVal, { color: RHIN_HUE.wash }]}>{washCount}</Text>
           <Text style={txt.chipLabel}>洗鼻</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.chip} onPress={() => doAction('sneeze_count', sneezeCount + 1)} activeOpacity={0.7}>
-          <Text style={[txt.chipVal, { color: c.amber }]}>{sneezeCount}</Text>
+          <Text style={[txt.chipVal, { color: RHIN_HUE.sneeze }]}>{sneezeCount}</Text>
           <Text style={txt.chipLabel}>喷嚏</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.chip, mometasoneTaken && { backgroundColor: c.tintGreen }]}
+          style={[styles.chip, mometasoneTaken && { backgroundColor: C.green50 }]}
           onPress={() => logMed(
             ['糠酸莫米松鼻喷雾剂', '糠酸莫米松', '莫米松', 'Mometasone'],
             { name: '糠酸莫米松鼻喷雾剂', dosage: '每侧2喷', frequency: '每日1次', category: 'prescription', purpose: '过敏性鼻炎', notes: '鼻喷糖皮质激素' },
@@ -95,11 +99,11 @@ export default function RhinitisCard({ checkin, medications, onUpdate }: Props) 
           )}
           activeOpacity={0.7}
         >
-          <Ionicons name={mometasoneTaken ? 'checkmark-circle' : 'ellipse-outline'} size={16} color={mometasoneTaken ? c.green : c.labelTertiary} />
+          <Ionicons name={mometasoneTaken ? 'checkmark-circle' : 'ellipse-outline'} size={16} color={mometasoneTaken ? C.green500 : C.ink3} />
           <Text style={txt.chipLabel}>莫米松</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.chip, ipratropiumTaken && { backgroundColor: c.tintGreen }]}
+          style={[styles.chip, ipratropiumTaken && { backgroundColor: C.green50 }]}
           onPress={() => logMed(
             ['异丙托溴铵', '异丙托溴铵鼻喷雾剂', 'Ipratropium Bromide'],
             { name: '异丙托溴铵鼻喷雾剂', dosage: '每侧2喷', frequency: '每日3-4次', category: 'prescription', purpose: '过敏性鼻炎/流涕', notes: '抗胆碱能鼻喷，缓解流涕' },
@@ -107,7 +111,7 @@ export default function RhinitisCard({ checkin, medications, onUpdate }: Props) 
           )}
           activeOpacity={0.7}
         >
-          <Ionicons name={ipratropiumTaken ? 'checkmark-circle' : 'ellipse-outline'} size={16} color={ipratropiumTaken ? c.green : c.labelTertiary} />
+          <Ionicons name={ipratropiumTaken ? 'checkmark-circle' : 'ellipse-outline'} size={16} color={ipratropiumTaken ? C.green500 : C.ink3} />
           <Text style={txt.chipLabel}>异丙托</Text>
         </TouchableOpacity>
       </View>
@@ -115,28 +119,24 @@ export default function RhinitisCard({ checkin, medications, onUpdate }: Props) 
   );
 }
 
-function createStyles(c: ColorPalette, isDark: boolean) {
-  return StyleSheet.create({
-    card: {
-      backgroundColor: c.bgCard, borderRadius: radii.lg,
-      padding: spacing.md, marginBottom: spacing.md,
-      ...(isDark
-        ? { borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator }
-        : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 1 }),
-    },
-    header: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
-    row: { flexDirection: 'row', gap: spacing.sm },
-    chip: {
-      flex: 1, backgroundColor: c.bgPrimary, borderRadius: radii.md,
-      paddingVertical: 8, alignItems: 'center', gap: 2,
-    },
-  });
-}
+// Reva 设计语言:暖白 surface / paper2 recessed chip 底 / r-lg 18 / light-first 软阴影。
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: C.surface, borderRadius: revaRadii.lg,
+    padding: revaSpacing.s3, marginBottom: revaSpacing.s3,
+    ...revaShadows.sm,
+  },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  row: { flexDirection: 'row', gap: revaSpacing.s2 },
+  chip: {
+    flex: 1, backgroundColor: C.paper2, borderRadius: revaRadii.md,
+    paddingVertical: 8, alignItems: 'center', gap: 2,
+  },
+});
 
-function createTxt(c: ColorPalette) {
-  return {
-    title: { fontSize: 14, fontWeight: '600', color: c.labelPrimary } as TextStyle,
-    chipVal: { fontSize: 20, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
-    chipLabel: { fontSize: 10, color: c.labelSecondary } as TextStyle,
-  };
-}
+// 数字(洗鼻/喷嚏计数)走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
+const txt = {
+  title: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '600', color: C.ink1 } as TextStyle,
+  chipVal: { fontFamily: revaFonts.mono, fontSize: 20, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  chipLabel: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink2 } as TextStyle,
+};

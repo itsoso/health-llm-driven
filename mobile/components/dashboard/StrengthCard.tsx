@@ -3,8 +3,22 @@ import { View, Text, StyleSheet, TouchableOpacity, TextStyle } from 'react-nativ
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import api from '../../services/api';
-import { spacing, radii } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaFonts,
+} from '../../constants/revaTheme';
+
+// 每个动作的装饰性 hue (俯卧撑橙 / 深蹲紫 / 引体蓝 / 倒立青) —— 「区分类目」的色码,
+// 不是「指标好坏」的三步临床语义,故为局部字面量 (同 VitalsGrid 的 HUES)。
+const EX_HUES = {
+  orange: { color: '#C97A2E', bg: '#F6E9DA' },
+  purple: { color: '#7C5CBF', bg: '#EDE7F6' },
+  blue: { color: '#2A6FDB', bg: '#E4ECF8' },
+  teal: { color: '#2F9E8F', bg: '#E0EFEC' },
+} as const;
 
 function today(): string {
   const d = new Date();
@@ -36,18 +50,14 @@ interface Props {
   onUpdate?: () => void;
 }
 
+const EXERCISES: ExerciseConfig[] = [
+  { type: '俯卧撑',   label: '俯卧撑',   icon: 'body-outline',    color: EX_HUES.orange.color, bg: EX_HUES.orange.bg, mode: 'reps',             quickAmounts: [10, 15, 20, 30],   dailyTarget: 100 },
+  { type: '深蹲',     label: '深蹲',     icon: 'barbell-outline', color: EX_HUES.purple.color, bg: EX_HUES.purple.bg, mode: 'reps',             quickAmounts: [10, 15, 20, 30],   dailyTarget: 100 },
+  { type: '引体向上', label: '引体向上', icon: 'fitness-outline', color: EX_HUES.blue.color,   bg: EX_HUES.blue.bg,   mode: 'reps',             quickAmounts: [3, 5, 8, 10],      dailyTarget: 30  },
+  { type: '倒立',     label: '倒立',     icon: 'sync-outline',    color: EX_HUES.teal.color,   bg: EX_HUES.teal.bg,   mode: 'duration_seconds', quickAmounts: [30, 60, 90, 120],  dailyTarget: 300 },
+];
+
 export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
-  const { c, isDark } = useTheme();
-  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
-  const txt = useMemo(() => createTxt(c), [c]);
-
-  const EXERCISES: ExerciseConfig[] = useMemo(() => [
-    { type: '俯卧撑',   label: '俯卧撑',   icon: 'body-outline',    color: c.orange, bg: c.tintOrange, mode: 'reps',             quickAmounts: [10, 15, 20, 30],   dailyTarget: 100 },
-    { type: '深蹲',     label: '深蹲',     icon: 'barbell-outline', color: c.purple, bg: c.tintPurple, mode: 'reps',             quickAmounts: [10, 15, 20, 30],   dailyTarget: 100 },
-    { type: '引体向上', label: '引体向上', icon: 'fitness-outline', color: c.blue,   bg: c.tintBlue,   mode: 'reps',             quickAmounts: [3, 5, 8, 10],      dailyTarget: 30  },
-    { type: '倒立',     label: '倒立',     icon: 'sync-outline',    color: c.teal,   bg: c.tintTeal,   mode: 'duration_seconds', quickAmounts: [30, 60, 90, 120],  dailyTarget: 300 },
-  ], [c]);
-
   // 本地乐观计数, 按 type 累加 (reps: 个数; duration: 秒数)
   const [localAdd, setLocalAdd] = useState<Record<string, number>>({});
   const [recording, setRecording] = useState<string | null>(null);
@@ -68,7 +78,7 @@ export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
       }, 0);
     }
     return totals;
-  }, [exerciseToday, EXERCISES]);
+  }, [exerciseToday]);
 
   // 当 server 总数增长 → 把对应 amount 从 localAdd 里扣掉, 避免重复计数
   useEffect(() => {
@@ -135,8 +145,8 @@ export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View style={[styles.iconWrap, { backgroundColor: c.tintOrange }]}>
-          <Ionicons name="fitness-outline" size={16} color={c.orange} />
+        <View style={[styles.iconWrap, { backgroundColor: EX_HUES.orange.bg }]}>
+          <Ionicons name="fitness-outline" size={16} color={EX_HUES.orange.color} />
         </View>
         <Text style={txt.title}>力量训练</Text>
         <Text style={txt.date}>今日</Text>
@@ -184,37 +194,33 @@ export default function StrengthCard({ exerciseToday, onUpdate }: Props) {
   );
 }
 
-function createStyles(c: ColorPalette, isDark: boolean) {
-  return StyleSheet.create({
-    card: {
-      backgroundColor: c.bgCard, borderRadius: radii.xl,
-      padding: spacing.lg, marginBottom: spacing.md,
-      ...(isDark
-        ? { borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator }
-        : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 1 }),
-    },
-    header: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: spacing.lg },
-    iconWrap: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-    exerciseSection: { marginBottom: spacing.md },
-    exerciseHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
-    exIconDot: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-    progressBg: { height: 6, backgroundColor: c.bgPrimary, borderRadius: 3, marginBottom: spacing.sm, overflow: 'hidden' },
-    progressFill: { height: 6, borderRadius: 3 },
-    quickRow: { flexDirection: 'row', gap: spacing.sm },
-    quickBtn: {
-      flex: 1, borderWidth: 1, borderRadius: radii.md,
-      paddingVertical: 8, alignItems: 'center',
-    },
-  });
-}
+// Reva 设计语言:暖白 surface / r-lg 18 / paper2 recessed 进度槽 / light-first 软阴影。动作色为类目装饰色。
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: C.surface, borderRadius: revaRadii.lg,
+    padding: revaSpacing.s4, marginBottom: revaSpacing.s3,
+    ...revaShadows.sm,
+  },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: revaSpacing.s4 },
+  iconWrap: { width: 28, height: 28, borderRadius: revaRadii.sm, alignItems: 'center', justifyContent: 'center' },
+  exerciseSection: { marginBottom: revaSpacing.s3 },
+  exerciseHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  exIconDot: { width: 26, height: 26, borderRadius: revaRadii.sm, alignItems: 'center', justifyContent: 'center' },
+  progressBg: { height: 6, backgroundColor: C.paper2, borderRadius: 3, marginBottom: revaSpacing.s2, overflow: 'hidden' },
+  progressFill: { height: 6, borderRadius: 3 },
+  quickRow: { flexDirection: 'row', gap: revaSpacing.s2 },
+  quickBtn: {
+    flex: 1, borderWidth: 1, borderRadius: revaRadii.md,
+    paddingVertical: 8, alignItems: 'center',
+  },
+});
 
-function createTxt(c: ColorPalette) {
-  return {
-    title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, flex: 1 } as TextStyle,
-    date: { fontSize: 12, color: c.labelTertiary } as TextStyle,
-    exerciseName: { fontSize: 15, fontWeight: '500', color: c.labelPrimary, flex: 1 } as TextStyle,
-    exerciseCount: { fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
-    exerciseTarget: { fontSize: 13, color: c.labelTertiary } as TextStyle,
-    quickBtnText: { fontSize: 14, fontWeight: '600' } as TextStyle,
-  };
-}
+// 数字(动作计数/目标/快捷量)走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
+const txt = {
+  title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1, flex: 1 } as TextStyle,
+  date: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3 } as TextStyle,
+  exerciseName: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '500', color: C.ink1, flex: 1 } as TextStyle,
+  exerciseCount: { fontFamily: revaFonts.mono, fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  exerciseTarget: { fontFamily: revaFonts.mono, fontSize: 13, color: C.ink3 } as TextStyle,
+  quickBtnText: { fontFamily: revaFonts.mono, fontSize: 14, fontWeight: '600' } as TextStyle,
+};

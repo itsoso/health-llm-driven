@@ -1,8 +1,13 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { radii, spacing, typography } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaFonts,
+} from '../../constants/revaTheme';
 
 interface Props {
   title: string;
@@ -19,9 +24,6 @@ export default function HealthCard({
   title, icon, iconColor, iconBg,
   rightAccessory, children, style, accentColor,
 }: Props) {
-  const { c, isDark } = useTheme();
-  const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
-
   return (
     <View
       style={[
@@ -32,8 +34,8 @@ export default function HealthCard({
     >
       <View style={styles.header}>
         {icon && (
-          <View style={[styles.iconCircle, { backgroundColor: iconBg ?? c.brandLight }]}>
-            <Ionicons name={icon} size={16} color={iconColor ?? c.brand} />
+          <View style={[styles.iconCircle, { backgroundColor: iconBg ?? C.green50 }]}>
+            <Ionicons name={icon} size={16} color={iconColor ?? C.green500} />
           </View>
         )}
         <Text style={styles.title}>{title}</Text>
@@ -44,38 +46,34 @@ export default function HealthCard({
   );
 }
 
-function createStyles(c: ColorPalette, isDark: boolean) {
-  return StyleSheet.create({
-    card: {
-      backgroundColor: c.bgCard,
-      borderRadius: radii.lg,
-      padding: spacing.lg,
-      marginBottom: spacing.md,
-      // dark mode 下 shadow 不可见, 用 hairline 边框做卡片分隔, 同 DashboardCard
-      ...(isDark
-        ? { borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator }
-        : {
-            shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.06, shadowRadius: 3, elevation: 1,
-          }),
-    },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      marginBottom: spacing.md,
-    },
-    iconCircle: {
-      width: 28,
-      height: 28,
-      borderRadius: radii.sm,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    title: {
-      ...typography.titleSmall,
-      color: c.labelPrimary,
-      flex: 1,
-    } as TextStyle,
-  });
-}
+// Reva 设计语言:暖白 surface / ink 文字 / r-lg 18 / light-first 单态软阴影。
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: C.surface,
+    borderRadius: revaRadii.lg,
+    padding: revaSpacing.s4,
+    marginBottom: revaSpacing.s3,
+    ...revaShadows.sm,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: revaSpacing.s2,
+    marginBottom: revaSpacing.s3,
+  },
+  iconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: revaRadii.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    fontFamily: revaFonts.sans,
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 23,
+    color: C.ink1,
+    flex: 1,
+  } as TextStyle,
+});
