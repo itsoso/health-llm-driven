@@ -25,6 +25,7 @@ POSITIVE_STANCES = {"supports", "positive", "for", "yes", "true", "increase", "i
 NEGATIVE_STANCES = {"opposes", "negative", "against", "no", "false", "decrease", "decreases"}
 
 _IN_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s+in\s+(?P<values>\[.*\])$")
+_INTERSECTS_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s+intersects\s+(?P<values>\[.*\])$")
 _HAS_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s+has\s+(?P<value>.+)$")
 _HAS_ANY_RE = re.compile(r"^any\s+of\s+(?P<values>\[.*\])$")
 _EQ_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s*(==|=)\s*(?P<value>.+)$")
@@ -730,7 +731,9 @@ def _matched_conditions_for_claim(conditions: list[str], twin: dict[str, Any]) -
     if not matched_conditions:
         return []
     membership_conditions = [
-        condition for condition in conditions if _HAS_RE.match((condition or "").strip())
+        condition for condition in conditions
+        if _HAS_RE.match((condition or "").strip())
+        or _INTERSECTS_RE.match((condition or "").strip())
     ]
     if membership_conditions and len(matched_conditions) != len(conditions):
         return []
@@ -1301,6 +1304,13 @@ def _system_kb_genetics_from_health_twin(twin: Any) -> dict[str, Any]:
             phenotype = _infer_pgx_phenotype(gene, genotype, result_label, risk_level)
             if phenotype:
                 out[f"{gene}_phenotype"] = phenotype
+        elif gene in {"TPMT", "NUDT15"}:
+            out[gene] = genotype or "present"
+            phenotype, function = _infer_thiopurine_pgx_status(gene, genotype, result_label, risk_level)
+            if phenotype:
+                out[f"{gene}_phenotype"] = phenotype
+            if function:
+                out["TPMT_activity" if gene == "TPMT" else "NUDT15_function"] = function
         elif gene == "SLCO1B1":
             out["SLCO1B1"] = genotype or "present"
             if genotype in {"CT", "CC", "TT"}:
@@ -1340,6 +1350,46 @@ def _infer_pgx_phenotype(gene: str, genotype: str, result_label: str, risk_level
     if inactive_count == 1:
         return "intermediate"
     return None
+
+
+def _infer_thiopurine_pgx_status(
+    gene: str,
+    genotype: str,
+    result_label: str,
+    risk_level: str,
+) -> tuple[str | None, str | None]:
+    """Map TPMT/NUDT15 labels into the existing KB condition vocabulary."""
+
+    text = f"{genotype} {result_label} {risk_level}".lower()
+    no_function_tokens = (
+        "poor",
+        "低活性",
+        "无活性",
+        "缺乏",
+        "no function",
+        "no_function",
+        "absent",
+        "deficient",
+        "high",
+        "高风险",
+    )
+    decreased_tokens = (
+        "intermediate",
+        "中间",
+        "活性降低",
+        "功能降低",
+        "decreased",
+        "reduced",
+        "medium",
+        "中风险",
+    )
+    if any(token in text for token in no_function_tokens):
+        function = "absent" if gene == "TPMT" else "no_function"
+        return "poor_metabolizer", function
+    if any(token in text for token in decreased_tokens):
+        function = "low" if gene == "TPMT" else "decreased_function"
+        return "intermediate_metabolizer", function
+    return None, None
 
 
 def attach_system_knowledge_evidence(
@@ -1639,6 +1689,17 @@ def evaluate_condition(condition: str, twin: dict[str, Any]) -> bool:
             return False
         return value in candidates
 
+    intersects_match = _INTERSECTS_RE.match(expression)
+    if intersects_match:
+        collection = _value_at_path(twin, intersects_match.group("path"))
+        try:
+            candidates = ast.literal_eval(intersects_match.group("values"))
+        except (SyntaxError, ValueError):
+            return False
+        if not isinstance(candidates, (list, tuple, set)):
+            return False
+        return any(_collection_contains(collection, candidate) for candidate in candidates)
+
     has_match = _HAS_RE.match(expression)
     if has_match:
         collection = _value_at_path(twin, has_match.group("path"))
@@ -1683,7 +1744,7 @@ def is_supported_condition(condition: str) -> bool:
     expression = (condition or "").strip()
     return any(
         pattern.match(expression)
-        for pattern in (_NULL_RE, _IN_RE, _HAS_RE, _EQ_RE, _COMPARE_RE)
+        for pattern in (_NULL_RE, _IN_RE, _INTERSECTS_RE, _HAS_RE, _EQ_RE, _COMPARE_RE)
     )
 
 
@@ -2547,6 +2608,10 @@ def _extract_entity_keys(twin: dict[str, Any]) -> set[tuple[str, str]]:
         "FTO": "FTO",
         "ACTN3": "ACTN3",
         "ALDH2": "ALDH2",
+        "TPMT": "TPMT",
+        "TPMT_phenotype": "TPMT",
+        "NUDT15": "NUDT15",
+        "NUDT15_phenotype": "NUDT15",
     }
     for field, entity_id in gene_prefixes.items():
         if genetics.get(field) is not None:
