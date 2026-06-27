@@ -87,6 +87,14 @@ class SafetyReport(BaseModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     alerts: List[Alert] = Field(default_factory=list)
     total_rules_evaluated: int = 0
+    failed_rule_count: int = Field(
+        0,
+        description=(
+            "本次评估中抛异常被 per-rule try/except 跳过的规则条数。"
+            ">0 表示自动安全筛查不完整(fail-loud 信号);此时 alerts 已注入一条 "
+            "HIGH 的 safety.evaluation_incomplete advisory,绝不静默冒充安全。"
+        ),
+    )
     twin_build_ms: int = 0
     evaluate_ms: int = 0
 
@@ -113,6 +121,7 @@ class SafetyReport(BaseModel):
                 "high": self.high_count,
                 "medium": self.medium_count,
                 "rules_evaluated": self.total_rules_evaluated,
+                "failed_rule_count": self.failed_rule_count,
             },
             "timing": {
                 "twin_build_ms": self.twin_build_ms,
