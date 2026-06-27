@@ -280,6 +280,47 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(mockPush).toHaveBeenCalledWith('/(tabs)/record');
   });
 
+  it('offers an isolated 5-minute demo on-ramp when there is no live runtime action', () => {
+    const { getByLabelText, getByText } = render(<TodayScreen />);
+
+    expect(getByText('5 分钟示例体验')).toBeTruthy();
+    expect(getByText('示例数据,不写入真实档案')).toBeTruthy();
+
+    fireEvent.press(getByLabelText('打开 Reva 示例体验'));
+
+    expect(mockPush).toHaveBeenCalledWith(expect.objectContaining({
+      pathname: '/(tabs)/chat',
+      params: expect.objectContaining({
+        badge: '示例体验',
+        newChat: '1',
+        context: expect.stringContaining('"demo":true'),
+      }),
+    }));
+  });
+
+  it('keeps the demo on-ramp out of the way when a live now-item exists', () => {
+    mockTimeline = makeTimeline({
+      id: 'water-1',
+      kind: 'action',
+      time_window: 'morning',
+      scheduled_for: '08:00',
+      title: '喝 200ml 温水',
+      subtitle: '起床后补水,再开始运动',
+      icon: 'water-outline',
+      color: '#1F8A5B',
+      status: 'pending',
+      priority: 1,
+      can_complete: true,
+      complete_ref: { object_type: 'health_protocol', object_id: 12 },
+      deep_link: null,
+      severity: null,
+      proof: null,
+    });
+
+    const { queryByText } = render(<TodayScreen />);
+    expect(queryByText('5 分钟示例体验')).toBeNull();
+  });
+
   it('routes the Hero now-action to its deep link when present', () => {
     mockTimeline = makeTimeline({
       id: 'act-9',

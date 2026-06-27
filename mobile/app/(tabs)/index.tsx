@@ -47,6 +47,7 @@ import MedicationCheckin from '../../components/dashboard/MedicationCheckin';
 import BodyStatsRow from '../../components/home/BodyStatsRow';
 import RevaGreetingHeader from '../../components/home/RevaGreetingHeader';
 import DailyArtifactCard from '../../components/home/DailyArtifactCard';
+import DemoOnRampCard from '../../components/home/DemoOnRampCard';
 import WriteIntentCard from '../../components/home/WriteIntentCard';
 import RevaTimelineStrip from '../../components/home/RevaTimelineStrip';
 import RevaCycleStrip from '../../components/home/RevaCycleStrip';
@@ -59,6 +60,7 @@ import { revaColors } from '../../constants/revaTheme';
 import { useHomeColdStartTrace } from '../../services/perfTrace';
 import { getHealthKitLastSync } from '../../services/appleHealth';
 import { buildDailyArtifact, type DailyArtifact } from '../../services/dailyArtifact';
+import { buildDemoOnRampRuntime, getDemoOnRampChatRoute } from '../../services/demoOnRamp';
 import { emitClientEvent } from '../../services/clientEvents';
 import { SKIP_REASONS } from '../../constants/skipReasons';
 
@@ -291,6 +293,17 @@ export default function TodayScreen() {
     criticalAlerts,
   ]);
 
+  const demoOnRampRuntime = useMemo(() => buildDemoOnRampRuntime(), []);
+  const hasLiveHealthSignals = Boolean(
+    twinSnap.readiness != null ||
+    twinSnap.sleep_hours != null ||
+    twinSnap.hrv != null ||
+    twinSnap.spo2_avg != null ||
+    garminDays.length > 0 ||
+    (dashboardQuery.data?.medicationToday?.length ?? 0) > 0
+  );
+  const shouldShowDemoOnRamp = !nowItem && !nextAction && !hasLiveHealthSignals;
+
   useEffect(() => {
     const id = dailyArtifact.tracking.artifactId;
     if (seenArtifactImpressionRef.current === id) return;
@@ -302,6 +315,20 @@ export default function TodayScreen() {
     emitClientEvent('daily_artifact_accepted', dailyArtifactEventMeta(dailyArtifact)).catch(() => {});
     onHeroAction();
   }, [dailyArtifact, onHeroAction]);
+
+  const onOpenDemoOnRamp = useCallback(() => {
+    hapticImpact(Haptics.ImpactFeedbackStyle?.Light);
+    emitClientEvent('demo_on_ramp_opened', {
+      mode: demoOnRampRuntime.mode,
+      estimated_minutes: demoOnRampRuntime.estimatedMinutes,
+    }).catch(() => {});
+    router.push(getDemoOnRampChatRoute(demoOnRampRuntime) as any);
+  }, [demoOnRampRuntime, router]);
+
+  const onConnectHealthKitFromDemo = useCallback(() => {
+    hapticImpact(Haptics.ImpactFeedbackStyle?.Light);
+    router.push('/settings' as any);
+  }, [router]);
 
   // Daily Artifact 内联「完成」:走时间线 now-item 的 complete_ref(复用 /agenda/complete 双轨写真实记录)。
   // action-lock(heroCompleting)防双击;失败给 Alert 反馈,不静默吞。
@@ -384,6 +411,14 @@ export default function TodayScreen() {
           skipReasons={SKIP_REASONS}
           onSkipReason={onArtifactSkipReason}
         />
+
+        {shouldShowDemoOnRamp ? (
+          <DemoOnRampCard
+            runtime={demoOnRampRuntime}
+            onOpenDemo={onOpenDemoOnRamp}
+            onConnectHealthKit={onConnectHealthKitFromDemo}
+          />
+        ) : null}
 
         {/* 待你确认(Write 层 v0:Agent 提议替你写一件事,确认才执行;空态不渲染) */}
         <WriteIntentCard />
@@ -469,12 +504,12 @@ function dailyArtifactEventMeta(artifact: DailyArtifact, extra?: Record<string, 
 
 function hapticImpact(style: Haptics.ImpactFeedbackStyle | undefined) {
   if (!style) return;
-  Haptics.impactAsync(style).catch(() => {});
+  Haptics.impactAsync(style)?.catch?.(() => {});
 }
 
 function hapticNotification(type: Haptics.NotificationFeedbackType | undefined) {
   if (!type) return;
-  Haptics.notificationAsync(type).catch(() => {});
+  Haptics.notificationAsync(type)?.catch?.(() => {});
 }
 
 function getSeverityKey(s: any): string {

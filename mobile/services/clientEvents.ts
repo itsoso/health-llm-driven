@@ -29,7 +29,9 @@ export type ClientEventName =
   | 'daily_artifact_impression'
   | 'daily_artifact_accepted'
   | 'daily_artifact_completed'
-  | 'daily_artifact_skipped';
+  | 'daily_artifact_skipped'
+  // Phase 1C — first-run demo path, must stay isolated from real PHI writes.
+  | 'demo_on_ramp_opened';
 
 /**
  * 发一条 UI 埋点事件. 失败静默 — 埋点不该影响用户流程.
@@ -46,6 +48,7 @@ export type ClientEventName =
  * - watch_action_*: { action_id: string, kind: string, priority_tier?: 'P0'|'P1'|'P2'|'P3'|'P4', reason?: string }
  * - agenda_action_failed: { reason: string, object_type?: string, object_id?: unknown, status?: string }
  * - daily_artifact_*: { artifact_id, week_index, top_action_source, top_action_title, skip_reason? }
+ * - demo_on_ramp_opened: { mode: 'demo', estimated_minutes: number }
  */
 export async function emitClientEvent(
   name: ClientEventName,
