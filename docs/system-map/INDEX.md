@@ -39,6 +39,7 @@ extend-via: docs/specs/product-pipeline-contract.md
 | **4 系统架构** | [`ARCHITECTURE.md`](../ARCHITECTURE.md) + CLAUDE.md §Architecture(计数由 `check_doc_drift` 钉) | A+B |
 | **5 未来规划** | reva-personal-health-os-prd.md §10 待拍板 · AS-IS PRD §3/§10 | A |
 | **6 产品地图(多端×UI×流)** | [`product-map.md`](product-map.md) + [surface-ownership-inventory](../specs/active/2026-06-26-surface-ownership-inventory.md) + ARCHITECTURE §5 系统流 | A+B |
+| **6b Mobile 动线知识图谱**(页面/动线/合理性审计/IA 重设计) | [`mobile-nav-map.md`](mobile-nav-map.md) + 代码派生图 [`_generated/mobile-nav-graph.json`](../_generated/mobile-nav-graph.json)(`mobile/scripts/dump_nav_graph.py` 生成) | A+B |
 
 ## 当前代码派生快照(引用,非手打 —— 真值见 `_generated/system-map.json`)
 
