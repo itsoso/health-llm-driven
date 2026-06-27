@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
   },
   label: { fontSize: 13, fontWeight: '500' },
   valueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 1 },
-  value: { fontSize: 24, fontWeight: '800', fontVariant: ['tabular-nums'], letterSpacing: -0.6 },
+  value: { fontSize: 24, fontWeight: '800', fontVariant: ['tabular-nums'], letterSpacing: 0 },
   unit: { fontSize: 13, fontWeight: '500' },
   sub: { fontSize: 11, marginTop: 4 },
 });

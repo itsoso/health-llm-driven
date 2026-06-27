@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
   },
   iconWrap: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   bigWrap: { flexDirection: 'row', alignItems: 'baseline', minWidth: 44 },
-  bigNum: { fontSize: 32, fontWeight: '900', letterSpacing: -1 },
+  bigNum: { fontSize: 32, fontWeight: '900', letterSpacing: 0 },
   bigUnit: { fontSize: 13, fontWeight: '700', marginLeft: 1 },
   textWrap: { flex: 1, gap: 2, minWidth: 0 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },

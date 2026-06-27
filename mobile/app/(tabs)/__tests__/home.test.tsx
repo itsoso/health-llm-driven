@@ -257,6 +257,28 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(queryByLabelText('现在该做:旧 Hero 行动')).toBeNull();
   });
 
+  it('renders a cockpit header with Twin and data freshness status', () => {
+    mockTwinData = {
+      physiological: { training_readiness_score: 87, hrv_latest: 48 },
+    };
+    mockDailyArtifact = {
+      artifact_date: '2026-06-27',
+      empty_state: false,
+      state: { label: '今日状态', tone: 'focused', summary: '数据已更新。' },
+      top_action: null,
+      evidence: [],
+      confidence: 'medium',
+      freshness: { status: 'fresh', sources: ['HealthKit', 'Garmin'] },
+      safety_boundary: null,
+    };
+
+    const { getByTestId, getByText } = render(<TodayScreen />);
+
+    expect(getByTestId('reva-cockpit-status-row')).toBeTruthy();
+    expect(getByText('Twin 已更新')).toBeTruthy();
+    expect(getByText('2 个来源 · 新鲜')).toBeTruthy();
+  });
+
   it('routes the Hero now-action to its deep link when present', () => {
     mockTimeline = makeTimeline({
       id: 'act-9',

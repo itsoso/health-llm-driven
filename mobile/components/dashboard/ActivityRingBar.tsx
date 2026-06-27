@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
 
 // 环数值(步数 / 活动 / 卡路里)与目标值走 IBM Plex Mono = Reva 等宽 signature;标签走 Manrope/ink。
 const txt = {
-  value: { fontFamily: revaFonts.mono, fontSize: 16, fontWeight: '700', color: C.ink1, marginTop: 6, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  value: { fontFamily: revaFonts.mono, fontSize: 16, fontWeight: '700', color: C.ink1, marginTop: 6, fontVariant: ['tabular-nums'] as const, letterSpacing: 0 } as TextStyle,
   label: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '500', color: C.ink2, marginTop: 2 } as TextStyle,
-  target: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3 } as TextStyle,
+  target: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3, letterSpacing: 0 } as TextStyle,
 };

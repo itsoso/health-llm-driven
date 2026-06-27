@@ -83,7 +83,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 19,
     fontWeight: '800',
-    letterSpacing: -0.3,
+    letterSpacing: 0,
     color: C.focusInk1,
   },
   sub: {

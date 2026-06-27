@@ -897,7 +897,7 @@ const styles = StyleSheet.create({
 
 // 数字/计数/指标值/单位走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
 const txt = {
-  title: { fontFamily: revaFonts.sans, fontSize: 28, fontWeight: '800', letterSpacing: -0.56, color: C.ink1, marginBottom: revaSpacing.s3 } as TextStyle,
+  title: { fontFamily: revaFonts.sans, fontSize: 28, fontWeight: '800', letterSpacing: 0, color: C.ink1, marginBottom: revaSpacing.s3 } as TextStyle,
   captureModeLabel: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '800', color: C.ink1 } as TextStyle,
   captureModeHint: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink3, fontWeight: '600' } as TextStyle,
   quickNavLabel: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '800', color: C.ink1 } as TextStyle,

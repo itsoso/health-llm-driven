@@ -204,10 +204,10 @@ const txt = {
   value: {
     fontFamily: revaFonts.mono,
     fontWeight: '800',
-    letterSpacing: -0.3,
+    letterSpacing: 0,
     fontVariant: ['tabular-nums'] as const,
   } as TextStyle,
-  unit: { fontFamily: revaFonts.mono, fontSize: 10, fontWeight: '700' } as TextStyle,
+  unit: { fontFamily: revaFonts.mono, fontSize: 10, fontWeight: '700', letterSpacing: 0 } as TextStyle,
   label: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '700' } as TextStyle,
   hint: { fontFamily: revaFonts.sans, fontSize: 10, fontWeight: '500' } as TextStyle,
 };

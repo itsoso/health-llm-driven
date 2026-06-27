@@ -194,8 +194,8 @@ const styles = StyleSheet.create({
 // 数字/单位(指标值 / 单位)走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
 const txt = {
   label: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '500', color: C.ink2 } as TextStyle,
-  value: { fontFamily: revaFonts.mono, fontSize: 26, fontWeight: '800', fontVariant: ['tabular-nums'] as const, letterSpacing: -0.8 } as TextStyle,
-  unit: { fontFamily: revaFonts.mono, fontSize: 13, fontWeight: '500' } as TextStyle,
+  value: { fontFamily: revaFonts.mono, fontSize: 26, fontWeight: '800', fontVariant: ['tabular-nums'] as const, letterSpacing: 0 } as TextStyle,
+  unit: { fontFamily: revaFonts.mono, fontSize: 13, fontWeight: '500', letterSpacing: 0 } as TextStyle,
   sub: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, marginTop: 2 } as TextStyle,
-  sparkHint: { fontFamily: revaFonts.mono, fontSize: 9, color: C.ink3, marginTop: 1 } as TextStyle,
+  sparkHint: { fontFamily: revaFonts.mono, fontSize: 9, color: C.ink3, marginTop: 1, letterSpacing: 0 } as TextStyle,
 };

@@ -165,7 +165,7 @@ function createTxt(c: ColorPalette) {
   return {
     label: { fontSize: 12, color: c.labelSecondary, fontWeight: '500' as const } as TextStyle,
     bigNumber: {
-      fontSize: 32, fontWeight: '800' as const, letterSpacing: -1,
+      fontSize: 32, fontWeight: '800' as const, letterSpacing: 0,
       fontVariant: ['tabular-nums' as const],
     } as TextStyle,
     unit: { fontSize: 14, fontWeight: '500' as const } as TextStyle,
