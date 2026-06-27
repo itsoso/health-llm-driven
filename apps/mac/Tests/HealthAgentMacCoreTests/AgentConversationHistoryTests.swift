@@ -56,7 +56,7 @@ final class AgentConversationHistoryTests: XCTestCase {
                  "image_url": "[\\"/api/v1/upload/files/chat/dinner.jpg\\", \\"https://cdn.example.test/meal.png\\"]",
                  "created_at": "2026-06-12 09:00:00+00:00"},
                 {"id": 2, "role": "assistant", "content": "了解,我们看看你的睡眠数据",
-                 "meta": {"model": "commercial/Claude-Opus-4.7", "selected_model": "commercial/Claude-Opus-4.7", "answer_model": "commercial/Claude-Opus-4.7", "tool_models": ["qwen3.7-max"], "fallback_reasons": ["selected_model_tool_stream_failed"], "elapsed_ms": 3300, "llm_rounds": 2, "sources_used": ["系统知识库"], "tools_used": ["health_query"], "completion_status": "complete"},
+                 "meta": {"model": "commercial/Claude-Opus-4.7", "selected_model": "commercial/Claude-Opus-4.7", "answer_model": "commercial/Claude-Opus-4.7", "tool_models": ["qwen3.7-max"], "fallback_reasons": ["selected_model_tool_stream_failed"], "elapsed_ms": 3300, "llm_rounds": 2, "sources_used": ["系统知识库"], "tools_used": ["health_query"], "completion_status": "complete", "cards": [{"type": "system_knowledge_evidence", "data": {"entity": {"title": "MTHFR"}, "claims": []}}]},
                  "created_at": "2026-06-12 09:01:00+00:00"},
                 {"id": 3, "role": "system", "content": "internal", "created_at": "2026-06-12 09:02:00+00:00"}
               ]
@@ -87,6 +87,8 @@ final class AgentConversationHistoryTests: XCTestCase {
         XCTAssertEqual(messages[1].sourcesUsed, ["系统知识库"])
         XCTAssertEqual(messages[1].toolsUsed, ["health_query"])
         XCTAssertEqual(messages[1].completionStatus, "complete")
+        XCTAssertEqual(messages[1].cardType, "system_knowledge_evidence")
+        XCTAssertEqual(messages[1].cardData?["entity"]?["title"]?.stringValue, "MTHFR")
     }
 
     func testConversationClientParsesPythonAndISODates() {

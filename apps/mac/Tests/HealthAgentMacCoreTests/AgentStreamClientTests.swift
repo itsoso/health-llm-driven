@@ -60,6 +60,38 @@ final class AgentStreamClientTests: XCTestCase {
         ])
     }
 
+    func testParserParsesDynamicCardsInDone() throws {
+        let payload = """
+        data: {"event":"done","data":{"conversation_id":5,"message_id":3,"completion_status":"complete","cards":[{"type":"medical_exam_import_result","data":{"exam_id":321,"source":"pdf","items_count":9}}]}}
+
+        """
+
+        let events = try AgentStreamParser.parse(payload)
+
+        XCTAssertEqual(events, [
+            .done(
+                conversationID: 5,
+                messageID: 3,
+                completionStatus: "complete",
+                model: nil,
+                sourcesUsed: [],
+                toolsUsed: [],
+                elapsedMs: nil,
+                llmRounds: nil,
+                cards: [
+                    AgentDynamicCardDescriptor(
+                        type: "medical_exam_import_result",
+                        data: .object([
+                            "exam_id": .int(321),
+                            "source": .string("pdf"),
+                            "items_count": .int(9)
+                        ])
+                    )
+                ]
+            )
+        ])
+    }
+
     func testParserToleratesMissingToolsUsed() throws {
         // 后端 tools_used 未上线前缺失 → 解析为空数组(容错,不崩)
         let payload = """
@@ -132,6 +164,8 @@ final class AgentStreamClientTests: XCTestCase {
         XCTAssertNil(msg.model)
         XCTAssertEqual(msg.sourcesUsed, [])
         XCTAssertEqual(msg.toolsUsed, [])
+        XCTAssertNil(msg.cardType)
+        XCTAssertNil(msg.cardData)
         XCTAssertFalse(msg.hasMeta)
     }
 
@@ -150,6 +184,53 @@ final class AgentStreamClientTests: XCTestCase {
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(AgentChatMessage.self, from: data)
         XCTAssertEqual(decoded, original)
+    }
+
+    func testAgentChatMessageRoundTripsDynamicCardThroughCodable() throws {
+        let original = AgentChatMessage(
+            role: .assistant,
+            content: "",
+            toolsUsed: ["medical_exam_import"],
+            cardType: "medical_exam_import_result",
+            cardData: .object([
+                "exam_id": .int(321),
+                "exam_date": .string("2026-06-18"),
+                "hospital_name": .string("Test Lab"),
+                "items_count": .int(9),
+                "abnormal_count": .int(2),
+                "review_required": .bool(true),
+                "safety_note": .string("OCR/AI 解析结果需要复核后再用于判断。")
+            ])
+        )
+
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(AgentChatMessage.self, from: data)
+
+        XCTAssertEqual(decoded, original)
+        XCTAssertEqual(decoded.cardData?["exam_id"]?.intValue, 321)
+        XCTAssertEqual(decoded.cardData?["hospital_name"]?.stringValue, "Test Lab")
+        XCTAssertEqual(decoded.cardData?["review_required"]?.boolValue, true)
+    }
+
+    func testAgentChatMessageDecodesSnakeCaseDynamicCardSnapshot() throws {
+        let snapshot = """
+        {
+          "id": "\(UUID().uuidString)",
+          "role": "assistant",
+          "content": "",
+          "card_type": "medical_exam_import_result",
+          "card_data": {
+            "exam_id": 88,
+            "source": "pdf"
+          }
+        }
+        """
+
+        let decoded = try JSONDecoder().decode(AgentChatMessage.self, from: Data(snapshot.utf8))
+
+        XCTAssertEqual(decoded.cardType, "medical_exam_import_result")
+        XCTAssertEqual(decoded.cardData?["exam_id"]?.intValue, 88)
+        XCTAssertEqual(decoded.cardData?["source"]?.stringValue, "pdf")
     }
 
     func testParserCapturesToolArgumentsAndResultsForInspection() throws {
@@ -628,6 +709,44 @@ final class AgentStreamClientTests: XCTestCase {
         XCTAssertEqual(imports.first?["items_count"] as? Int, 9)
         XCTAssertEqual(imports.first?["abnormal_count"] as? Int, 2)
         XCTAssertEqual(imports.first?["source_hash"] as? String, "sha256:lab")
+    }
+
+    @MainActor
+    func testAgentChatViewModelAttachesMedicalImportDynamicCardToAssistantMessage() async throws {
+        let service = CapturingAgentStreamService()
+        let labUpload = StubLabUploadService(result: LabUploadResult(
+            message: "图片 OCR 导入成功",
+            examID: 321,
+            examDate: "2026-06-18",
+            examType: "biochemistry",
+            hospitalName: "Test Lab",
+            itemsCount: 9,
+            abnormalCount: 2,
+            conclusionsCount: 1,
+            conclusion: "LDL <script>alert(1)</script> 偏高"
+        ))
+        let model = AgentChatViewModel(streamService: service, labUploadService: labUpload)
+        model.addAttachment(.init(
+            url: URL(fileURLWithPath: "/tmp/lab-photo.png"),
+            name: "lab-photo.png",
+            sourceKind: .medicalFile,
+            sha256: "sha256:lab"
+        ))
+
+        await model.send("解释这份化验单")
+
+        let assistant = try XCTUnwrap(model.messages.last)
+        XCTAssertEqual(assistant.cardType, "medical_exam_import_result")
+        XCTAssertEqual(assistant.cardData?["exam_id"]?.intValue, 321)
+        XCTAssertEqual(assistant.cardData?["source"]?.stringValue, "image")
+        XCTAssertEqual(assistant.toolsUsed, ["medical_exam_import"])
+
+        let html = try XCTUnwrap(model.renderedTranscript().last?.bodyHTML)
+        XCTAssertTrue(html.contains("体检报告已导入"))
+        XCTAssertTrue(html.contains("9 项指标"))
+        XCTAssertTrue(html.contains("2 项异常"))
+        XCTAssertFalse(html.contains("<script"))
+        XCTAssertTrue(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"))
     }
 
     @MainActor

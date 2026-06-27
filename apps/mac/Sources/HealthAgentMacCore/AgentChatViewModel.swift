@@ -14,6 +14,11 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
     /// uploaded chat images in the backend; Mac uses these URLs when replaying
     /// the same conversation from `/agent/conversations/{id}`.
     public var remoteImageURLs: [String]
+    /// Dynamic UI card descriptor carried by this message. The protocol mirrors
+    /// web/mobile: `cardType` selects a renderer, `cardData` is untrusted JSON
+    /// that must be escaped before entering the transcript DOM.
+    public var cardType: String?
+    public var cardData: AgentDynamicCardValue?
 
     // MARK: 每条消息级 meta(助手回复 footer 用;流式 done 回填)
     /// 实际生成本条回复的模型名(后端 done.model)。
@@ -59,12 +64,16 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         sourcesUsed: [String] = [],
         toolsUsed: [String] = [],
         completionStatus: String? = nil,
+        cardType: String? = nil,
+        cardData: AgentDynamicCardValue? = nil,
         remoteImageURLs: [String] = []
     ) {
         self.id = id
         self.role = role
         self.content = content
         self.remoteImageURLs = remoteImageURLs
+        self.cardType = cardType
+        self.cardData = cardData
         self.model = model
         self.selectedModel = selectedModel
         self.answerModel = answerModel
@@ -79,7 +88,9 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
 
     // 显式 Codable:历史快照(老版本无这些字段)用 decodeIfPresent 容错;数组缺失 → 空。
     private enum CodingKeys: String, CodingKey {
-        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, sourcesUsed, toolsUsed, completionStatus
+        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, sourcesUsed, toolsUsed, completionStatus, cardType, cardData
+        case cardTypeSnake = "card_type"
+        case cardDataSnake = "card_data"
     }
 
     public init(from decoder: Decoder) throws {
@@ -98,6 +109,30 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.sourcesUsed = try c.decodeIfPresent([String].self, forKey: .sourcesUsed) ?? []
         self.toolsUsed = try c.decodeIfPresent([String].self, forKey: .toolsUsed) ?? []
         self.completionStatus = try c.decodeIfPresent(String.self, forKey: .completionStatus)
+        self.cardType = try c.decodeIfPresent(String.self, forKey: .cardType)
+            ?? c.decodeIfPresent(String.self, forKey: .cardTypeSnake)
+        self.cardData = try c.decodeIfPresent(AgentDynamicCardValue.self, forKey: .cardData)
+            ?? c.decodeIfPresent(AgentDynamicCardValue.self, forKey: .cardDataSnake)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(role, forKey: .role)
+        try c.encode(content, forKey: .content)
+        try c.encode(remoteImageURLs, forKey: .remoteImageURLs)
+        try c.encodeIfPresent(model, forKey: .model)
+        try c.encodeIfPresent(selectedModel, forKey: .selectedModel)
+        try c.encodeIfPresent(answerModel, forKey: .answerModel)
+        try c.encode(toolModels, forKey: .toolModels)
+        try c.encode(fallbackReasons, forKey: .fallbackReasons)
+        try c.encodeIfPresent(elapsedMs, forKey: .elapsedMs)
+        try c.encodeIfPresent(llmRounds, forKey: .llmRounds)
+        try c.encode(sourcesUsed, forKey: .sourcesUsed)
+        try c.encode(toolsUsed, forKey: .toolsUsed)
+        try c.encodeIfPresent(completionStatus, forKey: .completionStatus)
+        try c.encodeIfPresent(cardType, forKey: .cardType)
+        try c.encodeIfPresent(cardData, forKey: .cardData)
     }
 }
 
@@ -770,7 +805,14 @@ public final class AgentChatViewModel {
         }
 
         do {
-            try await importLabReportAttachmentsIfNeeded()
+            let importedReports = try await importLabReportAttachmentsIfNeeded()
+            if let firstImport = importedReports.first {
+                attachDynamicCard(
+                    medicalExamImportDynamicCard(for: firstImport),
+                    to: assistantID,
+                    toolName: "medical_exam_import"
+                )
+            }
             for try await event in streamService.stream(
                 message: message,
                 conversationID: conversationID,
@@ -802,7 +844,7 @@ public final class AgentChatViewModel {
                     ))
                 case .toolDetails(let toolEvent):
                     applyToolEvent(toolEvent)
-                case .done(let id, _, let completionStatus, let model, let selectedModel, let answerModel, let toolModels, let fallbackReasons, let sourcesUsed, let toolsUsed, let elapsedMs, let llmRounds):
+                case .done(let id, _, let completionStatus, let model, let selectedModel, let answerModel, let toolModels, let fallbackReasons, let sourcesUsed, let toolsUsed, let elapsedMs, let llmRounds, let cards):
                     conversationID = id ?? conversationID
                     lastCompletionStatus = completionStatus
                     lastModel = answerModel ?? model
@@ -819,8 +861,15 @@ public final class AgentChatViewModel {
                         messages[idx].elapsedMs = elapsedMs
                         messages[idx].llmRounds = llmRounds
                         messages[idx].sourcesUsed = sourcesUsed
-                        messages[idx].toolsUsed = toolsUsed
+                        messages[idx].toolsUsed = Self.mergedToolNames(
+                            existing: messages[idx].toolsUsed,
+                            incoming: toolsUsed
+                        )
                         messages[idx].completionStatus = completionStatus
+                        if messages[idx].cardType == nil, let firstCard = cards.first {
+                            messages[idx].cardType = firstCard.type
+                            messages[idx].cardData = firstCard.data
+                        }
                     }
                     runState = .completed
                 case .error(let message):
@@ -1143,6 +1192,9 @@ public final class AgentChatViewModel {
         let rendered = messages.map { message -> ChatTranscriptHTML.RenderedMessage in
             let isStreamingThis = isStreaming && message.id == lastID && message.role == .assistant
             let content = displayContent(for: message)
+            let cardHTML = message.role == .assistant
+                ? ChatTranscriptHTML.dynamicCardHTML(type: message.cardType, data: message.cardData) ?? ""
+                : ""
             let bodyHTML: String
             if message.role == .user {
                 // 用户消息纯文本:转义 + 换行保留,不解析 markdown。
@@ -1150,9 +1202,10 @@ public final class AgentChatViewModel {
                     + ChatTranscriptHTML.imageGalleryHTML(urls: message.remoteImageURLs)
             } else if isStreamingThis {
                 // 流式态:plain 文本(避免每 60ms 用更长全文重 parse markdown 的 O(n²))。
-                bodyHTML = "<div class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</div>"
+                bodyHTML = cardHTML + "<div class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</div>"
             } else {
-                bodyHTML = ChatTranscriptHTML.renderMessageBody(markdown: content)
+                let textHTML = content.isEmpty ? "" : ChatTranscriptHTML.renderMessageBody(markdown: content)
+                bodyHTML = cardHTML + textHTML
             }
             let showCopy = message.role == .assistant && !isStreamingThis && !content.isEmpty
             let footerHTML: String
@@ -1313,25 +1366,30 @@ public final class AgentChatViewModel {
         return String(data: data, encoding: .utf8)
     }
 
-    private func importLabReportAttachmentsIfNeeded() async throws {
-        guard let labUploadService else { return }
+    @discardableResult
+    private func importLabReportAttachmentsIfNeeded() async throws -> [LabReportImportContext] {
+        guard let labUploadService else { return [] }
         let medicalAttachments = attachments.filter {
             $0.sourceKind == .medicalFile && LabReportUploadMime.isSupported(forExtension: $0.url.pathExtension)
         }
-        guard !medicalAttachments.isEmpty else { return }
+        guard !medicalAttachments.isEmpty else { return [] }
 
+        var imported: [LabReportImportContext] = []
         for attachment in medicalAttachments {
             guard !labReportImports.contains(where: { $0.sourceHash == attachment.sha256 }) else {
                 continue
             }
             let result = try await labUploadService.importReport(fileURL: attachment.url)
-            labReportImports.append(LabReportImportContext(
+            let item = LabReportImportContext(
                 fileName: attachment.name,
                 sourceHash: attachment.sha256,
                 sourceKind: attachment.sourceKind,
                 result: result
-            ))
+            )
+            labReportImports.append(item)
+            imported.append(item)
         }
+        return imported
     }
 
     private func labReportImportPayload(_ item: LabReportImportContext) -> [String: Any] {
@@ -1365,6 +1423,81 @@ public final class AgentChatViewModel {
         }
         return payload
     }
+
+    private func attachDynamicCard(
+        _ card: AgentDynamicCardDescriptor,
+        to messageID: UUID,
+        toolName: String? = nil
+    ) {
+        guard let idx = messages.firstIndex(where: { $0.id == messageID }) else {
+            return
+        }
+        messages[idx].cardType = card.type
+        messages[idx].cardData = card.data
+        if let toolName {
+            messages[idx].toolsUsed = Self.mergedToolNames(
+                existing: messages[idx].toolsUsed,
+                incoming: [toolName]
+            )
+        }
+    }
+
+    private func medicalExamImportDynamicCard(for item: LabReportImportContext) -> AgentDynamicCardDescriptor {
+        var data: [String: AgentDynamicCardValue] = [
+            "exam_id": .int(item.result.examID),
+            "source": .string(Self.labReportCardSource(fileName: item.fileName)),
+            "review_required": .bool(true),
+            "safety_note": .string(Self.medicalExamImportSafetyNote)
+        ]
+        if let examDate = item.result.examDate {
+            data["exam_date"] = .string(examDate)
+        }
+        if let examType = item.result.examType {
+            data["exam_type"] = .string(examType)
+        }
+        if let hospitalName = item.result.hospitalName {
+            data["hospital_name"] = .string(hospitalName)
+        }
+        if let itemsCount = item.result.itemsCount {
+            data["items_count"] = .int(itemsCount)
+        }
+        if let abnormalCount = item.result.abnormalCount {
+            data["abnormal_count"] = .int(abnormalCount)
+        }
+        if let conclusionsCount = item.result.conclusionsCount {
+            data["conclusions_count"] = .int(conclusionsCount)
+        }
+        if let conclusion = item.result.conclusion {
+            data["conclusion"] = .string(conclusion)
+        }
+        return AgentDynamicCardDescriptor(type: "medical_exam_import_result", data: .object(data))
+    }
+
+    private static func labReportCardSource(fileName: String) -> String {
+        let ext = URL(fileURLWithPath: fileName).pathExtension.lowercased()
+        if ext == "pdf" {
+            return "pdf"
+        }
+        if ["jpg", "jpeg", "png", "heic", "webp"].contains(ext) {
+            return "image"
+        }
+        return "text"
+    }
+
+    private static func mergedToolNames(existing: [String], incoming: [String]) -> [String] {
+        var seen = Set<String>()
+        var merged: [String] = []
+        for tool in existing + incoming {
+            let trimmed = tool.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, seen.insert(trimmed).inserted else {
+                continue
+            }
+            merged.append(trimmed)
+        }
+        return merged
+    }
+
+    private static let medicalExamImportSafetyNote = "OCR/AI 解析结果需要复核后再用于判断。"
 
     private static let desktopMarkdownResponseInstruction = """
     请用适合桌面阅读的中文 Markdown 回复：先给 2-3 条关键结论；再用二级/三级标题分段；比较或分项判断优先用表格；行动建议用编号列表；关键数值和结论加粗。每段最多 3 行，标题、段落、列表之间必须留空行。不要输出密集长段落，不要用长破折号把所有判断串成一段。最后必须包含「不确定性边界」和「下一步」；不要把基因风险当诊断，不要直接给用药决定。若需要执行结构化动作，自然语言说明后再给可确认动作。

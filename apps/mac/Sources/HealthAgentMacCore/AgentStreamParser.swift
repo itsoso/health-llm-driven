@@ -17,7 +17,8 @@ public enum AgentStreamEvent: Equatable, Sendable {
         sourcesUsed: [String],
         toolsUsed: [String],
         elapsedMs: Int?,
-        llmRounds: Int?
+        llmRounds: Int?,
+        cards: [AgentDynamicCardDescriptor] = []
     )
     case error(String)
 }
@@ -110,7 +111,12 @@ public enum AgentStreamParser {
                         // ViewModel/footer 容错(空则不显示该块)。
                         toolsUsed: stringArray(eventData?["tools_used"]),
                         elapsedMs: eventData?["elapsed_ms"] as? Int,
-                        llmRounds: eventData?["llm_rounds"] as? Int
+                        llmRounds: eventData?["llm_rounds"] as? Int,
+                        cards: cardDescriptors(
+                            cards: eventData?["cards"],
+                            cardType: eventData?["card_type"],
+                            cardData: eventData?["card_data"]
+                        )
                     )
                 case "error":
                     return .error(eventData?["message"] as? String ?? "Unknown stream error")
@@ -147,5 +153,44 @@ public enum AgentStreamParser {
             return string
         }
         return String(describing: value)
+    }
+
+    private static func cardDescriptors(
+        cards: Any?,
+        cardType: Any?,
+        cardData: Any?
+    ) -> [AgentDynamicCardDescriptor] {
+        var descriptors = decodeCards(cards)
+        if descriptors.isEmpty,
+           let type = cardType as? String,
+           let data = decodeCardValue(cardData) {
+            descriptors = [AgentDynamicCardDescriptor(type: type, data: data)]
+        }
+        return descriptors
+    }
+
+    private static func decodeCards(_ value: Any?) -> [AgentDynamicCardDescriptor] {
+        guard let value,
+              JSONSerialization.isValidJSONObject(value),
+              let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) else {
+            return []
+        }
+        return (try? JSONDecoder().decode([AgentDynamicCardDescriptor].self, from: data)) ?? []
+    }
+
+    private static func decodeCardValue(_ value: Any?) -> AgentDynamicCardValue? {
+        guard let value else {
+            return nil
+        }
+        if let string = value as? String,
+           let data = string.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode(AgentDynamicCardValue.self, from: data) {
+            return decoded
+        }
+        guard JSONSerialization.isValidJSONObject(value),
+              let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(AgentDynamicCardValue.self, from: data)
     }
 }

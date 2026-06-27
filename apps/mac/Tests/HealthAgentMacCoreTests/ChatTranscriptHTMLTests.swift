@@ -187,6 +187,48 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertFalse(html.contains("ftp://"))
     }
 
+    func testDynamicCardRendersMedicalExamImportResultSafely() throws {
+        let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
+            type: "medical_exam_import_result",
+            data: .object([
+                "exam_id": .int(321),
+                "exam_date": .string("2026-06-18"),
+                "hospital_name": .string("Test <Lab>"),
+                "items_count": .int(9),
+                "abnormal_count": .int(2),
+                "conclusions_count": .int(1),
+                "conclusion": .string("LDL <script>alert(1)</script> 偏高"),
+                "source": .string("image"),
+                "review_required": .bool(true),
+                "safety_note": .string("OCR/AI 解析结果需要复核后再用于判断。")
+            ])
+        ))
+
+        XCTAssertTrue(html.contains("dynamic-card"))
+        XCTAssertTrue(html.contains("体检报告已导入"))
+        XCTAssertTrue(html.contains("图片 OCR"))
+        XCTAssertTrue(html.contains("9 项指标"))
+        XCTAssertTrue(html.contains("2 项异常"))
+        XCTAssertTrue(html.contains("Test &lt;Lab&gt;"))
+        XCTAssertFalse(html.contains("<script"))
+        XCTAssertTrue(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"))
+        XCTAssertTrue(html.contains("OCR/AI 解析结果需要复核后再用于判断。"))
+    }
+
+    func testDynamicCardUnknownTypeFallsBackToSafeSummary() throws {
+        let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
+            type: "system_knowledge_evidence",
+            data: .object([
+                "entity": .object(["title": .string("MTHFR <tag>")]),
+                "claims": .array([.object(["doc_id": .string("claim:c1")])])
+            ])
+        ))
+
+        XCTAssertTrue(html.contains("知识证据卡"))
+        XCTAssertTrue(html.contains("MTHFR &lt;tag&gt;"))
+        XCTAssertFalse(html.contains("<tag>"))
+    }
+
     func testMetaFooterOmitsEmptySourcesAndToolsBlocks() {
         // 有模型行,但 sources/tools 空 → 只出 meta-line,不出 details / meta-tools
         let html = ChatTranscriptHTML.metaFooterHTML(

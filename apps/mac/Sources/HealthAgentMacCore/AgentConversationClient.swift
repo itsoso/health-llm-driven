@@ -43,6 +43,19 @@ struct BackendConversationMessageMeta: Decodable, Sendable {
     let sourcesUsed: [String]
     let toolsUsed: [String]
     let completionStatus: String?
+    let cards: [AgentDynamicCardDescriptor]
+    let cardType: String?
+    let cardData: AgentDynamicCardValue?
+
+    var firstCard: AgentDynamicCardDescriptor? {
+        if let first = cards.first {
+            return first
+        }
+        if let cardType, let cardData {
+            return AgentDynamicCardDescriptor(type: cardType, data: cardData)
+        }
+        return nil
+    }
 
     private enum CodingKeys: String, CodingKey {
         case model
@@ -55,6 +68,9 @@ struct BackendConversationMessageMeta: Decodable, Sendable {
         case sourcesUsed = "sources_used"
         case toolsUsed = "tools_used"
         case completionStatus = "completion_status"
+        case cards
+        case cardType = "card_type"
+        case cardData = "card_data"
     }
 
     init(from decoder: Decoder) throws {
@@ -69,6 +85,9 @@ struct BackendConversationMessageMeta: Decodable, Sendable {
         sourcesUsed = (try? c.decode([String].self, forKey: .sourcesUsed)) ?? []
         toolsUsed = (try? c.decode([String].self, forKey: .toolsUsed)) ?? []
         completionStatus = try? c.decode(String.self, forKey: .completionStatus)
+        cards = (try? c.decode([AgentDynamicCardDescriptor].self, forKey: .cards)) ?? []
+        cardType = try? c.decode(String.self, forKey: .cardType)
+        cardData = try? c.decode(AgentDynamicCardValue.self, forKey: .cardData)
     }
 }
 
@@ -157,6 +176,7 @@ public final class AgentConversationClient: AgentConversationRemoteSourcing, @un
             // Skip system / tool rows the desktop transcript doesn't render.
             return nil
         }
+        let card = dto.meta?.firstCard
         return AgentChatMessage(
             id: deterministicID(forMessageID: dto.id),
             role: role,
@@ -171,6 +191,8 @@ public final class AgentConversationClient: AgentConversationRemoteSourcing, @un
             sourcesUsed: dto.meta?.sourcesUsed ?? [],
             toolsUsed: dto.meta?.toolsUsed ?? [],
             completionStatus: dto.meta?.completionStatus,
+            cardType: card?.type,
+            cardData: card?.data,
             remoteImageURLs: imageURLStrings(from: dto.image_url, baseURL: baseURL)
         )
     }

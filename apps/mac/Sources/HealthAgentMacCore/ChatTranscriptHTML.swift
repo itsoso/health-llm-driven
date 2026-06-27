@@ -251,6 +251,175 @@ public enum ChatTranscriptHTML {
         return "<div class=\"attachment-images\">" + items.joined() + "</div>"
     }
 
+    // MARK: - Dynamic cards
+
+    public static func dynamicCardHTML(type: String?, data: AgentDynamicCardValue?) -> String? {
+        guard let type, let data else {
+            return nil
+        }
+        return dynamicCardHTML(type: type, data: data)
+    }
+
+    public static func dynamicCardHTML(type: String, data: AgentDynamicCardValue) -> String? {
+        switch type {
+        case "medical_exam_import_result":
+            return medicalExamImportCardHTML(data)
+        case "system_knowledge_evidence":
+            return systemKnowledgeEvidenceCardHTML(data)
+        default:
+            return genericDynamicCardHTML(type: type, data: data)
+        }
+    }
+
+    private static func medicalExamImportCardHTML(_ data: AgentDynamicCardValue) -> String? {
+        guard case .object = data else {
+            return nil
+        }
+        let source = sourceLabel(data["source"]?.stringValue ?? "")
+        let itemsCount = data["items_count"]?.intValue ?? 0
+        let abnormalCount = data["abnormal_count"]?.intValue ?? 0
+        let conclusionsCount = data["conclusions_count"]?.intValue
+        let badge = abnormalCount > 0 ? "\(abnormalCount) 项异常" : "待复核"
+        let badgeClass = abnormalCount > 0 ? "risk" : "neutral"
+        let detail = [
+            data["exam_date"]?.stringValue,
+            data["hospital_name"]?.stringValue,
+            data["exam_type"]?.stringValue
+        ].compactMap { value in
+            let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty ? nil : trimmed
+        }.joined(separator: " · ")
+        let conclusion = data["conclusion"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let reviewRequired = data["review_required"]?.boolValue ?? true
+        let safetyNote = data["safety_note"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? "OCR/AI 解析结果需要复核后再用于判断。"
+
+        var html = """
+        <div class="dynamic-card medical-exam-import-card">
+          <div class="dynamic-card-top">
+            <div>
+              <div class="dynamic-card-eyebrow">体检导入结果</div>
+              <div class="dynamic-card-title">体检报告已导入</div>
+            </div>
+            <span class="dynamic-card-badge \(badgeClass)">\(escape(badge))</span>
+          </div>
+          <div class="dynamic-card-metrics">
+            \(metricHTML(label: "来源", value: source, risk: false))
+            \(metricHTML(label: "指标", value: "\(itemsCount) 项指标", risk: false))
+            \(metricHTML(label: "异常", value: "\(abnormalCount) 项异常", risk: abnormalCount > 0))
+        """
+        if let conclusionsCount {
+            html += metricHTML(label: "结论", value: "\(conclusionsCount) 条", risk: false)
+        }
+        html += "</div>"
+        if !detail.isEmpty {
+            html += "<div class=\"dynamic-card-detail\">\(escape(detail))</div>"
+        }
+        if !conclusion.isEmpty {
+            html += "<div class=\"dynamic-card-conclusion\">\(escape(conclusion))</div>"
+        }
+        if reviewRequired {
+            html += "<div class=\"dynamic-card-warning\">\(escape(safetyNote))</div>"
+        }
+        html += """
+          <div class="dynamic-card-next">下一步：复核识别结果后，再让 Reva 基于异常项生成 30 天行动建议。</div>
+        </div>
+        """
+        return html
+    }
+
+    private static func systemKnowledgeEvidenceCardHTML(_ data: AgentDynamicCardValue) -> String? {
+        let title = data["entity"]?["title"]?.stringValue?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let claimsCount = data["claims"]?.arrayValue?.count ?? 0
+        return """
+        <div class="dynamic-card evidence-card">
+          <div class="dynamic-card-top">
+            <div>
+              <div class="dynamic-card-eyebrow">知识证据卡</div>
+              <div class="dynamic-card-title">\(escape((title?.isEmpty == false ? title : nil) ?? "系统知识库"))</div>
+            </div>
+            <span class="dynamic-card-badge neutral">\(escape("\(claimsCount) 条证据"))</span>
+          </div>
+          <div class="dynamic-card-next">本回答引用了已审核知识库证据，具体结论仍需结合个人数据边界判断。</div>
+        </div>
+        """
+    }
+
+    private static func genericDynamicCardHTML(type: String, data: AgentDynamicCardValue) -> String? {
+        let rows = cardSummaryRows(data: data)
+            .prefix(4)
+            .map { key, value in
+                "<div class=\"dynamic-card-summary-row\"><span>\(escape(key))</span><strong>\(escape(value))</strong></div>"
+            }
+            .joined()
+        return """
+        <div class="dynamic-card generic-card">
+          <div class="dynamic-card-top">
+            <div>
+              <div class="dynamic-card-eyebrow">动态卡片</div>
+              <div class="dynamic-card-title">\(escape(type))</div>
+            </div>
+          </div>
+          <div class="dynamic-card-summary">\(rows)</div>
+        </div>
+        """
+    }
+
+    private static func metricHTML(label: String, value: String, risk: Bool) -> String {
+        let riskClass = risk ? " risk" : ""
+        return """
+        <div class="dynamic-card-metric">
+          <div class="dynamic-card-metric-label">\(escape(label))</div>
+          <div class="dynamic-card-metric-value\(riskClass)">\(escape(value))</div>
+        </div>
+        """
+    }
+
+    private static func sourceLabel(_ source: String) -> String {
+        switch source {
+        case "pdf":
+            return "PDF"
+        case "image":
+            return "图片 OCR"
+        case "text":
+            return "文字"
+        default:
+            return source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "未知" : source
+        }
+    }
+
+    private static func cardSummaryRows(data: AgentDynamicCardValue) -> [(String, String)] {
+        guard case .object(let object) = data else {
+            return [("value", scalarSummary(data))]
+        }
+        return object
+            .sorted { $0.key < $1.key }
+            .compactMap { key, value in
+                let summary = scalarSummary(value)
+                return summary.isEmpty ? nil : (key, summary)
+            }
+    }
+
+    private static func scalarSummary(_ value: AgentDynamicCardValue) -> String {
+        switch value {
+        case .null:
+            return ""
+        case .string(let raw):
+            return raw
+        case .int(let raw):
+            return String(raw)
+        case .double(let raw):
+            return String(raw)
+        case .bool(let raw):
+            return raw ? "true" : "false"
+        case .array(let values):
+            return "\(values.count) 项"
+        case .object(let object):
+            return "\(object.count) 字段"
+        }
+    }
+
     // MARK: - Message envelope JSON (Swift → JS bridge)
 
     /// 一条消息喂给 JS 端的数据。`bodyHTML` 已是安全转义后的 HTML 片段。

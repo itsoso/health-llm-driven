@@ -156,6 +156,144 @@
     object-fit: cover;
   }
 
+  .dynamic-card {
+    margin: 2px 0 10px;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(48, 176, 112, 0.24);
+    background: linear-gradient(180deg, rgba(48, 176, 112, 0.12), rgba(48, 176, 112, 0.05));
+  }
+  .dynamic-card + p,
+  .dynamic-card + div.streaming-text {
+    margin-top: 10px;
+  }
+  .dynamic-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .dynamic-card-eyebrow {
+    font-size: 0.76em;
+    font-weight: 700;
+    color: var(--secondary);
+    margin-bottom: 2px;
+  }
+  .dynamic-card-title {
+    font-size: 1.06em;
+    font-weight: 800;
+    color: var(--text);
+    letter-spacing: 0;
+  }
+  .dynamic-card-badge {
+    flex: 0 0 auto;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 0.78em;
+    font-weight: 800;
+    border: 1px solid transparent;
+  }
+  .dynamic-card-badge.risk {
+    color: #b42318;
+    background: rgba(255, 69, 58, 0.14);
+    border-color: rgba(255, 69, 58, 0.22);
+  }
+  .dynamic-card-badge.neutral {
+    color: #177245;
+    background: rgba(48, 176, 112, 0.14);
+    border-color: rgba(48, 176, 112, 0.22);
+  }
+  .dynamic-card-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+    gap: 8px;
+  }
+  .dynamic-card-metric {
+    min-width: 0;
+    padding: 7px 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(120, 120, 128, 0.14);
+    background: rgba(255, 255, 255, 0.52);
+  }
+  .dynamic-card-metric-label {
+    font-size: 0.72em;
+    font-weight: 700;
+    color: var(--secondary);
+  }
+  .dynamic-card-metric-value {
+    margin-top: 2px;
+    font-size: 0.9em;
+    font-weight: 800;
+    color: var(--text);
+  }
+  .dynamic-card-metric-value.risk {
+    color: #b42318;
+  }
+  .dynamic-card-detail,
+  .dynamic-card-conclusion,
+  .dynamic-card-next,
+  .dynamic-card-warning {
+    margin-top: 8px;
+    font-size: 0.88em;
+  }
+  .dynamic-card-detail,
+  .dynamic-card-next {
+    color: var(--secondary);
+  }
+  .dynamic-card-conclusion {
+    color: var(--text);
+    font-weight: 650;
+  }
+  .dynamic-card-warning {
+    padding: 7px 8px;
+    border-radius: 8px;
+    color: #8a5a00;
+    background: rgba(255, 214, 10, 0.14);
+    border: 1px solid rgba(255, 214, 10, 0.24);
+  }
+  .evidence-card,
+  .generic-card {
+    border-color: rgba(10, 132, 255, 0.20);
+    background: linear-gradient(180deg, rgba(10, 132, 255, 0.11), rgba(10, 132, 255, 0.045));
+  }
+  .dynamic-card-summary {
+    display: grid;
+    gap: 6px;
+  }
+  .dynamic-card-summary-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 0;
+    border-top: 1px solid rgba(120, 120, 128, 0.16);
+    color: var(--secondary);
+    font-size: 0.86em;
+  }
+  .dynamic-card-summary-row strong {
+    color: var(--text);
+    font-weight: 700;
+    text-align: right;
+  }
+  @media (prefers-color-scheme: dark) {
+    .dynamic-card-metric {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+    .dynamic-card-badge.risk,
+    .dynamic-card-metric-value.risk {
+      color: #ff8a80;
+    }
+    .dynamic-card-badge.neutral {
+      color: #7ee0a3;
+    }
+    .dynamic-card-warning {
+      color: #ffd66b;
+      background: rgba(255, 214, 10, 0.10);
+      border-color: rgba(255, 214, 10, 0.18);
+    }
+  }
+
   /* meta footer (模型 · 轮数 · 耗时 / 数据源 / Skill) — 低调灰、小字号,不喧宾夺主 */
   .meta-footer {
     margin-top: 8px;
