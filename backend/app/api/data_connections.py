@@ -20,6 +20,7 @@ from app.services.data_connections import (
     serialize_data_connection,
     upsert_data_connection,
 )
+from app.services.fhir_bundle_import import import_fhir_bundle_observations
 
 router = APIRouter(prefix="/data-connections", tags=["data-connections"])
 
@@ -40,6 +41,13 @@ class ConsentGrantCreate(BaseModel):
     scopes: list[str] = Field(default_factory=list)
     purpose: str = Field(..., min_length=1, max_length=240)
     expires_at: datetime | None = None
+
+
+class FHIRBundleImportRequest(BaseModel):
+    provider: str = Field(..., min_length=1, max_length=80)
+    display_name: str = Field(..., min_length=1, max_length=160)
+    source_ref: str | None = Field(None, max_length=200)
+    bundle: dict[str, Any]
 
 
 @router.get("/me")
@@ -71,6 +79,25 @@ def create_or_update_my_data_connection(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     return serialize_data_connection(db, connection)
+
+
+@router.post("/fhir-bundles/import")
+def import_my_fhir_bundle(
+    payload: FHIRBundleImportRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    try:
+        return import_fhir_bundle_observations(
+            db,
+            user=current_user,
+            provider=payload.provider,
+            display_name=payload.display_name,
+            source_ref=payload.source_ref,
+            bundle=payload.bundle,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
 @router.post("/{connection_id}/consents")
