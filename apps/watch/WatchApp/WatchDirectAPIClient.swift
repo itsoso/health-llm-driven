@@ -34,6 +34,13 @@ final class WatchDirectAPIClient {
         return data.isEmpty ? nil : data
     }
 
+    func sendAsk(_ ask: WatchAskRequest) async throws -> Data {
+        let request = try authorizedRequest { token, apiBase in
+            try WatchBackendRequest.watchAsk(ask, apiBase: apiBase, token: token)
+        }
+        return try await data(for: request)
+    }
+
     func sendEvent(name: String, meta: [String: String]) async throws {
         let request = try authorizedRequest { token, apiBase in
             try WatchBackendRequest.event(name: name, meta: meta, apiBase: apiBase, token: token)

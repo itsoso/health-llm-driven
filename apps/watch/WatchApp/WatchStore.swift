@@ -16,6 +16,8 @@ final class WatchStore: ObservableObject {
     @Published var pendingDietDraft: VoiceFoodDraft?
     @Published var symptomResult: SymptomEvalResult?   // 最近一次语音记症状的安全裁决(供 QuickRecordView 渲染)
     @Published var symptomSubmitting = false           // 记症状请求在途(禁重复点)
+    @Published var askResult: WatchAskResponse?         // 最近一次腕上一问一答短安全建议
+    @Published var askSubmitting = false                // /watch/ask 请求在途(禁重复点)
     @Published var completing = false          // 「一键已做」请求在途(禁重复点 + tile 转圈)
     @Published var skipping = false            // 「跳过」请求在途(禁重复点)
     @Published var snoozing = false            // 「稍后」请求在途(禁重复点)
@@ -236,9 +238,40 @@ final class WatchStore: ObservableObject {
         lastError = nil
     }
 
+    func askReva(rawText: String) async {
+        guard !askSubmitting else { return }
+        askSubmitting = true
+        defer { askSubmitting = false }
+        askResult = nil
+        lastRecordOK = nil
+        lastRecordMessage = nil
+        lastError = nil
+        do {
+            let ask = try WatchAskRequest(text: rawText)
+            let data = try await connectivity.sendAsk(ask)
+            askResult = try WatchAskResponse.decode(data)
+        } catch let e as WatchAskError {
+            lastError = Self.message(for: e)
+        } catch {
+            lastError = "问答失败,请在 iPhone 查看"
+        }
+    }
+
+    func clearAskResult() {
+        askResult = nil
+        lastError = nil
+    }
+
     static func message(for e: QuickRecordError) -> String {
         switch e {
         case .outOfRange(let m), .missing(let m): return m
+        }
+    }
+
+    static func message(for e: WatchAskError) -> String {
+        switch e {
+        case .missingText: return "请先说出问题"
+        case .textTooLong: return "问题太长,请在 iPhone 继续"
         }
     }
 

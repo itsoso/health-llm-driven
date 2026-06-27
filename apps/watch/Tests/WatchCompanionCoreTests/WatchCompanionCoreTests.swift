@@ -673,6 +673,39 @@ final class WatchBackendRequestTests: XCTestCase {
         XCTAssertEqual(json["event_name"] as? String, "watch_action_shown")
         XCTAssertEqual((json["meta"] as? [String: String])?["action_id"], "agenda-health_protocol-12")
     }
+
+    func testWatchAskRequestBuildsAllowedPostBody() throws {
+        let ask = try WatchAskRequest(text: "  我今天适合高强度训练吗  ")
+
+        let req = try WatchBackendRequest.watchAsk(ask, apiBase: "https://example.test/api/v1", token: "tok")
+
+        XCTAssertEqual(req.url?.absoluteString, "https://example.test/api/v1/watch/ask")
+        XCTAssertEqual(req.httpMethod, "POST")
+        XCTAssertEqual(req.value(forHTTPHeaderField: "Authorization"), "Bearer tok")
+        XCTAssertEqual(req.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        let body = try XCTUnwrap(req.httpBody)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: String])
+        XCTAssertEqual(json["text"], "我今天适合高强度训练吗")
+    }
+
+    func testWatchAskRejectsBlankText() {
+        XCTAssertThrowsError(try WatchAskRequest(text: " \n\t ")) { err in
+            XCTAssertEqual(err as? WatchAskError, .missingText)
+        }
+    }
+
+    func testWatchAskResponseDecodesEscalationFlags() throws {
+        let data = Data("""
+        {"answer":"请到 iPhone 查看详情","escalate_to_phone":true,"requires_medical_attention":true}
+        """.utf8)
+
+        let response = try WatchAskResponse.decode(data)
+
+        XCTAssertEqual(response.answer, "请到 iPhone 查看详情")
+        XCTAssertTrue(response.escalateToPhone)
+        XCTAssertTrue(response.requiresMedicalAttention)
+        XCTAssertEqual(response.displayTone, .risk)
+    }
 }
 
 final class WatchSessionResetTests: XCTestCase {

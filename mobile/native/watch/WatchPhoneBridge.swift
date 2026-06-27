@@ -25,6 +25,7 @@ import WatchConnectivity
         "/diet/voice/parse": ["POST"],
         "/diet/records": ["POST"],
         "/client-events": ["POST"],              // watch action 埋点中继(shown/completed/snoozed/skipped)
+        "/watch/ask": ["POST"],                  // 腕上一问一答短安全建议
         "/watch/symptoms": ["POST"],             // 王牌⑤ 腕上语音记症状 → SafetyGuardian 裁决
     ]
     // 动态放行:/watch/actions/{action_id}/{complete|skip|snooze} 的 POST。前缀+后缀不够——
@@ -125,6 +126,22 @@ import WatchConnectivity
                         payload["data"] = data.base64EncodedString()
                     }
                     reply(payload)
+                } else {
+                    reply(["ok": false, "error": err ?? "请求失败"])
+                }
+            }
+        case "ask":
+            let text = (message["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else {
+                reply(["ok": false, "error": "缺少问题文本"]); return
+            }
+            let path = "/watch/ask"
+            guard isRouteAllowed(path: path, method: "POST") else {
+                reply(["ok": false, "error": "不允许的腕上操作"]); return
+            }
+            request(path: path, method: "POST", query: [:], body: ["text": text], token: token) { data, err in
+                if let data = data {
+                    reply(["ok": true, "data": data.base64EncodedString()])
                 } else {
                     reply(["ok": false, "error": err ?? "请求失败"])
                 }

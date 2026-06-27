@@ -15,6 +15,7 @@ public enum WatchBackendRequest {
         "/diet/voice/parse": ["POST"],
         "/diet/records": ["POST"],
         "/client-events": ["POST"],
+        "/watch/ask": ["POST"],
         "/watch/symptoms": ["POST"],
     ]
     private static let watchActionPrefix = "/watch/actions/"
@@ -50,6 +51,15 @@ public enum WatchBackendRequest {
         var envelope: [String: Any] = ["event_name": name]
         if !meta.isEmpty { envelope["meta"] = meta }
         return try request(path: "/client-events", method: "POST", query: [:], body: envelope, apiBase: apiBase, token: token)
+    }
+
+    public static func watchAsk(
+        _ ask: WatchAskRequest,
+        apiBase: String = defaultAPIBase,
+        token: String
+    ) throws -> URLRequest {
+        guard isRouteAllowed(path: "/watch/ask", method: "POST") else { throw Error.routeNotAllowed }
+        return try request(path: "/watch/ask", method: "POST", query: [:], body: ask.body, apiBase: apiBase, token: token)
     }
 
     public static func isRouteAllowed(path: String, method: String) -> Bool {
