@@ -14,8 +14,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.agents.safety_guardian.engine import evaluate_rules_with_status
-from app.agents.safety_guardian.schema import Alert, Severity
+from app.agents.safety_guardian.engine import (
+    evaluate_rules_with_status,
+    make_fail_safe_advisory,
+)
+from app.agents.safety_guardian.schema import Alert
 from app.api.deps import get_current_user_required
 from app.database import get_db
 from app.models.symptom_entry import SymptomEntry
@@ -245,24 +248,11 @@ def _audit_symptom_eval(
 def _fail_safe_advisory() -> Alert:
     """安全评估部分/整体未完成时注入的 fail-safe 告警(加层不减层)。
 
-    为什么是「注入一条 alert」而不是只置 flag:**绝不让 under-alarm 依赖客户端
-    正确读一个可选字段**。只渲染 alerts[0] 的腕上客户端也必须看到安全提示,
-    否则「某条急症规则崩了 → alerts 退化成空 → 看似绿灯」就是静默 under-alarm。
-
-    R4 不诊断:这条 advisory 不下任何病名/结论,只如实说「自动筛查未完成、
-    如有不适及时就医」—— 给动作不给诊断。severity=HIGH(≥HIGH),稳居就医引导档,
-    又不冒称 CRITICAL 急症(我们并不知道到底命没命中急症,只知道筛查没跑全)。
+    单一来源已上移到 `engine.make_fail_safe_advisory()`(guardian.evaluate_safety /
+    medication_regimen 等所有面共享同一条文案);这里保留薄别名,腕上症状面的现有
+    引用与对抗测试(test_watch_symptoms)不变。详见 `make_fail_safe_advisory` 文档。
     """
-    return Alert(
-        rule_id="safety.evaluation_incomplete",
-        category="meta",
-        severity=Severity.HIGH,
-        title="安全评估未完成",
-        message="本次自动安全筛查未能完整跑完,无法确认是否存在安全风险。这不代表安全,只代表系统未能完成评估。",
-        action="本次未能完成自动安全筛查,请勿据此判断为安全;如有任何不适请及时就医,情况紧急请拨打 120。",
-        data_citation={"reason": "rule_engine_partial_or_total_failure"},
-        requires_medical_attention=True,
-    )
+    return make_fail_safe_advisory()
 
 
 @router.post("/symptoms")

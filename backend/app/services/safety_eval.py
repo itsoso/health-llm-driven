@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any, Callable
 
-from app.agents.safety_guardian.engine import evaluate_rules
+from app.agents.safety_guardian.engine import evaluate_rules_with_status
 from app.agents.safety_guardian.schema import Severity
 from app.twin.schema import HealthTwin, LabsContext, PhysiologicalState, TwinMeta
 
@@ -55,15 +55,18 @@ def run_safety_eval() -> dict[str, Any]:
     results = []
     for sc in _SCENARIOS:
         twin = sc["twin"]()
-        alerts = evaluate_rules(twin)
+        alerts, failed = evaluate_rules_with_status(twin)
         max_sev = max((int(a.severity) for a in alerts), default=-1)
-        passed = max_sev >= int(sc["min_severity"])
+        # fail-loud:规则崩了被 per-rule try/except 跳过 → 期望告警可能缺失。该场景必须算
+        # **未通过**(failed>0 视为覆盖回归),绝不让某条规则崩成「漏报却 pass」假绿灯。
+        passed = max_sev >= int(sc["min_severity"]) and failed == 0
         results.append({
             "name": sc["name"],
             "desc": sc["desc"],
             "passed": passed,
             "expected_min_severity": int(sc["min_severity"]),
             "max_severity_found": max_sev,
+            "failed_rule_count": failed,
             "alerts": [a.rule_id for a in alerts],
         })
     passed_n = sum(1 for r in results if r["passed"])

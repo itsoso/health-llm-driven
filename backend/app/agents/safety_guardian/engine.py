@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from typing import Callable, Iterable, List, Optional, Union
 
-from app.agents.safety_guardian.schema import Alert
+from app.agents.safety_guardian.schema import Alert, Severity
 from app.twin.schema import HealthTwin
 
 logger = logging.getLogger(__name__)
@@ -90,11 +90,46 @@ def evaluate_rules_with_status(twin: HealthTwin) -> tuple[List[Alert], int]:
 def evaluate_rules(twin: HealthTwin) -> List[Alert]:
     """对 Twin 运行所有已注册规则，收集 Alert。
 
-    薄封装 `evaluate_rules_with_status`，只取 alerts —— 现有调用方
-    (guardian.evaluate_safety / orchestrator / safety_eval / medication_regimen)
-    行为零变化；需要部分失败计数的调用方改用 `evaluate_rules_with_status`。
+    薄封装 `evaluate_rules_with_status`，只取 alerts。**警告**：丢弃 `failed_rule_count`
+    会让「某条规则崩 → alerts 退化空」静默冒充「无告警=安全」绿灯(under-alarm,医疗
+    场景最危险失败)。安全敏感的调用方**必须**改用 `evaluate_rules_with_status` 并在
+    `failed>0` 时注入 `make_fail_safe_advisory()`；本薄封装仅留给「失败本就当『未命中』
+    安全」的非裁决场景(如 red-team 覆盖 gate，规则缺失=该场景未通过，方向本就安全)。
     """
     return evaluate_rules_with_status(twin)[0]
+
+
+def make_fail_safe_advisory() -> Alert:
+    """安全评估**部分/整体未完成**时注入的 fail-safe 告警(加层不减层，客户端无关)。
+
+    `evaluate_rules_with_status` 的 per-rule try/except 把单条规则的崩溃吞成「跳过」，
+    `alerts` 可能因此退化成空。若调用方据此当「无告警=安全」就是静默 under-alarm
+    —— 一个真急症因为某个规则在该用户数据 shape 上崩了而被讲成安全，是医疗场景最
+    危险的失败。故所有安全裁决面在 `failed_rule_count>0` 时都往**主渲染路径**
+    `alerts` 注入这条 HIGH 告警：**只渲染 `alerts[0]` 的客户端也必须看到**，绝不让
+    under-alarm 依赖客户端正确读一个可选的 side flag(空 alerts + 侧 flag 会被忽略成绿灯)。
+
+    R4 不诊断：不下任何病名/结论，只如实说「自动筛查未完成、如有不适及时就医」——
+    给动作不给诊断。`severity=HIGH`(稳居就医引导档，又不冒称我们并不掌握的 CRITICAL
+    急症：我们只知道筛查没跑全，不知道到底命没命中急症)。这是 watch.py 腕上症状面与
+    guardian.evaluate_safety 等所有面共享的**单一** fail-safe 文案来源。
+    """
+    return Alert(
+        rule_id="safety.evaluation_incomplete",
+        category="meta",
+        severity=Severity.HIGH,
+        title="安全评估未完成",
+        message=(
+            "本次自动安全筛查未能完整跑完,无法确认是否存在安全风险。"
+            "这不代表安全,只代表系统未能完成评估。"
+        ),
+        action=(
+            "本次未能完成自动安全筛查,请勿据此判断为安全;"
+            "如有任何不适请及时就医,情况紧急请拨打 120。"
+        ),
+        data_citation={"reason": "rule_engine_partial_or_total_failure"},
+        requires_medical_attention=True,
+    )
 
 
 def _load_rule_modules() -> None:
