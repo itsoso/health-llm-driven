@@ -15,7 +15,8 @@ import { fetchHealthOperatingReview } from '../../services/healthOperatingReview
 import { useAuth } from '../../hooks/useAuth';
 import type { RevaStatus } from '../../constants/revaTheme';
 
-export interface RevaLabRow { id: string; name: string; sub: string; value: string; unit: string; status: RevaStatus }
+export interface RevaLabRow { id: string; name: string; sub: string; value: string; unit: string; status: RevaStatus; pos?: number }
+export interface RevaAirCol { aqi: string; level: string; status: RevaStatus; advice: string }
 export interface RevaPlanItem { id: string; icon: string; title: string; sub: string }
 export interface RevaData {
   loading: boolean;
@@ -31,6 +32,8 @@ export interface RevaData {
   profileName: string;
   profileMeta: string;
   hasGarmin: boolean;
+  /** Today's air quality (real, from /environment/air-quality) — null if source unavailable. */
+  airToday: RevaAirCol | null;
 }
 
 const DOMAIN_ICON: Record<string, string> = {
@@ -48,6 +51,62 @@ function abnormalLabel(flag: string | null | undefined): string {
   if (flag === 'high') return '偏高 · 注意';
   if (flag === 'low') return '偏低 · 注意';
   return '异常 · 注意';
+}
+
+/**
+ * Position of a value inside a reference range, mapped to the 0–1 range-bar axis
+ * where 0.55 = top-normal, 0.78 = top-caution. Only returns a value when the
+ * reference range parses cleanly to numeric bounds; otherwise undefined (bar hidden).
+ * Honest: a free-text range like "阴性" / "见报告" yields no position.
+ */
+function computeLabPos(value: number | null | undefined, refRange: string | null | undefined): number | undefined {
+  if (value == null || !refRange) return undefined;
+  const r = refRange.replace(/\s/g, '');
+  // "low-high" or "low~high"
+  const between = r.match(/^([\d.]+)[-~]([\d.]+)$/);
+  if (between) {
+    const lo = parseFloat(between[1]), hi = parseFloat(between[2]);
+    if (!(hi > lo)) return undefined;
+    const span = hi - lo;
+    // Map below-range → 0–.55 band, in-range → .55 anchor, above → .55–1.
+    if (value <= hi) return Math.max(0, Math.min(0.55, ((value - (lo - span)) / (2 * span)) * 0.55));
+    return Math.min(1, 0.55 + Math.min(1, (value - hi) / span) * 0.45);
+  }
+  // "<X" / "≤X" upper-bound only
+  const upper = r.match(/^[<≤]?=?([\d.]+)$/);
+  if (upper) {
+    const hi = parseFloat(upper[1]);
+    if (!(hi > 0)) return undefined;
+    return value <= hi
+      ? Math.max(0, Math.min(0.55, (value / hi) * 0.55))
+      : Math.min(1, 0.55 + Math.min(1, (value - hi) / hi) * 0.45);
+  }
+  return undefined;
+}
+
+function aqiStatus(aqi: number): RevaStatus {
+  if (aqi <= 50) return 'normal';
+  if (aqi <= 100) return 'normal';
+  if (aqi <= 150) return 'caution';
+  return 'risk';
+}
+
+function aqiAdvice(aqi: number): string {
+  if (aqi <= 100) return '空气不错，适合户外快走、骑行';
+  if (aqi <= 150) return '改室内运动，外出戴口罩';
+  return '建议室内活动，减少外出';
+}
+
+function mapAirQuality(aq: any): RevaAirCol | null {
+  if (!aq || typeof aq !== 'object' || aq.available === false) return null;
+  const aqi = aq.aqi;
+  if (typeof aqi !== 'number') return null;
+  return {
+    aqi: String(aqi),
+    level: aq.aqi_description || aq.category || '—',
+    status: aqiStatus(aqi),
+    advice: aqiAdvice(aqi),
+  };
 }
 
 function extractBP(stats: any): string | null {
@@ -98,6 +157,7 @@ export function useRevaData(): RevaData {
         value: it.value_text ?? (it.value != null ? String(it.value) : '—'),
         unit: it.unit ?? '',
         status,
+        pos: computeLabPos(it.value, it.reference_range),
       } as RevaLabRow;
     })
     .filter((x): x is RevaLabRow => x !== null);
@@ -146,5 +206,6 @@ export function useRevaData(): RevaData {
     profileName,
     profileMeta,
     hasGarmin: !!latest,
+    airToday: mapAirQuality(dash.data?.airQuality),
   };
 }

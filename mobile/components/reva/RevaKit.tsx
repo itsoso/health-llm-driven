@@ -8,7 +8,7 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Circle, Path, Line, Text as SvgText, G } from 'react-native-svg';
+import Svg, { Circle, Path, Line, Text as SvgText, G, Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import {
   revaColors as C,
   revaRadii,
@@ -151,8 +151,10 @@ export function TabBar({ active, onChange, bottomInset = 0 }: { active: RevaTab;
         const on = active === t.id;
         return (
           <Pressable key={t.id} onPress={() => onChange(t.id)} style={k.tab}>
-            <Icon name={t.icon} size={23} color={on ? C.green500 : C.ink3} />
-            <Text style={{ fontSize: 11, fontWeight: on ? '700' : '600', color: on ? C.green500 : C.ink3 }}>{t.label}</Text>
+            <View style={[k.tabIconWrap, on && { backgroundColor: C.green50 }]}>
+              <Icon name={t.icon} size={22} color={on ? C.green500 : C.ink3} />
+            </View>
+            <Text style={{ fontSize: 11, fontWeight: on ? '700' : '600', color: on ? C.green600 : C.ink3 }}>{t.label}</Text>
           </Pressable>
         );
       })}
@@ -164,22 +166,35 @@ export function TabBar({ active, onChange, bottomInset = 0 }: { active: RevaTab;
 export function ReadinessRing({ score = 86, size = 104, stroke = 10, dark = true }: { score?: number; size?: number; stroke?: number; dark?: boolean }) {
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
-  const off = circ * (1 - score / 100);
+  const frac = score / 100;
+  const off = circ * (1 - frac);
   const track = dark ? C.focusLine : C.green100;
-  const arc = dark ? C.greenBright : C.green500;
+  const gid = `ring${dark ? 'D' : 'L'}`;
+  // Tip node: arc starts at top (-90°) and sweeps clockwise → end angle.
+  const ang = -Math.PI / 2 + frac * 2 * Math.PI;
+  const cx = size / 2 + r * Math.cos(ang);
+  const cy = size / 2 + r * Math.sin(ang);
   return (
     <View style={{ width: size, height: size }}>
       <Svg width={size} height={size}>
+        <Defs>
+          <LinearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor={C.green500} />
+            <Stop offset="1" stopColor={C.greenBright} />
+          </LinearGradient>
+        </Defs>
         <Circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={stroke} />
         <Circle
-          cx={size / 2} cy={size / 2} r={r} fill="none" stroke={arc} strokeWidth={stroke}
+          cx={size / 2} cy={size / 2} r={r} fill="none" stroke={`url(#${gid})`} strokeWidth={stroke}
           strokeLinecap="round" strokeDasharray={`${circ}`} strokeDashoffset={off}
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
+        <Circle cx={cx} cy={cy} r={stroke / 2 + 1.5} fill={C.greenBright} />
       </Svg>
       <View style={StyleSheet.absoluteFill}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ fontFamily: 'IBMPlexMono', fontWeight: '500', fontSize: size * 0.34, color: dark ? C.focusInk1 : C.ink1 }}>{score}</Text>
+          <Text style={{ fontFamily: 'IBMPlexMono', fontWeight: '500', fontSize: size * 0.33, lineHeight: size * 0.34, color: dark ? C.focusInk1 : C.ink1 }}>{score}</Text>
+          <Text style={{ fontFamily: 'IBMPlexMono', fontSize: 9.5, letterSpacing: 1.1, color: dark ? C.focusInk2 : C.ink3 }}>/ 100</Text>
         </View>
       </View>
     </View>
@@ -192,36 +207,59 @@ export function Sparkline({ points, color = C.green500, height = 44, fill = true
   const xs = points.map((_, i) => (i / (points.length - 1)) * w);
   const ys = points.map(v => h - pad - ((v - min) / ((max - min) || 1)) * (h - 2 * pad));
   const d = xs.map((x, i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
+  const ex = xs[xs.length - 1], ey = ys[ys.length - 1];
   return (
     <Svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
-      {fill ? <Path d={`${d} L${w},${h} L0,${h} Z`} fill={color} opacity={0.08} /> : null}
+      <Defs>
+        <LinearGradient id="spkFill" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor={color} stopOpacity={0.16} />
+          <Stop offset="1" stopColor={color} stopOpacity={0} />
+        </LinearGradient>
+      </Defs>
+      {fill ? <Path d={`${d} L${w},${h} L0,${h} Z`} fill="url(#spkFill)" /> : null}
       <Path d={d} fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-      <Circle cx={xs[xs.length - 1]} cy={ys[ys.length - 1]} r={3.2} fill={color} />
+      <Circle cx={ex} cy={ey} r={6} fill={color} opacity={0.16} />
+      <Circle cx={ex} cy={ey} r={3.4} fill={color} />
     </Svg>
   );
 }
 
-export function TrendChart({ series, target, w = 320, h = 150 }: { series: { t: string; v: number }[]; target: number; w?: number; h?: number }) {
-  const padL = 8, padR = 8, padT = 14, padB = 22;
+export function TrendChart({ series, target, w = 320, h = 164 }: { series: { t: string; v: number }[]; target: number; w?: number; h?: number }) {
+  const padL = 10, padR = 12, padT = 20, padB = 24;
   const iw = w - padL - padR, ih = h - padT - padB;
   const vals = series.map(s => s.v).concat([target]);
-  const min = Math.min(...vals) * 0.96, max = Math.max(...vals) * 1.04;
+  const min = Math.min(...vals) * 0.94, max = Math.max(...vals) * 1.05;
   const X = (i: number) => padL + (i / (series.length - 1)) * iw;
   const Y = (v: number) => padT + (1 - (v - min) / ((max - min) || 1)) * ih;
   const line = series.map((s, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(s.v).toFixed(1)}`).join(' ');
   const ty = Y(target);
+  const grid = [0, 0.5, 1];
   return (
     <Svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`}>
-      <Line x1={padL} x2={w - padR} y1={ty} y2={ty} stroke={C.green500} strokeWidth={1.5} strokeDasharray="4 4" opacity={0.55} />
-      <SvgText x={w - padR} y={ty - 5} textAnchor="end" fontFamily="IBMPlexMono" fontSize={10} fill={C.green600}>{`理想 ≤ ${target}`}</SvgText>
-      <Path d={`${line} L${X(series.length - 1)},${padT + ih} L${X(0)},${padT + ih} Z`} fill={C.green500} opacity={0.06} />
-      <Path d={line} fill="none" stroke={C.green500} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-      {series.map((s, i) => (
-        <G key={i}>
-          <Circle cx={X(i)} cy={Y(s.v)} r={i === series.length - 1 ? 4.5 : 3} fill={i === series.length - 1 ? C.green500 : '#fff'} stroke={C.green500} strokeWidth={2} />
-          <SvgText x={X(i)} y={h - 6} textAnchor="middle" fontFamily="IBMPlexMono" fontSize={10} fill={C.ink3}>{s.t}</SvgText>
-        </G>
+      <Defs>
+        <LinearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor={C.green500} stopOpacity={0.14} />
+          <Stop offset="1" stopColor={C.green500} stopOpacity={0} />
+        </LinearGradient>
+      </Defs>
+      {grid.map((g, i) => (
+        <Line key={`g${i}`} x1={padL} x2={w - padR} y1={padT + g * ih} y2={padT + g * ih} stroke={C.line} strokeWidth={1} />
       ))}
+      <Line x1={padL} x2={w - padR} y1={ty} y2={ty} stroke={C.green500} strokeWidth={1.5} strokeDasharray="4 4" opacity={0.6} />
+      <SvgText x={w - padR} y={ty - 6} textAnchor="end" fontFamily="IBMPlexMono" fontSize={10} fontWeight="500" fill={C.green600}>{`理想 ≤ ${target}`}</SvgText>
+      <Path d={`${line} L${X(series.length - 1)},${padT + ih} L${X(0)},${padT + ih} Z`} fill="url(#trendFill)" />
+      <Path d={line} fill="none" stroke={C.green500} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round" />
+      {series.map((s, i) => {
+        const last = i === series.length - 1;
+        return (
+          <G key={i}>
+            {last ? <Circle cx={X(i)} cy={Y(s.v)} r={8} fill={C.green500} opacity={0.14} /> : null}
+            <Circle cx={X(i)} cy={Y(s.v)} r={last ? 5 : 3.4} fill={last ? C.green500 : '#fff'} stroke={C.green500} strokeWidth={2} />
+            <SvgText x={X(i)} y={Y(s.v) - 12} textAnchor="middle" fontFamily="IBMPlexMono" fontSize={10.5} fontWeight="500" fill={last ? C.green600 : C.ink3}>{s.v.toFixed(1)}</SvgText>
+            <SvgText x={X(i)} y={h - 7} textAnchor="middle" fontFamily="IBMPlexMono" fontSize={10} fill={C.ink3}>{s.t}</SvgText>
+          </G>
+        );
+      })}
     </Svg>
   );
 }
@@ -248,7 +286,7 @@ export function PlanItem({ icon, title, sub, tag, done, onToggle, last, titleLin
   );
 }
 
-export function MetricTile({ icon, label, value, unit, delta, status = 'normal', onPress }: { icon: string; label: string; value: string; unit?: string; delta?: string; status?: RevaStatus; onPress?: () => void }) {
+export function MetricTile({ icon, label, value, unit, delta, trend, status = 'normal', onPress }: { icon: string; label: string; value: string; unit?: string; delta?: string; trend?: string; status?: RevaStatus; onPress?: () => void }) {
   const s = STATUS[status];
   const inner = (
     <View style={k.tile}>
@@ -260,24 +298,50 @@ export function MetricTile({ icon, label, value, unit, delta, status = 'normal',
         <Text style={{ fontFamily: 'IBMPlexMono', fontWeight: '500', fontSize: 22, color: s.fg }}>{value}</Text>
         {unit ? <Text style={{ fontFamily: 'IBMPlexMono', fontSize: 11, color: C.ink3 }}>{unit}</Text> : null}
       </View>
-      {delta ? <Text style={{ fontFamily: 'IBMPlexMono', fontSize: 11, color: C.ink3, marginTop: 2 }}>{delta}</Text> : null}
+      {delta ? (
+        <View style={[k.deltaPill, { backgroundColor: s.bg, borderColor: s.line }]}>
+          <Text style={{ fontFamily: 'IBMPlexMono', fontSize: 10.5, fontWeight: '500', color: s.fg }}>
+            {trend ? `${trend} ` : ''}{delta}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
   return onPress ? <Pressable onPress={onPress} style={{ flex: 1 }}>{inner}</Pressable> : <View style={{ flex: 1 }}>{inner}</View>;
 }
 
-export function LabRow({ status = 'normal', name, sub, value, unit, onPress, last }: { status?: RevaStatus; name: string; sub?: string; value: string; unit?: string; onPress?: () => void; last?: boolean }) {
+/** Segmented range bar: normalBg 0–55% / cautionBg 55–78% / riskBg 78–100% with a marker at `pos`. */
+function RangeBar({ status, pos }: { status: RevaStatus; pos: number }) {
   const s = STATUS[status];
+  const clamped = Math.max(0, Math.min(1, pos));
+  return (
+    <View style={k.rangeBar}>
+      <View style={{ flexDirection: 'row', flex: 1, borderRadius: 99, overflow: 'hidden' }}>
+        <View style={{ flex: 55, backgroundColor: revaSemantic.normal.bg }} />
+        <View style={{ flex: 23, backgroundColor: revaSemantic.caution.bg }} />
+        <View style={{ flex: 22, backgroundColor: revaSemantic.risk.bg }} />
+      </View>
+      <View style={[k.rangeMarker, { left: `${clamped * 100}%`, backgroundColor: s.fg }]} />
+    </View>
+  );
+}
+
+export function LabRow({ status = 'normal', name, sub, value, unit, pos, onPress, last }: { status?: RevaStatus; name: string; sub?: string; value: string; unit?: string; pos?: number | null; onPress?: () => void; last?: boolean }) {
+  const s = STATUS[status];
+  const showBar = pos != null;
   return (
     <Pressable onPress={onPress} disabled={!onPress} style={[k.rowItem, last && { borderBottomWidth: 0 }]}>
-      <Dot status={status} />
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontWeight: '600', fontSize: 15, color: C.ink1 }}>{name}</Text>
-        {sub ? <Text style={{ fontSize: 12, fontWeight: '600', color: s.fg }}>{sub}</Text> : null}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Dot status={status} size={8} />
+          <Text style={{ fontWeight: '600', fontSize: 15, color: C.ink1 }}>{name}</Text>
+        </View>
+        {showBar ? <RangeBar status={status} pos={pos as number} /> : null}
+        {sub ? <Text style={{ fontSize: 12, fontWeight: '600', color: s.fg, marginLeft: 16, marginTop: showBar ? 6 : 2 }}>{sub}</Text> : null}
       </View>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+      <View style={{ alignItems: 'flex-end' }}>
         <Text style={{ fontFamily: 'IBMPlexMono', fontWeight: '500', fontSize: 18, color: s.fg }}>{value}</Text>
-        {unit ? <Text style={{ fontFamily: 'IBMPlexMono', fontSize: 11, color: C.ink3 }}> {unit}</Text> : null}
+        {unit ? <Text style={{ fontFamily: 'IBMPlexMono', fontSize: 10.5, color: C.ink3, marginTop: 1 }}>{unit}</Text> : null}
       </View>
       {onPress ? <Icon name="chevron-right" size={18} color={C.ink4} /> : null}
     </Pressable>
@@ -299,6 +363,44 @@ export function DayProgress({ day = 23, total = 90 }: { day?: number; total?: nu
   );
 }
 
+// ── Air quality (today + tomorrow) ───────────────────────────────────────────
+export function AirCol({ day, aqi, level, status = 'normal', advice, last }: { day: string; aqi: string; level: string; status?: RevaStatus; advice: string; last?: boolean }) {
+  const s = STATUS[status];
+  return (
+    <View style={[k.airCol, !last && { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: C.line }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
+        <Text style={{ fontSize: 12.5, fontWeight: '600', color: C.ink2 }}>{day}</Text>
+        <Chip status={status}>{level}</Chip>
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
+        <Text style={{ fontFamily: 'IBMPlexMono', fontWeight: '500', fontSize: 26, color: s.fg }}>{aqi}</Text>
+        <Text style={{ fontFamily: 'IBMPlexMono', fontSize: 10.5, color: C.ink3 }}>AQI</Text>
+      </View>
+      <Text style={{ fontSize: 12.5, lineHeight: 18, color: C.ink2, marginTop: 6 }}>{advice}</Text>
+    </View>
+  );
+}
+
+export function AirQuality({ action, today, tomorrow }: {
+  action?: string;
+  today?: { aqi: string; level: string; status: RevaStatus; advice: string };
+  tomorrow?: { aqi: string; level: string; status: RevaStatus; advice: string };
+}) {
+  const t = today ?? { aqi: '62', level: '良', status: 'normal' as const, advice: '空气不错，适合户外快走、骑行' };
+  const m = tomorrow ?? { aqi: '118', level: '轻度污染', status: 'caution' as const, advice: '改室内运动，外出戴口罩' };
+  return (
+    <View>
+      <SectionLabel action={action}>今明空气</SectionLabel>
+      <Card pad={0}>
+        <View style={{ flexDirection: 'row' }}>
+          <AirCol day="今天" aqi={t.aqi} level={t.level} status={t.status} advice={t.advice} />
+          <AirCol day="明天" aqi={m.aqi} level={m.level} status={m.status} advice={m.advice} last />
+        </View>
+      </Card>
+    </View>
+  );
+}
+
 const k = StyleSheet.create({
   chip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth, alignSelf: 'flex-start' },
   chipText: { fontWeight: '600', fontSize: 12 },
@@ -314,4 +416,9 @@ const k = StyleSheet.create({
   rowIcon: { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   check: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   tile: { flex: 1, backgroundColor: C.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 13, ...revaShadows.sm },
+  deltaPill: { alignSelf: 'flex-start', marginTop: 6, borderRadius: 99, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 7, paddingVertical: 2 },
+  rangeBar: { position: 'relative', height: 5, marginTop: 9, marginLeft: 16, flexDirection: 'row', alignItems: 'center' },
+  rangeMarker: { position: 'absolute', width: 11, height: 11, borderRadius: 5.5, borderWidth: 2, borderColor: '#fff', marginLeft: -5.5, ...revaShadows.sm },
+  airCol: { flex: 1, minWidth: 0, paddingHorizontal: 16, paddingVertical: 13 },
+  tabIconWrap: { width: 46, height: 30, borderRadius: 99, alignItems: 'center', justifyContent: 'center' },
 });
