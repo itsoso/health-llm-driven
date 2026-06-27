@@ -59,13 +59,13 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 | 端 | 怎么生成视觉 | 状态(2026-06-27 实测) |
 |---|---|---|
 | **mac**(原生 macOS) | 组件级渲染:`cd apps/mac && swift test --filter HealthAgentMacTests`(snapshot 套件 → `Tests/HealthAgentMacTests/__Snapshots__/` 下 RefreshPanel/WearablePanel/PriorityActionHero/BriefingCard/SpO2WeekCard 等 PNG)。整屏:`swift run HealthAgentMac` 起 app(需登录后端)。 | ✅ `swift build` 绿;snapshot PNG 已 committed,可重录 |
-| **mobile**(iOS) | dev-client + Metro(8082)+ `xcrun simctl io <sim> screenshot`。 | ❌ **模拟器被 Rokid 挡死** —— `modules/rokid-bridge/ios/RokidBridgeModule.swift` 依赖 `RGCxrClient`(框架只有 device 切片)→ `npx expo run:ios <sim>` 必 **exit 65**(实测 83 errors,`cannot find type 'RGCxrClientAudioEvent'`);sim 里旧 build 也因缺 `HealthPilot.debug.dylib` 启动即 dyld 崩。**截图只能走真机**(dev build / TestFlight + Xcode Devices / `xcrun devicectl`),或出一个 Rokid-条件编译排除的 sim build 再走 simctl。**不造假截图。** |
+| **mobile**(iOS) | **`./scripts/sim-build.sh ["iPhone 17 Pro"]`**(Rokid 排除 build+install+launch)→ `xcrun simctl io <sim> screenshot`。 | ✅ **已解决** —— Rokid `RGCxrClient.framework` 只有 device 切片,直接 `npx expo run:ios <sim>` 必 exit 65。`sim-build.sh` 用 `ROKID_IOS_SDK_ENABLED=0`(不注入 RGCxrClient → canImport 假 → Rokid 代码全排除)+ `LC_ALL=en_US.UTF-8`(绕 ruby unicode 崩)+ `SENTRY_DISABLE_AUTO_UPLOAD=true` + 删 Podfile.lock 强制重装。**实测 build 绿、app 在模拟器渲染首页**。device/真机 Rokid 功能零影响(EAS device build 仍 ENABLED=1)。见 [[project_ios_simulator_blocked_by_rokid_framework]]。 |
 | **watch** | 同 mobile(原生 watchOS target,真机;sim 同受 Rokid/签名限制)。 | ⚠️ 真机 |
 | **frontend**(Web) | `cd frontend && npm run dev` → 浏览器/Playwright 截。 | ✅ 可本地起 |
 | **mini-program** | 微信开发者工具预览。 | ✅ 工具内 |
 | **rokid-pushup-glasses** | 眼镜真机(CXR-L)。 | ⚠️ 真机 |
 
-**结论(诚实)**:本轮「mac+mobile 走 macOS 模拟器截图」—— mac 非模拟器(原生,snapshot 套件可重生成视觉);**mobile 模拟器路径确认被 Rokid device-only 框架阻断(exit 65),需真机**,这与已知工程约束一致,未伪造。
+**结论**:mac 用 snapshot 套件渲染真实组件视觉;**mobile 模拟器路径已打通**(`sim-build.sh` 排除 device-only Rokid 框架 → 模拟器 build+run 成功,首页实测渲染)。两端视觉都可在 macOS 上现生成。
 
 ## 维护
 
