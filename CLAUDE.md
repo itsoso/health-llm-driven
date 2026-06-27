@@ -9,9 +9,10 @@ Claude Code 读本文件；Cursor 读 `.cursor/rules/00-agents-bootstrap.mdc` �
 | 我要做的事 | 读这个 |
 |---|---|
 | **系统全景 / 这系统是什么 / 有哪些能力 / 多端×UI×流 / onboard 本项目** | **`docs/system-map/INDEX.md`(agent 开工先读这个)** |
+| **本项目研发 skill binding / Claude-Codex 怎么共用研发 skills** | **`docs/agent-skill-binding.md`**（项目级 binding；全局 PRACTICES 不在此重写） |
 | 把一句需求走完整流程（需求→PRD→规划→研发→测试→部署→上线验证） | `docs/specs/product-pipeline-contract.md`（双环 + 6 道 Gate + Dossier） |
 | 项目结构 / 命令 / 架构总览 / Multi-Agent 系统 | 本文件 |
-| 安全 / 日志 / 测试 / 隐私 / 部署 / DB / 提交规范的硬约束 | `AGENTS.md` (992 行) |
+| 安全 / 日志 / 测试 / 隐私 / 部署 / DB / 提交规范的硬约束 | `AGENTS.md` |
 | 产品范围 / 需求演进 / 一等对象准入 Gate / Claude-Codex-Qwen-GLM-Kimi-Gemini-Grok 通用遵循协议 | `docs/specs/reva-product-governance-spec.md` |
 | LLM Harness 设计（source-aware fast path / verification before write / tool schema / memory 4-stage / streaming） | `docs/HARNESS.md` |
 | 编码 agent 如何在本仓库导航 / 验证 / 沉淀经验（**操作工具架**,≠ 上面那条产品 HARNESS.md） | `docs/design-agent-operating-harness.md` |
@@ -42,6 +43,8 @@ Claude Code 读本文件；Cursor 读 `.cursor/rules/00-agents-bootstrap.mdc` �
 - `release-engineer` — deploy.sh / OTA / EAS TestFlight / mac 打包安装(先后端再 OTA)
 
 **专用 skill**:`mac-build-deploy`(apps/mac 的 swift build/test 闸门 + package-app.sh 安装 + CI 工具链坑)。
+
+**项目 binding**:Claude/Codex/Cursor/其他 coding agent 如何共同触发这些研发 skills,见 `docs/agent-skill-binding.md`。全局层只管跨项目共性;health-llm-driven 内以该 binding + `AGENTS.md` 硬规则为准。
 
 **工作流**:计划 → 实现(后端‖移动‖mac‖前端 fan-out)→ 增量 QA → 安全评审 → PR/上线。详见 `.claude/skills/health-harness-orchestrator/SKILL.md`。单文件小修/纯文档可降级单代理。
 

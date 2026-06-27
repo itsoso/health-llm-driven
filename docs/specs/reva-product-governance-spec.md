@@ -371,7 +371,9 @@ G5 deploy-health, G6 live verification), a per-feature Dossier
 fail-stops (never carry red or a safety BLOCK downstream). Every agent
 satisfies the same gates with its own tooling. Claude Code's concrete
 orchestration of this contract lives in `.claude/skills/product-pipeline/`;
-other agents follow the contract directly.
+project-level skill binding for Claude, Codex, Cursor, and other agents lives
+in `docs/agent-skill-binding.md`; other agents follow the contract directly
+with their own tools.
 
 ## 10. Model-Agnostic Prompt Block
 
@@ -382,6 +384,8 @@ You are working in the Reva Personal Health OS repo.
 Before changing product behavior, read docs/specs/reva-product-governance-spec.md.
 AGENTS.md controls engineering safety, tests, privacy, deployment, DB, and commit
 rules. The governance spec controls product scope and requirement admission.
+docs/agent-skill-binding.md binds this repo's development skills to Claude,
+Codex, Cursor, and other coding agents.
 For new product behavior, map the request to a first-class Health OS object,
 identify the target surface, name the safety boundary, define the verification
 window, and implement only the smallest end-to-end slice. If the request cannot

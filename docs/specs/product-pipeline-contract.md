@@ -90,7 +90,7 @@ G1 准入、G2 待拍板、G5 真机/发布、G6 上线验证 —— **显式 ST
 
 | Agent | 经由 |
 |---|---|
-| Claude Code | `CLAUDE.md` → `.claude/skills/product-pipeline/`(实现本契约) |
-| Codex | `AGENTS.md` §12 → 本契约 |
-| Cursor | `.cursor/rules/00-agents-bootstrap.mdc` → `AGENTS.md` §12 → 本契约 |
-| Qwen/GLM/Kimi/Gemini/Grok/其他 | `reva-product-governance-spec.md` §9.6 / §10 → 本契约 |
+| Claude Code | `CLAUDE.md` → `docs/agent-skill-binding.md` → `.claude/skills/product-pipeline/`(实现本契约) |
+| Codex | `AGENTS.md` §12/§13 → `docs/agent-skill-binding.md` → 本契约 |
+| Cursor | `.cursor/rules/00-agents-bootstrap.mdc` → `AGENTS.md` §12/§13 → `docs/agent-skill-binding.md` → 本契约 |
+| Qwen/GLM/Kimi/Gemini/Grok/其他 | `reva-product-governance-spec.md` §9.6 / §10 → `docs/agent-skill-binding.md` → 本契约 |

@@ -53,7 +53,7 @@ INDEX 顶部 READ ORDER:① 能力/目标 → INDEX 表;② 功能在哪/怎么�
 
 ## 跨 agent / 跨项目
 
-- 本仓:`CLAUDE.md` doc-map + `AGENTS.md` 指向 `docs/system-map/INDEX.md`(agent 开工先读)。
+- 本仓:`CLAUDE.md` doc-map + `AGENTS.md` 指向 `docs/system-map/INDEX.md`(agent 开工先读);研发 skill 触发绑定见 `docs/agent-skill-binding.md`。
 - 跨项目:透明化标准与 `product-pipeline-contract.md` 并列(全局 `~/work/personal/PRACTICES/`);每项目建自己的 `docs/system-map/INDEX.md` + `dump_system_map.py` 填本项目实情。
 
 ## 边界

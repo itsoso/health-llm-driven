@@ -5,6 +5,7 @@ doc: system-map/INDEX
 last-reviewed: 2026-06-27
 generated-source: docs/_generated/system-map.json
 extend-via: docs/specs/product-pipeline-contract.md
+skill-binding: docs/agent-skill-binding.md
 ---
 
 # System Map — 复元 Reva 系统全景(agent 先读这个)
@@ -18,6 +19,7 @@ extend-via: docs/specs/product-pipeline-contract.md
 3. **想确认地图此刻可不可信** → [`docs/_generated/system-map.json`](../_generated/system-map.json)(代码派生,CI 校验;它是计数/roster 的唯一真源)。
 4. **想扩一个功能** → [`product-pipeline-contract.md`](../specs/product-pipeline-contract.md)(需求→上线 6 道 Gate;S1 用本地图当现状输入)。
 5. **想知道当前在做什么** → `docs/dossiers/`(在途 feature)。
+6. **想知道本项目研发 skills 怎么触发/Claude-Codex 怎么共用** → [`docs/agent-skill-binding.md`](../agent-skill-binding.md)。
 
 ## 三层分治(防漂移的核心)
 

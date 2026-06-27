@@ -5,7 +5,7 @@ description: "复元产品全生命周期总指挥:把一句用户需求,经『�
 
 # 复元 Product Pipeline — 从需求到上线验证的总指挥
 
-> **流程契约单一真源 = [`docs/specs/product-pipeline-contract.md`](../../../docs/specs/product-pipeline-contract.md)**(agent 中立:双环 + 6 道 Gate + Dossier + 失败即停 + 反馈环纪律)。本 SKILL 是 **Claude Code 对该契约的具体编排实现**(怎么 fan-out、调哪个 sub-skill、用 Workflow 工具)——**契约定标准,本文定 Claude 怎么落**。Codex/Cursor/其他 agent 经 `AGENTS.md §12` / `reva-product-governance-spec.md §9.6` 读同一份契约,用自己的工具满足同一套 Gate。契约改了,本文同步。
+> **流程契约单一真源 = [`docs/specs/product-pipeline-contract.md`](../../../docs/specs/product-pipeline-contract.md)**(agent 中立:双环 + 6 道 Gate + Dossier + 失败即停 + 反馈环纪律)。本 SKILL 是 **Claude Code 对该契约的具体编排实现**(怎么 fan-out、调哪个 sub-skill、用 Workflow 工具)——**契约定标准,本文定 Claude 怎么落**。项目级触发绑定见 [`docs/agent-skill-binding.md`](../../../docs/agent-skill-binding.md);Codex/Cursor/其他 agent 经 `AGENTS.md §12/§13` / `reva-product-governance-spec.md §9.6` 读同一份契约,用自己的工具满足同一套 Gate。契约改了,本文同步。
 
 > **定位**:这是**产品级**总指挥,坐在 `health-harness-orchestrator`(开发级团队编排)**之上**。
 > - 本 skill 拥有**前半段**(需求→PRD→规划→需求分解)+ **全程的 Gate 与 Dossier**。
