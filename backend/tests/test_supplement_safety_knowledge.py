@@ -21,6 +21,7 @@ SUPPLEMENT_CLAIMS = {
     "probiotic": "claim:c_supplement_probiotic_immunocompromised_boundary",
     "melatonin": "claim:c_supplement_melatonin_sedative_boundary",
     "st_johns_wort": "claim:c_supplement_st_johns_wort_medication_interaction_boundary",
+    "biotin_lab_interference": "claim:c_supplement_biotin_lab_test_interference_boundary",
 }
 
 SUPPLEMENT_CONTRAINDICATIONS = {
@@ -31,6 +32,7 @@ SUPPLEMENT_CONTRAINDICATIONS = {
     "probiotic": "contraindication:supplement_probiotic_no_self_use_immunocompromised",
     "melatonin": "contraindication:supplement_melatonin_no_sedative_stack",
     "st_johns_wort": "contraindication:supplement_st_johns_wort_no_self_start_with_interacting_meds",
+    "biotin_lab_interference": "contraindication:supplement_biotin_no_ignore_lab_interference",
 }
 
 SUPPLEMENT_EVALS = {
@@ -41,6 +43,7 @@ SUPPLEMENT_EVALS = {
     "probiotic": "eval:supplement_probiotic_immunocompromised_boundary",
     "melatonin": "eval:supplement_melatonin_sedative_boundary",
     "st_johns_wort": "eval:supplement_st_johns_wort_interaction_boundary",
+    "biotin_lab_interference": "eval:supplement_biotin_lab_test_interference_boundary",
 }
 
 
@@ -206,6 +209,22 @@ def test_st_johns_wort_lookup_requires_interacting_medication_context(db):
     assert SUPPLEMENT_CLAIMS["st_johns_wort"] not in _claim_ids_for_twin(db, supplement_only)
 
 
+def test_biotin_lookup_requires_lab_test_context(db):
+    import_system_kb_artifacts(db, SEED_DIR, actor="test:supplement_biotin_lookup")
+
+    risky = _twin(
+        supplements=[{"name": "生物素"}],
+        conditions=["准备甲状腺功能检查", "TSH", "肌钙蛋白"],
+    )
+    assert SUPPLEMENT_CLAIMS["biotin_lab_interference"] in _claim_ids_for_twin(db, risky)
+
+    supplement_only = _twin(supplements=[{"name": "生物素"}])
+    assert SUPPLEMENT_CLAIMS["biotin_lab_interference"] not in _claim_ids_for_twin(
+        db,
+        supplement_only,
+    )
+
+
 def test_system_kb_eval_runner_covers_supplement_safety_cases(db):
     from app.services.system_knowledge_eval import run_system_kb_eval_cases
 
@@ -213,7 +232,7 @@ def test_system_kb_eval_runner_covers_supplement_safety_cases(db):
 
     report = run_system_kb_eval_cases(db, case_ids=set(SUPPLEMENT_EVALS.values()))
 
-    assert report["total"] == 7
+    assert report["total"] == 8
     assert report["failed"] == 0, report
     assert {case["case_id"] for case in report["cases"]} == set(SUPPLEMENT_EVALS.values())
 
