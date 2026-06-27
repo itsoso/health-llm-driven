@@ -17,6 +17,7 @@ def _seed_system_kb_gene_claim(db):
         sources=["dedao:qiuzilong-genetics-07"],
         last_confirmed=datetime(2026, 5, 16, tzinfo=UTC),
         decay_rate="slow",
+        metadata_json={"review_status": "reviewed"},
     )
     claim = KBDocument(
         doc_id="claim:c_mthfr_c677t_hcy_folate_boundary",
@@ -32,6 +33,7 @@ def _seed_system_kb_gene_claim(db):
         sources=["dedao:qiuzilong-genetics-07", "pubmed:19033271"],
         last_confirmed=datetime(2026, 5, 16, tzinfo=UTC),
         decay_rate="normal",
+        metadata_json={"review_status": "reviewed"},
     )
     db.add_all([entity, claim])
     db.flush()

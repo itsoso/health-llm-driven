@@ -41,6 +41,7 @@ def _seed_9p21_knowledge(db):
         sources=["dedao:qiuzilong-genetics-20"],
         last_confirmed=datetime(2026, 5, 17, tzinfo=UTC),
         decay_rate="normal",
+        metadata_json={"review_status": "reviewed"},
     )
     claim = KBDocument(
         doc_id="claim:c_9p21_cardiovascular_labs_lifestyle_boundary",
@@ -60,6 +61,7 @@ def _seed_9p21_knowledge(db):
         sources=["dedao:qiuzilong-genetics-20"],
         last_confirmed=datetime(2026, 5, 17, tzinfo=UTC),
         decay_rate="normal",
+        metadata_json={"review_status": "reviewed"},
     )
     db.add_all([entity, claim])
     db.flush()
