@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
 import { EvidenceRefsRow } from './EvidenceRefsRow';
-import type { EvidenceRef } from './EvidenceRefsRow';
+import type { EvidenceRef, KnowledgeContraindication } from './EvidenceRefsRow';
 import { useTheme } from '../../../hooks/useTheme';
 import type { CardSpec } from './types';
 
@@ -12,9 +12,18 @@ interface SupplementData {
   total: number;
   pending_names: string[];
   evidence_refs?: EvidenceRef[];
+  claim_boundary?: string | null;
+  contraindications?: KnowledgeContraindication[] | null;
 }
 
-export function SupplementCardView({ checked, total, pending_names, evidence_refs }: SupplementData) {
+export function SupplementCardView({
+  checked,
+  total,
+  pending_names,
+  evidence_refs,
+  claim_boundary,
+  contraindications,
+}: SupplementData) {
   const { c } = useTheme();
   const pct = total > 0 ? Math.round((checked / total) * 100) : 0;
   // 进度颜色 = 完成度语义 (绿/橙/红), 不随主题切换
@@ -58,7 +67,11 @@ export function SupplementCardView({ checked, total, pending_names, evidence_ref
           ✅ 今日补剂已全部打卡
         </Text>
       )}
-      <EvidenceRefsRow refs={evidence_refs} />
+      <EvidenceRefsRow
+        refs={evidence_refs}
+        claimBoundary={claim_boundary}
+        contraindications={contraindications}
+      />
     </CardShell>
   );
 }

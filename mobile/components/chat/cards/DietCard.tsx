@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { CardShell } from './CardShell';
 import { EvidenceRefsRow } from './EvidenceRefsRow';
-import type { EvidenceRef } from './EvidenceRefsRow';
+import type { EvidenceRef, KnowledgeContraindication } from './EvidenceRefsRow';
 import { useTheme, type ColorPalette } from '../../../hooks/useTheme';
 import type { CardSpec } from './types';
 
@@ -15,6 +15,8 @@ interface DietData {
   meals_count?: number;
   meals_by_type?: Record<string, number>;
   evidence_refs?: EvidenceRef[];
+  claim_boundary?: string | null;
+  contraindications?: KnowledgeContraindication[] | null;
 }
 
 function _mealLabel(c: ColorPalette): Record<string, { label: string; icon: string; color: string }> {
@@ -33,6 +35,7 @@ function today(): string {
 
 export function DietCardView({
   calories, protein, carbs, fat, fiber, meals_count, meals_by_type, evidence_refs,
+  claim_boundary, contraindications,
 }: DietData) {
   const { c } = useTheme();
   const mealLabels = _mealLabel(c);
@@ -102,7 +105,11 @@ export function DietCardView({
         </Text>
       )}
 
-      <EvidenceRefsRow refs={evidence_refs} />
+      <EvidenceRefsRow
+        refs={evidence_refs}
+        claimBoundary={claim_boundary}
+        contraindications={contraindications}
+      />
     </CardShell>
   );
 }

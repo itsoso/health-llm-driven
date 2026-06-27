@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
 import { EvidenceRefsRow } from './EvidenceRefsRow';
-import type { EvidenceRef } from './EvidenceRefsRow';
+import type { EvidenceRef, KnowledgeContraindication } from './EvidenceRefsRow';
 import { useTheme, type ColorPalette } from '../../../hooks/useTheme';
 import type { CardSpec } from './types';
 
@@ -18,6 +18,8 @@ interface WorkoutData {
   avg_pace?: string;
   steps?: number;
   evidence_refs?: EvidenceRef[];
+  claim_boundary?: string | null;
+  contraindications?: KnowledgeContraindication[] | null;
 }
 
 /**
@@ -91,7 +93,11 @@ export function WorkoutCardView(d: WorkoutData) {
         {d.avg_pace && <Stat icon="speedometer-outline" color={c.purple} label="配速" value={d.avg_pace} c={c} />}
         {d.steps != null && <Stat icon="footsteps-outline" color={c.amber} label="步数" value={d.steps.toLocaleString()} c={c} />}
       </View>
-      <EvidenceRefsRow refs={d.evidence_refs} />
+      <EvidenceRefsRow
+        refs={d.evidence_refs}
+        claimBoundary={d.claim_boundary}
+        contraindications={d.contraindications}
+      />
     </CardShell>
   );
 }

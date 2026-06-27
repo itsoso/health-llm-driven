@@ -55,4 +55,26 @@ describe('knowledge EvidenceRefsRow', () => {
       expect(screen.getByText('恢复不足时降低运动强度')).toBeTruthy();
     });
   });
+
+  it('renders compact claim boundary and contraindication hits', () => {
+    const screen = renderWithQuery(
+      <EvidenceRefsRow
+        refs={['claim:c_recovery_low_reduce_intensity']}
+        claimBoundary="仅用于健康管理，不替代医生诊断。"
+        contraindications={[
+          {
+            title: '低氧阻断加量训练',
+            summary: '夜间低氧时先做睡眠评估。',
+          },
+        ]}
+        testID="action-evidence-chip"
+      />,
+    );
+
+    expect(screen.getByTestId('action-evidence-chip')).toBeTruthy();
+    expect(screen.getByText(/证据边界/)).toBeTruthy();
+    expect(screen.getByText(/不替代医生诊断/)).toBeTruthy();
+    expect(screen.getByText(/安全命中/)).toBeTruthy();
+    expect(screen.getByText(/低氧阻断加量训练/)).toBeTruthy();
+  });
 });

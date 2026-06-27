@@ -1,2 +1,2 @@
 export { EvidenceRefsRow } from '../../knowledge';
-export type { EvidenceRef } from '../../knowledge';
+export type { EvidenceRef, KnowledgeContraindication } from '../../knowledge';

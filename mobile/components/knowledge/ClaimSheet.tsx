@@ -42,6 +42,11 @@ const EVIDENCE_LABEL: Record<string, string> = {
   D: 'D级',
 };
 
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || '').trim()).filter(Boolean);
+}
+
 export function ClaimSheet({
   visible,
   onClose,
@@ -216,6 +221,9 @@ function ClaimBlock({
   const entityNeighbors: KnowledgeDocument[] = (bundle.neighbors || []).filter(
     (n) => n.doc_type === 'entity',
   );
+  const contraindicationNeighbors: KnowledgeDocument[] = (bundle.neighbors || []).filter(
+    (n) => n.doc_type === 'contraindication',
+  );
 
   return (
     <View style={[styles.claimBlock, !isLast && styles.claimDivider]}>
@@ -245,6 +253,22 @@ function ClaimBlock({
         <View style={styles.boundaryBox}>
           <Ionicons name="information-circle" size={12} color={c.amber} />
           <Text style={styles.boundaryText}>{bundle.claim_boundary}</Text>
+        </View>
+      ) : null}
+
+      {contraindicationNeighbors.length > 0 ? (
+        <View style={styles.contraWrap}>
+          <View style={styles.contraHeader}>
+            <Ionicons name="alert-circle" size={12} color={c.red} />
+            <Text style={styles.contraLabel}>安全命中</Text>
+          </View>
+          {contraindicationNeighbors.map((n) => (
+            <ContraindicationItem
+              key={n.doc_id}
+              doc={n}
+              styles={styles}
+            />
+          ))}
         </View>
       ) : null}
 
@@ -286,6 +310,36 @@ function ClaimBlock({
             />
           ))}
         </View>
+      ) : null}
+    </View>
+  );
+}
+
+function ContraindicationItem({
+  doc,
+  styles,
+}: {
+  doc: KnowledgeDocument;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  const severity = String(doc.metadata?.severity || doc.metadata?.risk_level || '').trim();
+  const blocks = toStringArray(doc.metadata?.blocks);
+  const triggers = toStringArray(doc.metadata?.trigger || doc.metadata?.triggers);
+
+  return (
+    <View style={styles.contraItem}>
+      <Text style={styles.contraTitle}>{doc.title || doc.doc_id}</Text>
+      {doc.summary ? <Text style={styles.contraSummary}>{doc.summary}</Text> : null}
+      {severity ? <Text style={styles.contraMeta}>等级 {severity}</Text> : null}
+      {blocks.length > 0 ? (
+        <Text style={styles.contraMeta} numberOfLines={2}>
+          阻断 {blocks.join(' / ')}
+        </Text>
+      ) : null}
+      {triggers.length > 0 ? (
+        <Text style={styles.contraMeta} numberOfLines={2}>
+          触发 {triggers.join(' / ')}
+        </Text>
       ) : null}
     </View>
   );
@@ -425,6 +479,45 @@ function createStyles(c: ColorPalette) {
     },
     sourcesWrap: {
       marginTop: 8,
+    },
+    contraWrap: {
+      marginTop: 8,
+      gap: 6,
+      paddingVertical: 7,
+      paddingHorizontal: 8,
+      borderRadius: 6,
+      backgroundColor: c.tintRed,
+    },
+    contraHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+    },
+    contraLabel: {
+      fontSize: 10,
+      fontWeight: '700',
+      color: c.red,
+    },
+    contraItem: {
+      paddingTop: 4,
+    },
+    contraTitle: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: c.labelPrimary,
+      lineHeight: 16,
+    },
+    contraSummary: {
+      marginTop: 2,
+      fontSize: 11,
+      color: c.labelSecondary,
+      lineHeight: 15,
+    },
+    contraMeta: {
+      marginTop: 2,
+      fontSize: 10,
+      color: c.red,
+      lineHeight: 14,
     },
     sourcesLabel: {
       fontSize: 10,

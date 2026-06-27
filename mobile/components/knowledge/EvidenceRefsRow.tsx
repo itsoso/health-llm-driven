@@ -6,7 +6,7 @@
  * consistent.
  */
 import React, { useMemo, useState } from 'react';
-import { GestureResponderEvent, StyleSheet, Text, TextStyle, TouchableOpacity } from 'react-native';
+import { GestureResponderEvent, StyleSheet, Text, TextStyle, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { KnowledgeClaimBundle } from '../../services/systemKnowledge';
 import { useTheme } from '../../hooks/useTheme';
@@ -14,8 +14,18 @@ import { ClaimSheet } from './ClaimSheet';
 
 export type EvidenceRef = string | { claim_id?: string; doc_id?: string; id?: string };
 
+export interface KnowledgeContraindication {
+  title?: string | null;
+  summary?: string | null;
+  severity?: string | null;
+  blocks?: string[] | null;
+  trigger?: string[] | null;
+}
+
 interface EvidenceRefsRowProps {
   refs?: EvidenceRef[] | null;
+  claimBoundary?: string | null;
+  contraindications?: KnowledgeContraindication[] | null;
   testID?: string;
   /** @deprecated ClaimSheet 自己调 getKnowledgeClaim. 保留参数防破坏 callsite. */
   loadClaim?: (claimId: string) => Promise<KnowledgeClaimBundle>;
@@ -37,10 +47,26 @@ export function normalizeEvidenceRefs(refs?: EvidenceRef[] | null): string[] {
   return out;
 }
 
-export function EvidenceRefsRow({ refs, testID = 'system-kb-evidence-chip' }: EvidenceRefsRowProps) {
-  const { s } = useTheme();
+function firstContraindicationLabel(items?: KnowledgeContraindication[] | null): string | null {
+  if (!Array.isArray(items)) return null;
+  for (const item of items) {
+    const label = String(item?.title || item?.summary || '').trim();
+    if (label) return label;
+  }
+  return null;
+}
+
+export function EvidenceRefsRow({
+  refs,
+  claimBoundary,
+  contraindications,
+  testID = 'system-kb-evidence-chip',
+}: EvidenceRefsRowProps) {
+  const { c, s } = useTheme();
   const claimIds = useMemo(() => normalizeEvidenceRefs(refs), [refs]);
   const [visible, setVisible] = useState(false);
+  const boundaryText = String(claimBoundary || '').trim();
+  const safetyLabel = firstContraindicationLabel(contraindications);
 
   if (claimIds.length === 0) return null;
 
@@ -61,6 +87,32 @@ export function EvidenceRefsRow({ refs, testID = 'system-kb-evidence-chip' }: Ev
         <Text style={[styles.chipText, { color: s.info.fg }]}>系统证据 {claimIds.length}</Text>
         <Ionicons name="chevron-forward" size={10} color={s.info.fg} />
       </TouchableOpacity>
+
+      {boundaryText ? (
+        <View style={[styles.metaRow, { backgroundColor: s.warning.bg }]}>
+          <Ionicons name="information-circle-outline" size={11} color={s.warning.fg} />
+          <Text
+            maxFontSizeMultiplier={1.3}
+            style={[styles.metaText, { color: c.labelSecondary }]}
+            numberOfLines={2}
+          >
+            证据边界 · {boundaryText}
+          </Text>
+        </View>
+      ) : null}
+
+      {safetyLabel ? (
+        <View style={[styles.metaRow, { backgroundColor: s.danger.bg }]}>
+          <Ionicons name="alert-circle-outline" size={11} color={s.danger.fg} />
+          <Text
+            maxFontSizeMultiplier={1.3}
+            style={[styles.metaText, { color: c.labelSecondary }]}
+            numberOfLines={2}
+          >
+            安全命中 · {safetyLabel}
+          </Text>
+        </View>
+      ) : null}
 
       <ClaimSheet
         visible={visible}
@@ -83,4 +135,21 @@ const styles = StyleSheet.create({
     borderRadius: 7,
   },
   chipText: { fontSize: 10, fontWeight: '700' } as TextStyle,
+  metaRow: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    marginTop: 5,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 7,
+  },
+  metaText: {
+    flexShrink: 1,
+    fontSize: 10,
+    fontWeight: '600',
+    lineHeight: 14,
+  } as TextStyle,
 });

@@ -35,10 +35,16 @@ describe('EvidenceRefsRow', () => {
           'claim:c_mthfr_c677t_hcy_folate_boundary',
           'claim:c_5mthf_b12_boundary',
         ]}
+        claim_boundary="仅用于健康管理，不替代医生诊断。"
+        contraindications={[
+          { title: 'B12 缺乏风险需先评估', summary: '贫血或神经症状时先做临床评估。' },
+        ]}
       />,
     );
 
     expect(screen.getByText('系统证据 2')).toBeTruthy();
+    expect(screen.getByText(/证据边界/)).toBeTruthy();
+    expect(screen.getByText(/B12 缺乏风险需先评估/)).toBeTruthy();
   });
 
   it('opens claim details from system knowledge', async () => {

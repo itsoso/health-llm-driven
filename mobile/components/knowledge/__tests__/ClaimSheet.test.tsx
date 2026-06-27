@@ -67,6 +67,17 @@ function makeBundle(claimId: string) {
         summary: '影响叶酸代谢',
         evidence_level: 'A',
       },
+      {
+        doc_id: 'contra:movement:acute_illness_training',
+        doc_type: 'contraindication',
+        title: '发热时阻断高强度训练',
+        summary: '发热或疑似感染时停止高强度训练。',
+        metadata: {
+          severity: 'high',
+          blocks: ['protocol:movement:hiit'],
+          trigger: ['twin.symptoms.fever == true'],
+        },
+      },
     ],
     claim_boundary: '仅用于健康管理，不替代医生诊断、治疗或用药决策。',
   };
@@ -129,6 +140,9 @@ describe('ClaimSheet', () => {
     expect(screen.getByText('得到课程')).toBeTruthy();
     expect(screen.getByText('PubMed')).toBeTruthy();
     expect(screen.getByText(/仇子龙/)).toBeTruthy();
+    expect(screen.getByText('安全命中')).toBeTruthy();
+    expect(screen.getByText('发热时阻断高强度训练')).toBeTruthy();
+    expect(screen.getByText(/阻断 protocol:movement:hiit/)).toBeTruthy();
 
     fireEvent.press(screen.getByTestId('claim-feedback-button'));
 
