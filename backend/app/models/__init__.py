@@ -122,7 +122,7 @@ from app.models.advice_ledger import AdviceLedger
 from app.models.genetic_data import GeneticImportJob, GeneticProfile, GeneticVariant
 # 多租户基因原始数据 (专用表, Postgres RLS + per-tenant 加密)
 from app.models.genetic_raw import GeneticRawFile, GeneticRawAudit
-from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
+from app.models.system_knowledge import KBAudit, KBDocument, KBDocumentVector, KBEdge
 # Personal Health OS P1 数据底座 + P2 干预闭环
 from app.models.twin_snapshot import TwinSnapshot
 from app.models.biomarker_observation import BiomarkerObservation

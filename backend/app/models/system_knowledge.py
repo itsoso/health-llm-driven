@@ -49,6 +49,23 @@ class KBEdge(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class KBDocumentVector(Base):
+    """Sparse vector index for reviewed-system-knowledge retrieval."""
+
+    __tablename__ = "kb_document_vectors"
+
+    doc_id = Column(
+        Text,
+        ForeignKey("kb_documents.doc_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    embedding_model = Column(String(80), nullable=False, index=True)
+    content_hash = Column(String(64), nullable=False, index=True)
+    vector_json = Column("vector", JSONB, nullable=False, default=dict)
+    magnitude = Column(Float, nullable=False, default=0.0)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class KBAudit(Base):
     """Audit trail for system knowledge operations."""
 

@@ -12,12 +12,15 @@ import re
 from typing import Any
 
 from sqlalchemy import desc, func, or_, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
+from app.models.system_knowledge import KBAudit, KBDocument, KBDocumentVector, KBEdge
 
 
 CLAIM_BOUNDARY = "仅用于健康管理和风险沟通，不替代医生诊断、治疗或用药决策。"
+VECTOR_BACKEND = "sparse_term_cosine_v1"
+VECTOR_MAX_TERMS = 512
 SPECIALIST_EVIDENCE_REF_RATE_TARGET = 0.85
 EXTERNAL_EVIDENCE_SOURCE_RATE_TARGET = 0.2
 VALID_REVIEW_STATUSES = {"draft", "reviewed", "needs_review", "archived"}
@@ -543,8 +546,11 @@ def search_knowledge(
 
     lexical_ranked: list[tuple[float, KBDocument]] = _bm25_rank_documents(documents, terms)
     fts_ranked: list[tuple[float, KBDocument]] = []
-    vector_ranked: list[tuple[float, KBDocument]] = []
-    semantic_terms = _semantic_query_terms(normalized_query)
+    vector_ranked: list[tuple[float, KBDocument]] = _rank_vector_documents(
+        db,
+        documents_by_id,
+        normalized_query,
+    )
     fts_backend = _fts_backend_for_session(db)
     postgres_fts_ranked: list[tuple[float, KBDocument]] = []
     if fts_backend == "postgres_tsv":
@@ -560,9 +566,6 @@ def search_knowledge(
             fts_score = _score_precomputed_search_text(document, terms)
             if fts_score > 0 or not terms:
                 fts_ranked.append((fts_score, document))
-        vector_score = _score_document(document, semantic_terms)
-        if vector_score > 0 and semantic_terms:
-            vector_ranked.append((vector_score, document))
     if fts_backend == "postgres_tsv":
         fts_ranked = postgres_fts_ranked
 
@@ -645,7 +648,7 @@ def search_knowledge(
             "channels": ["lexical", "fts", "vector", "graph"],
             "lexical_backend": "python_bm25_v1",
             "fts_backend": fts_backend,
-            "vector_backend": "alias_overlap_v1",
+            "vector_backend": VECTOR_BACKEND,
             "graph_backend": "kb_edges_one_hop",
             "rrf_backend": "python_rrf_v1",
         },
@@ -852,21 +855,30 @@ def _lookup_graph_context_for_entities(
 def reindex_knowledge_documents(db: Session, actor: str = "system") -> dict[str, int]:
     documents = db.query(KBDocument).filter(KBDocument.is_archived.is_(False)).all()
     use_postgres_tsvector = _fts_backend_for_session(db) == "postgres_tsv"
+    active_doc_ids = {document.doc_id for document in documents}
     for document in documents:
         searchable = _document_search_text(document)
         content_hash = hashlib.sha256(searchable.encode("utf-8")).hexdigest()
+        _upsert_document_vector(db, document.doc_id, searchable, content_hash)
         if use_postgres_tsvector:
             db.execute(_build_postgres_reindex_statement(document.doc_id, searchable, content_hash))
             continue
         document.tsv = searchable
         document.content_hash = content_hash
 
+    if active_doc_ids:
+        db.query(KBDocumentVector).filter(KBDocumentVector.doc_id.notin_(active_doc_ids)).delete(
+            synchronize_session=False
+        )
+    else:
+        db.query(KBDocumentVector).delete(synchronize_session=False)
+
     db.add(
         KBAudit(
             doc_id=None,
             op="reindex",
             actor=actor,
-            diff={"documents": len(documents)},
+            diff={"documents": len(documents), "vector_backend": VECTOR_BACKEND},
         )
     )
     db.commit()
@@ -2378,6 +2390,120 @@ def _semantic_query_terms(query: str) -> list[str]:
                     seen.add(subterm)
                     expanded.append(subterm)
     return expanded
+
+
+def _vector_terms(text: str) -> list[str]:
+    seen: set[str] = set()
+    terms: list[str] = []
+
+    def add(raw: str) -> None:
+        term = raw.strip().lower()
+        if not term or term in seen:
+            return
+        seen.add(term)
+        terms.append(term)
+
+    for term in _semantic_query_terms(text):
+        add(term)
+    for span in re.findall(r"[\u4e00-\u9fff]{2,}", text or ""):
+        max_n = min(8, len(span))
+        for n in range(2, max_n + 1):
+            for index in range(len(span) - n + 1):
+                add(span[index : index + n])
+    return terms
+
+
+def _build_sparse_term_vector(text: str) -> dict[str, float]:
+    counts = Counter(_vector_terms(text))
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:VECTOR_MAX_TERMS]
+    return {
+        term: round(1.0 + math.log(count), 6)
+        for term, count in ranked
+        if term
+    }
+
+
+def _sparse_vector_magnitude(vector: dict[str, float]) -> float:
+    return math.sqrt(sum(float(value) * float(value) for value in vector.values()))
+
+
+def _upsert_document_vector(db: Session, doc_id: str, searchable: str, content_hash: str) -> None:
+    vector = _build_sparse_term_vector(searchable)
+    magnitude = _sparse_vector_magnitude(vector)
+    existing = db.query(KBDocumentVector).filter(KBDocumentVector.doc_id == doc_id).first()
+    values = {
+        "embedding_model": VECTOR_BACKEND,
+        "content_hash": content_hash,
+        "vector_json": vector,
+        "magnitude": magnitude,
+        "updated_at": datetime.now(UTC),
+    }
+    if existing:
+        for key, value in values.items():
+            setattr(existing, key, value)
+        return
+    db.add(KBDocumentVector(doc_id=doc_id, **values))
+
+
+def _rank_vector_documents(
+    db: Session,
+    documents_by_id: dict[str, KBDocument],
+    query: str,
+) -> list[tuple[float, KBDocument]]:
+    if not documents_by_id:
+        return []
+
+    query_vector = _build_sparse_term_vector(query)
+    query_magnitude = _sparse_vector_magnitude(query_vector)
+    if not query_vector or query_magnitude == 0:
+        return []
+
+    try:
+        rows = (
+            db.query(KBDocumentVector)
+            .filter(
+                KBDocumentVector.doc_id.in_(documents_by_id.keys()),
+                KBDocumentVector.embedding_model == VECTOR_BACKEND,
+            )
+            .all()
+        )
+    except SQLAlchemyError:
+        db.rollback()
+        return []
+
+    ranked: list[tuple[float, KBDocument]] = []
+    for row in rows:
+        document = documents_by_id.get(row.doc_id)
+        if document is None:
+            continue
+        score = _cosine_sparse_vectors(
+            query_vector,
+            query_magnitude,
+            row.vector_json or {},
+            float(row.magnitude or 0.0),
+        )
+        if score > 0:
+            ranked.append((score, document))
+    return ranked
+
+
+def _cosine_sparse_vectors(
+    query_vector: dict[str, float],
+    query_magnitude: float,
+    document_vector: dict[str, Any],
+    document_magnitude: float,
+) -> float:
+    if query_magnitude == 0 or document_magnitude == 0:
+        return 0.0
+    dot = 0.0
+    for term, query_weight in query_vector.items():
+        document_weight = document_vector.get(term)
+        if document_weight is None:
+            continue
+        dot += float(query_weight) * float(document_weight)
+    if dot <= 0:
+        return 0.0
+    return dot / (query_magnitude * document_magnitude)
 
 
 def _fuse_search_rankings(
