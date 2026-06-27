@@ -44,6 +44,11 @@ export interface DailyArtifact {
     skipRequiresReason: boolean;
     canAskReva: boolean;
   };
+  tracking: {
+    artifactId: string;
+    weekIndex: number;
+    topActionSource: DailyArtifactTopAction['source'];
+  };
 }
 
 interface TimelineNowItem {
@@ -150,6 +155,26 @@ function buildTopAction(input: DailyArtifactInput): DailyArtifactTopAction {
   };
 }
 
+function isoDate(nowMs: number): string {
+  return new Date(nowMs).toISOString().slice(0, 10);
+}
+
+function isoWeekIndex(nowMs: number): number {
+  const d = new Date(nowMs);
+  const utc = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = utc.getUTCDay() || 7;
+  utc.setUTCDate(utc.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
+  return Math.ceil((((utc.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+}
+
+function buildArtifactId(nowMs: number, topAction: DailyArtifactTopAction, input: DailyArtifactInput): string {
+  const sourceId = topAction.source === 'timeline'
+    ? input.nowItem?.id || topAction.title
+    : topAction.title;
+  return `${isoDate(nowMs)}:${topAction.source}:${String(sourceId).trim() || 'empty'}`;
+}
+
 function buildEvidence(input: DailyArtifactInput): DailyArtifactEvidence[] {
   const riskAlerts = (input.safetyAlerts ?? []).filter((alert) => isRiskSeverity(alert.severity));
   const evidence: DailyArtifactEvidence[] = [];
@@ -194,6 +219,11 @@ export function buildDailyArtifact(input: DailyArtifactInput): DailyArtifact {
       canSkip: true,
       skipRequiresReason: true,
       canAskReva: true,
+    },
+    tracking: {
+      artifactId: buildArtifactId(nowMs, topAction, input),
+      weekIndex: isoWeekIndex(nowMs),
+      topActionSource: topAction.source,
     },
   };
 }

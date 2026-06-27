@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/no-require-imports, import/first */
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockPush = jest.fn();
 const mockInvalidateQueries = jest.fn();
+const mockCompleteAgendaItem = jest.fn().mockResolvedValue({ wrote: true });
+const mockEmitClientEvent = jest.fn().mockResolvedValue(undefined);
 let mockDailyPlanActions: unknown[] = [];
 let mockTwinData: Record<string, unknown> = {};
 let mockSafetyAlerts: any[] = [];
@@ -47,7 +49,20 @@ jest.mock('@tanstack/react-query', () => ({
     }
     return { data: null, isLoading: false, isRefetching: false };
   },
-  useMutation: () => ({ mutate: jest.fn(), isPending: false }),
+  useMutation: (options: any = {}) => ({
+    mutate: jest.fn((variables, callbacks) => {
+      Promise.resolve(options.mutationFn?.(variables))
+        .then((value) => {
+          options.onSuccess?.(value, variables, undefined);
+          callbacks?.onSuccess?.(value, variables, undefined);
+        })
+        .catch((error) => {
+          options.onError?.(error, variables, undefined);
+          callbacks?.onError?.(error, variables, undefined);
+        });
+    }),
+    isPending: false,
+  }),
   useQueryClient: () => ({
     invalidateQueries: mockInvalidateQueries,
   }),
@@ -97,6 +112,15 @@ jest.mock('../../../services/dailyPlan', () => ({
 
 jest.mock('../../../services/appleHealth', () => ({
   getHealthKitLastSync: jest.fn(),
+}));
+
+jest.mock('../../../services/agenda', () => ({
+  __esModule: true,
+  completeAgendaItem: (...args: unknown[]) => mockCompleteAgendaItem(...args),
+}));
+
+jest.mock('../../../services/clientEvents', () => ({
+  emitClientEvent: (...args: unknown[]) => mockEmitClientEvent(...args),
 }));
 
 jest.mock('../../../services/api', () => ({
@@ -179,13 +203,13 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
       severity: null,
       proof: null,
     });
-    const { getByText, getAllByText } = render(<TodayScreen />);
-    // 同一 now-item 既高亮在 Hero,也仍留在下方时间线 strip(同一 query 喂两处)→ 标题出现两次。
+    const { queryByText, getAllByText } = render(<TodayScreen />);
+    // 同一 now-item 高亮在 Daily Artifact,也仍留在下方时间线 strip(同一 query 喂两处)。
     expect(getAllByText('服用二甲双胍').length).toBeGreaterThanOrEqual(1);
     expect(getAllByText('随午餐服用').length).toBeGreaterThanOrEqual(1); // shortSubtitle 取首分句
-    // 时点 + lever 是 Hero 独有。
+    // 时点保留;过渡 Hero 的 lever 不再作为首页第二焦点出现。
     expect(getAllByText('12:30').length).toBeGreaterThanOrEqual(1);
-    expect(getByText('现在该做 · 中午')).toBeTruthy();
+    expect(queryByText('现在该做 · 中午')).toBeNull();
   });
 
   it('renders the Daily Artifact with freshness and one top action', () => {
@@ -244,15 +268,15 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
       severity: 'high',
       proof: null,
     });
-    const { getByText } = render(<TodayScreen />);
-    expect(getByText('现在该做 · 风险')).toBeTruthy();
+    const { getByText, queryByText } = render(<TodayScreen />);
+    expect(getByText('有 1 条风险提醒')).toBeTruthy();
+    expect(queryByText('现在该做 · 风险')).toBeNull();
   });
 
-  it('renders the graceful empty state and routes to record when there is no now-item', () => {
-    // 无 timeline now → Hero 空态「今天的事都安排好了」+「补齐今天记录」入口。
+  it('renders the Daily Artifact empty state and routes to record when there is no now-item', () => {
     const { getByText, getByLabelText } = render(<TodayScreen />);
-    expect(getByText('今天的事都安排好了')).toBeTruthy();
-    fireEvent.press(getByLabelText('补齐今天记录'));
+    expect(getByText('补齐今天记录')).toBeTruthy();
+    fireEvent.press(getByLabelText('今日最重要行动:补齐今天记录'));
     expect(mockPush).toHaveBeenCalledWith('/(tabs)/record');
   });
 
@@ -275,8 +299,51 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
       proof: null,
     });
     const { getByLabelText } = render(<TodayScreen />);
-    fireEvent.press(getByLabelText('现在该做:提高早餐蛋白'));
+    fireEvent.press(getByLabelText('今日最重要行动:提高早餐蛋白'));
     expect(mockPush).toHaveBeenCalledWith('/diet-plan');
+  });
+
+  it('captures a skip reason from the Daily Artifact instead of routing to a generic agenda page', async () => {
+    mockTimeline = makeTimeline({
+      id: 'water-1',
+      kind: 'action',
+      time_window: 'morning',
+      scheduled_for: '08:00',
+      title: '喝 200ml 温水',
+      subtitle: '起床后补水,再开始运动',
+      icon: 'water-outline',
+      color: '#1F8A5B',
+      status: 'pending',
+      priority: 1,
+      can_complete: true,
+      complete_ref: { object_type: 'health_protocol', object_id: 12 },
+      deep_link: null,
+      severity: null,
+      proof: null,
+    });
+
+    const { getByLabelText, getByText } = render(<TodayScreen />);
+
+    await waitFor(() => expect(mockEmitClientEvent).toHaveBeenCalledWith(
+      'daily_artifact_impression',
+      expect.objectContaining({ artifact_id: expect.any(String), week_index: expect.any(Number) }),
+    ));
+
+    fireEvent.press(getByLabelText('跳过今日最重要行动'));
+    expect(getByText('为什么跳过?')).toBeTruthy();
+    fireEvent.press(getByText('太累'));
+
+    await waitFor(() => expect(mockCompleteAgendaItem).toHaveBeenCalledWith(
+      { object_type: 'health_protocol', object_id: 12 },
+      'protocol',
+      undefined,
+      { status: 'skipped', skipReason: 'too_tired' },
+    ));
+    await waitFor(() => expect(mockEmitClientEvent).toHaveBeenCalledWith(
+      'daily_artifact_skipped',
+      expect.objectContaining({ skip_reason: 'too_tired' }),
+    ));
+    expect(mockPush).not.toHaveBeenCalledWith('/agenda');
   });
 
   // ── 90-day metabolic cycle strip ──

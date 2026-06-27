@@ -26,6 +26,7 @@ import { WorkoutCardSpec } from './WorkoutCard';
 import { MedicalReportCardSpec } from './MedicalReportCard';
 import { MenuShareCardSpec } from './MenuShareCard';
 import { SystemKnowledgeEvidenceCardSpec } from './SystemKnowledgeEvidenceCard';
+import { AgendaActionCardSpec } from './AgendaActionCard';
 
 /** 全量卡片注册表. 数组前面的优先级越高时越靠前 (便于可读), 实际按 match() 返回值排序 */
 export const CARD_REGISTRY: CardSpec[] = [
@@ -38,6 +39,7 @@ export const CARD_REGISTRY: CardSpec[] = [
   WorkoutCardSpec,
   MedicalReportCardSpec,
   SystemKnowledgeEvidenceCardSpec,
+  AgendaActionCardSpec,
   MenuShareCardSpec,   // 不本地匹配, 仅接受后端下发
   WeatherCardSpec,
   ScoreCardSpec,

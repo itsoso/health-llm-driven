@@ -9,7 +9,9 @@ import {
   revaSpacing,
 } from '../../constants/revaTheme';
 import { Icon, ReadinessRing } from '../reva/RevaKit';
+import type { AgendaSkipReason } from '../../services/agenda';
 import type { DailyArtifact, DailyArtifactTone } from '../../services/dailyArtifact';
+import type { SkipReasonOption } from '../../constants/skipReasons';
 
 interface DailyArtifactCardProps {
   artifact: DailyArtifact;
@@ -18,6 +20,9 @@ interface DailyArtifactCardProps {
   onComplete?: () => void;
   onSkip?: () => void;
   onAskReva?: () => void;
+  showSkipReasons?: boolean;
+  skipReasons?: readonly SkipReasonOption[];
+  onSkipReason?: (reason: AgendaSkipReason) => void;
 }
 
 const TONE: Record<DailyArtifactTone, { fg: string; bg: string; line: string }> = {
@@ -34,6 +39,9 @@ export default function DailyArtifactCard({
   onComplete,
   onSkip,
   onAskReva,
+  showSkipReasons,
+  skipReasons = [],
+  onSkipReason,
 }: DailyArtifactCardProps) {
   const action = artifact.topAction;
 
@@ -115,22 +123,53 @@ export default function DailyArtifactCard({
             style={[styles.actionButton, styles.primaryButton, completing && styles.disabledButton]}
             onPress={completing ? undefined : onComplete}
             disabled={completing}
+            accessibilityRole="button"
+            accessibilityLabel="完成今日最重要行动"
           >
             <Icon name="check" size={15} color={C.greenOn} />
             <Text style={styles.primaryButtonText}>{completing ? '保存中' : '完成'}</Text>
           </Pressable>
         ) : null}
         {artifact.actions.canSkip ? (
-          <Pressable style={[styles.actionButton, styles.secondaryButton]} onPress={onSkip}>
+          <Pressable
+            style={[styles.actionButton, styles.secondaryButton]}
+            onPress={onSkip}
+            accessibilityRole="button"
+            accessibilityLabel="跳过今日最重要行动"
+          >
             <Text style={styles.secondaryButtonText}>跳过</Text>
           </Pressable>
         ) : null}
         {artifact.actions.canAskReva ? (
-          <Pressable style={[styles.actionButton, styles.ghostButton]} onPress={onAskReva}>
+          <Pressable
+            style={[styles.actionButton, styles.ghostButton]}
+            onPress={onAskReva}
+            accessibilityRole="button"
+            accessibilityLabel="问 Reva 解释今日行动"
+          >
             <Text style={styles.ghostButtonText}>问 Reva</Text>
           </Pressable>
         ) : null}
       </View>
+
+      {showSkipReasons && artifact.actions.skipRequiresReason ? (
+        <View style={styles.skipPanel}>
+          <Text style={styles.skipTitle}>为什么跳过?</Text>
+          <View style={styles.skipReasons}>
+            {skipReasons.map((reason) => (
+              <Pressable
+                key={reason.value}
+                style={({ pressed }) => [styles.skipReasonButton, pressed && { opacity: 0.78 }]}
+                onPress={() => onSkipReason?.(reason.value)}
+                accessibilityRole="button"
+                accessibilityLabel={`跳过原因:${reason.label}`}
+              >
+                <Text style={styles.skipReasonText}>{reason.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -210,4 +249,21 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: C.greenOn, fontWeight: '800', fontSize: 14 },
   secondaryButtonText: { color: C.ink2, fontWeight: '800', fontSize: 14 },
   ghostButtonText: { color: C.green600, fontWeight: '800', fontSize: 14 },
+  skipPanel: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+    paddingTop: revaSpacing.s3,
+    gap: revaSpacing.s2,
+  },
+  skipTitle: { fontFamily: 'Manrope', fontSize: 13, fontWeight: '800', color: C.ink2 },
+  skipReasons: { flexDirection: 'row', flexWrap: 'wrap', gap: revaSpacing.s2 },
+  skipReasonButton: {
+    borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    backgroundColor: C.surface2,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  skipReasonText: { fontSize: 12.5, fontWeight: '800', color: C.ink2 },
 });

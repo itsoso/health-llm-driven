@@ -10,7 +10,7 @@
  * 数据缺失走"待记录"占位, 不掩盖空状态.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -33,8 +33,9 @@ import { useDashboardData, useLatestGarmin } from '../../hooks/useDashboardData'
 import { useMedicationReminders } from '../../hooks/useMedicationReminders';
 import { useBehaviorLoopReminders } from '../../hooks/useBehaviorLoopReminders';
 import { useActiveCycle } from '../../hooks/useHealthOs';
-import { useCompleteAgendaItem, useTodayTimeline } from '../../hooks/useTodayTimeline';
+import { useCompleteAgendaItem, useSkipAgendaItem, useTodayTimeline } from '../../hooks/useTodayTimeline';
 import type { TodayTimelineItem } from '../../services/todayTimeline';
+import type { AgendaSkipReason } from '../../services/agenda';
 import { garminSleepHours, garminDeepSleepHours, type GarminDailyRow } from '../../types/garmin';
 import {
   getDailyOperatingPlan,
@@ -45,7 +46,6 @@ import VitalsGrid from '../../components/dashboard/VitalsGrid';
 import MedicationCheckin from '../../components/dashboard/MedicationCheckin';
 import BodyStatsRow from '../../components/home/BodyStatsRow';
 import RevaGreetingHeader from '../../components/home/RevaGreetingHeader';
-import RevaHeroCard from '../../components/home/RevaHeroCard';
 import DailyArtifactCard from '../../components/home/DailyArtifactCard';
 import WriteIntentCard from '../../components/home/WriteIntentCard';
 import RevaTimelineStrip from '../../components/home/RevaTimelineStrip';
@@ -58,7 +58,9 @@ import { useRevaFonts } from '../../components/reva/useRevaFonts';
 import { revaColors } from '../../constants/revaTheme';
 import { useHomeColdStartTrace } from '../../services/perfTrace';
 import { getHealthKitLastSync } from '../../services/appleHealth';
-import { buildDailyArtifact } from '../../services/dailyArtifact';
+import { buildDailyArtifact, type DailyArtifact } from '../../services/dailyArtifact';
+import { emitClientEvent } from '../../services/clientEvents';
+import { SKIP_REASONS } from '../../constants/skipReasons';
 
 interface TwinSnapshot {
   hrv?: number | null;
@@ -116,7 +118,10 @@ export default function TodayScreen() {
   // Hero 据此渲染(标题/why/时点 + 内联完成);时间线 body 复用同一 query(React Query 去重)。
   const timelineQuery = useTodayTimeline();
   const completeNow = useCompleteAgendaItem();
+  const skipNow = useSkipAgendaItem();
   const [heroCompleting, setHeroCompleting] = useState(false);
+  const [skipReasonsOpen, setSkipReasonsOpen] = useState(false);
+  const seenArtifactImpressionRef = useRef<string | null>(null);
 
   const dashboardQuery = useDashboardData();
 
@@ -226,29 +231,6 @@ export default function TodayScreen() {
     else router.push('/(tabs)/record' as any);
   }, [nowItem, nextAction, openPlanAction, router]);
 
-  // Hero 内联「完成」:走时间线 now-item 的 complete_ref(复用 /agenda/complete 双轨写真实记录)。
-  // action-lock(heroCompleting)防双击;失败给 Alert 反馈,不静默吞。
-  const heroCanComplete = Boolean(
-    nowItem?.can_complete && nowItem?.complete_ref && nowItem?.status !== 'completed',
-  );
-  const onHeroComplete = useCallback(() => {
-    const ref = nowItem?.complete_ref;
-    if (!ref || heroCompleting) return;
-    setHeroCompleting(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    completeNow.mutate(ref, {
-      onSuccess: () => {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-        setHeroCompleting(false);
-      },
-      onError: () => {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-        Alert.alert('完成失败', '没有保存成功,请稍后重试。');
-        setHeroCompleting(false);
-      },
-    });
-  }, [nowItem, heroCompleting, completeNow]);
-
   // ── Vitals 数据 ──
   const vitalsProps = {
     // 睡眠时长优先用 Twin 的 sleep_duration_h_latest(已跨源合并、已是小时);
@@ -270,10 +252,10 @@ export default function TodayScreen() {
     bodyFatPct: twinSnap.body_fat_pct ?? null,
   };
 
-  // ── Reva Hero 派生值 ────────────────────────────────────
+  // ── Daily Artifact 派生值 ────────────────────────────────
   // 就绪分:用 Garmin 官方 Training Readiness(twin physiological.training_readiness_score),
   // 与时间线 advisory 写的「恢复就绪度」同源。不再用 body_battery 兜底(那是另一指标,
-  // 同屏会与时间线就绪分矛盾)。拿不到 → null(Hero 显示「待同步」)。
+  // 同屏会与时间线就绪分矛盾)。拿不到 → null(Daily Artifact 显示「待同步」)。
   const readinessScore = twinSnap.readiness ?? null;
   // 新鲜度守卫:readiness 是每日晨间指标。若来源日期不是「今天」(本地),说明昨晚没同步,
   // 不能把旧分当「今日就绪」(就是用户撞到的「昨晚没同步还显示 93」)。
@@ -283,15 +265,6 @@ export default function TodayScreen() {
     readinessScore != null && !!twinSnap.readiness_date && twinSnap.readiness_date < _todayStr;
   // 问候名:取 /profile/me 昵称(无 → 不带名,只问候)。不引入 auth 依赖。
   const profileName: string | null = dashboardQuery.data?.profile?.nickname ?? null;
-
-  // Hero now-action 显示值:全部直接透传后端 timeline 的 now-item(R4:不在前端造处方/诊断措辞)。
-  // 风险时 lever 标「风险」,否则用 now-item 的 time_window 中文化作为 lever。空态标题给「补齐今天记录」。
-  const heroHasNow = nowItem != null;
-  const heroNowTitle = nowItem?.title ?? '补齐今天记录';
-  const heroNowSubtitle = shortSubtitle(nowItem?.subtitle);
-  const heroNowTime = nowItem?.scheduled_for ?? null;
-  const heroNowLever =
-    criticalAlerts.length > 0 ? '现在该做 · 风险' : windowLever(nowItem?.time_window);
 
   const dailyArtifact = useMemo(() => buildDailyArtifact({
     readinessScore,
@@ -318,6 +291,68 @@ export default function TodayScreen() {
     criticalAlerts,
   ]);
 
+  useEffect(() => {
+    const id = dailyArtifact.tracking.artifactId;
+    if (seenArtifactImpressionRef.current === id) return;
+    seenArtifactImpressionRef.current = id;
+    emitClientEvent('daily_artifact_impression', dailyArtifactEventMeta(dailyArtifact)).catch(() => {});
+  }, [dailyArtifact]);
+
+  const onArtifactAction = useCallback(() => {
+    emitClientEvent('daily_artifact_accepted', dailyArtifactEventMeta(dailyArtifact)).catch(() => {});
+    onHeroAction();
+  }, [dailyArtifact, onHeroAction]);
+
+  // Daily Artifact 内联「完成」:走时间线 now-item 的 complete_ref(复用 /agenda/complete 双轨写真实记录)。
+  // action-lock(heroCompleting)防双击;失败给 Alert 反馈,不静默吞。
+  const onArtifactComplete = useCallback(() => {
+    const ref = dailyArtifact.topAction?.completeRef;
+    if (!ref || heroCompleting) return;
+    setHeroCompleting(true);
+    hapticImpact(Haptics.ImpactFeedbackStyle?.Light);
+    completeNow.mutate(ref, {
+      onSuccess: () => {
+        emitClientEvent('daily_artifact_completed', dailyArtifactEventMeta(dailyArtifact)).catch(() => {});
+        hapticNotification(Haptics.NotificationFeedbackType?.Success);
+        setHeroCompleting(false);
+      },
+      onError: () => {
+        hapticNotification(Haptics.NotificationFeedbackType?.Error);
+        Alert.alert('完成失败', '没有保存成功,请稍后重试。');
+        setHeroCompleting(false);
+      },
+    });
+  }, [dailyArtifact, heroCompleting, completeNow]);
+
+  const onArtifactSkip = useCallback(() => {
+    if (!dailyArtifact.actions.skipRequiresReason) return;
+    setSkipReasonsOpen((open) => !open);
+  }, [dailyArtifact.actions.skipRequiresReason]);
+
+  const onArtifactSkipReason = useCallback((reason: AgendaSkipReason) => {
+    const source = dailyArtifact.topAction?.completeRef;
+    if (!source) {
+      Alert.alert('暂时不能跳过', '这个行动还没有可记录的来源。');
+      return;
+    }
+    setSkipReasonsOpen(false);
+    skipNow.mutate(
+      { source, skipReason: reason },
+      {
+        onSuccess: () => {
+          emitClientEvent('daily_artifact_skipped', dailyArtifactEventMeta(dailyArtifact, {
+            skip_reason: reason,
+          })).catch(() => {});
+          hapticNotification(Haptics.NotificationFeedbackType?.Success);
+        },
+        onError: () => {
+          hapticNotification(Haptics.NotificationFeedbackType?.Error);
+          Alert.alert('跳过失败', '没有保存成功,请稍后重试。');
+        },
+      },
+    );
+  }, [dailyArtifact, skipNow]);
+
   // 字体没 load 时给个 ActivityIndicator(参考 app/reva.tsx),避免 mono 数字闪烁。
   if (!revaFontsLoaded) {
     return (
@@ -341,26 +376,13 @@ export default function TodayScreen() {
         <DailyArtifactCard
           artifact={dailyArtifact}
           completing={heroCompleting}
-          onPressAction={onHeroAction}
-          onComplete={onHeroComplete}
-          onSkip={() => router.push('/agenda' as any)}
+          onPressAction={onArtifactAction}
+          onComplete={onArtifactComplete}
+          onSkip={onArtifactSkip}
           onAskReva={() => router.push('/(tabs)/chat' as any)}
-        />
-
-        {/* 3 · 深绿 Hero(保留一版过渡,降低与并发 UI 分支合并风险) */}
-        <RevaHeroCard
-          readiness={readinessScore}
-          stale={readinessStale}
-          asOf={twinSnap.readiness_date}
-          hasNow={heroHasNow}
-          nowTitle={heroNowTitle}
-          nowSubtitle={heroNowSubtitle}
-          nowTime={heroNowTime}
-          nowLever={heroNowLever}
-          canComplete={heroCanComplete}
-          completing={heroCompleting}
-          onPressAction={onHeroAction}
-          onComplete={onHeroComplete}
+          showSkipReasons={skipReasonsOpen}
+          skipReasons={SKIP_REASONS}
+          onSkipReason={onArtifactSkipReason}
         />
 
         {/* 待你确认(Write 层 v0:Agent 提议替你写一件事,确认才执行;空态不渲染) */}
@@ -435,6 +457,26 @@ export default function TodayScreen() {
 // Helpers (从老版本沿用 + 精简)
 // ════════════════════════════════════════════════════════════
 
+function dailyArtifactEventMeta(artifact: DailyArtifact, extra?: Record<string, unknown>) {
+  return {
+    artifact_id: artifact.tracking.artifactId,
+    week_index: artifact.tracking.weekIndex,
+    top_action_source: artifact.tracking.topActionSource,
+    top_action_title: artifact.topAction?.title ?? null,
+    ...extra,
+  };
+}
+
+function hapticImpact(style: Haptics.ImpactFeedbackStyle | undefined) {
+  if (!style) return;
+  Haptics.impactAsync(style).catch(() => {});
+}
+
+function hapticNotification(type: Haptics.NotificationFeedbackType | undefined) {
+  if (!type) return;
+  Haptics.notificationAsync(type).catch(() => {});
+}
+
 function getSeverityKey(s: any): string {
   return typeof s === 'string' ? s : s?.label ?? 'info';
 }
@@ -474,28 +516,6 @@ function isBodyMeasurementAction(action?: DailyPlanAction | null): boolean {
   if (action?.domain !== 'measurement') return false;
   const haystack = `${action.title ?? ''} ${action.why ?? ''} ${action.metric_key ?? ''}`.toLowerCase();
   return /体重|腰围|weight|waist|bmi/.test(haystack);
-}
-
-// Hero now-action lever:把 timeline now-item 的 time_window 中文化(无 → 「现在该做」)。
-// R4:lever 只表达「什么时间窗」,不造处方/诊断措辞。
-function windowLever(window?: string | null): string {
-  switch (window) {
-    case 'morning': return '现在该做 · 上午';
-    case 'noon': return '现在该做 · 中午';
-    case 'afternoon': return '现在该做 · 下午';
-    case 'evening': return '现在该做 · 傍晚';
-    case 'bedtime': return '现在该做 · 睡前';
-    default: return '现在该做';
-  }
-}
-
-// subtitle 一眼扫:只取第一个分句(到首个 ; ; , , 。 . 止),完整内容留给点击进详情。
-function shortSubtitle(raw: string | null | undefined): string | undefined {
-  if (!raw) return undefined;
-  const s = raw.trim();
-  if (!s) return undefined;
-  const cut = s.search(/[;；,，。.]/);
-  return (cut > 0 ? s.slice(0, cut) : s).trim() || undefined;
 }
 
 const styles = StyleSheet.create({

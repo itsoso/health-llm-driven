@@ -24,6 +24,11 @@ const artifact: DailyArtifact = {
   freshness: { label: '10 分钟前同步', tone: 'normal', lastSyncAt: 1 },
   safetyBoundary: { level: 'normal', label: '安全边界正常' },
   actions: { canComplete: true, canSkip: true, skipRequiresReason: true, canAskReva: true },
+  tracking: {
+    artifactId: '2026-06-27:timeline:hydration-1',
+    weekIndex: 26,
+    topActionSource: 'timeline',
+  },
 };
 
 describe('DailyArtifactCard', () => {
@@ -67,5 +72,24 @@ describe('DailyArtifactCard', () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(onSkip).toHaveBeenCalledTimes(1);
     expect(onAskReva).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires a concrete skip reason before calling the skip callback', () => {
+    const onSkipReason = jest.fn();
+    const { getByText, queryByText } = render(
+      <DailyArtifactCard
+        artifact={artifact}
+        showSkipReasons
+        skipReasons={[{ value: 'too_tired', label: '太累' }, { value: 'no_time', label: '没时间' }]}
+        onSkipReason={onSkipReason}
+      />,
+    );
+
+    expect(getByText('为什么跳过?')).toBeTruthy();
+    expect(queryByText('太累')).toBeTruthy();
+
+    fireEvent.press(getByText('太累'));
+
+    expect(onSkipReason).toHaveBeenCalledWith('too_tired');
   });
 });

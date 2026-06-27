@@ -30,6 +30,11 @@ describe('buildDailyArtifact', () => {
     expect(artifact.topAction?.source).toBe('timeline');
     expect(artifact.topAction?.canComplete).toBe(true);
     expect(artifact.actions.skipRequiresReason).toBe(true);
+    expect(artifact.tracking).toEqual({
+      artifactId: '2026-06-27:timeline:hydration-1',
+      weekIndex: 26,
+      topActionSource: 'timeline',
+    });
     expect(artifact.evidence).toHaveLength(3);
     expect(artifact.evidence.map((item) => item.id)).toEqual(['sleep', 'hrv', 'spo2']);
   });

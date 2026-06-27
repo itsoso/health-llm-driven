@@ -88,6 +88,19 @@ describe('renderCard 安全降级', () => {
     expect(r).not.toBeNull();
   });
 
+  it('renders backend agenda_action cards for the runtime top action', () => {
+    const r = renderCard({
+      type: 'agenda_action',
+      data: {
+        title: '喝 200ml 温水',
+        subtitle: '起床后补水',
+        scheduled_for: '08:00',
+        source: { object_type: 'health_protocol', object_id: 12 },
+      },
+    });
+    expect(r).not.toBeNull();
+  });
+
   it('cards_group 1 张子卡 → 直接渲染, 不包 grid', () => {
     const r = renderCard({
       type: 'cards_group',
@@ -134,8 +147,9 @@ describe('renderServerCards 防御', () => {
       { type: 'vitals', data: {} },
       { type: 'fake', data: {} },
       { type: 'sleep', data: {} },
+      { type: 'agenda_action', data: { title: '喝水' } },
     ]);
-    expect(r.map((c) => c.type)).toEqual(['vitals', 'sleep']);
+    expect(r.map((c) => c.type)).toEqual(['vitals', 'sleep', 'agenda_action']);
   });
 
   it('preserves server action descriptors on known cards', () => {

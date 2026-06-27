@@ -24,7 +24,12 @@ export type ClientEventName =
   | 'watch_action_failed'
   | 'agenda_action_failed'
   // N-of-1 闭环北极星 (2026-06-17) — 已验证闭环数
-  | 'verified_loop';              // meta: { cycle_id, verdict_count, total } 复查产出 ≥1 非 pending 裁决
+  | 'verified_loop'               // meta: { cycle_id, verdict_count, total } 复查产出 ≥1 非 pending 裁决
+  // Reva Daily Artifact (2026-06-27) — 首页健康运行时闭环
+  | 'daily_artifact_impression'
+  | 'daily_artifact_accepted'
+  | 'daily_artifact_completed'
+  | 'daily_artifact_skipped';
 
 /**
  * 发一条 UI 埋点事件. 失败静默 — 埋点不该影响用户流程.
@@ -40,6 +45,7 @@ export type ClientEventName =
  * - starter_chip_clicked: { key: string, priority: number, position: number, source: 'chat' }
  * - watch_action_*: { action_id: string, kind: string, priority_tier?: 'P0'|'P1'|'P2'|'P3'|'P4', reason?: string }
  * - agenda_action_failed: { reason: string, object_type?: string, object_id?: unknown, status?: string }
+ * - daily_artifact_*: { artifact_id, week_index, top_action_source, top_action_title, skip_reason? }
  */
 export async function emitClientEvent(
   name: ClientEventName,

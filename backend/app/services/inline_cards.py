@@ -163,6 +163,83 @@ def _build_weather(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]
     return None
 
 
+def _as_dict(value: Any) -> Dict[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if hasattr(value, "model_dump"):
+        return value.model_dump(exclude_none=True)
+    if hasattr(value, "dict"):
+        return value.dict(exclude_none=True)
+    return {}
+
+
+def _short_subtitle(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    cut = re.search(r"[，,。.;；]", text)
+    if cut and cut.start() > 0:
+        text = text[:cut.start()].strip()
+    return text or None
+
+
+def _is_agenda_action_intent(q: str) -> bool:
+    ql = (q or "").lower()
+    return bool(re.search(r"今天.*(做|安排|行动)|今日.*(做|安排|行动)|该做什么|下一步|today.*(action|agenda)", ql))
+
+
+def _build_agenda_action(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
+    if not _is_agenda_action_intent(q):
+        return None
+    try:
+        from app.services import today_timeline_service
+
+        spine = _as_dict(today_timeline_service.build_today_spine(db, user_id))
+        items = spine.get("items") or []
+        now_id = spine.get("now")
+        item = next((_as_dict(x) for x in items if _as_dict(x).get("id") == now_id), None)
+        if not item:
+            item = next((_as_dict(x) for x in items if _as_dict(x).get("can_complete")), None)
+        if not item or not item.get("title"):
+            return None
+        source = _as_dict(item.get("complete_ref"))
+        data: Dict[str, Any] = {
+            "id": item.get("id"),
+            "title": item.get("title"),
+            "subtitle": _short_subtitle(item.get("subtitle")),
+            "scheduled_for": item.get("scheduled_for"),
+            "source": source or None,
+            "deep_link": item.get("deep_link"),
+        }
+        actions: List[Dict[str, Any]] = []
+        if isinstance(source.get("object_type"), str) and source.get("object_id") is not None:
+            actions = [
+                {
+                    "action": "complete_agenda",
+                    "endpoint": "/agenda/complete",
+                    "label": "完成",
+                    "payload": {"source": source},
+                    "style": "primary",
+                },
+                {
+                    "action": "skip_agenda",
+                    "endpoint": "/agenda/complete",
+                    "label": "太累,跳过",
+                    "payload": {"source": source, "skip_reason": "too_tired"},
+                    "style": "secondary",
+                },
+            ]
+        data["_actions"] = actions
+        return data
+    except Exception as e:
+        logger.debug("agenda_action card failed: %s", e)
+        return None
+
+
 def _build_diet(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
     if _is_record_intent(q):
         return None
@@ -205,6 +282,7 @@ def _build_diet(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
 
 _BUILDERS = [
     ("record_intent_skip", lambda db, uid, q: None),
+    ("agenda_action", _build_agenda_action),
     ("sleep",        _build_sleep),
     ("weight",       _build_weight),
     ("blood_pressure", _build_bp),
@@ -229,7 +307,11 @@ def build_cards(db: Session, user_id: int, query: str) -> List[Dict[str, Any]]:
         try:
             data = builder(db, user_id, query)
             if data:
-                out.append({"type": card_type, "data": data})
+                actions = data.pop("_actions", None) if isinstance(data, dict) else None
+                descriptor: Dict[str, Any] = {"type": card_type, "data": data}
+                if actions:
+                    descriptor["actions"] = actions
+                out.append(descriptor)
                 if len(out) >= MAX_CARDS:
                     break
         except Exception as e:
