@@ -9,14 +9,17 @@ jest.mock('expo-speech', () => ({ stop: jest.fn() }));
 jest.mock('expo-audio', () => ({ setAudioModeAsync: jest.fn() }));
 jest.mock('expo-haptics', () => ({
   selectionAsync: jest.fn(),
-  notificationAsync: jest.fn(),
-  NotificationFeedbackType: { Success: 'success' },
+  notificationAsync: jest.fn().mockResolvedValue(undefined),
+  NotificationFeedbackType: { Success: 'success', Error: 'error' },
 }));
 jest.mock('../../../services/speakWithUserVoice', () => ({
   speakWithUserVoice: jest.fn(),
 }));
 jest.mock('../../../services/chatResultActions', () => ({
   saveAssistantReplyAsMemory: jest.fn(),
+}));
+jest.mock('../../../services/chatCardActions', () => ({
+  dispatchChatCardAction: jest.fn(),
 }));
 jest.mock('../../../hooks/useToast', () => ({
   useToast: () => ({ show: jest.fn() }),
@@ -72,6 +75,7 @@ jest.mock('../../actions/InterventionDraftSheet', () => {
 
 const ChatBubble = require('../ChatBubble').default;
 const { saveAssistantReplyAsMemory } = require('../../../services/chatResultActions');
+const { dispatchChatCardAction } = require('../../../services/chatCardActions');
 const { renderCard, __mockCard } = require('../cards');
 
 function renderBubble(content: string) {
@@ -189,6 +193,48 @@ describe('ChatBubble structured summary', () => {
       flex: 1,
       minWidth: 0,
       maxWidth: '100%',
+    });
+  });
+
+  it('dispatches server card actions from the chat bubble', async () => {
+    dispatchChatCardAction.mockResolvedValueOnce({ status: 'completed' });
+    renderCard.mockImplementationOnce((descriptor: any, options: any) => {
+      const { Pressable, Text } = require('react-native');
+      return (
+        <Pressable onPress={() => options.onAction(descriptor.actions[0], descriptor)}>
+          <Text>完成</Text>
+        </Pressable>
+      );
+    });
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-card-action',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'vitals',
+      cardData: { sleep: '8h' },
+      cardActions: [{
+        label: '完成',
+        action: 'agenda.complete',
+        endpoint: '/agenda/complete',
+        requires_manual_confirm: true,
+        payload: { source: { object_type: 'health_protocol', object_id: 7 } },
+      }],
+    };
+
+    const { getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByText('完成'));
+
+    await waitFor(() => {
+      expect(dispatchChatCardAction).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'agenda.complete' }),
+      );
     });
   });
 });

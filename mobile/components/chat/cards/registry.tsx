@@ -10,8 +10,15 @@
  *   const card = renderServerCard(descriptor);
  */
 import React from 'react';
-import { View, Dimensions } from 'react-native';
-import type { CardSpec, CardContext, ServerCardDescriptor } from './types';
+import { View, Dimensions, Pressable, StyleSheet, Text } from 'react-native';
+import type {
+  CardRenderOptions,
+  CardSpec,
+  CardContext,
+  ChatCardActionDescriptor,
+  ServerCardDescriptor,
+} from './types';
+import { revaColors as C, revaRadii } from '../../../constants/revaTheme';
 
 import { VitalsCardSpec } from './VitalsCard';
 import { SleepCardSpec } from './SleepCard';
@@ -50,6 +57,13 @@ export const CARD_MAP: Record<string, CardSpec> = Object.fromEntries(
   CARD_REGISTRY.map((c) => [c.type, c]),
 );
 
+const ALLOWED_ACTIONS = new Set([
+  'agenda.complete',
+  'write_intent.confirm',
+  'write_intent.dismiss',
+  'route.open',
+]);
+
 /**
  * 从用户 query + 上下文挑一张卡 (本地关键词触发)
  * @returns {type, data} 或 null
@@ -79,11 +93,14 @@ export async function dispatchCard(ctx: CardContext): Promise<{ type: string; da
  * 渲染一张卡片 (不管本地还是后端来的)
  * 未知 type 返回 null (安全降级, 不崩)
  */
-export function renderCard(descriptor: ServerCardDescriptor): React.ReactElement | null {
+export function renderCard(
+  descriptor: ServerCardDescriptor,
+  options: CardRenderOptions = {},
+): React.ReactElement | null {
   // cards_group: iPad(>= 768) 双列, iPhone 单列
   if (descriptor.type === 'cards_group' && Array.isArray(descriptor.data?.cards)) {
     const items = (descriptor.data.cards as ServerCardDescriptor[])
-      .map((c, i) => ({ key: i, el: renderCard(c) }))
+      .map((c, i) => ({ key: i, el: renderCard(c, options) }))
       .filter((x) => x.el != null);
     if (items.length === 0) return null;
     if (items.length === 1) return items[0].el;
@@ -110,7 +127,38 @@ export function renderCard(descriptor: ServerCardDescriptor): React.ReactElement
     return null;
   }
   try {
-    return spec.render(descriptor.data);
+    const rendered = spec.render(descriptor.data, options);
+    const actions = normalizeCardActions(descriptor.actions);
+    if (!actions.length || !options.onAction) return rendered;
+    return (
+      <View style={styles.actionShell}>
+        {rendered}
+        <View style={styles.actionBar}>
+          {actions.map((action, index) => (
+            <Pressable
+              key={action.id ?? `${action.action}-${index}`}
+              style={({ pressed }) => [
+                styles.actionButton,
+                action.style === 'primary' && styles.actionButtonPrimary,
+                pressed && { opacity: 0.82 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={action.label}
+              onPress={() => options.onAction?.(action, descriptor)}
+            >
+              <Text
+                style={[
+                  styles.actionText,
+                  action.style === 'primary' && styles.actionTextPrimary,
+                ]}
+              >
+                {action.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+    );
   } catch (e) {
     if (__DEV__) console.warn(`[cards] ${descriptor.type}.render failed`, e);
     return null;
@@ -120,9 +168,59 @@ export function renderCard(descriptor: ServerCardDescriptor): React.ReactElement
 /**
  * 批量渲染后端下发的卡片 (SSE done 事件里的 cards 数组)
  */
-export function renderServerCards(cards?: ServerCardDescriptor[] | null): { type: string; data: any }[] {
+export function renderServerCards(cards?: ServerCardDescriptor[] | null): ServerCardDescriptor[] {
   if (!Array.isArray(cards)) return [];
   return cards.filter((c) => c && typeof c.type === 'string' && CARD_MAP[c.type]).map((c) => ({
-    type: c.type, data: c.data,
+    type: c.type,
+    data: c.data,
+    actions: normalizeCardActions(c.actions),
   }));
 }
+
+function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCardActionDescriptor[] {
+  if (!Array.isArray(actions)) return [];
+  return actions.filter((action): action is ChatCardActionDescriptor => (
+    action != null &&
+    typeof action.label === 'string' &&
+    action.label.trim().length > 0 &&
+    typeof action.action === 'string' &&
+    ALLOWED_ACTIONS.has(action.action)
+  )).map((action) => ({
+    ...action,
+    label: action.label.trim(),
+  }));
+}
+
+const styles = StyleSheet.create({
+  actionShell: {
+    gap: 8,
+  },
+  actionBar: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  actionButton: {
+    minHeight: 36,
+    borderRadius: revaRadii.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.lineStrong,
+    backgroundColor: C.surface,
+    paddingHorizontal: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionButtonPrimary: {
+    borderColor: C.green500,
+    backgroundColor: C.green500,
+  },
+  actionText: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0,
+    color: C.ink2,
+  },
+  actionTextPrimary: {
+    color: C.greenOn,
+  },
+});

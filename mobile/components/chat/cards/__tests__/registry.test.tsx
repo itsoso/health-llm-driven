@@ -1,5 +1,6 @@
 import { CARD_REGISTRY, CARD_MAP, dispatchCard, renderCard, renderServerCards } from '../registry';
 import type { CardContext } from '../types';
+import { fireEvent, render } from '@testing-library/react-native';
 
 function makeContext(query: string, overrides?: Partial<CardContext>): CardContext {
   return {
@@ -88,6 +89,37 @@ describe('renderCard 安全降级', () => {
     expect(r).not.toBeNull();
   });
 
+  it('renders server card actions and dispatches through onAction', () => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'vitals',
+      data: { sleep: '8h' },
+      actions: [
+        {
+          id: 'complete-now',
+          label: '完成',
+          action: 'agenda.complete',
+          endpoint: '/agenda/complete',
+          requires_manual_confirm: true,
+          payload: {
+            source: { object_type: 'health_protocol', object_id: 7 },
+          },
+        },
+      ],
+    } as any;
+
+    const element = renderCard(descriptor, { onAction });
+    expect(element).not.toBeNull();
+
+    const { getByText } = render(element!);
+    fireEvent.press(getByText('完成'));
+
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'agenda.complete' }),
+      expect.objectContaining({ type: 'vitals' }),
+    );
+  });
+
   it('renders medical exam import result cards from runtime skills', () => {
     const r = renderCard({
       type: 'medical_exam_import_result',
@@ -149,6 +181,29 @@ describe('renderServerCards 防御', () => {
       { type: 'sleep', data: {} },
     ]);
     expect(r.map((c) => c.type)).toEqual(['vitals', 'sleep']);
+  });
+
+  it('preserves allowed server card actions for chat dispatch', () => {
+    const r = renderServerCards([
+      {
+        type: 'vitals',
+        data: {},
+        actions: [
+          {
+            label: '完成',
+            action: 'agenda.complete',
+            endpoint: '/agenda/complete',
+            requires_manual_confirm: true,
+            payload: { source: { object_type: 'health_protocol', object_id: 7 } },
+          },
+        ],
+      } as any,
+    ]);
+
+    expect(r[0]).toEqual(expect.objectContaining({
+      type: 'vitals',
+      actions: [expect.objectContaining({ action: 'agenda.complete' })],
+    }));
   });
 
   it('非数组 → []', () => {

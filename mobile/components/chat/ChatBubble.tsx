@@ -23,7 +23,9 @@ import { createInterventionDraft } from '../../services/actionCards';
 import { saveAssistantReplyAsMemory } from '../../services/chatResultActions';
 import { buildInterventionDraft, type InterventionDraft } from '../../services/interventionDraft';
 import { speakWithUserVoice, type SpeakHandle } from '../../services/speakWithUserVoice';
+import { dispatchChatCardAction } from '../../services/chatCardActions';
 import AttributionChips from './AttributionChips';
+import type { ChatCardActionDescriptor, ServerCardDescriptor } from './cards/types';
 import {
   revaColors as C,
   revaRadii,
@@ -124,8 +126,36 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
     };
   }, [clearSpeechTimeout]);
 
+  const handleCardAction = useCallback(async (
+    action: ChatCardActionDescriptor,
+    descriptor: ServerCardDescriptor,
+  ) => {
+    try {
+      const result = await dispatchChatCardAction(action);
+      if (result.route) {
+        router.push(result.route as any);
+        return;
+      }
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['timeline', 'today'] }),
+        qc.invalidateQueries({ queryKey: ['agenda', 'today'] }),
+        qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] }),
+        qc.invalidateQueries({ queryKey: ['write-intents'] }),
+      ]);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      toast.show(action.action === 'write_intent.dismiss' ? '已忽略' : '已执行', 'success');
+    } catch {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      toast.show('操作失败，请稍后重试', 'error');
+      if (__DEV__) console.warn('[cards] action failed', descriptor.type, action.action);
+    }
+  }, [qc, toast]);
+
   if (item.cardType && item.cardData) {
-    const rendered = renderCard({ type: item.cardType, data: item.cardData });
+    const rendered = renderCard(
+      { type: item.cardType, data: item.cardData, actions: item.cardActions },
+      { onAction: handleCardAction },
+    );
     if (rendered) {
       return (
         <View style={[styles.msgRow, styles.msgRowAI]}>

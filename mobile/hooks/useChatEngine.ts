@@ -6,6 +6,7 @@ import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage } from '../services/chat';
 import { dispatchCard, renderServerCards } from '../components/chat/cards';
+import type { ChatCardActionDescriptor } from '../components/chat/cards/types';
 import api, { BASE_URL } from '../services/api';
 import { emitClientEvent } from '../services/clientEvents';
 
@@ -18,6 +19,7 @@ export interface UIMessage extends ChatMessage {
   isBriefing?: boolean;
   cardType?: string;
   cardData?: any;
+  cardActions?: ChatCardActionDescriptor[];
   createdAt?: string;
   fromSiri?: boolean;
   // 2026-05-13: 性能可观测 — done 事件的耗时 + 模型名, 渲染在 assistant 气泡底部
@@ -94,6 +96,7 @@ export function restoreMessagesFromHistory(
         content: '',
         cardType: card.type,
         cardData: card.data,
+        cardActions: card.actions,
         createdAt: m.created_at,
       });
     });
@@ -447,8 +450,15 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           } : m));
           const serverCards = renderServerCards((evt as any).cards);
           if (serverCards.length > 0) {
-            const single = serverCards.length === 1 ? serverCards[0] : { type: 'cards_group', data: { cards: serverCards } };
-            setMessages(prev => [...prev, { id: nextId(), role: 'assistant' as const, content: '', cardType: single.type, cardData: single.data }]);
+            const single = serverCards.length === 1 ? serverCards[0] : { type: 'cards_group', data: { cards: serverCards }, actions: [] };
+            setMessages(prev => [...prev, {
+              id: nextId(),
+              role: 'assistant' as const,
+              content: '',
+              cardType: single.type,
+              cardData: single.data,
+              cardActions: single.actions,
+            }]);
           } else {
             const card = await dispatchCard({
               query: finalMsg,

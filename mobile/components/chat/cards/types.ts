@@ -53,11 +53,34 @@ export interface CardSpec<D = any> {
    */
   build(ctx: CardContext): Promise<D | null> | D | null;
   /** 渲染组件 */
-  render(data: D): React.ReactElement;
+  render(data: D, options?: CardRenderOptions): React.ReactElement;
 }
 
 /** 后端下发的卡片描述 (SSE done 事件里的 cards 字段) */
 export interface ServerCardDescriptor {
   type: string;
   data: any;
+  actions?: ChatCardActionDescriptor[];
+}
+
+export type ChatCardActionStyle = 'primary' | 'secondary' | 'danger';
+
+/**
+ * Chat 动态卡片动作契约。
+ *
+ * 写动作必须由用户点击触发,且 requires_manual_confirm=true。前端 dispatcher
+ * 只接受 allowlist action/endpoint,不会把模型给的任意 endpoint 透传出去。
+ */
+export interface ChatCardActionDescriptor {
+  id?: string;
+  label: string;
+  action: 'agenda.complete' | 'write_intent.confirm' | 'write_intent.dismiss' | 'route.open' | string;
+  endpoint?: string | null;
+  payload?: Record<string, any> | null;
+  style?: ChatCardActionStyle;
+  requires_manual_confirm?: boolean;
+}
+
+export interface CardRenderOptions {
+  onAction?: (action: ChatCardActionDescriptor, descriptor: ServerCardDescriptor) => void;
 }

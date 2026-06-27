@@ -12,12 +12,27 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
+import { renderCard } from '../chat/cards';
 import { revaColors as C, revaRadii, revaShadows } from '../../constants/revaTheme';
 import { RevaMark } from './RevaKit';
 
 const QUICKS = ['今天能跑步吗？', '解读我的血糖', '这周吃得怎么样？'];
 
 function RevaBubble({ message }: { message: UIMessage }) {
+  if (message.cardType && message.cardData) {
+    const rendered = renderCard({
+      type: message.cardType,
+      data: message.cardData,
+      actions: message.cardActions,
+    });
+    if (rendered) {
+      return (
+        <View style={[styles.row, { justifyContent: 'flex-start' }]}>
+          <View style={styles.cardFrame}>{rendered}</View>
+        </View>
+      );
+    }
+  }
   if (message.role === 'user') {
     return (
       <View style={[styles.row, { justifyContent: 'flex-end' }]}>
@@ -51,8 +66,6 @@ export function RevaAgentView({ bottomInset = 0 }: { bottomInset?: number }) {
     void sendMessage(t);
   }, [draft, isStreaming, sendMessage]);
 
-  const textMessages = messages.filter(m => !m.cardType);
-
   return (
     <View style={styles.root}>
       <View style={styles.header}>
@@ -68,12 +81,12 @@ export function RevaAgentView({ bottomInset = 0 }: { bottomInset?: number }) {
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={8}>
         <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={styles.scrollContent} keyboardDismissMode="interactive">
-          {textMessages.length === 0 ? (
+          {messages.length === 0 ? (
             <View style={styles.empty}>
               <Text style={styles.emptyText}>问问复元 —— 它了解你的体检异常项、手环数据和 90 天计划。</Text>
             </View>
           ) : (
-            textMessages.map(m => <RevaBubble key={m.id} message={m} />)
+            messages.map(m => <RevaBubble key={m.id} message={m} />)
           )}
         </ScrollView>
 
@@ -119,6 +132,7 @@ const styles = StyleSheet.create({
   bubbleMe: { backgroundColor: C.green500, borderBottomRightRadius: 5 },
   bubbleMeText: { color: C.greenOn, fontSize: 15, lineHeight: 22 },
   bubbleAgent: { backgroundColor: C.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line, borderBottomLeftRadius: 5, ...revaShadows.sm },
+  cardFrame: { flex: 1, maxWidth: '100%' },
   composer: { paddingHorizontal: 12, paddingTop: 8, backgroundColor: C.paper, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line },
   quicks: { gap: 8, paddingBottom: 10, paddingHorizontal: 2 },
   chip: { backgroundColor: C.green50, borderWidth: StyleSheet.hairlineWidth, borderColor: C.green100, borderRadius: revaRadii.pill, paddingHorizontal: 13, paddingVertical: 7 },
