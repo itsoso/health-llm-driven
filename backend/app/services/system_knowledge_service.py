@@ -1422,6 +1422,8 @@ def _specialist_domain_keywords(specialist: str, category: str) -> list[str]:
         return ["movement", "training", "recovery", "metabolic"]
     if "recovery" in text:
         return ["sleep", "recovery", "readiness", "training"]
+    if "rhinitis" in text or "鼻炎" in text:
+        return ["rhinitis", "reflux", "gerd", "lpr", "gastro", "upper_airway"]
     if "safety" in text:
         return ["safety", "medication", "gene", "biomarker"]
     if "metabolic" in text:

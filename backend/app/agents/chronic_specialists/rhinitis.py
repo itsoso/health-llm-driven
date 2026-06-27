@@ -130,6 +130,19 @@ class RhinitisSpecialist:
                     "action": "今晚洗澡后固定使用鼻喷；如症状持续 > 1 周无改善，考虑加口服抗组胺药。",
                 })
 
+            reflux_context = _reflux_context(twin)
+            if reflux_context and severity in ("mild", "moderate", "severe"):
+                findings.append({
+                    "type": "reflux_hypothesis",
+                    "title": "反流相关上气道刺激假设",
+                    "summary": (
+                        "反流、咽喉反流或抑酸药线索与鼻炎样症状同时存在；"
+                        "适合记录咽喉反流、鼻后滴漏感、餐后和平卧相关波动。"
+                    ),
+                    "evidence": reflux_context,
+                    "action": "记录鼻炎、咽喉、餐后和平卧相关症状，带给耳鼻喉科或消化科医生复评。",
+                })
+
             # 下一步行动
             actions: List[str] = []
             if severity == "severe":
@@ -172,3 +185,24 @@ class RhinitisSpecialist:
                 raw={"error": str(e)},
                 ms_elapsed=int((time.monotonic() - t0) * 1000),
             )
+
+
+def _reflux_context(twin: HealthTwin) -> Optional[Dict[str, Any]]:
+    conditions = [str(c) for c in (twin.chronic.active_conditions or [])]
+    active_meds = twin.medication.active_meds or []
+    med_names = [str(m.get("name") or "") for m in active_meds if isinstance(m, dict)]
+
+    reflux_condition_tokens = ("反流", "胃食管反流", "咽喉反流", "GERD", "LPR", "胃溃疡", "消化性溃疡")
+    acid_med_tokens = ("伏诺拉生", "vonoprazan", "奥美拉唑", "兰索拉唑", "泮托拉唑", "PPI", "抑酸")
+
+    matched_conditions = [
+        condition for condition in conditions
+        if any(token.lower() in condition.lower() for token in reflux_condition_tokens)
+    ]
+    matched_meds = [
+        med for med in med_names
+        if any(token.lower() in med.lower() for token in acid_med_tokens)
+    ]
+    if not matched_conditions and not matched_meds:
+        return None
+    return {"active_conditions": matched_conditions, "active_meds": matched_meds}
