@@ -74,6 +74,11 @@ jest.mock('react-native-svg', () => {
     G: mock('G'),
     Text: mock('SvgText'),
     Polyline: mock('Polyline'),
+    // 渐变三件套:ReadinessRing 等用 <Defs><LinearGradient><Stop> 画环。缺它们 → 具名导入为
+    // undefined → "Element type is invalid. Check the render method of ReadinessRing"(整套件挂)。
+    Defs: mock('Defs'),
+    LinearGradient: mock('LinearGradient'),
+    Stop: mock('Stop'),
   };
 });
 
