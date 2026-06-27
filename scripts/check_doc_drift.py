@@ -296,7 +296,11 @@ def main() -> int:
             failures,
             label="安全规则条数",
             expected=total_actual,
-            patterns=[r"{n}\s*条\s*(?:安全|确定性)?\s*规则", r"{n}\s*safety\s*rules?"],
+            patterns=[
+                r"{n}\s*条\s*(?:安全|确定性)?\s*规则",
+                r"{n}\s*safety\s*rules?",
+                r"规则分类[（(]\s*{n}\s*条",  # Hook 3: 防 "规则分类(51 条)" 子标题漏检
+            ],
             required_docs=("docs/ARCHITECTURE.md",),
         )
 
@@ -334,6 +338,30 @@ def main() -> int:
     # web pages 在 CLAUDE.md / ARCHITECTURE.md 里写法灵活, 放宽到存在即可
     # 如果 doc 里确实写了 "X 路由" / "X 页面" 就要对齐
     # (避免误报: 若 doc 里 web 数字没提, 不算 fail)
+
+    # 5. System-map 代码派生事实 (docs/_generated/system-map.json) 与代码一致。
+    #    System-map 防漂移核心: 计数/roster 只准从代码生成进无人手改的 JSON, committed 与
+    #    代码不符即红 (跑 scripts/dump_system_map.py 重新生成即修)。见 docs/system-map/INDEX.md。
+    try:
+        import json
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from dump_system_map import OUT as SYSMAP_OUT
+        from dump_system_map import build_map
+        fresh_map = build_map()
+        if not SYSMAP_OUT.exists():
+            failures.append(
+                "  system-map: docs/_generated/system-map.json 缺失, "
+                "跑 python scripts/dump_system_map.py 生成并提交"
+            )
+        else:
+            committed_map = json.loads(SYSMAP_OUT.read_text(encoding="utf-8"))
+            if committed_map != fresh_map:
+                failures.append(
+                    "  system-map: docs/_generated/system-map.json 与代码不符, "
+                    "跑 python scripts/dump_system_map.py 重新生成并提交"
+                )
+    except Exception as e:  # noqa: BLE001
+        failures.append(f"  system-map build/compare failed: {e}")
 
     if failures:
         print("❌ CLAUDE.md / ARCHITECTURE.md 与代码已漂移：", file=sys.stderr)

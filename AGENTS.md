@@ -604,6 +604,8 @@ class ExampleModel(Base):
 
 ## 12. 需求→上线 全流程契约(跨 agent 通用，Codex 必读)
 
+**开工前先读系统现状**:`docs/system-map/INDEX.md` 是「本系统有什么、在哪、怎么扩」的统一入口(目标/能力/规划/架构/未来 + 多端×UI×业务流×系统流);计数真源在 `docs/_generated/system-map.json`(代码派生,`check_doc_drift.py` CI 校验,**绝不手打计数进任何文档**)。
+
 把一句用户需求走完整个生命周期（需求 → PRD → 规划 → 需求分解 → 研发 → 测试 → 部署 → 上线验证），或用户说「立项 / 走一遍流程 / 从需求到上线」时，**所有 coding agent（含 Codex / Cursor）必须遵循** agent 中立的流程契约 [`docs/specs/product-pipeline-contract.md`](docs/specs/product-pipeline-contract.md)：
 
 - **双环**：定义环（需求→PRD→规划，便宜可逆）+ 交付环（分解→实现→测试→部署→验证，昂贵有闸）。

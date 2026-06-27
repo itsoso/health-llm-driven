@@ -214,7 +214,7 @@
 
 辅助: **DataFreshness** 标记每个分区新鲜度(>X 小时视为过期, LLM prompt 里附提示)。
 
-### Safety Guardian 规则分类(51 条)
+### Safety Guardian 规则分类(63 条)
 
 `backend/app/agents/safety_guardian/rules/`:
 
