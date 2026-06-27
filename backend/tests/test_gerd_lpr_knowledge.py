@@ -21,6 +21,7 @@ CLAIMS_FILE = Path(SEED_DIR) / "claims.jsonl"
 
 NEW_CLAIM_IDS = {
     "claim:c_peptic_ulcer_hp_status_triage",
+    "claim:c_hp_positive_eradication_physician_boundary",
     "claim:c_lpr_upper_airway_rhinitis_overlap",
     "claim:c_long_term_acid_suppression_monitoring",
     "claim:c_gerd_lifestyle_modifiable_factors",
@@ -35,6 +36,9 @@ PR2_EVAL_CASE_IDS = {
     "eval:gerd_alarm_features_escalate",
     "eval:lpr_rhinitis_overlap_supported",
 }
+HP_POSITIVE_CLAIM = "claim:c_hp_positive_eradication_physician_boundary"
+HP_POSITIVE_CONTRAINDICATION = "contraindication:hp_positive_no_self_eradication_regimen"
+HP_POSITIVE_EVAL = "eval:hp_positive_eradication_boundary"
 
 
 def _new_claims() -> list[dict]:
@@ -80,6 +84,59 @@ def test_reflux_contraindications_and_eval_cases_imported(db):
         assert doc.doc_type == "eval_case"
         assert (doc.metadata_json or {}).get("case_id"), doc_id
         assert (doc.metadata_json or {}).get("expected"), doc_id
+
+
+def test_hp_positive_eradication_claim_contraindication_and_eval_import(db):
+    from app.services.system_knowledge_eval import run_system_kb_eval_cases
+    from app.services.system_knowledge_service import (
+        lookup_for_twin,
+        reindex_knowledge_documents,
+        search_knowledge,
+    )
+
+    counts = import_system_kb_artifacts(db, SEED_DIR, actor="test:hp_positive_gate")
+    assert counts["skipped_documents"] == 0
+
+    doc_ids = {HP_POSITIVE_CLAIM, HP_POSITIVE_CONTRAINDICATION, HP_POSITIVE_EVAL}
+    docs = db.query(KBDocument).filter(KBDocument.doc_id.in_(doc_ids)).all()
+    by_id = {doc.doc_id: doc for doc in docs}
+    assert set(by_id) == doc_ids
+    assert by_id[HP_POSITIVE_CLAIM].doc_type == "claim"
+    assert by_id[HP_POSITIVE_CONTRAINDICATION].doc_type == "contraindication"
+    assert by_id[HP_POSITIVE_EVAL].doc_type == "eval_case"
+    for doc in by_id.values():
+        assert (doc.metadata_json or {}).get("review_status") == "reviewed", doc.doc_id
+
+    positive = lookup_for_twin(
+        db,
+        {"conditions": {"active": ["胃溃疡"], "hp_status": "positive"}},
+    )
+    positive_claim_ids = {claim.get("doc_id") for claim in positive.get("claims") or []}
+    assert HP_POSITIVE_CLAIM in positive_claim_ids
+
+    negative = lookup_for_twin(
+        db,
+        {"conditions": {"active": ["胃溃疡"], "hp_status": "negative"}},
+    )
+    negative_claim_ids = {claim.get("doc_id") for claim in negative.get("claims") or []}
+    assert HP_POSITIVE_CLAIM not in negative_claim_ids
+
+    reindex_knowledge_documents(db, actor="test:hp_positive_gate")
+    search = search_knowledge(
+        db,
+        "幽门螺杆菌 阳性 消化性溃疡 根除 复查 呼气试验 医生",
+        limit=10,
+        doc_type="claim",
+    )
+    search_ids = {
+        (item.get("document") or {}).get("doc_id")
+        for item in (search.get("results") or [])
+    }
+    assert HP_POSITIVE_CLAIM in search_ids
+
+    report = run_system_kb_eval_cases(db, case_ids={HP_POSITIVE_EVAL})
+    assert report["total"] == 1
+    assert report["failed"] == 0
 
 
 # ── 2. 反流 claim 绑到鼻炎 specialist 真实 finding ────────────────
@@ -235,3 +292,30 @@ def test_hp_triage_claim_is_status_gated_not_unconditional_eradication():
     # 不能出现无条件的根除处方语
     assert "四联" not in blob
     assert "根除" in blob  # 提到根除概念,但限定在阳性语境
+
+
+def test_hp_positive_claim_keeps_eradication_in_physician_boundary():
+    claims = {c["doc_id"]: c for c in _new_claims()}
+    hp = claims[HP_POSITIVE_CLAIM]
+    blob = f"{hp.get('title','')} {hp.get('summary','')} {hp.get('body','')}"
+    meta = hp.get("metadata") or {}
+    assert meta.get("claim_boundary")
+    assert "阳性" in blob
+    assert "复查" in blob
+    assert "呼气试验" in blob or "粪便抗原" in blob
+    assert any(token in blob for token in ("医生", "医嘱", "消化科"))
+    assert "根除" in blob
+    for banned in [
+        "四联",
+        "阿莫西林",
+        "克拉霉素",
+        "甲硝唑",
+        "mg",
+        "毫克",
+        "每日服用",
+        "每天服用",
+        "自行根除",
+        "直接根除",
+        "自行用药",
+    ]:
+        assert banned not in blob, f"{HP_POSITIVE_CLAIM} 越界: {banned}"
