@@ -37,6 +37,7 @@ official / curated source
 - eval runner: `backend/app/services/system_knowledge_eval.py`
 - serving gate: 仅 `review_status=reviewed` 且未 archived 的文档可进入 search/lookup/bundle。
 - retrieval: lexical/BM25 + FTS fallback + semantic alias + graph RRF；真实 embedding/vector backend 仍是后续项。
+- coverage report: admin coverage report 已输出全局文档/外部证据/运营 unsupported 指标，并按 domain 输出 source coverage、review status、eval coverage、stale/decay risk。
 
 本批 PR0 后 reviewed seed 覆盖:
 
@@ -157,7 +158,7 @@ official / curated source
 
 1. PR0 reviewed-only gate: 已完成。
 2. High-risk golden slices: 胃病/HP、PGx、睡眠、运动、饮食、鼻炎、补剂本批 PR0 已覆盖。
-3. Coverage report: 每个 domain 输出 source coverage、review status、eval coverage、stale/decay risk。
+3. Coverage report: 已完成，每个 domain 输出 source coverage、review status、eval coverage、stale/decay risk。
 4. Draft extraction: LLM 只能生成 draft artifact；必须经过 reviewer gate 才能进入 serving。
 5. Real vector backend: 用 pgvector 或等价向量表替换当前 deterministic semantic alias stream，但保持 search response shape。
 6. Mobile evidence UI: 所有 agent card 统一展示 reviewed evidence refs、claim boundary 和 contraindication 命中。
@@ -176,4 +177,4 @@ official / curated source
 
 ## 6. 下一批 backlog
 
-当前 PR0 high-risk golden slice backlog 已清空。后续进入 Coverage report、draft extraction、real vector backend、mobile evidence UI 和 release gate 自动化。
+当前 PR0 high-risk golden slice backlog 已清空，Coverage report 已落地。后续进入 draft extraction、real vector backend、mobile evidence UI 和 release gate 自动化。

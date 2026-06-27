@@ -933,9 +933,10 @@ def lint_knowledge_base(db: Session) -> dict[str, Any]:
     }
 
 
-def get_knowledge_coverage_report(db: Session) -> dict[str, Any]:
+def get_knowledge_coverage_report(db: Session, *, now: datetime | None = None) -> dict[str, Any]:
     """Aggregate system KB coverage signals for admin review dashboards."""
     documents = db.query(KBDocument).filter(KBDocument.is_archived.is_(False)).all()
+    current_time = _ensure_aware(now or datetime.now(UTC))
     by_type: dict[str, int] = {}
     by_review_status: dict[str, int] = {}
     by_evidence_level: dict[str, int] = {}
@@ -959,6 +960,7 @@ def get_knowledge_coverage_report(db: Session) -> dict[str, Any]:
             "by_origin": dict(sorted(by_origin.items())),
         },
         "external_evidence": _aggregate_external_evidence_coverage(documents),
+        "domain_coverage": _aggregate_domain_coverage(documents, now=current_time),
         "protocol_review": _aggregate_protocol_review_coverage(documents),
         "specialist_findings": _aggregate_specialist_evidence_coverage(db),
         "notification_evidence": _aggregate_notification_evidence_coverage(db),
@@ -966,6 +968,199 @@ def get_knowledge_coverage_report(db: Session) -> dict[str, Any]:
             "disagree": db.query(KBAudit).filter(KBAudit.op == "feedback_disagree").count(),
         },
     }
+
+
+def _aggregate_domain_coverage(
+    documents: list[KBDocument],
+    *,
+    now: datetime,
+) -> dict[str, Any]:
+    buckets: dict[str, dict[str, Any]] = {}
+    claim_domains: dict[str, set[str]] = {}
+    eval_claim_ids: set[str] = set()
+
+    for document in documents:
+        domains = _document_domains(document)
+        if document.doc_type == "claim":
+            claim_domains[document.doc_id] = set(domains)
+        if document.doc_type == "eval_case":
+            eval_claim_ids.update(_eval_case_required_claim_ids(document))
+
+        for domain in domains:
+            bucket = _domain_coverage_bucket(buckets, domain)
+            _add_domain_document(bucket, document, now=now)
+
+    for claim_id, domains in claim_domains.items():
+        for domain in domains:
+            _domain_coverage_bucket(buckets, domain)["eval_coverage"]["_claim_ids"].add(claim_id)
+
+    for claim_id in eval_claim_ids:
+        for domain in claim_domains.get(claim_id, set()):
+            _domain_coverage_bucket(buckets, domain)["eval_coverage"]["_covered_claim_ids"].add(
+                claim_id
+            )
+
+    return {
+        domain: _finalize_domain_coverage_bucket(bucket)
+        for domain, bucket in sorted(buckets.items())
+    }
+
+
+def _domain_coverage_bucket(
+    buckets: dict[str, dict[str, Any]],
+    domain: str,
+) -> dict[str, Any]:
+    return buckets.setdefault(
+        domain,
+        {
+            "documents": {"total": 0, "by_type": Counter()},
+            "review_status": Counter(),
+            "source_coverage": {
+                "claim_total": 0,
+                "claims_with_external_sources": 0,
+                "by_kind": Counter(),
+                "missing_external_source_claims": [],
+            },
+            "eval_coverage": {
+                "eval_cases_total": 0,
+                "_claim_ids": set(),
+                "_covered_claim_ids": set(),
+            },
+            "stale_risk": {
+                "claim_total": 0,
+                "stale_claims": 0,
+                "missing_last_confirmed_claims": 0,
+                "by_decay_rate": {"fast": 0, "normal": 0, "slow": 0},
+                "items": [],
+            },
+        },
+    )
+
+
+def _add_domain_document(bucket: dict[str, Any], document: KBDocument, *, now: datetime) -> None:
+    bucket["documents"]["total"] += 1
+    bucket["documents"]["by_type"][document.doc_type] += 1
+    review_status = str((document.metadata_json or {}).get("review_status") or "unreviewed")
+    bucket["review_status"][review_status] += 1
+
+    if document.doc_type == "eval_case":
+        bucket["eval_coverage"]["eval_cases_total"] += 1
+
+    if document.doc_type != "claim":
+        return
+
+    source_coverage = bucket["source_coverage"]
+    source_coverage["claim_total"] += 1
+    external_sources = _document_external_sources(document)
+    if external_sources:
+        source_coverage["claims_with_external_sources"] += 1
+    elif review_status == "reviewed":
+        source_coverage["missing_external_source_claims"].append(_compact_issue(document))
+    for source in external_sources:
+        kind = str(source.get("kind") or "other")
+        source_coverage["by_kind"][kind] += 1
+
+    _add_domain_stale_risk(bucket["stale_risk"], document, now=now, review_status=review_status)
+
+
+def _add_domain_stale_risk(
+    stale_risk: dict[str, Any],
+    document: KBDocument,
+    *,
+    now: datetime,
+    review_status: str,
+) -> None:
+    stale_risk["claim_total"] += 1
+    if not document.last_confirmed:
+        stale_risk["missing_last_confirmed_claims"] += 1
+        return
+
+    windows = {
+        "fast": timedelta(days=30),
+        "normal": timedelta(days=120),
+        "slow": timedelta(days=365),
+    }
+    decay_rate = str(document.decay_rate or "normal")
+    window = windows.get(decay_rate, windows["normal"])
+    last_confirmed = _ensure_aware(document.last_confirmed)
+    if last_confirmed >= now - window:
+        return
+
+    stale_risk["stale_claims"] += 1
+    stale_risk["by_decay_rate"][decay_rate] = stale_risk["by_decay_rate"].get(decay_rate, 0) + 1
+    stale_risk["items"].append(
+        {
+            **_compact_issue(document),
+            "review_status": review_status,
+            "decay_rate": decay_rate,
+            "last_confirmed": last_confirmed.isoformat(),
+            "days_since_confirmed": (now.date() - last_confirmed.date()).days,
+        }
+    )
+
+
+def _finalize_domain_coverage_bucket(bucket: dict[str, Any]) -> dict[str, Any]:
+    source_coverage = bucket["source_coverage"]
+    claim_total = int(source_coverage.get("claim_total") or 0)
+    claims_with_external_sources = int(source_coverage.get("claims_with_external_sources") or 0)
+
+    eval_coverage = bucket["eval_coverage"]
+    claim_ids = set(eval_coverage.pop("_claim_ids", set()))
+    covered_claim_ids = set(eval_coverage.pop("_covered_claim_ids", set())) & claim_ids
+    eval_claim_total = len(claim_ids)
+    claims_with_eval = len(covered_claim_ids)
+
+    source_coverage["external_source_rate"] = (
+        round(claims_with_external_sources / claim_total, 4) if claim_total else 0.0
+    )
+    source_coverage["by_kind"] = dict(sorted(source_coverage["by_kind"].items()))
+    source_coverage["missing_external_source_claims"].sort(
+        key=lambda item: str(item.get("doc_id") or "")
+    )
+    source_coverage["missing_external_source_claims"] = source_coverage[
+        "missing_external_source_claims"
+    ][:10]
+
+    eval_coverage["claim_total"] = eval_claim_total
+    eval_coverage["claims_with_eval"] = claims_with_eval
+    eval_coverage["eval_coverage_rate"] = (
+        round(claims_with_eval / eval_claim_total, 4) if eval_claim_total else 0.0
+    )
+    eval_coverage["missing_eval_claims"] = sorted(claim_ids - covered_claim_ids)[:10]
+
+    bucket["stale_risk"]["items"].sort(key=lambda item: str(item.get("doc_id") or ""))
+    bucket["stale_risk"]["items"] = bucket["stale_risk"]["items"][:10]
+    bucket["stale_risk"]["by_decay_rate"] = dict(sorted(bucket["stale_risk"]["by_decay_rate"].items()))
+    bucket["documents"]["by_type"] = dict(sorted(bucket["documents"]["by_type"].items()))
+    bucket["review_status"] = dict(sorted(bucket["review_status"].items()))
+    return bucket
+
+
+def _document_domains(document: KBDocument) -> list[str]:
+    metadata = document.metadata_json or {}
+    raw_domains = metadata.get("domains")
+    domains: list[str] = []
+    if isinstance(raw_domains, list):
+        domains.extend(str(item).strip() for item in raw_domains if str(item).strip())
+    domain = str(metadata.get("domain") or "").strip()
+    if domain:
+        domains.append(domain)
+    if not domains and document.entity_type:
+        domains.append(str(document.entity_type))
+    if not domains:
+        domains.append("unknown")
+    return sorted(set(domains))
+
+
+def _eval_case_required_claim_ids(document: KBDocument) -> set[str]:
+    metadata = document.metadata_json or {}
+    expected = metadata.get("expected") if isinstance(metadata.get("expected"), dict) else {}
+    required_ids: set[str] = set()
+    for key in ("required_claim_ids", "required_doc_ids"):
+        values = expected.get(key)
+        if isinstance(values, list):
+            required_ids.update(str(value) for value in values if str(value).startswith("claim:"))
+    return required_ids
 
 
 def get_knowledge_review_queue(
