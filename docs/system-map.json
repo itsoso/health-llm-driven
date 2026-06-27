@@ -1,0 +1,374 @@
+{
+  "schema_version": 1,
+  "system": {
+    "name": "Reva Personal Health OS",
+    "goal": "Turn fragmented personal health data into safe, high-leverage actions that users can execute daily and verify over time.",
+    "north_star_metric": "Weekly completed high-leverage health actions that passed safety gating and have an attached verification plan."
+  },
+  "authority": [
+    "AGENTS.md",
+    "docs/specs/reva-product-governance-spec.md",
+    "docs/specs/product-pipeline-contract.md",
+    "docs/prd/reva-personal-health-os-prd.md",
+    "docs/ARCHITECTURE.md"
+  ],
+  "surfaces": [
+    {
+      "id": "backend",
+      "role": "Source of truth for Health Twin, Safety Gate, Agenda, WriteIntent, audit, and data ownership.",
+      "paths": [
+        "backend/app",
+        "backend/tests"
+      ]
+    },
+    {
+      "id": "mobile",
+      "role": "Primary daily product for Today, Agenda, Capture, Programs, Review, and consent/settings.",
+      "paths": [
+        "mobile/app",
+        "mobile/services",
+        "mobile/hooks"
+      ]
+    },
+    {
+      "id": "watch",
+      "role": "Low-friction execution and quick capture surface for top action, due item, voice, and fast records.",
+      "paths": [
+        "apps/watch",
+        "mobile/native/watch"
+      ]
+    },
+    {
+      "id": "mac",
+      "role": "Workbench for import, long agent workflows, trace review, file handling, and release operations.",
+      "paths": [
+        "apps/mac"
+      ]
+    },
+    {
+      "id": "web",
+      "role": "Admin, history, doctor/family, report, and compatibility surface.",
+      "paths": [
+        "frontend/src/app"
+      ]
+    },
+    {
+      "id": "external-agents",
+      "role": "Controlled extension through OpenClaw skills and MCP with auth, audit, and safety boundaries.",
+      "paths": [
+        "openclaw-skills",
+        "backend/skills",
+        "mcp-server"
+      ]
+    },
+    {
+      "id": "docs-agent",
+      "role": "Agent-readable governance, product, architecture, workflow, and system transparency layer.",
+      "paths": [
+        "AGENTS.md",
+        ".claude/skills",
+        "docs"
+      ]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "governance.requirement-admission",
+      "name": "Requirement admission and product governance",
+      "status": "implemented",
+      "surfaces": [
+        "docs-agent"
+      ],
+      "source_of_truth": {
+        "prd": [
+          "docs/prd/reva-personal-health-os-prd.md"
+        ],
+        "spec": [
+          "docs/specs/reva-product-governance-spec.md",
+          "docs/specs/templates/feature-spec-template.md"
+        ],
+        "code": [
+          "AGENTS.md",
+          "docs/specs/product-pipeline-contract.md"
+        ],
+        "tests": [
+          "scripts/check_doc_drift.py",
+          "scripts/validate.py"
+        ]
+      },
+      "safety_level": "governance",
+      "deploy_paths": [
+        "git_ci"
+      ]
+    },
+    {
+      "id": "agenda.leverage-action-loop",
+      "name": "Health Agenda and high-leverage action loop",
+      "status": "partial",
+      "surfaces": [
+        "backend",
+        "mobile",
+        "watch"
+      ],
+      "source_of_truth": {
+        "prd": [
+          "docs/prd/reva-personal-health-os-prd.md"
+        ],
+        "spec": [
+          "docs/specs/active/2026-06-22-smart-agenda.md",
+          "docs/specs/active/2026-06-26-health-agenda-contract-unification.md"
+        ],
+        "code": [
+          "backend/app/services/agenda_service.py",
+          "backend/app/services/agenda_contract.py",
+          "backend/app/api/agenda.py",
+          "mobile/app/agenda.tsx",
+          "mobile/services/agenda.ts",
+          "apps/watch/Sources/WatchCompanionCore/WatchSummary.swift"
+        ],
+        "tests": [
+          "backend/tests/test_agenda.py",
+          "backend/tests/test_agenda_contract.py",
+          "mobile/services/__tests__/agenda.test.ts",
+          "apps/watch/Tests/WatchCompanionCoreTests/WatchCompanionCoreTests.swift"
+        ]
+      },
+      "safety_level": "medical_boundary",
+      "deploy_paths": [
+        "backend_ci",
+        "mobile_ota",
+        "watch_eas_or_xcode"
+      ]
+    },
+    {
+      "id": "capture.quick-record",
+      "name": "Fast capture for diet, water, symptoms, medication, supplement, body measurement, and exercise records",
+      "status": "partial",
+      "surfaces": [
+        "backend",
+        "mobile",
+        "watch",
+        "external-agents"
+      ],
+      "source_of_truth": {
+        "prd": [
+          "docs/prd/reva-personal-health-os-prd.md"
+        ],
+        "plan": [
+          "docs/plans/2026-06-27-reva-mobile-watch-healthkit-experience-plan.md"
+        ],
+        "code": [
+          "backend/app/api/quick_record.py",
+          "backend/app/api/diet.py",
+          "backend/app/api/workout.py",
+          "mobile/app/(tabs)/record.tsx",
+          "mobile/services/records.ts",
+          "apps/watch/WatchApp/QuickRecordView.swift",
+          "openclaw-skills/health-record/SKILL.md"
+        ],
+        "tests": [
+          "backend/tests/test_quick_record.py",
+          "backend/tests/test_agent_fast_record_reply.py",
+          "mobile/app/(tabs)/__tests__/recordEntry.test.tsx",
+          "backend/tests/test_watch_voice_record_failclosed.py"
+        ]
+      },
+      "safety_level": "privacy_sensitive",
+      "deploy_paths": [
+        "backend_ci",
+        "mobile_ota",
+        "watch_eas_or_xcode"
+      ]
+    },
+    {
+      "id": "agent.chat-plus-dynamic-ui",
+      "name": "Health assistant conversation fused with dynamic UI cards",
+      "status": "partial",
+      "surfaces": [
+        "backend",
+        "mobile",
+        "web"
+      ],
+      "source_of_truth": {
+        "prd": [
+          "docs/prd/reva-personal-health-os-prd.md"
+        ],
+        "plan": [
+          "docs/plans/2026-06-27-reva-mobile-watch-healthkit-experience-plan.md"
+        ],
+        "code": [
+          "backend/app/api/agent.py",
+          "backend/app/services/agent_executor.py",
+          "mobile/app/reva.tsx",
+          "mobile/app/reva-agent.tsx",
+          "frontend/src/app/review/page.tsx"
+        ],
+        "tests": [
+          "backend/tests/test_agent_executor_tool_gating.py",
+          "backend/tests/test_agent_executor_completion_status.py",
+          "mobile/services/__tests__/agentAgenda.test.ts"
+        ]
+      },
+      "safety_level": "medical_boundary",
+      "deploy_paths": [
+        "backend_ci",
+        "mobile_ota"
+      ]
+    },
+    {
+      "id": "watch.ask-and-record",
+      "name": "Apple Watch ask Reva and quick record loop",
+      "status": "partial",
+      "surfaces": [
+        "backend",
+        "watch",
+        "mobile"
+      ],
+      "source_of_truth": {
+        "prd": [
+          "docs/prd/reva-personal-health-os-prd.md"
+        ],
+        "plan": [
+          "docs/plans/2026-06-27-reva-mobile-watch-healthkit-experience-plan.md",
+          "docs/plans/2026-06-15-apple-watch-companion-implementation-plan.md"
+        ],
+        "code": [
+          "backend/app/api/watch.py",
+          "backend/app/services/watch_summary.py",
+          "apps/watch/WatchApp/WatchDictation.swift",
+          "apps/watch/WatchApp/WatchDirectAPIClient.swift",
+          "mobile/native/watch/WatchPhoneBridge.swift"
+        ],
+        "tests": [
+          "backend/tests/test_watch_ask.py",
+          "backend/tests/test_watch_actions.py",
+          "backend/tests/test_watch_summary.py",
+          "apps/watch/Tests/WatchCompanionCoreTests/WatchCompanionCoreTests.swift"
+        ]
+      },
+      "safety_level": "medical_boundary",
+      "deploy_paths": [
+        "backend_ci",
+        "watch_eas_or_xcode"
+      ]
+    },
+    {
+      "id": "data.healthkit-sync",
+      "name": "HealthKit automatic import and wearable data routing",
+      "status": "partial",
+      "surfaces": [
+        "backend",
+        "mobile"
+      ],
+      "source_of_truth": {
+        "prd": [
+          "docs/prd/reva-personal-health-os-prd.md"
+        ],
+        "plan": [
+          "docs/plans/2026-06-27-reva-mobile-watch-healthkit-experience-plan.md",
+          "docs/plans/2026-06-15-multi-wearable-health-router-roadmap.md"
+        ],
+        "code": [
+          "backend/app/services/device_adapters/healthkit.py",
+          "backend/app/services/device_source_priority.py",
+          "backend/app/services/wearable_router.py",
+          "mobile/services/twin.ts"
+        ],
+        "tests": [
+          "backend/tests/test_healthkit_adapter.py",
+          "backend/tests/test_healthkit_bp_bodyfat_import.py",
+          "backend/tests/test_healthkit_spo2_samples_import.py",
+          "mobile/services/__tests__/twin.test.ts"
+        ]
+      },
+      "safety_level": "privacy_sensitive",
+      "deploy_paths": [
+        "backend_ci",
+        "mobile_ota_or_eas"
+      ]
+    },
+    {
+      "id": "safety.deterministic-guardian",
+      "name": "Deterministic Safety Guardian for red flags, labs, medication, genotype, CGM, training load, and symptoms",
+      "status": "implemented",
+      "surfaces": [
+        "backend",
+        "mobile",
+        "watch",
+        "external-agents"
+      ],
+      "source_of_truth": {
+        "prd": [
+          "docs/prd/reva-personal-health-os-prd.md"
+        ],
+        "spec": [
+          "docs/specs/reva-product-governance-spec.md"
+        ],
+        "code": [
+          "backend/app/agents/safety_guardian",
+          "backend/app/api/safety.py",
+          "mobile/services/safety.ts",
+          ".claude/skills/safety-gate/SKILL.md"
+        ],
+        "tests": [
+          "backend/tests/test_safety_guardian.py",
+          "backend/tests/test_safety_eval_harm.py",
+          "backend/tests/test_safety_failloud_consumers.py",
+          "backend/tests/test_medication_safety_precheck.py"
+        ]
+      },
+      "safety_level": "red_flag",
+      "deploy_paths": [
+        "backend_ci",
+        "safety_review_required"
+      ]
+    },
+    {
+      "id": "system.transparency",
+      "name": "Agent-readable system transparency map and workflow",
+      "status": "implemented",
+      "surfaces": [
+        "docs-agent"
+      ],
+      "source_of_truth": {
+        "prd": [
+          "docs/prd/reva-personal-health-os-prd.md"
+        ],
+        "plan": [
+          "docs/dossiers/2026-06-27-system-transparency-skill.md"
+        ],
+        "report": [
+          "docs/reports/2026-06-27-system-transparency-comparison.md"
+        ],
+        "code": [
+          "docs/system-map.json",
+          "docs/product-map.md",
+          "docs/workflows/requirement-to-deploy.md",
+          ".claude/skills/system-transparency/SKILL.md",
+          "scripts/check_system_map.py"
+        ],
+        "tests": [
+          "scripts/test_check_system_map.py",
+          "scripts/validate.py"
+        ]
+      },
+      "safety_level": "governance",
+      "deploy_paths": [
+        "git_ci"
+      ]
+    }
+  ],
+  "workflows": [
+    {
+      "id": "requirement-to-deploy",
+      "entry": "docs/workflows/requirement-to-deploy.md",
+      "contract": "docs/specs/product-pipeline-contract.md",
+      "agent_entry": ".claude/skills/system-transparency/SKILL.md"
+    },
+    {
+      "id": "system-map-maintenance",
+      "entry": ".claude/skills/system-transparency/SKILL.md",
+      "contract": "scripts/check_system_map.py"
+    }
+  ]
+}

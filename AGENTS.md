@@ -612,6 +612,13 @@ class ExampleModel(Base):
 - **测试 Gate 硬约束**：跑测试**绝不 `| tail`**（吞退出码 → 带红上线）；部署前集成闸 CI 模式合跑 + 查主干真实色。
 - 每个 agent 用自己的工具满足同一套 Gate。Claude Code 的具体编排在 `.claude/skills/product-pipeline/`；Codex/其他 agent 直接按契约走。
 
+## 13. 系统透明化入口(跨 agent 通用)
+
+- 涉及产品范围、系统架构、多端职责、能力规划、PRD/Plan 对齐、或从需求到实现的任务时，先读 `docs/system-map.json` 与 `docs/product-map.md`，再进入具体代码搜索。
+- `docs/system-map.json` 是机器可读总地图：系统目标、产品能力、端、源码、测试、部署路径和安全级别必须能追溯；人类说明见 `docs/product-map.md`。
+- 新增或实质改变产品能力时，同一分支更新 `docs/system-map.json`，并运行 `python scripts/check_system_map.py`；`scripts/validate.py` 已把它纳入 blocking 结构闸门。
+- Claude Code 可用 `.claude/skills/system-transparency/` 编排读取与回写；Codex/其他 agent 直接按本节和地图执行。
+
 <skills_system priority="1">
 
 ## Available Skills

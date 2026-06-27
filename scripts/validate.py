@@ -55,6 +55,7 @@ def main() -> int:
 
     checks = [
         Check("doc-drift", [sys.executable, "scripts/check_doc_drift.py"], blocking=True),
+        Check("system-map", [sys.executable, "scripts/check_system_map.py"], blocking=True),
         Check(
             "ruff (backend, report-only)",
             ["ruff", "check", "backend/app", "--output-format=concise"],
