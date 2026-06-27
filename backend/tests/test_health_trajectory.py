@@ -67,9 +67,16 @@ def test_trajectory_me_combines_baseline_anchors_realtime_and_actions(client, db
     assert all(r["evidence_tier"] for r in body["trajectory_risks"])
     assert all(r["confidence"] in {"high", "medium", "low"} for r in body["trajectory_risks"])
     assert all("不替代医生诊断" in r["claim_boundary"] for r in body["trajectory_risks"])
+    assert all(r["state_variable"] for r in body["trajectory_risks"])
+    assert all(r["horizon"] for r in body["trajectory_risks"])
+    assert all(isinstance(r["modifiable_levers"], list) for r in body["trajectory_risks"])
+    assert all(r["verification_window_days"] >= 0 for r in body["trajectory_risks"])
+    assert all(r["verification_signal"] for r in body["trajectory_risks"])
     metabolic = next(r for r in body["trajectory_risks"] if r["domain"] == "metabolic_health")
     assert metabolic["evidence_tier"] == "clinical_guideline"
     assert metabolic["confidence"] == "high"
+    assert metabolic["state_variable"] == "waist_cm"
+    assert "movement" in metabolic["modifiable_levers"]
     assert body["epigenetic_feedback"]["evidence_tier"] == "experimental"
     assert "短期干预成效" in body["epigenetic_feedback"]["claim_boundary"]
     assert any(a["domain"] == "measurement" for a in body["next_actions"])

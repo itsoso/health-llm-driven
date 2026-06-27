@@ -71,6 +71,12 @@ def test_daily_plan_review_summarizes_events_and_metric_changes(client, db, auth
         "confidence": "medium",
         "attribution": "temporal_association_not_causation",
     }]
+    backtest = body["prediction_backtest"]
+    assert backtest["status"] == "not_ready"
+    assert backtest["version"] == "prediction_backtest_placeholder_v1"
+    assert backtest["ready_candidate_count"] == 0
+    assert "prediction_output_history" in backtest["requirements"]
+    assert "不评估预测准确性" in backtest["boundary"]
 
 
 def test_daily_plan_review_is_user_scoped(client, db, auth_user_and_headers):

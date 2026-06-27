@@ -45,6 +45,7 @@ def build_health_operating_review(
     )
 
     metrics = _metric_summary(db, user_id=user_id, start=start, end=end)
+    action_effects = _action_effects(events, metrics)
     return {
         "window_days": window_days,
         "start_date": start.isoformat(),
@@ -54,7 +55,13 @@ def build_health_operating_review(
         "completed_action_keys": [
             event.action_key for event in events if event.feedback_status in COMPLETED_STATUSES
         ],
-        "action_effects": _action_effects(events, metrics),
+        "action_effects": action_effects,
+        "prediction_backtest": _prediction_backtest_placeholder(
+            window_days=window_days,
+            events=events,
+            metrics=metrics,
+            action_effects=action_effects,
+        ),
     }
 
 
@@ -114,6 +121,40 @@ def _action_effects(events: list[InterventionEvent], metrics: dict[str, Any]) ->
             "attribution": "temporal_association_not_causation",
         })
     return effects
+
+
+def _prediction_backtest_placeholder(
+    *,
+    window_days: int,
+    events: list[InterventionEvent],
+    metrics: dict[str, Any],
+    action_effects: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Expose the future backtest slot without pretending a model exists."""
+    eligible_metrics = sorted(
+        metric
+        for metric, change in metrics.items()
+        if change.get("status") == "present" and change.get("delta") is not None
+    )
+    completed_count = sum(1 for event in events if event.feedback_status in COMPLETED_STATUSES)
+    return {
+        "version": "prediction_backtest_placeholder_v1",
+        "status": "not_ready",
+        "reason": "requires_prediction_output_history",
+        "candidate_count": len(action_effects),
+        "ready_candidate_count": 0,
+        "window_days": window_days,
+        "minimum_window_days": 30,
+        "completed_action_count": completed_count,
+        "eligible_metrics": eligible_metrics,
+        "requirements": [
+            "prediction_output_history",
+            "matched_outcome_window",
+            "confounder_review",
+            "safety_boundary_review",
+        ],
+        "boundary": "当前仅预留后续回测槽位, 不评估预测准确性, 不生成新的健康建议或临床结论。",
+    }
 
 
 def _numeric_change(points: Iterable[tuple[date, float | int | None]], *, precision: int) -> dict[str, Any]:

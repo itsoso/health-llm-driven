@@ -20,6 +20,20 @@ export interface MetricChange {
   delta: number | null;
 }
 
+export interface PredictionBacktestPlaceholder {
+  version: string;
+  status: 'not_ready' | string;
+  reason: string;
+  candidate_count: number;
+  ready_candidate_count: number;
+  window_days: ReviewWindowDays;
+  minimum_window_days: number;
+  completed_action_count: number;
+  eligible_metrics: string[];
+  requirements: string[];
+  boundary: string;
+}
+
 export interface HealthOperatingReview {
   window_days: ReviewWindowDays;
   start_date: string;
@@ -27,6 +41,7 @@ export interface HealthOperatingReview {
   execution: ExecutionSummary;
   metrics: Record<string, MetricChange>;
   completed_action_keys: string[];
+  prediction_backtest?: PredictionBacktestPlaceholder;
 }
 
 export async function fetchHealthOperatingReview(
