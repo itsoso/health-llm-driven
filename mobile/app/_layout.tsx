@@ -17,6 +17,7 @@ import { useBiometricLock } from '../hooks/useBiometricLock';
 import { useGPSAutoRefresh } from '../hooks/useGPSAutoRefresh';
 import { useDeviceTimezoneSync } from '../hooks/useDeviceTimezoneSync';
 import { useHealthKitForegroundSync } from '../hooks/useHealthKitForegroundSync';
+import { useRevaFonts } from '../components/reva/useRevaFonts';
 import NotificationBanner from '../components/notifications/NotificationBanner';
 import NetworkBanner from '../components/NetworkBanner';
 import RootErrorBoundary from '../components/RootErrorBoundary';
@@ -156,6 +157,8 @@ function AppContent() {
 }
 
 function RootLayout() {
+  useRevaFonts();
+
   // Connect AppState to React Query for auto-refetch on foreground
   useEffect(() => {
     const sub = AppState.addEventListener('change', (status) => {

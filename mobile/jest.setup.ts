@@ -28,6 +28,54 @@ jest.mock('expo-haptics', () => ({
   ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
 }));
 
+jest.mock('react-native-reanimated', () => {
+  const React = require('react');
+  const RN = require('react-native');
+  const createAnimatedComponent = (Component: any) => {
+    const MockAnimatedComponent = React.forwardRef((props: any, ref: any) =>
+      React.createElement(Component, { ...props, ref }, props.children)
+    );
+    MockAnimatedComponent.displayName = `Animated(${Component.displayName || Component.name || 'Component'})`;
+    return MockAnimatedComponent;
+  };
+  const instantAnimation = (value: unknown, _config?: unknown, callback?: (finished: boolean) => void) => {
+    callback?.(true);
+    return value;
+  };
+  const Animated = {
+    View: createAnimatedComponent(RN.View),
+    Text: createAnimatedComponent(RN.Text),
+    Image: createAnimatedComponent(RN.Image),
+    ScrollView: createAnimatedComponent(RN.ScrollView),
+    createAnimatedComponent,
+  };
+  const identity = (value: unknown) => value;
+
+  return {
+    __esModule: true,
+    default: Animated,
+    createAnimatedComponent,
+    Easing: {
+      linear: identity,
+      ease: identity,
+      bezier: () => identity,
+      in: identity,
+      out: identity,
+      inOut: identity,
+    },
+    useSharedValue: (value: unknown) => ({ value }),
+    useAnimatedProps: (factory: () => unknown) => factory(),
+    useAnimatedStyle: (factory: () => unknown) => factory(),
+    useDerivedValue: (factory: () => unknown) => ({ value: factory() }),
+    withTiming: instantAnimation,
+    withSpring: instantAnimation,
+    withDelay: (_delayMs: number, value: unknown) => value,
+    withRepeat: (value: unknown) => value,
+    withSequence: (...values: unknown[]) => values[values.length - 1],
+    runOnJS: (fn: (...args: unknown[]) => unknown) => fn,
+  };
+});
+
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: jest.fn(), back: jest.fn(), replace: jest.fn() }),
   useLocalSearchParams: () => ({}),

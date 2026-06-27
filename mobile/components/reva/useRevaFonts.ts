@@ -3,9 +3,9 @@
  * revaTheme type tokens render correctly: Manrope (Latin UI/headlines) and
  * IBM Plex Mono (data/lab values/tabular numerals).
  *
- * Self-contained (used only by the Reva routes) so it doesn't touch the app
- * root or other surfaces. CJK keeps the system font (PingFang on iOS) — the full
- * Noto Sans SC TTF is ~10MB and not worth bundling; the design flagged the same.
+ * Loaded once from the app root so Reva cards can appear on any route or chat
+ * surface without a local font gate. CJK keeps the system font (PingFang on iOS)
+ * — the full Noto Sans SC TTF is ~10MB and not worth bundling.
  */
 import { useFonts } from 'expo-font';
 

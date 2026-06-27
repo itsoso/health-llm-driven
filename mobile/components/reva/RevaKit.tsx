@@ -5,17 +5,21 @@
  * to React Native, using `constants/revaTheme` tokens. Lucide icon names from the
  * design are mapped to @expo/vector-icons (Ionicons) — closest clinical-stroke match.
  */
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, Pressable, StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle, Path, Line, Text as SvgText, G, Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
+import Animated, { Easing, useAnimatedProps, useSharedValue, withTiming } from 'react-native-reanimated';
 import {
   revaColors as C,
+  revaMotion,
   revaRadii,
   revaSemantic,
   revaShadows,
   type RevaStatus,
 } from '../../constants/revaTheme';
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 // ── Status table ────────────────────────────────────────────────────────────
 const STATUS = {
@@ -163,17 +167,70 @@ export function TabBar({ active, onChange, bottomInset = 0 }: { active: RevaTab;
 }
 
 // ── Data widgets ─────────────────────────────────────────────────────────────
+export function readinessRingGeometry({
+  score,
+  size,
+  stroke,
+  progress,
+}: {
+  score: number;
+  size: number;
+  stroke: number;
+  progress?: number;
+}) {
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const safeScore = Number.isFinite(score) ? score : 0;
+  const fraction = Math.max(0, Math.min(1, safeScore / 100));
+  const safeProgress = typeof progress === 'number' && Number.isFinite(progress) ? progress : fraction;
+  const renderedFraction = Math.max(0, Math.min(1, safeProgress));
+  const strokeDashoffset = circumference * (1 - renderedFraction);
+  const angle = -Math.PI / 2 + renderedFraction * 2 * Math.PI;
+  const tipX = size / 2 + radius * Math.cos(angle);
+  const tipY = size / 2 + radius * Math.sin(angle);
+
+  return {
+    radius,
+    circumference,
+    fraction,
+    renderedFraction,
+    strokeDashoffset,
+    tipX,
+    tipY,
+  };
+}
+
 export function ReadinessRing({ score = 86, size = 104, stroke = 10, dark = true }: { score?: number; size?: number; stroke?: number; dark?: boolean }) {
-  const r = (size - stroke) / 2;
-  const circ = 2 * Math.PI * r;
-  const frac = score / 100;
-  const off = circ * (1 - frac);
+  const geometry = readinessRingGeometry({ score, size, stroke });
+  const displayedScore = Math.round(geometry.fraction * 100);
+  const progress = useSharedValue(0);
   const track = dark ? C.focusLine : C.green100;
   const gid = `ring${dark ? 'D' : 'L'}`;
-  // Tip node: arc starts at top (-90°) and sweeps clockwise → end angle.
-  const ang = -Math.PI / 2 + frac * 2 * Math.PI;
-  const cx = size / 2 + r * Math.cos(ang);
-  const cy = size / 2 + r * Math.sin(ang);
+
+  useEffect(() => {
+    progress.value = 0;
+    progress.value = withTiming(geometry.fraction, {
+      duration: revaMotion.durSlow,
+      easing: Easing.bezier(...revaMotion.easeOut),
+    });
+  }, [geometry.fraction, progress]);
+
+  const arcAnimatedProps = useAnimatedProps(() => {
+    const renderedFraction = Math.max(0, Math.min(1, progress.value));
+    return {
+      strokeDashoffset: geometry.circumference * (1 - renderedFraction),
+    };
+  });
+
+  const tipAnimatedProps = useAnimatedProps(() => {
+    const renderedFraction = Math.max(0, Math.min(1, progress.value));
+    const angle = -Math.PI / 2 + renderedFraction * 2 * Math.PI;
+    return {
+      cx: size / 2 + geometry.radius * Math.cos(angle),
+      cy: size / 2 + geometry.radius * Math.sin(angle),
+    };
+  });
+
   return (
     <View style={{ width: size, height: size }}>
       <Svg width={size} height={size}>
@@ -183,17 +240,17 @@ export function ReadinessRing({ score = 86, size = 104, stroke = 10, dark = true
             <Stop offset="1" stopColor={C.greenBright} />
           </LinearGradient>
         </Defs>
-        <Circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={stroke} />
-        <Circle
-          cx={size / 2} cy={size / 2} r={r} fill="none" stroke={`url(#${gid})`} strokeWidth={stroke}
-          strokeLinecap="round" strokeDasharray={`${circ}`} strokeDashoffset={off}
+        <Circle cx={size / 2} cy={size / 2} r={geometry.radius} fill="none" stroke={track} strokeWidth={stroke} />
+        <AnimatedCircle
+          cx={size / 2} cy={size / 2} r={geometry.radius} fill="none" stroke={`url(#${gid})`} strokeWidth={stroke}
+          strokeLinecap="round" strokeDasharray={`${geometry.circumference}`} animatedProps={arcAnimatedProps}
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
-        <Circle cx={cx} cy={cy} r={stroke / 2 + 1.5} fill={C.greenBright} />
+        <AnimatedCircle animatedProps={tipAnimatedProps} r={stroke / 2 + 1.5} fill={C.greenBright} />
       </Svg>
       <View style={StyleSheet.absoluteFill}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ fontFamily: 'IBMPlexMono', fontWeight: '500', fontSize: size * 0.33, lineHeight: size * 0.34, color: dark ? C.focusInk1 : C.ink1 }}>{score}</Text>
+          <Text style={{ fontFamily: 'IBMPlexMono', fontWeight: '500', fontSize: size * 0.33, lineHeight: size * 0.34, color: dark ? C.focusInk1 : C.ink1 }}>{displayedScore}</Text>
           <Text style={{ fontFamily: 'IBMPlexMono', fontSize: 9.5, letterSpacing: 1.1, color: dark ? C.focusInk2 : C.ink3 }}>/ 100</Text>
         </View>
       </View>
