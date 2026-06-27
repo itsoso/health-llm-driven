@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ast
 from collections import Counter
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 import hashlib
 import math
 import operator
@@ -23,6 +23,23 @@ EXTERNAL_EVIDENCE_SOURCE_RATE_TARGET = 0.2
 VALID_REVIEW_STATUSES = {"draft", "reviewed", "needs_review", "archived"}
 POSITIVE_STANCES = {"supports", "positive", "for", "yes", "true", "increase", "increases"}
 NEGATIVE_STANCES = {"opposes", "negative", "against", "no", "false", "decrease", "decreases"}
+_ACID_SUPPRESSION_MED_TOKENS = (
+    "ppi",
+    "p-cab",
+    "omeprazole",
+    "esomeprazole",
+    "lansoprazole",
+    "pantoprazole",
+    "rabeprazole",
+    "vonoprazan",
+    "奥美拉唑",
+    "艾司奥美拉唑",
+    "兰索拉唑",
+    "泮托拉唑",
+    "雷贝拉唑",
+    "伏诺拉生",
+    "抑酸",
+)
 
 _CONDITION_PATH = r"twin\.[A-Za-z0-9_.:*+-]+"
 _IN_RE = re.compile(rf"^(?P<path>{_CONDITION_PATH})\s+in\s+(?P<values>\[.*\])$")
@@ -1183,6 +1200,8 @@ def system_kb_twin_payload_from_health_twin(twin: Any) -> dict[str, Any]:
         "longevity": {"active": any(token in goals_text for token in ("长寿", "衰老", "抗衰", "老化"))},
     }
 
+    active_meds = getattr(medication, "active_meds", []) if medication is not None else []
+
     return {
         "genetics": _system_kb_genetics_from_health_twin(twin),
         "labs": {
@@ -1247,10 +1266,71 @@ def system_kb_twin_payload_from_health_twin(twin: Any) -> dict[str, Any]:
                 ),
             },
         },
-        "medications": getattr(medication, "active_meds", []) if medication is not None else [],
+        "medications": active_meds,
+        "medication_context": _system_kb_medication_context_from_health_twin(twin, active_meds),
         "supplements": getattr(supplement, "active_supplements", []) if supplement is not None else [],
         "goals": goals,
     }
+
+
+def _system_kb_medication_context_from_health_twin(
+    twin: Any,
+    active_meds: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+) -> dict[str, Any]:
+    generated_at = getattr(getattr(twin, "meta", None), "generated_at", None)
+    reference_date = _date_from_value(generated_at) or datetime.now(UTC).date()
+    acid_suppression_seen = False
+    acid_suppression_names: list[str] = []
+    acid_suppression_weeks: list[float] = []
+
+    for med in active_meds or []:
+        if not isinstance(med, dict):
+            continue
+        if not _is_acid_suppression_med(med):
+            continue
+        acid_suppression_seen = True
+        name = str(med.get("name") or med.get("generic_name") or med.get("drug_name") or "").strip()
+        if name:
+            acid_suppression_names.append(name)
+        start_date = _date_from_value(
+            med.get("start_date")
+            or med.get("started_at")
+            or med.get("startDate")
+            or med.get("startedAt")
+        )
+        if start_date is None or start_date > reference_date:
+            continue
+        acid_suppression_weeks.append((reference_date - start_date).days / 7)
+
+    return {
+        "acid_suppression_active": acid_suppression_seen,
+        "acid_suppression_names": _dedupe_preserve_order(acid_suppression_names),
+        "acid_suppression_weeks_max": max(acid_suppression_weeks) if acid_suppression_weeks else None,
+    }
+
+
+def _is_acid_suppression_med(med: dict[str, Any]) -> bool:
+    haystack = " ".join(
+        str(med.get(key) or "")
+        for key in ("name", "generic_name", "drug_name", "medication_name", "title", "label", "class")
+    ).lower()
+    return any(token in haystack for token in _ACID_SUPPRESSION_MED_TOKENS)
+
+
+def _date_from_value(value: Any) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
 
 
 def _system_kb_genetics_from_health_twin(twin: Any) -> dict[str, Any]:
