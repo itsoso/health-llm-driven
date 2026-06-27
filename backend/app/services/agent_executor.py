@@ -875,14 +875,136 @@ def _auto_confirm_fast_record_args(tool_name: str, func_args: Any) -> Any:
         args = json.loads(func_args) if isinstance(func_args, str) else dict(func_args or {})
     except Exception:
         return func_args
+
+    kind = _fast_record_kind(args)
+    if kind not in _FAST_RECORD_AUTO_CONFIRM_KINDS or kind in _FAST_RECORD_NEVER_AUTO_CONFIRM_KINDS:
+        data = args.get("data")
+        args.pop("confirmed", None)
+        args.pop("confirm", None)
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+                args["data"] = data
+            except (json.JSONDecodeError, ValueError):
+                data = None
+        if isinstance(data, dict):
+            data.pop("confirmed", None)
+            data.pop("confirm", None)
+        args["_fast_record_requires_confirmation"] = True
+        if kind:
+            args["record_type"] = kind
+        if isinstance(func_args, str):
+            return json.dumps(args, ensure_ascii=False)
+        return args
+
     data = args.get("data")
     if not isinstance(data, dict):
         data = {}
         args["data"] = data
+    args["record_type"] = kind
     args["confirmed"] = True
     data["confirmed"] = True
     if isinstance(func_args, str):
         return json.dumps(args, ensure_ascii=False)
+    return args
+
+
+_FAST_RECORD_AUTO_CONFIRM_KINDS = {
+    "water",
+    "weight",
+    "bp",
+    "blood_pressure",
+    "diet",
+    "exercise",
+    "supplement",
+}
+_FAST_RECORD_NEVER_AUTO_CONFIRM_KINDS = {
+    "adherence",
+    "dose",
+    "dosage",
+    "drug",
+    "financial",
+    "finance",
+    "illness",
+    "medication",
+    "medicine",
+    "payment",
+    "prescription",
+    "rhinitis",
+    "symptom",
+}
+_FAST_RECORD_KIND_ALIASES = {
+    "bp": "blood_pressure",
+    "blood-pressure": "blood_pressure",
+    "bloodpressure": "blood_pressure",
+}
+def _normalize_fast_record_kind(raw: Any) -> str:
+    kind = str(raw or "").strip().lower()
+    return _FAST_RECORD_KIND_ALIASES.get(kind, kind)
+
+
+def _fast_record_kind(args: dict) -> str:
+    data = args.get("data")
+    candidates = [
+        args.get("record_type"),
+        args.get("type"),
+        args.get("kind"),
+    ]
+    if isinstance(data, dict):
+        candidates.extend([
+            data.get("record_type"),
+            data.get("type"),
+            data.get("kind"),
+        ])
+    for raw in candidates:
+        if raw is not None:
+            return _normalize_fast_record_kind(raw)
+    return ""
+
+
+def _health_record_confirmation_preview(rtype: str, args: dict, data: dict) -> str:
+    label = {
+        "illness": "疾病/不适周期",
+        "medication": "用药",
+        "mood": "心情",
+        "reminder": "提醒",
+        "rhinitis": "鼻炎症状",
+        "supplement_group": "补剂批量打卡",
+        "symptom": "症状",
+    }.get(rtype, f"{rtype} 记录")
+
+    name = (
+        data.get("description") or data.get("medication_name") or data.get("name")
+        or data.get("illness_name") or data.get("title") or args.get("name")
+    )
+    if name:
+        return f"{label}: {name}"
+    return label
+
+
+def _prepare_health_record_args_for_validation(tool_name: str, args: Any) -> Any:
+    if tool_name != "health_record" or not isinstance(args, dict):
+        return args
+
+    rtype = _fast_record_kind(args)
+    if rtype:
+        args["record_type"] = rtype
+
+    data = args.get("data")
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+            args["data"] = data
+        except (json.JSONDecodeError, ValueError):
+            data = None
+    if not isinstance(data, dict):
+        return args
+
+    if rtype == "exercise" and not data.get("exercise_type"):
+        fallback_type = data.get("type") or data.get("name") or args.get("exercise_type")
+        if fallback_type:
+            data["exercise_type"] = fallback_type
+
     return args
 
 
@@ -2872,6 +2994,7 @@ class AgentExecutor:
         # 日期/数值/枚举/引用 ID 存在性/越权 / 必填 — 触发 coerce 只 log,
         # 必填缺失或越权才返回 error 给 LLM (它会重试).
         from app.services.llm.tool_validator import validate_tool_call
+        args = _prepare_health_record_args_for_validation(tool_name, args)
         v = validate_tool_call(tool_name, args, db=self.db, user_id=self._current_user_id)
         if v["error"]:
             return v["error"]
@@ -3003,7 +3126,7 @@ class AgentExecutor:
     ) -> str:
         """执行健康数据记录"""
         # 别名容错:模型常把 record_type 写成 type(实测 health_record(type=diet, data={...}))。
-        rtype = args.get("record_type") or args.get("type") or ""
+        rtype = _normalize_fast_record_kind(args.get("record_type") or args.get("type") or "")
         data = args.get("data", {})
         # data 偶尔被吐成 JSON 字符串(coerce 退化)→ 尽力解析回 dict。
         if isinstance(data, str):
@@ -3012,6 +3135,15 @@ class AgentExecutor:
             except (json.JSONDecodeError, ValueError):
                 data = {}
         today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
+
+        if args.pop("_fast_record_requires_confirmation", False):
+            check = _confirm_or_describe(
+                args,
+                data,
+                preview=_health_record_confirmation_preview(rtype, args, data),
+            )
+            if check:
+                return check
 
         # water: 必须显式提供 amount, 不再悄悄默认 250ml.
         # 之前 LLM 在回答健康问题时偶发误调 health_record(water) 不带 amount,

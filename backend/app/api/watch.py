@@ -26,6 +26,7 @@ from app.models.user import User
 from app.services import health_protocol_service as proto_svc
 from app.services import timeline_agenda_service as tas
 from app.services import workday_health_scheduler
+from app.services.guidance_validator import sanitize_guidance
 from app.services.watch_summary import build_watch_summary
 from app.twin import builder
 from app.twin.schema import HealthTwin, TwinMeta
@@ -35,6 +36,34 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/watch", tags=["Apple Watch Companion"])
 
 _SYMPTOM_MAX_LEN = 500
+_WATCH_ASK_FAIL_LOUD = "本次未能完成自动安全筛查,请勿据此判断为安全;不适请就医,紧急拨 120"
+_WATCH_ASK_ESCALATE_TEXT = "这个问题需要在 iPhone 上结合完整资料查看,手表上不展开判断。请不要据此自行调整用药、剂量、饮食或训练。"
+_WATCH_ASK_MEDICAL_TEXT = "这个情况可能涉及安全风险,手表上不展开判断。请立即在 iPhone 查看详情;如正在胸痛、呼吸困难、半身无力或情况紧急,请拨打 120。"
+_WATCH_ASK_LLM_FALLBACK = "我暂时无法完成可靠短答,请到 iPhone 查看完整上下文。不要据此自行调整用药、饮食或训练。"
+_WATCH_ASK_ESCALATE_RE = re.compile(
+    r"(处方|用药|吃药|服药|停药|加药|换药|药量|剂量|用量|吃多少|怎么吃|"
+    r"要不要吃|能不能吃[^。！？!?]{0,8}药|毫克|mg|片|胶囊|"
+    r"影像|拍片|片子|CT|核磁|MRI|X光|B超|诊断|确诊|是不是|是否需要|需不需要|"
+    r"要不要[^。！？!?]{0,8}(?:拍片|检查|吃药|用药|手术|就医|急诊)|"
+    r"(?:会不会是|有没有可能是|疑似|像是|考虑)[^。！？!?]{0,20}(?:炎|病|症|感染|感冒|心梗|中风|癌|骨折|结石)|"
+    r"(?:我)?这是[^。！？!?]{0,16}吗)",
+    re.IGNORECASE,
+)
+_WATCH_ASK_MEDICAL_ATTENTION_RE = re.compile(
+    r"(胸痛|胸口闷|心梗|中风|呼吸困难|喘不上气|半身|嘴歪|说话不清|"
+    r"黑便|呕血|晕厥|剧烈腹痛|急诊|120)",
+    re.IGNORECASE,
+)
+_WATCH_ASK_UNSAFE_OUTPUT_RE = re.compile(
+    r"(确诊|你患有|你得了|你这是|"
+    r"(?:可能是|考虑|疑似|像是|倾向于)[^。！？!?]{0,20}(?:炎|病|症|感染|感冒|心梗|中风|癌|骨折|结石)|"
+    r"(?:可以|建议|需要|应当|最好|考虑)[^。！？!?]{0,8}(?:吃|服用|口服|使用|停用|加用|换用)[^。！？!?]{0,24}|"
+    r"(?:口服|服用|吃药|用药)[^。！？!?]{0,24}|"
+    r"(?:使用|外用|涂抹|滴用|喷用|滴入|喷入)[^。！？!?]{0,20}(?:药|喷雾|软膏|乳膏|滴眼液|滴鼻液|布地奈德|莫匹罗星|红霉素|左氧氟沙星|抗生素|激素)|"
+    r"(?:每日|每天|每晚|早晚|一次|每次|睡前|饭前|饭后)[^。！？!?]{0,8}(?:一|二|两|三|\d+)[^。！？!?]{0,4}(?:片|粒|颗|胶囊|mg|毫克)|"
+    r"(?:剂量|用量|每次|每天)[^。！？!?]{0,16}(?:mg|毫克|片|粒|胶囊))",
+    re.IGNORECASE,
+)
 
 # action_id 编码: agenda-{object_type}-{object_id}(与 client_events meta 零翻译)
 _ACTION_ID_RE = re.compile(r"^agenda-(?P<ot>[a-z_]+)-(?P<oid>\d+)$")
@@ -57,6 +86,10 @@ class WatchSnoozeRequest(BaseModel):
     minutes: int = Field(30, ge=5, le=240)
 
 
+class WatchAskIn(BaseModel):
+    text: str
+
+
 def _parse_action_id(action_id: str) -> tuple[str, int]:
     m = _ACTION_ID_RE.match(action_id)
     if not m:
@@ -71,6 +104,164 @@ def _written_label(object_type: str, object_id: int, user_id: int, db: Session) 
     if object_type in ("medication", "supplement"):
         return "medication_log"
     return "none"
+
+
+def _watch_ask_needs_phone(text: str) -> bool:
+    return bool(_WATCH_ASK_ESCALATE_RE.search(text or ""))
+
+
+def _watch_ask_needs_medical_attention(text: str) -> bool:
+    return bool(_WATCH_ASK_MEDICAL_ATTENTION_RE.search(text or ""))
+
+
+def _watch_ask_output_unsafe(text: str) -> bool:
+    return bool(_WATCH_ASK_UNSAFE_OUTPUT_RE.search(text or ""))
+
+
+def _limit_watch_ask_answer(text: str) -> str:
+    compact = re.sub(r"\s+", " ", (text or "").strip())
+    if not compact:
+        return ""
+    parts = [p for p in re.split(r"(?<=[。！？!?])", compact) if p.strip()]
+    if len(parts) > 2:
+        compact = "".join(parts[:2]).strip()
+    if len(compact) > 160:
+        compact = compact[:157].rstrip() + "..."
+    return compact
+
+
+async def _generate_watch_ask_answer(text: str, current_user: User, db: Session) -> str:
+    """Generate the tiny Watch answer through the existing user-aware provider.
+
+    This helper is intentionally separate so tests can replace the LLM without
+    weakening the endpoint's safety gates.
+    """
+    from app.services.llm.factory import create_provider_for_user
+    from app.services.llm.usage_tracker import set_caller
+
+    set_caller("watch.ask", user_id=current_user.id)
+    provider = create_provider_for_user(current_user.id, db, task_tier="balanced")
+    raw = await provider.chat(
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "你是 Reva 的 Apple Watch 健康助理。只用中文回答,最多两句话。"
+                    "保持保守,不诊断、不处方、不调整药物或剂量,不输出具体训练/饮食命令。"
+                    "如信息不足,引导用户到 iPhone 查看完整详情。"
+                ),
+            },
+            {"role": "user", "content": text},
+        ],
+        temperature=0.2,
+        max_tokens=120,
+    )
+    return _limit_watch_ask_answer(str(raw or ""))
+
+
+@router.post("/ask")
+async def watch_ask(
+    payload: WatchAskIn,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """腕上一句话问 Reva → 短答 + 安全升级。
+
+    不写健康事实表。user_id 只取 token。请求内禁 build_twin,使用同一 request
+    session 的极简 HealthTwin 跑 SafetyGuardian,评估不完整时必须 fail-loud。
+    """
+    text = (payload.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="问题文本不能为空")
+    if len(text) > _SYMPTOM_MAX_LEN:
+        raise HTTPException(status_code=400, detail=f"问题文本过长(上限 {_SYMPTOM_MAX_LEN} 字)")
+
+    twin = HealthTwin(meta=TwinMeta(user_id=current_user.id, generated_at=datetime.now(UTC)))
+    twin.acute.symptom_texts_all = [text]
+
+    evaluation_failed = False
+    try:
+        builder._fill_problem_red_lines(db, current_user.id, twin, set(), raise_on_error=True)
+    except Exception as e:  # noqa: BLE001
+        logger.error(
+            f"[watch.ask] 个性化红线填充失败(部分 under-alarm 风险),"
+            f"标记 evaluation_failed,仍跑通用安全规则兜底: {e}",
+            exc_info=True,
+        )
+        evaluation_failed = True
+
+    alerts: list[Alert] = []
+    try:
+        alerts, failed = evaluate_rules_with_status(twin)
+        if failed > 0:
+            logger.error(
+                f"[watch.ask] {failed} 条安全规则执行失败被跳过(部分 under-alarm 风险),"
+                f"标记 evaluation_failed"
+            )
+            evaluation_failed = True
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"[watch.ask] 评估整体失败(fail loud): {e}", exc_info=True)
+        evaluation_failed = True
+
+    if evaluation_failed:
+        return {
+            "answer": _WATCH_ASK_FAIL_LOUD,
+            "escalate_to_phone": True,
+            "requires_medical_attention": True,
+        }
+
+    has_critical = any(int(a.severity) >= int(Severity.CRITICAL) for a in alerts)
+    text_needs_phone = _watch_ask_needs_phone(text)
+    text_needs_medical_attention = _watch_ask_needs_medical_attention(text)
+
+    if has_critical or text_needs_medical_attention:
+        return {
+            "answer": _WATCH_ASK_MEDICAL_TEXT,
+            "escalate_to_phone": True,
+            "requires_medical_attention": True,
+        }
+
+    if text_needs_phone:
+        return {
+            "answer": _WATCH_ASK_ESCALATE_TEXT,
+            "escalate_to_phone": True,
+            "requires_medical_attention": False,
+        }
+
+    try:
+        answer = await _generate_watch_ask_answer(text, current_user, db)
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"[watch.ask] LLM 短答失败,升级到 iPhone: {e}", exc_info=True)
+        return {
+            "answer": _WATCH_ASK_LLM_FALLBACK,
+            "escalate_to_phone": True,
+            "requires_medical_attention": False,
+        }
+
+    sanitized = sanitize_guidance(answer)
+    if sanitized.flagged or _watch_ask_output_unsafe(sanitized.text):
+        logger.warning(
+            "[watch.ask] LLM 短答触发安全后置门,升级到 iPhone: "
+            f"violations={len(sanitized.violations)}"
+        )
+        return {
+            "answer": _WATCH_ASK_ESCALATE_TEXT,
+            "escalate_to_phone": True,
+            "requires_medical_attention": False,
+        }
+
+    answer = _limit_watch_ask_answer(sanitized.text)
+    if not answer:
+        return {
+            "answer": _WATCH_ASK_LLM_FALLBACK,
+            "escalate_to_phone": True,
+            "requires_medical_attention": False,
+        }
+    return {
+        "answer": answer,
+        "escalate_to_phone": False,
+        "requires_medical_attention": False,
+    }
 
 
 @router.get("/summary")
