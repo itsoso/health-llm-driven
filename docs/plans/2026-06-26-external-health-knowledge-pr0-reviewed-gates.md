@@ -164,6 +164,8 @@ official / curated source
 5. Real vector backend: 已完成。用 `kb_document_vectors` 等价向量表替换 deterministic semantic alias stream，并保持 search response shape。
 6. Mobile evidence UI: 所有 agent card 统一展示 reviewed evidence refs、claim boundary 和 contraindication 命中。
 7. Release gate: PR 必须跑 domain focused tests、system KB eval runner、JSONL lint/import、compileall。
+   - 统一命令: `DATABASE_URL=sqlite:////tmp/system_kb_release_gate.sqlite3 venv/bin/python scripts/run_external_health_knowledge_release_gate.py --reset-db --json`
+   - 该命令会在临时/指定 SQLite DB 上注册 JSONB 兼容编译、建表、导入 reviewed artifacts、检查 JSONL 重复/解析、运行 KB lint 与全量 eval。
 
 ## 5. 验收闸门
 
