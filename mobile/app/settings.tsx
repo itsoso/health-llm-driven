@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import api from '../services/api';
+import { connectionStatusSummary, fetchDataConnections } from '../services/dataConnections';
 import { useAuth } from '../hooks/useAuth';
 import { useBiometricLock } from '../hooks/useBiometricLock';
 import { invalidateHealthSnapshot, queryKeys } from '../applib/queryKeys';
@@ -43,6 +44,11 @@ export default function SettingsScreen() {
     queryFn: () => api.get('/data-collection/garmin/me/credential-status').then(r => r.data),
     staleTime: 60_000,
     refetchInterval: 120_000,
+  });
+  const { data: dataConnections } = useQuery({
+    queryKey: ['data-connections'],
+    queryFn: fetchDataConnections,
+    staleTime: 120_000,
   });
 
   const syncGarmin = async () => {
@@ -165,6 +171,9 @@ export default function SettingsScreen() {
             onPress={() => router.push('/rokid-diagnostics' as any)} />
           <SettingRow icon="git-compare-outline" label="数据来源"
             onPress={() => router.push('/device-sources' as any)} />
+          <SettingRow icon="key-outline" label="数据连接与授权"
+            value={connectionStatusSummary(dataConnections)}
+            onPress={() => router.push('/data-connections' as any)} />
         </View>
 
         {/* Health tools */}

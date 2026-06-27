@@ -128,6 +128,12 @@ from app.models.biomarker_observation import BiomarkerObservation
 from app.models.intervention_cycle import InterventionCycle, OutcomeMetric
 # Apple Watch ECG 房颤筛查信号 (点事件, 独立表)
 from app.models.ecg_observation import EcgObservation
+from app.models.data_connection import (
+    ConsentGrant,
+    ConnectorPolicy,
+    DataConnection,
+    ProvenanceRecord,
+)
 # 智能卧室环境快照 (家居传感器点事件, §11 不进通用 LLM)
 from app.models.bedroom_environment import (
     BedroomAutomationEvent,
@@ -159,6 +165,10 @@ __all__ = [
     "InterventionCycle",
     "OutcomeMetric",
     "EcgObservation",
+    "DataConnection",
+    "ConsentGrant",
+    "ConnectorPolicy",
+    "ProvenanceRecord",
     "BedroomEnvironmentSnapshot",
     "BedroomAutomationEvent",
     "AudioInputEvent",
