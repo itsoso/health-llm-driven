@@ -27,6 +27,10 @@ RequirementAdmission:
   核心闭环: Health Twin -> Health Trajectory -> Safety Gate -> ActionRanker -> Agenda -> Execution -> Outcome Review
   一等对象:
     - HealthTwin
+    - DataConnection
+    - ConsentGrant
+    - ProvenanceRecord
+    - ConnectorPolicy
     - DomainKnowledgeBase
     - RealtimeHealthSignal
     - HealthTrajectory
@@ -40,6 +44,10 @@ RequirementAdmission:
     - IoTActuationIntent
     - SupplyIntent
     - OrganSystemProgram
+    - ProgramTemplate
+    - EvaluationScenario
+    - SafetyRegressionSuite
+    - SyntheticUserTwin
   目标端: Backend 真相源, Mobile Today/Agenda/Review, Watch top action, Mac workbench
   真相源: backend objects and services
   安全等级: medical_boundary | privacy_sensitive
@@ -80,6 +88,9 @@ RequirementAdmission:
 传感器
   化验 / 可穿戴 / CGM / 症状 / 影像 / 复测 / 用户反馈 / 家居设备 / 办公设备
 
+互操作与授权
+  FHIR Bundle / SMART on FHIR / HealthKit / device connectors / ConsentGrant / ProvenanceRecord / ConnectorPolicy
+
 状态模型
   Health Twin
 
@@ -97,6 +108,9 @@ LLM 与工具综合层
 
 反馈
   ExecutionEvent / OutcomeReview / CausalMemory / prediction backtest
+
+评估与回归
+  SyntheticUserTwin / EvaluationScenario / SafetyRegressionSuite / release gate / rollback evidence
 ```
 
 ## 4. PRD 实现缺口计划
@@ -112,6 +126,16 @@ LLM 与工具综合层
 | 部分实现 | 已有一部分代码，但完整 PRD 闭环尚未完成。 |
 | 待产品化 | 后端能力已经存在，但用户还看不见、看不懂，或没有进入每日闭环。 |
 
+### P0：数据连接、授权与可追溯缺口
+
+| 编号 | PRD 能力 | 当前证据 | 缺口工作 | 目标阶段 |
+|---|---|---|---|---|
+| D0.1 | `DataConnection` 统一外部数据源和设备连接 | HealthKit/Garmin/Oura/CGM/report/Home Assistant 等路径分散存在 | 缺少统一对象管理 provider、scope、token 状态、同步窗口、错误、最后成功时间、撤权和重连 | 阶段 0 / 阶段 1 |
+| D0.2 | `ConsentGrant` 管理用户授权、共享和撤权 | 鉴权、审计、导出/删除路径已有局部能力 | 缺少产品化授权中心，区分本人、家庭、医生、外部 agent、研究统计和 IoT 控制范围 | 阶段 1 |
+| D0.3 | `ProvenanceRecord` 支撑关键事实可追溯 | 多处已有 source/freshness/confidence 字段 | 缺少跨对象 provenance 合同，覆盖 observed_at、received_at、transformed_by、confidence、privacy_classification 和 user_correction | 阶段 1 |
+| D0.4 | `ConnectorPolicy` 管理连接器运行策略 | scheduler、wearable router、device source priority 已存在 | 缺少统一 connector policy：rate limit、token refresh、失败降级、数据最小化、撤权后删除和审计 | 阶段 1 / 阶段 4 |
+| D0.5 | FHIR/SMART 和报告导入成为优先医疗数据入口 | 报告、OCR、labs 和 patient record 相关能力已有基础 | 需要定义 FHIR Bundle import、SMART on FHIR 授权、非标准 PDF/OCR 到内部对象的映射和验证路径 | 阶段 1 |
+
 ### P0：核心闭环缺口
 
 | 编号 | PRD 能力 | 当前证据 | 缺口工作 | 目标阶段 |
@@ -122,26 +146,28 @@ LLM 与工具综合层
 | G0.4 | `PersonalPrediction` 反哺 Twin/Trajectory | `backend/app/services/personal_models/treatment_effect.py` 和 priors 已存在 | 模型输出还不是稳定的 Twin/Trajectory 区块，Review 中没有广泛呈现，也没有作为结构化输入进入 `ActionRanker` | 阶段 3 |
 | G0.5 | `CausalMemory` 成为用户可见的个人规律库 | `backend/app/services/causal_memory.py` 已能生成带 claim boundary 的观察性总结 | 缺少 Mobile/Review 的主入口展示“你的个人健康规律”；尚未接入 Today 排序或 program 下一步解释 | 阶段 2 |
 | G0.6 | 首次使用 onboarding 生成初始健康闭环 | 数据上传、报告、基因、目标、问题、protocol 和 agenda 已散落存在 | 缺少统一 onboarding pipeline，把报告/设备/目标转成 `HealthTwin` + `HealthProblem` + `HealthProgram` + `Protocol` + 首个 `Agenda` | 阶段 1 |
+| G0.7 | `ProgramTemplate` 支撑 8-12 周计划产品化 | `HealthProgram` model/API/tests 已存在；protocol 可以挂到 program | 缺少可审查、可版本化模板，声明适用人群、排除条件、必要数据、安全门、protocol 列表、复测窗口和退出条件 | 阶段 1 |
 
 ### P1：数据、知识、监控与安全缺口
 
 | 编号 | PRD 能力 | 当前证据 | 缺口工作 | 目标阶段 |
 |---|---|---|---|---|
-| G1.1 | 有来源、时效、权限和置信度的真实个人数据层 | 化验、基因、表观遗传、可穿戴、症状、药物/补剂和报告分布在多个模块 | 仍缺少跨领域统一的 `DataSourceQuality` / provenance 合同，覆盖所有 PRD 输入的权限、时效、置信度和用户纠错 | 阶段 4 |
+| G1.1 | 有来源、时效、权限和置信度的真实个人数据层 | 化验、基因、表观遗传、可穿戴、症状、药物/补剂和报告分布在多个模块 | 仍缺少跨领域统一的 `DataSourceQuality` / provenance 合同，覆盖所有 PRD 输入的权限、时效、置信度和用户纠错 | 阶段 1 / 阶段 4 |
 | G1.2 | 覆盖目标领域的 reviewed-first 专业知识库 | 系统 KB、reviewed-only gates、evidence boundaries 和大量知识测试已存在 | 饮食、睡眠、运动、补剂、药物、器官系统项目、IoT/环境的覆盖不均衡；用户侧引用和证据 UX 不稳定 | 阶段 2 / 阶段 4 |
 | G1.3 | 实时监控覆盖血压、血糖、SpO2、body battery、环境和设备 | wearable router、device source priority、Garmin/Apple/Ring/Oura 路径和卧室/设备 observation 已存在 | CGM Libre/Dexcom adapter 仍是 `NotImplementedError`；智能血压计/体重计和部分 HealthKit 路径仍偏手动；缺少统一的 health + home/office realtime signal 合同 | 阶段 4 / 阶段 5 |
 | G1.4 | 按用户配置数据源偏好和冲突仲裁 | wearable arbitration 和 source priority 已存在 | 部分仲裁仍是全局逻辑，不是按用户/疾病状态配置；用户无法在产品里稳定查看或覆盖 source preference | 阶段 4 |
 | G1.5 | 轨迹安全事件仪表盘 | `SafetyGuardian`、proactive coordinator 和 admin SLOs 已存在 | 缺少专门视图审计 trajectory-driven actions、prediction-driven nudges、误报和安全升级正确性 | 阶段 4 |
 | G1.6 | 派生记忆和预测的隐私控制 | 数据隔离、审计和部分导出/删除路径已存在 | 用户还不能在统一控制中心暂停/删除特定预测类别、派生 `CausalMemory` 或 IoT 派生行为 | 阶段 4 / 阶段 5 |
+| G1.7 | `EvaluationScenario` 和 `SafetyRegressionSuite` 成为 release gate | agent eval、SafetyGuardian tests 和部分 specialist tests 已存在 | 缺少 SyntheticUserTwin、标准场景集、红线/相互作用/claim boundary/manual_confirm 回归，以及模型或 connector 切换的回滚证据 | 阶段 2 |
 
 ### P1：端侧体验与产品化缺口
 
 | 编号 | PRD 能力 | 当前证据 | 缺口工作 | 目标阶段 |
 |---|---|---|---|---|
-| G1.7 | Mobile 收敛为 Today / Agenda / Capture / Programs / Review | 现有 Mobile routes 已覆盖这些概念，但仍有许多并行入口 | 还需要清理 route metadata 和导航；admin/debug/过期 daily flows 应从主导航隐藏或归档 | 阶段 0 / 阶段 1 |
-| G1.8 | Programs 成为用户可见的 8-12 周运营单元 | `HealthProgram` model/API/tests 已存在；protocol 可以挂到 program | Program templates、跨对象进展、Review 集成和器官系统 program map 尚未在 Mobile Today/Programs 成为一等能力 | 阶段 1 / 阶段 2 |
-| G1.9 | Mac 保持 workbench，Web 保持历史/admin/family/doctor 场景 | surface ownership doc 已存在 | 部分 Web/Mobile/Mac 工作流仍重叠；每日消费者流程需要在用户验证后更明确地归档或收敛 | 阶段 0 / 阶段 4 |
-| G1.10 | 外部 agent 输出必须落到一等对象 | MCP/OpenClaw skills 和 tool registry 已存在 | 并非所有外部/LLM 分析路径都被强制创建 `Problem`、`Protocol`、`Agenda`、`WriteIntent`、`Review`，或显式标记为 explain-only | 阶段 2 |
+| G1.8 | Mobile 收敛为 Today / Agenda / Capture / Programs / Review | 现有 Mobile routes 已覆盖这些概念，但仍有许多并行入口 | 还需要清理 route metadata 和导航；admin/debug/过期 daily flows 应从主导航隐藏或归档 | 阶段 0 / 阶段 1 |
+| G1.9 | Programs 成为用户可见的 8-12 周运营单元 | `HealthProgram` model/API/tests 已存在；protocol 可以挂到 program | Program templates、跨对象进展、Review 集成和器官系统 program map 尚未在 Mobile Today/Programs 成为一等能力 | 阶段 1 / 阶段 2 |
+| G1.10 | Mac 保持 workbench，Web 保持历史/admin/family/doctor 场景 | surface ownership doc 已存在 | 部分 Web/Mobile/Mac 工作流仍重叠；每日消费者流程需要在用户验证后更明确地归档或收敛 | 阶段 0 / 阶段 4 |
+| G1.11 | 外部 agent 输出必须落到一等对象 | MCP/OpenClaw skills 和 tool registry 已存在 | 并非所有外部/LLM 分析路径都被强制创建 `Problem`、`Protocol`、`Agenda`、`WriteIntent`、`Review`，或显式标记为 explain-only | 阶段 2 |
 
 ### P2：IoT、环境与供应链缺口
 
@@ -182,6 +208,8 @@ LLM 与工具综合层
 - 增加治理规则：每个预测都必须声明 horizon、uncertainty、evidence tier、claim boundary，以及它影响的 action/review。
 - 停止新增独立预测视图，除非它直接服务于 `Agenda`、`InterventionCycle` 或 `Review`。
 - 将五层系统作为架构词汇：真实个人数据、reviewed knowledge、实时监控、模型/工具综合、受控 IoT/环境执行。
+- 将 `DataConnection`、`ConsentGrant`、`ProvenanceRecord`、`ConnectorPolicy`、`ProgramTemplate`、`EvaluationScenario`、`SafetyRegressionSuite` 加入后续 spec 的标准对象清单。
+- 明确所有新 connector、agent、ranker、prediction、ProgramTemplate 或 IoT 能力必须有评估/回归入口，不允许只靠人工体验判断。
 
 验收标准：
 
@@ -189,12 +217,21 @@ LLM 与工具综合层
 - 后续文档避免“宿命”“保证抗衰”“基因决定结果”和绝对因果结论。
 - PRD 明确把 `HealthTrajectory` 和 `PersonalPrediction` 映射为一等产品对象。
 - PRD 明确把 IoT/环境和供应链行为映射到受控执行对象，而不是自主健康判断。
+- PRD 明确把标准互操作、授权、provenance 和评估回归作为 1000 万用户规模前的基础设施，而不是后期补丁。
 
-## 6. 阶段 1：让 Trajectory 影响 Today
+## 6. 阶段 1：数据连接底座与 Trajectory 共同影响 Today
 
 时间范围：1-4 周。
 
-目标：把 trajectory 从 workbench/report 概念变成每日行动选择依据。
+目标：在不扩大范围的前提下，让 trajectory 从 workbench/report 概念变成每日行动选择依据，并补齐最小数据连接、授权和 provenance 底座。
+
+数据底座待规划工作：
+
+- 定义最小 `DataConnection` 合同，先覆盖一个报告/FHIR Bundle 导入路径和一个 wearable/device connector。
+- 定义最小 `ConsentGrant` 合同，覆盖本人使用、外部 agent read scope、撤权和删除。
+- 定义关键事实的 `ProvenanceRecord`，让 Today top action 可以解释它使用了哪些来源、多久前更新、置信度如何。
+- 定义 `ConnectorPolicy` 的最小字段：scope、last_success_at、sync_error、rate_limit、token_status、degraded_behavior。
+- 明确 non-goal：不在本阶段做完整医院网络、支付级授权中心或所有设备 connector。
 
 后端待规划工作：
 
@@ -230,12 +267,13 @@ Mobile/Watch 待规划工作：
 - 一个代谢/恢复 top action 能解释它试图改变哪一种未来漂移。
 - 同一个 item 可以通过 Agenda 合同从 Mobile 或 Watch 完成。
 - 不需要新增 daily route。
+- Today top action 至少能展示一个关键事实的 provenance 摘要，避免用户只看到黑箱结论。
 
-## 7. 阶段 2：让预测回测对用户可见
+## 7. 阶段 2：让预测回测、评估和安全回归进入闭环
 
 时间范围：1-2 个月。
 
-目标：通过“预测 vs 实际”让信任逐步累积。
+目标：通过“预测 vs 实际”让用户信任逐步累积，同时让 agent/ranker/prediction/safety 的质量进入持续评估。
 
 工作项：
 
@@ -253,12 +291,17 @@ Mobile/Watch 待规划工作：
   - 允许：“这次观察支持继续当前策略。”
   - 允许：“数据不足，不能判断。”
   - 禁止：“这证明某补剂让你降低 LDL。”
+- 建立 `SyntheticUserTwin` 最小 fixture：代谢、睡眠/恢复、红线、数据缺失、设备冲突和补剂相互作用。
+- 建立 `EvaluationScenario`：对象落地率、top action 排序、claim boundary、预测校准、复测率和用户纠正后的调整。
+- 建立 `SafetyRegressionSuite`：急症红线、DDI/DSI/PGx、训练风险、IoT actuation、补剂供应链和 manual_confirm。
+- 将评估结果纳入模型、工具、ranker、ProgramTemplate 或 connector 切换前的 release gate。
 
 验收标准：
 
 - 用户能看到至少一个完整闭环：预测、行动、实际、解释、下一步。
 - 系统维护者能看到 specialist hit-rate 或 prediction confidence。
 - 低置信或混杂指标会被降级为 clinician_review 或 inconclusive。
+- 维护者能运行一组稳定 EvaluationScenario，看到 agent/ranker/prediction/safety 是否相对上个版本退化。
 
 ## 8. 阶段 3：在不微调个人 LLM 的前提下建立个人预测模型
 
@@ -294,18 +337,20 @@ Mobile/Watch 待规划工作：
 
 工作项：
 
-- 跟踪每次 Today/Agenda/Trajectory 调用的成本和延迟。
+- 跟踪每次 Today/Agenda/Trajectory/DataConnection 调用的成本和延迟。
 - 为 trajectory-driven actions 增加安全事件仪表盘。
-- 为 prediction inputs 和 decisions 增加审计日志。
+- 为 prediction inputs、connector inputs 和 decisions 增加审计日志。
 - 增加 per-user data source quality 和 source preference。
-- 增加用户暂停 prediction category、删除 derived memory 的控制。
-- 在大规模消费级推广前，补齐多区域隐私、删除和导出路径。
+- 增加用户暂停 prediction category、connector scope 和删除 derived memory 的控制。
+- 在大规模消费级推广前，补齐多区域隐私、删除、导出、consent 和 connector-token 路径。
+- 增加多租户 connector 隔离、sync backoff 和 provider failure dashboard。
 
 验收标准：
 
 - 系统能解释为什么向用户展示某个 trajectory action。
 - 用户能纠正、暂停或删除派生预测/记忆。
 - 运营者能审计 prediction-driven actions，同时不查看不必要的原始敏感数据。
+- 运营者能审计 connector failures、consent scope changes 和 provenance chains，同时不暴露不必要的原始记录。
 
 ## 10. 阶段 5：IoT、环境与供应链执行
 
@@ -359,17 +404,32 @@ Mobile/Watch 待规划工作：
 
 ## 12. 近期实现计划
 
-下一份实现 spec 应保持很小：
+下一份实现 spec 应保持很小，但应拆成两个并行最小切片：
 
-> 构建最小端到端“trajectory-informed top action”切片。
+> A. 构建最小 DataConnection/Consent/Provenance 底座。
+> B. 构建最小端到端“trajectory-informed top action”切片。
 
-建议范围：
+建议范围 A：
+
+- 后端：定义 `DataConnection` / `ConsentGrant` / `ProvenanceRecord` 的最小 schema 或 contract。
+- 导入：先支持一个报告/FHIR Bundle 风格输入和一个 wearable/device source 的统一 metadata。
+- Mobile/Mac：能展示连接状态、授权 scope、最近同步、撤权入口或解释性占位。
+- 测试：DataConnection contract test、ConsentGrant scope test、ProvenanceRecord serialization test、connector degraded behavior test。
+
+建议范围 B：
 
 - 后端：把现有 `health_trajectory.py` 输出适配为 Agenda/ActionRanker input contract。
 - Mobile：在 Today top action 展示目标状态变量和验证信号。
 - Watch：保留一句话行动，不新增复杂 UI。
 - Review：增加一个后续 prediction backtest 的占位。
 - 测试：trajectory risk shape contract test、ActionRanker scoring test、Agenda item serialization test、Mobile top action copy unit test。
+
+阶段 2 紧随其后的实现 spec：
+
+- `SyntheticUserTwin` fixture。
+- `EvaluationScenario` 数据集与 runner。
+- `SafetyRegressionSuite` 红线和 claim-boundary 回归。
+- `ProgramTemplate` 最小模板：metabolic/recovery/sleep。
 
 不做范围：
 
@@ -380,6 +440,9 @@ Mobile/Watch 待规划工作：
 - autonomous write actions。
 - IoT device control。
 - 补剂下单或个性化生产。
+- 完整医院网络连接。
+- 完整家庭/医生共享中心。
+- 大规模多租户 connector 运维平台。
 
 ## 13. 变更记录
 
@@ -389,3 +452,4 @@ Mobile/Watch 待规划工作：
 | 2026-06-27 | 增加系统基座、IoT/环境、供应链和器官系统规划 | 捕获扩展后的系统理念，同时保留安全和执行边界。 |
 | 2026-06-27 | 增加 PRD 实现缺口计划 | 追踪 PRD 已提出但尚未实现、仅有骨架、部分实现或尚未产品化的能力。 |
 | 2026-06-27 | 将 Plan 改为中文表达 | 便于团队按中文 PRD 和规划继续演进。 |
+| 2026-06-27 | 增加互操作、授权、provenance、评估回归和模板化计划 | 吸收 FHIR/PHR、闭环糖尿病系统、Home Assistant 和医疗 agent benchmark 的启发，补齐 1000 万用户规模前的基础设施。 |

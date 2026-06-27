@@ -41,6 +41,12 @@ Reva 的系统由五层组成：
 4. 大模型推断与工具层：LLM 负责综合解释、提出问题、归纳计划和调用工具；确定性系统负责安全门、排序、状态机、审计和写入。LLM 不能单独做诊断、处方、剂量、红线解除或自动购买决策。
 5. IoT 与环境执行层：空气净化器、除湿器、加湿器、窗帘、灯光、智能血压计、体重计、水杯、床垫、办公座椅、办公屏幕、药盒和补剂库存等设备负责低摩擦采集、环境默认和受控执行。Reva 输出健康意图和场景建议，不做不受审计的任意设备控制。
 
+这五层之外还需要三条横向能力：
+
+- 标准互操作与连接治理：优先支持 FHIR Bundle、SMART on FHIR、HealthKit、Garmin/Oura/Withings/CGM、Home Assistant 和未来 provider connectors，把每个外部来源建模为 DataConnection，而不是把导入脚本散落在业务逻辑里。
+- 授权、来源和可追溯：每个连接、报告、设备和 agent 调用都要有 ConsentGrant、ProvenanceRecord、ConnectorPolicy 和撤权路径；用户能知道数据从哪里来、谁能用、何时失效、如何删除。
+- 评估与安全回归：所有 agent、ranker、prediction 和 safety 变化都要进入 EvaluationScenario / SafetyRegressionSuite，用合成用户、历史样本和红线案例持续验证，避免只靠线上用户试错。
+
 长期看，Reva 可以按器官和系统组织 program，例如心血管、代谢/内分泌、睡眠/恢复、呼吸/鼻炎、消化/肝胆、肌肉骨骼、神经认知、心理压力、免疫/炎症和口腔健康。但器官系统只是组织方式，不能削弱整体 Health Twin、安全门和跨系统相互作用判断。
 
 它不是：
@@ -106,7 +112,8 @@ Reva 每天为用户完成五件事：
 当前代码已经围绕下面的产品链路成型：
 
 ```text
-Data Intake
+Data Connection / Consent / Provenance
+  -> Data Intake
   + Domain Knowledge
   + Realtime Monitoring
   -> Health Twin
@@ -118,6 +125,7 @@ Data Intake
   -> Surface / IoT / Environment Execution
   -> Execution Event
   -> Outcome Review / Causal Memory
+  -> Evaluation / Safety Regression
   -> Next Action
 ```
 
@@ -137,6 +145,18 @@ Data Intake
 - 每个数据点必须尽量保留来源、时间、新鲜度、置信度和用户归属。
 - 冲突数据必须交给后端路由和 arbitration，而不是客户端自行判断。
 - 高风险数据和医疗含义数据必须进入安全门和审计。
+
+### 3.1.1 Standards, Consent And Provenance
+
+真实数据层不能只靠“能导入”。它必须成为可授权、可撤销、可审计、可映射的连接系统。
+
+产品要求：
+
+- FHIR Bundle 和 SMART on FHIR 是医院/患者门户接入的优先标准；非标准报告、OCR、PDF 和图片导入必须映射到内部对象，并保留原始来源和转换链。
+- HealthKit、Garmin、Oura、Withings、CGM、智能血压计、智能体重计和 Home Assistant 等都必须建模为 DataConnection，记录 provider、scope、token 状态、同步窗口、错误和最后成功时间。
+- 用户授权必须建模为 ConsentGrant，区分本人使用、家庭共享、医生查看、外部 agent、研究/匿名统计和 IoT 设备控制。
+- 每条关键事实必须有 ProvenanceRecord，至少包含 source、observed_at、received_at、transformed_by、confidence、privacy_classification 和 user_correction 状态。
+- ConnectorPolicy 必须定义 rate limit、token refresh、失败降级、数据最小化、撤权后删除和审计策略。
 
 ### 3.2 Health Twin
 
@@ -251,11 +271,27 @@ Execution Event 是产品长期资产的关键原子。每次用户执行、跳�
 - 当系统建议继续、停止、调整时，必须能引用用户自己的历史数据和安全约束。
 - 用户应能看到自己的“个人健康规律库”：哪些输入经常让某些指标变好或变差，哪些只是低置信观察，哪些需要更多数据。
 
+### 3.11 Evaluation And Safety Regression
+
+Reva 的 AI 能力不能只通过人工感觉判断好坏。系统必须有持续评估环境，用于验证 agent、ranker、prediction、SafetyGuardian 和 surface copy 是否仍然符合产品边界。
+
+产品要求：
+
+- EvaluationScenario 应覆盖正常用户、数据缺失、冲突数据、红线症状、药物/补剂相互作用、训练风险、IoT 失败、错误预测和用户拒绝等场景。
+- SyntheticUserTwin 用于构造可复现的测试用户，不能包含真实用户敏感数据。
+- SafetyRegressionSuite 必须在每次安全、agent、ranker 或 prediction 变化后验证 fail-closed、claim boundary、escalation 和 manual_confirm 行为。
+- 评估指标不能只看回答是否流畅，还要看对象落地率、红线识别率、错误行动拦截率、预测校准、执行率、复测率和用户纠正后的调整质量。
+- 评估结果应成为上线门槛和模型/工具切换依据，而不是一次性研究报告。
+
 ## 4. First-Class Product Objects
 
 | Object | Product Meaning | Current Code Direction | Long-Term Requirement |
 |---|---|---|---|
 | HealthTwin | 用户当前健康状态镜像 | `backend/app/services/twin/*` | 成为所有推荐、分析和 surface 展示的上下文源 |
+| DataConnection | 外部数据或设备连接 | HealthKit/Garmin/Oura/CGM/FHIR/Home Assistant connectors | 统一 provider、scope、token、同步窗口、错误、最后成功时间和撤权路径 |
+| ConsentGrant | 用户授权和共享范围 | auth/audit/export/delete paths | 区分本人、家庭、医生、外部 agent、研究统计和 IoT 控制权限 |
+| ProvenanceRecord | 数据来源和转换链 | source/freshness/confidence fields, import jobs | 让关键事实可追溯、可纠错、可删除，支撑信任和审计 |
+| ConnectorPolicy | 连接器运行策略 | connector configs, sync jobs, rate limits | 管理速率、token refresh、失败降级、数据最小化和撤权后处理 |
 | DomainKnowledgeBase | 专业健康知识与证据层 | `backend/data/system_kb_v2_seed/*`, `system_knowledge_service.py` | 为饮食、睡眠、运动、补剂、药物、慢病和环境建议提供 reviewed-first 证据 |
 | RealtimeHealthSignal | 实时健康与环境信号 | wearable router, device source priority, bedroom/device observations | 统一实时监控数据的新鲜度、置信度、来源和隐私分类 |
 | SafetyGuardian | 确定性安全门 | `backend/app/agents/safety_guardian/*` | 所有行动、通知和写操作前置安全检查 |
@@ -264,6 +300,7 @@ Execution Event 是产品长期资产的关键原子。每次用户执行、跳�
 | OrganSystemProgram | 器官/系统级改善计划 | `HealthProgram`, specialists, health domains | 按心血管、代谢、睡眠恢复、呼吸、消化、肌骨等组织行动，但保持全局安全和相互作用判断 |
 | HealthProblem | 被管理的健康问题或风险 | `backend/app/models/health_problem.py` | 承载红线、负责人、复查、升级路径 |
 | HealthProgram | 8-12 周健康改善计划 | `backend/app/models/health_program.py` | 把多个 protocol/action/metric 组织成长期计划 |
+| ProgramTemplate | 可审查、可版本化的计划模板 | future template registry, `HealthProgram` seeds | 定义适用人群、排除条件、必要数据、安全门、protocol 列表、复测窗口和退出条件 |
 | HealthProtocol | 可重复执行的健康协议 | `backend/app/models/health_protocol.py` | 支持自动观察、手动补录、跳过原因、自我调整 |
 | HealthAgendaItem | 每日/近期执行单元 | `backend/app/services/agenda_service.py` | 成为 Mobile、Watch、Mac、Rokid、Web 的共同 contract |
 | ExecutionEvent | 用户真实执行结果 | protocol events、intervention events、domain records | 成为长期健康 ledger 的核心原子 |
@@ -273,6 +310,9 @@ Execution Event 是产品长期资产的关键原子。每次用户执行、跳�
 | SupplyIntent | 补剂/耗材/健康商品供应链意图 | supplement inventory, reorder nudges, `ReorderIntent` scaffold | 只做物流/财务受控动作，逐笔确认，不自动医疗化、不静默下单 |
 | CausalMemory | 观察性长期记忆 | `backend/app/services/causal_memory.py` | 存储“动作 -> 指标变化”的可解释个人证据 |
 | SystemKnowledge | 系统知识和证据层 | `backend/data/system_kb_v2_seed/*` | 以 reviewed knowledge 为主，支持安全可追溯检索 |
+| EvaluationScenario | 标准评估场景 | agent eval services, tests, future eval datasets | 持续评估 agent/ranker/prediction/surface 行为是否符合产品边界 |
+| SafetyRegressionSuite | 安全回归集 | SafetyGuardian tests, red-line fixtures | 在安全、agent、prediction 变化后验证 fail-closed、manual_confirm 和升级路径 |
+| SyntheticUserTwin | 合成测试用户 | test fixtures, synthetic datasets | 用非真实敏感数据复现高风险、缺失、冲突和长期闭环场景 |
 
 ## 5. Surface PRD
 
@@ -468,6 +508,14 @@ Agent 应服务于 health loop，而不是替代 health loop：
 | FR24 | IoT 只作为受控执行层 | 空气、湿度、灯光、窗帘、水杯、床垫、座椅、屏幕等设备只能执行健康意图和观察事实，不产生独立医疗判断 |
 | FR25 | 补剂和供应链动作受控 | 补剂建议、库存、补货、购买和未来个性化搭配/生产必须经过 DDI/DSI/PGx、安全审计和 manual_confirm |
 | FR26 | 器官系统 program 统一到全局 Twin | 心血管、代谢、睡眠恢复、呼吸、消化、肌骨、认知心理等 program 不得局部优化破坏全局风险 |
+| FR27 | 标准互操作优先 | FHIR Bundle、SMART on FHIR、HealthKit 和主流设备连接进入统一 DataConnection，而不是临时导入脚本 |
+| FR28 | 授权和撤权产品化 | 用户能查看、暂停、撤销、删除或限制每个 DataConnection、agent scope 和共享对象 |
+| FR29 | 关键事实可追溯 | 每个影响建议的事实都能展示 ProvenanceRecord、转换链、置信度和用户纠错状态 |
+| FR30 | ProgramTemplate 可审查可版本化 | 8-12 周计划由模板生成，模板声明适用人群、排除条件、安全门、协议、复测和退出条件 |
+| FR31 | Agent 和 ranker 必须持续评估 | 每次模型、工具、ranker 或提示变化都跑 EvaluationScenario，记录质量和安全回归结果 |
+| FR32 | SafetyRegressionSuite 阻止危险回归 | 红线、用药/补剂相互作用、训练风险、IoT/供应链写操作必须有 fail-closed 回归用例 |
+| FR33 | IoT observation 先于 actuation | 设备先作为结构化观察和低摩擦确认进入 Agenda/Review，自动控制必须等 allowlist、manual override 和审计成熟 |
+| FR34 | ConnectorPolicy 管理外部连接 | 每个 provider connector 定义 scope、rate limit、token refresh、同步失败降级、数据最小化和撤权后处理 |
 
 ## 8. Non-Functional Requirements
 
@@ -496,6 +544,18 @@ Agent 应服务于 health loop，而不是替代 health loop：
 - 用户必须能知道系统为什么提醒、为什么不提醒、为什么换了行动。
 - 用户必须能纠正、跳过、暂停和删除某类建议。
 
+### Interoperability And Consent
+
+- FHIR/SMART、HealthKit、Garmin/Oura/Withings/CGM 和 Home Assistant 等连接必须通过统一 DataConnection/ConsentGrant/ConnectorPolicy 运行。
+- 连接授权、撤权、token refresh、同步失败和数据删除必须可见、可审计、可恢复。
+- 家庭、医生、外部 agent 和研究/匿名统计必须使用不同 consent scope，不能复用默认全量权限。
+
+### Evaluation And Release Gates
+
+- agent、ranker、prediction、SafetyGuardian、ProgramTemplate 和 IoT/supply-chain 行为变化必须有 EvaluationScenario 或 SafetyRegressionSuite 覆盖。
+- 评估必须覆盖对象落地率、安全拦截率、claim boundary、预测校准、执行率、复测率和用户纠错后的调整。
+- 大模型、工具或 connector 切换不能只凭离线主观判断，必须保留评估结果和回滚路径。
+
 ## 9. Current AS-IS Assessment From Code
 
 ### 9.1 Strongly Implemented
@@ -522,6 +582,9 @@ Agent 应服务于 health loop，而不是替代 health loop：
 - CausalMemory 目前更接近观察性总结，还没有成为用户能直接感知的长期资产。
 - WriteIntent 已有手动确认框架，但距离可扩展的 earned autonomy 还需要分级、权限、撤销和审计体验。
 - 设备 source arbitration 已有后端能力，但多租户、个体化 source preference 和异常处理还需要加强。
+- FHIR/SMART、报告导入、设备连接、IoT 和外部 agent 还没有统一 DataConnection、ConsentGrant、ProvenanceRecord 和 ConnectorPolicy。
+- agent/ranker/prediction 评估还没有成为上线门槛，缺少 SyntheticUserTwin、EvaluationScenario 和 SafetyRegressionSuite 的持续体系。
+- HealthProgram 已有对象，但 ProgramTemplate 尚未成为可审查、可版本化、可复用的产品资产。
 - 文档中已有“不要继续堆功能”的方向，代码也显示目前更需要收敛、验证和上线质量，而不是再开新大模块。
 
 ## 10. Long-Term System Goal
@@ -567,6 +630,8 @@ Reva 的长期系统目标是成为：
 建设重点：
 
 - 更强 onboarding：体检、Apple Health、Garmin/Oura、CGM、药物、补剂、症状、目标。
+- 标准互操作：FHIR Bundle、SMART on FHIR、HealthKit、Garmin/Oura/Withings/CGM、Home Assistant 和后续 provider connectors。
+- DataConnection、ConsentGrant、ProvenanceRecord 和 ConnectorPolicy 成为所有外部来源的统一治理对象。
 - source quality score 和 per-user source preference。
 - 数据缺口解释和最小补齐任务。
 - 医生/家庭/导出场景的数据权限模型。
@@ -651,6 +716,17 @@ Reva 的长期系统目标是成为：
 - 个性化补剂搭配或未来个性化生产只作为长期受控供应链能力，必须有 reviewed knowledge、相互作用检查、批次质量、法规和审计边界。
 - IoT 设备接入以 Home Assistant / 厂商生态 / 标准协议为控制层，Reva 不做实时家居控制器。
 
+### Pillar 9. Evaluation And Safety Regression Platform
+
+目标：让 agent、ranker、prediction 和安全门的质量可持续验证，而不是依赖人工感觉或线上试错。
+
+建设重点：
+
+- 建立 SyntheticUserTwin，用非真实敏感数据覆盖缺失、冲突、红线、长期闭环和多设备场景。
+- 建立 EvaluationScenario，评估对象落地率、行动排序、claim boundary、预测校准、执行率、复测率和用户纠正后的调整。
+- 建立 SafetyRegressionSuite，覆盖急症红线、DDI/DSI/PGx、训练风险、IoT actuation、补剂供应链和 manual_confirm。
+- 每次模型、工具、ranker、ProgramTemplate 或 connector 变化都保留评估结果和回滚依据。
+
 ## 12. Evolution Roadmap
 
 ### Phase 0. Consolidate Current Product
@@ -671,6 +747,7 @@ Reva 的长期系统目标是成为：
 - 明确 Today、Agenda、Capture、Programs、Review 五个主入口。
 - 明确所有新需求必须落到 first-class object 和 verification loop。
 - 明确 Health Runtime Governance 叙事：预测层只服务行动、验证和安全治理。
+- 明确 DataConnection、ConsentGrant、ProvenanceRecord、ConnectorPolicy、ProgramTemplate、EvaluationScenario、SafetyRegressionSuite 进入一等对象清单。
 
 ### Phase 1. Make One Wedge Work End To End
 
@@ -684,11 +761,14 @@ Reva 的长期系统目标是成为：
 关键交付：
 
 - 首次 onboarding 自动生成 HealthTwin、HealthProblem、Program、Protocol、Agenda。
+- 首次 onboarding 同时生成或绑定 DataConnection、ConsentGrant、ProvenanceRecord 和最小 ConnectorPolicy。
 - 首次 onboarding 区分先天参数、状态、运行时输入、社会约束和可干预变量。
+- 至少支持一个 FHIR Bundle/报告导入路径和一个 wearable/device DataConnection 的端到端授权、同步、撤权和 provenance 展示。
 - Mobile Today 和 Watch top action 简化到足够清晰。
 - InterventionCycle review 在用户主路径可见。
 - 行动完成、跳过、复测、结果变化形成可读 ledger。
 - HealthTrajectory 风险和个人 baseline 偏离进入 ActionRanker，不再只做解释。
+- 第一批 metabolic/recovery/sleep ProgramTemplate 可审查、可版本化，并声明适用人群、排除条件、安全门和复测窗口。
 - 先服务 10-100 个高质量用户，追求真实改善而不是泛化规模。
 
 ### Phase 2. Toolized Agent And Evaluation
@@ -706,6 +786,8 @@ Reva 的长期系统目标是成为：
 - 所有 agent 输出映射到对象。
 - 小型个人预测器输出带不确定度的 forecast，LLM 只负责解释、提问和转化为对象。
 - 建立建议质量、风险误判、执行率、结果复测、用户纠正的数据集。
+- 建立 SyntheticUserTwin、EvaluationScenario 和 SafetyRegressionSuite，作为 agent/ranker/prediction/safety 变更的 release gate。
+- 引入 prediction backtest 与 safety regression 的维护视图，防止模型或 prompt 改动破坏既有边界。
 - 成本和延迟进入产品 SLO。
 
 ### Phase 3. Self-Serve Growth With Clinical-Grade Trust Boundaries
@@ -720,6 +802,7 @@ Reva 的长期系统目标是成为：
 
 - 自助 onboarding、设备连接、报告导入和体检解读。
 - 家庭/医生协作权限。
+- DataConnection 和 ConsentGrant 支持自助管理、家庭/医生共享、撤权、导出、删除和 connector 故障解释。
 - 多地区隐私、导出、删除、审计和合规机制。
 - 可复用 program templates，但仍需个人化 safety 和 context。
 - 付费、合作渠道和单位经济模型成型。
@@ -764,8 +847,11 @@ state_variable_to_change:
 prediction_or_trajectory_claim:
 safety_gate:
 data_source:
+data_connection:
+consent_scope:
 execution_event:
 verification_plan:
+evaluation_scenario:
 rollback_or_archive_plan:
 ```
 
@@ -777,7 +863,9 @@ rollback_or_archive_plan:
 4. 日常主路径优先 Mobile/Watch，复杂工作流优先 Mac，Web 退到 history/admin/doctor/family。
 5. Outcome Review 和 CausalMemory 必须从后台能力变成用户可见资产。
 6. 预测必须带不确定度、证据等级和声明边界；不能把基因或弱关联包装成个体命运。
-7. 如果一个功能无法提高安全行动完成率、验证闭环、健康结果、轨迹治理或信任，它不应进入主路径。
+7. 新外部数据源、设备、agent 或 IoT 能力必须先定义 DataConnection、ConsentGrant、ProvenanceRecord 和 ConnectorPolicy。
+8. 新 agent、ranker、prediction、安全门或 ProgramTemplate 变化必须进入 EvaluationScenario / SafetyRegressionSuite。
+9. 如果一个功能无法提高安全行动完成率、验证闭环、健康结果、轨迹治理或信任，它不应进入主路径。
 
 ## 15. Immediate Next Product Decisions
 
@@ -790,5 +878,8 @@ rollback_or_archive_plan:
 5. 做强 onboarding：让新用户从报告/设备/目标自动进入 Program 和 Agenda。
 6. 做强 safety/evidence：所有建议有 safety、evidence、uncertainty 和 escalation。
 7. 做强 eval：把 agent 建议质量、预测命中率、执行率、复测率和健康结果纳入持续评估。
+8. 做强 data connection：把 FHIR/SMART、报告导入、wearable、CGM、Home Assistant 统一到 DataConnection/ConsentGrant/ProvenanceRecord。
+9. 做强 ProgramTemplate：先把 metabolic/recovery/sleep 三类 8-12 周计划做成可审查、可版本化模板。
+10. 做强 connector policy：让每个外部连接都有 scope、rate limit、token refresh、失败降级和撤权后删除策略。
 
 这比继续新增更多健康功能更重要。当前代码显示 Reva 已经有足够多能力，下一步产品胜负在于收敛、信任、执行和验证。
