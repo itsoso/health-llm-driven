@@ -52,6 +52,7 @@ import RevaCycleStrip from '../../components/home/RevaCycleStrip';
 import RevaWeatherRow from '../../components/home/RevaWeatherRow';
 import RevaQuickActions from '../../components/home/RevaQuickActions';
 import RevaSectionGroup from '../../components/home/RevaSectionGroup';
+import RevaTryEntryCard from '../../components/home/RevaTryEntryCard';
 import { useRevaFonts } from '../../components/reva/useRevaFonts';
 import { revaColors } from '../../constants/revaTheme';
 import { useHomeColdStartTrace } from '../../services/perfTrace';
@@ -369,6 +370,9 @@ export default function TodayScreen() {
           onVoice={() => router.push('/voice-chat?intent=journal' as any)}
           onRecord={() => router.push('/(tabs)/record' as any)}
         />
+
+        {/* 8 · 试试新版 复元 入口(把休眠的 /reva 提升为首页可见入口) */}
+        <RevaTryEntryCard />
 
         {/* 深度分析(结果归因 / 生物年龄 / 抗衰下一步 / 设备一致性 / Agent 话题)
             已移出首页 → 「我」tab 的「健康分析」分组(信息架构:首页只留日常驱动)。 */}
