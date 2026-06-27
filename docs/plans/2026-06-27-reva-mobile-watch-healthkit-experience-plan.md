@@ -345,3 +345,115 @@ Goal 3(watch 上设备)、Goal 4 第二层(HK 后台 entitlement)、Goal 3 的 w
 7.(Phase 1)`mobile/app/onboarding.tsx` 或现有 onboarding 入口 —— 增加示例数据/示例报告 demo path,只展示安全脑+证据卡+Daily Artifact,不得写入真实 Twin。
 
 > 改完任何 backend request/response schema 后必须 `cd mobile && npm run generate-types` 并提交(防静默漂移)。
+
+---
+
+## 13. Watch 实施细化(Code 直接照做 · 已拍板)
+
+> **本节是给编码 agent 的 task-by-task 实现 spec。** 用户已拍板:**① 对话 = 一问一答短答(过安全门 + 复杂转手机);② 先验通 EAS 设备签名,再叠对话功能。**
+>
+> **不可妥协前置(每个 task 都受约束,违反即 reject)**:
+> - **R4**:不诊断/不开方/不给剂量;表上答复保守措辞、可转手机。
+> - **写恒 draft+confirm**:任何语音记录走草稿出口,服务端 draft-by-default,绝不静默自动写。承重墙只 `measurement_prompt` 自治,语音记录/医疗写永远 `manual_confirm`。
+> - **安全门 fail-loud**:LLM 答复出屏/TTS 前必须过 SafetyGuardian 确定性门;评估失败/部分失败绝不静默当安全。
+> - **合规范本** = `backend/app/api/watch.py` 的 `/watch/symptoms`(`record_symptom`):flush-not-commit、**禁 build_twin**(用极简 `HealthTwin()`)、`_fill_problem_red_lines(..., raise_on_error=True)`、`evaluate_rules_with_status` 查 `failed>0 → evaluation_failed`、user_id 取自 token、单次 commit。**`/watch/ask` 必须照抄这套骨架。**
+> - **从 origin/main build**(watch 代码在 main,design 分支零净改动);改 backend schema 后 `cd mobile && npm run generate-types`。
+> - **不碰 rokid/mac**(`apps/rokid-*`、`apps/mac`、`mobile/modules/rokid-bridge`、`backend/app/api/rokid.py` 由其它 session 活跃开发)。
+
+### 任务依赖图
+```
+W0 (签名 de-risk, 用户驱动) ──gate──▶ W3/W4/W5 (watch native, EAS)
+W1 (/watch/ask 后端安全门) ─┐  纯后端, 不卡 W0, 先做
+W2 (语音写 fail-closed 白名单)┘  纯后端, 不卡 W0, 先做
+W1 ─▶ W3 (watch 对话 UI 调 /watch/ask)
+```
+**先做 W1+W2(纯后端,独立部署,不卡签名),W0 通过后再做 W3/W4/W5。**
+
+---
+
+### W0 · 签名 de-risk(用户驱动 · gate · 非代码)
+- **目标**:证明现有已编译 watch app 能装上真机、Reva 表盘 App 真出现。**这是 W3+ 的前置闸。**
+- **做什么**:从干净 `origin/main` worktree 起一次**异步** iOS build(watch 已嵌入)→ TestFlight/internal → 装机。命令:`./scripts/mobile-local-archive.sh`(用户一键,本地归档+altool 上传,需根 `.env` 的 `APP_STORE_CONNECT_*`)或 `eas build -p ios --profile production`(远端异步)。**不等**(15–25min)。
+- **验收(用户在真机确认 4 点)**:① 手表出现 Reva App;② 点开进主界面(TodayStatus/QuickRecord);③ 现有语音记录可用(「喝了一杯水」→ 手机出现记录);④ 表冠 rotation 调数值可用。
+- **已本地确认**:watch 核心 `cd apps/watch && swift build` = Build complete;withWatchApp 自 06-16 挂载,06-21~23 多个 iOS 生产 build FINISHED → 签名极可能已通。**4 点全绿 → 解锁 W3/W4/W5。**
+
+---
+
+### W1 · 后端 `/watch/ask` 一问一答安全门(纯后端 · 先做 · 独立部署)
+- **目标**:腕上一句健康提问 → 后端出**一句短安全建议**,危险/复杂 → 「去 iPhone 看详情」。
+- **文件**:
+  - `backend/app/api/watch.py` —— 新增 `POST /watch/ask`(照抄 `record_symptom` 安全骨架)。
+  - `backend/app/services/guidance_validator.py` —— 复用 strip/soften 覆盖答复文本出口。
+  - `backend/tests/test_watch_ask.py`(新)。
+- **端点设计(逐步,严格按合规范本)**:
+  1. 入参 `WatchAskIn{ text: str }`;`text` 空/超长(沿用 `_SYMPTOM_MAX_LEN`)→ 400;user_id **取自 token**。
+  2. **先跑安全态闸**(不依赖 LLM):极简 `HealthTwin()` + `_fill_problem_red_lines(db, uid, twin, set(), raise_on_error=True)`(失败 → `evaluation_failed=True`,**不 return**)+ `evaluate_rules_with_status(twin)`;`failed>0` → `evaluation_failed=True`。
+  3. **LLM 短答**:走 orchestrator lite/单轮(复用现有 provider failover);**prompt 强约束**:≤2 句、保守、不诊断/不开方/不给剂量、中文。**禁请求内 build_twin**(同范本)。LLM 失败 → 走 escalate 兜底,不抛 500。
+  4. **答复必过 `guidance_validator`**(strip/soften 量化/命令式饮食处方 + 命令式训练指令);命中 red_line → 改投保守措辞。
+  5. **escalate 决策**:`evaluation_failed` 为真 **或** 安全闸命中 CRITICAL **或** 问题涉处方/剂量/影像/诊断意图 → **不返回自由答复**,返回 `{ answer: <短安全提示>, escalate_to_phone: true, requires_medical_attention: <bool> }`;否则返回 `{ answer: <短答>, escalate_to_phone: false }`。
+  6. **fail-loud**:`evaluation_failed` 时答复体必须含「本次未能完成自动安全筛查,请勿据此判断为安全;不适请就医,紧急拨 120」(照抄范本 evaluation_failed advisory),`requires_medical_attention=True`。
+  7. **单次 commit**(若落了 AskLog/审计);可选落一条 `client-events`/审计行,不写任何健康事实表。
+- **安全不变量**:不诊断(给方向+就医动作,不给病名)、保守措辞、评估失败 fail-loud、user_id 取 token、禁 build_twin。
+- **验收**:① 「我今天适合高强度训练吗」→ 短答 + escalate_to_phone=false(若安全态正常);② 「我这个胸痛是不是心梗」→ escalate_to_phone=true + requires_medical_attention=true,**不给诊断**;③ 安全规则注入失败 → answer 含 fail-loud advisory;④ 答复永不含命令式剂量/饮食处方(guidance_validator 测试)。
+- **测试**(`test_watch_ask.py`):正常短答 / 处方意图转手机 / `evaluation_failed` fail-loud / guidance_validator 覆盖答复出口 / user_id 取 token 不信客户端。
+- **反馈环**:纯后端 → `deploy.sh -b`。**不卡 W0。**
+
+---
+
+### W2 · 语音写 fail-closed 白名单(纯后端 · 先做)
+- **目标**:消除 `_auto_confirm_fast_record_args` 的隐式白名单 fail-open(弱模型把 supplement 误判处方剂量会静默自动写)。
+- **文件**:`backend/app/services/agent_executor.py`(`_auto_confirm_fast_record_args`,约 `:869`);`backend/tests/test_agent_executor.py` 或新 `test_watch_voice_record_failclosed.py`。
+- **做什么**:自动确认前**显式断言** `record_type ∈ {water,weight,bp,diet,checkin,supplement}` 且 `∉ NEVER 集`(medication/dose/adherence/financial);未知/越界 kind → **退回 `manual_confirm`**(不静默放行),对齐 `write_intent_service._execute` unknown-kind → ValueError fail-loud 模式。
+- **安全不变量**:语音记录恒走草稿出口(`/diet/voice/parse` 只解析不写库 → 客户端确认后 POST `/diet/records`);NEVER 类永不经语音偷渡自动写。
+- **验收**:① 正常 6 类 fast-record 行为零变化;② 构造 `record_type='medication'`/`'dose'` 的自动确认请求 → **不自动写、退 manual_confirm**(对抗测试,换回隐式白名单必红);③ 未知 kind → manual_confirm。
+- **反馈环**:纯后端 → `deploy.sh -b`。**不卡 W0。**
+
+---
+
+### W3 · Watch 对话 UI(native SwiftUI · W0 通过后)
+- **目标**:点开 Reva 表 App → 大「按住说话」按钮 → 系统听写 → POST `/watch/ask` → 渲染短答 / 「去 iPhone 看详情」。
+- **文件**:
+  - `apps/watch/WatchApp/` 新增 `RevaVoiceAssistantView.swift`(对话页)。
+  - `apps/watch/Sources/WatchCompanionCore/WatchBackendRequest.swift` —— `allowedRoutes` 加 `"/watch/ask": ["POST"]`(`:13-20`)。
+  - 复用 `WatchDictation.swift`(`present()` 系统听写)+ `WatchDirectAPIClient`/`WatchBackendRequest`。
+  - `apps/watch/Tests/WatchCompanionCoreTests/` 加 request 构造测试。
+- **做什么**:
+  1. 主入口卡:大「按住说话」按钮(`WatchDictation.present()` 一版)。
+  2. 意图三分:**饮食/运动/症状** → 现有 `/watch/*` 记录管线(草稿 manual_confirm,不变);**健康问答** → `POST /watch/ask`。
+  3. 状态机:处理中 / 成功(短答)/ **需转手机**(escalate_to_phone=true 时显「详情已发到 iPhone」+ 不展开长文)/ 风险提示(requires_medical_attention)。
+  4. **每次原生网络调用 Promise/closure 必带超时 + 查 ok**(memory `feedback_rokid_native_calls_need_js_timeout` 的镜像:闭包不来要兜底,失败置 failed 状态不假成功)。
+- **安全不变量**:表上**不展开自由诊断长对话**;escalate 时只显短提示 + 转手机;答复来自 W1(已过安全门),UI 不自行加医疗结论。
+- **验收**:表上「我今天适合高强度训练吗」→ 短答;「这个胸痛…」→ 「详情已发 iPhone」+ 风险提示;记录类仍走草稿。
+- **反馈环**:Xcode watch target build → **EAS build(异步)** → 真机(W5)。
+
+---
+
+### W4 · 入口(表冠 / Action Button / Siri · W0 通过后)
+- **目标**:把「按一个就开口」做到平台允许的极致(诚实文案)。
+- **文件**:`apps/watch/WatchApp/`(App Intent + AppShortcutsProvider)、`RevaComplication.swift`(已存在,tap→launch)、`RevaVoiceAssistantView`(crown rotation)。
+- **做什么**:
+  1. **App Intent + AppShortcutsProvider**(watch 端净新)→ 「Hey Siri,用 Reva 记录/问一下…」;表冠长按本就唤 Siri = 间接「表冠」路径。
+  2. **Action Button(Ultra 3)** 绑该 AppIntent → **「按一个物理键就开口」对锚点用户的真解**。
+  3. **表冠 rotation** 在对话/记录页选项/调数值(`.digitalCrownRotation`,QuickRecord 已用,扩到对话页选意图)。
+  4. complication tap → 直接进 RevaVoice(已有 complication,接 deeplink)。
+- **安全/文案红线**:**绝不写「按住表冠说话」**(系统独占);文案用「点 Reva / 说 Siri 短语 / Action Button」。
+- **验收**:Action Button 唤起 Reva 录入;Siri 短语可触发;表冠 rotation 选意图/调值;complication tap 进对话页。
+- **反馈环**:EAS build → 真机(Siri/AppIntent/Action Button 需真机 + Apple ID 验)。
+
+---
+
+### W5 · EAS build + 上设备(异步 · W3/W4 完成后)
+- **目标**:把对话+入口随 iOS app 嵌入 watch target 发到 TestFlight,真机验证。
+- **做什么**:从干净 origin/main(已含 W3/W4)起**异步** `eas build -p ios --profile production` 或 `./scripts/mobile-local-archive.sh` → TestFlight → 真机。**不等。**
+- **验收**:真机走完 W3/W4 全部验收点;QuickRecord 既有水/俯卧撑/跑步/饮食/症状不回归。
+- **风险**:watch 两 bundle id 凭据(若 W0 已通则已建);`withHealthKitCleanup` 交互(若同 build 含 HK entitlement)。
+
+---
+
+### Watch 测试与闸门汇总
+| 层 | 闸 |
+|---|---|
+| 后端 | `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai pytest tests/test_watch_ask.py tests/test_watch*.py -q`(直读 passed/failed,**不 `\| tail`**);W1/W2 对抗测试换回旧行为必红 |
+| watch native | `cd apps/watch && swift build`(核心)+ Xcode watch target build;真机 dictation + Siri/AppIntent |
+| 部署序 | W1/W2 先 `deploy.sh -b`(纯后端)→ `npm run generate-types` 若改 schema → W3/W4 随 W5 EAS build 上设备 |
+| 安全复审 | `/watch/ask` 属新安全行为(§8.1)→ 必过 safety-privacy-reviewer + 一次 Codex 跨家族 capstone |
