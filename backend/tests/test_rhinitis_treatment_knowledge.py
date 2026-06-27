@@ -19,6 +19,13 @@ RHINITIS_TREATMENT_CONTRAINDICATION = (
     "contraindication:rhinitis_decongestant_overuse_no_self_escalation"
 )
 RHINITIS_TREATMENT_EVAL = "eval:chronic_rhinitis_treatment_boundary"
+RHINITIS_DECONGESTANT_CARDIO_CLAIM = (
+    "claim:c_rhinitis_decongestant_cardiovascular_review_boundary"
+)
+RHINITIS_DECONGESTANT_CARDIO_CONTRAINDICATION = (
+    "contraindication:rhinitis_decongestant_no_self_use_with_cardiovascular_risk"
+)
+RHINITIS_DECONGESTANT_CARDIO_EVAL = "eval:rhinitis_decongestant_cardiovascular_boundary"
 
 
 def _rhinitis_twin():
@@ -36,6 +43,20 @@ def _rhinitis_twin():
     )
     twin.chronic = ChronicConditionState(
         active_conditions=["过敏性鼻炎"],
+        rhinitis_today={"active": True, "nasal_congestion": True},
+    )
+    return twin
+
+
+def _rhinitis_decongestant_cardio_twin(*, cardio_context: bool = True):
+    from app.twin.schema import ChronicConditionState, HealthTwin, TwinMeta
+
+    active_conditions = ["过敏性鼻炎", "鼻塞", "伪麻黄碱"]
+    if cardio_context:
+        active_conditions.extend(["高血压", "心悸"])
+    twin = HealthTwin(meta=TwinMeta(user_id=1, generated_at=datetime.now(UTC)))
+    twin.chronic = ChronicConditionState(
+        active_conditions=active_conditions,
         rhinitis_today={"active": True, "nasal_congestion": True},
     )
     return twin
@@ -80,6 +101,23 @@ def test_rhinitis_treatment_claim_contraindication_and_eval_import(db):
     assert "self_escalate_rhinitis_medication" in blocks
 
 
+def test_rhinitis_decongestant_cardio_claim_contraindication_and_eval_import(db):
+    counts = import_system_kb_artifacts(db, SEED_DIR, actor="test:rhinitis_decongestant_cardio")
+    assert counts["skipped_documents"] == 0
+
+    doc_ids = {
+        RHINITIS_DECONGESTANT_CARDIO_CLAIM,
+        RHINITIS_DECONGESTANT_CARDIO_CONTRAINDICATION,
+        RHINITIS_DECONGESTANT_CARDIO_EVAL,
+    }
+    docs = db.query(KBDocument).filter(KBDocument.doc_id.in_(doc_ids)).all()
+    by_id = {doc.doc_id: doc for doc in docs}
+    assert set(by_id) == doc_ids
+    assert by_id[RHINITIS_DECONGESTANT_CARDIO_CLAIM].doc_type == "claim"
+    assert by_id[RHINITIS_DECONGESTANT_CARDIO_CONTRAINDICATION].doc_type == "contraindication"
+    assert by_id[RHINITIS_DECONGESTANT_CARDIO_EVAL].doc_type == "eval_case"
+
+
 def test_rhinitis_twin_maps_to_kb_payload_and_lookup(db):
     from app.services.system_knowledge_service import (
         lookup_for_twin,
@@ -95,6 +133,29 @@ def test_rhinitis_twin_maps_to_kb_payload_and_lookup(db):
     result = lookup_for_twin(db, payload)
     claim_ids = {claim.get("doc_id") for claim in result.get("claims") or []}
     assert RHINITIS_TREATMENT_CLAIM in claim_ids
+
+
+def test_rhinitis_decongestant_cardio_lookup_requires_cardiovascular_context(db):
+    from app.services.system_knowledge_service import (
+        lookup_for_twin,
+        system_kb_twin_payload_from_health_twin,
+    )
+
+    import_system_kb_artifacts(db, SEED_DIR, actor="test:rhinitis_decongestant_cardio_lookup")
+
+    risky_payload = system_kb_twin_payload_from_health_twin(
+        _rhinitis_decongestant_cardio_twin()
+    )
+    risky = lookup_for_twin(db, risky_payload)
+    risky_claim_ids = {claim.get("doc_id") for claim in risky.get("claims") or []}
+    assert RHINITIS_DECONGESTANT_CARDIO_CLAIM in risky_claim_ids
+
+    no_cardio_payload = system_kb_twin_payload_from_health_twin(
+        _rhinitis_decongestant_cardio_twin(cardio_context=False)
+    )
+    no_cardio = lookup_for_twin(db, no_cardio_payload)
+    no_cardio_claim_ids = {claim.get("doc_id") for claim in no_cardio.get("claims") or []}
+    assert RHINITIS_DECONGESTANT_CARDIO_CLAIM not in no_cardio_claim_ids
 
 
 def test_rhinitis_treatment_claim_is_retrievable(db):
@@ -124,11 +185,12 @@ def test_system_kb_eval_runner_covers_rhinitis_treatment_case(db):
 
     import_system_kb_artifacts(db, SEED_DIR, actor="test:rhinitis_treatment_eval")
 
-    report = run_system_kb_eval_cases(db, case_ids={RHINITIS_TREATMENT_EVAL})
+    expected_cases = {RHINITIS_TREATMENT_EVAL, RHINITIS_DECONGESTANT_CARDIO_EVAL}
+    report = run_system_kb_eval_cases(db, case_ids=expected_cases)
 
-    assert report["total"] == 1
+    assert report["total"] == 2
     assert report["failed"] == 0, report
-    assert report["cases"][0]["case_id"] == RHINITIS_TREATMENT_EVAL
+    assert {case["case_id"] for case in report["cases"]} == expected_cases
 
 
 def test_rhinitis_treatment_claim_boundary_and_no_prescription():

@@ -751,6 +751,8 @@ def _matched_conditions_for_claim(conditions: list[str], twin: dict[str, Any]) -
     matched_conditions = [condition for condition in conditions if evaluate_condition(condition, twin)]
     if not matched_conditions:
         return []
+    if _requires_all_condition_matches(conditions) and len(matched_conditions) != len(conditions):
+        return []
     membership_conditions = [
         condition for condition in conditions
         if _HAS_RE.match((condition or "").strip())
@@ -759,6 +761,12 @@ def _matched_conditions_for_claim(conditions: list[str], twin: dict[str, Any]) -
     if membership_conditions and len(matched_conditions) != len(conditions):
         return []
     return matched_conditions
+
+
+def _requires_all_condition_matches(conditions: list[str]) -> bool:
+    """High-risk genetic confirmation boundaries must not match on gene presence alone."""
+
+    return any("_variant_class" in str(condition or "") for condition in conditions)
 
 
 def _lookup_graph_context_for_entities(

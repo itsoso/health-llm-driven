@@ -17,18 +17,21 @@ SLEEP_SAFETY_CLAIMS = {
     "cbti": "claim:c_sleep_insomnia_cbti_first_line_boundary",
     "sedative_alcohol": "claim:c_sleep_sedative_alcohol_impairment_boundary",
     "sedative_hypoxia": "claim:c_sleep_sedative_hypoxia_no_self_rescue_boundary",
+    "drowsy_driving": "claim:c_sleep_drowsy_driving_safety_boundary",
 }
 
 SLEEP_SAFETY_CONTRAINDICATIONS = {
     "cbti": "contraindication:sleep_insomnia_no_self_sedative_or_sleep_restriction",
     "sedative_alcohol": "contraindication:sleep_sedative_alcohol_no_combination",
     "sedative_hypoxia": "contraindication:sleep_sedative_hypoxia_no_self_rescue",
+    "drowsy_driving": "contraindication:sleep_drowsy_driving_no_push_through",
 }
 
 SLEEP_SAFETY_EVALS = {
     "cbti": "eval:sleep_insomnia_cbti_boundary",
     "sedative_alcohol": "eval:sleep_sedative_alcohol_boundary",
     "sedative_hypoxia": "eval:sleep_sedative_hypoxia_boundary",
+    "drowsy_driving": "eval:sleep_drowsy_driving_boundary",
 }
 
 
@@ -46,6 +49,7 @@ def _twin(
     *,
     conditions: list[str] | None = None,
     medications: list[dict[str, Any]] | None = None,
+    sleep_hours: float | None = None,
     spo2_min: int | None = None,
     spo2_odi: float | None = None,
 ):
@@ -62,8 +66,9 @@ def _twin(
         twin.chronic = ChronicConditionState(active_conditions=conditions)
     if medications is not None:
         twin.medication = MedicationState(active_meds=medications, has_any=bool(medications))
-    if spo2_min is not None or spo2_odi is not None:
+    if sleep_hours is not None or spo2_min is not None or spo2_odi is not None:
         twin.physiological = PhysiologicalState(
+            sleep_duration_h_latest=sleep_hours,
             spo2_min_overnight=spo2_min,
             spo2_odi=spo2_odi,
         )
@@ -144,6 +149,19 @@ def test_sedative_hypoxia_lookup_requires_sedative_and_low_spo2(db):
     assert SLEEP_SAFETY_CLAIMS["sedative_hypoxia"] not in _claim_ids_for_twin(db, normal_spo2)
 
 
+def test_drowsy_driving_lookup_requires_sleep_debt_and_driving_context(db):
+    import_system_kb_artifacts(db, SEED_DIR, actor="test:sleep_drowsy_driving_lookup")
+
+    risky = _twin(conditions=["长途驾驶", "白天嗜睡"], sleep_hours=4.3)
+    assert SLEEP_SAFETY_CLAIMS["drowsy_driving"] in _claim_ids_for_twin(db, risky)
+
+    sleep_debt_only = _twin(conditions=["白天嗜睡"], sleep_hours=4.3)
+    assert SLEEP_SAFETY_CLAIMS["drowsy_driving"] not in _claim_ids_for_twin(
+        db,
+        sleep_debt_only,
+    )
+
+
 def test_system_kb_eval_runner_covers_sleep_safety_cases(db):
     from app.services.system_knowledge_eval import run_system_kb_eval_cases
 
@@ -151,7 +169,7 @@ def test_system_kb_eval_runner_covers_sleep_safety_cases(db):
 
     report = run_system_kb_eval_cases(db, case_ids=set(SLEEP_SAFETY_EVALS.values()))
 
-    assert report["total"] == 3
+    assert report["total"] == 4
     assert report["failed"] == 0, report
     assert {case["case_id"] for case in report["cases"]} == set(SLEEP_SAFETY_EVALS.values())
 

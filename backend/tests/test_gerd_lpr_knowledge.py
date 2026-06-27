@@ -39,6 +39,11 @@ PR2_EVAL_CASE_IDS = {
 HP_POSITIVE_CLAIM = "claim:c_hp_positive_eradication_physician_boundary"
 HP_POSITIVE_CONTRAINDICATION = "contraindication:hp_positive_no_self_eradication_regimen"
 HP_POSITIVE_EVAL = "eval:hp_positive_eradication_boundary"
+HP_UNKNOWN_ANTIBIOTIC_CLAIM = "claim:c_hp_unknown_no_self_antibiotic_boundary"
+HP_UNKNOWN_ANTIBIOTIC_CONTRAINDICATION = (
+    "contraindication:hp_unknown_no_empiric_antibiotic_or_test_skip"
+)
+HP_UNKNOWN_ANTIBIOTIC_EVAL = "eval:hp_unknown_antibiotic_boundary"
 
 
 def _new_claims() -> list[dict]:
@@ -135,6 +140,43 @@ def test_hp_positive_eradication_claim_contraindication_and_eval_import(db):
     assert HP_POSITIVE_CLAIM in search_ids
 
     report = run_system_kb_eval_cases(db, case_ids={HP_POSITIVE_EVAL})
+    assert report["total"] == 1
+    assert report["failed"] == 0
+
+
+def test_hp_unknown_antibiotic_boundary_requires_unknown_status_and_self_treatment_context(db):
+    from app.services.system_knowledge_eval import run_system_kb_eval_cases
+    from app.services.system_knowledge_service import lookup_for_twin
+
+    counts = import_system_kb_artifacts(db, SEED_DIR, actor="test:hp_unknown_antibiotic_gate")
+    assert counts["skipped_documents"] == 0
+
+    doc_ids = {
+        HP_UNKNOWN_ANTIBIOTIC_CLAIM,
+        HP_UNKNOWN_ANTIBIOTIC_CONTRAINDICATION,
+        HP_UNKNOWN_ANTIBIOTIC_EVAL,
+    }
+    docs = db.query(KBDocument).filter(KBDocument.doc_id.in_(doc_ids)).all()
+    by_id = {doc.doc_id: doc for doc in docs}
+    assert set(by_id) == doc_ids
+    assert by_id[HP_UNKNOWN_ANTIBIOTIC_CLAIM].doc_type == "claim"
+    assert by_id[HP_UNKNOWN_ANTIBIOTIC_CONTRAINDICATION].doc_type == "contraindication"
+    assert by_id[HP_UNKNOWN_ANTIBIOTIC_EVAL].doc_type == "eval_case"
+
+    risky = lookup_for_twin(
+        db,
+        {"conditions": {"active": ["胃痛", "幽门螺杆菌状态不明", "想自己吃抗生素"]}},
+    )
+    risky_ids = {claim.get("doc_id") for claim in risky.get("claims") or []}
+    assert HP_UNKNOWN_ANTIBIOTIC_CLAIM in risky_ids
+
+    no_self_treatment = lookup_for_twin(db, {"conditions": {"active": ["胃痛"]}})
+    no_self_treatment_ids = {
+        claim.get("doc_id") for claim in no_self_treatment.get("claims") or []
+    }
+    assert HP_UNKNOWN_ANTIBIOTIC_CLAIM not in no_self_treatment_ids
+
+    report = run_system_kb_eval_cases(db, case_ids={HP_UNKNOWN_ANTIBIOTIC_EVAL})
     assert report["total"] == 1
     assert report["failed"] == 0
 

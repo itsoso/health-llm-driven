@@ -185,3 +185,9 @@ official / curated source
 - 运动安全: 高温/热浪运动与头晕、恶心、热痉挛、晕厥或意识模糊等热相关症状同现时，进入停止活动、降温补水和医生/急症分诊边界；已按 reviewed claim + contraindication + eval case 形态接入。
 - 补剂安全: 圣约翰草/贯叶连翘与抗抑郁药、口服避孕药、华法林、免疫抑制剂、抗病毒药或部分抗肿瘤药同现时，进入医生/药师相互作用复核边界；已按 reviewed claim + contraindication + eval case 形态接入。
 - 补剂安全: 生物素/维生素 B7 与甲状腺功能、肌钙蛋白、激素或其他近期化验场景同现时，进入医生/药师/检验机构检测干扰披露边界；已按 reviewed claim + contraindication + eval case 形态接入。
+- 饮食安全: 葡萄柚/西柚与他汀、钙通道阻滞剂、免疫抑制剂、抗心律失常药或其他相互作用用药同现时，进入医生/药师复核边界，禁止把饮食建议替代用药调整；已按 reviewed claim + contraindication + eval case 形态接入。
+- 睡眠安全: 短睡眠、白天嗜睡或困倦驾驶场景同现时，进入停止硬撑驾驶、补睡和医生/睡眠评估边界；已按 reviewed claim + contraindication + eval case 形态接入。
+- 胃病/幽门螺杆菌: HP 状态不明且出现自行服用抗生素或跳过检测意图时，进入先检测确认和医生制定方案边界；已按 reviewed claim + contraindication + eval case 形态接入。
+- 慢性鼻炎治疗: 伪麻黄碱/减充血剂与高血压、心悸、心脏病或心血管风险同现时，进入医生/药师复核边界，禁止无复核自行加量或长期使用；已按 reviewed claim + contraindication + eval case 形态接入。
+- 基因解析: BRCA1/BRCA2 DTC 或原始数据提示 pathogenic/likely pathogenic 时，进入遗传咨询和临床级确认检测边界，禁止把 DTC 结果直接作为癌症诊断或手术决策；已按 reviewed claim + contraindication + eval case 形态接入，并收紧 lookup 条件，避免 VUS 仅因基因名命中。
+- Release gate: 2026-06-27 本批后续 slices 导入临时库 841 documents / 3309 edges；lint summary 全 0；全量 system KB eval 46/46 pass。

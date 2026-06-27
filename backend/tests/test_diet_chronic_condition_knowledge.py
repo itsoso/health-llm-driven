@@ -18,6 +18,7 @@ DIET_CHRONIC_CLAIMS = {
     "ckd_protein": "claim:c_diet_ckd_protein_extreme_boundary",
     "gout_fast_weight_loss": "claim:c_diet_gout_crash_diet_dehydration_boundary",
     "hypertension_potassium_salt": "claim:c_diet_hypertension_potassium_salt_ckd_boundary",
+    "grapefruit_medication": "claim:c_diet_grapefruit_medication_interaction_boundary",
 }
 
 DIET_CHRONIC_CONTRAINDICATIONS = {
@@ -25,6 +26,7 @@ DIET_CHRONIC_CONTRAINDICATIONS = {
     "ckd_protein": "contraindication:diet_ckd_no_high_protein_or_zero_protein",
     "gout_fast_weight_loss": "contraindication:diet_gout_no_crash_diet_or_dehydration",
     "hypertension_potassium_salt": "contraindication:diet_hypertension_no_potassium_salt_without_review",
+    "grapefruit_medication": "contraindication:diet_grapefruit_no_self_manage_interacting_meds",
 }
 
 DIET_CHRONIC_EVALS = {
@@ -32,6 +34,7 @@ DIET_CHRONIC_EVALS = {
     "ckd_protein": "eval:diet_ckd_protein_boundary",
     "gout_fast_weight_loss": "eval:diet_gout_crash_diet_boundary",
     "hypertension_potassium_salt": "eval:diet_hypertension_potassium_salt_boundary",
+    "grapefruit_medication": "eval:diet_grapefruit_medication_boundary",
 }
 
 
@@ -192,6 +195,23 @@ def test_hypertension_potassium_salt_lookup_requires_kidney_or_potassium_med_con
     )
 
 
+def test_grapefruit_lookup_requires_interacting_medication_context(db):
+    import_system_kb_artifacts(db, SEED_DIR, actor="test:diet_grapefruit_lookup")
+
+    risky = _twin(
+        conditions=["早餐喝葡萄柚汁"],
+        medications=[{"name": "辛伐他汀", "generic_name": "simvastatin"}],
+    )
+    assert DIET_CHRONIC_CLAIMS["grapefruit_medication"] in _condition_claim_ids_for_twin(
+        db, risky
+    )
+
+    grapefruit_only = _twin(conditions=["早餐喝葡萄柚汁"])
+    assert DIET_CHRONIC_CLAIMS["grapefruit_medication"] not in _condition_claim_ids_for_twin(
+        db, grapefruit_only
+    )
+
+
 def test_system_kb_eval_runner_covers_diet_chronic_cases(db):
     from app.services.system_knowledge_eval import run_system_kb_eval_cases
 
@@ -199,7 +219,7 @@ def test_system_kb_eval_runner_covers_diet_chronic_cases(db):
 
     report = run_system_kb_eval_cases(db, case_ids=set(DIET_CHRONIC_EVALS.values()))
 
-    assert report["total"] == 4
+    assert report["total"] == 5
     assert report["failed"] == 0, report
     assert {case["case_id"] for case in report["cases"]} == set(DIET_CHRONIC_EVALS.values())
 
