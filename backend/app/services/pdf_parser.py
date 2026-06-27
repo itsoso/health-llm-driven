@@ -565,7 +565,10 @@ class MedicalReportPDFParser:
                     },
                 ],
                 temperature=0.1,
-                max_tokens=4000,
+                # 体检报告项目多(血常规/肝功能/免疫/影像…),结构化 JSON 输出常 >4000 token。
+                # 4000 会把 JSON 截断成 unterminated string → json.loads 撞断点报「格式错误」。
+                # 提到 8000 给足预算;仍可能被超大报告超出 → 下方按 finish_reason/截断特征 fail-loud。
+                max_tokens=8000,
             ))
             if not result_text:
                 raise ValueError("LLM返回内容为空")
@@ -638,7 +641,19 @@ class MedicalReportPDFParser:
             logger.error(f"LLM返回的JSON解析失败: {e}")
             logger.error(f"原始返回内容: {result_text[:1000] if 'result_text' in locals() else 'N/A'}")
             logger.error(f"清理后内容: {json_text[:1000] if 'json_text' in locals() else 'N/A'}")
-            raise ValueError(f"解析结果格式错误，请重试。详情: {str(e)[:100]}")
+            # 截断特征(Unterminated string / 末尾断在分隔符处)= LLM 输出超 max_tokens 被切,
+            # 不是格式错误。给可行指引(分次导入/重试),别误导用户以为报告格式有问题。fail-loud。
+            err = str(e)
+            is_truncated = (
+                "Unterminated" in err
+                or "Expecting" in err and getattr(e, "pos", 0) >= len(json_text) - 2
+            )
+            if is_truncated:
+                raise ValueError(
+                    "报告项目较多,本次解析结果被截断。请重试;若反复失败,请分多次导入"
+                    "(每次上传报告中的部分页),或换更简短的报告。"
+                )
+            raise ValueError(f"解析结果格式错误，请重试。详情: {err[:100]}")
         except Exception as e:
             logger.error(f"LLM解析失败: {e}", exc_info=True)
             raise ValueError(f"LLM解析失败，请重试")
