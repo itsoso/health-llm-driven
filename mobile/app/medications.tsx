@@ -22,8 +22,14 @@ import * as Haptics from 'expo-haptics';
 import {
   listMedications, deactivateMedication, restoreMedication, type Medication,
 } from '../services/medications';
-import { useTheme, type ColorPalette } from '../hooks/useTheme';
-import { spacing, radii, shadows } from '../constants/theme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaSemantic,
+  revaFonts,
+} from '../constants/revaTheme';
 import { useToast } from '../hooks/useToast';
 import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
 import { createMedicationAgentContext } from '../utils/agentContext';
@@ -32,9 +38,6 @@ type TabKey = 'active' | 'archived';
 
 export default function MedicationsScreen() {
   const router = useRouter();
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const qc = useQueryClient();
   const [tab, setTab] = useState<TabKey>('active');
   const toast = useToast();
@@ -106,7 +109,7 @@ export default function MedicationsScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={26} color={c.labelPrimary} />
+          <Ionicons name="chevron-back" size={26} color={C.ink1} />
         </TouchableOpacity>
         <Text style={txt.title}>用药管理</Text>
         <TouchableOpacity
@@ -115,7 +118,7 @@ export default function MedicationsScreen() {
           style={styles.backBtn}
           accessibilityLabel="多药梳理"
         >
-          <Ionicons name="list-outline" size={22} color={c.labelPrimary} />
+          <Ionicons name="list-outline" size={22} color={C.ink1} />
         </TouchableOpacity>
       </View>
 
@@ -136,7 +139,7 @@ export default function MedicationsScreen() {
 
       <ScrollView
         contentContainerStyle={styles.scroll}
-        refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => { refetch(); }} tintColor={c.brand} />}
+        refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => { refetch(); }} tintColor={C.green500} />}
       >
         {activeMedications.length > 0 && (
           <AgentFeedbackLink
@@ -153,10 +156,10 @@ export default function MedicationsScreen() {
           />
         )}
         {isLoading ? (
-          <View style={styles.center}><ActivityIndicator color={c.brand} /></View>
+          <View style={styles.center}><ActivityIndicator color={C.green500} /></View>
         ) : currentList.length === 0 ? (
           <View style={styles.empty}>
-            <Ionicons name="medical-outline" size={48} color={c.labelTertiary} />
+            <Ionicons name="medical-outline" size={48} color={C.ink3} />
             <Text style={txt.emptyTitle}>
               {tab === 'active' ? '还没有在用药品' : '没有已停用的药品'}
             </Text>
@@ -170,7 +173,7 @@ export default function MedicationsScreen() {
           <View style={styles.list}>
             {currentList.map((m) => (
               <MedicationRow
-                key={m.id} med={m} c={c}
+                key={m.id} med={m}
                 tab={tab}
                 onEdit={() => router.push(`/medication-edit?id=${m.id}` as any)}
                 onDeactivate={() => handleDeactivate(m)}
@@ -185,15 +188,12 @@ export default function MedicationsScreen() {
 }
 
 function MedicationRow({
-  med, c, tab, onEdit, onDeactivate, onRestore,
+  med, tab, onEdit, onDeactivate, onRestore,
 }: {
-  med: Medication; c: ColorPalette; tab: TabKey;
+  med: Medication; tab: TabKey;
   onEdit: () => void;
   onDeactivate: () => void; onRestore: () => void;
 }) {
-  const styles = createStyles(c);
-  const txt = createTxt(c);
-
   const confirmDeactivate = () => {
     Alert.alert(
       `停用 ${med.name}?`,
@@ -226,58 +226,56 @@ function MedicationRow({
       </TouchableOpacity>
       {tab === 'active' ? (
         <TouchableOpacity onPress={confirmDeactivate} hitSlop={8} style={styles.actionBtn}>
-          <Ionicons name="pause-circle-outline" size={24} color={c.red} />
+          <Ionicons name="pause-circle-outline" size={24} color={revaSemantic.risk.fg} />
         </TouchableOpacity>
       ) : (
         <TouchableOpacity onPress={onRestore} hitSlop={8} style={styles.actionBtn}>
-          <Ionicons name="refresh-circle-outline" size={24} color={c.brand} />
+          <Ionicons name="refresh-circle-outline" size={24} color={C.green500} />
         </TouchableOpacity>
       )}
     </View>
   );
 }
 
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
-    safe: { flex: 1, backgroundColor: c.bgPrimary },
-    header: {
-      flexDirection: 'row', alignItems: 'center',
-      paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    },
-    backBtn: { width: 40, alignItems: 'flex-start' },
-    tabBar: {
-      flexDirection: 'row',
-      marginHorizontal: spacing.md, marginBottom: spacing.xs,
-      backgroundColor: c.fill, borderRadius: radii.sm, padding: 3,
-    },
-    tabBtn: {
-      flex: 1, paddingVertical: 8, alignItems: 'center',
-      borderRadius: radii.sm - 2,
-    },
-    tabBtnActive: { backgroundColor: c.bgCard },
-    scroll: { paddingHorizontal: spacing.md, paddingBottom: spacing.xl },
-    agentLink: { marginTop: spacing.sm, marginBottom: spacing.md },
-    center: { paddingTop: 80, alignItems: 'center' },
-    empty: { paddingTop: 80, alignItems: 'center', paddingHorizontal: spacing.lg },
-    list: { gap: spacing.sm, paddingTop: spacing.sm },
-    row: {
-      flexDirection: 'row', alignItems: 'center',
-      backgroundColor: c.bgCard, borderRadius: radii.md,
-      padding: spacing.md, gap: spacing.sm, ...shadows.subtle,
-    },
-    actionBtn: { padding: 4 },
-  });
-}
+// Reva 设计语言:暖 paper 底 / 暖白 surface 卡 / paper2 segmented / 活力绿 / 剂量等宽 mono。
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.paper },
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: revaSpacing.s3, paddingVertical: revaSpacing.s2,
+  },
+  backBtn: { width: 40, alignItems: 'flex-start' },
+  tabBar: {
+    flexDirection: 'row',
+    marginHorizontal: revaSpacing.s3, marginBottom: revaSpacing.s1,
+    backgroundColor: C.paper2, borderRadius: revaRadii.sm, padding: 3,
+  },
+  tabBtn: {
+    flex: 1, paddingVertical: 8, alignItems: 'center',
+    borderRadius: revaRadii.sm - 2,
+  },
+  tabBtnActive: { backgroundColor: C.surface },
+  scroll: { paddingHorizontal: revaSpacing.s3, paddingBottom: revaSpacing.s5 },
+  agentLink: { marginTop: revaSpacing.s2, marginBottom: revaSpacing.s3 },
+  center: { paddingTop: 80, alignItems: 'center' },
+  empty: { paddingTop: 80, alignItems: 'center', paddingHorizontal: revaSpacing.s4 },
+  list: { gap: revaSpacing.s2, paddingTop: revaSpacing.s2 },
+  row: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: C.surface, borderRadius: revaRadii.md,
+    padding: revaSpacing.s3, gap: revaSpacing.s2, ...revaShadows.sm,
+  },
+  actionBtn: { padding: 4 },
+});
 
-function createTxt(c: ColorPalette) {
-  return {
-    title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary } as TextStyle,
-    tabText: { fontSize: 14, color: c.labelSecondary, fontWeight: '500' } as TextStyle,
-    tabTextActive: { color: c.labelPrimary, fontWeight: '600' } as TextStyle,
-    emptyTitle: { fontSize: 16, fontWeight: '600', color: c.labelPrimary, marginTop: spacing.md } as TextStyle,
-    emptyHint: { fontSize: 13, color: c.labelSecondary, lineHeight: 20, textAlign: 'center', marginTop: spacing.xs } as TextStyle,
-    medName: { fontSize: 16, fontWeight: '600', color: c.labelPrimary } as TextStyle,
-    medMeta: { fontSize: 12, color: c.labelSecondary, marginTop: 2 } as TextStyle,
-    medPurpose: { fontSize: 12, color: c.labelTertiary, marginTop: 2 } as TextStyle,
-  };
-}
+// 剂量/频次走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
+const txt = {
+  title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1 } as TextStyle,
+  tabText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink2, fontWeight: '500' } as TextStyle,
+  tabTextActive: { color: C.ink1, fontWeight: '600' } as TextStyle,
+  emptyTitle: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '600', color: C.ink1, marginTop: revaSpacing.s3 } as TextStyle,
+  emptyHint: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, lineHeight: 20, textAlign: 'center', marginTop: revaSpacing.s1 } as TextStyle,
+  medName: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '600', color: C.ink1 } as TextStyle,
+  medMeta: { fontFamily: revaFonts.mono, fontSize: 12, color: C.ink2, marginTop: 2 } as TextStyle,
+  medPurpose: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,
+};

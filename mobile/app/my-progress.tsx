@@ -23,7 +23,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { fetchMyProgress, type ProgressDashboard, type ProgressCard } from '../services/myProgress';
 import {
+  causalMemorySummary,
   fetchHealthOperatingReview,
+  predictionBacktestSummary,
   type HealthOperatingReview,
   type ReviewWindowDays,
 } from '../services/healthOperatingReview';
@@ -272,6 +274,10 @@ function OperatingReviewCard({ review, c }: { review: HealthOperatingReview; c: 
   const rows = Object.entries(REVIEW_METRICS)
     .map(([key, meta]) => ({ key, ...meta, change: review.metrics[key] }))
     .filter(row => row.change?.status === 'present' && row.change.delta !== null);
+  const predictionSummary = predictionBacktestSummary(review.prediction_backtest);
+  const predictionResults = review.prediction_backtest?.results ?? [];
+  const personalPatternSummary = causalMemorySummary(review.causal_memory);
+  const personalPatterns = review.causal_memory?.notes ?? [];
 
   return (
     <View style={[styles.reviewCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
@@ -316,6 +322,35 @@ function OperatingReviewCard({ review, c }: { review: HealthOperatingReview; c: 
           这段窗口内关键指标还不足，继续记录体重、腰围、血压、睡眠和 HRV。
         </Text>
       )}
+
+      {predictionSummary ? (
+        <View style={[styles.predictionBacktest, { backgroundColor: c.fill }]}>
+          <Text style={[styles.predictionTitle, { color: c.labelPrimary }]}>{predictionSummary}</Text>
+          {predictionResults.slice(0, 2).map(result => (
+            <Text key={result.prediction_id} style={[styles.predictionLine, { color: c.labelSecondary }]}>
+              {(REVIEW_METRICS[result.metric]?.label ?? result.metric)} · {result.verdict === 'met' ? '支持' : result.verdict === 'not_met' ? '未支持' : '数据不足'}
+              {typeof result.observed_delta === 'number' ? ` · ${result.observed_delta > 0 ? '+' : ''}${result.observed_delta}` : ''}
+            </Text>
+          ))}
+          <Text style={[styles.predictionBoundary, { color: c.labelTertiary }]}>
+            {review.prediction_backtest?.boundary}
+          </Text>
+        </View>
+      ) : null}
+
+      {personalPatternSummary ? (
+        <View style={[styles.causalMemory, { backgroundColor: c.fill }]}>
+          <Text style={[styles.causalTitle, { color: c.labelPrimary }]}>{personalPatternSummary}</Text>
+          {personalPatterns.slice(1, 3).map((note, index) => (
+            <Text key={`${note.metric}-${index}`} style={[styles.causalLine, { color: c.labelSecondary }]}>
+              {note.text}
+            </Text>
+          ))}
+          <Text style={[styles.causalBoundary, { color: c.labelTertiary }]}>
+            {review.causal_memory?.claim_boundary}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -452,6 +487,14 @@ const styles = StyleSheet.create({
   reviewMetric: { minWidth: '47%', flex: 1, borderRadius: radii.md, padding: spacing.sm },
   reviewMetricLabel: { fontSize: 11, marginBottom: 2 },
   reviewMetricValue: { fontSize: 15, fontWeight: '700' },
+  predictionBacktest: { borderRadius: radii.md, padding: spacing.sm, gap: 4 },
+  predictionTitle: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
+  predictionLine: { fontSize: 12, lineHeight: 17 },
+  predictionBoundary: { fontSize: 11, lineHeight: 15 },
+  causalMemory: { borderRadius: radii.md, padding: spacing.sm, gap: 4 },
+  causalTitle: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
+  causalLine: { fontSize: 12, lineHeight: 17 },
+  causalBoundary: { fontSize: 11, lineHeight: 15 },
   emptyCard: {
     borderWidth: 1,
     borderRadius: radii.md,

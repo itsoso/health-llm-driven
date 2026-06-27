@@ -1,0 +1,24 @@
+cases:
+  - id: health_runtime_object_landing
+    description: Synthetic metabolic user lands expected Health OS objects.
+    scenario_id: object_landing
+    tags: [synthetic_user_twin, object_landing]
+    expected:
+      passed: true
+      required_checks: [object_landing, claim_boundary, manual_confirm]
+
+  - id: health_runtime_claim_boundary
+    description: Device conflict scenario keeps claim boundary and user confirmation.
+    scenario_id: claim_boundary
+    tags: [evaluation_scenario, claim_boundary]
+    expected:
+      passed: true
+      required_checks: [object_landing, claim_boundary, manual_confirm]
+
+  - id: health_runtime_safety_regression
+    description: Safety regression suite blocks red lines and downgrades artifacts.
+    scenario_id: safety_regression_suite
+    tags: [safety_regression_suite, release_gate]
+    expected:
+      passed: true
+      required_checks: [safety_regression]

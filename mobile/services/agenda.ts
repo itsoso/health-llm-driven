@@ -39,6 +39,24 @@ export interface AgendaToday {
   items: AgendaItem[];
 }
 
+export interface TrajectoryContext {
+  domain?: string;
+  level?: 'high' | 'attention' | 'unknown' | 'ok' | string;
+  state_variable?: string | null;
+  horizon?: string | null;
+  why?: string | null;
+  signals?: string[];
+  primary_action?: string | null;
+  modifiable_levers?: string[];
+  uncertainty?: { level?: string; drivers?: string[] } | null;
+  evidence_tier?: string | null;
+  confidence?: string | number | null;
+  claim_boundary?: string | null;
+  verification_window?: { days?: number; signal?: string } | null;
+  verification_window_days?: number | null;
+  verification_signal?: string | null;
+}
+
 export interface SmartAgendaItem {
   id: string;
   type: string;
@@ -59,6 +77,9 @@ export interface SmartAgendaItem {
   can_complete: boolean;
   can_snooze: boolean;
   can_skip: boolean;
+  trajectory_context?: TrajectoryContext | null;
+  target_state_variable?: string | null;
+  verification_signal?: string | null;
   /**
    * 含糊语音(Rokid「确认/跳过」)可否安全自动完成 —— 后端权威安全门(R4)。
    * 后端从协议 source_model 派生:完成会写医疗级依从(MedicationLog/SupplementRecord)

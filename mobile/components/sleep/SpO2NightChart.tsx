@@ -1,9 +1,20 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Dimensions, LayoutChangeEvent } from 'react-native';
 import Svg, { Line, Polyline, Rect, G, Text as SvgText, Circle } from 'react-native-svg';
-import { spacing } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaSemantic,
+  revaFonts,
+} from '../../constants/revaTheme';
 import type { SpO2Point } from '../../services/spo2';
+
+// 血氧分区严重度 → 三步临床语义(好不好)。折线本身是数据序列色(蓝,装饰非好坏)。
+const SPO2_ZONE = {
+  normal: revaSemantic.normal.fg, // ≥95
+  caution: revaSemantic.caution.fg, // 90-94
+  risk: revaSemantic.risk.fg, // <90
+} as const;
+const LINE_COLOR = C.blue500;
 
 interface Props {
   data: SpO2Point[];
@@ -64,8 +75,6 @@ function timeToMinutes(t: string): number {
 }
 
 export default function SpO2NightChart({ data, height = 180 }: Props) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
   const [chartWidth, setChartWidth] = useState(Dimensions.get('window').width - 32);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
 
@@ -150,20 +159,20 @@ export default function SpO2NightChart({ data, height = 180 }: Props) {
             <G key={v}>
               <Line
                 x1={PAD.left} y1={toY(v)} x2={chartWidth - PAD.right} y2={toY(v)}
-                stroke={v === 90 ? '#FF453A40' : v === 95 ? '#FF9F0A30' : c.separator}
+                stroke={v === 90 ? `${SPO2_ZONE.risk}40` : v === 95 ? `${SPO2_ZONE.caution}30` : C.line}
                 strokeWidth={v === 90 || v === 95 ? 1 : 0.5}
                 strokeDasharray={v === 90 || v === 95 ? '4,3' : undefined}
               />
-              <SvgText x={PAD.left - 6} y={toY(v) + 4} textAnchor="end" fontSize={10} fill={c.labelTertiary}>
+              <SvgText x={PAD.left - 6} y={toY(v) + 4} textAnchor="end" fontSize={10} fill={C.ink3}>
                 {v}
               </SvgText>
             </G>
           ))}
 
-          {/* Reference bands */}
-          <Rect x={PAD.left} y={toY(Y_MAX)} width={plotW} height={toY(95) - toY(Y_MAX)} fill="#30D15808" />
-          <Rect x={PAD.left} y={toY(95)} width={plotW} height={toY(90) - toY(95)} fill="#FF9F0A08" />
-          <Rect x={PAD.left} y={toY(90)} width={plotW} height={toY(Y_MIN) - toY(90)} fill="#FF453A08" />
+          {/* Reference bands — 极低 alpha 的三步语义带 (正常/偏低/低氧) */}
+          <Rect x={PAD.left} y={toY(Y_MAX)} width={plotW} height={toY(95) - toY(Y_MAX)} fill={`${SPO2_ZONE.normal}0F`} />
+          <Rect x={PAD.left} y={toY(95)} width={plotW} height={toY(90) - toY(95)} fill={`${SPO2_ZONE.caution}0F`} />
+          <Rect x={PAD.left} y={toY(90)} width={plotW} height={toY(Y_MIN) - toY(90)} fill={`${SPO2_ZONE.risk}0F`} />
 
           {/* SpO2 line — 多段 polyline + 单点散点
               (gap > 30min 自动断开, 避免白天稀疏点连成长直线 misleading) */}
@@ -174,19 +183,19 @@ export default function SpO2NightChart({ data, height = 180 }: Props) {
               return (
                 <Circle key={`pt-${i}`}
                   cx={toX(p.time)} cy={toY(p.value)} r={2}
-                  fill="#fff" stroke="#007AFF" strokeWidth={1.2} />
+                  fill="#fff" stroke={LINE_COLOR} strokeWidth={1.2} />
               );
             }
             const pts = seg.map(p => `${toX(p.time).toFixed(1)},${toY(p.value).toFixed(1)}`).join(' ');
             return (
               <Polyline key={`seg-${i}`} points={pts} fill="none"
-                stroke="#007AFF" strokeWidth={1.5} strokeLinejoin="round" />
+                stroke={LINE_COLOR} strokeWidth={1.5} strokeLinejoin="round" />
             );
           })}
 
           {/* X labels */}
           {xLabels.map((t, i) => (
-            <SvgText key={i} x={toX(t)} y={height - 6} textAnchor="middle" fontSize={10} fill={c.labelTertiary}>
+            <SvgText key={i} x={toX(t)} y={height - 6} textAnchor="middle" fontSize={10} fill={C.ink3}>
               {t}
             </SvgText>
           ))}
@@ -194,8 +203,8 @@ export default function SpO2NightChart({ data, height = 180 }: Props) {
           {/* Selected point */}
           {selected && (
             <>
-              <Line x1={toX(selected.time)} y1={PAD.top} x2={toX(selected.time)} y2={PAD.top + plotH} stroke="#007AFF40" strokeWidth={1} />
-              <Circle cx={toX(selected.time)} cy={toY(selected.value)} r={4} fill="#007AFF" stroke="#fff" strokeWidth={1.5} />
+              <Line x1={toX(selected.time)} y1={PAD.top} x2={toX(selected.time)} y2={PAD.top + plotH} stroke={`${LINE_COLOR}40`} strokeWidth={1} />
+              <Circle cx={toX(selected.time)} cy={toY(selected.value)} r={4} fill={LINE_COLOR} stroke="#fff" strokeWidth={1.5} />
             </>
           )}
         </Svg>
@@ -205,7 +214,7 @@ export default function SpO2NightChart({ data, height = 180 }: Props) {
       {selected && (
         <View style={styles.tooltip}>
           <Text style={styles.tooltipTime}>{selected.time}</Text>
-          <Text style={[styles.tooltipValue, { color: selected.value < 90 ? '#FF453A' : selected.value < 95 ? '#FF9F0A' : '#30D158' }]}>
+          <Text style={[styles.tooltipValue, { color: selected.value < 90 ? SPO2_ZONE.risk : selected.value < 95 ? SPO2_ZONE.caution : SPO2_ZONE.normal }]}>
             {selected.value}%
           </Text>
         </View>
@@ -214,15 +223,15 @@ export default function SpO2NightChart({ data, height = 180 }: Props) {
       {/* Legend */}
       <View style={styles.legend}>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#30D158' }]} />
+          <View style={[styles.legendDot, { backgroundColor: SPO2_ZONE.normal }]} />
           <Text style={styles.legendText}>≥95 正常</Text>
         </View>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#FF9F0A' }]} />
+          <View style={[styles.legendDot, { backgroundColor: SPO2_ZONE.caution }]} />
           <Text style={styles.legendText}>90-94 偏低</Text>
         </View>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#FF453A' }]} />
+          <View style={[styles.legendDot, { backgroundColor: SPO2_ZONE.risk }]} />
           <Text style={styles.legendText}>&lt;90 低氧</Text>
         </View>
       </View>
@@ -230,20 +239,19 @@ export default function SpO2NightChart({ data, height = 180 }: Props) {
   );
 }
 
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
-    container: { marginTop: 4 },
-    tooltip: {
-      position: 'absolute', top: 0, right: 12,
-      flexDirection: 'row', alignItems: 'baseline', gap: 6,
-      backgroundColor: c.bgCard, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4,
-      shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
-    },
-    legend: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginTop: 4 },
-    legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    legendDot: { width: 6, height: 6, borderRadius: 3 },
-    tooltipTime: { fontSize: 12, color: c.labelSecondary },
-    tooltipValue: { fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'] },
-    legendText: { fontSize: 10, color: c.labelTertiary },
-  });
-}
+// Reva 设计语言:暖白 surface tooltip / 数字时间走等宽 mono / 文字走 sans。
+const styles = StyleSheet.create({
+  container: { marginTop: 4 },
+  tooltip: {
+    position: 'absolute', top: 0, right: 12,
+    flexDirection: 'row', alignItems: 'baseline', gap: 6,
+    backgroundColor: C.surface, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4,
+    shadowColor: '#142019', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
+  },
+  legend: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginTop: 4 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendDot: { width: 6, height: 6, borderRadius: 3 },
+  tooltipTime: { fontFamily: revaFonts.mono, fontSize: 12, color: C.ink2 },
+  tooltipValue: { fontFamily: revaFonts.mono, fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  legendText: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink3 },
+});

@@ -1,9 +1,19 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Rect } from 'react-native-svg';
-import { spacing } from '../../constants/theme';
-import { scoreColor } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaSpacing,
+  revaSemantic,
+  revaFonts,
+} from '../../constants/revaTheme';
+
+// 睡眠质量分 → 三步临床语义(好不好)的柱色。
+function scoreSemanticColor(score: number): string {
+  if (score >= 80) return revaSemantic.normal.fg;
+  if (score >= 60) return revaSemantic.caution.fg;
+  return revaSemantic.risk.fg;
+}
 
 interface ChartItem {
   date: string;
@@ -19,9 +29,6 @@ interface Props {
 const DAY_LABELS = ['一', '二', '三', '四', '五', '六', '日'];
 
 export default function SleepWeeklyChart({ data, height = 140 }: Props) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-
   const last7 = data.slice(-7);
   const maxHours = Math.max(10, ...last7.map(d => d.duration_hours ?? 0));
   const barW = 28;
@@ -35,7 +42,7 @@ export default function SleepWeeklyChart({ data, height = 140 }: Props) {
           const h = d.duration_hours ?? 0;
           const barH = Math.max(2, (h / maxHours) * chartH);
           const x = i * (barW + gap);
-          const color = d.score != null ? scoreColor(d.score) : c.labelTertiary;
+          const color = d.score != null ? scoreSemanticColor(d.score) : C.ink3;
           return (
             <React.Fragment key={i}>
               <Rect x={x} y={chartH - barH} width={barW} height={barH} rx={4} fill={color} opacity={0.85} />
@@ -54,10 +61,8 @@ export default function SleepWeeklyChart({ data, height = 140 }: Props) {
   );
 }
 
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
-    container: { alignItems: 'center', paddingVertical: spacing.sm },
-    labelRow: { flexDirection: 'row', marginTop: 4 },
-    dayLabel: { fontSize: 10, color: c.labelTertiary, textAlign: 'center' },
-  });
-}
+const styles = StyleSheet.create({
+  container: { alignItems: 'center', paddingVertical: revaSpacing.s2 },
+  labelRow: { flexDirection: 'row', marginTop: 4 },
+  dayLabel: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink3, textAlign: 'center' },
+});

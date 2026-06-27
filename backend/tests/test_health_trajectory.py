@@ -67,9 +67,21 @@ def test_trajectory_me_combines_baseline_anchors_realtime_and_actions(client, db
     assert all(r["evidence_tier"] for r in body["trajectory_risks"])
     assert all(r["confidence"] in {"high", "medium", "low"} for r in body["trajectory_risks"])
     assert all("不替代医生诊断" in r["claim_boundary"] for r in body["trajectory_risks"])
+    assert all(r["state_variable"] for r in body["trajectory_risks"])
+    assert all(r["horizon"] for r in body["trajectory_risks"])
+    assert all(isinstance(r["modifiable_levers"], list) for r in body["trajectory_risks"])
+    assert all(r["uncertainty"]["level"] in {"low", "medium", "high"} for r in body["trajectory_risks"])
+    assert all(isinstance(r["uncertainty"]["drivers"], list) for r in body["trajectory_risks"])
+    assert all(r["verification_window"]["days"] >= 0 for r in body["trajectory_risks"])
+    assert all(r["verification_window"]["signal"] for r in body["trajectory_risks"])
+    assert all(r["verification_window_days"] >= 0 for r in body["trajectory_risks"])
+    assert all(r["verification_signal"] for r in body["trajectory_risks"])
     metabolic = next(r for r in body["trajectory_risks"] if r["domain"] == "metabolic_health")
     assert metabolic["evidence_tier"] == "clinical_guideline"
     assert metabolic["confidence"] == "high"
+    assert metabolic["state_variable"] == "waist_cm"
+    assert metabolic["uncertainty"]["level"] == "medium"
+    assert "movement" in metabolic["modifiable_levers"]
     assert body["epigenetic_feedback"]["evidence_tier"] == "experimental"
     assert "短期干预成效" in body["epigenetic_feedback"]["claim_boundary"]
     assert any(a["domain"] == "measurement" for a in body["next_actions"])
@@ -144,3 +156,43 @@ def test_trajectory_me_uses_latest_epigenetic_report_as_experimental_feedback(cl
     assert aging_risk["level"] == "attention"
     assert "epigenetic_pace_elevated" in aging_risk["signals"]
     assert aging_risk["confidence"] == "low"
+
+
+def test_trajectory_me_includes_personal_prediction_context(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    from app.models.intervention_cycle import InterventionCycle, OutcomeMetric
+    from app.models.waist import WaistRecord
+    from app.models.weight import WeightRecord
+
+    db.add(WeightRecord(user_id=user.id, record_date=date.today(), weight=82.0, bmi=27.2))
+    db.add(WaistRecord(user_id=user.id, record_date=date.today(), waist_cm=92.0))
+    cycle = InterventionCycle(
+        user_id=user.id,
+        cycle_type="metabolic_90d",
+        status="active",
+        start_date=date.today(),
+    )
+    db.add(cycle)
+    db.flush()
+    db.add(OutcomeMetric(
+        cycle_id=cycle.id,
+        metric_code="weight",
+        unit="kg",
+        baseline_value=82.0,
+        latest_value=79.0,
+        delta=-3.0,
+        direction="down",
+    ))
+    db.commit()
+
+    resp = client.get("/api/v1/trajectory/me", headers=headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["personal_predictions"][0]["metric"] == "weight"
+    metabolic = next(r for r in body["trajectory_risks"] if r["domain"] == "metabolic_health")
+    context = metabolic["personal_prediction_context"]
+    assert context["metric"] == "weight"
+    assert context["model_version"] == "personal_prediction_v1"
+    assert context["uncertainty"]["level"] in {"low", "medium", "high"}
+    assert "不替代医生诊断" in context["claim_boundary"]

@@ -7,8 +7,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { useWorkoutList, useWorkoutStats } from '../hooks/useWorkouts';
 import { syncGarminWorkouts, type WorkoutSummary } from '../services/workouts';
-import { spacing, radii, shadows } from '../constants/theme'
-import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaFonts,
+} from '../constants/revaTheme';
 import { createWorkoutAgentContext, pushChatWithContext } from '../utils/agentContext';
 
 const TYPE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -22,9 +27,6 @@ const TYPE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
 };
 
 export default function WorkoutListScreen() {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
   const qc = useQueryClient();
   const { data: workouts, isLoading, refetch, isRefetching } = useWorkoutList();
@@ -62,7 +64,7 @@ export default function WorkoutListScreen() {
         onPress={() => router.push(`/workout-detail?id=${item.id}` as any)}
         activeOpacity={0.7}>
         <View style={styles.iconCircle}>
-          <Ionicons name={icon} size={18} color={c.brand} />
+          <Ionicons name={icon} size={18} color={C.green500} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={txt.type}>{item.workout_name || item.workout_type || '运动'}</Text>
@@ -72,7 +74,7 @@ export default function WorkoutListScreen() {
           <Text style={txt.duration}>{durationMin}min</Text>
           {item.calories != null && <Text style={txt.cal}>{item.calories}kcal</Text>}
         </View>
-        <Ionicons name="chevron-forward" size={14} color={c.labelTertiary} />
+        <Ionicons name="chevron-forward" size={14} color={C.ink3} />
       </TouchableOpacity>
     );
   };
@@ -81,11 +83,11 @@ export default function WorkoutListScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={C.ink1} />
         </TouchableOpacity>
         <Text style={txt.title}>运动记录</Text>
         <TouchableOpacity onPress={handleSync} style={styles.backBtn} disabled={syncing}>
-          <Ionicons name="sync-outline" size={20} color={syncing ? c.labelTertiary : c.brand} />
+          <Ionicons name="sync-outline" size={20} color={syncing ? C.ink3 : C.green500} />
         </TouchableOpacity>
       </View>
 
@@ -100,27 +102,27 @@ export default function WorkoutListScreen() {
       )}
       {(workouts?.length ?? 0) > 0 && (
         <TouchableOpacity
-          style={[styles.agentLink, { borderColor: c.separator }]}
+          style={[styles.agentLink, { borderColor: C.line }]}
           onPress={handleChatWorkouts}
           activeOpacity={0.75}
           accessibilityRole="button"
           accessibilityLabel="跟 Agent 详细聊运动记录"
         >
-          <Ionicons name="chatbubble-ellipses-outline" size={16} color={c.brand} />
-          <Text style={[txt.agentLinkText, { color: c.brand }]}>跟 Agent 详细聊运动安排</Text>
-          <Ionicons name="chevron-forward" size={15} color={c.brand} style={{ marginLeft: 'auto' }} />
+          <Ionicons name="chatbubble-ellipses-outline" size={16} color={C.green500} />
+          <Text style={[txt.agentLinkText, { color: C.green500 }]}>跟 Agent 详细聊运动安排</Text>
+          <Ionicons name="chevron-forward" size={15} color={C.green500} style={{ marginLeft: 'auto' }} />
         </TouchableOpacity>
       )}
 
       {isLoading ? (
-        <ActivityIndicator color={c.brand} style={{ marginTop: 40 }} />
+        <ActivityIndicator color={C.green500} style={{ marginTop: 40 }} />
       ) : (
         <FlatList
           data={workouts}
           keyExtractor={i => String(i.id)}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.green500} />}
           ListEmptyComponent={<Text style={txt.empty}>暂无运动记录</Text>}
         />
       )}
@@ -129,9 +131,6 @@ export default function WorkoutListScreen() {
 }
 
 function StatBadge({ label, value }: { label: string; value: string }) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <View style={styles.statBadge}>
       <Text style={txt.statVal}>{value}</Text>
@@ -140,48 +139,50 @@ function StatBadge({ label, value }: { label: string; value: string }) {
   );
 }
 
-const createStyles = (c: ColorPalette) => StyleSheet.create({
-  safe: { flex: 1, backgroundColor: c.bgPrimary },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+// Reva 设计语言:暖 paper 底 / 暖白 surface 卡 / 活力绿 / r-lg 18 / 时长卡路里走等宽 mono。
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.paper },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: revaSpacing.s3, paddingVertical: revaSpacing.s2 },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   statsRow: {
-    flexDirection: 'row', gap: 8, paddingHorizontal: spacing.lg, marginBottom: spacing.md,
+    flexDirection: 'row', gap: 8, paddingHorizontal: revaSpacing.s4, marginBottom: revaSpacing.s3,
   },
   agentLink: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: c.bgCard,
+    backgroundColor: C.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
+    borderRadius: revaRadii.md,
+    paddingHorizontal: revaSpacing.s4,
+    paddingVertical: revaSpacing.s3,
+    marginHorizontal: revaSpacing.s4,
+    marginBottom: revaSpacing.s3,
   },
   statBadge: {
-    flex: 1, backgroundColor: c.bgCard, borderRadius: radii.md,
-    padding: spacing.sm, alignItems: 'center', ...shadows.subtle,
+    flex: 1, backgroundColor: C.surface, borderRadius: revaRadii.md,
+    padding: revaSpacing.s2, alignItems: 'center', ...revaShadows.sm,
   },
-  list: { paddingHorizontal: spacing.lg, paddingBottom: 100 },
+  list: { paddingHorizontal: revaSpacing.s4, paddingBottom: 100 },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: c.bgCard, borderRadius: radii.lg,
-    padding: spacing.lg, marginBottom: spacing.sm, ...shadows.subtle,
+    backgroundColor: C.surface, borderRadius: revaRadii.lg,
+    padding: revaSpacing.s4, marginBottom: revaSpacing.s2, ...revaShadows.sm,
   },
   iconCircle: {
-    width: 36, height: 36, borderRadius: radii.sm,
-    backgroundColor: c.brandLight, alignItems: 'center', justifyContent: 'center',
+    width: 36, height: 36, borderRadius: revaRadii.sm,
+    backgroundColor: C.green50, alignItems: 'center', justifyContent: 'center',
   },
   metaCol: { alignItems: 'flex-end', marginRight: 4 },
 });
 
-const createTxt = (c: ColorPalette) => ({
-  title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
-  type: { fontSize: 15, fontWeight: '600', color: c.labelPrimary } as TextStyle,
-  time: { fontSize: 12, color: c.labelSecondary, marginTop: 2 } as TextStyle,
-  duration: { fontSize: 14, fontWeight: '700', color: c.labelPrimary } as TextStyle,
-  cal: { fontSize: 11, color: c.labelSecondary, marginTop: 1 } as TextStyle,
-  empty: { fontSize: 14, color: c.labelTertiary, textAlign: 'center', marginTop: 40 } as TextStyle,
-  agentLinkText: { fontSize: 14, fontWeight: '600' } as TextStyle,
-  statVal: { fontSize: 16, fontWeight: '700', color: c.labelPrimary } as TextStyle,
-  statLabel: { fontSize: 10, color: c.labelSecondary, marginTop: 2 } as TextStyle,
-});
+// 时长/卡路里/距离/次数/日期走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
+const txt = {
+  title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1, flex: 1, textAlign: 'center' } as TextStyle,
+  type: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '600', color: C.ink1 } as TextStyle,
+  time: { fontFamily: revaFonts.mono, fontSize: 12, color: C.ink2, marginTop: 2 } as TextStyle,
+  duration: { fontFamily: revaFonts.mono, fontSize: 14, fontWeight: '700', color: C.ink1 } as TextStyle,
+  cal: { fontFamily: revaFonts.mono, fontSize: 11, color: C.ink2, marginTop: 1 } as TextStyle,
+  empty: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink3, textAlign: 'center', marginTop: 40 } as TextStyle,
+  agentLinkText: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '600' } as TextStyle,
+  statVal: { fontFamily: revaFonts.mono, fontSize: 16, fontWeight: '700', color: C.ink1 } as TextStyle,
+  statLabel: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink2, marginTop: 2 } as TextStyle,
+};

@@ -1,0 +1,40 @@
+{
+  "suite": "health_runtime",
+  "total_cases": 3,
+  "passed": 3,
+  "failed": 0,
+  "errored": 0,
+  "avg_score": 1.0,
+  "avg_latency_ms": 0,
+  "cases": [
+    {
+      "case_id": "health_runtime_object_landing",
+      "suite": "health_runtime",
+      "passed": true,
+      "score": 1.0,
+      "details": {},
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "health_runtime_claim_boundary",
+      "suite": "health_runtime",
+      "passed": true,
+      "score": 1.0,
+      "details": {},
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "health_runtime_safety_regression",
+      "suite": "health_runtime",
+      "passed": true,
+      "score": 1.0,
+      "details": {},
+      "error": null,
+      "latency_ms": 0
+    }
+  ],
+  "baseline_path": null,
+  "regression": []
+}

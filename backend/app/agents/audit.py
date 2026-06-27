@@ -476,13 +476,14 @@ def log_external_action_intent(
     target_type: Optional[str] = None,
     target_id: Optional[int] = None,
 ) -> Optional[int]:
-    """P5 外部动作意图(food_order / doctor_booking / alarm_set)确认的取证审计。
+    """P5 外部动作意图确认的取证审计。
 
     food_order 是财务相邻动作(audit_required),确认是 human-in-the-loop:必须可追溯到
     「谁在何时确认了哪个外部动作意图、结果如何」。action='external_action_confirm';
     agent_type='external_action_intent'。
     outcome ∈ {drafted_acknowledged(food_order 本期惰性), reminder_created(alarm_set/
-    doctor_booking)}。旁路,失败不抛(返回 None),不阻断 confirm 主流程。
+    doctor_booking), actuation_acknowledged(environment_actuation 仅 ACK/event)}。
+    旁路,失败不抛(返回 None),不阻断 confirm 主流程。
     **无 PII / 无支付凭据**:只记 user_id + kind + 对象 id。
     """
     if user_id is None:

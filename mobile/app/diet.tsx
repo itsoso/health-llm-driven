@@ -15,8 +15,14 @@ import MealForm from '../components/diet/MealForm';
 import DietFAB from '../components/diet/DietFAB';
 import FrequentFoodsRow from '../components/diet/FrequentFoodsRow';
 import { useToast } from '../hooks/useToast';
-import { spacing, radii, shadows } from '../constants/theme'
-import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaSemantic,
+  revaFonts,
+} from '../constants/revaTheme';
 import { createDietAgentContext, pushChatWithContext } from '../utils/agentContext';
 
 function todayStr() {
@@ -41,9 +47,6 @@ function guessMealType(): DietRecordCreate['meal_type'] {
 }
 
 export default function DietScreen() {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
   const params = useLocalSearchParams<{ capture?: string }>();
   const captureConsumedRef = useRef(false);
@@ -249,7 +252,7 @@ export default function DietScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={C.ink1} />
         </TouchableOpacity>
         <Text style={txt.title}>饮食记录</Text>
         <View style={{ width: 40 }} />
@@ -258,16 +261,16 @@ export default function DietScreen() {
       {/* Date selector */}
       <View style={styles.dateRow}>
         <TouchableOpacity onPress={() => setDate(d => offsetDate(d, -1))}>
-          <Ionicons name="chevron-back-circle-outline" size={28} color={c.labelSecondary} />
+          <Ionicons name="chevron-back-circle-outline" size={28} color={C.ink2} />
         </TouchableOpacity>
         <Text style={txt.dateText}>{dateLabel}</Text>
         <TouchableOpacity onPress={() => setDate(d => offsetDate(d, 1))} disabled={isToday}>
-          <Ionicons name="chevron-forward-circle-outline" size={28} color={isToday ? c.labelQuaternary : c.labelSecondary} />
+          <Ionicons name="chevron-forward-circle-outline" size={28} color={isToday ? C.ink4 : C.ink2} />
         </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.green500} />}
         showsVerticalScrollIndicator={false}>
 
         {/* Summary — pending 记录不计入, 单独标注 (不假装成功) */}
@@ -286,15 +289,15 @@ export default function DietScreen() {
         )}
         {daily && (
           <TouchableOpacity
-            style={[styles.agentLink, { borderColor: c.separator }]}
+            style={[styles.agentLink, { borderColor: C.line }]}
             onPress={handleChatDiet}
             activeOpacity={0.75}
             accessibilityRole="button"
             accessibilityLabel="跟 Agent 详细聊今日饮食"
           >
-            <Ionicons name="chatbubble-ellipses-outline" size={16} color={c.brand} />
-            <Text style={[txt.agentLinkText, { color: c.brand }]}>跟 Agent 详细聊{dateLabel}饮食</Text>
-            <Ionicons name="chevron-forward" size={15} color={c.brand} style={{ marginLeft: 'auto' }} />
+            <Ionicons name="chatbubble-ellipses-outline" size={16} color={C.green500} />
+            <Text style={[txt.agentLinkText, { color: C.green500 }]}>跟 Agent 详细聊{dateLabel}饮食</Text>
+            <Ionicons name="chevron-forward" size={15} color={C.green500} style={{ marginLeft: 'auto' }} />
           </TouchableOpacity>
         )}
 
@@ -334,7 +337,7 @@ export default function DietScreen() {
                 renderRightActions={() => (
                   <View style={styles.swipeActions}>
                     <TouchableOpacity
-                      style={[styles.swipeBtn, { backgroundColor: c.brand }]}
+                      style={[styles.swipeBtn, { backgroundColor: C.green500 }]}
                       onPress={() => handleEdit(r)}
                       activeOpacity={0.85}
                       accessibilityLabel="编辑"
@@ -343,7 +346,7 @@ export default function DietScreen() {
                       <Text style={txt.swipeText}>编辑</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.swipeBtn, { backgroundColor: c.red }]}
+                      style={[styles.swipeBtn, { backgroundColor: revaSemantic.risk.fg }]}
                       onPress={() => handleDelete(r)}
                       activeOpacity={0.85}
                       accessibilityLabel="删除"
@@ -369,12 +372,12 @@ export default function DietScreen() {
                         accessibilityRole="button"
                         accessibilityLabel="营养估算失败,点击重试"
                       >
-                        <Ionicons name="refresh" size={13} color={c.red} />
-                        <Text style={[txt.retryText, { color: c.red }]}>估算失败 · 重试</Text>
+                        <Ionicons name="refresh" size={13} color={revaSemantic.risk.fg} />
+                        <Text style={[txt.retryText, { color: revaSemantic.risk.fg }]}>估算失败 · 重试</Text>
                       </TouchableOpacity>
                     ) : (
                       <View style={styles.pendingChip}>
-                        <ActivityIndicator size="small" color={c.labelTertiary} />
+                        <ActivityIndicator size="small" color={C.ink3} />
                         <Text style={txt.pendingChipText}>估算中…</Text>
                       </View>
                     )
@@ -398,9 +401,6 @@ export default function DietScreen() {
 }
 
 function NutriPill({ label, value, unit, color }: { label: string; value: string; unit: string; color: string }) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   return (
     <View style={styles.nutriItem}>
       <Text style={[txt.nutriVal, { color }]}>{value}</Text>
@@ -410,66 +410,68 @@ function NutriPill({ label, value, unit, color }: { label: string; value: string
   );
 }
 
-const createStyles = (c: ColorPalette) => StyleSheet.create({
-  safe: { flex: 1, backgroundColor: c.bgPrimary },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+// Reva 设计语言:暖 paper 底 / 暖白 surface 卡 / 活力绿 / r-lg 18 / 数字等宽 mono / light-first 软阴影。
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.paper },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: revaSpacing.s3, paddingVertical: revaSpacing.s2 },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  dateRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, paddingVertical: spacing.sm },
-  content: { padding: spacing.lg },
+  dateRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, paddingVertical: revaSpacing.s2 },
+  content: { padding: revaSpacing.s4 },
   summaryCard: {
     flexDirection: 'row', justifyContent: 'space-around',
-    backgroundColor: c.bgCard, borderRadius: radii.lg,
-    padding: spacing.lg, marginBottom: spacing.lg, ...shadows.subtle,
+    backgroundColor: C.surface, borderRadius: revaRadii.lg,
+    padding: revaSpacing.s4, marginBottom: revaSpacing.s4, ...revaShadows.sm,
   },
   nutriItem: { alignItems: 'center', gap: 2 },
   mealRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: c.bgCard, borderRadius: radii.md,
-    padding: spacing.lg, marginBottom: spacing.sm, ...shadows.subtle,
+    backgroundColor: C.surface, borderRadius: revaRadii.md,
+    padding: revaSpacing.s4, marginBottom: revaSpacing.s2, ...revaShadows.sm,
   },
-  mealDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: c.brand },
+  mealDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: C.green500 },
   pendingChip: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   retryBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: radii.full, backgroundColor: c.bgPrimary,
+    borderRadius: revaRadii.pill, backgroundColor: C.paper,
   },
   swipeActions: {
     flexDirection: 'row', alignItems: 'stretch',
-    marginBottom: spacing.sm,
+    marginBottom: revaSpacing.s2,
   },
   swipeBtn: {
     width: 76,
     alignItems: 'center', justifyContent: 'center',
     gap: 4,
     marginLeft: 6,
-    borderRadius: radii.md,
+    borderRadius: revaRadii.md,
   },
   agentLink: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: c.bgCard,
+    backgroundColor: C.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    marginTop: -spacing.sm,
-    marginBottom: spacing.lg,
+    borderRadius: revaRadii.md,
+    paddingHorizontal: revaSpacing.s4,
+    paddingVertical: revaSpacing.s3,
+    marginTop: -revaSpacing.s2,
+    marginBottom: revaSpacing.s4,
   },
 });
 
-const createTxt = (c: ColorPalette) => ({
-  title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
-  dateText: { fontSize: 16, fontWeight: '600', color: c.labelPrimary } as TextStyle,
-  nutriVal: { fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
-  nutriUnit: { fontSize: 10, color: c.labelSecondary } as TextStyle,
-  nutriLabel: { fontSize: 11, color: c.labelTertiary } as TextStyle,
-  pendingNote: { fontSize: 11, color: c.labelTertiary, textAlign: 'center', marginTop: -spacing.md, marginBottom: spacing.lg } as TextStyle,
-  mealType: { fontSize: 13, fontWeight: '600', color: c.labelPrimary } as TextStyle,
-  mealFood: { fontSize: 13, color: c.labelSecondary, marginTop: 2 } as TextStyle,
-  mealCal: { fontSize: 13, fontWeight: '600', color: '#FF6723' } as TextStyle,
-  pendingChipText: { fontSize: 12, color: c.labelTertiary } as TextStyle,
-  retryText: { fontSize: 12, fontWeight: '600' } as TextStyle,
-  swipeText: { fontSize: 11, color: '#fff', fontWeight: '600' } as TextStyle,
-  agentLinkText: { fontSize: 14, fontWeight: '600' } as TextStyle,
-  empty: { fontSize: 14, color: c.labelTertiary, textAlign: 'center', paddingVertical: 30 } as TextStyle,
-});
+// 数字/计数/指标值/单位/日期走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
+const txt = {
+  title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1, flex: 1, textAlign: 'center' } as TextStyle,
+  dateText: { fontFamily: revaFonts.mono, fontSize: 16, fontWeight: '600', color: C.ink1 } as TextStyle,
+  nutriVal: { fontFamily: revaFonts.mono, fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] as const } as TextStyle,
+  nutriUnit: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink2 } as TextStyle,
+  nutriLabel: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3 } as TextStyle,
+  pendingNote: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, textAlign: 'center', marginTop: -revaSpacing.s3, marginBottom: revaSpacing.s4 } as TextStyle,
+  mealType: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '600', color: C.ink1 } as TextStyle,
+  mealFood: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, marginTop: 2 } as TextStyle,
+  mealCal: { fontFamily: revaFonts.mono, fontSize: 13, fontWeight: '600', color: '#FF6723' } as TextStyle,
+  pendingChipText: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3 } as TextStyle,
+  retryText: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '600' } as TextStyle,
+  swipeText: { fontFamily: revaFonts.sans, fontSize: 11, color: '#fff', fontWeight: '600' } as TextStyle,
+  agentLinkText: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '600' } as TextStyle,
+  empty: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink3, textAlign: 'center', paddingVertical: 30 } as TextStyle,
+};

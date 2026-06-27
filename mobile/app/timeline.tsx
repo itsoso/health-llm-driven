@@ -16,14 +16,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { fetchTimeline, type TimelineEvent } from '../services/timeline';
-import { useTheme, type ColorPalette } from '../hooks/useTheme';
-import { spacing, radii, shadows } from '../constants/theme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaFonts,
+} from '../constants/revaTheme';
 
 export default function TimelineScreen() {
   const router = useRouter();
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['timeline', 30],
@@ -46,7 +48,7 @@ export default function TimelineScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={26} color={c.labelPrimary} />
+          <Ionicons name="chevron-back" size={26} color={C.ink1} />
         </TouchableOpacity>
         <Text style={txt.title}>健康事件流</Text>
         <View style={{ width: 40 }} />
@@ -54,13 +56,13 @@ export default function TimelineScreen() {
 
       <ScrollView
         contentContainerStyle={styles.scroll}
-        refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => { refetch(); }} tintColor={c.brand} />}
+        refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => { refetch(); }} tintColor={C.green500} />}
       >
         {isLoading ? (
-          <View style={styles.center}><ActivityIndicator color={c.brand} /></View>
+          <View style={styles.center}><ActivityIndicator color={C.green500} /></View>
         ) : events.length === 0 ? (
           <View style={styles.empty}>
-            <Ionicons name="time-outline" size={48} color={c.labelTertiary} />
+            <Ionicons name="time-outline" size={48} color={C.ink3} />
             <Text style={txt.emptyTitle}>近 30 天无事件</Text>
             <Text style={txt.emptyHint}>跑步、告警、体检都会出现在这里</Text>
           </View>
@@ -88,7 +90,7 @@ export default function TimelineScreen() {
                       </View>
                       <Text style={txt.evTime}>{formatTime(e.occurred_at)}</Text>
                       {e.deep_link ? (
-                        <Ionicons name="chevron-forward" size={16} color={c.labelTertiary} />
+                        <Ionicons name="chevron-forward" size={16} color={C.ink3} />
                       ) : null}
                     </TouchableOpacity>
                   ))}
@@ -133,48 +135,46 @@ function hexToBg(hex: string): string {
   return hex;
 }
 
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
-    safe: { flex: 1, backgroundColor: c.bgPrimary },
-    header: {
-      flexDirection: 'row', alignItems: 'center',
-      paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    },
-    backBtn: { width: 40, alignItems: 'flex-start' },
-    scroll: { paddingHorizontal: spacing.md, paddingBottom: spacing.xl },
-    center: { paddingTop: 80, alignItems: 'center' },
-    empty: { paddingTop: 80, alignItems: 'center', paddingHorizontal: spacing.lg },
-    dayGroup: { marginBottom: spacing.md },
-    dayList: {
-      backgroundColor: c.bgCard, borderRadius: radii.md,
-      ...shadows.subtle,
-    },
-    row: {
-      flexDirection: 'row', alignItems: 'center',
-      paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-      gap: spacing.sm,
-      borderBottomWidth: 1, borderBottomColor: c.separator,
-    },
-    rowLast: { borderBottomWidth: 0 },
-    iconWrap: {
-      width: 36, height: 36, borderRadius: 18,
-      alignItems: 'center', justifyContent: 'center',
-    },
-    content: { flex: 1, gap: 2 },
-  });
-}
+// Reva 设计语言:暖 paper 底 / 暖白 surface 卡 / r-md / 时间走等宽 mono。
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.paper },
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: revaSpacing.s3, paddingVertical: revaSpacing.s2,
+  },
+  backBtn: { width: 40, alignItems: 'flex-start' },
+  scroll: { paddingHorizontal: revaSpacing.s3, paddingBottom: revaSpacing.s5 },
+  center: { paddingTop: 80, alignItems: 'center' },
+  empty: { paddingTop: 80, alignItems: 'center', paddingHorizontal: revaSpacing.s4 },
+  dayGroup: { marginBottom: revaSpacing.s3 },
+  dayList: {
+    backgroundColor: C.surface, borderRadius: revaRadii.md,
+    ...revaShadows.sm,
+  },
+  row: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: revaSpacing.s3, paddingVertical: revaSpacing.s2,
+    gap: revaSpacing.s2,
+    borderBottomWidth: 1, borderBottomColor: C.line,
+  },
+  rowLast: { borderBottomWidth: 0 },
+  iconWrap: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  content: { flex: 1, gap: 2 },
+});
 
-function createTxt(c: ColorPalette) {
-  return {
-    title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary } as TextStyle,
-    dayLabel: {
-      fontSize: 13, fontWeight: '600', color: c.labelSecondary,
-      paddingHorizontal: spacing.xs, paddingVertical: spacing.sm,
-    } as TextStyle,
-    emptyTitle: { fontSize: 16, fontWeight: '600', color: c.labelPrimary, marginTop: spacing.md } as TextStyle,
-    emptyHint: { fontSize: 13, color: c.labelSecondary, marginTop: spacing.xs } as TextStyle,
-    evTitle: { fontSize: 15, color: c.labelPrimary, fontWeight: '500' } as TextStyle,
-    evSubtitle: { fontSize: 12, color: c.labelTertiary } as TextStyle,
-    evTime: { fontSize: 12, color: c.labelTertiary, marginRight: 4 } as TextStyle,
-  };
-}
+// 时间走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
+const txt = {
+  title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1 } as TextStyle,
+  dayLabel: {
+    fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '600', color: C.ink2,
+    paddingHorizontal: revaSpacing.s1, paddingVertical: revaSpacing.s2,
+  } as TextStyle,
+  emptyTitle: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '600', color: C.ink1, marginTop: revaSpacing.s3 } as TextStyle,
+  emptyHint: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, marginTop: revaSpacing.s1 } as TextStyle,
+  evTitle: { fontFamily: revaFonts.sans, fontSize: 15, color: C.ink1, fontWeight: '500' } as TextStyle,
+  evSubtitle: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3 } as TextStyle,
+  evTime: { fontFamily: revaFonts.mono, fontSize: 12, color: C.ink3, marginRight: 4 } as TextStyle,
+};

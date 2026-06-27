@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ast
 from collections import Counter
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 import hashlib
 import math
 import operator
@@ -12,26 +12,48 @@ import re
 from typing import Any
 
 from sqlalchemy import desc, func, or_, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
+from app.models.system_knowledge import KBAudit, KBDocument, KBDocumentVector, KBEdge
 
 
 CLAIM_BOUNDARY = "仅用于健康管理和风险沟通，不替代医生诊断、治疗或用药决策。"
+VECTOR_BACKEND = "sparse_term_cosine_v1"
+VECTOR_MAX_TERMS = 512
 SPECIALIST_EVIDENCE_REF_RATE_TARGET = 0.85
 EXTERNAL_EVIDENCE_SOURCE_RATE_TARGET = 0.2
 VALID_REVIEW_STATUSES = {"draft", "reviewed", "needs_review", "archived"}
 POSITIVE_STANCES = {"supports", "positive", "for", "yes", "true", "increase", "increases"}
 NEGATIVE_STANCES = {"opposes", "negative", "against", "no", "false", "decrease", "decreases"}
-
-_IN_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s+in\s+(?P<values>\[.*\])$")
-_HAS_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s+has\s+(?P<value>.+)$")
-_HAS_ANY_RE = re.compile(r"^any\s+of\s+(?P<values>\[.*\])$")
-_EQ_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s*(==|=)\s*(?P<value>.+)$")
-_COMPARE_RE = re.compile(
-    r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s*(?P<op>>=|<=|>|<)\s*(?P<value>-?\d+(?:\.\d+)?)$"
+_ACID_SUPPRESSION_MED_TOKENS = (
+    "ppi",
+    "p-cab",
+    "omeprazole",
+    "esomeprazole",
+    "lansoprazole",
+    "pantoprazole",
+    "rabeprazole",
+    "vonoprazan",
+    "奥美拉唑",
+    "艾司奥美拉唑",
+    "兰索拉唑",
+    "泮托拉唑",
+    "雷贝拉唑",
+    "伏诺拉生",
+    "抑酸",
 )
-_NULL_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s+is\s+(?P<negation>not\s+)?null$")
+
+_CONDITION_PATH = r"twin\.[A-Za-z0-9_.:*+-]+"
+_IN_RE = re.compile(rf"^(?P<path>{_CONDITION_PATH})\s+in\s+(?P<values>\[.*\])$")
+_INTERSECTS_RE = re.compile(rf"^(?P<path>{_CONDITION_PATH})\s+intersects\s+(?P<values>\[.*\])$")
+_HAS_RE = re.compile(rf"^(?P<path>{_CONDITION_PATH})\s+has\s+(?P<value>.+)$")
+_HAS_ANY_RE = re.compile(r"^any\s+of\s+(?P<values>\[.*\])$")
+_EQ_RE = re.compile(rf"^(?P<path>{_CONDITION_PATH})\s*(==|=)\s*(?P<value>.+)$")
+_COMPARE_RE = re.compile(
+    rf"^(?P<path>{_CONDITION_PATH})\s*(?P<op>>=|<=|>|<)\s*(?P<value>-?\d+(?:\.\d+)?)$"
+)
+_NULL_RE = re.compile(rf"^(?P<path>{_CONDITION_PATH})\s+is\s+(?P<negation>not\s+)?null$")
 _GENE_MESSAGE_PATTERNS = {
     "MTHFR": re.compile(r"\bMTHFR\b(?:[-\s_]*(?P<mthfr>CC|CT|TT))?", re.IGNORECASE),
     "APOE": re.compile(r"\bAPOE\b(?:[-\s_]*(?P<apoe>E[234]/E[234]|E[234]E[234]))?", re.IGNORECASE),
@@ -524,8 +546,11 @@ def search_knowledge(
 
     lexical_ranked: list[tuple[float, KBDocument]] = _bm25_rank_documents(documents, terms)
     fts_ranked: list[tuple[float, KBDocument]] = []
-    vector_ranked: list[tuple[float, KBDocument]] = []
-    semantic_terms = _semantic_query_terms(normalized_query)
+    vector_ranked: list[tuple[float, KBDocument]] = _rank_vector_documents(
+        db,
+        documents_by_id,
+        normalized_query,
+    )
     fts_backend = _fts_backend_for_session(db)
     postgres_fts_ranked: list[tuple[float, KBDocument]] = []
     if fts_backend == "postgres_tsv":
@@ -541,9 +566,6 @@ def search_knowledge(
             fts_score = _score_precomputed_search_text(document, terms)
             if fts_score > 0 or not terms:
                 fts_ranked.append((fts_score, document))
-        vector_score = _score_document(document, semantic_terms)
-        if vector_score > 0 and semantic_terms:
-            vector_ranked.append((vector_score, document))
     if fts_backend == "postgres_tsv":
         fts_ranked = postgres_fts_ranked
 
@@ -626,7 +648,7 @@ def search_knowledge(
             "channels": ["lexical", "fts", "vector", "graph"],
             "lexical_backend": "python_bm25_v1",
             "fts_backend": fts_backend,
-            "vector_backend": "alias_overlap_v1",
+            "vector_backend": VECTOR_BACKEND,
             "graph_backend": "kb_edges_one_hop",
             "rrf_backend": "python_rrf_v1",
         },
@@ -730,7 +752,9 @@ def _matched_conditions_for_claim(conditions: list[str], twin: dict[str, Any]) -
     if not matched_conditions:
         return []
     membership_conditions = [
-        condition for condition in conditions if _HAS_RE.match((condition or "").strip())
+        condition for condition in conditions
+        if _HAS_RE.match((condition or "").strip())
+        or _INTERSECTS_RE.match((condition or "").strip())
     ]
     if membership_conditions and len(matched_conditions) != len(conditions):
         return []
@@ -831,21 +855,30 @@ def _lookup_graph_context_for_entities(
 def reindex_knowledge_documents(db: Session, actor: str = "system") -> dict[str, int]:
     documents = db.query(KBDocument).filter(KBDocument.is_archived.is_(False)).all()
     use_postgres_tsvector = _fts_backend_for_session(db) == "postgres_tsv"
+    active_doc_ids = {document.doc_id for document in documents}
     for document in documents:
         searchable = _document_search_text(document)
         content_hash = hashlib.sha256(searchable.encode("utf-8")).hexdigest()
+        _upsert_document_vector(db, document.doc_id, searchable, content_hash)
         if use_postgres_tsvector:
             db.execute(_build_postgres_reindex_statement(document.doc_id, searchable, content_hash))
             continue
         document.tsv = searchable
         document.content_hash = content_hash
 
+    if active_doc_ids:
+        db.query(KBDocumentVector).filter(KBDocumentVector.doc_id.notin_(active_doc_ids)).delete(
+            synchronize_session=False
+        )
+    else:
+        db.query(KBDocumentVector).delete(synchronize_session=False)
+
     db.add(
         KBAudit(
             doc_id=None,
             op="reindex",
             actor=actor,
-            diff={"documents": len(documents)},
+            diff={"documents": len(documents), "vector_backend": VECTOR_BACKEND},
         )
     )
     db.commit()
@@ -912,9 +945,10 @@ def lint_knowledge_base(db: Session) -> dict[str, Any]:
     }
 
 
-def get_knowledge_coverage_report(db: Session) -> dict[str, Any]:
+def get_knowledge_coverage_report(db: Session, *, now: datetime | None = None) -> dict[str, Any]:
     """Aggregate system KB coverage signals for admin review dashboards."""
     documents = db.query(KBDocument).filter(KBDocument.is_archived.is_(False)).all()
+    current_time = _ensure_aware(now or datetime.now(UTC))
     by_type: dict[str, int] = {}
     by_review_status: dict[str, int] = {}
     by_evidence_level: dict[str, int] = {}
@@ -938,6 +972,7 @@ def get_knowledge_coverage_report(db: Session) -> dict[str, Any]:
             "by_origin": dict(sorted(by_origin.items())),
         },
         "external_evidence": _aggregate_external_evidence_coverage(documents),
+        "domain_coverage": _aggregate_domain_coverage(documents, now=current_time),
         "protocol_review": _aggregate_protocol_review_coverage(documents),
         "specialist_findings": _aggregate_specialist_evidence_coverage(db),
         "notification_evidence": _aggregate_notification_evidence_coverage(db),
@@ -945,6 +980,199 @@ def get_knowledge_coverage_report(db: Session) -> dict[str, Any]:
             "disagree": db.query(KBAudit).filter(KBAudit.op == "feedback_disagree").count(),
         },
     }
+
+
+def _aggregate_domain_coverage(
+    documents: list[KBDocument],
+    *,
+    now: datetime,
+) -> dict[str, Any]:
+    buckets: dict[str, dict[str, Any]] = {}
+    claim_domains: dict[str, set[str]] = {}
+    eval_claim_ids: set[str] = set()
+
+    for document in documents:
+        domains = _document_domains(document)
+        if document.doc_type == "claim":
+            claim_domains[document.doc_id] = set(domains)
+        if document.doc_type == "eval_case":
+            eval_claim_ids.update(_eval_case_required_claim_ids(document))
+
+        for domain in domains:
+            bucket = _domain_coverage_bucket(buckets, domain)
+            _add_domain_document(bucket, document, now=now)
+
+    for claim_id, domains in claim_domains.items():
+        for domain in domains:
+            _domain_coverage_bucket(buckets, domain)["eval_coverage"]["_claim_ids"].add(claim_id)
+
+    for claim_id in eval_claim_ids:
+        for domain in claim_domains.get(claim_id, set()):
+            _domain_coverage_bucket(buckets, domain)["eval_coverage"]["_covered_claim_ids"].add(
+                claim_id
+            )
+
+    return {
+        domain: _finalize_domain_coverage_bucket(bucket)
+        for domain, bucket in sorted(buckets.items())
+    }
+
+
+def _domain_coverage_bucket(
+    buckets: dict[str, dict[str, Any]],
+    domain: str,
+) -> dict[str, Any]:
+    return buckets.setdefault(
+        domain,
+        {
+            "documents": {"total": 0, "by_type": Counter()},
+            "review_status": Counter(),
+            "source_coverage": {
+                "claim_total": 0,
+                "claims_with_external_sources": 0,
+                "by_kind": Counter(),
+                "missing_external_source_claims": [],
+            },
+            "eval_coverage": {
+                "eval_cases_total": 0,
+                "_claim_ids": set(),
+                "_covered_claim_ids": set(),
+            },
+            "stale_risk": {
+                "claim_total": 0,
+                "stale_claims": 0,
+                "missing_last_confirmed_claims": 0,
+                "by_decay_rate": {"fast": 0, "normal": 0, "slow": 0},
+                "items": [],
+            },
+        },
+    )
+
+
+def _add_domain_document(bucket: dict[str, Any], document: KBDocument, *, now: datetime) -> None:
+    bucket["documents"]["total"] += 1
+    bucket["documents"]["by_type"][document.doc_type] += 1
+    review_status = str((document.metadata_json or {}).get("review_status") or "unreviewed")
+    bucket["review_status"][review_status] += 1
+
+    if document.doc_type == "eval_case":
+        bucket["eval_coverage"]["eval_cases_total"] += 1
+
+    if document.doc_type != "claim":
+        return
+
+    source_coverage = bucket["source_coverage"]
+    source_coverage["claim_total"] += 1
+    external_sources = _document_external_sources(document)
+    if external_sources:
+        source_coverage["claims_with_external_sources"] += 1
+    elif review_status == "reviewed":
+        source_coverage["missing_external_source_claims"].append(_compact_issue(document))
+    for source in external_sources:
+        kind = str(source.get("kind") or "other")
+        source_coverage["by_kind"][kind] += 1
+
+    _add_domain_stale_risk(bucket["stale_risk"], document, now=now, review_status=review_status)
+
+
+def _add_domain_stale_risk(
+    stale_risk: dict[str, Any],
+    document: KBDocument,
+    *,
+    now: datetime,
+    review_status: str,
+) -> None:
+    stale_risk["claim_total"] += 1
+    if not document.last_confirmed:
+        stale_risk["missing_last_confirmed_claims"] += 1
+        return
+
+    windows = {
+        "fast": timedelta(days=30),
+        "normal": timedelta(days=120),
+        "slow": timedelta(days=365),
+    }
+    decay_rate = str(document.decay_rate or "normal")
+    window = windows.get(decay_rate, windows["normal"])
+    last_confirmed = _ensure_aware(document.last_confirmed)
+    if last_confirmed >= now - window:
+        return
+
+    stale_risk["stale_claims"] += 1
+    stale_risk["by_decay_rate"][decay_rate] = stale_risk["by_decay_rate"].get(decay_rate, 0) + 1
+    stale_risk["items"].append(
+        {
+            **_compact_issue(document),
+            "review_status": review_status,
+            "decay_rate": decay_rate,
+            "last_confirmed": last_confirmed.isoformat(),
+            "days_since_confirmed": (now.date() - last_confirmed.date()).days,
+        }
+    )
+
+
+def _finalize_domain_coverage_bucket(bucket: dict[str, Any]) -> dict[str, Any]:
+    source_coverage = bucket["source_coverage"]
+    claim_total = int(source_coverage.get("claim_total") or 0)
+    claims_with_external_sources = int(source_coverage.get("claims_with_external_sources") or 0)
+
+    eval_coverage = bucket["eval_coverage"]
+    claim_ids = set(eval_coverage.pop("_claim_ids", set()))
+    covered_claim_ids = set(eval_coverage.pop("_covered_claim_ids", set())) & claim_ids
+    eval_claim_total = len(claim_ids)
+    claims_with_eval = len(covered_claim_ids)
+
+    source_coverage["external_source_rate"] = (
+        round(claims_with_external_sources / claim_total, 4) if claim_total else 0.0
+    )
+    source_coverage["by_kind"] = dict(sorted(source_coverage["by_kind"].items()))
+    source_coverage["missing_external_source_claims"].sort(
+        key=lambda item: str(item.get("doc_id") or "")
+    )
+    source_coverage["missing_external_source_claims"] = source_coverage[
+        "missing_external_source_claims"
+    ][:10]
+
+    eval_coverage["claim_total"] = eval_claim_total
+    eval_coverage["claims_with_eval"] = claims_with_eval
+    eval_coverage["eval_coverage_rate"] = (
+        round(claims_with_eval / eval_claim_total, 4) if eval_claim_total else 0.0
+    )
+    eval_coverage["missing_eval_claims"] = sorted(claim_ids - covered_claim_ids)[:10]
+
+    bucket["stale_risk"]["items"].sort(key=lambda item: str(item.get("doc_id") or ""))
+    bucket["stale_risk"]["items"] = bucket["stale_risk"]["items"][:10]
+    bucket["stale_risk"]["by_decay_rate"] = dict(sorted(bucket["stale_risk"]["by_decay_rate"].items()))
+    bucket["documents"]["by_type"] = dict(sorted(bucket["documents"]["by_type"].items()))
+    bucket["review_status"] = dict(sorted(bucket["review_status"].items()))
+    return bucket
+
+
+def _document_domains(document: KBDocument) -> list[str]:
+    metadata = document.metadata_json or {}
+    raw_domains = metadata.get("domains")
+    domains: list[str] = []
+    if isinstance(raw_domains, list):
+        domains.extend(str(item).strip() for item in raw_domains if str(item).strip())
+    domain = str(metadata.get("domain") or "").strip()
+    if domain:
+        domains.append(domain)
+    if not domains and document.entity_type:
+        domains.append(str(document.entity_type))
+    if not domains:
+        domains.append("unknown")
+    return sorted(set(domains))
+
+
+def _eval_case_required_claim_ids(document: KBDocument) -> set[str]:
+    metadata = document.metadata_json or {}
+    expected = metadata.get("expected") if isinstance(metadata.get("expected"), dict) else {}
+    required_ids: set[str] = set()
+    for key in ("required_claim_ids", "required_doc_ids"):
+        values = expected.get(key)
+        if isinstance(values, list):
+            required_ids.update(str(value) for value in values if str(value).startswith("claim:"))
+    return required_ids
 
 
 def get_knowledge_review_queue(
@@ -1163,6 +1391,7 @@ def system_kb_twin_payload_from_health_twin(twin: Any) -> dict[str, Any]:
     medication = getattr(twin, "medication", None)
     supplement = getattr(twin, "supplement", None)
     goals_state = getattr(twin, "goals", None)
+    acute = getattr(twin, "acute", None)
 
     goals_text = " ".join(
         str(goal.get("name") or goal.get("title") or goal.get("goal_type") or goal)
@@ -1177,6 +1406,8 @@ def system_kb_twin_payload_from_health_twin(twin: Any) -> dict[str, Any]:
         "sleep": {"active": any(token in goals_text for token in ("睡眠", "恢复", "精力"))},
         "longevity": {"active": any(token in goals_text for token in ("长寿", "衰老", "抗衰", "老化"))},
     }
+
+    active_meds = getattr(medication, "active_meds", []) if medication is not None else []
 
     return {
         "genetics": _system_kb_genetics_from_health_twin(twin),
@@ -1194,18 +1425,42 @@ def system_kb_twin_payload_from_health_twin(twin: Any) -> dict[str, Any]:
             "sleep_duration_hours": getattr(physiological, "sleep_duration_h_latest", None),
             "hrv_latest": getattr(physiological, "hrv_latest", None),
             "resting_hr": getattr(physiological, "resting_hr", None),
+            "spo2_avg": getattr(physiological, "spo2_avg", None),
+            "spo2_min_overnight": getattr(physiological, "spo2_min_overnight", None),
+            "spo2_odi": getattr(physiological, "spo2_odi", None),
+            "spo2_below_90_pct": getattr(physiological, "spo2_below_90_pct", None),
             "training_readiness_score": getattr(physiological, "training_readiness_score", None),
             "training_readiness_level": getattr(physiological, "training_readiness_level", None),
         },
         "behavioral": {
             "diet_calories_today": getattr(behavioral, "diet_calories_today", None),
             "diet_protein_g_today": getattr(behavioral, "diet_protein_g_today", None),
+            "diet_carbs_g_today": getattr(behavioral, "diet_carbs_g_today", None),
+            "diet_sodium_mg_today": getattr(behavioral, "diet_sodium_mg_today", None),
+            "high_sodium_foods_today": getattr(behavioral, "high_sodium_foods_today", []),
             "water_ml_today": getattr(behavioral, "water_ml_today", None),
             "water_goal_ml": getattr(behavioral, "water_goal_ml", None),
             "water_progress_pct": getattr(behavioral, "water_progress_pct", None),
             "training_load_7d": getattr(behavioral, "training_load_7d", None),
             "acute_chronic_ratio": getattr(behavioral, "acute_chronic_ratio", None),
             "acwr_zone": getattr(behavioral, "acwr_zone", None),
+        },
+        "acute": {
+            "has_active_illness": bool(getattr(acute, "has_active_illness", False)),
+            "illness_names": getattr(acute, "illness_names", []) if acute is not None else [],
+            "illness_severity_max": getattr(acute, "illness_severity_max", None),
+            "symptoms": (
+                _dedupe_preserve_order(
+                    list(getattr(acute, "recent_symptoms", []) or [])
+                    + list(getattr(acute, "symptom_texts_all", []) or [])
+                )
+                if acute is not None
+                else []
+            ),
+            "suspected_cold": bool(getattr(acute, "suspected_cold", False)),
+            "fever_reported": bool(getattr(acute, "fever_reported", False)),
+            "should_rest_from_training": bool(getattr(acute, "should_rest_from_training", False)),
+            "training_guardrail": getattr(acute, "training_guardrail", None),
         },
         "conditions": {
             "active": getattr(chronic, "active_conditions", []) if chronic is not None else [],
@@ -1219,10 +1474,71 @@ def system_kb_twin_payload_from_health_twin(twin: Any) -> dict[str, Any]:
                 ),
             },
         },
-        "medications": getattr(medication, "active_meds", []) if medication is not None else [],
+        "medications": active_meds,
+        "medication_context": _system_kb_medication_context_from_health_twin(twin, active_meds),
         "supplements": getattr(supplement, "active_supplements", []) if supplement is not None else [],
         "goals": goals,
     }
+
+
+def _system_kb_medication_context_from_health_twin(
+    twin: Any,
+    active_meds: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+) -> dict[str, Any]:
+    generated_at = getattr(getattr(twin, "meta", None), "generated_at", None)
+    reference_date = _date_from_value(generated_at) or datetime.now(UTC).date()
+    acid_suppression_seen = False
+    acid_suppression_names: list[str] = []
+    acid_suppression_weeks: list[float] = []
+
+    for med in active_meds or []:
+        if not isinstance(med, dict):
+            continue
+        if not _is_acid_suppression_med(med):
+            continue
+        acid_suppression_seen = True
+        name = str(med.get("name") or med.get("generic_name") or med.get("drug_name") or "").strip()
+        if name:
+            acid_suppression_names.append(name)
+        start_date = _date_from_value(
+            med.get("start_date")
+            or med.get("started_at")
+            or med.get("startDate")
+            or med.get("startedAt")
+        )
+        if start_date is None or start_date > reference_date:
+            continue
+        acid_suppression_weeks.append((reference_date - start_date).days / 7)
+
+    return {
+        "acid_suppression_active": acid_suppression_seen,
+        "acid_suppression_names": _dedupe_preserve_order(acid_suppression_names),
+        "acid_suppression_weeks_max": max(acid_suppression_weeks) if acid_suppression_weeks else None,
+    }
+
+
+def _is_acid_suppression_med(med: dict[str, Any]) -> bool:
+    haystack = " ".join(
+        str(med.get(key) or "")
+        for key in ("name", "generic_name", "drug_name", "medication_name", "title", "label", "class")
+    ).lower()
+    return any(token in haystack for token in _ACID_SUPPRESSION_MED_TOKENS)
+
+
+def _date_from_value(value: Any) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
 
 
 def _system_kb_genetics_from_health_twin(twin: Any) -> dict[str, Any]:
@@ -1279,10 +1595,49 @@ def _system_kb_genetics_from_health_twin(twin: Any) -> dict[str, Any]:
             phenotype = _infer_pgx_phenotype(gene, genotype, result_label, risk_level)
             if phenotype:
                 out[f"{gene}_phenotype"] = phenotype
+        elif gene in {"TPMT", "NUDT15"}:
+            out[gene] = genotype or "present"
+            phenotype, function = _infer_thiopurine_pgx_status(gene, genotype, result_label, risk_level)
+            if phenotype:
+                out[f"{gene}_phenotype"] = phenotype
+            if function:
+                out["TPMT_activity" if gene == "TPMT" else "NUDT15_function"] = function
+        elif gene == "DPYD":
+            out["DPYD"] = genotype or "present"
+            phenotype, activity_score = _infer_dpyd_pgx_status(genotype, result_label, risk_level)
+            if phenotype:
+                out["DPYD_phenotype"] = phenotype
+            if activity_score:
+                out["DPD_activity_score"] = activity_score
         elif gene == "SLCO1B1":
             out["SLCO1B1"] = genotype or "present"
             if genotype in {"CT", "CC", "TT"}:
                 out["SLCO1B1_rs4149056"] = genotype
+        elif gene == "VKORC1":
+            out["VKORC1"] = genotype or "present"
+            vkorc1_genotype = _normalize_vkorc1_genotype(genotype, result_label, risk_level)
+            if vkorc1_genotype:
+                out["VKORC1_1639G_A"] = vkorc1_genotype
+                out["VKORC1_rs9923231"] = vkorc1_genotype
+        elif gene == "HLA-A":
+            out["HLA-A"] = genotype or "present"
+            if _hla_allele_is_positive("31:01", genotype, result_label, risk_level):
+                out["HLA_A_31_01"] = "positive"
+                out["HLA_A_3101"] = "positive"
+                out["HLA-A*31:01"] = "positive"
+        elif gene == "HLA-B":
+            out["HLA-B"] = genotype or "present"
+            if _hla_allele_is_positive("15:02", genotype, result_label, risk_level):
+                out["HLA_B_15_02"] = "positive"
+                out["HLA-B*15:02"] = "positive"
+            if _hla_allele_is_positive("58:01", genotype, result_label, risk_level):
+                out["HLA_B_58_01"] = "positive"
+                out["HLA-B*58:01"] = "positive"
+        elif gene == "G6PD":
+            status = _infer_g6pd_status(genotype, result_label, risk_level)
+            out["G6PD"] = status or genotype or "present"
+            if status:
+                out["G6PD_phenotype"] = status
         elif gene == "HFE":
             out["HFE"] = genotype or "present"
             if genotype:
@@ -1318,6 +1673,163 @@ def _infer_pgx_phenotype(gene: str, genotype: str, result_label: str, risk_level
     if inactive_count == 1:
         return "intermediate"
     return None
+
+
+def _infer_thiopurine_pgx_status(
+    gene: str,
+    genotype: str,
+    result_label: str,
+    risk_level: str,
+) -> tuple[str | None, str | None]:
+    """Map TPMT/NUDT15 labels into the existing KB condition vocabulary."""
+
+    text = f"{genotype} {result_label} {risk_level}".lower()
+    no_function_tokens = (
+        "poor",
+        "低活性",
+        "无活性",
+        "缺乏",
+        "no function",
+        "no_function",
+        "absent",
+        "deficient",
+        "high",
+        "高风险",
+    )
+    decreased_tokens = (
+        "intermediate",
+        "中间",
+        "活性降低",
+        "功能降低",
+        "decreased",
+        "reduced",
+        "medium",
+        "中风险",
+    )
+    if any(token in text for token in no_function_tokens):
+        function = "absent" if gene == "TPMT" else "no_function"
+        return "poor_metabolizer", function
+    if any(token in text for token in decreased_tokens):
+        function = "low" if gene == "TPMT" else "decreased_function"
+        return "intermediate_metabolizer", function
+    return None, None
+
+
+def _infer_dpyd_pgx_status(
+    genotype: str,
+    result_label: str,
+    risk_level: str,
+) -> tuple[str | None, str | None]:
+    text = f"{genotype} {result_label} {risk_level}".lower()
+    poor_tokens = (
+        "poor",
+        "no function",
+        "no_function",
+        "complete deficiency",
+        "完全缺乏",
+        "无活性",
+        "低活性",
+        "缺乏",
+    )
+    intermediate_tokens = (
+        "intermediate",
+        "decreased",
+        "reduced",
+        "partial",
+        "中间",
+        "活性降低",
+        "功能降低",
+        "中风险",
+    )
+    if any(token in text for token in poor_tokens):
+        return "poor_metabolizer", "0"
+    if any(token in text for token in intermediate_tokens):
+        return "intermediate_metabolizer", "1"
+
+    normalized = re.sub(r"[\s_]+", "", f"{genotype} {result_label}").upper()
+    reduced_markers = (
+        "*2A",
+        "DPYD*2A",
+        "RS3918290",
+        "RS67376798",
+        "RS55886062",
+        "HAPB3",
+        "C.1905+1G>A",
+        "C.1679T>G",
+        "C.2846A>T",
+        "C.1129-5923C>G",
+    )
+    if any(re.sub(r"[\s_]+", "", marker).upper() in normalized for marker in reduced_markers):
+        return "intermediate_metabolizer", "1"
+    return None, None
+
+
+def _normalize_vkorc1_genotype(genotype: str, result_label: str, risk_level: str) -> str | None:
+    raw = str(genotype or "").strip().upper().replace(" ", "")
+    genotype_aliases = {
+        "AA": "AA",
+        "A/A": "A/A",
+        "AG": "AG",
+        "A/G": "A/G",
+        "GA": "A/G",
+        "G/A": "A/G",
+        "GG": "GG",
+        "G/G": "G/G",
+    }
+    if raw in genotype_aliases:
+        return genotype_aliases[raw]
+
+    text = f"{genotype} {result_label} {risk_level}".lower()
+    if any(token in text for token in ("warfarin sensitive", "华法林敏感", "敏感位点", "sensitive allele")):
+        return "A/G"
+    return None
+
+
+def _infer_g6pd_status(genotype: str, result_label: str, risk_level: str) -> str | None:
+    text = f"{genotype} {result_label} {risk_level}".lower()
+    deficient_tokens = (
+        "deficient",
+        "deficiency",
+        "缺乏",
+        "低活性",
+        "low activity",
+        "low enzyme",
+        "class i",
+        "class ii",
+        "class iii",
+        "high",
+        "高风险",
+    )
+    variable_tokens = (
+        "variable",
+        "intermediate",
+        "partial",
+        "borderline",
+        "中间",
+        "部分",
+        "medium",
+        "中风险",
+    )
+    if any(token in text for token in deficient_tokens):
+        return "deficient"
+    if any(token in text for token in variable_tokens):
+        return "variable"
+    return None
+
+
+def _hla_allele_is_positive(
+    allele_token: str,
+    genotype: str,
+    result_label: str,
+    risk_level: str,
+) -> bool:
+    text = f"{genotype} {result_label} {risk_level}"
+    lower = text.lower()
+    if any(token in lower for token in ("negative", "not detected", "absent", "阴性", "未检出")):
+        return False
+    normalized = re.sub(r"[\s_:\-*]+", "", text).upper()
+    allele_digits = re.sub(r"[^0-9]", "", allele_token)
+    return bool(allele_digits and allele_digits in normalized)
 
 
 def attach_system_knowledge_evidence(
@@ -1617,6 +2129,17 @@ def evaluate_condition(condition: str, twin: dict[str, Any]) -> bool:
             return False
         return value in candidates
 
+    intersects_match = _INTERSECTS_RE.match(expression)
+    if intersects_match:
+        collection = _value_at_path(twin, intersects_match.group("path"))
+        try:
+            candidates = ast.literal_eval(intersects_match.group("values"))
+        except (SyntaxError, ValueError):
+            return False
+        if not isinstance(candidates, (list, tuple, set)):
+            return False
+        return any(_collection_contains(collection, candidate) for candidate in candidates)
+
     has_match = _HAS_RE.match(expression)
     if has_match:
         collection = _value_at_path(twin, has_match.group("path"))
@@ -1661,7 +2184,7 @@ def is_supported_condition(condition: str) -> bool:
     expression = (condition or "").strip()
     return any(
         pattern.match(expression)
-        for pattern in (_NULL_RE, _IN_RE, _HAS_RE, _EQ_RE, _COMPARE_RE)
+        for pattern in (_NULL_RE, _IN_RE, _INTERSECTS_RE, _HAS_RE, _EQ_RE, _COMPARE_RE)
     )
 
 
@@ -1867,6 +2390,120 @@ def _semantic_query_terms(query: str) -> list[str]:
                     seen.add(subterm)
                     expanded.append(subterm)
     return expanded
+
+
+def _vector_terms(text: str) -> list[str]:
+    seen: set[str] = set()
+    terms: list[str] = []
+
+    def add(raw: str) -> None:
+        term = raw.strip().lower()
+        if not term or term in seen:
+            return
+        seen.add(term)
+        terms.append(term)
+
+    for term in _semantic_query_terms(text):
+        add(term)
+    for span in re.findall(r"[\u4e00-\u9fff]{2,}", text or ""):
+        max_n = min(8, len(span))
+        for n in range(2, max_n + 1):
+            for index in range(len(span) - n + 1):
+                add(span[index : index + n])
+    return terms
+
+
+def _build_sparse_term_vector(text: str) -> dict[str, float]:
+    counts = Counter(_vector_terms(text))
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:VECTOR_MAX_TERMS]
+    return {
+        term: round(1.0 + math.log(count), 6)
+        for term, count in ranked
+        if term
+    }
+
+
+def _sparse_vector_magnitude(vector: dict[str, float]) -> float:
+    return math.sqrt(sum(float(value) * float(value) for value in vector.values()))
+
+
+def _upsert_document_vector(db: Session, doc_id: str, searchable: str, content_hash: str) -> None:
+    vector = _build_sparse_term_vector(searchable)
+    magnitude = _sparse_vector_magnitude(vector)
+    existing = db.query(KBDocumentVector).filter(KBDocumentVector.doc_id == doc_id).first()
+    values = {
+        "embedding_model": VECTOR_BACKEND,
+        "content_hash": content_hash,
+        "vector_json": vector,
+        "magnitude": magnitude,
+        "updated_at": datetime.now(UTC),
+    }
+    if existing:
+        for key, value in values.items():
+            setattr(existing, key, value)
+        return
+    db.add(KBDocumentVector(doc_id=doc_id, **values))
+
+
+def _rank_vector_documents(
+    db: Session,
+    documents_by_id: dict[str, KBDocument],
+    query: str,
+) -> list[tuple[float, KBDocument]]:
+    if not documents_by_id:
+        return []
+
+    query_vector = _build_sparse_term_vector(query)
+    query_magnitude = _sparse_vector_magnitude(query_vector)
+    if not query_vector or query_magnitude == 0:
+        return []
+
+    try:
+        rows = (
+            db.query(KBDocumentVector)
+            .filter(
+                KBDocumentVector.doc_id.in_(documents_by_id.keys()),
+                KBDocumentVector.embedding_model == VECTOR_BACKEND,
+            )
+            .all()
+        )
+    except SQLAlchemyError:
+        db.rollback()
+        return []
+
+    ranked: list[tuple[float, KBDocument]] = []
+    for row in rows:
+        document = documents_by_id.get(row.doc_id)
+        if document is None:
+            continue
+        score = _cosine_sparse_vectors(
+            query_vector,
+            query_magnitude,
+            row.vector_json or {},
+            float(row.magnitude or 0.0),
+        )
+        if score > 0:
+            ranked.append((score, document))
+    return ranked
+
+
+def _cosine_sparse_vectors(
+    query_vector: dict[str, float],
+    query_magnitude: float,
+    document_vector: dict[str, Any],
+    document_magnitude: float,
+) -> float:
+    if query_magnitude == 0 or document_magnitude == 0:
+        return 0.0
+    dot = 0.0
+    for term, query_weight in query_vector.items():
+        document_weight = document_vector.get(term)
+        if document_weight is None:
+            continue
+        dot += float(query_weight) * float(document_weight)
+    if dot <= 0:
+        return 0.0
+    return dot / (query_magnitude * document_magnitude)
 
 
 def _fuse_search_rankings(
@@ -2525,6 +3162,10 @@ def _extract_entity_keys(twin: dict[str, Any]) -> set[tuple[str, str]]:
         "FTO": "FTO",
         "ACTN3": "ACTN3",
         "ALDH2": "ALDH2",
+        "TPMT": "TPMT",
+        "TPMT_phenotype": "TPMT",
+        "NUDT15": "NUDT15",
+        "NUDT15_phenotype": "NUDT15",
     }
     for field, entity_id in gene_prefixes.items():
         if genetics.get(field) is not None:

@@ -2,20 +2,10 @@ import React from 'react';
 import { StyleSheet } from 'react-native';
 import { render } from '@testing-library/react-native';
 import MetricTile from '../MetricTile';
+import { revaColors } from '../../../constants/revaTheme';
 
-const mockThemeColors = {
-  bgCard: '#101014',
-  labelSecondary: '#ABCDEF',
-  labelTertiary: '#778899',
-};
-
-jest.mock('../../../hooks/useTheme', () => ({
-  useTheme: () => ({
-    c: mockThemeColors,
-    isDark: true,
-    scheme: 'dark',
-  }),
-}));
+// P1 设计统一:MetricTile 已迁到 Reva 静态 token(不再走 useTheme),
+// neutral 文字色固定为 ink2(label)/ink3(subtitle)。
 
 describe('MetricTile', () => {
   const defaultProps = {
@@ -55,10 +45,10 @@ describe('MetricTile', () => {
     expect(getByText('120')).toBeTruthy();
   });
 
-  it('uses the active theme colors for neutral text', () => {
+  it('uses Reva neutral ink tokens for neutral text', () => {
     const { getByText } = render(<MetricTile {...defaultProps} subtitle="正常范围" />);
 
-    expect(StyleSheet.flatten(getByText('心率').props.style).color).toBe(mockThemeColors.labelSecondary);
-    expect(StyleSheet.flatten(getByText('正常范围').props.style).color).toBe(mockThemeColors.labelTertiary);
+    expect(StyleSheet.flatten(getByText('心率').props.style).color).toBe(revaColors.ink2);
+    expect(StyleSheet.flatten(getByText('正常范围').props.style).color).toBe(revaColors.ink3);
   });
 });

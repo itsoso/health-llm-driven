@@ -1,8 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { spacing, radii } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaFonts,
+} from '../../constants/revaTheme';
 import type { DietRecord, DietRecordCreate } from '../../services/diet';
 
 interface Props {
@@ -27,9 +31,6 @@ const MEAL_TYPES = [
 ];
 
 export default function MealForm({ date, onSubmit, onCancel, initialRecord, initialMealType, initialDescription, initialCalories, initialProtein, initialCarbs, initialFat }: Props) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-
   const isEdit = !!initialRecord;
   const [mealType, setMealType] = useState<'breakfast' | 'lunch' | 'dinner' | 'snack'>(
     (initialRecord?.meal_type as any) || initialMealType || 'lunch'
@@ -75,7 +76,7 @@ export default function MealForm({ date, onSubmit, onCancel, initialRecord, init
           </TouchableOpacity>
         ))}
       </View>
-      <TextInput style={styles.input} placeholder="食物描述（如：鸡胸肉200g、米饭一碗）" placeholderTextColor={c.labelTertiary}
+      <TextInput style={styles.input} placeholder="食物描述（如：鸡胸肉200g、米饭一碗）" placeholderTextColor={C.ink3}
         value={desc} onChangeText={setDesc} multiline />
       <View style={styles.nutriRow}>
         <NutrientInput label="热量" unit="kcal" value={cal} onChange={setCal} />
@@ -86,7 +87,7 @@ export default function MealForm({ date, onSubmit, onCancel, initialRecord, init
       <View style={styles.alcoholRow}>
         <Text style={styles.alcoholLabel}>🍺 饮酒</Text>
         <TextInput style={styles.alcoholInput} keyboardType="decimal-pad"
-          placeholder="0" placeholderTextColor={c.labelQuaternary}
+          placeholder="0" placeholderTextColor={C.ink4}
           value={alcohol} onChangeText={setAlcohol} />
         <Text style={styles.alcoholUnit}>标准杯</Text>
         <View style={styles.alcoholPresets}>
@@ -112,65 +113,62 @@ export default function MealForm({ date, onSubmit, onCancel, initialRecord, init
 }
 
 function NutrientInput({ label, unit, value, onChange }: { label: string; unit: string; value: string; onChange: (v: string) => void }) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
   return (
     <View style={styles.nutriCell}>
       <Text style={styles.nutriLabel}>{label}</Text>
       <TextInput style={styles.nutriInput} keyboardType="decimal-pad"
-        placeholder="0" placeholderTextColor={c.labelQuaternary}
+        placeholder="0" placeholderTextColor={C.ink4}
         value={value} onChangeText={onChange} />
       <Text style={styles.nutriUnit}>{unit}</Text>
     </View>
   );
 }
 
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
-    container: { backgroundColor: c.bgCard, borderRadius: radii.lg, padding: spacing.lg, marginBottom: spacing.md },
-    typeRow: { flexDirection: 'row', gap: 8, marginBottom: spacing.md },
-    typeChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: radii.full, backgroundColor: c.bgPrimary },
-    typeChipActive: { backgroundColor: c.brand },
-    input: {
-      backgroundColor: c.bgPrimary, borderRadius: radii.md,
-      paddingHorizontal: 14, paddingVertical: 10, fontSize: 14,
-      color: c.labelPrimary, marginBottom: spacing.md, minHeight: 44,
-    },
-    nutriRow: { flexDirection: 'row', gap: 8, marginBottom: spacing.md },
-    nutriCell: { flex: 1, alignItems: 'center' },
-    nutriInput: {
-      backgroundColor: c.bgPrimary, borderRadius: radii.sm,
-      paddingHorizontal: 6, paddingVertical: 6, fontSize: 14,
-      color: c.labelPrimary, textAlign: 'center', width: '100%',
-    },
-    alcoholRow: {
-      flexDirection: 'row', alignItems: 'center', gap: 8,
-      paddingVertical: 8, paddingHorizontal: 10,
-      backgroundColor: c.bgPrimary, borderRadius: radii.md,
-      marginBottom: 4,
-    },
-    alcoholInput: {
-      width: 48, textAlign: 'center', fontSize: 15,
-      color: c.labelPrimary, paddingVertical: 4,
-      backgroundColor: c.bgCard, borderRadius: radii.sm,
-    },
-    alcoholPresets: { flexDirection: 'row', gap: 4, marginLeft: 'auto' },
-    alcoholChip: {
-      paddingHorizontal: 10, paddingVertical: 4,
-      backgroundColor: c.bgCard, borderRadius: radii.full,
-    },
-    btnRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg },
-    cancelBtn: { flex: 1, paddingVertical: 12, borderRadius: radii.md, backgroundColor: c.bgPrimary, alignItems: 'center' },
-    saveBtn: { flex: 1, paddingVertical: 12, borderRadius: radii.md, backgroundColor: c.brand, alignItems: 'center' },
-    typeText: { fontSize: 13, fontWeight: '500', color: c.labelSecondary },
-    typeTextActive: { color: '#fff', fontWeight: '600' },
-    nutriLabel: { fontSize: 10, color: c.labelTertiary, marginBottom: 4 },
-    nutriUnit: { fontSize: 10, color: c.labelTertiary, marginTop: 2 },
-    alcoholLabel: { fontSize: 13, color: c.labelSecondary, fontWeight: '500' },
-    alcoholUnit: { fontSize: 12, color: c.labelTertiary },
-    alcoholChipText: { fontSize: 13, color: c.labelSecondary, fontWeight: '500' },
-    alcoholHint: { fontSize: 10, color: c.labelTertiary, marginBottom: spacing.sm, paddingLeft: 2 },
-    cancelText: { fontSize: 15, fontWeight: '500', color: c.labelSecondary },
-    saveText: { fontSize: 15, fontWeight: '600', color: '#fff' },
-  });
-}
+// Reva 设计语言:暖白 surface / paper2 输入底 / 活力绿 / 数字录入走等宽 mono。
+const styles = StyleSheet.create({
+  container: { backgroundColor: C.surface, borderRadius: revaRadii.lg, padding: revaSpacing.s4, marginBottom: revaSpacing.s3 },
+  typeRow: { flexDirection: 'row', gap: 8, marginBottom: revaSpacing.s3 },
+  typeChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: revaRadii.pill, backgroundColor: C.paper2 },
+  typeChipActive: { backgroundColor: C.green500 },
+  input: {
+    backgroundColor: C.paper2, borderRadius: revaRadii.md,
+    paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, fontFamily: revaFonts.sans,
+    color: C.ink1, marginBottom: revaSpacing.s3, minHeight: 44,
+  },
+  nutriRow: { flexDirection: 'row', gap: 8, marginBottom: revaSpacing.s3 },
+  nutriCell: { flex: 1, alignItems: 'center' },
+  nutriInput: {
+    backgroundColor: C.paper2, borderRadius: revaRadii.sm,
+    paddingHorizontal: 6, paddingVertical: 6, fontSize: 14, fontFamily: revaFonts.mono,
+    color: C.ink1, textAlign: 'center', width: '100%',
+  },
+  alcoholRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 8, paddingHorizontal: 10,
+    backgroundColor: C.paper2, borderRadius: revaRadii.md,
+    marginBottom: 4,
+  },
+  alcoholInput: {
+    width: 48, textAlign: 'center', fontSize: 15, fontFamily: revaFonts.mono,
+    color: C.ink1, paddingVertical: 4,
+    backgroundColor: C.surface, borderRadius: revaRadii.sm,
+  },
+  alcoholPresets: { flexDirection: 'row', gap: 4, marginLeft: 'auto' },
+  alcoholChip: {
+    paddingHorizontal: 10, paddingVertical: 4,
+    backgroundColor: C.surface, borderRadius: revaRadii.pill,
+  },
+  btnRow: { flexDirection: 'row', gap: revaSpacing.s3, marginTop: revaSpacing.s4 },
+  cancelBtn: { flex: 1, paddingVertical: 12, borderRadius: revaRadii.md, backgroundColor: C.paper2, alignItems: 'center' },
+  saveBtn: { flex: 1, paddingVertical: 12, borderRadius: revaRadii.md, backgroundColor: C.green500, alignItems: 'center' },
+  typeText: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '500', color: C.ink2 },
+  typeTextActive: { color: '#fff', fontWeight: '600' },
+  nutriLabel: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink3, marginBottom: 4 },
+  nutriUnit: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3, marginTop: 2 },
+  alcoholLabel: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, fontWeight: '500' },
+  alcoholUnit: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3 },
+  alcoholChipText: { fontFamily: revaFonts.mono, fontSize: 13, color: C.ink2, fontWeight: '500' },
+  alcoholHint: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink3, marginBottom: revaSpacing.s2, paddingLeft: 2 },
+  cancelText: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '500', color: C.ink2 },
+  saveText: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '600', color: '#fff' },
+});

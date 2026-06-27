@@ -1,9 +1,13 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
-import { radii, spacing } from '../../constants/theme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaFonts,
+} from '../../constants/revaTheme';
 
 interface Props {
   distanceKm: number | null;
@@ -21,12 +25,9 @@ interface Props {
 export default function HeroMetrics({
   distanceKm, durationMin, avgPaceDisplay, avgHr, workoutTypeLabel, dateLabel,
 }: Props) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-
   return (
     <LinearGradient
-      colors={[c.brand, '#15A5A5']}
+      colors={[C.green500, '#15A5A5']}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={styles.hero}
@@ -69,49 +70,48 @@ function SubMetric({ label, value, unit }: { label: string; value: string; unit:
 
 const subStyles = StyleSheet.create({
   col: { flex: 1, alignItems: 'center' },
-  label: { fontSize: 11, color: 'rgba(255,255,255,0.75)', marginBottom: 2 } as TextStyle,
+  label: { fontFamily: revaFonts.sans, fontSize: 11, color: 'rgba(255,255,255,0.75)', marginBottom: 2 } as TextStyle,
   valRow: { flexDirection: 'row', alignItems: 'baseline', gap: 2 },
   value: {
-    fontSize: 20, fontWeight: '700', color: '#fff',
+    fontFamily: revaFonts.mono, fontSize: 20, fontWeight: '700', color: '#fff',
     fontVariant: ['tabular-nums'] as const,
   } as TextStyle,
-  unit: { fontSize: 11, color: 'rgba(255,255,255,0.75)' } as TextStyle,
+  unit: { fontFamily: revaFonts.mono, fontSize: 11, color: 'rgba(255,255,255,0.75)' } as TextStyle,
 });
 
-function createStyles(_c: ColorPalette) {
-  return StyleSheet.create({
-    hero: {
-      borderRadius: radii.lg,
-      padding: spacing.lg,
-      marginBottom: spacing.md,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.12,
-      shadowRadius: 6,
-      elevation: 3,
-    },
-    topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-    badge: {
-      flexDirection: 'row', alignItems: 'center', gap: 4,
-      backgroundColor: 'rgba(255,255,255,0.18)',
-      paddingHorizontal: 8, paddingVertical: 3,
-      borderRadius: radii.full,
-    },
-    badgeText: { color: '#fff', fontSize: 11, fontWeight: '600' } as TextStyle,
-    dateText: { color: 'rgba(255,255,255,0.8)', fontSize: 12 } as TextStyle,
-    distRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 14 },
-    distValue: {
-      fontSize: 52, fontWeight: '800', color: '#fff',
-      fontVariant: ['tabular-nums'] as const,
-      letterSpacing: -1,
-    } as TextStyle,
-    distUnit: { fontSize: 18, color: 'rgba(255,255,255,0.8)', marginLeft: 6, fontWeight: '500' } as TextStyle,
-    subRow: {
-      flexDirection: 'row',
-      paddingTop: 12,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: 'rgba(255,255,255,0.25)',
-    },
-    divider: { width: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.25)', marginVertical: 4 },
-  });
-}
+// Reva 设计语言:活力绿 → teal 渐变 hero / 大号数字走等宽 mono / r-lg 18。
+const styles = StyleSheet.create({
+  hero: {
+    borderRadius: revaRadii.lg,
+    padding: revaSpacing.s4,
+    marginBottom: revaSpacing.s3,
+    shadowColor: '#142019',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  badge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: revaRadii.pill,
+  },
+  badgeText: { fontFamily: revaFonts.sans, color: '#fff', fontSize: 11, fontWeight: '600' } as TextStyle,
+  dateText: { fontFamily: revaFonts.mono, color: 'rgba(255,255,255,0.8)', fontSize: 12 } as TextStyle,
+  distRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 14 },
+  distValue: {
+    fontFamily: revaFonts.mono, fontSize: 52, fontWeight: '800', color: '#fff',
+    fontVariant: ['tabular-nums'] as const,
+    letterSpacing: -1,
+  } as TextStyle,
+  distUnit: { fontFamily: revaFonts.mono, fontSize: 18, color: 'rgba(255,255,255,0.8)', marginLeft: 6, fontWeight: '500' } as TextStyle,
+  subRow: {
+    flexDirection: 'row',
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.25)',
+  },
+  divider: { width: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.25)', marginVertical: 4 },
+});

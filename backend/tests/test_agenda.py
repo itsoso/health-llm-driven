@@ -171,6 +171,68 @@ def test_smart_today_returns_ranked_executable_contract(monkeypatch):
     assert daily["surface"]["primary"] in {"mobile", "watch", "rokid"}
 
 
+def test_smart_today_attaches_trajectory_context_to_daily_plan_actions(monkeypatch):
+    """Smart Agenda top action should show which HealthTrajectory state it is moving."""
+    from app.services import agenda_service
+
+    monkeypatch.setattr(agenda_service, "today", lambda db, uid, followup_within_days=14: {
+        "agenda_date": "2026-06-22",
+        "count": 0,
+        "items": [],
+    })
+    monkeypatch.setattr(agenda_service, "build_daily_operating_plan", lambda db, uid, plan_date=None: {
+        "plan_date": "2026-06-22",
+        "actions": [
+            {
+                "action_key": "movement.moderate_activity",
+                "domain": "movement",
+                "title": "累计 35-45 分钟中等强度活动",
+                "why": "对齐每周 150 分钟中等强度活动的代谢健康目标。",
+                "when": "daytime",
+                "metric_key": "waist_cm",
+                "target_value": "waist_down_or_stable",
+                "confidence": "high",
+                "verification": {"window_days": 7, "metrics": ["waist_cm"]},
+            }
+        ],
+    }, raising=False)
+    monkeypatch.setattr(agenda_service, "build_health_trajectory_snapshot", lambda db, uid: {
+        "trajectory_risks": [
+            {
+                "domain": "metabolic_health",
+                "level": "attention",
+                "state_variable": "waist_cm",
+                "horizon": "upstream_90d",
+                "why": "腰围和血压提示代谢轨迹需要关注。",
+                "primary_action": "优先执行中等强度活动和腰围复盘。",
+                "confidence": "high",
+                "uncertainty": {"level": "medium", "drivers": ["bp_single_measurement"]},
+                "evidence_tier": "clinical_guideline",
+                "claim_boundary": "用于上游健康管理排序, 不替代医生诊断。",
+                "verification_window": {"days": 7, "signal": "waist_cm"},
+                "verification_window_days": 7,
+                "verification_signal": "waist_cm",
+                "modifiable_levers": ["movement", "nutrition", "sleep"],
+            }
+        ],
+    }, raising=False)
+
+    body = agenda_service.smart_today(None, 1, max_items=1)
+
+    top = body["smart"]["top_items"][0]
+    assert body["smart"]["ranking"] == "trajectory_priority_status_source_v1"
+    assert top["trajectory_context"]["domain"] == "metabolic_health"
+    assert top["target_state_variable"] == "waist_cm"
+    assert top["verification_signal"] == "waist_cm"
+    assert top["why_now"].startswith("腰围和血压提示代谢轨迹需要关注。")
+    assert top["claim_boundary"] == "用于上游健康管理排序, 不替代医生诊断。"
+    assert top["trajectory_context"]["uncertainty"]["level"] == "medium"
+    assert top["trajectory_context"]["verification_window"]["signal"] == "waist_cm"
+    assert top["verify_by"]["trajectory"]["horizon"] == "upstream_90d"
+    assert top["verify_by"]["trajectory"]["uncertainty_level"] == "medium"
+    assert top["rank_reason"]["trajectory"]["state_variable"] == "waist_cm"
+
+
 # ── voice_actionable:含糊语音(Rokid「确认/跳过」)自动写的权威安全门(R4) ──────────
 # 权威真相 = 协议 source_model(完成实际落哪张表),不是 domain。下面对抗用例钉住:
 # ① 医疗级写表(med/supp)恒 False;② domain↔source_model 漂移时按 source_model 裁决

@@ -29,6 +29,7 @@ from app.models.desktop_job import DesktopJob
 from app.models.health_analysis_cache import HealthAnalysisCache
 from app.models.supplement import SupplementProduct, SupplementDefinition, SupplementRecord
 from app.models.supplement_inventory import SupplementInventory
+from app.models.supplement_ingredient import SupplementIngredient
 # P5(D2)复购下单 — 财务一等对象 ReorderIntent(SCAFFOLD,不真下单;独立于 WriteIntent)
 from app.models.reorder_intent import ReorderIntent
 # HabitDefinition/HabitRecord — DEPRECATED: router disabled, models retained for DB compat only
@@ -37,6 +38,7 @@ from app.models.weight import WeightRecord
 from app.models.waist import WaistRecord
 from app.models.daily_operating_plan import DailyOperatingPlan
 from app.models.intervention_event import InterventionEvent
+from app.models.daily_artifact import DailyArtifactEvent
 from app.models.epigenetic_report import EpigeneticReport
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.device_credential import DeviceCredential
@@ -120,7 +122,7 @@ from app.models.advice_ledger import AdviceLedger
 from app.models.genetic_data import GeneticImportJob, GeneticProfile, GeneticVariant
 # 多租户基因原始数据 (专用表, Postgres RLS + per-tenant 加密)
 from app.models.genetic_raw import GeneticRawFile, GeneticRawAudit
-from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
+from app.models.system_knowledge import KBAudit, KBDocument, KBDocumentVector, KBEdge
 # Personal Health OS P1 数据底座 + P2 干预闭环
 from app.models.twin_snapshot import TwinSnapshot
 from app.models.biomarker_observation import BiomarkerObservation
@@ -128,6 +130,17 @@ from app.models.intervention_cycle import InterventionCycle, OutcomeMetric
 from app.models.crossover_experiment import CrossoverExperiment  # R16 P4 A·B·A·B 交叉实验
 # Apple Watch ECG 房颤筛查信号 (点事件, 独立表)
 from app.models.ecg_observation import EcgObservation
+from app.models.data_connection import (
+    ConsentGrant,
+    ConnectorPolicy,
+    DataConnection,
+    ProvenanceRecord,
+)
+from app.models.health_runtime_governance import (
+    DataSourceQuality,
+    HealthRuntimeControl,
+    UserDataSourcePreference,
+)
 # 智能卧室环境快照 (家居传感器点事件, §11 不进通用 LLM)
 from app.models.bedroom_environment import (
     BedroomAutomationEvent,
@@ -162,6 +175,13 @@ __all__ = [
     "OutcomeMetric",
     "CrossoverExperiment",
     "EcgObservation",
+    "DataConnection",
+    "ConsentGrant",
+    "ConnectorPolicy",
+    "ProvenanceRecord",
+    "DataSourceQuality",
+    "UserDataSourcePreference",
+    "HealthRuntimeControl",
     "BedroomEnvironmentSnapshot",
     "BedroomAutomationEvent",
     "AudioInputEvent",
@@ -192,6 +212,7 @@ __all__ = [
     "SupplementDefinition",
     "SupplementRecord",
     "SupplementInventory",
+    "SupplementIngredient",
     "ReorderIntent",
     # "HabitDefinition",  # DEPRECATED
     # "HabitRecord",      # DEPRECATED
@@ -199,6 +220,7 @@ __all__ = [
     "WaistRecord",
     "DailyOperatingPlan",
     "InterventionEvent",
+    "DailyArtifactEvent",
     "EpigeneticReport",
     "BloodPressureRecord",
     "DeviceCredential",

@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, TextStyle } from 'react-native';
-import Svg, { Polyline, Line, Rect, Text as SvgText } from 'react-native-svg';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import { View } from 'react-native';
+import Svg, { Polyline, Rect, Text as SvgText } from 'react-native-svg';
+import { revaColors as C } from '../../constants/revaTheme';
 import type { HeartRatePoint } from '../../services/workouts';
 
 interface Props {
@@ -19,9 +19,6 @@ interface Props {
  * 自己画 Polyline + 横线 zone 已经够用.
  */
 export default function HrChart({ samples, height = 120, hrMax = null, hrRest = null }: Props) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-
   const prepared = useMemo(() => {
     if (!samples || samples.length < 2) return null;
     const xs = samples.map(s => s.time);
@@ -90,7 +87,7 @@ export default function HrChart({ samples, height = 120, hrMax = null, hrRest = 
         <Polyline
           points={pts}
           fill="none"
-          stroke={c.brand}
+          stroke={C.green500}
           strokeWidth={1.8}
           strokeLinejoin="round"
           strokeLinecap="round"
@@ -100,20 +97,15 @@ export default function HrChart({ samples, height = 120, hrMax = null, hrRest = 
           const t = minX + (maxX - minX) * p;
           const x = toX(t);
           return (
-            <SvgText key={i} x={x} y={H - 4} fontSize="9" fill={c.labelTertiary} textAnchor="middle">
+            <SvgText key={i} x={x} y={H - 4} fontSize="9" fill={C.ink3} textAnchor="middle">
               {fmtTime(t - minX)}
             </SvgText>
           );
         })}
         {/* Y-axis max/min label */}
-        <SvgText x={W - padX - 2} y={padT + 10} fontSize="9" fill={c.labelTertiary} textAnchor="end">{Math.round(maxY)}</SvgText>
-        <SvgText x={W - padX - 2} y={H - padB - 2} fontSize="9" fill={c.labelTertiary} textAnchor="end">{Math.round(minY)}</SvgText>
+        <SvgText x={W - padX - 2} y={padT + 10} fontSize="9" fill={C.ink3} textAnchor="end">{Math.round(maxY)}</SvgText>
+        <SvgText x={W - padX - 2} y={H - padB - 2} fontSize="9" fill={C.ink3} textAnchor="end">{Math.round(minY)}</SvgText>
       </Svg>
     </View>
   );
-}
-
-function createStyles(_c: ColorPalette) {
-  return StyleSheet.create({
-  });
 }

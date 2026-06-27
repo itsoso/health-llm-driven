@@ -11,14 +11,29 @@ import SleepBreathingSummary from '../components/sleep/SleepBreathingSummary';
 import { useSleepStats, useSleepDebt } from '../hooks/useSleepData';
 import { useSpO2LatestNight } from '../hooks/useSpO2Data';
 import { getDeepAnalysis } from '../services/sleep';
-import { spacing, radii, scoreColor, scoreGrade, metricColors } from '../constants/theme'
-import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import { scoreGrade } from '../constants/theme'
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaSemantic,
+  revaFonts,
+} from '../constants/revaTheme';
 import { createSleepAgentContext, pushChatWithContext } from '../utils/agentContext';
 
+// 睡眠相关类目装饰色(区分"哪类",非"好坏"):睡眠/时长蓝、AI 深度分析紫。
+const SLEEP_HUE = { fg: C.blue500, bg: C.blue50 } as const;
+const ANALYSIS_HUE = { fg: '#7C5CBF', bg: '#EDE7F6' } as const;
+
+// 睡眠质量分 → 三步临床语义(好不好)。
+function scoreSemanticColor(score: number): string {
+  if (score >= 80) return revaSemantic.normal.fg;
+  if (score >= 60) return revaSemantic.caution.fg;
+  return revaSemantic.risk.fg;
+}
+
 export default function SleepScreen() {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
   const [period, setPeriod] = useState(7);
   const { data: stats, isLoading, refetch, isRefetching } = useSleepStats(period);
@@ -58,14 +73,14 @@ export default function SleepScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={C.ink1} />
         </TouchableOpacity>
         <Text style={txt.title}>睡眠</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.green500} />}
         showsVerticalScrollIndicator={false}>
 
         {/* Period toggle */}
@@ -79,28 +94,28 @@ export default function SleepScreen() {
         </View>
 
         {isLoading ? (
-          <ActivityIndicator color={c.brand} style={{ marginTop: 40 }} />
+          <ActivityIndicator color={C.green500} style={{ marginTop: 40 }} />
         ) : (
           <>
             {/* Metrics */}
             <View style={styles.metricsRow}>
               <MetricTile label="平均时长" value={(avgDuration || 0).toFixed(1)} unit="h"
-                icon="moon" color={metricColors.sleep.main} tintColor={metricColors.sleep.tint} />
+                icon="moon" color={SLEEP_HUE.fg} tintColor={SLEEP_HUE.bg} />
               <MetricTile label="睡眠质量" value={avgScore > 0 ? Math.round(avgScore).toString() : '--'} unit=""
                 subtitle={avgScore > 0 ? scoreGrade(avgScore) : undefined}
-                icon="star" color={scoreColor(avgScore)} tintColor={`${scoreColor(avgScore)}20`} />
+                icon="star" color={scoreSemanticColor(avgScore)} tintColor={`${scoreSemanticColor(avgScore)}20`} />
             </View>
             {stats && (
               <TouchableOpacity
-                style={[styles.agentLink, { borderColor: c.separator }]}
+                style={[styles.agentLink, { borderColor: C.line }]}
                 onPress={handleChatSleep}
                 activeOpacity={0.75}
                 accessibilityRole="button"
                 accessibilityLabel="跟 Agent 详细聊睡眠"
               >
-                <Ionicons name="chatbubble-ellipses-outline" size={16} color={c.brand} />
-                <Text style={[txt.agentLinkText, { color: c.brand }]}>跟 Agent 详细聊睡眠</Text>
-                <Ionicons name="chevron-forward" size={15} color={c.brand} style={{ marginLeft: 'auto' }} />
+                <Ionicons name="chatbubble-ellipses-outline" size={16} color={C.green500} />
+                <Text style={[txt.agentLinkText, { color: C.green500 }]}>跟 Agent 详细聊睡眠</Text>
+                <Ionicons name="chevron-forward" size={15} color={C.green500} style={{ marginLeft: 'auto' }} />
               </TouchableOpacity>
             )}
 
@@ -108,31 +123,31 @@ export default function SleepScreen() {
             {debt && debt.status === 'success' && (
               <View style={styles.metricsRow}>
                 <MetricTile label="睡眠债务" value={(debt.cumulative_debt_hours ?? 0).toFixed(1)} unit="h"
-                  icon="trending-down" color={(debt.cumulative_debt_hours ?? 0) > 3 ? c.red : c.amber}
-                  tintColor={(debt.cumulative_debt_hours ?? 0) > 3 ? c.tintRed : c.tintAmber} />
+                  icon="trending-down" color={(debt.cumulative_debt_hours ?? 0) > 3 ? revaSemantic.risk.fg : revaSemantic.caution.fg}
+                  tintColor={(debt.cumulative_debt_hours ?? 0) > 3 ? revaSemantic.risk.bg : revaSemantic.caution.bg} />
                 <MetricTile label="推荐时长" value={(debt.target_hours ?? 0).toFixed(1)} unit="h"
-                  icon="bed" color={c.brand} tintColor={c.brandLight} />
+                  icon="bed" color={C.green500} tintColor={C.green50} />
               </View>
             )}
 
             {/* Chart */}
             {stats?.daily_trend && stats.daily_trend.length > 0 && (
-              <HealthCard title="周趋势" icon="bar-chart-outline" iconColor={metricColors.sleep.main} iconBg={metricColors.sleep.tint}>
+              <HealthCard title="周趋势" icon="bar-chart-outline" iconColor={SLEEP_HUE.fg} iconBg={SLEEP_HUE.bg}>
                 <SleepWeeklyChart data={stats.daily_trend} />
               </HealthCard>
             )}
 
             {/* SpO2 Overnight */}
             {spo2Data && spo2Data.timeline.length > 0 && (
-              <HealthCard title="夜间血氧" icon="pulse-outline" iconColor="#007AFF" iconBg="#E6F0FF"
+              <HealthCard title="夜间血氧" icon="pulse-outline" iconColor={C.blue500} iconBg={C.blue50}
                 rightAccessory={
                   <TouchableOpacity
                     onPress={() => router.push('/sleep-spo2-analysis')}
                     style={styles.osaBadge}
                     activeOpacity={0.7}
                   >
-                    <Ionicons name="analytics-outline" size={12} color={c.brand} />
-                    <Text style={[txt.osaBadgeText, { color: c.brand }]}>根因分析</Text>
+                    <Ionicons name="analytics-outline" size={12} color={C.green500} />
+                    <Text style={[txt.osaBadgeText, { color: C.green500 }]}>根因分析</Text>
                   </TouchableOpacity>
                 }>
                 <SpO2NightChart data={spo2Data.timeline} sleepStart={spo2Data.sleep_start} sleepEnd={spo2Data.sleep_end} />
@@ -150,7 +165,7 @@ export default function SleepScreen() {
             ) : null}
 
             {/* Deep analysis */}
-            <HealthCard title="AI 深度分析" icon="sparkles-outline" iconColor={c.purple} iconBg={c.tintPurple}
+            <HealthCard title="AI 深度分析" icon="sparkles-outline" iconColor={ANALYSIS_HUE.fg} iconBg={ANALYSIS_HUE.bg}
               rightAccessory={
                 !analysis && !analysisLoading ? (
                   <TouchableOpacity onPress={loadAnalysis} activeOpacity={0.7}>
@@ -159,7 +174,7 @@ export default function SleepScreen() {
                 ) : null
               }>
               {analysisLoading ? (
-                <ActivityIndicator color={c.purple} />
+                <ActivityIndicator color={ANALYSIS_HUE.fg} />
               ) : analysis ? (
                 <Text style={txt.analysisText}>{analysis}</Text>
               ) : (
@@ -175,34 +190,36 @@ export default function SleepScreen() {
   );
 }
 
-const createStyles = (c: ColorPalette) => StyleSheet.create({
-  safe: { flex: 1, backgroundColor: c.bgPrimary },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+// Reva 设计语言:暖 paper 底 / 暖白 surface 卡 / 活力绿 / r-md / 数字等宽 mono。
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.paper },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: revaSpacing.s3, paddingVertical: revaSpacing.s2 },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  content: { padding: spacing.lg },
-  periodRow: { flexDirection: 'row', gap: 8, marginBottom: spacing.lg },
-  periodBtn: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: radii.full, backgroundColor: c.bgCard },
-  periodBtnActive: { backgroundColor: c.brand },
-  metricsRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md },
-  osaBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#FFF5E6', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  content: { padding: revaSpacing.s4 },
+  periodRow: { flexDirection: 'row', gap: 8, marginBottom: revaSpacing.s4 },
+  periodBtn: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: revaRadii.pill, backgroundColor: C.surface },
+  periodBtnActive: { backgroundColor: C.green500 },
+  metricsRow: { flexDirection: 'row', gap: revaSpacing.s3, marginBottom: revaSpacing.s3 },
+  osaBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: C.green50, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   agentLink: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: c.bgCard,
+    backgroundColor: C.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    marginBottom: spacing.md,
+    borderRadius: revaRadii.md,
+    paddingHorizontal: revaSpacing.s4,
+    paddingVertical: revaSpacing.s3,
+    marginBottom: revaSpacing.s3,
   },
 });
 
-const createTxt = (c: ColorPalette) => ({
-  title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
-  periodText: { fontSize: 13, fontWeight: '500', color: c.labelSecondary } as TextStyle,
+// 数字/计数/指标走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
+const txt = {
+  title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1, flex: 1, textAlign: 'center' } as TextStyle,
+  periodText: { fontFamily: revaFonts.mono, fontSize: 13, fontWeight: '500', color: C.ink2 } as TextStyle,
   periodTextActive: { color: '#fff', fontWeight: '600' } as TextStyle,
-  analyzeBtn: { fontSize: 14, fontWeight: '600', color: c.purple } as TextStyle,
-  analysisText: { fontSize: 14, color: c.labelPrimary, lineHeight: 21 } as TextStyle,
-  placeholder: { fontSize: 13, color: c.labelTertiary, textAlign: 'center', paddingVertical: 12 } as TextStyle,
-  osaBadgeText: { fontSize: 11, fontWeight: '600', color: '#FF9F0A' } as TextStyle,
-  agentLinkText: { fontSize: 14, fontWeight: '600' } as TextStyle,
-});
+  analyzeBtn: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '600', color: ANALYSIS_HUE.fg } as TextStyle,
+  analysisText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink1, lineHeight: 21 } as TextStyle,
+  placeholder: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink3, textAlign: 'center', paddingVertical: 12 } as TextStyle,
+  osaBadgeText: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '600', color: C.green500 } as TextStyle,
+  agentLinkText: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '600' } as TextStyle,
+};

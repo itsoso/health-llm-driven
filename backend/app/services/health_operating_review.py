@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from datetime import date, timedelta
 from typing import Any, Iterable
@@ -13,10 +14,12 @@ from app.models.daily_health import GarminData
 from app.models.intervention_event import InterventionEvent
 from app.models.waist import WaistRecord
 from app.models.weight import WeightRecord
+from app.services.causal_memory import derive_causal_notes
 
 SUPPORTED_REVIEW_WINDOWS = {7, 30, 90}
 COMPLETED_STATUSES = {"completed", "done", "verified"}
 LOWER_IS_BETTER_METRICS = {"weight", "waist_cm", "systolic_bp", "diastolic_bp"}
+logger = logging.getLogger(__name__)
 
 
 def build_health_operating_review(
@@ -45,6 +48,7 @@ def build_health_operating_review(
     )
 
     metrics = _metric_summary(db, user_id=user_id, start=start, end=end)
+    action_effects = _action_effects(events, metrics)
     return {
         "window_days": window_days,
         "start_date": start.isoformat(),
@@ -54,7 +58,39 @@ def build_health_operating_review(
         "completed_action_keys": [
             event.action_key for event in events if event.feedback_status in COMPLETED_STATUSES
         ],
-        "action_effects": _action_effects(events, metrics),
+        "action_effects": action_effects,
+        "prediction_backtest": _prediction_backtest(
+            window_days=window_days,
+            events=events,
+            metrics=metrics,
+            action_effects=action_effects,
+        ),
+        "causal_memory": _causal_memory_review(db, user_id=user_id, window_days=window_days),
+    }
+
+
+def _causal_memory_review(db: Session, *, user_id: int, window_days: int) -> dict[str, Any]:
+    try:
+        result = derive_causal_notes(db, user_id=user_id, max_events=3, window_days=window_days)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("causal_memory_review_failed user_id=%s error=%s", user_id, str(exc))
+        return {
+            "notes": [],
+            "evidence_tier": "observational",
+            "claim_boundary": "个人规律暂不可用;不生成新的健康建议或临床结论。",
+        }
+
+    notes = result.get("notes") if isinstance(result, dict) else []
+    if not isinstance(notes, list):
+        notes = []
+    return {
+        "notes": notes[:3],
+        "evidence_tier": result.get("evidence_tier", "observational") if isinstance(result, dict) else "observational",
+        "claim_boundary": (
+            result.get("claim_boundary")
+            if isinstance(result, dict) and result.get("claim_boundary")
+            else "事件先于指标变化的时序相关,非证明因果;不替代医学结论。"
+        ),
     }
 
 
@@ -114,6 +150,214 @@ def _action_effects(events: list[InterventionEvent], metrics: dict[str, Any]) ->
             "attribution": "temporal_association_not_causation",
         })
     return effects
+
+
+def _prediction_backtest(
+    *,
+    window_days: int,
+    events: list[InterventionEvent],
+    metrics: dict[str, Any],
+    action_effects: list[dict[str, Any]],
+) -> dict[str, Any]:
+    results = _prediction_backtest_results(events, metrics)
+    if not results:
+        return _prediction_backtest_placeholder(
+            window_days=window_days,
+            events=events,
+            metrics=metrics,
+            action_effects=action_effects,
+        )
+
+    summary = Counter(result["verdict"] for result in results)
+    confidence_summary = Counter(result["confidence_after"] for result in results)
+    return {
+        "version": "prediction_backtest_v1",
+        "status": "ready",
+        "reason": "has_matched_prediction_results",
+        "candidate_count": len(results),
+        "ready_candidate_count": len(results),
+        "window_days": window_days,
+        "minimum_window_days": 7,
+        "completed_action_count": sum(1 for event in events if event.feedback_status in COMPLETED_STATUSES),
+        "eligible_metrics": sorted({result["metric"] for result in results}),
+        "requirements": [],
+        "summary": {
+            "met": summary.get("met", 0),
+            "not_met": summary.get("not_met", 0),
+            "inconclusive": summary.get("inconclusive", 0),
+        },
+        "confidence_summary": {
+            "high": confidence_summary.get("high", 0),
+            "medium": confidence_summary.get("medium", 0),
+            "low": confidence_summary.get("low", 0),
+        },
+        "results": results,
+        "boundary": "预测回测只比较预期信号与窗口内实际变化, 属观察性复盘, 不证明单个行动造成指标变化。",
+    }
+
+
+def _prediction_backtest_results(
+    events: list[InterventionEvent],
+    metrics: dict[str, Any],
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for event in events:
+        if event.feedback_status not in COMPLETED_STATUSES:
+            continue
+        snapshot = event.action_snapshot or {}
+        prediction = snapshot.get("prediction") or snapshot.get("prediction_record")
+        if not isinstance(prediction, dict):
+            continue
+        metric = _prediction_metric(prediction, snapshot)
+        if not metric or metric not in metrics:
+            continue
+        change = metrics[metric]
+        if change.get("status") != "present" or change.get("delta") is None:
+            continue
+        prediction_id = str(prediction.get("id") or f"{event.action_key}:{metric}")
+        key = (prediction_id, metric)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        observed_delta = change.get("delta")
+        expected_signal = _expected_signal(prediction, metric)
+        verdict = _prediction_verdict(expected_signal, observed_delta)
+        confidence_before = str(prediction.get("confidence") or "low")
+        downgrade_reason = _prediction_downgrade_reason(prediction, confidence_before)
+        if downgrade_reason:
+            verdict = "inconclusive"
+        results.append({
+            "prediction_id": prediction_id,
+            "source": prediction.get("source"),
+            "action_key": event.action_key,
+            "action_title": event.action_title,
+            "metric": metric,
+            "horizon_days": prediction.get("horizon_days") or expected_signal.get("horizon_days"),
+            "baseline": prediction.get("baseline") if prediction.get("baseline") is not None else change.get("first"),
+            "baseline_date": change.get("first_date"),
+            "expected_signal": expected_signal,
+            "actual_result": {
+                "current": change.get("current"),
+                "current_date": change.get("current_date"),
+            },
+            "observed_delta": observed_delta,
+            "verdict": verdict,
+            "downgrade_reason": downgrade_reason,
+            "confidence_before": confidence_before,
+            "confidence_after": _confidence_after(confidence_before, verdict),
+            "explanation": _prediction_explanation(verdict),
+            "attribution": "prediction_backtest_not_causation",
+            "boundary": prediction.get("claim_boundary")
+            or "观察性回测, 不证明单个行动造成指标变化。",
+        })
+    return results
+
+
+def _prediction_metric(prediction: dict[str, Any], snapshot: dict[str, Any]) -> str | None:
+    expected_signal = prediction.get("expected_signal")
+    if isinstance(expected_signal, dict) and expected_signal.get("metric"):
+        return str(expected_signal["metric"])
+    if prediction.get("metric"):
+        return str(prediction["metric"])
+    metric = snapshot.get("verification_metric") or snapshot.get("metric_key")
+    return str(metric) if metric else None
+
+
+def _expected_signal(prediction: dict[str, Any], metric: str) -> dict[str, Any]:
+    raw = prediction.get("expected_signal")
+    if isinstance(raw, dict):
+        signal = dict(raw)
+    else:
+        signal = {}
+    signal.setdefault("metric", metric)
+    if prediction.get("direction"):
+        signal.setdefault("direction", prediction.get("direction"))
+    if prediction.get("expected_delta") is not None:
+        signal.setdefault("expected_delta", prediction.get("expected_delta"))
+    if prediction.get("horizon_days") is not None:
+        signal.setdefault("horizon_days", prediction.get("horizon_days"))
+    if prediction.get("baseline") is not None:
+        signal.setdefault("baseline", prediction.get("baseline"))
+    return signal
+
+
+def _prediction_verdict(expected_signal: dict[str, Any], observed_delta: float | int | None) -> str:
+    if observed_delta is None:
+        return "inconclusive"
+    direction = str(expected_signal.get("direction") or "").lower()
+    expected_delta = expected_signal.get("expected_delta")
+    if direction == "down":
+        if isinstance(expected_delta, (int, float)):
+            return "met" if observed_delta <= expected_delta else "not_met"
+        return "met" if observed_delta < 0 else "not_met"
+    if direction == "up":
+        if isinstance(expected_delta, (int, float)):
+            return "met" if observed_delta >= expected_delta else "not_met"
+        return "met" if observed_delta > 0 else "not_met"
+    if direction == "stable":
+        tolerance = expected_signal.get("tolerance")
+        if isinstance(tolerance, (int, float)):
+            return "met" if abs(observed_delta) <= tolerance else "not_met"
+        return "met" if observed_delta == 0 else "not_met"
+    return "inconclusive"
+
+
+def _prediction_downgrade_reason(prediction: dict[str, Any], confidence_before: str) -> str | None:
+    if confidence_before == "low" or prediction.get("confounders"):
+        return "low_confidence_or_confounders"
+    return None
+
+
+def _confidence_after(confidence_before: str, verdict: str) -> str:
+    if verdict == "met":
+        return confidence_before
+    if verdict == "inconclusive":
+        return "low"
+    return {"high": "medium", "medium": "low", "med": "low"}.get(confidence_before, "low")
+
+
+def _prediction_explanation(verdict: str) -> str:
+    if verdict == "met":
+        return "实际变化与预测方向一致, 支持继续当前策略并继续观察。"
+    if verdict == "not_met":
+        return "实际变化未达到预测信号, 需要复盘执行、混杂因素或调整策略。"
+    return "数据不足或预测信号不明确, 暂不判断。"
+
+
+def _prediction_backtest_placeholder(
+    *,
+    window_days: int,
+    events: list[InterventionEvent],
+    metrics: dict[str, Any],
+    action_effects: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Expose the future backtest slot without pretending a model exists."""
+    eligible_metrics = sorted(
+        metric
+        for metric, change in metrics.items()
+        if change.get("status") == "present" and change.get("delta") is not None
+    )
+    completed_count = sum(1 for event in events if event.feedback_status in COMPLETED_STATUSES)
+    return {
+        "version": "prediction_backtest_placeholder_v1",
+        "status": "not_ready",
+        "reason": "requires_prediction_output_history",
+        "candidate_count": len(action_effects),
+        "ready_candidate_count": 0,
+        "window_days": window_days,
+        "minimum_window_days": 30,
+        "completed_action_count": completed_count,
+        "eligible_metrics": eligible_metrics,
+        "requirements": [
+            "prediction_output_history",
+            "matched_outcome_window",
+            "confounder_review",
+            "safety_boundary_review",
+        ],
+        "boundary": "当前仅预留后续回测槽位, 不评估预测准确性, 不生成新的健康建议或临床结论。",
+    }
 
 
 def _numeric_change(points: Iterable[tuple[date, float | int | None]], *, precision: int) -> dict[str, Any]:

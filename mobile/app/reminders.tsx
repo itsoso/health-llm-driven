@@ -10,13 +10,16 @@ import {
   getReminders, getReminderTemplates, createReminder, deleteReminder, updateReminder,
   type Reminder, type ReminderTemplate,
 } from '../services/notifications';
-import { spacing, radii, shadows } from '../constants/theme'
-import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaSemantic,
+  revaFonts,
+} from '../constants/revaTheme';
 
 export default function RemindersScreen() {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
   const qc = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
@@ -68,7 +71,7 @@ export default function RemindersScreen() {
           <Ionicons
             name={item.enabled ? 'checkmark-circle' : 'ellipse-outline'}
             size={24}
-            color={item.enabled ? c.brand : c.labelTertiary}
+            color={item.enabled ? C.green500 : C.ink3}
           />
         </TouchableOpacity>
       </View>
@@ -79,21 +82,21 @@ export default function RemindersScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={C.ink1} />
         </TouchableOpacity>
         <Text style={txt.title}>提醒管理</Text>
         <TouchableOpacity onPress={() => setShowAdd(true)} style={styles.backBtn}>
-          <Ionicons name="add" size={24} color={c.brand} />
+          <Ionicons name="add" size={24} color={C.green500} />
         </TouchableOpacity>
       </View>
 
       {isLoading ? (
-        <View style={styles.center}><ActivityIndicator color={c.brand} /></View>
+        <View style={styles.center}><ActivityIndicator color={C.green500} /></View>
       ) : reminders.length === 0 ? (
         <View style={styles.emptyWrap}>
           <View style={styles.emptyCard}>
             <View style={styles.emptyIcon}>
-              <Ionicons name="alarm-outline" size={26} color={c.brand} />
+              <Ionicons name="alarm-outline" size={26} color={C.green500} />
             </View>
             <Text style={txt.emptyTitle}>先放 1 个不会漏的提醒</Text>
             <Text style={txt.emptyBody}>
@@ -134,9 +137,6 @@ export default function RemindersScreen() {
 }
 
 function AddReminderModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const qc = useQueryClient();
   const [selectedTemplate, setSelectedTemplate] = useState<ReminderTemplate | null>(null);
   const [customTime, setCustomTime] = useState('');
@@ -177,11 +177,11 @@ function AddReminderModal({ visible, onClose }: { visible: boolean; onClose: () 
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.backBtn}>
-            <Text style={{ fontSize: 16, color: c.labelSecondary }}>取消</Text>
+            <Text style={{ fontFamily: revaFonts.sans, fontSize: 16, color: C.ink2 }}>取消</Text>
           </TouchableOpacity>
           <Text style={txt.title}>添加提醒</Text>
           <TouchableOpacity onPress={handleCreate} style={styles.backBtn} disabled={!selectedTemplate}>
-            <Text style={{ fontSize: 16, color: selectedTemplate ? c.brand : c.labelTertiary }}>添加</Text>
+            <Text style={{ fontFamily: revaFonts.sans, fontSize: 16, color: selectedTemplate ? C.green500 : C.ink3 }}>添加</Text>
           </TouchableOpacity>
         </View>
 
@@ -209,7 +209,7 @@ function AddReminderModal({ visible, onClose }: { visible: boolean; onClose: () 
               value={customTime}
               onChangeText={setCustomTime}
               placeholder={selectedTemplate.default_times.join(', ')}
-              placeholderTextColor={c.labelTertiary}
+              placeholderTextColor={C.ink3}
             />
           </View>
         )}
@@ -224,29 +224,30 @@ const EMPTY_REMINDER_HINTS = [
   { title: '睡前恢复', meta: '睡前 30 分钟降低刺激和屏幕', color: '#AF52DE' },
 ];
 
-const createStyles = (c: ColorPalette) => StyleSheet.create({
-  safe: { flex: 1, backgroundColor: c.bgPrimary },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+// Reva 设计语言:暖 paper 底 / 暖白 surface 卡 / 活力绿 / r-lg 18 / 时间走等宽 mono。
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.paper },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: revaSpacing.s3 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: revaSpacing.s3, paddingVertical: revaSpacing.s2 },
   backBtn: { width: 60, height: 40, alignItems: 'center', justifyContent: 'center' },
-  list: { padding: spacing.lg },
+  list: { padding: revaSpacing.s4 },
   row: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: c.bgCard, borderRadius: radii.lg,
-    paddingHorizontal: spacing.lg, paddingVertical: 14,
-    marginBottom: spacing.sm, ...shadows.subtle,
+    backgroundColor: C.surface, borderRadius: revaRadii.lg,
+    paddingHorizontal: revaSpacing.s4, paddingVertical: 14,
+    marginBottom: revaSpacing.s2, ...revaShadows.sm,
   },
   swipeDelete: {
-    backgroundColor: '#FF453A', width: 64, borderRadius: radii.lg,
-    justifyContent: 'center', alignItems: 'center', marginBottom: spacing.sm,
+    backgroundColor: revaSemantic.risk.fg, width: 64, borderRadius: revaRadii.lg,
+    justifyContent: 'center', alignItems: 'center', marginBottom: revaSpacing.s2,
   },
   addBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: c.brand, borderRadius: radii.lg,
-    paddingHorizontal: spacing.xxl, paddingVertical: 12,
+    backgroundColor: C.green500, borderRadius: revaRadii.lg,
+    paddingHorizontal: revaSpacing.s6, paddingVertical: 12,
   },
   secondaryBtn: {
     alignItems: 'center',
@@ -255,63 +256,64 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
   },
   emptyWrap: {
     flex: 1,
-    padding: spacing.lg,
-    paddingTop: spacing.xl,
+    padding: revaSpacing.s4,
+    paddingTop: revaSpacing.s5,
   },
   emptyCard: {
-    backgroundColor: c.bgCard,
-    borderRadius: radii.xl,
-    padding: spacing.lg,
-    gap: spacing.md,
-    ...shadows.subtle,
+    backgroundColor: C.surface,
+    borderRadius: revaRadii.xl,
+    padding: revaSpacing.s4,
+    gap: revaSpacing.s3,
+    ...revaShadows.sm,
   },
   emptyIcon: {
     width: 48,
     height: 48,
-    borderRadius: radii.lg,
-    backgroundColor: c.tintTeal,
+    borderRadius: revaRadii.lg,
+    backgroundColor: '#E0EFEC',
     alignItems: 'center',
     justifyContent: 'center',
   },
   templatePreview: {
-    gap: spacing.xs,
-    paddingVertical: spacing.xs,
+    gap: revaSpacing.s1,
+    paddingVertical: revaSpacing.s1,
   },
   hintRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: revaSpacing.s2,
     paddingVertical: 9,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: c.separator,
+    borderColor: C.line,
   },
   hintDot: { width: 8, height: 8, borderRadius: 4 },
   templateRow: {
-    backgroundColor: c.bgCard, borderRadius: radii.lg,
-    paddingHorizontal: spacing.lg, paddingVertical: 14,
-    marginBottom: spacing.sm, ...shadows.subtle,
+    backgroundColor: C.surface, borderRadius: revaRadii.lg,
+    paddingHorizontal: revaSpacing.s4, paddingVertical: 14,
+    marginBottom: revaSpacing.s2, ...revaShadows.sm,
     borderWidth: 2, borderColor: 'transparent',
   },
-  templateSelected: { borderColor: c.brand },
-  customTimeBox: { padding: spacing.lg },
+  templateSelected: { borderColor: C.green500 },
+  customTimeBox: { padding: revaSpacing.s4 },
   input: {
-    backgroundColor: c.bgCard, borderRadius: radii.md,
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    fontSize: 15, color: c.labelPrimary, marginTop: spacing.xs,
+    backgroundColor: C.surface, borderRadius: revaRadii.md,
+    paddingHorizontal: revaSpacing.s3, paddingVertical: 12,
+    fontSize: 15, fontFamily: revaFonts.mono, color: C.ink1, marginTop: revaSpacing.s1,
   },
 });
 
-const createTxt = (c: ColorPalette) => ({
-  title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
-  name: { fontSize: 15, fontWeight: '500', color: c.labelPrimary } as TextStyle,
-  times: { fontSize: 13, color: c.labelSecondary, marginTop: 2 } as TextStyle,
-  emptyTitle: { fontSize: 20, lineHeight: 25, fontWeight: '800', color: c.labelPrimary } as TextStyle,
-  emptyBody: { fontSize: 14, lineHeight: 21, color: c.labelSecondary } as TextStyle,
-  addBtnText: { fontSize: 15, fontWeight: '600', color: '#fff' } as TextStyle,
-  secondaryBtnText: { fontSize: 14, fontWeight: '600', color: c.brand } as TextStyle,
-  hintTitle: { fontSize: 14, fontWeight: '700', color: c.labelPrimary } as TextStyle,
-  hintMeta: { fontSize: 12, color: c.labelSecondary, marginTop: 2 } as TextStyle,
-  templateName: { fontSize: 15, fontWeight: '500', color: c.labelPrimary } as TextStyle,
-  templateTimes: { fontSize: 13, color: c.labelSecondary, marginTop: 2 } as TextStyle,
-  customLabel: { fontSize: 13, color: c.labelSecondary } as TextStyle,
-});
+// 时间/计数走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
+const txt = {
+  title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1, flex: 1, textAlign: 'center' } as TextStyle,
+  name: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '500', color: C.ink1 } as TextStyle,
+  times: { fontFamily: revaFonts.mono, fontSize: 13, color: C.ink2, marginTop: 2 } as TextStyle,
+  emptyTitle: { fontFamily: revaFonts.sans, fontSize: 20, lineHeight: 25, fontWeight: '800', color: C.ink1 } as TextStyle,
+  emptyBody: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 21, color: C.ink2 } as TextStyle,
+  addBtnText: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '600', color: '#fff' } as TextStyle,
+  secondaryBtnText: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '600', color: C.green500 } as TextStyle,
+  hintTitle: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '700', color: C.ink1 } as TextStyle,
+  hintMeta: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, marginTop: 2 } as TextStyle,
+  templateName: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '500', color: C.ink1 } as TextStyle,
+  templateTimes: { fontFamily: revaFonts.mono, fontSize: 13, color: C.ink2, marginTop: 2 } as TextStyle,
+  customLabel: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2 } as TextStyle,
+};

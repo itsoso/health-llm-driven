@@ -1,7 +1,10 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
 import Svg, { Rect, Text as SvgText } from 'react-native-svg';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaFonts,
+} from '../../constants/revaTheme';
 import type { PacePoint } from '../../services/workouts';
 
 interface Props {
@@ -20,9 +23,6 @@ interface Props {
  * 简化版: 按时间均匀把 pace 切 N 段, N = round(totalDistance).
  */
 export default function PaceBars({ paceTimeline, totalDistanceKm, durationSec, height = 100 }: Props) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-
   const bars = useMemo(() => {
     if (!paceTimeline || paceTimeline.length < 2 || !totalDistanceKm || !durationSec) return null;
     const nBars = Math.max(1, Math.min(30, Math.round(totalDistanceKm)));
@@ -95,8 +95,8 @@ export default function PaceBars({ paceTimeline, totalDistanceKm, durationSec, h
           );
         })}
         {/* Y labels */}
-        <SvgText x={W - padX} y={padT + 8} fontSize="9" fill={c.labelTertiary} textAnchor="end">{fmtPace(maxPace)}</SvgText>
-        <SvgText x={W - padX} y={padT + plotH - 2} fontSize="9" fill={c.labelTertiary} textAnchor="end">{fmtPace(minPace)}</SvgText>
+        <SvgText x={W - padX} y={padT + 8} fontSize="9" fill={C.ink3} textAnchor="end">{fmtPace(maxPace)}</SvgText>
+        <SvgText x={W - padX} y={padT + plotH - 2} fontSize="9" fill={C.ink3} textAnchor="end">{fmtPace(minPace)}</SvgText>
       </Svg>
       <View style={styles.caption}>
         <Text style={styles.captionText}>{segments.length} km · 最快 {fmtPace(minPace)} · 最慢 {fmtPace(maxPace)}</Text>
@@ -105,13 +105,13 @@ export default function PaceBars({ paceTimeline, totalDistanceKm, durationSec, h
   );
 }
 
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
-    caption: { marginTop: 4, alignItems: 'center' },
-    captionText: {
-      fontSize: 11,
-      color: c.labelTertiary,
-      fontVariant: ['tabular-nums'] as const,
-    } as TextStyle,
-  });
-}
+// 配速/公里数走 IBM Plex Mono = Reva 等宽 signature。
+const styles = StyleSheet.create({
+  caption: { marginTop: 4, alignItems: 'center' },
+  captionText: {
+    fontFamily: revaFonts.mono,
+    fontSize: 11,
+    color: C.ink3,
+    fontVariant: ['tabular-nums'] as const,
+  } as TextStyle,
+});

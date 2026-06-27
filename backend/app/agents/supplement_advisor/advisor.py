@@ -21,6 +21,7 @@ Supplement Advisor —— 基因 + 化验驱动的补剂推荐 specialist.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -266,28 +267,86 @@ UL_LIMITS = {
 }
 
 
-def _apply_ul_guardrail(
-    ul_key: Optional[str], ref_upper: Optional[float]
-) -> Tuple[Optional[float], Optional[str]]:
+@dataclass(frozen=True)
+class ULGuardrailResult:
+    ceiling: Optional[float]
+    warning: Optional[str]
+    unit: Optional[str] = None
+    source: Optional[str] = None
+    source_ref: Optional[str] = None
+
+
+def _resolve_ul_fact(ul_key: Optional[str], db: Any = None) -> ULGuardrailResult:
+    if not ul_key:
+        return ULGuardrailResult(None, None)
+
+    if db is not None:
+        try:
+            from app.services.supplement_ingredient_lookup import resolve_ingredient_ul
+
+            reviewed = resolve_ingredient_ul(db, ul_key)
+            if reviewed is not None:
+                return ULGuardrailResult(
+                    ceiling=reviewed["amount"],
+                    warning=None,
+                    unit=reviewed.get("unit"),
+                    source=reviewed.get("source"),
+                    source_ref=reviewed.get("source_ref"),
+                )
+        except Exception as exc:  # noqa: BLE001 - guardrail must degrade to static limits
+            logger.debug("[supplement_advisor] supplement ingredient UL lookup failed: %s", exc)
+
+    ul = UL_LIMITS.get(ul_key)
+    if ul is None:
+        return ULGuardrailResult(None, None)
+    return ULGuardrailResult(float(ul), None, source="static_ul_limits")
+
+
+def _format_ul_amount(value: float) -> str:
+    if float(value).is_integer():
+        return str(int(value))
+    return f"{value:g}"
+
+
+def _apply_ul_guardrail_details(
+    ul_key: Optional[str], ref_upper: Optional[float], db: Any = None
+) -> ULGuardrailResult:
     """对"参考范围上限"做安全上限 (UL) 封顶。
 
     这是真护栏 (历史上 UL_LIMITS 是死代码，从未被消费 —— 现接入 `_rule_to_rec`)。
     返回 (封顶后的安全上限值, 警告文案)。
-    - ul_key 不在 UL_LIMITS 或 ref_upper 缺失 → (None, None) 不干预。
+    - ul_key 不在 reviewed 表 / UL_LIMITS 或 ref_upper 缺失 → 不干预。
     - ref_upper 超 UL → 返回 (UL, 警告) ：把展示上限压到 UL，并提示不可超过。
     - ref_upper ≤ UL → 返回 (UL, None) ：仅回传 UL 作为天花板供展示，不警告。
     """
     if not ul_key or ref_upper is None:
-        return None, None
-    ul = UL_LIMITS.get(ul_key)
+        return ULGuardrailResult(None, None)
+    resolved = _resolve_ul_fact(ul_key, db=db)
+    ul = resolved.ceiling
     if ul is None:
-        return None, None
+        return ULGuardrailResult(None, None)
+    formatted_ul = _format_ul_amount(ul)
+    formatted_ref_upper = _format_ul_amount(float(ref_upper))
+    unit_suffix = f" {resolved.unit}" if resolved.unit else ""
     if ref_upper > ul:
-        return ul, (
-            f"⚠️ 参考范围上限 {ref_upper} 超安全上限 UL {ul}（{ul_key}）→ "
-            f"已按 UL 封顶，任何情况下不可超过 {ul}，且须遵医嘱。"
+        return ULGuardrailResult(
+            ceiling=ul,
+            warning=(
+                f"⚠️ 参考范围上限 {formatted_ref_upper} 超安全上限 UL {formatted_ul}{unit_suffix}（{ul_key}）→ "
+                f"已按 UL 封顶，任何情况下不可超过 {formatted_ul}{unit_suffix}，且须遵医嘱。"
+            ),
+            unit=resolved.unit,
+            source=resolved.source,
+            source_ref=resolved.source_ref,
         )
-    return ul, None
+    return resolved
+
+
+def _apply_ul_guardrail(
+    ul_key: Optional[str], ref_upper: Optional[float], db: Any = None
+) -> Tuple[Optional[float], Optional[str]]:
+    result = _apply_ul_guardrail_details(ul_key, ref_upper, db=db)
+    return result.ceiling, result.warning
 
 
 # ─────────────────────────── 辅助函数 ───────────────────────────
@@ -415,6 +474,10 @@ class SupplementAdvisorSpecialist:
             recommendations: List[Dict[str, Any]] = []
             blocks: List[Dict[str, Any]] = []  # 硬阻断项
             warnings: List[str] = []
+            db = context.get("db") if isinstance(context, dict) else None
+
+            def to_rec(rule: Dict[str, Any]) -> Dict[str, Any]:
+                return self._rule_to_rec(rule, twin, db=db)
 
             # 1. HFE 硬阻断（最优先）
             if _is_hfe_homozygous(twin):
@@ -432,19 +495,19 @@ class SupplementAdvisorSpecialist:
             if hit_mthfr:
                 for rid in ("mthfr_methylfolate", "mthfr_b12"):
                     rule = next(r for r in SUPPLEMENT_RULES if r["id"] == rid)
-                    recommendations.append(self._rule_to_rec(rule, twin))
+                    recommendations.append(to_rec(rule))
 
             # 3. APOE ε4
             hit_apoe, _ = _has_snp(twin, "APOE")
             if hit_apoe:
                 rule = next(r for r in SUPPLEMENT_RULES if r["id"] == "apoe_omega3")
-                recommendations.append(self._rule_to_rec(rule, twin))
+                recommendations.append(to_rec(rule))
 
             # 4. FADS1 (Omega-3 conversion low)
             hit_fads, _ = _has_snp(twin, "FADS1")
             if hit_fads and not hit_apoe:  # APOE 已覆盖 Omega-3
                 rule = next(r for r in SUPPLEMENT_RULES if r["id"] == "fads_epa")
-                recommendations.append(self._rule_to_rec(rule, twin))
+                recommendations.append(to_rec(rule))
 
             # 5. 镁 — 症状/化验触发 (非基因门控)
             #    旧版按 COMT 慢型基因型推荐, 已纠正 (无 COMT×镁→HRV/睡眠 交互证据);
@@ -452,7 +515,7 @@ class SupplementAdvisorSpecialist:
             low_mg = _lab_abnormal(twin, ["镁", "magnesium"])
             if low_mg or _has_sleep_or_anxiety_complaint(twin):
                 rule = next(r for r in SUPPLEMENT_RULES if r["id"] == "magnesium_sleep")
-                rec = self._rule_to_rec(rule, twin)
+                rec = to_rec(rule)
                 # eGFR < 30 禁高剂量镁
                 if twin.labs.egfr is not None and twin.labs.egfr < 30:
                     rec["warning"] = "⚠️ eGFR < 30, 镁不宜高剂量 — 建议 100 mg 起步并咨询肾内科。"
@@ -463,7 +526,7 @@ class SupplementAdvisorSpecialist:
             low_vd = _lab_abnormal(twin, ["25-OH-D", "25羟", "维生素 D", "维生素D"])
             if hit_vdr or low_vd:
                 rule_d = next(r for r in SUPPLEMENT_RULES if r["id"] == "vdr_vitamin_d")
-                rec_d = self._rule_to_rec(rule_d, twin)
+                rec_d = to_rec(rule_d)
                 # 肾结石史 → 自动降 dose 到 1000 IU + warning (memory 提的硬规则)
                 conditions = (twin.chronic.active_conditions or [])
                 has_kidney_stone = any(
@@ -489,14 +552,14 @@ class SupplementAdvisorSpecialist:
                     # 肾结石史也不加 K2 — 钙调控更谨慎
                     if not has_kidney_stone:
                         rule_k = next(r for r in SUPPLEMENT_RULES if r["id"] == "vdr_vitamin_k2")
-                        recommendations.append(self._rule_to_rec(rule_k, twin))
+                        recommendations.append(to_rec(rule_k))
 
             # 7. SOD2 / statin → CoQ10
             hit_sod, _ = _has_snp(twin, "SOD2")
             on_statin = _has_med(twin, ["statin", "他汀", "阿托伐", "瑞舒伐", "辛伐"])
             if hit_sod or on_statin:
                 rule = next(r for r in SUPPLEMENT_RULES if r["id"] == "sod2_coq10")
-                rec = self._rule_to_rec(rule, twin)
+                rec = to_rec(rule)
                 if on_statin:
                     rec["reason"] += " 用户在服用他汀类药物，CoQ10 合成被抑制。"
                 recommendations.append(rec)
@@ -633,7 +696,7 @@ class SupplementAdvisorSpecialist:
 
     # ─────────────────────────── 辅助 ───────────────────────────
 
-    def _rule_to_rec(self, rule: Dict[str, Any], twin: HealthTwin) -> Dict[str, Any]:
+    def _rule_to_rec(self, rule: Dict[str, Any], twin: HealthTwin, db: Any = None) -> Dict[str, Any]:
         """把规则转成给用户的推荐字典，挂免责声明 + 剂量 UL 检查."""
         rec = {
             "id": rule["id"],
@@ -653,10 +716,16 @@ class SupplementAdvisorSpecialist:
             "disclaimer": DISCLAIMER,
         }
         # UL 安全上限护栏 (对参考范围上限生效, 超 UL → 封顶 + 警告)
-        ul_ceiling, ul_warning = _apply_ul_guardrail(rule.get("ul_key"), rule.get("ref_upper"))
-        if ul_ceiling is not None:
-            rec["ul_ceiling"] = ul_ceiling
-        if ul_warning:
+        ul_result = _apply_ul_guardrail_details(rule.get("ul_key"), rule.get("ref_upper"), db=db)
+        if ul_result.ceiling is not None:
+            rec["ul_ceiling"] = ul_result.ceiling
+        if ul_result.unit:
+            rec["ul_unit"] = ul_result.unit
+        if ul_result.source:
+            rec["ul_source"] = ul_result.source
+        if ul_result.source_ref:
+            rec["ul_source_ref"] = ul_result.source_ref
+        if ul_result.warning:
             # 不覆盖既有 warning (如肾结石/eGFR), 追加
-            rec["warning"] = (rec.get("warning", "") + " " + ul_warning).strip()
+            rec["warning"] = (rec.get("warning", "") + " " + ul_result.warning).strip()
         return rec
