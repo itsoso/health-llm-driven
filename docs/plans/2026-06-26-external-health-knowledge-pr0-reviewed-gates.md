@@ -179,3 +179,7 @@ official / curated source
 ## 6. 下一批 backlog
 
 当前 PR0 high-risk golden slice backlog 已清空，Coverage report、draft extraction gate、real vector backend、mobile evidence UI 与 release gate 自动化均已落地。后续外部知识接入应从新增 source/domain slice 的 reviewed artifact 和 eval case 开始。
+
+2026-06-27 后续 slice 进展:
+
+- 补剂安全: 圣约翰草/贯叶连翘与抗抑郁药、口服避孕药、华法林、免疫抑制剂、抗病毒药或部分抗肿瘤药同现时，进入医生/药师相互作用复核边界；已按 reviewed claim + contraindication + eval case 形态接入。

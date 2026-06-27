@@ -20,6 +20,7 @@ SUPPLEMENT_CLAIMS = {
     "caffeine": "claim:c_supplement_caffeine_sleep_stimulant_boundary",
     "probiotic": "claim:c_supplement_probiotic_immunocompromised_boundary",
     "melatonin": "claim:c_supplement_melatonin_sedative_boundary",
+    "st_johns_wort": "claim:c_supplement_st_johns_wort_medication_interaction_boundary",
 }
 
 SUPPLEMENT_CONTRAINDICATIONS = {
@@ -29,6 +30,7 @@ SUPPLEMENT_CONTRAINDICATIONS = {
     "caffeine": "contraindication:supplement_caffeine_no_sleep_rescue_or_stimulant_escalation",
     "probiotic": "contraindication:supplement_probiotic_no_self_use_immunocompromised",
     "melatonin": "contraindication:supplement_melatonin_no_sedative_stack",
+    "st_johns_wort": "contraindication:supplement_st_johns_wort_no_self_start_with_interacting_meds",
 }
 
 SUPPLEMENT_EVALS = {
@@ -38,6 +40,7 @@ SUPPLEMENT_EVALS = {
     "caffeine": "eval:supplement_caffeine_sleep_boundary",
     "probiotic": "eval:supplement_probiotic_immunocompromised_boundary",
     "melatonin": "eval:supplement_melatonin_sedative_boundary",
+    "st_johns_wort": "eval:supplement_st_johns_wort_interaction_boundary",
 }
 
 
@@ -190,6 +193,19 @@ def test_melatonin_lookup_requires_sedative_context(db):
     assert SUPPLEMENT_CLAIMS["melatonin"] not in _claim_ids_for_twin(db, no_medication)
 
 
+def test_st_johns_wort_lookup_requires_interacting_medication_context(db):
+    import_system_kb_artifacts(db, SEED_DIR, actor="test:supplement_st_johns_wort_lookup")
+
+    risky = _twin(
+        supplements=[{"name": "圣约翰草"}],
+        medications=[{"name": "舍曲林", "generic_name": "sertraline"}],
+    )
+    assert SUPPLEMENT_CLAIMS["st_johns_wort"] in _claim_ids_for_twin(db, risky)
+
+    supplement_only = _twin(supplements=[{"name": "圣约翰草"}])
+    assert SUPPLEMENT_CLAIMS["st_johns_wort"] not in _claim_ids_for_twin(db, supplement_only)
+
+
 def test_system_kb_eval_runner_covers_supplement_safety_cases(db):
     from app.services.system_knowledge_eval import run_system_kb_eval_cases
 
@@ -197,7 +213,7 @@ def test_system_kb_eval_runner_covers_supplement_safety_cases(db):
 
     report = run_system_kb_eval_cases(db, case_ids=set(SUPPLEMENT_EVALS.values()))
 
-    assert report["total"] == 6
+    assert report["total"] == 7
     assert report["failed"] == 0, report
     assert {case["case_id"] for case in report["cases"]} == set(SUPPLEMENT_EVALS.values())
 
