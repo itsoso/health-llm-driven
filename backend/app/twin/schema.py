@@ -318,6 +318,8 @@ class BehavioralState(BaseModel):
     diet_protein_g_today: Optional[float] = None
     diet_carbs_g_today: Optional[float] = None
     diet_fat_g_today: Optional[float] = None
+    diet_sodium_mg_today: Optional[float] = None
+    high_sodium_foods_today: List[str] = Field(default_factory=list)
     meals_logged_today: int = 0
 
     # 饮水

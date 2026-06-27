@@ -1208,6 +1208,8 @@ def system_kb_twin_payload_from_health_twin(twin: Any) -> dict[str, Any]:
         "behavioral": {
             "diet_calories_today": getattr(behavioral, "diet_calories_today", None),
             "diet_protein_g_today": getattr(behavioral, "diet_protein_g_today", None),
+            "diet_sodium_mg_today": getattr(behavioral, "diet_sodium_mg_today", None),
+            "high_sodium_foods_today": getattr(behavioral, "high_sodium_foods_today", []),
             "water_ml_today": getattr(behavioral, "water_ml_today", None),
             "water_goal_ml": getattr(behavioral, "water_goal_ml", None),
             "water_progress_pct": getattr(behavioral, "water_progress_pct", None),
