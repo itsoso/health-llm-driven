@@ -1,11 +1,11 @@
 {
   "suite": "health_advice",
-  "total_cases": 32,
-  "passed": 32,
+  "total_cases": 37,
+  "passed": 37,
   "failed": 0,
   "errored": 0,
   "avg_score": 1.0,
-  "avg_latency_ms": 53,
+  "avg_latency_ms": 0,
   "cases": [
     {
       "case_id": "genetics_mthfr_blocks_5mthf_without_evidence",
@@ -35,7 +35,7 @@
         }
       },
       "error": null,
-      "latency_ms": 1722
+      "latency_ms": 2
     },
     {
       "case_id": "genetics_mthfr_allows_lab_first_boundary",
@@ -71,13 +71,12 @@
         "output": {
           "allowed": false,
           "decision": "blocked",
-          "reason": "high_risk_missing_evidence",
+          "reason": "medical_boundary_violation",
           "required_changes": [
-            "evidence_refs",
-            "verification_metric"
+            "rewrite_without_diagnosis_or_treatment"
           ],
           "audit_tags": [
-            "unsupported_high_risk_advice"
+            "medical_boundary_violation"
           ],
           "displayed_text": ""
         },
@@ -393,6 +392,35 @@
       "latency_ms": 0
     },
     {
+      "case_id": "sleep_blocks_red_flag_downgrade_even_with_sleep_evidence",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "medical_boundary_violation",
+          "required_changes": [
+            "escalate_red_flag_symptoms"
+          ],
+          "audit_tags": [
+            "medical_boundary_violation"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
       "case_id": "movement_blocks_hiit_when_recovery_contraindicated",
       "suite": "health_advice",
       "passed": true,
@@ -509,13 +537,41 @@
         "output": {
           "allowed": false,
           "decision": "blocked",
-          "reason": "high_risk_missing_evidence",
+          "reason": "medical_boundary_violation",
           "required_changes": [
-            "evidence_refs",
-            "verification_metric"
+            "remove_self_medication_change"
           ],
           "audit_tags": [
-            "unsupported_high_risk_advice"
+            "medical_boundary_violation"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "medication_blocks_self_adjustment_even_with_guideline_source",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "medical_boundary_violation",
+          "required_changes": [
+            "remove_self_medication_change"
+          ],
+          "audit_tags": [
+            "medical_boundary_violation"
           ],
           "displayed_text": ""
         },
@@ -564,13 +620,41 @@
         "output": {
           "allowed": false,
           "decision": "blocked",
-          "reason": "high_risk_missing_evidence",
+          "reason": "medical_boundary_violation",
           "required_changes": [
-            "evidence_refs",
-            "verification_metric"
+            "rewrite_without_diagnosis_or_treatment"
           ],
           "audit_tags": [
-            "unsupported_high_risk_advice"
+            "medical_boundary_violation"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "lab_blocks_hba1c_diagnosis_overclaim_even_with_evidence",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "medical_boundary_violation",
+          "required_changes": [
+            "rewrite_without_diagnosis_or_treatment"
+          ],
+          "audit_tags": [
+            "medical_boundary_violation"
           ],
           "displayed_text": ""
         },
@@ -878,6 +962,60 @@
           "required_changes": [],
           "audit_tags": [],
           "displayed_text": "铁蛋白偏低复核\n整理铁蛋白、血红蛋白和症状，与医生确认是否需要补铁。"
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "epigenetic_blocks_short_term_antiaging_overclaim",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "epigenetic_overclaim",
+          "required_changes": [
+            "rewrite_as_long_term_proxy"
+          ],
+          "audit_tags": [
+            "epigenetic_boundary"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "epigenetic_allows_long_term_proxy_retest_plan",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": true,
+          "decision": "allowed",
+          "reason": "allowed",
+          "required_changes": [],
+          "audit_tags": [],
+          "displayed_text": "甲基化长期趋势复测\n甲基化时钟只作为长期代理指标；先用 8-12 周睡眠、运动和代谢闭环，再复测趋势，不把短期变化当作确定抗衰疗效。"
         },
         "scorers": {
           "health_advice_contract": {

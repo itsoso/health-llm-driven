@@ -22,6 +22,50 @@ EPIGENETIC_OVERCLAIM_MARKERS = (
     "7天",
     "一周",
 )
+DIAGNOSTIC_OVERCLAIM_MARKERS = (
+    "确诊",
+    "诊断为",
+    "就是糖尿病",
+    "已经得了",
+    "一定会得",
+    "不需要再复查",
+    "不用复查",
+    "不需要医生确认",
+    "不用医生确认",
+)
+SELF_MEDICATION_CONTEXT_MARKERS = ("自行", "自己")
+SELF_MEDICATION_NEGATIONS = ("不自行", "不要自行", "不得自行", "不能自行", "避免自行", "请勿自行", "不自己")
+SELF_MEDICATION_ACTION_MARKERS = (
+    "加量",
+    "减量",
+    "停药",
+    "停用",
+    "换药",
+    "改剂量",
+    "调整剂量",
+    "剂量加倍",
+)
+RED_FLAG_SYMPTOM_MARKERS = (
+    "胸痛",
+    "呼吸困难",
+    "晕厥",
+    "呕血",
+    "黑便",
+    "单侧无力",
+    "剧烈头痛",
+    "持续高热",
+)
+RED_FLAG_DOWNGRADE_MARKERS = (
+    "先在家观察",
+    "不用就医",
+    "不需要就医",
+    "不用找医生",
+    "不需要医生",
+    "继续训练",
+    "睡眠卫生",
+    "放松训练",
+    "多喝水",
+)
 
 
 @dataclass(frozen=True)
@@ -67,6 +111,16 @@ def verify_advice(
             reason="epigenetic_overclaim",
             required_changes=["rewrite_as_long_term_proxy"],
             audit_tags=["epigenetic_boundary"],
+        )
+
+    medical_boundary_changes = _medical_boundary_required_changes(candidate)
+    if medical_boundary_changes:
+        return AdviceVerification(
+            allowed=False,
+            decision="blocked",
+            reason="medical_boundary_violation",
+            required_changes=medical_boundary_changes,
+            audit_tags=["medical_boundary_violation"],
         )
 
     contraindication = _matching_contraindication(candidate, contraindications or [])
@@ -152,6 +206,27 @@ def _is_epigenetic_overclaim(candidate: Any, personal_matrix: dict[str, Any]) ->
     if not (has_epigenetic_text or has_epigenetic_signal):
         return False
     return any(marker.lower() in text for marker in EPIGENETIC_OVERCLAIM_MARKERS)
+
+
+def _medical_boundary_required_changes(candidate: Any) -> list[str]:
+    text = f"{getattr(candidate, 'title', '')} {getattr(candidate, 'body', '')}".lower()
+    required_changes: list[str] = []
+
+    if any(marker.lower() in text for marker in DIAGNOSTIC_OVERCLAIM_MARKERS):
+        required_changes.append("rewrite_without_diagnosis_or_treatment")
+
+    has_self_context = any(marker in text for marker in SELF_MEDICATION_CONTEXT_MARKERS)
+    has_self_negation = any(marker in text for marker in SELF_MEDICATION_NEGATIONS)
+    has_medication_action = any(marker in text for marker in SELF_MEDICATION_ACTION_MARKERS)
+    if has_self_context and has_medication_action and not has_self_negation:
+        required_changes.append("remove_self_medication_change")
+
+    has_red_flag = any(marker in text for marker in RED_FLAG_SYMPTOM_MARKERS)
+    downgrades_red_flag = any(marker in text for marker in RED_FLAG_DOWNGRADE_MARKERS)
+    if has_red_flag and downgrades_red_flag:
+        required_changes.append("escalate_red_flag_symptoms")
+
+    return required_changes
 
 
 def _matching_contraindication(

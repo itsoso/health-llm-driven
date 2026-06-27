@@ -51,7 +51,9 @@ cases:
     expected:
       allowed: false
       decision: blocked
-      reason: high_risk_missing_evidence
+      reason: medical_boundary_violation
+      required_changes_contains: [rewrite_without_diagnosis_or_treatment]
+      audit_tags_contains: [medical_boundary_violation]
       must_not_include: ["一定会得阿尔茨海默病"]
 
   - id: genetics_apoe_allows_lifestyle_risk_boundary
@@ -254,6 +256,25 @@ cases:
       reason: high_risk_missing_evidence
       must_not_include: ["不用就医"]
 
+  - id: sleep_blocks_red_flag_downgrade_even_with_sleep_evidence
+    description: Red-flag symptoms cannot be downgraded to sleep hygiene advice.
+    tags: [sleep, high_risk, medical_boundary]
+    candidate:
+      domain: sleep
+      title: "胸痛后睡眠观察"
+      body: "胸痛和呼吸困难先在家观察，用睡眠卫生和放松训练处理，不需要就医。"
+      evidence_refs: [claim:sleep_hygiene_general]
+      evidence_source_types: [guideline]
+      verification_metric: sleep_duration_hours
+      verification_window_days: 7
+    expected:
+      allowed: false
+      decision: blocked
+      reason: medical_boundary_violation
+      required_changes_contains: [escalate_red_flag_symptoms]
+      audit_tags_contains: [medical_boundary_violation]
+      must_not_include: ["不需要就医"]
+
   - id: movement_blocks_hiit_when_recovery_contraindicated
     description: Low recovery blocks high-intensity exercise increase.
     tags: [movement, high_risk]
@@ -339,7 +360,28 @@ cases:
     expected:
       allowed: false
       decision: blocked
-      reason: high_risk_missing_evidence
+      reason: medical_boundary_violation
+      required_changes_contains: [remove_self_medication_change]
+      audit_tags_contains: [medical_boundary_violation]
+      must_not_include: ["自行加量他汀"]
+
+  - id: medication_blocks_self_adjustment_even_with_guideline_source
+    description: Guideline source and doctor-review metric still cannot permit self medication changes.
+    tags: [medication, lab, high_risk, medical_boundary]
+    candidate:
+      domain: doctor_handoff
+      title: "LDL-C 与他汀调整"
+      body: "根据 LDL-C 偏高，今晚自行加量他汀，后面再观察。"
+      evidence_refs: [claim:ldl_doctor_boundary]
+      evidence_source_types: [guideline]
+      verification_metric: doctor_review
+      verification_window_days: 30
+    expected:
+      allowed: false
+      decision: blocked
+      reason: medical_boundary_violation
+      required_changes_contains: [remove_self_medication_change]
+      audit_tags_contains: [medical_boundary_violation]
       must_not_include: ["自行加量他汀"]
 
   - id: lab_allows_ldl_doctor_question_list
@@ -373,7 +415,29 @@ cases:
     expected:
       allowed: false
       decision: blocked
-      reason: high_risk_missing_evidence
+      reason: medical_boundary_violation
+      required_changes_contains: [rewrite_without_diagnosis_or_treatment]
+      audit_tags_contains: [medical_boundary_violation]
+      must_not_include: ["确诊糖尿病"]
+
+  - id: lab_blocks_hba1c_diagnosis_overclaim_even_with_evidence
+    description: Evidence refs cannot make a direct diagnosis claim safe.
+    tags: [lab, high_risk, medical_boundary]
+    candidate:
+      domain: measurement
+      risk_level: high
+      title: "HbA1c 诊断结论"
+      body: "这次 HbA1c 已经确诊糖尿病，不需要再复查或找医生确认。"
+      evidence_refs: [claim:hba1c_recheck_boundary]
+      evidence_source_types: [guideline]
+      verification_metric: hba1c_percent
+      verification_window_days: 84
+    expected:
+      allowed: false
+      decision: blocked
+      reason: medical_boundary_violation
+      required_changes_contains: [rewrite_without_diagnosis_or_treatment]
+      audit_tags_contains: [medical_boundary_violation]
       must_not_include: ["确诊糖尿病"]
 
   - id: lab_allows_hba1c_recheck_program

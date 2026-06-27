@@ -152,6 +152,71 @@ def test_verifier_blocks_epigenetic_short_term_antiaging_overclaim():
     assert "epigenetic_boundary" in result.audit_tags
 
 
+def test_verifier_blocks_diagnostic_overclaim_even_with_evidence_refs():
+    result = verify_advice(
+        _candidate(
+            domain="measurement",
+            risk_level="high",
+            title="HbA1c 诊断结论",
+            body="这次 HbA1c 已经确诊糖尿病，不需要再复查或找医生确认。",
+            evidence_refs=["claim:hba1c_recheck_boundary"],
+            evidence_source_types=["guideline"],
+            verification_metric="hba1c_percent",
+            verification_window_days=84,
+        ),
+        evidence_resolution={"evidence_refs": ["claim:hba1c_recheck_boundary"]},
+        personal_matrix={},
+        contraindications=[],
+    )
+
+    assert result.allowed is False
+    assert result.reason == "medical_boundary_violation"
+    assert "rewrite_without_diagnosis_or_treatment" in result.required_changes
+    assert "medical_boundary_violation" in result.audit_tags
+
+
+def test_verifier_blocks_self_medication_change_even_with_guideline_source():
+    result = verify_advice(
+        _candidate(
+            domain="doctor_handoff",
+            title="LDL-C 与他汀调整",
+            body="根据 LDL-C 偏高，今晚自行加量他汀，后面再观察。",
+            evidence_refs=["claim:ldl_doctor_boundary"],
+            evidence_source_types=["guideline"],
+            verification_metric="doctor_review",
+            verification_window_days=30,
+        ),
+        evidence_resolution={"evidence_refs": ["claim:ldl_doctor_boundary"]},
+        personal_matrix={},
+        contraindications=[],
+    )
+
+    assert result.allowed is False
+    assert result.reason == "medical_boundary_violation"
+    assert "remove_self_medication_change" in result.required_changes
+
+
+def test_verifier_blocks_red_flag_symptom_downgrade_even_with_sleep_evidence():
+    result = verify_advice(
+        _candidate(
+            domain="sleep",
+            title="胸痛后睡眠观察",
+            body="胸痛和呼吸困难先在家观察，用睡眠卫生和放松训练处理，不需要就医。",
+            evidence_refs=["claim:sleep_hygiene_general"],
+            evidence_source_types=["guideline"],
+            verification_metric="sleep_duration_hours",
+            verification_window_days=7,
+        ),
+        evidence_resolution={"evidence_refs": ["claim:sleep_hygiene_general"]},
+        personal_matrix={},
+        contraindications=[],
+    )
+
+    assert result.allowed is False
+    assert result.reason == "medical_boundary_violation"
+    assert "escalate_red_flag_symptoms" in result.required_changes
+
+
 def test_verifier_allows_epigenetic_long_term_proxy_boundary():
     result = verify_advice(
         _candidate(
