@@ -399,6 +399,72 @@ async def test_agent_stream_auto_confirms_fast_record_tool_calls(db, auth_user_a
 
 
 @pytest.mark.asyncio
+async def test_agent_stream_emits_record_card_after_fast_diet_record(db, auth_user_and_headers):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+
+    async def fake_call_llm(messages, tools):
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [
+                {
+                    "id": "call_record_diet",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "diet",
+                            "data": {
+                                "food_items": "两个鸡蛋,一杯牛奶",
+                                "meal_type": "breakfast",
+                            },
+                        }, ensure_ascii=False),
+                    },
+                },
+            ],
+        }
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        assert tool_name == "health_record"
+        parsed = json.loads(args_raw)
+        assert parsed["confirmed"] is True
+        return json.dumps({"message": "已记录早餐：两个鸡蛋,一杯牛奶"}, ensure_ascii=False)
+
+    executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="早饭吃了两个鸡蛋一杯牛奶",
+            user_auth_token="test-token",
+        )
+    ]
+
+    card_events = [event for event in events if event.get("event") == "card"]
+    assert len(card_events) == 1
+    card = card_events[0]["data"]["descriptor"]
+    assert card == {
+        "type": "record",
+        "data": {
+            "type": "diet",
+            "detail": "已记录早餐：两个鸡蛋,一杯牛奶",
+        },
+    }
+    assert events.index(card_events[0]) > next(i for i, e in enumerate(events) if e.get("event") == "tool_result")
+    done_idx = next(i for i, e in enumerate(events) if e.get("event") == "done")
+    assert events.index(card_events[0]) < done_idx
+    assert events[done_idx]["data"]["cards"] == [card]
+
+    saved = db.query(OpenClawMessage).filter_by(id=events[done_idx]["data"]["message_id"]).first()
+    assert saved is not None
+    assert saved.meta["cards"] == [card]
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_marks_length_limited_answer_as_interrupted(db, auth_user_and_headers):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)

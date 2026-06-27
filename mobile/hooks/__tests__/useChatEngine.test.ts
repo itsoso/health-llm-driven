@@ -4,6 +4,7 @@ const mockStreamChat = jest.fn();
 const mockGetConversations = jest.fn();
 const mockGetConversationMessages = jest.fn();
 const mockDeleteConversation = jest.fn();
+const mockRenderServerCards = jest.fn();
 let mockAsyncStorage: Record<string, string> = {};
 
 jest.mock('expo-router', () => ({
@@ -28,7 +29,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 
 jest.mock('../../components/chat/cards', () => ({
   dispatchCard: jest.fn().mockResolvedValue(null),
-  renderServerCards: jest.fn().mockReturnValue([]),
+  renderServerCards: (...args: any[]) => mockRenderServerCards(...args),
 }));
 
 jest.mock('../../services/api', () => ({
@@ -72,6 +73,33 @@ async function* streamStartToolThenWait() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
+async function* streamTokenCardThenWait() {
+  yield { type: 'start', conversationId: 777 };
+  yield { type: 'token', content: '我先把这顿饭识别为待确认记录。' };
+  yield {
+    type: 'card',
+    anchor: 'after-token-1',
+    card: {
+      type: 'diet',
+      data: { items: ['鸡蛋', '牛奶'] },
+      actions: [
+        {
+          id: 'confirm-diet',
+          label: '确认记录',
+          action: 'write_intent.confirm',
+          endpoint: '/write-intents/12/confirm',
+          payload: { write_intent_id: 12 },
+          requires_manual_confirm: true,
+        },
+      ],
+    },
+  };
+  await new Promise<void>((resolve) => {
+    finishStream = resolve;
+  });
+  yield { type: 'done', conversationId: 777, messageId: 2 };
+}
+
 describe('useChatEngine', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -81,6 +109,7 @@ describe('useChatEngine', () => {
     mockGetConversations.mockResolvedValue([]);
     mockGetConversationMessages.mockResolvedValue({ total_messages: 0, messages: [] });
     mockDeleteConversation.mockResolvedValue(true);
+    mockRenderServerCards.mockImplementation((cards: any[]) => Array.isArray(cards) ? cards : []);
   });
 
   it('restores the last active conversation after the chat page is remounted', async () => {
@@ -217,6 +246,45 @@ describe('useChatEngine', () => {
           }),
         ]),
       );
+    });
+  });
+
+  it('inserts streamed server cards before the assistant done event', async () => {
+    mockStreamChat.mockImplementation(streamTokenCardThenWait);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('吃了两个鸡蛋一杯牛奶');
+    });
+
+    await waitFor(() => {
+      expect(result.current.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: 'assistant',
+            streaming: true,
+            content: '我先把这顿饭识别为待确认记录。',
+          }),
+          expect.objectContaining({
+            role: 'assistant',
+            content: '',
+            cardType: 'diet',
+            cardData: { items: ['鸡蛋', '牛奶'] },
+            cardActions: [
+              expect.objectContaining({
+                action: 'write_intent.confirm',
+                requires_manual_confirm: true,
+              }),
+            ],
+          }),
+        ]),
+      );
+    });
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
     });
   });
 

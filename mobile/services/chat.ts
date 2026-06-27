@@ -14,11 +14,19 @@ export interface Conversation {
   last_message?: string;
 }
 
+export interface StreamCardDescriptor {
+  type: string;
+  data: any;
+  actions?: any[];
+}
+
 export interface StreamEvent {
-  type: 'start' | 'token' | 'tool' | 'done' | 'error';
+  type: 'start' | 'token' | 'tool' | 'card' | 'done' | 'error';
   content?: string;
   conversationId?: number;
   messageId?: number;
+  anchor?: string;
+  card?: StreamCardDescriptor;
   toolName?: string;
   toolSuccess?: boolean;
   // I Phase 2: health_record 时附 record_type + record_data 让前端能 sniff 录入摘要
@@ -35,7 +43,7 @@ export interface StreamEvent {
   toolsUsed?: string[];
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
   // SSE done 事件里的动态卡片，由 useChatEngine 交给 card registry 渲染
-  cards?: { type: string; data: any }[];
+  cards?: StreamCardDescriptor[];
 }
 
 /**
@@ -156,6 +164,19 @@ export async function* streamChat(
           recordType: parsed.data?.record_type,
           recordData: parsed.data?.record_data,
         };
+      } else if (parsed.event === 'card' || parsed.event === 'proposed_card') {
+        const descriptor = parsed.data?.descriptor || parsed.data?.card || parsed.data;
+        if (descriptor && typeof descriptor.type === 'string') {
+          return {
+            type: 'card',
+            anchor: typeof parsed.data?.anchor === 'string' ? parsed.data.anchor : undefined,
+            card: {
+              type: descriptor.type,
+              data: descriptor.data ?? {},
+              actions: Array.isArray(descriptor.actions) ? descriptor.actions : undefined,
+            },
+          };
+        }
       } else if (parsed.event === 'done') {
         return {
           type: 'done',

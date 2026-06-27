@@ -93,6 +93,40 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('yields card events before done for interleaved dynamic UI', async () => {
+    const iter = streamChat('吃了两个鸡蛋一杯牛奶');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText =
+      'data: {"event":"card","data":{"anchor":"after-token-1","descriptor":{"type":"diet","data":{"items":["鸡蛋","牛奶"]},"actions":[{"id":"confirm-diet","label":"确认记录","action":"write_intent.confirm","endpoint":"/write-intents/12/confirm","payload":{"write_intent_id":12},"requires_manual_confirm":true}]}}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toEqual({
+      value: {
+        type: 'card',
+        anchor: 'after-token-1',
+        card: {
+          type: 'diet',
+          data: { items: ['鸡蛋', '牛奶'] },
+          actions: [
+            {
+              id: 'confirm-diet',
+              label: '确认记录',
+              action: 'write_intent.confirm',
+              endpoint: '/write-intents/12/confirm',
+              payload: { write_intent_id: 12 },
+              requires_manual_confirm: true,
+            },
+          ],
+        },
+      },
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
   it('parses a final done event even without a trailing newline', async () => {
     const iter = streamChat('slow commercial model');
     const first = iter.next();

@@ -986,6 +986,71 @@ def _fast_record_kind(args: dict) -> str:
     return ""
 
 
+def _merge_agent_card_descriptors(*groups: list | None) -> list[dict]:
+    out: list[dict] = []
+    seen: set[str] = set()
+    for group in groups:
+        if not isinstance(group, list):
+            continue
+        for card in group:
+            if not isinstance(card, dict) or not isinstance(card.get("type"), str):
+                continue
+            try:
+                key = json.dumps(card, sort_keys=True, ensure_ascii=False, default=str)
+            except Exception:
+                key = f"{card.get('type')}:{len(out)}"
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(card)
+    return out
+
+
+def _health_record_card_descriptor(record_type: Any, record_data: Any, result: str) -> Optional[dict]:
+    """Build a deterministic chat card from a completed health_record tool.
+
+    This is intentionally not model-generated UI. It mirrors the actual tool
+    result so streaming cards cannot introduce new medical claims.
+    """
+
+    if not result or result.startswith("Error") or result.startswith("[NEEDS_CONFIRMATION]"):
+        return None
+    kind = _normalize_fast_record_kind(record_type)
+    if kind not in {
+        "water",
+        "weight",
+        "blood_pressure",
+        "diet",
+        "exercise",
+        "supplement",
+        "checkin",
+    }:
+        return None
+
+    detail = ""
+    try:
+        payload = json.loads(result)
+        if isinstance(payload, dict):
+            detail = str(payload.get("message") or "").strip()
+    except Exception:
+        detail = ""
+    if not detail:
+        detail = str(result).splitlines()[0].strip()
+    if not detail:
+        return None
+    detail = re.sub(r"\s+", " ", detail)
+    if len(detail) > 120:
+        detail = detail[:117].rstrip() + "..."
+
+    return {
+        "type": "record",
+        "data": {
+            "type": kind,
+            "detail": detail,
+        },
+    }
+
+
 def _health_record_confirmation_preview(rtype: str, args: dict, data: dict) -> str:
     label = {
         "illness": "疾病/不适周期",
@@ -1617,6 +1682,7 @@ class AgentExecutor:
 
         # 5. Agent 循环
         full_reply = ""
+        streamed_cards: list[dict] = []
         yield {
             "event": "agent_start",
             "data": {
@@ -1852,11 +1918,17 @@ class AgentExecutor:
                             "preview": result[:200],
                             "result": result,
                         }
+                        record_card = None
                         if func_name == "health_record":
                             try:
                                 parsed_args = json.loads(func_args) if isinstance(func_args, str) else func_args
                                 tool_event_data["record_type"] = parsed_args.get("record_type")
                                 tool_event_data["record_data"] = parsed_args.get("data") or {}
+                                record_card = _health_record_card_descriptor(
+                                    tool_event_data["record_type"],
+                                    tool_event_data["record_data"],
+                                    result,
+                                )
                             except Exception:
                                 pass
 
@@ -1864,6 +1936,17 @@ class AgentExecutor:
                             "event": "tool_result",
                             "data": tool_event_data,
                         }
+                        if record_card:
+                            before = len(streamed_cards)
+                            streamed_cards = _merge_agent_card_descriptors(streamed_cards, [record_card])
+                            if len(streamed_cards) > before:
+                                yield {
+                                    "event": "card",
+                                    "data": {
+                                        "anchor": "tool_result",
+                                        "descriptor": record_card,
+                                    },
+                                }
 
                     if self._prefer_fast_record_model:
                         final_text = _fast_record_reply_from_tool_results(messages)
@@ -2051,6 +2134,7 @@ class AgentExecutor:
                     sources_used.append("系统知识库")
         except Exception as e:
             logger.warning(f"[agent_executor] system knowledge evidence card failed: {e}")
+        response_cards = _merge_agent_card_descriptors(streamed_cards, evidence_cards)
 
         # 后置校验 (#3 护栏): record 意图的 turn 却 0 次工具执行 = 很可能模型只是嘴上
         # 说"已记录"但没真写库(弱模型把 tool-call JSON 当正文吐出、提取失败的静默丢数据)。
@@ -2080,7 +2164,7 @@ class AgentExecutor:
                 "fallback_reasons": fallback_reasons,
                 "sources_used": sources_used,
                 "tools_used": tools_used,
-                "cards": evidence_cards,
+                "cards": response_cards,
                 "finish_reason": final_finish_reason,
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
@@ -2106,7 +2190,7 @@ class AgentExecutor:
                 "sources_used": sources_used,
                 "tools_used": tools_used,
                 "mode": "agent",
-                "cards": evidence_cards,
+                "cards": response_cards,
                 "finish_reason": final_finish_reason,
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,

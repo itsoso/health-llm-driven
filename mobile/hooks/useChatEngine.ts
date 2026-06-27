@@ -6,7 +6,7 @@ import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage } from '../services/chat';
 import { dispatchCard, renderServerCards } from '../components/chat/cards';
-import type { ChatCardActionDescriptor } from '../components/chat/cards/types';
+import type { ChatCardActionDescriptor, ServerCardDescriptor } from '../components/chat/cards/types';
 import api, { BASE_URL } from '../services/api';
 import { emitClientEvent } from '../services/clientEvents';
 
@@ -122,6 +122,36 @@ function stripThinkingPlaceholder(content: string): string {
 function mergeAssistantStreamContent(current: string, incoming: string): string {
   if (!incoming) return current;
   return stripThinkingPlaceholder(current) + incoming;
+}
+
+function serverCardKey(card: Pick<ServerCardDescriptor, 'type' | 'data' | 'actions'>): string {
+  try {
+    return JSON.stringify([card.type, card.data ?? {}, card.actions ?? []]);
+  } catch {
+    return `${card.type}:${Date.now()}`;
+  }
+}
+
+function insertCardMessagesAfterAssistant(
+  messages: UIMessage[],
+  assistantId: string,
+  cards: ServerCardDescriptor[],
+): UIMessage[] {
+  if (cards.length === 0) return messages;
+  const insertAtBase = messages.findIndex(m => m.id === assistantId);
+  let insertAt = insertAtBase >= 0 ? insertAtBase + 1 : messages.length;
+  while (insertAt < messages.length && messages[insertAt]?.role === 'assistant' && !!messages[insertAt]?.cardType) {
+    insertAt += 1;
+  }
+  const cardMessages = cards.map((card) => ({
+    id: nextId(),
+    role: 'assistant' as const,
+    content: '',
+    cardType: card.type,
+    cardData: card.data,
+    cardActions: card.actions,
+  }));
+  return [...messages.slice(0, insertAt), ...cardMessages, ...messages.slice(insertAt)];
 }
 
 async function readStoredConversationId(): Promise<number | null> {
@@ -415,6 +445,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
     try {
       const toolsUsed: Set<string> = new Set();
+      const streamedCardKeys: Set<string> = new Set();
       let sawDone = false;
       for await (const evt of streamChat(finalMsg, targetConversationId, hasImages ? pendingImages : undefined, ac.signal, sendOpts?.extraContext)) {
         if (evt.type === 'start') {
@@ -430,6 +461,17 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: mergeAssistantStreamContent(m.content, incoming) } : m));
           }
           if (evt.toolName) toolsUsed.add(evt.toolName);
+        } else if (evt.type === 'card') {
+          const serverCards = renderServerCards(evt.card ? [evt.card] : []);
+          const uniqueCards = serverCards.filter((card) => {
+            const key = serverCardKey(card);
+            if (streamedCardKeys.has(key)) return false;
+            streamedCardKeys.add(key);
+            return true;
+          });
+          if (uniqueCards.length > 0) {
+            setMessages(prev => insertCardMessagesAfterAssistant(prev, aId, uniqueCards));
+          }
         } else if (evt.type === 'done') {
           sawDone = true;
           if (evt.conversationId) {
@@ -448,7 +490,13 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             toolsUsed: evt.toolsUsed,
             completionStatus: evt.completionStatus,
           } : m));
-          const serverCards = renderServerCards((evt as any).cards);
+          const rawDoneCards = Array.isArray((evt as any).cards) ? (evt as any).cards : [];
+          const serverCards = renderServerCards(rawDoneCards).filter((card) => {
+            const key = serverCardKey(card);
+            if (streamedCardKeys.has(key)) return false;
+            streamedCardKeys.add(key);
+            return true;
+          });
           if (serverCards.length > 0) {
             const single = serverCards.length === 1 ? serverCards[0] : { type: 'cards_group', data: { cards: serverCards }, actions: [] };
             setMessages(prev => [...prev, {
@@ -459,7 +507,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               cardData: single.data,
               cardActions: single.actions,
             }]);
-          } else {
+          } else if (rawDoneCards.length === 0) {
             const card = await dispatchCard({
               query: finalMsg,
               query_lower: finalMsg.toLowerCase(),
