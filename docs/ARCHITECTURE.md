@@ -10,13 +10,13 @@
                         ┌───────────────────────────────────────────┐
                         │  iPhone App (健康助理 / 生产)             │
  Voice ⇄ Siri ──▶       │   Expo SDK 55 + RN 0.83 + expo-router     │──────┐
-                        │   mobile/app/*.tsx (107 路由)              │      │
+                        │   mobile/app/*.tsx (92 路由)               │      │
                         └───────────────────────────────────────────┘      │
                                                                            │ HTTPS (JWT Bearer)
                         ┌───────────────────────────────────────────┐      │
                         │  Web (health.executor.life)               │      │
                         │   Next.js 14 App Router + RSC             │──────┤
-                        │   frontend/src/app/*/page.tsx (68 页)     │      │
+                        │   frontend/src/app/*/page.tsx (70 页)     │      │
                         └───────────────────────────────────────────┘      │
                                                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
@@ -64,9 +64,9 @@
 | 端 | Stack | 位置 | 规模 |
 |---|---|---|---|
 | **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 159 API 路由, 288 services, 102 models, 63 Celery 任务 |
-| **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 57 路由 |
+| **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 92 路由 |
 | **Mac Desktop** | Swift 6 + SwiftUI + URLSession async/await + Keychain + MenuBarExtra | `apps/mac/` | 原生桌面 P0: Today / Agent / Record / Import / Jobs / Trace |
-| **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 68 页 |
+| **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 70 页 |
 | **WeChat 小程序** | uni-app (pnpm workspace) | `packages/mini-program/` | 独立发布 |
 | **MCP Server** | Python (独立) | `mcp-server/` | 第三方 OpenClaw 宿主用 |
 | **OpenClaw Skills** | Markdown | `backend/skills/` (22 个, 随后端部署) + `openclaw-skills/` (独立分发) | 22 + 12 |
@@ -85,7 +85,7 @@
 |------|------|
 | `backend/app/database.py` | 数据库连接、`get_db` 依赖 |
 | `backend/app/config.py` | Pydantic Settings, 所有 env 定义 |
-| `backend/app/models/*.py` | 70 个 SQLAlchemy ORM 模型 |
+| `backend/app/models/*.py` | 102 个模型文件 |
 | `backend/app/twin/schema.py` | HealthTwin 15 分区 Pydantic schema |
 | `backend/main.py` 中间件 | 安全头 / CORS / 限流 / request context |
 | `backend/tests/conftest.py` | 测试基础设施 |
@@ -115,11 +115,11 @@
 | 目录 | 职责 |
 |------|------|
 | `backend/app/api/*.py` | 159 条 API 路由 |
-| `backend/app/services/*.py` | 205 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/`;多源去重见 `device_source_priority` + `garmin_daily_merged`) |
+| `backend/app/services/*.py` | 288 个服务文件(含 `cgm/` / `data_collection` / `notification` / `environment` / `llm`;多源去重见 `device_source_priority` + `garmin_daily_merged`) |
 | `backend/app/tasks/*.py` | 63 Celery 异步任务 |
-| `frontend/src/app/*/page.tsx` | 68 Web 页 |
+| `frontend/src/app/*/page.tsx` | 70 Web 页 |
 | `frontend/src/components/*.tsx` | Web 组件 |
-| `mobile/app/` | 107 RN 路由 + Tab 导航 |
+| `mobile/app/` | 92 RN 路由 + Tab 导航 |
 | `mobile/components/` | RN 组件(按领域) |
 | `mobile/services/` + `mobile/hooks/` | RN API + React Query hooks |
 
@@ -418,7 +418,7 @@ APNs topic 用 `ios_bundle_id` per-device (绑定 token 时上报), 防 `DeviceT
 
 ## 八、Web (Next.js 14)
 
-68 页, 主要分域(和 Mobile 有**显著 parity 缺口** — 详见 `docs/FUTURE_ROADMAP.md`):
+70 页, 主要分域(和 Mobile 有**显著 parity 缺口** — 详见 `docs/FUTURE_ROADMAP.md`):
 
 - **Daily** (有 mobile 对应): `/ai-assistant` `/checkin` `/diet` `/sleep` `/goals` `/workout` `/reminders` `/notifications` `/settings`
 - **Deep Analytics**: `/digital-twin` `/personal-outcome` `/health-report` `/health-trends`

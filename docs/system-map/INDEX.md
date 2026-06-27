@@ -40,11 +40,9 @@ extend-via: docs/specs/product-pipeline-contract.md
 | **5 未来规划** | reva-personal-health-os-prd.md §10 待拍板 · AS-IS PRD §3/§10 | A |
 | **6 产品地图(多端×UI×流)** | [`product-map.md`](product-map.md) + [surface-ownership-inventory](../specs/active/2026-06-26-surface-ownership-inventory.md) + ARCHITECTURE §5 系统流 | A+B |
 
-## 当前代码派生快照(引用,非手打 —— 真值见 `_generated/system-map.json`)
+## 当前代码派生快照
 
-> 以下数字由 CI 保证当前;如本段与 `_generated/system-map.json` 不符,以 JSON 为准(并说明本段 last-reviewed 已过期)。
-
-8 端 · 13 specialists · 63 安全规则 · 15 Twin 分区 · 159 API routers · 63 Celery 任务 · 102 models · 288 services · 107 mobile 路由 · 70 web 页面。
+计数与 roster 只读 [`docs/_generated/system-map.json`](../_generated/system-map.json)。Mobile 展示层读取同源生成的 `mobile/constants/systemMap.generated.ts`;不要把 live 数字复制进本文。
 
 ## 维护(不靠自觉 —— 见 SKILL)
 

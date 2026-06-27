@@ -132,6 +132,14 @@ describe('SettingsScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/app-diagnostics');
   });
 
+  it('opens the system map from settings', () => {
+    const { getByText } = render(<SettingsScreen />);
+
+    fireEvent.press(getByText('系统地图'));
+
+    expect(mockPush).toHaveBeenCalledWith('/system-map');
+  });
+
   it('opens dedicated longevity analysis pages from settings', () => {
     const { getByText } = render(<SettingsScreen />);
 

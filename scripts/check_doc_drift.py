@@ -142,11 +142,16 @@ def count_service_files() -> int:
 
 
 def count_mobile_routes() -> int:
-    """mobile/app/**/*.tsx 排除 _layout.tsx (expo-router 约定)."""
+    """mobile/app/**/*.tsx 排除 _layout.tsx 和 app 内测试文件."""
     root = MOBILE / "app"
     if not root.is_dir():
         return 0
-    return sum(1 for p in root.rglob("*.tsx") if p.name != "_layout.tsx")
+    return sum(
+        1 for p in root.rglob("*.tsx")
+        if p.name != "_layout.tsx"
+        and "__tests__" not in p.parts
+        and not p.name.endswith((".test.tsx", ".spec.tsx"))
+    )
 
 
 def count_web_pages() -> int:
@@ -345,7 +350,9 @@ def main() -> int:
     try:
         import json
         sys.path.insert(0, str(ROOT / "scripts"))
+        from dump_system_map import MOBILE_OUT as SYSMAP_MOBILE_OUT
         from dump_system_map import OUT as SYSMAP_OUT
+        from dump_system_map import _serialize_mobile_ts
         from dump_system_map import build_map
         fresh_map = build_map()
         if not SYSMAP_OUT.exists():
@@ -360,6 +367,16 @@ def main() -> int:
                     "  system-map: docs/_generated/system-map.json 与代码不符, "
                     "跑 python scripts/dump_system_map.py 重新生成并提交"
                 )
+        if not SYSMAP_MOBILE_OUT.exists():
+            failures.append(
+                "  system-map: mobile/constants/systemMap.generated.ts 缺失, "
+                "跑 python scripts/dump_system_map.py 生成并提交"
+            )
+        elif SYSMAP_MOBILE_OUT.read_text(encoding="utf-8") != _serialize_mobile_ts(fresh_map):
+            failures.append(
+                "  system-map: mobile/constants/systemMap.generated.ts 与代码不符, "
+                "跑 python scripts/dump_system_map.py 重新生成并提交"
+            )
     except Exception as e:  # noqa: BLE001
         failures.append(f"  system-map build/compare failed: {e}")
 

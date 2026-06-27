@@ -233,6 +233,8 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <SettingRow icon="pulse-outline" label="数据自检"
             onPress={() => router.push('/data-integrity' as any)} />
+          <SettingRow icon="map-outline" label="系统地图"
+            onPress={() => router.push('/system-map' as any)} />
           <SettingRow icon="bug-outline" label="App 诊断"
             onPress={() => router.push('/app-diagnostics' as any)} />
           <SettingRow icon="information-circle-outline" label="版本" value="1.0.0" />

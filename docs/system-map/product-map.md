@@ -15,7 +15,7 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 
 | 端 | 栈 | 入口 | 角色 |
 |---|---|---|---|
-| **backend** | FastAPI + SQLAlchemy + Celery (py3.12) | `backend/main.py`;`app/api/main.py` 挂 159 router | 产品真源(Twin/Safety Gate/Agenda/Router/Write 自治),无 UI |
+| **backend** | FastAPI + SQLAlchemy + Celery (py3.12) | `backend/main.py`;`app/api/main.py` 挂载 router(计数见 `_generated`) | 产品真源(Twin/Safety Gate/Agenda/Router/Write 自治),无 UI |
 | **mobile** | Expo SDK 55 + expo-router + RN 0.83 | `mobile/app/` 文件路由 | **主日常产品**(iPhone/iPad 唯一原生 App) |
 | **frontend** | Next.js 14 App Router | `frontend/src/app/` | Web(PC);收敛向 admin/history/doctor/family |
 | **mac** | Swift 6 / SwiftUI / SPM | `apps/mac/Sources/HealthAgentMac/HealthAgentMacApp.swift` | 工作台(文件/化验导入、长 agent 流、trace) |
@@ -24,11 +24,11 @@ authoritative-surface-doc: docs/specs/active/2026-06-26-surface-ownership-invent
 | **rokid-pushup-glasses** | 原生 Android(Kotlin + Compose) | `apps/rokid-pushup-glasses/app/` | Rokid CXR-L 眼镜免手执行 |
 | **mcp-server** | Python + FastMCP | `mcp-server/server.py` | 受控扩展(stdio + SSE) |
 
-> **本地图已修正的旧文档漂移**(CLAUDE.md 待同步):① Rokid 是第 8 端(CLAUDE.md Monorepo 表缺)② mini-program 是 Taro 4.1.10 非 uni-app ③ mobile 是 SDK 55/RN 0.83 非 54/0.81 ④ mobile 路由实际见 `_generated`(107),非 CLAUDE.md「~15」。
+> **本地图已修正的旧文档漂移**(CLAUDE.md 待同步):① Rokid 是第 8 端(CLAUDE.md Monorepo 表缺)② mini-program 是 Taro 4.1.10 非 uni-app ③ mobile 是 SDK 55/RN 0.83 非 54/0.81 ④ mobile 路由计数以 `_generated` 为准,非 CLAUDE.md「~15」。
 
 ## 2. 每端 UI surface(roster;计数见 `_generated`)
 
-- **mobile**(`mobile/app/`,4 可见 tab):今日 `index.tsx` · 私教 `chat.tsx` · 记录 `record.tsx` · 我 `me.tsx`(隐藏:`alerts.tsx`/`journal/`)。日常非 tab:`reva.tsx`/`agenda.tsx`/`timeline.tsx`/`day-schedule.tsx`/`diet.tsx`/`symptom-record.tsx`/`medications.tsx`/`goals.tsx`/`reminders.tsx`/`voice-chat.tsx`。
+- **mobile**(`mobile/app/`,4 可见 tab):今日 `index.tsx` · 私教 `chat.tsx` · 记录 `record.tsx` · 我 `me.tsx`(隐藏:`alerts.tsx`/`journal/`)。日常非 tab:`reva.tsx`/`agenda.tsx`/`timeline.tsx`/`day-schedule.tsx`/`diet.tsx`/`symptom-record.tsx`/`medications.tsx`/`goals.tsx`/`reminders.tsx`/`voice-chat.tsx`;透明化入口:`system-map.tsx`。
 - **frontend**(`frontend/src/app/`):dashboard/digital-twin/health-trends/health-report/personal-outcome/admin/review/onboarding/family/… (全量计数 `_generated`)。
 - **mac**(`SidebarDestination.swift` 18 dest):today/agenda/timeline/calendar/agent/record/data/dataSources/prescriptions/liver/healthExtras/genetics/knowledge/workouts/goals/jobs/trace/settings。
 - **watch**(`apps/watch/WatchApp/`,3 屏):`TodayStatusView` · `PushListView` · `QuickRecordView` + complication `RevaComplication.swift`。(对话/记录扩展见 watch §13 实施规划)
