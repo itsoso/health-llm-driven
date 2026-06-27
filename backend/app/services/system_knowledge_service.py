@@ -1331,11 +1331,25 @@ def _system_kb_genetics_from_health_twin(twin: Any) -> dict[str, Any]:
             if vkorc1_genotype:
                 out["VKORC1_1639G_A"] = vkorc1_genotype
                 out["VKORC1_rs9923231"] = vkorc1_genotype
+        elif gene == "HLA-A":
+            out["HLA-A"] = genotype or "present"
+            if _hla_allele_is_positive("31:01", genotype, result_label, risk_level):
+                out["HLA_A_31_01"] = "positive"
+                out["HLA_A_3101"] = "positive"
+                out["HLA-A*31:01"] = "positive"
         elif gene == "HLA-B":
             out["HLA-B"] = genotype or "present"
             if _hla_allele_is_positive("15:02", genotype, result_label, risk_level):
                 out["HLA_B_15_02"] = "positive"
                 out["HLA-B*15:02"] = "positive"
+            if _hla_allele_is_positive("58:01", genotype, result_label, risk_level):
+                out["HLA_B_58_01"] = "positive"
+                out["HLA-B*58:01"] = "positive"
+        elif gene == "G6PD":
+            status = _infer_g6pd_status(genotype, result_label, risk_level)
+            out["G6PD"] = status or genotype or "present"
+            if status:
+                out["G6PD_phenotype"] = status
         elif gene == "HFE":
             out["HFE"] = genotype or "present"
             if genotype:
@@ -1480,6 +1494,38 @@ def _normalize_vkorc1_genotype(genotype: str, result_label: str, risk_level: str
     text = f"{genotype} {result_label} {risk_level}".lower()
     if any(token in text for token in ("warfarin sensitive", "华法林敏感", "敏感位点", "sensitive allele")):
         return "A/G"
+    return None
+
+
+def _infer_g6pd_status(genotype: str, result_label: str, risk_level: str) -> str | None:
+    text = f"{genotype} {result_label} {risk_level}".lower()
+    deficient_tokens = (
+        "deficient",
+        "deficiency",
+        "缺乏",
+        "低活性",
+        "low activity",
+        "low enzyme",
+        "class i",
+        "class ii",
+        "class iii",
+        "high",
+        "高风险",
+    )
+    variable_tokens = (
+        "variable",
+        "intermediate",
+        "partial",
+        "borderline",
+        "中间",
+        "部分",
+        "medium",
+        "中风险",
+    )
+    if any(token in text for token in deficient_tokens):
+        return "deficient"
+    if any(token in text for token in variable_tokens):
+        return "variable"
     return None
 
 
