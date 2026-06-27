@@ -166,6 +166,12 @@ async def test_agent_stream_injects_system_knowledge_from_user_twin(db, auth_use
     assert cards[0]["type"] == "system_knowledge_evidence"
     assert cards[0]["data"]["claims"][0]["doc_id"] == "claim:c_mthfr_c677t_hcy_folate_boundary"
 
+    card_events = [event for event in events if event.get("event") == "card"]
+    assert len(card_events) == 1
+    streamed_card = card_events[0]["data"]["descriptor"]
+    assert streamed_card == cards[0]
+    assert events.index(card_events[0]) < events.index(events[-1])
+
 
 @pytest.mark.asyncio
 async def test_agent_stream_does_not_attach_twin_kb_card_for_pure_record_intent(db, auth_user_and_headers):

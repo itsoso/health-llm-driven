@@ -2130,6 +2130,16 @@ class AgentExecutor:
             evidence_card = self._build_system_knowledge_evidence_card(user_id, message)
             if evidence_card:
                 evidence_cards.append(evidence_card)
+                before = len(streamed_cards)
+                streamed_cards = _merge_agent_card_descriptors(streamed_cards, [evidence_card])
+                if len(streamed_cards) > before:
+                    yield {
+                        "event": "card",
+                        "data": {
+                            "anchor": "system_knowledge_evidence",
+                            "descriptor": evidence_card,
+                        },
+                    }
                 if "系统知识库" not in sources_used:
                     sources_used.append("系统知识库")
         except Exception as e:
