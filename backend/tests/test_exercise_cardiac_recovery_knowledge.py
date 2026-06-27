@@ -16,16 +16,19 @@ CLAIMS_FILE = Path(SEED_DIR) / "claims.jsonl"
 EXERCISE_SAFETY_CLAIMS = {
     "cardiac_red_flags": "claim:c_exercise_cardiac_red_flags_stop_and_triage",
     "low_recovery": "claim:c_exercise_low_recovery_training_downgrade",
+    "heat_illness": "claim:c_exercise_heat_illness_stop_and_cool_boundary",
 }
 
 EXERCISE_SAFETY_CONTRAINDICATIONS = {
     "cardiac_red_flags": "contraindication:exercise_cardiac_red_flags_no_training",
     "low_recovery": "contraindication:exercise_low_recovery_no_intensity_escalation",
+    "heat_illness": "contraindication:exercise_heat_illness_no_training_or_delay",
 }
 
 EXERCISE_SAFETY_EVALS = {
     "cardiac_red_flags": "eval:exercise_cardiac_red_flags_boundary",
     "low_recovery": "eval:exercise_low_recovery_downgrade",
+    "heat_illness": "eval:exercise_heat_illness_boundary",
 }
 
 
@@ -111,6 +114,16 @@ def test_low_recovery_lookup_requires_low_training_readiness(db):
     assert EXERCISE_SAFETY_CLAIMS["low_recovery"] not in _claim_ids_for_twin(db, ready)
 
 
+def test_heat_illness_lookup_requires_heat_exertion_and_symptom_context(db):
+    import_system_kb_artifacts(db, SEED_DIR, actor="test:exercise_heat_illness_lookup")
+
+    risky = _twin(conditions=["高温户外跑", "头晕", "恶心"])
+    assert EXERCISE_SAFETY_CLAIMS["heat_illness"] in _claim_ids_for_twin(db, risky)
+
+    heat_only = _twin(conditions=["高温户外散步"])
+    assert EXERCISE_SAFETY_CLAIMS["heat_illness"] not in _claim_ids_for_twin(db, heat_only)
+
+
 def test_system_kb_eval_runner_covers_exercise_safety_cases(db):
     from app.services.system_knowledge_eval import run_system_kb_eval_cases
 
@@ -118,7 +131,7 @@ def test_system_kb_eval_runner_covers_exercise_safety_cases(db):
 
     report = run_system_kb_eval_cases(db, case_ids=set(EXERCISE_SAFETY_EVALS.values()))
 
-    assert report["total"] == 2
+    assert report["total"] == 3
     assert report["failed"] == 0, report
     assert {case["case_id"] for case in report["cases"]} == set(EXERCISE_SAFETY_EVALS.values())
 
