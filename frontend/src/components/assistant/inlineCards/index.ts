@@ -4,4 +4,5 @@ export { CardShell } from './CardShell';
 export {
   VitalsCardView, SleepCardView, WeightCardView, SupplementCardView,
   WeatherCardView, BPCardView, ScoreCardView, RecordCardView, DietCardView,
+  MedicalExamImportResultCardView,
 } from './cards';

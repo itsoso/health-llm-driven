@@ -412,7 +412,7 @@ struct AgentChatView: View {
                 .background(Color.secondary.opacity(0.08), in: Circle())
         }
         .buttonStyle(.plain)
-        .help("Attach image, PDF, genome txt, Apple Health export, or Dedao folder")
+        .help("Attach medical exam PDF/photo, image, genome txt, Apple Health export, or Dedao folder")
     }
 
     private var webSearchToggle: some View {

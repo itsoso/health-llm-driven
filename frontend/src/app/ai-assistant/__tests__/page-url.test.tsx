@@ -6,7 +6,7 @@
  */
 import React from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const searchParamsGet = vi.fn();
 const routerReplace = vi.fn();
@@ -31,6 +31,11 @@ vi.mock('@/services/api/ai', () => ({
 const apiGet = vi.fn();
 vi.mock('@/services/api/client', () => ({
   api: { get: (...a: unknown[]) => apiGet(...a), put: vi.fn(), post: vi.fn() },
+}));
+
+const executeMedicalExamImportSkillForFile = vi.fn();
+vi.mock('@/services/chatMedicalExamImportSkill', () => ({
+  executeMedicalExamImportSkillForFile: (...a: unknown[]) => executeMedicalExamImportSkillForFile(...a),
 }));
 
 import AIAssistantPage from '../page';
@@ -61,5 +66,35 @@ describe('ai-assistant URL state', () => {
     render(<AIAssistantPage />);
     await waitFor(() => expect(getConversations).toHaveBeenCalled());
     expect(getConversation).not.toHaveBeenCalled();
+  });
+
+  it('imports a medical exam file from the composer and renders a result card', async () => {
+    searchParamsGet.mockReturnValue(null);
+    executeMedicalExamImportSkillForFile.mockResolvedValueOnce({
+      skillId: 'medical_exam_import',
+      card: {
+        type: 'medical_exam_import_result',
+        data: {
+          exam_id: 42,
+          source: 'pdf',
+          items_count: 28,
+          abnormal_count: 3,
+          review_required: true,
+          safety_note: 'OCR/AI 解析结果需要复核后再用于判断。',
+        },
+      },
+      prompt: '请基于我刚导入的体检报告，解释异常/关键指标。',
+      context: {},
+    });
+    render(<AIAssistantPage />);
+
+    const file = new File(['pdf'], 'report.pdf', { type: 'application/pdf' });
+    fireEvent.change(screen.getByLabelText('选择体检报告文件'), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => expect(executeMedicalExamImportSkillForFile).toHaveBeenCalledWith(file));
+    expect(await screen.findByText('体检报告已导入')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('请基于我刚导入的体检报告，解释异常/关键指标。')).toBeInTheDocument();
   });
 });

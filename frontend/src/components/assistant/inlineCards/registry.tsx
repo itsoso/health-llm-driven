@@ -4,11 +4,13 @@ import type { CardSpec, CardContext, ServerCardDescriptor } from './types';
 import {
   VitalsCardSpec, SleepCardSpec, WeightCardSpec, SupplementCardSpec,
   WeatherCardSpec, BPCardSpec, ScoreCardSpec, RecordCardSpec, DietCardSpec,
+  MedicalExamImportResultCardSpec,
 } from './cards';
 
 /** 全量卡片注册表. 数组顺序不决定优先级, 以 match() 返回值为准. */
 export const CARD_REGISTRY: CardSpec[] = [
   RecordCardSpec,
+  MedicalExamImportResultCardSpec,
   SleepCardSpec,
   WeightCardSpec,
   BPCardSpec,

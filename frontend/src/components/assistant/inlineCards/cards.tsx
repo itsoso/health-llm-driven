@@ -572,3 +572,102 @@ export const DietCardSpec: CardSpec<DietData> = {
   },
   render: (d) => <DietCardView {...d} />,
 };
+
+// ────────────────────────────────────────────────────────────────
+// 10. MedicalExamImportResultCard - runtime skill import result
+// ────────────────────────────────────────────────────────────────
+interface MedicalExamImportResultData {
+  exam_id: number;
+  exam_date?: string | null;
+  exam_type?: string | null;
+  hospital_name?: string | null;
+  items_count?: number | null;
+  abnormal_count?: number | null;
+  conclusions_count?: number | null;
+  conclusion?: string | null;
+  source: 'pdf' | 'image' | 'text' | string;
+  review_required?: boolean;
+  safety_note?: string;
+}
+
+function sourceLabel(source: string) {
+  if (source === 'pdf') return 'PDF';
+  if (source === 'image') return '图片 OCR';
+  if (source === 'text') return '文字';
+  return source;
+}
+
+function ImportMetric({ label, value, risk }: { label: string; value: string; risk?: boolean }) {
+  return (
+    <div className="min-w-[76px] rounded-xl bg-white px-3 py-2 ring-1 ring-emerald-100">
+      <div className="text-[10px] text-slate-400">{label}</div>
+      <div className={`mt-0.5 text-xs font-extrabold tabular-nums ${risk ? 'text-rose-600' : 'text-slate-900'}`}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+export function MedicalExamImportResultCardView(data: MedicalExamImportResultData) {
+  const itemsCount = data.items_count ?? 0;
+  const abnormalCount = data.abnormal_count ?? 0;
+  const safetyNote = data.safety_note ?? 'OCR/AI 解析结果需要复核后再用于判断。';
+  return (
+    <CardShell
+      emoji="📋"
+      title="体检报告已导入"
+      badge={abnormalCount > 0 ? `${abnormalCount} 项异常` : '待复核'}
+      badgeColor={abnormalCount > 0 ? '#E11D48' : '#059669'}
+      bg="#F0FDF4"
+      border="#BBF7D0"
+    >
+      <div className="flex flex-wrap gap-2">
+        <ImportMetric label="来源" value={sourceLabel(String(data.source))} />
+        <ImportMetric label="指标" value={`${itemsCount} 项指标`} />
+        <ImportMetric label="异常" value={`${abnormalCount} 项异常`} risk={abnormalCount > 0} />
+      </div>
+
+      {(data.exam_date || data.hospital_name) && (
+        <div className="mt-2 line-clamp-2 text-xs text-slate-500">
+          {[data.exam_date, data.hospital_name].filter(Boolean).join(' · ')}
+        </div>
+      )}
+
+      {data.conclusion && (
+        <div className="mt-2 line-clamp-2 text-xs leading-5 text-slate-700">
+          {data.conclusion}
+        </div>
+      )}
+
+      {data.review_required !== false && (
+        <div className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800 ring-1 ring-amber-100">
+          {safetyNote}
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <a
+          href="/medical-exams"
+          className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-50"
+        >
+          查看体检记录
+        </a>
+        <span className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white">
+          已放入对话上下文
+        </span>
+      </div>
+    </CardShell>
+  );
+}
+
+export const MedicalExamImportResultCardSpec: CardSpec<MedicalExamImportResultData> = {
+  type: 'medical_exam_import_result',
+  label: '体检导入结果',
+  match() {
+    return null;
+  },
+  build() {
+    return null;
+  },
+  render: (d) => <MedicalExamImportResultCardView {...d} />,
+};

@@ -62,11 +62,29 @@
 3. Update RecordHub lab upload card copy and Agent prompt to use medical exam wording.
 4. Run `swift test --package-path apps/mac --filter LabUpload`.
 
-### Task 5: Final Verification
+### Task 5: Web Chat Runtime Skill
+
+**Files:**
+- Create: `frontend/src/services/chatMedicalExamImportSkill.ts`
+- Create: `frontend/src/services/chatMedicalExamImportSkill.test.ts`
+- Modify: `frontend/src/app/ai-assistant/page.tsx`
+- Modify: `frontend/src/app/ai-assistant/__tests__/page-url.test.tsx`
+- Modify: `frontend/src/components/assistant/inlineCards/cards.tsx`
+- Modify: `frontend/src/components/assistant/inlineCards/registry.tsx`
+
+**Steps:**
+1. Add failing Vitest coverage for skill execution, card rendering, and composer upload behavior.
+2. Implement Web runtime skill on top of `importMedicalExamFile`.
+3. Add `medical_exam_import_result` to the Web inline card registry.
+4. Add a composer file button that imports PDF/images, appends the result card, and pre-fills a follow-up interpretation prompt.
+5. Run targeted frontend Vitest for the service, card registry, and `/ai-assistant` page.
+
+### Task 6: Final Verification
 
 **Commands:**
 - `cd mobile && npm test -- services/__tests__/medicalExams.test.ts app/__tests__/medical-exams.test.tsx --runInBand`
 - `cd frontend && npm test -- src/services/api/medicalExams.test.ts`
+- `cd frontend && npm test -- src/services/chatMedicalExamImportSkill.test.ts src/components/assistant/inlineCards/__tests__/registry.test.tsx src/app/ai-assistant/__tests__/page-url.test.tsx`
 - `swift test --package-path apps/mac --filter LabUpload`
 - `git status --short`
 

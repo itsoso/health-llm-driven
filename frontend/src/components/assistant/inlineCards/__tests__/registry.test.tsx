@@ -120,6 +120,20 @@ describe('renderCard', () => {
     expect(r?.type).toBeDefined();
   });
 
+  it('renders medical exam import result cards from runtime skills', () => {
+    const r = renderCard({
+      type: 'medical_exam_import_result',
+      data: {
+        exam_id: 42,
+        source: 'pdf',
+        items_count: 28,
+        abnormal_count: 3,
+        review_required: true,
+      },
+    });
+    expect(r).not.toBeNull();
+  });
+
   it('cards_group 含 1 张子卡 → 直接渲染, 无 grid wrapper', () => {
     const r = renderCard({
       type: 'cards_group',

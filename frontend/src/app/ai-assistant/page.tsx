@@ -15,6 +15,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowUp,
   CheckSquare,
+  FileText,
+  Loader2,
   MessageSquarePlus,
   PanelLeft,
   Share2,
@@ -33,6 +35,7 @@ import {
   sanitizeLlmPreference,
   sanitizeModelOptions,
 } from '@/components/assistant/modelCatalog';
+import { executeMedicalExamImportSkillForFile } from '@/services/chatMedicalExamImportSkill';
 
 const DEFAULT_SUGGESTIONS = [
   '分析我最近的代谢健康',
@@ -93,8 +96,11 @@ function AIAssistantInner() {
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<number>>(new Set());
   const [sharing, setSharing] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const medicalExamInputRef = useRef<HTMLInputElement | null>(null);
   const [starterSuggestions, setStarterSuggestions] = useState<string[]>(DEFAULT_SUGGESTIONS);
   const [opener, setOpener] = useState<ConversationOpener | null>(null);
+  const [medicalExamImporting, setMedicalExamImporting] = useState(false);
+  const [medicalExamImportError, setMedicalExamImportError] = useState<string | null>(null);
 
   // 自动滚到底
   useEffect(() => {
@@ -409,6 +415,50 @@ function AIAssistantInner() {
     }
   };
 
+  const handleMedicalExamFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    if (!file || medicalExamImporting || streaming) return;
+
+    setMedicalExamImporting(true);
+    setMedicalExamImportError(null);
+    try {
+      const result = await executeMedicalExamImportSkillForFile(file);
+      const now = new Date().toISOString();
+      const stamp = Date.now();
+      const userMessageId = -stamp;
+      const cardMessageId = -stamp - 1;
+      setMessages(prev => [
+        ...prev,
+        {
+          id: userMessageId,
+          role: 'user',
+          content: `导入体检报告：${file.name}`,
+          file_name: file.name,
+          created_at: now,
+        },
+        {
+          id: cardMessageId,
+          role: 'assistant',
+          content: '',
+          card_type: result.card.type,
+          card_data: result.card.data,
+          created_at: now,
+        },
+      ]);
+      setDoneIds(prev => {
+        const next = new Set(prev);
+        next.add(cardMessageId);
+        return next;
+      });
+      setInput(result.prompt);
+    } catch (e: any) {
+      setMedicalExamImportError(e?.message || '体检报告导入失败，请重试');
+    } finally {
+      setMedicalExamImporting(false);
+    }
+  };
+
   return (
     <main className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-[#212121] text-zinc-100">
       <header className="relative z-[70] shrink-0 overflow-visible border-b border-white/[0.08] bg-[#212121]/95 px-3 py-2.5 backdrop-blur">
@@ -569,6 +619,28 @@ function AIAssistantInner() {
               }}
               className="pointer-events-auto mx-auto flex max-w-3xl items-end gap-2 rounded-[1.7rem] border border-white/10 bg-[#2f2f2f] p-2 shadow-2xl shadow-black/30"
             >
+              <input
+                ref={medicalExamInputRef}
+                aria-label="选择体检报告文件"
+                type="file"
+                accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.heic,.webp"
+                className="sr-only"
+                onChange={handleMedicalExamFileChange}
+              />
+              <button
+                type="button"
+                disabled={streaming || medicalExamImporting}
+                onClick={() => medicalExamInputRef.current?.click()}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-white/[0.08] hover:text-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-600"
+                title="导入体检报告"
+                aria-label="导入体检报告"
+              >
+                {medicalExamImporting ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <FileText className="h-5 w-5" />
+                )}
+              </button>
               <textarea
                 value={input}
                 onChange={e => setInput(e.target.value)}
@@ -594,6 +666,11 @@ function AIAssistantInner() {
                 <ArrowUp className="h-5 w-5" />
               </button>
             </form>
+            {medicalExamImportError && (
+              <p role="alert" className="pointer-events-auto mx-auto mt-2 max-w-3xl text-center text-[11px] text-rose-300">
+                {medicalExamImportError}
+              </p>
+            )}
             <p className="pointer-events-none mx-auto mt-2 max-w-3xl text-center text-[11px] text-zinc-600">
               健康建议不能替代医生诊断；紧急或明显异常请及时就医。
             </p>
