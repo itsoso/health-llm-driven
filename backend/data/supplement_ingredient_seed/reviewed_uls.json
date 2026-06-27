@@ -1,0 +1,42 @@
+[
+  {
+    "ingredient_id": "vitamin_d",
+    "canonical_name": "维生素 D",
+    "aliases": ["维生素D", "Vitamin D", "cholecalciferol", "维生素 D3", "维生素D3", "Vitamin D3"],
+    "ul_amount": 4000,
+    "ul_unit": "IU/day",
+    "source": "NIH ODS",
+    "source_ref": "Vitamin D Fact Sheet: adult UL 100 mcg / 4,000 IU per day",
+    "is_active": true
+  },
+  {
+    "ingredient_id": "folic_acid_synthetic_folate",
+    "canonical_name": "叶酸",
+    "aliases": ["5-MTHF", "Folic acid", "folate", "synthetic folate"],
+    "ul_amount": 1000,
+    "ul_unit": "mcg/day",
+    "source": "NIH ODS",
+    "source_ref": "Folate Fact Sheet: adult UL 1,000 mcg/day synthetic folate",
+    "is_active": true
+  },
+  {
+    "ingredient_id": "magnesium_supplemental",
+    "canonical_name": "甘氨酸镁",
+    "aliases": ["镁", "Magnesium", "Magnesium glycinate", "Mg-Glycinate"],
+    "ul_amount": 350,
+    "ul_unit": "mg/day supplemental magnesium",
+    "source": "NIH ODS",
+    "source_ref": "Magnesium Fact Sheet: adult UL 350 mg/day from supplements or medications",
+    "is_active": true
+  },
+  {
+    "ingredient_id": "omega_3_epa_dha",
+    "canonical_name": "Omega-3",
+    "aliases": ["Omega 3", "Omega-3 (EPA+DHA)", "鱼油", "EPA+DHA", "EPA", "DHA"],
+    "ul_amount": 5000,
+    "ul_unit": "mg/day EPA+DHA",
+    "source": "NIH ODS",
+    "source_ref": "Omega-3 Fact Sheet: FDA recommends no more than 5 g/day EPA+DHA from supplements",
+    "is_active": true
+  }
+]
