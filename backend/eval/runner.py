@@ -367,6 +367,44 @@ def _score_health_agent_core(case: GoldenCase, output: Dict[str, Any]) -> Dict[s
     }
 
 
+# ============= health runtime governance suite =============
+
+@_register_runner("health_runtime")
+def _run_health_runtime_case(case_inputs: Dict[str, Any]) -> Dict[str, Any]:
+    from app.services.health_runtime_eval import run_evaluation_scenario, run_safety_regression_suite
+
+    scenario_id = case_inputs.get("scenario_id")
+    if scenario_id == "safety_regression_suite":
+        safety = run_safety_regression_suite()
+        return {
+            "scenario_id": scenario_id,
+            "passed": safety["failed"] == 0,
+            "checks": {"safety_regression": safety["failed"] == 0},
+            "safety_regression": safety,
+        }
+    return run_evaluation_scenario(str(scenario_id))
+
+
+@_register_scorer("health_runtime")
+def _score_health_runtime(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    expected = case.expected or {}
+    details: List[str] = []
+    passed = bool(output.get("passed")) is bool(expected.get("passed", True))
+
+    for check in expected.get("required_checks") or []:
+        if not (output.get("checks") or {}).get(check):
+            passed = False
+            details.append(f"missing_or_failed_check={check}")
+
+    return {
+        "health_runtime_contract": {
+            "passed": passed,
+            "score": 1.0 if passed else 0.0,
+            "details": "; ".join(details) if details else "ok",
+        }
+    }
+
+
 # ============= retrieval suite (端到端: agent 工具真去查 DB) =============
 
 def _ensure_jsonb_sqlite_compiler() -> None:
