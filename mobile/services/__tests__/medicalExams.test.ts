@@ -10,6 +10,9 @@ import {
   countAbnormal,
   compareExams,
   relativeExamDate,
+  normalizeMedicalExamImportResult,
+  uploadMedicalExamPdf,
+  uploadMedicalExamImage,
   uploadMedicalExamText,
   type MedicalExam,
 } from '../medicalExams';
@@ -71,6 +74,67 @@ describe('uploadMedicalExamText', () => {
       exam_date: '2026-05-11',
       hospital_name: '手工录入',
     });
+  });
+});
+
+describe('medical exam import uploads', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('normalizes PDF import responses for review-first UI', () => {
+    const out = normalizeMedicalExamImportResult({
+      message: 'PDF解析并导入成功',
+      exam_id: 42,
+      exam_date: '2026-06-18',
+      hospital_name: '三甲医院',
+      items_count: 28,
+      conclusions_count: 2,
+    }, 'pdf');
+
+    expect(out).toMatchObject({
+      source: 'pdf',
+      exam_id: 42,
+      examId: 42,
+      examDate: '2026-06-18',
+      hospitalName: '三甲医院',
+      items_count: 28,
+      itemsCount: 28,
+      conclusionsCount: 2,
+      reviewRequired: true,
+    });
+  });
+
+  it('posts PDFs to the canonical medical-exams endpoint and returns normalized result', async () => {
+    mockPost.mockResolvedValueOnce({
+      data: { message: '导入成功', exam_id: 42, exam_date: '2026-06-18', items_count: 28 },
+    });
+
+    const out = await uploadMedicalExamPdf('file:///tmp/report.pdf', 'report.pdf');
+
+    expect(out.examId).toBe(42);
+    expect(out.itemsCount).toBe(28);
+    expect(out.reviewRequired).toBe(true);
+    expect(mockPost).toHaveBeenCalledWith(
+      '/medical-exams/import/pdf',
+      expect.any(FormData),
+      expect.objectContaining({ timeout: 120_000 }),
+    );
+  });
+
+  it('posts report images to the canonical medical-exams endpoint and preserves abnormal count', async () => {
+    mockPost.mockResolvedValueOnce({
+      data: { message: '图片 OCR 导入成功', exam_id: 77, items_count: 9, abnormal_count: 2 },
+    });
+
+    const out = await uploadMedicalExamImage('file:///tmp/report.png', 'report.png', 'image/png');
+
+    expect(out.examId).toBe(77);
+    expect(out.itemsCount).toBe(9);
+    expect(out.abnormalCount).toBe(2);
+    expect(mockPost).toHaveBeenCalledWith(
+      '/medical-exams/import/image',
+      expect.any(FormData),
+      expect.objectContaining({ timeout: 120_000 }),
+    );
   });
 });
 

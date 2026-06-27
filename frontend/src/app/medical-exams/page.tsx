@@ -11,6 +11,12 @@ import { PdfUploadSection } from './components/PdfUploadSection';
 import { ExamForm } from './components/ExamForm';
 import { ExamRecordCard } from './components/ExamRecordCard';
 import { StatsCards } from './components/StatsCards';
+import {
+  importMedicalExamFile,
+  importMedicalExamText,
+  medicalExamImportSourceForFile,
+  type MedicalExamImportResult,
+} from '@/services/api/medicalExams';
 
 // 使用相对路径，通过Next.js代理到后端
 const API_BASE = '/api';
@@ -24,6 +30,7 @@ function MedicalExamsContent() {
   const [expandedExam, setExpandedExam] = useState<number | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pdfPreview, setPdfPreview] = useState<any>(null);
+  const [textImportValue, setTextImportValue] = useState('');
   const [uploadProgress, setUploadProgress] = useState<string>('');
   const queryClient = useQueryClient();
   const today = format(new Date(), 'yyyy-MM-dd');
@@ -111,46 +118,18 @@ function MedicalExamsContent() {
     },
   });
 
-  // PDF上传导入
+  // PDF / 图片上传导入
   const uploadPdfMutation = useMutation({
     mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await fetch(`${API_BASE}/medical-exams/import/pdf?user_id=${userId}`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
-
-      const responseText = await res.text();
-
-      if (!res.ok) {
-        try {
-          const error = JSON.parse(responseText);
-          throw new Error(error.detail || '导入失败');
-        } catch (e) {
-          if (responseText.startsWith('<')) {
-            throw new Error(`服务器返回错误 (${res.status})，请稍后重试`);
-          }
-          throw new Error(responseText.slice(0, 200) || `导入失败 (${res.status})`);
-        }
-      }
-
-      try {
-        return JSON.parse(responseText);
-      } catch (e) {
-        throw new Error('服务器返回格式错误');
-      }
+      return importMedicalExamFile(file);
     },
-    onSuccess: (data) => {
+    onSuccess: (data: MedicalExamImportResult) => {
       queryClient.invalidateQueries({ queryKey: ['medical-exams'] });
       setShowPdfUpload(false);
       setPdfFile(null);
       setPdfPreview(null);
       setUploadProgress('');
-      alert(`✅ PDF导入成功！已解析 ${data.items_count} 个检查项目`);
+      alert(`✅ 导入成功！已解析 ${data.itemsCount ?? 0} 个检查项目，请复核后再用于判断。`);
     },
     onError: (error: any) => {
       setUploadProgress('');
@@ -158,17 +137,40 @@ function MedicalExamsContent() {
     },
   });
 
+  const uploadTextMutation = useMutation({
+    mutationFn: async (text: string) => importMedicalExamText(text, {
+      exam_date: today,
+      hospital_name: '手工贴文字',
+    }),
+    onSuccess: (data: MedicalExamImportResult) => {
+      queryClient.invalidateQueries({ queryKey: ['medical-exams'] });
+      setTextImportValue('');
+      setShowPdfUpload(false);
+      alert(`✅ 文字导入成功！已解析 ${data.itemsCount ?? 0} 个检查项目，请复核后再用于判断。`);
+    },
+    onError: (error: any) => {
+      alert(`❌ 文字导入失败: ${error.message}`);
+    },
+  });
+
   const handlePdfSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (!file.name.toLowerCase().endsWith('.pdf')) {
-        alert('请选择PDF格式文件');
+      let source: 'pdf' | 'image';
+      try {
+        source = medicalExamImportSourceForFile(file);
+      } catch (error: any) {
+        alert(error.message);
         return;
       }
       setPdfFile(file);
       setPdfPreview(null);
-      setUploadProgress('正在解析PDF...');
-      previewPdfMutation.mutate(file);
+      if (source === 'pdf') {
+        setUploadProgress('正在解析PDF...');
+        previewPdfMutation.mutate(file);
+      } else {
+        setUploadProgress('图片已选择，确认后将直接 OCR 导入。');
+      }
     }
   };
 
@@ -177,6 +179,15 @@ function MedicalExamsContent() {
       setUploadProgress('正在导入...');
       uploadPdfMutation.mutate(pdfFile);
     }
+  };
+
+  const handleTextImport = () => {
+    const text = textImportValue.trim();
+    if (!text) {
+      alert('请先粘贴体检或化验文字结果');
+      return;
+    }
+    uploadTextMutation.mutate(text);
   };
 
   // 统计异常项目数量
@@ -210,7 +221,7 @@ function MedicalExamsContent() {
               onClick={() => { setShowPdfUpload(!showPdfUpload); setShowForm(false); }}
               className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-600 text-white font-semibold rounded-lg hover:from-purple-600 hover:to-pink-700 shadow-md transition-all flex items-center gap-2"
             >
-              📄 {showPdfUpload ? '取消上传' : '上传PDF'}
+              📄 {showPdfUpload ? '取消导入' : '导入体检报告'}
             </button>
             <button
               onClick={() => { setShowForm(!showForm); setShowPdfUpload(false); }}
@@ -226,11 +237,15 @@ function MedicalExamsContent() {
           <PdfUploadSection
             pdfFile={pdfFile}
             pdfPreview={pdfPreview}
+            textImportValue={textImportValue}
             uploadProgress={uploadProgress}
             previewPdfMutation={previewPdfMutation}
             uploadPdfMutation={uploadPdfMutation}
+            uploadTextMutation={uploadTextMutation}
             onPdfSelect={handlePdfSelect}
             onPdfImport={handlePdfImport}
+            onTextChange={setTextImportValue}
+            onTextImport={handleTextImport}
             onReset={() => { setPdfFile(null); setPdfPreview(null); setUploadProgress(''); }}
           />
         )}

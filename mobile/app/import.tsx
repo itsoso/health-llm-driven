@@ -23,7 +23,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -44,6 +44,8 @@ interface UploadResult {
 }
 
 export default function ImportScreen() {
+  const params = useLocalSearchParams<{ focus?: string }>();
+  const isMedicalFocused = params.focus === 'medical';
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
   const txt = useMemo(() => createTxt(c), [c]);
@@ -73,6 +75,12 @@ export default function ImportScreen() {
       }
 
       if (ext === 'pdf') {
+        if (isMedicalFocused) {
+          await runUpload('medical_pdf', () =>
+            uploadMedicalExamPdf(asset.uri, asset.name || 'exam.pdf'));
+          return;
+        }
+
         // PDF 歧义 — 让用户选 基因 / 体检
         Alert.alert(
           '这份 PDF 是什么报告?',
@@ -201,12 +209,13 @@ export default function ImportScreen() {
           detail = `${detail}\n稍后在"基因档案"里可以查看最终结果.`;
         }
       } else if (kind === 'medical_pdf') {
-        message = `体检报告解析成功: ${data.items_count ?? 0} 个指标`;
-        detail = data.hospital_name ? `来源: ${data.hospital_name}` : '';
+        message = `体检报告解析成功: ${data.itemsCount ?? data.items_count ?? 0} 个指标`;
+        const source = data.hospitalName ?? data.hospital_name;
+        detail = `${source ? `来源: ${source}\n` : ''}请复核 OCR/AI 解析结果后再用于判断。`;
       } else if (kind === 'medical_image') {
-        const abnormal = data.abnormal_count ?? 0;
-        message = `化验单识别完成: ${data.items_count ?? 0} 项` + (abnormal > 0 ? `, ${abnormal} 项异常` : '');
-        detail = data.conclusion || '';
+        const abnormal = data.abnormalCount ?? data.abnormal_count ?? 0;
+        message = `化验单识别完成: ${data.itemsCount ?? data.items_count ?? 0} 项` + (abnormal > 0 ? `, ${abnormal} 项异常` : '');
+        detail = `${data.conclusion ? `${data.conclusion}\n` : ''}请复核 OCR/AI 解析结果后再用于判断。`;
       }
       setResult({ kind, message, detail });
     } catch (e: any) {
@@ -267,7 +276,7 @@ export default function ImportScreen() {
         <TouchableOpacity onPress={() => router.back()} hitSlop={10} style={{ padding: 6 }}>
           <Ionicons name="close" size={26} color={c.labelPrimary} />
         </TouchableOpacity>
-        <Text style={txt.title}>导入健康档案</Text>
+        <Text style={txt.title}>{isMedicalFocused ? '导入体检报告' : '导入健康档案'}</Text>
         <View style={{ width: 32 }} />
       </View>
 
@@ -276,7 +285,11 @@ export default function ImportScreen() {
         style={{ flex: 1 }}
       >
         <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          <Text style={txt.lead}>上传基因或体检报告, AI 帮你解读并放进健康档案.</Text>
+          <Text style={txt.lead}>
+            {isMedicalFocused
+              ? '上传体检报告 PDF、化验单照片，或粘贴文字结果。导入后会进入体检记录，先复核再用于判断。'
+              : '上传基因或体检报告, AI 帮你解读并放进健康档案.'}
+          </Text>
 
           <TouchableOpacity
             style={[styles.cta, busy && { opacity: 0.5 }]}
@@ -289,7 +302,11 @@ export default function ImportScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={txt.ctaTitle}>选择文件</Text>
-              <Text style={txt.ctaSub}>.txt (基因 raw data) / .pdf (基因或体检报告) / .jpg (化验单照片)</Text>
+              <Text style={txt.ctaSub}>
+                {isMedicalFocused
+                  ? '.pdf (体检报告) / .jpg .png .heic (化验单照片)'
+                  : '.txt (基因 raw data) / .pdf (基因或体检报告) / .jpg (化验单照片)'}
+              </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={c.labelTertiary} />
           </TouchableOpacity>
@@ -347,6 +364,19 @@ export default function ImportScreen() {
                 context={createImportResultAgentContext({ kind: result.kind, result })}
                 badge="导入结果"
               />
+              {(result.kind === 'medical_pdf' || result.kind === 'medical_image') && (
+                <TouchableOpacity
+                  onPress={() => router.replace('/medical-exams' as any)}
+                  style={styles.reviewBtn}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel="查看体检记录"
+                >
+                  <Ionicons name="document-text-outline" size={16} color={c.brand} />
+                  <Text style={txt.reviewBtn}>查看体检记录并复核</Text>
+                  <Ionicons name="chevron-forward" size={15} color={c.brand} />
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 onPress={() => router.back()}
                 style={styles.doneBtn}
@@ -359,8 +389,12 @@ export default function ImportScreen() {
 
           <View style={styles.tipsBox}>
             <Text style={txt.tipsTitle}>支持的格式</Text>
-            <Text style={txt.tipsItem}>• 基因: 23andMe / 微基因 raw data (.txt)</Text>
-            <Text style={txt.tipsItem}>• 基因: 基因检测报告 (.pdf, 后台异步解析)</Text>
+            {!isMedicalFocused && (
+              <>
+                <Text style={txt.tipsItem}>• 基因: 23andMe / 微基因 raw data (.txt)</Text>
+                <Text style={txt.tipsItem}>• 基因: 基因检测报告 (.pdf, 后台异步解析)</Text>
+              </>
+            )}
             <Text style={txt.tipsItem}>• 体检: 三甲医院体检报告 (.pdf)</Text>
             <Text style={txt.tipsItem}>• 化验: 单项化验单照片 (.jpg/.png)</Text>
             <Text style={[txt.tipsItem, { marginTop: spacing.sm, color: c.labelTertiary }]}>
@@ -448,6 +482,12 @@ function createStyles(c: ColorPalette) {
       marginTop: spacing.sm, paddingVertical: 12,
       backgroundColor: c.brand, borderRadius: radii.md, alignItems: 'center',
     },
+    reviewBtn: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+      gap: 8, marginTop: spacing.xs, paddingVertical: 12,
+      borderWidth: StyleSheet.hairlineWidth, borderColor: c.brand,
+      borderRadius: radii.md, backgroundColor: c.brandLight,
+    },
     tipsBox: {
       marginTop: spacing.xl * 1.2, padding: spacing.lg,
       backgroundColor: c.bgCard, borderRadius: radii.md,
@@ -474,6 +514,7 @@ function createTxt(c: ColorPalette) {
     resultTitle: { fontSize: 15, fontWeight: '600', color: c.labelPrimary, flex: 1 } as TextStyle,
     resultDetail: { fontSize: 13, color: c.labelSecondary, lineHeight: 19 } as TextStyle,
     doneBtn: { fontSize: 15, fontWeight: '600', color: '#fff' } as TextStyle,
+    reviewBtn: { fontSize: 14, fontWeight: '600', color: c.brand } as TextStyle,
     tipsTitle: { fontSize: 13, fontWeight: '600', color: c.labelSecondary, marginBottom: spacing.sm } as TextStyle,
     tipsItem: { fontSize: 13, color: c.labelSecondary, lineHeight: 20 } as TextStyle,
   };
