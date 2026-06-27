@@ -10,7 +10,7 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { revaColors as C, revaRadii, revaShadows } from '../../constants/revaTheme';
 import {
-  Button, Card, Chip, DayProgress, Icon, LabRow, MetricTile, PlanItem,
+  AirQuality, Button, Card, Chip, DayProgress, Icon, LabRow, MetricTile, PlanItem,
   ReadinessRing, RevaMark, SectionLabel, Sparkline, TopBar, TrendChart,
 } from './RevaKit';
 import { useRevaData } from './useRevaData';
@@ -70,6 +70,17 @@ export function TodayView({ onRisk }: { onRisk?: () => void }) {
             <Text style={{ fontSize: 13.5, lineHeight: 20, color: C.focusInk2 }}>{d.readinessNote}</Text>
           </View>
         </View>
+
+        {/* 今明空气: today = real AQI from /environment/air-quality (omitted when unavailable);
+            tomorrow = TODO placeholder — no forecast-AQI source on mobile yet (weather forecast
+            endpoint returns weather only, not AQI). */}
+        {d.airToday ? (
+          <AirQuality
+            action="实时"
+            today={d.airToday}
+            tomorrow={{ aqi: '—', level: '暂无预报', status: 'info', advice: '明日空气预报尚未接入' }}
+          />
+        ) : null}
 
         <View>
           <SectionLabel action={d.plan.length ? `${doneCount}/${d.plan.length} 已完成` : undefined}>今日计划</SectionLabel>
@@ -135,7 +146,7 @@ export function DataView({ onRisk }: { onRisk?: () => void }) {
           <Card pad={0}>
             {d.abnormalLabs.length ? (
               d.abnormalLabs.map((l, i) => (
-                <LabRow key={l.id} status={l.status} name={l.name} sub={l.sub} value={l.value} unit={l.unit} onPress={i === 0 ? onRisk : undefined} last={i === d.abnormalLabs.length - 1} />
+                <LabRow key={l.id} status={l.status} name={l.name} sub={l.sub} value={l.value} unit={l.unit} pos={l.pos} onPress={i === 0 ? onRisk : undefined} last={i === d.abnormalLabs.length - 1} />
               ))
             ) : (
               <Empty text={d.loading ? '正在加载体检数据…' : d.examDate ? '本次体检未见异常项。' : '还没有导入体检报告。'} />
