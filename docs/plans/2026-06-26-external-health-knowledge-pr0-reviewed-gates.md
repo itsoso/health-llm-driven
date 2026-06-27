@@ -163,7 +163,7 @@ official / curated source
 4. Draft extraction: 已完成。LLM 只能生成 draft artifact；必须经过 reviewer gate 才能进入 serving。
 5. Real vector backend: 已完成。用 `kb_document_vectors` 等价向量表替换 deterministic semantic alias stream，并保持 search response shape。
 6. Mobile evidence UI: 已完成。共享 `EvidenceRefsRow`、`ClaimSheet` 与系统知识卡片统一展示 reviewed evidence refs、claim boundary 和 contraindication 命中；饮食、补剂、运动卡片透传同一套 evidence props。
-7. Release gate: PR 必须跑 domain focused tests、system KB eval runner、JSONL lint/import、compileall。
+7. Release gate: 已完成。`backend/scripts/run_external_health_knowledge_release_gate.py` 统一执行 domain focused tests、隔离 JSONL lint/import + system KB eval runner、compileall。
 
 ## 5. 验收闸门
 
@@ -178,4 +178,4 @@ official / curated source
 
 ## 6. 下一批 backlog
 
-当前 PR0 high-risk golden slice backlog 已清空，Coverage report、draft extraction gate、real vector backend 与 mobile evidence UI 已落地。后续进入 release gate 自动化。
+当前 PR0 high-risk golden slice backlog 已清空，Coverage report、draft extraction gate、real vector backend、mobile evidence UI 与 release gate 自动化均已落地。后续外部知识接入应从新增 source/domain slice 的 reviewed artifact 和 eval case 开始。
