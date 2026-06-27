@@ -193,3 +193,4 @@ official / curated source
 - 慢性鼻炎治疗: 伪麻黄碱/减充血剂与高血压、心悸、心脏病或心血管风险同现时，进入医生/药师复核边界，禁止无复核自行加量或长期使用；已按 reviewed claim + contraindication + eval case 形态接入。
 - 基因解析: BRCA1/BRCA2 DTC 或原始数据提示 pathogenic/likely pathogenic 时，进入遗传咨询和临床级确认检测边界，禁止把 DTC 结果直接作为癌症诊断或手术决策；已按 reviewed claim + contraindication + eval case 形态接入，并收紧 lookup 条件，避免 VUS 仅因基因名命中。
 - Release gate: 2026-06-27 本批后续 slices 导入临时库 841 documents / 3309 edges；lint summary 全 0；全量 system KB eval 46/46 pass。
+- MCP 受控入口: Health MCP Server 新增 `search_reviewed_knowledge`、`lookup_reviewed_knowledge_for_twin`、`get_knowledge_coverage_report`、`get_knowledge_eval_report`，只调用后端 reviewed KB / admin governance API，不把第三方搜索结果作为运行时权威。

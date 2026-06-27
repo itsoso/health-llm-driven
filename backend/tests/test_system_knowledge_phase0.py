@@ -891,6 +891,56 @@ def test_admin_coverage_report_counts_evidence_refs_unsupported_and_feedback(cli
     assert payload["feedback"]["disagree"] == 1
 
 
+def test_admin_eval_report_runs_reviewed_eval_cases(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    db.add_all(
+        [
+            KBDocument(
+                doc_id="claim:c_admin_eval_weight_loss_boundary",
+                doc_type="claim",
+                entity_type="goal",
+                entity_id="weight-loss",
+                title="减重目标只做行为边界",
+                summary="减重目标下只整理行为和趋势，不生成处方或极端饮食。",
+                confidence=0.72,
+                evidence_level="B",
+                applies_when=["twin.goals.weight_loss.active == true"],
+                sources=["guideline:test"],
+                metadata_json={"review_status": "reviewed"},
+            ),
+            KBDocument(
+                doc_id="eval:admin_eval_weight_loss_boundary",
+                doc_type="eval_case",
+                entity_type="goal",
+                entity_id="weight-loss",
+                title="减重目标 eval",
+                metadata_json={
+                    "review_status": "reviewed",
+                    "case_id": "eval:admin_eval_weight_loss_boundary",
+                    "input": {"lookup_twin": {"goals": {"weight_loss": {"active": True}}}},
+                    "expected": {
+                        "required_claim_ids": ["claim:c_admin_eval_weight_loss_boundary"],
+                    },
+                },
+            ),
+        ]
+    )
+    db.commit()
+
+    response = client.get(
+        "/api/v1/admin/knowledge/eval_report?case_id=eval:admin_eval_weight_loss_boundary",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["passed"] == 1
+    assert payload["failed"] == 0
+    assert payload["cases"][0]["case_id"] == "eval:admin_eval_weight_loss_boundary"
+
+
 def test_admin_operations_dashboard_summarizes_kb_health(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
     user.is_admin = True

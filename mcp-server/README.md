@@ -89,7 +89,7 @@ docker ps | grep mcp
 curl -N http://localhost:8808/sse
 ```
 
-## 可用工具（18 个）
+## 可用工具（22 个）
 
 ### 查询工具（10 个）
 | 工具 | 说明 |
@@ -120,6 +120,14 @@ curl -N http://localhost:8808/sse
 | `get_health_analysis` | AI 健康分析 |
 | `get_daily_recommendation` | 每日健康建议 |
 | `get_health_trends` | 健康趋势预测 |
+
+### 知识库治理工具（4 个）
+| 工具 | 说明 |
+|------|------|
+| `search_reviewed_knowledge` | 搜索已审核本地系统知识库，不直出外部搜索结果 |
+| `lookup_reviewed_knowledge_for_twin` | 基于精简 Twin payload 查找 reviewed KB 命中 |
+| `get_knowledge_coverage_report` | 获取系统知识库 coverage report（需 admin token） |
+| `get_knowledge_eval_report` | 运行系统知识库 reviewed eval cases（需 admin token） |
 
 ## 客户端配置
 

@@ -26,6 +26,12 @@ from tools.analysis import (
     get_health_analysis,
     get_health_trends,
 )
+from tools.knowledge import (
+    get_knowledge_coverage_report,
+    get_knowledge_eval_report,
+    lookup_reviewed_knowledge_for_twin,
+    search_reviewed_knowledge,
+)
 
 mcp = FastMCP(
     "Health Management",
@@ -55,6 +61,12 @@ mcp.tool()(record_diet)
 mcp.tool()(get_health_analysis)
 mcp.tool()(get_daily_recommendation)
 mcp.tool()(get_health_trends)
+
+# ---- 知识库治理工具 (4) ----
+mcp.tool()(search_reviewed_knowledge)
+mcp.tool()(lookup_reviewed_knowledge_for_twin)
+mcp.tool()(get_knowledge_coverage_report)
+mcp.tool()(get_knowledge_eval_report)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ from app.api.deps import get_current_user_required
 from app.database import get_db
 from app.models.system_knowledge import KBAudit
 from app.models.user import User
+from app.services.system_knowledge_eval import run_system_kb_eval_cases
 from app.services.system_knowledge_service import (
     get_claim_bundle,
     get_entity_bundle,
@@ -193,6 +194,29 @@ def get_system_knowledge_coverage_report(
             "documents": result["documents"]["total"],
             "specialist_findings": result["specialist_findings"]["total"],
             "unsupported": result["specialist_findings"]["unsupported"],
+        },
+    )
+    return result
+
+
+@admin_router.get("/eval_report", summary="系统知识库 eval case 运行报告")
+def get_system_knowledge_eval_report(
+    case_id: list[str] | None = Query(None),
+    limit: int = Query(50, ge=1, le=10000),
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    result = run_system_kb_eval_cases(db, case_ids=case_id or None, limit=limit)
+    _record_audit(
+        db,
+        doc_id=None,
+        op="eval_report",
+        actor=f"admin:{admin_user.id}",
+        diff={
+            "total": result["total"],
+            "passed": result["passed"],
+            "failed": result["failed"],
+            "case_id_count": len(case_id or []),
         },
     )
     return result
