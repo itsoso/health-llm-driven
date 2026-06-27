@@ -86,6 +86,7 @@ from app.api import (
     fitness,
     calendar,
     health_program,
+    program_templates,
     womens_health,
     vision,
     siri,
@@ -241,6 +242,7 @@ api_router.include_router(schedule.router)
 api_router.include_router(fitness.router)
 api_router.include_router(calendar.router)
 api_router.include_router(health_program.router)
+api_router.include_router(program_templates.router)
 
 # ── Exercise & Activity ────────────────────────────────────────────
 api_router.include_router(workout.router, prefix="/workout", tags=["workout"])
