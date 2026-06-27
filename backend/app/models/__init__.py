@@ -134,6 +134,11 @@ from app.models.data_connection import (
     DataConnection,
     ProvenanceRecord,
 )
+from app.models.health_runtime_governance import (
+    DataSourceQuality,
+    HealthRuntimeControl,
+    UserDataSourcePreference,
+)
 # 智能卧室环境快照 (家居传感器点事件, §11 不进通用 LLM)
 from app.models.bedroom_environment import (
     BedroomAutomationEvent,
@@ -169,6 +174,9 @@ __all__ = [
     "ConsentGrant",
     "ConnectorPolicy",
     "ProvenanceRecord",
+    "DataSourceQuality",
+    "UserDataSourcePreference",
+    "HealthRuntimeControl",
     "BedroomEnvironmentSnapshot",
     "BedroomAutomationEvent",
     "AudioInputEvent",

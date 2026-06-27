@@ -81,6 +81,7 @@ def build_personal_predictions(
         int(p.get("horizon_days") or 999),
         str(p.get("metric") or ""),
     ))
+    predictions = _filter_predictions_by_user_controls(db, user_id, predictions)
     return predictions[: max(1, int(limit or 8))]
 
 
@@ -238,3 +239,17 @@ def _uncertainty_drivers_for_estimate(estimate, cycle) -> List[str]:
     if estimate.confidence in {"low", "med"}:
         drivers.append("wide_interval_or_short_cycle")
     return sorted(set(drivers))
+
+
+def _filter_predictions_by_user_controls(
+    db: Session,
+    user_id: int,
+    predictions: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    try:
+        from app.services.health_runtime_governance import filter_predictions_by_controls
+
+        return filter_predictions_by_controls(db, user_id, predictions)
+    except Exception:  # noqa: BLE001
+        logger.warning("[PersonalPrediction] governance filter failed user=%s", user_id, exc_info=True)
+        return predictions

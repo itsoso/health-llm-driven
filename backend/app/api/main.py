@@ -26,6 +26,7 @@ from app.api import (
     goals,
     data_collection,
     data_connections,
+    health_runtime_governance,
     health_analysis,
     garmin_analysis,
     garmin_timeseries,
@@ -258,6 +259,7 @@ api_router.include_router(withings.router)
 api_router.include_router(devices.router, prefix="/devices", tags=["devices"])
 api_router.include_router(data_collection.router, prefix="/data-collection", tags=["data-collection"])
 api_router.include_router(data_connections.router)
+api_router.include_router(health_runtime_governance.router)
 api_router.include_router(garmin_analysis.router, prefix="/garmin-analysis", tags=["garmin-analysis"])
 api_router.include_router(garmin_import.router)
 api_router.include_router(garmin_timeseries.router, prefix="/garmin", tags=["garmin-timeseries"])
