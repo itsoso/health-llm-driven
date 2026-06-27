@@ -14,23 +14,131 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useTheme, type ColorPalette } from '../hooks/useTheme';
-import { spacing, radii, shadows } from '../constants/theme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaSemantic,
+  revaFonts,
+} from '../constants/revaTheme';
 import { useAgendaToday, useCompleteAgendaItem, useSeedDemo, useSmartAgendaToday } from '../hooks/useAgenda';
 import { isProtocolActionable, MANUAL_CAPTURE, type AgendaItem, type SmartAgendaItem } from '../services/agenda';
+import { buildBoundarySummary, buildTrajectorySummary, buildVerifySummary } from '../services/trajectoryDisplay';
 import { agendaItemPresentation, agendaSummary } from '../utils/agendaPresentation';
 
+// 议程项 tone → 三步临床语义(好不好/信息):正常绿 / 注意琥珀 / 风险红 / 信息蓝 / 中性灰。
 const TONE_COLOR: Record<string, string> = {
-  green: '#34C759',
-  yellow: '#FFCC00',
-  red: '#FF3B30',
-  blue: '#0A84FF',
-  gray: '#8E8E93',
+  green: revaSemantic.normal.fg,
+  yellow: revaSemantic.caution.fg,
+  red: revaSemantic.risk.fg,
+  blue: revaSemantic.info.fg,
+  gray: C.ink3,
 };
 
+// 智能优先面板的绿色装饰 accent。
+const SMART_ACCENT = C.green600;
+
+const summaryStyles = StyleSheet.create({
+  pill: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.65)',
+  },
+  value: { fontFamily: revaFonts.mono, fontSize: 18, fontWeight: '800' },
+  label: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, marginTop: 2, fontWeight: '700' },
+});
+
+// Reva 设计语言:暖 paper 底 / 暖白 surface 卡 / 活力绿 / r-lg 18 / 计数读数走等宽 mono。
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: C.paper },
+  header: { paddingHorizontal: revaSpacing.s4, paddingVertical: revaSpacing.s3 },
+  title: { fontFamily: revaFonts.sans, fontSize: 24, fontWeight: '700', color: C.ink1 },
+  subtitle: { fontFamily: revaFonts.mono, fontSize: 13, color: C.ink2, marginTop: revaSpacing.s1 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: revaSpacing.s7 },
+  muted: { fontFamily: revaFonts.sans, color: C.ink2, fontSize: 14 },
+  retry: { fontFamily: revaFonts.sans, color: C.green500, fontSize: 14, marginTop: revaSpacing.s2 },
+  list: { padding: revaSpacing.s4, gap: revaSpacing.s3 },
+  summaryRow: { flexDirection: 'row', gap: revaSpacing.s2 },
+  smartPanel: {
+    backgroundColor: C.surface,
+    borderRadius: revaRadii.lg,
+    padding: revaSpacing.s4,
+    gap: revaSpacing.s3,
+    ...revaShadows.sm,
+  },
+  smartHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  smartTitleRow: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s1 },
+  smartTitle: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '800', color: C.ink1 },
+  smartMeta: { fontFamily: revaFonts.mono, fontSize: 12, fontWeight: '700', color: C.ink3 },
+  smartLoading: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2 },
+  smartMuted: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, flex: 1 },
+  smartItem: {
+    flexDirection: 'row',
+    gap: revaSpacing.s3,
+    paddingTop: revaSpacing.s3,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+  },
+  smartIndex: {
+    width: 28,
+    height: 28,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  smartIndexText: { fontFamily: revaFonts.mono, fontSize: 13, fontWeight: '800', color: SMART_ACCENT },
+  smartBody: { flex: 1, gap: 4 },
+  smartItemHeader: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2 },
+  smartItemTitle: { fontFamily: revaFonts.sans, flex: 1, fontSize: 15, fontWeight: '800', color: C.ink1 },
+  surfaceBadge: {
+    paddingHorizontal: revaSpacing.s2,
+    paddingVertical: 4,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+  },
+  surfaceBadgeText: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '800', color: SMART_ACCENT },
+  smartLine: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, lineHeight: 18 },
+  smartAction: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '700', color: C.ink1, lineHeight: 18 },
+  smartTrajectory: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '700', color: SMART_ACCENT, lineHeight: 16 },
+  smartVerify: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, lineHeight: 16 },
+  smartBoundary: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, lineHeight: 15 },
+  card: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: C.surface,
+    borderRadius: revaRadii.lg, padding: revaSpacing.s4, gap: revaSpacing.s3, ...revaShadows.sm,
+  },
+  icon: { width: 24, textAlign: 'center' },
+  cardBody: { flex: 1 },
+  cardTitle: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '600', color: C.ink1 },
+  cardStatus: { fontFamily: revaFonts.sans, fontSize: 13, marginTop: 2 },
+  cardDetail: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2 },
+  doneBtn: {
+    width: 36, height: 36, borderRadius: revaRadii.pill, backgroundColor: C.green500,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  manualBtn: {
+    paddingHorizontal: revaSpacing.s3, height: 36, borderRadius: revaRadii.pill,
+    borderWidth: 1, borderColor: C.green500, alignItems: 'center', justifyContent: 'center',
+  },
+  manualBtnText: { fontFamily: revaFonts.sans, color: C.green500, fontSize: 13, fontWeight: '600' },
+  lightWrap: { alignItems: 'center', width: 36, gap: 2 },
+  lightDot: { width: 16, height: 16, borderRadius: revaRadii.pill },
+  lightScore: { fontFamily: revaFonts.mono, fontSize: 11, fontWeight: '600', color: C.ink2 },
+  seedBtn: {
+    marginTop: revaSpacing.s4, backgroundColor: C.green500,
+    paddingHorizontal: revaSpacing.s5, paddingVertical: revaSpacing.s3, borderRadius: revaRadii.pill,
+  },
+  seedBtnText: { fontFamily: revaFonts.sans, color: '#fff', fontSize: 14, fontWeight: '600' },
+});
+
+type AgendaStyles = typeof styles;
+
 export default function AgendaScreen() {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
   const { data, isLoading, isError, refetch, isRefetching } = useAgendaToday();
   const { data: smartData, isLoading: smartLoading } = useSmartAgendaToday(3);
   const complete = useCompleteAgendaItem();
@@ -69,9 +177,9 @@ export default function AgendaScreen() {
   };
 
   const statusColor = (status: string): string => {
-    if (status === 'completed') return c.brand;
-    if (status === 'overdue') return c.red;
-    return c.labelTertiary;
+    if (status === 'completed') return C.green500;
+    if (status === 'overdue') return revaSemantic.risk.fg;
+    return C.ink3;
   };
 
   return (
@@ -82,7 +190,7 @@ export default function AgendaScreen() {
       </View>
 
       {isLoading ? (
-        <View style={styles.center}><ActivityIndicator color={c.brand} /></View>
+        <View style={styles.center}><ActivityIndicator color={C.green500} /></View>
       ) : isError ? (
         <View style={styles.center}>
           <Text style={styles.muted}>加载失败</Text>
@@ -91,16 +199,16 @@ export default function AgendaScreen() {
       ) : (
         <ScrollView
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.green500} />}
         >
           {smartLoading || smartItems.length > 0 ? (
             <SmartAgendaPanel items={smartItems} loading={smartLoading} styles={styles} />
           ) : null}
           {data && data.items.length > 0 ? (
             <View style={styles.summaryRow}>
-              <SummaryPill label="待执行" value={summary.actionable} color={c.brand} />
-              <SummaryPill label="逾期" value={summary.overdue} color={c.red} />
-              <SummaryPill label="建议" value={summary.info} color={c.amber} />
+              <SummaryPill label="待执行" value={summary.actionable} color={C.green500} />
+              <SummaryPill label="逾期" value={summary.overdue} color={revaSemantic.risk.fg} />
+              <SummaryPill label="建议" value={summary.info} color={revaSemantic.caution.fg} />
             </View>
           ) : null}
           {(data?.items ?? []).length === 0 ? (
@@ -129,8 +237,8 @@ export default function AgendaScreen() {
                 statusColor={statusColor}
                 onComplete={onComplete}
                 onManual={onManual}
-                completedColor={c.brand}
-                fallbackColor={c.labelTertiary}
+                completedColor={C.green500}
+                fallbackColor={C.ink3}
               />
             ))
           )}
@@ -154,20 +262,20 @@ function SmartAgendaPanel({
 }: {
   items: SmartAgendaItem[];
   loading: boolean;
-  styles: ReturnType<typeof createStyles>;
+  styles: AgendaStyles;
 }) {
   return (
     <View style={styles.smartPanel}>
       <View style={styles.smartHeader}>
         <View style={styles.smartTitleRow}>
-          <Ionicons name="sparkles-outline" size={18} color="#0E8F66" />
+          <Ionicons name="sparkles-outline" size={18} color={SMART_ACCENT} />
           <Text style={styles.smartTitle}>智能优先处理</Text>
         </View>
         <Text style={styles.smartMeta}>{items.length > 0 ? `${items.length} 项` : '生成中'}</Text>
       </View>
       {loading && items.length === 0 ? (
         <View style={styles.smartLoading}>
-          <ActivityIndicator size="small" color="#0E8F66" />
+          <ActivityIndicator size="small" color={SMART_ACCENT} />
           <Text style={styles.smartMuted}>正在按风险、时间窗和执行端排序…</Text>
         </View>
       ) : (
@@ -185,11 +293,11 @@ function SmartAgendaPanel({
               </View>
               <Text style={styles.smartLine}>{item.why_now}</Text>
               <Text style={styles.smartAction}>{item.do_now}</Text>
-              {Array.isArray(item.verify_by?.metrics) ? (
-                <Text style={styles.smartVerify}>
-                  验证: {(item.verify_by.metrics as string[]).join(' / ')}
-                </Text>
+              {buildTrajectorySummary(item) ? (
+                <Text style={styles.smartTrajectory}>{buildTrajectorySummary(item)}</Text>
               ) : null}
+              {buildVerifySummary(item) ? <Text style={styles.smartVerify}>验证: {buildVerifySummary(item)}</Text> : null}
+              {buildBoundarySummary(item) ? <Text style={styles.smartBoundary}>{buildBoundarySummary(item)}</Text> : null}
             </View>
           </View>
         ))
@@ -209,7 +317,7 @@ function AgendaCard({
   fallbackColor,
 }: {
   item: AgendaItem;
-  styles: ReturnType<typeof createStyles>;
+  styles: AgendaStyles;
   completePending: boolean;
   statusColor: (status: string) => string;
   onComplete: (item: AgendaItem) => void;
@@ -276,100 +384,4 @@ function SummaryPill({ label, value, color }: { label: string; value: number; co
       <Text style={summaryStyles.label}>{label}</Text>
     </View>
   );
-}
-
-const summaryStyles = StyleSheet.create({
-  pill: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 10,
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.65)',
-  },
-  value: { fontSize: 18, fontWeight: '800' },
-  label: { fontSize: 11, color: '#6B7280', marginTop: 2, fontWeight: '700' },
-});
-
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
-    screen: { flex: 1, backgroundColor: c.bgPrimary },
-    header: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-    title: { fontSize: 24, fontWeight: '700', color: c.labelPrimary },
-    subtitle: { fontSize: 13, color: c.labelSecondary, marginTop: spacing.xs },
-    center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: spacing.xxxl },
-    muted: { color: c.labelSecondary, fontSize: 14 },
-    retry: { color: c.brand, fontSize: 14, marginTop: spacing.sm },
-    list: { padding: spacing.lg, gap: spacing.md },
-    summaryRow: { flexDirection: 'row', gap: spacing.sm },
-    smartPanel: {
-      backgroundColor: c.bgCard,
-      borderRadius: radii.lg,
-      padding: spacing.lg,
-      gap: spacing.md,
-      ...shadows.subtle,
-    },
-    smartHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    smartTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-    smartTitle: { fontSize: 17, fontWeight: '800', color: c.labelPrimary },
-    smartMeta: { fontSize: 12, fontWeight: '700', color: c.labelTertiary },
-    smartLoading: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-    smartMuted: { fontSize: 13, color: c.labelSecondary, flex: 1 },
-    smartItem: {
-      flexDirection: 'row',
-      gap: spacing.md,
-      paddingTop: spacing.md,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: c.separator,
-    },
-    smartIndex: {
-      width: 28,
-      height: 28,
-      borderRadius: radii.full,
-      backgroundColor: 'rgba(14,143,102,0.12)',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    smartIndexText: { fontSize: 13, fontWeight: '800', color: '#0E8F66' },
-    smartBody: { flex: 1, gap: 4 },
-    smartItemHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-    smartItemTitle: { flex: 1, fontSize: 15, fontWeight: '800', color: c.labelPrimary },
-    surfaceBadge: {
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 4,
-      borderRadius: radii.full,
-      backgroundColor: 'rgba(14,143,102,0.10)',
-    },
-    surfaceBadgeText: { fontSize: 11, fontWeight: '800', color: '#0E8F66' },
-    smartLine: { fontSize: 13, color: c.labelSecondary, lineHeight: 18 },
-    smartAction: { fontSize: 13, fontWeight: '700', color: c.labelPrimary, lineHeight: 18 },
-    smartVerify: { fontSize: 12, color: c.labelTertiary, lineHeight: 16 },
-    card: {
-      flexDirection: 'row', alignItems: 'center', backgroundColor: c.bgCard,
-      borderRadius: radii.lg, padding: spacing.lg, gap: spacing.md, ...shadows.subtle,
-    },
-    icon: { width: 24, textAlign: 'center' },
-    cardBody: { flex: 1 },
-    cardTitle: { fontSize: 16, fontWeight: '600', color: c.labelPrimary },
-    cardStatus: { fontSize: 13, marginTop: 2 },
-    cardDetail: { fontSize: 12, color: c.labelTertiary, marginTop: 2 },
-    actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-    doneBtn: {
-      width: 36, height: 36, borderRadius: radii.full, backgroundColor: c.brand,
-      alignItems: 'center', justifyContent: 'center',
-    },
-    manualBtn: {
-      paddingHorizontal: spacing.md, height: 36, borderRadius: radii.full,
-      borderWidth: 1, borderColor: c.brand, alignItems: 'center', justifyContent: 'center',
-    },
-    manualBtnText: { color: c.brand, fontSize: 13, fontWeight: '600' },
-    lightWrap: { alignItems: 'center', width: 36, gap: 2 },
-    lightDot: { width: 16, height: 16, borderRadius: radii.full },
-    lightScore: { fontSize: 11, fontWeight: '600', color: c.labelSecondary },
-    seedBtn: {
-      marginTop: spacing.lg, backgroundColor: c.brand,
-      paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: radii.full,
-    },
-    seedBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  });
 }

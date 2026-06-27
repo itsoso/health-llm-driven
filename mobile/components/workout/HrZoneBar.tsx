@@ -1,6 +1,9 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, TextStyle } from 'react-native';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaFonts,
+} from '../../constants/revaTheme';
 import type { HrZoneBucket } from '../../services/workouts';
 
 const ZONE_COLORS: Record<string, string> = {
@@ -20,9 +23,6 @@ interface Props {
 
 /** HR 区间分布: 水平堆叠条 + 每 zone 的分钟数/百分比 */
 export default function HrZoneBar({ zones }: Props) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-
   if (!zones || zones.length === 0) return null;
 
   const total = zones.reduce((s, z) => s + (z.percentage || 0), 0);
@@ -33,7 +33,7 @@ export default function HrZoneBar({ zones }: Props) {
       <View style={styles.barRow}>
         {zones.map((z) => {
           if (!z.percentage) return null;
-          const color = ZONE_COLORS[z.zone] || c.fill;
+          const color = ZONE_COLORS[z.zone] || C.paper2;
           return (
             <View
               key={z.zone}
@@ -45,7 +45,7 @@ export default function HrZoneBar({ zones }: Props) {
       <View style={styles.legend}>
         {zones.map((z) => {
           if (!z.minutes && !z.percentage) return null;
-          const color = ZONE_COLORS[z.zone] || c.fill;
+          const color = ZONE_COLORS[z.zone] || C.paper2;
           return (
             <View key={z.zone} style={styles.legendItem}>
               <View style={[styles.dot, { backgroundColor: color }]} />
@@ -63,21 +63,20 @@ export default function HrZoneBar({ zones }: Props) {
   );
 }
 
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
-    barRow: {
-      flexDirection: 'row',
-      borderRadius: 5,
-      overflow: 'hidden',
-      marginBottom: 10,
-    },
-    legend: { gap: 4 },
-    legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    dot: { width: 10, height: 10, borderRadius: 5 },
-    zoneLabel: { fontSize: 12, color: c.labelSecondary, flex: 1 } as TextStyle,
-    zoneValue: {
-      fontSize: 12, color: c.labelPrimary, fontWeight: '500',
-      fontVariant: ['tabular-nums'] as const,
-    } as TextStyle,
-  });
-}
+// 区间时长/百分比走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
+const styles = StyleSheet.create({
+  barRow: {
+    flexDirection: 'row',
+    borderRadius: 5,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  legend: { gap: 4 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dot: { width: 10, height: 10, borderRadius: 5 },
+  zoneLabel: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, flex: 1 } as TextStyle,
+  zoneValue: {
+    fontFamily: revaFonts.mono, fontSize: 12, color: C.ink1, fontWeight: '500',
+    fontVariant: ['tabular-nums'] as const,
+  } as TextStyle,
+});

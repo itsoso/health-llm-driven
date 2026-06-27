@@ -1,8 +1,14 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { spacing, radii, shadows } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaSemantic,
+  revaFonts,
+} from '../../constants/revaTheme';
 import type { GoalResponse } from '../../services/goals';
 
 interface Props {
@@ -23,14 +29,12 @@ const TYPE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
 };
 
 export default function GoalCard({ goal, onPress, onUpdateProgress }: Props) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-
   const targetVal = goal.target_value ?? 0;
   const currentVal = goal.current_value ?? 0;
   const progress = targetVal > 0 ? Math.min(currentVal / targetVal, 1) : 0;
   const pct = Math.round(progress * 100);
-  const barColor = pct >= 100 ? c.green : pct >= 50 ? c.amber : c.brand;
+  // 进度达标度 → 三步语义:满 100% 正常绿、过半注意琥珀、其余进行中活力绿。
+  const barColor = pct >= 100 ? revaSemantic.normal.fg : pct >= 50 ? revaSemantic.caution.fg : C.green500;
   const icon = TYPE_ICONS[goal.goal_type] || 'flag-outline';
   const daysLeft = goal.end_date ? Math.max(0, Math.ceil((new Date(goal.end_date).getTime() - Date.now()) / 86400000)) : null;
 
@@ -49,7 +53,7 @@ export default function GoalCard({ goal, onPress, onUpdateProgress }: Props) {
         </View>
         {onUpdateProgress && (
           <TouchableOpacity onPress={onUpdateProgress} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="add-circle-outline" size={22} color={c.brand} />
+            <Ionicons name="add-circle-outline" size={22} color={C.green500} />
           </TouchableOpacity>
         )}
       </View>
@@ -61,18 +65,17 @@ export default function GoalCard({ goal, onPress, onUpdateProgress }: Props) {
   );
 }
 
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
-    card: {
-      backgroundColor: c.bgCard, borderRadius: radii.lg,
-      padding: spacing.lg, marginBottom: spacing.md, ...shadows.subtle,
-    },
-    topRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: spacing.sm },
-    iconCircle: { width: 32, height: 32, borderRadius: radii.sm, alignItems: 'center', justifyContent: 'center' },
-    barBg: { height: 6, backgroundColor: c.bgPrimary, borderRadius: 3, overflow: 'hidden' },
-    barFill: { height: 6, borderRadius: 3 },
-    title: { fontSize: 15, fontWeight: '600', color: c.labelPrimary },
-    sub: { fontSize: 12, color: c.labelSecondary, marginTop: 2 },
-    pct: { fontSize: 11, fontWeight: '600', textAlign: 'right', marginTop: 4 },
-  });
-}
+// Reva 设计语言:暖白 surface 卡 / r-lg 18 / 进度数字等宽 mono / light-first 软阴影。
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: C.surface, borderRadius: revaRadii.lg,
+    padding: revaSpacing.s4, marginBottom: revaSpacing.s3, ...revaShadows.sm,
+  },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: revaSpacing.s2 },
+  iconCircle: { width: 32, height: 32, borderRadius: revaRadii.sm, alignItems: 'center', justifyContent: 'center' },
+  barBg: { height: 6, backgroundColor: C.paper2, borderRadius: 3, overflow: 'hidden' },
+  barFill: { height: 6, borderRadius: 3 },
+  title: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '600', color: C.ink1 },
+  sub: { fontFamily: revaFonts.mono, fontSize: 12, color: C.ink2, marginTop: 2 },
+  pct: { fontFamily: revaFonts.mono, fontSize: 11, fontWeight: '600', textAlign: 'right', marginTop: 4 },
+});

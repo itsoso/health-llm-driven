@@ -1,8 +1,13 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { spacing, radii, shadows } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaFonts,
+} from '../../constants/revaTheme';
 import type { GoalResponse } from '../../services/goals';
 
 interface Props {
@@ -13,9 +18,6 @@ interface Props {
 }
 
 export default function ProgressUpdateSheet({ goal, visible, onClose, onSubmit }: Props) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-
   const [value, setValue] = useState('');
   const [notes, setNotes] = useState('');
 
@@ -40,16 +42,16 @@ export default function ProgressUpdateSheet({ goal, visible, onClose, onSubmit }
           <TextInput
             style={styles.input}
             placeholder={`输入新的数值 (${goal?.target_unit || ''})`}
-            placeholderTextColor={c.labelTertiary}
+            placeholderTextColor={C.ink3}
             keyboardType="decimal-pad"
             value={value}
             onChangeText={setValue}
             autoFocus
           />
           <TextInput
-            style={[styles.input, { height: 60 }]}
+            style={[styles.input, styles.notesInput]}
             placeholder="备注（可选）"
-            placeholderTextColor={c.labelTertiary}
+            placeholderTextColor={C.ink3}
             value={notes}
             onChangeText={setNotes}
             multiline
@@ -68,26 +70,26 @@ export default function ProgressUpdateSheet({ goal, visible, onClose, onSubmit }
   );
 }
 
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
-    overlay: { flex: 1, justifyContent: 'flex-end' },
-    backdrop: { flex: 1 },
-    sheet: {
-      backgroundColor: c.bgCard, borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl,
-      padding: spacing.lg, paddingBottom: 40, ...shadows.heavy,
-    },
-    handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: c.labelQuaternary, alignSelf: 'center', marginBottom: spacing.lg },
-    input: {
-      backgroundColor: c.bgPrimary, borderRadius: radii.md,
-      paddingHorizontal: 14, paddingVertical: 12, fontSize: 15,
-      color: c.labelPrimary, marginBottom: spacing.md,
-    },
-    submitBtn: {
-      backgroundColor: c.brand, borderRadius: radii.md,
-      paddingVertical: 14, alignItems: 'center', marginTop: spacing.sm,
-    },
-    title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, marginBottom: 4 },
-    goalName: { fontSize: 13, color: c.labelSecondary, marginBottom: spacing.lg },
-    submitText: { fontSize: 16, fontWeight: '600', color: '#fff' },
-  });
-}
+// Reva 设计语言:暖白 surface sheet / r-xl 圆角 / 数字录入走等宽 mono / 软阴影。
+const styles = StyleSheet.create({
+  overlay: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { flex: 1 },
+  sheet: {
+    backgroundColor: C.surface, borderTopLeftRadius: revaRadii.xl, borderTopRightRadius: revaRadii.xl,
+    padding: revaSpacing.s4, paddingBottom: 40, ...revaShadows.lg,
+  },
+  handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: C.ink4, alignSelf: 'center', marginBottom: revaSpacing.s4 },
+  input: {
+    backgroundColor: C.paper2, borderRadius: revaRadii.md,
+    paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontFamily: revaFonts.mono,
+    color: C.ink1, marginBottom: revaSpacing.s3,
+  },
+  notesInput: { fontFamily: revaFonts.sans, height: 60 },
+  submitBtn: {
+    backgroundColor: C.green500, borderRadius: revaRadii.md,
+    paddingVertical: 14, alignItems: 'center', marginTop: revaSpacing.s2,
+  },
+  title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1, marginBottom: 4 },
+  goalName: { fontFamily: revaFonts.mono, fontSize: 13, color: C.ink2, marginBottom: revaSpacing.s4 },
+  submitText: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '600', color: '#fff' },
+});

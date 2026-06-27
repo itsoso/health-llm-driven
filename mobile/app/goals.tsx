@@ -9,15 +9,17 @@ import { useGoals, useUpdateGoalProgress } from '../hooks/useGoals';
 import { generateGoalsFromAnalysis, type GoalResponse } from '../services/goals';
 import GoalCard from '../components/goals/GoalCard';
 import ProgressUpdateSheet from '../components/goals/ProgressUpdateSheet';
-import { spacing, radii, shadows } from '../constants/theme'
-import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaFonts,
+} from '../constants/revaTheme';
 import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
 import { createGoalsAgentContext } from '../utils/agentContext';
 
 export default function GoalsScreen() {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const router = useRouter();
   const qc = useQueryClient();
   const { data: goals, isLoading, refetch, isRefetching } = useGoals('active');
@@ -52,21 +54,21 @@ export default function GoalsScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={C.ink1} />
         </TouchableOpacity>
         <Text style={txt.title}>健康目标</Text>
         <View style={{ width: 40 }} />
       </View>
 
       {isLoading ? (
-        <ActivityIndicator color={c.brand} style={{ marginTop: 40 }} />
+        <ActivityIndicator color={C.green500} style={{ marginTop: 40 }} />
       ) : (
         <FlatList
           data={goals}
           keyExtractor={i => String(i.id)}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={c.brand} />}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.green500} />}
           ListHeaderComponent={
             <GoalsExecutionHeader
               goals={goals ?? []}
@@ -76,7 +78,7 @@ export default function GoalsScreen() {
           }
           ListEmptyComponent={
             <View style={styles.emptyBox}>
-              <Ionicons name="flag-outline" size={48} color={c.labelQuaternary} />
+              <Ionicons name="flag-outline" size={48} color={C.ink4} />
               <Text style={txt.empty}>暂无目标</Text>
               <Text style={txt.emptyHint}>点击"AI 生成目标"自动创建</Text>
             </View>
@@ -99,9 +101,6 @@ function GoalsExecutionHeader({
   generating: boolean;
   onGenerate: () => void;
 }) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   const weeklyCommitments = goals
     .filter(goal => goal.goal_period === 'weekly' || goal.priority === 1)
     .slice(0, 3);
@@ -116,10 +115,10 @@ function GoalsExecutionHeader({
 
   return (
     <View style={styles.headerStack}>
-      <View style={[styles.commitmentPanel, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={[styles.commitmentPanel, { backgroundColor: C.surface, borderColor: C.line }]}>
         <View style={styles.panelTitleRow}>
-          <View style={[styles.panelIcon, { backgroundColor: c.brandLight }]}>
-            <Ionicons name="flag-outline" size={17} color={c.brand} />
+          <View style={[styles.panelIcon, { backgroundColor: C.green50 }]}>
+            <Ionicons name="flag-outline" size={17} color={C.green500} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={txt.panelTitle}>本周承诺</Text>
@@ -140,10 +139,10 @@ function GoalsExecutionHeader({
         )}
       </View>
 
-      <View style={[styles.todayActionPanel, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
+      <View style={[styles.todayActionPanel, { backgroundColor: C.surface, borderColor: C.line }]}>
         <View style={styles.panelTitleRow}>
-          <View style={[styles.panelIcon, { backgroundColor: `${c.green}18` }]}>
-            <Ionicons name="checkmark-circle-outline" size={17} color={c.green} />
+          <View style={[styles.panelIcon, { backgroundColor: `${C.green500}18` }]}>
+            <Ionicons name="checkmark-circle-outline" size={17} color={C.green500} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={txt.panelTitle}>今日动作</Text>
@@ -167,7 +166,7 @@ function GoalsExecutionHeader({
 
       <View style={styles.actionRow}>
         <TouchableOpacity style={styles.actionBtn} onPress={onGenerate} disabled={generating} activeOpacity={0.7}>
-          <Ionicons name="sparkles-outline" size={18} color={c.brand} />
+          <Ionicons name="sparkles-outline" size={18} color={C.green500} />
           <Text style={txt.actionText}>{generating ? 'AI 分析中...' : 'AI 生成目标'}</Text>
         </TouchableOpacity>
         <AgentFeedbackLink
@@ -189,26 +188,27 @@ function formatGoalProgress(goal: GoalResponse): string {
   return `${goal.current_value}/${goal.target_value}${unit}`;
 }
 
-const createStyles = (c: ColorPalette) => StyleSheet.create({
-  safe: { flex: 1, backgroundColor: c.bgPrimary },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+// Reva 设计语言:暖 paper 底 / 暖白 surface 卡 / 活力绿 / r-lg 18 / 进度数字等宽 mono。
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.paper },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: revaSpacing.s3, paddingVertical: revaSpacing.s2 },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  list: { padding: spacing.lg, paddingBottom: 100 },
-  headerStack: { gap: spacing.md, marginBottom: spacing.lg },
+  list: { padding: revaSpacing.s4, paddingBottom: 100 },
+  headerStack: { gap: revaSpacing.s3, marginBottom: revaSpacing.s4 },
   commitmentPanel: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    gap: spacing.sm,
-    ...shadows.subtle,
+    borderRadius: revaRadii.lg,
+    padding: revaSpacing.s3,
+    gap: revaSpacing.s2,
+    ...revaShadows.sm,
   },
   todayActionPanel: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    gap: spacing.sm,
+    borderRadius: revaRadii.lg,
+    padding: revaSpacing.s3,
+    gap: revaSpacing.s2,
   },
-  panelTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  panelTitleRow: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2 },
   panelIcon: {
     width: 34,
     height: 34,
@@ -219,36 +219,37 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
   commitmentRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: revaSpacing.s2,
     paddingVertical: 5,
   },
   todayActionRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: spacing.sm,
+    gap: revaSpacing.s2,
     paddingVertical: 5,
   },
-  actionRow: { marginBottom: spacing.lg },
+  actionRow: { marginBottom: revaSpacing.s4 },
   actionBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: c.bgCard, borderRadius: radii.lg,
-    padding: spacing.lg, ...shadows.subtle,
+    backgroundColor: C.surface, borderRadius: revaRadii.lg,
+    padding: revaSpacing.s4, ...revaShadows.sm,
   },
-  agentLink: { marginTop: spacing.sm },
+  agentLink: { marginTop: revaSpacing.s2 },
   emptyBox: { alignItems: 'center', gap: 8, paddingVertical: 60 },
 });
 
-const createTxt = (c: ColorPalette) => ({
-  title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
-  panelTitle: { fontSize: 16, fontWeight: '800', color: c.labelPrimary } as TextStyle,
-  panelSub: { fontSize: 12, color: c.labelTertiary, marginTop: 2 } as TextStyle,
-  commitmentTitle: { flex: 1, fontSize: 14, fontWeight: '700', color: c.labelPrimary } as TextStyle,
-  commitmentProgress: { fontSize: 12, fontWeight: '800', color: c.brand } as TextStyle,
-  todayActionIndex: { width: 18, fontSize: 12, fontWeight: '900', color: c.green, textAlign: 'center' } as TextStyle,
-  todayActionText: { fontSize: 14, fontWeight: '700', color: c.labelPrimary, lineHeight: 19 } as TextStyle,
-  todayActionGoal: { fontSize: 12, color: c.labelTertiary, marginTop: 2 } as TextStyle,
-  emptyInline: { fontSize: 13, color: c.labelTertiary, lineHeight: 18 } as TextStyle,
-  actionText: { fontSize: 15, fontWeight: '600', color: c.brand } as TextStyle,
-  empty: { fontSize: 16, fontWeight: '600', color: c.labelTertiary } as TextStyle,
-  emptyHint: { fontSize: 13, color: c.labelQuaternary } as TextStyle,
-});
+// 进度/计数/序号走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
+const txt = {
+  title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1, flex: 1, textAlign: 'center' } as TextStyle,
+  panelTitle: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '800', color: C.ink1 } as TextStyle,
+  panelSub: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,
+  commitmentTitle: { fontFamily: revaFonts.sans, flex: 1, fontSize: 14, fontWeight: '700', color: C.ink1 } as TextStyle,
+  commitmentProgress: { fontFamily: revaFonts.mono, fontSize: 12, fontWeight: '800', color: C.green500 } as TextStyle,
+  todayActionIndex: { fontFamily: revaFonts.mono, width: 18, fontSize: 12, fontWeight: '900', color: C.green500, textAlign: 'center' } as TextStyle,
+  todayActionText: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '700', color: C.ink1, lineHeight: 19 } as TextStyle,
+  todayActionGoal: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,
+  emptyInline: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink3, lineHeight: 18 } as TextStyle,
+  actionText: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '600', color: C.green500 } as TextStyle,
+  empty: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '600', color: C.ink3 } as TextStyle,
+  emptyHint: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink4 } as TextStyle,
+};

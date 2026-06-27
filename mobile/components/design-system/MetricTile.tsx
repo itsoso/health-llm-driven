@@ -1,8 +1,13 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable, TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { spacing, radii, shadows } from '../../constants/theme';
-import { useTheme, type ColorPalette } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaFonts,
+} from '../../constants/revaTheme';
 
 interface Props {
   label: string;
@@ -16,9 +21,6 @@ interface Props {
 }
 
 export default function MetricTile({ label, value, unit, subtitle, icon, color, tintColor, onPress }: Props) {
-  const { c } = useTheme();
-  const styles = React.useMemo(() => createStyles(c), [c]);
-  const txt = React.useMemo(() => createTxt(c), [c]);
   const content = (
     <>
       <View style={[styles.iconCircle, { backgroundColor: tintColor }]}>
@@ -60,22 +62,23 @@ export default function MetricTile({ label, value, unit, subtitle, icon, color, 
   );
 }
 
-const createStyles = (c: ColorPalette) => StyleSheet.create({
+// Reva 设计语言:暖白 surface 卡 / r-md / 数字等宽 mono / light-first 软阴影。
+const styles = StyleSheet.create({
   tile: {
-    backgroundColor: c.bgCard,
-    borderRadius: radii.md,
-    padding: spacing.md,
+    backgroundColor: C.surface,
+    borderRadius: revaRadii.md,
+    padding: revaSpacing.s3,
     width: '48%',
-    ...shadows.subtle,
+    ...revaShadows.sm,
   },
   pressed: { opacity: 0.85, transform: [{ scale: 0.97 }] },
   iconCircle: {
     width: 28,
     height: 28,
-    borderRadius: radii.sm,
+    borderRadius: revaRadii.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: revaSpacing.s2,
   },
   valueRow: {
     flexDirection: 'row',
@@ -84,9 +87,10 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
   },
 });
 
-const createTxt = (c: ColorPalette) => ({
-  label: { fontSize: 11, fontWeight: '500', color: c.labelSecondary, marginBottom: 2 } as TextStyle,
-  value: { fontSize: 20, fontWeight: '700', fontVariant: ['tabular-nums'] } as TextStyle,
-  unit: { fontSize: 13, color: c.labelSecondary } as TextStyle,
-  subtitle: { fontSize: 11, fontWeight: '500', color: c.labelTertiary, marginTop: 2 } as TextStyle,
-});
+// 指标值/单位走 IBM Plex Mono = Reva 等宽 signature;标签/副标走 Manrope/ink。
+const txt = {
+  label: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '500', color: C.ink2, marginBottom: 2 } as TextStyle,
+  value: { fontFamily: revaFonts.mono, fontSize: 20, fontWeight: '700', fontVariant: ['tabular-nums'] } as TextStyle,
+  unit: { fontFamily: revaFonts.mono, fontSize: 13, color: C.ink2 } as TextStyle,
+  subtitle: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '500', color: C.ink3, marginTop: 2 } as TextStyle,
+};

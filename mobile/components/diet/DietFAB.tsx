@@ -1,9 +1,18 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { shadows } from '../../constants/theme';
-import { ColorPalette, useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaShadows,
+} from '../../constants/revaTheme';
+
+// 三种录入方式的类目装饰色(区分"哪种录入",非"好坏"):语音蓝 / 文字琥珀 / 拍照绿。
+const CAP_HUES = {
+  voice: { fg: C.blue500, bg: C.blue50 },
+  text: { fg: '#C98A1E', bg: '#F6ECD9' },
+  photo: { fg: C.green500, bg: C.green50 },
+} as const;
 
 interface Props {
   onPhoto: () => void;
@@ -12,8 +21,6 @@ interface Props {
 }
 
 export default function DietFAB({ onPhoto, onText, onVoice }: Props) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
   const [open, setOpen] = useState(false);
   const anim = React.useRef(new Animated.Value(0)).current;
 
@@ -32,24 +39,24 @@ export default function DietFAB({ onPhoto, onText, onVoice }: Props) {
   return (
     <View style={styles.container} pointerEvents="box-none">
       <Animated.View style={[styles.subFab, { transform: [{ translateY: voiceY }], opacity: anim }]}>
-        <TouchableOpacity style={[styles.subBtn, { backgroundColor: c.tintBlue }]}
+        <TouchableOpacity style={[styles.subBtn, { backgroundColor: CAP_HUES.voice.bg }]}
           onPress={() => { toggle(); onVoice(); }} activeOpacity={0.7}
           accessibilityRole="button" accessibilityLabel="语音记录饮食">
-          <Ionicons name="mic-outline" size={20} color={c.blue} />
+          <Ionicons name="mic-outline" size={20} color={CAP_HUES.voice.fg} />
         </TouchableOpacity>
       </Animated.View>
       <Animated.View style={[styles.subFab, { transform: [{ translateY: textY }], opacity: anim }]}>
-        <TouchableOpacity style={[styles.subBtn, { backgroundColor: c.tintAmber }]}
+        <TouchableOpacity style={[styles.subBtn, { backgroundColor: CAP_HUES.text.bg }]}
           onPress={() => { toggle(); onText(); }} activeOpacity={0.7}
           accessibilityRole="button" accessibilityLabel="文字记录饮食">
-          <Ionicons name="text-outline" size={20} color={c.amber} />
+          <Ionicons name="text-outline" size={20} color={CAP_HUES.text.fg} />
         </TouchableOpacity>
       </Animated.View>
       <Animated.View style={[styles.subFab, { transform: [{ translateY: photoY }], opacity: anim }]}>
-        <TouchableOpacity style={[styles.subBtn, { backgroundColor: c.tintGreen }]}
+        <TouchableOpacity style={[styles.subBtn, { backgroundColor: CAP_HUES.photo.bg }]}
           onPress={() => { toggle(); onPhoto(); }} activeOpacity={0.7}
           accessibilityRole="button" accessibilityLabel="拍照记录饮食">
-          <Ionicons name="camera-outline" size={20} color={c.green} />
+          <Ionicons name="camera-outline" size={20} color={CAP_HUES.photo.fg} />
         </TouchableOpacity>
       </Animated.View>
       <TouchableOpacity style={styles.mainFab} onPress={toggle} activeOpacity={0.8}
@@ -62,19 +69,17 @@ export default function DietFAB({ onPhoto, onText, onVoice }: Props) {
   );
 }
 
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
-    container: { position: 'absolute', bottom: 110, right: 20, alignItems: 'center' },
-    mainFab: {
-      width: 56, height: 56, borderRadius: 28,
-      backgroundColor: c.brand, alignItems: 'center', justifyContent: 'center',
-      ...shadows.heavy,
-    },
-    subFab: { position: 'absolute', bottom: 0 },
-    subBtn: {
-      width: 44, height: 44, borderRadius: 22,
-      alignItems: 'center', justifyContent: 'center',
-      ...shadows.medium,
-    },
-  });
-}
+const styles = StyleSheet.create({
+  container: { position: 'absolute', bottom: 110, right: 20, alignItems: 'center' },
+  mainFab: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: C.green500, alignItems: 'center', justifyContent: 'center',
+    ...revaShadows.md,
+  },
+  subFab: { position: 'absolute', bottom: 0 },
+  subBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
+    ...revaShadows.sm,
+  },
+});

@@ -18,8 +18,23 @@ import { getVoiceStyle, loadVoiceStyle } from '../services/voiceStyle';
 import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { sharePlainText } from '../utils/share';
 import { createWorkoutDetailAgentContext, pushChatWithContext } from '../utils/agentContext';
-import { spacing, radii } from '../constants/theme';
-import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaFonts,
+} from '../constants/revaTheme';
+
+// 详细指标的类目装饰色(区分"哪个指标",非"好坏"):各指标一个 hue + tint。
+const HUES = {
+  red: { fg: '#D5503A', bg: '#F7E4E0' },
+  orange: { fg: '#C97A2E', bg: '#F6E9DA' },
+  teal: { fg: '#2F9E8F', bg: '#E0EFEC' },
+  green: { fg: C.green500, bg: C.green50 },
+  blue: { fg: C.blue500, bg: C.blue50 },
+  amber: { fg: '#C98A1E', bg: '#F6ECD9' },
+  purple: { fg: '#7C5CBF', bg: '#EDE7F6' },
+} as const;
 
 interface RoutePoint { lat: number; lng: number; time?: number }
 
@@ -43,14 +58,13 @@ function RouteMap({
   onTouchStart?: () => void;
   onTouchEnd?: () => void;
 }) {
-  const { c } = useTheme();
   const points = useMemo(() => parseRoutePoints(routeJson), [routeJson]);
 
   // 速度渐变分段: 把 points 切成 ~20 段, 用 pace_timeline 对每段取平均配速
   const coloredSegments = useMemo(() => {
     const coords = points.map(p => ({ latitude: p.lat, longitude: p.lng }));
     if (!paceTimeline || paceTimeline.length < 2 || !points[0]?.time) {
-      return [{ coords, color: c.brand }];
+      return [{ coords, color: C.green500 }];
     }
     const paces = paceTimeline.map(p => p.pace);
     const minPace = Math.min(...paces);
@@ -78,8 +92,8 @@ function RouteMap({
         : (minPace + maxPace) / 2;
       segs.push({ coords: slice, color: barColor(avgPace) });
     }
-    return segs.length > 0 ? segs : [{ coords, color: c.brand }];
-  }, [points, paceTimeline, c]);
+    return segs.length > 0 ? segs : [{ coords, color: C.green500 }];
+  }, [points, paceTimeline]);
 
   if (points.length < 2) return null;
 
@@ -91,9 +105,9 @@ function RouteMap({
   const padLng = (maxLng - minLng) * 0.15 || 0.002;
 
   return (
-    <HealthCard title="运动轨迹" icon="map-outline" iconColor={c.blue} iconBg={c.tintBlue}>
+    <HealthCard title="运动轨迹" icon="map-outline" iconColor={C.blue500} iconBg={C.blue50}>
       <View
-        style={{ borderRadius: radii.md, overflow: 'hidden', height: 220 }}
+        style={{ borderRadius: revaRadii.md, overflow: 'hidden', height: 220 }}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
         onTouchCancel={onTouchEnd}
@@ -129,11 +143,10 @@ function RouteMap({
 }
 
 function LegendDot({ color, label }: { color: string; label: string }) {
-  const { c } = useTheme();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
       <View style={{ width: 10, height: 3, borderRadius: 2, backgroundColor: color }} />
-      <Text style={{ fontSize: 11, color: c.labelTertiary }}>{label}</Text>
+      <Text style={{ fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3 }}>{label}</Text>
     </View>
   );
 }
@@ -177,10 +190,6 @@ const WORKOUT_TYPE_LABEL: Record<string, string> = {
 
 export default function WorkoutDetailScreen() {
   const router = useRouter();
-  const { c, isDark } = useTheme();
-  const S = useMemo(() => styles(c), [c]);
-  const T = useMemo(() => txt(c), [c]);
-  const MD = useMemo(() => mdStyles(c), [c]);
   const { id } = useLocalSearchParams<{ id: string }>();
   const workoutId = parseInt(id || '0');
   const { data: workout, isLoading } = useWorkoutDetail(workoutId);
@@ -426,8 +435,8 @@ export default function WorkoutDetailScreen() {
   if (isLoading) {
     return (
       <SafeAreaView style={S.safe} edges={['top']}>
-        <StatusBar barStyle="dark-content" backgroundColor={c.bgPrimary} translucent={false} />
-        <ActivityIndicator color={c.brand} style={{ marginTop: 60 }} />
+        <StatusBar barStyle="dark-content" backgroundColor={C.paper} translucent={false} />
+        <ActivityIndicator color={C.green500} style={{ marginTop: 60 }} />
       </SafeAreaView>
     );
   }
@@ -435,10 +444,10 @@ export default function WorkoutDetailScreen() {
   if (!workout) {
     return (
       <SafeAreaView style={S.safe} edges={['top']}>
-        <StatusBar barStyle="dark-content" backgroundColor={c.bgPrimary} translucent={false} />
+        <StatusBar barStyle="dark-content" backgroundColor={C.paper} translucent={false} />
         <View style={S.header}>
           <TouchableOpacity onPress={() => router.back()} style={S.backBtn}>
-            <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
+            <Ionicons name="chevron-back" size={24} color={C.ink1} />
           </TouchableOpacity>
           <Text style={T.title}>运动详情</Text>
           <View style={{ width: 40 }} />
@@ -464,14 +473,14 @@ export default function WorkoutDetailScreen() {
 
   return (
     <SafeAreaView style={S.safe} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor={c.bgPrimary} translucent={false} />
+      <StatusBar barStyle="dark-content" backgroundColor={C.paper} translucent={false} />
       <View style={S.header}>
         <TouchableOpacity onPress={() => router.back()} style={S.backBtn} hitSlop={8}>
-          <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
+          <Ionicons name="chevron-back" size={24} color={C.ink1} />
         </TouchableOpacity>
         <Text style={T.title} numberOfLines={1}>{workout.workout_name || workoutTypeLabel}</Text>
         <TouchableOpacity onPress={handleShare} style={S.backBtn} hitSlop={8} accessibilityLabel="分享">
-          <Ionicons name="share-outline" size={22} color={c.labelPrimary} />
+          <Ionicons name="share-outline" size={22} color={C.ink1} />
         </TouchableOpacity>
       </View>
 
@@ -497,14 +506,14 @@ export default function WorkoutDetailScreen() {
 
         {/* HR zones */}
         {chart?.heart_rate_zones && chart.heart_rate_zones.length > 0 && (
-          <HealthCard title="心率区间" icon="stats-chart-outline" iconColor={c.brand} iconBg={c.brandLight}>
+          <HealthCard title="心率区间" icon="stats-chart-outline" iconColor={C.green500} iconBg={C.green50}>
             <HrZoneBar zones={chart.heart_rate_zones} />
           </HealthCard>
         )}
 
         {/* 配速分段 */}
         {chart?.pace_timeline && chart.pace_timeline.length > 1 && distanceKm && distanceKm >= 1 && (
-          <HealthCard title="公里配速" icon="speedometer-outline" iconColor={c.purple} iconBg={c.tintPurple}>
+          <HealthCard title="公里配速" icon="speedometer-outline" iconColor={HUES.purple.fg} iconBg={HUES.purple.bg}>
             <PaceBars
               paceTimeline={chart.pace_timeline}
               totalDistanceKm={distanceKm}
@@ -524,24 +533,24 @@ export default function WorkoutDetailScreen() {
         )}
 
         {/* 详细指标 — 2 列 grid, 有数据才展示 chip, 全空 fallback 提示 */}
-        <HealthCard title="详细指标" icon="analytics-outline" iconColor={c.brand} iconBg={c.brandLight}>
+        <HealthCard title="详细指标" icon="analytics-outline" iconColor={C.green500} iconBg={C.green50}>
           {(() => {
             const metrics: { label: string; value: string; icon: keyof typeof Ionicons.glyphMap; color: string; bg: string }[] = [];
-            if (workout.calories != null) metrics.push({ label: '卡路里', value: `${workout.calories}`, icon: 'flame-outline', color: c.red, bg: c.tintRed });
+            if (workout.calories != null) metrics.push({ label: '卡路里', value: `${workout.calories}`, icon: 'flame-outline', color: HUES.red.fg, bg: HUES.red.bg });
             if (workout.max_heart_rate != null) metrics.push({ label: '最大心率', value: `${workout.max_heart_rate} bpm`, icon: 'heart-outline', color: '#FF5252', bg: '#FFE5E5' });
-            if (workout.avg_cadence != null) metrics.push({ label: '平均步频', value: `${workout.avg_cadence} spm`, icon: 'walk-outline', color: c.orange, bg: c.tintOrange });
-            if (workout.avg_stride_length_cm != null) metrics.push({ label: '平均步幅', value: `${workout.avg_stride_length_cm.toFixed(0)} cm`, icon: 'resize-outline', color: c.teal, bg: c.tintTeal });
-            if (workout.elevation_gain_meters != null) metrics.push({ label: '累计爬升', value: `${workout.elevation_gain_meters.toFixed(0)} m`, icon: 'trending-up-outline', color: c.green, bg: c.tintGreen });
-            if (workout.training_effect_aerobic != null) metrics.push({ label: '有氧训练', value: workout.training_effect_aerobic.toFixed(1), icon: 'pulse-outline', color: c.blue, bg: c.tintBlue });
-            if (workout.training_effect_anaerobic != null) metrics.push({ label: '无氧训练', value: workout.training_effect_anaerobic.toFixed(1), icon: 'flash-outline', color: c.amber, bg: c.tintAmber });
-            if (workout.vo2max != null) metrics.push({ label: 'VO2max', value: workout.vo2max.toFixed(1), icon: 'fitness-outline', color: c.purple, bg: c.tintPurple });
-            if (workout.training_load != null) metrics.push({ label: '训练负荷', value: String(workout.training_load), icon: 'barbell-outline', color: c.brand, bg: c.brandLight });
-            if (workout.steps != null) metrics.push({ label: '步数', value: String(workout.steps), icon: 'footsteps-outline', color: c.orange, bg: c.tintOrange });
+            if (workout.avg_cadence != null) metrics.push({ label: '平均步频', value: `${workout.avg_cadence} spm`, icon: 'walk-outline', color: HUES.orange.fg, bg: HUES.orange.bg });
+            if (workout.avg_stride_length_cm != null) metrics.push({ label: '平均步幅', value: `${workout.avg_stride_length_cm.toFixed(0)} cm`, icon: 'resize-outline', color: HUES.teal.fg, bg: HUES.teal.bg });
+            if (workout.elevation_gain_meters != null) metrics.push({ label: '累计爬升', value: `${workout.elevation_gain_meters.toFixed(0)} m`, icon: 'trending-up-outline', color: HUES.green.fg, bg: HUES.green.bg });
+            if (workout.training_effect_aerobic != null) metrics.push({ label: '有氧训练', value: workout.training_effect_aerobic.toFixed(1), icon: 'pulse-outline', color: HUES.blue.fg, bg: HUES.blue.bg });
+            if (workout.training_effect_anaerobic != null) metrics.push({ label: '无氧训练', value: workout.training_effect_anaerobic.toFixed(1), icon: 'flash-outline', color: HUES.amber.fg, bg: HUES.amber.bg });
+            if (workout.vo2max != null) metrics.push({ label: 'VO2max', value: workout.vo2max.toFixed(1), icon: 'fitness-outline', color: HUES.purple.fg, bg: HUES.purple.bg });
+            if (workout.training_load != null) metrics.push({ label: '训练负荷', value: String(workout.training_load), icon: 'barbell-outline', color: HUES.green.fg, bg: HUES.green.bg });
+            if (workout.steps != null) metrics.push({ label: '步数', value: String(workout.steps), icon: 'footsteps-outline', color: HUES.orange.fg, bg: HUES.orange.bg });
 
             if (metrics.length === 0) {
               return (
                 <View style={S.emptyMetrics}>
-                  <Ionicons name="information-circle-outline" size={24} color={c.labelTertiary} />
+                  <Ionicons name="information-circle-outline" size={24} color={C.ink3} />
                   <Text style={T.placeholder}>这次运动没有记录额外指标</Text>
                 </View>
               );
@@ -568,13 +577,13 @@ export default function WorkoutDetailScreen() {
         <HealthCard
           title="AI 分析"
           icon="sparkles-outline"
-          iconColor={c.purple}
-          iconBg={c.tintPurple}
+          iconColor={HUES.purple.fg}
+          iconBg={HUES.purple.bg}
           rightAccessory={
             // 只放一个 badge, 按钮移到内容上方 toolbar (避免 header 过挤)
             hasAnalysis ? (
-              <View style={[S.cacheBadge, fromCache ? null : { backgroundColor: '#E8F0FE' }]}>
-                <Text style={[T.cacheBadgeText, fromCache ? null : { color: c.blue }]}>
+              <View style={[S.cacheBadge, fromCache ? null : { backgroundColor: C.blue50 }]}>
+                <Text style={[T.cacheBadgeText, fromCache ? null : { color: C.blue500 }]}>
                   {fromCache ? '已保存' : '新生成'}
                 </Text>
               </View>
@@ -591,7 +600,7 @@ export default function WorkoutDetailScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="跟 Agent 复盘本次运动"
               >
-                <Ionicons name="chatbubble-ellipses-outline" size={15} color={c.brand} />
+                <Ionicons name="chatbubble-ellipses-outline" size={15} color={C.green500} />
                 <Text style={[T.agentReviewBtn, { marginLeft: 4 }]}>跟 Agent 复盘这次</Text>
               </TouchableOpacity>
               {hasAnalysis && !analyzing && !postAnalyzing && (
@@ -602,9 +611,9 @@ export default function WorkoutDetailScreen() {
                   style={S.aiToolBtn}
                 >
                   {speaking ? (
-                    <ActivityIndicator size="small" color={c.purple} />
+                    <ActivityIndicator size="small" color={HUES.purple.fg} />
                   ) : (
-                    <Ionicons name="volume-high-outline" size={15} color={c.purple} />
+                    <Ionicons name="volume-high-outline" size={15} color={HUES.purple.fg} />
                   )}
                   <Text style={[T.reanalyzeBtn, { marginLeft: 4 }]}>
                     {speaking ? '播报中' : '听一下'}
@@ -617,7 +626,7 @@ export default function WorkoutDetailScreen() {
                   activeOpacity={0.7}
                   style={S.aiToolBtn}
                 >
-                  <Ionicons name="refresh-outline" size={15} color={c.brand} />
+                  <Ionicons name="refresh-outline" size={15} color={C.green500} />
                   <Text style={[T.reanalyzeBtn, { marginLeft: 4 }]}>重新分析</Text>
                 </TouchableOpacity>
               )}
@@ -625,9 +634,9 @@ export default function WorkoutDetailScreen() {
                 <TouchableOpacity
                   onPress={() => handlePostAnalysis(false)}
                   activeOpacity={0.7}
-                  style={[S.aiToolBtn, { backgroundColor: c.brandLight }]}
+                  style={[S.aiToolBtn, { backgroundColor: C.green50 }]}
                 >
-                  <Ionicons name="sparkles-outline" size={15} color={c.brand} />
+                  <Ionicons name="sparkles-outline" size={15} color={C.green500} />
                   <Text style={[T.analyzeBtn, { marginLeft: 4 }]}>开始分析</Text>
                 </TouchableOpacity>
               )}
@@ -636,7 +645,7 @@ export default function WorkoutDetailScreen() {
 
           {(analyzing || postAnalyzing) ? (
             <View style={{ alignItems: 'center', paddingVertical: 16, gap: 8 }}>
-              <ActivityIndicator color={c.purple} />
+              <ActivityIndicator color={HUES.purple.fg} />
               <Text style={T.placeholder}>AI 正在分析运动数据...</Text>
             </View>
           ) : postContent ? (
@@ -648,25 +657,25 @@ export default function WorkoutDetailScreen() {
               {analysis.training_effect_summary ? <Text style={T.analysisText}>{analysis.training_effect_summary}</Text> : null}
               {analysis.recovery_recommendation ? (
                 <View style={S.tipBox}>
-                  <Ionicons name="leaf-outline" size={14} color={c.green} />
+                  <Ionicons name="leaf-outline" size={14} color={C.green500} />
                   <Text style={T.tipText}>{analysis.recovery_recommendation}</Text>
                 </View>
               ) : null}
               {analysis.next_workout_suggestion ? (
                 <View style={S.tipBox}>
-                  <Ionicons name="fitness-outline" size={14} color={c.brand} />
+                  <Ionicons name="fitness-outline" size={14} color={C.green500} />
                   <Text style={T.tipText}>{analysis.next_workout_suggestion}</Text>
                 </View>
               ) : null}
               {(analysis.key_insights || []).map((t, i) => (
                 <View key={`insight-${i}`} style={S.tipBox}>
-                  <Ionicons name="sparkles-outline" size={14} color={c.purple} />
+                  <Ionicons name="sparkles-outline" size={14} color={HUES.purple.fg} />
                   <Text style={T.tipText}>{t}</Text>
                 </View>
               ))}
               {(analysis.improvement_tips || []).map((t, i) => (
                 <View key={`tip-${i}`} style={S.tipBox}>
-                  <Ionicons name="bulb-outline" size={14} color={c.amber} />
+                  <Ionicons name="bulb-outline" size={14} color={HUES.amber.fg} />
                   <Text style={T.tipText}>{t}</Text>
                 </View>
               ))}
@@ -683,9 +692,6 @@ export default function WorkoutDetailScreen() {
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
-  const { c } = useTheme();
-  const S = useMemo(() => styles(c), [c]);
-  const T = useMemo(() => txt(c), [c]);
   return (
     <View style={S.detailRow}>
       <Text style={T.detailLabel}>{label}</Text>
@@ -694,101 +700,104 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-const styles = (c: ColorPalette) => StyleSheet.create({
-  safe: { flex: 1, backgroundColor: c.bgPrimary },
+// Reva 设计语言:暖 paper 底 / 暖白 surface 卡 / 活力绿 / r-md / 指标值走等宽 mono。
+const S = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.paper },
   header: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: revaSpacing.s3,
+    paddingVertical: revaSpacing.s2,
     // 顶部多垫一点, 让 status bar 时间和 back 按钮不挤在一起
-    paddingTop: Platform.OS === 'ios' ? 4 : spacing.sm,
-    backgroundColor: c.bgPrimary,
+    paddingTop: Platform.OS === 'ios' ? 4 : revaSpacing.s2,
+    backgroundColor: C.paper,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: c.separator,
+    borderBottomColor: C.line,
   },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  content: { padding: spacing.lg },
+  content: { padding: revaSpacing.s4 },
   detailRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.separator,
+    paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line,
   },
   // 详细指标 2 列 grid
   metricGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    gap: revaSpacing.s2,
   },
   metricChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: revaSpacing.s2,
     // (100% - gap) / 2 — flex: '48%' 在 RN 上不稳, 直接 minWidth
     flexBasis: '48%',
     flexGrow: 1,
-    backgroundColor: c.bgPrimary,
-    borderRadius: radii.md,
+    backgroundColor: C.paper2,
+    borderRadius: revaRadii.md,
     paddingHorizontal: 10,
     paddingVertical: 10,
     minHeight: 52,
   },
   metricIcon: {
-    width: 32, height: 32, borderRadius: radii.sm,
+    width: 32, height: 32, borderRadius: revaRadii.sm,
     alignItems: 'center', justifyContent: 'center',
   },
   emptyMetrics: {
     alignItems: 'center',
-    paddingVertical: spacing.lg,
+    paddingVertical: revaSpacing.s4,
     gap: 6,
   },
-  tipBox: { flexDirection: 'row', gap: 6, alignItems: 'flex-start', backgroundColor: c.bgPrimary, borderRadius: radii.sm, padding: spacing.sm },
+  tipBox: { flexDirection: 'row', gap: 6, alignItems: 'flex-start', backgroundColor: C.paper2, borderRadius: revaRadii.sm, padding: revaSpacing.s2 },
   cacheBadge: {
-    backgroundColor: c.tintGreen, borderRadius: radii.full,
+    backgroundColor: C.green50, borderRadius: revaRadii.pill,
     paddingHorizontal: 8, paddingVertical: 2,
   },
   aiToolbar: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    paddingBottom: spacing.sm,
+    paddingBottom: revaSpacing.s2,
     borderBottomWidth: 1,
-    borderBottomColor: c.separator,
-    marginBottom: spacing.sm,
+    borderBottomColor: C.line,
+    marginBottom: revaSpacing.s2,
   },
   aiToolBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: radii.full,
-    backgroundColor: c.fill,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.paper2,
   },
   agentReviewBtn: {
-    backgroundColor: c.brandLight,
+    backgroundColor: C.green50,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: c.brand,
+    borderColor: C.green500,
   },
 });
 
-const txt = (c: ColorPalette) => ({
-  title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary, flex: 1, textAlign: 'center' } as TextStyle,
-  detailLabel: { fontSize: 14, color: c.labelSecondary } as TextStyle,
-  detailValue: { fontSize: 14, fontWeight: '600', color: c.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
-  metricLabel: { fontSize: 11, color: c.labelTertiary, marginBottom: 2 } as TextStyle,
-  metricValue: { fontSize: 14, fontWeight: '700', color: c.labelPrimary, fontVariant: ['tabular-nums'] as const } as TextStyle,
-  analyzeBtn: { fontSize: 14, fontWeight: '600', color: c.purple } as TextStyle,
-  agentReviewBtn: { fontSize: 13, fontWeight: '600', color: c.brand } as TextStyle,
-  reanalyzeBtn: { fontSize: 13, fontWeight: '500', color: c.labelTertiary } as TextStyle,
-  cacheBadgeText: { fontSize: 11, fontWeight: '500', color: c.green } as TextStyle,
-  analysisText: { fontSize: 14, color: c.labelPrimary, lineHeight: 21 } as TextStyle,
-  tipText: { fontSize: 13, color: c.labelPrimary, lineHeight: 20, flex: 1 } as TextStyle,
-  placeholder: { fontSize: 13, color: c.labelTertiary, textAlign: 'center', paddingVertical: 12 } as TextStyle,
-  empty: { fontSize: 14, color: c.labelTertiary, textAlign: 'center', marginTop: 40 } as TextStyle,
-});
+// 指标值走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
+const T = {
+  title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1, flex: 1, textAlign: 'center' } as TextStyle,
+  detailLabel: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink2 } as TextStyle,
+  detailValue: { fontFamily: revaFonts.mono, fontSize: 14, fontWeight: '600', color: C.ink1, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  metricLabel: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, marginBottom: 2 } as TextStyle,
+  metricValue: { fontFamily: revaFonts.mono, fontSize: 14, fontWeight: '700', color: C.ink1, fontVariant: ['tabular-nums'] as const } as TextStyle,
+  analyzeBtn: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '600', color: HUES.purple.fg } as TextStyle,
+  agentReviewBtn: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '600', color: C.green500 } as TextStyle,
+  reanalyzeBtn: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '500', color: C.ink3 } as TextStyle,
+  cacheBadgeText: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '500', color: C.green500 } as TextStyle,
+  analysisText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink1, lineHeight: 21 } as TextStyle,
+  tipText: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink1, lineHeight: 20, flex: 1 } as TextStyle,
+  placeholder: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink3, textAlign: 'center', paddingVertical: 12 } as TextStyle,
+  empty: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink3, textAlign: 'center', marginTop: 40 } as TextStyle,
+};
 
-const mdStyles = (c: ColorPalette) => StyleSheet.create({
-  body: { fontSize: 14, lineHeight: 21, color: c.labelPrimary },
-  heading2: { fontSize: 15, fontWeight: '600', color: c.labelPrimary, marginTop: 8, marginBottom: 4 },
-  heading3: { fontSize: 14, fontWeight: '600', color: c.labelPrimary, marginTop: 6, marginBottom: 2 },
+// Markdown 样式(AI 分析渲染)—— 走 Reva sans / ink。
+const MD = StyleSheet.create({
+  body: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 21, color: C.ink1 },
+  heading2: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '600', color: C.ink1, marginTop: 8, marginBottom: 4 },
+  heading3: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '600', color: C.ink1, marginTop: 6, marginBottom: 2 },
   strong: { fontWeight: '600' },
   bullet_list: { marginVertical: 2 },
   list_item: { flexDirection: 'row', marginVertical: 1 },

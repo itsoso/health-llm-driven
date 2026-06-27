@@ -9,8 +9,12 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { spacing, radii } from '../../constants/theme';
-import { useTheme } from '../../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaFonts,
+} from '../../constants/revaTheme';
 import type { FrequentFood } from '../../services/diet';
 
 const MEAL_LABEL: Record<string, string> = {
@@ -23,17 +27,15 @@ interface Props {
 }
 
 export default function FrequentFoodsRow({ foods, onPick }: Props) {
-  const { c } = useTheme();
-
   if (!foods || foods.length === 0) return null;
 
   return (
     <View style={styles.wrapper} testID="frequent-foods-row">
       <View style={styles.titleRow}>
-        <Ionicons name="repeat-outline" size={14} color={c.labelSecondary} />
+        <Ionicons name="repeat-outline" size={14} color={C.ink2} />
         <Text
           maxFontSizeMultiplier={1.4}
-          style={[styles.title, { color: c.labelSecondary }]}
+          style={[styles.title, { color: C.ink2 }]}
         >
           常吃 · 点一下直接记录
         </Text>
@@ -51,21 +53,21 @@ export default function FrequentFoodsRow({ foods, onPick }: Props) {
               onPress={() => onPick(f)}
               style={({ pressed }) => [
                 styles.chip,
-                { backgroundColor: c.bgCard, borderColor: c.separator, opacity: pressed ? 0.7 : 1 },
+                { backgroundColor: C.surface, borderColor: C.line, opacity: pressed ? 0.7 : 1 },
               ]}
               accessibilityRole="button"
               accessibilityLabel={`记录${MEAL_LABEL[f.meal_type] || ''}：${f.food_items}，${cal}`}
             >
               <Text
                 maxFontSizeMultiplier={1.3}
-                style={[styles.chipFood, { color: c.labelPrimary }]}
+                style={[styles.chipFood, { color: C.ink1 }]}
                 numberOfLines={1}
               >
                 {f.food_items}
               </Text>
               <Text
                 maxFontSizeMultiplier={1.3}
-                style={[styles.chipMeta, { color: c.labelTertiary }]}
+                style={[styles.chipMeta, { color: C.ink3 }]}
                 numberOfLines={1}
               >
                 {MEAL_LABEL[f.meal_type] || ''} · {cal}
@@ -79,19 +81,19 @@ export default function FrequentFoodsRow({ foods, onPick }: Props) {
 }
 
 const styles = StyleSheet.create({
-  wrapper: { marginBottom: spacing.md, gap: 8 },
+  wrapper: { marginBottom: revaSpacing.s3, gap: 8 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 2 },
-  title: { fontSize: 12, fontWeight: '700' },
-  scroll: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: 2, paddingBottom: 2 },
+  title: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '700' },
+  scroll: { flexDirection: 'row', gap: revaSpacing.s2, paddingHorizontal: 2, paddingBottom: 2 },
   chip: {
     minWidth: 96,
     maxWidth: 180,
-    borderRadius: radii.lg,
+    borderRadius: revaRadii.lg,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: revaSpacing.s3,
     paddingVertical: 9,
     gap: 3,
   },
-  chipFood: { fontSize: 13, fontWeight: '700' },
-  chipMeta: { fontSize: 10, fontWeight: '500' },
+  chipFood: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '700' },
+  chipMeta: { fontFamily: revaFonts.mono, fontSize: 10, fontWeight: '500' },
 });

@@ -18,8 +18,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { BODY_PARTS, BodyPart, createSymptom } from '../services/symptoms';
-import { spacing, radii, shadows } from '../constants/theme';
-import { ColorPalette, useTheme } from '../hooks/useTheme';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaFonts,
+} from '../constants/revaTheme';
 import { emitClientEvent } from '../services/clientEvents';
 import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
 import { createSymptomAgentContext } from '../utils/agentContext';
@@ -33,10 +38,6 @@ const SEVERITY_LEVELS = [
 ];
 
 export default function SymptomRecordScreen() {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
-
   const [bodyPart, setBodyPart] = useState<BodyPart | null>(null);
   const [description, setDescription] = useState('');
   const [severity, setSeverity] = useState<number | null>(null);
@@ -88,7 +89,7 @@ export default function SymptomRecordScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={10} style={{ padding: 6 }}>
-          <Ionicons name="close" size={26} color={c.labelPrimary} />
+          <Ionicons name="close" size={26} color={C.ink1} />
         </TouchableOpacity>
         <Text style={txt.title}>记症状</Text>
         <TouchableOpacity
@@ -97,7 +98,7 @@ export default function SymptomRecordScreen() {
           style={{ padding: 6 }}
           accessibilityLabel="语音记录"
         >
-          <Ionicons name="mic-outline" size={24} color={c.brand} />
+          <Ionicons name="mic-outline" size={24} color={C.green500} />
         </TouchableOpacity>
       </View>
 
@@ -113,7 +114,7 @@ export default function SymptomRecordScreen() {
               return (
                 <TouchableOpacity
                   key={p.value}
-                  style={[styles.partChip, selected && { borderColor: c.brand, backgroundColor: c.brandLight }]}
+                  style={[styles.partChip, selected && { borderColor: C.green500, backgroundColor: C.green50 }]}
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     setBodyPart(p.value);
@@ -121,31 +122,31 @@ export default function SymptomRecordScreen() {
                   activeOpacity={0.7}
                 >
                   <Text style={{ fontSize: 22 }}>{p.emoji}</Text>
-                  <Text style={[txt.partLabel, selected && { color: c.brand, fontWeight: '600' }]}>{p.label}</Text>
+                  <Text style={[txt.partLabel, selected && { color: C.green500, fontWeight: '600' }]}>{p.label}</Text>
                 </TouchableOpacity>
               );
             })}
           </View>
 
-          <Text style={[txt.sectionTitle, { marginTop: spacing.xl }]}>具体描述</Text>
+          <Text style={[txt.sectionTitle, { marginTop: revaSpacing.s5 }]}>具体描述</Text>
           <TextInput
             style={styles.input}
             value={description}
             onChangeText={setDescription}
             placeholder="如:眼睛痒 / 右膝钝痛 / 嗓子有痰"
-            placeholderTextColor={c.labelTertiary}
+            placeholderTextColor={C.ink3}
             multiline
             maxLength={200}
           />
 
-          <Text style={[txt.sectionTitle, { marginTop: spacing.xl }]}>严重度(可选)</Text>
+          <Text style={[txt.sectionTitle, { marginTop: revaSpacing.s5 }]}>严重度(可选)</Text>
           <View style={styles.severityRow}>
             {SEVERITY_LEVELS.map(s => {
               const selected = severity === s.value;
               return (
                 <TouchableOpacity
                   key={s.value}
-                  style={[styles.sevChip, selected && { backgroundColor: c.brand, borderColor: c.brand }]}
+                  style={[styles.sevChip, selected && { backgroundColor: C.green500, borderColor: C.green500 }]}
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     setSeverity(selected ? null : s.value);
@@ -191,52 +192,50 @@ export default function SymptomRecordScreen() {
   );
 }
 
-function createStyles(c: ColorPalette) {
-  return StyleSheet.create({
-    safe: { flex: 1, backgroundColor: c.bgPrimary },
-    header: {
-      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-      paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-      borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.separator,
-    },
-    scroll: { padding: spacing.lg, paddingBottom: 60 },
-    grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
-    partChip: {
-      width: '23%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center',
-      backgroundColor: c.bgCard, borderRadius: radii.md,
-      borderWidth: 1.5, borderColor: c.separator, gap: 4,
-    },
-    input: {
-      marginTop: spacing.md, padding: spacing.md,
-      backgroundColor: c.bgCard, borderRadius: radii.md,
-      borderWidth: StyleSheet.hairlineWidth, borderColor: c.separator,
-      color: c.labelPrimary, fontSize: 15, minHeight: 80,
-      textAlignVertical: 'top',
-    },
-    severityRow: {
-      flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md,
-    },
-    sevChip: {
-      flex: 1, paddingVertical: 12, borderRadius: radii.md,
-      borderWidth: 1.5, borderColor: c.separator,
-      alignItems: 'center', backgroundColor: c.bgCard,
-    },
-    saveCta: {
-      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-      marginTop: spacing.xl * 1.5, paddingVertical: 16,
-      backgroundColor: c.brand, borderRadius: radii.md, ...shadows.subtle,
-    },
-    saveCtaDisabled: { backgroundColor: c.labelQuaternary, shadowOpacity: 0 },
-    agentLink: { marginTop: spacing.xl },
-  });
-}
+// Reva 设计语言:暖 paper 底 / 暖白 surface 卡 / 活力绿 / r-md / 描述文字走 sans。
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.paper },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: revaSpacing.s4, paddingVertical: revaSpacing.s3,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line,
+  },
+  scroll: { padding: revaSpacing.s4, paddingBottom: 60 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: revaSpacing.s2, marginTop: revaSpacing.s3 },
+  partChip: {
+    width: '23%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.surface, borderRadius: revaRadii.md,
+    borderWidth: 1.5, borderColor: C.line, gap: 4,
+  },
+  input: {
+    marginTop: revaSpacing.s3, padding: revaSpacing.s3,
+    backgroundColor: C.surface, borderRadius: revaRadii.md,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: C.line,
+    color: C.ink1, fontSize: 15, fontFamily: revaFonts.sans, minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  severityRow: {
+    flexDirection: 'row', gap: revaSpacing.s2, marginTop: revaSpacing.s3,
+  },
+  sevChip: {
+    flex: 1, paddingVertical: 12, borderRadius: revaRadii.md,
+    borderWidth: 1.5, borderColor: C.line,
+    alignItems: 'center', backgroundColor: C.surface,
+  },
+  saveCta: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    marginTop: revaSpacing.s5 * 1.5, paddingVertical: 16,
+    backgroundColor: C.green500, borderRadius: revaRadii.md, ...revaShadows.sm,
+  },
+  saveCtaDisabled: { backgroundColor: C.ink4, shadowOpacity: 0 },
+  agentLink: { marginTop: revaSpacing.s5 },
+});
 
-function createTxt(c: ColorPalette) {
-  return {
-    title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary } as TextStyle,
-    sectionTitle: { fontSize: 15, fontWeight: '600', color: c.labelPrimary } as TextStyle,
-    partLabel: { fontSize: 12, color: c.labelSecondary, textAlign: 'center' } as TextStyle,
-    sevLabel: { fontSize: 13, color: c.labelPrimary } as TextStyle,
-    saveCtaText: { fontSize: 16, color: '#fff', fontWeight: '700' } as TextStyle,
-  };
-}
+// 文字走 Manrope/ink(本页无密集数字)。
+const txt = {
+  title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1 } as TextStyle,
+  sectionTitle: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '600', color: C.ink1 } as TextStyle,
+  partLabel: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, textAlign: 'center' } as TextStyle,
+  sevLabel: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink1 } as TextStyle,
+  saveCtaText: { fontFamily: revaFonts.sans, fontSize: 16, color: '#fff', fontWeight: '700' } as TextStyle,
+};
