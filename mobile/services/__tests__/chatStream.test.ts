@@ -93,6 +93,32 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('yields card events before done so the UI can render cards mid-stream', async () => {
+    const iter = streamChat('今天怎么练');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText =
+      'data: {"event":"card","data":{"descriptor":{"type":"workout","data":{"title":"低强度恢复跑"},"actions":[{"action":"confirm_write_intent","payload":{"id":9}}]},"anchor":"after_current_token"}}\n\n' +
+      'data: [DONE]\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toEqual({
+      value: {
+        type: 'card',
+        card: {
+          type: 'workout',
+          data: { title: '低强度恢复跑' },
+          actions: [{ action: 'confirm_write_intent', payload: { id: 9 } }],
+        },
+        anchor: 'after_current_token',
+      },
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
   it('parses a final done event even without a trailing newline', async () => {
     const iter = streamChat('slow commercial model');
     const first = iter.next();

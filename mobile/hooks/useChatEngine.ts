@@ -6,7 +6,7 @@ import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage } from '../services/chat';
 import { dispatchCard, renderServerCards } from '../components/chat/cards';
-import type { CardActionDescriptor } from '../components/chat/cards/types';
+import type { CardActionDescriptor, ServerCardDescriptor } from '../components/chat/cards/types';
 import api, { BASE_URL } from '../services/api';
 import { emitClientEvent } from '../services/clientEvents';
 
@@ -122,6 +122,25 @@ function stripThinkingPlaceholder(content: string): string {
 function mergeAssistantStreamContent(current: string, incoming: string): string {
   if (!incoming) return current;
   return stripThinkingPlaceholder(current) + incoming;
+}
+
+function serverCardSignature(card: ServerCardDescriptor): string {
+  try {
+    return JSON.stringify([card.type, card.data, card.actions ?? null]);
+  } catch {
+    return `${card.type}:${Date.now()}:${Math.random()}`;
+  }
+}
+
+function toServerCardMessage(card: ServerCardDescriptor): UIMessage {
+  return {
+    id: nextId(),
+    role: 'assistant',
+    content: '',
+    cardType: card.type,
+    cardData: card.data,
+    cardActions: card.actions ?? undefined,
+  };
 }
 
 async function readStoredConversationId(): Promise<number | null> {
@@ -415,6 +434,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
     try {
       const toolsUsed: Set<string> = new Set();
+      const streamedCardSignatures = new Set<string>();
+      let sawServerCard = false;
       let sawDone = false;
       for await (const evt of streamChat(finalMsg, targetConversationId, hasImages ? pendingImages : undefined, ac.signal, sendOpts?.extraContext)) {
         if (evt.type === 'start') {
@@ -430,6 +451,19 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: mergeAssistantStreamContent(m.content, incoming) } : m));
           }
           if (evt.toolName) toolsUsed.add(evt.toolName);
+        } else if (evt.type === 'card') {
+          const serverCards = renderServerCards(evt.card ? [evt.card] : []);
+          const freshCards = serverCards.filter((card) => {
+            const sig = serverCardSignature(card);
+            if (streamedCardSignatures.has(sig)) return false;
+            streamedCardSignatures.add(sig);
+            return true;
+          });
+          if (freshCards.length > 0) {
+            sawServerCard = true;
+            if (!gotFirstToken) { gotFirstToken = true; clearTimeout(slowTimer); }
+            setMessages(prev => [...prev, ...freshCards.map(toServerCardMessage)]);
+          }
         } else if (evt.type === 'done') {
           sawDone = true;
           if (evt.conversationId) {
@@ -448,11 +482,16 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             toolsUsed: evt.toolsUsed,
             completionStatus: evt.completionStatus,
           } : m));
-          const serverCards = renderServerCards((evt as any).cards);
+          const serverCards = renderServerCards((evt as any).cards).filter((card) => {
+            const sig = serverCardSignature(card);
+            if (streamedCardSignatures.has(sig)) return false;
+            streamedCardSignatures.add(sig);
+            return true;
+          });
           if (serverCards.length > 0) {
             const single = serverCards.length === 1 ? serverCards[0] : { type: 'cards_group', data: { cards: serverCards } };
-            setMessages(prev => [...prev, { id: nextId(), role: 'assistant' as const, content: '', cardType: single.type, cardData: single.data, cardActions: single.actions ?? undefined }]);
-          } else {
+            setMessages(prev => [...prev, toServerCardMessage(single)]);
+          } else if (!sawServerCard) {
             const card = await dispatchCard({
               query: finalMsg,
               query_lower: finalMsg.toLowerCase(),

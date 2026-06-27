@@ -261,6 +261,17 @@ async def agent_stream(
                                     event.get("data", {}).get("message_id"),
                                     merged,
                                 )
+                                for card in merged:
+                                    card_event = {
+                                        "event": "card",
+                                        "data": {
+                                            "descriptor": card,
+                                            "anchor": "after_current_token",
+                                        },
+                                    }
+                                    await chunk_queue.put(
+                                        f"data: {json.dumps(card_event, ensure_ascii=False)}\n\n"
+                                    )
                         except Exception as e:
                             logger.debug(f"inline_cards 失败: {e}")
                     await chunk_queue.put(f"data: {json.dumps(event, ensure_ascii=False)}\n\n")

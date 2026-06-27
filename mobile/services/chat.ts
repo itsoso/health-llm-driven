@@ -14,8 +14,22 @@ export interface Conversation {
   last_message?: string;
 }
 
+type StreamCardActionStyle = 'primary' | 'secondary' | 'destructive';
+
+export interface StreamCardDescriptor {
+  type: string;
+  data: any;
+  actions?: {
+    action: string;
+    label?: string;
+    endpoint?: string;
+    payload?: Record<string, any> | null;
+    style?: StreamCardActionStyle;
+  }[] | null;
+}
+
 export interface StreamEvent {
-  type: 'start' | 'token' | 'tool' | 'done' | 'error';
+  type: 'start' | 'token' | 'tool' | 'card' | 'done' | 'error';
   content?: string;
   conversationId?: number;
   messageId?: number;
@@ -34,8 +48,11 @@ export interface StreamEvent {
   // 2026-06-12: 本轮调用的 Skill / 工具名 (后端 done.tools_used; 去重保序, 空 [])
   toolsUsed?: string[];
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
+  // SSE card 事件:中段插入动态 UI 卡片,由 useChatEngine 走 registry 白名单过滤.
+  card?: StreamCardDescriptor;
+  anchor?: string;
   // SSE done 事件里的动态卡片，由 useChatEngine 交给 card registry 渲染
-  cards?: { type: string; data: any }[];
+  cards?: StreamCardDescriptor[];
 }
 
 /**
@@ -156,6 +173,15 @@ export async function* streamChat(
           recordType: parsed.data?.record_type,
           recordData: parsed.data?.record_data,
         };
+      } else if (parsed.event === 'card') {
+        const descriptor = parsed.data?.descriptor ?? parsed.data?.card ?? parsed.data;
+        if (descriptor && typeof descriptor.type === 'string') {
+          return {
+            type: 'card',
+            card: descriptor,
+            anchor: typeof parsed.data?.anchor === 'string' ? parsed.data.anchor : undefined,
+          };
+        }
       } else if (parsed.event === 'done') {
         return {
           type: 'done',

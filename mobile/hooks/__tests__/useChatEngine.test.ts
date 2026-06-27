@@ -4,6 +4,7 @@ const mockStreamChat = jest.fn();
 const mockGetConversations = jest.fn();
 const mockGetConversationMessages = jest.fn();
 const mockDeleteConversation = jest.fn();
+const mockRenderServerCards = jest.fn();
 let mockAsyncStorage: Record<string, string> = {};
 
 jest.mock('expo-router', () => ({
@@ -28,7 +29,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 
 jest.mock('../../components/chat/cards', () => ({
   dispatchCard: jest.fn().mockResolvedValue(null),
-  renderServerCards: jest.fn().mockReturnValue([]),
+  renderServerCards: (...args: any[]) => mockRenderServerCards(...args),
 }));
 
 jest.mock('../../services/api', () => ({
@@ -72,6 +73,24 @@ async function* streamStartToolThenWait() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
+async function* streamCardBeforeDone() {
+  yield { type: 'start', conversationId: 777 };
+  yield { type: 'token', content: '今天先降低强度。' };
+  yield {
+    type: 'card',
+    card: {
+      type: 'workout',
+      data: { title: '低强度恢复跑' },
+      actions: [{ action: 'confirm_write_intent', payload: { id: 9 } }],
+    },
+    anchor: 'after_current_token',
+  };
+  await new Promise<void>((resolve) => {
+    finishStream = resolve;
+  });
+  yield { type: 'done', conversationId: 777, messageId: 2 };
+}
+
 describe('useChatEngine', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -81,6 +100,7 @@ describe('useChatEngine', () => {
     mockGetConversations.mockResolvedValue([]);
     mockGetConversationMessages.mockResolvedValue({ total_messages: 0, messages: [] });
     mockDeleteConversation.mockResolvedValue(true);
+    mockRenderServerCards.mockReturnValue([]);
   });
 
   it('restores the last active conversation after the chat page is remounted', async () => {
@@ -267,6 +287,53 @@ describe('useChatEngine', () => {
     await act(async () => {
       finishStream?.();
       await Promise.resolve();
+    });
+  });
+
+  it('inserts a server card while the assistant stream is still running', async () => {
+    mockStreamChat.mockImplementation(streamCardBeforeDone);
+    mockRenderServerCards.mockImplementation((cards: any[]) => cards.map((card, index) => ({
+      type: card.type,
+      data: card.data,
+      actions: card.actions,
+      key: `card-${index}`,
+    })));
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('今天怎么练');
+    });
+
+    await waitFor(() => {
+      expect(result.current.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: 'assistant',
+            content: '今天先降低强度。',
+            streaming: true,
+          }),
+          expect.objectContaining({
+            role: 'assistant',
+            content: '',
+            cardType: 'workout',
+            cardData: { title: '低强度恢复跑' },
+            cardActions: [{ action: 'confirm_write_intent', payload: { id: 9 } }],
+          }),
+        ]),
+      );
+    });
+
+    expect(result.current.isStreaming).toBe(true);
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.messages.filter(m => m.cardType === 'workout')).toHaveLength(1);
+      expect(result.current.isStreaming).toBe(false);
     });
   });
 
