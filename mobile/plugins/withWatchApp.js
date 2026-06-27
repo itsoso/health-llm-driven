@@ -36,6 +36,16 @@ const WATCH_INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
   <key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
   <key>CFBundlePackageType</key><string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
   <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>life.executor.health.watch</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>reva-watch</string>
+      </array>
+    </dict>
+  </array>
   <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
   <key>NSPhotoLibraryUsageDescription</key><string>${PHOTO_LIBRARY_USAGE_DESCRIPTION}</string>
   <key>NSPhotoLibraryAddUsageDescription</key><string>${PHOTO_LIBRARY_ADD_USAGE_DESCRIPTION}</string>

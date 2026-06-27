@@ -11,14 +11,16 @@ Watch 启动时会先展示上次成功的 `WatchSummary` 缓存,再异步刷新
 
 | 目录 | 内容 | 测试 |
 |---|---|---|
-| `Sources/WatchCompanionCore/` | **纯逻辑**:summary 解码、表盘状态映射、打点/问答校验+请求构造 | ✅ `swift test`(host,58 用例) |
+| `Sources/WatchCompanionCore/` | **纯逻辑**:summary 解码、表盘状态映射、打点/问答校验+请求构造、Siri/complication 启动 surface | ✅ `swift test`(host,61 用例) |
 | `Tests/WatchCompanionCoreTests/` | 上面的单测 | ✅ |
-| `WatchApp/` | watchOS SwiftUI app(四屏 + WC 客户端 + 听写)——薄壳,逻辑全调 Core | 真机验(WatchKit 在 mac 编不过,不入 host 测试 target) |
-| `WatchComplication/` | WidgetKit 表盘 complication | 真机验 |
+| `WatchApp/` | watchOS SwiftUI app(四屏 + WC 客户端 + 听写 + AppIntent/Siri shortcuts)——薄壳,逻辑全调 Core | 真机验(WatchKit 在 mac 编不过,不入 host 测试 target) |
+| `WatchComplication/` | WidgetKit 表盘 complication,tap deep-link 到「问 Reva」 | 真机验 |
 
 > 设计纪律(对齐 `apps/mac`):**所有可测逻辑放 Core 并 swift test;UI/WC/complication 是声明式薄壳,真机验证**。改 watch 行为时,先在 Core 加逻辑+测试,再在壳里接。
 
 后端契约:`GET /api/v1/watch/summary`(腕上摘要)、`POST /api/v1/watch/ask`(一问一答短安全建议)、打点走已有写端点(`/water/records/quick`、`/daily-health/exercise`、`/diet/voice/parse`)。改后端这些 shape 时,**必须同步** `WatchSummary.swift` / `WatchAsk.swift` + fixture 测试(防静默漂移)。Watch 直连请求必须经过 `WatchBackendRequest` 白名单构造,不要在 UI 层手写任意后端 path。
+
+入口契约:不拦截表冠长按。`RevaWatchIntents.swift` 提供两个合法入口:「问 Reva」打开短答页、「快速记录」打开打点页;Siri/Action Button 绑定这两个 AppIntent。Complication tap 使用 `reva-watch://assistant` deep link 进入短答页。
 
 ## 跑逻辑测试(随时,无需设备)
 
@@ -52,6 +54,7 @@ cd ios && xcodebuild -project HealthPilot.xcodeproj -target RevaWatch \
 - **激活 bridge**:App 启动时调 `WatchPhoneBridge.shared.activate()`(AppDelegate 或一个极小 Expo module 里一行),登录 token 变化时 `SharedKeychainModule` 会通知 bridge 同步到 Watch。
 - **Capabilities**:watch app + widget + 主 app 加 App Group `group.life.executor.health`(complication 缓存);bridge token 复用 Siri 的 `siri_auth_token`,Watch 本机保存到 Keychain。
 - **真机运行**:装到配对手表跑通(complication 出状态灯、腕上喝水/俯卧撑回写、关键推送)。
+- **入口验证**:Siri 短语「问 Reva / 用 Reva 记录」和 Ultra Action Button 需真机 + Apple ID 验证;模拟器/host 只验证 Core launch surface 与 Swift 语法。
 - **发版**:EAS build production(watch app 随 iOS app 一起打包),见 `mobile-testflight-release` skill。
 
 1. `cd mobile && npx expo prebuild --platform ios`(生成/刷新 `ios/`)。

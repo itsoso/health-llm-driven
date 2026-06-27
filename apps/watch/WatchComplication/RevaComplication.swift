@@ -40,6 +40,7 @@ struct RevaComplicationView: View {
             }
             Text(entry.state.shortText).font(.caption2).lineLimit(1)
         }
+        .widgetURL(WatchLaunchRequest.url(for: .assistant))
     }
     private func color(_ t: ComplicationTone) -> Color {
         switch t { case .green: .green; case .yellow: .yellow; case .red: .red; case .gray: .gray }

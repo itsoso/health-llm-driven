@@ -1,6 +1,40 @@
 import XCTest
 @testable import WatchCompanionCore
 
+final class WatchLaunchRequestTests: XCTestCase {
+    func testMarkAndConsumeAssistantLaunchRequest() throws {
+        let suite = "WatchLaunchRequestTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        XCTAssertNil(WatchLaunchRequest.consume(from: defaults))
+
+        WatchLaunchRequest.mark(.assistant, in: defaults)
+
+        XCTAssertEqual(WatchLaunchRequest.consume(from: defaults), .assistant)
+        XCTAssertNil(WatchLaunchRequest.consume(from: defaults), "launch request should be one-shot")
+    }
+
+    func testLatestLaunchRequestWins() throws {
+        let suite = "WatchLaunchRequestTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        WatchLaunchRequest.mark(.quickRecord, in: defaults)
+        WatchLaunchRequest.mark(.assistant, in: defaults)
+
+        XCTAssertEqual(WatchLaunchRequest.consume(from: defaults), .assistant)
+    }
+
+    func testLaunchSurfaceRoundTripsThroughWidgetURL() throws {
+        let url = WatchLaunchRequest.url(for: .assistant)
+
+        XCTAssertEqual(url.absoluteString, "reva-watch://assistant")
+        XCTAssertEqual(WatchLaunchRequest.surface(from: url), .assistant)
+        XCTAssertNil(WatchLaunchRequest.surface(from: try XCTUnwrap(URL(string: "https://example.test/assistant"))))
+    }
+}
+
 final class WatchSummaryTests: XCTestCase {
     // fixture 对齐后端 watch_summary.build_watch_summary 输出契约
     private let json = Data("""

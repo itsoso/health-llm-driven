@@ -107,7 +107,7 @@
 
 把用户诉求重构为(保真度降序):
 1. **App 内「按住说话」大按钮** 驱动系统听写 —— `presentTextInputController(...allowedInputMode:.plain)`(**已接** `WatchDictation.swift`)。**今天就能做的「说话」主路径。**
-2. **App Intent / Siri phrase** —— `AppIntents` + `AppShortcutsProvider`,「Hey Siri, 用 Reva 记录…」。**「按住表冠」的合法替身**(净新,watch 端未接;iPhone 有 `withIntentsExtension.js`)。
+2. **App Intent / Siri phrase** —— `AppIntents` + `AppShortcutsProvider`,「Hey Siri, 用 Reva 记录…」。**「按住表冠」的合法替身**(watch 端已接基础入口:`RevaWatchAskIntent` / `RevaWatchRecordIntent`;iPhone 有 `withIntentsExtension.js`)。
 3. **Action Button(Apple Watch Ultra 专属,锚点用户有 Ultra 3)** —— 可绑 `AppIntent` shortcut。**这才是「按一个物理键就开口」对锚点用户的真解**;但 Ultra-only,不作通用主路径。
 4. **complication / Smart Stack tap → 启动 App**(**已有** `RevaComplication.swift`)。
 - `.digitalCrownRotation` 调数值(**已用**)保留。连续流式语音需 `WKExtendedRuntimeSession` + `SFSpeechRecognizer`(未用,有电量/运行预算成本)。
@@ -431,6 +431,7 @@ W1 ─▶ W3 (watch 对话 UI 调 /watch/ask)
 ### W4 · 入口(表冠 / Action Button / Siri · W0 通过后)
 - **目标**:把「按一个就开口」做到平台允许的极致(诚实文案)。
 - **文件**:`apps/watch/WatchApp/`(App Intent + AppShortcutsProvider)、`RevaComplication.swift`(已存在,tap→launch)、`RevaVoiceAssistantView`(crown rotation)。
+- **当前实现状态(2026-06-27 Codex)**:`RevaWatchIntents.swift` 已提供「问 Reva」和「快速记录」两个 AppIntent;`WatchLaunchRequest` 用一次性 launch surface 让 Siri / Action Button / complication deep link 切到对应 Tab;`RevaComplication` tap 使用 `reva-watch://assistant` 进入短答页。真机 Siri / Action Button 仍属于 W5 验证。
 - **做什么**:
   1. **App Intent + AppShortcutsProvider**(watch 端净新)→ 「Hey Siri,用 Reva 记录/问一下…」;表冠长按本就唤 Siri = 间接「表冠」路径。
   2. **Action Button(Ultra 3)** 绑该 AppIntent → **「按一个物理键就开口」对锚点用户的真解**。
