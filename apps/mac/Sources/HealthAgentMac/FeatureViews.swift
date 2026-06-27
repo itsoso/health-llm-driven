@@ -2361,9 +2361,9 @@ struct RecordHubView: View {
     private var labUploadCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 10) {
-                Label(appText("Upload Lab Report", appLanguageRaw), systemImage: "doc.badge.arrow.up")
+                Label(appText("Import Medical Exam Report", appLanguageRaw), systemImage: "doc.badge.arrow.up")
                     .font(.headline)
-                Text(appText("PDF or image lab reports", appLanguageRaw))
+                Text(appText("PDF or image report", appLanguageRaw))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -2377,12 +2377,12 @@ struct RecordHubView: View {
                 Button {
                     isLabImporterPresented = true
                 } label: {
-                    Label(appText("Choose Image or PDF", appLanguageRaw), systemImage: "tray.and.arrow.up")
+                    Label(appText("Choose Report", appLanguageRaw), systemImage: "tray.and.arrow.up")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isUploadingLab)
 
-                Text(appText("Agent chat also accepts pasted lab images.", appLanguageRaw))
+                Text(appText("After import, review OCR values before using them for health decisions.", appLanguageRaw))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -2401,6 +2401,7 @@ struct RecordHubView: View {
             }
 
             if let result = lastLabUploadResult {
+                let presentation = LabUploadPresentation.make(result: result, fileName: lastLabUploadFileName)
                 HStack(alignment: .center, spacing: 12) {
                     Image(systemName: "stethoscope")
                         .font(.title3)
@@ -2408,10 +2409,10 @@ struct RecordHubView: View {
                         .frame(width: 30, height: 30)
                         .background(Color.teal.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(lastLabUploadFileName ?? appText("Lab report", appLanguageRaw))
+                        Text(presentation.title)
                             .font(.callout.weight(.semibold))
                             .lineLimit(1)
-                        Text(labUploadResultSummary(result))
+                        Text(presentation.summary)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
@@ -2420,11 +2421,11 @@ struct RecordHubView: View {
                     if let onAskAgent {
                         Button {
                             onAskAgent(
-                                "解释这份刚上传的化验报告：先列出异常/关键指标，再说明不确定性边界和下一步需要复核的地方。",
+                                presentation.agentPrompt,
                                 labUploadContextItem(result)
                             )
                         } label: {
-                            Label(appText("Ask Agent about Lab", appLanguageRaw), systemImage: "sparkles")
+                            Label(appText("Ask Agent", appLanguageRaw), systemImage: "sparkles")
                         }
                         .buttonStyle(.bordered)
                     }
@@ -3383,7 +3384,7 @@ struct RecordHubView: View {
             lastLabUploadResult = result
             lastLabUploadFileName = intakeItem.name
             lastLabUploadSourceHash = intakeItem.sha256
-            labUploadStatus = appText("Lab report imported. Review OCR values before relying on them.", appLanguageRaw)
+            labUploadStatus = LabUploadPresentation.make(result: result, fileName: intakeItem.name).statusText
             await viewModel.refresh()
         } catch {
             labUploadStatus = "\(appText("Lab upload failed", appLanguageRaw)): \(userFacingError(error, appLanguageRaw))"
@@ -3392,26 +3393,7 @@ struct RecordHubView: View {
     }
 
     private func labUploadResultSummary(_ result: LabUploadResult) -> String {
-        var parts: [String] = ["#\(result.examID)"]
-        if let examDate = result.examDate, !examDate.isEmpty {
-            parts.append(examDate)
-        }
-        if let examType = result.examType, !examType.isEmpty {
-            parts.append(examType)
-        }
-        if let itemsCount = result.itemsCount {
-            parts.append("\(itemsCount) \(appText("items", appLanguageRaw))")
-        }
-        if let abnormalCount = result.abnormalCount {
-            parts.append("\(abnormalCount) \(appText("abnormal", appLanguageRaw))")
-        }
-        if let conclusionsCount = result.conclusionsCount {
-            parts.append("\(conclusionsCount) \(appText("conclusions", appLanguageRaw))")
-        }
-        if let conclusion = result.conclusion, !conclusion.isEmpty {
-            parts.append(conclusion)
-        }
-        return parts.joined(separator: " · ")
+        LabUploadPresentation.make(result: result, fileName: lastLabUploadFileName).summary
     }
 
     private func labUploadContextItem(_ result: LabUploadResult) -> AgentContextItem {
@@ -3446,7 +3428,7 @@ struct RecordHubView: View {
         if let conclusion = result.conclusion {
             payload["conclusion"] = conclusion
         }
-        let title = lastLabUploadFileName ?? appText("Lab report", appLanguageRaw)
+        let title = LabUploadPresentation.make(result: result, fileName: lastLabUploadFileName).title
         return AgentContextItem(
             sourceID: "medical_exam:\(result.examID)",
             sourceKind: "lab_report_import",

@@ -8,36 +8,48 @@ import { abnormalStyles, abnormalLabels, examTypeLabels } from './types';
 interface PdfUploadSectionProps {
   pdfFile: File | null;
   pdfPreview: any;
+  textImportValue: string;
   uploadProgress: string;
   previewPdfMutation: UseMutationResult<any, any, File, unknown>;
   uploadPdfMutation: UseMutationResult<any, any, File, unknown>;
+  uploadTextMutation: UseMutationResult<any, any, string, unknown>;
   onPdfSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onPdfImport: () => void;
+  onTextChange: (text: string) => void;
+  onTextImport: () => void;
   onReset: () => void;
 }
 
 export function PdfUploadSection({
   pdfFile,
   pdfPreview,
+  textImportValue,
   uploadProgress,
   previewPdfMutation,
   uploadPdfMutation,
+  uploadTextMutation,
   onPdfSelect,
   onPdfImport,
+  onTextChange,
+  onTextImport,
   onReset,
 }: PdfUploadSectionProps) {
+  const fileName = pdfFile?.name.toLowerCase() ?? '';
+  const isPdfFile = !!pdfFile && (pdfFile.type === 'application/pdf' || fileName.endsWith('.pdf'));
+  const canImportFile = !!pdfFile && (!isPdfFile || !!pdfPreview);
+
   return (
     <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-purple-200">
-      <h3 className="text-xl font-bold text-gray-900 mb-4">📄 上传体检报告PDF</h3>
+      <h3 className="text-xl font-bold text-gray-900 mb-4">📄 导入体检报告</h3>
       <p className="text-gray-600 text-sm mb-4">
-        上传体检报告PDF文件，系统将使用AI自动解析并提取检查项目数据。
+        上传体检报告 PDF、化验单图片，或粘贴文字结果。解析后会写入体检记录，使用前请复核 OCR/AI 提取值。
       </p>
 
       {/* 文件选择 */}
       <div className="border-2 border-dashed border-purple-300 rounded-lg p-8 text-center mb-4 hover:border-purple-500 transition-colors">
         <input
           type="file"
-          accept=".pdf"
+          accept=".pdf,image/jpeg,image/png,image/heic,image/webp"
           onChange={onPdfSelect}
           className="hidden"
           id="pdf-upload"
@@ -45,9 +57,9 @@ export function PdfUploadSection({
         <label htmlFor="pdf-upload" className="cursor-pointer">
           <div className="text-5xl mb-3">📁</div>
           <p className="text-gray-700 font-medium mb-2">
-            {pdfFile ? pdfFile.name : '点击或拖拽PDF文件到这里'}
+            {pdfFile ? pdfFile.name : '点击选择 PDF 或图片'}
           </p>
-          <p className="text-gray-500 text-sm">支持 .pdf 格式</p>
+          <p className="text-gray-500 text-sm">支持 .pdf / .jpg / .png / .heic / .webp</p>
         </label>
       </div>
 
@@ -60,6 +72,12 @@ export function PdfUploadSection({
             )}
             {uploadProgress}
           </div>
+        </div>
+      )}
+
+      {pdfFile && !isPdfFile && (
+        <div className="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200 text-amber-900 text-sm">
+          图片会直接进入 OCR 导入流程。导入后请在体检记录里复核项目名、数值、单位和参考范围。
         </div>
       )}
 
@@ -146,6 +164,48 @@ export function PdfUploadSection({
           </button>
         </div>
       )}
+
+      {canImportFile && !pdfPreview && (
+        <div className="flex gap-3">
+          <button
+            onClick={onPdfImport}
+            disabled={uploadPdfMutation.isPending}
+            className="flex-1 py-3 bg-gradient-to-r from-purple-500 to-pink-600 text-white font-semibold rounded-lg hover:from-purple-600 hover:to-pink-700 disabled:opacity-50 shadow-md"
+          >
+            {uploadPdfMutation.isPending ? '导入中...' : '确认导入图片'}
+          </button>
+          <button
+            onClick={onReset}
+            className="px-6 py-3 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300"
+          >
+            重新选择
+          </button>
+        </div>
+      )}
+
+      <div className="mt-6 border-t border-gray-100 pt-5">
+        <h4 className="font-bold text-gray-800 mb-2">文字兜底</h4>
+        <p className="text-gray-600 text-sm mb-3">
+          OCR 失败或只有复制文本时，把指标、数值、单位和参考范围粘贴在这里。
+        </p>
+        <textarea
+          value={textImportValue}
+          onChange={(e) => onTextChange(e.target.value)}
+          rows={5}
+          maxLength={4000}
+          className="w-full rounded-lg border border-gray-200 p-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-200"
+          placeholder={'例如:\nLDL 3.8 mmol/L 参考 <3.4\nALT 42 U/L 参考 9-50\n血压 130/85 mmHg'}
+        />
+        <div className="mt-3 flex justify-end">
+          <button
+            onClick={onTextImport}
+            disabled={uploadTextMutation.isPending || !textImportValue.trim()}
+            className="px-5 py-2 bg-gray-900 text-white font-semibold rounded-lg hover:bg-gray-800 disabled:opacity-50"
+          >
+            {uploadTextMutation.isPending ? '导入中...' : '导入文字'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

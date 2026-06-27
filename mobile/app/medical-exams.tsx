@@ -10,14 +10,14 @@
  * NOTE: 上传仍走 chat → OpenClaw skill (那是 OCR 流程, 改造工时太大暂不重做).
  * 这里只解决"上传后看得见" 这一断点.
  */
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, TextStyle,
   RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 
 import {
@@ -44,6 +44,18 @@ export default function MedicalExamsScreen() {
 
   const exams = examsQuery.data ?? [];
   const latestExam = exams[0] ?? null;
+  const openMedicalImport = useCallback(() => {
+    router.push({
+      pathname: '/import',
+      params: { focus: 'medical' },
+    } as any);
+  }, [router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void examsQuery.refetch();
+    }, [examsQuery.refetch]),
+  );
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -51,8 +63,16 @@ export default function MedicalExamsScreen() {
         <Pressable onPress={() => router.back()} hitSlop={8} accessibilityLabel="返回">
           <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </Pressable>
-        <Text style={txt.title}>化验记录</Text>
-        <View style={{ width: 24 }} />
+        <Text style={txt.title}>体检记录</Text>
+        <Pressable
+          onPress={openMedicalImport}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="导入体检报告"
+          style={({ pressed }) => [styles.headerImportButton, pressed && { opacity: 0.7 }]}
+        >
+          <Ionicons name="cloud-upload-outline" size={20} color={c.brand} />
+        </Pressable>
       </View>
 
       <ScrollView
@@ -76,8 +96,17 @@ export default function MedicalExamsScreen() {
             <Ionicons name="document-text-outline" size={36} color={c.labelTertiary} />
             <Text style={txt.empty}>
               还没有化验记录{'\n'}
-              在 AI 助理里发送化验单照片或 PDF，AI 会自动识别录入
+              上传体检报告 PDF、化验单照片，或粘贴文字结果，AI 会自动识别录入
             </Text>
+            <Pressable
+              onPress={openMedicalImport}
+              accessibilityRole="button"
+              accessibilityLabel="导入第一份体检报告"
+              style={({ pressed }) => [styles.emptyImportButton, pressed && { opacity: 0.76 }]}
+            >
+              <Ionicons name="cloud-upload-outline" size={16} color="#fff" />
+              <Text style={txt.emptyImportButton}>导入第一份报告</Text>
+            </Pressable>
           </View>
         ) : null}
 
@@ -201,11 +230,29 @@ function createStyles(c: ColorPalette, _isDark: boolean) {
       paddingHorizontal: spacing.lg,
       paddingVertical: spacing.md,
     },
+    headerImportButton: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: c.brandLight,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     content: { padding: spacing.lg, paddingTop: 0, gap: spacing.md, paddingBottom: 40 },
     loadingWrap: { paddingVertical: 40, alignItems: 'center' },
     emptyWrap: {
       paddingVertical: 60, paddingHorizontal: 30,
       alignItems: 'center', gap: 12,
+    },
+    emptyImportButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginTop: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: 10,
+      borderRadius: radii.full,
+      backgroundColor: c.brand,
     },
     examCard: {
       backgroundColor: c.bgCard,
@@ -248,6 +295,7 @@ function createTxt(c: ColorPalette) {
     empty: {
       fontSize: 13, color: c.labelTertiary, textAlign: 'center', lineHeight: 19,
     } as TextStyle,
+    emptyImportButton: { fontSize: 13, fontWeight: '600', color: '#fff' } as TextStyle,
     footer: {
       fontSize: 12, color: c.labelTertiary, textAlign: 'center', paddingTop: 12,
     } as TextStyle,

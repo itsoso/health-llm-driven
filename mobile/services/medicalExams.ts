@@ -122,30 +122,40 @@ export function compareExams(current: MedicalExam, previous: MedicalExam): ExamC
   return out;
 }
 
-// ========== 上传入口 (Iter 1 Day 2/3: /import 页) ==========
+// ========== 上传入口 (canonical /medical-exams/import/*) ==========
 
-export interface MedicalExamPdfUploadResult {
+export type MedicalExamImportSource = 'pdf' | 'image' | 'text';
+
+export interface MedicalExamImportResult {
   message: string;
+  source: MedicalExamImportSource;
+  reviewRequired: boolean;
+
+  // Backward-compatible snake_case fields from backend responses.
   exam_id: number;
-  patient_name?: string | null;
-  exam_date: string;
+  exam_date?: string | null;
   exam_type?: string | null;
   hospital_name?: string | null;
-  items_count: number;
-  conclusions_count?: number;
-  category_summary?: Record<string, number>;
-}
-
-export interface MedicalExamImageUploadResult {
-  message: string;
-  exam_id: number;
-  exam_date: string;
-  exam_type?: string | null;
-  hospital_name?: string | null;
-  items_count: number;
-  abnormal_count: number;
+  items_count?: number | null;
+  abnormal_count?: number | null;
+  conclusions_count?: number | null;
   conclusion?: string | null;
+  category_summary?: Record<string, number> | null;
+  patient_name?: string | null;
+
+  // UI-friendly camelCase fields used by multi-surface import cards.
+  examId: number;
+  examDate?: string | null;
+  examType?: string | null;
+  hospitalName?: string | null;
+  itemsCount?: number | null;
+  abnormalCount?: number | null;
+  conclusionsCount?: number | null;
 }
+
+export type MedicalExamPdfUploadResult = MedicalExamImportResult;
+
+export type MedicalExamImageUploadResult = MedicalExamImportResult;
 
 export interface MedicalExamTextUploadOptions {
   exam_date?: string;
@@ -153,13 +163,40 @@ export interface MedicalExamTextUploadOptions {
   exam_type?: string;
 }
 
-export interface MedicalExamTextUploadResult {
-  message: string;
-  exam_id: number;
-  exam_date: string;
-  exam_type?: string | null;
-  hospital_name?: string | null;
-  items_count: number;
+export type MedicalExamTextUploadResult = MedicalExamImportResult;
+
+export function normalizeMedicalExamImportResult(
+  raw: Record<string, any>,
+  source: MedicalExamImportSource,
+): MedicalExamImportResult {
+  const examId = Number(raw.exam_id ?? raw.examId ?? 0);
+  const itemsCount = raw.items_count ?? raw.itemsCount ?? null;
+  const abnormalCount = raw.abnormal_count ?? raw.abnormalCount ?? null;
+  const conclusionsCount = raw.conclusions_count ?? raw.conclusionsCount ?? null;
+
+  return {
+    ...raw,
+    message: raw.message ?? '体检报告导入成功',
+    source,
+    reviewRequired: true,
+    exam_id: examId,
+    examId,
+    exam_date: raw.exam_date ?? raw.examDate ?? null,
+    examDate: raw.exam_date ?? raw.examDate ?? null,
+    exam_type: raw.exam_type ?? raw.examType ?? null,
+    examType: raw.exam_type ?? raw.examType ?? null,
+    hospital_name: raw.hospital_name ?? raw.hospitalName ?? null,
+    hospitalName: raw.hospital_name ?? raw.hospitalName ?? null,
+    items_count: itemsCount,
+    itemsCount,
+    abnormal_count: abnormalCount,
+    abnormalCount,
+    conclusions_count: conclusionsCount,
+    conclusionsCount,
+    conclusion: raw.conclusion ?? null,
+    category_summary: raw.category_summary ?? null,
+    patient_name: raw.patient_name ?? null,
+  };
 }
 
 /**
@@ -177,7 +214,7 @@ export async function uploadMedicalExamPdf(
     form,
     { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120_000 },
   );
-  return res.data;
+  return normalizeMedicalExamImportResult(res.data, 'pdf');
 }
 
 /**
@@ -195,7 +232,7 @@ export async function uploadMedicalExamImage(
     form,
     { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120_000 },
   );
-  return res.data;
+  return normalizeMedicalExamImportResult(res.data, 'image');
 }
 
 /**
@@ -210,7 +247,7 @@ export async function uploadMedicalExamText(
     text,
     ...options,
   });
-  return res.data;
+  return normalizeMedicalExamImportResult(res.data, 'text');
 }
 
 /**
