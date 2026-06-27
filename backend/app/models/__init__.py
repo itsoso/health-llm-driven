@@ -38,6 +38,7 @@ from app.models.weight import WeightRecord
 from app.models.waist import WaistRecord
 from app.models.daily_operating_plan import DailyOperatingPlan
 from app.models.intervention_event import InterventionEvent
+from app.models.daily_artifact import DailyArtifactEvent
 from app.models.epigenetic_report import EpigeneticReport
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.device_credential import DeviceCredential
@@ -215,6 +216,7 @@ __all__ = [
     "WaistRecord",
     "DailyOperatingPlan",
     "InterventionEvent",
+    "DailyArtifactEvent",
     "EpigeneticReport",
     "BloodPressureRecord",
     "DeviceCredential",

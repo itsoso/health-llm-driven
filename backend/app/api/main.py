@@ -80,6 +80,7 @@ from app.api import (
     health_protocol,
     health_problem,
     agenda,
+    daily_artifact,
     watch,
     write_intents,
     reorder_intents,
@@ -236,6 +237,7 @@ api_router.include_router(medication.router)
 api_router.include_router(health_protocol.router)
 api_router.include_router(health_problem.router)
 api_router.include_router(agenda.router)
+api_router.include_router(daily_artifact.router)
 api_router.include_router(watch.router)
 api_router.include_router(write_intents.router)
 api_router.include_router(reorder_intents.router)
