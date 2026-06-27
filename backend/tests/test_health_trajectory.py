@@ -156,3 +156,43 @@ def test_trajectory_me_uses_latest_epigenetic_report_as_experimental_feedback(cl
     assert aging_risk["level"] == "attention"
     assert "epigenetic_pace_elevated" in aging_risk["signals"]
     assert aging_risk["confidence"] == "low"
+
+
+def test_trajectory_me_includes_personal_prediction_context(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    from app.models.intervention_cycle import InterventionCycle, OutcomeMetric
+    from app.models.waist import WaistRecord
+    from app.models.weight import WeightRecord
+
+    db.add(WeightRecord(user_id=user.id, record_date=date.today(), weight=82.0, bmi=27.2))
+    db.add(WaistRecord(user_id=user.id, record_date=date.today(), waist_cm=92.0))
+    cycle = InterventionCycle(
+        user_id=user.id,
+        cycle_type="metabolic_90d",
+        status="active",
+        start_date=date.today(),
+    )
+    db.add(cycle)
+    db.flush()
+    db.add(OutcomeMetric(
+        cycle_id=cycle.id,
+        metric_code="weight",
+        unit="kg",
+        baseline_value=82.0,
+        latest_value=79.0,
+        delta=-3.0,
+        direction="down",
+    ))
+    db.commit()
+
+    resp = client.get("/api/v1/trajectory/me", headers=headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["personal_predictions"][0]["metric"] == "weight"
+    metabolic = next(r for r in body["trajectory_risks"] if r["domain"] == "metabolic_health")
+    context = metabolic["personal_prediction_context"]
+    assert context["metric"] == "weight"
+    assert context["model_version"] == "personal_prediction_v1"
+    assert context["uncertainty"]["level"] in {"low", "medium", "high"}
+    assert "不替代医生诊断" in context["claim_boundary"]

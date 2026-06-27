@@ -63,3 +63,28 @@ def test_trajectory_context_boosts_and_explains_top_action():
     assert ranked_context["trajectory_context"]["state_variable"] == "waist_cm"
     assert ranked_context["verification_window_days"] == 7
     assert "轨迹" in ranked_context["rationale_short"]
+
+
+def test_personal_prediction_context_boosts_matching_verifiable_action():
+    base = _item("记录晚餐后 10 分钟步行", "movement", priority=55)
+    with_prediction = dict(base)
+    with_prediction["verification"] = {"metrics": ["weight"], "window_days": 7}
+    with_prediction["personal_prediction_context"] = {
+        "id": "personal_prediction:cycle:1:weight",
+        "prediction_type": "intervention_cycle_projection",
+        "metric": "weight",
+        "domain": "metabolic_health",
+        "horizon_days": 28,
+        "expected_signal": {"direction": "down", "expected_delta": -1.2},
+        "confidence": "medium",
+        "uncertainty": {"level": "medium", "drivers": ["short_cycle_observation"]},
+        "claim_boundary": "这是个人统计预测, 不替代医生诊断、处方或治疗。",
+    }
+
+    ranked_plain = rank_agenda_action(base)
+    ranked_prediction = rank_agenda_action(with_prediction)
+
+    assert ranked_prediction["leverage_score"] > ranked_plain["leverage_score"]
+    assert ranked_prediction["personal_prediction_context"]["metric"] == "weight"
+    assert ranked_prediction["verification_window_days"] == 7
+    assert "预测" in ranked_prediction["rationale_short"]

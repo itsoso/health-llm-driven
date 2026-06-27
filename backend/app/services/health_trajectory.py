@@ -15,6 +15,7 @@ from app.models.genetic_data import GeneticProfile, GeneticVariant
 from app.models.user import User
 from app.services.daily_operating_plan import build_daily_operating_plan
 from app.services.epigenetic_report_service import list_epigenetic_reports
+from app.services.personal_models.personal_prediction import build_personal_predictions
 from app.twin import build_twin
 
 
@@ -365,13 +366,60 @@ def _trajectory_risks(twin, genetic: Dict[str, Any], epigenetic: Dict[str, Any])
     return sorted(risks, key=lambda r: (_level_rank(r["level"]), FOCUS_DOMAINS.index(r["domain"])))
 
 
+def _prediction_context(prediction: Dict[str, Any]) -> Dict[str, Any]:
+    keys = (
+        "id",
+        "prediction_type",
+        "metric",
+        "domain",
+        "horizon_days",
+        "expected_signal",
+        "confidence",
+        "uncertainty",
+        "evidence_tier",
+        "claim_boundary",
+        "model_version",
+    )
+    return {key: prediction[key] for key in keys if key in prediction}
+
+
+def _enrich_risks_with_predictions(
+    risks: List[Dict[str, Any]],
+    predictions: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    active_predictions = [
+        prediction
+        for prediction in predictions
+        if prediction.get("confidence") != "low"
+    ]
+    enriched: List[Dict[str, Any]] = []
+    for risk in risks:
+        out = dict(risk)
+        match = next(
+            (
+                prediction
+                for prediction in active_predictions
+                if prediction.get("domain") == risk.get("domain")
+            ),
+            None,
+        )
+        if match:
+            out["personal_prediction_context"] = _prediction_context(match)
+        enriched.append(out)
+    return enriched
+
+
 def build_health_trajectory_snapshot(db: Session, user_id: int) -> Dict[str, Any]:
     """构建当前用户疾病上游健康轨迹快照."""
     twin = build_twin(db, user_id, use_cache=False)
     daily_plan = build_daily_operating_plan(db, user_id)
     genetic = _genetic_baseline(db, user_id)
     epigenetic = _epigenetic_feedback(db, user_id)
-    risks = _trajectory_risks(twin, genetic, epigenetic)
+    predictions = build_personal_predictions(db, user_id)
+    risks = _enrich_risks_with_predictions(
+        _trajectory_risks(twin, genetic, epigenetic),
+        predictions,
+    )
 
     return {
         "user_id": user_id,
@@ -403,6 +451,7 @@ def build_health_trajectory_snapshot(db: Session, user_id: int) -> Dict[str, Any
             "vo2max_running": twin.physiological.vo2max_running,
             "data_sources": twin.meta.data_sources,
         },
+        "personal_predictions": predictions,
         "modifiable_levers": {
             "nutrition": {
                 "calories_today": twin.behavioral.diet_calories_today,
