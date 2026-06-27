@@ -33,6 +33,7 @@
 - 不同步完整付费课程正文，不给用户展示大段课程内容。
 - Agent 使用结构化 `applies_when` 命中知识，而不是只靠 embedding 模糊召回。
 - Dedao 课程扩展先通过 dry-run PR-style diff 和 reviewer queue 摘要，再写入 reviewed artifacts；draft 结果不会覆盖已经 reviewed 的 claim。
+- 若由 `dedao-kbase`/`ak-kbase` 侧先编译出统一 export，使用 [`dedao-kbase-reva-sync.md`](dedao-kbase-reva-sync.md) 的 `system_kb_export.json` 契约和 `ingest_dedao_kbase_export.py`，默认进入 draft gate，禁止直接作为运行时搜索源。
 
 当前线上已导入：
 
