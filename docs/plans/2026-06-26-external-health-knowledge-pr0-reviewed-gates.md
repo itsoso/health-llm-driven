@@ -1,7 +1,7 @@
 # External Health Knowledge Integration PR0 Reviewed Gates
 
 日期: 2026-06-26
-状态: 执行中，PR0 reviewed-only gate 已落地，本文作为后续知识库接入的执行基线。
+状态: PR0 reviewed-only gate 与 high-risk golden slices 已落地，本文作为后续知识库接入的执行基线。
 范围: 运动、饮食、补剂、睡眠、胃病治疗、慢性鼻炎治疗、基因解析等外部健康知识进入 Reva 系统的治理路径。
 
 ## 1. 决策
@@ -42,11 +42,11 @@ official / curated source
 
 | artifact | count |
 | --- | ---: |
-| entities | 223 |
-| claims | 437 |
-| relations | 3262 |
-| eval_cases | 34 |
-| contraindications | 33 |
+| entities | 226 |
+| claims | 440 |
+| relations | 3277 |
+| eval_cases | 37 |
+| contraindications | 36 |
 
 已覆盖的 high-risk golden slice:
 
@@ -56,7 +56,7 @@ official / curated source
 - 睡眠: 夜间低氧/ODI 升高升级为睡眠呼吸评估，禁止用加大训练替代；失眠进入 CBT-I 和睡眠医学边界；镇静药合并酒精或低氧进入医生/药师/睡眠中心复核禁区。
 - 运动: 发热/疑似感染时训练目标降级，禁止带病加量；运动中胸痛/晕厥/心率异常进入停止训练和医生/急症分诊边界；低恢复/Training Readiness 很低时训练降级。
 - 饮食: 高钠饮食与血压偏高只做食物来源识别和家庭血压趋势，禁止调药或极端限盐；糖尿病极端控碳/禁食、CKD 高蛋白或极端去蛋白、痛风/高尿酸快速减重和脱水、高血压合并 CKD/保钾用药时钾盐替代进入医生/营养师复核边界。
-- 慢性鼻炎: 鼻喷激素/盐水冲洗/抗组胺依从性复盘，禁止自行升级鼻炎用药或长期依赖减充血剂。
+- 慢性鼻炎: 鼻喷激素/盐水冲洗/抗组胺依从性复盘，禁止自行升级鼻炎用药或长期依赖减充血剂；鼻窦炎样红旗、鼻炎-哮喘重叠、过敏原免疫治疗/脱敏治疗进入耳鼻喉科/过敏科/呼吸科转诊或复核边界。
 - 基因/PGx: TPMT/NUDT15 硫嘌呤；CYP2C19 氯吡格雷/PPI；DPYD/氟嘧啶；SLCO1B1/他汀；HLA-B*15:02/卡马西平或奥卡西平；CYP2C9/VKORC1/华法林；HLA-A*31:01/卡马西平；HLA-B*58:01/别嘌醇；G6PD/高风险氧化性药物。
 - 补剂: 维生素 D/eGFR/血钙；镁与吸收相关用药；Omega-3 与抗凝/抗血小板；咖啡因与睡眠不足；益生菌与免疫抑制；褪黑素与镇静药叠加。
 
@@ -156,7 +156,7 @@ official / curated source
 ## 4. 实施顺序
 
 1. PR0 reviewed-only gate: 已完成。
-2. High-risk golden slices: 按“胃病/HP -> PGx -> 睡眠 -> 运动 -> 饮食 -> 鼻炎 -> 补剂”继续扩展。
+2. High-risk golden slices: 胃病/HP、PGx、睡眠、运动、饮食、鼻炎、补剂本批 PR0 已覆盖。
 3. Coverage report: 每个 domain 输出 source coverage、review status、eval coverage、stale/decay risk。
 4. Draft extraction: LLM 只能生成 draft artifact；必须经过 reviewer gate 才能进入 serving。
 5. Real vector backend: 用 pgvector 或等价向量表替换当前 deterministic semantic alias stream，但保持 search response shape。
@@ -176,6 +176,4 @@ official / curated source
 
 ## 6. 下一批 backlog
 
-按风险优先级:
-
-1. 鼻炎: 鼻窦炎/哮喘/过敏原免疫治疗转诊边界。
+当前 PR0 high-risk golden slice backlog 已清空。后续进入 Coverage report、draft extraction、real vector backend、mobile evidence UI 和 release gate 自动化。
