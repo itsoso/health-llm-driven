@@ -17,10 +17,17 @@ from app.models.user import User
 from app.services.alert_clarification import get_clarification_opener
 from app.services.memory_dialog_extractor import extract_facts_from_dialog
 from app.services.memory_service import write_fact
+from app.services.personal_models.intervention_priors import gate_text_for_clinician
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/clarification", tags=["clarification"])
+
+# 因果有效性裁决谓词 —— 提及药物混杂指标时必须降级为描述性 observed_change (R4)。
+# responds_to / does_not_respond_to 都是"X 对 Y 有效/无效"的因果断言; partially 同理。
+_CAUSAL_EFFICACY_PREDICATES = frozenset(
+    {"responds_to", "does_not_respond_to", "partially_responds_to"}
+)
 
 
 class ClarificationOpenerResponse(BaseModel):
@@ -103,22 +110,35 @@ async def extract_memory(
 
     # 写库
     written: List[dict] = []
+    demoted_count = 0
     source = {
         "type": "voice_dialog",
         "alert_id": payload.alert_id,
         "user_turns_count": len(payload.user_turns),
     }
     for f in extracted:
+        predicate = f.predicate
+        fact_source = source
+        # R4 门控: 药物混杂指标 (转氨酶/尿酸/LDL/HbA1c/血压…) 上的因果有效性断言不可作为
+        # 🟢 高可信记忆喂回 chat LLM —— 混杂的他汀/降尿酸药/降压药才可能是真因。降级为
+        # 描述性 observed_change (保留观察, 不声称干预"有效/无效")。与 effect_estimator /
+        # crossover_verdict 共用同一门控集 (intervention_priors), 不复制关键词。
+        if predicate in _CAUSAL_EFFICACY_PREDICATES and gate_text_for_clinician(
+            f"{f.subject} {f.object_value}"
+        ):
+            predicate = "observed_change"
+            fact_source = {**source, "clinician_gated_demotion": f.predicate}
+            demoted_count += 1
         fact = write_fact(
             db,
             user_id=current_user.id,
             tier="episodic",  # 对话来的事实先放 episodic, lifecycle task 会自动升 semantic
             subject=f.subject,
-            predicate=f.predicate,
+            predicate=predicate,
             object_value=f.object_value,
             object_unit=f.object_unit,
             confidence=f.confidence,
-            source=source,
+            source=fact_source,
         )
         if fact:
             written.append({
@@ -131,6 +151,7 @@ async def extract_memory(
 
     logger.info(
         f"[clarification.extract] user={current_user.id} alert={payload.alert_id} "
-        f"extracted={len(extracted)} written={len(written)}"
+        f"extracted={len(extracted)} written={len(written)} "
+        f"clinician_demoted={demoted_count}"
     )
     return ExtractMemoryResponse(extracted_count=len(written), facts=written)

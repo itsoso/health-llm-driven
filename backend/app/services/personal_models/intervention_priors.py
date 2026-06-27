@@ -11,6 +11,7 @@ estimator 里按 sqrt(2)*obs_noise 放大。mcid = 最小临床意义变化 (改
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, replace
 from typing import Dict, Tuple
 
@@ -135,6 +136,75 @@ def is_clinician_gated_metric(metric_code: str) -> bool:
     (历史教训: 漏路由的高曝光消费端是真正的 R4 泄漏点)。
     """
     return _is_clinician_gated_code(metric_code)
+
+
+# ── 自由文本门控 ────────────────────────────────────────────────────────────────
+# 对话抽取等路径只有自然语言 (用户自陈 / subject / object), 没有 canonical metric_code。
+# 用户口语说"转氨酶/收缩压/uric acid"而非 code, 这些 NL 同义词补 code 集没有的说法。
+# 放这里 (而非各 producer 本地复制关键词) = 仍是单一事实源: 改门控集只动这一处。
+# code 集 (is_clinician_gated_metric 用) 仍是 canonical-code 的权威; 此处只是为自由文本补 NL 层。
+
+# 含非拉丁字符 (中文) 的同义词 —— 对原始小写文本子串匹配。
+_CLINICIAN_GATED_TEXT_TERMS_ZH = (
+    "转氨酶", "谷丙", "谷草", "肝酶",          # ALT / AST / GGT (DILI 药物混杂)
+    "尿酸",                                     # UA (降尿酸药混杂)
+    "胆固醇", "低密度脂蛋白", "载脂蛋白",       # TC / LDL / ApoB (他汀混杂)
+    "血糖", "糖化",                             # 空腹血糖 / HbA1c (降糖药混杂)
+    "血压", "收缩压", "舒张压",                 # BP / SBP / DBP (降压药混杂; 血压≠收缩压子串)
+    "睾酮", "皮质醇", "甲状腺",                 # 激素
+)
+
+# 纯拉丁 NL 叙述同义词 (code 集没有的英文说法) —— 归一化 (去空格/下划线/连字符) 后子串匹配,
+# 故 "blood pressure" / "uric acid" / "apo b" / "liver enzymes" 都能命中。
+_CLINICIAN_GATED_TEXT_TERMS_EN = (
+    "bloodpressure", "systolic", "diastolic",
+    "uricacid", "transaminase", "cholesterol", "liverenzyme",
+    "apolipoprotein",  # 拼全的 ApoB (缩写 apob/apo b 与中文载脂蛋白另有覆盖)
+)
+
+_ALL_GATED_CODES = _CLINICIAN_GATED_EXACT_CODES | frozenset(_CLINICIAN_GATED_KEYWORDS)
+
+# 短 code/keyword (≤3 字符: alt/ast/ggt/ua/tc/bp/sbp/dbp/a1c/tsh/ft4) 在自由文本里只能
+# 按 token 边界匹配 —— 子串会误伤 salt⊃alt / manual⊃ua / watch⊃tc / 60bpm⊃bp。
+_GATED_SHORT_TOKENS = frozenset(c for c in _ALL_GATED_CODES if len(c) <= 3)
+
+# 长 code/keyword (>3) 归一化去下划线后并入英文 NL 叙述, 统一对归一化文本子串匹配
+# (足够长/唯一, 子串安全)。两套均从上面单一事实源派生, 不复制清单。
+_GATED_LONG_NORM = tuple(
+    c.replace("_", "") for c in _ALL_GATED_CODES if len(c) > 3
+) + _CLINICIAN_GATED_TEXT_TERMS_EN
+
+
+def _strip_to_latin(text: str) -> str:
+    """小写 + 去掉一切非字母数字 (空格/下划线/连字符/标点/中文) → 让 'blood pressure' /
+    'blood_pressure' / 'apo b' 归一成同一串, 仅用于长 NL 子串匹配。"""
+    return re.sub(r"[^a-z0-9]+", "", text.lower())
+
+
+def gate_text_for_clinician(text: str) -> bool:
+    """自由文本 (用户自陈 / subject / object_value) 是否提及处方/激素/药物混杂指标。
+
+    用于对话抽取这类"只有自然语言、无 canonical metric_code"的路径: 命中 → 调用方应把
+    因果裁决 (responds_to / does_not_respond_to / partially_responds_to) 降级为描述性
+    observed_change, 防止对药物混杂指标 (ALT/尿酸/LDL/HbA1c/血压…) 下"X 有效/无效"的
+    R4 efficacy 断言 (混杂的他汀/降尿酸药/降压药才可能是真因)。
+
+    与 is_clinician_gated_metric 共享同一 canonical-code 集 (_CLINICIAN_GATED_EXACT_CODES
+    / _CLINICIAN_GATED_KEYWORDS), 自由文本另补中英 NL 同义词。
+
+    R4 保守: 命中即门控。漏判 (under-gate) = 真 R4 泄漏; 误判 (把纯生活方式因果降级) =
+    安全侧失败 (故对短 code 之外宁可宽松)。短 code 按 token 边界匹配防 salt/manual/watch/bpm 误伤。
+    """
+    if not text:
+        return False
+    low = text.lower()
+    if any(term in low for term in _CLINICIAN_GATED_TEXT_TERMS_ZH):
+        return True
+    norm = _strip_to_latin(low)
+    if any(sub in norm for sub in _GATED_LONG_NORM):
+        return True
+    tokens = set(re.split(r"[^a-z0-9]+", low))
+    return bool(tokens & _GATED_SHORT_TOKENS)
 
 
 def get_prior(cycle_type: str, metric_code: str) -> EffectPrior:
