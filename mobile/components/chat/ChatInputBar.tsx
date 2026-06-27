@@ -2,14 +2,20 @@ import React, { useCallback, useRef, useState } from 'react';
 import {
   View, TextInput, TouchableOpacity, StyleSheet, Text,
   Modal, Pressable, ActivityIndicator, TextStyle, ScrollView,
+  Alert,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
 import { useMediaPicker, type PendingImage } from '../../hooks/useMediaPicker';
 import { useVoiceRecording } from '../../hooks/useVoiceRecording';
+import {
+  executeMedicalExamImportSkillForDocumentAsset,
+  type ChatMedicalExamImportSkillResult,
+} from '../../services/chatMedicalExamImportSkill';
 import {
   revaColors as C,
   revaSpacing,
@@ -38,11 +44,14 @@ interface Props {
   initialText?: string;
   /** Reserved for callers that keep composer API aligned with chat-level voice entry. */
   conversationId?: number;
+  onMedicalExamImportResult?: (result: ChatMedicalExamImportSkillResult) => void;
 }
 
-export default function ChatInputBar({ onSend, isStreaming, initialText }: Props) {
+export default function ChatInputBar({ onSend, isStreaming, initialText, onMedicalExamImportResult }: Props) {
   const [input, setInput] = useState(initialText ?? '');
   const [showMenu, setShowMenu] = useState(false);
+  const [showMedicalImportMenu, setShowMedicalImportMenu] = useState(false);
+  const [medicalImportBusy, setMedicalImportBusy] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
   const [cancelHint, setCancelHint] = useState(false);
   const [justSent, setJustSent] = useState(false);  // 刚发送, 按钮停留 1s 避免误切 mic
@@ -119,6 +128,90 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
     }
   }, []);
 
+  const runMedicalExamImport = useCallback(async (asset: { uri: string; name?: string | null; mimeType?: string | null }) => {
+    if (medicalImportBusy) return;
+    setMedicalImportBusy(true);
+    try {
+      const result = await executeMedicalExamImportSkillForDocumentAsset(asset);
+      onMedicalExamImportResult?.(result);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (e: any) {
+      Alert.alert('导入体检报告失败', e?.message || '请稍后再试');
+    } finally {
+      setMedicalImportBusy(false);
+      setShowMedicalImportMenu(false);
+    }
+  }, [medicalImportBusy, onMedicalExamImportResult]);
+
+  const handleImportMedicalExamFile = useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        copyToCacheDirectory: true,
+      });
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        await runMedicalExamImport({
+          uri: asset.uri,
+          name: asset.name,
+          mimeType: asset.mimeType,
+        });
+      }
+    } catch (e: any) {
+      Alert.alert('选择报告失败', e?.message || '请稍后再试');
+    }
+  }, [runMedicalExamImport]);
+
+  const handleImportMedicalExamPhoto = useCallback(async () => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('需要相机权限', '请在系统设置中允许 Reva 使用相机。');
+        return;
+      }
+      const picked = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        quality: 0.85,
+        allowsEditing: false,
+      });
+      if (!picked.canceled && picked.assets[0]) {
+        const asset = picked.assets[0];
+        await runMedicalExamImport({
+          uri: asset.uri,
+          name: asset.fileName || 'medical-exam-photo.jpg',
+          mimeType: asset.mimeType || 'image/jpeg',
+        });
+      }
+    } catch (e: any) {
+      Alert.alert('拍摄报告失败', e?.message || '请稍后再试');
+    }
+  }, [runMedicalExamImport]);
+
+  const handleImportMedicalExamLibrary = useCallback(async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('需要相册权限', '请在系统设置中允许 Reva 访问照片。');
+        return;
+      }
+      const picked = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.85,
+        allowsEditing: false,
+      });
+      if (!picked.canceled && picked.assets[0]) {
+        const asset = picked.assets[0];
+        await runMedicalExamImport({
+          uri: asset.uri,
+          name: asset.fileName || 'medical-exam-image.jpg',
+          mimeType: asset.mimeType || 'image/jpeg',
+        });
+      }
+    } catch (e: any) {
+      Alert.alert('选择报告图片失败', e?.message || '请稍后再试');
+    }
+  }, [runMedicalExamImport]);
+
   const toggleMenu = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowMenu(!showMenu);
@@ -177,6 +270,13 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
         <View style={styles.transcribingBar}>
           <ActivityIndicator size="small" color={C.green500} />
           <Text style={styles.transcribingText}>语音识别中...</Text>
+        </View>
+      )}
+
+      {medicalImportBusy && (
+        <View style={styles.transcribingBar}>
+          <ActivityIndicator size="small" color={C.green500} />
+          <Text style={styles.transcribingText}>体检报告导入中...</Text>
         </View>
       )}
 
@@ -269,6 +369,34 @@ export default function ChatInputBar({ onSend, isStreaming, initialText }: Props
             <MenuItem icon="camera-outline" label="拍照" desc="拍摄食物或健康数据" onPress={handleTakePhoto} />
             <MenuItem icon="image-outline" label="相册" desc="选择多张图片（最多9张）" onPress={handlePickImage} />
             <MenuItem icon="document-outline" label="文件" desc="上传文档或报告" onPress={handlePickFile} />
+            <MenuItem
+              icon="document-text-outline"
+              label="导入体检报告"
+              desc={medicalImportBusy ? '正在写入体检基线' : 'PDF/图片入库并生成动态卡片'}
+              onPress={() => {
+                setShowMenu(false);
+                setShowMedicalImportMenu(true);
+              }}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={showMedicalImportMenu} transparent animationType="slide" onRequestClose={() => setShowMedicalImportMenu(false)}>
+        <Pressable style={styles.menuOverlay} onPress={() => setShowMedicalImportMenu(false)}>
+          <Pressable
+            testID="medical-exam-import-sheet"
+            style={styles.menuSheet}
+            onPress={e => e.stopPropagation()}
+          >
+            <View style={styles.menuHandle} />
+            <View style={styles.medicalImportHeader}>
+              <Text style={styles.menuLabel}>导入体检报告</Text>
+              <Text style={styles.menuDesc}>写入体检记录，并在对话中生成可复核卡片</Text>
+            </View>
+            <MenuItem icon="document-outline" label="选择 PDF 或图片报告" desc="从文件中选择体检 PDF 或化验单图片" onPress={handleImportMedicalExamFile} />
+            <MenuItem icon="camera-outline" label="拍摄体检/化验单" desc="拍照后直接 OCR 入库" onPress={handleImportMedicalExamPhoto} />
+            <MenuItem icon="images-outline" label="从相册选择报告图片" desc="选择已有报告照片并入库" onPress={handleImportMedicalExamLibrary} />
           </Pressable>
         </Pressable>
       </Modal>
@@ -437,6 +565,10 @@ const styles = StyleSheet.create({
   menuHandle: {
     width: 36, height: 4, borderRadius: 2, backgroundColor: C.ink4,
     alignSelf: 'center', marginBottom: revaSpacing.s4,
+  },
+  medicalImportHeader: {
+    paddingHorizontal: 4,
+    paddingBottom: 8,
   },
   menuItem: {
     flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14,

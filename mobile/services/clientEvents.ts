@@ -10,6 +10,7 @@ export type ClientEventName =
   | 'action_card_executed'        // ActionCard 执行/完成按钮
   | 'push_notification_opened'    // 从推送进 app (deep_link 路由后 emit)
   | 'chat_message_sent'           // 用户发送对话 (chat / voice 入口)
+  | 'chat_runtime_skill_completed' // Chat 内确定性 runtime skill 完成
   | 'quick_record_logged'         // 快速记录 (BP / 体重 / 用药 / 喝水) 提交
   // Phase 4 (2026-05-29) — cold start 观测
   | 'home_cold_start_perf'        // 首页 critical query 全部就绪的耗时分布
@@ -42,6 +43,7 @@ export type ClientEventName =
  * - action_card_executed: { card_id: number, action: 'execute' | 'complete' | 'reminder' }
  * - push_notification_opened: { kind?: string, deep_link?: string }
  * - chat_message_sent: { source: 'chat' | 'voice' | 'siri', has_image: boolean }
+ * - chat_runtime_skill_completed: { skill_id: string, card_type: string }
  * - quick_record_logged: { kind: 'bp' | 'weight' | 'water' | 'medication' | 'supplement' | 'mood' | ... }
  * - starter_chips_shown: { keys: string[], source: 'chat' }
  * - starter_chip_clicked: { key: string, priority: number, position: number, source: 'chat' }

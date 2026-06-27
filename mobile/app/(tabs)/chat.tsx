@@ -37,6 +37,7 @@ import {
 } from '../../constants/revaTheme';
 import { sharePlainText } from '../../utils/share';
 import { buildSelectedChatShareMessage, isShareableChatMessage } from '../../utils/chatShareSelection';
+import type { ChatMedicalExamImportSkillResult } from '../../services/chatMedicalExamImportSkill';
 
 type SuggestionCard = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -99,6 +100,7 @@ export default function ChatScreen() {
     newChat,
     loadLatestConversation,
     loadConversation,
+    setMessages,
   } = chat;
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
@@ -275,6 +277,29 @@ export default function ChatScreen() {
     setContextBadge(null);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
   }, [sendMessage]);
+
+  const handleMedicalExamImportResult = useCallback((result: ChatMedicalExamImportSkillResult) => {
+    isNearBottom.current = true;
+    setMessages(prev => [
+      ...prev,
+      {
+        id: `medical-exam-import-${Date.now()}`,
+        role: 'assistant',
+        content: '',
+        cardType: result.card.type,
+        cardData: result.card.data,
+        toolsUsed: [result.skillId],
+      },
+    ]);
+    setContextBadge('体检导入结果');
+    try {
+      void emitClientEvent('chat_runtime_skill_completed', {
+        skill_id: result.skillId,
+        card_type: result.card.type,
+      });
+    } catch { /* noop */ }
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
+  }, [setMessages]);
 
   const handleOpenerQuickReply = useCallback((text: string) => {
     isNearBottom.current = true;
@@ -590,7 +615,13 @@ export default function ChatScreen() {
             </TouchableOpacity>
           </View>
         )}
-        <ChatInputBar onSend={handleSend} isStreaming={isStreaming} initialText={initialInput} conversationId={conversationId} />
+        <ChatInputBar
+          onSend={handleSend}
+          isStreaming={isStreaming}
+          initialText={initialInput}
+          conversationId={conversationId}
+          onMedicalExamImportResult={handleMedicalExamImportResult}
+        />
         <View testID="chat-bottom-spacer" style={{ height: bottomSpacerHeight }} />
       </View>
 

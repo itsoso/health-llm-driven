@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 import React from 'react';
 import { StyleSheet } from 'react-native';
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import ChatInputBar from '../ChatInputBar';
 import { revaColors } from '../../../constants/revaTheme';
 
 const mockStartRecording = jest.fn();
+const mockExecuteMedicalExamImport = jest.fn();
 
 jest.mock('../../../hooks/useMediaPicker', () => ({
   useMediaPicker: () => ({
@@ -31,6 +32,10 @@ jest.mock('../../../hooks/useVoiceRecording', () => ({
 
 jest.mock('expo-document-picker', () => ({
   getDocumentAsync: jest.fn(),
+}));
+
+jest.mock('../../../services/chatMedicalExamImportSkill', () => ({
+  executeMedicalExamImportSkillForDocumentAsset: (...args: any[]) => mockExecuteMedicalExamImport(...args),
 }));
 
 jest.mock('expo-router', () => ({
@@ -78,5 +83,47 @@ describe('ChatInputBar', () => {
     fireEvent(getByLabelText('按住说话'), 'pressIn', { nativeEvent: { pageY: 300 } });
 
     expect(mockStartRecording).toHaveBeenCalled();
+  });
+
+  it('runs the medical exam import skill from the attachment menu', async () => {
+    const DocumentPicker = require('expo-document-picker');
+    DocumentPicker.getDocumentAsync.mockResolvedValueOnce({
+      canceled: false,
+      assets: [{
+        uri: 'file:///tmp/report.pdf',
+        name: 'report.pdf',
+        mimeType: 'application/pdf',
+      }],
+    });
+    const skillResult = {
+      skillId: 'medical_exam_import',
+      card: {
+        type: 'medical_exam_import_result',
+        data: { exam_id: 42, items_count: 28, review_required: true },
+      },
+    };
+    mockExecuteMedicalExamImport.mockResolvedValueOnce(skillResult);
+    const onMedicalExamImportResult = jest.fn();
+
+    const { getByLabelText } = render(
+      <ChatInputBar
+        onSend={jest.fn()}
+        isStreaming={false}
+        onMedicalExamImportResult={onMedicalExamImportResult}
+      />,
+    );
+
+    fireEvent.press(getByLabelText('附件菜单'));
+    fireEvent.press(getByLabelText('导入体检报告'));
+    fireEvent.press(getByLabelText('选择 PDF 或图片报告'));
+
+    await waitFor(() => {
+      expect(mockExecuteMedicalExamImport).toHaveBeenCalledWith({
+        uri: 'file:///tmp/report.pdf',
+        name: 'report.pdf',
+        mimeType: 'application/pdf',
+      });
+    });
+    expect(onMedicalExamImportResult).toHaveBeenCalledWith(skillResult);
   });
 });
