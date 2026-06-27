@@ -1,31 +1,31 @@
-# Health Runtime Governance Product Plan
+# 健康运行时治理产品规划
 
-> Status: draft
-> Updated: 2026-06-27
-> Owner: Reva / Personal Health OS
-> Related PRD: `docs/prd/2026-06-27-code-derived-product-prd-and-10m-goal.md`
-> Related docs/code: `docs/specs/reva-product-governance-spec.md`, `docs/design-personal-predictive-model.md`, `docs/PRODUCT_ROADMAP.md`, `docs/plans/2026-06-15-smart-bedroom-sleep-environment-devices.md`, `docs/specs/active/2026-06-19-p3-reorder-detection.md`, `docs/specs/active/2026-06-22-p5-reorder-ordering.md`, `backend/app/services/health_trajectory.py`, `backend/app/services/personal_models/`, `backend/app/services/action_ranker.py`, `backend/app/services/agenda_service.py`, `backend/app/services/causal_memory.py`, `backend/app/models/bedroom_environment.py`
+> 状态：草案
+> 更新时间：2026-06-27
+> 负责人：Reva / Personal Health OS
+> 关联 PRD：`docs/prd/2026-06-27-code-derived-product-prd-and-10m-goal.md`
+> 关联文档/代码：`docs/specs/reva-product-governance-spec.md`、`docs/design-personal-predictive-model.md`、`docs/PRODUCT_ROADMAP.md`、`docs/plans/2026-06-15-smart-bedroom-sleep-environment-devices.md`、`docs/specs/active/2026-06-19-p3-reorder-detection.md`、`docs/specs/active/2026-06-22-p5-reorder-ordering.md`、`backend/app/services/health_trajectory.py`、`backend/app/services/personal_models/`、`backend/app/services/action_ranker.py`、`backend/app/services/agenda_service.py`、`backend/app/services/causal_memory.py`、`backend/app/models/bedroom_environment.py`
 
-## 1. Planning Thesis
+## 1. 规划主张
 
 本计划把“健康是可观测、可预测、可干预、可治理的运行时系统”落成 Reva 下一阶段产品主线。
 
 核心判断：
 
-- Reva 当前能力已经足够多，下一阶段不是继续增加健康功能，而是把现有 Health Twin、HealthTrajectory、SafetyGuardian、ActionRanker、Agenda、InterventionCycle、CausalMemory 和 personal_models 收束成一个用户每天能理解和执行的治理闭环。
+- Reva 当前能力已经足够多，下一阶段不是继续堆健康功能，而是把现有 `HealthTwin`、`HealthTrajectory`、`SafetyGuardian`、`ActionRanker`、`Agenda`、`InterventionCycle`、`CausalMemory` 和 `personal_models` 收束成一个用户每天能理解、能执行、能复盘的治理闭环。
 - 预测能力不能成为独立炫技模块。预测必须服务于行动排序、安全边界、复测计划和个人规律沉淀。
-- 基因、甲基化、VO2max、生物年龄、血糖、血压等都不能被包装成宿命或确定性抗衰承诺。它们只能作为边界、倾向、代理指标、运行时信号或验证反馈。
+- 基因、甲基化、VO2max、生物年龄、血糖、血压等数据不能被包装成宿命或确定性抗衰承诺。它们只能作为边界、倾向、代理指标、运行时信号或验证反馈。
 - IoT、补剂补货、环境控制和个性化供应链不能绕过治理。它们是低摩擦采集、环境默认和受控执行层，不是独立医疗判断层。
 
-## 2. Requirement Admission
+## 2. 需求准入判断
 
 ```yaml
 RequirementAdmission:
-  request: 基于健康运行时治理世界观修改 PRD 并制定新规划
-  classification: docs | product_change | planning
-  first_user_fit: 35-60 岁高强度工作者, 有代谢/恢复/睡眠/慢病风险和多源健康数据
-  core_loop_step: Health Twin -> Health Trajectory -> Safety Gate -> ActionRanker -> Agenda -> Execution -> Outcome Review
-  first_class_objects:
+  需求: 基于健康运行时治理世界观修改 PRD 并制定新规划
+  分类: 文档 | 产品变化 | 规划
+  首批用户: 35-60 岁高强度工作者, 有代谢/恢复/睡眠/慢病风险和多源健康数据
+  核心闭环: Health Twin -> Health Trajectory -> Safety Gate -> ActionRanker -> Agenda -> Execution -> Outcome Review
+  一等对象:
     - HealthTwin
     - DomainKnowledgeBase
     - RealtimeHealthSignal
@@ -40,18 +40,18 @@ RequirementAdmission:
     - IoTActuationIntent
     - SupplyIntent
     - OrganSystemProgram
-  target_surface: Backend source of truth, Mobile Today/Agenda/Review, Watch top action, Mac workbench
-  source_of_truth: backend objects and services
-  safety_level: medical_boundary | privacy_sensitive
-  prescription_or_causal_verdict: clinician_review_downgraded
-  autonomy_tier: manual_confirm
-  evidence_provenance: reviewed knowledge, user data, device signals, clinical anchors, per-user observations
-  claim_hedging: hedged
-  verification_window: 1 day, 7 days, 4 weeks, 8-12 weeks, retest date
-  success_metric: weekly completed safe high-leverage actions with attached verification plan
-  added_user_burden: low
-  burden_justification: use existing data and current daily loop; ask only for data that changes decisions
-  non_goals:
+  目标端: Backend 真相源, Mobile Today/Agenda/Review, Watch top action, Mac workbench
+  真相源: backend objects and services
+  安全等级: medical_boundary | privacy_sensitive
+  处方或因果结论: clinician_review_downgraded
+  自主等级: manual_confirm
+  证据来源: reviewed knowledge, user data, device signals, clinical anchors, per-user observations
+  表述边界: hedged
+  验证窗口: 1 day, 7 days, 4 weeks, 8-12 weeks, retest date
+  成功指标: 每周完成带验证计划的安全高杠杆行动
+  新增用户负担: low
+  负担理由: 复用已有数据和当前每日闭环，只在能改变决策时才询问用户
+  非目标:
     - fine-tune personal LLM on health facts
     - deterministic gene destiny claims
     - autonomous clinical or medication changes
@@ -60,146 +60,146 @@ RequirementAdmission:
     - LLM-only IoT control
     - silent supplement purchase or recurring order
     - personalized supplement manufacturing without regulatory, quality and safety review
-  smallest_end_to_end_slice: Today top action shows target state variable, trajectory reason, safety boundary, execution control, and verification signal
-  stale_surface_to_remove_or_archive: duplicate Web/Mobile daily prediction pages not tied to Agenda or Review
-  spec_required: yes
+  最小端到端切片: Today top action 显示目标状态变量、轨迹原因、安全边界、执行控制和验证信号
+  需要移除或归档的过期入口: 不接入 Agenda 或 Review 的重复 Web/Mobile daily prediction 页面
+  是否需要 spec: yes
 ```
 
-## 3. Product Architecture Target
+## 3. 目标产品架构
 
 ```text
-Static priors
-  genes / age / sex / family history / medical history
+静态先验
+  基因 / 年龄 / 性别 / 家族史 / 既往病史
 
-Professional knowledge
-  diet / sleep / exercise / supplements / medication / chronic conditions / organ systems / safety rules
+专业知识
+  饮食 / 睡眠 / 运动 / 补剂 / 药物 / 慢病 / 器官系统 / 安全规则
 
-Runtime inputs
-  sleep / diet / exercise / stress / medication / supplements / weather / calendar / social constraints
+运行时输入
+  睡眠 / 饮食 / 运动 / 压力 / 药物 / 补剂 / 天气 / 日程 / 社交约束
 
-Sensors
-  labs / wearables / CGM / symptoms / imaging / retests / user feedback / home devices / office devices
+传感器
+  化验 / 可穿戴 / CGM / 症状 / 影像 / 复测 / 用户反馈 / 家居设备 / 办公设备
 
-State model
+状态模型
   Health Twin
 
-Trajectory model
-  baseline deviation / trend / risk drift / forecast with uncertainty / data gaps
+轨迹模型
+  基线偏离 / 趋势 / 风险漂移 / 带不确定性的预测 / 数据缺口
 
-Safety boundary
-  SafetyGuardian / evidence boundary / clinician escalation
+安全边界
+  SafetyGuardian / 证据边界 / 医生升级
 
-LLM and tool synthesis
-  explanation / question asking / tool use / plan drafting / object creation
+LLM 与工具综合层
+  解释 / 追问 / 工具使用 / 计划草拟 / 对象创建
 
-Control input and actuation
+控制输入与执行
   Agenda top action / protocol / write intent / environment default / IoT scene / supply intent / passive capture
 
-Feedback
+反馈
   ExecutionEvent / OutcomeReview / CausalMemory / prediction backtest
 ```
 
-## 4. PRD Implementation Gap Backlog
+## 4. PRD 实现缺口计划
 
-This section tracks PRD capabilities that are not implemented, only scaffolded, or not yet complete enough to count as product behavior. It is the planning bridge between the PRD and future implementation specs.
+本节追踪 PRD 已经提出、但当前系统尚未实现、仅有骨架、或还不够产品化的能力。它是 PRD 到后续实现 spec 之间的计划桥梁。
 
-Status vocabulary:
+状态词：
 
-| Status | Meaning |
+| 状态 | 含义 |
 |---|---|
-| Missing | No meaningful production implementation yet. |
-| Scaffolded | Object/API/service shape exists, but intentionally inert or not wired to user value. |
-| Partial | Some code exists, but the full PRD loop is not complete. |
-| Needs Productization | Backend capability exists, but it is not visible, understandable, or integrated in the daily loop. |
+| 未实现 | 还没有有效的生产级实现。 |
+| 骨架 | 对象、API 或服务形状已经存在，但有意保持 inert，或尚未接到用户价值。 |
+| 部分实现 | 已有一部分代码，但完整 PRD 闭环尚未完成。 |
+| 待产品化 | 后端能力已经存在，但用户还看不见、看不懂，或没有进入每日闭环。 |
 
-### P0: Core Loop Gaps
+### P0：核心闭环缺口
 
-| Gap | PRD Capability | Current Evidence | Missing Work | Target Phase |
+| 编号 | PRD 能力 | 当前证据 | 缺口工作 | 目标阶段 |
 |---|---|---|---|---|
-| G0.1 | HealthTrajectory drives daily action selection | `backend/app/services/health_trajectory.py` and `/trajectory/me` exist; tests cover evidence/confidence/claim_boundary | ActionRanker and Agenda do not yet consume trajectory risk as a first-class scoring input; trajectory risk shape lacks a full PRD contract for `state_variable`, `horizon`, `uncertainty`, and `verification_window` | Phase 1 |
-| G0.2 | Today top action explains control-input semantics | Agenda and Watch summary already expose top actions and verification windows | Top action does not consistently show target state variable, expected effect window, success signal, failure/safety signal, and trajectory reason across Mobile/Watch | Phase 1 |
-| G0.3 | Prediction vs actual is a unified review loop | Health consultation predictions, outcome grader, specialist hit-rate and InterventionCycle pieces exist | No unified prediction record contract attached to Agenda/Intervention/Specialist/Problem; Review does not yet show a user-facing “prediction -> actual -> next step” timeline | Phase 2 |
-| G0.4 | PersonalPrediction feeds Twin/Trajectory | `backend/app/services/personal_models/treatment_effect.py` and priors exist | Model outputs are not yet a stable Twin/Trajectory section, are not broadly rendered in Review, and are not used by ActionRanker as structured input | Phase 3 |
-| G0.5 | CausalMemory becomes user-visible personal规律库 | `backend/app/services/causal_memory.py` produces observational summaries with claim boundaries | No primary Mobile/Review surface for “your personal health patterns”; not integrated into Today ranking or program next-step explanations | Phase 2 |
-| G0.6 | First-run onboarding creates the initial health loop | Data upload, reports, genetics, goals, problems, protocols and agenda exist in separate flows | No unified onboarding pipeline that turns uploaded reports/devices/goals into HealthTwin + HealthProblem + HealthProgram + Protocol + first Agenda | Phase 1 |
+| G0.1 | `HealthTrajectory` 驱动每日行动选择 | `backend/app/services/health_trajectory.py` 和 `/trajectory/me` 已存在；测试覆盖 evidence、confidence、claim_boundary | `ActionRanker` 和 `Agenda` 尚未把 trajectory risk 作为一等评分输入；trajectory risk 结构还缺少完整 PRD 合同：`state_variable`、`horizon`、`uncertainty`、`verification_window` | 阶段 1 |
+| G0.2 | Today top action 解释“控制输入”语义 | `Agenda` 和 Watch summary 已经暴露 top actions 和 verification windows | Top action 还没有在 Mobile/Watch 一致展示目标状态变量、预期影响窗口、成功信号、失败/安全信号和轨迹原因 | 阶段 1 |
+| G0.3 | 预测与实际结果进入统一复盘闭环 | Health consultation predictions、outcome grader、specialist hit-rate 和 `InterventionCycle` 片段已存在 | 缺少统一 prediction record 合同，尚未附着到 `Agenda`、`Intervention`、`Specialist`、`Problem`；Review 还没有用户可见的“预测 -> 实际 -> 下一步”时间线 | 阶段 2 |
+| G0.4 | `PersonalPrediction` 反哺 Twin/Trajectory | `backend/app/services/personal_models/treatment_effect.py` 和 priors 已存在 | 模型输出还不是稳定的 Twin/Trajectory 区块，Review 中没有广泛呈现，也没有作为结构化输入进入 `ActionRanker` | 阶段 3 |
+| G0.5 | `CausalMemory` 成为用户可见的个人规律库 | `backend/app/services/causal_memory.py` 已能生成带 claim boundary 的观察性总结 | 缺少 Mobile/Review 的主入口展示“你的个人健康规律”；尚未接入 Today 排序或 program 下一步解释 | 阶段 2 |
+| G0.6 | 首次使用 onboarding 生成初始健康闭环 | 数据上传、报告、基因、目标、问题、protocol 和 agenda 已散落存在 | 缺少统一 onboarding pipeline，把报告/设备/目标转成 `HealthTwin` + `HealthProblem` + `HealthProgram` + `Protocol` + 首个 `Agenda` | 阶段 1 |
 
-### P1: Data, Knowledge, Monitoring And Safety Gaps
+### P1：数据、知识、监控与安全缺口
 
-| Gap | PRD Capability | Current Evidence | Missing Work | Target Phase |
+| 编号 | PRD 能力 | 当前证据 | 缺口工作 | 目标阶段 |
 |---|---|---|---|---|
-| G1.1 | Verified personal data layer with source/freshness/permission contract | Labs, genetics, epigenetic, wearables, symptoms, meds/supplements and reports exist in many modules | A single cross-domain `DataSourceQuality` / provenance contract is still missing for all PRD inputs, including permission, freshness, confidence and user correction | Phase 4 |
-| G1.2 | Reviewed-first professional knowledge across all target domains | System KB, reviewed-only gates, evidence boundaries and many knowledge tests exist | Coverage is uneven across diet, sleep, exercise, supplements, medication, organ-system programs and IoT/environment; user-facing citations/evidence UX are not consistently visible | Phase 2 / Phase 4 |
-| G1.3 | Realtime monitoring includes blood pressure, glucose, SpO2, body battery, environment and devices | Wearable router, device source priority, Garmin/Apple/Ring/Oura paths and bedroom/device observations exist | CGM Libre/Dexcom adapters are still `NotImplementedError`; smart BP/scale and some HealthKit paths are partial/manual; no unified realtime signal contract across health + home/office devices | Phase 4 / Phase 5 |
-| G1.4 | Per-user source preference and conflict arbitration | Wearable arbitration and source priority exist | Some arbitration remains global rather than per-user/per-condition; users cannot consistently override or inspect source preferences from the product | Phase 4 |
-| G1.5 | Trajectory safety event dashboard | SafetyGuardian, proactive coordinator and admin SLOs exist | No dedicated dashboard/audit view for trajectory-driven actions, prediction-driven nudges, false positives, or safety escalation correctness | Phase 4 |
-| G1.6 | Privacy controls for derived memory and predictions | Data isolation, audit and some export/delete paths exist | Users cannot yet pause/delete specific prediction categories, derived CausalMemory, or IoT-derived behavior in a coherent product control center | Phase 4 / Phase 5 |
+| G1.1 | 有来源、时效、权限和置信度的真实个人数据层 | 化验、基因、表观遗传、可穿戴、症状、药物/补剂和报告分布在多个模块 | 仍缺少跨领域统一的 `DataSourceQuality` / provenance 合同，覆盖所有 PRD 输入的权限、时效、置信度和用户纠错 | 阶段 4 |
+| G1.2 | 覆盖目标领域的 reviewed-first 专业知识库 | 系统 KB、reviewed-only gates、evidence boundaries 和大量知识测试已存在 | 饮食、睡眠、运动、补剂、药物、器官系统项目、IoT/环境的覆盖不均衡；用户侧引用和证据 UX 不稳定 | 阶段 2 / 阶段 4 |
+| G1.3 | 实时监控覆盖血压、血糖、SpO2、body battery、环境和设备 | wearable router、device source priority、Garmin/Apple/Ring/Oura 路径和卧室/设备 observation 已存在 | CGM Libre/Dexcom adapter 仍是 `NotImplementedError`；智能血压计/体重计和部分 HealthKit 路径仍偏手动；缺少统一的 health + home/office realtime signal 合同 | 阶段 4 / 阶段 5 |
+| G1.4 | 按用户配置数据源偏好和冲突仲裁 | wearable arbitration 和 source priority 已存在 | 部分仲裁仍是全局逻辑，不是按用户/疾病状态配置；用户无法在产品里稳定查看或覆盖 source preference | 阶段 4 |
+| G1.5 | 轨迹安全事件仪表盘 | `SafetyGuardian`、proactive coordinator 和 admin SLOs 已存在 | 缺少专门视图审计 trajectory-driven actions、prediction-driven nudges、误报和安全升级正确性 | 阶段 4 |
+| G1.6 | 派生记忆和预测的隐私控制 | 数据隔离、审计和部分导出/删除路径已存在 | 用户还不能在统一控制中心暂停/删除特定预测类别、派生 `CausalMemory` 或 IoT 派生行为 | 阶段 4 / 阶段 5 |
 
-### P1: Surface And Productization Gaps
+### P1：端侧体验与产品化缺口
 
-| Gap | PRD Capability | Current Evidence | Missing Work | Target Phase |
+| 编号 | PRD 能力 | 当前证据 | 缺口工作 | 目标阶段 |
 |---|---|---|---|---|
-| G1.7 | Mobile converges to Today / Agenda / Capture / Programs / Review | Existing Mobile routes cover these concepts, but many pages still exist as parallel entries | Route metadata and navigation cleanup are still needed; admin/debug/stale daily flows should be hidden or archived from primary navigation | Phase 0 / Phase 1 |
-| G1.8 | Programs become user-facing 8-12 week operating units | `HealthProgram` model/API/tests exist; protocols can attach to programs | Program templates, cross-object progress, Review integration, and organ-system program map are not yet first-class in Mobile Today/Programs | Phase 1 / Phase 2 |
-| G1.9 | Mac remains workbench, Web remains history/admin/family/doctor | Surface ownership doc exists | Some Web/Mobile/Mac workflows still overlap; daily consumer flows need clearer archive/converge decisions after traffic/user validation | Phase 0 / Phase 4 |
-| G1.10 | External agent outputs land in first-class objects | MCP/OpenClaw skills and tool registry exist | Not every external/LLM analysis path is forced to create Problem/Protocol/Agenda/WriteIntent/Review or explicitly mark explain-only | Phase 2 |
+| G1.7 | Mobile 收敛为 Today / Agenda / Capture / Programs / Review | 现有 Mobile routes 已覆盖这些概念，但仍有许多并行入口 | 还需要清理 route metadata 和导航；admin/debug/过期 daily flows 应从主导航隐藏或归档 | 阶段 0 / 阶段 1 |
+| G1.8 | Programs 成为用户可见的 8-12 周运营单元 | `HealthProgram` model/API/tests 已存在；protocol 可以挂到 program | Program templates、跨对象进展、Review 集成和器官系统 program map 尚未在 Mobile Today/Programs 成为一等能力 | 阶段 1 / 阶段 2 |
+| G1.9 | Mac 保持 workbench，Web 保持历史/admin/family/doctor 场景 | surface ownership doc 已存在 | 部分 Web/Mobile/Mac 工作流仍重叠；每日消费者流程需要在用户验证后更明确地归档或收敛 | 阶段 0 / 阶段 4 |
+| G1.10 | 外部 agent 输出必须落到一等对象 | MCP/OpenClaw skills 和 tool registry 已存在 | 并非所有外部/LLM 分析路径都被强制创建 `Problem`、`Protocol`、`Agenda`、`WriteIntent`、`Review`，或显式标记为 explain-only | 阶段 2 |
 
-### P2: IoT, Environment And Supply-Chain Gaps
+### P2：IoT、环境与供应链缺口
 
-| Gap | PRD Capability | Current Evidence | Missing Work | Target Phase |
+| 编号 | PRD 能力 | 当前证据 | 缺口工作 | 目标阶段 |
 |---|---|---|---|---|
-| G2.1 | Bedroom environment closed loop | `BedroomEnvironmentSnapshot`, `BedroomAutomationEvent`, `bedroom_environment_service`, Home Assistant webhook and `bedroom_outcome_analyzer` exist | HomeAssistantAdapter scene allowlist, scene downlink, BedroomSleepProtocol, Agenda projection, Mobile UI and sleep review are not complete | Phase 5 |
-| G2.2 | Device observations close Agenda items without privacy risk | `device_observation` schema/service/API and tests exist; raw media is blocked | More device types, provider auth, user consent UX, Agenda mapping and Review rendering remain incomplete | Phase 5 |
-| G2.3 | Supplement logistics and purchase boundary | Supplement inventory, reorder nudge, deep link and `ReorderIntent` scaffold exist | Real ordering is intentionally inert; OpenClaw/commerce skill contract, account binding, confirmation token, callbacks and financial safety review are pending | Phase 5 |
-| G2.4 | Personalized supplement pairing or production | Supplement recommendation and safety rules exist | No regulated supply-chain model, batch quality, PGx/DDI/DSI approval workflow, manufacturing partner boundary or post-market outcome tracking | Phase 5+ |
-| G2.5 | Office environment and workstation health loop | Device observation supports posture/screen events | Smart desk/chair/screen integrations, privacy UX, ergonomic protocols and outcome linkage are not productized | Phase 5 |
+| G2.1 | 卧室环境闭环 | `BedroomEnvironmentSnapshot`、`BedroomAutomationEvent`、`bedroom_environment_service`、Home Assistant webhook 和 `bedroom_outcome_analyzer` 已存在 | `HomeAssistantAdapter` scene allowlist、scene downlink、`BedroomSleepProtocol`、Agenda projection、Mobile UI 和睡眠复盘尚未完成 | 阶段 5 |
+| G2.2 | 设备 observation 在不扩大隐私风险的前提下闭合 Agenda item | `device_observation` schema/service/API 和测试已存在；raw media 被阻断 | 还缺更多设备类型、provider auth、用户同意 UX、Agenda 映射和 Review 渲染 | 阶段 5 |
+| G2.3 | 补剂物流和购买边界 | supplement inventory、reorder nudge、deep link 和 `ReorderIntent` 骨架已存在 | 真实下单有意保持 inert；OpenClaw/commerce skill contract、账号绑定、confirmation token、callbacks 和财务安全 review 待补 | 阶段 5 |
+| G2.4 | 个性化补剂搭配或生产 | supplement recommendation 和 safety rules 已存在 | 缺少受监管供应链模型、批次质量、PGx/DDI/DSI 审批流、生产伙伴边界和上市后 outcome tracking | 阶段 5+ |
+| G2.5 | 办公环境和工位健康闭环 | device observation 已支持 posture/screen events | 智能桌椅/屏幕集成、隐私 UX、人体工学 protocols 和 outcome linkage 尚未产品化 | 阶段 5 |
 
-### P2: Organ-System Program Gaps
+### P2：器官系统项目缺口
 
-| Gap | PRD Capability | Current Evidence | Missing Work | Target Phase |
+| 编号 | PRD 能力 | 当前证据 | 缺口工作 | 目标阶段 |
 |---|---|---|---|---|
-| G2.6 | Cardiovascular program | BP, lipids, VO2max, safety and trajectory pieces exist | No cohesive cardiovascular HealthProgram template with protocols, safety gates, retest plan and Review surface | Phase 5 / Organ map |
-| G2.7 | Metabolic/endocrine program | Metabolic cycle, waist, labs and nutrition pieces exist | Needs unified self-serve template, CGM path, meal response integration, retest cadence and program review | Phase 1 / Phase 3 |
-| G2.8 | Sleep/recovery program | Sleep, readiness, HRV and bedroom environment pieces exist | Needs integrated sleep/recovery HealthProgram that joins wearable readiness, bedroom environment and daily training decisions | Phase 5 |
-| G2.9 | Respiratory/allergy program | Rhinitis specialist, environment signals and nasal wash protocol pieces exist | Needs complete respiratory program with AQI/humidity/pollen, medication adherence, nasal wash and escalation rules | Phase 5 |
-| G2.10 | Digestive/liver program | Gastric/liver/PPI/lab pieces exist | Needs digestive/liver program template with medication/supplement interaction review, follow-up and retest plan | Phase 5 |
-| G2.11 | Musculoskeletal and workstation program | Movement/training and posture observations exist | Needs strength/mobility/sarcopenia program and office ergonomics closed loop | Phase 5 |
-| G2.12 | Neurocognitive/mental/social program | Mental, social connection and screen load pieces exist | Needs bounded program shape, red-line handling, consent and review surface | Phase 5 |
+| G2.6 | 心血管项目 | 血压、血脂、VO2max、安全和 trajectory 片段已存在 | 缺少完整 cardiovascular `HealthProgram` template，覆盖 protocols、安全闸门、复测计划和 Review surface | 阶段 5 / 器官地图 |
+| G2.7 | 代谢/内分泌项目 | metabolic cycle、腰围、化验和 nutrition 片段已存在 | 需要统一 self-serve template、CGM 路径、meal response 集成、复测节奏和 program review | 阶段 1 / 阶段 3 |
+| G2.8 | 睡眠/恢复项目 | 睡眠、readiness、HRV 和卧室环境片段已存在 | 需要整合 wearable readiness、卧室环境和每日训练决策的 sleep/recovery `HealthProgram` | 阶段 5 |
+| G2.9 | 呼吸/过敏项目 | rhinitis specialist、环境信号和 nasal wash protocol 片段已存在 | 需要完整 respiratory program，覆盖 AQI/湿度/花粉、用药依从、洗鼻和升级规则 | 阶段 5 |
+| G2.10 | 消化/肝脏项目 | 胃病、肝脏、PPI、化验片段已存在 | 需要 digestive/liver program template，覆盖药物/补剂相互作用 review、随访和复测计划 | 阶段 5 |
+| G2.11 | 肌肉骨骼与工位项目 | movement/training 和 posture observations 已存在 | 需要 strength/mobility/sarcopenia program 与办公人体工学闭环 | 阶段 5 |
+| G2.12 | 神经认知/心理/社交项目 | mental、social connection 和 screen load 片段已存在 | 需要有边界的 program shape、红线处理、同意机制和 Review surface | 阶段 5 |
 
-## 5. Phase 0: PRD And Product Language Alignment
+## 5. 阶段 0：PRD 与产品语言对齐
 
-Timebox: now to 1 week.
+时间范围：现在到 1 周。
 
-Goal: make the team and future agents use the same product language.
+目标：让团队和后续 agents 使用同一套产品语言。
 
-Work:
+工作项：
 
-- Treat `docs/prd/2026-06-27-code-derived-product-prd-and-10m-goal.md` as the current code-derived baseline PRD.
-- Adopt “Health Runtime Governance” as product thesis, but keep public language medically conservative.
-- Standardize three user-facing concepts:
-  - Health Twin: what is true now.
-  - Health Trajectory: where the state may drift.
-  - Health Action: what safe control input we choose next.
-- Add governance rule: every prediction must name horizon, uncertainty, evidence tier, claim boundary, and the action/review it affects.
-- Stop introducing standalone prediction views unless they feed Agenda, InterventionCycle, or Review.
-- Treat the five system layers as the architecture vocabulary: verified personal data, reviewed knowledge, realtime monitoring, model/tool synthesis, controlled IoT/environment execution.
+- 将 `docs/prd/2026-06-27-code-derived-product-prd-and-10m-goal.md` 作为当前 code-derived baseline PRD。
+- 采用“Health Runtime Governance”作为产品主张，但公开表达保持医疗保守。
+- 标准化三个用户可理解概念：
+  - Health Twin：现在什么是真的。
+  - Health Trajectory：状态可能如何漂移。
+  - Health Action：下一步选择什么安全控制输入。
+- 增加治理规则：每个预测都必须声明 horizon、uncertainty、evidence tier、claim boundary，以及它影响的 action/review。
+- 停止新增独立预测视图，除非它直接服务于 `Agenda`、`InterventionCycle` 或 `Review`。
+- 将五层系统作为架构词汇：真实个人数据、reviewed knowledge、实时监控、模型/工具综合、受控 IoT/环境执行。
 
-Acceptance:
+验收标准：
 
-- New product specs can fill `state_variable_to_change` and `prediction_or_trajectory_claim`.
-- Future docs avoid “destiny”, “guaranteed anti-aging”, “gene determines outcome”, and absolute causal claims.
-- PRD explicitly maps HealthTrajectory and PersonalPrediction to first-class product objects.
-- PRD explicitly maps IoT/environment and supply-chain actions to controlled execution objects, not autonomous health judgment.
+- 新产品 spec 能填写 `state_variable_to_change` 和 `prediction_or_trajectory_claim`。
+- 后续文档避免“宿命”“保证抗衰”“基因决定结果”和绝对因果结论。
+- PRD 明确把 `HealthTrajectory` 和 `PersonalPrediction` 映射为一等产品对象。
+- PRD 明确把 IoT/环境和供应链行为映射到受控执行对象，而不是自主健康判断。
 
-## 6. Phase 1: Make Trajectory Influence Today
+## 6. 阶段 1：让 Trajectory 影响 Today
 
-Timebox: 1-4 weeks.
+时间范围：1-4 周。
 
-Goal: turn trajectory from a workbench/report concept into daily action selection.
+目标：把 trajectory 从 workbench/report 概念变成每日行动选择依据。
 
-Backend work to plan next:
+后端待规划工作：
 
-- Audit `backend/app/services/health_trajectory.py` output fields and align them with Agenda item fields.
-- Add a product contract for trajectory risk:
+- 审计 `backend/app/services/health_trajectory.py` 输出字段，并与 Agenda item 字段对齐。
+- 增加 trajectory risk 产品合同：
   - `domain`
   - `state_variable`
   - `level`
@@ -212,179 +212,180 @@ Backend work to plan next:
   - `claim_boundary`
   - `primary_action`
   - `verification_window`
-- Make ActionRanker consume trajectory risk as a scoring input, not a parallel recommendation source.
-- Ensure low-confidence trajectory risks become data-gap or watchlist items rather than urgent actions.
+- 让 `ActionRanker` 把 trajectory risk 作为评分输入，而不是并行 recommendation source。
+- 低置信 trajectory risk 应降级为 data-gap 或 watchlist item，而不是 urgent action。
 
-Mobile/Watch work to plan next:
+Mobile/Watch 待规划工作：
 
-- Today top action shows:
-  - target state variable;
-  - why this trajectory matters now;
-  - safety boundary;
-  - exact action;
-  - expected verification signal.
-- Watch summary keeps this compressed into one sentence plus confirm/later/skip.
+- Today top action 展示：
+  - 目标状态变量；
+  - 为什么这个 trajectory 此刻重要；
+  - 安全边界；
+  - 具体行动；
+  - 预期验证信号。
+- Watch summary 保持压缩成一句话加 confirm/later/skip。
 
-Acceptance:
+验收标准：
 
-- A metabolic/recovery top action can explain which future drift it is trying to change.
-- The same item can be completed from Mobile or Watch through the Agenda contract.
-- No new daily route is required.
+- 一个代谢/恢复 top action 能解释它试图改变哪一种未来漂移。
+- 同一个 item 可以通过 Agenda 合同从 Mobile 或 Watch 完成。
+- 不需要新增 daily route。
 
-## 7. Phase 2: Make Prediction Backtesting Visible
+## 7. 阶段 2：让预测回测对用户可见
 
-Timebox: 1-2 months.
+时间范围：1-2 个月。
 
-Goal: make trust compound visibly through “prediction vs actual”.
+目标：通过“预测 vs 实际”让信任逐步累积。
 
-Work:
+工作项：
 
-- Define a prediction record shape that can be attached to InterventionCycle, HealthAgendaItem, Specialist output, or HealthProblem follow-up.
-- Store:
-  - predicted direction or range;
-  - horizon;
-  - baseline;
-  - expected signal;
-  - actual result;
-  - met / not_met / inconclusive;
-  - confidence change after observation.
-- Surface prediction backtests in Review, not as a vanity score.
-- Keep wording observational:
-  - allowed: “这次观察支持继续当前策略。”
-  - allowed: “数据不足，不能判断。”
-  - disallowed: “这证明某补剂让你降低 LDL。”
+- 定义可附着到 `InterventionCycle`、`HealthAgendaItem`、specialist output 或 `HealthProblem` follow-up 的 prediction record 结构。
+- 存储：
+  - 预测方向或范围；
+  - horizon；
+  - baseline；
+  - expected signal；
+  - actual result；
+  - met / not_met / inconclusive；
+  - 观察后的 confidence change。
+- 在 Review 中展示 prediction backtests，而不是做 vanity score。
+- 保持观察性措辞：
+  - 允许：“这次观察支持继续当前策略。”
+  - 允许：“数据不足，不能判断。”
+  - 禁止：“这证明某补剂让你降低 LDL。”
 
-Acceptance:
+验收标准：
 
-- User can see at least one completed loop: prediction, action, actual, interpretation, next step.
-- Specialist hit-rate or prediction confidence is visible to system maintainers.
-- Low-confidence or confounded metrics are downgraded to clinician_review or inconclusive.
+- 用户能看到至少一个完整闭环：预测、行动、实际、解释、下一步。
+- 系统维护者能看到 specialist hit-rate 或 prediction confidence。
+- 低置信或混杂指标会被降级为 clinician_review 或 inconclusive。
 
-## 8. Phase 3: Personal Prediction Models Without Personal LLM Fine-Tuning
+## 8. 阶段 3：在不微调个人 LLM 的前提下建立个人预测模型
 
-Timebox: 2-4 months, after enough closed-loop data exists.
+时间范围：2-4 个月，在积累足够闭环数据之后启动。
 
-Goal: introduce small, auditable prediction models only where data supports them.
+目标：只在数据支持的地方引入小型、可审计的预测模型。
 
-Priority order:
+优先顺序：
 
-1. Personal baseline and anomaly detection from wearable/lab time series.
-2. N-of-1 intervention effect estimate after enough InterventionCycle data.
-3. CGM + meal response only after paired CGM and diet records exist.
+1. 基于可穿戴/化验时间序列的个人基线和异常检测。
+2. 在积累足够 `InterventionCycle` 数据后，估计 N-of-1 干预效果。
+3. 只有在同时存在 CGM 和饮食记录时，才做 CGM + meal response。
 
-Rules:
+规则：
 
-- Do not fine-tune an LLM on personal health facts.
-- Keep personal model parameters server-side and user-scoped.
-- Feed LLM only summary predictions, uncertainty and boundaries.
-- Each model must fail gracefully to baseline, data gap or human review.
-- Every model output must have tests around confidence, boundary text and unsafe escalation.
+- 不在个人健康事实上微调 LLM。
+- 个人模型参数保留在服务端，并按用户隔离。
+- 只把摘要预测、不确定性和边界传给 LLM。
+- 每个模型都必须能优雅降级到 baseline、data gap 或 human review。
+- 每个模型输出都必须围绕 confidence、boundary text 和 unsafe escalation 建测试。
 
-Acceptance:
+验收标准：
 
-- `personal_models` produces at least one model output with uncertainty and version.
-- Twin or trajectory includes the prediction in a structured section.
-- ActionRanker can use the output without relying on LLM-only reasoning.
+- `personal_models` 产出至少一个带 uncertainty 和 version 的模型输出。
+- Twin 或 trajectory 以结构化 section 包含该 prediction。
+- `ActionRanker` 可以使用该输出，而不是依赖 LLM-only reasoning。
 
-## 9. Phase 4: Scale Governance For 10M Users
+## 9. 阶段 4：面向 1000 万用户扩展治理能力
 
-Timebox: starts after dogfood and paid wedge prove retention and outcome signal.
+时间范围：dogfood 和付费切口验证 retention 与 outcome signal 后启动。
 
-Goal: make health runtime governance safe, cheap and trustworthy at large scale.
+目标：让健康运行时治理在大规模下仍然安全、低成本、可信。
 
-Work:
+工作项：
 
-- Track cost and latency per Today/Agenda/Trajectory call.
-- Add safety event dashboards for trajectory-driven actions.
-- Add audit logs for prediction inputs and decisions.
-- Add per-user data source quality and source preference.
-- Add user controls for pausing prediction categories and deleting derived memory.
-- Add multi-region privacy, deletion and export paths before broad consumer rollout.
+- 跟踪每次 Today/Agenda/Trajectory 调用的成本和延迟。
+- 为 trajectory-driven actions 增加安全事件仪表盘。
+- 为 prediction inputs 和 decisions 增加审计日志。
+- 增加 per-user data source quality 和 source preference。
+- 增加用户暂停 prediction category、删除 derived memory 的控制。
+- 在大规模消费级推广前，补齐多区域隐私、删除和导出路径。
 
-Acceptance:
+验收标准：
 
-- The system can explain why a trajectory action was shown to a user.
-- The user can correct, pause or delete derived predictions/memories.
-- Operators can audit prediction-driven actions without seeing unnecessary raw sensitive data.
+- 系统能解释为什么向用户展示某个 trajectory action。
+- 用户能纠正、暂停或删除派生预测/记忆。
+- 运营者能审计 prediction-driven actions，同时不查看不必要的原始敏感数据。
 
-## 10. Phase 5: IoT, Environment And Supply Chain Execution
+## 10. 阶段 5：IoT、环境与供应链执行
 
-Timebox: after Today/Trajectory and Review loops are stable; narrow pilots can start earlier for bedroom environment.
+时间范围：Today/Trajectory 和 Review 闭环稳定后启动；卧室环境可以更早做窄 pilots。
 
-Goal: turn Reva from “suggesting behavior” into a governed execution layer that changes the user's physical and logistical environment.
+目标：让 Reva 从“建议行为”进化为受治理的执行层，能改变用户的物理环境和物流环境。
 
-Priority order:
+优先顺序：
 
-1. Bedroom sleep environment: CO2, PM2.5, humidity, temperature, lights, curtains, sleep protection window.
-2. Measurement devices: smart blood pressure cuff, smart scale, CGM and other ground-truth capture devices.
-3. Low-risk adherence devices: smart water cup, pill box observations, desk posture/screen break observations.
-4. Supplement inventory and replenishment: logistics reminder first, manual purchase later, no silent recurring order.
-5. Personalized supplement pairing or manufacturing: long-term only, after reviewed knowledge, DDI/DSI/PGx safety, quality control, regulatory review and audit model exist.
+1. 卧室睡眠环境：CO2、PM2.5、湿度、温度、灯光、窗帘、睡眠保护窗口。
+2. 测量设备：智能血压计、智能体重计、CGM 和其他 ground-truth 采集设备。
+3. 低风险依从设备：智能水杯、药盒 observation、坐姿/屏幕休息 observation。
+4. 补剂库存与补货：先做物流提醒，再做手动购买，不做静默 recurring order。
+5. 个性化补剂搭配或生产：仅作为长期方向，必须等 reviewed knowledge、DDI/DSI/PGx 安全、质量控制、监管审查和审计模型都存在后再推进。
 
-Rules:
+规则：
 
-- Reva emits health intents and scenes; Home Assistant, manufacturer apps or device ecosystems execute real-time control.
-- LLM must not directly control devices.
-- Device observations are structured scalar facts; no raw image/audio/video persistence unless a separate privacy spec authorizes it.
-- Every actuation path has manual override, audit, downgrade behavior and notification budget.
-- Financial actions and supplement supply-chain actions are `manual_confirm` by default; clinical, prescription and dose-changing actions remain manual forever.
-- IoT data must not enter generic LLM context unless privacy classification and minimization rules allow it.
+- Reva 输出 health intents 和 scenes；Home Assistant、厂商 app 或设备生态执行实时控制。
+- LLM 不直接控制设备。
+- 设备 observation 是结构化标量事实；除非另有隐私 spec 授权，不持久化原始图片/音频/视频。
+- 每条 actuation path 都必须有 manual override、audit、downgrade behavior 和 notification budget。
+- 金融动作和补剂供应链动作默认是 `manual_confirm`；临床、处方和剂量变化动作永久保持 manual。
+- IoT 数据不得进入 generic LLM context，除非隐私分类和最小化规则允许。
 
-Acceptance:
+验收标准：
 
-- A bedroom environment loop can show sensor state, executed scene, next morning sleep/recovery outcome and manual override history.
-- A supplement low-stock loop can propose a replenishment intent without medicalizing the purchase.
-- A device observation can complete or inform an Agenda item without creating an independent recommendation path.
+- 卧室环境闭环能展示 sensor state、executed scene、次日睡眠/恢复 outcome 和 manual override history。
+- 补剂低库存闭环能提出 replenishment intent，但不把购买行为医疗化。
+- 设备 observation 可以完成或影响 Agenda item，但不能创建独立 recommendation path。
 
-## 11. Organ And System Program Map
+## 11. 器官与系统项目地图
 
-Goal: organize health improvement around body systems without losing whole-person interactions.
+目标：围绕人体系统组织健康改善，同时不丢失全局交互。
 
-Initial domains:
+初始领域：
 
-- Cardiovascular: blood pressure, resting HR, HRV, VO2max, lipids, activity.
-- Metabolic/endocrine: weight, waist, HbA1c, CGM, triglycerides, liver fat risk, meal timing.
-- Sleep/recovery: sleep duration, sleep quality, HRV, training readiness, bedroom environment.
-- Respiratory/allergy: SpO2, rhinitis, AQI, humidity, pollen, nasal wash, medication adherence.
-- Digestive/liver: gastritis, PPI safety, liver enzymes, alcohol, meal composition, medication/supplement interactions.
-- Musculoskeletal: strength, mobility, sarcopenia prevention, injury recovery, posture and workstation.
-- Neurocognitive/mental: stress, screen load, sleep, social connection, mood and cognitive burden.
-- Immune/inflammation and oral health: infection signals, periodontal care, inflammatory markers where available.
+- 心血管：血压、静息心率、HRV、VO2max、血脂、活动量。
+- 代谢/内分泌：体重、腰围、HbA1c、CGM、甘油三酯、脂肪肝风险、进食时间。
+- 睡眠/恢复：睡眠时长、睡眠质量、HRV、训练 readiness、卧室环境。
+- 呼吸/过敏：SpO2、鼻炎、AQI、湿度、花粉、洗鼻、用药依从。
+- 消化/肝脏：胃炎、PPI 安全、肝酶、酒精、餐食构成、药物/补剂相互作用。
+- 肌肉骨骼：力量、活动度、肌少症预防、损伤恢复、姿势和工位。
+- 神经认知/心理：压力、屏幕负荷、睡眠、社交连接、情绪和认知负担。
+- 免疫/炎症与口腔健康：感染信号、牙周护理、可用时纳入炎症指标。
 
-Rules:
+规则：
 
-- Each domain program must still map to global HealthTwin, SafetyGuardian, Agenda and InterventionCycle.
-- No organ-level optimization can override cross-system contraindications.
-- Domain programs must define writable variables, not only outcome metrics.
+- 每个 domain program 仍必须映射到全局 `HealthTwin`、`SafetyGuardian`、`Agenda` 和 `InterventionCycle`。
+- 器官级优化不能覆盖跨系统禁忌。
+- Domain programs 必须定义可写变量，不能只定义 outcome metrics。
 
-## 12. Immediate Next Implementation Plan
+## 12. 近期实现计划
 
-The next implementation spec should be small:
+下一份实现 spec 应保持很小：
 
-> Build the smallest end-to-end “trajectory-informed top action” slice.
+> 构建最小端到端“trajectory-informed top action”切片。
 
-Proposed scope:
+建议范围：
 
-- Backend: adapt existing `health_trajectory.py` output into an Agenda/ActionRanker input contract.
-- Mobile: show target state variable and verification signal on the Today top action.
-- Watch: preserve one-line action, no new complex UI.
-- Review: add one placeholder for later prediction backtest.
-- Tests: contract test for trajectory risk shape, ActionRanker scoring test, Agenda item serialization test, Mobile unit test for top action copy.
+- 后端：把现有 `health_trajectory.py` 输出适配为 Agenda/ActionRanker input contract。
+- Mobile：在 Today top action 展示目标状态变量和验证信号。
+- Watch：保留一句话行动，不新增复杂 UI。
+- Review：增加一个后续 prediction backtest 的占位。
+- 测试：trajectory risk shape contract test、ActionRanker scoring test、Agenda item serialization test、Mobile top action copy unit test。
 
-Out of scope:
+不做范围：
 
-- New ML model.
-- New prediction dashboard.
-- Medication, dose or clinical treatment prediction.
-- CGM meal-response model.
-- Autonomous write actions.
-- IoT device control.
-- Supplement ordering or personalized production.
+- 新 ML model。
+- 新 prediction dashboard。
+- 药物、剂量或临床治疗预测。
+- CGM meal-response model。
+- autonomous write actions。
+- IoT device control。
+- 补剂下单或个性化生产。
 
-## 13. Changelog
+## 13. 变更记录
 
-| Date | Change | Reason |
+| 日期 | 变更 | 原因 |
 |---|---|---|
-| 2026-06-27 | Initial plan | Align PRD and roadmap around Health Runtime Governance. |
-| 2026-06-27 | Added system substrate, IoT/environment, supply-chain and organ-system planning | Capture expanded system philosophy while preserving safety and execution boundaries. |
-| 2026-06-27 | Added PRD implementation gap backlog | Track PRD capabilities that are missing, scaffolded, partial, or not yet productized. |
+| 2026-06-27 | 初始计划 | 围绕 Health Runtime Governance 对齐 PRD 与 roadmap。 |
+| 2026-06-27 | 增加系统基座、IoT/环境、供应链和器官系统规划 | 捕获扩展后的系统理念，同时保留安全和执行边界。 |
+| 2026-06-27 | 增加 PRD 实现缺口计划 | 追踪 PRD 已提出但尚未实现、仅有骨架、部分实现或尚未产品化的能力。 |
+| 2026-06-27 | 将 Plan 改为中文表达 | 便于团队按中文 PRD 和规划继续演进。 |
