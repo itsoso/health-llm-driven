@@ -24,15 +24,16 @@ VALID_REVIEW_STATUSES = {"draft", "reviewed", "needs_review", "archived"}
 POSITIVE_STANCES = {"supports", "positive", "for", "yes", "true", "increase", "increases"}
 NEGATIVE_STANCES = {"opposes", "negative", "against", "no", "false", "decrease", "decreases"}
 
-_IN_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s+in\s+(?P<values>\[.*\])$")
-_INTERSECTS_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s+intersects\s+(?P<values>\[.*\])$")
-_HAS_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s+has\s+(?P<value>.+)$")
+_CONDITION_PATH = r"twin\.[A-Za-z0-9_.:*+-]+"
+_IN_RE = re.compile(rf"^(?P<path>{_CONDITION_PATH})\s+in\s+(?P<values>\[.*\])$")
+_INTERSECTS_RE = re.compile(rf"^(?P<path>{_CONDITION_PATH})\s+intersects\s+(?P<values>\[.*\])$")
+_HAS_RE = re.compile(rf"^(?P<path>{_CONDITION_PATH})\s+has\s+(?P<value>.+)$")
 _HAS_ANY_RE = re.compile(r"^any\s+of\s+(?P<values>\[.*\])$")
-_EQ_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s*(==|=)\s*(?P<value>.+)$")
+_EQ_RE = re.compile(rf"^(?P<path>{_CONDITION_PATH})\s*(==|=)\s*(?P<value>.+)$")
 _COMPARE_RE = re.compile(
-    r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s*(?P<op>>=|<=|>|<)\s*(?P<value>-?\d+(?:\.\d+)?)$"
+    rf"^(?P<path>{_CONDITION_PATH})\s*(?P<op>>=|<=|>|<)\s*(?P<value>-?\d+(?:\.\d+)?)$"
 )
-_NULL_RE = re.compile(r"^(?P<path>twin\.[A-Za-z0-9_.-]+)\s+is\s+(?P<negation>not\s+)?null$")
+_NULL_RE = re.compile(rf"^(?P<path>{_CONDITION_PATH})\s+is\s+(?P<negation>not\s+)?null$")
 _GENE_MESSAGE_PATTERNS = {
     "MTHFR": re.compile(r"\bMTHFR\b(?:[-\s_]*(?P<mthfr>CC|CT|TT))?", re.IGNORECASE),
     "APOE": re.compile(r"\bAPOE\b(?:[-\s_]*(?P<apoe>E[234]/E[234]|E[234]E[234]))?", re.IGNORECASE),
@@ -1313,10 +1314,22 @@ def _system_kb_genetics_from_health_twin(twin: Any) -> dict[str, Any]:
                 out[f"{gene}_phenotype"] = phenotype
             if function:
                 out["TPMT_activity" if gene == "TPMT" else "NUDT15_function"] = function
+        elif gene == "DPYD":
+            out["DPYD"] = genotype or "present"
+            phenotype, activity_score = _infer_dpyd_pgx_status(genotype, result_label, risk_level)
+            if phenotype:
+                out["DPYD_phenotype"] = phenotype
+            if activity_score:
+                out["DPD_activity_score"] = activity_score
         elif gene == "SLCO1B1":
             out["SLCO1B1"] = genotype or "present"
             if genotype in {"CT", "CC", "TT"}:
                 out["SLCO1B1_rs4149056"] = genotype
+        elif gene == "HLA-B":
+            out["HLA-B"] = genotype or "present"
+            if _hla_allele_is_positive("15:02", genotype, result_label, risk_level):
+                out["HLA_B_15_02"] = "positive"
+                out["HLA-B*15:02"] = "positive"
         elif gene == "HFE":
             out["HFE"] = genotype or "present"
             if genotype:
@@ -1392,6 +1405,70 @@ def _infer_thiopurine_pgx_status(
         function = "low" if gene == "TPMT" else "decreased_function"
         return "intermediate_metabolizer", function
     return None, None
+
+
+def _infer_dpyd_pgx_status(
+    genotype: str,
+    result_label: str,
+    risk_level: str,
+) -> tuple[str | None, str | None]:
+    text = f"{genotype} {result_label} {risk_level}".lower()
+    poor_tokens = (
+        "poor",
+        "no function",
+        "no_function",
+        "complete deficiency",
+        "完全缺乏",
+        "无活性",
+        "低活性",
+        "缺乏",
+    )
+    intermediate_tokens = (
+        "intermediate",
+        "decreased",
+        "reduced",
+        "partial",
+        "中间",
+        "活性降低",
+        "功能降低",
+        "中风险",
+    )
+    if any(token in text for token in poor_tokens):
+        return "poor_metabolizer", "0"
+    if any(token in text for token in intermediate_tokens):
+        return "intermediate_metabolizer", "1"
+
+    normalized = re.sub(r"[\s_]+", "", f"{genotype} {result_label}").upper()
+    reduced_markers = (
+        "*2A",
+        "DPYD*2A",
+        "RS3918290",
+        "RS67376798",
+        "RS55886062",
+        "HAPB3",
+        "C.1905+1G>A",
+        "C.1679T>G",
+        "C.2846A>T",
+        "C.1129-5923C>G",
+    )
+    if any(re.sub(r"[\s_]+", "", marker).upper() in normalized for marker in reduced_markers):
+        return "intermediate_metabolizer", "1"
+    return None, None
+
+
+def _hla_allele_is_positive(
+    allele_token: str,
+    genotype: str,
+    result_label: str,
+    risk_level: str,
+) -> bool:
+    text = f"{genotype} {result_label} {risk_level}"
+    lower = text.lower()
+    if any(token in lower for token in ("negative", "not detected", "absent", "阴性", "未检出")):
+        return False
+    normalized = re.sub(r"[\s_:\-*]+", "", text).upper()
+    allele_digits = re.sub(r"[^0-9]", "", allele_token)
+    return bool(allele_digits and allele_digits in normalized)
 
 
 def attach_system_knowledge_evidence(
