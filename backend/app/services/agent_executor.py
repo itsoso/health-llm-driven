@@ -760,11 +760,33 @@ def _build_fast_record_messages(messages: List[Dict[str, Any]]) -> List[Dict[str
     Pure logging should not send the full Twin, knowledge base, and long chat
     history to a reasoning model. Tool extraction only needs the latest user
     request plus strict routing instructions.
+
+    **但跟进式记录必须保留紧邻的上一条助手回合**:助手刚问「要不要记录鼻炎症状(打喷嚏/流鼻涕)?」
+    用户答「记录」时,若只把最新一条用户消息「记录」发给模型,它**无从知道记什么** → 重新泛问
+    「什么症状?」(实测 bug:上下文丢失)。故保留最后一条非空 assistant 回合(截断保持 compact),
+    其余长历史/Twin/KB 仍剔除。
     """
 
     default_user_prompt = "请记录这条健康数据。"
     user_messages = [m for m in messages if m.get("role") == "user"]
     last_user = user_messages[-1] if user_messages else {"role": "user", "content": default_user_prompt}
+    user_content = last_user.get("content") or default_user_prompt
+
+    # 紧邻最新用户消息之前的最后一条非空 assistant 回合 —— 跟进式记录的消歧上下文。
+    # **折进 user 消息**(而非单独发一条 assistant):fast-record 走弱/代理模型(qwen/deepseek
+    # via tokenplan),[system, assistant, user] 这种 assistant 先于任何 user 的序列易被严格
+    # OpenAI 兼容适配器拒;折进单条 user 保持 [system, user] 稳态,且对弱模型更显式。
+    last_assistant = next(
+        (
+            m for m in reversed(messages)
+            if m.get("role") == "assistant" and str(m.get("content") or "").strip()
+        ),
+        None,
+    )
+    if last_assistant:
+        prior = str(last_assistant.get("content") or "").strip()[:400]  # 截断,保持 compact
+        user_content = f"[上一轮助手问我:{prior}]\n我的回复:{user_content}"
+
     return [
         {
             "role": "system",
@@ -773,9 +795,11 @@ def _build_fast_record_messages(messages: List[Dict[str, Any]]) -> List[Dict[str
                 "必须调用 health_record 或 health_manage 工具。不要做健康分析，"
                 "不要输出长建议。若用户提到多条记录，尽量一次性发起多个 tool_call；"
                 "信息不足时只用一句中文追问。"
+                "**若用户的回复是对上一轮助手提问的简短确认/回应**(消息里带「[上一轮助手问我:…]」"
+                "且回复是「记录」「好」「嗯」之类),结合上一轮助手的提问判断要记录什么,不要重新泛问。"
             ),
         },
-        {"role": "user", "content": last_user.get("content") or default_user_prompt},
+        {"role": "user", "content": user_content},
     ]
 
 

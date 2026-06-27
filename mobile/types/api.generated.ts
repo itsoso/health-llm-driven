@@ -7305,6 +7305,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/daily-artifact/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Daily Artifact
+         * @description Return today's compact top-action artifact.
+         */
+        get: operations["get_my_daily_artifact_api_v1_daily_artifact_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/daily-artifact/me/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post My Daily Artifact Event
+         * @description Append an interaction event for today's artifact.
+         */
+        post: operations["post_my_daily_artifact_event_api_v1_daily_artifact_me_events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/watch/ask": {
         parameters: {
             query?: never;
@@ -7485,7 +7525,8 @@ export interface paths {
          * Propose Write Intent
          * @description 提一个外部动作写意图(propose;全 manual_confirm,确认才执行)。
          *
-         *     服务端 kind 白名单(alarm_set/food_order/doctor_booking),未知 kind → 422。
+         *     服务端 kind 白名单(alarm_set/food_order/doctor_booking/environment_actuation),
+         *     未知 kind → 422。
          *     food_order 摘要先过 R4 守门(guidance_validator)再落库。幂等:同 (user,kind,target)
          *     已有 pending → 返回既有 id。**不在此下单/预约/支付** —— 仅记意图,确认是另一步。
          */
@@ -7928,6 +7969,40 @@ export interface paths {
         put?: never;
         /** Set Status */
         post: operations["set_status_api_v1_programs__program_id__status_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/program-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Program Templates */
+        get: operations["list_program_templates_api_v1_program_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/program-templates/{template_id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Program Template */
+        post: operations["start_program_template_api_v1_program_templates__template_id__start_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9377,6 +9452,143 @@ export interface paths {
          *     - days: 同步最近几天的数据，默认为 1（今天）
          */
         post: operations["sync_my_garmin_data_api_v1_data_collection_garmin_me_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/data-connections/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List My Data Connections */
+        get: operations["list_my_data_connections_api_v1_data_connections_me_get"];
+        put?: never;
+        /** Create Or Update My Data Connection */
+        post: operations["create_or_update_my_data_connection_api_v1_data_connections_me_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/data-connections/fhir-bundles/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import My Fhir Bundle */
+        post: operations["import_my_fhir_bundle_api_v1_data_connections_fhir_bundles_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/data-connections/{connection_id}/consents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Connection Consent */
+        post: operations["create_connection_consent_api_v1_data_connections__connection_id__consents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/data-connections/{connection_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke My Data Connection */
+        post: operations["revoke_my_data_connection_api_v1_data_connections__connection_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-runtime-governance/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get My Governance Summary */
+        get: operations["get_my_governance_summary_api_v1_health_runtime_governance_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-runtime-governance/source-quality": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upsert My Source Quality */
+        post: operations["upsert_my_source_quality_api_v1_health_runtime_governance_source_quality_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-runtime-governance/source-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upsert My Source Preference */
+        post: operations["upsert_my_source_preference_api_v1_health_runtime_governance_source_preferences_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health-runtime-governance/controls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upsert My Runtime Control */
+        post: operations["upsert_my_runtime_control_api_v1_health_runtime_governance_controls_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -12860,6 +13072,26 @@ export interface paths {
          * @description 某干预周期内每个指标的个人化效应估计 (相关非因果, 带 80% 不确定区间)。
          */
         get: operations["get_treatment_effect_api_v1_personal_models_treatment_effect_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/personal-models/predictions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Personal Predictions
+         * @description 返回稳定 PersonalPrediction 合同; 仅用于行动排序、轨迹解释和后续复盘。
+         */
+        get: operations["get_personal_predictions_api_v1_personal_models_predictions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -20145,6 +20377,19 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /** ConsentGrantCreate */
+        ConsentGrantCreate: {
+            /** Grantee Type */
+            grantee_type: string;
+            /** Grantee Id */
+            grantee_id?: string | null;
+            /** Scopes */
+            scopes?: string[];
+            /** Purpose */
+            purpose: string;
+            /** Expires At */
+            expires_at?: string | null;
+        };
         /** ConsultationItemCreate */
         ConsultationItemCreate: {
             /**
@@ -20437,6 +20682,19 @@ export interface components {
              * @default down
              */
             direction: string;
+        };
+        /** DailyArtifactEventIn */
+        DailyArtifactEventIn: {
+            /** Event Type */
+            event_type: string;
+            /** Artifact Date */
+            artifact_date?: string | null;
+            /** Top Action Id */
+            top_action_id?: string | null;
+            /** Skip Reason */
+            skip_reason?: string | null;
+            /** Delivered Context */
+            delivered_context?: Record<string, never> | null;
         };
         /**
          * DailyDietSummary
@@ -21060,6 +21318,53 @@ export interface components {
              * @default []
              */
             records: components["schemas"]["WaterRecordResponse"][];
+        };
+        /** DataConnectionCreate */
+        DataConnectionCreate: {
+            /** Provider */
+            provider: string;
+            /** Provider Type */
+            provider_type: string;
+            /** Display Name */
+            display_name: string;
+            /** Scopes */
+            scopes?: string[];
+            /**
+             * Token Status
+             * @default none
+             */
+            token_status: string;
+            /** Source Ref */
+            source_ref?: string | null;
+            /** Metadata */
+            metadata?: Record<string, never>;
+        };
+        /** DataSourceQualityUpsert */
+        DataSourceQualityUpsert: {
+            /** Source Kind */
+            source_kind: string;
+            /** Source Id */
+            source_id: string;
+            /** Metric */
+            metric: string;
+            /** Quality Score */
+            quality_score: number;
+            /**
+             * Confidence
+             * @default unknown
+             */
+            confidence: string;
+            /** Freshness Seconds */
+            freshness_seconds?: number | null;
+            /**
+             * Status
+             * @default usable
+             */
+            status: string;
+            /** Reason */
+            reason?: string | null;
+            /** Metadata */
+            metadata?: Record<string, never>;
         };
         /** DayOut */
         DayOut: {
@@ -22207,6 +22512,17 @@ export interface components {
             extracted_count: number;
             /** Facts */
             facts: Record<string, never>[];
+        };
+        /** FHIRBundleImportRequest */
+        FHIRBundleImportRequest: {
+            /** Provider */
+            provider: string;
+            /** Display Name */
+            display_name: string;
+            /** Source Ref */
+            source_ref?: string | null;
+            /** Bundle */
+            bundle: Record<string, never>;
         };
         /** FactCreate */
         FactCreate: {
@@ -26363,6 +26679,51 @@ export interface components {
              */
             flow_intensity: string;
         };
+        /** PersonalPredictionItem */
+        PersonalPredictionItem: {
+            /** Id */
+            id: string;
+            /** Prediction Type */
+            prediction_type: string;
+            /** Metric */
+            metric: string;
+            /** Domain */
+            domain: string;
+            /** Horizon Days */
+            horizon_days: number;
+            /** Baseline */
+            baseline?: number | null;
+            /** Unit */
+            unit?: string | null;
+            /** Expected Signal */
+            expected_signal: Record<string, never>;
+            /** Confidence */
+            confidence: string;
+            /** Uncertainty */
+            uncertainty: Record<string, never>;
+            /** Evidence Tier */
+            evidence_tier: string;
+            /** Source Model */
+            source_model: string;
+            /** Model Version */
+            model_version: string;
+            /** Claim Boundary */
+            claim_boundary: string;
+            /**
+             * Requires Clinician
+             * @default false
+             */
+            requires_clinician: boolean;
+            /** Review Hint */
+            review_hint?: string | null;
+        };
+        /** PersonalPredictionResponse */
+        PersonalPredictionResponse: {
+            /** Generated By */
+            generated_by: string;
+            /** Predictions */
+            predictions: components["schemas"]["PersonalPredictionItem"][];
+        };
         /** PlanFeedbackRequest */
         PlanFeedbackRequest: {
             /**
@@ -26623,7 +26984,7 @@ export interface components {
         ProposeExternalActionBody: {
             /**
              * Kind
-             * @description 外部动作类型: alarm_set / food_order / doctor_booking
+             * @description 外部动作类型: alarm_set / food_order / doctor_booking / environment_actuation
              */
             kind: string;
             /** Title */
@@ -27458,6 +27819,19 @@ export interface components {
             /** Distance */
             distance?: number | null;
         };
+        /** RuntimeControlUpsert */
+        RuntimeControlUpsert: {
+            /** Control Type */
+            control_type: string;
+            /** Target Key */
+            target_key: string;
+            /** Status */
+            status: string;
+            /** Reason */
+            reason?: string | null;
+            /** Metadata */
+            metadata?: Record<string, never>;
+        };
         /**
          * SearchQuery
          * @description 搜索查询
@@ -27856,6 +28230,22 @@ export interface components {
             username?: string | null;
             /** Password */
             password?: string | null;
+        };
+        /** SourcePreferenceUpsert */
+        SourcePreferenceUpsert: {
+            /** Metric */
+            metric: string;
+            /** Preferred Source Kind */
+            preferred_source_kind: string;
+            /** Preferred Source Id */
+            preferred_source_id: string;
+            /**
+             * Scope
+             * @default global
+             */
+            scope: string;
+            /** Reason */
+            reason?: string | null;
         };
         /** SourceUpdateIn */
         SourceUpdateIn: {
@@ -42901,6 +43291,70 @@ export interface operations {
             };
         };
     };
+    get_my_daily_artifact_api_v1_daily_artifact_me_get: {
+        parameters: {
+            query?: {
+                followup_within_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_my_daily_artifact_event_api_v1_daily_artifact_me_events_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DailyArtifactEventIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     watch_ask_api_v1_watch_ask_post: {
         parameters: {
             query?: never;
@@ -43899,6 +44353,57 @@ export interface operations {
             header?: never;
             path: {
                 program_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_program_templates_api_v1_program_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    start_program_template_api_v1_program_templates__template_id__start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
             };
             cookie?: never;
         };
@@ -46080,6 +46585,277 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_data_connections_api_v1_data_connections_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_or_update_my_data_connection_api_v1_data_connections_me_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataConnectionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_my_fhir_bundle_api_v1_data_connections_fhir_bundles_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FHIRBundleImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_connection_consent_api_v1_data_connections__connection_id__consents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsentGrantCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_my_data_connection_api_v1_data_connections__connection_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_governance_summary_api_v1_health_runtime_governance_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    upsert_my_source_quality_api_v1_health_runtime_governance_source_quality_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataSourceQualityUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_my_source_preference_api_v1_health_runtime_governance_source_preferences_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourcePreferenceUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_my_runtime_control_api_v1_health_runtime_governance_controls_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimeControlUpsert"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -51447,6 +52223,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_personal_predictions_api_v1_personal_models_predictions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalPredictionResponse"];
                 };
             };
         };
