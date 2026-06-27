@@ -40,3 +40,26 @@ def test_rank_agenda_actions_prefers_higher_leverage_when_priority_ties():
 
     assert actions[0]["title"] == "早间补剂"
     assert actions[0]["leverage_score"] > actions[1]["leverage_score"]
+
+
+def test_trajectory_context_boosts_and_explains_top_action():
+    base = _item("累计 35-45 分钟中等强度活动", "movement", priority=65)
+    with_trajectory = dict(base)
+    with_trajectory["trajectory_context"] = {
+        "domain": "metabolic_health",
+        "level": "attention",
+        "state_variable": "waist_cm",
+        "horizon": "upstream_90d",
+        "why": "腰围和血压提示代谢轨迹需要关注。",
+        "confidence": "high",
+        "verification_window_days": 7,
+        "verification_signal": "waist_cm",
+    }
+
+    ranked_plain = rank_agenda_action(base)
+    ranked_context = rank_agenda_action(with_trajectory)
+
+    assert ranked_context["leverage_score"] > ranked_plain["leverage_score"]
+    assert ranked_context["trajectory_context"]["state_variable"] == "waist_cm"
+    assert ranked_context["verification_window_days"] == 7
+    assert "轨迹" in ranked_context["rationale_short"]

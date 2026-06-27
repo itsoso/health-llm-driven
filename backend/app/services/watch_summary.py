@@ -86,6 +86,9 @@ def _action_view(item: Dict[str, Any]) -> Dict[str, Any]:
         "rationale_short": item.get("rationale_short"),
         "verification_window_days": item.get("verification_window_days"),
         "safety_status": item.get("safety_status"),
+        "trajectory_context": item.get("trajectory_context"),
+        "target_state_variable": item.get("target_state_variable"),
+        "verification_signal": item.get("verification_signal"),
         "prescription": item.get("prescription"),  # cut A:movement 处方(None 则前端忽略)
     }
 

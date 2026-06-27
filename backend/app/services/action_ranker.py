@@ -12,6 +12,7 @@ from typing import Any, Dict, Iterable, List
 
 _CONFIDENCE_WEIGHT = {"low": 0.6, "medium": 0.8, "high": 1.0}
 _TIER_ORDER = {"P0": 0, "P1": 1, "P2": 2, "P3": 3, "P4": 4}
+_TRAJECTORY_LEVEL_BOOST = {"high": 45, "attention": 25}
 
 _DEFAULT_PROFILE: Dict[str, Any] = {
     "upstreamness": 3,
@@ -131,6 +132,10 @@ _KIND_PROFILES: Dict[str, Dict[str, Any]] = {
 }
 
 
+def _confidence_rank(value: str) -> int:
+    return {"low": 0, "medium": 1, "high": 2}.get(str(value or ""), 1)
+
+
 def _profile_for(item: Dict[str, Any]) -> Dict[str, Any]:
     profile = dict(_DEFAULT_PROFILE)
     profile.update(_KIND_PROFILES.get(str(item.get("type") or ""), {}))
@@ -143,6 +148,28 @@ def _profile_for(item: Dict[str, Any]) -> Dict[str, Any]:
     if item.get("type") == "training" and item.get("light") == "red":
         profile["priority_tier"] = "P1"
         profile["rationale_short"] = "恢复不足时先降训练强度, 避免过度负荷"
+
+    trajectory = item.get("trajectory_context")
+    if isinstance(trajectory, dict) and trajectory:
+        level = str(trajectory.get("level") or "")
+        boost = _TRAJECTORY_LEVEL_BOOST.get(level, 0)
+        if boost:
+            profile["upstreamness"] = max(int(profile["upstreamness"]), 5)
+            profile["verifiability"] = max(int(profile["verifiability"]), 4)
+            trajectory_confidence = str(trajectory.get("confidence") or "")
+            if _confidence_rank(trajectory_confidence) > _confidence_rank(str(profile["confidence"])):
+                profile["confidence"] = trajectory_confidence
+            window_days = trajectory.get("verification_window_days")
+            if isinstance(window_days, int) and window_days >= 0:
+                profile["verification_window_days"] = window_days
+            why = trajectory.get("why")
+            domain = trajectory.get("domain") or "health"
+            profile["rationale_short"] = (
+                f"{why} 该动作用于{domain}轨迹的上游干预排序。"
+                if why
+                else f"该动作直接服务{domain}轨迹的上游干预排序。"
+            )
+            profile["trajectory_boost"] = boost
 
     return profile
 
@@ -159,7 +186,8 @@ def _score(item: Dict[str, Any], profile: Dict[str, Any]) -> int:
     friction_penalty = float(profile["friction"]) * 4
     agenda_priority = min(max(int(item.get("priority") or 0), 0), 100)
     tier_boost = max(0, 4 - _TIER_ORDER.get(str(profile["priority_tier"]), 2)) * 30
-    return int(round(leverage - friction_penalty + agenda_priority + tier_boost))
+    trajectory_boost = int(profile.get("trajectory_boost") or 0)
+    return int(round(leverage - friction_penalty + agenda_priority + tier_boost + trajectory_boost))
 
 
 def rank_agenda_action(item: Dict[str, Any]) -> Dict[str, Any]:

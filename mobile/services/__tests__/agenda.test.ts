@@ -34,6 +34,15 @@ describe('agenda service', () => {
               why_now: '对齐每周 150 分钟中等强度活动的代谢健康目标。',
               do_now: '执行: 累计 35-45 分钟中等强度活动',
               verify_by: { metrics: ['weight', 'waist_cm'], window_days: 7 },
+              trajectory_context: {
+                domain: 'metabolic_health',
+                level: 'attention',
+                state_variable: 'waist_cm',
+                horizon: 'upstream_90d',
+                verification_signal: 'waist_cm',
+              },
+              target_state_variable: 'waist_cm',
+              verification_signal: 'waist_cm',
               replan_policy: { on_skip: 'capture_reason_then_reschedule' },
               surface: { primary: 'watch', alternates: ['mobile', 'rokid'] },
               autonomy_tier: 'suggest',
@@ -53,6 +62,8 @@ describe('agenda service', () => {
     });
     expect(agenda.mode).toBe('smart');
     expect(agenda.smart.top_items[0].surface.primary).toBe('watch');
+    expect(agenda.smart.top_items[0].trajectory_context?.state_variable).toBe('waist_cm');
+    expect(agenda.smart.top_items[0].target_state_variable).toBe('waist_cm');
   });
 
   describe('completeAgendaItem', () => {
