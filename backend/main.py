@@ -1,5 +1,6 @@
 """主应用入口"""
 import logging
+import os
 import time
 import uuid
 import asyncio
@@ -61,8 +62,10 @@ if settings.sentry_dsn:
 from app.services.garmin_cffi_patch import patch_garth_with_cffi
 patch_garth_with_cffi()
 
-# 创建数据库表
-Base.metadata.create_all(bind=engine)
+# 创建数据库表(SKIP_DB_INIT=1 时跳过 —— 供 OpenAPI dump / 纯 import 用,不连 DB,
+# 也让 type-drift CI 能在无 DB 的 runner 上 dump app.openapi())
+if os.getenv("SKIP_DB_INIT") != "1":
+    Base.metadata.create_all(bind=engine)
 
 # 配置请求频率限制器（使用 Redis 存储，支持多实例部署）
 limiter = Limiter(

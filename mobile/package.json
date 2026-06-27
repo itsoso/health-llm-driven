@@ -13,7 +13,7 @@
     "test:coverage": "jest --coverage",
     "eas-build-post-install": "node scripts/eas-watch-postinstall.js",
     "lint": "expo lint",
-    "generate-types": "cd ../backend && source venv/bin/activate && python3 -c 'import json; from main import app; json.dump(app.openapi(), open(\"/tmp/openapi.json\",\"w\"), ensure_ascii=False)' && cd ../mobile && npx openapi-typescript /tmp/openapi.json -o types/api.generated.ts"
+    "generate-types": "cd ../backend && source venv/bin/activate && SKIP_DB_INIT=1 python3 -c 'import json; from main import app; json.dump(app.openapi(), open(\"/tmp/openapi.json\",\"w\"), ensure_ascii=False)' && cd ../mobile && npx openapi-typescript@7.13.0 /tmp/openapi.json -o types/api.generated.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "15.0.3",

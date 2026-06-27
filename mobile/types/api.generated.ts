@@ -2232,6 +2232,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/profile/me/effective-timezone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Effective Timezone
+         * @description 生效时区单一事实之主 —— 优先级 manual → detected → 旧 timezone → 默认中国。
+         *
+         *     所有读时区的 reader 应走 get_user_timezone(同一优先级);本端点给 mobile / 设置页展示用。
+         */
+        get: operations["get_effective_timezone_api_v1_profile_me_effective_timezone_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profile/me/device-timezone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report Device Timezone
+         * @description 设备/系统上报当前时区(自动跟随地理位置)。
+         *
+         *     写入 detected_timezone;只要用户没手动锁定(manual_timezone 为空),它就是生效时区。
+         *     用户已锁定时仍记录 detected(便于 UI 显示「你在 X,已锁定 Y」),但不改变生效时区。
+         */
+        post: operations["report_device_timezone_api_v1_profile_me_device_timezone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profile/me/manual-timezone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Manual Timezone
+         * @description 用户手动锁定/解锁时区。
+         *
+         *     timezone 非空 → 锁定(覆盖自动检测);传 null/空 → 解锁,恢复自动跟随设备/位置。
+         */
+        put: operations["set_manual_timezone_api_v1_profile_me_manual_timezone_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/profile/me/refresh-location": {
         parameters: {
             query?: never;
@@ -7232,6 +7299,29 @@ export interface paths {
          *     回写失败 → 422(不假装成功)。
          */
         post: operations["agenda_complete_api_v1_agenda_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/watch/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Watch Ask
+         * @description 腕上一句话问 Reva → 短答 + 安全升级。
+         *
+         *     不写健康事实表。user_id 只取 token。请求内禁 build_twin,使用同一 request
+         *     session 的极简 HealthTwin 跑 SafetyGuardian,评估不完整时必须 fail-loud。
+         */
+        post: operations["watch_ask_api_v1_watch_ask_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13012,6 +13102,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/crossover-experiments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create */
+        post: operations["create_api_v1_crossover_experiments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/crossover-experiments/{eid}/phases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Phase */
+        post: operations["add_phase_api_v1_crossover_experiments__eid__phases_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/crossover-experiments/{eid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get */
+        get: operations["get_api_v1_crossover_experiments__eid__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/monthly-report/me": {
         parameters: {
             query?: never;
@@ -14864,6 +15005,74 @@ export interface paths {
         get: operations["get_meal_session_api_v1_ambient_meal_sessions__session_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/devices/rokid/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Rokid Operation */
+        post: operations["create_rokid_operation_api_v1_devices_rokid_operations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/devices/rokid/operations/{operation_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Append Rokid Operation Event */
+        post: operations["append_rokid_operation_event_api_v1_devices_rokid_operations__operation_id__events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/devices/rokid/operations/{operation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rokid Operation Timeline */
+        get: operations["get_rokid_operation_timeline_api_v1_devices_rokid_operations__operation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/devices/rokid/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Rokid Diagnostics */
+        post: operations["upload_rokid_diagnostics_api_v1_devices_rokid_diagnostics_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -18079,6 +18288,13 @@ export interface components {
             /** Is Active */
             is_active: boolean;
         };
+        /** AddPhaseReq */
+        AddPhaseReq: {
+            /** Cycle Id */
+            cycle_id: number;
+            /** Arm */
+            arm: string;
+        };
         /** AdjustmentApply */
         AdjustmentApply: {
             /** Field */
@@ -18194,6 +18410,8 @@ export interface components {
             status: string;
             /** Skip Reason */
             skip_reason?: string | null;
+            /** Slot */
+            slot?: string | null;
         };
         /** AgentRequest */
         AgentRequest: {
@@ -19901,12 +20119,7 @@ export interface components {
             source_write?: components["schemas"]["SourceWriteRef"] | null;
         };
         /** CompleteRef */
-        CompleteRef: {
-            /** Object Type */
-            object_type: string;
-            /** Object Id */
-            object_id: number;
-        };
+        CompleteRef: Record<string, never>;
         /** ConfirmIn */
         ConfirmIn: {
             /** Plan Id */
@@ -20214,6 +20427,16 @@ export interface components {
              * @default []
              */
             current_medications: components["schemas"]["MedicationItem"][];
+        };
+        /** CreateReq */
+        CreateReq: {
+            /** Metric Code */
+            metric_code: string;
+            /**
+             * Direction
+             * @default down
+             */
+            direction: string;
         };
         /**
          * DailyDietSummary
@@ -21004,6 +21227,17 @@ export interface components {
             message: string;
         };
         /**
+         * DeviceTimezoneUpdate
+         * @description 设备/系统上报的时区(自动跟随地理位置)。mobile 前台/登录时上报。
+         */
+        DeviceTimezoneUpdate: {
+            /**
+             * Timezone
+             * @description 设备 IANA 时区,如 Asia/Shanghai / America/Los_Angeles
+             */
+            timezone: string;
+        };
+        /**
          * DietRecordResponse
          * @description 饮食记录响应
          */
@@ -21018,6 +21252,10 @@ export interface components {
             meal_time?: string | null;
             /** Food Items */
             food_items: string;
+            /** Food Id */
+            food_id?: string | null;
+            /** Source */
+            source?: string | null;
             /** Calories */
             calories?: number | null;
             /** Protein */
@@ -21067,6 +21305,10 @@ export interface components {
             meal_time?: string | null;
             /** Food Items */
             food_items?: string | null;
+            /** Food Id */
+            food_id?: string | null;
+            /** Source */
+            source?: string | null;
             /** Calories */
             calories?: number | null;
             /** Protein */
@@ -21291,6 +21533,32 @@ export interface components {
              * @description 额外元数据
              */
             metadata?: Record<string, never> | null;
+        };
+        /**
+         * EffectiveTimezone
+         * @description 派生的生效时区 + 来源。
+         */
+        EffectiveTimezone: {
+            /**
+             * Timezone
+             * @description 当前生效的 IANA 时区
+             */
+            timezone: string;
+            /**
+             * Source
+             * @description manual=手动锁定 / detected=设备检测 / profile=旧字段 / default=默认中国
+             */
+            source: string;
+            /**
+             * Detected Timezone
+             * @description 设备/位置检测到的时区
+             */
+            detected_timezone?: string | null;
+            /**
+             * Manual Timezone
+             * @description 用户手动锁定的时区(非空=已锁定)
+             */
+            manual_timezone?: string | null;
         };
         /**
          * ElevationPoint
@@ -22180,6 +22448,10 @@ export interface components {
             fiber?: number | null;
             /** Confidence */
             confidence?: number | null;
+            /** Food Id */
+            food_id?: string | null;
+            /** Source */
+            source?: string | null;
         };
         /**
          * FoodRecognitionRequest
@@ -24545,6 +24817,17 @@ export interface components {
              */
             units_remaining: number;
         };
+        /**
+         * ManualTimezoneUpdate
+         * @description 用户手动锁定时区。timezone 传 null/空 → 取消锁定,恢复自动跟随设备。
+         */
+        ManualTimezoneUpdate: {
+            /**
+             * Timezone
+             * @description 手动锁定的 IANA 时区;null/空=取消锁定
+             */
+            timezone?: string | null;
+        };
         /** MealFrameCreate */
         MealFrameCreate: {
             /**
@@ -26789,6 +27072,141 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /** RokidDiagnosticUpload */
+        RokidDiagnosticUpload: {
+            /** Operation Id */
+            operation_id: string;
+            /** Summary */
+            summary: string;
+            /** Diagnostics */
+            diagnostics: Record<string, never>;
+            /**
+             * Severity
+             * @default warn
+             */
+            severity: string;
+            /** Occurred At */
+            occurred_at?: string | null;
+        };
+        /** RokidOperationCreate */
+        RokidOperationCreate: {
+            /** Operation Id */
+            operation_id?: string | null;
+            /** Type */
+            type: string;
+            /**
+             * State
+             * @default queued
+             */
+            state: string;
+            /**
+             * Primary Surface
+             * @default rokid_glasses
+             */
+            primary_surface: string;
+            /** Summary */
+            summary?: string | null;
+            /** Last Error Code */
+            last_error_code?: string | null;
+            /** Meta */
+            meta?: Record<string, never> | null;
+            /** Entity Refs */
+            entity_refs?: Record<string, never> | null;
+            /** Write Intent Id */
+            write_intent_id?: number | null;
+        };
+        /** RokidOperationEventCreate */
+        RokidOperationEventCreate: {
+            /** Event Type */
+            event_type: string;
+            /** Phase */
+            phase?: string | null;
+            /**
+             * Severity
+             * @default info
+             */
+            severity: string;
+            /** State */
+            state?: string | null;
+            /** Message */
+            message?: string | null;
+            /** Payload */
+            payload?: Record<string, never> | null;
+            /** Occurred At */
+            occurred_at?: string | null;
+        };
+        /** RokidOperationResponse */
+        RokidOperationResponse: {
+            /** Id */
+            id: number;
+            /** Operation Id */
+            operation_id: string;
+            /** User Id */
+            user_id: number;
+            /** Operation Type */
+            operation_type: string;
+            /** State */
+            state: string;
+            /** Primary Surface */
+            primary_surface: string;
+            /** Summary */
+            summary: string | null;
+            /** Last Error Code */
+            last_error_code: string | null;
+            /** Meta */
+            meta: Record<string, never> | null;
+            /** Entity Refs */
+            entity_refs: Record<string, never> | null;
+            /** Write Intent Id */
+            write_intent_id: number | null;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** RokidOperationTimelineResponse */
+        RokidOperationTimelineResponse: {
+            operation: components["schemas"]["RokidOperationResponse"];
+            /** Events */
+            events: components["schemas"]["RokidOperationTraceEventResponse"][];
+        };
+        /** RokidOperationTraceEventResponse */
+        RokidOperationTraceEventResponse: {
+            /** Id */
+            id: number;
+            /** Operation Id */
+            operation_id: string;
+            /** User Id */
+            user_id: number;
+            /** Event Type */
+            event_type: string;
+            /** Phase */
+            phase: string | null;
+            /** Severity */
+            severity: string;
+            /** Message */
+            message: string | null;
+            /** Payload */
+            payload: Record<string, never> | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** RokidPushupEventCreate */
         RokidPushupEventCreate: {
             /** Event Type */
@@ -28542,6 +28960,8 @@ export interface components {
             kind: string;
             /** Time Window */
             time_window: string;
+            /** Scheduled For */
+            scheduled_for?: string | null;
             /** Title */
             title: string;
             /** Subtitle */
@@ -28566,6 +28986,8 @@ export interface components {
             /** Severity */
             severity?: string | null;
             proof?: components["schemas"]["ProofRef"] | null;
+            /** Driver */
+            driver?: string | null;
         };
         /** TodaySpineResponse */
         TodaySpineResponse: {
@@ -28573,6 +28995,8 @@ export interface components {
             date: string;
             /** Current Window */
             current_window: string;
+            /** Now */
+            now?: string | null;
             /** Items */
             items: components["schemas"]["TodaySpineItem"][];
             past: components["schemas"]["TodayPast"];
@@ -29078,6 +29502,26 @@ export interface components {
              */
             use_manual_location: boolean;
             /**
+             * Detected Timezone
+             * @description 设备/位置检测到的时区
+             */
+            detected_timezone?: string | null;
+            /**
+             * Manual Timezone
+             * @description 用户手动锁定的时区(非空=已锁定)
+             */
+            manual_timezone?: string | null;
+            /**
+             * Effective Timezone
+             * @description 当前生效的 IANA 时区(派生)
+             */
+            effective_timezone?: string | null;
+            /**
+             * Timezone Source
+             * @description 生效时区来源 manual/detected/profile/default
+             */
+            timezone_source?: string | null;
+            /**
              * Created At
              * Format: date-time
              */
@@ -29456,6 +29900,12 @@ export interface components {
             carbs?: number | null;
             /** Fat */
             fat?: number | null;
+            /** Fiber */
+            fiber?: number | null;
+            /** Food Id */
+            food_id?: string | null;
+            /** Source */
+            source?: string | null;
         };
         /**
          * VoiceFoodParseRequest
@@ -29563,6 +30013,11 @@ export interface components {
             source?: string | null;
             /** Notes */
             notes?: string | null;
+        };
+        /** WatchAskIn */
+        WatchAskIn: {
+            /** Text */
+            text: string;
         };
         /** WatchSkipRequest */
         WatchSkipRequest: {
@@ -30492,6 +30947,10 @@ export interface components {
             meal_time?: string | null;
             /** Food Items */
             food_items: string;
+            /** Food Id */
+            food_id?: string | null;
+            /** Source */
+            source?: string | null;
             /** Calories */
             calories?: number | null;
             /** Protein */
@@ -33854,6 +34313,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_effective_timezone_api_v1_profile_me_effective_timezone_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EffectiveTimezone"];
+                };
+            };
+        };
+    };
+    report_device_timezone_api_v1_profile_me_device_timezone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceTimezoneUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EffectiveTimezone"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_manual_timezone_api_v1_profile_me_manual_timezone_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualTimezoneUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EffectiveTimezone"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -42333,6 +42878,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AgendaComplete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    watch_ask_api_v1_watch_ask_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WatchAskIn"];
             };
         };
         responses: {
@@ -51176,6 +51754,105 @@ export interface operations {
             };
         };
     };
+    create_api_v1_crossover_experiments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateReq"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_phase_api_v1_crossover_experiments__eid__phases_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddPhaseReq"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_api_v1_crossover_experiments__eid__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_my_reports_api_v1_monthly_report_me_get: {
         parameters: {
             query?: {
@@ -54318,6 +54995,138 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MealSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_rokid_operation_api_v1_devices_rokid_operations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RokidOperationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RokidOperationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    append_rokid_operation_event_api_v1_devices_rokid_operations__operation_id__events_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RokidOperationEventCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RokidOperationTraceEventResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rokid_operation_timeline_api_v1_devices_rokid_operations__operation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RokidOperationTimelineResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_rokid_diagnostics_api_v1_devices_rokid_diagnostics_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RokidDiagnosticUpload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RokidOperationTraceEventResponse"];
                 };
             };
             /** @description Validation Error */
