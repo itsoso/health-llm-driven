@@ -476,23 +476,36 @@ Mobile/Watch 待规划工作：
   - 生产 user_id=3 smoke：`feedback_policy=recent_protocol_event_feedback_v1 feedback_count=3 feedback_items=6`；抽样 `replan=recent_completion_projection strategy=observe_metric_change`。
 - 本切片不新增写路径、不改药物/剂量/医疗计划，只改变 future projection 的排序和解释。
 
+2026-06-28 第六切片已完成本地实现，待发布:
+
+- Runtime item 的 `runtime_context.evidence` 新增 `provenance` 摘要，策略标识为 `runtime_key_fact_provenance_v1`。
+- 当前最小覆盖 FHIR/report 导入后形成的 `BiomarkerObservation`：从 `verify_by.metrics`、trajectory signals 和 canonical biomarker code 关联 `ProvenanceRecord`。
+- 响应只返回脱敏摘要：source kind/id、object type/id、observed/received 时间、transformed_by、confidence、privacy classification 和受控 `metadata_summary`；不返回 `raw_hash`、原始报告内容或完整 metadata。
+- Runtime root context 新增 `provenance_policy`，便于 Mobile/Chat/Watch 共用同一解释合同。
+- 本地验证：
+  - RED：新增合同测试先失败于 `runtime_context.evidence.provenance` 缺失。
+  - GREEN：`backend/tests/test_agenda_range_complete.py` `12 passed`。
+  - provenance 回归：`backend/tests/test_agenda_range_complete.py backend/tests/test_data_connections.py backend/tests/test_fhir_bundle_import.py backend/tests/test_healthkit_adapter.py --no-cov` `30 passed`。
+  - surface 兼容回归：`backend/tests/test_watch_actions.py backend/tests/test_watch_summary.py backend/tests/test_inline_cards_runtime_agenda.py backend/tests/test_daily_artifact.py --no-cov` `47 passed`。
+- 本切片不新增写路径、不改变排序、不新增医疗结论；只把已有真实数据来源投影到运行时解释层。
+
 2026-06-28 代码对比后的状态修正:
 
 - A 切片的最小 DataConnection / ConsentGrant / ProvenanceRecord 底座已经在 main 存在，不再作为“未实现底座”重复执行。
-- A 后续工作改为产品化与覆盖扩展：跨端连接中心、家庭/医生/外部 agent scope、撤权删除、更多 provider、runtime/Review provenance 展示和 ConnectorPolicy。
+- A 后续工作改为产品化与覆盖扩展：跨端连接中心、家庭/医生/外部 agent scope、撤权删除、更多 provider、Review provenance 展示和 ConnectorPolicy。
 
 仍未完成，继续保留在后续计划:
 
-- A 深化：DataConnection / ConsentGrant / ProvenanceRecord 的产品化、更多 provider 覆盖和 runtime/Review provenance 展示。
+- A 深化：DataConnection / ConsentGrant / ProvenanceRecord 的产品化、更多 provider 覆盖和 Review provenance 展示。
 - ConnectorPolicy 最小字段和连接器降级策略。
-- Today top action 中关键事实 provenance 摘要。
+- runtime provenance 继续扩展到 HealthKit / wearable/device / report provider 的更完整 key facts。
 
 建议范围 A：
 
 - 后端：在现有 `DataConnection` / `ConsentGrant` / `ProvenanceRecord` 底座上补 ConnectorPolicy、撤权后删除和更多 provider metadata。
-- 导入：扩展报告/FHIR Bundle、HealthKit 和 wearable/device source 的统一 provenance，并接入 Today/runtime context。
+- 导入：扩展报告/FHIR Bundle、HealthKit 和 wearable/device source 的统一 provenance，并继续扩展 Today/runtime context 的 key facts 覆盖面。
 - Mobile/Mac：连接中心展示连接状态、授权 scope、最近同步、撤权入口和 degraded explanation。
-- 测试：ConnectorPolicy degraded behavior test、runtime provenance serialization test、ConsentGrant revoke/delete test、跨 provider metadata contract test。
+- 测试：ConnectorPolicy degraded behavior test、HealthKit/device runtime provenance serialization test、ConsentGrant revoke/delete test、跨 provider metadata contract test。
 
 建议范围 B：
 
@@ -535,3 +548,4 @@ Mobile/Watch 待规划工作：
 | 2026-06-28 | 标记 B 切片第二个实现：Home Daily Artifact Runtime 化 | 首页不再从旧 smart agenda 派生，开始共用 7 天健康运行时对象。 |
 | 2026-06-28 | 标记 B 切片第三/四个实现：Chat 动态卡片与 Watch summary Runtime 化 | Chat 和 Watch 开始消费同一个 rolling runtime projection，后续只剩执行反馈重排与数据底座。 |
 | 2026-06-28 | 标记 B 切片第五个实现：执行反馈驱动 future replan | skip reason、snooze、completion 已进入未来 7 天投影的排序、解释和 runtime context；DataConnection/Consent/Provenance 状态修正为最小底座已存在、后续产品化。 |
+| 2026-06-28 | 标记 A/B 交叉切片：Runtime 关键事实 provenance 摘要 | Today/runtime top action 不再只有黑箱结论，已能把 FHIR/report biomarker 关键事实关联到 ProvenanceRecord 脱敏摘要。 |

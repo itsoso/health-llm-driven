@@ -15,6 +15,8 @@ from typing import Any, Dict, List
 
 from sqlalchemy.orm import Session
 
+from app.models.biomarker_observation import BiomarkerObservation
+from app.models.data_connection import ProvenanceRecord
 from app.services import health_protocol_service as proto_svc
 from app.services import health_problem_service as prob_svc
 from app.services import agenda_contract
@@ -61,6 +63,33 @@ _RUNTIME_REPLAN_TRIGGERS = (
 )
 _RUNTIME_FEEDBACK_LOOKBACK_DAYS = 7
 _HIGH_FRICTION_SKIP_REASONS = frozenset({"too_tired", "too_hard", "unwell"})
+_RUNTIME_PROVENANCE_POLICY = "runtime_key_fact_provenance_v1"
+_BIOMARKER_METRIC_ALIASES = {
+    "lipid_ldl": "lipid_ldl",
+    "ldl": "lipid_ldl",
+    "ldl_c": "lipid_ldl",
+    "ldl-c": "lipid_ldl",
+    "lipid_tg": "lipid_tg",
+    "triglycerides": "lipid_tg",
+    "tg": "lipid_tg",
+    "glucose_hba1c": "glucose_hba1c",
+    "hba1c": "glucose_hba1c",
+    "a1c": "glucose_hba1c",
+    "glucose_fasting": "glucose_fasting",
+    "fasting_glucose": "glucose_fasting",
+    "blood_glucose": "glucose_fasting",
+}
+_BIOMARKER_SIGNAL_CODES = {
+    "ldl_elevated": "lipid_ldl",
+    "triglycerides_elevated": "lipid_tg",
+    "hba1c_elevated": "glucose_hba1c",
+    "glucose_elevated": "glucose_fasting",
+}
+_BIOMARKER_GROUP_CODES = {
+    "metabolic_labs": ("lipid_ldl", "lipid_tg", "glucose_hba1c", "glucose_fasting"),
+    "lipid_labs": ("lipid_ldl", "lipid_tg"),
+    "glucose_labs": ("glucose_hba1c", "glucose_fasting"),
+}
 
 
 def _agenda_item(**kw) -> Dict[str, Any]:
@@ -1044,12 +1073,174 @@ def _runtime_verification_window(smart_item: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _runtime_key_fact_metric_codes(smart_item: Dict[str, Any]) -> List[str]:
+    codes: List[str] = []
+
+    def add_code(raw: Any) -> None:
+        if not raw:
+            return
+        normalized = str(raw).strip().lower()
+        if not normalized:
+            return
+        if normalized in _BIOMARKER_GROUP_CODES:
+            for grouped_code in _BIOMARKER_GROUP_CODES[normalized]:
+                add_code(grouped_code)
+            return
+        code = _BIOMARKER_METRIC_ALIASES.get(normalized)
+        if code and code not in codes:
+            codes.append(code)
+
+    verify_by = smart_item.get("verify_by") if isinstance(smart_item.get("verify_by"), dict) else {}
+    for metric in verify_by.get("metrics") if isinstance(verify_by.get("metrics"), list) else []:
+        add_code(metric)
+
+    trajectory = smart_item.get("trajectory_context") if isinstance(smart_item.get("trajectory_context"), dict) else {}
+    if not codes:
+        add_code(trajectory.get("state_variable"))
+        add_code(trajectory.get("verification_signal"))
+    signals = trajectory.get("signals") if isinstance(trajectory.get("signals"), list) else []
+    for signal in signals:
+        code = _BIOMARKER_SIGNAL_CODES.get(str(signal).strip().lower())
+        add_code(code)
+    return codes
+
+
+def _safe_provenance_metadata_summary(metadata: Dict[str, Any] | None) -> Dict[str, Any]:
+    if not isinstance(metadata, dict):
+        return {}
+    summary: Dict[str, Any] = {}
+    code = metadata.get("code")
+    if isinstance(code, dict):
+        if code.get("text"):
+            summary["code_text"] = str(code.get("text"))
+        coding = code.get("coding")
+        if isinstance(coding, list) and coding:
+            first = coding[0] if isinstance(coding[0], dict) else {}
+            if first.get("code"):
+                summary["code"] = str(first.get("code"))
+            if first.get("display"):
+                summary["display"] = str(first.get("display"))
+    elif code:
+        summary["code"] = str(code)
+    for key in ("resource_status", "record_date", "data_source", "source_name", "fields_present"):
+        value = metadata.get(key)
+        if value is not None:
+            summary[key] = value
+    return summary
+
+
+def _iso_or_none(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.isoformat()
+
+
+def _runtime_provenance_item(record: ProvenanceRecord) -> Dict[str, Any]:
+    return {
+        "id": record.id,
+        "connection_id": record.connection_id,
+        "source_kind": record.source_kind,
+        "source_id": record.source_id,
+        "object_type": record.object_type,
+        "object_id": record.object_id,
+        "observed_at": _iso_or_none(record.observed_at),
+        "received_at": _iso_or_none(record.received_at),
+        "transformed_by": record.transformed_by,
+        "confidence": record.confidence,
+        "privacy_classification": record.privacy_classification,
+        "metadata_summary": _safe_provenance_metadata_summary(record.source_metadata),
+    }
+
+
+def _runtime_key_fact_provenance(
+    db: Session | None,
+    user_id: int | None,
+    smart_item: Dict[str, Any],
+    *,
+    max_items: int = 3,
+) -> Dict[str, Any] | None:
+    if db is None or user_id is None:
+        return None
+    metric_codes = _runtime_key_fact_metric_codes(smart_item)
+    source = smart_item.get("source") if isinstance(smart_item.get("source"), dict) else {}
+    records: List[ProvenanceRecord] = []
+
+    source_type = source.get("object_type")
+    source_id = source.get("object_id")
+    if source_type and source_id is not None:
+        records.extend(
+            db.query(ProvenanceRecord)
+            .filter(
+                ProvenanceRecord.user_id == user_id,
+                ProvenanceRecord.object_type == str(source_type),
+                ProvenanceRecord.object_id == str(source_id),
+            )
+            .order_by(ProvenanceRecord.received_at.desc(), ProvenanceRecord.id.desc())
+            .limit(max_items)
+            .all()
+        )
+
+    if metric_codes:
+        observations = (
+            db.query(BiomarkerObservation)
+            .filter(
+                BiomarkerObservation.user_id == user_id,
+                BiomarkerObservation.code.in_(metric_codes),
+            )
+            .order_by(BiomarkerObservation.observed_at.desc(), BiomarkerObservation.id.desc())
+            .limit(12)
+            .all()
+        )
+        object_ids = [str(obs.id) for obs in observations]
+        if object_ids:
+            records.extend(
+                db.query(ProvenanceRecord)
+                .filter(
+                    ProvenanceRecord.user_id == user_id,
+                    ProvenanceRecord.object_type == "BiomarkerObservation",
+                    ProvenanceRecord.object_id.in_(object_ids),
+                )
+                .order_by(
+                    ProvenanceRecord.observed_at.desc(),
+                    ProvenanceRecord.received_at.desc(),
+                    ProvenanceRecord.id.desc(),
+                )
+                .limit(max_items)
+                .all()
+            )
+
+    if not records and not metric_codes and not (source_type and source_id is not None):
+        return None
+
+    deduped: List[ProvenanceRecord] = []
+    seen: set[int] = set()
+    for record in records:
+        if record.id in seen:
+            continue
+        seen.add(record.id)
+        deduped.append(record)
+        if len(deduped) >= max_items:
+            break
+
+    return {
+        "policy": _RUNTIME_PROVENANCE_POLICY,
+        "status": "available" if deduped else "missing",
+        "queried_metrics": metric_codes,
+        "source_count": len(deduped),
+        "items": [_runtime_provenance_item(record) for record in deduped],
+    }
+
+
 def _with_runtime_context(
     smart_item: Dict[str, Any],
     *,
     day: date,
     replan_reason: str,
     is_today: bool,
+    db: Session | None = None,
+    user_id: int | None = None,
 ) -> Dict[str, Any]:
     out = dict(smart_item)
     feedback = out.get("runtime_feedback") if isinstance(out.get("runtime_feedback"), dict) else None
@@ -1080,6 +1271,9 @@ def _with_runtime_context(
         "replan_reason": effective_replan_reason,
         "next_replan_triggers": list(_RUNTIME_REPLAN_TRIGGERS),
     }
+    provenance = _runtime_key_fact_provenance(db, user_id, out)
+    if provenance:
+        out["runtime_context"]["evidence"]["provenance"] = provenance
     if feedback:
         out["runtime_context"]["feedback_adjustment"] = feedback
     return out
@@ -1092,12 +1286,16 @@ def _runtime_project_item(
     replan_reason: str,
     is_today: bool,
     fallback_verification: Dict[str, Any] | None = None,
+    db: Session | None = None,
+    user_id: int | None = None,
 ) -> Dict[str, Any]:
     return _with_runtime_context(
         _to_smart_item(item, fallback_verification=fallback_verification),
         day=day,
         replan_reason=replan_reason,
         is_today=is_today,
+        db=db,
+        user_id=user_id,
     )
 
 
@@ -1187,7 +1385,14 @@ def runtime_range_view(
 
     today_smart = smart_today(db, user_id, followup_within_days=1, max_items=max_items)
     today_items = [
-        _with_runtime_context(item, day=today_d, replan_reason="today_smart_rank", is_today=True)
+        _with_runtime_context(
+            item,
+            day=today_d,
+            replan_reason="today_smart_rank",
+            is_today=True,
+            db=db,
+            user_id=user_id,
+        )
         for item in (today_smart.get("smart") or {}).get("top_items", [])
     ]
 
@@ -1232,6 +1437,8 @@ def runtime_range_view(
                     day=current_day,
                     replan_reason="daily_protocol_projection",
                     is_today=False,
+                    db=db,
+                    user_id=user_id,
                 )
                 for template in future_protocol_templates
             ]
@@ -1243,6 +1450,8 @@ def runtime_range_view(
                 day=current_day,
                 replan_reason="scheduled_followup_projection",
                 is_today=(offset == 0),
+                db=db,
+                user_id=user_id,
             ))
         items.sort(key=lambda x: (
             -int(x.get("rank_score") or x.get("priority") or 0),
@@ -1270,6 +1479,7 @@ def runtime_range_view(
             "definition": "rolling_7_day_health_runtime_orchestration",
             "projection_policy": "today_smart_rank_future_protocol_and_followup_projection",
             "feedback_policy": "recent_protocol_event_feedback_v1",
+            "provenance_policy": _RUNTIME_PROVENANCE_POLICY,
             "feedback_applied_count": len(protocol_feedback),
             "safety_boundary": _RUNTIME_SAFETY_BOUNDARY,
             "next_replan_triggers": list(_RUNTIME_REPLAN_TRIGGERS),

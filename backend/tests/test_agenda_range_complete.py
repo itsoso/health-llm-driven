@@ -2,7 +2,7 @@
 
 钉:① /range 列常驻每日协议 + 窗口内复查 ② 窗口外复查不进 ③ /complete 经议程路由完成协议
 (写真实记录,today 反映)④ 不支持的来源 400。"""
-from datetime import date
+from datetime import date, datetime, timezone
 
 
 def _freeze_agenda_today(monkeypatch, frozen: date) -> None:
@@ -150,6 +150,109 @@ def test_today_mode_smart_routes_to_smart_agenda(client, auth_user_and_headers, 
     assert r.status_code == 200, r.text
     assert r.json()["mode"] == "smart"
     assert r.json()["smart"]["top_items"][0]["id"] == "smart_health_problem_1_checkup"
+
+
+def test_runtime_context_includes_key_fact_provenance_for_biomarker(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    """运行时 top action 必须能说明关键化验事实来自哪里,而不是只给黑箱结论。"""
+    user, h = auth_user_and_headers
+    from app.models.biomarker_observation import BiomarkerObservation
+    from app.services import agenda_service
+    from app.services.data_connections import create_provenance_record, upsert_data_connection
+
+    observed_at = datetime(2026, 6, 20, 9, 0, tzinfo=timezone.utc)
+    connection = upsert_data_connection(
+        db,
+        user_id=user.id,
+        provider="fhir_bundle",
+        provider_type="fhir_bundle",
+        display_name="体检报告 FHIR Bundle",
+        scopes=["lab.read"],
+        source_ref="bundle-2026-06",
+        metadata={"importer": "test"},
+    )
+    obs = BiomarkerObservation(
+        user_id=user.id,
+        code="lipid_ldl",
+        domain="lipid",
+        normalized_value=4.1,
+        normalized_unit="mmol/L",
+        flag="high",
+        abnormal=True,
+        is_risk=True,
+        confidence="medium",
+        observed_at=observed_at,
+        source="fhir_bundle",
+    )
+    db.add(obs)
+    db.commit()
+    db.refresh(obs)
+    create_provenance_record(
+        db,
+        user_id=user.id,
+        connection_id=connection.id,
+        source_kind="fhir_bundle",
+        source_id="Observation/ldl-2026-06",
+        object_type="BiomarkerObservation",
+        object_id=str(obs.id),
+        transformed_by="fhir_bundle_observation_v1",
+        observed_at=observed_at,
+        confidence="medium",
+        metadata={
+            "code": {"text": "LDL-C", "coding": [{"code": "13457-7", "display": "LDL cholesterol"}]},
+            "resource_status": "final",
+            "raw_patient_name": "SHOULD_NOT_LEAK",
+        },
+        raw_hash="raw-report-hash-should-not-leak",
+    )
+
+    monkeypatch.setattr(agenda_service, "smart_today", lambda db, uid, followup_within_days=1, max_items=4: {
+        "agenda_date": "2026-06-28",
+        "mode": "smart",
+        "smart": {"top_items": [{
+            "id": "smart_daily_plan_metabolic_walk",
+            "type": "movement",
+            "title": "饭后步行 10 分钟",
+            "status": "pending",
+            "status_canonical": "pending",
+            "can_complete": True,
+            "can_skip": True,
+            "time_window": "evening",
+            "priority": 65,
+            "rank_score": 84,
+            "source": {"object_type": "daily_plan_action", "object_id": "metabolic_walk"},
+            "why_now": "LDL-C 偏高,今天先安排低门槛代谢行动。",
+            "verify_by": {"metrics": ["lipid_ldl"], "window_days": 7},
+            "trajectory_context": {
+                "domain": "metabolic_health",
+                "level": "attention",
+                "state_variable": "metabolic_labs",
+                "signals": ["ldl_elevated"],
+                "verification_signal": "metabolic_labs",
+            },
+            "confidence": "medium",
+            "claim_boundary": "仅作健康管理建议,不能替代医生诊断。",
+        }]},
+    }, raising=False)
+
+    r = client.get("/api/v1/agenda/range?days=1&mode=runtime", headers=h)
+
+    assert r.status_code == 200, r.text
+    top_action = r.json()["next_action"]
+    provenance = top_action["runtime_context"]["evidence"]["provenance"]
+    assert provenance["policy"] == "runtime_key_fact_provenance_v1"
+    assert provenance["status"] == "available"
+    assert provenance["queried_metrics"] == ["lipid_ldl"]
+    assert provenance["items"][0]["source_kind"] == "fhir_bundle"
+    assert provenance["items"][0]["source_id"] == "Observation/ldl-2026-06"
+    assert provenance["items"][0]["object_type"] == "BiomarkerObservation"
+    assert provenance["items"][0]["object_id"] == str(obs.id)
+    assert provenance["items"][0]["confidence"] == "medium"
+    assert provenance["items"][0]["privacy_classification"] == "L3"
+    assert provenance["items"][0]["metadata_summary"]["code_text"] == "LDL-C"
+    assert "raw_hash" not in provenance["items"][0]
+    assert "raw_patient_name" not in provenance["items"][0]["metadata_summary"]
 
 
 def _runtime_item_for_protocol(body: dict, protocol_id: int, day_index: int = 1) -> dict:

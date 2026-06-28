@@ -40,6 +40,7 @@
 - `surface`: 当前为 `agenda`。
 - `current_state_summary`: 为什么此刻需要看到这条行动。
 - `evidence`: source、rank score、trajectory context 和 confidence 摘要。
+- `evidence.provenance`: 可选；关键事实来源摘要。当前策略为 `runtime_key_fact_provenance_v1`，返回 source kind/id、object type/id、观测/接收时间、转换器、置信度、隐私级别和受控 `metadata_summary`，不得返回 raw hash、原始报告内容或完整 metadata。
 - `safety_boundary`: 不诊断、不处方、不调药；高风险症状转医生/急救。
 - `freshness`: 投影生成日期、来源对象类型。
 - `verification_window`: `window_days` + `metrics`。
@@ -66,7 +67,7 @@
 
 ## 6. 后续切片
 
-- DataConnection/Consent/Provenance 补齐后，runtime context 增加关键事实 provenance。
+- runtime provenance 继续扩展到 HealthKit、wearable/device、体检报告 provider 的更多 key facts，并在 Review 中展示纠错链路。
 
 ## 7. 已完成后续切片
 
@@ -95,3 +96,10 @@
 - Runtime root context 新增 `feedback_policy=recent_protocol_event_feedback_v1` 和 `feedback_applied_count`。
 - 测试覆盖：`backend/tests/test_agenda_range_complete.py` 新增 feedback future projection 合同测试。
 - 已发布：代码 commit `16c093f5f288f863d4759601e6affaea3d87824c`；后端部署 HEAD `ab65154382a98d25a70cd4038dfe92b85cf5d6c8`；生产 user_id=3 smoke 覆盖 `feedback_policy`、`feedback_count` 和抽样 `feedback_adjustment`。
+
+### 2026-06-28 · Runtime Key Fact Provenance
+
+- Runtime item 已在 `runtime_context.evidence.provenance` 暴露关键事实来源摘要。
+- 当前最小覆盖 FHIR/report 导入后的 `BiomarkerObservation`，由 `verify_by.metrics`、trajectory signals 和 canonical biomarker code 关联 `ProvenanceRecord`。
+- 摘要只返回受控字段，不返回 `raw_hash`、原始报告内容或完整 source metadata。
+- Runtime root context 新增 `provenance_policy=runtime_key_fact_provenance_v1`。
