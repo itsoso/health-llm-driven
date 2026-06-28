@@ -215,6 +215,58 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertTrue(html.contains("OCR/AI 解析结果需要复核后再用于判断。"))
     }
 
+    func testDynamicCardRendersSafetyCardConservatively() throws {
+        let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
+            type: "safety",
+            data: .object([
+                "title": .string("今天不建议高强度训练"),
+                "severity": .string("high"),
+                "summary": .string("睡眠不足且 HRV 明显低于近期基线，建议把训练降级。"),
+                "recommendations": .array([
+                    .string("改为 20 分钟低强度步行或拉伸"),
+                    .string("训练中如有胸闷、头晕、异常心悸，立即停止"),
+                    .string("明早根据睡眠和静息心率重新评估"),
+                    .string("第四条不应展示")
+                ]),
+                "boundary": .string("这不是诊断；如出现急性不适或持续症状，请及时就医。"),
+                "requires_medical_attention": .bool(true),
+                "rule_id": .string("acute_hrv_drop<script>alert(1)</script>")
+            ])
+        ))
+
+        XCTAssertTrue(html.contains("safety-card"))
+        XCTAssertTrue(html.contains("今天不建议高强度训练"))
+        XCTAssertTrue(html.contains("高风险"))
+        XCTAssertTrue(html.contains("睡眠不足且 HRV 明显低于近期基线，建议把训练降级。"))
+        XCTAssertTrue(html.contains("改为 20 分钟低强度步行或拉伸"))
+        XCTAssertTrue(html.contains("训练中如有胸闷、头晕、异常心悸，立即停止"))
+        XCTAssertTrue(html.contains("明早根据睡眠和静息心率重新评估"))
+        XCTAssertFalse(html.contains("第四条不应展示"))
+        XCTAssertTrue(html.contains("需要关注"))
+        XCTAssertTrue(html.contains("这不是诊断"))
+        XCTAssertFalse(html.contains("<script"))
+        XCTAssertTrue(html.contains("acute_hrv_drop&lt;script&gt;alert(1)&lt;/script&gt;"))
+    }
+
+    func testDynamicCardSafetyCardToleratesMalformedPayload() throws {
+        let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
+            type: "safety",
+            data: .object([
+                "title": .int(123),
+                "severity": .string("unknown"),
+                "summary": .object(["text": .string("bad payload")]),
+                "recommendations": .string("改为低强度活动"),
+                "boundary": .int(456),
+                "requires_medical_attention": .string("yes")
+            ])
+        ))
+
+        XCTAssertTrue(html.contains("安全提醒"))
+        XCTAssertTrue(html.contains("安全提示"))
+        XCTAssertTrue(html.contains("改为低强度活动"))
+        XCTAssertTrue(html.contains("这不是诊断"))
+    }
+
     func testDynamicCardUnknownTypeFallsBackToSafeSummary() throws {
         let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
             type: "system_knowledge_evidence",

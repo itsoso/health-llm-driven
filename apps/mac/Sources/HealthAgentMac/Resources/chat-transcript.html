@@ -204,6 +204,11 @@
     background: rgba(48, 176, 112, 0.14);
     border-color: rgba(48, 176, 112, 0.22);
   }
+  .dynamic-card-badge.caution {
+    color: #8a5a00;
+    background: rgba(255, 214, 10, 0.16);
+    border-color: rgba(255, 214, 10, 0.24);
+  }
   .dynamic-card-metrics {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
@@ -257,6 +262,50 @@
     border-color: rgba(10, 132, 255, 0.20);
     background: linear-gradient(180deg, rgba(10, 132, 255, 0.11), rgba(10, 132, 255, 0.045));
   }
+  .safety-card-risk {
+    border-color: rgba(255, 69, 58, 0.24);
+    background: linear-gradient(180deg, rgba(255, 69, 58, 0.12), rgba(255, 69, 58, 0.05));
+  }
+  .safety-card-caution {
+    border-color: rgba(255, 214, 10, 0.24);
+    background: linear-gradient(180deg, rgba(255, 214, 10, 0.14), rgba(255, 214, 10, 0.05));
+  }
+  .safety-card-info {
+    border-color: rgba(10, 132, 255, 0.20);
+    background: linear-gradient(180deg, rgba(10, 132, 255, 0.10), rgba(10, 132, 255, 0.04));
+  }
+  .safety-card-summary {
+    color: var(--text);
+    font-weight: 700;
+    line-height: 1.5;
+  }
+  .safety-card-recommendations {
+    display: grid;
+    gap: 6px;
+    margin: 9px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .safety-card-recommendations li {
+    margin: 0;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(120, 120, 128, 0.14);
+    background: rgba(255, 255, 255, 0.52);
+    color: var(--text);
+    font-size: 0.86em;
+  }
+  .safety-card-attention {
+    display: inline-block;
+    margin-top: 9px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    color: #b42318;
+    background: rgba(255, 69, 58, 0.12);
+    border: 1px solid rgba(255, 69, 58, 0.20);
+    font-size: 0.78em;
+    font-weight: 800;
+  }
   .dynamic-card-summary {
     display: grid;
     gap: 6px;
@@ -286,6 +335,18 @@
     }
     .dynamic-card-badge.neutral {
       color: #7ee0a3;
+    }
+    .dynamic-card-badge.caution {
+      color: #ffd66b;
+    }
+    .safety-card-recommendations li {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+    .safety-card-attention {
+      color: #ff8a80;
+      background: rgba(255, 69, 58, 0.10);
+      border-color: rgba(255, 69, 58, 0.18);
     }
     .dynamic-card-warning {
       color: #ffd66b;

@@ -266,6 +266,8 @@ public enum ChatTranscriptHTML {
             return medicalExamImportCardHTML(data)
         case "system_knowledge_evidence":
             return systemKnowledgeEvidenceCardHTML(data)
+        case "safety":
+            return safetyCardHTML(data)
         default:
             return genericDynamicCardHTML(type: type, data: data)
         }
@@ -346,6 +348,49 @@ public enum ChatTranscriptHTML {
         """
     }
 
+    private static func safetyCardHTML(_ data: AgentDynamicCardValue) -> String? {
+        let title = cardString(data["title"]) ?? "安全提醒"
+        let severity = normalizedSafetySeverity(data["severity"]?.stringValue)
+        let meta = safetySeverityMeta(severity)
+        let summary = cardString(data["summary"])
+        let recommendations = safetyRecommendations(from: data["recommendations"])
+        let boundary = cardString(data["boundary"]) ?? "这不是诊断；如出现急性不适或持续症状，请及时就医。"
+        let needsAttention = (data["requires_medical_attention"]?.boolValue == true) || severity == "critical"
+        let detail = [
+            cardString(data["rule_id"]).map { "规则 \($0)" },
+            cardString(data["category"]).map { "类别 \($0)" }
+        ].compactMap { $0 }.joined(separator: " · ")
+
+        var html = """
+        <div class="dynamic-card safety-card safety-card-\(meta.toneClass)">
+          <div class="dynamic-card-top">
+            <div>
+              <div class="dynamic-card-eyebrow">Safety Guardian</div>
+              <div class="dynamic-card-title">\(escape(title))</div>
+            </div>
+            <span class="dynamic-card-badge \(meta.badgeClass)">\(escape(meta.label))</span>
+          </div>
+        """
+        if let summary {
+            html += "<div class=\"safety-card-summary\">\(escape(summary))</div>"
+        }
+        if !recommendations.isEmpty {
+            let items = recommendations
+                .map { "<li>\(escape($0))</li>" }
+                .joined()
+            html += "<ul class=\"safety-card-recommendations\">\(items)</ul>"
+        }
+        if needsAttention {
+            html += "<div class=\"safety-card-attention\">需要关注</div>"
+        }
+        if !detail.isEmpty {
+            html += "<div class=\"dynamic-card-detail\">\(escape(detail))</div>"
+        }
+        html += "<div class=\"dynamic-card-warning\">\(escape(boundary))</div>"
+        html += "</div>"
+        return html
+    }
+
     private static func genericDynamicCardHTML(type: String, data: AgentDynamicCardValue) -> String? {
         let rows = cardSummaryRows(data: data)
             .prefix(4)
@@ -398,7 +443,52 @@ public enum ChatTranscriptHTML {
             .compactMap { key, value in
                 let summary = scalarSummary(value)
                 return summary.isEmpty ? nil : (key, summary)
+        }
+    }
+
+    private static func cardString(_ value: AgentDynamicCardValue?) -> String? {
+        guard case .string(let raw) = value else {
+            return nil
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func normalizedSafetySeverity(_ raw: String?) -> String {
+        let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        return ["critical", "high", "medium", "low", "info"].contains(value) ? value : "info"
+    }
+
+    private static func safetySeverityMeta(_ severity: String) -> (label: String, badgeClass: String, toneClass: String) {
+        switch severity {
+        case "critical":
+            return ("紧急风险", "risk", "risk")
+        case "high":
+            return ("高风险", "risk", "risk")
+        case "medium":
+            return ("注意", "caution", "caution")
+        case "low":
+            return ("低风险", "neutral", "info")
+        default:
+            return ("安全提示", "neutral", "info")
+        }
+    }
+
+    private static func safetyRecommendations(from value: AgentDynamicCardValue?) -> [String] {
+        let rawItems: [AgentDynamicCardValue]
+        if case .array(let values) = value {
+            rawItems = values
+        } else if let value {
+            rawItems = [value]
+        } else {
+            rawItems = []
+        }
+        let items = rawItems
+            .compactMap { item -> String? in
+                let text = item.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return text.isEmpty ? nil : text
             }
+        return Array(items.prefix(3))
     }
 
     private static func scalarSummary(_ value: AgentDynamicCardValue) -> String {
