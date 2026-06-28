@@ -439,7 +439,7 @@ Mobile/Watch 待规划工作：
   - Mobile OTA production update group `7fcf6a1c-7d96-4015-8a78-34dbdf3ee413`。
   - 生产 user_id=3 smoke：`generated_by=daily_artifact_runtime_v1 source_kind=agenda.runtime_range horizon_days=7 runtime_context_present=True evidence_count=3`。
 
-2026-06-28 第三/四切片已实现，待发布:
+2026-06-28 第三/四切片已发布:
 
 - Chat 动态 UI 卡片已接入 runtime projection：
   - 后端 `inline_cards` 新增 `runtime_agenda` card builder，消费 7 天 `agenda_service.runtime_range_view`。
@@ -455,6 +455,10 @@ Mobile/Watch 待规划工作：
   - Mobile card registry tests：`21 passed`。
   - Watch Swift package tests：`56 passed`。
   - Mobile TypeScript、Backend compileall、doc drift check 均通过。
+- 已发布：
+  - 后端部署 SHA `a1535357f76339e11a83f1a20dbb13987c5b6ef5`，部署健康分 `60/60`。
+  - Mobile OTA production update group `d731f134-0d98-46c4-8cc9-3b916c6281be`。
+  - 生产 user_id=3 smoke：Watch root runtime `generated_by=rolling_health_runtime_v1 horizon_days=1`；Chat runtime card `present=True horizon_days=7 action=route.open`。
 
 仍未完成，继续保留在后续计划:
 

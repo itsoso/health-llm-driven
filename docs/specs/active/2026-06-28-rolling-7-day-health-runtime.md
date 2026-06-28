@@ -84,3 +84,4 @@
 - Mobile Chat card registry 已支持渲染“7天健康运行时”卡片，展示下一步行动、重排原因、验证指标和打开 Agenda 的 `route.open` 动作。
 - Watch summary 已改为消费 1 天 `agenda_service.runtime_range_view`，并保留既有 `rank_agenda_actions`、安全预算和手动完成边界。
 - Watch shared model 已支持解码 root `runtime` 和 top action `runtime_context`，为原生 Watch UI 使用同一行动合同打底。
+- 已发布：backend SHA `a1535357f76339e11a83f1a20dbb13987c5b6ef5`；Mobile OTA group `d731f134-0d98-46c4-8cc9-3b916c6281be`；生产 smoke 覆盖 Watch root runtime 与 Chat runtime card。

@@ -4,8 +4,8 @@
 |---|---|
 | slug | `chat-watch-runtime-surfaces` |
 | 创建日期 | 2026-06-28 |
-| 当前阶段 | G3 测试闸 |
-| 状态 | verified_pending_release |
+| 当前阶段 | S8 沉淀 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | backend deploy + mobile OTA + Watch native model update |
 
@@ -112,13 +112,26 @@
 
 ## S6 · 部署
 
-- 状态: pending。
 - 路由: backend deploy + mobile OTA production。
+- 后端部署 SHA: `a1535357f76339e11a83f1a20dbb13987c5b6ef5`
+- 后端回滚点: `8d33cdba`
+- 后端健康分: `60/60 PASS`
+- Mobile OTA:
+  - branch: `production`
+  - runtime version: `1.3.1`
+  - update group ID: `d731f134-0d98-46c4-8cc9-3b916c6281be`
+  - iOS update ID: `019f0cc4-2d82-7070-8357-91a2081e7e4e`
+  - dashboard: `https://expo.dev/accounts/itsoso/projects/health-pilot/updates/d731f134-0d98-46c4-8cc9-3b916c6281be`
 
 ## G5/G6 · 部署健康与上线验证
 
-- 状态: pending。
+- 部署健康闸: PASS。
+- `GET https://health.executor.life/api/v1/health`: healthy，database/redis/celery connected。
+- 服务器本机 user_id=3 service smoke:
+  - Watch runtime: `generated_by=rolling_health_runtime_v1 horizon_days=1 pending=0`。
+  - Chat runtime card: `present=True generated_by=rolling_health_runtime_v1 horizon_days=7 next_action=True action=route.open`。
+- 说明: user_id=3 当前没有 Watch pending top action，因此生产 smoke 只验证 root runtime contract；top action `runtime_context` 由本地 contract test 覆盖。
 
 ## S8 · 沉淀
 
-- 状态: pending release。
+- 状态: shipped。
