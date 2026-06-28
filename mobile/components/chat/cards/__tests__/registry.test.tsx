@@ -133,6 +133,53 @@ describe('renderCard 安全降级', () => {
     });
     expect(r).not.toBeNull();
   });
+
+  it('renders runtime agenda cards from backend runtime projection', () => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'runtime_agenda',
+      data: {
+        generated_by: 'rolling_health_runtime_v1',
+        horizon_days: 7,
+        next_action: {
+          title: '晚餐后步行 15 分钟',
+          kind: 'movement',
+          time_window: 'evening',
+          priority_tier: 'P1',
+          current_state_summary: '晚餐后是今天最短的代谢干预窗口。',
+          replan_reason: 'today_smart_rank',
+          verification_metrics: ['post_meal_walk_completed', 'waist_cm'],
+          verification_window_days: 7,
+        },
+        days: [
+          { date: '2026-06-28', next_action_title: '晚餐后步行 15 分钟', items_count: 1 },
+          { date: '2026-06-29', next_action_title: '晨间补水', items_count: 2 },
+        ],
+        safety_boundary: '这是健康管理行动建议,不替代医生诊断。',
+      },
+      actions: [
+        {
+          id: 'open-runtime-agenda',
+          label: '查看7天计划',
+          action: 'route.open',
+          payload: { route: '/agenda' },
+          style: 'primary',
+        },
+      ],
+    } as any;
+    const r = renderCard(descriptor, { onAction });
+    expect(r).not.toBeNull();
+
+    const { getByText } = render(r!);
+    expect(getByText('7天健康运行时')).toBeTruthy();
+    expect(getByText('晚餐后步行 15 分钟')).toBeTruthy();
+    fireEvent.press(getByText('查看7天计划'));
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'route.open' }),
+      expect.objectContaining({ type: 'runtime_agenda' }),
+    );
+  });
+
   it('cards_group 1 张子卡 → 直接渲染, 不包 grid', () => {
     const r = renderCard({
       type: 'cards_group',
@@ -177,10 +224,11 @@ describe('renderServerCards 防御', () => {
   it('过滤未知 type', () => {
     const r = renderServerCards([
       { type: 'vitals', data: {} },
+      { type: 'runtime_agenda', data: { next_action: { title: '今日重点' } } },
       { type: 'fake', data: {} },
       { type: 'sleep', data: {} },
     ]);
-    expect(r.map((c) => c.type)).toEqual(['vitals', 'sleep']);
+    expect(r.map((c) => c.type)).toEqual(['vitals', 'runtime_agenda', 'sleep']);
   });
 
   it('preserves allowed server card actions for chat dispatch', () => {

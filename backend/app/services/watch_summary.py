@@ -1,6 +1,6 @@
 """Apple Watch 腕上摘要(W1 大脑)。
 
-把 agenda_service.today() 投影成 watch 优化的紧凑视图:
+把 agenda_service.runtime_range_view(days=1) 投影成 watch 优化的紧凑视图:
 - status:今日状态灯(绿/黄/红/灰)+ readiness + 一句话 headline
 - top_action:此刻最该做的一件可执行事(腕上一眼)
 - quick_actions:打点入口目录(喝水/补剂/运动/记一餐/打卡)—— watch 渲染按钮,各指向已有端点
@@ -75,7 +75,7 @@ def _action_id(item: Dict[str, Any]) -> Optional[str]:
 
 
 def _action_view(item: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    view = {
         "action_id": _action_id(item),
         "title": item.get("title"),
         "kind": item.get("type"),
@@ -91,6 +91,9 @@ def _action_view(item: Dict[str, Any]) -> Dict[str, Any]:
         "verification_signal": item.get("verification_signal"),
         "prescription": item.get("prescription"),  # cut A:movement 处方(None 则前端忽略)
     }
+    if item.get("runtime_context"):
+        view["runtime_context"] = item.get("runtime_context")
+    return view
 
 
 def _due_view(item: Dict[str, Any]) -> Dict[str, Any]:
@@ -104,6 +107,8 @@ def _due_view(item: Dict[str, Any]) -> Dict[str, Any]:
     }
     if item.get("prescription"):
         view["prescription"] = item["prescription"]  # cut A:腕上渲染强度 chip
+    if item.get("runtime_context"):
+        view["runtime_context"] = item.get("runtime_context")
     return view
 
 
@@ -115,6 +120,34 @@ def _push_view(item: Dict[str, Any], tier: str) -> Dict[str, Any]:
         "kind": item.get("type"),
         "source": item.get("source"),
     }
+
+
+def _runtime_contract(runtime_projection: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "mode": runtime_projection.get("mode"),
+        "generated_by": runtime_projection.get("generated_by"),
+        "horizon_days": runtime_projection.get("horizon_days"),
+        "start": runtime_projection.get("start"),
+        "end": runtime_projection.get("end"),
+    }
+
+
+def _runtime_projection_items(runtime_projection: Dict[str, Any]) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    for day in runtime_projection.get("days") or []:
+        if not isinstance(day, dict):
+            continue
+        for window in day.get("time_windows") or []:
+            if not isinstance(window, dict):
+                continue
+            for item in window.get("items") or []:
+                if isinstance(item, dict):
+                    items.append(item)
+    if not items and isinstance(runtime_projection.get("next_action"), dict):
+        items.append(runtime_projection["next_action"])
+    if not items and isinstance(runtime_projection.get("items"), list):
+        items.extend([item for item in runtime_projection["items"] if isinstance(item, dict)])
+    return items
 
 
 def _is_exercise_behavior_nudge(item: Dict[str, Any]) -> bool:
@@ -286,9 +319,14 @@ def _wearable_freshness(db: Session, user_id: int) -> Dict[str, Any]:
 
 
 def build_watch_summary(db: Session, user_id: int) -> Dict[str, Any]:
-    """腕上摘要(只读投影 agenda.today)。"""
-    agenda = agenda_service.today(db, user_id)
-    items: List[Dict[str, Any]] = agenda.get("items", []) or []
+    """腕上摘要(只读投影 rolling runtime 今日行动合同)。"""
+    runtime_projection = agenda_service.runtime_range_view(
+        db,
+        user_id,
+        days=1,
+        max_items_per_day=3,
+    )
+    items = _runtime_projection_items(runtime_projection)
 
     training = next((i for i in items if i.get("type") == "training"), None)
     light = (training or {}).get("light") or "gray"
@@ -327,7 +365,8 @@ def build_watch_summary(db: Session, user_id: int) -> Dict[str, Any]:
         },
         "top_action": top_action,
         "due_items": due_items,
-        "agenda": {"total": agenda.get("count", 0), "pending": len(actionable)},
+        "agenda": {"total": len(items), "pending": len(actionable)},
+        "runtime": _runtime_contract(runtime_projection),
         # quick_actions 是目录入口(无具体 source)→ action_id=null,不可一键完成。
         "quick_actions": [{**qa, "action_id": None} for qa in QUICK_ACTIONS],
         "push_items": push,

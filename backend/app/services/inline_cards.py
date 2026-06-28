@@ -18,6 +18,8 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from app.services import agenda_service
+
 logger = logging.getLogger(__name__)
 
 MAX_CARDS = 3
@@ -27,7 +29,98 @@ def _is_record_intent(q: str) -> bool:
     return bool(re.search(r"记录|打卡|吃了|喝了|服药|刚吃|刚喝", q))
 
 
+def _is_runtime_agenda_query(q: str) -> bool:
+    ql = q.lower()
+    if re.search(r"7天|七天|未来|接下来|接下去|这周|一周|计划|安排|编排|运行时|下一步|该做|重点", ql):
+        return True
+    if re.search(r"今天怎么样|今日如何|健康状况|健康行动|怎么改善|怎么做", ql):
+        return True
+    return False
+
+
+def _compact_runtime_day(day: Dict[str, Any]) -> Dict[str, Any]:
+    next_action = day.get("next_action") if isinstance(day.get("next_action"), dict) else None
+    item_count = 0
+    for window in day.get("time_windows") or []:
+        if isinstance(window, dict) and isinstance(window.get("items"), list):
+            item_count += len(window["items"])
+    return {
+        "date": day.get("date"),
+        "next_action_title": next_action.get("title") if next_action else None,
+        "items_count": item_count,
+    }
+
+
 # ── individual builders ────────────────────────────────────────────
+
+def _build_runtime_agenda(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
+    if _is_record_intent(q) or not _is_runtime_agenda_query(q):
+        return None
+    try:
+        payload = agenda_service.runtime_range_view(
+            db,
+            user_id,
+            days=7,
+            max_items_per_day=3,
+        )
+    except Exception as e:
+        logger.debug("runtime agenda card failed: %s", e)
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+    action = payload.get("next_action")
+    if not isinstance(action, dict):
+        for day in payload.get("days") or []:
+            if isinstance(day, dict) and isinstance(day.get("next_action"), dict):
+                action = day["next_action"]
+                break
+    if not isinstance(action, dict):
+        return None
+
+    runtime_context = action.get("runtime_context")
+    if not isinstance(runtime_context, dict):
+        runtime_context = {}
+    root_context = payload.get("runtime_context")
+    if not isinstance(root_context, dict):
+        root_context = {}
+    verification_window = runtime_context.get("verification_window")
+    if not isinstance(verification_window, dict):
+        verification_window = {}
+    metrics = [
+        str(metric)
+        for metric in verification_window.get("metrics") or []
+        if isinstance(metric, (str, int, float)) and str(metric).strip()
+    ][:3]
+
+    return {
+        "mode": payload.get("mode"),
+        "generated_by": payload.get("generated_by"),
+        "horizon_days": payload.get("horizon_days"),
+        "start": payload.get("start"),
+        "end": payload.get("end"),
+        "safety_boundary": (
+            root_context.get("safety_boundary")
+            or runtime_context.get("safety_boundary")
+        ),
+        "next_action": {
+            "id": action.get("id"),
+            "title": action.get("title"),
+            "kind": action.get("type"),
+            "time_window": action.get("time_window"),
+            "priority_tier": action.get("priority_tier"),
+            "current_state_summary": runtime_context.get("current_state_summary"),
+            "replan_reason": runtime_context.get("replan_reason"),
+            "verification_metrics": metrics,
+            "verification_window_days": verification_window.get("window_days"),
+        },
+        "days": [
+            _compact_runtime_day(day)
+            for day in (payload.get("days") or [])[:7]
+            if isinstance(day, dict)
+        ],
+    }
+
 
 def _build_vitals(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
     if _is_record_intent(q):
@@ -205,6 +298,7 @@ def _build_diet(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
 
 _BUILDERS = [
     ("record_intent_skip", lambda db, uid, q: None),
+    ("runtime_agenda", _build_runtime_agenda),
     ("sleep",        _build_sleep),
     ("weight",       _build_weight),
     ("blood_pressure", _build_bp),
@@ -229,7 +323,18 @@ def build_cards(db: Session, user_id: int, query: str) -> List[Dict[str, Any]]:
         try:
             data = builder(db, user_id, query)
             if data:
-                out.append({"type": card_type, "data": data})
+                card: Dict[str, Any] = {"type": card_type, "data": data}
+                if card_type == "runtime_agenda":
+                    card["actions"] = [
+                        {
+                            "id": "open-runtime-agenda",
+                            "label": "查看7天计划",
+                            "action": "route.open",
+                            "payload": {"route": "/agenda"},
+                            "style": "primary",
+                        }
+                    ]
+                out.append(card)
                 if len(out) >= MAX_CARDS:
                     break
         except Exception as e:

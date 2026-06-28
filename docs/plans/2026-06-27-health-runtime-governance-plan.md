@@ -439,11 +439,26 @@ Mobile/Watch 待规划工作：
   - Mobile OTA production update group `7fcf6a1c-7d96-4015-8a78-34dbdf3ee413`。
   - 生产 user_id=3 smoke：`generated_by=daily_artifact_runtime_v1 source_kind=agenda.runtime_range horizon_days=7 runtime_context_present=True evidence_count=3`。
 
+2026-06-28 第三/四切片已实现，待发布:
+
+- Chat 动态 UI 卡片已接入 runtime projection：
+  - 后端 `inline_cards` 新增 `runtime_agenda` card builder，消费 7 天 `agenda_service.runtime_range_view`。
+  - 记录、打卡、服药、刚吃喝等快速记录意图不会触发 runtime card。
+  - Mobile Chat registry 新增 `RuntimeAgendaCard`，展示“7天健康运行时”、下一步行动、重排原因、验证指标和打开 Agenda 的 `route.open` 动作。
+- Watch summary 已接入 runtime projection：
+  - 后端 `build_watch_summary` 从旧 `agenda_service.today` 切到 `agenda_service.runtime_range_view(days=1, max_items_per_day=3)`。
+  - Watch top action / due items 继续走既有 `rank_agenda_actions`、安全预算和 action_id 完成边界。
+  - Watch shared model 新增 root `runtime` 和 top action `runtime_context` 解码。
+- 新增 product-pipeline Dossier：`docs/dossiers/2026-06-28-chat-watch-runtime-surfaces.md`。
+- 当前验证：
+  - 后端 focused tests：`18 passed`。
+  - Mobile card registry tests：`21 passed`。
+  - Watch Swift package tests：`56 passed`。
+  - Mobile TypeScript、Backend compileall、doc drift check 均通过。
+
 仍未完成，继续保留在后续计划:
 
 - A 切片：DataConnection / ConsentGrant / ProvenanceRecord 最小底座。
-- Chat 动态 UI 卡片消费 runtime projection。
-- Watch summary 使用 `today?mode=runtime` 的压缩行动合同。
 - skip reason、snooze、completion 进入未来 7 天重排因子。
 
 建议范围 A：
@@ -492,3 +507,4 @@ Mobile/Watch 待规划工作：
 | 2026-06-27 | 增加互操作、授权、provenance、评估回归和模板化计划 | 吸收 FHIR/PHR、闭环糖尿病系统、Home Assistant 和医疗 agent benchmark 的启发，补齐 1000 万用户规模前的基础设施。 |
 | 2026-06-28 | 标记 B 切片首个实现：滚动 7 天健康运行时编排 | 先把 HealthTrajectory/Agenda 从单日 top action 推进到 7 天可执行路线，为 Home/Chat/Watch 共用 Daily Artifact 打底。 |
 | 2026-06-28 | 标记 B 切片第二个实现：Home Daily Artifact Runtime 化 | 首页不再从旧 smart agenda 派生，开始共用 7 天健康运行时对象。 |
+| 2026-06-28 | 标记 B 切片第三/四个实现：Chat 动态卡片与 Watch summary Runtime 化 | Chat 和 Watch 开始消费同一个 rolling runtime projection，后续只剩执行反馈重排与数据底座。 |

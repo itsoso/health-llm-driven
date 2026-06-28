@@ -140,6 +140,75 @@ public struct WatchPrescription: Codable, Sendable, Equatable {
     }
 }
 
+public struct WatchRuntimeVerificationWindow: Codable, Sendable, Equatable {
+    public let metrics: [String]
+    public let windowDays: Int?
+
+    public init(metrics: [String] = [], windowDays: Int? = nil) {
+        self.metrics = metrics
+        self.windowDays = windowDays
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case metrics
+        case windowDays = "window_days"
+    }
+}
+
+public struct WatchRuntimeContext: Codable, Sendable, Equatable {
+    public let currentStateSummary: String?
+    public let replanReason: String?
+    public let safetyBoundary: String?
+    public let verificationWindow: WatchRuntimeVerificationWindow?
+
+    public init(
+        currentStateSummary: String? = nil,
+        replanReason: String? = nil,
+        safetyBoundary: String? = nil,
+        verificationWindow: WatchRuntimeVerificationWindow? = nil
+    ) {
+        self.currentStateSummary = currentStateSummary
+        self.replanReason = replanReason
+        self.safetyBoundary = safetyBoundary
+        self.verificationWindow = verificationWindow
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case currentStateSummary = "current_state_summary"
+        case replanReason = "replan_reason"
+        case safetyBoundary = "safety_boundary"
+        case verificationWindow = "verification_window"
+    }
+}
+
+public struct WatchRuntimeSummary: Codable, Sendable, Equatable {
+    public let mode: String?
+    public let generatedBy: String?
+    public let horizonDays: Int?
+    public let start: String?
+    public let end: String?
+
+    public init(
+        mode: String? = nil,
+        generatedBy: String? = nil,
+        horizonDays: Int? = nil,
+        start: String? = nil,
+        end: String? = nil
+    ) {
+        self.mode = mode
+        self.generatedBy = generatedBy
+        self.horizonDays = horizonDays
+        self.start = start
+        self.end = end
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case mode, start, end
+        case generatedBy = "generated_by"
+        case horizonDays = "horizon_days"
+    }
+}
+
 public struct WatchTopAction: Codable, Sendable {
     public let title: String
     public let kind: String
@@ -153,6 +222,7 @@ public struct WatchTopAction: Codable, Sendable {
     /// 后端注入:`agenda-{object_type}-{object_id}`。无 source 的项为 nil(不可完成,只读)。
     public let actionId: String?
     public let prescription: WatchPrescription?
+    public let runtimeContext: WatchRuntimeContext?
 
     public init(
         title: String,
@@ -165,7 +235,8 @@ public struct WatchTopAction: Codable, Sendable {
         verificationWindowDays: Int? = nil,
         safetyStatus: String? = nil,
         actionId: String? = nil,
-        prescription: WatchPrescription? = nil
+        prescription: WatchPrescription? = nil,
+        runtimeContext: WatchRuntimeContext? = nil
     ) {
         self.title = title
         self.kind = kind
@@ -178,6 +249,7 @@ public struct WatchTopAction: Codable, Sendable {
         self.safetyStatus = safetyStatus
         self.actionId = actionId
         self.prescription = prescription
+        self.runtimeContext = runtimeContext
     }
 
     /// 可一键完成 = 有 action_id 且 kind 属于 health_protocol 可回写域。非可完成项只渲染只读。
@@ -197,6 +269,7 @@ public struct WatchTopAction: Codable, Sendable {
         case safetyStatus = "safety_status"
         case actionId = "action_id"
         case prescription
+        case runtimeContext = "runtime_context"
     }
 }
 
@@ -207,11 +280,14 @@ public struct WatchDueItem: Codable, Sendable, Identifiable {
     public let source: WatchSource?
     public let actionId: String?
     public let prescription: WatchPrescription?
+    public let runtimeContext: WatchRuntimeContext?
 
     public init(title: String, kind: String, timeWindow: String?, source: WatchSource?,
-                actionId: String? = nil, prescription: WatchPrescription? = nil) {
+                actionId: String? = nil, prescription: WatchPrescription? = nil,
+                runtimeContext: WatchRuntimeContext? = nil) {
         self.title = title; self.kind = kind; self.timeWindow = timeWindow
         self.source = source; self.actionId = actionId; self.prescription = prescription
+        self.runtimeContext = runtimeContext
     }
 
     public var id: String { actionId ?? "\(kind)-\(title)-\(timeWindow ?? "anytime")" }
@@ -227,6 +303,7 @@ public struct WatchDueItem: Codable, Sendable, Identifiable {
         case timeWindow = "time_window"
         case actionId = "action_id"
         case prescription
+        case runtimeContext = "runtime_context"
     }
 }
 
@@ -258,11 +335,12 @@ public struct WatchSummary: Codable, Sendable {
     public let topAction: WatchTopAction?
     public let dueItems: [WatchDueItem]
     public let agenda: WatchAgendaCount
+    public let runtime: WatchRuntimeSummary?
     public let quickActions: [WatchQuickAction]
     public let pushItems: [WatchPushItem]
 
     enum CodingKeys: String, CodingKey {
-        case status, agenda
+        case status, agenda, runtime
         case topAction = "top_action"
         case dueItems = "due_items"
         case quickActions = "quick_actions"
@@ -274,6 +352,7 @@ public struct WatchSummary: Codable, Sendable {
         topAction: WatchTopAction?,
         dueItems: [WatchDueItem] = [],
         agenda: WatchAgendaCount,
+        runtime: WatchRuntimeSummary? = nil,
         quickActions: [WatchQuickAction],
         pushItems: [WatchPushItem]
     ) {
@@ -281,6 +360,7 @@ public struct WatchSummary: Codable, Sendable {
         self.topAction = topAction
         self.dueItems = dueItems
         self.agenda = agenda
+        self.runtime = runtime
         self.quickActions = quickActions
         self.pushItems = pushItems
     }
@@ -291,6 +371,7 @@ public struct WatchSummary: Codable, Sendable {
         self.topAction = try c.decodeIfPresent(WatchTopAction.self, forKey: .topAction)
         self.dueItems = try c.decodeIfPresent([WatchDueItem].self, forKey: .dueItems) ?? []
         self.agenda = try c.decode(WatchAgendaCount.self, forKey: .agenda)
+        self.runtime = try c.decodeIfPresent(WatchRuntimeSummary.self, forKey: .runtime)
         self.quickActions = try c.decode([WatchQuickAction].self, forKey: .quickActions)
         self.pushItems = try c.decode([WatchPushItem].self, forKey: .pushItems)
     }

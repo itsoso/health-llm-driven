@@ -99,6 +99,30 @@ final class WatchSummaryTests: XCTestCase {
         XCTAssertEqual(s.topAction?.isCompletable, true)
     }
 
+    func testRuntimeContextDecodesForTopAction() throws {
+        let data = Data("""
+        {"status":{"light":"green","readiness_score":80,"headline":"h"},
+         "runtime":{"mode":"runtime","generated_by":"rolling_health_runtime_v1","horizon_days":1},
+         "top_action":{"title":"晚餐后步行 15 分钟","kind":"movement","time_window":"evening",
+                       "action_id":"agenda-health_protocol-8",
+                       "source":{"object_type":"health_protocol","object_id":8},
+                       "runtime_context":{
+                         "current_state_summary":"晚餐后是今天最短的代谢干预窗口。",
+                         "replan_reason":"today_smart_rank",
+                         "safety_boundary":"这是健康管理行动建议, 不替代医生诊断。",
+                         "verification_window":{"metrics":["post_meal_walk_completed","waist_cm"],"window_days":7}
+                       }},
+         "agenda":{"total":1,"pending":1},"quick_actions":[],"push_items":[],"generated_at":"x"}
+        """.utf8)
+        let s = try WatchSummary.decode(data)
+
+        XCTAssertEqual(s.runtime?.generatedBy, "rolling_health_runtime_v1")
+        XCTAssertEqual(s.runtime?.horizonDays, 1)
+        XCTAssertEqual(s.topAction?.runtimeContext?.replanReason, "today_smart_rank")
+        XCTAssertEqual(s.topAction?.runtimeContext?.verificationWindow?.metrics, ["post_meal_walk_completed", "waist_cm"])
+        XCTAssertEqual(s.topAction?.runtimeContext?.verificationWindow?.windowDays, 7)
+    }
+
     func testDecodeNullTopAction() throws {
         let data = Data("""
         {"status":{"light":"gray","readiness_score":null,"headline":"今日暂无待办"},

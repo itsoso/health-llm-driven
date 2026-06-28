@@ -65,8 +65,6 @@
 
 ## 6. 后续切片
 
-- Chat 动态卡片渲染 `RuntimeAgendaRange` 或单日 runtime card。
-- Watch summary 使用 `today?mode=runtime`，只显示一句话行动和安全边界。
 - skip reason、snooze、completion 进入 future projection 的重排因子。
 - DataConnection/Consent/Provenance 补齐后，runtime context 增加关键事实 provenance。
 
@@ -78,3 +76,11 @@
 - Home Daily Artifact 仍只展示一个 primary next action。
 - Mobile service 默认查询 7 天并保留 `top_action.runtime_context`。
 - Home telemetry 已记录 runtime generator、source kind、horizon 和 replan reason。
+
+### 2026-06-28 · Chat + Watch Runtime Surfaces
+
+- Chat SSE inline cards 已新增 `runtime_agenda` 只读动态卡片。
+- `runtime_agenda` 后端 builder 消费 7 天 `agenda_service.runtime_range_view`，并跳过记录/打卡类 query，避免把快速记录误判成规划查询。
+- Mobile Chat card registry 已支持渲染“7天健康运行时”卡片，展示下一步行动、重排原因、验证指标和打开 Agenda 的 `route.open` 动作。
+- Watch summary 已改为消费 1 天 `agenda_service.runtime_range_view`，并保留既有 `rank_agenda_actions`、安全预算和手动完成边界。
+- Watch shared model 已支持解码 root `runtime` 和 top action `runtime_context`，为原生 Watch UI 使用同一行动合同打底。

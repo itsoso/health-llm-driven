@@ -2,7 +2,7 @@
 
 钉:状态灯/headline 来自训练项、top_action 取最高优先级 pending 协议、push 分级(逾期复查 P0、
 其余 P1)+ 限 3 条、quick_actions 目录齐、API 走通 + 鉴权。
-用 monkeypatch 注入 agenda.today,纯映射逻辑确定性可测。
+用 monkeypatch 注入 agenda.runtime_range_view,纯映射逻辑确定性可测。
 """
 import uuid
 from datetime import UTC, date, datetime, timedelta
@@ -27,8 +27,23 @@ def auth(client, db):
     return user, {"Authorization": f"Bearer {auth_service.create_access_token({'sub': str(user.id)})}"}
 
 
-def _agenda(items):
-    return {"agenda_date": "2026-06-16", "count": len(items), "items": items}
+def _runtime_projection(items):
+    return {
+        "start": "2026-06-16",
+        "end": "2026-06-16",
+        "mode": "runtime",
+        "generated_by": "rolling_health_runtime_v1",
+        "horizon_days": 1,
+        "next_action": items[0] if items else None,
+        "runtime_context": {"safety_boundary": "这是健康管理行动建议, 不替代医生诊断。"},
+        "days": [
+            {
+                "date": "2026-06-16",
+                "next_action": items[0] if items else None,
+                "time_windows": [{"label": "anytime", "items": items}],
+            }
+        ],
+    }
 
 
 def _protocol(title, status="pending", priority=50, domain="hydration"):
@@ -40,7 +55,7 @@ def test_status_light_and_headline_from_training(db, auth, monkeypatch):
     user, _ = auth
     items = [{"type": "training", "title": "今日训练", "status": "info", "light": "red",
               "readiness_score": 40, "source": {"object_type": "training_decision", "object_id": user.id}}]
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda(items))
+    monkeypatch.setattr(ws.agenda_service, "runtime_range_view", lambda d, u, days=1, max_items_per_day=3: _runtime_projection(items))
     s = ws.build_watch_summary(db, user.id)
     assert s["status"]["light"] == "red"
     assert s["status"]["readiness_score"] == 40
@@ -59,7 +74,7 @@ def test_status_freshness_marks_old_wearable_data_stale(db, auth, monkeypatch):
     db.commit()
     items = [{"type": "training", "title": "今日训练", "status": "info", "light": "green",
               "readiness_score": 68, "source": {"object_type": "training_decision", "object_id": user.id}}]
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda(items))
+    monkeypatch.setattr(ws.agenda_service, "runtime_range_view", lambda d, u, days=1, max_items_per_day=3: _runtime_projection(items))
 
     s = ws.build_watch_summary(db, user.id)
 
@@ -72,7 +87,7 @@ def test_status_freshness_marks_old_wearable_data_stale(db, auth, monkeypatch):
 
 def test_status_freshness_missing_without_wearable_data(db, auth, monkeypatch):
     user, _ = auth
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([]))
+    monkeypatch.setattr(ws.agenda_service, "runtime_range_view", lambda d, u, days=1, max_items_per_day=3: _runtime_projection([]))
 
     s = ws.build_watch_summary(db, user.id)
 
@@ -86,7 +101,7 @@ def test_status_freshness_missing_without_wearable_data(db, auth, monkeypatch):
 def test_top_action_is_highest_priority_pending(db, auth, monkeypatch):
     user, _ = auth
     items = [_protocol("喝水", priority=50), _protocol("吃药", priority=80, domain="medication")]
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda(items))
+    monkeypatch.setattr(ws.agenda_service, "runtime_range_view", lambda d, u, days=1, max_items_per_day=3: _runtime_projection(items))
     s = ws.build_watch_summary(db, user.id)
     assert s["top_action"]["title"] == "吃药"          # 80 > 50
     assert s["top_action"]["priority_tier"] == "P1"
@@ -111,7 +126,7 @@ def test_top_action_preserves_trajectory_context_for_watch(db, auth, monkeypatch
     }
     item["target_state_variable"] = "waist_cm"
     item["verification_signal"] = "waist_cm"
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([item]))
+    monkeypatch.setattr(ws.agenda_service, "runtime_range_view", lambda d, u, days=1, max_items_per_day=3: _runtime_projection([item]))
 
     s = ws.build_watch_summary(db, user.id)
 
@@ -120,12 +135,46 @@ def test_top_action_preserves_trajectory_context_for_watch(db, auth, monkeypatch
     assert s["top_action"]["verification_signal"] == "waist_cm"
 
 
+def test_watch_summary_uses_runtime_projection_contract(db, auth, monkeypatch):
+    user, _ = auth
+    item = _protocol("晚餐后步行 15 分钟", priority=80, domain="movement")
+    item["runtime_context"] = {
+        "current_state_summary": "晚餐后是今天最短的代谢干预窗口。",
+        "replan_reason": "today_smart_rank",
+        "safety_boundary": "这是健康管理行动建议, 不替代医生诊断。",
+        "verification_window": {
+            "metrics": ["post_meal_walk_completed", "waist_cm"],
+            "window_days": 7,
+        },
+    }
+    calls = {}
+
+    def fake_runtime_range_view(db_arg, user_id, days=1, max_items_per_day=3):
+        calls["user_id"] = user_id
+        calls["days"] = days
+        calls["max_items_per_day"] = max_items_per_day
+        return _runtime_projection([item])
+
+    monkeypatch.setattr(ws.agenda_service, "runtime_range_view", fake_runtime_range_view)
+
+    s = ws.build_watch_summary(db, user.id)
+
+    assert calls == {"user_id": user.id, "days": 1, "max_items_per_day": 3}
+    assert s["runtime"]["generated_by"] == "rolling_health_runtime_v1"
+    assert s["runtime"]["horizon_days"] == 1
+    assert s["top_action"]["runtime_context"]["replan_reason"] == "today_smart_rank"
+    assert s["top_action"]["runtime_context"]["verification_window"]["metrics"] == [
+        "post_meal_walk_completed",
+        "waist_cm",
+    ]
+
+
 def test_training_protocol_can_be_top_action_for_watch_micro_movement(db, auth, monkeypatch):
     """训练类 health_protocol 是 Watch-first 工作日微运动的执行对象。"""
     user, _ = auth
     item = _protocol("到公司后俯卧撑 12 个", priority=80, domain="training")
     item["source"]["object_id"] = 7
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([item]))
+    monkeypatch.setattr(ws.agenda_service, "runtime_range_view", lambda d, u, days=1, max_items_per_day=3: _runtime_projection([item]))
 
     s = ws.build_watch_summary(db, user.id)
 
@@ -147,7 +196,7 @@ def test_due_items_preserve_source_for_watch_completion(db, auth, monkeypatch):
     ]
     items[0]["source"]["object_id"] = 7
     items[1]["source"]["object_id"] = 8
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda(items))
+    monkeypatch.setattr(ws.agenda_service, "runtime_range_view", lambda d, u, days=1, max_items_per_day=3: _runtime_projection(items))
 
     s = ws.build_watch_summary(db, user.id)
 
@@ -171,7 +220,7 @@ def test_push_tiering_and_cap(db, auth, monkeypatch):
          "source": {"object_type": "health_protocol", "object_id": 2}},
         _protocol("吃药", domain="medication"),
     ]
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda(items))
+    monkeypatch.setattr(ws.agenda_service, "runtime_range_view", lambda d, u, days=1, max_items_per_day=3: _runtime_projection(items))
     s = ws.build_watch_summary(db, user.id)
     assert len(s["push_items"]) <= 3
     assert s["push_items"][0]["tier"] == "P0"          # 逾期复查排首
@@ -184,7 +233,7 @@ def test_medication_watch_nudge_survives_quiet_budget_gate(db, auth, monkeypatch
     user, _ = auth
     item = _protocol("二甲双胍 0.5g", priority=90, domain="medication")
     item["source"]["object_id"] = 11
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([item]))
+    monkeypatch.setattr(ws.agenda_service, "runtime_range_view", lambda d, u, days=1, max_items_per_day=3: _runtime_projection([item]))
     monkeypatch.setattr(ws.proactive_coordinator, "can_notify_proactively", lambda *a, **k: False)
 
     s = ws.build_watch_summary(db, user.id)
@@ -215,7 +264,7 @@ def test_recent_too_tired_skip_suppresses_exercise_watch_nudge(db, auth, monkeyp
 
     item = _protocol("餐后轻松步行 20 分钟", priority=70, domain="exercise")
     item["source"]["object_id"] = protocol.id
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([item]))
+    monkeypatch.setattr(ws.agenda_service, "runtime_range_view", lambda d, u, days=1, max_items_per_day=3: _runtime_projection([item]))
     monkeypatch.setattr(ws.proactive_coordinator, "can_notify_proactively", lambda *a, **k: True)
 
     s = ws.build_watch_summary(db, user.id)
@@ -237,7 +286,7 @@ def test_exercise_watch_nudge_daily_cap_suppresses_extra_push(db, auth, monkeypa
     db.commit()
 
     item = _protocol("下午站立拉伸", priority=60, domain="exercise")
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([item]))
+    monkeypatch.setattr(ws.agenda_service, "runtime_range_view", lambda d, u, days=1, max_items_per_day=3: _runtime_projection([item]))
     monkeypatch.setattr(ws.proactive_coordinator, "can_notify_proactively", lambda *a, **k: True)
 
     s = ws.build_watch_summary(db, user.id)
@@ -247,7 +296,7 @@ def test_exercise_watch_nudge_daily_cap_suppresses_extra_push(db, auth, monkeypa
 
 def test_no_training_defaults_gray(db, auth, monkeypatch):
     user, _ = auth
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([]))
+    monkeypatch.setattr(ws.agenda_service, "runtime_range_view", lambda d, u, days=1, max_items_per_day=3: _runtime_projection([]))
     s = ws.build_watch_summary(db, user.id)
     assert s["status"]["light"] == "gray"
     assert s["top_action"] is None
@@ -256,7 +305,7 @@ def test_no_training_defaults_gray(db, auth, monkeypatch):
 
 def test_quick_actions_catalog_present(db, auth, monkeypatch):
     user, _ = auth
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([]))
+    monkeypatch.setattr(ws.agenda_service, "runtime_range_view", lambda d, u, days=1, max_items_per_day=3: _runtime_projection([]))
     kinds = {a["kind"] for a in ws.build_watch_summary(db, user.id)["quick_actions"]}
     assert {"water", "supplement", "exercise", "diet_voice"} <= kinds
 
