@@ -73,6 +73,7 @@ python3 scripts/harness_workflow_trace.py init \
 ### S1 · Discovery(现状勘察 · 并行)
 - **做什么**:在写任何 PRD 前,把需求触及的子系统**现状**摸清(已有什么可复用、缺什么、硬约束、安全/平台边界)。
 - **复用**:`Workflow` 工具跑「fan-out 现状图 readers(`Explore`/对应 engineer agent,READ-ONLY)+ 跨家族对抗评审 critics」(参考 `reva-prd-discovery` 工作流模式:5 现状图 + 平台可行性/安全合规/范围排序 3 评审)。grep 已有 skill/agent/模块,**连接 > 新建**。
+- **选择性 priming**:需要历史上下文时,先用 `python3 scripts/harness_memory_prime.py --keywords <repo/module/domain> --limit 8` 检索 `MEMORY.md` 行号证据;只把命中的少量条目写进 Dossier,不要整份 memory 入上下文。需要更窄召回时加 `--require-all`。
 - **产出物**:现状图 + 评审写进 Dossier「Discovery」节(带 file:line)。
 - **关键**:平台/安全硬限在此暴露(如「表冠长按系统独占」「healthkit_import 零 consent 校验」)—— 越早越便宜。
 

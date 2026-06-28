@@ -75,6 +75,7 @@
 5. **spec-kit/BMAD 工艺借鉴(P2)**:spec-template + /clarify + 只读 /analyze 一致性闸 + scale-adaptive 中档 + correct-course。
    - 2026-06-28 implementation note:已在 `product-pipeline` skill 与 Dossier 模板加入 BMAD 风格 **Quick Flow** 中档、升级为全流程条件、`correct-course` / `Correction Block`;并同步到 `reva-health-harness` plugin,由 plugin 包测试防漂移。
 6. **记忆检索/选择性 priming(P2)**:MEMORY.md 触顶前上 metaswarm tag-prime 或 Letta 核心+archival。
+   - 2026-06-28 implementation note:已新增 `scripts/harness_memory_prime.py` 按关键词检索本地 `MEMORY.md` 的 JSON 输出工具,支持 `--require-all` 与缺 registry fail-loud;并接入 `product-pipeline` S1 Discovery 和 `reva-health-harness` plugin,避免整份 memory 进入上下文。
 7. **输入/检索护栏(P2,健康专属)**:NeMo 分类法补 input PII 脱敏 + RAG grounding。
 
 ## 前沿会怎么批评你(最诚实的一刀)

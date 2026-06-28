@@ -47,9 +47,10 @@ def test_reva_health_harness_packages_core_project_skills():
         assert "scripts/harness_workflow_trace.py" in content
         assert content == (ROOT / ".claude" / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
 
-    assert (PLUGIN / "scripts" / "harness_workflow_trace.py").read_text(encoding="utf-8") == (
-        ROOT / "scripts" / "harness_workflow_trace.py"
-    ).read_text(encoding="utf-8")
+    for script_name in ["harness_workflow_trace.py", "harness_memory_prime.py"]:
+        assert (PLUGIN / "scripts" / script_name).read_text(encoding="utf-8") == (
+            ROOT / "scripts" / script_name
+        ).read_text(encoding="utf-8")
 
 
 def test_product_pipeline_documents_quick_flow_and_correct_course():
@@ -65,3 +66,11 @@ def test_product_pipeline_documents_quick_flow_and_correct_course():
     assert "Correction Block" in skill
     assert "## Correct Course" in template
     assert "旧基线" in template
+
+
+def test_product_pipeline_documents_selective_memory_priming():
+    skill = (ROOT / ".claude" / "skills" / "product-pipeline" / "SKILL.md").read_text(encoding="utf-8")
+
+    assert "harness_memory_prime.py" in skill
+    assert "MEMORY.md" in skill
+    assert "选择性 priming" in skill
