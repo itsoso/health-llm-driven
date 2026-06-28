@@ -10,7 +10,7 @@
 只读投影,无副作用(完成/跳过仍走各自 source 的端点)。详见 docs/prd/reva-personal-health-os-prd.md §4 / R1。
 """
 import logging
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Dict, List
 
 from sqlalchemy.orm import Session
@@ -59,6 +59,8 @@ _RUNTIME_REPLAN_TRIGGERS = (
     "new_report",
     "safety_alert",
 )
+_RUNTIME_FEEDBACK_LOOKBACK_DAYS = 7
+_HIGH_FRICTION_SKIP_REASONS = frozenset({"too_tired", "too_hard", "unwell"})
 
 
 def _agenda_item(**kw) -> Dict[str, Any]:
@@ -817,6 +819,14 @@ def _to_smart_item(
             "state_variable": trajectory.get("state_variable"),
             "confidence": trajectory.get("confidence"),
         }
+    runtime_feedback = item.get("runtime_feedback") if isinstance(item.get("runtime_feedback"), dict) else None
+    if runtime_feedback:
+        rank_reason["runtime_feedback"] = {
+            "latest_status": runtime_feedback.get("latest_status"),
+            "strategy": runtime_feedback.get("strategy"),
+            "priority_delta": runtime_feedback.get("priority_delta"),
+            "skip_reason": runtime_feedback.get("skip_reason"),
+        }
     claim_boundary = item.get("claim_boundary") or (trajectory or {}).get("claim_boundary")
     return {
         "id": _smart_id(item),
@@ -850,6 +860,8 @@ def _to_smart_item(
         "trajectory_context": trajectory,
         "target_state_variable": target_state_variable,
         "verification_signal": verification_signal,
+        "runtime_feedback": runtime_feedback,
+        "runtime_replan_reason": item.get("runtime_replan_reason"),
     }
 
 
@@ -895,6 +907,123 @@ def smart_today(
     }
 
 
+def _parse_feedback_datetime(raw: Any) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt
+
+
+def _feedback_replan_reason(feedback: Dict[str, Any]) -> str:
+    latest_status = feedback.get("latest_status")
+    if latest_status in {"completed", "auto_observed"}:
+        return "recent_completion_projection"
+    if latest_status == "skipped":
+        return "recent_skip_reason_projection"
+    if latest_status == "snoozed":
+        return "active_snooze_projection"
+    return "recent_protocol_feedback_projection"
+
+
+def _protocol_feedback_adjustment(ev: Any, *, lookback_days: int) -> Dict[str, Any] | None:
+    status = str(ev.status or "")
+    value = ev.value or {}
+    if status == "snoozed":
+        snoozed_until = _parse_feedback_datetime(value.get("snoozed_until"))
+        if snoozed_until is not None and snoozed_until <= datetime.now(UTC):
+            return None
+        return {
+            "latest_status": "snoozed",
+            "event_date": ev.event_date.isoformat(),
+            "source_event_id": ev.id,
+            "lookback_days": lookback_days,
+            "strategy": "respect_snooze_window",
+            "priority_delta": -18,
+            "snoozed_until": snoozed_until.isoformat() if snoozed_until else value.get("snoozed_until"),
+        }
+    if status == "skipped":
+        skip_reason = ev.skip_reason
+        high_friction = skip_reason in _HIGH_FRICTION_SKIP_REASONS
+        return {
+            "latest_status": "skipped",
+            "event_date": ev.event_date.isoformat(),
+            "source_event_id": ev.id,
+            "lookback_days": lookback_days,
+            "strategy": "reduce_pressure" if high_friction else "retry_in_better_window",
+            "priority_delta": -24 if high_friction else -8,
+            "skip_reason": skip_reason,
+        }
+    if status in {"completed", "auto_observed"}:
+        return {
+            "latest_status": status,
+            "event_date": ev.event_date.isoformat(),
+            "source_event_id": ev.id,
+            "lookback_days": lookback_days,
+            "strategy": "observe_metric_change",
+            "priority_delta": 0 if status == "completed" else -3,
+        }
+    return None
+
+
+def _protocol_feedback_map(
+    db: Session,
+    user_id: int,
+    today_d: date,
+    *,
+    lookback_days: int = _RUNTIME_FEEDBACK_LOOKBACK_DAYS,
+) -> Dict[int, Dict[str, Any]]:
+    """最近协议事件 → future projection 的重排因子。
+
+    这是 suggest-only 的运行时反馈:只改未来展示排序和解释,不改协议剂量/节奏/治疗方案。
+    """
+    from app.models.health_protocol import HealthProtocolEvent
+
+    since = today_d - timedelta(days=max(1, lookback_days) - 1)
+    rows = (
+        db.query(HealthProtocolEvent)
+        .filter(
+            HealthProtocolEvent.user_id == user_id,
+            HealthProtocolEvent.event_date >= since,
+            HealthProtocolEvent.event_date <= today_d,
+            HealthProtocolEvent.status.in_(("completed", "auto_observed", "skipped", "snoozed")),
+        )
+        .order_by(
+            HealthProtocolEvent.event_date.desc(),
+            HealthProtocolEvent.id.desc(),
+        )
+        .all()
+    )
+    feedback: Dict[int, Dict[str, Any]] = {}
+    for ev in rows:
+        if ev.protocol_id in feedback:
+            continue
+        adjustment = _protocol_feedback_adjustment(ev, lookback_days=lookback_days)
+        if adjustment is None:
+            continue
+        adjustment["replan_reason"] = _feedback_replan_reason(adjustment)
+        feedback[ev.protocol_id] = adjustment
+    return feedback
+
+
+def _runtime_feedback_detail(feedback: Dict[str, Any]) -> str | None:
+    status = feedback.get("latest_status")
+    if status == "skipped":
+        reason = feedback.get("skip_reason") or "unknown"
+        if feedback.get("strategy") == "reduce_pressure":
+            return f"最近跳过原因为 {reason},未来投影先降低压力并保留可恢复入口。"
+        return f"最近跳过原因为 {reason},未来投影会尝试换到更合适窗口。"
+    if status in {"completed", "auto_observed"}:
+        return "最近已完成,未来继续保留行动并观察验证指标变化。"
+    if status == "snoozed":
+        return "用户刚选择稍后,未来投影暂时降低打扰强度。"
+    return None
+
+
 def _runtime_verification_window(smart_item: Dict[str, Any]) -> Dict[str, Any]:
     verify_by = smart_item.get("verify_by") if isinstance(smart_item.get("verify_by"), dict) else {}
     metrics = verify_by.get("metrics") if isinstance(verify_by.get("metrics"), list) else []
@@ -923,6 +1052,7 @@ def _with_runtime_context(
     is_today: bool,
 ) -> Dict[str, Any]:
     out = dict(smart_item)
+    feedback = out.get("runtime_feedback") if isinstance(out.get("runtime_feedback"), dict) else None
     if not is_today:
         out["status"] = "scheduled"
         out["status_canonical"] = "pending"
@@ -930,6 +1060,7 @@ def _with_runtime_context(
         out["can_skip"] = False
     out["scheduled_for"] = str(day)
     source = out.get("source") if isinstance(out.get("source"), dict) else {}
+    effective_replan_reason = out.get("runtime_replan_reason") or replan_reason
     out["runtime_context"] = {
         "surface": "agenda",
         "current_state_summary": out.get("why_now") or out.get("title"),
@@ -946,9 +1077,11 @@ def _with_runtime_context(
             "source_object_type": source.get("object_type"),
         },
         "verification_window": _runtime_verification_window(out),
-        "replan_reason": replan_reason,
+        "replan_reason": effective_replan_reason,
         "next_replan_triggers": list(_RUNTIME_REPLAN_TRIGGERS),
     }
+    if feedback:
+        out["runtime_context"]["feedback_adjustment"] = feedback
     return out
 
 
@@ -994,21 +1127,44 @@ def _runtime_next_action(items: List[Dict[str, Any]]) -> Dict[str, Any] | None:
     ))[0]
 
 
-def _future_protocol_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
+def _future_protocol_items(
+    db: Session,
+    user_id: int,
+    *,
+    protocol_feedback: Dict[int, Dict[str, Any]] | None = None,
+) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
+    protocol_feedback = protocol_feedback or {}
     for p in proto_svc.today_status(db, user_id):
         if (p.get("cadence") or "daily") != "daily":
             continue
+        feedback = protocol_feedback.get(int(p["protocol_id"]))
+        priority = 45
+        extra: Dict[str, Any] = {}
+        if feedback:
+            try:
+                priority = max(10, priority + int(feedback.get("priority_delta") or 0))
+            except (TypeError, ValueError):
+                priority = 45
+            extra = {
+                "runtime_feedback": feedback,
+                "runtime_replan_reason": feedback.get("replan_reason"),
+            }
+            detail = _runtime_feedback_detail(feedback)
+            if detail:
+                extra["detail"] = detail
+                extra["why"] = detail
         items.append(_agenda_item(
             type=p["domain"],
             title=p["name"],
             status="pending",
             time_window=p.get("time_window") or "anytime",
-            priority=45,
+            priority=priority,
             cadence=p.get("cadence"),
             can_default_complete=p.get("can_default_complete"),
             source_model=p.get("source_model"),
             source={"object_type": "health_protocol", "object_id": p["protocol_id"]},
+            **extra,
         ))
     return items
 
@@ -1035,7 +1191,12 @@ def runtime_range_view(
         for item in (today_smart.get("smart") or {}).get("top_items", [])
     ]
 
-    future_protocol_templates = _future_protocol_items(db, user_id)
+    protocol_feedback = _protocol_feedback_map(db, user_id, today_d)
+    future_protocol_templates = _future_protocol_items(
+        db,
+        user_id,
+        protocol_feedback=protocol_feedback,
+    )
     future_checkups = []
     for f in prob_svc.due_followups(db, user_id, within_days=horizon):
         try:
@@ -1108,6 +1269,8 @@ def runtime_range_view(
         "runtime_context": {
             "definition": "rolling_7_day_health_runtime_orchestration",
             "projection_policy": "today_smart_rank_future_protocol_and_followup_projection",
+            "feedback_policy": "recent_protocol_event_feedback_v1",
+            "feedback_applied_count": len(protocol_feedback),
             "safety_boundary": _RUNTIME_SAFETY_BOUNDARY,
             "next_replan_triggers": list(_RUNTIME_REPLAN_TRIGGERS),
         },

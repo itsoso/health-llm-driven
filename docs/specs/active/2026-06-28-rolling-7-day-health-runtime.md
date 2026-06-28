@@ -43,8 +43,9 @@
 - `safety_boundary`: 不诊断、不处方、不调药；高风险症状转医生/急救。
 - `freshness`: 投影生成日期、来源对象类型。
 - `verification_window`: `window_days` + `metrics`。
-- `replan_reason`: `today_smart_rank`、`daily_protocol_projection` 或 `scheduled_followup_projection`。
+- `replan_reason`: `today_smart_rank`、`daily_protocol_projection`、`scheduled_followup_projection`、`recent_skip_reason_projection`、`recent_completion_projection` 或 `active_snooze_projection`。
 - `next_replan_triggers`: completion、skip、snooze、新可穿戴信号、新报告、安全警报。
+- `feedback_adjustment`：可选；当最近 7 天内有完成、跳过或稍后反馈时，说明 `latest_status`、`strategy`、`priority_delta`、`skip_reason` 或 `snoozed_until`。
 
 ## 4. 安全边界
 
@@ -65,7 +66,6 @@
 
 ## 6. 后续切片
 
-- skip reason、snooze、completion 进入 future projection 的重排因子。
 - DataConnection/Consent/Provenance 补齐后，runtime context 增加关键事实 provenance。
 
 ## 7. 已完成后续切片
@@ -85,3 +85,12 @@
 - Watch summary 已改为消费 1 天 `agenda_service.runtime_range_view`，并保留既有 `rank_agenda_actions`、安全预算和手动完成边界。
 - Watch shared model 已支持解码 root `runtime` 和 top action `runtime_context`，为原生 Watch UI 使用同一行动合同打底。
 - 已发布：backend SHA `a1535357f76339e11a83f1a20dbb13987c5b6ef5`；Mobile OTA group `d731f134-0d98-46c4-8cc9-3b916c6281be`；生产 smoke 覆盖 Watch root runtime 与 Chat runtime card。
+
+### 2026-06-28 · Feedback-driven Future Replan
+
+- Future projection 已读取最近 7 天 `HealthProtocolEvent`，把 completion、skip、snooze 转为 future runtime 的重排因子。
+- skip reason 进入排序和解释：`too_tired`、`too_hard`、`unwell` 采用 `reduce_pressure` 策略并降低未来优先级；其他跳过原因采用 `retry_in_better_window`。
+- completion / auto observed 采用 `observe_metric_change`，保留行动但把解释转向验证窗口。
+- active snooze 采用 `respect_snooze_window`，降低短期打扰强度，并暴露 `snoozed_until`。
+- Runtime root context 新增 `feedback_policy=recent_protocol_event_feedback_v1` 和 `feedback_applied_count`。
+- 测试覆盖：`backend/tests/test_agenda_range_complete.py` 新增 feedback future projection 合同测试。

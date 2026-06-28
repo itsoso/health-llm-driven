@@ -150,3 +150,94 @@ def test_today_mode_smart_routes_to_smart_agenda(client, auth_user_and_headers, 
     assert r.status_code == 200, r.text
     assert r.json()["mode"] == "smart"
     assert r.json()["smart"]["top_items"][0]["id"] == "smart_health_problem_1_checkup"
+
+
+def _runtime_item_for_protocol(body: dict, protocol_id: int, day_index: int = 1) -> dict:
+    for window in body["days"][day_index]["time_windows"]:
+        for item in window["items"]:
+            source = item.get("source") or {}
+            if source.get("object_type") == "health_protocol" and source.get("object_id") == protocol_id:
+                return item
+    raise AssertionError(f"runtime item not found for protocol {protocol_id}")
+
+
+def test_runtime_future_projection_downranks_recent_skip_reason(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    """跳过原因不是只记录:它必须进入未来 7 天投影的重排和解释。"""
+    user, h = auth_user_and_headers
+    today = date.today()
+    _freeze_agenda_today(monkeypatch, today)
+    from app.services import health_protocol_service as proto_svc
+
+    water = proto_svc.create_water_cup_protocol(db, user.id)
+    exercise = proto_svc.create_protocol(db, user.id, {
+        "domain": "exercise",
+        "name": "俯卧撑 12 个",
+        "mechanism": "pre_commit",
+        "cadence": "daily",
+        "time_window": "morning",
+        "completion_mode": "one_tap",
+        "can_default_complete": False,
+    })
+    proto_svc.skip_protocol(db, exercise.id, user.id, reason="too_tired", day=today)
+
+    r = client.get("/api/v1/agenda/range?days=3&mode=runtime", headers=h)
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    exercise_item = _runtime_item_for_protocol(body, exercise.id)
+    water_item = _runtime_item_for_protocol(body, water.id)
+    runtime_context = exercise_item["runtime_context"]
+    assert runtime_context["replan_reason"] == "recent_skip_reason_projection"
+    assert runtime_context["feedback_adjustment"]["latest_status"] == "skipped"
+    assert runtime_context["feedback_adjustment"]["skip_reason"] == "too_tired"
+    assert runtime_context["feedback_adjustment"]["strategy"] == "reduce_pressure"
+    assert exercise_item["rank_score"] < water_item["rank_score"]
+
+
+def test_runtime_future_projection_carries_completion_and_snooze_feedback(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    """完成与稍后都要进入 future projection,而不是只改变今天的状态。"""
+    user, h = auth_user_and_headers
+    today = date.today()
+    _freeze_agenda_today(monkeypatch, today)
+    from app.services import health_protocol_service as proto_svc
+
+    mobility = proto_svc.create_protocol(db, user.id, {
+        "domain": "activity",
+        "name": "饭后散步 10 分钟",
+        "mechanism": "pre_commit",
+        "cadence": "daily",
+        "time_window": "evening",
+        "completion_mode": "one_tap",
+    })
+    stretch = proto_svc.create_protocol(db, user.id, {
+        "domain": "exercise",
+        "name": "肩颈拉伸 5 分钟",
+        "mechanism": "pre_commit",
+        "cadence": "daily",
+        "time_window": "afternoon",
+        "completion_mode": "one_tap",
+    })
+    proto_svc.complete_protocol(db, mobility.id, user.id, day=today)
+    proto_svc.snooze_protocol(db, stretch.id, user.id, minutes=45, day=today)
+
+    r = client.get("/api/v1/agenda/range?days=3&mode=runtime", headers=h)
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    completed_item = _runtime_item_for_protocol(body, mobility.id)
+    snoozed_item = _runtime_item_for_protocol(body, stretch.id)
+    completed_context = completed_item["runtime_context"]
+    snoozed_context = snoozed_item["runtime_context"]
+
+    assert completed_context["replan_reason"] == "recent_completion_projection"
+    assert completed_context["feedback_adjustment"]["latest_status"] == "completed"
+    assert completed_context["feedback_adjustment"]["strategy"] == "observe_metric_change"
+
+    assert snoozed_context["replan_reason"] == "active_snooze_projection"
+    assert snoozed_context["feedback_adjustment"]["latest_status"] == "snoozed"
+    assert snoozed_context["feedback_adjustment"]["strategy"] == "respect_snooze_window"
+    assert snoozed_context["feedback_adjustment"]["snoozed_until"]

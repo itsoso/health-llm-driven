@@ -312,8 +312,20 @@ def test_supplement_write_failure_propagates(client, db, monkeypatch):
 
 
 # ── 8) watch_summary action_id 注入 ───────────────────────────────────
-def _agenda(items):
-    return {"agenda_date": "2026-06-16", "count": len(items), "items": items}
+def _runtime_agenda(items):
+    return {
+        "mode": "runtime",
+        "generated_by": "rolling_health_runtime_v1",
+        "horizon_days": 1,
+        "start": "2026-06-16",
+        "end": "2026-06-16",
+        "next_action": items[0] if items else None,
+        "days": [{
+            "date": "2026-06-16",
+            "is_today": True,
+            "time_windows": [{"time_window": "anytime", "items": items}],
+        }],
+    }
 
 
 def _proto_item(title, priority=50, domain="medication", oid=7):
@@ -325,7 +337,11 @@ def _proto_item(title, priority=50, domain="medication", oid=7):
 def test_watch_summary_top_action_has_action_id(db, monkeypatch):
     user = _mk_user(db)
     items = [_proto_item("吃药", priority=80, oid=42)]
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda(items))
+    monkeypatch.setattr(
+        ws.agenda_service,
+        "runtime_range_view",
+        lambda d, u, days=1, max_items_per_day=3: _runtime_agenda(items),
+    )
     s = ws.build_watch_summary(db, user.id)
     assert s["top_action"]["action_id"] == "agenda-health_protocol-42"
 
@@ -333,7 +349,11 @@ def test_watch_summary_top_action_has_action_id(db, monkeypatch):
 def test_watch_summary_due_items_have_action_id(db, monkeypatch):
     user = _mk_user(db)
     items = [_proto_item("吃药", oid=1), _proto_item("补剂", oid=2)]
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda(items))
+    monkeypatch.setattr(
+        ws.agenda_service,
+        "runtime_range_view",
+        lambda d, u, days=1, max_items_per_day=3: _runtime_agenda(items),
+    )
     s = ws.build_watch_summary(db, user.id)
     assert "due_items" in s
     ids = {d["action_id"] for d in s["due_items"]}
@@ -342,7 +362,11 @@ def test_watch_summary_due_items_have_action_id(db, monkeypatch):
 
 def test_watch_summary_quick_actions_have_action_id_key(db, monkeypatch):
     user = _mk_user(db)
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([]))
+    monkeypatch.setattr(
+        ws.agenda_service,
+        "runtime_range_view",
+        lambda d, u, days=1, max_items_per_day=3: _runtime_agenda([]),
+    )
     s = ws.build_watch_summary(db, user.id)
     # quick_actions 是无 source 的目录入口 → action_id 必须为 null(不可一键完成具体项)
     for qa in s["quick_actions"]:
@@ -354,7 +378,11 @@ def test_watch_summary_item_without_source_action_id_null(db, monkeypatch):
     # 无 source 的项(如训练灯)action_id=null
     items = [{"type": "training", "title": "今日训练", "status": "info", "light": "green",
               "readiness_score": 70}]
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda(items))
+    monkeypatch.setattr(
+        ws.agenda_service,
+        "runtime_range_view",
+        lambda d, u, days=1, max_items_per_day=3: _runtime_agenda(items),
+    )
     s = ws.build_watch_summary(db, user.id)
     # training 不是 pending health_protocol,不进 due_items;top_action 为 None
     assert s["top_action"] is None

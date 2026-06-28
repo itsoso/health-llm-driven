@@ -130,9 +130,9 @@ LLM 与工具综合层
 
 | 编号 | PRD 能力 | 当前证据 | 缺口工作 | 目标阶段 |
 |---|---|---|---|---|
-| D0.1 | `DataConnection` 统一外部数据源和设备连接 | HealthKit/Garmin/Oura/CGM/report/Home Assistant 等路径分散存在 | 缺少统一对象管理 provider、scope、token 状态、同步窗口、错误、最后成功时间、撤权和重连 | 阶段 0 / 阶段 1 |
-| D0.2 | `ConsentGrant` 管理用户授权、共享和撤权 | 鉴权、审计、导出/删除路径已有局部能力 | 缺少产品化授权中心，区分本人、家庭、医生、外部 agent、研究统计和 IoT 控制范围 | 阶段 1 |
-| D0.3 | `ProvenanceRecord` 支撑关键事实可追溯 | 多处已有 source/freshness/confidence 字段 | 缺少跨对象 provenance 合同，覆盖 observed_at、received_at、transformed_by、confidence、privacy_classification 和 user_correction | 阶段 1 |
+| D0.1 | `DataConnection` 统一外部数据源和设备连接 | 已有最小底座：`backend/app/models/data_connection.py`、`backend/app/services/data_connections.py`、`backend/app/api/data_connections.py`、HealthKit/FHIR import tests 和 Mobile 连接页 | 仍需产品化更多 provider、重连 UX、撤权后删除、连接健康解释和跨端统一状态 | 阶段 1 / 阶段 4 |
+| D0.2 | `ConsentGrant` 管理用户授权、共享和撤权 | 已有最小 consent grant、HealthKit consent gate 和 revoke API | 仍需产品化授权中心，区分本人、家庭、医生、外部 agent、研究统计和 IoT 控制范围 | 阶段 1 / 阶段 4 |
+| D0.3 | `ProvenanceRecord` 支撑关键事实可追溯 | 已有最小 provenance record service、FHIR import provenance 和 HealthKit provenance gate | 仍需把 provenance 扩到 Today top action、runtime context、Review 和用户纠错链路 | 阶段 1 / 阶段 4 |
 | D0.4 | `ConnectorPolicy` 管理连接器运行策略 | scheduler、wearable router、device source priority 已存在 | 缺少统一 connector policy：rate limit、token refresh、失败降级、数据最小化、撤权后删除和审计 | 阶段 1 / 阶段 4 |
 | D0.5 | FHIR/SMART 和报告导入成为优先医疗数据入口 | 报告、OCR、labs 和 patient record 相关能力已有基础 | 需要定义 FHIR Bundle import、SMART on FHIR 授权、非标准 PDF/OCR 到内部对象的映射和验证路径 | 阶段 1 |
 
@@ -227,9 +227,8 @@ LLM 与工具综合层
 
 数据底座待规划工作：
 
-- 定义最小 `DataConnection` 合同，先覆盖一个报告/FHIR Bundle 导入路径和一个 wearable/device connector。
-- 定义最小 `ConsentGrant` 合同，覆盖本人使用、外部 agent read scope、撤权和删除。
-- 定义关键事实的 `ProvenanceRecord`，让 Today top action 可以解释它使用了哪些来源、多久前更新、置信度如何。
+- 最小 `DataConnection` / `ConsentGrant` / `ProvenanceRecord` 底座已经进入 main；下一步不是重复建模，而是扩覆盖面和产品化状态页。
+- 让 Today top action / runtime context 可以解释关键事实使用了哪些来源、多久前更新、置信度如何。
 - 定义 `ConnectorPolicy` 的最小字段：scope、last_success_at、sync_error、rate_limit、token_status、degraded_behavior。
 - 明确 non-goal：不在本阶段做完整医院网络、支付级授权中心或所有设备 connector。
 
@@ -460,17 +459,33 @@ Mobile/Watch 待规划工作：
   - Mobile OTA production update group `d731f134-0d98-46c4-8cc9-3b916c6281be`。
   - 生产 user_id=3 smoke：Watch root runtime `generated_by=rolling_health_runtime_v1 horizon_days=1`；Chat runtime card `present=True horizon_days=7 action=route.open`。
 
+2026-06-28 第五切片已实现，待发布:
+
+- Future projection 已把最近 7 天 `HealthProtocolEvent` 作为重排因子：
+  - skip reason 进入排序和解释，`too_tired`、`too_hard`、`unwell` 采用 `reduce_pressure` 并降低未来行动优先级。
+  - completion / auto observed 采用 `observe_metric_change`，继续保留行动并转向验证窗口。
+  - active snooze 采用 `respect_snooze_window`，降低短期打扰强度并暴露 `snoozed_until`。
+- Runtime item 新增 `runtime_context.feedback_adjustment`，root context 新增 `feedback_policy` 和 `feedback_applied_count`。
+- 后端合同测试：`backend/tests/test_agenda_range_complete.py` `11 passed`。
+- 本切片不新增写路径、不改药物/剂量/医疗计划，只改变 future projection 的排序和解释。
+
+2026-06-28 代码对比后的状态修正:
+
+- A 切片的最小 DataConnection / ConsentGrant / ProvenanceRecord 底座已经在 main 存在，不再作为“未实现底座”重复执行。
+- A 后续工作改为产品化与覆盖扩展：跨端连接中心、家庭/医生/外部 agent scope、撤权删除、更多 provider、runtime/Review provenance 展示和 ConnectorPolicy。
+
 仍未完成，继续保留在后续计划:
 
-- A 切片：DataConnection / ConsentGrant / ProvenanceRecord 最小底座。
-- skip reason、snooze、completion 进入未来 7 天重排因子。
+- A 深化：DataConnection / ConsentGrant / ProvenanceRecord 的产品化、更多 provider 覆盖和 runtime/Review provenance 展示。
+- ConnectorPolicy 最小字段和连接器降级策略。
+- Today top action 中关键事实 provenance 摘要。
 
 建议范围 A：
 
-- 后端：定义 `DataConnection` / `ConsentGrant` / `ProvenanceRecord` 的最小 schema 或 contract。
-- 导入：先支持一个报告/FHIR Bundle 风格输入和一个 wearable/device source 的统一 metadata。
-- Mobile/Mac：能展示连接状态、授权 scope、最近同步、撤权入口或解释性占位。
-- 测试：DataConnection contract test、ConsentGrant scope test、ProvenanceRecord serialization test、connector degraded behavior test。
+- 后端：在现有 `DataConnection` / `ConsentGrant` / `ProvenanceRecord` 底座上补 ConnectorPolicy、撤权后删除和更多 provider metadata。
+- 导入：扩展报告/FHIR Bundle、HealthKit 和 wearable/device source 的统一 provenance，并接入 Today/runtime context。
+- Mobile/Mac：连接中心展示连接状态、授权 scope、最近同步、撤权入口和 degraded explanation。
+- 测试：ConnectorPolicy degraded behavior test、runtime provenance serialization test、ConsentGrant revoke/delete test、跨 provider metadata contract test。
 
 建议范围 B：
 
@@ -512,3 +527,4 @@ Mobile/Watch 待规划工作：
 | 2026-06-28 | 标记 B 切片首个实现：滚动 7 天健康运行时编排 | 先把 HealthTrajectory/Agenda 从单日 top action 推进到 7 天可执行路线，为 Home/Chat/Watch 共用 Daily Artifact 打底。 |
 | 2026-06-28 | 标记 B 切片第二个实现：Home Daily Artifact Runtime 化 | 首页不再从旧 smart agenda 派生，开始共用 7 天健康运行时对象。 |
 | 2026-06-28 | 标记 B 切片第三/四个实现：Chat 动态卡片与 Watch summary Runtime 化 | Chat 和 Watch 开始消费同一个 rolling runtime projection，后续只剩执行反馈重排与数据底座。 |
+| 2026-06-28 | 标记 B 切片第五个实现：执行反馈驱动 future replan | skip reason、snooze、completion 已进入未来 7 天投影的排序、解释和 runtime context；DataConnection/Consent/Provenance 状态修正为最小底座已存在、后续产品化。 |
