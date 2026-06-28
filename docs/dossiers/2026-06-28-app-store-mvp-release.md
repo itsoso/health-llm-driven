@@ -4,11 +4,11 @@
 |---|---|
 | slug | `app-store-mvp-release` |
 | 创建日期 | 2026-06-28 |
-| 当前阶段 | G4 安全闸 |
-| 状态 | release-prep-ready |
+| 当前阶段 | S6 部署准备 |
+| 状态 | app-store-batch2-building |
 | 负责 | Codex |
-| 分支 | `codex/app-store-mvp` |
-| 工作区 | `/Users/liqiuhua/.config/superpowers/worktrees/health-llm-driven/app-store-mvp` |
+| 分支 | `main` |
+| 工作区 | `/Users/liqiuhua/work/personal/health-llm-driven` |
 
 ## S0 · 用户需求
 
@@ -121,6 +121,16 @@ P0:
 - PASS: `/Users/liqiuhua/work/personal/health-llm-driven/backend/venv/bin/python backend/scripts/check_dossier_consistency.py`
 - PASS: `/Users/liqiuhua/work/personal/health-llm-driven/backend/venv/bin/python scripts/check_doc_drift.py`
 - PASS: `git diff --check`
+- Batch 2 local gates:
+  - PASS: `python3 scripts/check_app_store_release_pack.py`
+  - PASS: `bash -n scripts/sim-build.sh && bash -n scripts/mobile-sim-screenshots.sh && python3 -m py_compile scripts/check_app_store_release_pack.py`
+  - PASS: `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest backend/tests/test_app_store_release_pack.py -q --no-cov`
+  - PASS: `cd frontend && npm run test -- --run 'src/app/shared/[shareToken]/sharePrivacy.test.ts'`
+  - PASS: `cd frontend && npx tsc --noEmit --pretty false`
+  - PASS: `cd mobile && ./node_modules/.bin/jest --runTestsByPath __tests__/app-config.test.ts --runInBand`
+  - PASS: `cd mobile && ./node_modules/.bin/tsc --noEmit`
+  - PASS: `backend/venv/bin/python backend/scripts/check_dossier_consistency.py`
+  - PASS: `backend/venv/bin/python scripts/check_doc_drift.py`
 
 ## G4 · 安全闸
 
@@ -132,11 +142,35 @@ P0:
 
 ## S6 · 部署
 
-- pending: 本批先完成 App Store MVP 合规/UI 切片。后续发布批次需在合入主干后执行 iOS archive、截图、App Store Connect 元数据和审核提交。
+- Batch 1: 已完成 App Store MVP 合规/UI 切片并合入 `main`。
+- Batch 2 plan: `docs/plans/2026-06-28-app-store-mvp-release-batch2-plan.md`
+- Batch 2 release pack:
+  - `frontend/src/app/privacy/page.tsx`: App Store Connect 可用隐私政策 URL 源码。
+  - `docs/release/app-store/submission-pack.md`: App Store metadata / submission gate。
+  - `docs/release/app-store/privacy-nutrition-label.draft.json`: 隐私营养标签草案。
+  - `docs/release/app-store/review-notes.zh-CN.md`: Review Notes 草案。
+  - `docs/release/app-store/screenshot-runbook.md`: 截图与 QA 运行手册。
+  - `scripts/check_app_store_release_pack.py`: 提交包一致性检查器。
+  - `scripts/sim-build.sh`: 默认在临时 worktree 中构建 iOS simulator app,避免 Pods/锁文件污染主工作区。
+  - `scripts/mobile-sim-screenshots.sh`: 模拟器截图脚本。
+- pending:
+  - iOS production archive / EAS build 产出并进入 App Store Connect。
+  - App Store Connect 手工填入隐私营养标签、metadata、Review Notes。
 
 ## G5 · 部署健康闸
 
-- pending
+- Local release-pack gate:
+  - PASS: `python3 scripts/check_app_store_release_pack.py`
+- Local simulator screenshot route gate:
+  - PASS: `./scripts/mobile-sim-screenshots.sh` 可在已安装 simulator app 上遍历 `今日 / 私教 / 记录 / 我 / 体检导入 / 隐私政策` 并输出 1206 x 2622 截图。
+  - 注意: 本次生成的截图来自 simulator 上旧安装包,仅证明截图自动化路径可运行;未提交截图文件。
+- Local current-code simulator build gate:
+  - BLOCK: `cd mobile && ROKID_IOS_SDK_ENABLED=0 ROKID_IOS_SIMULATOR=1 SENTRY_DISABLE_AUTO_UPLOAD=true npx expo run:ios --device "iPhone 17 Pro"` 失败,`xcodebuild` exit 65。失败点在 `mobile/modules/rokid-bridge/ios/RokidBridgeModule.swift` 编译期仍看到 stale `RGCxrClient/RGCoreKit` Pods,触发 `cannot find type RGCxrClientAudioEvent`、`cannot find CxrClient`、`RGCxrClientBLE.shared` 等 82 个 Swift 错误。
+  - 缓解: 新增 `scripts/sim-build.sh`,默认在临时 worktree 中清理 generated Pods/Podfile.lock 后用 `ROKID_IOS_SDK_ENABLED=0 ROKID_IOS_SIMULATOR=1` 构建,避免主工作区和 stale Rokid Pods 影响 App Store 截图安装。
+- pending:
+  - `curl -fsSI https://health.executor.life/privacy`
+  - App Store Connect build processing status。
+  - 用 `scripts/sim-build.sh` 重新安装当前代码后产出最终截图。
 
 ## S7 · 上线验证
 
@@ -144,11 +178,13 @@ P0:
 
 ## G6 · 验证闸
 
-- pending
+- pending: App Store submission still requires human-provided demo account credentials and final App Store Connect manual entry.
 
 ## S8 · 沉淀
 
 - 下一批优先级:
-  - App Store 元数据、截图、Review Notes、隐私营养标签对齐。
+  - 用 `scripts/check_app_store_release_pack.py` 作为提交前硬闸。
+  - 用 `scripts/mobile-sim-screenshots.sh` 或真机截图补齐 App Store screenshot set。
+  - 用 `docs/release/app-store/*` 作为 App Store Connect 填写真源。
   - 真机走查核心动线: 今日 -> Chat 动态卡片 -> 快速记录 -> 体检导入 -> 复盘 -> 隐私/删除请求。
   - 若需要“完整账号删除”,新增删除工单/worker/admin 审批与跨表匿名化测试。

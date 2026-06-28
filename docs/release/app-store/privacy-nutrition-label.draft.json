@@ -1,0 +1,118 @@
+{
+  "app_store_connect_app_id": "6763569720",
+  "bundle_id": "life.executor.health",
+  "privacy_policy_url": "https://health.executor.life/privacy",
+  "tracking": false,
+  "data_not_used_for_tracking": true,
+  "data_not_used_for_third_party_advertising": true,
+  "healthkit_advertising_use": false,
+  "data_types": [
+    {
+      "category": "Health",
+      "examples": [
+        "activity",
+        "heart_rate",
+        "sleep",
+        "blood_oxygen",
+        "blood_pressure",
+        "body_measurements",
+        "medical_exam_indicators",
+        "medication_and_supplement_records"
+      ],
+      "purpose": [
+        "app_functionality",
+        "analytics_for_user_health_review",
+        "personalization"
+      ],
+      "linked_to_user": true,
+      "used_for_tracking": false
+    },
+    {
+      "category": "Fitness",
+      "examples": [
+        "workouts",
+        "steps",
+        "training_load"
+      ],
+      "purpose": [
+        "app_functionality",
+        "personalization"
+      ],
+      "linked_to_user": true,
+      "used_for_tracking": false
+    },
+    {
+      "category": "User Content",
+      "examples": [
+        "chat_messages",
+        "health_notes",
+        "uploaded_reports",
+        "food_or_report_images_selected_by_user"
+      ],
+      "purpose": [
+        "app_functionality",
+        "personalization"
+      ],
+      "linked_to_user": true,
+      "used_for_tracking": false
+    },
+    {
+      "category": "Contact Info",
+      "examples": [
+        "email",
+        "username"
+      ],
+      "purpose": [
+        "account_management",
+        "app_functionality"
+      ],
+      "linked_to_user": true,
+      "used_for_tracking": false
+    },
+    {
+      "category": "Identifiers",
+      "examples": [
+        "user_id",
+        "device_source_id"
+      ],
+      "purpose": [
+        "account_management",
+        "app_functionality",
+        "fraud_prevention_and_security"
+      ],
+      "linked_to_user": true,
+      "used_for_tracking": false
+    },
+    {
+      "category": "Diagnostics",
+      "examples": [
+        "crash_logs",
+        "performance_traces",
+        "client_events"
+      ],
+      "purpose": [
+        "analytics",
+        "app_functionality"
+      ],
+      "linked_to_user": false,
+      "used_for_tracking": false
+    },
+    {
+      "category": "Location",
+      "examples": [
+        "coarse_or_device_location_for_weather_air_quality_and_outdoor_activity_context"
+      ],
+      "purpose": [
+        "app_functionality",
+        "personalization"
+      ],
+      "linked_to_user": true,
+      "used_for_tracking": false
+    }
+  ],
+  "manual_review_required_before_submission": [
+    "Confirm Sentry/diagnostic collection settings in production.",
+    "Confirm whether precise location is collected or only coarse context is stored.",
+    "Confirm whether any future marketing integrations are disabled before submission."
+  ]
+}

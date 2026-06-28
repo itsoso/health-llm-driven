@@ -34,6 +34,9 @@ Deferred:
 - [x] Task 4: Privacy Policy Wording
 - [x] Task 5: Verification
 - [ ] Release batch: App Store metadata, screenshots, native archive, App Store Connect submission, true-device validation.
+  - Batch 2 plan/materials: `docs/plans/2026-06-28-app-store-mvp-release-batch2-plan.md`
+  - App Store Connect source pack: `docs/release/app-store/`
+  - Deterministic gate: `python3 scripts/check_app_store_release_pack.py`
 
 ## Task 1: Backend Account Deletion Request
 
