@@ -177,43 +177,53 @@ else
     exit 1
   fi
 
-  AUTH_ARGS=()
+  AUTH_KEY_PATH=""
+  AUTH_KEY_ID=""
+  AUTH_ISSUER_ID=""
   KEY_ID="${APP_STORE_CONNECT_API_KEY:-${ASC_KEY_ID:-}}"
   ISSUER_ID="${APP_STORE_CONNECT_ISSUER_ID:-${ASC_ISSUER_ID:-}}"
   if [ -n "${KEY_ID}" ] && [ -n "${ISSUER_ID}" ]; then
     P8="${ASC_PRIVATE_KEY_PATH:-${HOME}/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8}"
     if [ -f "${P8}" ]; then
-      AUTH_ARGS=(
-        -authenticationKeyPath "${P8}"
-        -authenticationKeyID "${KEY_ID}"
-        -authenticationKeyIssuerID "${ISSUER_ID}"
-      )
+      AUTH_KEY_PATH="${P8}"
+      AUTH_KEY_ID="${KEY_ID}"
+      AUTH_ISSUER_ID="${ISSUER_ID}"
     fi
   fi
+
+  run_xcodebuild() {
+    if [ -n "${AUTH_KEY_PATH}" ]; then
+      xcodebuild \
+        -authenticationKeyPath "${AUTH_KEY_PATH}" \
+        -authenticationKeyID "${AUTH_KEY_ID}" \
+        -authenticationKeyIssuerID "${AUTH_ISSUER_ID}" \
+        "$@"
+    else
+      xcodebuild "$@"
+    fi
+  }
 
   write_export_options "${EXPORT_METHOD}" "${EXPORT_OPTIONS}"
 
   echo "==> archive (${SCHEME})"
-  xcodebuild \
+  run_xcodebuild \
     -workspace "${WORKSPACE}" \
     -scheme "${SCHEME}" \
     -configuration Release \
     -destination 'generic/platform=iOS' \
     -archivePath "${ARCHIVE_PATH}" \
     -allowProvisioningUpdates \
-    "${AUTH_ARGS[@]}" \
     CODE_SIGN_STYLE=Automatic \
     DEVELOPMENT_TEAM="${TEAM_ID}" \
     archive 2>&1 | tee "${BUILD_LOG}"
 
   echo "==> export ${EXPORT_METHOD} IPA"
-  if ! xcodebuild \
+  if ! run_xcodebuild \
     -exportArchive \
     -archivePath "${ARCHIVE_PATH}" \
     -exportPath "${EXPORT_DIR}" \
     -exportOptionsPlist "${EXPORT_OPTIONS}" \
-    -allowProvisioningUpdates \
-    "${AUTH_ARGS[@]}" 2>&1 | tee -a "${BUILD_LOG}"; then
+    -allowProvisioningUpdates 2>&1 | tee -a "${BUILD_LOG}"; then
     if [ "${EXPORT_METHOD}" = "development" ]; then
       exit 1
     fi
@@ -222,7 +232,7 @@ else
     EXPORT_METHOD="development"
     EXPORT_DIR="${OUTPUT_DIR}/export-development"
     write_export_options "${EXPORT_METHOD}" "${EXPORT_OPTIONS}"
-    xcodebuild \
+    run_xcodebuild \
       -exportArchive \
       -archivePath "${ARCHIVE_PATH}" \
       -exportPath "${EXPORT_DIR}" \

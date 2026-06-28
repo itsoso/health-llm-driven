@@ -5,7 +5,7 @@
 | slug | `app-store-mvp-release` |
 | 创建日期 | 2026-06-28 |
 | 当前阶段 | S6 部署准备 |
-| 状态 | app-store-batch2-web-deployed-app-store-external-pending |
+| 状态 | app-store-batch3-qr-published-app-store-connect-pending |
 | 负责 | Codex |
 | 分支 | `main` |
 | 工作区 | `/Users/liqiuhua/work/personal/health-llm-driven` |
@@ -131,6 +131,20 @@ P0:
   - PASS: `cd mobile && ./node_modules/.bin/tsc --noEmit`
   - PASS: `backend/venv/bin/python backend/scripts/check_dossier_consistency.py`
   - PASS: `backend/venv/bin/python scripts/check_doc_drift.py`
+- Batch 3 local gates:
+  - PASS: `./scripts/sim-build.sh --device 39D954B3-A2B5-41AA-8A6E-BD9750D3CB86 --keep-temp-worktree`
+    - `xcodebuild` completed `Build Succeeded`, 0 errors, 7 warnings, installed `HealthPilot.app`, and opened `life.executor.health`.
+  - PASS: `./scripts/mobile-sim-screenshots.sh --device 39D954B3-A2B5-41AA-8A6E-BD9750D3CB86 --output design/screenshots/app-store/batch3-20260628`
+    - Captured `00-launch.png` through `06-privacy.png`, all 1206 x 2622.
+    - Screenshots are local evidence only; they include real account/health context and must not be committed or submitted before replacing with a demo account.
+  - PASS: `bash -n scripts/mobile-local-qr.sh scripts/sim-build.sh scripts/mobile-sim-screenshots.sh`
+  - PASS: `python3 scripts/check_app_store_release_pack.py`
+  - PASS: `cd mobile && ./node_modules/.bin/jest --runTestsByPath __tests__/app-config.test.ts --runInBand`
+    - 1 suite passed, 5 tests passed.
+  - PASS: `cd mobile && ./node_modules/.bin/tsc --noEmit`
+  - PASS: `/Users/liqiuhua/work/personal/health-llm-driven/backend/venv/bin/python backend/scripts/check_dossier_consistency.py`
+  - PASS: `/Users/liqiuhua/work/personal/health-llm-driven/backend/venv/bin/python scripts/check_doc_drift.py`
+  - PASS: `git diff --check`
 
 ## G4 · 安全闸
 
@@ -144,6 +158,7 @@ P0:
 
 - Batch 1: 已完成 App Store MVP 合规/UI 切片并合入 `main`。
 - Batch 2 plan: `docs/plans/2026-06-28-app-store-mvp-release-batch2-plan.md`
+- Batch 3 plan: `docs/plans/2026-06-28-app-store-mvp-release-batch3-plan.md`
 - Batch 2 release pack:
   - `frontend/src/app/privacy/page.tsx`: App Store Connect 可用隐私政策 URL 源码。
   - `docs/release/app-store/submission-pack.md`: App Store metadata / submission gate。
@@ -156,6 +171,7 @@ P0:
 - pending:
   - iOS production archive / EAS build 产出并进入 App Store Connect。
   - App Store Connect 手工填入隐私营养标签、metadata、Review Notes。
+  - App Store 截图需要用 demo account / 脱敏数据重新采集后再提交。
 
 ## G5 · 部署健康闸
 
@@ -168,14 +184,23 @@ P0:
   - PASS: `curl -fsSI https://health.executor.life/privacy` 返回 `HTTP/2 200`。
   - PASS: `curl -fsS https://health.executor.life/privacy | rg -n "HealthKit|删除账号|不提供诊断|support@executor.life"` 命中 App Store 审核要求的关键文案。
 - Local simulator screenshot route gate:
-  - PASS: `./scripts/mobile-sim-screenshots.sh` 可在已安装 simulator app 上遍历 `今日 / 私教 / 记录 / 我 / 体检导入 / 隐私政策` 并输出 1206 x 2622 截图。
-  - 注意: 本次生成的截图来自 simulator 上旧安装包,仅证明截图自动化路径可运行;未提交截图文件。
+  - PASS: `./scripts/mobile-sim-screenshots.sh --device 39D954B3-A2B5-41AA-8A6E-BD9750D3CB86 --output design/screenshots/app-store/batch3-20260628` 在当前代码 simulator app 上遍历 `今日 / 私教 / 记录 / 我 / 体检导入 / 隐私政策` 并输出 1206 x 2622 截图。
+  - 注意: 本次截图包含真实账号和健康上下文,只作为本地 QA 证据,未提交进仓库,不可直接用于 App Store Connect。
 - Local current-code simulator build gate:
-  - BLOCK: `cd mobile && ROKID_IOS_SDK_ENABLED=0 ROKID_IOS_SIMULATOR=1 SENTRY_DISABLE_AUTO_UPLOAD=true npx expo run:ios --device "iPhone 17 Pro"` 失败,`xcodebuild` exit 65。失败点在 `mobile/modules/rokid-bridge/ios/RokidBridgeModule.swift` 编译期仍看到 stale `RGCxrClient/RGCoreKit` Pods,触发 `cannot find type RGCxrClientAudioEvent`、`cannot find CxrClient`、`RGCxrClientBLE.shared` 等 82 个 Swift 错误。
-  - 缓解: 新增 `scripts/sim-build.sh`,默认在临时 worktree 中清理 generated Pods/Podfile.lock 后用 `ROKID_IOS_SDK_ENABLED=0 ROKID_IOS_SIMULATOR=1` 构建,避免主工作区和 stale Rokid Pods 影响 App Store 截图安装。
+  - PASS: `./scripts/sim-build.sh --device 39D954B3-A2B5-41AA-8A6E-BD9750D3CB86 --keep-temp-worktree` 从干净临时 worktree 构建、安装并打开当前代码。
+  - 结论: Batch 2 的 Rokid compile failure 是主工作区 stale Pods/Podfile.lock 污染;干净 worktree + `ROKID_IOS_SDK_ENABLED=0` 可以稳定走通 simulator build。
+- Local QR install gate:
+  - PASS: 修复 `scripts/mobile-local-qr.sh` 的 `AUTH_ARGS[@]: unbound variable` 问题;在无 App Store Connect API key 文件时仍可运行 archive/export。
+  - PASS: `SENTRY_DISABLE_AUTO_UPLOAD=true SENTRY_ALLOW_FAILURE=true xcodebuild ... archive` 成功生成 `HealthPilot.xcarchive`。
+  - PASS with fallback: ad-hoc export 因本机缺少 `life.executor.health`、watch app、watch extension 的 ad-hoc profiles 失败;development export 成功生成 IPA。
+  - PASS: `./scripts/mobile-local-qr.sh --ipa .../HealthPilot.ipa --build-id batch3-20260628-af8f7721` 生成并上传二维码安装包。
+  - Public install page: `https://health.executor.life/mobile-install/ios/batch3-20260628-af8f7721/install.html`
+  - Public artifacts gate: script 与独立 `curl -fsSI` 均已验证 `install.html`、`manifest.plist`、IPA 公开可访问。
+  - 注意: 当前二维码包是 development-signed build,适合已纳入开发签名/配置的设备扫码安装;不等同于 App Store/TestFlight build。
 - pending:
   - App Store Connect build processing status。
-  - 用 `scripts/sim-build.sh` 重新安装当前代码后产出最终截图。
+  - App Store Connect production/distribution profile build。
+  - 用 demo account / 脱敏数据产出最终 App Store screenshot set。
 
 ## S7 · 上线验证
 
