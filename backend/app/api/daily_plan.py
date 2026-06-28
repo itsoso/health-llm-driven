@@ -21,6 +21,7 @@ from app.services.health_operating_review import (
     SUPPORTED_REVIEW_WINDOWS,
     build_health_operating_review,
 )
+from app.services.personal_models.prediction_record import attach_prediction_record_to_snapshot
 
 router = APIRouter(prefix="/daily-plan", tags=["daily-plan"])
 
@@ -104,6 +105,14 @@ def _sync_source_card_lifecycle(
     card.updated_at = now
 
 
+def _action_execution_snapshot(action: dict, action_key: str) -> dict:
+    return attach_prediction_record_to_snapshot(
+        action,
+        object_type="daily_plan_action",
+        object_id=action_key,
+    )
+
+
 @router.get("/me")
 def get_my_daily_plan(
     plan_date: Optional[date] = Query(None, description="默认今天"),
@@ -154,7 +163,7 @@ def submit_my_daily_plan_action_feedback(
         feedback_status=request.status,
         reason=request.reason,
         source="daily_plan",
-        action_snapshot=action,
+        action_snapshot=_action_execution_snapshot(action, action_key),
     )
     db.add(row)
     _sync_source_card_lifecycle(
@@ -199,6 +208,7 @@ def record_my_daily_plan_action_event(
     action_snapshot = dict(action)
     action_snapshot["event_type"] = request.event_type
     action_snapshot["event_payload"] = request.payload
+    action_snapshot = _action_execution_snapshot(action_snapshot, action_id)
 
     row = InterventionEvent(
         user_id=current_user.id,

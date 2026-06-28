@@ -5,6 +5,26 @@ from datetime import date, datetime, timedelta, timezone
 from tests.conftest import create_authenticated_user
 
 
+def _prediction_context(metric: str = "waist_cm"):
+    return {
+        "id": f"personal_prediction:cycle:1:{metric}",
+        "prediction_type": "intervention_cycle_projection",
+        "metric": metric,
+        "domain": "metabolic_health",
+        "horizon_days": 7,
+        "baseline": 96.0,
+        "unit": "cm",
+        "expected_signal": {"metric": metric, "direction": "down", "expected_delta": -0.5},
+        "confidence": "medium",
+        "uncertainty": {"level": "medium", "drivers": ["n_of_1_observational_cycle"]},
+        "evidence_tier": "personal_observation",
+        "source_model": "phase1-hbayes-v1",
+        "model_version": "personal_prediction_v1",
+        "claim_boundary": "观察性预测, 不证明单个行动造成指标变化。",
+        "review_hint": "到复测窗口后用实际指标回测。",
+    }
+
+
 def test_daily_plan_action_feedback_creates_intervention_event(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
 
@@ -33,6 +53,57 @@ def test_daily_plan_action_feedback_creates_intervention_event(client, db, auth_
     assert rows[0].action_key == action_key
     assert rows[0].action_title == action["title"]
     assert rows[0].feedback_status == "done"
+
+
+def test_daily_plan_feedback_stores_standard_prediction_record(
+    client,
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    user, headers = auth_user_and_headers
+    from app.api import daily_plan
+
+    today = date.today()
+    prediction = _prediction_context()
+    monkeypatch.setattr(daily_plan, "build_daily_operating_plan", lambda db, uid, plan_date=None: {
+        "id": 123,
+        "plan_date": today.isoformat(),
+        "actions": [
+            {
+                "action_key": "movement.moderate_activity",
+                "domain": "movement",
+                "title": "累计 35-45 分钟中等强度活动",
+                "metric_key": "waist_cm",
+                "personal_prediction_context": prediction,
+            },
+        ],
+    }, raising=False)
+
+    resp = client.post(
+        "/api/v1/daily-plan/me/actions/movement.moderate_activity/feedback",
+        headers=headers,
+        json={"status": "done", "reason": "已完成"},
+    )
+
+    assert resp.status_code == 200
+    from app.models.intervention_event import InterventionEvent
+
+    row = db.query(InterventionEvent).filter(InterventionEvent.user_id == user.id).one()
+    record = row.action_snapshot["prediction_record"]
+    assert record["id"] == "personal_prediction:cycle:1:waist_cm"
+    assert record["source"] == "phase1-hbayes-v1"
+    assert record["source_model"] == "phase1-hbayes-v1"
+    assert record["prediction_type"] == "intervention_cycle_projection"
+    assert record["metric"] == "waist_cm"
+    assert record["expected_signal"]["direction"] == "down"
+    assert record["confidence"] == "medium"
+    assert record["uncertainty"]["level"] == "medium"
+    assert record["evidence_tier"] == "personal_observation"
+    assert record["model_version"] == "personal_prediction_v1"
+    assert record["attached_to"]["object_type"] == "daily_plan_action"
+    assert record["attached_to"]["object_id"] == "movement.moderate_activity"
+    assert "不证明" in record["claim_boundary"]
 
 
 def test_daily_plan_action_feedback_rejects_unknown_action(client, auth_user_and_headers):
@@ -73,6 +144,44 @@ def test_daily_plan_action_event_endpoint_records_completed_event(client, db, au
     assert len(rows) == 1
     assert rows[0].feedback_status == "completed"
     assert rows[0].action_snapshot["event_payload"] == {"source": "test"}
+
+
+def test_daily_plan_action_event_stores_standard_prediction_record(
+    client,
+    db,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    user, headers = auth_user_and_headers
+    from app.api import daily_plan
+
+    today = date.today()
+    monkeypatch.setattr(daily_plan, "build_daily_operating_plan", lambda db, uid, plan_date=None: {
+        "id": 124,
+        "plan_date": today.isoformat(),
+        "actions": [
+            {
+                "action_key": "movement.moderate_activity",
+                "domain": "movement",
+                "title": "累计 35-45 分钟中等强度活动",
+                "metric_key": "waist_cm",
+                "personal_prediction_context": _prediction_context(),
+            },
+        ],
+    }, raising=False)
+
+    resp = client.post(
+        "/api/v1/daily-plan/actions/movement.moderate_activity/events",
+        headers=headers,
+        json={"event_type": "completed", "payload": {"source": "watch"}},
+    )
+
+    assert resp.status_code == 200
+    from app.models.intervention_event import InterventionEvent
+
+    row = db.query(InterventionEvent).filter(InterventionEvent.user_id == user.id).one()
+    assert row.action_snapshot["event_payload"] == {"source": "watch"}
+    assert row.action_snapshot["prediction_record"]["id"] == "personal_prediction:cycle:1:waist_cm"
 
 
 def test_daily_plan_action_event_endpoint_rejects_unknown_event_type(client, auth_user_and_headers):

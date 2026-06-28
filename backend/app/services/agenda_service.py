@@ -51,6 +51,7 @@ _TRAJECTORY_CONTEXT_KEYS = (
     "verification_window",
     "verification_window_days",
     "verification_signal",
+    "personal_prediction_context",
 )
 _RUNTIME_SAFETY_BOUNDARY = "健康运行时只做提醒、记录和风险提示；不诊断、不处方、不调药，高风险症状请及时就医。"
 _RUNTIME_REPLAN_TRIGGERS = (

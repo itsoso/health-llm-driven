@@ -21,6 +21,8 @@ from app.services.personal_evidence_matrix import (
     build_personal_evidence_matrix,
     compact_personal_evidence_matrix,
 )
+from app.services.personal_models.personal_prediction import build_personal_predictions
+from app.services.personal_models.prediction_record import prediction_context_for_attachment
 from app.services.measurement_automation import get_measurement_capability_map
 from app.twin import build_twin
 
@@ -47,6 +49,11 @@ _ACUTE_REST_SUPPRESS_TITLES = (
 )
 _COMPLETED_ACTION_EVENT_STATUSES = {"completed", "done", "verified"}
 _TERMINAL_ACTION_EVENT_STATUSES = _COMPLETED_ACTION_EVENT_STATUSES | {"skipped", "failed"}
+_PREDICTION_ACTION_DOMAIN_MAP = {
+    "metabolic_health": {"measurement", "movement", "nutrition", "hydration"},
+    "recovery_capacity": {"sleep", "movement", "nutrition"},
+    "aging_pace": {"measurement", "movement", "nutrition", "sleep"},
+}
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
@@ -432,6 +439,63 @@ def _training_gate_guardrail(gate: Dict[str, Any]) -> str:
     return "；".join(parts) or "训练门控建议今天降低强度,优先恢复和低冲击活动。"
 
 
+def _verification_metrics(action: Dict[str, Any]) -> set[str]:
+    metrics: set[str] = set()
+    metric_key = action.get("metric_key")
+    if metric_key:
+        metrics.add(str(metric_key))
+    verification = action.get("verification")
+    if isinstance(verification, dict):
+        raw_metrics = verification.get("metrics")
+        if isinstance(raw_metrics, list):
+            metrics.update(str(metric) for metric in raw_metrics if metric)
+    return metrics
+
+
+def _prediction_matches_action(action: Dict[str, Any], prediction: Dict[str, Any]) -> bool:
+    metric = str(prediction.get("metric") or "")
+    if metric and metric in _verification_metrics(action):
+        return True
+    action_domain = str(action.get("domain") or "").strip().lower()
+    prediction_domain = str(prediction.get("domain") or "").strip()
+    return action_domain in _PREDICTION_ACTION_DOMAIN_MAP.get(prediction_domain, set())
+
+
+def _attach_personal_prediction_contexts(
+    actions: List[Dict[str, Any]],
+    predictions: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    active_predictions = [
+        prediction
+        for prediction in predictions
+        if prediction_context_for_attachment(prediction or {})
+    ]
+    if not active_predictions:
+        return actions
+
+    enriched: List[Dict[str, Any]] = []
+    for action in actions:
+        if not isinstance(action, dict) or action.get("personal_prediction_context"):
+            enriched.append(action)
+            continue
+        match = next(
+            (
+                prediction
+                for prediction in active_predictions
+                if _prediction_matches_action(action, prediction)
+            ),
+            None,
+        )
+        context = prediction_context_for_attachment(match or {})
+        if not context:
+            enriched.append(action)
+            continue
+        out = dict(action)
+        out["personal_prediction_context"] = context
+        enriched.append(out)
+    return enriched
+
+
 def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None = None) -> Dict[str, Any]:
     """构建并缓存当天 Daily Operating Plan.
 
@@ -563,6 +627,10 @@ def build_daily_operating_plan(db: Session, user_id: int, plan_date: date | None
         personal_matrix=personal_matrix,
     )[:5]
     actions = _bind_actions_to_active_cycle(actions, active_cycle_summary)
+    try:
+        actions = _attach_personal_prediction_contexts(actions, build_personal_predictions(db, user_id))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[daily_plan] personal prediction attachment failed user=%s: %s", user_id, exc)
     action_progress = _action_progress_summary(
         remaining_count=len(actions),
         terminal_action_keys=terminal_action_keys,

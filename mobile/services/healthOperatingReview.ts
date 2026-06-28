@@ -40,6 +40,10 @@ export interface PredictionBacktestPlaceholder {
 export interface PredictionBacktestResult {
   prediction_id: string;
   source?: string | null;
+  source_model?: string | null;
+  prediction_type?: string | null;
+  domain?: string | null;
+  unit?: string | null;
   action_key: string;
   action_title: string;
   metric: string;
@@ -49,6 +53,11 @@ export interface PredictionBacktestResult {
   expected_signal?: Record<string, unknown>;
   actual_result?: { current?: number | string | null; current_date?: string | null };
   observed_delta?: number | null;
+  uncertainty?: Record<string, unknown> | null;
+  evidence_tier?: string | null;
+  model_version?: string | null;
+  review_hint?: string | null;
+  requires_clinician?: boolean | null;
   verdict: 'met' | 'not_met' | 'inconclusive' | string;
   downgrade_reason?: string | null;
   confidence_before?: string | null;

@@ -3,7 +3,7 @@
 from datetime import date, timedelta
 
 
-def _make_active_cycle(db, user_id):
+def _make_active_cycle(db, user_id, *, metric_code: str = "weight", unit: str = "kg"):
     from app.models.intervention_cycle import InterventionCycle, OutcomeMetric
 
     cycle = InterventionCycle(
@@ -17,8 +17,8 @@ def _make_active_cycle(db, user_id):
     db.flush()
     db.add(OutcomeMetric(
         cycle_id=cycle.id,
-        metric_code="weight",
-        unit="kg",
+        metric_code=metric_code,
+        unit=unit,
         baseline_value=82.0,
         latest_value=79.0,
         delta=-3.0,
@@ -66,3 +66,19 @@ def test_personal_predictions_endpoint_shape(client, db, auth_user_and_headers):
     assert len(body["predictions"]) == 1
     assert body["predictions"][0]["metric"] == "weight"
     assert body["predictions"][0]["uncertainty"]["drivers"]
+
+
+def test_daily_plan_actions_attach_matching_personal_prediction_context(db, auth_user_and_headers):
+    user, _ = auth_user_and_headers
+    _make_active_cycle(db, user.id, metric_code="waist_cm", unit="cm")
+
+    from app.services.daily_operating_plan import build_daily_operating_plan
+
+    plan = build_daily_operating_plan(db, user.id)
+
+    measurement = next(action for action in plan["actions"] if action["action_key"] == "measurement.weight_waist_morning")
+    prediction = measurement["personal_prediction_context"]
+    assert prediction["id"].startswith("personal_prediction:cycle:")
+    assert prediction["metric"] == "waist_cm"
+    assert prediction["model_version"] == "personal_prediction_v1"
+    assert prediction["expected_signal"]["direction"] == "down"

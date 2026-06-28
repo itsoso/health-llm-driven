@@ -152,6 +152,62 @@ def test_daily_plan_review_backtests_prediction_records(client, db, auth_user_an
     assert "不证明" in timeline[3]["boundary"]
 
 
+def test_daily_plan_review_preserves_prediction_record_metadata(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    today = date.today()
+
+    db.add_all([
+        InterventionEvent(
+            user_id=user.id,
+            plan_date=today - timedelta(days=5),
+            action_key="movement.moderate_activity",
+            action_domain="movement",
+            action_title="累计 35-45 分钟中等强度活动",
+            feedback_status="completed",
+            source="daily_plan",
+            action_snapshot={
+                "verification_metric": "waist_cm",
+                "prediction_record": {
+                    "id": "personal_prediction:cycle:1:waist_cm",
+                    "source": "phase1-hbayes-v1",
+                    "source_model": "phase1-hbayes-v1",
+                    "prediction_type": "intervention_cycle_projection",
+                    "metric": "waist_cm",
+                    "domain": "metabolic_health",
+                    "horizon_days": 7,
+                    "baseline": 96.0,
+                    "unit": "cm",
+                    "expected_signal": {"metric": "waist_cm", "direction": "down", "expected_delta": -0.5},
+                    "confidence": "medium",
+                    "uncertainty": {"level": "medium", "drivers": ["n_of_1_observational_cycle"]},
+                    "evidence_tier": "personal_observation",
+                    "model_version": "personal_prediction_v1",
+                    "review_hint": "到复测窗口后用实际指标回测。",
+                    "claim_boundary": "观察性预测, 不证明单个行动造成指标变化。",
+                },
+            },
+        ),
+        WaistRecord(user_id=user.id, record_date=today - timedelta(days=6), waist_cm=96.0),
+        WaistRecord(user_id=user.id, record_date=today, waist_cm=94.8),
+    ])
+    db.commit()
+
+    resp = client.get("/api/v1/daily-plan/review?window_days=7", headers=headers)
+
+    assert resp.status_code == 200
+    result = resp.json()["prediction_backtest"]["results"][0]
+    assert result["prediction_id"] == "personal_prediction:cycle:1:waist_cm"
+    assert result["source"] == "phase1-hbayes-v1"
+    assert result["source_model"] == "phase1-hbayes-v1"
+    assert result["prediction_type"] == "intervention_cycle_projection"
+    assert result["evidence_tier"] == "personal_observation"
+    assert result["uncertainty"]["level"] == "medium"
+    assert result["review_hint"] == "到复测窗口后用实际指标回测。"
+    assert result["model_version"] == "personal_prediction_v1"
+    assert result["unit"] == "cm"
+    assert result["verdict"] == "met"
+
+
 def test_daily_plan_review_downgrades_low_confidence_predictions(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
     today = date.today()

@@ -16,6 +16,7 @@ from app.models.user import User
 from app.services.daily_operating_plan import build_daily_operating_plan
 from app.services.epigenetic_report_service import list_epigenetic_reports
 from app.services.personal_models.personal_prediction import build_personal_predictions
+from app.services.personal_models.prediction_record import prediction_context_for_attachment
 from app.twin import build_twin
 
 
@@ -367,20 +368,7 @@ def _trajectory_risks(twin, genetic: Dict[str, Any], epigenetic: Dict[str, Any])
 
 
 def _prediction_context(prediction: Dict[str, Any]) -> Dict[str, Any]:
-    keys = (
-        "id",
-        "prediction_type",
-        "metric",
-        "domain",
-        "horizon_days",
-        "expected_signal",
-        "confidence",
-        "uncertainty",
-        "evidence_tier",
-        "claim_boundary",
-        "model_version",
-    )
-    return {key: prediction[key] for key in keys if key in prediction}
+    return prediction_context_for_attachment(prediction) or {}
 
 
 def _enrich_risks_with_predictions(

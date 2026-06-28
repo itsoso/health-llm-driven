@@ -213,6 +213,19 @@ def test_smart_today_attaches_trajectory_context_to_daily_plan_actions(monkeypat
                 "verification_window_days": 7,
                 "verification_signal": "waist_cm",
                 "modifiable_levers": ["movement", "nutrition", "sleep"],
+                "personal_prediction_context": {
+                    "id": "personal_prediction:cycle:1:waist_cm",
+                    "prediction_type": "intervention_cycle_projection",
+                    "metric": "waist_cm",
+                    "domain": "metabolic_health",
+                    "horizon_days": 7,
+                    "expected_signal": {"metric": "waist_cm", "direction": "down", "expected_delta": -0.5},
+                    "confidence": "medium",
+                    "uncertainty": {"level": "medium", "drivers": ["n_of_1_observational_cycle"]},
+                    "evidence_tier": "personal_observation",
+                    "model_version": "personal_prediction_v1",
+                    "claim_boundary": "观察性预测, 不证明单个行动造成指标变化。",
+                },
             }
         ],
     }, raising=False)
@@ -227,6 +240,8 @@ def test_smart_today_attaches_trajectory_context_to_daily_plan_actions(monkeypat
     assert top["why_now"].startswith("腰围和血压提示代谢轨迹需要关注。")
     assert top["claim_boundary"] == "用于上游健康管理排序, 不替代医生诊断。"
     assert top["trajectory_context"]["uncertainty"]["level"] == "medium"
+    assert top["trajectory_context"]["personal_prediction_context"]["id"] == "personal_prediction:cycle:1:waist_cm"
+    assert top["trajectory_context"]["personal_prediction_context"]["model_version"] == "personal_prediction_v1"
     assert top["trajectory_context"]["verification_window"]["signal"] == "waist_cm"
     assert top["verify_by"]["trajectory"]["horizon"] == "upstream_90d"
     assert top["verify_by"]["trajectory"]["uncertainty_level"] == "medium"
