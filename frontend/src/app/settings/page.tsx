@@ -490,6 +490,26 @@ function SettingsContent() {
         {/* Withings 体重秤 */}
         <WithingsSection token={token} setMessage={setMessage} queryClient={queryClient} />
 
+        {/* 数据连接与授权 */}
+        <div className="bg-white rounded-xl shadow-md p-6 mb-6 border border-gray-200">
+          <button
+            type="button"
+            onClick={() => router.push('/data-connections')}
+            className="flex w-full items-center justify-between text-left group"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">{'\u{1F510}'}</span>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 group-hover:text-indigo-600 transition-colors">数据连接与授权</h2>
+                <p className="text-sm text-gray-600">查看数据源、授权 scope、同步状态和连接健康</p>
+              </div>
+            </div>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400 group-hover:text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+
         {/* API Key 管理 */}
         <ApiKeySection token={token} setMessage={setMessage} />
 

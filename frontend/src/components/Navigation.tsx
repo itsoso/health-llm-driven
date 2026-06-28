@@ -146,6 +146,7 @@ export default function Navigation() {
         { href: '/medical-exams', label: '体检记录', icon: <FileText className="w-4 h-4" /> },
         { href: '/genetic', label: '基因数据', icon: <Zap className="w-4 h-4" /> },
         { href: '/data-collection', label: '数据收集', icon: <Database className="w-4 h-4" /> },
+        { href: '/data-connections', label: '数据连接与授权', icon: <Shield className="w-4 h-4" /> },
         { href: '/skills', label: 'AI Skills', icon: <Zap className="w-4 h-4" /> },
         { href: '/settings', label: '个人设置', icon: <Settings className="w-4 h-4" /> },
       ],
