@@ -4,8 +4,8 @@
 |---|---|
 | slug | `connector-policy-degraded-health` |
 | 创建日期 | 2026-06-28 |
-| 当前阶段 | S5 实现 |
-| 状态 | in_progress |
+| 当前阶段 | S8 沉淀 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | backend deploy |
 
@@ -75,20 +75,25 @@
 - 任务表:
   - [x] T1 RED: 增加 active/degraded/revoked 合同测试。
   - [x] T2 GREEN: 服务层序列化 `connection_health`。
-  - [ ] T3 文档回写、验证、部署和生产 smoke。
+  - [x] T3 文档回写、验证、部署和生产 smoke。
 
 ## S5 · 实现
 
 - 委托: Codex
 - 分支: `codex/rolling-runtime-next-slice`
-- commit: 待提交
+- commit: `d4003e1594fc89f76e4353b4dd29c0876e3857e6` `feat(data-connections): expose connector health state`
 
 ## G3 · 测试闸
 
 - RED: `backend/tests/test_data_connections.py::test_connection_health_explains_active_degraded_and_revoked` 先失败于 `KeyError: 'connection_health'`。
 - GREEN: 同测试通过。
-- 集成闸: 待跑。
-- **裁决**: 待定
+- 集成闸(CI 模式 `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai`,**不 `| tail`**):
+  - `backend/tests/test_data_connections.py --no-cov`: `5 passed`。
+  - `backend/tests/test_healthkit_adapter.py backend/tests/test_fhir_bundle_import.py --no-cov`: `14 passed`。
+  - `python -m compileall -q backend/app/services/data_connections.py backend/tests/test_data_connections.py`: 通过。
+  - `scripts/check_doc_drift.py`: 通过。
+  - `git diff --check`: 通过。
+- **裁决**: 绿
 
 ## G4 · 安全闸
 
@@ -98,27 +103,35 @@
   - 不新增用户数据读取范围。
   - 不返回 token 或原始外部数据。
   - 撤权状态下 `can_use_cached_data=false`。
-- **裁决**: 待定
+- **裁决**: GO
 
 ## S6 · 部署
 
 - 路由: backend-deploy
-- 部署 SHA / 回滚点: 待定
+- 部署 SHA / 回滚点:
+  - 后端部署 HEAD: `d4003e1594fc89f76e4353b4dd29c0876e3857e6`
+  - 回滚点: `fd48fd38`
 
 ## G5 · 部署健康闸
 
-- 健康分: 待定
-- prod smoke: 待定
-- **裁决**: 待定
+- 健康分(阈值 35,低于自动回滚): `60/60 PASS`
+- skills manifest: `22 = 22`
+- prod smoke:
+  - `GET /api/v1/data-connections/me` authenticated as user_id=3: `http_status=200 connections=0 health_count=0 health_statuses=[] user_actions=[]`。
+  - user_id=3 当前没有持久连接记录；为验证线上代码与 schema 合同，服务器本机开启未提交事务临时构造连接，序列化 active/degraded/revoked 后 `rollback`，无持久写入。
+  - 事务内合同 smoke: `active:healthy/none/True degraded:degraded/reconnect/True revoked:revoked/reconnect/False`。
+- **裁决**: PASS
 
 ## S7 · 上线验证
 
-- 真实路径验证: 待定
+- 真实路径验证: 生产 API 只读端点健康；线上服务代码在生产 DB schema 上可序列化 `connection_health` 三种关键状态。
 
 ## G6 · 验证闸(人在环)
 
-- 裁决: 待定
+- 裁决: PASS；本切片为后端只读合同，不涉及真机或 QR 发布。
 
 ## S8 · 沉淀
 
-- 待上线验证后回写计划状态。
+- 新坑沉淀: user_id=3 没有连接记录时，HTTP smoke 只能证明端点健康；需要用 rollback 事务或测试 fixture 证明正向合同，避免污染真实用户数据。
+- 文档同步: Dossier / Plan / rolling runtime spec 已回写。
+- 状态 -> **shipped**: 完成

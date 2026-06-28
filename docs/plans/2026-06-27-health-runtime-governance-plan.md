@@ -495,6 +495,25 @@ Mobile/Watch 待规划工作：
   - 后端部署 HEAD `fd48fd38113c4e85f02674e35500d2ff9f195901`；部署健康分 `60/60`；skills manifest `22 = 22`。
   - 生产 user_id=3 smoke：`mode=runtime generated_by=rolling_health_runtime_v1 horizon=7 days=7 next=True provenance_policy=runtime_key_fact_provenance_v1 item_provenance_count=0 missing_provenance_count=0`。说明：user_id=3 当前 runtime payload 没有命中 FHIR/report biomarker provenance 的行动；正向 item-level provenance 由本地合同测试覆盖。
 
+2026-06-28 第七切片已发布:
+
+- `ConnectorPolicy` 的降级状态已产品化为 `connection_health` 只读合同:
+  - active 连接: `healthy/ok/none`，可尝试同步，可使用缓存数据。
+  - 鉴权失败降级: `degraded/warning/reconnect`，不可继续同步，但在 `read_only` 策略下仍可使用已授权缓存数据做只读判断。
+  - revoke 后: `revoked/blocked/reconnect`，不可同步，也不可继续使用缓存数据。
+- 响应字段覆盖 `message_code`、`can_attempt_sync`、`can_use_cached_data`、`needs_reconnect`、`user_action`、原始连接/token 状态和最近同步时间。
+- 本切片不改 DB schema，不做 token refresh，不删除派生数据，不接新 provider。
+- 本地验证:
+  - RED：新增合同测试先失败于 `KeyError: 'connection_health'`。
+  - GREEN：`backend/tests/test_data_connections.py` `5 passed`。
+  - 相邻回归：`backend/tests/test_healthkit_adapter.py backend/tests/test_fhir_bundle_import.py --no-cov` `14 passed`。
+  - `compileall`、`scripts/check_doc_drift.py`、`git diff --check` 均通过。
+- 已发布:
+  - 代码 commit `d4003e1594fc89f76e4353b4dd29c0876e3857e6`。
+  - 后端部署 HEAD `d4003e1594fc89f76e4353b4dd29c0876e3857e6`；部署健康分 `60/60`；skills manifest `22 = 22`。
+  - 生产 user_id=3 只读 HTTP smoke：`http_status=200 connections=0 health_count=0`。
+  - 因 user_id=3 当前没有连接记录，使用生产服务器本机未提交事务临时构造连接并 rollback，合同 smoke：`active:healthy/none/True degraded:degraded/reconnect/True revoked:revoked/reconnect/False`。
+
 2026-06-28 代码对比后的状态修正:
 
 - A 切片的最小 DataConnection / ConsentGrant / ProvenanceRecord 底座已经在 main 存在，不再作为“未实现底座”重复执行。
@@ -503,15 +522,15 @@ Mobile/Watch 待规划工作：
 仍未完成，继续保留在后续计划:
 
 - A 深化：DataConnection / ConsentGrant / ProvenanceRecord 的产品化、更多 provider 覆盖和 Review provenance 展示。
-- ConnectorPolicy 最小字段和连接器降级策略。
+- ConnectorPolicy 后续深化：rate limit、token refresh、provider retry policy、撤权后删除和审计 UI。
 - runtime provenance 继续扩展到 HealthKit / wearable/device / report provider 的更完整 key facts。
 
 建议范围 A：
 
-- 后端：在现有 `DataConnection` / `ConsentGrant` / `ProvenanceRecord` 底座上补 ConnectorPolicy、撤权后删除和更多 provider metadata。
+- 后端：在现有 `DataConnection` / `ConsentGrant` / `ProvenanceRecord` / `ConnectorPolicy` 底座上补 token refresh、rate limit、撤权后删除和更多 provider metadata。
 - 导入：扩展报告/FHIR Bundle、HealthKit 和 wearable/device source 的统一 provenance，并继续扩展 Today/runtime context 的 key facts 覆盖面。
 - Mobile/Mac：连接中心展示连接状态、授权 scope、最近同步、撤权入口和 degraded explanation。
-- 测试：ConnectorPolicy degraded behavior test、HealthKit/device runtime provenance serialization test、ConsentGrant revoke/delete test、跨 provider metadata contract test。
+- 测试：HealthKit/device runtime provenance serialization test、ConsentGrant revoke/delete test、跨 provider metadata contract test、token refresh/retry policy contract test。
 
 建议范围 B：
 
@@ -555,3 +574,4 @@ Mobile/Watch 待规划工作：
 | 2026-06-28 | 标记 B 切片第三/四个实现：Chat 动态卡片与 Watch summary Runtime 化 | Chat 和 Watch 开始消费同一个 rolling runtime projection，后续只剩执行反馈重排与数据底座。 |
 | 2026-06-28 | 标记 B 切片第五个实现：执行反馈驱动 future replan | skip reason、snooze、completion 已进入未来 7 天投影的排序、解释和 runtime context；DataConnection/Consent/Provenance 状态修正为最小底座已存在、后续产品化。 |
 | 2026-06-28 | 标记 A/B 交叉切片：Runtime 关键事实 provenance 摘要 | Today/runtime top action 不再只有黑箱结论，已能把 FHIR/report biomarker 关键事实关联到 ProvenanceRecord 脱敏摘要。 |
+| 2026-06-28 | 标记 A 切片：ConnectorPolicy 降级连接健康解释 | DataConnection API 已返回 `connection_health`，三端连接中心后续可直接消费统一降级/重连/缓存可用性合同。 |

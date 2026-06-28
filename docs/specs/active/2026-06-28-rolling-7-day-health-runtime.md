@@ -33,6 +33,19 @@
 
 返回同一合同的一天投影，用于 Watch、首页或 Chat 只需要今日行动的场景。
 
+### `GET /api/v1/data-connections/me`
+
+返回用户数据源连接状态。每个 connection 包含 `connection_health`，供 Mobile/Mac/Web 连接中心和运行时解释层共用:
+
+- `status`: `healthy | degraded | revoked | unknown`。
+- `severity`: `ok | warning | blocked`。
+- `message_code`: 稳定机器码，前端负责 i18n 和文案映射。
+- `can_attempt_sync`: 当前是否可以尝试同步。
+- `can_use_cached_data`: 降级或 token 失效时，是否还允许只读使用已授权缓存数据。
+- `needs_reconnect`: 是否需要用户重新授权。
+- `user_action`: `none | retry_later | reconnect`。
+- `connection_status` / `token_status` / `degraded_behavior` / `last_success_at` / `last_attempt_at` / `sync_error`: 原始状态摘要，便于调试和 UI 解释。
+
 ## 3. Runtime Context
 
 每个 runtime item 必须包含:
@@ -68,6 +81,7 @@
 ## 6. 后续切片
 
 - runtime provenance 继续扩展到 HealthKit、wearable/device、体检报告 provider 的更多 key facts，并在 Review 中展示纠错链路。
+- DataConnection 连接中心继续扩展到 Mobile/Mac/Web UI、撤权后删除、token refresh、rate limit 和更多 provider metadata。
 
 ## 7. 已完成后续切片
 
@@ -103,3 +117,11 @@
 - 当前最小覆盖 FHIR/report 导入后的 `BiomarkerObservation`，由 `verify_by.metrics`、trajectory signals 和 canonical biomarker code 关联 `ProvenanceRecord`。
 - 摘要只返回受控字段，不返回 `raw_hash`、原始报告内容或完整 source metadata。
 - Runtime root context 新增 `provenance_policy=runtime_key_fact_provenance_v1`。
+
+### 2026-06-28 · ConnectorPolicy Connection Health
+
+- `serialize_data_connection()` 已新增只读 `connection_health` 合同。
+- active 连接返回 `healthy/ok/none`，可尝试同步，也可使用缓存数据。
+- 鉴权失败降级返回 `degraded/warning/reconnect`，不可继续尝试同步，但在 `read_only` 降级策略下仍可使用已授权缓存数据做只读判断。
+- revoke 后返回 `revoked/blocked/reconnect`，不可尝试同步，也不可继续使用缓存数据。
+- 已发布：backend SHA `d4003e1594fc89f76e4353b4dd29c0876e3857e6`；生产 smoke 使用 user_id=3 只读 HTTP + rollback 事务合同验证。
