@@ -44,6 +44,23 @@ description: "复元产品全生命周期总指挥:把一句用户需求,经『�
 - **任何 session 接手先读 Dossier 当前状态,从那一阶段继续**(可恢复)。
 - Gate 裁决必须写进 Dossier(诚实:REJECT/BLOCK 也写,不藏)。
 
+## Workflow Run Ledger — 可恢复执行脊柱
+
+进入交付环(S4+)且存在跨代理 fan-out / 长验证 / 对抗评审时,用文件型 ledger 记录 checkpoint、预算和 trace:
+
+```bash
+python3 scripts/harness_workflow_trace.py init \
+  --kind product-pipeline \
+  --dossier docs/dossiers/<date>-<slug>.md \
+  --budget-tokens <hard-limit> \
+  --label "<short label>"
+```
+
+- 将输出 `run_path` 写进 Dossier;原始 JSONL 留在本地 `docs/_generated/harness-runs/`,不要提交。
+- `event --event spawn|checkpoint|verdict --phase "S5"` 记录每次派生、检查点和裁决。
+- 返回码 `2` 表示预算将超限,按 Gate 纪律 STOP,回 S3/S4 缩小范围或让用户拍板。
+- 恢复时先 `summary --run <run_path>`,用 `latest_checkpoint` 定位断点,不要靠记忆重跑整条链。
+
 ---
 
 ## 阶段 × Gate 详解(每条注明:做什么 / 复用什么 / 产出物 / Gate)
@@ -89,12 +106,13 @@ description: "复元产品全生命周期总指挥:把一句用户需求,经『�
 ### S4 · 需求分解(规划 → 研发分支/任务)
 - **做什么**:把规划的阶段拆成**具体研发任务**(每任务链接回规划某 task);定**跨端 API 契约**(请求/响应 shape)写进 `_workspace/`;`TaskCreate` 建任务;判定每任务 **OTA vs EAS**、触及层(frozen core/agent fleet/mutable business)、是否需 feature spec(§8.1)。
 - **并发检查**:`git fetch` + `gh pr list` —— 本仓库并发多,先确认没被别的分支/agent 抢先([[project_concurrent_agents_check_main_first]])。
-- **产出物**:Dossier「研发任务」节(任务表 + 契约 + 分支策略)。
+- **产出物**:Dossier「研发任务」节(任务表 + 契约 + 分支策略 + workflow `run_path`)。
 
 ### S5 · 实现 — **委托 `health-harness-orchestrator`**
 - **做什么**:把 S4 任务交给开发团队编排器(计划→实现 fan-out:`backend-engineer`‖`mobile-engineer`‖`mac-engineer`‖`frontend-engineer`)。
 - **隔离**:并发 agent 切分支 → 有状态编辑用 `git worktree`(显式 commit hash 建,见 `using-git-worktrees`);别把 build+push 放进同一并行批次([[project_shared_worktree_use_git_worktree]])。从 `origin/main` 干净起分支。
 - **产出物**:分支 + commit,记进 Dossier。
+- **Trace**:每个 agent 派生、阶段 checkpoint、G3/G4 裁决都写入 Run Ledger;中断后从 ledger summary 恢复。
 
 ### G3 · 测试 Gate
 - **做什么**:`qa-verifier` 跑对应闸门(pytest/doc-drift/tsc/jest/swift/前端 vitest+page-freeze);**部署前集成闸**:全增量测试 CI 模式合跑(`DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai`),**直读 passed/failed,绝不 `| tail`**([[feedback_pytest_pipe_masks_exit_code]]);查 `gh run list --branch main` 真实色。高风险面加一次 **Codex 跨家族 capstone**([[feedback_autonomous_campaign_integration_gate_and_crossfamily_capstone]])。

@@ -69,6 +69,7 @@
 1. **Hooks(P0,低工本,最高价值)**:把**已存在的** doc-drift + R4/fail-loud 不变量包成 PreToolUse/Stop hook + SessionStart bootstrap。你已经写了确定性检查,只是让它更早、更机械地触发。单点最高 value/effort。
 2. **LLM 层 eval + LLM-judge(P0,中,高)**:promptfoo 声明 eval + Hamel critique-shadowing(创始人当 judge)+ 换模型回归闸。让"证伪工厂"哲学**对 LLM 层也成立**,不只对确定性层。你今天按用户切模型零闸=已知活风险。
 3. **Workflow 持久化 + 预算 + trace(P1,中)**:checkpoint/resume + token 上限 + JSONL trace。本 session 已两次被它咬(PRD review 被打断全丢、这次综合 agent 挂)。
+   - 2026-06-28 implementation note:已新增 `scripts/harness_workflow_trace.py` 文件型 JSONL ledger,支持 `init/event/summary`、硬 token budget、`budget_exceeded` 返回码 2、checkpoint summary;并已接入 `health-harness-orchestrator` / `product-pipeline` 使用说明。下一步若继续深化,应把 subagent spawn/verdict 自动写入该 ledger,而不是只靠人工命令。
 4. **plugin 打包(P1,中)**:marketplace.json + per-project adapter,终结手抄 4 次。
 5. **spec-kit/BMAD 工艺借鉴(P2)**:spec-template + /clarify + 只读 /analyze 一致性闸 + scale-adaptive 中档 + correct-course。
 6. **记忆检索/选择性 priming(P2)**:MEMORY.md 触顶前上 metaswarm tag-prime 或 Letta 核心+archival。

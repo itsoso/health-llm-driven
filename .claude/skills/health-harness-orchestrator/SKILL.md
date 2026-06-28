@@ -10,6 +10,23 @@ description: "复元健康平台的代理团队编排器。当用户要在本仓
 ## 执行模式:代理团队(默认)
 2 个以上代理协作时优先组队(`TeamCreate` + `SendMessage` + `TaskCreate`),团员自调度、互相质疑、共享发现。所有代理 `model: "opus"`。
 
+## Run Ledger(checkpoint / budget / trace)
+
+凡是跨 2 个以上代理、可能被中断、或需要对抗评审的工作,先建本地 JSONL ledger:
+
+```bash
+python3 scripts/harness_workflow_trace.py init \
+  --kind health-harness \
+  --dossier docs/dossiers/<date>-<slug>.md \
+  --budget-tokens <hard-limit> \
+  --label "<short label>"
+```
+
+- 把输出的 `run_path` 记录到 Dossier「研发任务/验证记录」里;原始 JSONL 在 `docs/_generated/harness-runs/` 本地保存,不提交。
+- 每次派生/检查点/裁决都追加事件: `event --event spawn|checkpoint|verdict --phase "Phase 2" --agent backend-engineer --status started --tokens <n>`。
+- `event` 返回码 `2` = 预算将超限,必须 STOP、缩小范围或重新拍板,不能继续 fan-out。
+- 中断恢复时先跑 `summary --run <run_path>`,从 `latest_checkpoint` 和 `agents` 继续。
+
 ## 团队构成
 
 | 团员 | 类型 | 职责 |
@@ -35,6 +52,7 @@ leader 拆任务 → `TaskCreate`。跨端任务先定 **API 契约**(请求/响
 ### Phase 2:实现(fan-out,团队)
 - 按任务触及的端并行:`backend-engineer` ‖ `mobile-engineer` ‖ `mac-engineer` ‖ `frontend-engineer`;后端定下 shape 后 `SendMessage` 给各端对齐类型/hook(Web 注意页面冻结,默认不开新页)。
 - 隔离原则:并发 agent 会切分支 → 有状态编辑用 `git worktree`(显式 commit hash 建,见 `using-git-worktrees`),edit→build→commit 在隔离工作树里;别把 build+push 放进同一并行批次。
+- 每个 fan-out 分支创建/完成/阻断都写入 Run Ledger;大段综合前先看 `summary`,避免丢失已完成分支。
 
 ### Phase 3:增量 QA(每个模块完成即跑,非最后一次)
 `qa-verifier` 跑对应闸门;**真红**回对应实现者修;**假红**(本地 Redis / runner 假死)标注、不动测试。
