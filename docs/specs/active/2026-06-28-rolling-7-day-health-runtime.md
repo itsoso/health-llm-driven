@@ -126,6 +126,15 @@
 - 本切片不新增诊断/处方/剂量/因果证明文案，不改变行动排序或自动重排。
 - 已发布：backend SHA `280b572577b963b28b64b638450b0a33851ffdaf`；Mobile OTA group `37f226c1-2de2-4d15-bbcc-3387590e3e56`；生产 smoke `build_health_operating_review(user_id=3)` 返回 `backtest_status=not_ready timeline_count=0`。
 
+### 2026-06-28 · Prediction Record Attachment MVP
+
+- `PersonalPrediction` context 已通过统一 helper 进入 Trajectory/Agenda/Daily Plan action。
+- Daily Plan feedback/event 写入执行事件时，会把 carried context 标准化为 `prediction_record`，作为 Review backtest 的稳定输入。
+- Review backtest result 已保留模型和证据 metadata：`source_model`、`prediction_type`、`domain`、`unit`、`uncertainty`、`evidence_tier`、`model_version`、`review_hint`、`requires_clinician`。
+- 低置信预测仅作为复盘记录携带，继续暴露 uncertainty/evidence tier/boundary，不新增行动、不触发自动干预、不做因果证明。
+- Mobile `healthOperatingReview` service 已同步 additive metadata 类型；本切片不新增可见 UI。
+- 已发布：backend SHA `c47cd109749433ffad35c73af30c81802a9fe212`；Mobile OTA group `20d8c133-08f5-4873-9bda-c9d450fc3d5a`；后端部署健康分 `60/60`。
+
 ### 2026-06-28 · Feedback-driven Future Replan
 
 - Future projection 已读取最近 7 天 `HealthProtocolEvent`，把 completion、skip、snooze 转为 future runtime 的重排因子。

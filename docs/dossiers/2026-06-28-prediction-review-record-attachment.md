@@ -4,8 +4,8 @@
 |---|---|
 | slug | `prediction-review-record-attachment` |
 | 创建日期 | 2026-06-28 |
-| 当前阶段 | S4 需求分解 |
-| 状态 | building |
+| 当前阶段 | S8 沉淀 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | backend deploy |
 
@@ -75,7 +75,7 @@
   - [x] T2 RED: Daily Plan feedback/event 应把 `personal_prediction_context` 标准化写入 `prediction_record`。
   - [x] T3 RED: Review backtest result 应透出 prediction record metadata。
   - [x] T4 GREEN: 实现 attachment helper 与 review metadata。
-  - [ ] T5 验证、部署、计划回写。
+  - [x] T5 验证、部署、计划回写。
 - 分支: `codex/prediction-review-record-attachment`
 - 并发检查: 基于 `origin/main` 隔离 worktree，主工作区存在 Claude/harness 并发改动，不混入本切片。
 
@@ -116,20 +116,38 @@
 ## S6 · 部署
 
 - 路由: backend deploy。
-- 部署 SHA / 回滚点: 待定。
+- 代码 SHA: `c47cd109749433ffad35c73af30c81802a9fe212`。
+- 后端部署: `./deploy.sh -b` 从干净 deploy worktree 部署 `origin/main@c47cd109`。
+- 回滚点: `feedffb4`。
+- Mobile 发布: 因 main 中有 Mobile JS/TS 变更未 OTA，按纯 JS/TS 路径发布 production OTA；未走 TestFlight，未构建 native 二维码包。
+- OTA: group `20d8c133-08f5-4873-9bda-c9d450fc3d5a`；iOS update `019f0e7c-fad9-7bec-9b17-b7b2b6539a02`。
 
 ## G5 · 部署健康闸
 
-- 待定。
+- `deploy.sh -b` 健康度 `60/60`，PASS。
+- 服务器服务状态: `health-backend`、`celery-worker`、`celery-beat` 均为 `active`。
+- 服务器 HEAD: `c47cd109749433ffad35c73af30c81802a9fe212`。
+- **裁决**: PASS
 
 ## S7 · 上线验证
 
-- 待定。
+- 生产 `/api/v1/health` 返回 `200`，body: `api=running/database=connected/redis=connected/celery=connected`。
+- 生产 `/api/v1/daily-plan/review?window_days=7` 未鉴权返回 `401`，确认敏感 Review API 仍受 Bearer auth 保护。
+- Mobile OTA 已发布到 production channel，设备下次冷启或后台 30s+ 可拉取新 bundle。
 
 ## G6 · 验证闸
 
-- 待定。
+- 后端目标路径已在 production 部署并通过 smoke。
+- 本切片 Mobile 改动为 service 类型/test 与随 main 发布的 JS bundle；无新增可见 UI，不需要真机视觉确认。
+- **裁决**: PASS
 
 ## S8 · 沉淀
 
-- 待上线验证后回写计划状态。
+- 已回写:
+  - `docs/plans/2026-06-27-health-runtime-governance-plan.md`
+  - `docs/specs/active/2026-06-28-rolling-7-day-health-runtime.md`
+- 后续切片:
+  - `Specialist` / `Problem` attachment。
+  - confidence change history。
+  - inconclusive 原因和 next-step/replan。
+  - 可查询的长期 prediction record 索引。
