@@ -5,7 +5,7 @@
 **不重跑重型测试套件** —— 那是 `scripts/run-all-tests.sh` / CI 的活, 这里 --full 委托过去,
 不重造 (复用 > 重写)。
 
-  python scripts/validate.py          # 结构闸门: doc-drift (blocking) + ruff (report-only)
+  python scripts/validate.py          # 结构闸门: doc-drift + dossier-consistency (blocking) + ruff (report-only)
   python scripts/validate.py --full   # 额外委托 run-all-tests.sh 跑全栈测试
   python scripts/validate.py -v       # 打印失败检查的完整尾部输出
 
@@ -55,6 +55,11 @@ def main() -> int:
 
     checks = [
         Check("doc-drift", [sys.executable, "scripts/check_doc_drift.py"], blocking=True),
+        Check(
+            "dossier-consistency",
+            [sys.executable, "backend/scripts/check_dossier_consistency.py"],
+            blocking=True,
+        ),
         Check(
             "ruff (backend, report-only)",
             ["ruff", "check", "backend/app", "--output-format=concise"],

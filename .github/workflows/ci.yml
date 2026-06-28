@@ -68,6 +68,14 @@ jobs:
           TZ: Asia/Shanghai
         run: python scripts/check_doc_drift.py
 
+      - name: Check dossier consistency
+        env:
+          SECRET_KEY: test-secret-key-32-chars-minimum!!
+          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
+          DATABASE_URL: "sqlite:///:memory:"
+          TZ: Asia/Shanghai
+        run: python backend/scripts/check_dossier_consistency.py
+
       - name: Eval Golden Set (safety + insight + retrieval, no LLM cost)
         working-directory: backend
         env:
