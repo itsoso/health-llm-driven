@@ -75,11 +75,12 @@
 - 集成闸(CI 模式 `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai`,**不 `| tail`**):
   - RED：`backend/tests/test_agenda_range_complete.py::test_runtime_context_includes_key_fact_provenance_for_biomarker` 先失败于 `KeyError: 'provenance'`。
   - GREEN：同测试通过。
-  - `backend/tests/test_agenda_range_complete.py`：`12 passed`。
-  - `backend/tests/test_agenda_range_complete.py backend/tests/test_data_connections.py backend/tests/test_fhir_bundle_import.py backend/tests/test_healthkit_adapter.py --no-cov`：`30 passed`。
+  - 生产 smoke 发现普通协议项会产生 `provenance.status=missing` 噪声后，新增 `test_runtime_context_omits_provenance_for_plain_protocol_without_key_fact`，先失败再通过。
+  - `backend/tests/test_agenda_range_complete.py`：`13 passed`。
+  - `backend/tests/test_agenda_range_complete.py backend/tests/test_data_connections.py backend/tests/test_fhir_bundle_import.py backend/tests/test_healthkit_adapter.py --no-cov`：`31 passed`。
   - `backend/tests/test_watch_actions.py backend/tests/test_watch_summary.py backend/tests/test_inline_cards_runtime_agenda.py backend/tests/test_daily_artifact.py --no-cov`：`47 passed`。
   - `python -m compileall -q backend/app/services/agenda_service.py backend/tests/test_agenda_range_complete.py`：通过。
-  - `scripts/check_doc_drift.py`：系统 Python 因缺依赖失败；项目 venv Python 重跑通过，确认 CLAUDE.md + ARCHITECTURE.md 数字与代码一致。
+  - `scripts/check_doc_drift.py`：系统 Python 因缺依赖失败；项目 venv Python 重跑通过。fast-forward 到最新 main 后并发 `lab_plausibility.py` 使 service 文件数从 298 变 299，已跑 `scripts/dump_system_map.py` 并同步 `docs/ARCHITECTURE.md`，最终 doc drift 通过。
 - main CI 真实色(`gh run list`):未查
 - Codex 跨家族 capstone(高风险):不触发，未改药物/基因/用药写路径或安全规则。
 - **裁决**:绿

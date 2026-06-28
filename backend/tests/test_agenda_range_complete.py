@@ -264,6 +264,21 @@ def _runtime_item_for_protocol(body: dict, protocol_id: int, day_index: int = 1)
     raise AssertionError(f"runtime item not found for protocol {protocol_id}")
 
 
+def test_runtime_context_omits_provenance_for_plain_protocol_without_key_fact(
+    client, auth_user_and_headers, monkeypatch
+):
+    """普通协议没有明确关键事实时,不应把 missing provenance 噪声塞进 every item。"""
+    _, h = auth_user_and_headers
+    _freeze_agenda_today(monkeypatch, date(2026, 6, 28))
+    protocol_id = client.post("/api/v1/protocols/seed/water-cup", headers=h).json()["id"]
+
+    r = client.get("/api/v1/agenda/range?days=2&mode=runtime", headers=h)
+
+    assert r.status_code == 200, r.text
+    item = _runtime_item_for_protocol(r.json(), protocol_id)
+    assert "provenance" not in item["runtime_context"]["evidence"]
+
+
 def test_runtime_future_projection_downranks_recent_skip_reason(
     client, db, auth_user_and_headers, monkeypatch
 ):

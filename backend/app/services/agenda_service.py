@@ -1211,7 +1211,7 @@ def _runtime_key_fact_provenance(
                 .all()
             )
 
-    if not records and not metric_codes and not (source_type and source_id is not None):
+    if not records and not metric_codes:
         return None
 
     deduped: List[ProvenanceRecord] = []

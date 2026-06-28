@@ -485,7 +485,8 @@ Mobile/Watch 待规划工作：
 - 本地验证：
   - RED：新增合同测试先失败于 `runtime_context.evidence.provenance` 缺失。
   - GREEN：`backend/tests/test_agenda_range_complete.py` `12 passed`。
-  - provenance 回归：`backend/tests/test_agenda_range_complete.py backend/tests/test_data_connections.py backend/tests/test_fhir_bundle_import.py backend/tests/test_healthkit_adapter.py --no-cov` `30 passed`。
+  - 生产 smoke 发现普通协议项会产生 `provenance.status=missing` 噪声后，新增 RED/GREEN 回归，改为没有 metric 且无 direct provenance 时不返回 provenance 字段。
+  - provenance 回归：`backend/tests/test_agenda_range_complete.py backend/tests/test_data_connections.py backend/tests/test_fhir_bundle_import.py backend/tests/test_healthkit_adapter.py --no-cov` `31 passed`。
   - surface 兼容回归：`backend/tests/test_watch_actions.py backend/tests/test_watch_summary.py backend/tests/test_inline_cards_runtime_agenda.py backend/tests/test_daily_artifact.py --no-cov` `47 passed`。
 - 本切片不新增写路径、不改变排序、不新增医疗结论；只把已有真实数据来源投影到运行时解释层。
 
