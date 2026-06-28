@@ -216,6 +216,18 @@ class Settings(BaseSettings):
     # 多模型 panel(高风险裁决多模型投票):primitive,默认关
     multi_model_panel: bool = False
 
+    # Legacy Chroma/RAG 知识库运行时开关。
+    # 默认 False: 用户问答与 health agent 只能使用 reviewed System KB。
+    # 仅在本地调试旧索引时显式打开。
+    legacy_knowledge_runtime_enabled: bool = False
+
+    # dedao-kbase -> Reva System KB draft 同步配置。
+    # export URL 是传输通道，不是运行时医疗权威；同步结果始终先进入 draft/review gate。
+    dedao_kbase_export_url: Optional[str] = None
+    dedao_kbase_auth_token: Optional[str] = None
+    dedao_kbase_source_root: str = "/Users/liqiuhua/work/personal/down-dedao"
+    system_kb_artifact_dir: Optional[str] = None
+
     # 邀请码配置
     default_invite_code: str = "LLM"  # 默认邀请码
 

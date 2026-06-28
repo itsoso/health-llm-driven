@@ -10,6 +10,7 @@ from threading import Thread
 
 from app.services.dedao_kbase_export_importer import compile_dedao_kbase_export_artifacts
 from app.services.system_knowledge_ingest import validate_artifact_review_gate
+from app.models.system_knowledge import KBAudit
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -225,6 +226,45 @@ def test_ingest_dedao_kbase_export_cli_can_fetch_remote_export_url(tmp_path):
     claim = _jsonl(artifact_dir / "claims.jsonl")[0]
     assert claim["metadata"]["origin"] == "dedao-kbase-export"
     assert claim["metadata"]["source_commit"] == "abc1234"
+
+
+def test_dedao_kbase_online_sync_task_writes_draft_artifacts_and_audit(tmp_path, db):
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_export_draft_once
+
+    source_root = tmp_path / "dedao-kbase"
+    artifact_dir = tmp_path / "system-kb-artifacts"
+    _write_export(source_root)
+    export_body = (source_root / "artifacts" / "system_kb_export.json").read_bytes()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _export_handler(export_body))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        export_url = f"http://127.0.0.1:{server.server_port}/api/system-kb/export"
+        result = sync_dedao_kbase_export_draft_once(
+            db,
+            export_url=export_url,
+            auth_token="secret-token",
+            artifact_dir=artifact_dir,
+            source_root=source_root,
+            actor="test:dedao-kbase-sync",
+            now=datetime(2026, 6, 28, 9, 0, tzinfo=UTC),
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert result["status"] == "draft_written"
+    assert result["export_url"] == export_url
+    assert result["draft_manifest"]["serving_allowed"] is False
+    assert result["gate"]["serving_allowed"] is False
+    claim = _jsonl(artifact_dir / "claims.jsonl")[0]
+    assert claim["metadata"]["review_status"] == "draft"
+    assert claim["metadata"]["source_commit"] == "abc1234"
+
+    audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_export_sync_draft").one()
+    assert audit.actor == "test:dedao-kbase-sync"
+    assert audit.diff["source_commit"] == "abc1234"
 
 
 def _export_handler(export_body: bytes):

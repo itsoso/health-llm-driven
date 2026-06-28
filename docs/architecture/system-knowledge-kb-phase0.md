@@ -146,7 +146,7 @@ New behavior:
 - `POST /api/v1/admin/knowledge/reindex` refreshes `kb_documents.tsv` and SHA-256 `content_hash`.
 - `apply_confidence_decay(...)` and `scripts/decay_system_kb_confidence.py` implement the first lifecycle hook for stale claim confidence decay.
 - Orchestrator attaches matched system KB claim IDs to specialist output as `evidence_refs`, so mobile can render evidence chips on non-gene cards in a later UI pass.
-- KnowledgeLibrarian now prefers system KB V2 when a DB session is present, returning `system_knowledge_reference` findings and claim-level `evidence_refs`; the old Chroma wiki search remains fallback.
+- KnowledgeLibrarian now prefers system KB V2 when a DB session is present, returning `system_knowledge_reference` findings and claim-level `evidence_refs`; the old Chroma wiki path is disabled by default and only runs when `LEGACY_KNOWLEDGE_RUNTIME_ENABLED=true`.
 
 New taxonomy:
 

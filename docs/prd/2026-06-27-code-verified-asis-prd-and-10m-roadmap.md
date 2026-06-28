@@ -64,7 +64,7 @@ Claude 的竞品调研有两类价值：
 | **Execution Event** | ✅ real | HealthEvent + HealthProtocolEvent（唯一约束）一等；device-observation COMPLETION 走 `complete_by_ref` 带幂等 + 跨用户隔离测试 | device-observation COMPLETION 严格测试但**无活产者**；Rokid 俯卧撑 session→ExerciseRecord 自动写接缝未闭 |
 | **Outcome Review 复盘** | 🟡 partial | ActionCard 结果评分（`outcome_grader` Celery → accuracy_score）；InterventionCycle/OutcomeMetric（baseline→recheck→delta，RCV 显著性）；health_operating_review 带归因 caveat | InterventionCycle recheck **无定时自动复测**，只在用户/LLM 显式调用时闭；预测 backtest 是 inert 占位；结果评分只覆盖 ActionCard，不覆盖自由文本 agent 输出 |
 | **Causal Memory 因果记忆** | 🟡 partial | `causal_memory.derive_causal_notes`（事件×指标，\|pct\|≥5%）；AgentAuditLog→推理轨迹/eval/审计；TwinSnapshot dedupe；intervention_significance RCV 门 | **有意做弱**（时序关联、硬编码"相关非因果"、小白名单）；crystallize 入库环刻意 inert（只产草稿）；`protocol_learning_watch` 写 `notified=False` 审计行**无人读**（开环） |
-| **Knowledge 知识库** | 🟡 beta | System-KB v2 reviewed-first DB 支撑（**419 claims / 219 entities / 3171 relations，100% reviewed**）；hybrid search + twin-match + prompt 注入；导入/服务/eval 三处 reviewed 门；**34/34 eval slice 通过**；confidence 衰减按 beat 运行 | KB eval 仅测试期跑，无生产/定时 eval 信号；legacy ChromaDB RAG 仍喂 diet/supplement 且需 OpenAI+vectorstore 才工作；vector 流是同义词扩展不是真 embedding |
+| **Knowledge 知识库** | 🟡 beta | System-KB v2 reviewed-first DB 支撑（**419 claims / 219 entities / 3171 relations，100% reviewed**）；hybrid search + twin-match + prompt 注入；导入/服务/eval 三处 reviewed 门；**34/34 eval slice 通过**；confidence 衰减按 beat 运行 | KB eval 仅测试期跑，无生产/定时 eval 信号；legacy ChromaDB RAG 已默认关闭，仅显式 `LEGACY_KNOWLEDGE_RUNTIME_ENABLED=true` 时可作为旧路径启用；vector 流是同义词扩展不是真 embedding |
 | **External Agent 外部** | 🟡 partial | OpenClaw SSE 代理上线带 per-user `HEALTH_API_TOKEN` 注入（真多租户 skill 鉴权）；22 个 SKILL.md；可分发 skills 部署校验；assistant-openclaw BYO 绑定测试 | `_needs_skill` OpenClaw 分支在默认 provider 下死；MCP server（18 工具）未挂载无生产消费；Telegram inbound 单硬编码用户；kuaishou/food_order/skills-hub 是 `NotImplementedError`/不存在仓库的桩 |
 
 ### 1.2 一等对象账本（是否真接进每日闭环）
@@ -249,7 +249,7 @@ Enter键 = Write权限 × 个体化先验 × 闭环验证
 - **重复 `/checkin/*`**：`health_checkin.py`(v1) 与 `checkin.py`(v2) 并挂。
 - **3 套规划面**：HealthProtocol→`build_today_spine`（新）、DailyOperatingPlan（脊柱明确拒绝调它）、WeeklyPlan/PeriodGoal（legacy）。
 - **2 个 daily-insight 任务**：`insights.py`（09:20）vs `notifications.py`（20:30），不同引擎都排程。
-- **2 套 RAG**：新 reviewed-first DB system-KB v2（承重）vs legacy ChromaDB 得到-wiki（仍喂 diet+supplement）。
+- **2 套 RAG**：新 reviewed-first DB system-KB v2（承重）vs legacy ChromaDB 得到-wiki（默认关闭，仅显式开关启用）。
 - **158 router / ~948 endpoint**；`genetic_data.py` 2410 行 / 23 端点（远超 500 行预算）。
 
 ---

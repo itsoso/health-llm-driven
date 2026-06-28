@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from app.services.down_dedao_wiki_bridge import (
     DownDedaoBridgeResult,
@@ -117,6 +119,25 @@ def _read_export(path: Path) -> dict[str, Any]:
         raise FileNotFoundError(f"dedao-kbase export not found: {path}")
     payload = json.loads(path.read_text(encoding="utf-8"))
     _validate_export_payload(payload, str(path))
+    return payload
+
+
+def fetch_dedao_kbase_export_payload(export_url: str, *, auth_token: str | None = None) -> dict[str, Any]:
+    """Fetch a private dedao-kbase System KB export over HTTP."""
+    headers = {"Accept": "application/json"}
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+    request = Request(export_url, headers=headers, method="GET")
+    try:
+        with urlopen(request, timeout=30) as response:
+            body = response.read()
+    except HTTPError as exc:
+        raise RuntimeError(f"dedao-kbase export fetch failed: HTTP {exc.code} {export_url}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"dedao-kbase export fetch failed: {export_url}: {exc.reason}") from exc
+
+    payload = json.loads(body.decode("utf-8"))
+    _validate_export_payload(payload, export_url)
     return payload
 
 

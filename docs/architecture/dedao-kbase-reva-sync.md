@@ -128,6 +128,22 @@ backend/venv/bin/python backend/scripts/ingest_dedao_kbase_export.py \
   --json-summary
 ```
 
+Scheduled online sync. Reva can also poll the private kbase export on a weekly Celery beat. This task only writes draft artifacts and a KB audit row; it does not promote anything into serving without the existing human review and release gate.
+
+Required settings:
+
+```text
+DEDAO_KBASE_EXPORT_URL=https://kbase.executor.life/api/system-kb/export
+DEDAO_KBASE_AUTH_TOKEN=<private-token>
+SYSTEM_KB_ARTIFACT_DIR=/opt/health-app/backend/data/system_kb_v2_seed
+```
+
+Task:
+
+```text
+app.tasks.system_knowledge_lifecycle.sync_dedao_kbase_export_draft
+```
+
 Then run the normal release gate:
 
 ```bash
@@ -156,6 +172,7 @@ It must not become a runtime medical authority. Runtime agent tools should conti
 
 - Import service: `backend/app/services/dedao_kbase_export_importer.py`
 - CLI: `backend/scripts/ingest_dedao_kbase_export.py`
+- Scheduled draft sync: `backend/app/tasks/system_knowledge_lifecycle.py`
 - Draft/review gate: `backend/app/services/system_knowledge_ingest.py`
 - Serving import gate: `backend/app/services/system_knowledge_importer.py`
 - Serving lookup filter: `backend/app/services/system_knowledge_service.py`

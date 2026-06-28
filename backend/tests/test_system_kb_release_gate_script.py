@@ -9,6 +9,31 @@ import subprocess
 import sys
 
 
+def test_release_gate_manifest_count_validation_detects_drift(tmp_path):
+    from scripts.run_external_health_knowledge_release_gate import validate_artifact_manifest_counts
+
+    artifact_dir = tmp_path / "seed"
+    artifact_dir.mkdir()
+    (artifact_dir / "entities.jsonl").write_text('{"doc_id":"entity:gene:MTHFR"}\n', encoding="utf-8")
+    (artifact_dir / "claims.jsonl").write_text('{"doc_id":"claim:c1"}\n', encoding="utf-8")
+    (artifact_dir / "contraindications.jsonl").write_text("", encoding="utf-8")
+    (artifact_dir / "eval_cases.jsonl").write_text("", encoding="utf-8")
+    (artifact_dir / "relations.jsonl").write_text("", encoding="utf-8")
+    (artifact_dir / "pages.jsonl").write_text("", encoding="utf-8")
+    (artifact_dir / "protocols.jsonl").write_text("", encoding="utf-8")
+    (artifact_dir / "manifest.json").write_text(
+        '{"counts":{"entities":2,"claims":1,"contraindications":0,"eval_cases":0,"relations":0,"pages":0,"protocols":0}}\n',
+        encoding="utf-8",
+    )
+
+    report = validate_artifact_manifest_counts(artifact_dir)
+
+    assert report["status"] == "fail"
+    assert report["mismatches"] == [
+        {"artifact": "entities", "manifest": 2, "actual": 1},
+    ]
+
+
 def test_release_gate_script_runs_jsonl_import_lint_and_eval_against_fresh_sqlite(tmp_path):
     backend_root = Path(__file__).resolve().parents[1]
     script = backend_root / "scripts" / "run_external_health_knowledge_release_gate.py"

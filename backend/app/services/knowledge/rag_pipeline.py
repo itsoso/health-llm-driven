@@ -8,6 +8,8 @@ import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
+from app.config import settings
+
 from .vectorstore import vector_store
 from .document_loader import document_loader
 
@@ -40,8 +42,6 @@ class RAGPipeline:
 
     def _initialize(self):
         """初始化 RAG 管道"""
-        from app.config import settings
-
         if OPENAI_AVAILABLE and settings.openai_api_key:
             client_kwargs = {"api_key": settings.openai_api_key}
             if settings.openai_base_url:
@@ -54,6 +54,8 @@ class RAGPipeline:
 
     def is_available(self) -> bool:
         """检查 RAG 管道是否可用"""
+        if not settings.legacy_knowledge_runtime_enabled:
+            return False
         return self.openai_client is not None and vector_store.is_available()
 
     def retrieve_relevant_knowledge(
@@ -73,6 +75,10 @@ class RAGPipeline:
         Returns:
             相关知识列表
         """
+        if not settings.legacy_knowledge_runtime_enabled:
+            logger.info("legacy Chroma RAG 运行时检索已关闭")
+            return []
+
         if not vector_store.is_available():
             logger.warning("向量存储不可用，无法检索知识")
             return []
@@ -111,6 +117,13 @@ class RAGPipeline:
         Returns:
             生成的回答和来源
         """
+        if not settings.legacy_knowledge_runtime_enabled:
+            return {
+                "success": False,
+                "error": "legacy_knowledge_runtime_disabled",
+                "answer": None,
+            }
+
         if not self.openai_client:
             return {
                 "success": False,

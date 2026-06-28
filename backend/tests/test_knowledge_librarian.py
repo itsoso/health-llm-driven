@@ -3,9 +3,8 @@
 覆盖:
 - applies_to 关键字 / general fallback
 - run() 空 query 降级
-- run() search_knowledge 返回空时的降级 summary
-- run() 有结果时的 finding 结构 (relevance 计算 / 文本截断)
-- run() search_knowledge 抛异常时 catch
+- legacy Chroma fallback 默认关闭，避免绕过 reviewed System KB
+- 显式开启 legacy fallback 时保留旧 finding 结构
 """
 
 from __future__ import annotations
@@ -68,22 +67,10 @@ class TestRunDegraded:
         assert finding.summary == "无查询内容"
         assert finding.findings == []
 
-    def test_empty_results_returns_hint(self, monkeypatch):
-        """search_knowledge 返回空数组时, summary 提示可能需先建索引."""
-        monkeypatch.setattr(
-            "app.agents.knowledge_librarian.indexer.search_knowledge",
-            lambda q, n_results=5: [],
-        )
-        s = KnowledgeLibrarianSpecialist()
-        finding = s.run(_empty_twin(), context={"query": "MTHFR"})
-        assert finding.findings == []
-        assert "索引" in finding.summary
-        assert finding.raw["results_count"] == 0
-
-    def test_search_exception_caught(self, monkeypatch):
-        """search_knowledge 抛异常 → catch, 不上抛."""
+    def test_legacy_chroma_fallback_disabled_by_default(self, monkeypatch):
+        """默认不再访问旧 Chroma wiki，避免绕过 reviewed System KB。"""
         def _boom(q, n_results=5):
-            raise RuntimeError("chromadb 坏了")
+            raise AssertionError("legacy Chroma fallback should not be called by default")
 
         monkeypatch.setattr(
             "app.agents.knowledge_librarian.indexer.search_knowledge",
@@ -91,9 +78,11 @@ class TestRunDegraded:
         )
         s = KnowledgeLibrarianSpecialist()
         finding = s.run(_empty_twin(), context={"query": "MTHFR"})
-        assert "失败" in finding.summary
         assert finding.findings == []
-        assert "error" in finding.raw
+        assert "reviewed" in finding.summary
+        assert finding.raw["results_count"] == 0
+        assert finding.raw["source"] == "system_kb_v2"
+        assert finding.raw["legacy_chroma_enabled"] is False
 
 
 # ───────────────────────── run() 正常路径 ─────────────────────────
@@ -118,6 +107,9 @@ class TestRunHappyPath:
         ]
 
     def _patch_search(self, monkeypatch, stub_results):
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "legacy_knowledge_runtime_enabled", True)
         monkeypatch.setattr(
             "app.agents.knowledge_librarian.indexer.search_knowledge",
             lambda q, n_results=5: stub_results,

@@ -12,6 +12,7 @@ import logging
 import time
 from typing import Any, Dict, List
 
+from app.config import settings
 from app.orchestrator.schema import Intent, SpecialistFinding
 from app.twin.schema import HealthTwin
 
@@ -56,6 +57,21 @@ class KnowledgeLibrarianSpecialist:
             system_kb_finding = self._run_system_kb(query, context, t0)
             if system_kb_finding is not None:
                 return system_kb_finding
+
+            if not settings.legacy_knowledge_runtime_enabled:
+                return SpecialistFinding(
+                    specialist_name=self.name,
+                    category=self.category,
+                    summary="系统知识库暂无 reviewed 证据；legacy Chroma wiki 运行时检索已关闭。",
+                    findings=[],
+                    raw={
+                        "source": "system_kb_v2",
+                        "query": query,
+                        "results_count": 0,
+                        "legacy_chroma_enabled": False,
+                    },
+                    ms_elapsed=int((time.monotonic() - t0) * 1000),
+                )
 
             from app.agents.knowledge_librarian.indexer import search_knowledge
 

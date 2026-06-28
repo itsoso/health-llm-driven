@@ -283,6 +283,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=4, minute=0, day_of_week=1),
     },
 
+    # 每周一 04:10 拉取在线 dedao-kbase export, 只写 draft artifacts, 等待人工 review。
+    "dedao-kbase-export-sync": {
+        "task": "app.tasks.system_knowledge_lifecycle.sync_dedao_kbase_export_draft",
+        "schedule": crontab(hour=4, minute=10, day_of_week=1),
+    },
+
     # 每周一 04:30 系统级 KB 生命周期维护:
     # lint + confidence decay + multi-user crystallize draft report.
     "system-kb-lifecycle": {

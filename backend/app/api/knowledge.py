@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from app.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user_required
+from app.config import settings
 from app.services.knowledge import VectorStoreService, RAGPipeline, DocumentLoader
 from app.services.knowledge.vectorstore import vector_store
 from app.services.knowledge.rag_pipeline import rag_pipeline
@@ -23,6 +24,26 @@ from app.services.knowledge.document_loader_enhanced import enhanced_loader, zha
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge-base"])
 logger = logging.getLogger(__name__)
+
+
+def _ensure_legacy_knowledge_runtime_enabled() -> None:
+    """Guard legacy Chroma/RAG runtime endpoints.
+
+    The governed health runtime uses ``system_knowledge`` APIs. This legacy
+    vector store remains available only when explicitly enabled for local
+    debugging or migration work.
+    """
+
+    if settings.legacy_knowledge_runtime_enabled:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail={
+            "code": "legacy_knowledge_runtime_disabled",
+            "message": "Legacy Chroma/RAG knowledge runtime is disabled. Use reviewed System KB APIs.",
+            "use": "system_knowledge",
+        },
+    )
 
 
 # ========== Pydantic Models ==========
@@ -558,6 +579,8 @@ def search_knowledge(
 
     使用向量相似度搜索相关文档
     """
+    _ensure_legacy_knowledge_runtime_enabled()
+
     if not vector_store.is_available():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -589,6 +612,8 @@ def ask_question(
 
     结合知识库内容和用户画像生成个性化回答
     """
+    _ensure_legacy_knowledge_runtime_enabled()
+
     if not rag_pipeline.is_available():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

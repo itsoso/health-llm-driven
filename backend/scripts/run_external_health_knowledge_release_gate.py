@@ -22,6 +22,15 @@ ARTIFACT_FILES = (
     "eval_cases.jsonl",
     "relations.jsonl",
 )
+MANIFEST_COUNT_FILES = {
+    "pages": "pages.jsonl",
+    "entities": "entities.jsonl",
+    "claims": "claims.jsonl",
+    "protocols": "protocols.jsonl",
+    "contraindications": "contraindications.jsonl",
+    "eval_cases": "eval_cases.jsonl",
+    "relations": "relations.jsonl",
+}
 
 
 def _artifact_key(filename: str, row: dict[str, Any]) -> Any:
@@ -77,6 +86,45 @@ def lint_jsonl_artifacts(artifact_dir: Path) -> dict[str, Any]:
     }
 
 
+def validate_artifact_manifest_counts(artifact_dir: Path) -> dict[str, Any]:
+    """Validate manifest counts against JSONL artifact line counts."""
+
+    manifest_path = artifact_dir / "manifest.json"
+    if not manifest_path.exists():
+        return {
+            "status": "fail",
+            "reason": "missing_manifest",
+            "mismatches": [],
+            "manifest_counts": {},
+            "actual_counts": {},
+        }
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest_counts = manifest.get("counts") if isinstance(manifest.get("counts"), dict) else {}
+    actual_counts: dict[str, int] = {}
+    mismatches: list[dict[str, Any]] = []
+
+    for artifact, filename in MANIFEST_COUNT_FILES.items():
+        path = artifact_dir / filename
+        actual = 0
+        if path.exists():
+            actual = sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+        actual_counts[artifact] = actual
+        expected = manifest_counts.get(artifact)
+        if expected is None:
+            mismatches.append({"artifact": artifact, "manifest": None, "actual": actual})
+            continue
+        if int(expected) != actual:
+            mismatches.append({"artifact": artifact, "manifest": int(expected), "actual": actual})
+
+    return {
+        "status": "fail" if mismatches else "pass",
+        "mismatches": mismatches,
+        "manifest_counts": dict(manifest_counts),
+        "actual_counts": actual_counts,
+    }
+
+
 def _register_sqlite_jsonb_compiler() -> None:
     from sqlalchemy.dialects.postgresql import JSONB
     from sqlalchemy.ext.compiler import compiles
@@ -120,6 +168,7 @@ def run_release_gate(
     from app.services.system_knowledge_service import lint_knowledge_base
 
     jsonl_report = lint_jsonl_artifacts(artifact_dir)
+    manifest_report = validate_artifact_manifest_counts(artifact_dir)
 
     db = SessionLocal()
     try:
@@ -133,6 +182,7 @@ def run_release_gate(
     failed = (
         bool(jsonl_report["parse_errors"])
         or int(jsonl_report["duplicate_count"]) > 0
+        or manifest_report["status"] != "pass"
         or int(import_report.get("skipped_documents") or 0) > 0
         or lint_issue_count > 0
         or int(eval_report.get("failed") or 0) > 0
@@ -141,6 +191,7 @@ def run_release_gate(
         "status": "fail" if failed else "pass",
         "database": database_report,
         "jsonl": jsonl_report,
+        "manifest": manifest_report,
         "import": import_report,
         "lint": lint_report,
         "eval": eval_report,
@@ -166,6 +217,11 @@ def _print_text_report(report: dict[str, Any]) -> None:
         f"documents={report['import'].get('documents')} "
         f"edges={report['import'].get('edges')} "
         f"skipped={report['import'].get('skipped_documents')}"
+    )
+    print(
+        "  manifest: "
+        f"status={report['manifest']['status']} "
+        f"mismatches={len(report['manifest']['mismatches'])}"
     )
     print(f"  lint: {report['lint']['summary']}")
     print(f"  eval: {report['eval']['passed']}/{report['eval']['total']} pass")
