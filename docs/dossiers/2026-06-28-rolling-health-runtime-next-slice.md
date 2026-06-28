@@ -4,8 +4,8 @@
 |---|---|
 | slug | `rolling-health-runtime-next-slice` |
 | 创建日期 | 2026-06-28 |
-| 当前阶段 | S6 部署前 |
-| 状态 | shipping |
+| 当前阶段 | S8 沉淀 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | backend deploy + mobile OTA |
 
@@ -105,23 +105,33 @@
 ## S6 · 部署
 
 - 路由: backend deploy + mobile OTA。
-- 部署 SHA / 回滚点: 待提交后补。
+- 后端部署 SHA: `e93cada43ad386e989a0ed8451e5b9124b37da87`
+- 后端回滚点: `bb60c3a6`
+- Mobile OTA:
+  - branch: `production`
+  - runtime version: `1.3.1`
+  - update group ID: `1a6b76e2-a74a-4d14-bccb-caec541ba29f`
+  - iOS update ID: `019f0c9a-86a6-7bdc-aa2c-bdec3f8d10ed`
+  - dashboard: `https://expo.dev/accounts/itsoso/projects/health-pilot/updates/1a6b76e2-a74a-4d14-bccb-caec541ba29f`
 
 ## G5 · 部署健康闸
 
-- 健康分: 待部署后补。
-- prod smoke: 待部署后补。
-- 裁决: 待执行。
+- 健康分: `60/60 PASS`。
+- prod smoke:
+  - `GET https://health.executor.life/api/v1/health`: healthy。
+  - 未鉴权 `GET /api/v1/agenda/range?days=7&mode=runtime`: `401`，路由受鉴权保护。
+  - 服务器本机 user_id=3 token smoke: `mode=runtime horizon=7 days=7 next=True first_runtime_context=True`。
+- 裁决: PASS。
 
 ## S7 · 上线验证
 
-- 真实路径验证: 待部署后补。
+- 真实路径验证: 后端生产 payload 已验证；Mobile OTA 已发布，设备冷启或后台 30s+ 后拉取。
 
 ## G6 · 验证闸(人在环)
 
-- 需求在 prod 对 anchor 用户真成立: 待用户真机确认。
+- 需求在 prod 对 anchor 用户真成立: 生产 API 对 user_id=3 成立；Mobile 真机视觉确认待用户打开 Agenda 页验证。
 
 ## S8 · 沉淀
 
 - 文档同步: 本 Dossier + active spec + plan 状态。
-- 状态: 待 shipped。
+- 状态: shipped。

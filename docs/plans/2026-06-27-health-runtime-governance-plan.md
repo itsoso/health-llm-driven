@@ -411,7 +411,7 @@ Mobile/Watch 待规划工作：
 
 ### 2026-06-28 执行状态
 
-本轮按 PRD/Plan/Code 对比后，优先选择 B 的最小端到端切片，并把它收敛为“滚动 7 天健康运行时编排”的首个可发布版本。
+本轮按 PRD/Plan/Code 对比后，优先选择 B 的最小端到端切片，并把它收敛为“滚动 7 天健康运行时编排”的首个已发布版本。
 
 已完成:
 
@@ -422,6 +422,10 @@ Mobile/Watch 待规划工作：
 - Mobile Agenda 页面新增“7天运行时”面板，展示下一步行动和未来几天主要行动。
 - 新增 active spec：`docs/specs/active/2026-06-28-rolling-7-day-health-runtime.md`。
 - 新增 product-pipeline Dossier：`docs/dossiers/2026-06-28-rolling-health-runtime-next-slice.md`。
+- 已发布：
+  - 后端部署 SHA `e93cada43ad386e989a0ed8451e5b9124b37da87`，部署健康分 `60/60`。
+  - Mobile OTA production update group `1a6b76e2-a74a-4d14-bccb-caec541ba29f`。
+  - 生产 user_id=3 smoke：`mode=runtime horizon=7 days=7 next=True first_runtime_context=True`。
 
 仍未完成，继续保留在后续计划:
 
