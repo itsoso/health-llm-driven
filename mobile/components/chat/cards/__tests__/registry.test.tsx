@@ -180,6 +180,70 @@ describe('renderCard 安全降级', () => {
     );
   });
 
+  it('renders operating review cards from backend prediction backtest', () => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'operating_review',
+      data: {
+        window_days: 7,
+        start_date: '2026-06-22',
+        end_date: '2026-06-28',
+        execution: {
+          total_events: 4,
+          completed_events: 3,
+          completion_rate: 0.75,
+        },
+        metrics: [
+          { metric: 'waist_cm', current: 94.8, delta: -1.2, current_date: '2026-06-28' },
+        ],
+        prediction_backtest: {
+          status: 'ready',
+          ready_candidate_count: 1,
+          summary: { met: 1, not_met: 0, inconclusive: 0 },
+          results: [
+            {
+              prediction_id: 'pred-waist-7d',
+              action_title: '累计 35-45 分钟中等强度活动',
+              metric: 'waist_cm',
+              horizon_days: 7,
+              observed_delta: -1.2,
+              verdict: 'met',
+              confidence_after: 'medium',
+            },
+          ],
+          boundary: '预测回测只比较预期信号与窗口内实际变化, 属观察性复盘, 不证明单个行动造成指标变化。',
+        },
+        causal_memory: {
+          notes: [{ metric: 'hrv', text: '晚餐提前之后 HRV 改善(相关非因果)' }],
+          claim_boundary: '事件先于指标变化的时序相关,非证明因果;不替代医学结论。',
+        },
+      },
+      actions: [
+        {
+          id: 'open-operating-review',
+          label: '查看复盘详情',
+          action: 'route.open',
+          payload: { route: '/my-progress' },
+          style: 'primary',
+        },
+      ],
+    } as any;
+    const r = renderCard(descriptor, { onAction });
+    expect(r).not.toBeNull();
+
+    const { getByText } = render(r!);
+    expect(getByText('7天复盘')).toBeTruthy();
+    expect(getByText('完成率 75%')).toBeTruthy();
+    expect(getByText('预测回测: 1/1 支持')).toBeTruthy();
+    expect(getByText(/累计 35-45 分钟中等强度活动/)).toBeTruthy();
+    expect(getByText(/不证明单个行动造成指标变化/)).toBeTruthy();
+    fireEvent.press(getByText('查看复盘详情'));
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'route.open' }),
+      expect.objectContaining({ type: 'operating_review' }),
+    );
+  });
+
   it('cards_group 1 张子卡 → 直接渲染, 不包 grid', () => {
     const r = renderCard({
       type: 'cards_group',

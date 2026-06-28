@@ -19,6 +19,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.services import agenda_service
+from app.services.health_operating_review import build_health_operating_review
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,22 @@ def _is_runtime_agenda_query(q: str) -> bool:
     return False
 
 
+def _is_operating_review_query(q: str) -> bool:
+    ql = q.lower()
+    if _is_record_intent(ql):
+        return False
+    return bool(re.search(r"复盘|回测|预测.*实际|预测.*结果|效果怎么样|有没有改善|有没有变好|进展|成果|本周效果|这周效果", ql))
+
+
+def _review_window_days(q: str) -> int:
+    ql = q.lower()
+    if re.search(r"90天|九十天|三个月|3个月|长期", ql):
+        return 90
+    if re.search(r"30天|三十天|一个月|月度|最近一月", ql):
+        return 30
+    return 7
+
+
 def _compact_runtime_day(day: Dict[str, Any]) -> Dict[str, Any]:
     next_action = day.get("next_action") if isinstance(day.get("next_action"), dict) else None
     item_count = 0
@@ -51,7 +68,97 @@ def _compact_runtime_day(day: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _compact_metric_changes(metrics: Dict[str, Any]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    if not isinstance(metrics, dict):
+        return out
+    for metric, change in metrics.items():
+        if not isinstance(change, dict):
+            continue
+        if change.get("status") != "present" or change.get("delta") is None:
+            continue
+        out.append({
+            "metric": metric,
+            "count": change.get("count"),
+            "current": change.get("current"),
+            "current_date": change.get("current_date"),
+            "delta": change.get("delta"),
+        })
+    return out[:4]
+
+
+def _compact_prediction_backtest(backtest: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(backtest, dict):
+        return {}
+    results = [
+        result
+        for result in (backtest.get("results") or [])
+        if isinstance(result, dict)
+    ][:2]
+    return {
+        "version": backtest.get("version"),
+        "status": backtest.get("status"),
+        "reason": backtest.get("reason"),
+        "ready_candidate_count": backtest.get("ready_candidate_count"),
+        "candidate_count": backtest.get("candidate_count"),
+        "summary": backtest.get("summary") if isinstance(backtest.get("summary"), dict) else None,
+        "confidence_summary": (
+            backtest.get("confidence_summary")
+            if isinstance(backtest.get("confidence_summary"), dict)
+            else None
+        ),
+        "results": results,
+        "boundary": backtest.get("boundary"),
+    }
+
+
+def _compact_causal_memory(memory: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(memory, dict):
+        return {"notes": [], "claim_boundary": None}
+    notes = [note for note in (memory.get("notes") or []) if isinstance(note, dict)][:2]
+    return {
+        "notes": notes,
+        "claim_boundary": memory.get("claim_boundary"),
+    }
+
+
 # ── individual builders ────────────────────────────────────────────
+
+def _build_operating_review(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
+    if not _is_operating_review_query(q):
+        return None
+    window_days = _review_window_days(q)
+    try:
+        payload = build_health_operating_review(
+            db,
+            user_id=user_id,
+            window_days=window_days,
+        )
+    except Exception as e:
+        logger.debug("operating review card failed: %s", e)
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    execution = payload.get("execution") if isinstance(payload.get("execution"), dict) else {}
+    backtest = _compact_prediction_backtest(payload.get("prediction_backtest") or {})
+    metrics = _compact_metric_changes(payload.get("metrics") or {})
+    memory = _compact_causal_memory(payload.get("causal_memory") or {})
+
+    return {
+        "window_days": payload.get("window_days") or window_days,
+        "start_date": payload.get("start_date"),
+        "end_date": payload.get("end_date"),
+        "execution": {
+            "total_events": execution.get("total_events", 0),
+            "completed_events": execution.get("completed_events", 0),
+            "completion_rate": execution.get("completion_rate", 0),
+        },
+        "metrics": metrics,
+        "prediction_backtest": backtest,
+        "causal_memory": memory,
+    }
+
 
 def _build_runtime_agenda(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
     if _is_record_intent(q) or not _is_runtime_agenda_query(q):
@@ -298,6 +405,7 @@ def _build_diet(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
 
 _BUILDERS = [
     ("record_intent_skip", lambda db, uid, q: None),
+    ("operating_review", _build_operating_review),
     ("runtime_agenda", _build_runtime_agenda),
     ("sleep",        _build_sleep),
     ("weight",       _build_weight),
@@ -331,6 +439,16 @@ def build_cards(db: Session, user_id: int, query: str) -> List[Dict[str, Any]]:
                             "label": "查看7天计划",
                             "action": "route.open",
                             "payload": {"route": "/agenda"},
+                            "style": "primary",
+                        }
+                    ]
+                if card_type == "operating_review":
+                    card["actions"] = [
+                        {
+                            "id": "open-operating-review",
+                            "label": "查看复盘详情",
+                            "action": "route.open",
+                            "payload": {"route": "/my-progress"},
                             "style": "primary",
                         }
                     ]

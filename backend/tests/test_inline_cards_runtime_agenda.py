@@ -79,3 +79,106 @@ def test_inline_cards_runtime_agenda_does_not_trigger_for_record_intent(monkeypa
     cards = inline_cards.build_cards(db=None, user_id=3, query="记录我刚喝了200ml水")
 
     assert all(card["type"] != "runtime_agenda" for card in cards)
+
+
+def test_inline_cards_builds_operating_review_card(monkeypatch):
+    from app.services import inline_cards
+
+    calls = {}
+
+    def fake_review(db, *, user_id, window_days, end_date=None):
+        calls["db"] = db
+        calls["user_id"] = user_id
+        calls["window_days"] = window_days
+        calls["end_date"] = end_date
+        return {
+            "window_days": window_days,
+            "start_date": "2026-06-22",
+            "end_date": "2026-06-28",
+            "execution": {
+                "total_events": 4,
+                "completed_events": 3,
+                "completion_rate": 0.75,
+                "by_status": {"completed": 3, "skipped": 1},
+                "by_domain": {"movement": 2, "sleep": 2},
+            },
+            "metrics": {
+                "waist_cm": {
+                    "status": "present",
+                    "count": 2,
+                    "current": 94.8,
+                    "delta": -1.2,
+                    "current_date": "2026-06-28",
+                },
+            },
+            "prediction_backtest": {
+                "version": "prediction_backtest_v1",
+                "status": "ready",
+                "reason": "has_matched_prediction_results",
+                "candidate_count": 1,
+                "ready_candidate_count": 1,
+                "window_days": window_days,
+                "minimum_window_days": 7,
+                "completed_action_count": 3,
+                "eligible_metrics": ["waist_cm"],
+                "requirements": [],
+                "summary": {"met": 1, "not_met": 0, "inconclusive": 0},
+                "confidence_summary": {"high": 0, "medium": 1, "low": 0},
+                "results": [
+                    {
+                        "prediction_id": "pred-waist-7d",
+                        "action_title": "累计 35-45 分钟中等强度活动",
+                        "metric": "waist_cm",
+                        "horizon_days": 7,
+                        "expected_signal": {"direction": "down", "expected_delta": -0.5},
+                        "actual_result": {"current": 94.8, "current_date": "2026-06-28"},
+                        "observed_delta": -1.2,
+                        "verdict": "met",
+                        "confidence_after": "medium",
+                        "boundary": "观察性回测, 不证明单个行动造成指标变化。",
+                    }
+                ],
+                "boundary": "预测回测只比较预期信号与窗口内实际变化, 属观察性复盘, 不证明单个行动造成指标变化。",
+            },
+            "causal_memory": {
+                "notes": [{"metric": "hrv", "text": "晚餐提前之后 HRV 改善(相关非因果)"}],
+                "claim_boundary": "事件先于指标变化的时序相关,非证明因果;不替代医学结论。",
+            },
+        }
+
+    monkeypatch.setattr(inline_cards, "build_health_operating_review", fake_review, raising=False)
+
+    cards = inline_cards.build_cards(db="db", user_id=3, query="帮我做一次预测回测和近期复盘")
+
+    assert calls == {"db": "db", "user_id": 3, "window_days": 7, "end_date": None}
+    assert cards[0]["type"] == "operating_review"
+    assert cards[0]["data"]["window_days"] == 7
+    assert cards[0]["data"]["execution"]["completion_rate"] == 0.75
+    assert cards[0]["data"]["prediction_backtest"]["summary"]["met"] == 1
+    assert cards[0]["data"]["prediction_backtest"]["results"][0]["prediction_id"] == "pred-waist-7d"
+    assert cards[0]["data"]["metrics"][0]["metric"] == "waist_cm"
+    assert cards[0]["data"]["causal_memory"]["notes"][0]["text"] == "晚餐提前之后 HRV 改善(相关非因果)"
+    assert cards[0]["actions"] == [
+        {
+            "id": "open-operating-review",
+            "label": "查看复盘详情",
+            "action": "route.open",
+            "payload": {"route": "/my-progress"},
+            "style": "primary",
+        }
+    ]
+
+
+def test_inline_cards_operating_review_does_not_trigger_for_record_intent(monkeypatch):
+    from app.services import inline_cards
+
+    monkeypatch.setattr(
+        inline_cards,
+        "build_health_operating_review",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not call review")),
+        raising=False,
+    )
+
+    cards = inline_cards.build_cards(db=None, user_id=3, query="记录我刚做完今天复盘")
+
+    assert all(card["type"] != "operating_review" for card in cards)
