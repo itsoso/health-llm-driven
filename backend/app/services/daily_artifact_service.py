@@ -1,7 +1,8 @@
 """Daily Artifact projection and telemetry.
 
-The artifact is a small presentation contract over the smart agenda: one top
-action, at most three evidence cards, and append-only event telemetry.
+The artifact is a compact presentation contract over the rolling health
+runtime: one top action, at most three evidence cards, and append-only event
+telemetry.
 """
 from __future__ import annotations
 
@@ -23,37 +24,37 @@ def build_daily_artifact(
     db: Session,
     user_id: int,
     *,
-    followup_within_days: int = 14,
+    followup_within_days: int = 7,
 ) -> dict[str, Any]:
-    """Build today's single-action artifact from the smart agenda."""
-    smart_payload = agenda_service.smart_today(
+    """Build today's single-action artifact from the 7-day runtime projection."""
+    runtime_days = max(1, min(int(followup_within_days or 7), 14))
+    runtime_payload = agenda_service.runtime_range_view(
         db,
         user_id,
-        followup_within_days=followup_within_days,
-        max_items=3,
+        days=runtime_days,
+        max_items_per_day=3,
     )
     artifact_date = _coerce_date(
-        smart_payload.get("agenda_date"),
+        runtime_payload.get("start"),
         fallback=get_user_today(db, user_id),
     )
-    top_items = ((smart_payload.get("smart") or {}).get("top_items") or [])
-    top_action = top_items[0] if top_items else None
+    top_action = runtime_payload.get("next_action")
 
     if not isinstance(top_action, dict):
-        return _empty_artifact(artifact_date, smart_payload)
+        return _empty_artifact(artifact_date, runtime_payload)
 
     action_view = _top_action_view(top_action)
     evidence = _evidence_cards(top_action)[:3]
-    safety_boundary = top_action.get("claim_boundary") or DEFAULT_SAFETY_BOUNDARY
+    safety_boundary = (
+        top_action.get("claim_boundary")
+        or _runtime_context(top_action, runtime_payload).get("safety_boundary")
+        or DEFAULT_SAFETY_BOUNDARY
+    )
 
     return {
         "artifact_date": artifact_date.isoformat(),
-        "generated_by": "daily_artifact_v1",
-        "source": {
-            "kind": "agenda.smart_today",
-            "ranking": (smart_payload.get("smart") or {}).get("ranking"),
-            "source_count": smart_payload.get("source_count", 0),
-        },
+        "generated_by": "daily_artifact_runtime_v1",
+        "source": _runtime_source(runtime_payload),
         "empty_state": False,
         "state": _state_for(top_action),
         "top_action": action_view,
@@ -99,15 +100,15 @@ def record_daily_artifact_event(
     return _event_view(event)
 
 
-def _empty_artifact(artifact_date: date, smart_payload: dict[str, Any]) -> dict[str, Any]:
+def _empty_artifact(artifact_date: date, runtime_payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_context = runtime_payload.get("runtime_context")
+    safety_boundary = DEFAULT_SAFETY_BOUNDARY
+    if isinstance(runtime_context, dict) and runtime_context.get("safety_boundary"):
+        safety_boundary = str(runtime_context["safety_boundary"])
     return {
         "artifact_date": artifact_date.isoformat(),
-        "generated_by": "daily_artifact_v1",
-        "source": {
-            "kind": "agenda.smart_today",
-            "ranking": (smart_payload.get("smart") or {}).get("ranking"),
-            "source_count": smart_payload.get("source_count", 0),
-        },
+        "generated_by": "daily_artifact_runtime_v1",
+        "source": _runtime_source(runtime_payload),
         "empty_state": True,
         "state": {
             "label": "暂无今日重点",
@@ -117,14 +118,14 @@ def _empty_artifact(artifact_date: date, smart_payload: dict[str, Any]) -> dict[
         "top_action": None,
         "evidence": [],
         "confidence": "low",
-        "freshness": {"status": "limited", "sources": []},
-        "safety_boundary": DEFAULT_SAFETY_BOUNDARY,
+        "freshness": {"status": "limited", "sources": ["agenda.runtime_range"]},
+        "safety_boundary": safety_boundary,
     }
 
 
 def _top_action_view(item: dict[str, Any]) -> dict[str, Any]:
     source = item.get("source") if isinstance(item.get("source"), dict) else {}
-    return {
+    view = {
         "id": str(item.get("id") or ""),
         "title": item.get("title") or "今日健康行动",
         "type": item.get("type"),
@@ -154,12 +155,17 @@ def _top_action_view(item: dict[str, Any]) -> dict[str, Any]:
             },
         },
     }
+    runtime_context = item.get("runtime_context")
+    if isinstance(runtime_context, dict) and runtime_context:
+        view["runtime_context"] = runtime_context
+    return view
 
 
 def _evidence_cards(item: dict[str, Any]) -> list[dict[str, Any]]:
     cards: list[dict[str, Any]] = []
     source = item.get("source") if isinstance(item.get("source"), dict) else {}
     source_kind = source.get("object_type") or "agenda"
+    runtime_context = item.get("runtime_context") if isinstance(item.get("runtime_context"), dict) else {}
 
     why_now = _clean_text(item.get("why_now"))
     if why_now:
@@ -184,8 +190,15 @@ def _evidence_cards(item: dict[str, Any]) -> list[dict[str, Any]]:
         })
 
     verify_by = item.get("verify_by")
-    if isinstance(verify_by, dict):
+    if isinstance(verify_by, dict) or isinstance(runtime_context, dict):
+        if not isinstance(verify_by, dict):
+            verify_by = {}
+        runtime_window = runtime_context.get("verification_window") if isinstance(runtime_context, dict) else {}
+        if not isinstance(runtime_window, dict):
+            runtime_window = {}
         metrics = [str(m) for m in (verify_by.get("metrics") or []) if m][:3]
+        if not metrics:
+            metrics = [str(m) for m in (runtime_window.get("metrics") or []) if m][:3]
         if metrics:
             cards.append({
                 "kind": "verification",
@@ -194,7 +207,10 @@ def _evidence_cards(item: dict[str, Any]) -> list[dict[str, Any]]:
                 "metrics": metrics,
                 "window_days": verify_by.get("window_days")
                 or (verify_by.get("trajectory") or {}).get("verification_window_days"),
+                "replan_reason": runtime_context.get("replan_reason") if isinstance(runtime_context, dict) else None,
             })
+            if cards[-1]["window_days"] is None:
+                cards[-1]["window_days"] = runtime_window.get("window_days")
 
     return cards
 
@@ -239,10 +255,53 @@ def _confidence_for(item: dict[str, Any]) -> str:
 def _freshness_for(item: dict[str, Any], evidence: list[dict[str, Any]]) -> dict[str, Any]:
     source = item.get("source") if isinstance(item.get("source"), dict) else {}
     sources = [source.get("object_type")] if source.get("object_type") else []
+    sources.append("agenda.runtime_range")
     return {
         "status": "fresh" if evidence else "limited",
-        "sources": sources,
+        "sources": [source for source in sources if source],
     }
+
+
+def _runtime_context(item: dict[str, Any], runtime_payload: dict[str, Any]) -> dict[str, Any]:
+    item_context = item.get("runtime_context")
+    if isinstance(item_context, dict):
+        return item_context
+    payload_context = runtime_payload.get("runtime_context")
+    if isinstance(payload_context, dict):
+        return payload_context
+    return {}
+
+
+def _runtime_source(runtime_payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": "agenda.runtime_range",
+        "runtime_generated_by": runtime_payload.get("generated_by"),
+        "mode": runtime_payload.get("mode"),
+        "horizon_days": runtime_payload.get("horizon_days"),
+        "start": runtime_payload.get("start"),
+        "end": runtime_payload.get("end"),
+        "source_count": _runtime_item_count(runtime_payload),
+    }
+
+
+def _runtime_item_count(runtime_payload: dict[str, Any]) -> int:
+    count = 0
+    days = runtime_payload.get("days")
+    if not isinstance(days, list):
+        return count
+    for day in days:
+        if not isinstance(day, dict):
+            continue
+        windows = day.get("time_windows")
+        if not isinstance(windows, list):
+            continue
+        for window in windows:
+            if not isinstance(window, dict):
+                continue
+            items = window.get("items")
+            if isinstance(items, list):
+                count += len(items)
+    return count
 
 
 def _week_index(db: Session, user_id: int, artifact_date: date) -> int:

@@ -65,8 +65,16 @@
 
 ## 6. 后续切片
 
-- Home Daily Artifact 使用同一 runtime projection，只展示一个 primary next action。
 - Chat 动态卡片渲染 `RuntimeAgendaRange` 或单日 runtime card。
 - Watch summary 使用 `today?mode=runtime`，只显示一句话行动和安全边界。
 - skip reason、snooze、completion 进入 future projection 的重排因子。
 - DataConnection/Consent/Provenance 补齐后，runtime context 增加关键事实 provenance。
+
+## 7. 已完成后续切片
+
+### 2026-06-28 · Home Daily Artifact Runtime 化
+
+- `GET /api/v1/daily-artifact/me` 已改为由 7 天 `agenda.runtime_range` 派生。
+- Home Daily Artifact 仍只展示一个 primary next action。
+- Mobile service 默认查询 7 天并保留 `top_action.runtime_context`。
+- Home telemetry 已记录 runtime generator、source kind、horizon 和 replan reason。

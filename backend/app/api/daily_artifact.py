@@ -37,7 +37,7 @@ class DailyArtifactEventIn(BaseModel):
 
 @router.get("/me")
 def get_my_daily_artifact(
-    followup_within_days: int = Query(default=14, ge=1, le=120),
+    followup_within_days: int = Query(default=7, ge=1, le=14),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):

@@ -43,11 +43,9 @@ skill-binding: docs/agent-skill-binding.md
 | **6 产品地图(多端×UI×流)** | [`product-map.md`](product-map.md) + [surface-ownership-inventory](../specs/active/2026-06-26-surface-ownership-inventory.md) + ARCHITECTURE §5 系统流 | A+B |
 | **6b Mobile 动线知识图谱**(页面/动线/合理性审计/IA 重设计) | [`mobile-nav-map.md`](mobile-nav-map.md) + 代码派生图 [`_generated/mobile-nav-graph.json`](../_generated/mobile-nav-graph.json)(`mobile/scripts/dump_nav_graph.py` 生成) | A+B |
 
-## 当前代码派生快照(引用,非手打 —— 真值见 `_generated/system-map.json`)
+## 当前代码派生快照
 
-> 以下数字由 CI 保证当前;如本段与 `_generated/system-map.json` 不符,以 JSON 为准(并说明本段 last-reviewed 已过期)。
-
-8 端 · 13 specialists · 63 安全规则 · 15 Twin 分区 · 159 API routers · 63 Celery 任务 · 102 models · 288 services · 107 mobile 路由 · 70 web 页面。
+所有计数与 roster 以 [`docs/_generated/system-map.json`](../_generated/system-map.json) 为唯一真源;本 INDEX 不手写任何会漂移的架构数字。
 
 ## 维护(不靠自觉 —— 见 SKILL)
 

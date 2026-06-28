@@ -427,10 +427,17 @@ Mobile/Watch 待规划工作：
   - Mobile OTA production update group `1a6b76e2-a74a-4d14-bccb-caec541ba29f`。
   - 生产 user_id=3 smoke：`mode=runtime horizon=7 days=7 next=True first_runtime_context=True`。
 
+2026-06-28 第二切片已完成实现、待发布:
+
+- Home Daily Artifact 后端由 `agenda.smart_today` 切换为 `agenda.runtime_range` 派生，默认 7 天 horizon、最大 14 天。
+- `/api/v1/daily-artifact/me` 返回 `generated_by=daily_artifact_runtime_v1`，`source.kind=agenda.runtime_range`，并暴露 runtime generator / horizon / source count。
+- Mobile `getDailyArtifact()` 默认查询 7 天，并保留 `top_action.runtime_context`。
+- Mobile Home impression / accepted / skipped / completed telemetry 带上 `generated_by`、`source_kind`、`runtime_horizon_days`、`replan_reason`，为后续 skip/snooze 重排打基础。
+- 新增 product-pipeline Dossier：`docs/dossiers/2026-06-28-home-daily-artifact-runtime.md`。
+
 仍未完成，继续保留在后续计划:
 
 - A 切片：DataConnection / ConsentGrant / ProvenanceRecord 最小底座。
-- Home Daily Artifact 直接消费 runtime projection，并严格只展示一个 primary next action。
 - Chat 动态 UI 卡片消费 runtime projection。
 - Watch summary 使用 `today?mode=runtime` 的压缩行动合同。
 - skip reason、snooze、completion 进入未来 7 天重排因子。
@@ -480,3 +487,4 @@ Mobile/Watch 待规划工作：
 | 2026-06-27 | 将 Plan 改为中文表达 | 便于团队按中文 PRD 和规划继续演进。 |
 | 2026-06-27 | 增加互操作、授权、provenance、评估回归和模板化计划 | 吸收 FHIR/PHR、闭环糖尿病系统、Home Assistant 和医疗 agent benchmark 的启发，补齐 1000 万用户规模前的基础设施。 |
 | 2026-06-28 | 标记 B 切片首个实现：滚动 7 天健康运行时编排 | 先把 HealthTrajectory/Agenda 从单日 top action 推进到 7 天可执行路线，为 Home/Chat/Watch 共用 Daily Artifact 打底。 |
+| 2026-06-28 | 标记 B 切片第二个实现：Home Daily Artifact Runtime 化 | 首页不再从旧 smart agenda 派生，开始共用 7 天健康运行时对象。 |

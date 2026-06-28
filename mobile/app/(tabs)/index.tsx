@@ -599,6 +599,14 @@ function dailyArtifactContext(
   return {
     surface,
     empty_state: artifact.empty_state,
+    generated_by: artifact.generated_by ?? null,
+    source_kind: typeof artifact.source?.kind === 'string' ? artifact.source.kind : null,
+    runtime_horizon_days:
+      typeof artifact.source?.horizon_days === 'number' ? artifact.source.horizon_days : null,
+    replan_reason:
+      typeof artifact.top_action?.runtime_context?.replan_reason === 'string'
+        ? artifact.top_action.runtime_context.replan_reason
+        : null,
     confidence: artifact.confidence,
     freshness: artifact.freshness?.status ?? null,
     evidence_count: artifact.evidence.length,

@@ -38,6 +38,7 @@ export interface DailyArtifactTopAction {
   why_now?: string | null;
   do_now?: string | null;
   verify_by?: Record<string, unknown> | null;
+  runtime_context?: Record<string, unknown> | null;
   actions?: {
     complete?: {
       enabled?: boolean;
@@ -95,7 +96,7 @@ const DEFAULT_STATE: DailyArtifactState = {
   summary: '今天暂无需要突出的健康行动。',
 };
 
-export async function getDailyArtifact(followupWithinDays = 14): Promise<DailyArtifact> {
+export async function getDailyArtifact(followupWithinDays = 7): Promise<DailyArtifact> {
   const { data } = await api.get<Partial<DailyArtifact>>('/daily-artifact/me', {
     params: { followup_within_days: followupWithinDays },
   });
@@ -163,6 +164,7 @@ function normalizeTopAction(
     why_now: raw.why_now ?? null,
     do_now: raw.do_now ?? null,
     verify_by: raw.verify_by ?? null,
+    runtime_context: raw.runtime_context ?? null,
     actions: raw.actions ?? null,
   };
 }

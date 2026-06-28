@@ -18,7 +18,11 @@ describe('dailyArtifact service', () => {
         artifact_date: '2026-06-27',
         empty_state: false,
         state: { label: '今日最重要行动', tone: 'focused', summary: '先完成午间步行' },
-        top_action: { id: 'a1', title: '午饭后步行 10 分钟' },
+        top_action: {
+          id: 'a1',
+          title: '午饭后步行 10 分钟',
+          runtime_context: { replan_reason: 'today_smart_rank' },
+        },
         evidence: [
           { kind: 'why_now', label: 'Why now', summary: '餐后血糖窗口' },
           { kind: 'trajectory', label: 'Trajectory', summary: '近期活动不足' },
@@ -34,9 +38,10 @@ describe('dailyArtifact service', () => {
     const artifact = await getDailyArtifact();
 
     expect(api.get).toHaveBeenCalledWith('/daily-artifact/me', {
-      params: { followup_within_days: 14 },
+      params: { followup_within_days: 7 },
     });
     expect(artifact.top_action?.title).toBe('午饭后步行 10 分钟');
+    expect(artifact.top_action?.runtime_context?.replan_reason).toBe('today_smart_rank');
     expect(artifact.evidence).toHaveLength(3);
     expect(artifact.state.label).toBe('今日最重要行动');
   });
