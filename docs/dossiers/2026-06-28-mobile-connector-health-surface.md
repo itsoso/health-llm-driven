@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-connector-health-surface` |
 | 创建日期 | 2026-06-28 |
-| 当前阶段 | S5 实现 |
-| 状态 | in_progress |
+| 当前阶段 | S8 沉淀 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | mobile OTA |
 
@@ -67,20 +67,24 @@
   - [x] T1 RED: Mobile service 测试证明摘要需优先使用 `connection_health`，且 helper 尚不存在。
   - [x] T2 GREEN: 增加 `ConnectionHealth` 类型、fallback 和 `connectionHealthDisplay`。
   - [x] T3 UI: Mobile `/data-connections` 卡片展示状态、说明、缓存可用性和重连动作语义。
-  - [ ] T4 文档回写、提交、OTA 和验证。
+  - [x] T4 文档回写、提交、OTA 和验证。
 
 ## S5 · 实现
 
 - 委托: Codex
 - 分支: `codex/rolling-runtime-next-slice`
-- commit: 待提交
+- commit: `80b903035526acf96ccb8bc9b995006e66e8e840` `feat(mobile): show data connection health`
 
 ## G3 · 测试闸
 
 - RED: `mobile/services/__tests__/dataConnections.test.ts` 先失败于摘要仍返回 `1 个可用`，以及 `connectionHealthDisplay is not a function`。
 - GREEN: 同测试文件通过。
-- 集成闸: 待跑。
-- **裁决**: 待定
+- 集成闸:
+  - `npm test -- --runTestsByPath services/__tests__/dataConnections.test.ts --runInBand`: `8 passed`。
+  - `npx tsc --noEmit`: 通过。
+  - `scripts/check_doc_drift.py`: 通过。
+  - `git diff --check`: 通过。
+- **裁决**: 绿
 
 ## G4 · 安全闸
 
@@ -90,25 +94,34 @@
   - 不显示 token。
   - 不扩大授权 scope。
   - 撤权和缓存状态沿用后端合同。
-- **裁决**: 待定
+- **裁决**: GO
 
 ## S6 · 发布
 
 - 路由: Mobile OTA
-- OTA group / update id: 待定
+- OTA group / update id:
+  - Branch: `production`
+  - Runtime version: `1.3.1`
+  - Platform: `ios`
+  - Update group ID: `dae8abc9-8dcf-4fb8-8e18-3252faf29f7b`
+  - iOS update ID: `019f0d33-d178-7fe1-843c-de5430217f5e`
+  - Commit: `80b903035526acf96ccb8bc9b995006e66e8e840`
 
 ## G5 · 发布健康闸
 
-- 待定
+- EAS update 发布成功；`.last-ota-commit` anchor 写入 `80b90303`。
+- **裁决**: PASS
 
 ## S7 · 上线验证
 
-- 待定
+- EAS Dashboard: `https://expo.dev/accounts/itsoso/projects/health-pilot/updates/dae8abc9-8dcf-4fb8-8e18-3252faf29f7b`
+- 设备下次冷启或后台 30s+ 会自动拉取新 bundle。
 
 ## G6 · 验证闸
 
-- 待定
+- 裁决: PASS；本切片为 JS/TS OTA，不涉及 TestFlight 或 native 二维码包。
 
 ## S8 · 沉淀
 
-- 待上线验证后回写计划状态。
+- 沉淀: Web/Mac 当前没有外部数据连接中心入口，后续应先做信息架构和跨端 PRD，而不是把 Mobile 页面机械复制过去。
+- 状态 -> **shipped**: 完成

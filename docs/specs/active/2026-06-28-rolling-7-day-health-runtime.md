@@ -125,3 +125,10 @@
 - 鉴权失败降级返回 `degraded/warning/reconnect`，不可继续尝试同步，但在 `read_only` 降级策略下仍可使用已授权缓存数据做只读判断。
 - revoke 后返回 `revoked/blocked/reconnect`，不可尝试同步，也不可继续使用缓存数据。
 - 已发布：backend SHA `d4003e1594fc89f76e4353b4dd29c0876e3857e6`；生产 smoke 使用 user_id=3 只读 HTTP + rollback 事务合同验证。
+
+### 2026-06-28 · Mobile Connector Health Surface
+
+- Mobile service 已支持 `ConnectionHealth` 类型、旧后端 fallback 和 `connectionHealthDisplay`。
+- Mobile 设置页摘要优先使用 `connection_health`，不再只看原始 `connection_status`。
+- Mobile `/data-connections` 卡片展示状态、解释文案、缓存可用性和需重连动作语义。
+- 已发布：Mobile OTA production group `dae8abc9-8dcf-4fb8-8e18-3252faf29f7b`，iOS update `019f0d33-d178-7fe1-843c-de5430217f5e`。

@@ -514,6 +514,23 @@ Mobile/Watch 待规划工作：
   - 生产 user_id=3 只读 HTTP smoke：`http_status=200 connections=0 health_count=0`。
   - 因 user_id=3 当前没有连接记录，使用生产服务器本机未提交事务临时构造连接并 rollback，合同 smoke：`active:healthy/none/True degraded:degraded/reconnect/True revoked:revoked/reconnect/False`。
 
+2026-06-28 第八切片已发布:
+
+- Mobile 已消费 `connection_health` 合同:
+  - `mobile/services/dataConnections.ts` 增加 `ConnectionHealth` 类型、旧后端 fallback 和 `connectionHealthDisplay`。
+  - 设置页 `connectionStatusSummary` 优先使用后端健康状态，避免 active raw status 掩盖 degraded health。
+  - `/data-connections` 卡片展示状态、说明、缓存可用性和重连动作语义。
+- 本切片不新增写路径、不显示 token、不做重连 flow、不新增 native module。
+- 本地验证:
+  - RED：Mobile service 测试先失败于摘要仍显示 `1 个可用`，以及 `connectionHealthDisplay is not a function`。
+  - GREEN：`npm test -- --runTestsByPath services/__tests__/dataConnections.test.ts --runInBand` `8 passed`。
+  - `npx tsc --noEmit`、`scripts/check_doc_drift.py`、`git diff --check` 均通过。
+- 已发布:
+  - 代码 commit `80b903035526acf96ccb8bc9b995006e66e8e840`。
+  - Mobile OTA production group `dae8abc9-8dcf-4fb8-8e18-3252faf29f7b`。
+  - iOS update ID `019f0d33-d178-7fe1-843c-de5430217f5e`；runtime version `1.3.1`；commit `80b903035526acf96ccb8bc9b995006e66e8e840`。
+- Web/Mac 当前没有外部数据连接中心入口，后续应先补跨端信息架构和 PRD，而不是机械复制 Mobile 页面。
+
 2026-06-28 代码对比后的状态修正:
 
 - A 切片的最小 DataConnection / ConsentGrant / ProvenanceRecord 底座已经在 main 存在，不再作为“未实现底座”重复执行。
@@ -521,7 +538,7 @@ Mobile/Watch 待规划工作：
 
 仍未完成，继续保留在后续计划:
 
-- A 深化：DataConnection / ConsentGrant / ProvenanceRecord 的产品化、更多 provider 覆盖和 Review provenance 展示。
+- A 深化：DataConnection / ConsentGrant / ProvenanceRecord 的 Web/Mac 产品化、更多 provider 覆盖和 Review provenance 展示。
 - ConnectorPolicy 后续深化：rate limit、token refresh、provider retry policy、撤权后删除和审计 UI。
 - runtime provenance 继续扩展到 HealthKit / wearable/device / report provider 的更完整 key facts。
 
@@ -529,7 +546,7 @@ Mobile/Watch 待规划工作：
 
 - 后端：在现有 `DataConnection` / `ConsentGrant` / `ProvenanceRecord` / `ConnectorPolicy` 底座上补 token refresh、rate limit、撤权后删除和更多 provider metadata。
 - 导入：扩展报告/FHIR Bundle、HealthKit 和 wearable/device source 的统一 provenance，并继续扩展 Today/runtime context 的 key facts 覆盖面。
-- Mobile/Mac：连接中心展示连接状态、授权 scope、最近同步、撤权入口和 degraded explanation。
+- Mobile/Mac/Web：Mobile 连接中心已展示连接健康；后续补 Mac/Web 信息架构、连接状态、授权 scope、最近同步、撤权入口和 degraded explanation。
 - 测试：HealthKit/device runtime provenance serialization test、ConsentGrant revoke/delete test、跨 provider metadata contract test、token refresh/retry policy contract test。
 
 建议范围 B：
@@ -575,3 +592,4 @@ Mobile/Watch 待规划工作：
 | 2026-06-28 | 标记 B 切片第五个实现：执行反馈驱动 future replan | skip reason、snooze、completion 已进入未来 7 天投影的排序、解释和 runtime context；DataConnection/Consent/Provenance 状态修正为最小底座已存在、后续产品化。 |
 | 2026-06-28 | 标记 A/B 交叉切片：Runtime 关键事实 provenance 摘要 | Today/runtime top action 不再只有黑箱结论，已能把 FHIR/report biomarker 关键事实关联到 ProvenanceRecord 脱敏摘要。 |
 | 2026-06-28 | 标记 A 切片：ConnectorPolicy 降级连接健康解释 | DataConnection API 已返回 `connection_health`，三端连接中心后续可直接消费统一降级/重连/缓存可用性合同。 |
+| 2026-06-28 | 标记 A 切片：Mobile 连接健康状态展示 | Mobile 设置摘要和 `/data-connections` 页面已消费 `connection_health`，通过 OTA 发布到 production。 |
