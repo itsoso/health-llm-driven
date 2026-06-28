@@ -19,8 +19,9 @@
 5. **P2: source freshness policy.** Track guideline/source `last_reviewed_at` and stale source action items per domain.
 6. **P2: pgvector operations loop.** Persist reindex health reports, surface dense-index coverage in the admin dashboard, and schedule weekly serving-index refresh.
 7. **P2: dedao-kbase one-click publish.** Let explicit admin approval optionally publish reviewed dedao-kbase artifacts into serving KB and refresh indexes.
+8. **P2: dedao-kbase publish dry-run.** Let admin approval preview reviewed artifact import/reindex impact without mutating serving KB.
 
-This implementation executes P0, the P1 dedao-kbase draft observability and reviewer workflow API slices, plus the P2 source freshness, pgvector fallback-safe semantic backend, pgvector operations-loop, and explicit dedao-kbase one-click publish slices. It avoids new medical content and does not relax reviewed-only serving.
+This implementation executes P0, the P1 dedao-kbase draft observability and reviewer workflow API slices, plus the P2 source freshness, pgvector fallback-safe semantic backend, pgvector operations-loop, explicit dedao-kbase one-click publish, and dedao-kbase publish dry-run slices. It avoids new medical content and does not relax reviewed-only serving.
 
 ## Task 1: Lifecycle Eval Snapshot
 
@@ -252,6 +253,28 @@ Expected: focused pytest pass, compileall exit 0, release gate pass.
 
 ```bash
 DATABASE_URL=sqlite:///./backend/test_dedao_publish.db PYTHONPATH=backend COVERAGE_FILE=/tmp/.coverage-dedao-publish backend/venv/bin/python -m pytest backend/tests/test_system_knowledge_phase0.py::test_admin_dedao_kbase_draft_review_approve_can_publish_to_serving_kb -q
+```
+
+Expected: pytest pass.
+
+## Task 10: P2 dedao-kbase Publish Dry-Run Preview
+
+**Files:**
+- Modify: `backend/app/api/system_knowledge.py`
+- Modify: `backend/app/services/system_knowledge_service.py`
+- Test: `backend/tests/test_system_knowledge_phase0.py`
+
+**Implemented behavior:**
+- `POST /admin/knowledge/dedao_kbase/draft_review/approve` accepts `dry_run_publish: true` as an explicit publish preflight.
+- The endpoint still promotes draft artifacts through the existing human-review gate first, then returns `publish_preview` with reviewed artifact import counts and current reindex health.
+- Dry-run publish does not import artifacts into serving KB and does not write `system_kb_reindex_report`.
+- `publish` and `dry_run_publish` are mutually exclusive to avoid ambiguous admin intent.
+- The approval audit records `publish_dry_run` and stores the preview summary.
+
+**Verification:**
+
+```bash
+DATABASE_URL=sqlite:///./backend/test_dedao_publish_preview.db PYTHONPATH=backend COVERAGE_FILE=/tmp/.coverage-dedao-publish-preview backend/venv/bin/python -m pytest backend/tests/test_system_knowledge_phase0.py::test_admin_dedao_kbase_draft_review_approve_can_preview_publish_without_serving_mutation -q
 ```
 
 Expected: pytest pass.

@@ -1514,6 +1514,38 @@ def publish_dedao_kbase_reviewed_artifacts(
     }
 
 
+def preview_dedao_kbase_reviewed_artifacts_publish(
+    db: Session,
+    *,
+    artifact_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    """Preview reviewed dedao-kbase artifact import/reindex impact without serving mutation."""
+
+    root = _configured_system_kb_artifact_dir(artifact_dir)
+    gate = validate_artifact_review_gate(root)
+    if not gate.get("serving_allowed"):
+        reasons = ", ".join(str(reason) for reason in gate.get("blocking_reasons") or [])
+        raise ValueError(f"dedao-kbase artifacts are not reviewed for serving: {reasons}")
+
+    import_preview = _preview_reviewed_artifact_import(db, root)
+    pgvector = get_system_kb_pgvector_health(db)
+    return {
+        "dry_run": True,
+        "artifact_dir": str(root),
+        "gate": gate,
+        "import": import_preview,
+        "reindex": {
+            "would_run": True,
+            "current": {
+                "expected_documents": pgvector.get("expected_documents"),
+                "embedding_rows": pgvector.get("embedding_rows"),
+                "current_vector_backend": pgvector.get("current_vector_backend"),
+                "latest_reindex_report": pgvector.get("latest_reindex_report"),
+            },
+        },
+    }
+
+
 def apply_confidence_decay(
     db: Session,
     *,
@@ -3537,6 +3569,62 @@ def _artifact_preview(root: Path, *, limit: int) -> dict[str, Any]:
         else:
             preview[section] = [_document_preview(row) for row in rows[:limit]]
     return preview
+
+
+def _preview_reviewed_artifact_import(db: Session, root: Path) -> dict[str, int]:
+    from app.services.system_knowledge_importer import DOC_FILES
+
+    reviewed_existing_doc_ids = {
+        document.doc_id
+        for document in db.query(KBDocument.doc_id, KBDocument.metadata_json, KBDocument.is_archived).all()
+        if not document.is_archived
+        and isinstance(document.metadata_json, dict)
+        and document.metadata_json.get("review_status") == "reviewed"
+    }
+    reviewed_artifact_doc_ids: set[str] = set()
+    non_reviewed_artifact_doc_ids: set[str] = set()
+    documents = 0
+    skipped_documents = 0
+    for file_name in DOC_FILES:
+        for payload in _read_artifact_jsonl(root / file_name):
+            doc_id = str(payload.get("doc_id") or "")
+            if _artifact_payload_review_status(payload) == "reviewed":
+                documents += 1
+                if doc_id:
+                    reviewed_artifact_doc_ids.add(doc_id)
+                continue
+            skipped_documents += 1
+            if doc_id:
+                non_reviewed_artifact_doc_ids.add(doc_id)
+
+    reviewed_doc_ids_after_import = (
+        reviewed_existing_doc_ids - non_reviewed_artifact_doc_ids
+    ) | reviewed_artifact_doc_ids
+    edges = 0
+    skipped_edges = 0
+    for payload in _read_artifact_jsonl(root / "relations.jsonl"):
+        if (
+            payload.get("src_doc_id") in reviewed_doc_ids_after_import
+            and payload.get("dst_doc_id") in reviewed_doc_ids_after_import
+        ):
+            edges += 1
+        else:
+            skipped_edges += 1
+
+    return {
+        "documents": documents,
+        "edges": edges,
+        "skipped_documents": skipped_documents,
+        "skipped_edges": skipped_edges,
+    }
+
+
+def _artifact_payload_review_status(payload: dict[str, Any]) -> str | None:
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    value = metadata.get("review_status")
+    return str(value) if value is not None else None
 
 
 def _document_preview(row: dict[str, Any]) -> dict[str, Any]:
