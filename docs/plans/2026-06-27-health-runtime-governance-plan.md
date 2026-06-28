@@ -142,7 +142,7 @@ LLM 与工具综合层
 |---|---|---|---|---|
 | G0.1 | `HealthTrajectory` 驱动每日行动选择 | `backend/app/services/health_trajectory.py` 和 `/trajectory/me` 已存在；测试覆盖 evidence、confidence、claim_boundary | `ActionRanker` 和 `Agenda` 尚未把 trajectory risk 作为一等评分输入；trajectory risk 结构还缺少完整 PRD 合同：`state_variable`、`horizon`、`uncertainty`、`verification_window` | 阶段 1 |
 | G0.2 | Today top action 解释“控制输入”语义 | `Agenda`、Watch summary、Mobile Agenda 和 Mobile Home Daily Artifact 已暴露目标状态变量、轨迹周期和 verification signals | 剩余工作转向 Review 里的“预测 -> 实际 -> 下一步”回测时间线，以及更多 provider provenance 覆盖 | 阶段 1 / 阶段 2 |
-| G0.3 | 预测与实际结果进入统一复盘闭环 | Health consultation predictions、outcome grader、specialist hit-rate 和 `InterventionCycle` 片段已存在 | 缺少统一 prediction record 合同，尚未附着到 `Agenda`、`Intervention`、`Specialist`、`Problem`；Review 还没有用户可见的“预测 -> 实际 -> 下一步”时间线 | 阶段 2 |
+| G0.3 | 预测与实际结果进入统一复盘闭环 | `health_operating_review` 已支持 `prediction_backtest_v1`；Mobile `/my-progress` 和 Chat `operating_review` 动态卡片已展示预测回测摘要 | 仍缺统一 prediction record 写入合同，尚未系统附着到 `Agenda`、`Intervention`、`Specialist`、`Problem`；Review 还需要完整“预测 -> 实际 -> 下一步”时间线 | 阶段 2 |
 | G0.4 | `PersonalPrediction` 反哺 Twin/Trajectory | `backend/app/services/personal_models/treatment_effect.py` 和 priors 已存在 | 模型输出还不是稳定的 Twin/Trajectory 区块，Review 中没有广泛呈现，也没有作为结构化输入进入 `ActionRanker` | 阶段 3 |
 | G0.5 | `CausalMemory` 成为用户可见的个人规律库 | `backend/app/services/causal_memory.py` 已能生成带 claim boundary 的观察性总结 | 缺少 Mobile/Review 的主入口展示“你的个人健康规律”；尚未接入 Today 排序或 program 下一步解释 | 阶段 2 |
 | G0.6 | 首次使用 onboarding 生成初始健康闭环 | 数据上传、报告、基因、目标、问题、protocol 和 agenda 已散落存在 | 缺少统一 onboarding pipeline，把报告/设备/目标转成 `HealthTwin` + `HealthProblem` + `HealthProgram` + `Protocol` + 首个 `Agenda` | 阶段 1 |
@@ -581,17 +581,36 @@ Mobile/Watch 待规划工作：
   - 生产 smoke：`/api/v1/health` 返回 `200`，`/api/v1/daily-artifact/me` 未鉴权返回 `401`。
   - Mobile OTA production group `1ad7bd94-3ae9-4614-b713-05743488775b`；iOS update `019f0da5-f3cd-7136-94d8-aabc9bd34a22`。
 
+2026-06-28 第十二切片已发布:
+
+- Chat 已新增 `operating_review` 动态卡片:
+  - 后端 `inline_cards` 对“复盘 / 预测回测 / 效果怎么样 / 近期进展”类 query 调用 `build_health_operating_review()`，输出窗口、完成率、指标变化、prediction backtest 摘要和 causal memory 摘要。
+  - Mobile Chat registry 新增 `OperatingReviewCard`，展示完成率、预测回测状态、最多 2 条结果、指标变化和 observation/non-causal boundary。
+  - 卡片只提供 `route.open` 到 `/my-progress`，不新增写路径；记录/打卡类 query 不触发。
+- 本切片不新增 DB schema、不新增 prediction 写入、不新增诊断/处方/剂量/因果证明文案。
+- 本地验证:
+  - RED：后端 inline card 测试先失败于未调用 operating review builder；Mobile registry 先失败于 `unknown card type: operating_review`。
+  - GREEN：后端 inline cards focused test `4 passed`；Mobile registry focused test `22 passed`。
+  - 回归：后端 inline cards + health operating review `10 passed`；Mobile registry + healthOperatingReview service `25 passed`；Mobile TypeScript、compileall、dossier/doc drift、diff check 均通过。
+- 已发布:
+  - 代码 commit `a84bd620b0271a0d52711ea3de411ffb4289d18c`。
+  - 后端部署 HEAD `a84bd620b0271a0d52711ea3de411ffb4289d18c`，部署健康分 `60/60`。
+  - 生产 smoke：`/api/v1/health` 返回 `200`，`/api/v1/daily-plan/review?window_days=7` 未鉴权返回 `401`；服务器本机只读 `build_cards(user_id=3)` 返回 `operating_review status=not_ready ready=0`。
+  - Mobile OTA production group `78bf1ba3-3a75-4aa7-a30a-5bee29b4f3c9`；iOS update `019f0db8-4e06-7d7c-a819-8bfaceeaf6d0`。
+
 2026-06-28 代码对比后的状态修正:
 
 - A 切片的最小 DataConnection / ConsentGrant / ProvenanceRecord 底座已经在 main 存在，不再作为“未实现底座”重复执行。
 - A 后续工作改为产品化与覆盖扩展：跨端连接中心、家庭/医生/外部 agent scope、撤权删除、更多 provider、Review provenance 展示和 ConnectorPolicy。
 - B 切片的 Today/Home/Agenda/Watch 控制输入展示已经进入已发布状态；后续不再重复做 top action 基础展示，应转向 Review 回测和 provider provenance 扩展。
+- G0.3 的最小只读回测展示已覆盖 `/my-progress` 和 Chat 动态卡片；后续应补 prediction record 持久化合同与完整 Review 时间线。
 
 仍未完成，继续保留在后续计划:
 
 - A 深化：更多 provider 覆盖、家庭/医生/外部 agent scope、撤权删除、重连 UX、审计 UI 和 Review provenance 展示。
 - ConnectorPolicy 后续深化：rate limit、token refresh、provider retry policy、撤权后删除和审计 UI。
 - runtime provenance 继续扩展到 HealthKit / wearable/device / report provider 的更完整 key facts。
+- prediction record 继续深化：统一写入合同、跨 `Agenda` / `Intervention` / `Specialist` / `Problem` 的 attachment、Review timeline 和 confidence change 历史。
 
 建议范围 A：
 
@@ -603,9 +622,9 @@ Mobile/Watch 待规划工作：
 建议范围 B：
 
 - 后端：继续把 `health_trajectory.py`、`personal_models` 和 `ActionRanker` 的结构化输出用于 prediction/review，不再重复做基础 top action 展示。
-- Mobile：Home/Agenda 已展示目标状态变量和验证信号；下一步应在 Review 展示“预测 -> 实际 -> 下一步”的回测时间线。
+- Mobile：Home/Agenda 已展示目标状态变量和验证信号；Chat 已展示 `operating_review` 卡片；下一步应在 Review 展示完整“预测 -> 实际 -> 下一步”的时间线。
 - Watch：继续保留一句话行动，不新增复杂 UI；只在安全边界或验证信号缺失时补充极短提示。
-- Review：实现 prediction backtest 占位到真实闭环，展示 horizon、expected signal、actual result、confidence change 和 inconclusive 状态。
+- Review：把现有 prediction backtest 从摘要卡升级为完整时间线，展示 horizon、expected signal、actual result、confidence change、inconclusive 原因和下一步。
 - 测试：prediction record contract test、Review timeline rendering test、claim-boundary regression、provider provenance coverage test。
 
 阶段 2 紧随其后的实现 spec：
@@ -647,3 +666,4 @@ Mobile/Watch 待规划工作：
 | 2026-06-28 | 标记 A 切片：Web 连接健康状态展示 | Web `/data-connections` 页面、侧边导航和设置入口已消费 `connection_health`，生产 page smoke 通过。 |
 | 2026-06-28 | 标记 A 切片：Mac 连接健康状态展示 | Mac sidebar、command palette 和 SwiftUI 连接中心已消费 `connection_health`，本地打包安装并打开。 |
 | 2026-06-28 | 标记 B 切片：Daily Artifact 控制输入展示 | Mobile Home 已展示目标状态变量、轨迹周期和验证摘要，Today top action 基础展示从“任务卡”推进到“控制输入”。 |
+| 2026-06-28 | 标记 G0.3 切片：Chat 预测回测复盘动态卡片 | 用户在 Chat 里问复盘/预测回测时可看到结构化 Review 卡片，连接到 `/my-progress`，同时保留观察性非因果边界。 |

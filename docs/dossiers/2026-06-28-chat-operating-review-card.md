@@ -4,8 +4,8 @@
 |---|---|
 | slug | `chat-operating-review-card` |
 | 创建日期 | 2026-06-28 |
-| 当前阶段 | S6 部署 |
-| 状态 | shipping |
+| 当前阶段 | S8 沉淀 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | backend deploy + mobile OTA |
 
@@ -80,7 +80,7 @@
 
 - 委托: Codex
 - 分支: `main`
-- commit: 待提交
+- commit: `a84bd620b0271a0d52711ea3de411ffb4289d18c`
 - 代码改动:
   - `backend/app/services/inline_cards.py` 新增 `operating_review` builder，复用 `build_health_operating_review()` 生成紧凑只读卡片。
   - Chat card action 只开放 `route.open` 到 `/my-progress`。
@@ -114,20 +114,49 @@
 ## S6 · 部署
 
 - 路由: backend deploy + mobile OTA。
-- 部署 SHA / 回滚点: 待定。
+- 代码提交: `a84bd620b0271a0d52711ea3de411ffb4289d18c`。
+- 后端部署 HEAD: `a84bd620b0271a0d52711ea3de411ffb4289d18c`。
+- deploy.sh 回滚点: `bb08085e`。
+- Mobile OTA:
+  - branch/channel: `production`
+  - runtime version: `1.3.1`
+  - update group: `78bf1ba3-3a75-4aa7-a30a-5bee29b4f3c9`
+  - iOS update id: `019f0db8-4e06-7d7c-a819-8bfaceeaf6d0`
+  - EAS dashboard: `https://expo.dev/accounts/itsoso/projects/health-pilot/updates/78bf1ba3-3a75-4aa7-a30a-5bee29b4f3c9`
 
 ## G5 · 部署健康闸
 
-- 待定。
+- `./deploy.sh -b` 成功。
+- 部署健康分: `60/60 ✅ PASS`。
+- skills manifest: 本地 `22` = 线上 `22`。
+- 生产服务 HEAD: `a84bd620b0271a0d52711ea3de411ffb4289d18c`。
+- 生产 smoke:
+  - `GET http://127.0.0.1:8000/api/v1/health` -> `200`。
+  - `GET http://127.0.0.1:8000/api/v1/daily-plan/review?window_days=7` 未鉴权 -> `401`，说明复盘路由已注册。
+  - 服务器本机只读调用 `build_cards(db, 3, "帮我做一次预测回测和近期复盘")` -> `count=1 types=['operating_review'] window_days=7 status=not_ready ready=0`。
+- **裁决**: PASS
 
 ## S7 · 上线验证
 
-- 待定。
+- Mobile OTA `./scripts/mobile-ota.sh production "Chat shows prediction backtest review cards"` 成功发布。
+- EAS 输出 iOS bundle `entry-45e7d729f9e28feec0f91aad3f41f645.hbc`，设备冷启动或后台 30s+ 后拉取。
+- user_id=3 当前没有 ready prediction backtest，卡片正确显示 `not_ready` 数据边界，不假装预测准确性。
 
 ## G6 · 验证闸
 
-- 待定。
+- PASS。Chat 复盘类 query 现在能返回只读 `operating_review` 动态卡片:
+  - 窗口与完成率；
+  - prediction backtest 摘要；
+  - 最多 2 条回测结果；
+  - 指标变化；
+  - observation/non-causal boundary；
+  - 打开 `/my-progress` 查看复盘详情。
+- 尚未完成: 统一 prediction record 写入合同和 Review 时间线中的完整“预测 -> 实际 -> 下一步”历史视图；保留到后续切片。
 
 ## S8 · 沉淀
 
-- 待上线验证后回写计划状态。
+- 已回写 `docs/specs/active/2026-06-28-rolling-7-day-health-runtime.md` 和 `docs/plans/2026-06-27-health-runtime-governance-plan.md`。
+- 后续最高价值切片转向:
+  - prediction record 持久化合同；
+  - Review timeline 把 backtest、causal memory、program review 串成一条用户可读时间线；
+  - provider provenance 覆盖 HealthKit/wearable/device key facts。

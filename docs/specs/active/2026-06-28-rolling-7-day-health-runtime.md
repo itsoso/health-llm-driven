@@ -108,6 +108,15 @@
 - Watch shared model 已支持解码 root `runtime` 和 top action `runtime_context`，为原生 Watch UI 使用同一行动合同打底。
 - 已发布：backend SHA `a1535357f76339e11a83f1a20dbb13987c5b6ef5`；Mobile OTA group `d731f134-0d98-46c4-8cc9-3b916c6281be`；生产 smoke 覆盖 Watch root runtime 与 Chat runtime card。
 
+### 2026-06-28 · Chat Operating Review Card
+
+- Chat SSE inline cards 已新增 `operating_review` 只读动态卡片，用于“复盘 / 预测回测 / 效果怎么样 / 近期进展”类 query。
+- 后端 builder 复用 `health_operating_review.build_health_operating_review()`，输出窗口、完成率、最多 4 个指标变化、prediction backtest 摘要、最多 2 条结果和 causal memory 摘要。
+- Mobile Chat registry 已新增 `OperatingReviewCard`，展示完成率、预测回测状态、结果行和 observation/non-causal boundary，并提供 `route.open` 到 `/my-progress` 的只读跳转。
+- 记录/打卡类 query 不触发该卡片，避免把快速记录误判成复盘。
+- 本切片不新增 DB schema、不新增 prediction 写入、不新增诊断/处方/剂量/因果证明文案。
+- 已发布：backend SHA `a84bd620b0271a0d52711ea3de411ffb4289d18c`；Mobile OTA group `78bf1ba3-3a75-4aa7-a30a-5bee29b4f3c9`；生产 smoke `build_cards(user_id=3)` 返回 `operating_review` 且 `status=not_ready`。
+
 ### 2026-06-28 · Feedback-driven Future Replan
 
 - Future projection 已读取最近 7 天 `HealthProtocolEvent`，把 completion、skip、snooze 转为 future runtime 的重排因子。
