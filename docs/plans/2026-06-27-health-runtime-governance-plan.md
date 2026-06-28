@@ -529,7 +529,25 @@ Mobile/Watch 待规划工作：
   - 代码 commit `80b903035526acf96ccb8bc9b995006e66e8e840`。
   - Mobile OTA production group `dae8abc9-8dcf-4fb8-8e18-3252faf29f7b`。
   - iOS update ID `019f0d33-d178-7fe1-843c-de5430217f5e`；runtime version `1.3.1`；commit `80b903035526acf96ccb8bc9b995006e66e8e840`。
-- Web/Mac 当前没有外部数据连接中心入口，后续应先补跨端信息架构和 PRD，而不是机械复制 Mobile 页面。
+- Web 入口已在下一切片补齐；Mac 当前没有外部数据连接中心入口，后续应按同一信息架构补 SwiftUI 连接中心。
+
+2026-06-28 第九切片已发布:
+
+- Web 已消费 `connection_health` 合同:
+  - `frontend/src/services/api/dataConnections.ts` 增加 `ConnectionHealth` 类型、旧后端 fallback、状态摘要和 display mapping。
+  - `/data-connections` 页面展示连接状态、授权 scope、最近同步/尝试时间、缓存可用性、降级解释和重连动作语义。
+  - 侧边导航“管理中心”和设置页“数据和智能”已接入统一连接中心入口。
+- 本切片只读展示，不显示 token、不新增重连 flow、不做撤权删除、不新增 provider 写路径。
+- 本地验证:
+  - RED：Web service 测试先失败于 `Failed to resolve import "./dataConnections"`。
+  - GREEN：`npm test -- src/services/api/dataConnections.test.ts` `3 passed`。
+  - `npx tsc --noEmit`、`npm run build`、`scripts/check_doc_drift.py`、`git diff --check` 均通过。
+- 已发布:
+  - 代码 commit `f6ab4e3dc688e583a72f43583e3fd51c8d69926a`。
+  - 前端部署 `./deploy.sh -f -y` 成功，PM2 `health-frontend` online。
+  - 生产 page smoke：`GET /data-connections` `page_status=200 next_payload_present=True`。
+  - 生产 user_id=3 API smoke：`http_status=200 connections=0 health_count=0`。
+- Mac 当前仍没有外部数据连接中心入口；下一步如果继续 A 线，应补 Mac sidebar/SwiftUI 连接状态和 degraded explanation。
 
 2026-06-28 代码对比后的状态修正:
 
@@ -538,7 +556,7 @@ Mobile/Watch 待规划工作：
 
 仍未完成，继续保留在后续计划:
 
-- A 深化：DataConnection / ConsentGrant / ProvenanceRecord 的 Web/Mac 产品化、更多 provider 覆盖和 Review provenance 展示。
+- A 深化：DataConnection / ConsentGrant / ProvenanceRecord 的 Mac 产品化、更多 provider 覆盖和 Review provenance 展示。
 - ConnectorPolicy 后续深化：rate limit、token refresh、provider retry policy、撤权后删除和审计 UI。
 - runtime provenance 继续扩展到 HealthKit / wearable/device / report provider 的更完整 key facts。
 
@@ -546,7 +564,7 @@ Mobile/Watch 待规划工作：
 
 - 后端：在现有 `DataConnection` / `ConsentGrant` / `ProvenanceRecord` / `ConnectorPolicy` 底座上补 token refresh、rate limit、撤权后删除和更多 provider metadata。
 - 导入：扩展报告/FHIR Bundle、HealthKit 和 wearable/device source 的统一 provenance，并继续扩展 Today/runtime context 的 key facts 覆盖面。
-- Mobile/Mac/Web：Mobile 连接中心已展示连接健康；后续补 Mac/Web 信息架构、连接状态、授权 scope、最近同步、撤权入口和 degraded explanation。
+- Mobile/Mac/Web：Mobile 和 Web 连接中心已展示连接健康；后续补 Mac 信息架构、连接状态、授权 scope、最近同步、撤权入口和 degraded explanation。
 - 测试：HealthKit/device runtime provenance serialization test、ConsentGrant revoke/delete test、跨 provider metadata contract test、token refresh/retry policy contract test。
 
 建议范围 B：

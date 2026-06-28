@@ -4,8 +4,8 @@
 |---|---|
 | slug | `web-data-connections-center` |
 | 创建日期 | 2026-06-28 |
-| 当前阶段 | S5 实现 |
-| 状态 | in_progress |
+| 当前阶段 | S8 沉淀 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | frontend deploy |
 
@@ -68,13 +68,13 @@
   - [x] T1 RED: Web service 测试证明缺少 `dataConnections` service。
   - [x] T2 GREEN: 增加 Web service 类型、fallback、display 映射和 endpoint。
   - [x] T3 UI: 增加 `/data-connections` 页面、导航入口和设置页入口。
-  - [ ] T4 验证、提交、部署、生产 smoke 和文档回写。
+  - [x] T4 验证、提交、部署、生产 smoke 和文档回写。
 
 ## S5 · 实现
 
 - 委托: Codex
 - 分支: `codex/rolling-runtime-next-slice`
-- commit: 待提交
+- commit: `f6ab4e3dc688e583a72f43583e3fd51c8d69926a`
 
 ## G3 · 测试闸
 
@@ -83,6 +83,8 @@
 - 集成闸:
   - `npm test -- src/services/api/dataConnections.test.ts`: `3 passed`。
   - `npx tsc --noEmit`: 通过。
+  - `npm run build`: 通过，`/data-connections` 进入 Next route table。
+  - `scripts/check_doc_drift.py`: 通过，Web pages 派生计数更新。
   - `git diff --check`: 通过。
 - **裁决**: 绿
 
@@ -99,20 +101,33 @@
 ## S6 · 部署
 
 - 路由: frontend deploy
-- 部署 SHA / 回滚点: 待定
+- 部署 SHA / 回滚点:
+  - 前端部署 HEAD: `f6ab4e3dc688e583a72f43583e3fd51c8d69926a`
+  - 回滚点: `b7116a17`
 
 ## G5 · 部署健康闸
 
-- 待定
+- frontend deploy: `./deploy.sh -f -y` 成功，PM2 `health-frontend` online。
+- production page smoke:
+  - `GET https://health.executor.life/data-connections`: `page_status=200 page_bytes=24530 next_payload_present=True route_text_present=True`。
+- production service smoke:
+  - `GET https://health.executor.life/api/v1/health`: `health_status=200 status=healthy`。
+  - 服务器本机 user_id=3 authenticated `GET /api/v1/data-connections/me`: `http_status=200 connections=0 health_count=0 health_statuses=[] user_actions=[]`。
+- **裁决**: PASS
 
 ## S7 · 上线验证
 
-- 待定
+- 真实路径验证: Web 连接中心页面已在生产路由可访问；页面使用同一 `/api/v1/data-connections/me` 只读合同，生产 anchor 用户 user_id=3 的 API 合同返回 200。
+- 结果(相关非因果措辞): 本切片已补齐 Web 端查看外部数据连接健康、授权范围、同步状态和降级解释的入口；user_id=3 当前没有连接记录，因此正向连接卡片状态由本地 service/unit test 和已发布 backend rollback 合同 smoke 覆盖。
 
 ## G6 · 验证闸
 
-- 待定
+- 需求在 prod 对 anchor 用户真成立?: PASS；Web 页面路由、Next payload、后端只读合同均已生产验证。
+- 真机/发布用户确认: 不涉及 Mobile 真机或 TestFlight；Web 生产发布已完成。
+- **裁决**: PASS(回路闭合)
 
 ## S8 · 沉淀
 
-- 待上线验证后回写计划状态。
+- 新坑沉淀: Web/Mobile 均消费同一个 `connection_health` display mapping；后续 Mac 实现应复用语义，不再各端手写 degraded/revoked 文案。
+- 文档同步: `docs/specs/active/2026-06-28-rolling-7-day-health-runtime.md` 和 `docs/plans/2026-06-27-health-runtime-governance-plan.md` 已回写。
+- 状态 -> **shipped**: 完成

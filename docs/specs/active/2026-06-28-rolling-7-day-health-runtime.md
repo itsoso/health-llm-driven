@@ -132,3 +132,11 @@
 - Mobile 设置页摘要优先使用 `connection_health`，不再只看原始 `connection_status`。
 - Mobile `/data-connections` 卡片展示状态、解释文案、缓存可用性和需重连动作语义。
 - 已发布：Mobile OTA production group `dae8abc9-8dcf-4fb8-8e18-3252faf29f7b`，iOS update `019f0d33-d178-7fe1-843c-de5430217f5e`。
+
+### 2026-06-28 · Web Connector Health Surface
+
+- Web 已新增 `/data-connections` 连接中心，用于查看外部数据源、授权范围、同步状态和 `connection_health` 降级解释。
+- Web service 已支持 `ConnectionHealth` 类型、旧后端 fallback、状态摘要和 display mapping，与 Mobile 使用同一语义。
+- 侧边导航“管理中心”和设置页“数据和智能”已接入连接中心入口。
+- 本切片只读展示，不新增 token refresh、撤权删除、重连 flow 或 provider 写路径。
+- 已发布：Web commit `f6ab4e3dc688e583a72f43583e3fd51c8d69926a`；生产 page smoke `GET /data-connections` 返回 200；user_id=3 authenticated API smoke 返回 `http_status=200 connections=0`。
