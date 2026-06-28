@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import api from '../services/api';
+import { requestAccountDeletion } from '../services/auth';
 import { connectionStatusSummary, fetchDataConnections } from '../services/dataConnections';
 import { useAuth } from '../hooks/useAuth';
 import { useBiometricLock } from '../hooks/useBiometricLock';
@@ -25,6 +26,7 @@ export default function SettingsScreen() {
   const { logout, user, isAuthenticated } = useAuth();
   const qc = useQueryClient();
   const [syncing, setSyncing] = useState(false);
+  const [deletionRequesting, setDeletionRequesting] = useState(false);
   const { isEnabled: bioEnabled, isSupported: bioSupported, toggleEnabled: toggleBio } = useBiometricLock(isAuthenticated);
 
   const { data: profile } = useQuery({ queryKey: queryKeys.profile, queryFn: () => api.get('/profile/me').then(r => r.data), staleTime: 600_000 });
@@ -76,6 +78,37 @@ export default function SettingsScreen() {
     ]);
   };
 
+  const handleRequestAccountDeletion = () => {
+    Alert.alert(
+      '删除账号与数据',
+      '提交后我们会在 7 天内处理账号、健康数据和设备连接删除请求。处理期间请不要卸载 App,以便接收必要通知。这个操作需要人工复核,不能撤销。',
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: deletionRequesting ? '提交中...' : '确认提交',
+          style: 'destructive',
+          onPress: async () => {
+            if (deletionRequesting) return;
+            setDeletionRequesting(true);
+            try {
+              const result = await requestAccountDeletion();
+              Alert.alert(
+                '删除请求已提交',
+                result.message || `请求已记录,预计 ${result.estimated_completion_days} 天内完成处理。`,
+                [{ text: '知道了' }],
+              );
+              await logout();
+            } catch {
+              Alert.alert('提交失败', '删除请求没有保存成功,请稍后重试。');
+            } finally {
+              setDeletionRequesting(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const showSiriInfo = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert(
@@ -117,7 +150,36 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* AI 模型 — 置顶 */}
+        <Text style={txt.sectionLabel}>数据连接</Text>
+        <View style={styles.card}>
+          <LocationSettingsRow city={city} useManual={profile?.use_manual_location === true}
+            onPress={() => router.push('/location' as any)} />
+          <GarminStatusRow status={garminStatus} syncing={syncing} onSync={syncGarmin} />
+          <AppleHealthRow onSyncComplete={() => invalidateHealthSnapshot(qc)} />
+          <SettingRow icon="key-outline" label="数据连接与授权"
+            value={connectionStatusSummary(dataConnections)}
+            onPress={() => router.push('/data-connections' as any)} />
+          <SettingRow icon="git-compare-outline" label="数据来源"
+            onPress={() => router.push('/device-sources' as any)} />
+        </View>
+
+        <Text style={txt.sectionLabel}>健康档案</Text>
+        <View style={styles.card}>
+          <SettingRow icon="document-text-outline" label="化验记录"
+            onPress={() => router.push('/medical-exams' as any)} />
+          <SettingRow icon="cloud-upload-outline" label="导入体检报告"
+            onPress={() => router.push('/import' as any)} />
+          <SettingRow icon="medkit-outline" label="用药管理"
+            onPress={() => router.push('/medications' as any)} />
+          <SettingRow icon="cube-outline" label="补剂库存"
+            onPress={() => router.push('/supplement-inventory' as any)} />
+          <SettingRow icon="cellular-outline" label="我的基因"
+            onPress={() => router.push('/genetic-report' as any)} />
+          <SettingRow icon="flag-outline" label="健康目标"
+            onPress={() => router.push('/goals' as any)} />
+        </View>
+
+        <Text style={txt.sectionLabel}>复盘与计划</Text>
         <View style={styles.card}>
           <SettingRow icon="today-outline" label="今日议程"
             onPress={() => router.push('/agenda' as any)} />
@@ -125,104 +187,28 @@ export default function SettingsScreen() {
             onPress={() => router.push('/day-schedule' as any)} />
           <SettingRow icon="calendar-outline" label="日历 · 日程 + 多源管理"
             onPress={() => router.push('/calendar' as any)} />
-          <SettingRow icon="sparkles-outline" label="AI 模型"
-            onPress={() => router.push('/llm-preference' as any)} />
           <SettingRow icon="calendar-outline" label="本周建议"
             onPress={() => router.push('/weekly-briefing' as any)} />
           <SettingRow icon="trending-up" label="我的进度"
             onPress={() => router.push('/my-progress' as any)} />
-          <SettingRow icon="person-outline" label="AI 教练风格"
-            onPress={() => router.push('/coach-persona' as any)} />
-          <SettingRow icon="cellular-outline" label="我的基因"
-            onPress={() => router.push('/genetic-report' as any)} />
-        </View>
-
-        {/* 代谢健康 — Personal Health OS 闭环 */}
-        <View style={styles.card}>
           <SettingRow icon="pulse-outline" label="代谢健康画像"
             onPress={() => router.push('/metabolic-profile' as any)} />
           <SettingRow icon="refresh-outline" label="代谢干预 · 90 天"
             onPress={() => router.push('/intervention-cycle' as any)} />
-        </View>
-
-        {/* 健康分析 — 深度分析从首页移到这里(首页只留日常驱动);各卡路由仍可达 */}
-        <Text style={txt.sectionLabel}>健康分析</Text>
-        <View style={styles.card}>
-          <SettingRow icon="trending-up" label="结果追踪"
-            onPress={() => router.push('/my-progress' as any)} />
           <SettingRow icon="hourglass-outline" label="生物年龄"
             onPress={() => router.push('/biological-age' as any)} />
           <SettingRow icon="leaf-outline" label="抗衰下一步"
             onPress={() => router.push('/longevity-next' as any)} />
-          <SettingRow icon="git-compare-outline" label="设备一致性"
-            onPress={() => router.push('/device-sources' as any)} />
-          <SettingRow icon="analytics-outline" label="健康轨迹分析"
-            onPress={() => router.push('/(tabs)/chat' as any)} />
-        </View>
-
-        {/* Settings items */}
-        <View style={styles.card}>
-          <LocationSettingsRow city={city} useManual={profile?.use_manual_location === true}
-            onPress={() => router.push('/location' as any)} />
-          <GarminStatusRow status={garminStatus} syncing={syncing} onSync={syncGarmin} />
-          <AppleHealthRow onSyncComplete={() => invalidateHealthSnapshot(qc)} />
-          <SettingRow icon="scan-outline" label="Rokid 眼镜健康模式"
-            onPress={() => router.push('/rokid-health' as any)} />
-          <SettingRow icon="body-outline" label="Rokid 俯卧撑计数"
-            onPress={() => router.push('/rokid-pushup-coach' as any)} />
-          <SettingRow icon="shield-checkmark-outline" label="Rokid 自检"
-            onPress={() => router.push('/rokid-diagnostics' as any)} />
-          <SettingRow icon="git-compare-outline" label="数据来源"
-            onPress={() => router.push('/device-sources' as any)} />
-          <SettingRow icon="key-outline" label="数据连接与授权"
-            value={connectionStatusSummary(dataConnections)}
-            onPress={() => router.push('/data-connections' as any)} />
-        </View>
-
-        {/* Health tools */}
-        <View style={styles.card}>
-          <SettingRow icon="warning-outline" label="安全告警"
-            onPress={() => router.push('/alerts' as any)} />
-          <SettingRow icon="reader-outline" label="健康日记"
-            onPress={() => router.push('/journal' as any)} />
-          <SettingRow icon="medical-outline" label="健康咨询"
-            onPress={() => router.push('/consultations' as any)} />
-          <SettingRow icon="pulse-outline" label="肝脏趋势"
-            onPress={() => router.push('/liver-trend' as any)} />
-          <SettingRow icon="ribbon-outline" label="处方查原研药"
-            onPress={() => router.push('/prescription-scan' as any)} />
-          <SettingRow icon="barbell-outline" label="运动记录"
-            onPress={() => router.push('/workout-list' as any)} />
-          <SettingRow icon="flag-outline" label="健康目标"
-            onPress={() => router.push('/goals' as any)} />
-          <SettingRow icon="document-text-outline" label="硬性指令"
-            onPress={() => router.push('/directives' as any)} />
-          <SettingRow icon="sparkles-outline" label="AI 对我的画像"
-            onPress={() => router.push('/ai-profile' as any)} />
-          <SettingRow icon="bookmark-outline" label="AI 关于你的笔记"
-            onPress={() => router.push('/memory' as any)} />
-          <SettingRow icon="document-text-outline" label="化验记录"
-            onPress={() => router.push('/medical-exams' as any)} />
           <SettingRow icon="calendar-outline" label="月度复盘"
             onPress={() => router.push('/monthly-reports' as any)} />
           <SettingRow icon="medical-outline" label="医生回路"
             onPress={() => router.push('/doctor-loop' as any)} />
-          <SettingRow icon="time-outline" label="健康事件流"
-            onPress={() => router.push('/timeline' as any)} />
-          <SettingRow icon="medkit-outline" label="用药管理"
-            onPress={() => router.push('/medications' as any)} />
-          <SettingRow icon="cube-outline" label="补剂库存"
-            onPress={() => router.push('/supplement-inventory' as any)} />
-          <SettingRow icon="list-outline" label="多药梳理"
-            onPress={() => router.push('/deprescribing' as any)} />
-          <SettingRow icon="people-circle-outline" label="社会连接自评"
-            onPress={() => router.push('/connection-checkin' as any)} />
-          <SettingRow icon="people-outline" label="家庭健康"
-            onPress={() => router.push('/family' as any)} />
         </View>
 
-        {/* Notifications & Siri & Security */}
+        <Text style={txt.sectionLabel}>通知与安全</Text>
         <View style={styles.card}>
+          <SettingRow icon="warning-outline" label="安全告警"
+            onPress={() => router.push('/alerts' as any)} />
           <SettingRow icon="notifications-outline" label="推送通知"
             onPress={() => router.push('/notification-settings' as any)} />
           <SettingRow icon="eye-outline" label="科学用眼 (20-20-20)"
@@ -242,14 +228,57 @@ export default function SettingsScreen() {
           )}
         </View>
 
+        <Text style={txt.sectionLabel}>账号与隐私</Text>
         <View style={styles.card}>
+          <SettingRow icon="shield-checkmark-outline" label="隐私政策"
+            onPress={() => router.push('/privacy-policy' as any)} />
+          <SettingRow icon="people-outline" label="家庭健康"
+            onPress={() => router.push('/family' as any)} />
+          <SettingRow icon="reader-outline" label="健康日记"
+            onPress={() => router.push('/journal' as any)} />
+          <SettingRow icon="document-text-outline" label="硬性指令"
+            onPress={() => router.push('/directives' as any)} />
           <SettingRow icon="pulse-outline" label="数据自检"
             onPress={() => router.push('/data-integrity' as any)} />
+          <SettingRow icon="trash-outline" label="删除账号与数据"
+            value={deletionRequesting ? '提交中...' : '请求删除'}
+            destructive
+            onPress={handleRequestAccountDeletion} />
+        </View>
+
+        <Text style={txt.sectionLabel}>高级与实验</Text>
+        <View style={styles.card}>
+          <SettingRow icon="sparkles-outline" label="AI 模型"
+            onPress={() => router.push('/llm-preference' as any)} />
+          <SettingRow icon="person-outline" label="AI 教练风格"
+            onPress={() => router.push('/coach-persona' as any)} />
+          <SettingRow icon="sparkles-outline" label="AI 对我的画像"
+            onPress={() => router.push('/ai-profile' as any)} />
+          <SettingRow icon="bookmark-outline" label="AI 关于你的笔记"
+            onPress={() => router.push('/memory' as any)} />
+          <SettingRow icon="medical-outline" label="健康咨询"
+            onPress={() => router.push('/consultations' as any)} />
+          <SettingRow icon="pulse-outline" label="肝脏趋势"
+            onPress={() => router.push('/liver-trend' as any)} />
+          <SettingRow icon="ribbon-outline" label="处方查原研药"
+            onPress={() => router.push('/prescription-scan' as any)} />
+          <SettingRow icon="barbell-outline" label="运动记录"
+            onPress={() => router.push('/workout-list' as any)} />
+          <SettingRow icon="list-outline" label="多药梳理"
+            onPress={() => router.push('/deprescribing' as any)} />
+          <SettingRow icon="people-circle-outline" label="社会连接自评"
+            onPress={() => router.push('/connection-checkin' as any)} />
+          <SettingRow icon="time-outline" label="健康事件流"
+            onPress={() => router.push('/timeline' as any)} />
+          <SettingRow icon="scan-outline" label="Rokid 眼镜健康模式"
+            onPress={() => router.push('/rokid-health' as any)} />
+          <SettingRow icon="body-outline" label="Rokid 俯卧撑计数"
+            onPress={() => router.push('/rokid-pushup-coach' as any)} />
+          <SettingRow icon="shield-checkmark-outline" label="Rokid 自检"
+            onPress={() => router.push('/rokid-diagnostics' as any)} />
           <SettingRow icon="bug-outline" label="App 诊断"
             onPress={() => router.push('/app-diagnostics' as any)} />
           <SettingRow icon="information-circle-outline" label="版本" value="1.0.0" />
-          <SettingRow icon="shield-checkmark-outline" label="隐私政策"
-            onPress={() => router.push('/privacy-policy' as any)} />
         </View>
 
         {/* Logout */}
@@ -261,13 +290,26 @@ export default function SettingsScreen() {
   );
 }
 
-function SettingRow({ icon, label, value, onPress }: { icon: any; label: string; value?: string; onPress?: () => void }) {
+function SettingRow({
+  icon,
+  label,
+  value,
+  onPress,
+  destructive = false,
+}: {
+  icon: any;
+  label: string;
+  value?: string;
+  onPress?: () => void;
+  destructive?: boolean;
+}) {
   const Wrapper = onPress ? TouchableOpacity : View;
+  const color = destructive ? revaSemantic.risk.fg : C.ink2;
   return (
     <Wrapper style={styles.settingRow} onPress={onPress} activeOpacity={0.6}>
-      <Ionicons name={icon} size={18} color={C.ink2} />
-      <Text style={txt.settingLabel}>{label}</Text>
-      <Text style={txt.settingValue}>{value || ''}</Text>
+      <Ionicons name={icon} size={18} color={color} />
+      <Text style={[txt.settingLabel, destructive && { color }]}>{label}</Text>
+      <Text style={[txt.settingValue, destructive && { color }]}>{value || ''}</Text>
       {onPress && <Ionicons name="chevron-forward" size={14} color={C.ink3} />}
     </Wrapper>
   );

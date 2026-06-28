@@ -16,19 +16,19 @@ import { useTheme, type ColorPalette } from '../hooks/useTheme';
 
 const sections = [
   {
-    title: '我们收集什么',
+    title: '我们读取和记录什么',
     body:
-      '为了生成健康建议,应用会处理你主动记录的症状、饮食、运动、睡眠、用药、补剂、化验、基因报告摘要,以及你授权同步的 Apple Health、Garmin、Rokid 等设备数据。',
+      '为了生成健康时间线和行动建议,应用会处理你主动记录的症状、饮食、运动、睡眠、用药、补剂、化验、体检报告和基因报告摘要,以及你授权同步的 Apple Health、Garmin 等设备数据。',
   },
   {
-    title: '这些数据怎么用',
+    title: 'HealthKit 数据怎么用',
     body:
-      '数据用于健康时间线、提醒、风险提示、复盘、模型个性化和跨设备一致性检查。位置与天气信息只用于空气质量、户外运动、睡眠环境和日程提醒等健康场景。',
+      'Apple Health / HealthKit 数据仅用于身体状态展示、自动同步、趋势复盘、提醒和个性化健康行动建议。我们不会把 HealthKit 数据用于广告、营销画像或出售给数据经纪方。',
   },
   {
     title: 'AI 与第三方模型',
     body:
-      '当你请求 AI 分析时,系统会按最小必要原则向所选模型提供上下文。我们不会把你的个人健康数据出售给广告平台或数据经纪方。',
+      '当你请求 AI 分析或对话时,系统会按最小必要原则向所选模型提供上下文。AI 用于解释、总结和生成行动草稿,不能替代医生诊断、治疗、处方或药物剂量调整。',
   },
   {
     title: '安全与隔离',
@@ -38,7 +38,12 @@ const sections = [
   {
     title: '你的控制权',
     body:
-      '你可以在系统设置或应用内断开设备授权,停止同步 Apple Health、Garmin、Rokid 等来源。需要导出、删除或更正数据时,可通过应用内反馈或注册邮箱联系处理。',
+      '你可以在应用内断开设备授权,停止同步 Apple Health、Garmin 等来源。你也可以在“我 -> 账号与隐私”中发起删除账号与数据请求;请求会进入可审计处理流程,通常 7 天内完成。',
+  },
+  {
+    title: '医疗边界',
+    body:
+      'Reva 提供健康记录、趋势解读和生活方式建议,不提供诊断、急救分诊、处方、治疗方案或药物剂量调整。出现红旗症状或医生要求复查时,请以医生和急救服务为准。',
   },
 ];
 
@@ -67,7 +72,7 @@ export default function PrivacyPolicyScreen() {
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={txt.heroTitle}>健康数据优先按最小必要原则使用</Text>
             <Text style={txt.heroBody}>
-              这份摘要说明移动端当前主要数据用途和控制方式。正式上线、接入支付或面向更多用户前,仍需要同步完整法律文本。
+              这份摘要说明移动端当前主要数据用途和控制方式。完整法律文本、App Store 隐私填报和权限说明需要保持一致。
             </Text>
           </View>
         </View>
@@ -81,7 +86,7 @@ export default function PrivacyPolicyScreen() {
           ))}
         </View>
 
-        <Text style={txt.footer}>最近更新: 2026-06-23</Text>
+        <Text style={txt.footer}>最近更新: 2026-06-28</Text>
       </ScrollView>
     </SafeAreaView>
   );

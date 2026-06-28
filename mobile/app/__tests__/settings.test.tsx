@@ -1,9 +1,12 @@
 /* eslint-disable import/first, @typescript-eslint/no-require-imports */
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
+import { Alert } from 'react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockBack = jest.fn();
 const mockPush = jest.fn();
+const mockLogout = jest.fn();
+const mockRequestAccountDeletion = jest.fn();
 let mockGarminStatus: any = { health: 'healthy', minutes_since_last_sync: 3 };
 
 jest.mock('expo-router', () => ({
@@ -36,7 +39,7 @@ jest.mock('expo-haptics', () => ({
 
 jest.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
-    logout: jest.fn(),
+    logout: mockLogout,
     user: { username: 'Suntice', email: 'itsoso@126.com' },
     isAuthenticated: true,
   }),
@@ -85,12 +88,21 @@ jest.mock('../../services/api', () => ({
   },
 }));
 
+jest.mock('../../services/auth', () => ({
+  requestAccountDeletion: (...args: unknown[]) => mockRequestAccountDeletion(...args),
+}));
+
 import SettingsScreen from '../settings';
 
 describe('SettingsScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGarminStatus = { health: 'healthy', minutes_since_last_sync: 3 };
+    mockRequestAccountDeletion.mockResolvedValue({
+      status: 'requested',
+      estimated_completion_days: 7,
+      requested_at: '2026-06-28T00:00:00Z',
+    });
   });
 
   it('surfaces GPS and city positioning as one explicit clickable entry', () => {
@@ -148,6 +160,26 @@ describe('SettingsScreen', () => {
     fireEvent.press(getByText('隐私政策'));
 
     expect(mockPush).toHaveBeenCalledWith('/privacy-policy');
+  });
+
+  it('lets the user request account deletion from the app', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((title, message, buttons) => {
+      if (title === '删除账号与数据') {
+        buttons?.find((button) => button.style === 'destructive')?.onPress?.();
+      }
+    });
+    const { getByText } = render(<SettingsScreen />);
+
+    fireEvent.press(getByText('删除账号与数据'));
+
+    await waitFor(() => expect(mockRequestAccountDeletion).toHaveBeenCalledTimes(1));
+    expect(mockLogout).toHaveBeenCalledTimes(1);
+    expect(alertSpy).toHaveBeenCalledWith(
+      '删除请求已提交',
+      expect.stringContaining('7 天'),
+      expect.any(Array),
+    );
+    alertSpy.mockRestore();
   });
 
   it('does not show negative Garmin sync age when server time is ahead', () => {

@@ -1,5 +1,5 @@
 """用户认证API"""
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from typing import Optional, AsyncGenerator
 import json
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
@@ -10,6 +10,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from app.database import get_db
 from app.models.user import User, GarminCredential
+from app.models.agent_audit_log import AgentAuditLog
 from app.schemas.auth import (
     UserRegister, UserLogin, Token, UserResponse, UserUpdate,
     PasswordChange, BindWebLogin, GarminCredentialCreate, GarminCredentialResponse,
@@ -231,6 +232,64 @@ async def get_me(
         )
     # 允许未审核用户查看自己的信息，但不允许访问其他功能
     return user_to_response(current_user, db)
+
+
+@router.post("/me/deletion-request", summary="发起账号与数据删除请求")
+async def request_account_deletion(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Let a signed-in user initiate account and health-data deletion.
+
+    App Store account deletion rules require an in-app initiation path. Full
+    deletion/anonymization touches many health tables, so this endpoint records a
+    fail-loud auditable request for the deletion worker/admin process instead of
+    silently pretending the account was deleted.
+    """
+    requested_at = datetime.now(timezone.utc)
+    audit = AgentAuditLog(
+        user_id=current_user.id,
+        agent_type="account_privacy",
+        action="account_deletion_requested",
+        result_summary="用户已在 App 内发起账号与数据删除请求",
+        result_detail={
+            "requested_by": "self",
+            "channel": "mobile_app",
+            "requested_at": requested_at.isoformat(),
+            "estimated_completion_days": 7,
+            "requires_manual_processing": True,
+            "scope": ["account", "health_data", "device_connections"],
+        },
+    )
+    try:
+        db.add(audit)
+        db.commit()
+        db.refresh(audit)
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        logger.error(
+            "账号删除请求记录失败 - user_id=%s, error=%s",
+            current_user.id,
+            str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="删除请求未能记录，请稍后重试",
+        ) from exc
+
+    logger.warning(
+        "用户 %s 发起账号与数据删除请求 audit_id=%s",
+        current_user.id,
+        audit.id,
+    )
+    return {
+        "status": "requested",
+        "user_id": current_user.id,
+        "audit_id": audit.id,
+        "requested_at": requested_at.isoformat(),
+        "estimated_completion_days": 7,
+        "message": "删除请求已提交，我们会在 7 天内完成处理并保留必要审计记录。",
+    }
 
 
 @router.put("/me", response_model=UserResponse, summary="更新用户信息")

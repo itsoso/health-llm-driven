@@ -20,6 +20,15 @@ export interface LoginResponse {
   user: User;
 }
 
+export interface AccountDeletionRequestResponse {
+  status: 'requested';
+  user_id: number;
+  audit_id: number;
+  requested_at: string;
+  estimated_completion_days: number;
+  message: string;
+}
+
 export async function login(
   username: string,
   password: string,
@@ -69,6 +78,11 @@ export async function isLoggedIn(): Promise<boolean> {
 
 export async function fetchCurrentUser(): Promise<User> {
   const { data } = await api.get<User>('/auth/me');
+  return data;
+}
+
+export async function requestAccountDeletion(): Promise<AccountDeletionRequestResponse> {
+  const { data } = await api.post<AccountDeletionRequestResponse>('/auth/me/deletion-request');
   return data;
 }
 
