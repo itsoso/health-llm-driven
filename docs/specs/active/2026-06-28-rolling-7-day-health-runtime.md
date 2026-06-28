@@ -92,6 +92,13 @@
 - Mobile service 默认查询 7 天并保留 `top_action.runtime_context`。
 - Home telemetry 已记录 runtime generator、source kind、horizon 和 replan reason。
 
+### 2026-06-28 · Daily Artifact Control Input Surface
+
+- Daily Artifact `top_action` 已稳定透传 `trajectory_context`、`target_state_variable`、`verification_signal` 和 `claim_boundary`。
+- Mobile Home Daily Artifact 卡片已展示目标状态变量、轨迹周期和验证摘要，复用 Agenda 的 trajectory display 语义。
+- 本切片不改行动排序、不新增写路径、不新增诊断/处方/剂量/因果承诺，只把已有 suggest-only runtime 字段产品化。
+- 已发布：代码 commit `c6af470e5ebfff6eb5eb6fbf2c046eeb54c57772`；后端部署 HEAD `bb08085eb54ce36c9a143c7313952494f570c5f8`；Mobile OTA group `1ad7bd94-3ae9-4614-b713-05743488775b`，iOS update `019f0da5-f3cd-7136-94d8-aabc9bd34a22`。
+
 ### 2026-06-28 · Chat + Watch Runtime Surfaces
 
 - Chat SSE inline cards 已新增 `runtime_agenda` 只读动态卡片。

@@ -141,7 +141,7 @@ LLM 与工具综合层
 | 编号 | PRD 能力 | 当前证据 | 缺口工作 | 目标阶段 |
 |---|---|---|---|---|
 | G0.1 | `HealthTrajectory` 驱动每日行动选择 | `backend/app/services/health_trajectory.py` 和 `/trajectory/me` 已存在；测试覆盖 evidence、confidence、claim_boundary | `ActionRanker` 和 `Agenda` 尚未把 trajectory risk 作为一等评分输入；trajectory risk 结构还缺少完整 PRD 合同：`state_variable`、`horizon`、`uncertainty`、`verification_window` | 阶段 1 |
-| G0.2 | Today top action 解释“控制输入”语义 | `Agenda` 和 Watch summary 已经暴露 top actions 和 verification windows | Top action 还没有在 Mobile/Watch 一致展示目标状态变量、预期影响窗口、成功信号、失败/安全信号和轨迹原因 | 阶段 1 |
+| G0.2 | Today top action 解释“控制输入”语义 | `Agenda`、Watch summary、Mobile Agenda 和 Mobile Home Daily Artifact 已暴露目标状态变量、轨迹周期和 verification signals | 剩余工作转向 Review 里的“预测 -> 实际 -> 下一步”回测时间线，以及更多 provider provenance 覆盖 | 阶段 1 / 阶段 2 |
 | G0.3 | 预测与实际结果进入统一复盘闭环 | Health consultation predictions、outcome grader、specialist hit-rate 和 `InterventionCycle` 片段已存在 | 缺少统一 prediction record 合同，尚未附着到 `Agenda`、`Intervention`、`Specialist`、`Problem`；Review 还没有用户可见的“预测 -> 实际 -> 下一步”时间线 | 阶段 2 |
 | G0.4 | `PersonalPrediction` 反哺 Twin/Trajectory | `backend/app/services/personal_models/treatment_effect.py` 和 priors 已存在 | 模型输出还不是稳定的 Twin/Trajectory 区块，Review 中没有广泛呈现，也没有作为结构化输入进入 `ActionRanker` | 阶段 3 |
 | G0.5 | `CausalMemory` 成为用户可见的个人规律库 | `backend/app/services/causal_memory.py` 已能生成带 claim boundary 的观察性总结 | 缺少 Mobile/Review 的主入口展示“你的个人健康规律”；尚未接入 Today 排序或 program 下一步解释 | 阶段 2 |
@@ -564,10 +564,28 @@ Mobile/Watch 待规划工作：
   - `apps/mac/scripts/package-app.sh --install --open` 成功。
   - 已安装并打开 `/Applications/健康 Agent.app`。
 
+2026-06-28 第十一切片已发布:
+
+- Mobile Home Daily Artifact 已补齐控制输入语义:
+  - 后端 `daily_artifact_service._top_action_view()` 透传 `trajectory_context`、`target_state_variable`、`verification_signal` 和 `claim_boundary`。
+  - Mobile `dailyArtifact` service 保留这些字段，首页 `DailyArtifactCard` 展示目标状态变量、轨迹周期和验证摘要。
+  - `trajectoryDisplay` 已从 Agenda 专用抽成可被 Agenda 和 Daily Artifact 共用的 display input。
+- 本切片不改 ActionRanker、不新增写路径、不新增诊断/处方/剂量/因果承诺，只把已有 suggest-only runtime 字段产品化。
+- 本地验证:
+  - RED：后端 Daily Artifact 合同测试先失败于 `trajectory_context` 缺失；Mobile UI 测试先失败于找不到目标/周期文案。
+  - GREEN：后端 Daily Artifact focused test `3 passed`；Mobile Daily Artifact/trajectory tests `3 passed, 8 tests`。
+  - 回归：后端 Daily Artifact + Agenda + ActionRanker + Watch + Chat runtime `39 passed`；Mobile Daily Artifact + Agenda display `4 passed, 15 tests`；Mobile TypeScript、compileall、dossier/doc drift、diff check 均通过。
+- 已发布:
+  - 代码 commit `c6af470e5ebfff6eb5eb6fbf2c046eeb54c57772`。
+  - 后端部署 HEAD `bb08085eb54ce36c9a143c7313952494f570c5f8`，部署健康分 `55/60`。
+  - 生产 smoke：`/api/v1/health` 返回 `200`，`/api/v1/daily-artifact/me` 未鉴权返回 `401`。
+  - Mobile OTA production group `1ad7bd94-3ae9-4614-b713-05743488775b`；iOS update `019f0da5-f3cd-7136-94d8-aabc9bd34a22`。
+
 2026-06-28 代码对比后的状态修正:
 
 - A 切片的最小 DataConnection / ConsentGrant / ProvenanceRecord 底座已经在 main 存在，不再作为“未实现底座”重复执行。
 - A 后续工作改为产品化与覆盖扩展：跨端连接中心、家庭/医生/外部 agent scope、撤权删除、更多 provider、Review provenance 展示和 ConnectorPolicy。
+- B 切片的 Today/Home/Agenda/Watch 控制输入展示已经进入已发布状态；后续不再重复做 top action 基础展示，应转向 Review 回测和 provider provenance 扩展。
 
 仍未完成，继续保留在后续计划:
 
@@ -584,11 +602,11 @@ Mobile/Watch 待规划工作：
 
 建议范围 B：
 
-- 后端：把现有 `health_trajectory.py` 输出适配为 Agenda/ActionRanker input contract。
-- Mobile：在 Today top action 展示目标状态变量和验证信号。
-- Watch：保留一句话行动，不新增复杂 UI。
-- Review：增加一个后续 prediction backtest 的占位。
-- 测试：trajectory risk shape contract test、ActionRanker scoring test、Agenda item serialization test、Mobile top action copy unit test。
+- 后端：继续把 `health_trajectory.py`、`personal_models` 和 `ActionRanker` 的结构化输出用于 prediction/review，不再重复做基础 top action 展示。
+- Mobile：Home/Agenda 已展示目标状态变量和验证信号；下一步应在 Review 展示“预测 -> 实际 -> 下一步”的回测时间线。
+- Watch：继续保留一句话行动，不新增复杂 UI；只在安全边界或验证信号缺失时补充极短提示。
+- Review：实现 prediction backtest 占位到真实闭环，展示 horizon、expected signal、actual result、confidence change 和 inconclusive 状态。
+- 测试：prediction record contract test、Review timeline rendering test、claim-boundary regression、provider provenance coverage test。
 
 阶段 2 紧随其后的实现 spec：
 
@@ -628,3 +646,4 @@ Mobile/Watch 待规划工作：
 | 2026-06-28 | 标记 A 切片：Mobile 连接健康状态展示 | Mobile 设置摘要和 `/data-connections` 页面已消费 `connection_health`，通过 OTA 发布到 production。 |
 | 2026-06-28 | 标记 A 切片：Web 连接健康状态展示 | Web `/data-connections` 页面、侧边导航和设置入口已消费 `connection_health`，生产 page smoke 通过。 |
 | 2026-06-28 | 标记 A 切片：Mac 连接健康状态展示 | Mac sidebar、command palette 和 SwiftUI 连接中心已消费 `connection_health`，本地打包安装并打开。 |
+| 2026-06-28 | 标记 B 切片：Daily Artifact 控制输入展示 | Mobile Home 已展示目标状态变量、轨迹周期和验证摘要，Today top action 基础展示从“任务卡”推进到“控制输入”。 |

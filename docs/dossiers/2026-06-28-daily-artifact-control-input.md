@@ -4,8 +4,8 @@
 |---|---|
 | slug | `daily-artifact-control-input` |
 | 创建日期 | 2026-06-28 |
-| 当前阶段 | S5 实现 |
-| 状态 | building |
+| 当前阶段 | S8 沉淀 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | backend deploy + mobile OTA |
 
@@ -74,19 +74,32 @@
   - [ ] T2 RED: Mobile service 归一化和首页 UI 不展示 control-input 摘要。
   - [ ] T3 GREEN: 后端透传、Mobile 类型/归一化、首页卡片展示。
   - [ ] T4 验证、部署、OTA、文档回写。
-- 并发检查: 已 `git fetch` + fast-forward 到 `origin/main` `6a9bccf9`。
+- 并发检查: 已 `git fetch` + fast-forward 到 `origin/main`；开发提交为 `c6af470e5ebfff6eb5eb6fbf2c046eeb54c57772`，部署前远端继续前进到 `bb08085eb54ce36c9a143c7313952494f570c5f8`。
 
 ## S5 · 实现
 
 - 委托: Codex
 - 分支: `main`
-- commit: 待提交
+- commit: `c6af470e5ebfff6eb5eb6fbf2c046eeb54c57772`
+- 代码改动:
+  - `backend/app/services/daily_artifact_service.py` 的 `_top_action_view()` 透传 `trajectory_context`、`target_state_variable`、`verification_signal` 和 `claim_boundary`。
+  - `mobile/services/dailyArtifact.ts` 保留 Daily Artifact top action 的控制输入字段。
+  - `mobile/services/trajectoryDisplay.ts` 抽成 Agenda 和 Daily Artifact 共用的 display input。
+  - `mobile/components/home/DailyArtifactCard.tsx` 在首页行动卡片展示目标/周期和验证摘要。
 
 ## G3 · 测试闸
 
-- RED: 待记录。
-- GREEN: 待记录。
-- 集成闸: 待记录。
+- RED:
+  - `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest backend/tests/test_daily_artifact.py -q --no-cov` 先失败于 `KeyError: 'trajectory_context'`，随后失败于 `target_state_variable` 缺少 fallback。
+  - `npm test -- --runTestsByPath services/__tests__/dailyArtifact.test.ts components/home/__tests__/DailyArtifactCard.test.tsx --runInBand` 先失败于首页找不到 `目标: 腰围 · 周期: 90天上游轨迹`，service 归一化也未保留 `trajectory_context`。
+- GREEN:
+  - `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest backend/tests/test_daily_artifact.py -q --no-cov` -> `3 passed, 9 warnings`。
+  - `npm test -- --runTestsByPath services/__tests__/dailyArtifact.test.ts components/home/__tests__/DailyArtifactCard.test.tsx services/__tests__/trajectoryDisplay.test.ts --runInBand` -> `3 passed, 8 tests`。
+- 集成闸:
+  - `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest backend/tests/test_daily_artifact.py backend/tests/test_agenda_range_complete.py backend/tests/test_action_ranker.py backend/tests/test_watch_summary.py backend/tests/test_inline_cards_runtime_agenda.py -q --no-cov` -> `39 passed, 9 warnings`。
+  - `npm test -- --runTestsByPath services/__tests__/dailyArtifact.test.ts components/home/__tests__/DailyArtifactCard.test.tsx services/__tests__/trajectoryDisplay.test.ts services/__tests__/agenda.test.ts --runInBand` -> `4 passed, 15 tests`。
+  - `cd mobile && npx tsc --noEmit` -> exit 0。
+  - `backend/venv/bin/python -m compileall -q backend/app/services/daily_artifact_service.py && backend/venv/bin/python backend/scripts/check_dossier_consistency.py && backend/venv/bin/python scripts/check_doc_drift.py && git diff --check` -> dossier/doc drift/diff 检查通过。
 
 ## G4 · 安全闸
 
@@ -95,25 +108,52 @@
   - 只显示已有 suggest-only 字段。
   - 安全边界继续展示。
   - 不新增诊断、处方、剂量、因果承诺。
+- 复查方式: Codex safety self-review；由于当前工具策略不允许未显式请求时主动派子 agent，未启动 safety-privacy-reviewer。
+- 结果: diff 只新增字段透传和 UI 展示；无新增写路径，完成/跳过路径不变；无药物、剂量、诊断或因果承诺升级。
 - **裁决**: GO
 
 ## S6 · 部署
 
 - 路由: backend deploy + mobile OTA。
-- 部署 SHA / 回滚点: 待定。
+- 代码提交: `c6af470e5ebfff6eb5eb6fbf2c046eeb54c57772`。
+- 后端部署 HEAD: `bb08085eb54ce36c9a143c7313952494f570c5f8`（包含并发 harness gate 提交）。
+- deploy.sh 回滚点: `6a9bccf9`。
+- Mobile OTA:
+  - branch/channel: `production`
+  - runtime version: `1.3.1`
+  - update group: `1ad7bd94-3ae9-4614-b713-05743488775b`
+  - iOS update id: `019f0da5-f3cd-7136-94d8-aabc9bd34a22`
+  - EAS dashboard: `https://expo.dev/accounts/itsoso/projects/health-pilot/updates/1ad7bd94-3ae9-4614-b713-05743488775b`
 
 ## G5 · 部署健康闸
 
-- 待定。
+- `./deploy.sh -b` 成功。
+- 部署健康分: `55/60 ✅ PASS`。
+- skills manifest: 本地 `22` = 线上 `22`。
+- 生产服务 HEAD: `bb08085eb54ce36c9a143c7313952494f570c5f8`。
+- 生产 smoke:
+  - `GET http://127.0.0.1:8000/api/v1/health` -> `200`。
+  - `GET http://127.0.0.1:8000/api/v1/daily-artifact/me` 未鉴权 -> `401`，说明路由已注册；不是旧进程 `404`。
+- **裁决**: PASS
 
 ## S7 · 上线验证
 
-- 待定。
+- Mobile OTA `./scripts/mobile-ota.sh production "Daily Artifact shows target and verification controls"` 成功发布。
+- EAS 输出 iOS bundle `entry-b7516e1e93a45d3a05551c1fcb3e1590.hbc`，设备冷启动或后台 30s+ 后拉取。
+- 本切片无新增真实世界写动作；上线验证以路由活性、OTA 发布和本地合同/UI 测试为准。
 
 ## G6 · 验证闸
 
-- 待定。
+- PASS。Daily Artifact 首页现在能通过同一 trajectory display 工具展示:
+  - 目标状态变量；
+  - 轨迹周期；
+  - 验证信号/窗口/不确定性。
+- 尚未完成: Review 页面中的 prediction backtest 时间线，以及更广泛 provider provenance 覆盖；保留到后续切片。
 
 ## S8 · 沉淀
 
-- 待上线验证后回写计划状态。
+- 已回写 `docs/specs/active/2026-06-28-rolling-7-day-health-runtime.md` 和 `docs/plans/2026-06-27-health-runtime-governance-plan.md`。
+- 后续最高价值切片转向:
+  - Review prediction backtest；
+  - DataConnection 重连/撤权删除/token refresh；
+  - runtime provenance 扩展到 HealthKit/wearable/device key facts。
