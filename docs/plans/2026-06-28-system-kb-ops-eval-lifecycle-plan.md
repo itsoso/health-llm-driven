@@ -18,7 +18,7 @@
 4. **P2: real semantic backend.** Replace deterministic semantic aliases with pgvector-backed embeddings while preserving the current search response shape.
 5. **P2: source freshness policy.** Track guideline/source `last_reviewed_at` and stale source action items per domain.
 
-This implementation executes P0 only. It avoids new medical content and does not relax reviewed-only serving.
+This implementation executes P0 and the P1 dedao-kbase draft observability slice. It avoids new medical content and does not relax reviewed-only serving.
 
 ## Task 1: Lifecycle Eval Snapshot
 
@@ -94,3 +94,20 @@ PYTHONPATH=backend backend/venv/bin/python backend/scripts/run_external_health_k
 ```
 
 Expected: pytest pass, compileall exit 0, release gate pass.
+
+## Task 4: dedao-kbase Draft Observability
+
+**Files:**
+- Modify: `backend/app/services/system_knowledge_service.py`
+- Test: `backend/tests/test_system_knowledge_phase0.py`
+
+**Step 1: Write the failing test**
+
+Seed a `KBAudit(op="dedao_kbase_export_sync_draft")` with a draft gate that is not serving-allowed, then assert:
+- `/admin/knowledge/operations_dashboard` returns `latest_dedao_kbase_export_sync`
+- the returned audit includes the source commit and gate payload
+- `dedao_kbase_draft_review_needed` appears in `action_items`
+
+**Step 2: Implement minimal dashboard observability**
+
+Add a latest-audit helper for `dedao_kbase_export_sync_draft`, return it from the operations dashboard, and add the review-needed action item when the latest draft sync gate has blocking reasons. This is read-only observability; draft artifacts still require review plus the normal release gate before serving.

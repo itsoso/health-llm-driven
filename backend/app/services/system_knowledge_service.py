@@ -1286,12 +1286,19 @@ def get_knowledge_operations_dashboard(db: Session) -> dict[str, Any]:
     coverage = get_knowledge_coverage_report(db)
     lint = lint_knowledge_base(db)
     latest_lifecycle = _latest_lifecycle_report(db)
-    action_items = _knowledge_operations_action_items(coverage, lint, latest_lifecycle)
+    latest_dedao_sync = _latest_dedao_kbase_export_sync_draft(db)
+    action_items = _knowledge_operations_action_items(
+        coverage,
+        lint,
+        latest_lifecycle,
+        latest_dedao_sync,
+    )
     return {
         "status": "ok" if not action_items else "attention",
         "coverage": coverage,
         "lint": lint,
         "latest_lifecycle_report": latest_lifecycle,
+        "latest_dedao_kbase_export_sync": latest_dedao_sync,
         "action_items": action_items,
     }
 
@@ -3015,10 +3022,29 @@ def _latest_lifecycle_report(db: Session) -> dict[str, Any] | None:
     }
 
 
+def _latest_dedao_kbase_export_sync_draft(db: Session) -> dict[str, Any] | None:
+    audit = (
+        db.query(KBAudit)
+        .filter(KBAudit.op == "dedao_kbase_export_sync_draft")
+        .order_by(KBAudit.ts.desc(), KBAudit.id.desc())
+        .first()
+    )
+    if audit is None:
+        return None
+    return {
+        "id": audit.id,
+        "op": audit.op,
+        "actor": audit.actor,
+        "ts": audit.ts.isoformat() if audit.ts else None,
+        "diff": audit.diff or {},
+    }
+
+
 def _knowledge_operations_action_items(
     coverage: dict[str, Any],
     lint: dict[str, Any],
     latest_lifecycle_report: dict[str, Any] | None,
+    latest_dedao_sync: dict[str, Any] | None = None,
 ) -> list[str]:
     action_items: list[str] = []
     specialist = coverage.get("specialist_findings") or {}
@@ -3055,6 +3081,12 @@ def _knowledge_operations_action_items(
                 action_items.append("kb_eval_failures_present")
             if int(eval_report.get("total") or 0) == 0:
                 action_items.append("kb_eval_cases_missing")
+    if latest_dedao_sync is not None:
+        dedao_diff = latest_dedao_sync.get("diff")
+        gate = dedao_diff.get("gate") if isinstance(dedao_diff, dict) else None
+        blocking_reasons = gate.get("blocking_reasons") if isinstance(gate, dict) else []
+        if isinstance(gate, dict) and gate.get("serving_allowed") is False and blocking_reasons:
+            action_items.append("dedao_kbase_draft_review_needed")
     return action_items
 
 

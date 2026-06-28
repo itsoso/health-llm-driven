@@ -1063,6 +1063,42 @@ def test_admin_operations_dashboard_flags_eval_failures(client, db, auth_user_an
     assert "kb_eval_failures_present" in payload["action_items"]
 
 
+def test_admin_operations_dashboard_surfaces_dedao_kbase_draft_sync(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    db.add(
+        KBAudit(
+            doc_id=None,
+            op="dedao_kbase_export_sync_draft",
+            actor="celery:dedao_kbase_export_sync",
+            diff={
+                "status": "draft_written",
+                "export_url": "https://kbase.executor.life/api/export",
+                "artifact_dir": "/tmp/system_kb_v2_seed",
+                "source": "dedao-kbase",
+                "source_repo": "dedao-kbase",
+                "source_commit": "abc123",
+                "source_version": "2026-06-28",
+                "diff": {"documents": {"added": 3}, "edges": {"added": 4}},
+                "gate": {
+                    "serving_allowed": False,
+                    "blocking_reasons": ["draft_artifacts_pending_review"],
+                },
+            },
+        )
+    )
+    db.commit()
+
+    response = client.get("/api/v1/admin/knowledge/operations_dashboard", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["latest_dedao_kbase_export_sync"]["op"] == "dedao_kbase_export_sync_draft"
+    assert payload["latest_dedao_kbase_export_sync"]["diff"]["source_commit"] == "abc123"
+    assert payload["latest_dedao_kbase_export_sync"]["diff"]["gate"]["serving_allowed"] is False
+    assert "dedao_kbase_draft_review_needed" in payload["action_items"]
+
+
 def test_admin_review_queue_prioritizes_claims_needing_human_review(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
     user.is_admin = True
