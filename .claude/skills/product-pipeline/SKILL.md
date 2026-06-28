@@ -160,7 +160,10 @@ python3 scripts/harness_workflow_trace.py init \
 
 ## 降级与并行
 
-- **降级**:小需求可压缩 —— 跳 S1 大 discovery(直接小范围 grep)、PRD+规划合一页、单 agent 实现。但 **Gate 不可跳**(尤其 G3/G4/G5)。
+- **Quick Flow(中档)**:介于全 6-Gate 与单文件小修之间。适用:单 surface、无新一等对象、无新 DB/写自治/医疗安全行为、可在 1 个 Dossier + 1 页 tech-spec 内说清的用户可见改动。做法:S0/S1 轻量化,S2 PRD + S3 规划合并为「tech-spec」,但 G1/G2/G3/G4/G5/G6 的裁决仍写进 Dossier。
+- **单文件降级**:纯机械/纯文档/无用户行为改变的小修,可跳 S1 大 discovery(直接小范围 grep)、PRD+规划合一页、单 agent 实现。但 **Gate 不可跳**(尤其 G3/G4/G5)。
+- **升级为全流程**:Quick Flow 中一旦发现跨端契约、新写路径、认证/CORS、R4/R15/PIPL、安全规则、长期数据模型或无法在 1 页 tech-spec 内解释清楚,立即升级为全流程,回 S1/S2 补 discovery/PRD/规划。
+- **correct-course**:实现或评审中若发现旧基线错误、scope 必须变、Gate 假设被证伪,不要在原计划上静默漂移;在 Dossier 增加 **Correction Block**(触发/旧基线/新基线/回退阶段/需重跑 Gate),更新 PRD/Plan 后从指定阶段继续。若回到 S2/S3,必须重跑 G2 出口一致性闸。
 - **并行**:定义环的 discovery readers 并行;交付环的多端实现 fan-out 并行;长动作(EAS/deploy)异步触发不等。
 - **可恢复**:任何中断后,读 Dossier「当前阶段 + 状态」从断点续。
 

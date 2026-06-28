@@ -73,6 +73,7 @@
 4. **plugin 打包(P1,中)**:marketplace.json + per-project adapter,终结手抄 4 次。
    - 2026-06-28 implementation note:已新增 repo-local Codex plugin `plugins/reva-health-harness` 与 `.agents/plugins/marketplace.json`,打包 `product-pipeline` / `health-harness-orchestrator` / workflow trace CLI;并新增测试确保 plugin manifest、marketplace entry、打包 skill 与源文件保持一致。
 5. **spec-kit/BMAD 工艺借鉴(P2)**:spec-template + /clarify + 只读 /analyze 一致性闸 + scale-adaptive 中档 + correct-course。
+   - 2026-06-28 implementation note:已在 `product-pipeline` skill 与 Dossier 模板加入 BMAD 风格 **Quick Flow** 中档、升级为全流程条件、`correct-course` / `Correction Block`;并同步到 `reva-health-harness` plugin,由 plugin 包测试防漂移。
 6. **记忆检索/选择性 priming(P2)**:MEMORY.md 触顶前上 metaswarm tag-prime 或 Letta 核心+archival。
 7. **输入/检索护栏(P2,健康专属)**:NeMo 分类法补 input PII 脱敏 + RAG grounding。
 

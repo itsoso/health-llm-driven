@@ -50,3 +50,18 @@ def test_reva_health_harness_packages_core_project_skills():
     assert (PLUGIN / "scripts" / "harness_workflow_trace.py").read_text(encoding="utf-8") == (
         ROOT / "scripts" / "harness_workflow_trace.py"
     ).read_text(encoding="utf-8")
+
+
+def test_product_pipeline_documents_quick_flow_and_correct_course():
+    skill = (ROOT / ".claude" / "skills" / "product-pipeline" / "SKILL.md").read_text(encoding="utf-8")
+    template = (ROOT / ".claude" / "skills" / "product-pipeline" / "dossier-template.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Quick Flow" in skill
+    assert "全 6-Gate" in skill
+    assert "升级为全流程" in skill
+    assert "correct-course" in skill
+    assert "Correction Block" in skill
+    assert "## Correct Course" in template
+    assert "旧基线" in template

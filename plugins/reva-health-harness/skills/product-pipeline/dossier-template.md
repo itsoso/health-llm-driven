@@ -15,6 +15,16 @@
 | 负责 | <human / agent> |
 | 反馈环 | 本地 Sim / OTA / EAS / backend deploy |
 
+## Correct Course
+<!-- correct-course 时追加一条 Correction Block,不要覆盖旧计划。旧基线要保留,新基线要指向需重跑的 Gate。 -->
+- [ ] Correction Block
+  - 触发:
+  - 旧基线:
+  - 新基线:
+  - 回退阶段:S0 / S1 / G1 / S2 / S3 / G2 / S4 / S5 / G3 / G4 / S6 / G5 / S7 / G6
+  - 需重跑 Gate:
+  - 用户确认(若 scope/风险变):☐
+
 ## S0 · 用户需求(逐字)
 > <把用户原话粘这里,不改写>
 
