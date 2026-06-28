@@ -12,6 +12,8 @@ BUNDLE_ID="${IOS_SIM_BUNDLE_ID:-life.executor.health}"
 DEVICE="${IOS_SIM_DEVICE:-booted}"
 OUTPUT_DIR="${ROOT}/design/screenshots/app-store/$(date +%Y%m%d-%H%M%S)"
 URL_SCHEME="${IOS_SIM_URL_SCHEME:-}"
+PRIVACY_STATUS="${APP_STORE_SCREENSHOT_PRIVACY_STATUS:-private}"
+APP_STORE_READY=0
 
 usage() {
   sed -n '1,12p' "$0"
@@ -31,6 +33,14 @@ while [ "$#" -gt 0 ]; do
       OUTPUT_DIR="${2:?missing --output value}"
       shift 2
       ;;
+    --privacy-status)
+      PRIVACY_STATUS="${2:?missing --privacy-status value}"
+      shift 2
+      ;;
+    --app-store-ready)
+      APP_STORE_READY=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -42,6 +52,19 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
+
+case "${PRIVACY_STATUS}" in
+  private|demo|sanitized) ;;
+  *)
+    echo "--privacy-status must be private, demo, or sanitized" >&2
+    exit 2
+    ;;
+esac
+
+if [ "${APP_STORE_READY}" = "1" ] && [ "${PRIVACY_STATUS}" = "private" ]; then
+  echo "--app-store-ready requires --privacy-status demo or sanitized" >&2
+  exit 2
+fi
 
 if ! command -v xcrun >/dev/null 2>&1; then
   echo "xcrun not found. Install Xcode command line tools first." >&2
@@ -148,8 +171,42 @@ cat > "${OUTPUT_DIR}/README.md" <<EOF
 - Simulator: ${DEVICE_ID}
 - Bundle ID: ${BUNDLE_ID}
 - URL scheme: ${URL_SCHEME}
+- Privacy status: ${PRIVACY_STATUS}
+- App Store ready: $([ "${APP_STORE_READY}" = "1" ] && echo "yes" || echo "no")
 
-Review each image before committing. Do not commit screenshots with private user data.
+Review each image before committing. Do not commit screenshots with private user data. App Store ready sets must use a demo account or sanitized data.
 EOF
+
+python3 - "${OUTPUT_DIR}/manifest.json" "${DEVICE_ID}" "${BUNDLE_ID}" "${URL_SCHEME}" "${PRIVACY_STATUS}" "${APP_STORE_READY}" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+
+manifest_path, simulator, bundle_id, url_scheme, privacy_status, ready = sys.argv[1:]
+routes = [
+    ("00-launch", "launch"),
+    ("01-today", "/"),
+    ("02-chat", "/chat"),
+    ("03-record", "/record"),
+    ("04-me", "/me"),
+    ("05-import", "/import"),
+    ("06-privacy", "/privacy-policy"),
+]
+payload = {
+    "captured_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+    "simulator": simulator,
+    "bundle_id": bundle_id,
+    "url_scheme": url_scheme,
+    "privacy_status": privacy_status,
+    "app_store_ready": ready == "1",
+    "screens": [
+        {"name": name, "route": route, "file": f"{name}.png"}
+        for name, route in routes
+    ],
+}
+with open(manifest_path, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, ensure_ascii=False, indent=2)
+    handle.write("\n")
+PY
 
 echo "Screenshots written to ${OUTPUT_DIR}"

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -14,9 +16,12 @@ REQUIRED_FILES = [
     "docs/release/app-store/review-notes.zh-CN.md",
     "docs/release/app-store/screenshot-runbook.md",
     "docs/plans/2026-06-28-app-store-mvp-release-batch2-plan.md",
+    "docs/plans/2026-06-28-app-store-mvp-release-batch3-plan.md",
+    "docs/plans/2026-06-28-app-store-mvp-release-batch4-plan.md",
     "frontend/src/app/privacy/page.tsx",
     "scripts/sim-build.sh",
     "scripts/mobile-sim-screenshots.sh",
+    "scripts/check_app_store_screenshots.py",
 ]
 
 REQUIRED_INFO_PLIST_KEYS = [
@@ -122,6 +127,29 @@ def main() -> int:
 
     if "[NEEDS APP STORE REVIEW DEMO ACCOUNT]" not in review_notes:
         failures.append("review notes must keep an explicit demo-account placeholder until owner provides credentials")
+
+    screenshot_dir = os.environ.get("APP_STORE_SCREENSHOT_DIR")
+    if screenshot_dir:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts/check_app_store_screenshots.py"),
+                screenshot_dir,
+                "--app-store-ready",
+            ],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if result.stdout:
+            print(result.stdout, end="")
+        if result.returncode != 0:
+            failures.append(
+                "App Store screenshot set failed validation; "
+                f"APP_STORE_SCREENSHOT_DIR={screenshot_dir!r}\n{result.stderr.strip()}"
+            )
 
     if failures:
         print("App Store release pack check failed:", file=sys.stderr)

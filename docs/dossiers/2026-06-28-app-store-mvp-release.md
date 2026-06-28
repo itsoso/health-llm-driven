@@ -5,7 +5,7 @@
 | slug | `app-store-mvp-release` |
 | 创建日期 | 2026-06-28 |
 | 当前阶段 | S6 部署准备 |
-| 状态 | app-store-batch3-qr-published-app-store-connect-pending |
+| 状态 | app-store-batch4-screenshot-gate-ready-demo-screenshots-pending |
 | 负责 | Codex |
 | 分支 | `main` |
 | 工作区 | `/Users/liqiuhua/work/personal/health-llm-driven` |
@@ -145,6 +145,17 @@ P0:
   - PASS: `/Users/liqiuhua/work/personal/health-llm-driven/backend/venv/bin/python backend/scripts/check_dossier_consistency.py`
   - PASS: `/Users/liqiuhua/work/personal/health-llm-driven/backend/venv/bin/python scripts/check_doc_drift.py`
   - PASS: `git diff --check`
+- Batch 4 local gates:
+  - RED then PASS: `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest backend/tests/test_app_store_release_pack.py backend/tests/test_app_store_screenshot_checker.py -q --no-cov`
+    - 初始 RED:缺少 `scripts/check_app_store_screenshots.py`,release pack 未调用截图 checker。
+    - GREEN:5 passed。
+  - PASS: `bash -n scripts/mobile-sim-screenshots.sh`
+  - PASS: `python3 -m py_compile scripts/check_app_store_release_pack.py scripts/check_app_store_screenshots.py`
+  - PASS: `python3 scripts/check_app_store_release_pack.py`
+  - PASS: `python3 scripts/check_app_store_screenshots.py design/screenshots/app-store/batch4-private-20260628`
+    - `screens=7 privacy_status=private app_store_ready=False`。
+  - EXPECTED FAIL: `python3 scripts/check_app_store_screenshots.py design/screenshots/app-store/batch4-private-20260628 --app-store-ready`
+    - 拒绝 private status,并拒绝 1206 x 2622 作为 App Store 6.9-inch ready size。
 
 ## G4 · 安全闸
 
@@ -159,6 +170,7 @@ P0:
 - Batch 1: 已完成 App Store MVP 合规/UI 切片并合入 `main`。
 - Batch 2 plan: `docs/plans/2026-06-28-app-store-mvp-release-batch2-plan.md`
 - Batch 3 plan: `docs/plans/2026-06-28-app-store-mvp-release-batch3-plan.md`
+- Batch 4 plan: `docs/plans/2026-06-28-app-store-mvp-release-batch4-plan.md`
 - Batch 2 release pack:
   - `frontend/src/app/privacy/page.tsx`: App Store Connect 可用隐私政策 URL 源码。
   - `docs/release/app-store/submission-pack.md`: App Store metadata / submission gate。
@@ -168,6 +180,7 @@ P0:
   - `scripts/check_app_store_release_pack.py`: 提交包一致性检查器。
   - `scripts/sim-build.sh`: 默认在临时 worktree 中构建 iOS simulator app,避免 Pods/锁文件污染主工作区。
   - `scripts/mobile-sim-screenshots.sh`: 模拟器截图脚本。
+  - `scripts/check_app_store_screenshots.py`: 截图 manifest/privacy/尺寸合规检查器。
 - pending:
   - iOS production archive / EAS build 产出并进入 App Store Connect。
   - App Store Connect 手工填入隐私营养标签、metadata、Review Notes。
@@ -186,6 +199,11 @@ P0:
 - Local simulator screenshot route gate:
   - PASS: `./scripts/mobile-sim-screenshots.sh --device 39D954B3-A2B5-41AA-8A6E-BD9750D3CB86 --output design/screenshots/app-store/batch3-20260628` 在当前代码 simulator app 上遍历 `今日 / 私教 / 记录 / 我 / 体检导入 / 隐私政策` 并输出 1206 x 2622 截图。
   - 注意: 本次截图包含真实账号和健康上下文,只作为本地 QA 证据,未提交进仓库,不可直接用于 App Store Connect。
+- Local screenshot compliance gate:
+  - PASS: `./scripts/mobile-sim-screenshots.sh --device 39D954B3-A2B5-41AA-8A6E-BD9750D3CB86 --output design/screenshots/app-store/batch4-private-20260628 --privacy-status private` 生成带 `manifest.json` 的 QA 截图集。
+  - PASS: 普通检查接受 private QA set,用于本地回归证据。
+  - EXPECTED FAIL: `--app-store-ready` 拒绝该 set,原因是 `privacy_status=private` 且截图尺寸为 1206 x 2622,不属于 App Store Connect 6.9-inch accepted portrait sizes。
+  - Release pack 增强:设置 `APP_STORE_SCREENSHOT_DIR` 时,`scripts/check_app_store_release_pack.py` 会调用截图 checker;未提供该变量时仍只检查 App Store 文案/配置包。
 - Local current-code simulator build gate:
   - PASS: `./scripts/sim-build.sh --device 39D954B3-A2B5-41AA-8A6E-BD9750D3CB86 --keep-temp-worktree` 从干净临时 worktree 构建、安装并打开当前代码。
   - 结论: Batch 2 的 Rokid compile failure 是主工作区 stale Pods/Podfile.lock 污染;干净 worktree + `ROKID_IOS_SDK_ENABLED=0` 可以稳定走通 simulator build。
@@ -201,6 +219,7 @@ P0:
   - App Store Connect build processing status。
   - App Store Connect production/distribution profile build。
   - 用 demo account / 脱敏数据产出最终 App Store screenshot set。
+  - 将最终截图导出为 1260 x 2736、1290 x 2796 或 1320 x 2868 后,用 `APP_STORE_SCREENSHOT_DIR=<dir> python3 scripts/check_app_store_release_pack.py` 过闸。
 
 ## S7 · 上线验证
 
@@ -216,5 +235,6 @@ P0:
   - 用 `scripts/check_app_store_release_pack.py` 作为提交前硬闸。
   - 用 `scripts/mobile-sim-screenshots.sh` 或真机截图补齐 App Store screenshot set。
   - 用 `docs/release/app-store/*` 作为 App Store Connect 填写真源。
+  - 用 `scripts/check_app_store_screenshots.py --app-store-ready` 防止 private/尺寸不合规截图进入提交包。
   - 真机走查核心动线: 今日 -> Chat 动态卡片 -> 快速记录 -> 体检导入 -> 复盘 -> 隐私/删除请求。
   - 若需要“完整账号删除”,新增删除工单/worker/admin 审批与跨表匿名化测试。
