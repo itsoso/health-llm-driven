@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.services.tool_schema_registry import get_health_tools
+from app.services.lab_plausibility import annotate_if_implausible
 
 logger = logging.getLogger(__name__)
 
@@ -2436,6 +2437,14 @@ class AgentExecutor:
             "- totals 给当餐总和, shopping_list 是给家人买菜的清单",
             "- 只在用户明确要餐食/菜单建议时输出, 普通营养咨询不要输出",
             "- JSON 必须 valid, 不要 trailing comma, 不要注释",
+            "",
+            "## 安全与边界 (R4 — 必须严格遵守)",
+            "- 解读异常指标/给健康建议时,先调用 knowledge_search 取依据;无命中就如实说明依据来自通用知识,**绝不编造引用或具体研究**。",
+            "- **不得把补剂/保健品作为针对某指标异常的治疗或\"护X\"方案推荐**(例:不得说\"姜黄素/NAC 护肝\")。补剂相关一律表述为\"是否需要请医生评估\";任何剂量数字必须注明\"须医生确认\"。",
+            "- 任何把指标改善归因于某项干预(如\"ALT 下降=某方案有效\")**必须标注\"相关性,非因果\"**,不得下因果结论。",
+            "- **不得对结构性发现下\"无需处理/不用管\"的临床判断**;改为\"通常定期随访,以医生意见为准\"。",
+            "- 若工具结果带有『数据合理性提示』(或 _data_plausibility_warning 字段),先把该数值当作疑似录入错误、提示用户核实原始报告,核实前不要据此下结论;**若用户确认数值属实,仍须按其严重程度正常处置(例如危急值建议就医)**,不得因『疑似错误』而忽略一个可能真实的危急值。",
+            "- 不做诊断;不下诊断标签(如不直接断言\"代谢综合征\",用\"…的风险信号\"并建议就医确认)。",
         ]
 
         # 注入 ak-kbase gene_knowledge 高优先级警示规则（PM/缺陷/纯合风险）
@@ -3224,13 +3233,17 @@ class AgentExecutor:
 
         try:
             if tool_name == "health_query":
-                return await self._exec_health_query(base_url, headers, args)
+                result = await self._exec_health_query(base_url, headers, args)
+                return annotate_if_implausible(result)
             elif tool_name == "health_record":
                 return await self._exec_health_record(base_url, headers, args)
             elif tool_name == "health_manage":
                 return await self._exec_health_manage(base_url, headers, args)
             elif tool_name == "health_analysis":
-                return await self._exec_health_analysis(base_url, headers, args)
+                result = await self._exec_health_analysis(base_url, headers, args)
+                return annotate_if_implausible(result)
+            elif tool_name == "knowledge_search":
+                return await self._exec_knowledge_search(args)
             elif tool_name == "environment_check":
                 return await self._exec_environment(base_url, headers, args)
             elif tool_name == "supplement_guide":
@@ -3246,7 +3259,8 @@ class AgentExecutor:
             elif tool_name == "upload_medical_exam_text":
                 return await self._exec_upload_medical_exam_text(base_url, headers, args)
             elif tool_name == "query_lab_indicators":
-                return await self._exec_query_lab_indicators(base_url, headers, args)
+                result = await self._exec_query_lab_indicators(base_url, headers, args)
+                return annotate_if_implausible(result)
             else:
                 # RFC 方向一 Phase A: specialist 分析工具(analyze_recovery 等)
                 from app.services.specialist_tools import is_specialist_tool, run_specialist_tool
@@ -3260,6 +3274,61 @@ class AgentExecutor:
         except Exception as e:
             logger.error(f"工具执行失败 {tool_name}: {e}")
             return f"Error: {tool_name} 执行失败: {str(e)}"
+
+    async def _exec_knowledge_search(self, args: dict) -> str:
+        """检索得到医学 wiki RAG 知识库 (ChromaDB). fail-honest, 不静默返回空."""
+        query = (args.get("query") or "").strip()
+        if not query:
+            return "Error: knowledge_search 需要 query 参数"
+
+        n = args.get("n_results", 5)
+        try:
+            n = int(n)
+        except (TypeError, ValueError):
+            n = 5
+        n = max(1, min(8, n))
+
+        try:
+            from app.agents.knowledge_librarian.indexer import search_knowledge
+            results = search_knowledge(query, n_results=n)
+        except Exception as e:  # noqa: BLE001 — fail honest, 不冒充成功
+            logger.warning(f"[knowledge_search] 检索失败: {e}")
+            return "知识库检索失败(暂不可用),请基于已有信息谨慎作答,勿编造依据。"
+
+        # indexer.search_knowledge 对「不可用」与「零命中」都返回 [](契约不能改,
+        # librarian.py 依赖 [])。这里旁路探测知识库可用性, 区分两种情形 ——
+        # 否则模型会把「ChromaDB 挂了」误当成「该主题未收录」而凭记忆编造。
+        if not results:
+            kb_available = False
+            try:
+                from app.agents.knowledge_librarian.indexer import _get_collection
+                collection = _get_collection()
+                kb_available = collection is not None and collection.count() > 0
+            except Exception:  # noqa: BLE001 — 探测自身出错 → 视作不可用(诚实)
+                kb_available = False
+
+            if not kb_available:
+                return (
+                    "知识库检索失败(暂不可用),请基于已有信息谨慎作答,勿编造依据。"
+                )
+            return (
+                f"知识库未命中『{query}』相关条目(该主题可能未收录)。"
+                "请如实说明依据来自通用医学知识而非本系统知识库,勿编造引用。"
+            )
+
+        lines = ["以下为知识库检索片段(仅供参考,不替代医生,不得据此开处方/给剂量):"]
+        for i, r in enumerate(results, 1):
+            snippet = (r.get("text") or "").strip().replace("\n", " ")
+            if len(snippet) > 400:
+                snippet = snippet[:400] + "…"
+            title = (r.get("title") or "").strip()
+            source = (r.get("source") or "").strip()
+            label = title or source or "片段"
+            head = f"{i}. [{label}]"
+            if source and source != label:
+                head += f" ({source})"
+            lines.append(f"{head} {snippet}")
+        return "\n".join(lines)
 
     async def _exec_health_query(
         self, base: str, headers: dict, args: dict

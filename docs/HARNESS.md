@@ -539,6 +539,7 @@ _NEEDS_SKILL_RE = re.compile(
 
 | 时间 | 决策/坑 | 出处 |
 |---|---|---|
+| 2026-06-28 | 体检/化验 chat 路径(agent_executor)补 `knowledge_search` RAG 工具(接 dedao wiki chroma,fail-honest 区分"不可用"vs"零命中"防编造引用)+ `lab_plausibility` 输入合理性闸(SpO2 53% 类录入错误:语义=核实不抑制,危急值绝不忽略)+ R4 prompt 硬化(补剂非处方化/改善须标"相关非因果"/结构发现不下"无需处理"/⚠️值先核实再处置) | 本次 |
 | 2026-05-05 | weight / BP / illness 写库前必须 confirm | `b0926af`, `8522c75` |
 | 2026-05-05 | tool schema 描述加厚（dimension/type 选择指南） | `5179678` |
 | 2026-05-05 | memory_extractor 接 messages 数组（不是 string） | `738ddf0` |

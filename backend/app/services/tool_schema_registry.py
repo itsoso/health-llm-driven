@@ -478,6 +478,30 @@ action 选择:
     {
         "type": "function",
         "function": {
+            "name": "knowledge_search",
+            "description": "检索本系统医学知识库(得到医学wiki RAG)获取解读化验/体检异常、健康建议的依据。**解读异常指标或给建议前先检索,不要只凭记忆。** 返回相关知识片段,仅供参考、不替代医生,**不得据此开处方或给具体剂量(R4)**。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "检索关键词,如\"脂肪肝管理\"\"红细胞增多 鉴别\"",
+                    },
+                    "n_results": {
+                        "type": "integer",
+                        "default": 5,
+                        "minimum": 1,
+                        "maximum": 8,
+                        "description": "返回片段数量, 1-8, 默认 5",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "manage_plan",
             "description": "管理健康计划：生成周计划、完成计划项、保存内容到首页卡片。",
             "parameters": {
