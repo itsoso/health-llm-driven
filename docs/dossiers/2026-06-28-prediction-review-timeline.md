@@ -4,8 +4,8 @@
 |---|---|
 | slug | `prediction-review-timeline` |
 | 创建日期 | 2026-06-28 |
-| 当前阶段 | S6 部署 |
-| 状态 | ready_to_ship |
+| 当前阶段 | S8 沉淀 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | backend deploy + mobile OTA |
 
@@ -85,7 +85,7 @@
   - [x] T2 RED: Mobile service 缺少 timeline 类型和 summary helper。
   - [x] T3 GREEN: 后端从 ready backtest results 派生 timeline。
   - [x] T4 GREEN: Mobile `/my-progress` 展示 timeline。
-  - [ ] T5 验证、部署、OTA、文档回写。
+  - [x] T5 验证、部署、OTA、文档回写。
 - 并发检查: 已 `git fetch origin`；当前本地 main 包含并发 `70096c68 docs(pipeline): add quick flow correction protocol`，基于它继续。
 
 ## S5 · 实现
@@ -96,7 +96,7 @@
   - `backend/app/services/health_operating_review.py`: 对 ready `prediction_backtest.results` 展开 `prediction_created/action_executed/outcome_observed/review_verdict` 四类节点。
   - `mobile/services/healthOperatingReview.ts`: 增加 `PredictionTimelineItem` 类型与 `predictionTimelineSummary`。
   - `mobile/app/my-progress.tsx`: 在 Daily Plan 复盘卡内展示预测时间线摘要、前四个节点和非因果边界。
-- commit: 待提交
+- commit: `280b572577b963b28b64b638450b0a33851ffdaf`
 
 ## G3 · 测试闸
 
@@ -111,6 +111,9 @@
   - `cd mobile && npm test -- --runTestsByPath services/__tests__/healthOperatingReview.test.ts components/chat/cards/__tests__/registry.test.tsx --runInBand` -> 26 passed；保留既有 unknown card console.warn。
   - `cd mobile && npx tsc --noEmit` -> exit 0。
   - `backend/venv/bin/python -m compileall -q backend/app/services/health_operating_review.py` -> exit 0。
+  - `backend/venv/bin/python backend/scripts/check_dossier_consistency.py` -> 12 份 dossier 全自洽。
+  - `backend/venv/bin/python scripts/check_doc_drift.py` -> PASS。
+  - `git diff --check` -> exit 0。
 
 ## G4 · 安全闸
 
@@ -124,20 +127,45 @@
 ## S6 · 部署
 
 - 路由: backend deploy + mobile OTA。
-- 部署 SHA / 回滚点: 待定。
+- 后端部署:
+  - source SHA: `280b572577b963b28b64b638450b0a33851ffdaf`
+  - 命令: `./deploy.sh -b`
+  - 回滚点: `a84bd620`
+  - 结果: 部署完成。
+- Mobile OTA:
+  - channel: `production`
+  - runtime version: `1.3.1`
+  - update group ID: `37f226c1-2de2-4d15-bbcc-3387590e3e56`
+  - iOS update ID: `019f0dca-0a58-71ba-a380-9c0e31e0d6ed`
+  - message: `Review shows prediction timeline`
 
 ## G5 · 部署健康闸
 
-- 待定。
+- 后端部署健康度: `60/60` PASS。
+- 服务器服务状态: `health-backend`、`celery-worker`、`celery-beat` 均 `active`。
+- 服务器 HEAD: `280b572577b963b28b64b638450b0a33851ffdaf`。
+- `scripts/system_health_score.py --skip-tests --url http://localhost:8000 --json` -> `total_score=60 max_possible=60 pass=true`。
+- **裁决**: PASS
 
 ## S7 · 上线验证
 
-- 待定。
+- API smoke:
+  - 服务器本机 `GET /api/v1/health` -> `200`, `api/database/redis/celery=running/connected`。
+  - 服务器本机未登录 `GET /api/v1/daily-plan/review?window_days=7` -> `401`，说明接口仍受认证保护。
+- 只读 anchor 验证:
+  - `build_health_operating_review(db, user_id=3, window_days=7)` -> `window_days=7 backtest_status=not_ready ready_candidate_count=0 timeline_count=0`。
+  - 解释: anchor 用户当前没有 ready prediction candidate，因此 timeline 合同存在但为空；这符合只读派生边界。
+- Mobile OTA: production update 已发布；设备下次冷启或后台 30s+ 自动拉取。
 
 ## G6 · 验证闸
 
-- 待定。
+- 线上后端、认证边界、只读 anchor 构建和 Mobile OTA 均通过。
+- 真机视觉确认仍需用户打开 App 后检查 `/my-progress`，但发布链路已闭合。
+- **裁决**: PASS
 
 ## S8 · 沉淀
 
-- 待上线验证后回写计划状态。
+- 已回写:
+  - `docs/specs/active/2026-06-28-rolling-7-day-health-runtime.md`
+  - `docs/plans/2026-06-27-health-runtime-governance-plan.md`
+- 后续不再重复做 timeline MVP；下一步应推进 prediction record 持久化合同、跨对象 attachment、next-step/replan 和 confidence history。

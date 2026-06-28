@@ -117,6 +117,15 @@
 - 本切片不新增 DB schema、不新增 prediction 写入、不新增诊断/处方/剂量/因果证明文案。
 - 已发布：backend SHA `a84bd620b0271a0d52711ea3de411ffb4289d18c`；Mobile OTA group `78bf1ba3-3a75-4aa7-a30a-5bee29b4f3c9`；生产 smoke `build_cards(user_id=3)` 返回 `operating_review` 且 `status=not_ready`。
 
+### 2026-06-28 · Prediction Review Timeline
+
+- `GET /api/v1/daily-plan/review` 已新增只读 `prediction_timeline` 合同。
+- timeline 从已持久化的 `InterventionEvent.action_snapshot.prediction` 与窗口指标变化派生，不新增 DB schema、不新增 prediction 写入。
+- ready backtest 会展开为 `prediction_created`、`action_executed`、`outcome_observed`、`review_verdict` 四类节点，保留 metric、status、confidence 与 observation/non-causal boundary。
+- Mobile `/my-progress` 的 Daily Plan 复盘卡已展示预测时间线摘要、前四个节点和非因果边界。
+- 本切片不新增诊断/处方/剂量/因果证明文案，不改变行动排序或自动重排。
+- 已发布：backend SHA `280b572577b963b28b64b638450b0a33851ffdaf`；Mobile OTA group `37f226c1-2de2-4d15-bbcc-3387590e3e56`；生产 smoke `build_health_operating_review(user_id=3)` 返回 `backtest_status=not_ready timeline_count=0`。
+
 ### 2026-06-28 · Feedback-driven Future Replan
 
 - Future projection 已读取最近 7 天 `HealthProtocolEvent`，把 completion、skip、snooze 转为 future runtime 的重排因子。
