@@ -1,5 +1,8 @@
 from datetime import UTC, datetime
+from types import SimpleNamespace
+import sys
 
+from app.config import settings
 from app.models.system_knowledge import KBDocument, KBDocumentVector, KBEdge
 from app.services import system_knowledge_service
 from app.services.system_knowledge_service import reindex_knowledge_documents, search_knowledge
@@ -144,3 +147,37 @@ def test_reindex_prepares_pgvector_table_before_sparse_document_updates(db, monk
     assert result["documents"] == 3
     assert calls[0] == "ensure_pgvector_table"
     assert any(call.startswith("sparse:") for call in calls[1:])
+
+
+def test_system_kb_embeddings_use_dedicated_provider_settings(monkeypatch):
+    captured = {}
+
+    class FakeEmbeddings:
+        def create(self, *, model, input):
+            captured["model"] = model
+            captured["input"] = input
+            return SimpleNamespace(
+                data=[
+                    SimpleNamespace(embedding=[0.1, 0.2, 0.3])
+                    for _ in input
+                ]
+            )
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            captured["client_kwargs"] = kwargs
+            self.embeddings = FakeEmbeddings()
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
+    monkeypatch.setattr(settings, "system_kb_embedding_api_key", "system-kb-key")
+    monkeypatch.setattr(settings, "system_kb_embedding_base_url", "https://embedding.example/v1")
+    monkeypatch.setattr(settings, "system_kb_embedding_model", "text-embedding-v3")
+
+    embeddings = system_knowledge_service._embed_system_kb_texts(["hello"])
+
+    assert embeddings == [[0.1, 0.2, 0.3]]
+    assert captured["client_kwargs"] == {
+        "api_key": "system-kb-key",
+        "base_url": "https://embedding.example/v1",
+    }
+    assert captured["model"] == "text-embedding-v3"

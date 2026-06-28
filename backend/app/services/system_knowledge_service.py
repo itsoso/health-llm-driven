@@ -2627,8 +2627,16 @@ def _is_postgres_session(db: Session) -> bool:
     return getattr(dialect, "name", "") == "postgresql"
 
 
+def _system_kb_embedding_api_key() -> str | None:
+    return settings.system_kb_embedding_api_key or settings.openai_api_key
+
+
+def _system_kb_embedding_base_url() -> str | None:
+    return settings.system_kb_embedding_base_url or settings.openai_base_url
+
+
 def _system_kb_embedding_provider_available() -> bool:
-    return bool(settings.openai_api_key)
+    return bool(_system_kb_embedding_api_key())
 
 
 def _pgvector_backend_for_session(db: Session) -> str | None:
@@ -2708,9 +2716,10 @@ def _embed_system_kb_texts(texts: list[str], *, batch_size: int = 50) -> list[li
     try:
         from openai import OpenAI
 
-        client_kwargs: dict[str, Any] = {"api_key": settings.openai_api_key}
-        if settings.openai_base_url:
-            client_kwargs["base_url"] = settings.openai_base_url
+        client_kwargs: dict[str, Any] = {"api_key": _system_kb_embedding_api_key()}
+        embedding_base_url = _system_kb_embedding_base_url()
+        if embedding_base_url:
+            client_kwargs["base_url"] = embedding_base_url
         client = OpenAI(**client_kwargs)
         embeddings: list[list[float]] = []
         for index in range(0, len(prepared_texts), batch_size):
