@@ -9,6 +9,7 @@ import pdfplumber
 from openai import OpenAI
 from app.config import settings
 from app.services.exam_packages import normalize_item_name, identify_package, ITEM_LABELS
+from app.services.json_lenient import lenient_loads
 
 logger = logging.getLogger(__name__)
 
@@ -741,18 +742,10 @@ class MedicalReportPDFParser:
 
             logger.info(f"清理后的JSON长度: {len(json_text)}, 前300字符: {json_text[:300]}...")
 
-            # 尝试解析JSON
-            try:
-                parsed_data = json.loads(json_text)
-            except json.JSONDecodeError as je:
-                # 尝试修复常见问题
-                # 1. 移除控制字符
-                import re
-                cleaned = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', json_text)
-                # 2. 修复可能的尾部逗号
-                cleaned = re.sub(r',\s*}', '}', cleaned)
-                cleaned = re.sub(r',\s*]', ']', cleaned)
-                parsed_data = json.loads(cleaned)
+            # 解析 JSON —— 严格优先,失败走宽松修复(弯引号/全角分隔符/裸 key/尾逗号/控制字符)。
+            # 仍失败则 lenient_loads 抛出"严格解析的原始 JSONDecodeError",交下面 except 做
+            # 截断 vs 格式判别(截断→分次导入指引;格式→重试)。修复阶梯见 json_lenient.py。
+            parsed_data = lenient_loads(json_text)
 
             return parsed_data
 
