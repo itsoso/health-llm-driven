@@ -71,6 +71,7 @@
 3. **Workflow 持久化 + 预算 + trace(P1,中)**:checkpoint/resume + token 上限 + JSONL trace。本 session 已两次被它咬(PRD review 被打断全丢、这次综合 agent 挂)。
    - 2026-06-28 implementation note:已新增 `scripts/harness_workflow_trace.py` 文件型 JSONL ledger,支持 `init/event/summary`、硬 token budget、`budget_exceeded` 返回码 2、checkpoint summary;并已接入 `health-harness-orchestrator` / `product-pipeline` 使用说明。下一步若继续深化,应把 subagent spawn/verdict 自动写入该 ledger,而不是只靠人工命令。
 4. **plugin 打包(P1,中)**:marketplace.json + per-project adapter,终结手抄 4 次。
+   - 2026-06-28 implementation note:已新增 repo-local Codex plugin `plugins/reva-health-harness` 与 `.agents/plugins/marketplace.json`,打包 `product-pipeline` / `health-harness-orchestrator` / workflow trace CLI;并新增测试确保 plugin manifest、marketplace entry、打包 skill 与源文件保持一致。
 5. **spec-kit/BMAD 工艺借鉴(P2)**:spec-template + /clarify + 只读 /analyze 一致性闸 + scale-adaptive 中档 + correct-course。
 6. **记忆检索/选择性 priming(P2)**:MEMORY.md 触顶前上 metaswarm tag-prime 或 Letta 核心+archival。
 7. **输入/检索护栏(P2,健康专属)**:NeMo 分类法补 input PII 脱敏 + RAG grounding。

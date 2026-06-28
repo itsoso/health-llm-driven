@@ -1,0 +1,36 @@
+{
+  "name": "reva-health-harness",
+  "version": "0.1.0",
+  "description": "Codex plugin for Reva product pipeline, harness gates, and workflow trace operations.",
+  "author": {
+    "name": "executor.life"
+  },
+  "license": "UNLICENSED",
+  "keywords": [
+    "Health",
+    "Reva",
+    "harness",
+    "product-pipeline",
+    "system-map",
+    "dossier",
+    "workflow-trace"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Reva Health Harness",
+    "shortDescription": "Governed product pipeline and delivery harness for health-llm-driven.",
+    "longDescription": "Packages Reva's product-pipeline and health-harness orchestration skills, including Dossier gates and workflow trace ledger usage, for Codex work in the health platform repository.",
+    "developerName": "executor.life",
+    "category": "Productivity",
+    "capabilities": [
+      "Write",
+      "Review",
+      "Automation"
+    ],
+    "defaultPrompt": [
+      "Run the Reva product pipeline for this feature.",
+      "Continue a Reva Dossier from its current gate.",
+      "Add a workflow ledger for this harness run."
+    ]
+  }
+}
