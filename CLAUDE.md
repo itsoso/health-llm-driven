@@ -296,7 +296,7 @@ Collectors + Services (L1) ← Garmin/Withings/CGM/化验/基因/环境/补剂/�
 | HypertensionSpecialist | `agents/chronic_specialists/` | ACC/AHA BP 分级 + 降压药识别 |
 | MetabolicSpecialist | `agents/chronic_specialists/` | 代谢综合征判定（5 项命中 3 项）+ CGM TIR |
 | RhinitisSpecialist | `agents/chronic_specialists/` | 症状分级 + AQI/湿度环境关联 + 用药依从性 |
-| KnowledgeLibrarian | `agents/knowledge_librarian/` | 得到 wiki → ChromaDB RAG 检索 |
+| KnowledgeLibrarian | `agents/knowledge_librarian/` | reviewed System KB V2 entity/claim 检索；legacy Chroma/RAG 仅显式开关调试 |
 | LongitudinalAnalyst | `agents/longitudinal_analyst/` | 6 个月趋势 + 干预事件×指标变化因果叙事 |
 | SupplementAdvisor | `agents/supplement_advisor/` | SNP+化验驱动补剂建议 (MTHFR/APOE/HFE/COMT/VDR/FADS1) + Episode 12 周 N-of-1 闭环 + HFE 硬阻断 |
 | LongevitySpecialist | `agents/longevity_specialist/` | PhenoAge(Levine 2018)表型年龄解读 + 缺值列清单 + 委托四件套(抗衰 MVP) |
@@ -421,10 +421,11 @@ Per memory: **do not add backend route aliases to accommodate wrong skill calls*
 
 ### Knowledge Base (知识库)
 
-- **来源**: `~/work/personal/down-dedao/wiki/`（本地）或 `/opt/health-app/knowledge/dedao-wiki/`（服务器）
-- **索引**: ChromaDB 持久化到 `backend/data/knowledge_chromadb/`
-- **触发索引**: `POST /api/v1/safety/knowledge/index` 或 `build_index(force=True)`
-- **检索**: `search_knowledge(query, n_results=5)` → 语义向量搜索
+- **主路径**: reviewed System KB V2，数据来自 `backend/data/system_kb_v2_seed/*.jsonl` 导入到 `kb_documents/kb_edges/kb_audit`
+- **来源**: `down-dedao` / `dedao-kbase` 只作为 authoring/export plane；健康运行时不直接搜原始笔记或 MCP
+- **检索**: `/api/v1/knowledge/search` + `/api/v1/knowledge/lookup_for_twin`，BM25 + PostgreSQL `tsvector` FTS + sparse/pgvector vector + graph RRF
+- **治理**: 只服务 `review_status=reviewed` 文档；draft/needs_review 不进入 health agent prompt
+- **Legacy**: Chroma/RAG endpoint 默认 410；仅 `LEGACY_KNOWLEDGE_RUNTIME_ENABLED=true` 时用于本地调试旧索引
 
 ### Test Infrastructure
 
@@ -570,7 +571,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 | `backend/app/agents/movement_coach/` | ACWR + 训练处方 |
 | `backend/app/agents/mental_health_companion/` | 危机检测 + 非药物支持 |
 | `backend/app/agents/chronic_specialists/` | 鼻炎/高血压/代谢 专科管理 |
-| `backend/app/agents/knowledge_librarian/` | 得到 wiki RAG 检索 |
+| `backend/app/agents/knowledge_librarian/` | reviewed System KB V2 检索；legacy Chroma/RAG 仅显式开关调试 |
 | `backend/app/agents/longitudinal_analyst/` | 长期趋势 + 因果叙事 |
 | `backend/app/orchestrator/` | 意图路由 + 专家调度 + LLM 合成 |
 | `backend/app/agents/audit.py` | Agent 审计日志 |

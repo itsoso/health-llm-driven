@@ -190,7 +190,7 @@ cross_review 路径中遇到矛盾，optionally 触发 LLM 仲裁（成本高，
 |---|---|---|
 | Decay + crystallization | 每天 04:00 | `memory-lifecycle` |
 | Stale entity 软删 (90 天没 source) | 每天 04:00 (同上) | 同上 |
-| Knowledge base ChromaDB rebuild | 每周一 04:00 | `rebuild-knowledge-index` |
+| System KB lifecycle + reindex | 每周一 04:00/04:50 | `system-kb-lifecycle` / `system-kb-reindex` |
 | Specialist hit-rate 评分 | 每天 08:00 | `grade-action-cards` |
 
 ---
