@@ -329,6 +329,7 @@ export function createDietPlanAgentContext(plan: DietPlan): AgentContextPayload 
       metric_key: card.metric_key,
       baseline_value: card.baseline_value,
       actual_value: card.actual_value,
+      evidence_refs: card.evidence_refs ?? [],
     })),
     expected_agent_output: ['饮食方案复盘', '饮水与补剂调整', '下一餐建议', '需要用户反馈的问题'],
   };
@@ -358,6 +359,7 @@ export function createMovementPlanAgentContext(plan: MovementPlan): AgentContext
       metric_key: card.metric_key,
       baseline_value: card.baseline_value,
       actual_value: card.actual_value,
+      evidence_refs: card.evidence_refs ?? [],
     })),
     expected_agent_output: ['本周训练方案复盘', '今日训练/恢复安排', '不同运动类型替代方案', '需要用户反馈的问题'],
   };

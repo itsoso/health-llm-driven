@@ -34,7 +34,7 @@ Main remaining gaps:
 
 - Specialist evidence is attached and measured as a product contract through `evidence_refs`, `unsupported`, and coverage-rate metrics.
 - Orchestrator Planner now filters unsupported actionable findings before synthesis when a same-domain KB-supported finding exists; safety alerts and data gaps are preserved.
-- Mobile evidence UI is not yet a unified, reusable `EntityCard` / `ClaimSheet` across all recommendation surfaces.
+- Mobile evidence UI now has reusable `EvidenceRefsRow` / `ClaimSheet` / `EntityCard`; chat cards, action cards, genetic report, today plan, knowledge entity, and the standalone diet/movement related-card surfaces expose system KB evidence refs.
 - Admin has `/api/v1/admin/knowledge/operations_dashboard`, which aggregates coverage, lint, latest lifecycle report, and action items for KB governance.
 - External second-source evidence exists for selected high-risk claim templates (`MTHFR`, `APOE`, statin boundary, diabetes 8-12 week loop), and coverage report now exposes `external_evidence` metrics by claim count, source kind, target rate, and `meets_target`.
 - Direct PushScheduler wearable health alerts carry the KB V2 safety-alert evidence contract. Celery notification surfaces now tag trend summaries, morning briefings, weekly review invites, action-card followups, agent-loop pushes, and outcome-grader pushes with notification evidence metadata. Push-log evidence coverage is exposed in the admin coverage dashboard and operations action items. Search now uses local BM25 and PostgreSQL `tsvector` FTS in production; remaining gap is real vector retrieval beyond the deterministic alias stream.
@@ -349,6 +349,8 @@ Expected: PASS.
 ## Phase 4: Mobile-First Evidence UX
 
 **Intent:** Make evidence inspectable from every recommendation surface, not just chat markdown.
+
+**Status 2026-06-28:** Unified `mobile/components/knowledge/EvidenceRefsRow.tsx`, `ClaimSheet.tsx`, and `EntityCard.tsx` are live. This pass also closes the remaining standalone plan-page gap: diet and movement plan `related_cards` now receive backend `evidence_refs`, render `EvidenceRefsRow`, and preserve refs in follow-up Agent context.
 
 ### Task 7: Build Unified Evidence Components
 

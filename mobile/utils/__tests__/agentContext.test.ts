@@ -276,7 +276,21 @@ describe('agentContext', () => {
       hydration: { ml_today: 900, goal_ml: 2000, progress_pct: 45, status: 'low' },
       supplement: { taken_today: 1, total: 3, pending: ['镁', '鱼油'] },
       proposed_experiments: [{ title: '早餐加蛋白', metric_key: 'protein' }],
-      related_cards: [],
+      related_cards: [{
+        id: 11,
+        title: '早餐加蛋白',
+        status: 'active',
+        user_decision: 'accepted',
+        outcome: 'improved',
+        effect_size: 0.2,
+        metric_key: 'protein',
+        baseline_value: '58g',
+        actual_value: '82g',
+        evidence_level: 'high',
+        evidence_refs: ['claim:c_protein_weight_loss_boundary'],
+        created_at: '2026-05-21T08:00:00Z',
+        graded_at: null,
+      }],
     });
     const movementContext = createMovementPlanAgentContext({
       has_data: true,
@@ -285,18 +299,34 @@ describe('agentContext', () => {
       today: { intensity: 'low', intensity_zh: '低强度', guidance: '轻松跑或休息' },
       fitness: { vo2max_running: 48, resting_hr: 58 },
       proposed_experiments: [{ title: '降低强度', metric_key: 'hrv' }],
-      related_cards: [],
+      related_cards: [{
+        id: 12,
+        title: '恢复差时降低训练强度',
+        status: 'active',
+        user_decision: 'accepted',
+        outcome: 'unchanged',
+        effect_size: 0,
+        metric_key: 'hrv',
+        baseline_value: '42',
+        actual_value: '44',
+        evidence_level: 'medium',
+        evidence_refs: ['claim:c_recovery_low_reduce_intensity'],
+        created_at: '2026-05-21T08:00:00Z',
+        graded_at: null,
+      }],
     });
 
     expect(dietContext).toMatchObject({
       from: 'diet-plan/current',
       feedback_intent: 'diet_plan_follow_up',
       hydration: { ml_today: 900, goal_ml: 2000, status: 'low' },
+      related_cards: [{ evidence_refs: ['claim:c_protein_weight_loss_boundary'] }],
     });
     expect(movementContext).toMatchObject({
       from: 'movement-plan/current',
       feedback_intent: 'movement_plan_follow_up',
       training_status: { status: 'overload', status_zh: '过载', acwr: 1.6 },
+      related_cards: [{ evidence_refs: ['claim:c_recovery_low_reduce_intensity'] }],
     });
   });
 

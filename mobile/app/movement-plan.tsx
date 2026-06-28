@@ -24,6 +24,7 @@ import { fetchMovementPlan, type MovementPlan, type MovementCard } from '../serv
 import { spacing, radii } from '../constants/theme';
 import { useTheme } from '../hooks/useTheme';
 import HeroTile from '../components/dashboard/HeroTile';
+import { EvidenceRefsRow } from '../components/knowledge';
 import MarkdownText from '../components/shared/MarkdownText';
 import EvidenceChip from '../components/shared/EvidenceChip';
 import { createMovementPlanAgentContext, pushChatWithContext } from '../utils/agentContext';
@@ -344,6 +345,7 @@ function RelatedCardRow({ card, onPress, c }: { card: MovementCard; onPress: () 
             {card.metric_key} {card.baseline_value} → {card.actual_value}
           </Text>
         )}
+        <EvidenceRefsRow refs={card.evidence_refs} testID={`movement-related-evidence-${card.id}`} />
       </View>
       {card.outcome && (
         <Text style={[styles.outcomeText, { color: ocColor }]}>

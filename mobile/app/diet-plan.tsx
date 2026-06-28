@@ -29,6 +29,7 @@ import {
   revaFonts,
 } from '../constants/revaTheme';
 import HeroTile from '../components/dashboard/HeroTile';
+import { EvidenceRefsRow } from '../components/knowledge';
 import MarkdownText from '../components/shared/MarkdownText';
 import EvidenceChip from '../components/shared/EvidenceChip';
 import { createDietPlanAgentContext, pushChatWithContext } from '../utils/agentContext';
@@ -271,6 +272,7 @@ function RelatedCardRow({ card, onPress }: { card: DietCard; onPress: () => void
             {card.metric_key} {card.baseline_value} → {card.actual_value}
           </Text>
         )}
+        <EvidenceRefsRow refs={card.evidence_refs} testID={`diet-related-evidence-${card.id}`} />
       </View>
       {card.outcome && (
         <Text style={[styles.outcomeText, { color: ocColor }]}>

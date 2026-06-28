@@ -78,6 +78,7 @@ def _card_to_dict(card: ActionCard) -> Dict[str, Any]:
         "baseline_value": card.baseline_value,
         "actual_value": card.actual_value,
         "evidence_level": card.evidence_level,
+        "evidence_refs": card.evidence_refs or [],
         "created_at": card.created_at.isoformat() if card.created_at else None,
         "graded_at": card.graded_at.isoformat() if card.graded_at else None,
     }

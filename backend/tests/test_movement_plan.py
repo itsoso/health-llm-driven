@@ -2,8 +2,10 @@
 
 import uuid
 
+from app.models.action_card import ActionCard
 from app.models.user import User
 from app.services.auth import auth_service
+from app.services.movement_plan import _card_to_dict
 
 
 def _make_user(db, name="movement_user"):
@@ -56,3 +58,20 @@ def test_endpoint_returns_full_shape(client, db):
 def test_endpoint_requires_auth(client):
     resp = client.get("/api/v1/movement/plan/me")
     assert resp.status_code in (401, 403)
+
+
+def test_movement_related_card_serializes_system_kb_evidence_refs(db):
+    user, _headers = _make_user(db, "movement_refs")
+    card = ActionCard(
+        user_id=user.id,
+        title="恢复差时降低训练强度",
+        content="运动建议",
+        evidence_refs=["claim:c_recovery_low_reduce_intensity"],
+    )
+    db.add(card)
+    db.commit()
+    db.refresh(card)
+
+    payload = _card_to_dict(card)
+
+    assert payload["evidence_refs"] == ["claim:c_recovery_low_reduce_intensity"]

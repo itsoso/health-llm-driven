@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from app.models.action_card import ActionCard
 from app.models.user import User
 from app.services.auth import auth_service
-from app.services.diet_plan import _fetch_diet_related_cards
+from app.services.diet_plan import _card_to_dict, _fetch_diet_related_cards
 
 
 def _make_user(db, name="diet_user"):
@@ -92,3 +92,20 @@ def test_diet_related_cards_deduplicates_repeated_suggestions(db):
         "MTHFR 变异 —— 建议甲基叶酸形式",
         "每日饮水提升至 2000ml",
     ]
+
+
+def test_diet_related_card_serializes_system_kb_evidence_refs(db):
+    user, _headers = _make_user(db, "diet_refs")
+    card = ActionCard(
+        user_id=user.id,
+        title="晚餐增加蛋白质",
+        content="饮食建议",
+        evidence_refs=["claim:c_protein_weight_loss_boundary"],
+    )
+    db.add(card)
+    db.commit()
+    db.refresh(card)
+
+    payload = _card_to_dict(card)
+
+    assert payload["evidence_refs"] == ["claim:c_protein_weight_loss_boundary"]
