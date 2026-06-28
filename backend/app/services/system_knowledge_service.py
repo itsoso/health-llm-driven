@@ -2803,34 +2803,32 @@ _emb_guard_lock = _emb_threading.Lock()
 _emb_guard_state = {"day": None, "calls": 0}
 
 
-def _embedding_daily_cap_reached() -> bool:
-    """日级 embedding 调用上限 — 按量模式防 runaway 烧钱。
-    env EMBEDDING_DAILY_CALL_CAP=0/未设 → 不限;>0 → 每进程每日超限返 True,
-    调用方返回 None → 稀疏向量降级(不崩)。"""
+def _embedding_count_and_warn() -> None:
+    """日级 embedding 调用计数 —— 超阈值【只告警, 不降级】: 继续按量嵌入保检索质量,
+    仅跨过阈值时 log 一次 warning 作 runaway 预警。env EMBEDDING_DAILY_CALL_CAP=0/未设 → 不计数。"""
     import os as _os
     try:
         cap = int(_os.environ.get("EMBEDDING_DAILY_CALL_CAP", "0") or 0)
     except ValueError:
         cap = 0
     if cap <= 0:
-        return False
+        return
     today = _emb_date_cls.today().isoformat()
     with _emb_guard_lock:
-        if _emb_guard_state["day"] != today:
-            _emb_guard_state["day"], _emb_guard_state["calls"] = today, 0
-        if _emb_guard_state["calls"] >= cap:
-            return True
+        if _emb_guard_state.get("day") != today:
+            _emb_guard_state.update(day=today, calls=0, warned=False)
         _emb_guard_state["calls"] += 1
-    return False
+        if _emb_guard_state["calls"] > cap and not _emb_guard_state.get("warned"):
+            _emb_guard_state["warned"] = True
+            logger.warning(
+                "system KB embedding 今日调用超阈值 %s (EMBEDDING_DAILY_CALL_CAP), 继续按量不降级; 排查 runaway 重嵌", cap)
 
 
 def _embed_system_kb_texts(texts: list[str], *, batch_size: int | None = None) -> list[list[float]] | None:
     prepared_texts = [str(text or "").strip() or " " for text in texts]
     if not prepared_texts or not _system_kb_embedding_provider_available():
         return None
-    if _embedding_daily_cap_reached():
-        logger.warning("system KB embedding 日上限已达, 跳过 (EMBEDDING_DAILY_CALL_CAP); 稀疏向量降级")
-        return None
+    _embedding_count_and_warn()  # 超阈值只告警不降级, 继续按量嵌入
     effective_batch_size = max(1, int(batch_size or settings.system_kb_embedding_batch_size))
     try:
         from openai import OpenAI
