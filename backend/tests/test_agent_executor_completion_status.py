@@ -1,8 +1,10 @@
 import json
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 import pytest
 
+from app.agents.safety_guardian.schema import Alert, Severity
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.user_profile import UserProfile
 from app.models.openclaw import OpenClawMessage
@@ -462,6 +464,102 @@ async def test_agent_stream_emits_record_card_after_fast_diet_record(db, auth_us
     saved = db.query(OpenClawMessage).filter_by(id=events[done_idx]["data"]["message_id"]).first()
     assert saved is not None
     assert saved.meta["cards"] == [card]
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_emits_safety_card_after_record_safety_alert(db, auth_user_and_headers, monkeypatch):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+
+    async def fake_call_llm(messages, tools):
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [
+                {
+                    "id": "call_record_diet",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "diet",
+                            "data": {
+                                "food_items": "牛肉面",
+                                "meal_type": "dinner",
+                            },
+                        }, ensure_ascii=False),
+                    },
+                },
+            ],
+        }
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        assert tool_name == "health_record"
+        parsed = json.loads(args_raw)
+        assert parsed["confirmed"] is True
+        return json.dumps({"message": "已记录晚餐：牛肉面"}, ensure_ascii=False)
+
+    safety_alert = Alert(
+        rule_id="training.high_intensity_not_recommended",
+        category="training_load",
+        severity=Severity.HIGH,
+        title="今天不建议高强度训练",
+        message="睡眠不足且 HRV 明显低于近期基线，建议把训练降级。",
+        action="改为 20 分钟低强度步行或拉伸",
+        requires_medical_attention=True,
+    )
+    monkeypatch.setattr("app.twin.builder.build_twin", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(
+        "app.agents.safety_guardian.evaluate_safety",
+        lambda _twin: SimpleNamespace(alerts=[safety_alert]),
+    )
+
+    executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录晚餐牛肉面",
+            user_auth_token="test-token",
+        )
+    ]
+
+    card_events = [event for event in events if event.get("event") == "card"]
+    cards = [event["data"]["descriptor"] for event in card_events]
+    record_card = {
+        "type": "record",
+        "data": {
+            "type": "diet",
+            "detail": "已记录晚餐：牛肉面",
+        },
+    }
+    safety_card = {
+        "type": "safety",
+        "data": {
+            "title": "今天不建议高强度训练",
+            "severity": "high",
+            "summary": "睡眠不足且 HRV 明显低于近期基线，建议把训练降级。",
+            "recommendations": ["改为 20 分钟低强度步行或拉伸"],
+            "boundary": "这不是诊断；如出现急性不适或持续症状，请及时就医。",
+            "requires_medical_attention": True,
+            "rule_id": "training.high_intensity_not_recommended",
+            "category": "training_load",
+        },
+    }
+
+    assert cards == [record_card, safety_card]
+    assert card_events[0]["data"]["anchor"] == "tool_result"
+    assert card_events[1]["data"]["anchor"] == "safety_alert"
+
+    done_idx = next(i for i, e in enumerate(events) if e.get("event") == "done")
+    assert events[done_idx]["data"]["cards"] == [record_card, safety_card]
+
+    saved = db.query(OpenClawMessage).filter_by(id=events[done_idx]["data"]["message_id"]).first()
+    assert saved is not None
+    assert saved.meta["cards"] == [record_card, safety_card]
 
 
 @pytest.mark.asyncio

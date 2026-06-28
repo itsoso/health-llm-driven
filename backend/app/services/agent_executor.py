@@ -33,6 +33,7 @@ INTERRUPTED_COMPLETION_NOTICE = "\n\n[回复因长度限制中断，请让我接
 AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
 BEIJING_TZ = timezone(timedelta(hours=8))
 COMPACT_EMPTY_RETRY_SYSTEM_CHAR_LIMIT = 760
+SAFETY_CARD_BOUNDARY = "这不是诊断；如出现急性不适或持续症状，请及时就医。"
 
 
 # ──── 多模型综合分析 (参考 browser-llm-driven / LangBridge 平台) ────
@@ -1051,6 +1052,69 @@ def _health_record_card_descriptor(record_type: Any, record_data: Any, result: s
     }
 
 
+def _safety_alert_value(alert: Any, key: str, default: Any = None) -> Any:
+    if isinstance(alert, dict):
+        return alert.get(key, default)
+    return getattr(alert, key, default)
+
+
+def _safety_alert_severity_label(raw: Any) -> str:
+    if isinstance(raw, dict):
+        raw = raw.get("label") or raw.get("value")
+    label = getattr(raw, "label", None)
+    if isinstance(label, str) and label:
+        return label.strip().lower()
+    if isinstance(raw, str):
+        normalized = raw.strip().lower()
+        return normalized if normalized in {"info", "low", "medium", "high", "critical"} else "info"
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return "info"
+    if value >= 4:
+        return "critical"
+    if value >= 3:
+        return "high"
+    if value >= 2:
+        return "medium"
+    if value >= 1:
+        return "low"
+    return "info"
+
+
+def _safety_alert_card_descriptor(alert: Any) -> Optional[dict]:
+    """Translate a deterministic SafetyGuardian alert into a conservative UI card."""
+
+    title = str(_safety_alert_value(alert, "title", "") or "").strip() or "安全提醒"
+    summary = str(_safety_alert_value(alert, "message", "") or "").strip()
+    severity = _safety_alert_severity_label(_safety_alert_value(alert, "severity"))
+
+    raw_action = _safety_alert_value(alert, "action")
+    if isinstance(raw_action, list):
+        recommendations = [str(item).strip() for item in raw_action if str(item).strip()]
+    elif raw_action:
+        recommendations = [str(raw_action).strip()]
+    else:
+        recommendations = []
+
+    data = {
+        "title": title,
+        "severity": severity,
+        "summary": summary,
+        "recommendations": recommendations[:3],
+        "boundary": SAFETY_CARD_BOUNDARY,
+        "requires_medical_attention": bool(
+            _safety_alert_value(alert, "requires_medical_attention", False)
+        ) or severity == "critical",
+    }
+    for key in ("rule_id", "category"):
+        value = _safety_alert_value(alert, key)
+        if value not in (None, ""):
+            data[key] = str(value)
+
+    return {"type": "safety", "data": data}
+
+
 def _health_record_confirmation_preview(rtype: str, args: dict, data: dict) -> str:
     label = {
         "illness": "疾病/不适周期",
@@ -1878,6 +1942,8 @@ class AgentExecutor:
                         result = await self._execute_tool(
                             func_name, func_args, user_auth_token
                         )
+                        result_for_record_card = result
+                        safety_cards: list[dict] = []
                         tool_executed_count += 1
 
                         # 写操作成功后内联安全检查。
@@ -1899,6 +1965,13 @@ class AgentExecutor:
                                 critical = [a for a in report.alerts if int(a.severity) >= 3]
                                 if critical:
                                     alert_msgs = "; ".join(a.title for a in critical[:3])
+                                    safety_cards = [
+                                        card for card in (
+                                            _safety_alert_card_descriptor(a)
+                                            for a in critical[:3]
+                                        )
+                                        if card
+                                    ]
                                     result += f"\n\n⚠️ 安全提示: {alert_msgs}"
                             except Exception as e:
                                 logger.warning(f"Safety check after write failed: {e}")
@@ -1927,7 +2000,7 @@ class AgentExecutor:
                                 record_card = _health_record_card_descriptor(
                                     tool_event_data["record_type"],
                                     tool_event_data["record_data"],
-                                    result,
+                                    result_for_record_card,
                                 )
                             except Exception:
                                 pass
@@ -1945,6 +2018,17 @@ class AgentExecutor:
                                     "data": {
                                         "anchor": "tool_result",
                                         "descriptor": record_card,
+                                    },
+                                }
+                        for safety_card in safety_cards:
+                            before = len(streamed_cards)
+                            streamed_cards = _merge_agent_card_descriptors(streamed_cards, [safety_card])
+                            if len(streamed_cards) > before:
+                                yield {
+                                    "event": "card",
+                                    "data": {
+                                        "anchor": "safety_alert",
+                                        "descriptor": safety_card,
                                     },
                                 }
 
