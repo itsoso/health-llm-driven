@@ -430,6 +430,31 @@ class TestLabsRules:
         alerts = evaluate_safety(twin).alerts
         assert "labs.liver_enzyme_pattern" not in _rule_ids(alerts)
 
+    def test_red_cell_elevation_both_high(self):
+        """HGB + HCT 同向超(男)上限 → MEDIUM 告警(非诊断、无处方/剂量)。"""
+        twin = _empty_twin()
+        twin.labs = LabsContext(hemoglobin=173, hematocrit=54)
+        alerts = evaluate_safety(twin).alerts
+        assert "labs.red_cell_elevation" in _rule_ids(alerts)
+        alert = next(a for a in alerts if a.rule_id == "labs.red_cell_elevation")
+        assert alert.severity == Severity.MEDIUM
+        # R4: 复查/评估框架, 不下诊断、不出药/剂量
+        text = (alert.message or "") + (alert.action or "")
+        assert "非诊断" in alert.message
+        assert "复查" in text and "血液科" in text
+        for forbidden in ("确诊", "诊断为", "处方", "mg", "毫克", "剂量"):
+            assert forbidden not in text
+
+    def test_red_cell_elevation_only_one_high(self):
+        """只有 HGB 高 / 只有 HCT 高 → 不触发(必须两项佐证)。"""
+        only_hgb = _empty_twin()
+        only_hgb.labs = LabsContext(hemoglobin=173, hematocrit=46)
+        assert "labs.red_cell_elevation" not in _rule_ids(evaluate_safety(only_hgb).alerts)
+
+        only_hct = _empty_twin()
+        only_hct.labs = LabsContext(hemoglobin=160, hematocrit=54)
+        assert "labs.red_cell_elevation" not in _rule_ids(evaluate_safety(only_hct).alerts)
+
     def test_ldl_high(self):
         twin = _empty_twin()
         twin.labs = LabsContext(ldl=5.0)

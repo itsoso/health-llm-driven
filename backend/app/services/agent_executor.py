@@ -2504,6 +2504,18 @@ class AgentExecutor:
         except Exception as e:
             logger.warning(f"Agent 肝脏趋势注入失败: {e}")
 
+        # 注入血常规趋势(消费历史 CBC;红细胞系同向偏高/中性-淋巴倒置提示,非诊断)
+        try:
+            from app.services.blood_routine import blood_routine_prompt_blob
+            from app.models.user import User as _User
+            _u = self.db.query(_User).filter(_User.id == user_id).first()
+            _sex = _u.gender if _u else None
+            blob = blood_routine_prompt_blob(self.db, user_id, sex=_sex)
+            if blob:
+                parts.append("\n" + blob)
+        except Exception as e:
+            logger.warning(f"Agent 血常规趋势注入失败: {e}")
+
         # 注入用药疗程提醒(即将结束的疗程 + 建议复查;胃溃疡 PPI 疗程等)
         try:
             from app.services.medication_course_service import course_prompt_blob
@@ -3276,7 +3288,12 @@ class AgentExecutor:
             return f"Error: {tool_name} 执行失败: {str(e)}"
 
     async def _exec_knowledge_search(self, args: dict) -> str:
-        """检索得到医学 wiki RAG 知识库 (ChromaDB). fail-honest, 不静默返回空."""
+        """检索两路知识库, fail-honest, 不静默返回空:
+          1. 已审定 System KB v2 claims (DB-backed, owner-reviewed 通用结论)
+          2. 得到医学 wiki RAG 片段 (ChromaDB, 仅供参考)
+        二者各自独立 try/except: 一路挂不影响另一路。两路全空且 dedao 探测不可用 →
+        诚实「检索失败」; 两路全空但可用 → 诚实「未命中」; 任一有命中 → 合并双区块返回。
+        """
         query = (args.get("query") or "").strip()
         if not query:
             return "Error: knowledge_search 需要 query 参数"
@@ -3288,26 +3305,41 @@ class AgentExecutor:
             n = 5
         n = max(1, min(8, n))
 
+        # ── 1. 已审定 System KB v2 claims (通用 reviewed 结论, 非个性化) ──
+        kb_results: list[dict] = []
+        try:
+            from app.services.system_knowledge_service import search_knowledge as kb_search
+            kb_payload = kb_search(self.db, query, limit=n)
+            kb_results = (kb_payload or {}).get("results") or []
+        except Exception as e:  # noqa: BLE001 — fail honest, 一路挂不冒充成功
+            logger.warning(f"[knowledge_search] System KB 检索失败: {e}")
+            kb_results = []
+
+        # ── 2. 得到医学 wiki RAG (ChromaDB) ──
+        dedao_results: list[dict] = []
+        dedao_errored = False
         try:
             from app.agents.knowledge_librarian.indexer import search_knowledge
-            results = search_knowledge(query, n_results=n)
-        except Exception as e:  # noqa: BLE001 — fail honest, 不冒充成功
-            logger.warning(f"[knowledge_search] 检索失败: {e}")
-            return "知识库检索失败(暂不可用),请基于已有信息谨慎作答,勿编造依据。"
+            dedao_results = search_knowledge(query, n_results=n) or []
+        except Exception as e:  # noqa: BLE001 — fail honest, 一路挂不冒充成功
+            logger.warning(f"[knowledge_search] 得到 wiki 检索失败: {e}")
+            dedao_results = []
+            dedao_errored = True
 
+        # ── 双路全空: 区分「不可用」与「零命中」(否则模型把挂了误当未收录而编造) ──
         # indexer.search_knowledge 对「不可用」与「零命中」都返回 [](契约不能改,
-        # librarian.py 依赖 [])。这里旁路探测知识库可用性, 区分两种情形 ——
-        # 否则模型会把「ChromaDB 挂了」误当成「该主题未收录」而凭记忆编造。
-        if not results:
-            kb_available = False
-            try:
-                from app.agents.knowledge_librarian.indexer import _get_collection
-                collection = _get_collection()
-                kb_available = collection is not None and collection.count() > 0
-            except Exception:  # noqa: BLE001 — 探测自身出错 → 视作不可用(诚实)
-                kb_available = False
+        # librarian.py 依赖 []),故旁路探测 dedao collection 可用性。
+        if not kb_results and not dedao_results:
+            dedao_available = False
+            if not dedao_errored:
+                try:
+                    from app.agents.knowledge_librarian.indexer import _get_collection
+                    collection = _get_collection()
+                    dedao_available = collection is not None and collection.count() > 0
+                except Exception:  # noqa: BLE001 — 探测自身出错 → 视作不可用(诚实)
+                    dedao_available = False
 
-            if not kb_available:
+            if not dedao_available:
                 return (
                     "知识库检索失败(暂不可用),请基于已有信息谨慎作答,勿编造依据。"
                 )
@@ -3316,19 +3348,47 @@ class AgentExecutor:
                 "请如实说明依据来自通用医学知识而非本系统知识库,勿编造引用。"
             )
 
-        lines = ["以下为知识库检索片段(仅供参考,不替代医生,不得据此开处方/给剂量):"]
-        for i, r in enumerate(results, 1):
-            snippet = (r.get("text") or "").strip().replace("\n", " ")
-            if len(snippet) > 400:
-                snippet = snippet[:400] + "…"
-            title = (r.get("title") or "").strip()
-            source = (r.get("source") or "").strip()
-            label = title or source or "片段"
-            head = f"{i}. [{label}]"
-            if source and source != label:
-                head += f" ({source})"
-            lines.append(f"{head} {snippet}")
-        return "\n".join(lines)
+        # ── 合并双区块 ──
+        sections: list[str] = []
+
+        if kb_results:
+            kb_lines = [
+                "【已审定知识库(owner-reviewed,通用结论,需结合个人情况,非诊断)】",
+                "(以下为已审定的通用医学结论,非针对当前用户的个性化判断;"
+                "个性化证据见 Twin evidence card。仅供参考,不替代医生,不得据此开处方/给剂量)",
+                "以下条目按主题相关性召回,未经『是否适用于本用户』判定;"
+                "若与本用户实际指标/基因/用药不符,以 Twin evidence card 为准并忽略本条。",
+            ]
+            for i, r in enumerate(kb_results, 1):
+                doc = (r.get("document") or {}) if isinstance(r, dict) else {}
+                title = (doc.get("title") or "").strip()
+                snippet = (doc.get("summary") or doc.get("body") or "").strip().replace("\n", " ")
+                if len(snippet) > 300:
+                    snippet = snippet[:300] + "…"
+                evidence = (doc.get("evidence_level") or "").strip()
+                label = title or doc.get("doc_id") or "结论"
+                head = f"{i}. [{label}]"
+                if evidence:
+                    head += f"(证据等级 {evidence})"
+                kb_lines.append(f"{head} {snippet}")
+            sections.append("\n".join(kb_lines))
+
+        if dedao_results:
+            dd_lines = ["【得到医学wiki 检索片段(仅供参考)】"]
+            for i, r in enumerate(dedao_results, 1):
+                snippet = (r.get("text") or "").strip().replace("\n", " ")
+                if len(snippet) > 400:
+                    snippet = snippet[:400] + "…"
+                title = (r.get("title") or "").strip()
+                source = (r.get("source") or "").strip()
+                label = title or source or "片段"
+                head = f"{i}. [{label}]"
+                if source and source != label:
+                    head += f" ({source})"
+                dd_lines.append(f"{head} {snippet}")
+            sections.append("\n".join(dd_lines))
+
+        return "\n\n".join(sections)
 
     async def _exec_health_query(
         self, base: str, headers: dict, args: dict

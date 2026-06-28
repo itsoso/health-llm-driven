@@ -195,6 +195,15 @@ class LabsContext(BaseModel):
     alp: Optional[float] = None             # 碱性磷酸酶 U/L
     wbc: Optional[float] = None             # 白细胞 10⁹/L
 
+    # 血常规 CBC (blood_routine 深度评估 + red_cell_elevation 安全规则的消费源)。
+    hemoglobin: Optional[float] = None      # HGB 血红蛋白 g/L
+    hematocrit: Optional[float] = None      # HCT 红细胞压积 %
+    rbc: Optional[float] = None             # RBC 红细胞计数 10¹²/L
+    platelet: Optional[float] = None        # PLT 血小板计数 10⁹/L
+    mch: Optional[float] = None             # MCH 平均血红蛋白量 pg
+    mchc: Optional[float] = None            # MCHC 平均血红蛋白浓度 g/L
+    neutrophil_pct: Optional[float] = None  # NEUT% 中性粒细胞百分比 %
+
     # PhenoAge 派生 (twin/builder 在所有 9 项 + age 齐时调用 compute_phenoage 填充)。
     # 缺任一输入 → 全部留 None,不猜算。证据等级独立于 EpigeneticState (后者 experimental,
     # PhenoAge 是 validated)。展示侧必须同时呈现 claim_boundary 文案。

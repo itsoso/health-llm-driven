@@ -322,6 +322,51 @@ def wbc_pattern_lymphocytosis(twin: HealthTwin) -> Optional[Alert]:
     return None
 
 
+# ─────────────────────── 红细胞系整体偏高 ─────────────────
+
+
+@register
+def red_cell_elevation(twin: HealthTwin) -> Optional[Alert]:
+    """红细胞系统整体偏高 —— HGB 与 HCT **同向**超上限才触发(互相佐证)。
+
+    单点红细胞值常被腕式伪影/脱水污染,只在 HGB+HCT 两项同时超标时才提示,降伪阳。
+    性别感知上限(成人):男 HGB>170 g/L & HCT>50%;女 HGB>150 g/L & HCT>45%。
+    Twin 无性别字段 → 用男性(更高)阈值,保守少报。
+
+    R4:非急症 → MEDIUM;行动=血液科评估 + 复查,排除脱水/OSA/真红;明确非诊断,不给药/剂量。
+    """
+    hgb = _as_float(twin.labs.hemoglobin)
+    hct = _as_float(twin.labs.hematocrit)
+    if hgb is None or hct is None:
+        return None
+
+    # 性别未知 → 男性阈值(更高,保守)。Twin 当前无性别字段。
+    hgb_uln, hct_uln = 170.0, 50.0
+
+    if not (hgb > hgb_uln and hct > hct_uln):
+        return None
+
+    return Alert(
+        rule_id="labs.red_cell_elevation",
+        category="labs",
+        severity=Severity.MEDIUM,
+        title="红细胞系统整体偏高",
+        message=(
+            f"血红蛋白 {hgb:g} g/L、红细胞压积 {hct:g}% 同向偏高。"
+            "红细胞系整体升高常见于脱水、慢性缺氧(含睡眠呼吸暂停/吸烟/高原),"
+            "少数为真性红细胞增多症。单项升高可能是伪影,两项同向更值得关注(非诊断)。"
+        ),
+        action=(
+            "建议复查血常规确认;到血液科评估排除脱水、慢性缺氧/睡眠呼吸暂停、真性红细胞增多等。"
+            "近期可保证充足饮水。具体处置以医生意见为准。"
+        ),
+        data_citation={
+            "hemoglobin": hgb, "hematocrit": hct,
+            "hgb_uln": hgb_uln, "hct_uln": hct_uln,
+        },
+    )
+
+
 # ─────────────────────── 其他异常项的 fallback ─────────
 
 

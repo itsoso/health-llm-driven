@@ -267,6 +267,7 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
     返回 {key: value}, key 与 LabsContext 字段名对齐:
       ldl / hdl / total_cholesterol / triglycerides / blood_glucose / hba1c
       alt / ast / ggt / creatinine / egfr / uric_acid
+      血常规 CBC: hemoglobin / hematocrit / rbc / platelet / mch / mchc / neutrophil_pct
 
     每个 key 取该用户该指标的最新一次记录 (按 record_date desc).
     """
@@ -294,11 +295,11 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
             # PhenoAge 输入项 (单位见 LabsContext 字段注释):
             "albumin": ["ALB", "白蛋白"],
             "crp": ["hs-CRP", "hsCRP", "CRP", "C反应蛋白", "C-反应蛋白"],
-            "lymphocyte_pct": ["LYMPH%", "淋巴细胞百分比", "淋巴%"],
             "mcv": ["MCV", "红细胞平均体积", "平均红细胞体积"],
             "rdw": ["RDW", "红细胞分布宽度"],
             "alp": ["ALP", "碱性磷酸酶"],
-            "wbc": ["WBC", "白细胞"],
+            # 注: wbc / lymphocyte_pct 以及全部血常规 CBC analyte 不在此 substring-loop,
+            # 改走下方 cbc_analyte_of 锚定白名单 (防 白细胞酯酶/网织血红蛋白/MPV 等复合名污染)。
         }
 
         from sqlalchemy import or_
@@ -338,6 +339,51 @@ def fetch_latest_labs(db: Session, user_id: int) -> Dict[str, float]:
                     out[key] = float(row[0])
                 except (TypeError, ValueError):
                     pass
+
+        # ── 血常规 CBC: 锚定白名单 (cbc_analyte_of) ──
+        # resolve_code 最长子串回退把任何含「血红蛋白」名 → hemoglobin (黑名单打地鼠会漏
+        # 网织血红蛋白/还原血红蛋白/血红蛋白A2/电泳); 血小板/白细胞同病 (MPV/PDW/白细胞酯酶)。
+        # 这里只接受「规范化整串恰好等于规范名」的行 → 复合名结构性拒绝, 防 red_cell_elevation
+        # 等安全规则 under-alarm。SQL 宽前缀仅缩小扫描, 每行最终走 cbc_analyte_of 锚定校验。
+        from app.services.blood_routine import (
+            cbc_analyte_of, _CBC_SQL_PREFILTER,
+        )
+        _CBC_KEYS = (
+            "hemoglobin", "hematocrit", "rbc", "platelet",
+            "wbc", "neutrophil_pct", "lymphocyte_pct", "mch", "mchc",
+        )
+        # mch/mchc 不在 _CBC_SQL_PREFILTER (它只列 blood_routine 需要的); 给一份本地前缀。
+        _CBC_PREFILTER = dict(_CBC_SQL_PREFILTER)
+        _CBC_PREFILTER.setdefault("mch", ["平均血红蛋白量", "MCH"])
+        _CBC_PREFILTER.setdefault("mchc", ["平均血红蛋白浓度", "MCHC"])
+        for key in _CBC_KEYS:
+            prefilters = _CBC_PREFILTER.get(key) or []
+            if not prefilters:
+                continue
+            cond = or_(*[
+                MedicalIndicator.name.ilike(f"%{p}%") |
+                MedicalIndicator.name_en.ilike(f"%{p}%") |
+                MedicalIndicator.item_code.ilike(f"%{p}%")
+                for p in prefilters
+            ])
+            rows = (
+                db.query(MedicalIndicator.value, MedicalIndicator.name)
+                .filter(
+                    MedicalIndicator.user_id == user_id,
+                    MedicalIndicator.value.isnot(None),
+                    cond,
+                )
+                .order_by(desc(MedicalIndicator.record_date))
+                .limit(30)
+                .all()
+            )
+            for cand_value, cand_name in rows:  # newest-first; 取首个锚定命中
+                if cbc_analyte_of(cand_name) == key:
+                    try:
+                        out[key] = float(cand_value)
+                    except (TypeError, ValueError):
+                        pass
+                    break
         return out
     except Exception as e:
         logger.warning(f"[twin.collectors] fetch_latest_labs 失败: {e}")
