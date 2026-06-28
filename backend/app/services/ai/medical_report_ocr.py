@@ -75,7 +75,9 @@ async def recognize_medical_report(
         response = await provider.chat(
             messages=messages,
             temperature=0.1,
-            max_tokens=3000,
+            # 体检报告指标多,结构化 JSON 输出常 >3000 token → 截断 → json.loads 失败。
+            # active 模型实测接受 ≥32000,放开到 16000 覆盖整份报告(同 pdf_parser)。
+            max_tokens=16000,
         )
         content = response if isinstance(response, str) else response.get("content", "")
         json_str = extract_json_from_text(content or "")

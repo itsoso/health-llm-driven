@@ -561,14 +561,18 @@ class MedicalReportPDFParser:
                     },
                     {
                         "role": "user",
-                        "content": prompt.format(text=text_content[:8000]),
+                        # 输入也别只截前 8000 字符(多页报告会丢页/丢项目)。active 模型
+                        # context 充裕(≥100k),放到 40000 字符覆盖整份体检报告;与 max_tokens
+                        # 16000 合计仍在 context 内。
+                        "content": prompt.format(text=text_content[:40000]),
                     },
                 ],
                 temperature=0.1,
-                # 体检报告项目多(血常规/肝功能/免疫/影像…),结构化 JSON 输出常 >4000 token。
-                # 4000 会把 JSON 截断成 unterminated string → json.loads 撞断点报「格式错误」。
-                # 提到 8000 给足预算;仍可能被超大报告超出 → 下方按 finish_reason/截断特征 fail-loud。
-                max_tokens=8000,
+                # 体检报告项目多(血常规/肝功能/免疫/影像…),结构化 JSON 输出常很大。
+                # 8000 仍会截断超大报告 → unterminated string。active 模型(qwen3.7 / MiniMax-M2.5)
+                # 实测接受 max_tokens≥32000,故放开到 16000(覆盖整份报告 JSON,无实际上限);
+                # 仍超出时下方按截断特征 fail-loud 给「分次导入」指引。
+                max_tokens=16000,
             ))
             if not result_text:
                 raise ValueError("LLM返回内容为空")

@@ -77,6 +77,8 @@ async def parse_lab_photo(image_base64: str, image_type: str = "jpeg") -> list[d
         ],
         image_url=data_url,
         temperature=0.0,
-        max_tokens=1500,
+        # 化验单项目多时 1500 token 会截断结构化输出。active 模型实测接受 ≥32000,
+        # 放开到 16000 覆盖整张化验单(同 pdf_parser / medical_report_ocr)。
+        max_tokens=16000,
     )
     return parse_lab_items(raw or "")
