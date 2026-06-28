@@ -801,6 +801,10 @@ async function importBodyMeasurements(records: HealthKitDailyRecord[]): Promise<
   return errors;
 }
 
+function isHealthKitConsentBlocked(errors: string[]): boolean {
+  return errors.some((error) => /HealthKit consent/i.test(error));
+}
+
 // ── 全量回填 ─────────────────────────────────────────────────────────────────
 export async function backfillAll(
   onProgress?: (p: BackfillProgress) => void,
@@ -902,7 +906,9 @@ export async function syncRecentDays(
 
   const coverage = summarizeCoverage(records);
   const result = await importBatch(records);
-  const bodyErrors = await importBodyMeasurements(records);
+  const bodyErrors = isHealthKitConsentBlocked(result.errors)
+    ? []
+    : await importBodyMeasurements(records);
   return {
     totalImported: result.imported_count,
     errors: [...result.errors, ...bodyErrors],

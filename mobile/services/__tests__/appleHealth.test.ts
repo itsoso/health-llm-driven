@@ -470,4 +470,23 @@ describe('syncRecentDays', () => {
       notes: 'HealthKit 自动同步',
     }));
   });
+
+  it('HealthKit import 被 consent 门拒绝时不旁路上传体重腰围', async () => {
+    mockHK.getWeightSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [{ value: 82.4, sourceName: 'com.withings.wiScaleNG', startDate: new Date().toISOString(), endDate: new Date().toISOString() }]),
+    );
+    mockHK.getWaistCircumferenceSamples.mockImplementation((_o: any, cb: any) =>
+      cb('', [{ value: 91.2, sourceName: 'com.ringconn.app', startDate: new Date().toISOString(), endDate: new Date().toISOString() }]),
+    );
+    (api.post as jest.Mock).mockRejectedValueOnce({
+      response: { data: { detail: 'HealthKit consent required for scopes: healthkit.body.read' } },
+    });
+
+    const result = await syncRecentDays(1);
+
+    expect(result.errors).toContain('HealthKit consent required for scopes: healthkit.body.read');
+    expect(api.post).toHaveBeenCalledTimes(1);
+    expect(api.post).not.toHaveBeenCalledWith('/weight/records', expect.anything());
+    expect(api.post).not.toHaveBeenCalledWith('/waist/records', expect.anything());
+  });
 });
