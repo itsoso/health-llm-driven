@@ -1489,6 +1489,31 @@ def approve_dedao_kbase_draft_review(
     }
 
 
+def publish_dedao_kbase_reviewed_artifacts(
+    db: Session,
+    *,
+    artifact_dir: str | Path | None = None,
+    actor: str = "system",
+) -> dict[str, Any]:
+    """Import reviewed dedao-kbase artifacts into serving KB and refresh indexes."""
+
+    root = _configured_system_kb_artifact_dir(artifact_dir)
+    gate = validate_artifact_review_gate(root)
+    if not gate.get("serving_allowed"):
+        reasons = ", ".join(str(reason) for reason in gate.get("blocking_reasons") or [])
+        raise ValueError(f"dedao-kbase artifacts are not reviewed for serving: {reasons}")
+
+    from app.services.system_knowledge_importer import import_system_kb_artifacts
+
+    import_report = import_system_kb_artifacts(db, root, actor=actor)
+    reindex_report = run_system_kb_reindex_report(db, actor=actor)
+    return {
+        "artifact_dir": str(root),
+        "import": import_report,
+        "reindex": reindex_report,
+    }
+
+
 def apply_confidence_decay(
     db: Session,
     *,

@@ -1368,6 +1368,87 @@ def test_admin_dedao_kbase_draft_review_approve_promotes_configured_artifacts(
     assert audit.diff["note"] == "结构化摘要已人工核对"
 
 
+def test_admin_dedao_kbase_draft_review_approve_can_publish_to_serving_kb(
+    client,
+    db,
+    auth_user_and_headers,
+    tmp_path,
+    monkeypatch,
+):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    artifact_dir = tmp_path / "system_kb_v2_seed"
+    artifact_dir.mkdir()
+    monkeypatch.setattr(settings, "system_kb_artifact_dir", str(artifact_dir))
+    for name in ("pages", "protocols", "contraindications", "eval_cases"):
+        _write_artifact_jsonl(artifact_dir / f"{name}.jsonl", [])
+    _write_artifact_jsonl(
+        artifact_dir / "entities.jsonl",
+        [
+            {
+                "doc_id": "entity:sleep:caffeine",
+                "doc_type": "entity",
+                "entity_type": "sleep",
+                "entity_id": "caffeine",
+                "title": "咖啡因",
+                "summary": "咖啡因是睡眠相关刺激物。",
+                "metadata": {"review_status": "draft"},
+            }
+        ],
+    )
+    _write_artifact_jsonl(
+        artifact_dir / "claims.jsonl",
+        [
+            {
+                "doc_id": "claim:c_sleep_caffeine_window",
+                "doc_type": "claim",
+                "entity_type": "sleep",
+                "entity_id": "caffeine",
+                "title": "睡眠前咖啡因窗口",
+                "summary": "下午晚些时候摄入咖啡因可能影响入睡。",
+                "metadata": {"review_status": "draft"},
+            }
+        ],
+    )
+    _write_artifact_jsonl(
+        artifact_dir / "relations.jsonl",
+        [
+            {
+                "src_doc_id": "entity:sleep:caffeine",
+                "dst_doc_id": "claim:c_sleep_caffeine_window",
+                "relation": "has_claim",
+                "metadata": {"review_status": "draft"},
+            }
+        ],
+    )
+    (artifact_dir / "manifest.json").write_text(
+        json.dumps({"ingest": {"review_status": "draft"}}, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    (artifact_dir / "draft_manifest.json").write_text(
+        json.dumps({"status": "draft", "requires_review": True, "serving_allowed": False}, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    response = client.post(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review/approve",
+        headers=headers,
+        json={"note": "审核后直接发布", "publish": True},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["gate"]["serving_allowed"] is True
+    assert payload["publish"]["import"]["documents"] == 2
+    assert payload["publish"]["import"]["edges"] == 1
+    assert payload["publish"]["reindex"]["reindex"]["documents"] == 2
+    assert db.get(KBDocument, "claim:c_sleep_caffeine_window").metadata_json["review_status"] == "reviewed"
+    assert db.query(KBEdge).filter(KBEdge.dst_doc_id == "claim:c_sleep_caffeine_window").count() == 1
+    audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_draft_review_approved").one()
+    assert audit.diff["published"] is True
+    assert audit.diff["publish"]["import"]["documents"] == 2
+
+
 def test_admin_review_queue_prioritizes_claims_needing_human_review(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
     user.is_admin = True

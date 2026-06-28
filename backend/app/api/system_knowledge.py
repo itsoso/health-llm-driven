@@ -22,6 +22,7 @@ from app.services.system_knowledge_service import (
     get_knowledge_review_queue,
     lint_knowledge_base,
     lookup_for_twin,
+    publish_dedao_kbase_reviewed_artifacts,
     run_system_kb_reindex_report,
     search_knowledge,
     update_claim_review,
@@ -65,6 +66,7 @@ class ClaimReviewUpdateRequest(BaseModel):
 
 class DedaoKbaseDraftReviewApproveRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
+    publish: bool = False
 
 
 @router.get("/entity/{entity_type}/{entity_id}", summary="获取系统知识库实体与关联 claim")
@@ -338,6 +340,13 @@ def approve_dedao_kbase_draft_review_endpoint(
 ):
     try:
         result = approve_dedao_kbase_draft_review(reviewer=f"admin:{admin_user.id}")
+        publish_report = None
+        if request.publish:
+            publish_report = publish_dedao_kbase_reviewed_artifacts(
+                db,
+                actor=f"admin:{admin_user.id}",
+            )
+            result["publish"] = publish_report
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -354,6 +363,8 @@ def approve_dedao_kbase_draft_review_endpoint(
             "documents_reviewed": result["review"].get("documents_reviewed"),
             "relations_reviewed": result["review"].get("relations_reviewed"),
             "note": request.note,
+            "published": request.publish,
+            "publish": publish_report,
         },
     )
     return result
