@@ -82,7 +82,7 @@ description: "复元产品全生命周期总指挥:把一句用户需求,经『�
 
 #### G2 出口 · 定义环一致性闸(spec-kit 只读 /analyze)— 进交付环前必过
 定义环出了 PRD↔Plan↔Dossier 三件套,**进昂贵交付前先验它们自洽**(否则 plan 落了 PRD 没提的、或 Dossier 引了不存在的 spec、或带着未解问题就开工):
-- **确定性子集(硬闸)**:`python backend/scripts/check_dossier_consistency.py` —— ① 进交付环不留未解 `[NEEDS CLARIFICATION]` ② 引用的 `docs/{prd,plans,specs}/*.md` 锚点必须存在 ③ Gate↔阶段自洽(进交付环则 G1=PASS;shipped 无 REJECT/BLOCK)。**已接进 doc-drift 提交闸 hook**:不自洽则 commit 被拦。
+- **确定性子集(硬闸)**:`python backend/scripts/check_dossier_consistency.py` —— ① 进交付环(状态∈building/shipping/shipped 或 阶段≥S4)不留未解 `[NEEDS CLARIFICATION]` ② 引用的 `docs/{prd,plans,specs}/*.md` 锚点必须存在 ③ Gate↔阶段自洽(进交付环则 G1=PASS;shipped 无任何 Gate 判失败——裁决词表对齐 template:GO/绿=过、REJECT/BLOCK/NO-GO/真红/红/FAIL/失败/自动回滚=失败,**无法识别的裁决词在 shipped 下 fail-closed 报警**)④ front-matter 不可解析=fail-loud 报。**运行方式(目前是 G2 出口手动跑,无自动闸)**:在本 G2 步骤手动 `python backend/scripts/check_dossier_consistency.py`;**可选**自行接进 CI(放 `.github/workflows/ci.yml` 与 doc-drift 同段)或挂本地 `.claude/hooks/` 提交闸。注意 **`.claude/hooks/` 被 .gitignore 整目录忽略、不随仓库分发**,新 clone 不会自动拦 commit——别假设 clone 下来就有机械闸,要么手动跑、要么自己接 CI/挂 hook。
 - **语义子集(LLM 只读)**:跑一个**只读** /analyze pass(`Explore` agent 或 council),核 PRD 的目标/一等对象/验收在 plan 与分解里**都有对应**,无 plan 凭空多出 PRD 没授权的范围;冲突按严重度标(违反不变量=CRITICAL)。
 - **裁决**:任一不过 → 回 S2/S3 补,**不进 S4**。
 
