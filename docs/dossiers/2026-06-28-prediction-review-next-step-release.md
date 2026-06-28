@@ -4,8 +4,8 @@
 |---|---|
 | slug | `prediction-review-next-step-release` |
 | 创建日期 | 2026-06-28 |
-| 当前阶段 | G3/G4 验证 |
-| 状态 | release-ready |
+| 当前阶段 | S8 沉淀 |
+| 状态 | released |
 | 负责 | Codex |
 | 反馈环 | backend deploy / web deploy / Mac package / Watch package tests / Mobile local QR |
 
@@ -87,7 +87,7 @@
   - [x] T3 Web Review UI
   - [x] T4 Mac Review UI
   - [x] T5 Watch compatibility
-  - [ ] T6 Release all surfaces
+  - [x] T6 Release all surfaces
 - 并发检查: `git status --short --branch` clean, `main...origin/main` aligned.
 
 ## S5 · 实现
@@ -139,20 +139,40 @@
 
 ## S6 · 部署
 
-- pending
+- backend: `./deploy.sh -b` -> pass；生产服务同步到 `53985eab`，DB backup 成功，迁移无新增，KB reindex 完成，health check `60/60 PASS`。
+- web: `./deploy.sh -f` -> pass；Next build pass，PM2 `health-frontend` online。
+- mac: `apps/mac/scripts/package-app.sh --install --open` -> pass；已安装并启动 `/Applications/健康 Agent.app`。
+- mobile/watch: `./scripts/mobile-local-qr.sh` -> pass；生成 iOS QR 安装包并注入 Watch target。
+  - build id: `20260628-102842-53985eab`
+  - signing: `development`, `automatic`, team `QA2U724DAN`
+  - install page: `https://health.executor.life/mobile-install/ios/20260628-102842-53985eab/install.html`
+  - ipa: `artifacts/ios-local-install/20260628-102842-53985eab/HealthPilot-20260628-102842-53985eab.ipa`
+  - qr: `artifacts/ios-local-install/20260628-102842-53985eab/qr.png`
 
 ## G5 · 部署健康闸
 
-- pending
+- PASS:
+  - `curl -fsS https://health.executor.life/api/v1/health` -> `{"status":"healthy","services":{"api":"running","database":"connected","redis":"connected","celery":"connected"}}`
+  - `curl -fsSI https://health.executor.life/my-progress` -> HTTP 200。
+  - `curl -fsSI https://health.executor.life/mobile-install/ios/20260628-102842-53985eab/install.html` -> HTTP 200。
+  - `curl -fsSI https://health.executor.life/mobile-install/ios/20260628-102842-53985eab/manifest.plist` -> HTTP 200。
+  - `curl -fsSI https://health.executor.life/mobile-install/ios/20260628-102842-53985eab/HealthPilot-20260628-102842-53985eab.ipa` -> HTTP 200。
+  - `pgrep -fl "HealthAgentMac|健康 Agent"` -> `/Applications/健康 Agent.app/Contents/MacOS/HealthAgentMac` running。
 
 ## S7 · 上线验证
 
-- pending
+- PASS:
+  - 未登录访问 `https://health.executor.life/api/v1/daily-plan/review?window_days=7` -> HTTP 401，权限边界正常。
+  - Mobile QR install artifacts public reachable；本次不走 TestFlight。
+  - Watch target 已随 iOS archive 构建和嵌入；不新增复杂 Watch review UI。
 
 ## G6 · 验证闸(人在环)
 
-- pending
+- PASS(agent-verifiable):
+  - Web/backend/Mac/Mobile QR/Watch packaging 均完成。
+  - 手机端真实安装仍需用户用已纳入 development signing 的设备扫码验证；若 iOS 拒绝安装，优先检查设备 UDID 是否在签名 profile 内。
 
 ## S8 · 沉淀
 
-- pending
+- `docs/plans/2026-06-27-health-runtime-governance-plan.md` 已记录 G0.3 Review 下一步与置信度历史完成。
+- 下一批按计划进入 `Specialist` / `Problem` attachment、持久化 prediction index、跨周期 confidence calibration。
