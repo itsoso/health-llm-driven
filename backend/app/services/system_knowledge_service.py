@@ -2797,9 +2797,39 @@ def _ensure_pgvector_table(db: Session) -> bool:
         return False
 
 
+import threading as _emb_threading
+from datetime import date as _emb_date_cls
+_emb_guard_lock = _emb_threading.Lock()
+_emb_guard_state = {"day": None, "calls": 0}
+
+
+def _embedding_daily_cap_reached() -> bool:
+    """日级 embedding 调用上限 — 按量模式防 runaway 烧钱。
+    env EMBEDDING_DAILY_CALL_CAP=0/未设 → 不限;>0 → 每进程每日超限返 True,
+    调用方返回 None → 稀疏向量降级(不崩)。"""
+    import os as _os
+    try:
+        cap = int(_os.environ.get("EMBEDDING_DAILY_CALL_CAP", "0") or 0)
+    except ValueError:
+        cap = 0
+    if cap <= 0:
+        return False
+    today = _emb_date_cls.today().isoformat()
+    with _emb_guard_lock:
+        if _emb_guard_state["day"] != today:
+            _emb_guard_state["day"], _emb_guard_state["calls"] = today, 0
+        if _emb_guard_state["calls"] >= cap:
+            return True
+        _emb_guard_state["calls"] += 1
+    return False
+
+
 def _embed_system_kb_texts(texts: list[str], *, batch_size: int | None = None) -> list[list[float]] | None:
     prepared_texts = [str(text or "").strip() or " " for text in texts]
     if not prepared_texts or not _system_kb_embedding_provider_available():
+        return None
+    if _embedding_daily_cap_reached():
+        logger.warning("system KB embedding 日上限已达, 跳过 (EMBEDDING_DAILY_CALL_CAP); 稀疏向量降级")
         return None
     effective_batch_size = max(1, int(batch_size or settings.system_kb_embedding_batch_size))
     try:
