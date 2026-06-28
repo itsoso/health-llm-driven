@@ -71,6 +71,10 @@ class DedaoKbaseDraftReviewApproveRequest(BaseModel):
     dry_run_publish: bool = False
 
 
+class DedaoKbaseReviewedArtifactsPublishRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=1000)
+
+
 @router.get("/entity/{entity_type}/{entity_id}", summary="获取系统知识库实体与关联 claim")
 def get_knowledge_entity(
     entity_type: str,
@@ -375,6 +379,36 @@ def approve_dedao_kbase_draft_review_endpoint(
             "publish_dry_run": request.dry_run_publish,
             "publish": publish_report,
             "publish_preview": publish_preview,
+        },
+    )
+    return result
+
+
+@admin_router.post("/dedao_kbase/reviewed_artifacts/publish", summary="发布已审核 dedao-kbase artifacts")
+def publish_dedao_kbase_reviewed_artifacts_endpoint(
+    request: DedaoKbaseReviewedArtifactsPublishRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        result = publish_dedao_kbase_reviewed_artifacts(
+            db,
+            actor=f"admin:{admin_user.id}",
+        )
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    _record_audit(
+        db,
+        doc_id=None,
+        op="dedao_kbase_reviewed_artifacts_published",
+        actor=f"admin:{admin_user.id}",
+        diff={
+            "artifact_dir": result["artifact_dir"],
+            "published": True,
+            "note": request.note,
+            "import": result["import"],
+            "reindex": result["reindex"],
         },
     )
     return result

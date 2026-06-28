@@ -20,8 +20,9 @@
 6. **P2: pgvector operations loop.** Persist reindex health reports, surface dense-index coverage in the admin dashboard, and schedule weekly serving-index refresh.
 7. **P2: dedao-kbase one-click publish.** Let explicit admin approval optionally publish reviewed dedao-kbase artifacts into serving KB and refresh indexes.
 8. **P2: dedao-kbase publish dry-run.** Let admin approval preview reviewed artifact import/reindex impact without mutating serving KB.
+9. **P2: reviewed-artifact publish endpoint.** Let admins publish already-reviewed dedao-kbase artifacts after a dry-run without re-running approval.
 
-This implementation executes P0, the P1 dedao-kbase draft observability and reviewer workflow API slices, plus the P2 source freshness, pgvector fallback-safe semantic backend, pgvector operations-loop, explicit dedao-kbase one-click publish, and dedao-kbase publish dry-run slices. It avoids new medical content and does not relax reviewed-only serving.
+This implementation executes P0, the P1 dedao-kbase draft observability and reviewer workflow API slices, plus the P2 source freshness, pgvector fallback-safe semantic backend, pgvector operations-loop, explicit dedao-kbase one-click publish, dedao-kbase publish dry-run, and reviewed-artifact publish endpoint slices. It avoids new medical content and does not relax reviewed-only serving.
 
 ## Task 1: Lifecycle Eval Snapshot
 
@@ -275,6 +276,26 @@ Expected: pytest pass.
 
 ```bash
 DATABASE_URL=sqlite:///./backend/test_dedao_publish_preview.db PYTHONPATH=backend COVERAGE_FILE=/tmp/.coverage-dedao-publish-preview backend/venv/bin/python -m pytest backend/tests/test_system_knowledge_phase0.py::test_admin_dedao_kbase_draft_review_approve_can_preview_publish_without_serving_mutation -q
+```
+
+Expected: pytest pass.
+
+## Task 11: P2 Reviewed dedao-kbase Artifact Publish Endpoint
+
+**Files:**
+- Modify: `backend/app/api/system_knowledge.py`
+- Test: `backend/tests/test_system_knowledge_phase0.py`
+
+**Implemented behavior:**
+- `POST /admin/knowledge/dedao_kbase/reviewed_artifacts/publish` publishes artifacts that are already reviewed and serving-allowed.
+- The endpoint reuses the existing reviewed gate, import, and `run_system_kb_reindex_report` path.
+- It does not call `review_draft_artifacts` or write `dedao_kbase_draft_review_approved`, so it can safely follow a prior dry-run preview without changing review metadata.
+- It writes an independent `KBAudit(op="dedao_kbase_reviewed_artifacts_published")` row with the import/reindex summary and admin note.
+
+**Verification:**
+
+```bash
+DATABASE_URL=sqlite:///./backend/test_dedao_publish_reviewed.db PYTHONPATH=backend COVERAGE_FILE=/tmp/.coverage-dedao-publish-reviewed backend/venv/bin/python -m pytest backend/tests/test_system_knowledge_phase0.py::test_admin_dedao_kbase_reviewed_artifacts_publish_imports_without_reapproving -q
 ```
 
 Expected: pytest pass.
