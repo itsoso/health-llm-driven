@@ -281,6 +281,17 @@ STREAMING_PATHS = {
     "/api/v1/agent/stream",
     "/api/v1/orchestrator/chat/stream",
 }
+# LLM-bound 长任务端点:单条请求需多次/大输出 LLM 调用,远超 60s 但**非**流式
+# (不能进 STREAMING_PATHS 全豁免——全豁免会让真卡死的请求永不超时、饿死 worker)。
+# 给单独的更长超时上限,既容下合法长解析、又保留兜底。
+# 体检报告 PDF 导入:大报告 LLM 解析 + 服务端分段(CHUNK_CHARS=35000)多次调用,实测 76s+。
+# image 走 vision OCR、text 走同一分段解析路径,同样 LLM-bound 可能 >60s。
+# csv/json 是确定性解析(快),不进此表。
+LONG_REQUEST_PATHS = {
+    "/api/v1/medical-exams/import/pdf": 300,
+    "/api/v1/medical-exams/import/image": 300,
+    "/api/v1/medical-exams/import/text": 300,
+}
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
@@ -290,6 +301,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         method = request.method
         is_streaming = path in STREAMING_PATHS
+        req_timeout = LONG_REQUEST_PATHS.get(path, REQUEST_TIMEOUT)
 
         try:
             if is_streaming:
@@ -297,7 +309,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             else:
                 response = await asyncio.wait_for(
                     call_next(request),
-                    timeout=REQUEST_TIMEOUT
+                    timeout=req_timeout
                 )
 
             duration = time.time() - start_time
@@ -318,7 +330,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             duration_ms = (time.time() - start_time) * 1000
             logger.error(
                 f"[TIMEOUT] [{request_id}] {method} {path} "
-                f"timed out after {duration_ms:.0f}ms (limit={REQUEST_TIMEOUT}s)"
+                f"timed out after {duration_ms:.0f}ms (limit={req_timeout}s)"
             )
             return JSONResponse(
                 status_code=504,

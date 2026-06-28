@@ -57,6 +57,14 @@ public final class APIClient: @unchecked Sendable {
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
 
+    /// File uploads (medical-report PDF / lab image / prescription photo) are
+    /// LLM-bound on the server: large reports take a multi-chunk parse well past
+    /// `URLSession.shared`'s default 60s request timeout, so the client would
+    /// give up ("请求超时") before the server replies. Server caps these paths at
+    /// 300s; keep the client a touch higher so the server's bounded 504 (with a
+    /// readable message) wins the race instead of an opaque client timeout.
+    static let uploadRequestTimeout: TimeInterval = 320
+
     /// Backend root used to resolve resource URLs returned by history APIs.
     /// Requests still go through `makeRequest`; this is only for already-public
     /// upload URLs such as `/api/v1/upload/files/chat/...`.
@@ -116,6 +124,7 @@ public final class APIClient: @unchecked Sendable {
         mimeType: String = "application/octet-stream"
     ) async throws -> T {
         var request = try await makeRequest(path: path, method: "POST")
+        request.timeoutInterval = Self.uploadRequestTimeout
         let boundary = "Boundary-\(UUID().uuidString)"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.httpBody = Self.multipartBody(
