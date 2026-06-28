@@ -76,6 +76,16 @@ jobs:
           TZ: Asia/Shanghai
         run: python backend/scripts/check_dossier_consistency.py
 
+      - name: LLM synthesis regression gate
+        env:
+          SECRET_KEY: test-secret-key-32-chars-minimum!!
+          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
+          DATABASE_URL: "sqlite:///:memory:"
+          TZ: Asia/Shanghai
+        # Hard gate: zero-cost synthesis invariant + health-agent rubric evals.
+        # Live LLM suites stay explicit: python scripts/harness_llm_regression_gate.py --include-live-llm
+        run: python scripts/harness_llm_regression_gate.py
+
       - name: Eval Golden Set (safety + insight + retrieval, no LLM cost)
         working-directory: backend
         env:
