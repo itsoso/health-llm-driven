@@ -768,6 +768,24 @@ public enum L10n {
         "Could not load suggestions. Try refresh.": "无法加载建议，请刷新重试。",
         "For reference only — confirm with your pharmacist or doctor.":
             "仅供参考，请以药师或医生意见为准。",
+        "Data Connections": "数据连接与授权",
+        "Open Data Connections": "打开数据连接与授权",
+        "External data connections, consent scopes, sync health, and degraded behavior.":
+            "外部数据连接、授权范围、同步健康和降级策略。",
+        "No external data connections yet.": "还没有外部数据连接。",
+        "Connect Apple Health, wearable, FHIR, or report sources from mobile/web; Mac will show their sync and authorization health here.":
+            "从 Mobile 或 Web 连接 Apple Health、可穿戴、FHIR 或报告来源；Mac 会在这里展示同步和授权健康状态。",
+        "Could not load data connections. Try refresh.": "无法加载数据连接，请刷新重试。",
+        "Connections": "连接数",
+        "Available": "可用",
+        "Needs Action": "需处理",
+        "Readable Cache": "可读缓存",
+        "Connection Action": "动作",
+        "Cache": "缓存",
+        "Connection Last Sync": "最近同步",
+        "Token": "令牌",
+        "Consent Scopes": "授权范围",
+        "Read-only. Reva never shows tokens here.": "只读展示。Reva 不在这里显示令牌。",
 
         // Liver Trend
         "Liver Trend": "肝脏趋势",

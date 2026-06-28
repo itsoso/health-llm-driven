@@ -15,6 +15,7 @@ final class HealthAgentMacCoreTests: XCTestCase {
             "record",
             "data",
             "dataSources",
+            "dataConnections",
             "prescriptions",
             "liver",
             "healthExtras",

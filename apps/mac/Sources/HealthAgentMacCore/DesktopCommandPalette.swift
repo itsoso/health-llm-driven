@@ -43,6 +43,7 @@ public enum DesktopCommandPalette {
             navigateCommand(.agent, language: language, keywords: ["agent", "chat", "analysis", "assistant", "问", "助手", "分析"]),
             navigateCommand(.record, language: language, keywords: ["record", "food", "water", "supplement", "diet", "饮食", "饮水", "补剂", "记录"]),
             navigateCommand(.data, language: language, keywords: ["data", "labs", "records", "trend", "化验", "趋势", "健康数据"]),
+            navigateCommand(.dataConnections, language: language, keywords: ["connection", "connector", "authorization", "consent", "scope", "数据连接", "授权", "同意", "同步状态"]),
             navigateCommand(.healthExtras, language: language, keywords: ["deprescribing", "polypharmacy", "connection", "loneliness", "causal", "integrity", "多药", "减药", "社会连接", "孤独", "因果", "数据自检"]),
             navigateCommand(.genetics, language: language, keywords: ["gene", "genome", "genetic", "wegene", "23andme", "基因", "位点"]),
             navigateCommand(.knowledge, language: language, keywords: ["knowledge", "kb", "dedao", "source", "知识", "得到", "证据"]),
@@ -176,6 +177,8 @@ public enum DesktopCommandPalette {
             L10n.text("Inspect records, trends, labs, and wearable summaries.", language: language)
         case .dataSources:
             L10n.text("Wearable records grouped by device.", language: language)
+        case .dataConnections:
+            L10n.text("External data connections, consent scopes, sync health, and degraded behavior.", language: language)
         case .prescriptions:
             L10n.text("Look up originator drugs from a prescription, and review switch suggestions.", language: language)
         case .liver:

@@ -88,7 +88,17 @@ final class MacP0FeatureTests: XCTestCase {
 
         XCTAssertTrue(commands.contains { $0.intent == .navigate(.agent) && $0.title == "问助手" })
         XCTAssertTrue(commands.contains { $0.intent == .navigate(.genetics) && $0.title == "打开基因" })
+        let hasDataConnections = commands.contains { command in
+            command.intent == .navigate(.dataConnections) && command.title == "打开数据连接与授权"
+        }
+        XCTAssertTrue(hasDataConnections)
         XCTAssertTrue(commands.contains { $0.intent == .quickPrompt && $0.title == "基于当前上下文问助手" })
+    }
+
+    func testSidebarIncludesDataConnectionsAsGovernedDataSurface() {
+        XCTAssertTrue(SidebarDestination.sidebarVisible.contains(.dataConnections))
+        XCTAssertEqual(SidebarDestination.dataConnections.title(language: .zh), "数据连接与授权")
+        XCTAssertEqual(SidebarDestination.dataConnections.systemImage, "shield.lefthalf.filled")
     }
 
     func testCommandPaletteFiltersByTitleSubtitleAndKeywords() {
