@@ -2709,10 +2709,11 @@ def _ensure_pgvector_table(db: Session) -> bool:
         return False
 
 
-def _embed_system_kb_texts(texts: list[str], *, batch_size: int = 50) -> list[list[float]] | None:
+def _embed_system_kb_texts(texts: list[str], *, batch_size: int | None = None) -> list[list[float]] | None:
     prepared_texts = [str(text or "").strip() or " " for text in texts]
     if not prepared_texts or not _system_kb_embedding_provider_available():
         return None
+    effective_batch_size = max(1, int(batch_size or settings.system_kb_embedding_batch_size))
     try:
         from openai import OpenAI
 
@@ -2722,8 +2723,8 @@ def _embed_system_kb_texts(texts: list[str], *, batch_size: int = 50) -> list[li
             client_kwargs["base_url"] = embedding_base_url
         client = OpenAI(**client_kwargs)
         embeddings: list[list[float]] = []
-        for index in range(0, len(prepared_texts), batch_size):
-            batch = prepared_texts[index : index + batch_size]
+        for index in range(0, len(prepared_texts), effective_batch_size):
+            batch = prepared_texts[index : index + effective_batch_size]
             response = client.embeddings.create(
                 model=settings.system_kb_embedding_model,
                 input=batch,

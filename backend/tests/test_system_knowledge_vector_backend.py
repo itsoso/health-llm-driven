@@ -181,3 +181,31 @@ def test_system_kb_embeddings_use_dedicated_provider_settings(monkeypatch):
         "base_url": "https://embedding.example/v1",
     }
     assert captured["model"] == "text-embedding-v3"
+
+
+def test_system_kb_embeddings_honor_configured_batch_size(monkeypatch):
+    calls = []
+
+    class FakeEmbeddings:
+        def create(self, *, model, input):
+            calls.append(list(input))
+            return SimpleNamespace(
+                data=[
+                    SimpleNamespace(embedding=[float(index)])
+                    for index, _ in enumerate(input)
+                ]
+            )
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.embeddings = FakeEmbeddings()
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
+    monkeypatch.setattr(settings, "system_kb_embedding_api_key", "system-kb-key")
+    monkeypatch.setattr(settings, "system_kb_embedding_base_url", "https://embedding.example/v1")
+    monkeypatch.setattr(settings, "system_kb_embedding_batch_size", 2)
+
+    embeddings = system_knowledge_service._embed_system_kb_texts(["a", "b", "c", "d", "e"])
+
+    assert embeddings == [[0.0], [1.0], [0.0], [1.0], [0.0]]
+    assert calls == [["a", "b"], ["c", "d"], ["e"]]

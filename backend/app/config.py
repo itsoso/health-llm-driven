@@ -232,6 +232,7 @@ class Settings(BaseSettings):
     system_kb_embedding_base_url: Optional[str] = None
     system_kb_embedding_model: str = "text-embedding-3-small"
     system_kb_embedding_dimensions: int = 1536
+    system_kb_embedding_batch_size: int = 50
 
     # 邀请码配置
     default_invite_code: str = "LLM"  # 默认邀请码
