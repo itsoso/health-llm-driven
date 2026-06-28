@@ -1038,6 +1038,31 @@ def test_admin_operations_dashboard_summarizes_kb_health(client, db, auth_user_a
     assert "notification_evidence_unsupported_high" in payload["action_items"]
 
 
+def test_admin_operations_dashboard_flags_eval_failures(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    db.add(
+        KBAudit(
+            doc_id=None,
+            op="lifecycle_report",
+            actor="celery:system-kb-lifecycle",
+            diff={
+                "lint": {"summary": {}},
+                "decay": {"processed": 0},
+                "eval": {"total": 2, "passed": 1, "failed": 1},
+            },
+        )
+    )
+    db.commit()
+
+    response = client.get("/api/v1/admin/knowledge/operations_dashboard", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "attention"
+    assert "kb_eval_failures_present" in payload["action_items"]
+
+
 def test_admin_review_queue_prioritizes_claims_needing_human_review(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
     user.is_admin = True

@@ -3045,6 +3045,16 @@ def _knowledge_operations_action_items(
         action_items.append("kb_lint_issues_present")
     if latest_lifecycle_report is None:
         action_items.append("lifecycle_report_missing")
+    else:
+        lifecycle_diff = latest_lifecycle_report.get("diff")
+        eval_report = lifecycle_diff.get("eval") if isinstance(lifecycle_diff, dict) else None
+        if not isinstance(eval_report, dict):
+            action_items.append("kb_eval_report_missing")
+        else:
+            if int(eval_report.get("failed") or 0) > 0:
+                action_items.append("kb_eval_failures_present")
+            if int(eval_report.get("total") or 0) == 0:
+                action_items.append("kb_eval_cases_missing")
     return action_items
 
 

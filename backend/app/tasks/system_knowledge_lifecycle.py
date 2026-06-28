@@ -24,6 +24,7 @@ from app.services.dedao_kbase_export_importer import (
     fetch_dedao_kbase_export_payload,
 )
 from app.services.system_knowledge_crystallize import draft_crystallized_claim_candidates
+from app.services.system_knowledge_eval import run_system_kb_eval_cases
 from app.services.system_knowledge_ingest import validate_artifact_review_gate, write_draft_artifacts
 from app.services.system_knowledge_service import apply_confidence_decay, lint_knowledge_base
 
@@ -115,6 +116,7 @@ def run_system_kb_lifecycle_once(
     *,
     now: datetime | None = None,
     crystallize_min_count: int = 100,
+    eval_limit: int = 10_000,
     actor: str = "system",
 ) -> dict[str, Any]:
     current_time = now or datetime.now(UTC)
@@ -125,6 +127,7 @@ def run_system_kb_lifecycle_once(
         min_count=crystallize_min_count,
         now=current_time,
     )
+    eval_report = run_system_kb_eval_cases(db, limit=eval_limit)
     report = {
         "lint": lint,
         "decay": decay,
@@ -133,6 +136,7 @@ def run_system_kb_lifecycle_once(
             "min_count": crystallize["min_count"],
             "generated_at": crystallize["generated_at"],
         },
+        "eval": eval_report,
     }
     db.add(
         KBAudit(
