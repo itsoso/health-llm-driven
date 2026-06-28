@@ -113,6 +113,11 @@ struct AppRootView: View {
             )
         case .agenda:
             AgendaView(client: services.agendaClient)
+        case .review:
+            HealthOperatingReviewView(
+                client: services.healthOperatingReviewClient,
+                onAskAgent: askAgentWithContext
+            )
         case .timeline:
             DayTimelineView(
                 scheduleClient: services.scheduleClient,

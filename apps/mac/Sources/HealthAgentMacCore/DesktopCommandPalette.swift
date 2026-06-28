@@ -39,6 +39,7 @@ public enum DesktopCommandPalette {
         [
             navigateCommand(.today, language: language, keywords: ["dashboard", "home", "today", "看板", "首页", "今日"]),
             navigateCommand(.agenda, language: language, keywords: ["agenda", "schedule", "plan", "today agenda", "议程", "日程", "待办", "复查"]),
+            navigateCommand(.review, language: language, keywords: ["review", "backtest", "prediction", "confidence", "复盘", "预测", "置信度", "下一步"]),
             navigateCommand(.calendar, language: language, keywords: ["calendar", "caldav", "ics", "sync", "日历", "同步", "订阅"]),
             navigateCommand(.agent, language: language, keywords: ["agent", "chat", "analysis", "assistant", "问", "助手", "分析"]),
             navigateCommand(.record, language: language, keywords: ["record", "food", "water", "supplement", "diet", "饮食", "饮水", "补剂", "记录"]),
@@ -165,6 +166,8 @@ public enum DesktopCommandPalette {
             L10n.text("Daily dashboard, priorities, and recent context.", language: language)
         case .agenda:
             L10n.text("Training gate, follow-ups, protocols, and device quality.", language: language)
+        case .review:
+            L10n.text("Daily plan execution, prediction backtest, confidence changes, and next steps.", language: language)
         case .timeline:
             L10n.text("A 24-hour timeline of today's schedule and calendar events.", language: language)
         case .calendar:

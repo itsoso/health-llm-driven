@@ -60,8 +60,18 @@ export interface PredictionBacktestResult {
   requires_clinician?: boolean | null;
   verdict: 'met' | 'not_met' | 'inconclusive' | string;
   downgrade_reason?: string | null;
+  inconclusive_reason?: string | null;
   confidence_before?: string | null;
   confidence_after?: string | null;
+  confidence_change?: { before?: string | null; after?: string | null; direction?: 'up' | 'down' | 'same' | string };
+  confidence_history?: { stage: string; confidence: string; reason: string }[];
+  next_step?: {
+    action: string;
+    label: string;
+    reason: string;
+    replan_hint?: string | null;
+    requires_clinician?: boolean | null;
+  } | null;
   explanation?: string | null;
   attribution?: string | null;
   boundary?: string | null;
@@ -148,6 +158,15 @@ export function predictionTimelineSummary(timeline?: PredictionTimelineItem[] | 
     });
   if (!ordered.length) return null;
   return `预测时间线: ${ordered.join(' -> ')} · 观察性,非因果`;
+}
+
+export function predictionNextStepSummary(result?: PredictionBacktestResult | null): string | null {
+  const label = result?.next_step?.label;
+  if (!result || !label) return null;
+  const before = result.confidence_change?.before ?? result.confidence_before;
+  const after = result.confidence_change?.after ?? result.confidence_after;
+  const confidence = before && after ? ` · 置信度 ${before} → ${after}` : '';
+  return `下一步: ${label}${confidence} · 观察性,非因果`;
 }
 
 export function causalMemorySummary(memory?: CausalMemoryReview | null): string | null {

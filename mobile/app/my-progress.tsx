@@ -26,6 +26,7 @@ import {
   causalMemorySummary,
   fetchHealthOperatingReview,
   predictionBacktestSummary,
+  predictionNextStepSummary,
   predictionTimelineSummary,
   type HealthOperatingReview,
   type ReviewWindowDays,
@@ -277,6 +278,8 @@ function OperatingReviewCard({ review, c }: { review: HealthOperatingReview; c: 
     .filter(row => row.change?.status === 'present' && row.change.delta !== null);
   const predictionSummary = predictionBacktestSummary(review.prediction_backtest);
   const predictionResults = review.prediction_backtest?.results ?? [];
+  const nextStepResult = predictionResults.find(result => result.next_step);
+  const nextStepSummary = predictionNextStepSummary(nextStepResult);
   const timelineSummary = predictionTimelineSummary(review.prediction_timeline);
   const timelineItems = review.prediction_timeline ?? [];
   const personalPatternSummary = causalMemorySummary(review.causal_memory);
@@ -338,6 +341,22 @@ function OperatingReviewCard({ review, c }: { review: HealthOperatingReview; c: 
           <Text style={[styles.predictionBoundary, { color: c.labelTertiary }]}>
             {review.prediction_backtest?.boundary}
           </Text>
+        </View>
+      ) : null}
+
+      {nextStepSummary && nextStepResult?.next_step ? (
+        <View style={[styles.predictionNextStep, { backgroundColor: c.tintBlue }]}>
+          <Text style={[styles.predictionNextStepTitle, { color: c.blue }]}>{nextStepSummary}</Text>
+          {nextStepResult.inconclusive_reason ? (
+            <Text style={[styles.predictionLine, { color: c.labelSecondary }]}>
+              为什么暂不判断: {nextStepResult.inconclusive_reason}
+            </Text>
+          ) : null}
+          {nextStepResult.next_step.replan_hint ? (
+            <Text style={[styles.predictionBoundary, { color: c.labelTertiary }]}>
+              {nextStepResult.next_step.replan_hint}
+            </Text>
+          ) : null}
         </View>
       ) : null}
 
@@ -516,6 +535,8 @@ const styles = StyleSheet.create({
   predictionTitle: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
   predictionLine: { fontSize: 12, lineHeight: 17 },
   predictionBoundary: { fontSize: 11, lineHeight: 15 },
+  predictionNextStep: { borderRadius: radii.md, padding: spacing.sm, gap: 4 },
+  predictionNextStepTitle: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
   predictionTimeline: { borderRadius: radii.md, padding: spacing.sm, gap: 6 },
   timelineTitle: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
   timelineRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },

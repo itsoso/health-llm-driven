@@ -230,6 +230,12 @@ def _prediction_backtest_results(
         downgrade_reason = _prediction_downgrade_reason(prediction, confidence_before)
         if downgrade_reason:
             verdict = "inconclusive"
+        confidence_after = _confidence_after(confidence_before, verdict)
+        inconclusive_reason = _prediction_inconclusive_reason(
+            verdict=verdict,
+            downgrade_reason=downgrade_reason,
+            expected_signal=expected_signal,
+        )
         results.append({
             "prediction_id": prediction_id,
             "source": prediction.get("source") or prediction.get("source_model"),
@@ -256,8 +262,21 @@ def _prediction_backtest_results(
             "observed_delta": observed_delta,
             "verdict": verdict,
             "downgrade_reason": downgrade_reason,
+            "inconclusive_reason": inconclusive_reason,
             "confidence_before": confidence_before,
-            "confidence_after": _confidence_after(confidence_before, verdict),
+            "confidence_after": confidence_after,
+            "confidence_change": _confidence_change(confidence_before, confidence_after),
+            "confidence_history": _confidence_history(
+                before=confidence_before,
+                after=confidence_after,
+                verdict=verdict,
+                inconclusive_reason=inconclusive_reason,
+            ),
+            "next_step": _prediction_next_step(
+                verdict=verdict,
+                inconclusive_reason=inconclusive_reason,
+                requires_clinician=bool(prediction.get("requires_clinician", False)),
+            ),
             "explanation": _prediction_explanation(verdict),
             "attribution": "prediction_backtest_not_causation",
             "boundary": prediction.get("claim_boundary")
@@ -435,6 +454,95 @@ def _confidence_after(confidence_before: str, verdict: str) -> str:
     if verdict == "inconclusive":
         return "low"
     return {"high": "medium", "medium": "low", "med": "low"}.get(confidence_before, "low")
+
+
+def _confidence_change(before: str, after: str) -> dict[str, str]:
+    before_rank = _confidence_rank(before)
+    after_rank = _confidence_rank(after)
+    if after_rank > before_rank:
+        direction = "up"
+    elif after_rank < before_rank:
+        direction = "down"
+    else:
+        direction = "same"
+    return {"before": before, "after": after, "direction": direction}
+
+
+def _confidence_rank(value: str) -> int:
+    return {"low": 1, "medium": 2, "med": 2, "high": 3}.get((value or "").lower(), 1)
+
+
+def _prediction_inconclusive_reason(
+    *,
+    verdict: str,
+    downgrade_reason: str | None,
+    expected_signal: dict[str, Any],
+) -> str | None:
+    if verdict != "inconclusive":
+        return None
+    if downgrade_reason == "low_confidence_or_confounders":
+        return "低置信或存在混杂因素, 暂不判断预测命中。"
+    if not expected_signal.get("direction"):
+        return "预测方向或验证信号不完整, 暂不判断预测命中。"
+    return "验证窗口内数据不足, 暂不判断预测命中。"
+
+
+def _confidence_history(
+    *,
+    before: str,
+    after: str,
+    verdict: str,
+    inconclusive_reason: str | None,
+) -> list[dict[str, str]]:
+    if verdict == "met":
+        review_reason = "实际变化与预测方向一致, 保持置信度"
+    elif verdict == "not_met":
+        review_reason = "实际变化未支持预测, 降低置信度并进入复盘"
+    else:
+        review_reason = inconclusive_reason or "数据不足或预测信号不明确, 暂不判断"
+    return [
+        {"stage": "prediction_created", "confidence": before, "reason": "预测生成时的置信度"},
+        {"stage": "review_verdict", "confidence": after, "reason": review_reason},
+    ]
+
+
+def _prediction_next_step(
+    *,
+    verdict: str,
+    inconclusive_reason: str | None,
+    requires_clinician: bool,
+) -> dict[str, Any]:
+    if requires_clinician:
+        return {
+            "action": "clinician_review",
+            "label": "带给医生/药师复核",
+            "reason": "该预测记录标记为需要临床复核, Reva 只做观察性整理。",
+            "replan_hint": "不要据此自行调整药物、剂量或治疗方案。",
+            "requires_clinician": True,
+        }
+    if verdict == "met":
+        return {
+            "action": "continue_observe",
+            "label": "继续当前策略并观察",
+            "reason": "实际变化与预测方向一致, 下一步保持低风险行动并在验证窗口继续观察。",
+            "replan_hint": "继续当前行动节奏, 不升级为诊断或治疗结论。",
+            "requires_clinician": False,
+        }
+    if verdict == "not_met":
+        return {
+            "action": "review_and_replan",
+            "label": "复盘执行并调整策略",
+            "reason": "实际变化未达到预测信号, 下一步检查执行、混杂因素和行动强度。",
+            "replan_hint": "先降低行动负担或换一个更可执行变量, 不做临床结论。",
+            "requires_clinician": False,
+        }
+    return {
+        "action": "collect_more_data",
+        "label": "补齐数据后再判断",
+        "reason": "当前证据不足, 先补充同一指标的连续记录或执行记录, 再进入下一轮复盘。",
+        "replan_hint": "不要据此升级行动强度;先补数据或降低干预压力。",
+        "requires_clinician": False,
+    }
 
 
 def _prediction_explanation(verdict: str) -> str:

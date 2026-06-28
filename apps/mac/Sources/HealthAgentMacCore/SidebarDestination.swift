@@ -1,6 +1,7 @@
 public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
     case today
     case agenda
+    case review
     case timeline
     case calendar
     case agent
@@ -25,7 +26,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
     /// switching is discoverable without knowing the cmd+, shortcut.
     /// Jobs/Trace remain reachable via right-rail panels or the command palette.
     public static let sidebarVisible: [SidebarDestination] = [
-        .today, .agenda, .timeline, .calendar, .agent, .record, .data, .dataSources, .dataConnections, .prescriptions, .liver, .healthExtras, .genetics, .knowledge, .workouts, .goals, .settings
+        .today, .agenda, .review, .timeline, .calendar, .agent, .record, .data, .dataSources, .dataConnections, .prescriptions, .liver, .healthExtras, .genetics, .knowledge, .workouts, .goals, .settings
     ]
 
     public var title: String {
@@ -36,6 +37,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .today: L10n.text("Today", language: language)
         case .agenda: L10n.text("Agenda", language: language)
+        case .review: L10n.text("Review", language: language)
         case .timeline: L10n.text("Today Timeline", language: language)
         case .calendar: L10n.text("Calendar", language: language)
         case .agent: L10n.text("Agent", language: language)
@@ -60,6 +62,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .today: "sparkles"
         case .agenda: "calendar.badge.checkmark"
+        case .review: "arrow.triangle.2.circlepath"
         case .timeline: "calendar.day.timeline.left"
         case .calendar: "calendar.badge.clock"
         case .agent: "bubble.left.and.bubble.right"

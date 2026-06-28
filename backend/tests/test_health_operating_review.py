@@ -131,6 +131,19 @@ def test_daily_plan_review_backtests_prediction_records(client, db, auth_user_an
     assert result["verdict"] == "met"
     assert result["confidence_before"] == "medium"
     assert result["confidence_after"] == "medium"
+    assert result["confidence_change"] == {"before": "medium", "after": "medium", "direction": "same"}
+    assert result["confidence_history"] == [
+        {"stage": "prediction_created", "confidence": "medium", "reason": "预测生成时的置信度"},
+        {"stage": "review_verdict", "confidence": "medium", "reason": "实际变化与预测方向一致, 保持置信度"},
+    ]
+    assert result["inconclusive_reason"] is None
+    assert result["next_step"] == {
+        "action": "continue_observe",
+        "label": "继续当前策略并观察",
+        "reason": "实际变化与预测方向一致, 下一步保持低风险行动并在验证窗口继续观察。",
+        "replan_hint": "继续当前行动节奏, 不升级为诊断或治疗结论。",
+        "requires_clinician": False,
+    }
     assert result["attribution"] == "prediction_backtest_not_causation"
     assert "不证明" in result["boundary"]
 
@@ -251,7 +264,21 @@ def test_daily_plan_review_downgrades_low_confidence_predictions(client, db, aut
     result = backtest["results"][0]
     assert result["verdict"] == "inconclusive"
     assert result["downgrade_reason"] == "low_confidence_or_confounders"
+    assert result["inconclusive_reason"] == "低置信或存在混杂因素, 暂不判断预测命中。"
     assert result["confidence_after"] == "low"
+    assert result["confidence_change"] == {"before": "low", "after": "low", "direction": "same"}
+    assert result["confidence_history"][-1] == {
+        "stage": "review_verdict",
+        "confidence": "low",
+        "reason": "低置信或存在混杂因素, 暂不判断预测命中。",
+    }
+    assert result["next_step"] == {
+        "action": "collect_more_data",
+        "label": "补齐数据后再判断",
+        "reason": "当前证据不足, 先补充同一指标的连续记录或执行记录, 再进入下一轮复盘。",
+        "replan_hint": "不要据此升级行动强度;先补数据或降低干预压力。",
+        "requires_clinician": False,
+    }
     assert "不能判断干预效果" in result["boundary"]
 
 

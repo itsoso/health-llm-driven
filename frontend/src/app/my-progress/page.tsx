@@ -14,6 +14,12 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { api } from '@/services/api/client';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import {
+  fetchHealthOperatingReview,
+  predictionNextStepSummary,
+  type HealthOperatingReview,
+  type ReviewWindowDays,
+} from '@/services/api/healthOperatingReview';
 
 interface ProgressCard {
   id: number;
@@ -95,14 +101,21 @@ function pct(v: number | null): string {
 function MyProgressInner() {
   const [days, setDays] = useState(30);
   const [data, setData] = useState<ProgressDashboard | null>(null);
+  const [review, setReview] = useState<HealthOperatingReview | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
     setErr(null);
-    api.get<ProgressDashboard>(`/action-cards/me/progress?days=${days}`)
-      .then(r => setData(r.data))
+    Promise.all([
+      api.get<ProgressDashboard>(`/action-cards/me/progress?days=${days}`),
+      fetchHealthOperatingReview(days as ReviewWindowDays).catch(() => null),
+    ])
+      .then(([progress, reviewData]) => {
+        setData(progress.data);
+        setReview(reviewData);
+      })
       .catch(e => setErr(e?.response?.data?.detail || e?.message || '加载失败'))
       .finally(() => setLoading(false));
   }, [days]);
@@ -164,6 +177,8 @@ function MyProgressInner() {
             {err}
           </div>
         )}
+
+        {review && <OperatingReviewPanel review={review} />}
 
         {data && data.stats.total_surfaced === 0 ? (
           <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-8 text-center">
@@ -264,6 +279,45 @@ function MyProgressInner() {
             )}
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+function OperatingReviewPanel({ review }: { review: HealthOperatingReview }) {
+  const results = review.prediction_backtest?.results ?? [];
+  const next = results.find(r => r.next_step);
+  const summary = predictionNextStepSummary(next);
+  return (
+    <div className="mb-5 rounded-xl border border-sky-500/25 bg-sky-500/10 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-sky-200">Daily Plan 复盘</div>
+          <div className="mt-1 text-xs text-slate-400">
+            {review.start_date} → {review.end_date} · 完成率 {(review.execution.completion_rate * 100).toFixed(0)}%
+          </div>
+        </div>
+        <div className="rounded-md bg-sky-400/10 px-2 py-1 text-xs text-sky-200 tabular-nums">
+          {review.execution.completed_events}/{review.execution.total_events}
+        </div>
+      </div>
+      {summary && next?.next_step ? (
+        <div className="mt-3 rounded-lg bg-slate-950/40 p-3">
+          <div className="text-sm font-medium text-sky-100">{summary}</div>
+          {next.inconclusive_reason && (
+            <div className="mt-1 text-xs text-slate-300">为什么暂不判断: {next.inconclusive_reason}</div>
+          )}
+          {next.next_step.replan_hint && (
+            <div className="mt-1 text-xs text-slate-500">{next.next_step.replan_hint}</div>
+          )}
+        </div>
+      ) : (
+        <div className="mt-3 text-xs text-slate-400">
+          暂无可回测预测记录；继续完成行动并保留验证指标。
+        </div>
+      )}
+      <div className="mt-2 text-[11px] text-slate-500">
+        {review.prediction_backtest?.boundary ?? '观察性复盘, 不证明单个行动造成指标变化。'}
       </div>
     </div>
   );
