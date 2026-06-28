@@ -50,6 +50,15 @@ _TRAJECTORY_CONTEXT_KEYS = (
     "verification_window_days",
     "verification_signal",
 )
+_RUNTIME_SAFETY_BOUNDARY = "健康运行时只做提醒、记录和风险提示；不诊断、不处方、不调药，高风险症状请及时就医。"
+_RUNTIME_REPLAN_TRIGGERS = (
+    "completion",
+    "skip",
+    "snooze",
+    "new_wearable_signal",
+    "new_report",
+    "safety_alert",
+)
 
 
 def _agenda_item(**kw) -> Dict[str, Any]:
@@ -883,6 +892,227 @@ def smart_today(
             "ranking": "trajectory_priority_status_source_v1",
             "top_items": top_items,
         },
+    }
+
+
+def _runtime_verification_window(smart_item: Dict[str, Any]) -> Dict[str, Any]:
+    verify_by = smart_item.get("verify_by") if isinstance(smart_item.get("verify_by"), dict) else {}
+    metrics = verify_by.get("metrics") if isinstance(verify_by.get("metrics"), list) else []
+    window_days = verify_by.get("window_days") or verify_by.get("days")
+    trajectory = smart_item.get("trajectory_context")
+    if not window_days and isinstance(trajectory, dict):
+        raw_window = trajectory.get("verification_window")
+        if isinstance(raw_window, dict):
+            window_days = raw_window.get("days") or raw_window.get("window_days")
+        window_days = window_days or trajectory.get("verification_window_days")
+    try:
+        normalized_window = int(window_days or 1)
+    except (TypeError, ValueError):
+        normalized_window = 1
+    return {
+        "window_days": max(1, normalized_window),
+        "metrics": [str(metric) for metric in metrics if metric] or ["completion_event"],
+    }
+
+
+def _with_runtime_context(
+    smart_item: Dict[str, Any],
+    *,
+    day: date,
+    replan_reason: str,
+    is_today: bool,
+) -> Dict[str, Any]:
+    out = dict(smart_item)
+    if not is_today:
+        out["status"] = "scheduled"
+        out["status_canonical"] = "pending"
+        out["can_complete"] = False
+        out["can_skip"] = False
+    out["scheduled_for"] = str(day)
+    source = out.get("source") if isinstance(out.get("source"), dict) else {}
+    out["runtime_context"] = {
+        "surface": "agenda",
+        "current_state_summary": out.get("why_now") or out.get("title"),
+        "evidence": {
+            "source": source,
+            "rank_score": out.get("rank_score"),
+            "trajectory_context": out.get("trajectory_context"),
+            "confidence": out.get("confidence"),
+        },
+        "safety_boundary": out.get("claim_boundary") or _RUNTIME_SAFETY_BOUNDARY,
+        "freshness": {
+            "status": "derived_projection",
+            "generated_for": str(day),
+            "source_object_type": source.get("object_type"),
+        },
+        "verification_window": _runtime_verification_window(out),
+        "replan_reason": replan_reason,
+        "next_replan_triggers": list(_RUNTIME_REPLAN_TRIGGERS),
+    }
+    return out
+
+
+def _runtime_project_item(
+    item: Dict[str, Any],
+    *,
+    day: date,
+    replan_reason: str,
+    is_today: bool,
+    fallback_verification: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    return _with_runtime_context(
+        _to_smart_item(item, fallback_verification=fallback_verification),
+        day=day,
+        replan_reason=replan_reason,
+        is_today=is_today,
+    )
+
+
+def _runtime_time_windows(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    buckets: Dict[str, List[Dict[str, Any]]] = {}
+    for item in sorted(items, key=lambda x: (
+        _TW_ORDER.get(x.get("time_window"), 9),
+        -int(x.get("rank_score") or x.get("priority") or 0),
+        str(x.get("title") or ""),
+    )):
+        buckets.setdefault(item.get("time_window") or "anytime", []).append(item)
+    return [
+        {"time_window": window, "items": buckets[window]}
+        for window in sorted(buckets, key=lambda w: _TW_ORDER.get(w, 9))
+    ]
+
+
+def _runtime_next_action(items: List[Dict[str, Any]]) -> Dict[str, Any] | None:
+    if not items:
+        return None
+    actionable = [item for item in items if item.get("can_complete") or item.get("can_skip")]
+    pool = actionable or items
+    return sorted(pool, key=lambda x: (
+        -int(x.get("rank_score") or x.get("priority") or 0),
+        _TW_ORDER.get(x.get("time_window"), 9),
+        str(x.get("title") or ""),
+    ))[0]
+
+
+def _future_protocol_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    for p in proto_svc.today_status(db, user_id):
+        if (p.get("cadence") or "daily") != "daily":
+            continue
+        items.append(_agenda_item(
+            type=p["domain"],
+            title=p["name"],
+            status="pending",
+            time_window=p.get("time_window") or "anytime",
+            priority=45,
+            cadence=p.get("cadence"),
+            can_default_complete=p.get("can_default_complete"),
+            source_model=p.get("source_model"),
+            source={"object_type": "health_protocol", "object_id": p["protocol_id"]},
+        ))
+    return items
+
+
+def runtime_range_view(
+    db: Session,
+    user_id: int,
+    days: int = 7,
+    *,
+    max_items_per_day: int = 4,
+) -> Dict[str, Any]:
+    """滚动健康运行时投影:今天用 smart agenda,未来用协议/复查做保守虚拟排程。
+
+    这是运行时编排的首个可发布切片:不新增存储、不替代医生,只把现有议程脊柱投影成
+    可解释、可验证、可重排的 1-14 天 horizon。完成/跳过仍走 /agenda/complete。
+    """
+    horizon = max(1, min(int(days or 7), 14))
+    today_d = get_user_today(db, user_id)
+    max_items = max(1, min(int(max_items_per_day or 4), 10))
+
+    today_smart = smart_today(db, user_id, followup_within_days=1, max_items=max_items)
+    today_items = [
+        _with_runtime_context(item, day=today_d, replan_reason="today_smart_rank", is_today=True)
+        for item in (today_smart.get("smart") or {}).get("top_items", [])
+    ]
+
+    future_protocol_templates = _future_protocol_items(db, user_id)
+    future_checkups = []
+    for f in prob_svc.due_followups(db, user_id, within_days=horizon):
+        try:
+            due = date.fromisoformat(str(f.get("next_due")))
+        except (TypeError, ValueError):
+            continue
+        if due < today_d:
+            due = today_d
+        if due >= today_d + timedelta(days=horizon):
+            continue
+        future_checkups.append((due, _agenda_item(
+            type="checkup",
+            title=f"复查:{f['name']}",
+            status="overdue" if f.get("overdue") else "due",
+            time_window="anytime",
+            priority=95 if (f.get("risk_level") in ("P0", "P1")) else 75,
+            detail=f.get("what_to_check"),
+            responsible=f.get("responsible"),
+            next_due=f.get("next_due"),
+            source={"object_type": "health_problem", "object_id": f["problem_id"]},
+        )))
+
+    days_payload: List[Dict[str, Any]] = []
+    root_next_action: Dict[str, Any] | None = None
+    for offset in range(horizon):
+        current_day = today_d + timedelta(days=offset)
+        if offset == 0:
+            items = list(today_items)
+        else:
+            items = [
+                _runtime_project_item(
+                    template,
+                    day=current_day,
+                    replan_reason="daily_protocol_projection",
+                    is_today=False,
+                )
+                for template in future_protocol_templates
+            ]
+        for due_day, checkup in future_checkups:
+            if due_day != current_day:
+                continue
+            items.append(_runtime_project_item(
+                checkup,
+                day=current_day,
+                replan_reason="scheduled_followup_projection",
+                is_today=(offset == 0),
+            ))
+        items.sort(key=lambda x: (
+            -int(x.get("rank_score") or x.get("priority") or 0),
+            _TW_ORDER.get(x.get("time_window"), 9),
+            str(x.get("title") or ""),
+        ))
+        next_action = _runtime_next_action(items)
+        if root_next_action is None and next_action is not None:
+            root_next_action = next_action
+        days_payload.append({
+            "date": str(current_day),
+            "is_today": offset == 0,
+            "state": "today" if offset == 0 else "planned",
+            "next_action": next_action,
+            "time_windows": _runtime_time_windows(items),
+        })
+
+    return {
+        "start": str(today_d),
+        "end": str(today_d + timedelta(days=horizon - 1)),
+        "mode": "runtime",
+        "generated_by": "rolling_health_runtime_v1",
+        "horizon_days": horizon,
+        "runtime_context": {
+            "definition": "rolling_7_day_health_runtime_orchestration",
+            "projection_policy": "today_smart_rank_future_protocol_and_followup_projection",
+            "safety_boundary": _RUNTIME_SAFETY_BOUNDARY,
+            "next_replan_triggers": list(_RUNTIME_REPLAN_TRIGGERS),
+        },
+        "next_action": root_next_action,
+        "days": days_payload,
     }
 
 

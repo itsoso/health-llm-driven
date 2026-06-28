@@ -6,7 +6,7 @@
  *
  * 入口:Today / 设置 跳转。后端能力首次在手机可见可用。
  */
-import React, { useMemo } from 'react';
+import React from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl,
   Alert, Platform,
@@ -22,8 +22,21 @@ import {
   revaSemantic,
   revaFonts,
 } from '../constants/revaTheme';
-import { useAgendaToday, useCompleteAgendaItem, useSeedDemo, useSmartAgendaToday } from '../hooks/useAgenda';
-import { isProtocolActionable, MANUAL_CAPTURE, type AgendaItem, type SmartAgendaItem } from '../services/agenda';
+import {
+  useAgendaToday,
+  useCompleteAgendaItem,
+  useRuntimeAgendaRange,
+  useSeedDemo,
+  useSmartAgendaToday,
+} from '../hooks/useAgenda';
+import {
+  isProtocolActionable,
+  MANUAL_CAPTURE,
+  type AgendaItem,
+  type RuntimeAgendaItem,
+  type RuntimeAgendaRange,
+  type SmartAgendaItem,
+} from '../services/agenda';
 import { buildBoundarySummary, buildTrajectorySummary, buildVerifySummary } from '../services/trajectoryDisplay';
 import { agendaItemPresentation, agendaSummary } from '../utils/agendaPresentation';
 
@@ -107,6 +120,49 @@ const styles = StyleSheet.create({
   smartTrajectory: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '700', color: SMART_ACCENT, lineHeight: 16 },
   smartVerify: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, lineHeight: 16 },
   smartBoundary: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, lineHeight: 15 },
+  runtimePanel: {
+    backgroundColor: C.surface,
+    borderRadius: revaRadii.lg,
+    padding: revaSpacing.s4,
+    gap: revaSpacing.s3,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
+  runtimeTitleRow: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s1 },
+  runtimeTitle: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '800', color: C.ink1 },
+  runtimeMeta: { fontFamily: revaFonts.mono, fontSize: 12, fontWeight: '700', color: C.ink3 },
+  runtimeNext: {
+    paddingVertical: revaSpacing.s2,
+    paddingHorizontal: revaSpacing.s3,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.green50,
+    gap: 3,
+  },
+  runtimeNextLabel: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '800', color: SMART_ACCENT },
+  runtimeNextTitle: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '800', color: C.ink1, lineHeight: 18 },
+  runtimeNextMeta: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, lineHeight: 16 },
+  runtimeDayRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: revaSpacing.s3,
+    paddingTop: revaSpacing.s2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+  },
+  runtimeDayBadge: {
+    width: 44,
+    minHeight: 34,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.paper,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  runtimeDayLabel: { fontFamily: revaFonts.mono, fontSize: 11, fontWeight: '800', color: C.ink2 },
+  runtimeDayBody: { flex: 1, gap: 2 },
+  runtimeDayTitle: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '800', color: C.ink1, lineHeight: 17 },
+  runtimeDayMeta: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, lineHeight: 16 },
+  runtimeEmpty: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, lineHeight: 18 },
   card: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: C.surface,
     borderRadius: revaRadii.lg, padding: revaSpacing.s4, gap: revaSpacing.s3, ...revaShadows.sm,
@@ -141,6 +197,7 @@ type AgendaStyles = typeof styles;
 export default function AgendaScreen() {
   const { data, isLoading, isError, refetch, isRefetching } = useAgendaToday();
   const { data: smartData, isLoading: smartLoading } = useSmartAgendaToday(3);
+  const { data: runtimeData, isLoading: runtimeLoading } = useRuntimeAgendaRange(7);
   const complete = useCompleteAgendaItem();
   const seed = useSeedDemo();
   const summary = agendaSummary(data?.items ?? []);
@@ -203,6 +260,9 @@ export default function AgendaScreen() {
         >
           {smartLoading || smartItems.length > 0 ? (
             <SmartAgendaPanel items={smartItems} loading={smartLoading} styles={styles} />
+          ) : null}
+          {runtimeLoading || runtimeData ? (
+            <RuntimeRangePanel projection={runtimeData} loading={runtimeLoading} styles={styles} />
           ) : null}
           {data && data.items.length > 0 ? (
             <View style={styles.summaryRow}>
@@ -302,6 +362,81 @@ function SmartAgendaPanel({
           </View>
         ))
       )}
+    </View>
+  );
+}
+
+function formatRuntimeDay(dateText: string, isToday: boolean): string {
+  if (isToday) return '今天';
+  const parts = dateText.split('-');
+  if (parts.length !== 3) return dateText;
+  return `${Number(parts[1])}/${Number(parts[2])}`;
+}
+
+function firstRuntimeItem(day: RuntimeAgendaRange['days'][number]): RuntimeAgendaItem | null {
+  if (day.next_action) return day.next_action;
+  for (const window of day.time_windows) {
+    if (window.items.length > 0) return window.items[0];
+  }
+  return null;
+}
+
+function runtimeMeta(item: RuntimeAgendaItem): string {
+  const verify = item.runtime_context.verification_window;
+  const metrics = verify.metrics.slice(0, 2).join('、');
+  const surface = surfaceLabel(item.surface.primary);
+  return `${surface} · ${verify.window_days}天验证${metrics ? ` · ${metrics}` : ''}`;
+}
+
+function RuntimeRangePanel({
+  projection,
+  loading,
+  styles,
+}: {
+  projection?: RuntimeAgendaRange;
+  loading: boolean;
+  styles: AgendaStyles;
+}) {
+  const previewDays = projection?.days.slice(0, 4) ?? [];
+  return (
+    <View style={styles.runtimePanel}>
+      <View style={styles.smartHeader}>
+        <View style={styles.runtimeTitleRow}>
+          <Ionicons name="calendar-outline" size={18} color={SMART_ACCENT} />
+          <Text style={styles.runtimeTitle}>7天运行时</Text>
+        </View>
+        <Text style={styles.runtimeMeta}>
+          {projection ? `${projection.start} → ${projection.end}` : '生成中'}
+        </Text>
+      </View>
+      {loading && !projection ? (
+        <View style={styles.smartLoading}>
+          <ActivityIndicator size="small" color={SMART_ACCENT} />
+          <Text style={styles.smartMuted}>正在生成未来 7 天行动投影…</Text>
+        </View>
+      ) : projection?.next_action ? (
+        <View style={styles.runtimeNext}>
+          <Text style={styles.runtimeNextLabel}>下一步</Text>
+          <Text style={styles.runtimeNextTitle}>{projection.next_action.title}</Text>
+          <Text style={styles.runtimeNextMeta}>{runtimeMeta(projection.next_action)}</Text>
+        </View>
+      ) : (
+        <Text style={styles.runtimeEmpty}>未来 7 天暂无可执行行动。</Text>
+      )}
+      {previewDays.map((day) => {
+        const item = firstRuntimeItem(day);
+        return (
+          <View key={day.date} style={styles.runtimeDayRow}>
+            <View style={styles.runtimeDayBadge}>
+              <Text style={styles.runtimeDayLabel}>{formatRuntimeDay(day.date, day.is_today)}</Text>
+            </View>
+            <View style={styles.runtimeDayBody}>
+              <Text style={styles.runtimeDayTitle}>{item?.title ?? '暂无行动'}</Text>
+              {item ? <Text style={styles.runtimeDayMeta}>{runtimeMeta(item)}</Text> : null}
+            </View>
+          </View>
+        );
+      })}
     </View>
   );
 }

@@ -2,6 +2,14 @@
 
 钉:① /range 列常驻每日协议 + 窗口内复查 ② 窗口外复查不进 ③ /complete 经议程路由完成协议
 (写真实记录,today 反映)④ 不支持的来源 400。"""
+from datetime import date
+
+
+def _freeze_agenda_today(monkeypatch, frozen: date) -> None:
+    from app.services import agenda_service, health_problem_service
+
+    monkeypatch.setattr(agenda_service, "get_user_today", lambda db, uid: frozen)
+    monkeypatch.setattr(health_problem_service, "get_user_today", lambda db, uid: frozen)
 
 
 def test_range_recurring_and_scheduled(client, auth_user_and_headers):
@@ -58,6 +66,72 @@ def test_complete_nonexistent_protocol_404(client, auth_user_and_headers):
     r = client.post("/api/v1/agenda/complete", headers=h,
                     json={"object_type": "health_protocol", "object_id": 999999})
     assert r.status_code == 404
+
+
+def test_range_runtime_mode_returns_rolling_projection(client, auth_user_and_headers, monkeypatch):
+    _, h = auth_user_and_headers
+    _freeze_agenda_today(monkeypatch, date(2026, 6, 28))
+
+    client.post("/api/v1/protocols/seed/water-cup", headers=h)
+    assert client.post("/api/v1/problems", headers=h, json={
+        "name": "血压复查",
+        "follow_up": {"next_due": "2026-06-30", "what_to_check": "家庭血压连续偏高"},
+    }).status_code == 200
+
+    r = client.get("/api/v1/agenda/range?days=7&mode=runtime", headers=h)
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["mode"] == "runtime"
+    assert body["horizon_days"] == 7
+    assert body["start"] == "2026-06-28"
+    assert body["end"] == "2026-07-04"
+    assert len(body["days"]) == 7
+    assert body["next_action"] is not None
+    assert body["next_action"]["runtime_context"]["replan_reason"]
+    assert body["days"][0]["is_today"] is True
+    assert body["days"][0]["next_action"]["runtime_context"]["safety_boundary"]
+
+    future_protocol_items = [
+        item
+        for day in body["days"][1:]
+        for window in day["time_windows"]
+        for item in window["items"]
+        if item["source"]["object_type"] == "health_protocol"
+    ]
+    assert future_protocol_items
+    assert all(item["runtime_context"]["verification_window"] for item in future_protocol_items)
+
+    scheduled_items = [
+        item
+        for day in body["days"]
+        for window in day["time_windows"]
+        for item in window["items"]
+        if item["source"]["object_type"] == "health_problem"
+    ]
+    assert any(item["scheduled_for"] == "2026-06-30" for item in scheduled_items)
+
+
+def test_today_runtime_mode_returns_one_day_projection(client, auth_user_and_headers, monkeypatch):
+    _, h = auth_user_and_headers
+    _freeze_agenda_today(monkeypatch, date(2026, 6, 28))
+    client.post("/api/v1/protocols/seed/water-cup", headers=h)
+
+    r = client.get("/api/v1/agenda/today?mode=runtime", headers=h)
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["mode"] == "runtime"
+    assert body["horizon_days"] == 1
+    assert len(body["days"]) == 1
+    assert body["days"][0]["date"] == "2026-06-28"
+    assert body["next_action"]["runtime_context"]["surface"] == "agenda"
+
+
+def test_range_rejects_unknown_mode(client, auth_user_and_headers):
+    _, h = auth_user_and_headers
+    r = client.get("/api/v1/agenda/range?days=7&mode=banana", headers=h)
+    assert r.status_code == 422
 
 
 def test_today_mode_smart_routes_to_smart_agenda(client, auth_user_and_headers, monkeypatch):

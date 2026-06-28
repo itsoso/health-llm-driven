@@ -7249,7 +7249,7 @@ export interface paths {
         };
         /**
          * Agenda Today
-         * @description 今日统一议程:默认普通投影;mode=smart 时返回可执行智能议程。
+         * @description 今日统一议程:默认普通投影;mode=smart/runtime 时返回可执行智能议程/运行时投影。
          */
         get: operations["agenda_today_api_v1_agenda_today_get"];
         put?: never;
@@ -13817,6 +13817,40 @@ export interface paths {
         get: operations["get_system_knowledge_operations_dashboard_api_v1_admin_knowledge_operations_dashboard_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/dedao_kbase/draft_review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看 dedao-kbase draft artifact review 包 */
+        get: operations["get_dedao_kbase_draft_review_api_v1_admin_knowledge_dedao_kbase_draft_review_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/dedao_kbase/draft_review/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 批准 dedao-kbase draft artifacts */
+        post: operations["approve_dedao_kbase_draft_review_endpoint_api_v1_admin_knowledge_dedao_kbase_draft_review_approve_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -21394,6 +21428,11 @@ export interface components {
             workout?: components["schemas"]["WorkoutOut"] | null;
             /** Rationale */
             rationale: string;
+        };
+        /** DedaoKbaseDraftReviewApproveRequest */
+        DedaoKbaseDraftReviewApproveRequest: {
+            /** Note */
+            note?: string | null;
         };
         /**
          * DeleteBySourceInput
@@ -43213,7 +43252,7 @@ export interface operations {
         parameters: {
             query?: {
                 followup_within_days?: number;
-                /** @description regular | smart */
+                /** @description regular | smart | runtime */
                 mode?: string;
                 /** @description smart mode top item limit */
                 max_items?: number;
@@ -43248,6 +43287,8 @@ export interface operations {
         parameters: {
             query?: {
                 days?: number;
+                /** @description regular | runtime */
+                mode?: string;
             };
             header?: never;
             path?: never;
@@ -53441,6 +53482,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_dedao_kbase_draft_review_api_v1_admin_knowledge_dedao_kbase_draft_review_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    approve_dedao_kbase_draft_review_endpoint_api_v1_admin_knowledge_dedao_kbase_draft_review_approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DedaoKbaseDraftReviewApproveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

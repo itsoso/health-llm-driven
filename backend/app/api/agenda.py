@@ -20,26 +20,33 @@ router = APIRouter(prefix="/agenda", tags=["统一健康议程"])
 @router.get("/today")
 async def agenda_today(
     followup_within_days: int = Query(default=14, le=120),
-    mode: str = Query(default="regular", description="regular | smart"),
+    mode: str = Query(default="regular", description="regular | smart | runtime"),
     max_items: int = Query(default=3, ge=1, le=10, description="smart mode top item limit"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    """今日统一议程:默认普通投影;mode=smart 时返回可执行智能议程。"""
+    """今日统一议程:默认普通投影;mode=smart/runtime 时返回可执行智能议程/运行时投影。"""
     if mode == "smart":
         return agenda_service.smart_today(db, current_user.id, followup_within_days, max_items=max_items)
+    if mode == "runtime":
+        return agenda_service.runtime_range_view(db, current_user.id, days=1, max_items_per_day=max_items)
     if mode != "regular":
-        raise HTTPException(status_code=422, detail="mode 仅支持 regular 或 smart")
+        raise HTTPException(status_code=422, detail="mode 仅支持 regular、smart 或 runtime")
     return agenda_service.today(db, current_user.id, followup_within_days)
 
 
 @router.get("/range")
 async def agenda_range(
     days: int = Query(default=7, le=120),
+    mode: str = Query(default="regular", description="regular | runtime"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
     """区间视图:常驻每日协议 + 窗口内按到期日排布的复查。"""
+    if mode == "runtime":
+        return agenda_service.runtime_range_view(db, current_user.id, days)
+    if mode != "regular":
+        raise HTTPException(status_code=422, detail="mode 仅支持 regular 或 runtime")
     return agenda_service.range_view(db, current_user.id, days)
 
 

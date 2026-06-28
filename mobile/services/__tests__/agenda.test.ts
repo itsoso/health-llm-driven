@@ -4,7 +4,7 @@ jest.mock('../api', () => ({
 }));
 
 import api from '../api';
-import { completeAgendaItem, getSmartAgendaToday } from '../agenda';
+import { completeAgendaItem, getRuntimeAgendaRange, getSmartAgendaToday } from '../agenda';
 
 const mockApi = api as unknown as {
   get: jest.Mock;
@@ -64,6 +64,36 @@ describe('agenda service', () => {
     expect(agenda.smart.top_items[0].surface.primary).toBe('watch');
     expect(agenda.smart.top_items[0].trajectory_context?.state_variable).toBe('waist_cm');
     expect(agenda.smart.top_items[0].target_state_variable).toBe('waist_cm');
+  });
+
+  it('loads rolling runtime projection with explicit mode and horizon', async () => {
+    mockApi.get.mockResolvedValue({
+      data: {
+        start: '2026-06-28',
+        end: '2026-07-04',
+        mode: 'runtime',
+        horizon_days: 7,
+        next_action: {
+          id: 'smart_health_protocol_42',
+          title: '喝温水 200ml',
+          source: { object_type: 'health_protocol', object_id: 42 },
+          runtime_context: {
+            surface: 'agenda',
+            replan_reason: 'today_smart_rank',
+            safety_boundary: '不诊断、不处方、不调药。',
+          },
+        },
+        days: [],
+      },
+    });
+
+    const projection = await getRuntimeAgendaRange(7);
+
+    expect(mockApi.get).toHaveBeenCalledWith('/agenda/range', {
+      params: { days: 7, mode: 'runtime' },
+    });
+    expect(projection.mode).toBe('runtime');
+    expect(projection.next_action?.runtime_context.replan_reason).toBe('today_smart_rank');
   });
 
   describe('completeAgendaItem', () => {

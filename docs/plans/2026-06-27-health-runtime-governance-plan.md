@@ -409,6 +409,28 @@ Mobile/Watch 待规划工作：
 > A. 构建最小 DataConnection/Consent/Provenance 底座。
 > B. 构建最小端到端“trajectory-informed top action”切片。
 
+### 2026-06-28 执行状态
+
+本轮按 PRD/Plan/Code 对比后，优先选择 B 的最小端到端切片，并把它收敛为“滚动 7 天健康运行时编排”的首个可发布版本。
+
+已完成:
+
+- 后端新增 `GET /api/v1/agenda/range?days=7&mode=runtime`，返回 7 天同构 runtime projection。
+- 后端新增 `GET /api/v1/agenda/today?mode=runtime`，返回 1 天同构 projection，供 Watch/Home/Chat 复用。
+- 每个 runtime item 带 `runtime_context`，包含 evidence、safety boundary、verification window、replan reason 和 replan triggers。
+- Mobile 新增 `getRuntimeAgendaRange` / `useRuntimeAgendaRange`。
+- Mobile Agenda 页面新增“7天运行时”面板，展示下一步行动和未来几天主要行动。
+- 新增 active spec：`docs/specs/active/2026-06-28-rolling-7-day-health-runtime.md`。
+- 新增 product-pipeline Dossier：`docs/dossiers/2026-06-28-rolling-health-runtime-next-slice.md`。
+
+仍未完成，继续保留在后续计划:
+
+- A 切片：DataConnection / ConsentGrant / ProvenanceRecord 最小底座。
+- Home Daily Artifact 直接消费 runtime projection，并严格只展示一个 primary next action。
+- Chat 动态 UI 卡片消费 runtime projection。
+- Watch summary 使用 `today?mode=runtime` 的压缩行动合同。
+- skip reason、snooze、completion 进入未来 7 天重排因子。
+
 建议范围 A：
 
 - 后端：定义 `DataConnection` / `ConsentGrant` / `ProvenanceRecord` 的最小 schema 或 contract。
@@ -453,3 +475,4 @@ Mobile/Watch 待规划工作：
 | 2026-06-27 | 增加 PRD 实现缺口计划 | 追踪 PRD 已提出但尚未实现、仅有骨架、部分实现或尚未产品化的能力。 |
 | 2026-06-27 | 将 Plan 改为中文表达 | 便于团队按中文 PRD 和规划继续演进。 |
 | 2026-06-27 | 增加互操作、授权、provenance、评估回归和模板化计划 | 吸收 FHIR/PHR、闭环糖尿病系统、Home Assistant 和医疗 agent benchmark 的启发，补齐 1000 万用户规模前的基础设施。 |
+| 2026-06-28 | 标记 B 切片首个实现：滚动 7 天健康运行时编排 | 先把 HealthTrajectory/Agenda 从单日 top action 推进到 7 天可执行路线，为 Home/Chat/Watch 共用 Daily Artifact 打底。 |

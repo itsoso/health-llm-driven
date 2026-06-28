@@ -1,11 +1,18 @@
 /** 今日议程 React Query 封装(消费 /agenda/today + 双轨完成 + 跳过)。 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  getAgendaToday, getSmartAgendaToday, completeAgendaItem, skipProtocol, seedDemo, type AgendaSource,
+  getAgendaToday,
+  getRuntimeAgendaRange,
+  getSmartAgendaToday,
+  completeAgendaItem,
+  skipProtocol,
+  seedDemo,
+  type AgendaSource,
 } from '../services/agenda';
 
 const AGENDA_TODAY_KEY = ['agenda', 'today'];
 const AGENDA_SMART_TODAY_KEY = ['agenda', 'today', 'smart'];
+const AGENDA_RUNTIME_RANGE_KEY = ['agenda', 'range', 'runtime'];
 
 export function useAgendaToday() {
   return useQuery({
@@ -19,6 +26,14 @@ export function useSmartAgendaToday(maxItems = 3) {
   return useQuery({
     queryKey: [...AGENDA_SMART_TODAY_KEY, maxItems],
     queryFn: () => getSmartAgendaToday(maxItems),
+    staleTime: 60_000,
+  });
+}
+
+export function useRuntimeAgendaRange(days = 7) {
+  return useQuery({
+    queryKey: [...AGENDA_RUNTIME_RANGE_KEY, days],
+    queryFn: () => getRuntimeAgendaRange(days),
     staleTime: 60_000,
   });
 }

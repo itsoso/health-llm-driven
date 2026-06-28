@@ -102,6 +102,49 @@ export interface SmartAgendaToday extends AgendaToday {
   };
 }
 
+export interface RuntimeAgendaContext {
+  surface: 'agenda' | string;
+  current_state_summary?: string | null;
+  evidence?: Record<string, unknown>;
+  safety_boundary: string;
+  freshness?: Record<string, unknown>;
+  verification_window: {
+    window_days: number;
+    metrics: string[];
+  };
+  replan_reason: string;
+  next_replan_triggers?: string[];
+}
+
+export interface RuntimeAgendaItem extends SmartAgendaItem {
+  scheduled_for: string;
+  runtime_context: RuntimeAgendaContext;
+}
+
+export interface RuntimeAgendaTimeWindow {
+  time_window: string;
+  items: RuntimeAgendaItem[];
+}
+
+export interface RuntimeAgendaDay {
+  date: string;
+  is_today: boolean;
+  state: 'today' | 'planned' | string;
+  next_action?: RuntimeAgendaItem | null;
+  time_windows: RuntimeAgendaTimeWindow[];
+}
+
+export interface RuntimeAgendaRange {
+  start: string;
+  end: string;
+  mode: 'runtime';
+  generated_by: string;
+  horizon_days: number;
+  runtime_context: Record<string, unknown>;
+  next_action?: RuntimeAgendaItem | null;
+  days: RuntimeAgendaDay[];
+}
+
 export async function getAgendaToday(): Promise<AgendaToday> {
   const resp = await api.get<AgendaToday>('/agenda/today');
   return resp.data;
@@ -110,6 +153,13 @@ export async function getAgendaToday(): Promise<AgendaToday> {
 export async function getSmartAgendaToday(maxItems = 3): Promise<SmartAgendaToday> {
   const resp = await api.get<SmartAgendaToday>('/agenda/today', {
     params: { mode: 'smart', max_items: maxItems },
+  });
+  return resp.data;
+}
+
+export async function getRuntimeAgendaRange(days = 7): Promise<RuntimeAgendaRange> {
+  const resp = await api.get<RuntimeAgendaRange>('/agenda/range', {
+    params: { days, mode: 'runtime' },
   });
   return resp.data;
 }
