@@ -24,13 +24,21 @@ const RECORD_ICONS: Record<string, { icon: string; color: string; bg: string }> 
   default:         { icon: 'checkmark-circle',  color: C.green500, bg: C.green50 },
 };
 
+// 防御闸: 后端若漏把原始 JSON 当 detail (历史 bug: tool result 无 message 字段时
+// fallback 倒出整段 {"record_date":...}), 这里兜底成 "已记录", 绝不把 JSON 渲染给用户.
+function safeDetail(detail: string): string {
+  const trimmed = (detail || '').trim();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) return '已记录';
+  return trimmed || '已记录';
+}
+
 export function RecordCardView({ type, detail }: RecordData) {
   const cfg = RECORD_ICONS[type] || RECORD_ICONS.default;
   return (
     <View style={[styles.card, { backgroundColor: cfg.bg, borderColor: C.line }]}>
       <Ionicons name={cfg.icon as any} size={16} color={cfg.color} />
       <Text maxFontSizeMultiplier={1.3} style={styles.text}>
-        {detail}
+        {safeDetail(detail)}
       </Text>
       <Ionicons name="checkmark-circle" size={14} color={C.green500} />
     </View>

@@ -1025,6 +1025,44 @@ def _merge_agent_card_descriptors(*groups: list | None) -> list[dict]:
     return out
 
 
+_MEAL_TYPE_ZH = {
+    "breakfast": "早餐",
+    "lunch": "午餐",
+    "dinner": "晚餐",
+    "snack": "加餐",
+}
+
+
+def _summarize_record_data(kind: str, record_data: Any) -> str:
+    """Build a clean human summary from the structured args the model wrote.
+
+    `record_data` is the tool's `data` argument — structured and reliable — so it
+    is a far safer source for the card than re-parsing the tool result string.
+    Returns "" when nothing presentable can be built (caller suppresses the card).
+    """
+    if not isinstance(record_data, dict):
+        return ""
+    if kind == "diet":
+        food = str(record_data.get("food_items") or record_data.get("food") or "").strip()
+        meal = _MEAL_TYPE_ZH.get(str(record_data.get("meal_type") or "").strip().lower(), "")
+        if food:
+            return f"已记录{meal + '：' if meal else '饮食 '}{food}"
+    elif kind == "water":
+        amt = record_data.get("amount") or record_data.get("amount_ml")
+        if amt:
+            return f"已记录饮水 {amt}ml"
+    elif kind == "weight":
+        w = record_data.get("weight") or record_data.get("weight_kg")
+        if w:
+            return f"已记录体重 {w}kg"
+    elif kind == "blood_pressure":
+        s = record_data.get("systolic")
+        d = record_data.get("diastolic")
+        if s and d:
+            return f"已记录血压 {s}/{d}"
+    return ""
+
+
 def _health_record_card_descriptor(record_type: Any, record_data: Any, result: str) -> Optional[dict]:
     """Build a deterministic chat card from a completed health_record tool.
 
@@ -1046,14 +1084,22 @@ def _health_record_card_descriptor(record_type: Any, record_data: Any, result: s
     }:
         return None
 
+    # 1) Prefer the tool's own human "message".
     detail = ""
+    parsed_is_json = False
     try:
         payload = json.loads(result)
+        parsed_is_json = True
         if isinstance(payload, dict):
             detail = str(payload.get("message") or "").strip()
     except Exception:
-        detail = ""
+        parsed_is_json = False
+    # 2) No usable message → synthesize from the structured args (never raw JSON).
     if not detail:
+        detail = _summarize_record_data(kind, record_data)
+    # 3) Plain-text result (not JSON) → first line is safe. A JSON blob is NOT:
+    #    dumping it leaks `{"record_date":...,"food_items":...}` into the card.
+    if not detail and not parsed_is_json:
         detail = str(result).splitlines()[0].strip()
     if not detail:
         return None
