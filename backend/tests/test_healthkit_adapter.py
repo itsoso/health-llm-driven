@@ -3,7 +3,7 @@ from datetime import date
 
 import pytest
 
-from tests.conftest import create_authenticated_user
+from tests.conftest import create_authenticated_user, grant_healthkit_consent
 
 
 def _record(record_date: str, source: str, **kwargs):
@@ -12,9 +12,98 @@ def _record(record_date: str, source: str, **kwargs):
     return base
 
 
+def test_healthkit_import_requires_active_consent(client, db):
+    """PIPL guard: HealthKit import must be backed by active server-side consent."""
+    _, token = create_authenticated_user(db)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.post(
+        "/api/v1/devices/healthkit/import",
+        json={"records": [_record("2026-05-20", "apple-watch", steps=1000)]},
+        headers=headers,
+    )
+
+    assert resp.status_code == 403
+    assert "HealthKit consent" in resp.text
+
+
+def test_healthkit_import_rejects_revoked_consent(client, db):
+    """Revoking the HealthKit DataConnection must stop future uploads immediately."""
+    user, token = create_authenticated_user(db)
+    headers = {"Authorization": f"Bearer {token}"}
+    connection = grant_healthkit_consent(db, user)
+
+    from app.services.data_connections import revoke_data_connection
+    revoke_data_connection(db, user_id=user.id, connection_id=connection.id)
+
+    resp = client.post(
+        "/api/v1/devices/healthkit/import",
+        json={"records": [_record("2026-05-20", "apple-watch", steps=1000)]},
+        headers=headers,
+    )
+
+    assert resp.status_code == 403
+    assert "HealthKit consent" in resp.text
+
+
+def test_healthkit_import_requires_type_level_scope(client, db):
+    """HealthKit consent is data-type scoped; daily-only consent cannot import SpO2."""
+    user, token = create_authenticated_user(db)
+    headers = {"Authorization": f"Bearer {token}"}
+    grant_healthkit_consent(db, user, scopes=["healthkit.daily.read"])
+
+    resp = client.post(
+        "/api/v1/devices/healthkit/import",
+        json={"records": [_record("2026-05-20", "apple-watch", spo2_avg=97.0)]},
+        headers=headers,
+    )
+
+    assert resp.status_code == 403
+    assert "healthkit.spo2.read" in resp.text
+
+
+def test_healthkit_import_writes_provenance_for_each_record(client, db):
+    """Each accepted HealthKit payload record gets a provenance row with source and scope."""
+    user, token = create_authenticated_user(db)
+    headers = {"Authorization": f"Bearer {token}"}
+    connection = grant_healthkit_consent(db, user)
+
+    resp = client.post(
+        "/api/v1/devices/healthkit/import",
+        json={"records": [
+            _record("2026-05-20", "apple-watch", steps=1000),
+            _record("2026-05-20", "ringconn", hrv=42.0, spo2_avg=97.0),
+        ]},
+        headers=headers,
+    )
+
+    assert resp.status_code == 200, resp.text
+
+    from app.models.data_connection import ProvenanceRecord
+
+    rows = (
+        db.query(ProvenanceRecord)
+        .filter(
+            ProvenanceRecord.user_id == user.id,
+            ProvenanceRecord.connection_id == connection.id,
+            ProvenanceRecord.source_kind == "healthkit",
+            ProvenanceRecord.object_type == "HealthKitDailyRecord",
+        )
+        .order_by(ProvenanceRecord.object_id.asc())
+        .all()
+    )
+    assert len(rows) == 2
+    assert {r.source_id for r in rows} == {"apple-watch", "ringconn"}
+    assert all(r.privacy_classification == "L3" for r in rows)
+    assert all(r.transformed_by == "healthkit_import_v1" for r in rows)
+    assert rows[0].source_metadata["required_scopes"]
+    assert rows[0].source_metadata["record_date"] == "2026-05-20"
+
+
 def test_healthkit_import_three_sources_three_rows(client, db):
     """同一天 apple-watch + ringconn + oura 三条 → garmin_data 三行各占一 source."""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     headers = {"Authorization": f"Bearer {token}"}
 
     payload = {"records": [
@@ -49,6 +138,7 @@ def test_healthkit_import_three_sources_three_rows(client, db):
 def test_healthkit_import_idempotent_upsert(client, db):
     """重复 POST 同一批不重复插入 — (user_id, record_date, data_source) 唯一约束."""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     headers = {"Authorization": f"Bearer {token}"}
     payload = {"records": [
         _record("2026-05-18", "apple-watch", steps=7000),
@@ -82,6 +172,7 @@ def test_healthkit_import_idempotent_upsert(client, db):
 def test_healthkit_import_unknown_source_falls_back(client, db):
     """白名单外 / sourceName 字典 miss 都落 unknown,不抛."""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     headers = {"Authorization": f"Bearer {token}"}
 
     payload = {"records": [
@@ -113,6 +204,7 @@ def test_garmin_connect_display_name_maps_to_garmin_app():
 def test_healthkit_import_connect_source_lands_garmin_app(client, db):
     """端到端: source_name='Connect' 的 record → data_source='garmin-app'(不再 unknown)。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     headers = {"Authorization": f"Bearer {token}"}
     payload = {"records": [
         {"record_date": "2026-06-14", "source_name": "Connect", "steps": 5143},
@@ -130,6 +222,7 @@ def test_healthkit_import_apple_xml_path_unaffected(client, db):
     from app.services.device_adapters import DeviceManager
 
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     # AppleHealthAdapter XML 路径模拟: 直接构造 NormalizedHealthData(source="apple")
     DeviceManager._save_health_data(db, user.id, NormalizedHealthData(
         record_date=date(2026, 5, 14),
@@ -164,6 +257,7 @@ def test_healthkit_import_ecg_persists_when_daily_fails(client, db):
     test_twin_builder 的 batch_save 直测覆盖该 contract 层); 端点级真实失败路径是
     '存在但格式错误的 record_date' (过 str 校验, _parse_date 返回 None → ValueError)。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     headers = {"Authorization": f"Bearer {token}"}
 
     payload = {"records": [{
@@ -194,6 +288,7 @@ def test_healthkit_import_fractional_int_fields_coerced_not_422(client, db):
     回归:整批 422 → 0 导入(用户实测 '已导入 0 天 1 条错误')。
     现在后端 before-validator 取整,坏值不再拖垮整批。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     headers = {"Authorization": f"Bearer {token}"}
     payload = {"records": [_record(
         "2026-06-09", "apple-watch",

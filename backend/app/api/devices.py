@@ -5,11 +5,13 @@
 支持：Garmin、华为手表、Apple Watch（未来）
 """
 
+import hashlib
+import json
+import logging
 import os
 import secrets
-import logging
-from datetime import datetime, timedelta
-from typing import Optional, List
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, field_validator
@@ -960,6 +962,190 @@ class HealthKitImportResponse(BaseModel):
 # 单批上限 — 前端按月切片 (~30 天/批),给 100 留余量;再大走多批
 _HEALTHKIT_BATCH_LIMIT = 100
 
+_HEALTHKIT_PROVIDER = "healthkit"
+_HEALTHKIT_IMPORT_TRANSFORM = "healthkit_import_v1"
+_HEALTHKIT_SCOPES = {
+    "daily": "healthkit.daily.read",
+    "ecg": "healthkit.ecg.read",
+    "blood_pressure": "healthkit.blood_pressure.read",
+    "spo2": "healthkit.spo2.read",
+    "body": "healthkit.body.read",
+}
+_HEALTHKIT_DAILY_FIELDS = frozenset({
+    "sleep_score",
+    "total_sleep_minutes",
+    "deep_sleep_minutes",
+    "rem_sleep_minutes",
+    "light_sleep_minutes",
+    "awake_minutes",
+    "sleep_start_time",
+    "sleep_end_time",
+    "resting_heart_rate",
+    "avg_heart_rate",
+    "max_heart_rate",
+    "min_heart_rate",
+    "hrv",
+    "hrv_status",
+    "steps",
+    "distance_meters",
+    "floors_climbed",
+    "active_minutes",
+    "calories_total",
+    "calories_active",
+    "stress_level",
+    "body_battery_high",
+    "body_battery_low",
+    "respiration_rate_avg",
+    "respiration_rate_min",
+    "respiration_rate_max",
+    "body_temp_deviation_c",
+    "raw_data",
+})
+
+
+def _non_empty(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, (list, dict, str)):
+        return len(value) > 0
+    return True
+
+
+def _healthkit_required_scopes_for_record(record: dict[str, Any]) -> set[str]:
+    scopes: set[str] = set()
+    if any(_non_empty(record.get(field)) for field in _HEALTHKIT_DAILY_FIELDS):
+        scopes.add(_HEALTHKIT_SCOPES["daily"])
+    if _non_empty(record.get("ecg_classification")) or _non_empty(record.get("ecg_recorded_at")):
+        scopes.add(_HEALTHKIT_SCOPES["ecg"])
+    if _non_empty(record.get("afib_event_count")):
+        scopes.add(_HEALTHKIT_SCOPES["ecg"])
+    if _non_empty(record.get("blood_pressure_readings")):
+        scopes.add(_HEALTHKIT_SCOPES["blood_pressure"])
+    if _non_empty(record.get("spo2_avg")) or _non_empty(record.get("spo2_min")):
+        scopes.add(_HEALTHKIT_SCOPES["spo2"])
+    if _non_empty(record.get("spo2_samples")):
+        scopes.add(_HEALTHKIT_SCOPES["spo2"])
+    if _non_empty(record.get("weight_kg")) or _non_empty(record.get("body_fat_percentage")):
+        scopes.add(_HEALTHKIT_SCOPES["body"])
+    if not scopes:
+        # Empty HealthKit payloads still attempt the daily import path today; require the
+        # least-privilege daily scope rather than accepting unscoped writes.
+        scopes.add(_HEALTHKIT_SCOPES["daily"])
+    return scopes
+
+
+def _healthkit_required_scopes(records: list[dict[str, Any]]) -> set[str]:
+    required: set[str] = set()
+    for record in records:
+        required.update(_healthkit_required_scopes_for_record(record))
+    return required
+
+
+def _healthkit_missing_scope_detail(required: set[str]) -> str:
+    return f"HealthKit consent required for scopes: {', '.join(sorted(required))}"
+
+
+def _expires_in_future(expires_at: datetime | None) -> bool:
+    if expires_at is None:
+        return True
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at > datetime.now(timezone.utc)
+
+
+def _require_active_healthkit_import_consent(
+    db: Session,
+    *,
+    user_id: int,
+    required_scopes: set[str],
+):
+    from app.models.data_connection import ConsentGrant, DataConnection
+    from app.services.data_connections import ACTIVE_GRANT_STATUS
+
+    connections = (
+        db.query(DataConnection)
+        .filter(
+            DataConnection.user_id == user_id,
+            DataConnection.provider == _HEALTHKIT_PROVIDER,
+            DataConnection.connection_status == "active",
+            DataConnection.token_status != "revoked",
+        )
+        .order_by(DataConnection.id.desc())
+        .all()
+    )
+    for connection in connections:
+        connection_scopes = set(connection.scopes or [])
+        if not required_scopes.issubset(connection_scopes):
+            continue
+        grants = (
+            db.query(ConsentGrant)
+            .filter(
+                ConsentGrant.user_id == user_id,
+                ConsentGrant.connection_id == connection.id,
+                ConsentGrant.status == ACTIVE_GRANT_STATUS,
+                ConsentGrant.grantee_type == "self",
+            )
+            .order_by(ConsentGrant.granted_at.desc(), ConsentGrant.id.desc())
+            .all()
+        )
+        for grant in grants:
+            if not _expires_in_future(grant.expires_at):
+                continue
+            if required_scopes.issubset(set(grant.scopes or [])):
+                return connection
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=_healthkit_missing_scope_detail(required_scopes),
+    )
+
+
+def _healthkit_payload_hash(record: dict[str, Any]) -> str:
+    encoded = json.dumps(record, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _healthkit_present_fields(record: dict[str, Any]) -> list[str]:
+    return sorted(key for key, value in record.items() if _non_empty(value))
+
+
+def _record_healthkit_provenance(
+    db: Session,
+    *,
+    user_id: int,
+    connection_id: int,
+    records: list[dict[str, Any]],
+) -> None:
+    from app.services.data_connections import create_provenance_record
+    from app.services.device_adapters.healthkit import HealthKitAdapter
+
+    for index, record in enumerate(records):
+        data_source = HealthKitAdapter._resolve_data_source(record)
+        record_scopes = _healthkit_required_scopes_for_record(record)
+        record_date = str(record.get("record_date")) if record.get("record_date") else "unknown-date"
+        object_id = f"{record_date}:{data_source}:{index}:{_healthkit_payload_hash(record)[:12]}"
+        create_provenance_record(
+            db,
+            user_id=user_id,
+            connection_id=connection_id,
+            source_kind=_HEALTHKIT_PROVIDER,
+            source_id=data_source,
+            object_type="HealthKitDailyRecord",
+            object_id=object_id,
+            transformed_by=_HEALTHKIT_IMPORT_TRANSFORM,
+            confidence="device_reported",
+            privacy_classification="L3",
+            raw_hash=_healthkit_payload_hash(record),
+            metadata={
+                "required_scopes": sorted(record_scopes),
+                "record_date": str(record.get("record_date")) if record.get("record_date") else None,
+                "data_source": data_source,
+                "source_name": record.get("source_name"),
+                "fields_present": _healthkit_present_fields(record),
+                "import_index": index,
+            },
+        )
+
 
 @router.post(
     "/healthkit/import",
@@ -983,9 +1169,28 @@ async def healthkit_import(
         )
 
     from app.services.device_adapters.healthkit import HealthKitAdapter
+    from app.services.data_connections import record_sync_result
 
     records = [r.model_dump() for r in request.records]
+    required_scopes = _healthkit_required_scopes(records)
+    connection = _require_active_healthkit_import_consent(
+        db,
+        user_id=current_user.id,
+        required_scopes=required_scopes,
+    )
+    _record_healthkit_provenance(
+        db,
+        user_id=current_user.id,
+        connection_id=connection.id,
+        records=records,
+    )
     result = HealthKitAdapter.batch_save(db, current_user.id, records)
+    record_sync_result(
+        db,
+        user_id=current_user.id,
+        connection_id=connection.id,
+        success=True,
+    )
 
     logger.info(
         f"[healthkit_import] user={current_user.id} batch={len(records)} "

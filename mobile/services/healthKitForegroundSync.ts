@@ -7,6 +7,7 @@ import {
   syncRecentDays,
   type SyncCoverage,
 } from './appleHealth';
+import { hasActiveHealthKitServerConsent } from './dataConnections';
 
 export const DEFAULT_HEALTHKIT_FOREGROUND_SYNC_DAYS = 2;
 export const DEFAULT_HEALTHKIT_FOREGROUND_SYNC_COOLDOWN_MS = 30 * 60 * 1000;
@@ -15,6 +16,7 @@ export type HealthKitForegroundSyncStatus =
   | 'synced'
   | 'skipped_unavailable'
   | 'skipped_unauthorized'
+  | 'skipped_no_server_consent'
   | 'skipped_cooldown'
   | 'skipped_in_flight'
   | 'failed';
@@ -30,6 +32,7 @@ export interface HealthKitForegroundSyncResult {
 export interface HealthKitForegroundSyncDeps {
   isHealthKitAvailable: () => boolean;
   getHealthKitAuthorized: () => Promise<boolean>;
+  hasActiveHealthKitServerConsent: () => Promise<boolean>;
   getHealthKitLastSync: () => Promise<number | null>;
   persistHealthKitAuthorized: () => Promise<void>;
   persistHealthKitLastSync: (ts: number) => Promise<void>;
@@ -50,6 +53,7 @@ export interface HealthKitForegroundSyncOptions {
 const defaultDeps: HealthKitForegroundSyncDeps = {
   isHealthKitAvailable,
   getHealthKitAuthorized,
+  hasActiveHealthKitServerConsent,
   getHealthKitLastSync,
   persistHealthKitAuthorized,
   persistHealthKitLastSync,
@@ -78,6 +82,10 @@ export async function maybeSyncHealthKitOnForeground(
     const authorized = await deps.getHealthKitAuthorized();
     if (!authorized) {
       return { status: 'skipped_unauthorized' };
+    }
+    const hasServerConsent = await deps.hasActiveHealthKitServerConsent();
+    if (!hasServerConsent) {
+      return { status: 'skipped_no_server_consent' };
     }
 
     const now = deps.now();

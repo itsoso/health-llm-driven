@@ -10,6 +10,7 @@ function makeDeps(overrides: Partial<HealthKitForegroundSyncDeps> = {}): jest.Mo
   return {
     isHealthKitAvailable: jest.fn(() => true),
     getHealthKitAuthorized: jest.fn(async () => true),
+    hasActiveHealthKitServerConsent: jest.fn(async () => true),
     getHealthKitLastSync: jest.fn(async () => null),
     persistHealthKitAuthorized: jest.fn(async () => undefined),
     persistHealthKitLastSync: jest.fn(async () => undefined),
@@ -43,6 +44,7 @@ describe('maybeSyncHealthKitOnForeground', () => {
     const result = await maybeSyncHealthKitOnForeground({ deps });
 
     expect(result.status).toBe('synced');
+    expect(deps.hasActiveHealthKitServerConsent).toHaveBeenCalled();
     expect(deps.syncRecentDays).toHaveBeenCalledWith(DEFAULT_HEALTHKIT_FOREGROUND_SYNC_DAYS);
     expect(deps.persistHealthKitLastSync).toHaveBeenCalledWith(1_000_000);
     expect(deps.persistHealthKitAuthorized).toHaveBeenCalled();
@@ -61,6 +63,18 @@ describe('maybeSyncHealthKitOnForeground', () => {
       status: 'skipped_unauthorized',
     });
     expect(unauthorized.syncRecentDays).not.toHaveBeenCalled();
+  });
+
+  it('skips silently when server-side HealthKit consent is missing or revoked', async () => {
+    const deps = makeDeps({
+      hasActiveHealthKitServerConsent: jest.fn(async () => false),
+    });
+
+    const result = await maybeSyncHealthKitOnForeground({ deps });
+
+    expect(result.status).toBe('skipped_no_server_consent');
+    expect(deps.syncRecentDays).not.toHaveBeenCalled();
+    expect(deps.persistHealthKitLastSync).not.toHaveBeenCalled();
   });
 
   it('uses the persisted last sync timestamp as a cooldown gate', async () => {

@@ -12,7 +12,7 @@ spo2_min 算不出, 而 vitals.spo2_min_nocturnal_severe 需要它们做佐证�
 """
 from datetime import date, datetime
 
-from tests.conftest import create_authenticated_user
+from tests.conftest import create_authenticated_user, grant_healthkit_consent
 
 
 def _post(client, token, records):
@@ -39,6 +39,7 @@ def _night_samples(values, day="2026-06-15", base_minute=0):
 def test_spo2_samples_persist_with_source(client, db):
     """整夜逐分钟血氧落 spo2_samples 表, source=data_source, 计数正确。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     records = [{
         "record_date": "2026-06-15",
         "data_source": "apple-watch",
@@ -67,6 +68,7 @@ def test_spo2_samples_persist_with_source(client, db):
 def test_spo2_samples_idempotent_per_source(client, db):
     """同 (user, date, source) 重导 → 删后插, 不增行 (幂等)。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     records = [{
         "record_date": "2026-06-15",
         "data_source": "ringconn",
@@ -85,6 +87,7 @@ def test_spo2_samples_idempotent_per_source(client, db):
 def test_spo2_per_source_delete_does_not_wipe_other_source(client, db):
     """删除按 (user, date, source) 缩窄 — apple-watch 重导不抹掉同日 garmin / ringconn 样本。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
 
     # 先直接塞一条同日 garmin 样本 (模拟 Garmin 采集器已写)
     from app.models.daily_health import SpO2Sample
@@ -119,6 +122,7 @@ def test_imported_samples_feed_odi_below90_and_recover_critical(client, db):
     (单点伪影无法证伪); 有了 apple-watch 逐分钟数据, 持续负荷被佐证 → 真低氧拉 CRITICAL。
     """
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
 
     # 一夜 ~120 分钟; 5 个点 <90 (含一个 82 的明显低值) → below_90_pct ≈ 4.2% ≥ 1.0 佐证门槛
     values = [96] * 115 + [89, 88, 85, 82, 87]
@@ -156,6 +160,7 @@ def test_garmin_app_spo2_samples_excluded_from_nocturnal_rule(client, db):
     若回退 EXCLUDED_SOURCES 里 'garmin-app' 的剔除, 本测试立即变红 (假性低值会拉 CRITICAL)。
     """
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     # 与 test_imported_samples_feed_odi_below90 相同的"持续低氧"序列, 但来源是 garmin-app
     values = [96] * 115 + [89, 88, 85, 82, 87]
     resp = _post(client, token, [{
@@ -181,6 +186,7 @@ def test_garmin_app_spo2_samples_excluded_from_nocturnal_rule(client, db):
 def test_bad_samples_tolerated_not_crash_batch(client, db):
     """坏样本 (缺 value / 缺 measured_at / 越界值) 跳过, 不崩整批; 合法点仍落库。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     records = [{
         "record_date": "2026-06-15",
         "data_source": "apple-watch",
@@ -205,6 +211,7 @@ def test_bad_samples_tolerated_not_crash_batch(client, db):
 def test_spo2_independent_of_daily_aggregate(client, db):
     """并行 try: 日聚合正常 + spo2 序列正常, 互不影响, 各自计数。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     records = [{
         "record_date": "2026-06-15",
         "data_source": "apple-watch",
@@ -221,6 +228,7 @@ def test_spo2_independent_of_daily_aggregate(client, db):
 def test_response_shape_includes_spo2_count(client, db):
     """response 始终含 spo2_sample_imported_count (即使无 spo2 序列)。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     resp = _post(client, token, [{"record_date": "2026-06-16", "data_source": "apple-watch", "steps": 100}])
     assert resp.status_code == 200, resp.text
     assert resp.json()["spo2_sample_imported_count"] == 0
@@ -230,6 +238,7 @@ def test_user_isolation_spo2_samples(client, db):
     """用户隔离: A 的血氧样本不进 B。"""
     user_a, token_a = create_authenticated_user(db)
     user_b, _ = create_authenticated_user(db)
+    grant_healthkit_consent(db, user_a)
     _post(client, token_a, [{
         "record_date": "2026-06-15", "data_source": "apple-watch",
         "spo2_samples": _night_samples([96, 95]),

@@ -1,6 +1,9 @@
 import {
   connectionStatusSummary,
+  ensureHealthKitServerConsent,
   fetchDataConnections,
+  hasActiveHealthKitConsent,
+  HEALTHKIT_CONSENT_SCOPES,
   revokeDataConnection,
 } from '../dataConnections';
 import api from '../api';
@@ -77,5 +80,78 @@ describe('dataConnections service', () => {
 
     expect(api.post).toHaveBeenCalledWith('/data-connections/1/revoke');
     expect(result.connection_status).toBe('revoked');
+  });
+
+  it('recognizes active HealthKit self consent with all required scopes', () => {
+    expect(hasActiveHealthKitConsent({
+      connections: [{
+        id: 7,
+        provider: 'healthkit',
+        provider_type: 'healthkit',
+        display_name: 'Apple Health',
+        connection_status: 'active',
+        scopes: HEALTHKIT_CONSENT_SCOPES,
+        token_status: 'not_required',
+        active_consents: [{
+          id: 9,
+          connection_id: 7,
+          grantee_type: 'self',
+          grantee_id: null,
+          scopes: HEALTHKIT_CONSENT_SCOPES,
+          purpose: 'sync HealthKit data into Reva',
+          status: 'active',
+        }],
+        policy: null,
+      }],
+    })).toBe(true);
+  });
+
+  it('does not treat revoked HealthKit consent as active', () => {
+    expect(hasActiveHealthKitConsent({
+      connections: [{
+        id: 7,
+        provider: 'healthkit',
+        provider_type: 'healthkit',
+        display_name: 'Apple Health',
+        connection_status: 'revoked',
+        scopes: HEALTHKIT_CONSENT_SCOPES,
+        token_status: 'revoked',
+        active_consents: [],
+        policy: null,
+      }],
+    })).toBe(false);
+  });
+
+  it('creates Apple Health connection and self consent when user explicitly enables sync', async () => {
+    (api.get as jest.Mock).mockResolvedValueOnce({ data: { connections: [] } });
+    (api.post as jest.Mock)
+      .mockResolvedValueOnce({
+        data: {
+          id: 7,
+          provider: 'healthkit',
+          provider_type: 'healthkit',
+          display_name: 'Apple Health',
+          connection_status: 'active',
+          scopes: HEALTHKIT_CONSENT_SCOPES,
+          token_status: 'not_required',
+          active_consents: [],
+          policy: null,
+        },
+      })
+      .mockResolvedValueOnce({ data: { id: 9, status: 'active' } });
+
+    const connection = await ensureHealthKitServerConsent();
+
+    expect(connection.id).toBe(7);
+    expect(api.post).toHaveBeenNthCalledWith(1, '/data-connections/me', expect.objectContaining({
+      provider: 'healthkit',
+      provider_type: 'healthkit',
+      scopes: HEALTHKIT_CONSENT_SCOPES,
+      token_status: 'not_required',
+    }));
+    expect(api.post).toHaveBeenNthCalledWith(2, '/data-connections/7/consents', expect.objectContaining({
+      grantee_type: 'self',
+      scopes: HEALTHKIT_CONSENT_SCOPES,
+    }));
   });
 });

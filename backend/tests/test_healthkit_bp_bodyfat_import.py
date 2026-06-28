@@ -8,7 +8,7 @@
 """
 from datetime import date
 
-from tests.conftest import create_authenticated_user
+from tests.conftest import create_authenticated_user, grant_healthkit_consent
 
 
 def _post(client, token, records):
@@ -22,6 +22,7 @@ def _post(client, token, records):
 def test_bp_point_events_persist_and_count(client, db):
     """一天多条血压点事件全部落库, blood_pressure_imported_count 反映数量。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     records = [{
         "record_date": "2026-06-10",
         "data_source": "apple-watch",
@@ -49,6 +50,7 @@ def test_bp_point_events_persist_and_count(client, db):
 def test_bp_idempotent_same_measured_at(client, db):
     """同 measured_at 重导不增行 ((user_id, measured_at) 唯一 + service dedup)。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     records = [{
         "record_date": "2026-06-11",
         "data_source": "apple-watch",
@@ -75,6 +77,7 @@ def test_bp_idempotent_same_measured_at(client, db):
 def test_bp_fractional_and_bad_values_tolerated(client, db):
     """坏值容错: float→int 取整; systolic 缺失/非数 → 该条丢弃, 不崩整批。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     records = [{
         "record_date": "2026-06-12",
         "data_source": "apple-watch",
@@ -104,6 +107,7 @@ def test_bp_fractional_and_bad_values_tolerated(client, db):
 def test_bp_persists_when_daily_aggregate_fails(client, db):
     """并行 try: 日聚合解析失败 (record_date 坏) 不影响血压落库。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     records = [{
         "record_date": "not-a-date",  # 过 str 校验但 _parse_date 失败 → 日聚合 ValueError
         "data_source": "apple-watch",
@@ -131,6 +135,7 @@ def test_bp_persists_when_daily_aggregate_fails(client, db):
 def test_body_fat_rides_with_weight(client, db):
     """体脂随 weight_kg 落 weight_records。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     records = [{
         "record_date": "2026-06-14",
         "data_source": "withings-app",
@@ -153,6 +158,7 @@ def test_body_fat_rides_with_weight(client, db):
 def test_body_fat_without_weight_not_written(client, db):
     """只有 body_fat 没 weight → 无 NOT NULL 载体, 不写, 不报错。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     records = [{
         "record_date": "2026-06-14",
         "data_source": "apple-watch",
@@ -170,6 +176,7 @@ def test_body_fat_without_weight_not_written(client, db):
 def test_body_composition_upsert_by_date(client, db):
     """同日重导体重 → upsert 不增行, 体脂更新。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     _post(client, token, [{
         "record_date": "2026-06-15", "data_source": "apple-watch",
         "weight_kg": 71.0, "body_fat_percentage": 19.0,
@@ -192,6 +199,7 @@ def test_body_composition_upsert_by_date(client, db):
 def test_response_shape_includes_bp_count(client, db):
     """response 始终含 blood_pressure_imported_count (即使无 BP 数据)。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     resp = _post(client, token, [{"record_date": "2026-06-16", "data_source": "apple-watch", "steps": 5000}])
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -204,6 +212,7 @@ def test_user_isolation_bp(client, db):
     """用户隔离: A 的血压不进 B 的查询。"""
     user_a, token_a = create_authenticated_user(db)
     user_b, token_b = create_authenticated_user(db)
+    grant_healthkit_consent(db, user_a)
     _post(client, token_a, [{
         "record_date": "2026-06-10", "data_source": "apple-watch",
         "blood_pressure_readings": [
@@ -232,6 +241,7 @@ def test_bp_import_requires_auth(client, db):
 def test_same_day_two_measured_at_two_rows(client, db):
     """点事件语义: 同日不同 measured_at → 两行 (不像日聚合互相覆盖)。"""
     user, token = create_authenticated_user(db)
+    grant_healthkit_consent(db, user)
     _post(client, token, [{
         "record_date": "2026-06-10", "data_source": "apple-watch",
         "blood_pressure_readings": [

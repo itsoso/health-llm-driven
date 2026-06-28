@@ -143,6 +143,39 @@ def create_authenticated_user(db):
     return user, token
 
 
+def grant_healthkit_consent(db, user, scopes=None):
+    """Create the server-side Apple Health connection + self consent used by imports."""
+    from app.services.data_connections import create_consent_grant, upsert_data_connection
+
+    hk_scopes = scopes or [
+        "healthkit.daily.read",
+        "healthkit.ecg.read",
+        "healthkit.blood_pressure.read",
+        "healthkit.spo2.read",
+        "healthkit.body.read",
+    ]
+    connection = upsert_data_connection(
+        db,
+        user_id=user.id,
+        provider="healthkit",
+        provider_type="healthkit",
+        display_name="Apple Health",
+        scopes=hk_scopes,
+        token_status="not_required",
+        source_ref="ios-healthkit",
+    )
+    create_consent_grant(
+        db,
+        user_id=user.id,
+        connection_id=connection.id,
+        grantee_type="self",
+        grantee_id=str(user.id),
+        scopes=hk_scopes,
+        purpose="sync HealthKit data into Reva",
+    )
+    return connection
+
+
 @pytest.fixture
 def auth_user_and_headers(db):
     """创建已认证用户，返回 (user, headers)"""

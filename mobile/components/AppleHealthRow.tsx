@@ -26,6 +26,7 @@ import {
   persistHealthKitLastSync,
   type BackfillProgress,
 } from '../services/appleHealth';
+import { ensureHealthKitServerConsent } from '../services/dataConnections';
 import {
   revaColors as C,
   revaSpacing,
@@ -93,6 +94,7 @@ export function AppleHealthRow({ onSyncComplete }: Props) {
     setErrorMsg(null);
     setProgress(null);
     try {
+      await ensureHealthKitServerConsent();
       const { totalImported, errors, coverage } = await syncRecentDays(7);
       const now = new Date();
       setLastSyncAt(now);
@@ -130,6 +132,7 @@ export function AppleHealthRow({ onSyncComplete }: Props) {
     setErrorMsg(null);
     setProgress(null);
     try {
+      await ensureHealthKitServerConsent();
       const { totalImported, errors } = await backfillAll((p) => setProgress(p));
       const now = new Date();
       setLastSyncAt(now);
@@ -152,6 +155,7 @@ export function AppleHealthRow({ onSyncComplete }: Props) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       await requestPermissions();
+      await ensureHealthKitServerConsent();
       setAuthorized(true);
       persistHealthKitAuthorized();  // 持久化 → 重挂载/冷启不再回退"未授权"
       // 授权后立即同步近 7 天
