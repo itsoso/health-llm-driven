@@ -47,7 +47,7 @@ def test_reva_health_harness_packages_core_project_skills():
         assert "scripts/harness_workflow_trace.py" in content
         assert content == (ROOT / ".claude" / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
 
-    for script_name in ["harness_workflow_trace.py", "harness_memory_prime.py"]:
+    for script_name in ["harness_workflow_trace.py", "harness_memory_prime.py", "harness_friction_scan.py"]:
         assert (PLUGIN / "scripts" / script_name).read_text(encoding="utf-8") == (
             ROOT / "scripts" / script_name
         ).read_text(encoding="utf-8")
@@ -74,3 +74,11 @@ def test_product_pipeline_documents_selective_memory_priming():
     assert "harness_memory_prime.py" in skill
     assert "MEMORY.md" in skill
     assert "选择性 priming" in skill
+
+
+def test_product_pipeline_documents_friction_scan_as_advisory():
+    skill = (ROOT / ".claude" / "skills" / "product-pipeline" / "SKILL.md").read_text(encoding="utf-8")
+
+    assert "harness_friction_scan.py" in skill
+    assert "摩擦检测" in skill
+    assert "不自动改 memory 或 skill" in skill

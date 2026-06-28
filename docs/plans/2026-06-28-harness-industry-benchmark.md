@@ -80,6 +80,8 @@
    - 2026-06-28 implementation note:已新增 `scripts/harness_memory_prime.py` 按关键词检索本地 `MEMORY.md` 的 JSON 输出工具,支持 `--require-all` 与缺 registry fail-loud;并接入 `product-pipeline` S1 Discovery 和 `reva-health-harness` plugin,避免整份 memory 进入上下文。
 7. **输入/检索护栏(P2,健康专属)**:NeMo 分类法补 input PII 脱敏 + RAG grounding。
    - 2026-06-28 implementation note:已新增 `retrieval_guard` 作为健康知识检索入口护栏,在 System KB search、KnowledgeLibrarian 和 agent `knowledge_search` 双路检索前脱敏直接标识符,同时保留 LDL/MTHFR/rsID 等医学检索词;System KB 返回 `retrieval_plan.input_guard`,API audit 改记脱敏后 query 与 guard metadata。
+8. **自改进摩擦检测(P2)**:扫描会话/Dossier/计划里的"用户重复继续、纠正真源、反复追问完成"信号,自动**提议**该沉淀的新规则;晋级仍走 reviewed gate,避免自写规则失控。
+   - 2026-06-28 implementation note:已新增 `scripts/harness_friction_scan.py` advisory CLI,返回 JSON evidence + suggested_rule,并接入 `product-pipeline` S8 沉淀说明与 `reva-health-harness` plugin 包同步测试;该工具只检测/提议,不自动改 memory/skill。
 
 ## 前沿会怎么批评你(最诚实的一刀)
 

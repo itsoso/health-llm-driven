@@ -145,6 +145,7 @@ python3 scripts/harness_workflow_trace.py init \
 
 ### S8 · 沉淀
 - **做什么**:把本轮新坑沉淀回**对应 agent 定义 / 本 skill / memory**(harness 是演进系统);更新 `docs/ARCHITECTURE.md` + `check_doc_drift.py` EXPECTED(若加 model/规则/分区);更新 mobile/Web parity 表;Dossier 状态 → **shipped**。
+- **摩擦检测**:需要判断是否该沉淀新规则时,先跑 `python3 scripts/harness_friction_scan.py --input docs/dossiers/<date>-<slug>.md --json`(也可指向会话导出/计划文件)。它只输出「用户重复/纠正真源/反复追问完成」等候选证据和 suggested_rule,**不自动改 memory 或 skill**;晋级仍必须走 reviewed gate / 手动记忆更新。
 
 ---
 
