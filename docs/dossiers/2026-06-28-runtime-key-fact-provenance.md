@@ -4,8 +4,8 @@
 |---|---|
 | slug | `runtime-key-fact-provenance` |
 | 创建日期 | 2026-06-28 |
-| 当前阶段 | S6 部署 |
-| 状态 | shipping |
+| 当前阶段 | S8 沉淀 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | backend deploy |
 
@@ -69,7 +69,10 @@
 
 ## S5 · 实现
 - 委托: Codex
-- 分支(off origin/main)/ commit: `codex/rolling-runtime-next-slice` / 待提交
+- 分支(off origin/main)/ commit:
+  - `codex/rolling-runtime-next-slice`
+  - `f52379b994a69f1d202a433bb6bf76f225542583` `feat(agenda): expose runtime key fact provenance`
+  - `fd48fd38113c4e85f02674e35500d2ff9f195901` `fix(agenda): suppress empty runtime provenance noise`
 
 ## G3 · 测试闸
 - 集成闸(CI 模式 `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai`,**不 `| tail`**):
@@ -93,23 +96,29 @@
 ## S6 · 部署
 - 路由: backend-deploy
 - 序: 后端 deploy；不需要 generate-types；不需要 OTA。
-- 部署 SHA / 回滚点: 待定
+- 部署 SHA / 回滚点:
+  - 第一次部署：`f52379b994a69f1d202a433bb6bf76f225542583`，健康分通过后生产 smoke 发现普通协议项 missing provenance 噪声。
+  - 第二次部署：`fd48fd38113c4e85f02674e35500d2ff9f195901`。
+  - 回滚点：`9b1a5c4a7`。
 
 ## G5 · 部署健康闸
-- 健康分(阈值 35,低于自动回滚): 待定
-- prod smoke: 待定
-- **裁决**:待定
+- 健康分(阈值 35,低于自动回滚): `60/60 PASS`
+- prod smoke:
+  - `GET /api/v1/health`: healthy，database/redis/celery connected。
+  - 服务器本机 user_id=3 authenticated runtime smoke：`http_status=200 mode=runtime generated_by=rolling_health_runtime_v1 horizon=7 days=7 next=True provenance_policy=runtime_key_fact_provenance_v1 item_provenance_count=0 missing_provenance_count=0`。
+  - 说明：user_id=3 当前 runtime payload 没有命中 FHIR/report biomarker provenance 的行动；item-level positive path 由本地合同测试覆盖。
+- **裁决**:PASS
 
 ## S7 · 上线验证
-- 真实路径验证(curl / 健康分 / 真机 / anchor 视角): 待定
-- 结果(相关非因果措辞): 待定
+- 真实路径验证(curl / 健康分 / 真机 / anchor 视角): 生产 API 对 anchor user_id=3 返回 runtime root provenance policy，且不再产生普通协议 missing provenance 噪声。
+- 结果(相关非因果措辞): 本切片已把可追溯能力发布到 runtime 合同；当行动明确依赖 FHIR/report biomarker key facts 且存在 `ProvenanceRecord` 时，会返回脱敏 provenance 摘要。
 
 ## G6 · 验证闸(人在环)
-- 需求在 prod 对 anchor 用户真成立?: 待定
+- 需求在 prod 对 anchor 用户真成立?: PASS；生产合同和噪声边界成立，正向 item-level provenance 因当前 anchor payload 无匹配数据由本地合同测试证明。
 - 真机/发布用户确认: 不涉及真机发布
-- **裁决**:待定
+- **裁决**:PASS(回路闭合)
 
 ## S8 · 沉淀
-- 新坑沉淀到(agent 定义 / skill / memory): 待定
-- 文档同步(ARCHITECTURE.md / doc-drift EXPECTED / parity 表): 计划/spec 回写；无架构计数变更。
-- 状态 -> **shipped**: 待定
+- 新坑沉淀到(agent 定义 / skill / memory): provenance 缺失只应在明确 key metric 存在时暴露，不能给普通协议项制造 missing 噪声。
+- 文档同步(ARCHITECTURE.md / doc-drift EXPECTED / parity 表): 计划/spec/Dossier 已回写；fast-forward 到最新 main 后并发 service 文件数变更已同步 `docs/_generated/system-map.json` 和 `docs/ARCHITECTURE.md`。
+- 状态 -> **shipped**: 完成

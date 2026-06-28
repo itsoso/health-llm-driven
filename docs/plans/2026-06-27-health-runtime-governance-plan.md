@@ -476,7 +476,7 @@ Mobile/Watch 待规划工作：
   - 生产 user_id=3 smoke：`feedback_policy=recent_protocol_event_feedback_v1 feedback_count=3 feedback_items=6`；抽样 `replan=recent_completion_projection strategy=observe_metric_change`。
 - 本切片不新增写路径、不改药物/剂量/医疗计划，只改变 future projection 的排序和解释。
 
-2026-06-28 第六切片已完成本地实现，待发布:
+2026-06-28 第六切片已发布:
 
 - Runtime item 的 `runtime_context.evidence` 新增 `provenance` 摘要，策略标识为 `runtime_key_fact_provenance_v1`。
 - 当前最小覆盖 FHIR/report 导入后形成的 `BiomarkerObservation`：从 `verify_by.metrics`、trajectory signals 和 canonical biomarker code 关联 `ProvenanceRecord`。
@@ -489,6 +489,11 @@ Mobile/Watch 待规划工作：
   - provenance 回归：`backend/tests/test_agenda_range_complete.py backend/tests/test_data_connections.py backend/tests/test_fhir_bundle_import.py backend/tests/test_healthkit_adapter.py --no-cov` `31 passed`。
   - surface 兼容回归：`backend/tests/test_watch_actions.py backend/tests/test_watch_summary.py backend/tests/test_inline_cards_runtime_agenda.py backend/tests/test_daily_artifact.py --no-cov` `47 passed`。
 - 本切片不新增写路径、不改变排序、不新增医疗结论；只把已有真实数据来源投影到运行时解释层。
+- 已发布：
+  - 代码 commit `f52379b994a69f1d202a433bb6bf76f225542583`。
+  - 噪声修正 + doc drift 修复 commit `fd48fd38113c4e85f02674e35500d2ff9f195901`。
+  - 后端部署 HEAD `fd48fd38113c4e85f02674e35500d2ff9f195901`；部署健康分 `60/60`；skills manifest `22 = 22`。
+  - 生产 user_id=3 smoke：`mode=runtime generated_by=rolling_health_runtime_v1 horizon=7 days=7 next=True provenance_policy=runtime_key_fact_provenance_v1 item_provenance_count=0 missing_provenance_count=0`。说明：user_id=3 当前 runtime payload 没有命中 FHIR/report biomarker provenance 的行动；正向 item-level provenance 由本地合同测试覆盖。
 
 2026-06-28 代码对比后的状态修正:
 
