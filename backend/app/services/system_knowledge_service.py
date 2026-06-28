@@ -883,6 +883,7 @@ def reindex_knowledge_documents(db: Session, actor: str = "system") -> dict[str,
     use_postgres_tsvector = _fts_backend_for_session(db) == "postgres_tsv"
     active_doc_ids = {document.doc_id for document in documents}
     searchable_by_doc_id: dict[str, tuple[str, str]] = {}
+    pgvector_table_ready = _ensure_pgvector_table(db)
     for document in documents:
         searchable = _document_search_text(document)
         content_hash = hashlib.sha256(searchable.encode("utf-8")).hexdigest()
@@ -894,7 +895,11 @@ def reindex_knowledge_documents(db: Session, actor: str = "system") -> dict[str,
         document.tsv = searchable
         document.content_hash = content_hash
 
-    dense_vectors = _reindex_pgvector_documents(db, searchable_by_doc_id)
+    dense_vectors = _reindex_pgvector_documents(
+        db,
+        searchable_by_doc_id,
+        table_ready=pgvector_table_ready,
+    )
 
     if active_doc_ids:
         db.query(KBDocumentVector).filter(KBDocumentVector.doc_id.notin_(active_doc_ids)).delete(
@@ -2739,10 +2744,14 @@ def _pgvector_literal(vector: list[float]) -> str:
 def _reindex_pgvector_documents(
     db: Session,
     searchable_by_doc_id: dict[str, tuple[str, str]],
+    *,
+    table_ready: bool | None = None,
 ) -> int:
     if not searchable_by_doc_id:
         return 0
-    if not _ensure_pgvector_table(db):
+    if table_ready is None:
+        table_ready = _ensure_pgvector_table(db)
+    if not table_ready:
         return 0
 
     doc_ids = list(searchable_by_doc_id.keys())

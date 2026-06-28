@@ -123,3 +123,24 @@ def test_search_vector_channel_prefers_pgvector_backend_when_available(db, monke
     assert payload["retrieval_plan"]["vector_backend"] == "pgvector:text-embedding-3-small"
     assert "vector" in claim_result["retrieval"]["channels"]
     assert claim_result["retrieval"]["vector_score"] > 0
+
+
+def test_reindex_prepares_pgvector_table_before_sparse_document_updates(db, monkeypatch):
+    _seed_vector_knowledge(db)
+    calls = []
+
+    def fake_ensure_pgvector_table(_db):
+        calls.append("ensure_pgvector_table")
+        return False
+
+    def fake_upsert_document_vector(_db, doc_id, searchable, content_hash):
+        calls.append(f"sparse:{doc_id}")
+
+    monkeypatch.setattr(system_knowledge_service, "_ensure_pgvector_table", fake_ensure_pgvector_table)
+    monkeypatch.setattr(system_knowledge_service, "_upsert_document_vector", fake_upsert_document_vector)
+
+    result = reindex_knowledge_documents(db, actor="test")
+
+    assert result["documents"] == 3
+    assert calls[0] == "ensure_pgvector_table"
+    assert any(call.startswith("sparse:") for call in calls[1:])
