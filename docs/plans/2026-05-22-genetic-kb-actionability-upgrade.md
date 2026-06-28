@@ -12,25 +12,35 @@
 
 ## Current Baseline
 
-Generated report: `docs/reports/2026-05-22-gene-knowledge-audit.md`
+Latest generated report: `docs/reports/2026-05-23-gene-knowledge-audit.md`
 
-Current `down-dedao/artifacts/gene_knowledge.json`:
+Current `backend/data/gene_knowledge.json` audit result:
 
-- Gene entities: 24
+- Gene entities: 28
 - SNP registry entries: 26
-- Claims: 28
+- Claims: 32
 - Gene rules: 18
 - Tier 0 drug-safety coverage: 12/12
 - Tier 1 gene + lab loop coverage: 7/7
-- Tier X confirmation-only coverage: 2/4
+- Tier 2 lifestyle coverage: 5/5
+- Tier X confirmation-only coverage: 4/4
 
 Main gaps:
 
-- Missing confirmation-only boundaries: `BRCA1`, `BRCA2`
-- Missing Tier 2 lifestyle claims: `COMT`, `VDR`
-- Current quality gates pass for existing claims: no missing `applies_when`, no missing boundary text, no drug claim missing clinician boundary
+- No blocking coverage gaps remain in the promoted artifact.
+- Current quality gates pass: no missing `applies_when`, no missing boundary text, no drug claim missing clinician boundary.
 
-Do not edit `down-dedao` blindly right now: its worktree already has many user/generated changes. First use the audit report as the shared checklist, then modify source wiki files in small batches.
+Do not edit `down-dedao` blindly: it is still the authoring source and may have user/generated changes. First use the audit report as the shared checklist, then modify source wiki files in small batches.
+
+2026-06-28 re-check:
+
+```bash
+PYTHONPATH=backend backend/venv/bin/python backend/scripts/audit_gene_knowledge.py \
+  --gene-knowledge backend/data/gene_knowledge.json \
+  --output /tmp/gene-knowledge-audit.md
+```
+
+Result: Tier 0 `12/12`, Tier 1 `7/7`, Tier 2 `5/5`, Tier X `4/4`; all quality-gate counters are `0`.
 
 ## Task 1: Keep The Audit Gate Green
 
@@ -48,18 +58,22 @@ Do not edit `down-dedao` blindly right now: its worktree already has many user/g
 
 ## Task 2: Add Tier X Confirmation-Only Boundaries First
 
-Status: `CFTR` and `ATP7B` completed on 2026-05-22. Remaining Tier X gaps are `BRCA1` and `BRCA2`.
+Status: completed. `CFTR`, `ATP7B`, `BRCA1`, and `BRCA2` are all covered by confirmation-only boundaries in the promoted artifact.
 
 **Source files in `down-dedao`:**
 
 - Created: `wiki/entities/gene/CFTR.md`
 - Created: `wiki/entities/gene/ATP7B.md`
+- Created: `wiki/entities/gene/BRCA1.md`
+- Created: `wiki/entities/gene/BRCA2.md`
 - Created: `wiki/entities/snp/rs121908763.md`
 - Created: `wiki/entities/snp/rs149790377.md`
 - Created: `wiki/entities/snp/rs186045772.md`
 - Created: `wiki/entities/snp/rs137853280.md`
 - Created: `wiki/claims/c_cftr_dtc_confirmation_boundary.md`
 - Created: `wiki/claims/c_atp7b_dtc_confirmation_boundary.md`
+- Created: `wiki/claims/c_brca1_dtc_confirmation_boundary.md`
+- Created: `wiki/claims/c_brca2_dtc_confirmation_boundary.md`
 
 **Rules:**
 
@@ -72,7 +86,7 @@ Status: `CFTR` and `ATP7B` completed on 2026-05-22. Remaining Tier X gaps are `B
 
 1. Compile down-dedao artifacts using its existing compiler.
 2. Re-run `backend/scripts/audit_gene_knowledge.py`.
-3. Expected: Tier X coverage includes `CFTR` and `ATP7B`.
+3. Expected: Tier X coverage includes `CFTR`, `ATP7B`, `BRCA1`, and `BRCA2`.
 
 ## Task 3: Add Highest-Value HLA Medication Rules
 
@@ -151,10 +165,14 @@ Status: completed on 2026-05-22. `absorb_down_dedao_wiki.py` now includes the ge
 
 ## Task 6: User 3 Regression Suite
 
+Status: implemented for the core safety regressions. Targeted tests now cover confirmation-only disease handling, BRCA reviewed-KB lookup/eval cases, HLA actionability classification, MTHFR lab-anchored interpretation boundaries, and CYP proxy/star-allele uncertainty guards. Real user 3 re-analysis remains an operational check after artifact promotion, not a blocking implementation gap.
+
 **Files:**
 
 - Modify: `backend/tests/test_genetic_improvements.py`
 - Modify: `backend/tests/test_genetic_report.py`
+- Modify: `backend/tests/test_genetics_clinical_confirmation_knowledge.py`
+- Modify: `backend/tests/test_gene_classification.py`
 
 **Required cases:**
 

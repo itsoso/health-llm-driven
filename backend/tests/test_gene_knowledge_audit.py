@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 from app.services.gene_knowledge_audit import (
     audit_gene_knowledge,
     format_gene_knowledge_audit_markdown,
 )
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 
 def test_gene_knowledge_audit_reports_tier_coverage_and_missing_required_rules():
@@ -213,13 +216,13 @@ def test_audit_gene_knowledge_cli_writes_markdown_report(tmp_path):
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/audit_gene_knowledge.py",
+            str(BACKEND_DIR / "scripts" / "audit_gene_knowledge.py"),
             "--gene-knowledge",
             str(source),
             "--output",
             str(output),
         ],
-        cwd=".",
+        cwd=BACKEND_DIR,
         text=True,
         capture_output=True,
         check=False,
@@ -232,7 +235,7 @@ def test_audit_gene_knowledge_cli_writes_markdown_report(tmp_path):
 
 def test_repository_gene_knowledge_mirror_has_no_tier_claim_gaps():
     """Runtime mirror should not lag behind the curated down-dedao gene KB."""
-    with open("data/gene_knowledge.json", encoding="utf-8") as fh:
+    with (BACKEND_DIR / "data" / "gene_knowledge.json").open(encoding="utf-8") as fh:
         payload = json.load(fh)
 
     report = audit_gene_knowledge(payload)
