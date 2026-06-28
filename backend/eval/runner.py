@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -21,6 +21,7 @@ from eval.scorers.exact_match import score_rule_set
 from eval.scorers.grounding import score_grounding
 from eval.scorers.keywords import score_keywords
 from eval.scorers.llm_judge import score_llm_judge
+from eval.scorers.invariant_judge import score_invariant_judge
 
 
 _DATASETS_DIR = Path(__file__).parent / "datasets"
@@ -543,6 +544,33 @@ def _score_retrieval(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, Dict
 
 
 # ============= 通用流程 =============
+
+# ============= invariants suite (LLM 合成层不变量 × founder 对齐) =============
+# case.inputs = {query, answer(预生成的合成文本)};不跑 LLM 生成,只**判**给定文本。
+# scorer.passed = judge 裁决与 founder 金标 (expected.should_pass) **是否一致** —— 失配 =
+# judge 漂移出 founder 标准 = 回归信号(这正是 critique-shadowing 对齐度量)。
+
+@_register_runner("invariants")
+def _run_invariants_case(case_inputs: Dict[str, Any]) -> Dict[str, Any]:
+    return {"answer": case_inputs.get("answer", ""), "query": case_inputs.get("query", "")}
+
+
+@_register_scorer("invariants")
+def _score_invariants(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    r = score_invariant_judge(output.get("query", ""), output.get("answer", ""), case.expected)
+    should_pass = bool(case.expected.get("should_pass", True))
+    aligned = (r["passed"] == should_pass)
+    return {
+        "invariant_alignment": {
+            "passed": aligned,
+            "score": 1.0 if aligned else 0.0,
+            "judge_passed": r["passed"],
+            "expected_pass": should_pass,
+            "violations": r["violations"],
+            "judge_critique": r["judge_critique"],
+        }
+    }
+
 
 def load_suite(suite: str) -> List[GoldenCase]:
     path = _DATASETS_DIR / f"{suite}.yaml"

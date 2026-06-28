@@ -67,6 +67,7 @@ description: "复元产品全生命周期总指挥:把一句用户需求,经『�
 ### S2 · PRD(产品需求)
 - **做什么**:合成 PRD,**引用不重述**权威 `docs/prd/reva-personal-health-os-prd.md`(R1–R18/北极星/一等对象);走 feature-plan 四问 + ASCII 数据流;声明边界、不变量、验收 Gate、待拍板。
 - **复用**:discovery 现状图 + G1 准入卡 + 四问模板(`~/work/personal/PRACTICES/feature-plan.md`)。已 specced 的需求(如 R4/R5/R6/R18)**引 R 号,不重 spec**。
+- **未决用标记,别脑补**(借 spec-kit):任何拿不准的点写 `[NEEDS CLARIFICATION: <问题>]` 留在 PRD/Dossier 里;在进交付环(S4)前必须**清零**(由 /clarify 顺序追问解决)。带着未解标记进昂贵交付 = 返工源,被 G2 出口闸拦。
 - **产出物**:`docs/prd/<date>-<slug>.md`,链接进 Dossier。
 
 ### S3 · 规划(分阶段实施计划)
@@ -78,6 +79,12 @@ description: "复元产品全生命周期总指挥:把一句用户需求,经『�
 - **做什么**:在进昂贵交付前,用**跨家族对抗**压测规划:平台可行性(诚实:做不到的别承诺)、R4/R15/Write 承重墙/PIPL 合规、范围排序。
 - **复用**:`council-review` skill(Claude×Codex 三方)或 `codex` challenge,或 discovery 工作流的 critic 阶段。
 - **裁决**:抓到的硬阻断/reframe 焊进规划;**待拍板分叉 STOP 问用户**(如「watch 对话做一问一答还是多轮」「HK 后台先 spike 再投 EAS?」)。PASS 后才进 S4。
+
+#### G2 出口 · 定义环一致性闸(spec-kit 只读 /analyze)— 进交付环前必过
+定义环出了 PRD↔Plan↔Dossier 三件套,**进昂贵交付前先验它们自洽**(否则 plan 落了 PRD 没提的、或 Dossier 引了不存在的 spec、或带着未解问题就开工):
+- **确定性子集(硬闸)**:`python backend/scripts/check_dossier_consistency.py` —— ① 进交付环不留未解 `[NEEDS CLARIFICATION]` ② 引用的 `docs/{prd,plans,specs}/*.md` 锚点必须存在 ③ Gate↔阶段自洽(进交付环则 G1=PASS;shipped 无 REJECT/BLOCK)。**已接进 doc-drift 提交闸 hook**:不自洽则 commit 被拦。
+- **语义子集(LLM 只读)**:跑一个**只读** /analyze pass(`Explore` agent 或 council),核 PRD 的目标/一等对象/验收在 plan 与分解里**都有对应**,无 plan 凭空多出 PRD 没授权的范围;冲突按严重度标(违反不变量=CRITICAL)。
+- **裁决**:任一不过 → 回 S2/S3 补,**不进 S4**。
 
 ### S4 · 需求分解(规划 → 研发分支/任务)
 - **做什么**:把规划的阶段拆成**具体研发任务**(每任务链接回规划某 task);定**跨端 API 契约**(请求/响应 shape)写进 `_workspace/`;`TaskCreate` 建任务;判定每任务 **OTA vs EAS**、触及层(frozen core/agent fleet/mutable business)、是否需 feature spec(§8.1)。

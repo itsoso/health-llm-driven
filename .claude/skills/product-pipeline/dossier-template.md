@@ -42,6 +42,8 @@
 - 引用的权威 R 号(不重 spec):
 - 边界(不做):
 - 验收 Gate:
+- 未决问题(进交付环前必清零,否则 G2 出口闸拦):
+  - `[NEEDS CLARIFICATION: <写下拿不准的点,/clarify 解决后删>]`
 
 ## S3 · 规划
 - 链接:`docs/plans/<date>-<slug>.md`
@@ -49,6 +51,7 @@
 - 长杆 / spike:
 
 ## G2 · 可行性 + 安全压测
+<!-- 进 S4 前过「定义环一致性闸」: python backend/scripts/check_dossier_consistency.py(确定性)+ LLM 只读 /analyze(PRD↔Plan↔分解 语义自洽);不过回 S2/S3。 -->
 - 评审方式:☐ council-review ☐ codex challenge ☐ discovery critics
 - 硬阻断(已焊进规划):
 - **待拍板分叉(STOP 问人)**:

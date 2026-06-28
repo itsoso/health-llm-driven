@@ -25,6 +25,9 @@ _SUITES = [
     ("health_runtime", "main"),
     ("retrieval", "main"),
     ("orchestrator", "main"),
+    # LLM 合成层不变量 × founder 对齐(确定性层,零 LLM 成本;baseline=None 即任一 case
+    # 失败=judge 漂移出 founder 标准就告警)。换模型/改 synthesis prompt 的回归信号。
+    ("invariants", None),
 ]
 
 
