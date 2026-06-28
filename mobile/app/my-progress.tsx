@@ -26,6 +26,7 @@ import {
   causalMemorySummary,
   fetchHealthOperatingReview,
   predictionBacktestSummary,
+  predictionTimelineSummary,
   type HealthOperatingReview,
   type ReviewWindowDays,
 } from '../services/healthOperatingReview';
@@ -276,6 +277,8 @@ function OperatingReviewCard({ review, c }: { review: HealthOperatingReview; c: 
     .filter(row => row.change?.status === 'present' && row.change.delta !== null);
   const predictionSummary = predictionBacktestSummary(review.prediction_backtest);
   const predictionResults = review.prediction_backtest?.results ?? [];
+  const timelineSummary = predictionTimelineSummary(review.prediction_timeline);
+  const timelineItems = review.prediction_timeline ?? [];
   const personalPatternSummary = causalMemorySummary(review.causal_memory);
   const personalPatterns = review.causal_memory?.notes ?? [];
 
@@ -334,6 +337,28 @@ function OperatingReviewCard({ review, c }: { review: HealthOperatingReview; c: 
           ))}
           <Text style={[styles.predictionBoundary, { color: c.labelTertiary }]}>
             {review.prediction_backtest?.boundary}
+          </Text>
+        </View>
+      ) : null}
+
+      {timelineSummary ? (
+        <View style={[styles.predictionTimeline, { backgroundColor: c.fill }]}>
+          <Text style={[styles.timelineTitle, { color: c.labelPrimary }]}>{timelineSummary}</Text>
+          {timelineItems.slice(0, 4).map(item => (
+            <View key={item.id} style={styles.timelineRow}>
+              <View style={[styles.timelineDot, { backgroundColor: c.brand }]} />
+              <View style={styles.timelineText}>
+                <Text style={[styles.timelineItemTitle, { color: c.labelSecondary }]} numberOfLines={1}>
+                  {item.title}
+                </Text>
+                <Text style={[styles.timelineItemSummary, { color: c.labelTertiary }]} numberOfLines={2}>
+                  {item.summary}
+                </Text>
+              </View>
+            </View>
+          ))}
+          <Text style={[styles.predictionBoundary, { color: c.labelTertiary }]}>
+            {timelineItems[timelineItems.length - 1]?.boundary}
           </Text>
         </View>
       ) : null}
@@ -491,6 +516,13 @@ const styles = StyleSheet.create({
   predictionTitle: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
   predictionLine: { fontSize: 12, lineHeight: 17 },
   predictionBoundary: { fontSize: 11, lineHeight: 15 },
+  predictionTimeline: { borderRadius: radii.md, padding: spacing.sm, gap: 6 },
+  timelineTitle: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
+  timelineRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
+  timelineDot: { width: 7, height: 7, borderRadius: 4, marginTop: 5 },
+  timelineText: { flex: 1, minWidth: 0, gap: 2 },
+  timelineItemTitle: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  timelineItemSummary: { fontSize: 11, lineHeight: 15 },
   causalMemory: { borderRadius: radii.md, padding: spacing.sm, gap: 4 },
   causalTitle: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
   causalLine: { fontSize: 12, lineHeight: 17 },

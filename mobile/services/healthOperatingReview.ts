@@ -58,6 +58,25 @@ export interface PredictionBacktestResult {
   boundary?: string | null;
 }
 
+export type PredictionTimelineEventType =
+  | 'prediction_created'
+  | 'action_executed'
+  | 'outcome_observed'
+  | 'review_verdict';
+
+export interface PredictionTimelineItem {
+  id: string;
+  prediction_id: string;
+  event_type: PredictionTimelineEventType | string;
+  occurred_at: string;
+  title: string;
+  summary: string;
+  metric: string;
+  status: string;
+  confidence?: string | null;
+  boundary?: string | null;
+}
+
 export interface CausalMemoryNote {
   metric: string;
   before?: number | null;
@@ -81,6 +100,7 @@ export interface HealthOperatingReview {
   metrics: Record<string, MetricChange>;
   completed_action_keys: string[];
   prediction_backtest?: PredictionBacktestPlaceholder;
+  prediction_timeline?: PredictionTimelineItem[];
   causal_memory?: CausalMemoryReview;
 }
 
@@ -99,6 +119,26 @@ export function predictionBacktestSummary(backtest?: PredictionBacktestPlacehold
   if (total <= 0) return null;
   const met = backtest.summary?.met ?? backtest.results?.filter((r) => r.verdict === 'met').length ?? 0;
   return `预测回测: ${met}/${total} 支持继续当前策略 · 观察性,非因果`;
+}
+
+export function predictionTimelineSummary(timeline?: PredictionTimelineItem[] | null): string | null {
+  if (!timeline?.length) return null;
+  const labels: Record<string, string> = {
+    prediction_created: '预测',
+    action_executed: '执行',
+    outcome_observed: '实际',
+    review_verdict: '复盘',
+  };
+  const seen = new Set<string>();
+  const ordered = timeline
+    .map(item => labels[item.event_type] ?? item.event_type)
+    .filter((label) => {
+      if (!label || seen.has(label)) return false;
+      seen.add(label);
+      return true;
+    });
+  if (!ordered.length) return null;
+  return `预测时间线: ${ordered.join(' -> ')} · 观察性,非因果`;
 }
 
 export function causalMemorySummary(memory?: CausalMemoryReview | null): string | null {

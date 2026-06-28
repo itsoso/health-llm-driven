@@ -1,4 +1,9 @@
-import { causalMemorySummary, fetchHealthOperatingReview, predictionBacktestSummary } from '../healthOperatingReview';
+import {
+  causalMemorySummary,
+  fetchHealthOperatingReview,
+  predictionBacktestSummary,
+  predictionTimelineSummary,
+} from '../healthOperatingReview';
 import api from '../api';
 
 jest.mock('../api', () => ({
@@ -86,5 +91,36 @@ describe('fetchHealthOperatingReview', () => {
     });
 
     expect(summary).toBe('个人规律: 「晚餐提前」之后,HRV 从 40.0 → 46.0(改善;7 天窗口,相关非因果)');
+  });
+
+  it('summarizes prediction review timeline without causal wording', () => {
+    const summary = predictionTimelineSummary([
+      {
+        id: 'pred-waist-7d:prediction',
+        prediction_id: 'pred-waist-7d',
+        event_type: 'prediction_created',
+        occurred_at: '2026-06-22',
+        title: '预测: waist_cm',
+        summary: '7 天内观察 waist_cm down',
+        metric: 'waist_cm',
+        status: 'predicted',
+        confidence: 'medium',
+        boundary: '观察性回测, 不证明单个行动造成指标变化。',
+      },
+      {
+        id: 'pred-waist-7d:review',
+        prediction_id: 'pred-waist-7d',
+        event_type: 'review_verdict',
+        occurred_at: '2026-06-28',
+        title: '复盘: 支持',
+        summary: '实际变化与预测方向一致, 支持继续当前策略并继续观察。',
+        metric: 'waist_cm',
+        status: 'met',
+        confidence: 'medium',
+        boundary: '观察性回测, 不证明单个行动造成指标变化。',
+      },
+    ]);
+
+    expect(summary).toBe('预测时间线: 预测 -> 复盘 · 观察性,非因果');
   });
 });

@@ -49,6 +49,12 @@ def build_health_operating_review(
 
     metrics = _metric_summary(db, user_id=user_id, start=start, end=end)
     action_effects = _action_effects(events, metrics)
+    prediction_backtest = _prediction_backtest(
+        window_days=window_days,
+        events=events,
+        metrics=metrics,
+        action_effects=action_effects,
+    )
     return {
         "window_days": window_days,
         "start_date": start.isoformat(),
@@ -59,12 +65,8 @@ def build_health_operating_review(
             event.action_key for event in events if event.feedback_status in COMPLETED_STATUSES
         ],
         "action_effects": action_effects,
-        "prediction_backtest": _prediction_backtest(
-            window_days=window_days,
-            events=events,
-            metrics=metrics,
-            action_effects=action_effects,
-        ),
+        "prediction_backtest": prediction_backtest,
+        "prediction_timeline": _prediction_timeline(prediction_backtest, events),
         "causal_memory": _causal_memory_review(db, user_id=user_id, window_days=window_days),
     }
 
@@ -253,6 +255,114 @@ def _prediction_backtest_results(
             or "观察性回测, 不证明单个行动造成指标变化。",
         })
     return results
+
+
+def _prediction_timeline(
+    prediction_backtest: dict[str, Any],
+    events: list[InterventionEvent],
+) -> list[dict[str, Any]]:
+    """Turn ready prediction backtests into an observation-only review timeline."""
+    if prediction_backtest.get("status") != "ready":
+        return []
+    results = prediction_backtest.get("results")
+    if not isinstance(results, list):
+        return []
+
+    events_by_action = {
+        event.action_key: event
+        for event in events
+        if event.feedback_status in COMPLETED_STATUSES
+    }
+    timeline: list[dict[str, Any]] = []
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        action_key = str(result.get("action_key") or "")
+        event = events_by_action.get(action_key)
+        if event is None:
+            continue
+
+        prediction_id = str(result.get("prediction_id") or f"{action_key}:{result.get('metric')}")
+        metric = str(result.get("metric") or "unknown")
+        actual_result = result.get("actual_result") if isinstance(result.get("actual_result"), dict) else {}
+        expected_signal = result.get("expected_signal") if isinstance(result.get("expected_signal"), dict) else {}
+        horizon_days = result.get("horizon_days") or expected_signal.get("horizon_days")
+        direction = expected_signal.get("direction") or "change"
+        boundary = (
+            result.get("boundary")
+            or prediction_backtest.get("boundary")
+            or "观察性回测, 不证明单个行动造成指标变化。"
+        )
+
+        timeline.extend([
+            {
+                "id": f"{prediction_id}:prediction",
+                "prediction_id": prediction_id,
+                "event_type": "prediction_created",
+                "occurred_at": result.get("baseline_date") or event.plan_date.isoformat(),
+                "title": f"预测: {metric}",
+                "summary": _prediction_signal_summary(horizon_days, metric, direction),
+                "metric": metric,
+                "status": "predicted",
+                "confidence": result.get("confidence_before"),
+                "boundary": boundary,
+            },
+            {
+                "id": f"{prediction_id}:action",
+                "prediction_id": prediction_id,
+                "event_type": "action_executed",
+                "occurred_at": event.plan_date.isoformat(),
+                "title": f"执行: {result.get('action_title') or event.action_title}",
+                "summary": f"已完成行动, 等待 {metric} 结果复盘",
+                "metric": metric,
+                "status": event.feedback_status,
+                "confidence": result.get("confidence_before"),
+                "boundary": boundary,
+            },
+            {
+                "id": f"{prediction_id}:outcome",
+                "prediction_id": prediction_id,
+                "event_type": "outcome_observed",
+                "occurred_at": actual_result.get("current_date") or result.get("baseline_date") or event.plan_date.isoformat(),
+                "title": f"实际: {metric}",
+                "summary": f"实际 {metric}: {_display_value(actual_result.get('current'))}, 变化 {_display_value(result.get('observed_delta'))}",
+                "metric": metric,
+                "status": "observed",
+                "confidence": result.get("confidence_after"),
+                "boundary": boundary,
+            },
+            {
+                "id": f"{prediction_id}:review",
+                "prediction_id": prediction_id,
+                "event_type": "review_verdict",
+                "occurred_at": actual_result.get("current_date") or event.plan_date.isoformat(),
+                "title": f"复盘: {_prediction_verdict_label(str(result.get('verdict') or 'inconclusive'))}",
+                "summary": result.get("explanation") or _prediction_explanation(str(result.get("verdict") or "inconclusive")),
+                "metric": metric,
+                "status": result.get("verdict") or "inconclusive",
+                "confidence": result.get("confidence_after"),
+                "boundary": boundary,
+            },
+        ])
+    return timeline
+
+
+def _prediction_signal_summary(horizon_days: Any, metric: str, direction: Any) -> str:
+    if horizon_days:
+        return f"{horizon_days} 天内观察 {metric} {direction}"
+    return f"观察 {metric} {direction}"
+
+
+def _prediction_verdict_label(verdict: str) -> str:
+    return {
+        "met": "支持",
+        "not_met": "未支持",
+        "inconclusive": "数据不足",
+    }.get(verdict, "数据不足")
+
+
+def _display_value(value: Any) -> str:
+    return "—" if value is None else str(value)
 
 
 def _prediction_metric(prediction: dict[str, Any], snapshot: dict[str, Any]) -> str | None:

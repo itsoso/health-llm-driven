@@ -134,6 +134,23 @@ def test_daily_plan_review_backtests_prediction_records(client, db, auth_user_an
     assert result["attribution"] == "prediction_backtest_not_causation"
     assert "不证明" in result["boundary"]
 
+    timeline = resp.json()["prediction_timeline"]
+    assert [item["event_type"] for item in timeline] == [
+        "prediction_created",
+        "action_executed",
+        "outcome_observed",
+        "review_verdict",
+    ]
+    assert timeline[0]["prediction_id"] == "pred-waist-7d"
+    assert timeline[0]["metric"] == "waist_cm"
+    assert timeline[0]["status"] == "predicted"
+    assert timeline[1]["title"] == "执行: 累计 35-45 分钟中等强度活动"
+    assert timeline[1]["occurred_at"] == (today - timedelta(days=5)).isoformat()
+    assert timeline[2]["summary"] == "实际 waist_cm: 94.8, 变化 -1.2"
+    assert timeline[3]["status"] == "met"
+    assert timeline[3]["confidence"] == "medium"
+    assert "不证明" in timeline[3]["boundary"]
+
 
 def test_daily_plan_review_downgrades_low_confidence_predictions(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
