@@ -115,3 +115,55 @@ def test_budget_exceeded_is_fail_loud_and_persisted(tmp_path):
     assert events[-1]["projected_tokens"] == 101
     assert events[-1]["budget_tokens"] == 100
     assert events[-1]["agent"] == "qa-verifier"
+
+
+def test_typed_spawn_and_verdict_commands_track_open_agents(tmp_path, capsys):
+    trace = _load_trace_module()
+    trace.main([
+        "init",
+        "--run-dir", str(tmp_path),
+        "--run-id", "wf-test",
+        "--kind", "health-harness",
+        "--budget-tokens", "500",
+    ])
+    run_path = tmp_path / "wf-test.jsonl"
+
+    assert trace.main([
+        "spawn",
+        "--run", str(run_path),
+        "--agent", "backend-engineer",
+        "--task-id", "task-backend",
+        "--phase", "S5",
+        "--tokens", "90",
+        "--message", "implement API shape",
+    ]) == 0
+    assert trace.main([
+        "spawn",
+        "--run", str(run_path),
+        "--agent", "qa-verifier",
+        "--task-id", "task-qa",
+        "--phase", "G3",
+        "--tokens", "40",
+    ]) == 0
+    assert trace.main([
+        "verdict",
+        "--run", str(run_path),
+        "--agent", "backend-engineer",
+        "--task-id", "task-backend",
+        "--phase", "G3",
+        "--status", "passed",
+        "--tokens", "20",
+    ]) == 0
+    assert trace.main(["summary", "--run", str(run_path)]) == 0
+
+    events = _read_jsonl(run_path)
+    summary = json.loads(capsys.readouterr().out.splitlines()[-1])
+
+    assert events[1]["event"] == "spawn"
+    assert events[1]["task_id"] == "task-backend"
+    assert events[3]["event"] == "verdict"
+    assert events[3]["task_id"] == "task-backend"
+    assert summary["spawn_count"] == 2
+    assert summary["verdict_count"] == 1
+    assert summary["open_agents"] == ["qa-verifier"]
+    assert summary["open_tasks"] == ["task-qa"]

@@ -71,7 +71,7 @@
 2. **LLM 层 eval + LLM-judge(P0,中,高)**:promptfoo 声明 eval + Hamel critique-shadowing(创始人当 judge)+ 换模型回归闸。让"证伪工厂"哲学**对 LLM 层也成立**,不只对确定性层。你今天按用户切模型零闸=已知活风险。
    - 2026-06-28 implementation note:已把现有 `invariants` founder 金标/LLM 合成不变量 scorer 提升为硬回归闸:新增 `scripts/harness_llm_regression_gate.py` 默认零成本跑 `invariants` + `health_agent_core`,CI 中作为 blocking step 执行;新增 `backend/eval/promptfoo/synthesis_invariants.promptfooconfig.yaml` 镜像金标,给 promptfoo/langfuse 桥接;live LLM 的 `orchestrator` suite 仍需显式 `--include-live-llm` 才会触发,避免 CI 偷跑成本。
 3. **Workflow 持久化 + 预算 + trace(P1,中)**:checkpoint/resume + token 上限 + JSONL trace。本 session 已两次被它咬(PRD review 被打断全丢、这次综合 agent 挂)。
-   - 2026-06-28 implementation note:已新增 `scripts/harness_workflow_trace.py` 文件型 JSONL ledger,支持 `init/event/summary`、硬 token budget、`budget_exceeded` 返回码 2、checkpoint summary;并已接入 `health-harness-orchestrator` / `product-pipeline` 使用说明。下一步若继续深化,应把 subagent spawn/verdict 自动写入该 ledger,而不是只靠人工命令。
+   - 2026-06-28 implementation note:已新增 `scripts/harness_workflow_trace.py` 文件型 JSONL ledger,支持 `init/event/summary`、硬 token budget、`budget_exceeded` 返回码 2、checkpoint summary;并已接入 `health-harness-orchestrator` / `product-pipeline` 使用说明。随后补齐一等 `spawn` / `verdict` 命令和 summary 的 `open_agents` / `open_tasks`,让 fan-out 派生与 G3/G4 裁决不再靠自由文本事件。
 4. **plugin 打包(P1,中)**:marketplace.json + per-project adapter,终结手抄 4 次。
    - 2026-06-28 implementation note:已新增 repo-local Codex plugin `plugins/reva-health-harness` 与 `.agents/plugins/marketplace.json`,打包 `product-pipeline` / `health-harness-orchestrator` / workflow trace CLI;并新增测试确保 plugin manifest、marketplace entry、打包 skill 与源文件保持一致。
 5. **spec-kit/BMAD 工艺借鉴(P2)**:spec-template + /clarify + 只读 /analyze 一致性闸 + scale-adaptive 中档 + correct-course。

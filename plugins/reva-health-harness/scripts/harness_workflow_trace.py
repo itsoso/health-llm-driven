@@ -52,11 +52,60 @@ def _next_sequence(events: list[dict[str, Any]]) -> int:
     return max((int(e.get("sequence", -1)) for e in events), default=-1) + 1
 
 
+def _event_key(event: dict[str, Any]) -> str | None:
+    task_id = event.get("task_id")
+    if task_id:
+        return f"task:{task_id}"
+    agent = event.get("agent")
+    if agent:
+        return f"agent:{agent}"
+    return None
+
+
+def _append_checked_event(run_path: Path, base_event: dict[str, Any]) -> int:
+    events = _read_events(run_path)
+    tokens = int(base_event.get("tokens") or 0)
+    budget = _budget_tokens(events)
+    projected = _total_tokens(events) + tokens
+    clean_event = {
+        k: v for k, v in {
+            "sequence": _next_sequence(events),
+            **base_event,
+            "tokens": tokens,
+        }.items()
+        if v is not None
+    }
+    if budget is not None and projected > budget:
+        budget_event = {
+            "sequence": clean_event["sequence"],
+            "event": "budget_exceeded",
+            "requested_event": clean_event.get("event"),
+            "budget_tokens": budget,
+            "projected_tokens": projected,
+            "agent": clean_event.get("agent"),
+            "task_id": clean_event.get("task_id"),
+            "phase": clean_event.get("phase"),
+            "status": clean_event.get("status") or "blocked",
+            "message": clean_event.get("message"),
+            "tokens": tokens,
+        }
+        _append(run_path, {k: v for k, v in budget_event.items() if v is not None})
+        _write_json({"ok": False, "reason": "budget_exceeded", "projected_tokens": projected})
+        return 2
+    _append(run_path, clean_event)
+    _write_json({"ok": True, "sequence": clean_event["sequence"], "total_tokens": projected})
+    return 0
+
+
 def _summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
     started = events[0] if events else {}
     budget = _budget_tokens(events)
     total = _total_tokens(events)
     checkpoints = [e for e in events if e.get("event") == "checkpoint"]
+    spawns = [e for e in events if e.get("event") == "spawn"]
+    verdicts = [e for e in events if e.get("event") == "verdict"]
+    closed = {key for key in (_event_key(v) for v in verdicts) if key}
+    open_spawns = [s for s in spawns if (_event_key(s) not in closed)]
     agents = sorted({str(e["agent"]) for e in events if e.get("agent")})
     summary = {
         "run_id": started.get("run_id"),
@@ -68,6 +117,10 @@ def _summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
         "budget_remaining": None if budget is None else budget - total,
         "latest_checkpoint": checkpoints[-1] if checkpoints else None,
         "agents": agents,
+        "spawn_count": len(spawns),
+        "verdict_count": len(verdicts),
+        "open_agents": sorted({str(e["agent"]) for e in open_spawns if e.get("agent")}),
+        "open_tasks": sorted({str(e["task_id"]) for e in open_spawns if e.get("task_id")}),
     }
     return summary
 
@@ -95,39 +148,39 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_event(args: argparse.Namespace) -> int:
-    run_path = Path(args.run)
-    events = _read_events(run_path)
-    tokens = int(args.tokens or 0)
-    budget = _budget_tokens(events)
-    projected = _total_tokens(events) + tokens
-    base = {
-        "sequence": _next_sequence(events),
+    return _append_checked_event(Path(args.run), {
         "event": args.event,
         "phase": args.phase,
         "agent": args.agent,
+        "task_id": args.task_id,
         "status": args.status,
-        "tokens": tokens,
+        "tokens": args.tokens,
         "message": args.message,
-    }
-    clean_event = {k: v for k, v in base.items() if v is not None}
-    if budget is not None and projected > budget:
-        budget_event = {
-            "sequence": clean_event["sequence"],
-            "event": "budget_exceeded",
-            "budget_tokens": budget,
-            "projected_tokens": projected,
-            "agent": args.agent,
-            "phase": args.phase,
-            "status": args.status or "blocked",
-            "message": args.message,
-            "tokens": tokens,
-        }
-        _append(run_path, {k: v for k, v in budget_event.items() if v is not None})
-        _write_json({"ok": False, "reason": "budget_exceeded", "projected_tokens": projected})
-        return 2
-    _append(run_path, clean_event)
-    _write_json({"ok": True, "sequence": clean_event["sequence"], "total_tokens": projected})
-    return 0
+    })
+
+
+def cmd_spawn(args: argparse.Namespace) -> int:
+    return _append_checked_event(Path(args.run), {
+        "event": "spawn",
+        "phase": args.phase,
+        "agent": args.agent,
+        "task_id": args.task_id,
+        "status": args.status,
+        "tokens": args.tokens,
+        "message": args.message,
+    })
+
+
+def cmd_verdict(args: argparse.Namespace) -> int:
+    return _append_checked_event(Path(args.run), {
+        "event": "verdict",
+        "phase": args.phase,
+        "agent": args.agent,
+        "task_id": args.task_id,
+        "status": args.status,
+        "tokens": args.tokens,
+        "message": args.message,
+    })
 
 
 def cmd_summary(args: argparse.Namespace) -> int:
@@ -154,10 +207,31 @@ def build_parser() -> argparse.ArgumentParser:
     event.add_argument("--event", required=True)
     event.add_argument("--phase")
     event.add_argument("--agent")
+    event.add_argument("--task-id")
     event.add_argument("--status")
     event.add_argument("--tokens", type=int, default=0)
     event.add_argument("--message")
     event.set_defaults(func=cmd_event)
+
+    spawn = sub.add_parser("spawn", help="append a typed subagent/task spawn event")
+    spawn.add_argument("--run", required=True)
+    spawn.add_argument("--agent", required=True)
+    spawn.add_argument("--task-id")
+    spawn.add_argument("--phase")
+    spawn.add_argument("--status", default="started")
+    spawn.add_argument("--tokens", type=int, default=0)
+    spawn.add_argument("--message")
+    spawn.set_defaults(func=cmd_spawn)
+
+    verdict = sub.add_parser("verdict", help="append a typed subagent/task verdict event")
+    verdict.add_argument("--run", required=True)
+    verdict.add_argument("--agent", required=True)
+    verdict.add_argument("--task-id")
+    verdict.add_argument("--phase")
+    verdict.add_argument("--status", required=True, choices=["passed", "failed", "blocked", "completed", "needs_changes"])
+    verdict.add_argument("--tokens", type=int, default=0)
+    verdict.add_argument("--message")
+    verdict.set_defaults(func=cmd_verdict)
 
     summary = sub.add_parser("summary", help="print workflow run summary as JSON")
     summary.add_argument("--run", required=True)

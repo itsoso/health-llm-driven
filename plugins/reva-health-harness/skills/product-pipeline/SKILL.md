@@ -57,9 +57,9 @@ python3 scripts/harness_workflow_trace.py init \
 ```
 
 - 将输出 `run_path` 写进 Dossier;原始 JSONL 留在本地 `docs/_generated/harness-runs/`,不要提交。
-- `event --event spawn|checkpoint|verdict --phase "S5"` 记录每次派生、检查点和裁决。
+- 用一等 trace 命令记录派生与裁决:`spawn --run <run_path> --phase "S5" --agent backend-engineer --task-id <task-id>`;`verdict --run <run_path> --phase "G3" --agent qa-verifier --task-id <task-id> --status passed|failed|blocked`。普通检查点仍用 `event --event checkpoint --phase "S5"`。
 - 返回码 `2` 表示预算将超限,按 Gate 纪律 STOP,回 S3/S4 缩小范围或让用户拍板。
-- 恢复时先 `summary --run <run_path>`,用 `latest_checkpoint` 定位断点,不要靠记忆重跑整条链。
+- 恢复时先 `summary --run <run_path>`,用 `latest_checkpoint`、`open_agents`、`open_tasks` 定位断点,不要靠记忆重跑整条链。
 
 ---
 
@@ -113,7 +113,7 @@ python3 scripts/harness_workflow_trace.py init \
 - **做什么**:把 S4 任务交给开发团队编排器(计划→实现 fan-out:`backend-engineer`‖`mobile-engineer`‖`mac-engineer`‖`frontend-engineer`)。
 - **隔离**:并发 agent 切分支 → 有状态编辑用 `git worktree`(显式 commit hash 建,见 `using-git-worktrees`);别把 build+push 放进同一并行批次([[project_shared_worktree_use_git_worktree]])。从 `origin/main` 干净起分支。
 - **产出物**:分支 + commit,记进 Dossier。
-- **Trace**:每个 agent 派生、阶段 checkpoint、G3/G4 裁决都写入 Run Ledger;中断后从 ledger summary 恢复。
+- **Trace**:每个 agent 派生用 `spawn`,G3/G4 裁决用 `verdict`,阶段 checkpoint 用 `event`;中断后从 ledger summary 的 `open_agents/open_tasks` 恢复。
 
 ### G3 · 测试 Gate
 - **做什么**:`qa-verifier` 跑对应闸门(pytest/doc-drift/tsc/jest/swift/前端 vitest+page-freeze);**部署前集成闸**:全增量测试 CI 模式合跑(`DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai`),**直读 passed/failed,绝不 `| tail`**([[feedback_pytest_pipe_masks_exit_code]]);查 `gh run list --branch main` 真实色。高风险面加一次 **Codex 跨家族 capstone**([[feedback_autonomous_campaign_integration_gate_and_crossfamily_capstone]])。

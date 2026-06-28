@@ -23,9 +23,9 @@ python3 scripts/harness_workflow_trace.py init \
 ```
 
 - 把输出的 `run_path` 记录到 Dossier「研发任务/验证记录」里;原始 JSONL 在 `docs/_generated/harness-runs/` 本地保存,不提交。
-- 每次派生/检查点/裁决都追加事件: `event --event spawn|checkpoint|verdict --phase "Phase 2" --agent backend-engineer --status started --tokens <n>`。
+- 每次派生/裁决用一等命令追加:`spawn --run <run_path> --phase "Phase 2" --agent backend-engineer --task-id <task-id> --tokens <n>`;`verdict --run <run_path> --phase "Phase 3" --agent qa-verifier --task-id <task-id> --status passed|failed|blocked`。阶段检查点仍用 `event --event checkpoint --phase "Phase 2"`。
 - `event` 返回码 `2` = 预算将超限,必须 STOP、缩小范围或重新拍板,不能继续 fan-out。
-- 中断恢复时先跑 `summary --run <run_path>`,从 `latest_checkpoint` 和 `agents` 继续。
+- 中断恢复时先跑 `summary --run <run_path>`,从 `latest_checkpoint`、`open_agents` 和 `open_tasks` 继续。
 
 ## 团队构成
 
