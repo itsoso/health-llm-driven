@@ -3256,6 +3256,8 @@ class AgentExecutor:
                 return annotate_if_implausible(result)
             elif tool_name == "knowledge_search":
                 return await self._exec_knowledge_search(args)
+            elif tool_name == "realtime_search":
+                return await self._exec_realtime_search(args)
             elif tool_name == "environment_check":
                 return await self._exec_environment(base_url, headers, args)
             elif tool_name == "supplement_guide":
@@ -3389,6 +3391,35 @@ class AgentExecutor:
             sections.append("\n".join(dd_lines))
 
         return "\n\n".join(sections)
+
+    async def _exec_realtime_search(self, args: dict) -> str:
+        """实时联网检索(阿里云 IQS)给 chat/体检分析路径做最新指南/时效事实接地。
+
+        隐私: 只把模型给的 query 传给 IQS, **绝不**注入 Twin/PII —— 比 orchestrator
+        (送原始用户问句)更克制, 保持这一点, 不要用用户数据丰富 query。
+        fail-honest: 失败/未启用/无命中各有诚实措辞, 绝不静默冒充成功。
+        """
+        query = (args.get("query") or "").strip()
+        if not query:
+            return "Error: realtime_search 需要 query 参数"
+
+        from app.services.iqs_search import fetch_realtime_evidence
+        try:
+            block = await fetch_realtime_evidence(query)
+        except Exception as e:  # noqa: BLE001 — fail honest, 不冒充成功
+            logger.warning(f"[realtime_search] IQS 检索失败: {e}")
+            return "实时检索暂不可用,请基于已有信息谨慎作答,勿编造依据。"
+
+        if not block:
+            return (
+                "实时检索未返回结果(可能未启用或无命中);"
+                "请如实说明依据来自通用知识,勿编造引用。"
+            )
+        return (
+            "以下为实时联网检索结果(仅供参考,不替代医生,"
+            "不得据此开处方/给剂量;须结合用户个人情况):\n"
+            + block
+        )
 
     async def _exec_health_query(
         self, base: str, headers: dict, args: dict

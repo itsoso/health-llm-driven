@@ -502,6 +502,23 @@ action 选择:
     {
         "type": "function",
         "function": {
+            "name": "realtime_search",
+            "description": "实时联网检索最新医学指南/外部时效信息(阿里云 IQS)。仅在需要最新指南/时效事实时使用;返回外部检索摘要,仅供参考、不替代医生、不得据此开处方或给剂量(R4)。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "精炼的检索词,**只放主题关键词,不要放用户的隐私细节/完整病史**。",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "manage_plan",
             "description": "管理健康计划：生成周计划、完成计划项、保存内容到首页卡片。",
             "parameters": {

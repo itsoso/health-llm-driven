@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import List, Optional
 
 from app.config import settings
@@ -20,6 +21,41 @@ logger = logging.getLogger(__name__)
 
 _ENDPOINT = "iqs.cn-zhangjiakou.aliyuncs.com"
 _client = None  # 进程级单例
+
+# ── H1: 出口前确定性 PII 脱敏 ────────────────────────────────
+# 仅清洗**明确的直接标识符**(手机号/身份证/邮箱), 绝不动年龄/数值/病名 —— 那些是
+# 有用检索词。过度清洗只损搜索质量, 不损正确性。脱敏在 query 离开本进程到外部
+# (aliyun IQS)之前一次性应用, 同时护住新 realtime_search 工具与既有 orchestrator 路径。
+_PII_PATTERNS = (
+    re.compile(r"(?<!\d)1\d{10}(?!\d)"),               # CN 手机号 11 位
+    re.compile(r"(?<!\d)\d{17}[\dXx](?!\d)"),          # 18 位身份证
+    re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"),           # email
+)
+_PII_TOKEN = "『…』"
+
+# ── H2: 外部返回文本里的注入指令防御 ────────────────────────
+# 返回的 title/summary 是攻击者可影响的网页文本, 会喂进 LLM 上下文。剥除/打码明显的
+# 注入指令; 块内既有「不得覆盖个人数据与专家裁决…」护栏保留。
+_INJECTION_RE = re.compile(
+    r"(?i)(ignore (previous|above)|disregard previous|system:|assistant:|无视以上|忽略(上文|以上)|按我说的做)"
+)
+
+
+def _scrub_pii(text: str) -> str:
+    """出口前清洗直接标识符(手机号/身份证/邮箱), 替换为中性 token。纯函数, 可单测。"""
+    if not text:
+        return text
+    out = text
+    for pat in _PII_PATTERNS:
+        out = pat.sub(_PII_TOKEN, out)
+    return out
+
+
+def _defang_injection(text: str) -> str:
+    """打掉外部文本里的注入指令(ignore previous / 忽略以上 / system: 等)。"""
+    if not text:
+        return text
+    return _INJECTION_RE.sub("▢", text)
 
 
 def _enabled() -> bool:
@@ -81,9 +117,11 @@ def _format_block(query: str, items: List[dict], max_chars: int = 2200) -> str:
     ]
     used = 0
     for i, it in enumerate(items, 1):
-        body = (it.get("summary") or "").strip().replace("\n", " ")
+        # H2: 外部文本可被攻击者注入 —— title/summary 打掉明显注入指令后再喂进上下文。
+        body = _defang_injection((it.get("summary") or "").strip().replace("\n", " "))
+        title = _defang_injection((it.get("title") or "").strip().replace("\n", " "))
         when = f" ({it['published_time']})" if it.get("published_time") else ""
-        block = f"[{i}]{when} {it['title']}\n    {body[:280]}\n    来源: {it['link']}"
+        block = f"[{i}]{when} {title}\n    {body[:280]}\n    来源: {it['link']}"
         if used + len(block) > max_chars:
             break
         lines.append(block)
@@ -104,6 +142,8 @@ async def fetch_realtime_evidence(
     """
     if not _enabled() or not (query or "").strip():
         return ""
+    # H1: 出口前确定性 PII 脱敏 —— query 离开本进程到 aliyun IQS 前清洗直接标识符。
+    query = _scrub_pii(query)
     try:
         items = await asyncio.wait_for(
             _raw_search(query, max_results, time_range), timeout=timeout_s
