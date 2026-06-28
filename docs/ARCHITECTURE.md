@@ -104,7 +104,7 @@
 | `backend/app/agents/fuel_strategist/` | TDEE-缺口 + 基因驱动饮食 |
 | `backend/app/agents/mental_health_companion/` | 危机检测 + 非药物支持 |
 | `backend/app/agents/chronic_specialists/` | 鼻炎/高血压/代谢 专科 |
-| `backend/app/agents/knowledge_librarian/` | 得到 wiki RAG (ChromaDB) |
+| `backend/app/agents/knowledge_librarian/` | reviewed System KB V2 检索；legacy Chroma/RAG 仅显式开关调试 |
 | `backend/app/agents/longitudinal_analyst/` | 6 月趋势 + 因果叙事 |
 | `backend/app/agents/longevity_specialist/` | PhenoAge(Levine 2018)解读 + 委托四件套(抗衰 MVP) |
 | `backend/app/orchestrator/` | 意图路由 + specialist 调度 + LLM 合成 |

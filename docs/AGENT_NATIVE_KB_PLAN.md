@@ -16,7 +16,7 @@
 - Admin coverage: `/api/v1/admin/knowledge/coverage_report`.
 - Crystallize: draft-only service exists and is called by weekly `system-kb-lifecycle` Celery task.
 - Mobile evidence consumption: ordinary chat cards and genetic report cards render `evidence_refs` through a shared `ClaimSheet`/`EntityCard` detail surface with claim feedback and entity deep-link pages.
-- Search serving: `/knowledge/search` now fuses local BM25 lexical ranking, PostgreSQL `tsvector` FTS, semantic alias retrieval, and one-hop graph expansion via deterministic reciprocal-rank fusion; admin reindex writes production `TSVECTOR` via `to_tsvector('simple', ...)`.
+- Search serving: `/knowledge/search` now fuses local BM25 lexical ranking, PostgreSQL `tsvector` FTS, sparse vectors, fallback-safe pgvector dense retrieval when healthy, and one-hop graph expansion via deterministic reciprocal-rank fusion; admin reindex writes production `TSVECTOR` via `to_tsvector('simple', ...)` and records pgvector health.
 - Privacy isolation: source scanner excludes private-looking paths and `find_private_source_violations(...)` reports private material without reading content.
 - External evidence: selected MTHFR/APOE/statin/diabetes claims include reviewed PubMed/guideline references in `metadata.external_sources`.
 - Phase 2 corpus expansion: deterministic compiler scanned 46 health-relevant source directories and promoted 314 generated claims / 83 entities / 46 pages / 2566 relations to reviewed status across reviewed passes, exceeding the 300 claim / 80 entity target.
@@ -42,8 +42,8 @@ WSCLA 北极星里的 "Safe" 这个字，依赖于知识库——没有结构化
 |---|---|---|
 | 原始素材 | `~/work/personal/down-dedao/raw/` 已有 160+ 门课程、10000+ 课时（健康类约 30 门） | 全是叙事文本，无结构化抽取 |
 | Wiki | `wiki/AK-INDEX.md` `wiki/domains/` `wiki/concepts/` `wiki/articles/` 已有骨架，303 篇 md | Serving plane 已用 reviewed JSONL artifacts 承接 entity/claim；scanner 会排除 private/personal/user-* 路径 |
-| 后端检索 | `KnowledgeLibrarian` specialist + ChromaDB 一个 collection | 纯 keyword/embedding 模糊匹配，对 Twin 里的 `MTHFR_C677T = "TT"` 这种结构化事实没法精确反查 |
-| 消费端 | Specialist 输出建议 + KnowledgeLibrarian 输出引用，**并排两份 finding**，由 LLM 合成时拼接 | 引用经常和具体建议对不上号；Mobile UI 没有"看证据"入口 |
+| 后端检索 | 旧路径是 `KnowledgeLibrarian` specialist + ChromaDB 一个 collection；当前默认是 reviewed-first System KB V2 | 旧问题是纯 keyword/embedding 模糊匹配；当前已用 `lookup_for_twin`、BM25/FTS/vector/graph RRF 和 reviewed-only gate 收口 |
+| 消费端 | 旧路径是 Specialist 输出建议 + KnowledgeLibrarian 输出引用并排；当前 Orchestrator/Planner/Weekly Advisor 会附着或过滤 evidence_refs | 后续重点是把更多主动推送和 generated advice 调用点接到同一用户级 evidence builder |
 | 隔离 | 私人 episode 不进入 system KB | `find_private_source_violations(...)` 可报告路径风险；用户对话只进 user memory/crystallize draft |
 
 ### 1.3 这次设计要解决的 4 件事
@@ -224,7 +224,7 @@ C677T 纯合会将 MTHFR 酶活性降至 ~30%，导致叶酸 → 5-MTHF 转化�
 ### 6.1 新建 3 张表（PostgreSQL，写迁移 SQL）
 
 ```sql
--- 文档元数据（正文在 git wiki + ChromaDB）
+-- 文档元数据（正文来自 reviewed artifacts；legacy Chroma 不再作为默认 serving runtime）
 CREATE TABLE kb_documents (
   doc_id          TEXT PRIMARY KEY,         -- entity:gene:MTHFR / claim:c_xxx
   doc_type        TEXT NOT NULL,            -- entity / claim / article
@@ -269,7 +269,7 @@ CREATE TABLE kb_audit (
 );
 ```
 
-ChromaDB 拆 3 个 collection：`kb_entities` / `kb_claims` / `kb_articles`，分别 embed 对应 doc 的摘要文本。
+早期 ChromaDB 三 collection 方案已被 serving-plane DB 检索取代：`kb_documents.tsv` 承载 PostgreSQL FTS，`kb_document_vectors` 承载稀疏向量，pgvector dense table 在可用时由 reindex 运维环填充；legacy Chroma/RAG 仅在显式 `LEGACY_KNOWLEDGE_RUNTIME_ENABLED=true` 时作为旧路径启用。
 
 ### 6.2 API 端点（最小集，挂在 `/api/v1/knowledge`）
 
@@ -404,8 +404,8 @@ ChromaDB 拆 3 个 collection：`kb_entities` / `kb_claims` / `kb_articles`，�
 
 | 现有模块 | 关系 | 动作 |
 |---|---|---|
-| `KnowledgeLibrarian` specialist | 不删 | 改造为 entity-first 入口；旧 ChromaDB collection 保留作 fallback |
-| `backend/data/knowledge_chromadb/` | 路径保留 | collection 重建为 `kb_entities` / `kb_claims` / `kb_articles` |
+| `KnowledgeLibrarian` specialist | 不删 | 默认优先 System KB V2 entity/claim 入口；legacy Chroma path 仅显式开关启用 |
+| `backend/data/knowledge_chromadb/` | 旧路径保留 | 不再作为新知识库验收面；新增知识走 reviewed JSONL artifacts + System KB import/reindex |
 | [[project_action_card_compliance_2026_05_12]] 的 evidence_level | 直接复用 | A/B/C/D 4 级写入 claim frontmatter |
 | [[project_agent_native_principles]] "Protocol-first LLM-second" | 在此体现 | claim.applies_when 是 protocol，Planner LLM 不能绕过 |
 | [[feedback_data_before_analysis]] P-a/P-b 切分 | Phase 0 = P-a，Phase 2 = P-b | 数据先采全（claim 库），再做分析消费（specialist 改造） |
@@ -482,7 +482,7 @@ Claude 的核心判断是合理的：系统知识库必须从“页面检索”�
 | Artifact import | 已有 reviewed JSONL import，部署自动导入 | 完成 |
 | Dedao ingest | 已有 dry-run/`--write` deterministic pipeline；本轮扫描 46 个健康相关来源目录 | deterministic pipeline 完成，仍不是完整 LLM claim mining |
 | Corpus coverage | 52 pages / 99 entities / 357 claims / 2715 relations | Phase 2 breadth 达标；新增 entity-to-entity contextual graph |
-| KnowledgeLibrarian | 已改为有 DB 时优先 system KB V2，旧 Chroma fallback | 本轮补齐 |
+| KnowledgeLibrarian | 已改为有 DB 时优先 system KB V2，legacy Chroma 仅显式开关 fallback | 本轮补齐 |
 | Prompt injection | `format_system_knowledge_for_prompt` 已接入 Orchestrator；`lookup_for_twin` 会沿 `contextualizes` 图谱边补充上下文 claim | 完成最小闭环 |
 | Specialist evidence_refs | Orchestrator 可自动附着；Planner synthesis 前会过滤同域无证据 actionable 建议，安全告警和 data_gap 例外；Weekly Advisor fallback action card 也复用同一策略 | 基本完成，后续扩展到直接 push scheduler 通知面 |
 | Mobile evidence UI | 已有 system evidence card、EvidenceRefsRow、统一 ClaimSheet/EntityCard、反馈入口、来源可信度解释和 entity 深链页面 | 基本完成，后续优化交互密度 |
@@ -499,7 +499,7 @@ Claude 的核心判断是合理的：系统知识库必须从“页面检索”�
 
 #### P1：消费闭环（优先）
 
-- KnowledgeLibrarian 优先走 system KB V2，旧 Chroma 只做 fallback。
+- KnowledgeLibrarian 优先走 system KB V2，legacy Chroma/RAG 仅在显式开关启用时 fallback。
 - Specialist 输出如果没有 `evidence_refs`，记录 `unsupported=true`，先进入 audit，不立刻降低线上回答质量。
 - Mobile 的 diet/supplement/workout 卡统一展示 `EvidenceRefsRow`，并补“这条证据不对”反馈入口，写 `kb_audit.op=feedback_disagree`。
 

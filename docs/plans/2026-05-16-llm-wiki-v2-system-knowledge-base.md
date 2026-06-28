@@ -6,7 +6,7 @@
 
 **Architecture:** Keep `/Users/liqiuhua/work/personal/down-dedao` as the offline wiki compiler and source curation workspace. Extend `health-llm-driven` into the serving plane: system corpus, typed health knowledge graph, lifecycle metadata, hybrid retrieval, safety policy, and Mobile Agent citation surfaces.
 
-**Tech Stack:** Python 3.12, FastAPI, SQLAlchemy, PostgreSQL in production, ChromaDB vector store, BM25/hybrid search, Celery, Expo React Native, Markdown/YAML wiki artifacts.
+**Tech Stack:** Python 3.12, FastAPI, SQLAlchemy, PostgreSQL in production, PostgreSQL `tsvector` FTS, sparse vector index with fallback-safe pgvector dense retrieval, BM25/graph RRF hybrid search, Celery, Expo React Native, Markdown/YAML/JSONL wiki artifacts. Legacy Chroma/RAG remains gated behind `LEGACY_KNOWLEDGE_RUNTIME_ENABLED=true`.
 
 ---
 
@@ -59,12 +59,12 @@ System Wiki must be shared by all users. User Twin must remain private per user.
 - Diet and supplement advice using first-pass `knowledge_evidence`.
 - Agent architecture with Digital Health Twin, specialists, Safety Guardian, and advice ledger.
 
-Implementation status as of 2026-05-16:
+Implementation status updated 2026-06-28:
 
 - Completed serving slice: `kb_documents`, `kb_edges`, `kb_audit`, entity/claim/search/lookup/admin APIs, deployment import, and mobile evidence-card plumbing.
 - Completed first deterministic ingest slice: `system_knowledge_ingest.py` + `ingest_dedao_system_kb.py` produce dry-run PR-style diffs, transformed claims, graph edges, duplicate detection, and supersession guardrails.
-- Completed first scaled Dedao corpus expansion: 13 course sources compiled into reviewed artifacts, expanding the serving corpus to 206 documents and 550 graph edges.
-- Remaining V2 work: governed LLM extraction for deeper per-lesson claims, PostgreSQL FTS/vector/RRF hybrid search, reviewer UI/workflow, and broader evidence promotion with PubMed/guidelines.
+- Completed reviewed corpus expansion and follow-on ratification: System KB V2 now serves reviewed JSONL artifacts through DB-backed import/reindex, with BM25, PostgreSQL FTS, sparse vector, pgvector health reporting, graph RRF, planner evidence policy, and mobile evidence surfaces.
+- Remaining V2 work: governed LLM extraction for deeper per-lesson claims, reviewer UI polish, broader evidence promotion with PubMed/guidelines, and production-grade recurring eval signals.
 
 ## 3. Target Architecture
 
@@ -76,7 +76,7 @@ flowchart TD
     D --> E["Sync API: system knowledge publish"]
 
     E --> F["PostgreSQL metadata tables"]
-    E --> G["Chroma vector chunks"]
+    E --> G["Sparse vectors / pgvector dense index"]
     E --> H["BM25 index"]
     E --> I["Typed health KG"]
 
@@ -108,7 +108,7 @@ flowchart TD
 `health-llm-driven` is the serving plane:
 
 - Stores system knowledge metadata in PostgreSQL.
-- Stores retrievable chunks in Chroma/BM25.
+- Stores retrievable text in PostgreSQL FTS, sparse vectors, fallback-safe pgvector dense rows when available, BM25, and graph context. Legacy Chroma/RAG is not the default serving plane.
 - Stores typed health KG in relational tables.
 - Injects evidence into Agent prompts.
 - Enforces privacy, claim boundaries, advice ledger, and safety rules.
@@ -302,13 +302,13 @@ CREATE INDEX IF NOT EXISTS kb_audit_doc ON kb_audit(doc_id, ts DESC);
 CREATE INDEX IF NOT EXISTS kb_audit_op ON kb_audit(op, ts DESC);
 ```
 
-Chroma collections should be split by document role:
+Superseded Chroma rollout note: the original plan split Chroma collections by document role:
 
 - `kb_entities`
 - `kb_claims`
 - `kb_articles`
 
-The old collection can stay as fallback during rollout, but new Agent paths should use the three-role split.
+This is no longer the new Agent serving path. New knowledge goes through reviewed JSONL artifacts, DB import, PostgreSQL FTS, sparse vectors, optional pgvector dense rows, and graph RRF. Legacy Chroma/RAG can remain as an explicitly gated old path only.
 
 ### Task 1: Add System Knowledge Metadata Tables
 
@@ -1130,19 +1130,19 @@ Acceptance:
 
 ### Phase 2: Serving Plane
 
-- Postgres `kb_*` tables first, normalized `system_knowledge_*` tables later if needed
-- import APIs
-- vector/BM25/KG storage
-- audit logs
-- stats endpoint
+- Postgres `kb_*` tables: done
+- import APIs and reviewed-only gates: done
+- BM25, PostgreSQL FTS, sparse vector, fallback-safe pgvector, and graph RRF storage/search: done
+- audit logs, admin coverage, operations dashboard, and reindex health reports: done
+- remaining: production recurring eval signal and reviewer UI polish
 
 ### Phase 3: Agent Integration
 
-- hybrid retriever
-- knowledge policy
-- diet/supplement/genetic/medication injection
-- safety override
-- advice trace contract
+- hybrid retriever: done
+- knowledge policy: done for Orchestrator synthesis, Weekly Advisor fallback action cards, and several notification surfaces
+- diet/supplement/genetic/medication injection: substantially done through evidence refs and reviewed claim lookup
+- safety override: done for safety alerts and data-gap preservation
+- remaining: migrate more generated-advice call sites to the same user-level evidence builder
 
 ### Phase 4: Mobile UX
 

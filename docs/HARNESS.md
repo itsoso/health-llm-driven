@@ -404,7 +404,7 @@ _NEEDS_SKILL_RE = re.compile(
 | **Duplicate work** | 模糊 delegation 导致子 agent 重复劳动 | specialist 之间靠 `SpecialistContext`（如 readiness_zone）显式传，不靠 LLM 协调 |
 | **Synchronous bottleneck** | Lead 等所有子 agent，无 mid-flight steering | 我们当前也是同步等 — 列入 §11 |
 | **Compounding errors** | Stateful 长循环出错时不能简单 restart | 我们 specialist 是无状态的，重跑没副作用；但写库类操作（agent_executor）有 — 靠 §2 verification 兜 |
-| **Source bias** | Agent 偏 SEO 内容 | 我们 KnowledgeLibrarian 走 ChromaDB（得到 wiki），来源固定，不会被 SEO 污染 |
+| **Source bias** | Agent 偏 SEO 内容 | 我们 KnowledgeLibrarian 默认走 reviewed System KB V2（本地 DB + reviewed artifacts），来源固定且有 review gate；legacy Chroma/RAG 默认关闭 |
 
 ### Anthropic 报告的多 agent 收益（我们已得到的）
 
