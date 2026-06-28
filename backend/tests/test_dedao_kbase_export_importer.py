@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Thread
 
 from app.services.dedao_kbase_export_importer import compile_dedao_kbase_export_artifacts
 from app.services.system_knowledge_ingest import validate_artifact_review_gate
@@ -179,3 +181,69 @@ def test_ingest_dedao_kbase_export_cli_writes_draft_then_promotes_after_review(t
     reviewed_claim = _jsonl(artifact_dir / "claims.jsonl")[0]
     assert reviewed_claim["metadata"]["review_status"] == "reviewed"
     assert reviewed_claim["metadata"]["reviewed_by"] == "clinician:test"
+
+
+def test_ingest_dedao_kbase_export_cli_can_fetch_remote_export_url(tmp_path):
+    backend_root = Path(__file__).resolve().parents[1]
+    source_root = tmp_path / "dedao-kbase"
+    artifact_dir = tmp_path / "system-kb-artifacts"
+    _write_export(source_root)
+    export_body = (source_root / "artifacts" / "system_kb_export.json").read_bytes()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _export_handler(export_body))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        export_url = f"http://127.0.0.1:{server.server_port}/api/system-kb/export"
+        remote_run = subprocess.run(
+            [
+                sys.executable,
+                str(backend_root / "scripts" / "ingest_dedao_kbase_export.py"),
+                "--export-url",
+                export_url,
+                "--auth-token",
+                "secret-token",
+                "--artifact-dir",
+                str(artifact_dir),
+                "--write",
+                "--json-summary",
+            ],
+            cwd=backend_root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert remote_run.returncode == 0, remote_run.stderr
+    summary = json.loads(remote_run.stdout)
+    assert summary["mode"] == "write_draft"
+    assert summary["export_url"] == export_url
+    assert summary["draft_manifest"]["serving_allowed"] is False
+    claim = _jsonl(artifact_dir / "claims.jsonl")[0]
+    assert claim["metadata"]["origin"] == "dedao-kbase-export"
+    assert claim["metadata"]["source_commit"] == "abc1234"
+
+
+def _export_handler(export_body: bytes):
+    class ExportHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path != "/api/system-kb/export":
+                self.send_response(404)
+                self.end_headers()
+                return
+            if self.headers.get("Authorization") != "Bearer secret-token":
+                self.send_response(401)
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(export_body)
+
+        def log_message(self, format, *args):
+            return
+
+    return ExportHandler

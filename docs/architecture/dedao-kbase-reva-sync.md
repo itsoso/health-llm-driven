@@ -19,6 +19,15 @@ The only supported cross-repo input for this path is:
 <dedao-kbase>/artifacts/system_kb_export.json
 ```
 
+The same export may also be fetched over the private kbase HTTP service:
+
+```text
+https://kbase.executor.life/api/system-kb/export
+Authorization: Bearer <DEDAO_KBASE_AUTH_TOKEN>
+```
+
+The HTTP path is a transport for the reviewed export contract, not a runtime search authority. Health agents still serve from Reva's reviewed local System KB tables after import and review.
+
 The importer intentionally does not scan the rest of the repo. This avoids accidental ingestion of:
 
 - raw Dedao course text;
@@ -103,6 +112,19 @@ backend/venv/bin/python backend/scripts/ingest_dedao_kbase_export.py \
   --write \
   --promote-reviewed \
   --reviewer clinician:<reviewer-id> \
+  --json-summary
+```
+
+Online kbase mode. This is the preferred production transport when the kbase server is deployed at `kbase.executor.life`.
+
+```bash
+DATABASE_URL=sqlite:///./backend/dedao_kbase_export_ingest_cli.db \
+PYTHONPATH=backend \
+DEDAO_KBASE_AUTH_TOKEN="<private-token>" \
+backend/venv/bin/python backend/scripts/ingest_dedao_kbase_export.py \
+  --export-url https://kbase.executor.life/api/system-kb/export \
+  --artifact-dir backend/data/system_kb_v2_seed \
+  --write \
   --json-summary
 ```
 

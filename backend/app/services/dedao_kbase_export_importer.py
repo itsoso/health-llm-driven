@@ -39,9 +39,33 @@ def compile_dedao_kbase_export_artifacts(
     source_root = Path(source_root).expanduser()
     base_artifact_dir = Path(base_artifact_dir)
     export_path = Path(export_path).expanduser() if export_path else source_root / "artifacts" / SYSTEM_KB_EXPORT_FILENAME
-    now = now or datetime.now(UTC)
-
     payload = _read_export(export_path)
+    return compile_dedao_kbase_export_payload_artifacts(
+        source_root=source_root,
+        base_artifact_dir=base_artifact_dir,
+        payload=payload,
+        export_ref=str(export_path),
+        now=now,
+    )
+
+
+def compile_dedao_kbase_export_payload_artifacts(
+    *,
+    source_root: str | Path,
+    base_artifact_dir: str | Path,
+    payload: dict[str, Any],
+    export_ref: str,
+    now: datetime | None = None,
+) -> IngestResult:
+    """Compile an already-loaded dedao-kbase export payload.
+
+    ``export_ref`` is intentionally a string so callers can preserve either a
+    local file path or a remote HTTPS URL in the review manifest.
+    """
+    source_root = Path(source_root).expanduser()
+    base_artifact_dir = Path(base_artifact_dir)
+    now = now or datetime.now(UTC)
+    _validate_export_payload(payload, export_ref)
     bridge_result = DownDedaoBridgeResult(source_root=source_root, base_artifact_dir=base_artifact_dir)
 
     existing_docs = _load_existing_doc_ids(base_artifact_dir)
@@ -69,7 +93,7 @@ def compile_dedao_kbase_export_artifacts(
             key=lambda item: (item["src_doc_id"], item["relation"], item["dst_doc_id"]),
         ),
         diff=bridge_result.diff,
-        manifest=_manifest_for_export(source_root, export_path, payload, bridge_result.diff, now),
+        manifest=_manifest_for_export(source_root, export_ref, payload, bridge_result.diff, now),
         source_stats=[
             {
                 "source": payload.get("source") or "dedao-kbase",
@@ -77,7 +101,7 @@ def compile_dedao_kbase_export_artifacts(
                 "version": payload.get("version"),
                 "source_repo": payload.get("source_repo"),
                 "source_commit": payload.get("source_commit"),
-                "export_path": str(export_path),
+                "export_path": export_ref,
                 "pages": len(bridge_result.pages),
                 "entities": len(bridge_result.entities),
                 "claims": len(bridge_result.claims),
@@ -92,16 +116,20 @@ def _read_export(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(f"dedao-kbase export not found: {path}")
     payload = json.loads(path.read_text(encoding="utf-8"))
+    _validate_export_payload(payload, str(path))
+    return payload
+
+
+def _validate_export_payload(payload: Any, export_ref: str) -> None:
     if not isinstance(payload, dict):
-        raise ValueError(f"dedao-kbase export must be a JSON object: {path}")
+        raise ValueError(f"dedao-kbase export must be a JSON object: {export_ref}")
     if payload.get("type") not in {None, "system_kb_v2_export"}:
         raise ValueError(f"unsupported dedao-kbase export type: {payload.get('type')}")
-    return payload
 
 
 def _manifest_for_export(
     source_root: Path,
-    export_path: Path,
+    export_ref: str,
     payload: dict[str, Any],
     diff: dict[str, int],
     now: datetime,
@@ -109,7 +137,7 @@ def _manifest_for_export(
     return {
         "compiled_at": now.isoformat(),
         "source_root": str(source_root),
-        "export_path": str(export_path),
+        "export_path": export_ref,
         "source": payload.get("source") or "dedao-kbase",
         "source_repo": payload.get("source_repo"),
         "source_commit": payload.get("source_commit"),

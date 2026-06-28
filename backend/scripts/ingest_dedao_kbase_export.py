@@ -12,6 +12,9 @@ import json
 import os
 from pathlib import Path
 import sys
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -28,6 +31,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", default=DEFAULT_SOURCE_ROOT)
     parser.add_argument("--export-path", default=None)
+    parser.add_argument("--export-url", default=os.environ.get("DEDAO_KBASE_EXPORT_URL"))
+    parser.add_argument("--auth-token", default=os.environ.get("DEDAO_KBASE_AUTH_TOKEN"))
     parser.add_argument("--artifact-dir", default=str(DEFAULT_ARTIFACT_DIR))
     parser.add_argument("--dry-run", action="store_true", help="Explicit dry-run mode. This is the default.")
     parser.add_argument("--write", action="store_true", help="Write draft artifacts.")
@@ -42,7 +47,13 @@ def main() -> int:
     if args.promote_reviewed and not args.reviewer:
         parser.error("--promote-reviewed requires --reviewer")
 
-    from app.services.dedao_kbase_export_importer import compile_dedao_kbase_export_artifacts
+    if args.export_path and args.export_url:
+        parser.error("--export-path and --export-url are mutually exclusive")
+
+    from app.services.dedao_kbase_export_importer import (
+        compile_dedao_kbase_export_artifacts,
+        compile_dedao_kbase_export_payload_artifacts,
+    )
     from app.services.system_knowledge_ingest import (
         build_pr_style_diff,
         review_draft_artifacts,
@@ -50,11 +61,20 @@ def main() -> int:
         write_draft_artifacts,
     )
 
-    result = compile_dedao_kbase_export_artifacts(
-        source_root=args.source_root,
-        base_artifact_dir=args.artifact_dir,
-        export_path=args.export_path,
-    )
+    if args.export_url:
+        payload = _fetch_export_payload(args.export_url, auth_token=args.auth_token)
+        result = compile_dedao_kbase_export_payload_artifacts(
+            source_root=args.source_root,
+            base_artifact_dir=args.artifact_dir,
+            payload=payload,
+            export_ref=args.export_url,
+        )
+    else:
+        result = compile_dedao_kbase_export_artifacts(
+            source_root=args.source_root,
+            base_artifact_dir=args.artifact_dir,
+            export_path=args.export_path,
+        )
     export_path = result.manifest["export_path"]
     summary: dict[str, object] = {
         "mode": "dry_run",
@@ -65,6 +85,8 @@ def main() -> int:
         "source_count": len(result.source_stats),
         "sources": result.source_stats,
     }
+    if args.export_url:
+        summary["export_url"] = args.export_url
 
     if args.write:
         draft_manifest = write_draft_artifacts(
@@ -111,6 +133,25 @@ def _print_summary(summary: dict[str, object], *, as_json: bool) -> None:
         print("review:")
         for key, value in dict(summary["review"]).items():
             print(f"  {key}: {value}")
+
+
+def _fetch_export_payload(export_url: str, *, auth_token: str | None) -> dict[str, Any]:
+    headers = {"Accept": "application/json"}
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+    request = Request(export_url, headers=headers, method="GET")
+    try:
+        with urlopen(request, timeout=30) as response:
+            body = response.read()
+    except HTTPError as exc:
+        raise RuntimeError(f"dedao-kbase export fetch failed: HTTP {exc.code} {export_url}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"dedao-kbase export fetch failed: {export_url}: {exc.reason}") from exc
+
+    payload = json.loads(body.decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"dedao-kbase export must be a JSON object: {export_url}")
+    return payload
 
 
 if __name__ == "__main__":
