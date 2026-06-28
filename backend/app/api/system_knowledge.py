@@ -151,7 +151,12 @@ def search_system_knowledge(
         doc_id=None,
         op="search",
         actor=f"user:{current_user.id}",
-        diff={"q": q, "limit": limit, "result_count": len(result["results"])},
+        diff={
+            "q": result.get("query", ""),
+            "limit": limit,
+            "result_count": len(result["results"]),
+            "input_guard": (result.get("retrieval_plan") or {}).get("input_guard") or {},
+        },
     )
     return result
 

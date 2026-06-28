@@ -119,3 +119,30 @@ async def test_both_empty_but_available_returns_honest_miss(db, monkeypatch):
 async def test_empty_query_errors(db):
     out = await _make_executor(db)._exec_knowledge_search({"query": "  "})
     assert out.startswith("Error:")
+
+
+async def test_knowledge_search_scrubs_direct_identifiers_before_both_retrievers(db, monkeypatch):
+    seen = {}
+
+    def _kb(db, query, **kw):
+        seen["kb"] = query
+        return {"results": []}
+
+    def _dedao(query, n_results=5):
+        seen["dedao"] = query
+        return _DEDAO_RESULTS
+
+    monkeypatch.setattr(sks, "search_knowledge", _kb)
+    monkeypatch.setattr(indexer, "search_knowledge", _dedao)
+
+    out = await _make_executor(db)._exec_knowledge_search({
+        "query": "LDL 13800138000 alice@example.com",
+    })
+
+    assert WIKI_HEADER in out
+    assert seen == {
+        "kb": "LDL [PHONE] [EMAIL]",
+        "dedao": "LDL [PHONE] [EMAIL]",
+    }
+    assert "13800138000" not in out
+    assert "alice@example.com" not in out

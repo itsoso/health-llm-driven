@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.system_knowledge import KBAudit, KBDocument, KBDocumentVector, KBEdge
+from app.services.retrieval_guard import guard_retrieval_query
 from app.services.system_knowledge_ingest import review_draft_artifacts, validate_artifact_review_gate
 
 
@@ -549,7 +550,8 @@ def search_knowledge(
     later without changing the response shape.
     """
 
-    normalized_query = (query or "").strip()
+    guarded_query = guard_retrieval_query(query)
+    normalized_query = guarded_query.query
     terms = _query_terms(normalized_query)
 
     docs_query = db.query(KBDocument).filter(*_serving_document_filters())
@@ -669,6 +671,7 @@ def search_knowledge(
             "vector_backend": vector_backend,
             "graph_backend": "kb_edges_one_hop",
             "rrf_backend": "python_rrf_v1",
+            "input_guard": guarded_query.metadata(),
         },
         "claim_boundary": CLAIM_BOUNDARY,
     }

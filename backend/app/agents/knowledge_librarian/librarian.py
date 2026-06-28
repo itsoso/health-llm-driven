@@ -53,8 +53,17 @@ class KnowledgeLibrarianSpecialist:
                     raw={},
                     ms_elapsed=int((time.monotonic() - t0) * 1000),
                 )
+            from app.services.retrieval_guard import guard_retrieval_query
 
-            system_kb_finding = self._run_system_kb(query, context, t0)
+            guarded_query = guard_retrieval_query(query)
+            query = guarded_query.query
+
+            system_kb_finding = self._run_system_kb(
+                query,
+                context,
+                t0,
+                guarded_query.metadata(),
+            )
             if system_kb_finding is not None:
                 return system_kb_finding
 
@@ -69,6 +78,7 @@ class KnowledgeLibrarianSpecialist:
                         "query": query,
                         "results_count": 0,
                         "legacy_chroma_enabled": False,
+                        "input_guard": guarded_query.metadata(),
                     },
                     ms_elapsed=int((time.monotonic() - t0) * 1000),
                 )
@@ -83,7 +93,11 @@ class KnowledgeLibrarianSpecialist:
                     category=self.category,
                     summary="知识库暂无相关内容（可能需要先建索引）",
                     findings=[],
-                    raw={"query": query, "results_count": 0},
+                    raw={
+                        "query": query,
+                        "results_count": 0,
+                        "input_guard": guarded_query.metadata(),
+                    },
                     ms_elapsed=int((time.monotonic() - t0) * 1000),
                 )
 
@@ -109,6 +123,7 @@ class KnowledgeLibrarianSpecialist:
                     "query": query,
                     "results_count": len(results),
                     "top_source": results[0].get("source") if results else None,
+                    "input_guard": guarded_query.metadata(),
                 },
                 ms_elapsed=int((time.monotonic() - t0) * 1000),
             )
@@ -128,6 +143,7 @@ class KnowledgeLibrarianSpecialist:
         query: str,
         context: Dict[str, Any],
         started_at: float,
+        input_guard: dict[str, Any] | None = None,
     ) -> SpecialistFinding | None:
         db = context.get("db")
         if db is None:
@@ -175,6 +191,7 @@ class KnowledgeLibrarianSpecialist:
                         "query": query,
                         "entity": entity,
                         "claim_boundary": data.get("claim_boundary"),
+                        "input_guard": input_guard or {},
                     },
                     evidence_refs=refs,
                     ms_elapsed=int((time.monotonic() - started_at) * 1000),
@@ -223,6 +240,9 @@ class KnowledgeLibrarianSpecialist:
                     "query": query,
                     "result_count": len(results),
                     "claim_boundary": result.get("claim_boundary"),
+                    "input_guard": input_guard
+                    or result.get("retrieval_plan", {}).get("input_guard")
+                    or {},
                 },
                 evidence_refs=refs,
                 ms_elapsed=int((time.monotonic() - started_at) * 1000),

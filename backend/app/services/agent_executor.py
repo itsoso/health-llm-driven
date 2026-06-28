@@ -3299,6 +3299,10 @@ class AgentExecutor:
         query = (args.get("query") or "").strip()
         if not query:
             return "Error: knowledge_search 需要 query 参数"
+        from app.services.retrieval_guard import guard_retrieval_query
+
+        guarded_query = guard_retrieval_query(query)
+        query = guarded_query.query
 
         n = args.get("n_results", 5)
         try:
