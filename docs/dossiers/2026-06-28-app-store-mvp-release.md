@@ -5,7 +5,7 @@
 | slug | `app-store-mvp-release` |
 | 创建日期 | 2026-06-28 |
 | 当前阶段 | S6 部署准备 |
-| 状态 | app-store-batch2-building |
+| 状态 | app-store-batch2-web-deployed-app-store-external-pending |
 | 负责 | Codex |
 | 分支 | `main` |
 | 工作区 | `/Users/liqiuhua/work/personal/health-llm-driven` |
@@ -161,6 +161,12 @@ P0:
 
 - Local release-pack gate:
   - PASS: `python3 scripts/check_app_store_release_pack.py`
+- Web deployment gate:
+  - PASS: `./deploy.sh -f -y` 成功完成前端部署;远端 `next build` compiled successfully,生成 `/privacy` 静态页面,并重启 `health-frontend` PM2 为 online。
+  - NOTE: 部署脚本报告 kuaishou GitLab 同步失败,不影响 GitHub/main 和生产前端部署;还提示 mobile 自上次 OTA 后有未发布改动,本次只发布 Web 隐私页。
+- Public privacy URL gate:
+  - PASS: `curl -fsSI https://health.executor.life/privacy` 返回 `HTTP/2 200`。
+  - PASS: `curl -fsS https://health.executor.life/privacy | rg -n "HealthKit|删除账号|不提供诊断|support@executor.life"` 命中 App Store 审核要求的关键文案。
 - Local simulator screenshot route gate:
   - PASS: `./scripts/mobile-sim-screenshots.sh` 可在已安装 simulator app 上遍历 `今日 / 私教 / 记录 / 我 / 体检导入 / 隐私政策` 并输出 1206 x 2622 截图。
   - 注意: 本次生成的截图来自 simulator 上旧安装包,仅证明截图自动化路径可运行;未提交截图文件。
@@ -168,7 +174,6 @@ P0:
   - BLOCK: `cd mobile && ROKID_IOS_SDK_ENABLED=0 ROKID_IOS_SIMULATOR=1 SENTRY_DISABLE_AUTO_UPLOAD=true npx expo run:ios --device "iPhone 17 Pro"` 失败,`xcodebuild` exit 65。失败点在 `mobile/modules/rokid-bridge/ios/RokidBridgeModule.swift` 编译期仍看到 stale `RGCxrClient/RGCoreKit` Pods,触发 `cannot find type RGCxrClientAudioEvent`、`cannot find CxrClient`、`RGCxrClientBLE.shared` 等 82 个 Swift 错误。
   - 缓解: 新增 `scripts/sim-build.sh`,默认在临时 worktree 中清理 generated Pods/Podfile.lock 后用 `ROKID_IOS_SDK_ENABLED=0 ROKID_IOS_SIMULATOR=1` 构建,避免主工作区和 stale Rokid Pods 影响 App Store 截图安装。
 - pending:
-  - `curl -fsSI https://health.executor.life/privacy`
   - App Store Connect build processing status。
   - 用 `scripts/sim-build.sh` 重新安装当前代码后产出最终截图。
 
