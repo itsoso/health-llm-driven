@@ -1,7 +1,9 @@
 from datetime import UTC, datetime
+import json
 
 from sqlalchemy.dialects import postgresql
 
+from app.config import settings
 from app.models.agent_audit_log import AgentAuditLog
 from app.models.notification import NotificationLog
 from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
@@ -12,6 +14,13 @@ from app.services.system_knowledge_service import (
     build_evidence_card_for_message,
 )
 from app.orchestrator.schema import SpecialistFinding
+
+
+def _write_artifact_jsonl(path, rows):
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n" for row in rows),
+        encoding="utf-8",
+    )
 
 
 def _seed_phase0_knowledge(db):
@@ -1097,6 +1106,161 @@ def test_admin_operations_dashboard_surfaces_dedao_kbase_draft_sync(client, db, 
     assert payload["latest_dedao_kbase_export_sync"]["diff"]["source_commit"] == "abc123"
     assert payload["latest_dedao_kbase_export_sync"]["diff"]["gate"]["serving_allowed"] is False
     assert "dedao_kbase_draft_review_needed" in payload["action_items"]
+
+
+def test_admin_dedao_kbase_draft_review_bundle_reads_configured_artifacts(
+    client,
+    db,
+    auth_user_and_headers,
+    tmp_path,
+    monkeypatch,
+):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    artifact_dir = tmp_path / "system_kb_v2_seed"
+    artifact_dir.mkdir()
+    monkeypatch.setattr(settings, "system_kb_artifact_dir", str(artifact_dir))
+    _write_artifact_jsonl(
+        artifact_dir / "pages.jsonl",
+        [
+            {
+                "doc_id": "page:ak-kbase:sleep-caffeine",
+                "title": "Sleep caffeine",
+                "summary": "咖啡因与睡眠窗口的结构化摘要。",
+                "metadata": {"review_status": "draft", "origin": "dedao-kbase-export"},
+                "sources": ["dedao:sleep-course"],
+            }
+        ],
+    )
+    _write_artifact_jsonl(artifact_dir / "entities.jsonl", [])
+    _write_artifact_jsonl(
+        artifact_dir / "claims.jsonl",
+        [
+            {
+                "doc_id": "claim:c_sleep_caffeine_window",
+                "doc_type": "claim",
+                "entity_type": "sleep",
+                "entity_id": "caffeine",
+                "title": "睡眠前咖啡因窗口",
+                "summary": "下午晚些时候摄入咖啡因可能影响入睡。",
+                "evidence_level": "B",
+                "confidence": 0.72,
+                "metadata": {"review_status": "draft", "origin": "dedao-kbase-export"},
+                "sources": ["dedao:sleep-course", "guideline:test"],
+            }
+        ],
+    )
+    _write_artifact_jsonl(artifact_dir / "protocols.jsonl", [])
+    _write_artifact_jsonl(artifact_dir / "contraindications.jsonl", [])
+    _write_artifact_jsonl(artifact_dir / "eval_cases.jsonl", [])
+    _write_artifact_jsonl(
+        artifact_dir / "relations.jsonl",
+        [
+            {
+                "src_doc_id": "page:ak-kbase:sleep-caffeine",
+                "dst_doc_id": "claim:c_sleep_caffeine_window",
+                "relation": "supports",
+                "confidence": 0.8,
+                "metadata": {"review_status": "draft"},
+            }
+        ],
+    )
+    (artifact_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "ingest": {"review_status": "draft"},
+                "draft_gate": {"status": "draft", "requires_review": True, "serving_allowed": False},
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (artifact_dir / "draft_manifest.json").write_text(
+        json.dumps({"status": "draft", "requires_review": True, "serving_allowed": False}, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/admin/knowledge/dedao_kbase/draft_review", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["artifact_dir"] == str(artifact_dir)
+    assert payload["gate"]["serving_allowed"] is False
+    assert payload["gate"]["blocking_reasons"] == ["draft_artifacts_present", "manifest_not_reviewed"]
+    assert payload["draft_manifest"]["status"] == "draft"
+    assert payload["preview"]["counts"]["claims"] == 1
+    assert payload["preview"]["claims"][0]["doc_id"] == "claim:c_sleep_caffeine_window"
+    assert payload["preview"]["claims"][0]["review_status"] == "draft"
+    assert "body" not in payload["preview"]["claims"][0]
+    assert db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_draft_review_bundle").count() == 1
+
+
+def test_admin_dedao_kbase_draft_review_approve_promotes_configured_artifacts(
+    client,
+    db,
+    auth_user_and_headers,
+    tmp_path,
+    monkeypatch,
+):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    artifact_dir = tmp_path / "system_kb_v2_seed"
+    artifact_dir.mkdir()
+    monkeypatch.setattr(settings, "system_kb_artifact_dir", str(artifact_dir))
+    for name in ("pages", "entities", "protocols", "contraindications", "eval_cases"):
+        _write_artifact_jsonl(artifact_dir / f"{name}.jsonl", [])
+    _write_artifact_jsonl(
+        artifact_dir / "claims.jsonl",
+        [
+            {
+                "doc_id": "claim:c_sleep_caffeine_window",
+                "doc_type": "claim",
+                "entity_type": "sleep",
+                "entity_id": "caffeine",
+                "title": "睡眠前咖啡因窗口",
+                "summary": "下午晚些时候摄入咖啡因可能影响入睡。",
+                "metadata": {"review_status": "draft"},
+            }
+        ],
+    )
+    _write_artifact_jsonl(
+        artifact_dir / "relations.jsonl",
+        [
+            {
+                "src_doc_id": "entity:sleep:caffeine",
+                "dst_doc_id": "claim:c_sleep_caffeine_window",
+                "relation": "has_claim",
+                "metadata": {"review_status": "draft"},
+            }
+        ],
+    )
+    (artifact_dir / "manifest.json").write_text(
+        json.dumps({"ingest": {"review_status": "draft"}}, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    (artifact_dir / "draft_manifest.json").write_text(
+        json.dumps({"status": "draft", "requires_review": True, "serving_allowed": False}, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    response = client.post(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review/approve",
+        headers=headers,
+        json={"note": "结构化摘要已人工核对"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["review"]["serving_allowed"] is True
+    assert payload["gate"]["serving_allowed"] is True
+    reviewed_claim = json.loads((artifact_dir / "claims.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    reviewed_relation = json.loads((artifact_dir / "relations.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert reviewed_claim["metadata"]["review_status"] == "reviewed"
+    assert reviewed_relation["metadata"]["review_status"] == "reviewed"
+    audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_draft_review_approved").one()
+    assert audit.diff["serving_allowed"] is True
+    assert audit.diff["note"] == "结构化摘要已人工核对"
 
 
 def test_admin_review_queue_prioritizes_claims_needing_human_review(client, db, auth_user_and_headers):

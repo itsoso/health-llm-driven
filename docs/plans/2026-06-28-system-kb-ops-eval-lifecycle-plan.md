@@ -18,7 +18,7 @@
 4. **P2: real semantic backend.** Replace deterministic semantic aliases with pgvector-backed embeddings while preserving the current search response shape.
 5. **P2: source freshness policy.** Track guideline/source `last_reviewed_at` and stale source action items per domain.
 
-This implementation executes P0 and the P1 dedao-kbase draft observability slice. It avoids new medical content and does not relax reviewed-only serving.
+This implementation executes P0 plus the P1 dedao-kbase draft observability and reviewer workflow API slices. It avoids new medical content and does not relax reviewed-only serving.
 
 ## Task 1: Lifecycle Eval Snapshot
 
@@ -111,3 +111,42 @@ Seed a `KBAudit(op="dedao_kbase_export_sync_draft")` with a draft gate that is n
 **Step 2: Implement minimal dashboard observability**
 
 Add a latest-audit helper for `dedao_kbase_export_sync_draft`, return it from the operations dashboard, and add the review-needed action item when the latest draft sync gate has blocking reasons. This is read-only observability; draft artifacts still require review plus the normal release gate before serving.
+
+## Task 5: dedao-kbase Reviewer Workflow API
+
+**Files:**
+- Modify: `backend/app/api/system_knowledge.py`
+- Modify: `backend/app/services/system_knowledge_service.py`
+- Test: `backend/tests/test_system_knowledge_phase0.py`
+
+**Step 1: Write the failing tests**
+
+Add admin API tests for:
+- `GET /api/v1/admin/knowledge/dedao_kbase/draft_review`
+- `POST /api/v1/admin/knowledge/dedao_kbase/draft_review/approve`
+
+The review bundle test should read the configured artifact directory, return draft gate status and compact previews, and avoid returning raw `body` content from paid knowledge artifacts. The approve test should call the artifact review promotion path, mark draft claim and relation metadata as reviewed, return a serving-allowed gate, and record an audit row.
+
+**Step 2: Implement review bundle and approve endpoints**
+
+Add service helpers that:
+- resolve `settings.system_kb_artifact_dir`
+- call `validate_artifact_review_gate` for current draft gate status
+- return manifest and preview data for pages, entities, claims, protocols, contraindications, eval cases, and relations
+- call `review_draft_artifacts` for reviewer approval
+
+Add admin routes that record:
+- `KBAudit(op="dedao_kbase_draft_review_bundle")`
+- `KBAudit(op="dedao_kbase_draft_review_approved")`
+
+**Step 3: Verification**
+
+Run:
+
+```bash
+DATABASE_URL=sqlite:///./backend/test_kb_review_workflow.db PYTHONPATH=backend backend/venv/bin/python -m pytest backend/tests/test_system_knowledge_phase0.py::test_admin_operations_dashboard_surfaces_dedao_kbase_draft_sync backend/tests/test_system_knowledge_phase0.py::test_admin_dedao_kbase_draft_review_bundle_reads_configured_artifacts backend/tests/test_system_knowledge_phase0.py::test_admin_dedao_kbase_draft_review_approve_promotes_configured_artifacts -q
+PYTHONPATH=backend backend/venv/bin/python -m compileall -q backend/app/api/system_knowledge.py backend/app/services/system_knowledge_service.py backend/tests/test_system_knowledge_phase0.py
+PYTHONPATH=backend backend/venv/bin/python backend/scripts/run_external_health_knowledge_release_gate.py --artifact-dir backend/data/system_kb_v2_seed
+```
+
+Expected: pytest pass, compileall exit 0, release gate pass.

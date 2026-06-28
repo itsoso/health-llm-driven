@@ -13,6 +13,8 @@ from app.models.system_knowledge import KBAudit
 from app.models.user import User
 from app.services.system_knowledge_eval import run_system_kb_eval_cases
 from app.services.system_knowledge_service import (
+    approve_dedao_kbase_draft_review,
+    get_dedao_kbase_draft_review_bundle,
     get_claim_bundle,
     get_entity_bundle,
     get_knowledge_coverage_report,
@@ -58,6 +60,10 @@ class ClaimReviewUpdateRequest(BaseModel):
     external_source: ExternalSourceReviewRequest | None = None
     clear_candidate_duplicates: bool = False
     resolve_feedback: bool = False
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class DedaoKbaseDraftReviewApproveRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
 
 
@@ -294,6 +300,60 @@ def get_system_knowledge_operations_dashboard(
             "status": result["status"],
             "action_items": result["action_items"],
             "documents": result["coverage"]["documents"]["total"],
+        },
+    )
+    return result
+
+
+@admin_router.get("/dedao_kbase/draft_review", summary="查看 dedao-kbase draft artifact review 包")
+def get_dedao_kbase_draft_review(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        result = get_dedao_kbase_draft_review_bundle()
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    _record_audit(
+        db,
+        doc_id=None,
+        op="dedao_kbase_draft_review_bundle",
+        actor=f"admin:{admin_user.id}",
+        diff={
+            "artifact_dir": result["artifact_dir"],
+            "serving_allowed": result["gate"]["serving_allowed"],
+            "blocking_reasons": result["gate"]["blocking_reasons"],
+            "preview_counts": result["preview"]["counts"],
+        },
+    )
+    return result
+
+
+@admin_router.post("/dedao_kbase/draft_review/approve", summary="批准 dedao-kbase draft artifacts")
+def approve_dedao_kbase_draft_review_endpoint(
+    request: DedaoKbaseDraftReviewApproveRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        result = approve_dedao_kbase_draft_review(reviewer=f"admin:{admin_user.id}")
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    _record_audit(
+        db,
+        doc_id=None,
+        op="dedao_kbase_draft_review_approved",
+        actor=f"admin:{admin_user.id}",
+        diff={
+            "artifact_dir": result["artifact_dir"],
+            "serving_allowed": result["gate"]["serving_allowed"],
+            "blocking_reasons": result["gate"]["blocking_reasons"],
+            "reviewed_at": result["review"].get("reviewed_at"),
+            "documents_reviewed": result["review"].get("documents_reviewed"),
+            "relations_reviewed": result["review"].get("relations_reviewed"),
+            "note": request.note,
         },
     )
     return result

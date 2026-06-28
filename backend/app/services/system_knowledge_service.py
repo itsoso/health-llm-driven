@@ -6,8 +6,10 @@ import ast
 from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 import hashlib
+import json
 import math
 import operator
+from pathlib import Path
 import re
 from typing import Any
 
@@ -15,7 +17,9 @@ from sqlalchemy import desc, func, or_, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models.system_knowledge import KBAudit, KBDocument, KBDocumentVector, KBEdge
+from app.services.system_knowledge_ingest import review_draft_artifacts, validate_artifact_review_gate
 
 
 CLAIM_BOUNDARY = "仅用于健康管理和风险沟通，不替代医生诊断、治疗或用药决策。"
@@ -1300,6 +1304,47 @@ def get_knowledge_operations_dashboard(db: Session) -> dict[str, Any]:
         "latest_lifecycle_report": latest_lifecycle,
         "latest_dedao_kbase_export_sync": latest_dedao_sync,
         "action_items": action_items,
+    }
+
+
+def get_dedao_kbase_draft_review_bundle(
+    *,
+    artifact_dir: str | Path | None = None,
+    preview_limit: int = 20,
+) -> dict[str, Any]:
+    """Return a bounded review preview for configured dedao-kbase draft artifacts."""
+    root = _configured_system_kb_artifact_dir(artifact_dir)
+    gate = validate_artifact_review_gate(root)
+    manifest = _read_json_file(root / "manifest.json")
+    return {
+        "artifact_dir": str(root),
+        "gate": gate,
+        "draft_manifest": _read_json_file(root / "draft_manifest.json"),
+        "manifest": {
+            "ingest": manifest.get("ingest") if isinstance(manifest.get("ingest"), dict) else None,
+            "draft_gate": manifest.get("draft_gate") if isinstance(manifest.get("draft_gate"), dict) else None,
+            "review": manifest.get("review") if isinstance(manifest.get("review"), dict) else None,
+            "counts": manifest.get("counts") if isinstance(manifest.get("counts"), dict) else None,
+            "diff": manifest.get("diff") if isinstance(manifest.get("diff"), dict) else None,
+        },
+        "preview": _artifact_preview(root, limit=preview_limit),
+    }
+
+
+def approve_dedao_kbase_draft_review(
+    *,
+    artifact_dir: str | Path | None = None,
+    reviewer: str,
+) -> dict[str, Any]:
+    """Promote configured dedao-kbase draft artifacts after human review."""
+    root = _configured_system_kb_artifact_dir(artifact_dir)
+    review = review_draft_artifacts(root, reviewer=reviewer)
+    gate = validate_artifact_review_gate(root)
+    return {
+        "artifact_dir": str(root),
+        "review": review,
+        "gate": gate,
+        "draft_manifest": _read_json_file(root / "draft_manifest.json"),
     }
 
 
@@ -3019,6 +3064,89 @@ def _latest_lifecycle_report(db: Session) -> dict[str, Any] | None:
         "actor": audit.actor,
         "ts": audit.ts.isoformat() if audit.ts else None,
         "diff": audit.diff or {},
+    }
+
+
+def _configured_system_kb_artifact_dir(artifact_dir: str | Path | None = None) -> Path:
+    if artifact_dir is not None:
+        root = Path(artifact_dir)
+    elif settings.system_kb_artifact_dir:
+        root = Path(settings.system_kb_artifact_dir)
+    else:
+        root = Path(__file__).resolve().parents[2] / "data" / "system_kb_v2_seed"
+    root = root.expanduser()
+    if not root.exists():
+        raise ValueError(f"system KB artifact dir does not exist: {root}")
+    return root
+
+
+def _read_json_file(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return payload if isinstance(payload, dict) else {}
+
+
+def _read_artifact_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            if isinstance(payload, dict):
+                rows.append(payload)
+    return rows
+
+
+def _artifact_preview(root: Path, *, limit: int) -> dict[str, Any]:
+    sections = {
+        "pages": "pages.jsonl",
+        "entities": "entities.jsonl",
+        "claims": "claims.jsonl",
+        "protocols": "protocols.jsonl",
+        "contraindications": "contraindications.jsonl",
+        "eval_cases": "eval_cases.jsonl",
+        "relations": "relations.jsonl",
+    }
+    preview: dict[str, Any] = {"counts": {}}
+    for section, file_name in sections.items():
+        rows = _read_artifact_jsonl(root / file_name)
+        preview["counts"][section] = len(rows)
+        if section == "relations":
+            preview[section] = [_relation_preview(row) for row in rows[:limit]]
+        else:
+            preview[section] = [_document_preview(row) for row in rows[:limit]]
+    return preview
+
+
+def _document_preview(row: dict[str, Any]) -> dict[str, Any]:
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    return {
+        "doc_id": row.get("doc_id"),
+        "doc_type": row.get("doc_type"),
+        "title": row.get("title"),
+        "summary": row.get("summary"),
+        "entity_type": row.get("entity_type"),
+        "entity_id": row.get("entity_id"),
+        "evidence_level": row.get("evidence_level"),
+        "confidence": row.get("confidence"),
+        "sources": row.get("sources") or [],
+        "review_status": metadata.get("review_status"),
+        "origin": metadata.get("origin"),
+    }
+
+
+def _relation_preview(row: dict[str, Any]) -> dict[str, Any]:
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    return {
+        "src_doc_id": row.get("src_doc_id"),
+        "dst_doc_id": row.get("dst_doc_id"),
+        "relation": row.get("relation"),
+        "confidence": row.get("confidence"),
+        "review_status": metadata.get("review_status"),
     }
 
 
