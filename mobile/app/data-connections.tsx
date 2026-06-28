@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
+  connectionHealthDisplay,
   fetchDataConnections,
   revokeDataConnection,
   type DataConnection,
@@ -30,14 +31,14 @@ function providerIcon(connection: DataConnection): keyof typeof Ionicons.glyphMa
   return 'link-outline';
 }
 
-function statusTone(connection: DataConnection, c: ColorPalette) {
-  if (connection.connection_status === 'active' && !['expired', 'revoked'].includes(connection.token_status)) {
-    return { label: '可用', color: c.green, bg: c.tintGreen };
+function statusTone(severity: string, c: ColorPalette) {
+  if (severity === 'ok') {
+    return { color: c.green, bg: c.tintGreen };
   }
-  if (connection.connection_status === 'revoked' || connection.token_status === 'revoked') {
-    return { label: '已撤权', color: c.labelTertiary, bg: c.fill };
+  if (severity === 'blocked') {
+    return { color: c.labelTertiary, bg: c.fill };
   }
-  return { label: '需处理', color: c.orange, bg: c.tintOrange };
+  return { color: c.orange, bg: c.tintOrange };
 }
 
 function formatSync(connection: DataConnection): string {
@@ -58,7 +59,8 @@ function ConnectionCard({
 }) {
   const { c } = useTheme();
   const styles = createStyles(c);
-  const tone = statusTone(connection, c);
+  const display = connectionHealthDisplay(connection);
+  const tone = statusTone(display.health.severity, c);
   const canRevoke = connection.connection_status !== 'revoked';
 
   return (
@@ -76,7 +78,7 @@ function ConnectionCard({
           </Text>
         </View>
         <View style={[styles.statusPill, { backgroundColor: tone.bg }]}>
-          <Text style={[styles.statusText, { color: tone.color }]}>{tone.label}</Text>
+          <Text style={[styles.statusText, { color: tone.color }]}>{display.label}</Text>
         </View>
       </View>
 
@@ -89,6 +91,30 @@ function ConnectionCard({
       </View>
 
       <Text style={[styles.line, { color: c.labelSecondary }]}>{formatSync(connection)}</Text>
+      <Text style={[styles.line, { color: c.labelSecondary }]}>{display.description}</Text>
+      <View style={styles.healthMetaRow}>
+        <View style={[styles.healthChip, { backgroundColor: c.fill }]}>
+          <Ionicons
+            name={display.health.can_use_cached_data ? 'file-tray-full-outline' : 'ban-outline'}
+            size={13}
+            color={display.health.can_use_cached_data ? c.green : c.labelTertiary}
+          />
+          <Text
+            style={[
+              styles.healthChipText,
+              { color: display.health.can_use_cached_data ? c.green : c.labelTertiary },
+            ]}
+          >
+            {display.cacheLabel}
+          </Text>
+        </View>
+        {display.health.needs_reconnect ? (
+          <View style={[styles.healthChip, { backgroundColor: c.tintOrange }]}>
+            <Ionicons name="refresh-circle-outline" size={13} color={c.orange} />
+            <Text style={[styles.healthChipText, { color: c.orange }]}>{display.actionLabel}</Text>
+          </View>
+        ) : null}
+      </View>
       {connection.policy ? (
         <Text style={[styles.line, { color: c.labelTertiary }]}>
           降级: {connection.policy.degraded_behavior ?? 'read_only'} · 最小化: {connection.policy.data_minimization ?? 'scoped_fields_only'}
@@ -210,6 +236,16 @@ const createStyles = (c: ColorPalette) =>
     scopeChip: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
     scopeText: { fontSize: 11, fontWeight: '600' },
     line: { fontSize: 12, lineHeight: 17 },
+    healthMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    healthChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      borderRadius: 999,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+    },
+    healthChipText: { fontSize: 11, fontWeight: '700' },
     revokeButton: {
       alignSelf: 'flex-start',
       flexDirection: 'row',

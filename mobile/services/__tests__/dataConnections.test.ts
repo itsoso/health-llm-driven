@@ -1,4 +1,5 @@
 import {
+  connectionHealthDisplay,
   connectionStatusSummary,
   ensureHealthKitServerConsent,
   fetchDataConnections,
@@ -71,6 +72,61 @@ describe('dataConnections service', () => {
         },
       ],
     })).toBe('1 个可用 · 1 个需处理');
+  });
+
+  it('prefers backend connection health when summarizing settings status', () => {
+    expect(connectionStatusSummary({
+      connections: [
+        {
+          id: 1,
+          provider: 'healthkit',
+          provider_type: 'healthkit',
+          display_name: 'Apple Health',
+          connection_status: 'active',
+          scopes: ['heart_rate.read'],
+          token_status: 'valid',
+          active_consents: [],
+          policy: null,
+          connection_health: {
+            status: 'degraded',
+            severity: 'warning',
+            message_code: 'reconnect_required',
+            can_attempt_sync: false,
+            can_use_cached_data: true,
+            needs_reconnect: true,
+            user_action: 'reconnect',
+          },
+        },
+      ],
+    })).toBe('0 个可用 · 1 个需处理');
+  });
+
+  it('maps connection health into user-facing mobile copy', () => {
+    const display = connectionHealthDisplay({
+      id: 1,
+      provider: 'healthkit',
+      provider_type: 'healthkit',
+      display_name: 'Apple Health',
+      connection_status: 'degraded',
+      scopes: ['heart_rate.read'],
+      token_status: 'expired',
+      active_consents: [],
+      policy: null,
+      connection_health: {
+        status: 'degraded',
+        severity: 'warning',
+        message_code: 'reconnect_required',
+        can_attempt_sync: false,
+        can_use_cached_data: true,
+        needs_reconnect: true,
+        user_action: 'reconnect',
+      },
+    });
+
+    expect(display.label).toBe('需重连');
+    expect(display.actionLabel).toBe('重新授权');
+    expect(display.cacheLabel).toBe('缓存可只读使用');
+    expect(display.description).toContain('授权已失效');
   });
 
   it('revokes connection through governed endpoint', async () => {
