@@ -24,6 +24,7 @@ SNAPSHOT_PURPOSES = {
     "plan",            # 生成周计划 / 日计划时
     "report",          # 生成健康报告时
     "audit",           # agent 评估时
+    "periodic",        # 定时快照:给 trajectory/longevity watch 提供时间序列锚点
     "cycle_baseline",  # 干预周期基线
     "cycle_latest",    # 干预周期复查
 }

@@ -52,6 +52,7 @@ celery_app = Celery(
         "app.tasks.course_review_materialize",
         "app.tasks.checkup_plan_materialize",
         "app.tasks.write_autonomy_worker",
+        "app.tasks.twin_snapshot",
     ]
 )
 
@@ -376,6 +377,13 @@ celery_app.conf.beat_schedule = {
     "trajectory-watch-weekly": {
         "task": "app.tasks.trajectory_watch.trajectory_watch",
         "schedule": crontab(hour=10, minute=25, day_of_week=0),  # 北京 周日 10:25
+    },
+
+    # 每日 09:35 生成周期 TwinSnapshot:Garmin 09:01 同步后形成时间序列锚点,
+    # 让 trajectory_watch/longevity_watch 不再只依赖 intervention cycle 快照。
+    "periodic-twin-snapshot-daily": {
+        "task": "app.tasks.twin_snapshot.periodic_twin_snapshot",
+        "schedule": crontab(hour=9, minute=35),  # 北京 09:35
     },
 
     # 依从性智能: 每周日 10:40 扫 N-of-1 掉队风险, 温和再激活 (Next Horizon)
