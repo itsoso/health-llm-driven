@@ -4,8 +4,8 @@
 |---|---|
 | slug | `runtime-feedback-replanning` |
 | 创建日期 | 2026-06-28 |
-| 当前阶段 | S5 验证中 |
-| 状态 | implemented |
+| 当前阶段 | S8 沉淀 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | backend deploy |
 
@@ -61,7 +61,7 @@
 - [x] T2 增加 `_protocol_feedback_map` 和 feedback adjustment。
 - [x] T3 将 feedback 穿透到 `rank_reason`、`runtime_feedback` 和 `runtime_context.feedback_adjustment`。
 - [x] T4 更新 Spec / Plan 状态。
-- [ ] T5 后端部署与生产 smoke。
+- [x] T5 后端部署与生产 smoke。
 
 ## S5 · 实现
 
@@ -75,6 +75,10 @@
 - 新增测试 RED：当前代码返回 `daily_protocol_projection`，未带 `feedback_adjustment`。
 - 新增测试 GREEN：`runtime_future_projection` 两个合同测试通过。
 - 议程回归：`backend/tests/test_agenda_range_complete.py` `11 passed`。
+- Watch/Agenda 回归：`backend/tests/test_agenda_range_complete.py backend/tests/test_watch_actions.py backend/tests/test_watch_summary.py` `53 passed`。
+- DataConnection 状态修正佐证：`backend/tests/test_data_connections.py backend/tests/test_healthkit_adapter.py backend/tests/test_fhir_bundle_import.py` `18 passed`。
+- Backend compileall：passed。
+- `scripts/check_doc_drift.py`：passed。
 
 ## G4 · 安全闸
 
@@ -83,16 +87,25 @@
 
 ## S6 · 部署
 
-- 待执行。
+- 代码 commit：`16c093f5f288f863d4759601e6affaea3d87824c`。
+- 部署 HEAD：`ab65154382a98d25a70cd4038dfe92b85cf5d6c8`，包含本切片和并发的 system-kb commit。
+- 回滚点：`843c8ede`。
+- 路由：`./deploy.sh -b -y`，backend-only。
+- 结果：后端部署完成。
 
 ## G5 · 部署健康闸
 
-- 待执行。
+- 健康分：`60/60 PASS`。
+- Skills manifest：本地 `22` = 线上 `22`。
+- `GET https://health.executor.life/api/v1/health`：healthy，api/database/redis/celery connected。
 
 ## S7 · 上线验证
 
-- 待执行。
+- 服务器本机 user_id=3 authenticated smoke：
+  - `mode=runtime generated_by=rolling_health_runtime_v1 horizon=7 days=7 next=True`
+  - `feedback_policy=recent_protocol_event_feedback_v1 feedback_count=3 feedback_items=6`
+  - 抽样：`2000ml 温水杯 replan=recent_completion_projection latest=completed strategy=observe_metric_change rank=60`
 
 ## S8 · 沉淀
 
-- 待部署完成后回写 commit、deploy SHA 和 smoke 结果。
+- Spec、Plan 和本 Dossier 已回写。

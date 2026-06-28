@@ -94,3 +94,4 @@
 - active snooze 采用 `respect_snooze_window`，降低短期打扰强度，并暴露 `snoozed_until`。
 - Runtime root context 新增 `feedback_policy=recent_protocol_event_feedback_v1` 和 `feedback_applied_count`。
 - 测试覆盖：`backend/tests/test_agenda_range_complete.py` 新增 feedback future projection 合同测试。
+- 已发布：代码 commit `16c093f5f288f863d4759601e6affaea3d87824c`；后端部署 HEAD `ab65154382a98d25a70cd4038dfe92b85cf5d6c8`；生产 user_id=3 smoke 覆盖 `feedback_policy`、`feedback_count` 和抽样 `feedback_adjustment`。

@@ -459,7 +459,7 @@ Mobile/Watch 待规划工作：
   - Mobile OTA production update group `d731f134-0d98-46c4-8cc9-3b916c6281be`。
   - 生产 user_id=3 smoke：Watch root runtime `generated_by=rolling_health_runtime_v1 horizon_days=1`；Chat runtime card `present=True horizon_days=7 action=route.open`。
 
-2026-06-28 第五切片已实现，待发布:
+2026-06-28 第五切片已发布:
 
 - Future projection 已把最近 7 天 `HealthProtocolEvent` 作为重排因子：
   - skip reason 进入排序和解释，`too_tired`、`too_hard`、`unwell` 采用 `reduce_pressure` 并降低未来行动优先级。
@@ -467,6 +467,13 @@ Mobile/Watch 待规划工作：
   - active snooze 采用 `respect_snooze_window`，降低短期打扰强度并暴露 `snoozed_until`。
 - Runtime item 新增 `runtime_context.feedback_adjustment`，root context 新增 `feedback_policy` 和 `feedback_applied_count`。
 - 后端合同测试：`backend/tests/test_agenda_range_complete.py` `11 passed`。
+- Watch/Agenda 回归：`backend/tests/test_agenda_range_complete.py backend/tests/test_watch_actions.py backend/tests/test_watch_summary.py` `53 passed`。
+- DataConnection 状态修正佐证：`backend/tests/test_data_connections.py backend/tests/test_healthkit_adapter.py backend/tests/test_fhir_bundle_import.py` `18 passed`。
+- 已发布：
+  - 代码 commit `16c093f5f288f863d4759601e6affaea3d87824c`。
+  - 后端部署 HEAD `ab65154382a98d25a70cd4038dfe92b85cf5d6c8`，包含本切片和并发的 system-kb commit。
+  - 部署健康分 `60/60`，skills manifest `22 = 22`。
+  - 生产 user_id=3 smoke：`feedback_policy=recent_protocol_event_feedback_v1 feedback_count=3 feedback_items=6`；抽样 `replan=recent_completion_projection strategy=observe_metric_change`。
 - 本切片不新增写路径、不改药物/剂量/医疗计划，只改变 future projection 的排序和解释。
 
 2026-06-28 代码对比后的状态修正:
