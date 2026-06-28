@@ -28,6 +28,7 @@ ALLOWED_PROVIDER_TYPES = {
     "lab",
 }
 ACTIVE_GRANT_STATUS = "active"
+CACHED_READ_DEGRADED_BEHAVIORS = {"read_only", "cached_read_only", "use_cached", "cache_only"}
 
 
 def upsert_data_connection(
@@ -108,6 +109,7 @@ def serialize_data_connection(db: Session, connection: DataConnection) -> dict[s
         "metadata": connection.source_metadata or {},
         "active_consents": [serialize_consent_grant(grant) for grant in grants],
         "policy": serialize_connector_policy(policy) if policy else None,
+        "connection_health": summarize_connection_health(connection, policy),
     }
 
 
@@ -294,6 +296,61 @@ def serialize_connector_policy(policy: ConnectorPolicy) -> dict[str, Any]:
         "data_minimization": policy.data_minimization,
         "revoke_deletes_derived": policy.revoke_deletes_derived,
         "audit_required": policy.audit_required,
+    }
+
+
+def summarize_connection_health(connection: DataConnection, policy: ConnectorPolicy | None) -> dict[str, Any]:
+    connection_status = (connection.connection_status or "unknown").lower()
+    token_status = (connection.token_status or "none").lower()
+    degraded_behavior = (policy.degraded_behavior if policy and policy.degraded_behavior else "read_only").lower()
+
+    if connection_status == "revoked" or token_status == "revoked":
+        status = "revoked"
+        severity = "blocked"
+        message_code = "connection_revoked"
+    elif token_status == "expired":
+        status = "degraded"
+        severity = "warning"
+        message_code = "reconnect_required"
+    elif connection_status == "degraded":
+        status = "degraded"
+        severity = "warning"
+        message_code = "temporarily_degraded"
+    elif connection_status == "active":
+        status = "healthy"
+        severity = "ok"
+        message_code = "connection_healthy"
+    else:
+        status = "unknown"
+        severity = "warning"
+        message_code = "connection_unknown"
+
+    needs_reconnect = status == "revoked" or token_status in {"expired", "revoked"}
+    can_attempt_sync = status != "revoked" and token_status not in {"expired", "revoked"}
+    can_use_cached_data = status != "revoked" and (
+        status == "healthy" or degraded_behavior in CACHED_READ_DEGRADED_BEHAVIORS
+    )
+    if needs_reconnect:
+        user_action = "reconnect"
+    elif status == "degraded":
+        user_action = "retry_later"
+    else:
+        user_action = "none"
+
+    return {
+        "status": status,
+        "severity": severity,
+        "message_code": message_code,
+        "can_attempt_sync": can_attempt_sync,
+        "can_use_cached_data": can_use_cached_data,
+        "needs_reconnect": needs_reconnect,
+        "user_action": user_action,
+        "connection_status": connection_status,
+        "token_status": token_status,
+        "degraded_behavior": degraded_behavior,
+        "last_success_at": _iso(connection.last_success_at),
+        "last_attempt_at": _iso(connection.last_attempt_at),
+        "sync_error": connection.sync_error,
     }
 
 

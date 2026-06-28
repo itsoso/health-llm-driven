@@ -76,6 +76,67 @@ def test_connection_consent_grant_and_revoke(client, auth_user_and_headers):
     assert revoked["active_consents"] == []
 
 
+def test_connection_health_explains_active_degraded_and_revoked(db):
+    from app.services.data_connections import (
+        record_sync_result,
+        revoke_data_connection,
+        serialize_data_connection,
+        upsert_data_connection,
+    )
+
+    user, _ = create_authenticated_user(db)
+    connection = upsert_data_connection(
+        db,
+        user_id=user.id,
+        provider="apple_health",
+        provider_type="healthkit",
+        display_name="Apple Health",
+        scopes=["heart_rate.read", "sleep.read"],
+        token_status="valid",
+    )
+
+    active = serialize_data_connection(db, connection)
+    assert active["connection_health"]["status"] == "healthy"
+    assert active["connection_health"]["severity"] == "ok"
+    assert active["connection_health"]["can_attempt_sync"] is True
+    assert active["connection_health"]["can_use_cached_data"] is True
+    assert active["connection_health"]["needs_reconnect"] is False
+    assert active["connection_health"]["user_action"] == "none"
+    assert active["connection_health"]["message_code"] == "connection_healthy"
+
+    degraded = record_sync_result(
+        db,
+        user_id=user.id,
+        connection_id=connection.id,
+        success=False,
+        error_message="token expired",
+        is_auth_error=True,
+    )
+    degraded_body = serialize_data_connection(db, degraded)
+    degraded_health = degraded_body["connection_health"]
+    assert degraded_health["status"] == "degraded"
+    assert degraded_health["severity"] == "warning"
+    assert degraded_health["can_attempt_sync"] is False
+    assert degraded_health["can_use_cached_data"] is True
+    assert degraded_health["needs_reconnect"] is True
+    assert degraded_health["user_action"] == "reconnect"
+    assert degraded_health["message_code"] == "reconnect_required"
+    assert degraded_health["sync_error"] == "token expired"
+    assert degraded_health["token_status"] == "expired"
+    assert degraded_health["degraded_behavior"] == "read_only"
+
+    revoked = revoke_data_connection(db, user_id=user.id, connection_id=connection.id)
+    revoked_body = serialize_data_connection(db, revoked)
+    revoked_health = revoked_body["connection_health"]
+    assert revoked_health["status"] == "revoked"
+    assert revoked_health["severity"] == "blocked"
+    assert revoked_health["can_attempt_sync"] is False
+    assert revoked_health["can_use_cached_data"] is False
+    assert revoked_health["needs_reconnect"] is True
+    assert revoked_health["user_action"] == "reconnect"
+    assert revoked_health["message_code"] == "connection_revoked"
+
+
 def test_data_connections_are_user_scoped(client, db, auth_user_and_headers):
     _, headers = auth_user_and_headers
     other_user, _ = create_authenticated_user(db)
