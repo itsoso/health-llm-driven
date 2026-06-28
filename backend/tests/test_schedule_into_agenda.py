@@ -70,8 +70,22 @@ def _workout_item(status="pending", **kw):
     return base
 
 
+def _runtime(items):
+    """build_watch_summary 现读 runtime_range_view(rolling runtime),不再读 today;
+    它从 days[].time_windows[].items[] 取项。模拟该投影 shape(boundary mock,同 test_watch_actions/test_inline_cards)。"""
+    first = items[0] if items else None
+    return {
+        "mode": "runtime",
+        "next_action": first,
+        "days": [
+            {"date": "2026-06-17", "next_action": first,
+             "time_windows": [{"label": "evening", "items": items}]},
+        ],
+    }
+
+
 def test_watch_due_items_include_workout(db, user, monkeypatch):
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([_workout_item()]))
+    monkeypatch.setattr(ws.agenda_service, "runtime_range_view", lambda d, u, **k: _runtime([_workout_item()]))
     s = ws.build_watch_summary(db, user.id)
     kinds = [d["kind"] for d in s["due_items"]]
     assert "movement" in kinds
@@ -88,7 +102,7 @@ def test_watch_workout_push_tier_is_p1():
 def test_watch_rest_day_workout_not_actionable(db, user, monkeypatch):
     # Red 休息项 status=info → 不进 due_items(非待打点)。
     rest = _workout_item(status="info", title="锻炼", time=None)
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([rest]))
+    monkeypatch.setattr(ws.agenda_service, "runtime_range_view", lambda d, u, **k: _runtime([rest]))
     s = ws.build_watch_summary(db, user.id)
     assert not any(d["kind"] == "movement" for d in s["due_items"])
 
@@ -99,7 +113,7 @@ def test_workout_is_exercise_nudge_for_critical_suppression():
 
 
 def test_workout_push_suppressed_when_critical_active(db, user, monkeypatch):
-    monkeypatch.setattr(ws.agenda_service, "today", lambda d, u, **k: _agenda([_workout_item()]))
+    monkeypatch.setattr(ws.agenda_service, "runtime_range_view", lambda d, u, **k: _runtime([_workout_item()]))
     monkeypatch.setattr(ws, "_has_active_critical_safety", lambda d, u: True)
     monkeypatch.setattr(ws.proactive_coordinator, "can_notify_proactively", lambda *a, **k: True)
     s = ws.build_watch_summary(db, user.id)

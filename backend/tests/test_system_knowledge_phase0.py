@@ -1846,7 +1846,8 @@ def test_admin_reindex_refreshes_search_text_and_content_hash(client, db, auth_u
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["documents"] == 2
+    # reindex 端点改为返回 report 结构(run_system_kb_reindex_report),文档数在 reindex 子对象里
+    assert payload["reindex"]["documents"] == 2
     refreshed = db.get(KBDocument, "entity:gene:MTHFR")
     assert refreshed.tsv is not None
     assert "MTHFR" in refreshed.tsv
