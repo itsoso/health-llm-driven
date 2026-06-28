@@ -130,10 +130,10 @@ LLM 与工具综合层
 
 | 编号 | PRD 能力 | 当前证据 | 缺口工作 | 目标阶段 |
 |---|---|---|---|---|
-| D0.1 | `DataConnection` 统一外部数据源和设备连接 | 已有最小底座：`backend/app/models/data_connection.py`、`backend/app/services/data_connections.py`、`backend/app/api/data_connections.py`、HealthKit/FHIR import tests 和 Mobile 连接页 | 仍需产品化更多 provider、重连 UX、撤权后删除、连接健康解释和跨端统一状态 | 阶段 1 / 阶段 4 |
+| D0.1 | `DataConnection` 统一外部数据源和设备连接 | 已有最小底座：`backend/app/models/data_connection.py`、`backend/app/services/data_connections.py`、`backend/app/api/data_connections.py`、HealthKit/FHIR import tests、`connection_health` 合同和 Mobile/Web/Mac 只读连接中心 | 仍需产品化更多 provider、重连 UX、撤权后删除、provider metadata 和审计 | 阶段 1 / 阶段 4 |
 | D0.2 | `ConsentGrant` 管理用户授权、共享和撤权 | 已有最小 consent grant、HealthKit consent gate 和 revoke API | 仍需产品化授权中心，区分本人、家庭、医生、外部 agent、研究统计和 IoT 控制范围 | 阶段 1 / 阶段 4 |
 | D0.3 | `ProvenanceRecord` 支撑关键事实可追溯 | 已有最小 provenance record service、FHIR import provenance 和 HealthKit provenance gate | 仍需把 provenance 扩到 Today top action、runtime context、Review 和用户纠错链路 | 阶段 1 / 阶段 4 |
-| D0.4 | `ConnectorPolicy` 管理连接器运行策略 | scheduler、wearable router、device source priority 已存在 | 缺少统一 connector policy：rate limit、token refresh、失败降级、数据最小化、撤权后删除和审计 | 阶段 1 / 阶段 4 |
+| D0.4 | `ConnectorPolicy` 管理连接器运行策略 | scheduler、wearable router、device source priority 和 `connection_health` 降级解释已存在 | 仍缺 rate limit、token refresh、provider retry policy、数据最小化、撤权后删除和审计 UI | 阶段 1 / 阶段 4 |
 | D0.5 | FHIR/SMART 和报告导入成为优先医疗数据入口 | 报告、OCR、labs 和 patient record 相关能力已有基础 | 需要定义 FHIR Bundle import、SMART on FHIR 授权、非标准 PDF/OCR 到内部对象的映射和验证路径 | 阶段 1 |
 
 ### P0：核心闭环缺口
@@ -529,7 +529,7 @@ Mobile/Watch 待规划工作：
   - 代码 commit `80b903035526acf96ccb8bc9b995006e66e8e840`。
   - Mobile OTA production group `dae8abc9-8dcf-4fb8-8e18-3252faf29f7b`。
   - iOS update ID `019f0d33-d178-7fe1-843c-de5430217f5e`；runtime version `1.3.1`；commit `80b903035526acf96ccb8bc9b995006e66e8e840`。
-- Web 入口已在下一切片补齐；Mac 当前没有外部数据连接中心入口，后续应按同一信息架构补 SwiftUI 连接中心。
+- Web 入口已在第九切片补齐；Mac 入口已在第十切片补齐。后续不再重复做只读连接中心，应转向重连、撤权删除、provider metadata 和审计。
 
 2026-06-28 第九切片已发布:
 
@@ -547,7 +547,22 @@ Mobile/Watch 待规划工作：
   - 前端部署 `./deploy.sh -f -y` 成功，PM2 `health-frontend` online。
   - 生产 page smoke：`GET /data-connections` `page_status=200 next_payload_present=True`。
   - 生产 user_id=3 API smoke：`http_status=200 connections=0 health_count=0`。
-- Mac 当前仍没有外部数据连接中心入口；下一步如果继续 A 线，应补 Mac sidebar/SwiftUI 连接状态和 degraded explanation。
+2026-06-28 第十切片已发布:
+
+- Mac 已消费 `connection_health` 合同:
+  - `apps/mac/Sources/HealthAgentMacCore/DataConnectionsClient.swift` 增加 `DataConnection`、`ConnectorPolicy`、`DataConnectionHealth`、旧后端 fallback 和 display mapping。
+  - sidebar 与 command palette 增加“数据连接与授权”入口。
+  - SwiftUI `DataConnectionsView` 展示连接状态、授权 scope、最近同步、token 状态摘要、缓存可用性和 degraded explanation。
+- 本切片只读展示，不显示 token、不新增重连 flow、不做撤权删除、不新增 provider 写路径。
+- 本地验证:
+  - RED：`DataConnectionsClientTests` 先失败于缺少 `DataConnectionsResponse`、`DataConnectionHealth`、`DataConnectionsClient`。
+  - GREEN：targeted Mac tests `6 passed`。
+  - `swift test --package-path apps/mac --filter HealthAgentMacCoreTests` `259 tests, 1 skipped, 0 failures`。
+  - `swift build --package-path apps/mac`、`scripts/check_doc_drift.py`、`git diff --check` 均通过。
+- 已发布:
+  - 代码 commit `55964db040a0952063df1824488a93cc6687c155`。
+  - `apps/mac/scripts/package-app.sh --install --open` 成功。
+  - 已安装并打开 `/Applications/健康 Agent.app`。
 
 2026-06-28 代码对比后的状态修正:
 
@@ -556,7 +571,7 @@ Mobile/Watch 待规划工作：
 
 仍未完成，继续保留在后续计划:
 
-- A 深化：DataConnection / ConsentGrant / ProvenanceRecord 的 Mac 产品化、更多 provider 覆盖和 Review provenance 展示。
+- A 深化：更多 provider 覆盖、家庭/医生/外部 agent scope、撤权删除、重连 UX、审计 UI 和 Review provenance 展示。
 - ConnectorPolicy 后续深化：rate limit、token refresh、provider retry policy、撤权后删除和审计 UI。
 - runtime provenance 继续扩展到 HealthKit / wearable/device / report provider 的更完整 key facts。
 
@@ -564,7 +579,7 @@ Mobile/Watch 待规划工作：
 
 - 后端：在现有 `DataConnection` / `ConsentGrant` / `ProvenanceRecord` / `ConnectorPolicy` 底座上补 token refresh、rate limit、撤权后删除和更多 provider metadata。
 - 导入：扩展报告/FHIR Bundle、HealthKit 和 wearable/device source 的统一 provenance，并继续扩展 Today/runtime context 的 key facts 覆盖面。
-- Mobile/Mac/Web：Mobile 和 Web 连接中心已展示连接健康；后续补 Mac 信息架构、连接状态、授权 scope、最近同步、撤权入口和 degraded explanation。
+- Mobile/Mac/Web：Mobile、Web、Mac 连接中心已展示连接健康；后续补撤权入口、重连 UX、审计 UI、家庭/医生/外部 agent scope 和 Review provenance 展示。
 - 测试：HealthKit/device runtime provenance serialization test、ConsentGrant revoke/delete test、跨 provider metadata contract test、token refresh/retry policy contract test。
 
 建议范围 B：
@@ -611,3 +626,5 @@ Mobile/Watch 待规划工作：
 | 2026-06-28 | 标记 A/B 交叉切片：Runtime 关键事实 provenance 摘要 | Today/runtime top action 不再只有黑箱结论，已能把 FHIR/report biomarker 关键事实关联到 ProvenanceRecord 脱敏摘要。 |
 | 2026-06-28 | 标记 A 切片：ConnectorPolicy 降级连接健康解释 | DataConnection API 已返回 `connection_health`，三端连接中心后续可直接消费统一降级/重连/缓存可用性合同。 |
 | 2026-06-28 | 标记 A 切片：Mobile 连接健康状态展示 | Mobile 设置摘要和 `/data-connections` 页面已消费 `connection_health`，通过 OTA 发布到 production。 |
+| 2026-06-28 | 标记 A 切片：Web 连接健康状态展示 | Web `/data-connections` 页面、侧边导航和设置入口已消费 `connection_health`，生产 page smoke 通过。 |
+| 2026-06-28 | 标记 A 切片：Mac 连接健康状态展示 | Mac sidebar、command palette 和 SwiftUI 连接中心已消费 `connection_health`，本地打包安装并打开。 |

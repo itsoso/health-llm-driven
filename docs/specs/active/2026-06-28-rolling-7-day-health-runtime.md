@@ -81,7 +81,7 @@
 ## 6. 后续切片
 
 - runtime provenance 继续扩展到 HealthKit、wearable/device、体检报告 provider 的更多 key facts，并在 Review 中展示纠错链路。
-- DataConnection 连接中心继续扩展到 Mobile/Mac/Web UI、撤权后删除、token refresh、rate limit 和更多 provider metadata。
+- DataConnection 连接中心已覆盖 Mobile/Mac/Web UI；继续扩展撤权后删除、token refresh、rate limit、更多 provider metadata 和 Review provenance 展示。
 
 ## 7. 已完成后续切片
 
@@ -140,3 +140,11 @@
 - 侧边导航“管理中心”和设置页“数据和智能”已接入连接中心入口。
 - 本切片只读展示，不新增 token refresh、撤权删除、重连 flow 或 provider 写路径。
 - 已发布：Web commit `f6ab4e3dc688e583a72f43583e3fd51c8d69926a`；生产 page smoke `GET /data-connections` 返回 200；user_id=3 authenticated API smoke 返回 `http_status=200 connections=0`。
+
+### 2026-06-28 · Mac Connector Health Surface
+
+- Mac Core 已新增 `DataConnection`、`ConnectorPolicy`、`DataConnectionHealth`、旧后端 fallback 和 display mapping。
+- Mac sidebar 与 command palette 已新增“数据连接与授权”入口。
+- Mac `DataConnectionsView` 已只读展示连接状态、授权 scope、最近同步、token 状态摘要、缓存可用性和 degraded explanation。
+- 本切片不显示 token、不新增重连 flow、不做撤权删除、不新增 provider 写路径。
+- 已发布：Mac code commit `55964db040a0952063df1824488a93cc6687c155`；`swift test --package-path apps/mac --filter HealthAgentMacCoreTests` 通过 259 tests / 1 skipped / 0 failures；`apps/mac/scripts/package-app.sh --install --open` 已安装并打开 `/Applications/健康 Agent.app`。
