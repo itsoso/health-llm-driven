@@ -427,13 +427,17 @@ Mobile/Watch 待规划工作：
   - Mobile OTA production update group `1a6b76e2-a74a-4d14-bccb-caec541ba29f`。
   - 生产 user_id=3 smoke：`mode=runtime horizon=7 days=7 next=True first_runtime_context=True`。
 
-2026-06-28 第二切片已完成实现、待发布:
+2026-06-28 第二切片已发布:
 
 - Home Daily Artifact 后端由 `agenda.smart_today` 切换为 `agenda.runtime_range` 派生，默认 7 天 horizon、最大 14 天。
 - `/api/v1/daily-artifact/me` 返回 `generated_by=daily_artifact_runtime_v1`，`source.kind=agenda.runtime_range`，并暴露 runtime generator / horizon / source count。
 - Mobile `getDailyArtifact()` 默认查询 7 天，并保留 `top_action.runtime_context`。
 - Mobile Home impression / accepted / skipped / completed telemetry 带上 `generated_by`、`source_kind`、`runtime_horizon_days`、`replan_reason`，为后续 skip/snooze 重排打基础。
 - 新增 product-pipeline Dossier：`docs/dossiers/2026-06-28-home-daily-artifact-runtime.md`。
+- 已发布：
+  - 后端部署 SHA `5f015b0ef682ff7c8d1e34ee34b336b41a64e113`，部署健康分 `60/60`。
+  - Mobile OTA production update group `7fcf6a1c-7d96-4015-8a78-34dbdf3ee413`。
+  - 生产 user_id=3 smoke：`generated_by=daily_artifact_runtime_v1 source_kind=agenda.runtime_range horizon_days=7 runtime_context_present=True evidence_count=3`。
 
 仍未完成，继续保留在后续计划:
 

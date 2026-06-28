@@ -4,8 +4,8 @@
 |---|---|
 | slug | `home-daily-artifact-runtime` |
 | 创建日期 | 2026-06-28 |
-| 当前阶段 | S6 部署前验证 |
-| 状态 | implementation-complete |
+| 当前阶段 | S8 沉淀 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | backend deploy + mobile OTA |
 
@@ -106,17 +106,23 @@
 
 ## S6 · 部署
 
-- 状态: pending。
-- 计划:
-  - 提交并推送到 `main`。
-  - 后端 deploy。
-  - Mobile OTA production。
-  - 生产 user_id=3 smoke `/api/v1/daily-artifact/me`。
+- 后端部署 SHA: `5f015b0ef682ff7c8d1e34ee34b336b41a64e113`
+- 后端回滚点: `60667de7`
+- 后端健康分: `60/60 PASS`
+- Mobile OTA:
+  - branch: `production`
+  - runtime version: `1.3.1`
+  - update group ID: `7fcf6a1c-7d96-4015-8a78-34dbdf3ee413`
+  - iOS update ID: `019f0caf-2e7f-73f9-b8e9-7dd67db90559`
+  - dashboard: `https://expo.dev/accounts/itsoso/projects/health-pilot/updates/7fcf6a1c-7d96-4015-8a78-34dbdf3ee413`
 
 ## G5/G6 · 部署健康与上线验证
 
-- 状态: pending。
+- 部署健康闸: PASS。
+- 线上 smoke: 服务器本机 user_id=3 authenticated smoke 通过。
+- smoke 摘要: `generated_by=daily_artifact_runtime_v1 source_kind=agenda.runtime_range horizon_days=7 runtime_generated_by=rolling_health_runtime_v1 top_action_present=True runtime_context_present=True replan_reason=today_smart_rank evidence_count=3 safety_boundary_present=True`。
 
 ## S8 · 沉淀
 
-- 状态: pending deploy result。
+- 状态: shipped。
+- 已回写计划和 active spec。
