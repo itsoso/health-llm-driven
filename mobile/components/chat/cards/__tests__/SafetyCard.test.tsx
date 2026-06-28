@@ -39,4 +39,21 @@ describe('SafetyCard', () => {
   it('accepts backend safety descriptors', () => {
     expect(renderServerCards([descriptor]).map((card) => card.type)).toEqual(['safety']);
   });
+
+  it('does not crash on malformed backend safety data', () => {
+    const element = renderCard({
+      type: 'safety',
+      data: {
+        title: 123,
+        severity: 'critical',
+        summary: { text: 'bad payload' },
+        recommendations: '改为低强度活动',
+        boundary: 456,
+        requires_medical_attention: 'yes',
+      },
+    } as any);
+
+    expect(element).not.toBeNull();
+    expect(() => render(element!)).not.toThrow();
+  });
 });

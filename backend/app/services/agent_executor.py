@@ -34,6 +34,7 @@ AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
 BEIJING_TZ = timezone(timedelta(hours=8))
 COMPACT_EMPTY_RETRY_SYSTEM_CHAR_LIMIT = 760
 SAFETY_CARD_BOUNDARY = "这不是诊断；如出现急性不适或持续症状，请及时就医。"
+SAFETY_WARNING_MARKER = "\n\n⚠️ 安全提示:"
 
 
 # ──── 多模型综合分析 (参考 browser-llm-driven / LangBridge 平台) ────
@@ -854,15 +855,27 @@ def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
         content = str(message.get("content") or "").strip()
         if not content:
             continue
+        safety_warning = ""
+        marker_idx = content.find(SAFETY_WARNING_MARKER)
+        if marker_idx >= 0:
+            safety_warning = content[marker_idx:].strip()
+            content = content[:marker_idx].strip()
+
+        def append_safety_warning() -> None:
+            if safety_warning:
+                replies.append(safety_warning)
+
         if content.startswith("[NEEDS_CONFIRMATION]"):
             prompt = content.replace("[NEEDS_CONFIRMATION]", "", 1).strip()
             prompt = prompt.split("请向用户", 1)[0].strip()
             if prompt.endswith("."):
                 prompt = prompt[:-1].strip()
             replies.append(f"{prompt}。是这样吗？")
+            append_safety_warning()
             continue
         if content.startswith("Error"):
             replies.append(content)
+            append_safety_warning()
             continue
         try:
             payload = json.loads(content)
@@ -872,17 +885,21 @@ def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
             tool_message = payload.get("message")
             if isinstance(tool_message, str) and tool_message.strip():
                 replies.append(tool_message.strip())
+                append_safety_warning()
                 continue
             # Created-record JSON with no `message` — synthesize a human line
             # instead of dumping raw JSON (the user complaint).
             replies.append(_friendly_record_confirmation(payload))
+            append_safety_warning()
             continue
         if isinstance(payload, list):
             # Array of created records (batch) — confirm count, never dump JSON.
             replies.append(f"✅ 已记录 {len(payload)} 条")
+            append_safety_warning()
             continue
         # Plain-text tool result (already human-readable) — show as-is.
         replies.append(content.replace("\n", " ")[:160])
+        append_safety_warning()
 
     deduped: list[str] = []
     for reply in replies:

@@ -13,16 +13,46 @@ import {
 type SafetySeverity = 'info' | 'low' | 'medium' | 'high' | 'critical' | string;
 
 interface SafetyCardData {
-  title?: string;
-  severity?: SafetySeverity;
-  summary?: string;
-  recommendations?: string[];
-  boundary?: string;
-  requires_medical_attention?: boolean;
+  title?: unknown;
+  severity?: unknown;
+  summary?: unknown;
+  recommendations?: unknown;
+  boundary?: unknown;
+  requires_medical_attention?: unknown;
 }
 
-function severityMeta(severity?: SafetySeverity): { label: string; fg: string; bg: string; icon: string } {
-  switch (severity) {
+const DEFAULT_BOUNDARY = '这不是诊断；如出现急性不适或持续症状，请及时就医。';
+
+function optionalText(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const text = value.trim();
+    return text || undefined;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  return undefined;
+}
+
+function normalizeSeverity(severity?: unknown): SafetySeverity {
+  if (typeof severity !== 'string') return 'info';
+  const normalized = severity.trim().toLowerCase();
+  return ['info', 'low', 'medium', 'high', 'critical'].includes(normalized)
+    ? normalized
+    : 'info';
+}
+
+function normalizeRecommendations(value: unknown): string[] {
+  const items = Array.isArray(value) ? value : value == null ? [] : [value];
+  return items
+    .map((item) => optionalText(item))
+    .filter((item): item is string => Boolean(item))
+    .slice(0, 3);
+}
+
+function severityMeta(severity?: unknown): { label: string; fg: string; bg: string; icon: string } {
+  const normalized = normalizeSeverity(severity);
+  switch (normalized) {
     case 'critical':
       return { label: '紧急风险', fg: revaSemantic.risk.fg, bg: revaSemantic.risk.bg, icon: 'warning-outline' };
     case 'high':
@@ -41,25 +71,30 @@ export function SafetyCardView({
   title,
   severity = 'info',
   summary,
-  recommendations = [],
+  recommendations,
   boundary,
   requires_medical_attention,
 }: SafetyCardData) {
-  const meta = severityMeta(severity);
-  const visibleRecommendations = recommendations.filter(Boolean).slice(0, 3);
+  const normalizedSeverity = normalizeSeverity(severity);
+  const meta = severityMeta(normalizedSeverity);
+  const safeTitle = optionalText(title) || '安全提醒';
+  const safeSummary = optionalText(summary);
+  const safeBoundary = optionalText(boundary) || DEFAULT_BOUNDARY;
+  const visibleRecommendations = normalizeRecommendations(recommendations);
+  const requiresAttention = requires_medical_attention === true || normalizedSeverity === 'critical';
 
   return (
     <CardShell
       icon={meta.icon}
       iconColor={meta.fg}
-      title={title || '安全提醒'}
+      title={safeTitle}
       badge={meta.label}
       badgeColor={meta.fg}
       bg={meta.bg}
     >
-      {summary ? (
+      {safeSummary ? (
         <Text maxFontSizeMultiplier={1.3} style={styles.summary}>
-          {summary}
+          {safeSummary}
         </Text>
       ) : null}
 
@@ -76,7 +111,7 @@ export function SafetyCardView({
         </View>
       ) : null}
 
-      {requires_medical_attention ? (
+      {requiresAttention ? (
         <View style={styles.attention}>
           <Ionicons name="medkit-outline" size={12} color={revaSemantic.risk.fg} />
           <Text maxFontSizeMultiplier={1.3} style={styles.attentionText}>
@@ -86,7 +121,7 @@ export function SafetyCardView({
       ) : null}
 
       <Text maxFontSizeMultiplier={1.3} style={styles.boundary}>
-        {boundary || '这不是诊断；如出现急性不适或持续症状，请及时就医。'}
+        {safeBoundary}
       </Text>
     </CardShell>
   );

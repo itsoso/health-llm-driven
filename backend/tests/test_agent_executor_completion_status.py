@@ -563,6 +563,76 @@ async def test_agent_stream_emits_safety_card_after_record_safety_alert(db, auth
 
 
 @pytest.mark.asyncio
+async def test_agent_stream_keeps_safety_text_visible_for_old_clients(db, auth_user_and_headers, monkeypatch):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+
+    async def fake_call_llm(messages, tools):
+        return {
+            "content": "",
+            "finish_reason": "tool_calls",
+            "tool_calls": [
+                {
+                    "id": "call_record_diet",
+                    "type": "function",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": json.dumps({
+                            "record_type": "diet",
+                            "data": {
+                                "food_items": "牛肉面",
+                                "meal_type": "dinner",
+                            },
+                        }, ensure_ascii=False),
+                    },
+                },
+            ],
+        }
+
+    async def fake_execute_tool(tool_name, args_raw, user_token):
+        assert tool_name == "health_record"
+        return json.dumps(
+            {"message": "已记录晚餐：" + ("牛肉面" * 80)},
+            ensure_ascii=False,
+        )
+
+    safety_alert = Alert(
+        rule_id="training.high_intensity_not_recommended",
+        category="training_load",
+        severity=Severity.HIGH,
+        title="今天不建议高强度训练",
+        message="睡眠不足且 HRV 明显低于近期基线，建议把训练降级。",
+        action="改为 20 分钟低强度步行或拉伸",
+    )
+    monkeypatch.setattr("app.twin.builder.build_twin", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(
+        "app.agents.safety_guardian.evaluate_safety",
+        lambda _twin: SimpleNamespace(alerts=[safety_alert]),
+    )
+
+    executor._call_llm = fake_call_llm
+    executor._call_llm_stream = _stream_from(fake_call_llm)
+    executor._execute_tool = fake_execute_tool
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录晚餐牛肉面",
+            user_auth_token="test-token",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+    assert "⚠️ 安全提示" in rendered
+    assert "今天不建议高强度训练" in rendered
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_marks_length_limited_answer_as_interrupted(db, auth_user_and_headers):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
