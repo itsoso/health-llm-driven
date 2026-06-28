@@ -1108,6 +1108,51 @@ def test_admin_operations_dashboard_surfaces_dedao_kbase_draft_sync(client, db, 
     assert "dedao_kbase_draft_review_needed" in payload["action_items"]
 
 
+def test_admin_operations_dashboard_flags_stale_source_freshness(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    db.add(
+        KBDocument(
+            doc_id="claim:c_sleep_stale_guideline_source",
+            doc_type="claim",
+            entity_type="sleep",
+            entity_id="caffeine",
+            title="睡眠前咖啡因窗口",
+            summary="睡眠前较晚摄入咖啡因可能影响入睡。",
+            body="仅用于健康管理提示。",
+            confidence=0.74,
+            evidence_level="B",
+            sources=["guideline:sleep-caffeine-window"],
+            last_confirmed=datetime(2026, 5, 1, tzinfo=UTC),
+            decay_rate="normal",
+            metadata_json={
+                "review_status": "reviewed",
+                "domain": "sleep",
+                "external_sources": [
+                    {
+                        "source": "guideline:sleep-caffeine-window",
+                        "kind": "guideline",
+                        "last_reviewed_at": "2024-01-01T00:00:00+00:00",
+                    }
+                ],
+            },
+        )
+    )
+    db.commit()
+
+    response = client.get("/api/v1/admin/knowledge/operations_dashboard", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "kb_stale_sources_present" in payload["action_items"]
+    freshness = payload["coverage"]["domain_coverage"]["sleep"]["source_freshness"]
+    assert freshness["source_total"] == 1
+    assert freshness["stale_sources"] == 1
+    assert freshness["items"][0]["source"] == "guideline:sleep-caffeine-window"
+    assert freshness["items"][0]["kind"] == "guideline"
+    assert freshness["items"][0]["days_since_reviewed"] > 365
+
+
 def test_admin_dedao_kbase_draft_review_bundle_reads_configured_artifacts(
     client,
     db,

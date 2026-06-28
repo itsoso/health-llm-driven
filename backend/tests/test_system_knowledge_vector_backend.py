@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from app.models.system_knowledge import KBDocument, KBDocumentVector, KBEdge
+from app.services import system_knowledge_service
 from app.services.system_knowledge_service import reindex_knowledge_documents, search_knowledge
 
 
@@ -94,5 +95,31 @@ def test_search_vector_channel_uses_index_rows_not_alias_fallback(db):
     assert "claim:c_mthfr_c677t_hcy_folate_boundary" in result_ids
     assert "claim:c_mthfr_draft_vector_should_not_serve" not in result_ids
     assert after_index["retrieval_plan"]["vector_backend"] == "sparse_term_cosine_v1"
+    assert "vector" in claim_result["retrieval"]["channels"]
+    assert claim_result["retrieval"]["vector_score"] > 0
+
+
+def test_search_vector_channel_prefers_pgvector_backend_when_available(db, monkeypatch):
+    _seed_vector_knowledge(db)
+
+    def fake_pgvector_backend(_db):
+        return "pgvector:text-embedding-3-small"
+
+    def fake_pgvector_rank(_db, documents_by_id, query, *, limit):
+        assert query == "semantic-only-query"
+        claim = documents_by_id["claim:c_mthfr_c677t_hcy_folate_boundary"]
+        return [(0.93, claim)]
+
+    monkeypatch.setattr(system_knowledge_service, "_pgvector_backend_for_session", fake_pgvector_backend, raising=False)
+    monkeypatch.setattr(system_knowledge_service, "_rank_pgvector_documents", fake_pgvector_rank, raising=False)
+
+    payload = search_knowledge(db, "semantic-only-query", limit=5)
+    claim_result = next(
+        item
+        for item in payload["results"]
+        if item["document"]["doc_id"] == "claim:c_mthfr_c677t_hcy_folate_boundary"
+    )
+
+    assert payload["retrieval_plan"]["vector_backend"] == "pgvector:text-embedding-3-small"
     assert "vector" in claim_result["retrieval"]["channels"]
     assert claim_result["retrieval"]["vector_score"] > 0

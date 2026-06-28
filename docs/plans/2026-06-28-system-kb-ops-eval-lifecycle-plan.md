@@ -18,7 +18,7 @@
 4. **P2: real semantic backend.** Replace deterministic semantic aliases with pgvector-backed embeddings while preserving the current search response shape.
 5. **P2: source freshness policy.** Track guideline/source `last_reviewed_at` and stale source action items per domain.
 
-This implementation executes P0 plus the P1 dedao-kbase draft observability and reviewer workflow API slices. It avoids new medical content and does not relax reviewed-only serving.
+This implementation executes P0, the P1 dedao-kbase draft observability and reviewer workflow API slices, plus the P2 source freshness and pgvector fallback-safe semantic backend slices. It avoids new medical content and does not relax reviewed-only serving.
 
 ## Task 1: Lifecycle Eval Snapshot
 
@@ -146,6 +146,57 @@ Run:
 ```bash
 DATABASE_URL=sqlite:///./backend/test_kb_review_workflow.db PYTHONPATH=backend backend/venv/bin/python -m pytest backend/tests/test_system_knowledge_phase0.py::test_admin_operations_dashboard_surfaces_dedao_kbase_draft_sync backend/tests/test_system_knowledge_phase0.py::test_admin_dedao_kbase_draft_review_bundle_reads_configured_artifacts backend/tests/test_system_knowledge_phase0.py::test_admin_dedao_kbase_draft_review_approve_promotes_configured_artifacts -q
 PYTHONPATH=backend backend/venv/bin/python -m compileall -q backend/app/api/system_knowledge.py backend/app/services/system_knowledge_service.py backend/tests/test_system_knowledge_phase0.py
+PYTHONPATH=backend backend/venv/bin/python backend/scripts/run_external_health_knowledge_release_gate.py --artifact-dir backend/data/system_kb_v2_seed
+```
+
+Expected: pytest pass, compileall exit 0, release gate pass.
+
+## Task 6: P2 Source Freshness Policy
+
+**Files:**
+- Modify: `backend/app/services/system_knowledge_service.py`
+- Test: `backend/tests/test_system_knowledge_phase0.py`
+
+**Implemented behavior:**
+- Domain coverage now includes `source_freshness` for external reviewed sources.
+- Sources are de-duplicated by `(kind, source)`.
+- Staleness windows are explicit by source kind:
+  - guideline/article/other: 365 days
+  - database: 180 days
+  - course: 730 days
+  - research/book: 1095 days
+- Missing `last_reviewed_at` and stale sources are surfaced as `kb_stale_sources_present` in the operations dashboard action items.
+
+**Verification:**
+
+```bash
+DATABASE_URL=sqlite:///./backend/test_kb_p2.db PYTHONPATH=backend backend/venv/bin/python -m pytest backend/tests/test_system_knowledge_phase0.py::test_admin_operations_dashboard_flags_stale_source_freshness -q
+```
+
+Expected: pass.
+
+## Task 7: P2 pgvector Semantic Backend
+
+**Files:**
+- Modify: `backend/app/config.py`
+- Modify: `backend/app/services/system_knowledge_service.py`
+- Modify: `backend/.env.example`
+- Test: `backend/tests/test_system_knowledge_vector_backend.py`
+
+**Implemented behavior:**
+- Search retrieval still returns the same response shape and channel names.
+- When PostgreSQL, `SYSTEM_KB_PGVECTOR_ENABLED=true`, an embedding provider is configured, and `kb_document_embeddings` exists, vector search prefers `pgvector:<SYSTEM_KB_EMBEDDING_MODEL>`.
+- If pgvector, the embedding provider, or dense rows are unavailable, retrieval falls back to the existing `sparse_term_cosine_v1` vector backend.
+- Reindex now attempts to create and populate `kb_document_embeddings`, but dense indexing failures do not break reviewed KB serving.
+
+**Production note:**
+- The current production PostgreSQL host did not report the `vector` extension as available during implementation verification. Until pgvector is installed and `reindex_knowledge_documents` has populated dense embeddings, production will keep serving via sparse fallback.
+
+**Verification:**
+
+```bash
+DATABASE_URL=sqlite:///./backend/test_kb_p2.db PYTHONPATH=backend backend/venv/bin/python -m pytest backend/tests/test_system_knowledge_vector_backend.py::test_search_vector_channel_prefers_pgvector_backend_when_available -q
+PYTHONPATH=backend backend/venv/bin/python -m compileall -q backend/app/config.py backend/app/services/system_knowledge_service.py backend/tests/test_system_knowledge_vector_backend.py
 PYTHONPATH=backend backend/venv/bin/python backend/scripts/run_external_health_knowledge_release_gate.py --artifact-dir backend/data/system_kb_v2_seed
 ```
 

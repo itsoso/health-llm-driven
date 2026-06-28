@@ -7,13 +7,14 @@ from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 import hashlib
 import json
+import logging
 import math
 import operator
 from pathlib import Path
 import re
 from typing import Any
 
-from sqlalchemy import desc, func, or_, update
+from sqlalchemy import bindparam, desc, func, or_, text, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -22,14 +23,26 @@ from app.models.system_knowledge import KBAudit, KBDocument, KBDocumentVector, K
 from app.services.system_knowledge_ingest import review_draft_artifacts, validate_artifact_review_gate
 
 
+logger = logging.getLogger(__name__)
 CLAIM_BOUNDARY = "仅用于健康管理和风险沟通，不替代医生诊断、治疗或用药决策。"
-VECTOR_BACKEND = "sparse_term_cosine_v1"
+SPARSE_VECTOR_BACKEND = "sparse_term_cosine_v1"
+VECTOR_BACKEND = SPARSE_VECTOR_BACKEND
+PGVECTOR_TABLE = "kb_document_embeddings"
 VECTOR_MAX_TERMS = 512
 SPECIALIST_EVIDENCE_REF_RATE_TARGET = 0.85
 EXTERNAL_EVIDENCE_SOURCE_RATE_TARGET = 0.2
 VALID_REVIEW_STATUSES = {"draft", "reviewed", "needs_review", "archived"}
 POSITIVE_STANCES = {"supports", "positive", "for", "yes", "true", "increase", "increases"}
 NEGATIVE_STANCES = {"opposes", "negative", "against", "no", "false", "decrease", "decreases"}
+SOURCE_FRESHNESS_WINDOWS_DAYS = {
+    "guideline": 365,
+    "database": 180,
+    "research": 1095,
+    "course": 730,
+    "book": 1095,
+    "article": 365,
+    "other": 365,
+}
 _ACID_SUPPRESSION_MED_TOKENS = (
     "ppi",
     "p-cab",
@@ -550,10 +563,11 @@ def search_knowledge(
 
     lexical_ranked: list[tuple[float, KBDocument]] = _bm25_rank_documents(documents, terms)
     fts_ranked: list[tuple[float, KBDocument]] = []
-    vector_ranked: list[tuple[float, KBDocument]] = _rank_vector_documents(
+    vector_ranked, vector_backend = _rank_vector_documents(
         db,
         documents_by_id,
         normalized_query,
+        limit=max(50, limit),
     )
     fts_backend = _fts_backend_for_session(db)
     postgres_fts_ranked: list[tuple[float, KBDocument]] = []
@@ -652,7 +666,7 @@ def search_knowledge(
             "channels": ["lexical", "fts", "vector", "graph"],
             "lexical_backend": "python_bm25_v1",
             "fts_backend": fts_backend,
-            "vector_backend": VECTOR_BACKEND,
+            "vector_backend": vector_backend,
             "graph_backend": "kb_edges_one_hop",
             "rrf_backend": "python_rrf_v1",
         },
@@ -868,15 +882,19 @@ def reindex_knowledge_documents(db: Session, actor: str = "system") -> dict[str,
     documents = db.query(KBDocument).filter(KBDocument.is_archived.is_(False)).all()
     use_postgres_tsvector = _fts_backend_for_session(db) == "postgres_tsv"
     active_doc_ids = {document.doc_id for document in documents}
+    searchable_by_doc_id: dict[str, tuple[str, str]] = {}
     for document in documents:
         searchable = _document_search_text(document)
         content_hash = hashlib.sha256(searchable.encode("utf-8")).hexdigest()
+        searchable_by_doc_id[document.doc_id] = (searchable, content_hash)
         _upsert_document_vector(db, document.doc_id, searchable, content_hash)
         if use_postgres_tsvector:
             db.execute(_build_postgres_reindex_statement(document.doc_id, searchable, content_hash))
             continue
         document.tsv = searchable
         document.content_hash = content_hash
+
+    dense_vectors = _reindex_pgvector_documents(db, searchable_by_doc_id)
 
     if active_doc_ids:
         db.query(KBDocumentVector).filter(KBDocumentVector.doc_id.notin_(active_doc_ids)).delete(
@@ -890,11 +908,16 @@ def reindex_knowledge_documents(db: Session, actor: str = "system") -> dict[str,
             doc_id=None,
             op="reindex",
             actor=actor,
-            diff={"documents": len(documents), "vector_backend": VECTOR_BACKEND},
+            diff={
+                "documents": len(documents),
+                "vector_backend": VECTOR_BACKEND,
+                "dense_vector_backend": _pgvector_backend_name(),
+                "dense_vectors": dense_vectors,
+            },
         )
     )
     db.commit()
-    return {"documents": len(documents)}
+    return {"documents": len(documents), "dense_vectors": dense_vectors}
 
 
 def _build_postgres_reindex_statement(doc_id: str, searchable: str, content_hash: str):
@@ -1045,6 +1068,14 @@ def _domain_coverage_bucket(
                 "by_kind": Counter(),
                 "missing_external_source_claims": [],
             },
+            "source_freshness": {
+                "source_total": 0,
+                "stale_sources": 0,
+                "missing_last_reviewed_sources": 0,
+                "by_kind": Counter(),
+                "items": [],
+                "_seen_sources": set(),
+            },
             "eval_coverage": {
                 "eval_cases_total": 0,
                 "_claim_ids": set(),
@@ -1083,8 +1114,73 @@ def _add_domain_document(bucket: dict[str, Any], document: KBDocument, *, now: d
     for source in external_sources:
         kind = str(source.get("kind") or "other")
         source_coverage["by_kind"][kind] += 1
+        _add_domain_source_freshness(
+            bucket["source_freshness"],
+            source,
+            document,
+            now=now,
+        )
 
     _add_domain_stale_risk(bucket["stale_risk"], document, now=now, review_status=review_status)
+
+
+def _add_domain_source_freshness(
+    source_freshness: dict[str, Any],
+    source: dict[str, Any],
+    document: KBDocument,
+    *,
+    now: datetime,
+) -> None:
+    source_key = str(source.get("source") or "").strip()
+    if not source_key:
+        return
+    kind = str(source.get("kind") or source_detail(source_key).get("kind") or "other")
+    seen_key = (kind, source_key)
+    seen_sources = source_freshness.setdefault("_seen_sources", set())
+    if seen_key in seen_sources:
+        return
+    seen_sources.add(seen_key)
+
+    source_freshness["source_total"] += 1
+    source_freshness["by_kind"][kind] += 1
+
+    raw_reviewed_at = (
+        source.get("last_reviewed_at")
+        or source.get("reviewed_at")
+        or source.get("last_confirmed_at")
+    )
+    reviewed_date = _date_from_value(raw_reviewed_at)
+    if reviewed_date is None:
+        source_freshness["missing_last_reviewed_sources"] += 1
+        source_freshness["items"].append(
+            {
+                "source": source_key,
+                "kind": kind,
+                "reason": "missing_last_reviewed_at",
+                "doc_id": document.doc_id,
+                "title": document.title,
+            }
+        )
+        return
+
+    window_days = SOURCE_FRESHNESS_WINDOWS_DAYS.get(kind, SOURCE_FRESHNESS_WINDOWS_DAYS["other"])
+    days_since_reviewed = (now.date() - reviewed_date).days
+    if days_since_reviewed <= window_days:
+        return
+
+    source_freshness["stale_sources"] += 1
+    source_freshness["items"].append(
+        {
+            "source": source_key,
+            "kind": kind,
+            "reason": "stale_source",
+            "doc_id": document.doc_id,
+            "title": document.title,
+            "last_reviewed_at": reviewed_date.isoformat(),
+            "days_since_reviewed": days_since_reviewed,
+            "freshness_window_days": window_days,
+        }
+    )
 
 
 def _add_domain_stale_risk(
@@ -1151,6 +1247,18 @@ def _finalize_domain_coverage_bucket(bucket: dict[str, Any]) -> dict[str, Any]:
         round(claims_with_eval / eval_claim_total, 4) if eval_claim_total else 0.0
     )
     eval_coverage["missing_eval_claims"] = sorted(claim_ids - covered_claim_ids)[:10]
+
+    source_freshness = bucket["source_freshness"]
+    source_freshness.pop("_seen_sources", None)
+    source_freshness["by_kind"] = dict(sorted(source_freshness["by_kind"].items()))
+    source_freshness["items"].sort(
+        key=lambda item: (
+            str(item.get("kind") or ""),
+            str(item.get("source") or ""),
+            str(item.get("doc_id") or ""),
+        )
+    )
+    source_freshness["items"] = source_freshness["items"][:10]
 
     bucket["stale_risk"]["items"].sort(key=lambda item: str(item.get("doc_id") or ""))
     bucket["stale_risk"]["items"] = bucket["stale_risk"]["items"][:10]
@@ -2505,18 +2613,204 @@ def _upsert_document_vector(db: Session, doc_id: str, searchable: str, content_h
     db.add(KBDocumentVector(doc_id=doc_id, **values))
 
 
+def _pgvector_backend_name() -> str:
+    return f"pgvector:{settings.system_kb_embedding_model}"
+
+
+def _is_postgres_session(db: Session) -> bool:
+    dialect = getattr(getattr(db, "bind", None), "dialect", None)
+    return getattr(dialect, "name", "") == "postgresql"
+
+
+def _system_kb_embedding_provider_available() -> bool:
+    return bool(settings.openai_api_key)
+
+
+def _pgvector_backend_for_session(db: Session) -> str | None:
+    if not settings.system_kb_pgvector_enabled:
+        return None
+    if not _is_postgres_session(db):
+        return None
+    if not _system_kb_embedding_provider_available():
+        return None
+    if not _pgvector_table_exists(db):
+        return None
+    return _pgvector_backend_name()
+
+
+def _pgvector_table_exists(db: Session) -> bool:
+    try:
+        return bool(
+            db.execute(
+                text("SELECT to_regclass('public.kb_document_embeddings')")
+            ).scalar()
+        )
+    except SQLAlchemyError:
+        db.rollback()
+        return False
+
+
+def _ensure_pgvector_table(db: Session) -> bool:
+    if not settings.system_kb_pgvector_enabled or not _is_postgres_session(db):
+        return False
+    dimensions = int(settings.system_kb_embedding_dimensions)
+    try:
+        engine = db.get_bind()
+        with engine.begin() as connection:
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            connection.execute(
+                text(
+                    f"""
+                    CREATE TABLE IF NOT EXISTS {PGVECTOR_TABLE} (
+                        doc_id TEXT PRIMARY KEY REFERENCES kb_documents(doc_id) ON DELETE CASCADE,
+                        embedding_model VARCHAR(120) NOT NULL,
+                        content_hash VARCHAR(64) NOT NULL,
+                        embedding vector({dimensions}) NOT NULL,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    f"""
+                    CREATE INDEX IF NOT EXISTS ix_{PGVECTOR_TABLE}_model_doc
+                    ON {PGVECTOR_TABLE}(embedding_model, doc_id)
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    f"""
+                    CREATE INDEX IF NOT EXISTS ix_{PGVECTOR_TABLE}_embedding_cosine
+                    ON {PGVECTOR_TABLE}
+                    USING ivfflat (embedding vector_cosine_ops)
+                    WITH (lists = 100)
+                    """
+                )
+            )
+        return True
+    except SQLAlchemyError as exc:
+        logger.warning("system KB pgvector table unavailable; sparse vector fallback remains active: %s", exc)
+        return False
+
+
+def _embed_system_kb_texts(texts: list[str], *, batch_size: int = 50) -> list[list[float]] | None:
+    prepared_texts = [str(text or "").strip() or " " for text in texts]
+    if not prepared_texts or not _system_kb_embedding_provider_available():
+        return None
+    try:
+        from openai import OpenAI
+
+        client_kwargs: dict[str, Any] = {"api_key": settings.openai_api_key}
+        if settings.openai_base_url:
+            client_kwargs["base_url"] = settings.openai_base_url
+        client = OpenAI(**client_kwargs)
+        embeddings: list[list[float]] = []
+        for index in range(0, len(prepared_texts), batch_size):
+            batch = prepared_texts[index : index + batch_size]
+            response = client.embeddings.create(
+                model=settings.system_kb_embedding_model,
+                input=batch,
+            )
+            embeddings.extend([list(item.embedding) for item in response.data])
+        if len(embeddings) != len(prepared_texts):
+            return None
+        return embeddings
+    except Exception as exc:  # External provider failure must not break reviewed KB serving.
+        logger.warning("system KB embedding provider unavailable; sparse vector fallback remains active: %s", exc)
+        return None
+
+
+def _pgvector_literal(vector: list[float]) -> str:
+    dimensions = int(settings.system_kb_embedding_dimensions)
+    if len(vector) != dimensions:
+        raise ValueError(f"embedding dimension mismatch: expected {dimensions}, got {len(vector)}")
+    values = []
+    for value in vector:
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError("embedding contains non-finite value")
+        values.append(format(number, ".8g"))
+    return "[" + ",".join(values) + "]"
+
+
+def _reindex_pgvector_documents(
+    db: Session,
+    searchable_by_doc_id: dict[str, tuple[str, str]],
+) -> int:
+    if not searchable_by_doc_id:
+        return 0
+    if not _ensure_pgvector_table(db):
+        return 0
+
+    doc_ids = list(searchable_by_doc_id.keys())
+    texts = [searchable_by_doc_id[doc_id][0] for doc_id in doc_ids]
+    embeddings = _embed_system_kb_texts(texts)
+    if not embeddings:
+        return 0
+
+    upsert_sql = text(
+        f"""
+        INSERT INTO {PGVECTOR_TABLE} (doc_id, embedding_model, content_hash, embedding, updated_at)
+        VALUES (:doc_id, :embedding_model, :content_hash, CAST(:embedding AS vector), NOW())
+        ON CONFLICT (doc_id) DO UPDATE SET
+            embedding_model = EXCLUDED.embedding_model,
+            content_hash = EXCLUDED.content_hash,
+            embedding = EXCLUDED.embedding,
+            updated_at = NOW()
+        """
+    )
+    try:
+        params = [
+            {
+                "doc_id": doc_id,
+                "embedding_model": settings.system_kb_embedding_model,
+                "content_hash": searchable_by_doc_id[doc_id][1],
+                "embedding": _pgvector_literal(embedding),
+            }
+            for doc_id, embedding in zip(doc_ids, embeddings, strict=True)
+        ]
+    except ValueError as exc:
+        logger.warning("system KB pgvector upsert skipped: %s", exc)
+        return 0
+
+    try:
+        engine = db.get_bind()
+        with engine.begin() as connection:
+            connection.execute(upsert_sql, params)
+    except SQLAlchemyError as exc:
+        logger.warning("system KB pgvector upsert skipped; sparse vector fallback remains active: %s", exc)
+        return 0
+    return len(params)
+
+
 def _rank_vector_documents(
     db: Session,
     documents_by_id: dict[str, KBDocument],
     query: str,
-) -> list[tuple[float, KBDocument]]:
+    *,
+    limit: int,
+) -> tuple[list[tuple[float, KBDocument]], str]:
     if not documents_by_id:
-        return []
+        return [], VECTOR_BACKEND
+
+    dense_backend = _pgvector_backend_for_session(db)
+    if dense_backend:
+        dense_ranked = _rank_pgvector_documents(
+            db,
+            documents_by_id,
+            query,
+            limit=limit,
+        )
+        if dense_ranked:
+            return dense_ranked, dense_backend
 
     query_vector = _build_sparse_term_vector(query)
     query_magnitude = _sparse_vector_magnitude(query_vector)
     if not query_vector or query_magnitude == 0:
-        return []
+        return [], VECTOR_BACKEND
 
     try:
         rows = (
@@ -2529,7 +2823,7 @@ def _rank_vector_documents(
         )
     except SQLAlchemyError:
         db.rollback()
-        return []
+        return [], VECTOR_BACKEND
 
     ranked: list[tuple[float, KBDocument]] = []
     for row in rows:
@@ -2542,6 +2836,57 @@ def _rank_vector_documents(
             row.vector_json or {},
             float(row.magnitude or 0.0),
         )
+        if score > 0:
+            ranked.append((score, document))
+    return ranked, VECTOR_BACKEND
+
+
+def _rank_pgvector_documents(
+    db: Session,
+    documents_by_id: dict[str, KBDocument],
+    query: str,
+    *,
+    limit: int,
+) -> list[tuple[float, KBDocument]]:
+    embedding_rows = _embed_system_kb_texts([query])
+    if not embedding_rows:
+        return []
+    try:
+        query_embedding = _pgvector_literal(embedding_rows[0])
+    except ValueError:
+        return []
+
+    statement = text(
+        f"""
+        SELECT doc_id, 1 - (embedding <=> CAST(:query_embedding AS vector)) AS score
+        FROM {PGVECTOR_TABLE}
+        WHERE embedding_model = :embedding_model
+          AND doc_id IN :doc_ids
+        ORDER BY embedding <=> CAST(:query_embedding AS vector)
+        LIMIT :limit
+        """
+    ).bindparams(bindparam("doc_ids", expanding=True))
+    try:
+        rows = db.execute(
+            statement,
+            {
+                "query_embedding": query_embedding,
+                "embedding_model": settings.system_kb_embedding_model,
+                "doc_ids": list(documents_by_id.keys()),
+                "limit": max(1, min(limit, 100)),
+            },
+        ).fetchall()
+    except SQLAlchemyError as exc:
+        logger.warning("system KB pgvector rank failed; sparse vector fallback remains active: %s", exc)
+        db.rollback()
+        return []
+
+    ranked: list[tuple[float, KBDocument]] = []
+    for row in rows:
+        document = documents_by_id.get(str(row.doc_id))
+        if document is None:
+            continue
+        score = float(row.score or 0.0)
         if score > 0:
             ranked.append((score, document))
     return ranked
@@ -3194,6 +3539,14 @@ def _knowledge_operations_action_items(
         action_items.append("protocol_paid_content_lint_violations")
     if protocol_review.get("high_risk_protocols_missing_external_evidence", 0):
         action_items.append("high_risk_protocol_external_evidence_missing")
+    domain_coverage = coverage.get("domain_coverage") or {}
+    if any(
+        int((bucket.get("source_freshness") or {}).get("stale_sources") or 0) > 0
+        or int((bucket.get("source_freshness") or {}).get("missing_last_reviewed_sources") or 0) > 0
+        for bucket in domain_coverage.values()
+        if isinstance(bucket, dict)
+    ):
+        action_items.append("kb_stale_sources_present")
     lint_summary = lint.get("summary") if isinstance(lint, dict) else {}
     if isinstance(lint_summary, dict) and any(int(count or 0) > 0 for count in lint_summary.values()):
         action_items.append("kb_lint_issues_present")

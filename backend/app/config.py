@@ -227,6 +227,9 @@ class Settings(BaseSettings):
     dedao_kbase_auth_token: Optional[str] = None
     dedao_kbase_source_root: str = "/Users/liqiuhua/work/personal/down-dedao"
     system_kb_artifact_dir: Optional[str] = None
+    system_kb_pgvector_enabled: bool = True
+    system_kb_embedding_model: str = "text-embedding-3-small"
+    system_kb_embedding_dimensions: int = 1536
 
     # 邀请码配置
     default_invite_code: str = "LLM"  # 默认邀请码
