@@ -1,4 +1,11 @@
-import type { SmartAgendaItem } from './agenda';
+import type { TrajectoryContext } from './agenda';
+
+export interface TrajectoryDisplayInput {
+  target_state_variable?: string | null;
+  trajectory_context?: TrajectoryContext | null;
+  verify_by?: Record<string, unknown> | null;
+  claim_boundary?: string | null;
+}
 
 export function stateVariableLabel(value?: string | null): string | null {
   if (!value) return null;
@@ -35,7 +42,7 @@ function uncertaintyLabel(value?: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-export function buildTrajectorySummary(item: SmartAgendaItem): string | null {
+export function buildTrajectorySummary(item: TrajectoryDisplayInput): string | null {
   const target = stateVariableLabel(item.target_state_variable ?? item.trajectory_context?.state_variable);
   const horizon = horizonLabel(item.trajectory_context?.horizon);
   if (!target && !horizon) return null;
@@ -45,7 +52,7 @@ export function buildTrajectorySummary(item: SmartAgendaItem): string | null {
   return parts.join(' · ');
 }
 
-export function buildVerifySummary(item: SmartAgendaItem): string | null {
+export function buildVerifySummary(item: TrajectoryDisplayInput): string | null {
   const metrics = Array.isArray(item.verify_by?.metrics) ? item.verify_by.metrics as string[] : [];
   const trajectory = item.verify_by?.trajectory as Record<string, unknown> | undefined;
   const windowDays = typeof item.verify_by?.window_days === 'number'
@@ -60,7 +67,7 @@ export function buildVerifySummary(item: SmartAgendaItem): string | null {
   return parts.join(' · ');
 }
 
-export function buildBoundarySummary(item: SmartAgendaItem): string | null {
+export function buildBoundarySummary(item: TrajectoryDisplayInput): string | null {
   const boundary = item.claim_boundary ?? item.trajectory_context?.claim_boundary;
   if (!boundary) return null;
   return `边界: ${boundary}`;

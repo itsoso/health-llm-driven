@@ -21,6 +21,20 @@ describe('dailyArtifact service', () => {
         top_action: {
           id: 'a1',
           title: '午饭后步行 10 分钟',
+          trajectory_context: {
+            state_variable: 'waist_cm',
+            horizon: 'upstream_90d',
+            verification_window_days: 7,
+            claim_boundary: '用于上游健康管理排序, 不替代医生诊断。',
+          },
+          target_state_variable: 'waist_cm',
+          verification_signal: 'waist_cm',
+          claim_boundary: '用于上游健康管理排序, 不替代医生诊断。',
+          verify_by: {
+            metrics: ['waist_cm'],
+            window_days: 7,
+            trajectory: { uncertainty_level: 'medium' },
+          },
           runtime_context: { replan_reason: 'today_smart_rank' },
         },
         evidence: [
@@ -41,6 +55,10 @@ describe('dailyArtifact service', () => {
       params: { followup_within_days: 7 },
     });
     expect(artifact.top_action?.title).toBe('午饭后步行 10 分钟');
+    expect(artifact.top_action?.trajectory_context?.state_variable).toBe('waist_cm');
+    expect(artifact.top_action?.target_state_variable).toBe('waist_cm');
+    expect(artifact.top_action?.verification_signal).toBe('waist_cm');
+    expect(artifact.top_action?.claim_boundary).toContain('不替代医生诊断');
     expect(artifact.top_action?.runtime_context?.replan_reason).toBe('today_smart_rank');
     expect(artifact.evidence).toHaveLength(3);
     expect(artifact.state.label).toBe('今日最重要行动');

@@ -125,6 +125,13 @@ def _empty_artifact(artifact_date: date, runtime_payload: dict[str, Any]) -> dic
 
 def _top_action_view(item: dict[str, Any]) -> dict[str, Any]:
     source = item.get("source") if isinstance(item.get("source"), dict) else {}
+    trajectory = item.get("trajectory_context") if isinstance(item.get("trajectory_context"), dict) else None
+    target_state_variable = item.get("target_state_variable") or (trajectory or {}).get("state_variable")
+    verification_signal = (
+        item.get("verification_signal")
+        or (trajectory or {}).get("verification_signal")
+        or target_state_variable
+    )
     view = {
         "id": str(item.get("id") or ""),
         "title": item.get("title") or "今日健康行动",
@@ -136,6 +143,10 @@ def _top_action_view(item: dict[str, Any]) -> dict[str, Any]:
         "why_now": item.get("why_now"),
         "do_now": item.get("do_now"),
         "verify_by": item.get("verify_by") or {},
+        "trajectory_context": trajectory,
+        "target_state_variable": target_state_variable,
+        "verification_signal": verification_signal,
+        "claim_boundary": item.get("claim_boundary"),
         "actions": {
             "complete": {
                 "method": "POST",

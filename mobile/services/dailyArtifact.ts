@@ -1,4 +1,4 @@
-import type { AgendaSkipReason } from './agenda';
+import type { AgendaSkipReason, TrajectoryContext } from './agenda';
 import api from './api';
 
 export type DailyArtifactEventType = 'impression' | 'accepted' | 'completed' | 'skipped';
@@ -38,6 +38,10 @@ export interface DailyArtifactTopAction {
   why_now?: string | null;
   do_now?: string | null;
   verify_by?: Record<string, unknown> | null;
+  trajectory_context?: TrajectoryContext | null;
+  target_state_variable?: string | null;
+  verification_signal?: string | null;
+  claim_boundary?: string | null;
   runtime_context?: Record<string, unknown> | null;
   actions?: {
     complete?: {
@@ -164,6 +168,10 @@ function normalizeTopAction(
     why_now: raw.why_now ?? null,
     do_now: raw.do_now ?? null,
     verify_by: raw.verify_by ?? null,
+    trajectory_context: raw.trajectory_context ?? null,
+    target_state_variable: raw.target_state_variable ?? null,
+    verification_signal: raw.verification_signal ?? null,
+    claim_boundary: raw.claim_boundary ?? null,
     runtime_context: raw.runtime_context ?? null,
     actions: raw.actions ?? null,
   };

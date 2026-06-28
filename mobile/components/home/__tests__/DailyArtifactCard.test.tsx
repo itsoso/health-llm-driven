@@ -20,12 +20,26 @@ function makeArtifact(overrides: Partial<DailyArtifact> = {}): DailyArtifact {
       do_now: '穿好鞋,从办公室楼下走一圈。',
       confidence: 'medium',
       priority_tier: 'P1',
+      verify_by: {
+        metrics: ['waist_cm'],
+        window_days: 7,
+        trajectory: { uncertainty_level: 'medium' },
+      },
+      trajectory_context: {
+        state_variable: 'waist_cm',
+        horizon: 'upstream_90d',
+        verification_window_days: 7,
+        claim_boundary: '用于上游健康管理排序, 不替代医生诊断。',
+      },
+      target_state_variable: 'waist_cm',
+      verification_signal: 'waist_cm',
+      claim_boundary: '用于上游健康管理排序, 不替代医生诊断。',
       actions: {
         complete: { enabled: true },
         skip: { requires_reason: true, event_type: 'skipped' },
         ask_reva: { target: '/voice-chat?intent=daily_artifact' },
       },
-    },
+    } as any,
     evidence: [
       { kind: 'why_now', label: 'Why now', summary: '餐后窗口' },
       { kind: 'trajectory', label: 'Trajectory', summary: '近期活动不足' },
@@ -46,6 +60,8 @@ describe('DailyArtifactCard', () => {
     );
 
     expect(getByText('午饭后步行 10 分钟')).toBeTruthy();
+    expect(getByText('目标: 腰围 · 周期: 90天上游轨迹')).toBeTruthy();
+    expect(getByText('验证: 腰围 · 7天 · 不确定性: 中')).toBeTruthy();
     expect(getAllByTestId('daily-artifact-evidence')).toHaveLength(3);
     expect(queryByText('不应显示')).toBeNull();
   });

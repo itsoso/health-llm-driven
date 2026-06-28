@@ -12,6 +12,10 @@ import type {
   DailyArtifact,
   DailyArtifactTopAction,
 } from '../../services/dailyArtifact';
+import {
+  buildTrajectorySummary,
+  buildVerifySummary,
+} from '../../services/trajectoryDisplay';
 import { Icon } from '../reva/RevaKit';
 
 export default function DailyArtifactCard({
@@ -39,6 +43,8 @@ export default function DailyArtifactCard({
   const evidence = (artifact?.evidence ?? []).slice(0, 3);
   const canComplete = Boolean(topAction?.actions?.complete?.enabled);
   const busy = completing || skipping;
+  const trajectorySummary = topAction ? buildTrajectorySummary(topAction) : null;
+  const verifySummary = topAction ? buildVerifySummary(topAction) : null;
 
   if (loading && !artifact) {
     return (
@@ -83,6 +89,12 @@ export default function DailyArtifactCard({
             <Text style={styles.summary} numberOfLines={3}>
               {topAction.do_now || topAction.why_now}
             </Text>
+          ) : null}
+          {trajectorySummary ? (
+            <Text style={styles.controlInput} numberOfLines={1}>{trajectorySummary}</Text>
+          ) : null}
+          {verifySummary ? (
+            <Text style={styles.verifyInput} numberOfLines={1}>验证: {verifySummary}</Text>
           ) : null}
         </Pressable>
       ) : (
@@ -271,6 +283,8 @@ const styles = StyleSheet.create({
   freshnessText: { flexShrink: 1, fontSize: 12, color: C.ink3 },
   title: { fontFamily: 'Manrope', fontSize: 18, lineHeight: 24, fontWeight: '800', color: C.ink1 },
   summary: { fontSize: 14, lineHeight: 20, color: C.ink2 },
+  controlInput: { fontSize: 13, lineHeight: 18, color: C.green700, fontWeight: '700' },
+  verifyInput: { fontSize: 12, lineHeight: 17, color: C.ink3 },
   emptyBlock: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   emptyCopy: { flex: 1, minWidth: 0, gap: 3 },
   evidenceList: { gap: 8 },

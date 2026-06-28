@@ -131,6 +131,10 @@ def test_daily_artifact_projects_single_top_action_and_three_evidence_items(
     assert body["top_action"]["id"] == "smart_daily_plan_action_movement.walk_after_meal"
     assert body["top_action"]["title"] == "晚餐后步行 15 分钟"
     assert body["top_action"]["why_now"].startswith("餐后活动")
+    assert body["top_action"]["trajectory_context"]["state_variable"] == "waist_cm"
+    assert body["top_action"]["target_state_variable"] == "waist_cm"
+    assert body["top_action"]["verification_signal"] == "waist_cm"
+    assert body["top_action"]["claim_boundary"] == "这是健康管理行动建议, 不替代医生诊断。"
     assert body["top_action"]["runtime_context"]["replan_reason"] == "today_smart_rank"
     assert body["top_action"]["actions"]["complete"]["method"] == "POST"
     assert body["top_action"]["actions"]["skip"]["requires_reason"] is True
