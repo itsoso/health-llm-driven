@@ -58,11 +58,125 @@ class MedicalReportPDFParser:
                 lines.append(" | ".join(cleaned_row))
         return "\n".join(lines)
 
+    # 单块输入上限(字符)。35000 输入 + max_tokens=16000 输出仍在 active 模型 context(≥100k)内。
+    # 超过此长度的报告按自然边界(换行)切块,逐块解析后合并,对用户透明(无需手动分次导入)。
+    CHUNK_CHARS = 35000
+    # 总输入上限,防 runaway(异常超大 PDF / OCR 噪声)。
+    MAX_TEXT_CHARS = 100000
+
     def parse_with_llm(self, text_content: str) -> Dict[str, Any]:
-        """使用LLM解析体检报告文本"""
+        """使用LLM解析体检报告文本。
+
+        正常报告(≤CHUNK_CHARS 字符)走单块路径,行为与历史完全一致、无任何合并 overhead。
+        超大报告按自然边界(换行)切块,逐块解析后合并,完整解析不丢页、对用户透明。
+        """
         if not self.client:
             raise ValueError("LLM服务不可用，请配置OpenAI API Key")
 
+        # 总上限防 runaway
+        text = text_content[:self.MAX_TEXT_CHARS]
+
+        if len(text) <= self.CHUNK_CHARS:
+            # 单块路径:与历史行为字节级一致(只调一次 _parse_exam_chunk,不合并)
+            parts = [self._parse_exam_chunk(text)]
+            return self._merge_exam_chunks(parts)
+
+        # 分段路径:按自然边界(最近换行)切块,绝不切在一行/一个检查项中间
+        chunks: List[str] = []
+        start = 0
+        n = len(text)
+        while start < n:
+            end = start + self.CHUNK_CHARS
+            if end >= n:
+                chunks.append(text[start:])
+                break
+            # 回退到块内最近的换行处,避免切断检查项;找不到换行才硬切
+            nl = text.rfind('\n', start, end)
+            if nl > start:
+                end = nl
+            chunks.append(text[start:end])
+            start = end
+
+        total = len(chunks)
+        parts: List[Dict[str, Any]] = []
+        for idx, chunk in enumerate(chunks, 1):
+            # 医疗数据不可静默丢:单块失败重试 1 次,仍失败整体 raise(绝不静默跳过一段)
+            try:
+                parts.append(self._parse_exam_chunk(chunk))
+            except Exception as first_err:
+                logger.warning(
+                    f"报告第 {idx}/{total} 段解析失败,重试一次: {first_err}"
+                )
+                try:
+                    parts.append(self._parse_exam_chunk(chunk))
+                except Exception as retry_err:
+                    logger.error(
+                        f"报告第 {idx}/{total} 段重试后仍失败: {retry_err}", exc_info=True
+                    )
+                    raise ValueError(f"报告第 {idx}/{total} 段解析失败,请重试")
+
+        return self._merge_exam_chunks(parts)
+
+    def _merge_exam_chunks(self, parts: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """合并分段解析结果。
+
+        - 单块直接返回(无任何合并改变)。
+        - items: concat 后按 (item_name, category) 去重保留首次。
+        - conclusions: concat 后按 (category, title) 去重保留首次。
+        - scalars: 取各块首个非空值;overall_assessment 取最长(不同块各给一段)。
+        """
+        if len(parts) == 1:
+            return parts[0]
+
+        merged_items: List[Dict[str, Any]] = []
+        seen_items: set = set()
+        for part in parts:
+            for item in part.get("items") or []:
+                key = (item.get("item_name"), item.get("category"))
+                if key in seen_items:
+                    continue
+                seen_items.add(key)
+                merged_items.append(item)
+
+        merged_conclusions: List[Dict[str, Any]] = []
+        seen_conclusions: set = set()
+        for part in parts:
+            for conclusion in part.get("conclusions") or []:
+                key = (conclusion.get("category"), conclusion.get("title"))
+                if key in seen_conclusions:
+                    continue
+                seen_conclusions.add(key)
+                merged_conclusions.append(conclusion)
+
+        scalar_keys = [
+            "patient_name", "patient_gender", "patient_age", "exam_date",
+            "exam_number", "exam_type", "hospital_name", "doctor_name",
+        ]
+        merged: Dict[str, Any] = {}
+        for k in scalar_keys:
+            # 首个非空
+            value = None
+            for part in parts:
+                candidate = part.get(k)
+                if candidate not in (None, ""):
+                    value = candidate
+                    break
+            merged[k] = value
+
+        # overall_assessment 取最长(不同块各给一段)
+        best_assessment = ""
+        for part in parts:
+            candidate = part.get("overall_assessment") or ""
+            if len(str(candidate)) > len(str(best_assessment)):
+                best_assessment = candidate
+        merged["overall_assessment"] = best_assessment or None
+
+        merged["conclusions"] = merged_conclusions
+        merged["items"] = merged_items
+        return merged
+
+    def _parse_exam_chunk(self, text_chunk: str) -> Dict[str, Any]:
+        """对单段体检报告文本调用 LLM 并提取/修复 JSON(逐字保留历史解析逻辑)。"""
         prompt = """你是一个专业的医疗报告解析专家。请解析以下体检报告内容，提取结构化数据。
 
 请严格按照以下JSON格式返回结果（不要包含任何其他文字，只返回JSON）：
@@ -563,8 +677,9 @@ class MedicalReportPDFParser:
                         "role": "user",
                         # 输入也别只截前 8000 字符(多页报告会丢页/丢项目)。active 模型
                         # context 充裕(≥100k),放到 40000 字符覆盖整份体检报告;与 max_tokens
-                        # 16000 合计仍在 context 内。
-                        "content": prompt.format(text=text_content[:40000]),
+                        # 16000 合计仍在 context 内。分段路径下 text_chunk 已 ≤ CHUNK_CHARS(35000),
+                        # 此处 [:40000] 为安全上限(单块路径与历史一致)。
+                        "content": prompt.format(text=text_chunk[:40000]),
                     },
                 ],
                 temperature=0.1,
