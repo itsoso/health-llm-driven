@@ -925,6 +925,31 @@ def reindex_knowledge_documents(db: Session, actor: str = "system") -> dict[str,
     return {"documents": len(documents), "dense_vectors": dense_vectors}
 
 
+def run_system_kb_reindex_report(db: Session, actor: str = "system") -> dict[str, Any]:
+    """Rebuild KB search indexes and persist an operations-grade health report."""
+
+    reindex = reindex_knowledge_documents(db, actor=actor)
+    pgvector = get_system_kb_pgvector_health(db)
+    report = {
+        "reindex": reindex,
+        "pgvector": {
+            key: value
+            for key, value in pgvector.items()
+            if key != "latest_reindex_report"
+        },
+    }
+    db.add(
+        KBAudit(
+            doc_id=None,
+            op="system_kb_reindex_report",
+            actor=actor,
+            diff=report,
+        )
+    )
+    db.commit()
+    return report
+
+
 def _build_postgres_reindex_statement(doc_id: str, searchable: str, content_hash: str):
     return (
         update(KBDocument)
@@ -1404,11 +1429,13 @@ def get_knowledge_operations_dashboard(db: Session) -> dict[str, Any]:
     lint = lint_knowledge_base(db)
     latest_lifecycle = _latest_lifecycle_report(db)
     latest_dedao_sync = _latest_dedao_kbase_export_sync_draft(db)
+    pgvector = get_system_kb_pgvector_health(db)
     action_items = _knowledge_operations_action_items(
         coverage,
         lint,
         latest_lifecycle,
         latest_dedao_sync,
+        pgvector,
     )
     return {
         "status": "ok" if not action_items else "attention",
@@ -1416,6 +1443,7 @@ def get_knowledge_operations_dashboard(db: Session) -> dict[str, Any]:
         "lint": lint,
         "latest_lifecycle_report": latest_lifecycle,
         "latest_dedao_kbase_export_sync": latest_dedao_sync,
+        "pgvector": pgvector,
         "action_items": action_items,
     }
 
@@ -3532,11 +3560,101 @@ def _latest_dedao_kbase_export_sync_draft(db: Session) -> dict[str, Any] | None:
     }
 
 
+def get_system_kb_pgvector_health(db: Session) -> dict[str, Any]:
+    """Return pgvector readiness and dense-index coverage for admin operations."""
+
+    expected_dimensions = int(settings.system_kb_embedding_dimensions)
+    health: dict[str, Any] = {
+        "enabled": bool(settings.system_kb_pgvector_enabled),
+        "postgres": _is_postgres_session(db),
+        "extension_version": None,
+        "table_exists": False,
+        "embedding_type": None,
+        "embedding_model": settings.system_kb_embedding_model,
+        "embedding_dimensions": expected_dimensions,
+        "embedding_batch_size": int(settings.system_kb_embedding_batch_size),
+        "embedding_rows": 0,
+        "embedding_model_counts": {},
+        "expected_documents": db.query(KBDocument).filter(KBDocument.is_archived.is_(False)).count(),
+        "current_vector_backend": _pgvector_backend_for_session(db) or VECTOR_BACKEND,
+        "latest_reindex_report": _latest_system_kb_reindex_report(db),
+        "error": None,
+    }
+    if not health["enabled"] or not health["postgres"]:
+        return health
+
+    try:
+        health["extension_version"] = db.execute(
+            text("SELECT extversion FROM pg_extension WHERE extname = :name"),
+            {"name": "vector"},
+        ).scalar()
+        table_name = db.execute(
+            text("SELECT to_regclass(:table_name)"),
+            {"table_name": f"public.{PGVECTOR_TABLE}"},
+        ).scalar()
+        health["table_exists"] = table_name is not None
+        if table_name is None:
+            health["current_vector_backend"] = VECTOR_BACKEND
+            return health
+
+        health["embedding_type"] = db.execute(
+            text(
+                """
+                SELECT format_type(a.atttypid, a.atttypmod)
+                FROM pg_attribute a
+                JOIN pg_class c ON c.oid = a.attrelid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = :schema
+                  AND c.relname = :table
+                  AND a.attname = :column
+                """
+            ),
+            {"schema": "public", "table": PGVECTOR_TABLE, "column": "embedding"},
+        ).scalar()
+        rows = db.execute(
+            text(
+                f"""
+                SELECT embedding_model, COUNT(*)
+                FROM {PGVECTOR_TABLE}
+                GROUP BY embedding_model
+                ORDER BY embedding_model
+                """
+            )
+        ).fetchall()
+        model_counts = {str(model): int(count or 0) for model, count in rows}
+        health["embedding_model_counts"] = model_counts
+        health["embedding_rows"] = sum(model_counts.values())
+        health["current_vector_backend"] = _pgvector_backend_for_session(db) or VECTOR_BACKEND
+    except SQLAlchemyError as exc:
+        health["error"] = str(exc)
+        health["current_vector_backend"] = VECTOR_BACKEND
+    return health
+
+
+def _latest_system_kb_reindex_report(db: Session) -> dict[str, Any] | None:
+    audit = (
+        db.query(KBAudit)
+        .filter(KBAudit.op == "system_kb_reindex_report")
+        .order_by(KBAudit.ts.desc(), KBAudit.id.desc())
+        .first()
+    )
+    if audit is None:
+        return None
+    return {
+        "id": audit.id,
+        "op": audit.op,
+        "actor": audit.actor,
+        "ts": audit.ts.isoformat() if audit.ts else None,
+        "diff": audit.diff or {},
+    }
+
+
 def _knowledge_operations_action_items(
     coverage: dict[str, Any],
     lint: dict[str, Any],
     latest_lifecycle_report: dict[str, Any] | None,
     latest_dedao_sync: dict[str, Any] | None = None,
+    pgvector: dict[str, Any] | None = None,
 ) -> list[str]:
     action_items: list[str] = []
     specialist = coverage.get("specialist_findings") or {}
@@ -3587,7 +3705,30 @@ def _knowledge_operations_action_items(
         blocking_reasons = gate.get("blocking_reasons") if isinstance(gate, dict) else []
         if isinstance(gate, dict) and gate.get("serving_allowed") is False and blocking_reasons:
             action_items.append("dedao_kbase_draft_review_needed")
+    if pgvector:
+        action_items.extend(_pgvector_action_items(pgvector))
     return action_items
+
+
+def _pgvector_action_items(pgvector: dict[str, Any]) -> list[str]:
+    latest = pgvector.get("latest_reindex_report")
+    if not isinstance(latest, dict):
+        return []
+    diff = latest.get("diff") if isinstance(latest.get("diff"), dict) else {}
+    reindex = diff.get("reindex") if isinstance(diff.get("reindex"), dict) else {}
+    reported_pgvector = diff.get("pgvector") if isinstance(diff.get("pgvector"), dict) else {}
+    documents = int(reindex.get("documents") or 0)
+    dense_vectors = int(reindex.get("dense_vectors") or 0)
+    items: list[str] = []
+    if documents > 0 and dense_vectors < documents:
+        items.append("kb_pgvector_dense_coverage_low")
+    reported_postgres = reported_pgvector.get("postgres")
+    if reported_postgres is None:
+        reported_postgres = pgvector.get("postgres")
+    reported_backend = reported_pgvector.get("current_vector_backend") or pgvector.get("current_vector_backend")
+    if documents > 0 and reported_postgres and reported_backend == VECTOR_BACKEND:
+        items.append("kb_pgvector_backend_fallback")
+    return items
 
 
 def _extract_finding_evidence_refs(finding: dict[str, Any]) -> list[Any]:

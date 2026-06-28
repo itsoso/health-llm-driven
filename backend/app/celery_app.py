@@ -296,6 +296,13 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=4, minute=30, day_of_week=1),
     },
 
+    # 每周一 04:50 重建系统级 KB 检索索引并落 pgvector health audit。
+    # 位于 dedao export draft sync + lifecycle/eval 之后,让运营看板能直接看最新 serving 索引状态。
+    "system-kb-reindex": {
+        "task": "app.tasks.system_knowledge_lifecycle.run_system_kb_reindex",
+        "schedule": crontab(hour=4, minute=50, day_of_week=1),
+    },
+
     # 每天 23:55 检查 24h LLM 成本, 超阈值 log warning (Sentry breadcrumb)
     "llm-cost-daily-check": {
         "task": "app.tasks.maintenance.llm_cost_daily_check",

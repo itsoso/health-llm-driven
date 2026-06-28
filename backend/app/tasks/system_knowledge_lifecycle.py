@@ -26,7 +26,11 @@ from app.services.dedao_kbase_export_importer import (
 from app.services.system_knowledge_crystallize import draft_crystallized_claim_candidates
 from app.services.system_knowledge_eval import run_system_kb_eval_cases
 from app.services.system_knowledge_ingest import validate_artifact_review_gate, write_draft_artifacts
-from app.services.system_knowledge_service import apply_confidence_decay, lint_knowledge_base
+from app.services.system_knowledge_service import (
+    apply_confidence_decay,
+    lint_knowledge_base,
+    run_system_kb_reindex_report,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -150,12 +154,27 @@ def run_system_kb_lifecycle_once(
     return report
 
 
+def run_system_kb_reindex_once(db: Session, *, actor: str = "system") -> dict[str, Any]:
+    """Rebuild serving search indexes and persist the pgvector health report."""
+
+    return run_system_kb_reindex_report(db, actor=actor)
+
+
 @celery_app.task(time_limit=600, name="app.tasks.system_knowledge_lifecycle.run_system_kb_lifecycle")
 def run_system_kb_lifecycle() -> dict[str, Any]:
     logger.info("[system_kb_lifecycle] start")
     with SessionLocal() as db:
         result = run_system_kb_lifecycle_once(db, actor="celery:system_kb_lifecycle")
     logger.info("[system_kb_lifecycle] done: %s", result.get("crystallize"))
+    return result
+
+
+@celery_app.task(time_limit=900, name="app.tasks.system_knowledge_lifecycle.run_system_kb_reindex")
+def run_system_kb_reindex() -> dict[str, Any]:
+    logger.info("[system_kb_reindex] start")
+    with SessionLocal() as db:
+        result = run_system_kb_reindex_once(db, actor="celery:system_kb_reindex")
+    logger.info("[system_kb_reindex] done: %s", result.get("reindex"))
     return result
 
 

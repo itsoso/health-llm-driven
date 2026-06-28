@@ -17,8 +17,9 @@
 3. **P1: reviewer workflow.** Add a compact admin review UI/API path for draft artifact diffs before promotion.
 4. **P2: real semantic backend.** Replace deterministic semantic aliases with pgvector-backed embeddings while preserving the current search response shape.
 5. **P2: source freshness policy.** Track guideline/source `last_reviewed_at` and stale source action items per domain.
+6. **P2: pgvector operations loop.** Persist reindex health reports, surface dense-index coverage in the admin dashboard, and schedule weekly serving-index refresh.
 
-This implementation executes P0, the P1 dedao-kbase draft observability and reviewer workflow API slices, plus the P2 source freshness and pgvector fallback-safe semantic backend slices. It avoids new medical content and does not relax reviewed-only serving.
+This implementation executes P0, the P1 dedao-kbase draft observability and reviewer workflow API slices, plus the P2 source freshness, pgvector fallback-safe semantic backend, and pgvector operations-loop slices. It avoids new medical content and does not relax reviewed-only serving.
 
 ## Task 1: Lifecycle Eval Snapshot
 
@@ -190,7 +191,7 @@ Expected: pass.
 - Reindex now attempts to create and populate `kb_document_embeddings`, but dense indexing failures do not break reviewed KB serving.
 
 **Production note:**
-- The current production PostgreSQL host did not report the `vector` extension as available during implementation verification. Until pgvector is installed and `reindex_knowledge_documents` has populated dense embeddings, production will keep serving via sparse fallback.
+- Superseded: production pgvector is now installed/configured. Operational readiness is tracked by the `system_kb_reindex_report` audit, the admin operations dashboard `pgvector` payload, and the weekly `system-kb-reindex` Celery beat entry.
 
 **Verification:**
 
@@ -201,3 +202,34 @@ PYTHONPATH=backend backend/venv/bin/python backend/scripts/run_external_health_k
 ```
 
 Expected: pytest pass, compileall exit 0, release gate pass.
+
+## Task 8: P2 pgvector Operations Loop
+
+**Files:**
+- Modify: `backend/app/api/system_knowledge.py`
+- Modify: `backend/app/celery_app.py`
+- Modify: `backend/app/services/system_knowledge_service.py`
+- Modify: `backend/app/tasks/system_knowledge_lifecycle.py`
+- Modify: `backend/scripts/import_system_kb_v2_artifacts.py`
+- Test: `backend/tests/test_system_knowledge_phase0.py`
+- Test: `backend/tests/test_system_knowledge_lifecycle.py`
+- Test: `backend/tests/test_system_knowledge_vector_backend.py`
+- Test: `backend/tests/test_system_kb_import_script.py`
+
+**Implemented behavior:**
+- `run_system_kb_reindex_report` wraps sparse+dense reindex, captures pgvector health, and writes `KBAudit(op="system_kb_reindex_report")`.
+- `/admin/knowledge/operations_dashboard` returns a `pgvector` section with extension/table/model/row-count/latest-report details.
+- Dashboard action items now flag dense coverage gaps as `kb_pgvector_dense_coverage_low` and sparse fallback on PostgreSQL as `kb_pgvector_backend_fallback`.
+- Admin `POST /admin/knowledge/reindex` returns the operations-grade report instead of only raw counts.
+- `import_system_kb_v2_artifacts.py` reindexes by default after reviewed artifact import, with `--skip-reindex` available for explicit maintenance cases.
+- Celery beat runs `system-kb-reindex` every Monday 04:50 after dedao draft sync and lifecycle/eval.
+
+**Verification:**
+
+```bash
+DATABASE_URL=sqlite:///./backend/test_system_kb_ops_pgvector.db PYTHONPATH=backend COVERAGE_FILE=/tmp/.coverage-system-kb-ops backend/venv/bin/python -m pytest backend/tests/test_system_knowledge_vector_backend.py backend/tests/test_system_knowledge_phase0.py::test_admin_operations_dashboard_flags_pgvector_dense_coverage_gap backend/tests/test_system_knowledge_lifecycle.py backend/tests/test_system_kb_import_script.py -q
+PYTHONPATH=backend backend/venv/bin/python -m compileall -q backend/app/services/system_knowledge_service.py backend/app/api/system_knowledge.py backend/app/tasks/system_knowledge_lifecycle.py backend/app/celery_app.py backend/scripts/import_system_kb_v2_artifacts.py backend/tests/test_system_knowledge_vector_backend.py backend/tests/test_system_knowledge_phase0.py backend/tests/test_system_knowledge_lifecycle.py backend/tests/test_system_kb_import_script.py
+PYTHONPATH=backend backend/venv/bin/python backend/scripts/run_external_health_knowledge_release_gate.py --artifact-dir backend/data/system_kb_v2_seed
+```
+
+Expected: focused pytest pass, compileall exit 0, release gate pass.

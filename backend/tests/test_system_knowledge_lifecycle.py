@@ -4,7 +4,8 @@ from datetime import UTC, datetime
 
 from app.models.agent_audit_log import AgentAuditLog
 from app.models.system_knowledge import KBAudit, KBDocument
-from app.tasks.system_knowledge_lifecycle import run_system_kb_lifecycle_once
+from app.tasks import system_knowledge_lifecycle
+from app.tasks.system_knowledge_lifecycle import run_system_kb_lifecycle_once, run_system_kb_reindex_once
 
 
 def test_run_system_kb_lifecycle_once_lints_decays_crystallizes_and_audits(db):
@@ -112,3 +113,36 @@ def test_run_system_kb_lifecycle_once_runs_reviewed_eval_cases_and_audits(db):
     assert audit.diff["eval"]["total"] == 1
     assert audit.diff["eval"]["passed"] == 1
     assert audit.diff["eval"]["failed"] == 0
+
+
+def test_run_system_kb_reindex_once_uses_report_helper(db, monkeypatch):
+    captured = {}
+
+    def fake_reindex_report(_db, *, actor="system"):
+        captured["db"] = _db
+        captured["actor"] = actor
+        return {
+            "reindex": {"documents": 2, "dense_vectors": 2},
+            "pgvector": {"current_vector_backend": "pgvector:text-embedding-v3"},
+        }
+
+    monkeypatch.setattr(system_knowledge_lifecycle, "run_system_kb_reindex_report", fake_reindex_report)
+
+    result = run_system_kb_reindex_once(db, actor="test:reindex")
+
+    assert captured == {"db": db, "actor": "test:reindex"}
+    assert result["reindex"]["documents"] == 2
+    assert result["pgvector"]["current_vector_backend"] == "pgvector:text-embedding-v3"
+
+
+def test_system_kb_reindex_task_registered_and_scheduled():
+    from celery.schedules import crontab
+
+    from app.celery_app import celery_app
+    from app.tasks.system_knowledge_lifecycle import run_system_kb_reindex  # noqa: F401
+
+    assert "app.tasks.system_knowledge_lifecycle.run_system_kb_reindex" in celery_app.tasks
+    entry = celery_app.conf.beat_schedule.get("system-kb-reindex")
+    assert entry is not None
+    assert entry["task"] == "app.tasks.system_knowledge_lifecycle.run_system_kb_reindex"
+    assert entry["schedule"] == crontab(hour=4, minute=50, day_of_week=1)

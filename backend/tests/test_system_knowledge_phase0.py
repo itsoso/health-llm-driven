@@ -1153,6 +1153,66 @@ def test_admin_operations_dashboard_flags_stale_source_freshness(client, db, aut
     assert freshness["items"][0]["days_since_reviewed"] > 365
 
 
+def test_admin_operations_dashboard_flags_pgvector_dense_coverage_gap(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    db.add_all(
+        [
+            KBDocument(
+                doc_id="claim:c_pgvector_indexed",
+                doc_type="claim",
+                entity_type="nutrition",
+                entity_id="folate",
+                title="Indexed claim",
+                evidence_level="B",
+                metadata_json={"review_status": "reviewed"},
+            ),
+            KBDocument(
+                doc_id="claim:c_pgvector_missing",
+                doc_type="claim",
+                entity_type="nutrition",
+                entity_id="b12",
+                title="Missing dense vector",
+                evidence_level="B",
+                metadata_json={"review_status": "reviewed"},
+            ),
+            KBAudit(
+                doc_id=None,
+                op="lifecycle_report",
+                actor="celery:system-kb-lifecycle",
+                diff={"lint": {"summary": {}}, "eval": {"total": 1, "passed": 1, "failed": 0}},
+            ),
+            KBAudit(
+                doc_id=None,
+                op="system_kb_reindex_report",
+                actor="celery:system-kb-reindex",
+                diff={
+                    "reindex": {"documents": 2, "dense_vectors": 1},
+                    "pgvector": {
+                        "enabled": True,
+                        "postgres": True,
+                        "table_exists": True,
+                        "embedding_rows": 1,
+                        "embedding_model": "text-embedding-v3",
+                        "current_vector_backend": "sparse_term_cosine_v1",
+                    },
+                },
+            ),
+        ]
+    )
+    db.commit()
+
+    response = client.get("/api/v1/admin/knowledge/operations_dashboard", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "attention"
+    assert payload["pgvector"]["latest_reindex_report"]["op"] == "system_kb_reindex_report"
+    assert payload["pgvector"]["latest_reindex_report"]["diff"]["reindex"]["dense_vectors"] == 1
+    assert "kb_pgvector_dense_coverage_low" in payload["action_items"]
+    assert "kb_pgvector_backend_fallback" in payload["action_items"]
+
+
 def test_admin_dedao_kbase_draft_review_bundle_reads_configured_artifacts(
     client,
     db,

@@ -22,7 +22,7 @@ from app.services.system_knowledge_service import (
     get_knowledge_review_queue,
     lint_knowledge_base,
     lookup_for_twin,
-    reindex_knowledge_documents,
+    run_system_kb_reindex_report,
     search_knowledge,
     update_claim_review,
 )
@@ -364,7 +364,7 @@ def reindex_system_knowledge(
     admin_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
-    return reindex_knowledge_documents(db, actor=f"admin:{admin_user.id}")
+    return run_system_kb_reindex_report(db, actor=f"admin:{admin_user.id}")
 
 
 def _record_audit(

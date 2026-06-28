@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import sys
 
 from app.config import settings
-from app.models.system_knowledge import KBDocument, KBDocumentVector, KBEdge
+from app.models.system_knowledge import KBAudit, KBDocument, KBDocumentVector, KBEdge
 from app.services import system_knowledge_service
 from app.services.system_knowledge_service import reindex_knowledge_documents, search_knowledge
 
@@ -147,6 +147,34 @@ def test_reindex_prepares_pgvector_table_before_sparse_document_updates(db, monk
     assert result["documents"] == 3
     assert calls[0] == "ensure_pgvector_table"
     assert any(call.startswith("sparse:") for call in calls[1:])
+
+
+def test_system_kb_reindex_report_audits_pgvector_health(db, monkeypatch):
+    _seed_vector_knowledge(db)
+
+    def fake_pgvector_health(_db):
+        return {
+            "enabled": True,
+            "postgres": True,
+            "table_exists": True,
+            "embedding_model": "text-embedding-v3",
+            "embedding_rows": 3,
+            "current_vector_backend": "pgvector:text-embedding-v3",
+        }
+
+    monkeypatch.setattr(system_knowledge_service, "get_system_kb_pgvector_health", fake_pgvector_health)
+
+    report = system_knowledge_service.run_system_kb_reindex_report(db, actor="test")
+
+    assert report["reindex"]["documents"] == 3
+    assert report["reindex"]["dense_vectors"] == 0
+    assert report["pgvector"]["embedding_rows"] == 3
+    assert report["pgvector"]["current_vector_backend"] == "pgvector:text-embedding-v3"
+
+    audit = db.query(KBAudit).filter(KBAudit.op == "system_kb_reindex_report").one()
+    assert audit.actor == "test"
+    assert audit.diff["reindex"]["documents"] == 3
+    assert audit.diff["pgvector"]["embedding_rows"] == 3
 
 
 def test_system_kb_embeddings_use_dedicated_provider_settings(monkeypatch):
