@@ -472,7 +472,7 @@ export default function ChatScreen() {
   const activeLlmLabel = llmModelId
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
-  const headerLlmLabel = isStreaming ? '正在回复' : compactLlmHeaderLabel(activeLlmLabel);
+  const headerLlmLabel = compactLlmHeaderLabel(activeLlmLabel);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -483,17 +483,31 @@ export default function ChatScreen() {
           currentModelId={llmModelId}
           options={llmOptions}
           savingModelId={llmSaving}
-          disabled={isStreaming}
           error={llmError}
           onSelect={handleSelectModel}
         />
+        {isStreaming && (
+          <View style={styles.streamingBadge} accessibilityLabel="回复中">
+            <View style={styles.streamingDot} />
+            <Text style={txt.streamingBadge}>回复中</Text>
+          </View>
+        )}
+        <TouchableOpacity
+          onPress={handleNewChat}
+          hitSlop={8}
+          style={styles.headerAction}
+          accessibilityLabel="新建对话"
+          accessibilityRole="button"
+        >
+          <Ionicons name="add" size={20} color={C.ink2} />
+        </TouchableOpacity>
         <TouchableOpacity
           onPress={() => router.push({
             pathname: '/voice-chat',
             params: conversationId ? { conversation_id: String(conversationId) } : {},
           } as any)}
           hitSlop={8}
-          style={styles.voiceConversationAction}
+          style={styles.headerActionPrimary}
           accessibilityLabel="开始语音对话"
           accessibilityHint="进入连续语音对话，AI 会听你说并用语音回复"
           accessibilityRole="button"
@@ -661,7 +675,6 @@ export default function ChatScreen() {
               </TouchableOpacity>
             </View>
             <ToolMenuRow icon="time-outline" label="对话历史" onPress={openHistory} />
-            <ToolMenuRow icon="create-outline" label="新建对话" onPress={handleNewChat} />
             {messages.some(isShareableChatMessage) && (
               <ToolMenuRow
                 icon={selectionMode ? 'close' : 'checkbox-outline'}
@@ -739,7 +752,15 @@ function ToolMenuRow({
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
   header: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2, paddingHorizontal: revaSpacing.s5, paddingVertical: revaSpacing.s3 },
-  voiceConversationAction: {
+  headerAction: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.surface,
+  },
+  headerActionPrimary: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -754,6 +775,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.surface,
+  },
+  streamingBadge: {
+    minHeight: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+  },
+  streamingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: C.green500,
   },
   historyAction: {
     flexDirection: 'row',
@@ -907,6 +943,7 @@ const styles = StyleSheet.create({
 const txt = {
   headerTitle: { fontFamily: revaFonts.sans, fontSize: 20, fontWeight: '800', color: C.ink1 } as TextStyle,
   headerMeta: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2, fontWeight: '600' } as TextStyle,
+  streamingBadge: { fontFamily: revaFonts.sans, fontSize: 11, color: C.green500, fontWeight: '700' } as TextStyle,
   welcomeInline: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, fontWeight: '700', flexShrink: 1 } as TextStyle,
   sugChipText: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink1, fontWeight: '600', flexShrink: 1 } as TextStyle,
   contextBanner: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green500, flex: 1, fontWeight: '500' } as TextStyle,

@@ -15,6 +15,7 @@ const mockSetParams = jest.fn();
 let mockRouteParams: Record<string, string | undefined> = {};
 let mockLlmPreference: any = { model_id: null, options: [] };
 let mockMessages: any[] = [];
+let mockIsStreaming = false;
 
 jest.mock('expo-router', () => ({
   router: {
@@ -28,7 +29,7 @@ jest.mock('expo-router', () => ({
 jest.mock('../../../hooks/useChatEngine', () => ({
   useChatEngine: () => ({
     messages: mockMessages,
-    isStreaming: false,
+    isStreaming: mockIsStreaming,
     conversationId: undefined,
     sendMessage: mockSendMessage,
     newChat: mockNewChat,
@@ -137,6 +138,7 @@ describe('ChatScreen', () => {
     mockRouteParams = {};
     mockLlmPreference = { model_id: null, options: [] };
     mockMessages = [];
+    mockIsStreaming = false;
   });
 
   it('shows a visible history entry on the private coach page', async () => {
@@ -219,6 +221,72 @@ describe('ChatScreen', () => {
     });
     expect(getByText('切换 AI 模型')).toBeTruthy();
     expect(queryByText('Qwen3.6 Plus 推理 · 阿里')).toBeNull();
+  });
+
+  it('keeps the selected model visible and switchable while a reply is streaming', async () => {
+    mockIsStreaming = true;
+    mockLlmPreference = {
+      model_id: 'qwen3.7-plus',
+      options: [
+        {
+          id: 'qwen3.7-plus',
+          label: 'Qwen3.7 Plus 推理 · 阿里',
+          provider: '阿里',
+          model: 'qwen3.7-plus',
+          speed_tier: 'reasoning',
+          note: '',
+        },
+        {
+          id: 'minimax-m2.5',
+          label: 'MiniMax M2.5 推理 · MiniMax',
+          provider: 'MiniMax',
+          model: 'minimax-m2.5',
+          speed_tier: 'reasoning',
+          note: '',
+        },
+      ],
+    };
+
+    const { getByLabelText, getByText, queryByText } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(getByLabelText('切换 AI 模型，当前 Qwen3.7 Plus')).toBeTruthy();
+    });
+    expect(getByText('回复中')).toBeTruthy();
+    expect(queryByText('正在回复')).toBeNull();
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('切换 AI 模型，当前 Qwen3.7 Plus'));
+    });
+    expect(getByText('切换 AI 模型')).toBeTruthy();
+  });
+
+  it('starts a new chat from a first-level header action', async () => {
+    mockFetchConversationStarters
+      .mockResolvedValueOnce({
+        opener: null,
+        suggestions: [{ text: '今天饮水 300/2000ml，帮我安排剩余补水', key: 'water', priority: 50 }],
+      })
+      .mockResolvedValueOnce({
+        opener: null,
+        suggestions: [{ text: '复盘我最近一次跑步（5.2km / 30min / 均心率 145）', key: 'workout', priority: 50 }],
+      });
+
+    const { getByLabelText, getByText } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(getByText('今天饮水 300/2000ml，帮我安排剩余补水')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('新建对话'));
+    });
+
+    await waitFor(() => {
+      expect(mockFetchConversationStarters).toHaveBeenCalledTimes(2);
+      expect(getByText('复盘我最近一次跑步（5.2km / 30min / 均心率 145）')).toBeTruthy();
+    });
+    expect(mockNewChat).toHaveBeenCalled();
   });
 
   it('keeps the header voice action as continuous voice conversation', async () => {
@@ -410,18 +478,14 @@ describe('ChatScreen', () => {
     });
   });
 
-  it('refreshes dynamic starter suggestions when starting a new chat', async () => {
+  it('keeps new chat out of the low-frequency more sheet', async () => {
     mockFetchConversationStarters
       .mockResolvedValueOnce({
         opener: null,
         suggestions: [{ text: '今天饮水 300/2000ml，帮我安排剩余补水', key: 'water', priority: 50 }],
-      })
-      .mockResolvedValueOnce({
-        opener: null,
-        suggestions: [{ text: '复盘我最近一次跑步（5.2km / 30min / 均心率 145）', key: 'workout', priority: 50 }],
       });
 
-    const { getByLabelText, getByText } = render(<ChatScreen />);
+    const { getByLabelText, getByText, queryByText } = render(<ChatScreen />);
 
     await waitFor(() => {
       expect(getByText('今天饮水 300/2000ml，帮我安排剩余补水')).toBeTruthy();
@@ -430,15 +494,9 @@ describe('ChatScreen', () => {
     await act(async () => {
       fireEvent.press(getByLabelText('更多会诊操作'));
     });
-    await act(async () => {
-      fireEvent.press(getByLabelText('新建对话'));
-    });
 
-    await waitFor(() => {
-      expect(mockFetchConversationStarters).toHaveBeenCalledTimes(2);
-      expect(getByText('复盘我最近一次跑步（5.2km / 30min / 均心率 145）')).toBeTruthy();
-    });
-    expect(mockNewChat).toHaveBeenCalled();
+    expect(queryByText('新建对话')).toBeNull();
+    expect(getByText('对话历史')).toBeTruthy();
   });
 
   it('starts a new conversation when opened from an Agent context entry', async () => {
