@@ -421,6 +421,9 @@ export default function ChatScreen() {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      if (next.size === 0) {
+        setSelectionMode(false);
+      }
       return next;
     });
   }, []);
@@ -599,6 +602,16 @@ export default function ChatScreen() {
 
         {selectionMode && (
           <View style={styles.shareBar}>
+            <TouchableOpacity
+              onPress={exitSelectionMode}
+              hitSlop={8}
+              style={styles.cancelSelectionButton}
+              accessibilityLabel="取消多选"
+              accessibilityRole="button"
+            >
+              <Ionicons name="close" size={16} color={C.ink2} />
+              <Text style={txt.cancelSelectionButton}>取消</Text>
+            </TouchableOpacity>
             <View style={{ flex: 1 }}>
               <Text style={txt.shareBarTitle}>已选择 {selectedMessageIds.size} 条</Text>
               <Text style={txt.shareBarSub}>按当前对话顺序生成分享链接</Text>
@@ -866,6 +879,17 @@ const styles = StyleSheet.create({
     borderColor: C.line,
     ...revaShadows.sm,
   },
+  cancelSelectionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.paper2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
   shareButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -892,6 +916,7 @@ const txt = {
   memoryBody: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, lineHeight: 18 } as TextStyle,
   shareBarTitle: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink1, fontWeight: '700' } as TextStyle,
   shareBarSub: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, marginTop: 2 } as TextStyle,
+  cancelSelectionButton: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, fontWeight: '700' } as TextStyle,
   shareButton: { fontFamily: revaFonts.sans, fontSize: 13, color: '#fff', fontWeight: '700' } as TextStyle,
   toolSheetTitle: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '800', color: C.ink1 } as TextStyle,
   toolSheetSub: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,

@@ -14,6 +14,7 @@ const mockNewChat = jest.fn();
 const mockSetParams = jest.fn();
 let mockRouteParams: Record<string, string | undefined> = {};
 let mockLlmPreference: any = { model_id: null, options: [] };
+let mockMessages: any[] = [];
 
 jest.mock('expo-router', () => ({
   router: {
@@ -26,7 +27,7 @@ jest.mock('expo-router', () => ({
 
 jest.mock('../../../hooks/useChatEngine', () => ({
   useChatEngine: () => ({
-    messages: [],
+    messages: mockMessages,
     isStreaming: false,
     conversationId: undefined,
     sendMessage: mockSendMessage,
@@ -90,7 +91,23 @@ jest.mock('../../../hooks/useTheme', () => ({
   }),
 }));
 
-jest.mock('../../../components/chat/ChatBubble', () => 'ChatBubble');
+jest.mock('../../../components/chat/ChatBubble', () => {
+  const React = require('react');
+  const { Pressable, Text } = require('react-native');
+  const MockChatBubble = ({ item, selectionMode, selected, onToggleSelected, onEnterSelection }: any) => (
+    <Pressable
+      accessibilityLabel={`message-${item.id}`}
+      accessibilityState={selectionMode ? { selected } : undefined}
+      onLongPress={() => onEnterSelection?.(item.id)}
+      onPress={() => onToggleSelected?.(item.id)}
+    >
+      <Text>{item.content}</Text>
+      <Text>{selectionMode ? (selected ? 'selected' : 'unselected') : 'normal'}</Text>
+    </Pressable>
+  );
+  MockChatBubble.displayName = 'MockChatBubble';
+  return MockChatBubble;
+});
 jest.mock('../../../components/chat/BrandCircle', () => 'BrandCircle');
 jest.mock('../../../components/chat/ConversationSheet', () => 'ConversationSheet');
 jest.mock('../../../components/chat/OpenerCard', () => {
@@ -119,6 +136,7 @@ describe('ChatScreen', () => {
     mockRecordCardDecision.mockResolvedValue({});
     mockRouteParams = {};
     mockLlmPreference = { model_id: null, options: [] };
+    mockMessages = [];
   });
 
   it('shows a visible history entry on the private coach page', async () => {
@@ -343,6 +361,53 @@ describe('ChatScreen', () => {
     });
 
     expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 336 });
+  });
+
+  it('shows a visible cancel action after long-pressing a message into multi-select', async () => {
+    mockMessages = [
+      { id: 'u-1', role: 'user', content: '早餐吃了鸡蛋和咖啡' },
+      { id: 'a-1', role: 'assistant', content: '建议今天午后散步 10 分钟。', completionStatus: 'complete' },
+    ];
+
+    const { getByLabelText, getByText, queryByText } = render(<ChatScreen />);
+
+    await waitFor(() => expect(getByLabelText('message-u-1')).toBeTruthy());
+    await act(async () => {
+      fireEvent(getByLabelText('message-u-1'), 'longPress');
+    });
+
+    expect(getByText('已选择 1 条')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(getByLabelText('取消多选'));
+    });
+
+    await waitFor(() => {
+      expect(queryByText('已选择 1 条')).toBeNull();
+    });
+  });
+
+  it('exits multi-select when the last selected message is deselected', async () => {
+    mockMessages = [
+      { id: 'u-1', role: 'user', content: '早餐吃了鸡蛋和咖啡' },
+      { id: 'a-1', role: 'assistant', content: '建议今天午后散步 10 分钟。', completionStatus: 'complete' },
+    ];
+
+    const { getByLabelText, getByText, queryByText } = render(<ChatScreen />);
+
+    await waitFor(() => expect(getByLabelText('message-u-1')).toBeTruthy());
+    await act(async () => {
+      fireEvent(getByLabelText('message-u-1'), 'longPress');
+    });
+    expect(getByText('已选择 1 条')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('message-u-1'));
+    });
+
+    await waitFor(() => {
+      expect(queryByText('已选择 0 条')).toBeNull();
+      expect(queryByText('已选择 1 条')).toBeNull();
+    });
   });
 
   it('refreshes dynamic starter suggestions when starting a new chat', async () => {
