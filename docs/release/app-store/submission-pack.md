@@ -72,6 +72,15 @@ Use `docs/release/app-store/screenshot-runbook.md`. Required first pass:
 
 Candidate screenshot sets are not App Store-ready unless `manifest.json` marks them as `demo` or `sanitized` and the PNGs match accepted 6.9-inch portrait dimensions.
 
+Use `scripts/prepare_app_store_screenshots.py` to convert a raw demo/sanitized capture into a ready set before upload:
+
+```bash
+python3 scripts/prepare_app_store_screenshots.py \
+  design/screenshots/app-store/<build-id>-raw \
+  design/screenshots/app-store/<build-id>-ready \
+  --size 1290x2796
+```
+
 ## Official Requirements Mapped
 
 - Apple account deletion support says deletion must be easy to find, usually in account settings, and users must be kept informed if deletion takes time.
@@ -84,8 +93,8 @@ Candidate screenshot sets are not App Store-ready unless `manifest.json` marks t
 Do not submit until:
 
 - [ ] `python3 scripts/check_app_store_release_pack.py` passes.
-- [ ] Candidate screenshots exist under `design/screenshots/app-store/<build-id>/` and pass:
-      `APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/<build-id> python3 scripts/check_app_store_release_pack.py`.
+- [ ] Candidate screenshots exist under `design/screenshots/app-store/<build-id>-ready/` and pass:
+      `APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/<build-id>-ready python3 scripts/check_app_store_release_pack.py`.
 - [ ] Privacy policy URL is publicly reachable: `curl -fsSI https://health.executor.life/privacy`.
 - [ ] A production IPA or EAS build is visible in App Store Connect.
 - [ ] A human has replaced the demo account placeholder in Review Notes.

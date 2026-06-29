@@ -35,6 +35,9 @@ Deferred:
 - [x] Task 5: Verification
 - [ ] Release batch: App Store metadata, screenshots, native archive, App Store Connect submission, true-device validation.
   - Batch 2 plan/materials: `docs/plans/2026-06-28-app-store-mvp-release-batch2-plan.md`
+  - Batch 3 simulator build / QR path: `docs/plans/2026-06-28-app-store-mvp-release-batch3-plan.md`
+  - Batch 4 screenshot compliance gate: `docs/plans/2026-06-28-app-store-mvp-release-batch4-plan.md`
+  - Batch 5 final screenshot export gate: `docs/plans/2026-06-28-app-store-mvp-release-batch5-plan.md`
   - App Store Connect source pack: `docs/release/app-store/`
   - Deterministic gate: `python3 scripts/check_app_store_release_pack.py`
 

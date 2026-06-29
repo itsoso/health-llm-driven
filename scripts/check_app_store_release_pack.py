@@ -18,10 +18,12 @@ REQUIRED_FILES = [
     "docs/plans/2026-06-28-app-store-mvp-release-batch2-plan.md",
     "docs/plans/2026-06-28-app-store-mvp-release-batch3-plan.md",
     "docs/plans/2026-06-28-app-store-mvp-release-batch4-plan.md",
+    "docs/plans/2026-06-28-app-store-mvp-release-batch5-plan.md",
     "frontend/src/app/privacy/page.tsx",
     "scripts/sim-build.sh",
     "scripts/mobile-sim-screenshots.sh",
     "scripts/check_app_store_screenshots.py",
+    "scripts/prepare_app_store_screenshots.py",
 ]
 
 REQUIRED_INFO_PLIST_KEYS = [

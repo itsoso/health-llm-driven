@@ -38,16 +38,24 @@ Then rerun:
 ./scripts/mobile-sim-screenshots.sh --output design/screenshots/app-store/manual --privacy-status private
 ```
 
-For App Store candidate screenshots, use a dedicated demo account or a sanitized data build and mark the capture explicitly:
+For App Store candidate screenshots, use a dedicated demo account or a sanitized data build and mark the capture explicitly. Capture first; do not reuse a private QA set:
 
 ```bash
 ./scripts/mobile-sim-screenshots.sh \
-  --output design/screenshots/app-store/<build-id> \
-  --privacy-status demo \
-  --app-store-ready
+  --output design/screenshots/app-store/<build-id>-raw \
+  --privacy-status demo
 ```
 
-`--app-store-ready` refuses `--privacy-status private`. It is still the operator's responsibility to visually review screenshots before submission.
+Then prepare the final App Store-sized export:
+
+```bash
+python3 scripts/prepare_app_store_screenshots.py \
+  design/screenshots/app-store/<build-id>-raw \
+  design/screenshots/app-store/<build-id>-ready \
+  --size 1290x2796
+```
+
+`prepare_app_store_screenshots.py` refuses `privacy_status=private`, writes `app_store_ready=true`, and validates the prepared output before returning success. It is still the operator's responsibility to visually review screenshots before submission.
 
 ## Machine Gate
 
@@ -60,7 +68,7 @@ python3 scripts/check_app_store_screenshots.py design/screenshots/app-store/<bui
 Validate an App Store candidate set:
 
 ```bash
-python3 scripts/check_app_store_screenshots.py design/screenshots/app-store/<build-id> --app-store-ready
+python3 scripts/check_app_store_screenshots.py design/screenshots/app-store/<build-id>-ready --app-store-ready
 ```
 
 The App Store-ready gate requires:
@@ -73,7 +81,7 @@ The App Store-ready gate requires:
 To include screenshots in the full release-pack gate:
 
 ```bash
-APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/<build-id> \
+APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/<build-id>-ready \
   python3 scripts/check_app_store_release_pack.py
 ```
 
