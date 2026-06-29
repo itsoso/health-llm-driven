@@ -197,7 +197,7 @@ export default function DailyArtifactCard({
               accessibilityLabel="询问阿衡今日行动"
             >
               <Icon name="messages-square" size={16} color={C.green600} />
-              <Text style={styles.askText}>问</Text>
+              <Text style={styles.askText}>问阿衡</Text>
             </Pressable>
           </View>
 
@@ -451,13 +451,14 @@ const styles = StyleSheet.create({
   },
   secondaryText: { color: C.ink2, fontSize: 14, fontWeight: '700' },
   askButton: {
-    minWidth: 48,
+    minWidth: 72,
     height: 42,
     borderRadius: revaRadii.sm,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 4,
+    paddingHorizontal: 10,
     backgroundColor: C.green50,
   },
   askText: { fontSize: 13, fontWeight: '800', color: C.green600 },

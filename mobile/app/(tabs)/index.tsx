@@ -70,6 +70,10 @@ import {
   hasRenderableTodayDynamicView,
 } from '../../services/todayDynamicView';
 import { dispatchChatCardAction } from '../../services/chatCardActions';
+import {
+  buildDailyArtifactAskRoute,
+  buildDailyArtifactExecuteRoute,
+} from '../../utils/dailyArtifactNavigation';
 import type {
   ChatCardActionDescriptor,
   ServerCardDescriptor,
@@ -360,20 +364,15 @@ export default function TodayScreen() {
 
   const onArtifactAskReva = useCallback((artifact: DailyArtifact) => {
     recordArtifactAccepted(artifact, 'ask_reva');
-    const target = artifact.top_action?.actions?.ask_reva?.target || '/voice-chat?intent=daily_artifact';
-    router.push(target as any);
+    router.push(buildDailyArtifactAskRoute(artifact) as any);
   }, [recordArtifactAccepted, router]);
 
   const onArtifactPressAction = useCallback((action: DailyArtifactTopAction, artifactOverride?: DailyArtifact) => {
     const artifact = artifactOverride ?? dailyArtifactQuery.data;
     if (artifact) recordArtifactAccepted(artifact, 'open_detail');
-    if (nowItem?.deep_link) {
-      const link = nowItem.deep_link;
-      router.push((link.startsWith('/') ? link : `/${link}`) as any);
-      return;
-    }
-    if (action.source?.object_type) router.push('/timeline' as any);
-    else router.push('/(tabs)/chat' as any);
+    router.push(buildDailyArtifactExecuteRoute(artifact, action, {
+      nowDeepLink: nowItem?.deep_link ?? null,
+    }) as any);
   }, [dailyArtifactQuery.data, nowItem, recordArtifactAccepted, router]);
 
   const onDynamicCardAction = useCallback((
@@ -430,8 +429,6 @@ export default function TodayScreen() {
     readinessScore != null && !!twinSnap.readiness_date && twinSnap.readiness_date < _todayStr;
   // 问候名:取 /profile/me 昵称(无 → 不带名,只问候)。不引入 auth 依赖。
   const profileName: string | null = dashboardQuery.data?.profile?.nickname ?? null;
-  const headerTwinStatus = cockpitTwinStatus(twinSnap, readinessStale);
-  const headerFreshness = cockpitFreshnessLabel(dailyArtifactQuery.data, twinSnap, readinessStale);
   const dynamicTodayView = todayDynamicViewQuery.data;
   const canRenderDynamicToday = hasRenderableTodayDynamicView(dynamicTodayView);
 
@@ -461,11 +458,7 @@ export default function TodayScreen() {
         refreshControl={<RefreshControl refreshing={manualRefreshing} onRefresh={onRefresh} />}
       >
         {/* 1 · 问候头 */}
-        <RevaGreetingHeader
-          name={profileName}
-          twinStatus={headerTwinStatus}
-          freshness={headerFreshness}
-        />
+        <RevaGreetingHeader name={profileName} />
 
         {/* 2 · Daily Artifact(今日状态 + 一个 top action)。接口不可用时回退既有 Hero。 */}
         {canRenderDynamicToday ? (
@@ -679,42 +672,6 @@ function dailyArtifactContext(
     evidence_count: artifact.evidence.length,
     ...(extra ?? {}),
   };
-}
-
-function cockpitTwinStatus(twin: TwinSnapshot, readinessStale: boolean): string {
-  if (readinessStale) return 'Twin 待同步';
-  return hasTwinSignal(twin) ? 'Twin 已更新' : 'Twin 待补数';
-}
-
-function cockpitFreshnessLabel(
-  artifact: DailyArtifact | null | undefined,
-  twin: TwinSnapshot,
-  readinessStale: boolean,
-): string {
-  const freshness = artifact?.freshness?.status;
-  const sourceCount = artifact?.freshness?.sources?.length ?? 0;
-  if (freshness === 'fresh') return sourceCount ? `${sourceCount} 个来源 · 新鲜` : '数据新鲜';
-  if (freshness === 'limited') return '数据有限';
-  if (readinessStale) return '数据待同步';
-  if (hasTwinSignal(twin)) return 'Twin 数据';
-  return '等待连接数据';
-}
-
-function hasTwinSignal(twin: TwinSnapshot): boolean {
-  return [
-    twin.hrv,
-    twin.readiness,
-    twin.sleep_score,
-    twin.sleep_hours,
-    twin.systolic_bp,
-    twin.diastolic_bp,
-    twin.spo2_avg,
-    twin.resting_hr,
-    twin.body_battery,
-    twin.bmi,
-    twin.body_fat_pct,
-    twin.vo2max,
-  ].some((value) => value != null && Number.isFinite(Number(value)));
 }
 
 const styles = StyleSheet.create({

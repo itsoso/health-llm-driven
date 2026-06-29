@@ -270,6 +270,67 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(queryByLabelText('现在该做:旧 Hero 行动')).toBeNull();
   });
 
+  it('routes Daily Artifact go-execute into the right action surface instead of the blank timeline', () => {
+    mockDailyArtifact = {
+      artifact_date: '2026-06-29',
+      empty_state: false,
+      state: { label: '今日最重要行动', tone: 'focused', summary: '先恢复。' },
+      top_action: {
+        id: 'today-recovery',
+        title: '今日训练:今天恢复/休息,暂停高强度;优先睡眠与轻活动',
+        why_now: '近期恢复不足。',
+        do_now: '先睡眠和轻活动。',
+        source: { object_type: 'health_protocol', object_id: 7 },
+        actions: {
+          complete: { enabled: false },
+          skip: { requires_reason: true },
+          ask_reva: { target: '/voice-chat?intent=daily_artifact' },
+        },
+      },
+      evidence: [{ kind: 'verification', label: 'Verification', summary: '用睡眠和腰围验证。' }],
+      confidence: 'high',
+      freshness: { status: 'fresh', sources: ['runtime'] },
+      safety_boundary: '健康管理行动建议,不替代医生诊断。',
+    };
+
+    const { getByLabelText } = render(<TodayScreen />);
+
+    fireEvent.press(getByLabelText('执行今日最重要行动'));
+    expect(mockPush).toHaveBeenCalledWith('/movement-plan');
+    expect(mockPush).not.toHaveBeenCalledWith('/timeline');
+  });
+
+  it('routes Daily Artifact ask into Aheng chat instead of the legacy voice chat page', () => {
+    mockDailyArtifact = {
+      artifact_date: '2026-06-29',
+      empty_state: false,
+      state: { label: '今日最重要行动', tone: 'focused', summary: '先处理餐后窗口。' },
+      top_action: {
+        id: 'walk-10m',
+        title: '午饭后步行 10 分钟',
+        do_now: '穿好鞋,从办公室楼下走一圈。',
+        actions: {
+          complete: { enabled: false },
+          skip: { requires_reason: true },
+          ask_reva: { target: '/voice-chat?intent=daily_artifact' },
+        },
+      },
+      evidence: [{ kind: 'why_now', label: 'Why now', summary: '餐后窗口' }],
+      confidence: 'medium',
+      freshness: { status: 'fresh', sources: ['health_protocol'] },
+      safety_boundary: '健康管理行动建议,不替代医生诊断。',
+    };
+
+    const { getByLabelText } = render(<TodayScreen />);
+
+    fireEvent.press(getByLabelText('询问阿衡今日行动'));
+    const route = mockPush.mock.calls[mockPush.mock.calls.length - 1]?.[0] as any;
+    expect(route.pathname).toBe('/(tabs)/chat');
+    expect(route.params.prompt).toContain('午饭后步行 10 分钟');
+    expect(route.params.context).toContain('"intent":"ask_reva"');
+    expect(mockPush).not.toHaveBeenCalledWith('/voice-chat?intent=daily_artifact');
+  });
+
   it('renders the Aheng-generated DynamicView when available', () => {
     mockTimeline = makeTimeline({
       id: 'act-1',
@@ -357,7 +418,7 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(queryByLabelText('现在该做:旧 Hero 行动')).toBeNull();
   });
 
-  it('renders a cockpit header with Twin and data freshness status', () => {
+  it('omits the noisy Twin freshness status row from the greeting header', () => {
     mockTwinData = {
       physiological: { training_readiness_score: 87, hrv_latest: 48 },
     };
@@ -372,11 +433,11 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
       safety_boundary: null,
     };
 
-    const { getByTestId, getByText } = render(<TodayScreen />);
+    const { queryByTestId, queryByText } = render(<TodayScreen />);
 
-    expect(getByTestId('reva-cockpit-status-row')).toBeTruthy();
-    expect(getByText('Twin 已更新')).toBeTruthy();
-    expect(getByText('2 个来源 · 新鲜')).toBeTruthy();
+    expect(queryByTestId('reva-cockpit-status-row')).toBeNull();
+    expect(queryByText('Twin 已更新')).toBeNull();
+    expect(queryByText('2 个来源 · 新鲜')).toBeNull();
   });
 
   it('routes the Hero now-action to its deep link when present', () => {
