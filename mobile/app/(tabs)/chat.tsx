@@ -503,17 +503,14 @@ export default function ChatScreen() {
               <Ionicons name="add" size={19} color={C.ink1} />
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => router.push({
-                pathname: '/voice-chat',
-                params: conversationId ? { conversation_id: String(conversationId) } : {},
-              } as any)}
+              onPress={openHistory}
               hitSlop={8}
-              style={styles.headerActionPrimary}
-              accessibilityLabel="开始语音对话"
-              accessibilityHint="进入连续语音对话，AI 会听你说并用语音回复"
+              style={styles.headerActionAccent}
+              accessibilityLabel="对话历史"
+              accessibilityHint="查看和切换历史对话"
               accessibilityRole="button"
             >
-              <Ionicons name="call" size={17} color="#FFFFFF" />
+              <Ionicons name="time-outline" size={18} color={C.green500} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setToolMenuVisible(true)}
@@ -671,13 +668,12 @@ export default function ChatScreen() {
             <View style={styles.toolSheetHeader}>
               <View>
                 <Text style={txt.toolSheetTitle}>会诊工具</Text>
-                <Text style={txt.toolSheetSub}>把低频操作收在这里</Text>
+                <Text style={txt.toolSheetSub}>分享、删除等低频操作</Text>
               </View>
               <TouchableOpacity onPress={() => setToolMenuVisible(false)} hitSlop={8} accessibilityLabel="关闭会诊工具">
                 <Ionicons name="close" size={22} color={C.ink2} />
               </TouchableOpacity>
             </View>
-            <ToolMenuRow icon="time-outline" label="对话历史" onPress={openHistory} />
             {messages.some(isShareableChatMessage) && (
               <ToolMenuRow
                 icon={selectionMode ? 'close' : 'checkbox-outline'}
@@ -788,13 +784,15 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
   },
-  headerActionPrimary: {
+  headerActionAccent: {
     width: 38,
     height: 38,
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: C.green500,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: revaSemantic.normal.line,
     ...revaShadows.sm,
   },
   headerMenuAction: {

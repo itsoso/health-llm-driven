@@ -59,6 +59,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
   const [justSent, setJustSent] = useState(false);  // 刚发送, 按钮停留 1s 避免误切 mic
   const { pendingImages, removeImage, clearImages, pickImage, takePhoto } = useMediaPicker();
   const textInputRef = useRef<TextInput>(null);
+  const canSend = (input.trim() || pendingImages.length > 0) && !isStreaming;
 
   const handleSend = useCallback((text?: string) => {
     const msg = (text || input).trim();
@@ -82,6 +83,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
 
   const cancelledRef = useRef(false);
   const startYRef = useRef(0);
+  const inputHoldActiveRef = useRef(false);
 
   const handleHoldStart = useCallback((pageY: number) => {
     cancelledRef.current = false;
@@ -117,6 +119,24 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setVoiceMode(false);
   }, []);
+
+  const focusTextInput = useCallback(() => {
+    textInputRef.current?.focus();
+  }, []);
+
+  const handleInputLongPress = useCallback((pageY: number) => {
+    if (canSend || voiceMode || isStreaming) return;
+    inputHoldActiveRef.current = true;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setVoiceMode(false);
+    handleHoldStart(pageY);
+  }, [canSend, handleHoldStart, isStreaming, voiceMode]);
+
+  const handleInputPressOut = useCallback(() => {
+    if (!inputHoldActiveRef.current) return;
+    inputHoldActiveRef.current = false;
+    handleHoldEnd();
+  }, [handleHoldEnd]);
 
   const handlePickImage = useCallback(async () => { setShowMenu(false); await pickImage(); }, [pickImage]);
   const handleTakePhoto = useCallback(async () => { setShowMenu(false); await takePhoto(); }, [takePhoto]);
@@ -219,8 +239,6 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
     setShowMenu(!showMenu);
   };
 
-  const canSend = (input.trim() || pendingImages.length > 0) && !isStreaming;
-
   return (
     <>
       {/* 图片预览 */}
@@ -261,7 +279,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
               {Math.floor(voice.durationMs / 1000)}″
             </Text>
             <Text style={[styles.recordingHint, cancelHint && styles.recordingHintCancel]}>
-              {cancelHint ? '松手取消' : '上滑取消发送'}
+              {cancelHint ? '松手取消' : '松手转文字，上滑取消'}
             </Text>
           </View>
         </View>
@@ -316,11 +334,26 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
           </Pressable>
         ) : (
           /* 键盘模式：文本输入框 */
-          <View style={styles.inputWrap}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.inputWrap,
+              pressed && styles.inputWrapPressed,
+            ]}
+            onPress={focusTextInput}
+            onLongPress={(e) => handleInputLongPress(e.nativeEvent.pageY)}
+            onPressOut={handleInputPressOut}
+            onTouchMove={(e) => {
+              if (inputHoldActiveRef.current) handleHoldMove(e.nativeEvent.pageY);
+            }}
+            delayLongPress={260}
+            accessibilityRole="button"
+            accessibilityLabel="消息输入框，长按语音输入"
+            accessibilityHint="点击输入文字，长按录音并转成文字"
+          >
             <TextInput
               ref={textInputRef}
               style={styles.textInput}
-              placeholder="问阿衡，或直接说刚做了什么"
+              placeholder="问阿衡，或按住说话"
               placeholderTextColor={C.ink3}
               value={input}
               onChangeText={setInput}
@@ -330,7 +363,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
               maxLength={2000}
               accessibilityLabel="消息输入框"
             />
-          </View>
+          </Pressable>
         )}
 
         {/* 右侧按钮：发送 / 语音切换
@@ -445,6 +478,10 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
     paddingHorizontal: 14, paddingVertical: 4,
     ...revaShadows.sm,
+  },
+  inputWrapPressed: {
+    backgroundColor: C.paper2,
+    borderColor: C.green100,
   },
   textInput: {
     flex: 1, fontFamily: revaFonts.sans, fontSize: 15, maxHeight: 90, color: C.ink1,

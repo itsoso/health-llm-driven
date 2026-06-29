@@ -7,6 +7,7 @@ import ChatInputBar from '../ChatInputBar';
 import { revaColors } from '../../../constants/revaTheme';
 
 const mockStartRecording = jest.fn();
+const mockStopAndTranscribe = jest.fn();
 const mockExecuteMedicalExamImport = jest.fn();
 
 jest.mock('../../../hooks/useMediaPicker', () => ({
@@ -25,7 +26,7 @@ jest.mock('../../../hooks/useVoiceRecording', () => ({
     isTranscribing: false,
     durationMs: 0,
     startRecording: mockStartRecording,
-    stopAndTranscribe: jest.fn(),
+    stopAndTranscribe: mockStopAndTranscribe,
     cancelRecording: jest.fn(),
   }),
 }));
@@ -83,6 +84,18 @@ describe('ChatInputBar', () => {
     fireEvent(getByLabelText('按住说话'), 'pressIn', { nativeEvent: { pageY: 300 } });
 
     expect(mockStartRecording).toHaveBeenCalled();
+  });
+
+  it('starts voice dictation by long-pressing the empty input field', () => {
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent(getByLabelText('消息输入框，长按语音输入'), 'longPress', { nativeEvent: { pageY: 300 } });
+    fireEvent(getByLabelText('消息输入框，长按语音输入'), 'pressOut');
+
+    expect(mockStartRecording).toHaveBeenCalled();
+    expect(mockStopAndTranscribe).toHaveBeenCalled();
   });
 
   it('runs the medical exam import skill from the attachment menu', async () => {

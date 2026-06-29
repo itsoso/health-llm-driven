@@ -142,21 +142,19 @@ describe('ChatScreen', () => {
   });
 
   it('shows a visible history entry on the private coach page', async () => {
-    const { getAllByText, getByText, getByLabelText } = render(<ChatScreen />);
+    const { getAllByText, getByLabelText } = render(<ChatScreen />);
 
     expect(getAllByText('阿衡').length).toBeGreaterThan(0);
     await waitFor(() => {
-      expect(getByLabelText('更多会诊操作')).toBeTruthy();
+      expect(getByLabelText('对话历史')).toBeTruthy();
     });
-    await act(async () => {
-      fireEvent.press(getByLabelText('更多会诊操作'));
-    });
-    expect(getByText('对话历史')).toBeTruthy();
     await act(async () => {
       fireEvent.press(getByLabelText('对话历史'));
     });
 
-    expect(mockOpenHistory).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mockOpenHistory).toHaveBeenCalled();
+    });
   });
 
   it('uses a short readable model label in the chat header', async () => {
@@ -289,18 +287,23 @@ describe('ChatScreen', () => {
     expect(mockNewChat).toHaveBeenCalled();
   });
 
-  it('keeps the header voice action as continuous voice conversation', async () => {
-    const { getByLabelText } = render(<ChatScreen />);
+  it('replaces the low-frequency phone action with first-level history', async () => {
+    const { getByLabelText, queryByLabelText } = render(<ChatScreen />);
 
     await waitFor(() => {
-      expect(getByLabelText('开始语音对话')).toBeTruthy();
+      expect(getByLabelText('对话历史')).toBeTruthy();
     });
-    fireEvent.press(getByLabelText('开始语音对话'));
+    expect(queryByLabelText('开始语音对话')).toBeNull();
+    await act(async () => {
+      fireEvent.press(getByLabelText('对话历史'));
+    });
 
-    expect(mockPush).toHaveBeenCalledWith({
-      pathname: '/voice-chat',
-      params: {},
+    await waitFor(() => {
+      expect(mockOpenHistory).toHaveBeenCalled();
     });
+    expect(mockPush).not.toHaveBeenCalledWith(expect.objectContaining({
+      pathname: '/voice-chat',
+    }));
   });
 
   it('sends opener quick replies with the opener context so verification has a target', async () => {
@@ -495,7 +498,8 @@ describe('ChatScreen', () => {
     });
 
     expect(queryByText('新建对话')).toBeNull();
-    expect(getByText('对话历史')).toBeTruthy();
+    expect(queryByText('对话历史')).toBeNull();
+    expect(getByText('会诊工具')).toBeTruthy();
   });
 
   it('starts a new conversation when opened from an Agent context entry', async () => {

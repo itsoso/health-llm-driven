@@ -1,7 +1,7 @@
 /* eslint-disable import/first */
 import React from 'react';
 import { Text as MockText } from 'react-native';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockLoadConversation = jest.fn();
 const mockNewChat = jest.fn();
@@ -98,9 +98,9 @@ describe('ChatScreen history entry', () => {
   it('opens conversation history from the coach header', async () => {
     const { getByLabelText, findByText } = render(<ChatScreen />);
 
-    // 历史入口已收进"会诊工具"菜单, 先展开再点
-    fireEvent.press(getByLabelText('更多会诊操作'));
-    fireEvent.press(getByLabelText('对话历史'));
+    await act(async () => {
+      fireEvent.press(getByLabelText('对话历史'));
+    });
 
     await waitFor(() => expect(mockGetConversations).toHaveBeenCalled());
     expect(await findByText('恢复能力分析')).toBeTruthy();
