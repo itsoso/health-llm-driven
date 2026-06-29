@@ -448,7 +448,7 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
 
     expect(getByTestId('dynamic-today-view')).toBeTruthy();
     expect(getByText('阿衡动态生成的餐后步行')).toBeTruthy();
-    expect(getByText('7天健康编排')).toBeTruthy();
+    expect(getByText('7天验证节奏')).toBeTruthy();
     expect(queryByLabelText('现在该做:旧 Hero 行动')).toBeNull();
   });
 
@@ -532,6 +532,37 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(mockPush).toHaveBeenCalledWith('/intervention-cycle');
   });
 
+  it('hides the standalone 90-day cycle when Aheng has already generated the primary today action', () => {
+    mockActiveCycle = {
+      id: 7,
+      status: 'active',
+      start_date: new Date(Date.now() - 14 * 86400000).toISOString(),
+      planned_end_date: new Date(Date.now() + 76 * 86400000).toISOString(),
+      outcomes: [{ metric_code: 'LDL', display: 'LDL-C', unit: 'mmol/L', status: 'pending' }],
+    };
+    mockDailyArtifact = {
+      artifact_date: '2026-06-29',
+      empty_state: false,
+      state: { label: '今日最重要行动', tone: 'focused', summary: '先处理今日行动。' },
+      top_action: {
+        id: 'walk',
+        title: '午饭后步行 10 分钟',
+        why_now: '餐后窗口优先。',
+        verification_signal: 'waist_cm',
+        actions: { complete: { enabled: false }, skip: { requires_reason: true } },
+      },
+      evidence: [],
+      confidence: 'medium',
+      freshness: { status: 'fresh', sources: ['runtime'] },
+      safety_boundary: '健康管理行动建议,不替代医生诊断。',
+    };
+
+    const { queryByTestId, getByText } = render(<TodayScreen />);
+
+    expect(getByText('午饭后步行 10 分钟')).toBeTruthy();
+    expect(queryByTestId('home-health-cycle-cockpit')).toBeNull();
+  });
+
   it('keeps the pull-to-refresh spinner separate from background sync', () => {
     mockRefetchingKeys = new Set(['twin:me']);
     const { UNSAFE_getByType } = render(<TodayScreen />);
@@ -540,29 +571,30 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(refreshControl.props.refreshing).toBe(false);
   });
 
-  // ── 身体数据 (ActivityRing + Vitals + BodyStats) ──
+  // ── 身体信号 (agent-selected compact signals) ──
 
-  it('renders the basic vitals grid with pending placeholders when data is missing', () => {
-    const { getByText, getByLabelText } = render(<TodayScreen />);
-    expect(getByText('血压')).toBeTruthy();
-    expect(getByText('SpO2')).toBeTruthy();
-    expect(getByText('BMI')).toBeTruthy();
-    expect(getByText('体脂')).toBeTruthy();
-    expect(getByLabelText('血压 待记录')).toBeTruthy();
+  it('renders compact body signals with pending placeholders when data is missing', () => {
+    const { getByText, getByLabelText, queryByText } = render(<TodayScreen />);
+    expect(getByText('身体信号')).toBeTruthy();
+    expect(getByLabelText('睡眠 待同步')).toBeTruthy();
+    expect(getByLabelText('HRV 待同步')).toBeTruthy();
+    expect(queryByText('/ 8,000')).toBeNull();
   });
 
-  it('fills the vitals grid from the twin snapshot when values exist', () => {
+  it('fills body signals from the twin snapshot when values exist', () => {
     mockTwinData = {
-      physiological: { spo2_avg: 96 },
+      physiological: { spo2_avg: 96, hrv_latest: 59, sleep_duration_h_latest: 8.3, body_battery_current: 98 },
       body_composition: { bmi: 22.4 },
       labs: { blood_pressure_systolic: 120, blood_pressure_diastolic: 78 },
     };
     const { getByLabelText } = render(<TodayScreen />);
-    expect(getByLabelText('血压 120/78mmHg')).toBeTruthy();
+    expect(getByLabelText('睡眠 8.3h')).toBeTruthy();
+    expect(getByLabelText('HRV 59ms')).toBeTruthy();
+    expect(getByLabelText('电量 98')).toBeTruthy();
     expect(getByLabelText('BMI 22.4')).toBeTruthy();
   });
 
-  it('opens a vitals tile route on press', () => {
+  it('opens a body signal route on press', () => {
     const { getByLabelText } = render(<TodayScreen />);
     fireEvent.press(getByLabelText('BMI 待记录'));
     expect(mockPush).toHaveBeenCalledWith('/body-measurements?focus=morning');

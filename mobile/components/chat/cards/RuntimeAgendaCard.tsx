@@ -91,7 +91,7 @@ export function RuntimeAgendaCardView(data: RuntimeAgendaData) {
     <CardShell
       icon="calendar-clear-outline"
       iconColor={C.green500}
-      title={`${horizon}天健康编排`}
+      title={`${horizon}天验证节奏`}
       badge={replanReason ? '已重排' : '动态'}
       badgeColor={C.green500}
       bg={C.surface}
@@ -104,10 +104,10 @@ export function RuntimeAgendaCardView(data: RuntimeAgendaData) {
           </View>
           <View style={styles.heroBody}>
             <Text maxFontSizeMultiplier={1.2} style={styles.eyebrow}>
-              现在先做
+              未来节奏
             </Text>
             <Text maxFontSizeMultiplier={1.3} style={styles.actionTitle} numberOfLines={3}>
-              {actionTitle}
+              围绕当前重点动态重排
             </Text>
           </View>
         </View>
@@ -122,7 +122,7 @@ export function RuntimeAgendaCardView(data: RuntimeAgendaData) {
       {stateSummary || replanReason ? (
         <View style={styles.reasonBlock}>
           <Text maxFontSizeMultiplier={1.2} style={styles.sectionLabel}>
-            为什么现在
+            为什么这样排
           </Text>
           {stateSummary ? (
             <Text maxFontSizeMultiplier={1.3} style={styles.summary} numberOfLines={3}>
@@ -306,7 +306,7 @@ function formatDayLabel(value: string | undefined, index: number): string {
 
 export const RuntimeAgendaCardSpec: CardSpec<RuntimeAgendaData> = {
   type: 'runtime_agenda',
-  label: '7天健康运行时',
+  label: '7天验证节奏',
   match() {
     return null;
   },

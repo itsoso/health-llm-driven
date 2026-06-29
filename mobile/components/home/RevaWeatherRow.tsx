@@ -61,7 +61,7 @@ function aqiLabel(aqi: number | undefined): string {
   return '空气 重度';
 }
 
-export default function RevaWeatherRow() {
+export default function RevaWeatherRow({ relevanceText }: { relevanceText?: string | null }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
 
@@ -142,6 +142,10 @@ export default function RevaWeatherRow() {
 
   if (!w && !a && !loc?.city && !tomorrow) return null;
 
+  const environmentMatters = isEnvironmentRelevant(relevanceText);
+  const airNeedsAttention = a?.aqi != null && a.aqi > 100;
+  if (!environmentMatters && !airNeedsAttention) return null;
+
   const top = [
     loc?.city || null,
     w?.temperature != null ? `${Math.round(w.temperature)}°` : null,
@@ -219,6 +223,11 @@ export default function RevaWeatherRow() {
       ) : null}
     </View>
   );
+}
+
+function isEnvironmentRelevant(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return /天气|温度|空气|户外|外出|通勤|跑步|步行|散步|健走|慢跑|运动|训练|骑行|紫外|下雨|雨|冷|热|雾霾|AQI|PM2\.?5/i.test(value);
 }
 
 const styles = StyleSheet.create({

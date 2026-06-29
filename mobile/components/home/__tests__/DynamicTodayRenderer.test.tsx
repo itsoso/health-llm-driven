@@ -86,7 +86,8 @@ describe('DynamicTodayRenderer', () => {
 
     expect(getByTestId('dynamic-today-view')).toBeTruthy();
     expect(getByText('阿衡动态生成的餐后步行')).toBeTruthy();
-    expect(getByText('7天健康编排')).toBeTruthy();
+    expect(getByText('7天验证节奏')).toBeTruthy();
+    expect(getByText('未来节奏')).toBeTruthy();
 
     fireEvent.press(getByText('查看7天计划'));
     expect(onAction).toHaveBeenCalledWith(
