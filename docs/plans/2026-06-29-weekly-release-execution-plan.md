@@ -33,6 +33,14 @@
 - 保留 `HealthPilot` 作为工程/技术历史名,不重命名 Xcode target、bundle id、脚本路径。
 - 增强发布检查:若 Expo app name、`CFBundleDisplayName` 或 App Store submission pack 回退到旧名,测试和 release gate 必须失败。
 
+## 第二批实现切片
+
+P0 App Store final-submit gate 已完成:
+
+- 普通 `check_app_store_release_pack.py` 继续用于无人工凭证的日常回归。
+- `check_app_store_release_pack.py --final-submit` 用于真正提交前,强制检查 App Store-ready 截图、demo account/password 和 ASC credentials。
+- 当前 final-submit 预期失败,阻塞项是用户提供 demo credentials、ASC credentials 和最终截图目录。
+
 ## 本周不做
 
 - 不把 App Store 发布伪装成已完成:缺 demo account、ASC credentials、人审截图时必须停在 pending。

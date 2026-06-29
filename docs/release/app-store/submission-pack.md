@@ -72,6 +72,22 @@ python3 scripts/check_ios_app_store_submission.py --require-asc-credentials
 
 The production binary path remains EAS production build with App Store Connect auto-submit. QR install is the default for local mobile distribution, but App Store submission requires the production EAS/App Store Connect path.
 
+## Final Submit Gate
+
+The default release-pack check validates repo materials that do not require human secrets or fresh screenshots:
+
+```bash
+python3 scripts/check_app_store_release_pack.py
+```
+
+Immediately before an App Store submission, run the stricter final gate. It must fail if demo credentials are still placeholders, App Store Connect credentials are unavailable, or no App Store-ready screenshot set is provided:
+
+```bash
+python3 scripts/check_app_store_release_pack.py \
+  --final-submit \
+  --screenshot-dir design/screenshots/app-store/<build-id>-ready
+```
+
 ## Privacy Nutrition Label
 
 Use `docs/release/app-store/privacy-nutrition-label.draft.json` as the working source. App Store Connect remains the final source of truth after manual entry.
@@ -127,6 +143,7 @@ python3 scripts/prepare_app_store_screenshots.py \
 Do not submit until:
 
 - [ ] `python3 scripts/check_app_store_release_pack.py` passes.
+- [ ] `python3 scripts/check_app_store_release_pack.py --final-submit --screenshot-dir design/screenshots/app-store/<build-id>-ready` passes on the release machine.
 - [ ] `python3 scripts/check_ios_app_store_submission.py --require-asc-credentials` passes on the release machine.
 - [ ] Any sanitized candidate generated from private QA screenshots has passed human visual review before prepare.
 - [ ] Candidate screenshots exist under `design/screenshots/app-store/<build-id>-ready/` and pass:

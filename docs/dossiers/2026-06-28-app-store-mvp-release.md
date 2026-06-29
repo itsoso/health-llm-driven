@@ -277,11 +277,16 @@ P0:
   - PASS: `scripts/check_ios_app_store_submission.py` 和 `scripts/check_app_store_release_pack.py` 已把用户可见 App 名锁定为 `阿衡`,防止发布材料回退到旧名。
   - PASS: `cd mobile && ./node_modules/.bin/jest --runTestsByPath __tests__/app-config.test.ts --runInBand` -> 7 passed。
   - PASS: `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest backend/tests/test_ios_app_store_submission_preflight.py backend/tests/test_app_store_release_pack.py -q --no-cov` -> 4 passed。
+- Local final-submit gate(Batch 9):
+  - PASS: `scripts/check_app_store_release_pack.py` 新增 `--final-submit` 与 `--screenshot-dir`,把最终 App Store 提交前的人审材料升级为硬闸。
+  - EXPECTED FAIL: 在缺少 `APP_STORE_SCREENSHOT_DIR` / `--screenshot-dir`、Review Notes 仍有 demo credentials 占位符、且本机无 ASC credentials 时,`python3 scripts/check_app_store_release_pack.py --final-submit` 返回 1 并列出全部阻塞。
+  - 普通 `python3 scripts/check_app_store_release_pack.py` 仍可用于无人工凭证的日常回归。
 - pending:
   - App Store Connect build processing status。
   - App Store Connect production/distribution profile build。
   - 用 demo account 产出最终 App Store screenshot raw set,或对 private QA set 运行 sanitize 后人工视觉复核。
   - 用 `scripts/prepare_app_store_screenshots.py <raw-or-reviewed-sanitized> <ready> --size 1290x2796 --confirm-sanitized-reviewed` 导出最终 ready set,再用 `APP_STORE_SCREENSHOT_DIR=<ready> python3 scripts/check_app_store_release_pack.py` 过闸。
+  - 最终提交前必须跑 `python3 scripts/check_app_store_release_pack.py --final-submit --screenshot-dir <ready>`。
   - 真正触发 EAS production build / submit 前,用 `python3 scripts/check_ios_app_store_submission.py --require-asc-credentials` 在发布机器上过闸。
 
 ## S7 · 上线验证

@@ -90,3 +90,29 @@ def test_app_store_release_pack_checker_validates_optional_screenshot_dir(tmp_pa
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "App Store screenshot check passed." in result.stdout
+
+
+def test_app_store_release_pack_final_submit_fails_loud_without_human_materials():
+    root = Path(__file__).resolve().parents[2]
+    scrubbed_env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("ASC_")
+        and not key.startswith("APP_STORE_CONNECT_")
+        and key != "APP_STORE_SCREENSHOT_DIR"
+    }
+
+    result = subprocess.run(
+        [sys.executable, "scripts/check_app_store_release_pack.py", "--final-submit"],
+        cwd=root,
+        env=scrubbed_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "final submit requires APP_STORE_SCREENSHOT_DIR or --screenshot-dir" in result.stderr
+    assert "final submit requires replacing demo account placeholders" in result.stderr
+    assert "missing App Store Connect credentials" in result.stderr

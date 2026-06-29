@@ -2,6 +2,7 @@
 """Validate App Store release materials against mobile config."""
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -21,6 +22,7 @@ REQUIRED_FILES = [
     "docs/plans/2026-06-28-app-store-mvp-release-batch5-plan.md",
     "docs/plans/2026-06-28-app-store-mvp-release-batch6-plan.md",
     "docs/plans/2026-06-28-app-store-mvp-release-batch7-plan.md",
+    "docs/plans/2026-06-29-app-store-final-submit-gate-plan.md",
     "frontend/src/app/privacy/page.tsx",
     "scripts/sim-build.sh",
     "scripts/mobile-sim-screenshots.sh",
@@ -55,6 +57,10 @@ OFFICIAL_REFERENCE_URLS = [
 ]
 
 EXPECTED_APP_NAME = "阿衡"
+DEMO_PLACEHOLDERS = [
+    "[NEEDS APP STORE REVIEW DEMO ACCOUNT]",
+    "[NEEDS APP STORE REVIEW DEMO PASSWORD]",
+]
 
 
 def read_json(path: str) -> dict:
@@ -67,6 +73,18 @@ def read_text(path: str) -> str:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--final-submit",
+        action="store_true",
+        help="Require human-provided App Store submission materials: screenshots, ASC credentials, and demo credentials.",
+    )
+    parser.add_argument(
+        "--screenshot-dir",
+        help="App Store-ready screenshot directory. Overrides APP_STORE_SCREENSHOT_DIR.",
+    )
+    args = parser.parse_args()
+
     failures: list[str] = []
 
     for rel in REQUIRED_FILES:
@@ -141,14 +159,25 @@ def main() -> int:
         if url not in submission and url not in read_text("docs/plans/2026-06-28-app-store-mvp-release-batch2-plan.md"):
             failures.append(f"missing official reference URL: {url}")
 
-    if "[NEEDS APP STORE REVIEW DEMO ACCOUNT]" not in review_notes:
+    if args.final_submit:
+        remaining_placeholders = [placeholder for placeholder in DEMO_PLACEHOLDERS if placeholder in review_notes]
+        if remaining_placeholders:
+            failures.append(
+                "final submit requires replacing demo account placeholders in review notes: "
+                + ", ".join(remaining_placeholders)
+            )
+    elif DEMO_PLACEHOLDERS[0] not in review_notes:
         failures.append("review notes must keep an explicit demo-account placeholder until owner provides credentials")
 
+    ios_preflight_args = [
+        sys.executable,
+        str(ROOT / "scripts/check_ios_app_store_submission.py"),
+    ]
+    if args.final_submit:
+        ios_preflight_args.append("--require-asc-credentials")
+
     ios_preflight = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts/check_ios_app_store_submission.py"),
-        ],
+        ios_preflight_args,
         cwd=ROOT,
         text=True,
         stdout=subprocess.PIPE,
@@ -160,7 +189,9 @@ def main() -> int:
     if ios_preflight.returncode != 0:
         failures.append(f"iOS App Store submission preflight failed\n{ios_preflight.stderr.strip()}")
 
-    screenshot_dir = os.environ.get("APP_STORE_SCREENSHOT_DIR")
+    screenshot_dir = args.screenshot_dir or os.environ.get("APP_STORE_SCREENSHOT_DIR")
+    if args.final_submit and not screenshot_dir:
+        failures.append("final submit requires APP_STORE_SCREENSHOT_DIR or --screenshot-dir")
     if screenshot_dir:
         result = subprocess.run(
             [
