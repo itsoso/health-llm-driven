@@ -97,6 +97,24 @@ python3 scripts/prepare_app_store_screenshots.py \
   --size 1290x2796
 ```
 
+If the source screenshots came from a private QA run, generate a review-required sanitized candidate first:
+
+```bash
+python3 scripts/sanitize_app_store_screenshots.py \
+  design/screenshots/app-store/<private-build-id> \
+  design/screenshots/app-store/<build-id>-sanitized
+```
+
+Then visually review every PNG and run prepare with explicit confirmation:
+
+```bash
+python3 scripts/prepare_app_store_screenshots.py \
+  design/screenshots/app-store/<build-id>-sanitized \
+  design/screenshots/app-store/<build-id>-ready \
+  --size 1290x2796 \
+  --confirm-sanitized-reviewed
+```
+
 ## Official Requirements Mapped
 
 - Apple account deletion support says deletion must be easy to find, usually in account settings, and users must be kept informed if deletion takes time.
@@ -110,6 +128,7 @@ Do not submit until:
 
 - [ ] `python3 scripts/check_app_store_release_pack.py` passes.
 - [ ] `python3 scripts/check_ios_app_store_submission.py --require-asc-credentials` passes on the release machine.
+- [ ] Any sanitized candidate generated from private QA screenshots has passed human visual review before prepare.
 - [ ] Candidate screenshots exist under `design/screenshots/app-store/<build-id>-ready/` and pass:
       `APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/<build-id>-ready python3 scripts/check_app_store_release_pack.py`.
 - [ ] Privacy policy URL is publicly reachable: `curl -fsSI https://health.executor.life/privacy`.

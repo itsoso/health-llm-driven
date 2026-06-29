@@ -110,6 +110,7 @@ def prepare(
     target_size: tuple[int, int],
     privacy_status: str | None,
     overwrite: bool,
+    confirm_sanitized_reviewed: bool,
 ) -> None:
     failures = validate(source_dir, app_store_ready=False)
     if failures:
@@ -120,6 +121,15 @@ def prepare(
     source_privacy_status = manifest.get("privacy_status")
     if source_privacy_status not in {"demo", "sanitized"}:
         raise ValueError("source privacy_status must be demo or sanitized")
+    if (
+        source_privacy_status == "sanitized"
+        and manifest.get("sanitization_review_required") is True
+        and not confirm_sanitized_reviewed
+    ):
+        raise ValueError(
+            "sanitized screenshots require human review; "
+            "rerun with --confirm-sanitized-reviewed after visual QA"
+        )
 
     output_privacy_status = privacy_status or source_privacy_status
     if output_privacy_status not in {"demo", "sanitized"}:
@@ -191,6 +201,11 @@ def main() -> int:
         action="store_true",
         help="Replace an existing non-empty output directory.",
     )
+    parser.add_argument(
+        "--confirm-sanitized-reviewed",
+        action="store_true",
+        help="Confirm a sanitized candidate has passed human visual review.",
+    )
     args = parser.parse_args()
 
     try:
@@ -201,6 +216,7 @@ def main() -> int:
             target_size=target_size,
             privacy_status=args.privacy_status,
             overwrite=args.overwrite,
+            confirm_sanitized_reviewed=args.confirm_sanitized_reviewed,
         )
     except (RuntimeError, ValueError) as exc:
         print(str(exc), file=sys.stderr)

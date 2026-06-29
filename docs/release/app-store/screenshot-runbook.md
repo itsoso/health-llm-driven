@@ -46,16 +46,28 @@ For App Store candidate screenshots, use a dedicated demo account or a sanitized
   --privacy-status demo
 ```
 
+If a demo account is not available yet, a private QA set can be turned into a review-required sanitized candidate. This is a fallback, not an automatic approval:
+
+```bash
+python3 scripts/sanitize_app_store_screenshots.py \
+  design/screenshots/app-store/<private-build-id> \
+  design/screenshots/app-store/<build-id>-sanitized \
+  --overwrite
+```
+
+Review every PNG manually. If the sanitized candidate still exposes private data, discard it and capture with a dedicated demo account instead.
+
 Then prepare the final App Store-sized export:
 
 ```bash
 python3 scripts/prepare_app_store_screenshots.py \
-  design/screenshots/app-store/<build-id>-raw \
+  design/screenshots/app-store/<build-id>-raw-or-sanitized \
   design/screenshots/app-store/<build-id>-ready \
-  --size 1290x2796
+  --size 1290x2796 \
+  --confirm-sanitized-reviewed
 ```
 
-`prepare_app_store_screenshots.py` refuses `privacy_status=private`, writes `app_store_ready=true`, and validates the prepared output before returning success. It is still the operator's responsibility to visually review screenshots before submission.
+`prepare_app_store_screenshots.py` refuses `privacy_status=private`, writes `app_store_ready=true`, and validates the prepared output before returning success. If the source was produced by `sanitize_app_store_screenshots.py`, prepare refuses it until `--confirm-sanitized-reviewed` is provided after human visual QA.
 
 ## Machine Gate
 
@@ -77,6 +89,7 @@ The App Store-ready gate requires:
 - `app_store_ready` is `true`.
 - all seven core screenshots exist in `manifest.json`.
 - each PNG uses an accepted 6.9-inch portrait size: 1260 x 2736, 1290 x 2796, or 1320 x 2868.
+- sanitized candidates created from private QA screenshots have passed human visual review before prepare.
 
 To include screenshots in the full release-pack gate:
 

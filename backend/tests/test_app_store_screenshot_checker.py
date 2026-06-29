@@ -113,6 +113,28 @@ def _run_prepare(
     )
 
 
+def _run_sanitize(
+    root: Path,
+    source_dir: Path,
+    output_dir: Path,
+    *extra: str,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            sys.executable,
+            "scripts/sanitize_app_store_screenshots.py",
+            str(source_dir),
+            str(output_dir),
+            *extra,
+        ],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+
 def test_app_store_screenshot_checker_accepts_demo_ready_set(tmp_path: Path):
     root = Path(__file__).resolve().parents[2]
     screenshot_dir = tmp_path / "screens"
@@ -204,3 +226,63 @@ def test_prepare_app_store_screenshots_rejects_unsupported_target_size(tmp_path:
 
     assert result.returncode == 1
     assert "target size must be one of" in result.stderr
+
+
+def test_sanitize_app_store_screenshots_creates_review_required_candidate(tmp_path: Path):
+    root = Path(__file__).resolve().parents[2]
+    source_dir = tmp_path / "private"
+    output_dir = tmp_path / "sanitized"
+    source_dir.mkdir()
+    _write_manifest(source_dir, privacy_status="private", app_store_ready=False, width=1206, height=2622)
+
+    result = _run_sanitize(root, source_dir, output_dir)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["privacy_status"] == "sanitized"
+    assert manifest["app_store_ready"] is False
+    assert manifest["sanitization_review_required"] is True
+    assert manifest["sanitized_from"].endswith("private")
+    assert len(manifest["sanitization_masks"]) >= len(REQUIRED_NAMES)
+    for name in REQUIRED_NAMES:
+        assert _read_png_size(output_dir / f"{name}.png") == (1206, 2622)
+
+    checker = _run_checker(root, output_dir)
+    assert checker.returncode == 0, checker.stdout + checker.stderr
+
+
+def test_prepare_app_store_screenshots_requires_review_for_sanitized_candidate(tmp_path: Path):
+    if shutil.which("sips") is None:
+        pytest.skip("prepare_app_store_screenshots uses macOS sips for deterministic local release exports")
+
+    root = Path(__file__).resolve().parents[2]
+    source_dir = tmp_path / "private"
+    sanitized_dir = tmp_path / "sanitized"
+    ready_dir = tmp_path / "ready"
+    source_dir.mkdir()
+    _write_manifest(source_dir, privacy_status="private", app_store_ready=False, width=1206, height=2622)
+    sanitize = _run_sanitize(root, source_dir, sanitized_dir)
+    assert sanitize.returncode == 0, sanitize.stdout + sanitize.stderr
+
+    blocked = _run_prepare(root, sanitized_dir, ready_dir)
+
+    assert blocked.returncode == 1
+    assert "sanitized screenshots require human review" in blocked.stderr
+
+    confirmed = _run_prepare(root, sanitized_dir, ready_dir, "--confirm-sanitized-reviewed")
+    assert confirmed.returncode == 0, confirmed.stdout + confirmed.stderr
+    checker = _run_checker(root, ready_dir, "--app-store-ready")
+    assert checker.returncode == 0, checker.stdout + checker.stderr
+
+
+def test_sanitize_app_store_screenshots_refuses_non_private_source(tmp_path: Path):
+    root = Path(__file__).resolve().parents[2]
+    source_dir = tmp_path / "demo"
+    output_dir = tmp_path / "sanitized"
+    source_dir.mkdir()
+    _write_manifest(source_dir, privacy_status="demo", app_store_ready=False)
+
+    result = _run_sanitize(root, source_dir, output_dir)
+
+    assert result.returncode == 1
+    assert "source privacy_status must be private" in result.stderr

@@ -5,7 +5,7 @@
 | slug | `app-store-mvp-release` |
 | 创建日期 | 2026-06-28 |
 | 当前阶段 | S6 部署准备 |
-| 状态 | app-store-batch6-ios-submission-preflight-ready-demo-screenshots-pending |
+| 状态 | app-store-batch7-sanitized-candidate-tooling-human-review-pending |
 | 负责 | Codex |
 | 分支 | `main` |
 | 工作区 | `/Users/liqiuhua/work/personal/health-llm-driven` |
@@ -181,6 +181,20 @@ P0:
   - PASS: `python3 -m py_compile scripts/check_app_store_release_pack.py scripts/check_ios_app_store_submission.py scripts/check_app_store_screenshots.py scripts/prepare_app_store_screenshots.py`
   - PASS: `backend/venv/bin/python backend/scripts/check_dossier_consistency.py`
   - PASS: `backend/venv/bin/python scripts/check_doc_drift.py`
+- Batch 7 local gates:
+  - RED then PASS: `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest backend/tests/test_app_store_screenshot_checker.py -q --no-cov`
+    - 初始 RED:缺少 `scripts/sanitize_app_store_screenshots.py`,prepare 未阻断 review-required sanitized candidate。
+    - GREEN:9 passed。
+  - PASS: `scripts/sanitize_app_store_screenshots.py` 能从 private QA 截图生成 `privacy_status=sanitized`、`app_store_ready=false`、`sanitization_review_required=true` 的候选集。
+  - PASS: `scripts/prepare_app_store_screenshots.py` 默认拒绝 review-required sanitized candidate。
+  - PASS: `--confirm-sanitized-reviewed` 后才允许 prepare 生成 ready set。
+  - PASS: `python3 scripts/sanitize_app_store_screenshots.py design/screenshots/app-store/batch4-private-20260628 /tmp/reva-appstore-sanitized --overwrite`
+  - EXPECTED FAIL: `python3 scripts/prepare_app_store_screenshots.py /tmp/reva-appstore-sanitized /tmp/reva-appstore-ready --overwrite`
+    - `sanitized screenshots require human review`。
+  - PASS: `python3 scripts/prepare_app_store_screenshots.py /tmp/reva-appstore-sanitized /tmp/reva-appstore-ready --overwrite --confirm-sanitized-reviewed && python3 scripts/check_app_store_screenshots.py /tmp/reva-appstore-ready --app-store-ready`
+    - 7 张截图导出为 1290 x 2796,`privacy_status=sanitized app_store_ready=True`。
+  - PASS: `python3 scripts/check_app_store_release_pack.py`
+  - PASS: `python3 -m py_compile scripts/check_app_store_release_pack.py scripts/check_app_store_screenshots.py scripts/prepare_app_store_screenshots.py scripts/sanitize_app_store_screenshots.py scripts/check_ios_app_store_submission.py`
 
 ## G4 · 安全闸
 
@@ -198,6 +212,7 @@ P0:
 - Batch 4 plan: `docs/plans/2026-06-28-app-store-mvp-release-batch4-plan.md`
 - Batch 5 plan: `docs/plans/2026-06-28-app-store-mvp-release-batch5-plan.md`
 - Batch 6 plan: `docs/plans/2026-06-28-app-store-mvp-release-batch6-plan.md`
+- Batch 7 plan: `docs/plans/2026-06-28-app-store-mvp-release-batch7-plan.md`
 - Batch 2 release pack:
   - `frontend/src/app/privacy/page.tsx`: App Store Connect 可用隐私政策 URL 源码。
   - `docs/release/app-store/submission-pack.md`: App Store metadata / submission gate。
@@ -210,6 +225,7 @@ P0:
   - `scripts/check_app_store_screenshots.py`: 截图 manifest/privacy/尺寸合规检查器。
   - `scripts/prepare_app_store_screenshots.py`: 将 demo/sanitized 原始截图导出为 App Store Connect 接受尺寸,并写入 ready manifest。
   - `scripts/check_ios_app_store_submission.py`: iOS production build / App Store Connect submit 配置预检,默认不联网;真正上传前用 `--require-asc-credentials` 检查本机 ASC 凭证。
+  - `scripts/sanitize_app_store_screenshots.py`: 将 private QA 截图生成 review-required sanitized candidate;不等于可提交截图。
 - pending:
   - iOS production archive / EAS build 产出并进入 App Store Connect。
   - App Store Connect 手工填入隐私营养标签、metadata、Review Notes。
@@ -240,6 +256,10 @@ P0:
 - Local iOS submission preflight gate:
   - PASS: `scripts/check_ios_app_store_submission.py` 默认模式已纳入 release pack gate。
   - EXPECTED FAIL: `--require-asc-credentials` 在缺少 ASC key / issuer / private key 时失败;真正上传前必须由 release machine 跑通过。
+- Local sanitized screenshot candidate gate:
+  - PASS: private QA set 可生成 sanitized candidate,但 manifest 保持 `app_store_ready=false` 和 `sanitization_review_required=true`。
+  - EXPECTED FAIL: 未加 `--confirm-sanitized-reviewed` 时,prepare 拒绝 sanitized candidate。
+  - pending: 需要人工逐张视觉复核 sanitized PNG;若仍暴露私密数据,改用 dedicated demo account 重新采集。
 - Local current-code simulator build gate:
   - PASS: `./scripts/sim-build.sh --device 39D954B3-A2B5-41AA-8A6E-BD9750D3CB86 --keep-temp-worktree` 从干净临时 worktree 构建、安装并打开当前代码。
   - 结论: Batch 2 的 Rokid compile failure 是主工作区 stale Pods/Podfile.lock 污染;干净 worktree + `ROKID_IOS_SDK_ENABLED=0` 可以稳定走通 simulator build。
@@ -254,8 +274,8 @@ P0:
 - pending:
   - App Store Connect build processing status。
   - App Store Connect production/distribution profile build。
-  - 用 demo account / 脱敏数据产出最终 App Store screenshot raw set。
-  - 用 `scripts/prepare_app_store_screenshots.py <raw> <ready> --size 1290x2796` 导出最终 ready set,再用 `APP_STORE_SCREENSHOT_DIR=<ready> python3 scripts/check_app_store_release_pack.py` 过闸。
+  - 用 demo account 产出最终 App Store screenshot raw set,或对 private QA set 运行 sanitize 后人工视觉复核。
+  - 用 `scripts/prepare_app_store_screenshots.py <raw-or-reviewed-sanitized> <ready> --size 1290x2796 --confirm-sanitized-reviewed` 导出最终 ready set,再用 `APP_STORE_SCREENSHOT_DIR=<ready> python3 scripts/check_app_store_release_pack.py` 过闸。
   - 真正触发 EAS production build / submit 前,用 `python3 scripts/check_ios_app_store_submission.py --require-asc-credentials` 在发布机器上过闸。
 
 ## S7 · 上线验证
@@ -273,6 +293,6 @@ P0:
   - 用 `scripts/mobile-sim-screenshots.sh` 或真机截图补齐 App Store raw screenshot set。
   - 用 `docs/release/app-store/*` 作为 App Store Connect 填写真源。
   - 用 `scripts/check_ios_app_store_submission.py --require-asc-credentials` 作为 EAS production build / submit 前置闸。
-  - 用 `scripts/prepare_app_store_screenshots.py` + `scripts/check_app_store_screenshots.py --app-store-ready` 防止 private/尺寸不合规截图进入提交包。
+  - 用 `scripts/sanitize_app_store_screenshots.py` + 人工视觉复核 + `scripts/prepare_app_store_screenshots.py` + `scripts/check_app_store_screenshots.py --app-store-ready` 防止 private/尺寸不合规截图进入提交包。
   - 真机走查核心动线: 今日 -> Chat 动态卡片 -> 快速记录 -> 体检导入 -> 复盘 -> 隐私/删除请求。
   - 若需要“完整账号删除”,新增删除工单/worker/admin 审批与跨表匿名化测试。
