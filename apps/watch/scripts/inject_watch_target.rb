@@ -3,18 +3,19 @@
 # pbxproj 含中文显示名 → 强制 UTF-8,否则 Ruby 默认 US-ASCII 读 pbxproj 报 invalid byte。
 Encoding.default_external = Encoding::UTF_8
 Encoding.default_internal = Encoding::UTF_8
-# 把 RevaWatch watchOS App target 注入 prebuilt 的 HealthPilot.xcodeproj。
-# 用法: ruby apps/watch/scripts/inject_watch_target.rb [path/to/HealthPilot.xcodeproj]
+# 把 RevaWatch watchOS App target 注入 prebuilt 的 Expo iOS xcodeproj。
+# 用法: ruby apps/watch/scripts/inject_watch_target.rb [path/to/app.xcodeproj]
 #
 # 这是 config-plugin 的可执行参考(纯 Ruby xcodeproj,比 JS xcode lib 更可靠地建 watch target)。
 # 幂等: 已存在 RevaWatch target 则跳过创建,只刷新源文件引用。
 require 'xcodeproj'
 require 'fileutils'
 
-proj_path = ARGV[0] || File.expand_path('../../../../mobile/ios/HealthPilot.xcodeproj', __FILE__)
+default_proj = Dir[File.expand_path('../../../../mobile/ios/*.xcodeproj', __FILE__)].sort.first
+proj_path = ARGV[0] || default_proj || File.expand_path('../../../../mobile/ios/HealthPilot.xcodeproj', __FILE__)
 watch_name = 'RevaWatch'
 watch_bundle = 'life.executor.health.watchkitapp'
-ios_bundle = 'life.executor.health'
+ios_bundle = (ENV['REVA_IOS_BUNDLE_ID'] || 'life.executor.health').strip
 src_dir = File.join(File.dirname(proj_path), watch_name)   # ios/RevaWatch
 
 abort("✗ 工程不存在: #{proj_path}") unless File.exist?(proj_path)
@@ -22,12 +23,26 @@ abort("✗ 源目录不存在: #{src_dir}") unless Dir.exist?(src_dir)
 
 project = Xcodeproj::Project.open(proj_path)
 
-# 版本号必须与主 app HealthPilot 一致(否则 watchOS 校验报版本不匹配)。
-main_t = project.targets.find { |t| t.name == 'HealthPilot' }
+# 版本号必须与主 app 一致(否则 watchOS 校验报版本不匹配)。
+configured_main_target_name = ENV['REVA_MAIN_TARGET_NAME'].to_s.strip
+main_t = nil
+main_t = project.targets.find { |t| t.name == configured_main_target_name } unless configured_main_target_name.empty?
+main_t ||= project.targets.find do |t|
+  t.respond_to?(:product_type) &&
+    t.product_type == 'com.apple.product-type.application' &&
+    t.name != watch_name
+end
+abort("✗ 主 app target 不存在: #{configured_main_target_name.empty? ? '(auto)' : configured_main_target_name}") unless main_t
+
+main_group_path = ENV['REVA_MAIN_GROUP_PATH'].to_s.strip
+main_group_path = main_t.name if main_group_path.empty?
+main_infoplist_file = ENV['REVA_IOS_INFOPLIST_FILE'].to_s.strip
+main_infoplist_file = "#{main_group_path}/Info.plist" if main_infoplist_file.empty?
 main_bs = main_t&.build_configurations&.find { |c| c.name == 'Release' }&.build_settings || {}
 configured_mv = ENV['REVA_MARKETING_VERSION'].to_s.strip
 mv = configured_mv.empty? ? (main_bs['MARKETING_VERSION'] || '1.0') : configured_mv
 cv = main_bs['CURRENT_PROJECT_VERSION'] || '1'
+puts "• 主 app target: #{main_t.name} INFOPLIST_FILE=#{main_infoplist_file}"
 puts "• 主 app 版本: MARKETING_VERSION=#{mv} CURRENT_PROJECT_VERSION=#{cv}"
 
 if main_t
@@ -35,7 +50,7 @@ if main_t
     bs = c.build_settings
     bs['PRODUCT_BUNDLE_IDENTIFIER'] = ios_bundle
     bs['GENERATE_INFOPLIST_FILE'] = 'NO'
-    bs['INFOPLIST_FILE'] = 'HealthPilot/Info.plist'
+    bs['INFOPLIST_FILE'] = main_infoplist_file
     bs['MARKETING_VERSION'] = mv
     bs['DEVELOPMENT_TEAM'] ||= ENV['APPLE_TEAM_ID'] || main_bs['DEVELOPMENT_TEAM'] || 'QA2U724DAN'
   end
@@ -182,19 +197,19 @@ end
 ios_root = File.dirname(proj_path)
 bridge_src = File.expand_path('../../../../mobile/native/watch/WatchPhoneBridge.swift', __FILE__)
 if File.exist?(bridge_src)
-  main_target = project.targets.find { |t| t.name == 'HealthPilot' }
+  main_target = main_t
   if main_target
-    bridge_dir = File.join(ios_root, 'HealthPilot', 'WatchBridge')
+    bridge_dir = File.join(ios_root, main_group_path, 'WatchBridge')
     FileUtils.mkdir_p(bridge_dir)
     dest = File.join(bridge_dir, 'WatchPhoneBridge.swift')
     FileUtils.cp(bridge_src, dest)
-    bgroup = project.main_group.find_subpath('HealthPilot/WatchBridge', true)
+    bgroup = project.main_group.find_subpath("#{main_group_path}/WatchBridge", true)
     bgroup.set_source_tree('SOURCE_ROOT')
     main_refs = main_target.source_build_phase.files_references.map(&:real_path).map(&:to_s)
     unless main_refs.include?(File.expand_path(dest))
       main_target.add_file_references([bgroup.new_file(dest)])
     end
-    puts "✓ WatchPhoneBridge.swift 已加进主 target HealthPilot"
+    puts "✓ WatchPhoneBridge.swift 已加进主 target #{main_target.name}"
 
     # 把 watch app 嵌进 iOS app(否则 EAS 打的 iOS 包不含手表 App)+ iOS 依赖 watch
     unless main_target.dependencies.any? { |d| d.display_name == watch_name }
@@ -211,7 +226,7 @@ if File.exist?(bridge_src)
       wbf = embed_watch.add_file_reference(target.product_reference)
       wbf.settings = { 'ATTRIBUTES' => ['RemoveHeadersOnCopy'] }
     end
-    puts "✓ 已把 #{watch_name} 嵌进 iOS app HealthPilot"
+    puts "✓ 已把 #{watch_name} 嵌进 iOS app #{main_target.name}"
   end
 end
 
