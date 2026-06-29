@@ -2,6 +2,8 @@ const {
   _addBundledApkResource,
   _ensureResourcesGroup,
 } = require('../plugins/withRokidPushupApk');
+const fs = require('fs');
+const path = require('path');
 
 function createProjectMock(hasResourcesGroup = false) {
   const groups: Record<string, any> = hasResourcesGroup
@@ -83,5 +85,33 @@ describe('withRokidPushupApk', () => {
         },
       },
     ]);
+  });
+
+  it('adds the APK resource under the generated Expo app group', () => {
+    const { project, addedResourceFiles } = createProjectMock();
+
+    _addBundledApkResource(project, 'APP_TARGET', 'app/RokidApps/rokid-pushup-glasses.apk');
+
+    expect(addedResourceFiles).toEqual([
+      {
+        resourcePath: 'app/RokidApps/rokid-pushup-glasses.apk',
+        options: {
+          target: 'APP_TARGET',
+          sourceTree: 'SOURCE_ROOT',
+        },
+      },
+    ]);
+  });
+
+  it('uses the Expo generated project name when locating the iOS app target', () => {
+    const pluginSource = fs.readFileSync(
+      path.join(__dirname, '..', 'plugins', 'withRokidPushupApk.js'),
+      'utf8',
+    );
+
+    expect(pluginSource).toContain("cfg.modRequest.projectName || 'HealthPilot'");
+    expect(pluginSource).toContain('findMainTargetUuid(project, mainTargetName)');
+    expect(pluginSource).not.toContain('findMainTargetUuid(project);');
+    expect(pluginSource).not.toContain('could not find HealthPilot target');
   });
 });

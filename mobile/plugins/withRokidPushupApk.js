@@ -3,7 +3,11 @@ const fs = require('fs');
 const path = require('path');
 
 const BUNDLED_APK_NAME = 'rokid-pushup-glasses.apk';
-const RESOURCE_DEST = path.join('HealthPilot', 'RokidApps', BUNDLED_APK_NAME);
+const LEGACY_PROJECT_NAME = 'HealthPilot';
+
+function buildResourceDest(projectName = LEGACY_PROJECT_NAME) {
+  return path.join(projectName || LEGACY_PROJECT_NAME, 'RokidApps', BUNDLED_APK_NAME);
+}
 
 function findRokidPushupApk(projectRoot, env = process.env) {
   const candidates = [
@@ -41,7 +45,8 @@ function findRokidPushupApk(projectRoot, env = process.env) {
 function findMainTargetUuid(project, targetName = 'HealthPilot') {
   const targets = project.pbxNativeTargetSection();
   for (const [uuid, target] of Object.entries(targets)) {
-    if (!uuid.endsWith('_comment') && target.name === targetName) {
+    const name = String(target?.name || '').replace(/^"|"$/g, '');
+    if (!uuid.endsWith('_comment') && name === targetName) {
       return uuid;
     }
   }
@@ -73,9 +78,9 @@ function ensureResourcesGroup(project) {
   }
 }
 
-function addBundledApkResource(project, mainTargetUuid) {
+function addBundledApkResource(project, mainTargetUuid, resourceDest = buildResourceDest()) {
   ensureResourcesGroup(project);
-  return project.addResourceFile(RESOURCE_DEST, {
+  return project.addResourceFile(resourceDest, {
     target: mainTargetUuid,
     sourceTree: 'SOURCE_ROOT',
   });
@@ -102,18 +107,20 @@ function withRokidPushupApk(config) {
       return cfg;
     }
 
-    const dest = path.join(iosRoot, RESOURCE_DEST);
+    const mainTargetName = cfg.modRequest.projectName || 'HealthPilot';
+    const resourceDest = buildResourceDest(mainTargetName);
+    const dest = path.join(iosRoot, resourceDest);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.copyFileSync(apkSource, dest);
 
     const project = cfg.modResults;
-    const mainTargetUuid = findMainTargetUuid(project);
+    const mainTargetUuid = findMainTargetUuid(project, mainTargetName);
     if (!mainTargetUuid) {
-      throw new Error('withRokidPushupApk could not find HealthPilot target');
+      throw new Error(`withRokidPushupApk could not find ${mainTargetName} target`);
     }
 
     if (!hasFileReference(project, BUNDLED_APK_NAME)) {
-      addBundledApkResource(project, mainTargetUuid);
+      addBundledApkResource(project, mainTargetUuid, resourceDest);
     }
     return cfg;
   });
@@ -123,4 +130,5 @@ module.exports = withRokidPushupApk;
 module.exports._findRokidPushupApk = findRokidPushupApk;
 module.exports._ensureResourcesGroup = ensureResourcesGroup;
 module.exports._addBundledApkResource = addBundledApkResource;
+module.exports._buildResourceDest = buildResourceDest;
 module.exports._BUNDLED_APK_NAME = BUNDLED_APK_NAME;
