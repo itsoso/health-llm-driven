@@ -38,6 +38,7 @@ Deferred:
   - Batch 3 simulator build / QR path: `docs/plans/2026-06-28-app-store-mvp-release-batch3-plan.md`
   - Batch 4 screenshot compliance gate: `docs/plans/2026-06-28-app-store-mvp-release-batch4-plan.md`
   - Batch 5 final screenshot export gate: `docs/plans/2026-06-28-app-store-mvp-release-batch5-plan.md`
+  - Batch 6 iOS submission preflight gate: `docs/plans/2026-06-28-app-store-mvp-release-batch6-plan.md`
   - App Store Connect source pack: `docs/release/app-store/`
   - Deterministic gate: `python3 scripts/check_app_store_release_pack.py`
 

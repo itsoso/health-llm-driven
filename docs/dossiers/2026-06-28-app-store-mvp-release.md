@@ -5,7 +5,7 @@
 | slug | `app-store-mvp-release` |
 | 创建日期 | 2026-06-28 |
 | 当前阶段 | S6 部署准备 |
-| 状态 | app-store-batch5-final-screenshot-export-ready-demo-screenshots-pending |
+| 状态 | app-store-batch6-ios-submission-preflight-ready-demo-screenshots-pending |
 | 负责 | Codex |
 | 分支 | `main` |
 | 工作区 | `/Users/liqiuhua/work/personal/health-llm-driven` |
@@ -168,6 +168,19 @@ P0:
   - PASS: `backend/venv/bin/python backend/scripts/check_dossier_consistency.py`
     - 15 份 dossier 全自洽。
   - PASS: `backend/venv/bin/python scripts/check_doc_drift.py`
+- Batch 6 local gates:
+  - RED then PASS: `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest backend/tests/test_ios_app_store_submission_preflight.py backend/tests/test_app_store_release_pack.py -q --no-cov`
+    - 初始 RED:缺少 `scripts/check_ios_app_store_submission.py`,release pack 未调用 iOS submission preflight。
+    - GREEN:4 passed。
+  - PASS: `python3 scripts/check_ios_app_store_submission.py`
+    - 校验 bundle id、ASC app id、EAS production profile、HealthKit/Push entitlement、usage strings、watch extension bundle id、updates URL 和 submit helper。
+  - EXPECTED FAIL: `env -u ASC_KEY_ID -u APP_STORE_CONNECT_API_KEY -u ASC_ISSUER_ID -u APP_STORE_CONNECT_ISSUER_ID -u ASC_PRIVATE_KEY_PATH -u ASC_PRIVATE_KEY_BASE64 python3 scripts/check_ios_app_store_submission.py --require-asc-credentials`
+    - 缺少 App Store Connect credentials 时 fail-loud。
+  - PASS: `python3 scripts/check_app_store_release_pack.py`
+    - release pack 自动执行 iOS submission preflight。
+  - PASS: `python3 -m py_compile scripts/check_app_store_release_pack.py scripts/check_ios_app_store_submission.py scripts/check_app_store_screenshots.py scripts/prepare_app_store_screenshots.py`
+  - PASS: `backend/venv/bin/python backend/scripts/check_dossier_consistency.py`
+  - PASS: `backend/venv/bin/python scripts/check_doc_drift.py`
 
 ## G4 · 安全闸
 
@@ -184,6 +197,7 @@ P0:
 - Batch 3 plan: `docs/plans/2026-06-28-app-store-mvp-release-batch3-plan.md`
 - Batch 4 plan: `docs/plans/2026-06-28-app-store-mvp-release-batch4-plan.md`
 - Batch 5 plan: `docs/plans/2026-06-28-app-store-mvp-release-batch5-plan.md`
+- Batch 6 plan: `docs/plans/2026-06-28-app-store-mvp-release-batch6-plan.md`
 - Batch 2 release pack:
   - `frontend/src/app/privacy/page.tsx`: App Store Connect 可用隐私政策 URL 源码。
   - `docs/release/app-store/submission-pack.md`: App Store metadata / submission gate。
@@ -195,6 +209,7 @@ P0:
   - `scripts/mobile-sim-screenshots.sh`: 模拟器截图脚本。
   - `scripts/check_app_store_screenshots.py`: 截图 manifest/privacy/尺寸合规检查器。
   - `scripts/prepare_app_store_screenshots.py`: 将 demo/sanitized 原始截图导出为 App Store Connect 接受尺寸,并写入 ready manifest。
+  - `scripts/check_ios_app_store_submission.py`: iOS production build / App Store Connect submit 配置预检,默认不联网;真正上传前用 `--require-asc-credentials` 检查本机 ASC 凭证。
 - pending:
   - iOS production archive / EAS build 产出并进入 App Store Connect。
   - App Store Connect 手工填入隐私营养标签、metadata、Review Notes。
@@ -222,6 +237,9 @@ P0:
   - PASS: `scripts/prepare_app_store_screenshots.py` 能将 demo/sanitized raw set 导出为 App Store Connect accepted portrait size,并写入 `app_store_ready=true` manifest。
   - EXPECTED FAIL: 当前 private QA set 不能 prepare,防止真实账号截图被误提交。
   - pending: 仍需用 demo account 或脱敏数据重新采集 raw set 后生成最终 ready set。
+- Local iOS submission preflight gate:
+  - PASS: `scripts/check_ios_app_store_submission.py` 默认模式已纳入 release pack gate。
+  - EXPECTED FAIL: `--require-asc-credentials` 在缺少 ASC key / issuer / private key 时失败;真正上传前必须由 release machine 跑通过。
 - Local current-code simulator build gate:
   - PASS: `./scripts/sim-build.sh --device 39D954B3-A2B5-41AA-8A6E-BD9750D3CB86 --keep-temp-worktree` 从干净临时 worktree 构建、安装并打开当前代码。
   - 结论: Batch 2 的 Rokid compile failure 是主工作区 stale Pods/Podfile.lock 污染;干净 worktree + `ROKID_IOS_SDK_ENABLED=0` 可以稳定走通 simulator build。
@@ -238,6 +256,7 @@ P0:
   - App Store Connect production/distribution profile build。
   - 用 demo account / 脱敏数据产出最终 App Store screenshot raw set。
   - 用 `scripts/prepare_app_store_screenshots.py <raw> <ready> --size 1290x2796` 导出最终 ready set,再用 `APP_STORE_SCREENSHOT_DIR=<ready> python3 scripts/check_app_store_release_pack.py` 过闸。
+  - 真正触发 EAS production build / submit 前,用 `python3 scripts/check_ios_app_store_submission.py --require-asc-credentials` 在发布机器上过闸。
 
 ## S7 · 上线验证
 
@@ -253,6 +272,7 @@ P0:
   - 用 `scripts/check_app_store_release_pack.py` 作为提交前硬闸。
   - 用 `scripts/mobile-sim-screenshots.sh` 或真机截图补齐 App Store raw screenshot set。
   - 用 `docs/release/app-store/*` 作为 App Store Connect 填写真源。
+  - 用 `scripts/check_ios_app_store_submission.py --require-asc-credentials` 作为 EAS production build / submit 前置闸。
   - 用 `scripts/prepare_app_store_screenshots.py` + `scripts/check_app_store_screenshots.py --app-store-ready` 防止 private/尺寸不合规截图进入提交包。
   - 真机走查核心动线: 今日 -> Chat 动态卡片 -> 快速记录 -> 体检导入 -> 复盘 -> 隐私/删除请求。
   - 若需要“完整账号删除”,新增删除工单/worker/admin 审批与跨表匿名化测试。

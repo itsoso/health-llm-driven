@@ -19,10 +19,12 @@ REQUIRED_FILES = [
     "docs/plans/2026-06-28-app-store-mvp-release-batch3-plan.md",
     "docs/plans/2026-06-28-app-store-mvp-release-batch4-plan.md",
     "docs/plans/2026-06-28-app-store-mvp-release-batch5-plan.md",
+    "docs/plans/2026-06-28-app-store-mvp-release-batch6-plan.md",
     "frontend/src/app/privacy/page.tsx",
     "scripts/sim-build.sh",
     "scripts/mobile-sim-screenshots.sh",
     "scripts/check_app_store_screenshots.py",
+    "scripts/check_ios_app_store_submission.py",
     "scripts/prepare_app_store_screenshots.py",
 ]
 
@@ -129,6 +131,22 @@ def main() -> int:
 
     if "[NEEDS APP STORE REVIEW DEMO ACCOUNT]" not in review_notes:
         failures.append("review notes must keep an explicit demo-account placeholder until owner provides credentials")
+
+    ios_preflight = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts/check_ios_app_store_submission.py"),
+        ],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if ios_preflight.stdout:
+        print(ios_preflight.stdout, end="")
+    if ios_preflight.returncode != 0:
+        failures.append(f"iOS App Store submission preflight failed\n{ios_preflight.stderr.strip()}")
 
     screenshot_dir = os.environ.get("APP_STORE_SCREENSHOT_DIR")
     if screenshot_dir:

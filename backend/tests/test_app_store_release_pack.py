@@ -68,6 +68,7 @@ def test_app_store_release_pack_checker_passes():
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+    assert "iOS App Store submission preflight passed." in result.stdout
     assert "App Store release pack check passed." in result.stdout
 
 

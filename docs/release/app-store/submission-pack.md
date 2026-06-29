@@ -56,6 +56,22 @@ Status: draft for the next App Store submission.
 
 Use `docs/release/app-store/review-notes.zh-CN.md` as the source text for App Store Connect.
 
+## Production Build Preflight
+
+Before triggering a production iOS build or submit, run the no-network config gate:
+
+```bash
+python3 scripts/check_ios_app_store_submission.py
+```
+
+Immediately before upload/submit, require local App Store Connect API credentials as well:
+
+```bash
+python3 scripts/check_ios_app_store_submission.py --require-asc-credentials
+```
+
+The production binary path remains EAS production build with App Store Connect auto-submit. QR install is the default for local mobile distribution, but App Store submission requires the production EAS/App Store Connect path.
+
 ## Privacy Nutrition Label
 
 Use `docs/release/app-store/privacy-nutrition-label.draft.json` as the working source. App Store Connect remains the final source of truth after manual entry.
@@ -93,6 +109,7 @@ python3 scripts/prepare_app_store_screenshots.py \
 Do not submit until:
 
 - [ ] `python3 scripts/check_app_store_release_pack.py` passes.
+- [ ] `python3 scripts/check_ios_app_store_submission.py --require-asc-credentials` passes on the release machine.
 - [ ] Candidate screenshots exist under `design/screenshots/app-store/<build-id>-ready/` and pass:
       `APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/<build-id>-ready python3 scripts/check_app_store_release_pack.py`.
 - [ ] Privacy policy URL is publicly reachable: `curl -fsSI https://health.executor.life/privacy`.
