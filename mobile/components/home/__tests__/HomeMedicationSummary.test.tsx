@@ -24,8 +24,8 @@ describe('HomeMedicationSummary', () => {
     expect(toJSON()).toBeNull();
   });
 
-  it('renders one combined compact summary when medication and supplement are done', () => {
-    const { getByText, queryByText, getByLabelText } = render(
+  it('does not render a completed-only summary when medication and supplement are done', () => {
+    const { toJSON, queryByText, queryByLabelText } = render(
       <HomeMedicationSummary
         items={[
           item({ medication_id: 1, name: '二甲双胍', category: 'medication', taken_count: 2 }),
@@ -34,16 +34,15 @@ describe('HomeMedicationSummary', () => {
       />,
     );
 
-    expect(getByLabelText('今日用药补剂摘要')).toBeTruthy();
-    expect(getByText('用药 / 补剂')).toBeTruthy();
-    expect(getByText('今日已全部完成')).toBeTruthy();
-    expect(getByText('用药 2/2')).toBeTruthy();
-    expect(getByText('补剂 1/1')).toBeTruthy();
+    expect(toJSON()).toBeNull();
+    expect(queryByLabelText('今日用药补剂摘要')).toBeNull();
+    expect(queryByText('用药 / 补剂')).toBeNull();
+    expect(queryByText('今日已全部完成')).toBeNull();
     expect(queryByText('今日用药')).toBeNull();
     expect(queryByText('今日补剂')).toBeNull();
   });
 
-  it('keeps only pending categories expanded and summarizes completed categories', () => {
+  it('keeps only pending categories expanded and omits completed categories', () => {
     const { getByText, queryByText } = render(
       <HomeMedicationSummary
         items={[
@@ -55,7 +54,8 @@ describe('HomeMedicationSummary', () => {
 
     expect(getByText('补剂')).toBeTruthy();
     expect(getByText('Magnesium')).toBeTruthy();
-    expect(getByText('用药 2/2')).toBeTruthy();
+    expect(queryByText('用药 2/2')).toBeNull();
+    expect(queryByText('二甲双胍')).toBeNull();
     expect(queryByText('今日用药')).toBeNull();
   });
 });

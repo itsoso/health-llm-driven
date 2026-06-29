@@ -11,6 +11,7 @@ let mockTodayDynamicView: any = null;
 let mockTwinData: Record<string, unknown> = {};
 let mockSafetyAlerts: any[] = [];
 let mockActiveCycle: any = null;
+let mockDashboardData: any = null;
 let mockRefetchingKeys = new Set<string>();
 // 时间线 now-item:Hero 现在读 /timeline/today 的 now(时间感知最相关项),不再读清晨第一项。
 let mockTimeline: any = null;
@@ -49,6 +50,9 @@ jest.mock('@tanstack/react-query', () => ({
     }
     if (key.includes('intervention-cycle')) {
       return { data: mockActiveCycle, isLoading: false, isRefetching };
+    }
+    if (key === 'dashboard') {
+      return { data: mockDashboardData, isLoading: false, isSuccess: true, isRefetching };
     }
     return { data: null, isLoading: false, isRefetching: false };
   },
@@ -128,6 +132,7 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     mockTwinData = {};
     mockSafetyAlerts = [];
     mockActiveCycle = null;
+    mockDashboardData = null;
     mockRefetchingKeys = new Set<string>();
     mockTimeline = null;
   });
@@ -629,6 +634,45 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     const { RefreshControl } = require('react-native');
     const refreshControl = UNSAFE_getByType(RefreshControl);
     expect(refreshControl.props.refreshing).toBe(false);
+  });
+
+  it('does not show completed-only medication and supplement summaries on Today', () => {
+    mockDashboardData = {
+      medicationToday: [
+        {
+          medication_id: 1,
+          name: '二甲双胍',
+          dosage: '0.5g',
+          category: 'medication',
+          total_count: 2,
+          taken_count: 2,
+          skipped_count: 0,
+          last_taken_time: '08:00',
+          reminder_times: ['08:00', '20:00'],
+          logs: [],
+        },
+        {
+          medication_id: 2,
+          name: 'Magnesium',
+          dosage: '100mg',
+          category: 'supplement',
+          total_count: 1,
+          taken_count: 1,
+          skipped_count: 0,
+          last_taken_time: '09:00',
+          reminder_times: ['09:00'],
+          logs: [],
+        },
+      ],
+    };
+
+    const { queryByLabelText, queryByText } = render(<TodayScreen />);
+
+    expect(queryByLabelText('今日用药补剂摘要')).toBeNull();
+    expect(queryByText('用药 / 补剂')).toBeNull();
+    expect(queryByText('今日已全部完成')).toBeNull();
+    expect(queryByText('二甲双胍')).toBeNull();
+    expect(queryByText('Magnesium')).toBeNull();
   });
 
   // ── 身体信号 (agent-selected compact signals) ──
