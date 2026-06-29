@@ -10,6 +10,8 @@ target 'HealthPilot' do
 end
 `;
 
+const APP_TARGET_PODFILE = BASE_PODFILE.replace("target 'HealthPilot' do", "target 'app' do");
+
 const LEGACY_HOOK_ONLY_PODFILE = `# Reva Rokid iOS SDK dynamic framework fix
 def reva_rokid_ios_sdk_enabled?
   ['1', 'true', 'yes'].include?(
@@ -62,6 +64,15 @@ describe('withRokidIosPods Podfile patch', () => {
     expect(twice).toBe(once);
     const occurrences = twice.split("pod 'RGCxrClient'").length - 1;
     expect(occurrences).toBe(1);
+  });
+
+  it('injects into Expo generated app target when the project name is app', () => {
+    const patched = _patchPodfileContents(APP_TARGET_PODFILE, 'app');
+
+    const targetIdx = patched.indexOf("target 'app' do");
+    const podIdx = patched.indexOf("pod 'RGCxrClient'");
+    expect(targetIdx).toBeGreaterThan(-1);
+    expect(podIdx).toBeGreaterThan(targetIdx);
   });
 
   it('repairs legacy Podfiles that already have the global hook but not the target RGCxrClient pod', () => {
