@@ -78,7 +78,11 @@ def build_timeline(
     events.extend(_medications(db, user_id, since_date))
     events.extend(_exams(db, user_id, since_date))
 
-    # 按时间倒序
+    # 按时间倒序。
+    # 不变量:所有 occurred_at 必须 **tz-aware UTC**(workout 是真 UTC 时点,其余源用
+    # datetime.combine(..., tzinfo=timezone.utc) 把"日期 + 代表性整点"标成 UTC)。混入 naive
+    # 会让此处 sort 抛 TypeError(can't compare offset-naive and offset-aware)→ 整条 timeline
+    # 变空白。新增源时务必给 occurred_at 带 tzinfo。
     events.sort(key=lambda e: e.occurred_at, reverse=True)
     return events[:limit]
 
@@ -107,12 +111,15 @@ def _workouts(db: Session, user_id: int, since: datetime) -> List[TimelineEvent]
             # start_time 是 **UTC** 时点(Garmin/Apple 同步均存 UTC;SQLite 读回常丢 tzinfo)。
             # 标成 tz-aware UTC,下游(build_today_spine)才能正确 astimezone 到本地判「今天」——
             # 否则 naive 被当本地挂钟,跨午夜(北京)会把 UTC 挂钟误判成本地日 → 当日 workout 漏进 past。
-            # 无 start_time 时回退 workout_date 当日 0 点(本地日,保持 naive,不强加时区)。
+            # 无 start_time 时回退 workout_date 当日 0 点,同样标 tz-aware UTC —— 全部事件统一
+            # 走一种约定(见 build_timeline 排序处),否则与下面 combine() 出的 naive 混排会 TypeError。
             occurred = w.start_time
             if occurred is not None and occurred.tzinfo is None:
                 occurred = occurred.replace(tzinfo=timezone.utc)
             if occurred is None:
-                occurred = datetime.combine(w.workout_date or date.today(), datetime.min.time())
+                occurred = datetime.combine(
+                    w.workout_date or date.today(), datetime.min.time(), tzinfo=timezone.utc
+                )
             out.append(TimelineEvent(
                 id=f"workout_{w.id}",
                 source="workout",
@@ -155,8 +162,10 @@ def _alerts(db: Session, user_id: int, since: date) -> List[TimelineEvent]:
                 subtitle=subtitle or None,
                 icon="warning-outline" if a.severity != "critical" else "alert-circle",
                 color=color,
-                # detection_date 只到天, 给个稳定的 12:00 防排序抖动
-                occurred_at=datetime.combine(a.detection_date, datetime.min.time().replace(hour=12)),
+                # detection_date 只到天, 给个稳定的 12:00 防排序抖动(tz-aware UTC,见 build_timeline 不变量)
+                occurred_at=datetime.combine(
+                    a.detection_date, datetime.min.time().replace(hour=12), tzinfo=timezone.utc
+                ),
                 deep_link=deep,
                 severity=a.severity,
             ))
@@ -183,7 +192,9 @@ def _sleep_lows(db: Session, user_id: int, since: date) -> List[TimelineEvent]:
                     subtitle=f"{int((g.total_sleep_duration or 0) / 60)}h 偏低" if g.total_sleep_duration else "偏低",
                     icon="moon-outline",
                     color="#FF9500",
-                    occurred_at=datetime.combine(g.record_date, datetime.min.time().replace(hour=8)),
+                    occurred_at=datetime.combine(
+                        g.record_date, datetime.min.time().replace(hour=8), tzinfo=timezone.utc
+                    ),
                     deep_link=f"sleep",
                     severity=None,
                 ))
@@ -211,7 +222,9 @@ def _medications(db: Session, user_id: int, since: date) -> List[TimelineEvent]:
                     subtitle=m.dosage or m.frequency,
                     icon="medkit-outline",
                     color="#AF52DE",
-                    occurred_at=datetime.combine(m.start_date, datetime.min.time().replace(hour=9)),
+                    occurred_at=datetime.combine(
+                        m.start_date, datetime.min.time().replace(hour=9), tzinfo=timezone.utc
+                    ),
                     deep_link="medications",
                     severity=None,
                 ))
@@ -225,7 +238,9 @@ def _medications(db: Session, user_id: int, since: date) -> List[TimelineEvent]:
                     subtitle=None,
                     icon="pause-circle-outline",
                     color="#8E8E93",
-                    occurred_at=datetime.combine(m.end_date, datetime.min.time().replace(hour=9)),
+                    occurred_at=datetime.combine(
+                        m.end_date, datetime.min.time().replace(hour=9), tzinfo=timezone.utc
+                    ),
                     deep_link="medications",
                     severity=None,
                 ))
@@ -251,7 +266,9 @@ def _exams(db: Session, user_id: int, since: date) -> List[TimelineEvent]:
                 subtitle=getattr(e, "hospital_name", None),
                 icon="document-text-outline",
                 color="#5AC8FA",
-                occurred_at=datetime.combine(e.exam_date, datetime.min.time().replace(hour=10)),
+                occurred_at=datetime.combine(
+                    e.exam_date, datetime.min.time().replace(hour=10), tzinfo=timezone.utc
+                ),
                 deep_link=f"medical-exam-detail?id={e.id}",
                 severity=None,
             ))
