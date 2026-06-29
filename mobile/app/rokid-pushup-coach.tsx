@@ -31,6 +31,7 @@ import {
   type RokidIntegrationStatus,
 } from '../modules/rokid-bridge';
 import { invalidateRecordMutation } from '../applib/queryKeys';
+import { APP_DISPLAY_NAME } from '../constants/brand';
 import { radii, spacing } from '../constants/theme';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import api from '../services/api';
@@ -349,7 +350,7 @@ function formatRealPushupSessionIssue(reason?: string) {
   }
   if (fallback.includes('rokid_cxrl_wrong_session_mode')) {
     const mode = fallback.match(/currentMode=([^;]+)/)?.[1] ?? 'unknown';
-    return `Rokid CXR-L 当前已在 ${mode} 会话，无法安装或启动眼镜端 App。请完全退出 Reva（从后台划掉）后，直接进入「Rokid 俯卧撑计数」再点安装/启动；不要先打开 Reva 眼镜视图。本地计数仍可保存。`;
+    return `Rokid CXR-L 当前已在 ${mode} 会话，无法安装或启动眼镜端 App。请完全退出${APP_DISPLAY_NAME}（从后台划掉）后，直接进入「Rokid 俯卧撑计数」再点安装/启动；不要先打开${APP_DISPLAY_NAME}眼镜视图。本地计数仍可保存。`;
   }
   return `眼镜识别暂不可用: ${fallback}。先用下方「+1 校准」本地计数，本组仍可保存。`;
 }

@@ -87,6 +87,16 @@ P0 Mobile Shell 品牌一致性已推进:
 - Settings 的 Siri 语音记录示例从 `HealthPilot` 收敛为 `阿衡`。
 - 非测试代码扫描 `mobile/app mobile/components mobile/utils` 不再命中 `HealthPilot`。
 
+## 第八批实现切片
+
+P1/P2 Rokid 俯卧撑教练旧称收敛已推进:
+
+- `Rokid 俯卧撑计数` wrong CXR session mode 提示从“完全退出 Reva”收敛为“完全退出阿衡”。
+- 同一提示从“不要先打开 Reva 眼镜视图”收敛为“不要先打开阿衡眼镜视图”。
+- 复用 `APP_DISPLAY_NAME`,不新造产品名常量。
+- 保留 `Rokid` / `CXR-L` / `CustomView` / `CustomApp` / native package / URL scheme 等技术名。
+- `Rokid Health` 大页仍作为后续独立切片,避免把 SDK 状态机和大测试面混入本批。
+
 ## 本周不做
 
 - 不把 App Store 发布伪装成已完成:缺 demo account、ASC credentials、人审截图时必须停在 pending。
