@@ -23,6 +23,7 @@ REQUIRED_FILES = [
     "docs/plans/2026-06-28-app-store-mvp-release-batch6-plan.md",
     "docs/plans/2026-06-28-app-store-mvp-release-batch7-plan.md",
     "docs/plans/2026-06-29-app-store-final-submit-gate-plan.md",
+    "docs/plans/2026-06-29-app-store-release-narrative-gate-plan.md",
     "frontend/src/app/privacy/page.tsx",
     "scripts/sim-build.sh",
     "scripts/mobile-sim-screenshots.sh",
@@ -61,6 +62,14 @@ DEMO_PLACEHOLDERS = [
     "[NEEDS APP STORE REVIEW DEMO ACCOUNT]",
     "[NEEDS APP STORE REVIEW DEMO PASSWORD]",
 ]
+CURRENT_BOTTOM_NAV_TEXT = "今日 / 私教 / 记录 / 我"
+CURRENT_POSITIONING_TERM = "健康参谋"
+STALE_USER_VISIBLE_RELEASE_TERMS = [
+    "Reva",
+    "复元",
+    "健康助理",
+    "守护神",
+]
 
 
 def read_json(path: str) -> dict:
@@ -70,6 +79,28 @@ def read_json(path: str) -> dict:
 
 def read_text(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def validate_release_narrative(
+    *,
+    submission: str,
+    review_notes: str,
+    screenshot_runbook: str,
+) -> list[str]:
+    combined = "\n".join([submission, review_notes, screenshot_runbook])
+    failures: list[str] = []
+
+    for term in STALE_USER_VISIBLE_RELEASE_TERMS:
+        if term in combined:
+            failures.append(f"release text contains stale user-visible term: {term}")
+
+    if CURRENT_BOTTOM_NAV_TEXT not in combined and "今日、私教、记录、我" not in combined:
+        failures.append(f"release text must use current bottom navigation labels: {CURRENT_BOTTOM_NAV_TEXT}")
+
+    if CURRENT_POSITIONING_TERM not in combined:
+        failures.append(f"release text must include current positioning term: {CURRENT_POSITIONING_TERM}")
+
+    return failures
 
 
 def main() -> int:
@@ -104,6 +135,7 @@ def main() -> int:
     privacy = read_json("docs/release/app-store/privacy-nutrition-label.draft.json")
     submission = read_text("docs/release/app-store/submission-pack.md")
     review_notes = read_text("docs/release/app-store/review-notes.zh-CN.md")
+    screenshot_runbook = read_text("docs/release/app-store/screenshot-runbook.md")
     privacy_page = read_text("frontend/src/app/privacy/page.tsx")
 
     bundle_id = ios.get("bundleIdentifier")
@@ -154,6 +186,14 @@ def main() -> int:
     for required in ["HealthKit", "删除账号与数据", "广告", "营销", "support@executor.life"]:
         if required not in combined_release_text:
             failures.append(f"release text missing required wording: {required}")
+
+    failures.extend(
+        validate_release_narrative(
+            submission=submission,
+            review_notes=review_notes,
+            screenshot_runbook=screenshot_runbook,
+        )
+    )
 
     for url in OFFICIAL_REFERENCE_URLS:
         if url not in submission and url not in read_text("docs/plans/2026-06-28-app-store-mvp-release-batch2-plan.md"):

@@ -46,7 +46,7 @@ Status: draft for the next App Store submission.
 
 ### Keywords
 
-健康记录,Apple Watch,HealthKit,体检报告,饮食记录,运动记录,睡眠,用药提醒,补剂,健康助理,中和知微,健康参谋
+健康记录,Apple Watch,HealthKit,体检报告,饮食记录,运动记录,睡眠,用药提醒,补剂,阿衡,中和知微,健康参谋
 
 ### What's New
 

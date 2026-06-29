@@ -286,6 +286,10 @@ P0:
   - PASS: `cd mobile && ./node_modules/.bin/jest --runTestsByPath components/chat/cards/__tests__/MedicalExamImportResultCard.test.tsx components/home/__tests__/DailyArtifactCard.test.tsx components/home/__tests__/RevaTryEntryCard.test.tsx app/__tests__/reva-onboarding.test.tsx --runInBand` -> 11 passed。
   - PASS: 目标旧称扫描无命中,覆盖 `询问 Reva` / `试试新版复元` / `进入复元` / `让 Reva` / `健康助理` 等通用用户可见旧称。
   - NOTE: Rokid 专页旧称因外设 SDK 语义和测试面较大,保留为后续独立切片。
+- Local release narrative gate(Batch 11):
+  - PASS: `scripts/check_app_store_release_pack.py` 新增高可见审核叙事校验,覆盖 submission pack、review notes 和 screenshot runbook。
+  - PASS: `backend/tests/test_app_store_release_pack.py` 拒绝 `Reva`、`复元`、`健康助理`、`守护神` 等旧用户可见叙事,并要求当前底部导航 `今日 / 私教 / 记录 / 我` 与定位词 `健康参谋`。
+  - PASS: `submission-pack.md` keywords 从 `健康助理` 收敛为 `阿衡` / `健康参谋`。
 - pending:
   - App Store Connect build processing status。
   - App Store Connect production/distribution profile build。
@@ -310,6 +314,7 @@ P0:
   - 用 `docs/release/app-store/*` 作为 App Store Connect 填写真源。
   - 用 `scripts/check_ios_app_store_submission.py --require-asc-credentials` 作为 EAS production build / submit 前置闸。
   - 用 `scripts/sanitize_app_store_screenshots.py` + 人工视觉复核 + `scripts/prepare_app_store_screenshots.py` + `scripts/check_app_store_screenshots.py --app-store-ready` 防止 private/尺寸不合规截图进入提交包。
+  - 用 `scripts/check_app_store_release_pack.py` 持续阻断 App Store 高可见文案回退到旧品牌、旧 tab 或旧定位。
   - 真机走查核心动线: 今日 -> Chat 动态卡片 -> 快速记录 -> 体检导入 -> 复盘 -> 隐私/删除请求。
   - 发布配置中用户可见命名必须保持 `阿衡`;`HealthPilot` 仅保留为工程/历史技术名,不得重新进入 App Store 用户可见字段。
   - 后续用独立切片处理 Rokid 专页中的旧称和测试断言,避免影响本周 App Store 主路径。

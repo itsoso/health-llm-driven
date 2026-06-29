@@ -107,6 +107,16 @@ P1/P2 Rokid Health 大页旧称收敛已推进:
 - 保留 `openRokidRevaCustomView` / `createRokidRevaCustomViewLayout`、`appName: 'Reva'`、`Reva build`、`appName=Reva` 等技术函数、SDK auth 字段和历史诊断字段。
 - 不改 Rokid 设备控制、语音、拍照、记录写入和权限逻辑。
 
+## 第十批实现切片
+
+P0 App Store 高可见审核叙事闸已推进:
+
+- `check_app_store_release_pack.py` 新增 release narrative gate,覆盖 submission pack、review notes 和 screenshot runbook。
+- 旧的用户可见叙事词 `Reva`、`复元`、`健康助理`、`守护神` 进入 App Store 高可见文案时直接失败。
+- App Store 文案必须包含当前底部导航 `今日 / 私教 / 记录 / 我` 或等价中文顿号写法。
+- App Store 文案必须包含当前定位词 `健康参谋`。
+- `submission-pack.md` keywords 从 `健康助理` 收敛为 `阿衡` / `健康参谋`。
+
 ## 本周不做
 
 - 不把 App Store 发布伪装成已完成:缺 demo account、ASC credentials、人审截图时必须停在 pending。
@@ -119,5 +129,4 @@ P1/P2 Rokid Health 大页旧称收敛已推进:
 1. 补最终截图/审核材料路径,明确哪些需要用户提供。
 2. 继续 Daily Artifact 主屏视觉走查和点击动线截图。
 3. 继续 Chat card action 成功后的局部刷新/跳转反馈和记录页联动。
-4. 继续清理 App Store 高可见截图/审核叙事与当前 UI 的差异。
-5. 视签名条件推进 Watch 真机和二维码发版。
+4. 视签名条件推进 Watch 真机和二维码发版。
