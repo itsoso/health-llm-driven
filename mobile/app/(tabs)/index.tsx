@@ -61,9 +61,19 @@ import RevaWeatherRow from '../../components/home/RevaWeatherRow';
 import RevaQuickActions from '../../components/home/RevaQuickActions';
 import RevaSectionGroup from '../../components/home/RevaSectionGroup';
 import RevaTryEntryCard from '../../components/home/RevaTryEntryCard';
+import DynamicTodayRenderer from '../../components/home/DynamicTodayRenderer';
 import { useRevaFonts } from '../../components/reva/useRevaFonts';
 import { revaColors } from '../../constants/revaTheme';
 import { useHomeColdStartTrace } from '../../services/perfTrace';
+import {
+  getTodayDynamicView,
+  hasRenderableTodayDynamicView,
+} from '../../services/todayDynamicView';
+import { dispatchChatCardAction } from '../../services/chatCardActions';
+import type {
+  ChatCardActionDescriptor,
+  ServerCardDescriptor,
+} from '../../components/chat/cards/types';
 
 interface TwinSnapshot {
   hrv?: number | null;
@@ -120,6 +130,16 @@ export default function TodayScreen() {
     staleTime: 60 * 1000,
   });
 
+  const todayDynamicViewQuery = useQuery({
+    queryKey: ['today-dynamic-view', 'mobile.today'],
+    queryFn: () => getTodayDynamicView({
+      trigger: 'open',
+      clientContext: todayDynamicClientContext(),
+    }),
+    staleTime: 30 * 1000,
+    retry: 1,
+  });
+
   // 时间感知「现在该做什么」单一真相源:后端 /timeline/today 的 now(指向最相关一项,非清晨第一项)。
   // Hero 据此渲染(标题/why/时点 + 内联完成);时间线 body 复用同一 query(React Query 去重)。
   const timelineQuery = useTodayTimeline();
@@ -171,6 +191,7 @@ export default function TodayScreen() {
         qc.invalidateQueries({ queryKey: ['twin', 'me'] }),
         qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] }),
         qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] }),
+        qc.invalidateQueries({ queryKey: ['today-dynamic-view', 'mobile.today'] }),
         qc.invalidateQueries({ queryKey: ['timeline', 'today'] }),
         qc.invalidateQueries({ queryKey: ['agenda', 'today'] }),
         qc.invalidateQueries({ queryKey: ['dashboard'] }),
@@ -281,10 +302,10 @@ export default function TodayScreen() {
     }).catch(() => {});
   }, []);
 
-  const onArtifactComplete = useCallback((action: DailyArtifactTopAction) => {
+  const onArtifactComplete = useCallback((action: DailyArtifactTopAction, artifactOverride?: DailyArtifact) => {
     if (artifactCompleting) return;
     const source = agendaSourceFromArtifactAction(action);
-    const artifact = dailyArtifactQuery.data;
+    const artifact = artifactOverride ?? dailyArtifactQuery.data;
     if (!source || !artifact) {
       Alert.alert('暂时不能完成', '这条行动还缺少可写入的来源。');
       return;
@@ -300,6 +321,7 @@ export default function TodayScreen() {
           deliveredContext: dailyArtifactContext(artifact, 'home', { action: 'complete' }),
         }).catch(() => {});
         qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] });
+        qc.invalidateQueries({ queryKey: ['today-dynamic-view', 'mobile.today'] });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         setArtifactCompleting(false);
       },
@@ -311,8 +333,12 @@ export default function TodayScreen() {
     });
   }, [artifactCompleting, completeNow, dailyArtifactQuery.data, qc]);
 
-  const onArtifactSkip = useCallback((reason: AgendaSkipReason, action: DailyArtifactTopAction | null) => {
-    const artifact = dailyArtifactQuery.data;
+  const onArtifactSkip = useCallback((
+    reason: AgendaSkipReason,
+    action: DailyArtifactTopAction | null,
+    artifactOverride?: DailyArtifact,
+  ) => {
+    const artifact = artifactOverride ?? dailyArtifactQuery.data;
     if (!artifact || artifactSkipping) return;
     setArtifactSkipping(true);
     recordDailyArtifactEvent({
@@ -323,6 +349,7 @@ export default function TodayScreen() {
       deliveredContext: dailyArtifactContext(artifact, 'home', { action: 'skip' }),
     }).then(() => {
       qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] });
+      qc.invalidateQueries({ queryKey: ['today-dynamic-view', 'mobile.today'] });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     }).catch(() => {
       Alert.alert('跳过失败', '没有记录成功,请稍后重试。');
@@ -337,8 +364,8 @@ export default function TodayScreen() {
     router.push(target as any);
   }, [recordArtifactAccepted, router]);
 
-  const onArtifactPressAction = useCallback((action: DailyArtifactTopAction) => {
-    const artifact = dailyArtifactQuery.data;
+  const onArtifactPressAction = useCallback((action: DailyArtifactTopAction, artifactOverride?: DailyArtifact) => {
+    const artifact = artifactOverride ?? dailyArtifactQuery.data;
     if (artifact) recordArtifactAccepted(artifact, 'open_detail');
     if (nowItem?.deep_link) {
       const link = nowItem.deep_link;
@@ -348,6 +375,26 @@ export default function TodayScreen() {
     if (action.source?.object_type) router.push('/timeline' as any);
     else router.push('/(tabs)/chat' as any);
   }, [dailyArtifactQuery.data, nowItem, recordArtifactAccepted, router]);
+
+  const onDynamicCardAction = useCallback((
+    action: ChatCardActionDescriptor,
+    descriptor: ServerCardDescriptor,
+  ) => {
+    dispatchChatCardAction(action).then((result) => {
+      if (result.route) {
+        router.push(result.route as any);
+        return;
+      }
+      qc.invalidateQueries({ queryKey: ['today-dynamic-view', 'mobile.today'] });
+      qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] });
+      qc.invalidateQueries({ queryKey: ['timeline', 'today'] });
+      qc.invalidateQueries({ queryKey: ['agenda', 'today'] });
+    }).catch(() => {
+      Alert.alert('操作失败', descriptor.type === 'runtime_agenda'
+        ? '暂时无法打开健康编排,请稍后重试。'
+        : '没有执行成功,请稍后重试。');
+    });
+  }, [qc, router]);
 
   // ── Vitals 数据 ──
   const vitalsProps = {
@@ -385,6 +432,8 @@ export default function TodayScreen() {
   const profileName: string | null = dashboardQuery.data?.profile?.nickname ?? null;
   const headerTwinStatus = cockpitTwinStatus(twinSnap, readinessStale);
   const headerFreshness = cockpitFreshnessLabel(dailyArtifactQuery.data, twinSnap, readinessStale);
+  const dynamicTodayView = todayDynamicViewQuery.data;
+  const canRenderDynamicToday = hasRenderableTodayDynamicView(dynamicTodayView);
 
   // Hero now-action 显示值:全部直接透传后端 timeline 的 now-item(R4:不在前端造处方/诊断措辞)。
   // 风险时 lever 标「风险」,否则用 now-item 的 time_window 中文化作为 lever。空态标题给「补齐今天记录」。
@@ -419,7 +468,18 @@ export default function TodayScreen() {
         />
 
         {/* 2 · Daily Artifact(今日状态 + 一个 top action)。接口不可用时回退既有 Hero。 */}
-        {dailyArtifactQuery.data ? (
+        {canRenderDynamicToday ? (
+          <DynamicTodayRenderer
+            view={dynamicTodayView}
+            completing={artifactCompleting}
+            skipping={artifactSkipping}
+            onDailyArtifactComplete={(artifact, action) => onArtifactComplete(action, artifact)}
+            onDailyArtifactSkip={(artifact, reason, action) => onArtifactSkip(reason, action, artifact)}
+            onDailyArtifactAsk={onArtifactAskReva}
+            onDailyArtifactPressAction={(artifact, action) => onArtifactPressAction(action, artifact)}
+            onCardAction={onDynamicCardAction}
+          />
+        ) : dailyArtifactQuery.data ? (
           <DailyArtifactCard
             artifact={dailyArtifactQuery.data}
             completing={artifactCompleting}
@@ -517,6 +577,13 @@ export default function TodayScreen() {
 // ════════════════════════════════════════════════════════════
 // Helpers (从老版本沿用 + 精简)
 // ════════════════════════════════════════════════════════════
+
+function todayDynamicClientContext(): Record<string, unknown> {
+  return {
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null,
+    client_capabilities: ['daily_artifact', 'runtime_agenda'],
+  };
+}
 
 function getSeverityKey(s: any): string {
   return typeof s === 'string' ? s : s?.label ?? 'info';
