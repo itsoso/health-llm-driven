@@ -9,7 +9,7 @@ import hashlib
 import json
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -30,8 +30,16 @@ router = APIRouter(prefix="/orchestrator", tags=["orchestrator"])
 _ORCH_CACHE_TTL = 1800  # 30 min
 
 
-def _orch_cache_key(user_id: int, query: str, specialists: list | None) -> str:
-    payload = f"{user_id}:{query}:{sorted(specialists or [])}"
+def _parse_client_caps(raw: str | None) -> list[str]:
+    """解析 X-Reva-Client-Caps 头 (逗号分隔, 大小写归一化)。"""
+    if not raw:
+        return []
+    return [c.strip().lower() for c in raw.split(",") if c.strip()]
+
+
+def _orch_cache_key(user_id: int, query: str, specialists: list | None, caps: list[str]) -> str:
+    # caps 进 key: genui-v1 客户端与旧端对同一 query 得到不同响应 (block vs 现状), 不能串味。
+    payload = f"{user_id}:{query}:{sorted(specialists or [])}:{sorted(caps)}"
     return f"orch:v1:{hashlib.sha1(payload.encode()).hexdigest()[:16]}"
 
 
@@ -64,14 +72,18 @@ async def chat(
     req: OrchestratorRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_required),
+    x_reva_client_caps: str | None = Header(default=None),
 ):
     """
     非流式综合分析。
 
     返回完整 OrchestratorResponse（intent + findings + synthesis）。
     """
+    # GenUI 能力协商: 头里的 caps 合入 request (body 也可带 client_caps, 取并集)。
+    req.client_caps = sorted(set(req.client_caps) | set(_parse_client_caps(x_reva_client_caps)))
+
     # 检查缓存
-    cache_key = _orch_cache_key(current_user.id, req.query, req.specialists)
+    cache_key = _orch_cache_key(current_user.id, req.query, req.specialists, req.client_caps)
     cached = _get_orch_cache(cache_key)
     if cached:
         cached["_cached"] = True
@@ -111,9 +123,12 @@ async def chat_stream(
     req: OrchestratorRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_required),
+    x_reva_client_caps: str | None = Header(default=None),
 ):
     """SSE 流式综合分析。"""
     req.stream = True
+    # GenUI 能力协商 (头优先, 与 body client_caps 取并集)。
+    req.client_caps = sorted(set(req.client_caps) | set(_parse_client_caps(x_reva_client_caps)))
 
     async def event_source():
         async for chunk in stream_orchestrator(db, current_user.id, req):

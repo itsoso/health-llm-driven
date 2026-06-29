@@ -19,6 +19,14 @@ class OrchestratorRequest(BaseModel):
         None,
         description="请求来源 (用于 audit): 'siri' | 'chat' | 'widget' | None. 仅埋点用, 不影响路由/合成.",
     )
+    client_caps: List[str] = Field(
+        default_factory=list,
+        description=(
+            "客户端能力声明 (GenUI 能力协商), 来自 X-Reva-Client-Caps 头。"
+            "含 'genui-v1' 时, 图表意图可返回 ```reva-ui line_chart block; "
+            "缺省 (旧端) → 现状行为, 零回归。"
+        ),
+    )
     # 未来字段：conversation_id、user_mood、priority_level 等
 
 
