@@ -54,6 +54,8 @@ OFFICIAL_REFERENCE_URLS = [
     "https://developer.apple.com/app-store/review/guidelines/",
 ]
 
+EXPECTED_APP_NAME = "阿衡"
+
 
 def read_json(path: str) -> dict:
     with (ROOT / path).open(encoding="utf-8") as handle:
@@ -87,6 +89,14 @@ def main() -> int:
     privacy_page = read_text("frontend/src/app/privacy/page.tsx")
 
     bundle_id = ios.get("bundleIdentifier")
+    if app.get("name") != EXPECTED_APP_NAME:
+        failures.append(f"Expo app name must be {EXPECTED_APP_NAME!r}, got {app.get('name')!r}")
+    if info_plist.get("CFBundleDisplayName") != EXPECTED_APP_NAME:
+        failures.append(
+            f"CFBundleDisplayName must be {EXPECTED_APP_NAME!r}, got {info_plist.get('CFBundleDisplayName')!r}"
+        )
+    if f"| App name | `{EXPECTED_APP_NAME}` |" not in submission:
+        failures.append(f"submission pack App name must be {EXPECTED_APP_NAME!r}")
     if bundle_id != privacy.get("bundle_id"):
         failures.append(f"bundle id mismatch: app.json={bundle_id!r}, privacy={privacy.get('bundle_id')!r}")
 

@@ -271,6 +271,12 @@ P0:
   - Public install page: `https://health.executor.life/mobile-install/ios/batch3-20260628-af8f7721/install.html`
   - Public artifacts gate: script 与独立 `curl -fsSI` 均已验证 `install.html`、`manifest.plist`、IPA 公开可访问。
   - 注意: 当前二维码包是 development-signed build,适合已纳入开发签名/配置的设备扫码安装;不等同于 App Store/TestFlight build。
+- Local brand consistency gate(Batch 8):
+  - PASS: `mobile/app.json` Expo `name` 与 iOS `CFBundleDisplayName` 均为 `阿衡`。
+  - PASS: `mobile/app.config.ts` 生产/预览/开发显示名为 `阿衡` / `阿衡 Preview` / `阿衡 Dev`。
+  - PASS: `scripts/check_ios_app_store_submission.py` 和 `scripts/check_app_store_release_pack.py` 已把用户可见 App 名锁定为 `阿衡`,防止发布材料回退到旧名。
+  - PASS: `cd mobile && ./node_modules/.bin/jest --runTestsByPath __tests__/app-config.test.ts --runInBand` -> 7 passed。
+  - PASS: `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest backend/tests/test_ios_app_store_submission_preflight.py backend/tests/test_app_store_release_pack.py -q --no-cov` -> 4 passed。
 - pending:
   - App Store Connect build processing status。
   - App Store Connect production/distribution profile build。
@@ -295,4 +301,5 @@ P0:
   - 用 `scripts/check_ios_app_store_submission.py --require-asc-credentials` 作为 EAS production build / submit 前置闸。
   - 用 `scripts/sanitize_app_store_screenshots.py` + 人工视觉复核 + `scripts/prepare_app_store_screenshots.py` + `scripts/check_app_store_screenshots.py --app-store-ready` 防止 private/尺寸不合规截图进入提交包。
   - 真机走查核心动线: 今日 -> Chat 动态卡片 -> 快速记录 -> 体检导入 -> 复盘 -> 隐私/删除请求。
+  - 发布配置中用户可见命名必须保持 `阿衡`;`HealthPilot` 仅保留为工程/历史技术名,不得重新进入 App Store 用户可见字段。
   - 若需要“完整账号删除”,新增删除工单/worker/admin 审批与跨表匿名化测试。

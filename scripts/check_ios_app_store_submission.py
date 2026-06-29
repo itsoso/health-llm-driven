@@ -29,6 +29,8 @@ REQUIRED_EXTENSION_BUNDLE_IDS = {
     "life.executor.health.watchkitapp.watchkitextension",
 }
 
+EXPECTED_APP_NAME = "阿衡"
+
 
 def read_json(path: Path) -> dict[str, Any]:
     with path.open(encoding="utf-8") as handle:
@@ -75,6 +77,12 @@ def validate(require_asc_credentials: bool) -> list[str]:
     entitlements = ios.get("entitlements", {})
     bundle_id = ios.get("bundleIdentifier")
     privacy_bundle_id = privacy.get("bundle_id")
+    if app.get("name") != EXPECTED_APP_NAME:
+        failures.append(f"Expo app name must be {EXPECTED_APP_NAME!r}, got {app.get('name')!r}")
+    if info_plist.get("CFBundleDisplayName") != EXPECTED_APP_NAME:
+        failures.append(
+            f"CFBundleDisplayName must be {EXPECTED_APP_NAME!r}, got {info_plist.get('CFBundleDisplayName')!r}"
+        )
     if bundle_id != privacy_bundle_id:
         failures.append(f"bundle id mismatch: app.json={bundle_id!r}, privacy={privacy_bundle_id!r}")
     if bundle_id != "life.executor.health":
@@ -192,6 +200,7 @@ def main() -> int:
     project_id = app["extra"]["eas"]["projectId"]
     print(
         "iOS App Store submission preflight passed. "
+        f"app_name={app['name']} "
         f"bundle_id={bundle_id} "
         f"asc_app_id={asc_app_id} "
         f"profile=production "
