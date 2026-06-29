@@ -41,6 +41,15 @@ P0 App Store final-submit gate 已完成:
 - `check_app_store_release_pack.py --final-submit` 用于真正提交前,强制检查 App Store-ready 截图、demo account/password 和 ASC credentials。
 - 当前 final-submit 预期失败,阻塞项是用户提供 demo credentials、ASC credentials 和最终截图目录。
 
+## 第三批实现切片
+
+P1 Mobile 阿衡人格文案收敛已完成:
+
+- 首页 Daily Artifact 的 ask action、首页试用入口、`/reva-onboarding`、`/reva` hub、Chat 体检导入动态卡片统一为 `阿衡`。
+- 语音分享、家庭邀请、体检导入权限、聊天附件权限、运动分享、隐私政策、分享落地页等通用用户可见文案统一为 `阿衡`。
+- 技术符号、历史组件名、route 名和 Reva design token 暂不重命名。
+- Rokid 专页旧称保留为后续独立切片,避免外设 SDK 文案和大测试面混入本批。
+
 ## 本周不做
 
 - 不把 App Store 发布伪装成已完成:缺 demo account、ASC credentials、人审截图时必须停在 pending。
@@ -50,8 +59,8 @@ P0 App Store final-submit gate 已完成:
 
 ## 后续顺序
 
-1. 完成发布一致性闸并回写 dossier。
-2. 补最终截图/审核材料路径,明确哪些需要用户提供。
-3. 继续 Daily Artifact 主屏收敛。
-4. 继续 Chat card action / fast record 主路径。
+1. 补最终截图/审核材料路径,明确哪些需要用户提供。
+2. 继续 Daily Artifact 主屏视觉走查和点击动线截图。
+3. 继续 Chat card action / fast record 主路径。
+4. 单独处理 Rokid 专页旧称和相关测试。
 5. 视签名条件推进 Watch 真机和二维码发版。

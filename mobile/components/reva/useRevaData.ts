@@ -141,7 +141,7 @@ export function useRevaData(): RevaData {
         latest.resting_heart_rate != null ? `静息心率 ${latest.resting_heart_rate} bpm` : null,
         latest.total_sleep_duration != null ? `睡眠 ${Math.round(latest.total_sleep_duration / 60)}h${latest.total_sleep_duration % 60}m` : null,
       ].filter(Boolean).join(' · ') || '已接入手环数据'
-    : '连接手环后，复元用真实数据校准就绪度';
+    : '连接手环后，阿衡用真实数据校准就绪度';
 
   // Abnormal labs from the most recent exam.
   const exams: MedicalExam[] = examsQ.data ?? [];

@@ -166,7 +166,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('需要相机权限', '请在系统设置中允许 Reva 使用相机。');
+        Alert.alert('需要相机权限', '请在系统设置中允许阿衡使用相机。');
         return;
       }
       const picked = await ImagePicker.launchCameraAsync({
@@ -191,7 +191,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('需要相册权限', '请在系统设置中允许 Reva 访问照片。');
+        Alert.alert('需要相册权限', '请在系统设置中允许阿衡访问照片。');
         return;
       }
       const picked = await ImagePicker.launchImageLibraryAsync({

@@ -66,6 +66,15 @@ describe('DailyArtifactCard', () => {
     expect(queryByText('不应显示')).toBeNull();
   });
 
+  it('uses 阿衡 as the visible assistant persona for the ask action', () => {
+    const { getByLabelText, queryByLabelText } = render(
+      <DailyArtifactCard artifact={makeArtifact()} />,
+    );
+
+    expect(getByLabelText('询问阿衡今日行动')).toBeTruthy();
+    expect(queryByLabelText('询问 Reva 今日行动')).toBeNull();
+  });
+
   it('requires a skip reason before calling onSkip', () => {
     const onSkip = jest.fn();
     const { getByLabelText, getByText } = render(

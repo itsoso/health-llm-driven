@@ -281,6 +281,11 @@ P0:
   - PASS: `scripts/check_app_store_release_pack.py` 新增 `--final-submit` 与 `--screenshot-dir`,把最终 App Store 提交前的人审材料升级为硬闸。
   - EXPECTED FAIL: 在缺少 `APP_STORE_SCREENSHOT_DIR` / `--screenshot-dir`、Review Notes 仍有 demo credentials 占位符、且本机无 ASC credentials 时,`python3 scripts/check_app_store_release_pack.py --final-submit` 返回 1 并列出全部阻塞。
   - 普通 `python3 scripts/check_app_store_release_pack.py` 仍可用于无人工凭证的日常回归。
+- Local persona copy gate(Batch 10):
+  - PASS: Mobile 首页 Daily Artifact、试用入口、onboarding、hub、体检导入动态卡片和通用权限/分享/隐私文案已统一使用 `阿衡`。
+  - PASS: `cd mobile && ./node_modules/.bin/jest --runTestsByPath components/chat/cards/__tests__/MedicalExamImportResultCard.test.tsx components/home/__tests__/DailyArtifactCard.test.tsx components/home/__tests__/RevaTryEntryCard.test.tsx app/__tests__/reva-onboarding.test.tsx --runInBand` -> 11 passed。
+  - PASS: 目标旧称扫描无命中,覆盖 `询问 Reva` / `试试新版复元` / `进入复元` / `让 Reva` / `健康助理` 等通用用户可见旧称。
+  - NOTE: Rokid 专页旧称因外设 SDK 语义和测试面较大,保留为后续独立切片。
 - pending:
   - App Store Connect build processing status。
   - App Store Connect production/distribution profile build。
@@ -307,4 +312,5 @@ P0:
   - 用 `scripts/sanitize_app_store_screenshots.py` + 人工视觉复核 + `scripts/prepare_app_store_screenshots.py` + `scripts/check_app_store_screenshots.py --app-store-ready` 防止 private/尺寸不合规截图进入提交包。
   - 真机走查核心动线: 今日 -> Chat 动态卡片 -> 快速记录 -> 体检导入 -> 复盘 -> 隐私/删除请求。
   - 发布配置中用户可见命名必须保持 `阿衡`;`HealthPilot` 仅保留为工程/历史技术名,不得重新进入 App Store 用户可见字段。
+  - 后续用独立切片处理 Rokid 专页中的旧称和测试断言,避免影响本周 App Store 主路径。
   - 若需要“完整账号删除”,新增删除工单/worker/admin 审批与跨表匿名化测试。

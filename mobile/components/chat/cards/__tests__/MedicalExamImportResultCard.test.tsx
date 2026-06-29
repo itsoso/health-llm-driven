@@ -58,7 +58,7 @@ describe('MedicalExamImportResultCard', () => {
     fireEvent.press(getByLabelText('查看体检记录'));
     expect(mockPush).toHaveBeenCalledWith('/medical-exams');
 
-    fireEvent.press(getByLabelText('让 Reva 解读这次导入'));
+    fireEvent.press(getByLabelText('让阿衡解读这次导入'));
     expect(mockPush).toHaveBeenCalledWith(expect.objectContaining({
       pathname: '/(tabs)/chat',
       params: expect.objectContaining({

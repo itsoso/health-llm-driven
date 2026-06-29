@@ -121,7 +121,7 @@ export default function ImportScreen() {
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('需要相机权限', '在"设置 → 健康助理"中开启相机权限,才能拍摄化验单.');
+        Alert.alert('需要相机权限', '在"设置 → 阿衡"中开启相机权限,才能拍摄化验单.');
         return;
       }
       const picked = await ImagePicker.launchCameraAsync({
@@ -144,7 +144,7 @@ export default function ImportScreen() {
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('需要相册权限', '在"设置 → 健康助理"中开启"照片"权限,才能选取化验单图片.');
+        Alert.alert('需要相册权限', '在"设置 → 阿衡"中开启"照片"权限,才能选取化验单图片.');
         return;
       }
       const picked = await ImagePicker.launchImageLibraryAsync({

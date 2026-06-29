@@ -143,7 +143,7 @@ export function RevaMark({ size = 30 }: { size?: number }) {
 const TABS = [
   { id: 'today', label: '今天', icon: 'sun' },
   { id: 'data', label: '数据', icon: 'activity' },
-  { id: 'agent', label: '复元', icon: 'messages-square' },
+  { id: 'agent', label: '阿衡', icon: 'messages-square' },
   { id: 'me', label: '我的', icon: 'user' },
 ] as const;
 export type RevaTab = (typeof TABS)[number]['id'];

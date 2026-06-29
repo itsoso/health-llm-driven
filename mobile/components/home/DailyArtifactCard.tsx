@@ -165,7 +165,7 @@ export default function DailyArtifactCard({
               disabled={busy || !artifact}
               onPress={() => artifact && onAskReva?.(artifact)}
               accessibilityRole="button"
-              accessibilityLabel="询问 Reva 今日行动"
+              accessibilityLabel="询问阿衡今日行动"
             >
               <Icon name="messages-square" size={18} color={C.green600} />
             </Pressable>

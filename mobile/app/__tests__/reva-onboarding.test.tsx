@@ -31,10 +31,10 @@ describe('RevaOnboardingScreen demo mode', () => {
     expect(getByText('今日最重要行动')).toBeTruthy();
   });
 
-  it('enters the Reva hub without writing demo data', () => {
+  it('enters the 阿衡 hub without writing demo data', () => {
     const { getByText } = render(<RevaOnboardingScreen />);
 
-    fireEvent.press(getByText('进入复元'));
+    fireEvent.press(getByText('进入阿衡'));
 
     expect(mockReplace).toHaveBeenCalledWith('/reva');
   });

@@ -1,6 +1,6 @@
 /**
- * 复元 Reva — Agent (分析对话) view. Reusable body used by the standalone
- * route (app/reva-agent.tsx) and the Reva hub's 复元 tab (app/reva.tsx).
+ * Reva Agent view. Reusable body used by the standalone route
+ * (app/reva-agent.tsx) and the Reva hub's assistant tab (app/reva.tsx).
  * Powered by the real `useChatEngine` streaming. No outer SafeAreaView — the host
  * provides layout/insets.
  */
@@ -71,7 +71,7 @@ export function RevaAgentView({ bottomInset = 0 }: { bottomInset?: number }) {
       <View style={styles.header}>
         <RevaMark size={32} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.brand}>复元</Text>
+          <Text style={styles.brand}>阿衡</Text>
           <View style={styles.statusRow}>
             <View style={styles.statusDot} />
             <Text style={styles.statusText}>了解你的全部健康数据</Text>
@@ -83,7 +83,7 @@ export function RevaAgentView({ bottomInset = 0 }: { bottomInset?: number }) {
         <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={styles.scrollContent} keyboardDismissMode="interactive">
           {messages.length === 0 ? (
             <View style={styles.empty}>
-              <Text style={styles.emptyText}>问问复元 —— 它了解你的体检异常项、手环数据和 90 天计划。</Text>
+              <Text style={styles.emptyText}>问问阿衡 —— 它了解你的体检异常项、手环数据和 90 天计划。</Text>
             </View>
           ) : (
             messages.map(m => <RevaBubble key={m.id} message={m} />)
@@ -100,7 +100,7 @@ export function RevaAgentView({ bottomInset = 0 }: { bottomInset?: number }) {
           </ScrollView>
           <View style={styles.inputBar}>
             <TextInput
-              value={draft} onChangeText={setDraft} placeholder="问问复元…" placeholderTextColor={C.ink3}
+              value={draft} onChangeText={setDraft} placeholder="问问阿衡…" placeholderTextColor={C.ink3}
               style={styles.input} returnKeyType="send" onSubmitEditing={() => submit()} editable={!isStreaming}
             />
             <Pressable onPress={() => submit()} style={[styles.send, (!draft.trim() || isStreaming) && styles.sendDisabled]} disabled={!draft.trim() || isStreaming}>
