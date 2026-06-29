@@ -153,6 +153,15 @@ export default function RecordScreen() {
         priority: recordGaps.isPreWorkoutWindow ? 72 : 18,
         onPress: () => router.push('/voice-chat?intent=preworkout&workout_type=running' as any),
       },
+      {
+        key: 'pushup',
+        icon: 'barbell-outline',
+        label: '俯卧撑',
+        hint: '本地/眼镜计数',
+        color: CAT_HUES.pink,
+        priority: 36,
+        onPress: () => router.push('/rokid-pushup-coach' as any),
+      },
     ];
 
     return entries.sort((a, b) => b.priority - a.priority);

@@ -115,6 +115,7 @@ describe('RecordScreen import shortcuts', () => {
     await waitFor(() => expect(getByText('高频记录')).toBeTruthy());
     expect(getByText('更多记录')).toBeTruthy();
     await waitFor(() => expect(getByText('声音笔记')).toBeTruthy());
+    expect(within(getByTestId('high-frequency-records')).getByText('俯卧撑')).toBeTruthy();
     expect(within(getByTestId('high-frequency-records')).queryByText('化验记录')).toBeNull();
     expect(within(getByTestId('more-records')).getByText('化验记录')).toBeTruthy();
     expect(within(getByTestId('more-records')).getByText('基因')).toBeTruthy();
@@ -128,6 +129,9 @@ describe('RecordScreen import shortcuts', () => {
 
     fireEvent.press(getByLabelText('导入档案'));
     expect(mockPush).toHaveBeenCalledWith('/import');
+
+    fireEvent.press(getByLabelText('俯卧撑'));
+    expect(mockPush).toHaveBeenCalledWith('/rokid-pushup-coach');
   });
 
   it('highlights the best record shortcut for the current time and missing data', async () => {

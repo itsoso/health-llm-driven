@@ -50,6 +50,14 @@ P1 Mobile 阿衡人格文案收敛已完成:
 - 技术符号、历史组件名、route 名和 Reva design token 暂不重命名。
 - Rokid 专页旧称保留为后续独立切片,避免外设 SDK 文案和大测试面混入本批。
 
+## 第四批实现切片
+
+P1/P3 快速记录入口已推进:
+
+- `/(tabs)/record` 高频记录区新增 `俯卧撑`。
+- 点击直达 `/rokid-pushup-coach`,复用已有本地/眼镜计数与保存能力,不新增后端 schema。
+- `更多记录 -> 运动` 保持为 `/workout-list`,用于查看历史运动记录。
+
 ## 本周不做
 
 - 不把 App Store 发布伪装成已完成:缺 demo account、ASC credentials、人审截图时必须停在 pending。
@@ -61,6 +69,6 @@ P1 Mobile 阿衡人格文案收敛已完成:
 
 1. 补最终截图/审核材料路径,明确哪些需要用户提供。
 2. 继续 Daily Artifact 主屏视觉走查和点击动线截图。
-3. 继续 Chat card action / fast record 主路径。
+3. 继续 Chat card action 的成功/失败反馈和记录页联动。
 4. 单独处理 Rokid 专页旧称和相关测试。
 5. 视签名条件推进 Watch 真机和二维码发版。
