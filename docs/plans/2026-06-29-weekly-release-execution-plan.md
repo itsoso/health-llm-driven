@@ -97,6 +97,16 @@ P1/P2 Rokid 俯卧撑教练旧称收敛已推进:
 - 保留 `Rokid` / `CXR-L` / `CustomView` / `CustomApp` / native package / URL scheme 等技术名。
 - `Rokid Health` 大页仍作为后续独立切片,避免把 SDK 状态机和大测试面混入本批。
 
+## 第九批实现切片
+
+P1/P2 Rokid Health 大页旧称收敛已推进:
+
+- `Rokid 眼镜健康模式` 大页的授权等待、CustomView 打开/等待/失败、语音控制 title、页面按钮和用户诊断指引统一为 `阿衡`。
+- 眼镜端 CustomView 展示 payload 从 `Reva Health` / `Reva 语音控制` 收敛为 `阿衡 Health` / `阿衡语音控制`。
+- 复用 `APP_DISPLAY_NAME`,不新造产品名常量。
+- 保留 `openRokidRevaCustomView` / `createRokidRevaCustomViewLayout`、`appName: 'Reva'`、`Reva build`、`appName=Reva` 等技术函数、SDK auth 字段和历史诊断字段。
+- 不改 Rokid 设备控制、语音、拍照、记录写入和权限逻辑。
+
 ## 本周不做
 
 - 不把 App Store 发布伪装成已完成:缺 demo account、ASC credentials、人审截图时必须停在 pending。
@@ -109,5 +119,5 @@ P1/P2 Rokid 俯卧撑教练旧称收敛已推进:
 1. 补最终截图/审核材料路径,明确哪些需要用户提供。
 2. 继续 Daily Artifact 主屏视觉走查和点击动线截图。
 3. 继续 Chat card action 成功后的局部刷新/跳转反馈和记录页联动。
-4. 单独处理 Rokid 专页旧称和相关测试。
+4. 继续清理 App Store 高可见截图/审核叙事与当前 UI 的差异。
 5. 视签名条件推进 Watch 真机和二维码发版。
