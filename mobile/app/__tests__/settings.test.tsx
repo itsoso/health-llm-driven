@@ -144,6 +144,21 @@ describe('SettingsScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/app-diagnostics');
   });
 
+  it('uses 阿衡 in Siri voice recording examples', () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const { getByText } = render(<SettingsScreen />);
+
+    fireEvent.press(getByText('Siri 语音记录'));
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Siri 语音记录',
+      expect.stringContaining('嘿 Siri，用 阿衡 记录喝了500ml水'),
+      expect.any(Array),
+    );
+    expect(alertSpy.mock.calls[0][1]).not.toContain('HealthPilot');
+    alertSpy.mockRestore();
+  });
+
   it('opens dedicated longevity analysis pages from settings', () => {
     const { getByText } = render(<SettingsScreen />);
 

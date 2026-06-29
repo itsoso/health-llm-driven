@@ -77,6 +77,16 @@ P0/P1 Mobile 阿衡人格主路径收敛已推进:
 - 首页 `HomeCommandCard` 顶部人格和“问原因”无障碍标签统一为 `阿衡`。
 - 底部 Chat tab 无障碍标签统一为“私教,与阿衡对话”。
 
+## 第七批实现切片
+
+P0 Mobile Shell 品牌一致性已推进:
+
+- 新增 `APP_DISPLAY_NAME = '阿衡'` 品牌常量,供高可见 shell surface 复用。
+- 登录页标题从 `HealthPilot` 收敛为 `阿衡`。
+- 根布局锁屏抽成 `AppLockScreen`,锁屏态显示 `阿衡` 并保留解锁回调。
+- Settings 的 Siri 语音记录示例从 `HealthPilot` 收敛为 `阿衡`。
+- 非测试代码扫描 `mobile/app mobile/components mobile/utils` 不再命中 `HealthPilot`。
+
 ## 本周不做
 
 - 不把 App Store 发布伪装成已完成:缺 demo account、ASC credentials、人审截图时必须停在 pending。
