@@ -145,6 +145,13 @@ export function getMainTabAccessibilityLabels() {
   ) as Record<MainTabName, string>;
 }
 
+export function getMainTabBarPresentation() {
+  return {
+    layout: 'docked',
+    overlaysContent: false,
+  } as const;
+}
+
 function createTabScreenOptions(name: MainTabName) {
   const meta = TAB_META[name];
   return {
@@ -162,7 +169,16 @@ function RevaTabBar({ state, navigation }: BottomTabBarProps) {
   const routes = state.routes.filter((r): r is typeof r & { name: MainTabName } => r.name in TAB_META);
   const activeKey = state.routes[state.index]?.key;
   return (
-    <View pointerEvents="box-none" style={[capsule.wrap, { paddingBottom: Math.max(insets.bottom, FLOATING_TAB_BAR_MIN_BOTTOM) }]}>
+    <View
+      style={[
+        capsule.wrap,
+        {
+          paddingBottom: Math.max(insets.bottom, FLOATING_TAB_BAR_MIN_BOTTOM),
+          backgroundColor: c.bgPrimary,
+          borderTopColor: c.separator,
+        },
+      ]}
+    >
       <View style={[capsule.bar, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
         {routes.map((route) => {
           const meta = TAB_META[route.name];
@@ -196,12 +212,9 @@ function RevaTabBar({ state, navigation }: BottomTabBarProps) {
 
 const capsule = StyleSheet.create({
   wrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     paddingHorizontal: 16,
     paddingTop: FLOATING_TAB_BAR_PADDING_TOP,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   bar: {
     flexDirection: 'row',
@@ -211,10 +224,10 @@ const capsule = StyleSheet.create({
     paddingHorizontal: 6,
     borderWidth: 1,
     shadowColor: '#16201B',
-    shadowOpacity: 0.13,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   item: {
     flex: 1,

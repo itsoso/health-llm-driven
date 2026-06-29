@@ -1368,6 +1368,48 @@ def _future_protocol_items(
     return items
 
 
+def _runtime_anchor_items(existing_items: List[Dict[str, Any]], *, offset: int) -> List[Dict[str, Any]]:
+    """补足未来日程的低风险运行时底座。
+
+    未来 projection 如果只有一个日常协议(典型:饮水),UI 会退化成 6 天重复同一条。
+    这里只补建议性 runtime_guidance:不入完成写路径,不替代医生,让用户看到未来会围绕
+    活动打断/睡眠收尾等低风险变量滚动重排。
+    """
+    domains = {str(item.get("type") or "").strip() for item in existing_items if item.get("type")}
+    if len(domains) >= 2:
+        return []
+
+    prefer_movement = offset % 2 == 1
+    anchors: List[Dict[str, Any]] = []
+    if "movement" not in domains and "exercise" not in domains and "training" not in domains:
+        anchors.append(_agenda_item(
+            type="movement",
+            title="午后轻活动 5 分钟",
+            status="info",
+            time_window="afternoon",
+            priority=64 if prefer_movement else 38,
+            detail="低强度活动打断久坐,不追求训练强度。",
+            why="未来日程不能只堆单一提醒;先保留一个低负担活动窗口,明天会按睡眠、HRV 和记录重排。",
+            verification={"metrics": ["movement_break_completed", "hrv", "sleep_score"], "window_days": 7},
+            claim_boundary=_RUNTIME_SAFETY_BOUNDARY,
+            source={"object_type": "runtime_guidance", "object_id": "micro_movement_anchor"},
+        ))
+    if "sleep" not in domains and "recovery" not in domains:
+        anchors.append(_agenda_item(
+            type="sleep",
+            title="睡前 30 分钟收尾",
+            status="info",
+            time_window="bedtime",
+            priority=38 if prefer_movement else 64,
+            detail="把夜间节律作为恢复底座,避免未来计划只重复饮水。",
+            why="睡眠和恢复是未来 7 天计划的重排锚点;今天数据回来后会自动调整强度。",
+            verification={"metrics": ["sleep_score", "sleep_duration", "hrv"], "window_days": 7},
+            claim_boundary=_RUNTIME_SAFETY_BOUNDARY,
+            source={"object_type": "runtime_guidance", "object_id": "sleep_wind_down_anchor"},
+        ))
+    return anchors
+
+
 def runtime_range_view(
     db: Session,
     user_id: int,
@@ -1443,6 +1485,17 @@ def runtime_range_view(
                 )
                 for template in future_protocol_templates
             ]
+            items.extend(
+                _runtime_project_item(
+                    template,
+                    day=current_day,
+                    replan_reason="runtime_anchor_projection",
+                    is_today=False,
+                    db=db,
+                    user_id=user_id,
+                )
+                for template in _runtime_anchor_items(future_protocol_templates, offset=offset)
+            )
         for due_day, checkup in future_checkups:
             if due_day != current_day:
                 continue
@@ -1459,6 +1512,7 @@ def runtime_range_view(
             _TW_ORDER.get(x.get("time_window"), 9),
             str(x.get("title") or ""),
         ))
+        items = items[:max_items]
         next_action = _runtime_next_action(items)
         if root_next_action is None and next_action is not None:
             root_next_action = next_action

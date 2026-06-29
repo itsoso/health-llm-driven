@@ -148,7 +148,7 @@ describe('renderCard 安全降级', () => {
           priority_tier: 'P1',
           current_state_summary: '晚餐后是今天最短的代谢干预窗口。',
           replan_reason: 'today_smart_rank',
-          verification_metrics: ['post_meal_walk_completed', 'waist_cm'],
+          verification_metrics: ['post_meal_walk_completed', 'waist_cm', 'hrv'],
           verification_window_days: 7,
         },
         days: [
@@ -171,8 +171,14 @@ describe('renderCard 安全降级', () => {
     expect(r).not.toBeNull();
 
     const { getByText } = render(r!);
-    expect(getByText('7天健康运行时')).toBeTruthy();
+    expect(getByText('7天健康编排')).toBeTruthy();
     expect(getByText('晚餐后步行 15 分钟')).toBeTruthy();
+    expect(getByText('基于今日状态重排')).toBeTruthy();
+    expect(getByText('晚间')).toBeTruthy();
+    expect(getByText('腰围')).toBeTruthy();
+    expect(getByText('HRV')).toBeTruthy();
+    expect(() => getByText('today_smart_rank')).toThrow();
+    expect(() => getByText('waist_cm')).toThrow();
     fireEvent.press(getByText('查看7天计划'));
     expect(onAction).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'route.open' }),

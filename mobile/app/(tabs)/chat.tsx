@@ -463,8 +463,7 @@ export default function ChatScreen() {
   }, [selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  // 悬浮胶囊 tab bar 是 absolute 定位,useBottomTabBarHeight() 测不准(真机返回 0),
-  // 会让输入框落到屏幕底被 tab bar 盖住 → 无法输入。用真实几何高度。
+  // Tab bar 已在布局流内;这里只留少量底部呼吸空间,键盘弹起时改用键盘高度。
   const tabBarHeight = useFloatingTabBarHeight();
   const bottomSpacerHeight = keyboardVisible
     ? (Platform.OS === 'ios' ? keyboardHeight : 0)
@@ -476,53 +475,57 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <LlmModelPicker
-          variant="header"
-          currentLabel={headerLlmLabel}
-          currentModelId={llmModelId}
-          options={llmOptions}
-          savingModelId={llmSaving}
-          error={llmError}
-          onSelect={handleSelectModel}
-        />
-        {isStreaming && (
-          <View style={styles.streamingBadge} accessibilityLabel="回复中">
-            <View style={styles.streamingDot} />
-            <Text style={txt.streamingBadge}>回复中</Text>
+      <View style={styles.headerWrap}>
+        <View style={styles.headerSurface}>
+          <LlmModelPicker
+            variant="header"
+            currentLabel={headerLlmLabel}
+            currentModelId={llmModelId}
+            options={llmOptions}
+            savingModelId={llmSaving}
+            error={llmError}
+            onSelect={handleSelectModel}
+          />
+          <View style={styles.headerRight}>
+            {isStreaming && (
+              <View style={styles.streamingBadge} accessibilityLabel="回复中">
+                <View style={styles.streamingDot} />
+                <Text style={txt.streamingBadge}>回复中</Text>
+              </View>
+            )}
+            <TouchableOpacity
+              onPress={handleNewChat}
+              hitSlop={8}
+              style={styles.headerAction}
+              accessibilityLabel="新建对话"
+              accessibilityRole="button"
+            >
+              <Ionicons name="add" size={19} color={C.ink1} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => router.push({
+                pathname: '/voice-chat',
+                params: conversationId ? { conversation_id: String(conversationId) } : {},
+              } as any)}
+              hitSlop={8}
+              style={styles.headerActionPrimary}
+              accessibilityLabel="开始语音对话"
+              accessibilityHint="进入连续语音对话，AI 会听你说并用语音回复"
+              accessibilityRole="button"
+            >
+              <Ionicons name="call" size={17} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setToolMenuVisible(true)}
+              hitSlop={8}
+              style={styles.headerMenuAction}
+              accessibilityLabel="更多会诊操作"
+              accessibilityRole="button"
+            >
+              <Ionicons name="ellipsis-horizontal" size={19} color={C.ink1} />
+            </TouchableOpacity>
           </View>
-        )}
-        <TouchableOpacity
-          onPress={handleNewChat}
-          hitSlop={8}
-          style={styles.headerAction}
-          accessibilityLabel="新建对话"
-          accessibilityRole="button"
-        >
-          <Ionicons name="add" size={20} color={C.ink2} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => router.push({
-            pathname: '/voice-chat',
-            params: conversationId ? { conversation_id: String(conversationId) } : {},
-          } as any)}
-          hitSlop={8}
-          style={styles.headerActionPrimary}
-          accessibilityLabel="开始语音对话"
-          accessibilityHint="进入连续语音对话，AI 会听你说并用语音回复"
-          accessibilityRole="button"
-        >
-          <Ionicons name="call" size={18} color="#FFFFFF" />
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setToolMenuVisible(true)}
-          hitSlop={8}
-          style={styles.headerMenuAction}
-          accessibilityLabel="更多会诊操作"
-          accessibilityRole="button"
-        >
-          <Ionicons name="ellipsis-horizontal" size={20} color={C.ink2} />
-        </TouchableOpacity>
+        </View>
       </View>
 
       <View style={{ flex: 1 }}>
@@ -751,30 +754,58 @@ function ToolMenuRow({
 // Reva 设计语言: 暖白 paper 屏底 / surface 卡 / green500 主色 / r-lg 18 / 软阴影. 文字走 Manrope.
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
-  header: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2, paddingHorizontal: revaSpacing.s5, paddingVertical: revaSpacing.s3 },
+  headerWrap: {
+    paddingHorizontal: revaSpacing.s4,
+    paddingTop: revaSpacing.s2,
+    paddingBottom: revaSpacing.s2,
+  },
+  headerSurface: {
+    minHeight: 62,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: revaSpacing.s2,
+    paddingLeft: revaSpacing.s3,
+    paddingRight: 6,
+    paddingVertical: 7,
+    borderRadius: revaRadii.xl,
+    backgroundColor: C.surface2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    ...revaShadows.sm,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   headerAction: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
   },
   headerActionPrimary: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.green500,
+    ...revaShadows.sm,
   },
   headerMenuAction: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
   },
   streamingBadge: {
     minHeight: 28,
@@ -784,6 +815,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderRadius: revaRadii.pill,
     backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: revaSemantic.normal.line,
   },
   streamingDot: {
     width: 6,

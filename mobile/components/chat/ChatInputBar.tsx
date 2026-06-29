@@ -18,6 +18,8 @@ import {
 } from '../../services/chatMedicalExamImportSkill';
 import {
   revaColors as C,
+  revaRadii,
+  revaShadows,
   revaSpacing,
   revaSemantic,
   revaFonts,
@@ -318,7 +320,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
             <TextInput
               ref={textInputRef}
               style={styles.textInput}
-              placeholder="有问题，尽管问"
+              placeholder="问阿衡，或直接说刚做了什么"
               placeholderTextColor={C.ink3}
               value={input}
               onChangeText={setInput}
@@ -424,55 +426,63 @@ const styles = StyleSheet.create({
   /* ── 输入栏 ── */
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 6,
-    paddingHorizontal: revaSpacing.s2, paddingVertical: 8,
+    paddingHorizontal: revaSpacing.s3,
+    paddingTop: 8,
+    paddingBottom: 10,
     backgroundColor: C.paper,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
   },
   plusBtn: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: C.surface, borderWidth: 1, borderColor: C.line,
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: C.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line,
     alignItems: 'center', justifyContent: 'center',
   },
   inputWrap: {
+    minHeight: 38,
     flex: 1, flexDirection: 'row', alignItems: 'flex-end',
-    backgroundColor: C.surface, borderRadius: 18,
-    borderWidth: 1, borderColor: C.line,
-    paddingHorizontal: 12, paddingVertical: 4,
+    backgroundColor: C.surface, borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
+    paddingHorizontal: 14, paddingVertical: 4,
+    ...revaShadows.sm,
   },
   textInput: {
     flex: 1, fontFamily: revaFonts.sans, fontSize: 15, maxHeight: 90, color: C.ink1,
     paddingTop: 6, paddingBottom: 6,
   },
   sendBtn: {
-    width: 32, height: 32, borderRadius: 16,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: C.green500,
     alignItems: 'center', justifyContent: 'center',
+    ...revaShadows.sm,
   },
   modeBtn: {
-    width: 32, height: 32, borderRadius: 16,
+    width: 38, height: 38, borderRadius: 19,
     alignItems: 'center', justifyContent: 'center',
   },
   voiceInputBtn: {
-    width: 32, height: 32, borderRadius: 16,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: C.surface,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.green500,
     alignItems: 'center', justifyContent: 'center',
   },
   keyboardBtn: {
-    width: 32, height: 32, borderRadius: 16,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: C.surface,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
     alignItems: 'center', justifyContent: 'center',
   },
 
   /* ── 按住说话按钮（微信风格） ── */
   holdToTalkBtn: {
-    flex: 1, height: 36, borderRadius: 20,
+    flex: 1, minHeight: 38, borderRadius: revaRadii.pill,
     backgroundColor: C.surface,
-    borderWidth: 1, borderColor: C.line,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
     flexDirection: 'row',
     alignItems: 'center', justifyContent: 'center',
+    ...revaShadows.sm,
   },
   holdToTalkBtnActive: {
     backgroundColor: '#E8E8E8',

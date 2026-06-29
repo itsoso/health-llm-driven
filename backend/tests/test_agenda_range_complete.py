@@ -112,6 +112,43 @@ def test_range_runtime_mode_returns_rolling_projection(client, auth_user_and_hea
     assert any(item["scheduled_for"] == "2026-06-30" for item in scheduled_items)
 
 
+def test_runtime_projection_adds_low_risk_anchors_when_protocols_are_sparse(
+    client, auth_user_and_headers, monkeypatch
+):
+    """只有一个日常饮水协议时,未来运行时也不能退化成 6 天同一条。
+
+    未来日程需要保守补足低风险 anchor:轻活动/拉伸、睡眠收尾等,且它们只作为
+    runtime_guidance 投影,不进入完成写路径。
+    """
+    _, h = auth_user_and_headers
+    _freeze_agenda_today(monkeypatch, date(2026, 6, 29))
+    client.post("/api/v1/protocols/seed/water-cup", headers=h)
+
+    r = client.get("/api/v1/agenda/range?days=7&mode=runtime&max_items=4", headers=h)
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    future_items = [
+        item
+        for day in body["days"][1:]
+        for window in day["time_windows"]
+        for item in window["items"]
+    ]
+    titles = {item["title"] for item in future_items}
+    assert "2000ml 温水杯" in titles
+    assert any("轻活动" in title or "拉伸" in title for title in titles)
+    assert any("睡眠" in title or "收尾" in title for title in titles)
+
+    anchor_items = [
+        item for item in future_items
+        if item["source"].get("object_type") == "runtime_guidance"
+    ]
+    assert anchor_items
+    assert all(item["can_complete"] is False for item in anchor_items)
+    assert all(item["can_skip"] is False for item in anchor_items)
+    assert all(item["runtime_context"]["replan_reason"] == "runtime_anchor_projection" for item in anchor_items)
+
+
 def test_today_runtime_mode_returns_one_day_projection(client, auth_user_and_headers, monkeypatch):
     _, h = auth_user_and_headers
     _freeze_agenda_today(monkeypatch, date(2026, 6, 28))
