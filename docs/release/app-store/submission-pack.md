@@ -1,4 +1,4 @@
-# Reva App Store Submission Pack
+# 阿衡(中和知微)App Store Submission Pack · 睿为健康
 
 Status: draft for the next App Store submission.
 
@@ -9,8 +9,8 @@ Status: draft for the next App Store submission.
 | App Store Connect app id | `6763569720` |
 | Bundle ID | `life.executor.health` |
 | SKU | `life.executor.health` |
-| App name | `Reva 睿为` |
-| Internal product name | `Reva / HealthPilot` |
+| App name | `阿衡` |
+| Internal product name | `中和知微`(公司:睿为健康;内部代号 HealthPilot)|
 | Primary language | Simplified Chinese |
 | Category | Health & Fitness |
 | Privacy policy URL | `https://health.executor.life/privacy` |
@@ -27,7 +27,7 @@ Status: draft for the next App Store submission.
 
 ### Description
 
-Reva 睿为是面向长期健康管理的个人健康操作系统。它把你授权同步的 Apple Health / HealthKit 数据、Apple Watch 记录、体检报告、饮食运动记录、用药和补剂信息组织成可复盘的健康时间线，并通过 AI 帮你生成日常行动建议。
+阿衡是面向长期健康管理的个人健康操作系统。它把你授权同步的 Apple Health / HealthKit 数据、Apple Watch 记录、体检报告、饮食运动记录、用药和补剂信息组织成可复盘的健康时间线，并通过 AI 帮你生成日常行动建议。
 
 你可以在“今日”看到当前最重要的健康行动，在“私教”里用对话追问和执行记录，在“记录”里快速记录饮水、饮食、运动、体重、血压、症状、用药和补剂，在“我”里管理数据来源、健康档案、提醒、安全与隐私。
 
@@ -42,11 +42,11 @@ Reva 睿为是面向长期健康管理的个人健康操作系统。它把你授
 
 重要说明:
 
-Reva 睿为提供健康记录、趋势解读和生活方式建议，不提供诊断、急救分诊、处方、治疗方案或药物剂量调整。任何医疗决策请咨询医生。紧急症状请立即联系医生或当地急救服务。
+阿衡提供健康记录、趋势解读和生活方式建议，不提供诊断、急救分诊、处方、治疗方案或药物剂量调整。任何医疗决策请咨询医生。紧急症状请立即联系医生或当地急救服务。
 
 ### Keywords
 
-健康记录,Apple Watch,HealthKit,体检报告,饮食记录,运动记录,睡眠,用药提醒,补剂,健康助理
+健康记录,Apple Watch,HealthKit,体检报告,饮食记录,运动记录,睡眠,用药提醒,补剂,健康助理,中和知微,健康参谋
 
 ### What's New
 
