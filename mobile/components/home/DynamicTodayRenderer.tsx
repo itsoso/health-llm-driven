@@ -24,6 +24,7 @@ export default function DynamicTodayRenderer({
   onDailyArtifactComplete,
   onDailyArtifactSkip,
   onDailyArtifactAsk,
+  onDailyArtifactExplainBasis,
   onDailyArtifactPressAction,
   onCardAction,
 }: {
@@ -37,6 +38,7 @@ export default function DynamicTodayRenderer({
     action: DailyArtifactTopAction | null,
   ) => void;
   onDailyArtifactAsk?: (artifact: DailyArtifact) => void;
+  onDailyArtifactExplainBasis?: (artifact: DailyArtifact) => void;
   onDailyArtifactPressAction?: (artifact: DailyArtifact, action: DailyArtifactTopAction) => void;
   onCardAction?: (action: ChatCardActionDescriptor, descriptor: ServerCardDescriptor) => void;
 }) {
@@ -57,6 +59,7 @@ export default function DynamicTodayRenderer({
             onDailyArtifactComplete,
             onDailyArtifactSkip,
             onDailyArtifactAsk,
+            onDailyArtifactExplainBasis,
             onDailyArtifactPressAction,
             onCardAction,
           }))
@@ -80,6 +83,7 @@ function renderDynamicCard({
   onDailyArtifactComplete,
   onDailyArtifactSkip,
   onDailyArtifactAsk,
+  onDailyArtifactExplainBasis,
   onDailyArtifactPressAction,
   onCardAction,
 }: {
@@ -94,6 +98,7 @@ function renderDynamicCard({
     action: DailyArtifactTopAction | null,
   ) => void;
   onDailyArtifactAsk?: (artifact: DailyArtifact) => void;
+  onDailyArtifactExplainBasis?: (artifact: DailyArtifact) => void;
   onDailyArtifactPressAction?: (artifact: DailyArtifact, action: DailyArtifactTopAction) => void;
   onCardAction?: (action: ChatCardActionDescriptor, descriptor: ServerCardDescriptor) => void;
 }): React.ReactElement | null {
@@ -108,6 +113,7 @@ function renderDynamicCard({
         onComplete={(action) => onDailyArtifactComplete?.(artifact, action)}
         onSkip={(reason, action) => onDailyArtifactSkip?.(artifact, reason, action)}
         onAskReva={(value) => onDailyArtifactAsk?.(value)}
+        onExplainBasis={(value) => onDailyArtifactExplainBasis?.(value)}
         onPressAction={(action) => onDailyArtifactPressAction?.(artifact, action)}
       />
     );

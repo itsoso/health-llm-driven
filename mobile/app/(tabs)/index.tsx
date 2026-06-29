@@ -60,7 +60,6 @@ import RevaCycleStrip from '../../components/home/RevaCycleStrip';
 import RevaWeatherRow from '../../components/home/RevaWeatherRow';
 import RevaQuickActions from '../../components/home/RevaQuickActions';
 import RevaSectionGroup from '../../components/home/RevaSectionGroup';
-import RevaTryEntryCard from '../../components/home/RevaTryEntryCard';
 import DynamicTodayRenderer from '../../components/home/DynamicTodayRenderer';
 import { useRevaFonts } from '../../components/reva/useRevaFonts';
 import { revaColors } from '../../constants/revaTheme';
@@ -72,6 +71,7 @@ import {
 import { dispatchChatCardAction } from '../../services/chatCardActions';
 import {
   buildDailyArtifactAskRoute,
+  buildDailyArtifactBasisRoute,
   buildDailyArtifactExecuteRoute,
 } from '../../utils/dailyArtifactNavigation';
 import type {
@@ -367,6 +367,11 @@ export default function TodayScreen() {
     router.push(buildDailyArtifactAskRoute(artifact) as any);
   }, [recordArtifactAccepted, router]);
 
+  const onArtifactExplainBasis = useCallback((artifact: DailyArtifact) => {
+    recordArtifactAccepted(artifact, 'explain_basis');
+    router.push(buildDailyArtifactBasisRoute(artifact) as any);
+  }, [recordArtifactAccepted, router]);
+
   const onArtifactPressAction = useCallback((action: DailyArtifactTopAction, artifactOverride?: DailyArtifact) => {
     const artifact = artifactOverride ?? dailyArtifactQuery.data;
     if (artifact) recordArtifactAccepted(artifact, 'open_detail');
@@ -469,6 +474,7 @@ export default function TodayScreen() {
             onDailyArtifactComplete={(artifact, action) => onArtifactComplete(action, artifact)}
             onDailyArtifactSkip={(artifact, reason, action) => onArtifactSkip(reason, action, artifact)}
             onDailyArtifactAsk={onArtifactAskReva}
+            onDailyArtifactExplainBasis={onArtifactExplainBasis}
             onDailyArtifactPressAction={(artifact, action) => onArtifactPressAction(action, artifact)}
             onCardAction={onDynamicCardAction}
           />
@@ -480,6 +486,7 @@ export default function TodayScreen() {
             onComplete={onArtifactComplete}
             onSkip={onArtifactSkip}
             onAskReva={onArtifactAskReva}
+            onExplainBasis={onArtifactExplainBasis}
             onPressAction={onArtifactPressAction}
           />
         ) : (
@@ -546,13 +553,10 @@ export default function TodayScreen() {
 
         {/* 7 · 快捷动作行 */}
         <RevaQuickActions
-          onRun={() => router.push('/live-run' as any)}
+          onRun={() => router.push('/(tabs)/record' as any)}
           onVoice={() => router.push('/voice-chat?intent=journal' as any)}
           onRecord={() => router.push('/(tabs)/record' as any)}
         />
-
-        {/* 8 · 试试新版 复元 入口(把休眠的 /reva 提升为首页可见入口) */}
-        <RevaTryEntryCard />
 
         {/* 深度分析(结果归因 / 生物年龄 / 抗衰下一步 / 设备一致性 / Agent 话题)
             已移出首页 → 「我」tab 的「健康分析」分组(信息架构:首页只留日常驱动)。 */}

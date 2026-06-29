@@ -1,7 +1,7 @@
 /**
  * RevaQuickActions —— 首页快捷动作行(Reva 重设计第 6 块)。
  *
- * 主按钮「开始跑步」(Button primary → /live-run,与 EnvironmentCard 跑步入口同目标)
+ * 主按钮「补今日记录」(Button primary → /(tabs)/record)
  * + 语音记录(/voice-chat?intent=journal)+ 加号记录(/(tabs)/record)两个次级 icon 按钮。
  * 纯表现型:导航回调全部由 index.tsx 注入,本组件不取数。
  */
@@ -24,8 +24,8 @@ export default function RevaQuickActions({
   return (
     <View style={styles.row}>
       <View style={styles.primary}>
-        <Button variant="primary" size="md" icon="play" full onPress={onRun}>
-          开始跑步
+        <Button variant="primary" size="md" icon="plus" full onPress={onRun} accessibilityLabel="补今日记录">
+          补今日记录
         </Button>
       </View>
       <IconBtn label="语音记录" icon="mic-outline" onPress={onVoice} />

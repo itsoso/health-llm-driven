@@ -17,6 +17,7 @@ import {
   buildTrajectorySummary,
   buildVerifySummary,
 } from '../../services/trajectoryDisplay';
+import { formatHealthActionTitle } from '../../utils/actionCopy';
 import { Icon } from '../reva/RevaKit';
 
 export default function DailyArtifactCard({
@@ -27,6 +28,7 @@ export default function DailyArtifactCard({
   onComplete,
   onSkip,
   onAskReva,
+  onExplainBasis,
   onPressAction,
 }: {
   artifact?: DailyArtifact | null;
@@ -36,11 +38,13 @@ export default function DailyArtifactCard({
   onComplete?: (action: DailyArtifactTopAction) => void;
   onSkip?: (reason: AgendaSkipReason, action: DailyArtifactTopAction | null) => void;
   onAskReva?: (artifact: DailyArtifact) => void;
+  onExplainBasis?: (artifact: DailyArtifact) => void;
   onPressAction?: (action: DailyArtifactTopAction) => void;
 }) {
   const [showSkipReasons, setShowSkipReasons] = useState(false);
   const state = artifact?.state;
   const topAction = artifact?.top_action ?? null;
+  const displayTitle = topAction ? formatHealthActionTitle(topAction.title) : null;
   const busy = completing || skipping;
   const trajectorySummary = topAction ? buildTrajectorySummary(topAction) : null;
   const verifySummary = topAction ? buildVerifySummary(topAction) : null;
@@ -82,7 +86,7 @@ export default function DailyArtifactCard({
           style={({ pressed }) => [styles.actionBlock, pressed && { opacity: 0.88 }]}
           onPress={() => onPressAction?.(topAction)}
           accessibilityRole="button"
-          accessibilityLabel={`今日最重要行动:${topAction.title}`}
+          accessibilityLabel={`今日最重要行动:${displayTitle || topAction.title}`}
         >
           <View style={styles.actionHead}>
             <Text style={styles.actionTag}>现在只做</Text>
@@ -90,7 +94,7 @@ export default function DailyArtifactCard({
               {[topAction.priority_tier, freshnessLabel(artifact)].filter(Boolean).join(' · ')}
             </Text>
           </View>
-          <Text style={styles.title} numberOfLines={2}>{topAction.title}</Text>
+          <Text style={styles.title} numberOfLines={2}>{displayTitle || topAction.title}</Text>
           {doNow ? (
             <View style={styles.executeRow}>
               <View style={styles.executeIcon}>
@@ -127,12 +131,21 @@ export default function DailyArtifactCard({
         </View>
       )}
 
-      {visibleEvidence.length > 0 ? (
+      {(topAction?.why_now || visibleEvidence.length > 0) ? (
         <View style={styles.evidenceList}>
           <View style={styles.evidenceHeader}>
             <Icon name="sparkles" size={14} color={C.green600} />
-            <Text style={styles.evidenceHeaderText}>依据</Text>
+            <Text style={styles.evidenceHeaderText}>决策依据</Text>
           </View>
+          {topAction?.why_now ? (
+            <View style={styles.basisReasonRow} testID="daily-artifact-basis-reason">
+              <View style={styles.evidenceDot} />
+              <View style={styles.evidenceCopy}>
+                <Text style={styles.evidenceLabel}>为什么现在</Text>
+                <Text style={styles.evidenceSummary} numberOfLines={2}>{topAction.why_now}</Text>
+              </View>
+            </View>
+          ) : null}
           {visibleEvidence.map((item, index) => (
             <View
               key={`${item.kind}-${index}`}
@@ -146,6 +159,18 @@ export default function DailyArtifactCard({
               </View>
             </View>
           ))}
+          {artifact ? (
+            <Pressable
+              style={({ pressed }) => [styles.basisLink, pressed && { opacity: 0.82 }]}
+              disabled={busy}
+              onPress={() => onExplainBasis?.(artifact)}
+              accessibilityRole="button"
+              accessibilityLabel="查看今日行动决策依据"
+            >
+              <Text style={styles.basisLinkText}>查看决策依据</Text>
+              <Icon name="messages-square" size={14} color={C.green600} />
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
 
@@ -414,6 +439,7 @@ const styles = StyleSheet.create({
   evidenceHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   evidenceHeaderText: { fontSize: 12, fontWeight: '800', color: C.green700 },
   evidenceRow: { flexDirection: 'row', gap: 9, alignItems: 'flex-start' },
+  basisReasonRow: { flexDirection: 'row', gap: 9, alignItems: 'flex-start' },
   evidenceDot: {
     width: 7,
     height: 7,
@@ -424,6 +450,17 @@ const styles = StyleSheet.create({
   evidenceCopy: { flex: 1, minWidth: 0 },
   evidenceLabel: { fontSize: 12, fontWeight: '800', color: C.ink1 },
   evidenceSummary: { marginTop: 2, fontSize: 12.5, lineHeight: 18, color: C.ink2 },
+  basisLink: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  basisLinkText: { fontSize: 12.5, fontWeight: '800', color: C.green600 },
   safety: { fontSize: 11.5, lineHeight: 16, color: C.ink3 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   primaryButton: {

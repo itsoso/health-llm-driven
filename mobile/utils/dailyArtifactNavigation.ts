@@ -1,5 +1,6 @@
 import type { DailyArtifact, DailyArtifactTopAction } from '../services/dailyArtifact';
 import { buildChatContextRoute, type AgentContextPayload } from './agentContext';
+import { formatHealthActionTitle } from './actionCopy';
 
 export type DailyArtifactMovementTarget = 'strength' | 'mobility' | 'recovery';
 export type DailyArtifactNavigationRoute = string | ReturnType<typeof buildChatContextRoute>;
@@ -13,11 +14,20 @@ const MEDICATION_WORDS = ['用药', '服药', '药', '补剂', '维生素'];
 const EXAM_WORDS = ['体检', '化验', '复查', '检查', '指标'];
 
 export function buildDailyArtifactAskRoute(artifact: DailyArtifact) {
-  const title = artifact.top_action?.title || artifact.state.summary || '今天这条行动';
+  const title = formatHealthActionTitle(artifact.top_action?.title || artifact.state.summary || '今天这条行动');
   return buildChatContextRoute({
     prompt: `请解释这条今日行动: ${title}。告诉我为什么现在做、现在怎么做、如何验证; 如果我现在不适合执行,请给出替代方案。`,
     context: createDailyArtifactChatContext(artifact, 'ask_reva'),
     badge: artifact.state.label || '今日最重要行动',
+  });
+}
+
+export function buildDailyArtifactBasisRoute(artifact: DailyArtifact) {
+  const title = formatHealthActionTitle(artifact.top_action?.title || artifact.state.summary || '今天这条行动');
+  return buildChatContextRoute({
+    prompt: `请详细解读这条今日行动的决策依据: ${title}。按「为什么选它、依据来自哪里、有哪些不确定性、怎么验证、什么情况下不该做」说明,并继续和我讨论替代方案。`,
+    context: createDailyArtifactChatContext(artifact, 'explain_basis'),
+    badge: '决策依据',
   });
 }
 
@@ -44,7 +54,7 @@ export function buildDailyArtifactExecuteRoute(
   if (EXAM_WORDS.some((word) => text.includes(word))) return '/medical-exams';
 
   return buildChatContextRoute({
-    prompt: `请把这条今日行动拆成现在可执行的步骤: ${action.title}。如果它还不适合执行,请先问我必要的补充信息。`,
+    prompt: `请把这条今日行动拆成现在可执行的步骤: ${formatHealthActionTitle(action.title)}。如果它还不适合执行,请先问我必要的补充信息。`,
     context: createDailyArtifactChatContext(artifact, 'execute', action),
     badge: '执行今日行动',
   });
@@ -67,7 +77,7 @@ export function inferDailyArtifactMovementTarget(
 
 export function createDailyArtifactChatContext(
   artifact: DailyArtifact | null | undefined,
-  intent: 'ask_reva' | 'execute',
+  intent: 'ask_reva' | 'execute' | 'explain_basis',
   actionOverride?: DailyArtifactTopAction | null,
 ): AgentContextPayload {
   const action = actionOverride ?? artifact?.top_action ?? null;

@@ -9,6 +9,7 @@ import {
   revaRadii,
   revaShadows,
 } from '../../../constants/revaTheme';
+import { formatHealthActionTitle } from '../../../utils/actionCopy';
 
 interface RuntimeAgendaAction {
   title?: unknown;
@@ -76,7 +77,7 @@ function days(value: RuntimeAgendaData['days']): RuntimeAgendaDay[] {
 export function RuntimeAgendaCardView(data: RuntimeAgendaData) {
   const horizon = numberText(data.horizon_days) || '7';
   const action = data.next_action || {};
-  const actionTitle = text(action.title) || '今日暂无明确行动';
+  const actionTitle = formatHealthActionTitle(text(action.title) || '今日暂无明确行动');
   const stateSummary = text(action.current_state_summary);
   const visibleMetrics = metrics(action.verification_metrics);
   const visibleDays = days(data.days);
@@ -214,7 +215,8 @@ function DayRow({
   currentTitle: string;
 }) {
   const dayTitle = text(day.next_action_title);
-  const visibleTitle = dayTitle === currentTitle ? '当前重点行动' : dayTitle || '待运行时重排';
+  const formattedDayTitle = dayTitle ? formatHealthActionTitle(dayTitle) : null;
+  const visibleTitle = formattedDayTitle === currentTitle ? '当前重点行动' : formattedDayTitle || '待运行时重排';
   const dayLabel = formatDayLabel(text(day.date), index);
   return (
     <View style={styles.day}>

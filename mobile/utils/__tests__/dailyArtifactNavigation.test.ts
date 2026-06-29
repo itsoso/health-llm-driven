@@ -1,6 +1,7 @@
 import type { DailyArtifact, DailyArtifactTopAction } from '../../services/dailyArtifact';
 import {
   buildDailyArtifactAskRoute,
+  buildDailyArtifactBasisRoute,
   buildDailyArtifactExecuteRoute,
   inferDailyArtifactMovementTarget,
 } from '../dailyArtifactNavigation';
@@ -40,9 +41,29 @@ describe('dailyArtifactNavigation', () => {
     const route = buildDailyArtifactAskRoute(artifact());
 
     expect(route.pathname).toBe('/(tabs)/chat');
-    expect(route.params.prompt).toContain('今日训练');
+    expect(route.params.prompt).toContain('恢复/休息');
+    expect(route.params.prompt).not.toContain('今日训练:今天');
     expect(route.params.badge).toBe('今日最重要行动');
     expect(JSON.parse(route.params.context).top_action.title).toContain('恢复/休息');
+  });
+
+  it('routes decision basis explanation into Aheng chat with evidence context', () => {
+    const route = buildDailyArtifactBasisRoute(artifact({
+      evidence: [
+        { kind: 'why_now', label: 'Why now', summary: '恢复不足,先降低训练负荷。' },
+        { kind: 'verification', label: 'Verification', summary: '后续用睡眠和腰围验证。' },
+      ],
+    }));
+
+    expect(route.pathname).toBe('/(tabs)/chat');
+    expect(route.params.prompt).toContain('决策依据');
+    expect(route.params.prompt).toContain('恢复/休息');
+    expect(route.params.prompt).not.toContain('今日训练:今天');
+    expect(route.params.badge).toBe('决策依据');
+    const context = JSON.parse(route.params.context);
+    expect(context.intent).toBe('explain_basis');
+    expect(context.evidence).toHaveLength(2);
+    expect(context.top_action.title).toContain('恢复/休息');
   });
 
   it('sends recovery/rest training actions to the movement plan instead of a blank timeline page', () => {

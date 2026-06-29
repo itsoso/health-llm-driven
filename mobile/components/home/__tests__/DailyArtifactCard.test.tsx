@@ -61,6 +61,8 @@ describe('DailyArtifactCard', () => {
 
     expect(getByText('今日焦点')).toBeTruthy();
     expect(getByText('午饭后步行 10 分钟')).toBeTruthy();
+    expect(getByText('决策依据')).toBeTruthy();
+    expect(getByText('餐后血糖窗口更适合轻活动。')).toBeTruthy();
     expect(getByText('现在只做')).toBeTruthy();
     expect(getByText('目标')).toBeTruthy();
     expect(getByText('腰围 · 90天上游轨迹')).toBeTruthy();
@@ -68,6 +70,34 @@ describe('DailyArtifactCard', () => {
     expect(getByText('腰围 · 7天 · 不确定性: 中')).toBeTruthy();
     expect(getAllByTestId('daily-artifact-evidence')).toHaveLength(2);
     expect(queryByText('不应显示')).toBeNull();
+  });
+
+  it('opens a detailed decision basis discussion with Aheng', () => {
+    const onExplainBasis = jest.fn();
+    const artifact = makeArtifact();
+    const { getByLabelText, getByText } = render(
+      <DailyArtifactCard artifact={artifact} onExplainBasis={onExplainBasis} />,
+    );
+
+    expect(getByText('查看决策依据')).toBeTruthy();
+    fireEvent.press(getByLabelText('查看今日行动决策依据'));
+    expect(onExplainBasis).toHaveBeenCalledWith(artifact);
+  });
+
+  it('cleans generated action titles before rendering them', () => {
+    const { getByText, queryByText } = render(
+      <DailyArtifactCard
+        artifact={makeArtifact({
+          top_action: {
+            ...makeArtifact().top_action!,
+            title: '今日训练:今天恢复/休息,暂停高强度;优先睡眠与轻活动',
+          } as any,
+        })}
+      />,
+    );
+
+    expect(getByText('恢复/休息:暂停高强度;优先睡眠与轻活动')).toBeTruthy();
+    expect(queryByText('今日训练:今天恢复/休息,暂停高强度;优先睡眠与轻活动')).toBeNull();
   });
 
   it('deduplicates repeated evidence against the action copy', () => {
@@ -93,12 +123,12 @@ describe('DailyArtifactCard', () => {
       ],
     });
 
-    const { getAllByTestId, getAllByText, getByText, queryByText } = render(
+    const { getAllByTestId, getAllByText, getByText } = render(
       <DailyArtifactCard artifact={artifact} />,
     );
 
-    expect(getAllByText('今天训练:优先睡眠与轻活动')).toHaveLength(1);
-    expect(queryByText('腰围、血压、BMI、血糖血脂或基因信号提示代谢风险轨迹正在形成。')).toBeNull();
+    expect(getAllByText('优先睡眠与轻活动')).toHaveLength(1);
+    expect(getAllByText('腰围、血压、BMI、血糖血脂或基因信号提示代谢风险轨迹正在形成。')).toHaveLength(1);
     expect(getByText('后续用睡眠分和腰围验证。')).toBeTruthy();
     expect(getAllByTestId('daily-artifact-evidence')).toHaveLength(1);
   });

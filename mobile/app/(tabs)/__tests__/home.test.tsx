@@ -331,6 +331,40 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(mockPush).not.toHaveBeenCalledWith('/voice-chat?intent=daily_artifact');
   });
 
+  it('routes Daily Artifact decision basis into Aheng chat with the evidence context', () => {
+    mockDailyArtifact = {
+      artifact_date: '2026-06-29',
+      empty_state: false,
+      state: { label: '今日最重要行动', tone: 'focused', summary: '先恢复。' },
+      top_action: {
+        id: 'today-recovery',
+        title: '今日训练:今天恢复/休息,暂停高强度;优先睡眠与轻活动',
+        why_now: '睡眠和恢复不足,今天不应叠加强度。',
+        do_now: '优先睡眠与轻活动。',
+        actions: {
+          complete: { enabled: false },
+          skip: { requires_reason: true },
+        },
+      },
+      evidence: [
+        { kind: 'why_now', label: 'Why now', summary: '恢复不足。' },
+        { kind: 'verification', label: 'Verification', summary: '用睡眠和腰围验证。' },
+      ],
+      confidence: 'high',
+      freshness: { status: 'fresh', sources: ['runtime'] },
+      safety_boundary: '健康管理行动建议,不替代医生诊断。',
+    };
+
+    const { getByLabelText } = render(<TodayScreen />);
+
+    fireEvent.press(getByLabelText('查看今日行动决策依据'));
+    const route = mockPush.mock.calls[mockPush.mock.calls.length - 1]?.[0] as any;
+    expect(route.pathname).toBe('/(tabs)/chat');
+    expect(route.params.badge).toBe('决策依据');
+    expect(route.params.context).toContain('"intent":"explain_basis"');
+    expect(route.params.context).toContain('睡眠和恢复不足');
+  });
+
   it('renders the Aheng-generated DynamicView when available', () => {
     mockTimeline = makeTimeline({
       id: 'act-1',
@@ -550,5 +584,16 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(queryByTestId('home-command-judgment')).toBeNull();
     expect(queryByTestId('home-streak-badge')).toBeNull();
     expect(queryByTestId('home-outcome-win-card')).toBeNull();
+  });
+
+  it('uses neutral record-first quick actions and removes the static Aheng demo card from Today', () => {
+    const { getByLabelText, getByText, queryByLabelText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('补今日记录')).toBeTruthy();
+    expect(queryByText('开始跑步')).toBeNull();
+    expect(queryByLabelText('试试阿衡')).toBeNull();
+
+    fireEvent.press(getByLabelText('补今日记录'));
+    expect(mockPush).toHaveBeenCalledWith('/(tabs)/record');
   });
 });
