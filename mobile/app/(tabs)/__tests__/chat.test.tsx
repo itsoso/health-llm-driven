@@ -411,7 +411,7 @@ describe('ChatScreen', () => {
     });
   });
 
-  it('moves the chat composer above the iOS keyboard using the keyboard height', async () => {
+  it('moves the chat composer above the iOS keyboard without double-counting the docked tab bar', async () => {
     const keyboardListeners: Record<string, (event: any) => void> = {};
     jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
       keyboardListeners[String(eventName)] = callback;
@@ -430,7 +430,7 @@ describe('ChatScreen', () => {
       });
     });
 
-    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 336 });
+    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 262 });
   });
 
   it('shows a visible cancel action after long-pressing a message into multi-select', async () => {

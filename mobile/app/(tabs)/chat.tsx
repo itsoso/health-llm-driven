@@ -5,8 +5,13 @@ import {
   Alert, Keyboard, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { useFloatingTabBarHeight } from '../../hooks/useFloatingTabBarHeight';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  FLOATING_TAB_BAR_BAR_HEIGHT,
+  FLOATING_TAB_BAR_MIN_BOTTOM,
+  FLOATING_TAB_BAR_PADDING_TOP,
+  useFloatingTabBarHeight,
+} from '../../hooks/useFloatingTabBarHeight';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { deleteConversation, getConversations, updateConversationTitle } from '../../services/chat';
@@ -92,6 +97,7 @@ function getSelfReportedAdherence(reply: string): number | null {
 
 export default function ChatScreen() {
   const chat = useChatEngine();
+  const safeInsets = useSafeAreaInsets();
   const {
     messages,
     isStreaming,
@@ -463,10 +469,15 @@ export default function ChatScreen() {
   }, [selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  // Tab bar 已在布局流内;这里只留少量底部呼吸空间,键盘弹起时改用键盘高度。
+  // Tab bar 已在布局流内;键盘弹起时只补"键盘高度 - docked tab bar 已占高度",
+  // 避免输入框和输入法之间出现一整块 tab bar 高度的空隙。
   const tabBarHeight = useFloatingTabBarHeight();
+  const dockedTabBarReservedHeight =
+    FLOATING_TAB_BAR_PADDING_TOP +
+    FLOATING_TAB_BAR_BAR_HEIGHT +
+    Math.max(safeInsets.bottom, FLOATING_TAB_BAR_MIN_BOTTOM);
   const bottomSpacerHeight = keyboardVisible
-    ? (Platform.OS === 'ios' ? keyboardHeight : 0)
+    ? (Platform.OS === 'ios' ? Math.max(0, keyboardHeight - dockedTabBarReservedHeight) : 0)
     : tabBarHeight;
   const activeLlmLabel = llmModelId
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
