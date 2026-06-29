@@ -20,7 +20,7 @@
         "com.apple.developer.healthkit": true
       },
       "infoPlist": {
-        "CFBundleDisplayName": "Reva 健康",
+        "CFBundleDisplayName": "Reva 睿为",
         "UISupportedInterfaceOrientations": [
           "UIInterfaceOrientationPortrait",
           "UIInterfaceOrientationPortraitUpsideDown",
