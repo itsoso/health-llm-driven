@@ -4,8 +4,8 @@
 |---|---|
 | slug | `today-dynamic-view` |
 | 创建日期 | 2026-06-29 |
-| 当前阶段 | G3/G4 验证 |
-| 状态 | verified-local |
+| 当前阶段 | S8 沉淀 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | backend focused pytest + mobile Jest/tsc + deploy/OTA smoke |
 
@@ -69,7 +69,7 @@
 - [x] T4 Mobile service/renderer GREEN。
 - [x] T5 TodayScreen 优先使用 DynamicView 并保留 fallback。
 - [x] T6 focused verification。
-- [ ] T7 deploy + OTA + production smoke。
+- [x] T7 deploy + OTA + production smoke。
 
 ## Gate 记录
 
@@ -85,4 +85,14 @@
   - `runtime_agenda` card 只下发 `route.open`；Daily Artifact 完成/跳过继续走既有 manual-confirm/skip-reason 合同。
   - 医疗边界继续透传 `safety_boundary`;不诊断、不处方、不自动调药。
   - 裁决: PASS。
-- G5/G6 部署/线上验证:待执行。
+- G5 部署:
+  - git commit: `38f266a8c36d8522750951dc37461694030fa2f2` (`feat(today): compose dynamic view`)。
+  - push: `origin/main` updated `d7d215ac..38f266a8`。
+  - backend deploy: `./deploy.sh -b -y` -> deployed remote HEAD `38f266a8c36d8522750951dc37461694030fa2f2`。
+  - health score: `60/60 PASS`。
+  - services: `health-backend`,`celery-worker`,`celery-beat` all `active`。
+  - Mobile OTA: `./scripts/mobile-ota.sh production "feat(today): compose dynamic view"` -> production update group `42c2e3fd-8145-490c-a402-793b3191b6d6`, iOS update `019f13d3-69d4-706d-9b96-886fe55eab91`, runtime version `1.3.1`。
+- G6 上线验证:
+  - `GET https://health.executor.life/api/v1/health` -> `healthy`, database/redis/celery connected。
+  - unauthenticated `POST https://health.executor.life/api/v1/dynamic-views/today` -> `401`,证明新 route 在线且受认证保护,不是 `404`。
+  - 裁决: PASS。
