@@ -28,6 +28,7 @@ import type {
   TodayTimelineItem,
 } from '../../services/todayTimeline';
 import SkipReasonSheet from './SkipReasonSheet';
+import { formatHealthActionTitle } from '../../utils/actionCopy';
 
 const MAX_VISIBLE = 3;
 const MOBILITY_WORDS = ['拉伸', '柔韧'];
@@ -113,7 +114,18 @@ function shortSubtitle(raw: string | null | undefined): string | undefined {
   return s.trim() || undefined;
 }
 
-export default function RevaTimelineStrip() {
+function titleKey(raw: string | null | undefined): string {
+  return formatHealthActionTitle(raw)
+    .replace(/[：:]/gu, '')
+    .replace(/\s+/gu, '')
+    .toLowerCase();
+}
+
+export default function RevaTimelineStrip({
+  excludeTitles = [],
+}: {
+  excludeTitles?: (string | null | undefined)[];
+}) {
   const router = useRouter();
   const { data, isLoading, isError } = useTodayTimeline();
   const complete = useCompleteAgendaItem();
@@ -219,7 +231,14 @@ export default function RevaTimelineStrip() {
 
   const items = useMemo(() => data?.items ?? [], [data]);
   const past = data?.past ?? { completed_count: 0, events: [] };
-  const counts = data?.counts ?? { actionable: 0, overdue: 0, info: 0 };
+  const excludedTitleKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const title of excludeTitles) {
+      const key = titleKey(title);
+      if (key) keys.add(key);
+    }
+    return keys;
+  }, [excludeTitles]);
 
   if (isLoading) {
     return (
@@ -236,12 +255,14 @@ export default function RevaTimelineStrip() {
   if (isError || !data) return null;
 
   // 接下来只展示未完成的 action / advisory / checkup;完成记录留给历史页和计数,不占首页。
-  const rows = items.filter((i) => i.kind !== 'outcome' && i.status !== 'completed');
+  const rows = items.filter(
+    (i) => i.kind !== 'outcome' && i.status !== 'completed' && !excludedTitleKeys.has(titleKey(i.title)),
+  );
   if (rows.length === 0) return null;
 
   const visible = expand ? rows : rows.slice(0, MAX_VISIBLE);
   const hidden = rows.length - visible.length;
-  const countsLabel = `待办 ${counts.actionable} · 已完成 ${past.completed_count}`;
+  const countsLabel = `待办 ${rows.length} · 已完成 ${past.completed_count}`;
 
   return (
     <View>

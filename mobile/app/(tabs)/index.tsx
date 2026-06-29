@@ -417,6 +417,10 @@ export default function TodayScreen() {
   const primaryArtifact = extractDailyArtifactFromDynamicView(dynamicTodayView) ?? dailyArtifactQuery.data ?? null;
   const primaryTopAction = primaryArtifact?.top_action ?? null;
   const primaryActionSignal = actionSignalFromArtifact(primaryArtifact);
+  const timelineExcludedTitles = useMemo(
+    () => collectPromotedActionTitles(dynamicTodayView, primaryArtifact),
+    [dynamicTodayView, primaryArtifact],
+  );
   const primaryActionContext = [
     primaryTopAction?.title,
     primaryTopAction?.why_now,
@@ -500,7 +504,7 @@ export default function TodayScreen() {
         <WriteIntentCard />
 
         {/* 3 · 接下来:只保留未完成且马上相关的行动条 */}
-        <RevaTimelineStrip />
+        <RevaTimelineStrip excludeTitles={timelineExcludedTitles} />
 
         {/* 4 · 用药 / 补剂:完成态合并成摘要,待完成项再展开 */}
         <HomeMedicationSummary
@@ -576,6 +580,27 @@ function actionSignalFromArtifact(artifact: DailyArtifact | null | undefined): s
     .flatMap((item) => item.metrics ?? [])
     .find((metric) => typeof metric === 'string' && metric.trim());
   return evidenceMetric ?? null;
+}
+
+function collectPromotedActionTitles(
+  view: TodayDynamicView | null | undefined,
+  artifact: DailyArtifact | null | undefined,
+): string[] {
+  const titles = new Set<string>();
+  if (artifact?.top_action?.title) titles.add(artifact.top_action.title);
+  for (const section of view?.sections ?? []) {
+    for (const card of section.cards ?? []) {
+      if (card.type === 'daily_artifact') {
+        const data = card.data as Partial<DailyArtifact>;
+        if (data.top_action?.title) titles.add(data.top_action.title);
+      }
+      if (card.type === 'runtime_agenda') {
+        const data = card.data as { next_action?: { title?: unknown } };
+        if (typeof data.next_action?.title === 'string') titles.add(data.next_action.title);
+      }
+    }
+  }
+  return [...titles];
 }
 
 function openSignalRoute(signal: TodaySignalKey, router: { push: (href: any) => void }) {
