@@ -1,6 +1,10 @@
 const {
   _patchAppDelegateContents,
+  _resolveGeneratedAppDelegatePath,
 } = require('../plugins/withRokidIosAuthCallback');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 const BASE_APP_DELEGATE = `internal import Expo
 import React
@@ -19,6 +23,19 @@ class AppDelegate: ExpoAppDelegate {
 `;
 
 describe('withRokidIosAuthCallback', () => {
+  it('resolves the Expo generated AppDelegate from the actual project name', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rokid-appdelegate-'));
+    try {
+      const appDelegatePath = path.join(tmpDir, 'app', 'AppDelegate.swift');
+      fs.mkdirSync(path.dirname(appDelegatePath), { recursive: true });
+      fs.writeFileSync(appDelegatePath, BASE_APP_DELEGATE, 'utf8');
+
+      expect(_resolveGeneratedAppDelegatePath(tmpDir, { projectName: 'app' })).toBe(appDelegatePath);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it('patches generated AppDelegate to route Rokid auth callbacks before RN linking', () => {
     const patched = _patchAppDelegateContents(BASE_APP_DELEGATE);
 
