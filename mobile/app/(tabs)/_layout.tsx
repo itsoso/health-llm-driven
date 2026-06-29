@@ -59,7 +59,7 @@ export default function TabLayout() {
           name="chat"
           options={{
             title: '私教',
-            tabBarAccessibilityLabel: '私教，与健康 Agent 对话',
+            tabBarAccessibilityLabel: '私教，与阿衡对话',
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? 'chatbubbles' : 'chatbubbles-outline'} size={22} color={color} />
             ),

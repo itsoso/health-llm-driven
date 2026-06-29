@@ -124,7 +124,7 @@ describe('ChatScreen', () => {
   it('shows a visible history entry on the private coach page', async () => {
     const { getAllByText, getByText, getByLabelText } = render(<ChatScreen />);
 
-    expect(getAllByText('健康 Agent').length).toBeGreaterThan(0);
+    expect(getAllByText('阿衡').length).toBeGreaterThan(0);
     await waitFor(() => {
       expect(getByLabelText('更多会诊操作')).toBeTruthy();
     });
@@ -318,7 +318,7 @@ describe('ChatScreen', () => {
     const { getByText } = render(<ChatScreen />);
 
     await waitFor(() => {
-      expect(getByText(/健康 Agent · 会带上你的健康上下文/)).toBeTruthy();
+      expect(getByText(/阿衡 · 会带上你的健康上下文/)).toBeTruthy();
     });
   });
 

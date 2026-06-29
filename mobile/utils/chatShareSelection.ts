@@ -9,7 +9,7 @@ type ShareableChatMessage = {
 
 const ROLE_LABEL: Record<ShareableChatMessage['role'], string> = {
   user: '我',
-  assistant: '健康 Agent',
+  assistant: '阿衡',
 };
 
 export function isShareableChatMessage(message: ShareableChatMessage): boolean {
@@ -32,6 +32,6 @@ export function buildSelectedChatShareMessage(
     .map(message => `【${ROLE_LABEL[message.role] || message.role}】\n${message.content.trim()}`);
 
   return parts.length > 0
-    ? `${parts.join('\n\n')}\n\n— 健康 Agent 对话节选`
+    ? `${parts.join('\n\n')}\n\n— 阿衡对话节选`
     : '';
 }

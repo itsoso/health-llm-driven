@@ -67,6 +67,16 @@ P1 Chat 动态卡片 action 安全可见性已推进:
 - `agenda.complete` / `write_intent.confirm` / `write_intent.dismiss` 等写动作必须带 `requires_manual_confirm=true` 才展示给用户。
 - 服务层 `dispatchChatCardAction` 仍保留 fail-loud,不放宽 endpoint allowlist。
 
+## 第六批实现切片
+
+P0/P1 Mobile 阿衡人格主路径收敛已推进:
+
+- Chat header / 模型选择器 / 空态提示 / starter chip 无障碍标签统一为 `阿衡`。
+- Chat 单条回复分享、对话节选分享、AI 分享正文尾注统一为 `阿衡`。
+- 菜单分享动态卡片的分享尾注统一为 `阿衡`,并新增纯文本 helper 回归测试。
+- 首页 `HomeCommandCard` 顶部人格和“问原因”无障碍标签统一为 `阿衡`。
+- 底部 Chat tab 无障碍标签统一为“私教,与阿衡对话”。
+
 ## 本周不做
 
 - 不把 App Store 发布伪装成已完成:缺 demo account、ASC credentials、人审截图时必须停在 pending。

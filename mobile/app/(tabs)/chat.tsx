@@ -436,7 +436,7 @@ export default function ChatScreen() {
     if (!message || sharing) return;
     setSharing(true);
     try {
-      await sharePlainText({ title: '健康 Agent · 对话节选', message });
+      await sharePlainText({ title: '阿衡 · 对话节选', message });
       exitSelectionMode();
     } catch {
       Alert.alert('分享失败', '请稍后重试');
@@ -553,7 +553,7 @@ export default function ChatScreen() {
                 <View style={styles.welcomeInline}>
                   <Ionicons name="sparkles" size={14} color={C.green500} />
                   <Text style={txt.welcomeInline} numberOfLines={1}>
-                    健康 Agent · {opener ? '或者问我别的' : '会带上你的健康上下文'}
+                    阿衡 · {opener ? '或者问我别的' : '会带上你的健康上下文'}
                   </Text>
                 </View>
                 <View style={styles.sugGrid}>
@@ -573,7 +573,7 @@ export default function ChatScreen() {
                       }}
                       activeOpacity={0.72}
                       accessibilityRole="button"
-                      accessibilityLabel={`向健康 Agent 提问: ${s.text}`}
+                      accessibilityLabel={`向阿衡提问: ${s.text}`}
                     >
                       <Ionicons name={s.icon} size={13} color={C.green500} />
                       <Text style={txt.sugChipText} numberOfLines={1}>{s.text}</Text>

@@ -83,7 +83,7 @@ export default function LlmModelPicker({
         {isHeader ? (
           <>
             <View style={styles.headerTitleRow}>
-              <Text style={txt.headerTitle} numberOfLines={1}>健康 Agent</Text>
+              <Text style={txt.headerTitle} numberOfLines={1}>阿衡</Text>
               {savingModelId ? (
                 <ActivityIndicator size="small" color={C.ink3} />
               ) : (
@@ -100,7 +100,7 @@ export default function LlmModelPicker({
         ) : (
           <>
             <Ionicons name="hardware-chip-outline" size={15} color={C.green500} />
-            <Text style={txt.triggerTitle} numberOfLines={1}>健康 Agent</Text>
+            <Text style={txt.triggerTitle} numberOfLines={1}>阿衡</Text>
             <Text style={txt.triggerModel} numberOfLines={1}>
               {savingModelId ? '切换中...' : currentLabel}
             </Text>

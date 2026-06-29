@@ -44,7 +44,7 @@ interface MenuShareData {
   shopping_list?: string[];
 }
 
-function buildShareText(d: MenuShareData): string {
+export function buildShareText(d: MenuShareData): string {
   const lines: string[] = [`【${d.title}】`];
   if (d.reason) lines.push(d.reason, '');
   for (const it of d.items) {
@@ -65,7 +65,7 @@ function buildShareText(d: MenuShareData): string {
     lines.push('', '买菜清单:');
     for (const s of d.shopping_list) lines.push(`· ${s}`);
   }
-  lines.push('', '— 健康 Agent');
+  lines.push('', '— 阿衡');
   return lines.join('\n');
 }
 
