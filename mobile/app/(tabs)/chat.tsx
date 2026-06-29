@@ -246,7 +246,7 @@ export default function ChatScreen() {
 
   useEffect(() => { loadLatestConversation(); }, [loadLatestConversation]);
 
-  // 点"私教" tab 进来时滚到对话最后, 方便看最新消息.
+  // 点"阿衡" tab 进来时滚到对话最后, 方便看最新消息.
   // useFocusEffect 在每次 tab 获得 focus 时触发 (包括首次 mount).
   // 用 setTimeout 推迟一帧, 等 FlatList 排版完才能滚到正确位置.
   useFocusEffect(

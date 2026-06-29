@@ -75,7 +75,7 @@ P0/P1 Mobile 阿衡人格主路径收敛已推进:
 - Chat 单条回复分享、对话节选分享、AI 分享正文尾注统一为 `阿衡`。
 - 菜单分享动态卡片的分享尾注统一为 `阿衡`,并新增纯文本 helper 回归测试。
 - 首页 `HomeCommandCard` 顶部人格和“问原因”无障碍标签统一为 `阿衡`。
-- 底部 Chat tab 无障碍标签统一为“私教,与阿衡对话”。
+- 底部 Chat tab 已进一步收敛为“阿衡,与健康参谋对话”。
 
 ## 第七批实现切片
 
@@ -113,9 +113,18 @@ P0 App Store 高可见审核叙事闸已推进:
 
 - `check_app_store_release_pack.py` 新增 release narrative gate,覆盖 submission pack、review notes 和 screenshot runbook。
 - 旧的用户可见叙事词 `Reva`、`复元`、`健康助理`、`守护神` 进入 App Store 高可见文案时直接失败。
-- App Store 文案必须包含当前底部导航 `今日 / 私教 / 记录 / 我` 或等价中文顿号写法。
+- App Store 文案必须包含当前底部导航 `今日 / 阿衡 / 记录 / 我` 或等价中文顿号写法。
 - App Store 文案必须包含当前定位词 `健康参谋`。
 - `submission-pack.md` keywords 从 `健康助理` 收敛为 `阿衡` / `健康参谋`。
+
+## 第十一批实现切片
+
+P0/P1 Mobile 底部导航命名收敛已推进:
+
+- 用户确认采用方案 1:`今日 / 阿衡 / 记录 / 我`。
+- `chat` route 和技术文件名不改,只改用户可见 tab label 和 accessibility。
+- `私教` 作为旧用户可见 tab 文案进入 App Store release narrative gate 的 stale term 列表。
+- App Store submission pack、review notes、screenshot runbook 和 system-map/mobile 产品地图同步为 `阿衡`。
 
 ## 本周不做
 

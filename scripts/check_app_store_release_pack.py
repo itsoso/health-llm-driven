@@ -62,13 +62,14 @@ DEMO_PLACEHOLDERS = [
     "[NEEDS APP STORE REVIEW DEMO ACCOUNT]",
     "[NEEDS APP STORE REVIEW DEMO PASSWORD]",
 ]
-CURRENT_BOTTOM_NAV_TEXT = "今日 / 私教 / 记录 / 我"
+CURRENT_BOTTOM_NAV_TEXT = "今日 / 阿衡 / 记录 / 我"
 CURRENT_POSITIONING_TERM = "健康参谋"
 STALE_USER_VISIBLE_RELEASE_TERMS = [
     "Reva",
     "复元",
     "健康助理",
     "守护神",
+    "私教",
 ]
 
 
@@ -94,7 +95,7 @@ def validate_release_narrative(
         if term in combined:
             failures.append(f"release text contains stale user-visible term: {term}")
 
-    if CURRENT_BOTTOM_NAV_TEXT not in combined and "今日、私教、记录、我" not in combined:
+    if CURRENT_BOTTOM_NAV_TEXT not in combined and "今日、阿衡、记录、我" not in combined:
         failures.append(f"release text must use current bottom navigation labels: {CURRENT_BOTTOM_NAV_TEXT}")
 
     if CURRENT_POSITIONING_TERM not in combined:

@@ -2,7 +2,7 @@
      图谱(节点/边)代码派生可重生成;动线/审计/重设计=叙事层,带 last-reviewed。 -->
 ---
 doc: system-map/mobile-nav-map
-last-reviewed: 2026-06-27
+last-reviewed: 2026-06-29
 generated-source: docs/_generated/mobile-nav-graph.json
 generator: mobile/scripts/dump_nav_graph.py
 extend-via: docs/specs/product-pipeline-contract.md (S8 回写) + governance §7 Surface Ownership
@@ -20,7 +20,7 @@ extend-via: docs/specs/product-pipeline-contract.md (S8 回写) + governance §7
 
 | 类别 | 代表页面 | tab 可达性 |
 |---|---|---|
-| **日常脊柱**(daily-driver) | `/`(今日时间线)、`/chat`(私教)、`/alerts`(安全告警,隐藏 tab)、`/sleep`、`/voice-chat` | 今日/私教一跳;alerts 仅 settings→ |
+| **日常脊柱**(daily-driver) | `/`(今日时间线)、`/chat`(阿衡)、`/alerts`(安全告警,隐藏 tab)、`/sleep`、`/voice-chat` | 今日/阿衡一跳;alerts 仅 settings→ |
 | **录入**(record) | `/record`(高频记录中枢)、`/diet`、`/body-measurements`、`/symptom-record`、`/import`、`/workout-list` | 记录 tab→ |
 | **议程/计划** | `/agenda`、`/timeline`、`/day-schedule`、`/goals`、`/reminders`、`/movement-plan`、`/fitness-plan` | **多数仅 settings 抽屉深进** |
 | **深度分析** | `/my-progress`、`/biological-age`、`/metabolic-profile`、`/liver-trend`、`/indicator-history`、`/longevity-next`、`/weekly-briefing`、`/monthly-reports`、`/intervention-cycle` | **几乎全埋 settings** |
@@ -37,7 +37,7 @@ extend-via: docs/specs/product-pipeline-contract.md (S8 回写) + governance §7
 
 ## 3. 用户路线图(动线,模拟用户操作)
 
-**实测点击验证**(cliclick 真点 + simctl 截图,非 deep-link):4 tab 全部真点遍 —— 今日(时间线脊柱)/ 私教(健康 Agent+简报)/ 记录(高频记录中枢)/ 我(设置超级抽屉)。
+**实测点击验证**(cliclick 真点 + simctl 截图,非 deep-link):4 tab 全部真点遍 —— 今日(时间线脊柱)/ 阿衡(健康参谋+动态卡片)/ 记录(高频记录中枢)/ 我(设置超级抽屉)。
 
 核心闭环动线(对照 governance §4 Core Loop)**现状**:
 ```
@@ -68,9 +68,9 @@ canonical 动线:① 首次 login→reva-onboarding→reva/今日 ② 每日闭�
 
 **理想态 IA(5 tab,把核心环摊平、分析归枢、设置瘦身)**:
 ```
-现状:[今日] [私教] [记录] [我=44 项超级抽屉]
-理想:[今日]     [议程]      [记录]      [私教]    [我]
-       时间线脊柱  议程/时间线  统一录入     AI 私教   账号/设备/
+现状:[今日] [阿衡] [记录] [我=44 项超级抽屉]
+理想:[今日]     [议程]      [记录]      [阿衡]    [我]
+       时间线脊柱  议程/时间线  统一录入     健康参谋  账号/设备/
        +现在该做   +完成回路    (草稿→确认)  +简报     隐私/AI配置
        +安全告警   (从抽屉提上来 (语音/拍照              (~8 项,
        (提上来)    =核心环的"做") /手动)                 非功能)
@@ -94,7 +94,7 @@ canonical 动线:① 首次 login→reva-onboarding→reva/今日 ② 每日闭�
 | **MERGE** | reva 三件套、voice-chat↔chat | 消重叠 |
 | **FIX/DELETE** | 5 个未挂载死组件 + 4 真孤儿 | 挂上(可达)或删(去债) |
 
-**设计语言统一**:实拍证实**只有「今日」贴了 Claude Design handoff**(`docs/design/reva/colors_and_type.css`:focus-bg/等宽数字/活力绿/18px 卡);私教/记录/我仍 legacy(系统字体)。重设计须把 `revaTheme.ts` 推到全 tab + 子卡,消除"首页精致、点进掉档"的断崖。
+**设计语言统一**:实拍证实**只有「今日」贴了 Claude Design handoff**(`docs/design/reva/colors_and_type.css`:focus-bg/等宽数字/活力绿/18px 卡);阿衡/记录/我仍 legacy(系统字体)。重设计须把 `revaTheme.ts` 推到全 tab + 子卡,消除"首页精致、点进掉档"的断崖。
 
 ## 6. 自迭代机制
 

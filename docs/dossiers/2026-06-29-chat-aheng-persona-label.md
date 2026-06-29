@@ -82,7 +82,7 @@
 - `mobile/utils/aiShareText.ts` / `mobile/utils/chatShareSelection.ts`:分享正文尾注改为 `阿衡`。
 - `mobile/components/chat/cards/MenuShareCard.tsx`:菜单分享尾注改为 `阿衡`,并导出 `buildShareText`。
 - `mobile/components/home/HomeCommandCard.tsx`:首页主卡人格和 a11y 改为 `阿衡`。
-- `mobile/app/(tabs)/_layout.tsx`:Chat tab a11y 改为 `私教,与阿衡对话`。
+- `mobile/app/(tabs)/_layout.tsx`:Chat tab a11y 当批改为 `私教,与阿衡对话`;后续 Mobile tab rename 切片继续收敛为 `阿衡,与健康参谋对话`。
 
 ## G3 · 测试闸
 

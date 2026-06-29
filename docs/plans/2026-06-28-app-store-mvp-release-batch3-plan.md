@@ -29,7 +29,7 @@ Batch 2 已完成 Web 隐私页部署和 App Store 提交包文档。第三批�
 ## 验收
 
 - 当前代码 simulator build PASS，或记录可复现 blocker。
-- 截图脚本能点击并覆盖 `今日 / 私教 / 记录 / 我 / 体检导入 / 隐私政策`。
+- 截图脚本能点击并覆盖 `今日 / 阿衡 / 记录 / 我 / 体检导入 / 隐私政策`。
 - QR 脚本 `bash -n` PASS，且无 `AUTH_ARGS[@]: unbound variable`。
 - Dossier 记录第三批的测试、部署、隐私截图处理和剩余阻塞。
 

@@ -21,7 +21,7 @@
 ## S1 · Discovery
 
 - 现有系统定位: Reva 是 Personal Health OS, 不做医疗诊断/处方/治疗承诺。
-- Mobile 当前主导航已经是 `今日 / 私教 / 记录 / 我`, 但 `我` tab 仍像内部功能清单, App Store 版需要更清晰的“核心健康动线 + 数据与隐私”结构。
+- Mobile 当前主导航已经是 `今日 / 阿衡 / 记录 / 我`, 但 `我` tab 仍像内部功能清单, App Store 版需要更清晰的“核心健康动线 + 数据与隐私”结构。
 - HealthKit 已在 `mobile/app.json` 开启 entitlement 和 `NSHealthShareUsageDescription`;根布局已挂 `useHealthKitForegroundSync()`。
 - App Store 硬风险:
   - 健康类表述必须保守,避免诊断、治疗、药物剂量调整和疗效保证。
@@ -50,7 +50,7 @@
 下周 App Store MVP 只承诺:
 
 1. HealthKit / 体检导入 / 快速记录 / Chat 动态卡片 / Today top action / Review 复盘的核心闭环可用。
-2. Mobile UI 主入口统一为 `今日 / 私教 / 记录 / 我`。
+2. Mobile UI 主入口统一为 `今日 / 阿衡 / 记录 / 我`。
 3. “我”页按 App Store 用户理解重组为: 数据连接、健康档案、复盘、通知与安全、账号与隐私。
 4. App 内能发起账号删除与数据删除请求。
 
@@ -242,7 +242,7 @@ P0:
   - PASS: `curl -fsSI https://health.executor.life/privacy` 返回 `HTTP/2 200`。
   - PASS: `curl -fsS https://health.executor.life/privacy | rg -n "HealthKit|删除账号|不提供诊断|support@executor.life"` 命中 App Store 审核要求的关键文案。
 - Local simulator screenshot route gate:
-  - PASS: `./scripts/mobile-sim-screenshots.sh --device 39D954B3-A2B5-41AA-8A6E-BD9750D3CB86 --output design/screenshots/app-store/batch3-20260628` 在当前代码 simulator app 上遍历 `今日 / 私教 / 记录 / 我 / 体检导入 / 隐私政策` 并输出 1206 x 2622 截图。
+  - PASS: `./scripts/mobile-sim-screenshots.sh --device 39D954B3-A2B5-41AA-8A6E-BD9750D3CB86 --output design/screenshots/app-store/batch3-20260628` 在当时代码 simulator app 上遍历 `今日 / 私教 / 记录 / 我 / 体检导入 / 隐私政策` 并输出 1206 x 2622 截图;当前可见 tab 已在后续批次收敛为 `今日 / 阿衡 / 记录 / 我`。
   - 注意: 本次截图包含真实账号和健康上下文,只作为本地 QA 证据,未提交进仓库,不可直接用于 App Store Connect。
 - Local screenshot compliance gate:
   - PASS: `./scripts/mobile-sim-screenshots.sh --device 39D954B3-A2B5-41AA-8A6E-BD9750D3CB86 --output design/screenshots/app-store/batch4-private-20260628 --privacy-status private` 生成带 `manifest.json` 的 QA 截图集。
@@ -288,7 +288,8 @@ P0:
   - NOTE: Rokid 专页旧称因外设 SDK 语义和测试面较大,保留为后续独立切片。
 - Local release narrative gate(Batch 11):
   - PASS: `scripts/check_app_store_release_pack.py` 新增高可见审核叙事校验,覆盖 submission pack、review notes 和 screenshot runbook。
-  - PASS: `backend/tests/test_app_store_release_pack.py` 拒绝 `Reva`、`复元`、`健康助理`、`守护神` 等旧用户可见叙事,并要求当前底部导航 `今日 / 私教 / 记录 / 我` 与定位词 `健康参谋`。
+  - PASS: `backend/tests/test_app_store_release_pack.py` 拒绝 `Reva`、`复元`、`健康助理`、`守护神` 等旧用户可见叙事,并要求当时底部导航 `今日 / 私教 / 记录 / 我` 与定位词 `健康参谋`。
+  - PASS: 后续 Mobile tab rename 批次把 release narrative gate 的当前底部导航推进为 `今日 / 阿衡 / 记录 / 我`,并把 `私教` 纳入 stale user-visible term。
   - PASS: `submission-pack.md` keywords 从 `健康助理` 收敛为 `阿衡` / `健康参谋`。
 - pending:
   - App Store Connect build processing status。

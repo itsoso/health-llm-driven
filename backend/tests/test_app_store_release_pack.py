@@ -124,13 +124,14 @@ def test_release_narrative_rejects_stale_public_positioning():
     failures = validate_release_narrative(
         submission=(
             "Reva 是你的健康助理。"
-            "本版本重构了移动端核心动线: 今日、助理、记录、我的。"
+            "本版本重构了移动端核心动线: 今日、私教、记录、我的。"
         ),
-        review_notes="Go to `助理` and ask a question.",
-        screenshot_runbook="Bottom navigation labels are `今日 / 助理 / 记录 / 我的`.",
+        review_notes="Go to `私教` and ask a question.",
+        screenshot_runbook="Bottom navigation labels are `今日 / 私教 / 记录 / 我的`.",
     )
 
     assert "release text contains stale user-visible term: Reva" in failures
     assert "release text contains stale user-visible term: 健康助理" in failures
-    assert "release text must use current bottom navigation labels: 今日 / 私教 / 记录 / 我" in failures
+    assert "release text contains stale user-visible term: 私教" in failures
+    assert "release text must use current bottom navigation labels: 今日 / 阿衡 / 记录 / 我" in failures
     assert "release text must include current positioning term: 健康参谋" in failures
