@@ -4,6 +4,19 @@ import { fireEvent, render } from '@testing-library/react-native';
 import TodaySignalsPanel from '../TodaySignalsPanel';
 
 describe('TodaySignalsPanel', () => {
+  it('does not render a placeholder-only panel without action context or data', () => {
+    const { toJSON } = render(
+      <TodaySignalsPanel
+        sleep={null}
+        hrv={null}
+        bodyBatteryCurrent={null}
+        bodyStats={{ bmi: null, systolic: null, diastolic: null, spo2: null, bodyFatPct: null }}
+      />,
+    );
+
+    expect(toJSON()).toBeNull();
+  });
+
   it('renders compact signals instead of a full body dashboard', () => {
     const { getByText, getByLabelText, queryByText } = render(
       <TodaySignalsPanel
@@ -39,5 +52,22 @@ describe('TodaySignalsPanel', () => {
 
     fireEvent.press(getByLabelText('血压 120/78mmHg'));
     expect(onSignalPress).toHaveBeenCalledWith('blood_pressure');
+  });
+
+  it('shows only the required verification placeholder when no observed signals exist yet', () => {
+    const { getByLabelText, queryByLabelText } = render(
+      <TodaySignalsPanel
+        sleep={null}
+        hrv={null}
+        bodyBatteryCurrent={null}
+        bodyStats={{ bmi: null, systolic: null, diastolic: null, spo2: null, bodyFatPct: null }}
+        actionSignal="waist_cm"
+      />,
+    );
+
+    expect(getByLabelText('BMI 待记录')).toBeTruthy();
+    expect(queryByLabelText('睡眠 待同步')).toBeNull();
+    expect(queryByLabelText('HRV 待同步')).toBeNull();
+    expect(queryByLabelText('电量 待同步')).toBeNull();
   });
 });

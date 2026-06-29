@@ -633,11 +633,9 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
 
   // ── 身体信号 (agent-selected compact signals) ──
 
-  it('renders compact body signals with pending placeholders when data is missing', () => {
-    const { getByText, getByLabelText, queryByText } = render(<TodayScreen />);
-    expect(getByText('身体信号')).toBeTruthy();
-    expect(getByLabelText('睡眠 待同步')).toBeTruthy();
-    expect(getByLabelText('HRV 待同步')).toBeTruthy();
+  it('does not render placeholder-only body signals when there is no action context or data', () => {
+    const { queryByText } = render(<TodayScreen />);
+    expect(queryByText('身体信号')).toBeNull();
     expect(queryByText('/ 8,000')).toBeNull();
   });
 
@@ -655,7 +653,24 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
   });
 
   it('opens a body signal route on press', () => {
-    const { getByLabelText } = render(<TodayScreen />);
+    mockDailyArtifact = {
+      artifact_date: '2026-06-29',
+      empty_state: false,
+      state: { label: '今日最重要行动', tone: 'focused', summary: '先处理今日行动。' },
+      top_action: {
+        id: 'waist-check',
+        title: '记录腰围和体重',
+        why_now: '用代谢信号验证行动。',
+        verification_signal: 'waist_cm',
+        actions: { complete: { enabled: false }, skip: { requires_reason: true } },
+      },
+      evidence: [],
+      confidence: 'medium',
+      freshness: { status: 'fresh', sources: ['runtime'] },
+      safety_boundary: '健康管理行动建议,不替代医生诊断。',
+    };
+    const { getByLabelText, queryByLabelText } = render(<TodayScreen />);
+    expect(queryByLabelText('睡眠 待同步')).toBeNull();
     fireEvent.press(getByLabelText('BMI 待记录'));
     expect(mockPush).toHaveBeenCalledWith('/body-measurements?focus=morning');
   });

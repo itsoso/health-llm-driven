@@ -69,12 +69,19 @@ export default function TodaySignalsPanel({
     ],
     [actionSignal, bodyBatteryCurrent, bodyStats, hrv, sleep, sleepScore],
   );
+  const hasActionSignal = Boolean(actionSignal?.trim());
+  const hasAnyObservedSignal = tiles.some((tile) => !tile.pending);
+  const visibleTiles = !hasAnyObservedSignal && hasActionSignal
+    ? [tiles[tiles.length - 1]]
+    : tiles;
+
+  if (!hasActionSignal && !hasAnyObservedSignal) return null;
 
   return (
     <View>
       <SectionLabel>身体信号</SectionLabel>
       <View style={styles.card}>
-        {tiles.map((tile) => (
+        {visibleTiles.map((tile) => (
           <SignalButton key={tile.key} tile={tile} onPress={onSignalPress} />
         ))}
       </View>
