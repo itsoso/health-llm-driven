@@ -20,7 +20,7 @@
         "com.apple.developer.healthkit": true
       },
       "infoPlist": {
-        "CFBundleDisplayName": "健康助理",
+        "CFBundleDisplayName": "Reva 健康",
         "UISupportedInterfaceOrientations": [
           "UIInterfaceOrientationPortrait",
           "UIInterfaceOrientationPortraitUpsideDown",
@@ -38,8 +38,8 @@
         "NSPhotoLibraryUsageDescription": "用于你主动选择餐盘、补剂标签、检查报告或健康相关图片，生成记录草稿和健康分析",
         "NSPhotoLibraryAddUsageDescription": "用于你主动保存健康报告、截图或导出图片到照片图库",
         "NSCameraUsageDescription": "拍摄食物或健康数据进行分析",
-        "NSMicrophoneUsageDescription": "用于语音输入、健康记录听写和健康助理对话",
-        "NSSpeechRecognitionUsageDescription": "识别你的语音,和健康助理连续对话",
+        "NSMicrophoneUsageDescription": "用于语音输入、健康记录听写和 Reva 对话",
+        "NSSpeechRecognitionUsageDescription": "识别你的语音,和 Reva 连续对话",
         "NSLocationWhenInUseUsageDescription": "用你当前位置查天气、空气质量,给出更贴合的建议",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "跑步过程中需要后台定位才能持续记录路线和配速,息屏 / 切换到其他 App 时不中断",
         "NSHealthShareUsageDescription": "用于读取 Apple Watch / RingConn / Oura 等设备写入的健康数据,生成个性化健康分析",
