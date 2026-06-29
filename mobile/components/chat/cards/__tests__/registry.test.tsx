@@ -265,6 +265,61 @@ describe('renderCard 安全降级', () => {
     expect(r).not.toBeNull();
   });
 
+  it('cards_group preserves child card actions so multi-card replies stay actionable', () => {
+    const onAction = jest.fn();
+    const r = renderCard({
+      type: 'cards_group',
+      data: {
+        cards: [
+          {
+            type: 'runtime_agenda',
+            data: { next_action: { title: '晚餐后步行 15 分钟' } },
+            actions: [
+              {
+                id: 'open-runtime',
+                label: '查看7天计划',
+                action: 'route.open',
+                payload: { route: '/agenda' },
+                style: 'primary',
+              },
+            ],
+          },
+          {
+            type: 'operating_review',
+            data: {
+              window_days: 7,
+              execution: { total_events: 1, completed_events: 1, completion_rate: 1 },
+            },
+            actions: [
+              {
+                id: 'open-review',
+                label: '查看复盘详情',
+                action: 'route.open',
+                payload: { route: '/my-progress' },
+                style: 'primary',
+              },
+            ],
+          },
+        ],
+      },
+    }, { onAction });
+
+    expect(r).not.toBeNull();
+    const { getByText } = render(r!);
+
+    fireEvent.press(getByText('查看7天计划'));
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'route.open', payload: { route: '/agenda' } }),
+      expect.objectContaining({ type: 'runtime_agenda' }),
+    );
+
+    fireEvent.press(getByText('查看复盘详情'));
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'route.open', payload: { route: '/my-progress' } }),
+      expect.objectContaining({ type: 'operating_review' }),
+    );
+  });
+
   it('cards_group 全是未知 type → null', () => {
     const r = renderCard({
       type: 'cards_group',
@@ -316,6 +371,40 @@ describe('renderServerCards 防御', () => {
       type: 'vitals',
       actions: [expect.objectContaining({ action: 'agenda.complete' })],
     }));
+  });
+
+  it('filters unsafe write actions before they reach the chat UI', () => {
+    const r = renderServerCards([
+      {
+        type: 'vitals',
+        data: {},
+        actions: [
+          {
+            label: '缺少人工确认的完成按钮',
+            action: 'agenda.complete',
+            endpoint: '/agenda/complete',
+            payload: { source: { object_type: 'health_protocol', object_id: 7 } },
+          },
+          {
+            label: '打开记录页',
+            action: 'route.open',
+            payload: { route: '/(tabs)/record' },
+          },
+          {
+            label: '确认写入',
+            action: 'write_intent.confirm',
+            endpoint: '/write-intents/42/confirm',
+            requires_manual_confirm: true,
+            payload: { write_intent_id: 42 },
+          },
+        ],
+      } as any,
+    ]);
+
+    expect(r[0].actions).toEqual([
+      expect.objectContaining({ action: 'route.open' }),
+      expect.objectContaining({ action: 'write_intent.confirm', requires_manual_confirm: true }),
+    ]);
   });
 
   it('非数组 → []', () => {

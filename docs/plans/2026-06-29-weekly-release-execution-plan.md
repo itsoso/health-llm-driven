@@ -58,6 +58,15 @@ P1/P3 快速记录入口已推进:
 - 点击直达 `/rokid-pushup-coach`,复用已有本地/眼镜计数与保存能力,不新增后端 schema。
 - `更多记录 -> 运动` 保持为 `/workout-list`,用于查看历史运动记录。
 
+## 第五批实现切片
+
+P1 Chat 动态卡片 action 安全可见性已推进:
+
+- 多卡 `cards_group` 子卡 action 已有回归测试,确保运行时/复盘等多卡回复仍可点击。
+- `route.open` 导航 action 保持可见。
+- `agenda.complete` / `write_intent.confirm` / `write_intent.dismiss` 等写动作必须带 `requires_manual_confirm=true` 才展示给用户。
+- 服务层 `dispatchChatCardAction` 仍保留 fail-loud,不放宽 endpoint allowlist。
+
 ## 本周不做
 
 - 不把 App Store 发布伪装成已完成:缺 demo account、ASC credentials、人审截图时必须停在 pending。
@@ -69,6 +78,6 @@ P1/P3 快速记录入口已推进:
 
 1. 补最终截图/审核材料路径,明确哪些需要用户提供。
 2. 继续 Daily Artifact 主屏视觉走查和点击动线截图。
-3. 继续 Chat card action 的成功/失败反馈和记录页联动。
+3. 继续 Chat card action 成功后的局部刷新/跳转反馈和记录页联动。
 4. 单独处理 Rokid 专页旧称和相关测试。
 5. 视签名条件推进 Watch 真机和二维码发版。

@@ -192,11 +192,17 @@ function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCar
     typeof action.label === 'string' &&
     action.label.trim().length > 0 &&
     typeof action.action === 'string' &&
-    ALLOWED_ACTIONS.has(action.action)
+    ALLOWED_ACTIONS.has(action.action) &&
+    isSafeVisibleAction(action)
   )).map((action) => ({
     ...action,
     label: action.label.trim(),
   }));
+}
+
+function isSafeVisibleAction(action: ChatCardActionDescriptor): boolean {
+  if (action.action === 'route.open') return true;
+  return action.requires_manual_confirm === true;
 }
 
 const styles = StyleSheet.create({
