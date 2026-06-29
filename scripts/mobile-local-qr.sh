@@ -14,7 +14,7 @@
 #   IOS_LOCAL_QR_PUBLIC_BASE_URL=https://health.executor.life/mobile-install/ios/<id>
 #   IOS_LOCAL_QR_REMOTE_DIR=/opt/health-app-shared/mobile-install/ios/<id>
 #   IOS_LOCAL_QR_TEAM_ID=QA2U724DAN
-#   IOS_LOCAL_QR_SCHEME=HealthPilot
+#   IOS_LOCAL_QR_SCHEME=HealthPilot  # optional; auto-detected when unset
 #   IOS_LOCAL_QR_EXPORT_METHOD=ad-hoc
 
 set -euo pipefail
@@ -28,7 +28,7 @@ IPA_INPUT=""
 UPLOAD="${IOS_LOCAL_QR_UPLOAD:-1}"
 BUILD_ID="$(date +%Y%m%d-%H%M%S)-$(git -C "${ROOT}" rev-parse --short HEAD)"
 TEAM_ID="${IOS_LOCAL_QR_TEAM_ID:-QA2U724DAN}"
-SCHEME="${IOS_LOCAL_QR_SCHEME:-HealthPilot}"
+SCHEME="${IOS_LOCAL_QR_SCHEME:-}"
 EXPORT_METHOD="${IOS_LOCAL_QR_EXPORT_METHOD:-ad-hoc}"
 
 usage() {
@@ -203,6 +203,34 @@ else
     fi
   }
 
+  resolve_xcode_scheme() {
+    local workspace="$1"
+    local configured="${IOS_LOCAL_QR_SCHEME:-}"
+    if [ -n "${configured}" ]; then
+      printf '%s\n' "${configured}"
+      return
+    fi
+
+    local workspace_name
+    workspace_name="$(basename "${workspace}" .xcworkspace)"
+    local scheme_list="${OUTPUT_DIR}/xcodebuild-list.json"
+    run_xcodebuild -list -json -workspace "${workspace}" > "${scheme_list}"
+
+    node - "${scheme_list}" "${workspace_name}" <<'NODE'
+const fs = require('fs');
+const [schemeListPath, workspaceName] = process.argv.slice(2);
+const list = JSON.parse(fs.readFileSync(schemeListPath, 'utf8'));
+const schemes = list.workspace?.schemes || list.project?.schemes || [];
+const preferred = ['HealthPilot', workspaceName, 'app'].filter(Boolean);
+const selected = preferred.find((candidate) => schemes.includes(candidate)) || schemes[0];
+if (!selected) {
+  throw new Error(`No Xcode scheme found in ${schemeListPath}`);
+}
+process.stdout.write(`${selected}\n`);
+NODE
+  }
+
+  SCHEME="$(resolve_xcode_scheme "${WORKSPACE}")"
   write_export_options "${EXPORT_METHOD}" "${EXPORT_OPTIONS}"
 
   echo "==> archive (${SCHEME})"
