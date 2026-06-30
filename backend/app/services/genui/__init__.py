@@ -13,10 +13,12 @@ from app.services.genui.chart_builder import (
     render_reva_ui_block,
     SUPPORTED_METRICS,
 )
+from app.services.genui.chart_rich import compute_chart_rich
 
 __all__ = [
     "build_line_chart",
     "detect_chart_request",
     "render_reva_ui_block",
     "SUPPORTED_METRICS",
+    "compute_chart_rich",
 ]
