@@ -126,6 +126,15 @@ P0/P1 Mobile 底部导航命名收敛已推进:
 - `私教` 作为旧用户可见 tab 文案进入 App Store release narrative gate 的 stale term 列表。
 - App Store submission pack、review notes、screenshot runbook 和 system-map/mobile 产品地图同步为 `阿衡`。
 
+## 第十二批实现切片
+
+P1 Mobile Today 主行动聚焦已推进:
+
+- DynamicView 中存在 `daily_artifact` 时,首页不再展开 `runtime_agenda` 7 天计划大卡。
+- 首页第一屏继续保留 Daily Artifact 的完成、跳过、问阿衡、查看依据和去执行入口。
+- `runtime_agenda` 数据合同和卡片实现保留,后续放到阿衡对话或详情页承接,不在首页抢主叙事。
+- 聚焦测试和首页回归测试已覆盖该行为。
+
 ## 本周不做
 
 - 不把 App Store 发布伪装成已完成:缺 demo account、ASC credentials、人审截图时必须停在 pending。

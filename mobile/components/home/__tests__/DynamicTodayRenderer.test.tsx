@@ -78,22 +78,18 @@ function makeView(overrides: Partial<TodayDynamicView> = {}): TodayDynamicView {
 }
 
 describe('DynamicTodayRenderer', () => {
-  it('renders daily artifact and runtime agenda cards from a DynamicView', () => {
+  it('renders the daily artifact as the single primary home card and suppresses the expanded runtime agenda', () => {
     const onAction = jest.fn();
-    const { getByTestId, getByText } = render(
+    const { getByTestId, getByText, queryByText } = render(
       <DynamicTodayRenderer view={makeView()} onCardAction={onAction} />,
     );
 
     expect(getByTestId('dynamic-today-view')).toBeTruthy();
     expect(getByText('阿衡动态生成的餐后步行')).toBeTruthy();
-    expect(getByText('7天验证节奏')).toBeTruthy();
-    expect(getByText('未来节奏')).toBeTruthy();
-
-    fireEvent.press(getByText('查看7天计划'));
-    expect(onAction).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'route.open' }),
-      expect.objectContaining({ type: 'runtime_agenda' }),
-    );
+    expect(queryByText('7天验证节奏')).toBeNull();
+    expect(queryByText('未来节奏')).toBeNull();
+    expect(queryByText('查看7天计划')).toBeNull();
+    expect(onAction).not.toHaveBeenCalled();
   });
 
   it('ignores unknown cards without breaking the view', () => {
