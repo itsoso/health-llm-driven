@@ -131,6 +131,79 @@ final class RevaUIBlockTests: XCTestCase {
         XCTAssertFalse(html.contains("reva-ui-chart"))
     }
 
+    // MARK: - 真实后端 payload 端到端回归(首个真正到达 live WKWebView 的 reva-ui 块)
+
+    /// 后端实际下发的 HRV 趋势消息:intro 行(含括号/中文/分隔点)+ 空行 + ```reva-ui```
+    /// 围栏,内含 4 序列(role: raw/device/avg_7d/avg_30d)、null 密集、latest 注解。
+    /// 复刻 prod 上首次真正进入 live WebView 的内容,断言占位 div + 非空 base64 被抽出。
+    func testRenderMessageBodyExtractsRealBackendHRVPayload() {
+        let realJSON = "{\"v\":1,\"component\":\"line_chart\",\"title\":\"HRV 趋势\",\"unit\":\"ms\","
+            + "\"x\":[\"01-01\",\"03-15\",\"06-30\"],"
+            + "\"series\":[{\"name\":\"Garmin 夜间 HRV\",\"role\":\"raw\",\"points\":[51.0,53.2,null]},"
+            + "{\"name\":\"Apple Watch HRV\",\"role\":\"device\",\"points\":[null,null,58.4]},"
+            + "{\"name\":\"7日滚动均值\",\"role\":\"avg_7d\",\"points\":[50.1,52.0,57.3]},"
+            + "{\"name\":\"30日滚动均值\",\"role\":\"avg_30d\",\"points\":[49.0,51.5,55.0]}],"
+            + "\"annotations\":[{\"x\":\"06-30\",\"label\":\"最新 58.4 ms · Apple Watch\",\"kind\":\"latest\"}],"
+            + "\"source\":\"garmin\",\"data_note\":\"基于 178 天真实数据 · 每日 · Garmin 169d + Apple Watch 24d\"}"
+        let intro = "近半年HRV趋势（数据来自你的设备，基于 178 天真实数据 · 每日 · Garmin 169d + Apple Watch 24d）："
+        // 后端真实拼接形态:{intro}\n\n```reva-ui\n{json}\n``` (render_reva_ui_block)
+        let md = intro + "\n\n```reva-ui\n" + realJSON + "\n```"
+
+        let html = ChatTranscriptHTML.renderMessageBody(markdown: md)
+        XCTAssertTrue(html.contains("class=\"reva-ui-chart\""), "real backend payload must emit a placeholder div")
+        let b64 = extractDataRevaUI(html)
+        XCTAssertNotNil(b64, "data-reva-ui must be present")
+        XCTAssertFalse(b64!.isEmpty, "data-reva-ui base64 must be non-empty")
+        let decoded = Data(base64Encoded: b64!).flatMap { String(data: $0, encoding: .utf8) }
+        XCTAssertEqual(decoded, realJSON, "raw JSON must round-trip verbatim through placeholder")
+        // 占位里不该有裸 JSON 字段名(应已 base64)。
+        XCTAssertFalse(html.contains("line_chart\""))
+        // intro 叙事仍正常渲染为普通 markdown,不被吞。
+        XCTAssertTrue(html.contains("近半年HRV趋势"))
+    }
+
+    // MARK: - displayText → renderMessageBody 端到端(真实数据路径回归)
+
+    /// 线上首个 reva-ui 块渲染成裸文本的根因:`renderedTranscript()` 喂给 `renderMessageBody`
+    /// 的不是原始 content,而是 `displayContent → AgentStructuredCommandParser.displayText` 清洗后的
+    /// 文本。旧 displayText 的逐行清洗会**删掉闭合 ``` 行**(它在 legacy 围栏剥离的 filter 里),
+    /// 于是 split 把围栏判为「未闭合」退回纯文本,占位永不生成。
+    /// 这条测试走真实路径(displayText → renderMessageBody),确保闭合围栏被保留、占位被抽出。
+    func testDisplayTextThenRenderMessageBodyKeepsRevaUIFence() {
+        let intro = "近半年HRV趋势（数据来自你的设备，基于 178 天真实数据 · 每日 · Garmin 169d + Apple Watch 24d）："
+        let md = intro + "\n\n```reva-ui\n" + sampleJSON + "\n```"
+
+        // 关键:模拟 renderedTranscript 的真实链路——先过 displayText,再渲染。
+        let displayed = AgentStructuredCommandParser.displayText(for: md)
+        // 闭合围栏必须仍在(旧实现会把它删掉)。
+        XCTAssertTrue(displayed.contains("```reva-ui"), "opening fence preserved")
+        let trailingFence = displayed.hasSuffix("```") || displayed.contains("\n```\n") || displayed.contains("\n```")
+        XCTAssertTrue(trailingFence, "closing fence must survive displayText cleanup")
+
+        let html = ChatTranscriptHTML.renderMessageBody(markdown: displayed)
+        XCTAssertTrue(html.contains("class=\"reva-ui-chart\""),
+                      "after displayText the fence must still yield a chart placeholder, not raw text")
+        let b64 = extractDataRevaUI(html)
+        XCTAssertNotNil(b64)
+        let decoded = Data(base64Encoded: b64!).flatMap { String(data: $0, encoding: .utf8) }
+        XCTAssertEqual(decoded, sampleJSON, "raw JSON must round-trip verbatim end-to-end")
+        // intro 叙事仍在(普通文本段照常清洗渲染)。
+        XCTAssertTrue(html.contains("近半年HRV趋势"))
+        // 绝不退回成裸文本(出现裸字段名即说明退回了 markdown 文本路径)。
+        XCTAssertFalse(html.contains("line_chart\""))
+    }
+
+    /// displayText 仍须正常清洗普通段:legacy 裸 ``` / ```json 围栏标记照常剥、空行照常合并。
+    func testDisplayTextStillStripsLegacyFencesWithoutRevaUI() {
+        let md = "前言\n\n```json\n{\"name\":\"x\"}\n```\n\n结论"
+        let displayed = AgentStructuredCommandParser.displayText(for: md)
+        // 无 reva-ui 时行为不变:裸 ```json / ``` 标记被剥。
+        XCTAssertFalse(displayed.contains("```json"))
+        XCTAssertFalse(displayed.contains("```"))
+        XCTAssertTrue(displayed.contains("前言"))
+        XCTAssertTrue(displayed.contains("结论"))
+    }
+
     // 提取占位 div 的 data-reva-ui 属性值。
     private func extractDataRevaUI(_ html: String) -> String? {
         guard let range = html.range(of: "data-reva-ui=\"") else { return nil }
