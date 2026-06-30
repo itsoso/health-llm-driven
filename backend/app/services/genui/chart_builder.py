@@ -3,7 +3,8 @@ r"""GenUI line_chart 构建器 — 确定性查真实日级序列, 聚合分桶,
 数据来源 (与 mobile `indicator-history` 同一日级源, 见 `mobile/services/trends.ts`
 的 `fetchGarminMetricTrend`):
   - GarminData 日行 (`backend/app/models/daily_health.py`):
-      hrv / resting_heart_rate / stress_level / total_sleep_duration
+      hrv / resting_heart_rate / stress_level / total_sleep_duration /
+      sleep_score / steps / body_battery_current
   - WeightRecord 日行 (`backend/app/models/weight.py`): weight
 
 铁律 (R4): 本模块所有数值均来自上述 DB 表的真实行。LLM 不参与数据路径 —
@@ -28,6 +29,11 @@ from sqlalchemy.orm import Session
 
 from app.models.daily_health import GarminData
 from app.models.weight import WeightRecord
+
+LINE_CHART_COMPONENT = "line_chart"
+METRIC_LINE_CHART_COMPONENT = "metric_line_chart"
+METRIC_LINE_CHART_SCHEMA = "reva.metric_line_chart.v1"
+_SUPPORTED_COMPONENTS = {LINE_CHART_COMPONENT, METRIC_LINE_CHART_COMPONENT}
 
 # ---------------------------------------------------------------------------
 # Metric allowlist — 受约束目录, 只有这些 metric 允许出图
@@ -70,6 +76,18 @@ SUPPORTED_METRICS: Dict[str, _MetricSpec] = {
         garmin_field="total_sleep_duration", transform=_sleep_min_to_hours,
         warn_direction="low_is_warn",
     ),
+    "sleep_score": _MetricSpec(
+        key="sleep_score", title="睡眠评分趋势", unit="分", source="garmin",
+        garmin_field="sleep_score", warn_direction="low_is_warn",
+    ),
+    "steps": _MetricSpec(
+        key="steps", title="步数趋势", unit="步", source="garmin",
+        garmin_field="steps", warn_direction="low_is_warn",
+    ),
+    "body_battery": _MetricSpec(
+        key="body_battery", title="身体电量趋势", unit="", source="garmin",
+        garmin_field="body_battery_current", warn_direction="low_is_warn",
+    ),
     "weight": _MetricSpec(
         key="weight", title="体重趋势", unit="kg", source="scale",
         garmin_field=None, warn_direction="high_is_warn",
@@ -106,8 +124,12 @@ _CHART_NOUN = re.compile(r"(曲线|趋势|走势|图表|图|变化|chart|trend|g
 
 # metric 关键词 → metric key (顺序敏感: 更具体的在前)
 _METRIC_KEYWORDS: List[Tuple[re.Pattern, str]] = [
+    (re.compile(r"(睡眠评分|睡眠分|sleep\s*score)", re.IGNORECASE), "sleep_score"),
     (re.compile(r"(hrv|心率变异|心律变异)", re.IGNORECASE), "hrv"),
     (re.compile(r"(静息心率|静息心跳|resting\s*hr|rhr)", re.IGNORECASE), "resting_hr"),
+    (re.compile(r"(心率|心跳|heart\s*rate|heart\s*beat)", re.IGNORECASE), "resting_hr"),
+    (re.compile(r"(身体电量|体力电量|body\s*battery|电量)", re.IGNORECASE), "body_battery"),
+    (re.compile(r"(步数|步行|steps?)", re.IGNORECASE), "steps"),
     (re.compile(r"(压力|stress)", re.IGNORECASE), "stress"),
     (re.compile(r"(睡眠时长|睡眠时间|睡眠|sleep)", re.IGNORECASE), "sleep"),
     (re.compile(r"(体重|weight)", re.IGNORECASE), "weight"),
@@ -355,13 +377,36 @@ def _fetch_daily_by_source(
     return {"garmin": garmin, _APPLE_WATCH_SOURCE: apple}
 
 
-def build_line_chart(
-    db: Session, user_id: int, metric: str, range: str = "6m"
+def _apply_component_contract(
+    block: Optional[dict], metric: str, rng: str, component: str
 ) -> Optional[dict]:
-    """构建 reva-ui line_chart block (真数据)。
+    """把内部图表 block 包装成客户端协商的 GenUI 组件形态。"""
+    if block is None:
+        return None
+    if component not in _SUPPORTED_COMPONENTS:
+        return None
+
+    out = dict(block)
+    out["component"] = component
+    if component == METRIC_LINE_CHART_COMPONENT:
+        out["schema"] = METRIC_LINE_CHART_SCHEMA
+        out["metric"] = metric
+        out["range"] = rng
+    return out
+
+
+def build_line_chart(
+    db: Session,
+    user_id: int,
+    metric: str,
+    range: str = "6m",
+    *,
+    component: str = LINE_CHART_COMPONENT,
+) -> Optional[dict]:
+    """构建 reva-ui line_chart / metric_line_chart block (真数据)。
 
     metric 不在 allowlist / range 非法 / 数据不足 → None (调用方显"数据不足")。
-    返回的 dict 即 §3.2 契约;数值全部来自 DB。
+    返回的 dict 即 GenUI 契约;数值全部来自 DB。
 
     路由: HRV / 静息心率 (_RICH_METRICS) → compute_chart_rich (每日点 + 7/30 日滚动
     均值 + Garmin/Apple Watch 多源分线 + latest annotation); 其余 metric → compute_chart
@@ -369,6 +414,8 @@ def build_line_chart(
     """
     spec = SUPPORTED_METRICS.get(metric)
     if spec is None:
+        return None
+    if component not in _SUPPORTED_COMPONENTS:
         return None
     days = _RANGE_DAYS.get(range)
     if days is None:
@@ -378,12 +425,14 @@ def build_line_chart(
     if metric in _RICH_METRICS and spec.source == "garmin":
         from app.services.genui.chart_rich import compute_chart_rich
         by_source = _fetch_daily_by_source(db, user_id, spec, days)
-        return compute_chart_rich(
+        block = compute_chart_rich(
             by_source["garmin"], by_source[_APPLE_WATCH_SOURCE], metric, range
         )
+        return _apply_component_contract(block, metric, range, component)
 
     points = _fetch_daily_points(db, user_id, spec, days)
-    return compute_chart(points, metric, range)
+    block = compute_chart(points, metric, range)
+    return _apply_component_contract(block, metric, range, component)
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,10 @@
 import type { ServerCardDescriptor } from '../components/chat/cards/types';
 
 const REVA_UI_FENCE_RE = /\n?```reva-ui\s*\n([\s\S]*?)\n?```\n?/g;
+const REVA_UI_COMPONENT_TYPES: Record<string, ServerCardDescriptor['type']> = {
+  line_chart: 'line_chart',
+  metric_line_chart: 'metric_line_chart',
+};
 
 export interface ExtractedRevaUiBlocks {
   text: string;
@@ -30,9 +34,11 @@ function descriptorFromPayload(payload: string): ServerCardDescriptor | null {
   }
   if (!parsed || typeof parsed !== 'object') return null;
   const block = parsed as Record<string, unknown>;
-  if (block.v !== 1 || block.component !== 'line_chart') return null;
+  const component = typeof block.component === 'string' ? block.component : '';
+  const type = REVA_UI_COMPONENT_TYPES[component];
+  if (block.v !== 1 || !type) return null;
   return {
-    type: 'line_chart',
+    type,
     data: block,
   };
 }

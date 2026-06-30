@@ -56,6 +56,9 @@ interface RevaUiLineChartAnnotation {
 
 interface RevaUiLineChartData {
   component?: unknown;
+  schema?: unknown;
+  metric?: unknown;
+  range?: unknown;
   title?: unknown;
   unit?: unknown;
   x?: unknown;
@@ -405,6 +408,18 @@ export const MetricChartCardSpec: CardSpec<MetricChartData> = {
 export const RevaUiLineChartCardSpec: CardSpec<RevaUiLineChartData> = {
   type: 'line_chart',
   label: '趋势图表',
+  match() {
+    return null;
+  },
+  build() {
+    return null;
+  },
+  render: (data) => <RevaUiLineChartCardView {...data} />,
+};
+
+export const MetricLineChartCardSpec: CardSpec<RevaUiLineChartData> = {
+  type: 'metric_line_chart',
+  label: '指标趋势图表',
   match() {
     return null;
   },

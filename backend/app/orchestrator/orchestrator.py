@@ -44,13 +44,18 @@ _task_tier_ctx: ContextVar[Optional[str]] = ContextVar("orch_task_tier", default
 _HIGH_STAKES_CATEGORIES = {"safety", "chronic", "mental", "labs", "longevity"}
 
 # GenUI 能力协商: 客户端在 X-Reva-Client-Caps 头声明 'genui-v1' 才返回 reva-ui block。
+# 新客户端再声明 'genui-components-v1' 时, 返回通用动态组件 schema。
 GENUI_CAP = "genui-v1"
+GENUI_COMPONENTS_CAP = "genui-components-v1"
 
 _METRIC_LABEL = {
     "hrv": "HRV",
     "resting_hr": "静息心率",
     "stress": "压力",
     "sleep": "睡眠时长",
+    "sleep_score": "睡眠评分",
+    "steps": "步数",
+    "body_battery": "身体电量",
     "weight": "体重",
 }
 _RANGE_LABEL = {"1m": "近一个月", "3m": "近三个月", "6m": "近半年"}
@@ -59,7 +64,7 @@ _RANGE_LABEL = {"1m": "近一个月", "3m": "近三个月", "6m": "近半年"}
 def _maybe_build_genui_chart(
     db: Session, user_id: int, req: OrchestratorRequest
 ) -> Optional[OrchestratorResponse]:
-    """GenUI line_chart 短路。
+    """GenUI 图表组件短路。
 
     仅当 (a) 客户端 caps 含 genui-v1 且 (b) 检测到图表意图时介入。
     - 数据足够 → 返回带 ```reva-ui block + 确定性叙事的 OrchestratorResponse。
@@ -84,7 +89,12 @@ def _maybe_build_genui_chart(
     metric, rng = detected
     intent = classify_intent(req.query)
 
-    block = build_line_chart(db, user_id, metric, range=rng)
+    component = (
+        "metric_line_chart"
+        if GENUI_COMPONENTS_CAP in (req.client_caps or [])
+        else "line_chart"
+    )
+    block = build_line_chart(db, user_id, metric, range=rng, component=component)
     metric_label = _METRIC_LABEL.get(metric, metric)
     range_label = _RANGE_LABEL.get(rng, rng)
 

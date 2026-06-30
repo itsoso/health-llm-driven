@@ -103,4 +103,23 @@ describe('ChatBubble reva-ui blocks', () => {
     expect(queryByText(/```reva-ui/)).toBeNull();
     expect(queryByText(/"component":"line_chart"/)).toBeNull();
   });
+
+  it('renders generic metric_line_chart blocks as dynamic UI components', () => {
+    const content = [
+      '近半年心率趋势如下:',
+      '',
+      '```reva-ui',
+      '{"v":1,"schema":"reva.metric_line_chart.v1","component":"metric_line_chart","metric":"resting_hr","range":"6m","title":"静息心率趋势","unit":"bpm","x":["06-29","06-30"],"series":[{"name":"Apple Watch 静息心率","role":"device","points":[62,58]},{"name":"7日滚动均值","role":"avg_7d","points":[61,60]}],"annotations":[{"x":"06-30","label":"最新 58 bpm · Apple Watch","kind":"latest"}],"source":"garmin","data_note":"基于 2 天真实数据 · 每日 · Apple Watch 2d"}',
+      '```',
+    ].join('\n');
+
+    const { getByText, queryByText } = renderBubble(content);
+
+    expect(getByText('静息心率趋势')).toBeTruthy();
+    expect(getByText('Apple Watch 静息心率')).toBeTruthy();
+    expect(getByText('7日滚动均值')).toBeTruthy();
+    expect(getByText(/基于 2 天真实数据/)).toBeTruthy();
+    expect(queryByText(/```reva-ui/)).toBeNull();
+    expect(queryByText(/"component":"metric_line_chart"/)).toBeNull();
+  });
 });

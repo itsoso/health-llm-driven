@@ -367,6 +367,37 @@ describe('renderCard 安全降级', () => {
     );
   });
 
+  it('renders generic metric_line_chart dynamic UI cards', () => {
+    const descriptor = {
+      type: 'metric_line_chart',
+      data: {
+        schema: 'reva.metric_line_chart.v1',
+        component: 'metric_line_chart',
+        metric: 'resting_hr',
+        range: '6m',
+        title: '静息心率趋势',
+        unit: 'bpm',
+        x: ['06-29', '06-30'],
+        series: [
+          { name: 'Apple Watch 静息心率', role: 'device', points: [62, 58] },
+          { name: '7日滚动均值', role: 'avg_7d', points: [61, 60] },
+        ],
+        annotations: [{ x: '06-30', label: '最新 58 bpm · Apple Watch', kind: 'latest' }],
+        source: 'garmin',
+        data_note: '基于 2 天真实数据',
+      },
+    } as any;
+
+    const r = renderCard(descriptor);
+    expect(r).not.toBeNull();
+
+    const { getByText } = render(r!);
+    expect(getByText('静息心率趋势')).toBeTruthy();
+    expect(getByText('Apple Watch 静息心率')).toBeTruthy();
+    expect(getByText('7日滚动均值')).toBeTruthy();
+    expect(getByText(/最新 58 bpm/)).toBeTruthy();
+  });
+
   it('cards_group 1 张子卡 → 直接渲染, 不包 grid', () => {
     const r = renderCard({
       type: 'cards_group',

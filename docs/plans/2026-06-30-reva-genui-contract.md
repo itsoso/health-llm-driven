@@ -38,14 +38,15 @@
 用户:"绘制我最近半年的 HRV 曲线"
    ↓  classify_intent + 图表意图检测(确定性正则:绘制/画/趋势/曲线 + 已知 metric)
    ↓  build_chart_series(user, metric, range)   ← 确定性查真实日级序列(twin/garmin_timeseries/indicator)
-   ↓  [能力协商] 客户端声明 genui-v1 ?
-        ├─ 是 → 后端确定性拼 ```reva-ui 块(真 data)+ 简短叙事
+   ↓  [能力协商] 客户端声明 genui-v1 / genui-components-v1 ?
+        ├─ genui-components-v1 → 后端确定性拼 metric_line_chart(真 data)+ 简短叙事
+        ├─ genui-v1 → 后端确定性拼旧 line_chart(真 data)+ 简短叙事
         └─ 否 → 现状(markdown 表/文本),零回归
    ↓  客户端按注册表渲染:Mac Web;Web React;Mobile RN(自绘 SVG / svg 复用)
 ```
 
 ### 3.1 组件目录 v0(小而固定)
-`line_chart`(先做)→ 后续 `metric_grid` / `table` / `timeline` / `comparison` / `alert_list` / `action_card`。
+`metric_line_chart` / `line_chart`(先做)→ 后续 `metric_grid` / `table` / `timeline` / `comparison` / `alert_list` / `action_card`。
 - 图表取 **Vega-Lite 的形**但 v0 用**最小自定义 schema**(各端可手绘 SVG,离线稳),不强依赖 vega 运行时。
 
 ### 3.2 `reva-ui` 块契约 v0(line_chart)
@@ -61,8 +62,24 @@
 - `points` 由 `build_chart_series` 真查;LLM 只可写 `annotations.label` 与块外叙事。
 - 解析端用 `json_lenient.lenient_loads`(已上线)兜底。
 
+### 3.2.1 `metric_line_chart` v1(通用指标趋势组件)
+新客户端声明 `genui-components-v1` 后，后端返回显式 schema:
+```
+​```reva-ui
+{"v":1,"schema":"reva.metric_line_chart.v1","component":"metric_line_chart",
+ "metric":"resting_hr","range":"6m","title":"静息心率趋势","unit":"bpm",
+ "x":["06-24","06-25"],"series":[{"name":"Apple Watch 静息心率","role":"device","points":[61,59]}],
+ "annotations":[{"x":"06-25","label":"最新 59 bpm · Apple Watch","kind":"latest"}],
+ "source":"garmin","data_note":"基于 N 天真实数据"}
+​```
+```
+- 当前确定性 allowlist: `hrv`、`resting_hr`(含自然说法“心率”)、`stress`、`sleep`、`sleep_score`、`steps`、`body_battery`、`weight`。
+- Mobile parser 把 component 映射为 card descriptor；renderer 由卡片 registry 选择。未知 component fail-closed。
+- `line_chart` 保留为旧客户端兼容协议。
+
 ### 3.3 能力协商(防移动端回归)
-- 客户端发 `X-Reva-Client-Caps: genui-v1`(或等价 query)声明支持。
+- 客户端发 `X-Reva-Client-Caps: genui-v1`(或等价 query)声明支持基础 `reva-ui` fenced block。
+- 客户端再声明 `genui-components-v1` 时，后端返回显式 schema 的动态组件，如 `metric_line_chart`。
 - 后端仅对声明者发 `reva-ui`;否则现状。**渐进上线、按端开关。**
 - 未知 component / 解析失败 / 弱模型 → 降级 markdown 表,绝不白屏/不显示裸 JSON。
 
@@ -77,7 +94,7 @@
 | **P1 契约 v0**(本 PR) | `reva-ui` line_chart schema + `build_chart_series` 确定性真查 + 图表意图检测 + 能力协商 + 降级 + 测试 | **实施中** |
 | **P2 Mac 渲染**(本 PR) | 聊天 WebView JS shell 拦 `reva-ui` fence → 自绘 SVG 折线(tooltip,离线)+ 发 caps 头 | **实施中** |
 | P3 Web React 渲染器 | 同契约,React(可吃 json-render) | 待 |
-| P4 Mobile RN 注册表 | 复用 `indicator-history` 的 react-native-svg 图；Mobile 已声明 `genui-v1` 并渲染 `line_chart` fenced block | 已推进 |
+| P4 Mobile RN 注册表 | 复用 `indicator-history` 的 react-native-svg 图；Mobile 已声明 `genui-v1, genui-components-v1` 并渲染 `metric_line_chart` / `line_chart` fenced block | 已推进 |
 | P5 扩目录 | metric_grid/table/timeline/comparison;同契约渲染现有 safety/specialist/action-card 结构化输出 | 待 |
 | 贯穿 | **数据确定性闸**:数字永不来自 LLM;缺数据显"数据不足";旧端降级 | 必须 |
 
@@ -87,4 +104,4 @@
 - 不让 LLM 产可执行代码,只产受 schema 约束的声明 JSON(信任边界)。
 
 ## 6. 现状(2026-06-30 起)
-P1+P2 MVP 开工:Mac 上"绘制 HRV 曲线"→ 真实日级 HRV 折线图内联渲染。P4 Mobile 已接入 `genui-v1` 能力声明与 `line_chart` 原生渲染。其余 Web 与扩展组件按 §4 推进。
+P1+P2 MVP 开工:Mac 上"绘制 HRV 曲线"→ 真实日级 HRV 折线图内联渲染。P4 Mobile 已接入 `genui-v1, genui-components-v1` 能力声明与 `metric_line_chart` / `line_chart` 原生渲染；“心率/睡眠评分/步数/身体电量”等指标已走确定性真数据路径。其余 Web 与扩展组件按 §4 推进。

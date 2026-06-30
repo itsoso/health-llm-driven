@@ -84,7 +84,7 @@ def compute_chart_rich(
     # 这里只有两源参与 (garmin + apple-watch), 用其优先顺序逐日挑。
     from app.services.device_source_priority import priority_for
 
-    prio = priority_for(metric)
+    prio = priority_for(spec.garmin_field or metric)
     garmin_first = prio.index("garmin") <= prio.index(_APPLE_WATCH_SOURCE) \
         if (_APPLE_WATCH_SOURCE in prio and "garmin" in prio) else True
 
@@ -109,9 +109,10 @@ def compute_chart_rich(
 
     x_labels = [_date_label(d) for d in axis]
 
+    display_title = spec.title.removesuffix("趋势")
     series: List[dict] = [
         {
-            "name": "Garmin 夜间 HRV" if metric == "hrv" else f"Garmin {spec.title}",
+            "name": "Garmin 夜间 HRV" if metric == "hrv" else f"Garmin {display_title}",
             "role": "raw",
             "points": _align_series(axis, garmin_by_day),
         }
@@ -119,7 +120,7 @@ def compute_chart_rich(
     # Apple Watch 分线: 仅当确有 apple-watch 源数据 (不伪造)。
     if apple_by_day:
         series.append({
-            "name": "Apple Watch HRV" if metric == "hrv" else f"Apple Watch {spec.title}",
+            "name": "Apple Watch HRV" if metric == "hrv" else f"Apple Watch {display_title}",
             "role": "device",
             "points": _align_series(axis, apple_by_day),
         })

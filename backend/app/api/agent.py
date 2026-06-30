@@ -108,7 +108,7 @@ def _check_recent_dup(user_id: int, message: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# GenUI 短路 (reva-ui line_chart) — 与 orchestrator 同一确定性 builder。
+# GenUI 短路 (reva-ui chart components) — 与 orchestrator 同一确定性 builder。
 #
 # 背景: Mac/mobile 统一聊天走本文件的 `agent_stream`, 但历史上只有
 # orchestrator 端点接了 GenUI 协商。charting query ("绘制我最近半年的HRV曲线")
@@ -120,12 +120,16 @@ def _check_recent_dup(user_id: int, message: str) -> bool:
 # ---------------------------------------------------------------------------
 
 GENUI_CAP = "genui-v1"
+GENUI_COMPONENTS_CAP = "genui-components-v1"
 
 _GENUI_METRIC_LABEL = {
     "hrv": "HRV",
     "resting_hr": "静息心率",
     "stress": "压力",
     "sleep": "睡眠时长",
+    "sleep_score": "睡眠评分",
+    "steps": "步数",
+    "body_battery": "身体电量",
     "weight": "体重",
 }
 _GENUI_RANGE_LABEL = {"1m": "近一个月", "3m": "近三个月", "6m": "近半年"}
@@ -134,7 +138,7 @@ _GENUI_RANGE_LABEL = {"1m": "近一个月", "3m": "近三个月", "6m": "近半�
 def _maybe_genui_chart_events(
     db: Session, user_id: int, message: str, conversation_id: int | None, caps: list[str]
 ) -> Optional[tuple[list[dict], int, int]]:
-    """确定性构建 reva-ui line_chart, 持久化 assistant 消息, 返回要 emit 的 SSE 事件。
+    """确定性构建 reva-ui 图表组件, 持久化 assistant 消息, 返回要 emit 的 SSE 事件。
 
     返回 (events, conversation_id, message_id) 命中时; 否则 None (调用方走普通路径)。
     - caps 缺 genui-v1 / 非图表意图 / 数据不足 → None。
@@ -157,7 +161,8 @@ def _maybe_genui_chart_events(
         return None
 
     metric, rng = detected
-    block = build_line_chart(db, user_id, metric, range=rng)
+    component = "metric_line_chart" if GENUI_COMPONENTS_CAP in (caps or []) else "line_chart"
+    block = build_line_chart(db, user_id, metric, range=rng, component=component)
     if block is None:
         # 数据不足: 与 orchestrator 路径一致 — 不补点, 回退普通路径 (让 LLM 解释/引导)。
         return None

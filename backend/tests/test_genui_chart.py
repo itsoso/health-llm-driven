@@ -87,11 +87,15 @@ def _seed_daily_hrv(db, user_id, start_days_ago, values, data_source="garmin"):
     "query,expected",
     [
         ("帮我绘制最近半年的HRV曲线", ("hrv", "6m")),
+        ("绘制我最近半年的心率曲线", ("resting_hr", "6m")),
         ("画一下近三个月的静息心率趋势", ("resting_hr", "3m")),
         ("看看我这个月的体重变化图", ("weight", "1m")),
         ("展示一下我的压力趋势", ("stress", "6m")),          # 默认 6m
         ("plot my hrv trend over the last 3 months", ("hrv", "3m")),
         ("画一张睡眠时长的曲线", ("sleep", "6m")),
+        ("画最近30天睡眠评分趋势", ("sleep_score", "1m")),
+        ("看看最近一个月的步数曲线", ("steps", "1m")),
+        ("展示身体电量趋势图", ("body_battery", "6m")),
     ],
 )
 def test_detect_chart_request_positive(query, expected):
@@ -272,6 +276,49 @@ def test_build_line_chart_sleep_minutes_to_hours(db):
     label_to_val = dict(zip(block["x"], block["series"][0]["points"]))
     # 上月桶均值 = (8+7+9)/3 = 8.0h (分钟→小时换算正确)
     assert label_to_val[_MONTH_NAMES[prev_month.month]] == 8.0
+
+
+def test_build_line_chart_sleep_score_metric(db):
+    user, _ = create_authenticated_user(db)
+    this_month = date.today().replace(day=1)
+    prev_month = (this_month - timedelta(days=1)).replace(day=1)
+    for i, score in enumerate([72, 81, 86]):
+        db.add(GarminData(user_id=user.id, record_date=prev_month + timedelta(days=i + 1),
+                          sleep_score=score))
+    db.add(GarminData(user_id=user.id, record_date=this_month + timedelta(days=1),
+                      sleep_score=90))
+    db.commit()
+    block = build_line_chart(db, user.id, "sleep_score", range="6m")
+    assert block is not None
+    assert block["title"] == "睡眠评分趋势"
+    assert block["unit"] == "分"
+
+
+def test_build_line_chart_steps_metric(db):
+    user, _ = create_authenticated_user(db)
+    this_month = date.today().replace(day=1)
+    prev_month = (this_month - timedelta(days=1)).replace(day=1)
+    for i, steps in enumerate([6000, 8000, 10000]):
+        db.add(GarminData(user_id=user.id, record_date=prev_month + timedelta(days=i + 1),
+                          steps=steps))
+    db.add(GarminData(user_id=user.id, record_date=this_month + timedelta(days=1),
+                      steps=12000))
+    db.commit()
+    block = build_line_chart(db, user.id, "steps", range="6m")
+    assert block is not None
+    assert block["title"] == "步数趋势"
+    assert block["unit"] == "步"
+
+
+def test_build_line_chart_can_emit_metric_line_chart_component(db):
+    user, _ = create_authenticated_user(db)
+    _seed_daily_hrv(db, user.id, 4, [50, 52, 54, 56, 58])
+    block = build_line_chart(db, user.id, "hrv", range="6m", component="metric_line_chart")
+    assert block is not None
+    assert block["component"] == "metric_line_chart"
+    assert block["metric"] == "hrv"
+    assert block["range"] == "6m"
+    assert block["schema"] == "reva.metric_line_chart.v1"
 
 
 def test_build_line_chart_unknown_metric_none(db):
@@ -579,6 +626,7 @@ async def test_genui_non_chart_query_with_caps_falls_through(db, monkeypatch):
 def test_api_parse_client_caps():
     from app.api.orchestrator import _parse_client_caps
     assert _parse_client_caps("genui-v1") == ["genui-v1"]
+    assert _parse_client_caps("genui-v1, genui-components-v1") == ["genui-v1", "genui-components-v1"]
     assert _parse_client_caps("genui-v1, foo") == ["genui-v1", "foo"]
     assert _parse_client_caps("GENUI-V1") == ["genui-v1"]
     assert _parse_client_caps(None) == []
@@ -587,7 +635,7 @@ def test_api_parse_client_caps():
 
 def test_supported_metrics_allowlist():
     assert "hrv" in SUPPORTED_METRICS
-    for m in ("hrv", "resting_hr", "stress", "sleep", "weight"):
+    for m in ("hrv", "resting_hr", "stress", "sleep", "sleep_score", "steps", "body_battery", "weight"):
         assert m in SUPPORTED_METRICS
 
 
@@ -661,6 +709,33 @@ def test_agent_stream_genui_caps_present_emits_block_no_llm(
     assistant_msgs = [m for m in detail.messages if m.role == "assistant"]
     assert assistant_msgs, "assistant 消息必须持久化"
     assert any("reva-ui" in (m.content or "") for m in assistant_msgs)
+
+
+def test_agent_stream_genui_components_cap_emits_metric_line_chart(
+    client, db, auth_user_and_headers, _explode_agent_run_stream
+):
+    """新端声明 genui-components-v1 → 走通用 metric_line_chart 组件, 仍不进 LLM。"""
+    user, headers = auth_user_and_headers
+    today = date.today()
+    for i, rhr in enumerate([61, 60, 62, 59, 58]):
+        db.add(GarminData(
+            user_id=user.id,
+            record_date=today - timedelta(days=4 - i),
+            resting_heart_rate=rhr,
+            data_source="apple-watch",
+        ))
+    db.commit()
+
+    resp = client.post(
+        "/api/v1/agent/stream",
+        json={"message": "绘制我最近半年的心率曲线"},
+        headers={**headers, "X-Reva-Client-Caps": "genui-v1, genui-components-v1"},
+    )
+    assert resp.status_code == 200
+    body = _read_sse_body(resp)
+    assert "reva-ui" in body
+    assert "metric_line_chart" in body
+    assert "line_chart" not in body.split("metric_line_chart", 1)[0]
 
 
 def test_agent_stream_no_caps_falls_through_to_normal_path(

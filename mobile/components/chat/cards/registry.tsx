@@ -36,7 +36,7 @@ import { MenuShareCardSpec } from './MenuShareCard';
 import { SystemKnowledgeEvidenceCardSpec } from './SystemKnowledgeEvidenceCard';
 import { RuntimeAgendaCardSpec } from './RuntimeAgendaCard';
 import { OperatingReviewCardSpec } from './OperatingReviewCard';
-import { MetricChartCardSpec, RevaUiLineChartCardSpec } from './MetricChartCard';
+import { MetricChartCardSpec, MetricLineChartCardSpec, RevaUiLineChartCardSpec } from './MetricChartCard';
 import { DiscoveryCardSpec } from './DiscoveryCard';
 import { SafetyCardSpec } from './SafetyCard';
 
@@ -54,6 +54,7 @@ export const CARD_REGISTRY: CardSpec[] = [
   SystemKnowledgeEvidenceCardSpec,
   RuntimeAgendaCardSpec,
   OperatingReviewCardSpec,
+  MetricLineChartCardSpec,
   RevaUiLineChartCardSpec,
   MetricChartCardSpec,
   DiscoveryCardSpec,
