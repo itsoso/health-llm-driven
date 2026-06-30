@@ -123,6 +123,22 @@ def _compact_causal_memory(memory: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _metric_history_route_type(metric: Optional[str]) -> str:
+    return {
+        "resting_heart_rate": "heart_rate",
+    }.get(metric or "", metric or "hrv")
+
+
+def _metric_history_label(data: Dict[str, Any]) -> str:
+    metric = data.get("metric")
+    label = data.get("label")
+    if metric == "hrv":
+        return "查看HRV历史"
+    if isinstance(label, str) and label.strip():
+        return f"查看{label.strip()}历史"
+    return "查看指标历史"
+
+
 # ── individual builders ────────────────────────────────────────────
 
 def _build_metric_chart(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
@@ -460,13 +476,14 @@ def build_cards(db: Session, user_id: int, query: str) -> List[Dict[str, Any]]:
                     ]
                 if card_type == "metric_chart":
                     metric = data.get("metric") if isinstance(data, dict) else None
+                    route_type = _metric_history_route_type(metric)
                     card["actions"] = [
                         {
                             "id": f"open-{metric or 'metric'}-history",
-                            "label": "查看HRV历史" if metric == "hrv" else "查看指标历史",
+                            "label": _metric_history_label(data) if isinstance(data, dict) else "查看指标历史",
                             "action": "route.open",
                             "payload": {
-                                "route": f"/indicator-history?type={metric or 'hrv'}",
+                                "route": f"/indicator-history?type={route_type}",
                             },
                             "style": "secondary",
                         }

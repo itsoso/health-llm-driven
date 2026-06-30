@@ -238,3 +238,37 @@ def test_inline_cards_builds_hrv_metric_chart_card(monkeypatch):
             "style": "secondary",
         }
     ]
+
+
+def test_inline_cards_metric_chart_uses_metric_specific_history_action(monkeypatch):
+    from app.services import inline_cards
+
+    def fake_metric_chart(db, *, user_id, query):
+        return {
+            "metric": "sleep_score",
+            "label": "睡眠评分",
+            "title": "最近7天 睡眠评分",
+            "unit": "分",
+            "coverage": {"days_with_data": 3, "days_in_window": 8},
+            "latest": {"date": "2026-06-30", "value": 86.0, "source": "garmin"},
+            "summary": {},
+            "series": [
+                {"date": "2026-06-28", "value": 72.0, "source": "garmin"},
+                {"date": "2026-06-29", "value": 81.0, "source": "garmin"},
+                {"date": "2026-06-30", "value": 86.0, "source": "garmin"},
+            ],
+        }
+
+    monkeypatch.setattr(inline_cards, "build_metric_chart", fake_metric_chart, raising=False)
+
+    cards = inline_cards.build_cards(db="db", user_id=3, query="画最近7天睡眠评分趋势")
+
+    assert cards[0]["actions"] == [
+        {
+            "id": "open-sleep_score-history",
+            "label": "查看睡眠评分历史",
+            "action": "route.open",
+            "payload": {"route": "/indicator-history?type=sleep_score"},
+            "style": "secondary",
+        }
+    ]

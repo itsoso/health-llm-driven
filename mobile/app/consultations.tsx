@@ -34,9 +34,6 @@ const STATUS_COLOR: Record<string, { bg: string; fg: string }> = {
 };
 
 function fmtDate(s?: string) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
   return s ? s.slice(0, 10) : '—';
 }
 

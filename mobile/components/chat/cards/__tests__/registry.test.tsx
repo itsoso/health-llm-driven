@@ -303,6 +303,59 @@ describe('renderCard 安全降级', () => {
     );
   });
 
+  it('renders non-HRV metric chart cards with metric-specific units and actions', () => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'metric_chart',
+      data: {
+        metric: 'weight',
+        label: '体重',
+        title: '最近30天 体重',
+        unit: 'kg',
+        start_date: '2026-06-01',
+        end_date: '2026-06-30',
+        coverage: { days_with_data: 3, days_in_window: 31 },
+        latest: { date: '2026-06-30', value: 73.8, source: 'manual' },
+        summary: {
+          avg: 74.1,
+          last_7d_avg: 73.9,
+          last_30d_avg: 74.1,
+          prev_30d_avg: 74.8,
+          last_30_vs_prev_30_delta: -0.7,
+        },
+        series: [
+          { date: '2026-06-26', value: 74.5, rolling_7d: 74.5, source: 'manual' },
+          { date: '2026-06-28', value: 74.0, rolling_7d: 74.3, source: 'manual' },
+          { date: '2026-06-30', value: 73.8, rolling_7d: 74.1, source: 'manual' },
+        ],
+        boundary: '体重 趋势仅用于健康管理参考, 不替代诊断或治疗。',
+      },
+      actions: [
+        {
+          id: 'open-weight-history',
+          label: '查看体重历史',
+          action: 'route.open',
+          payload: { route: '/indicator-history?type=weight' },
+          style: 'secondary',
+        },
+      ],
+    } as any;
+
+    const r = renderCard(descriptor, { onAction });
+    expect(r).not.toBeNull();
+
+    const { getByText } = render(r!);
+    expect(getByText('最近30天 体重')).toBeTruthy();
+    expect(getByText('73.8kg')).toBeTruthy();
+    expect(getByText('3/31 天')).toBeTruthy();
+    expect(getByText('近30天 -0.7kg')).toBeTruthy();
+    fireEvent.press(getByText('查看体重历史'));
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'route.open', payload: { route: '/indicator-history?type=weight' } }),
+      expect.objectContaining({ type: 'metric_chart' }),
+    );
+  });
+
   it('cards_group 1 张子卡 → 直接渲染, 不包 grid', () => {
     const r = renderCard({
       type: 'cards_group',
