@@ -21,6 +21,7 @@ from app.services.genui import (
     render_reva_ui_block,
 )
 from app.services.genui.chart_builder import compute_chart, MIN_POINTS
+from app.services.genui.chart_rich import compute_chart_rich
 
 from tests.conftest import create_authenticated_user
 
@@ -49,6 +50,22 @@ def _seed_hrv_across_months(db, user_id, monthly_values):
         seeded_means[(month_start.year, month_start.month)] = round(mean(vals), 1)
     db.commit()
     return seeded_means
+
+
+def _seed_daily_hrv(db, user_id, start_days_ago, values, data_source="garmin"):
+    """从今天往前 start_days_ago 起, 每天一行 GarminData.hrv (指定 data_source)。
+
+    values 按日期升序; values[i] 落在 (today - start_days_ago + i) 这天。
+    返回 {date: value} 供断言。
+    """
+    today = date.today()
+    out = {}
+    for i, v in enumerate(values):
+        d = today - timedelta(days=start_days_ago - i)
+        db.add(GarminData(user_id=user_id, record_date=d, hrv=v, data_source=data_source))
+        out[d] = v
+    db.commit()
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -147,17 +164,27 @@ def test_compute_chart_unknown_metric_none():
 # ---------------------------------------------------------------------------
 
 
-def test_build_line_chart_points_from_seeded_db_rows(db):
-    """关键: 块里的 points 必须等于 seeded GarminData 行的月均值 (非 LLM 编造)。"""
+def test_build_line_chart_monthly_metric_points_from_seeded_db_rows(db):
+    """关键 (月/周分桶路径回归): 非 rich metric (stress) 块里的 points 必须等于
+    seeded GarminData 行的月均值 (非 LLM 编造)。HRV 已走富日级路径, 见下方 rich 测试。
+    """
     user, _ = create_authenticated_user(db)
-    seeded = _seed_hrv_across_months(
-        db, user.id, {0: [70, 80, 90], 1: [50, 60, 55], 2: [40, 42, 44]}
-    )
+    base = date.today().replace(day=1)
+    seeded = {}
+    for offset, vals in {0: [70, 80, 90], 1: [50, 60, 55], 2: [40, 42, 44]}.items():
+        month_start = base
+        for _ in range(offset):
+            month_start = (month_start - timedelta(days=1)).replace(day=1)
+        for i, v in enumerate(vals):
+            db.add(GarminData(user_id=user.id,
+                              record_date=month_start + timedelta(days=i + 1),
+                              stress_level=v))
+        seeded[(month_start.year, month_start.month)] = round(mean(vals), 1)
+    db.commit()
 
-    block = build_line_chart(db, user.id, "hrv", range="6m")
+    block = build_line_chart(db, user.id, "stress", range="6m")
     assert block is not None
     assert block["component"] == "line_chart"
-    assert block["unit"] == "ms"
 
     pts = block["series"][0]["points"]
     assert len(pts) == len(block["x"])
@@ -168,8 +195,9 @@ def test_build_line_chart_points_from_seeded_db_rows(db):
         from app.services.genui.chart_builder import _MONTH_NAMES
         assert label_to_val[_MONTH_NAMES[mo]] == expected_mean
 
-    # data_note 反映真实天数 (9 天)
+    # data_note 反映真实天数 (9 天), 月度均值 grain
     assert "9" in block["data_note"]
+    assert block["series"][0]["name"] == "月度均值"
 
 
 def test_build_line_chart_insufficient_data_returns_none(db):
@@ -244,6 +272,179 @@ def test_build_line_chart_unknown_metric_none(db):
 def test_build_line_chart_bad_range_none(db):
     user, _ = create_authenticated_user(db)
     assert build_line_chart(db, user.id, "hrv", range="99y") is None
+
+
+# ---------------------------------------------------------------------------
+# compute_chart_rich — 富日级纯计算 (无 DB, 无 LLM)
+# ---------------------------------------------------------------------------
+
+
+def _daily(start_days_ago, values):
+    """{date: value}, values[i] 落在 today - start_days_ago + i 天。"""
+    today = date.today()
+    return {today - timedelta(days=start_days_ago - i): float(v)
+            for i, v in enumerate(values)}
+
+
+def test_rich_daily_grain_all_series_aligned():
+    """每条 series.points 长度 == x 长度 (日级对齐, 缺日 null)。"""
+    g = _daily(9, [50, 52, 54, 56, 58, 60, 62, 64, 66, 68])  # 10 连续日
+    block = compute_chart_rich(g, {}, "hrv", "6m")
+    assert block is not None
+    n = len(block["x"])
+    assert n == 10
+    for s in block["series"]:
+        assert len(s["points"]) == n, f"series {s['role']} 长度未对齐"
+
+
+def test_rich_x_is_daily_dates_with_gaps_nulled():
+    """跨度内缺的日子在 x 上仍占位, raw series 该位置为 null。"""
+    # 第 5 天故意缺值
+    today = date.today()
+    g = {}
+    for i in [0, 1, 2, 4, 5]:  # 缺第 3 天 (index 3)
+        g[today - timedelta(days=5 - i)] = float(50 + i)
+    block = compute_chart_rich(g, {}, "hrv", "6m")
+    assert block is not None
+    assert len(block["x"]) == 6  # 跨度 6 天 (含缺日)
+    raw = next(s for s in block["series"] if s["role"] == "raw")["points"]
+    assert raw.count(None) == 1  # 恰一个缺日为 null
+
+
+def test_rich_rolling_7d_math_correct():
+    """7 日滚动均值 = trailing 7 日历窗口内 primary 非空值的均值。"""
+    # 10 连续日, 值 = 10,20,...,100
+    g = _daily(9, [10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
+    block = compute_chart_rich(g, {}, "hrv", "6m")
+    avg7 = next(s for s in block["series"] if s["role"] == "avg_7d")["points"]
+    # 最后一天 (第 10 天) 窗口 = 第 4..10 天值 [40..100] → 均值 70.0
+    assert avg7[-1] == 70.0
+    # 第 1 天窗口仅 [10] → 10.0; 第 2 天 [10,20] → 15.0
+    assert avg7[0] == 10.0
+    assert avg7[1] == 15.0
+
+
+def test_rich_rolling_30d_present():
+    g = _daily(40, list(range(40, 80)))  # 40 连续日
+    block = compute_chart_rich(g, {}, "hrv", "6m")
+    roles = {s["role"] for s in block["series"]}
+    assert "avg_30d" in roles
+    avg30 = next(s for s in block["series"] if s["role"] == "avg_30d")["points"]
+    assert len(avg30) == len(block["x"])
+    assert avg30[-1] is not None
+
+
+def test_rich_latest_annotation_factual():
+    """latest annotation = 最新有值日 + 值 + 源, kind=latest, ≤3 条。"""
+    g = _daily(4, [55, 56, 57, 58, 59])  # 最新 (今天) = 59.0, garmin 源
+    block = compute_chart_rich(g, {}, "hrv", "6m")
+    anns = block["annotations"]
+    assert len(anns) <= 3
+    latest = [a for a in anns if a["kind"] == "latest"]
+    assert len(latest) == 1
+    assert "最新" in latest[0]["label"]
+    assert "59.0" in latest[0]["label"]
+    assert "Garmin" in latest[0]["label"]
+
+
+def test_rich_apple_watch_series_present_when_data_exists():
+    """有 apple-watch 源数据 → 单独 device 线; data_note 标 Apple Watch 天数。"""
+    g = _daily(5, [50, 51, 52, 53, 54, 55])
+    a = _daily(5, [60, 61, 62, 63, 64, 65])
+    block = compute_chart_rich(g, a, "hrv", "6m")
+    roles = [s["role"] for s in block["series"]]
+    assert "device" in roles
+    device = next(s for s in block["series"] if s["role"] == "device")
+    assert device["name"] == "Apple Watch HRV"
+    assert "Apple Watch" in block["data_note"]
+
+
+def test_rich_apple_watch_series_omitted_when_absent():
+    """无 apple-watch 数据 → 不出 device 线 (不伪造), data_note 不提 Apple Watch。"""
+    g = _daily(4, [50, 51, 52, 53, 54])
+    block = compute_chart_rich(g, {}, "hrv", "6m")
+    roles = [s["role"] for s in block["series"]]
+    assert "device" not in roles
+    assert "Apple Watch" not in block["data_note"]
+
+
+def test_rich_series_count_le_5():
+    g = _daily(5, [50, 51, 52, 53, 54, 55])
+    a = _daily(5, [60, 61, 62, 63, 64, 65])
+    block = compute_chart_rich(g, a, "hrv", "6m")
+    assert len(block["series"]) <= 5
+
+
+def test_rich_insufficient_data_returns_none():
+    g = _daily(1, [50, 51])  # 2 天 < MIN_POINTS
+    assert compute_chart_rich(g, {}, "hrv", "6m") is None
+
+
+def test_rich_unknown_metric_none():
+    g = _daily(4, [1, 2, 3, 4, 5])
+    assert compute_chart_rich(g, {}, "bogus", "6m") is None
+
+
+# ---------------------------------------------------------------------------
+# build_line_chart 富路径 — 真 DB 数据 (HRV)
+# ---------------------------------------------------------------------------
+
+
+def test_build_hrv_routes_through_rich_daily_path(db):
+    """HRV 走富日级路径: 日级 x + raw/avg_7d/avg_30d roles + latest annotation。"""
+    user, _ = create_authenticated_user(db)
+    _seed_daily_hrv(db, user.id, 6, [50, 52, 54, 56, 58, 60, 62])  # 7 连续日 garmin
+    block = build_line_chart(db, user.id, "hrv", range="6m")
+    assert block is not None
+    roles = {s["role"] for s in block["series"]}
+    assert {"raw", "avg_7d", "avg_30d"} <= roles
+    assert all(s["role"] != "device" for s in block["series"])  # 无 apple
+    assert any(a["kind"] == "latest" for a in block["annotations"])
+    # 每条 series 与 x 等长
+    for s in block["series"]:
+        assert len(s["points"]) == len(block["x"])
+    assert "每日" in block["data_note"]
+
+
+def test_build_hrv_apple_watch_separate_series_from_db(db):
+    """同用户 garmin + apple-watch 两源 HRV → 两条独立 series (不合并成一条)。"""
+    user, _ = create_authenticated_user(db)
+    today = date.today()
+    # 同一天两源, 验证不互相覆盖 (唯一约束 (user,date,source) 允许)
+    for i in range(6):
+        d = today - timedelta(days=5 - i)
+        db.add(GarminData(user_id=user.id, record_date=d, hrv=50 + i, data_source="garmin"))
+        db.add(GarminData(user_id=user.id, record_date=d, hrv=70 + i, data_source="apple-watch"))
+    db.commit()
+
+    block = build_line_chart(db, user.id, "hrv", range="6m")
+    assert block is not None
+    raw = next(s for s in block["series"] if s["role"] == "raw")
+    device = next(s for s in block["series"] if s["role"] == "device")
+    # garmin 与 apple 值各自独立 (50-55 vs 70-75)
+    raw_vals = [p for p in raw["points"] if p is not None]
+    dev_vals = [p for p in device["points"] if p is not None]
+    assert all(50 <= p <= 55 for p in raw_vals)
+    assert all(70 <= p <= 75 for p in dev_vals)
+    assert "Garmin" in block["data_note"] and "Apple Watch" in block["data_note"]
+
+
+def test_build_hrv_apple_only_user_still_charts(db):
+    """仅 apple-watch 源 (无 garmin) → 图仍出 (raw=garmin 主线全 null, device 有值)。
+
+    HRV 的优先源是 ring-first (garmin 在 apple 之前), 故 primary 逐日回落 apple-watch,
+    滚动均值/latest 基于 apple 值, 不整图失败。
+    """
+    user, _ = create_authenticated_user(db)
+    _seed_daily_hrv(db, user.id, 4, [60, 61, 62, 63, 64], data_source="apple-watch")
+    block = build_line_chart(db, user.id, "hrv", range="6m")
+    assert block is not None
+    roles = {s["role"] for s in block["series"]}
+    assert "device" in roles
+    avg7 = next(s for s in block["series"] if s["role"] == "avg_7d")["points"]
+    assert any(v is not None for v in avg7)  # 滚动均值回落 apple 值
+    latest = next(a for a in block["annotations"] if a["kind"] == "latest")
+    assert "Apple Watch" in latest["label"]
 
 
 # ---------------------------------------------------------------------------

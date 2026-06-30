@@ -84,6 +84,18 @@ MIN_POINTS = 3
 # 非空桶少于此数 → 数据不足 (一条线至少 2 个桶才有"趋势")
 MIN_BUCKETS = 2
 
+# ---------------------------------------------------------------------------
+# 富日级路径 (rich daily) — 仅对下列 metric 出"每日点 + 滚动均值 + 多源分线"图。
+# 纯计算核心在 `chart_rich.compute_chart_rich`; 本文件只管路由 + DB I/O。
+# 其余 metric 仍走原月/周分桶 compute_chart, 行为零变化 (back-compat)。
+# ---------------------------------------------------------------------------
+
+# 走富日级路径的 metric (其余 metric 保持月/周分桶不变)
+_RICH_METRICS = frozenset({"hrv", "resting_hr"})
+
+# Apple Watch 在 GarminData.data_source 上的标签 (见 device_source_priority.py)
+_APPLE_WATCH_SOURCE = "apple-watch"
+
 
 # ---------------------------------------------------------------------------
 # 确定性图表意图检测 (纯正则, 无 LLM)
@@ -308,6 +320,41 @@ def _fetch_daily_points(
     return out
 
 
+def _fetch_daily_by_source(
+    db: Session, user_id: int, spec: _MetricSpec, days: int
+) -> Dict[str, Dict[date, float]]:
+    """查真实日级值, 按 data_source 分组: {"garmin": {date: v}, "apple-watch": {...}}。
+
+    富日级路径专用。同源同日多行取第一条非空 (唯一约束 (user,date,source) 下通常仅一行)。
+    0/None 视为缺值跳过。Apple Watch 行 = data_source == "apple-watch"; 其余源 (garmin/
+    ringconn/oura/...) 当前合并归入 "garmin" 主线 (本图只双源分线: Garmin 主线 + Apple Watch)。
+    """
+    cutoff = date.today() - timedelta(days=days)
+    garmin: Dict[date, float] = {}
+    apple: Dict[date, float] = {}
+
+    rows = (
+        db.query(GarminData)
+        .filter(
+            GarminData.user_id == user_id,
+            GarminData.record_date >= cutoff,
+        )
+        .order_by(GarminData.record_date.asc())
+        .all()
+    )
+    for r in rows:
+        raw = getattr(r, spec.garmin_field, None)
+        if raw is None or raw == 0:
+            continue
+        val = spec.transform(float(raw)) if spec.transform else float(raw)
+        src = getattr(r, "data_source", None) or "garmin"
+        target = apple if src == _APPLE_WATCH_SOURCE else garmin
+        if r.record_date not in target:  # 同源同日取首条非空
+            target[r.record_date] = val
+
+    return {"garmin": garmin, _APPLE_WATCH_SOURCE: apple}
+
+
 def build_line_chart(
     db: Session, user_id: int, metric: str, range: str = "6m"
 ) -> Optional[dict]:
@@ -315,6 +362,10 @@ def build_line_chart(
 
     metric 不在 allowlist / range 非法 / 数据不足 → None (调用方显"数据不足")。
     返回的 dict 即 §3.2 契约;数值全部来自 DB。
+
+    路由: HRV / 静息心率 (_RICH_METRICS) → compute_chart_rich (每日点 + 7/30 日滚动
+    均值 + Garmin/Apple Watch 多源分线 + latest annotation); 其余 metric → compute_chart
+    (月/周分桶, 行为零变化, back-compat)。
     """
     spec = SUPPORTED_METRICS.get(metric)
     if spec is None:
@@ -322,6 +373,14 @@ def build_line_chart(
     days = _RANGE_DAYS.get(range)
     if days is None:
         return None
+
+    # 富日级路径仅适用于 garmin 源 metric (有 data_source 分线意义)。
+    if metric in _RICH_METRICS and spec.source == "garmin":
+        from app.services.genui.chart_rich import compute_chart_rich
+        by_source = _fetch_daily_by_source(db, user_id, spec, days)
+        return compute_chart_rich(
+            by_source["garmin"], by_source[_APPLE_WATCH_SOURCE], metric, range
+        )
 
     points = _fetch_daily_points(db, user_id, spec, days)
     return compute_chart(points, metric, range)
