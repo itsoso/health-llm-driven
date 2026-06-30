@@ -252,4 +252,66 @@ describe('ChatBubble structured summary', () => {
       );
     });
   });
+
+  it('asks for confirmation before dispatching write card actions', async () => {
+    const { Alert } = require('react-native');
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    dispatchChatCardAction.mockResolvedValueOnce({ status: 'completed' });
+    renderCard.mockImplementationOnce((descriptor: any, options: any) => {
+      const { Pressable, Text } = require('react-native');
+      return (
+        <Pressable onPress={() => options.onAction(descriptor.actions[0], descriptor)}>
+          <Text>确认记录</Text>
+        </Pressable>
+      );
+    });
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-card-confirmation',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'record',
+      cardData: { type: 'exercise', detail: '俯卧撑 30 个' },
+      cardActions: [{
+        label: '确认记录',
+        action: 'write_intent.confirm',
+        endpoint: '/write-intents/42/confirm',
+        requires_manual_confirm: true,
+        payload: { write_intent_id: 42 },
+        confirmation: {
+          title: '记录 30 个俯卧撑？',
+          detail: '将写入今天的运动记录',
+          confirm_label: '确认记录',
+          cancel_label: '再看看',
+        },
+      } as any],
+    };
+
+    const { getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByText('确认记录'));
+
+    expect(dispatchChatCardAction).not.toHaveBeenCalled();
+    expect(alertSpy).toHaveBeenCalledWith(
+      '记录 30 个俯卧撑？',
+      '将写入今天的运动记录',
+      expect.any(Array),
+    );
+
+    const buttons = alertSpy.mock.calls[0][2] as Array<{ onPress?: () => void }>;
+    buttons[1].onPress?.();
+
+    await waitFor(() => {
+      expect(dispatchChatCardAction).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'write_intent.confirm' }),
+      );
+    });
+
+    alertSpy.mockRestore();
+  });
 });

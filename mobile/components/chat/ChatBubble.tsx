@@ -137,25 +137,47 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
     action: ChatCardActionDescriptor,
     descriptor: ServerCardDescriptor,
   ) => {
-    try {
-      const result = await dispatchChatCardAction(action);
-      if (result.route) {
-        router.push(result.route as any);
-        return;
+    const execute = async () => {
+      try {
+        const result = await dispatchChatCardAction(action);
+        if (result.route) {
+          router.push(result.route as any);
+          return;
+        }
+        await Promise.all([
+          qc.invalidateQueries({ queryKey: ['timeline', 'today'] }),
+          qc.invalidateQueries({ queryKey: ['agenda', 'today'] }),
+          qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] }),
+          qc.invalidateQueries({ queryKey: ['write-intents'] }),
+        ]);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        toast.show(action.action === 'write_intent.dismiss' ? '已忽略' : '已执行', 'success');
+      } catch {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        toast.show('操作失败，请稍后重试', 'error');
+        if (__DEV__) console.warn('[cards] action failed', descriptor.type, action.action);
       }
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ['timeline', 'today'] }),
-        qc.invalidateQueries({ queryKey: ['agenda', 'today'] }),
-        qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] }),
-        qc.invalidateQueries({ queryKey: ['write-intents'] }),
-      ]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      toast.show(action.action === 'write_intent.dismiss' ? '已忽略' : '已执行', 'success');
-    } catch {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-      toast.show('操作失败，请稍后重试', 'error');
-      if (__DEV__) console.warn('[cards] action failed', descriptor.type, action.action);
+    };
+
+    if (action.action !== 'route.open' && action.confirmation) {
+      Alert.alert(
+        action.confirmation.title || action.label,
+        action.confirmation.detail || '确认后会写入你的健康记录。',
+        [
+          {
+            text: action.confirmation.cancel_label || '取消',
+            style: 'cancel',
+          },
+          {
+            text: action.confirmation.confirm_label || action.label,
+            onPress: execute,
+          },
+        ],
+      );
+      return;
     }
+
+    await execute();
   }, [qc, toast]);
 
   if (item.cardType && item.cardData) {

@@ -139,6 +139,74 @@ def _metric_history_label(data: Dict[str, Any]) -> str:
     return "查看指标历史"
 
 
+_AGENDA_COMPLETE_SOURCE_TYPES = {"health_protocol", "medication", "supplement"}
+
+
+def _normalize_agenda_source(source: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(source, dict):
+        return None
+    object_type = source.get("object_type")
+    object_id = source.get("object_id")
+    if not isinstance(object_type, str) or object_type not in _AGENDA_COMPLETE_SOURCE_TYPES:
+        return None
+    try:
+        oid = int(object_id)
+    except (TypeError, ValueError):
+        return None
+    if oid <= 0:
+        return None
+    return {"object_type": object_type, "object_id": oid}
+
+
+def _runtime_agenda_actions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    action = data.get("next_action") if isinstance(data.get("next_action"), dict) else {}
+    title = action.get("title") if isinstance(action.get("title"), str) else "当前行动"
+    source = _normalize_agenda_source(action.get("source"))
+    actions: List[Dict[str, Any]] = []
+
+    if source:
+        actions.append({
+            "id": "complete-runtime-action",
+            "label": "完成",
+            "action": "agenda.complete",
+            "endpoint": "/agenda/complete",
+            "requires_manual_confirm": True,
+            "payload": {
+                "source": source,
+                "status": "done",
+                "track": "manual",
+            },
+            "style": "primary",
+            "confirmation": {
+                "title": f"完成：{title}？",
+                "detail": "将写入今天的健康运行时执行记录。",
+                "confirm_label": "确认完成",
+                "cancel_label": "再看看",
+            },
+            "optimistic": True,
+        })
+    else:
+        actions.append({
+            "id": "complete-runtime-action",
+            "label": "完成",
+            "action": "agenda.complete",
+            "endpoint": "/agenda/complete",
+            "requires_manual_confirm": True,
+            "payload": {},
+            "style": "primary",
+            "disabled_reason": "当前行动缺少可完成的来源,请进入7天计划处理",
+        })
+
+    actions.append({
+        "id": "open-runtime-agenda",
+        "label": "查看7天计划",
+        "action": "route.open",
+        "payload": {"route": "/agenda"},
+        "style": "secondary",
+    })
+    return actions
+
+
 # ── individual builders ────────────────────────────────────────────
 
 def _build_metric_chart(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
@@ -235,6 +303,7 @@ def _build_runtime_agenda(db: Session, user_id: int, q: str) -> Optional[Dict[st
             "id": action.get("id"),
             "title": action.get("title"),
             "kind": action.get("type"),
+            "source": action.get("source") if isinstance(action.get("source"), dict) else None,
             "time_window": action.get("time_window"),
             "priority_tier": action.get("priority_tier"),
             "current_state_summary": runtime_context.get("current_state_summary"),
@@ -455,15 +524,7 @@ def build_cards(db: Session, user_id: int, query: str) -> List[Dict[str, Any]]:
             if data:
                 card: Dict[str, Any] = {"type": card_type, "data": data}
                 if card_type == "runtime_agenda":
-                    card["actions"] = [
-                        {
-                            "id": "open-runtime-agenda",
-                            "label": "查看7天计划",
-                            "action": "route.open",
-                            "payload": {"route": "/agenda"},
-                            "style": "primary",
-                        }
-                    ]
+                    card["actions"] = _runtime_agenda_actions(data)
                 if card_type == "operating_review":
                     card["actions"] = [
                         {

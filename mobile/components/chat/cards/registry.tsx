@@ -147,26 +147,39 @@ export function renderCard(
         {rendered}
         <View style={styles.actionBar}>
           {actions.map((action, index) => (
-            <Pressable
-              key={action.id ?? `${action.action}-${index}`}
-              style={({ pressed }) => [
-                styles.actionButton,
-                action.style === 'primary' && styles.actionButtonPrimary,
-                pressed && { opacity: 0.82 },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={action.label}
-              onPress={() => options.onAction?.(action, descriptor)}
-            >
-              <Text
-                style={[
-                  styles.actionText,
-                  action.style === 'primary' && styles.actionTextPrimary,
+            <View key={action.id ?? `${action.action}-${index}`} style={styles.actionItem}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.actionButton,
+                  action.style === 'primary' && styles.actionButtonPrimary,
+                  action.disabled_reason && styles.actionButtonDisabled,
+                  pressed && !action.disabled_reason && { opacity: 0.82 },
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel={action.label}
+                accessibilityState={{ disabled: !!action.disabled_reason }}
+                disabled={!!action.disabled_reason}
+                onPress={() => {
+                  if (action.disabled_reason) return;
+                  options.onAction?.(action, descriptor);
+                }}
               >
-                {action.label}
-              </Text>
-            </Pressable>
+                <Text
+                  style={[
+                    styles.actionText,
+                    action.style === 'primary' && styles.actionTextPrimary,
+                    action.disabled_reason && styles.actionTextDisabled,
+                  ]}
+                >
+                  {action.label}
+                </Text>
+              </Pressable>
+              {action.disabled_reason ? (
+                <Text maxFontSizeMultiplier={1.1} style={styles.disabledReason}>
+                  {action.disabled_reason}
+                </Text>
+              ) : null}
+            </View>
           ))}
         </View>
       </View>
@@ -201,6 +214,9 @@ function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCar
   )).map((action) => ({
     ...action,
     label: action.label.trim(),
+    disabled_reason: typeof action.disabled_reason === 'string' && action.disabled_reason.trim()
+      ? action.disabled_reason.trim()
+      : null,
   }));
 }
 
@@ -218,6 +234,10 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
+  actionItem: {
+    maxWidth: '100%',
+    gap: 3,
+  },
   actionButton: {
     minHeight: 36,
     borderRadius: revaRadii.sm,
@@ -232,6 +252,11 @@ const styles = StyleSheet.create({
     borderColor: C.green500,
     backgroundColor: C.green500,
   },
+  actionButtonDisabled: {
+    borderColor: C.line,
+    backgroundColor: C.paper2,
+    opacity: 0.68,
+  },
   actionText: {
     fontSize: 13,
     fontWeight: '700',
@@ -240,5 +265,14 @@ const styles = StyleSheet.create({
   },
   actionTextPrimary: {
     color: C.greenOn,
+  },
+  actionTextDisabled: {
+    color: C.ink3,
+  },
+  disabledReason: {
+    maxWidth: 220,
+    fontSize: 11,
+    lineHeight: 15,
+    color: C.ink3,
   },
 });

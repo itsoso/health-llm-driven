@@ -50,6 +50,10 @@ def test_inline_cards_builds_runtime_agenda_card(monkeypatch):
     assert cards[0]["data"]["generated_by"] == "rolling_health_runtime_v1"
     assert cards[0]["data"]["horizon_days"] == 7
     assert cards[0]["data"]["next_action"]["title"] == "晚餐后步行 15 分钟"
+    assert cards[0]["data"]["next_action"]["source"] == {
+        "object_type": "daily_plan_action",
+        "object_id": "walk",
+    }
     assert cards[0]["data"]["next_action"]["replan_reason"] == "today_smart_rank"
     assert cards[0]["data"]["next_action"]["verification_metrics"] == [
         "post_meal_walk_completed",
@@ -58,13 +62,78 @@ def test_inline_cards_builds_runtime_agenda_card(monkeypatch):
     ]
     assert cards[0]["actions"] == [
         {
+            "id": "complete-runtime-action",
+            "label": "完成",
+            "action": "agenda.complete",
+            "endpoint": "/agenda/complete",
+            "requires_manual_confirm": True,
+            "payload": {},
+            "style": "primary",
+            "disabled_reason": "当前行动缺少可完成的来源,请进入7天计划处理",
+        },
+        {
             "id": "open-runtime-agenda",
             "label": "查看7天计划",
             "action": "route.open",
             "payload": {"route": "/agenda"},
-            "style": "primary",
+            "style": "secondary",
         }
     ]
+
+
+def test_inline_cards_runtime_agenda_emits_manual_confirm_complete_action(monkeypatch):
+    from app.services import inline_cards
+
+    def fake_runtime_range_view(db, user_id, days=7, max_items_per_day=3):
+        action = {
+            "id": "smart_health_protocol_9",
+            "type": "hydration",
+            "title": "喝温水 200ml",
+            "time_window": "morning",
+            "priority_tier": "P0",
+            "source": {"object_type": "health_protocol", "object_id": 9},
+            "runtime_context": {
+                "current_state_summary": "起床后补水窗口。",
+                "replan_reason": "morning_runtime",
+                "verification_window": {"metrics": ["water_ml"], "window_days": 1},
+            },
+        }
+        return {
+            "mode": "runtime",
+            "generated_by": "rolling_health_runtime_v1",
+            "horizon_days": 7,
+            "start": "2026-06-30",
+            "end": "2026-07-06",
+            "next_action": action,
+            "runtime_context": {},
+            "days": [{"date": "2026-06-30", "next_action": action, "time_windows": []}],
+        }
+
+    monkeypatch.setattr(inline_cards.agenda_service, "runtime_range_view", fake_runtime_range_view)
+
+    cards = inline_cards.build_cards(db=None, user_id=3, query="我现在下一步该做什么？")
+
+    assert cards[0]["type"] == "runtime_agenda"
+    assert cards[0]["actions"][0] == {
+        "id": "complete-runtime-action",
+        "label": "完成",
+        "action": "agenda.complete",
+        "endpoint": "/agenda/complete",
+        "requires_manual_confirm": True,
+        "payload": {
+            "source": {"object_type": "health_protocol", "object_id": 9},
+            "status": "done",
+            "track": "manual",
+        },
+        "style": "primary",
+        "confirmation": {
+            "title": "完成：喝温水 200ml？",
+            "detail": "将写入今天的健康运行时执行记录。",
+            "confirm_label": "确认完成",
+            "cancel_label": "再看看",
+        },
+        "optimistic": True,
+    }
 
 
 def test_inline_cards_runtime_agenda_does_not_trigger_for_record_intent(monkeypatch):

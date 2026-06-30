@@ -131,6 +131,65 @@ describe('renderCard 安全降级', () => {
     );
   });
 
+  it('preserves interaction metadata on safe write actions', () => {
+    const r = renderServerCards([
+      {
+        type: 'vitals',
+        data: {},
+        actions: [
+          {
+            label: '确认记录',
+            action: 'write_intent.confirm',
+            endpoint: '/write-intents/42/confirm',
+            requires_manual_confirm: true,
+            payload: { write_intent_id: 42 },
+            confirmation: {
+              title: '记录 30 个俯卧撑？',
+              detail: '将写入今天的运动记录',
+              confirm_label: '确认记录',
+              cancel_label: '再看看',
+            },
+            optimistic: true,
+          },
+        ],
+      } as any,
+    ]);
+
+    expect(r[0].actions?.[0]).toEqual(expect.objectContaining({
+      action: 'write_intent.confirm',
+      confirmation: expect.objectContaining({ title: '记录 30 个俯卧撑？' }),
+      optimistic: true,
+    }));
+  });
+
+  it('renders disabled card actions without dispatching them', () => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'vitals',
+      data: { sleep: '8h' },
+      actions: [
+        {
+          id: 'complete-missing-source',
+          label: '完成',
+          action: 'agenda.complete',
+          endpoint: '/agenda/complete',
+          requires_manual_confirm: true,
+          disabled_reason: '缺少可完成的行动来源',
+          payload: {},
+        },
+      ],
+    } as any;
+
+    const element = renderCard(descriptor, { onAction });
+    expect(element).not.toBeNull();
+
+    const { getByText } = render(element!);
+    fireEvent.press(getByText('完成'));
+
+    expect(onAction).not.toHaveBeenCalled();
+    expect(getByText('缺少可完成的行动来源')).toBeTruthy();
+  });
+
   it('renders medical exam import result cards from runtime skills', () => {
     const r = renderCard({
       type: 'medical_exam_import_result',
