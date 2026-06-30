@@ -77,6 +77,7 @@ const ChatBubble = require('../ChatBubble').default;
 const { saveAssistantReplyAsMemory } = require('../../../services/chatResultActions');
 const { dispatchChatCardAction } = require('../../../services/chatCardActions');
 const { renderCard, __mockCard } = require('../cards');
+const { sharePlainText } = require('../../../utils/share');
 
 function renderBubble(content: string) {
   const qc = new QueryClient();
@@ -149,6 +150,20 @@ describe('ChatBubble structured summary', () => {
 
     await waitFor(() => {
       expect(saveAssistantReplyAsMemory).toHaveBeenCalledWith('建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。');
+    });
+  });
+
+  it('shares assistant replies under the 阿衡 persona', async () => {
+    sharePlainText.mockResolvedValueOnce(undefined);
+
+    const { getByLabelText } = renderBubble('今天先补水 300ml, 晚饭后散步 15 分钟。');
+
+    fireEvent.press(getByLabelText('分享'));
+
+    await waitFor(() => {
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        title: '阿衡 · 建议',
+      }));
     });
   });
 

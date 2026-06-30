@@ -54,16 +54,116 @@ function makeArtifact(overrides: Partial<DailyArtifact> = {}): DailyArtifact {
 }
 
 describe('DailyArtifactCard', () => {
-  it('renders exactly one top action and at most three evidence rows', () => {
+  it('renders one focused top action with compact proof chips and capped evidence', () => {
     const { getByText, getAllByTestId, queryByText } = render(
       <DailyArtifactCard artifact={makeArtifact()} />,
     );
 
+    expect(getByText('今日焦点')).toBeTruthy();
     expect(getByText('午饭后步行 10 分钟')).toBeTruthy();
-    expect(getByText('目标: 腰围 · 周期: 90天上游轨迹')).toBeTruthy();
-    expect(getByText('验证: 腰围 · 7天 · 不确定性: 中')).toBeTruthy();
-    expect(getAllByTestId('daily-artifact-evidence')).toHaveLength(3);
+    expect(getByText('决策依据')).toBeTruthy();
+    expect(getByText('餐后血糖窗口更适合轻活动。')).toBeTruthy();
+    expect(getByText('现在只做')).toBeTruthy();
+    expect(getByText('目标')).toBeTruthy();
+    expect(getByText('腰围 · 90天上游轨迹')).toBeTruthy();
+    expect(getByText('验证')).toBeTruthy();
+    expect(getByText('腰围 · 7天 · 不确定性: 中')).toBeTruthy();
+    expect(getAllByTestId('daily-artifact-evidence')).toHaveLength(2);
     expect(queryByText('不应显示')).toBeNull();
+  });
+
+  it('opens a detailed decision basis discussion with Aheng', () => {
+    const onExplainBasis = jest.fn();
+    const artifact = makeArtifact();
+    const { getByLabelText, getByText } = render(
+      <DailyArtifactCard artifact={artifact} onExplainBasis={onExplainBasis} />,
+    );
+
+    expect(getByText('查看决策依据')).toBeTruthy();
+    fireEvent.press(getByLabelText('查看今日行动决策依据'));
+    expect(onExplainBasis).toHaveBeenCalledWith(artifact);
+  });
+
+  it('cleans generated action titles before rendering them', () => {
+    const { getByText, queryByText } = render(
+      <DailyArtifactCard
+        artifact={makeArtifact({
+          top_action: {
+            ...makeArtifact().top_action!,
+            title: '今日训练:今天恢复/休息,暂停高强度;优先睡眠与轻活动',
+          } as any,
+        })}
+      />,
+    );
+
+    expect(getByText('恢复/休息:暂停高强度;优先睡眠与轻活动')).toBeTruthy();
+    expect(queryByText('今日训练:今天恢复/休息,暂停高强度;优先睡眠与轻活动')).toBeNull();
+  });
+
+  it('deduplicates repeated evidence against the action copy', () => {
+    const artifact = makeArtifact({
+      top_action: {
+        ...makeArtifact().top_action!,
+        title: '今天训练:优先睡眠与轻活动',
+        do_now: '今天训练:优先睡眠与轻活动',
+        why_now: '腰围、血压、BMI、血糖血脂或基因信号提示代谢风险轨迹正在形成。',
+      } as any,
+      evidence: [
+        {
+          kind: 'why_now',
+          label: 'Why now',
+          summary: '腰围、血压、BMI、血糖血脂或基因信号提示代谢风险轨迹正在形成。',
+        },
+        {
+          kind: 'trajectory',
+          label: 'Trajectory',
+          summary: '腰围、血压、BMI、血糖血脂或基因信号提示代谢风险轨迹正在形成。',
+        },
+        { kind: 'verification', label: 'Verification', summary: '后续用睡眠分和腰围验证。' },
+      ],
+    });
+
+    const { getAllByTestId, getAllByText, getByText } = render(
+      <DailyArtifactCard artifact={artifact} />,
+    );
+
+    expect(getAllByText('优先睡眠与轻活动')).toHaveLength(1);
+    expect(getAllByText('腰围、血压、BMI、血糖血脂或基因信号提示代谢风险轨迹正在形成。')).toHaveLength(1);
+    expect(getByText('后续用睡眠分和腰围验证。')).toBeTruthy();
+    expect(getAllByTestId('daily-artifact-evidence')).toHaveLength(1);
+  });
+
+  it('uses a go-execute primary action when the card cannot write completion', () => {
+    const onComplete = jest.fn();
+    const onPressAction = jest.fn();
+    const artifact = makeArtifact({
+      top_action: {
+        ...makeArtifact().top_action!,
+        actions: { complete: { enabled: true }, skip: { requires_reason: true } },
+        source: null,
+      } as any,
+    });
+
+    const { getByLabelText, getByText, queryByText } = render(
+      <DailyArtifactCard artifact={artifact} onComplete={onComplete} onPressAction={onPressAction} />,
+    );
+
+    expect(getByText('去执行')).toBeTruthy();
+    expect(queryByText('完成')).toBeNull();
+
+    fireEvent.press(getByLabelText('执行今日最重要行动'));
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(onPressAction).toHaveBeenCalledWith(artifact.top_action);
+  });
+
+  it('uses 阿衡 as the visible assistant persona for the ask action', () => {
+    const { getByLabelText, getByText, queryByLabelText } = render(
+      <DailyArtifactCard artifact={makeArtifact()} />,
+    );
+
+    expect(getByText('问阿衡')).toBeTruthy();
+    expect(getByLabelText('询问阿衡今日行动')).toBeTruthy();
+    expect(queryByLabelText('询问 Reva 今日行动')).toBeNull();
   });
 
   it('requires a skip reason before calling onSkip', () => {

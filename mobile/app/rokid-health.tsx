@@ -67,6 +67,7 @@ import {
   type RokidAgendaVoiceAction,
 } from '../services/rokidVoiceAgenda';
 import { recognizeFood, type FoodRecognitionResponse } from '../services/diet';
+import { APP_DISPLAY_NAME } from '../constants/brand';
 import { radii, spacing } from '../constants/theme';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 
@@ -496,7 +497,7 @@ function isRecoverableRokidAuthorizationDelay(reason?: string) {
 
 function formatRokidAuthorizationIssue(reason?: string) {
   if (isRecoverableRokidAuthorizationDelay(reason)) {
-    return '鉴权请求超时: Rokid AI / Hi Rokid 未在等待窗口内回调 Reva';
+    return `鉴权请求超时: Rokid AI / Hi Rokid 未在等待窗口内回调${APP_DISPLAY_NAME}`;
   }
   return reason ?? 'authorization_failed';
 }
@@ -507,13 +508,13 @@ function formatRokidCustomViewIssue(reason?: string) {
   }
   const normalized = reason.toLowerCase();
   if (normalized.includes('rokid_glasses_no_network') || normalized.includes('subcmd=nonetwork')) {
-    return '眼镜网络未就绪: 请在 Rokid AI / Hi Rokid 中确认眼镜已连 WiFi，并让手机与眼镜处在同一可互通网络，再回 Reva 刷新。';
+    return `眼镜网络未就绪: 请在 Rokid AI / Hi Rokid 中确认眼镜已连 WiFi，并让手机与眼镜处在同一可互通网络，再回${APP_DISPLAY_NAME}刷新。`;
   }
   if (normalized.includes('rokid_glasses_ble_not_connected')) {
-    return '眼镜蓝牙链路未连接: 授权完成后请「完全退出」Rokid AI / Hi Rokid(它会独占眼镜蓝牙, 一次只能一个 App 连眼镜), 再回 Reva 刷新。';
+    return `眼镜蓝牙链路未连接: 授权完成后请「完全退出」Rokid AI / Hi Rokid(它会独占眼镜蓝牙, 一次只能一个 App 连眼镜), 再回${APP_DISPLAY_NAME}刷新。`;
   }
   if (normalized.includes('rokid_custom_view_not_running_after_open')) {
-    return 'SDK 已接受打开命令，但眼镜端没有回报 CustomView 运行。请确认眼镜端是否显示 Reva；若未显示，请重新打开眼镜视图。';
+    return `SDK 已接受打开命令，但眼镜端没有回报 CustomView 运行。请确认眼镜端是否显示${APP_DISPLAY_NAME}；若未显示，请重新打开眼镜视图。`;
   }
   if (normalized.includes('rokid_custom_view_open_callback_missing')) {
     return 'SDK 没有返回 CustomView 打开回调，眼镜端也没有回报运行。请确认 Rokid AI 已退出后台占用后重新打开眼镜视图。';
@@ -526,9 +527,9 @@ function formatRokidCustomViewIssue(reason?: string) {
 
 function formatQueuedCustomViewMessage(status?: RokidIntegrationStatus) {
   if (status?.iosBleConnected === true) {
-    return 'Reva 眼镜视图已排队, 但 SDK 尚未回报 CustomView 运行。眼镜蓝牙当前已连接; 若长时间不变, 请完全退出 Rokid AI / Hi Rokid 后重新打开眼镜视图。';
+    return `${APP_DISPLAY_NAME}眼镜视图已排队, 但 SDK 尚未回报 CustomView 运行。眼镜蓝牙当前已连接; 若长时间不变, 请完全退出 Rokid AI / Hi Rokid 后重新打开眼镜视图。`;
   }
-  return '眼镜蓝牙未连接,已排队: 完全退出 Rokid AI / Hi Rokid 释放眼镜蓝牙后,Reva 会在连上时自动打开眼镜视图。';
+  return `眼镜蓝牙未连接,已排队: 完全退出 Rokid AI / Hi Rokid 释放眼镜蓝牙后,${APP_DISPLAY_NAME}会在连上时自动打开眼镜视图。`;
 }
 
 function isCustomViewCallbackMissing(status?: RokidIntegrationStatus) {
@@ -608,7 +609,7 @@ function buildVoiceSelfCheck(
           ? '眼镜显示有证据，但 SDK 未回报 running'
           : isCustomViewCallbackMissing(status)
             ? 'CustomView 回调缺失，眼镜显示可能已出现但 SDK 未确认'
-            : '等待打开 Reva 眼镜视图',
+            : `等待打开${APP_DISPLAY_NAME}眼镜视图`,
     },
     {
       id: 'record',
@@ -905,7 +906,7 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
     const device = status.iosBleDeviceName ? ` · device=${status.iosBleDeviceName}` : '';
     lines.push(`iOS BLE: connected=${status.iosBleConnected}${device}`);
     if (isRokidBleBlockedByCompanionSuspected(status)) {
-      lines.push('iOS BLE suspected: ble_blocked_by_companion · action=完全退出/划掉 Rokid AI / Hi Rokid 后回 Reva 刷新');
+      lines.push(`iOS BLE suspected: ble_blocked_by_companion · action=完全退出/划掉 Rokid AI / Hi Rokid 后回${APP_DISPLAY_NAME}刷新`);
     }
   }
   if (typeof status.cxrCallbackApiEnabled === 'boolean' || status.cxrNotifySubscriptionMode) {
@@ -1086,7 +1087,7 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
   if (status.lastCallbackAt) {
     lines.push(`最近回调: ${status.lastCallbackHandled ? 'SDK 已处理' : 'SDK 未确认'} · ${formatRokidLogTimestamp(status.lastCallbackAt)}`);
   } else if (status.lastAuthorizationError && isRecoverableRokidAuthorizationDelay(status.lastAuthorizationError)) {
-    lines.push('最近回调: 尚未进入 Reva');
+    lines.push(`最近回调: 尚未进入${APP_DISPLAY_NAME}`);
     lines.push('iOS 回跳: 尚未收到 AppDelegate openURL');
   }
   if (Array.isArray(status.authDiagnosticTimeline)) {
@@ -1463,7 +1464,7 @@ export default function RokidHealthScreen() {
   const updateVoiceCustomView = async (body: string, priority = 'voice') => {
     try {
       await updateRokidCustomView(createRokidRevaCustomViewLayout({
-        title: 'Reva 语音控制',
+        title: `${APP_DISPLAY_NAME}语音控制`,
         body,
         priority,
       }));
@@ -1530,7 +1531,7 @@ export default function RokidHealthScreen() {
       return;
     }
     if (status?.customViewRunning === true) {
-      setSessionState({ status: 'ready', message: 'Reva 眼镜视图已运行' });
+      setSessionState({ status: 'ready', message: `${APP_DISPLAY_NAME}眼镜视图已运行` });
     } else if (status?.iosBleConnected === true) {
       setSessionState((prev) =>
         prev.status === 'waiting'
@@ -1849,7 +1850,7 @@ export default function RokidHealthScreen() {
         if (isRecoverableRokidAuthorizationDelay(reason)) {
           setSessionState({
             status: 'waiting',
-            message: '等待 Rokid 授权回调。请在 Rokid AI / Hi Rokid 完成授权后回到 Reva 并点刷新; 若仍超时, 继续点授权重试。',
+            message: `等待 Rokid 授权回调。请在 Rokid AI / Hi Rokid 完成授权后回到${APP_DISPLAY_NAME}并点刷新; 若仍超时, 继续点授权重试。`,
           });
           return;
         }
@@ -1866,11 +1867,11 @@ export default function RokidHealthScreen() {
   };
 
   const openRevaCustomView = async () => {
-    setSessionState({ status: 'running', message: '正在打开 Reva 眼镜视图...' });
+    setSessionState({ status: 'running', message: `正在打开${APP_DISPLAY_NAME}眼镜视图...` });
     try {
       const result = await openRokidRevaCustomView({
-        title: 'Reva Health',
-        body: '等待 Reva 投递下一条健康行动',
+        title: `${APP_DISPLAY_NAME} Health`,
+        body: `等待${APP_DISPLAY_NAME}投递下一条健康行动`,
         priority: 'manual_confirm',
       });
       if (result.ok === false) {
@@ -1898,12 +1899,12 @@ export default function RokidHealthScreen() {
         result.customViewRunning === true ||
         refreshed.data?.customViewRunning === true;
       if (customViewRunning) {
-        setSessionState({ status: 'ready', message: 'Reva 眼镜视图已运行' });
+        setSessionState({ status: 'ready', message: `${APP_DISPLAY_NAME}眼镜视图已运行` });
         return;
       }
       setSessionState({
         status: 'waiting',
-        message: 'Reva 眼镜视图已请求打开，等待眼镜端确认运行。请确认眼镜已显示后刷新。',
+        message: `${APP_DISPLAY_NAME}眼镜视图已请求打开，等待眼镜端确认运行。请确认眼镜已显示后刷新。`,
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'custom_view_failed';
@@ -1914,7 +1915,7 @@ export default function RokidHealthScreen() {
       }
       setSessionState({
         status: 'failed',
-        message: `Reva 眼镜视图失败: ${formatRokidCustomViewIssue(reason)}`,
+        message: `${APP_DISPLAY_NAME}眼镜视图失败: ${formatRokidCustomViewIssue(reason)}`,
       });
     }
   };
@@ -1925,7 +1926,7 @@ export default function RokidHealthScreen() {
     let recordingStarted = false;
     try {
       const viewResult = await openRokidRevaCustomView({
-        title: 'Reva 语音控制',
+        title: `${APP_DISPLAY_NAME}语音控制`,
         body: '正在等待明确语音指令',
         priority: 'voice',
       });
@@ -1971,7 +1972,7 @@ export default function RokidHealthScreen() {
             : 'speech_recognition_unavailable';
         setVoiceState({
           status: 'failed',
-          message: `语音识别未就绪(${reason}):请在 设置 → Reva 里允许"语音识别"和"麦克风",再重试。`,
+          message: `语音识别未就绪(${reason}):请在 设置 → ${APP_DISPLAY_NAME} 里允许"语音识别"和"麦克风",再重试。`,
         });
         return;
       }
@@ -2500,7 +2501,7 @@ export default function RokidHealthScreen() {
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={txt.panelTitle}>Ambient capture surface</Text>
-              <Text style={txt.panelSub}>眼镜只负责低摩擦捕获和短提示, 决策仍回到 Reva Health OS。</Text>
+              <Text style={txt.panelSub}>{`眼镜只负责低摩擦捕获和短提示, 决策仍回到${APP_DISPLAY_NAME} Health OS。`}</Text>
             </View>
           </View>
 
@@ -2568,7 +2569,7 @@ export default function RokidHealthScreen() {
                   accessibilityRole="button"
                 >
                   <Ionicons name="browsers-outline" size={16} color={c.brand} />
-                  <Text style={txt.secondaryButton}>打开 Reva 眼镜视图</Text>
+                  <Text style={txt.secondaryButton}>打开{APP_DISPLAY_NAME}眼镜视图</Text>
                 </Pressable>
               </View>
               {sessionState.message ? (

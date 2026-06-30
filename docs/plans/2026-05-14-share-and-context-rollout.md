@@ -37,7 +37,7 @@ L1 解决"建议变信息产物可分享"；L2 解决"信息产物变行动"；C
 
 ### 杂项收尾
 
-- 私教 tab 用 `useFocusEffect` 进 tab 即 scrollToEnd 看最新消息
+- 阿衡 tab 用 `useFocusEffect` 进 tab 即 scrollToEnd 看最新消息
 - 饮食记录页支持左滑编辑/删除 + 删除二次确认 (上一轮)
 - 后端 `update_diet_record` 加 user 归属校验 (修了之前的越权 bug, 上一轮)
 
@@ -241,4 +241,3 @@ WSCLA 北极星不是"分享 / 点击"次数, 是 **完整闭环**. 必须能验
 1. **Phase 1 T1 (饮食页 context)** — 复用 SNP 的模式, 1 小时内能完成 + OTA
 2. 配套 (可同 PR): 后端在 system prompt 「## 入口上下文」段加更多"当 context 提到 diet/sleep/workouts 时怎么用"的引导, 让 LLM 知道这些字段什么意思
 3. 验完 L1 1-2 天分享次数 → 决定 L2 是否启动
-

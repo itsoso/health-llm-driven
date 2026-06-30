@@ -14,7 +14,7 @@ If the reviewer cannot sign in, please contact support@executor.life.
 
 1. Open the app and sign in with the demo account.
 2. Go to `今日` to see the current health summary and next suggested action.
-3. Go to `私教` and ask: `今天应该先做什么健康行动？`
+3. Go to `阿衡` and ask: `今天应该先做什么健康行动？`
 4. Go to `记录` and record a simple water or exercise entry.
 5. Go to `我 -> 数据连接` to view Apple Health / Garmin / data source controls.
 6. Go to `我 -> 健康档案 -> 导入体检报告` to see report import entry.

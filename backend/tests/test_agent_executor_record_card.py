@@ -64,5 +64,18 @@ def test_blood_pressure_summary_from_args():
     assert "119/75" in card["data"]["detail"]
 
 
+def test_reminder_summary_from_args():
+    result = json.dumps({"id": 7, "title": "臀中肌训练", "recurrence": "daily"}, ensure_ascii=False)
+    card = _health_record_card_descriptor(
+        "reminder",
+        {"title": "臀中肌训练", "recurrence": "daily", "remind_at": "2026-06-30T10:30:00+08:00"},
+        result,
+    )
+
+    assert card is not None
+    assert card["data"]["type"] == "reminder"
+    assert card["data"]["detail"] == "已设置每日提醒：臀中肌训练"
+
+
 def test_error_result_returns_none():
     assert _health_record_card_descriptor("diet", {}, "Error: boom") is None

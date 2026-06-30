@@ -6,6 +6,8 @@ import sys
 import zlib
 from pathlib import Path
 
+from scripts.check_app_store_release_pack import validate_release_narrative
+
 REQUIRED_SCREENSHOT_NAMES = [
     "00-launch",
     "01-today",
@@ -90,3 +92,46 @@ def test_app_store_release_pack_checker_validates_optional_screenshot_dir(tmp_pa
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "App Store screenshot check passed." in result.stdout
+
+
+def test_app_store_release_pack_final_submit_fails_loud_without_human_materials():
+    root = Path(__file__).resolve().parents[2]
+    scrubbed_env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("ASC_")
+        and not key.startswith("APP_STORE_CONNECT_")
+        and key != "APP_STORE_SCREENSHOT_DIR"
+    }
+
+    result = subprocess.run(
+        [sys.executable, "scripts/check_app_store_release_pack.py", "--final-submit"],
+        cwd=root,
+        env=scrubbed_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "final submit requires APP_STORE_SCREENSHOT_DIR or --screenshot-dir" in result.stderr
+    assert "final submit requires replacing demo account placeholders" in result.stderr
+    assert "missing App Store Connect credentials" in result.stderr
+
+
+def test_release_narrative_rejects_stale_public_positioning():
+    failures = validate_release_narrative(
+        submission=(
+            "Reva 是你的健康助理。"
+            "本版本重构了移动端核心动线: 今日、私教、记录、我的。"
+        ),
+        review_notes="Go to `私教` and ask a question.",
+        screenshot_runbook="Bottom navigation labels are `今日 / 私教 / 记录 / 我的`.",
+    )
+
+    assert "release text contains stale user-visible term: Reva" in failures
+    assert "release text contains stale user-visible term: 健康助理" in failures
+    assert "release text contains stale user-visible term: 私教" in failures
+    assert "release text must use current bottom navigation labels: 今日 / 阿衡 / 记录 / 我" in failures
+    assert "release text must include current positioning term: 健康参谋" in failures

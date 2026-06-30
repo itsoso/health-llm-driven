@@ -5,13 +5,18 @@ import {
   Alert, Keyboard, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { useFloatingTabBarHeight } from '../../hooks/useFloatingTabBarHeight';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  FLOATING_TAB_BAR_BAR_HEIGHT,
+  FLOATING_TAB_BAR_MIN_BOTTOM,
+  FLOATING_TAB_BAR_PADDING_TOP,
+  useFloatingTabBarHeight,
+} from '../../hooks/useFloatingTabBarHeight';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { deleteConversation, getConversations, updateConversationTitle } from '../../services/chat';
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
-import ChatInputBar from '../../components/chat/ChatInputBar';
+import ChatInputBar, { type ChatInputSendOptions } from '../../components/chat/ChatInputBar';
 import ChatBubble from '../../components/chat/ChatBubble';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import OpenerCard from '../../components/chat/OpenerCard';
@@ -92,6 +97,7 @@ function getSelfReportedAdherence(reply: string): number | null {
 
 export default function ChatScreen() {
   const chat = useChatEngine();
+  const safeInsets = useSafeAreaInsets();
   const {
     messages,
     isStreaming,
@@ -246,7 +252,7 @@ export default function ChatScreen() {
 
   useEffect(() => { loadLatestConversation(); }, [loadLatestConversation]);
 
-  // 点"私教" tab 进来时滚到对话最后, 方便看最新消息.
+  // 点"阿衡" tab 进来时滚到对话最后, 方便看最新消息.
   // useFocusEffect 在每次 tab 获得 focus 时触发 (包括首次 mount).
   // 用 setTimeout 推迟一帧, 等 FlatList 排版完才能滚到正确位置.
   useFocusEffect(
@@ -271,9 +277,9 @@ export default function ChatScreen() {
     return () => { showSub.remove(); hideSub.remove(); };
   }, []);
 
-  const handleSend = useCallback((text: string, images?: any) => {
+  const handleSend = useCallback((text: string, images?: any, options?: ChatInputSendOptions) => {
     isNearBottom.current = true;
-    sendMessage(text, images);
+    sendMessage(text, images, options?.extraContext ? { extraContext: options.extraContext } : undefined);
     setContextBadge(null);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
   }, [sendMessage]);
@@ -421,6 +427,9 @@ export default function ChatScreen() {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      if (next.size === 0) {
+        setSelectionMode(false);
+      }
       return next;
     });
   }, []);
@@ -436,7 +445,7 @@ export default function ChatScreen() {
     if (!message || sharing) return;
     setSharing(true);
     try {
-      await sharePlainText({ title: '健康 Agent · 对话节选', message });
+      await sharePlainText({ title: '阿衡 · 对话节选', message });
       exitSelectionMode();
     } catch {
       Alert.alert('分享失败', '请稍后重试');
@@ -460,52 +469,71 @@ export default function ChatScreen() {
   }, [selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  // 悬浮胶囊 tab bar 是 absolute 定位,useBottomTabBarHeight() 测不准(真机返回 0),
-  // 会让输入框落到屏幕底被 tab bar 盖住 → 无法输入。用真实几何高度。
+  // Tab bar 已在布局流内;键盘弹起时只补"键盘高度 - docked tab bar 已占高度",
+  // 避免输入框和输入法之间出现一整块 tab bar 高度的空隙。
   const tabBarHeight = useFloatingTabBarHeight();
+  const dockedTabBarReservedHeight =
+    FLOATING_TAB_BAR_PADDING_TOP +
+    FLOATING_TAB_BAR_BAR_HEIGHT +
+    Math.max(safeInsets.bottom, FLOATING_TAB_BAR_MIN_BOTTOM);
   const bottomSpacerHeight = keyboardVisible
-    ? (Platform.OS === 'ios' ? keyboardHeight : 0)
+    ? (Platform.OS === 'ios' ? Math.max(0, keyboardHeight - dockedTabBarReservedHeight) : 0)
     : tabBarHeight;
   const activeLlmLabel = llmModelId
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
-  const headerLlmLabel = isStreaming ? '正在回复' : compactLlmHeaderLabel(activeLlmLabel);
+  const headerLlmLabel = compactLlmHeaderLabel(activeLlmLabel);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <LlmModelPicker
-          variant="header"
-          currentLabel={headerLlmLabel}
-          currentModelId={llmModelId}
-          options={llmOptions}
-          savingModelId={llmSaving}
-          disabled={isStreaming}
-          error={llmError}
-          onSelect={handleSelectModel}
-        />
-        <TouchableOpacity
-          onPress={() => router.push({
-            pathname: '/voice-chat',
-            params: conversationId ? { conversation_id: String(conversationId) } : {},
-          } as any)}
-          hitSlop={8}
-          style={styles.voiceConversationAction}
-          accessibilityLabel="开始语音对话"
-          accessibilityHint="进入连续语音对话，AI 会听你说并用语音回复"
-          accessibilityRole="button"
-        >
-          <Ionicons name="call" size={18} color="#FFFFFF" />
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setToolMenuVisible(true)}
-          hitSlop={8}
-          style={styles.headerMenuAction}
-          accessibilityLabel="更多会诊操作"
-          accessibilityRole="button"
-        >
-          <Ionicons name="ellipsis-horizontal" size={20} color={C.ink2} />
-        </TouchableOpacity>
+      <View style={styles.headerWrap}>
+        <View style={styles.headerSurface}>
+          <LlmModelPicker
+            variant="header"
+            currentLabel={headerLlmLabel}
+            currentModelId={llmModelId}
+            options={llmOptions}
+            savingModelId={llmSaving}
+            error={llmError}
+            onSelect={handleSelectModel}
+          />
+          <View style={styles.headerRight}>
+            {isStreaming && (
+              <View style={styles.streamingBadge} accessibilityLabel="回复中">
+                <View style={styles.streamingDot} />
+                <Text style={txt.streamingBadge}>回复中</Text>
+              </View>
+            )}
+            <TouchableOpacity
+              onPress={handleNewChat}
+              hitSlop={8}
+              style={styles.headerAction}
+              accessibilityLabel="新建对话"
+              accessibilityRole="button"
+            >
+              <Ionicons name="add" size={19} color={C.ink1} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={openHistory}
+              hitSlop={8}
+              style={styles.headerActionAccent}
+              accessibilityLabel="对话历史"
+              accessibilityHint="查看和切换历史对话"
+              accessibilityRole="button"
+            >
+              <Ionicons name="time-outline" size={18} color={C.green500} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setToolMenuVisible(true)}
+              hitSlop={8}
+              style={styles.headerMenuAction}
+              accessibilityLabel="更多会诊操作"
+              accessibilityRole="button"
+            >
+              <Ionicons name="ellipsis-horizontal" size={19} color={C.ink1} />
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
 
       <View style={{ flex: 1 }}>
@@ -553,7 +581,7 @@ export default function ChatScreen() {
                 <View style={styles.welcomeInline}>
                   <Ionicons name="sparkles" size={14} color={C.green500} />
                   <Text style={txt.welcomeInline} numberOfLines={1}>
-                    健康 Agent · {opener ? '或者问我别的' : '会带上你的健康上下文'}
+                    阿衡 · {opener ? '或者问我别的' : '会带上你的健康上下文'}
                   </Text>
                 </View>
                 <View style={styles.sugGrid}>
@@ -573,7 +601,7 @@ export default function ChatScreen() {
                       }}
                       activeOpacity={0.72}
                       accessibilityRole="button"
-                      accessibilityLabel={`向健康 Agent 提问: ${s.text}`}
+                      accessibilityLabel={`向阿衡提问: ${s.text}`}
                     >
                       <Ionicons name={s.icon} size={13} color={C.green500} />
                       <Text style={txt.sugChipText} numberOfLines={1}>{s.text}</Text>
@@ -599,6 +627,16 @@ export default function ChatScreen() {
 
         {selectionMode && (
           <View style={styles.shareBar}>
+            <TouchableOpacity
+              onPress={exitSelectionMode}
+              hitSlop={8}
+              style={styles.cancelSelectionButton}
+              accessibilityLabel="取消多选"
+              accessibilityRole="button"
+            >
+              <Ionicons name="close" size={16} color={C.ink2} />
+              <Text style={txt.cancelSelectionButton}>取消</Text>
+            </TouchableOpacity>
             <View style={{ flex: 1 }}>
               <Text style={txt.shareBarTitle}>已选择 {selectedMessageIds.size} 条</Text>
               <Text style={txt.shareBarSub}>按当前对话顺序生成分享链接</Text>
@@ -641,14 +679,12 @@ export default function ChatScreen() {
             <View style={styles.toolSheetHeader}>
               <View>
                 <Text style={txt.toolSheetTitle}>会诊工具</Text>
-                <Text style={txt.toolSheetSub}>把低频操作收在这里</Text>
+                <Text style={txt.toolSheetSub}>分享、删除等低频操作</Text>
               </View>
               <TouchableOpacity onPress={() => setToolMenuVisible(false)} hitSlop={8} accessibilityLabel="关闭会诊工具">
                 <Ionicons name="close" size={22} color={C.ink2} />
               </TouchableOpacity>
             </View>
-            <ToolMenuRow icon="time-outline" label="对话历史" onPress={openHistory} />
-            <ToolMenuRow icon="create-outline" label="新建对话" onPress={handleNewChat} />
             {messages.some(isShareableChatMessage) && (
               <ToolMenuRow
                 icon={selectionMode ? 'close' : 'checkbox-outline'}
@@ -725,22 +761,77 @@ function ToolMenuRow({
 // Reva 设计语言: 暖白 paper 屏底 / surface 卡 / green500 主色 / r-lg 18 / 软阴影. 文字走 Manrope.
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
-  header: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2, paddingHorizontal: revaSpacing.s5, paddingVertical: revaSpacing.s3 },
-  voiceConversationAction: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.green500,
+  headerWrap: {
+    paddingHorizontal: revaSpacing.s4,
+    paddingTop: revaSpacing.s2,
+    paddingBottom: revaSpacing.s2,
   },
-  headerMenuAction: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  headerSurface: {
+    minHeight: 62,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: revaSpacing.s2,
+    paddingLeft: revaSpacing.s3,
+    paddingRight: 6,
+    paddingVertical: 7,
+    borderRadius: revaRadii.xl,
+    backgroundColor: C.surface2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    ...revaShadows.sm,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  headerAction: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
+  headerActionAccent: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: revaSemantic.normal.line,
+    ...revaShadows.sm,
+  },
+  headerMenuAction: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
+  streamingBadge: {
+    minHeight: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: revaSemantic.normal.line,
+  },
+  streamingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: C.green500,
   },
   historyAction: {
     flexDirection: 'row',
@@ -866,6 +957,17 @@ const styles = StyleSheet.create({
     borderColor: C.line,
     ...revaShadows.sm,
   },
+  cancelSelectionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.paper2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
   shareButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -883,6 +985,7 @@ const styles = StyleSheet.create({
 const txt = {
   headerTitle: { fontFamily: revaFonts.sans, fontSize: 20, fontWeight: '800', color: C.ink1 } as TextStyle,
   headerMeta: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2, fontWeight: '600' } as TextStyle,
+  streamingBadge: { fontFamily: revaFonts.sans, fontSize: 11, color: C.green500, fontWeight: '700' } as TextStyle,
   welcomeInline: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, fontWeight: '700', flexShrink: 1 } as TextStyle,
   sugChipText: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink1, fontWeight: '600', flexShrink: 1 } as TextStyle,
   contextBanner: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green500, flex: 1, fontWeight: '500' } as TextStyle,
@@ -892,6 +995,7 @@ const txt = {
   memoryBody: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, lineHeight: 18 } as TextStyle,
   shareBarTitle: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink1, fontWeight: '700' } as TextStyle,
   shareBarSub: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, marginTop: 2 } as TextStyle,
+  cancelSelectionButton: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, fontWeight: '700' } as TextStyle,
   shareButton: { fontFamily: revaFonts.sans, fontSize: 13, color: '#fff', fontWeight: '700' } as TextStyle,
   toolSheetTitle: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '800', color: C.ink1 } as TextStyle,
   toolSheetSub: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,

@@ -31,6 +31,22 @@ const options: ModelOption[] = [
 ];
 
 describe('Mobile LlmModelPicker', () => {
+  it('uses 阿衡 as the visible assistant persona', () => {
+    const onSelect = jest.fn();
+    const { getByText, queryByText } = render(
+      <LlmModelPicker
+        currentLabel="Qwen3.7 Plus"
+        currentModelId="qwen3.7-plus"
+        options={options}
+        savingModelId={null}
+        onSelect={onSelect}
+      />,
+    );
+
+    expect(getByText('阿衡')).toBeTruthy();
+    expect(queryByText('健康 Agent')).toBeNull();
+  });
+
   it('opens options and selects a model inline', () => {
     const onSelect = jest.fn();
     const { getByLabelText, getByText } = render(

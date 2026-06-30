@@ -6,7 +6,7 @@
  */
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { revaColors as C, revaFonts, revaRadii, revaSpacing } from '../../constants/revaTheme';
+import { revaColors as C, revaFonts, revaSpacing } from '../../constants/revaTheme';
 
 function partOfDay(h: number): string {
   if (h < 6) return '凌晨好';
@@ -23,12 +23,8 @@ function chineseDate(now: Date): string {
 
 export default function RevaGreetingHeader({
   name,
-  twinStatus,
-  freshness,
 }: {
   name?: string | null;
-  twinStatus?: string | null;
-  freshness?: string | null;
 }) {
   const now = new Date();
   const greet = partOfDay(now.getHours());
@@ -41,19 +37,6 @@ export default function RevaGreetingHeader({
         </Text>
         <Text style={styles.date}>{chineseDate(now)}</Text>
       </View>
-      {(twinStatus || freshness) ? (
-        <View style={styles.statusRow} testID="reva-cockpit-status-row">
-          {twinStatus ? (
-            <View style={styles.statusChip}>
-              <View style={styles.statusDot} />
-              <Text style={styles.statusText} numberOfLines={1}>{twinStatus}</Text>
-            </View>
-          ) : null}
-          {freshness ? (
-            <Text style={styles.freshness} numberOfLines={1}>{freshness}</Text>
-          ) : null}
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -81,42 +64,6 @@ const styles = StyleSheet.create({
   date: {
     fontFamily: revaFonts.mono,
     fontSize: 12.5,
-    letterSpacing: 0,
-    color: C.ink3,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: revaSpacing.s2,
-  },
-  statusChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    minWidth: 0,
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.green50,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: C.green500,
-  },
-  statusText: {
-    fontFamily: revaFonts.sans,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0,
-    color: C.green700,
-  },
-  freshness: {
-    flexShrink: 1,
-    fontFamily: revaFonts.mono,
-    fontSize: 11.5,
     letterSpacing: 0,
     color: C.ink3,
   },

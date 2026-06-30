@@ -89,6 +89,17 @@ describe('renderCard 安全降级', () => {
     expect(r).not.toBeNull();
   });
 
+  it('renders reminder record cards from chat tool results', () => {
+    const r = renderCard({
+      type: 'record',
+      data: { type: 'reminder', detail: '已设置每日提醒：臀中肌训练' },
+    });
+    expect(r).not.toBeNull();
+
+    const { getByText } = render(r!);
+    expect(getByText('已设置每日提醒：臀中肌训练')).toBeTruthy();
+  });
+
   it('renders server card actions and dispatches through onAction', () => {
     const onAction = jest.fn();
     const descriptor = {
@@ -148,7 +159,7 @@ describe('renderCard 安全降级', () => {
           priority_tier: 'P1',
           current_state_summary: '晚餐后是今天最短的代谢干预窗口。',
           replan_reason: 'today_smart_rank',
-          verification_metrics: ['post_meal_walk_completed', 'waist_cm'],
+          verification_metrics: ['post_meal_walk_completed', 'waist_cm', 'hrv'],
           verification_window_days: 7,
         },
         days: [
@@ -170,9 +181,16 @@ describe('renderCard 安全降级', () => {
     const r = renderCard(descriptor, { onAction });
     expect(r).not.toBeNull();
 
-    const { getByText } = render(r!);
-    expect(getByText('7天健康运行时')).toBeTruthy();
+    const { getByText, queryByText } = render(r!);
+    expect(getByText('7天验证节奏')).toBeTruthy();
     expect(getByText('晚餐后步行 15 分钟')).toBeTruthy();
+    expect(queryByText('围绕当前重点动态重排')).toBeNull();
+    expect(getByText('基于今日状态重排')).toBeTruthy();
+    expect(getByText('晚间')).toBeTruthy();
+    expect(getByText('腰围')).toBeTruthy();
+    expect(getByText('HRV')).toBeTruthy();
+    expect(() => getByText('today_smart_rank')).toThrow();
+    expect(() => getByText('waist_cm')).toThrow();
     fireEvent.press(getByText('查看7天计划'));
     expect(onAction).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'route.open' }),
@@ -244,6 +262,111 @@ describe('renderCard 安全降级', () => {
     );
   });
 
+  it('renders metric chart cards from backend health data', () => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'metric_chart',
+      data: {
+        metric: 'hrv',
+        title: '最近半年 HRV',
+        unit: 'ms',
+        start_date: '2025-12-29',
+        end_date: '2026-06-30',
+        coverage: { days_with_data: 181, days_in_window: 184 },
+        latest: { date: '2026-06-30', value: 56.0, source: 'apple-watch' },
+        summary: {
+          avg: 57.3,
+          last_7d_avg: 48.8,
+          last_30d_avg: 50.9,
+          prev_30d_avg: 57.5,
+          last_30_vs_prev_30_delta: -6.6,
+        },
+        series: [
+          { date: '2026-06-24', value: 52.0, rolling_7d: 54.0, source: 'garmin' },
+          { date: '2026-06-25', value: 49.0, rolling_7d: 53.0, source: 'garmin' },
+          { date: '2026-06-30', value: 56.0, rolling_7d: 48.8, source: 'apple-watch' },
+        ],
+        boundary: 'HRV 趋势仅用于健康管理参考, 不替代诊断或治疗。',
+      },
+      actions: [
+        {
+          id: 'open-hrv-history',
+          label: '查看HRV历史',
+          action: 'route.open',
+          payload: { route: '/indicator-history?type=hrv' },
+          style: 'secondary',
+        },
+      ],
+    } as any;
+    const r = renderCard(descriptor, { onAction });
+    expect(r).not.toBeNull();
+
+    const { getByText } = render(r!);
+    expect(getByText('最近半年 HRV')).toBeTruthy();
+    expect(getByText('56.0ms')).toBeTruthy();
+    expect(getByText('181/184 天')).toBeTruthy();
+    expect(getByText('近30天 -6.6ms')).toBeTruthy();
+    expect(getByText(/不替代诊断或治疗/)).toBeTruthy();
+    fireEvent.press(getByText('查看HRV历史'));
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'route.open' }),
+      expect.objectContaining({ type: 'metric_chart' }),
+    );
+  });
+
+  it('renders non-HRV metric chart cards with metric-specific units and actions', () => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'metric_chart',
+      data: {
+        metric: 'weight',
+        label: '体重',
+        title: '最近30天 体重',
+        unit: 'kg',
+        start_date: '2026-06-01',
+        end_date: '2026-06-30',
+        coverage: { days_with_data: 3, days_in_window: 31 },
+        latest: { date: '2026-06-30', value: 73.8, source: 'manual' },
+        summary: {
+          avg: 74.1,
+          last_7d_avg: 73.9,
+          last_30d_avg: 74.1,
+          prev_30d_avg: 74.8,
+          last_30_vs_prev_30_delta: -0.7,
+        },
+        series: [
+          { date: '2026-06-26', value: 74.5, rolling_7d: 74.5, source: 'manual' },
+          { date: '2026-06-28', value: 74.0, rolling_7d: 74.3, source: 'manual' },
+          { date: '2026-06-30', value: 73.8, rolling_7d: 74.1, source: 'manual' },
+        ],
+        boundary: '体重 趋势仅用于健康管理参考, 不替代诊断或治疗。',
+      },
+      actions: [
+        {
+          id: 'open-weight-history',
+          label: '查看体重历史',
+          action: 'route.open',
+          payload: { route: '/indicator-history?type=weight' },
+          style: 'secondary',
+        },
+      ],
+    } as any;
+
+    const r = renderCard(descriptor, { onAction });
+    expect(r).not.toBeNull();
+
+    const { getByText } = render(r!);
+    expect(getByText('最近30天 体重')).toBeTruthy();
+    expect(getByText('73.8kg')).toBeTruthy();
+    expect(getByText('3/31 天')).toBeTruthy();
+    expect(getByText('近30天 -0.7kg')).toBeTruthy();
+    fireEvent.press(getByText('查看体重历史'));
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'route.open', payload: { route: '/indicator-history?type=weight' } }),
+      expect.objectContaining({ type: 'metric_chart' }),
+    );
+  });
+
   it('cards_group 1 张子卡 → 直接渲染, 不包 grid', () => {
     const r = renderCard({
       type: 'cards_group',
@@ -263,6 +386,61 @@ describe('renderCard 安全降级', () => {
       },
     });
     expect(r).not.toBeNull();
+  });
+
+  it('cards_group preserves child card actions so multi-card replies stay actionable', () => {
+    const onAction = jest.fn();
+    const r = renderCard({
+      type: 'cards_group',
+      data: {
+        cards: [
+          {
+            type: 'runtime_agenda',
+            data: { next_action: { title: '晚餐后步行 15 分钟' } },
+            actions: [
+              {
+                id: 'open-runtime',
+                label: '查看7天计划',
+                action: 'route.open',
+                payload: { route: '/agenda' },
+                style: 'primary',
+              },
+            ],
+          },
+          {
+            type: 'operating_review',
+            data: {
+              window_days: 7,
+              execution: { total_events: 1, completed_events: 1, completion_rate: 1 },
+            },
+            actions: [
+              {
+                id: 'open-review',
+                label: '查看复盘详情',
+                action: 'route.open',
+                payload: { route: '/my-progress' },
+                style: 'primary',
+              },
+            ],
+          },
+        ],
+      },
+    }, { onAction });
+
+    expect(r).not.toBeNull();
+    const { getByText } = render(r!);
+
+    fireEvent.press(getByText('查看7天计划'));
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'route.open', payload: { route: '/agenda' } }),
+      expect.objectContaining({ type: 'runtime_agenda' }),
+    );
+
+    fireEvent.press(getByText('查看复盘详情'));
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'route.open', payload: { route: '/my-progress' } }),
+      expect.objectContaining({ type: 'operating_review' }),
+    );
   });
 
   it('cards_group 全是未知 type → null', () => {
@@ -316,6 +494,40 @@ describe('renderServerCards 防御', () => {
       type: 'vitals',
       actions: [expect.objectContaining({ action: 'agenda.complete' })],
     }));
+  });
+
+  it('filters unsafe write actions before they reach the chat UI', () => {
+    const r = renderServerCards([
+      {
+        type: 'vitals',
+        data: {},
+        actions: [
+          {
+            label: '缺少人工确认的完成按钮',
+            action: 'agenda.complete',
+            endpoint: '/agenda/complete',
+            payload: { source: { object_type: 'health_protocol', object_id: 7 } },
+          },
+          {
+            label: '打开记录页',
+            action: 'route.open',
+            payload: { route: '/(tabs)/record' },
+          },
+          {
+            label: '确认写入',
+            action: 'write_intent.confirm',
+            endpoint: '/write-intents/42/confirm',
+            requires_manual_confirm: true,
+            payload: { write_intent_id: 42 },
+          },
+        ],
+      } as any,
+    ]);
+
+    expect(r[0].actions).toEqual([
+      expect.objectContaining({ action: 'route.open' }),
+      expect.objectContaining({ action: 'write_intent.confirm', requires_manual_confirm: true }),
+    ]);
   });
 
   it('非数组 → []', () => {

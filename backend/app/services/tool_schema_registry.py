@@ -155,7 +155,9 @@ symptom:          {"body_part": "eye|respiratory|skin|digestive|musculoskeletal|
                    "triggers": ["pollen", "dust"],            // 可选
                    "occurred_at": "2026-05-08T09:00:00+08:00"} // 可选, 默认现在
 garmin_sync:      {}
-reminder:         {"title": "吃药", "remind_at": "2026-05-06T08:00:00+08:00"}""",
+reminder:         {"title": "臀中肌训练", "message": "蚌式开合、侧卧抬腿、臀桥",
+                   "remind_at": "2026-06-30T10:30:00+08:00",
+                   "recurrence": "daily", "priority": "normal"}""",
                     },
                 },
                 "required": ["record_type", "data"],

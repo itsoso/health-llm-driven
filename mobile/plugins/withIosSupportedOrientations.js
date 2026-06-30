@@ -16,8 +16,53 @@ function applySupportedOrientationsToInfoPlist(infoPlist) {
   return infoPlist;
 }
 
-function patchGeneratedInfoPlist(platformProjectRoot) {
-  const infoPlistPath = path.join(platformProjectRoot, 'HealthPilot', 'Info.plist');
+function isMainAppInfoPlist(candidatePath) {
+  const parts = candidatePath.split(path.sep).map((part) => part.toLowerCase());
+  if (parts.some((part) => (
+    part.includes('watch')
+    || part.includes('complication')
+    || part.includes('extension')
+    || part.includes('intent')
+  ))) {
+    return false;
+  }
+
+  try {
+    const parsed = plist.parse(fs.readFileSync(candidatePath, 'utf8'));
+    const bundleId = String(parsed.CFBundleIdentifier || '').toLowerCase();
+    return !bundleId.includes('watchkit')
+      && !bundleId.includes('extension')
+      && !bundleId.includes('intent');
+  } catch {
+    return false;
+  }
+}
+
+function findInfoPlists(platformProjectRoot) {
+  if (!fs.existsSync(platformProjectRoot)) return [];
+  return fs.readdirSync(platformProjectRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.endsWith('.xcodeproj') && !entry.name.endsWith('.xcworkspace'))
+    .map((entry) => path.join(platformProjectRoot, entry.name, 'Info.plist'))
+    .filter((candidate) => fs.existsSync(candidate));
+}
+
+function resolveGeneratedInfoPlistPath(platformProjectRoot, modRequest = {}) {
+  const projectName = modRequest.projectName;
+  if (projectName) {
+    const projectInfoPlistPath = path.join(platformProjectRoot, projectName, 'Info.plist');
+    if (fs.existsSync(projectInfoPlistPath)) {
+      return projectInfoPlistPath;
+    }
+  }
+
+  const mainCandidates = findInfoPlists(platformProjectRoot).filter(isMainAppInfoPlist);
+  if (mainCandidates.length > 0) return mainCandidates[0];
+
+  return path.join(platformProjectRoot, 'HealthPilot', 'Info.plist');
+}
+
+function patchGeneratedInfoPlist(platformProjectRoot, modRequest = {}) {
+  const infoPlistPath = resolveGeneratedInfoPlistPath(platformProjectRoot, modRequest);
   if (!fs.existsSync(infoPlistPath)) {
     throw new Error(`withIosSupportedOrientations could not find ${infoPlistPath}`);
   }
@@ -36,7 +81,7 @@ function withIosSupportedOrientations(config) {
   return withDangerousMod(config, [
     'ios',
     (cfg) => {
-      patchGeneratedInfoPlist(cfg.modRequest.platformProjectRoot);
+      patchGeneratedInfoPlist(cfg.modRequest.platformProjectRoot, cfg.modRequest);
       return cfg;
     },
   ]);
@@ -44,4 +89,6 @@ function withIosSupportedOrientations(config) {
 
 module.exports = withIosSupportedOrientations;
 module.exports._applySupportedOrientationsToInfoPlist = applySupportedOrientationsToInfoPlist;
+module.exports._patchGeneratedInfoPlist = patchGeneratedInfoPlist;
+module.exports._resolveGeneratedInfoPlistPath = resolveGeneratedInfoPlistPath;
 module.exports._SUPPORTED_ORIENTATIONS = SUPPORTED_ORIENTATIONS;

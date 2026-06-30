@@ -1,10 +1,10 @@
 /**
- * RevaTimelineStrip —— 首页今日时间线(Reva 重设计第 3 块)。
+ * RevaTimelineStrip —— 首页「接下来」行动条(Reva 重设计第 3 块)。
  *
  * 复用 useTodayTimeline 的真实条目(训练 / 补水 / 血氧 / 设备待核对…),
  * 用 RevaKit 的 Card + PlanItem 重排。每行一眼扫:title 单行截断,subtitle 只取
  * 第一个分句(shortSubtitle)单行 + 省略号,完整内容留给点击进详情(deep_link)。
- *   - 顶部 SectionLabel「今日时间线」+ 右侧「待办 N · 已完成 M」。
+ *   - 顶部 SectionLabel「接下来」+ 右侧「待办 N · 已完成 M」。
  *   - 已完成项 done 打勾;血氧偏低这类 severity=critical/high 的 advisory 用 risk Chip 标红。
  *   - action 项点「开始」→ 引导式执行屏(R17);可完成项点行勾走 /agenda/complete 双轨。
  *
@@ -28,8 +28,9 @@ import type {
   TodayTimelineItem,
 } from '../../services/todayTimeline';
 import SkipReasonSheet from './SkipReasonSheet';
+import { formatHealthActionTitle } from '../../utils/actionCopy';
 
-const MAX_VISIBLE = 6;
+const MAX_VISIBLE = 3;
 const MOBILITY_WORDS = ['拉伸', '柔韧'];
 const CARDIO_ONLY_WORDS = ['跑步', '健走', '步行', '快走', '慢跑'];
 const MOVEMENT_ICONS = ['barbell', 'fitness', 'body'];
@@ -113,7 +114,18 @@ function shortSubtitle(raw: string | null | undefined): string | undefined {
   return s.trim() || undefined;
 }
 
-export default function RevaTimelineStrip() {
+function titleKey(raw: string | null | undefined): string {
+  return formatHealthActionTitle(raw)
+    .replace(/[：:]/gu, '')
+    .replace(/\s+/gu, '')
+    .toLowerCase();
+}
+
+export default function RevaTimelineStrip({
+  excludeTitles = [],
+}: {
+  excludeTitles?: (string | null | undefined)[];
+}) {
   const router = useRouter();
   const { data, isLoading, isError } = useTodayTimeline();
   const complete = useCompleteAgendaItem();
@@ -219,12 +231,19 @@ export default function RevaTimelineStrip() {
 
   const items = useMemo(() => data?.items ?? [], [data]);
   const past = data?.past ?? { completed_count: 0, events: [] };
-  const counts = data?.counts ?? { actionable: 0, overdue: 0, info: 0 };
+  const excludedTitleKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const title of excludeTitles) {
+      const key = titleKey(title);
+      if (key) keys.add(key);
+    }
+    return keys;
+  }, [excludeTitles]);
 
   if (isLoading) {
     return (
       <View>
-        <SectionLabel>今日时间线</SectionLabel>
+        <SectionLabel>接下来</SectionLabel>
         <Card>
           <ActivityIndicator color={C.green500} />
         </Card>
@@ -235,17 +254,19 @@ export default function RevaTimelineStrip() {
   // 网络错误 / 无数据 → 不渲染(下方分组各卡自带错误态)
   if (isError || !data) return null;
 
-  // 时间线行:action / advisory / checkup(outcome 由结果归因区呈现,这里跳过)
-  const rows = items.filter((i) => i.kind !== 'outcome');
-  if (rows.length === 0 && past.completed_count === 0) return null;
+  // 接下来只展示未完成的 action / advisory / checkup;完成记录留给历史页和计数,不占首页。
+  const rows = items.filter(
+    (i) => i.kind !== 'outcome' && i.status !== 'completed' && !excludedTitleKeys.has(titleKey(i.title)),
+  );
+  if (rows.length === 0) return null;
 
   const visible = expand ? rows : rows.slice(0, MAX_VISIBLE);
   const hidden = rows.length - visible.length;
-  const countsLabel = `待办 ${counts.actionable} · 已完成 ${past.completed_count}`;
+  const countsLabel = `待办 ${rows.length} · 已完成 ${past.completed_count}`;
 
   return (
     <View>
-      <SectionLabel action={countsLabel}>今日时间线</SectionLabel>
+      <SectionLabel action={countsLabel}>接下来</SectionLabel>
       <Card pad={0}>
         {visible.map((item, i) => {
           const isWork = item.kind === 'work';

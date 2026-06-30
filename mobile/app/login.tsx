@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 import { loadCredentials, saveCredentials } from '../services/auth';
+import { APP_DISPLAY_NAME } from '../constants/brand';
 
 export default function LoginScreen() {
   const { c } = useTheme();
@@ -70,7 +71,7 @@ export default function LoginScreen() {
           <View style={styles.logoCircle}>
             <Ionicons name="heart-circle" size={64} color={c.brand} />
           </View>
-          <Text style={styles.title}>HealthPilot</Text>
+          <Text style={styles.title}>{APP_DISPLAY_NAME}</Text>
           <Text style={styles.subtitle}>AI 驱动的健康管理</Text>
         </View>
 

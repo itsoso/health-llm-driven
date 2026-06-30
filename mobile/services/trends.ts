@@ -123,19 +123,23 @@ export async function fetchIndicatorTrend(
 }
 
 /**
- * Garmin 日数据趋势 (心率 / HRV / Body Battery / 睡眠).
+ * Garmin 日数据趋势 (心率 / HRV / Body Battery / 睡眠 / 步数).
  * 复用 dashboard 端点: /daily-health/garmin/me?start_date=&end_date=
  * 返回按 record_date 升序的点序列. metric 取值:
  *   - heart_rate → resting_heart_rate
  *   - hrv → hrv
  *   - body_battery → body_battery_current (主) / body_battery_most_charged (次)
  *   - sleep → total_sleep_duration / 60 (h)
+ *   - sleep_score → sleep_score
+ *   - steps → steps
  */
 const GARMIN_METRIC_CFG: Record<string, { label: string; color: string; unit: string; field: string; transform?: (v: number) => number; refRange?: { low: number; high: number } }> = {
   heart_rate: { label: '静息心率', color: '#FF375F', unit: 'bpm', field: 'resting_heart_rate', refRange: { low: 50, high: 80 } },
   hrv: { label: 'HRV', color: '#40C8E0', unit: 'ms', field: 'hrv' },
   body_battery: { label: '电量 (当前)', color: '#30D158', unit: '', field: 'body_battery_current' },
   sleep: { label: '睡眠时长', color: '#BF5AF2', unit: 'h', field: 'total_sleep_duration', transform: (v) => v / 60, refRange: { low: 7, high: 9 } },
+  sleep_score: { label: '睡眠评分', color: '#5E8CFF', unit: '分', field: 'sleep_score', refRange: { low: 80, high: 100 } },
+  steps: { label: '步数', color: '#34C759', unit: '步', field: 'steps' },
 };
 
 export async function fetchGarminMetricTrend(

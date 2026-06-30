@@ -7,9 +7,11 @@ const mockInvalidateQueries = jest.fn();
 const mockApiPost = jest.fn();
 let mockDailyPlanActions: unknown[] = [];
 let mockDailyArtifact: any = null;
+let mockTodayDynamicView: any = null;
 let mockTwinData: Record<string, unknown> = {};
 let mockSafetyAlerts: any[] = [];
 let mockActiveCycle: any = null;
+let mockDashboardData: any = null;
 let mockRefetchingKeys = new Set<string>();
 // 时间线 now-item:Hero 现在读 /timeline/today 的 now(时间感知最相关项),不再读清晨第一项。
 let mockTimeline: any = null;
@@ -40,11 +42,17 @@ jest.mock('@tanstack/react-query', () => ({
     if (key.includes('daily-artifact')) {
       return { data: mockDailyArtifact, isLoading: false, isError: false, isRefetching };
     }
+    if (key.includes('today-dynamic-view')) {
+      return { data: mockTodayDynamicView, isLoading: false, isError: false, isRefetching };
+    }
     if (key.includes('timeline')) {
       return { data: mockTimeline, isLoading: false, isError: false, isRefetching };
     }
     if (key.includes('intervention-cycle')) {
       return { data: mockActiveCycle, isLoading: false, isRefetching };
+    }
+    if (key === 'dashboard') {
+      return { data: mockDashboardData, isLoading: false, isSuccess: true, isRefetching };
     }
     return { data: null, isLoading: false, isRefetching: false };
   },
@@ -101,6 +109,14 @@ jest.mock('../../../services/api', () => ({
   default: { get: jest.fn(), post: (...args: any[]) => mockApiPost(...args) },
 }));
 
+jest.mock('expo-notifications', () => ({
+  getAllScheduledNotificationsAsync: jest.fn().mockResolvedValue([]),
+  cancelScheduledNotificationAsync: jest.fn().mockResolvedValue(undefined),
+  getPermissionsAsync: jest.fn().mockResolvedValue({ status: 'denied' }),
+  scheduleNotificationAsync: jest.fn().mockResolvedValue('notification-id'),
+  SchedulableTriggerInputTypes: { DAILY: 'daily' },
+}));
+
 // Reva self-fetching strips read their own hooks (timeline / weather). Under the
 // generic react-query mock they degrade to null/empty — that's fine for the home
 // feed structure assertions. We only assert on the cards that take props from index.
@@ -112,9 +128,11 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     jest.clearAllMocks();
     mockDailyPlanActions = [];
     mockDailyArtifact = null;
+    mockTodayDynamicView = null;
     mockTwinData = {};
     mockSafetyAlerts = [];
     mockActiveCycle = null;
+    mockDashboardData = null;
     mockRefetchingKeys = new Set<string>();
     mockTimeline = null;
   });
@@ -252,12 +270,254 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
 
     const { getByText, queryByLabelText } = render(<TodayScreen />);
 
-    expect(getByText('DAILY ARTIFACT')).toBeTruthy();
+    expect(getByText('今日焦点')).toBeTruthy();
     expect(getByText('午饭后步行 10 分钟')).toBeTruthy();
     expect(queryByLabelText('现在该做:旧 Hero 行动')).toBeNull();
   });
 
-  it('renders a cockpit header with Twin and data freshness status', () => {
+  it('routes Daily Artifact go-execute into the right action surface instead of the blank timeline', () => {
+    mockDailyArtifact = {
+      artifact_date: '2026-06-29',
+      empty_state: false,
+      state: { label: '今日最重要行动', tone: 'focused', summary: '先恢复。' },
+      top_action: {
+        id: 'today-recovery',
+        title: '今日训练:今天恢复/休息,暂停高强度;优先睡眠与轻活动',
+        why_now: '近期恢复不足。',
+        do_now: '先睡眠和轻活动。',
+        source: { object_type: 'health_protocol', object_id: 7 },
+        actions: {
+          complete: { enabled: false },
+          skip: { requires_reason: true },
+          ask_reva: { target: '/voice-chat?intent=daily_artifact' },
+        },
+      },
+      evidence: [{ kind: 'verification', label: 'Verification', summary: '用睡眠和腰围验证。' }],
+      confidence: 'high',
+      freshness: { status: 'fresh', sources: ['runtime'] },
+      safety_boundary: '健康管理行动建议,不替代医生诊断。',
+    };
+
+    const { getByLabelText } = render(<TodayScreen />);
+
+    fireEvent.press(getByLabelText('执行今日最重要行动'));
+    expect(mockPush).toHaveBeenCalledWith('/movement-plan');
+    expect(mockPush).not.toHaveBeenCalledWith('/timeline');
+  });
+
+  it('routes Daily Artifact ask into Aheng chat instead of the legacy voice chat page', () => {
+    mockDailyArtifact = {
+      artifact_date: '2026-06-29',
+      empty_state: false,
+      state: { label: '今日最重要行动', tone: 'focused', summary: '先处理餐后窗口。' },
+      top_action: {
+        id: 'walk-10m',
+        title: '午饭后步行 10 分钟',
+        do_now: '穿好鞋,从办公室楼下走一圈。',
+        actions: {
+          complete: { enabled: false },
+          skip: { requires_reason: true },
+          ask_reva: { target: '/voice-chat?intent=daily_artifact' },
+        },
+      },
+      evidence: [{ kind: 'why_now', label: 'Why now', summary: '餐后窗口' }],
+      confidence: 'medium',
+      freshness: { status: 'fresh', sources: ['health_protocol'] },
+      safety_boundary: '健康管理行动建议,不替代医生诊断。',
+    };
+
+    const { getByLabelText } = render(<TodayScreen />);
+
+    fireEvent.press(getByLabelText('询问阿衡今日行动'));
+    const route = mockPush.mock.calls[mockPush.mock.calls.length - 1]?.[0] as any;
+    expect(route.pathname).toBe('/(tabs)/chat');
+    expect(route.params.prompt).toContain('午饭后步行 10 分钟');
+    expect(route.params.context).toContain('"intent":"ask_reva"');
+    expect(mockPush).not.toHaveBeenCalledWith('/voice-chat?intent=daily_artifact');
+  });
+
+  it('routes Daily Artifact decision basis into Aheng chat with the evidence context', () => {
+    mockDailyArtifact = {
+      artifact_date: '2026-06-29',
+      empty_state: false,
+      state: { label: '今日最重要行动', tone: 'focused', summary: '先恢复。' },
+      top_action: {
+        id: 'today-recovery',
+        title: '今日训练:今天恢复/休息,暂停高强度;优先睡眠与轻活动',
+        why_now: '睡眠和恢复不足,今天不应叠加强度。',
+        do_now: '优先睡眠与轻活动。',
+        actions: {
+          complete: { enabled: false },
+          skip: { requires_reason: true },
+        },
+      },
+      evidence: [
+        { kind: 'why_now', label: 'Why now', summary: '恢复不足。' },
+        { kind: 'verification', label: 'Verification', summary: '用睡眠和腰围验证。' },
+      ],
+      confidence: 'high',
+      freshness: { status: 'fresh', sources: ['runtime'] },
+      safety_boundary: '健康管理行动建议,不替代医生诊断。',
+    };
+
+    const { getByLabelText } = render(<TodayScreen />);
+
+    fireEvent.press(getByLabelText('查看今日行动决策依据'));
+    const route = mockPush.mock.calls[mockPush.mock.calls.length - 1]?.[0] as any;
+    expect(route.pathname).toBe('/(tabs)/chat');
+    expect(route.params.badge).toBe('决策依据');
+    expect(route.params.context).toContain('"intent":"explain_basis"');
+    expect(route.params.context).toContain('睡眠和恢复不足');
+  });
+
+  it('renders the Aheng-generated DynamicView when available', () => {
+    mockTimeline = makeTimeline({
+      id: 'act-1',
+      kind: 'action',
+      time_window: 'noon',
+      scheduled_for: '12:00',
+      title: '旧 Hero 行动',
+      subtitle: null,
+      icon: 'restaurant-outline',
+      color: '#1F8A5B',
+      status: 'pending',
+      priority: 1,
+      can_complete: false,
+      complete_ref: null,
+      deep_link: null,
+      severity: null,
+      proof: null,
+    });
+    mockTodayDynamicView = {
+      view_id: 'today:2026-06-29:abc',
+      surface: 'mobile.today',
+      trigger: 'open',
+      generated_by: 'aheng_today_view_v1',
+      generated_at: '2026-06-29T08:00:00Z',
+      expires_at: '2026-06-29T08:01:00Z',
+      context_hash: 'abc',
+      safety_boundary: '健康管理行动建议,不替代医生诊断。',
+      sections: [
+        {
+          slot: 'hero',
+          priority: 100,
+          cards: [
+            {
+              type: 'daily_artifact',
+              data: {
+                artifact_date: '2026-06-29',
+                empty_state: false,
+                state: { label: '今日最重要行动', tone: 'focused', summary: '阿衡已生成今日行动。' },
+                top_action: {
+                  id: 'dynamic-walk',
+                  title: '阿衡动态生成的餐后步行',
+                  why_now: '餐后窗口优先。',
+                  actions: { complete: { enabled: false }, skip: { requires_reason: true } },
+                },
+                evidence: [],
+                confidence: 'medium',
+                freshness: { status: 'fresh', sources: ['agenda.runtime_range'] },
+                safety_boundary: '健康管理行动建议,不替代医生诊断。',
+              },
+            },
+          ],
+        },
+        {
+          slot: 'runtime',
+          priority: 80,
+          cards: [
+            {
+              type: 'runtime_agenda',
+              data: {
+                generated_by: 'rolling_health_runtime_v1',
+                horizon_days: 7,
+                next_action: {
+                  title: '晚餐后步行 15 分钟',
+                  time_window: 'evening',
+                  priority_tier: 'P1',
+                  current_state_summary: '晚餐后是今天最短的代谢干预窗口。',
+                  replan_reason: 'today_smart_rank',
+                  verification_metrics: ['waist_cm'],
+                  verification_window_days: 7,
+                },
+                days: [],
+                safety_boundary: '健康管理行动建议,不替代医生诊断。',
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const { getByTestId, getByText, queryByLabelText } = render(<TodayScreen />);
+
+    expect(getByTestId('dynamic-today-view')).toBeTruthy();
+    expect(getByText('阿衡动态生成的餐后步行')).toBeTruthy();
+    expect(getByText('7天验证节奏')).toBeTruthy();
+    expect(queryByLabelText('现在该做:旧 Hero 行动')).toBeNull();
+  });
+
+  it('does not repeat the Aheng-promoted action in the following timeline strip', () => {
+    mockTimeline = makeTimeline({
+      id: 'dynamic-walk',
+      kind: 'action',
+      time_window: 'noon',
+      scheduled_for: '12:30',
+      title: '阿衡动态生成的餐后步行',
+      subtitle: '餐后窗口优先。',
+      icon: 'walk-outline',
+      color: '#1F8A5B',
+      status: 'pending',
+      priority: 1,
+      can_complete: false,
+      complete_ref: null,
+      deep_link: null,
+      severity: null,
+      proof: null,
+    });
+    mockTodayDynamicView = {
+      view_id: 'today:2026-06-29:abc',
+      surface: 'mobile.today',
+      trigger: 'open',
+      generated_by: 'aheng_today_view_v1',
+      generated_at: '2026-06-29T08:00:00Z',
+      expires_at: '2026-06-29T08:01:00Z',
+      context_hash: 'abc',
+      safety_boundary: '健康管理行动建议,不替代医生诊断。',
+      sections: [
+        {
+          slot: 'hero',
+          priority: 100,
+          cards: [
+            {
+              type: 'daily_artifact',
+              data: {
+                artifact_date: '2026-06-29',
+                empty_state: false,
+                state: { label: '今日最重要行动', tone: 'focused', summary: '阿衡已生成今日行动。' },
+                top_action: {
+                  id: 'dynamic-walk',
+                  title: '阿衡动态生成的餐后步行',
+                  why_now: '餐后窗口优先。',
+                  actions: { complete: { enabled: false }, skip: { requires_reason: true } },
+                },
+                evidence: [],
+                confidence: 'medium',
+                freshness: { status: 'fresh', sources: ['agenda.runtime_range'] },
+                safety_boundary: '健康管理行动建议,不替代医生诊断。',
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const { getAllByText } = render(<TodayScreen />);
+
+    expect(getAllByText('阿衡动态生成的餐后步行')).toHaveLength(1);
+  });
+
+  it('omits the noisy Twin freshness status row from the greeting header', () => {
     mockTwinData = {
       physiological: { training_readiness_score: 87, hrv_latest: 48 },
     };
@@ -272,11 +532,11 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
       safety_boundary: null,
     };
 
-    const { getByTestId, getByText } = render(<TodayScreen />);
+    const { queryByTestId, queryByText } = render(<TodayScreen />);
 
-    expect(getByTestId('reva-cockpit-status-row')).toBeTruthy();
-    expect(getByText('Twin 已更新')).toBeTruthy();
-    expect(getByText('2 个来源 · 新鲜')).toBeTruthy();
+    expect(queryByTestId('reva-cockpit-status-row')).toBeNull();
+    expect(queryByText('Twin 已更新')).toBeNull();
+    expect(queryByText('2 个来源 · 新鲜')).toBeNull();
   });
 
   it('routes the Hero now-action to its deep link when present', () => {
@@ -337,6 +597,37 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(mockPush).toHaveBeenCalledWith('/intervention-cycle');
   });
 
+  it('hides the standalone 90-day cycle when Aheng has already generated the primary today action', () => {
+    mockActiveCycle = {
+      id: 7,
+      status: 'active',
+      start_date: new Date(Date.now() - 14 * 86400000).toISOString(),
+      planned_end_date: new Date(Date.now() + 76 * 86400000).toISOString(),
+      outcomes: [{ metric_code: 'LDL', display: 'LDL-C', unit: 'mmol/L', status: 'pending' }],
+    };
+    mockDailyArtifact = {
+      artifact_date: '2026-06-29',
+      empty_state: false,
+      state: { label: '今日最重要行动', tone: 'focused', summary: '先处理今日行动。' },
+      top_action: {
+        id: 'walk',
+        title: '午饭后步行 10 分钟',
+        why_now: '餐后窗口优先。',
+        verification_signal: 'waist_cm',
+        actions: { complete: { enabled: false }, skip: { requires_reason: true } },
+      },
+      evidence: [],
+      confidence: 'medium',
+      freshness: { status: 'fresh', sources: ['runtime'] },
+      safety_boundary: '健康管理行动建议,不替代医生诊断。',
+    };
+
+    const { queryByTestId, getByText } = render(<TodayScreen />);
+
+    expect(getByText('午饭后步行 10 分钟')).toBeTruthy();
+    expect(queryByTestId('home-health-cycle-cockpit')).toBeNull();
+  });
+
   it('keeps the pull-to-refresh spinner separate from background sync', () => {
     mockRefetchingKeys = new Set(['twin:me']);
     const { UNSAFE_getByType } = render(<TodayScreen />);
@@ -345,30 +636,85 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(refreshControl.props.refreshing).toBe(false);
   });
 
-  // ── 身体数据 (ActivityRing + Vitals + BodyStats) ──
+  it('does not show completed-only medication and supplement summaries on Today', () => {
+    mockDashboardData = {
+      medicationToday: [
+        {
+          medication_id: 1,
+          name: '二甲双胍',
+          dosage: '0.5g',
+          category: 'medication',
+          total_count: 2,
+          taken_count: 2,
+          skipped_count: 0,
+          last_taken_time: '08:00',
+          reminder_times: ['08:00', '20:00'],
+          logs: [],
+        },
+        {
+          medication_id: 2,
+          name: 'Magnesium',
+          dosage: '100mg',
+          category: 'supplement',
+          total_count: 1,
+          taken_count: 1,
+          skipped_count: 0,
+          last_taken_time: '09:00',
+          reminder_times: ['09:00'],
+          logs: [],
+        },
+      ],
+    };
 
-  it('renders the basic vitals grid with pending placeholders when data is missing', () => {
-    const { getByText, getByLabelText } = render(<TodayScreen />);
-    expect(getByText('血压')).toBeTruthy();
-    expect(getByText('SpO2')).toBeTruthy();
-    expect(getByText('BMI')).toBeTruthy();
-    expect(getByText('体脂')).toBeTruthy();
-    expect(getByLabelText('血压 待记录')).toBeTruthy();
+    const { queryByLabelText, queryByText } = render(<TodayScreen />);
+
+    expect(queryByLabelText('今日用药补剂摘要')).toBeNull();
+    expect(queryByText('用药 / 补剂')).toBeNull();
+    expect(queryByText('今日已全部完成')).toBeNull();
+    expect(queryByText('二甲双胍')).toBeNull();
+    expect(queryByText('Magnesium')).toBeNull();
   });
 
-  it('fills the vitals grid from the twin snapshot when values exist', () => {
+  // ── 身体信号 (agent-selected compact signals) ──
+
+  it('does not render placeholder-only body signals when there is no action context or data', () => {
+    const { queryByText } = render(<TodayScreen />);
+    expect(queryByText('身体信号')).toBeNull();
+    expect(queryByText('/ 8,000')).toBeNull();
+  });
+
+  it('fills body signals from the twin snapshot when values exist', () => {
     mockTwinData = {
-      physiological: { spo2_avg: 96 },
+      physiological: { spo2_avg: 96, hrv_latest: 59, sleep_duration_h_latest: 8.3, body_battery_current: 98 },
       body_composition: { bmi: 22.4 },
       labs: { blood_pressure_systolic: 120, blood_pressure_diastolic: 78 },
     };
     const { getByLabelText } = render(<TodayScreen />);
-    expect(getByLabelText('血压 120/78mmHg')).toBeTruthy();
+    expect(getByLabelText('睡眠 8.3h')).toBeTruthy();
+    expect(getByLabelText('HRV 59ms')).toBeTruthy();
+    expect(getByLabelText('电量 98')).toBeTruthy();
     expect(getByLabelText('BMI 22.4')).toBeTruthy();
   });
 
-  it('opens a vitals tile route on press', () => {
-    const { getByLabelText } = render(<TodayScreen />);
+  it('opens a body signal route on press', () => {
+    mockDailyArtifact = {
+      artifact_date: '2026-06-29',
+      empty_state: false,
+      state: { label: '今日最重要行动', tone: 'focused', summary: '先处理今日行动。' },
+      top_action: {
+        id: 'waist-check',
+        title: '记录腰围和体重',
+        why_now: '用代谢信号验证行动。',
+        verification_signal: 'waist_cm',
+        actions: { complete: { enabled: false }, skip: { requires_reason: true } },
+      },
+      evidence: [],
+      confidence: 'medium',
+      freshness: { status: 'fresh', sources: ['runtime'] },
+      safety_boundary: '健康管理行动建议,不替代医生诊断。',
+    };
+    const { getByLabelText, queryByLabelText } = render(<TodayScreen />);
+    expect(queryByLabelText('睡眠 待同步')).toBeNull();
     fireEvent.press(getByLabelText('BMI 待记录'));
     expect(mockPush).toHaveBeenCalledWith('/body-measurements?focus=morning');
   });
@@ -389,5 +735,42 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(queryByTestId('home-command-judgment')).toBeNull();
     expect(queryByTestId('home-streak-badge')).toBeNull();
     expect(queryByTestId('home-outcome-win-card')).toBeNull();
+  });
+
+  it('uses neutral record-first quick actions and removes the static Aheng demo card from Today', () => {
+    const { getByLabelText, getByText, queryByLabelText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('补今日记录')).toBeTruthy();
+    expect(queryByText('开始跑步')).toBeNull();
+    expect(queryByLabelText('试试阿衡')).toBeNull();
+
+    fireEvent.press(getByLabelText('补今日记录'));
+    expect(mockPush).toHaveBeenCalledWith('/(tabs)/record');
+  });
+
+  it('hides generic quick actions when Aheng already provides primary action controls', () => {
+    mockDailyArtifact = {
+      artifact_date: '2026-06-29',
+      empty_state: false,
+      state: { label: '今日最重要行动', tone: 'focused', summary: '先处理今日行动。' },
+      top_action: {
+        id: 'walk-after-lunch',
+        title: '午饭后步行 10 分钟',
+        why_now: '餐后窗口优先,先用轻活动稳定血糖波动。',
+        actions: { complete: { enabled: false }, skip: { requires_reason: true } },
+      },
+      evidence: [],
+      confidence: 'medium',
+      freshness: { status: 'fresh', sources: ['runtime'] },
+      safety_boundary: '健康管理行动建议,不替代医生诊断。',
+    };
+
+    const { getByText, queryByLabelText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('午饭后步行 10 分钟')).toBeTruthy();
+    expect(queryByText('补今日记录')).toBeNull();
+    expect(queryByLabelText('补今日记录')).toBeNull();
+    expect(queryByLabelText('语音记录')).toBeNull();
+    expect(queryByLabelText('记录')).toBeNull();
   });
 });

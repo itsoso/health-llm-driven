@@ -18,12 +18,50 @@ import {
 } from '../../services/chatMedicalExamImportSkill';
 import {
   revaColors as C,
+  revaRadii,
+  revaShadows,
   revaSpacing,
   revaSemantic,
   revaFonts,
 } from '../../constants/revaTheme';
 
 const CANCEL_THRESHOLD = 80;
+
+type ChatAgentMode = 'daily' | 'deep' | 'vision';
+
+export interface ChatInputSendOptions {
+  extraContext?: string;
+}
+
+const AGENT_MODES: {
+  id: ChatAgentMode;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}[] = [
+  { id: 'daily', label: '日常', icon: 'flash-outline' },
+  { id: 'deep', label: '深思', icon: 'diamond-outline' },
+  { id: 'vision', label: '识图', icon: 'image-outline' },
+];
+
+const MODE_PLACEHOLDER: Record<ChatAgentMode, string> = {
+  daily: '问阿衡，或按住说话',
+  deep: '让阿衡深思一个计划',
+  vision: '拍照/报告后问阿衡',
+};
+
+function buildAgentModeOptions(mode: ChatAgentMode): ChatInputSendOptions | undefined {
+  if (mode === 'daily') return undefined;
+  const instruction = mode === 'deep'
+    ? '先梳理目标、约束和健康风险边界，再给出可执行计划、验证信号和下一步确认动作。'
+    : '优先理解图片、报告或饮食运动线索，输出可确认的记录、复核卡片或下一步补充信息。';
+  return {
+    extraContext: JSON.stringify({
+      source: 'mobile_chat_composer',
+      mode,
+      instruction,
+    }),
+  };
+}
 
 function PulsingRing() {
   const scale = useSharedValue(1);
@@ -38,7 +76,7 @@ function PulsingRing() {
 }
 
 interface Props {
-  onSend: (text: string, images?: PendingImage[] | null) => void;
+  onSend: (text: string, images?: PendingImage[] | null, options?: ChatInputSendOptions) => void;
   isStreaming: boolean;
   /** Populated once on first mount; subsequent changes are ignored. */
   initialText?: string;
@@ -53,21 +91,27 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
   const [showMedicalImportMenu, setShowMedicalImportMenu] = useState(false);
   const [medicalImportBusy, setMedicalImportBusy] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
+  const [agentMode, setAgentMode] = useState<ChatAgentMode>('daily');
   const [cancelHint, setCancelHint] = useState(false);
   const [justSent, setJustSent] = useState(false);  // 刚发送, 按钮停留 1s 避免误切 mic
   const { pendingImages, removeImage, clearImages, pickImage, takePhoto } = useMediaPicker();
   const textInputRef = useRef<TextInput>(null);
+  const canSend = (!!input.trim() || pendingImages.length > 0) && !isStreaming;
 
   const handleSend = useCallback((text?: string) => {
     const msg = (text || input).trim();
     if (!msg && pendingImages.length === 0) return;
-    onSend(msg || '请分析这些图片', pendingImages.length > 0 ? pendingImages : null);
+    onSend(
+      msg || '请分析这些图片',
+      pendingImages.length > 0 ? pendingImages : null,
+      buildAgentModeOptions(agentMode),
+    );
     setInput('');
     clearImages();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setJustSent(true);
     setTimeout(() => setJustSent(false), 1000);
-  }, [input, pendingImages, onSend, clearImages]);
+  }, [agentMode, input, pendingImages, onSend, clearImages]);
 
   const voice = useVoiceRecording({
     onTranscript: (text) => {
@@ -80,6 +124,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
 
   const cancelledRef = useRef(false);
   const startYRef = useRef(0);
+  const inputHoldActiveRef = useRef(false);
 
   const handleHoldStart = useCallback((pageY: number) => {
     cancelledRef.current = false;
@@ -115,6 +160,24 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setVoiceMode(false);
   }, []);
+
+  const focusTextInput = useCallback(() => {
+    textInputRef.current?.focus();
+  }, []);
+
+  const handleInputLongPress = useCallback((pageY: number) => {
+    if (canSend || voiceMode || isStreaming) return;
+    inputHoldActiveRef.current = true;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setVoiceMode(false);
+    handleHoldStart(pageY);
+  }, [canSend, handleHoldStart, isStreaming, voiceMode]);
+
+  const handleInputPressOut = useCallback(() => {
+    if (!inputHoldActiveRef.current) return;
+    inputHoldActiveRef.current = false;
+    handleHoldEnd();
+  }, [handleHoldEnd]);
 
   const handlePickImage = useCallback(async () => { setShowMenu(false); await pickImage(); }, [pickImage]);
   const handleTakePhoto = useCallback(async () => { setShowMenu(false); await takePhoto(); }, [takePhoto]);
@@ -166,7 +229,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('需要相机权限', '请在系统设置中允许 Reva 使用相机。');
+        Alert.alert('需要相机权限', '请在系统设置中允许阿衡使用相机。');
         return;
       }
       const picked = await ImagePicker.launchCameraAsync({
@@ -191,7 +254,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('需要相册权限', '请在系统设置中允许 Reva 访问照片。');
+        Alert.alert('需要相册权限', '请在系统设置中允许阿衡访问照片。');
         return;
       }
       const picked = await ImagePicker.launchImageLibraryAsync({
@@ -216,8 +279,6 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowMenu(!showMenu);
   };
-
-  const canSend = (input.trim() || pendingImages.length > 0) && !isStreaming;
 
   return (
     <>
@@ -259,7 +320,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
               {Math.floor(voice.durationMs / 1000)}″
             </Text>
             <Text style={[styles.recordingHint, cancelHint && styles.recordingHintCancel]}>
-              {cancelHint ? '松手取消' : '上滑取消发送'}
+              {cancelHint ? '松手取消' : '松手转文字，上滑取消'}
             </Text>
           </View>
         </View>
@@ -279,6 +340,42 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
           <Text style={styles.transcribingText}>体检报告导入中...</Text>
         </View>
       )}
+
+      <View style={styles.agentModeRow} accessibilityLabel="Agent 模式">
+        {AGENT_MODES.map(mode => {
+          const selected = agentMode === mode.id;
+          return (
+            <Pressable
+              key={mode.id}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setAgentMode(mode.id);
+              }}
+              style={({ pressed }) => [
+                styles.agentModeChip,
+                selected && styles.agentModeChipActive,
+                pressed && styles.agentModeChipPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              accessibilityLabel={`切换到${mode.label}模式`}
+            >
+              <Ionicons
+                name={mode.icon}
+                size={14}
+                color={selected ? C.green500 : C.ink3}
+              />
+              <Text
+                maxFontSizeMultiplier={1.2}
+                style={[styles.agentModeText, selected && styles.agentModeTextActive]}
+                numberOfLines={1}
+              >
+                {mode.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
 
       {/* 输入栏 */}
       <View style={styles.inputBar}>
@@ -314,11 +411,26 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
           </Pressable>
         ) : (
           /* 键盘模式：文本输入框 */
-          <View style={styles.inputWrap}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.inputWrap,
+              pressed && styles.inputWrapPressed,
+            ]}
+            onPress={focusTextInput}
+            onLongPress={(e) => handleInputLongPress(e.nativeEvent.pageY)}
+            onPressOut={handleInputPressOut}
+            onTouchMove={(e) => {
+              if (inputHoldActiveRef.current) handleHoldMove(e.nativeEvent.pageY);
+            }}
+            delayLongPress={260}
+            accessibilityRole="button"
+            accessibilityLabel="消息输入框，长按语音输入"
+            accessibilityHint="点击输入文字，长按录音并转成文字"
+          >
             <TextInput
               ref={textInputRef}
               style={styles.textInput}
-              placeholder="有问题，尽管问"
+              placeholder={MODE_PLACEHOLDER[agentMode]}
               placeholderTextColor={C.ink3}
               value={input}
               onChangeText={setInput}
@@ -328,7 +440,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
               maxLength={2000}
               accessibilityLabel="消息输入框"
             />
-          </View>
+          </Pressable>
         )}
 
         {/* 右侧按钮：发送 / 语音切换
@@ -422,57 +534,109 @@ function MenuItem({ icon, label, desc, onPress }: { icon: any; label: string; de
 // 录音蒙层的红色/灰色为固定 mic 录音态语义, 不走主题 token.
 const styles = StyleSheet.create({
   /* ── 输入栏 ── */
+  agentModeRow: {
+    flexDirection: 'row',
+    gap: 7,
+    paddingHorizontal: revaSpacing.s3,
+    paddingTop: 8,
+    paddingBottom: 2,
+    backgroundColor: C.paper,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+  },
+  agentModeChip: {
+    flex: 1,
+    minHeight: 30,
+    borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    backgroundColor: C.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+  },
+  agentModeChipActive: {
+    backgroundColor: C.green50,
+    borderColor: C.green100,
+  },
+  agentModeChipPressed: {
+    opacity: 0.72,
+  },
+  agentModeText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    fontWeight: '800',
+    color: C.ink3,
+    lineHeight: 15,
+  } as TextStyle,
+  agentModeTextActive: {
+    color: C.green500,
+  } as TextStyle,
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 6,
-    paddingHorizontal: revaSpacing.s2, paddingVertical: 8,
+    paddingHorizontal: revaSpacing.s3,
+    paddingTop: 8,
+    paddingBottom: 10,
     backgroundColor: C.paper,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
   },
   plusBtn: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: C.surface, borderWidth: 1, borderColor: C.line,
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: C.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line,
     alignItems: 'center', justifyContent: 'center',
   },
   inputWrap: {
+    minHeight: 38,
     flex: 1, flexDirection: 'row', alignItems: 'flex-end',
-    backgroundColor: C.surface, borderRadius: 18,
-    borderWidth: 1, borderColor: C.line,
-    paddingHorizontal: 12, paddingVertical: 4,
+    backgroundColor: C.surface, borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
+    paddingHorizontal: 14, paddingVertical: 4,
+    ...revaShadows.sm,
+  },
+  inputWrapPressed: {
+    backgroundColor: C.paper2,
+    borderColor: C.green100,
   },
   textInput: {
     flex: 1, fontFamily: revaFonts.sans, fontSize: 15, maxHeight: 90, color: C.ink1,
     paddingTop: 6, paddingBottom: 6,
   },
   sendBtn: {
-    width: 32, height: 32, borderRadius: 16,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: C.green500,
     alignItems: 'center', justifyContent: 'center',
+    ...revaShadows.sm,
   },
   modeBtn: {
-    width: 32, height: 32, borderRadius: 16,
+    width: 38, height: 38, borderRadius: 19,
     alignItems: 'center', justifyContent: 'center',
   },
   voiceInputBtn: {
-    width: 32, height: 32, borderRadius: 16,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: C.surface,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.green500,
     alignItems: 'center', justifyContent: 'center',
   },
   keyboardBtn: {
-    width: 32, height: 32, borderRadius: 16,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: C.surface,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
     alignItems: 'center', justifyContent: 'center',
   },
 
   /* ── 按住说话按钮（微信风格） ── */
   holdToTalkBtn: {
-    flex: 1, height: 36, borderRadius: 20,
+    flex: 1, minHeight: 38, borderRadius: revaRadii.pill,
     backgroundColor: C.surface,
-    borderWidth: 1, borderColor: C.line,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
     flexDirection: 'row',
     alignItems: 'center', justifyContent: 'center',
+    ...revaShadows.sm,
   },
   holdToTalkBtnActive: {
     backgroundColor: '#E8E8E8',

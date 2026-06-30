@@ -21,7 +21,7 @@
 ## S1 · Discovery
 
 - 现有系统定位: Reva 是 Personal Health OS, 不做医疗诊断/处方/治疗承诺。
-- Mobile 当前主导航已经是 `今日 / 私教 / 记录 / 我`, 但 `我` tab 仍像内部功能清单, App Store 版需要更清晰的“核心健康动线 + 数据与隐私”结构。
+- Mobile 当前主导航已经是 `今日 / 阿衡 / 记录 / 我`, 但 `我` tab 仍像内部功能清单, App Store 版需要更清晰的“核心健康动线 + 数据与隐私”结构。
 - HealthKit 已在 `mobile/app.json` 开启 entitlement 和 `NSHealthShareUsageDescription`;根布局已挂 `useHealthKitForegroundSync()`。
 - App Store 硬风险:
   - 健康类表述必须保守,避免诊断、治疗、药物剂量调整和疗效保证。
@@ -50,7 +50,7 @@
 下周 App Store MVP 只承诺:
 
 1. HealthKit / 体检导入 / 快速记录 / Chat 动态卡片 / Today top action / Review 复盘的核心闭环可用。
-2. Mobile UI 主入口统一为 `今日 / 私教 / 记录 / 我`。
+2. Mobile UI 主入口统一为 `今日 / 阿衡 / 记录 / 我`。
 3. “我”页按 App Store 用户理解重组为: 数据连接、健康档案、复盘、通知与安全、账号与隐私。
 4. App 内能发起账号删除与数据删除请求。
 
@@ -242,7 +242,7 @@ P0:
   - PASS: `curl -fsSI https://health.executor.life/privacy` 返回 `HTTP/2 200`。
   - PASS: `curl -fsS https://health.executor.life/privacy | rg -n "HealthKit|删除账号|不提供诊断|support@executor.life"` 命中 App Store 审核要求的关键文案。
 - Local simulator screenshot route gate:
-  - PASS: `./scripts/mobile-sim-screenshots.sh --device 39D954B3-A2B5-41AA-8A6E-BD9750D3CB86 --output design/screenshots/app-store/batch3-20260628` 在当前代码 simulator app 上遍历 `今日 / 私教 / 记录 / 我 / 体检导入 / 隐私政策` 并输出 1206 x 2622 截图。
+  - PASS: `./scripts/mobile-sim-screenshots.sh --device 39D954B3-A2B5-41AA-8A6E-BD9750D3CB86 --output design/screenshots/app-store/batch3-20260628` 在当时代码 simulator app 上遍历 `今日 / 私教 / 记录 / 我 / 体检导入 / 隐私政策` 并输出 1206 x 2622 截图;当前可见 tab 已在后续批次收敛为 `今日 / 阿衡 / 记录 / 我`。
   - 注意: 本次截图包含真实账号和健康上下文,只作为本地 QA 证据,未提交进仓库,不可直接用于 App Store Connect。
 - Local screenshot compliance gate:
   - PASS: `./scripts/mobile-sim-screenshots.sh --device 39D954B3-A2B5-41AA-8A6E-BD9750D3CB86 --output design/screenshots/app-store/batch4-private-20260628 --privacy-status private` 生成带 `manifest.json` 的 QA 截图集。
@@ -277,11 +277,26 @@ P0:
   - PASS: `scripts/check_ios_app_store_submission.py` 和 `scripts/check_app_store_release_pack.py` 已把用户可见 App 名锁定为 `阿衡`,防止发布材料回退到旧名。
   - PASS: `cd mobile && ./node_modules/.bin/jest --runTestsByPath __tests__/app-config.test.ts --runInBand` -> 7 passed。
   - PASS: `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest backend/tests/test_ios_app_store_submission_preflight.py backend/tests/test_app_store_release_pack.py -q --no-cov` -> 4 passed。
+- Local final-submit gate(Batch 9):
+  - PASS: `scripts/check_app_store_release_pack.py` 新增 `--final-submit` 与 `--screenshot-dir`,把最终 App Store 提交前的人审材料升级为硬闸。
+  - EXPECTED FAIL: 在缺少 `APP_STORE_SCREENSHOT_DIR` / `--screenshot-dir`、Review Notes 仍有 demo credentials 占位符、且本机无 ASC credentials 时,`python3 scripts/check_app_store_release_pack.py --final-submit` 返回 1 并列出全部阻塞。
+  - 普通 `python3 scripts/check_app_store_release_pack.py` 仍可用于无人工凭证的日常回归。
+- Local persona copy gate(Batch 10):
+  - PASS: Mobile 首页 Daily Artifact、试用入口、onboarding、hub、体检导入动态卡片和通用权限/分享/隐私文案已统一使用 `阿衡`。
+  - PASS: `cd mobile && ./node_modules/.bin/jest --runTestsByPath components/chat/cards/__tests__/MedicalExamImportResultCard.test.tsx components/home/__tests__/DailyArtifactCard.test.tsx components/home/__tests__/RevaTryEntryCard.test.tsx app/__tests__/reva-onboarding.test.tsx --runInBand` -> 11 passed。
+  - PASS: 目标旧称扫描无命中,覆盖 `询问 Reva` / `试试新版复元` / `进入复元` / `让 Reva` / `健康助理` 等通用用户可见旧称。
+  - NOTE: Rokid 专页旧称因外设 SDK 语义和测试面较大,保留为后续独立切片。
+- Local release narrative gate(Batch 11):
+  - PASS: `scripts/check_app_store_release_pack.py` 新增高可见审核叙事校验,覆盖 submission pack、review notes 和 screenshot runbook。
+  - PASS: `backend/tests/test_app_store_release_pack.py` 拒绝 `Reva`、`复元`、`健康助理`、`守护神` 等旧用户可见叙事,并要求当时底部导航 `今日 / 私教 / 记录 / 我` 与定位词 `健康参谋`。
+  - PASS: 后续 Mobile tab rename 批次把 release narrative gate 的当前底部导航推进为 `今日 / 阿衡 / 记录 / 我`,并把 `私教` 纳入 stale user-visible term。
+  - PASS: `submission-pack.md` keywords 从 `健康助理` 收敛为 `阿衡` / `健康参谋`。
 - pending:
   - App Store Connect build processing status。
   - App Store Connect production/distribution profile build。
   - 用 demo account 产出最终 App Store screenshot raw set,或对 private QA set 运行 sanitize 后人工视觉复核。
   - 用 `scripts/prepare_app_store_screenshots.py <raw-or-reviewed-sanitized> <ready> --size 1290x2796 --confirm-sanitized-reviewed` 导出最终 ready set,再用 `APP_STORE_SCREENSHOT_DIR=<ready> python3 scripts/check_app_store_release_pack.py` 过闸。
+  - 最终提交前必须跑 `python3 scripts/check_app_store_release_pack.py --final-submit --screenshot-dir <ready>`。
   - 真正触发 EAS production build / submit 前,用 `python3 scripts/check_ios_app_store_submission.py --require-asc-credentials` 在发布机器上过闸。
 
 ## S7 · 上线验证
@@ -300,6 +315,8 @@ P0:
   - 用 `docs/release/app-store/*` 作为 App Store Connect 填写真源。
   - 用 `scripts/check_ios_app_store_submission.py --require-asc-credentials` 作为 EAS production build / submit 前置闸。
   - 用 `scripts/sanitize_app_store_screenshots.py` + 人工视觉复核 + `scripts/prepare_app_store_screenshots.py` + `scripts/check_app_store_screenshots.py --app-store-ready` 防止 private/尺寸不合规截图进入提交包。
+  - 用 `scripts/check_app_store_release_pack.py` 持续阻断 App Store 高可见文案回退到旧品牌、旧 tab 或旧定位。
   - 真机走查核心动线: 今日 -> Chat 动态卡片 -> 快速记录 -> 体检导入 -> 复盘 -> 隐私/删除请求。
   - 发布配置中用户可见命名必须保持 `阿衡`;`HealthPilot` 仅保留为工程/历史技术名,不得重新进入 App Store 用户可见字段。
+  - 后续用独立切片处理 Rokid 专页中的旧称和测试断言,避免影响本周 App Store 主路径。
   - 若需要“完整账号删除”,新增删除工单/worker/admin 审批与跨表匿名化测试。

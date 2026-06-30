@@ -45,46 +45,10 @@ export default function TabLayout() {
         tabBar={(props) => <RevaTabBar {...props} />}
         screenOptions={{ headerShown: false }}
       >
-        <Tabs.Screen
-          name="index"
-          options={{
-            title: '今日',
-            tabBarAccessibilityLabel: '今日，查看告警、本周建议、身体快照',
-            tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={focused ? 'sparkles' : 'sparkles-outline'} size={22} color={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="chat"
-          options={{
-            title: '私教',
-            tabBarAccessibilityLabel: '私教，与健康 Agent 对话',
-            tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={focused ? 'chatbubbles' : 'chatbubbles-outline'} size={22} color={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="record"
-          options={{
-            title: '记录',
-            tabBarAccessibilityLabel: '记录，快速记录饮水、体重、血压、打卡',
-            tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={focused ? 'add-circle' : 'add-circle-outline'} size={26} color={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="me"
-          options={{
-            title: '我',
-            tabBarAccessibilityLabel: '我，设置、AI 模型、目标、化验、用药、通知',
-            tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={focused ? 'person-circle' : 'person-circle-outline'} size={22} color={color} />
-            ),
-          }}
-        />
+        <Tabs.Screen name="index" options={createTabScreenOptions('index')} />
+        <Tabs.Screen name="chat" options={createTabScreenOptions('chat')} />
+        <Tabs.Screen name="record" options={createTabScreenOptions('record')} />
+        <Tabs.Screen name="me" options={createTabScreenOptions('me')} />
         {/* 隐藏路由 — 文件保留, 仍可程序化导航 (router.push('/alerts') 等). */}
         <Tabs.Screen name="alerts" options={{ href: null }} />
         <Tabs.Screen name="journal" options={{ href: null }} />
@@ -133,20 +97,88 @@ export default function TabLayout() {
 
 // ── Reva 浮动胶囊 Tab Bar ─────────────────────────────────
 // "Liquid Glass" 风: 距边缘内缩, 圆角 = 半高 (真胶囊端), 柔光阴影; 选中态绿色软高亮 + 实心图标.
-const TAB_META: Record<string, { label: string; icon: keyof typeof Ionicons.glyphMap; iconOutline: keyof typeof Ionicons.glyphMap }> = {
-  index: { label: '今日', icon: 'sparkles', iconOutline: 'sparkles-outline' },
-  chat: { label: '私教', icon: 'chatbubbles', iconOutline: 'chatbubbles-outline' },
-  record: { label: '记录', icon: 'add-circle', iconOutline: 'add-circle-outline' },
-  me: { label: '我', icon: 'person-circle', iconOutline: 'person-circle-outline' },
+type MainTabName = 'index' | 'chat' | 'record' | 'me';
+
+type MainTabMeta = {
+  label: string;
+  accessibilityLabel: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  iconOutline: keyof typeof Ionicons.glyphMap;
 };
+
+const MAIN_TAB_ORDER: MainTabName[] = ['index', 'chat', 'record', 'me'];
+
+export const TAB_META: Record<MainTabName, MainTabMeta> = {
+  index: {
+    label: '今日',
+    accessibilityLabel: '今日，查看告警、本周建议、身体快照',
+    icon: 'sparkles',
+    iconOutline: 'sparkles-outline',
+  },
+  chat: {
+    label: '阿衡',
+    accessibilityLabel: '阿衡，与健康参谋对话',
+    icon: 'chatbubbles',
+    iconOutline: 'chatbubbles-outline',
+  },
+  record: {
+    label: '记录',
+    accessibilityLabel: '记录，快速记录饮水、体重、血压、打卡',
+    icon: 'add-circle',
+    iconOutline: 'add-circle-outline',
+  },
+  me: {
+    label: '我',
+    accessibilityLabel: '我，设置、AI 模型、目标、化验、用药、通知',
+    icon: 'person-circle',
+    iconOutline: 'person-circle-outline',
+  },
+};
+
+export function getMainTabLabels() {
+  return MAIN_TAB_ORDER.map((name) => TAB_META[name].label);
+}
+
+export function getMainTabAccessibilityLabels() {
+  return Object.fromEntries(
+    MAIN_TAB_ORDER.map((name) => [name, TAB_META[name].accessibilityLabel]),
+  ) as Record<MainTabName, string>;
+}
+
+export function getMainTabBarPresentation() {
+  return {
+    layout: 'docked',
+    overlaysContent: false,
+  } as const;
+}
+
+function createTabScreenOptions(name: MainTabName) {
+  const meta = TAB_META[name];
+  return {
+    title: meta.label,
+    tabBarAccessibilityLabel: meta.accessibilityLabel,
+    tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
+      <Ionicons name={focused ? meta.icon : meta.iconOutline} size={name === 'record' ? 26 : 22} color={color} />
+    ),
+  };
+}
 
 function RevaTabBar({ state, navigation }: BottomTabBarProps) {
   const { c } = useTheme();
   const insets = useSafeAreaInsets();
-  const routes = state.routes.filter((r) => TAB_META[r.name]);
+  const routes = state.routes.filter((r): r is typeof r & { name: MainTabName } => r.name in TAB_META);
   const activeKey = state.routes[state.index]?.key;
   return (
-    <View pointerEvents="box-none" style={[capsule.wrap, { paddingBottom: Math.max(insets.bottom, FLOATING_TAB_BAR_MIN_BOTTOM) }]}>
+    <View
+      style={[
+        capsule.wrap,
+        {
+          paddingBottom: Math.max(insets.bottom, FLOATING_TAB_BAR_MIN_BOTTOM),
+          backgroundColor: c.bgPrimary,
+          borderTopColor: c.separator,
+        },
+      ]}
+    >
       <View style={[capsule.bar, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
         {routes.map((route) => {
           const meta = TAB_META[route.name];
@@ -180,12 +212,9 @@ function RevaTabBar({ state, navigation }: BottomTabBarProps) {
 
 const capsule = StyleSheet.create({
   wrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     paddingHorizontal: 16,
     paddingTop: FLOATING_TAB_BAR_PADDING_TOP,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   bar: {
     flexDirection: 'row',
@@ -195,10 +224,10 @@ const capsule = StyleSheet.create({
     paddingHorizontal: 6,
     borderWidth: 1,
     shadowColor: '#16201B',
-    shadowOpacity: 0.13,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   item: {
     flex: 1,

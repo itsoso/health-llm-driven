@@ -12,10 +12,10 @@ describe('buildSelectedChatShareMessage', () => {
       '【我】',
       '明天有事我会睡不好',
       '',
-      '【健康 Agent】',
+      '【阿衡】',
       '今晚把明天事项写成 3 条清单。',
       '',
-      '— 健康 Agent 对话节选',
+      '— 阿衡对话节选',
     ].join('\n'));
   });
 
@@ -60,7 +60,7 @@ describe('buildSelectedChatShareMessage', () => {
       ],
       new Set(['h-50']),
     );
-    expect(text).toBe(['【我】', '早上好', '', '— 健康 Agent 对话节选'].join('\n'));
+    expect(text).toBe(['【我】', '早上好', '', '— 阿衡对话节选'].join('\n'));
   });
 
   describe('isShareableChatMessage', () => {

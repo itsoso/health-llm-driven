@@ -12,6 +12,7 @@ from app.api import (
     movement_plan,
     diet_plan,
     daily_plan,
+    dynamic_views,
     trajectory,
     users,
     basic_health,
@@ -276,6 +277,7 @@ api_router.include_router(twin.router, tags=["twin"])
 api_router.include_router(safety.router, tags=["safety"])
 api_router.include_router(orchestrator.router, tags=["orchestrator"])
 api_router.include_router(agent.router, prefix="/agent", tags=["agent"])
+api_router.include_router(dynamic_views.router)
 api_router.include_router(openclaw.router)
 api_router.include_router(assistant_openclaw.router)
 api_router.include_router(openclaw_skills.router)

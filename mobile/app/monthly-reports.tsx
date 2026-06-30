@@ -140,9 +140,6 @@ function buildRecentMonths(n: number, now: Date): { year: number; month: number 
   // 从当前月开始向前 n 个月 (含当前月，若是 1 号就排除)
   // 实际只显示已结束的月份：若今天是 1 号则排除当月
   if (now.getDate() === 1) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
-  const txt = useMemo(() => createTxt(c), [c]);
     m -= 1; if (m === 0) { m = 12; y -= 1; }
   }
   for (let i = 0; i < n; i++) {

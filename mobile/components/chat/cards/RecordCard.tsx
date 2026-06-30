@@ -21,6 +21,7 @@ const RECORD_ICONS: Record<string, { icon: string; color: string; bg: string }> 
   rhinitis:        { icon: 'water',             color: '#2F9E8F', bg: '#E0EFEC' },
   checkin:         { icon: 'checkbox',          color: C.green500, bg: C.green50 },
   medication:      { icon: 'flask',             color: '#7C5CBF', bg: '#EDE7F6' },
+  reminder:        { icon: 'notifications',     color: '#2F7D67', bg: '#DFF1EA' },
   default:         { icon: 'checkmark-circle',  color: C.green500, bg: C.green50 },
 };
 
@@ -50,7 +51,7 @@ export const RecordCardSpec: CardSpec<RecordData> = {
   label: '记录确认',
   match({ query_lower, toolsUsed }) {
     if (toolsUsed.has('health_record')) return 20;
-    if (/记录|打卡|吃了|喝了|喝水|服药|补剂.*吃|刚吃|刚喝|体重是|血压是|洗鼻了|喷嚏/.test(query_lower)) return 12;
+    if (/记录|打卡|吃了|喝了|喝水|服药|补剂.*吃|刚吃|刚喝|体重是|血压是|洗鼻了|喷嚏|提醒|闹钟/.test(query_lower)) return 12;
     return null;
   },
   build({ query_lower }) {
@@ -61,6 +62,7 @@ export const RecordCardSpec: CardSpec<RecordData> = {
     else if (/体重/.test(query_lower)) type = 'weight';
     else if (/血压/.test(query_lower)) type = 'blood_pressure';
     else if (/喷嚏|洗鼻|鼻炎/.test(query_lower)) type = 'rhinitis';
+    else if (/提醒|闹钟/.test(query_lower)) type = 'reminder';
     else if (/跑|运动|锻炼|训练/.test(query_lower)) type = 'exercise';
     return { type, detail: '已记录' };
   },

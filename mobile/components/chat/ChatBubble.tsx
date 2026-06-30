@@ -309,7 +309,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
     Haptics.selectionAsync();
     try {
       await sharePlainText({
-        title: '健康 Agent · 建议',
+        title: '阿衡 · 建议',
         message,
       });
     } catch { /* 用户取消分享也会走这里, 不打扰 */ }

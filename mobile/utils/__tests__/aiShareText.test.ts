@@ -11,7 +11,7 @@ describe('buildAiShareMessage', () => {
       '| 饮水 | 0ml/2000ml | ⚠️ 未达标 |',
     ].join('\n');
 
-    expect(buildAiShareMessage(content)).toBe(`${content}\n\n— 健康 Agent`);
+    expect(buildAiShareMessage(content)).toBe(`${content}\n\n— 阿衡`);
   });
 
   it('formats flattened workout plan tables before creating a share page', () => {
@@ -38,7 +38,7 @@ describe('buildAiShareMessage', () => {
       '',
       '目前才238步，建议今天至少补到5000步。',
       '',
-      '— 健康 Agent',
+      '— 阿衡',
     ].join('\n'));
   });
 
@@ -54,7 +54,7 @@ describe('buildAiShareMessage', () => {
       '请线下就医确认处方。',
     ].join('\n');
 
-    expect(buildAiShareMessage(content)).toBe(`${content}\n\n— 健康 Agent`);
+    expect(buildAiShareMessage(content)).toBe(`${content}\n\n— 阿衡`);
   });
 
   it('structures flattened advice with headings and action labels', () => {
@@ -87,7 +87,7 @@ describe('buildAiShareMessage', () => {
       '',
       '跑后记得补 300ml 水。',
       '',
-      '— 健康 Agent',
+      '— 阿衡',
     ].join('\n'));
   });
 });

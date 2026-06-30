@@ -8,7 +8,7 @@
 import React, { useEffect } from 'react';
 import { View, Text, Pressable, StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Circle, Path, Line, Text as SvgText, G, Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
+import Svg, { Circle, Path, Line, Text as SvgText, G, Defs, LinearGradient, Stop } from 'react-native-svg';
 import Animated, { Easing, useAnimatedProps, useSharedValue, withTiming } from 'react-native-reanimated';
 import {
   revaColors as C,
@@ -87,8 +87,8 @@ export function SectionLabel({ children, action, onAction }: { children: React.R
 
 type BtnVariant = 'primary' | 'secondary' | 'tertiary' | 'dark' | 'ghost';
 type BtnSize = 'sm' | 'md' | 'lg';
-export function Button({ children, variant = 'primary', size = 'md', icon, onPress, full }: {
-  children: React.ReactNode; variant?: BtnVariant; size?: BtnSize; icon?: string; onPress?: () => void; full?: boolean;
+export function Button({ children, variant = 'primary', size = 'md', icon, onPress, full, accessibilityLabel }: {
+  children: React.ReactNode; variant?: BtnVariant; size?: BtnSize; icon?: string; onPress?: () => void; full?: boolean; accessibilityLabel?: string;
 }) {
   const pad = size === 'lg' ? { paddingVertical: 16, paddingHorizontal: 24 } : size === 'sm' ? { paddingVertical: 9, paddingHorizontal: 16 } : { paddingVertical: 14, paddingHorizontal: 22 };
   const fs = size === 'lg' ? 17 : size === 'sm' ? 14 : 16;
@@ -103,6 +103,8 @@ export function Button({ children, variant = 'primary', size = 'md', icon, onPre
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       style={({ pressed }) => [k.btn, pad, full && { alignSelf: 'stretch' }, {
         backgroundColor: vs.bg,
         borderWidth: vs.border ? 1.5 : 0, borderColor: vs.border,
@@ -143,7 +145,7 @@ export function RevaMark({ size = 30 }: { size?: number }) {
 const TABS = [
   { id: 'today', label: '今天', icon: 'sun' },
   { id: 'data', label: '数据', icon: 'activity' },
-  { id: 'agent', label: '复元', icon: 'messages-square' },
+  { id: 'agent', label: '阿衡', icon: 'messages-square' },
   { id: 'me', label: '我的', icon: 'user' },
 ] as const;
 export type RevaTab = (typeof TABS)[number]['id'];

@@ -38,10 +38,10 @@ const ROKID_TARGET_POD = `  ${ROKID_TARGET_POD_MARKER}
   end
 `;
 
-function patchPodfileContents(contents) {
-  const targetAnchor = "target 'HealthPilot' do";
+function patchPodfileContents(contents, targetName = 'HealthPilot') {
+  const targetAnchor = `target '${targetName}' do`;
   if (!contents.includes(targetAnchor)) {
-    throw new Error('withRokidIosPods could not find the HealthPilot Podfile target');
+    throw new Error(`withRokidIosPods could not find the ${targetName} Podfile target`);
   }
 
   let patched = contents;
@@ -60,7 +60,7 @@ function withRokidIosPods(config) {
     (cfg) => {
       const podfilePath = path.join(cfg.modRequest.platformProjectRoot, 'Podfile');
       const contents = fs.readFileSync(podfilePath, 'utf8');
-      const patched = patchPodfileContents(contents);
+      const patched = patchPodfileContents(contents, cfg.modRequest.projectName || 'HealthPilot');
       if (patched !== contents) {
         fs.writeFileSync(podfilePath, patched, 'utf8');
       }

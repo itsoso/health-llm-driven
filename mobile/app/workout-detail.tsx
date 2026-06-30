@@ -334,7 +334,7 @@ export default function WorkoutDetailScreen() {
       const text = [
         summary,
         script ? `\n${script}` : '',
-        '\n— 健康助理',
+        '\n— 阿衡',
       ].filter(Boolean).join('');
       await sharePlainText({ title: '运动记录', message: text });
     } catch (e: any) {

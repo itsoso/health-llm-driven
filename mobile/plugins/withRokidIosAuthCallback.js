@@ -49,14 +49,39 @@ function patchAppDelegateContents(contents) {
   return patched;
 }
 
+function isAppDelegateDirectory(entryName) {
+  const lower = entryName.toLowerCase();
+  return !lower.includes('watch')
+    && !lower.includes('complication')
+    && !lower.includes('extension')
+    && !entryName.endsWith('.xcodeproj')
+    && !entryName.endsWith('.xcworkspace');
+}
+
+function resolveGeneratedAppDelegatePath(platformProjectRoot, modRequest = {}) {
+  const projectName = modRequest.projectName;
+  if (projectName) {
+    const projectAppDelegate = path.join(platformProjectRoot, projectName, 'AppDelegate.swift');
+    if (fs.existsSync(projectAppDelegate)) return projectAppDelegate;
+  }
+
+  const candidates = fs.readdirSync(platformProjectRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && isAppDelegateDirectory(entry.name))
+    .map((entry) => path.join(platformProjectRoot, entry.name, 'AppDelegate.swift'))
+    .filter((candidate) => fs.existsSync(candidate))
+    .sort();
+
+  if (candidates.length > 0) return candidates[0];
+  return path.join(platformProjectRoot, 'HealthPilot', 'AppDelegate.swift');
+}
+
 function withRokidIosAuthCallback(config) {
   return withDangerousMod(config, [
     'ios',
     (cfg) => {
-      const appDelegatePath = path.join(
+      const appDelegatePath = resolveGeneratedAppDelegatePath(
         cfg.modRequest.platformProjectRoot,
-        'HealthPilot',
-        'AppDelegate.swift',
+        cfg.modRequest,
       );
       const contents = fs.readFileSync(appDelegatePath, 'utf8');
       const patched = patchAppDelegateContents(contents);
@@ -70,3 +95,4 @@ function withRokidIosAuthCallback(config) {
 
 module.exports = withRokidIosAuthCallback;
 module.exports._patchAppDelegateContents = patchAppDelegateContents;
+module.exports._resolveGeneratedAppDelegatePath = resolveGeneratedAppDelegatePath;

@@ -1,9 +1,9 @@
 /**
  * 今日 Tab —— Reva「今日」时间线优先布局 (2026-06-16 真机修正).
  *
- * 首页只留日常驱动,从上到下:
- *   问候头 → 深绿 Hero(就绪环 + 现在只做一件事) → 今日时间线 → 用药(折叠)
- *   → 身体数据(ActivityRing + Vitals + BodyStats) → 90 天周期 → 天气行 → 快捷动作
+ * 首页只留 Agent Native 日常驱动,从上到下:
+ *   问候头 → 阿衡动态今日行动 → 待确认写入 → 接下来 → 用药/补剂摘要
+ *   → 身体信号 → 情境天气 → 90 天周期兜底 → 快捷动作
  *
  * 深度分析(结果归因 / 生物年龄 / 抗衰下一步 / 设备一致性 / Agent 话题)已移出首页,
  * 见「我」tab 的「健康分析」分组(各组件路由仍可达)。
@@ -36,7 +36,7 @@ import { useActiveCycle } from '../../hooks/useHealthOs';
 import { useCompleteAgendaItem, useTodayTimeline } from '../../hooks/useTodayTimeline';
 import type { TodayTimelineItem } from '../../services/todayTimeline';
 import type { AgendaSource, AgendaSkipReason } from '../../services/agenda';
-import { garminSleepHours, garminDeepSleepHours, type GarminDailyRow } from '../../types/garmin';
+import { garminSleepHours } from '../../types/garmin';
 import {
   getDailyOperatingPlan,
   type DailyPlanAction,
@@ -47,10 +47,6 @@ import {
   type DailyArtifact,
   type DailyArtifactTopAction,
 } from '../../services/dailyArtifact';
-import ActivityRingBar from '../../components/dashboard/ActivityRingBar';
-import VitalsGrid from '../../components/dashboard/VitalsGrid';
-import MedicationCheckin from '../../components/dashboard/MedicationCheckin';
-import BodyStatsRow from '../../components/home/BodyStatsRow';
 import RevaGreetingHeader from '../../components/home/RevaGreetingHeader';
 import RevaHeroCard from '../../components/home/RevaHeroCard';
 import DailyArtifactCard from '../../components/home/DailyArtifactCard';
@@ -59,11 +55,27 @@ import RevaTimelineStrip from '../../components/home/RevaTimelineStrip';
 import RevaCycleStrip from '../../components/home/RevaCycleStrip';
 import RevaWeatherRow from '../../components/home/RevaWeatherRow';
 import RevaQuickActions from '../../components/home/RevaQuickActions';
-import RevaSectionGroup from '../../components/home/RevaSectionGroup';
-import RevaTryEntryCard from '../../components/home/RevaTryEntryCard';
+import DynamicTodayRenderer from '../../components/home/DynamicTodayRenderer';
+import HomeMedicationSummary from '../../components/home/HomeMedicationSummary';
+import TodaySignalsPanel, { type TodaySignalKey } from '../../components/home/TodaySignalsPanel';
 import { useRevaFonts } from '../../components/reva/useRevaFonts';
 import { revaColors } from '../../constants/revaTheme';
 import { useHomeColdStartTrace } from '../../services/perfTrace';
+import {
+  getTodayDynamicView,
+  hasRenderableTodayDynamicView,
+  type TodayDynamicView,
+} from '../../services/todayDynamicView';
+import { dispatchChatCardAction } from '../../services/chatCardActions';
+import {
+  buildDailyArtifactAskRoute,
+  buildDailyArtifactBasisRoute,
+  buildDailyArtifactExecuteRoute,
+} from '../../utils/dailyArtifactNavigation';
+import type {
+  ChatCardActionDescriptor,
+  ServerCardDescriptor,
+} from '../../components/chat/cards/types';
 
 interface TwinSnapshot {
   hrv?: number | null;
@@ -86,7 +98,7 @@ export default function TodayScreen() {
   const qc = useQueryClient();
   const revaFontsLoaded = useRevaFonts();
   // 悬浮胶囊 tab bar 是 absolute,不占布局流;底部内容须按其真实高度留白,
-  // 否则最后一块(「开始跑步」绿色 CTA)会被 tab bar 半遮盖(硬编码 110 在大安全区机型不够)。
+  // 否则最后一块快捷动作会被 tab bar 半遮盖(硬编码 110 在大安全区机型不够)。
   const tabBarHeight = useFloatingTabBarHeight();
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [artifactCompleting, setArtifactCompleting] = useState(false);
@@ -120,6 +132,16 @@ export default function TodayScreen() {
     staleTime: 60 * 1000,
   });
 
+  const todayDynamicViewQuery = useQuery({
+    queryKey: ['today-dynamic-view', 'mobile.today'],
+    queryFn: () => getTodayDynamicView({
+      trigger: 'open',
+      clientContext: todayDynamicClientContext(),
+    }),
+    staleTime: 30 * 1000,
+    retry: 1,
+  });
+
   // 时间感知「现在该做什么」单一真相源:后端 /timeline/today 的 now(指向最相关一项,非清晨第一项)。
   // Hero 据此渲染(标题/why/时点 + 内联完成);时间线 body 复用同一 query(React Query 去重)。
   const timelineQuery = useTodayTimeline();
@@ -151,17 +173,9 @@ export default function TodayScreen() {
   );
 
   const garmin = useLatestGarmin(dashboardQuery.data);
-  const garminDays: GarminDailyRow[] = Array.isArray(dashboardQuery.data?.garminDaily)
-    ? dashboardQuery.data!.garminDaily!
-    : [];
-
-  const steps = garmin?.steps ?? 0;
-  const activeMin = garmin?.active_minutes ?? 0;
-  const calories = garmin?.active_calories ?? 0;
   // 睡眠时长单位换算 + 脏数据守卫的单一真相源在 types/garmin.ts。
   // (此处曾误当秒 /3600,把 7h 显示成 0.1h —— 现在不再手算单位。)
   const sleepHoursRaw = garminSleepHours(garmin);
-  const deepSleepRaw = garminDeepSleepHours(garmin);
 
   const onRefresh = useCallback(async () => {
     setManualRefreshing(true);
@@ -171,6 +185,7 @@ export default function TodayScreen() {
         qc.invalidateQueries({ queryKey: ['twin', 'me'] }),
         qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] }),
         qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] }),
+        qc.invalidateQueries({ queryKey: ['today-dynamic-view', 'mobile.today'] }),
         qc.invalidateQueries({ queryKey: ['timeline', 'today'] }),
         qc.invalidateQueries({ queryKey: ['agenda', 'today'] }),
         qc.invalidateQueries({ queryKey: ['dashboard'] }),
@@ -281,10 +296,10 @@ export default function TodayScreen() {
     }).catch(() => {});
   }, []);
 
-  const onArtifactComplete = useCallback((action: DailyArtifactTopAction) => {
+  const onArtifactComplete = useCallback((action: DailyArtifactTopAction, artifactOverride?: DailyArtifact) => {
     if (artifactCompleting) return;
     const source = agendaSourceFromArtifactAction(action);
-    const artifact = dailyArtifactQuery.data;
+    const artifact = artifactOverride ?? dailyArtifactQuery.data;
     if (!source || !artifact) {
       Alert.alert('暂时不能完成', '这条行动还缺少可写入的来源。');
       return;
@@ -300,6 +315,7 @@ export default function TodayScreen() {
           deliveredContext: dailyArtifactContext(artifact, 'home', { action: 'complete' }),
         }).catch(() => {});
         qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] });
+        qc.invalidateQueries({ queryKey: ['today-dynamic-view', 'mobile.today'] });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         setArtifactCompleting(false);
       },
@@ -311,8 +327,12 @@ export default function TodayScreen() {
     });
   }, [artifactCompleting, completeNow, dailyArtifactQuery.data, qc]);
 
-  const onArtifactSkip = useCallback((reason: AgendaSkipReason, action: DailyArtifactTopAction | null) => {
-    const artifact = dailyArtifactQuery.data;
+  const onArtifactSkip = useCallback((
+    reason: AgendaSkipReason,
+    action: DailyArtifactTopAction | null,
+    artifactOverride?: DailyArtifact,
+  ) => {
+    const artifact = artifactOverride ?? dailyArtifactQuery.data;
     if (!artifact || artifactSkipping) return;
     setArtifactSkipping(true);
     recordDailyArtifactEvent({
@@ -323,6 +343,7 @@ export default function TodayScreen() {
       deliveredContext: dailyArtifactContext(artifact, 'home', { action: 'skip' }),
     }).then(() => {
       qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] });
+      qc.invalidateQueries({ queryKey: ['today-dynamic-view', 'mobile.today'] });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     }).catch(() => {
       Alert.alert('跳过失败', '没有记录成功,请稍后重试。');
@@ -333,35 +354,43 @@ export default function TodayScreen() {
 
   const onArtifactAskReva = useCallback((artifact: DailyArtifact) => {
     recordArtifactAccepted(artifact, 'ask_reva');
-    const target = artifact.top_action?.actions?.ask_reva?.target || '/voice-chat?intent=daily_artifact';
-    router.push(target as any);
+    router.push(buildDailyArtifactAskRoute(artifact) as any);
   }, [recordArtifactAccepted, router]);
 
-  const onArtifactPressAction = useCallback((action: DailyArtifactTopAction) => {
-    const artifact = dailyArtifactQuery.data;
+  const onArtifactExplainBasis = useCallback((artifact: DailyArtifact) => {
+    recordArtifactAccepted(artifact, 'explain_basis');
+    router.push(buildDailyArtifactBasisRoute(artifact) as any);
+  }, [recordArtifactAccepted, router]);
+
+  const onArtifactPressAction = useCallback((action: DailyArtifactTopAction, artifactOverride?: DailyArtifact) => {
+    const artifact = artifactOverride ?? dailyArtifactQuery.data;
     if (artifact) recordArtifactAccepted(artifact, 'open_detail');
-    if (nowItem?.deep_link) {
-      const link = nowItem.deep_link;
-      router.push((link.startsWith('/') ? link : `/${link}`) as any);
-      return;
-    }
-    if (action.source?.object_type) router.push('/timeline' as any);
-    else router.push('/(tabs)/chat' as any);
+    router.push(buildDailyArtifactExecuteRoute(artifact, action, {
+      nowDeepLink: nowItem?.deep_link ?? null,
+    }) as any);
   }, [dailyArtifactQuery.data, nowItem, recordArtifactAccepted, router]);
 
-  // ── Vitals 数据 ──
-  const vitalsProps = {
-    // 睡眠时长优先用 Twin 的 sleep_duration_h_latest(已跨源合并、已是小时);
-    // 回退到 garmin days[0](/garmin/me 未按日期合并,可能落到全 null 行)。
-    sleep: twinSnap.sleep_hours ?? sleepHoursRaw,
-    deepSleep: deepSleepRaw,
-    sleepScore: twinSnap.sleep_score ?? null,
-    heartRate: twinSnap.resting_hr ?? null,
-    hrv: twinSnap.hrv ?? null,
-    bodyBatteryCurrent: twinSnap.body_battery ?? null,
-    bodyBatteryMax: garmin?.body_battery_most_charged ?? null,
-    garminDays,
-  };
+  const onDynamicCardAction = useCallback((
+    action: ChatCardActionDescriptor,
+    descriptor: ServerCardDescriptor,
+  ) => {
+    dispatchChatCardAction(action).then((result) => {
+      if (result.route) {
+        router.push(result.route as any);
+        return;
+      }
+      qc.invalidateQueries({ queryKey: ['today-dynamic-view', 'mobile.today'] });
+      qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] });
+      qc.invalidateQueries({ queryKey: ['timeline', 'today'] });
+      qc.invalidateQueries({ queryKey: ['agenda', 'today'] });
+    }).catch(() => {
+      Alert.alert('操作失败', descriptor.type === 'runtime_agenda'
+        ? '暂时无法打开健康编排,请稍后重试。'
+        : '没有执行成功,请稍后重试。');
+    });
+  }, [qc, router]);
+
+  // ── 身体信号:只给首页当前行动验证所需的紧凑指标,完整历史留在数据页。 ──
   const bodyStatsValues = {
     systolic: twinSnap.systolic_bp ?? null,
     diastolic: twinSnap.diastolic_bp ?? null,
@@ -383,8 +412,24 @@ export default function TodayScreen() {
     readinessScore != null && !!twinSnap.readiness_date && twinSnap.readiness_date < _todayStr;
   // 问候名:取 /profile/me 昵称(无 → 不带名,只问候)。不引入 auth 依赖。
   const profileName: string | null = dashboardQuery.data?.profile?.nickname ?? null;
-  const headerTwinStatus = cockpitTwinStatus(twinSnap, readinessStale);
-  const headerFreshness = cockpitFreshnessLabel(dailyArtifactQuery.data, twinSnap, readinessStale);
+  const dynamicTodayView = todayDynamicViewQuery.data;
+  const canRenderDynamicToday = hasRenderableTodayDynamicView(dynamicTodayView);
+  const primaryArtifact = extractDailyArtifactFromDynamicView(dynamicTodayView) ?? dailyArtifactQuery.data ?? null;
+  const primaryTopAction = primaryArtifact?.top_action ?? null;
+  const primaryActionSignal = actionSignalFromArtifact(primaryArtifact);
+  const timelineExcludedTitles = useMemo(
+    () => collectPromotedActionTitles(dynamicTodayView, primaryArtifact),
+    [dynamicTodayView, primaryArtifact],
+  );
+  const primaryActionContext = [
+    primaryTopAction?.title,
+    primaryTopAction?.why_now,
+    primaryTopAction?.do_now,
+    primaryActionSignal,
+    nowItem?.title,
+    nowItem?.subtitle,
+  ].filter(Boolean).join(' ');
+  const hasAgentPrimaryAction = Boolean(primaryTopAction);
 
   // Hero now-action 显示值:全部直接透传后端 timeline 的 now-item(R4:不在前端造处方/诊断措辞)。
   // 风险时 lever 标「风险」,否则用 now-item 的 time_window 中文化作为 lever。空态标题给「补齐今天记录」。
@@ -412,14 +457,22 @@ export default function TodayScreen() {
         refreshControl={<RefreshControl refreshing={manualRefreshing} onRefresh={onRefresh} />}
       >
         {/* 1 · 问候头 */}
-        <RevaGreetingHeader
-          name={profileName}
-          twinStatus={headerTwinStatus}
-          freshness={headerFreshness}
-        />
+        <RevaGreetingHeader name={profileName} />
 
         {/* 2 · Daily Artifact(今日状态 + 一个 top action)。接口不可用时回退既有 Hero。 */}
-        {dailyArtifactQuery.data ? (
+        {canRenderDynamicToday ? (
+          <DynamicTodayRenderer
+            view={dynamicTodayView}
+            completing={artifactCompleting}
+            skipping={artifactSkipping}
+            onDailyArtifactComplete={(artifact, action) => onArtifactComplete(action, artifact)}
+            onDailyArtifactSkip={(artifact, reason, action) => onArtifactSkip(reason, action, artifact)}
+            onDailyArtifactAsk={onArtifactAskReva}
+            onDailyArtifactExplainBasis={onArtifactExplainBasis}
+            onDailyArtifactPressAction={(artifact, action) => onArtifactPressAction(action, artifact)}
+            onCardAction={onDynamicCardAction}
+          />
+        ) : dailyArtifactQuery.data ? (
           <DailyArtifactCard
             artifact={dailyArtifactQuery.data}
             completing={artifactCompleting}
@@ -427,6 +480,7 @@ export default function TodayScreen() {
             onComplete={onArtifactComplete}
             onSkip={onArtifactSkip}
             onAskReva={onArtifactAskReva}
+            onExplainBasis={onArtifactExplainBasis}
             onPressAction={onArtifactPressAction}
           />
         ) : (
@@ -449,57 +503,40 @@ export default function TodayScreen() {
         {/* 待你确认(Write 层 v0:Agent 提议替你写一件事,确认才执行;空态不渲染) */}
         <WriteIntentCard />
 
-        {/* 3 · 天气一行(城市 · 温度 · 天气 · 空气 chip;点击展开/进位置) */}
-        <RevaWeatherRow />
+        {/* 3 · 接下来:只保留未完成且马上相关的行动条 */}
+        <RevaTimelineStrip excludeTitles={timelineExcludedTitles} />
 
-        {/* 4 · 今日时间线 strip(自取数) */}
-        <RevaTimelineStrip />
-
-        {/* 4 · 药品 / 补剂分区(按 category 拆开;各自空态自动不渲染) */}
-        <MedicationCheckin
-          title="今日用药"
-          icon="medkit"
-          items={(dashboardQuery.data?.medicationToday ?? []).filter(
-            (m: any) => m?.category !== 'supplement',
-          )}
-          onChanged={() => qc.invalidateQueries({ queryKey: ['dashboard'] })}
-        />
-        <MedicationCheckin
-          title="今日补剂"
-          icon="leaf"
-          items={(dashboardQuery.data?.medicationToday ?? []).filter(
-            (m: any) => m?.category === 'supplement',
-          )}
+        {/* 4 · 用药 / 补剂:完成态合并成摘要,待完成项再展开 */}
+        <HomeMedicationSummary
+          items={dashboardQuery.data?.medicationToday ?? []}
           onChanged={() => qc.invalidateQueries({ queryKey: ['dashboard'] })}
         />
 
-        {/* 5 · 身体数据(ActivityRing + Vitals + BodyStats,一个分组) */}
-        <RevaSectionGroup title="身体数据">
-          <ActivityRingBar steps={steps} activeMin={activeMin} calories={calories} />
-          <VitalsGrid
-            {...vitalsProps}
-            onTilePress={(metric) => {
-              if (metric === 'sleep') router.push('/sleep' as any);
-              else if (metric === 'heart_rate') router.push('/indicator-history?type=heart_rate' as any);
-              else if (metric === 'hrv') router.push('/indicator-history?type=hrv' as any);
-              else router.push('/indicator-history?type=body_battery' as any);
-            }}
+        {/* 5 · 身体信号:围绕当前行动验证,不再把完整 dashboard 堆在首页 */}
+        <TodaySignalsPanel
+          sleep={twinSnap.sleep_hours ?? sleepHoursRaw}
+          sleepScore={twinSnap.sleep_score ?? null}
+          hrv={twinSnap.hrv ?? null}
+          bodyBatteryCurrent={twinSnap.body_battery ?? null}
+          bodyStats={bodyStatsValues}
+          actionSignal={primaryActionSignal}
+          onSignalPress={(signal) => openSignalRoute(signal, router)}
+        />
+
+        {/* 6 · 情境天气:只有行动/空气风险相关时出现 */}
+        <RevaWeatherRow relevanceText={primaryActionContext} />
+
+        {/* 7 · 90 天代谢周期兜底:阿衡今日行动已承接时不重复露出 */}
+        {!hasAgentPrimaryAction ? <RevaCycleStrip /> : null}
+
+        {/* 8 · 通用快捷动作:没有阿衡主行动时作为兜底入口 */}
+        {!hasAgentPrimaryAction ? (
+          <RevaQuickActions
+            onRun={() => router.push('/(tabs)/record' as any)}
+            onVoice={() => router.push('/voice-chat?intent=journal' as any)}
+            onRecord={() => router.push('/(tabs)/record' as any)}
           />
-          <BodyStatsRow values={bodyStatsValues} />
-        </RevaSectionGroup>
-
-        {/* 6 · 90 天代谢周期细条(自取数) */}
-        <RevaCycleStrip />
-
-        {/* 7 · 快捷动作行 */}
-        <RevaQuickActions
-          onRun={() => router.push('/live-run' as any)}
-          onVoice={() => router.push('/voice-chat?intent=journal' as any)}
-          onRecord={() => router.push('/(tabs)/record' as any)}
-        />
-
-        {/* 8 · 试试新版 复元 入口(把休眠的 /reva 提升为首页可见入口) */}
-        <RevaTryEntryCard />
+        ) : null}
 
         {/* 深度分析(结果归因 / 生物年龄 / 抗衰下一步 / 设备一致性 / Agent 话题)
             已移出首页 → 「我」tab 的「健康分析」分组(信息架构:首页只留日常驱动)。 */}
@@ -517,6 +554,65 @@ export default function TodayScreen() {
 // ════════════════════════════════════════════════════════════
 // Helpers (从老版本沿用 + 精简)
 // ════════════════════════════════════════════════════════════
+
+function todayDynamicClientContext(): Record<string, unknown> {
+  return {
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null,
+    client_capabilities: ['daily_artifact', 'runtime_agenda'],
+  };
+}
+
+function extractDailyArtifactFromDynamicView(view: TodayDynamicView | null | undefined): DailyArtifact | null {
+  for (const section of view?.sections ?? []) {
+    for (const card of section.cards ?? []) {
+      if (card.type === 'daily_artifact' && card.data && typeof card.data === 'object') {
+        return card.data as DailyArtifact;
+      }
+    }
+  }
+  return null;
+}
+
+function actionSignalFromArtifact(artifact: DailyArtifact | null | undefined): string | null {
+  const action = artifact?.top_action;
+  if (!action) return null;
+  if (action.verification_signal) return action.verification_signal;
+  if (action.target_state_variable) return action.target_state_variable;
+  const evidenceMetric = artifact.evidence
+    .flatMap((item) => item.metrics ?? [])
+    .find((metric) => typeof metric === 'string' && metric.trim());
+  return evidenceMetric ?? null;
+}
+
+function collectPromotedActionTitles(
+  view: TodayDynamicView | null | undefined,
+  artifact: DailyArtifact | null | undefined,
+): string[] {
+  const titles = new Set<string>();
+  if (artifact?.top_action?.title) titles.add(artifact.top_action.title);
+  for (const section of view?.sections ?? []) {
+    for (const card of section.cards ?? []) {
+      if (card.type === 'daily_artifact') {
+        const data = card.data as Partial<DailyArtifact>;
+        if (data.top_action?.title) titles.add(data.top_action.title);
+      }
+      if (card.type === 'runtime_agenda') {
+        const data = card.data as { next_action?: { title?: unknown } };
+        if (typeof data.next_action?.title === 'string') titles.add(data.next_action.title);
+      }
+    }
+  }
+  return [...titles];
+}
+
+function openSignalRoute(signal: TodaySignalKey, router: { push: (href: any) => void }) {
+  if (signal === 'sleep') router.push('/sleep' as any);
+  else if (signal === 'hrv') router.push('/indicator-history?type=hrv' as any);
+  else if (signal === 'body_battery') router.push('/indicator-history?type=body_battery' as any);
+  else if (signal === 'blood_pressure') router.push('/indicator-history?type=blood_pressure' as any);
+  else if (signal === 'spo2') router.push('/sleep-spo2-analysis' as any);
+  else router.push('/body-measurements?focus=morning' as any);
+}
 
 function getSeverityKey(s: any): string {
   return typeof s === 'string' ? s : s?.label ?? 'info';
@@ -612,42 +708,6 @@ function dailyArtifactContext(
     evidence_count: artifact.evidence.length,
     ...(extra ?? {}),
   };
-}
-
-function cockpitTwinStatus(twin: TwinSnapshot, readinessStale: boolean): string {
-  if (readinessStale) return 'Twin 待同步';
-  return hasTwinSignal(twin) ? 'Twin 已更新' : 'Twin 待补数';
-}
-
-function cockpitFreshnessLabel(
-  artifact: DailyArtifact | null | undefined,
-  twin: TwinSnapshot,
-  readinessStale: boolean,
-): string {
-  const freshness = artifact?.freshness?.status;
-  const sourceCount = artifact?.freshness?.sources?.length ?? 0;
-  if (freshness === 'fresh') return sourceCount ? `${sourceCount} 个来源 · 新鲜` : '数据新鲜';
-  if (freshness === 'limited') return '数据有限';
-  if (readinessStale) return '数据待同步';
-  if (hasTwinSignal(twin)) return 'Twin 数据';
-  return '等待连接数据';
-}
-
-function hasTwinSignal(twin: TwinSnapshot): boolean {
-  return [
-    twin.hrv,
-    twin.readiness,
-    twin.sleep_score,
-    twin.sleep_hours,
-    twin.systolic_bp,
-    twin.diastolic_bp,
-    twin.spo2_avg,
-    twin.resting_hr,
-    twin.body_battery,
-    twin.bmi,
-    twin.body_fat_pct,
-    twin.vo2max,
-  ].some((value) => value != null && Number.isFinite(Number(value)));
 }
 
 const styles = StyleSheet.create({

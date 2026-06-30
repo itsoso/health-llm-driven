@@ -19,6 +19,7 @@ import {
   revaSemantic,
   revaFonts,
 } from '../constants/revaTheme';
+import { APP_DISPLAY_NAME } from '../constants/brand';
 import { AppleHealthRow } from '../components/AppleHealthRow';
 
 export default function SettingsScreen() {
@@ -113,7 +114,7 @@ export default function SettingsScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert(
       'Siri 语音记录',
-      '登录后即可使用 Siri 语音记录健康数据：\n\n• "嘿 Siri，用 HealthPilot 记录喝了500ml水"\n• "嘿 Siri，告诉 HealthPilot 吃了一个苹果"\n\n首次使用时 Siri 会请求授权。',
+      `登录后即可使用 Siri 语音记录健康数据：\n\n• "嘿 Siri，用 ${APP_DISPLAY_NAME} 记录喝了500ml水"\n• "嘿 Siri，告诉 ${APP_DISPLAY_NAME} 吃了一个苹果"\n\n首次使用时 Siri 会请求授权。`,
       [{ text: '知道了' }],
     );
   };

@@ -73,7 +73,43 @@ public enum ChatTranscriptHTML {
 
     /// 把单条消息的 markdown 内容渲染为 HTML 片段(气泡内层)。
     /// 复用 `MarkdownRenderSupport.blocks(from:)`,再逐块转义 + inline markdown + 包标签。
+    ///
+    /// GenUI(契约 v0 §3.2):先把 ```reva-ui 围栏块**整段抽离**(在 markdown 解析之前——
+    /// 否则解析器会把多行 JSON 折成一行 + `---` 误判分割线,JSON 被毁)。抽出的块以
+    /// `<div class="reva-ui-chart" data-reva-ui="<base64 原始 JSON>">` 占位符承载,真正的
+    /// 解析 + SVG 折线绘制由 WebView 的 JS shell 完成(离线、零外链)。围栏外 markdown 正常渲染。
     public static func renderMessageBody(markdown: String) -> String {
+        let src = markdown.isEmpty ? "" : markdown
+        let segments = RevaUIBlock.split(from: src)
+        // 至少有一个 reva-ui 块 → 分段渲染:普通段各自走 blocks,reva-ui 段换占位 div。
+        // 无块时退回原始单段路径(零行为变化)。
+        if segments.contains(where: { if case .revaUI = $0 { return true } else { return false } }) {
+            var html = ""
+            for segment in segments {
+                switch segment {
+                case .markdown(let text):
+                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        html += renderMarkdownBlocksHTML(text)
+                    }
+                case .revaUI(let rawJSON):
+                    html += revaUIPlaceholderHTML(rawJSON: rawJSON)
+                }
+            }
+            return html
+        }
+        return renderMarkdownBlocksHTML(src)
+    }
+
+    /// 给一个已抽出的 reva-ui 原始 JSON 字符串生成占位 div。原始 JSON 经 base64 进 data 属性,
+    /// 既避开 HTML 属性转义/引号问题,也让 JS 端拿到**未被 markdown 解析器破坏**的原文。
+    static func revaUIPlaceholderHTML(rawJSON: String) -> String {
+        let b64 = Data(rawJSON.utf8).base64EncodedString()
+        return "<div class=\"reva-ui-chart\" data-reva-ui=\"\(b64)\">图表生成中…</div>"
+    }
+
+    /// 原 renderMessageBody 主体:markdown → blocks → HTML。供分段渲染与无块路径共用。
+    static func renderMarkdownBlocksHTML(_ markdown: String) -> String {
         let src = markdown.isEmpty ? "" : markdown
         let blocks = MarkdownRenderSupport.blocks(from: src)
         if blocks.isEmpty {

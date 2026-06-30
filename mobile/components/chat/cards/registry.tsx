@@ -36,6 +36,7 @@ import { MenuShareCardSpec } from './MenuShareCard';
 import { SystemKnowledgeEvidenceCardSpec } from './SystemKnowledgeEvidenceCard';
 import { RuntimeAgendaCardSpec } from './RuntimeAgendaCard';
 import { OperatingReviewCardSpec } from './OperatingReviewCard';
+import { MetricChartCardSpec } from './MetricChartCard';
 import { DiscoveryCardSpec } from './DiscoveryCard';
 import { SafetyCardSpec } from './SafetyCard';
 
@@ -53,6 +54,7 @@ export const CARD_REGISTRY: CardSpec[] = [
   SystemKnowledgeEvidenceCardSpec,
   RuntimeAgendaCardSpec,
   OperatingReviewCardSpec,
+  MetricChartCardSpec,
   DiscoveryCardSpec,
   SafetyCardSpec,
   MenuShareCardSpec,   // 不本地匹配, 仅接受后端下发
@@ -192,11 +194,17 @@ function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCar
     typeof action.label === 'string' &&
     action.label.trim().length > 0 &&
     typeof action.action === 'string' &&
-    ALLOWED_ACTIONS.has(action.action)
+    ALLOWED_ACTIONS.has(action.action) &&
+    isSafeVisibleAction(action)
   )).map((action) => ({
     ...action,
     label: action.label.trim(),
   }));
+}
+
+function isSafeVisibleAction(action: ChatCardActionDescriptor): boolean {
+  if (action.action === 'route.open') return true;
+  return action.requires_manual_confirm === true;
 }
 
 const styles = StyleSheet.create({

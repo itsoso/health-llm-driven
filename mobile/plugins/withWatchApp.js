@@ -107,6 +107,36 @@ function buildWatchInjectionEnv(exp, baseEnv = process.env) {
   };
 }
 
+function resolveGeneratedXcodeprojPath(iosRoot, modRequest = {}) {
+  const projectName = modRequest.projectName;
+  if (projectName) {
+    const projectPath = path.join(iosRoot, `${projectName}.xcodeproj`);
+    if (fs.existsSync(projectPath)) return projectPath;
+  }
+
+  const projects = fs.readdirSync(iosRoot)
+    .filter((entry) => entry.endsWith('.xcodeproj'))
+    .map((entry) => path.join(iosRoot, entry))
+    .filter((entry) => fs.statSync(entry).isDirectory())
+    .sort();
+
+  const legacy = projects.find((entry) => path.basename(entry) === 'HealthPilot.xcodeproj');
+  if (legacy) return legacy;
+  if (projects.length === 1) return projects[0];
+  if (projects.length > 1) {
+    throw new Error(`withWatchApp found multiple xcodeproj files: ${projects.join(', ')}`);
+  }
+
+  throw new Error(`withWatchApp could not find generated xcodeproj under ${iosRoot}`);
+}
+
+function getIosBundleIdentifier(cfg) {
+  return cfg.ios?.bundleIdentifier
+    || cfg.modRequest?.exp?.ios?.bundleIdentifier
+    || cfg.modRequest?.config?.ios?.bundleIdentifier
+    || 'life.executor.health';
+}
+
 function withWatchSources(config) {
   return withDangerousMod(config, [
     'ios',
@@ -133,10 +163,17 @@ function withWatchSources(config) {
 
       // 3) 跑已验证的 ruby 注入(建 target + 嵌入 + 加 bridge 进主 target)。EAS 构建机有 xcodeproj gem。
       const script = path.join(watchRoot, 'scripts', 'inject_watch_target.rb');
-      const proj = path.join(iosRoot, 'HealthPilot.xcodeproj');
+      const proj = resolveGeneratedXcodeprojPath(iosRoot, cfg.modRequest);
+      const mainProjectName = path.basename(proj, '.xcodeproj');
       execSync(`ruby "${script}" "${proj}"`, {
         stdio: 'inherit',
-        env: buildWatchInjectionEnv(cfg, process.env),
+        env: buildWatchInjectionEnv(cfg, {
+          ...process.env,
+          REVA_MAIN_TARGET_NAME: mainProjectName,
+          REVA_MAIN_GROUP_PATH: mainProjectName,
+          REVA_IOS_INFOPLIST_FILE: `${mainProjectName}/Info.plist`,
+          REVA_IOS_BUNDLE_ID: getIosBundleIdentifier(cfg),
+        }),
       });
       return cfg;
     },
@@ -165,3 +202,4 @@ module.exports = function withWatchApp(config) {
   return config;
 };
 module.exports.buildWatchInjectionEnv = buildWatchInjectionEnv;
+module.exports._resolveGeneratedXcodeprojPath = resolveGeneratedXcodeprojPath;

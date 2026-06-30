@@ -105,6 +105,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/me/deletion-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 发起账号与数据删除请求
+         * @description Let a signed-in user initiate account and health-data deletion.
+         *
+         *     App Store account deletion rules require an in-app initiation path. Full
+         *     deletion/anonymization touches many health tables, so this endpoint records a
+         *     fail-loud auditable request for the deletion worker/admin process instead of
+         *     silently pretending the account was deleted.
+         */
+        post: operations["request_account_deletion_api_v1_auth_me_deletion_request_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/change-password": {
         parameters: {
             query?: never;
@@ -10618,6 +10643,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/dynamic-views/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Today Dynamic View */
+        post: operations["post_today_dynamic_view_api_v1_dynamic_views_today_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/openclaw/stream": {
         parameters: {
             query?: never;
@@ -13851,6 +13893,23 @@ export interface paths {
         put?: never;
         /** 批准 dedao-kbase draft artifacts */
         post: operations["approve_dedao_kbase_draft_review_endpoint_api_v1_admin_knowledge_dedao_kbase_draft_review_approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/dedao_kbase/reviewed_artifacts/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 发布已审核 dedao-kbase artifacts */
+        post: operations["publish_dedao_kbase_reviewed_artifacts_endpoint_api_v1_admin_knowledge_dedao_kbase_reviewed_artifacts_publish_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -21433,6 +21492,21 @@ export interface components {
         DedaoKbaseDraftReviewApproveRequest: {
             /** Note */
             note?: string | null;
+            /**
+             * Publish
+             * @default false
+             */
+            publish: boolean;
+            /**
+             * Dry Run Publish
+             * @default false
+             */
+            dry_run_publish: boolean;
+        };
+        /** DedaoKbaseReviewedArtifactsPublishRequest */
+        DedaoKbaseReviewedArtifactsPublishRequest: {
+            /** Note */
+            note?: string | null;
         };
         /**
          * DeleteBySourceInput
@@ -26337,6 +26411,11 @@ export interface components {
              * @description 请求来源 (用于 audit): 'siri' | 'chat' | 'widget' | None. 仅埋点用, 不影响路由/合成.
              */
             source?: string | null;
+            /**
+             * Client Caps
+             * @description 客户端能力声明 (GenUI 能力协商), 来自 X-Reva-Client-Caps 头。含 'genui-v1' 时, 图表意图可返回 ```reva-ui line_chart block; 缺省 (旧端) → 现状行为, 零回归。
+             */
+            client_caps?: string[];
         };
         /**
          * OutdoorActivityCreate
@@ -29391,6 +29470,24 @@ export interface components {
             /** Info */
             info: number;
         };
+        /** TodayDynamicViewRequest */
+        TodayDynamicViewRequest: {
+            /**
+             * Trigger
+             * @default open
+             * @enum {string}
+             */
+            trigger: "open" | "resume" | "pull_refresh" | "action_completed";
+            /**
+             * Surface
+             * @default mobile.today
+             * @constant
+             * @enum {string}
+             */
+            surface: "mobile.today";
+            /** Client Context */
+            client_context?: Record<string, never>;
+        };
         /** TodayPast */
         TodayPast: {
             /** Completed Count */
@@ -31634,6 +31731,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_account_deletion_api_v1_auth_me_deletion_request_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -48170,7 +48287,9 @@ export interface operations {
     chat_api_v1_orchestrator_chat_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "x-reva-client-caps"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -48203,7 +48322,9 @@ export interface operations {
     chat_stream_api_v1_orchestrator_chat_stream_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "x-reva-client-caps"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -48457,6 +48578,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    post_today_dynamic_view_api_v1_dynamic_views_today_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TodayDynamicViewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -53516,6 +53670,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DedaoKbaseDraftReviewApproveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_dedao_kbase_reviewed_artifacts_endpoint_api_v1_admin_knowledge_dedao_kbase_reviewed_artifacts_publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DedaoKbaseReviewedArtifactsPublishRequest"];
             };
         };
         responses: {

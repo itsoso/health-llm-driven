@@ -120,6 +120,9 @@ public final class AgentStreamClient: AgentStreamServicing, @unchecked Sendable 
         request.timeoutInterval = Self.streamGapTimeout
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // GenUI 能力协商(契约 v0 §3.3):声明 Mac 能原生渲染 `reva-ui` 组件块,
+        // 后端仅对声明者发结构化块,旧端零回归。值固定 "genui-v1"。
+        request.setValue("genui-v1", forHTTPHeaderField: "X-Reva-Client-Caps")
         request.httpBody = try encoder.encode(body)
         if let token = await tokenProvider.getToken(), !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

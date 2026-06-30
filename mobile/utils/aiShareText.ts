@@ -116,5 +116,5 @@ function normalizeFlattenedAgentContent(content: string): string {
 
 export function buildAiShareMessage(content: string): string {
   const text = normalizeFlattenedAgentContent(content);
-  return text ? `${text}\n\n— 健康 Agent` : '';
+  return text ? `${text}\n\n— 阿衡` : '';
 }

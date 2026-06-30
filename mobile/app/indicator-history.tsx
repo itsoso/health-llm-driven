@@ -27,11 +27,11 @@ const TYPE_TITLES: Record<string, string> = {
   hrv: 'HRV 趋势',
   body_battery: '身体电量',
   sleep: '睡眠时长',
+  sleep_score: '睡眠评分',
+  steps: '步数趋势',
 };
 
 function useHistoryData(type: string, range: TimeRange) {
-  const { c } = useTheme();
-  const styles = useMemo(() => createStyles(c), [c]);
   const weight = useWeightHistory(range);
   const bp = useBPHistory(range);
   const garmin = useGarminMetricTrend(isGarminMetric(type) ? type : '', range);

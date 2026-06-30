@@ -43,6 +43,74 @@ _task_tier_ctx: ContextVar[Optional[str]] = ContextVar("orch_task_tier", default
 # 高风险类别 → reasoning 强模型;纯 general → fast;其余 → balanced
 _HIGH_STAKES_CATEGORIES = {"safety", "chronic", "mental", "labs", "longevity"}
 
+# GenUI 能力协商: 客户端在 X-Reva-Client-Caps 头声明 'genui-v1' 才返回 reva-ui block。
+GENUI_CAP = "genui-v1"
+
+_METRIC_LABEL = {
+    "hrv": "HRV",
+    "resting_hr": "静息心率",
+    "stress": "压力",
+    "sleep": "睡眠时长",
+    "weight": "体重",
+}
+_RANGE_LABEL = {"1m": "近一个月", "3m": "近三个月", "6m": "近半年"}
+
+
+def _maybe_build_genui_chart(
+    db: Session, user_id: int, req: OrchestratorRequest
+) -> Optional[OrchestratorResponse]:
+    """GenUI line_chart 短路。
+
+    仅当 (a) 客户端 caps 含 genui-v1 且 (b) 检测到图表意图时介入。
+    - 数据足够 → 返回带 ```reva-ui block + 确定性叙事的 OrchestratorResponse。
+    - 数据不足 → 返回"数据不足"文本 (绝不补点)。
+    - 不命中 (caps 缺 / 非图表意图) → 返回 None, 调用方走现状全流程 (零回归)。
+
+    铁律: block 的数值全部来自 build_line_chart 的 DB 查询, 本路径不调用任何 LLM。
+    """
+    if GENUI_CAP not in (req.client_caps or []):
+        return None
+
+    from app.services.genui import (
+        build_line_chart,
+        detect_chart_request,
+        render_reva_ui_block,
+    )
+
+    detected = detect_chart_request(req.query)
+    if detected is None:
+        return None
+
+    metric, rng = detected
+    intent = classify_intent(req.query)
+
+    block = build_line_chart(db, user_id, metric, range=rng)
+    metric_label = _METRIC_LABEL.get(metric, metric)
+    range_label = _RANGE_LABEL.get(rng, rng)
+
+    if block is None:
+        synthesis = (
+            f"暂时无法绘制{range_label}的{metric_label}趋势图：可用的真实数据点不足。"
+            f"等设备同步更多数据后再试。"
+        )
+    else:
+        note = block.get("data_note", "")
+        synthesis = (
+            f"已根据你的真实数据绘制{range_label}的{metric_label}趋势（{note}）。"
+            f"图中数值均为按月/周聚合的实测均值，未做任何推断填充。"
+            f"\n\n{render_reva_ui_block(block)}"
+        )
+
+    return OrchestratorResponse(
+        query=req.query,
+        intent=intent,
+        findings=[],
+        synthesis=synthesis,
+        used_specialists=[],
+        twin_build_ms=0,
+        total_ms=0,
+    )
+
 
 def _tier_for_intent(intent) -> str:
     cats = set(getattr(intent, "categories", []) or [])
@@ -1274,6 +1342,11 @@ async def run_orchestrator(
     if req.source == "siri":
         return await _run_orchestrator_fast(db, user_id, req)
 
+    # GenUI 短路: caps=genui-v1 + 图表意图 → 确定性出 reva-ui block, 跳过 LLM 数据路径。
+    genui = _maybe_build_genui_chart(db, user_id, req)
+    if genui is not None:
+        return genui
+
     from app.services.llm.usage_tracker import set_caller
     set_caller("orchestrator.synthesis", user_id=user_id)
     # 2026-05-13: set 用户偏好 ctx, _call_llm 内部读取.
@@ -1632,16 +1705,30 @@ async def stream_orchestrator(
             yield chunk
         return
 
+    def _sse(event: str, data) -> str:
+        payload = data if isinstance(data, str) else json.dumps(data, default=str, ensure_ascii=False)
+        return f"event: {event}\ndata: {payload}\n\n"
+
+    # GenUI 短路: caps=genui-v1 + 图表意图 → 确定性出 reva-ui block, 跳过 specialist/LLM。
+    # 整段 synthesis (含 ```reva-ui block) 作为单个 chunk 推出, 客户端按现状渲染。
+    genui = _maybe_build_genui_chart(db, user_id, req)
+    if genui is not None:
+        yield _sse("intent", {
+            "categories": genui.intent.categories,
+            "keywords": genui.intent.keywords,
+            "used_specialists": [],
+            "twin_build_ms": 0,
+        })
+        yield _sse("chunk", genui.synthesis)
+        yield _sse("done", {"total_ms": 0, "genui": True})
+        return
+
     from app.services.llm.usage_tracker import set_caller
     set_caller("orchestrator.stream", user_id=user_id)
     # 2026-05-13: 用户偏好 ctx
     _user_pref_ctx.set((user_id, db))
 
     t_start = time.monotonic()
-
-    def _sse(event: str, data) -> str:
-        payload = data if isinstance(data, str) else json.dumps(data, default=str, ensure_ascii=False)
-        return f"event: {event}\ndata: {payload}\n\n"
 
     chunk_queue: asyncio.Queue = asyncio.Queue()
 

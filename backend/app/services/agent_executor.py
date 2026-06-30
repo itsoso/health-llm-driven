@@ -840,6 +840,11 @@ def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
     # water
     if s("amount") is not None and "drink_type" in record:
         return f"已记录饮水 {record.get('amount')}ml"
+    # reminder (/reminders/me)
+    if s("title") is not None and ("remind_at" in record or "recurrence" in record):
+        recurrence = str(record.get("recurrence") or "").strip().lower()
+        prefix = "已设置每日提醒" if recurrence == "daily" else "已设置提醒"
+        return f"{prefix}：{record.get('title')}"
     # illness episode
     if s("illness_name") is not None or (s("name") is not None and "start_date" in record):
         return f"已记录：{record.get('illness_name') or record.get('name')}"
@@ -959,6 +964,7 @@ _FAST_RECORD_AUTO_CONFIRM_KINDS = {
     "blood_pressure",
     "diet",
     "exercise",
+    "reminder",
     "supplement",
 }
 _FAST_RECORD_NEVER_AUTO_CONFIRM_KINDS = {
@@ -1003,6 +1009,109 @@ def _fast_record_kind(args: dict) -> str:
         if raw is not None:
             return _normalize_fast_record_kind(raw)
     return ""
+
+
+def _parse_time_only_to_next_beijing(raw: Any) -> Optional[str]:
+    """Normalize a time-only reminder like 10:30 into the next Beijing datetime."""
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        dt = raw if raw.tzinfo else raw.replace(tzinfo=BEIJING_TZ)
+        return dt.astimezone(BEIJING_TZ).isoformat(timespec="seconds")
+
+    s = str(raw).strip()
+    if not s:
+        return None
+
+    # Full ISO datetime: keep it, adding Beijing tz when omitted.
+    try:
+        if re.search(r"\d{4}-\d{2}-\d{2}", s):
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=BEIJING_TZ)
+            return dt.astimezone(BEIJING_TZ).isoformat(timespec="seconds")
+    except ValueError:
+        pass
+
+    compact = (
+        s.lower()
+        .replace("：", ":")
+        .replace("点半", ":30")
+        .replace("点", ":")
+        .replace("时", ":")
+        .strip()
+    )
+    m = re.fullmatch(r"(\d{1,2})(?::(\d{1,2}))?", compact)
+    if not m:
+        return None
+    hour = int(m.group(1))
+    minute = int(m.group(2) or 0)
+    if hour > 23 or minute > 59:
+        return None
+
+    now = datetime.now(BEIJING_TZ)
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target <= now + timedelta(minutes=1):
+        target += timedelta(days=1)
+    return target.isoformat(timespec="seconds")
+
+
+def _normalize_recurrence(raw: Any) -> Optional[str]:
+    if raw is None:
+        return None
+    s = str(raw).strip().lower()
+    if not s:
+        return None
+    if re.search(r"daily|每天|每日|天天|every\s*day", s):
+        return "daily"
+    if re.search(r"weekdays|工作日", s):
+        return "weekdays"
+    if s.startswith("weekly"):
+        return s
+    if re.search(r"每周|weekly|星期|周[一二三四五六日天]", s):
+        return "weekly"
+    return s
+
+
+def _normalize_reminder_record_data(data: dict) -> dict:
+    """Make LLM reminder args match /reminders/me without inventing reminders."""
+    out = dict(data or {})
+    title = (
+        out.get("title")
+        or out.get("label")
+        or out.get("name")
+        or out.get("message")
+        or "健康提醒"
+    )
+    out["title"] = str(title).strip()[:200] or "健康提醒"
+    out["message"] = str(
+        out.get("message")
+        or out.get("description")
+        or out.get("note")
+        or out["title"]
+    ).strip()[:500]
+    priority = str(out.get("priority") or "normal").strip().lower()
+    out["priority"] = priority if priority in {"low", "normal", "high", "urgent"} else "normal"
+
+    recurrence = _normalize_recurrence(
+        out.get("recurrence") or out.get("repeat") or out.get("frequency")
+    )
+    if recurrence:
+        out["recurrence"] = recurrence
+
+    remind_at = _parse_time_only_to_next_beijing(
+        out.get("remind_at")
+        or out.get("alarm_time")
+        or out.get("reminder_time")
+        or out.get("time")
+        or out.get("at")
+    )
+    if remind_at:
+        out["remind_at"] = remind_at
+
+    for key in ("alarm_time", "reminder_time", "time", "at", "repeat", "frequency", "confirmed", "confirm"):
+        out.pop(key, None)
+    return out
 
 
 def _merge_agent_card_descriptors(*groups: list | None) -> list[dict]:
@@ -1060,6 +1169,11 @@ def _summarize_record_data(kind: str, record_data: Any) -> str:
         d = record_data.get("diastolic")
         if s and d:
             return f"已记录血压 {s}/{d}"
+    elif kind == "reminder":
+        title = str(record_data.get("title") or record_data.get("message") or "").strip()
+        recurrence = str(record_data.get("recurrence") or "").strip().lower()
+        if title:
+            return f"{'已设置每日提醒' if recurrence == 'daily' else '已设置提醒'}：{title}"
     return ""
 
 
@@ -1081,6 +1195,7 @@ def _health_record_card_descriptor(record_type: Any, record_data: Any, result: s
         "exercise",
         "supplement",
         "checkin",
+        "reminder",
     }:
         return None
 
@@ -2430,6 +2545,8 @@ class AgentExecutor:
             "- 血压、血糖、体重：执行后复述确认数值（'已记录血压 138/92'）",
             "- 用户说'吃了XX'：药瓶/保健品名(鱼油/维C/B族等) → record_type=supplement；食物 → record_type=diet",
             "- 用户说'早上的药都吃了' → record_type=supplement_group, timing=morning",
+            "- 用户明确要设置提醒/闹钟/每天几点提醒,且已给出时间 → 调用 health_record(record_type=reminder, data={title,message,remind_at,recurrence})。每日提醒用 recurrence=daily; remind_at 必须是带 +08:00 的 ISO 时间; 只有 HH:MM 时按下一次北京时间生成。不能回复“系统接口限制”或让用户自己去手机/手表设置。",
+            "- 如果上一轮已在问'几点提醒',用户只回复'10:30'这类时间,要继承上一轮任务标题和内容,直接创建 reminder; 不要丢失上下文。",
             "- 模糊数量：'几杯水' → 追问具体杯数再记录；'130多' → 追问具体数值",
             "- 时间归属：'昨天' → 记到昨天日期；'刚才' → 当前时间；未说明 → 今天",
             "- 图片：用户发食物照片时，先用你的视觉能力识别图片中的食物名称和份量，然后调用 health_record(type=diet, data={meal_type, food_items, calories, protein, carbs, fat, fiber, record_date}) 记录。必须在 data 中填写完整的 food_items 字符串，不能传空 data。",
@@ -2491,6 +2608,7 @@ class AgentExecutor:
             "- **不得对结构性发现下\"无需处理/不用管\"的临床判断**;改为\"通常定期随访,以医生意见为准\"。",
             "- 若工具结果带有『数据合理性提示』(或 _data_plausibility_warning 字段),先把该数值当作疑似录入错误、提示用户核实原始报告,核实前不要据此下结论;**若用户确认数值属实,仍须按其严重程度正常处置(例如危急值建议就医)**,不得因『疑似错误』而忽略一个可能真实的危急值。",
             "- 不做诊断;不下诊断标签(如不直接断言\"代谢综合征\",用\"…的风险信号\"并建议就医确认)。",
+            "- 不要说\"你的诊断非常准确\"。用户自述疼痛/功能问题时,改为\"你的描述提示可能存在某种模式,需要结合医生/康复师评估\";训练建议只作为健康管理/康复辅助动作,不是诊断或治疗处方。",
         ]
 
         # 注入 ak-kbase gene_knowledge 高优先级警示规则（PM/缺陷/纯合风险）
@@ -3705,6 +3823,10 @@ class AgentExecutor:
             # exercise_type 必填, 若缺失从 type / name 回退
             if not data.get("exercise_type"):
                 data["exercise_type"] = data.get("type") or data.get("name") or "其他"
+
+        if rtype == "reminder":
+            data = _normalize_reminder_record_data(data)
+            args["data"] = data
 
         # rhinitis: 症状计数转 illness_episode (复用 illness 流程, 跟 rhinitis-tracker skill 对齐)
         if rtype == "rhinitis":

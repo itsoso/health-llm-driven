@@ -32,7 +32,7 @@ public enum L10n {
     }
 
     private static let zhCN: [String: String] = [
-        "Health Agent": "健康 Agent",
+        "Health Agent": "阿衡",
         "Today": "今日",
         "Review": "复盘",
         "Health": "健康",

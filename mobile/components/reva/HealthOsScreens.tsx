@@ -166,7 +166,7 @@ export function InterventionCycleView() {
               还没有进行中的干预周期
             </Text>
             <Text style={{ fontSize: 13, lineHeight: 19, color: C.ink2, marginTop: 6 }}>
-              开启一个 90 天代谢干预:锁定当前体检为基线,设定目标指标,复元会安排每周计划并在第 84 天提示复查。
+              开启一个 90 天代谢干预:锁定当前体检为基线,设定目标指标,阿衡会安排每周计划并在第 84 天提示复查。
             </Text>
             <View style={{ marginTop: 14 }}>
               <Button full icon="play" onPress={() => start.mutate(90)}>

@@ -14,6 +14,8 @@ const mockNewChat = jest.fn();
 const mockSetParams = jest.fn();
 let mockRouteParams: Record<string, string | undefined> = {};
 let mockLlmPreference: any = { model_id: null, options: [] };
+let mockMessages: any[] = [];
+let mockIsStreaming = false;
 
 jest.mock('expo-router', () => ({
   router: {
@@ -26,8 +28,8 @@ jest.mock('expo-router', () => ({
 
 jest.mock('../../../hooks/useChatEngine', () => ({
   useChatEngine: () => ({
-    messages: [],
-    isStreaming: false,
+    messages: mockMessages,
+    isStreaming: mockIsStreaming,
     conversationId: undefined,
     sendMessage: mockSendMessage,
     newChat: mockNewChat,
@@ -90,7 +92,23 @@ jest.mock('../../../hooks/useTheme', () => ({
   }),
 }));
 
-jest.mock('../../../components/chat/ChatBubble', () => 'ChatBubble');
+jest.mock('../../../components/chat/ChatBubble', () => {
+  const React = require('react');
+  const { Pressable, Text } = require('react-native');
+  const MockChatBubble = ({ item, selectionMode, selected, onToggleSelected, onEnterSelection }: any) => (
+    <Pressable
+      accessibilityLabel={`message-${item.id}`}
+      accessibilityState={selectionMode ? { selected } : undefined}
+      onLongPress={() => onEnterSelection?.(item.id)}
+      onPress={() => onToggleSelected?.(item.id)}
+    >
+      <Text>{item.content}</Text>
+      <Text>{selectionMode ? (selected ? 'selected' : 'unselected') : 'normal'}</Text>
+    </Pressable>
+  );
+  MockChatBubble.displayName = 'MockChatBubble';
+  return MockChatBubble;
+});
 jest.mock('../../../components/chat/BrandCircle', () => 'BrandCircle');
 jest.mock('../../../components/chat/ConversationSheet', () => 'ConversationSheet');
 jest.mock('../../../components/chat/OpenerCard', () => {
@@ -119,24 +137,24 @@ describe('ChatScreen', () => {
     mockRecordCardDecision.mockResolvedValue({});
     mockRouteParams = {};
     mockLlmPreference = { model_id: null, options: [] };
+    mockMessages = [];
+    mockIsStreaming = false;
   });
 
   it('shows a visible history entry on the private coach page', async () => {
-    const { getAllByText, getByText, getByLabelText } = render(<ChatScreen />);
+    const { getAllByText, getByLabelText } = render(<ChatScreen />);
 
-    expect(getAllByText('健康 Agent').length).toBeGreaterThan(0);
+    expect(getAllByText('阿衡').length).toBeGreaterThan(0);
     await waitFor(() => {
-      expect(getByLabelText('更多会诊操作')).toBeTruthy();
+      expect(getByLabelText('对话历史')).toBeTruthy();
     });
-    await act(async () => {
-      fireEvent.press(getByLabelText('更多会诊操作'));
-    });
-    expect(getByText('对话历史')).toBeTruthy();
     await act(async () => {
       fireEvent.press(getByLabelText('对话历史'));
     });
 
-    expect(mockOpenHistory).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mockOpenHistory).toHaveBeenCalled();
+    });
   });
 
   it('uses a short readable model label in the chat header', async () => {
@@ -203,18 +221,89 @@ describe('ChatScreen', () => {
     expect(queryByText('Qwen3.6 Plus 推理 · 阿里')).toBeNull();
   });
 
-  it('keeps the header voice action as continuous voice conversation', async () => {
-    const { getByLabelText } = render(<ChatScreen />);
+  it('keeps the selected model visible and switchable while a reply is streaming', async () => {
+    mockIsStreaming = true;
+    mockLlmPreference = {
+      model_id: 'qwen3.7-plus',
+      options: [
+        {
+          id: 'qwen3.7-plus',
+          label: 'Qwen3.7 Plus 推理 · 阿里',
+          provider: '阿里',
+          model: 'qwen3.7-plus',
+          speed_tier: 'reasoning',
+          note: '',
+        },
+        {
+          id: 'minimax-m2.5',
+          label: 'MiniMax M2.5 推理 · MiniMax',
+          provider: 'MiniMax',
+          model: 'minimax-m2.5',
+          speed_tier: 'reasoning',
+          note: '',
+        },
+      ],
+    };
+
+    const { getByLabelText, getByText, queryByText } = render(<ChatScreen />);
 
     await waitFor(() => {
-      expect(getByLabelText('开始语音对话')).toBeTruthy();
+      expect(getByLabelText('切换 AI 模型，当前 Qwen3.7 Plus')).toBeTruthy();
     });
-    fireEvent.press(getByLabelText('开始语音对话'));
+    expect(getByText('回复中')).toBeTruthy();
+    expect(queryByText('正在回复')).toBeNull();
 
-    expect(mockPush).toHaveBeenCalledWith({
-      pathname: '/voice-chat',
-      params: {},
+    await act(async () => {
+      fireEvent.press(getByLabelText('切换 AI 模型，当前 Qwen3.7 Plus'));
     });
+    expect(getByText('切换 AI 模型')).toBeTruthy();
+  });
+
+  it('starts a new chat from a first-level header action', async () => {
+    mockFetchConversationStarters
+      .mockResolvedValueOnce({
+        opener: null,
+        suggestions: [{ text: '今天饮水 300/2000ml，帮我安排剩余补水', key: 'water', priority: 50 }],
+      })
+      .mockResolvedValueOnce({
+        opener: null,
+        suggestions: [{ text: '复盘我最近一次跑步（5.2km / 30min / 均心率 145）', key: 'workout', priority: 50 }],
+      });
+
+    const { getByLabelText, getByText } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(getByText('今天饮水 300/2000ml，帮我安排剩余补水')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('新建对话'));
+    });
+
+    await waitFor(() => {
+      expect(mockFetchConversationStarters).toHaveBeenCalledTimes(2);
+      expect(getByText('复盘我最近一次跑步（5.2km / 30min / 均心率 145）')).toBeTruthy();
+    });
+    expect(mockNewChat).toHaveBeenCalled();
+  });
+
+  it('replaces the low-frequency phone action with first-level history', async () => {
+    const { getByLabelText, queryByLabelText } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(getByLabelText('对话历史')).toBeTruthy();
+    });
+    expect(queryByLabelText('开始语音对话')).toBeNull();
+    await act(async () => {
+      fireEvent.press(getByLabelText('对话历史'));
+    });
+
+    await waitFor(() => {
+      expect(mockOpenHistory).toHaveBeenCalled();
+    });
+    expect(mockPush).not.toHaveBeenCalledWith(expect.objectContaining({
+      pathname: '/voice-chat',
+    }));
   });
 
   it('sends opener quick replies with the opener context so verification has a target', async () => {
@@ -318,11 +407,11 @@ describe('ChatScreen', () => {
     const { getByText } = render(<ChatScreen />);
 
     await waitFor(() => {
-      expect(getByText(/健康 Agent · 会带上你的健康上下文/)).toBeTruthy();
+      expect(getByText(/阿衡 · 会带上你的健康上下文/)).toBeTruthy();
     });
   });
 
-  it('moves the chat composer above the iOS keyboard using the keyboard height', async () => {
+  it('moves the chat composer above the iOS keyboard without double-counting the docked tab bar', async () => {
     const keyboardListeners: Record<string, (event: any) => void> = {};
     jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
       keyboardListeners[String(eventName)] = callback;
@@ -332,9 +421,8 @@ describe('ChatScreen', () => {
     const { getByTestId } = render(<ChatScreen />);
     await waitFor(() => expect(mockFetchConversationStarters).toHaveBeenCalled());
 
-    // 键盘收起:spacer = 悬浮 tab bar 真实高度
-    // (paddingTop 8 + bar 56 + max(insets.bottom=0, 10) = 74),给输入框让出空间不被 tab bar 盖住。
-    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 74 });
+    // 键盘收起:docked tab bar 已占布局流,页面只保留轻量呼吸空间。
+    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 12 });
 
     act(() => {
       keyboardListeners.keyboardDidShow({
@@ -342,21 +430,64 @@ describe('ChatScreen', () => {
       });
     });
 
-    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 336 });
+    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 262 });
   });
 
-  it('refreshes dynamic starter suggestions when starting a new chat', async () => {
+  it('shows a visible cancel action after long-pressing a message into multi-select', async () => {
+    mockMessages = [
+      { id: 'u-1', role: 'user', content: '早餐吃了鸡蛋和咖啡' },
+      { id: 'a-1', role: 'assistant', content: '建议今天午后散步 10 分钟。', completionStatus: 'complete' },
+    ];
+
+    const { getByLabelText, getByText, queryByText } = render(<ChatScreen />);
+
+    await waitFor(() => expect(getByLabelText('message-u-1')).toBeTruthy());
+    await act(async () => {
+      fireEvent(getByLabelText('message-u-1'), 'longPress');
+    });
+
+    expect(getByText('已选择 1 条')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(getByLabelText('取消多选'));
+    });
+
+    await waitFor(() => {
+      expect(queryByText('已选择 1 条')).toBeNull();
+    });
+  });
+
+  it('exits multi-select when the last selected message is deselected', async () => {
+    mockMessages = [
+      { id: 'u-1', role: 'user', content: '早餐吃了鸡蛋和咖啡' },
+      { id: 'a-1', role: 'assistant', content: '建议今天午后散步 10 分钟。', completionStatus: 'complete' },
+    ];
+
+    const { getByLabelText, getByText, queryByText } = render(<ChatScreen />);
+
+    await waitFor(() => expect(getByLabelText('message-u-1')).toBeTruthy());
+    await act(async () => {
+      fireEvent(getByLabelText('message-u-1'), 'longPress');
+    });
+    expect(getByText('已选择 1 条')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('message-u-1'));
+    });
+
+    await waitFor(() => {
+      expect(queryByText('已选择 0 条')).toBeNull();
+      expect(queryByText('已选择 1 条')).toBeNull();
+    });
+  });
+
+  it('keeps new chat out of the low-frequency more sheet', async () => {
     mockFetchConversationStarters
       .mockResolvedValueOnce({
         opener: null,
         suggestions: [{ text: '今天饮水 300/2000ml，帮我安排剩余补水', key: 'water', priority: 50 }],
-      })
-      .mockResolvedValueOnce({
-        opener: null,
-        suggestions: [{ text: '复盘我最近一次跑步（5.2km / 30min / 均心率 145）', key: 'workout', priority: 50 }],
       });
 
-    const { getByLabelText, getByText } = render(<ChatScreen />);
+    const { getByLabelText, getByText, queryByText } = render(<ChatScreen />);
 
     await waitFor(() => {
       expect(getByText('今天饮水 300/2000ml，帮我安排剩余补水')).toBeTruthy();
@@ -365,15 +496,10 @@ describe('ChatScreen', () => {
     await act(async () => {
       fireEvent.press(getByLabelText('更多会诊操作'));
     });
-    await act(async () => {
-      fireEvent.press(getByLabelText('新建对话'));
-    });
 
-    await waitFor(() => {
-      expect(mockFetchConversationStarters).toHaveBeenCalledTimes(2);
-      expect(getByText('复盘我最近一次跑步（5.2km / 30min / 均心率 145）')).toBeTruthy();
-    });
-    expect(mockNewChat).toHaveBeenCalled();
+    expect(queryByText('新建对话')).toBeNull();
+    expect(queryByText('对话历史')).toBeNull();
+    expect(getByText('会诊工具')).toBeTruthy();
   });
 
   it('starts a new conversation when opened from an Agent context entry', async () => {
