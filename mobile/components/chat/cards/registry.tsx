@@ -36,6 +36,7 @@ import { MenuShareCardSpec } from './MenuShareCard';
 import { SystemKnowledgeEvidenceCardSpec } from './SystemKnowledgeEvidenceCard';
 import { RuntimeAgendaCardSpec } from './RuntimeAgendaCard';
 import { OperatingReviewCardSpec } from './OperatingReviewCard';
+import { MetricChartCardSpec } from './MetricChartCard';
 import { DiscoveryCardSpec } from './DiscoveryCard';
 import { SafetyCardSpec } from './SafetyCard';
 
@@ -53,6 +54,7 @@ export const CARD_REGISTRY: CardSpec[] = [
   SystemKnowledgeEvidenceCardSpec,
   RuntimeAgendaCardSpec,
   OperatingReviewCardSpec,
+  MetricChartCardSpec,
   DiscoveryCardSpec,
   SafetyCardSpec,
   MenuShareCardSpec,   // 不本地匹配, 仅接受后端下发

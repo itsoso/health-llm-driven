@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import desc
@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.services import agenda_service
 from app.services.health_operating_review import build_health_operating_review
+from app.services.metric_chart_cards import build_metric_chart
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,10 @@ def _compact_causal_memory(memory: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ── individual builders ────────────────────────────────────────────
+
+def _build_metric_chart(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
+    return build_metric_chart(db, user_id=user_id, query=q)
+
 
 def _build_operating_review(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
     if not _is_operating_review_query(q):
@@ -405,6 +410,7 @@ def _build_diet(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
 
 _BUILDERS = [
     ("record_intent_skip", lambda db, uid, q: None),
+    ("metric_chart", _build_metric_chart),
     ("operating_review", _build_operating_review),
     ("runtime_agenda", _build_runtime_agenda),
     ("sleep",        _build_sleep),
@@ -450,6 +456,19 @@ def build_cards(db: Session, user_id: int, query: str) -> List[Dict[str, Any]]:
                             "action": "route.open",
                             "payload": {"route": "/my-progress"},
                             "style": "primary",
+                        }
+                    ]
+                if card_type == "metric_chart":
+                    metric = data.get("metric") if isinstance(data, dict) else None
+                    card["actions"] = [
+                        {
+                            "id": f"open-{metric or 'metric'}-history",
+                            "label": "查看HRV历史" if metric == "hrv" else "查看指标历史",
+                            "action": "route.open",
+                            "payload": {
+                                "route": f"/indicator-history?type={metric or 'hrv'}",
+                            },
+                            "style": "secondary",
                         }
                     ]
                 out.append(card)

@@ -251,6 +251,58 @@ describe('renderCard 安全降级', () => {
     );
   });
 
+  it('renders metric chart cards from backend health data', () => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'metric_chart',
+      data: {
+        metric: 'hrv',
+        title: '最近半年 HRV',
+        unit: 'ms',
+        start_date: '2025-12-29',
+        end_date: '2026-06-30',
+        coverage: { days_with_data: 181, days_in_window: 184 },
+        latest: { date: '2026-06-30', value: 56.0, source: 'apple-watch' },
+        summary: {
+          avg: 57.3,
+          last_7d_avg: 48.8,
+          last_30d_avg: 50.9,
+          prev_30d_avg: 57.5,
+          last_30_vs_prev_30_delta: -6.6,
+        },
+        series: [
+          { date: '2026-06-24', value: 52.0, rolling_7d: 54.0, source: 'garmin' },
+          { date: '2026-06-25', value: 49.0, rolling_7d: 53.0, source: 'garmin' },
+          { date: '2026-06-30', value: 56.0, rolling_7d: 48.8, source: 'apple-watch' },
+        ],
+        boundary: 'HRV 趋势仅用于健康管理参考, 不替代诊断或治疗。',
+      },
+      actions: [
+        {
+          id: 'open-hrv-history',
+          label: '查看HRV历史',
+          action: 'route.open',
+          payload: { route: '/indicator-history?type=hrv' },
+          style: 'secondary',
+        },
+      ],
+    } as any;
+    const r = renderCard(descriptor, { onAction });
+    expect(r).not.toBeNull();
+
+    const { getByText } = render(r!);
+    expect(getByText('最近半年 HRV')).toBeTruthy();
+    expect(getByText('56.0ms')).toBeTruthy();
+    expect(getByText('181/184 天')).toBeTruthy();
+    expect(getByText('近30天 -6.6ms')).toBeTruthy();
+    expect(getByText(/不替代诊断或治疗/)).toBeTruthy();
+    fireEvent.press(getByText('查看HRV历史'));
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'route.open' }),
+      expect.objectContaining({ type: 'metric_chart' }),
+    );
+  });
+
   it('cards_group 1 张子卡 → 直接渲染, 不包 grid', () => {
     const r = renderCard({
       type: 'cards_group',

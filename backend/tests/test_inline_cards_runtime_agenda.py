@@ -182,3 +182,59 @@ def test_inline_cards_operating_review_does_not_trigger_for_record_intent(monkey
     cards = inline_cards.build_cards(db=None, user_id=3, query="记录我刚做完今天复盘")
 
     assert all(card["type"] != "operating_review" for card in cards)
+
+
+def test_inline_cards_builds_hrv_metric_chart_card(monkeypatch):
+    from app.services import inline_cards
+
+    calls = {}
+
+    def fake_metric_chart(db, *, user_id, query):
+        calls["db"] = db
+        calls["user_id"] = user_id
+        calls["query"] = query
+        return {
+            "metric": "hrv",
+            "title": "最近半年 HRV",
+            "unit": "ms",
+            "start_date": "2025-12-29",
+            "end_date": "2026-06-30",
+            "coverage": {"days_with_data": 181, "days_in_window": 184},
+            "latest": {"date": "2026-06-30", "value": 56.0, "source": "apple-watch"},
+            "summary": {
+                "avg": 57.3,
+                "last_7d_avg": 48.8,
+                "last_30d_avg": 50.9,
+                "prev_30d_avg": 57.5,
+                "last_30_vs_prev_30_delta": -6.6,
+            },
+            "series": [
+                {"date": "2026-06-24", "value": 52.0, "rolling_7d": 54.0, "source": "garmin"},
+                {"date": "2026-06-25", "value": 49.0, "rolling_7d": 53.0, "source": "garmin"},
+                {"date": "2026-06-30", "value": 56.0, "rolling_7d": 48.8, "source": "apple-watch"},
+            ],
+            "boundary": "HRV 趋势仅用于健康管理参考, 不替代诊断或治疗。",
+        }
+
+    monkeypatch.setattr(inline_cards, "build_metric_chart", fake_metric_chart, raising=False)
+
+    cards = inline_cards.build_cards(db="db", user_id=3, query="绘制最近半年的 HRV 曲线")
+
+    assert calls == {"db": "db", "user_id": 3, "query": "绘制最近半年的 HRV 曲线"}
+    assert cards[0]["type"] == "metric_chart"
+    assert cards[0]["data"]["metric"] == "hrv"
+    assert cards[0]["data"]["coverage"] == {"days_with_data": 181, "days_in_window": 184}
+    assert cards[0]["data"]["latest"] == {
+        "date": "2026-06-30",
+        "value": 56.0,
+        "source": "apple-watch",
+    }
+    assert cards[0]["actions"] == [
+        {
+            "id": "open-hrv-history",
+            "label": "查看HRV历史",
+            "action": "route.open",
+            "payload": {"route": "/indicator-history?type=hrv"},
+            "style": "secondary",
+        }
+    ]
