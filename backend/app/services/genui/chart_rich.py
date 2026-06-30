@@ -124,16 +124,23 @@ def compute_chart_rich(
             "role": "device",
             "points": _align_series(axis, apple_by_day),
         })
-    series.append({
-        "name": "7日滚动均值",
-        "role": "avg_7d",
-        "points": _rolling_mean(axis, primary_by_day, _ROLL_7D),
-    })
-    series.append({
-        "name": "30日滚动均值",
-        "role": "avg_30d",
-        "points": _rolling_mean(axis, primary_by_day, _ROLL_30D),
-    })
+    # 滚动均值仅在请求范围覆盖窗口时给出 —— 否则 "30日滚动均值" 在两周图里标签误导。
+    # 按请求范围(非实际数据跨度)判定:6m 请求即使 seed 稀疏也保留两条(back-compat);
+    # 两周(2w=14d)只显原始 + 7日,不显 30日。lazy import 避免与 chart_builder 循环依赖。
+    from app.services.genui.chart_builder import _RANGE_DAYS as _RD
+    range_days = _RD.get(rng, 180)
+    if range_days >= _ROLL_7D:
+        series.append({
+            "name": "7日滚动均值",
+            "role": "avg_7d",
+            "points": _rolling_mean(axis, primary_by_day, _ROLL_7D),
+        })
+    if range_days >= _ROLL_30D:
+        series.append({
+            "name": "30日滚动均值",
+            "role": "avg_30d",
+            "points": _rolling_mean(axis, primary_by_day, _ROLL_30D),
+        })
 
     # latest annotation: 最新有值日 (primary), 标注值 + 源 (事实)。
     latest_day = end_d  # all_days 的 max 必有 primary 值

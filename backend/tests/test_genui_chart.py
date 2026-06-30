@@ -851,3 +851,22 @@ def test_agent_stream_genui_non_chart_query_falls_through(
     body = _read_sse_body(resp)
     assert "reva-ui" not in body
     assert called["n"] == 1
+
+
+def test_detect_two_week_range_and_short_range_skips_30d_rolling():
+    """两周/半个月 → 2w(14天),不再误判 6m;两周富图不带 30日滚动(标签会误导)。"""
+    from app.services.genui.chart_builder import detect_chart_request
+    from app.services.genui.chart_rich import compute_chart_rich
+    from datetime import date, timedelta
+
+    assert detect_chart_request("绘制我最近两周的心率曲线") == ("resting_hr", "2w")
+    assert detect_chart_request("画半个月HRV趋势") == ("hrv", "2w")
+    assert detect_chart_request("绘制最近一周心率曲线") == ("resting_hr", "7d")
+    # 半年仍是 6m(不回归)
+    assert detect_chart_request("绘制我最近半年的HRV曲线") == ("hrv", "6m")
+
+    g = {date(2026, 6, 1) + timedelta(days=i): 55.0 + i % 5 for i in range(14)}
+    blk = compute_chart_rich(g, {}, "resting_hr", "2w")
+    roles = [s["role"] for s in blk["series"]]
+    assert "avg_7d" in roles and "avg_30d" not in roles  # 两周不显 30 日滚动
+    assert len(blk["x"]) == 14

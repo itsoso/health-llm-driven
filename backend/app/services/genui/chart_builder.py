@@ -95,7 +95,7 @@ SUPPORTED_METRICS: Dict[str, _MetricSpec] = {
 }
 
 # range → 天数
-_RANGE_DAYS: Dict[str, int] = {"7d": 7, "1m": 30, "3m": 90, "6m": 180}
+_RANGE_DAYS: Dict[str, int] = {"7d": 7, "2w": 14, "1m": 30, "3m": 90, "6m": 180}
 
 # 数据点 (有值的日子) 少于此数 → 数据不足
 MIN_POINTS = 3
@@ -137,6 +137,7 @@ _METRIC_KEYWORDS: List[Tuple[re.Pattern, str]] = [
 
 # range 提示
 _RANGE_HINTS: List[Tuple[re.Pattern, str]] = [
+    (re.compile(r"(最近两周|近两周|两周|两个?星期|两星期|2\s*周|14\s*天|十四天|半个月|2\s*weeks?|two\s*weeks?)", re.IGNORECASE), "2w"),
     (re.compile(r"(最近一周|近一周|一周|7\s*天|七天|7d|1w|last\s*week|one\s*week)", re.IGNORECASE), "7d"),
     (re.compile(r"(半年|6\s*个?月|六个月|6m|180\s*天|6\s*months?)", re.IGNORECASE), "6m"),
     (re.compile(r"(近三月|三个月|3\s*个?月|3m|90\s*天|一个季度|季度|3\s*months?)", re.IGNORECASE), "3m"),
