@@ -4,8 +4,8 @@
 |---|---|
 | slug | `chat-thinking-stream` |
 | 创建日期 | 2026-06-30 |
-| 当前阶段 | S5 实现 |
-| 状态 | building |
+| 当前阶段 | S7 上线验证 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | TDD / mobile Jest / tsc / mobile OTA |
 
@@ -70,6 +70,21 @@ pnpm --dir mobile exec jest mobile/components/chat/__tests__/ChatBubbleStreaming
 # 3 passed
 ```
 
+```bash
+pnpm --dir mobile exec jest mobile/services/__tests__/chatStream.test.ts mobile/hooks/__tests__/useChatEngine.test.ts mobile/components/chat/__tests__/ChatBubbleStreaming.test.tsx --runInBand
+# 3 suites passed, 18 tests passed
+```
+
+```bash
+pnpm --dir mobile exec tsc --noEmit
+# exit 0
+```
+
+```bash
+git diff --check
+# exit 0
+```
+
 ## G4 · 安全闸
 
 裁决: GO.
@@ -80,11 +95,18 @@ pnpm --dir mobile exec jest mobile/components/chat/__tests__/ChatBubbleStreaming
 
 ## G5 · 部署健康
 
-Pending.
+裁决: PASS.
+
+- Git: `f0cf901a feat(chat): stream safe thinking progress` pushed to `origin/main`.
+- Backend deploy: not needed; no backend code, schema, migration, or runtime contract change.
+- Mobile OTA: production branch, runtime `1.3.1`, update group `60164289-3469-491b-b084-2dec4b4b0d41`, iOS update `019f183f-3422-7e4a-acbc-6def655b50ac`.
 
 ## G6 · 上线验证
 
-Pending.
+裁决: PASS.
+
+- EAS dashboard: https://expo.dev/accounts/itsoso/projects/health-pilot/updates/60164289-3469-491b-b084-2dec4b4b0d41
+- Device rollout: app will fetch the new bundle on cold start or after backgrounding for 30s+.
 
 ## S8 · 沉淀
 
