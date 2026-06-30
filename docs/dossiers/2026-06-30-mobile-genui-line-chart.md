@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-genui-line-chart` |
 | 创建日期 | 2026-06-30 |
-| 当前阶段 | S6 验证/发布 |
-| 状态 | implemented-target-tests-pass |
+| 当前阶段 | S7 上线验证 |
+| 状态 | deployed |
 | 负责 | Codex |
 | 反馈环 | TDD / mobile Jest / backend contract test / OTA |
 
@@ -53,13 +53,13 @@
 - [x] T5 RED: 新 cap `genui-components-v1` 下后端必须返回 `metric_line_chart`。
 - [x] T6 GREEN: 后端支持 `metric_line_chart` schema，并扩展自然指标识别: 心率、睡眠评分、步数、身体电量。
 - [x] T7 GREEN: Mobile parser / registry 支持 `metric_line_chart` 动态组件，同时保留 `line_chart`。
-- [ ] T8 G3 类型检查、提交、部署、发布 OTA。
+- [x] T8 G3 类型检查、提交、部署、发布 OTA。
 
 ## G3 测试
 
 - `DATABASE_URL='sqlite:///:memory:' TZ=Asia/Shanghai backend/.venv/bin/python -m pytest backend/tests/test_genui_chart.py` → 55 passed。
 - `pnpm --dir mobile exec jest mobile/utils/__tests__/revaUiBlocks.test.ts mobile/services/__tests__/chatStream.test.ts mobile/components/chat/__tests__/ChatBubbleRevaUi.test.tsx mobile/components/chat/cards/__tests__/registry.test.tsx --runInBand` → 4 suites / 39 tests passed。
-- 类型检查与发布前验证待执行。
+- `pnpm --dir mobile exec tsc --noEmit` → passed。
 
 ## G4 安全
 
@@ -67,4 +67,7 @@
 
 ## S6/S7 部署与上线验证
 
-待后端部署与 OTA 发布后回写。
+- Git: `2114a2c6 feat(genui): support generic metric line charts` pushed to `origin/main`。
+- Backend: `./deploy.sh -b` from clean deploy worktree → health score `55/60 PASS`; skills manifest `22 = 22`。
+- Production route check: `POST /api/v1/agent/stream` without auth → `401`; GET route shape → `405`。
+- Mobile OTA: production branch, runtime `1.3.1`, update group `43d96c67-936f-440b-9ca5-9a7c0bdd2a1c`, iOS update `019f17a5-cd15-7ba7-bfdb-9077fa27994a`。
