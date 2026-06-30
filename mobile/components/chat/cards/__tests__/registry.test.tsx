@@ -89,6 +89,17 @@ describe('renderCard 安全降级', () => {
     expect(r).not.toBeNull();
   });
 
+  it('renders reminder record cards from chat tool results', () => {
+    const r = renderCard({
+      type: 'record',
+      data: { type: 'reminder', detail: '已设置每日提醒：臀中肌训练' },
+    });
+    expect(r).not.toBeNull();
+
+    const { getByText } = render(r!);
+    expect(getByText('已设置每日提醒：臀中肌训练')).toBeTruthy();
+  });
+
   it('renders server card actions and dispatches through onAction', () => {
     const onAction = jest.fn();
     const descriptor = {

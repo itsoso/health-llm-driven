@@ -153,6 +153,80 @@ async def test_garmin_sync_does_not_throw_on_missing_amount(db):
 
 
 @pytest.mark.asyncio
+async def test_reminder_record_normalizes_daily_time_without_extra_confirmation(db):
+    """明确设置提醒 + 给出 10:30 时, Agent 应直接创建每日 SmartReminder payload."""
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+
+    captured = {}
+
+    async def fake_post(url, headers, payload):
+        captured["url"] = url
+        captured["payload"] = payload
+        return json.dumps({"id": 7, "title": payload["title"], "status": "pending"}, ensure_ascii=False)
+
+    with patch.object(executor, "_api_post", new=AsyncMock(side_effect=fake_post)):
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({
+                "record_type": "reminder",
+                "data": {
+                    "title": "臀中肌训练",
+                    "message": "蚌式开合、侧卧抬腿、臀桥",
+                    "time": "10:30",
+                    "recurrence": "daily",
+                },
+            }, ensure_ascii=False),
+            user_token="test-token",
+        )
+
+    assert "[NEEDS_CONFIRMATION]" not in str(result)
+    assert "Error" not in str(result)
+    assert captured["url"].endswith("/reminders/me")
+    assert captured["payload"]["title"] == "臀中肌训练"
+    assert captured["payload"]["message"] == "蚌式开合、侧卧抬腿、臀桥"
+    assert captured["payload"]["recurrence"] == "daily"
+    assert captured["payload"]["priority"] == "normal"
+    assert captured["payload"]["remind_at"].endswith("+08:00")
+    assert "T10:30:00" in captured["payload"]["remind_at"]
+
+
+def test_agent_system_prompt_teaches_reminder_write_flow(db):
+    """共享对话失败点: 不应说接口限制;应调用 health_record(reminder)."""
+    from app.services.agent_executor import AgentExecutor
+
+    prompt = AgentExecutor(db)._build_system_prompt(
+        user_id=1,
+        conv_id=1,
+        user_auth_token="token",
+    )
+
+    assert "record_type=reminder" in prompt
+    assert "recurrence=daily" in prompt
+    assert "不能回复“系统接口限制”" in prompt
+
+
+def test_reminder_fast_record_is_auto_confirmed():
+    """明确提醒写入是低风险记录,流式工具循环不应再二次确认。"""
+    from app.services.agent_executor import _auto_confirm_fast_record_args
+
+    args = _auto_confirm_fast_record_args(
+        "health_record",
+        {
+            "record_type": "reminder",
+            "data": {"title": "臀中肌训练", "time": "10:30", "recurrence": "daily"},
+        },
+    )
+
+    assert args["record_type"] == "reminder"
+    assert args["confirmed"] is True
+    assert args["data"]["confirmed"] is True
+    assert "_fast_record_requires_confirmation" not in args
+
+
+@pytest.mark.asyncio
 async def test_illness_record_accepts_name_payload(db):
     """illness schema 使用 name 字段, 执行器应兼容并写入 illness episodes."""
     from app.services.agent_executor import AgentExecutor
