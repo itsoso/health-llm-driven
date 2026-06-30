@@ -4,8 +4,8 @@
 |---|---|
 | slug | `genui-chart-shared-web-regression` |
 | 创建日期 | 2026-06-30 |
-| 当前阶段 | S5 实现完成 |
-| 状态 | tested |
+| 当前阶段 | S7 上线验证 |
+| 状态 | deployed |
 | 负责 | Codex |
 | 反馈环 | TDD / backend contract test / frontend Vitest / Next build |
 
@@ -70,6 +70,9 @@
 
 ## S6/S7 部署与上线验证
 
-- Git: 待提交。
-- Backend/Web: 待 `./deploy.sh --all -y`。
-- Production 验证: 待检查共享页和 `/agent/stream` 健康。
+- Git: `3f69d55b fix(genui): render weekly chart requests on web` pushed to `origin/main`。
+- Backend/Web: `./deploy.sh --all -y` via clean temporary worktree; frontend PM2 online, backend `health-backend.service` active。
+- Deploy health: `60/60 PASS`; skills manifest `22 = 22`。
+- Production shared page: `GET https://health.executor.life/shared/726d42db0f8b8ddf2b2bd971ca1d3566?reveal=1` -> `200`。
+- Production auth boundary: unauthenticated `POST /api/v1/agent/stream` with GenUI caps -> `401`。
+- 裁决: PASS。
