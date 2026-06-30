@@ -30,11 +30,8 @@ router = APIRouter(prefix="/orchestrator", tags=["orchestrator"])
 _ORCH_CACHE_TTL = 1800  # 30 min
 
 
-def _parse_client_caps(raw: str | None) -> list[str]:
-    """解析 X-Reva-Client-Caps 头 (逗号分隔, 大小写归一化)。"""
-    if not raw:
-        return []
-    return [c.strip().lower() for c in raw.split(",") if c.strip()]
+# 头解析提到共享 util (agent.py 同用), 这里保留同名 re-export 供既有 import / 测试。
+from app.api._client_caps import parse_client_caps as _parse_client_caps  # noqa: E402,F401
 
 
 def _orch_cache_key(user_id: int, query: str, specialists: list | None, caps: list[str]) -> str:

@@ -9,7 +9,7 @@ import logging
 from typing import Optional, List
 
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
@@ -107,6 +107,102 @@ def _check_recent_dup(user_id: int, message: str) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# GenUI 短路 (reva-ui line_chart) — 与 orchestrator 同一确定性 builder。
+#
+# 背景: Mac/mobile 统一聊天走本文件的 `agent_stream`, 但历史上只有
+# orchestrator 端点接了 GenUI 协商。charting query ("绘制我最近半年的HRV曲线")
+# 带 genui-v1 cap 落到这里会走 LLM 吐 ASCII/文本, 不出图。
+#
+# 铁律 (R4): 图表数值全部来自 chart_builder 的 DB 查询, 本路径绝不调用 LLM。
+# 数据不足 / 异常 → 返回 None, 调用方 FALL THROUGH 到普通 AgentExecutor 路径
+# (永不因 genui 失败而断聊天)。
+# ---------------------------------------------------------------------------
+
+GENUI_CAP = "genui-v1"
+
+_GENUI_METRIC_LABEL = {
+    "hrv": "HRV",
+    "resting_hr": "静息心率",
+    "stress": "压力",
+    "sleep": "睡眠时长",
+    "weight": "体重",
+}
+_GENUI_RANGE_LABEL = {"1m": "近一个月", "3m": "近三个月", "6m": "近半年"}
+
+
+def _maybe_genui_chart_events(
+    db: Session, user_id: int, message: str, conversation_id: int | None, caps: list[str]
+) -> Optional[tuple[list[dict], int, int]]:
+    """确定性构建 reva-ui line_chart, 持久化 assistant 消息, 返回要 emit 的 SSE 事件。
+
+    返回 (events, conversation_id, message_id) 命中时; 否则 None (调用方走普通路径)。
+    - caps 缺 genui-v1 / 非图表意图 / 数据不足 → None。
+    - events 复用 `agent_stream` 现有 shape: token (data.content 含 ```reva-ui block)
+      + done ({conversation_id, message_id, elapsed_ms, mode})。
+    - assistant 消息写入与普通路径同一 durable store (OpenClawService), 含 reva-ui
+      文本 → 历史/恢复可见, message_id 真实。
+    """
+    if GENUI_CAP not in (caps or []):
+        return None
+
+    from app.services.genui import (
+        build_line_chart,
+        detect_chart_request,
+        render_reva_ui_block,
+    )
+
+    detected = detect_chart_request(message)
+    if detected is None:
+        return None
+
+    metric, rng = detected
+    block = build_line_chart(db, user_id, metric, range=rng)
+    if block is None:
+        # 数据不足: 与 orchestrator 路径一致 — 不补点, 回退普通路径 (让 LLM 解释/引导)。
+        return None
+
+    metric_label = _GENUI_METRIC_LABEL.get(metric, metric)
+    range_label = _GENUI_RANGE_LABEL.get(rng, rng)
+    note = block.get("data_note", "")
+    # 确定性模板叙事 (无 LLM); 图表数值只来自 block。
+    intro = (
+        f"{range_label}{metric_label}趋势（数据来自你的设备，{note}）："
+        if note
+        else f"{range_label}{metric_label}趋势（数据来自你的设备）："
+    )
+    full_reply = f"{intro}\n\n{render_reva_ui_block(block)}"
+
+    # 持久化: 与 AgentExecutor.run_stream 相同的 OpenClawService 会话/消息存储。
+    from app.services.openclaw_service import OpenClawService
+
+    svc = OpenClawService(db)
+    conv = svc.get_or_create_conversation(user_id, conversation_id, title=message)
+    svc.save_message(conv.id, "user", message)
+    ai_msg = svc.save_message(conv.id, "assistant", full_reply)
+    try:
+        ai_msg.meta = {"mode": "agent", "genui": True, "sources_used": ["设备数据"]}
+        db.commit()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[agent.stream] genui meta write skipped: %s", e)
+
+    events = [
+        {"event": "agent_start", "data": {"message": "正在绘制图表…", "conversation_id": conv.id}},
+        {"event": "token", "data": {"content": full_reply}},
+        {
+            "event": "done",
+            "data": {
+                "conversation_id": conv.id,
+                "message_id": ai_msg.id,
+                "elapsed_ms": 0,
+                "mode": "agent",
+                "genui": True,
+            },
+        },
+    ]
+    return events, conv.id, ai_msg.id
+
+
 class ImageItem(BaseModel):
     base64: str
     type: str = "jpeg"
@@ -168,6 +264,7 @@ async def agent_stream(
     req: AgentRequest,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
+    x_reva_client_caps: str | None = Header(default=None),
 ):
     """统一健康 Agent — 记录 + 查询 + 分析 + 图片识别
 
@@ -211,6 +308,46 @@ async def agent_stream(
     file_b64 = req.file_base64
     file_nm = req.file_name
     extra_ctx = req.extra_context
+
+    # GenUI 短路: caps=genui-v1 + 图表意图 + 无图片/附件 → 确定性出 reva-ui block,
+    # 跳过 AgentExecutor/LLM (R4: 数值只来自 DB)。命中即持久化消息并直接 SSE 回放。
+    # 数据不足 / 任何异常 → genui_events=None, FALL THROUGH 到普通路径 (永不断聊天)。
+    from app.api._client_caps import parse_client_caps
+
+    caps = parse_client_caps(x_reva_client_caps)
+    genui_events: Optional[list[dict]] = None
+    if not has_images and not file_b64:
+        try:
+            hit = _maybe_genui_chart_events(db, user_id, msg_text, conv_id, caps)
+            if hit is not None:
+                genui_events, _conv, _mid = hit
+                logger.info(
+                    "[agent.stream] GenUI short-circuit hit user=%s conv=%s msg_id=%s",
+                    user_id, _conv, _mid,
+                )
+        except Exception as e:  # noqa: BLE001
+            # 失败软着陆: 不破坏聊天, 回退普通路径。
+            logger.warning("[agent.stream] GenUI short-circuit failed, fall through: %s", e)
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            genui_events = None
+
+    if genui_events is not None:
+        async def genui_generate():
+            for event in genui_events:
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(
+            genui_generate(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     async def generate():
         """G-W9 同模式 (FIX-5, 2026-05-14): bg task + asyncio.Queue.

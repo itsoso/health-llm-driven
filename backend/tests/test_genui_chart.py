@@ -579,3 +579,149 @@ def test_supported_metrics_allowlist():
     assert "hrv" in SUPPORTED_METRICS
     for m in ("hrv", "resting_hr", "stress", "sleep", "weight"):
         assert m in SUPPORTED_METRICS
+
+
+# ---------------------------------------------------------------------------
+# 能力协商 e2e (POST /agent/stream) — 统一聊天端点 (Mac/mobile 实际走的路径)
+#
+# 这是本次修复的核心: agent_stream 之前完全绕过 GenUI。下面验证:
+#   1. caps=genui-v1 + 图表意图 → 流里出 reva-ui block + line_chart, 消息持久化,
+#      且 AgentExecutor.run_stream 从未被调 (R4: 短路路径无 LLM)。
+#   2. 无 caps → 不短路, 走普通 AgentExecutor 路径 (无 reva-ui)。
+#   3. 数据不足 → fall through, 不 crash。
+# ---------------------------------------------------------------------------
+
+
+def _read_sse_body(resp) -> str:
+    """TestClient 的 StreamingResponse: resp.text 即完整 SSE 文本。"""
+    return resp.text
+
+
+@pytest.fixture
+def _explode_agent_run_stream(monkeypatch):
+    """让 AgentExecutor.run_stream 一旦被调用就炸 (genui 短路不应触达它)。"""
+
+    async def _boom(*args, **kwargs):  # noqa: ANN001
+        raise AssertionError(
+            "AgentExecutor.run_stream must NOT be called on the GenUI short-circuit (R4)"
+        )
+        yield  # pragma: no cover  (使其成为 async generator)
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream", _boom
+    )
+
+
+def test_agent_stream_genui_caps_present_emits_block_no_llm(
+    client, db, auth_user_and_headers, _explode_agent_run_stream
+):
+    """caps=genui-v1 + 图表意图 → SSE 含 reva-ui/line_chart, 消息持久化, 无 LLM。"""
+    user, headers = auth_user_and_headers
+    _seed_hrv_across_months(db, user.id, {0: [70, 80, 90], 1: [50, 60, 55], 2: [40, 42, 44]})
+
+    resp = client.post(
+        "/api/v1/agent/stream",
+        json={"message": "绘制我最近半年的HRV曲线"},
+        headers={**headers, "X-Reva-Client-Caps": "genui-v1"},
+    )
+    assert resp.status_code == 200
+    body = _read_sse_body(resp)
+    # block 出现在 token 事件里 (Mac WebView 扫描 fence)
+    assert "reva-ui" in body
+    assert "line_chart" in body
+    # 数值来自 seeded 数据 (40-90 区间)
+    assert '"component":"line_chart"' in body or '"component": "line_chart"' in body
+
+    # done 事件携带真实 message_id, 且消息已持久化到对话存储
+    from app.services.openclaw_service import OpenClawService
+
+    convs = OpenClawService(db).get_conversations(user.id, limit=10)
+    assert convs, "短路应创建/复用对话"
+    detail = OpenClawService(db).get_conversation_detail(user.id, convs[0].id)
+    assistant_msgs = [m for m in detail.messages if m.role == "assistant"]
+    assert assistant_msgs, "assistant 消息必须持久化"
+    assert any("reva-ui" in (m.content or "") for m in assistant_msgs)
+
+
+def test_agent_stream_no_caps_falls_through_to_normal_path(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    """无 caps → 不短路, 走普通 AgentExecutor 路径, 流里不含 reva-ui。"""
+    user, headers = auth_user_and_headers
+    _seed_hrv_across_months(db, user.id, {0: [70, 80, 90], 1: [50, 60, 55]})
+
+    async def _stub_run_stream(*args, **kwargs):  # noqa: ANN001
+        yield {"event": "token", "data": {"content": "（普通路径回答，无图表）"}}
+        yield {"event": "done", "data": {"conversation_id": 1, "message_id": 1, "mode": "agent"}}
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream", _stub_run_stream
+    )
+
+    resp = client.post(
+        "/api/v1/agent/stream",
+        json={"message": "绘制我最近半年的HRV曲线"},
+        headers=headers,  # 不带 X-Reva-Client-Caps
+    )
+    assert resp.status_code == 200
+    body = _read_sse_body(resp)
+    assert "reva-ui" not in body
+    assert "普通路径回答" in body
+
+
+def test_agent_stream_genui_insufficient_data_falls_through(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    """caps + 图表意图 但数据不足 → fall through 普通路径, 不 crash, 无 reva-ui。"""
+    user, headers = auth_user_and_headers
+    # 只 seed 1 天 → build_line_chart 返回 None
+    db.add(GarminData(user_id=user.id, record_date=date.today(), hrv=55.0))
+    db.commit()
+
+    called = {"n": 0}
+
+    async def _stub_run_stream(*args, **kwargs):  # noqa: ANN001
+        called["n"] += 1
+        yield {"event": "token", "data": {"content": "数据还不太够，等设备多同步一些。"}}
+        yield {"event": "done", "data": {"conversation_id": 1, "message_id": 1, "mode": "agent"}}
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream", _stub_run_stream
+    )
+
+    resp = client.post(
+        "/api/v1/agent/stream",
+        json={"message": "画一下我的HRV趋势图"},
+        headers={**headers, "X-Reva-Client-Caps": "genui-v1"},
+    )
+    assert resp.status_code == 200
+    body = _read_sse_body(resp)
+    assert "reva-ui" not in body
+    assert called["n"] == 1, "数据不足必须 fall through 到普通 AgentExecutor 路径"
+
+
+def test_agent_stream_genui_non_chart_query_falls_through(
+    client, db, auth_user_and_headers, monkeypatch
+):
+    """caps 在但非图表意图 → 不短路, 走普通路径。"""
+    user, headers = auth_user_and_headers
+    called = {"n": 0}
+
+    async def _stub_run_stream(*args, **kwargs):  # noqa: ANN001
+        called["n"] += 1
+        yield {"event": "token", "data": {"content": "普通分析回答"}}
+        yield {"event": "done", "data": {"conversation_id": 1, "message_id": 1, "mode": "agent"}}
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream", _stub_run_stream
+    )
+
+    resp = client.post(
+        "/api/v1/agent/stream",
+        json={"message": "我最近睡眠质量怎么样"},
+        headers={**headers, "X-Reva-Client-Caps": "genui-v1"},
+    )
+    assert resp.status_code == 200
+    body = _read_sse_body(resp)
+    assert "reva-ui" not in body
+    assert called["n"] == 1
