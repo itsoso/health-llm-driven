@@ -8,7 +8,7 @@
 
 **Tech Stack:** FastAPI / SQLAlchemy / pytest for backend chart generation; React/Next MarkdownRenderer and React Native card registry for rendering; existing `reva-ui` fenced block contract.
 
-**Status (2026-06-30):** implementation verified, pending commit/push/deploy. Backend GenUI now covers BP, waist, body fat, blood glucose, and SpO2; Web/Mobile render `metric_empty_state`.
+**Status (2026-06-30):** released. Backend GenUI now covers BP, waist, body fat, blood glucose, and SpO2; Web/Mobile render `metric_empty_state`; Web/backend deployed and Mobile production OTA published.
 
 ---
 
@@ -62,7 +62,7 @@ Status: Done.
 
 ### Task 4: Verification And Release
 
-Status: Verification done; release pending.
+Status: Done.
 
 **Commands:**
 - `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/pytest backend/tests/test_genui_chart.py -q`
@@ -74,3 +74,8 @@ Status: Verification done; release pending.
 - Commit and push to `main`.
 - Deploy backend/web with `./deploy.sh --all -y` from a clean worktree if the main worktree has unrelated untracked files.
 - For mobile JS changes, publish OTA with `scripts/mobile-ota.sh production`.
+
+**Release evidence (2026-06-30):**
+- Web/backend deploy health: `60/60 PASS`; frontend online; backend active.
+- Skills manifest: local 22 = online 22.
+- Mobile OTA: update group `da747a51-d62e-43fb-91a8-26db0afac5e7`, runtime `1.3.1`.

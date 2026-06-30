@@ -4,8 +4,8 @@
 |---|---|
 | slug | `genui-health-chart-coverage` |
 | 创建日期 | 2026-06-30 |
-| 当前阶段 | S5 验证 |
-| 状态 | verified_pending_release |
+| 当前阶段 | S7 上线验证 |
+| 状态 | released |
 | 负责 | Codex |
 | 反馈环 | TDD / backend contract test / Web build / Mobile Jest / OTA |
 
@@ -66,4 +66,11 @@
 
 ## S6/S7 部署与上线验证
 
-待发布。
+- 代码提交: `7fce54e7 feat(genui): support common health metric charts`。
+- Web/backend: 从临时干净 worktree 执行 `./deploy.sh --all -y`。
+- 部署结果: 前端 PM2 `health-frontend` online; 后端 `health-backend.service` active (running)。
+- 部署健康度: `60/60 PASS`。
+- Skills manifest: 本地 22 = 线上 22。
+- Mobile OTA: `scripts/mobile-ota.sh production "GenUI common health metric charts"`。
+- OTA 结果: production branch, runtime `1.3.1`, update group `da747a51-d62e-43fb-91a8-26db0afac5e7`, iOS update `019f191b-1ac8-7df6-ad85-ebe88c77e202`。
+- 裁决: PASS。
