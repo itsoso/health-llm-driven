@@ -27,6 +27,42 @@ import {
 
 const CANCEL_THRESHOLD = 80;
 
+type ChatAgentMode = 'daily' | 'deep' | 'vision';
+
+export interface ChatInputSendOptions {
+  extraContext?: string;
+}
+
+const AGENT_MODES: {
+  id: ChatAgentMode;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}[] = [
+  { id: 'daily', label: '日常', icon: 'flash-outline' },
+  { id: 'deep', label: '深思', icon: 'diamond-outline' },
+  { id: 'vision', label: '识图', icon: 'image-outline' },
+];
+
+const MODE_PLACEHOLDER: Record<ChatAgentMode, string> = {
+  daily: '问阿衡，或按住说话',
+  deep: '让阿衡深思一个计划',
+  vision: '拍照/报告后问阿衡',
+};
+
+function buildAgentModeOptions(mode: ChatAgentMode): ChatInputSendOptions | undefined {
+  if (mode === 'daily') return undefined;
+  const instruction = mode === 'deep'
+    ? '先梳理目标、约束和健康风险边界，再给出可执行计划、验证信号和下一步确认动作。'
+    : '优先理解图片、报告或饮食运动线索，输出可确认的记录、复核卡片或下一步补充信息。';
+  return {
+    extraContext: JSON.stringify({
+      source: 'mobile_chat_composer',
+      mode,
+      instruction,
+    }),
+  };
+}
+
 function PulsingRing() {
   const scale = useSharedValue(1);
   React.useEffect(() => {
@@ -40,7 +76,7 @@ function PulsingRing() {
 }
 
 interface Props {
-  onSend: (text: string, images?: PendingImage[] | null) => void;
+  onSend: (text: string, images?: PendingImage[] | null, options?: ChatInputSendOptions) => void;
   isStreaming: boolean;
   /** Populated once on first mount; subsequent changes are ignored. */
   initialText?: string;
@@ -55,22 +91,27 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
   const [showMedicalImportMenu, setShowMedicalImportMenu] = useState(false);
   const [medicalImportBusy, setMedicalImportBusy] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
+  const [agentMode, setAgentMode] = useState<ChatAgentMode>('daily');
   const [cancelHint, setCancelHint] = useState(false);
   const [justSent, setJustSent] = useState(false);  // 刚发送, 按钮停留 1s 避免误切 mic
   const { pendingImages, removeImage, clearImages, pickImage, takePhoto } = useMediaPicker();
   const textInputRef = useRef<TextInput>(null);
-  const canSend = (input.trim() || pendingImages.length > 0) && !isStreaming;
+  const canSend = (!!input.trim() || pendingImages.length > 0) && !isStreaming;
 
   const handleSend = useCallback((text?: string) => {
     const msg = (text || input).trim();
     if (!msg && pendingImages.length === 0) return;
-    onSend(msg || '请分析这些图片', pendingImages.length > 0 ? pendingImages : null);
+    onSend(
+      msg || '请分析这些图片',
+      pendingImages.length > 0 ? pendingImages : null,
+      buildAgentModeOptions(agentMode),
+    );
     setInput('');
     clearImages();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setJustSent(true);
     setTimeout(() => setJustSent(false), 1000);
-  }, [input, pendingImages, onSend, clearImages]);
+  }, [agentMode, input, pendingImages, onSend, clearImages]);
 
   const voice = useVoiceRecording({
     onTranscript: (text) => {
@@ -300,6 +341,42 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
         </View>
       )}
 
+      <View style={styles.agentModeRow} accessibilityLabel="Agent 模式">
+        {AGENT_MODES.map(mode => {
+          const selected = agentMode === mode.id;
+          return (
+            <Pressable
+              key={mode.id}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setAgentMode(mode.id);
+              }}
+              style={({ pressed }) => [
+                styles.agentModeChip,
+                selected && styles.agentModeChipActive,
+                pressed && styles.agentModeChipPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              accessibilityLabel={`切换到${mode.label}模式`}
+            >
+              <Ionicons
+                name={mode.icon}
+                size={14}
+                color={selected ? C.green500 : C.ink3}
+              />
+              <Text
+                maxFontSizeMultiplier={1.2}
+                style={[styles.agentModeText, selected && styles.agentModeTextActive]}
+                numberOfLines={1}
+              >
+                {mode.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
       {/* 输入栏 */}
       <View style={styles.inputBar}>
         <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn} accessibilityLabel="附件菜单">
@@ -353,7 +430,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
             <TextInput
               ref={textInputRef}
               style={styles.textInput}
-              placeholder="问阿衡，或按住说话"
+              placeholder={MODE_PLACEHOLDER[agentMode]}
               placeholderTextColor={C.ink3}
               value={input}
               onChangeText={setInput}
@@ -457,6 +534,46 @@ function MenuItem({ icon, label, desc, onPress }: { icon: any; label: string; de
 // 录音蒙层的红色/灰色为固定 mic 录音态语义, 不走主题 token.
 const styles = StyleSheet.create({
   /* ── 输入栏 ── */
+  agentModeRow: {
+    flexDirection: 'row',
+    gap: 7,
+    paddingHorizontal: revaSpacing.s3,
+    paddingTop: 8,
+    paddingBottom: 2,
+    backgroundColor: C.paper,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+  },
+  agentModeChip: {
+    flex: 1,
+    minHeight: 30,
+    borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    backgroundColor: C.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+  },
+  agentModeChipActive: {
+    backgroundColor: C.green50,
+    borderColor: C.green100,
+  },
+  agentModeChipPressed: {
+    opacity: 0.72,
+  },
+  agentModeText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    fontWeight: '800',
+    color: C.ink3,
+    lineHeight: 15,
+  } as TextStyle,
+  agentModeTextActive: {
+    color: C.green500,
+  } as TextStyle,
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 6,
     paddingHorizontal: revaSpacing.s3,

@@ -84,6 +84,7 @@ export function RuntimeAgendaCardView(data: RuntimeAgendaData) {
   const boundary = text(data.safety_boundary) || '这是健康管理建议,不替代医生诊断。';
   const timeWindow = formatTimeWindow(text(action.time_window));
   const priority = formatPriority(text(action.priority_tier));
+  const actionKind = formatActionKind(text(action.kind));
   const replanReason = formatReplanReason(text(action.replan_reason));
   const verifyDays = numberText(action.verification_window_days);
 
@@ -104,39 +105,38 @@ export function RuntimeAgendaCardView(data: RuntimeAgendaData) {
           </View>
           <View style={styles.heroBody}>
             <Text maxFontSizeMultiplier={1.2} style={styles.eyebrow}>
-              未来节奏
+              下一步行动
             </Text>
             <Text maxFontSizeMultiplier={1.3} style={styles.actionTitle} numberOfLines={3}>
-              围绕当前重点动态重排
+              {actionTitle}
             </Text>
+            {stateSummary ? (
+              <Text maxFontSizeMultiplier={1.2} style={styles.heroSummary} numberOfLines={2}>
+                {stateSummary}
+              </Text>
+            ) : null}
           </View>
         </View>
 
         <View style={styles.heroMeta}>
+          {actionKind ? <SignalPill icon="layers-outline" label={actionKind} /> : null}
           {timeWindow ? <SignalPill icon="time-outline" label={timeWindow} /> : null}
           {priority ? <SignalPill icon="flag-outline" label={priority} /> : null}
           {verifyDays ? <SignalPill icon="analytics-outline" label={`${verifyDays}天验证`} /> : null}
         </View>
       </View>
 
-      {stateSummary || replanReason ? (
+      {replanReason ? (
         <View style={styles.reasonBlock}>
           <Text maxFontSizeMultiplier={1.2} style={styles.sectionLabel}>
-            为什么这样排
+            为什么现在
           </Text>
-          {stateSummary ? (
-            <Text maxFontSizeMultiplier={1.3} style={styles.summary} numberOfLines={3}>
-              {stateSummary}
+          <View style={styles.reasonChip}>
+            <Ionicons name="git-compare-outline" size={11} color={C.green500} />
+            <Text maxFontSizeMultiplier={1.2} style={styles.reasonText} numberOfLines={1}>
+              {replanReason}
             </Text>
-          ) : null}
-          {replanReason ? (
-            <View style={styles.reasonChip}>
-              <Ionicons name="git-compare-outline" size={11} color={C.green500} />
-              <Text maxFontSizeMultiplier={1.2} style={styles.reasonText} numberOfLines={1}>
-                {replanReason}
-              </Text>
-            </View>
-          ) : null}
+          </View>
         </View>
       ) : null}
 
@@ -216,7 +216,7 @@ function DayRow({
 }) {
   const dayTitle = text(day.next_action_title);
   const formattedDayTitle = dayTitle ? formatHealthActionTitle(dayTitle) : null;
-  const visibleTitle = formattedDayTitle === currentTitle ? '当前重点行动' : formattedDayTitle || '待运行时重排';
+  const visibleTitle = formattedDayTitle === currentTitle ? '延续当前行动' : formattedDayTitle || '待运行时重排';
   const dayLabel = formatDayLabel(text(day.date), index);
   return (
     <View style={styles.day}>
@@ -260,6 +260,23 @@ function formatPriority(value: string | undefined): string | undefined {
     P3: '低负担',
   };
   return map[normalized] || value;
+}
+
+function formatActionKind(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const map: Record<string, string> = {
+    movement: '运动',
+    exercise: '运动',
+    hydration: '饮水',
+    nutrition: '饮食',
+    diet: '饮食',
+    medication: '用药',
+    supplement: '补剂',
+    sleep: '睡眠',
+    review: '复查',
+    lab_review: '复查',
+  };
+  return map[value] || value.replace(/_/g, ' ');
 }
 
 function formatReplanReason(value: string | undefined): string | undefined {
@@ -362,6 +379,14 @@ const styles = StyleSheet.create({
     color: C.focusInk1,
     lineHeight: 23,
     marginTop: 2,
+  } as TextStyle,
+  heroSummary: {
+    marginTop: 6,
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    fontWeight: '600',
+    color: C.focusInk2,
+    lineHeight: 17,
   } as TextStyle,
   heroMeta: {
     marginTop: 10,

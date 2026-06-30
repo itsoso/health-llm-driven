@@ -170,10 +170,10 @@ describe('renderCard 安全降级', () => {
     const r = renderCard(descriptor, { onAction });
     expect(r).not.toBeNull();
 
-    const { getByText } = render(r!);
+    const { getByText, queryByText } = render(r!);
     expect(getByText('7天验证节奏')).toBeTruthy();
-    expect(getByText('围绕当前重点动态重排')).toBeTruthy();
-    expect(() => getByText('晚餐后步行 15 分钟')).toThrow();
+    expect(getByText('晚餐后步行 15 分钟')).toBeTruthy();
+    expect(queryByText('围绕当前重点动态重排')).toBeNull();
     expect(getByText('基于今日状态重排')).toBeTruthy();
     expect(getByText('晚间')).toBeTruthy();
     expect(getByText('腰围')).toBeTruthy();

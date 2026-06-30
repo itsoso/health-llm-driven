@@ -98,6 +98,25 @@ describe('ChatInputBar', () => {
     expect(mockStopAndTranscribe).toHaveBeenCalled();
   });
 
+  it('sends the selected agent mode as chat context without polluting the user text', () => {
+    const onSend = jest.fn();
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('切换到深思模式'));
+    fireEvent.changeText(getByLabelText('消息输入框'), '帮我调整训练计划');
+    fireEvent.press(getByLabelText('发送消息'));
+
+    expect(onSend).toHaveBeenCalledWith(
+      '帮我调整训练计划',
+      null,
+      expect.objectContaining({
+        extraContext: expect.stringContaining('"mode":"deep"'),
+      }),
+    );
+  });
+
   it('runs the medical exam import skill from the attachment menu', async () => {
     const DocumentPicker = require('expo-document-picker');
     DocumentPicker.getDocumentAsync.mockResolvedValueOnce({

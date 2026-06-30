@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { deleteConversation, getConversations, updateConversationTitle } from '../../services/chat';
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
-import ChatInputBar from '../../components/chat/ChatInputBar';
+import ChatInputBar, { type ChatInputSendOptions } from '../../components/chat/ChatInputBar';
 import ChatBubble from '../../components/chat/ChatBubble';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import OpenerCard from '../../components/chat/OpenerCard';
@@ -277,9 +277,9 @@ export default function ChatScreen() {
     return () => { showSub.remove(); hideSub.remove(); };
   }, []);
 
-  const handleSend = useCallback((text: string, images?: any) => {
+  const handleSend = useCallback((text: string, images?: any, options?: ChatInputSendOptions) => {
     isNearBottom.current = true;
-    sendMessage(text, images);
+    sendMessage(text, images, options?.extraContext ? { extraContext: options.extraContext } : undefined);
     setContextBadge(null);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
   }, [sendMessage]);
