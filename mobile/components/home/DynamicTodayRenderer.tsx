@@ -42,7 +42,14 @@ export default function DynamicTodayRenderer({
   onDailyArtifactPressAction?: (artifact: DailyArtifact, action: DailyArtifactTopAction) => void;
   onCardAction?: (action: ChatCardActionDescriptor, descriptor: ServerCardDescriptor) => void;
 }) {
+  const hasDailyArtifact = (view?.sections ?? []).some((section) =>
+    section.cards.some((card) => card.type === 'daily_artifact'),
+  );
   const sections = [...(view?.sections ?? [])]
+    .map((section) => ({
+      ...section,
+      cards: section.cards.filter((card) => !(hasDailyArtifact && card.type === 'runtime_agenda')),
+    }))
     .filter((section) => section.cards.length > 0)
     .sort((a, b) => b.priority - a.priority);
   if (sections.length === 0) return null;

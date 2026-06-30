@@ -449,11 +449,11 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
       ],
     };
 
-    const { getByTestId, getByText, queryByLabelText } = render(<TodayScreen />);
+    const { getByTestId, getByText, queryByLabelText, queryByText } = render(<TodayScreen />);
 
     expect(getByTestId('dynamic-today-view')).toBeTruthy();
     expect(getByText('阿衡动态生成的餐后步行')).toBeTruthy();
-    expect(getByText('7天验证节奏')).toBeTruthy();
+    expect(queryByText('7天验证节奏')).toBeNull();
     expect(queryByLabelText('现在该做:旧 Hero 行动')).toBeNull();
   });
 
