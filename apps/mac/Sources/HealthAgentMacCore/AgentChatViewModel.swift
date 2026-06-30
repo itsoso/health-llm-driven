@@ -225,14 +225,41 @@ public enum AgentStructuredCommandParser {
             with: "",
             options: .regularExpression
         )
-        let out = result
+        // GenUI(契约 v0):```reva-ui 围栏块必须**整段原样保留**——否则下面的逐行清洗会把
+        // 闭合 ``` 行当成 legacy 命令围栏删掉,导致 RevaUIBlock.split 把它判为「未闭合」而退回
+        // 纯文本,图表占位永远生不出来(线上首个 reva-ui 块只渲染成裸文本的根因)。
+        // 用同一个 split 作为围栏识别的唯一真源:reva-ui 段照搬,普通段才走清洗。
+        let segments = RevaUIBlock.split(from: result)
+        let out: String
+        if segments.contains(where: { if case .revaUI = $0 { return true } else { return false } }) {
+            var pieces: [String] = []
+            for segment in segments {
+                switch segment {
+                case .revaUI(let rawJSON):
+                    // 原样重建闭合围栏(split 切掉了围栏标记本身,这里补回)。
+                    pieces.append("```reva-ui\n" + rawJSON + "\n```")
+                case .markdown(let text):
+                    let cleaned = cleanDisplayLines(text)
+                    if !cleaned.isEmpty { pieces.append(cleaned) }
+                }
+            }
+            out = pieces.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            out = cleanDisplayLines(result)
+        }
+        displayTextCache.setObject(StringBox(out), forKey: key)
+        return out
+    }
+
+    /// 逐行清洗普通文本段:trim 每行、丢空行、剥 legacy `` ``` `` / ``` ```json ``` 围栏标记。
+    /// **不得**对 reva-ui 围栏内容调用——那会删掉闭合 ``` 行毁掉图表块(见 displayText)。
+    private static func cleanDisplayLines(_ text: String) -> String {
+        text
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && $0 != "```" && $0 != "```json" }
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        displayTextCache.setObject(StringBox(out), forKey: key)
-        return out
     }
 
     private struct StructuredCommand {
