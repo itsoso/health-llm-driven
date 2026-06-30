@@ -24,7 +24,7 @@ Options:
   --output DIR  Write the .app bundle into DIR.
   --debug       Build the debug binary instead of release.
   --open        Open the app after packaging.
-  --install     Copy the packaged app to /Applications/健康 Agent.app.
+  --install     Copy the packaged app to /Applications/阿衡.app.
   --no-sign     Skip local ad-hoc codesign.
 USAGE
 }
@@ -106,7 +106,7 @@ cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
   <key>CFBundleDevelopmentRegion</key>
   <string>zh-Hans</string>
   <key>CFBundleDisplayName</key>
-  <string>健康 Agent</string>
+  <string>阿衡</string>
   <key>CFBundleExecutable</key>
   <string>${APP_NAME}</string>
   <key>CFBundleIdentifier</key>
@@ -114,7 +114,7 @@ cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>健康 Agent</string>
+  <string>阿衡</string>
   <key>CFBundleIconFile</key>
   <string>HealthAgentIcon</string>
   <key>CFBundlePackageType</key>
@@ -150,7 +150,7 @@ fi
 echo "Packaged ${APP_BUNDLE}"
 
 if [[ "${INSTALL_AFTER_BUILD}" == "1" ]]; then
-  INSTALL_APP="/Applications/健康 Agent.app"
+  INSTALL_APP="/Applications/阿衡.app"
   rm -rf "${INSTALL_APP}"
   cp -R "${APP_BUNDLE}" "${INSTALL_APP}"
   echo "Installed ${INSTALL_APP}"
@@ -158,7 +158,7 @@ fi
 
 if [[ "${OPEN_AFTER_BUILD}" == "1" ]]; then
   if [[ "${INSTALL_AFTER_BUILD}" == "1" ]]; then
-    open "/Applications/健康 Agent.app"
+    open "/Applications/阿衡.app"
   else
     open "${APP_BUNDLE}"
   fi
