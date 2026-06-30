@@ -431,6 +431,19 @@
   .reva-ui-axislabel { fill: var(--secondary); font-size: 10px; }
   .reva-ui-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
   .reva-ui-dot { stroke: var(--bg); stroke-width: 1; }
+  /* role-based 折线样式(stroke 颜色由 builder 内联;粗细/透明度按角色) */
+  .reva-ui-line-raw { stroke-width: 1; opacity: 0.35; }
+  .reva-ui-line-avg7 { stroke-width: 3; }
+  .reva-ui-line-avg30 { stroke-width: 2; }
+  .reva-ui-line-device { stroke-width: 1; opacity: 0.55; }
+  /* latest 标注 callout 框 + 引线 */
+  .reva-ui-callout-leader { stroke: var(--secondary); stroke-width: 1; stroke-dasharray: 2 2; }
+  .reva-ui-callout-box { fill: rgba(30, 30, 32, 0.92); stroke: rgba(255, 255, 255, 0.18); stroke-width: 1; }
+  .reva-ui-callout-text { fill: #fff; font-size: 10px; font-weight: 700; }
+  @media (prefers-color-scheme: light) {
+    .reva-ui-callout-box { fill: rgba(255, 255, 255, 0.96); stroke: rgba(0, 0, 0, 0.16); }
+    .reva-ui-callout-text { fill: #1d1d1f; }
+  }
   .reva-ui-ann-warn { stroke: #ff453a; fill: #ff453a; }
   .reva-ui-ann-info { stroke: var(--accent); fill: var(--accent); }
   .reva-ui-ann-good { stroke: #34c759; fill: #34c759; }
@@ -452,7 +465,17 @@
   }
   .reva-ui-legend-item { display: inline-flex; align-items: center; gap: 5px; }
   .reva-ui-legend-swatch { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
+  /* device/raw 这类以散点表达的序列,图例用圆点提示 */
+  .reva-ui-legend-swatch.dots { width: 8px; height: 8px; border-radius: 50%; }
   .reva-ui-note { margin-top: 6px; font-size: 0.78em; color: var(--secondary); }
+  .reva-ui-disclaimer {
+    margin-top: 6px;
+    padding-top: 5px;
+    border-top: 1px solid var(--hr);
+    font-size: 0.74em;
+    color: var(--secondary);
+    line-height: 1.4;
+  }
   .reva-ui-tooltip {
     position: fixed;
     z-index: 30;
@@ -527,6 +550,31 @@
   var REVA_PAD = { top: 14, right: 16, bottom: 34, left: 44 };
   var REVA_COLORS = ["#0a84ff", "#34c759", "#ff9f0a", "#bf5af2", "#ff453a", "#64d2ff"];
 
+  // 角色 → 固定调色板 + 线型(dark-mode 双安全的 system 色)。缺省/未知角色回退默认。
+  // teal=7d hero,tan/amber=30d,blue=Apple Watch device,灰=raw 噪声背景。
+  var REVA_ROLE_STYLE = {
+    raw:     { color: "#8e8e93", lineClass: "reva-ui-line-raw",    dots: false, dotR: 0   },
+    avg_7d:  { color: "#30b070", lineClass: "reva-ui-line-avg7",   dots: false, dotR: 0   },
+    avg_30d: { color: "#d99a3a", lineClass: "reva-ui-line-avg30",  dots: false, dotR: 0   },
+    device:  { color: "#0a84ff", lineClass: "reva-ui-line-device", dots: true,  dotR: 2.6 },
+    value:   { color: null,      lineClass: "reva-ui-line",        dots: true,  dotR: 3   }
+  };
+  // 解析一个 series 的有效样式:role 命中表则用之(color 缺省回退调色板槽);否则走 value。
+  function revaStyleForSeries(series, slotIndex) {
+    var role = series && typeof series.role === "string" ? series.role : "value";
+    var style = REVA_ROLE_STYLE[role] || REVA_ROLE_STYLE.value;
+    var color = style.color || REVA_COLORS[slotIndex % REVA_COLORS.length];
+    return { role: role, color: color, lineClass: style.lineClass, dots: style.dots, dotR: style.dotR };
+  }
+
+  // x 轴日期刻度格式化:"2026-06-30" → "06-30";"06-30" 原样;非日期串原样返回。
+  function revaFmtDateTick(s) {
+    if (typeof s !== "string") return String(s == null ? "" : s);
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (m) return m[2] + "-" + m[3];
+    return s;
+  }
+
   function revaEscapeXML(s) {
     return String(s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -591,12 +639,22 @@
     var i, k;
     for (i = 0; i < n; i += step) {
       parts.push('<text class="reva-ui-axislabel" x="' + xAt(i).toFixed(1) + '" y="' + (y0 + plotH + 14) +
-        '" text-anchor="middle">' + revaEscapeXML(x[i]) + '</text>');
+        '" text-anchor="middle">' + revaEscapeXML(revaFmtDateTick(x[i])) + '</text>');
     }
 
-    // 折线 + 点(null 断开)
-    for (k = 0; k < series.length; k++) {
-      var color = REVA_COLORS[k % REVA_COLORS.length];
+    // 折线 + 点(null 断开)。角色决定线型/颜色/是否画点(raw/avg* 不画点,device/value 画点)。
+    // 绘制顺序:先 raw(底噪),后 device,再 30d/7d/value——保证 hero 线压在最上。
+    var drawOrder = [];
+    for (k = 0; k < series.length; k++) { drawOrder.push(k); }
+    var ROLE_Z = { raw: 0, device: 1, avg_30d: 2, value: 3, avg_7d: 4 };
+    drawOrder.sort(function (a, b) {
+      var za = ROLE_Z[(series[a] && series[a].role) || "value"]; if (za === undefined) za = 3;
+      var zb = ROLE_Z[(series[b] && series[b].role) || "value"]; if (zb === undefined) zb = 3;
+      return za - zb || a - b;
+    });
+    for (var oi = 0; oi < drawOrder.length; oi++) {
+      k = drawOrder[oi];
+      var st = revaStyleForSeries(series[k], k);
       var pts = series[k].points || [];
       var d = "", penDown = false, val, px, py;
       for (i = 0; i < n; i++) {
@@ -609,24 +667,32 @@
           penDown = false; // gap
         }
       }
+      // device 角色以散点为主,但仍画一条很淡的连线辅助阅读;raw 画淡线不画点。
       if (d) {
-        parts.push('<path class="reva-ui-line" d="' + d.trim() + '" stroke="' + color + '"/>');
+        parts.push('<path class="reva-ui-line ' + st.lineClass + '" d="' + d.trim() +
+          '" stroke="' + st.color + '"/>');
       }
-      for (i = 0; i < n; i++) {
-        val = pts[i];
-        if (!revaIsFiniteNum(val)) continue;
-        px = xAt(i); py = yAt(val);
-        var tip = (series[k].name ? series[k].name + " · " : "") + x[i] + ": " +
-          revaFmtNum(val) + (spec.unit ? " " + spec.unit : "");
-        parts.push('<circle class="reva-ui-dot" cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) +
-          '" r="3" fill="' + color + '" data-tip="' + revaEscapeXML(tip) + '"/>');
+      if (st.dots && st.dotR > 0) {
+        for (i = 0; i < n; i++) {
+          val = pts[i];
+          if (!revaIsFiniteNum(val)) continue;
+          px = xAt(i); py = yAt(val);
+          var tip = (series[k].name ? series[k].name + " · " : "") + x[i] + ": " +
+            revaFmtNum(val) + (spec.unit ? " " + spec.unit : "");
+          parts.push('<circle class="reva-ui-dot" cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) +
+            '" r="' + st.dotR + '" fill="' + st.color + '" data-tip="' + revaEscapeXML(tip) + '"/>');
+        }
       }
     }
 
-    // 注解(竖标记 + 标签),按 x 文本匹配索引
+    // 注解。kind === "latest" → callout 框 + 引线指向最后一个非空点;其余(warn/info/good)沿用竖标记。
     var anns = Array.isArray(spec.annotations) ? spec.annotations : [];
     for (i = 0; i < anns.length; i++) {
       var a = anns[i];
+      if (a && a.kind === "latest") {
+        parts.push(revaBuildLatestCallout(a, spec, series, x, n, xAt, yAt, x0, y0, plotW, plotH));
+        continue;
+      }
       var idx = x.indexOf(a.x);
       if (idx < 0) continue;
       var kind = (a.kind === "warn" || a.kind === "good") ? a.kind : "info";
@@ -650,6 +716,71 @@
     if (!revaIsFiniteNum(v)) return "";
     if (Math.abs(v) >= 100 || Number.isInteger(v)) return String(Math.round(v));
     return (Math.round(v * 10) / 10).toString();
+  }
+
+  // 找出 latest callout 的锚点(x 索引 + 值)。优先 annotation.x 命中,否则取 hero 序列
+  // (avg_7d > value > 第一条有非空尾点的序列)的最后一个非空点。返回 null 表示无法定位。
+  function revaFindLatestAnchor(ann, series, x, n) {
+    // annotation 显式 x 命中时,在偏好序列里取该索引的值。
+    var prefOrder = [], i, k;
+    for (k = 0; k < series.length; k++) {
+      var role = (series[k] && series[k].role) || "value";
+      if (role === "avg_7d") prefOrder.unshift(k); else prefOrder.push(k);
+    }
+    var idx = (ann && typeof ann.x !== "undefined") ? x.indexOf(ann.x) : -1;
+    if (idx >= 0) {
+      for (i = 0; i < prefOrder.length; i++) {
+        var v0 = (series[prefOrder[i]].points || [])[idx];
+        if (revaIsFiniteNum(v0)) return { idx: idx, value: v0 };
+      }
+    }
+    // 回退:跨偏好序列,找全局最靠右的非空点。
+    var bestIdx = -1, bestVal = null;
+    for (i = 0; i < prefOrder.length; i++) {
+      var pts = series[prefOrder[i]].points || [];
+      for (k = n - 1; k >= 0; k--) {
+        if (revaIsFiniteNum(pts[k])) {
+          if (k > bestIdx) { bestIdx = k; bestVal = pts[k]; }
+          break;
+        }
+      }
+    }
+    if (bestIdx < 0) return null;
+    return { idx: bestIdx, value: bestVal };
+  }
+
+  // 构建 latest callout SVG 片段:引线 + 圆点高亮 + 右上角(或就近)文本框 "最新 NN.N ms · label"。
+  function revaBuildLatestCallout(ann, spec, series, x, n, xAt, yAt, x0, y0, plotW, plotH) {
+    var anchor = revaFindLatestAnchor(ann, series, x, n);
+    if (!anchor) return "";
+    var px = xAt(anchor.idx), py = yAt(anchor.value);
+    var unit = spec && spec.unit ? " " + spec.unit : "";
+    var label = ann && ann.label ? String(ann.label) : revaFmtDateTick(x[anchor.idx]);
+    var text = "最新 " + revaFmtNum(anchor.value) + unit + (label ? " · " + label : "");
+    // 文本框尺寸估算(等宽近似:中文按 ~9px,其他按 ~5.5px),固定贴右上但夹在绘图区内。
+    var charW = 0, ci;
+    for (ci = 0; ci < text.length; ci++) {
+      charW += text.charCodeAt(ci) > 255 ? 9 : 5.4;
+    }
+    var boxW = Math.min(plotW - 4, charW + 14);
+    var boxH = 18;
+    var boxX = x0 + plotW - boxW;          // 贴右
+    var boxY = y0 + 2;                       // 贴顶
+    // 若锚点就在右上角附近,把框左移以免遮点。
+    if (px > boxX - 6 && py < boxY + boxH + 6) { boxX = Math.max(x0, px - boxW - 8); }
+    var s = "";
+    // 引线:从框底缘中点到锚点。
+    var leaderX = boxX + boxW / 2, leaderY = boxY + boxH;
+    s += '<line class="reva-ui-callout-leader" x1="' + leaderX.toFixed(1) + '" y1="' + leaderY.toFixed(1) +
+      '" x2="' + px.toFixed(1) + '" y2="' + py.toFixed(1) + '"/>';
+    // 锚点高亮圈。
+    s += '<circle class="reva-ui-ann-info" cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="3.5"/>';
+    // 框 + 文本。
+    s += '<rect class="reva-ui-callout-box" x="' + boxX.toFixed(1) + '" y="' + boxY.toFixed(1) +
+      '" width="' + boxW.toFixed(1) + '" height="' + boxH + '" rx="5"/>';
+    s += '<text class="reva-ui-callout-text" x="' + (boxX + boxW / 2).toFixed(1) + '" y="' + (boxY + 12).toFixed(1) +
+      '" text-anchor="middle">' + revaEscapeXML(text) + '</text>';
+    return s;
   }
 
   // 单例 tooltip(fixed 定位,鼠标在点上时显示)。
@@ -691,22 +822,30 @@
     if (spec.title) html += '<div class="reva-ui-title">' + revaEscapeXML(spec.title) + '</div>';
     if (spec.unit) html += '<div class="reva-ui-unit">单位: ' + revaEscapeXML(spec.unit) + '</div>';
     html += svg;
-    // 多序列图例
+    // 多序列图例(角色感知:device/raw 用圆点 swatch,折线类用横条 swatch)。
     var series = Array.isArray(spec.series) ? spec.series : [];
     if (series.length > 1) {
       var leg = '<div class="reva-ui-legend">';
       for (var s = 0; s < series.length; s++) {
-        var c = REVA_COLORS[s % REVA_COLORS.length];
-        leg += '<span class="reva-ui-legend-item"><span class="reva-ui-legend-swatch" style="background:' +
-          c + '"></span>' + revaEscapeXML(series[s].name || ("序列 " + (s + 1))) + '</span>';
+        var stl = revaStyleForSeries(series[s], s);
+        var swatchClass = stl.dots && stl.dotR > 0 && (series[s].role === "device" || series[s].role === "raw")
+          ? "reva-ui-legend-swatch dots" : "reva-ui-legend-swatch";
+        leg += '<span class="reva-ui-legend-item"><span class="' + swatchClass + '" style="background:' +
+          stl.color + '"></span>' + revaEscapeXML(series[s].name || ("序列 " + (s + 1))) + '</span>';
       }
       leg += '</div>';
       html += leg;
     }
-    var note = [];
-    if (spec.source) note.push("来源: " + spec.source);
-    if (spec.data_note) note.push(spec.data_note);
-    if (note.length) html += '<div class="reva-ui-note">' + revaEscapeXML(note.join(" · ")) + '</div>';
+    // source 仍走轻量 note;data_note / disclaimer 作为底部免责声明脚注(有任一即渲染)。
+    if (spec.source) {
+      html += '<div class="reva-ui-note">' + revaEscapeXML("来源: " + spec.source) + '</div>';
+    }
+    var foot = [];
+    if (spec.data_note) foot.push(spec.data_note);
+    if (spec.disclaimer) foot.push(spec.disclaimer);
+    if (foot.length) {
+      html += '<div class="reva-ui-disclaimer">' + revaEscapeXML(foot.join(" · ")) + '</div>';
+    }
     el.innerHTML = html;
 
     // hover tooltip(桌面 WebView)
