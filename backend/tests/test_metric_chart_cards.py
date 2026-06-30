@@ -35,9 +35,9 @@ def test_metric_chart_builds_weight_from_weight_records(db):
 
     today = date.today()
     db.add_all([
-        WeightRecord(user_id=3, record_date=today - timedelta(days=4), weight=74.5, source="manual"),
-        WeightRecord(user_id=3, record_date=today - timedelta(days=2), weight=74.0, source="manual"),
-        WeightRecord(user_id=3, record_date=today, weight=73.8, source="manual"),
+        WeightRecord(user_id=3, record_date=today - timedelta(days=4), weight=74.5),
+        WeightRecord(user_id=3, record_date=today - timedelta(days=2), weight=74.0),
+        WeightRecord(user_id=3, record_date=today, weight=73.8),
     ])
     db.commit()
 

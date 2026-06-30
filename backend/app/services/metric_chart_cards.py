@@ -113,7 +113,7 @@ def build_metric_chart(db: Session, *, user_id: int, query: str) -> Optional[Dic
         rows_by_date.setdefault(row_date, []).append({
             metric.value_column: raw.get("metric_value"),
             "metric_value": raw.get("metric_value"),
-            "data_source": raw.get("data_source") or "unknown",
+            "data_source": raw.get("data_source") or _default_source(metric),
             "id": raw.get("id") or 0,
         })
 
