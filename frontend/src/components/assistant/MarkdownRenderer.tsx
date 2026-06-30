@@ -10,7 +10,8 @@ const CHART_COLORS = ['#0f9f7a', '#2563eb', '#7c3aed', '#d97706', '#dc2626'];
 type Variant = 'dark' | 'light';
 type MarkdownSegment =
   | { kind: 'markdown'; text: string }
-  | { kind: 'chart'; data: RevaUiLineChartData };
+  | { kind: 'chart'; data: RevaUiLineChartData }
+  | { kind: 'empty'; data: RevaUiMetricEmptyStateData };
 
 interface RevaUiLineChartSeries {
   name?: string;
@@ -37,6 +38,18 @@ interface RevaUiLineChartData {
   annotations?: RevaUiLineChartAnnotation[];
   source?: string;
   data_note?: string;
+}
+
+interface RevaUiMetricEmptyStateData {
+  v: 1;
+  component: 'metric_empty_state';
+  schema?: string;
+  metric?: string;
+  range?: string;
+  title?: string;
+  message?: string;
+  suggestions?: string[];
+  boundary?: string;
 }
 
 const styles: Record<Variant, {
@@ -119,12 +132,15 @@ function ToolStep({ name, status }: { name?: string; status?: string }) {
 export default function MarkdownRenderer({ content, variant = 'light' }: { content: string; variant?: Variant }) {
   const s = styles[variant];
   const segments = splitRevaUiSegments(content);
-  if (segments.length > 1 || segments[0]?.kind === 'chart') {
+  if (segments.length > 1 || segments[0]?.kind !== 'markdown') {
     return (
       <>
         {segments.map((segment, index) => {
           if (segment.kind === 'chart') {
             return <RevaUiLineChartCard key={`chart-${index}`} data={segment.data} variant={variant} />;
+          }
+          if (segment.kind === 'empty') {
+            return <RevaUiMetricEmptyStateCard key={`empty-${index}`} data={segment.data} variant={variant} />;
           }
           if (!segment.text.trim()) return null;
           return (
@@ -192,8 +208,8 @@ function splitRevaUiSegments(content: string): MarkdownSegment[] {
     const start = match.index ?? 0;
     const before = content.slice(cursor, start);
     if (before) segments.push({ kind: 'markdown', text: before });
-    const chart = parseRevaUiChart(match[1]);
-    if (chart) segments.push({ kind: 'chart', data: chart });
+    const block = parseRevaUiBlock(match[1]);
+    if (block) segments.push(block);
     cursor = start + match[0].length;
   }
   const rest = content.slice(cursor);
@@ -201,7 +217,7 @@ function splitRevaUiSegments(content: string): MarkdownSegment[] {
   return segments.length ? segments : [{ kind: 'markdown', text: content }];
 }
 
-function parseRevaUiChart(payload: string): RevaUiLineChartData | null {
+function parseRevaUiBlock(payload: string): Extract<MarkdownSegment, { kind: 'chart' | 'empty' }> | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(payload.trim());
@@ -209,11 +225,64 @@ function parseRevaUiChart(payload: string): RevaUiLineChartData | null {
     return null;
   }
   if (!parsed || typeof parsed !== 'object') return null;
-  const block = parsed as RevaUiLineChartData;
+  const block = parsed as RevaUiLineChartData | RevaUiMetricEmptyStateData;
   if (block.v !== 1) return null;
-  if (block.component !== 'line_chart' && block.component !== 'metric_line_chart') return null;
-  if (!Array.isArray(block.x) || !Array.isArray(block.series)) return null;
-  return block;
+  if (block.component === 'line_chart' || block.component === 'metric_line_chart') {
+    const chart = block as RevaUiLineChartData;
+    if (!Array.isArray(chart.x) || !Array.isArray(chart.series)) return null;
+    return { kind: 'chart', data: chart };
+  }
+  if (block.component === 'metric_empty_state') {
+    return { kind: 'empty', data: block as RevaUiMetricEmptyStateData };
+  }
+  return null;
+}
+
+function RevaUiMetricEmptyStateCard({ data, variant }: { data: RevaUiMetricEmptyStateData; variant: Variant }) {
+  const dark = variant === 'dark';
+  const suggestions = Array.isArray(data.suggestions) ? data.suggestions.filter(Boolean).slice(0, 4) : [];
+  return (
+    <div
+      className={[
+        'my-4 overflow-hidden rounded-2xl border p-4 shadow-sm',
+        dark
+          ? 'border-white/10 bg-white/[0.06] text-zinc-100'
+          : 'border-amber-100 bg-white text-slate-900',
+      ].join(' ')}
+      data-testid="reva-ui-empty-state-card"
+    >
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div>
+          <div className={dark ? 'text-sm font-semibold text-white' : 'text-sm font-semibold text-slate-950'}>
+            {data.title || '数据不足'}
+          </div>
+          <div className={dark ? 'mt-1 text-sm leading-6 text-zinc-300' : 'mt-1 text-sm leading-6 text-slate-600'}>
+            {data.message || '暂无足够数据生成趋势图。'}
+          </div>
+        </div>
+        <div className={dark ? 'rounded-full bg-amber-300/10 px-2.5 py-1 text-xs text-amber-200' : 'rounded-full bg-amber-50 px-2.5 py-1 text-xs text-amber-700'}>
+          待补齐
+        </div>
+      </div>
+      {suggestions.length ? (
+        <div className="mt-3 grid gap-2">
+          {suggestions.map((item, index) => (
+            <div
+              key={`${item}-${index}`}
+              className={dark ? 'rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-zinc-300' : 'rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-700'}
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {data.boundary ? (
+        <div className={dark ? 'mt-3 text-xs leading-5 text-zinc-500' : 'mt-3 text-xs leading-5 text-slate-500'}>
+          {data.boundary}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function RevaUiLineChartCard({ data, variant }: { data: RevaUiLineChartData; variant: Variant }) {

@@ -115,8 +115,8 @@ def _check_recent_dup(user_id: int, message: str) -> bool:
 # 带 genui-v1 cap 落到这里会走 LLM 吐 ASCII/文本, 不出图。
 #
 # 铁律 (R4): 图表数值全部来自 chart_builder 的 DB 查询, 本路径绝不调用 LLM。
-# 数据不足 / 异常 → 返回 None, 调用方 FALL THROUGH 到普通 AgentExecutor 路径
-# (永不因 genui 失败而断聊天)。
+# 数据不足: 新端 (genui-components-v1) 返回 metric_empty_state; 旧端继续 fall through。
+# 异常 → 返回 None, 调用方 FALL THROUGH 到普通 AgentExecutor 路径。
 # ---------------------------------------------------------------------------
 
 GENUI_CAP = "genui-v1"
@@ -131,6 +131,12 @@ _GENUI_METRIC_LABEL = {
     "steps": "步数",
     "body_battery": "身体电量",
     "weight": "体重",
+    "bp_systolic": "收缩压",
+    "bp_diastolic": "舒张压",
+    "waist": "腰围",
+    "body_fat": "体脂率",
+    "blood_glucose": "血糖",
+    "spo2": "血氧",
 }
 _GENUI_RANGE_LABEL = {"7d": "最近一周", "1m": "近一个月", "3m": "近三个月", "6m": "近半年"}
 
@@ -151,6 +157,7 @@ def _maybe_genui_chart_events(
         return None
 
     from app.services.genui import (
+        build_empty_state,
         build_line_chart,
         detect_chart_request,
         render_reva_ui_block,
@@ -164,18 +171,25 @@ def _maybe_genui_chart_events(
     component = "metric_line_chart" if GENUI_COMPONENTS_CAP in (caps or []) else "line_chart"
     block = build_line_chart(db, user_id, metric, range=rng, component=component)
     if block is None:
-        # 数据不足: 与 orchestrator 路径一致 — 不补点, 回退普通路径 (让 LLM 解释/引导)。
-        return None
+        if GENUI_COMPONENTS_CAP not in (caps or []):
+            # 旧端只声明 line_chart, 不认识空状态组件, 保持历史回退行为。
+            return None
+        block = build_empty_state(metric, range=rng)
+        if block is None:
+            return None
 
     metric_label = _GENUI_METRIC_LABEL.get(metric, metric)
     range_label = _GENUI_RANGE_LABEL.get(rng, rng)
     note = block.get("data_note", "")
     # 确定性模板叙事 (无 LLM); 图表数值只来自 block。
-    intro = (
-        f"{range_label}{metric_label}趋势（数据来自你的设备，{note}）："
-        if note
-        else f"{range_label}{metric_label}趋势（数据来自你的设备）："
-    )
+    if block.get("component") == "metric_empty_state":
+        intro = f"{range_label}{metric_label}暂无足够数据："
+    else:
+        intro = (
+            f"{range_label}{metric_label}趋势（数据来自你的设备，{note}）："
+            if note
+            else f"{range_label}{metric_label}趋势（数据来自你的设备）："
+        )
     full_reply = f"{intro}\n\n{render_reva_ui_block(block)}"
 
     # 持久化: 与 AgentExecutor.run_stream 相同的 OpenClawService 会话/消息存储。

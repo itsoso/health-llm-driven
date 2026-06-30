@@ -457,6 +457,30 @@ describe('renderCard 安全降级', () => {
     expect(getByText(/最新 58 bpm/)).toBeTruthy();
   });
 
+  it('renders metric_empty_state dynamic UI cards', () => {
+    const descriptor = {
+      type: 'metric_empty_state',
+      data: {
+        schema: 'reva.metric_empty_state.v1',
+        component: 'metric_empty_state',
+        metric: 'blood_glucose',
+        range: '7d',
+        title: '血糖数据不足',
+        message: '暂无足够数据，至少需要 3 天真实记录后才能生成趋势图。',
+        suggestions: ['同步 HealthKit 或可穿戴设备数据', '补录最近几天的关键指标'],
+        boundary: '仅用于健康管理参考，不替代诊断或治疗。',
+      },
+    } as any;
+
+    const r = renderCard(descriptor);
+    expect(r).not.toBeNull();
+
+    const { getByText } = render(r!);
+    expect(getByText('血糖数据不足')).toBeTruthy();
+    expect(getByText(/至少需要 3 天真实记录/)).toBeTruthy();
+    expect(getByText('同步 HealthKit 或可穿戴设备数据')).toBeTruthy();
+  });
+
   it('cards_group 1 张子卡 → 直接渲染, 不包 grid', () => {
     const r = renderCard({
       type: 'cards_group',

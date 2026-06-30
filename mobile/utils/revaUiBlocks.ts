@@ -4,6 +4,7 @@ const REVA_UI_FENCE_RE = /\n?```reva-ui\s*\n([\s\S]*?)\n?```\n?/g;
 const REVA_UI_COMPONENT_TYPES: Record<string, ServerCardDescriptor['type']> = {
   line_chart: 'line_chart',
   metric_line_chart: 'metric_line_chart',
+  metric_empty_state: 'metric_empty_state',
 };
 
 export interface ExtractedRevaUiBlocks {

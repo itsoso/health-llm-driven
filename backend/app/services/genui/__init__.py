@@ -8,6 +8,7 @@ annotation 文案。数据不足时调用方显"数据不足", 绝不补点。
 """
 
 from app.services.genui.chart_builder import (
+    build_empty_state,
     build_line_chart,
     detect_chart_request,
     render_reva_ui_block,
@@ -17,6 +18,7 @@ from app.services.genui.chart_rich import compute_chart_rich
 
 __all__ = [
     "build_line_chart",
+    "build_empty_state",
     "detect_chart_request",
     "render_reva_ui_block",
     "SUPPORTED_METRICS",

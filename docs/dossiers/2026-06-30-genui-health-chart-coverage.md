@@ -4,8 +4,8 @@
 |---|---|
 | slug | `genui-health-chart-coverage` |
 | 创建日期 | 2026-06-30 |
-| 当前阶段 | S3 规划 |
-| 状态 | planning |
+| 当前阶段 | S5 验证 |
+| 状态 | verified_pending_release |
 | 负责 | Codex |
 | 反馈环 | TDD / backend contract test / Web build / Mobile Jest / OTA |
 
@@ -41,20 +41,29 @@
 
 ## S4/S5 实现任务
 
-- [ ] T1 Backend RED: 覆盖血压、腰围、体脂、血糖、SpO2 识别与 `metric_line_chart`。
-- [ ] T2 Backend RED: 数据不足返回 `metric_empty_state`, 不触达普通 LLM。
-- [ ] T3 Backend GREEN: 扩展 allowlist、DB fetch 和空态 block。
-- [ ] T4 Client RED/GREEN: Web/Mobile 解析并渲染 `metric_empty_state`。
-- [ ] T5 Verification: focused backend/frontend/mobile tests + Web build。
+- [x] T1 Backend RED: 覆盖血压、腰围、体脂、血糖、SpO2 识别与 `metric_line_chart`。
+- [x] T2 Backend RED: 数据不足返回 `metric_empty_state`, 不触达普通 LLM。
+- [x] T3 Backend GREEN: 扩展 allowlist、DB fetch 和空态 block。
+- [x] T4 Client RED/GREEN: Web/Mobile 解析并渲染 `metric_empty_state`。
+- [x] T5 Verification: focused backend/frontend/mobile tests + Web build。
 
 ## G3 测试
 
-待执行。
+- `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/pytest backend/tests/test_genui_chart.py -q` -> PASS, 66 passed。
+- `npm --prefix frontend test -- --run src/components/assistant/__tests__/MarkdownRenderer.test.tsx` -> PASS, 3 passed。
+- `npm --prefix frontend run build` -> PASS, compiled successfully; 存量 lint warnings 未新增阻断。
+- `pnpm --dir mobile exec jest mobile/utils/__tests__/revaUiBlocks.test.ts mobile/components/chat/cards/__tests__/registry.test.tsx --runInBand` -> PASS, 35 passed。
+- `pnpm --dir mobile exec tsc --noEmit` -> PASS。
+- `git diff --check` -> PASS。
+- 裁决: PASS。
 
 ## G4 安全
 
-待执行。
+- 本切片只读生成图表/空态, 不写健康数据、不诊断、不处方。
+- 图表数值来自 DB allowlist 字段; 数据不足时显式 `metric_empty_state`, 不让 LLM 补点或画 ASCII 图。
+- 旧端只声明 `genui-v1` 且数据不足时保持历史 fall through, 避免未知组件破坏兼容。
+- 裁决: PASS。
 
 ## S6/S7 部署与上线验证
 
-待执行。
+待发布。

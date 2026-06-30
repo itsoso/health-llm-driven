@@ -68,6 +68,17 @@ interface RevaUiLineChartData {
   data_note?: unknown;
 }
 
+interface MetricEmptyStateData {
+  component?: unknown;
+  schema?: unknown;
+  metric?: unknown;
+  range?: unknown;
+  title?: unknown;
+  message?: unknown;
+  suggestions?: unknown;
+  boundary?: unknown;
+}
+
 const CHART_W = 300;
 const CHART_H = 118;
 const PAD_X = 12;
@@ -108,6 +119,13 @@ function annotations(value: unknown): RevaUiLineChartAnnotation[] {
   return value.filter((item): item is RevaUiLineChartAnnotation => (
     !!item && typeof item === 'object' && !!text((item as RevaUiLineChartAnnotation).label)
   ));
+}
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => text(item))
+    .filter((item): item is string => !!item);
 }
 
 function formatValue(value: unknown, unit: string): string {
@@ -312,6 +330,42 @@ export function RevaUiLineChartCardView(data: RevaUiLineChartData) {
   );
 }
 
+export function MetricEmptyStateCardView(data: MetricEmptyStateData) {
+  const suggestions = stringList(data.suggestions).slice(0, 4);
+  const boundary = text(data.boundary) || '仅用于健康管理参考,不替代诊断或治疗。';
+  return (
+    <CardShell
+      icon="alert-circle"
+      iconColor={revaSemantic.caution.fg}
+      title={text(data.title) || '数据不足'}
+      badge="待补齐"
+      badgeColor={revaSemantic.caution.fg}
+      bg={C.surface}
+    >
+      <Text maxFontSizeMultiplier={1.2} style={styles.emptyMessage}>
+        {text(data.message) || '暂无足够数据生成趋势图。'}
+      </Text>
+      {suggestions.length > 0 ? (
+        <View style={styles.suggestionStack}>
+          {suggestions.map((item, index) => (
+            <View key={`${item}-${index}`} style={styles.suggestionItem}>
+              <Text maxFontSizeMultiplier={1.1} style={styles.suggestionIndex}>
+                {index + 1}
+              </Text>
+              <Text maxFontSizeMultiplier={1.2} style={styles.suggestionText}>
+                {item}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      <Text maxFontSizeMultiplier={1.2} style={styles.boundary}>
+        {boundary}
+      </Text>
+    </CardShell>
+  );
+}
+
 export function MetricChartCardView(data: MetricChartData) {
   const unit = text(data.unit) || '';
   const series = points(data.series);
@@ -429,6 +483,18 @@ export const MetricLineChartCardSpec: CardSpec<RevaUiLineChartData> = {
   render: (data) => <RevaUiLineChartCardView {...data} />,
 };
 
+export const MetricEmptyStateCardSpec: CardSpec<MetricEmptyStateData> = {
+  type: 'metric_empty_state',
+  label: '指标数据不足',
+  match() {
+    return null;
+  },
+  build() {
+    return null;
+  },
+  render: (data) => <MetricEmptyStateCardView {...data} />,
+};
+
 const styles = StyleSheet.create({
   hero: {
     flexDirection: 'row',
@@ -538,6 +604,48 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 15,
     color: C.ink3,
+  } as TextStyle,
+  emptyMessage: {
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    lineHeight: 19,
+    color: C.ink2,
+  } as TextStyle,
+  suggestionStack: {
+    marginTop: 10,
+    gap: 7,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: revaRadii.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: revaSemantic.caution.line,
+    backgroundColor: revaSemantic.caution.bg,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+  },
+  suggestionIndex: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    overflow: 'hidden',
+    backgroundColor: C.surface,
+    textAlign: 'center',
+    fontFamily: revaFonts.mono,
+    fontSize: 11,
+    lineHeight: 18,
+    fontWeight: '800',
+    color: revaSemantic.caution.fg,
+  } as TextStyle,
+  suggestionText: {
+    flex: 1,
+    minWidth: 0,
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    lineHeight: 17,
+    color: C.ink2,
   } as TextStyle,
   axisRow: {
     marginTop: -2,

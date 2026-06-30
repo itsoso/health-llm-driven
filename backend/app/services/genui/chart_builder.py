@@ -4,8 +4,11 @@ r"""GenUI line_chart 构建器 — 确定性查真实日级序列, 聚合分桶,
 的 `fetchGarminMetricTrend`):
   - GarminData 日行 (`backend/app/models/daily_health.py`):
       hrv / resting_heart_rate / stress_level / total_sleep_duration /
-      sleep_score / steps / body_battery_current
-  - WeightRecord 日行 (`backend/app/models/weight.py`): weight
+      sleep_score / steps / body_battery_current / spo2_avg
+  - WeightRecord 日行 (`backend/app/models/weight.py`): weight / body_fat_percentage
+  - BloodPressureRecord 日行 (`backend/app/models/blood_pressure.py`): systolic / diastolic
+  - WaistRecord 日行 (`backend/app/models/waist.py`): waist_cm
+  - BasicHealthData 日行 (`backend/app/models/basic_health.py`): blood_glucose
 
 铁律 (R4): 本模块所有数值均来自上述 DB 表的真实行。LLM 不参与数据路径 —
 请用 `grep -n "llm\|LLM\|_call_llm" chart_builder.py` 自证 (无命中)。LLM 仅在
@@ -27,13 +30,18 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from app.models.basic_health import BasicHealthData
+from app.models.blood_pressure import BloodPressureRecord
 from app.models.daily_health import GarminData
+from app.models.waist import WaistRecord
 from app.models.weight import WeightRecord
 
 LINE_CHART_COMPONENT = "line_chart"
 METRIC_LINE_CHART_COMPONENT = "metric_line_chart"
 METRIC_LINE_CHART_SCHEMA = "reva.metric_line_chart.v1"
-_SUPPORTED_COMPONENTS = {LINE_CHART_COMPONENT, METRIC_LINE_CHART_COMPONENT}
+METRIC_EMPTY_STATE_COMPONENT = "metric_empty_state"
+METRIC_EMPTY_STATE_SCHEMA = "reva.metric_empty_state.v1"
+_CHART_COMPONENTS = {LINE_CHART_COMPONENT, METRIC_LINE_CHART_COMPONENT}
 
 # ---------------------------------------------------------------------------
 # Metric allowlist — 受约束目录, 只有这些 metric 允许出图
@@ -45,8 +53,8 @@ class _MetricSpec:
     key: str
     title: str
     unit: str
-    source: str  # "garmin" | "scale"
-    # GarminData 行上的字段名, 或 None 表示走 WeightRecord
+    source: str  # "garmin" | "scale" | "blood_pressure" | "waist" | "basic"
+    # 数据源模型行上的字段名；历史字段名沿用 garmin_field 以避免大范围改动。
     garmin_field: Optional[str]
     # 把原始单位转成展示单位 (例如睡眠 分钟→小时)
     transform: Optional[Callable[[float], float]] = None
@@ -90,7 +98,31 @@ SUPPORTED_METRICS: Dict[str, _MetricSpec] = {
     ),
     "weight": _MetricSpec(
         key="weight", title="体重趋势", unit="kg", source="scale",
-        garmin_field=None, warn_direction="high_is_warn",
+        garmin_field="weight", warn_direction="high_is_warn",
+    ),
+    "bp_systolic": _MetricSpec(
+        key="bp_systolic", title="收缩压趋势", unit="mmHg", source="blood_pressure",
+        garmin_field="systolic", warn_direction="high_is_warn",
+    ),
+    "bp_diastolic": _MetricSpec(
+        key="bp_diastolic", title="舒张压趋势", unit="mmHg", source="blood_pressure",
+        garmin_field="diastolic", warn_direction="high_is_warn",
+    ),
+    "waist": _MetricSpec(
+        key="waist", title="腰围趋势", unit="cm", source="waist",
+        garmin_field="waist_cm", warn_direction="high_is_warn",
+    ),
+    "body_fat": _MetricSpec(
+        key="body_fat", title="体脂率趋势", unit="%", source="scale",
+        garmin_field="body_fat_percentage", warn_direction="high_is_warn",
+    ),
+    "blood_glucose": _MetricSpec(
+        key="blood_glucose", title="血糖趋势", unit="mmol/L", source="basic",
+        garmin_field="blood_glucose", warn_direction="high_is_warn",
+    ),
+    "spo2": _MetricSpec(
+        key="spo2", title="血氧趋势", unit="%", source="garmin",
+        garmin_field="spo2_avg", warn_direction="low_is_warn",
     ),
 }
 
@@ -127,6 +159,12 @@ _METRIC_KEYWORDS: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"(睡眠评分|睡眠分|sleep\s*score)", re.IGNORECASE), "sleep_score"),
     (re.compile(r"(hrv|心率变异|心律变异)", re.IGNORECASE), "hrv"),
     (re.compile(r"(静息心率|静息心跳|resting\s*hr|rhr)", re.IGNORECASE), "resting_hr"),
+    (re.compile(r"(舒张压|低压|diastolic)", re.IGNORECASE), "bp_diastolic"),
+    (re.compile(r"(收缩压|高压|血压|blood\s*pressure|systolic)", re.IGNORECASE), "bp_systolic"),
+    (re.compile(r"(腰围|waist)", re.IGNORECASE), "waist"),
+    (re.compile(r"(体脂率|体脂|body\s*fat)", re.IGNORECASE), "body_fat"),
+    (re.compile(r"(空腹血糖|血糖|glucose|blood\s*sugar)", re.IGNORECASE), "blood_glucose"),
+    (re.compile(r"(血氧饱和度|血氧|spo2|spO2|氧饱和)", re.IGNORECASE), "spo2"),
     (re.compile(r"(心率|心跳|heart\s*rate|heart\s*beat)", re.IGNORECASE), "resting_hr"),
     (re.compile(r"(身体电量|体力电量|body\s*battery|电量)", re.IGNORECASE), "body_battery"),
     (re.compile(r"(步数|步行|steps?)", re.IGNORECASE), "steps"),
@@ -324,6 +362,13 @@ def compute_chart(
 # ---------------------------------------------------------------------------
 
 
+def _coerce_value(raw: object, transform: Optional[Callable[[float], float]] = None) -> Optional[float]:
+    if raw is None or raw == 0:
+        return None
+    val = float(raw)
+    return transform(val) if transform else val
+
+
 def _fetch_daily_points(
     db: Session, user_id: int, spec: _MetricSpec, days: int
 ) -> List[Tuple[date, float]]:
@@ -344,16 +389,16 @@ def _fetch_daily_points(
         # 同日多源 (apple-watch/garmin/ringconn) 取该日第一条非空值, 防重复计入桶
         per_day: Dict[date, float] = {}
         for r in rows:
-            raw = getattr(r, spec.garmin_field, None)
-            if raw is None or raw == 0:
+            val = _coerce_value(getattr(r, spec.garmin_field, None), spec.transform)
+            if val is None:
                 continue
             if r.record_date in per_day:
                 continue
-            val = spec.transform(float(raw)) if spec.transform else float(raw)
             per_day[r.record_date] = val
         out = sorted(per_day.items())
 
     elif spec.source == "scale":
+        field_name = spec.garmin_field or "weight"
         rows = (
             db.query(WeightRecord)
             .filter(
@@ -365,11 +410,70 @@ def _fetch_daily_points(
         )
         per_day = {}
         for r in rows:
-            if r.weight is None or r.weight == 0:
+            val = _coerce_value(getattr(r, field_name, None), spec.transform)
+            if val is None:
                 continue
             if r.record_date in per_day:
                 continue
-            per_day[r.record_date] = float(r.weight)
+            per_day[r.record_date] = val
+        out = sorted(per_day.items())
+
+    elif spec.source == "blood_pressure":
+        rows = (
+            db.query(BloodPressureRecord)
+            .filter(
+                BloodPressureRecord.user_id == user_id,
+                BloodPressureRecord.record_date >= cutoff,
+            )
+            .order_by(BloodPressureRecord.record_date.asc())
+            .all()
+        )
+        per_day_values: Dict[date, List[float]] = {}
+        for r in rows:
+            val = _coerce_value(getattr(r, spec.garmin_field, None), spec.transform)
+            if val is None:
+                continue
+            per_day_values.setdefault(r.record_date, []).append(val)
+        out = sorted((d, round(mean(vals), 1)) for d, vals in per_day_values.items() if vals)
+
+    elif spec.source == "waist":
+        rows = (
+            db.query(WaistRecord)
+            .filter(
+                WaistRecord.user_id == user_id,
+                WaistRecord.record_date >= cutoff,
+            )
+            .order_by(WaistRecord.record_date.asc(), WaistRecord.id.desc())
+            .all()
+        )
+        per_day = {}
+        for r in rows:
+            val = _coerce_value(getattr(r, spec.garmin_field, None), spec.transform)
+            if val is None:
+                continue
+            if r.record_date in per_day:
+                continue
+            per_day[r.record_date] = val
+        out = sorted(per_day.items())
+
+    elif spec.source == "basic":
+        rows = (
+            db.query(BasicHealthData)
+            .filter(
+                BasicHealthData.user_id == user_id,
+                BasicHealthData.record_date >= cutoff,
+            )
+            .order_by(BasicHealthData.record_date.asc(), BasicHealthData.id.desc())
+            .all()
+        )
+        per_day = {}
+        for r in rows:
+            val = _coerce_value(getattr(r, spec.garmin_field, None), spec.transform)
+            if val is None:
+                continue
+            if r.record_date in per_day:
+                continue
+            per_day[r.record_date] = val
         out = sorted(per_day.items())
 
     return out
@@ -416,7 +520,7 @@ def _apply_component_contract(
     """把内部图表 block 包装成客户端协商的 GenUI 组件形态。"""
     if block is None:
         return None
-    if component not in _SUPPORTED_COMPONENTS:
+    if component not in _CHART_COMPONENTS:
         return None
 
     out = dict(block)
@@ -448,7 +552,7 @@ def build_line_chart(
     spec = SUPPORTED_METRICS.get(metric)
     if spec is None:
         return None
-    if component not in _SUPPORTED_COMPONENTS:
+    if component not in _CHART_COMPONENTS:
         return None
     days = _RANGE_DAYS.get(range)
     if days is None:
@@ -466,6 +570,34 @@ def build_line_chart(
     points = _fetch_daily_points(db, user_id, spec, days)
     block = compute_chart(points, metric, range)
     return _apply_component_contract(block, metric, range, component)
+
+
+def build_empty_state(metric: str, range: str = "6m") -> Optional[dict]:
+    """为已识别的图表意图构建受 schema 约束的数据不足卡片。
+
+    这是 GenUI 的 fail-loud 兜底: 不补点、不让 LLM 手画图, 而是明确告诉客户端
+    当前缺真实数据, 并给出可执行的数据补齐动作。
+    """
+    spec = SUPPORTED_METRICS.get(metric)
+    if spec is None or range not in _RANGE_DAYS:
+        return None
+
+    title_base = spec.title[:-2] if spec.title.endswith("趋势") else spec.title
+    return {
+        "v": 1,
+        "schema": METRIC_EMPTY_STATE_SCHEMA,
+        "component": METRIC_EMPTY_STATE_COMPONENT,
+        "metric": metric,
+        "range": range,
+        "title": f"{title_base}数据不足",
+        "message": "暂无足够数据，至少需要 3 天真实记录后才能生成趋势图。",
+        "suggestions": [
+            "同步 HealthKit 或可穿戴设备数据",
+            "补录最近几天的关键指标",
+            "等新数据进入后再生成趋势",
+        ],
+        "boundary": "仅用于健康管理参考，不替代诊断或治疗。",
+    }
 
 
 # ---------------------------------------------------------------------------

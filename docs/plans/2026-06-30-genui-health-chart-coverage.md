@@ -8,9 +8,13 @@
 
 **Tech Stack:** FastAPI / SQLAlchemy / pytest for backend chart generation; React/Next MarkdownRenderer and React Native card registry for rendering; existing `reva-ui` fenced block contract.
 
+**Status (2026-06-30):** implementation verified, pending commit/push/deploy. Backend GenUI now covers BP, waist, body fat, blood glucose, and SpO2; Web/Mobile render `metric_empty_state`.
+
 ---
 
 ### Task 1: Backend RED Tests
+
+Status: Done.
 
 **Files:**
 - Modify: `backend/tests/test_genui_chart.py`
@@ -22,6 +26,8 @@
 4. Expected: new tests fail because metrics/fallback are not implemented.
 
 ### Task 2: Backend Implementation
+
+Status: Done.
 
 **Files:**
 - Modify: `backend/app/services/genui/chart_builder.py`
@@ -40,6 +46,8 @@
 
 ### Task 3: Client Renderer RED/GREEN
 
+Status: Done.
+
 **Files:**
 - Modify: `frontend/src/components/assistant/MarkdownRenderer.tsx`
 - Modify: `frontend/src/components/assistant/__tests__/MarkdownRenderer.test.tsx`
@@ -53,6 +61,8 @@
 3. Re-run focused frontend/mobile tests.
 
 ### Task 4: Verification And Release
+
+Status: Verification done; release pending.
 
 **Commands:**
 - `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/pytest backend/tests/test_genui_chart.py -q`

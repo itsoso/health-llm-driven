@@ -92,6 +92,12 @@ def _seed_daily_hrv(db, user_id, start_days_ago, values, data_source="garmin"):
         ("看看我这个月的体重变化图", ("weight", "1m")),
         ("最近一周睡眠时长曲线 以及评估睡眠", ("sleep", "7d")),
         ("近7天睡眠曲线和评估", ("sleep", "7d")),
+        ("绘制最近一周血压趋势", ("bp_systolic", "7d")),
+        ("画近7天舒张压曲线", ("bp_diastolic", "7d")),
+        ("看看最近一个月腰围变化图", ("waist", "1m")),
+        ("绘制近30天体脂率趋势", ("body_fat", "1m")),
+        ("画最近一周血糖曲线", ("blood_glucose", "7d")),
+        ("展示近7天血氧趋势图", ("spo2", "7d")),
         ("展示一下我的压力趋势", ("stress", "6m")),          # 默认 6m
         ("plot my hrv trend over the last 3 months", ("hrv", "3m")),
         ("画一张睡眠时长的曲线", ("sleep", "6m")),
@@ -767,6 +773,68 @@ def test_agent_stream_genui_week_sleep_duration_prompt_from_shared_page(
     assert "metric_line_chart" in body
     assert '"range":"7d"' in body.replace('\\"', '"')
     assert "睡眠时长趋势" in body
+
+
+def test_agent_stream_genui_common_health_metric_coverage(
+    client, db, auth_user_and_headers, _explode_agent_run_stream
+):
+    """常见健康管理指标必须走确定性 metric_line_chart, 不让 LLM 画 ASCII 图。"""
+    from app.models.basic_health import BasicHealthData
+    from app.models.blood_pressure import BloodPressureRecord
+    from app.models.waist import WaistRecord
+
+    user, headers = auth_user_and_headers
+    today = date.today()
+    for i in range(3):
+        d = today - timedelta(days=2 - i)
+        db.add(BloodPressureRecord(user_id=user.id, record_date=d, systolic=128 + i, diastolic=78 + i))
+        db.add(WaistRecord(user_id=user.id, record_date=d, waist_cm=86.0 - i * 0.3, source="manual"))
+        db.add(WeightRecord(user_id=user.id, record_date=d, weight=73.0 - i * 0.1, body_fat_percentage=21.5 - i * 0.2, source="withings"))
+        db.add(BasicHealthData(user_id=user.id, record_date=d, blood_glucose=5.7 - i * 0.1))
+        db.add(GarminData(user_id=user.id, record_date=d, spo2_avg=96.0 + i * 0.2, data_source="garmin"))
+    db.commit()
+
+    cases = [
+        ("绘制最近一周血压趋势", "bp_systolic", "收缩压趋势"),
+        ("画近7天舒张压曲线", "bp_diastolic", "舒张压趋势"),
+        ("看看最近一周腰围变化图", "waist", "腰围趋势"),
+        ("绘制近7天体脂率趋势", "body_fat", "体脂率趋势"),
+        ("画最近一周血糖曲线", "blood_glucose", "血糖趋势"),
+        ("展示近7天血氧趋势图", "spo2", "血氧趋势"),
+    ]
+    for message, metric, title in cases:
+        resp = client.post(
+            "/api/v1/agent/stream",
+            json={"message": message},
+            headers={**headers, "X-Reva-Client-Caps": "genui-v1, genui-components-v1"},
+        )
+        assert resp.status_code == 200
+        body = _read_sse_body(resp)
+        decoded = body.replace('\\"', '"')
+        assert "reva-ui" in body
+        assert "metric_line_chart" in body
+        assert f'"metric":"{metric}"' in decoded
+        assert title in body
+
+
+def test_agent_stream_genui_insufficient_data_emits_empty_state_no_llm(
+    client, db, auth_user_and_headers, _explode_agent_run_stream
+):
+    """图表意图但无数据时也要结构化返回, 禁止回落到普通 LLM 编造文本图。"""
+    _user, headers = auth_user_and_headers
+
+    resp = client.post(
+        "/api/v1/agent/stream",
+        json={"message": "画最近一周血糖曲线"},
+        headers={**headers, "X-Reva-Client-Caps": "genui-v1, genui-components-v1"},
+    )
+    assert resp.status_code == 200
+    body = _read_sse_body(resp)
+    decoded = body.replace('\\"', '"')
+    assert "reva-ui" in body
+    assert "metric_empty_state" in body
+    assert '"metric":"blood_glucose"' in decoded
+    assert "暂无足够数据" in body
 
 
 def test_agent_stream_no_caps_falls_through_to_normal_path(

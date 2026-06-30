@@ -45,4 +45,25 @@ describe('MarkdownRenderer', () => {
     expect(screen.queryByText(/```reva-ui/)).toBeNull();
     expect(screen.queryByText(/"component":"metric_line_chart"/)).toBeNull();
   });
+
+  it('renders reva-ui metric empty-state cards instead of leaking JSON code', () => {
+    render(
+      <MarkdownRenderer
+        variant="light"
+        content={[
+          '最近一周血糖暂无足够数据:',
+          '',
+          '```reva-ui',
+          '{"v":1,"schema":"reva.metric_empty_state.v1","component":"metric_empty_state","metric":"blood_glucose","range":"7d","title":"血糖数据不足","message":"暂无足够数据，至少需要 3 天真实记录后才能生成趋势图。","suggestions":["同步 HealthKit 或可穿戴设备数据","补录最近几天的关键指标"],"boundary":"仅用于健康管理参考，不替代诊断或治疗。"}',
+          '```',
+        ].join('\n')}
+      />,
+    );
+
+    expect(screen.getByText('血糖数据不足')).toBeInTheDocument();
+    expect(screen.getByText(/至少需要 3 天真实记录/)).toBeInTheDocument();
+    expect(screen.getByText('同步 HealthKit 或可穿戴设备数据')).toBeInTheDocument();
+    expect(screen.queryByText(/```reva-ui/)).toBeNull();
+    expect(screen.queryByText(/"component":"metric_empty_state"/)).toBeNull();
+  });
 });
