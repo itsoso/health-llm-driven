@@ -4,8 +4,40 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 
 const DISPLAY_FONT = '"Iowan Old Style", "Noto Serif SC", "Songti SC", serif';
+const REVA_UI_FENCE_RE = /\n?```reva-ui\s*\n([\s\S]*?)\n?```\n?/g;
+const CHART_COLORS = ['#0f9f7a', '#2563eb', '#7c3aed', '#d97706', '#dc2626'];
 
 type Variant = 'dark' | 'light';
+type MarkdownSegment =
+  | { kind: 'markdown'; text: string }
+  | { kind: 'chart'; data: RevaUiLineChartData };
+
+interface RevaUiLineChartSeries {
+  name?: string;
+  role?: string;
+  points?: Array<number | null>;
+}
+
+interface RevaUiLineChartAnnotation {
+  x?: string;
+  label?: string;
+  kind?: string;
+}
+
+interface RevaUiLineChartData {
+  v: 1;
+  component: 'line_chart' | 'metric_line_chart';
+  schema?: string;
+  metric?: string;
+  range?: string;
+  title?: string;
+  unit?: string;
+  x?: string[];
+  series?: RevaUiLineChartSeries[];
+  annotations?: RevaUiLineChartAnnotation[];
+  source?: string;
+  data_note?: string;
+}
 
 const styles: Record<Variant, {
   p: string; ul: string; ol: string; li: string;
@@ -86,6 +118,34 @@ function ToolStep({ name, status }: { name?: string; status?: string }) {
 
 export default function MarkdownRenderer({ content, variant = 'light' }: { content: string; variant?: Variant }) {
   const s = styles[variant];
+  const segments = splitRevaUiSegments(content);
+  if (segments.length > 1 || segments[0]?.kind === 'chart') {
+    return (
+      <>
+        {segments.map((segment, index) => {
+          if (segment.kind === 'chart') {
+            return <RevaUiLineChartCard key={`chart-${index}`} data={segment.data} variant={variant} />;
+          }
+          if (!segment.text.trim()) return null;
+          return (
+            <MarkdownRendererBase key={`md-${index}`} content={segment.text} variant={variant} stylesForVariant={s} />
+          );
+        })}
+      </>
+    );
+  }
+  return <MarkdownRendererBase content={content} variant={variant} stylesForVariant={s} />;
+}
+
+function MarkdownRendererBase({
+  content,
+  variant,
+  stylesForVariant: s,
+}: {
+  content: string;
+  variant: Variant;
+  stylesForVariant: (typeof styles)[Variant];
+}) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -121,4 +181,201 @@ export default function MarkdownRenderer({ content, variant = 'light' }: { conte
       }}
     >{content}</ReactMarkdown>
   );
+}
+
+function splitRevaUiSegments(content: string): MarkdownSegment[] {
+  const segments: MarkdownSegment[] = [];
+  let cursor = 0;
+  REVA_UI_FENCE_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = REVA_UI_FENCE_RE.exec(content)) !== null) {
+    const start = match.index ?? 0;
+    const before = content.slice(cursor, start);
+    if (before) segments.push({ kind: 'markdown', text: before });
+    const chart = parseRevaUiChart(match[1]);
+    if (chart) segments.push({ kind: 'chart', data: chart });
+    cursor = start + match[0].length;
+  }
+  const rest = content.slice(cursor);
+  if (rest) segments.push({ kind: 'markdown', text: rest });
+  return segments.length ? segments : [{ kind: 'markdown', text: content }];
+}
+
+function parseRevaUiChart(payload: string): RevaUiLineChartData | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload.trim());
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const block = parsed as RevaUiLineChartData;
+  if (block.v !== 1) return null;
+  if (block.component !== 'line_chart' && block.component !== 'metric_line_chart') return null;
+  if (!Array.isArray(block.x) || !Array.isArray(block.series)) return null;
+  return block;
+}
+
+function RevaUiLineChartCard({ data, variant }: { data: RevaUiLineChartData; variant: Variant }) {
+  const dark = variant === 'dark';
+  const title = data.title || '指标趋势';
+  const unit = data.unit || '';
+  const x = Array.isArray(data.x) ? data.x : [];
+  const series = (Array.isArray(data.series) ? data.series : [])
+    .filter(item => Array.isArray(item.points) && item.points.some(point => typeof point === 'number'));
+  const annotations = Array.isArray(data.annotations) ? data.annotations.filter(a => a?.label) : [];
+
+  const values = series.flatMap(item =>
+    (item.points || []).filter((point): point is number => typeof point === 'number' && Number.isFinite(point)),
+  );
+  if (!x.length || !series.length || !values.length) return null;
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = Math.max(max - min, 1);
+  const yMin = Math.max(0, min - span * 0.16);
+  const yMax = max + span * 0.16;
+  const width = 640;
+  const height = 220;
+  const left = 44;
+  const right = 18;
+  const top = 20;
+  const bottom = 34;
+  const plotW = width - left - right;
+  const plotH = height - top - bottom;
+  const xPos = (index: number) => left + (x.length === 1 ? plotW / 2 : (plotW * index) / (x.length - 1));
+  const yPos = (value: number) => top + plotH - ((value - yMin) / (yMax - yMin)) * plotH;
+  const gridValues = Array.from({ length: 4 }, (_, i) => yMin + ((yMax - yMin) * i) / 3);
+
+  return (
+    <div
+      className={[
+        'my-4 overflow-hidden rounded-2xl border p-4 shadow-sm',
+        dark
+          ? 'border-white/10 bg-white/[0.06] text-zinc-100'
+          : 'border-emerald-100 bg-white text-slate-900',
+      ].join(' ')}
+      data-testid="reva-ui-chart-card"
+    >
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <div className={dark ? 'text-sm font-semibold text-white' : 'text-sm font-semibold text-slate-950'}>
+            {title}
+          </div>
+          {data.data_note ? (
+            <div className={dark ? 'mt-1 text-xs text-zinc-400' : 'mt-1 text-xs text-slate-500'}>
+              {data.data_note}
+            </div>
+          ) : null}
+        </div>
+        <div className={dark ? 'rounded-full bg-emerald-300/10 px-2.5 py-1 text-xs text-emerald-200' : 'rounded-full bg-emerald-50 px-2.5 py-1 text-xs text-emerald-700'}>
+          {data.range || data.metric || '趋势'}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <svg viewBox={`0 0 ${width} ${height}`} className="h-[220px] min-w-[520px] w-full" role="img" aria-label={title}>
+          <rect x="0" y="0" width={width} height={height} rx="16" fill={dark ? 'rgba(10,15,18,0.34)' : '#f8faf9'} />
+          {gridValues.map((value, index) => {
+            const y = yPos(value);
+            return (
+              <g key={`grid-${index}`}>
+                <line x1={left} x2={width - right} y1={y} y2={y} stroke={dark ? 'rgba(255,255,255,0.08)' : '#e2e8f0'} />
+                <text x={left - 8} y={y + 4} textAnchor="end" fontSize="11" fill={dark ? '#a1a1aa' : '#64748b'}>
+                  {formatTick(value)}
+                </text>
+              </g>
+            );
+          })}
+          <text x={left} y={14} fontSize="11" fill={dark ? '#a1a1aa' : '#64748b'}>{unit}</text>
+          {series.map((item, seriesIndex) => (
+            <g key={`${item.name || 'series'}-${seriesIndex}`}>
+              {pathsForSeries(item.points || [], xPos, yPos).map((path, pathIndex) => (
+                <path
+                  key={pathIndex}
+                  d={path}
+                  fill="none"
+                  stroke={CHART_COLORS[seriesIndex % CHART_COLORS.length]}
+                  strokeWidth={item.role?.includes('avg') ? 2 : 2.6}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity={item.role?.includes('avg') ? 0.76 : 1}
+                />
+              ))}
+              {(item.points || []).map((point, pointIndex) => (
+                typeof point === 'number' ? (
+                  <circle
+                    key={pointIndex}
+                    cx={xPos(pointIndex)}
+                    cy={yPos(point)}
+                    r={2.6}
+                    fill={CHART_COLORS[seriesIndex % CHART_COLORS.length]}
+                    opacity={item.role?.includes('avg') ? 0.45 : 0.9}
+                  />
+                ) : null
+              ))}
+            </g>
+          ))}
+          {x.map((label, index) => {
+            const show = x.length <= 8 || index === 0 || index === x.length - 1 || index % Math.ceil(x.length / 6) === 0;
+            if (!show) return null;
+            return (
+              <text key={label + index} x={xPos(index)} y={height - 12} textAnchor="middle" fontSize="11" fill={dark ? '#a1a1aa' : '#64748b'}>
+                {label}
+              </text>
+            );
+          })}
+        </svg>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {series.map((item, index) => (
+          <span key={`${item.name || 'series'}-legend-${index}`} className={dark ? 'inline-flex items-center gap-1.5 text-xs text-zinc-300' : 'inline-flex items-center gap-1.5 text-xs text-slate-600'}>
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }} />
+            {item.name || `序列 ${index + 1}`}
+          </span>
+        ))}
+      </div>
+      {annotations.length ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {annotations.slice(0, 3).map((annotation, index) => (
+            <span
+              key={`${annotation.label}-${index}`}
+              className={dark ? 'rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-xs text-zinc-300' : 'rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-xs text-emerald-800'}
+            >
+              {annotation.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function pathsForSeries(
+  points: Array<number | null>,
+  xPos: (index: number) => number,
+  yPos: (value: number) => number,
+): string[] {
+  const paths: string[] = [];
+  let current = '';
+  points.forEach((point, index) => {
+    if (typeof point !== 'number' || !Number.isFinite(point)) {
+      if (current) {
+        paths.push(current);
+        current = '';
+      }
+      return;
+    }
+    const command = current ? 'L' : 'M';
+    current += `${command}${xPos(index).toFixed(1)},${yPos(point).toFixed(1)} `;
+  });
+  if (current) paths.push(current);
+  return paths;
+}
+
+function formatTick(value: number): string {
+  if (Math.abs(value) >= 1000) return `${Math.round(value)}`;
+  if (Math.abs(value) >= 10) return `${Math.round(value)}`;
+  return value.toFixed(1);
 }

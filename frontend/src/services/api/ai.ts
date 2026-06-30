@@ -251,6 +251,7 @@ export const agentApi = {
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        'X-Reva-Client-Caps': 'genui-v1, genui-components-v1',
       },
       body: JSON.stringify(body),
     });

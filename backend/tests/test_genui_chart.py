@@ -90,6 +90,8 @@ def _seed_daily_hrv(db, user_id, start_days_ago, values, data_source="garmin"):
         ("绘制我最近半年的心率曲线", ("resting_hr", "6m")),
         ("画一下近三个月的静息心率趋势", ("resting_hr", "3m")),
         ("看看我这个月的体重变化图", ("weight", "1m")),
+        ("最近一周睡眠时长曲线 以及评估睡眠", ("sleep", "7d")),
+        ("近7天睡眠曲线和评估", ("sleep", "7d")),
         ("展示一下我的压力趋势", ("stress", "6m")),          # 默认 6m
         ("plot my hrv trend over the last 3 months", ("hrv", "3m")),
         ("画一张睡眠时长的曲线", ("sleep", "6m")),
@@ -736,6 +738,35 @@ def test_agent_stream_genui_components_cap_emits_metric_line_chart(
     assert "reva-ui" in body
     assert "metric_line_chart" in body
     assert "line_chart" not in body.split("metric_line_chart", 1)[0]
+
+
+def test_agent_stream_genui_week_sleep_duration_prompt_from_shared_page(
+    client, db, auth_user_and_headers, _explode_agent_run_stream
+):
+    """线上分享回归: "最近一周睡眠时长曲线" 这类无动词图表请求也必须走 GenUI。"""
+    user, headers = auth_user_and_headers
+    today = date.today()
+    durations_min = [346, 823, 495, 527, 316, 501, 341]
+    for i, duration in enumerate(durations_min):
+        db.add(GarminData(
+            user_id=user.id,
+            record_date=today - timedelta(days=6 - i),
+            total_sleep_duration=duration,
+            sleep_score=80 + i,
+        ))
+    db.commit()
+
+    resp = client.post(
+        "/api/v1/agent/stream",
+        json={"message": "最近一周睡眠时长曲线 以及评估睡眠"},
+        headers={**headers, "X-Reva-Client-Caps": "genui-v1, genui-components-v1"},
+    )
+    assert resp.status_code == 200
+    body = _read_sse_body(resp)
+    assert "reva-ui" in body
+    assert "metric_line_chart" in body
+    assert '"range":"7d"' in body.replace('\\"', '"')
+    assert "睡眠时长趋势" in body
 
 
 def test_agent_stream_no_caps_falls_through_to_normal_path(

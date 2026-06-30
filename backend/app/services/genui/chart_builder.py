@@ -95,7 +95,7 @@ SUPPORTED_METRICS: Dict[str, _MetricSpec] = {
 }
 
 # range → 天数
-_RANGE_DAYS: Dict[str, int] = {"1m": 30, "3m": 90, "6m": 180}
+_RANGE_DAYS: Dict[str, int] = {"7d": 7, "1m": 30, "3m": 90, "6m": 180}
 
 # 数据点 (有值的日子) 少于此数 → 数据不足
 MIN_POINTS = 3
@@ -137,6 +137,7 @@ _METRIC_KEYWORDS: List[Tuple[re.Pattern, str]] = [
 
 # range 提示
 _RANGE_HINTS: List[Tuple[re.Pattern, str]] = [
+    (re.compile(r"(最近一周|近一周|一周|7\s*天|七天|7d|1w|last\s*week|one\s*week)", re.IGNORECASE), "7d"),
     (re.compile(r"(半年|6\s*个?月|六个月|6m|180\s*天|6\s*months?)", re.IGNORECASE), "6m"),
     (re.compile(r"(近三月|三个月|3\s*个?月|3m|90\s*天|一个季度|季度|3\s*months?)", re.IGNORECASE), "3m"),
     (re.compile(r"(一个月|1\s*个?月|近一月|最近一月|30\s*天|1m|这个月|本月|1\s*month|last\s*month)", re.IGNORECASE), "1m"),
@@ -146,13 +147,17 @@ _RANGE_HINTS: List[Tuple[re.Pattern, str]] = [
 def detect_chart_request(query: str) -> Optional[Tuple[str, str]]:
     """确定性检测图表意图。
 
-    命中条件: (绘制/画/展示/看/show/plot) + (曲线/趋势/图/chart) + 已知 metric 关键词。
+    命中条件:
+    - 主动图表请求: (绘制/画/展示/看/show/plot) + (曲线/趋势/图/chart) + 已知 metric。
+    - 省略动词的图表请求: 明确 range + (曲线/趋势/图/chart) + 已知 metric。
+
+    第二类覆盖自然输入如"最近一周睡眠时长曲线 以及评估睡眠", 但仍避免把
+    "我最近睡眠怎么样"这类非图表分析请求误判成图。
     返回 (metric_key, range)；未命中返回 None。range 默认 "6m"。
     """
     if not query:
         return None
-    if not (_CHART_VERB.search(query) and _CHART_NOUN.search(query)):
-        return None
+    has_chart_noun = bool(_CHART_NOUN.search(query))
 
     metric: Optional[str] = None
     for pat, key in _METRIC_KEYWORDS:
@@ -163,10 +168,16 @@ def detect_chart_request(query: str) -> Optional[Tuple[str, str]]:
         return None
 
     rng = "6m"
+    has_range_hint = False
     for pat, r in _RANGE_HINTS:
         if pat.search(query):
             rng = r
+            has_range_hint = True
             break
+
+    has_chart_verb = bool(_CHART_VERB.search(query))
+    if not (has_chart_noun and (has_chart_verb or has_range_hint)):
+        return None
 
     return (metric, rng)
 
@@ -196,6 +207,10 @@ def _bucket_label_week(key: Tuple[int, int]) -> str:
     return f"W{key[1]}"
 
 
+def _date_label_day(d: date) -> str:
+    return f"{d.month}/{d.day}"
+
+
 # ---------------------------------------------------------------------------
 # 纯计算核心 (无 DB, 无 LLM) — 可直接单测
 # ---------------------------------------------------------------------------
@@ -208,7 +223,8 @@ def compute_chart(
 ) -> Optional[dict]:
     """把日级 (date, value) 序列聚合成分桶均值, 拼成 reva-ui line_chart dict。
 
-    - 6m / 3m → 月度桶 (mean); 1m → 周桶 (mean)。空桶 points 填 null。
+    - 6m / 3m → 月度桶 (mean); 1m → 周桶 (mean); 7d → 日级值。
+      空桶 points 填 null。
     - 数据点或非空桶过少 → None (调用方显"数据不足")。
     - annotation 由数据确定 (最低/最高桶), 文案为事实陈述, 无 LLM。
 
@@ -221,43 +237,60 @@ def compute_chart(
     if len(points) < MIN_POINTS:
         return None
 
-    use_week = rng == "1m"
-    key_fn = _bucket_key_week if use_week else _bucket_key_month
-    label_fn = _bucket_label_week if use_week else _bucket_label_month
-
     # 确定桶的全集 (按数据真实跨度), 升序
     sorted_pts = sorted(points, key=lambda p: p[0])
     start_d = sorted_pts[0][0]
     end_d = sorted_pts[-1][0]
 
-    # 枚举 start..end 的所有桶 key (保证空桶也出 null, x 轴连续)
-    bucket_order: List[Tuple[int, int]] = []
-    seen = set()
-    cur = start_d
-    while cur <= end_d:
-        k = key_fn(cur)
-        if k not in seen:
-            seen.add(k)
-            bucket_order.append(k)
-        cur += timedelta(days=1)
+    if rng == "7d":
+        by_day = {d: v for d, v in sorted_pts}
+        x_labels: List[str] = []
+        day_points: List[Optional[float]] = []
+        cur = start_d
+        while cur <= end_d:
+            x_labels.append(_date_label_day(cur))
+            day_points.append(by_day.get(cur))
+            cur += timedelta(days=1)
+        non_null = [(lbl, val) for lbl, val in zip(x_labels, day_points) if val is not None]
+        if len(non_null) < MIN_BUCKETS:
+            return None
+        bucket_means = day_points
+        grain = "每日值"
+    else:
+        use_week = rng == "1m"
+        key_fn = _bucket_key_week if use_week else _bucket_key_month
+        label_fn = _bucket_label_week if use_week else _bucket_label_month
 
-    # 聚合
-    buckets: Dict[Tuple[int, int], List[float]] = {k: [] for k in bucket_order}
-    for d, v in sorted_pts:
-        k = key_fn(d)
-        if k in buckets:
-            buckets[k].append(v)
+        # 枚举 start..end 的所有桶 key (保证空桶也出 null, x 轴连续)
+        bucket_order: List[Tuple[int, int]] = []
+        seen = set()
+        cur = start_d
+        while cur <= end_d:
+            k = key_fn(cur)
+            if k not in seen:
+                seen.add(k)
+                bucket_order.append(k)
+            cur += timedelta(days=1)
 
-    x_labels: List[str] = []
-    bucket_means: List[Optional[float]] = []
-    for k in bucket_order:
-        x_labels.append(label_fn(k))
-        vals = buckets[k]
-        bucket_means.append(round(mean(vals), 1) if vals else None)
+        # 聚合
+        buckets: Dict[Tuple[int, int], List[float]] = {k: [] for k in bucket_order}
+        for d, v in sorted_pts:
+            k = key_fn(d)
+            if k in buckets:
+                buckets[k].append(v)
 
-    non_null = [(lbl, val) for lbl, val in zip(x_labels, bucket_means) if val is not None]
-    if len(non_null) < MIN_BUCKETS:
-        return None
+        x_labels = []
+        bucket_means = []
+        for k in bucket_order:
+            x_labels.append(label_fn(k))
+            vals = buckets[k]
+            bucket_means.append(round(mean(vals), 1) if vals else None)
+
+        non_null = [(lbl, val) for lbl, val in zip(x_labels, bucket_means) if val is not None]
+        if len(non_null) < MIN_BUCKETS:
+            return None
+
+        grain = "周度均值" if use_week else "月度均值"
 
     # annotations: 标出最低 / 最高桶 (事实, 非 LLM)
     annotations: List[dict] = []
@@ -271,7 +304,6 @@ def compute_chart(
             annotations.append({"x": hi_lbl, "label": f"最高 {hi_val}{spec.unit}", "kind": "warn"})
             annotations.append({"x": lo_lbl, "label": f"最低 {lo_val}{spec.unit}", "kind": "good"})
 
-    grain = "周度均值" if use_week else "月度均值"
     block = {
         "v": 1,
         "component": "line_chart",

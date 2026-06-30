@@ -132,7 +132,7 @@ _GENUI_METRIC_LABEL = {
     "body_battery": "身体电量",
     "weight": "体重",
 }
-_GENUI_RANGE_LABEL = {"1m": "近一个月", "3m": "近三个月", "6m": "近半年"}
+_GENUI_RANGE_LABEL = {"7d": "最近一周", "1m": "近一个月", "3m": "近三个月", "6m": "近半年"}
 
 
 def _maybe_genui_chart_events(
