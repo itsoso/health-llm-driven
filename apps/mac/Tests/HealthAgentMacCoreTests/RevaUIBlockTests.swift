@@ -97,6 +97,31 @@ final class RevaUIBlockTests: XCTestCase {
         }
     }
 
+    func testRenderMessageBodyPreservesEnrichedFieldsVerbatim() {
+        // 富契约(role / kind:"latest" / disclaimer)的 JSON 必须原样进 base64,
+        // 由 WebView JS 端解析渲染——Swift 占位层不得吞/改任何加性字段。
+        let richJSON = """
+        {"v":1,"component":"line_chart","title":"半年 HRV","unit":"ms",\
+        "y_hint":{"min":30,"max":90},"x":["2026-06-29","2026-06-30"],\
+        "series":[{"name":"每日","role":"raw","points":[61,null]},\
+        {"name":"7日均","role":"avg_7d","points":[60,62]},\
+        {"name":"Apple Watch","role":"device","points":[null,59]}],\
+        "annotations":[{"x":"2026-06-30","kind":"latest","label":"2026-06-30"}],\
+        "source":"garmin","data_note":"基于 178 天真实数据","disclaimer":"仅供参考,非医疗诊断"}
+        """
+        let md = "趋势如下:\n\n```reva-ui\n\(richJSON)\n```"
+        let html = ChatTranscriptHTML.renderMessageBody(markdown: md)
+        XCTAssertTrue(html.contains("class=\"reva-ui-chart\""))
+        let b64 = extractDataRevaUI(html)
+        XCTAssertNotNil(b64)
+        let decoded = Data(base64Encoded: b64!).flatMap { String(data: $0, encoding: .utf8) }
+        XCTAssertEqual(decoded, richJSON, "enriched JSON must round-trip verbatim through the placeholder")
+        // 关键加性字段都在解码结果里(防 Swift 侧意外 schema 收窄)。
+        XCTAssertTrue(decoded!.contains("\"role\":\"avg_7d\""))
+        XCTAssertTrue(decoded!.contains("\"kind\":\"latest\""))
+        XCTAssertTrue(decoded!.contains("\"disclaimer\""))
+    }
+
     func testRenderMessageBodyNoBlockUnchangedBehavior() {
         // 无 reva-ui 块时与旧路径一致(段落渲染)。
         let md = "# 标题\n\n正文。"
