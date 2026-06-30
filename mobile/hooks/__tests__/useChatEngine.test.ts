@@ -73,6 +73,17 @@ async function* streamStartToolThenWait() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
+async function* streamThoughtsThenWait() {
+  yield { type: 'start', conversationId: 777, thought: '正在理解你的问题' };
+  yield { type: 'tool', toolName: 'health_query', content: '', thought: '读取健康数据' };
+  yield { type: 'tool', toolName: 'health_query', content: '', toolSuccess: true, thought: '已取得健康数据' };
+  yield { type: 'token', content: '今晚优先固定睡眠时间。' };
+  await new Promise<void>((resolve) => {
+    finishStream = resolve;
+  });
+  yield { type: 'done', conversationId: 777, messageId: 2 };
+}
+
 async function* streamTokenCardThenWait() {
   yield { type: 'start', conversationId: 777 };
   yield { type: 'token', content: '我先把这顿饭识别为待确认记录。' };
@@ -246,6 +257,38 @@ describe('useChatEngine', () => {
           }),
         ]),
       );
+    });
+  });
+
+  it('streams safe thinking steps separately from assistant answer text', async () => {
+    mockStreamChat.mockImplementation(streamThoughtsThenWait);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('分析我最近 7 天睡眠');
+    });
+
+    await waitFor(() => {
+      expect(result.current.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: 'assistant',
+            streaming: true,
+            content: '今晚优先固定睡眠时间。',
+            thinkingSteps: expect.arrayContaining([
+              '正在理解你的问题',
+              '读取健康数据',
+              '已取得健康数据',
+            ]),
+          }),
+        ]),
+      );
+    });
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
     });
   });
 

@@ -91,6 +91,17 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
     () => (structuredSummary ? stripStructuredHealthSummary(assistantText) : assistantText),
     [assistantText, structuredSummary],
   );
+  const thinkingSteps = useMemo(
+    () => (!isUser && Array.isArray(item.thinkingSteps)
+      ? item.thinkingSteps.map(step => String(step || '').trim()).filter(Boolean).slice(-4)
+      : []),
+    [isUser, item.thinkingSteps],
+  );
+  const visibleAssistantMarkdown = (
+    thinkingSteps.length > 0 && visibleMarkdown === '⏳ AI 正在思考中...'
+      ? ''
+      : visibleMarkdown
+  );
   const assistantTextForActions = assistantText.trim();
   // 流式期间故意不跑 preprocessMarkdownTables + <Markdown> 整树渲染:
   // visibleMarkdown 每个 token 批次都变, memo 会失效 → 每秒 10-20 次全量
@@ -99,8 +110,8 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
   // (保留换行), 流完 (item.streaming 转 false) 才走富 markdown —— 终态结果不变.
   const isStreaming = !isUser && !!item.streaming;
   const renderedMarkdown = useMemo(
-    () => (isStreaming ? '' : preprocessMarkdownTables(visibleMarkdown)),
-    [isStreaming, visibleMarkdown],
+    () => (isStreaming ? '' : preprocessMarkdownTables(visibleAssistantMarkdown)),
+    [isStreaming, visibleAssistantMarkdown],
   );
   const images = item.imageUris;
 
@@ -408,13 +419,16 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
             accessibilityLabel={`AI: ${assistantTextForActions || (revaUiContent.cards.length > 0 ? '图表卡片' : item.content)}`}
             accessibilityState={selectionMode ? { selected } : undefined}
           >
+            {thinkingSteps.length > 0 ? (
+              <ThinkingStepsPanel steps={thinkingSteps} streaming={item.streaming} />
+            ) : null}
             {structuredSummary ? (
               <StructuredSummaryCard summary={structuredSummary} />
             ) : null}
-            {visibleMarkdown && isStreaming ? (
+            {visibleAssistantMarkdown && isStreaming ? (
               // 流式降级: plain text, 保留换行, 不做 markdown 解析/整树渲染
-              <Text selectable style={txt.streaming}>{visibleMarkdown}</Text>
-            ) : visibleMarkdown ? (
+              <Text selectable style={txt.streaming}>{visibleAssistantMarkdown}</Text>
+            ) : visibleAssistantMarkdown ? (
               <Markdown style={MD_STYLES}>{renderedMarkdown}</Markdown>
             ) : !item.streaming && !displayText ? (
               <Text style={txt.fallback}>抱歉，这条回复没能送达。你可以重新提问。</Text>
@@ -965,6 +979,39 @@ const styles = StyleSheet.create({
   imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 4 },
   msgImageSingle: { width: 160, height: 120, borderRadius: 10 },
   msgImageGrid: { width: 72, height: 72, borderRadius: 8 },
+  thinkingPanel: {
+    gap: 7,
+    marginBottom: 9,
+    borderRadius: revaRadii.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    backgroundColor: C.green50,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  thinkingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  thinkingList: {
+    gap: 5,
+  },
+  thinkingStepRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 7,
+  },
+  thinkingDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    marginTop: 7,
+    backgroundColor: C.green300,
+  },
+  thinkingDotActive: {
+    backgroundColor: C.green600,
+  },
   actionsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1010,10 +1057,35 @@ const txt = {
   bubbleUser: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 22, color: '#fff' } as TextStyle,
   // 与 markdownStyles body (fontSize 15 / lineHeight 23) 对齐, 流式→终态切 markdown 时无跳动
   streaming: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 23, color: C.ink1 } as TextStyle,
+  thinkingTitle: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, fontWeight: '800', color: C.green700 } as TextStyle,
+  thinkingStep: { flex: 1, fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, color: C.ink2 } as TextStyle,
   actionBtn: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '700', color: C.green500 } as TextStyle,
   fallback: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 20, color: C.ink2, fontStyle: 'italic' } as TextStyle,
   meta: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3 } as TextStyle,
 };
+
+function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?: boolean }) {
+  if (steps.length === 0) return null;
+  return (
+    <View testID="assistant-thinking-panel" style={styles.thinkingPanel}>
+      <View style={styles.thinkingHeader}>
+        <Ionicons name="sparkles-outline" size={13} color={C.green500} />
+        <Text style={txt.thinkingTitle}>{streaming ? '思考中' : '思考完成'}</Text>
+      </View>
+      <View style={styles.thinkingList}>
+        {steps.map((step, index) => {
+          const active = streaming && index === steps.length - 1;
+          return (
+            <View key={`${step}-${index}`} style={styles.thinkingStepRow}>
+              <View style={[styles.thinkingDot, active && styles.thinkingDotActive]} />
+              <Text style={txt.thinkingStep} numberOfLines={2}>{step}</Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
 
 /** 2026-05-14 #4: 默认折叠 "AI 用了 N 项数据", 点开列出来. */
 function SourcesChip({ sources }: { sources: string[] }) {

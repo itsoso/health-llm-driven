@@ -103,6 +103,22 @@ describe('ChatBubble streaming degraded render', () => {
     expect(getByText(CONTENT)).toBeTruthy();
   });
 
+  it('renders streaming thinking steps above the assistant text', () => {
+    const { getByText, queryByTestId } = renderBubble({
+      id: 'assistant-streaming-thinking',
+      role: 'assistant',
+      content: '今晚优先固定睡眠时间。',
+      streaming: true,
+      thinkingSteps: ['正在理解你的问题', '读取健康数据'],
+    });
+
+    expect(queryByTestId('rich-markdown')).toBeNull();
+    expect(getByText('思考中')).toBeTruthy();
+    expect(getByText('正在理解你的问题')).toBeTruthy();
+    expect(getByText('读取健康数据')).toBeTruthy();
+    expect(getByText('今晚优先固定睡眠时间。')).toBeTruthy();
+  });
+
   it('renders rich Markdown once streaming has finished (terminal state unchanged)', () => {
     const { getByTestId } = renderBubble({
       id: 'assistant-done',

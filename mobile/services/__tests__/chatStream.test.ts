@@ -55,7 +55,57 @@ describe('streamChat', () => {
     xhr.onprogress?.();
 
     await expect(first).resolves.toEqual({
-      value: { type: 'start', conversationId: 42 },
+      value: { type: 'start', conversationId: 42, thought: '正在理解你的问题' },
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
+  it('maps agent progress events to safe thinking summaries', async () => {
+    const iter = streamChat('分析我最近 7 天睡眠');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText =
+      'data: {"event":"agent_start","data":{"message":"Agent 正在分析...","conversation_id":42}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toEqual({
+      value: { type: 'start', conversationId: 42, thought: '正在理解你的问题' },
+      done: false,
+    });
+
+    const second = iter.next();
+    xhr.responseText +=
+      'data: {"event":"tool_call","data":{"tool":"health_query","round":1,"args":"{\\"dimension\\":\\"sleep\\"}"}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(second).resolves.toEqual({
+      value: {
+        type: 'tool',
+        content: '',
+        toolName: 'health_query',
+        thought: '读取健康数据',
+      },
+      done: false,
+    });
+
+    const third = iter.next();
+    xhr.responseText +=
+      'data: {"event":"tool_result","data":{"tool":"health_query","success":true,"preview":"ok"}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(third).resolves.toEqual({
+      value: {
+        type: 'tool',
+        content: '',
+        toolName: 'health_query',
+        toolSuccess: true,
+        recordType: undefined,
+        recordData: undefined,
+        thought: '已取得健康数据',
+      },
       done: false,
     });
     await iter.return?.(undefined as any);

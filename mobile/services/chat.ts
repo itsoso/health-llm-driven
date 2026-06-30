@@ -23,6 +23,8 @@ export interface StreamCardDescriptor {
 export interface StreamEvent {
   type: 'start' | 'token' | 'tool' | 'card' | 'done' | 'error';
   content?: string;
+  /** 面向用户的安全思考/进度摘要,不包含模型原始推理链或工具参数。 */
+  thought?: string;
   conversationId?: number;
   messageId?: number;
   anchor?: string;
@@ -44,6 +46,26 @@ export interface StreamEvent {
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
   // SSE done 事件里的动态卡片，由 useChatEngine 交给 card registry 渲染
   cards?: StreamCardDescriptor[];
+}
+
+const TOOL_THOUGHT_LABELS: Record<string, string> = {
+  health_query: '健康数据',
+  health_record: '记录信息',
+  health_manage: '健康记录',
+};
+
+function toolThoughtLabel(toolName?: string): string {
+  const tool = (toolName || '').trim();
+  if (!tool) return '相关数据';
+  if (TOOL_THOUGHT_LABELS[tool]) return TOOL_THOUGHT_LABELS[tool];
+  if (tool.includes('weather') || tool.includes('environment')) return '环境数据';
+  if (tool.includes('calendar')) return '日程上下文';
+  if (tool.includes('medical') || tool.includes('exam') || tool.includes('lab')) return '体检数据';
+  if (tool.includes('genetic')) return '基因数据';
+  if (tool.includes('supplement')) return '补剂数据';
+  if (tool.includes('diet')) return '饮食数据';
+  if (tool.includes('sleep')) return '睡眠数据';
+  return '相关数据';
 }
 
 /**
@@ -143,6 +165,7 @@ export async function* streamChat(
         return {
           type: 'start',
           conversationId: parsed.data?.conversation_id,
+          thought: '正在理解你的问题',
         };
       } else if (parsed.event === 'token') {
         const text = parsed.data?.content || '';
@@ -151,16 +174,23 @@ export async function* streamChat(
         const tool = parsed.data?.tool || '';
         // 不把 "🔧 health_record (第1轮)" 这种技术文本注入消息气泡
         // toolName 仍传给前端, cards dispatcher / analytics 可用
-        return { type: 'tool', content: '', toolName: tool };
+        return {
+          type: 'tool',
+          content: '',
+          toolName: tool,
+          thought: `读取${toolThoughtLabel(tool)}`,
+        };
       } else if (parsed.event === 'tool_result') {
         const tool = parsed.data?.tool || '';
         const ok = parsed.data?.success;
+        const label = toolThoughtLabel(tool);
         // 成功静默 (AI token 流会接着讲), 失败才给用户可见的简短提示
         return {
           type: 'tool',
           content: ok ? '' : '⚠️ 操作未成功，请稍后重试\n\n',
           toolName: tool,
           toolSuccess: ok,
+          thought: ok ? `已取得${label}` : `${label}暂时不可用`,
           // I Phase 2: health_record 时后端附 record_type + record_data, 前端 sniff 录入摘要
           recordType: parsed.data?.record_type,
           recordData: parsed.data?.record_data,

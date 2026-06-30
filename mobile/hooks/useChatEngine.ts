@@ -15,6 +15,7 @@ const IMAGE_HOST = BASE_URL.replace(/\/api$/, '');
 export interface UIMessage extends ChatMessage {
   id: string;
   streaming?: boolean;
+  thinkingSteps?: string[];
   imageUris?: string[];
   isBriefing?: boolean;
   cardType?: string;
@@ -114,6 +115,7 @@ const LAST_CONVERSATION_ID_KEY = 'chat:last_conversation_id:v1';
 const PENDING_STREAM_STARTED_AT_KEY = 'chat:pending_stream_started_at:v1';
 const PENDING_STREAM_TTL_MS = 10 * 60 * 1000;
 const THINKING_PLACEHOLDER = '⏳ AI 正在思考中...';
+const MAX_THINKING_STEPS = 8;
 
 function stripThinkingPlaceholder(content: string): string {
   return content.replace(THINKING_PLACEHOLDER, '');
@@ -122,6 +124,14 @@ function stripThinkingPlaceholder(content: string): string {
 function mergeAssistantStreamContent(current: string, incoming: string): string {
   if (!incoming) return current;
   return stripThinkingPlaceholder(current) + incoming;
+}
+
+function appendThinkingStep(current: string[] | undefined, next: string | undefined): string[] | undefined {
+  const normalized = (next || '').trim();
+  if (!normalized) return current;
+  const existing = Array.isArray(current) ? current : [];
+  if (existing[existing.length - 1] === normalized) return existing;
+  return [...existing, normalized].slice(-MAX_THINKING_STEPS);
 }
 
 function serverCardKey(card: Pick<ServerCardDescriptor, 'type' | 'data' | 'actions'>): string {
@@ -424,7 +434,13 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     const uris = hasImages ? pendingImages.map(i => i.uri) : undefined;
     const userMsg: UIMessage = { id: nextId(), role: 'user', content: finalMsg, imageUris: uris, fromSiri: sendOpts?.fromSiri };
     const aId = nextId();
-    const aiMsg: UIMessage = { id: aId, role: 'assistant', content: THINKING_PLACEHOLDER, streaming: true };
+    const aiMsg: UIMessage = {
+      id: aId,
+      role: 'assistant',
+      content: THINKING_PLACEHOLDER,
+      streaming: true,
+      thinkingSteps: ['正在理解你的问题'],
+    };
 
     setMessages(prev => forceNewConversation ? [userMsg, aiMsg] : [...prev, userMsg, aiMsg]);
     setIsStreaming(true);
@@ -448,6 +464,12 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       const streamedCardKeys: Set<string> = new Set();
       let sawDone = false;
       for await (const evt of streamChat(finalMsg, targetConversationId, hasImages ? pendingImages : undefined, ac.signal, sendOpts?.extraContext)) {
+        if (evt.thought) {
+          setMessages(prev => prev.map(m => m.id === aId ? {
+            ...m,
+            thinkingSteps: appendThinkingStep(m.thinkingSteps, evt.thought),
+          } : m));
+        }
         if (evt.type === 'start') {
           if (evt.conversationId) {
             streamConversationId = evt.conversationId;
