@@ -43,10 +43,33 @@ interface MetricChartData {
   boundary?: unknown;
 }
 
+interface RevaUiLineChartSeries {
+  name?: unknown;
+  role?: unknown;
+  points?: unknown;
+}
+
+interface RevaUiLineChartAnnotation {
+  label?: unknown;
+  kind?: unknown;
+}
+
+interface RevaUiLineChartData {
+  component?: unknown;
+  title?: unknown;
+  unit?: unknown;
+  x?: unknown;
+  series?: unknown;
+  annotations?: unknown;
+  source?: unknown;
+  data_note?: unknown;
+}
+
 const CHART_W = 300;
 const CHART_H = 118;
 const PAD_X = 12;
 const PAD_Y = 14;
+const LINE_COLORS = [C.green500, C.blue500, '#6D4AAE', '#C98A1E', C.ink2];
 
 function text(value: unknown): string | undefined {
   if (typeof value === 'string') {
@@ -66,6 +89,22 @@ function num(value: unknown): number | null {
 function points(value: unknown): MetricChartPoint[] {
   if (!Array.isArray(value)) return [];
   return value.filter((point) => point && num((point as MetricChartPoint).value) != null);
+}
+
+function lineSeries(value: unknown): RevaUiLineChartSeries[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is RevaUiLineChartSeries => {
+    if (!item || typeof item !== 'object') return false;
+    const rawPoints = (item as RevaUiLineChartSeries).points;
+    return Array.isArray(rawPoints) && rawPoints.some((point) => num(point) != null);
+  });
+}
+
+function annotations(value: unknown): RevaUiLineChartAnnotation[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is RevaUiLineChartAnnotation => (
+    !!item && typeof item === 'object' && !!text((item as RevaUiLineChartAnnotation).label)
+  ));
 }
 
 function formatValue(value: unknown, unit: string): string {
@@ -110,6 +149,22 @@ function polylineFor(values: { value: number | null }[], min: number, max: numbe
       if (point.value == null) return null;
       const x = PAD_X + (index / denom) * innerW;
       const y = PAD_Y + innerH - ((point.value - min) / range) * innerH;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .filter(Boolean)
+    .join(' ');
+}
+
+function polylineForValues(values: (number | null)[], min: number, max: number): string {
+  const range = max - min || 1;
+  const innerW = CHART_W - PAD_X * 2;
+  const innerH = CHART_H - PAD_Y * 2;
+  const denom = Math.max(values.length - 1, 1);
+  return values
+    .map((value, index) => {
+      if (value == null) return null;
+      const x = PAD_X + (index / denom) * innerW;
+      const y = PAD_Y + innerH - ((value - min) / range) * innerH;
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .filter(Boolean)
@@ -165,6 +220,92 @@ function LegendDot({ color, label }: { color: string; label: string }) {
       <View style={[styles.legendDot, { backgroundColor: color }]} />
       <Text maxFontSizeMultiplier={1.2} style={styles.legendText}>{label}</Text>
     </View>
+  );
+}
+
+function RevaUiLineChart({ data }: { data: RevaUiLineChartData }) {
+  const series = lineSeries(data.series);
+  const normalized = series.map((item, index) => ({
+    name: text(item.name) || `序列 ${index + 1}`,
+    values: Array.isArray(item.points)
+      ? item.points.map((point) => num(point))
+      : [],
+    color: LINE_COLORS[index % LINE_COLORS.length],
+  })).filter((item) => item.values.some((value) => value != null));
+  const values = normalized.flatMap((item) => item.values).filter((value): value is number => value != null);
+  if (normalized.length === 0 || values.length < 2) return null;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+
+  return (
+    <View style={styles.chartFrame}>
+      <Svg width="100%" height={CHART_H} viewBox={`0 0 ${CHART_W} ${CHART_H}`}>
+        <Line x1={PAD_X} y1={PAD_Y} x2={CHART_W - PAD_X} y2={PAD_Y} stroke={C.line} strokeWidth={1} />
+        <Line x1={PAD_X} y1={CHART_H / 2} x2={CHART_W - PAD_X} y2={CHART_H / 2} stroke={C.line} strokeWidth={1} />
+        <Line x1={PAD_X} y1={CHART_H - PAD_Y} x2={CHART_W - PAD_X} y2={CHART_H - PAD_Y} stroke={C.line} strokeWidth={1} />
+        {normalized.map((item) => {
+          const line = polylineForValues(item.values, min, max);
+          return line ? (
+            <Polyline
+              key={item.name}
+              points={line}
+              fill="none"
+              stroke={item.color}
+              strokeWidth={item.name.includes('均值') ? 2.6 : 2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ) : null;
+        })}
+      </Svg>
+      <View style={styles.axisRow}>
+        <Text maxFontSizeMultiplier={1.1} style={styles.axisText} numberOfLines={1}>
+          {Array.isArray(data.x) && data.x.length > 0 ? text(data.x[0]) || '--' : '--'}
+        </Text>
+        <Text maxFontSizeMultiplier={1.1} style={styles.axisText} numberOfLines={1}>
+          {Array.isArray(data.x) && data.x.length > 0 ? text(data.x[data.x.length - 1]) || '--' : '--'}
+        </Text>
+      </View>
+      <View style={styles.legend}>
+        {normalized.slice(0, 4).map((item) => (
+          <LegendDot key={item.name} color={item.color} label={item.name} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+export function RevaUiLineChartCardView(data: RevaUiLineChartData) {
+  const notes = text(data.data_note);
+  const anns = annotations(data.annotations);
+  return (
+    <CardShell
+      icon="stats-chart"
+      iconColor={C.green500}
+      title={text(data.title) || '指标趋势'}
+      badge="真实数据"
+      badgeColor={C.green500}
+      bg={C.surface}
+    >
+      <RevaUiLineChart data={data} />
+      {anns.length > 0 ? (
+        <View style={styles.annotationStack}>
+          {anns.slice(0, 3).map((item, index) => (
+            <Text key={`${text(item.label)}-${index}`} maxFontSizeMultiplier={1.2} style={styles.annotationText}>
+              {text(item.label)}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      {notes ? (
+        <Text maxFontSizeMultiplier={1.2} style={styles.boundary}>
+          {notes}
+        </Text>
+      ) : null}
+      <Text maxFontSizeMultiplier={1.2} style={styles.boundary}>
+        趋势仅用于健康管理参考,不替代诊断或治疗。
+      </Text>
+    </CardShell>
   );
 }
 
@@ -261,6 +402,18 @@ export const MetricChartCardSpec: CardSpec<MetricChartData> = {
   render: (data) => <MetricChartCardView {...data} />,
 };
 
+export const RevaUiLineChartCardSpec: CardSpec<RevaUiLineChartData> = {
+  type: 'line_chart',
+  label: '趋势图表',
+  match() {
+    return null;
+  },
+  build() {
+    return null;
+  },
+  render: (data) => <RevaUiLineChartCardView {...data} />,
+};
+
 const styles = StyleSheet.create({
   hero: {
     flexDirection: 'row',
@@ -332,6 +485,7 @@ const styles = StyleSheet.create({
   },
   legend: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
     paddingHorizontal: 10,
     paddingBottom: 8,
@@ -369,5 +523,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 15,
     color: C.ink3,
+  } as TextStyle,
+  axisRow: {
+    marginTop: -2,
+    paddingHorizontal: 10,
+    paddingBottom: 5,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  axisText: {
+    fontFamily: revaFonts.mono,
+    fontSize: 10,
+    color: C.ink3,
+  } as TextStyle,
+  annotationStack: {
+    marginTop: 8,
+    gap: 4,
+  },
+  annotationText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    lineHeight: 17,
+    color: C.ink2,
   } as TextStyle,
 });

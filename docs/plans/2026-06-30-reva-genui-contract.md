@@ -77,7 +77,7 @@
 | **P1 契约 v0**(本 PR) | `reva-ui` line_chart schema + `build_chart_series` 确定性真查 + 图表意图检测 + 能力协商 + 降级 + 测试 | **实施中** |
 | **P2 Mac 渲染**(本 PR) | 聊天 WebView JS shell 拦 `reva-ui` fence → 自绘 SVG 折线(tooltip,离线)+ 发 caps 头 | **实施中** |
 | P3 Web React 渲染器 | 同契约,React(可吃 json-render) | 待 |
-| P4 Mobile RN 注册表 | 复用 `indicator-history` 的 react-native-svg 图 | 待 |
+| P4 Mobile RN 注册表 | 复用 `indicator-history` 的 react-native-svg 图；Mobile 已声明 `genui-v1` 并渲染 `line_chart` fenced block | 已推进 |
 | P5 扩目录 | metric_grid/table/timeline/comparison;同契约渲染现有 safety/specialist/action-card 结构化输出 | 待 |
 | 贯穿 | **数据确定性闸**:数字永不来自 LLM;缺数据显"数据不足";旧端降级 | 必须 |
 
@@ -87,4 +87,4 @@
 - 不让 LLM 产可执行代码,只产受 schema 约束的声明 JSON(信任边界)。
 
 ## 6. 现状(2026-06-30 起)
-P1+P2 MVP 开工:Mac 上"绘制 HRV 曲线"→ 真实日级 HRV 折线图内联渲染。其余端与组件按 §4 推进。
+P1+P2 MVP 开工:Mac 上"绘制 HRV 曲线"→ 真实日级 HRV 折线图内联渲染。P4 Mobile 已接入 `genui-v1` 能力声明与 `line_chart` 原生渲染。其余 Web 与扩展组件按 §4 推进。

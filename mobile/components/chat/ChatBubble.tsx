@@ -37,6 +37,7 @@ import { useToast } from '../../hooks/useToast';
 import { sharePlainText } from '../../utils/share';
 import { buildAiShareMessage } from '../../utils/aiShareText';
 import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/markdownTables';
+import { extractRevaUiBlocks } from '../../utils/revaUiBlocks';
 
 // 结果操作按钮的装饰性 hue (加入计划绿/保存记忆紫/生成记录青/继续追问蓝) ——
 // 「是哪个动作」的色码, 非临床好坏, 保留 Reva 亮色调色板字面量.
@@ -77,14 +78,20 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
   const speechActiveRef = useRef(false);
   const speechHandleRef = useRef<SpeakHandle | null>(null);
   const displayText = useMemo(() => sanitizeAiContent(item.content), [item.content]);
+  const revaUiContent = useMemo(
+    () => (!isUser ? extractRevaUiBlocks(displayText) : { text: displayText, cards: [] }),
+    [displayText, isUser],
+  );
+  const assistantText = revaUiContent.text;
   const structuredSummary = useMemo(
-    () => (!isUser && !item.streaming ? parseStructuredHealthSummary(displayText) : null),
-    [displayText, isUser, item.streaming],
+    () => (!isUser && !item.streaming ? parseStructuredHealthSummary(assistantText) : null),
+    [assistantText, isUser, item.streaming],
   );
   const visibleMarkdown = useMemo(
-    () => (structuredSummary ? stripStructuredHealthSummary(displayText) : displayText),
-    [displayText, structuredSummary],
+    () => (structuredSummary ? stripStructuredHealthSummary(assistantText) : assistantText),
+    [assistantText, structuredSummary],
   );
+  const assistantTextForActions = assistantText.trim();
   // 流式期间故意不跑 preprocessMarkdownTables + <Markdown> 整树渲染:
   // visibleMarkdown 每个 token 批次都变, memo 会失效 → 每秒 10-20 次全量
   // markdown 预处理 + react-native-markdown-display 整树重渲, 长回复打满 JS 线程,
@@ -204,8 +211,8 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
   const openDraft = () => {
     setShowActions(false);
     setDraft(buildInterventionDraft({
-      title: inferActionTitle(displayText),
-      advice: displayText,
+      title: inferActionTitle(assistantTextForActions),
+      advice: assistantTextForActions,
       sourceType: 'chat',
       sourceId: item.id,
     }));
@@ -213,7 +220,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
 
   const handleSaveMemory = async () => {
     try {
-      await saveAssistantReplyAsMemory(displayText);
+      await saveAssistantReplyAsMemory(assistantTextForActions);
       await invalidateQueryKeys(qc, [['memory-facts'], ['memory-stats']]);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       toast.show('已保存到记忆', 'success');
@@ -264,7 +271,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
       finishSpeech();
       return;
     }
-    const text = stripMarkdownForSpeech(displayText);
+    const text = stripMarkdownForSpeech(assistantTextForActions);
     if (!text) return;
     try { Haptics.selectionAsync(); } catch {}
     setSpeechActive(true);
@@ -304,7 +311,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
       toast.show('这条回复没有完整结束，暂不能分享。', 'info');
       return;
     }
-    const message = buildAiShareMessage(displayText);
+    const message = buildAiShareMessage(assistantTextForActions);
     if (!message) return;
     Haptics.selectionAsync();
     try {
@@ -376,7 +383,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
             onPress={handleBubblePress}
             onLongPress={handleLongPress}
             accessibilityRole="text"
-            accessibilityLabel={`AI: ${item.content}`}
+            accessibilityLabel={`AI: ${assistantTextForActions || (revaUiContent.cards.length > 0 ? '图表卡片' : item.content)}`}
             accessibilityState={selectionMode ? { selected } : undefined}
           >
             {structuredSummary ? (
@@ -390,12 +397,20 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
             ) : !item.streaming && !displayText ? (
               <Text style={txt.fallback}>抱歉，这条回复没能送达。你可以重新提问。</Text>
             ) : null}
+            {revaUiContent.cards.length > 0 ? (
+              <View testID="assistant-reva-ui-cards" style={styles.inlineCardStack}>
+                {revaUiContent.cards.map((card, index) => {
+                  const rendered = renderCard(card, { onAction: handleCardAction });
+                  return rendered ? <View key={`${card.type}-${index}`}>{rendered}</View> : null;
+                })}
+              </View>
+            ) : null}
             {/* P4: 显式归因 chips — 仅当 LLM 在回答里加了"(基于你的 X)" 等 marker 才渲染.
                  markdown 渲染完后, 流式结束才出 (避免提取不全的 marker 闪现) */}
-            {displayText && !item.streaming ? (
-              <AttributionChips text={displayText} />
+            {assistantTextForActions && !item.streaming ? (
+              <AttributionChips text={assistantTextForActions} />
             ) : null}
-            {!item.streaming && displayText ? (
+            {!item.streaming && assistantTextForActions ? (
               <View style={styles.resultActionGrid}>
                 <ResultActionButton
                   icon="add-circle-outline"
@@ -423,7 +438,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
                 />
               </View>
             ) : null}
-            {displayText && showActions ? (
+            {assistantTextForActions && showActions ? (
               <View style={styles.actionsRow}>
                 <Pressable
                   style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
@@ -447,7 +462,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
             ) : null}
             {item.streaming && <ActivityIndicator size="small" color={C.green500} style={{ marginTop: 4 }} />}
             {/* 2026-05-13: 耗时 + 模型名 footer + 🔊 播报按钮 (流式结束才显示) */}
-            {!item.streaming && displayText ? (
+            {!item.streaming && assistantTextForActions ? (
               <View style={styles.metaRow}>
                 {item.elapsedMs != null ? (
                   <>
@@ -884,6 +899,7 @@ const styles = StyleSheet.create({
   msgRowUser: { justifyContent: 'flex-end' },
   msgRowAI: { justifyContent: 'flex-start' },
   cardFrame: { flex: 1, minWidth: 0, maxWidth: '100%' },
+  inlineCardStack: { marginTop: 10, gap: 8 },
   bubble: { maxWidth: '88%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
   bubbleUser: { backgroundColor: C.green500, borderBottomRightRadius: 4 },
   bubbleSelected: {

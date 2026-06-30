@@ -83,6 +83,7 @@ export async function* streamChat(
   xhr.open('POST', `${BASE_URL}/agent/stream`);
   xhr.setRequestHeader('Content-Type', 'application/json');
   if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+  xhr.setRequestHeader('X-Reva-Client-Caps', 'genui-v1');
   xhr.responseType = 'text';
 
   // Wire up abort signal

@@ -61,6 +61,22 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('declares GenUI support so the backend can return deterministic charts', async () => {
+    const iter = streamChat('帮我绘制最近半年的HRV曲线');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+
+    expect(xhr.setRequestHeader).toHaveBeenCalledWith('X-Reva-Client-Caps', expect.stringContaining('genui-v1'));
+
+    xhr.responseText =
+      'data: {"event":"done","data":{"conversation_id":42,"message_id":99}}\n\n';
+    xhr.onprogress?.();
+    await first;
+    await iter.return?.(undefined as any);
+  });
+
   it('preserves cards from done event for mobile card rendering', async () => {
     const iter = streamChat('MTHFR 怎么办');
     const first = iter.next();

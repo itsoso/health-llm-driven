@@ -135,6 +135,15 @@ P1 Mobile Today 主行动聚焦已推进:
 - `runtime_agenda` 数据合同和卡片实现保留,后续放到阿衡对话或详情页承接,不在首页抢主叙事。
 - 聚焦测试和首页回归测试已覆盖该行为。
 
+## 第十三批实现切片
+
+P1 Chat GenUI 图表承接已推进:
+
+- Mobile `streamChat` 声明 `X-Reva-Client-Caps: genui-v1`,让后端可以返回确定性 `reva-ui` 图表块。
+- 新增 `reva-ui` fenced block parser,只接受 `v=1` 且 `component=line_chart` 的白名单组件。
+- ChatBubble 会把 assistant 文本内的 `line_chart` 渲染为原生动态图表卡,不再显示 raw JSON。
+- `line_chart` renderer 与既有 `metric_chart` 旧协议共存,保留健康管理边界和真实数据来源提示。
+
 ## 本周不做
 
 - 不把 App Store 发布伪装成已完成:缺 demo account、ASC credentials、人审截图时必须停在 pending。
