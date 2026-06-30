@@ -747,4 +747,30 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     fireEvent.press(getByLabelText('补今日记录'));
     expect(mockPush).toHaveBeenCalledWith('/(tabs)/record');
   });
+
+  it('hides generic quick actions when Aheng already provides primary action controls', () => {
+    mockDailyArtifact = {
+      artifact_date: '2026-06-29',
+      empty_state: false,
+      state: { label: '今日最重要行动', tone: 'focused', summary: '先处理今日行动。' },
+      top_action: {
+        id: 'walk-after-lunch',
+        title: '午饭后步行 10 分钟',
+        why_now: '餐后窗口优先,先用轻活动稳定血糖波动。',
+        actions: { complete: { enabled: false }, skip: { requires_reason: true } },
+      },
+      evidence: [],
+      confidence: 'medium',
+      freshness: { status: 'fresh', sources: ['runtime'] },
+      safety_boundary: '健康管理行动建议,不替代医生诊断。',
+    };
+
+    const { getByText, queryByLabelText, queryByText } = render(<TodayScreen />);
+
+    expect(getByText('午饭后步行 10 分钟')).toBeTruthy();
+    expect(queryByText('补今日记录')).toBeNull();
+    expect(queryByLabelText('补今日记录')).toBeNull();
+    expect(queryByLabelText('语音记录')).toBeNull();
+    expect(queryByLabelText('记录')).toBeNull();
+  });
 });

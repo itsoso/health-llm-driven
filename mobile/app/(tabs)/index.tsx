@@ -529,12 +529,14 @@ export default function TodayScreen() {
         {/* 7 · 90 天代谢周期兜底:阿衡今日行动已承接时不重复露出 */}
         {!hasAgentPrimaryAction ? <RevaCycleStrip /> : null}
 
-        {/* 8 · 快捷动作行 */}
-        <RevaQuickActions
-          onRun={() => router.push('/(tabs)/record' as any)}
-          onVoice={() => router.push('/voice-chat?intent=journal' as any)}
-          onRecord={() => router.push('/(tabs)/record' as any)}
-        />
+        {/* 8 · 通用快捷动作:没有阿衡主行动时作为兜底入口 */}
+        {!hasAgentPrimaryAction ? (
+          <RevaQuickActions
+            onRun={() => router.push('/(tabs)/record' as any)}
+            onVoice={() => router.push('/voice-chat?intent=journal' as any)}
+            onRecord={() => router.push('/(tabs)/record' as any)}
+          />
+        ) : null}
 
         {/* 深度分析(结果归因 / 生物年龄 / 抗衰下一步 / 设备一致性 / Agent 话题)
             已移出首页 → 「我」tab 的「健康分析」分组(信息架构:首页只留日常驱动)。 */}
