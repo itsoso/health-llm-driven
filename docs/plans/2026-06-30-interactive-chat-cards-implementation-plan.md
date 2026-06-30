@@ -8,7 +8,7 @@
 
 **Tech Stack:** FastAPI/Python backend card builders, Expo React Native card registry, Jest, pytest.
 
-**Current status (2026-06-30):** Tasks 1-3 and the generic `record` action protocol are implemented and verified. Release evidence is tracked in `docs/dossiers/2026-06-30-interactive-chat-cards.md`.
+**Current status (2026-06-30):** Tasks 1-3 and the generic `record` action protocol are implemented, verified, deployed to backend, and published through Mobile OTA. Release evidence is tracked in `docs/dossiers/2026-06-30-interactive-chat-cards.md`.
 
 ---
 

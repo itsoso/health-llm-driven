@@ -4,8 +4,8 @@
 |---|---|
 | slug | `interactive-chat-cards` |
 | 创建日期 | 2026-06-30 |
-| 当前阶段 | S5 实现 |
-| 状态 | building |
+| 当前阶段 | S7 上线验证 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | TDD / mobile Jest / backend contract test / backend deploy / mobile OTA |
 
@@ -105,11 +105,23 @@ Pre-release review notes:
 
 ## G5 · 部署健康
 
-Pending.
+裁决: PASS.
+
+- Git: `344c50ce feat(chat): add interactive dynamic card actions` pushed to `origin/main`.
+- Backend deploy: `./deploy.sh -b` from clean detached worktree `/tmp/health-deploy-344c50ce`.
+- Database backup: `health_db_2026-06-30_18-03.sql.gz`, 36M, integrity checks passed for force-RLS tables.
+- Migrations: managed migrations applied `none`.
+- System KB: imported 855 documents and 3309 edges; reindexed 863 dense vectors.
+- Health score: `60/60 PASS`.
+- Skills manifest: local 22 = online 22.
+- Mobile OTA: production branch, runtime `1.3.1`, update group `59d8577f-8264-4aa9-98f0-e30bb5bf8f95`, iOS update `019f17ff-34e6-7802-b443-874c7d6b7226`.
 
 ## G6 · 上线验证
 
-Pending.
+裁决: PASS.
+
+- Production route check: unauthenticated `POST /api/v1/agent/stream` on `127.0.0.1:8000` returned `401`, confirming service reachability and auth boundary.
+- OTA dashboard: https://expo.dev/accounts/itsoso/projects/health-pilot/updates/59d8577f-8264-4aa9-98f0-e30bb5bf8f95
 
 ## S8 · 沉淀
 
