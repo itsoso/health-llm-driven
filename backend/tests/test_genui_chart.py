@@ -26,6 +26,16 @@ from app.services.genui.chart_rich import compute_chart_rich
 from tests.conftest import create_authenticated_user
 
 
+@pytest.fixture(autouse=True)
+def _clear_agent_dup_cache():
+    """agent/stream 的 in-memory 防双发缓存是模块级, 跨测试存活 →
+    多个 agent_stream 测试用同一 user_id+message 会撞 429。每测试前后清空。"""
+    from app.api.agent import _RECENT_DUP_CACHE
+    _RECENT_DUP_CACHE.clear()
+    yield
+    _RECENT_DUP_CACHE.clear()
+
+
 # ---------------------------------------------------------------------------
 # seed helpers
 # ---------------------------------------------------------------------------
@@ -629,8 +639,18 @@ def test_agent_stream_genui_caps_present_emits_block_no_llm(
     # block 出现在 token 事件里 (Mac WebView 扫描 fence)
     assert "reva-ui" in body
     assert "line_chart" in body
-    # 数值来自 seeded 数据 (40-90 区间)
-    assert '"component":"line_chart"' in body or '"component": "line_chart"' in body
+    # reva-ui 块在 token.data.content 内是 JSON 字符串 (SSE 再转义一层),
+    # 解码 token 内容后再验组件字段 (body 里是 \"component\" 转义形态)。
+    _decoded = ""
+    for _l in body.split("\n"):
+        if _l.startswith("data: "):
+            try:
+                _ev = json.loads(_l[6:])
+            except Exception:
+                continue
+            if _ev.get("event") == "token":
+                _decoded += _ev.get("data", {}).get("content", "")
+    assert "line_chart" in _decoded and '"component"' in _decoded
 
     # done 事件携带真实 message_id, 且消息已持久化到对话存储
     from app.services.openclaw_service import OpenClawService
