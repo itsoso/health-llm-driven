@@ -63,7 +63,8 @@ struct AppServices {
         let labUploadClient = LabUploadClient(apiClient: apiClient)
         self.labUploadClient = labUploadClient
         self.todayViewModel = TodayViewModel(
-            service: DesktopBootstrapService(apiClient: apiClient)
+            service: DesktopBootstrapService(apiClient: apiClient),
+            dynamicViewService: TodayDynamicViewClient(apiClient: apiClient)
         )
         self.agentViewModel = AgentChatViewModel(
             streamService: AgentStreamClient(baseURL: baseURL, tokenProvider: tokenProvider),

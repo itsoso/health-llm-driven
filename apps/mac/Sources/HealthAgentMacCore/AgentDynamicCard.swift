@@ -2,24 +2,62 @@ import Foundation
 
 public struct AgentDynamicCardDescriptor: Codable, Equatable, Sendable {
     public let type: String
+    public let render: AgentDynamicCardRenderDescriptor?
     public let data: AgentDynamicCardValue
     public let actions: [AgentDynamicCardActionDescriptor]
 
-    public init(type: String, data: AgentDynamicCardValue, actions: [AgentDynamicCardActionDescriptor] = []) {
+    public init(
+        type: String,
+        render: AgentDynamicCardRenderDescriptor? = nil,
+        data: AgentDynamicCardValue,
+        actions: [AgentDynamicCardActionDescriptor] = []
+    ) {
         self.type = type
+        self.render = render
         self.data = data
         self.actions = actions
     }
 
     private enum CodingKeys: String, CodingKey {
-        case type, data, actions
+        case type, render, data, actions
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         type = try c.decode(String.self, forKey: .type)
+        render = try? c.decode(AgentDynamicCardRenderDescriptor.self, forKey: .render)
         data = try c.decode(AgentDynamicCardValue.self, forKey: .data)
         actions = (try? c.decode([AgentDynamicCardActionDescriptor].self, forKey: .actions)) ?? []
+    }
+}
+
+public struct AgentDynamicCardRenderDescriptor: Codable, Equatable, Sendable {
+    public let atom: String?
+    public let reason: String?
+    public let dedupeKey: String?
+
+    public init(atom: String? = nil, reason: String? = nil, dedupeKey: String? = nil) {
+        self.atom = atom
+        self.reason = reason
+        self.dedupeKey = dedupeKey
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case atom
+        case reason
+        case dedupeKey = "dedupe_key"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        atom = Self.clean(try? c.decode(String.self, forKey: .atom))
+        reason = Self.clean(try? c.decode(String.self, forKey: .reason))
+        dedupeKey = Self.clean(try? c.decode(String.self, forKey: .dedupeKey))
+    }
+
+    private static func clean(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 

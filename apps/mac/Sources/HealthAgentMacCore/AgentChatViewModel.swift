@@ -18,6 +18,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
     /// web/mobile: `cardType` selects a renderer, `cardData` is untrusted JSON
     /// that must be escaped before entering the transcript DOM.
     public var cardType: String?
+    public var cardRender: AgentDynamicCardRenderDescriptor?
     public var cardData: AgentDynamicCardValue?
     public var cardActions: [AgentDynamicCardActionDescriptor]
 
@@ -71,6 +72,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         completionStatus: String? = nil,
         perf: MessagePerf? = nil,
         cardType: String? = nil,
+        cardRender: AgentDynamicCardRenderDescriptor? = nil,
         cardData: AgentDynamicCardValue? = nil,
         cardActions: [AgentDynamicCardActionDescriptor] = [],
         remoteImageURLs: [String] = []
@@ -80,6 +82,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.content = content
         self.remoteImageURLs = remoteImageURLs
         self.cardType = cardType
+        self.cardRender = cardRender
         self.cardData = cardData
         self.cardActions = cardActions
         self.model = model
@@ -97,8 +100,9 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
 
     // 显式 Codable:历史快照(老版本无这些字段)用 decodeIfPresent 容错;数组缺失 → 空。
     private enum CodingKeys: String, CodingKey {
-        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, sourcesUsed, toolsUsed, completionStatus, perf, cardType, cardData, cardActions
+        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, sourcesUsed, toolsUsed, completionStatus, perf, cardType, cardRender, cardData, cardActions
         case cardTypeSnake = "card_type"
+        case cardRenderSnake = "card_render"
         case cardDataSnake = "card_data"
         case cardActionsSnake = "card_actions"
     }
@@ -122,6 +126,8 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.perf = try c.decodeIfPresent(MessagePerf.self, forKey: .perf)
         self.cardType = try c.decodeIfPresent(String.self, forKey: .cardType)
             ?? c.decodeIfPresent(String.self, forKey: .cardTypeSnake)
+        self.cardRender = try c.decodeIfPresent(AgentDynamicCardRenderDescriptor.self, forKey: .cardRender)
+            ?? c.decodeIfPresent(AgentDynamicCardRenderDescriptor.self, forKey: .cardRenderSnake)
         self.cardData = try c.decodeIfPresent(AgentDynamicCardValue.self, forKey: .cardData)
             ?? c.decodeIfPresent(AgentDynamicCardValue.self, forKey: .cardDataSnake)
         self.cardActions = try c.decodeIfPresent([AgentDynamicCardActionDescriptor].self, forKey: .cardActions)
@@ -147,6 +153,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         try c.encodeIfPresent(completionStatus, forKey: .completionStatus)
         try c.encodeIfPresent(perf, forKey: .perf)
         try c.encodeIfPresent(cardType, forKey: .cardType)
+        try c.encodeIfPresent(cardRender, forKey: .cardRender)
         try c.encodeIfPresent(cardData, forKey: .cardData)
         try c.encode(cardActions, forKey: .cardActions)
     }
@@ -920,6 +927,7 @@ public final class AgentChatViewModel {
                         if let perf { messages[idx].perf = perf }
                         if messages[idx].cardType == nil, let firstCard = cards.first {
                             messages[idx].cardType = firstCard.type
+                            messages[idx].cardRender = firstCard.render
                             messages[idx].cardData = firstCard.data
                             messages[idx].cardActions = firstCard.actions
                         }
@@ -1249,6 +1257,7 @@ public final class AgentChatViewModel {
             let cardHTML = message.role == .assistant
                 ? ChatTranscriptHTML.dynamicCardHTML(
                     type: message.cardType,
+                    render: message.cardRender,
                     data: message.cardData,
                     actions: message.cardActions
                 ) ?? ""
@@ -1492,6 +1501,7 @@ public final class AgentChatViewModel {
             return
         }
         messages[idx].cardType = card.type
+        messages[idx].cardRender = card.render
         messages[idx].cardData = card.data
         messages[idx].cardActions = card.actions
         if let toolName {

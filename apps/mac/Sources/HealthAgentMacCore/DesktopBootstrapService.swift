@@ -21,6 +21,7 @@ public struct DesktopBootstrapService: DesktopBootstrapServicing {
 @MainActor
 public final class TodayViewModel {
     private let service: DesktopBootstrapServicing
+    private let dynamicViewService: TodayDynamicViewServicing?
 
     public private(set) var bootstrap: DesktopBootstrap?
     public private(set) var topActions: [DailyPlanAction] = []
@@ -28,8 +29,9 @@ public final class TodayViewModel {
     public private(set) var errorMessage: String?
     public private(set) var isLoading = false
 
-    public init(service: DesktopBootstrapServicing) {
+    public init(service: DesktopBootstrapServicing, dynamicViewService: TodayDynamicViewServicing? = nil) {
         self.service = service
+        self.dynamicViewService = dynamicViewService
     }
 
     public func refresh() async {
@@ -40,11 +42,25 @@ public final class TodayViewModel {
         do {
             let payload = try await service.fetchBootstrap()
             bootstrap = payload
-            topActions = payload.menuBarActions
+            topActions = await preferredMenuBarActions(fallback: payload.menuBarActions)
             activeJobs = payload.activeJobs
         } catch {
             AppLogger.dashboard.error("desktop bootstrap fetch failed: \(error.localizedDescription, privacy: .public)")
             errorMessage = String(describing: error)
+        }
+    }
+
+    private func preferredMenuBarActions(fallback: [DailyPlanAction]) async -> [DailyPlanAction] {
+        guard let dynamicViewService else {
+            return fallback
+        }
+        do {
+            let view = try await dynamicViewService.fetchTodayDynamicView(trigger: "open")
+            let dynamicActions = view.menuBarActions
+            return dynamicActions.isEmpty ? fallback : dynamicActions
+        } catch {
+            AppLogger.dashboard.warning("today dynamic view fetch failed, falling back to desktop bootstrap: \(error.localizedDescription, privacy: .public)")
+            return fallback
         }
     }
 }

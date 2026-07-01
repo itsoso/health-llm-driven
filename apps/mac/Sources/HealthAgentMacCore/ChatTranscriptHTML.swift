@@ -380,22 +380,25 @@ public enum ChatTranscriptHTML {
 
     public static func dynamicCardHTML(
         type: String?,
+        render: AgentDynamicCardRenderDescriptor? = nil,
         data: AgentDynamicCardValue?,
         actions: [AgentDynamicCardActionDescriptor] = []
     ) -> String? {
         guard let type, let data else {
             return nil
         }
-        return dynamicCardHTML(type: type, data: data, actions: actions)
+        return dynamicCardHTML(type: type, render: render, data: data, actions: actions)
     }
 
     public static func dynamicCardHTML(
         type: String,
+        render: AgentDynamicCardRenderDescriptor? = nil,
         data: AgentDynamicCardValue,
         actions: [AgentDynamicCardActionDescriptor] = []
     ) -> String? {
+        let rendererType = dynamicCardRendererType(type: type, render: render)
         let html: String?
-        switch type {
+        switch rendererType {
         case "medical_exam_import_result":
             html = medicalExamImportCardHTML(data)
         case "system_knowledge_evidence":
@@ -405,13 +408,34 @@ public enum ChatTranscriptHTML {
         case "record_quality":
             html = recordQualityCardHTML(data)
         default:
-            html = genericDynamicCardHTML(type: type, data: data)
+            html = genericDynamicCardHTML(type: rendererType, data: data)
         }
         guard let html else {
             return nil
         }
         return appendDynamicCardActions(to: html, actions: actions)
     }
+
+    private static func dynamicCardRendererType(
+        type: String,
+        render: AgentDynamicCardRenderDescriptor?
+    ) -> String {
+        let cardType = cleanCardIdentifier(type) ?? "unknown"
+        guard let atom = cleanCardIdentifier(render?.atom) else {
+            return cardType
+        }
+        if dedicatedDynamicCardRenderers.contains(atom) || cardType == "agent_atom" {
+            return atom
+        }
+        return cardType
+    }
+
+    private static let dedicatedDynamicCardRenderers: Set<String> = [
+        "medical_exam_import_result",
+        "system_knowledge_evidence",
+        "safety",
+        "record_quality"
+    ]
 
     private static func medicalExamImportCardHTML(_ data: AgentDynamicCardValue) -> String? {
         guard case .object = data else {
@@ -690,6 +714,14 @@ public enum ChatTranscriptHTML {
         }
     }
 
+    private static func cleanCardIdentifier(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty, trimmed.rangeOfCharacter(from: .controlCharacters) == nil else {
+            return nil
+        }
+        return String(trimmed.prefix(80))
+    }
+
     private static func cardSummaryRows(data: AgentDynamicCardValue) -> [(String, String)] {
         guard case .object(let object) = data else {
             return [("value", scalarSummary(data))]
@@ -798,6 +830,9 @@ public enum ChatTranscriptHTML {
         case .array(let values):
             return "\(values.count) 项"
         case .object(let object):
+            if let title = cardString(object["title"]) {
+                return title
+            }
             return "\(object.count) 字段"
         }
     }

@@ -364,6 +364,47 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertFalse(html.contains("<tag>"))
     }
 
+    func testDynamicCardUnknownRenderAtomFallsBackToRegisteredTypeRenderer() throws {
+        let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
+            type: "system_knowledge_evidence",
+            render: AgentDynamicCardRenderDescriptor(
+                atom: "future_evidence_atom",
+                reason: "experimental_renderer"
+            ),
+            data: .object([
+                "entity": .object(["title": .string("MTHFR <tag>")]),
+                "claims": .array([.object(["doc_id": .string("claim:c1")])])
+            ])
+        ))
+
+        XCTAssertTrue(html.contains("知识证据卡"))
+        XCTAssertTrue(html.contains("MTHFR &lt;tag&gt;"))
+        XCTAssertFalse(html.contains("future_evidence_atom"))
+        XCTAssertFalse(html.contains("动态卡片"))
+        XCTAssertFalse(html.contains("<tag>"))
+    }
+
+    func testDynamicCardGenericAgentAtomEnvelopeUsesRenderAtomName() throws {
+        let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
+            type: "agent_atom",
+            render: AgentDynamicCardRenderDescriptor(
+                atom: "runtime_agenda",
+                reason: "next_runtime_action"
+            ),
+            data: .object([
+                "horizon_days": .int(7),
+                "next_action": .object([
+                    "title": .string("晚餐后步行 15 分钟")
+                ])
+            ])
+        ))
+
+        XCTAssertTrue(html.contains("动态卡片"))
+        XCTAssertTrue(html.contains("runtime_agenda"))
+        XCTAssertTrue(html.contains("晚餐后步行 15 分钟"))
+        XCTAssertFalse(html.contains(">agent_atom<"))
+    }
+
     func testMetaFooterOmitsEmptySourcesAndToolsBlocks() {
         // 有模型行,但 sources/tools 空 → 只出 meta-line,不出 details / meta-tools
         let html = ChatTranscriptHTML.metaFooterHTML(

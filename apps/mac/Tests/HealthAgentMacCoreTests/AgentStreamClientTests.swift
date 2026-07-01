@@ -62,7 +62,7 @@ final class AgentStreamClientTests: XCTestCase {
 
     func testParserParsesDynamicCardsInDone() throws {
         let payload = """
-        data: {"event":"done","data":{"conversation_id":5,"message_id":3,"completion_status":"complete","cards":[{"type":"medical_exam_import_result","data":{"exam_id":321,"source":"pdf","items_count":9},"actions":[{"id":"ask-import-review","label":"问阿衡复核","action":"route.open","payload":{"route":"/(tabs)/chat?prompt=复核体检报告"},"style":"primary"}]}]}}
+        data: {"event":"done","data":{"conversation_id":5,"message_id":3,"completion_status":"complete","cards":[{"type":"medical_exam_import_result","render":{"atom":"future_medical_exam_import","reason":"experimental_renderer"},"data":{"exam_id":321,"source":"pdf","items_count":9},"actions":[{"id":"ask-import-review","label":"问阿衡复核","action":"route.open","payload":{"route":"/(tabs)/chat?prompt=复核体检报告"},"style":"primary"}]}]}}
 
         """
 
@@ -81,6 +81,10 @@ final class AgentStreamClientTests: XCTestCase {
                 cards: [
                     AgentDynamicCardDescriptor(
                         type: "medical_exam_import_result",
+                        render: AgentDynamicCardRenderDescriptor(
+                            atom: "future_medical_exam_import",
+                            reason: "experimental_renderer"
+                        ),
                         data: .object([
                             "exam_id": .int(321),
                             "source": .string("pdf"),
@@ -232,6 +236,31 @@ final class AgentStreamClientTests: XCTestCase {
         XCTAssertEqual(decoded.cardData?["review_required"]?.boolValue, true)
         XCTAssertEqual(decoded.cardActions.first?.label, "问阿衡复核")
         XCTAssertEqual(decoded.cardActions.first?.payload?["route"]?.stringValue, "/(tabs)/chat?prompt=复核体检报告")
+    }
+
+    func testAgentChatMessageRoundTripsDynamicCardRenderMetadataThroughCodable() throws {
+        let original = AgentChatMessage(
+            role: .assistant,
+            content: "",
+            cardType: "runtime_agenda",
+            cardRender: AgentDynamicCardRenderDescriptor(
+                atom: "future_runtime_agenda",
+                reason: "experimental_renderer"
+            ),
+            cardData: .object([
+                "horizon_days": .int(7),
+                "next_action": .object([
+                    "title": .string("晚餐后步行 15 分钟")
+                ])
+            ])
+        )
+
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(AgentChatMessage.self, from: data)
+
+        XCTAssertEqual(decoded, original)
+        XCTAssertEqual(decoded.cardRender?.atom, "future_runtime_agenda")
+        XCTAssertEqual(decoded.cardRender?.reason, "experimental_renderer")
     }
 
     func testAgentChatMessageDecodesSnakeCaseDynamicCardSnapshot() throws {
