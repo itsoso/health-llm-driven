@@ -226,6 +226,40 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(getByText('现在该做 · 风险')).toBeTruthy();
   });
 
+  it('promotes high-priority safety alerts into Today as a contextual safety card', () => {
+    mockSafetyAlerts = [{
+      rule_id: 'spo2_low',
+      severity: 'high',
+      title: '夜间血氧持续偏低',
+      message: '昨晚最低血氧 88%,需要复核设备佩戴和症状。',
+      action: '今天先复测并观察是否胸闷、气短。',
+    }];
+
+    const { getByLabelText, getByText } = render(<TodayScreen />);
+
+    expect(getByText('安全提醒')).toBeTruthy();
+    expect(getByText('夜间血氧持续偏低')).toBeTruthy();
+    expect(getByText('昨晚最低血氧 88%,需要复核设备佩戴和症状。')).toBeTruthy();
+    expect(getByText('今天先复测并观察是否胸闷、气短。')).toBeTruthy();
+
+    fireEvent.press(getByLabelText('查看安全提醒详情'));
+    expect(mockPush).toHaveBeenCalledWith('/(tabs)/alerts');
+  });
+
+  it('does not pin medium or low safety hints on Today', () => {
+    mockSafetyAlerts = [{
+      rule_id: 'hydration_hint',
+      severity: 'medium',
+      title: '饮水偏少',
+      message: '今天上午饮水记录较少。',
+    }];
+
+    const { queryByText } = render(<TodayScreen />);
+
+    expect(queryByText('安全提醒')).toBeNull();
+    expect(queryByText('饮水偏少')).toBeNull();
+  });
+
   it('renders the graceful empty state and routes to record when there is no now-item', () => {
     // 无 timeline now → Hero 空态「今天的事都安排好了」+「补齐今天记录」入口。
     const { getByText, getByLabelText } = render(<TodayScreen />);

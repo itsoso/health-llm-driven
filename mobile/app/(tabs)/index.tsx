@@ -58,6 +58,7 @@ import RevaQuickActions from '../../components/home/RevaQuickActions';
 import DynamicTodayRenderer from '../../components/home/DynamicTodayRenderer';
 import HomeMedicationSummary from '../../components/home/HomeMedicationSummary';
 import TodaySignalsPanel, { type TodaySignalKey } from '../../components/home/TodaySignalsPanel';
+import TodaySafetyAlertCard from '../../components/home/TodaySafetyAlertCard';
 import { useRevaFonts } from '../../components/reva/useRevaFonts';
 import { revaColors } from '../../constants/revaTheme';
 import { useHomeColdStartTrace } from '../../services/perfTrace';
@@ -208,6 +209,7 @@ export default function TodayScreen() {
   const criticalAlerts = alerts.filter((a) =>
     ['critical', 'high'].includes(getSeverityKey(a.severity)),
   );
+  const primarySafetyAlert = pickPrimarySafetyAlert(criticalAlerts);
 
   const twinSnap = pickTwinSnapshot(twinQuery.data, garmin);
 
@@ -501,6 +503,14 @@ export default function TodayScreen() {
           />
         )}
 
+        {primarySafetyAlert ? (
+          <TodaySafetyAlertCard
+            alert={primarySafetyAlert}
+            alertCount={criticalAlerts.length}
+            onPress={() => router.push('/(tabs)/alerts')}
+          />
+        ) : null}
+
         {/* 待你确认(Write 层 v0:Agent 提议替你写一件事,确认才执行;空态不渲染) */}
         <WriteIntentCard />
 
@@ -617,6 +627,12 @@ function openSignalRoute(signal: TodaySignalKey, router: { push: (href: any) => 
 
 function getSeverityKey(s: any): string {
   return typeof s === 'string' ? s : s?.label ?? 'info';
+}
+
+function pickPrimarySafetyAlert(alerts: SafetyAlert[]): SafetyAlert | null {
+  return alerts.find((alert) => getSeverityKey(alert.severity) === 'critical')
+    ?? alerts.find((alert) => getSeverityKey(alert.severity) === 'high')
+    ?? null;
 }
 
 function pickTwinSnapshot(twin: any, garmin: any): TwinSnapshot {
