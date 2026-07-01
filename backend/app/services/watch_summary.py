@@ -1,13 +1,16 @@
 """Apple Watch 腕上摘要(W1 大脑)。
 
-把 agenda_service.runtime_range_view(days=1) 投影成 watch 优化的紧凑视图:
+把 rolling-runtime 投影 runtime_range_view(days=1) 投影成 watch 优化的紧凑视图,并**加层不减层**
+地补回 today() 里每一条今日到期协议(含事件触发非 daily 协议,见 build_watch_summary):
 - status:今日状态灯(绿/黄/红/灰)+ readiness + 一句话 headline
 - top_action:此刻最该做的一件可执行事(腕上一眼)
 - quick_actions:打点入口目录(喝水/补剂/运动/记一餐/打卡)—— watch 渲染按钮,各指向已有端点
 - push_items:该推到手腕的关键信息(分级 P0/P1,运动/补剂/睡眠/复查),小屏只留最多 3 条
+- runtime:rolling-runtime 合同信封 + 当日协议项的 runtime_context 富化
 
 只读投影,不写库、不绕过 Safety Guardian(critical 告警仍走告警通道);headline/push 措辞不诊断不开方。
 """
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -21,6 +24,8 @@ from app.models.user import GarminCredential
 from app.services import agenda_service, proactive_coordinator
 from app.services.action_ranker import rank_agenda_actions
 from app.utils.timezone import get_user_today
+
+logger = logging.getLogger(__name__)
 
 # 打点入口目录(canonical):watch 据此渲染按钮,endpoint 指向已有写接口。
 # value 由 watch 端补(喝水 ml / 运动 reps 等);diet_voice 走语音解析草稿流。
@@ -318,8 +323,51 @@ def _wearable_freshness(db: Session, user_id: int) -> Dict[str, Any]:
     }
 
 
+def _merge_due_protocol_items(
+    db: Session, user_id: int, items: List[Dict[str, Any]]
+) -> None:
+    """把 today() 里今日到期的协议/锻炼块补进投影 items(in-place,按 source 去重)。
+
+    投影 runtime_range_view 的 max_items_per_day top-N 截断会把低 rank 的事件触发协议
+    (餐后散步等)挤出,但腕上 due/push 必须看到每一条今日到期协议(加层不减层)。
+    只补 pending 的 health_protocol / day_schedule_workout(= actionable 可回写域),不动
+    checkup/training 等投影行为;已在投影里的同 source 项跳过 → daily 协议绝不双现。
+    """
+    seen = {
+        (src.get("object_type"), src.get("object_id"))
+        for src in ((it.get("source") or {}) for it in items)
+        if (src.get("object_type"), src.get("object_id")) != (None, None)
+    }
+    try:
+        agenda_today = agenda_service.today(db, user_id)
+    except Exception as e:  # noqa: BLE001 — 补层失败不得拖垮整张腕上摘要(fail-loud 记日志)
+        logger.warning("watch_summary: today() 协议补层失败,仅用投影 items: %s", e)
+        return
+    for it in agenda_today.get("items") or []:
+        src = it.get("source") or {}
+        if src.get("object_type") not in ("health_protocol", "day_schedule_workout"):
+            continue
+        if it.get("status") != "pending":
+            continue
+        key = (src.get("object_type"), src.get("object_id"))
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append(it)
+
+
 def build_watch_summary(db: Session, user_id: int) -> Dict[str, Any]:
-    """腕上摘要(只读投影 rolling runtime 今日行动合同)。"""
+    """腕上摘要(只读投影 rolling runtime 今日行动合同)。
+
+    items 以 runtime_range_view(days=1) 投影为基底(带 runtime_context 富化),再**加层不减层**
+    地补回 today() 里每一条今日到期的协议/锻炼块 —— 投影的 max_items_per_day top-N 截断会把
+    低 rank 的事件触发协议(餐后散步等)挤出,而腕上 due/push 必须看到每一条今日到期协议。
+    按 source 去重,daily 协议不会双现。
+
+    历史回归(a1535357 feat(runtime): add chat and watch surfaces):build_watch_summary 从
+    today() 切到截断投影后,事件触发协议(rank 低)被 daily_plan_action(rank 高)挤出 top-3,
+    手腕餐后散步 nudge 静默消失。见 tests/test_postmeal_walk_jitai.py。
+    """
     runtime_projection = agenda_service.runtime_range_view(
         db,
         user_id,
@@ -327,6 +375,8 @@ def build_watch_summary(db: Session, user_id: int) -> Dict[str, Any]:
         max_items_per_day=3,
     )
     items = _runtime_projection_items(runtime_projection)
+    # 加层不减层:补回投影截断掉的今日到期协议/锻炼块(含事件触发非 daily 协议)。
+    _merge_due_protocol_items(db, user_id, items)
 
     training = next((i for i in items if i.get("type") == "training"), None)
     light = (training or {}).get("light") or "gray"
