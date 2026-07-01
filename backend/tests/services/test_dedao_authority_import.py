@@ -1,11 +1,29 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
+from urllib.error import HTTPError
 
 from app.services.system_kb.dedao_authority_import import (
     HEALTH_AUTHORITY_PACK_CONTRACT,
     dry_run_import_dedao_authority_pack,
+    dry_run_import_dedao_authority_pack_from_kbase,
 )
+
+
+@dataclass
+class _FakeHTTPResponse:
+    body: str
+    status: int = 200
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def read(self):
+        return self.body.encode("utf-8")
 
 
 def _line(**overrides):
@@ -126,3 +144,67 @@ def test_dry_run_blocks_blocked_review_status():
     assert report.accepted_for_review == []
     assert report.blocked[0].claim_id == "dedao:book-1:claim-blocked-review"
     assert report.blocked[0].reason == "blocked_review_status"
+
+
+def test_pull_report_fetches_jsonl_with_bearer_and_sanitizes_token():
+    seen = {}
+
+    def opener(request, *, timeout):
+        seen["url"] = request.full_url
+        seen["authorization"] = request.headers.get("Authorization")
+        seen["timeout"] = timeout
+        return _FakeHTTPResponse(_line())
+
+    report = dry_run_import_dedao_authority_pack_from_kbase(
+        "https://kbase.example/",
+        "secret-token",
+        limit=7,
+        timeout=3,
+        opener=opener,
+    )
+
+    assert report.status == "ok"
+    assert report.http_status == 200
+    assert report.source_url == "https://kbase.example/api/projects/health/authority-pack/export?format=jsonl&limit=7"
+    assert seen == {
+        "url": report.source_url,
+        "authorization": "Bearer secret-token",
+        "timeout": 3,
+    }
+    assert [item.claim_id for item in report.import_report.accepted_for_review] == ["dedao:book-1:claim-1"]
+    serialized = json.dumps(report.to_dict(), ensure_ascii=False)
+    assert "secret-token" not in serialized
+    assert "Authorization" not in serialized
+
+
+def test_pull_report_reports_http_401_without_token_leakage():
+    def opener(request, *, timeout):
+        raise HTTPError(request.full_url, 401, "Unauthorized", hdrs=None, fp=None)
+
+    report = dry_run_import_dedao_authority_pack_from_kbase(
+        "https://kbase.example",
+        "secret-token",
+        opener=opener,
+    )
+
+    assert report.status == "fetch_failed"
+    assert report.http_status == 401
+    assert report.error == "http_401"
+    assert report.import_report.total == 0
+    assert "secret-token" not in json.dumps(report.to_dict(), ensure_ascii=False)
+
+
+def test_pull_report_keeps_bad_jsonl_as_import_finding():
+    def opener(request, *, timeout):
+        return _FakeHTTPResponse("{not-json}\n" + _line(claim_id="dedao:book-1:claim-ok"))
+
+    report = dry_run_import_dedao_authority_pack_from_kbase(
+        "https://kbase.example",
+        "secret-token",
+        opener=opener,
+    )
+
+    assert report.status == "ok"
+    assert report.import_report.total == 2
+    assert report.import_report.invalid[0].reason == "invalid_json"
+    assert [item.claim_id for item in report.import_report.accepted_for_review] == ["dedao:book-1:claim-ok"]

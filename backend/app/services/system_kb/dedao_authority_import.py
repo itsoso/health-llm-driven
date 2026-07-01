@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 from typing import Any, Iterable
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 
 HEALTH_AUTHORITY_PACK_CONTRACT = "health_authority_pack_v1"
@@ -85,6 +88,24 @@ class DedaoAuthorityImportReport:
         }
 
 
+@dataclass(frozen=True)
+class DedaoAuthorityPullReport:
+    status: str
+    source_url: str
+    http_status: int | None
+    import_report: DedaoAuthorityImportReport
+    error: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "source_url": self.source_url,
+            "http_status": self.http_status,
+            "error": self.error,
+            "import_report": self.import_report.to_dict(),
+        }
+
+
 def dry_run_import_dedao_authority_pack(lines: Iterable[str]) -> DedaoAuthorityImportReport:
     """Validate Health Authority Pack JSONL without writing System KB rows."""
 
@@ -139,6 +160,93 @@ def dry_run_import_dedao_authority_pack(lines: Iterable[str]) -> DedaoAuthorityI
         invalid=invalid,
         missing_source_refs=missing_source_refs,
         would_write=False,
+    )
+
+
+def build_dedao_authority_pack_export_url(base_url: str, limit: int = 25) -> str:
+    normalized = str(base_url or "").strip().rstrip("/")
+    if not normalized:
+        return ""
+    query = urlencode({"format": "jsonl", "limit": str(max(1, int(limit or 25)))})
+    return f"{normalized}/api/projects/health/authority-pack/export?{query}"
+
+
+def fetch_dedao_authority_pack_jsonl(
+    base_url: str,
+    token: str,
+    *,
+    limit: int = 25,
+    timeout: float = 15,
+    opener: Any | None = None,
+) -> tuple[str, str, int]:
+    source_url = build_dedao_authority_pack_export_url(base_url, limit)
+    if not source_url:
+        raise ValueError("missing_base_url")
+    token = str(token or "").strip()
+    if not token:
+        raise ValueError("missing_token")
+    request = Request(
+        source_url,
+        headers={
+            "Accept": "application/x-ndjson",
+            "Authorization": f"Bearer {token}",
+        },
+    )
+    open_fn = opener or urlopen
+    with open_fn(request, timeout=timeout) as response:
+        status = int(getattr(response, "status", 200) or 200)
+        body = response.read().decode("utf-8")
+    return source_url, body, status
+
+
+def dry_run_import_dedao_authority_pack_from_kbase(
+    base_url: str,
+    token: str,
+    *,
+    limit: int = 25,
+    timeout: float = 15,
+    opener: Any | None = None,
+) -> DedaoAuthorityPullReport:
+    source_url = build_dedao_authority_pack_export_url(base_url, limit)
+    try:
+        source_url, body, http_status = fetch_dedao_authority_pack_jsonl(
+            base_url,
+            token,
+            limit=limit,
+            timeout=timeout,
+            opener=opener,
+        )
+    except ValueError as exc:
+        return DedaoAuthorityPullReport(
+            status="fetch_failed",
+            source_url=source_url,
+            http_status=None,
+            error=str(exc),
+            import_report=_empty_import_report(),
+        )
+    except HTTPError as exc:
+        return DedaoAuthorityPullReport(
+            status="fetch_failed",
+            source_url=source_url,
+            http_status=int(exc.code),
+            error=f"http_{int(exc.code)}",
+            import_report=_empty_import_report(),
+        )
+    except URLError:
+        return DedaoAuthorityPullReport(
+            status="fetch_failed",
+            source_url=source_url,
+            http_status=None,
+            error="network_error",
+            import_report=_empty_import_report(),
+        )
+
+    import_report = dry_run_import_dedao_authority_pack(body.splitlines())
+    return DedaoAuthorityPullReport(
+        status="ok",
+        source_url=source_url,
+        http_status=http_status,
+        import_report=import_report,
     )
 
 
@@ -223,3 +331,15 @@ def _record_citations(record: dict[str, Any]) -> list[str]:
 
 def _review_status(record: dict[str, Any]) -> str:
     return _string(record.get("review_status")) or "needs_review"
+
+
+def _empty_import_report() -> DedaoAuthorityImportReport:
+    return DedaoAuthorityImportReport(
+        total=0,
+        accepted_for_review=[],
+        blocked=[],
+        duplicates=[],
+        invalid=[],
+        missing_source_refs=[],
+        would_write=False,
+    )

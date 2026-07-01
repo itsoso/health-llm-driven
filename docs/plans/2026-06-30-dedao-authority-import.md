@@ -10,6 +10,8 @@ Use `dry_run_import_dedao_authority_pack(lines)` from `app.services.system_kb.de
 
 The importer accepts both legacy flat source fields (`book_id`, `citations`, `source_hash`) and enriched `source_refs` from dedao-kbase. Review candidates preserve `review_status`, `risk_reason`, and `entity_candidates` for reviewer triage.
 
+Use `dry_run_import_dedao_authority_pack_from_kbase(base_url, token)` or the CLI report to pull the live dedao-kbase export. The pull report is read-only, sanitizes errors, and does not include Bearer tokens in output.
+
 ## Safety Rules
 
 - Unknown contract versions are invalid.
@@ -24,4 +26,12 @@ Run:
 
 ```bash
 DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest backend/tests/services/test_dedao_authority_import.py -q --no-cov
+```
+
+Generate a live dry-run report:
+
+```bash
+DEDAO_KBASE_BASE_URL=https://kbase.executor.life \
+DEDAO_KBASE_TOKEN=... \
+backend/venv/bin/python scripts/dedao_authority_pull_report.py --json
 ```
