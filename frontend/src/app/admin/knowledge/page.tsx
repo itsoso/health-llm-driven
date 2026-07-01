@@ -18,6 +18,7 @@ import {
 } from './reviewHelpers';
 import { CoverageMatrixView, CoverageMatrix } from './CoverageMatrixView';
 import { KnowledgeGraphView, GraphData, GraphNode } from './KnowledgeGraphView';
+import { ReconciliationQueueView, ReconQueueData, ReconScanResult } from './ReconciliationQueueView';
 
 interface CoverageReportResponse {
   coverage_matrix?: CoverageMatrix;
@@ -138,6 +139,9 @@ export default function KnowledgeAdminPage() {
   const [seedInput, setSeedInput] = useState('');
   const [graphSeed, setGraphSeed] = useState('');
   const [graphNode, setGraphNode] = useState<GraphNode | null>(null);
+  const [reconStatus, setReconStatus] = useState('open');
+  const [reconKind, setReconKind] = useState('');
+  const [reconScanResult, setReconScanResult] = useState<ReconScanResult | undefined>(undefined);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -184,6 +188,28 @@ export default function KnowledgeAdminPage() {
       return res.data;
     },
     enabled: isAuthenticated && !!user?.is_admin && !!graphSeed,
+  });
+
+  const reconQuery = useQuery<ReconQueueData>({
+    queryKey: ['admin-knowledge-reconciliation', reconStatus, reconKind],
+    queryFn: async () => {
+      const params = new URLSearchParams({ status: reconStatus, limit: '100' });
+      if (reconKind) params.set('kind', reconKind);
+      const res = await api.get(`/admin/knowledge/reconciliation/candidates?${params.toString()}`);
+      return res.data;
+    },
+    enabled: isAuthenticated && !!user?.is_admin,
+  });
+
+  const reconScanMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/admin/knowledge/reconciliation/scan');
+      return res.data as ReconScanResult;
+    },
+    onSuccess: (result) => {
+      setReconScanResult(result);
+      queryClient.invalidateQueries({ queryKey: ['admin-knowledge-reconciliation'] });
+    },
   });
 
   const items = useMemo(() => queueQuery.data?.items ?? [], [queueQuery.data?.items]);
@@ -370,6 +396,18 @@ export default function KnowledgeAdminPage() {
             )}
           </div>
         </section>
+
+        <ReconciliationQueueView
+          data={reconQuery.data}
+          loading={reconQuery.isLoading}
+          onScan={() => reconScanMutation.mutate()}
+          scanning={reconScanMutation.isPending}
+          scanResult={reconScanResult}
+          status={reconStatus}
+          kind={reconKind}
+          onStatusChange={setReconStatus}
+          onKindChange={setReconKind}
+        />
 
         <section className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
           <div className="rounded-xl border border-slate-800 bg-[#111820]">
