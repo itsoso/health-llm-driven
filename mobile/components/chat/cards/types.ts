@@ -93,4 +93,5 @@ export interface ChatCardActionDescriptor {
 export interface CardRenderOptions {
   onAction?: (action: ChatCardActionDescriptor, descriptor: ServerCardDescriptor) => void;
   actionStateByKey?: Record<string, ChatCardActionRuntimeState | undefined>;
+  onCardDataChange?: (data: any) => void;
 }

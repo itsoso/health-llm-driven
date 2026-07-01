@@ -1,8 +1,8 @@
 import React from 'react';
-import { StyleSheet, Text, TextStyle, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
-import type { CardSpec } from './types';
+import type { CardRenderOptions, CardSpec } from './types';
 import { revaColors as C, revaFonts, revaRadii, revaSemantic } from '../../../constants/revaTheme';
 
 const DIET_ACCENT = '#C97A2E';
@@ -39,6 +39,12 @@ interface DietDraftData {
   boundary?: unknown;
 }
 
+interface DietDraftCardViewProps extends DietDraftData {
+  onDraftChange?: (data: DietDraftData) => void;
+}
+
+type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+
 function text(value: unknown): string | undefined {
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -63,6 +69,11 @@ function numberValue(value: unknown): number | undefined {
     return Number.isFinite(parsed) ? parsed : undefined;
   }
   return undefined;
+}
+
+function editNumber(value: unknown): string {
+  const parsed = numberValue(value);
+  return parsed == null ? '' : String(Math.round(parsed * 10) / 10);
 }
 
 function listText(value: unknown): string[] {
@@ -102,7 +113,24 @@ function postMealWalkText(value: unknown): string | undefined {
   return `餐后轻走 ${Math.round(minutes)} 分钟`;
 }
 
-export function DietDraftCardView(data: DietDraftData) {
+function sanitizeNumberText(value: string): number | undefined {
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 10) / 10 : undefined;
+}
+
+function mealTypeValue(value: unknown): MealType {
+  const raw = text(value);
+  return raw && raw in MEAL_LABELS ? raw as MealType : 'snack';
+}
+
+export function DietDraftCardView(data: DietDraftCardViewProps) {
+  const [editing, setEditing] = React.useState(false);
+  const [draftMealType, setDraftMealType] = React.useState<MealType>(() => mealTypeValue(data.meal_type));
+  const [draftFood, setDraftFood] = React.useState(() => foodText(data.food_items) || '');
+  const [draftCalories, setDraftCalories] = React.useState(() => editNumber(data.calories));
+  const [draftProtein, setDraftProtein] = React.useState(() => editNumber(data.protein));
+  const [draftCarbs, setDraftCarbs] = React.useState(() => editNumber(data.carbs));
+  const [draftFat, setDraftFat] = React.useState(() => editNumber(data.fat));
   const foodItems = foodText(data.food_items) || '待确认餐食';
   const mealType = text(data.meal_type);
   const mealLabel = mealType ? (MEAL_LABELS[mealType] || mealType) : '餐食';
@@ -121,9 +149,89 @@ export function DietDraftCardView(data: DietDraftData) {
       badgeColor={DIET_ACCENT}
       bg={DIET_TINT}
     >
+      <View style={styles.inlineHeader}>
+        <Text maxFontSizeMultiplier={1.15} style={styles.inlineHint}>
+          确认前可修正餐次、食物和营养估算
+        </Text>
+        <Pressable
+          onPress={() => setEditing((prev) => !prev)}
+          accessibilityRole="button"
+          accessibilityLabel={editing ? '收起修正' : '修正饮食草稿'}
+          style={({ pressed }) => [styles.editButton, pressed && styles.editButtonPressed]}
+        >
+          <Ionicons name={editing ? 'chevron-up' : 'create-outline'} size={12} color={DIET_ACCENT} />
+          <Text style={styles.editButtonText}>{editing ? '收起' : '修正'}</Text>
+        </Pressable>
+      </View>
+
       <Text maxFontSizeMultiplier={1.25} style={styles.food} numberOfLines={3}>
         {foodItems}
       </Text>
+
+      {editing ? (
+        <View style={styles.editor}>
+          <View style={styles.mealTypeRow}>
+            {(Object.keys(MEAL_LABELS) as MealType[]).map((key) => (
+              <Pressable
+                key={key}
+                onPress={() => setDraftMealType(key)}
+                accessibilityRole="button"
+                accessibilityLabel={`餐次 ${MEAL_LABELS[key]}`}
+                style={[
+                  styles.mealChip,
+                  draftMealType === key && styles.mealChipActive,
+                ]}
+              >
+                <Text style={[
+                  styles.mealChipText,
+                  draftMealType === key && styles.mealChipTextActive,
+                ]}>
+                  {MEAL_LABELS[key]}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <TextInput
+            accessibilityLabel="食物描述"
+            value={draftFood}
+            onChangeText={setDraftFood}
+            placeholder="食物描述"
+            placeholderTextColor={C.ink4}
+            multiline
+            style={styles.foodInput}
+          />
+          <View style={styles.editMacroGrid}>
+            <DraftNumberInput label="热量" unit="kcal" value={draftCalories} onChangeText={setDraftCalories} />
+            <DraftNumberInput label="蛋白" unit="g" value={draftProtein} onChangeText={setDraftProtein} />
+            <DraftNumberInput label="碳水" unit="g" value={draftCarbs} onChangeText={setDraftCarbs} />
+            <DraftNumberInput label="脂肪" unit="g" value={draftFat} onChangeText={setDraftFat} />
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="应用饮食草稿修正"
+            style={({ pressed }) => [styles.applyButton, pressed && { opacity: 0.86 }]}
+            onPress={() => {
+              const next: DietDraftData = {
+                ...data,
+                meal_type: draftMealType,
+                food_items: draftFood.trim() || data.food_items,
+              };
+              const calories = sanitizeNumberText(draftCalories);
+              const protein = sanitizeNumberText(draftProtein);
+              const carbs = sanitizeNumberText(draftCarbs);
+              const fat = sanitizeNumberText(draftFat);
+              if (calories != null) next.calories = calories;
+              if (protein != null) next.protein = protein;
+              if (carbs != null) next.carbs = carbs;
+              if (fat != null) next.fat = fat;
+              data.onDraftChange?.(next);
+              setEditing(false);
+            }}
+          >
+            <Text style={styles.applyButtonText}>应用修正</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {macros.length > 0 ? (
         <View style={styles.macroGrid}>
@@ -182,16 +290,169 @@ export const DietDraftCardSpec: CardSpec<DietDraftData> = {
   build() {
     return null;
   },
-  render: (data) => <DietDraftCardView {...data} />,
+  render: (data, options?: CardRenderOptions) => (
+    <DietDraftCardView {...data} onDraftChange={options?.onCardDataChange} />
+  ),
 };
 
+function DraftNumberInput({
+  label,
+  unit,
+  value,
+  onChangeText,
+}: {
+  label: string;
+  unit: string;
+  value: string;
+  onChangeText: (value: string) => void;
+}) {
+  return (
+    <View style={styles.editMacroCell}>
+      <Text style={styles.editMacroLabel}>{label}</Text>
+      <TextInput
+        accessibilityLabel={label}
+        value={value}
+        onChangeText={onChangeText}
+        keyboardType="decimal-pad"
+        placeholder="0"
+        placeholderTextColor={C.ink4}
+        style={styles.editMacroInput}
+      />
+      <Text style={styles.editMacroUnit}>{unit}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  inlineHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  inlineHint: {
+    flex: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 11.5,
+    lineHeight: 16,
+    color: C.ink3,
+    fontWeight: '700',
+  } as TextStyle,
+  editButton: {
+    minHeight: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    paddingHorizontal: 9,
+  },
+  editButtonPressed: {
+    opacity: 0.78,
+  },
+  editButtonText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    color: DIET_ACCENT,
+    fontWeight: '800',
+  } as TextStyle,
   food: {
     fontFamily: revaFonts.sans,
     fontSize: 15,
     lineHeight: 21,
     fontWeight: '800',
     color: C.ink1,
+  } as TextStyle,
+  editor: {
+    gap: 9,
+    marginTop: 10,
+    marginBottom: 2,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    padding: 10,
+  },
+  mealTypeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+  },
+  mealChip: {
+    minHeight: 30,
+    justifyContent: 'center',
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.paper2,
+    paddingHorizontal: 11,
+  },
+  mealChipActive: {
+    backgroundColor: DIET_ACCENT,
+  },
+  mealChipText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    color: C.ink2,
+    fontWeight: '800',
+  } as TextStyle,
+  mealChipTextActive: {
+    color: '#fff',
+  } as TextStyle,
+  foodInput: {
+    minHeight: 44,
+    borderRadius: revaRadii.sm,
+    backgroundColor: C.paper2,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    color: C.ink1,
+  } as TextStyle,
+  editMacroGrid: {
+    flexDirection: 'row',
+    gap: 7,
+  },
+  editMacroCell: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 3,
+  },
+  editMacroLabel: {
+    fontFamily: revaFonts.sans,
+    fontSize: 10,
+    color: C.ink3,
+    fontWeight: '700',
+  } as TextStyle,
+  editMacroInput: {
+    width: '100%',
+    minHeight: 34,
+    borderRadius: revaRadii.sm,
+    backgroundColor: C.paper2,
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+    fontFamily: revaFonts.mono,
+    fontSize: 13,
+    color: C.ink1,
+    textAlign: 'center',
+  } as TextStyle,
+  editMacroUnit: {
+    fontFamily: revaFonts.mono,
+    fontSize: 9.5,
+    color: C.ink3,
+  } as TextStyle,
+  applyButton: {
+    minHeight: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: revaRadii.sm,
+    backgroundColor: DIET_ACCENT,
+  },
+  applyButtonText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    color: '#fff',
+    fontWeight: '900',
   } as TextStyle,
   macroGrid: {
     flexDirection: 'row',

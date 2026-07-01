@@ -146,9 +146,23 @@ export function renderCard(
     if (__DEV__) console.warn(`[cards] unknown card type: ${descriptor.type}`);
     return null;
   }
+  return <StatefulCardRenderer descriptor={descriptor} spec={spec} options={options} />;
+}
+
+function StatefulCardRenderer({
+  descriptor,
+  spec,
+  options,
+}: {
+  descriptor: ServerCardDescriptor;
+  spec: CardSpec;
+  options: CardRenderOptions;
+}) {
+  const [data, setData] = React.useState(descriptor.data);
   try {
-    const rendered = spec.render(descriptor.data, options);
-    const actions = normalizeCardActions(descriptor.actions);
+    const rendered = spec.render(data, { ...options, onCardDataChange: setData });
+    const actions = normalizeCardActions(descriptor.actions)
+      .map((action) => rewriteActionForCurrentCardData(action, descriptor.type, data));
     if (!actions.length || !options.onAction) return rendered;
     return (
       <View style={styles.actionShell}>
@@ -248,6 +262,65 @@ function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCar
 function isSafeVisibleAction(action: ChatCardActionDescriptor): boolean {
   if (action.action === 'route.open') return isSafeInternalRoute(action.payload?.route);
   return action.requires_manual_confirm === true;
+}
+
+function rewriteActionForCurrentCardData(
+  action: ChatCardActionDescriptor,
+  cardType: string,
+  data: any,
+): ChatCardActionDescriptor {
+  if (cardType !== 'diet_draft' || action.action !== 'diet_record.create') return action;
+  const record = readDietRecordFromCardData(data, action.payload?.record);
+  return {
+    ...action,
+    payload: {
+      ...(action.payload ?? {}),
+      record,
+    },
+  };
+}
+
+function readDietRecordFromCardData(data: any, existing: any): Record<string, unknown> {
+  const record: Record<string, unknown> = (
+    existing && typeof existing === 'object' && !Array.isArray(existing)
+      ? { ...existing }
+      : {}
+  );
+  const mealType = textValue(data?.meal_type);
+  const foodItems = foodItemsValue(data?.food_items);
+  if (mealType) record.meal_type = mealType;
+  if (foodItems) record.food_items = foodItems;
+  for (const key of ['calories', 'protein', 'carbs', 'fat', 'fiber'] as const) {
+    const parsed = numberValue(data?.[key]);
+    if (parsed != null) record[key] = parsed;
+  }
+  return record;
+}
+
+function textValue(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || undefined;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return undefined;
+}
+
+function foodItemsValue(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    const items = value.map(textValue).filter((item): item is string => Boolean(item));
+    return items.length ? items.slice(0, 8).join(' + ') : undefined;
+  }
+  return textValue(value);
+}
+
+function numberValue(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return Math.round(value * 10) / 10;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 10) / 10 : undefined;
+  }
+  return undefined;
 }
 
 export function getCardActionRuntimeKey(

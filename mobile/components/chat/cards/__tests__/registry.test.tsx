@@ -218,6 +218,69 @@ describe('renderCard 安全降级', () => {
     );
   });
 
+  it('lets users edit a diet draft inline before confirming it', () => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'diet_draft',
+      data: {
+        meal_type: 'lunch',
+        food_items: '煎牛肉能量碗',
+        calories: 770,
+        protein: 30,
+        carbs: 70,
+        fat: 17,
+      },
+      actions: [
+        {
+          id: 'confirm-diet-draft',
+          label: '确认记录',
+          action: 'diet_record.create',
+          endpoint: '/diet/records',
+          requires_manual_confirm: true,
+          style: 'primary',
+          payload: {
+            record: {
+              meal_type: 'lunch',
+              food_items: '煎牛肉能量碗',
+              calories: 770,
+              protein: 30,
+              carbs: 70,
+              fat: 17,
+            },
+          },
+        },
+      ],
+    } as any;
+
+    const element = renderCard(descriptor, { onAction });
+    expect(element).not.toBeNull();
+
+    const { getByText, getByLabelText } = render(element!);
+    fireEvent.press(getByText('修正'));
+    fireEvent.press(getByText('晚餐'));
+    fireEvent.changeText(getByLabelText('食物描述'), '鸡胸肉 200g + 杂粮饭 100g');
+    fireEvent.changeText(getByLabelText('蛋白'), '46');
+    fireEvent.press(getByText('应用修正'));
+    fireEvent.press(getByText('确认记录'));
+
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'diet_record.create',
+        payload: expect.objectContaining({
+          record: expect.objectContaining({
+            meal_type: 'dinner',
+            food_items: '鸡胸肉 200g + 杂粮饭 100g',
+            calories: 770,
+            protein: 46,
+            carbs: 70,
+            fat: 17,
+          }),
+        }),
+      }),
+      expect.objectContaining({ type: 'diet_draft' }),
+    );
+  });
+
   it('renders structured diet draft food arrays as a readable meal line', () => {
     const element = renderCard({
       type: 'diet_draft',
