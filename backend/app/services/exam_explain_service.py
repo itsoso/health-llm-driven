@@ -261,7 +261,8 @@ def build_exam_explain(db: Session, user_id: int, exam_id: int) -> Optional[Dict
             {"exam_date": str(exam.exam_date), "exam_type": exam.exam_type},
             abnormal_items, gene_hits, user_chronic,
         )
-        import asyncio, json as _json
+        import asyncio
+        from app.services.json_lenient import lenient_loads
 
         async def _call():
             r = await provider.chat(
@@ -279,10 +280,10 @@ def build_exam_explain(db: Session, user_id: int, exam_id: int) -> Optional[Dict
             raw = asyncio.get_event_loop().run_until_complete(_call())
 
         if raw:
-            t = raw.strip()
-            if t.startswith("```"):
-                t = t.strip("`").lstrip("json").strip()
-            parsed = _json.loads(t)
+            # 宽松解析:去围栏 + 弯引号/全角分隔符/裸 key/尾逗号修复。仍不可修复时
+            # lenient_loads 抛 json.JSONDecodeError → 落到下面 except Exception → explanation=None,
+            # 维持既有 fail-soft(不阻断整个解释包)。
+            parsed = lenient_loads(raw)
             # 校验/规范 actions
             actions = []
             for a in (parsed.get("actions") or [])[:8]:

@@ -484,7 +484,7 @@ ssh root@39.98.206.178 "pm2 logs health-frontend --lines 50"
 ## CI/CD
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
-- **Backend**: `pytest tests/ -q --no-cov --tb=short -x` (Python 3.12, fails fast; `DATABASE_URL=sqlite:///:memory:`), then `python scripts/check_doc_drift.py`
+- **Backend**: `pytest tests/ -q --no-cov --tb=short -x` (Python 3.12, fails fast; `DATABASE_URL=sqlite:///:memory:`) from `backend/`, then `python scripts/check_doc_drift.py` **from the repo root** (the script lives at repo-root `scripts/`, not `backend/scripts/` — running it from `backend/` fails with "No such file")
 - **Frontend**: `npm run build` + `npm run lint` (Node.js 22)
 - **Mobile**: `npx tsc --noEmit` (TypeScript typecheck only; no native build in CI)
 

@@ -37,6 +37,24 @@ def test_parse_garbage_returns_empty():
     assert parse_lab_items("") == []
 
 
+def test_parse_smart_quote_keys_repaired():
+    """全角/弯引号 key+分隔符:strict json.loads 直接抛,lenient_loads 修复后解析。"""
+    raw = '{“items”：[{“item_name”：“白蛋白”，“value”：“45”，“unit”：“g/L”}]}'
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(raw)                        # 钉:旧的 raw json.loads 会炸
+    out = parse_lab_items(raw)
+    assert out == [{"item_name": "白蛋白", "value": 45.0, "unit": "g/L"}]
+
+
+def test_parse_bare_keys_repaired():
+    """裸 key(无引号):strict json.loads 拒,lenient_loads 补引号后解析。"""
+    raw = '{items: [{item_name: "肌酐", value: "80", unit: "umol/L"}]}'
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(raw)
+    out = parse_lab_items(raw)
+    assert out == [{"item_name": "肌酐", "value": 80.0, "unit": "umol/L"}]
+
+
 @pytest.mark.asyncio
 async def test_parse_lab_photo_uses_vision():
     from app.services import lab_photo_parse as m

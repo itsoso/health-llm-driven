@@ -9,9 +9,10 @@
 """
 from __future__ import annotations
 
-import json
 import re
 from typing import Any, Optional
+
+from app.services.json_lenient import lenient_loads
 
 _VISION_PROMPT = """你是化验单 OCR 解析器。从这张化验报告图片里提取所有检验项目。
 只返回 JSON,不要解释:
@@ -39,7 +40,10 @@ def parse_lab_items(raw_text: str) -> list[dict[str, Any]]:
     只保留有 item_name + 可转 float 的 value 的项;value 去箭头;脏数据丢弃不猜。
     """
     try:
-        data = json.loads(_extract_json(raw_text))
+        # 先做 brace 抽取(从含散文的 vision 输出里割出 JSON 对象,lenient_loads 不做这步),
+        # 再走宽松解析(弯引号/全角分隔符/裸 key/尾逗号);仍不可修复时 lenient_loads 抛
+        # json.JSONDecodeError(ValueError 子类)→ 被下方 except 接住,fail-soft 返回 []。
+        data = lenient_loads(_extract_json(raw_text))
     except (ValueError, TypeError):
         return []
     items = data.get("items") if isinstance(data, dict) else None
