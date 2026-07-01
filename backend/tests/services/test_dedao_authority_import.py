@@ -8,6 +8,7 @@ from app.services.system_kb.dedao_authority_import import (
     HEALTH_AUTHORITY_PACK_CONTRACT,
     dry_run_import_dedao_authority_pack,
     dry_run_import_dedao_authority_pack_from_kbase,
+    evaluate_dedao_authority_pull_gate,
 )
 
 
@@ -208,3 +209,120 @@ def test_pull_report_keeps_bad_jsonl_as_import_finding():
     assert report.import_report.total == 2
     assert report.import_report.invalid[0].reason == "invalid_json"
     assert [item.claim_id for item in report.import_report.accepted_for_review] == ["dedao:book-1:claim-ok"]
+
+
+def test_pull_gate_passes_clean_report():
+    def opener(request, *, timeout):
+        return _FakeHTTPResponse(_line())
+
+    report = dry_run_import_dedao_authority_pack_from_kbase(
+        "https://kbase.example",
+        "secret-token",
+        opener=opener,
+    )
+
+    gate = evaluate_dedao_authority_pull_gate(report)
+
+    assert gate.status == "pass"
+    assert gate.reasons == []
+    assert gate.fail_count == 0
+    assert gate.warn_count == 0
+
+
+def test_pull_gate_fails_fetch_errors_without_token_leakage():
+    def opener(request, *, timeout):
+        raise HTTPError(request.full_url, 401, "Unauthorized", hdrs=None, fp=None)
+
+    report = dry_run_import_dedao_authority_pack_from_kbase(
+        "https://kbase.example",
+        "secret-token",
+        opener=opener,
+    )
+
+    gate = evaluate_dedao_authority_pull_gate(report)
+    serialized = json.dumps(gate.to_redacted_dict(), ensure_ascii=False)
+
+    assert gate.status == "fail"
+    assert "fetch_failed" in gate.reasons
+    assert gate.fail_count == 1
+    assert "secret-token" not in serialized
+    assert "Authorization" not in serialized
+
+
+def test_pull_gate_fails_invalid_jsonl():
+    def opener(request, *, timeout):
+        return _FakeHTTPResponse("{not-json}\n" + _line(claim_id="dedao:book-1:claim-ok"))
+
+    report = dry_run_import_dedao_authority_pack_from_kbase(
+        "https://kbase.example",
+        "secret-token",
+        opener=opener,
+    )
+
+    gate = evaluate_dedao_authority_pull_gate(report)
+    redacted = gate.to_redacted_dict()
+
+    assert gate.status == "fail"
+    assert "invalid_records" in gate.reasons
+    assert redacted["counts"]["invalid"] == 1
+    assert redacted["issues"]["invalid"] == [
+        {"claim_id": "", "reason": "invalid_json", "line_no": 1},
+    ]
+
+
+def test_pull_gate_fails_blocked_only_report():
+    def opener(request, *, timeout):
+        return _FakeHTTPResponse(
+            _line(
+                claim_id="dedao:book-1:claim-blocked-review",
+                review_status="blocked",
+                risk_reason="medical_action_boundary",
+            ),
+        )
+
+    report = dry_run_import_dedao_authority_pack_from_kbase(
+        "https://kbase.example",
+        "secret-token",
+        opener=opener,
+    )
+
+    gate = evaluate_dedao_authority_pull_gate(report)
+
+    assert gate.status == "fail"
+    assert "no_accepted_candidates" in gate.reasons
+    assert "blocked_records" in gate.reasons
+
+
+def test_pull_gate_warns_on_mixed_accepted_and_blocked_records():
+    raw_text = "raw source text should not appear in gate output"
+
+    def opener(request, *, timeout):
+        return _FakeHTTPResponse(
+            "\n".join(
+                [
+                    _line(claim_id="dedao:book-1:claim-ok", summary=raw_text),
+                    _line(
+                        claim_id="dedao:book-1:claim-blocked-review",
+                        review_status="blocked",
+                        risk_reason="medical_action_boundary",
+                        summary=raw_text,
+                    ),
+                ],
+            ),
+        )
+
+    report = dry_run_import_dedao_authority_pack_from_kbase(
+        "https://kbase.example",
+        "secret-token",
+        opener=opener,
+    )
+
+    gate = evaluate_dedao_authority_pull_gate(report)
+    serialized = json.dumps(gate.to_redacted_dict(), ensure_ascii=False)
+
+    assert gate.status == "warn"
+    assert gate.fail_count == 0
+    assert gate.warn_count == 1
+    assert gate.reasons == ["blocked_records"]
+    assert raw_text not in serialized
+    assert "dedao:book-1:claim-blocked-review" in serialized

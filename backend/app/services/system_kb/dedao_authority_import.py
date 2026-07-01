@@ -106,6 +106,45 @@ class DedaoAuthorityPullReport:
         }
 
 
+@dataclass(frozen=True)
+class DedaoAuthorityPullGate:
+    status: str
+    reasons: list[str]
+    fail_count: int
+    warn_count: int
+    pull_report: DedaoAuthorityPullReport
+
+    def to_redacted_dict(self) -> dict[str, Any]:
+        import_report = self.pull_report.import_report
+        return {
+            "status": self.status,
+            "reasons": list(self.reasons),
+            "fail_count": self.fail_count,
+            "warn_count": self.warn_count,
+            "pull": {
+                "status": self.pull_report.status,
+                "source_url": self.pull_report.source_url,
+                "http_status": self.pull_report.http_status,
+                "error": self.pull_report.error,
+            },
+            "counts": {
+                "total": import_report.total,
+                "accepted_for_review": len(import_report.accepted_for_review),
+                "blocked": len(import_report.blocked),
+                "duplicates": len(import_report.duplicates),
+                "invalid": len(import_report.invalid),
+                "missing_source_refs": len(import_report.missing_source_refs),
+            },
+            "issues": {
+                "blocked": _issue_refs(import_report.blocked),
+                "duplicates": _issue_refs(import_report.duplicates),
+                "invalid": _issue_refs(import_report.invalid),
+                "missing_source_refs": _issue_refs(import_report.missing_source_refs),
+            },
+            "would_write": import_report.would_write,
+        }
+
+
 def dry_run_import_dedao_authority_pack(lines: Iterable[str]) -> DedaoAuthorityImportReport:
     """Validate Health Authority Pack JSONL without writing System KB rows."""
 
@@ -250,6 +289,41 @@ def dry_run_import_dedao_authority_pack_from_kbase(
     )
 
 
+def evaluate_dedao_authority_pull_gate(report: DedaoAuthorityPullReport) -> DedaoAuthorityPullGate:
+    import_report = report.import_report
+    fail_reasons: list[str] = []
+    warn_reasons: list[str] = []
+
+    if report.status != "ok":
+        fail_reasons.append("fetch_failed")
+    else:
+        if import_report.invalid:
+            fail_reasons.append("invalid_records")
+        if not import_report.accepted_for_review:
+            fail_reasons.append("no_accepted_candidates")
+        if import_report.blocked:
+            warn_reasons.append("blocked_records")
+        if import_report.duplicates:
+            warn_reasons.append("duplicate_records")
+        if import_report.missing_source_refs:
+            warn_reasons.append("missing_source_refs")
+
+    if fail_reasons:
+        status = "fail"
+    elif warn_reasons:
+        status = "warn"
+    else:
+        status = "pass"
+
+    return DedaoAuthorityPullGate(
+        status=status,
+        reasons=fail_reasons + warn_reasons,
+        fail_count=len(fail_reasons),
+        warn_count=len(warn_reasons),
+        pull_report=report,
+    )
+
+
 def _invalid_reason(record: dict[str, Any]) -> str:
     if record.get("consumer_contract") != HEALTH_AUTHORITY_PACK_CONTRACT:
         return "unknown_contract"
@@ -300,6 +374,17 @@ def _issue(claim_id: str, reason: str, line_no: int, record: dict[str, Any]) -> 
         line_no=line_no,
         record=dict(record),
     )
+
+
+def _issue_refs(items: list[DedaoAuthorityImportItem]) -> list[dict[str, Any]]:
+    return [
+        {
+            "claim_id": item.claim_id,
+            "reason": item.reason,
+            "line_no": item.line_no,
+        }
+        for item in items
+    ]
 
 
 def _string(value: Any) -> str:
