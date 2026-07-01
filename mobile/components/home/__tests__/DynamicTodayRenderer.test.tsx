@@ -57,7 +57,12 @@ function makeView(overrides: Partial<TodayDynamicView> = {}): TodayDynamicView {
                 verification_metrics: ['waist_cm'],
                 verification_window_days: 7,
               },
-              days: [],
+              // 「未来节奏」段仅在有未来日时渲染(RuntimeAgendaCard 的 visibleDays>0 门控);
+              // horizon_days:7 的 runtime agenda 现实里就带日序,空数组是不真实的旧 fixture。
+              days: [
+                { date: '2026-06-30', next_action_title: '晚餐后步行 15 分钟', items_count: 2 },
+                { date: '2026-07-01', next_action_title: '晨起拉伸', items_count: 1 },
+              ],
               safety_boundary: '健康管理行动建议,不替代医生诊断。',
             },
             actions: [
