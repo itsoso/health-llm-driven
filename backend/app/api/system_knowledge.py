@@ -30,7 +30,15 @@ from app.services.system_knowledge_service import (
 )
 
 router = APIRouter(prefix="/knowledge", tags=["system-knowledge"])
-admin_router = APIRouter(prefix="/admin/knowledge", tags=["admin-system-knowledge"])
+# 治理隔离 belt-and-suspenders:admin_router 整个 router 级强制 get_admin_user。
+# 每条路由仍各自声明 `Depends(get_admin_user)`(要 User 对象写审计),FastAPI 同请求内
+# 缓存同一依赖只跑一次。router 级这道是为了将来新增路由**忘了**加 per-route 依赖时,
+# 仍不会静默对任意登录用户开放(此 router 下有 /graph 等读未审 draft 的路径)。
+admin_router = APIRouter(
+    prefix="/admin/knowledge",
+    tags=["admin-system-knowledge"],
+    dependencies=[Depends(get_admin_user)],
+)
 
 
 class TwinLookupRequest(BaseModel):

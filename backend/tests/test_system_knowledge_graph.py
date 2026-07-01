@@ -1,4 +1,7 @@
 """KB 邻域图(P2):BFS 有界邻域 + **治理隔离**(admin 图见 draft,但 serving 门仍排除 draft 不漏进 runtime)。"""
+import re
+from pathlib import Path
+
 from app.models.system_knowledge import KBDocument, KBEdge
 from app.services.system_knowledge_graph import admin_expand_kb_neighborhood
 
@@ -70,6 +73,36 @@ def test_edges_only_between_collected_nodes(db):
 def test_seed_not_found(db):
     res = admin_expand_kb_neighborhood(db, "does_not_exist")
     assert res["not_found"] is True and res["nodes"] == []
+
+
+def test_no_runtime_module_imports_the_graph_module():
+    """治理隔离机械护栏(fail-loud):`system_knowledge_graph` 故意不套 reviewed serving 门,
+    只允许 admin 读路径调用。任何 runtime 面(twin / agents / orchestrator / tasks /
+    运行时 KB service)一旦 import 它,就等于把未审 draft 内容接进了用户面健康建议 —— 违反
+    reviewed-only-serving 不变量。这里把「约定」升成 CI 强制:扫描这些目录,发现引用即红。
+
+    允许引用的白名单:api/system_knowledge.py(admin /graph 端点唯一合法入口)、
+    services/system_knowledge_graph.py 自身、以及 tests/。"""
+    app_dir = Path(__file__).resolve().parents[1] / "app"
+    guarded = [
+        app_dir / "twin",
+        app_dir / "agents",
+        app_dir / "orchestrator",
+        app_dir / "tasks",
+        app_dir / "services" / "system_knowledge_service.py",
+    ]
+    pattern = re.compile(r"system_knowledge_graph|admin_expand_kb_neighborhood")
+    offenders: list[str] = []
+    for target in guarded:
+        py_files = [target] if target.is_file() else sorted(target.rglob("*.py"))
+        for f in py_files:
+            for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+                if pattern.search(line):
+                    offenders.append(f"{f.relative_to(app_dir.parent)}:{i}: {line.strip()}")
+    assert not offenders, (
+        "runtime 模块引用了 admin-only 的 system_knowledge_graph(会把未审 draft 漏进用户面):\n"
+        + "\n".join(offenders)
+    )
 
 
 def test_isolation_admin_sees_draft_but_serving_gate_excludes_it(db):
