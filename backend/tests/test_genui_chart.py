@@ -126,6 +126,199 @@ def test_detect_chart_request_negative(query):
 
 
 # ---------------------------------------------------------------------------
+# detect_chart_requests — 多指标 (复数)
+# ---------------------------------------------------------------------------
+
+
+def test_detect_chart_requests_multi_metric():
+    from app.services.genui import detect_chart_requests
+
+    # HRV + 心率(resting_hr), 共享 range (默认 6m)
+    assert detect_chart_requests("绘制HRV和心率的混合曲线") == [
+        ("hrv", "6m"), ("resting_hr", "6m")
+    ]
+    # 单指标仍返回单元素列表
+    assert detect_chart_requests("绘制HRV曲线") == [("hrv", "6m")]
+    # 心率变异 + 静息心率 → 都映射 hrv/resting_hr, dedup 后两条
+    assert detect_chart_requests("画心率变异和静息心率趋势") == [
+        ("hrv", "6m"), ("resting_hr", "6m")
+    ]
+    # range 提示共享给所有 metric
+    assert detect_chart_requests("绘制最近一周HRV和心率曲线") == [
+        ("hrv", "7d"), ("resting_hr", "7d")
+    ]
+
+
+def test_detect_chart_requests_dedup_same_metric():
+    """同一 metric 的多个别名只出一次 (静息心率 与 心率 都 → resting_hr)。"""
+    from app.services.genui import detect_chart_requests
+
+    out = detect_chart_requests("绘制静息心率和心率曲线")
+    keys = [m for m, _ in out]
+    assert keys == ["resting_hr"]  # 去重
+
+
+def test_detect_chart_requests_caps_at_three():
+    """命中超过 3 个 metric → 只取前 3 (稳定序), 避免拥挤。"""
+    from app.services.genui import detect_chart_requests
+
+    out = detect_chart_requests("绘制HRV、静息心率、体重、步数、睡眠曲线")
+    assert len(out) == 3
+    # 稳定序 = _METRIC_KEYWORDS 声明序: hrv, resting_hr, ... 体重/步数/睡眠靠后
+    keys = [m for m, _ in out]
+    assert keys[:2] == ["hrv", "resting_hr"]
+
+
+def test_detect_chart_requests_negative():
+    from app.services.genui import detect_chart_requests
+
+    assert detect_chart_requests("我最近HRV和心率怎么样") == []  # 非图表意图
+    assert detect_chart_requests("") == []
+
+
+def test_detect_chart_request_singular_still_first_of_plural():
+    """单数 detect_chart_request 返回复数的第一个 (零回归)。"""
+    assert detect_chart_request("绘制HRV和心率的混合曲线") == ("hrv", "6m")
+
+
+# ---------------------------------------------------------------------------
+# build_multi_metric_chart — 叠加图真 DB 数据
+# ---------------------------------------------------------------------------
+
+
+def _seed_daily_garmin(db, user_id, start_days_ago, fields_by_day):
+    """从今天往前 start_days_ago 起, 每天写一行 GarminData, 同一行可含多字段。
+
+    fields_by_day: List[dict], fields_by_day[i] 落在 (today - start_days_ago + i) 这天,
+    如 [{"hrv": 50, "resting_heart_rate": 61}, ...]。同日一行 → 不撞唯一约束。
+    """
+    today = date.today()
+    for i, fields in enumerate(fields_by_day):
+        d = today - timedelta(days=start_days_ago - i)
+        db.add(GarminData(user_id=user_id, record_date=d, **fields))
+    db.commit()
+
+
+def test_build_multi_metric_two_series_units_in_names_mixed_unit(db):
+    """HRV + resting_hr 叠加: 2 条 series (各 7 日滚动), unit="", 名字带单位, x 对齐。"""
+    from app.services.genui import build_multi_metric_chart
+
+    user, _ = create_authenticated_user(db)
+    hrv_vals = [50, 52, 54, 56, 58, 60, 62]
+    rhr_vals = [61, 60, 59, 62, 58, 57, 56]
+    _seed_daily_garmin(db, user.id, 6, [
+        {"hrv": h, "resting_heart_rate": r} for h, r in zip(hrv_vals, rhr_vals)
+    ])
+
+    block = build_multi_metric_chart(db, user.id, ["hrv", "resting_hr"], range="6m")
+    assert block is not None
+    assert block["component"] == "line_chart"
+    assert len(block["series"]) == 2
+    names = [s["name"] for s in block["series"]]
+    assert names == ["HRV（ms）", "静息心率（bpm）"]
+    # 混合单位 → unit="" (渲染端不出单一 y 轴单位)
+    assert block["unit"] == ""
+    # 两单位都进 data_note
+    assert "ms" in block["data_note"] and "bpm" in block["data_note"]
+    assert "单位不同仅供趋势对比" in block["data_note"]
+    # x 对齐: 每条 series.points 等长 == x 长
+    n = len(block["x"])
+    for s in block["series"]:
+        assert len(s["points"]) == n
+    # 所有 series role=value (渲染端多序列调色板)
+    assert all(s["role"] == "value" for s in block["series"])
+    # 叠加图无 annotations (混合单位 latest callout 会误导)
+    assert block["annotations"] == []
+    # title 由指标名拼接
+    assert block["title"] == "HRV × 静息心率 趋势对比"
+
+
+def test_build_multi_metric_same_unit_sets_unit(db):
+    """同单位 metric (收缩压 + 舒张压 都 mmHg) → unit 设为该单位。"""
+    from app.models.blood_pressure import BloodPressureRecord
+    from app.services.genui import build_multi_metric_chart
+
+    user, _ = create_authenticated_user(db)
+    today = date.today()
+    for i in range(7):
+        d = today - timedelta(days=6 - i)
+        db.add(BloodPressureRecord(user_id=user.id, record_date=d,
+                                   systolic=125 + i, diastolic=78 + i))
+    db.commit()
+
+    block = build_multi_metric_chart(db, user.id, ["bp_systolic", "bp_diastolic"], range="6m")
+    assert block is not None
+    assert block["unit"] == "mmHg"
+    assert "单位 mmHg" in block["data_note"]
+
+
+def test_build_multi_metric_insufficient_one_omitted(db):
+    """一个 metric 数据不足 → 略过该 series (不伪造), 只出有数据的那条。"""
+    from app.services.genui import build_multi_metric_chart
+
+    user, _ = create_authenticated_user(db)
+    # hrv 7 天足够; resting_heart_rate 只 1 天 (< MIN_POINTS) → 略过 rhr series
+    hrv_vals = [50, 52, 54, 56, 58, 60, 62]
+    rows = [{"hrv": v} for v in hrv_vals]
+    rows[-1]["resting_heart_rate"] = 60  # 仅最后一天有 rhr → 1 点 < MIN
+    _seed_daily_garmin(db, user.id, 6, rows)
+
+    block = build_multi_metric_chart(db, user.id, ["hrv", "resting_hr"], range="6m")
+    assert block is not None
+    assert len(block["series"]) == 1
+    assert block["series"][0]["name"] == "HRV（ms）"
+    # 只剩单一单位 → unit 设为 ms
+    assert block["unit"] == "ms"
+
+
+def test_build_multi_metric_all_insufficient_returns_none(db):
+    """所有 metric 都数据不足 → None (调用方 fall through)。"""
+    from app.services.genui import build_multi_metric_chart
+
+    user, _ = create_authenticated_user(db)
+    _seed_daily_garmin(db, user.id, 0, [{"hrv": 50, "resting_heart_rate": 60}])
+    assert build_multi_metric_chart(db, user.id, ["hrv", "resting_hr"], range="6m") is None
+
+
+def test_build_multi_metric_rolling_mean_math(db):
+    """叠加线是 7 日滚动均值: 最后一天窗口 = trailing 7 日均值。"""
+    from app.services.genui import build_multi_metric_chart
+
+    user, _ = create_authenticated_user(db)
+    # 10 连续日 HRV = 10,20,...,100
+    hrv_vals = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+    _seed_daily_garmin(db, user.id, 9, [
+        {"hrv": h, "resting_heart_rate": 60} for h in hrv_vals
+    ])
+
+    block = build_multi_metric_chart(db, user.id, ["hrv"], range="6m")
+    # 单 metric 也能出 (调用方通常只在 ≥2 时调, 但函数本身允许单条)
+    assert block is not None
+    hrv_series = block["series"][0]
+    # 最后一天 (第10天) 7 日窗口 = 第4..10天 [40..100] 均值 = 70.0
+    assert hrv_series["points"][-1] == 70.0
+
+
+def test_build_multi_metric_bad_range_none(db):
+    from app.services.genui import build_multi_metric_chart
+
+    user, _ = create_authenticated_user(db)
+    assert build_multi_metric_chart(db, user.id, ["hrv", "resting_hr"], range="99y") is None
+
+
+def test_build_multi_metric_unknown_metrics_filtered(db):
+    """未知 metric 被过滤; 全未知 → None。"""
+    from app.services.genui import build_multi_metric_chart
+
+    user, _ = create_authenticated_user(db)
+    _seed_daily_garmin(db, user.id, 6, [{"hrv": v} for v in [50, 52, 54, 56, 58, 60, 62]])
+    block = build_multi_metric_chart(db, user.id, ["hrv", "bogus"], range="6m")
+    assert block is not None
+    assert len(block["series"]) == 1
+    assert build_multi_metric_chart(db, user.id, ["bogus1", "bogus2"], range="6m") is None
+
+
+# ---------------------------------------------------------------------------
 # compute_chart — 纯计算核心 (无 DB, 无 LLM)
 # ---------------------------------------------------------------------------
 
@@ -938,3 +1131,65 @@ def test_detect_two_week_range_and_short_range_skips_30d_rolling():
     roles = [s["role"] for s in blk["series"]]
     assert "avg_7d" in roles and "avg_30d" not in roles  # 两周不显 30 日滚动
     assert len(blk["x"]) == 14
+
+
+# ---------------------------------------------------------------------------
+# 多指标叠加 e2e — agent_stream + orchestrator, 无 LLM (R4)
+# ---------------------------------------------------------------------------
+
+
+def test_agent_stream_multi_metric_overlay_one_block_no_llm(
+    client, db, auth_user_and_headers, _explode_agent_run_stream
+):
+    """caps + "HRV和心率" → 一张 line_chart 叠 2 条对比线, 无 LLM。"""
+    user, headers = auth_user_and_headers
+    today = date.today()
+    for i in range(7):
+        d = today - timedelta(days=6 - i)
+        db.add(GarminData(user_id=user.id, record_date=d,
+                          hrv=50 + i, resting_heart_rate=60 - i, data_source="garmin"))
+    db.commit()
+
+    resp = client.post(
+        "/api/v1/agent/stream",
+        json={"message": "绘制HRV和心率的混合曲线"},
+        headers={**headers, "X-Reva-Client-Caps": "genui-v1, genui-components-v1"},
+    )
+    assert resp.status_code == 200
+    body = _read_sse_body(resp)
+    assert "reva-ui" in body
+    decoded = body.replace('\\"', '"')
+    # 一个块 2 条 series, 名字带单位
+    assert "HRV（ms）" in body
+    assert "静息心率（bpm）" in body
+    assert "多指标趋势对比" in body
+    # unit="" (混合单位)
+    assert '"unit":""' in decoded
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_multi_metric_overlay_no_llm(db, _explode_llm):
+    """orchestrator 路径: caps + "HRV和心率" → 一张叠加块, _call_llm 从未被调。"""
+    user, _ = create_authenticated_user(db)
+    today = date.today()
+    for i in range(7):
+        d = today - timedelta(days=6 - i)
+        db.add(GarminData(user_id=user.id, record_date=d,
+                          hrv=50 + i, resting_heart_rate=60 - i, data_source="garmin"))
+    db.commit()
+
+    req = OrchestratorRequest(
+        query="绘制HRV和心率的混合曲线",
+        client_caps=["genui-v1"],
+        stream=False,
+    )
+    resp = await run_orchestrator(db, user.id, req)
+    assert "```reva-ui" in resp.synthesis
+    inner = resp.synthesis.split("```reva-ui\n", 1)[1].rsplit("```", 1)[0].strip()
+    block = json.loads(inner)
+    assert len(block["series"]) == 2
+    assert block["unit"] == ""
+    assert block["annotations"] == []
+    # 各 series 与 x 等长
+    for s in block["series"]:
+        assert len(s["points"]) == len(block["x"])

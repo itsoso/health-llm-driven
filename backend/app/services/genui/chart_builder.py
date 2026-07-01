@@ -183,8 +183,12 @@ _RANGE_HINTS: List[Tuple[re.Pattern, str]] = [
 ]
 
 
+# 多指标叠加图上限 (避免混叠指标过多导致图表拥挤)
+MAX_MULTI_METRICS = 3
+
+
 def detect_chart_request(query: str) -> Optional[Tuple[str, str]]:
-    """确定性检测图表意图。
+    """确定性检测图表意图 (单指标; 取第一个命中的 metric)。
 
     命中条件:
     - 主动图表请求: (绘制/画/展示/看/show/plot) + (曲线/趋势/图/chart) + 已知 metric。
@@ -193,18 +197,43 @@ def detect_chart_request(query: str) -> Optional[Tuple[str, str]]:
     第二类覆盖自然输入如"最近一周睡眠时长曲线 以及评估睡眠", 但仍避免把
     "我最近睡眠怎么样"这类非图表分析请求误判成图。
     返回 (metric_key, range)；未命中返回 None。range 默认 "6m"。
+
+    多指标叠加请求 (如"HRV和心率") 请用 `detect_chart_requests` (复数)。
+    本函数仍返回第一个命中的 metric, 保持既有单指标调用方零回归。
+    """
+    matches = detect_chart_requests(query)
+    if not matches:
+        return None
+    return matches[0]
+
+
+def detect_chart_requests(query: str) -> List[Tuple[str, str]]:
+    """确定性检测图表意图 (多指标; 返回所有命中的 metric, 共享同一 range)。
+
+    命中条件与 `detect_chart_request` 相同 (图表名词 + (动词 或 range 提示) + ≥1 metric)。
+    返回 [(metric_key, range), ...]:
+    - 保持稳定顺序 (按 _METRIC_KEYWORDS 声明序), 去重 (同 metric 只出一次)。
+    - 所有条目共享单次检测出的 range (默认 "6m")。
+    - "HRV和心率" → [("hrv", rng), ("resting_hr", rng)]
+    - "HRV" → [("hrv", rng)]
+    - "心率变异和静息心率" → [("hrv", rng), ("resting_hr", rng)] (dedup 若同 metric)
+    - 命中 metric 超过 MAX_MULTI_METRICS 条 → 只取前 MAX_MULTI_METRICS 条 (稳定序)。
+    未命中 (无 metric / 非图表意图) → []。
     """
     if not query:
-        return None
+        return []
     has_chart_noun = bool(_CHART_NOUN.search(query))
 
-    metric: Optional[str] = None
+    metrics: List[str] = []
+    seen: set = set()
     for pat, key in _METRIC_KEYWORDS:
+        if key in seen:
+            continue
         if pat.search(query):
-            metric = key
-            break
-    if metric is None:
-        return None
+            metrics.append(key)
+            seen.add(key)
+    if not metrics:
+        return []
 
     rng = "6m"
     has_range_hint = False
@@ -216,9 +245,9 @@ def detect_chart_request(query: str) -> Optional[Tuple[str, str]]:
 
     has_chart_verb = bool(_CHART_VERB.search(query))
     if not (has_chart_noun and (has_chart_verb or has_range_hint)):
-        return None
+        return []
 
-    return (metric, rng)
+    return [(m, rng) for m in metrics[:MAX_MULTI_METRICS]]
 
 
 # ---------------------------------------------------------------------------
@@ -570,6 +599,131 @@ def build_line_chart(
     points = _fetch_daily_points(db, user_id, spec, days)
     block = compute_chart(points, metric, range)
     return _apply_component_contract(block, metric, range, component)
+
+
+# 多指标叠加图 series 名里显示单位 (轴无法承载多单位)
+def _metric_display_name(spec: _MetricSpec) -> str:
+    """指标短名: title 去掉 "趋势" 后缀并 strip (HRV 的 title 是 "HRV 趋势", 带空格)。"""
+    return spec.title.removesuffix("趋势").strip()
+
+
+def _metric_series_name(spec: _MetricSpec) -> str:
+    """多指标叠加线名: 指标名 + 单位, 如 "HRV（ms）"、"静息心率（bpm）"。
+
+    无单位 metric (压力/身体电量) 只出名字。名字里带单位是因为叠加图 y 轴混合单位,
+    无法给单一轴单位, 只能靠 series 名区分。
+    """
+    base = _metric_display_name(spec)
+    return f"{base}（{spec.unit}）" if spec.unit else base
+
+
+def build_multi_metric_chart(
+    db: Session,
+    user_id: int,
+    metrics: List[str],
+    range: str = "6m",
+    *,
+    component: str = LINE_CHART_COMPONENT,
+) -> Optional[dict]:
+    """把多个 metric 叠加进一张 reva-ui line_chart (每 metric 一条 7 日滚动均值线)。
+
+    - 每个 metric 取其"主日级序列"(合并全源, 与单指标 build 的日级取值一致),
+      对该序列算 7 日滚动均值 → 一条干净的对比线 (不含原始/多源/30日, 避免拥挤)。
+    - x = 各 metric 日级日期并集 (升序), 每条 series.points 对齐等长, 缺日 null。
+    - series.role = "value" (渲染端多序列调色板自动上色区分)。
+    - unit: metric 单位不同 → "" (渲染端不出单一 y 轴单位); 全同 → 该单位。
+    - title = 各 metric 名 join, 如 "HRV × 静息心率 趋势对比"。
+    - data_note = 混合单位说明 + 真实天数基数。
+    - annotations = [] (混合单位下单条 latest callout 会误导)。
+    - 铁律 (R4): 所有数值来自 DB 主日级序列 + 滚动均值, 无 LLM。
+    - fail-soft: 某 metric 数据不足 → 略过该 metric 的 series (不伪造);
+      可用 metric < 1 → None (调用方 fall through)。
+    """
+    if component not in _CHART_COMPONENTS:
+        return None
+    days = _RANGE_DAYS.get(range)
+    if days is None:
+        return None
+
+    from app.services.genui.chart_rich import _rolling_mean, _ROLL_7D
+
+    # 去重保序 + 只保留 allowlist 内 metric
+    ordered: List[str] = []
+    seen: set = set()
+    for m in metrics:
+        if m in seen or m not in SUPPORTED_METRICS:
+            continue
+        seen.add(m)
+        ordered.append(m)
+    if not ordered:
+        return None
+
+    # 逐 metric 取主日级序列 {date: value}, 数据不足的 metric 略过 (不伪造)
+    per_metric: List[Tuple[_MetricSpec, Dict[date, float]]] = []
+    for m in ordered:
+        spec = SUPPORTED_METRICS[m]
+        by_day = dict(_fetch_daily_points(db, user_id, spec, days))
+        if len(by_day) < MIN_POINTS:
+            continue  # fail-soft: 略过数据不足的 metric
+        per_metric.append((spec, by_day))
+
+    if not per_metric:
+        return None
+
+    # x = 所有可用 metric 的日级日期并集 (升序)
+    all_days: set = set()
+    for _spec, by_day in per_metric:
+        all_days |= set(by_day.keys())
+    axis: List[date] = sorted(all_days)
+    x_labels = [_date_label_day(d) for d in axis]
+
+    # 每 metric 一条 7 日滚动均值线, 与 axis 对齐
+    series: List[dict] = []
+    units: set = set()
+    for spec, by_day in per_metric:
+        rolled = _rolling_mean(axis, by_day, _ROLL_7D)
+        series.append({
+            "name": _metric_series_name(spec),
+            "role": "value",
+            "points": rolled,
+        })
+        units.add(spec.unit)
+
+    if not series:
+        return None
+
+    # 单位: 全同 → 该单位; 混合 → "" (渲染端不出 y 轴单位)
+    unit = next(iter(units)) if len(units) == 1 else ""
+
+    titles = [_metric_display_name(spec) for spec, _ in per_metric]
+    title = f"{' × '.join(titles)} 趋势对比"
+
+    unit_desc = "、".join(
+        f"{_metric_display_name(spec)} 单位 {spec.unit}"
+        for spec, _ in per_metric if spec.unit
+    )
+    total_days = len(all_days)
+    if unit and len(units) == 1:
+        data_note = f"单位 {unit} · 7 日滚动均值 · 基于 {total_days} 天真实数据"
+    elif unit_desc:
+        data_note = f"{unit_desc}，单位不同仅供趋势对比 · 7 日滚动均值 · 基于 {total_days} 天真实数据"
+    else:
+        data_note = f"7 日滚动均值 · 基于 {total_days} 天真实数据"
+
+    block = {
+        "v": 1,
+        "component": "line_chart",
+        "title": title,
+        "unit": unit,
+        "x": x_labels,
+        "series": series,
+        "annotations": [],
+        # source 留空: 多指标叠加跨多个数据源, 单一 "来源" 标签会误导; 基数走 data_note。
+        "source": "",
+        "data_note": data_note,
+    }
+    # 多指标叠加沿用第一个 metric 作 component contract 的 metric 标识 (客户端仅用于分析埋点)
+    return _apply_component_contract(block, per_metric[0][0].key, range, component)
 
 
 def build_empty_state(metric: str, range: str = "6m") -> Optional[dict]:

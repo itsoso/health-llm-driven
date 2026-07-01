@@ -78,38 +78,58 @@ def _maybe_build_genui_chart(
 
     from app.services.genui import (
         build_line_chart,
-        detect_chart_request,
+        build_multi_metric_chart,
+        detect_chart_requests,
         render_reva_ui_block,
     )
 
-    detected = detect_chart_request(req.query)
-    if detected is None:
+    detected = detect_chart_requests(req.query)
+    if not detected:
         return None
 
-    metric, rng = detected
+    rng = detected[0][1]
     intent = classify_intent(req.query)
+    range_label = _RANGE_LABEL.get(rng, rng)
 
     component = (
         "metric_line_chart"
         if GENUI_COMPONENTS_CAP in (req.client_caps or [])
         else "line_chart"
     )
-    block = build_line_chart(db, user_id, metric, range=rng, component=component)
-    metric_label = _METRIC_LABEL.get(metric, metric)
-    range_label = _RANGE_LABEL.get(rng, rng)
 
-    if block is None:
-        synthesis = (
-            f"暂时无法绘制{range_label}的{metric_label}趋势图：可用的真实数据点不足。"
-            f"等设备同步更多数据后再试。"
-        )
+    if len(detected) >= 2:
+        # 多指标叠加: 一张 line_chart 叠多条 metric 7 日滚动均值对比线 (无 LLM)。
+        metrics = [m for m, _ in detected]
+        block = build_multi_metric_chart(db, user_id, metrics, range=rng, component=component)
+        if block is None:
+            synthesis = (
+                f"暂时无法绘制{range_label}的多指标趋势对比图：可用的真实数据点不足。"
+                f"等设备同步更多数据后再试。"
+            )
+        else:
+            note = block.get("data_note", "")
+            synthesis = (
+                f"已根据你的真实数据绘制{range_label}的多指标趋势对比（{note}）。"
+                f"图中每条线均为对应指标的 7 日滚动均值，未做任何推断填充。"
+                f"\n\n{render_reva_ui_block(block)}"
+            )
     else:
-        note = block.get("data_note", "")
-        synthesis = (
-            f"已根据你的真实数据绘制{range_label}的{metric_label}趋势（{note}）。"
-            f"图中数值均为按月/周聚合的实测均值，未做任何推断填充。"
-            f"\n\n{render_reva_ui_block(block)}"
-        )
+        metric, _rng = detected[0]
+        block = build_line_chart(db, user_id, metric, range=rng, component=component)
+        metric_label = _METRIC_LABEL.get(metric, metric)
+
+        if block is None:
+            synthesis = (
+                f"暂时无法绘制{range_label}的{metric_label}趋势图：可用的真实数据点不足。"
+                f"等设备同步更多数据后再试。"
+            )
+        else:
+            note = block.get("data_note", "")
+            synthesis = (
+                f"已根据你的真实数据绘制{range_label}的{metric_label}趋势（{note}）。"
+                f"图中数值均为按月/周聚合的实测均值，未做任何推断填充。"
+                f"\n\n{render_reva_ui_block(block)}"
+            )
 
     return OrchestratorResponse(
         query=req.query,
