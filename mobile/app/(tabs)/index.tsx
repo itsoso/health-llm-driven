@@ -542,8 +542,8 @@ export default function TodayScreen() {
         {/* 6 · 情境天气:只有行动/空气风险相关时出现 */}
         <RevaWeatherRow relevanceText={primaryActionContext} />
 
-        {/* 7 · 90 天代谢周期兜底:阿衡今日行动已承接时不重复露出 */}
-        {!hasAgentPrimaryAction ? <RevaCycleStrip /> : null}
+        {/* 7 · 90 天代谢周期兜底:没有当下行动时才露出,长期复盘主入口在「健康分析」。 */}
+        {!hasAgentPrimaryAction && !heroHasNow ? <RevaCycleStrip /> : null}
 
         {/* 深度分析(结果归因 / 生物年龄 / 抗衰下一步 / 设备一致性 / Agent 话题)
             已移出首页 → 「我」tab 的「健康分析」分组(信息架构:首页只留日常驱动)。 */}

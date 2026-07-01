@@ -662,6 +662,39 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(queryByTestId('home-health-cycle-cockpit')).toBeNull();
   });
 
+  it('hides the standalone 90-day cycle when the Hero already has a now-action', () => {
+    mockActiveCycle = {
+      id: 7,
+      status: 'active',
+      start_date: new Date(Date.now() - 14 * 86400000).toISOString(),
+      planned_end_date: new Date(Date.now() + 76 * 86400000).toISOString(),
+      outcomes: [{ metric_code: 'LDL', display: 'LDL-C', unit: 'mmol/L', status: 'pending' }],
+    };
+    mockTimeline = makeTimeline({
+      id: 'protein-breakfast',
+      kind: 'action',
+      time_window: 'morning',
+      scheduled_for: '08:30',
+      title: '早餐补足 30g 蛋白',
+      subtitle: '先完成当下这一餐,长期周期放到分析页复盘。',
+      icon: 'restaurant-outline',
+      color: '#1F8A5B',
+      status: 'pending',
+      priority: 1,
+      can_complete: false,
+      complete_ref: null,
+      deep_link: '/diet-plan',
+      severity: null,
+      proof: null,
+    });
+
+    const { getByLabelText, queryByTestId, queryByText } = render(<TodayScreen />);
+
+    expect(getByLabelText('现在该做:早餐补足 30g 蛋白')).toBeTruthy();
+    expect(queryByTestId('home-health-cycle-cockpit')).toBeNull();
+    expect(queryByText('90 天代谢周期')).toBeNull();
+  });
+
   it('keeps the pull-to-refresh spinner separate from background sync', () => {
     mockRefetchingKeys = new Set(['twin:me']);
     const { UNSAFE_getByType } = render(<TodayScreen />);
