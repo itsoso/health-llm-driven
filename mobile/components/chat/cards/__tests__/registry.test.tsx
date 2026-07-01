@@ -152,6 +152,89 @@ describe('renderCard 安全降级', () => {
     );
   });
 
+  it('renders confirmable diet draft cards with next action guidance', () => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'diet_draft',
+      data: {
+        meal_type: 'lunch',
+        food_items: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
+        calories: 770,
+        protein: 30,
+        carbs: 70,
+        fat: 17,
+        confidence: 0.82,
+        source: 'chat_photo',
+        suggestions: ['晚餐优先补 40g 蛋白', '餐后轻走 8-10 分钟'],
+        post_meal_walk: { recommended: true, minutes: 10 },
+        boundary: '营养为估算值,确认后写入今日饮食记录。',
+      },
+      actions: [
+        {
+          id: 'confirm-diet-draft',
+          label: '确认记录',
+          action: 'diet_record.create',
+          endpoint: '/diet/records',
+          requires_manual_confirm: true,
+          style: 'primary',
+          payload: {
+            record: {
+              meal_type: 'lunch',
+              food_items: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
+              calories: 770,
+              protein: 30,
+              carbs: 70,
+              fat: 17,
+              notes: '来源: chat_photo; 置信度 82%',
+            },
+          },
+        },
+        {
+          id: 'open-diet',
+          label: '去饮食页修正',
+          action: 'route.open',
+          payload: { route: '/diet' },
+        },
+      ],
+    } as any;
+
+    const element = renderCard(descriptor, { onAction });
+    expect(element).not.toBeNull();
+
+    const { getByText } = render(element!);
+    expect(getByText('待确认饮食记录')).toBeTruthy();
+    expect(getByText('午餐')).toBeTruthy();
+    expect(getByText('煎牛肉能量碗 + 姜黄鲜柠维C茶')).toBeTruthy();
+    expect(getByText('热量 770kcal')).toBeTruthy();
+    expect(getByText('蛋白 30g')).toBeTruthy();
+    expect(getByText('置信度 82% · 来源: 对话/图片')).toBeTruthy();
+    expect(getByText('餐后轻走 10 分钟')).toBeTruthy();
+    expect(getByText('营养为估算值,确认后写入今日饮食记录。')).toBeTruthy();
+
+    fireEvent.press(getByText('确认记录'));
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'diet_record.create', endpoint: '/diet/records' }),
+      expect.objectContaining({ type: 'diet_draft' }),
+    );
+  });
+
+  it('renders structured diet draft food arrays as a readable meal line', () => {
+    const element = renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'dinner',
+        food_items: ['鸡胸肉 200g', '杂粮饭 100g', '西兰花'],
+        protein: 46,
+      },
+    } as any);
+
+    expect(element).not.toBeNull();
+    const { getByText } = render(element!);
+    expect(getByText('鸡胸肉 200g + 杂粮饭 100g + 西兰花')).toBeTruthy();
+    expect(getByText('晚餐')).toBeTruthy();
+    expect(getByText('蛋白 46g')).toBeTruthy();
+  });
+
   it('renders server card actions and dispatches through onAction', () => {
     const onAction = jest.fn();
     const descriptor = {
@@ -691,6 +774,42 @@ describe('renderServerCards 防御', () => {
       type: 'vitals',
       actions: [expect.objectContaining({ action: 'agenda.complete' })],
     }));
+  });
+
+  it('preserves manual-confirm diet record create actions', () => {
+    const r = renderServerCards([
+      {
+        type: 'diet_draft',
+        data: { food_items: '鸡蛋 2 个', meal_type: 'breakfast' },
+        actions: [
+          {
+            label: '确认记录',
+            action: 'diet_record.create',
+            endpoint: '/diet/records',
+            requires_manual_confirm: true,
+            payload: {
+              record: { food_items: '鸡蛋 2 个', meal_type: 'breakfast', protein: 12 },
+            },
+          },
+          {
+            label: '静默写入',
+            action: 'diet_record.create',
+            endpoint: '/diet/records',
+            payload: {
+              record: { food_items: '鸡蛋 2 个', meal_type: 'breakfast' },
+            },
+          },
+        ],
+      } as any,
+    ]);
+
+    expect(r[0].actions).toEqual([
+      expect.objectContaining({
+        action: 'diet_record.create',
+        endpoint: '/diet/records',
+        requires_manual_confirm: true,
+      }),
+    ]);
   });
 
   it('filters unsafe write actions before they reach the chat UI', () => {

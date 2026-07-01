@@ -76,6 +76,37 @@ describe('extractRevaUiBlocks', () => {
     ]);
   });
 
+  it('turns fenced reva-ui diet_draft JSON into a confirmable diet draft card', () => {
+    const text = [
+      '我识别到这是一份午餐:',
+      '',
+      '```reva-ui',
+      '{"v":1,"schema":"reva.diet_draft.v1","component":"diet_draft","meal_type":"lunch","food_items":"煎牛肉能量碗 + 姜黄鲜柠维C茶","calories":770,"protein":30,"carbs":70,"fat":17,"confidence":0.82,"source":"chat_photo","suggestions":["晚餐优先补 40g 蛋白"],"post_meal_walk":{"recommended":true,"minutes":10},"boundary":"营养为估算值,确认后写入今日饮食记录。","actions":[{"id":"confirm-diet-draft","label":"确认记录","action":"diet_record.create","endpoint":"/diet/records","requires_manual_confirm":true,"payload":{"record":{"meal_type":"lunch","food_items":"煎牛肉能量碗 + 姜黄鲜柠维C茶","calories":770,"protein":30,"carbs":70,"fat":17}}}]}',
+      '```',
+    ].join('\n');
+
+    const result = extractRevaUiBlocks(text);
+
+    expect(result.text).toBe('我识别到这是一份午餐:');
+    expect(result.cards).toEqual([
+      {
+        type: 'diet_draft',
+        data: expect.objectContaining({
+          component: 'diet_draft',
+          meal_type: 'lunch',
+          food_items: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
+        }),
+        actions: [
+          expect.objectContaining({
+            action: 'diet_record.create',
+            endpoint: '/diet/records',
+            requires_manual_confirm: true,
+          }),
+        ],
+      },
+    ]);
+  });
+
   it('strips unsupported or malformed reva-ui blocks instead of leaking raw JSON', () => {
     const result = extractRevaUiBlocks('说明\n```reva-ui\nnot-json\n```\n结束');
 

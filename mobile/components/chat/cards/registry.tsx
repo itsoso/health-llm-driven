@@ -32,6 +32,7 @@ import { ScoreCardSpec } from './ScoreCard';
 import { RecordCardSpec } from './RecordCard';
 import { RecordQualityCardSpec } from './RecordQualityCard';
 import { DietCardSpec } from './DietCard';
+import { DietDraftCardSpec } from './DietDraftCard';
 import { WorkoutCardSpec } from './WorkoutCard';
 import { MedicalReportCardSpec } from './MedicalReportCard';
 import { MedicalExamImportResultCardSpec } from './MedicalExamImportResultCard';
@@ -47,6 +48,7 @@ import { SafetyCardSpec } from './SafetyCard';
 export const CARD_REGISTRY: CardSpec[] = [
   RecordCardSpec,      // 记录类优先 - 避免被分析类误触
   RecordQualityCardSpec,
+  DietDraftCardSpec,
   SleepCardSpec,
   WeightCardSpec,
   BPCardSpec,
@@ -76,6 +78,7 @@ export const CARD_MAP: Record<string, CardSpec> = Object.fromEntries(
 
 const ALLOWED_ACTIONS = new Set([
   'agenda.complete',
+  'diet_record.create',
   'write_intent.confirm',
   'write_intent.dismiss',
   'route.open',

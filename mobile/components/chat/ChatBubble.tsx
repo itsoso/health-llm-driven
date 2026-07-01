@@ -162,6 +162,9 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
           qc.invalidateQueries({ queryKey: ['agenda', 'today'] }),
           qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] }),
           qc.invalidateQueries({ queryKey: ['write-intents'] }),
+          qc.invalidateQueries({ queryKey: ['diet'] }),
+          qc.invalidateQueries({ queryKey: ['dashboard'] }),
+          qc.invalidateQueries({ queryKey: ['today-dynamic-view', 'mobile.today'] }),
         ]);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         setCardActionStateByKey(prev => ({ ...prev, [actionKey]: 'done' }));

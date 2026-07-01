@@ -5,6 +5,7 @@ const REVA_UI_COMPONENT_TYPES: Record<string, ServerCardDescriptor['type']> = {
   line_chart: 'line_chart',
   metric_line_chart: 'metric_line_chart',
   metric_empty_state: 'metric_empty_state',
+  diet_draft: 'diet_draft',
 };
 
 export interface ExtractedRevaUiBlocks {
@@ -41,6 +42,7 @@ function descriptorFromPayload(payload: string): ServerCardDescriptor | null {
   return {
     type,
     data: block,
+    actions: Array.isArray(block.actions) ? block.actions : undefined,
   };
 }
 

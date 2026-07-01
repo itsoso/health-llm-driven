@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-require-imports, import/first */
+/* eslint-disable import/first */
 
 const mockApiPost = jest.fn();
 const mockConfirmWriteIntent = jest.fn();
@@ -106,5 +106,73 @@ describe('dispatchChatCardAction', () => {
       action: 'route.open',
       payload: { route: '/(tabs)/chat\ninject' },
     })).rejects.toThrow('invalid_route_action');
+  });
+
+  it('creates diet records only through the manual-confirm diet endpoint', async () => {
+    await dispatchChatCardAction({
+      label: '确认记录',
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      requires_manual_confirm: true,
+      payload: {
+        record: {
+          food_items: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
+          meal_type: 'lunch',
+          calories: 770,
+          protein: 30,
+          carbs: 70,
+          fat: 17,
+        },
+      },
+    });
+
+    expect(mockApiPost).toHaveBeenCalledWith('/diet/records', expect.objectContaining({
+      food_items: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
+      meal_type: 'lunch',
+      calories: 770,
+      protein: 30,
+      carbs: 70,
+      fat: 17,
+      record_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    }));
+  });
+
+  it('normalizes structured food arrays before creating diet records', async () => {
+    await dispatchChatCardAction({
+      label: '确认记录',
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      requires_manual_confirm: true,
+      payload: {
+        record: {
+          food_items: ['鸡胸肉 200g', '杂粮饭 100g', '西兰花'],
+          meal_type: 'dinner',
+          protein: 46,
+        },
+      },
+    });
+
+    expect(mockApiPost).toHaveBeenCalledWith('/diet/records', expect.objectContaining({
+      food_items: '鸡胸肉 200g + 杂粮饭 100g + 西兰花',
+      meal_type: 'dinner',
+      protein: 46,
+    }));
+  });
+
+  it('rejects diet record actions with arbitrary endpoints', async () => {
+    await expect(dispatchChatCardAction({
+      label: '危险饮食写入',
+      action: 'diet_record.create',
+      endpoint: '/medications/7/dose',
+      requires_manual_confirm: true,
+      payload: {
+        record: {
+          food_items: '鸡蛋 2 个',
+          meal_type: 'breakfast',
+        },
+      },
+    })).rejects.toThrow('unsupported_card_action_endpoint');
+
+    expect(mockApiPost).not.toHaveBeenCalled();
   });
 });
