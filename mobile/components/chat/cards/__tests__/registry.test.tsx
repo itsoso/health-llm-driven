@@ -356,6 +356,35 @@ describe('renderCard 安全降级', () => {
     expect(onAction).not.toHaveBeenCalled();
   });
 
+  it('renders completed diet record actions as recorded feedback', () => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'diet_draft',
+      data: { food_items: '鸡胸肉 200g', meal_type: 'lunch' },
+      actions: [
+        {
+          id: 'confirm-diet',
+          label: '确认记录',
+          action: 'diet_record.create',
+          endpoint: '/diet/records',
+          requires_manual_confirm: true,
+          payload: { record: { food_items: '鸡胸肉 200g', meal_type: 'lunch' } },
+        },
+      ],
+    } as any;
+
+    const element = renderCard(descriptor, {
+      onAction,
+      actionStateByKey: { 'confirm-diet': 'done' },
+    } as any);
+    expect(element).not.toBeNull();
+
+    const { getByText } = render(element!);
+    fireEvent.press(getByText('已记录'));
+
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
   it('renders medical exam import result cards from runtime skills', () => {
     const r = renderCard({
       type: 'medical_exam_import_result',

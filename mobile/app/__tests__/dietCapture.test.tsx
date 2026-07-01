@@ -3,9 +3,12 @@ import React from 'react';
 import { render, waitFor } from '@testing-library/react-native';
 import * as ImagePicker from 'expo-image-picker';
 
+const mockRouteParams: Record<string, string> = { capture: 'photo' };
+const mockMealForm = jest.fn();
+
 jest.mock('expo-router', () => ({
   useRouter: () => ({ back: jest.fn() }),
-  useLocalSearchParams: () => ({ capture: 'photo' }),
+  useLocalSearchParams: () => mockRouteParams,
 }));
 
 jest.mock('@tanstack/react-query', () => ({
@@ -75,7 +78,10 @@ jest.mock('../../hooks/useTheme', () => ({
 jest.mock('../../components/diet/MealForm', () => {
   const React = require('react');
   const { View } = require('react-native');
-  const MockMealForm = () => <View />;
+  const MockMealForm = (props: any) => {
+    mockMealForm(props);
+    return <View testID="meal-form" />;
+  };
   MockMealForm.displayName = 'MockMealForm';
   return MockMealForm;
 });
@@ -96,11 +102,44 @@ jest.mock('../../utils/agentContext', () => ({
 import DietScreen from '../diet';
 
 describe('DietScreen capture deeplink', () => {
+  beforeEach(() => {
+    mockMealForm.mockClear();
+    jest.clearAllMocks();
+    Object.keys(mockRouteParams).forEach((key) => { delete mockRouteParams[key]; });
+  });
+
   it('starts photo capture when opened with capture=photo', async () => {
+    mockRouteParams.capture = 'photo';
     render(<DietScreen />);
 
     await waitFor(() => {
       expect(ImagePicker.requestCameraPermissionsAsync).toHaveBeenCalled();
     });
+  });
+
+  it('opens a prefilled meal form from a diet draft deeplink without auto-saving', async () => {
+    mockRouteParams.draft = 'diet';
+    mockRouteParams.meal_type = 'lunch';
+    mockRouteParams.food_items = '煎牛肉能量碗和姜黄鲜柠维C茶';
+    mockRouteParams.calories = '770';
+    mockRouteParams.protein = '30';
+    mockRouteParams.carbs = '70';
+    mockRouteParams.fat = '17';
+
+    render(<DietScreen />);
+
+    await waitFor(() => {
+      expect(mockMealForm).toHaveBeenCalledWith(expect.objectContaining({
+        initialMealType: 'lunch',
+        initialDescription: '煎牛肉能量碗和姜黄鲜柠维C茶',
+        initialCalories: 770,
+        initialProtein: 30,
+        initialCarbs: 70,
+        initialFat: 17,
+      }));
+    });
+    const dietService = require('../../services/diet');
+    expect(dietService.createDietRecord).not.toHaveBeenCalled();
+    expect(ImagePicker.requestCameraPermissionsAsync).not.toHaveBeenCalled();
   });
 });

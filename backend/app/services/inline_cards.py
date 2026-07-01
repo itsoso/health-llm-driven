@@ -14,6 +14,7 @@ import logging
 import re
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlencode
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -324,10 +325,22 @@ def _diet_draft_actions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             "id": "open-diet-edit",
             "label": "去饮食页修正",
             "action": "route.open",
-            "payload": {"route": "/diet"},
+            "payload": {"route": _diet_draft_route(data)},
             "style": "secondary",
         },
     ]
+
+
+def _diet_draft_route(data: Dict[str, Any]) -> str:
+    params: Dict[str, Any] = {
+        "draft": "diet",
+        "meal_type": data.get("meal_type") or "snack",
+        "food_items": data.get("food_items") or "",
+    }
+    for key in ("calories", "protein", "carbs", "fat"):
+        if data.get(key) is not None:
+            params[key] = data[key]
+    return f"/diet?{urlencode(params)}"
 
 
 # ── individual builders ────────────────────────────────────────────

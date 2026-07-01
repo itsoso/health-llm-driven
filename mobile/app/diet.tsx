@@ -27,6 +27,19 @@ import { createDietAgentContext, pushChatWithContext } from '../utils/agentConte
 import { todayStr, offsetDate } from '../utils/dietDate';
 
 const MEAL_LABEL: Record<string, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' };
+const VALID_MEAL_TYPES = new Set(['breakfast', 'lunch', 'dinner', 'snack']);
+const EMPTY_MEALS: DietRecord[] = [];
+
+type DietRouteParams = {
+  capture?: string | string[];
+  draft?: string | string[];
+  meal_type?: string | string[];
+  food_items?: string | string[];
+  calories?: string | string[];
+  protein?: string | string[];
+  carbs?: string | string[];
+  fat?: string | string[];
+};
 
 function guessMealType(): DietRecordCreate['meal_type'] {
   const h = new Date().getHours();
@@ -36,10 +49,38 @@ function guessMealType(): DietRecordCreate['meal_type'] {
   return 'snack';
 }
 
+function firstParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function readRouteText(value: string | string[] | undefined): string | undefined {
+  const raw = firstParam(value)?.trim();
+  if (!raw) return undefined;
+  const normalized = raw.replace(/\+/g, ' ');
+  try {
+    return decodeURIComponent(normalized).trim().slice(0, 500) || undefined;
+  } catch {
+    return normalized.slice(0, 500);
+  }
+}
+
+function readRouteNumber(value: string | string[] | undefined): number | undefined {
+  const raw = readRouteText(value);
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 10) / 10 : undefined;
+}
+
+function readRouteMealType(value: string | string[] | undefined): DietRecordCreate['meal_type'] | undefined {
+  const raw = readRouteText(value);
+  return raw && VALID_MEAL_TYPES.has(raw) ? raw as DietRecordCreate['meal_type'] : undefined;
+}
+
 export default function DietScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ capture?: string }>();
+  const params = useLocalSearchParams<DietRouteParams>();
   const captureConsumedRef = useRef(false);
+  const draftConsumedRef = useRef(false);
   const qc = useQueryClient();
   const toast = useToast();
   const [date, setDate] = useState(todayStr());
@@ -208,10 +249,36 @@ export default function DietScreen() {
   }, [recordThenEstimate]);
 
   useEffect(() => {
-    if (params.capture !== 'photo' || captureConsumedRef.current) return;
+    if (firstParam(params.capture) !== 'photo' || captureConsumedRef.current || firstParam(params.draft) === 'diet') return;
     captureConsumedRef.current = true;
     handlePhoto();
-  }, [handlePhoto, params.capture]);
+  }, [handlePhoto, params.capture, params.draft]);
+
+  useEffect(() => {
+    if (firstParam(params.draft) !== 'diet' || draftConsumedRef.current) return;
+    const foodItems = readRouteText(params.food_items);
+    if (!foodItems) return;
+    draftConsumedRef.current = true;
+    setDate(todayStr());
+    setEditingRecord(null);
+    setFormDefaults({
+      meal_type: readRouteMealType(params.meal_type) ?? guessMealType(),
+      food_items: foodItems,
+      calories: readRouteNumber(params.calories),
+      protein: readRouteNumber(params.protein),
+      carbs: readRouteNumber(params.carbs),
+      fat: readRouteNumber(params.fat),
+    });
+    setShowForm(true);
+  }, [
+    params.calories,
+    params.carbs,
+    params.draft,
+    params.fat,
+    params.food_items,
+    params.meal_type,
+    params.protein,
+  ]);
 
   // 进入/刷新时对账: 任何 calories==null 的当日记录 (含上次中途退出卡住的),
   // 若本会话尚未跑过 → 用已知来源或文字兜底自动重试一次. 不让一餐永远空着.
@@ -228,7 +295,7 @@ export default function DietScreen() {
     }
   }, [daily?.meals, date, estimate, pendingIds, failedIds]);
 
-  const meals = daily?.meals ?? [];
+  const meals = daily?.meals ?? EMPTY_MEALS;
   const totals = useMemo(() => computeDietTotals(meals), [meals]);
   const isToday = date === todayStr();
   const dateLabel = isToday ? '今天' : new Date(date).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', weekday: 'short' });

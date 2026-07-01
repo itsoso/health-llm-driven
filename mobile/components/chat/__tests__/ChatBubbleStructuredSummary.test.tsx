@@ -260,6 +260,46 @@ describe('ChatBubble structured summary', () => {
     });
   });
 
+  it('shows diet-specific success feedback after confirming a diet card', async () => {
+    dispatchChatCardAction.mockResolvedValueOnce({ status: 'completed' });
+    renderCard.mockImplementationOnce((descriptor: any, options: any) => {
+      const { Pressable, Text } = require('react-native');
+      return (
+        <Pressable onPress={() => options.onAction(descriptor.actions[0], descriptor)}>
+          <Text>确认记录</Text>
+        </Pressable>
+      );
+    });
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-diet-card-action',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'diet_draft',
+      cardData: { food_items: '鸡胸肉 200g', meal_type: 'lunch' },
+      cardActions: [{
+        label: '确认记录',
+        action: 'diet_record.create',
+        endpoint: '/diet/records',
+        requires_manual_confirm: true,
+        payload: { record: { food_items: '鸡胸肉 200g', meal_type: 'lunch' } },
+      }],
+    };
+
+    const { getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByText('确认记录'));
+
+    await waitFor(() => {
+      expect(mockToastShow).toHaveBeenCalledWith('已记录饮食', 'success');
+    });
+  });
+
   it('refreshes dependent data and shows feedback before opening routed card actions', async () => {
     dispatchChatCardAction.mockResolvedValueOnce({
       status: 'opened',

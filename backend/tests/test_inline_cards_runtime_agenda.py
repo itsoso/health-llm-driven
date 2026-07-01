@@ -206,7 +206,9 @@ def test_inline_cards_builds_confirmable_diet_draft_card():
         "id": "open-diet-edit",
         "label": "去饮食页修正",
         "action": "route.open",
-        "payload": {"route": "/diet"},
+        "payload": {
+            "route": "/diet?draft=diet&meal_type=lunch&food_items=%E7%85%8E%E7%89%9B%E8%82%89%E8%83%BD%E9%87%8F%E7%A2%97%E5%92%8C%E5%A7%9C%E9%BB%84%E9%B2%9C%E6%9F%A0%E7%BB%B4C%E8%8C%B6&calories=770&protein=30&carbs=70&fat=17"
+        },
         "style": "secondary",
     }
 

@@ -602,6 +602,7 @@ function getCardActionSuccessMessage(
   result: ChatCardActionResult,
 ): string {
   if (result.route || action.action === 'route.open') return '已打开';
+  if (action.action === 'diet_record.create') return '已记录饮食';
   if (result.status === 'dismissed' || action.action === 'write_intent.dismiss') return '已忽略';
   return '已执行';
 }

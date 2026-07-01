@@ -264,6 +264,7 @@ function getActionRuntimeLabel(
   if (state === 'running') return '执行中';
   if (state === 'done') {
     if (action.action === 'route.open') return '已打开';
+    if (action.action === 'diet_record.create') return '已记录';
     if (action.action === 'write_intent.dismiss') return '已忽略';
     return '已完成';
   }
