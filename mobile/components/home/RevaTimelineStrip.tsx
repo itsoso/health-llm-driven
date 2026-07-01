@@ -266,7 +266,7 @@ export default function RevaTimelineStrip({
 
   return (
     <View>
-      <SectionLabel action={countsLabel}>接下来</SectionLabel>
+      <SectionLabel action={countsLabel} onAction={() => router.push('/agenda' as any)}>接下来</SectionLabel>
       <Card pad={0}>
         {visible.map((item, i) => {
           const isWork = item.kind === 'work';

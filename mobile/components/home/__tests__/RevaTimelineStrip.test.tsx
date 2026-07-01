@@ -1,12 +1,13 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 
 import RevaTimelineStrip from '../RevaTimelineStrip';
 
 let mockTimeline: any = null;
+const mockPush = jest.fn();
 
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ push: jest.fn() }),
+  useRouter: () => ({ push: mockPush }),
 }));
 
 jest.mock('expo-haptics', () => ({
@@ -46,6 +47,7 @@ function item(id: string, title: string, overrides: Record<string, unknown> = {}
 
 describe('RevaTimelineStrip', () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     mockTimeline = {
       date: '2026-06-29',
       current_window: 'noon',
@@ -78,5 +80,13 @@ describe('RevaTimelineStrip', () => {
     expect(queryByText('睡前准备')).toBeNull();
     expect(getByText('待办 4 · 已完成 1')).toBeTruthy();
     expect(getByText('还有 1 项')).toBeTruthy();
+  });
+
+  it('opens the full agenda queue from the Today header action', () => {
+    const { getByText } = render(<RevaTimelineStrip />);
+
+    fireEvent.press(getByText('待办 5 · 已完成 1'));
+
+    expect(mockPush).toHaveBeenCalledWith('/agenda');
   });
 });
