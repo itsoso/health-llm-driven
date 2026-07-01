@@ -1178,6 +1178,17 @@ _LITE_MAX_TOKENS = 300
 _FULL_MAX_TOKENS = 2000
 
 
+def _strip_llm_reva_ui(text: str) -> str:
+    """确定性护栏 (R4, 防御纵深): 剥掉 LLM synthesis 里伪造的 ```reva-ui``` 图表 block。
+
+    图表 block 只能由 `_maybe_build_genui_chart` 确定性短路产出 —— 它更早返回, 从不
+    经过任何 LLM synthesis 路径, 因此本函数只作用于 LLM 生成文本, 绝不会吃掉短路的 block。
+    单一真源在 `app.services.genui.strip_reva_ui_blocks`。"""
+    from app.services.genui import strip_reva_ui_blocks
+
+    return strip_reva_ui_blocks(text)
+
+
 async def _call_llm(
     system_prompt: str, user_prompt: str, *, lite_mode: bool = False,
 ) -> str:
@@ -1437,6 +1448,7 @@ async def run_orchestrator(
     t_llm = time.monotonic()
     synthesis = await _call_llm(system_prompt, user_prompt, lite_mode=lite_mode)
     perf["llm_full_ms"] = int((time.monotonic() - t_llm) * 1000)
+    synthesis = _strip_llm_reva_ui(synthesis)  # R4 护栏: 剥 LLM 伪造图表 block
 
     # v3 cross-cutting safety: 所有 LLM 终态自由文本统一过 validator
     safety = _safety_wrap(synthesis, source="orchestrator.run")
@@ -1567,6 +1579,7 @@ async def _run_orchestrator_fast(
     )
 
     synthesis = await _call_llm(system_prompt, user_prompt, lite_mode=True)
+    synthesis = _strip_llm_reva_ui(synthesis)  # R4 护栏: 剥 LLM 伪造图表 block
 
     # v3 cross-cutting safety: Siri 路径同样过 validator
     safety = _safety_wrap(synthesis, source="orchestrator.siri_fast")
@@ -1648,6 +1661,8 @@ async def _stream_orchestrator_fast(
                     await chunk_queue.put(_sse("chunk", chunk))
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"[orchestrator.stream.siri_fast] LLM stream 失败: {e}")
+
+            full = _strip_llm_reva_ui(full)  # R4 护栏: 剥 LLM 伪造图表 block (audit 前)
 
             safety = _safety_wrap(full, source="orchestrator.siri_fast.stream")
             total_ms = int((time.monotonic() - t_start) * 1000)
@@ -1880,6 +1895,8 @@ async def stream_orchestrator(
                     logger.warning(f"[orchestrator.stream] LLM stream 失败: {e}")
                 perf["llm_ttft_ms"] = llm_ttft_ms
                 perf["llm_full_ms"] = int((time.monotonic() - t_llm) * 1000)
+
+                full = _strip_llm_reva_ui(full)  # R4 护栏: 剥 LLM 伪造图表 block (audit 前)
 
                 safety = _safety_wrap(full, source="orchestrator.stream")
                 total_ms = int((time.monotonic() - t_start) * 1000)

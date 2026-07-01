@@ -763,3 +763,71 @@ def render_reva_ui_block(block: dict) -> str:
     """把 block dict 渲染成 ```reva-ui fenced 文本 (嵌进 assistant 消息)。"""
     payload = json.dumps(block, ensure_ascii=False, separators=(",", ":"))
     return f"```reva-ui\n{payload}\n```"
+
+
+# ---------------------------------------------------------------------------
+# 确定性护栏: 剥离 / 占位 LLM 伪造的 reva-ui block
+# ---------------------------------------------------------------------------
+#
+# 铁律 (R4): reva-ui 图表 block **只能**由本模块的确定性短路 (agent
+# `_maybe_genui_chart_events` / orchestrator `_maybe_build_genui_chart`) 产出,
+# 数值全部来自 DB 查询。LLM 见过历史里的 reva-ui block 会**模仿**这个格式并**编造**
+# 数据 (实测: 编出 "多源合并: Apple Watch + Garmin + RingConn")。因此:
+#   - 喂给 LLM 的历史里, 助手消息的 reva-ui block 必须换成占位符 (LLM 无从模仿)。
+#   - LLM 生成的最终文本落库/下发前, reva-ui block 必须整块剥掉 (防御纵深)。
+# 短路自身产出的 block 走的是独立、更早返回的路径, 不经过这两处 → 不受影响。
+
+# 匹配一个 ```reva-ui fenced block。opener 行可带尾随空白; 首选匹配到成对的 ``` 闭合;
+# re.DOTALL 让 block 体跨行。闭合 fence 前允许可选换行 (block 体可能不以换行结尾)。
+_REVA_UI_CLOSED_RE = re.compile(
+    r"```reva-ui[^\n]*\n.*?\n?```",
+    re.DOTALL,
+)
+# 未闭合 (缺尾 ```) 的 opener → 从 opener 一直吃到文本结尾。仅在闭合形全部移除后再跑,
+# 避免把一段闭合 block 之后、下一段无关 fence 之前的内容误吞。
+_REVA_UI_UNCLOSED_RE = re.compile(
+    r"```reva-ui[^\n]*(?:\n.*)?\Z",
+    re.DOTALL,
+)
+
+
+def _collapse_blank_runs(text: str) -> str:
+    """把剥离后残留的 3+ 连续换行压回 2 个 (即最多一个空行), 并 strip 首尾空白。"""
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def strip_reva_ui_blocks(text: str) -> str:
+    """移除文本里所有 ```reva-ui``` fenced block, 保留其余内容 (其它 fence / 散文原样)。
+
+    - 成对闭合的 block: 整块删除 (支持多个)。
+    - 未闭合的 opener (没有闭合 fence): 从 opener 删到文本结尾 —— 半个伪造 block
+      也绝不能泄漏给用户。
+    - ```json 等其它语言的 fence、普通散文: 原样保留。
+    - 清理剥离后残留的多余空行。
+
+    纯函数, 可单测。None / 空串安全返回原值。
+    """
+    if not text or "reva-ui" not in text:
+        return text
+    cleaned = _REVA_UI_CLOSED_RE.sub("", text)
+    if "```reva-ui" in cleaned:
+        # 剩下的一定是未闭合 opener (闭合形已全被上一步吃掉)。
+        cleaned = _REVA_UI_UNCLOSED_RE.sub("", cleaned)
+    return _collapse_blank_runs(cleaned)
+
+
+def placeholder_reva_ui_blocks(text: str, placeholder: str = "［图表已展示］") -> str:
+    """把文本里的 ```reva-ui``` block 换成短占位符 (而非删除)。
+
+    用于喂给 LLM 的历史: LLM 看到占位符而非真格式, 就无从模仿 reva-ui 结构编数据,
+    同时仍知道"上一轮展示过一张图表"的语义。闭合 block 换成占位符; 未闭合 opener
+    (历史里极少见) 同样换成占位符。其它内容不动。
+
+    纯函数, 可单测。None / 空串安全返回原值。
+    """
+    if not text or "reva-ui" not in text:
+        return text
+    replaced = _REVA_UI_CLOSED_RE.sub(placeholder, text)
+    if "```reva-ui" in replaced:
+        replaced = _REVA_UI_UNCLOSED_RE.sub(placeholder, replaced)
+    return _collapse_blank_runs(replaced)

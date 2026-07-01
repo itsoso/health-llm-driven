@@ -431,6 +431,26 @@ def _strip_bracket_tool_markers(text: str) -> str:
     return _BRACKET_TOOL_CALL_STRIP_RE.sub("", text).strip()
 
 
+def _strip_reva_ui_from_llm_text(text: str) -> str:
+    """剥掉 LLM 生成文本里伪造的 ```reva-ui``` 图表 block (确定性护栏, 防御纵深)。
+
+    reva-ui block 只能由确定性 genui 短路产出; LLM 编的 block 数值全是假的 (R4 违规)。
+    单一真源在 `app.services.genui.strip_reva_ui_blocks`。仅作用于 LLM 生成文本 ——
+    短路自身产出的 block 走独立更早返回路径, 不经过此处。"""
+    from app.services.genui import strip_reva_ui_blocks
+
+    return strip_reva_ui_blocks(text)
+
+
+def _placeholder_reva_ui_in_history(text: str) -> str:
+    """把历史助手消息里的 ```reva-ui``` block 换成占位符, 再喂回 LLM (防模仿)。
+
+    单一真源在 `app.services.genui.placeholder_reva_ui_blocks`。"""
+    from app.services.genui import placeholder_reva_ui_blocks
+
+    return placeholder_reva_ui_blocks(text)
+
+
 _BARE_JSON_START_RE = re.compile(r'^\{\s*"\w+"\s*:')
 
 
@@ -1749,6 +1769,8 @@ class AgentExecutor:
                 await self._http_client.aclose()
                 self._http_client = None
 
+        # 确定性护栏 (R4): 多模型综合是 LLM 生成文本 → 剥掉任何伪造的 reva-ui block。
+        full_reply = _strip_reva_ui_from_llm_text(full_reply)
         ai_msg = svc.save_message(conv.id, "assistant", full_reply)
         conv.updated_at = datetime.now(UTC)
         elapsed_ms = int((time.time() - start_time) * 1000)
@@ -1898,6 +1920,13 @@ class AgentExecutor:
 
         # 3. 构建对话历史
         messages = svc.build_messages(conv.id, limit=15)
+        # 确定性护栏 (R4): 历史里助手消息带过 ```reva-ui``` 图表 block —— 若原样喂回
+        # LLM, 它会**模仿**这个格式并**编造**图表数据 (实测: 编 "Apple Watch + Garmin +
+        # RingConn 多源合并")。把历史助手消息里的 block 换成占位符, LLM 无从模仿。
+        # (确定性短路自身产出的 block 走独立更早返回的路径, 不经此处 → 不受影响。)
+        for _m in messages:
+            if _m.get("role") == "assistant" and _m.get("content"):
+                _m["content"] = _placeholder_reva_ui_in_history(_m["content"])
         messages.insert(0, {"role": "system", "content": system_content})
 
         # 如果有图片：LangBridge 商用模型自身支持多模态，必须直接传原图；
@@ -2378,6 +2407,9 @@ class AgentExecutor:
                 self._http_client = None
 
         # 6. 保存回复
+        # 确定性护栏 (R4, 防御纵深): full_reply 是 LLM 生成文本 —— 剥掉任何伪造的
+        # reva-ui 图表 block (数值只能来自确定性 genui 短路; 短路走独立路径不经此处)。
+        full_reply = _strip_reva_ui_from_llm_text(full_reply)
         ai_msg = svc.save_message(conv.id, "assistant", full_reply)
         conv.updated_at = datetime.now(UTC)
 

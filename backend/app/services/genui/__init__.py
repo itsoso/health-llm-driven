@@ -13,7 +13,9 @@ from app.services.genui.chart_builder import (
     build_multi_metric_chart,
     detect_chart_request,
     detect_chart_requests,
+    placeholder_reva_ui_blocks,
     render_reva_ui_block,
+    strip_reva_ui_blocks,
     SUPPORTED_METRICS,
 )
 from app.services.genui.chart_rich import compute_chart_rich
@@ -24,7 +26,9 @@ __all__ = [
     "build_empty_state",
     "detect_chart_request",
     "detect_chart_requests",
+    "placeholder_reva_ui_blocks",
     "render_reva_ui_block",
+    "strip_reva_ui_blocks",
     "SUPPORTED_METRICS",
     "compute_chart_rich",
 ]
