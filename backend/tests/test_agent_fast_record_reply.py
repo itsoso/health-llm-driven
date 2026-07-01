@@ -9,6 +9,7 @@ import json
 from app.services.agent_executor import (
     _fast_record_reply_from_tool_results,
     _friendly_record_confirmation,
+    _post_record_quality_response,
 )
 
 
@@ -68,3 +69,54 @@ def test_error_tool_result_passes_through():
     msg = {"role": "tool", "content": "Error: water amount 必须是整数毫升"}
     reply = _fast_record_reply_from_tool_results([msg])
     assert reply.startswith("Error")
+
+
+def test_diet_record_quality_response_uses_personal_context_and_next_action():
+    response = _post_record_quality_response(
+        "diet",
+        {
+            "meal_type": "lunch",
+            "food_items": "煎牛肉能量碗, 水煮蛋, 姜黄鲜柠维C茶",
+            "calories": 770,
+            "protein": 30,
+            "carbs": 70,
+            "fat": 17,
+        },
+        personal_context="[用户健康档案]\n慢性病: 胃溃疡(Hp 阴性), 高血压\n健康目标: 每日饮水2000ml",
+    )
+
+    assert response is not None
+    reply = response["reply"]
+    assert "已记录午餐" in reply
+    assert "蛋白" in reply and "30g" in reply
+    assert "胃溃疡" in reply
+    assert "酸" in reply or "冷" in reply
+    assert "下一步" in reply
+    assert "要不要算热量" not in reply
+    assert "{" not in reply
+    assert len(reply) <= 220
+
+    assert response["cards"][0]["type"] == "record_quality"
+    assert response["cards"][0]["data"]["domain"] == "diet"
+    assert response["cards"][0]["actions"][0]["action"] == "route.open"
+
+
+def test_exercise_record_quality_response_is_actionable_without_medical_claims():
+    response = _post_record_quality_response(
+        "exercise",
+        {
+            "exercise_type": "俯卧撑",
+            "reps": 30,
+            "sets": 3,
+            "duration": 8,
+        },
+        personal_context="[用户健康档案]\n慢性病: 高血压\n",
+    )
+
+    assert response is not None
+    reply = response["reply"]
+    assert "已记录运动" in reply
+    assert "俯卧撑" in reply
+    assert "下一步" in reply
+    assert "诊断" not in reply
+    assert len(reply) <= 200

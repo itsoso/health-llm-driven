@@ -100,6 +100,44 @@ describe('renderCard 安全降级', () => {
     expect(getByText('已设置每日提醒：臀中肌训练')).toBeTruthy();
   });
 
+  it('renders record quality cards with personal cautions and route actions', () => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'record_quality',
+      data: {
+        domain: 'diet',
+        title: '午餐已记录',
+        summary: '770 kcal · 蛋白 30g · 碳水 70g',
+        primary_judgement: '蛋白质到位，但晚餐仍要补足。',
+        personal_cautions: ['胃溃疡记录在案，冷饮/酸性饮品可能刺激胃，建议观察耐受。'],
+        next_action: '晚餐优先 40g 蛋白，少油少刺激。',
+        boundary: '健康管理建议，不替代医生诊断或治疗。',
+      },
+      actions: [
+        {
+          id: 'open-diet-plan',
+          label: '看晚餐建议',
+          action: 'route.open',
+          endpoint: '/diet-plan',
+        },
+      ],
+    } as any;
+
+    const element = renderCard(descriptor, { onAction });
+    expect(element).not.toBeNull();
+
+    const { getByText } = render(element!);
+    expect(getByText('午餐已记录')).toBeTruthy();
+    expect(getByText('770 kcal · 蛋白 30g · 碳水 70g')).toBeTruthy();
+    expect(getByText('胃溃疡记录在案，冷饮/酸性饮品可能刺激胃，建议观察耐受。')).toBeTruthy();
+
+    fireEvent.press(getByText('看晚餐建议'));
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'route.open', endpoint: '/diet-plan' }),
+      expect.objectContaining({ type: 'record_quality' }),
+    );
+  });
+
   it('renders server card actions and dispatches through onAction', () => {
     const onAction = jest.fn();
     const descriptor = {

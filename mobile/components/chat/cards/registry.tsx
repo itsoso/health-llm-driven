@@ -29,6 +29,7 @@ import { WeatherCardSpec } from './WeatherCard';
 import { BPCardSpec } from './BPCard';
 import { ScoreCardSpec } from './ScoreCard';
 import { RecordCardSpec } from './RecordCard';
+import { RecordQualityCardSpec } from './RecordQualityCard';
 import { DietCardSpec } from './DietCard';
 import { WorkoutCardSpec } from './WorkoutCard';
 import { MedicalReportCardSpec } from './MedicalReportCard';
@@ -44,6 +45,7 @@ import { SafetyCardSpec } from './SafetyCard';
 /** 全量卡片注册表. 数组前面的优先级越高时越靠前 (便于可读), 实际按 match() 返回值排序 */
 export const CARD_REGISTRY: CardSpec[] = [
   RecordCardSpec,      // 记录类优先 - 避免被分析类误触
+  RecordQualityCardSpec,
   SleepCardSpec,
   WeightCardSpec,
   BPCardSpec,

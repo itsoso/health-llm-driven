@@ -1251,6 +1251,227 @@ def _health_record_card_descriptor(record_type: Any, record_data: Any, result: s
     }
 
 
+def _number_or_none(value: Any) -> Optional[float]:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    if isinstance(value, str):
+        raw = value.strip()
+        if raw:
+            try:
+                return float(raw)
+            except ValueError:
+                return None
+    return None
+
+
+def _short_food_label(value: Any, limit: int = 34) -> str:
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, dict):
+                text = str(item.get("name") or item.get("food") or "").strip()
+            else:
+                text = str(item or "").strip()
+            if text:
+                parts.append(text)
+        raw = "、".join(parts)
+    else:
+        raw = str(value or "").strip()
+    raw = re.sub(r"\s+", " ", raw).strip(" ,，、")
+    if len(raw) > limit:
+        return raw[:limit].rstrip(" ,，、") + "…"
+    return raw
+
+
+def _has_any(text: str, words: tuple[str, ...]) -> bool:
+    return any(word and word in text for word in words)
+
+
+def _macro_summary(record_data: dict) -> str:
+    parts: list[str] = []
+    kcal = _number_or_none(record_data.get("calories") or record_data.get("kcal"))
+    protein = _number_or_none(record_data.get("protein"))
+    carbs = _number_or_none(record_data.get("carbs") or record_data.get("carbohydrates"))
+    fat = _number_or_none(record_data.get("fat"))
+    if kcal is not None:
+        parts.append(f"{kcal:.0f} kcal")
+    if protein is not None:
+        parts.append(f"蛋白 {protein:.0f}g")
+    if carbs is not None:
+        parts.append(f"碳水 {carbs:.0f}g")
+    if fat is not None:
+        parts.append(f"脂肪 {fat:.0f}g")
+    return " · ".join(parts)
+
+
+def _diet_personal_cautions(record_data: dict, personal_context: str) -> list[str]:
+    food_text = str(record_data.get("food_items") or record_data.get("food") or "")
+    context = personal_context or ""
+    combined = f"{food_text}\n{context}"
+    cautions: list[str] = []
+    if _has_any(context, ("胃溃疡", "胃炎", "胃病", "反流", "GERD", "消化道")) and _has_any(
+        food_text,
+        ("柠檬", "酸", "维C", "维生素C", "姜黄", "咖啡", "酒", "辣", "冰", "冷"),
+    ):
+        cautions.append("胃溃疡记录在案，冷饮/酸性饮品可能刺激胃，建议观察耐受。")
+    if _has_any(context, ("糖尿病", "血糖", "糖耐量", "胰岛素抵抗")):
+        carbs = _number_or_none(record_data.get("carbs") or record_data.get("carbohydrates"))
+        if carbs is not None and carbs >= 80:
+            cautions.append("控糖背景下这餐碳水偏高，餐后可轻走 10-15 分钟并关注血糖。")
+    if _has_any(context, ("高血压", "血压")) and _has_any(combined, ("咸", "盐", "酱", "汤", "腌", "外卖")):
+        cautions.append("有血压管理目标时，留意这餐钠盐和汤汁摄入。")
+    allergy_match = re.search(r"过敏/禁忌[:：]\s*([^\n]+)", context)
+    if allergy_match:
+        allergy_text = allergy_match.group(1)
+        for item in re.split(r"[,，、/]\s*", allergy_text):
+            item = item.strip()
+            if item and item in food_text:
+                cautions.append(f"你的禁忌里包含「{item}」，请确认这餐没有误食。")
+                break
+    return cautions[:2]
+
+
+def _diet_primary_judgement(record_data: dict) -> str:
+    protein = _number_or_none(record_data.get("protein"))
+    kcal = _number_or_none(record_data.get("calories") or record_data.get("kcal"))
+    if protein is not None and protein >= 25:
+        if kcal is not None:
+            return f"蛋白质到位（{protein:.0f}g），热量约 {kcal:.0f} kcal。"
+        return f"蛋白质到位（{protein:.0f}g）。"
+    if protein is not None:
+        return f"蛋白偏低（{protein:.0f}g），下一餐需要补足。"
+    if kcal is not None:
+        return f"热量约 {kcal:.0f} kcal，营养估算已写入。"
+    return "这餐已经进入今日饮食账本。"
+
+
+def _diet_next_action(record_data: dict, personal_context: str) -> str:
+    protein = _number_or_none(record_data.get("protein"))
+    context = personal_context or ""
+    if _has_any(context, ("胃溃疡", "胃炎", "胃病", "反流", "GERD")):
+        return "晚餐优先 35-45g 蛋白，少油少刺激，饮品尽量温和。"
+    if protein is not None and protein < 25:
+        return "下一餐优先补 30-40g 蛋白，比如鱼/鸡胸/豆腐加蔬菜。"
+    return "下一餐继续补足蛋白和蔬菜，避免把热量集中到夜间。"
+
+
+def _exercise_record_summary(record_data: dict) -> tuple[str, str]:
+    exercise = str(
+        record_data.get("exercise_type")
+        or record_data.get("type")
+        or record_data.get("name")
+        or "运动"
+    ).strip()
+    reps = _number_or_none(record_data.get("reps"))
+    sets = _number_or_none(record_data.get("sets"))
+    duration = _number_or_none(record_data.get("duration") or record_data.get("minutes"))
+    bits: list[str] = []
+    if sets is not None:
+        bits.append(f"{sets:.0f}组")
+    if reps is not None:
+        bits.append(f"{reps:.0f}次")
+    if duration is not None:
+        bits.append(f"{duration:.0f}分钟")
+    detail = " · ".join(bits) if bits else "已完成"
+    return exercise, detail
+
+
+def _post_record_quality_response(
+    record_type: Any,
+    record_data: Any,
+    result: str = "",
+    personal_context: str = "",
+) -> Optional[dict]:
+    """Build a short post-record answer + deterministic card for fast-record turns.
+
+    This is the Answer Quality Layer for high-frequency writes. It does not
+    diagnose, prescribe, or infer safety clearance; it turns confirmed writes into
+    concise personal guidance using already-available context.
+    """
+
+    if result and (result.startswith("Error") or result.startswith("[NEEDS_CONFIRMATION]")):
+        return None
+    kind = _normalize_fast_record_kind(record_type)
+    if not isinstance(record_data, dict):
+        return None
+
+    if kind == "diet":
+        meal = _MEAL_TYPE_ZH.get(str(record_data.get("meal_type") or "").lower(), "饮食")
+        food_label = _short_food_label(record_data.get("food_items") or record_data.get("food"))
+        if not food_label:
+            return None
+        judgement = _diet_primary_judgement(record_data)
+        cautions = _diet_personal_cautions(record_data, personal_context)
+        caution_text = f"个人提醒：{cautions[0]}" if cautions else "个人提醒：暂无明显禁忌信号，继续观察餐后体感。"
+        next_action = _diet_next_action(record_data, personal_context)
+        reply = (
+            f"已记录{meal}：{food_label}。{judgement}"
+            f"{caution_text} 下一步：{next_action}"
+        )
+        summary = _macro_summary(record_data)
+        card = {
+            "type": "record_quality",
+            "data": {
+                "domain": "diet",
+                "title": f"{meal}已记录",
+                "summary": summary or food_label,
+                "primary_judgement": judgement,
+                "personal_cautions": cautions,
+                "next_action": next_action,
+                "boundary": "健康管理建议，不替代医生诊断、处方或治疗。",
+            },
+            "actions": [
+                {
+                    "id": "open-diet-plan",
+                    "label": "看下一餐建议",
+                    "action": "route.open",
+                    "endpoint": "/diet-plan",
+                },
+                {
+                    "id": "open-record",
+                    "label": "调整记录",
+                    "action": "route.open",
+                    "endpoint": "/record",
+                },
+            ],
+        }
+        return {"reply": reply[:220], "cards": [card]}
+
+    if kind == "exercise":
+        exercise, detail = _exercise_record_summary(record_data)
+        context = personal_context or ""
+        caution = ""
+        if _has_any(context, ("高血压", "心脏病", "胸闷", "胸痛")):
+            caution = "有心血管/血压背景时，训练中若胸闷头晕要停止并观察。"
+        else:
+            caution = "留意心率和疲劳感，避免连续高强度堆叠。"
+        next_action = "补水并做 3-5 分钟拉伸，晚些再看恢复状态。"
+        reply = f"已记录运动：{exercise} {detail}。{caution} 下一步：{next_action}"
+        card = {
+            "type": "record_quality",
+            "data": {
+                "domain": "exercise",
+                "title": "运动已记录",
+                "summary": f"{exercise} · {detail}",
+                "primary_judgement": "已进入今日活动记录。",
+                "personal_cautions": [caution],
+                "next_action": next_action,
+                "boundary": "健康管理建议，不替代医生诊断、处方或治疗。",
+            },
+            "actions": [
+                {
+                    "id": "open-record",
+                    "label": "查看记录",
+                    "action": "route.open",
+                    "endpoint": "/record",
+                },
+            ],
+        }
+        return {"reply": reply[:200], "cards": [card]}
+
+    return None
+
+
 def _safety_alert_value(alert: Any, key: str, default: Any = None) -> Any:
     if isinstance(alert, dict):
         return alert.get(key, default)
@@ -1991,6 +2212,7 @@ class AgentExecutor:
         # 5. Agent 循环
         full_reply = ""
         streamed_cards: list[dict] = []
+        post_record_quality: Optional[dict] = None
         yield {
             "event": "agent_start",
             "data": {
@@ -2287,16 +2509,30 @@ class AgentExecutor:
                             "result": result,
                         }
                         record_card = None
+                        quality_cards: list[dict] = []
                         if func_name == "health_record":
                             try:
                                 parsed_args = json.loads(func_args) if isinstance(func_args, str) else func_args
                                 tool_event_data["record_type"] = parsed_args.get("record_type")
                                 tool_event_data["record_data"] = parsed_args.get("data") or {}
-                                record_card = _health_record_card_descriptor(
+                                quality_response = _post_record_quality_response(
                                     tool_event_data["record_type"],
                                     tool_event_data["record_data"],
                                     result_for_record_card,
+                                    personal_context=system_content,
                                 )
+                                if quality_response:
+                                    post_record_quality = quality_response
+                                    quality_cards = [
+                                        card for card in quality_response.get("cards", [])
+                                        if isinstance(card, dict)
+                                    ]
+                                else:
+                                    record_card = _health_record_card_descriptor(
+                                        tool_event_data["record_type"],
+                                        tool_event_data["record_data"],
+                                        result_for_record_card,
+                                    )
                             except Exception:
                                 pass
 
@@ -2304,6 +2540,17 @@ class AgentExecutor:
                             "event": "tool_result",
                             "data": tool_event_data,
                         }
+                        for quality_card in quality_cards:
+                            before = len(streamed_cards)
+                            streamed_cards = _merge_agent_card_descriptors(streamed_cards, [quality_card])
+                            if len(streamed_cards) > before:
+                                yield {
+                                    "event": "card",
+                                    "data": {
+                                        "anchor": "post_record_quality",
+                                        "descriptor": quality_card,
+                                    },
+                                }
                         if record_card:
                             before = len(streamed_cards)
                             streamed_cards = _merge_agent_card_descriptors(streamed_cards, [record_card])
@@ -2339,7 +2586,12 @@ class AgentExecutor:
                     })
 
                     if self._prefer_fast_record_model:
-                        final_text = _fast_record_reply_from_tool_results(messages)
+                        final_text = (
+                            str(post_record_quality.get("reply") or "").strip()
+                            if post_record_quality else ""
+                        )
+                        if not final_text:
+                            final_text = _fast_record_reply_from_tool_results(messages)
                         if final_text:
                             for i in range(0, len(final_text), 20):
                                 chunk = final_text[i:i + 20]
