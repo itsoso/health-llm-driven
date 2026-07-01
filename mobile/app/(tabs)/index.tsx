@@ -59,6 +59,10 @@ import DynamicTodayRenderer from '../../components/home/DynamicTodayRenderer';
 import HomeMedicationSummary from '../../components/home/HomeMedicationSummary';
 import TodaySignalsPanel, { type TodaySignalKey } from '../../components/home/TodaySignalsPanel';
 import TodaySafetyAlertCard from '../../components/home/TodaySafetyAlertCard';
+import {
+  buildDailyArtifactAtomicContract,
+  buildSafetyAlertAtomicContract,
+} from '../../components/home/todayAtomicCards';
 import { useRevaFonts } from '../../components/reva/useRevaFonts';
 import { revaColors } from '../../constants/revaTheme';
 import { useHomeColdStartTrace } from '../../services/perfTrace';
@@ -209,7 +213,8 @@ export default function TodayScreen() {
   const criticalAlerts = alerts.filter((a) =>
     ['critical', 'high'].includes(getSeverityKey(a.severity)),
   );
-  const primarySafetyAlert = pickPrimarySafetyAlert(criticalAlerts);
+  const safetyAlertContract = buildSafetyAlertAtomicContract(alerts);
+  const primarySafetyAlert = safetyAlertContract.payload;
 
   const twinSnap = pickTwinSnapshot(twinQuery.data, garmin);
 
@@ -418,6 +423,7 @@ export default function TodayScreen() {
   const dynamicTodayView = todayDynamicViewQuery.data;
   const canRenderDynamicToday = hasRenderableTodayDynamicView(dynamicTodayView);
   const primaryArtifact = extractDailyArtifactFromDynamicView(dynamicTodayView) ?? dailyArtifactQuery.data ?? null;
+  const primaryArtifactContract = buildDailyArtifactAtomicContract(primaryArtifact);
   const primaryTopAction = primaryArtifact?.top_action ?? null;
   const primaryActionSignal = actionSignalFromArtifact(primaryArtifact);
   const timelineExcludedTitles = useMemo(
@@ -432,7 +438,7 @@ export default function TodayScreen() {
     nowItem?.title,
     nowItem?.subtitle,
   ].filter(Boolean).join(' ');
-  const hasAgentPrimaryAction = Boolean(primaryTopAction);
+  const hasAgentPrimaryAction = primaryArtifactContract.render.show;
 
   // Hero now-action 显示值:全部直接透传后端 timeline 的 now-item(R4:不在前端造处方/诊断措辞)。
   // 风险时 lever 标「风险」,否则用 now-item 的 time_window 中文化作为 lever。空态标题给「补齐今天记录」。
@@ -627,12 +633,6 @@ function openSignalRoute(signal: TodaySignalKey, router: { push: (href: any) => 
 
 function getSeverityKey(s: any): string {
   return typeof s === 'string' ? s : s?.label ?? 'info';
-}
-
-function pickPrimarySafetyAlert(alerts: SafetyAlert[]): SafetyAlert | null {
-  return alerts.find((alert) => getSeverityKey(alert.severity) === 'critical')
-    ?? alerts.find((alert) => getSeverityKey(alert.severity) === 'high')
-    ?? null;
 }
 
 function pickTwinSnapshot(twin: any, garmin: any): TwinSnapshot {
