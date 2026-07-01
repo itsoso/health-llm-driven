@@ -69,4 +69,39 @@ describe('todayDynamicView service', () => {
     expect(hasRenderableTodayDynamicView(view)).toBe(true);
     expect(hasRenderableTodayDynamicView(normalizeTodayDynamicView(null))).toBe(false);
   });
+
+  it('preserves server card identity and render metadata for atom composition', () => {
+    const view = normalizeTodayDynamicView({
+      view_id: 'today:2026-06-29:abc',
+      surface: 'mobile.today',
+      trigger: 'open',
+      generated_by: 'aheng_today_view_v1',
+      context_hash: 'abc',
+      sections: [
+        {
+          slot: 'hero',
+          priority: 100,
+          cards: [
+            {
+              id: 'daily-artifact:2026-06-29:walk',
+              type: 'daily_artifact',
+              data: { artifact_date: '2026-06-29' },
+              render: {
+                atom: 'daily_artifact',
+                dedupe_key: 'action:walk',
+                reason: 'primary_today_action',
+              },
+            } as any,
+          ],
+        },
+      ],
+    });
+
+    expect(view.sections[0].cards[0].id).toBe('daily-artifact:2026-06-29:walk');
+    expect(view.sections[0].cards[0].render).toEqual({
+      atom: 'daily_artifact',
+      dedupe_key: 'action:walk',
+      reason: 'primary_today_action',
+    });
+  });
 });

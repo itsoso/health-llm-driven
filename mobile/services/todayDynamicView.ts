@@ -6,9 +6,11 @@ export type TodayDynamicTrigger = 'open' | 'resume' | 'pull_refresh' | 'action_c
 export type TodayDynamicSurface = 'mobile.today';
 
 export interface TodayDynamicCard {
+  id?: string;
   type: string;
   data: Record<string, unknown> | DailyArtifact;
   actions?: ChatCardActionDescriptor[];
+  render?: Record<string, unknown>;
 }
 
 export interface TodayDynamicSection {
@@ -106,9 +108,13 @@ function normalizeCards(value: unknown): TodayDynamicCard[] {
       const type = typeof card.type === 'string' ? card.type.trim() : '';
       if (!type) return null;
       return {
+        id: typeof card.id === 'string' && card.id.trim() ? card.id.trim() : undefined,
         type,
         data: card.data && typeof card.data === 'object' ? card.data as Record<string, unknown> : {},
         actions: normalizeActions(card.actions),
+        render: card.render && typeof card.render === 'object'
+          ? card.render as Record<string, unknown>
+          : undefined,
       };
     })
     .filter((card): card is TodayDynamicCard => card != null);
