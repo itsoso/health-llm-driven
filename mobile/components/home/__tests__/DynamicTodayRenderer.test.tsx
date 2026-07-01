@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
+import { render } from '@testing-library/react-native';
 
 import DynamicTodayRenderer from '../DynamicTodayRenderer';
 import type { DailyArtifact } from '../../../services/dailyArtifact';
@@ -111,5 +111,42 @@ describe('DynamicTodayRenderer', () => {
 
     expect(getByText('阿衡动态生成的餐后步行')).toBeTruthy();
     expect(queryByText('Bad')).toBeNull();
+  });
+
+  it('suppresses duplicate low-signal dynamic cards already covered by the daily artifact', () => {
+    const { getByText, queryByText } = render(
+      <DynamicTodayRenderer
+        view={makeView({
+          sections: [
+            { slot: 'hero', priority: 100, cards: [{ type: 'daily_artifact', data: makeArtifact() }] },
+            {
+              slot: 'insights',
+              priority: 70,
+              cards: [
+                {
+                  type: 'discovery',
+                  data: {
+                    title: '阿衡动态生成的餐后步行',
+                    summary: '重复解释不应该再占首页。',
+                  },
+                },
+                {
+                  type: 'discovery',
+                  data: {
+                    title: '最近睡眠连续性变好',
+                    summary: '这个不同题,应该保留。',
+                  },
+                },
+              ],
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(getByText('阿衡动态生成的餐后步行')).toBeTruthy();
+    expect(queryByText('重复解释不应该再占首页。')).toBeNull();
+    expect(getByText('最近睡眠连续性变好')).toBeTruthy();
+    expect(getByText('这个不同题,应该保留。')).toBeTruthy();
   });
 });

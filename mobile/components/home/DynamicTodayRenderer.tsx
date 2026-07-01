@@ -42,13 +42,11 @@ export default function DynamicTodayRenderer({
   onDailyArtifactPressAction?: (artifact: DailyArtifact, action: DailyArtifactTopAction) => void;
   onCardAction?: (action: ChatCardActionDescriptor, descriptor: ServerCardDescriptor) => void;
 }) {
-  const hasDailyArtifact = (view?.sections ?? []).some((section) =>
-    section.cards.some((card) => card.type === 'daily_artifact'),
-  );
+  const dailyArtifactTitles = collectDailyArtifactTitleKeys(view);
   const sections = [...(view?.sections ?? [])]
     .map((section) => ({
       ...section,
-      cards: section.cards.filter((card) => !(hasDailyArtifact && card.type === 'runtime_agenda')),
+      cards: section.cards.filter((card) => shouldRenderDynamicCard(card, dailyArtifactTitles)),
     }))
     .filter((section) => section.cards.length > 0)
     .sort((a, b) => b.priority - a.priority);
@@ -80,6 +78,59 @@ export default function DynamicTodayRenderer({
       })}
     </View>
   );
+}
+
+function collectDailyArtifactTitleKeys(view: TodayDynamicView | null | undefined): Set<string> {
+  const keys = new Set<string>();
+  for (const section of view?.sections ?? []) {
+    for (const card of section.cards) {
+      if (card.type !== 'daily_artifact') continue;
+      const artifact = card.data as Partial<DailyArtifact>;
+      const key = titleKey(artifact.top_action?.title);
+      if (key) keys.add(key);
+    }
+  }
+  return keys;
+}
+
+function shouldRenderDynamicCard(card: TodayDynamicCard, dailyArtifactTitleKeys: Set<string>): boolean {
+  if (dailyArtifactTitleKeys.size === 0) return true;
+  if (card.type === 'runtime_agenda') return false;
+  if (!isLowSignalDuplicateCandidate(card.type)) return true;
+  const key = titleKey(dynamicCardTitle(card));
+  return !key || !dailyArtifactTitleKeys.has(key);
+}
+
+function isLowSignalDuplicateCandidate(type: string): boolean {
+  return [
+    'discovery',
+    'operating_review',
+    'metric_chart',
+    'metric_line_chart',
+    'line_chart',
+    'metric_empty_state',
+  ].includes(type);
+}
+
+function dynamicCardTitle(card: TodayDynamicCard): string | null {
+  const data = card.data as Record<string, unknown>;
+  const direct = data.title;
+  if (typeof direct === 'string') return direct;
+  const nextAction = data.next_action;
+  if (nextAction && typeof nextAction === 'object') {
+    const title = (nextAction as Record<string, unknown>).title;
+    if (typeof title === 'string') return title;
+  }
+  const actionTitle = data.action_title;
+  return typeof actionTitle === 'string' ? actionTitle : null;
+}
+
+function titleKey(value: unknown): string {
+  return String(value ?? '')
+    .replace(/[：:]/gu, '')
+    .replace(/[，,。.;；\s]+/gu, '')
+    .trim()
+    .toLowerCase();
 }
 
 function renderDynamicCard({
