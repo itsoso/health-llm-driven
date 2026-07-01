@@ -74,8 +74,10 @@
 
 ## S6/S7 · 部署与上线验证
 
-- 本批尚未部署。属于 Mobile JS/TS UI 行为变更,可随下一次 OTA 或二维码包发布。
-- Follow-up code commit exists locally as `642093ed fix(mobile): dedupe dynamic today cards`;待推送和 OTA。
+- Base slice was initially held for Mobile JS/TS release.
+- Follow-up code commit `642093ed fix(mobile): dedupe dynamic today cards` was pushed to `origin/main`.
+- Follow-up Mobile OTA: production branch, runtime `1.3.1`, update group `63fe8309-ecf3-4f56-8b12-45d9a16e3443`, iOS update `019f1bcd-b77e-77a5-82a4-a9e192debe57`, commit `6a3ceb7ed8e9e0733e0e5602cf9d0bc9ca3e4336`, message `Today dynamic card dedupe`.
+- EAS dashboard: https://expo.dev/accounts/itsoso/projects/health-pilot/updates/63fe8309-ecf3-4f56-8b12-45d9a16e3443
 - 真机待验:首页只出现 Daily Artifact 主行动,不再直接展开 7 天计划大卡,且不重复展示同标题低信号 insight。
 
 ## S8 · 沉淀
