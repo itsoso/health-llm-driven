@@ -56,18 +56,22 @@ export default function DynamicTodayRenderer({
     <View style={styles.container} testID="dynamic-today-view">
       {sections.map((section) => {
         const renderedCards = section.cards
-          .map((card, index) => renderDynamicCard({
-            card,
-            key: `${section.slot}:${card.type}:${index}`,
-            completing,
-            skipping,
-            onDailyArtifactComplete,
-            onDailyArtifactSkip,
-            onDailyArtifactAsk,
-            onDailyArtifactExplainBasis,
-            onDailyArtifactPressAction,
-            onCardAction,
-          }))
+          .map((card, index) => {
+            const atom = cardAtom(card);
+            return renderDynamicCard({
+              card,
+              atom,
+              key: `${section.slot}:${card.id ?? atom}:${index}`,
+              completing,
+              skipping,
+              onDailyArtifactComplete,
+              onDailyArtifactSkip,
+              onDailyArtifactAsk,
+              onDailyArtifactExplainBasis,
+              onDailyArtifactPressAction,
+              onCardAction,
+            });
+          })
           .filter(Boolean);
         if (renderedCards.length === 0) return null;
         return (
@@ -84,7 +88,7 @@ function collectDailyArtifactTitleKeys(view: TodayDynamicView | null | undefined
   const keys = new Set<string>();
   for (const section of view?.sections ?? []) {
     for (const card of section.cards) {
-      if (card.type !== 'daily_artifact') continue;
+      if (cardAtom(card) !== 'daily_artifact') continue;
       const artifact = card.data as Partial<DailyArtifact>;
       const key = titleKey(artifact.top_action?.title);
       if (key) keys.add(key);
@@ -95,8 +99,9 @@ function collectDailyArtifactTitleKeys(view: TodayDynamicView | null | undefined
 
 function shouldRenderDynamicCard(card: TodayDynamicCard, dailyArtifactTitleKeys: Set<string>): boolean {
   if (dailyArtifactTitleKeys.size === 0) return true;
-  if (card.type === 'runtime_agenda') return false;
-  if (!isLowSignalDuplicateCandidate(card.type)) return true;
+  const atom = cardAtom(card);
+  if (atom === 'runtime_agenda') return false;
+  if (!isLowSignalDuplicateCandidate(atom)) return true;
   const key = titleKey(dynamicCardTitle(card));
   return !key || !dailyArtifactTitleKeys.has(key);
 }
@@ -135,6 +140,7 @@ function titleKey(value: unknown): string {
 
 function renderDynamicCard({
   card,
+  atom,
   key,
   completing,
   skipping,
@@ -146,6 +152,7 @@ function renderDynamicCard({
   onCardAction,
 }: {
   card: TodayDynamicCard;
+  atom: string;
   key: string;
   completing: boolean;
   skipping: boolean;
@@ -160,7 +167,7 @@ function renderDynamicCard({
   onDailyArtifactPressAction?: (artifact: DailyArtifact, action: DailyArtifactTopAction) => void;
   onCardAction?: (action: ChatCardActionDescriptor, descriptor: ServerCardDescriptor) => void;
 }): React.ReactElement | null {
-  if (card.type === 'daily_artifact') {
+  if (atom === 'daily_artifact') {
     const artifact = card.data as DailyArtifact;
     return (
       <DailyArtifactCard
@@ -177,15 +184,20 @@ function renderDynamicCard({
     );
   }
 
-  if (!CARD_MAP[card.type]) return null;
+  if (!CARD_MAP[atom]) return null;
 
   const descriptor: ServerCardDescriptor = {
-    type: card.type,
+    type: atom,
     data: card.data,
     actions: card.actions,
   };
   const rendered = renderCard(descriptor, onCardAction ? { onAction: onCardAction } : {});
   return rendered ? <View key={key}>{rendered}</View> : null;
+}
+
+function cardAtom(card: TodayDynamicCard): string {
+  const atom = card.render?.atom;
+  return typeof atom === 'string' && atom.trim() ? atom.trim() : card.type;
 }
 
 const styles = StyleSheet.create({

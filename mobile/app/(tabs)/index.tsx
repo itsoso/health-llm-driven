@@ -572,7 +572,7 @@ function todayDynamicClientContext(): Record<string, unknown> {
 function extractDailyArtifactFromDynamicView(view: TodayDynamicView | null | undefined): DailyArtifact | null {
   for (const section of view?.sections ?? []) {
     for (const card of section.cards ?? []) {
-      if (card.type === 'daily_artifact' && card.data && typeof card.data === 'object') {
+      if (todayDynamicCardAtom(card) === 'daily_artifact' && card.data && typeof card.data === 'object') {
         return card.data as DailyArtifact;
       }
     }
@@ -599,17 +599,23 @@ function collectPromotedActionTitles(
   if (artifact?.top_action?.title) titles.add(artifact.top_action.title);
   for (const section of view?.sections ?? []) {
     for (const card of section.cards ?? []) {
-      if (card.type === 'daily_artifact') {
+      const atom = todayDynamicCardAtom(card);
+      if (atom === 'daily_artifact') {
         const data = card.data as Partial<DailyArtifact>;
         if (data.top_action?.title) titles.add(data.top_action.title);
       }
-      if (card.type === 'runtime_agenda') {
+      if (atom === 'runtime_agenda') {
         const data = card.data as { next_action?: { title?: unknown } };
         if (typeof data.next_action?.title === 'string') titles.add(data.next_action.title);
       }
     }
   }
   return [...titles];
+}
+
+function todayDynamicCardAtom(card: TodayDynamicView['sections'][number]['cards'][number]): string {
+  const atom = card.render?.atom;
+  return typeof atom === 'string' && atom.trim() ? atom.trim() : card.type;
 }
 
 function openSignalRoute(signal: TodaySignalKey, router: { push: (href: any) => void }) {

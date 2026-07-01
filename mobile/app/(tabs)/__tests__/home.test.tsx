@@ -551,6 +551,68 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(getAllByText('阿衡动态生成的餐后步行')).toHaveLength(1);
   });
 
+  it('does not repeat an Aheng-promoted generic atom in the following timeline strip', () => {
+    mockTimeline = makeTimeline({
+      id: 'dynamic-walk',
+      kind: 'action',
+      time_window: 'noon',
+      scheduled_for: '12:30',
+      title: '阿衡动态生成的餐后步行',
+      subtitle: '餐后窗口优先。',
+      icon: 'walk-outline',
+      color: '#1F8A5B',
+      status: 'pending',
+      priority: 1,
+      can_complete: false,
+      complete_ref: null,
+      deep_link: null,
+      severity: null,
+      proof: null,
+    });
+    mockTodayDynamicView = {
+      view_id: 'today:2026-06-29:abc',
+      surface: 'mobile.today',
+      trigger: 'open',
+      generated_by: 'aheng_today_view_v1',
+      generated_at: '2026-06-29T08:00:00Z',
+      expires_at: '2026-06-29T08:01:00Z',
+      context_hash: 'abc',
+      safety_boundary: '健康管理行动建议,不替代医生诊断。',
+      sections: [
+        {
+          slot: 'hero',
+          priority: 100,
+          cards: [
+            {
+              id: 'daily-artifact:2026-06-29:dynamic-walk',
+              type: 'agent_atom',
+              render: { atom: 'daily_artifact', reason: 'primary_today_action' },
+              data: {
+                artifact_date: '2026-06-29',
+                empty_state: false,
+                state: { label: '今日最重要行动', tone: 'focused', summary: '阿衡已生成今日行动。' },
+                top_action: {
+                  id: 'dynamic-walk',
+                  title: '阿衡动态生成的餐后步行',
+                  why_now: '餐后窗口优先。',
+                  actions: { complete: { enabled: false }, skip: { requires_reason: true } },
+                },
+                evidence: [],
+                confidence: 'medium',
+                freshness: { status: 'fresh', sources: ['agenda.runtime_range'] },
+                safety_boundary: '健康管理行动建议,不替代医生诊断。',
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const { getAllByText } = render(<TodayScreen />);
+
+    expect(getAllByText('阿衡动态生成的餐后步行')).toHaveLength(1);
+  });
+
   it('omits the noisy Twin freshness status row from the greeting header', () => {
     mockTwinData = {
       physiological: { training_readiness_score: 87, hrv_latest: 48 },
