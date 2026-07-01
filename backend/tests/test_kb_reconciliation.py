@@ -26,7 +26,11 @@ def _doc(
     origin=DOWN,
     review_status="reviewed",
     evidence_level="B",
+    aliases=None,  # None=不写 aliases 键;list=正常;非 list(如 str)=脏数据故意触发 fail-loud
 ):
+    meta = {"origin": origin, "review_status": review_status}
+    if aliases is not None:
+        meta["aliases"] = aliases
     db.add(
         KBDocument(
             doc_id=doc_id,
@@ -37,9 +41,16 @@ def _doc(
             content_hash=content_hash,
             evidence_level=evidence_level,
             is_archived=False,
-            metadata_json={"origin": origin, "review_status": review_status},
+            metadata_json=meta,
         )
     )
+    db.commit()
+
+
+def _edge(db, src, dst, relation="has_claim"):
+    from app.models.system_knowledge import KBEdge
+
+    db.add(KBEdge(src_doc_id=src, dst_doc_id=dst, relation=relation))
     db.commit()
 
 
@@ -219,3 +230,156 @@ def test_queue_lists_and_filters(db):
     only_dup = list_reconciliation_candidates(db, status="open", relation_tag="duplicate")
     # 两对都是 content_hash 相同 → 都 duplicate
     assert only_dup["total"] == 2
+
+
+# ─────────────────── 语义对齐信号(edge_neighborhood + alias_overlap)───────────────────
+
+def test_alias_overlap_surfaces_crosssource_alias_old_detector_missed(db):
+    """别名级跨源重复(Hp vs 幽门螺杆菌):不同 entity_id + 不同 title + 无同 hash,
+    旧结构 detector 结构上抓不到;alias_overlap 靠共享 title/alias token 捞出来。"""
+    from app.services.kb_reconciliation import _norm_title
+
+    _doc(db, "dd:hp+", doc_type="entity", entity_type="condition", entity_id="e:hp-pos",
+         origin=DOWN, review_status="reviewed", content_hash="hA", title="幽门螺杆菌阳性",
+         aliases=["幽门螺杆菌", "pylori", "hp阳性"])
+    _doc(db, "kb:hp?", doc_type="entity", entity_type="bacterium", entity_id="e:hp-unknown",
+         origin=KBASE, review_status="draft", content_hash="hB", title="Hp感染",
+         aliases=["幽门螺杆菌", "pylori", "hp感染"])
+    # 前置证明 gap:结构键全 miss
+    a = db.query(KBDocument).filter(KBDocument.doc_id == "dd:hp+").first()
+    b = db.query(KBDocument).filter(KBDocument.doc_id == "kb:hp?").first()
+    assert a.content_hash != b.content_hash
+    assert a.entity_id != b.entity_id
+    assert _norm_title(a.title) != _norm_title(b.title)
+
+    res = detect_reconciliation_candidates(db)
+    assert res["created"] == 1
+    c = db.query(KBReconciliationCandidate).first()
+    assert c.relation_tag is None  # 语义信号永不标 duplicate
+    assert c.kind == "entity_align"
+    assert "alias_overlap" in c.signals["detectors"]
+    assert c.signals["alias_overlap"]["shared_tokens"]  # reviewer 能看到为什么
+    assert c.canonical_hint == "dd:hp+"  # D1:down-dedao reviewed 侧
+    assert c.status == "open"
+
+
+def test_edge_neighborhood_surfaces_shared_neighbor_alias(db):
+    """共享 KBEdge 邻域:两跨源 entity(不同 entity_id/title/hash,entity_type 甚至不同)
+    各连同样 3 个 claim 邻居 → edge_neighborhood 捞出别名候选。"""
+    _doc(db, "dd:hp+", doc_type="entity", entity_type="bacterium", entity_id="e:hp-pos",
+         origin=DOWN, review_status="reviewed", content_hash="hA", title="幽门螺杆菌阳性")
+    _doc(db, "kb:hp?", doc_type="entity", entity_type="condition", entity_id="e:hp-unknown",
+         origin=KBASE, review_status="draft", content_hash="hB", title="Hp感染状况")
+    for i in range(3):
+        _doc(db, f"c{i}", doc_type="claim", title=f"claim{i}", content_hash=f"hc{i}")
+        _edge(db, "dd:hp+", f"c{i}", relation="mentions")
+        _edge(db, "kb:hp?", f"c{i}", relation="mentions")
+    res = detect_reconciliation_candidates(db)
+    # 两 entity 共享 3 邻居 → 恰 1 候选(claim 邻居非 entity,不自成对)
+    align = [r for r in db.query(KBReconciliationCandidate).all() if r.kind == "entity_align"]
+    assert len(align) == 1
+    c = align[0]
+    assert "edge_neighborhood" in c.signals["detectors"]
+    assert c.signals["edge_neighborhood"]["shared_count"] >= 3
+    assert c.relation_tag is None
+
+
+def test_single_hub_neighbor_below_threshold_no_candidate(db):
+    """负例/防泛滥:两跨源 entity 只共享 1 个邻居(< _MIN_SHARED_NEIGHBORS)、无 alias 重叠 → 零候选。"""
+    _doc(db, "dd:x", doc_type="entity", entity_type="condition", entity_id="e:x",
+         origin=DOWN, content_hash="hX", title="实体X独特名")
+    _doc(db, "kb:y", doc_type="entity", entity_type="condition", entity_id="e:y",
+         origin=KBASE, review_status="draft", content_hash="hY", title="实体Y另名")
+    _doc(db, "hub", doc_type="claim", title="公共hub", content_hash="hh")
+    _edge(db, "dd:x", "hub", relation="mentions")
+    _edge(db, "kb:y", "hub", relation="mentions")
+    res = detect_reconciliation_candidates(db)
+    assert res["created"] == 0  # 单个共享 hub 不足以成对
+
+
+def test_semantic_signal_zero_serving_mutation_incl_edges(db):
+    """最高价值:语义扫描后 kb_documents **和 kb_edges** 逐行不变(读边不改边)。"""
+    from app.models.system_knowledge import KBEdge
+
+    _doc(db, "dd:hp+", doc_type="entity", entity_id="e:hp-pos", origin=DOWN,
+         review_status="reviewed", content_hash="hA", title="幽门螺杆菌阳性",
+         aliases=["幽门螺杆菌", "pylori"])
+    _doc(db, "kb:hp?", doc_type="entity", entity_id="e:hp-unknown", origin=KBASE,
+         review_status="draft", content_hash="hB", title="Hp感染", aliases=["幽门螺杆菌", "pylori"])
+    _doc(db, "c0", doc_type="claim", title="c0", content_hash="hc0")
+    _edge(db, "dd:hp+", "c0", relation="mentions")
+
+    docs_before = {d.doc_id: (d.content_hash, d.is_archived, dict(d.metadata_json or {}))
+                   for d in db.query(KBDocument).all()}
+    edges_before = sorted((e.src_doc_id, e.dst_doc_id, e.relation) for e in db.query(KBEdge).all())
+
+    detect_reconciliation_candidates(db)
+
+    docs_after = {d.doc_id: (d.content_hash, d.is_archived, dict(d.metadata_json or {}))
+                  for d in db.query(KBDocument).all()}
+    edges_after = sorted((e.src_doc_id, e.dst_doc_id, e.relation) for e in db.query(KBEdge).all())
+    assert docs_after == docs_before  # 无 archive、无 merged_into/aliases 改写
+    assert edges_after == edges_before  # 无加边/删边/重指
+
+
+def test_semantic_signal_idempotent(db):
+    _doc(db, "dd:hp+", doc_type="entity", entity_id="e:hp-pos", origin=DOWN,
+         content_hash="hA", title="幽门螺杆菌阳性", aliases=["幽门螺杆菌", "pylori"])
+    _doc(db, "kb:hp?", doc_type="entity", entity_id="e:hp-unknown", origin=KBASE,
+         review_status="draft", content_hash="hB", title="Hp感染", aliases=["幽门螺杆菌", "pylori"])
+    first = detect_reconciliation_candidates(db)
+    assert first["created"] == 1
+    second = detect_reconciliation_candidates(db)
+    assert second["created"] == 0
+    assert db.query(KBReconciliationCandidate).count() == 1
+
+
+def test_semantic_signal_same_origin_not_surfaced(db):
+    """同 origin 两 entity 即便共享邻居 + alias 也不成跨源候选。"""
+    _doc(db, "kb:a", doc_type="entity", entity_id="e:a", origin=KBASE, review_status="draft",
+         content_hash="hA", title="实体A", aliases=["幽门螺杆菌", "pylori"])
+    _doc(db, "kb:b", doc_type="entity", entity_id="e:b", origin=KBASE, review_status="draft",
+         content_hash="hB", title="实体B", aliases=["幽门螺杆菌", "pylori"])
+    res = detect_reconciliation_candidates(db)
+    assert res["created"] == 0
+
+
+def test_super_hub_neighbor_is_bounded_and_flagged(monkeypatch):
+    """边界/fail-loud:被极多 entity 触达的超级 hub token 不展开 O(m²),oversized_neighbor_tokens 暴露。"""
+    import app.services.kb_reconciliation as m
+    from app.database import Base
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    monkeypatch.setattr(m, "_MAX_NEIGHBOR_FANOUT", 3)
+    eng = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(eng)
+    S = sessionmaker(bind=eng)
+    s = S()
+    try:
+        _doc(s, "hub", doc_type="claim", title="超级hub", content_hash="hh")
+        for i in range(8):  # 8 个 entity 都连同一 hub → hub token 的 posting list=8 > 3
+            origin = DOWN if i % 2 == 0 else KBASE
+            _doc(s, f"e{i}", doc_type="entity", entity_id=f"e:{i}", origin=origin,
+                 review_status="reviewed" if origin == DOWN else "draft",
+                 content_hash=f"h{i}", title=f"实体{i}独特")
+            _edge(s, f"e{i}", "hub", relation="mentions")
+        res = detect_reconciliation_candidates(s)
+        assert res["oversized_neighbor_tokens"] >= 1  # 超级 hub 被跳且计数
+    finally:
+        s.close()
+
+
+import pytest
+
+
+@pytest.mark.parametrize("bad_aliases", ["不是列表是字符串", {"k": "v"}, 42])
+def test_malformed_aliases_counted_not_swallowed(db, bad_aliases):
+    """脏 aliases(非 list:str/dict/int 都算)fail-loud 计数,不静默吞、不抛。"""
+    _doc(db, "dd:bad", doc_type="entity", entity_id="e:bad", origin=DOWN,
+         content_hash="hA", title="坏别名实体", aliases=bad_aliases)
+    _doc(db, "kb:ok", doc_type="entity", entity_id="e:ok", origin=KBASE, review_status="draft",
+         content_hash="hB", title="正常实体")
+    res = detect_reconciliation_candidates(db)  # 不抛
+    assert res["malformed_alias_docs"] >= 1

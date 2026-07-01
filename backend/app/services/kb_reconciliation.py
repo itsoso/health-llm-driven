@@ -11,17 +11,23 @@
 **治理隔离**:本表是 authoring/审核面对象,健康运行时(lookup_for_twin / knowledge_librarian /
 search_knowledge)只读 kb_documents 且套 reviewed 门,**永不读本表** —— 候选永不进 Twin/Orchestrator。
 
-确定性 detector 只做**结构性**跨源重叠(同 content_hash / 同 entity_id / 归一 title 相同),
-只在 content_hash 完全相同(字节同内容)时敢标 relation_tag='duplicate';弱信号留 NULL 待 P5 judge。
-语义判定(agree/conflict/complementary)与处方地板一律不在 P3。
+detector 信号两类,都只 SURFACE 候选给人工队列(relation_tag 恒 NULL,除非 content_hash 完全相同):
+- **结构性**:同 content_hash / 同 entity_id / 归一 title 相同(只有 content_hash 才标 'duplicate')。
+- **语义对齐**(edge_neighborhood + alias_overlap):找结构信号抓不到的**别名级**跨源重复
+  (Hp vs 幽门螺杆菌 —— 不同 entity_id + 不同 title)。共享 (dir,rel,neighbor) 邻域(IDF 加权、
+  超级 hub 跳)+ 共享 title/alias token。**只读 kb_edges(零 mutation)**,永不设 relation_tag。
+语义判定(agree/conflict/complementary)与处方地板、任何 merge 一律不在 P3(P5 judge 才做)。
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+import math
+import re
+from collections import Counter, defaultdict
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from sqlalchemy.orm import Session
 
-from app.models.system_knowledge import KBDocument, KBReconciliationCandidate
+from app.models.system_knowledge import KBDocument, KBEdge, KBReconciliationCandidate
 from app.services.system_knowledge_service import _normalize_knowledge_text
 
 DOWN_DEDAO_ORIGIN = "down-dedao-llm-wiki"
@@ -29,7 +35,16 @@ UNKNOWN = "unknown"
 _ENTITY_DOC_TYPE = "entity"
 
 # 确定性信号权重(纯结构,informational;P5 judge 才定 τ)。
-_SIGNAL_WEIGHTS = {"content_hash": 0.7, "entity_id": 0.5, "normalized_title": 0.4}
+# edge_neighborhood/alias_overlap 是**语义对齐**信号(找 Hp vs 幽门螺杆菌 这类别名级跨源重复,
+# 结构信号 content_hash/entity_id/title 抓不到)。两者权重都**低于**任一结构信号,且**永不**设
+# relation_tag='duplicate'(那只归 content_hash);只做队列排序提示,语义判定留 P5 judge。
+_SIGNAL_WEIGHTS = {
+    "content_hash": 0.7,
+    "entity_id": 0.5,
+    "normalized_title": 0.4,
+    "edge_neighborhood": 0.35,
+    "alias_overlap": 0.30,
+}
 _EVIDENCE_RANK = {"A": 4, "B": 3, "C": 2, "D": 1}
 # 防跑飞:单次扫描最多写这么多候选(863 doc/15 类型下远够;KB 长大后截断而非静默全扫)。
 _MAX_CANDIDATES_PER_SCAN = 5000
@@ -37,6 +52,16 @@ _MAX_CANDIDATES_PER_SCAN = 5000
 # (真跨源重复簇只有几篇;100+ 篇同 hash/同 id 是数据病态 = 批量重复,须 reviewer 整簇看,
 # 不是 ~5000 条两两候选)。跳过的桶数在返回 + 审计里 fail-loud 暴露,不静默全扫爆内存。
 _MAX_BUCKET_SIZE = 100
+
+# ── 语义对齐信号阈值(P3 无 eval 语料,均为按种子度分布的保守猜测;relation_tag 恒 NULL,
+#    调错只影响人工队列噪声,绝不误合。P5 eval harness 起来后重调。) ──
+_K_EDGE_OVERLAP = 0.8      # IDF 加权共享邻域重叠和阈值(可调)
+_MIN_SHARED_NEIGHBORS = 2  # 至少共享 2 个 (dir,rel,neighbor) —— 单个 hub 永不单独成对(硬地板)
+_K_ALIAS_OVERLAP = 2       # 至少共享 2 个非平凡 title/alias token(可调)
+# 超级 hub 上界:被 >200 个 entity 触达的 token 是分类根,不展开其 O(m²) 对(fail-loud 计数)。
+_MAX_NEIGHBOR_FANOUT = 200
+_STOPLIST = {"the", "and", "of", "for", "with", "status", "unknown", "的", "与", "和", "状态", "不明", "未知"}
+_TOKEN_SPLIT = re.compile(r"[^0-9a-z一-鿿]+")
 
 
 def _origin(doc: KBDocument) -> str:
@@ -116,6 +141,12 @@ def _build_buckets(
     return by_hash, by_entity, by_title
 
 
+def _is_cross_origin(a: KBDocument, b: KBDocument) -> bool:
+    """两文档 origin 都已知且不同 = 跨源(标量版,供语义 producer 逐对判)。"""
+    oa, ob = _origin(a), _origin(b)
+    return oa != UNKNOWN and ob != UNKNOWN and oa != ob
+
+
 def _cross_origin_pairs(group: List[KBDocument]) -> List[Tuple[KBDocument, KBDocument]]:
     """组内**跨不同 origin** 的两两对(同 origin 对不算跨源,排除)。"""
     pairs: List[Tuple[KBDocument, KBDocument]] = []
@@ -123,11 +154,36 @@ def _cross_origin_pairs(group: List[KBDocument]) -> List[Tuple[KBDocument, KBDoc
     for i in range(n):
         for j in range(i + 1, n):
             a, b = group[i], group[j]
-            oa, ob = _origin(a), _origin(b)
-            if oa == UNKNOWN or ob == UNKNOWN or oa == ob:
-                continue  # 需两个已知且不同的 origin
-            pairs.append((a, b))
+            if _is_cross_origin(a, b):
+                pairs.append((a, b))
     return pairs
+
+
+def _alias_tokens(doc: KBDocument) -> Tuple[Set[str], bool]:
+    """title + metadata.aliases 的归一 token 集。返回 (tokens, malformed)。
+
+    malformed=True:aliases 存在但不是 list(脏数据)→ 调用方 fail-loud 计数,**不静默吞**。
+    token = 整条归一串(CJK 安全,不做中文分词)+ 标点切出的片段(len≥2,去 _STOPLIST)。
+    """
+    strings: List[str] = []
+    if doc.title:
+        strings.append(str(doc.title))
+    malformed = False
+    raw_aliases = (doc.metadata_json or {}).get("aliases")
+    if raw_aliases is not None:
+        if isinstance(raw_aliases, list):
+            strings.extend(str(x) for x in raw_aliases)
+        else:
+            malformed = True  # 非 list → 脏数据,跳过但计数
+    tokens: Set[str] = set()
+    for s in strings:
+        norm = _normalize_knowledge_text(s)
+        if len(norm) >= 2 and norm not in _STOPLIST:
+            tokens.add(norm)  # 整条归一串作一个 token(CJK 安全)
+        for frag in _TOKEN_SPLIT.split(norm):
+            if len(frag) >= 2 and frag not in _STOPLIST:
+                tokens.add(frag)
+    return tokens, malformed
 
 
 def detect_reconciliation_candidates(
@@ -144,7 +200,10 @@ def detect_reconciliation_candidates(
     # pair -> 触发的信号集合。key 恒为 (lo, hi) = sorted doc_ids。
     pair_signals: Dict[Tuple[str, str], set] = {}
     pair_docs: Dict[Tuple[str, str], Tuple[KBDocument, KBDocument]] = {}
+    pair_evidence: Dict[Tuple[str, str], Dict[str, Any]] = {}  # 语义信号的可审证据(存进 signals JSONB)
     oversized_buckets = 0
+    oversized_neighbor_tokens = 0  # 语义:超级 hub token 被跳(fail-loud)
+    malformed_alias_docs = 0       # 语义:aliases 非 list 的脏文档被跳(fail-loud)
 
     def _register(a: KBDocument, b: KBDocument, signal: str) -> None:
         lo, hi = sorted((a.doc_id, b.doc_id))
@@ -164,9 +223,92 @@ def detect_reconciliation_candidates(
             for a, b in _cross_origin_pairs(group):
                 _register(a, b, signal)
 
+    def _process_semantic_overlap() -> None:
+        """语义对齐信号(edge_neighborhood + alias_overlap)—— 找结构信号抓不到的别名级跨源重复。
+
+        **只读 kb_documents(复用 docs)+ kb_edges(仅列查,零 mutation)**。倒排索引 + 桶内共现,
+        绝不 O(V²);超级 hub token 按 _MAX_NEIGHBOR_FANOUT 跳(fail-loud)。两信号都**永不**设
+        relation_tag(仍恒 NULL),只经 _register 汇进同一累加器。
+        """
+        nonlocal oversized_neighbor_tokens, malformed_alias_docs
+        ent = {d.doc_id: d for d in docs if d.doc_type == _ENTITY_DOC_TYPE}
+        if len(ent) < 2:
+            return
+
+        # STEP 1:邻域 token N + df(只读 kb_edges,仅列)。token=(dir,rel,neighbor),含方向。
+        neigh: Dict[str, Set[Tuple[str, str, str]]] = defaultdict(set)
+        edges = db.query(KBEdge.src_doc_id, KBEdge.dst_doc_id, KBEdge.relation).all()
+        for src, dst, rel in edges:
+            if src in ent:
+                neigh[src].add(("out", rel, dst))
+            if dst in ent:
+                neigh[dst].add(("in", rel, src))
+
+        # STEP 1b:alias/title token T(脏 aliases fail-loud 计数)。
+        alias_tok: Dict[str, Set[str]] = {}
+        for did, d in ent.items():
+            toks, malformed = _alias_tokens(d)
+            if malformed:
+                malformed_alias_docs += 1
+            alias_tok[did] = toks
+
+        # STEP 2+3:倒排索引 + 桶内共现累加(超级 hub 跳)。
+        def _accumulate(index_src: Dict[str, Set], weighted: bool):
+            nonlocal oversized_neighbor_tokens
+            inv: Dict[Any, List[str]] = defaultdict(list)
+            for did, toks in index_src.items():
+                for t in toks:
+                    inv[t].append(did)
+            df = {t: len(ids) for t, ids in inv.items()}
+            cooc: Dict[Tuple[str, str], float] = defaultdict(float)
+            cnt: Counter = Counter()
+            for t, ids in inv.items():
+                if len(ids) > _MAX_NEIGHBOR_FANOUT:
+                    oversized_neighbor_tokens += 1
+                    continue  # 超级 hub:不展开 O(m²)
+                w = (1.0 / math.log2(1 + df[t])) if weighted else 1.0
+                ids_sorted = sorted(ids)
+                for i in range(len(ids_sorted)):
+                    for j in range(i + 1, len(ids_sorted)):
+                        key = (ids_sorted[i], ids_sorted[j])
+                        cooc[key] += w
+                        cnt[key] += 1
+            return cooc, cnt
+
+        edge_cooc, edge_cnt = _accumulate(neigh, weighted=True)
+        alias_cooc, alias_cnt = _accumulate(alias_tok, weighted=False)
+
+        # STEP 4:发射。GATE 0 = 两侧 entity(ent 已过滤)+ entity_id 不同 + 跨源。
+        candidate_keys = set(edge_cooc) | set(alias_cnt)
+        for (lo, hi) in candidate_keys:
+            a, b = ent[lo], ent[hi]
+            if (a.entity_id or "") == (b.entity_id or "") and a.entity_id:
+                continue  # 同 entity_id 已由 entity_id 桶负责
+            if not _is_cross_origin(a, b):
+                continue
+            edge_fires = edge_cnt.get((lo, hi), 0) >= _MIN_SHARED_NEIGHBORS and edge_cooc.get((lo, hi), 0.0) >= _K_EDGE_OVERLAP
+            alias_fires = alias_cnt.get((lo, hi), 0) >= _K_ALIAS_OVERLAP
+            if not (edge_fires or alias_fires):
+                continue
+            ev = pair_evidence.setdefault((lo, hi), {})
+            if edge_fires:
+                _register(a, b, "edge_neighborhood")
+                shared = sorted(neigh[lo] & neigh[hi])
+                ev["edge_neighborhood"] = {
+                    "overlap_score": round(edge_cooc[(lo, hi)], 3),
+                    "shared_count": edge_cnt[(lo, hi)],
+                    "shared_top": [list(t) for t in shared[:5]],
+                }
+            if alias_fires:
+                _register(a, b, "alias_overlap")
+                ev["alias_overlap"] = {
+                    "shared_tokens": sorted(alias_tok[lo] & alias_tok[hi])[:20],
+                }
+
     _process(by_hash.values(), "content_hash")
     _process(by_entity.values(), "entity_id")
     _process(by_title.values(), "normalized_title")
+    _process_semantic_overlap()
 
     # 幂等:有序对 (left, right) 复合唯一。已存在(含已 rejected)一律跳过,不复活、不重复。
     existing = {
@@ -194,8 +336,17 @@ def detect_reconciliation_candidates(
 
         canonical_id, canonical_reason = resolve_canonical(left, right)
         score = round(min(1.0, sum(_SIGNAL_WEIGHTS[s] for s in signals)), 3)
-        # 确定性层只在 content_hash 完全相同(字节同内容)时敢标 duplicate;弱信号留 NULL 待 judge。
+        # 确定性层只在 content_hash 完全相同(字节同内容)时敢标 duplicate;弱信号(含语义对齐)留 NULL 待 judge。
         relation_tag = "duplicate" if "content_hash" in signals else None
+
+        signals_blob = {
+            "detectors": sorted(signals),
+            "detected_by": actor,
+            "left": {"origin": _origin(left), "review_status": _review_status(left), "doc_type": left.doc_type},
+            "right": {"origin": _origin(right), "review_status": _review_status(right), "doc_type": right.doc_type},
+            "canonical_reason": canonical_reason,
+        }
+        signals_blob.update(pair_evidence.get((lo, hi), {}))  # 语义信号可审证据(edge/alias)
 
         db.add(
             KBReconciliationCandidate(
@@ -206,13 +357,7 @@ def detect_reconciliation_candidates(
                 entity_id=left.entity_id or right.entity_id,
                 relation_tag=relation_tag,
                 score=score,
-                signals={
-                    "detectors": sorted(signals),
-                    "detected_by": actor,
-                    "left": {"origin": _origin(left), "review_status": _review_status(left), "doc_type": left.doc_type},
-                    "right": {"origin": _origin(right), "review_status": _review_status(right), "doc_type": right.doc_type},
-                    "canonical_reason": canonical_reason,
-                },
+                signals=signals_blob,
                 canonical_hint=canonical_id,
                 status="open",
             )
@@ -232,6 +377,8 @@ def detect_reconciliation_candidates(
         "skipped_existing": skipped,
         "truncated": truncated,
         "oversized_buckets": oversized_buckets,
+        "oversized_neighbor_tokens": oversized_neighbor_tokens,
+        "malformed_alias_docs": malformed_alias_docs,
         "scanned_docs": len(docs),
         "total_open": total_open,
     }
