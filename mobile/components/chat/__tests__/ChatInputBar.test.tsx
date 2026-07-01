@@ -86,6 +86,22 @@ describe('ChatInputBar', () => {
     expect(getByLabelText('Agent 模式')).toBeTruthy();
   });
 
+  it('keeps the keyboard composer controls compact', () => {
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    const styleOf = (node: any) => {
+      const style = node.props.style;
+      return StyleSheet.flatten(typeof style === 'function' ? style({ pressed: false }) : style);
+    };
+
+    expect(styleOf(getByLabelText('切换到日常模式')).minHeight).toBeLessThanOrEqual(24);
+    expect(styleOf(getByLabelText('附件菜单')).width).toBeLessThanOrEqual(34);
+    expect(styleOf(getByLabelText('消息输入框，长按语音输入')).minHeight).toBeLessThanOrEqual(34);
+    expect(styleOf(getByLabelText('语音输入')).width).toBeLessThanOrEqual(34);
+  });
+
   it('uses the bottom microphone for voice input instead of voice conversation', () => {
     const { getByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
