@@ -16,6 +16,7 @@ if str(BACKEND) not in sys.path:
 
 from app.services.system_kb.dedao_authority_import import (  # noqa: E402
     dry_run_import_dedao_authority_pack_from_kbase,
+    evaluate_dedao_authority_pull_gate,
 )
 
 
@@ -35,6 +36,33 @@ def _print_text(payload: dict) -> None:
     print(f"would_write: {import_report['would_write']}")
 
 
+def _print_gate_text(payload: dict) -> None:
+    counts = payload["counts"]
+    pull = payload["pull"]
+    print(f"Dedao authority gate: {payload['status']}")
+    print(f"reasons: {', '.join(payload['reasons']) or '-'}")
+    print(f"source: {pull.get('source_url') or '-'}")
+    print(f"http_status: {pull.get('http_status') or '-'}")
+    print(f"fetch_status: {pull.get('status') or '-'}")
+    if pull.get("error"):
+        print(f"error: {pull['error']}")
+    print(f"total: {counts['total']}")
+    print(f"accepted_for_review: {counts['accepted_for_review']}")
+    print(f"blocked: {counts['blocked']}")
+    print(f"duplicates: {counts['duplicates']}")
+    print(f"invalid: {counts['invalid']}")
+    print(f"missing_source_refs: {counts['missing_source_refs']}")
+    print(f"would_write: {payload['would_write']}")
+
+
+def _exit_code_for_gate(status: str, *, fail_on_warn: bool) -> int:
+    if status == "fail":
+        return 1
+    if status == "warn" and fail_on_warn:
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default=os.getenv("DEDAO_KBASE_BASE_URL", ""))
@@ -42,6 +70,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=25)
     parser.add_argument("--timeout", type=float, default=15)
     parser.add_argument("--json", dest="as_json", action="store_true")
+    parser.add_argument("--gate", action="store_true", help="Evaluate pass/warn/fail gate status.")
+    parser.add_argument(
+        "--redacted-json",
+        action="store_true",
+        help="Print the gate artifact without raw record payloads.",
+    )
+    parser.add_argument(
+        "--fail-on-warn",
+        action="store_true",
+        help="Return non-zero for warn gate status as well as fail.",
+    )
     args = parser.parse_args(argv)
 
     report = dry_run_import_dedao_authority_pack_from_kbase(
@@ -50,6 +89,15 @@ def main(argv: list[str] | None = None) -> int:
         limit=args.limit,
         timeout=args.timeout,
     )
+    if args.gate or args.redacted_json:
+        gate = evaluate_dedao_authority_pull_gate(report)
+        payload = gate.to_redacted_dict()
+        if args.as_json or args.redacted_json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            _print_gate_text(payload)
+        return _exit_code_for_gate(gate.status, fail_on_warn=args.fail_on_warn)
+
     payload = report.to_dict()
     if args.as_json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))

@@ -12,6 +12,8 @@ The importer accepts both legacy flat source fields (`book_id`, `citations`, `so
 
 Use `dry_run_import_dedao_authority_pack_from_kbase(base_url, token)` or the CLI report to pull the live dedao-kbase export. The pull report is read-only, sanitizes errors, and does not include Bearer tokens in output.
 
+Use `evaluate_dedao_authority_pull_gate(report)` when the caller needs an unattended pass/warn/fail decision. The gate is still read-only: it wraps the pull report, counts findings, and emits redacted issue refs without raw Dedao record payloads.
+
 ## Safety Rules
 
 - Unknown contract versions are invalid.
@@ -35,3 +37,13 @@ DEDAO_KBASE_BASE_URL=https://kbase.executor.life \
 DEDAO_KBASE_TOKEN=... \
 backend/venv/bin/python scripts/dedao_authority_pull_report.py --json
 ```
+
+Generate a redacted gate artifact for automation:
+
+```bash
+DEDAO_KBASE_BASE_URL=https://kbase.executor.life \
+DEDAO_KBASE_TOKEN=... \
+backend/venv/bin/python scripts/dedao_authority_pull_report.py --gate --redacted-json
+```
+
+Add `--fail-on-warn` when a CI caller should reject packs with blocked, duplicate, or missing-source records even if accepted review candidates are present.
