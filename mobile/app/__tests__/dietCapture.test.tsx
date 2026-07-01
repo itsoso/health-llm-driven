@@ -1,6 +1,7 @@
 /* eslint-disable import/first, @typescript-eslint/no-require-imports */
 import React from 'react';
-import { render, waitFor } from '@testing-library/react-native';
+import { Alert } from 'react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 const mockRouteParams: Record<string, string> = { capture: 'photo' };
@@ -88,8 +89,14 @@ jest.mock('../../components/diet/MealForm', () => {
 
 jest.mock('../../components/diet/DietFAB', () => {
   const React = require('react');
-  const { View } = require('react-native');
-  const MockDietFAB = () => <View />;
+  const { Text, TouchableOpacity, View } = require('react-native');
+  const MockDietFAB = ({ onPhoto, onText, onVoice }: any) => (
+    <View>
+      <TouchableOpacity testID="diet-fab-photo" onPress={onPhoto}><Text>拍照</Text></TouchableOpacity>
+      <TouchableOpacity testID="diet-fab-text" onPress={onText}><Text>文字</Text></TouchableOpacity>
+      <TouchableOpacity testID="diet-fab-voice" onPress={onVoice}><Text>语音</Text></TouchableOpacity>
+    </View>
+  );
   MockDietFAB.displayName = 'MockDietFAB';
   return MockDietFAB;
 });
@@ -150,6 +157,42 @@ describe('DietScreen capture deeplink', () => {
       }));
     });
     expect(dietService.createDietRecord).not.toHaveBeenCalled();
+  });
+
+  it('turns text entry into a confirmable draft without auto-saving', async () => {
+    const dietService = require('../../services/diet');
+    const promptSpy = jest.spyOn(Alert, 'prompt').mockImplementationOnce((_title, _message, callback) => {
+      if (typeof callback === 'function') callback('鸡胸肉 200g + 糙米饭一碗');
+    });
+
+    const { getByTestId } = render(<DietScreen />);
+    fireEvent.press(getByTestId('diet-fab-text'));
+
+    await waitFor(() => {
+      expect(mockMealForm).toHaveBeenCalledWith(expect.objectContaining({
+        initialDescription: '鸡胸肉 200g + 糙米饭一碗',
+      }));
+    });
+    expect(dietService.createDietRecord).not.toHaveBeenCalled();
+    promptSpy.mockRestore();
+  });
+
+  it('turns voice text into a confirmable draft without auto-saving', async () => {
+    const dietService = require('../../services/diet');
+    const promptSpy = jest.spyOn(Alert, 'prompt').mockImplementationOnce((_title, _message, callback) => {
+      if (typeof callback === 'function') callback('晚饭吃了鸡胸肉和一碗米饭');
+    });
+
+    const { getByTestId } = render(<DietScreen />);
+    fireEvent.press(getByTestId('diet-fab-voice'));
+
+    await waitFor(() => {
+      expect(mockMealForm).toHaveBeenCalledWith(expect.objectContaining({
+        initialDescription: '晚饭吃了鸡胸肉和一碗米饭',
+      }));
+    });
+    expect(dietService.createDietRecord).not.toHaveBeenCalled();
+    promptSpy.mockRestore();
   });
 
   it('opens a prefilled meal form from a diet draft deeplink without auto-saving', async () => {

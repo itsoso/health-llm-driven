@@ -76,6 +76,11 @@ function readRouteMealType(value: string | string[] | undefined): DietRecordCrea
   return raw && VALID_MEAL_TYPES.has(raw) ? raw as DietRecordCreate['meal_type'] : undefined;
 }
 
+function needsNutritionBackfill(record: Partial<DietRecordCreate>): boolean {
+  return [record.calories, record.protein, record.carbs, record.fat]
+    .some((value) => typeof value !== 'number' || !Number.isFinite(value));
+}
+
 export default function DietScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<DietRouteParams>();
@@ -97,28 +102,24 @@ export default function DietScreen() {
   const [showForm, setShowForm] = useState(false);
   const [formDefaults, setFormDefaults] = useState<Partial<DietRecordCreate>>({});
   const [editingRecord, setEditingRecord] = useState<DietRecord | null>(null);
+  const [draftEstimateSource, setDraftEstimateSource] = useState<EstimateSource | null>(null);
 
-  // 记录立刻入库 (无营养) → 关闭输入 → toast → 后台估算回填. 不阻塞用户.
-  // 快速记录 (文字/语音 FAB) 语义永远是「我刚吃的」= 现在, 因此在 submit 时
-  // 现取 todayStr(), 绝不用浏览器回翻过的 selector `date` (数据完整性: 曾把午餐记到 2 天前).
-  const recordThenEstimate = useCallback(async (
-    description: string,
-    mealType: DietRecordCreate['meal_type'],
-    source: EstimateSource,
+  const openDietDraft = useCallback((
+    defaults: Partial<DietRecordCreate>,
+    source: EstimateSource | null,
+    toastMessage = '已生成草稿,确认后写入',
   ) => {
-    let created: DietRecord;
-    try {
-      created = await createDietRecord({ record_date: todayStr(), meal_type: mealType, food_items: description });
-    } catch {
-      toast.show('记录失败,请重试', 'error');
-      return;
-    }
+    setDate(todayStr());
+    setEditingRecord(null);
+    setDraftEstimateSource(source);
+    setFormDefaults({
+      meal_type: defaults.meal_type ?? guessMealType(),
+      ...defaults,
+    });
+    setShowForm(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    sourceMapRef.current.set(created.id, source);
-    qc.invalidateQueries({ queryKey: ['diet'] });
-    toast.show('已记录 · 营养后台估算中', 'success');
-    estimate(created.id, source);
-  }, [estimate, qc, toast]);
+    toast.show(toastMessage, 'success');
+  }, [toast]);
 
   const retryEstimate = useCallback((record: DietRecord) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -129,20 +130,29 @@ export default function DietScreen() {
 
   const handleSave = useCallback(async (record: DietRecordCreate) => {
     try {
+      let created: DietRecord | undefined;
       if (editingRecord) {
         await updateDietRecord(editingRecord.id, record);
       } else {
-        await createDietRecord(record);
+        created = await createDietRecord(record);
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowForm(false);
       setEditingRecord(null);
       setFormDefaults({});
+      setDraftEstimateSource(null);
       qc.invalidateQueries({ queryKey: ['diet'] });
+      if (!editingRecord && created?.id && draftEstimateSource && needsNutritionBackfill(record)) {
+        sourceMapRef.current.set(created.id, draftEstimateSource);
+        toast.show('已保存 · 营养后台估算中', 'success');
+        estimate(created.id, draftEstimateSource);
+      } else if (!editingRecord) {
+        toast.show('已保存饮食', 'success');
+      }
     } catch {
       Alert.alert(editingRecord ? '更新失败' : '保存失败', '请稍后再试');
     }
-  }, [qc, editingRecord]);
+  }, [draftEstimateSource, editingRecord, estimate, qc, toast]);
 
   // P1-b: 点「常吃」chip → 直接入库(用历史营养素中位数)+ 5s undo. 失败要让用户感知 (rule#1).
   // 「常吃」也是「我现在又吃了这个」= 现在, 同 recordThenEstimate 在 submit 时现取 todayStr(),
@@ -216,17 +226,23 @@ export default function DietScreen() {
     Alert.prompt('文字记录', '描述你吃的食物（如：鸡胸肉200g + 糙米饭一碗）', (text) => {
       const raw = text?.trim();
       if (!raw) return;
-      recordThenEstimate(raw, guessMealType(), { kind: 'text', description: raw });
+      openDietDraft(
+        { meal_type: guessMealType(), food_items: raw },
+        { kind: 'text', description: raw },
+      );
     });
-  }, [recordThenEstimate]);
+  }, [openDietDraft]);
 
   const handleVoiceText = useCallback(() => {
     Alert.prompt('语音记录饮食', '说完后保留转写文本，例如: "晚饭吃了鸡胸肉和一碗米饭"', (text) => {
       const raw = text?.trim();
       if (!raw) return;
-      recordThenEstimate(raw, guessMealType(), { kind: 'voice', rawText: raw });
+      openDietDraft(
+        { meal_type: guessMealType(), food_items: raw },
+        { kind: 'voice', rawText: raw },
+      );
     });
-  }, [recordThenEstimate]);
+  }, [openDietDraft]);
 
   const handlePhoto = useCallback(async () => {
     try {
@@ -252,23 +268,18 @@ export default function DietScreen() {
         Alert.alert('识别失败', '没有识别出可记录的餐食,请重拍或改用文字记录。');
         return;
       }
-      setDate(todayStr());
-      setEditingRecord(null);
-      setFormDefaults({
+      openDietDraft({
         meal_type: guessMealType(),
         food_items: description,
         calories: recognized.total_calories ?? undefined,
         protein: recognized.total_protein ?? undefined,
         carbs: recognized.total_carbs ?? undefined,
         fat: recognized.total_fat ?? undefined,
-      });
-      setShowForm(true);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      toast.show('已识别餐食,确认后写入', 'success');
+      }, { kind: 'photo', imageBase64: result.assets[0].base64 }, '已识别餐食,确认后写入');
     } catch {
       Alert.alert('拍照失败', '请稍后重试');
     }
-  }, [toast]);
+  }, [openDietDraft]);
 
   useEffect(() => {
     if (firstParam(params.capture) !== 'photo' || captureConsumedRef.current || firstParam(params.draft) === 'diet') return;
@@ -283,6 +294,7 @@ export default function DietScreen() {
     draftConsumedRef.current = true;
     setDate(todayStr());
     setEditingRecord(null);
+    setDraftEstimateSource(null);
     setFormDefaults({
       meal_type: readRouteMealType(params.meal_type) ?? guessMealType(),
       food_items: foodItems,
@@ -398,7 +410,12 @@ export default function DietScreen() {
             initialRecord={editingRecord || undefined}
             initialMealType={formDefaults.meal_type}
             onSubmit={handleSave}
-            onCancel={() => { setShowForm(false); setEditingRecord(null); setFormDefaults({}); }}
+            onCancel={() => {
+              setShowForm(false);
+              setEditingRecord(null);
+              setFormDefaults({});
+              setDraftEstimateSource(null);
+            }}
             initialDescription={formDefaults.food_items}
             initialCalories={formDefaults.calories}
             initialProtein={formDefaults.protein}
