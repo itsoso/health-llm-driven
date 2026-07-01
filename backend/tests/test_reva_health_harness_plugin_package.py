@@ -47,7 +47,12 @@ def test_reva_health_harness_packages_core_project_skills():
         assert "scripts/harness_workflow_trace.py" in content
         assert content == (ROOT / ".claude" / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
 
-    for script_name in ["harness_workflow_trace.py", "harness_memory_prime.py", "harness_friction_scan.py"]:
+    for script_name in [
+        "harness_workflow_trace.py",
+        "harness_memory_prime.py",
+        "harness_friction_scan.py",
+        "harness_llm_change_gate.py",
+    ]:
         assert (PLUGIN / "scripts" / script_name).read_text(encoding="utf-8") == (
             ROOT / "scripts" / script_name
         ).read_text(encoding="utf-8")

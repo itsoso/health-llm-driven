@@ -3,9 +3,10 @@
 Repo-local Codex plugin for the `health-llm-driven` product and delivery harness.
 
 It packages the project-level `product-pipeline` and `health-harness-orchestrator`
-skills plus the workflow trace ledger CLI. The source of truth remains the repo
-contracts under `docs/`, `AGENTS.md`, and `.claude/skills/`; update this package
-when those contracts change.
+skills plus the workflow trace, memory prime, friction scan, and LLM live-change
+gate CLIs. The source of truth remains the repo contracts under `docs/`,
+`AGENTS.md`, `.claude/skills/`, and `scripts/`; update this package when those
+contracts change.
 
 Install from the repo marketplace:
 

@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # LLM live-change gate needs a reliable base...HEAD diff
 
       - uses: actions/setup-python@v5
         with:
@@ -75,6 +77,13 @@ jobs:
           DATABASE_URL: "sqlite:///:memory:"
           TZ: Asia/Shanghai
         run: python backend/scripts/check_dossier_consistency.py
+
+      - name: LLM live-change regression gate
+        env:
+          HARNESS_CHANGE_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+          HARNESS_LIVE_LLM_EVAL_CONFIRMED: ${{ vars.HARNESS_LIVE_LLM_EVAL_CONFIRMED }}
+        # Zero-cost path gate: high-risk LLM/prompt/model/eval changes must carry explicit live-eval evidence.
+        run: python scripts/harness_llm_change_gate.py --base-ref "$HARNESS_CHANGE_BASE_REF"
 
       - name: LLM synthesis regression gate
         env:
