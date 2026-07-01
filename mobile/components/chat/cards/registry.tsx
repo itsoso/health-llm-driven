@@ -160,9 +160,17 @@ function StatefulCardRenderer({
 }) {
   const [data, setData] = React.useState(descriptor.data);
   try {
-    const rendered = spec.render(data, { ...options, onCardDataChange: setData });
     const actions = normalizeCardActions(descriptor.actions)
       .map((action) => rewriteActionForCurrentCardData(action, descriptor.type, data));
+    const currentDescriptor: ServerCardDescriptor = { ...descriptor, data, actions };
+    const rendered = spec.render(data, {
+      ...options,
+      onCardDataChange: setData,
+      cardActions: actions,
+      onCardAction: (action) => {
+        options.onAction?.(action, currentDescriptor);
+      },
+    });
     if (!actions.length || !options.onAction) return rendered;
     return (
       <View style={styles.actionShell}>
@@ -194,7 +202,7 @@ function StatefulCardRenderer({
                   disabled={isDisabled}
                   onPress={() => {
                     if (isDisabled) return;
-                    options.onAction?.(action, descriptor);
+                    options.onAction?.(action, currentDescriptor);
                   }}
                 >
                   <View style={styles.actionButtonContent}>

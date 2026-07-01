@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, TextInput, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
-import type { CardRenderOptions, CardSpec } from './types';
+import type { CardRenderOptions, CardSpec, ChatCardActionDescriptor } from './types';
 import { revaColors as C, revaFonts, revaRadii, revaSemantic } from '../../../constants/revaTheme';
 
 const DIET_ACCENT = '#C97A2E';
@@ -41,6 +41,8 @@ interface DietDraftData {
 
 interface DietDraftCardViewProps extends DietDraftData {
   onDraftChange?: (data: DietDraftData) => void;
+  confirmAction?: ChatCardActionDescriptor;
+  onConfirmAction?: (action: ChatCardActionDescriptor) => void;
 }
 
 type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
@@ -132,6 +134,11 @@ function mealTypeValue(value: unknown): MealType {
   return raw && raw in MEAL_LABELS ? raw as MealType : 'snack';
 }
 
+function findDietConfirmAction(actions?: ChatCardActionDescriptor[]): ChatCardActionDescriptor | undefined {
+  return actions?.find((action) => action.action === 'diet_record.create' && action.style === 'primary')
+    ?? actions?.find((action) => action.action === 'diet_record.create');
+}
+
 export function DietDraftCardView(data: DietDraftCardViewProps) {
   const [editing, setEditing] = React.useState(false);
   const [draftMealType, setDraftMealType] = React.useState<MealType>(() => mealTypeValue(data.meal_type));
@@ -148,6 +155,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const suggestions = listText(data.suggestions);
   const walkText = postMealWalkText(data.post_meal_walk);
   const boundary = text(data.boundary) || '营养为估算值,确认后写入今日饮食记录。';
+  const canConfirmFromEditor = Boolean(data.confirmAction && data.onConfirmAction && !data.confirmAction.disabled_reason);
   const publishDraftChange = React.useCallback((overrides: Partial<DraftEditValues> = {}) => {
     const values: DraftEditValues = {
       mealType: overrides.mealType ?? draftMealType,
@@ -157,7 +165,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
       carbs: overrides.carbs ?? draftCarbs,
       fat: overrides.fat ?? draftFat,
     };
-    const { onDraftChange, ...baseData } = data;
+    const { onDraftChange, confirmAction, onConfirmAction, ...baseData } = data;
     const next: DietDraftData = {
       ...baseData,
       meal_type: values.mealType,
@@ -278,17 +286,45 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
               }}
             />
           </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="完成饮食草稿修正"
-            style={({ pressed }) => [styles.applyButton, pressed && { opacity: 0.86 }]}
-            onPress={() => {
-              publishDraftChange();
-              setEditing(false);
-            }}
-          >
-            <Text style={styles.applyButtonText}>完成修正</Text>
-          </Pressable>
+          <View style={styles.editorActionRow}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="完成饮食草稿修正"
+              style={({ pressed }) => [
+                styles.finishButton,
+                !canConfirmFromEditor && styles.finishButtonFull,
+                pressed && { opacity: 0.86 },
+              ]}
+              onPress={() => {
+                publishDraftChange();
+                setEditing(false);
+              }}
+            >
+              <Text style={styles.finishButtonText}>完成修正</Text>
+            </Pressable>
+            {data.confirmAction ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="保存并确认饮食记录"
+                accessibilityState={{ disabled: !canConfirmFromEditor }}
+                disabled={!canConfirmFromEditor}
+                style={({ pressed }) => [
+                  styles.saveConfirmButton,
+                  !canConfirmFromEditor && styles.saveConfirmButtonDisabled,
+                  pressed && canConfirmFromEditor && { opacity: 0.86 },
+                ]}
+                onPress={() => {
+                  if (!data.confirmAction || !data.onConfirmAction) return;
+                  publishDraftChange();
+                  setEditing(false);
+                  data.onConfirmAction(data.confirmAction);
+                }}
+              >
+                <Ionicons name="checkmark-circle" size={14} color="#fff" />
+                <Text style={styles.saveConfirmButtonText}>保存并确认</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </View>
       ) : null}
 
@@ -349,9 +385,17 @@ export const DietDraftCardSpec: CardSpec<DietDraftData> = {
   build() {
     return null;
   },
-  render: (data, options?: CardRenderOptions) => (
-    <DietDraftCardView {...data} onDraftChange={options?.onCardDataChange} />
-  ),
+  render: (data, options?: CardRenderOptions) => {
+    const confirmAction = findDietConfirmAction(options?.cardActions);
+    return (
+      <DietDraftCardView
+        {...data}
+        onDraftChange={options?.onCardDataChange}
+        confirmAction={confirmAction}
+        onConfirmAction={options?.onCardAction}
+      />
+    );
+  },
 };
 
 function DraftNumberInput({
@@ -500,14 +544,43 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     color: C.ink3,
   } as TextStyle,
-  applyButton: {
+  editorActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  finishButton: {
+    flex: 0.82,
     minHeight: 34,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: revaRadii.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.lineStrong,
+    backgroundColor: C.surface,
+  },
+  finishButtonFull: {
+    flex: 1,
+  },
+  finishButtonText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    color: C.ink2,
+    fontWeight: '900',
+  } as TextStyle,
+  saveConfirmButton: {
+    flex: 1.18,
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderRadius: revaRadii.sm,
     backgroundColor: DIET_ACCENT,
   },
-  applyButtonText: {
+  saveConfirmButtonDisabled: {
+    opacity: 0.58,
+  },
+  saveConfirmButtonText: {
     fontFamily: revaFonts.sans,
     fontSize: 13,
     color: '#fff',
