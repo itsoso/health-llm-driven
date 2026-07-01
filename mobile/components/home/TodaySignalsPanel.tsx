@@ -40,6 +40,7 @@ interface SignalTile {
   color: string;
   tint: string;
   pending: boolean;
+  attention: boolean;
 }
 
 const HUES = {
@@ -71,11 +72,12 @@ export default function TodaySignalsPanel({
   );
   const hasActionSignal = Boolean(actionSignal?.trim());
   const hasAnyObservedSignal = tiles.some((tile) => !tile.pending);
-  const visibleTiles = !hasAnyObservedSignal && hasActionSignal
-    ? [tiles[tiles.length - 1]]
-    : tiles;
+  const attentionTiles = tiles.filter((tile) => tile.attention);
+  const visibleTiles = hasActionSignal
+    ? (!hasAnyObservedSignal ? [tiles[tiles.length - 1]] : tiles)
+    : attentionTiles;
 
-  if (!hasActionSignal && !hasAnyObservedSignal) return null;
+  if (visibleTiles.length === 0) return null;
 
   return (
     <View>
@@ -127,6 +129,7 @@ function SignalButton({
 
 function sleepSignal(sleep: number | null | undefined, sleepScore: number | null | undefined): SignalTile {
   const hasValue = sleep != null && Number.isFinite(sleep);
+  const scoreNeedsAttention = sleepScore != null && sleepScore < 60;
   return {
     key: 'sleep',
     label: '睡眠',
@@ -136,6 +139,7 @@ function sleepSignal(sleep: number | null | undefined, sleepScore: number | null
     color: HUES.purple.color,
     tint: HUES.purple.tint,
     pending: !hasValue,
+    attention: hasValue && (sleep < 6 || scoreNeedsAttention),
   };
 }
 
@@ -150,6 +154,7 @@ function hrvSignal(hrv: number | null | undefined): SignalTile {
     color: HUES.teal.color,
     tint: HUES.teal.tint,
     pending: !hasValue,
+    attention: false,
   };
 }
 
@@ -164,12 +169,19 @@ function batterySignal(value: number | null | undefined): SignalTile {
     color: HUES.green.color,
     tint: HUES.green.tint,
     pending: !hasValue,
+    attention: hasValue && value < 35,
   };
 }
 
 function bodySignal(actionSignal: string | null | undefined, values: BodyStatsValues): SignalTile {
   const normalized = (actionSignal ?? '').toLowerCase();
-  if (/systolic|diastolic|blood|bp|血压/.test(normalized)) {
+  const bpNeedsAttention =
+    values.systolic != null &&
+    values.diastolic != null &&
+    (values.systolic >= 140 || values.diastolic >= 90);
+  const spo2NeedsAttention = values.spo2 != null && values.spo2 < 94;
+
+  if (/systolic|diastolic|blood|bp|血压/.test(normalized) || (!normalized && bpNeedsAttention)) {
     const hasValue = values.systolic != null && values.diastolic != null;
     return {
       key: 'blood_pressure',
@@ -180,9 +192,10 @@ function bodySignal(actionSignal: string | null | undefined, values: BodyStatsVa
       color: HUES.pink.color,
       tint: HUES.pink.tint,
       pending: !hasValue,
+      attention: bpNeedsAttention,
     };
   }
-  if (/spo2|oxygen|血氧/.test(normalized)) {
+  if (/spo2|oxygen|血氧/.test(normalized) || (!normalized && spo2NeedsAttention)) {
     const value = values.spo2;
     const hasValue = value != null;
     return {
@@ -194,6 +207,7 @@ function bodySignal(actionSignal: string | null | undefined, values: BodyStatsVa
       color: HUES.blue.color,
       tint: HUES.blue.tint,
       pending: !hasValue,
+      attention: spo2NeedsAttention,
     };
   }
   if (/fat|体脂/.test(normalized)) {
@@ -208,6 +222,7 @@ function bodySignal(actionSignal: string | null | undefined, values: BodyStatsVa
       color: HUES.orange.color,
       tint: HUES.orange.tint,
       pending: !hasValue,
+      attention: false,
     };
   }
   const value = values.bmi;
@@ -221,6 +236,7 @@ function bodySignal(actionSignal: string | null | undefined, values: BodyStatsVa
     color: HUES.green.color,
     tint: HUES.green.tint,
     pending: !hasValue,
+    attention: false,
   };
 }
 

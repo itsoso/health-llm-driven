@@ -750,11 +750,41 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(queryByText('/ 8,000')).toBeNull();
   });
 
-  it('fills body signals from the twin snapshot when values exist', () => {
+  it('does not surface normal body signals without current action context', () => {
     mockTwinData = {
       physiological: { spo2_avg: 96, hrv_latest: 59, sleep_duration_h_latest: 8.3, body_battery_current: 98 },
       body_composition: { bmi: 22.4 },
       labs: { blood_pressure_systolic: 120, blood_pressure_diastolic: 78 },
+    };
+    const { queryByLabelText, queryByText } = render(<TodayScreen />);
+    expect(queryByText('身体信号')).toBeNull();
+    expect(queryByLabelText('睡眠 8.3h')).toBeNull();
+    expect(queryByLabelText('HRV 59ms')).toBeNull();
+    expect(queryByLabelText('电量 98')).toBeNull();
+    expect(queryByLabelText('BMI 22.4')).toBeNull();
+  });
+
+  it('surfaces body signals when current action asks for verification', () => {
+    mockTwinData = {
+      physiological: { spo2_avg: 96, hrv_latest: 59, sleep_duration_h_latest: 8.3, body_battery_current: 98 },
+      body_composition: { bmi: 22.4 },
+      labs: { blood_pressure_systolic: 120, blood_pressure_diastolic: 78 },
+    };
+    mockDailyArtifact = {
+      artifact_date: '2026-06-29',
+      empty_state: false,
+      state: { label: '今日最重要行动', tone: 'focused', summary: '先处理今日行动。' },
+      top_action: {
+        id: 'waist-check',
+        title: '记录腰围和体重',
+        why_now: '用代谢信号验证行动。',
+        verification_signal: 'waist_cm',
+        actions: { complete: { enabled: false }, skip: { requires_reason: true } },
+      },
+      evidence: [],
+      confidence: 'medium',
+      freshness: { status: 'fresh', sources: ['runtime'] },
+      safety_boundary: '健康管理行动建议,不替代医生诊断。',
     };
     const { getByLabelText } = render(<TodayScreen />);
     expect(getByLabelText('睡眠 8.3h')).toBeTruthy();

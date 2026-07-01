@@ -17,6 +17,38 @@ describe('TodaySignalsPanel', () => {
     expect(toJSON()).toBeNull();
   });
 
+  it('does not render normal observed signals without action context', () => {
+    const { toJSON } = render(
+      <TodaySignalsPanel
+        sleep={8.3}
+        sleepScore={91}
+        hrv={59}
+        bodyBatteryCurrent={98}
+        bodyStats={{ bmi: 22.4, systolic: 120, diastolic: 78, spo2: 96, bodyFatPct: 18.5 }}
+      />,
+    );
+
+    expect(toJSON()).toBeNull();
+  });
+
+  it('surfaces observed signals that need attention even without action context', () => {
+    const { getByText, getByLabelText, queryByLabelText } = render(
+      <TodaySignalsPanel
+        sleep={7.8}
+        sleepScore={86}
+        hrv={59}
+        bodyBatteryCurrent={82}
+        bodyStats={{ bmi: 22.4, systolic: 145, diastolic: 92, spo2: 91, bodyFatPct: 18.5 }}
+      />,
+    );
+
+    expect(getByText('身体信号')).toBeTruthy();
+    expect(getByLabelText('血压 145/92mmHg')).toBeTruthy();
+    expect(queryByLabelText('睡眠 7.8h')).toBeNull();
+    expect(queryByLabelText('HRV 59ms')).toBeNull();
+    expect(queryByLabelText('电量 82')).toBeNull();
+  });
+
   it('renders compact signals instead of a full body dashboard', () => {
     const { getByText, getByLabelText, queryByText } = render(
       <TodaySignalsPanel
