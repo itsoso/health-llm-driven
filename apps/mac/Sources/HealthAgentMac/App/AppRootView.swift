@@ -32,24 +32,26 @@ struct AppRootView: View {
                     if let currentUser {
                         SidebarAccountHeader(user: currentUser)
                     }
-                    List(SidebarDestination.sidebarVisible, selection: $navigation.selection) { destination in
-                        HStack(spacing: 6) {
-                            Label(destination.title(language: AppLanguage(storedValue: appLanguageRaw)), systemImage: destination.systemImage)
-                            if destination == .agent {
-                                let basketCount = services.agentViewModel.contextItems.count
-                                if basketCount > 0 {
-                                    Text("\(basketCount)")
-                                        .font(.caption2.weight(.bold))
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 1)
-                                        .background(Color.accentColor, in: Capsule())
-                                        .help(appText("Items waiting in the context basket.", appLanguageRaw))
+                    List(selection: $navigation.selection) {
+                        ForEach(SidebarDestination.sidebarSections) { section in
+                            Section {
+                                ForEach(section.items) { destination in
+                                    sidebarRow(destination)
+                                        .tag(destination)
+                                }
+                            } header: {
+                                if !section.titleKey.isEmpty {
+                                    Text(section.title(language: AppLanguage(storedValue: appLanguageRaw)))
                                 }
                             }
                         }
-                        .tag(destination)
+                        // Settings pinned at the bottom, set off by a headerless section.
+                        Section {
+                            sidebarRow(.settings)
+                                .tag(SidebarDestination.settings)
+                        }
                     }
+                    .listStyle(.sidebar)
                     .navigationTitle(appText("Health Agent", appLanguageRaw))
                 } detail: {
                     detailView
@@ -71,7 +73,7 @@ struct AppRootView: View {
             // user isn't stranded in a logged-in shell where everything fails.
             isAuthenticated = false
             currentUser = nil
-            navigation.selection = .today
+            navigation.selection = .agent
         }
         .onChange(of: navigation.refreshTick) { _, _ in
             // ⌘R: refresh the shared dashboard data backing most pages.
@@ -100,9 +102,29 @@ struct AppRootView: View {
         services.quickCaptureManager.install()
     }
 
+    /// One sidebar row: localized label + icon, plus the agent context-basket badge.
+    @ViewBuilder
+    private func sidebarRow(_ destination: SidebarDestination) -> some View {
+        HStack(spacing: 6) {
+            Label(destination.title(language: AppLanguage(storedValue: appLanguageRaw)), systemImage: destination.systemImage)
+            if destination == .agent {
+                let basketCount = services.agentViewModel.contextItems.count
+                if basketCount > 0 {
+                    Text("\(basketCount)")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Color.accentColor, in: Capsule())
+                        .help(appText("Items waiting in the context basket.", appLanguageRaw))
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private var detailView: some View {
-        switch navigation.selection ?? .today {
+        switch navigation.selection ?? .agent {
         case .today:
             TodayView(
                 viewModel: services.todayViewModel,
@@ -111,6 +133,8 @@ struct AppRootView: View {
                 onAskAgent: askAgentWithContext,
                 onAddContext: addAgentContext
             )
+        case .schedule:
+            ScheduleView(services: services)
         case .agenda:
             AgendaView(client: services.agendaClient)
         case .review:
@@ -187,7 +211,7 @@ struct AppRootView: View {
             SettingsView(authClient: services.authClient, tokenStore: services.tokenProvider) {
                 isAuthenticated = false
                 currentUser = nil
-                navigation.selection = .today
+                navigation.selection = .agent
             }
         }
     }

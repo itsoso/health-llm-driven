@@ -164,6 +164,8 @@ public enum DesktopCommandPalette {
         switch destination {
         case .today:
             L10n.text("Daily dashboard, priorities, and recent context.", language: language)
+        case .schedule:
+            L10n.text("Today's timeline, agenda tasks, and calendar in one place.", language: language)
         case .agenda:
             L10n.text("Training gate, follow-ups, protocols, and device quality.", language: language)
         case .review:

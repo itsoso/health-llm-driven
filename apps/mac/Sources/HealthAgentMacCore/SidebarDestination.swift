@@ -1,5 +1,6 @@
 public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
     case today
+    case schedule
     case agenda
     case review
     case timeline
@@ -22,12 +23,30 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
 
     public var id: String { rawValue }
 
-    /// Primary sidebar set. Settings is included so sign-out / account
-    /// switching is discoverable without knowing the cmd+, shortcut.
+    /// Grouped sidebar sections — the single source of truth for sidebar ordering.
+    /// Settings is pinned separately at the bottom of the sidebar (not in a section).
     /// Jobs/Trace remain reachable via right-rail panels or the command palette.
-    public static let sidebarVisible: [SidebarDestination] = [
-        .today, .agenda, .review, .timeline, .calendar, .agent, .record, .data, .dataSources, .dataConnections, .prescriptions, .liver, .healthExtras, .genetics, .knowledge, .workouts, .goals, .settings
+    public static let sidebarSections: [SidebarSection] = [
+        // 阿衡(助手)= 默认第一入口。无标题的顶部主操作区,置于所有分组之上。
+        SidebarSection(id: "primary", titleKey: "",
+                       items: [.agent, .record]),
+        // 每日:今日(仪表盘)+ 日程(时间线·议程·日历 三合一标签页)。
+        SidebarSection(id: "daily", titleKey: "Daily",
+                       items: [.today, .schedule]),
+        SidebarSection(id: "health", titleKey: "Health",
+                       items: [.data, .workouts, .goals]),
+        // 洞察:复盘(回顾/预测回测,非当日规划)归入此处 + 深度分析视图。
+        SidebarSection(id: "insights", titleKey: "Insights",
+                       items: [.review, .healthExtras, .liver, .genetics, .prescriptions]),
+        SidebarSection(id: "resources", titleKey: "Resources",
+                       items: [.dataSources, .dataConnections, .knowledge]),
     ]
+
+    /// Flat list of all sidebar-visible destinations (sections + Settings), derived
+    /// from `sidebarSections` so ordering can never drift. Settings is included so
+    /// sign-out / account switching is discoverable without the cmd+, shortcut.
+    public static let sidebarVisible: [SidebarDestination] =
+        sidebarSections.flatMap(\.items) + [.settings]
 
     public var title: String {
         title(language: .en)
@@ -36,6 +55,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
     public func title(language: AppLanguage) -> String {
         switch self {
         case .today: L10n.text("Today", language: language)
+        case .schedule: L10n.text("Schedule", language: language)
         case .agenda: L10n.text("Agenda", language: language)
         case .review: L10n.text("Review", language: language)
         case .timeline: L10n.text("Today Timeline", language: language)
@@ -61,6 +81,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
     public var systemImage: String {
         switch self {
         case .today: "sparkles"
+        case .schedule: "calendar.day.timeline.left"
         case .agenda: "calendar.badge.checkmark"
         case .review: "arrow.triangle.2.circlepath"
         case .timeline: "calendar.day.timeline.left"
@@ -81,5 +102,23 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
         case .trace: "point.3.connected.trianglepath.dotted"
         case .settings: "gearshape"
         }
+    }
+}
+
+/// A titled group of sidebar destinations. `titleKey` is an English L10n key
+/// resolved via `L10n.text` (mirrors `SidebarDestination.title(language:)`).
+public struct SidebarSection: Identifiable, Sendable {
+    public let id: String
+    public let titleKey: String
+    public let items: [SidebarDestination]
+
+    public init(id: String, titleKey: String, items: [SidebarDestination]) {
+        self.id = id
+        self.titleKey = titleKey
+        self.items = items
+    }
+
+    public func title(language: AppLanguage) -> String {
+        L10n.text(titleKey, language: language)
     }
 }

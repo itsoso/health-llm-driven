@@ -4,7 +4,7 @@ import HealthAgentMacCore
 @MainActor
 @Observable
 final class AppNavigationState {
-    var selection: SidebarDestination? = .today
+    var selection: SidebarDestination? = .agent  // 阿衡(助手)= 默认第一入口
     var traceConversationID: Int?
     var isCommandPalettePresented = false
     /// Bumped by the ⌘R command; observed at the app root to refresh the

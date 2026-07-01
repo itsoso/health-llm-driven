@@ -33,6 +33,12 @@ public enum L10n {
 
     private static let zhCN: [String: String] = [
         "Health Agent": "阿衡",
+        "Daily": "每日",
+        "Insights": "洞察",
+        "Resources": "资料",
+        "Schedule": "日程",
+        "Timeline": "时间线",
+        "Today's timeline, agenda tasks, and calendar in one place.": "今日时间线、议程任务与日历,合并在一处。",
         "Today": "今日",
         "Review": "复盘",
         "Health": "健康",
