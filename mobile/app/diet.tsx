@@ -8,7 +8,7 @@ import * as Haptics from 'expo-haptics';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useDailyDiet } from '../hooks/useDiet';
 import { useDietEstimate, type EstimateSource } from '../hooks/useDietEstimate';
-import { createDietRecord, updateDietRecord, deleteDietRecord, getFrequentFoods, type DietRecord, type DietRecordCreate, type FrequentFood } from '../services/diet';
+import { createDietRecord, updateDietRecord, deleteDietRecord, getFrequentFoods, recognizeFood, type DietRecord, type DietRecordCreate, type FrequentFood } from '../services/diet';
 import { computeDietTotals, isPendingNutrition } from '../utils/dietTotals';
 import * as ImagePicker from 'expo-image-picker';
 import MealForm from '../components/diet/MealForm';
@@ -99,7 +99,7 @@ export default function DietScreen() {
   const [editingRecord, setEditingRecord] = useState<DietRecord | null>(null);
 
   // 记录立刻入库 (无营养) → 关闭输入 → toast → 后台估算回填. 不阻塞用户.
-  // 快速记录 (文字/语音/拍照 FAB) 语义永远是「我刚吃的」= 现在, 因此在 submit 时
+  // 快速记录 (文字/语音 FAB) 语义永远是「我刚吃的」= 现在, 因此在 submit 时
   // 现取 todayStr(), 绝不用浏览器回翻过的 selector `date` (数据完整性: 曾把午餐记到 2 天前).
   const recordThenEstimate = useCallback(async (
     description: string,
@@ -241,12 +241,34 @@ export default function DietScreen() {
         base64: true,
       });
       if (result.canceled || !result.assets[0]?.base64) return;
-      // 拍完立刻入库占位 (来源=照片), 营养后台识别回填. 图片本身仍走识别, 只是不阻塞.
-      await recordThenEstimate('照片记录的一餐', guessMealType(), { kind: 'photo', imageBase64: result.assets[0].base64 });
+      const recognized = await recognizeFood(result.assets[0].base64);
+      if (!recognized.success) {
+        Alert.alert('识别失败', recognized.error || '没有识别出可记录的餐食,请重拍或改用文字记录。');
+        return;
+      }
+      const description = recognized.meal_description
+        || (recognized.foods ?? []).map((food) => food.name).filter(Boolean).join(' + ');
+      if (!description) {
+        Alert.alert('识别失败', '没有识别出可记录的餐食,请重拍或改用文字记录。');
+        return;
+      }
+      setDate(todayStr());
+      setEditingRecord(null);
+      setFormDefaults({
+        meal_type: guessMealType(),
+        food_items: description,
+        calories: recognized.total_calories ?? undefined,
+        protein: recognized.total_protein ?? undefined,
+        carbs: recognized.total_carbs ?? undefined,
+        fat: recognized.total_fat ?? undefined,
+      });
+      setShowForm(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      toast.show('已识别餐食,确认后写入', 'success');
     } catch {
       Alert.alert('拍照失败', '请稍后重试');
     }
-  }, [recordThenEstimate]);
+  }, [toast]);
 
   useEffect(() => {
     if (firstParam(params.capture) !== 'photo' || captureConsumedRef.current || firstParam(params.draft) === 'diet') return;

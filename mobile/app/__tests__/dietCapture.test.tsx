@@ -117,6 +117,41 @@ describe('DietScreen capture deeplink', () => {
     });
   });
 
+  it('turns photo capture into a confirmable draft without auto-saving', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ base64: 'photo-base64' }],
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      foods: [{ name: '煎牛肉能量碗', quantity: null }],
+      meal_description: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
+      total_calories: 770,
+      total_protein: 30,
+      total_carbs: 70,
+      total_fat: 17,
+      error: null,
+    });
+
+    render(<DietScreen />);
+
+    await waitFor(() => {
+      expect(dietService.recognizeFood).toHaveBeenCalledWith('photo-base64');
+    });
+    await waitFor(() => {
+      expect(mockMealForm).toHaveBeenCalledWith(expect.objectContaining({
+        initialDescription: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
+        initialCalories: 770,
+        initialProtein: 30,
+        initialCarbs: 70,
+        initialFat: 17,
+      }));
+    });
+    expect(dietService.createDietRecord).not.toHaveBeenCalled();
+  });
+
   it('opens a prefilled meal form from a diet draft deeplink without auto-saving', async () => {
     mockRouteParams.draft = 'diet';
     mockRouteParams.meal_type = 'lunch';
