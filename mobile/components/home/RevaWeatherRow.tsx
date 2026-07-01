@@ -227,7 +227,7 @@ export default function RevaWeatherRow({ relevanceText }: { relevanceText?: stri
 
 function isEnvironmentRelevant(value: string | null | undefined): boolean {
   if (!value) return false;
-  return /天气|温度|空气|户外|外出|通勤|跑步|步行|散步|健走|慢跑|运动|训练|骑行|紫外|下雨|雨|冷|热|雾霾|AQI|PM2\.?5/i.test(value);
+  return /天气|温度|空气|空气质量|户外|外出|通勤|跑步|步行|散步|健走|慢跑|骑行|紫外|下雨|雨|冷|热|雾霾|AQI|PM2\.?5/i.test(value);
 }
 
 const styles = StyleSheet.create({
