@@ -159,38 +159,56 @@ def _maybe_genui_chart_events(
     from app.services.genui import (
         build_empty_state,
         build_line_chart,
-        detect_chart_request,
+        build_multi_metric_chart,
+        detect_chart_requests,
         render_reva_ui_block,
     )
 
-    detected = detect_chart_request(message)
-    if detected is None:
+    detected = detect_chart_requests(message)
+    if not detected:
         return None
 
-    metric, rng = detected
-    component = "metric_line_chart" if GENUI_COMPONENTS_CAP in (caps or []) else "line_chart"
-    block = build_line_chart(db, user_id, metric, range=rng, component=component)
-    if block is None:
-        if GENUI_COMPONENTS_CAP not in (caps or []):
-            # 旧端只声明 line_chart, 不认识空状态组件, 保持历史回退行为。
-            return None
-        block = build_empty_state(metric, range=rng)
-        if block is None:
-            return None
-
-    metric_label = _GENUI_METRIC_LABEL.get(metric, metric)
+    rng = detected[0][1]
     range_label = _GENUI_RANGE_LABEL.get(rng, rng)
-    note = block.get("data_note", "")
-    # 确定性模板叙事 (无 LLM); 图表数值只来自 block。
-    if block.get("component") == "metric_empty_state":
-        intro = f"{range_label}{metric_label}暂无足够数据："
-    else:
+    component = "metric_line_chart" if GENUI_COMPONENTS_CAP in (caps or []) else "line_chart"
+
+    if len(detected) >= 2:
+        # 多指标叠加: 一张 line_chart 叠多条 metric 7 日滚动均值对比线 (无 LLM)。
+        metrics = [m for m, _ in detected]
+        block = build_multi_metric_chart(db, user_id, metrics, range=rng, component=component)
+        if block is None:
+            # 可用 metric < 1 → fall through (返回 None), 走普通路径 (永不断聊天)。
+            return None
+        note = block.get("data_note", "")
         intro = (
-            f"{range_label}{metric_label}趋势（数据来自你的设备，{note}）："
+            f"近{range_label}多指标趋势对比（数据来自你的设备，{note}）："
             if note
-            else f"{range_label}{metric_label}趋势（数据来自你的设备）："
+            else f"近{range_label}多指标趋势对比（数据来自你的设备）："
         )
-    full_reply = f"{intro}\n\n{render_reva_ui_block(block)}"
+        full_reply = f"{intro}\n\n{render_reva_ui_block(block)}"
+    else:
+        metric, _rng = detected[0]
+        block = build_line_chart(db, user_id, metric, range=rng, component=component)
+        if block is None:
+            if GENUI_COMPONENTS_CAP not in (caps or []):
+                # 旧端只声明 line_chart, 不认识空状态组件, 保持历史回退行为。
+                return None
+            block = build_empty_state(metric, range=rng)
+            if block is None:
+                return None
+
+        metric_label = _GENUI_METRIC_LABEL.get(metric, metric)
+        note = block.get("data_note", "")
+        # 确定性模板叙事 (无 LLM); 图表数值只来自 block。
+        if block.get("component") == "metric_empty_state":
+            intro = f"{range_label}{metric_label}暂无足够数据："
+        else:
+            intro = (
+                f"{range_label}{metric_label}趋势（数据来自你的设备，{note}）："
+                if note
+                else f"{range_label}{metric_label}趋势（数据来自你的设备）："
+            )
+        full_reply = f"{intro}\n\n{render_reva_ui_block(block)}"
 
     # 持久化: 与 AgentExecutor.run_stream 相同的 OpenClawService 会话/消息存储。
     from app.services.openclaw_service import OpenClawService
