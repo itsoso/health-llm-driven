@@ -1047,7 +1047,16 @@ def get_knowledge_coverage_report(db: Session, *, now: datetime | None = None) -
         "feedback": {
             "disagree": db.query(KBAudit).filter(KBAudit.op == "feedback_disagree").count(),
         },
+        # 融合可见:entity_type × origin 覆盖矩阵 + 权威校验(count 不变量)+ 跨源重复候选。
+        # 懒导入断循环(coverage 模块反向引用本 service 的 _normalize_knowledge_text)。
+        "coverage_matrix": _coverage_matrix(db),
     }
+
+
+def _coverage_matrix(db: Session) -> dict[str, Any]:
+    from app.services.system_knowledge_coverage import build_coverage_matrix
+
+    return build_coverage_matrix(db)
 
 
 def _aggregate_domain_coverage(
