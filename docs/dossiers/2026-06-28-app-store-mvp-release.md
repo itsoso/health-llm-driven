@@ -5,7 +5,7 @@
 | slug | `app-store-mvp-release` |
 | 创建日期 | 2026-06-28 |
 | 当前阶段 | S6 部署准备 |
-| 状态 | app-store-batch7-sanitized-candidate-tooling-human-review-pending |
+| 状态 | app-store-ready-screenshots-human-credentials-pending |
 | 负责 | Codex |
 | 分支 | `main` |
 | 工作区 | `/Users/liqiuhua/work/personal/health-llm-driven` |
@@ -195,6 +195,23 @@ P0:
     - 7 张截图导出为 1290 x 2796,`privacy_status=sanitized app_store_ready=True`。
   - PASS: `python3 scripts/check_app_store_release_pack.py`
   - PASS: `python3 -m py_compile scripts/check_app_store_release_pack.py scripts/check_app_store_screenshots.py scripts/prepare_app_store_screenshots.py scripts/sanitize_app_store_screenshots.py scripts/check_ios_app_store_submission.py`
+- Batch 12 current UI ready screenshot gates:
+  - PASS: `./scripts/sim-build.sh --device "iPhone 17 Pro"` 从当前 HEAD 干净临时 worktree 构建、安装并打开 simulator app。
+  - PASS: `./scripts/mobile-sim-screenshots.sh --output design/screenshots/app-store/batch5-current-private-20260630` 重新捕获当前 UI 截图,覆盖 `今日 / 阿衡 / 记录 / 我 / 体检导入 / 隐私政策`。
+  - PASS: `python3 scripts/check_app_store_screenshots.py design/screenshots/app-store/batch5-current-private-20260630`。
+  - RED then PASS: `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest backend/tests/test_app_store_screenshot_checker.py::test_sanitize_app_store_screenshots_masks_launch_and_chat_health_regions -q --no-cov`
+    - 初始 RED: `00-launch` 未按 Today 遮罩,`02-chat` 下半部具体健康建议/数值未遮罩。
+    - GREEN: sanitizer 增加 launch/Chat 高风险区域 mask。
+  - PASS: `python3 scripts/sanitize_app_store_screenshots.py design/screenshots/app-store/batch5-current-private-20260630 design/screenshots/app-store/batch5-current-sanitized-20260630 --overwrite`。
+  - PASS: 人工视觉抽查 `/tmp/aheng-batch5-current-sanitized-contact-sheet-v2.jpg`,确认真实账号、首页主健康细节和 Chat 具体建议/数值已遮罩,当前品牌与 tab 可见。
+  - PASS: `python3 scripts/prepare_app_store_screenshots.py design/screenshots/app-store/batch5-current-sanitized-20260630 design/screenshots/app-store/batch5-ready-20260630 --size 1290x2796 --confirm-sanitized-reviewed --overwrite`。
+  - PASS: `python3 scripts/check_app_store_screenshots.py design/screenshots/app-store/batch5-ready-20260630 --app-store-ready`
+    - `screens=7 privacy_status=sanitized app_store_ready=True`。
+  - PASS: `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest backend/tests/test_app_store_screenshot_checker.py backend/tests/test_app_store_release_pack.py -q --no-cov`
+    - 14 passed。
+  - PASS: `APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/batch5-ready-20260630 python3 scripts/check_app_store_release_pack.py`。
+  - EXPECTED FAIL: `python3 scripts/check_app_store_release_pack.py --final-submit --screenshot-dir design/screenshots/app-store/batch5-ready-20260630`
+    - 截图闸已通过;仍因 Review Notes demo account/password 占位符和缺 ASC credentials 返回 1。
 
 ## G4 · 安全闸
 
@@ -229,7 +246,8 @@ P0:
 - pending:
   - iOS production archive / EAS build 产出并进入 App Store Connect。
   - App Store Connect 手工填入隐私营养标签、metadata、Review Notes。
-  - App Store 截图需要用 demo account / 脱敏数据重新采集,经 `prepare_app_store_screenshots.py` 导出并过闸后再提交。
+  - App Store-ready sanitized 截图候选已生成: `design/screenshots/app-store/batch5-ready-20260630`。
+  - 最终提交仍需用户提供 demo account/password 并在发布机器配置 ASC credentials。
 
 ## G5 · 部署健康闸
 
@@ -294,8 +312,7 @@ P0:
 - pending:
   - App Store Connect build processing status。
   - App Store Connect production/distribution profile build。
-  - 用 demo account 产出最终 App Store screenshot raw set,或对 private QA set 运行 sanitize 后人工视觉复核。
-  - 用 `scripts/prepare_app_store_screenshots.py <raw-or-reviewed-sanitized> <ready> --size 1290x2796 --confirm-sanitized-reviewed` 导出最终 ready set,再用 `APP_STORE_SCREENSHOT_DIR=<ready> python3 scripts/check_app_store_release_pack.py` 过闸。
+  - App Store-ready sanitized screenshot set 已生成并过闸: `design/screenshots/app-store/batch5-ready-20260630`。
   - 最终提交前必须跑 `python3 scripts/check_app_store_release_pack.py --final-submit --screenshot-dir <ready>`。
   - 真正触发 EAS production build / submit 前,用 `python3 scripts/check_ios_app_store_submission.py --require-asc-credentials` 在发布机器上过闸。
 

@@ -39,7 +39,7 @@ P0 App Store final-submit gate 已完成:
 
 - 普通 `check_app_store_release_pack.py` 继续用于无人工凭证的日常回归。
 - `check_app_store_release_pack.py --final-submit` 用于真正提交前,强制检查 App Store-ready 截图、demo account/password 和 ASC credentials。
-- 当前 final-submit 预期失败,阻塞项是用户提供 demo credentials、ASC credentials 和最终截图目录。
+- 当前 final-submit 预期失败,阻塞项是用户提供 demo credentials 和 ASC credentials；最终截图目录已由第十四批补齐。
 
 ## 第三批实现切片
 
@@ -144,6 +144,17 @@ P1 Chat GenUI 图表承接已推进:
 - ChatBubble 会把 assistant 文本内的 `line_chart` 渲染为原生动态图表卡,不再显示 raw JSON。
 - `line_chart` renderer 与既有 `metric_chart` 旧协议共存,保留健康管理边界和真实数据来源提示。
 
+## 第十四批实现切片
+
+P0 App Store 当前 UI ready 截图已推进:
+
+- 重新用当前 HEAD 构建并安装 iOS simulator app,重新捕获当前 UI 的 `今日 / 阿衡 / 记录 / 我 / 体检导入 / 隐私政策` 截图。
+- 旧 batch 截图因仍显示旧称和旧 tab,不再作为 ready 候选。
+- `sanitize_app_store_screenshots.py` 增加 `00-launch` 与 `02-chat` 高风险健康内容遮罩,并用回归测试锁住。
+- 生成 `design/screenshots/app-store/batch5-ready-20260630`,尺寸为 1290 x 2796,`privacy_status=sanitized`, `app_store_ready=true`。
+- `APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/batch5-ready-20260630 python3 scripts/check_app_store_release_pack.py` 已通过。
+- `--final-submit` 现在只剩 demo account/password 和 ASC credentials 阻塞。
+
 ## 本周不做
 
 - 不把 App Store 发布伪装成已完成:缺 demo account、ASC credentials、人审截图时必须停在 pending。
@@ -153,7 +164,7 @@ P1 Chat GenUI 图表承接已推进:
 
 ## 后续顺序
 
-1. 补最终截图/审核材料路径,明确哪些需要用户提供。
-2. 继续 Daily Artifact 主屏视觉走查和点击动线截图。
+1. 补 Review Notes demo account/password 和 ASC credentials,再跑 `--final-submit`。
+2. 继续 Daily Artifact 主屏真机点击动线截图。
 3. 继续 Chat card action 成功后的局部刷新/跳转反馈和记录页联动。
 4. 视签名条件推进 Watch 真机和二维码发版。

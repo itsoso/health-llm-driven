@@ -251,6 +251,25 @@ def test_sanitize_app_store_screenshots_creates_review_required_candidate(tmp_pa
     assert checker.returncode == 0, checker.stdout + checker.stderr
 
 
+def test_sanitize_app_store_screenshots_masks_launch_and_chat_health_regions(tmp_path: Path):
+    root = Path(__file__).resolve().parents[2]
+    source_dir = tmp_path / "private"
+    output_dir = tmp_path / "sanitized"
+    source_dir.mkdir()
+    _write_manifest(source_dir, privacy_status="private", app_store_ready=False, width=1206, height=2622)
+
+    result = _run_sanitize(root, source_dir, output_dir)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    masks_by_screen: dict[str, list[str]] = {}
+    for mask in manifest["sanitization_masks"]:
+        masks_by_screen.setdefault(mask["screen"], []).append(mask["reason"])
+
+    assert "launch mirrors Today health detail card" in masks_by_screen["00-launch"]
+    assert "chat health suggestions and action list" in masks_by_screen["02-chat"]
+
+
 def test_prepare_app_store_screenshots_requires_review_for_sanitized_candidate(tmp_path: Path):
     if shutil.which("sips") is None:
         pytest.skip("prepare_app_store_screenshots uses macOS sips for deterministic local release exports")

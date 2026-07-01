@@ -5,7 +5,7 @@
 | slug | `app-store-final-submit-gate` |
 | 创建日期 | 2026-06-29 |
 | 当前阶段 | S8 沉淀 |
-| 状态 | shipped-local-gate-human-materials-pending |
+| 状态 | shipped-local-gate-screenshot-ready-human-credentials-pending |
 | 负责 | Codex |
 | 反馈环 | local tests / final-submit gate |
 
@@ -80,6 +80,10 @@
   - 普通 release pack 通过。
 - EXPECTED FAIL: `python3 scripts/check_app_store_release_pack.py --final-submit`
   - 返回 1,列出 demo account/password 占位符、缺 ASC credentials、缺 screenshot dir 三个阻塞。
+- 2026-06-30 更新:
+  - PASS: `APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/batch5-ready-20260630 python3 scripts/check_app_store_release_pack.py`。
+  - EXPECTED FAIL: `python3 scripts/check_app_store_release_pack.py --final-submit --screenshot-dir design/screenshots/app-store/batch5-ready-20260630`
+    - 截图闸已通过;仍因 demo account/password 占位符和缺 ASC credentials 返回 1。
 - PASS: `python3 -m py_compile scripts/check_app_store_release_pack.py scripts/check_ios_app_store_submission.py`
 
 ## G4 · 安全闸
@@ -103,10 +107,10 @@
 
 - App Store 最终提交仍需用户提供:
   - demo account / password;
-  - App Store Connect credentials;
-  - App Store-ready screenshot directory。
+  - App Store Connect credentials。
+  - App Store-ready screenshot directory 已有候选:`design/screenshots/app-store/batch5-ready-20260630`。
 
 ## S8 · 沉淀
 
-- App Store MVP release dossier 已记录 Batch 9 final-submit gate。
-- 状态 -> **shipped-local-gate-human-materials-pending**。
+- App Store MVP release dossier 已记录 Batch 9 final-submit gate 与 2026-06-30 ready 截图候选。
+- 状态 -> **shipped-local-gate-screenshot-ready-human-credentials-pending**。

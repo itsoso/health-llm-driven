@@ -23,12 +23,17 @@ MASKS_BY_SCREEN: dict[str, list[tuple[float, float, float, float, str]]] = {
     "*": [
         (0.00, 0.00, 1.00, 0.10, "status/header identity band"),
     ],
+    "00-launch": [
+        (0.00, 0.10, 1.00, 0.24, "launch mirrors Today greeting and health summary band"),
+        (0.05, 0.24, 0.95, 0.43, "launch mirrors Today health detail card"),
+    ],
     "01-today": [
         (0.00, 0.10, 1.00, 0.24, "greeting and health summary band"),
         (0.05, 0.24, 0.95, 0.43, "top action health detail card"),
     ],
     "02-chat": [
         (0.04, 0.12, 0.96, 0.34, "recent chat context"),
+        (0.04, 0.34, 0.96, 0.72, "chat health suggestions and action list"),
     ],
     "04-me": [
         (0.00, 0.10, 1.00, 0.24, "account identity block"),

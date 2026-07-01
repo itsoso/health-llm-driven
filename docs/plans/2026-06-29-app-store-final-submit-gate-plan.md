@@ -39,4 +39,5 @@ Batch 2-8 已准备普通 release pack、截图检查、sanitized candidate、iO
 
 - 已实现 `--final-submit` 和 `--screenshot-dir`。
 - 已把 final-submit 命令写入 App Store submission pack。
-- 当前 final-submit 预期失败,因为仍缺用户提供的 demo credentials、ASC credentials 和最终 ready 截图集。
+- 2026-06-30 已生成当前 UI 的 App Store-ready sanitized 截图集:`design/screenshots/app-store/batch5-ready-20260630`。
+- 当前 final-submit 预期失败,因为仍缺用户提供的 demo credentials 和 ASC credentials；截图闸已通过。
