@@ -1,6 +1,7 @@
 import type { DailyArtifact, DailyArtifactTopAction } from '../../services/dailyArtifact';
 import {
   buildDailyArtifactAskRoute,
+  buildDailyArtifactBasisChatRoute,
   buildDailyArtifactBasisRoute,
   buildDailyArtifactExecuteRoute,
   inferDailyArtifactMovementTarget,
@@ -47,7 +48,7 @@ describe('dailyArtifactNavigation', () => {
     expect(JSON.parse(route.params.context).top_action.title).toContain('恢复/休息');
   });
 
-  it('routes decision basis explanation into Aheng chat with evidence context', () => {
+  it('routes decision basis explanation into a local detail page with evidence context', () => {
     const route = buildDailyArtifactBasisRoute(artifact({
       evidence: [
         { kind: 'why_now', label: 'Why now', summary: '恢复不足,先降低训练负荷。' },
@@ -55,15 +56,23 @@ describe('dailyArtifactNavigation', () => {
       ],
     }));
 
+    expect(route.pathname).toBe('/daily-artifact/[date]');
+    expect(route.params.date).toBe('2026-06-29');
+    const payload = JSON.parse(route.params.artifact);
+    expect(payload.intent).toBe('explain_basis');
+    expect(payload.evidence).toHaveLength(2);
+    expect(payload.top_action.title).toContain('恢复/休息');
+    expect(payload.top_action.title).not.toContain('今日训练:今天');
+  });
+
+  it('keeps a dedicated Aheng route for continuing the basis discussion from the detail page', () => {
+    const route = buildDailyArtifactBasisChatRoute(artifact());
+
     expect(route.pathname).toBe('/(tabs)/chat');
     expect(route.params.prompt).toContain('决策依据');
     expect(route.params.prompt).toContain('恢复/休息');
-    expect(route.params.prompt).not.toContain('今日训练:今天');
     expect(route.params.badge).toBe('决策依据');
-    const context = JSON.parse(route.params.context);
-    expect(context.intent).toBe('explain_basis');
-    expect(context.evidence).toHaveLength(2);
-    expect(context.top_action.title).toContain('恢复/休息');
+    expect(JSON.parse(route.params.context).intent).toBe('explain_basis');
   });
 
   it('sends recovery/rest training actions to the movement plan instead of a blank timeline page', () => {

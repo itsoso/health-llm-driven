@@ -359,7 +359,8 @@ export default function TodayScreen() {
 
   const onArtifactExplainBasis = useCallback((artifact: DailyArtifact) => {
     recordArtifactAccepted(artifact, 'explain_basis');
-    router.push(buildDailyArtifactBasisRoute(artifact) as any);
+    const route = buildDailyArtifactBasisRoute(artifact);
+    router.push({ pathname: '/daily-artifact/[date]' as any, params: route.params } as any);
   }, [recordArtifactAccepted, router]);
 
   const onArtifactPressAction = useCallback((action: DailyArtifactTopAction, artifactOverride?: DailyArtifact) => {

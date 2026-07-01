@@ -11,8 +11,9 @@ export function formatHealthActionTitle(raw: string | null | undefined): string 
 
   const commaIndex = title.indexOf(',');
   const semicolonIndex = title.indexOf(';');
+  const colonIndex = title.indexOf(':');
   const firstBreak = [commaIndex, semicolonIndex].filter((index) => index >= 0).sort((a, b) => a - b)[0];
-  if (firstBreak > 0) {
+  if (firstBreak > 0 && (colonIndex < 0 || colonIndex > firstBreak)) {
     title = `${title.slice(0, firstBreak)}:${title.slice(firstBreak + 1)}`;
   }
 

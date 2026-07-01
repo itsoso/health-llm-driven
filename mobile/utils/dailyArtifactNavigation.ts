@@ -1,5 +1,9 @@
 import type { DailyArtifact, DailyArtifactTopAction } from '../services/dailyArtifact';
-import { buildChatContextRoute, type AgentContextPayload } from './agentContext';
+import {
+  buildChatContextRoute,
+  serializeAgentContext,
+  type AgentContextPayload,
+} from './agentContext';
 import { formatHealthActionTitle } from './actionCopy';
 
 export type DailyArtifactMovementTarget = 'strength' | 'mobility' | 'recovery';
@@ -23,12 +27,44 @@ export function buildDailyArtifactAskRoute(artifact: DailyArtifact) {
 }
 
 export function buildDailyArtifactBasisRoute(artifact: DailyArtifact) {
-  const title = formatHealthActionTitle(artifact.top_action?.title || artifact.state.summary || '今天这条行动');
+  return {
+    pathname: '/daily-artifact/[date]' as const,
+    params: {
+      date: artifact.artifact_date || 'today',
+      artifact: serializeAgentContext(createDailyArtifactChatContext(artifact, 'explain_basis')),
+    },
+  };
+}
+
+export function buildDailyArtifactBasisChatRoute(artifact: DailyArtifact | AgentContextPayload) {
+  const context = isDailyArtifact(artifact)
+    ? createDailyArtifactChatContext(artifact, 'explain_basis')
+    : artifact;
+  const action = context.top_action as Record<string, unknown> | null | undefined;
+  const state = context.state as Record<string, unknown> | null | undefined;
+  const rawTitle = typeof action?.title === 'string'
+    ? action.title
+    : typeof state?.summary === 'string'
+      ? state.summary
+      : '今天这条行动';
+  const title = formatHealthActionTitle(rawTitle);
   return buildChatContextRoute({
     prompt: `请详细解读这条今日行动的决策依据: ${title}。按「为什么选它、依据来自哪里、有哪些不确定性、怎么验证、什么情况下不该做」说明,并继续和我讨论替代方案。`,
-    context: createDailyArtifactChatContext(artifact, 'explain_basis'),
+    context,
     badge: '决策依据',
   });
+}
+
+export function parseDailyArtifactDetailPayload(value: unknown): AgentContextPayload | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed as AgentContextPayload;
+  } catch {
+    return null;
+  }
 }
 
 export function buildDailyArtifactExecuteRoute(
@@ -95,7 +131,7 @@ export function createDailyArtifactChatContext(
     top_action: action
       ? {
           id: action.id,
-          title: action.title,
+          title: formatHealthActionTitle(action.title),
           status: action.status ?? null,
           priority_tier: action.priority_tier ?? null,
           confidence: action.confidence ?? null,
@@ -192,4 +228,10 @@ function primaryActionText(action: DailyArtifactTopAction): string {
     action.type,
     action.do_now,
   ].filter(Boolean).join(' ');
+}
+
+function isDailyArtifact(value: DailyArtifact | AgentContextPayload): value is DailyArtifact {
+  return typeof (value as DailyArtifact).artifact_date === 'string'
+    && typeof (value as DailyArtifact).state?.summary === 'string'
+    && 'empty_state' in value;
 }

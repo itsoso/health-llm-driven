@@ -10,4 +10,10 @@ describe('actionCopy', () => {
   it('preserves normal user-facing titles', () => {
     expect(formatHealthActionTitle('午饭后步行 10 分钟')).toBe('午饭后步行 10 分钟');
   });
+
+  it('is idempotent after a generated title has already been cleaned', () => {
+    expect(formatHealthActionTitle('恢复/休息:暂停高强度;优先睡眠与轻活动')).toBe(
+      '恢复/休息:暂停高强度;优先睡眠与轻活动',
+    );
+  });
 });

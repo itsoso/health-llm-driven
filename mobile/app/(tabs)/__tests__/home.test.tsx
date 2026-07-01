@@ -336,7 +336,7 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(mockPush).not.toHaveBeenCalledWith('/voice-chat?intent=daily_artifact');
   });
 
-  it('routes Daily Artifact decision basis into Aheng chat with the evidence context', () => {
+  it('routes Daily Artifact decision basis into the local interpretation page with evidence context', () => {
     mockDailyArtifact = {
       artifact_date: '2026-06-29',
       empty_state: false,
@@ -364,10 +364,10 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
 
     fireEvent.press(getByLabelText('查看今日行动决策依据'));
     const route = mockPush.mock.calls[mockPush.mock.calls.length - 1]?.[0] as any;
-    expect(route.pathname).toBe('/(tabs)/chat');
-    expect(route.params.badge).toBe('决策依据');
-    expect(route.params.context).toContain('"intent":"explain_basis"');
-    expect(route.params.context).toContain('睡眠和恢复不足');
+    expect(route.pathname).toBe('/daily-artifact/[date]');
+    expect(route.params.date).toBe('2026-06-29');
+    expect(route.params.artifact).toContain('"intent":"explain_basis"');
+    expect(route.params.artifact).toContain('睡眠和恢复不足');
   });
 
   it('renders the Aheng-generated DynamicView when available', () => {
