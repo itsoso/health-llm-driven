@@ -771,15 +771,48 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(queryByTestId('home-outcome-win-card')).toBeNull();
   });
 
-  it('uses neutral record-first quick actions and removes the static Aheng demo card from Today', () => {
+  it('does not show generic quick actions when the Hero already provides the empty-state record action', () => {
     const { getByLabelText, getByText, queryByLabelText, queryByText } = render(<TodayScreen />);
 
-    expect(getByText('补今日记录')).toBeTruthy();
+    expect(getByText('今天的事都安排好了')).toBeTruthy();
+    expect(getByLabelText('补齐今天记录')).toBeTruthy();
+    expect(queryByText('补今日记录')).toBeNull();
+    expect(queryByLabelText('补今日记录')).toBeNull();
+    expect(queryByLabelText('语音记录')).toBeNull();
+    expect(queryByLabelText('记录')).toBeNull();
     expect(queryByText('开始跑步')).toBeNull();
     expect(queryByLabelText('试试阿衡')).toBeNull();
 
-    fireEvent.press(getByLabelText('补今日记录'));
+    fireEvent.press(getByLabelText('补齐今天记录'));
     expect(mockPush).toHaveBeenCalledWith('/(tabs)/record');
+  });
+
+  it('does not show generic quick actions when the Hero already has a now-action', () => {
+    mockTimeline = makeTimeline({
+      id: 'act-9',
+      kind: 'action',
+      time_window: 'noon',
+      scheduled_for: '12:00',
+      title: '提高早餐蛋白',
+      subtitle: '目标 30g',
+      icon: 'restaurant-outline',
+      color: '#1F8A5B',
+      status: 'pending',
+      priority: 1,
+      can_complete: false,
+      complete_ref: null,
+      deep_link: '/diet-plan',
+      severity: null,
+      proof: null,
+    });
+
+    const { getByLabelText, queryByLabelText, queryByText } = render(<TodayScreen />);
+
+    expect(getByLabelText('现在该做:提高早餐蛋白')).toBeTruthy();
+    expect(queryByText('补今日记录')).toBeNull();
+    expect(queryByLabelText('补今日记录')).toBeNull();
+    expect(queryByLabelText('语音记录')).toBeNull();
+    expect(queryByLabelText('记录')).toBeNull();
   });
 
   it('hides generic quick actions when Aheng already provides primary action controls', () => {
