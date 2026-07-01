@@ -46,6 +46,7 @@
 - RED:把 `DynamicTodayRenderer` 测试改成期望首页只展示 Daily Artifact,不展示 `runtime_agenda`。
 - GREEN:`DynamicTodayRenderer` 检测到任一 `daily_artifact` 时过滤 `runtime_agenda` section card。
 - 同步首页回归测试中对 DynamicView 的旧断言。
+- Follow-up:当 Daily Artifact 已覆盖同一 top action 时,过滤 `discovery` / review / metric chart 等低信号重复卡;不同主题的 insight 继续保留。
 
 ## G3 · 测试闸
 
@@ -55,6 +56,16 @@
   - 2 passed。
 - PASS: `cd mobile && ./node_modules/.bin/jest --runTestsByPath 'app/(tabs)/__tests__/home.test.tsx' components/home/__tests__/DailyArtifactCard.test.tsx components/home/__tests__/DynamicTodayRenderer.test.tsx --runInBand`
   - 3 suites passed,33 tests passed。
+- Follow-up PASS: `pnpm --dir mobile exec jest components/home/__tests__/DynamicTodayRenderer.test.tsx --runInBand`
+  - 1 suite passed,3 tests passed。
+- Follow-up PASS: `pnpm --dir mobile exec jest --runTestsByPath "app/(tabs)/__tests__/home.test.tsx" components/home/__tests__/DailyArtifactCard.test.tsx components/home/__tests__/DynamicTodayRenderer.test.tsx --runInBand`
+  - 3 suites passed,39 tests passed。
+- Follow-up PASS: `pnpm --dir mobile exec tsc --noEmit`
+  - exit 0。
+- Follow-up PASS: `pnpm --dir mobile exec eslint components/home/DynamicTodayRenderer.tsx components/home/__tests__/DynamicTodayRenderer.test.tsx`
+  - exit 0。
+- Follow-up PASS: `git diff --check origin/main..HEAD -- mobile/components/home/DynamicTodayRenderer.tsx mobile/components/home/__tests__/DynamicTodayRenderer.test.tsx`
+  - exit 0。
 
 ## G4 · 安全闸
 
@@ -64,7 +75,8 @@
 ## S6/S7 · 部署与上线验证
 
 - 本批尚未部署。属于 Mobile JS/TS UI 行为变更,可随下一次 OTA 或二维码包发布。
-- 真机待验:首页只出现 Daily Artifact 主行动,不再直接展开 7 天计划大卡。
+- Follow-up code commit exists locally as `642093ed fix(mobile): dedupe dynamic today cards`;待推送和 OTA。
+- 真机待验:首页只出现 Daily Artifact 主行动,不再直接展开 7 天计划大卡,且不重复展示同标题低信号 insight。
 
 ## S8 · 沉淀
 
