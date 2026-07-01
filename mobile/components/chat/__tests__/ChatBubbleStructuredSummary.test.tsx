@@ -1,8 +1,10 @@
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import type { UIMessage } from '../../../hooks/useChatEngine';
+
+const mockToastShow = jest.fn();
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 jest.mock('expo-speech', () => ({ stop: jest.fn() }));
@@ -22,7 +24,7 @@ jest.mock('../../../services/chatCardActions', () => ({
   dispatchChatCardAction: jest.fn(),
 }));
 jest.mock('../../../hooks/useToast', () => ({
-  useToast: () => ({ show: jest.fn() }),
+  useToast: () => ({ show: mockToastShow }),
 }));
 jest.mock('expo-router', () => ({
   router: { push: jest.fn() },
@@ -53,6 +55,9 @@ jest.mock('../cards', () => {
   const { View, Text } = require('react-native');
   return {
     renderCard: jest.fn(() => null),
+    getCardActionRuntimeKey: jest.fn((action: any, descriptor?: any) => (
+      action.id || `${descriptor?.type ?? 'card'}:${action.action}:${action.label}`
+    )),
     __mockCard: <View><Text>今晚晚餐建议</Text></View>,
   };
 });
@@ -78,6 +83,7 @@ const { saveAssistantReplyAsMemory } = require('../../../services/chatResultActi
 const { dispatchChatCardAction } = require('../../../services/chatCardActions');
 const { renderCard, __mockCard } = require('../cards');
 const { sharePlainText } = require('../../../utils/share');
+const { router } = require('expo-router');
 
 function renderBubble(content: string) {
   const qc = new QueryClient();
@@ -97,6 +103,7 @@ function renderBubble(content: string) {
 describe('ChatBubble structured summary', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockToastShow.mockClear();
   });
 
   it('summarizes markdown metric tables and today advice for mobile scanning', () => {
@@ -253,6 +260,54 @@ describe('ChatBubble structured summary', () => {
     });
   });
 
+  it('refreshes dependent data and shows feedback before opening routed card actions', async () => {
+    dispatchChatCardAction.mockResolvedValueOnce({
+      status: 'opened',
+      route: '/indicator-history?type=hrv',
+    });
+    renderCard.mockImplementationOnce((descriptor: any, options: any) => {
+      const { Pressable, Text } = require('react-native');
+      return (
+        <Pressable onPress={() => options.onAction(descriptor.actions[0], descriptor)}>
+          <Text>查看HRV历史</Text>
+        </Pressable>
+      );
+    });
+    const qc = new QueryClient();
+    const invalidateSpy = jest.spyOn(qc, 'invalidateQueries');
+    const message: UIMessage = {
+      id: 'assistant-card-route-action',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'metric_chart',
+      cardData: { metric: 'hrv', title: '最近半年 HRV' },
+      cardActions: [{
+        id: 'open-hrv-history',
+        label: '查看HRV历史',
+        action: 'route.open',
+        payload: { route: '/indicator-history?type=hrv' },
+      }],
+    };
+
+    const { getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByText('查看HRV历史'));
+
+    await waitFor(() => {
+      expect(router.push).toHaveBeenCalledWith('/indicator-history?type=hrv');
+    });
+    expect(mockToastShow).toHaveBeenCalledWith('已打开', 'success');
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['timeline', 'today'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['agenda', 'today'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['daily-artifact', 'me'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['write-intents'] });
+  });
+
   it('asks for confirmation before dispatching write card actions', async () => {
     const { Alert } = require('react-native');
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
@@ -303,8 +358,10 @@ describe('ChatBubble structured summary', () => {
       expect.any(Array),
     );
 
-    const buttons = alertSpy.mock.calls[0][2] as Array<{ onPress?: () => void }>;
-    buttons[1].onPress?.();
+    const buttons = alertSpy.mock.calls[0][2] as { onPress?: () => void }[];
+    await act(async () => {
+      buttons[1].onPress?.();
+    });
 
     await waitFor(() => {
       expect(dispatchChatCardAction).toHaveBeenCalledWith(

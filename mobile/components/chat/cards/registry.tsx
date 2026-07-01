@@ -10,15 +10,16 @@
  *   const card = renderServerCard(descriptor);
  */
 import React from 'react';
-import { View, Dimensions, Pressable, StyleSheet, Text } from 'react-native';
+import { View, Dimensions, Pressable, StyleSheet, Text, ActivityIndicator } from 'react-native';
 import type {
   CardRenderOptions,
   CardSpec,
   CardContext,
   ChatCardActionDescriptor,
+  ChatCardActionRuntimeState,
   ServerCardDescriptor,
 } from './types';
-import { revaColors as C, revaRadii } from '../../../constants/revaTheme';
+import { revaColors as C, revaRadii, revaSemantic } from '../../../constants/revaTheme';
 
 import { VitalsCardSpec } from './VitalsCard';
 import { SleepCardSpec } from './SleepCard';
@@ -147,41 +148,58 @@ export function renderCard(
       <View style={styles.actionShell}>
         {rendered}
         <View style={styles.actionBar}>
-          {actions.map((action, index) => (
-            <View key={action.id ?? `${action.action}-${index}`} style={styles.actionItem}>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.actionButton,
-                  action.style === 'primary' && styles.actionButtonPrimary,
-                  action.disabled_reason && styles.actionButtonDisabled,
-                  pressed && !action.disabled_reason && { opacity: 0.82 },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={action.label}
-                accessibilityState={{ disabled: !!action.disabled_reason }}
-                disabled={!!action.disabled_reason}
-                onPress={() => {
-                  if (action.disabled_reason) return;
-                  options.onAction?.(action, descriptor);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.actionText,
-                    action.style === 'primary' && styles.actionTextPrimary,
-                    action.disabled_reason && styles.actionTextDisabled,
+          {actions.map((action) => {
+            const actionKey = getCardActionRuntimeKey(action, descriptor);
+            const actionState = options.actionStateByKey?.[actionKey];
+            const isBusy = actionState === 'running';
+            const isDone = actionState === 'done';
+            const isDisabled = !!action.disabled_reason || isBusy || isDone;
+            const visibleLabel = getActionRuntimeLabel(action, actionState);
+            const supportText = action.disabled_reason || (actionState === 'error' ? '刚刚失败，可重试' : null);
+            return (
+              <View key={actionKey} style={styles.actionItem}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.actionButton,
+                    action.style === 'primary' && styles.actionButtonPrimary,
+                    isBusy && styles.actionButtonRunning,
+                    isDone && styles.actionButtonDone,
+                    actionState === 'error' && styles.actionButtonError,
+                    isDisabled && !isBusy && !isDone && styles.actionButtonDisabled,
+                    pressed && !isDisabled && { opacity: 0.82 },
                   ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={visibleLabel}
+                  accessibilityState={{ disabled: isDisabled, busy: isBusy }}
+                  disabled={isDisabled}
+                  onPress={() => {
+                    if (isDisabled) return;
+                    options.onAction?.(action, descriptor);
+                  }}
                 >
-                  {action.label}
-                </Text>
-              </Pressable>
-              {action.disabled_reason ? (
-                <Text maxFontSizeMultiplier={1.1} style={styles.disabledReason}>
-                  {action.disabled_reason}
-                </Text>
-              ) : null}
-            </View>
-          ))}
+                  <View style={styles.actionButtonContent}>
+                    {isBusy ? <ActivityIndicator size="small" color={C.green500} /> : null}
+                    <Text
+                      style={[
+                        styles.actionText,
+                        action.style === 'primary' && styles.actionTextPrimary,
+                        isBusy && styles.actionTextRunning,
+                        isDone && styles.actionTextDone,
+                        isDisabled && !isBusy && !isDone && styles.actionTextDisabled,
+                      ]}
+                    >
+                      {visibleLabel}
+                    </Text>
+                  </View>
+                </Pressable>
+                {supportText ? (
+                  <Text maxFontSizeMultiplier={1.1} style={styles.disabledReason}>
+                    {supportText}
+                  </Text>
+                ) : null}
+              </View>
+            );
+          })}
         </View>
       </View>
     );
@@ -226,6 +244,26 @@ function isSafeVisibleAction(action: ChatCardActionDescriptor): boolean {
   return action.requires_manual_confirm === true;
 }
 
+export function getCardActionRuntimeKey(
+  action: ChatCardActionDescriptor,
+  descriptor?: Pick<ServerCardDescriptor, 'type'>,
+): string {
+  return action.id || `${descriptor?.type ?? 'card'}:${action.action}:${action.label}`;
+}
+
+function getActionRuntimeLabel(
+  action: ChatCardActionDescriptor,
+  state?: ChatCardActionRuntimeState,
+): string {
+  if (state === 'running') return '执行中';
+  if (state === 'done') {
+    if (action.action === 'route.open') return '已打开';
+    if (action.action === 'write_intent.dismiss') return '已忽略';
+    return '已完成';
+  }
+  return action.label;
+}
+
 const styles = StyleSheet.create({
   actionShell: {
     gap: 8,
@@ -249,9 +287,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  actionButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
   actionButtonPrimary: {
     borderColor: C.green500,
     backgroundColor: C.green500,
+  },
+  actionButtonRunning: {
+    borderColor: C.green100,
+    backgroundColor: C.green50,
+    opacity: 0.9,
+  },
+  actionButtonDone: {
+    borderColor: C.green100,
+    backgroundColor: C.green50,
+  },
+  actionButtonError: {
+    borderColor: revaSemantic.risk.line,
+    backgroundColor: revaSemantic.risk.bg,
   },
   actionButtonDisabled: {
     borderColor: C.line,
@@ -266,6 +323,12 @@ const styles = StyleSheet.create({
   },
   actionTextPrimary: {
     color: C.greenOn,
+  },
+  actionTextRunning: {
+    color: C.green500,
+  },
+  actionTextDone: {
+    color: C.green500,
   },
   actionTextDisabled: {
     color: C.ink3,

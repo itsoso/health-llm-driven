@@ -64,6 +64,7 @@ export interface ServerCardDescriptor {
 }
 
 export type ChatCardActionStyle = 'primary' | 'secondary' | 'danger';
+export type ChatCardActionRuntimeState = 'running' | 'done' | 'error';
 
 /**
  * Chat 动态卡片动作契约。
@@ -91,4 +92,5 @@ export interface ChatCardActionDescriptor {
 
 export interface CardRenderOptions {
   onAction?: (action: ChatCardActionDescriptor, descriptor: ServerCardDescriptor) => void;
+  actionStateByKey?: Record<string, ChatCardActionRuntimeState | undefined>;
 }

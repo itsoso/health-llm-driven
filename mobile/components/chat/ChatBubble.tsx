@@ -13,7 +13,7 @@ import * as Speech from 'expo-speech';
 import { setAudioModeAsync } from 'expo-audio';
 import Markdown from 'react-native-markdown-display';
 import BrandCircle from './BrandCircle';
-import { renderCard } from './cards';
+import { getCardActionRuntimeKey, renderCard } from './cards';
 import InterventionDraftSheet from '../actions/InterventionDraftSheet';
 import { createMdStylesChat } from '../../constants/markdownStyles';
 import type { ColorPalette } from '../../hooks/useTheme';
@@ -23,9 +23,9 @@ import { createInterventionDraft } from '../../services/actionCards';
 import { saveAssistantReplyAsMemory } from '../../services/chatResultActions';
 import { buildInterventionDraft, type InterventionDraft } from '../../services/interventionDraft';
 import { speakWithUserVoice, type SpeakHandle } from '../../services/speakWithUserVoice';
-import { dispatchChatCardAction } from '../../services/chatCardActions';
+import { dispatchChatCardAction, type ChatCardActionResult } from '../../services/chatCardActions';
 import AttributionChips from './AttributionChips';
-import type { ChatCardActionDescriptor, ServerCardDescriptor } from './cards/types';
+import type { ChatCardActionDescriptor, ChatCardActionRuntimeState, ServerCardDescriptor } from './cards/types';
 import {
   revaColors as C,
   revaRadii,
@@ -74,6 +74,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
   const [savingDraft, setSavingDraft] = useState(false);
   const [showActions, setShowActions] = useState(false);  // 长按显示操作
   const [speaking, setSpeaking] = useState(false);
+  const [cardActionStateByKey, setCardActionStateByKey] = useState<Record<string, ChatCardActionRuntimeState>>({});
   const speechTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechActiveRef = useRef(false);
   const speechHandleRef = useRef<SpeakHandle | null>(null);
@@ -148,13 +149,14 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
     action: ChatCardActionDescriptor,
     descriptor: ServerCardDescriptor,
   ) => {
+    const actionKey = getCardActionRuntimeKey(action, descriptor);
+    if (cardActionStateByKey[actionKey] === 'running' || cardActionStateByKey[actionKey] === 'done') {
+      return;
+    }
     const execute = async () => {
+      setCardActionStateByKey(prev => ({ ...prev, [actionKey]: 'running' }));
       try {
         const result = await dispatchChatCardAction(action);
-        if (result.route) {
-          router.push(result.route as any);
-          return;
-        }
         await Promise.all([
           qc.invalidateQueries({ queryKey: ['timeline', 'today'] }),
           qc.invalidateQueries({ queryKey: ['agenda', 'today'] }),
@@ -162,8 +164,13 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
           qc.invalidateQueries({ queryKey: ['write-intents'] }),
         ]);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-        toast.show(action.action === 'write_intent.dismiss' ? '已忽略' : '已执行', 'success');
+        setCardActionStateByKey(prev => ({ ...prev, [actionKey]: 'done' }));
+        toast.show(getCardActionSuccessMessage(action, result), 'success');
+        if (result.route) {
+          router.push(result.route as any);
+        }
       } catch {
+        setCardActionStateByKey(prev => ({ ...prev, [actionKey]: 'error' }));
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
         toast.show('操作失败，请稍后重试', 'error');
         if (__DEV__) console.warn('[cards] action failed', descriptor.type, action.action);
@@ -189,12 +196,12 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
     }
 
     await execute();
-  }, [qc, toast]);
+  }, [cardActionStateByKey, qc, toast]);
 
   if (item.cardType && item.cardData) {
     const rendered = renderCard(
       { type: item.cardType, data: item.cardData, actions: item.cardActions },
-      { onAction: handleCardAction },
+      { onAction: handleCardAction, actionStateByKey: cardActionStateByKey },
     );
     if (rendered) {
       return (
@@ -436,7 +443,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
             {revaUiContent.cards.length > 0 ? (
               <View testID="assistant-reva-ui-cards" style={styles.inlineCardStack}>
                 {revaUiContent.cards.map((card, index) => {
-                  const rendered = renderCard(card, { onAction: handleCardAction });
+                  const rendered = renderCard(card, { onAction: handleCardAction, actionStateByKey: cardActionStateByKey });
                   return rendered ? <View key={`${card.type}-${index}`}>{rendered}</View> : null;
                 })}
               </View>
@@ -583,6 +590,15 @@ function ResultActionButton({
       </Text>
     </Pressable>
   );
+}
+
+function getCardActionSuccessMessage(
+  action: ChatCardActionDescriptor,
+  result: ChatCardActionResult,
+): string {
+  if (result.route || action.action === 'route.open') return '已打开';
+  if (result.status === 'dismissed' || action.action === 'write_intent.dismiss') return '已忽略';
+  return '已执行';
 }
 
 function inferActionTitle(text: string): string {

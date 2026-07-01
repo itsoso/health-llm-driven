@@ -48,6 +48,8 @@ Changed surfaces:
 - Card registry renders disabled action states and preserves safe interaction metadata.
 - Chat bubble shows a native confirmation alert before dispatching confirmed write actions.
 - Backend runtime agenda cards include `next_action.source` and emit either an enabled `agenda.complete` action or a disabled completion action plus route fallback.
+- Follow-up: card action runtime state is now part of the shared mobile card render options, so server cards and inline GenUI cards can render executing / done / error feedback consistently.
+- Follow-up: `route.open` actions now refresh dependent Today / Agenda / Daily Artifact / WriteIntent data and show success feedback before navigation, instead of silently jumping away.
 
 Design and plan:
 
@@ -92,6 +94,35 @@ Known warnings:
 - Frontend Jest logs existing unknown-card warnings from fail-closed registry tests.
 - Backend pytest logs existing deprecation warnings from dependencies and FastAPI startup hooks.
 
+Follow-up verification for action-state feedback:
+
+```bash
+pnpm --dir mobile exec jest mobile/components/chat/__tests__/ChatBubbleStructuredSummary.test.tsx mobile/components/chat/cards/__tests__/registry.test.tsx --runInBand
+# Test Suites: 2 passed, 2 total
+# Tests: 41 passed, 41 total
+```
+
+```bash
+pnpm --dir mobile exec jest mobile/components/chat --runInBand --forceExit
+# Test Suites: 20 passed, 20 total
+# Tests: 96 passed, 96 total
+```
+
+```bash
+pnpm --dir mobile exec tsc --noEmit
+# exit 0
+```
+
+```bash
+pnpm --dir mobile exec eslint components/chat/ChatBubble.tsx components/chat/cards/registry.tsx components/chat/cards/types.ts components/chat/__tests__/ChatBubbleStructuredSummary.test.tsx components/chat/cards/__tests__/registry.test.tsx
+# exit 0
+```
+
+```bash
+git diff --check -- mobile/components/chat/ChatBubble.tsx mobile/components/chat/cards/registry.tsx mobile/components/chat/cards/types.ts mobile/components/chat/__tests__/ChatBubbleStructuredSummary.test.tsx mobile/components/chat/cards/__tests__/registry.test.tsx
+# exit 0
+```
+
 ## G4 · 安全闸
 
 裁决: GO.
@@ -126,5 +157,5 @@ Pre-release review notes:
 ## S8 · 沉淀
 
 - Add backend-generated quick-record actions once write-intent IDs are consistently returned in chat tool results.
-- Add richer action states: executing, succeeded, failed, and undo when backend semantics are ready.
+- Done in follow-up: executing, succeeded, and failed action states are implemented in the shared mobile card renderer; undo remains future work because backend undo semantics are not ready.
 - Add card-specific interaction analytics for confirmation rate, disabled reason frequency, and dispatch failures.

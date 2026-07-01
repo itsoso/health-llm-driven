@@ -190,6 +190,37 @@ describe('renderCard 安全降级', () => {
     expect(getByText('缺少可完成的行动来源')).toBeTruthy();
   });
 
+  it('renders in-flight card actions as disabled execution feedback', () => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'vitals',
+      data: { sleep: '8h' },
+      actions: [
+        {
+          id: 'complete-now',
+          label: '完成',
+          action: 'agenda.complete',
+          endpoint: '/agenda/complete',
+          requires_manual_confirm: true,
+          payload: {
+            source: { object_type: 'health_protocol', object_id: 7 },
+          },
+        },
+      ],
+    } as any;
+
+    const element = renderCard(descriptor, {
+      onAction,
+      actionStateByKey: { 'complete-now': 'running' },
+    } as any);
+    expect(element).not.toBeNull();
+
+    const { getByText } = render(element!);
+    fireEvent.press(getByText('执行中'));
+
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
   it('renders medical exam import result cards from runtime skills', () => {
     const r = renderCard({
       type: 'medical_exam_import_result',
