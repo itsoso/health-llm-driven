@@ -108,6 +108,17 @@ describe('renderCard 安全降级', () => {
         domain: 'diet',
         title: '午餐已记录',
         summary: '770 kcal · 蛋白 30g · 碳水 70g',
+        metrics: [
+          { label: '热量', value: '770kcal' },
+          { label: '蛋白', value: '30g' },
+        ],
+        progress: {
+          protein_total_g: 37,
+          protein_target_g: 112,
+          remaining_protein_g: 75,
+          calories_total: 1040,
+          meals_count: 2,
+        },
         primary_judgement: '蛋白质到位，但晚餐仍要补足。',
         personal_cautions: ['胃溃疡记录在案，冷饮/酸性饮品可能刺激胃，建议观察耐受。'],
         next_action: '晚餐优先 40g 蛋白，少油少刺激。',
@@ -119,6 +130,7 @@ describe('renderCard 安全降级', () => {
           label: '看晚餐建议',
           action: 'route.open',
           endpoint: '/diet-plan',
+          payload: { route: '/diet-plan' },
         },
       ],
     } as any;
@@ -129,11 +141,13 @@ describe('renderCard 安全降级', () => {
     const { getByText } = render(element!);
     expect(getByText('午餐已记录')).toBeTruthy();
     expect(getByText('770 kcal · 蛋白 30g · 碳水 70g')).toBeTruthy();
+    expect(getByText('37/112g')).toBeTruthy();
+    expect(getByText('已记 1040 kcal · 2 餐 · 还差约 75g 蛋白')).toBeTruthy();
     expect(getByText('胃溃疡记录在案，冷饮/酸性饮品可能刺激胃，建议观察耐受。')).toBeTruthy();
 
     fireEvent.press(getByText('看晚餐建议'));
     expect(onAction).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'route.open', endpoint: '/diet-plan' }),
+      expect.objectContaining({ action: 'route.open', endpoint: '/diet-plan', payload: { route: '/diet-plan' } }),
       expect.objectContaining({ type: 'record_quality' }),
     );
   });

@@ -134,6 +134,32 @@ describe('renderCard', () => {
     expect(r).not.toBeNull();
   });
 
+  it('renders record_quality cards from backend post-record responses', () => {
+    const r = renderCard({
+      type: 'record_quality',
+      data: {
+        domain: 'diet',
+        title: '午餐已记录',
+        summary: '煎牛肉能量碗, 水煮蛋',
+        metrics: [
+          { label: '热量', value: '770kcal' },
+          { label: '蛋白', value: '30g' },
+        ],
+        progress: {
+          calories_total: 1040,
+          meals_count: 2,
+          protein_total_g: 37,
+          protein_target_g: 112,
+          remaining_protein_g: 75,
+        },
+        primary_judgement: '本餐蛋白质到位；今日蛋白 37/112g。',
+        personal_cautions: ['胃溃疡记录在案，冷饮/酸性饮品可能刺激胃，建议观察耐受。'],
+        next_action: '下一餐补约 45g 蛋白，少油少刺激。',
+      },
+    });
+    expect(r).not.toBeNull();
+  });
+
   it('cards_group 含 1 张子卡 → 直接渲染, 无 grid wrapper', () => {
     const r = renderCard({
       type: 'cards_group',
@@ -187,11 +213,12 @@ describe('renderServerCards', () => {
   it('过滤掉未知 type', () => {
     const r = renderServerCards([
       { type: 'vitals', data: {} },
+      { type: 'record_quality', data: { title: '午餐已记录' } },
       { type: 'fake_type', data: {} },
       { type: 'sleep', data: {} },
     ]);
-    expect(r.length).toBe(2);
-    expect(r.map((c) => c.type)).toEqual(['vitals', 'sleep']);
+    expect(r.length).toBe(3);
+    expect(r.map((c) => c.type)).toEqual(['vitals', 'record_quality', 'sleep']);
   });
 
   it('非数组输入 → 空数组 (防御 e.reduce is not a function 类 bug)', () => {

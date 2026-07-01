@@ -393,6 +393,8 @@ public enum ChatTranscriptHTML {
             return systemKnowledgeEvidenceCardHTML(data)
         case "safety":
             return safetyCardHTML(data)
+        case "record_quality":
+            return recordQualityCardHTML(data)
         default:
             return genericDynamicCardHTML(type: type, data: data)
         }
@@ -516,6 +518,76 @@ public enum ChatTranscriptHTML {
         return html
     }
 
+    private static func recordQualityCardHTML(_ data: AgentDynamicCardValue) -> String? {
+        guard case .object = data else {
+            return nil
+        }
+        let domain = cardText(data["domain"]) ?? "diet"
+        let badge = domain == "exercise" ? "运动" : "饮食"
+        let badgeClass = domain == "exercise" ? "neutral" : "caution"
+        let title = cardText(data["title"]) ?? "已记录"
+        let summary = cardText(data["summary"])
+        let judgement = cardText(data["primary_judgement"])
+        let nextAction = cardText(data["next_action"])
+        let boundary = cardText(data["boundary"]) ?? "健康管理建议，不替代医生诊断、处方或治疗。"
+        let cautions = cardStringArray(data["personal_cautions"]).prefix(2)
+
+        var html = """
+        <div class="dynamic-card record-quality-card">
+          <div class="dynamic-card-top">
+            <div>
+              <div class="dynamic-card-eyebrow">记录后建议</div>
+              <div class="dynamic-card-title">\(escape(title))</div>
+            </div>
+            <span class="dynamic-card-badge \(badgeClass)">\(escape(badge))</span>
+          </div>
+        """
+        if let summary {
+            html += "<div class=\"dynamic-card-detail\">\(escape(summary))</div>"
+        }
+        let metrics = recordQualityMetricsHTML(data["metrics"])
+        let progress = recordQualityProgressHTML(data["progress"])
+        if !metrics.isEmpty || !progress.isEmpty {
+            html += "<div class=\"dynamic-card-metrics\">\(metrics)\(progress)</div>"
+        }
+        if let judgement {
+            html += "<div class=\"dynamic-card-conclusion\">\(escape(judgement))</div>"
+        }
+        for item in cautions {
+            html += "<div class=\"dynamic-card-warning\">\(escape(item))</div>"
+        }
+        if let nextAction {
+            html += "<div class=\"dynamic-card-next\">下一步：\(escape(nextAction))</div>"
+        }
+        html += "<div class=\"dynamic-card-detail\">\(escape(boundary))</div>"
+        html += "</div>"
+        return html
+    }
+
+    private static func recordQualityMetricsHTML(_ value: AgentDynamicCardValue?) -> String {
+        guard case .array(let items) = value else {
+            return ""
+        }
+        return items.prefix(5).compactMap { item -> String? in
+            let label = cardText(item["label"])
+            let value = cardText(item["value"])
+            guard let label, let value else {
+                return nil
+            }
+            return metricHTML(label: label, value: value, risk: false)
+        }.joined()
+    }
+
+    private static func recordQualityProgressHTML(_ value: AgentDynamicCardValue?) -> String {
+        guard let proteinTotal = cardNumber(value?["protein_total_g"]),
+              let proteinTarget = cardNumber(value?["protein_target_g"]) else {
+            return ""
+        }
+        let remaining = cardNumber(value?["remaining_protein_g"]) ?? max(0, proteinTarget - proteinTotal)
+        let valueText = "\(Int(proteinTotal.rounded()))/\(Int(proteinTarget.rounded()))g · 还差\(Int(remaining.rounded()))g"
+        return metricHTML(label: "今日蛋白", value: valueText, risk: remaining > 0)
+    }
+
     private static func genericDynamicCardHTML(type: String, data: AgentDynamicCardValue) -> String? {
         let rows = cardSummaryRows(data: data)
             .prefix(4)
@@ -569,6 +641,42 @@ public enum ChatTranscriptHTML {
                 let summary = scalarSummary(value)
                 return summary.isEmpty ? nil : (key, summary)
         }
+    }
+
+    private static func cardText(_ value: AgentDynamicCardValue?) -> String? {
+        guard let raw = value?.stringValue else {
+            return nil
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func cardNumber(_ value: AgentDynamicCardValue?) -> Double? {
+        guard let value else {
+            return nil
+        }
+        switch value {
+        case .int(let raw):
+            return Double(raw)
+        case .double(let raw):
+            return raw
+        case .string(let raw):
+            return Double(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        case .null, .bool, .object, .array:
+            return nil
+        }
+    }
+
+    private static func cardStringArray(_ value: AgentDynamicCardValue?) -> [String] {
+        let rawItems: [AgentDynamicCardValue]
+        if case .array(let values) = value {
+            rawItems = values
+        } else if let value {
+            rawItems = [value]
+        } else {
+            rawItems = []
+        }
+        return rawItems.compactMap(cardText)
     }
 
     private static func cardString(_ value: AgentDynamicCardValue?) -> String? {

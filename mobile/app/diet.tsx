@@ -24,17 +24,7 @@ import {
   revaFonts,
 } from '../constants/revaTheme';
 import { createDietAgentContext, pushChatWithContext } from '../utils/agentContext';
-
-function todayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function offsetDate(base: string, offset: number) {
-  const d = new Date(base);
-  d.setDate(d.getDate() + offset);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+import { todayStr, offsetDate } from '../utils/dietDate';
 
 const MEAL_LABEL: Record<string, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' };
 
@@ -68,6 +58,8 @@ export default function DietScreen() {
   const [editingRecord, setEditingRecord] = useState<DietRecord | null>(null);
 
   // 记录立刻入库 (无营养) → 关闭输入 → toast → 后台估算回填. 不阻塞用户.
+  // 快速记录 (文字/语音/拍照 FAB) 语义永远是「我刚吃的」= 现在, 因此在 submit 时
+  // 现取 todayStr(), 绝不用浏览器回翻过的 selector `date` (数据完整性: 曾把午餐记到 2 天前).
   const recordThenEstimate = useCallback(async (
     description: string,
     mealType: DietRecordCreate['meal_type'],
@@ -75,7 +67,7 @@ export default function DietScreen() {
   ) => {
     let created: DietRecord;
     try {
-      created = await createDietRecord({ record_date: date, meal_type: mealType, food_items: description });
+      created = await createDietRecord({ record_date: todayStr(), meal_type: mealType, food_items: description });
     } catch {
       toast.show('记录失败,请重试', 'error');
       return;
@@ -85,7 +77,7 @@ export default function DietScreen() {
     qc.invalidateQueries({ queryKey: ['diet'] });
     toast.show('已记录 · 营养后台估算中', 'success');
     estimate(created.id, source);
-  }, [date, estimate, qc, toast]);
+  }, [estimate, qc, toast]);
 
   const retryEstimate = useCallback((record: DietRecord) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -112,12 +104,14 @@ export default function DietScreen() {
   }, [qc, editingRecord]);
 
   // P1-b: 点「常吃」chip → 直接入库(用历史营养素中位数)+ 5s undo. 失败要让用户感知 (rule#1).
+  // 「常吃」也是「我现在又吃了这个」= 现在, 同 recordThenEstimate 在 submit 时现取 todayStr(),
+  // 不用回翻过的 selector `date` (数据完整性 belt-and-suspenders).
   const handlePickFrequent = useCallback(async (f: FrequentFood) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     let created: DietRecord;
     try {
       created = await createDietRecord({
-        record_date: date,
+        record_date: todayStr(),
         meal_type: f.meal_type,
         food_items: f.food_items,
         calories: f.calories ?? undefined,
@@ -143,7 +137,7 @@ export default function DietScreen() {
       },
       5000,
     );
-  }, [date, qc, toast]);
+  }, [qc, toast]);
 
   const handleEdit = useCallback((r: DietRecord) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

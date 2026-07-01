@@ -22,6 +22,10 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.services.tool_schema_registry import get_health_tools
 from app.services.lab_plausibility import annotate_if_implausible
+from app.services.post_record_quality import (
+    build_post_record_quality_response,
+    combine_post_record_quality_responses,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -477,6 +481,149 @@ def _looks_like_bare_tool_json(text: str) -> bool:
         except json.JSONDecodeError:
             return False
     return False
+
+
+# ── 泄漏工具结果 JSON 检测(锚定字段白名单,非"任何 JSON")────────────────────
+# 弱模型(qwen3.7-max)在 QUERY 回答里会先写一句人话再把工具结果原始 JSON 数组
+# 粘进正文,例:`让我查一下今天的饮食记录…[{"record_date":"2026-07-01","meal_type":
+# "breakfast",...}]`。_looks_like_bare_tool_json 只认"整条就是裸 JSON",这种"短前言
+# + 内嵌数组"漏过。这里做锚定检测:只有当内嵌 JSON 的键与**已知工具结果字段白名单**
+# 相交才判为泄漏 —— 绝不对任意 JSON、也绝不对用户主动要的 ```json / ```reva-ui /
+# ```menu_share 代码块(app 会渲染)动手。纪律见 memory「anchored allowlist 非子串」。
+#
+# 白名单只收工具 result payload 里真实出现的字段名(记录/查询回来的),不收 menu_share
+# / reva-ui 的字段(title/items/reason 等),否则会误伤用户要的菜单/图表块。
+_TOOL_RESULT_FIELD_ALLOWLIST: frozenset = frozenset({
+    "record_date", "meal_type", "food_items", "food_id", "food_name",
+    "calories", "protein", "carbs", "fat", "fiber", "alcohol_units",
+    "systolic", "diastolic", "glucose_mg_dl", "spo2_min", "spo2",
+    "hrv", "resting_hr", "body_battery", "stress", "readiness",
+    "occurred_at", "taken_time", "remind_at", "recurrence",
+    "body_part", "severity", "mood_score", "weight", "reps",
+    "exercise_type", "drink_type", "reference_low", "reference_high",
+    "is_abnormal", "user_id",
+})
+# 需要至少这么多个白名单字段命中,才算"泄漏工具结果"。单字段(如正文里恰好有个
+# {"weight": 72})可能是用户主动贴的合法 JSON;要求 ≥2 个白名单字段同现,把误伤
+# 压到极低,同时真泄漏(一条 record 至少 5-8 个字段)必然命中。
+_TOOL_RESULT_MIN_FIELD_HITS = 2
+# 前言最多这么长 —— 真泄漏是"一句短语就开始 dump"(如"让我查一下今天的饮食记录…"
+# ≈13 字);一整句分析(≈60+ 字)后才嵌 JSON 属于灰区,宁可漏判也不误伤合法分析,
+# 故把上限收到 40:覆盖真泄漏的短前言,拒绝"长分析 + 尾部小 JSON"。
+_LEAK_PREAMBLE_MAX_CHARS = 40
+
+
+def _json_keys_hit_allowlist(payload: Any) -> int:
+    """payload(dict 或 list[dict])里命中工具结果字段白名单的**去重**键数。"""
+    keys: set = set()
+
+    def _collect(obj: Any) -> None:
+        if isinstance(obj, dict):
+            keys.update(k for k in obj.keys() if isinstance(k, str))
+        elif isinstance(obj, list):
+            for item in obj[:8]:  # 采样前几项即可,数组同构
+                _collect(item)
+
+    _collect(payload)
+    return len(keys & _TOOL_RESULT_FIELD_ALLOWLIST)
+
+
+def _leaks_tool_result_json(text: str) -> bool:
+    """回复里(在一小段前言后)内嵌了一段工具结果原始 JSON 数组/对象 → 判定为泄漏。
+
+    锚定判定,故意保守以避免误伤:
+      1. **有任何 fenced 代码块 → 直接不判泄漏**(用户主动要的 ```json、app 渲染的
+         ```reva-ui / ```menu_share 都在此豁免;弱模型裸泄漏从不带围栏)。
+      2. 从文本里扫第一个 `[` 或 `{`,要求它出现在前 _LEAK_PREAMBLE_MAX_CHARS 内
+         (真泄漏是"一句人话就开始 dump",长篇分析里偶提字段名不触发)。
+      3. 该处能解析出 JSON 数组/对象,且键与工具结果字段白名单相交 ≥ 阈值。
+    只提到字段名的普通散文(无 JSON 括号结构)永不触发。
+    """
+    s = (text or "").strip()
+    if not s:
+        return False
+    # (1) 任何 fenced 块 → 豁免。用户要 JSON/代码,或 app 渲染的 reva-ui/menu_share。
+    if "```" in s:
+        return False
+    # (2) 第一个 JSON 结构起点必须在短前言内。
+    lb = s.find("[")
+    ob = s.find("{")
+    candidates = [i for i in (lb, ob) if i != -1]
+    if not candidates:
+        return False
+    start = min(candidates)
+    if start > _LEAK_PREAMBLE_MAX_CHARS:
+        return False
+    # (3) 从起点解析 JSON,键命中白名单 ≥ 阈值 → 泄漏。用宽松解析救弯引号/截断。
+    tail = s[start:]
+    payload = None
+    try:
+        payload, _ = json.JSONDecoder().raw_decode(tail)
+    except json.JSONDecodeError:
+        try:
+            payload = _loads_lenient(tail)
+        except json.JSONDecodeError:
+            payload = None
+    if payload is None:
+        return False
+    return _json_keys_hit_allowlist(payload) >= _TOOL_RESULT_MIN_FIELD_HITS
+
+
+# 流式期"泄漏正在形成"的早停:JSON 还没吐完、raw_decode 尚不能解析,但已能看出
+# 是在 dump 工具结果。锚定到**带引号 + 冒号的白名单字段键**(如 `"record_date":`),
+# 散文永不会写出 `"record_date":` 这种形态 → 误伤趋近于零。命中即抑制,把逐 token
+# 泄漏压到最多一两个 delta(JSON 结构刚起、字段名刚现)。fenced 块一律豁免。
+_QUOTED_ALLOWLIST_KEY_RE = re.compile(
+    r'["“]('
+    + "|".join(re.escape(k) for k in sorted(_TOOL_RESULT_FIELD_ALLOWLIST))
+    + r')["”]\s*[:：]'
+)
+
+
+def _streaming_leak_forming(text: str) -> bool:
+    """流式增量文本里,泄漏工具结果 JSON 是否已在形成(供逐 delta 早停抑制)。
+
+    比 _leaks_tool_result_json 更早触发(不要求整段 JSON 可解析),但同样锚定:
+    必须(1)无 fenced 围栏(否则是用户/渲染意图);(2)短前言内已起 JSON 结构;
+    (3)已出现 ≥ _TOOL_RESULT_MIN_FIELD_HITS 个"带引号+冒号的白名单字段键"。
+    三者同时满足才抑制 —— 单个孤立键(用户可能主动贴的 {"calories":500})不触发。
+    """
+    s = (text or "").strip()
+    if not s or "```" in s:
+        return False
+    lb = s.find("[")
+    ob = s.find("{")
+    candidates = [i for i in (lb, ob) if i != -1]
+    if not candidates or min(candidates) > _LEAK_PREAMBLE_MAX_CHARS:
+        return False
+    hits = {m.group(1) for m in _QUOTED_ALLOWLIST_KEY_RE.finditer(s[min(candidates):])}
+    return len(hits) >= _TOOL_RESULT_MIN_FIELD_HITS
+
+
+def _natural_language_from_tool_results(messages: List[Dict[str, Any]]) -> str:
+    """QUERY 泄漏兜底:把工具结果转成一句中性人话,绝不裸露 JSON。
+
+    与 _fast_record_reply_from_tool_results 的区别:那条是记录场景("已记录…"),
+    这条是查询场景。优先用 tool result 自带的 message/summary;没有则给一句让模型
+    重述的通用兜底(调用方随后走空回复重试链,让模型用自然语言重答)。
+    """
+    for message in reversed(messages):
+        if message.get("role") != "tool":
+            continue
+        content = str(message.get("content") or "").strip()
+        if not content or content.startswith("Error"):
+            continue
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, dict):
+            msg = payload.get("message") or payload.get("summary")
+            if isinstance(msg, str) and msg.strip():
+                return msg.strip()
+        # 有工具结果但无现成人话字段 → 交给空回复重试链让模型自然语言重答。
+        return ""
+    return ""
 
 
 _SMART_DOUBLE_QUOTES = "“”„‟″＂"  # “ ” „ ‟ ″ ＂
@@ -1381,95 +1528,19 @@ def _post_record_quality_response(
     record_data: Any,
     result: str = "",
     personal_context: str = "",
+    *,
+    db: Optional[Session] = None,
+    user_id: Optional[int] = None,
 ) -> Optional[dict]:
-    """Build a short post-record answer + deterministic card for fast-record turns.
-
-    This is the Answer Quality Layer for high-frequency writes. It does not
-    diagnose, prescribe, or infer safety clearance; it turns confirmed writes into
-    concise personal guidance using already-available context.
-    """
-
-    if result and (result.startswith("Error") or result.startswith("[NEEDS_CONFIRMATION]")):
-        return None
-    kind = _normalize_fast_record_kind(record_type)
-    if not isinstance(record_data, dict):
-        return None
-
-    if kind == "diet":
-        meal = _MEAL_TYPE_ZH.get(str(record_data.get("meal_type") or "").lower(), "饮食")
-        food_label = _short_food_label(record_data.get("food_items") or record_data.get("food"))
-        if not food_label:
-            return None
-        judgement = _diet_primary_judgement(record_data)
-        cautions = _diet_personal_cautions(record_data, personal_context)
-        caution_text = f"个人提醒：{cautions[0]}" if cautions else "个人提醒：暂无明显禁忌信号，继续观察餐后体感。"
-        next_action = _diet_next_action(record_data, personal_context)
-        reply = (
-            f"已记录{meal}：{food_label}。{judgement}"
-            f"{caution_text} 下一步：{next_action}"
-        )
-        summary = _macro_summary(record_data)
-        card = {
-            "type": "record_quality",
-            "data": {
-                "domain": "diet",
-                "title": f"{meal}已记录",
-                "summary": summary or food_label,
-                "primary_judgement": judgement,
-                "personal_cautions": cautions,
-                "next_action": next_action,
-                "boundary": "健康管理建议，不替代医生诊断、处方或治疗。",
-            },
-            "actions": [
-                {
-                    "id": "open-diet-plan",
-                    "label": "看下一餐建议",
-                    "action": "route.open",
-                    "endpoint": "/diet-plan",
-                },
-                {
-                    "id": "open-record",
-                    "label": "调整记录",
-                    "action": "route.open",
-                    "endpoint": "/record",
-                },
-            ],
-        }
-        return {"reply": reply[:220], "cards": [card]}
-
-    if kind == "exercise":
-        exercise, detail = _exercise_record_summary(record_data)
-        context = personal_context or ""
-        caution = ""
-        if _has_any(context, ("高血压", "心脏病", "胸闷", "胸痛")):
-            caution = "有心血管/血压背景时，训练中若胸闷头晕要停止并观察。"
-        else:
-            caution = "留意心率和疲劳感，避免连续高强度堆叠。"
-        next_action = "补水并做 3-5 分钟拉伸，晚些再看恢复状态。"
-        reply = f"已记录运动：{exercise} {detail}。{caution} 下一步：{next_action}"
-        card = {
-            "type": "record_quality",
-            "data": {
-                "domain": "exercise",
-                "title": "运动已记录",
-                "summary": f"{exercise} · {detail}",
-                "primary_judgement": "已进入今日活动记录。",
-                "personal_cautions": [caution],
-                "next_action": next_action,
-                "boundary": "健康管理建议，不替代医生诊断、处方或治疗。",
-            },
-            "actions": [
-                {
-                    "id": "open-record",
-                    "label": "查看记录",
-                    "action": "route.open",
-                    "endpoint": "/record",
-                },
-            ],
-        }
-        return {"reply": reply[:200], "cards": [card]}
-
-    return None
+    """Compatibility wrapper; implementation lives in post_record_quality.py."""
+    return build_post_record_quality_response(
+        record_type,
+        record_data,
+        result=result,
+        personal_context=personal_context,
+        db=db,
+        user_id=user_id,
+    )
 
 
 def _safety_alert_value(alert: Any, key: str, default: Any = None) -> Any:
@@ -2212,7 +2283,7 @@ class AgentExecutor:
         # 5. Agent 循环
         full_reply = ""
         streamed_cards: list[dict] = []
-        post_record_quality: Optional[dict] = None
+        post_record_qualities: list[dict] = []
         yield {
             "event": "agent_start",
             "data": {
@@ -2291,6 +2362,19 @@ class AgentExecutor:
                             )
                         ):
                             # 检测到内联工具调用(JSON 或括号标记) → 进入抑制模式,本轮不再 live 下发。
+                            inline_suppressed = True
+                            streamed_to_client = False
+                        # 合成轮(round_tools 空)弱模型把工具结果原始 JSON 数组粘进 QUERY 回答
+                        # (`让我查一下…[{"record_date":...,"meal_type":...}]`)。上面那条 gate 在
+                        # round_tools 上,合成轮跳过它 → 这里独立、不依赖 round_tools 做锚定检测。
+                        # 用"泄漏正在形成"的早停版本(不等整段 JSON 可解析):一见到 JSON 结构起
+                        # + 带引号冒号的白名单字段键就抑制,把逐 token 泄漏压到最多一两个 delta。
+                        # 锚定到真实字段名(非"任何 JSON"),且遇 fenced 块直接豁免,详见谓词。
+                        if (
+                            not inline_suppressed
+                            and not streamed_tool_calls
+                            and _streaming_leak_forming(streamed_text)
+                        ):
                             inline_suppressed = True
                             streamed_to_client = False
                         if not inline_suppressed:
@@ -2520,9 +2604,11 @@ class AgentExecutor:
                                     tool_event_data["record_data"],
                                     result_for_record_card,
                                     personal_context=system_content,
+                                    db=self.db,
+                                    user_id=user_id,
                                 )
                                 if quality_response:
-                                    post_record_quality = quality_response
+                                    post_record_qualities.append(quality_response)
                                     quality_cards = [
                                         card for card in quality_response.get("cards", [])
                                         if isinstance(card, dict)
@@ -2586,9 +2672,10 @@ class AgentExecutor:
                     })
 
                     if self._prefer_fast_record_model:
+                        combined_post_record_quality = combine_post_record_quality_responses(post_record_qualities)
                         final_text = (
-                            str(post_record_quality.get("reply") or "").strip()
-                            if post_record_quality else ""
+                            str(combined_post_record_quality.get("reply") or "").strip()
+                            if combined_post_record_quality else ""
                         )
                         if not final_text:
                             final_text = _fast_record_reply_from_tool_results(messages)
@@ -2631,6 +2718,15 @@ class AgentExecutor:
                         if synthesized.strip():
                             final_text = synthesized
                             streamed_to_client = False
+                    # QUERY 泄漏:短前言 + 内嵌工具结果 JSON 数组(qwen3.7-max:`让我查一下…
+                    # [{"record_date":...,"meal_type":...}]`)。_looks_like_bare_tool_json 只认
+                    # "整条即 JSON",这种带前言的漏过 → 锚定检测命中就必须清掉,绝不落库/回显。
+                    # 流式期已被上面的 suppressor 拦下(streamed_to_client 应已 False),这里做
+                    # 落库侧兜底:优先用工具结果里现成人话;没有则清空,交给下方空回复重试链让
+                    # 模型用自然语言重答。写回 final_text 保证 message.meta / reload 也是干净的。
+                    elif _leaks_tool_result_json(final_text):
+                        streamed_to_client = False
+                        final_text = _natural_language_from_tool_results(messages)
                     if not final_text.strip():
                         # 空回复 → 走非流式重试链 (这些是新生成文本,需要 emit)。
                         streamed_to_client = False
@@ -3031,6 +3127,7 @@ class AgentExecutor:
             "- 若工具结果带有『数据合理性提示』(或 _data_plausibility_warning 字段),先把该数值当作疑似录入错误、提示用户核实原始报告,核实前不要据此下结论;**若用户确认数值属实,仍须按其严重程度正常处置(例如危急值建议就医)**,不得因『疑似错误』而忽略一个可能真实的危急值。",
             "- 不做诊断;不下诊断标签(如不直接断言\"代谢综合征\",用\"…的风险信号\"并建议就医确认)。",
             "- 不要说\"你的诊断非常准确\"。用户自述疼痛/功能问题时,改为\"你的描述提示可能存在某种模式,需要结合医生/康复师评估\";训练建议只作为健康管理/康复辅助动作,不是诊断或治疗处方。",
+            "- **绝对不要把工具返回的原始 JSON / 数组 / 字段名(如 record_date、meal_type、food_items、`[{...}]`)复述或粘贴进回复。工具结果只供你阅读,必须用自然语言概括给用户**(例:今天只有早餐记录,没有午餐;而不是把 `[{\"record_date\":...,\"meal_type\":\"breakfast\",...}]` 贴出来)。",
         ]
 
         # 注入 ak-kbase gene_knowledge 高优先级警示规则（PM/缺陷/纯合风险）

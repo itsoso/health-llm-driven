@@ -461,7 +461,113 @@ export const RecordCardSpec: CardSpec<RecordData> = {
 };
 
 // ────────────────────────────────────────────────────────────────
-// 9. DietCard - 今日饮食
+// 9. RecordQualityCard - 记录后的个人化建议
+// ────────────────────────────────────────────────────────────────
+interface RecordQualityMetric { label?: string; value?: string; }
+interface RecordQualityData {
+  domain?: string;
+  title?: string;
+  summary?: string;
+  metrics?: RecordQualityMetric[];
+  progress?: {
+    calories_total?: number;
+    meals_count?: number;
+    protein_total_g?: number;
+    protein_target_g?: number;
+    remaining_protein_g?: number;
+  };
+  primary_judgement?: string;
+  personal_cautions?: string[];
+  next_action?: string;
+  boundary?: string;
+}
+function recordQualityTheme(domain?: string) {
+  if (domain === 'exercise') {
+    return { emoji: '🏃', bg: '#FFF5F7', border: '#FECACA', badge: '运动', badgeColor: '#BE185D' };
+  }
+  return { emoji: '🍽️', bg: '#F0FDF4', border: '#BBF7D0', badge: '饮食', badgeColor: '#059669' };
+}
+function safeTextList(value?: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .slice(0, 2);
+}
+export function RecordQualityCardView(data: RecordQualityData) {
+  const theme = recordQualityTheme(data.domain);
+  const metrics = Array.isArray(data.metrics) ? data.metrics.filter(m => m?.label && m?.value).slice(0, 5) : [];
+  const cautions = safeTextList(data.personal_cautions);
+  const progress = data.progress;
+  const hasProteinProgress = progress?.protein_total_g != null && progress?.protein_target_g != null;
+  return (
+    <CardShell
+      emoji={theme.emoji}
+      title={data.title || '已记录'}
+      badge={theme.badge}
+      badgeColor={theme.badgeColor}
+      bg={theme.bg}
+      border={theme.border}
+    >
+      {data.summary && <div className="text-sm font-semibold leading-5 text-slate-900">{data.summary}</div>}
+      {metrics.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {metrics.map((m) => (
+            <span key={`${m.label}-${m.value}`} className="rounded-lg bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 ring-1 ring-emerald-100">
+              <span className="text-slate-400">{m.label}</span> {m.value}
+            </span>
+          ))}
+        </div>
+      )}
+      {hasProteinProgress && (
+        <div className="mt-2 rounded-xl bg-emerald-50 px-3 py-2 ring-1 ring-emerald-100">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[11px] font-semibold text-emerald-700">今日蛋白</span>
+            <span className="text-xs font-extrabold tabular-nums text-emerald-800">
+              {Math.round(progress!.protein_total_g!)}/{Math.round(progress!.protein_target_g!)}g
+            </span>
+          </div>
+          <div className="mt-1 text-[10px] leading-4 text-slate-500">
+            {[
+              progress?.calories_total != null ? `已记 ${Math.round(progress.calories_total)} kcal` : null,
+              progress?.meals_count != null ? `${progress.meals_count} 餐` : null,
+              progress?.remaining_protein_g != null ? `还差约 ${Math.round(progress.remaining_protein_g)}g 蛋白` : null,
+            ].filter(Boolean).join(' · ')}
+          </div>
+        </div>
+      )}
+      {data.primary_judgement && (
+        <div className="mt-2 text-xs font-bold leading-5 text-slate-900">{data.primary_judgement}</div>
+      )}
+      {cautions.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {cautions.map((item) => (
+            <div key={item} className="rounded-xl bg-white px-3 py-2 text-[11px] leading-5 text-amber-800 ring-1 ring-amber-100">
+              {item}
+            </div>
+          ))}
+        </div>
+      )}
+      {data.next_action && (
+        <div className="mt-2 rounded-xl bg-white px-3 py-2 text-[11px] font-bold leading-5 text-emerald-700 ring-1 ring-emerald-100">
+          下一步：{data.next_action}
+        </div>
+      )}
+      <div className="mt-2 text-[10px] leading-4 text-slate-400">
+        {data.boundary || '健康管理建议，不替代医生诊断、处方或治疗。'}
+      </div>
+    </CardShell>
+  );
+}
+export const RecordQualityCardSpec: CardSpec<RecordQualityData> = {
+  type: 'record_quality', label: '记录后建议',
+  match() { return null; },
+  build() { return null; },
+  render: (d) => <RecordQualityCardView {...d} />,
+};
+
+// ────────────────────────────────────────────────────────────────
+// 10. DietCard - 今日饮食
 // ────────────────────────────────────────────────────────────────
 interface DietData {
   calories?: number;

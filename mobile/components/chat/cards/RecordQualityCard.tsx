@@ -14,10 +14,17 @@ interface RecordQualityData {
   domain?: unknown;
   title?: unknown;
   summary?: unknown;
+  metrics?: unknown;
+  progress?: unknown;
   primary_judgement?: unknown;
   personal_cautions?: unknown;
   next_action?: unknown;
   boundary?: unknown;
+}
+
+interface MetricItem {
+  label: string;
+  value: string;
 }
 
 function text(value: unknown): string | undefined {
@@ -37,6 +44,25 @@ function textList(value: unknown): string[] {
     .slice(0, 2);
 }
 
+function metricList(value: unknown): MetricItem[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const raw = item as Record<string, unknown>;
+      const label = text(raw.label);
+      const metricValue = text(raw.value);
+      return label && metricValue ? { label, value: metricValue } : null;
+    })
+    .filter((item): item is MetricItem => Boolean(item))
+    .slice(0, 5);
+}
+
+function progressValue(progress: unknown, key: string): string | undefined {
+  if (!progress || typeof progress !== 'object') return undefined;
+  return text((progress as Record<string, unknown>)[key]);
+}
+
 function domainMeta(domain?: unknown): { icon: string; fg: string; bg: string; badge: string } {
   if (text(domain) === 'exercise') {
     return { icon: 'fitness-outline', fg: '#C2487A', bg: '#F7E4EC', badge: '运动' };
@@ -48,6 +74,13 @@ export function RecordQualityCardView(data: RecordQualityData) {
   const meta = domainMeta(data.domain);
   const title = text(data.title) || '已记录';
   const summary = text(data.summary);
+  const metrics = metricList(data.metrics);
+  const proteinTotal = progressValue(data.progress, 'protein_total_g');
+  const proteinTarget = progressValue(data.progress, 'protein_target_g');
+  const remainingProtein = progressValue(data.progress, 'remaining_protein_g');
+  const caloriesTotal = progressValue(data.progress, 'calories_total');
+  const mealsCount = progressValue(data.progress, 'meals_count');
+  const hasProgress = Boolean(proteinTotal && proteinTarget);
   const judgement = text(data.primary_judgement);
   const cautions = textList(data.personal_cautions);
   const nextAction = text(data.next_action);
@@ -66,6 +99,41 @@ export function RecordQualityCardView(data: RecordQualityData) {
         <Text maxFontSizeMultiplier={1.2} style={styles.summary} numberOfLines={2}>
           {summary}
         </Text>
+      ) : null}
+
+      {metrics.length > 0 ? (
+        <View style={styles.metricRow}>
+          {metrics.map((item) => (
+            <View key={`${item.label}-${item.value}`} style={styles.metricPill}>
+              <Text maxFontSizeMultiplier={1.1} style={styles.metricLabel}>
+                {item.label}
+              </Text>
+              <Text maxFontSizeMultiplier={1.1} style={styles.metricValue}>
+                {item.value}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {hasProgress ? (
+        <View style={styles.progressBox}>
+          <View style={styles.progressLine}>
+            <Text maxFontSizeMultiplier={1.1} style={styles.progressLabel}>
+              今日蛋白
+            </Text>
+            <Text maxFontSizeMultiplier={1.1} style={styles.progressValue}>
+              {proteinTotal}/{proteinTarget}g
+            </Text>
+          </View>
+          <Text maxFontSizeMultiplier={1.1} style={styles.progressHint}>
+            {[
+              caloriesTotal ? `已记 ${caloriesTotal} kcal` : null,
+              mealsCount ? `${mealsCount} 餐` : null,
+              remainingProtein ? `还差约 ${remainingProtein}g 蛋白` : null,
+            ].filter(Boolean).join(' · ')}
+          </Text>
+        </View>
       ) : null}
 
       {judgement ? (
@@ -129,6 +197,71 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: C.ink1,
     lineHeight: 20,
+  } as TextStyle,
+  metricRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  metricPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: revaRadii.sm,
+    backgroundColor: 'rgba(255,255,255,0.78)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
+  metricLabel: {
+    fontFamily: revaFonts.sans,
+    fontSize: 10,
+    color: C.ink3,
+    lineHeight: 14,
+  } as TextStyle,
+  metricValue: {
+    fontFamily: revaFonts.mono,
+    fontSize: 11,
+    fontWeight: '800',
+    color: C.ink1,
+    lineHeight: 14,
+  } as TextStyle,
+  progressBox: {
+    marginTop: 8,
+    gap: 3,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+  },
+  progressLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  progressLabel: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    color: C.green700,
+    lineHeight: 15,
+  } as TextStyle,
+  progressValue: {
+    fontFamily: revaFonts.mono,
+    fontSize: 12,
+    fontWeight: '900',
+    color: C.green700,
+    lineHeight: 15,
+  } as TextStyle,
+  progressHint: {
+    fontFamily: revaFonts.sans,
+    fontSize: 10,
+    color: C.ink3,
+    lineHeight: 14,
   } as TextStyle,
   cautionList: {
     marginTop: 9,

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from typing import List, Optional
-from datetime import date, timedelta, datetime, time
+from datetime import date, timedelta, datetime, time, timezone
 
 from app.database import get_db
 from app.models.daily_health import DietRecord as DietRecordModel
@@ -47,6 +47,19 @@ def create_diet_record(
         record_dict = record.model_dump()
         if record_dict.get('meal_time'):
             record_dict['meal_time'] = record_dict['meal_time'].strftime('%H:%M')
+
+        # 防御纵深: 客户端曾把"刚吃的午餐"的 record_date 写成 2 天前(客户端 bug)。
+        # 以服务端 Asia/Shanghai 的"今天"为准, 偏离 > 2 天(过去或未来)判定为不合理,
+        # 钳制回今天并告警 —— 钳制比硬 422 对 UX 更安全, 同日/±1-2 天正常补录仍放行。
+        _SHANGHAI = timezone(timedelta(hours=8))
+        server_today = datetime.now(_SHANGHAI).date()
+        submitted_date = record_dict.get('record_date')
+        if submitted_date is not None and abs((submitted_date - server_today).days) > 2:
+            logger.warning(
+                "[diet] implausible record_date=%s (server today=%s) user=%s → clamped",
+                submitted_date, server_today, current_user.id,
+            )
+            record_dict['record_date'] = server_today
 
         # 处理图片上传
         image_url = record_dict.get('image_url')

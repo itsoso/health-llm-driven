@@ -267,6 +267,42 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertTrue(html.contains("这不是诊断"))
     }
 
+    func testDynamicCardRendersRecordQualityCard() throws {
+        let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
+            type: "record_quality",
+            data: .object([
+                "domain": .string("diet"),
+                "title": .string("午餐已记录 <tag>"),
+                "summary": .string("煎牛肉能量碗, 水煮蛋"),
+                "metrics": .array([
+                    .object(["label": .string("热量"), "value": .string("770kcal")]),
+                    .object(["label": .string("蛋白"), "value": .string("30g")])
+                ]),
+                "progress": .object([
+                    "protein_total_g": .int(37),
+                    "protein_target_g": .int(112),
+                    "remaining_protein_g": .int(75)
+                ]),
+                "primary_judgement": .string("本餐蛋白质到位；今日蛋白 37/112g。"),
+                "personal_cautions": .array([
+                    .string("胃溃疡记录在案，冷饮/酸性饮品可能刺激胃。")
+                ]),
+                "next_action": .string("下一餐补约 45g 蛋白，少油少刺激。"),
+                "boundary": .string("健康管理建议，不替代医生诊断、处方或治疗。")
+            ])
+        ))
+
+        XCTAssertTrue(html.contains("record-quality-card"))
+        XCTAssertTrue(html.contains("午餐已记录 &lt;tag&gt;"))
+        XCTAssertTrue(html.contains("记录后建议"))
+        XCTAssertTrue(html.contains("770kcal"))
+        XCTAssertTrue(html.contains("37/112g"))
+        XCTAssertTrue(html.contains("还差75g"))
+        XCTAssertTrue(html.contains("胃溃疡记录在案"))
+        XCTAssertTrue(html.contains("健康管理建议"))
+        XCTAssertFalse(html.contains("<tag>"))
+    }
+
     func testDynamicCardUnknownTypeFallsBackToSafeSummary() throws {
         let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
             type: "system_knowledge_evidence",

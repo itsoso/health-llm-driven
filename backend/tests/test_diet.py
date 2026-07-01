@@ -118,6 +118,61 @@ class TestDietAPI:
         )
         assert response.status_code == 401
 
+    def test_implausible_past_record_date_is_clamped_to_server_today(
+        self, client, auth_headers, caplog
+    ):
+        """客户端 bug 把"刚吃的午餐"写成远早的 record_date → 钳制回服务端今天 (Asia/Shanghai)。
+
+        对应真实事故: mobile POST 的"刚才"午餐落到 2 天前 (客户端日期 bug)。防御纵深:
+        偏离 > 2 天判为不合理, 钳制而非 422 (钳制比硬拒更安全的 UX), 并写 WARNING 日志。
+        任务示例: server-today=2026-07-01 时提交 2026-06-29 → 存成 2026-07-01。
+        (此处用相对日期使测试不依赖运行当天; 用 3 天前确保触发 > 2 天阈值。)
+        """
+        from datetime import datetime, timedelta, timezone
+
+        server_today = datetime.now(timezone(timedelta(hours=8))).date()
+        implausible = server_today - timedelta(days=3)  # > 2 天 → 触发钳制
+
+        import logging
+        with caplog.at_level(logging.WARNING):
+            response = client.post(
+                "/api/v1/diet/records",
+                json={
+                    "record_date": str(implausible),
+                    "meal_type": "lunch",
+                    "food_items": "wagas 沙拉",
+                },
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        # 被钳制回服务端今天, 而非客户端传的 3 天前
+        assert data["record_date"] == str(server_today)
+        # 且写了可被监控捕获的告警日志 (不假装成功)
+        assert any(
+            "implausible record_date" in rec.getMessage() for rec in caplog.records
+        )
+
+    def test_two_day_backfill_is_allowed_not_clamped(self, client, auth_headers):
+        """合法补录: ±2 天以内的日期照原样保留, 不被钳制 (真实补录场景)。"""
+        from datetime import datetime, timedelta, timezone
+
+        server_today = datetime.now(timezone(timedelta(hours=8))).date()
+        two_days_ago = server_today - timedelta(days=2)  # 恰好 2 天, 属允许区间
+
+        response = client.post(
+            "/api/v1/diet/records",
+            json={
+                "record_date": str(two_days_ago),
+                "meal_type": "dinner",
+                "food_items": "补录的晚餐",
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["record_date"] == str(two_days_ago)
+
     def test_get_my_diet_records(self, client, auth_headers, sample_diet_data):
         """测试获取我的饮食记录"""
         # 先创建记录
