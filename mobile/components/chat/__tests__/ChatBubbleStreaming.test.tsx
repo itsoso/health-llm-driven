@@ -1,4 +1,5 @@
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import { render } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -104,7 +105,7 @@ describe('ChatBubble streaming degraded render', () => {
   });
 
   it('renders streaming thinking steps above the assistant text', () => {
-    const { getByText, queryByTestId } = renderBubble({
+    const { getByLabelText, getByTestId, getByText, queryByTestId } = renderBubble({
       id: 'assistant-streaming-thinking',
       role: 'assistant',
       content: '今晚优先固定睡眠时间。',
@@ -113,9 +114,14 @@ describe('ChatBubble streaming degraded render', () => {
     });
 
     expect(queryByTestId('rich-markdown')).toBeNull();
-    expect(getByText('思考中')).toBeTruthy();
+    expect(getByText('阿衡正在思考')).toBeTruthy();
+    expect(getByText('2/2')).toBeTruthy();
     expect(getByText('正在理解你的问题')).toBeTruthy();
     expect(getByText('读取健康数据')).toBeTruthy();
+    expect(getByLabelText('当前步骤:读取健康数据')).toBeTruthy();
+    const panelStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
+    expect(panelStyle.alignSelf).toBe('stretch');
+    expect(panelStyle.minWidth).toBeGreaterThanOrEqual(260);
     expect(getByText('今晚优先固定睡眠时间。')).toBeTruthy();
   });
 

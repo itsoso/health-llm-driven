@@ -503,7 +503,9 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
                 </Pressable>
               </View>
             ) : null}
-            {item.streaming && <ActivityIndicator size="small" color={C.green500} style={{ marginTop: 4 }} />}
+            {item.streaming && thinkingSteps.length === 0 ? (
+              <ActivityIndicator size="small" color={C.green500} style={{ marginTop: 4 }} />
+            ) : null}
             {/* 2026-05-13: 耗时 + 模型名 footer + 🔊 播报按钮 (流式结束才显示) */}
             {!item.streaming && assistantTextForActions ? (
               <View style={styles.metaRow}>
@@ -996,37 +998,72 @@ const styles = StyleSheet.create({
   msgImageSingle: { width: 160, height: 120, borderRadius: 10 },
   msgImageGrid: { width: 72, height: 72, borderRadius: 8 },
   thinkingPanel: {
-    gap: 7,
-    marginBottom: 9,
-    borderRadius: revaRadii.md,
+    alignSelf: 'stretch',
+    minWidth: 260,
+    gap: 8,
+    marginBottom: 10,
+    borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.green100,
-    backgroundColor: C.green50,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    backgroundColor: C.paper2,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
   },
   thinkingHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 7,
+  },
+  thinkingHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  thinkingSubtitle: {
+    marginTop: 1,
+  },
+  thinkingProgressPill: {
+    minWidth: 38,
+    minHeight: 22,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  thinkingProgressTrack: {
+    height: 3,
+    borderRadius: 999,
+    backgroundColor: C.line,
+    overflow: 'hidden',
+  },
+  thinkingProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: C.green500,
   },
   thinkingList: {
-    gap: 5,
+    gap: 6,
   },
   thinkingStepRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 7,
+    alignItems: 'center',
+    gap: 8,
   },
-  thinkingDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    marginTop: 7,
-    backgroundColor: C.green300,
+  thinkingStepIndex: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
   },
-  thinkingDotActive: {
+  thinkingStepIndexActive: {
     backgroundColor: C.green600,
+    borderColor: C.green600,
   },
   actionsRow: {
     flexDirection: 'row',
@@ -1073,8 +1110,12 @@ const txt = {
   bubbleUser: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 22, color: '#fff' } as TextStyle,
   // 与 markdownStyles body (fontSize 15 / lineHeight 23) 对齐, 流式→终态切 markdown 时无跳动
   streaming: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 23, color: C.ink1 } as TextStyle,
-  thinkingTitle: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, fontWeight: '800', color: C.green700 } as TextStyle,
-  thinkingStep: { flex: 1, fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, color: C.ink2 } as TextStyle,
+  thinkingTitle: { fontFamily: revaFonts.sans, fontSize: 12.5, lineHeight: 17, fontWeight: '900', color: C.ink1 } as TextStyle,
+  thinkingSubtitle: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, color: C.ink3 } as TextStyle,
+  thinkingProgressText: { fontFamily: revaFonts.mono, fontSize: 10.5, lineHeight: 13, fontWeight: '800', color: C.green700 } as TextStyle,
+  thinkingStepIndex: { fontFamily: revaFonts.mono, fontSize: 10, lineHeight: 13, fontWeight: '900', color: C.green700 } as TextStyle,
+  thinkingStepIndexActive: { color: C.greenOn } as TextStyle,
+  thinkingStep: { flex: 1, fontFamily: revaFonts.sans, fontSize: 12.2, lineHeight: 18, color: C.ink2, fontWeight: '600' } as TextStyle,
   actionBtn: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '700', color: C.green500 } as TextStyle,
   fallback: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 20, color: C.ink2, fontStyle: 'italic' } as TextStyle,
   meta: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3 } as TextStyle,
@@ -1082,18 +1123,42 @@ const txt = {
 
 function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?: boolean }) {
   if (steps.length === 0) return null;
+  const title = streaming ? '阿衡正在思考' : '思考完成';
+  const latestStep = steps[steps.length - 1];
+  const progressText = `${steps.length}/${steps.length}`;
   return (
-    <View testID="assistant-thinking-panel" style={styles.thinkingPanel}>
+    <View
+      testID="assistant-thinking-panel"
+      style={styles.thinkingPanel}
+      accessibilityLabel={`${title},当前步骤:${latestStep}`}
+    >
       <View style={styles.thinkingHeader}>
-        <Ionicons name="sparkles-outline" size={13} color={C.green500} />
-        <Text style={txt.thinkingTitle}>{streaming ? '思考中' : '思考完成'}</Text>
+        <Ionicons name={streaming ? 'pulse-outline' : 'checkmark-circle-outline'} size={16} color={C.green500} />
+        <View style={styles.thinkingHeaderCopy}>
+          <Text style={txt.thinkingTitle}>{title}</Text>
+          <Text style={[txt.thinkingSubtitle, styles.thinkingSubtitle]} numberOfLines={1}>
+            整理健康数据和下一步建议
+          </Text>
+        </View>
+        <View style={styles.thinkingProgressPill}>
+          <Text style={txt.thinkingProgressText}>{progressText}</Text>
+        </View>
+      </View>
+      <View style={styles.thinkingProgressTrack}>
+        <View style={[styles.thinkingProgressFill, { width: streaming ? '78%' : '100%' }]} />
       </View>
       <View style={styles.thinkingList}>
         {steps.map((step, index) => {
           const active = streaming && index === steps.length - 1;
           return (
-            <View key={`${step}-${index}`} style={styles.thinkingStepRow}>
-              <View style={[styles.thinkingDot, active && styles.thinkingDotActive]} />
+            <View
+              key={`${step}-${index}`}
+              style={styles.thinkingStepRow}
+              accessibilityLabel={`${active ? '当前步骤' : '已完成步骤'}:${step}`}
+            >
+              <View style={[styles.thinkingStepIndex, active && styles.thinkingStepIndexActive]}>
+                <Text style={[txt.thinkingStepIndex, active && txt.thinkingStepIndexActive]}>{index + 1}</Text>
+              </View>
               <Text style={txt.thinkingStep} numberOfLines={2}>{step}</Text>
             </View>
           );
