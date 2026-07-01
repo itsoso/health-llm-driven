@@ -18,9 +18,11 @@ struct ChatTranscriptWebView: NSViewRepresentable {
     let fontScale: Double
     /// 复制回调:JS 端点复制按钮 → messageHandler → 这里拿 messageID 写 NSPasteboard。
     let onCopy: (String) -> Void
+    /// 动态卡片动作回调:JS 拦截安全内部 route.open → 上层解释 route。
+    let onRouteOpen: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onCopy: onCopy)
+        Coordinator(onCopy: onCopy, onRouteOpen: onRouteOpen)
     }
 
     func makeNSView(context: Context) -> WKWebView {
@@ -32,6 +34,7 @@ struct ChatTranscriptWebView: NSViewRepresentable {
 
         let controller = WKUserContentController()
         controller.add(context.coordinator, name: "copy")
+        controller.add(context.coordinator, name: "routeOpen")
         controller.add(context.coordinator, name: "ready")
         config.userContentController = controller
 
@@ -47,12 +50,14 @@ struct ChatTranscriptWebView: NSViewRepresentable {
 
     func updateNSView(_ nsView: WKWebView, context: Context) {
         context.coordinator.onCopy = onCopy
+        context.coordinator.onRouteOpen = onRouteOpen
         context.coordinator.apply(messages: messages, fontScale: fontScale)
     }
 
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var onCopy: (String) -> Void
+        var onRouteOpen: (String) -> Void
         weak var webView: WKWebView?
 
         private var isReady = false
@@ -64,8 +69,9 @@ struct ChatTranscriptWebView: NSViewRepresentable {
         // 已同步进 DOM 的整组消息;用于「内容未变就别重推」的闸(见 apply)。
         private var lastSyncedMessages: [ChatTranscriptHTML.RenderedMessage] = []
 
-        init(onCopy: @escaping (String) -> Void) {
+        init(onCopy: @escaping (String) -> Void, onRouteOpen: @escaping (String) -> Void) {
             self.onCopy = onCopy
+            self.onRouteOpen = onRouteOpen
         }
 
         func loadShell() {
@@ -133,6 +139,10 @@ struct ChatTranscriptWebView: NSViewRepresentable {
             case "copy":
                 if let id = message.body as? String {
                     onCopy(id)
+                }
+            case "routeOpen":
+                if let route = message.body as? String {
+                    onRouteOpen(route)
                 }
             default:
                 break
@@ -243,7 +253,8 @@ private func previewOrchestratorMessage() -> ChatTranscriptHTML.RenderedMessage 
             previewOrchestratorMessage()
         ],
         fontScale: 1.0,
-        onCopy: { _ in }
+        onCopy: { _ in },
+        onRouteOpen: { _ in }
     )
     .frame(width: 560, height: 520)
 }

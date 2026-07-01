@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
+from urllib.parse import quote
 
 from sqlalchemy.orm import Session
 
@@ -330,6 +331,15 @@ def _route_action(action_id: str, label: str, route: str, *, style: str = "secon
     }
 
 
+def _chat_prompt_action(action_id: str, label: str, prompt: str, *, badge: str = "记录建议") -> dict[str, Any]:
+    prompt_text = re.sub(r"\s+", " ", prompt).strip()[:240]
+    route = (
+        f"/(tabs)/chat?prompt={quote(prompt_text, safe='')}"
+        f"&badge={quote(badge, safe='')}"
+    )
+    return _route_action(action_id, label, route)
+
+
 def _exercise_record_summary(record_data: dict) -> tuple[str, str]:
     exercise = str(
         record_data.get("exercise_type")
@@ -410,6 +420,15 @@ def build_post_record_quality_response(
                 "actions": [
                     _route_action("open-diet-plan", "看下一餐建议", "/diet-plan", style="primary"),
                     _route_action("open-record", "调整记录", "/(tabs)/record"),
+                    _chat_prompt_action(
+                        "ask-next-meal",
+                        "问阿衡下一餐",
+                        (
+                            f"基于我刚记录的{meal}（{food_label}；{_macro_summary(record_data) or '营养估算待补全'}），"
+                            "结合我的健康档案和今天累计进度，给我下一餐怎么吃，列出2个可执行选项。"
+                        ),
+                        badge="饮食记录",
+                    ),
                 ],
             }],
         }
@@ -439,6 +458,15 @@ def build_post_record_quality_response(
                 "actions": [
                     _route_action("open-workouts", "查看运动记录", "/workout-list", style="primary"),
                     _route_action("open-record", "继续记录", "/(tabs)/record"),
+                    _chat_prompt_action(
+                        "ask-recovery",
+                        "问阿衡恢复",
+                        (
+                            f"基于我刚记录的运动（{exercise} · {detail}），结合最近恢复、睡眠和心率数据，"
+                            "给我今天剩余时间的恢复建议。"
+                        ),
+                        badge="运动记录",
+                    ),
                 ],
             }],
         }

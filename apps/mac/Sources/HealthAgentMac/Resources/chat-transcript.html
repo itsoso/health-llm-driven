@@ -270,6 +270,34 @@
     background: rgba(255, 214, 10, 0.14);
     border: 1px solid rgba(255, 214, 10, 0.24);
   }
+  .dynamic-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .dynamic-card-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(48, 176, 112, 0.22);
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.58);
+    font-size: 0.82em;
+    font-weight: 800;
+    text-decoration: none;
+  }
+  .dynamic-card-action.primary {
+    color: white;
+    background: #1f9b65;
+    border-color: #1f9b65;
+  }
+  .dynamic-card-action.secondary {
+    color: #177245;
+  }
   .evidence-card,
   .generic-card {
     border-color: rgba(10, 132, 255, 0.20);
@@ -355,6 +383,13 @@
     .safety-card-recommendations li {
       background: rgba(255, 255, 255, 0.06);
       border-color: rgba(255, 255, 255, 0.08);
+    }
+    .dynamic-card-action {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.10);
+    }
+    .dynamic-card-action.secondary {
+      color: #7ee0a3;
     }
     .safety-card-attention {
       color: #ff8a80;
@@ -648,6 +683,32 @@
         window.webkit.messageHandlers.copy.postMessage(String(id));
       }
     } catch (e) {}
+  }
+
+  function postRouteOpen(route) {
+    try {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.routeOpen) {
+        window.webkit.messageHandlers.routeOpen.postMessage(String(route));
+      }
+    } catch (e) {}
+  }
+
+  function isSafeInternalRoute(route) {
+    return typeof route === "string" && route.indexOf("/") === 0 && route.indexOf("//") !== 0 &&
+      !/[\u0000-\u001f\u007f]/.test(route);
+  }
+
+  function bindDynamicCardActions(scope) {
+    if (!scope || !scope.querySelectorAll) return;
+    var actions = scope.querySelectorAll(".dynamic-card-action[href]");
+    for (var i = 0; i < actions.length; i++) {
+      actions[i].addEventListener("click", function (ev) {
+        var route = ev.currentTarget.getAttribute("href") || "";
+        if (!isSafeInternalRoute(route)) return;
+        ev.preventDefault();
+        postRouteOpen(route);
+      });
+    }
   }
 
   function isNearBottom() {
@@ -1073,6 +1134,7 @@
     var body = document.createElement("div");
     body.className = "body" + (msg.streaming ? " streaming" : "");
     body.innerHTML = msg.html;
+    bindDynamicCardActions(body);
     // GenUI:把消息体里的 reva-ui 占位渲染成 SVG 折线图。流式态下 Swift 侧用 plain 文本、
     // 不产占位 → 这里自然 no-op,直到消息结算才有占位、才绘图(契约 §3.3 流式安全)。
     renderRevaCharts(body);

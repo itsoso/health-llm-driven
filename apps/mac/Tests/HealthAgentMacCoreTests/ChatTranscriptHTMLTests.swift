@@ -303,6 +303,53 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertFalse(html.contains("<tag>"))
     }
 
+    func testDynamicCardRendersSafeRouteActionsOnly() throws {
+        let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
+            type: "record_quality",
+            data: .object([
+                "domain": .string("diet"),
+                "title": .string("午餐已记录"),
+                "summary": .string("煎牛肉能量碗")
+            ]),
+            actions: [
+                AgentDynamicCardActionDescriptor(
+                    id: "ask-next-meal",
+                    label: "问阿衡下一餐",
+                    action: "route.open",
+                    payload: .object([
+                        "route": .string("/(tabs)/chat?prompt=下一餐怎么吃&badge=饮食记录")
+                    ]),
+                    style: "primary"
+                ),
+                AgentDynamicCardActionDescriptor(
+                    id: "unsafe-external",
+                    label: "外部链接",
+                    action: "route.open",
+                    payload: .object([
+                        "route": .string("https://example.test")
+                    ]),
+                    style: "secondary"
+                ),
+                AgentDynamicCardActionDescriptor(
+                    id: "unsafe-action",
+                    label: "直接写入",
+                    action: "write.execute",
+                    payload: .object([
+                        "route": .string("/safe-looking")
+                    ]),
+                    style: "primary"
+                )
+            ]
+        ))
+
+        XCTAssertTrue(html.contains("dynamic-card-actions"))
+        XCTAssertTrue(html.contains("问阿衡下一餐"))
+        XCTAssertTrue(html.contains("/(tabs)/chat?prompt=下一餐怎么吃&amp;badge=饮食记录"))
+        XCTAssertFalse(html.contains("外部链接"))
+        XCTAssertFalse(html.contains("直接写入"))
+        XCTAssertFalse(html.contains("https://example.test"))
+    }
+
     func testDynamicCardUnknownTypeFallsBackToSafeSummary() throws {
         let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
             type: "system_knowledge_evidence",

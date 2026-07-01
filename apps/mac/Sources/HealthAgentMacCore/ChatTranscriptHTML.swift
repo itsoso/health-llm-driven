@@ -378,26 +378,39 @@ public enum ChatTranscriptHTML {
 
     // MARK: - Dynamic cards
 
-    public static func dynamicCardHTML(type: String?, data: AgentDynamicCardValue?) -> String? {
+    public static func dynamicCardHTML(
+        type: String?,
+        data: AgentDynamicCardValue?,
+        actions: [AgentDynamicCardActionDescriptor] = []
+    ) -> String? {
         guard let type, let data else {
             return nil
         }
-        return dynamicCardHTML(type: type, data: data)
+        return dynamicCardHTML(type: type, data: data, actions: actions)
     }
 
-    public static func dynamicCardHTML(type: String, data: AgentDynamicCardValue) -> String? {
+    public static func dynamicCardHTML(
+        type: String,
+        data: AgentDynamicCardValue,
+        actions: [AgentDynamicCardActionDescriptor] = []
+    ) -> String? {
+        let html: String?
         switch type {
         case "medical_exam_import_result":
-            return medicalExamImportCardHTML(data)
+            html = medicalExamImportCardHTML(data)
         case "system_knowledge_evidence":
-            return systemKnowledgeEvidenceCardHTML(data)
+            html = systemKnowledgeEvidenceCardHTML(data)
         case "safety":
-            return safetyCardHTML(data)
+            html = safetyCardHTML(data)
         case "record_quality":
-            return recordQualityCardHTML(data)
+            html = recordQualityCardHTML(data)
         default:
-            return genericDynamicCardHTML(type: type, data: data)
+            html = genericDynamicCardHTML(type: type, data: data)
         }
+        guard let html else {
+            return nil
+        }
+        return appendDynamicCardActions(to: html, actions: actions)
     }
 
     private static func medicalExamImportCardHTML(_ data: AgentDynamicCardValue) -> String? {
@@ -606,6 +619,52 @@ public enum ChatTranscriptHTML {
           <div class="dynamic-card-summary">\(rows)</div>
         </div>
         """
+    }
+
+    private static func appendDynamicCardActions(
+        to html: String,
+        actions: [AgentDynamicCardActionDescriptor]
+    ) -> String {
+        let actionBar = dynamicCardActionsHTML(actions)
+        guard !actionBar.isEmpty,
+              let closingRange = html.range(of: "</div>", options: .backwards) else {
+            return html
+        }
+        var result = html
+        result.replaceSubrange(closingRange, with: "\(actionBar)\n</div>")
+        return result
+    }
+
+    private static func dynamicCardActionsHTML(_ actions: [AgentDynamicCardActionDescriptor]) -> String {
+        let items = actions.compactMap { action -> String? in
+            guard action.action == "route.open" else {
+                return nil
+            }
+            let label = action.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !label.isEmpty,
+                  let route = action.payload?["route"]?.stringValue?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                  isSafeInternalRoute(route) else {
+                return nil
+            }
+            let styleClass = action.style == "primary" ? "primary" : "secondary"
+            return """
+            <a class="dynamic-card-action \(styleClass)" href="\(escape(route))">\(escape(label))</a>
+            """
+        }
+        guard !items.isEmpty else {
+            return ""
+        }
+        return "<div class=\"dynamic-card-actions\">\(items.joined())</div>"
+    }
+
+    private static func isSafeInternalRoute(_ route: String) -> Bool {
+        guard route.hasPrefix("/"),
+              !route.hasPrefix("//"),
+              route.rangeOfCharacter(from: .controlCharacters) == nil else {
+            return false
+        }
+        return true
     }
 
     private static func metricHTML(label: String, value: String, risk: Bool) -> String {

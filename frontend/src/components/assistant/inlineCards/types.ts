@@ -32,4 +32,18 @@ export interface CardSpec<D = any> {
 export interface ServerCardDescriptor {
   type: string;
   data: any;
+  actions?: ChatCardActionDescriptor[];
+}
+
+export type ChatCardActionStyle = 'primary' | 'secondary' | 'danger';
+
+export interface ChatCardActionDescriptor {
+  id?: string;
+  label: string;
+  action: 'route.open' | string;
+  endpoint?: string | null;
+  payload?: Record<string, any> | null;
+  style?: ChatCardActionStyle;
+  requires_manual_confirm?: boolean;
+  disabled_reason?: string | null;
 }

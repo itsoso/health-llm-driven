@@ -12,6 +12,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
 import {
   CARD_REGISTRY,
   CARD_MAP,
@@ -160,6 +161,46 @@ describe('renderCard', () => {
     expect(r).not.toBeNull();
   });
 
+  it('renders safe route actions below backend cards', () => {
+    const r = renderCard({
+      type: 'record_quality',
+      data: { title: '午餐已记录', summary: '牛肉饭' },
+      actions: [
+        {
+          id: 'ask-next-meal',
+          label: '问阿衡下一餐',
+          action: 'route.open',
+          payload: { route: '/(tabs)/chat?prompt=test' },
+          style: 'primary',
+        },
+      ],
+    });
+
+    const html = renderToStaticMarkup(r!);
+    expect(html).toContain('问阿衡下一餐');
+    expect(html).toContain('/(tabs)/chat?prompt=test');
+  });
+
+  it('filters scheme-relative route actions from backend cards', () => {
+    const r = renderCard({
+      type: 'record_quality',
+      data: { title: '午餐已记录', summary: '牛肉饭' },
+      actions: [
+        {
+          id: 'unsafe',
+          label: '外部跳转',
+          action: 'route.open',
+          payload: { route: '//example.test/path' },
+          style: 'primary',
+        },
+      ],
+    });
+
+    const html = renderToStaticMarkup(r!);
+    expect(html).not.toContain('外部跳转');
+    expect(html).not.toContain('//example.test/path');
+  });
+
   it('cards_group 含 1 张子卡 → 直接渲染, 无 grid wrapper', () => {
     const r = renderCard({
       type: 'cards_group',
@@ -213,12 +254,24 @@ describe('renderServerCards', () => {
   it('过滤掉未知 type', () => {
     const r = renderServerCards([
       { type: 'vitals', data: {} },
-      { type: 'record_quality', data: { title: '午餐已记录' } },
+      {
+        type: 'record_quality',
+        data: { title: '午餐已记录' },
+        actions: [
+          {
+            id: 'ask-next-meal',
+            label: '问阿衡下一餐',
+            action: 'route.open',
+            payload: { route: '/(tabs)/chat?prompt=test' },
+          },
+        ],
+      },
       { type: 'fake_type', data: {} },
       { type: 'sleep', data: {} },
     ]);
     expect(r.length).toBe(3);
     expect(r.map((c) => c.type)).toEqual(['vitals', 'record_quality', 'sleep']);
+    expect(r[1].actions?.[0]).toEqual(expect.objectContaining({ action: 'route.open' }));
   });
 
   it('非数组输入 → 空数组 (防御 e.reduce is not a function 类 bug)', () => {

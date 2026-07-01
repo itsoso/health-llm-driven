@@ -3,10 +3,74 @@ import Foundation
 public struct AgentDynamicCardDescriptor: Codable, Equatable, Sendable {
     public let type: String
     public let data: AgentDynamicCardValue
+    public let actions: [AgentDynamicCardActionDescriptor]
 
-    public init(type: String, data: AgentDynamicCardValue) {
+    public init(type: String, data: AgentDynamicCardValue, actions: [AgentDynamicCardActionDescriptor] = []) {
         self.type = type
         self.data = data
+        self.actions = actions
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type, data, actions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        type = try c.decode(String.self, forKey: .type)
+        data = try c.decode(AgentDynamicCardValue.self, forKey: .data)
+        actions = (try? c.decode([AgentDynamicCardActionDescriptor].self, forKey: .actions)) ?? []
+    }
+}
+
+public struct AgentDynamicCardActionDescriptor: Codable, Equatable, Sendable {
+    public let id: String?
+    public let label: String
+    public let action: String
+    public let endpoint: String?
+    public let payload: AgentDynamicCardValue?
+    public let style: String?
+    public let requiresManualConfirm: Bool?
+    public let disabledReason: String?
+
+    public init(
+        id: String? = nil,
+        label: String,
+        action: String,
+        endpoint: String? = nil,
+        payload: AgentDynamicCardValue? = nil,
+        style: String? = nil,
+        requiresManualConfirm: Bool? = nil,
+        disabledReason: String? = nil
+    ) {
+        self.id = id
+        self.label = label
+        self.action = action
+        self.endpoint = endpoint
+        self.payload = payload
+        self.style = style
+        self.requiresManualConfirm = requiresManualConfirm
+        self.disabledReason = disabledReason
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, label, action, endpoint, payload, style
+        case requiresManualConfirm = "requires_manual_confirm"
+        case disabledReason = "disabled_reason"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try? c.decode(String.self, forKey: .id)
+        label = ((try? c.decode(String.self, forKey: .label)) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        action = ((try? c.decode(String.self, forKey: .action)) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        endpoint = try? c.decode(String.self, forKey: .endpoint)
+        payload = try? c.decode(AgentDynamicCardValue.self, forKey: .payload)
+        style = try? c.decode(String.self, forKey: .style)
+        requiresManualConfirm = try? c.decode(Bool.self, forKey: .requiresManualConfirm)
+        disabledReason = try? c.decode(String.self, forKey: .disabledReason)
     }
 }
 

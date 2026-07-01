@@ -603,7 +603,8 @@ struct AgentChatView: View {
         ChatTranscriptWebView(
             messages: viewModel.renderedTranscript(),
             fontScale: AppFontScale(level: appFontScaleLevel).pointScale,
-            onCopy: { id in handleWebCopy(messageID: id) }
+            onCopy: { id in handleWebCopy(messageID: id) },
+            onRouteOpen: { route in handleWebRouteOpen(route) }
         )
     }
 
@@ -613,6 +614,33 @@ struct AgentChatView: View {
         let text = viewModel.displayContent(for: message)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    /// Mac 端没有 mobile 的 tab router。动态卡片 route.open 先复用 chat prompt
+    /// 语义:点击后预填输入框并聚焦,用户确认后再发送。
+    private func handleWebRouteOpen(_ route: String) {
+        guard let prompt = Self.chatPrompt(fromDynamicCardRoute: route) else { return }
+        draft = prompt
+        editorFocusToken += 1
+    }
+
+    private static func chatPrompt(fromDynamicCardRoute route: String) -> String? {
+        let trimmed = route.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("/"),
+              !trimmed.hasPrefix("//"),
+              trimmed.rangeOfCharacter(from: .controlCharacters) == nil,
+              let components = URLComponents(string: "reva://local\(trimmed)") else {
+            return nil
+        }
+        let path = components.path
+        guard path.contains("/chat") else {
+            return nil
+        }
+        let prompt = components.queryItems?
+            .first(where: { $0.name == "prompt" })?
+            .value?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return prompt.isEmpty ? nil : prompt
     }
 
     /// transcript 下方的原生 SwiftUI:仅对最后一条助手消息渲染 proposed action 卡片 +

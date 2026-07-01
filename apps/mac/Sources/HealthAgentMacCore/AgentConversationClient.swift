@@ -198,6 +198,7 @@ public final class AgentConversationClient: AgentConversationRemoteSourcing, @un
             perf: dto.meta?.perf,
             cardType: card?.type,
             cardData: card?.data,
+            cardActions: card?.actions ?? [],
             remoteImageURLs: imageURLStrings(from: dto.image_url, baseURL: baseURL)
         )
     }

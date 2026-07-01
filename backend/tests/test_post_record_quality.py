@@ -2,6 +2,7 @@
 """记录后的回答质量层：结构化上下文、当天汇总、多记录聚合。"""
 import logging
 from datetime import date
+from urllib.parse import unquote
 
 from app.models.daily_health import DietRecord
 from app.models.user_profile import UserProfile
@@ -127,6 +128,12 @@ def test_diet_quality_response_uses_today_totals_and_actionable_routes(db, auth_
     assert card["data"]["progress"]["remaining_protein_g"] == 75
     assert card["actions"][0]["payload"]["route"] == "/diet-plan"
     assert card["actions"][1]["payload"]["route"] == "/(tabs)/record"
+    assert card["actions"][2]["action"] == "route.open"
+    assert "阿衡" in card["actions"][2]["label"]
+    diet_follow_up_route = unquote(card["actions"][2]["payload"]["route"])
+    assert diet_follow_up_route.startswith("/(tabs)/chat?")
+    assert "煎牛肉能量碗" in diet_follow_up_route
+    assert "下一餐" in diet_follow_up_route
 
 
 def test_multi_record_quality_responses_are_aggregated_not_last_one_wins():
@@ -149,3 +156,8 @@ def test_multi_record_quality_responses_are_aggregated_not_last_one_wins():
     assert "俯卧撑" in combined["reply"]
     assert len(combined["cards"]) == 2
     assert all(card["type"] == "record_quality" for card in combined["cards"])
+    exercise_actions = combined["cards"][1]["actions"]
+    exercise_follow_up_route = unquote(exercise_actions[2]["payload"]["route"])
+    assert exercise_follow_up_route.startswith("/(tabs)/chat?")
+    assert "俯卧撑" in exercise_follow_up_route
+    assert "恢复" in exercise_follow_up_route

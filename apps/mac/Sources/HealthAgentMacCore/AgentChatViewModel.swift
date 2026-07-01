@@ -19,6 +19,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
     /// that must be escaped before entering the transcript DOM.
     public var cardType: String?
     public var cardData: AgentDynamicCardValue?
+    public var cardActions: [AgentDynamicCardActionDescriptor]
 
     // MARK: 每条消息级 meta(助手回复 footer 用;流式 done 回填)
     /// 实际生成本条回复的模型名(后端 done.model)。
@@ -71,6 +72,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         perf: MessagePerf? = nil,
         cardType: String? = nil,
         cardData: AgentDynamicCardValue? = nil,
+        cardActions: [AgentDynamicCardActionDescriptor] = [],
         remoteImageURLs: [String] = []
     ) {
         self.id = id
@@ -79,6 +81,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.remoteImageURLs = remoteImageURLs
         self.cardType = cardType
         self.cardData = cardData
+        self.cardActions = cardActions
         self.model = model
         self.selectedModel = selectedModel
         self.answerModel = answerModel
@@ -94,9 +97,10 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
 
     // 显式 Codable:历史快照(老版本无这些字段)用 decodeIfPresent 容错;数组缺失 → 空。
     private enum CodingKeys: String, CodingKey {
-        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, sourcesUsed, toolsUsed, completionStatus, perf, cardType, cardData
+        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, sourcesUsed, toolsUsed, completionStatus, perf, cardType, cardData, cardActions
         case cardTypeSnake = "card_type"
         case cardDataSnake = "card_data"
+        case cardActionsSnake = "card_actions"
     }
 
     public init(from decoder: Decoder) throws {
@@ -120,6 +124,9 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
             ?? c.decodeIfPresent(String.self, forKey: .cardTypeSnake)
         self.cardData = try c.decodeIfPresent(AgentDynamicCardValue.self, forKey: .cardData)
             ?? c.decodeIfPresent(AgentDynamicCardValue.self, forKey: .cardDataSnake)
+        self.cardActions = try c.decodeIfPresent([AgentDynamicCardActionDescriptor].self, forKey: .cardActions)
+            ?? c.decodeIfPresent([AgentDynamicCardActionDescriptor].self, forKey: .cardActionsSnake)
+            ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -141,6 +148,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         try c.encodeIfPresent(perf, forKey: .perf)
         try c.encodeIfPresent(cardType, forKey: .cardType)
         try c.encodeIfPresent(cardData, forKey: .cardData)
+        try c.encode(cardActions, forKey: .cardActions)
     }
 }
 
@@ -913,6 +921,7 @@ public final class AgentChatViewModel {
                         if messages[idx].cardType == nil, let firstCard = cards.first {
                             messages[idx].cardType = firstCard.type
                             messages[idx].cardData = firstCard.data
+                            messages[idx].cardActions = firstCard.actions
                         }
                     }
                     livePreLLMPerf = nil
@@ -1238,7 +1247,11 @@ public final class AgentChatViewModel {
             let isStreamingThis = isStreaming && message.id == lastID && message.role == .assistant
             let content = displayContent(for: message)
             let cardHTML = message.role == .assistant
-                ? ChatTranscriptHTML.dynamicCardHTML(type: message.cardType, data: message.cardData) ?? ""
+                ? ChatTranscriptHTML.dynamicCardHTML(
+                    type: message.cardType,
+                    data: message.cardData,
+                    actions: message.cardActions
+                ) ?? ""
                 : ""
             let bodyHTML: String
             if message.role == .user {
@@ -1480,6 +1493,7 @@ public final class AgentChatViewModel {
         }
         messages[idx].cardType = card.type
         messages[idx].cardData = card.data
+        messages[idx].cardActions = card.actions
         if let toolName {
             messages[idx].toolsUsed = Self.mergedToolNames(
                 existing: messages[idx].toolsUsed,

@@ -62,7 +62,7 @@ final class AgentStreamClientTests: XCTestCase {
 
     func testParserParsesDynamicCardsInDone() throws {
         let payload = """
-        data: {"event":"done","data":{"conversation_id":5,"message_id":3,"completion_status":"complete","cards":[{"type":"medical_exam_import_result","data":{"exam_id":321,"source":"pdf","items_count":9}}]}}
+        data: {"event":"done","data":{"conversation_id":5,"message_id":3,"completion_status":"complete","cards":[{"type":"medical_exam_import_result","data":{"exam_id":321,"source":"pdf","items_count":9},"actions":[{"id":"ask-import-review","label":"问阿衡复核","action":"route.open","payload":{"route":"/(tabs)/chat?prompt=复核体检报告"},"style":"primary"}]}]}}
 
         """
 
@@ -85,8 +85,18 @@ final class AgentStreamClientTests: XCTestCase {
                             "exam_id": .int(321),
                             "source": .string("pdf"),
                             "items_count": .int(9)
+                        ]),
+                        actions: [
+                            AgentDynamicCardActionDescriptor(
+                                id: "ask-import-review",
+                                label: "问阿衡复核",
+                                action: "route.open",
+                                payload: .object([
+                                    "route": .string("/(tabs)/chat?prompt=复核体检报告")
+                                ]),
+                                style: "primary"
+                            )
                         ])
-                    )
                 ]
             )
         ])
@@ -200,8 +210,18 @@ final class AgentStreamClientTests: XCTestCase {
                 "abnormal_count": .int(2),
                 "review_required": .bool(true),
                 "safety_note": .string("OCR/AI 解析结果需要复核后再用于判断。")
+            ]),
+            cardActions: [
+                AgentDynamicCardActionDescriptor(
+                    id: "ask-import-review",
+                    label: "问阿衡复核",
+                    action: "route.open",
+                    payload: .object([
+                        "route": .string("/(tabs)/chat?prompt=复核体检报告")
+                    ]),
+                    style: "primary"
+                )
             ])
-        )
 
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(AgentChatMessage.self, from: data)
@@ -210,6 +230,8 @@ final class AgentStreamClientTests: XCTestCase {
         XCTAssertEqual(decoded.cardData?["exam_id"]?.intValue, 321)
         XCTAssertEqual(decoded.cardData?["hospital_name"]?.stringValue, "Test Lab")
         XCTAssertEqual(decoded.cardData?["review_required"]?.boolValue, true)
+        XCTAssertEqual(decoded.cardActions.first?.label, "问阿衡复核")
+        XCTAssertEqual(decoded.cardActions.first?.payload?["route"]?.stringValue, "/(tabs)/chat?prompt=复核体检报告")
     }
 
     func testAgentChatMessageDecodesSnakeCaseDynamicCardSnapshot() throws {
