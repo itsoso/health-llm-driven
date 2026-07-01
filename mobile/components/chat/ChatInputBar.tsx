@@ -341,132 +341,134 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
         </View>
       )}
 
-      <View style={styles.agentModeRow} accessibilityLabel="Agent 模式">
-        {AGENT_MODES.map(mode => {
-          const selected = agentMode === mode.id;
-          return (
+      <View testID="chat-composer-surface" style={styles.composerSurface}>
+        <View style={styles.agentModeRow} accessibilityLabel="Agent 模式">
+          {AGENT_MODES.map(mode => {
+            const selected = agentMode === mode.id;
+            return (
+              <Pressable
+                key={mode.id}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setAgentMode(mode.id);
+                }}
+                style={({ pressed }) => [
+                  styles.agentModeChip,
+                  selected && styles.agentModeChipActive,
+                  pressed && styles.agentModeChipPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                accessibilityLabel={`切换到${mode.label}模式`}
+              >
+                <Ionicons
+                  name={mode.icon}
+                  size={13}
+                  color={selected ? C.green500 : C.ink3}
+                />
+                <Text
+                  maxFontSizeMultiplier={1.2}
+                  style={[styles.agentModeText, selected && styles.agentModeTextActive]}
+                  numberOfLines={1}
+                >
+                  {mode.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* 输入栏 */}
+        <View style={styles.inputBar}>
+          <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn} accessibilityLabel="附件菜单">
+            <Ionicons name={showMenu ? 'close' : 'add'} size={22} color={C.ink1} />
+          </TouchableOpacity>
+
+          {voiceMode && !canSend ? (
+            /* 语音模式：按住说话按钮 */
             <Pressable
-              key={mode.id}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setAgentMode(mode.id);
-              }}
+              onPressIn={(e) => handleHoldStart(e.nativeEvent.pageY)}
+              onPressOut={handleHoldEnd}
+              onTouchMove={(e) => handleHoldMove(e.nativeEvent.pageY)}
               style={({ pressed }) => [
-                styles.agentModeChip,
-                selected && styles.agentModeChipActive,
-                pressed && styles.agentModeChipPressed,
+                styles.holdToTalkBtn,
+                pressed && styles.holdToTalkBtnActive,
+                voice.isRecording && styles.holdToTalkBtnRecording,
               ]}
-              accessibilityRole="button"
-              accessibilityState={{ selected }}
-              accessibilityLabel={`切换到${mode.label}模式`}
+              accessibilityLabel="按住说话"
             >
               <Ionicons
-                name={mode.icon}
-                size={14}
-                color={selected ? C.green500 : C.ink3}
+                name="mic"
+                size={18}
+                color={voice.isRecording ? '#FF453A' : C.ink2}
+                style={{ marginRight: 4 }}
               />
-              <Text
-                maxFontSizeMultiplier={1.2}
-                style={[styles.agentModeText, selected && styles.agentModeTextActive]}
-                numberOfLines={1}
-              >
-                {mode.label}
+              <Text style={[
+                styles.holdToTalkText,
+                voice.isRecording && styles.holdToTalkTextRecording,
+              ]}>
+                {voice.isRecording ? '松开 结束' : '按住 说话'}
               </Text>
             </Pressable>
-          );
-        })}
-      </View>
+          ) : (
+            /* 键盘模式：文本输入框 */
+            <Pressable
+              style={({ pressed }) => [
+                styles.inputWrap,
+                pressed && styles.inputWrapPressed,
+              ]}
+              onPress={focusTextInput}
+              onLongPress={(e) => handleInputLongPress(e.nativeEvent.pageY)}
+              onPressOut={handleInputPressOut}
+              onTouchMove={(e) => {
+                if (inputHoldActiveRef.current) handleHoldMove(e.nativeEvent.pageY);
+              }}
+              delayLongPress={260}
+              accessibilityRole="button"
+              accessibilityLabel="消息输入框，长按语音输入"
+              accessibilityHint="点击输入文字，长按录音并转成文字"
+            >
+              <TextInput
+                ref={textInputRef}
+                style={styles.textInput}
+                placeholder={MODE_PLACEHOLDER[agentMode]}
+                placeholderTextColor={C.ink3}
+                value={input}
+                onChangeText={setInput}
+                onSubmitEditing={() => handleSend()}
+                returnKeyType="send"
+                multiline
+                maxLength={2000}
+                accessibilityLabel="消息输入框"
+              />
+            </Pressable>
+          )}
 
-      {/* 输入栏 */}
-      <View style={styles.inputBar}>
-        <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn} accessibilityLabel="附件菜单">
-          <Ionicons name={showMenu ? 'close' : 'add'} size={22} color={C.ink1} />
-        </TouchableOpacity>
-
-        {voiceMode && !canSend ? (
-          /* 语音模式：按住说话按钮 */
-          <Pressable
-            onPressIn={(e) => handleHoldStart(e.nativeEvent.pageY)}
-            onPressOut={handleHoldEnd}
-            onTouchMove={(e) => handleHoldMove(e.nativeEvent.pageY)}
-            style={({ pressed }) => [
-              styles.holdToTalkBtn,
-              pressed && styles.holdToTalkBtnActive,
-              voice.isRecording && styles.holdToTalkBtnRecording,
-            ]}
-            accessibilityLabel="按住说话"
-          >
-            <Ionicons
-              name="mic"
-              size={18}
-              color={voice.isRecording ? '#FF453A' : C.ink2}
-              style={{ marginRight: 4 }}
-            />
-            <Text style={[
-              styles.holdToTalkText,
-              voice.isRecording && styles.holdToTalkTextRecording,
-            ]}>
-              {voice.isRecording ? '松开 结束' : '按住 说话'}
-            </Text>
-          </Pressable>
-        ) : (
-          /* 键盘模式：文本输入框 */
-          <Pressable
-            style={({ pressed }) => [
-              styles.inputWrap,
-              pressed && styles.inputWrapPressed,
-            ]}
-            onPress={focusTextInput}
-            onLongPress={(e) => handleInputLongPress(e.nativeEvent.pageY)}
-            onPressOut={handleInputPressOut}
-            onTouchMove={(e) => {
-              if (inputHoldActiveRef.current) handleHoldMove(e.nativeEvent.pageY);
-            }}
-            delayLongPress={260}
-            accessibilityRole="button"
-            accessibilityLabel="消息输入框，长按语音输入"
-            accessibilityHint="点击输入文字，长按录音并转成文字"
-          >
-            <TextInput
-              ref={textInputRef}
-              style={styles.textInput}
-              placeholder={MODE_PLACEHOLDER[agentMode]}
-              placeholderTextColor={C.ink3}
-              value={input}
-              onChangeText={setInput}
-              onSubmitEditing={() => handleSend()}
-              returnKeyType="send"
-              multiline
-              maxLength={2000}
-              accessibilityLabel="消息输入框"
-            />
-          </Pressable>
-        )}
-
-        {/* 右侧按钮：发送 / 语音切换
-            刚发送 (justSent) 时保持发送按钮样式 disabled 1s, 避免立即切回 mic 导致误触再次录音 */}
-        {canSend ? (
-          <TouchableOpacity onPress={() => handleSend()} style={styles.sendBtn} accessibilityLabel="发送消息">
-            <Ionicons name="arrow-up" size={20} color="#fff" />
-          </TouchableOpacity>
-        ) : justSent ? (
-          <View style={[styles.sendBtn, { opacity: 0.4 }]}>
-            <Ionicons name="checkmark" size={20} color="#fff" />
-          </View>
-        ) : (
-          <TouchableOpacity
-            onPress={voiceMode ? stopVoiceInput : startVoiceInput}
-            style={voiceMode ? styles.keyboardBtn : styles.voiceInputBtn}
-            accessibilityLabel={voiceMode ? '切回键盘输入' : '语音输入'}
-            accessibilityHint={voiceMode ? '回到文字输入框' : '切换到按住说话，将语音转成文字'}
-          >
-            <Ionicons
-              name={voiceMode ? 'keypad-outline' : 'mic-outline'}
-              size={20}
-              color={voiceMode ? C.ink1 : C.green500}
-            />
-          </TouchableOpacity>
-        )}
+          {/* 右侧按钮：发送 / 语音切换
+              刚发送 (justSent) 时保持发送按钮样式 disabled 1s, 避免立即切回 mic 导致误触再次录音 */}
+          {canSend ? (
+            <TouchableOpacity onPress={() => handleSend()} style={styles.sendBtn} accessibilityLabel="发送消息">
+              <Ionicons name="arrow-up" size={20} color="#fff" />
+            </TouchableOpacity>
+          ) : justSent ? (
+            <View style={[styles.sendBtn, { opacity: 0.4 }]}>
+              <Ionicons name="checkmark" size={20} color="#fff" />
+            </View>
+          ) : (
+            <TouchableOpacity
+              onPress={voiceMode ? stopVoiceInput : startVoiceInput}
+              style={voiceMode ? styles.keyboardBtn : styles.voiceInputBtn}
+              accessibilityLabel={voiceMode ? '切回键盘输入' : '语音输入'}
+              accessibilityHint={voiceMode ? '回到文字输入框' : '切换到按住说话，将语音转成文字'}
+            >
+              <Ionicons
+                name={voiceMode ? 'keypad-outline' : 'mic-outline'}
+                size={20}
+                color={voiceMode ? C.ink1 : C.green500}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* 附件菜单 */}
@@ -534,28 +536,36 @@ function MenuItem({ icon, label, desc, onPress }: { icon: any; label: string; de
 // 录音蒙层的红色/灰色为固定 mic 录音态语义, 不走主题 token.
 const styles = StyleSheet.create({
   /* ── 输入栏 ── */
+  composerSurface: {
+    marginHorizontal: revaSpacing.s3,
+    marginTop: 6,
+    marginBottom: 2,
+    borderRadius: 26,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    ...revaShadows.sm,
+  },
   agentModeRow: {
     flexDirection: 'row',
-    gap: 7,
-    paddingHorizontal: revaSpacing.s3,
-    paddingTop: 8,
-    paddingBottom: 2,
-    backgroundColor: C.paper,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.line,
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingTop: 7,
+    paddingBottom: 1,
+    backgroundColor: 'transparent',
   },
   agentModeChip: {
     flex: 1,
-    minHeight: 30,
+    minHeight: 27,
     borderRadius: revaRadii.pill,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
-    backgroundColor: C.surface,
+    backgroundColor: C.paper,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    paddingHorizontal: 9,
+    gap: 4,
+    paddingHorizontal: 8,
   },
   agentModeChipActive: {
     backgroundColor: C.green50,
@@ -576,25 +586,22 @@ const styles = StyleSheet.create({
   } as TextStyle,
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 6,
-    paddingHorizontal: revaSpacing.s3,
-    paddingTop: 8,
-    paddingBottom: 10,
-    backgroundColor: C.paper,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.line,
+    paddingHorizontal: 8,
+    paddingTop: 7,
+    paddingBottom: 8,
+    backgroundColor: 'transparent',
   },
   plusBtn: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: C.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line,
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: C.paper2, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line,
     alignItems: 'center', justifyContent: 'center',
   },
   inputWrap: {
-    minHeight: 38,
+    minHeight: 36,
     flex: 1, flexDirection: 'row', alignItems: 'flex-end',
-    backgroundColor: C.surface, borderRadius: revaRadii.pill,
+    backgroundColor: C.paper, borderRadius: revaRadii.pill,
     borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
-    paddingHorizontal: 14, paddingVertical: 4,
-    ...revaShadows.sm,
+    paddingHorizontal: 13, paddingVertical: 3,
   },
   inputWrapPressed: {
     backgroundColor: C.paper2,
@@ -605,7 +612,7 @@ const styles = StyleSheet.create({
     paddingTop: 6, paddingBottom: 6,
   },
   sendBtn: {
-    width: 38, height: 38, borderRadius: 19,
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: C.green500,
     alignItems: 'center', justifyContent: 'center',
     ...revaShadows.sm,
@@ -615,15 +622,15 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   voiceInputBtn: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: C.surface,
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: C.paper,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.green500,
     alignItems: 'center', justifyContent: 'center',
   },
   keyboardBtn: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: C.surface,
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: C.paper,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
     alignItems: 'center', justifyContent: 'center',
@@ -631,8 +638,8 @@ const styles = StyleSheet.create({
 
   /* ── 按住说话按钮（微信风格） ── */
   holdToTalkBtn: {
-    flex: 1, minHeight: 38, borderRadius: revaRadii.pill,
-    backgroundColor: C.surface,
+    flex: 1, minHeight: 36, borderRadius: revaRadii.pill,
+    backgroundColor: C.paper,
     borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
     flexDirection: 'row',
     alignItems: 'center', justifyContent: 'center',

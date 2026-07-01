@@ -145,7 +145,14 @@ export function getMainTabAccessibilityLabels() {
   ) as Record<MainTabName, string>;
 }
 
-export function getMainTabBarPresentation() {
+export function getMainTabBarPresentation(name?: MainTabName) {
+  if (name === 'chat') {
+    return {
+      layout: 'immersive',
+      overlaysContent: false,
+      hidden: true,
+    } as const;
+  }
   return {
     layout: 'docked',
     overlaysContent: false,
@@ -166,6 +173,10 @@ function createTabScreenOptions(name: MainTabName) {
 function RevaTabBar({ state, navigation }: BottomTabBarProps) {
   const { c } = useTheme();
   const insets = useSafeAreaInsets();
+  const activeRouteName = state.routes[state.index]?.name;
+  if (isMainTabName(activeRouteName) && getMainTabBarPresentation(activeRouteName).layout === 'immersive') {
+    return null;
+  }
   const routes = state.routes.filter((r): r is typeof r & { name: MainTabName } => r.name in TAB_META);
   const activeKey = state.routes[state.index]?.key;
   return (
@@ -208,6 +219,10 @@ function RevaTabBar({ state, navigation }: BottomTabBarProps) {
       </View>
     </View>
   );
+}
+
+function isMainTabName(name: string | undefined): name is MainTabName {
+  return !!name && name in TAB_META;
 }
 
 const capsule = StyleSheet.create({

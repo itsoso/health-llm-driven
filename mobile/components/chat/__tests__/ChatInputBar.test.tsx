@@ -75,6 +75,17 @@ describe('ChatInputBar', () => {
       .toBe(revaColors.surface);
   });
 
+  it('renders the mode selector and input inside one compact composer surface', () => {
+    const { getByTestId, getByLabelText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    const composerSurface = StyleSheet.flatten(getByTestId('chat-composer-surface').props.style);
+    expect(composerSurface.backgroundColor).toBe(revaColors.surface);
+    expect(composerSurface.borderRadius).toBeGreaterThanOrEqual(24);
+    expect(getByLabelText('Agent 模式')).toBeTruthy();
+  });
+
   it('uses the bottom microphone for voice input instead of voice conversation', () => {
     const { getByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,

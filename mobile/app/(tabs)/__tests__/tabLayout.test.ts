@@ -20,4 +20,12 @@ describe('main tab labels', () => {
       overlaysContent: false,
     });
   });
+
+  it('hides the global tab bar on the chat tab for an immersive assistant surface', () => {
+    expect(getMainTabBarPresentation('chat')).toEqual({
+      layout: 'immersive',
+      overlaysContent: false,
+      hidden: true,
+    });
+  });
 });

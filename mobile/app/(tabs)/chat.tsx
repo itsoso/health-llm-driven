@@ -5,12 +5,6 @@ import {
   Alert, Keyboard, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
-import {
-  FLOATING_TAB_BAR_BAR_HEIGHT,
-  FLOATING_TAB_BAR_MIN_BOTTOM,
-  FLOATING_TAB_BAR_PADDING_TOP,
-  useFloatingTabBarHeight,
-} from '../../hooks/useFloatingTabBarHeight';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
@@ -57,6 +51,8 @@ const SUGGESTIONS: SuggestionCard[] = [
   { icon: 'fitness-outline', text: '给我运动建议', key: 'default', priority: 0 },
   { icon: 'trending-up-outline', text: 'HRV趋势分析', key: 'default', priority: 0 },
 ];
+
+const CHAT_BOTTOM_BREATHING_SPACE = 8;
 
 function guessSuggestionIcon(text: string): SuggestionCard['icon'] {
   if (/体检|化验|指标|LDL|HbA1c|尿酸|血压|血脂|血糖/i.test(text)) return 'document-text-outline';
@@ -469,16 +465,11 @@ export default function ChatScreen() {
   }, [selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  // Tab bar 已在布局流内;键盘弹起时只补"键盘高度 - docked tab bar 已占高度",
-  // 避免输入框和输入法之间出现一整块 tab bar 高度的空隙。
-  const tabBarHeight = useFloatingTabBarHeight();
-  const dockedTabBarReservedHeight =
-    FLOATING_TAB_BAR_PADDING_TOP +
-    FLOATING_TAB_BAR_BAR_HEIGHT +
-    Math.max(safeInsets.bottom, FLOATING_TAB_BAR_MIN_BOTTOM);
+  // Chat tab 是沉浸态:全局 tab bar 不参与布局。键盘弹起时直接为键盘留位,
+  // 收起时只保留 home indicator 的呼吸空间。
   const bottomSpacerHeight = keyboardVisible
-    ? (Platform.OS === 'ios' ? Math.max(0, keyboardHeight - dockedTabBarReservedHeight) : 0)
-    : tabBarHeight;
+    ? (Platform.OS === 'ios' ? keyboardHeight : 0)
+    : Math.max(safeInsets.bottom, CHAT_BOTTOM_BREATHING_SPACE);
   const activeLlmLabel = llmModelId
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
@@ -762,19 +753,19 @@ function ToolMenuRow({
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
   headerWrap: {
-    paddingHorizontal: revaSpacing.s4,
-    paddingTop: revaSpacing.s2,
-    paddingBottom: revaSpacing.s2,
+    paddingHorizontal: revaSpacing.s3,
+    paddingTop: 2,
+    paddingBottom: 5,
   },
   headerSurface: {
-    minHeight: 62,
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     gap: revaSpacing.s2,
     paddingLeft: revaSpacing.s3,
-    paddingRight: 6,
-    paddingVertical: 7,
-    borderRadius: revaRadii.xl,
+    paddingRight: 5,
+    paddingVertical: 5,
+    borderRadius: 22,
     backgroundColor: C.surface2,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
@@ -786,9 +777,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   headerAction: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.surface,
@@ -796,9 +787,9 @@ const styles = StyleSheet.create({
     borderColor: C.line,
   },
   headerActionAccent: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.green50,
@@ -807,9 +798,9 @@ const styles = StyleSheet.create({
     ...revaShadows.sm,
   },
   headerMenuAction: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.surface,
