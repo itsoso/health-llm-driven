@@ -3,9 +3,12 @@ import { confirmWriteIntent, dismissWriteIntent } from './writeIntents';
 import type { ChatCardActionDescriptor } from '../components/chat/cards/types';
 import { isSafeInternalRoute } from '../utils/internalRoutes';
 
+type DietNutritionStatus = 'not_needed' | 'estimated' | 'estimate_failed';
+
 export interface ChatCardActionResult {
   status: 'completed' | 'dismissed' | 'opened';
   route?: string;
+  nutrition_status?: DietNutritionStatus;
 }
 
 export async function dispatchChatCardAction(
@@ -20,8 +23,10 @@ export async function dispatchChatCardAction(
     case 'diet_record.create':
       assertManualConfirm(action);
       assertEndpoint(action, '/diet/records');
-      await createDietRecordFromCard(action);
-      return { status: 'completed' };
+      return {
+        status: 'completed',
+        nutrition_status: await createDietRecordFromCard(action),
+      };
     case 'write_intent.confirm':
       assertManualConfirm(action);
       await confirmWriteIntent(readWriteIntentId(action));
@@ -37,9 +42,13 @@ export async function dispatchChatCardAction(
   }
 }
 
-async function createDietRecordFromCard(action: ChatCardActionDescriptor): Promise<void> {
+async function createDietRecordFromCard(action: ChatCardActionDescriptor): Promise<DietNutritionStatus> {
   const record = readDietRecord(action);
-  await api.post('/diet/records', record);
+  const { data } = await api.post('/diet/records', record);
+  if (!needsNutritionEstimate(record)) return 'not_needed';
+  const recordId = readOptionalNumericId(data?.id);
+  if (!recordId) return 'estimate_failed';
+  return backfillEstimatedNutrition(recordId, record);
 }
 
 function assertManualConfirm(action: ChatCardActionDescriptor): void {
@@ -119,6 +128,52 @@ function readDietRecord(action: ChatCardActionDescriptor): Record<string, unknow
   return out;
 }
 
+function needsNutritionEstimate(record: Record<string, unknown>): boolean {
+  return ['calories', 'protein', 'carbs', 'fat'].some((key) => !isUsableNutritionNumber(record[key]));
+}
+
+async function backfillEstimatedNutrition(recordId: number, record: Record<string, unknown>): Promise<DietNutritionStatus> {
+  try {
+    const foodItems = readFoodItems(record.food_items);
+    const { data } = await api.post(`/diet/estimate-nutrition?food_description=${encodeURIComponent(foodItems)}`);
+    const patch = readNutritionPatch(data, record);
+    if (!Object.keys(patch).length) return 'estimate_failed';
+    await api.put(`/diet/records/${recordId}`, patch);
+    return 'estimated';
+  } catch {
+    return 'estimate_failed';
+  }
+}
+
+function readNutritionPatch(raw: unknown, existing: Record<string, unknown>): Record<string, number> {
+  if (!raw || typeof raw !== 'object') return {};
+  const source = raw as Record<string, unknown>;
+  if (source.success === false) return {};
+  const mapping: [string, string][] = [
+    ['total_calories', 'calories'],
+    ['total_protein', 'protein'],
+    ['total_carbs', 'carbs'],
+    ['total_fat', 'fat'],
+  ];
+  const patch: Record<string, number> = {};
+  for (const [estimateKey, recordKey] of mapping) {
+    if (isUsableNutritionNumber(existing[recordKey])) continue;
+    const value = normalizeOptionalNutritionNumber(source[estimateKey]);
+    if (value != null) patch[recordKey] = value;
+  }
+  return patch;
+}
+
+function normalizeOptionalNutritionNumber(raw: unknown): number | undefined {
+  const value = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw.trim()) : NaN;
+  if (!Number.isFinite(value) || value < 0) return undefined;
+  return Math.round(value * 10) / 10;
+}
+
+function isUsableNutritionNumber(raw: unknown): boolean {
+  return normalizeOptionalNutritionNumber(raw) != null;
+}
+
 function readRequiredText(raw: unknown, errorCode: string): string {
   const value = optionalText(raw);
   if (!value) throw new Error(errorCode);
@@ -176,4 +231,12 @@ function normalizeNumericId(raw: unknown): number {
   if (typeof raw === 'number' && Number.isInteger(raw) && raw > 0) return raw;
   if (typeof raw === 'string' && /^\d+$/.test(raw.trim())) return Number(raw);
   throw new Error('invalid_card_action_id');
+}
+
+function readOptionalNumericId(raw: unknown): number | undefined {
+  try {
+    return normalizeNumericId(raw);
+  } catch {
+    return undefined;
+  }
 }

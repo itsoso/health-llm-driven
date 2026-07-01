@@ -168,7 +168,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
         ]);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         setCardActionStateByKey(prev => ({ ...prev, [actionKey]: 'done' }));
-        toast.show(getCardActionSuccessMessage(action, result), 'success');
+        toast.show(getCardActionSuccessMessage(action, result), getCardActionSuccessType(action, result));
         if (result.route) {
           router.push(result.route as any);
         }
@@ -602,9 +602,23 @@ function getCardActionSuccessMessage(
   result: ChatCardActionResult,
 ): string {
   if (result.route || action.action === 'route.open') return '已打开';
-  if (action.action === 'diet_record.create') return '已记录饮食';
+  if (action.action === 'diet_record.create') {
+    if (result.nutrition_status === 'estimated') return '已记录饮食，营养已估算';
+    if (result.nutrition_status === 'estimate_failed') return '已记录饮食，营养估算稍后补充';
+    return '已记录饮食';
+  }
   if (result.status === 'dismissed' || action.action === 'write_intent.dismiss') return '已忽略';
   return '已执行';
+}
+
+function getCardActionSuccessType(
+  action: ChatCardActionDescriptor,
+  result: ChatCardActionResult,
+): 'info' | 'error' | 'success' {
+  if (action.action === 'diet_record.create' && result.nutrition_status === 'estimate_failed') {
+    return 'info';
+  }
+  return 'success';
 }
 
 function inferActionTitle(text: string): string {

@@ -1,12 +1,16 @@
 /* eslint-disable import/first */
 
 const mockApiPost = jest.fn();
+const mockApiPut = jest.fn();
 const mockConfirmWriteIntent = jest.fn();
 const mockDismissWriteIntent = jest.fn();
 
 jest.mock('../api', () => ({
   __esModule: true,
-  default: { post: (...args: any[]) => mockApiPost(...args) },
+  default: {
+    post: (...args: any[]) => mockApiPost(...args),
+    put: (...args: any[]) => mockApiPut(...args),
+  },
 }));
 
 jest.mock('../writeIntents', () => ({
@@ -20,6 +24,7 @@ describe('dispatchChatCardAction', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockApiPost.mockResolvedValue({ data: { ok: true } });
+    mockApiPut.mockResolvedValue({ data: { ok: true } });
     mockConfirmWriteIntent.mockResolvedValue({ status: 'executed' });
     mockDismissWriteIntent.mockResolvedValue({ status: 'dismissed' });
   });
@@ -157,6 +162,69 @@ describe('dispatchChatCardAction', () => {
       meal_type: 'dinner',
       protein: 46,
     }));
+  });
+
+  it('estimates and backfills nutrition after confirming a diet record without macros', async () => {
+    mockApiPost
+      .mockResolvedValueOnce({ data: { id: 88, food_items: '牛肉面', meal_type: 'lunch' } })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          total_calories: 620,
+          total_protein: 28,
+          total_carbs: 78,
+          total_fat: 18,
+        },
+      });
+
+    await expect(dispatchChatCardAction({
+      label: '确认记录',
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      requires_manual_confirm: true,
+      payload: {
+        record: {
+          food_items: '牛肉面',
+          meal_type: 'lunch',
+        },
+      },
+    })).resolves.toEqual({ status: 'completed', nutrition_status: 'estimated' });
+
+    expect(mockApiPost).toHaveBeenNthCalledWith(1, '/diet/records', expect.objectContaining({
+      food_items: '牛肉面',
+      meal_type: 'lunch',
+    }));
+    expect(mockApiPost).toHaveBeenNthCalledWith(2, '/diet/estimate-nutrition?food_description=%E7%89%9B%E8%82%89%E9%9D%A2');
+    expect(mockApiPut).toHaveBeenCalledWith('/diet/records/88', {
+      calories: 620,
+      protein: 28,
+      carbs: 78,
+      fat: 18,
+    });
+  });
+
+  it('returns an estimate failure status without rolling back a saved diet record', async () => {
+    mockApiPost
+      .mockResolvedValueOnce({ data: { id: 89 } })
+      .mockRejectedValueOnce(new Error('estimate unavailable'));
+
+    await expect(dispatchChatCardAction({
+      label: '确认记录',
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      requires_manual_confirm: true,
+      payload: {
+        record: {
+          food_items: '鸡蛋 2 个',
+          meal_type: 'breakfast',
+        },
+      },
+    })).resolves.toEqual({ status: 'completed', nutrition_status: 'estimate_failed' });
+
+    expect(mockApiPost).toHaveBeenNthCalledWith(1, '/diet/records', expect.objectContaining({
+      food_items: '鸡蛋 2 个',
+    }));
+    expect(mockApiPut).not.toHaveBeenCalled();
   });
 
   it('rejects diet record actions with arbitrary endpoints', async () => {
