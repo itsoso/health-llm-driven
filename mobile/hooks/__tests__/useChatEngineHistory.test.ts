@@ -23,6 +23,44 @@ jest.mock('../../components/chat/cards', () => ({
 }));
 
 describe('restoreMessagesFromHistory', () => {
+  it('restores chat image URLs without duplicating the API prefix', () => {
+    const restored = restoreMessagesFromHistory([
+      {
+        id: 11,
+        role: 'user',
+        content: '记录一下\n[附图: 1张]',
+        created_at: '2026-07-01 13:54:00',
+        image_url: '["/api/v1/upload/files/chat/knee-mri.jpeg"]',
+      },
+    ], 'https://example.test/api/v1', 'h');
+
+    expect(restored[0]).toMatchObject({
+      id: 'h-11',
+      role: 'user',
+      imageUris: ['https://example.test/api/v1/upload/files/chat/knee-mri.jpeg'],
+    });
+  });
+
+  it('restores chat images from array and absolute URL history payloads', () => {
+    const restored = restoreMessagesFromHistory([
+      {
+        id: 12,
+        role: 'user',
+        content: '两张图',
+        created_at: '2026-07-01 13:55:00',
+        image_url: [
+          '/api/v1/upload/files/chat/a.jpeg',
+          'https://cdn.example.test/chat/b.jpeg',
+        ],
+      },
+    ], 'https://example.test/api/v1', 'h');
+
+    expect(restored[0]?.imageUris).toEqual([
+      'https://example.test/api/v1/upload/files/chat/a.jpeg',
+      'https://cdn.example.test/chat/b.jpeg',
+    ]);
+  });
+
   it('restores persisted server cards after the assistant message', () => {
     const restored = restoreMessagesFromHistory([
       {

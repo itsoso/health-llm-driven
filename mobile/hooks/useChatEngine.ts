@@ -10,7 +10,11 @@ import type { ChatCardActionDescriptor, ServerCardDescriptor } from '../componen
 import api, { BASE_URL } from '../services/api';
 import { emitClientEvent } from '../services/clientEvents';
 
-const IMAGE_HOST = BASE_URL.replace(/\/api$/, '');
+function normalizeImageHost(baseUrl: string): string {
+  return String(baseUrl || '').replace(/\/+$/, '').replace(/\/api(?:\/v\d+)?$/, '');
+}
+
+const IMAGE_HOST = normalizeImageHost(BASE_URL);
 
 export interface UIMessage extends ChatMessage {
   id: string;
@@ -54,15 +58,31 @@ function applyMeta(msg: any): Partial<UIMessage> {
   };
 }
 
+function absolutizeHistoryImageUri(uri: string, imageHost: string): string | undefined {
+  const value = String(uri || '').trim();
+  if (!value) return undefined;
+  if (/^(https?:|file:|data:)/i.test(value)) return value;
+  const host = normalizeImageHost(imageHost);
+  if (!host) return value;
+  return value.startsWith('/') ? `${host}${value}` : `${host}/${value}`;
+}
+
 function parseHistoryImageUris(raw: any, imageHost: string): string[] | undefined {
   if (!raw) return undefined;
+  let parsed: any = raw;
   try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return undefined;
-    return parsed.map((u: string) => `${imageHost}${u}`);
+    if (typeof raw === 'string') {
+      parsed = JSON.parse(raw);
+    }
   } catch {
-    return undefined;
+    parsed = raw;
   }
+  const values = Array.isArray(parsed) ? parsed : (typeof parsed === 'string' ? [parsed] : []);
+  const uris = values
+    .filter((u: any): u is string => typeof u === 'string')
+    .map((u: string) => absolutizeHistoryImageUri(u, imageHost))
+    .filter((u: string | undefined): u is string => !!u);
+  return uris.length > 0 ? uris : undefined;
 }
 
 /** Restore durable chat messages plus server-rendered cards from history.
