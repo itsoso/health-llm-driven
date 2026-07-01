@@ -270,6 +270,7 @@ final class AgentStreamClientTests: XCTestCase {
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/agent/stream")
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer token")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Reva-Client-Caps"), "genui-v1, genui-components-v1")
             let body = try JSONSerialization.jsonObject(with: request.bodyDataForTesting ?? Data()) as? [String: Any]
             XCTAssertEqual(body?["message"] as? String, "分析今天状态")
             XCTAssertEqual(body?["conversation_id"] as? Int, 7)

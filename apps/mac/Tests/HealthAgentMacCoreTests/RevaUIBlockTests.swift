@@ -122,6 +122,50 @@ final class RevaUIBlockTests: XCTestCase {
         XCTAssertTrue(decoded!.contains("\"disclaimer\""))
     }
 
+    func testRenderMessageBodyAcceptsMetricLineChartPayload() {
+        let json = """
+        {"v":1,"schema":"reva.metric_line_chart.v1","component":"metric_line_chart","metric":"blood_glucose",\
+        "range":"7d","title":"血糖趋势","unit":"mmol/L","x":["06-28","06-29","06-30"],\
+        "series":[{"name":"每日值","points":[5.4,5.8,5.6]}],"source":"basic","data_note":"基于 3 天真实数据"}
+        """
+        let md = "血糖趋势:\n\n```reva-ui\n\(json)\n```"
+        let html = ChatTranscriptHTML.renderMessageBody(markdown: md)
+
+        XCTAssertTrue(html.contains("class=\"reva-ui-chart\""))
+        let decoded = extractDataRevaUI(html).flatMap { Data(base64Encoded: $0) }.flatMap { String(data: $0, encoding: .utf8) }
+        XCTAssertEqual(decoded, json)
+        XCTAssertFalse(html.contains("metric_line_chart\""))
+    }
+
+    func testRenderMessageBodyAcceptsMetricEmptyStatePayload() {
+        let json = """
+        {"v":1,"schema":"reva.metric_empty_state.v1","component":"metric_empty_state","metric":"blood_glucose",\
+        "range":"7d","title":"血糖数据不足","message":"暂无足够数据，至少需要 3 天真实记录后才能生成趋势图。",\
+        "suggestions":["同步 HealthKit 或可穿戴设备数据","补录最近几天的关键指标"],"boundary":"仅用于健康管理参考，不替代诊断或治疗。"}
+        """
+        let md = "血糖暂无足够数据:\n\n```reva-ui\n\(json)\n```"
+        let html = ChatTranscriptHTML.renderMessageBody(markdown: md)
+
+        XCTAssertTrue(html.contains("class=\"reva-ui-chart\""))
+        let decoded = extractDataRevaUI(html).flatMap { Data(base64Encoded: $0) }.flatMap { String(data: $0, encoding: .utf8) }
+        XCTAssertEqual(decoded, json)
+        XCTAssertFalse(html.contains("metric_empty_state\""))
+    }
+
+    func testBundledTranscriptRendererSupportsGenUIComponentsV1() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let resourceURL = packageRoot
+            .appendingPathComponent("Sources/HealthAgentMac/Resources/chat-transcript.html")
+        let source = try String(contentsOf: resourceURL, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("spec.component === \"metric_line_chart\""))
+        XCTAssertTrue(source.contains("spec.component === \"metric_empty_state\""))
+        XCTAssertTrue(source.contains("buildRevaMetricEmptyStateHTML"))
+    }
+
     func testRenderMessageBodyNoBlockUnchangedBehavior() {
         // 无 reva-ui 块时与旧路径一致(段落渲染)。
         let md = "# 标题\n\n正文。"

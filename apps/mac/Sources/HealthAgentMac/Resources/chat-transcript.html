@@ -402,7 +402,7 @@
     font-size: 0.95em;
   }
 
-  /* GenUI reva-ui 折线图(JS 自绘 SVG,离线;占位 div 由 Swift 注入) */
+  /* GenUI reva-ui 折线图 / 空状态(JS 自绘,离线;占位 div 由 Swift 注入) */
   .reva-ui-chart {
     margin: 6px 0 10px;
     padding: 12px 12px 8px;
@@ -503,6 +503,35 @@
     word-break: break-word;
     margin: 0;
   }
+  .reva-ui-empty-message {
+    margin-top: 6px;
+    color: var(--text);
+    line-height: 1.55;
+  }
+  .reva-ui-empty-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 2px 8px;
+    background: rgba(255, 159, 10, 0.12);
+    color: #b36b00;
+    font-size: 0.72em;
+    font-weight: 700;
+  }
+  .reva-ui-empty-list {
+    display: grid;
+    gap: 6px;
+    margin: 10px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .reva-ui-empty-list li {
+    border: 1px solid var(--hr);
+    border-radius: 10px;
+    padding: 7px 9px;
+    background: rgba(255, 159, 10, 0.08);
+    color: var(--secondary);
+  }
 
   /* 流式光标 */
   .body.streaming::after {
@@ -539,10 +568,10 @@
     }
   }
 
-  // ===== GenUI: reva-ui line_chart (离线自绘 SVG) =====================
+  // ===== GenUI: reva-ui line_chart / metric_line_chart / metric_empty_state =====================
   // 设计:占位 div 由 Swift 注入(<div class="reva-ui-chart" data-reva-ui="<base64 JSON>">)。
   // 这里 base64 解码 → JSON.parse(try/catch)→ 构建 SVG 串 → 替换 div 内容。
-  // 解析失败 / 非 line_chart → 降级成代码块(不白屏、不毁整条消息)。
+  // 解析失败 / 未支持组件 → 降级成代码块(不白屏、不毁整条消息)。
   // SVG 用固定 viewBox 坐标系(不依赖容器测量)→ 无布局探测,CSS width:100% 缩放。
   var REVA_SVG_NS = "http://www.w3.org/2000/svg";
   var REVA_VW = 600;       // viewBox 宽
@@ -581,6 +610,12 @@
       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
   function revaIsFiniteNum(v) { return typeof v === "number" && isFinite(v); }
+  function revaIsChartComponent(spec) {
+    return !!spec && (spec.component === "line_chart" || spec.component === "metric_line_chart");
+  }
+  function revaIsMetricEmptyState(spec) {
+    return !!spec && spec.component === "metric_empty_state";
+  }
 
   // 计算 y 轴范围:优先 y_hint(min/max 各自可缺),否则从所有非空点自动 + 内边距。
   function revaComputeYRange(series, yHint) {
@@ -605,7 +640,7 @@
   // 把一个 spec 对象构建成 SVG 字符串(纯函数,可在 node 里测)。
   // 返回 null 表示该 spec 不可渲染(交给调用方降级)。
   function buildRevaLineChartSVG(spec) {
-    if (!spec || spec.component !== "line_chart") return null;
+    if (!revaIsChartComponent(spec)) return null;
     var x = Array.isArray(spec.x) ? spec.x : [];
     var series = Array.isArray(spec.series) ? spec.series : [];
     if (x.length === 0 || series.length === 0) return null;
@@ -712,6 +747,28 @@
       '" preserveAspectRatio="xMidYMid meet" role="img">' + parts.join("") + '</svg>';
   }
 
+  function buildRevaMetricEmptyStateHTML(spec) {
+    if (!revaIsMetricEmptyState(spec)) return null;
+    var html = "";
+    html += '<div class="reva-ui-title">' + revaEscapeXML(spec.title || "数据不足") + '</div>';
+    html += '<span class="reva-ui-empty-badge">待补齐</span>';
+    html += '<div class="reva-ui-empty-message">' +
+      revaEscapeXML(spec.message || "暂无足够数据生成趋势图。") + '</div>';
+    var suggestions = Array.isArray(spec.suggestions) ? spec.suggestions : [];
+    if (suggestions.length) {
+      html += '<ul class="reva-ui-empty-list">';
+      for (var i = 0; i < suggestions.length && i < 4; i++) {
+        if (typeof suggestions[i] !== "string" || !suggestions[i]) continue;
+        html += '<li>' + revaEscapeXML(suggestions[i]) + '</li>';
+      }
+      html += '</ul>';
+    }
+    if (spec.boundary) {
+      html += '<div class="reva-ui-disclaimer">' + revaEscapeXML(spec.boundary) + '</div>';
+    }
+    return html;
+  }
+
   function revaFmtNum(v) {
     if (!revaIsFiniteNum(v)) return "";
     if (Math.abs(v) >= 100 || Number.isInteger(v)) return String(Math.round(v));
@@ -804,8 +861,16 @@
       spec = JSON.parse(json);
     } catch (e) { spec = null; }
 
+    var emptyHTML = null;
+    try { emptyHTML = buildRevaMetricEmptyStateHTML(spec); } catch (e2) { emptyHTML = null; }
+    if (emptyHTML) {
+      el.classList.add("rendered");
+      el.innerHTML = emptyHTML;
+      return;
+    }
+
     var svg = null;
-    try { svg = buildRevaLineChartSVG(spec); } catch (e2) { svg = null; }
+    try { svg = buildRevaLineChartSVG(spec); } catch (e4) { svg = null; }
 
     if (!svg) {
       // 降级:把原始 JSON 当代码块展示(解析失败也不毁消息)。
