@@ -1,5 +1,5 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import DynamicTodayRenderer from '../DynamicTodayRenderer';
 import type { DailyArtifact } from '../../../services/dailyArtifact';
@@ -172,6 +172,73 @@ describe('DynamicTodayRenderer', () => {
 
     expect(getByText('7天验证节奏')).toBeTruthy();
     expect(getByText('晚餐后步行 15 分钟')).toBeTruthy();
+  });
+
+  it('shows running feedback and prevents duplicate dynamic card actions', async () => {
+    let resolveAction: (() => void) | null = null;
+    const onAction = jest.fn(() => new Promise<void>((resolve) => {
+      resolveAction = resolve;
+    }));
+    const { getByText } = render(
+      <DynamicTodayRenderer
+        view={makeView({
+          sections: [
+            {
+              slot: 'runtime',
+              priority: 80,
+              cards: [
+                {
+                  id: 'runtime-agenda:2026-06-29:walk',
+                  type: 'agent_atom',
+                  render: { atom: 'runtime_agenda', reason: 'next_runtime_action' },
+                  data: {
+                    generated_by: 'rolling_health_runtime_v1',
+                    horizon_days: 7,
+                    next_action: {
+                      title: '晚餐后步行 15 分钟',
+                      time_window: 'evening',
+                      priority_tier: 'P1',
+                      current_state_summary: '晚餐后是今天最短的代谢干预窗口。',
+                      verification_metrics: ['waist_cm'],
+                      verification_window_days: 7,
+                    },
+                    days: [
+                      { date: '2026-06-30', next_action_title: '晚餐后步行 15 分钟', items_count: 2 },
+                    ],
+                  },
+                  actions: [
+                    {
+                      id: 'open-runtime-agenda',
+                      label: '查看7天计划',
+                      action: 'route.open',
+                      payload: { route: '/agenda' },
+                      style: 'primary',
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        })}
+        onCardAction={onAction}
+      />,
+    );
+
+    fireEvent.press(getByText('查看7天计划'));
+
+    await waitFor(() => {
+      expect(getByText('执行中')).toBeTruthy();
+    });
+    fireEvent.press(getByText('执行中'));
+    expect(onAction).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveAction?.();
+    });
+
+    await waitFor(() => {
+      expect(getByText('已打开')).toBeTruthy();
+    });
   });
 
   it('ignores unknown cards without breaking the view', () => {

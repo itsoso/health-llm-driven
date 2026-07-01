@@ -3,8 +3,10 @@ import { StyleSheet, View } from 'react-native';
 
 import type {
   ChatCardActionDescriptor,
+  ChatCardActionRuntimeState,
   ServerCardDescriptor,
 } from '../chat/cards/types';
+import { getCardActionRuntimeKey } from '../chat/cards';
 import type { AgendaSkipReason } from '../../services/agenda';
 import type {
   DailyArtifact,
@@ -43,8 +45,25 @@ export default function DynamicTodayRenderer({
   onDailyArtifactAsk?: (artifact: DailyArtifact) => void;
   onDailyArtifactExplainBasis?: (artifact: DailyArtifact) => void;
   onDailyArtifactPressAction?: (artifact: DailyArtifact, action: DailyArtifactTopAction) => void;
-  onCardAction?: (action: ChatCardActionDescriptor, descriptor: ServerCardDescriptor) => void;
+  onCardAction?: (action: ChatCardActionDescriptor, descriptor: ServerCardDescriptor) => Promise<void> | void;
 }) {
+  const [actionStateByKey, setActionStateByKey] = React.useState<Record<string, ChatCardActionRuntimeState>>({});
+  const handleCardAction = React.useCallback(async (
+    action: ChatCardActionDescriptor,
+    descriptor: ServerCardDescriptor,
+  ) => {
+    if (!onCardAction) return;
+    const actionKey = getCardActionRuntimeKey(action, descriptor);
+    const state = actionStateByKey[actionKey];
+    if (state === 'running' || state === 'done') return;
+    setActionStateByKey(prev => ({ ...prev, [actionKey]: 'running' }));
+    try {
+      await onCardAction(action, descriptor);
+      setActionStateByKey(prev => ({ ...prev, [actionKey]: 'done' }));
+    } catch {
+      setActionStateByKey(prev => ({ ...prev, [actionKey]: 'error' }));
+    }
+  }, [actionStateByKey, onCardAction]);
   const promotedTitleKeys = collectTodayDynamicPromotedTitleKeys(view);
   const sections = [...(view?.sections ?? [])]
     .map((section) => ({
@@ -71,7 +90,8 @@ export default function DynamicTodayRenderer({
               onDailyArtifactAsk,
               onDailyArtifactExplainBasis,
               onDailyArtifactPressAction,
-              onCardAction,
+              onCardAction: onCardAction ? handleCardAction : undefined,
+              actionStateByKey,
             });
           })
           .filter(Boolean);

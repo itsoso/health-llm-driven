@@ -377,11 +377,12 @@ export default function TodayScreen() {
     }) as any);
   }, [dailyArtifactQuery.data, nowItem, recordArtifactAccepted, router]);
 
-  const onDynamicCardAction = useCallback((
+  const onDynamicCardAction = useCallback(async (
     action: ChatCardActionDescriptor,
     descriptor: ServerCardDescriptor,
   ) => {
-    dispatchChatCardAction(action).then((result) => {
+    try {
+      const result = await dispatchChatCardAction(action);
       if (result.route) {
         router.push(result.route as any);
         return;
@@ -390,11 +391,12 @@ export default function TodayScreen() {
       qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] });
       qc.invalidateQueries({ queryKey: ['timeline', 'today'] });
       qc.invalidateQueries({ queryKey: ['agenda', 'today'] });
-    }).catch(() => {
+    } catch (error) {
       Alert.alert('操作失败', descriptor.type === 'runtime_agenda'
         ? '暂时无法打开健康编排,请稍后重试。'
         : '没有执行成功,请稍后重试。');
-    });
+      throw error;
+    }
   }, [qc, router]);
 
   // ── 身体信号:只给首页当前行动验证所需的紧凑指标,完整历史留在数据页。 ──

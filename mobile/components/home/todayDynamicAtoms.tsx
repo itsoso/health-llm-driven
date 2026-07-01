@@ -3,6 +3,7 @@ import { View } from 'react-native';
 
 import type {
   ChatCardActionDescriptor,
+  ChatCardActionRuntimeState,
   ServerCardDescriptor,
 } from '../chat/cards/types';
 import { CARD_MAP, renderCard } from '../chat/cards';
@@ -31,7 +32,8 @@ export interface TodayDynamicAtomRenderArgs {
   onDailyArtifactAsk?: (artifact: DailyArtifact) => void;
   onDailyArtifactExplainBasis?: (artifact: DailyArtifact) => void;
   onDailyArtifactPressAction?: (artifact: DailyArtifact, action: DailyArtifactTopAction) => void;
-  onCardAction?: (action: ChatCardActionDescriptor, descriptor: ServerCardDescriptor) => void;
+  onCardAction?: (action: ChatCardActionDescriptor, descriptor: ServerCardDescriptor) => Promise<void> | void;
+  actionStateByKey?: Record<string, ChatCardActionRuntimeState>;
 }
 
 interface TodayDynamicAtomSpec {
@@ -88,7 +90,7 @@ export function renderTodayDynamicAtom(args: TodayDynamicAtomRenderArgs): React.
   };
   const rendered = renderCard(
     descriptor,
-    args.onCardAction ? { onAction: args.onCardAction } : {},
+    args.onCardAction ? { onAction: args.onCardAction, actionStateByKey: args.actionStateByKey } : {},
   );
   return rendered ? <View key={args.key}>{rendered}</View> : null;
 }
