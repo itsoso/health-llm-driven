@@ -20,6 +20,7 @@ import type {
   ServerCardDescriptor,
 } from './types';
 import { revaColors as C, revaRadii, revaSemantic } from '../../../constants/revaTheme';
+import { isSafeInternalRoute } from '../../../utils/internalRoutes';
 
 import { VitalsCardSpec } from './VitalsCard';
 import { SleepCardSpec } from './SleepCard';
@@ -242,7 +243,7 @@ function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCar
 }
 
 function isSafeVisibleAction(action: ChatCardActionDescriptor): boolean {
-  if (action.action === 'route.open') return true;
+  if (action.action === 'route.open') return isSafeInternalRoute(action.payload?.route);
   return action.requires_manual_confirm === true;
 }
 

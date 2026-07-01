@@ -727,6 +727,39 @@ describe('renderServerCards 防御', () => {
     ]);
   });
 
+  it('filters unsafe route actions before they reach the chat UI', () => {
+    const r = renderServerCards([
+      {
+        type: 'vitals',
+        data: {},
+        actions: [
+          {
+            label: '打开外部站点',
+            action: 'route.open',
+            payload: { route: '//example.test/path' },
+          },
+          {
+            label: '打开异常路径',
+            action: 'route.open',
+            payload: { route: '/(tabs)/chat\ninject' },
+          },
+          {
+            label: '打开阿衡',
+            action: 'route.open',
+            payload: { route: '/(tabs)/chat?prompt=hrv' },
+          },
+        ],
+      } as any,
+    ]);
+
+    expect(r[0].actions).toEqual([
+      expect.objectContaining({
+        action: 'route.open',
+        payload: { route: '/(tabs)/chat?prompt=hrv' },
+      }),
+    ]);
+  });
+
   it('非数组 → []', () => {
     expect(renderServerCards({} as any)).toEqual([]);
     expect(renderServerCards('string' as any)).toEqual([]);

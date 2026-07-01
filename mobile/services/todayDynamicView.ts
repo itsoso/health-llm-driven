@@ -1,6 +1,7 @@
 import type { ChatCardActionDescriptor } from '../components/chat/cards/types';
 import type { DailyArtifact } from './dailyArtifact';
 import api from './api';
+import { isSafeInternalRoute } from '../utils/internalRoutes';
 
 export type TodayDynamicTrigger = 'open' | 'resume' | 'pull_refresh' | 'action_completed';
 export type TodayDynamicSurface = 'mobile.today';
@@ -36,6 +37,13 @@ export interface GetTodayDynamicViewOptions {
   trigger?: TodayDynamicTrigger;
   clientContext?: Record<string, unknown>;
 }
+
+const ALLOWED_DYNAMIC_ACTIONS = new Set([
+  'agenda.complete',
+  'write_intent.confirm',
+  'write_intent.dismiss',
+  'route.open',
+]);
 
 export async function getTodayDynamicView(
   options: GetTodayDynamicViewOptions = {},
@@ -122,11 +130,26 @@ function normalizeCards(value: unknown): TodayDynamicCard[] {
 
 function normalizeActions(value: unknown): ChatCardActionDescriptor[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  const actions = value.filter((raw): raw is ChatCardActionDescriptor => (
-    raw != null &&
-    typeof raw === 'object' &&
-    typeof (raw as ChatCardActionDescriptor).label === 'string' &&
-    typeof (raw as ChatCardActionDescriptor).action === 'string'
-  ));
+  const actions = value
+    .filter((raw): raw is ChatCardActionDescriptor => (
+      raw != null &&
+      typeof raw === 'object' &&
+      typeof (raw as ChatCardActionDescriptor).label === 'string' &&
+      (raw as ChatCardActionDescriptor).label.trim().length > 0 &&
+      typeof (raw as ChatCardActionDescriptor).action === 'string' &&
+      ALLOWED_DYNAMIC_ACTIONS.has((raw as ChatCardActionDescriptor).action) &&
+      isSafeAction(raw as ChatCardActionDescriptor)
+    ))
+    .map((action) => ({
+      ...action,
+      label: action.label.trim(),
+    }));
   return actions.length > 0 ? actions : undefined;
+}
+
+function isSafeAction(action: ChatCardActionDescriptor): boolean {
+  if (action.action === 'route.open') {
+    return isSafeInternalRoute(action.payload?.route);
+  }
+  return action.requires_manual_confirm === true;
 }

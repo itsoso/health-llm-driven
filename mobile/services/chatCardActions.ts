@@ -1,6 +1,7 @@
 import api from './api';
 import { confirmWriteIntent, dismissWriteIntent } from './writeIntents';
 import type { ChatCardActionDescriptor } from '../components/chat/cards/types';
+import { isSafeInternalRoute } from '../utils/internalRoutes';
 
 export interface ChatCardActionResult {
   status: 'completed' | 'dismissed' | 'opened';
@@ -77,7 +78,7 @@ function readWriteIntentId(action: ChatCardActionDescriptor): number {
 
 function readRoute(action: ChatCardActionDescriptor): string {
   const route = action.payload?.route;
-  if (typeof route !== 'string' || !route.startsWith('/')) {
+  if (!isSafeInternalRoute(route)) {
     throw new Error('invalid_route_action');
   }
   return route;

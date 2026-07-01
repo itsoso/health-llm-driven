@@ -82,4 +82,29 @@ describe('dispatchChatCardAction', () => {
 
     expect(mockConfirmWriteIntent).toHaveBeenCalledWith(42);
   });
+
+  it('opens only app-local route actions', async () => {
+    await expect(dispatchChatCardAction({
+      label: '打开阿衡',
+      action: 'route.open',
+      payload: { route: '/(tabs)/chat?prompt=hrv' },
+    })).resolves.toEqual({
+      status: 'opened',
+      route: '/(tabs)/chat?prompt=hrv',
+    });
+  });
+
+  it('rejects scheme-relative and control-character route actions', async () => {
+    await expect(dispatchChatCardAction({
+      label: '打开外部站点',
+      action: 'route.open',
+      payload: { route: '//example.test/path' },
+    })).rejects.toThrow('invalid_route_action');
+
+    await expect(dispatchChatCardAction({
+      label: '打开异常路径',
+      action: 'route.open',
+      payload: { route: '/(tabs)/chat\ninject' },
+    })).rejects.toThrow('invalid_route_action');
+  });
 });

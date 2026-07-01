@@ -104,4 +104,56 @@ describe('todayDynamicView service', () => {
       reason: 'primary_today_action',
     });
   });
+
+  it('keeps only safe dynamic card actions for Today view cards', () => {
+    const view = normalizeTodayDynamicView({
+      view_id: 'today:2026-06-29:abc',
+      surface: 'mobile.today',
+      trigger: 'open',
+      generated_by: 'aheng_today_view_v1',
+      context_hash: 'abc',
+      sections: [
+        {
+          slot: 'hero',
+          priority: 100,
+          cards: [
+            {
+              type: 'runtime_agenda',
+              data: {},
+              actions: [
+                {
+                  label: '打开外部站点',
+                  action: 'route.open',
+                  payload: { route: '//example.test/path' },
+                },
+                {
+                  label: '缺少确认',
+                  action: 'agenda.complete',
+                  endpoint: '/agenda/complete',
+                  payload: { source: { object_type: 'health_protocol', object_id: 7 } },
+                },
+                {
+                  label: '打开阿衡',
+                  action: 'route.open',
+                  payload: { route: '/(tabs)/chat?prompt=hrv' },
+                },
+                {
+                  label: '确认完成',
+                  action: 'agenda.complete',
+                  endpoint: '/agenda/complete',
+                  requires_manual_confirm: true,
+                  payload: { source: { object_type: 'health_protocol', object_id: 7 } },
+                },
+              ],
+            } as any,
+          ],
+        },
+      ],
+    });
+
+    expect(view.sections[0].cards[0].actions).toEqual([
+      expect.objectContaining({ action: 'route.open', payload: { route: '/(tabs)/chat?prompt=hrv' } }),
+      expect.objectContaining({ action: 'agenda.complete', requires_manual_confirm: true }),
+    ]);
+  });
 });
