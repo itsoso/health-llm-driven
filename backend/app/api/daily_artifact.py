@@ -15,6 +15,10 @@ from app.models.user import User
 from app.services import daily_artifact_service as service
 
 router = APIRouter(prefix="/daily-artifact", tags=["daily-artifact"])
+DAILY_ARTIFACT_NOT_FOUND_ERRORS = frozenset({
+    "daily_artifact_action_not_found",
+    "daily_artifact_date_not_found",
+})
 
 
 class DailyArtifactEventIn(BaseModel):
@@ -37,16 +41,25 @@ class DailyArtifactEventIn(BaseModel):
 
 @router.get("/me")
 def get_my_daily_artifact(
+    artifact_date: date | None = Query(default=None),
     followup_within_days: int = Query(default=7, ge=1, le=14),
+    top_action_id: str | None = Query(default=None, max_length=200),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    """Return today's compact top-action artifact."""
-    return service.build_daily_artifact(
-        db,
-        current_user.id,
-        followup_within_days=followup_within_days,
-    )
+    """Return the compact top-action artifact, optionally pinned to a date/action."""
+    try:
+        return service.build_daily_artifact(
+            db,
+            current_user.id,
+            artifact_date=artifact_date,
+            followup_within_days=followup_within_days,
+            top_action_id=top_action_id,
+        )
+    except ValueError as exc:
+        if str(exc) in DAILY_ARTIFACT_NOT_FOUND_ERRORS:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise
 
 
 @router.post("/me/events")

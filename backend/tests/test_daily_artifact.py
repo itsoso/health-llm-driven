@@ -146,6 +146,110 @@ def test_daily_artifact_projects_single_top_action_and_three_evidence_items(
     assert body["safety_boundary"] == "这是健康管理行动建议, 不替代医生诊断。"
 
 
+def test_daily_artifact_detail_query_recovers_matching_action(client, auth_user_and_headers, monkeypatch):
+    from app.services import daily_artifact_service
+
+    user, headers = auth_user_and_headers
+    runtime_action = {
+        "id": "today-recovery",
+        "type": "movement",
+        "title": "今天先轻活动",
+        "status": "pending",
+        "why_now": "恢复日先降低强度。",
+        "source": {"object_type": "daily_plan_action", "object_id": "movement.recovery"},
+    }
+
+    def fake_runtime_range_view(db, user_id, days=7, max_items_per_day=3):
+        assert user_id == user.id
+        assert days == 7
+        assert max_items_per_day == 3
+        return {
+            "start": "2026-06-29",
+            "end": "2026-07-05",
+            "mode": "runtime",
+            "generated_by": "rolling_health_runtime_v1",
+            "horizon_days": 7,
+            "next_action": runtime_action,
+            "runtime_context": {
+                "safety_boundary": "这是运行时健康管理行动建议, 不替代医生诊断。",
+            },
+            "days": [
+                {
+                    "date": "2026-06-29",
+                    "time_windows": [{"label": "morning", "items": [runtime_action]}],
+                    "next_action": runtime_action,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(daily_artifact_service.agenda_service, "runtime_range_view", fake_runtime_range_view)
+
+    resp = client.get(
+        "/api/v1/daily-artifact/me",
+        headers=headers,
+        params={"artifact_date": "2026-06-29", "top_action_id": "today-recovery"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["artifact_date"] == "2026-06-29"
+    assert body["top_action"]["id"] == "today-recovery"
+    assert body["top_action"]["title"] == "今天先轻活动"
+
+
+def test_daily_artifact_detail_query_rejects_mismatched_action(client, auth_user_and_headers, monkeypatch):
+    from app.services import daily_artifact_service
+
+    user, headers = auth_user_and_headers
+    runtime_action = {
+        "id": "today-recovery",
+        "type": "movement",
+        "title": "今天先轻活动",
+        "status": "pending",
+        "why_now": "恢复日先降低强度。",
+        "source": {"object_type": "daily_plan_action", "object_id": "movement.recovery"},
+    }
+
+    def fake_runtime_range_view(db, user_id, days=7, max_items_per_day=3):
+        assert user_id == user.id
+        return {
+            "start": "2026-06-29",
+            "end": "2026-07-05",
+            "mode": "runtime",
+            "generated_by": "rolling_health_runtime_v1",
+            "horizon_days": days,
+            "next_action": runtime_action,
+            "runtime_context": {
+                "safety_boundary": "这是运行时健康管理行动建议, 不替代医生诊断。",
+            },
+            "days": [
+                {
+                    "date": "2026-06-29",
+                    "time_windows": [{"label": "morning", "items": [runtime_action]}],
+                    "next_action": runtime_action,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(daily_artifact_service.agenda_service, "runtime_range_view", fake_runtime_range_view)
+
+    action_resp = client.get(
+        "/api/v1/daily-artifact/me",
+        headers=headers,
+        params={"artifact_date": "2026-06-29", "top_action_id": "other-action"},
+    )
+    date_resp = client.get(
+        "/api/v1/daily-artifact/me",
+        headers=headers,
+        params={"artifact_date": "2026-06-28", "top_action_id": "today-recovery"},
+    )
+
+    assert action_resp.status_code == 404
+    assert action_resp.json()["detail"] == "daily_artifact_action_not_found"
+    assert date_resp.status_code == 404
+    assert date_resp.json()["detail"] == "daily_artifact_date_not_found"
+
+
 def test_daily_artifact_records_skip_reason_and_week_index(client, db, auth_user_and_headers):
     _, headers = auth_user_and_headers
 

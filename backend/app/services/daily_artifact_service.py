@@ -24,9 +24,11 @@ def build_daily_artifact(
     db: Session,
     user_id: int,
     *,
+    artifact_date: date | str | None = None,
     followup_within_days: int = 7,
+    top_action_id: str | None = None,
 ) -> dict[str, Any]:
-    """Build today's single-action artifact from the 7-day runtime projection."""
+    """Build a single-action artifact from the runtime projection."""
     runtime_days = max(1, min(int(followup_within_days or 7), 14))
     runtime_payload = agenda_service.runtime_range_view(
         db,
@@ -34,16 +36,31 @@ def build_daily_artifact(
         days=runtime_days,
         max_items_per_day=3,
     )
-    artifact_date = _coerce_date(
+    runtime_artifact_date = _coerce_date(
         runtime_payload.get("start"),
         fallback=get_user_today(db, user_id),
     )
+    requested_artifact_date = None
+    if artifact_date:
+        requested_artifact_date = _coerce_date(
+            artifact_date,
+            fallback=runtime_artifact_date,
+        )
+    if requested_artifact_date and requested_artifact_date != runtime_artifact_date:
+        raise ValueError("daily_artifact_date_not_found")
+
+    requested_top_action_id = (top_action_id or "").strip() or None
     top_action = runtime_payload.get("next_action")
 
     if not isinstance(top_action, dict):
-        return _empty_artifact(artifact_date, runtime_payload)
+        if requested_top_action_id:
+            raise ValueError("daily_artifact_action_not_found")
+        return _empty_artifact(runtime_artifact_date, runtime_payload)
 
     action_view = _top_action_view(top_action)
+    if requested_top_action_id and action_view.get("id") != requested_top_action_id:
+        raise ValueError("daily_artifact_action_not_found")
+
     evidence = _evidence_cards(top_action)[:3]
     safety_boundary = (
         top_action.get("claim_boundary")
@@ -52,7 +69,7 @@ def build_daily_artifact(
     )
 
     return {
-        "artifact_date": artifact_date.isoformat(),
+        "artifact_date": runtime_artifact_date.isoformat(),
         "generated_by": "daily_artifact_runtime_v1",
         "source": _runtime_source(runtime_payload),
         "empty_state": False,
