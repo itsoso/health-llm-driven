@@ -218,6 +218,32 @@ def get_system_knowledge_coverage_report(
     return result
 
 
+@admin_router.get("/graph", summary="系统知识库邻域图(admin,种子+hops≤2;含 draft 节点)")
+def get_system_knowledge_graph(
+    seed: str = Query(..., description="种子文档 doc_id"),
+    hops: int = Query(2, ge=1, le=2),
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    # 治理隔离:此路径故意含 draft/needs_review 节点(reviewer 要看得见才审得动),
+    # 只在 admin 读路径可达;Twin/Orchestrator 走 lookup_for_twin/search(reviewed 门)不受影响。
+    from app.services.system_knowledge_graph import admin_expand_kb_neighborhood
+
+    result = admin_expand_kb_neighborhood(db, seed, hops=hops)
+    _record_audit(
+        db,
+        doc_id=seed,
+        op="admin_graph_view",
+        actor=f"admin:{admin_user.id}",
+        diff={
+            "nodes": result.get("node_count", 0),
+            "hops": result.get("hops"),
+            "truncated": result.get("truncated"),
+        },
+    )
+    return result
+
+
 @admin_router.get("/eval_report", summary="系统知识库 eval case 运行报告")
 def get_system_knowledge_eval_report(
     case_id: list[str] | None = Query(None),

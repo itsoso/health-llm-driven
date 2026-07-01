@@ -17,6 +17,7 @@ import {
   ReviewStatus,
 } from './reviewHelpers';
 import { CoverageMatrixView, CoverageMatrix } from './CoverageMatrixView';
+import { KnowledgeGraphView, GraphData, GraphNode } from './KnowledgeGraphView';
 
 interface CoverageReportResponse {
   coverage_matrix?: CoverageMatrix;
@@ -134,6 +135,9 @@ export default function KnowledgeAdminPage() {
   const [reviewStatus, setReviewStatus] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<ClaimReviewFormState>(emptyForm);
+  const [seedInput, setSeedInput] = useState('');
+  const [graphSeed, setGraphSeed] = useState('');
+  const [graphNode, setGraphNode] = useState<GraphNode | null>(null);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -171,6 +175,15 @@ export default function KnowledgeAdminPage() {
       return res.data;
     },
     enabled: isAuthenticated && !!user?.is_admin,
+  });
+
+  const graphQuery = useQuery<GraphData>({
+    queryKey: ['admin-knowledge-graph', graphSeed],
+    queryFn: async () => {
+      const res = await api.get(`/admin/knowledge/graph?seed=${encodeURIComponent(graphSeed)}&hops=2`);
+      return res.data;
+    },
+    enabled: isAuthenticated && !!user?.is_admin && !!graphSeed,
   });
 
   const items = useMemo(() => queueQuery.data?.items ?? [], [queueQuery.data?.items]);
@@ -296,6 +309,67 @@ export default function KnowledgeAdminPage() {
         {coverageQuery.data?.coverage_matrix && (
           <CoverageMatrixView data={coverageQuery.data.coverage_matrix} />
         )}
+
+        <section className="mt-6 rounded-xl border border-slate-800 bg-[#111820]">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 p-4">
+            <div>
+              <h2 className="text-lg font-semibold">邻域图 · 实体关系</h2>
+              <p className="mt-1 text-xs text-slate-400">
+                种子文档 + hops≤2 邻域(纯 SVG,含 draft 节点供审;不喂 Twin)。粘贴 doc_id 画图。
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                value={seedInput}
+                onChange={(e) => setSeedInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') setGraphSeed(seedInput.trim());
+                }}
+                placeholder="种子 doc_id(如 entity:gene:CFTR)"
+                className="w-72 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 outline-none focus:border-teal-400"
+              />
+              <button
+                type="button"
+                onClick={() => setGraphSeed(seedInput.trim())}
+                disabled={!seedInput.trim() || graphQuery.isFetching}
+                className="rounded-md bg-teal-500 px-3 py-2 text-sm font-medium text-slate-950 hover:bg-teal-400 disabled:opacity-60"
+              >
+                画图
+              </button>
+            </div>
+          </div>
+          <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <div>
+              {!graphSeed && <div className="p-4 text-sm text-slate-500">粘贴一个 doc_id 开始。</div>}
+              {graphSeed && graphQuery.isLoading && <div className="p-4 text-sm text-slate-400">加载中…</div>}
+              {graphQuery.data && <KnowledgeGraphView data={graphQuery.data} onSelect={setGraphNode} />}
+            </div>
+            {graphNode && (
+              <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-sm">
+                <div className="font-medium text-slate-200">{graphNode.title || graphNode.doc_id}</div>
+                <div className="mt-2 space-y-1 text-xs text-slate-400">
+                  <div>doc_id: <span className="text-slate-300">{graphNode.doc_id}</span></div>
+                  <div>类型: <span className="text-slate-300">{graphNode.entity_type ?? '-'}</span></div>
+                  <div>来源: <span className="text-slate-300">{graphNode.origin ?? '-'}</span></div>
+                  <div>
+                    审核:{' '}
+                    <span className={graphNode.review_status === 'reviewed' ? 'text-emerald-300' : 'text-amber-300'}>
+                      {graphNode.review_status ?? '-'}
+                    </span>
+                  </div>
+                  <div>hop: <span className="text-slate-300">{graphNode.hop}</span></div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setGraphSeed(graphNode.doc_id)}
+                  className="mt-3 rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-teal-400"
+                >
+                  以此为种子展开
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
 
         <section className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
           <div className="rounded-xl border border-slate-800 bg-[#111820]">
