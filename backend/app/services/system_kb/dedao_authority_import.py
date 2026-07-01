@@ -57,6 +57,9 @@ class DedaoAuthorityReviewCandidate:
     citations: list[str]
     allowed_uses: list[str]
     blocked_uses: list[str]
+    review_status: str
+    risk_reason: str
+    entity_candidates: list[str]
     record: dict[str, Any] = field(default_factory=dict)
 
 
@@ -119,6 +122,9 @@ def dry_run_import_dedao_authority_pack(lines: Iterable[str]) -> DedaoAuthorityI
         if _missing_source_refs(record):
             missing_source_refs.append(_issue(claim_id, "missing_source_refs", line_no, record))
             continue
+        if _review_status(record) == "blocked":
+            blocked.append(_issue(claim_id, "blocked_review_status", line_no, record))
+            continue
         if _is_medical_action_claim(record):
             blocked.append(_issue(claim_id, "medical_action_claim", line_no, record))
             continue
@@ -143,13 +149,13 @@ def _invalid_reason(record: dict[str, Any]) -> str:
         return "unsupported_target_system"
     if not _string(record.get("claim_id")):
         return "missing_claim_id"
-    if not _string(record.get("book_id")):
+    if not _record_book_id(record):
         return "missing_book_id"
     return ""
 
 
 def _missing_source_refs(record: dict[str, Any]) -> bool:
-    return not _string(record.get("source_hash")) or not _string_list(record.get("citations"))
+    return not _record_source_hash(record) or not _record_citations(record)
 
 
 def _is_medical_action_claim(record: dict[str, Any]) -> bool:
@@ -168,10 +174,13 @@ def _review_candidate(record: dict[str, Any]) -> DedaoAuthorityReviewCandidate:
         claim_id=_string(record.get("claim_id")),
         title=_string(record.get("title")),
         summary=_string(record.get("summary")),
-        source_hash=_string(record.get("source_hash")),
-        citations=_string_list(record.get("citations")),
+        source_hash=_record_source_hash(record),
+        citations=_record_citations(record),
         allowed_uses=_string_list(record.get("allowed_uses")),
         blocked_uses=_string_list(record.get("blocked_uses")),
+        review_status=_review_status(record),
+        risk_reason=_string(record.get("risk_reason")),
+        entity_candidates=_string_list(record.get("entity_candidates")),
         record=dict(record),
     )
 
@@ -193,3 +202,24 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _source_refs(record: dict[str, Any]) -> dict[str, Any]:
+    value = record.get("source_refs")
+    return value if isinstance(value, dict) else {}
+
+
+def _record_book_id(record: dict[str, Any]) -> str:
+    return _string(record.get("book_id")) or _string(_source_refs(record).get("book_id"))
+
+
+def _record_source_hash(record: dict[str, Any]) -> str:
+    return _string(record.get("source_hash")) or _string(_source_refs(record).get("source_hash"))
+
+
+def _record_citations(record: dict[str, Any]) -> list[str]:
+    return _string_list(record.get("citations")) or _string_list(_source_refs(record).get("citations"))
+
+
+def _review_status(record: dict[str, Any]) -> str:
+    return _string(record.get("review_status")) or "needs_review"

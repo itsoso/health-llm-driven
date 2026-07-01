@@ -8,10 +8,13 @@
 
 Use `dry_run_import_dedao_authority_pack(lines)` from `app.services.system_kb.dedao_authority_import` to validate JSONL before any future reviewer workflow. The report separates `accepted_for_review`, `blocked`, `duplicates`, `invalid`, and `missing_source_refs`.
 
+The importer accepts both legacy flat source fields (`book_id`, `citations`, `source_hash`) and enriched `source_refs` from dedao-kbase. Review candidates preserve `review_status`, `risk_reason`, and `entity_candidates` for reviewer triage.
+
 ## Safety Rules
 
 - Unknown contract versions are invalid.
 - Missing `claim_id`, `book_id`, `source_hash`, or citations cannot enter review.
+- Records with `review_status = blocked` are blocked even if source refs are present.
 - Dedao-only records that request diagnosis, treatment, dosage, medication changes, emergency guidance, or generic action support are blocked.
 - Dry run is side-effect free and always returns `would_write = False`.
 

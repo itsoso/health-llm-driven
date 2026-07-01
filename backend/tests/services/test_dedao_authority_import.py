@@ -75,3 +75,54 @@ def test_dry_run_reports_review_candidates_without_writing(tmp_path):
     assert report.missing_source_refs[0].claim_id == "dedao:book-1:claim-missing-source"
     assert report.would_write is False
     assert not any(tmp_path.iterdir())
+
+
+def test_dry_run_accepts_nested_source_refs_and_preserves_review_metadata():
+    report = dry_run_import_dedao_authority_pack(
+        [
+            _line(
+                claim_id="dedao:book-1:claim-nested-source",
+                source_hash="",
+                citations=[],
+                source_refs={
+                    "book_id": "book-1",
+                    "book_title": "健康学习材料",
+                    "chapter_id": "chapter-1",
+                    "claim_id": "dedao:book-1:claim-nested-source",
+                    "citations": ["nested-citation-1"],
+                    "source_hash": "nested-source-hash-1",
+                },
+                review_status="needs_review",
+                risk_reason="dedao_educational_source",
+                entity_candidates=["睡眠管理", "学习复盘"],
+            ),
+        ],
+    )
+
+    assert report.missing_source_refs == []
+    assert report.blocked == []
+    candidate = report.accepted_for_review[0]
+    assert candidate.source_hash == "nested-source-hash-1"
+    assert candidate.citations == ["nested-citation-1"]
+    assert candidate.review_status == "needs_review"
+    assert candidate.risk_reason == "dedao_educational_source"
+    assert candidate.entity_candidates == ["睡眠管理", "学习复盘"]
+
+
+def test_dry_run_blocks_blocked_review_status():
+    report = dry_run_import_dedao_authority_pack(
+        [
+            _line(
+                claim_id="dedao:book-1:claim-blocked-review",
+                title="睡眠复盘仅作背景材料",
+                summary="这条记录已由上游标记为 blocked。",
+                review_status="blocked",
+                risk_reason="medical_action_boundary",
+                entity_candidates=["睡眠管理"],
+            ),
+        ],
+    )
+
+    assert report.accepted_for_review == []
+    assert report.blocked[0].claim_id == "dedao:book-1:claim-blocked-review"
+    assert report.blocked[0].reason == "blocked_review_status"
