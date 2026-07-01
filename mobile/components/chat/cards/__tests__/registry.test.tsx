@@ -260,7 +260,6 @@ describe('renderCard 安全降级', () => {
     fireEvent.press(getByText('晚餐'));
     fireEvent.changeText(getByLabelText('食物描述'), '鸡胸肉 200g + 杂粮饭 100g');
     fireEvent.changeText(getByLabelText('蛋白'), '46');
-    fireEvent.press(getByText('应用修正'));
     fireEvent.press(getByText('确认记录'));
 
     expect(onAction).toHaveBeenCalledWith(

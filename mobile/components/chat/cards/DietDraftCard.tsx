@@ -45,6 +45,15 @@ interface DietDraftCardViewProps extends DietDraftData {
 
 type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 
+interface DraftEditValues {
+  mealType: MealType;
+  food: string;
+  calories: string;
+  protein: string;
+  carbs: string;
+  fat: string;
+}
+
 function text(value: unknown): string | undefined {
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -139,6 +148,31 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const suggestions = listText(data.suggestions);
   const walkText = postMealWalkText(data.post_meal_walk);
   const boundary = text(data.boundary) || '营养为估算值,确认后写入今日饮食记录。';
+  const publishDraftChange = React.useCallback((overrides: Partial<DraftEditValues> = {}) => {
+    const values: DraftEditValues = {
+      mealType: overrides.mealType ?? draftMealType,
+      food: overrides.food ?? draftFood,
+      calories: overrides.calories ?? draftCalories,
+      protein: overrides.protein ?? draftProtein,
+      carbs: overrides.carbs ?? draftCarbs,
+      fat: overrides.fat ?? draftFat,
+    };
+    const { onDraftChange, ...baseData } = data;
+    const next: DietDraftData = {
+      ...baseData,
+      meal_type: values.mealType,
+      food_items: values.food.trim() || baseData.food_items,
+    };
+    const calories = sanitizeNumberText(values.calories);
+    const protein = sanitizeNumberText(values.protein);
+    const carbs = sanitizeNumberText(values.carbs);
+    const fat = sanitizeNumberText(values.fat);
+    if (calories != null) next.calories = calories;
+    if (protein != null) next.protein = protein;
+    if (carbs != null) next.carbs = carbs;
+    if (fat != null) next.fat = fat;
+    onDraftChange?.(next);
+  }, [data, draftCalories, draftCarbs, draftFat, draftFood, draftMealType, draftProtein]);
 
   return (
     <CardShell
@@ -174,7 +208,10 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
             {(Object.keys(MEAL_LABELS) as MealType[]).map((key) => (
               <Pressable
                 key={key}
-                onPress={() => setDraftMealType(key)}
+                onPress={() => {
+                  setDraftMealType(key);
+                  publishDraftChange({ mealType: key });
+                }}
                 accessibilityRole="button"
                 accessibilityLabel={`餐次 ${MEAL_LABELS[key]}`}
                 style={[
@@ -194,41 +231,63 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
           <TextInput
             accessibilityLabel="食物描述"
             value={draftFood}
-            onChangeText={setDraftFood}
+            onChangeText={(value) => {
+              setDraftFood(value);
+              publishDraftChange({ food: value });
+            }}
             placeholder="食物描述"
             placeholderTextColor={C.ink4}
             multiline
             style={styles.foodInput}
           />
           <View style={styles.editMacroGrid}>
-            <DraftNumberInput label="热量" unit="kcal" value={draftCalories} onChangeText={setDraftCalories} />
-            <DraftNumberInput label="蛋白" unit="g" value={draftProtein} onChangeText={setDraftProtein} />
-            <DraftNumberInput label="碳水" unit="g" value={draftCarbs} onChangeText={setDraftCarbs} />
-            <DraftNumberInput label="脂肪" unit="g" value={draftFat} onChangeText={setDraftFat} />
+            <DraftNumberInput
+              label="热量"
+              unit="kcal"
+              value={draftCalories}
+              onChangeText={(value) => {
+                setDraftCalories(value);
+                publishDraftChange({ calories: value });
+              }}
+            />
+            <DraftNumberInput
+              label="蛋白"
+              unit="g"
+              value={draftProtein}
+              onChangeText={(value) => {
+                setDraftProtein(value);
+                publishDraftChange({ protein: value });
+              }}
+            />
+            <DraftNumberInput
+              label="碳水"
+              unit="g"
+              value={draftCarbs}
+              onChangeText={(value) => {
+                setDraftCarbs(value);
+                publishDraftChange({ carbs: value });
+              }}
+            />
+            <DraftNumberInput
+              label="脂肪"
+              unit="g"
+              value={draftFat}
+              onChangeText={(value) => {
+                setDraftFat(value);
+                publishDraftChange({ fat: value });
+              }}
+            />
           </View>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="应用饮食草稿修正"
+            accessibilityLabel="完成饮食草稿修正"
             style={({ pressed }) => [styles.applyButton, pressed && { opacity: 0.86 }]}
             onPress={() => {
-              const next: DietDraftData = {
-                ...data,
-                meal_type: draftMealType,
-                food_items: draftFood.trim() || data.food_items,
-              };
-              const calories = sanitizeNumberText(draftCalories);
-              const protein = sanitizeNumberText(draftProtein);
-              const carbs = sanitizeNumberText(draftCarbs);
-              const fat = sanitizeNumberText(draftFat);
-              if (calories != null) next.calories = calories;
-              if (protein != null) next.protein = protein;
-              if (carbs != null) next.carbs = carbs;
-              if (fat != null) next.fat = fat;
-              data.onDraftChange?.(next);
+              publishDraftChange();
               setEditing(false);
             }}
           >
-            <Text style={styles.applyButtonText}>应用修正</Text>
+            <Text style={styles.applyButtonText}>完成修正</Text>
           </Pressable>
         </View>
       ) : null}
