@@ -58,4 +58,20 @@ describe('HomeMedicationSummary', () => {
     expect(queryByText('二甲双胍')).toBeNull();
     expect(queryByText('今日用药')).toBeNull();
   });
+
+  it('keeps completed items out of an otherwise pending category', () => {
+    const { getByText, queryByText } = render(
+      <HomeMedicationSummary
+        items={[
+          item({ medication_id: 1, name: '二甲双胍', category: 'medication', taken_count: 2 }),
+          item({ medication_id: 2, name: '降压药', category: 'medication', total_count: 1, taken_count: 0 }),
+        ]}
+      />,
+    );
+
+    expect(getByText('用药')).toBeTruthy();
+    expect(getByText('降压药')).toBeTruthy();
+    expect(queryByText('二甲双胍')).toBeNull();
+    expect(queryByText('查看全部 (2)')).toBeNull();
+  });
 });

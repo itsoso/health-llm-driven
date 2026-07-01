@@ -89,4 +89,17 @@ describe('RevaTimelineStrip', () => {
 
     expect(mockPush).toHaveBeenCalledWith('/agenda');
   });
+
+  it('keeps calendar work blocks out of the Today next-actions strip', () => {
+    mockTimeline.items = [
+      item('work', '年终总结会议', { kind: 'work', driver: 'plan_driven' }),
+      item('water', '补水 300ml'),
+    ];
+
+    const { getByText, queryByText } = render(<RevaTimelineStrip />);
+
+    expect(queryByText('年终总结会议')).toBeNull();
+    expect(getByText('补水 300ml')).toBeTruthy();
+    expect(getByText('待办 1 · 已完成 1')).toBeTruthy();
+  });
 });

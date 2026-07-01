@@ -254,9 +254,12 @@ export default function RevaTimelineStrip({
   // 网络错误 / 无数据 → 不渲染(下方分组各卡自带错误态)
   if (isError || !data) return null;
 
-  // 接下来只展示未完成的 action / advisory / checkup;完成记录留给历史页和计数,不占首页。
+  // 接下来只展示未完成的健康 action / advisory / checkup;完成记录和 CalDAV work 块留给完整 agenda。
   const rows = items.filter(
-    (i) => i.kind !== 'outcome' && i.status !== 'completed' && !excludedTitleKeys.has(titleKey(i.title)),
+    (i) =>
+      (i.kind === 'action' || i.kind === 'advisory' || i.kind === 'checkup') &&
+      i.status !== 'completed' &&
+      !excludedTitleKeys.has(titleKey(i.title)),
   );
   if (rows.length === 0) return null;
 

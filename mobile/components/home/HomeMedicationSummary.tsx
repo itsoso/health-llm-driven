@@ -16,7 +16,6 @@ interface CategorySummary {
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
   items: MedicationTodayItem[];
-  pending: number;
 }
 
 function targetCount(item: MedicationTodayItem): number {
@@ -29,13 +28,13 @@ function summarize(
   icon: keyof typeof Ionicons.glyphMap,
   items: MedicationTodayItem[],
 ): CategorySummary {
-  let pending = 0;
+  const pendingItems: MedicationTodayItem[] = [];
   for (const item of items) {
     const t = targetCount(item);
     const done = Math.min(item.taken_count, t);
-    if (done < t) pending += 1;
+    if (done < t) pendingItems.push(item);
   }
-  return { key, label, icon, items, pending };
+  return { key, label, icon, items: pendingItems };
 }
 
 export default function HomeMedicationSummary({ items, onChanged }: Props) {
@@ -56,12 +55,11 @@ export default function HomeMedicationSummary({ items, onChanged }: Props) {
   );
 
   const categories = [medication, supplement].filter((category) => category.items.length > 0);
-  const pending = categories.filter((category) => category.pending > 0);
-  if (pending.length === 0) return null;
+  if (categories.length === 0) return null;
 
   return (
     <View style={styles.wrap}>
-      {pending.map((category) => (
+      {categories.map((category) => (
         <MedicationCheckin
           key={category.key}
           title={category.label}
