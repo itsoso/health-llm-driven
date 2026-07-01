@@ -193,9 +193,19 @@ public enum ChatTranscriptHTML {
         elapsedMs: Int?,
         llmRounds: Int?,
         sourcesUsed: [String],
-        toolsUsed: [String]
+        toolsUsed: [String],
+        perf: MessagePerf? = nil
     ) -> String {
         var sections: [String] = []
+
+        // 延迟瀑布图:紧跟在 footer 顶部(耗时行之上),给「秒都花哪了」一眼画像。
+        // perf 缺失(老消息 / 老后端)→ 空串 → footer 其余部分行为完全不变。
+        if let perf {
+            let waterfall = latencyWaterfallHTML(perf)
+            if !waterfall.isEmpty {
+                sections.append(waterfall)
+            }
+        }
 
         // 第一行:耗时 · N 轮 · 回答模型 · 工具模型(各自缺则跳过;整行全缺则不输出)。
         var lineParts: [String] = []
@@ -263,6 +273,85 @@ public enum ChatTranscriptHTML {
         default:
             return reason
         }
+    }
+
+    // MARK: - Latency waterfall (每回复级阶段耗时瀑布图)
+
+    /// 渲染一条紧凑的横向色带瀑布图 + 可折叠 `<details>` 明细。段宽按 ms 正比,沿
+    /// `total_ms` 时间线求和。默认收起,只显示色带 + 总耗时;展开显示 7 个 pre-LLM 阶段
+    /// + 逐轮 {生成/工具/工具名}。数据不足(无 total_ms)→ 返回 ""(不渲染)。
+    ///
+    /// 全部走 CSS(段是 flex 子元素,`flex-grow` 承载比例);展开用原生 `<details>`,零 JS。
+    /// 所有动态文本经 `escape(_:)` 防 XSS(与 footer 其余部分同一防线)。
+    static func latencyWaterfallHTML(_ perf: MessagePerf) -> String {
+        let bands = perf.bands()
+        guard !bands.isEmpty, let total = perf.totalMs, total > 0 else { return "" }
+
+        let totalSeconds = String(format: "%.1fs", Double(total) / 1000.0)
+
+        // 色带:每段 flex-grow = ms(相对总时长的比例)。极小段给个下限,避免 0 宽不可见。
+        let segments = bands.map { band -> String in
+            let grow = max(band.ms, 1)
+            let title = "\(band.label) \(msLabel(band.ms))"
+            return "<span class=\"wf-seg wf-\(band.kind.rawValue)\" style=\"flex-grow:\(grow)\" title=\"\(escape(title))\"></span>"
+        }.joined()
+
+        // 图例:只列真正出现的色带,和色带一一对应。
+        let legend = bands.map { band -> String in
+            "<span class=\"wf-legend-item\"><span class=\"wf-dot wf-\(band.kind.rawValue)\"></span>\(escape(band.label)) \(escape(msLabel(band.ms)))</span>"
+        }.joined()
+
+        // 展开明细:7 个 pre-LLM 阶段(非零)+ 逐轮生成/工具。
+        var detailRows = ""
+        if let stages = perf.preLLMStages {
+            let stageItems = stages.orderedNonZero
+            if !stageItems.isEmpty {
+                let rows = stageItems.map { item in
+                    "<div class=\"wf-detail-row\"><span>\(escape(item.label))</span><span>\(escape(msLabel(item.ms)))</span></div>"
+                }.joined()
+                detailRows += "<div class=\"wf-detail-group\"><div class=\"wf-detail-head\">组装阶段</div>\(rows)</div>"
+            }
+        }
+        if !perf.rounds.isEmpty {
+            let rows = perf.rounds.enumerated().map { index, round -> String in
+                let gen = msLabel(round.llmGenMs ?? 0)
+                let tool = msLabel(round.toolExecMs ?? 0)
+                let toolNames = round.tools.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                let toolsSuffix = toolNames.isEmpty ? "" : " · " + toolNames.joined(separator: ", ")
+                let label = "第 \(index + 1) 轮"
+                let value = "生成 \(gen) · 工具 \(tool)\(toolsSuffix)"
+                return "<div class=\"wf-detail-row\"><span>\(escape(label))</span><span>\(escape(value))</span></div>"
+            }.joined()
+            detailRows += "<div class=\"wf-detail-group\"><div class=\"wf-detail-head\">LLM 轮次</div>\(rows)</div>"
+        }
+
+        // 无任何明细可展开时,退化为纯色带(不套 <details>,避免空展开)。
+        if detailRows.isEmpty {
+            return """
+            <div class="latency-waterfall">
+              <div class="wf-summary-static"><span class="wf-title">延迟</span><span class="wf-total">\(escape(totalSeconds))</span></div>
+              <div class="wf-bar">\(segments)</div>
+              <div class="wf-legend">\(legend)</div>
+            </div>
+            """
+        }
+
+        return """
+        <details class="latency-waterfall">
+          <summary class="wf-summary"><span class="wf-title">延迟</span><span class="wf-total">\(escape(totalSeconds))</span><span class="wf-hint">明细</span></summary>
+          <div class="wf-bar">\(segments)</div>
+          <div class="wf-legend">\(legend)</div>
+          <div class="wf-detail">\(detailRows)</div>
+        </details>
+        """
+    }
+
+    /// 把毫秒格式化为紧凑标签:≥1000ms → "x.xs";否则 "Nms"。
+    private static func msLabel(_ ms: Int) -> String {
+        if ms >= 1000 {
+            return String(format: "%.1fs", Double(ms) / 1000.0)
+        }
+        return "\(ms)ms"
     }
 
     // MARK: - Attached images

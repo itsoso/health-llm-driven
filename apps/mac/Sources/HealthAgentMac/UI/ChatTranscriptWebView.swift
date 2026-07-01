@@ -169,3 +169,81 @@ struct ChatTranscriptWebView: NSViewRepresentable {
         """
     }
 }
+
+// MARK: - Latency waterfall preview fixtures
+//
+// The Mac app points at the production backend, which isn't yet redeployed with
+// the perf contract — so there's no live perf to eyeball. These fixtures drive the
+// real WebView render path (`metaFooterHTML` → HTML/CSS in chat-transcript.html)
+// so the waterfall can be inspected in the SwiftUI canvas offline.
+
+/// A short assistant reply carrying a representative `perf` (fast path, no tools):
+/// total 4.2s dominated by KB retrieval (1.4s) + system prompt (0.9s), then a
+/// 0.7s first-token wait and 0.9s generation. Proves gray/amber/green bands.
+private func previewFastPathMessage() -> ChatTranscriptHTML.RenderedMessage {
+    let perf = MessagePerf(
+        totalMs: 4200, preLLMMs: 2600,
+        preLLMStages: .init(
+            convMs: 40, openerMs: 20, systemPromptMs: 900,
+            kbMs: 1400, inspectMs: 120, historyMs: 80, visionMs: 40
+        ),
+        llmTTFTMs: 3300, llmFullMs: 1500,
+        rounds: [.init(llmGenMs: 1500, toolExecMs: 0, tools: [])],
+        orchestratorToolMs: nil
+    )
+    let footer = ChatTranscriptHTML.metaFooterHTML(
+        model: "gpt-5.5", answerModel: "gpt-5.5",
+        elapsedMs: 4200, llmRounds: 1,
+        sourcesUsed: ["Garmin", "系统知识库"], toolsUsed: [],
+        perf: perf
+    )
+    return ChatTranscriptHTML.RenderedMessage(
+        id: "preview-fast",
+        role: "assistant",
+        bodyHTML: "<p>你的 HRV 最近 7 天中位数 62ms，处于个人基线正常带；今天恢复度偏好中等强度训练。</p>",
+        isStreaming: false, showCopy: true, footerHTML: footer
+    )
+}
+
+/// A reply that went through the orchestrator subtree: a 38s "silent" specialist
+/// fan-out dwarfs everything else (total 45s). Proves the red orchestrator band
+/// plus a blue tool-exec band and a per-round tool name in the expanded detail.
+private func previewOrchestratorMessage() -> ChatTranscriptHTML.RenderedMessage {
+    let perf = MessagePerf(
+        totalMs: 45000, preLLMMs: 2000,
+        preLLMStages: .init(systemPromptMs: 700, kbMs: 800, inspectMs: 500),
+        llmTTFTMs: 6000, llmFullMs: 1000,
+        rounds: [.init(llmGenMs: 1000, toolExecMs: 3000, tools: ["twin_lookup", "safety_scan"])],
+        orchestratorToolMs: 38000
+    )
+    let footer = ChatTranscriptHTML.metaFooterHTML(
+        model: "claude-opus-4.7", answerModel: "claude-opus-4.7",
+        toolModels: ["gpt-5.5"], elapsedMs: 45000, llmRounds: 1,
+        sourcesUsed: ["Garmin", "化验", "基因"], toolsUsed: ["health_query"],
+        perf: perf
+    )
+    return ChatTranscriptHTML.RenderedMessage(
+        id: "preview-orch",
+        role: "assistant",
+        bodyHTML: "<p>综合恢复、代谢与安全专家的分析：本周训练负荷偏高（ACWR 1.4），建议插入一天低强度恢复日。</p>",
+        isStreaming: false, showCopy: true, footerHTML: footer
+    )
+}
+
+#Preview("延迟瀑布图 · 快路径 + 编排子树") {
+    ChatTranscriptWebView(
+        messages: [
+            ChatTranscriptHTML.RenderedMessage(
+                id: "preview-user",
+                role: "user",
+                bodyHTML: "<p class=\"streaming-text\">我今天恢复得怎么样？</p>",
+                isStreaming: false, showCopy: false
+            ),
+            previewFastPathMessage(),
+            previewOrchestratorMessage()
+        ],
+        fontScale: 1.0,
+        onCopy: { _ in }
+    )
+    .frame(width: 560, height: 520)
+}

@@ -43,6 +43,8 @@ struct BackendConversationMessageMeta: Decodable, Sendable {
     let sourcesUsed: [String]
     let toolsUsed: [String]
     let completionStatus: String?
+    /// 每回复级阶段耗时(后端 message.meta.perf)。老消息缺失 → nil → footer 不变。
+    let perf: MessagePerf?
     let cards: [AgentDynamicCardDescriptor]
     let cardType: String?
     let cardData: AgentDynamicCardValue?
@@ -68,6 +70,7 @@ struct BackendConversationMessageMeta: Decodable, Sendable {
         case sourcesUsed = "sources_used"
         case toolsUsed = "tools_used"
         case completionStatus = "completion_status"
+        case perf
         case cards
         case cardType = "card_type"
         case cardData = "card_data"
@@ -85,6 +88,7 @@ struct BackendConversationMessageMeta: Decodable, Sendable {
         sourcesUsed = (try? c.decode([String].self, forKey: .sourcesUsed)) ?? []
         toolsUsed = (try? c.decode([String].self, forKey: .toolsUsed)) ?? []
         completionStatus = try? c.decode(String.self, forKey: .completionStatus)
+        perf = try? c.decode(MessagePerf.self, forKey: .perf)
         cards = (try? c.decode([AgentDynamicCardDescriptor].self, forKey: .cards)) ?? []
         cardType = try? c.decode(String.self, forKey: .cardType)
         cardData = try? c.decode(AgentDynamicCardValue.self, forKey: .cardData)
@@ -191,6 +195,7 @@ public final class AgentConversationClient: AgentConversationRemoteSourcing, @un
             sourcesUsed: dto.meta?.sourcesUsed ?? [],
             toolsUsed: dto.meta?.toolsUsed ?? [],
             completionStatus: dto.meta?.completionStatus,
+            perf: dto.meta?.perf,
             cardType: card?.type,
             cardData: card?.data,
             remoteImageURLs: imageURLStrings(from: dto.image_url, baseURL: baseURL)

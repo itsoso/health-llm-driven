@@ -26,6 +26,13 @@
     --code-bg: rgba(120, 120, 128, 0.14);
     --table-border: rgba(120, 120, 128, 0.28);
     --hr: rgba(120, 120, 128, 0.3);
+
+    /* latency waterfall band colors (pre-LLM 灰 / TTFT 琥珀 / 生成 绿 / 工具 蓝 / 分析 红) */
+    --wf-prellm: rgba(120, 120, 128, 0.55);
+    --wf-ttft: #f5a623;
+    --wf-gen: #34c759;
+    --wf-tool: #0a84ff;
+    --wf-orch: #ff3b30;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -39,6 +46,12 @@
       --code-bg: rgba(255, 255, 255, 0.10);
       --table-border: rgba(255, 255, 255, 0.18);
       --hr: rgba(255, 255, 255, 0.16);
+
+      --wf-prellm: rgba(160, 160, 168, 0.55);
+      --wf-ttft: #ffb340;
+      --wf-gen: #30d158;
+      --wf-tool: #4aa3ff;
+      --wf-orch: #ff453a;
     }
   }
 
@@ -401,6 +414,86 @@
     color: var(--secondary);
     font-size: 0.95em;
   }
+
+  /* 延迟瀑布图:紧凑色带 + 可折叠明细(tap 展开逐阶段/逐轮耗时) */
+  .latency-waterfall {
+    margin: 2px 0 4px;
+    font-size: 1em;
+    color: var(--secondary);
+  }
+  .latency-waterfall .wf-summary,
+  .latency-waterfall .wf-summary-static {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+  }
+  .latency-waterfall .wf-summary-static { cursor: default; }
+  .latency-waterfall > summary::-webkit-details-marker { display: none; }
+  .latency-waterfall .wf-title { color: var(--secondary); }
+  .latency-waterfall .wf-total { color: var(--text); font-weight: 600; }
+  .latency-waterfall .wf-hint {
+    margin-left: auto;
+    color: var(--secondary);
+    font-size: 0.9em;
+  }
+  .latency-waterfall .wf-hint::before { content: "▸ "; }
+  .latency-waterfall[open] .wf-hint::before { content: "▾ "; }
+  /* 色带:flex 布局,段宽由内联 flex-grow(∝ ms)驱动 */
+  .latency-waterfall .wf-bar {
+    display: flex;
+    width: 100%;
+    height: 12px;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--hr);
+  }
+  .latency-waterfall .wf-seg { display: block; height: 100%; flex-basis: 0; min-width: 2px; }
+  .latency-waterfall .wf-seg + .wf-seg { border-left: 1px solid rgba(255, 255, 255, 0.18); }
+  .wf-prellm { background: var(--wf-prellm); }
+  .wf-ttft { background: var(--wf-ttft); }
+  .wf-gen { background: var(--wf-gen); }
+  .wf-tool { background: var(--wf-tool); }
+  .wf-orch { background: var(--wf-orch); }
+  /* 图例:小圆点 + 标签,与出现的色带一一对应 */
+  .latency-waterfall .wf-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    margin-top: 5px;
+    font-size: 0.9em;
+  }
+  .latency-waterfall .wf-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--secondary);
+  }
+  .latency-waterfall .wf-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+  }
+  /* 展开明细:分组(组装阶段 / LLM 轮次),每行 label + 值两端对齐 */
+  .latency-waterfall .wf-detail { margin-top: 8px; }
+  .latency-waterfall .wf-detail-group + .wf-detail-group { margin-top: 6px; }
+  .latency-waterfall .wf-detail-head {
+    color: var(--secondary);
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .latency-waterfall .wf-detail-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 1px 0;
+  }
+  .latency-waterfall .wf-detail-row > span:first-child { color: var(--secondary); }
+  .latency-waterfall .wf-detail-row > span:last-child { color: var(--text); text-align: right; }
 
   /* GenUI reva-ui 折线图 / 空状态(JS 自绘,离线;占位 div 由 Swift 注入) */
   .reva-ui-chart {

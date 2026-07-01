@@ -5,6 +5,11 @@ public enum AgentStreamEvent: Equatable, Sendable {
     case token(String)
     case tool(name: String?, success: Bool?)
     case toolDetails(AgentToolEvent)
+    /// Mid-stream perf hint (`perf_pre_llm`): arrives right when prompt assembly
+    /// finishes, before the first token. Optional — old backends never emit it.
+    /// The main waterfall renders from the final `done.perf`; this is only a live
+    /// "assembling…" signal.
+    case perfPreLLM(preLLMMs: Int?, stages: MessagePerf.PreLLMStages?)
     case done(
         conversationID: Int?,
         messageID: Int?,
@@ -18,7 +23,10 @@ public enum AgentStreamEvent: Equatable, Sendable {
         toolsUsed: [String],
         elapsedMs: Int?,
         llmRounds: Int?,
-        cards: [AgentDynamicCardDescriptor] = []
+        cards: [AgentDynamicCardDescriptor] = [],
+        // Per-answer stage-timing perf. Absent on old backends → nil → footer
+        // renders unchanged (full back-compat).
+        perf: MessagePerf? = nil
     )
     case error(String)
 }
@@ -96,6 +104,11 @@ public enum AgentStreamParser {
                         result: eventData?["result"] as? String,
                         round: eventData?["round"] as? Int
                     ))
+                case "perf_pre_llm":
+                    return .perfPreLLM(
+                        preLLMMs: eventData?["pre_llm_ms"] as? Int,
+                        stages: decode(MessagePerf.PreLLMStages.self, from: eventData?["stages"])
+                    )
                 case "done":
                     return .done(
                         conversationID: eventData?["conversation_id"] as? Int,
@@ -116,7 +129,9 @@ public enum AgentStreamParser {
                             cards: eventData?["cards"],
                             cardType: eventData?["card_type"],
                             cardData: eventData?["card_data"]
-                        )
+                        ),
+                        // perf absent on old backends → nil → footer unchanged.
+                        perf: decode(MessagePerf.self, from: eventData?["perf"])
                     )
                 case "error":
                     return .error(eventData?["message"] as? String ?? "Unknown stream error")
@@ -140,6 +155,20 @@ public enum AgentStreamParser {
             }
         }
         return []
+    }
+
+    /// Bridges a `JSONSerialization`-produced value (dict / array) back into a
+    /// `Codable` type by re-serializing and decoding. Returns nil on any mismatch
+    /// (missing object, non-JSON value, decode failure) so a malformed / absent
+    /// `perf` never crashes the stream — it just renders the plain footer.
+    private static func decode<T: Decodable>(_ type: T.Type, from value: Any?) -> T? {
+        guard let value,
+              !(value is NSNull),
+              JSONSerialization.isValidJSONObject(value),
+              let data = try? JSONSerialization.data(withJSONObject: value) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(T.self, from: data)
     }
 
     private static func normalizedJSONString(_ value: Any?) -> String? {

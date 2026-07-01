@@ -41,6 +41,9 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
     public var toolsUsed: [String]
     /// 完成状态(后端 done.completion_status,如 "complete" / "partial")。
     public var completionStatus: String?
+    /// 每回复级阶段耗时(后端 done.perf,持久化在 message.meta.perf)。用于渲染延迟瀑布图。
+    /// 老消息缺失 → nil → footer 行为不变(完整向后兼容)。
+    public var perf: MessagePerf?
 
     /// 是否有任何可展示的 meta(footer 是否需要渲染)。
     public var hasMeta: Bool {
@@ -48,6 +51,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
             || selectedModel != nil || answerModel != nil
             || !toolModels.isEmpty || !fallbackReasons.isEmpty
             || !sourcesUsed.isEmpty || !toolsUsed.isEmpty
+            || (perf?.isRenderable ?? false)
     }
 
     public init(
@@ -64,6 +68,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         sourcesUsed: [String] = [],
         toolsUsed: [String] = [],
         completionStatus: String? = nil,
+        perf: MessagePerf? = nil,
         cardType: String? = nil,
         cardData: AgentDynamicCardValue? = nil,
         remoteImageURLs: [String] = []
@@ -84,11 +89,12 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.sourcesUsed = sourcesUsed
         self.toolsUsed = toolsUsed
         self.completionStatus = completionStatus
+        self.perf = perf
     }
 
     // 显式 Codable:历史快照(老版本无这些字段)用 decodeIfPresent 容错;数组缺失 → 空。
     private enum CodingKeys: String, CodingKey {
-        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, sourcesUsed, toolsUsed, completionStatus, cardType, cardData
+        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, sourcesUsed, toolsUsed, completionStatus, perf, cardType, cardData
         case cardTypeSnake = "card_type"
         case cardDataSnake = "card_data"
     }
@@ -109,6 +115,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.sourcesUsed = try c.decodeIfPresent([String].self, forKey: .sourcesUsed) ?? []
         self.toolsUsed = try c.decodeIfPresent([String].self, forKey: .toolsUsed) ?? []
         self.completionStatus = try c.decodeIfPresent(String.self, forKey: .completionStatus)
+        self.perf = try c.decodeIfPresent(MessagePerf.self, forKey: .perf)
         self.cardType = try c.decodeIfPresent(String.self, forKey: .cardType)
             ?? c.decodeIfPresent(String.self, forKey: .cardTypeSnake)
         self.cardData = try c.decodeIfPresent(AgentDynamicCardValue.self, forKey: .cardData)
@@ -131,6 +138,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         try c.encode(sourcesUsed, forKey: .sourcesUsed)
         try c.encode(toolsUsed, forKey: .toolsUsed)
         try c.encodeIfPresent(completionStatus, forKey: .completionStatus)
+        try c.encodeIfPresent(perf, forKey: .perf)
         try c.encodeIfPresent(cardType, forKey: .cardType)
         try c.encodeIfPresent(cardData, forKey: .cardData)
     }
@@ -623,6 +631,9 @@ public final class AgentChatViewModel {
     public var lastCompletionStatus: String?
     public var lastModel: String?
     public var lastSourcesUsed: [String] = []
+    /// 流式中的中途 perf 提示(perf_pre_llm);done 到达后清空。目前仅暂存,供未来
+    /// 「组装中…」实时提示消费——主瀑布图始终从最终 message.perf 渲染。
+    public var livePreLLMPerf: MessagePerf?
     public var lastPrompt: String?
     public var preparedDraft: String?
     public var contextItems: [AgentContextItem] = []
@@ -871,7 +882,11 @@ public final class AgentChatViewModel {
                     ))
                 case .toolDetails(let toolEvent):
                     applyToolEvent(toolEvent)
-                case .done(let id, _, let completionStatus, let model, let selectedModel, let answerModel, let toolModels, let fallbackReasons, let sourcesUsed, let toolsUsed, let elapsedMs, let llmRounds, let cards):
+                case .perfPreLLM(let preLLMMs, let stages):
+                    // 中途 perf 提示:仅暂存(prompt 组装刚完成,首 token 前)。主瀑布图从
+                    // 最终 done.perf 渲染;这里让「组装中…」等实时提示未来有据可依。
+                    livePreLLMPerf = MessagePerf(preLLMMs: preLLMMs, preLLMStages: stages)
+                case .done(let id, _, let completionStatus, let model, let selectedModel, let answerModel, let toolModels, let fallbackReasons, let sourcesUsed, let toolsUsed, let elapsedMs, let llmRounds, let cards, let perf):
                     conversationID = id ?? conversationID
                     lastCompletionStatus = completionStatus
                     lastModel = answerModel ?? model
@@ -893,11 +908,14 @@ public final class AgentChatViewModel {
                             incoming: toolsUsed
                         )
                         messages[idx].completionStatus = completionStatus
+                        // perf 缺失(老后端)→ 保留 nil,footer 行为不变。
+                        if let perf { messages[idx].perf = perf }
                         if messages[idx].cardType == nil, let firstCard = cards.first {
                             messages[idx].cardType = firstCard.type
                             messages[idx].cardData = firstCard.data
                         }
                     }
+                    livePreLLMPerf = nil
                     runState = .completed
                 case .error(let message):
                     errorMessage = message
@@ -1246,7 +1264,8 @@ public final class AgentChatViewModel {
                     elapsedMs: message.elapsedMs,
                     llmRounds: message.llmRounds,
                     sourcesUsed: message.sourcesUsed,
-                    toolsUsed: message.toolsUsed
+                    toolsUsed: message.toolsUsed,
+                    perf: message.perf
                 )
             } else {
                 footerHTML = ""
