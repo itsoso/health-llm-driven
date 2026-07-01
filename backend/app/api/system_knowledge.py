@@ -252,6 +252,59 @@ def get_system_knowledge_graph(
     return result
 
 
+@admin_router.post(
+    "/reconciliation/scan",
+    summary="跨源对账 detector 扫描(Phase B P3;只写候选旁路表,零 serving mutation)",
+)
+def scan_reconciliation_candidates(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    # P3:确定性 detector 只读 kb_documents 找跨源重叠,只写 kb_reconciliation_candidate 旁路表。
+    # 零 kb_documents/kb_edges mutation、零 auto-approve、零 merge(那些在 P4/P5,过 eval 才开)。
+    from app.services.kb_reconciliation import detect_reconciliation_candidates
+
+    result = detect_reconciliation_candidates(db, actor=f"admin:{admin_user.id}")
+    _record_audit(
+        db,
+        doc_id=None,
+        op="reconciliation_scan",
+        actor=f"admin:{admin_user.id}",
+        diff={
+            "created": result.get("created"),
+            "skipped_existing": result.get("skipped_existing"),
+            "truncated": result.get("truncated"),
+            "total_open": result.get("total_open"),
+        },
+    )
+    return result
+
+
+@admin_router.get(
+    "/reconciliation/candidates",
+    summary="跨源对账候选队列(Phase B P3;只读)",
+)
+def get_reconciliation_candidates(
+    status: str | None = Query("open", description="open|approved|rejected|deferred"),
+    kind: str | None = Query(None, description="entity_align|claim_overlap"),
+    relation_tag: str | None = Query(None, description="duplicate|agree|conflict|complementary"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    from app.services.kb_reconciliation import list_reconciliation_candidates
+
+    return list_reconciliation_candidates(
+        db,
+        status=status,
+        kind=kind,
+        relation_tag=relation_tag,
+        limit=limit,
+        offset=offset,
+    )
+
+
 @admin_router.get("/eval_report", summary="系统知识库 eval case 运行报告")
 def get_system_knowledge_eval_report(
     case_id: list[str] | None = Query(None),
