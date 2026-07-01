@@ -146,6 +146,7 @@ Pre-release review notes:
 - Health score: `60/60 PASS`.
 - Skills manifest: local 22 = online 22.
 - Mobile OTA: production branch, runtime `1.3.1`, update group `59d8577f-8264-4aa9-98f0-e30bb5bf8f95`, iOS update `019f17ff-34e6-7802-b443-874c7d6b7226`.
+- Follow-up Mobile OTA for action-state feedback: production branch, runtime `1.3.1`, update group `a2a87b94-bc48-4870-86b4-42e5c0db907e`, iOS update `019f1bb2-f9f4-738d-ac62-434ce2d3570d`, commit `501f2e19e28cd20d116240194096bad6f3bd75ac`, message `Chat card action feedback`.
 
 ## G6 · 上线验证
 
@@ -153,6 +154,7 @@ Pre-release review notes:
 
 - Production route check: unauthenticated `POST /api/v1/agent/stream` on `127.0.0.1:8000` returned `401`, confirming service reachability and auth boundary.
 - OTA dashboard: https://expo.dev/accounts/itsoso/projects/health-pilot/updates/59d8577f-8264-4aa9-98f0-e30bb5bf8f95
+- Follow-up OTA dashboard: https://expo.dev/accounts/itsoso/projects/health-pilot/updates/a2a87b94-bc48-4870-86b4-42e5c0db907e
 
 ## S8 · 沉淀
 
