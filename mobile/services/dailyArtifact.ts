@@ -94,6 +94,12 @@ export interface DailyArtifactEventResult {
   created_at?: string | null;
 }
 
+export interface DailyArtifactDetailOptions {
+  date?: string | null;
+  actionId?: string | null;
+  followupWithinDays?: number;
+}
+
 const DEFAULT_STATE: DailyArtifactState = {
   label: '今日状态',
   tone: 'neutral',
@@ -105,6 +111,21 @@ export async function getDailyArtifact(followupWithinDays = 7): Promise<DailyArt
     params: { followup_within_days: followupWithinDays },
   });
   return normalizeDailyArtifact(data);
+}
+
+export async function getDailyArtifactDetail(
+  options: DailyArtifactDetailOptions = {},
+): Promise<DailyArtifact | null> {
+  const params: Record<string, string | number> = {};
+  if (options.date) params.artifact_date = options.date;
+  params.followup_within_days = options.followupWithinDays ?? 7;
+  if (options.actionId) params.top_action_id = options.actionId;
+
+  const { data } = await api.get<Partial<DailyArtifact>>('/daily-artifact/me', { params });
+  const artifact = normalizeDailyArtifact(data);
+  if (options.date && artifact.artifact_date !== options.date) return null;
+  if (options.actionId && artifact.top_action?.id !== options.actionId) return null;
+  return artifact;
 }
 
 export async function recordDailyArtifactEvent(

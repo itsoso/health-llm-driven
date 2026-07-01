@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -7,8 +7,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   buildDailyArtifactBasisChatRoute,
+  createDailyArtifactChatContext,
   parseDailyArtifactDetailPayload,
 } from '../../utils/dailyArtifactNavigation';
+import { getDailyArtifactDetail } from '../../services/dailyArtifact';
 import { formatHealthActionTitle } from '../../utils/actionCopy';
 import {
   revaColors as C,
@@ -27,10 +29,47 @@ type DetailEvidence = {
 
 export default function DailyArtifactDetailScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ artifact?: string; date?: string }>();
-  const payload = useMemo(() => parseDailyArtifactDetailPayload(params.artifact), [params.artifact]);
+  const params = useLocalSearchParams<{ artifact?: string; date?: string; actionId?: string }>();
+  const routePayload = useMemo(() => parseDailyArtifactDetailPayload(params.artifact), [params.artifact]);
+  const [recoveredPayload, setRecoveredPayload] = useState<AgentContextPayload | null>(null);
+  const [recovering, setRecovering] = useState(false);
+  const payload = routePayload ?? recoveredPayload;
+
+  useEffect(() => {
+    if (routePayload) return;
+    const date = stringParam(params.date);
+    if (!date) return;
+    let cancelled = false;
+    setRecovering(true);
+    getDailyArtifactDetail({ date, actionId: stringParam(params.actionId) })
+      .then((artifact) => {
+        if (cancelled) return;
+        setRecoveredPayload(artifact ? createDailyArtifactChatContext(artifact, 'explain_basis') : null);
+      })
+      .catch(() => {
+        if (!cancelled) setRecoveredPayload(null);
+      })
+      .finally(() => {
+        if (!cancelled) setRecovering(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [params.actionId, params.date, routePayload]);
 
   if (!payload) {
+    if (recovering) {
+      return (
+        <SafeAreaView style={styles.safe} edges={['top']}>
+          <StatusBar style="dark" />
+          <View style={styles.empty}>
+            <ActivityIndicator color={C.green600} />
+            <Text style={styles.emptyTitle}>今日行动解读</Text>
+            <Text style={styles.emptyText}>正在恢复这条行动的决策依据。</Text>
+          </View>
+        </SafeAreaView>
+      );
+    }
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
         <StatusBar style="dark" />
@@ -206,6 +245,11 @@ function arrayValue(value: unknown): unknown[] {
 
 function stringValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function stringParam(value: unknown): string | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
 }
 
 function uniqueValues(values: (string | null)[]): string[] {

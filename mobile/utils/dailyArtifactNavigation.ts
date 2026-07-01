@@ -31,6 +31,7 @@ export function buildDailyArtifactBasisRoute(artifact: DailyArtifact) {
     pathname: '/daily-artifact/[date]' as const,
     params: {
       date: artifact.artifact_date || 'today',
+      actionId: artifact.top_action?.id ?? undefined,
       artifact: serializeAgentContext(createDailyArtifactChatContext(artifact, 'explain_basis')),
     },
   };

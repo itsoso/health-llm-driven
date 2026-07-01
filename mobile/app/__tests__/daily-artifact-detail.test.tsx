@@ -1,8 +1,9 @@
 /* eslint-disable import/first */
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import type { DailyArtifact } from '../../services/dailyArtifact';
+import { getDailyArtifactDetail } from '../../services/dailyArtifact';
 import { buildDailyArtifactBasisRoute } from '../../utils/dailyArtifactNavigation';
 
 const mockBack = jest.fn();
@@ -22,7 +23,13 @@ jest.mock('@expo/vector-icons', () => ({
   Ionicons: 'Ionicons',
 }));
 
+jest.mock('../../services/dailyArtifact', () => ({
+  getDailyArtifactDetail: jest.fn(),
+}));
+
 import DailyArtifactDetailScreen from '../daily-artifact/[date]';
+
+const mockGetDailyArtifactDetail = getDailyArtifactDetail as jest.MockedFunction<typeof getDailyArtifactDetail>;
 
 function makeArtifact(overrides: Partial<DailyArtifact> = {}): DailyArtifact {
   return {
@@ -55,6 +62,7 @@ describe('DailyArtifactDetailScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockParams = {};
+    mockGetDailyArtifactDetail.mockResolvedValue(null);
   });
 
   it('renders the decision basis, execution guidance, verification plan, and safety boundary', () => {
@@ -87,5 +95,20 @@ describe('DailyArtifactDetailScreen', () => {
     expect(pushed.params.prompt).toContain('决策依据');
     expect(pushed.params.context).toContain('"intent":"explain_basis"');
     expect(pushed.params.context).toContain('睡眠和恢复不足');
+  });
+
+  it('recovers the detail from date and action id when route payload is absent', async () => {
+    mockParams = { date: '2026-06-29', actionId: 'today-recovery' };
+    mockGetDailyArtifactDetail.mockResolvedValue(makeArtifact());
+
+    const { getByText } = render(<DailyArtifactDetailScreen />);
+
+    await waitFor(() => {
+      expect(getByText('恢复/休息:暂停高强度;优先睡眠与轻活动')).toBeTruthy();
+    });
+    expect(mockGetDailyArtifactDetail).toHaveBeenCalledWith({
+      date: '2026-06-29',
+      actionId: 'today-recovery',
+    });
   });
 });

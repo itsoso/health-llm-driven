@@ -1,5 +1,6 @@
 import api from '../api';
 import {
+  getDailyArtifactDetail,
   getDailyArtifact,
   recordDailyArtifactEvent,
 } from '../dailyArtifact';
@@ -62,6 +63,39 @@ describe('dailyArtifact service', () => {
     expect(artifact.top_action?.runtime_context?.replan_reason).toBe('today_smart_rank');
     expect(artifact.evidence).toHaveLength(3);
     expect(artifact.state.label).toBe('今日最重要行动');
+  });
+
+  it('loads a recoverable Daily Artifact detail by date and action id', async () => {
+    (api.get as jest.Mock).mockResolvedValue({
+      data: {
+        artifact_date: '2026-06-29',
+        empty_state: false,
+        state: { label: '今日最重要行动', tone: 'focused', summary: '先恢复。' },
+        top_action: {
+          id: 'today-recovery',
+          title: '今日训练:今天恢复/休息,暂停高强度;优先睡眠与轻活动',
+        },
+        evidence: [{ kind: 'why_now', label: 'Why now', summary: '恢复不足。' }],
+        confidence: 'high',
+        freshness: { status: 'fresh', sources: ['runtime'] },
+        safety_boundary: '健康管理行动建议。',
+      },
+    });
+
+    const artifact = await getDailyArtifactDetail({
+      date: '2026-06-29',
+      actionId: 'today-recovery',
+    });
+
+    expect(api.get).toHaveBeenCalledWith('/daily-artifact/me', {
+      params: {
+        artifact_date: '2026-06-29',
+        followup_within_days: 7,
+        top_action_id: 'today-recovery',
+      },
+    });
+    expect(artifact?.artifact_date).toBe('2026-06-29');
+    expect(artifact?.top_action?.id).toBe('today-recovery');
   });
 
   it('posts artifact events with snake_case payload', async () => {

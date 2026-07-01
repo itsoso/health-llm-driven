@@ -58,6 +58,7 @@ describe('dailyArtifactNavigation', () => {
 
     expect(route.pathname).toBe('/daily-artifact/[date]');
     expect(route.params.date).toBe('2026-06-29');
+    expect(route.params.actionId).toBe('today-training');
     const payload = JSON.parse(route.params.artifact);
     expect(payload.intent).toBe('explain_basis');
     expect(payload.evidence).toHaveLength(2);
