@@ -1848,7 +1848,23 @@ class AgentExecutor:
         # 可解释性: 记录本次回答用到的数据源. 必须在 system prompt / inspection 前初始化.
         sources_used: list = []
 
+        # 2026-07-01: PURE-MEASUREMENT 阶段级性能埋点 (镜像 orchestrator.py [perf.orchestrator]).
+        # 目标: 找 pre-first-token 阶段瓶颈 + 驱动 mac 端 waterfall。**绝不改任何行为**。
+        # fail-soft: 每个计时点用 _pre_stage() 包起来, 计时异常不影响主流程 (返回 0)。
+        pre_stages: Dict[str, int] = {
+            "conv_ms": 0, "opener_ms": 0, "system_prompt_ms": 0,
+            "kb_ms": 0, "inspect_ms": 0, "history_ms": 0, "vision_ms": 0,
+        }
+
+        def _pre_stage(_t0: float) -> int:
+            """time.time() delta → int ms, 永不抛 (计时 bug 不能断流)。"""
+            try:
+                return int((time.time() - _t0) * 1000)
+            except Exception:  # noqa: BLE001
+                return 0
+
         # 1. 获取或创建会话（复用 OpenClaw 的对话管理）
+        _t_stage = time.time()
         from app.services.openclaw_service import OpenClawService
         svc = OpenClawService(self.db)
         conv = svc.get_or_create_conversation(user_id, conversation_id, title=message)
@@ -1866,7 +1882,9 @@ class AgentExecutor:
             user_content += f"\n[附件: {file_name}]"
         image_url_value = json.dumps(saved_image_urls) if saved_image_urls else None
         svc.save_message(conv.id, "user", user_content, image_url=image_url_value)
+        pre_stages["conv_ms"] = _pre_stage(_t_stage)
 
+        _t_stage = time.time()
         opener_quick_reply_note = None
         try:
             from app.services.opener_quick_reply import apply_opener_quick_reply_context
@@ -1879,9 +1897,12 @@ class AgentExecutor:
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[agent_executor] opener quick reply context failed: {e}")
+        pre_stages["opener_ms"] = _pre_stage(_t_stage)
 
         # 2. 构建 system prompt（复用健康上下文）
+        _t_stage = time.time()
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
+        pre_stages["system_prompt_ms"] = _pre_stage(_t_stage)
         if opener_quick_reply_note:
             system_content += (
                 "\n\n## 入口动作处理结果\n"
@@ -1906,19 +1927,24 @@ class AgentExecutor:
                 "不要重新生成方案; 引用条目名称时跟用户已看见的一致.\n"
                 f"```\n{extra_context.strip()[:4000]}\n```"
             )
+        _t_stage = time.time()
         system_kb_context = self._build_system_knowledge_prompt_context(user_id, message)
+        pre_stages["kb_ms"] = _pre_stage(_t_stage)
         if system_kb_context:
             system_content += f"\n\n{system_kb_context}"
             if "系统知识库" not in sources_used:
                 sources_used.append("系统知识库")
         # 2026-05-14: 用户数据源 inspection — 不依赖 system_prompt 实际用了什么,
         # 直接 SQL count 用户哪些表有数据, 给"AI 用了什么数据"chip 用.
+        _t_stage = time.time()
         try:
             sources_used.extend(_inspect_user_data_sources(self.db, user_id))
         except Exception as e:
             logger.warning(f"[sources_used] inspect failed: {e}")
+        pre_stages["inspect_ms"] = _pre_stage(_t_stage)
 
         # 3. 构建对话历史
+        _t_stage = time.time()
         messages = svc.build_messages(conv.id, limit=15)
         # 确定性护栏 (R4): 历史里助手消息带过 ```reva-ui``` 图表 block —— 若原样喂回
         # LLM, 它会**模仿**这个格式并**编造**图表数据 (实测: 编 "Apple Watch + Garmin +
@@ -1928,9 +1954,11 @@ class AgentExecutor:
             if _m.get("role") == "assistant" and _m.get("content"):
                 _m["content"] = _placeholder_reva_ui_in_history(_m["content"])
         messages.insert(0, {"role": "system", "content": system_content})
+        pre_stages["history_ms"] = _pre_stage(_t_stage)
 
         # 如果有图片：LangBridge 商用模型自身支持多模态，必须直接传原图；
         # 其它模型保留原来的"先用独立 vision 识别，再降级直传"路径。
+        _t_stage = time.time()
         if images:
             should_send_raw_images = self._should_send_raw_images_to_primary_model(user_id)
             vision_description = None
@@ -1948,6 +1976,14 @@ class AgentExecutor:
                 logger.info(f"[Vision] 图片识别完成: {vision_description[:200]}")
             else:
                 _attach_images_to_last_user_message(messages, message, images)
+        pre_stages["vision_ms"] = _pre_stage(_t_stage) if images else 0
+
+        # pre_llm_ms: system-prompt 组装 + KB 检索 + history + vision 到本点的总壁钟。
+        # 直接取 start_time delta (最准, 不受漏计阶段影响)。fail-soft。
+        try:
+            pre_llm_ms = int((time.time() - start_time) * 1000)
+        except Exception:  # noqa: BLE001
+            pre_llm_ms = 0
 
         # 4. 工具定义
         tools = get_health_tools()
@@ -1965,10 +2001,25 @@ class AgentExecutor:
             },
         }
 
+        # 2026-07-01: pre-LLM 阶段计时 SSE (纯埋点, mac 端解析未知 event 会 tolerate)。
+        # 在进入 round loop 前发, 客户端可据此先画出 first-token 前的 waterfall。
+        yield {
+            "event": "perf_pre_llm",
+            "data": {
+                "pre_llm_ms": pre_llm_ms,
+                "stages": dict(pre_stages),
+            },
+        }
+
         # 2026-05-13: 计时 + 模型名可观测性 — 每轮 LLM 耗时积累到 done 事件
         llm_rounds_ms: list = []
         model_name: Optional[str] = None
         final_finish_reason: Optional[str] = None
+        # 2026-07-01: TTFT + per-round split + orchestrator-as-tool 计时 (纯埋点)。
+        first_token_at: Optional[float] = None  # 第一个 token yield 给客户端的时刻
+        rounds: List[Dict[str, Any]] = []  # 每轮 {llm_gen_ms, tool_exec_ms, tools:[...]}
+        orchestrator_tool_ms: Optional[int] = None  # health_analysis(type=orchestrator) 壁钟
+        orchestrator_perf: Optional[Any] = None  # /orchestrator/chat 若回传 perf 则透传
         # 后置校验: record 意图的 turn 必须真的执行了写工具。0 次 = 模型可能只是
         # 嘴上说"已记录"却没调工具(弱模型把 tool-call 当正文吐出 → 静默丢数据)。
         tool_executed_count = 0
@@ -2022,6 +2073,9 @@ class AgentExecutor:
                             streamed_to_client = False
                         if not inline_suppressed:
                             streamed_to_client = True
+                            # 2026-07-01: TTFT — 第一个真正下发给客户端的 token 时刻 (纯埋点)。
+                            if first_token_at is None:
+                                first_token_at = time.time()
                             # 真流式:逐 delta 即时下发,不再切 20-char 假块。
                             yield {"event": "token", "data": {"content": delta}}
                     elif etype == "tool_calls":
@@ -2037,7 +2091,12 @@ class AgentExecutor:
                 if streamed_tool_calls:
                     response["tool_calls"] = streamed_tool_calls
                 final_finish_reason = stream_finish_reason or final_finish_reason
-                llm_rounds_ms.append(int((time.time() - _round_start) * 1000))
+                _round_llm_gen_ms = int((time.time() - _round_start) * 1000)
+                llm_rounds_ms.append(_round_llm_gen_ms)
+                # 2026-07-01: per-round split — 本轮 LLM 生成耗时 (纯埋点)。tool_exec_ms /
+                # tools 在下面工具执行块填充; 无工具调用的最终答案轮 tool_exec_ms=0。
+                _round_tool_exec_ms = 0
+                _round_tool_names: List[str] = []
                 if model_name is None:
                     if self._last_provider_model_name:
                         model_name = self._last_provider_model_name
@@ -2122,12 +2181,16 @@ class AgentExecutor:
                     })
 
                     # 执行每个工具
+                    # 2026-07-01: per-round tool_exec 壁钟起点 (纯埋点, 串行执行的墙钟)。
+                    _round_tool_start = time.time()
                     for tc in tool_calls:
                         func_name = tc["function"]["name"]
                         func_args = tc["function"]["arguments"]
                         # 收集工具名 (去重、按首次调用顺序) 供 done/meta 的 tools_used。
                         if func_name and func_name not in tools_used:
                             tools_used.append(func_name)
+                        if func_name:
+                            _round_tool_names.append(func_name)
                         if self._prefer_fast_record_model:
                             func_args = _auto_confirm_fast_record_args(func_name, func_args)
                         tool_id = tc["id"]
@@ -2147,9 +2210,33 @@ class AgentExecutor:
                             sources_used.append(_tool_label)
 
                         # 执行工具
+                        # 2026-07-01: 若本工具是 health_analysis(type=orchestrator) → 捕获其
+                        # 单工具壁钟给 orchestrator_tool_ms; best-effort 从 result JSON 透传 perf。
+                        _is_orch_tool = False
+                        try:
+                            if func_name == "health_analysis":
+                                _parsed = json.loads(func_args) if isinstance(func_args, str) else func_args
+                                _is_orch_tool = (
+                                    isinstance(_parsed, dict)
+                                    and _parsed.get("analysis_type") == "orchestrator"
+                                )
+                        except Exception:  # noqa: BLE001
+                            _is_orch_tool = False
+                        _tool_call_start = time.time()
                         result = await self._execute_tool(
                             func_name, func_args, user_auth_token
                         )
+                        if _is_orch_tool:
+                            try:
+                                orchestrator_tool_ms = int((time.time() - _tool_call_start) * 1000)
+                            except Exception:  # noqa: BLE001
+                                orchestrator_tool_ms = None
+                            try:
+                                _orch_json = json.loads(result) if isinstance(result, str) else None
+                                if isinstance(_orch_json, dict) and _orch_json.get("perf") is not None:
+                                    orchestrator_perf = _orch_json.get("perf")
+                            except Exception:  # noqa: BLE001
+                                pass
                         result_for_record_card = result
                         safety_cards: list[dict] = []
                         tool_executed_count += 1
@@ -2239,6 +2326,17 @@ class AgentExecutor:
                                         "descriptor": safety_card,
                                     },
                                 }
+
+                    # 2026-07-01: 关闭本轮 tool_exec 壁钟 + 记录 per-round split (纯埋点)。
+                    try:
+                        _round_tool_exec_ms = int((time.time() - _round_tool_start) * 1000)
+                    except Exception:  # noqa: BLE001
+                        _round_tool_exec_ms = 0
+                    rounds.append({
+                        "llm_gen_ms": _round_llm_gen_ms,
+                        "tool_exec_ms": _round_tool_exec_ms,
+                        "tools": list(_round_tool_names),
+                    })
 
                     if self._prefer_fast_record_model:
                         final_text = _fast_record_reply_from_tool_results(messages)
@@ -2346,12 +2444,22 @@ class AgentExecutor:
                         # 正文已实时下发,只补 interrupted notice 等未流式的后缀。
                         tail = final_text[len(streamed_text):]
                         if tail:
+                            if first_token_at is None:
+                                first_token_at = time.time()
                             yield {"event": "token", "data": {"content": tail}}
                     else:
                         # 重试/兜底产生的新文本 (非流式来源) → 一次性下发。
                         if final_text:
+                            if first_token_at is None:
+                                first_token_at = time.time()
                             yield {"event": "token", "data": {"content": final_text}}
                     full_reply += final_text
+                    # 2026-07-01: 无工具的最终答案轮 — per-round split (tool_exec_ms=0)。
+                    rounds.append({
+                        "llm_gen_ms": _round_llm_gen_ms,
+                        "tool_exec_ms": 0,
+                        "tools": [],
+                    })
                     break
 
             else:
@@ -2415,6 +2523,34 @@ class AgentExecutor:
 
         elapsed_ms = int((time.time() - start_time) * 1000)
         llm_ms_total = sum(llm_rounds_ms)
+
+        # 2026-07-01: 汇总 perf (纯埋点)。fail-soft — 任何计时缺失用 None/0, 绝不断流。
+        try:
+            llm_ttft_ms: Optional[int] = (
+                int((first_token_at - start_time) * 1000) if first_token_at else None
+            )
+        except Exception:  # noqa: BLE001
+            llm_ttft_ms = None
+        perf = {
+            "total_ms": elapsed_ms,
+            "pre_llm_ms": pre_llm_ms,
+            "pre_llm_stages": dict(pre_stages),
+            "llm_ttft_ms": llm_ttft_ms,
+            "llm_full_ms": llm_ms_total,
+            "rounds": rounds,
+            "orchestrator_tool_ms": orchestrator_tool_ms,
+            "orchestrator_perf": orchestrator_perf,
+        }
+        # 单行 grep 日志 (镜像 orchestrator.py [perf.orchestrator])。
+        try:
+            logger.info(
+                "[perf.agent] user=%s total=%sms pre_llm=%sms ttft=%sms llm=%sms rounds=%s model=%s",
+                user_id, elapsed_ms, pre_llm_ms, llm_ttft_ms, llm_ms_total,
+                len(llm_rounds_ms), model_name,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
         completion_status = _completion_status_from_finish_reason(final_finish_reason)
         answer_model = model_name
         selected_model = self._display_model_name_for_id(self._request_model_id) or answer_model
@@ -2473,6 +2609,7 @@ class AgentExecutor:
                 "finish_reason": final_finish_reason,
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
+                "perf": perf,
             }
         except Exception as e:
             logger.warning(f"[agent_executor] write meta 失败: {e}")
@@ -2499,6 +2636,7 @@ class AgentExecutor:
                 "finish_reason": final_finish_reason,
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
+                "perf": perf,
             },
         }
 
