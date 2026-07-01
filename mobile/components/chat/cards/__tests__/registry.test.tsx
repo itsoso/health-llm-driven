@@ -509,6 +509,52 @@ describe('renderCard 安全降级', () => {
     expect(onAction).not.toHaveBeenCalled();
   });
 
+  it('shows in-card completion feedback after a diet draft is recorded', () => {
+    const descriptor = {
+      type: 'diet_draft',
+      data: {
+        food_items: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
+        meal_type: 'lunch',
+        calories: 770,
+        protein: 30,
+        carbs: 70,
+        fat: 17,
+        suggestions: ['晚餐优先补 40g 蛋白'],
+        post_meal_walk: { recommended: true, minutes: 10 },
+      },
+      actions: [
+        {
+          id: 'confirm-diet-draft',
+          label: '确认记录',
+          action: 'diet_record.create',
+          endpoint: '/diet/records',
+          requires_manual_confirm: true,
+          payload: {
+            record: {
+              food_items: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
+              meal_type: 'lunch',
+              calories: 770,
+              protein: 30,
+              carbs: 70,
+              fat: 17,
+            },
+          },
+        },
+      ],
+    } as any;
+
+    const element = renderCard(descriptor, {
+      actionStateByKey: { 'confirm-diet-draft': 'done' },
+    } as any);
+    expect(element).not.toBeNull();
+
+    const { getByText } = render(element!);
+    expect(getByText('已写入今日饮食')).toBeTruthy();
+    expect(getByText('午餐 · 770 kcal · 蛋白 30g')).toBeTruthy();
+    expect(getByText('下一步: 餐后轻走 10 分钟')).toBeTruthy();
+    expect(getByText('可在记录页继续修正,阿衡会把这餐纳入今日饮食进度。')).toBeTruthy();
+  });
+
   it('renders medical exam import result cards from runtime skills', () => {
     const r = renderCard({
       type: 'medical_exam_import_result',

@@ -2,7 +2,12 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, TextInput, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
-import type { CardRenderOptions, CardSpec, ChatCardActionDescriptor } from './types';
+import type {
+  CardRenderOptions,
+  CardSpec,
+  ChatCardActionDescriptor,
+  ChatCardActionRuntimeState,
+} from './types';
 import { revaColors as C, revaFonts, revaRadii, revaSemantic } from '../../../constants/revaTheme';
 
 const DIET_ACCENT = '#C97A2E';
@@ -42,6 +47,7 @@ interface DietDraftData {
 interface DietDraftCardViewProps extends DietDraftData {
   onDraftChange?: (data: DietDraftData) => void;
   confirmAction?: ChatCardActionDescriptor;
+  confirmActionState?: ChatCardActionRuntimeState;
   onConfirmAction?: (action: ChatCardActionDescriptor) => void;
 }
 
@@ -155,7 +161,14 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const suggestions = listText(data.suggestions);
   const walkText = postMealWalkText(data.post_meal_walk);
   const boundary = text(data.boundary) || '营养为估算值,确认后写入今日饮食记录。';
+  const isRecorded = data.confirmActionState === 'done';
   const canConfirmFromEditor = Boolean(data.confirmAction && data.onConfirmAction && !data.confirmAction.disabled_reason);
+  const recordedSummary = [
+    mealLabel,
+    numberValue(data.calories) != null ? `${Math.round(numberValue(data.calories)!)} kcal` : null,
+    numberValue(data.protein) != null ? `蛋白 ${Math.round(numberValue(data.protein)!)}g` : null,
+  ].filter(Boolean).join(' · ');
+  const recordedNextStep = walkText || suggestions[0] || '下一餐按目标补足蛋白和蔬菜';
   const publishDraftChange = React.useCallback((overrides: Partial<DraftEditValues> = {}) => {
     const values: DraftEditValues = {
       mealType: overrides.mealType ?? draftMealType,
@@ -186,24 +199,26 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
     <CardShell
       icon="restaurant-outline"
       iconColor={DIET_ACCENT}
-      title="待确认饮食记录"
+      title={isRecorded ? '已记录饮食' : '待确认饮食记录'}
       badge={mealLabel}
       badgeColor={DIET_ACCENT}
       bg={DIET_TINT}
     >
       <View style={styles.inlineHeader}>
         <Text maxFontSizeMultiplier={1.15} style={styles.inlineHint}>
-          确认前可修正餐次、食物和营养估算
+          {isRecorded ? '这餐已进入今日饮食进度' : '确认前可修正餐次、食物和营养估算'}
         </Text>
-        <Pressable
-          onPress={() => setEditing((prev) => !prev)}
-          accessibilityRole="button"
-          accessibilityLabel={editing ? '收起修正' : '修正饮食草稿'}
-          style={({ pressed }) => [styles.editButton, pressed && styles.editButtonPressed]}
-        >
-          <Ionicons name={editing ? 'chevron-up' : 'create-outline'} size={12} color={DIET_ACCENT} />
-          <Text style={styles.editButtonText}>{editing ? '收起' : '修正'}</Text>
-        </Pressable>
+        {!isRecorded ? (
+          <Pressable
+            onPress={() => setEditing((prev) => !prev)}
+            accessibilityRole="button"
+            accessibilityLabel={editing ? '收起修正' : '修正饮食草稿'}
+            style={({ pressed }) => [styles.editButton, pressed && styles.editButtonPressed]}
+          >
+            <Ionicons name={editing ? 'chevron-up' : 'create-outline'} size={12} color={DIET_ACCENT} />
+            <Text style={styles.editButtonText}>{editing ? '收起' : '修正'}</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <Text maxFontSizeMultiplier={1.25} style={styles.food} numberOfLines={3}>
@@ -349,6 +364,22 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
         </Text>
       ) : null}
 
+      {isRecorded ? (
+        <View style={styles.recordedBox}>
+          <View style={styles.recordedTitleRow}>
+            <Ionicons name="checkmark-circle" size={15} color={C.green600} />
+            <Text maxFontSizeMultiplier={1.15} style={styles.recordedTitle}>已写入今日饮食</Text>
+          </View>
+          {recordedSummary ? (
+            <Text maxFontSizeMultiplier={1.15} style={styles.recordedSummary}>{recordedSummary}</Text>
+          ) : null}
+          <Text maxFontSizeMultiplier={1.15} style={styles.recordedNext}>下一步: {recordedNextStep}</Text>
+          <Text maxFontSizeMultiplier={1.15} style={styles.recordedHelp}>
+            可在记录页继续修正,阿衡会把这餐纳入今日饮食进度。
+          </Text>
+        </View>
+      ) : null}
+
       {(walkText || suggestions.length > 0) ? (
         <View style={styles.nextBox}>
           {walkText ? (
@@ -387,11 +418,15 @@ export const DietDraftCardSpec: CardSpec<DietDraftData> = {
   },
   render: (data, options?: CardRenderOptions) => {
     const confirmAction = findDietConfirmAction(options?.cardActions);
+    const confirmActionKey = confirmAction
+      ? confirmAction.id || `diet_draft:${confirmAction.action}:${confirmAction.label}`
+      : undefined;
     return (
       <DietDraftCardView
         {...data}
         onDraftChange={options?.onCardDataChange}
         confirmAction={confirmAction}
+        confirmActionState={confirmActionKey ? options?.actionStateByKey?.[confirmActionKey] : undefined}
         onConfirmAction={options?.onCardAction}
       />
     );
@@ -621,6 +656,48 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: C.ink3,
     fontWeight: '700',
+  } as TextStyle,
+  recordedBox: {
+    gap: 5,
+    marginTop: 10,
+    borderRadius: revaRadii.sm,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  recordedTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  recordedTitle: {
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    color: C.green700,
+    fontWeight: '900',
+  } as TextStyle,
+  recordedSummary: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12.2,
+    lineHeight: 17,
+    color: C.ink2,
+    fontWeight: '800',
+  } as TextStyle,
+  recordedNext: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    lineHeight: 17,
+    color: C.green700,
+    fontWeight: '800',
+  } as TextStyle,
+  recordedHelp: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    lineHeight: 16,
+    color: C.ink3,
+    fontWeight: '600',
   } as TextStyle,
   nextBox: {
     gap: 6,
