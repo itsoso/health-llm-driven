@@ -150,6 +150,75 @@ def test_inline_cards_runtime_agenda_does_not_trigger_for_record_intent(monkeypa
     assert all(card["type"] != "runtime_agenda" for card in cards)
 
 
+def test_inline_cards_builds_confirmable_diet_draft_card():
+    from app.services import inline_cards
+
+    cards = inline_cards.build_cards(
+        db=None,
+        user_id=3,
+        query="记录午餐吃了煎牛肉能量碗和姜黄鲜柠维C茶，770 kcal，蛋白30g，碳水70g，脂肪17g",
+    )
+
+    assert cards[0]["type"] == "diet_draft"
+    assert cards[0]["data"] == {
+        "meal_type": "lunch",
+        "food_items": "煎牛肉能量碗和姜黄鲜柠维C茶",
+        "calories": 770,
+        "protein": 30,
+        "carbs": 70,
+        "fat": 17,
+        "confidence": 0.82,
+        "source": "chat",
+        "suggestions": [
+            "确认后更新今日饮食进度",
+            "如估算不准，可去饮食页修正",
+        ],
+        "post_meal_walk": {"recommended": True, "minutes": 10},
+        "boundary": "营养为估算值,确认后写入今日饮食记录。",
+    }
+    assert cards[0]["actions"][0] == {
+        "id": "confirm-diet-draft",
+        "label": "确认记录",
+        "action": "diet_record.create",
+        "endpoint": "/diet/records",
+        "requires_manual_confirm": True,
+        "payload": {
+            "record": {
+                "meal_type": "lunch",
+                "food_items": "煎牛肉能量碗和姜黄鲜柠维C茶",
+                "calories": 770,
+                "protein": 30,
+                "carbs": 70,
+                "fat": 17,
+                "notes": "来源: chat; 置信度 82%",
+            },
+        },
+        "style": "primary",
+        "confirmation": {
+            "title": "记录这顿午餐？",
+            "detail": "确认后会写入今天的饮食记录，可稍后在饮食页修正。",
+            "confirm_label": "确认记录",
+            "cancel_label": "再看看",
+        },
+        "optimistic": True,
+    }
+    assert cards[0]["actions"][1] == {
+        "id": "open-diet-edit",
+        "label": "去饮食页修正",
+        "action": "route.open",
+        "payload": {"route": "/diet"},
+        "style": "secondary",
+    }
+
+
+def test_inline_cards_diet_draft_does_not_trigger_for_water_record():
+    from app.services import inline_cards
+
+    cards = inline_cards.build_cards(db=None, user_id=3, query="记录我刚喝了200ml水")
+
+    assert all(card["type"] != "diet_draft" for card in cards)
+
+
 def test_inline_cards_builds_operating_review_card(monkeypatch):
     from app.services import inline_cards
 

@@ -140,6 +140,12 @@ def _metric_history_label(data: Dict[str, Any]) -> str:
 
 
 _AGENDA_COMPLETE_SOURCE_TYPES = {"health_protocol", "medication", "supplement"}
+_MEAL_LABELS = {
+    "breakfast": "早餐",
+    "lunch": "午餐",
+    "dinner": "晚餐",
+    "snack": "加餐",
+}
 
 
 def _normalize_agenda_source(source: Any) -> Optional[Dict[str, Any]]:
@@ -205,6 +211,123 @@ def _runtime_agenda_actions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
         "style": "secondary",
     })
     return actions
+
+
+def _is_water_only_record(q: str) -> bool:
+    return bool(re.search(r"(喝水|饮水|温水|白水|矿泉水|纯净水|喝了?\s*\d+\s*(?:ml|毫升).{0,4}水)", q, re.I))
+
+
+def _looks_like_diet_record(q: str) -> bool:
+    if not _is_record_intent(q):
+        return False
+    if _is_water_only_record(q):
+        return False
+    return bool(re.search(r"吃了|刚吃|早餐|早饭|午餐|中饭|晚餐|晚饭|加餐|夜宵|零食|餐食|食物", q))
+
+
+def _infer_meal_type_from_query(q: str) -> str:
+    if re.search(r"早餐|早饭|早上", q):
+        return "breakfast"
+    if re.search(r"午餐|中饭|中午", q):
+        return "lunch"
+    if re.search(r"晚餐|晚饭|晚上", q):
+        return "dinner"
+    if re.search(r"加餐|零食|夜宵|下午茶", q):
+        return "snack"
+    hour = datetime.now().hour
+    if hour < 10:
+        return "breakfast"
+    if hour < 14:
+        return "lunch"
+    if hour < 20:
+        return "dinner"
+    return "snack"
+
+
+def _as_payload_number(value: float) -> int | float:
+    rounded = round(float(value), 1)
+    return int(rounded) if rounded.is_integer() else rounded
+
+
+def _extract_number(q: str, *patterns: str) -> Optional[int | float]:
+    for pattern in patterns:
+        m = re.search(pattern, q, re.I)
+        if not m:
+            continue
+        try:
+            return _as_payload_number(float(m.group(1)))
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _strip_nutrition_tokens(q: str) -> str:
+    cleaned = re.sub(r"(?:热量|约|大约|总共)?\s*\d+(?:\.\d+)?\s*(?:kcal|千卡|大卡|卡路里)", " ", q, flags=re.I)
+    cleaned = re.sub(r"(?:蛋白质?|protein)\s*\d+(?:\.\d+)?\s*(?:g|克)?", " ", cleaned, flags=re.I)
+    cleaned = re.sub(r"(?:碳水|carbs?|碳水化合物)\s*\d+(?:\.\d+)?\s*(?:g|克)?", " ", cleaned, flags=re.I)
+    cleaned = re.sub(r"(?:脂肪|fat)\s*\d+(?:\.\d+)?\s*(?:g|克)?", " ", cleaned, flags=re.I)
+    cleaned = re.sub(r"(?:纤维|fiber|膳食纤维)\s*\d+(?:\.\d+)?\s*(?:g|克)?", " ", cleaned, flags=re.I)
+    return cleaned
+
+
+def _extract_food_items(q: str) -> Optional[str]:
+    cleaned = _strip_nutrition_tokens(q)
+    cleaned = re.sub(r"[，,;；。]", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    patterns = [
+        r"(?:早餐|早饭|午餐|中饭|晚餐|晚饭|加餐|夜宵|零食)?\s*(?:吃了|吃的是|吃|点了)\s*(.+)",
+        r"(?:早餐|早饭|午餐|中饭|晚餐|晚饭|加餐|夜宵|零食)\s*[:：]?\s*(.+)",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, cleaned)
+        if not m:
+            continue
+        food = m.group(1).strip(" ：:，,;；。")
+        food = re.sub(r"^(?:一份|一个|一碗|一杯|了)\s*", "", food)
+        food = re.sub(r"\s+", " ", food).strip()
+        if food:
+            return food[:160]
+    return None
+
+
+def _diet_draft_actions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    meal_type = data.get("meal_type") if isinstance(data.get("meal_type"), str) else "snack"
+    meal_label = _MEAL_LABELS.get(meal_type, "餐食")
+    record: Dict[str, Any] = {
+        "meal_type": meal_type,
+        "food_items": data.get("food_items"),
+    }
+    for key in ("calories", "protein", "carbs", "fat", "fiber"):
+        if data.get(key) is not None:
+            record[key] = data[key]
+    confidence = data.get("confidence")
+    if isinstance(confidence, (int, float)):
+        record["notes"] = f"来源: chat; 置信度 {round(float(confidence) * 100)}%"
+    return [
+        {
+            "id": "confirm-diet-draft",
+            "label": "确认记录",
+            "action": "diet_record.create",
+            "endpoint": "/diet/records",
+            "requires_manual_confirm": True,
+            "payload": {"record": record},
+            "style": "primary",
+            "confirmation": {
+                "title": f"记录这顿{meal_label}？",
+                "detail": "确认后会写入今天的饮食记录，可稍后在饮食页修正。",
+                "confirm_label": "确认记录",
+                "cancel_label": "再看看",
+            },
+            "optimistic": True,
+        },
+        {
+            "id": "open-diet-edit",
+            "label": "去饮食页修正",
+            "action": "route.open",
+            "payload": {"route": "/diet"},
+            "style": "secondary",
+        },
+    ]
 
 
 # ── individual builders ────────────────────────────────────────────
@@ -317,6 +440,48 @@ def _build_runtime_agenda(db: Session, user_id: int, q: str) -> Optional[Dict[st
             if isinstance(day, dict)
         ],
     }
+
+
+def _build_diet_draft(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
+    if not _looks_like_diet_record(q):
+        return None
+    food_items = _extract_food_items(q)
+    if not food_items:
+        return None
+    meal_type = _infer_meal_type_from_query(q)
+    calories = _extract_number(
+        q,
+        r"(?:热量|约|大约|总共)?\s*(\d+(?:\.\d+)?)\s*(?:kcal|千卡|大卡|卡路里)",
+    )
+    protein = _extract_number(q, r"(?:蛋白质?|protein)\s*(\d+(?:\.\d+)?)\s*(?:g|克)?")
+    carbs = _extract_number(q, r"(?:碳水|carbs?|碳水化合物)\s*(\d+(?:\.\d+)?)\s*(?:g|克)?")
+    fat = _extract_number(q, r"(?:脂肪|fat)\s*(\d+(?:\.\d+)?)\s*(?:g|克)?")
+    fiber = _extract_number(q, r"(?:纤维|fiber|膳食纤维)\s*(\d+(?:\.\d+)?)\s*(?:g|克)?")
+    confidence = 0.82 if calories is not None or sum(x is not None for x in (protein, carbs, fat, fiber)) >= 2 else 0.62
+
+    data: Dict[str, Any] = {
+        "meal_type": meal_type,
+        "food_items": food_items,
+        "confidence": confidence,
+        "source": "chat",
+        "suggestions": [
+            "确认后更新今日饮食进度",
+            "如估算不准，可去饮食页修正",
+        ],
+        "boundary": "营养为估算值,确认后写入今日饮食记录。",
+    }
+    for key, value in {
+        "calories": calories,
+        "protein": protein,
+        "carbs": carbs,
+        "fat": fat,
+        "fiber": fiber,
+    }.items():
+        if value is not None:
+            data[key] = value
+    if meal_type in {"lunch", "dinner"} or (isinstance(calories, (int, float)) and calories >= 300):
+        data["post_meal_walk"] = {"recommended": True, "minutes": 10}
+    return data
 
 
 def _build_vitals(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
@@ -495,6 +660,7 @@ def _build_diet(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
 
 _BUILDERS = [
     ("record_intent_skip", lambda db, uid, q: None),
+    ("diet_draft", _build_diet_draft),
     ("metric_chart", _build_metric_chart),
     ("operating_review", _build_operating_review),
     ("runtime_agenda", _build_runtime_agenda),
@@ -525,6 +691,8 @@ def build_cards(db: Session, user_id: int, query: str) -> List[Dict[str, Any]]:
                 card: Dict[str, Any] = {"type": card_type, "data": data}
                 if card_type == "runtime_agenda":
                     card["actions"] = _runtime_agenda_actions(data)
+                if card_type == "diet_draft":
+                    card["actions"] = _diet_draft_actions(data)
                 if card_type == "operating_review":
                     card["actions"] = [
                         {
