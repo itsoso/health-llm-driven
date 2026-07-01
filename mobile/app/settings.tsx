@@ -188,20 +188,9 @@ export default function SettingsScreen() {
             onPress={() => router.push('/day-schedule' as any)} />
           <SettingRow icon="calendar-outline" label="日历 · 日程 + 多源管理"
             onPress={() => router.push('/calendar' as any)} />
-          <SettingRow icon="calendar-outline" label="本周建议"
-            onPress={() => router.push('/weekly-briefing' as any)} />
-          <SettingRow icon="trending-up" label="我的进度"
-            onPress={() => router.push('/my-progress' as any)} />
-          <SettingRow icon="pulse-outline" label="代谢健康画像"
-            onPress={() => router.push('/metabolic-profile' as any)} />
-          <SettingRow icon="refresh-outline" label="代谢干预 · 90 天"
-            onPress={() => router.push('/intervention-cycle' as any)} />
-          <SettingRow icon="hourglass-outline" label="生物年龄"
-            onPress={() => router.push('/biological-age' as any)} />
-          <SettingRow icon="leaf-outline" label="抗衰下一步"
-            onPress={() => router.push('/longevity-next' as any)} />
-          <SettingRow icon="calendar-outline" label="月度复盘"
-            onPress={() => router.push('/monthly-reports' as any)} />
+          <SettingRow icon="analytics-outline" label="健康分析"
+            value="进展 / 代谢 / 趋势"
+            onPress={() => router.push('/insights' as any)} />
           <SettingRow icon="medical-outline" label="医生回路"
             onPress={() => router.push('/doctor-loop' as any)} />
         </View>
@@ -259,8 +248,6 @@ export default function SettingsScreen() {
             onPress={() => router.push('/memory' as any)} />
           <SettingRow icon="medical-outline" label="健康咨询"
             onPress={() => router.push('/consultations' as any)} />
-          <SettingRow icon="pulse-outline" label="肝脏趋势"
-            onPress={() => router.push('/liver-trend' as any)} />
           <SettingRow icon="ribbon-outline" label="处方查原研药"
             onPress={() => router.push('/prescription-scan' as any)} />
           <SettingRow icon="barbell-outline" label="运动记录"

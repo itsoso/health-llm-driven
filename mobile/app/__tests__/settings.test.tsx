@@ -159,14 +159,17 @@ describe('SettingsScreen', () => {
     alertSpy.mockRestore();
   });
 
-  it('opens dedicated longevity analysis pages from settings', () => {
-    const { getByText } = render(<SettingsScreen />);
+  it('opens one health analysis hub instead of scattering analysis rows in settings', () => {
+    const { getByText, queryByText } = render(<SettingsScreen />);
 
-    fireEvent.press(getByText('生物年龄'));
-    fireEvent.press(getByText('抗衰下一步'));
+    fireEvent.press(getByText('健康分析'));
 
-    expect(mockPush).toHaveBeenCalledWith('/biological-age');
-    expect(mockPush).toHaveBeenCalledWith('/longevity-next');
+    expect(mockPush).toHaveBeenCalledWith('/insights');
+    expect(queryByText('我的进度')).toBeNull();
+    expect(queryByText('代谢健康画像')).toBeNull();
+    expect(queryByText('生物年龄')).toBeNull();
+    expect(queryByText('抗衰下一步')).toBeNull();
+    expect(queryByText('肝脏趋势')).toBeNull();
   });
 
   it('opens the privacy policy instead of rendering a dead row', () => {
