@@ -174,6 +174,66 @@ describe('DynamicTodayRenderer', () => {
     expect(getByText('晚餐后步行 15 分钟')).toBeTruthy();
   });
 
+  it('falls back to the registered card type when render metadata names an unknown atom', async () => {
+    const onAction = jest.fn();
+    const { getByText } = render(
+      <DynamicTodayRenderer
+        view={makeView({
+          sections: [
+            {
+              slot: 'runtime',
+              priority: 80,
+              cards: [
+                {
+                  id: 'runtime-agenda:2026-06-29:walk',
+                  type: 'runtime_agenda',
+                  render: { atom: 'future_runtime_agenda', reason: 'experimental_renderer' },
+                  data: {
+                    generated_by: 'rolling_health_runtime_v1',
+                    horizon_days: 7,
+                    next_action: {
+                      title: '晚餐后步行 15 分钟',
+                      time_window: 'evening',
+                      priority_tier: 'P1',
+                      current_state_summary: '晚餐后是今天最短的代谢干预窗口。',
+                      replan_reason: 'today_smart_rank',
+                      verification_metrics: ['waist_cm'],
+                      verification_window_days: 7,
+                    },
+                    days: [
+                      { date: '2026-06-30', next_action_title: '晚餐后步行 15 分钟', items_count: 2 },
+                    ],
+                    safety_boundary: '健康管理行动建议,不替代医生诊断。',
+                  },
+                  actions: [
+                    {
+                      id: 'open-runtime-agenda',
+                      label: '查看7天计划',
+                      action: 'route.open',
+                      payload: { route: '/agenda' },
+                      style: 'primary',
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        })}
+        onCardAction={onAction}
+      />,
+    );
+
+    expect(getByText('7天验证节奏')).toBeTruthy();
+    expect(getByText('晚餐后步行 15 分钟')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(getByText('查看7天计划'));
+    });
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'route.open' }),
+      expect.objectContaining({ type: 'runtime_agenda' }),
+    );
+  });
+
   it('shows running feedback and prevents duplicate dynamic card actions', async () => {
     let resolveAction: (() => void) | null = null;
     const onAction = jest.fn(() => new Promise<void>((resolve) => {

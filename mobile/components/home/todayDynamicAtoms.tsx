@@ -81,10 +81,11 @@ export function renderTodayDynamicAtom(args: TodayDynamicAtomRenderArgs): React.
   const atom = resolveTodayDynamicAtom(args.card);
   const spec = TODAY_DYNAMIC_ATOMS[atom];
   if (spec) return spec.render(args);
-  if (!CARD_MAP[atom]) return null;
+  const registeredType = CARD_MAP[atom] ? atom : args.card.type;
+  if (!CARD_MAP[registeredType]) return null;
 
   const descriptor: ServerCardDescriptor = {
-    type: atom,
+    type: registeredType,
     data: args.card.data,
     actions: args.card.actions,
   };
