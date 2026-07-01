@@ -16,6 +16,11 @@ import {
   reasonLabel,
   ReviewStatus,
 } from './reviewHelpers';
+import { CoverageMatrixView, CoverageMatrix } from './CoverageMatrixView';
+
+interface CoverageReportResponse {
+  coverage_matrix?: CoverageMatrix;
+}
 
 interface ReviewQueueItem {
   doc_id: string;
@@ -159,6 +164,15 @@ export default function KnowledgeAdminPage() {
     enabled: isAuthenticated && !!user?.is_admin,
   });
 
+  const coverageQuery = useQuery<CoverageReportResponse>({
+    queryKey: ['admin-knowledge-coverage-report'],
+    queryFn: async () => {
+      const res = await api.get('/admin/knowledge/coverage_report');
+      return res.data;
+    },
+    enabled: isAuthenticated && !!user?.is_admin,
+  });
+
   const items = useMemo(() => queueQuery.data?.items ?? [], [queueQuery.data?.items]);
   const selectedItem = useMemo(() => {
     if (!items.length) return null;
@@ -277,6 +291,10 @@ export default function KnowledgeAdminPage() {
               ))}
             </div>
           </section>
+        )}
+
+        {coverageQuery.data?.coverage_matrix && (
+          <CoverageMatrixView data={coverageQuery.data.coverage_matrix} />
         )}
 
         <section className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
