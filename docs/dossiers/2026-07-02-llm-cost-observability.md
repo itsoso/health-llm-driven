@@ -140,8 +140,18 @@ npm run generate-types # mobile
 - 线上验证:
   - `https://health.executor.life/api/v1/health` 返回 `healthy`。
   - `https://health.executor.life/admin/llm-performance` 返回 HTTP 200。
+- 第二轮扩展提交: `ca919f18`。
+- 第二轮 Web/Backend 部署: `./deploy.sh -y`。
+- 第二轮部署健康度: `60/60 ✅ PASS`。
+- 第二轮受控迁移: `20260702_190000_add_llm_usage_recovery_trace` 已被生产迁移账本识别。
+- 第二轮 Mobile OTA: production channel, runtime `1.3.1`, update group `9871448a-b0f3-4941-bf20-956ea5785b29`, iOS update `019f2176-0f41-7eeb-99fc-385107d16a23`。
+- 第二轮 Mac 本地发布: `apps/mac/scripts/package-app.sh --install --open` 已安装 `/Applications/阿衡.app`, `HealthAgentMac` 进程已运行。
+- 第二轮线上验证:
+  - `https://health.executor.life/api/v1/health` 返回 `healthy`。
+  - `https://health.executor.life/admin/llm-performance` 返回 HTTP 200。
 - 裁决:GO。
 
 ## 验证记录
 
 - 2026-07-02: 已完成测试、部署、线上健康检查和 Mobile OTA。
+- 2026-07-02: 第二轮已完成预算水位、恢复 trace、三端透视验证、Web/Backend 部署、Mobile OTA 与 Mac 重启。
