@@ -21,61 +21,69 @@ struct QuickRecordView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 10) {
-                adjustableRecordTile(
-                    icon: "drop.fill",
-                    title: "喝水",
-                    value: "\(QuickRecordDials.waterML.intValue(waterAmountML))",
-                    unit: "ml",
-                    amount: $waterAmountML,
-                    spec: QuickRecordDials.waterML,
-                    focus: .water
-                ) {
-                    let ml = QuickRecordDials.waterML.intValue(waterAmountML)
-                    Task { await store.submit { try QuickRecord.water(amountML: ml) } }
-                }
-
-                adjustableRecordTile(
-                    icon: "figure.strengthtraining.traditional",
-                    title: "俯卧撑",
-                    value: "\(QuickRecordDials.pushupReps.intValue(pushupReps))",
-                    unit: "次",
-                    amount: $pushupReps,
-                    spec: QuickRecordDials.pushupReps,
-                    focus: .pushups
-                ) {
-                    let reps = QuickRecordDials.pushupReps.intValue(pushupReps)
-                    Task { await store.submit { try QuickRecord.exercise(type: "俯卧撑", reps: reps) } }
-                }
-
-                adjustableRecordTile(
-                    icon: "figure.run",
-                    title: "跑步",
-                    value: "\(QuickRecordDials.runDurationMin.intValue(runDurationMin))",
-                    unit: "分钟",
-                    amount: $runDurationMin,
-                    spec: QuickRecordDials.runDurationMin,
-                    focus: .run
-                ) {
-                    let minutes = QuickRecordDials.runDurationMin.snapped(runDurationMin)
-                    Task { await store.submit { try QuickRecord.exercise(type: "跑步", durationMin: minutes) } }
-                }
-
-                tile(icon: "mic.fill", label: "语音记一餐") {
-                    Task {
-                        let text = await dictate()
-                        guard let text, !text.isEmpty else { return }
-                        await store.submit { try QuickRecord.dietVoice(rawText: text) }
+                if hasQuickAction(.water) {
+                    adjustableRecordTile(
+                        icon: "drop.fill",
+                        title: quickActionLabel(.water),
+                        value: "\(QuickRecordDials.waterML.intValue(waterAmountML))",
+                        unit: "ml",
+                        amount: $waterAmountML,
+                        spec: QuickRecordDials.waterML,
+                        focus: .water
+                    ) {
+                        let ml = QuickRecordDials.waterML.intValue(waterAmountML)
+                        Task { await store.submit { try QuickRecord.water(amountML: ml) } }
                     }
                 }
 
-                tile(icon: "waveform.path.ecg", label: store.symptomSubmitting ? "记录中..." : "语音记症状") {
-                    Task {
-                        guard !store.symptomSubmitting else { return }
-                        let text = await dictate()
-                        guard let text, !text.isEmpty else { return }
-                        await store.submitSymptom(rawText: text)
-                        if let result = store.symptomResult {
-                            playSymptomHaptic(result.hapticKind)
+                if hasQuickAction(.exercise) {
+                    adjustableRecordTile(
+                        icon: "figure.strengthtraining.traditional",
+                        title: "俯卧撑",
+                        value: "\(QuickRecordDials.pushupReps.intValue(pushupReps))",
+                        unit: "次",
+                        amount: $pushupReps,
+                        spec: QuickRecordDials.pushupReps,
+                        focus: .pushups
+                    ) {
+                        let reps = QuickRecordDials.pushupReps.intValue(pushupReps)
+                        Task { await store.submit { try QuickRecord.exercise(type: "俯卧撑", reps: reps) } }
+                    }
+
+                    adjustableRecordTile(
+                        icon: "figure.run",
+                        title: "跑步",
+                        value: "\(QuickRecordDials.runDurationMin.intValue(runDurationMin))",
+                        unit: "分钟",
+                        amount: $runDurationMin,
+                        spec: QuickRecordDials.runDurationMin,
+                        focus: .run
+                    ) {
+                        let minutes = QuickRecordDials.runDurationMin.snapped(runDurationMin)
+                        Task { await store.submit { try QuickRecord.exercise(type: "跑步", durationMin: minutes) } }
+                    }
+                }
+
+                if hasQuickAction(.dietVoice) {
+                    tile(icon: "mic.fill", label: quickActionLabel(.dietVoice)) {
+                        Task {
+                            let text = await dictate()
+                            guard let text, !text.isEmpty else { return }
+                            await store.submit { try QuickRecord.dietVoice(rawText: text) }
+                        }
+                    }
+                }
+
+                if hasQuickAction(.symptomVoice) {
+                    tile(icon: "waveform.path.ecg", label: store.symptomSubmitting ? "记录中..." : quickActionLabel(.symptomVoice)) {
+                        Task {
+                            guard !store.symptomSubmitting else { return }
+                            let text = await dictate()
+                            guard let text, !text.isEmpty else { return }
+                            await store.submitSymptom(rawText: text)
+                            if let result = store.symptomResult {
+                                playSymptomHaptic(result.hapticKind)
+                            }
                         }
                     }
                 }
@@ -95,6 +103,18 @@ struct QuickRecordView: View {
         }
         .background(RevaWatch.focusBg)
         .navigationTitle("打点")
+    }
+
+    private var quickActions: [WatchQuickActionPresentation] {
+        watchQuickActionPresentations(store.summary?.quickActions ?? [])
+    }
+
+    private func hasQuickAction(_ kind: WatchQuickActionKind) -> Bool {
+        quickActions.contains { $0.kind == kind }
+    }
+
+    private func quickActionLabel(_ kind: WatchQuickActionKind) -> String {
+        quickActions.first { $0.kind == kind }?.label ?? kind.defaultLabel
     }
 
     // MARK: - Status feedback (fail loud)
@@ -431,5 +451,20 @@ struct QuickRecordView: View {
     /// 腕上听写(WKExtension/Dictation)。真机用 presentTextInputController 取语音转写。
     private func dictate() async -> String? {
         await WatchDictation.present()
+    }
+}
+
+private extension WatchQuickActionKind {
+    var defaultLabel: String {
+        switch self {
+        case .water:
+            return "喝水"
+        case .exercise:
+            return "运动"
+        case .dietVoice:
+            return "语音记一餐"
+        case .symptomVoice:
+            return "语音记症状"
+        }
     }
 }

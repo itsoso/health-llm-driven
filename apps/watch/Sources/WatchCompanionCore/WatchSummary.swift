@@ -410,6 +410,75 @@ public struct WatchQuickAction: Codable, Sendable, Identifiable {
     public var id: String { kind }
 }
 
+public enum WatchQuickActionKind: String, Sendable, Equatable {
+    case water
+    case exercise
+    case dietVoice
+    case symptomVoice
+}
+
+public struct WatchQuickActionPresentation: Sendable, Equatable, Identifiable {
+    public let kind: WatchQuickActionKind
+    public let label: String
+
+    public init(kind: WatchQuickActionKind, label: String) {
+        self.kind = kind
+        self.label = label
+    }
+
+    public var id: String { kind.rawValue }
+}
+
+public func watchQuickActionPresentations(_ actions: [WatchQuickAction]) -> [WatchQuickActionPresentation] {
+    let source = actions.isEmpty ? watchDefaultRemoteQuickActions() : actions
+    var result: [WatchQuickActionPresentation] = []
+    var seen: Set<WatchQuickActionKind> = []
+
+    func append(_ item: WatchQuickActionPresentation) {
+        guard !seen.contains(item.kind) else { return }
+        seen.insert(item.kind)
+        result.append(item)
+    }
+
+    for action in source {
+        guard let presentation = watchPresentation(for: action) else { continue }
+        append(presentation)
+    }
+    append(.init(kind: .symptomVoice, label: "语音记症状"))
+    return result
+}
+
+private func watchDefaultRemoteQuickActions() -> [WatchQuickAction] {
+    [
+        .init(kind: "water", label: "喝水", endpoint: "/water/records/quick", method: "POST"),
+        .init(kind: "exercise", label: "运动", endpoint: "/daily-health/exercise", method: "POST"),
+        .init(kind: "diet_voice", label: "记一餐", endpoint: "/diet/voice/parse", method: "POST"),
+    ]
+}
+
+private func watchPresentation(for action: WatchQuickAction) -> WatchQuickActionPresentation? {
+    guard action.method.uppercased() == "POST" else { return nil }
+    switch action.kind {
+    case "water":
+        guard action.endpoint == "/water/records/quick" else { return nil }
+        return .init(kind: .water, label: normalizedQuickActionLabel(action.label, fallback: "喝水"))
+    case "exercise":
+        guard action.endpoint == "/daily-health/exercise" else { return nil }
+        return .init(kind: .exercise, label: normalizedQuickActionLabel(action.label, fallback: "运动"))
+    case "diet_voice":
+        guard action.endpoint == "/diet/voice/parse" else { return nil }
+        let label = normalizedQuickActionLabel(action.label, fallback: "记一餐")
+        return .init(kind: .dietVoice, label: label.contains("语音") ? label : "语音\(label)")
+    default:
+        return nil
+    }
+}
+
+private func normalizedQuickActionLabel(_ label: String, fallback: String) -> String {
+    let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? fallback : trimmed
+}
+
 public struct WatchPushItem: Codable, Sendable, Identifiable {
     public let tier: String          // "P0" | "P1"
     public let title: String

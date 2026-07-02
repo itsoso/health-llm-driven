@@ -49,6 +49,65 @@ final class WatchSummaryTests: XCTestCase {
         XCTAssertFalse(s.pushItems.first!.isUrgent)
     }
 
+    func testQuickActionPresentationsUseBackendOrderAndSkipUnsupportedKinds() throws {
+        let data = Data("""
+        {"status":{"light":"green","readiness_score":80,"headline":"h"},
+         "top_action":null,
+         "agenda":{"total":0,"pending":0},
+         "quick_actions":[
+           {"kind":"water","label":"喝水","endpoint":"/water/records/quick","method":"POST"},
+           {"kind":"supplement","label":"补剂","endpoint":"/supplements/records","method":"POST"},
+           {"kind":"exercise","label":"运动","endpoint":"/daily-health/exercise","method":"POST"},
+           {"kind":"diet_voice","label":"记一餐","endpoint":"/diet/voice/parse","method":"POST"},
+           {"kind":"checkin","label":"打卡","endpoint":"/checkin/records/quick","method":"POST"}
+         ],
+         "push_items":[],"generated_at":"x"}
+        """.utf8)
+        let s = try WatchSummary.decode(data)
+
+        XCTAssertEqual(
+            watchQuickActionPresentations(s.quickActions),
+            [
+                WatchQuickActionPresentation(kind: .water, label: "喝水"),
+                WatchQuickActionPresentation(kind: .exercise, label: "运动"),
+                WatchQuickActionPresentation(kind: .dietVoice, label: "语音记一餐"),
+                WatchQuickActionPresentation(kind: .symptomVoice, label: "语音记症状"),
+            ]
+        )
+    }
+
+    func testQuickActionPresentationsFallbackToWatchDefaultsWhenBackendIsEmpty() {
+        XCTAssertEqual(
+            watchQuickActionPresentations([]),
+            [
+                WatchQuickActionPresentation(kind: .water, label: "喝水"),
+                WatchQuickActionPresentation(kind: .exercise, label: "运动"),
+                WatchQuickActionPresentation(kind: .dietVoice, label: "语音记一餐"),
+                WatchQuickActionPresentation(kind: .symptomVoice, label: "语音记症状"),
+            ]
+        )
+    }
+
+    func testQuickActionPresentationsSkipMismatchedEndpoints() throws {
+        let data = Data("""
+        {"status":{"light":"green","readiness_score":80,"headline":"h"},
+         "top_action":null,
+         "agenda":{"total":0,"pending":0},
+         "quick_actions":[
+           {"kind":"water","label":"喝水","endpoint":"/unexpected/water","method":"POST"},
+           {"kind":"exercise","label":"运动","endpoint":"/daily-health/exercise","method":"GET"},
+           {"kind":"diet_voice","label":"记一餐","endpoint":"/diet/records","method":"POST"}
+         ],
+         "push_items":[],"generated_at":"x"}
+        """.utf8)
+        let s = try WatchSummary.decode(data)
+
+        XCTAssertEqual(
+            watchQuickActionPresentations(s.quickActions),
+            [WatchQuickActionPresentation(kind: .symptomVoice, label: "语音记症状")]
+        )
+    }
+
     func testTopActionWithoutActionIdIsNotCompletable() throws {
         // 既有 fixture 不带 action_id → 可选字段缺省 nil,不破解码,且不可完成(只读)。
         let s = try WatchSummary.decode(json)
