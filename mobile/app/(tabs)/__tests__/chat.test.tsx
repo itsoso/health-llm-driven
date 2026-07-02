@@ -425,7 +425,7 @@ describe('ChatScreen', () => {
     });
   });
 
-  it('moves the immersive chat composer above the iOS keyboard without reserving the global tab bar', async () => {
+  it('keeps the docked-tab chat composer close to the global tab bar and above the iOS keyboard', async () => {
     const keyboardListeners: Record<string, (event: any) => void> = {};
     jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
       keyboardListeners[String(eventName)] = callback;
@@ -435,8 +435,8 @@ describe('ChatScreen', () => {
     const { getByTestId } = render(<ChatScreen />);
     await waitFor(() => expect(mockFetchConversationStarters).toHaveBeenCalled());
 
-    // Chat tab hides the global tab bar; composer only needs a small home-indicator breath.
-    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 8 });
+    // The global tab bar stays docked; the composer only needs a tiny separator breath.
+    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 4 });
 
     act(() => {
       keyboardListeners.keyboardDidShow({

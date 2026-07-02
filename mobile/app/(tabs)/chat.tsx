@@ -5,7 +5,7 @@ import {
   Alert, Keyboard, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { deleteConversation, getConversations, updateConversationTitle } from '../../services/chat';
@@ -52,7 +52,7 @@ const SUGGESTIONS: SuggestionCard[] = [
   { icon: 'trending-up-outline', text: 'HRV趋势分析', key: 'default', priority: 0 },
 ];
 
-const CHAT_BOTTOM_BREATHING_SPACE = 8;
+const CHAT_BOTTOM_BREATHING_SPACE = 4;
 
 function guessSuggestionIcon(text: string): SuggestionCard['icon'] {
   if (/体检|化验|指标|LDL|HbA1c|尿酸|血压|血脂|血糖/i.test(text)) return 'document-text-outline';
@@ -93,7 +93,6 @@ function getSelfReportedAdherence(reply: string): number | null {
 
 export default function ChatScreen() {
   const chat = useChatEngine();
-  const safeInsets = useSafeAreaInsets();
   const {
     messages,
     isStreaming,
@@ -465,11 +464,11 @@ export default function ChatScreen() {
   }, [selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  // Chat tab 是沉浸态:全局 tab bar 不参与布局。键盘弹起时直接为键盘留位,
-  // 收起时只保留 home indicator 的呼吸空间。
+  // Chat tab 保留 docked 全局 tab bar。键盘弹起时直接为键盘留位,
+  // 收起时只保留输入框和 tab bar 之间的轻量分隔。
   const bottomSpacerHeight = keyboardVisible
     ? (Platform.OS === 'ios' ? keyboardHeight : 0)
-    : Math.max(safeInsets.bottom, CHAT_BOTTOM_BREATHING_SPACE);
+    : CHAT_BOTTOM_BREATHING_SPACE;
   const activeLlmLabel = llmModelId
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
