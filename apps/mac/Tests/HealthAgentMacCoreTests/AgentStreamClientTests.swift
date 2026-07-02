@@ -196,6 +196,16 @@ final class AgentStreamClientTests: XCTestCase {
         XCTAssertEqual(AgentChatViewModel.statusText(stage: "thinking", detail: nil, round: 1).key, "Reva is thinking…")
         XCTAssertEqual(AgentChatViewModel.statusText(stage: "thinking", detail: nil, round: nil).key, "Reva is thinking…")
         XCTAssertEqual(AgentChatViewModel.statusText(stage: "thinking", detail: nil, round: 2).key, "Reva is organizing thoughts…")
+        // thinking + nil/blank detail keeps the round-based template (detail stays nil).
+        XCTAssertNil(AgentChatViewModel.statusText(stage: "thinking", detail: nil, round: 1).detail)
+        XCTAssertEqual(AgentChatViewModel.statusText(stage: "thinking", detail: "   ", round: 1).key, "Reva is thinking…")
+
+        // thinking + non-blank detail → server phrase verbatim as the key, no %@ detail,
+        // no 正在 prefix / template. (Non-streaming commercial models via LangBridge.)
+        let nonStreamNotice = "该模型整段生成,需等待完整回答"
+        let thinkingDetail = AgentChatViewModel.statusText(stage: "thinking", detail: nonStreamNotice, round: 3)
+        XCTAssertEqual(thinkingDetail.key, nonStreamNotice)
+        XCTAssertNil(thinkingDetail.detail)
 
         let tool = AgentChatViewModel.statusText(stage: "tool", detail: "查询健康数据", round: 2)
         XCTAssertEqual(tool.key, "Working: %@…")
@@ -219,6 +229,14 @@ final class AgentStreamClientTests: XCTestCase {
         // tool detail 插值:格式串 + 中文工具名 → 正在<detail>…
         let template = L10n.text("Working: %@…", language: .zh)
         XCTAssertEqual(String(format: template, "查询健康数据"), "正在查询健康数据…")
+
+        // thinking + detail 走 verbatim 分支:map 出的 key 是完整中文短语,L10n 未登记
+        // 则透传原样(zh 与 en 都不加模板/前缀),detail 为 nil 不触发 %@ 插值。
+        let nonStreamNotice = "该模型整段生成,需等待完整回答"
+        let mapped = AgentChatViewModel.statusText(stage: "thinking", detail: nonStreamNotice, round: 3)
+        XCTAssertNil(mapped.detail)
+        XCTAssertEqual(L10n.text(mapped.key, language: .zh), nonStreamNotice)
+        XCTAssertEqual(L10n.text(mapped.key, language: .en), nonStreamNotice)
     }
 
     @MainActor
@@ -268,6 +286,33 @@ final class AgentStreamClientTests: XCTestCase {
         await sendTask.value
 
         // stream 结束后清空,退回时间轮换兜底。
+        XCTAssertNil(model.liveStatusText)
+        XCTAssertNil(model.liveStatusDetail)
+    }
+
+    @MainActor
+    func testViewModelHoldsVerbatimThinkingDetailBeforeFirstToken() async throws {
+        // 非流式商业模型(Opus/GPT/Gemini via LangBridge)会先发一条带 detail 的
+        // thinking status;detail 是完整中文短语,须原样显示(不加 正在 / 不套模板)。
+        // liveStatusText == 原短语,liveStatusDetail == nil(不触发 %@ 插值)。
+        let notice = "该模型整段生成,需等待完整回答"
+        let box = StreamContinuationBox()
+        let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+            box.continuation = continuation
+        }
+        let model = AgentChatViewModel(streamService: StaticAgentStreamService(stream: stream))
+        let sendTask = Task { await model.send("分析") }
+
+        box.continuation?.yield(.start(conversationID: 7))
+        box.continuation?.yield(.status(stage: "thinking", detail: notice, round: 1))
+
+        try await pollUntil { model.liveStatusText == notice }
+        XCTAssertEqual(model.liveStatusText, notice)
+        XCTAssertNil(model.liveStatusDetail)
+
+        box.continuation?.finish()
+        await sendTask.value
+
         XCTAssertNil(model.liveStatusText)
         XCTAssertNil(model.liveStatusDetail)
     }

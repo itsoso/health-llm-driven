@@ -386,3 +386,225 @@ async def test_typed_symptom_writes_without_confirmation_roundtrip(db):
     assert "NEEDS_CONFIRMATION" not in result
     assert posted["url"].endswith("/symptoms")
     assert posted["payload"]["description"] == "舌头尖溃疡"
+
+
+# ──── P4: lite system prompt for fast-routed simple turns ────
+# fast-route 的简单记录/查询回合应走 lite prompt: 保留核心人格 + R4 边界 + 防回显 +
+# 记录参数指引 + 基础画像; 剥掉分析 blob (世界观/肝/原研药/基因/记忆…) 与系统知识库检索。
+# 非快路由回合 prompt 逐字节不变。
+
+# 稳定 marker (从 _build_system_prompt 静态 parts / 各 blob 里挑不会漂移的短语):
+_R4_MARKER = "## 安全与边界 (R4"          # 医疗边界章节标题
+_ANTI_ECHO_MARKER = "绝对不要把工具返回的原始 JSON"   # 防回显规则 (R4 里那条)
+_RECORD_GUIDANCE_MARKER = "data 参数必须包含具体内容"  # 记录 worked-example / 单位默认指引
+_LITE_HEALTH_MARKER = "当前时段:"           # build_lite_health_context 路径注入
+# full-only marker (lite 必须不含):
+_WORLDVIEW_MARKER = "【健康世界观"          # worldview_prompt_blob (full 恒注入)
+
+
+def test_lite_prompt_keeps_core_persona_and_record_guidance(db, auth_user_and_headers):
+    """(a) fast/lite prompt 含 R4 + 防回显 + 记录指引 + lite_health, 不含 worldview。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+
+    lite = executor._build_system_prompt(user.id, 1, "tok", lite=True)
+
+    # KEEP: 核心人格 / R4 边界 / 防回显 / 记录参数指引 / 基础画像
+    assert _R4_MARKER in lite
+    assert _ANTI_ECHO_MARKER in lite
+    assert _RECORD_GUIDANCE_MARKER in lite
+    assert _LITE_HEALTH_MARKER in lite
+    # SKIP: 分析 blob (世界观是 full 恒注入的最稳 marker)
+    assert _WORLDVIEW_MARKER not in lite
+
+
+def test_full_prompt_unchanged_contains_analysis_blobs(db, auth_user_and_headers):
+    """(b) 非快路由 (lite=False) prompt 仍含分析 blob (worldview) + 全部核心 marker。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+
+    full = executor._build_system_prompt(user.id, 1, "tok", lite=False)
+
+    # 分析 blob 仍在
+    assert _WORLDVIEW_MARKER in full
+    # 核心 marker 与 lite 共有
+    assert _R4_MARKER in full
+    assert _ANTI_ECHO_MARKER in full
+    assert _RECORD_GUIDANCE_MARKER in full
+
+
+def test_default_prompt_equals_full_byte_for_byte(db, auth_user_and_headers):
+    """非快路由默认调用 (不传 lite) 必须与 lite=False 逐字节等同 (行为零变化)。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    assert executor._build_system_prompt(user.id, 1, "tok") == executor._build_system_prompt(
+        user.id, 1, "tok", lite=False
+    )
+
+
+def test_lite_prompt_is_smaller_than_full(db, auth_user_and_headers):
+    """lite prompt 必须显著短于 full (prefill 削减)。打印实测削减量供观测。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    lite = executor._build_system_prompt(user.id, 1, "tok", lite=True)
+    full = executor._build_system_prompt(user.id, 1, "tok", lite=False)
+    cut = len(full) - len(lite)
+    print(
+        f"\n[P4 prompt char reduction] full={len(full)} lite={len(lite)} "
+        f"cut={cut} ({cut / len(full) * 100:.1f}%)"
+    )
+    assert len(lite) < len(full)
+
+
+@pytest.mark.asyncio
+async def test_fast_turn_skips_system_kb_context(db, auth_user_and_headers, monkeypatch):
+    """(c) fast-routed 回合跳过系统知识库检索 (_build_system_knowledge_prompt_context 不被调用)。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+
+    kb_calls: list = []
+
+    def _spy_kb(uid, msg):
+        kb_calls.append((uid, msg))
+        return "SYSTEM_KB_BLOCK"
+
+    monkeypatch.setattr(executor, "_build_system_knowledge_prompt_context", _spy_kb)
+
+    def factory(model_id):
+        return _FakeProvider(model_id)
+
+    _stub_registry_fast(monkeypatch)
+    _wire_common(executor, monkeypatch, factory)
+    # _wire_common stubs _build_system_prompt to "SYS"; that's fine — we only assert
+    # the KB spy is skipped when fast-routed.
+
+    await _run(executor, "记录我喝了500ml水", user_id=user.id)
+
+    assert executor._fast_route_simple_turn is True
+    assert kb_calls == []  # KB retrieval skipped for the fast turn
+
+
+@pytest.mark.asyncio
+async def test_analysis_turn_calls_system_kb_context(db, auth_user_and_headers, monkeypatch):
+    """对照 (c): 非快路由分析回合仍调用系统知识库检索。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+
+    kb_calls: list = []
+
+    def _spy_kb(uid, msg):
+        kb_calls.append((uid, msg))
+        return ""
+
+    monkeypatch.setattr(executor, "_build_system_knowledge_prompt_context", _spy_kb)
+
+    default_provider = _FakeProvider("qwen3.7-plus")
+    _stub_registry_fast(monkeypatch)
+    _wire_common(executor, monkeypatch, lambda mid: _FakeProvider(mid))
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_user",
+        lambda uid, db, **k: default_provider,
+    )
+
+    await _run(executor, "综合分析我的健康趋势", user_id=user.id)
+
+    assert executor._fast_route_simple_turn is False
+    assert len(kb_calls) == 1  # KB retrieval ran for the analysis turn
+
+
+# ──── Task 2: honest non-streaming UX for LangBridge commercial models ────
+# ModelEntry.supports_streaming 默认 True; langbridge-proxy 商用三强 = False。
+# 答案轮遇非流式模型多发一条 thinking 状态 detail; 流式模型 detail 恒 None。
+
+
+def test_supports_streaming_defaults_true():
+    """新字段默认 True — 拿不准的模型走正常 token 滚动。"""
+    e = reg.ModelEntry("x", "X", "tokenplan", "m", "fast")
+    assert e.supports_streaming is True
+
+
+@pytest.mark.parametrize("model_id", ["claude-opus-4.7", "gpt-5.5", "gemini-3.1-pro"])
+def test_langbridge_entries_are_non_streaming(model_id):
+    """langbridge-proxy 商用模型标 supports_streaming=False (上游无 SSE, 整段返回)。"""
+    entry = reg.get_model(model_id)
+    assert entry is not None
+    assert entry.provider == "langbridge-proxy"
+    assert entry.supports_streaming is False
+
+
+def test_tokenplan_entries_stay_streaming():
+    """tokenplan 直连模型仍是流式 (逐 token)。抽查几个。"""
+    for model_id in ("qwen3.7-plus", "deepseek-v4-flash", "deepseek-v4-pro"):
+        entry = reg.get_model(model_id)
+        assert entry is not None
+        assert entry.supports_streaming is True, model_id
+
+
+def test_status_detail_emitted_for_non_streaming_model(db, monkeypatch):
+    """答案模型 resolve 到非流式 entry → thinking 状态带 detail。"""
+    executor = AgentExecutor(db)
+    executor._request_model_id = "claude-opus-4.7"
+
+    assert executor._resolved_answer_model_is_non_streaming() is True
+
+
+def test_status_detail_not_emitted_for_streaming_model(db):
+    """答案模型 resolve 到流式 entry → 不发 detail (走正常滚动)。"""
+    executor = AgentExecutor(db)
+    executor._request_model_id = "deepseek-v4-flash"
+
+    assert executor._resolved_answer_model_is_non_streaming() is False
+
+
+def test_non_streaming_resolve_fail_soft_on_unknown(db):
+    """未知 model_id / 无 model → fail-soft 返回 False (不误发提示)。"""
+    executor = AgentExecutor(db)
+    executor._request_model_id = "nope-not-registered"
+    assert executor._resolved_answer_model_is_non_streaming() is False
+    executor._request_model_id = None
+    executor._current_user_id = None
+    assert executor._resolved_answer_model_is_non_streaming() is False
+
+
+@pytest.mark.asyncio
+async def test_run_stream_emits_thinking_detail_for_non_streaming(db, auth_user_and_headers, monkeypatch):
+    """端到端: 非流式模型的分析回合, SSE 里出现带 detail 的 thinking 状态事件。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+
+    _wire_common(executor, monkeypatch, lambda mid: _FakeProvider(mid))
+
+    events = await _run(
+        executor,
+        "综合分析我的健康趋势",
+        extra_context=json.dumps({"client": "mac", "model_id": "claude-opus-4.7"}),
+        user_id=user.id,
+    )
+
+    details = [
+        e["data"].get("detail")
+        for e in events
+        if e.get("event") == "status" and e["data"].get("stage") == "thinking"
+    ]
+    assert "该模型整段生成,需等待完整回答" in details
+
+
+@pytest.mark.asyncio
+async def test_run_stream_no_thinking_detail_for_streaming(db, auth_user_and_headers, monkeypatch):
+    """对照: 流式模型的回合, thinking 状态 detail 恒为 None。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+
+    _stub_registry_fast(monkeypatch)
+    _wire_common(executor, monkeypatch, lambda mid: _FakeProvider(mid))
+
+    # 走 fast-route → deepseek-v4-flash (streaming)
+    events = await _run(executor, "记录我喝了500ml水", user_id=user.id)
+
+    thinking_details = [
+        e["data"].get("detail")
+        for e in events
+        if e.get("event") == "status" and e["data"].get("stage") == "thinking"
+    ]
+    assert thinking_details  # at least one thinking status was emitted
+    assert all(d is None for d in thinking_details)

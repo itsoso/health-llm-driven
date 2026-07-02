@@ -2054,6 +2054,29 @@ class AgentExecutor:
             else ANSWER_MAX_TOKENS
         )
 
+    def _resolved_answer_model_is_non_streaming(self) -> bool:
+        """本回合答案是否由一个**结构性非流式**模型生成 (整段一次返回, ttft≈total)。
+
+        解析口径与 _resolve_chat_provider 一致: 优先 _request_model_id (mac/桌面显式选/
+        fast-route 填充), 否则用户画像/admin 全局默认模型 (_user_effective_model_id)。
+        命中注册表 entry 且 supports_streaming=False 才返回 True。
+
+        **fail-soft, 任何不确定都返回 False (不发提示, mac 走正常 token 滚动)**:
+        解析不出 model_id、未注册、读库异常 —— 一律当作可流式, 宁可少提示也不误导。
+        """
+        try:
+            from app.services.llm.model_registry import get_model
+
+            model_id = self._request_model_id or self._user_effective_model_id()
+            if not model_id:
+                return False
+            entry = get_model(model_id)
+            if entry is None:
+                return False
+            return not entry.supports_streaming
+        except Exception:  # noqa: BLE001 — 观测性提示绝不能断主链路
+            return False
+
     @staticmethod
     def _status_event(
         stage: str,
@@ -2382,9 +2405,20 @@ class AgentExecutor:
         pre_stages["opener_ms"] = _pre_stage(_t_stage)
 
         # 2. 构建 system prompt（复用健康上下文）
+        # fast-routed 简单回合走 lite prompt: 剥掉分析 blob (基因/世界观/肝/血常规/疗程/
+        # 干预/效应/记忆), 只留核心人格 + R4 边界 + 防回显 + 记录参数指引 + 基础画像。
+        # 非快路由回合 lite=False → prompt 逐字节不变。
         _t_stage = time.time()
-        system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
+        system_content = self._build_system_prompt(
+            user_id, conv.id, user_auth_token, lite=self._fast_route_simple_turn
+        )
         pre_stages["system_prompt_ms"] = _pre_stage(_t_stage)
+        if self._fast_route_simple_turn:
+            # 可观测性: 记录 lite prompt 的实际字符数, 用来看 prefill 削减 (对比 full)。
+            logger.info(
+                "[agent_executor] fast-route lite system prompt user=%s chars=%d",
+                user_id, len(system_content),
+            )
         if opener_quick_reply_note:
             system_content += (
                 "\n\n## 入口动作处理结果\n"
@@ -2410,7 +2444,12 @@ class AgentExecutor:
                 f"```\n{extra_context.strip()[:4000]}\n```"
             )
         _t_stage = time.time()
-        system_kb_context = self._build_system_knowledge_prompt_context(user_id, message)
+        # fast-routed 简单回合跳过系统知识库检索: KB claim 是给分析/解读用的依据,
+        # 对「今天喝了多少水」无用, 且检索本身占 pre-first-token 壁钟 (kb_ms)。
+        system_kb_context = (
+            "" if self._fast_route_simple_turn
+            else self._build_system_knowledge_prompt_context(user_id, message)
+        )
         pre_stages["kb_ms"] = _pre_stage(_t_stage)
         if system_kb_context:
             system_content += f"\n\n{system_kb_context}"
@@ -2513,6 +2552,12 @@ class AgentExecutor:
         # 展示"调用了哪些 Skills"。与 sources_used (引用了哪些数据源) 独立。
         tools_used: List[str] = []
 
+        # 诚实的非流式 UX: 若本回合答案模型结构性非流式 (langbridge 商用模型, 上游无 SSE,
+        # 整段一次返回), mac 端「正在思考…」的 token 滚动是误导 —— 在每轮 LLM 调用前多发一条
+        # thinking 状态, 带 detail「整段生成, 需等待完整回答」, mac 会原样显示该 detail。
+        # 流式模型 detail 恒为 None (不发此附加事件), mac 走正常滚动。fail-soft (解析异常=不发)。
+        answer_model_non_streaming = self._resolved_answer_model_is_non_streaming()
+
         self._http_client = httpx.AsyncClient(timeout=90.0)
         try:
             for round_idx in range(MAX_TOOL_ROUNDS):
@@ -2530,6 +2575,13 @@ class AgentExecutor:
                     yield self._status_event("synthesis", round=round_idx + 1)
                 else:
                     yield self._status_event("thinking", round=round_idx + 1)
+                # 非流式模型: 多发一条带 detail 的 thinking 状态 (整段生成需等待)。
+                if answer_model_non_streaming:
+                    yield self._status_event(
+                        "thinking",
+                        detail="该模型整段生成,需等待完整回答",
+                        round=round_idx + 1,
+                    )
                 _round_start = time.time()
                 streamed_text = ""
                 streamed_tool_calls: List[Dict[str, Any]] = []
@@ -3256,9 +3308,17 @@ class AgentExecutor:
             yield evt
 
     def _build_system_prompt(
-        self, user_id: int, conv_id: int, user_auth_token: Optional[str]
+        self, user_id: int, conv_id: int, user_auth_token: Optional[str], lite: bool = False
     ) -> str:
-        """构建统一 Agent 的 system prompt"""
+        """构建统一 Agent 的 system prompt。
+
+        lite=True (fast-routed 简单记录/查询回合): 只保留核心人格 + 行为准则
+        (R4 医疗边界 / 绝不复述工具原始 JSON 的防回显规则 / 记录参数的 worked-example
+        与单位默认指引 —— 弱快模型丢量参会把「饮水2000」记成默认值, 这段必须留) +
+        build_lite_health_context (基础画像) + 自我标识。**跳过**所有分析 blob:基因规则库、
+        原研药建议、健康世界观、肝脏趋势、血常规趋势、用药疗程、干预闭环、效应估计、记忆 ——
+        这些是分析用的重 prefill, 对「今天喝了多少水」纯噪音且拉长首字延迟。
+        lite=False (分析/建议/复盘等一切非快路由回合): 行为 100% 不变 (逐字节等同旧实现)。"""
         parts = [
             "你是用户的 AI 健康助理。你可以通过工具调用获取、记录和分析用户的健康数据。",
             "你是唯一的对话入口——用户的所有健康相关请求（记录数据、查询指标、深度分析、图片识别）都由你处理。",
@@ -3346,15 +3406,17 @@ class AgentExecutor:
         ]
 
         # 注入 ak-kbase gene_knowledge 高优先级警示规则（PM/缺陷/纯合风险）
-        try:
-            from app.services.gene_rules_registry import get_registry
-            gene_section = get_registry().system_prompt_section(user_phenotypes=None)
-            if gene_section:
-                parts.append("\n" + gene_section)
-        except Exception:
-            pass
+        # lite 回合跳过: 分析用的基因规则库对「记录喝水/多少水」是纯 prefill 噪音。
+        if not lite:
+            try:
+                from app.services.gene_rules_registry import get_registry
+                gene_section = get_registry().system_prompt_section(user_phenotypes=None)
+                if gene_section:
+                    parts.append("\n" + gene_section)
+            except Exception:
+                pass
 
-        # 注入健康上下文
+        # 注入健康上下文 (lite 与 full 都注入 —— 基础画像是记录/查询也需要的最小上下文)
         try:
             from app.services.health_context_lite_service import (
                 build_lite_health_context, _get_time_period,
@@ -3369,88 +3431,93 @@ class AgentExecutor:
         except Exception as e:
             logger.warning(f"Agent 健康上下文注入失败: {e}")
 
-        # 注入原研药可换建议(基于在用药;已采纳/忽略的已被抑制,不会重复推荐)
-        try:
-            from app.services.originator_recommendations import originator_recs_prompt_blob
-            blob = originator_recs_prompt_blob(self.db, user_id)
-            if blob:
-                parts.append("\n" + blob)
-        except Exception as e:
-            logger.warning(f"Agent 原研药建议注入失败: {e}")
+        # ──── 分析 blob (仅 full 回合注入) ────
+        # 下面这一组都是给分析/建议/复盘用的重上下文: 原研药建议、健康世界观、肝脏/血常规
+        # 趋势、用药疗程、干预闭环、N-of-1 效应估计、对话记忆。fast-routed 简单记录/查询回合
+        # (lite=True) 全部跳过 —— 对「记录喝水」「今天喝了多少水」无用, 只增加 prefill 与噪音。
+        if not lite:
+            # 注入原研药可换建议(基于在用药;已采纳/忽略的已被抑制,不会重复推荐)
+            try:
+                from app.services.originator_recommendations import originator_recs_prompt_blob
+                blob = originator_recs_prompt_blob(self.db, user_id)
+                if blob:
+                    parts.append("\n" + blob)
+            except Exception as e:
+                logger.warning(f"Agent 原研药建议注入失败: {e}")
 
-        # 注入健康世界观(四定律 + 四层 + 症状级转诊红线)—— 统一建议哲学
-        try:
-            from app.services.health_worldview import worldview_prompt_blob
-            parts.append("\n" + worldview_prompt_blob(include_triage=True))
-        except Exception as e:
-            logger.warning(f"Agent 世界观注入失败: {e}")
+            # 注入健康世界观(四定律 + 四层 + 症状级转诊红线)—— 统一建议哲学
+            try:
+                from app.services.health_worldview import worldview_prompt_blob
+                parts.append("\n" + worldview_prompt_blob(include_triage=True))
+            except Exception as e:
+                logger.warning(f"Agent 世界观注入失败: {e}")
 
-        # 注入肝脏趋势(消费历史肝酶;FIB-4/脂肪肝风险提示,非诊断)
-        try:
-            from app.services.liver_health import liver_prompt_blob
-            from app.models.user import User as _User
-            from datetime import date as _date
-            _u = self.db.query(_User).filter(_User.id == user_id).first()
-            _age = None
-            if _u and _u.birth_date:
-                _t = _date.today()
-                _age = float(_t.year - _u.birth_date.year -
-                             ((_t.month, _t.day) < (_u.birth_date.month, _u.birth_date.day)))
-            blob = liver_prompt_blob(self.db, user_id, age=_age)
-            if blob:
-                parts.append("\n" + blob)
-        except Exception as e:
-            logger.warning(f"Agent 肝脏趋势注入失败: {e}")
+            # 注入肝脏趋势(消费历史肝酶;FIB-4/脂肪肝风险提示,非诊断)
+            try:
+                from app.services.liver_health import liver_prompt_blob
+                from app.models.user import User as _User
+                from datetime import date as _date
+                _u = self.db.query(_User).filter(_User.id == user_id).first()
+                _age = None
+                if _u and _u.birth_date:
+                    _t = _date.today()
+                    _age = float(_t.year - _u.birth_date.year -
+                                 ((_t.month, _t.day) < (_u.birth_date.month, _u.birth_date.day)))
+                blob = liver_prompt_blob(self.db, user_id, age=_age)
+                if blob:
+                    parts.append("\n" + blob)
+            except Exception as e:
+                logger.warning(f"Agent 肝脏趋势注入失败: {e}")
 
-        # 注入血常规趋势(消费历史 CBC;红细胞系同向偏高/中性-淋巴倒置提示,非诊断)
-        try:
-            from app.services.blood_routine import blood_routine_prompt_blob
-            from app.models.user import User as _User
-            _u = self.db.query(_User).filter(_User.id == user_id).first()
-            _sex = _u.gender if _u else None
-            blob = blood_routine_prompt_blob(self.db, user_id, sex=_sex)
-            if blob:
-                parts.append("\n" + blob)
-        except Exception as e:
-            logger.warning(f"Agent 血常规趋势注入失败: {e}")
+            # 注入血常规趋势(消费历史 CBC;红细胞系同向偏高/中性-淋巴倒置提示,非诊断)
+            try:
+                from app.services.blood_routine import blood_routine_prompt_blob
+                from app.models.user import User as _User
+                _u = self.db.query(_User).filter(_User.id == user_id).first()
+                _sex = _u.gender if _u else None
+                blob = blood_routine_prompt_blob(self.db, user_id, sex=_sex)
+                if blob:
+                    parts.append("\n" + blob)
+            except Exception as e:
+                logger.warning(f"Agent 血常规趋势注入失败: {e}")
 
-        # 注入用药疗程提醒(即将结束的疗程 + 建议复查;胃溃疡 PPI 疗程等)
-        try:
-            from app.services.medication_course_service import course_prompt_blob
-            blob = course_prompt_blob(self.db, user_id)
-            if blob:
-                parts.append("\n" + blob)
-        except Exception as e:
-            logger.warning(f"Agent 疗程提醒注入失败: {e}")
+            # 注入用药疗程提醒(即将结束的疗程 + 建议复查;胃溃疡 PPI 疗程等)
+            try:
+                from app.services.medication_course_service import course_prompt_blob
+                blob = course_prompt_blob(self.db, user_id)
+                if blob:
+                    parts.append("\n" + blob)
+            except Exception as e:
+                logger.warning(f"Agent 疗程提醒注入失败: {e}")
 
-        # 注入干预闭环主动提议(有异常代谢杠杆 + 无 active 周期 → 可提议开 N-of-1 周期)
-        try:
-            from app.services.intervention_cycle_service import intervention_proposal_prompt_blob
-            blob = intervention_proposal_prompt_blob(self.db, user_id)
-            if blob:
-                parts.append("\n" + blob)
-        except Exception as e:
-            logger.warning(f"Agent 干预闭环提议注入失败: {e}")
+            # 注入干预闭环主动提议(有异常代谢杠杆 + 无 active 周期 → 可提议开 N-of-1 周期)
+            try:
+                from app.services.intervention_cycle_service import intervention_proposal_prompt_blob
+                blob = intervention_proposal_prompt_blob(self.db, user_id)
+                if blob:
+                    parts.append("\n" + blob)
+            except Exception as e:
+                logger.warning(f"Agent 干预闭环提议注入失败: {e}")
 
-        # 注入 N-of-1 干预效应估计(active/近期周期 + 复查数据 → 个人化效应后验)。
-        # 无周期/无复查 → 空串不注入(Phase 1, effect_estimator)。
-        try:
-            from app.services.effect_estimator import effect_estimate_prompt_blob
-            blob = effect_estimate_prompt_blob(self.db, user_id)
-            if blob:
-                parts.append("\n" + blob)
-        except Exception as e:
-            logger.warning(f"Agent 干预效应估计注入失败: {e}")
+            # 注入 N-of-1 干预效应估计(active/近期周期 + 复查数据 → 个人化效应后验)。
+            # 无周期/无复查 → 空串不注入(Phase 1, effect_estimator)。
+            try:
+                from app.services.effect_estimator import effect_estimate_prompt_blob
+                blob = effect_estimate_prompt_blob(self.db, user_id)
+                if blob:
+                    parts.append("\n" + blob)
+            except Exception as e:
+                logger.warning(f"Agent 干预效应估计注入失败: {e}")
 
-        # 注入记忆
-        try:
-            from app.services.conversation_memory_service import get_relevant_memories
-            memories = get_relevant_memories(self.db, user_id, limit=5)
-            if memories:
-                parts.append("\n## 用户记忆")
-                parts.append(memories)
-        except Exception:
-            pass
+            # 注入记忆
+            try:
+                from app.services.conversation_memory_service import get_relevant_memories
+                memories = get_relevant_memories(self.db, user_id, limit=5)
+                if memories:
+                    parts.append("\n## 用户记忆")
+                    parts.append(memories)
+            except Exception:
+                pass
 
         # 告诉 LLM 自己是哪个模型 — 用户问 "你是什么模型" 时如实答
         try:

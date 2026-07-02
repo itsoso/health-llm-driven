@@ -36,6 +36,11 @@ class ModelEntry:
     #   写成文本 / 弯引号 JSON / [claim:] 泄漏)。False = 经验上不稳, 需要工具的
     #   agent 回合会门控回退到可靠模型 (见 agent_executor._resolve_chat_provider)。
     #   纯文本分析/问答不受影响。拿不准时保守标 True。
+    supports_streaming: bool = True
+    # ↑ 该模型是否真流式 (逐 token SSE)。False = 上游整段一次性返回 (ttft≈total),
+    #   例如 langbridge-proxy 经万擎公网转发的商用模型: 网关无 SSE, 整段答案一次到。
+    #   agent_executor 在答案轮据此发一条 thinking 状态 detail, 让 mac 端如实显示
+    #   「需等待完整回答」而非误导性的 token 滚动。拿不准时保守标 True (走正常滚动)。
 
 
 # 注册表 — 加新模型只改这里
@@ -251,6 +256,9 @@ MODELS: List[ModelEntry] = [
     # ──── 商用模型 (经 browser-llm-orchestrator LangBridge gateway) ────
     # 透明走 https://base.executor.life/api/llm , OpenAI 协议兼容, 支持 vision.
     # 切换粒度 = user_profile.llm_model_id, admin 也可用 set_active_model_id 全局切.
+    # supports_streaming=False: 经万擎公网转发的商用模型在网关侧无 SSE, 整段答案
+    # 一次性返回 (ttft≈total)。agent_executor 答案轮据此发 thinking 状态 detail,
+    # 让 mac 端如实提示「整段生成, 需等待完整回答」而非误导性 token 滚动。
     ModelEntry(
         id="claude-opus-4.7",
         label="Claude Opus 4.7 · 商用",
@@ -259,6 +267,7 @@ MODELS: List[ModelEntry] = [
         speed_tier="reasoning",
         note="多模态 / 推理强 / 经 LangBridge",
         requires_env=("LANGBRIDGE_GATEWAY_API_KEY",),
+        supports_streaming=False,
     ),
     ModelEntry(
         id="gpt-5.5",
@@ -268,6 +277,7 @@ MODELS: List[ModelEntry] = [
         speed_tier="balanced",
         note="多模态 / 工具调用 / 经 LangBridge",
         requires_env=("LANGBRIDGE_GATEWAY_API_KEY",),
+        supports_streaming=False,
     ),
     ModelEntry(
         id="gemini-3.1-pro",
@@ -277,6 +287,7 @@ MODELS: List[ModelEntry] = [
         speed_tier="reasoning",
         note="多模态 / 长上下文 / 经 LangBridge",
         requires_env=("LANGBRIDGE_GATEWAY_API_KEY",),
+        supports_streaming=False,
     ),
 ]
 

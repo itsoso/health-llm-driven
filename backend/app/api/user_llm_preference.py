@@ -37,6 +37,7 @@ class ModelOption(BaseModel):
     speed_tier: str
     note: str = ""
     capabilities: List[str] = Field(default_factory=list)
+    supports_streaming: bool = True  # False = 整段生成 (无 SSE), 客户端可提示需等待
 
 
 class PreferenceResponse(BaseModel):
@@ -70,6 +71,7 @@ def _list_options() -> List[ModelOption]:
         ModelOption(
             id=m.id, label=m.label, provider=m.provider, model=m.model,
             speed_tier=m.speed_tier, note=m.note, capabilities=list(m.capabilities),
+            supports_streaming=m.supports_streaming,
         )
         for m in list_models(only_available=True)
     ]

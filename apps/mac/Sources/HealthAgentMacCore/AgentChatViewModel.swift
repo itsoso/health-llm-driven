@@ -1620,8 +1620,13 @@ public final class AgentChatViewModel {
     ///
     /// Stage table (backend contract):
     /// - `vision`     → "Recognizing image…"                     (正在识别图片…)
-    /// - `thinking`   → round≥2 "Reva is organizing thoughts…" else "Reva is thinking…"
-    ///                  (正在整理思路… / 阿衡正在思考…)
+    /// - `thinking`   → detail non-blank: the detail verbatim     (server-provided zh
+    ///                  phrase, e.g. 该模型整段生成,需等待完整回答 — non-streaming
+    ///                  commercial models via LangBridge). Returned as the `key` with
+    ///                  `detail: nil` so the View renders it AS-IS (L10n pass-through,
+    ///                  no 正在 prefix, no %@ template).
+    ///                  detail nil/blank: round≥2 "Reva is organizing thoughts…" else
+    ///                  "Reva is thinking…" (正在整理思路… / 阿衡正在思考…)
     /// - `tool`       → detail non-nil "Working: %@…" + detail   (正在<detail>…)
     ///                  detail nil "Calling a tool…"             (正在调用工具…)
     /// - `synthesis`  → "Reva is composing a reply…"             (正在整理回答…)
@@ -1630,6 +1635,12 @@ public final class AgentChatViewModel {
         case "vision":
             return ("Recognizing image…", nil)
         case "thinking":
+            // Server-provided complete zh phrase (e.g. non-streaming commercial model
+            // notice). Show verbatim: return it as `key` (L10n pass-through renders the
+            // raw string) with `detail: nil` so the View skips %@ templating.
+            if let detail, !detail.trimmingCharacters(in: .whitespaces).isEmpty {
+                return (detail, nil)
+            }
             return ((round ?? 1) >= 2 ? "Reva is organizing thoughts…" : "Reva is thinking…", nil)
         case "tool":
             if let detail, !detail.trimmingCharacters(in: .whitespaces).isEmpty {
