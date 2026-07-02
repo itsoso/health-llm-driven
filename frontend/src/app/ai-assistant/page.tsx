@@ -37,6 +37,7 @@ import {
 } from '@/components/assistant/modelCatalog';
 import { executeMedicalExamImportSkillForFile } from '@/services/chatMedicalExamImportSkill';
 import { pickPastedMedicalImportFile } from '@/services/pastedMedicalImportFile';
+import { statusStagePhrase } from '@/components/assistant/statusStagePhrase';
 
 const DEFAULT_SUGGESTIONS = [
   '分析我最近的代谢健康',
@@ -85,6 +86,8 @@ function AIAssistantInner() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
+  // 2026-07-02: 实时状态行 (status SSE 事件 → 中文短语), 首 token 到达清空。纯加法。
+  const [statusText, setStatusText] = useState<string | null>(null);
   const [doneIds, setDoneIds] = useState<Set<number>>(new Set());
   // 2026-05-13: 当前用户偏好的 LLM 模型 (顶部 chip 用)
   const [llmPref, setLlmPref] = useState<{ label: string | null; model_id: string | null }>({
@@ -97,6 +100,8 @@ function AIAssistantInner() {
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<number>>(new Set());
   const [sharing, setSharing] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // 状态行去抖: for-await 循环内读闭包会拿到陈旧 statusText, 用 ref 避免重复 setState。
+  const statusRef = useRef<string | null>(null);
   const medicalExamInputRef = useRef<HTMLInputElement | null>(null);
   const [starterSuggestions, setStarterSuggestions] = useState<string[]>(DEFAULT_SUGGESTIONS);
   const [opener, setOpener] = useState<ConversationOpener | null>(null);
@@ -241,6 +246,7 @@ function AIAssistantInner() {
     if (!text || streaming) return;
     setInput('');
     setStreaming(true);
+    setStatusText(null);
 
     // 本地先插用户消息 + assistant 占位
     const tempUserId = -Date.now();
@@ -254,6 +260,7 @@ function AIAssistantInner() {
 
     let assistantBuf = '';
     let realConvId = activeConvId;
+    statusRef.current = null;
 
     try {
       for await (const evt of agentApi.streamMessage(text, activeConvId)) {
@@ -263,9 +270,21 @@ function AIAssistantInner() {
         const data = evt.data ?? {};
         if (type === 'token' && typeof data.content === 'string') {
           assistantBuf += data.content;
+          // 首 token 落地即清空状态行 (loader 旁的小字), 让正文接管。
+          if (statusRef.current !== null) {
+            statusRef.current = null;
+            setStatusText(null);
+          }
           setMessages(prev =>
             prev.map(m => (m.id === tempAssistantId ? { ...m, content: assistantBuf } : m)),
           );
+        } else if (type === 'status') {
+          // 2026-07-02: 实时状态行。stage/detail → 中文短语, 未知 stage 返回 null 时忽略。
+          const phrase = statusStagePhrase(data);
+          if (phrase !== null) {
+            statusRef.current = phrase;
+            setStatusText(phrase);
+          }
         } else if (type === 'tool_call') {
           // 用户感知: 显示"调用工具中"提示一行 (灰色 italic), 不污染主回答
         } else if (type === 'done') {
@@ -302,6 +321,8 @@ function AIAssistantInner() {
       );
     } finally {
       setStreaming(false);
+      statusRef.current = null;
+      setStatusText(null);
       if (!activeConvId && realConvId) {
         setActiveConvId(realConvId);
         syncConvUrl(realConvId); // 首条消息拿到 realConvId 后写 ?c=<id>
@@ -591,6 +612,7 @@ function AIAssistantInner() {
               <ChatView
                 messages={messages}
                 loading={streaming}
+                statusText={statusText}
                 doneMessageIds={doneIds}
                 messageFeedback={{}}
                 onFeedback={() => {}}

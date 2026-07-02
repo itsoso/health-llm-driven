@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useCallback, useRef, useState } from 'react';
+import { Fragment, memo, useCallback, useMemo, useRef, useState } from 'react';
 import { Bookmark, Check, ChevronDown, Copy, Gauge, Share2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { ChatMessage } from '@/services/api/ai';
 import MarkdownRenderer from '@/components/assistant/MarkdownRenderer';
@@ -16,6 +16,8 @@ import { buildAgentTransparency, formatDurationMs, type AgentTransparencyBand } 
 interface ChatViewProps {
   messages: ChatMessage[];
   loading: boolean;
+  /** 实时状态短语 (status SSE 事件映射), 渲染在 loader 圆点旁; 首 token 到达清空。 */
+  statusText?: string | null;
   doneMessageIds: Set<number>;
   messageFeedback: Record<number, 1 | 5>;
   onFeedback: (msgId: number, rating: 1 | 5) => void;
@@ -40,6 +42,7 @@ const STYLE = {
 export default function ChatView({
   messages,
   loading,
+  statusText = null,
   doneMessageIds,
   messageFeedback,
   onFeedback,
@@ -51,8 +54,12 @@ export default function ChatView({
   onShareMessages,
 }: ChatViewProps) {
   // 允许空内容但是有卡片的消息显示
-  const visibleMessages = messages.filter(m => !(m.role === 'assistant' && !m.content && !m.card_type));
-  const shareableMessageIds = getShareableMessageIds(visibleMessages);
+  const visibleMessages = useMemo(
+    () => messages.filter(m => !(m.role === 'assistant' && !m.content && !m.card_type)),
+    [messages],
+  );
+  // P1: 稳定 Set 引用 — 否则每 token 重算的新 Set 会击穿下面 MessageRow 的 memo。
+  const shareableMessageIds = useMemo(() => getShareableMessageIds(visibleMessages), [visibleMessages]);
 
   // 长按计时器 (触屏补充入口). 右键是桌面主入口, 见下方 onContextMenu.
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -87,137 +94,228 @@ export default function ChatView({
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      {visibleMessages.map(msg => {
-        const canSelectForShare = shareableMessageIds.has(msg.id);
-        const selectedForShare = selectedMessageIds.has(msg.id);
-        // 动态卡片消息 - 独立分支, 气泡外直接贴卡片
-        if (msg.card_type && msg.card_data) {
-          const cardEl = renderCard({ type: msg.card_type, data: msg.card_data });
-          if (cardEl) {
-            return (
-              <div key={msg.id} className="flex gap-3 justify-start">
-                <div className={`mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${STYLE.badgeClass}`}>
-                  <Sparkles className="h-4 w-4" />
-                </div>
-                <div className="min-w-0 flex-1">{cardEl}</div>
-              </div>
-            );
-          }
-        }
-        return (
-        <div
+      {visibleMessages.map(msg => (
+        <MessageRow
           key={msg.id}
-          className={`group flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'} ${shareSelectionMode && selectedForShare ? 'rounded-2xl bg-teal-400/[0.06] ring-1 ring-teal-300/20' : ''}`}
-          onContextMenu={
-            canSelectForShare && !shareSelectionMode && onEnterSelectionWith
-              ? e => {
-                  e.preventDefault();
-                  enterFor(msg.id);
-                }
-              : undefined
-          }
-          onPointerDown={canSelectForShare ? e => handlePointerDown(e, msg.id) : undefined}
-          onPointerUp={cancelLongPress}
-          onPointerMove={cancelLongPress}
-          onPointerLeave={cancelLongPress}
-          onPointerCancel={cancelLongPress}
-        >
-          {shareSelectionMode && (
-            <button
-              type="button"
-              disabled={!canSelectForShare}
-              onClick={() => canSelectForShare && onToggleMessageSelection?.(msg.id)}
-              className={`mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-all ${
-                selectedForShare
-                  ? 'border-teal-300 bg-teal-400 text-zinc-950'
-                  : canSelectForShare
-                    ? 'border-white/15 bg-white/[0.04] text-transparent hover:border-teal-300/60'
-                    : 'border-white/[0.06] bg-white/[0.02] text-transparent opacity-40'
-              }`}
-              aria-label={selectedForShare ? '取消选择这条消息' : '选择这条消息'}
-            >
-              <Check className="h-3.5 w-3.5" />
-            </button>
-          )}
-          {msg.role === 'assistant' && (
-            <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${STYLE.badgeClass}`}>
-              <Sparkles className="h-4 w-4" />
-            </div>
-          )}
-          {msg.role === 'user' && msg.created_at && (
-            <span className="self-center select-none text-[11px] text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100 shrink-0">
-              {new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
-            </span>
-          )}
-          <div className={`${msg.role === 'user' ? 'max-w-[min(80%,34rem)] rounded-[1.35rem] px-4 py-2.5 shadow-sm' : 'min-w-0 flex-1'} ${msg.role === 'user' ? STYLE.userBubbleClass : STYLE.assistantTextClass}`}>
-            {msg.role === 'assistant' ? (
-              <div>
-                <div className="text-[15px] leading-7">
-                  <AssistantBody content={msg.content} streaming={!doneMessageIds.has(msg.id)} />
-                </div>
-                {doneMessageIds.has(msg.id) && (
-                  <AssistantTransparencyPanel msg={msg} />
-                )}
-              </div>
-            ) : (
-              <div>
-                {msg.image_preview && <img src={msg.image_preview} alt="上传图片" className="mb-2 max-h-56 max-w-xs rounded-xl object-cover" />}
-                {msg.file_name && (
-                  <div className="mb-2 flex items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 text-sm">
-                    <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-                    <span className="truncate">{msg.file_name}</span>
-                  </div>
-                )}
-                <div className="whitespace-pre-wrap text-[15px] leading-6">{msg.content}</div>
-              </div>
-            )}
-          </div>
-          {msg.role === 'assistant' && msg.created_at && (
-            <span className="mb-1 ml-1 self-end select-none text-[11px] text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100 shrink-0">
-              {new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
-            </span>
-          )}
-          {msg.role === 'assistant' && msg.content && doneMessageIds.has(msg.id) && (
-            <div className="ml-1 mt-1 flex items-center gap-0.5 self-end opacity-0 transition-opacity group-hover:opacity-100">
-              <button onClick={() => navigator.clipboard?.writeText(msg.content)} className="rounded-lg p-1.5 text-zinc-500 transition-all hover:bg-white/5 hover:text-zinc-200" title="复制">
-                <Copy className="h-3.5 w-3.5" />
-              </button>
-              {onShareMessages && (
-                <button onClick={() => onShareMessages([msg.id])} className="rounded-lg p-1.5 text-zinc-500 transition-all hover:bg-white/5 hover:text-teal-300" title="分享这条">
-                  <Share2 className="h-3.5 w-3.5" />
-                </button>
-              )}
-              <button onClick={() => onFeedback(msg.id, 5)} className={`rounded-lg p-1.5 transition-all ${messageFeedback[msg.id] === 5 ? 'bg-teal-400/15 text-teal-300' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200'}`} title="helpful">
-                <ThumbsUp className="h-3.5 w-3.5" />
-              </button>
-              <button onClick={() => onFeedback(msg.id, 1)} className={`rounded-lg p-1.5 transition-all ${messageFeedback[msg.id] === 1 ? 'bg-rose-400/15 text-rose-300' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200'}`} title="not helpful">
-                <ThumbsDown className="h-3.5 w-3.5" />
-              </button>
-              {onPinMessage && (
-                <button onClick={() => onPinMessage(msg.content, msg.id)} className="rounded-lg p-1.5 text-zinc-500 transition-all hover:bg-white/5 hover:text-amber-300" title="固化到首页">
-                  <Bookmark className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-        );
-      })}
+          msg={msg}
+          done={doneMessageIds.has(msg.id)}
+          canSelectForShare={shareableMessageIds.has(msg.id)}
+          selectedForShare={selectedMessageIds.has(msg.id)}
+          shareSelectionMode={shareSelectionMode}
+          feedback={messageFeedback[msg.id]}
+          onFeedback={onFeedback}
+          onPinMessage={onPinMessage}
+          onToggleMessageSelection={onToggleMessageSelection}
+          onEnterSelectionWith={onEnterSelectionWith}
+          onShareMessages={onShareMessages}
+          enterFor={enterFor}
+          handlePointerDown={handlePointerDown}
+          cancelLongPress={cancelLongPress}
+        />
+      ))}
       {loading && (
         <div className="flex gap-3">
           <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${STYLE.badgeClass}`}>
             <Sparkles className="h-4 w-4" />
           </div>
-          <div className="px-1 py-2.5">
+          <div className="flex items-center gap-2 px-1 py-2.5">
             <div className="flex gap-1.5 rounded-full bg-[#2f2f2f] px-3 py-2">
               <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-300" style={{ animationDelay: '0ms' }} />
               <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-300" style={{ animationDelay: '150ms' }} />
               <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-300" style={{ animationDelay: '300ms' }} />
             </div>
+            {statusText && (
+              <span className="min-w-0 truncate text-[12px] leading-5 text-zinc-500">{statusText}</span>
+            )}
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+interface MessageRowProps {
+  msg: ChatMessage;
+  done: boolean;
+  canSelectForShare: boolean;
+  selectedForShare: boolean;
+  shareSelectionMode: boolean;
+  feedback?: 1 | 5;
+  onFeedback: (msgId: number, rating: 1 | 5) => void;
+  onPinMessage?: (content: string, msgId: number) => void;
+  onToggleMessageSelection?: (msgId: number) => void;
+  onEnterSelectionWith?: (msgId: number) => void;
+  onShareMessages?: (msgIds: number[]) => void;
+  enterFor: (msgId: number) => void;
+  handlePointerDown: (e: React.PointerEvent, msgId: number) => void;
+  cancelLongPress: () => void;
+}
+
+/**
+ * MessageRow — 单条消息行. React.memo 化 (P1): 流式期间父组件每 token 重渲整列表,
+ * 但只有正在流式的那一行 (done=false, content 增长) 真正 diff; 已完成行 props 不变则跳过.
+ * buildAgentTransparency 在 AssistantTransparencyPanel 里另用 useMemo, 双重护栏.
+ *
+ * 比较器只看影响该行输出的字段 (msg 内容/性能字段 + 交互态). handler 视为稳定引用,
+ * 不参与比较 —— 它们的行为由上层 setState 保证幂等, 且参与比较会击穿 memo.
+ */
+const MessageRow = memo(function MessageRow({
+  msg,
+  done,
+  canSelectForShare,
+  selectedForShare,
+  shareSelectionMode,
+  feedback,
+  onFeedback,
+  onPinMessage,
+  onToggleMessageSelection,
+  onEnterSelectionWith,
+  onShareMessages,
+  enterFor,
+  handlePointerDown,
+  cancelLongPress,
+}: MessageRowProps) {
+  // 动态卡片消息 - 独立分支, 气泡外直接贴卡片
+  if (msg.card_type && msg.card_data) {
+    const cardEl = renderCard({ type: msg.card_type, data: msg.card_data });
+    if (cardEl) {
+      return (
+        <div className="flex gap-3 justify-start">
+          <div className={`mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${STYLE.badgeClass}`}>
+            <Sparkles className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">{cardEl}</div>
+        </div>
+      );
+    }
+  }
+  return (
+    <div
+      className={`group flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'} ${shareSelectionMode && selectedForShare ? 'rounded-2xl bg-teal-400/[0.06] ring-1 ring-teal-300/20' : ''}`}
+      onContextMenu={
+        canSelectForShare && !shareSelectionMode && onEnterSelectionWith
+          ? e => {
+              e.preventDefault();
+              enterFor(msg.id);
+            }
+          : undefined
+      }
+      onPointerDown={canSelectForShare ? e => handlePointerDown(e, msg.id) : undefined}
+      onPointerUp={cancelLongPress}
+      onPointerMove={cancelLongPress}
+      onPointerLeave={cancelLongPress}
+      onPointerCancel={cancelLongPress}
+    >
+      {shareSelectionMode && (
+        <button
+          type="button"
+          disabled={!canSelectForShare}
+          onClick={() => canSelectForShare && onToggleMessageSelection?.(msg.id)}
+          className={`mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-all ${
+            selectedForShare
+              ? 'border-teal-300 bg-teal-400 text-zinc-950'
+              : canSelectForShare
+                ? 'border-white/15 bg-white/[0.04] text-transparent hover:border-teal-300/60'
+                : 'border-white/[0.06] bg-white/[0.02] text-transparent opacity-40'
+          }`}
+          aria-label={selectedForShare ? '取消选择这条消息' : '选择这条消息'}
+        >
+          <Check className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {msg.role === 'assistant' && (
+        <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${STYLE.badgeClass}`}>
+          <Sparkles className="h-4 w-4" />
+        </div>
+      )}
+      {msg.role === 'user' && msg.created_at && (
+        <span className="self-center select-none text-[11px] text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100 shrink-0">
+          {new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
+        </span>
+      )}
+      <div className={`${msg.role === 'user' ? 'max-w-[min(80%,34rem)] rounded-[1.35rem] px-4 py-2.5 shadow-sm' : 'min-w-0 flex-1'} ${msg.role === 'user' ? STYLE.userBubbleClass : STYLE.assistantTextClass}`}>
+        {msg.role === 'assistant' ? (
+          <div>
+            <div className="text-[15px] leading-7">
+              <AssistantBody content={msg.content} streaming={!done} />
+            </div>
+            {done && <AssistantTransparencyPanel msg={msg} />}
+          </div>
+        ) : (
+          <div>
+            {msg.image_preview && <img src={msg.image_preview} alt="上传图片" className="mb-2 max-h-56 max-w-xs rounded-xl object-cover" />}
+            {msg.file_name && (
+              <div className="mb-2 flex items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 text-sm">
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                <span className="truncate">{msg.file_name}</span>
+              </div>
+            )}
+            <div className="whitespace-pre-wrap text-[15px] leading-6">{msg.content}</div>
+          </div>
+        )}
+      </div>
+      {msg.role === 'assistant' && msg.created_at && (
+        <span className="mb-1 ml-1 self-end select-none text-[11px] text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100 shrink-0">
+          {new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
+        </span>
+      )}
+      {msg.role === 'assistant' && msg.content && done && (
+        <div className="ml-1 mt-1 flex items-center gap-0.5 self-end opacity-0 transition-opacity group-hover:opacity-100">
+          <button onClick={() => navigator.clipboard?.writeText(msg.content)} className="rounded-lg p-1.5 text-zinc-500 transition-all hover:bg-white/5 hover:text-zinc-200" title="复制">
+            <Copy className="h-3.5 w-3.5" />
+          </button>
+          {onShareMessages && (
+            <button onClick={() => onShareMessages([msg.id])} className="rounded-lg p-1.5 text-zinc-500 transition-all hover:bg-white/5 hover:text-teal-300" title="分享这条">
+              <Share2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <button onClick={() => onFeedback(msg.id, 5)} className={`rounded-lg p-1.5 transition-all ${feedback === 5 ? 'bg-teal-400/15 text-teal-300' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200'}`} title="helpful">
+            <ThumbsUp className="h-3.5 w-3.5" />
+          </button>
+          <button onClick={() => onFeedback(msg.id, 1)} className={`rounded-lg p-1.5 transition-all ${feedback === 1 ? 'bg-rose-400/15 text-rose-300' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200'}`} title="not helpful">
+            <ThumbsDown className="h-3.5 w-3.5" />
+          </button>
+          {onPinMessage && (
+            <button onClick={() => onPinMessage(msg.content, msg.id)} className="rounded-lg p-1.5 text-zinc-500 transition-all hover:bg-white/5 hover:text-amber-300" title="固化到首页">
+              <Bookmark className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}, areMessageRowEqual);
+
+/**
+ * 比较器: 仅比较影响该行渲染的数据 + 交互态; handler 视作稳定引用不比较。
+ * 完成态消息 (done=true) 这些字段全稳定 → 流式期间整表重渲时该行直接跳过。
+ */
+function areMessageRowEqual(prev: MessageRowProps, next: MessageRowProps): boolean {
+  const a = prev.msg;
+  const b = next.msg;
+  return (
+    a.id === b.id &&
+    a.content === b.content &&
+    a.role === b.role &&
+    a.created_at === b.created_at &&
+    a.image_preview === b.image_preview &&
+    a.file_name === b.file_name &&
+    a.card_type === b.card_type &&
+    a.card_data === b.card_data &&
+    // 完成后回填的性能/透视字段 (引用相等即可; done 后一次性设置, 不再变)
+    a.elapsed_ms === b.elapsed_ms &&
+    a.llm_rounds === b.llm_rounds &&
+    a.llm_rounds_ms === b.llm_rounds_ms &&
+    a.model === b.model &&
+    a.llm_usage === b.llm_usage &&
+    a.perf === b.perf &&
+    a.sources_used === b.sources_used &&
+    a.tools_used === b.tools_used &&
+    prev.done === next.done &&
+    prev.canSelectForShare === next.canSelectForShare &&
+    prev.selectedForShare === next.selectedForShare &&
+    prev.shareSelectionMode === next.shareSelectionMode &&
+    prev.feedback === next.feedback
   );
 }
 
@@ -303,16 +401,30 @@ function bandClass(kind: AgentTransparencyBand['kind']): string {
 
 function AssistantTransparencyPanel({ msg }: { msg: ChatMessage }) {
   const [open, setOpen] = useState(false);
-  const profile = buildAgentTransparency({
-    elapsedMs: msg.elapsed_ms,
-    llmRounds: msg.llm_rounds,
-    llmRoundsMs: msg.llm_rounds_ms,
-    model: prettyModelName(msg.model) || msg.model,
-    llmUsage: msg.llm_usage,
-    sourcesUsed: msg.sources_used,
-    toolsUsed: msg.tools_used,
-    perf: msg.perf,
-  });
+  // P1: 只有 msg 相关性能字段变化时才重算 (完成态消息这些字段稳定, 完全跳过重算)。
+  const profile = useMemo(
+    () =>
+      buildAgentTransparency({
+        elapsedMs: msg.elapsed_ms,
+        llmRounds: msg.llm_rounds,
+        llmRoundsMs: msg.llm_rounds_ms,
+        model: prettyModelName(msg.model) || msg.model,
+        llmUsage: msg.llm_usage,
+        sourcesUsed: msg.sources_used,
+        toolsUsed: msg.tools_used,
+        perf: msg.perf,
+      }),
+    [
+      msg.elapsed_ms,
+      msg.llm_rounds,
+      msg.llm_rounds_ms,
+      msg.model,
+      msg.llm_usage,
+      msg.sources_used,
+      msg.tools_used,
+      msg.perf,
+    ],
+  );
   if (!profile.visible) return null;
 
   return (
