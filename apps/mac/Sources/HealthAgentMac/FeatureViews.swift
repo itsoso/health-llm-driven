@@ -654,7 +654,16 @@ struct AgentChatView: View {
             if !actions.isEmpty || showChips || showSpinner {
                 VStack(alignment: .leading, spacing: 8) {
                     if showSpinner {
-                        ProgressView().controlSize(.small)
+                        // Pre-first-token affordance: an informative animated status
+                        // line instead of a bare spinner (阿衡 TTFT is 2–14s, longer
+                        // on a silent tool round). Purely presentational — no stream,
+                        // parse, or network behavior changes. `isToolTurn` only flips
+                        // the copy when a tool activity has already surfaced, so we
+                        // never overclaim "checking records" on a plain analysis turn.
+                        ThinkingStatusLine(
+                            language: appLanguageRaw,
+                            isToolTurn: !viewModel.toolActivities.isEmpty
+                        )
                     }
                     ForEach(actions) { action in
                         AgentProposedActionCard(
@@ -1280,6 +1289,42 @@ struct AgentChatView: View {
         case .low: Color.secondary
         case .medicalGrade: Color.red
         }
+    }
+}
+
+/// Pre-first-token "thinking" affordance shown in the empty assistant bubble
+/// while 阿衡's TTFT (2–14s, longer on a silent tool round) elapses. Purely
+/// presentational: a small spinner + a caption that cycles copy after ~6s so a
+/// long wait doesn't feel frozen. No stream/parse/network coupling.
+private struct ThinkingStatusLine: View {
+    let language: String
+    /// True once a tool activity has surfaced this turn — only then do we claim
+    /// "checking your records", never on a plain analysis turn.
+    let isToolTurn: Bool
+
+    /// 0 = initial copy, 1 = after ~6s. Kept minimal; a static line is fine too.
+    @State private var phase = 0
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text(appText(statusKey, language))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .transition(.opacity)
+                .id(statusKey)
+        }
+        .task {
+            // Cheap one-shot: advance to the "organizing" copy after ~6s if the
+            // token hasn't arrived (this view is torn down the moment it does).
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            withAnimation(.easeInOut(duration: 0.25)) { phase = 1 }
+        }
+    }
+
+    private var statusKey: String {
+        if isToolTurn { return "Checking your records…" }
+        return phase == 0 ? "Reva is thinking…" : "Reva is organizing…"
     }
 }
 

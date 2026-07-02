@@ -310,6 +310,11 @@ public enum L10n {
         "Ready": "就绪",
         "Preparing": "准备中",
         "Generating": "生成中",
+        // Pre-first-token thinking affordance (阿衡 TTFT gap). English keys are the
+        // fallback; zh strings shown for the default zh UI.
+        "Reva is thinking…": "阿衡正在思考…",
+        "Reva is organizing…": "阿衡正在整理…",
+        "Checking your records…": "正在查你的记录…",
         "Completed": "已完成",
         "Partial": "部分完成",
         "Failed": "失败",
