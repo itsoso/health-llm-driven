@@ -75,6 +75,18 @@ describe('ChatInputBar', () => {
       .toBe(revaColors.surface);
   });
 
+  it('keeps the attachment menu sheet vertically tight', () => {
+    const { getByLabelText, getByTestId } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('附件菜单'));
+
+    const menuSheet = StyleSheet.flatten(getByTestId('attachment-menu-sheet').props.style);
+    expect(menuSheet.paddingTop).toBeLessThanOrEqual(8);
+    expect(menuSheet.paddingBottom).toBeLessThanOrEqual(28);
+  });
+
   it('renders attachment actions as a compact two-column grid', () => {
     const { getByLabelText, getByTestId, getByText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,

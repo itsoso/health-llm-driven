@@ -742,7 +742,7 @@ const styles = StyleSheet.create({
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
   menuSheet: {
     backgroundColor: C.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingHorizontal: revaSpacing.s5, paddingBottom: 40, paddingTop: 8,
+    paddingHorizontal: revaSpacing.s5, paddingBottom: 24, paddingTop: 8,
   },
   menuHandle: {
     width: 36, height: 4, borderRadius: 2, backgroundColor: C.ink4,
