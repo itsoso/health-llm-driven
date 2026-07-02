@@ -10,6 +10,9 @@ public struct LLMUsageCall: Codable, Equatable, Sendable {
     public let costUsd: Double?
     public let latencyMs: Int?
     public let success: Bool?
+    public let errorType: String?
+    public let errorCode: String?
+    public let errorMessage: String?
 
     private enum CodingKeys: String, CodingKey {
         case provider, model, caller, success
@@ -18,6 +21,9 @@ public struct LLMUsageCall: Codable, Equatable, Sendable {
         case totalTokens = "total_tokens"
         case costUsd = "cost_usd"
         case latencyMs = "latency_ms"
+        case errorType = "error_type"
+        case errorCode = "error_code"
+        case errorMessage = "error_message"
     }
 
     public init(
@@ -29,7 +35,10 @@ public struct LLMUsageCall: Codable, Equatable, Sendable {
         totalTokens: Int? = nil,
         costUsd: Double? = nil,
         latencyMs: Int? = nil,
-        success: Bool? = nil
+        success: Bool? = nil,
+        errorType: String? = nil,
+        errorCode: String? = nil,
+        errorMessage: String? = nil
     ) {
         self.provider = provider
         self.model = model
@@ -40,6 +49,9 @@ public struct LLMUsageCall: Codable, Equatable, Sendable {
         self.costUsd = costUsd
         self.latencyMs = latencyMs
         self.success = success
+        self.errorType = errorType
+        self.errorCode = errorCode
+        self.errorMessage = errorMessage
     }
 }
 

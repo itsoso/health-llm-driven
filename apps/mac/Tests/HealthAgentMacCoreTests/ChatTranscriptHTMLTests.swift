@@ -200,6 +200,46 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertTrue(html.contains("qwen3.7-plus"))
     }
 
+    func testMetaFooterRendersFailedTokenUsageReason() {
+        let usage = LLMUsageProfile(
+            calls: 1,
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0,
+            costUsd: 0,
+            failedCalls: 1,
+            models: ["qwen3.7-plus"],
+            providers: ["tokenplan"],
+            items: [
+                LLMUsageCall(
+                    provider: "tokenplan",
+                    model: "qwen3.7-plus",
+                    caller: "agent.answer",
+                    promptTokens: 0,
+                    completionTokens: 0,
+                    totalTokens: 0,
+                    costUsd: 0,
+                    latencyMs: 1200,
+                    success: false,
+                    errorType: "insufficient_quota",
+                    errorCode: "insufficient_quota",
+                    errorMessage: "Your token-plan quota has been exhausted."
+                )
+            ]
+        )
+        let html = ChatTranscriptHTML.metaFooterHTML(
+            model: nil,
+            elapsedMs: nil,
+            llmRounds: nil,
+            sourcesUsed: [],
+            toolsUsed: [],
+            llmUsage: usage
+        )
+        XCTAssertTrue(html.contains("失败 1次"))
+        XCTAssertTrue(html.contains("qwen3.7-plus"))
+        XCTAssertTrue(html.contains("insufficient_quota"))
+    }
+
     func testMetaFooterEmptyWhenNoMeta() {
         // 所有字段为空 → 不输出任何 footer(空字符串,JS 端不渲染)
         let html = ChatTranscriptHTML.metaFooterHTML(

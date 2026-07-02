@@ -274,11 +274,15 @@ public enum ChatTranscriptHTML {
     private static func tokenUsageHTML(_ usage: LLMUsageProfile) -> String {
         let prompt = usage.promptTokens ?? 0
         let completion = usage.completionTokens ?? 0
-        guard prompt > 0 || completion > 0 else { return "" }
+        let failed = usage.failedCalls ?? usage.items.filter { $0.success == false }.count
+        guard prompt > 0 || completion > 0 || failed > 0 else { return "" }
 
         var summary = "Token 输入 \(tokenCountLabel(prompt)) · 输出 \(tokenCountLabel(completion))"
         if let calls = usage.calls, calls > 1 {
             summary += " · \(calls)次"
+        }
+        if failed > 0 {
+            summary += " · 失败 \(failed)次"
         }
         if let cost = usage.costUsd, cost > 0 {
             summary += " · \(costLabel(cost))"
@@ -294,6 +298,9 @@ public enum ChatTranscriptHTML {
             }
             if item.success == false {
                 value += " · 失败"
+                if let reason = failureReasonLabel(item) {
+                    value += " · \(reason)"
+                }
             }
             return "<li>\(escape(name))：\(escape(value))</li>"
         }.joined()
@@ -302,6 +309,26 @@ public enum ChatTranscriptHTML {
             return "<div class=\"meta-line\">\(escape(summary))</div>"
         }
         return "<details class=\"meta-sources meta-token\"><summary>\(escape(summary))</summary><ul>\(rows)</ul></details>"
+    }
+
+    private static func failureReasonLabel(_ item: LLMUsageCall) -> String? {
+        let parts = [item.errorCode, item.errorType]
+            .compactMap { cleanMetaValue($0) }
+            .filter { !$0.isEmpty }
+        if !parts.isEmpty {
+            return parts.joined(separator: " / ")
+        }
+        if let message = cleanMetaValue(item.errorMessage), !message.isEmpty {
+            return message.count > 80 ? String(message.prefix(80)) + "..." : message
+        }
+        return nil
+    }
+
+    private static func cleanMetaValue(_ value: String?) -> String? {
+        value?
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func tokenCountLabel(_ value: Int) -> String {
