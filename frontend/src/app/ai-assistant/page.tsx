@@ -277,6 +277,7 @@ function AIAssistantInner() {
             llm_rounds: typeof data.llm_rounds === 'number' ? data.llm_rounds : undefined,
             llm_rounds_ms: Array.isArray(data.llm_rounds_ms) ? data.llm_rounds_ms : undefined,
             model: typeof data.model === 'string' ? data.model : undefined,
+            llm_usage: data.llm_usage && typeof data.llm_usage === 'object' ? data.llm_usage : undefined,
             // 2026-05-14 #4: 可解释性 sources
             sources_used: Array.isArray(data.sources_used) ? data.sources_used : undefined,
           };
@@ -331,6 +332,7 @@ function AIAssistantInner() {
       llm_rounds: m.meta?.llm_rounds,
       llm_rounds_ms: m.meta?.llm_rounds_ms,
       model: m.meta?.model,
+      llm_usage: m.meta?.llm_usage,
       sources_used: m.meta?.sources_used,
     })) as ChatMessage[];
     setActiveConvId(conversationId);

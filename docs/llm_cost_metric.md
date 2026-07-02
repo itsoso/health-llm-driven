@@ -15,6 +15,16 @@ _最后更新: 2026-07-02_
 - 新调用从 provider factory 开始会把 TokenPlan / Moonshot / Zhipu / LangBridge 等 OpenAI-compatible 代理写成真实 provider,不再全部混成 `openai`。
 - `allocated_plan_cost_cny` 是按窗口内 TokenPlan token 份额分摊月费,不是边际消耗;`effective_cny_per_1k_tokens` 用于观察当前套餐利用率。
 
+## 2026-07 消息级 Token Profile 增量
+
+新增对话回复级 token profile,归入成本和性能剖析:
+
+- `LlmUsageLog` 仍是**单次调用真源**;每次 LLM 调用继续独立写入 provider / model / caller / user_id / prompt tokens / completion tokens / latency / success。
+- `/agent/stream` 后台任务会开启请求级 capture,把本轮回复内多次 LLM 调用汇总到 SSE `done.data.llm_usage`。
+- 同一份汇总会持久化到 assistant 消息 `message.meta.llm_usage`,用于 Web / Mobile / Mac 历史会话恢复。
+- 端上只展示简要摘要:输入 token、输出 token、调用次数;单次调用明细仅放在 tooltip / details 中,不展示 prompt 或回答正文。
+- 该 profile 是**端上本轮成本/性能可解释层**,不是 Admin 聚合账本的替代;Admin 仍以 `llm_usage_logs` 做全局和用户级统计。
+
 ## 一、现状（已建成，不要重做）
 
 基础设施在 4 天前就 ship 了（2026-04-26 起有真实数据），但外部没人知道，容易重复造轮子。

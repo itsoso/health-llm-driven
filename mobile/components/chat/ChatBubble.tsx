@@ -522,6 +522,14 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
                     </Text>
                   </>
                 ) : null}
+                {formatLlmUsage(item.llmUsage) ? (
+                  <>
+                    <Ionicons name="analytics-outline" size={10} color={C.ink3} />
+                    <Text style={txt.meta} numberOfLines={1}>
+                      {formatLlmUsage(item.llmUsage)}
+                    </Text>
+                  </>
+                ) : null}
                 <View style={{ flex: 1 }} />
                 {!selectionMode ? (
                   <Pressable
@@ -814,6 +822,21 @@ function statusTone(status?: string): string {
   if (/❌|严重|急|失败/.test(status)) return revaSemantic.risk.fg;
   if (/✅|正常|优秀|良好|充沛/.test(status)) return revaSemantic.normal.fg;
   return '#8A968F';
+}
+
+function formatTokenCount(value?: number | null): string {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  return String(Math.max(0, Math.round(n)));
+}
+
+function formatLlmUsage(usage?: UIMessage['llmUsage']): string | null {
+  if (!usage) return null;
+  const input = usage.prompt_tokens ?? 0;
+  const output = usage.completion_tokens ?? 0;
+  if (!input && !output) return null;
+  const calls = usage.calls && usage.calls > 1 ? ` · ${usage.calls}次` : '';
+  return `输入 ${formatTokenCount(input)} · 输出 ${formatTokenCount(output)}${calls}`;
 }
 
 function StructuredSummaryCard({

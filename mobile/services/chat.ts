@@ -21,6 +21,31 @@ export interface StreamCardDescriptor {
   actions?: any[];
 }
 
+export interface LlmUsageCall {
+  provider?: string;
+  model?: string;
+  caller?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  cost_usd?: number;
+  latency_ms?: number | null;
+  success?: boolean;
+}
+
+export interface LlmUsageProfile {
+  calls?: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  cost_usd?: number;
+  latency_ms?: number | null;
+  failed_calls?: number;
+  models?: string[];
+  providers?: string[];
+  items?: LlmUsageCall[];
+}
+
 export interface StreamEvent {
   type: 'start' | 'token' | 'tool' | 'card' | 'done' | 'error';
   content?: string;
@@ -40,6 +65,7 @@ export interface StreamEvent {
   llmMs?: number;
   llmRounds?: number;
   model?: string;
+  llmUsage?: LlmUsageProfile;
   // 2026-05-14 #4: 可解释性 — AI 用了什么数据
   sourcesUsed?: string[];
   // 2026-06-12: 本轮调用的 Skill / 工具名 (后端 done.tools_used; 去重保序, 空 [])
@@ -213,6 +239,9 @@ export async function* streamChat(
           };
         }
       } else if (parsed.event === 'done') {
+        const llmUsage = parsed.data?.llm_usage && typeof parsed.data.llm_usage === 'object'
+          ? parsed.data.llm_usage
+          : undefined;
         return {
           type: 'done',
           conversationId: parsed.data?.conversation_id,
@@ -221,6 +250,7 @@ export async function* streamChat(
           llmMs: parsed.data?.llm_ms,
           llmRounds: parsed.data?.llm_rounds,
           model: parsed.data?.model,
+          ...(llmUsage ? { llmUsage } : {}),
           sourcesUsed: Array.isArray(parsed.data?.sources_used) ? parsed.data.sources_used : undefined,
           toolsUsed: Array.isArray(parsed.data?.tools_used) ? parsed.data.tools_used : undefined,
           completionStatus: parsed.data?.completion_status,

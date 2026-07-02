@@ -105,4 +105,38 @@ describe('restoreMessagesFromHistory', () => {
       },
     });
   });
+
+  it('restores llm usage from assistant message meta', () => {
+    const restored = restoreMessagesFromHistory([
+      {
+        id: 20,
+        role: 'assistant',
+        content: '已分析。',
+        created_at: '2026-07-02 10:00:00',
+        meta: {
+          llm_usage: {
+            calls: 2,
+            prompt_tokens: 1800,
+            completion_tokens: 420,
+            total_tokens: 2220,
+            items: [
+              { model: 'qwen3.7-plus', prompt_tokens: 1000, completion_tokens: 300 },
+              { model: 'qwen3.7-max', prompt_tokens: 800, completion_tokens: 120 },
+            ],
+          },
+        },
+      },
+    ], 'https://example.test', 'h');
+
+    expect(restored[0]).toMatchObject({
+      id: 'h-20',
+      role: 'assistant',
+      llmUsage: {
+        calls: 2,
+        prompt_tokens: 1800,
+        completion_tokens: 420,
+        total_tokens: 2220,
+      },
+    });
+  });
 });

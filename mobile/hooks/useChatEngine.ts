@@ -4,7 +4,7 @@ import { useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage } from '../services/chat';
+import { streamChat, getConversations, getConversationMessages, deleteConversation, type ChatMessage, type LlmUsageProfile } from '../services/chat';
 import { dispatchCard, renderServerCards } from '../components/chat/cards';
 import type { ChatCardActionDescriptor, ServerCardDescriptor } from '../components/chat/cards/types';
 import api, { BASE_URL } from '../services/api';
@@ -33,6 +33,7 @@ export interface UIMessage extends ChatMessage {
   llmMs?: number;
   llmRounds?: number;
   model?: string;
+  llmUsage?: LlmUsageProfile;
   // 2026-05-14 #4: 可解释性 — AI 用了什么数据
   sourcesUsed?: string[];
   // 2026-06-12: 本轮调用的 Skill / 工具名 (后端 done.tools_used / meta.tools_used), 对齐 mac/web
@@ -53,6 +54,7 @@ function applyMeta(msg: any): Partial<UIMessage> {
     llmMs: typeof meta.llm_ms === 'number' ? meta.llm_ms : undefined,
     llmRounds: typeof meta.llm_rounds === 'number' ? meta.llm_rounds : undefined,
     model: typeof meta.model === 'string' ? meta.model : undefined,
+    llmUsage: meta.llm_usage && typeof meta.llm_usage === 'object' ? meta.llm_usage : undefined,
     sourcesUsed: Array.isArray(meta.sources_used) ? meta.sources_used : undefined,
     toolsUsed: Array.isArray(meta.tools_used) ? meta.tools_used : undefined,
     completionStatus: typeof meta.completion_status === 'string' ? meta.completion_status : undefined,
@@ -529,6 +531,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             llmMs: evt.llmMs,
             llmRounds: evt.llmRounds,
             model: evt.model,
+            llmUsage: evt.llmUsage,
             sourcesUsed: evt.sourcesUsed,
             toolsUsed: evt.toolsUsed,
             completionStatus: evt.completionStatus,

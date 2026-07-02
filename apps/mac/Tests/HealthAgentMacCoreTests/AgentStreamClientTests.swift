@@ -60,6 +60,22 @@ final class AgentStreamClientTests: XCTestCase {
         ])
     }
 
+    func testParserParsesLLMUsageInDone() throws {
+        let payload = """
+        data: {"event":"done","data":{"conversation_id":5,"message_id":3,"llm_usage":{"calls":1,"prompt_tokens":1200,"completion_tokens":360,"total_tokens":1560,"cost_usd":0.0004,"items":[{"provider":"tokenplan","model":"qwen3.7-plus","prompt_tokens":1200,"completion_tokens":360,"latency_ms":900,"success":true}]}}}
+
+        """
+
+        let events = try AgentStreamParser.parse(payload)
+        guard case .done(_, _, _, _, _, _, _, _, _, _, _, _, _, _, let usage) = events.first else {
+            return XCTFail("expected done event")
+        }
+        XCTAssertEqual(usage?.calls, 1)
+        XCTAssertEqual(usage?.promptTokens, 1200)
+        XCTAssertEqual(usage?.completionTokens, 360)
+        XCTAssertEqual(usage?.items.first?.model, "qwen3.7-plus")
+    }
+
     func testParserParsesDynamicCardsInDone() throws {
         let payload = """
         data: {"event":"done","data":{"conversation_id":5,"message_id":3,"completion_status":"complete","cards":[{"type":"medical_exam_import_result","render":{"atom":"future_medical_exam_import","reason":"experimental_renderer"},"data":{"exam_id":321,"source":"pdf","items_count":9},"actions":[{"id":"ask-import-review","label":"问阿衡复核","action":"route.open","payload":{"route":"/(tabs)/chat?prompt=复核体检报告"},"style":"primary"}]}]}}

@@ -163,6 +163,43 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertTrue(html.contains(">health_record<"))
     }
 
+    func testMetaFooterRendersTokenUsage() {
+        let usage = LLMUsageProfile(
+            calls: 2,
+            promptTokens: 1800,
+            completionTokens: 420,
+            totalTokens: 2220,
+            costUsd: 0.0004,
+            latencyMs: 1200,
+            models: ["qwen3.7-plus"],
+            providers: ["tokenplan"],
+            items: [
+                LLMUsageCall(
+                    provider: "tokenplan",
+                    model: "qwen3.7-plus",
+                    caller: "agent.answer",
+                    promptTokens: 1000,
+                    completionTokens: 300,
+                    totalTokens: 1300,
+                    costUsd: 0.0003,
+                    latencyMs: 900,
+                    success: true
+                )
+            ]
+        )
+        let html = ChatTranscriptHTML.metaFooterHTML(
+            model: nil,
+            elapsedMs: nil,
+            llmRounds: nil,
+            sourcesUsed: [],
+            toolsUsed: [],
+            llmUsage: usage
+        )
+        XCTAssertTrue(html.contains("Token 输入 1.8k"))
+        XCTAssertTrue(html.contains("输出 420"))
+        XCTAssertTrue(html.contains("qwen3.7-plus"))
+    }
+
     func testMetaFooterEmptyWhenNoMeta() {
         // 所有字段为空 → 不输出任何 footer(空字符串,JS 端不渲染)
         let html = ChatTranscriptHTML.metaFooterHTML(

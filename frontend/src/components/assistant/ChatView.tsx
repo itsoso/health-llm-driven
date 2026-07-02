@@ -155,7 +155,7 @@ export default function ChatView({
                   <AssistantBody content={msg.content} streaming={!doneMessageIds.has(msg.id)} />
                 </div>
                 {/* 元信息行: 模型友好名 + 数据来源. 耗时/轮数收进 hover tooltip. */}
-                {doneMessageIds.has(msg.id) && (msg.model || (msg.sources_used && msg.sources_used.length > 0)) && (
+                {doneMessageIds.has(msg.id) && (msg.model || msg.llm_usage || (msg.sources_used && msg.sources_used.length > 0)) && (
                   <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                     {prettyModelName(msg.model) && (
                       <span
@@ -163,6 +163,14 @@ export default function ChatView({
                         title={buildPerfTooltip(msg)}
                       >
                         {prettyModelName(msg.model)}
+                      </span>
+                    )}
+                    {msg.llm_usage && (
+                      <span
+                        className="text-[11px] font-mono text-zinc-600"
+                        title={buildTokenUsageTooltip(msg)}
+                      >
+                        {formatTokenUsage(msg.llm_usage)}
                       </span>
                     )}
                     {/* 2026-05-14 #4: 可解释性 chip — AI 用了什么数据 */}
@@ -307,6 +315,35 @@ function buildPerfTooltip(msg: ChatMessage): string {
   if (msg.elapsed_ms != null) parts.push(`耗时 ${(msg.elapsed_ms / 1000).toFixed(1)}s`);
   if (msg.llm_rounds != null && msg.llm_rounds > 1) parts.push(`${msg.llm_rounds} 轮`);
   return parts.length ? `本次回答的模型 · ${parts.join(' · ')}` : '本次回答的模型';
+}
+
+function formatTokenCount(value?: number | null): string {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  return String(Math.max(0, Math.round(n)));
+}
+
+function formatTokenUsage(usage: NonNullable<ChatMessage['llm_usage']>): string {
+  const calls = usage.calls && usage.calls > 1 ? ` · ${usage.calls}次` : '';
+  return `Token 输入 ${formatTokenCount(usage.prompt_tokens)} · 输出 ${formatTokenCount(usage.completion_tokens)}${calls}`;
+}
+
+function buildTokenUsageTooltip(msg: ChatMessage): string {
+  const usage = msg.llm_usage;
+  if (!usage) return '';
+  const lines = [
+    `输入 ${formatTokenCount(usage.prompt_tokens)} · 输出 ${formatTokenCount(usage.completion_tokens)} · 总 ${formatTokenCount(usage.total_tokens)}`,
+  ];
+  if (usage.cost_usd && usage.cost_usd > 0) {
+    lines.push(`估算成本 $${usage.cost_usd.toFixed(6)}`);
+  }
+  const items = Array.isArray(usage.items) ? usage.items : [];
+  items.slice(0, 8).forEach((item, index) => {
+    const latency = typeof item.latency_ms === 'number' ? ` · ${(item.latency_ms / 1000).toFixed(1)}s` : '';
+    const model = item.model || item.provider || `调用 ${index + 1}`;
+    lines.push(`${index + 1}. ${model}: 输入 ${formatTokenCount(item.prompt_tokens)} · 输出 ${formatTokenCount(item.completion_tokens)}${latency}`);
+  });
+  return lines.join('\n');
 }
 
 /** 2026-05-14 #4 可解释性 chip — 默认折叠 "🔍 AI 用了什么数据 (N)", 点开列出来. */

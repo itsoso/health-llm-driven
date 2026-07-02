@@ -50,8 +50,34 @@ export interface ChatMessage {
   llm_rounds?: number;
   llm_rounds_ms?: number[];
   model?: string;
+  llm_usage?: LlmUsageProfile;
   /** 2026-05-14 #4 可解释性: AI 本次回答用了什么数据源, 中文标签数组 */
   sources_used?: string[];
+}
+
+export interface LlmUsageCall {
+  provider?: string;
+  model?: string;
+  caller?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  cost_usd?: number;
+  latency_ms?: number | null;
+  success?: boolean;
+}
+
+export interface LlmUsageProfile {
+  calls?: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  cost_usd?: number;
+  latency_ms?: number | null;
+  failed_calls?: number;
+  models?: string[];
+  providers?: string[];
+  items?: LlmUsageCall[];
 }
 
 export interface ChatSendResponse {

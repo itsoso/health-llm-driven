@@ -160,6 +160,40 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('preserves llm usage profile from done event', async () => {
+    const iter = streamChat('昨天我吃得如何');
+    const first = iter.next();
+
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText =
+      'data: {"event":"done","data":{"conversation_id":42,"message_id":99,"llm_usage":{"calls":1,"prompt_tokens":1200,"completion_tokens":360,"total_tokens":1560,"cost_usd":0.0004,"items":[{"model":"qwen3.7-plus","prompt_tokens":1200,"completion_tokens":360}]}}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toMatchObject({
+      value: {
+        type: 'done',
+        conversationId: 42,
+        messageId: 99,
+        llmUsage: {
+          calls: 1,
+          prompt_tokens: 1200,
+          completion_tokens: 360,
+          total_tokens: 1560,
+          items: [
+            {
+              model: 'qwen3.7-plus',
+              prompt_tokens: 1200,
+              completion_tokens: 360,
+            },
+          ],
+        },
+      },
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
   it('yields card events before done for interleaved dynamic UI', async () => {
     const iter = streamChat('吃了两个鸡蛋一杯牛奶');
     const first = iter.next();

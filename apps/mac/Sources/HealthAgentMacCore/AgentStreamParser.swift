@@ -31,7 +31,8 @@ public enum AgentStreamEvent: Equatable, Sendable {
         cards: [AgentDynamicCardDescriptor] = [],
         // Per-answer stage-timing perf. Absent on old backends → nil → footer
         // renders unchanged (full back-compat).
-        perf: MessagePerf? = nil
+        perf: MessagePerf? = nil,
+        llmUsage: LLMUsageProfile? = nil
     )
     case error(String)
 }
@@ -151,7 +152,8 @@ public enum AgentStreamParser {
                             cardData: eventData?["card_data"]
                         ),
                         // perf absent on old backends → nil → footer unchanged.
-                        perf: decode(MessagePerf.self, from: eventData?["perf"])
+                        perf: decode(MessagePerf.self, from: eventData?["perf"]),
+                        llmUsage: decode(LLMUsageProfile.self, from: eventData?["llm_usage"])
                     )
                 case "error":
                     return .error(eventData?["message"] as? String ?? "Unknown stream error")

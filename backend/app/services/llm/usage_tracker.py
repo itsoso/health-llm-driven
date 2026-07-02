@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import time
 import json
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -32,6 +32,11 @@ _MODEL_PRICING: Dict[str, tuple] = {
 # 调用方上下文 — orchestrator / specialist / endpoint 可以通过 set_caller() 标注自己
 _caller_ctx: ContextVar[Optional[str]] = ContextVar("llm_caller", default=None)
 _user_id_ctx: ContextVar[Optional[int]] = ContextVar("llm_user_id", default=None)
+_usage_capture_ctx: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar(
+    "llm_usage_capture",
+    default=None,
+)
+_MAX_CAPTURE_ITEMS = 20
 
 
 def set_caller(caller: str, user_id: Optional[int] = None) -> None:
@@ -39,6 +44,64 @@ def set_caller(caller: str, user_id: Optional[int] = None) -> None:
     _caller_ctx.set(caller)
     if user_id is not None:
         _user_id_ctx.set(user_id)
+
+
+def begin_usage_capture() -> Token[Optional[List[Dict[str, Any]]]]:
+    """Start per-request LLM usage capture for surfacing a brief client profile."""
+    return _usage_capture_ctx.set([])
+
+
+def end_usage_capture(token: Token[Optional[List[Dict[str, Any]]]]) -> None:
+    """End per-request capture and restore the previous context."""
+    _usage_capture_ctx.reset(token)
+
+
+def _capture_usage_entry(entry: Dict[str, Any]) -> None:
+    bucket = _usage_capture_ctx.get()
+    if bucket is None:
+        return
+    bucket.append(dict(entry))
+
+
+def summarize_usage_capture() -> Optional[Dict[str, Any]]:
+    """Return a privacy-safe summary of the current request's LLM calls."""
+    items = _usage_capture_ctx.get()
+    if not items:
+        return None
+
+    captured = [dict(item) for item in items]
+    prompt_tokens = sum(int(item.get("prompt_tokens") or 0) for item in captured)
+    completion_tokens = sum(int(item.get("completion_tokens") or 0) for item in captured)
+    total_tokens = sum(int(item.get("total_tokens") or 0) for item in captured)
+    cost_usd = sum(float(item.get("cost_usd") or 0.0) for item in captured)
+    latency_values = [
+        int(item["latency_ms"])
+        for item in captured
+        if isinstance(item.get("latency_ms"), int)
+    ]
+
+    models: List[str] = []
+    providers: List[str] = []
+    for item in captured:
+        model = str(item.get("model") or "").strip()
+        provider = str(item.get("provider") or "").strip()
+        if model and model not in models:
+            models.append(model)
+        if provider and provider not in providers:
+            providers.append(provider)
+
+    return {
+        "calls": len(captured),
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "cost_usd": round(cost_usd, 8),
+        "latency_ms": sum(latency_values) if latency_values else None,
+        "failed_calls": sum(1 for item in captured if not item.get("success", True)),
+        "models": models,
+        "providers": providers,
+        "items": captured[-_MAX_CAPTURE_ITEMS:],
+    }
 
 
 def _estimate_tokens(text: str, model: str = "gpt-4o-mini") -> int:
@@ -91,15 +154,29 @@ def record_usage(
     success: bool = True,
 ) -> None:
     """写一条 LlmUsageLog (旁路, 失败只 log)."""
+    prompt_tokens = _estimate_tokens(prompt_text, model)
+    completion_tokens = _estimate_tokens(completion_text, model)
+    cost = _price_usd(model, prompt_tokens, completion_tokens)
+    resolved_caller = caller or _caller_ctx.get() or "unknown"
+    resolved_user_id = user_id if user_id is not None else _user_id_ctx.get()
+    entry = {
+        "provider": provider,
+        "model": model,
+        "caller": resolved_caller,
+        "user_id": resolved_user_id,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+        "cost_usd": round(cost, 8),
+        "latency_ms": latency_ms,
+        "success": bool(success),
+    }
+    _capture_usage_entry(entry)
+
     try:
         from app.database import SessionLocal
         from app.models.llm_usage import LlmUsageLog
 
-        prompt_tokens = _estimate_tokens(prompt_text, model)
-        completion_tokens = _estimate_tokens(completion_text, model)
-        cost = _price_usd(model, prompt_tokens, completion_tokens)
-
-        resolved_caller = caller or _caller_ctx.get() or "unknown"
         if resolved_caller == "unknown":
             import traceback
             stack = "".join(traceback.format_stack(limit=8))
@@ -111,7 +188,7 @@ def record_usage(
                 provider=provider,
                 model=model,
                 caller=resolved_caller,
-                user_id=user_id if user_id is not None else _user_id_ctx.get(),
+                user_id=resolved_user_id,
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 total_tokens=prompt_tokens + completion_tokens,

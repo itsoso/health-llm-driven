@@ -37,6 +37,8 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
     public var elapsedMs: Int?
     /// LLM 调用轮数(后端 done.llm_rounds);>1 才有展示意义。
     public var llmRounds: Int?
+    /// 本条回复内每次 LLM 调用的 token / 成本摘要(后端 done.llm_usage / message.meta.llm_usage)。
+    public var llmUsage: LLMUsageProfile?
     /// 本次引用的数据源标签(后端 done.sources_used)。
     public var sourcesUsed: [String]
     /// 本次调用的 Skill / 工具名(后端 done.tools_used;未上线前为空)。
@@ -53,6 +55,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
             || selectedModel != nil || answerModel != nil
             || !toolModels.isEmpty || !fallbackReasons.isEmpty
             || !sourcesUsed.isEmpty || !toolsUsed.isEmpty
+            || llmUsage != nil
             || (perf?.isRenderable ?? false)
     }
 
@@ -67,6 +70,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         fallbackReasons: [String] = [],
         elapsedMs: Int? = nil,
         llmRounds: Int? = nil,
+        llmUsage: LLMUsageProfile? = nil,
         sourcesUsed: [String] = [],
         toolsUsed: [String] = [],
         completionStatus: String? = nil,
@@ -92,6 +96,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.fallbackReasons = fallbackReasons
         self.elapsedMs = elapsedMs
         self.llmRounds = llmRounds
+        self.llmUsage = llmUsage
         self.sourcesUsed = sourcesUsed
         self.toolsUsed = toolsUsed
         self.completionStatus = completionStatus
@@ -100,7 +105,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
 
     // 显式 Codable:历史快照(老版本无这些字段)用 decodeIfPresent 容错;数组缺失 → 空。
     private enum CodingKeys: String, CodingKey {
-        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, sourcesUsed, toolsUsed, completionStatus, perf, cardType, cardRender, cardData, cardActions
+        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, llmUsage, sourcesUsed, toolsUsed, completionStatus, perf, cardType, cardRender, cardData, cardActions
         case cardTypeSnake = "card_type"
         case cardRenderSnake = "card_render"
         case cardDataSnake = "card_data"
@@ -120,6 +125,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.fallbackReasons = try c.decodeIfPresent([String].self, forKey: .fallbackReasons) ?? []
         self.elapsedMs = try c.decodeIfPresent(Int.self, forKey: .elapsedMs)
         self.llmRounds = try c.decodeIfPresent(Int.self, forKey: .llmRounds)
+        self.llmUsage = try c.decodeIfPresent(LLMUsageProfile.self, forKey: .llmUsage)
         self.sourcesUsed = try c.decodeIfPresent([String].self, forKey: .sourcesUsed) ?? []
         self.toolsUsed = try c.decodeIfPresent([String].self, forKey: .toolsUsed) ?? []
         self.completionStatus = try c.decodeIfPresent(String.self, forKey: .completionStatus)
@@ -148,6 +154,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         try c.encode(fallbackReasons, forKey: .fallbackReasons)
         try c.encodeIfPresent(elapsedMs, forKey: .elapsedMs)
         try c.encodeIfPresent(llmRounds, forKey: .llmRounds)
+        try c.encodeIfPresent(llmUsage, forKey: .llmUsage)
         try c.encode(sourcesUsed, forKey: .sourcesUsed)
         try c.encode(toolsUsed, forKey: .toolsUsed)
         try c.encodeIfPresent(completionStatus, forKey: .completionStatus)
@@ -922,7 +929,7 @@ public final class AgentChatViewModel {
                     // 中途 perf 提示:仅暂存(prompt 组装刚完成,首 token 前)。主瀑布图从
                     // 最终 done.perf 渲染;这里让「组装中…」等实时提示未来有据可依。
                     livePreLLMPerf = MessagePerf(preLLMMs: preLLMMs, preLLMStages: stages)
-                case .done(let id, _, let completionStatus, let model, let selectedModel, let answerModel, let toolModels, let fallbackReasons, let sourcesUsed, let toolsUsed, let elapsedMs, let llmRounds, let cards, let perf):
+                case .done(let id, _, let completionStatus, let model, let selectedModel, let answerModel, let toolModels, let fallbackReasons, let sourcesUsed, let toolsUsed, let elapsedMs, let llmRounds, let cards, let perf, let llmUsage):
                     conversationID = id ?? conversationID
                     lastCompletionStatus = completionStatus
                     lastModel = answerModel ?? model
@@ -938,6 +945,7 @@ public final class AgentChatViewModel {
                         messages[idx].fallbackReasons = fallbackReasons
                         messages[idx].elapsedMs = elapsedMs
                         messages[idx].llmRounds = llmRounds
+                        messages[idx].llmUsage = llmUsage
                         messages[idx].sourcesUsed = sourcesUsed
                         messages[idx].toolsUsed = Self.mergedToolNames(
                             existing: messages[idx].toolsUsed,
@@ -1314,7 +1322,8 @@ public final class AgentChatViewModel {
                     llmRounds: message.llmRounds,
                     sourcesUsed: message.sourcesUsed,
                     toolsUsed: message.toolsUsed,
-                    perf: message.perf
+                    perf: message.perf,
+                    llmUsage: message.llmUsage
                 )
             } else {
                 footerHTML = ""

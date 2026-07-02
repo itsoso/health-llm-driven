@@ -5,6 +5,9 @@ import logging
 import pytest
 
 from app.services.llm.usage_tracker import (
+    begin_usage_capture,
+    end_usage_capture,
+    summarize_usage_capture,
     set_caller,
     wrap_provider,
     record_usage,
@@ -109,3 +112,32 @@ def test_record_usage_failsoft_on_db_error(monkeypatch, caplog):
         )
 
     assert any("写日志失败" in r.message for r in caplog.records)
+
+
+def test_usage_capture_summarizes_calls_and_resets(patch_session):
+    """请求级 capture 汇总本轮每次 LLM 调用的输入/输出 token, 且 reset 后不串轮."""
+    token = begin_usage_capture()
+    try:
+        record_usage(
+            provider="fake",
+            model="gpt-4o-mini",
+            prompt_text="hello world",
+            completion_text="ok",
+            caller="test.capture",
+            user_id=7,
+            latency_ms=123,
+        )
+        summary = summarize_usage_capture()
+    finally:
+        end_usage_capture(token)
+
+    assert summary is not None
+    assert summary["calls"] == 1
+    assert summary["prompt_tokens"] > 0
+    assert summary["completion_tokens"] > 0
+    assert summary["total_tokens"] == summary["prompt_tokens"] + summary["completion_tokens"]
+    assert summary["latency_ms"] == 123
+    assert summary["models"] == ["gpt-4o-mini"]
+    assert summary["items"][0]["caller"] == "test.capture"
+    assert summary["items"][0]["prompt_tokens"] == summary["prompt_tokens"]
+    assert summarize_usage_capture() is None

@@ -81,6 +81,25 @@ def _persist_done_cards(db: Session, message_id: int | None, cards: list) -> Non
         logger.debug("[agent.stream] persist done cards skipped: %s", e)
 
 
+def _persist_done_llm_usage(db: Session, message_id: int | None, usage: dict | None) -> None:
+    """Persist per-answer token/cost profile into OpenClawMessage.meta."""
+
+    if not message_id or not isinstance(usage, dict) or not usage:
+        return
+    try:
+        from app.models.openclaw import OpenClawMessage
+
+        msg = db.query(OpenClawMessage).filter(OpenClawMessage.id == message_id).first()
+        if not msg:
+            return
+        meta = dict(msg.meta or {})
+        meta["llm_usage"] = usage
+        msg.meta = meta
+        db.commit()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[agent.stream] persist llm usage skipped: %s", e)
+
+
 def _check_recent_dup(user_id: int, message: str) -> bool:
     """同一 user 同一 message 在 3s 内重复 → 返回 True (拒绝).
 
@@ -403,7 +422,15 @@ async def agent_stream(
         async def _bg():
             # 独立 db session — 主 request 的 db 在客户端断开时会被 close
             from app.database import SessionLocal as _SessionLocal
+            from app.services.llm.usage_tracker import (
+                begin_usage_capture,
+                end_usage_capture,
+                set_caller,
+                summarize_usage_capture,
+            )
             bg_db = _SessionLocal()
+            usage_capture_token = begin_usage_capture()
+            set_caller("agent.stream", user_id=user_id)
             try:
                 executor_bg = AgentExecutor(bg_db)
                 # 累积 LLM 流式输出, done 时扫描 fenced ```menu_share 块 (L1 分享菜单)
@@ -443,6 +470,17 @@ async def agent_stream(
                                 )
                         except Exception as e:
                             logger.debug(f"inline_cards 失败: {e}")
+                        try:
+                            usage = summarize_usage_capture()
+                            if usage:
+                                event.setdefault("data", {})["llm_usage"] = usage
+                                _persist_done_llm_usage(
+                                    bg_db,
+                                    event.get("data", {}).get("message_id"),
+                                    usage,
+                                )
+                        except Exception as e:  # noqa: BLE001
+                            logger.debug("[agent.stream] attach llm usage skipped: %s", e)
                     await chunk_queue.put(f"data: {json.dumps(event, ensure_ascii=False)}\n\n")
             except Exception as e:
                 logger.error(f"Agent bg 流式异常: {e}", exc_info=True)
@@ -455,6 +493,10 @@ async def agent_stream(
                 # sentinel: 通知 generator 结束
                 try:
                     await chunk_queue.put(None)
+                except Exception:
+                    pass
+                try:
+                    end_usage_capture(usage_capture_token)
                 except Exception:
                     pass
                 try:

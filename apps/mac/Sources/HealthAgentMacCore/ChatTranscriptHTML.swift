@@ -194,7 +194,8 @@ public enum ChatTranscriptHTML {
         llmRounds: Int?,
         sourcesUsed: [String],
         toolsUsed: [String],
-        perf: MessagePerf? = nil
+        perf: MessagePerf? = nil,
+        llmUsage: LLMUsageProfile? = nil
     ) -> String {
         var sections: [String] = []
 
@@ -204,6 +205,12 @@ public enum ChatTranscriptHTML {
             let waterfall = latencyWaterfallHTML(perf)
             if !waterfall.isEmpty {
                 sections.append(waterfall)
+            }
+        }
+        if let llmUsage {
+            let usageHTML = tokenUsageHTML(llmUsage)
+            if !usageHTML.isEmpty {
+                sections.append(usageHTML)
             }
         }
 
@@ -262,6 +269,54 @@ public enum ChatTranscriptHTML {
 
         guard !sections.isEmpty else { return "" }
         return "<div class=\"meta-footer\">" + sections.joined() + "</div>"
+    }
+
+    private static func tokenUsageHTML(_ usage: LLMUsageProfile) -> String {
+        let prompt = usage.promptTokens ?? 0
+        let completion = usage.completionTokens ?? 0
+        guard prompt > 0 || completion > 0 else { return "" }
+
+        var summary = "Token 输入 \(tokenCountLabel(prompt)) · 输出 \(tokenCountLabel(completion))"
+        if let calls = usage.calls, calls > 1 {
+            summary += " · \(calls)次"
+        }
+        if let cost = usage.costUsd, cost > 0 {
+            summary += " · \(costLabel(cost))"
+        }
+
+        let rows = usage.items.enumerated().map { index, item -> String in
+            let model = item.model?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let provider = item.provider?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = (!(model ?? "").isEmpty ? model : provider) ?? "调用 \(index + 1)"
+            var value = "输入 \(tokenCountLabel(item.promptTokens ?? 0)) · 输出 \(tokenCountLabel(item.completionTokens ?? 0))"
+            if let latency = item.latencyMs, latency > 0 {
+                value += " · " + msLabel(latency)
+            }
+            if item.success == false {
+                value += " · 失败"
+            }
+            return "<li>\(escape(name))：\(escape(value))</li>"
+        }.joined()
+
+        if rows.isEmpty {
+            return "<div class=\"meta-line\">\(escape(summary))</div>"
+        }
+        return "<details class=\"meta-sources meta-token\"><summary>\(escape(summary))</summary><ul>\(rows)</ul></details>"
+    }
+
+    private static func tokenCountLabel(_ value: Int) -> String {
+        if value >= 1000 {
+            let formatted = String(format: "%.1fk", Double(value) / 1000.0)
+            return formatted.replacingOccurrences(of: ".0k", with: "k")
+        }
+        return "\(max(0, value))"
+    }
+
+    private static func costLabel(_ value: Double) -> String {
+        if value < 0.01 {
+            return String(format: "$%.4f", value)
+        }
+        return String(format: "$%.2f", value)
     }
 
     private static func fallbackReasonLabel(_ reason: String) -> String {

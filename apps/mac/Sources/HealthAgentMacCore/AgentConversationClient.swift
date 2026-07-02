@@ -40,6 +40,7 @@ struct BackendConversationMessageMeta: Decodable, Sendable {
     let fallbackReasons: [String]
     let elapsedMs: Int?
     let llmRounds: Int?
+    let llmUsage: LLMUsageProfile?
     let sourcesUsed: [String]
     let toolsUsed: [String]
     let completionStatus: String?
@@ -67,6 +68,7 @@ struct BackendConversationMessageMeta: Decodable, Sendable {
         case fallbackReasons = "fallback_reasons"
         case elapsedMs = "elapsed_ms"
         case llmRounds = "llm_rounds"
+        case llmUsage = "llm_usage"
         case sourcesUsed = "sources_used"
         case toolsUsed = "tools_used"
         case completionStatus = "completion_status"
@@ -85,6 +87,7 @@ struct BackendConversationMessageMeta: Decodable, Sendable {
         fallbackReasons = (try? c.decode([String].self, forKey: .fallbackReasons)) ?? []
         elapsedMs = try? c.decode(Int.self, forKey: .elapsedMs)
         llmRounds = try? c.decode(Int.self, forKey: .llmRounds)
+        llmUsage = try? c.decode(LLMUsageProfile.self, forKey: .llmUsage)
         sourcesUsed = (try? c.decode([String].self, forKey: .sourcesUsed)) ?? []
         toolsUsed = (try? c.decode([String].self, forKey: .toolsUsed)) ?? []
         completionStatus = try? c.decode(String.self, forKey: .completionStatus)
@@ -192,6 +195,7 @@ public final class AgentConversationClient: AgentConversationRemoteSourcing, @un
             fallbackReasons: dto.meta?.fallbackReasons ?? [],
             elapsedMs: dto.meta?.elapsedMs,
             llmRounds: dto.meta?.llmRounds,
+            llmUsage: dto.meta?.llmUsage,
             sourcesUsed: dto.meta?.sourcesUsed ?? [],
             toolsUsed: dto.meta?.toolsUsed ?? [],
             completionStatus: dto.meta?.completionStatus,
