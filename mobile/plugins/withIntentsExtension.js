@@ -195,7 +195,7 @@ struct HealthCommandIntent: AppIntent {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30
 
-        let body: [String: Any] = ["message": content.text, "stream": false]
+        let body: [String: Any] = ["message": content.text, "channel": "siri"]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
@@ -209,24 +209,41 @@ struct HealthCommandIntent: AppIntent {
             if httpResponse.statusCode >= 400 {
                 return .result(dialog: "服务暂时不可用，请稍后再试")
             }
-            if let text = String(data: data, encoding: .utf8), !text.isEmpty {
-                let lines = text.components(separatedBy: "\\n")
-                var lastContent = ""
-                for line in lines {
-                    if line.hasPrefix("data: ") {
-                        let jsonStr = String(line.dropFirst(6))
-                        if let jsonData = jsonStr.data(using: .utf8),
-                           let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                           let c = json["content"] as? String {
-                            lastContent += c
-                        }
-                    }
-                }
-                let trimmed = lastContent.trimmingCharacters(in: .whitespacesAndNewlines)
-                let display = trimmed.isEmpty ? "已记录" : (trimmed.count > 200 ? String(trimmed.prefix(200)) + "..." : trimmed)
-                return .result(dialog: "\\(display)")
+            // SSE 线格式: 每行 \`data: {"event":"token","data":{"content":"..."}}\`。
+            // token 累积 data.content; done 结束; error → 该次记录失败, 绝不播报"已记录"。
+            guard let text = String(data: data, encoding: .utf8), !text.isEmpty else {
+                return .result(dialog: "记录失败，请打开健康助理 App 确认")
             }
-            return .result(dialog: "已记录")
+            var accumulated = ""
+            var sawError = false
+            for line in text.components(separatedBy: "\\n") {
+                guard line.hasPrefix("data: ") else { continue }
+                let jsonStr = String(line.dropFirst(6))
+                guard let jsonData = jsonStr.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+                    continue
+                }
+                let eventType = json["event"] as? String
+                let payload = json["data"] as? [String: Any]
+                if eventType == "error" {
+                    sawError = true
+                    break
+                }
+                if eventType == "token", let c = payload?["content"] as? String {
+                    accumulated += c
+                }
+                // done: 结束标记, 无需额外累积 (elapsed_ms 可读但不入播报)。
+            }
+            if sawError {
+                return .result(dialog: "记录失败，请打开健康助理 App 确认")
+            }
+            let trimmed = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                // 空回复 = 无法确认是否写入, 保守按失败处理, 不假报成功。
+                return .result(dialog: "记录失败，请打开健康助理 App 确认")
+            }
+            let display = trimmed.count > 200 ? String(trimmed.prefix(200)) + "..." : trimmed
+            return .result(dialog: "\\(display)")
         } catch {
             return .result(dialog: "网络错误，请检查网络连接")
         }
@@ -340,11 +357,11 @@ struct QuickWaterIntent: AppIntent {
         request.setValue("Bearer \\(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30
-        let body: [String: Any] = ["message": "记录我喝了一杯水(约250毫升)", "stream": false]
+        let body: [String: Any] = ["message": "记录我喝了一杯水(约250毫升)", "channel": "siri"]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
                 return .result(dialog: "网络请求失败")
             }
@@ -354,7 +371,34 @@ struct QuickWaterIntent: AppIntent {
             if httpResponse.statusCode >= 400 {
                 return .result(dialog: "服务暂时不可用, 请稍后再试")
             }
-            // 表上极简确认: 速记成功固定一句, 不回放后端长文本(瞥一眼即可)。
+            // SSE 线格式: 每行 \`data: {"event":"token","data":{"content":"..."}}\`。
+            // 表上极简确认, 但必须先确认后端真写入: error 或空回复 → 报失败, 绝不假说"已记录"。
+            guard let text = String(data: data, encoding: .utf8), !text.isEmpty else {
+                return .result(dialog: "记录失败, 请打开健康助理 App 确认")
+            }
+            var accumulated = ""
+            var sawError = false
+            for line in text.components(separatedBy: "\\n") {
+                guard line.hasPrefix("data: ") else { continue }
+                let jsonStr = String(line.dropFirst(6))
+                guard let jsonData = jsonStr.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+                    continue
+                }
+                let eventType = json["event"] as? String
+                let payload = json["data"] as? [String: Any]
+                if eventType == "error" {
+                    sawError = true
+                    break
+                }
+                if eventType == "token", let c = payload?["content"] as? String {
+                    accumulated += c
+                }
+            }
+            if sawError || accumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return .result(dialog: "记录失败, 请打开健康助理 App 确认")
+            }
+            // 后端确实产出了回复才播报成功; 表上仍用极简固定一句, 不回放长文本。
             return .result(dialog: "已记录一杯水")
         } catch {
             return .result(dialog: "网络错误, 请检查网络连接")
@@ -421,3 +465,5 @@ struct HealthPilotShortcuts: AppShortcutsProvider {
 }
 
 module.exports = withIntentsExtension;
+// Exported for template-content tests (mirrors _patchPodfileContents convention).
+module.exports._buildSiriSwift = buildSiriSwift;
