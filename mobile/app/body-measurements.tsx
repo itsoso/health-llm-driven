@@ -204,7 +204,7 @@ export default function BodyMeasurementsScreen() {
               <Ionicons name="git-network-outline" size={17} color={c.brand} />
               <Text style={styles.autoTitle}>自动化优先级</Text>
             </View>
-            <AutomationRow title="1. 系统健康库" body="iOS 读 Apple Health，Android 读 Health Connect；体重、腰围都先落到系统健康库。" />
+            <AutomationRow title="1. 系统健康库" body="优先读取系统健康库；体重、腰围都先落到设备原生健康数据源。" />
             <AutomationRow title="2. 设备原生同步" body="智能体脂秤或智能软尺先同步到系统健康库，App 只做授权读取和去重。" />
             <AutomationRow title="3. 手动兜底" body="设备断链时只填一个数字，保存后进入 Twin、每日计划和轨迹复盘。" />
           </View>

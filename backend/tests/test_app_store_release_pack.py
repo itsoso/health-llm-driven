@@ -6,7 +6,7 @@ import sys
 import zlib
 from pathlib import Path
 
-from scripts.check_app_store_release_pack import validate_release_narrative
+from scripts.check_app_store_release_pack import validate_app_review_redlines, validate_release_narrative
 
 REQUIRED_SCREENSHOT_NAMES = [
     "00-launch",
@@ -135,3 +135,35 @@ def test_release_narrative_rejects_stale_public_positioning():
     assert "release text contains stale user-visible term: 私教" in failures
     assert "release text must use current bottom navigation labels: 今日 / 阿衡 / 记录 / 我" in failures
     assert "release text must include current positioning term: 健康参谋" in failures
+
+
+def test_app_review_redlines_reject_high_confidence_review_risks():
+    failures = validate_app_review_redlines(
+        {
+            "mobile/app/paywall.tsx": (
+                "Android 用户请去微信支付充值会员, 也可以输入 CDKey 兑换码。"
+                "必须开启通知才能继续使用。"
+                "敬请期待, 页面建设中。"
+                "AI 已确诊为高血压, 治疗方案如下。"
+            )
+        }
+    )
+
+    assert "non-iOS platform term" in "\n".join(failures)
+    assert "third-party payment or redeem-code term" in "\n".join(failures)
+    assert "forced permission wording" in "\n".join(failures)
+    assert "unfinished or placeholder product copy" in "\n".join(failures)
+    assert "unsafe medical claim wording" in "\n".join(failures)
+
+
+def test_app_review_redlines_allow_current_medical_boundary_disclaimers():
+    failures = validate_app_review_redlines(
+        {
+            "docs/release/app-store/submission-pack.md": (
+                "阿衡提供健康记录、趋势解读和生活方式建议,不提供诊断、急救分诊、"
+                "处方、治疗方案或药物剂量调整。任何医疗决策请咨询医生。"
+            )
+        }
+    )
+
+    assert failures == []

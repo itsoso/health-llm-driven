@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Mapping
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -16,6 +18,7 @@ REQUIRED_FILES = [
     "docs/release/app-store/privacy-nutrition-label.draft.json",
     "docs/release/app-store/review-notes.zh-CN.md",
     "docs/release/app-store/screenshot-runbook.md",
+    "docs/release/app-store/adapted-review-checklist.md",
     "docs/plans/2026-06-28-app-store-mvp-release-batch2-plan.md",
     "docs/plans/2026-06-28-app-store-mvp-release-batch3-plan.md",
     "docs/plans/2026-06-28-app-store-mvp-release-batch4-plan.md",
@@ -71,6 +74,76 @@ STALE_USER_VISIBLE_RELEASE_TERMS = [
     "守护神",
     "私教",
 ]
+APP_REVIEW_REDLINE_GLOBS = [
+    "docs/release/app-store/*.md",
+    "frontend/src/app/privacy/page.tsx",
+    "mobile/app/**/*.tsx",
+    "mobile/components/**/*.tsx",
+    "mobile/services/**/*.ts",
+    "mobile/utils/**/*.ts",
+]
+APP_REVIEW_REDLINE_EXCLUDED_PARTS = {
+    "__tests__",
+    "__mocks__",
+    "adapted-review-checklist.md",
+    "api.generated.ts",
+}
+APP_REVIEW_REDLINE_RULES = [
+    (
+        "non-iOS platform term",
+        [
+            r"\bAndroid\b",
+            r"安卓",
+            r"Google Play",
+        ],
+    ),
+    (
+        "third-party payment or redeem-code term",
+        [
+            r"微信支付",
+            r"支付宝",
+            r"第三方支付",
+            r"兑换码",
+            r"\bCDKey\b",
+            r"\bcdkey\b",
+            r"充值",
+            r"提现",
+        ],
+    ),
+    (
+        "forced permission wording",
+        [
+            r"(?:必须|强制|需要|请先|不开启|未开启).{0,24}(?:通知|定位|跟踪|麦克风|相机|健康权限|HealthKit).{0,24}(?:才能继续使用|才能进入|才可继续|无法继续|无法使用本应用|不能使用本应用|不可使用本应用)",
+            r"(?:通知|定位|跟踪|麦克风|相机|健康权限|HealthKit).{0,24}(?:必须|强制).{0,24}(?:开启|授权|允许).{0,24}(?:才能继续|才可继续|进入应用)",
+        ],
+    ),
+    (
+        "unfinished or placeholder product copy",
+        [
+            r"敬请期待",
+            r"页面建设中",
+            r"功能建设中",
+            r"即将上线",
+            r"待上线",
+            r"待开放",
+            r"占位页面",
+            r"暂未实现",
+            r"未实现",
+            r"coming soon",
+        ],
+    ),
+    (
+        "unsafe medical claim wording",
+        [
+            r"确诊为",
+            r"诊断为",
+            r"治疗方案如下",
+            r"处方如下",
+            r"药物剂量调整为",
+            r"(?:建议|可以|应|请|立刻|马上)自行(?:停药|换药|改剂量)",
+        ],
+    ),
+]
 
 
 def read_json(path: str) -> dict:
@@ -100,6 +173,42 @@ def validate_release_narrative(
 
     if CURRENT_POSITIONING_TERM not in combined:
         failures.append(f"release text must include current positioning term: {CURRENT_POSITIONING_TERM}")
+
+    return failures
+
+
+def collect_app_review_redline_sources() -> dict[str, str]:
+    sources: dict[str, str] = {}
+    for pattern in APP_REVIEW_REDLINE_GLOBS:
+        for path in ROOT.glob(pattern):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(ROOT).as_posix()
+            if any(part in rel for part in APP_REVIEW_REDLINE_EXCLUDED_PARTS):
+                continue
+            sources[rel] = path.read_text(encoding="utf-8")
+    return sources
+
+
+def validate_app_review_redlines(source_texts: Mapping[str, str]) -> list[str]:
+    failures: list[str] = []
+    compiled_rules = [
+        (category, [re.compile(pattern, re.IGNORECASE) for pattern in patterns])
+        for category, patterns in APP_REVIEW_REDLINE_RULES
+    ]
+
+    for rel, text in sorted(source_texts.items()):
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            compact = line.strip()
+            if not compact:
+                continue
+            if compact.startswith(("//", "*")) or "Platform.OS" in compact:
+                continue
+            if "application/vnd.android.package-archive" in compact:
+                continue
+            for category, patterns in compiled_rules:
+                if any(pattern.search(compact) for pattern in patterns):
+                    failures.append(f"{category}: {rel}:{line_no}: {compact[:120]}")
 
     return failures
 
@@ -195,6 +304,7 @@ def main() -> int:
             screenshot_runbook=screenshot_runbook,
         )
     )
+    failures.extend(validate_app_review_redlines(collect_app_review_redline_sources()))
 
     for url in OFFICIAL_REFERENCE_URLS:
         if url not in submission and url not in read_text("docs/plans/2026-06-28-app-store-mvp-release-batch2-plan.md"):

@@ -80,6 +80,8 @@ The default release-pack check validates repo materials that do not require huma
 python3 scripts/check_app_store_release_pack.py
 ```
 
+The adapted review checklist is `docs/release/app-store/adapted-review-checklist.md`. It is included in the release-pack gate and maps operational App Review risks to automated and manual checks.
+
 Immediately before an App Store submission, run the stricter final gate. It must fail if demo credentials are still placeholders, App Store Connect credentials are unavailable, or no App Store-ready screenshot set is provided:
 
 ```bash
@@ -143,6 +145,7 @@ python3 scripts/prepare_app_store_screenshots.py \
 Do not submit until:
 
 - [ ] `python3 scripts/check_app_store_release_pack.py` passes.
+- [ ] `docs/release/app-store/adapted-review-checklist.md` has been reviewed for any new route, dynamic card, payment, permission, HealthKit, or medical-boundary change.
 - [ ] `python3 scripts/check_app_store_release_pack.py --final-submit --screenshot-dir design/screenshots/app-store/<build-id>-ready` passes on the release machine.
 - [ ] `python3 scripts/check_ios_app_store_submission.py --require-asc-credentials` passes on the release machine.
 - [ ] Any sanitized candidate generated from private QA screenshots has passed human visual review before prepare.

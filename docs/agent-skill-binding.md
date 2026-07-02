@@ -43,6 +43,7 @@ Codex 如果全局 openskills 已提供同名 skill,可以用 `npx openskills re
 | 后端上线 | `.claude/skills/backend-deploy/SKILL.md` | `deploy.sh`, `docs/governance/deploy.md` |
 | Mobile JS/TS/UI 线上热更新 | `.claude/skills/mobile-ota/SKILL.md` | `scripts/mobile-ota.sh`, mobile release notes |
 | Mobile native / EAS / TestFlight 发版 | `.claude/skills/mobile-testflight-release/SKILL.md` | EAS profiles, iOS signing, user confirmation gates |
+| iOS App Store 送审 / 审核被拒 / Review Notes / 截图隐私 / 审核账号可达性 | `.claude/skills/ios-app-review-gate/SKILL.md` | `docs/release/app-store/submission-pack.md`, `docs/release/app-store/adapted-review-checklist.md`, `scripts/check_app_store_release_pack.py` |
 | Mac app 构建/安装/分发 | `.claude/skills/mac-build-deploy/SKILL.md` | `apps/mac/`, packaging scripts |
 
 ## Claude 与 Codex 的分工绑定
