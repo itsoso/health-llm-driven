@@ -4,8 +4,8 @@
 |---|---|
 | slug | `admin-llm-run-drilldown` |
 | 创建日期 | 2026-07-02 |
-| 当前阶段 | S6 部署 |
-| 状态 | shipping |
+| 当前阶段 | S8 沉淀 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | Quick Flow / TDD / frontend vitest+tsc / deploy |
 
@@ -74,3 +74,19 @@ DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai ./backend/.venv/bin/python back
 - 只读 Admin observability;未新增健康建议、医疗判断、写路径、通知或用户端暴露面。
 - 继续使用既有 Admin token 和后端错误摘要字段。
 - 裁决:GO。
+
+## G5/G6 · 部署与上线验证
+
+- 代码提交: `e0f51f72`。
+- Web/Backend 部署: `./deploy.sh -y`。
+- 部署健康度: `55/60 ✅ PASS`。
+- 前端构建: `/admin/llm-performance` bundle 已生成并重启 `health-frontend` PM2。
+- 线上验证:
+  - `https://health.executor.life/api/v1/health` 返回 `healthy`。
+  - `https://health.executor.life/admin/llm-performance` 返回 HTTP 200。
+- 注意: 部署完成后 `origin/main` 出现并发提交 `8e760bec`(KB provenance lineage),不属于本轮部署证据。
+- 裁决:GO。
+
+## 验证记录
+
+- 2026-07-02: Run Trace drill-down 已上线;Admin 可从失败调用/最近调用点击 `run_id` 查看本次回复的 LLM 调用链。
