@@ -1,6 +1,7 @@
 import { getToken } from './auth';
 import { BASE_URL } from './api';
 import { sanitizeChatErrorMessage } from '../utils/chatErrorMessage';
+import type { AgentPerfProfileLike } from '../utils/chatTransparency';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -46,6 +47,8 @@ export interface LlmUsageProfile {
   items?: LlmUsageCall[];
 }
 
+export type AgentPerfProfile = AgentPerfProfileLike;
+
 export interface StreamEvent {
   type: 'start' | 'token' | 'tool' | 'card' | 'done' | 'error';
   content?: string;
@@ -64,8 +67,10 @@ export interface StreamEvent {
   elapsedMs?: number;
   llmMs?: number;
   llmRounds?: number;
+  llmRoundsMs?: number[];
   model?: string;
   llmUsage?: LlmUsageProfile;
+  perf?: AgentPerfProfile;
   // 2026-05-14 #4: 可解释性 — AI 用了什么数据
   sourcesUsed?: string[];
   // 2026-06-12: 本轮调用的 Skill / 工具名 (后端 done.tools_used; 去重保序, 空 [])
@@ -242,6 +247,9 @@ export async function* streamChat(
         const llmUsage = parsed.data?.llm_usage && typeof parsed.data.llm_usage === 'object'
           ? parsed.data.llm_usage
           : undefined;
+        const perf = parsed.data?.perf && typeof parsed.data.perf === 'object'
+          ? parsed.data.perf
+          : undefined;
         return {
           type: 'done',
           conversationId: parsed.data?.conversation_id,
@@ -249,8 +257,10 @@ export async function* streamChat(
           elapsedMs: parsed.data?.elapsed_ms,
           llmMs: parsed.data?.llm_ms,
           llmRounds: parsed.data?.llm_rounds,
+          llmRoundsMs: Array.isArray(parsed.data?.llm_rounds_ms) ? parsed.data.llm_rounds_ms : undefined,
           model: parsed.data?.model,
           ...(llmUsage ? { llmUsage } : {}),
+          ...(perf ? { perf } : {}),
           sourcesUsed: Array.isArray(parsed.data?.sources_used) ? parsed.data.sources_used : undefined,
           toolsUsed: Array.isArray(parsed.data?.tools_used) ? parsed.data.tools_used : undefined,
           completionStatus: parsed.data?.completion_status,

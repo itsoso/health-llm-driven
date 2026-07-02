@@ -167,7 +167,7 @@ describe('streamChat', () => {
     await Promise.resolve();
     const xhr = MockXMLHttpRequest.instances[0];
     xhr.responseText =
-      'data: {"event":"done","data":{"conversation_id":42,"message_id":99,"llm_usage":{"calls":1,"prompt_tokens":1200,"completion_tokens":360,"total_tokens":1560,"cost_usd":0.0004,"items":[{"model":"qwen3.7-plus","prompt_tokens":1200,"completion_tokens":360}]}}}\n\n';
+      'data: {"event":"done","data":{"conversation_id":42,"message_id":99,"llm_rounds_ms":[4100],"perf":{"total_ms":5200,"pre_llm_ms":44,"llm_ttft_ms":900,"rounds":[{"llm_gen_ms":4100,"tool_exec_ms":12,"tools":["health_query"]}]},"llm_usage":{"calls":1,"prompt_tokens":1200,"completion_tokens":360,"total_tokens":1560,"cost_usd":0.0004,"items":[{"model":"qwen3.7-plus","prompt_tokens":1200,"completion_tokens":360}]}}}\n\n';
     xhr.onprogress?.();
 
     await expect(first).resolves.toMatchObject({
@@ -175,6 +175,15 @@ describe('streamChat', () => {
         type: 'done',
         conversationId: 42,
         messageId: 99,
+        llmRoundsMs: [4100],
+        perf: {
+          total_ms: 5200,
+          pre_llm_ms: 44,
+          llm_ttft_ms: 900,
+          rounds: [
+            { llm_gen_ms: 4100, tool_exec_ms: 12, tools: ['health_query'] },
+          ],
+        },
         llmUsage: {
           calls: 1,
           prompt_tokens: 1200,

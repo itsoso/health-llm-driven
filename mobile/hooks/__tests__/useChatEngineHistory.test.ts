@@ -124,6 +124,14 @@ describe('restoreMessagesFromHistory', () => {
               { model: 'qwen3.7-max', prompt_tokens: 800, completion_tokens: 120 },
             ],
           },
+          perf: {
+            total_ms: 29200,
+            pre_llm_ms: 44,
+            llm_ttft_ms: 23600,
+            rounds: [
+              { llm_gen_ms: 4100, tool_exec_ms: 15, tools: ['health_manage'] },
+            ],
+          },
         },
       },
     ], 'https://example.test', 'h');
@@ -136,6 +144,11 @@ describe('restoreMessagesFromHistory', () => {
         prompt_tokens: 1800,
         completion_tokens: 420,
         total_tokens: 2220,
+      },
+      perf: {
+        total_ms: 29200,
+        pre_llm_ms: 44,
+        llm_ttft_ms: 23600,
       },
     });
   });

@@ -51,8 +51,11 @@ export interface ChatMessage {
   llm_rounds_ms?: number[];
   model?: string;
   llm_usage?: LlmUsageProfile;
+  perf?: AgentPerfProfile;
   /** 2026-05-14 #4 可解释性: AI 本次回答用了什么数据源, 中文标签数组 */
   sources_used?: string[];
+  /** 本轮调用的 Skill / 工具名, 与 sources_used 独立. */
+  tools_used?: string[];
 }
 
 export interface LlmUsageCall {
@@ -78,6 +81,22 @@ export interface LlmUsageProfile {
   models?: string[];
   providers?: string[];
   items?: LlmUsageCall[];
+}
+
+export interface AgentPerfRound {
+  llm_gen_ms?: number | null;
+  tool_exec_ms?: number | null;
+  tools?: string[] | null;
+}
+
+export interface AgentPerfProfile {
+  total_ms?: number | null;
+  pre_llm_ms?: number | null;
+  pre_llm_stages?: Record<string, number | null | undefined> | null;
+  llm_ttft_ms?: number | null;
+  llm_full_ms?: number | null;
+  rounds?: AgentPerfRound[] | null;
+  orchestrator_tool_ms?: number | null;
 }
 
 export interface ChatSendResponse {

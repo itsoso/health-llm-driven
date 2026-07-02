@@ -38,6 +38,12 @@ import { sharePlainText } from '../../utils/share';
 import { buildAiShareMessage } from '../../utils/aiShareText';
 import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/markdownTables';
 import { extractRevaUiBlocks } from '../../utils/revaUiBlocks';
+import {
+  buildAgentTransparency,
+  formatDurationMs,
+  type AgentTransparencyBand,
+  type AgentTransparencyProfile,
+} from '../../utils/chatTransparency';
 
 // 结果操作按钮的装饰性 hue (加入计划绿/保存记忆紫/生成记录青/继续追问蓝) ——
 // 「是哪个动作」的色码, 非临床好坏, 保留 Reva 亮色调色板字面量.
@@ -115,6 +121,28 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
     [isStreaming, visibleAssistantMarkdown],
   );
   const images = item.imageUris;
+  const transparency = useMemo(
+    () => buildAgentTransparency({
+      elapsedMs: item.elapsedMs,
+      llmRounds: item.llmRounds,
+      llmRoundsMs: item.llmRoundsMs,
+      model: item.model,
+      llmUsage: item.llmUsage,
+      sourcesUsed: item.sourcesUsed,
+      toolsUsed: item.toolsUsed,
+      perf: item.perf,
+    }),
+    [
+      item.elapsedMs,
+      item.llmRounds,
+      item.llmRoundsMs,
+      item.model,
+      item.llmUsage,
+      item.sourcesUsed,
+      item.toolsUsed,
+      item.perf,
+    ],
+  );
 
   const clearSpeechTimeout = useCallback(() => {
     if (speechTimeoutRef.current) {
@@ -484,6 +512,9 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
                 />
               </View>
             ) : null}
+            {!item.streaming && assistantTextForActions && transparency.visible ? (
+              <AgentTransparencyPanel profile={transparency} />
+            ) : null}
             {assistantTextForActions && showActions ? (
               <View style={styles.actionsRow}>
                 <Pressable
@@ -512,24 +543,6 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
             {/* 2026-05-13: 耗时 + 模型名 footer + 🔊 播报按钮 (流式结束才显示) */}
             {!item.streaming && assistantTextForActions ? (
               <View style={styles.metaRow}>
-                {item.elapsedMs != null ? (
-                  <>
-                    <Ionicons name="time-outline" size={10} color={C.ink3} />
-                    <Text style={txt.meta}>
-                      {(item.elapsedMs / 1000).toFixed(1)}s
-                      {item.llmRounds && item.llmRounds > 1 ? ` · ${item.llmRounds} 轮` : ''}
-                      {item.model ? ` · ${item.model}` : ''}
-                    </Text>
-                  </>
-                ) : null}
-                {formatLlmUsage(item.llmUsage) ? (
-                  <>
-                    <Ionicons name="analytics-outline" size={10} color={C.ink3} />
-                    <Text style={txt.meta} numberOfLines={1}>
-                      {formatLlmUsage(item.llmUsage)}
-                    </Text>
-                  </>
-                ) : null}
                 <View style={{ flex: 1 }} />
                 {!selectionMode ? (
                   <Pressable
@@ -556,14 +569,6 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
                   />
                 </Pressable>
               </View>
-            ) : null}
-            {/* 2026-05-14 #4: 可解释性 chip — AI 用了什么数据 (默认折叠) */}
-            {!item.streaming && item.sourcesUsed && item.sourcesUsed.length > 0 ? (
-              <SourcesChip sources={item.sourcesUsed} />
-            ) : null}
-            {/* 2026-06-12: 调用 Skill chips — 本轮用了哪些 Skill/工具 (对齐 mac/web) */}
-            {!item.streaming && item.toolsUsed && item.toolsUsed.length > 0 ? (
-              <ToolsChips tools={item.toolsUsed} />
             ) : null}
           </TouchableOpacity>
         )}
@@ -822,21 +827,6 @@ function statusTone(status?: string): string {
   if (/❌|严重|急|失败/.test(status)) return revaSemantic.risk.fg;
   if (/✅|正常|优秀|良好|充沛/.test(status)) return revaSemantic.normal.fg;
   return '#8A968F';
-}
-
-function formatTokenCount(value?: number | null): string {
-  const n = typeof value === 'number' && Number.isFinite(value) ? value : 0;
-  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
-  return String(Math.max(0, Math.round(n)));
-}
-
-function formatLlmUsage(usage?: UIMessage['llmUsage']): string | null {
-  if (!usage) return null;
-  const input = usage.prompt_tokens ?? 0;
-  const output = usage.completion_tokens ?? 0;
-  if (!input && !output) return null;
-  const calls = usage.calls && usage.calls > 1 ? ` · ${usage.calls}次` : '';
-  return `输入 ${formatTokenCount(input)} · 输出 ${formatTokenCount(output)}${calls}`;
 }
 
 function StructuredSummaryCard({
@@ -1145,6 +1135,59 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 3,
     marginTop: 6,
   },
+  transparencyPanel: {
+    marginTop: 9,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    backgroundColor: C.paper2,
+    overflow: 'hidden',
+  },
+  transparencyHeader: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  transparencyBody: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    gap: 8,
+  },
+  transparencyBar: {
+    height: 7,
+    borderRadius: 999,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    backgroundColor: C.line,
+  },
+  transparencyLegend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  transparencyRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  transparencyChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+  },
+  transparencyChip: {
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    backgroundColor: C.paper,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
 });
 
 const txt = {
@@ -1160,6 +1203,11 @@ const txt = {
   actionBtn: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '700', color: C.green500 } as TextStyle,
   fallback: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 20, color: C.ink2, fontStyle: 'italic' } as TextStyle,
   meta: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3 } as TextStyle,
+  transparencyTitle: { flex: 1, fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 16, fontWeight: '800', color: C.ink2 } as TextStyle,
+  transparencyLabel: { width: 64, fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 16, color: C.ink3 } as TextStyle,
+  transparencyValue: { flex: 1, fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 16, fontWeight: '700', color: C.ink2 } as TextStyle,
+  transparencyMono: { fontFamily: revaFonts.mono, fontSize: 10.5, lineHeight: 15, color: C.ink3 } as TextStyle,
+  transparencyChip: { fontFamily: revaFonts.sans, fontSize: 10.5, lineHeight: 14, color: C.ink2, fontWeight: '700' } as TextStyle,
 };
 
 function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?: boolean }) {
@@ -1209,71 +1257,99 @@ function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?:
   );
 }
 
-/** 2026-05-14 #4: 默认折叠 "AI 用了 N 项数据", 点开列出来. */
-function SourcesChip({ sources }: { sources: string[] }) {
+function bandColor(kind: AgentTransparencyBand['kind']): string {
+  switch (kind) {
+    case 'prellm': return '#CBD5D1';
+    case 'ttft': return '#F5A623';
+    case 'gen': return C.green500;
+    case 'tool': return C.blue500;
+    case 'orch': return revaSemantic.risk.fg;
+    case 'total':
+    default:
+      return C.green300;
+  }
+}
+
+function AgentTransparencyPanel({ profile }: { profile: AgentTransparencyProfile }) {
   const [open, setOpen] = React.useState(false);
+  const rows = [
+    ...(profile.stages.length > 0 ? [{ label: '继续阶段', value: profile.stages.map(s => `${s.label} ${s.value}`).join(' · ') }] : []),
+    ...(profile.rounds.length > 0 ? [{ label: 'LLM 轮次', value: profile.rounds.map(r => `${r.label} ${r.value}`).join('\n') }] : []),
+    ...(profile.tokenLine ? [{ label: 'Token', value: profile.tokenLine }] : []),
+  ];
   return (
-    <View style={{ marginTop: 6 }}>
-      <TouchableOpacity
+    <View style={styles.transparencyPanel}>
+      <Pressable
         onPress={() => setOpen(o => !o)}
-        style={{
-          flexDirection: 'row', alignItems: 'center', gap: 4,
-          alignSelf: 'flex-start',
-          paddingHorizontal: 8, paddingVertical: 3,
-          borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line,
-          backgroundColor: C.paper2,
-        }}
+        style={({ pressed }) => [styles.transparencyHeader, pressed && styles.actionBtnPressed]}
+        accessibilityRole="button"
+        accessibilityLabel={open ? '收起执行透视' : '展开执行透视'}
       >
-        <Ionicons name="search-outline" size={11} color={C.ink3} />
-        <Text style={{ fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3 }}>
-          AI 用了 {sources.length} 项数据
+        <Ionicons name="analytics-outline" size={13} color={C.green500} />
+        <Text style={txt.transparencyTitle} numberOfLines={1}>
+          透视 · {profile.headline || '本轮执行'}
         </Text>
         <Ionicons
           name={open ? 'chevron-up' : 'chevron-down'}
-          size={11}
+          size={13}
           color={C.ink3}
         />
-      </TouchableOpacity>
+      </Pressable>
       {open && (
-        <View style={{ marginTop: 4, marginLeft: 4, gap: 2 }}>
-          {sources.map((s, i) => (
-            <View key={i} style={{ flexDirection: 'row', gap: 4 }}>
-              <Text style={{ fontFamily: revaFonts.sans, fontSize: 11, color: C.green500, opacity: 0.6 }}>·</Text>
-              <Text style={{ fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, flex: 1 }}>{s}</Text>
+        <View style={styles.transparencyBody}>
+          {profile.bands.length > 0 ? (
+            <>
+              <View style={styles.transparencyBar}>
+                {profile.bands.map((band, index) => (
+                  <View
+                    key={`${band.kind}-${index}`}
+                    style={{
+                      flexGrow: band.ratio,
+                      flexBasis: 0,
+                      backgroundColor: bandColor(band.kind),
+                    }}
+                  />
+                ))}
+              </View>
+              <View style={styles.transparencyLegend}>
+                {profile.bands.map((band, index) => (
+                  <Text key={`${band.kind}-legend-${index}`} style={txt.transparencyMono}>
+                    {band.label} {formatDurationMs(band.ms)}
+                  </Text>
+                ))}
+              </View>
+            </>
+          ) : null}
+          {rows.map(row => (
+            <View key={row.label} style={styles.transparencyRow}>
+              <Text style={txt.transparencyLabel}>{row.label}</Text>
+              <Text style={txt.transparencyValue}>{row.value}</Text>
             </View>
           ))}
+          {profile.sources.length > 0 ? (
+            <View style={styles.transparencyRow}>
+              <Text style={txt.transparencyLabel}>引用数据</Text>
+              <View style={{ flex: 1, gap: 3 }}>
+                {profile.sources.slice(0, 8).map(source => (
+                  <Text key={source} style={txt.transparencyValue}>· {source}</Text>
+                ))}
+              </View>
+            </View>
+          ) : null}
+          {profile.tools.length > 0 ? (
+            <View style={styles.transparencyRow}>
+              <Text style={txt.transparencyLabel}>调用 Skill</Text>
+              <View style={[styles.transparencyChipRow, { flex: 1 }]}>
+                {profile.tools.map(tool => (
+                  <View key={tool} style={styles.transparencyChip}>
+                    <Text style={txt.transparencyChip}>{tool}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
         </View>
       )}
-    </View>
-  );
-}
-
-/** 2026-06-12: "调用 Skill" — 本轮调用的 Skill/工具名, 横排 chip (对齐 mac/web).
- * 始终展开 (通常 1-3 个), 灰、小、低调, 不抢内容。 */
-function ToolsChips({ tools }: { tools: string[] }) {
-  const list = tools.filter(t => t && t.trim());
-  if (list.length === 0) return null;
-  return (
-    <View
-      style={{
-        flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4,
-        marginTop: 6,
-      }}
-    >
-      <Ionicons name="construct-outline" size={11} color={C.ink3} />
-      <Text style={{ fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3 }}>调用 Skill</Text>
-      {list.map((t, i) => (
-        <View
-          key={i}
-          style={{
-            paddingHorizontal: 7, paddingVertical: 2,
-            borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line,
-            backgroundColor: C.paper2,
-          }}
-        >
-          <Text style={{ fontFamily: revaFonts.sans, fontSize: 11, color: C.ink2 }}>{t}</Text>
-        </View>
-      ))}
     </View>
   );
 }

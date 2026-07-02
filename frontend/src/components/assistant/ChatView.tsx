@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useCallback, useRef, useState } from 'react';
-import { Bookmark, Check, Copy, Share2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { Bookmark, Check, ChevronDown, Copy, Gauge, Share2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { ChatMessage } from '@/services/api/ai';
 import MarkdownRenderer from '@/components/assistant/MarkdownRenderer';
 import MealPlanCard from '@/components/assistant/MealPlanCard';
@@ -11,6 +11,7 @@ import { ChatSegment, hasToolCall, parseToolCalls } from '@/components/assistant
 import { prettyModelName } from '@/components/assistant/modelName';
 import { renderCard } from '@/components/assistant/inlineCards';
 import { getShareableMessageIds } from '@/components/assistant/shareSelection';
+import { buildAgentTransparency, formatDurationMs, type AgentTransparencyBand } from '@/components/assistant/chatTransparency';
 
 interface ChatViewProps {
   messages: ChatMessage[];
@@ -154,30 +155,8 @@ export default function ChatView({
                 <div className="text-[15px] leading-7">
                   <AssistantBody content={msg.content} streaming={!doneMessageIds.has(msg.id)} />
                 </div>
-                {/* 元信息行: 模型友好名 + 数据来源. 耗时/轮数收进 hover tooltip. */}
-                {doneMessageIds.has(msg.id) && (msg.model || msg.llm_usage || (msg.sources_used && msg.sources_used.length > 0)) && (
-                  <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                    {prettyModelName(msg.model) && (
-                      <span
-                        className="text-[11px] text-zinc-600"
-                        title={buildPerfTooltip(msg)}
-                      >
-                        {prettyModelName(msg.model)}
-                      </span>
-                    )}
-                    {msg.llm_usage && (
-                      <span
-                        className="text-[11px] font-mono text-zinc-600"
-                        title={buildTokenUsageTooltip(msg)}
-                      >
-                        {formatTokenUsage(msg.llm_usage)}
-                      </span>
-                    )}
-                    {/* 2026-05-14 #4: 可解释性 chip — AI 用了什么数据 */}
-                    {msg.sources_used && msg.sources_used.length > 0 && (
-                      <SourcesChip sources={msg.sources_used} />
-                    )}
-                  </div>
+                {doneMessageIds.has(msg.id) && (
+                  <AssistantTransparencyPanel msg={msg} />
                 )}
               </div>
             ) : (
@@ -309,71 +288,100 @@ function groupSegments(segments: ChatSegment[]): ChatSegment[][] {
   return groups;
 }
 
-/** 把耗时/轮数收进 model 名的 hover tooltip, 默认不在 UI 上占位. */
-function buildPerfTooltip(msg: ChatMessage): string {
-  const parts: string[] = [];
-  if (msg.elapsed_ms != null) parts.push(`耗时 ${(msg.elapsed_ms / 1000).toFixed(1)}s`);
-  if (msg.llm_rounds != null && msg.llm_rounds > 1) parts.push(`${msg.llm_rounds} 轮`);
-  return parts.length ? `本次回答的模型 · ${parts.join(' · ')}` : '本次回答的模型';
-}
-
-function formatTokenCount(value?: number | null): string {
-  const n = typeof value === 'number' && Number.isFinite(value) ? value : 0;
-  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
-  return String(Math.max(0, Math.round(n)));
-}
-
-function formatTokenUsage(usage: NonNullable<ChatMessage['llm_usage']>): string {
-  const calls = usage.calls && usage.calls > 1 ? ` · ${usage.calls}次` : '';
-  return `Token 输入 ${formatTokenCount(usage.prompt_tokens)} · 输出 ${formatTokenCount(usage.completion_tokens)}${calls}`;
-}
-
-function buildTokenUsageTooltip(msg: ChatMessage): string {
-  const usage = msg.llm_usage;
-  if (!usage) return '';
-  const lines = [
-    `输入 ${formatTokenCount(usage.prompt_tokens)} · 输出 ${formatTokenCount(usage.completion_tokens)} · 总 ${formatTokenCount(usage.total_tokens)}`,
-  ];
-  if (usage.cost_usd && usage.cost_usd > 0) {
-    lines.push(`估算成本 $${usage.cost_usd.toFixed(6)}`);
+function bandClass(kind: AgentTransparencyBand['kind']): string {
+  switch (kind) {
+    case 'prellm': return 'bg-zinc-500/60';
+    case 'ttft': return 'bg-amber-400';
+    case 'gen': return 'bg-emerald-400';
+    case 'tool': return 'bg-sky-400';
+    case 'orch': return 'bg-rose-400';
+    case 'total':
+    default:
+      return 'bg-teal-400';
   }
-  const items = Array.isArray(usage.items) ? usage.items : [];
-  items.slice(0, 8).forEach((item, index) => {
-    const latency = typeof item.latency_ms === 'number' ? ` · ${(item.latency_ms / 1000).toFixed(1)}s` : '';
-    const model = item.model || item.provider || `调用 ${index + 1}`;
-    lines.push(`${index + 1}. ${model}: 输入 ${formatTokenCount(item.prompt_tokens)} · 输出 ${formatTokenCount(item.completion_tokens)}${latency}`);
-  });
-  return lines.join('\n');
 }
 
-/** 2026-05-14 #4 可解释性 chip — 默认折叠 "🔍 AI 用了什么数据 (N)", 点开列出来. */
-function SourcesChip({ sources }: { sources: string[] }) {
+function AssistantTransparencyPanel({ msg }: { msg: ChatMessage }) {
   const [open, setOpen] = useState(false);
+  const profile = buildAgentTransparency({
+    elapsedMs: msg.elapsed_ms,
+    llmRounds: msg.llm_rounds,
+    llmRoundsMs: msg.llm_rounds_ms,
+    model: prettyModelName(msg.model) || msg.model,
+    llmUsage: msg.llm_usage,
+    sourcesUsed: msg.sources_used,
+    toolsUsed: msg.tools_used,
+    perf: msg.perf,
+  });
+  if (!profile.visible) return null;
+
   return (
-    <div>
+    <div className="mt-2.5 overflow-hidden rounded-xl border border-white/10 bg-white/[0.035]">
       <button
         onClick={() => setOpen(o => !o)}
-        className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-zinc-500 transition-colors hover:border-teal-300/30 hover:text-teal-300"
-        title="点击展开 / 折叠"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] text-zinc-500 transition-colors hover:text-teal-300"
+        title="查看本轮执行透视"
       >
-        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-        AI 用了 {sources.length} 项数据
-        <svg className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
+        <Gauge className="h-3.5 w-3.5 text-teal-400/80" />
+        <span className="min-w-0 flex-1 truncate font-medium">透视 · {profile.headline || '本轮执行'}</span>
+        <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <ul className="mt-1.5 ml-3 space-y-0.5 text-[11px] text-zinc-500">
-          {sources.map((s, i) => (
-            <li key={i} className="flex items-start gap-1.5">
-              <span className="shrink-0 text-teal-400/60">·</span>
-              <span>{s}</span>
-            </li>
-          ))}
-        </ul>
+        <div className="border-t border-white/10 px-3 py-2.5 text-[11px] text-zinc-500">
+          {profile.bands.length > 0 && (
+            <>
+              <div className="flex h-1.5 overflow-hidden rounded-full bg-white/10">
+                {profile.bands.map((band, index) => (
+                  <span
+                    key={`${band.kind}-${index}`}
+                    className={bandClass(band.kind)}
+                    style={{ flexGrow: band.ratio, flexBasis: 0 }}
+                  />
+                ))}
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10.5px] text-zinc-600">
+                {profile.bands.map((band, index) => (
+                  <span key={`${band.kind}-legend-${index}`}>{band.label} {formatDurationMs(band.ms)}</span>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div className="mt-2.5 grid gap-1.5">
+            {profile.stages.length > 0 && (
+              <MetaRow label="继续阶段" value={profile.stages.map(s => `${s.label} ${s.value}`).join(' · ')} />
+            )}
+            {profile.rounds.length > 0 && (
+              <MetaRow label="LLM 轮次" value={profile.rounds.map(r => `${r.label} ${r.value}`).join('\n')} preserveLines />
+            )}
+            {profile.tokenLine && <MetaRow label="Token" value={profile.tokenLine} />}
+            {profile.sources.length > 0 && (
+              <MetaRow label="引用数据" value={profile.sources.slice(0, 8).map(s => `· ${s}`).join('\n')} preserveLines />
+            )}
+            {profile.tools.length > 0 && (
+              <div className="grid grid-cols-[4.5rem_1fr] gap-2">
+                <span className="text-zinc-600">调用 Skill</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {profile.tools.map(tool => (
+                    <span key={tool} className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono text-[10.5px] text-zinc-500">
+                      {tool}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
+    </div>
+  );
+}
+
+function MetaRow({ label, value, preserveLines = false }: { label: string; value: string; preserveLines?: boolean }) {
+  return (
+    <div className="grid grid-cols-[4.5rem_1fr] gap-2">
+      <span className="text-zinc-600">{label}</span>
+      <span className={`text-zinc-500 ${preserveLines ? 'whitespace-pre-wrap' : ''}`}>{value}</span>
     </div>
   );
 }

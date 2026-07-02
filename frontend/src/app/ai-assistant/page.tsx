@@ -278,8 +278,10 @@ function AIAssistantInner() {
             llm_rounds_ms: Array.isArray(data.llm_rounds_ms) ? data.llm_rounds_ms : undefined,
             model: typeof data.model === 'string' ? data.model : undefined,
             llm_usage: data.llm_usage && typeof data.llm_usage === 'object' ? data.llm_usage : undefined,
+            perf: data.perf && typeof data.perf === 'object' ? data.perf : undefined,
             // 2026-05-14 #4: 可解释性 sources
             sources_used: Array.isArray(data.sources_used) ? data.sources_used : undefined,
+            tools_used: Array.isArray(data.tools_used) ? data.tools_used : undefined,
           };
           setMessages(prev =>
             prev.map(m => (m.id === tempAssistantId ? { ...m, ...perf } : m)),
@@ -333,7 +335,9 @@ function AIAssistantInner() {
       llm_rounds_ms: m.meta?.llm_rounds_ms,
       model: m.meta?.model,
       llm_usage: m.meta?.llm_usage,
+      perf: m.meta?.perf,
       sources_used: m.meta?.sources_used,
+      tools_used: m.meta?.tools_used,
     })) as ChatMessage[];
     setActiveConvId(conversationId);
     setMessages(loaded);
