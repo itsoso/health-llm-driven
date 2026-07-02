@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 
 HEALTH_AUTHORITY_PACK_CONTRACT = "health_authority_pack_v1"
 HEALTH_AUTHORITY_TARGET_SYSTEM = "health-llm-driven"
+HEALTH_AUTHORITY_GATE_ARTIFACT_SCHEMA = "dedao_authority_pull_gate_v1"
 REQUIRED_BLOCKED_USES = {
     "diagnosis",
     "treatment",
@@ -114,9 +115,11 @@ class DedaoAuthorityPullGate:
     warn_count: int
     pull_report: DedaoAuthorityPullReport
 
-    def to_redacted_dict(self) -> dict[str, Any]:
+    def to_redacted_dict(self, *, generated_at: str = "") -> dict[str, Any]:
         import_report = self.pull_report.import_report
         return {
+            "artifact_schema": HEALTH_AUTHORITY_GATE_ARTIFACT_SCHEMA,
+            "generated_at": generated_at,
             "status": self.status,
             "reasons": list(self.reasons),
             "fail_count": self.fail_count,

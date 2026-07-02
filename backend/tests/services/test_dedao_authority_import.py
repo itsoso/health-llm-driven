@@ -326,3 +326,20 @@ def test_pull_gate_warns_on_mixed_accepted_and_blocked_records():
     assert gate.reasons == ["blocked_records"]
     assert raw_text not in serialized
     assert "dedao:book-1:claim-blocked-review" in serialized
+
+
+def test_pull_gate_redacted_artifact_has_schema_and_generation_time():
+    def opener(request, *, timeout):
+        return _FakeHTTPResponse(_line())
+
+    report = dry_run_import_dedao_authority_pack_from_kbase(
+        "https://kbase.example",
+        "secret-token",
+        opener=opener,
+    )
+
+    gate = evaluate_dedao_authority_pull_gate(report)
+    redacted = gate.to_redacted_dict(generated_at="2026-07-02T00:00:00Z")
+
+    assert redacted["artifact_schema"] == "dedao_authority_pull_gate_v1"
+    assert redacted["generated_at"] == "2026-07-02T00:00:00Z"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import UTC, datetime
 import json
 import os
 import sys
@@ -70,6 +71,10 @@ def _write_output_text(text: str, output_path: str | Path) -> Path:
     return path
 
 
+def _utc_timestamp() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default=os.getenv("DEDAO_KBASE_BASE_URL", ""))
@@ -103,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.gate or args.redacted_json or args.redacted_output:
         gate = evaluate_dedao_authority_pull_gate(report)
-        payload = gate.to_redacted_dict()
+        payload = gate.to_redacted_dict(generated_at=_utc_timestamp())
         redacted_json = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
         if args.redacted_output:
             _write_output_text(redacted_json, args.redacted_output)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 
@@ -36,3 +37,17 @@ def test_write_output_text_creates_parent_directory(tmp_path):
 
     assert written_path == output_path
     assert output_path.read_text(encoding="utf-8") == "{\"status\":\"pass\"}\n"
+
+
+def test_main_redacted_output_writes_versioned_artifact(tmp_path, capsys):
+    module = _load_script_module()
+    output_path = tmp_path / "reports" / "dedao-gate.json"
+
+    exit_code = module.main(["--redacted-output", str(output_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["artifact_schema"] == "dedao_authority_pull_gate_v1"
+    assert payload["generated_at"].endswith("Z")
+    assert "redacted_output:" in captured.out
