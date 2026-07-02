@@ -107,13 +107,32 @@ def _median(vals: list[Any]) -> float | None:
     return float(median(values)) if values else None
 
 
+def _fast_provider(user_id: int, db):
+    """腕上「简单记录」→ 走最快的可靠工具调用模型(deepseek-v4-flash 档),而非
+    用户当前激活的慢模型(qwen-plus/Opus 全额延迟)。解析结果本走草稿确认(R4 不受影响),
+    这是 watch 端最便宜的延迟 win。
+
+    fail-soft:快模型 id 拿不到 / 建 provider 失败 → 回退用户激活模型,绝不断记餐链路。
+    """
+    from app.services.llm.factory import create_provider_for_model_id, create_provider_for_user
+    from app.services.llm.model_registry import pick_fast_tool_model_id
+
+    try:
+        fast_id = pick_fast_tool_model_id()
+        if fast_id:
+            logger.info("[diet_voice] fast-tier model=%s", fast_id)
+            return create_provider_for_model_id(fast_id)
+    except Exception as e:  # noqa: BLE001 — 快模型选择/创建失败 → 回退激活模型,不断链路
+        logger.warning("[diet_voice] fast-tier 不可用,回退激活模型: %s", e)
+    return create_provider_for_user(user_id, db)
+
+
 async def _llm_parse_foods(db: Session, user_id: int, raw_text: str):
     """LLM 层:自由文本 → (foods[], confidence)。不可用/失败 → ([], None)。"""
     from app.services.ai.food_recognition import extract_json_from_text
-    from app.services.llm.factory import create_provider_for_user
 
     try:
-        provider = create_provider_for_user(user_id, db)
+        provider = _fast_provider(user_id, db)
         content = await provider.chat(messages=[
             {"role": "system", "content": (
                 "你把用户语音记录的食物解析成 JSON。只输出 JSON,格式:"

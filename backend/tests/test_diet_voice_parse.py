@@ -130,6 +130,48 @@ def test_degrade_when_llm_empty(db, auth):
     assert draft["needs_confirmation"] is True
 
 
+# ── fast-tier provider 选择(腕上简单记录走最快可靠工具模型)──
+def test_fast_provider_uses_fast_tier_model(db, auth, monkeypatch):
+    """快路径:拿到 fast-tier model id → 走 create_provider_for_model_id,不碰激活模型工厂。"""
+    from app.services.llm import factory as llm_factory
+    from app.services.llm import model_registry as reg
+
+    picked = {}
+    monkeypatch.setattr(reg, "pick_fast_tool_model_id", lambda **_k: "deepseek-v4-flash")
+
+    def fake_for_model_id(model_id):
+        picked["model_id"] = model_id
+        return object()
+
+    def boom_for_user(*a, **k):  # 若误走激活模型工厂即失败
+        raise AssertionError("fast 路径不应调用 create_provider_for_user")
+
+    monkeypatch.setattr(llm_factory, "create_provider_for_model_id", fake_for_model_id)
+    monkeypatch.setattr(llm_factory, "create_provider_for_user", boom_for_user)
+
+    provider = dvp._fast_provider(auth[0].id, db)
+    assert picked["model_id"] == "deepseek-v4-flash"
+    assert provider is not None
+
+
+def test_fast_provider_failsoft_falls_back_to_active(db, auth, monkeypatch):
+    """fail-soft:快模型创建失败 → 回退 create_provider_for_user,记餐链路不断。"""
+    from app.services.llm import factory as llm_factory
+    from app.services.llm import model_registry as reg
+
+    monkeypatch.setattr(reg, "pick_fast_tool_model_id", lambda **_k: "deepseek-v4-flash")
+
+    def boom_for_model_id(model_id):
+        raise ValueError("fast env 缺")
+
+    sentinel = object()
+    monkeypatch.setattr(llm_factory, "create_provider_for_model_id", boom_for_model_id)
+    monkeypatch.setattr(llm_factory, "create_provider_for_user", lambda uid, database: sentinel)
+
+    provider = dvp._fast_provider(auth[0].id, db)
+    assert provider is sentinel   # 回退到激活模型 provider
+
+
 # ── API(显式 mock LLM 空结果 → 降级路径,仍 200)──
 def test_api_voice_parse_degraded_path(client, auth, monkeypatch):
     _, headers = auth
