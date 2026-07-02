@@ -4,8 +4,8 @@
 |---|---|
 | slug | `chat-post-record-quality` |
 | 创建日期 | 2026-07-01 |
-| 当前阶段 | S6 部署 |
-| 状态 | shipping |
+| 当前阶段 | S8 沉淀 |
+| 状态 | shipped |
 | 负责 | Codex |
 | 反馈环 | backend pytest / mobile Jest+tsc+lint / web vitest+tsc+lint / mac swift test / backend deploy / mobile OTA |
 
@@ -63,11 +63,12 @@
 - [x] T3 Mobile `record_quality` 增加 metrics/progress/行动路由渲染。
 - [x] T4 Web/Mac 注册并渲染同一类动态卡片。
 - [x] T5 增加后端、移动、Web、Mac 相关测试。
-- [ ] T6 部署后记录 SHA、健康分、OTA 标识和线上 smoke。
+- [x] T6 部署后记录 SHA、健康分、OTA 标识和线上 smoke。
 
 ## S5 · 实现
 
-- 分支/commit:待提交
+- 发布 HEAD:`b4a93c3be4fe51280b9ebfb481b61cf0d5107582`
+- Mobile OTA commit:`409842670f329d34ca5963c15cb7f40a2e33f6db`（包含随后并发落地的 mobile chat input 修复）
 - 关键文件:
   - `backend/app/services/post_record_quality.py`
   - `backend/app/services/agent_executor.py`
@@ -116,10 +117,28 @@
 
 ## S6/G5/G6 · 部署与上线验证
 
-- 后端/Web 部署:待执行
-- Mobile OTA:待执行
-- Mac 本地验证:待执行
-- 线上 smoke:待执行
+- 后端/Web 部署:PASS
+  - 命令:`./deploy.sh -a -y`
+  - 服务器实际 SHA:`b4a93c3be4fe51280b9ebfb481b61cf0d5107582`
+  - 前端:PM2 `health-frontend` online
+  - 后端:`health-backend` active
+  - 健康分:`60/60`
+  - Skills manifest:`22 = 22`
+- Mobile OTA:PASS
+  - 命令:`scripts/mobile-ota.sh production "Latest chat input and post-record quality"`
+  - Channel:`production`
+  - Runtime version:`1.3.1`
+  - Update group ID:`d50e6084-32a0-4172-89b3-b2a8670b5cae`
+  - iOS update ID:`019f20c4-d7c3-7aa1-b666-68b19481287a`
+  - OTA commit:`409842670f329d34ca5963c15cb7f40a2e33f6db`
+- Mac 本地验证:PASS
+  - 命令:`apps/mac/scripts/package-app.sh --install --open`
+  - 结果:`/Applications/阿衡.app` 已安装并打开
+  - 进程:`86560 /Applications/阿衡.app/Contents/MacOS/HealthAgentMac`
+- 线上 smoke:PASS
+  - `https://health.executor.life/api/v1/health`:healthy(api/database/redis/celery running)
+  - `https://health.executor.life/ai-assistant`:HTTP 200
+  - 生产 backend Python smoke:`build_post_record_quality_response(...)` 返回 `card_type=record_quality`
 
 ## S8 · 沉淀
 
