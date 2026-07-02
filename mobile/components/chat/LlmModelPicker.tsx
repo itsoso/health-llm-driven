@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
     ...revaShadows.sm,
   },
   triggerHeader: {
-    minHeight: 44,
+    minHeight: 36,
     paddingHorizontal: 0,
     paddingVertical: 0,
     borderRadius: 0,
@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'center',
     flexDirection: 'column',
-    gap: 1,
+    gap: 0,
     shadowOpacity: 0,
     elevation: 0,
   },
@@ -285,8 +285,8 @@ const styles = StyleSheet.create({
 });
 
 const txt = {
-  headerTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 20, fontWeight: '800' } as TextStyle,
-  headerModel: { fontFamily: revaFonts.sans, color: C.ink3, fontSize: 12, fontWeight: '600', flexShrink: 1 } as TextStyle,
+  headerTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 18, fontWeight: '800', lineHeight: 21 } as TextStyle,
+  headerModel: { fontFamily: revaFonts.sans, color: C.ink3, fontSize: 11, fontWeight: '600', lineHeight: 14, flexShrink: 1 } as TextStyle,
   triggerTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 15, fontWeight: '700' } as TextStyle,
   triggerModel: { fontFamily: revaFonts.sans, color: C.ink3, fontSize: 13, flexShrink: 1 } as TextStyle,
   sheetTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 17, fontWeight: '700' } as TextStyle,

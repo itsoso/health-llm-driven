@@ -342,42 +342,6 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
       )}
 
       <View testID="chat-composer-surface" style={styles.composerSurface}>
-        <View style={styles.agentModeRow} accessibilityLabel="Agent 模式">
-          {AGENT_MODES.map(mode => {
-            const selected = agentMode === mode.id;
-            return (
-              <Pressable
-                key={mode.id}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setAgentMode(mode.id);
-                }}
-                style={({ pressed }) => [
-                  styles.agentModeChip,
-                  selected && styles.agentModeChipActive,
-                  pressed && styles.agentModeChipPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                accessibilityLabel={`切换到${mode.label}模式`}
-              >
-                <Ionicons
-                  name={mode.icon}
-                  size={13}
-                  color={selected ? C.green500 : C.ink3}
-                />
-                <Text
-                  maxFontSizeMultiplier={1.2}
-                  style={[styles.agentModeText, selected && styles.agentModeTextActive]}
-                  numberOfLines={1}
-                >
-                  {mode.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
         {/* 输入栏 */}
         <View style={styles.inputBar}>
           <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn} accessibilityLabel="附件菜单">
@@ -492,6 +456,20 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
                 setShowMedicalImportMenu(true);
               }}
             />
+            <Text style={styles.menuSectionTitle}>模式</Text>
+            {AGENT_MODES.map(mode => (
+              <ModeMenuItem
+                key={mode.id}
+                icon={mode.icon}
+                label={`${mode.label}模式`}
+                selected={agentMode === mode.id}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setAgentMode(mode.id);
+                  setShowMenu(false);
+                }}
+              />
+            ))}
           </Pressable>
         </Pressable>
       </Modal>
@@ -518,6 +496,35 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
   );
 }
 
+function ModeMenuItem({
+  icon,
+  label,
+  selected,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.modeMenuItem, selected && styles.modeMenuItemActive]}
+      onPress={onPress}
+      activeOpacity={0.68}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      accessibilityLabel={label}
+    >
+      <View style={styles.modeMenuIconWrap}>
+        <Ionicons name={icon} size={18} color={selected ? C.green500 : C.ink2} />
+      </View>
+      <Text style={[styles.modeMenuLabel, selected && styles.modeMenuLabelActive]}>{label}</Text>
+      {selected && <Ionicons name="checkmark-circle" size={18} color={C.green500} />}
+    </TouchableOpacity>
+  );
+}
+
 function MenuItem({ icon, label, desc, onPress }: { icon: any; label: string; desc: string; onPress: () => void }) {
   return (
     <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.6} accessibilityRole="button" accessibilityLabel={label}>
@@ -538,56 +545,18 @@ const styles = StyleSheet.create({
   /* ── 输入栏 ── */
   composerSurface: {
     marginHorizontal: revaSpacing.s3,
-    marginTop: 4,
-    marginBottom: 1,
-    borderRadius: 24,
+    marginTop: 3,
+    marginBottom: 2,
+    borderRadius: 22,
     backgroundColor: C.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
     ...revaShadows.sm,
   },
-  agentModeRow: {
-    flexDirection: 'row',
-    gap: 5,
-    paddingHorizontal: 7,
-    paddingTop: 5,
-    paddingBottom: 0,
-    backgroundColor: 'transparent',
-  },
-  agentModeChip: {
-    flex: 1,
-    minHeight: 24,
-    borderRadius: revaRadii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    backgroundColor: C.paper,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-    paddingHorizontal: 6,
-  },
-  agentModeChipActive: {
-    backgroundColor: C.green50,
-    borderColor: C.green100,
-  },
-  agentModeChipPressed: {
-    opacity: 0.72,
-  },
-  agentModeText: {
-    fontFamily: revaFonts.sans,
-    fontSize: 11.5,
-    fontWeight: '800',
-    color: C.ink3,
-    lineHeight: 14,
-  } as TextStyle,
-  agentModeTextActive: {
-    color: C.green500,
-  } as TextStyle,
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 5,
     paddingHorizontal: 7,
-    paddingTop: 5,
+    paddingTop: 6,
     paddingBottom: 6,
     backgroundColor: 'transparent',
   },
@@ -741,6 +710,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingBottom: 8,
   },
+  menuSectionTitle: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    fontWeight: '800',
+    color: C.ink3,
+    marginTop: 12,
+    marginBottom: 6,
+    paddingHorizontal: 4,
+  } as TextStyle,
   menuItem: {
     flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line,
@@ -749,6 +727,36 @@ const styles = StyleSheet.create({
     width: 38, height: 38, borderRadius: 12, backgroundColor: C.paper,
     alignItems: 'center', justifyContent: 'center',
   },
+  modeMenuItem: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: revaRadii.md,
+    paddingHorizontal: 10,
+    marginBottom: 4,
+  },
+  modeMenuItemActive: {
+    backgroundColor: C.green50,
+  },
+  modeMenuIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.paper,
+  },
+  modeMenuLabel: {
+    flex: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 14,
+    color: C.ink2,
+    fontWeight: '700',
+  } as TextStyle,
+  modeMenuLabelActive: {
+    color: C.green500,
+  } as TextStyle,
   menuLabel: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '500', color: C.ink1 } as TextStyle,
   menuDesc: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, marginTop: 1 } as TextStyle,
 });

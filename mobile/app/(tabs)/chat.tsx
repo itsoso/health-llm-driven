@@ -478,7 +478,7 @@ export default function ChatScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.headerWrap}>
-        <View style={styles.headerSurface}>
+        <View testID="chat-header-surface" style={styles.headerSurface}>
           <LlmModelPicker
             variant="header"
             currentLabel={headerLlmLabel}
@@ -754,18 +754,18 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
   headerWrap: {
     paddingHorizontal: revaSpacing.s3,
-    paddingTop: 2,
-    paddingBottom: 5,
+    paddingTop: 0,
+    paddingBottom: 3,
   },
   headerSurface: {
-    minHeight: 52,
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: revaSpacing.s2,
-    paddingLeft: revaSpacing.s3,
-    paddingRight: 5,
-    paddingVertical: 5,
-    borderRadius: 22,
+    gap: 6,
+    paddingLeft: 10,
+    paddingRight: 4,
+    paddingVertical: 3,
+    borderRadius: 20,
     backgroundColor: C.surface2,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
@@ -774,12 +774,12 @@ const styles = StyleSheet.create({
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
   },
   headerAction: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.surface,
@@ -787,9 +787,9 @@ const styles = StyleSheet.create({
     borderColor: C.line,
   },
   headerActionAccent: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.green50,
@@ -798,9 +798,9 @@ const styles = StyleSheet.create({
     ...revaShadows.sm,
   },
   headerMenuAction: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.surface,
@@ -808,11 +808,11 @@ const styles = StyleSheet.create({
     borderColor: C.line,
   },
   streamingBadge: {
-    minHeight: 28,
+    minHeight: 26,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     borderRadius: revaRadii.pill,
     backgroundColor: C.green50,
     borderWidth: StyleSheet.hairlineWidth,

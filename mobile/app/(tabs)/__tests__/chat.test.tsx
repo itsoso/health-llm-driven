@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports, import/first */
 import React from 'react';
-import { Keyboard } from 'react-native';
+import { Keyboard, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockOpenHistory = jest.fn();
@@ -257,6 +257,17 @@ describe('ChatScreen', () => {
       fireEvent.press(getByLabelText('切换 AI 模型，当前 Qwen3.7 Plus'));
     });
     expect(getByText('切换 AI 模型')).toBeTruthy();
+  });
+
+  it('keeps the chat header compact', async () => {
+    const { getByTestId } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(getByTestId('chat-header-surface')).toBeTruthy();
+    });
+    const headerSurface = StyleSheet.flatten(getByTestId('chat-header-surface').props.style);
+    expect(headerSurface.minHeight).toBeLessThanOrEqual(46);
+    expect(headerSurface.paddingVertical).toBeLessThanOrEqual(3);
   });
 
   it('starts a new chat from a first-level header action', async () => {

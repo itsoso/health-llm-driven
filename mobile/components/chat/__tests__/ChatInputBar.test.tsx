@@ -75,15 +75,15 @@ describe('ChatInputBar', () => {
       .toBe(revaColors.surface);
   });
 
-  it('renders the mode selector and input inside one compact composer surface', () => {
-    const { getByTestId, getByLabelText } = render(
+  it('renders only one compact composer row by default', () => {
+    const { getByTestId, queryByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
     const composerSurface = StyleSheet.flatten(getByTestId('chat-composer-surface').props.style);
     expect(composerSurface.backgroundColor).toBe(revaColors.surface);
-    expect(composerSurface.borderRadius).toBeGreaterThanOrEqual(24);
-    expect(getByLabelText('Agent 模式')).toBeTruthy();
+    expect(composerSurface.borderRadius).toBeLessThanOrEqual(22);
+    expect(queryByLabelText('Agent 模式')).toBeNull();
   });
 
   it('keeps the keyboard composer controls compact', () => {
@@ -96,7 +96,6 @@ describe('ChatInputBar', () => {
       return StyleSheet.flatten(typeof style === 'function' ? style({ pressed: false }) : style);
     };
 
-    expect(styleOf(getByLabelText('切换到日常模式')).minHeight).toBeLessThanOrEqual(24);
     expect(styleOf(getByLabelText('附件菜单')).width).toBeLessThanOrEqual(34);
     expect(styleOf(getByLabelText('消息输入框，长按语音输入')).minHeight).toBeLessThanOrEqual(34);
     expect(styleOf(getByLabelText('语音输入')).width).toBeLessThanOrEqual(34);
@@ -131,7 +130,8 @@ describe('ChatInputBar', () => {
       <ChatInputBar onSend={onSend} isStreaming={false} />,
     );
 
-    fireEvent.press(getByLabelText('切换到深思模式'));
+    fireEvent.press(getByLabelText('附件菜单'));
+    fireEvent.press(getByLabelText('深思模式'));
     fireEvent.changeText(getByLabelText('消息输入框'), '帮我调整训练计划');
     fireEvent.press(getByLabelText('发送消息'));
 
