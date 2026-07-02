@@ -86,7 +86,21 @@ interface Failure {
   caller: string | null;
   user_id: number | null;
   latency_ms: number | null;
+  error_type?: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
   created_at: string;
+}
+
+interface RecentCall extends Failure {
+  name: string | null;
+  email: string | null;
+  username: string | null;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  success: boolean;
 }
 
 function LLMPerformanceInner() {
@@ -94,6 +108,7 @@ function LLMPerformanceInner() {
   const [usage, setUsage] = useState<UsageDashboard | null>(null);
   const [stats, setStats] = useState<PerfRow[]>([]);
   const [failures, setFailures] = useState<Failure[]>([]);
+  const [recentCalls, setRecentCalls] = useState<RecentCall[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [days, setDays] = useState(7);
@@ -105,20 +120,24 @@ function LLMPerformanceInner() {
     setErr(null);
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const [usageResp, statsResp, failResp] = await Promise.all([
+      const [usageResp, statsResp, failResp, recentResp] = await Promise.all([
         fetch(`/api/v1/admin/llm/usage-dashboard?days=${days}`, { headers }),
         fetch(`/api/v1/admin/llm/performance-stats?days=${days}&group_by=${groupBy}`, { headers }),
         fetch(`/api/v1/admin/llm/performance-failures?days=${days}&limit=30`, { headers }),
+        fetch(`/api/v1/admin/llm/recent-calls?days=${days}&limit=50`, { headers }),
       ]);
       if (!usageResp.ok) throw new Error(`usage ${usageResp.status}`);
       if (!statsResp.ok) throw new Error(`stats ${statsResp.status}`);
       if (!failResp.ok) throw new Error(`failures ${failResp.status}`);
+      if (!recentResp.ok) throw new Error(`recent ${recentResp.status}`);
       const uj = await usageResp.json();
       const sj = await statsResp.json();
       const fj = await failResp.json();
+      const rj = await recentResp.json();
       setUsage(uj);
       setStats(sj.stats || []);
       setFailures(fj.failures || []);
+      setRecentCalls(rj.calls || []);
     } catch (e: any) {
       setErr(e.message || '加载失败');
     } finally {
@@ -415,6 +434,7 @@ function LLMPerformanceInner() {
                         <th className="px-4 py-2">caller</th>
                         <th className="px-4 py-2 text-right">user</th>
                         <th className="px-4 py-2 text-right">latency</th>
+                        <th className="px-4 py-2">错误摘要</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -430,12 +450,83 @@ function LLMPerformanceInner() {
                           <td className="px-4 py-2 text-right font-mono text-rose-500">
                             {f.latency_ms != null ? `${f.latency_ms}ms` : '—'}
                           </td>
+                          <td className="px-4 py-2 text-xs text-rose-600 max-w-[280px]">
+                            <div className="font-mono">{f.error_code || f.error_type || '—'}</div>
+                            {f.error_message && (
+                              <div className="mt-1 text-slate-500 line-clamp-2">{f.error_message}</div>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               )}
+            </div>
+
+            <div className="bg-white rounded-lg border overflow-hidden mt-6">
+              <div className="px-4 py-3 border-b bg-slate-50">
+                <h2 className="font-semibold text-slate-900">最近逐次调用</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  用于追踪单次请求的用户、模型、token、延迟和上游错误摘要
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr className="text-left text-xs text-slate-500 uppercase">
+                      <th className="px-4 py-2">时间</th>
+                      <th className="px-4 py-2">用户</th>
+                      <th className="px-4 py-2">caller</th>
+                      <th className="px-4 py-2">模型</th>
+                      <th className="px-4 py-2 text-right">tokens</th>
+                      <th className="px-4 py-2 text-right">延迟</th>
+                      <th className="px-4 py-2">状态</th>
+                      <th className="px-4 py-2">错误摘要</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentCalls.length === 0 ? (
+                      <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400">暂无调用</td></tr>
+                    ) : recentCalls.map(call => (
+                      <tr key={call.id} className="border-t hover:bg-slate-50">
+                        <td className="px-4 py-2 font-mono text-xs text-slate-500 whitespace-nowrap">
+                          {new Date(call.created_at).toLocaleString('zh-CN', { hour12: false })}
+                        </td>
+                        <td className="px-4 py-2">
+                          <div className="font-medium text-slate-900">{call.name || call.username || `User ${call.user_id ?? 'unknown'}`}</div>
+                          <div className="text-xs text-slate-500">{call.email || call.username || '—'}</div>
+                        </td>
+                        <td className="px-4 py-2 font-mono text-slate-500">{call.caller || '—'}</td>
+                        <td className="px-4 py-2">
+                          <div className="font-mono text-slate-900">{call.model}</div>
+                          <div className="text-xs text-slate-500">{call.provider}</div>
+                        </td>
+                        <td className="px-4 py-2 text-right font-mono">
+                          <div>{fmtTokens(call.total_tokens)}</div>
+                          <div className="text-xs text-slate-400">in {fmtTokens(call.prompt_tokens)} / out {fmtTokens(call.completion_tokens)}</div>
+                        </td>
+                        <td className="px-4 py-2 text-right font-mono text-slate-500">
+                          {call.latency_ms != null ? `${call.latency_ms}ms` : '—'}
+                        </td>
+                        <td className="px-4 py-2">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                            call.success ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                          }`}>
+                            {call.success ? '成功' : '失败'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-xs max-w-[320px]">
+                          <div className="font-mono text-rose-600">{call.error_code || call.error_type || '—'}</div>
+                          {call.error_message && (
+                            <div className="mt-1 text-slate-500 line-clamp-2">{call.error_message}</div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </>
         )}

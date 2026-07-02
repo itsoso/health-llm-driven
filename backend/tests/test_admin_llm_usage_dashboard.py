@@ -40,6 +40,9 @@ def _log(
     completion_tokens: int,
     success: int = 1,
     latency_ms: int = 1200,
+    error_type: str | None = None,
+    error_code: str | None = None,
+    error_message: str | None = None,
 ) -> None:
     db.add(
         LlmUsageLog(
@@ -53,6 +56,9 @@ def _log(
             cost_usd=0.01,
             latency_ms=latency_ms,
             success=success,
+            error_type=error_type,
+            error_code=error_code,
+            error_message=error_message,
             created_at=datetime.now(timezone.utc),
         )
     )
@@ -184,3 +190,44 @@ def test_performance_stats_is_sqlite_safe_and_normalizes_tokenplan_provider(clie
     assert rows["tokenplan"]["n"] == 1
     assert rows["tokenplan"]["p50_ms"] == 100
     assert rows["openai"]["success_rate"] == 0.0
+
+
+def test_recent_calls_and_failures_include_error_context(client, db):
+    admin = _make_user(db, admin=True, name="管理员")
+    user = _make_user(db, name="Alice")
+    _log(
+        db,
+        user_id=user.id,
+        provider="tokenplan",
+        model="qwen3.7-plus",
+        caller="agent.stream",
+        prompt_tokens=1000,
+        completion_tokens=200,
+        success=0,
+        latency_ms=3210,
+        error_type="insufficient_quota",
+        error_code="insufficient_quota",
+        error_message="Your token-plan quota has been exhausted.",
+    )
+
+    calls = client.get(
+        "/api/v1/admin/llm/recent-calls?days=30&limit=10",
+        headers=_headers(admin),
+    )
+    assert calls.status_code == 200
+    first = calls.json()["calls"][0]
+    assert first["user_id"] == user.id
+    assert first["email"] == user.email
+    assert first["success"] is False
+    assert first["total_tokens"] == 1200
+    assert first["error_type"] == "insufficient_quota"
+    assert "quota" in first["error_message"]
+
+    failures = client.get(
+        "/api/v1/admin/llm/performance-failures?days=30&limit=10",
+        headers=_headers(admin),
+    )
+    assert failures.status_code == 200
+    failed = failures.json()["failures"][0]
+    assert failed["error_code"] == "insufficient_quota"
+    assert "quota" in failed["error_message"]

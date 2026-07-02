@@ -21,6 +21,9 @@ class LlmUsageLog(Base):
     cost_usd = Column(Float, nullable=False, default=0.0)
     latency_ms = Column(Integer, nullable=True)
     success = Column(Integer, nullable=False, default=1)  # 0/1, 失败也记
+    error_type = Column(String(64), nullable=True)
+    error_code = Column(String(64), nullable=True)
+    error_message = Column(String(500), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (

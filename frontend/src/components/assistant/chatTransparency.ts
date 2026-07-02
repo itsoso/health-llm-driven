@@ -1,9 +1,18 @@
+export interface LlmUsageCallLike {
+  success?: boolean | null;
+  error_type?: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
+}
+
 export interface LlmUsageProfileLike {
   calls?: number | null;
   prompt_tokens?: number | null;
   completion_tokens?: number | null;
   total_tokens?: number | null;
   cost_usd?: number | null;
+  failed_calls?: number | null;
+  items?: LlmUsageCallLike[] | null;
 }
 
 export interface AgentPerfRoundLike {
@@ -49,6 +58,7 @@ export interface AgentTransparencyProfile {
   visible: boolean;
   headline: string;
   tokenLine?: string;
+  errorLine?: string;
   bands: AgentTransparencyBand[];
   stages: AgentTransparencyRow[];
   rounds: AgentTransparencyRow[];
@@ -111,6 +121,30 @@ function buildTokenLine(usage?: LlmUsageProfileLike | null): string | undefined 
   if (calls > 1) parts.push(`${Math.round(calls)}次`);
   const cost = formatCostUsd(usage.cost_usd);
   if (cost) parts.push(cost);
+  return parts.join(' · ');
+}
+
+function cleanText(value: unknown): string {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function truncate(value: string, max = 96): string {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+function buildErrorLine(usage?: LlmUsageProfileLike | null): string | undefined {
+  if (!usage) return undefined;
+  const items = Array.isArray(usage.items) ? usage.items : [];
+  const failedItems = items.filter(item => item?.success === false || item?.error_code || item?.error_type);
+  const failedCount = positive(usage.failed_calls) || failedItems.length;
+  if (!failedCount) return undefined;
+
+  const first = failedItems[0];
+  const code = cleanText(first?.error_code || first?.error_type);
+  const message = truncate(cleanText(first?.error_message));
+  const parts = [`失败 ${Math.round(failedCount)} 次`];
+  if (code) parts.push(code);
+  if (message) parts.push(message);
   return parts.join(' · ');
 }
 
@@ -183,15 +217,17 @@ export function buildAgentTransparency(input: AgentTransparencyInput): AgentTran
   const sources = uniqueClean(input.sourcesUsed);
   const tools = uniqueClean(input.toolsUsed);
   const tokenLine = buildTokenLine(input.llmUsage);
+  const errorLine = buildErrorLine(input.llmUsage);
   const bands = buildBands(input.perf, total);
   const stages = buildStages(input.perf);
   const rounds = buildRounds(input);
-  const visible = headlineParts.length > 0 || !!tokenLine || sources.length > 0 || tools.length > 0;
+  const visible = headlineParts.length > 0 || !!tokenLine || !!errorLine || sources.length > 0 || tools.length > 0;
 
   return {
     visible,
     headline: headlineParts.join(' · '),
     tokenLine,
+    errorLine,
     bands,
     stages,
     rounds,

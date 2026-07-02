@@ -1,0 +1,3 @@
+ALTER TABLE llm_usage_logs ADD COLUMN IF NOT EXISTS error_type VARCHAR(64);
+ALTER TABLE llm_usage_logs ADD COLUMN IF NOT EXISTS error_code VARCHAR(64);
+ALTER TABLE llm_usage_logs ADD COLUMN IF NOT EXISTS error_message VARCHAR(500);

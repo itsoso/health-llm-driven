@@ -1276,6 +1276,7 @@ function AgentTransparencyPanel({ profile }: { profile: AgentTransparencyProfile
     ...(profile.stages.length > 0 ? [{ label: '继续阶段', value: profile.stages.map(s => `${s.label} ${s.value}`).join(' · ') }] : []),
     ...(profile.rounds.length > 0 ? [{ label: 'LLM 轮次', value: profile.rounds.map(r => `${r.label} ${r.value}`).join('\n') }] : []),
     ...(profile.tokenLine ? [{ label: 'Token', value: profile.tokenLine }] : []),
+    ...(profile.errorLine ? [{ label: '失败', value: profile.errorLine }] : []),
   ];
   return (
     <View style={styles.transparencyPanel}>

@@ -128,6 +128,29 @@ def _usage_aggregates(tokenplan_condition):
     ]
 
 
+def _usage_log_payload(row: LlmUsageLog, user: User | None = None) -> dict:
+    return {
+        "id": row.id,
+        "provider": row.provider,
+        "model": row.model,
+        "caller": row.caller,
+        "user_id": row.user_id,
+        "name": getattr(user, "name", None) if user else None,
+        "email": getattr(user, "email", None) if user else None,
+        "username": getattr(user, "username", None) if user else None,
+        "prompt_tokens": _safe_int(row.prompt_tokens),
+        "completion_tokens": _safe_int(row.completion_tokens),
+        "total_tokens": _safe_int(row.total_tokens),
+        "cost_usd": _safe_float(row.cost_usd, 8),
+        "latency_ms": row.latency_ms,
+        "success": bool(row.success),
+        "error_type": row.error_type,
+        "error_code": row.error_code,
+        "error_message": row.error_message,
+        "created_at": row.created_at.isoformat(),
+    }
+
+
 def _percentile(values: list[int], percentile: float) -> Optional[int]:
     if not values:
         return None
@@ -427,10 +450,43 @@ def performance_failures(
                 "caller": r.caller,
                 "user_id": r.user_id,
                 "latency_ms": r.latency_ms,
+                "error_type": r.error_type,
+                "error_code": r.error_code,
+                "error_message": r.error_message,
                 "created_at": r.created_at.isoformat(),
             }
             for r in rows
         ],
+    }
+
+
+@router.get("/recent-calls", summary="最近 LLM 调用明细")
+def recent_calls(
+    days: int = Query(7, ge=1, le=120),
+    limit: int = Query(50, ge=1, le=200),
+    user_id: Optional[int] = Query(None, ge=1),
+    admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """按时间倒序返回逐次 LLM 调用账本,用于定位用户、调用方、模型和失败原因."""
+    until = datetime.now(timezone.utc)
+    since = until - timedelta(days=days)
+    rows = (
+        db.query(LlmUsageLog, User)
+        .outerjoin(User, User.id == LlmUsageLog.user_id)
+        .filter(*_usage_filters(since, until, user_id))
+        .order_by(LlmUsageLog.created_at.desc(), LlmUsageLog.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "window": {
+            "days": days,
+            "since": since.isoformat(),
+            "until": until.isoformat(),
+            "user_id": user_id,
+        },
+        "calls": [_usage_log_payload(row, user) for row, user in rows],
     }
 
 

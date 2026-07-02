@@ -53,6 +53,27 @@ describe('chatTransparency', () => {
     expect(profile.bands).toEqual([{ kind: 'total', label: '总耗时', ms: 3200, ratio: 1 }]);
   });
 
+  it('summarizes failed LLM calls for client-side diagnosis', () => {
+    const profile = buildAgentTransparency({
+      llmUsage: {
+        calls: 1,
+        prompt_tokens: 120,
+        failed_calls: 1,
+        items: [
+          {
+            success: false,
+            error_type: 'insufficient_quota',
+            error_code: 'insufficient_quota',
+            error_message: 'Your token-plan quota has been exhausted.',
+          },
+        ],
+      },
+    });
+
+    expect(profile.visible).toBe(true);
+    expect(profile.errorLine).toBe('失败 1 次 · insufficient_quota · Your token-plan quota has been exhausted.');
+  });
+
   it('formats compact durations and tokens', () => {
     expect(formatDurationMs(44)).toBe('44ms');
     expect(formatDurationMs(4100)).toBe('4.1s');

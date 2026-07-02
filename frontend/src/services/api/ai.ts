@@ -68,6 +68,9 @@ export interface LlmUsageCall {
   cost_usd?: number;
   latency_ms?: number | null;
   success?: boolean;
+  error_type?: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
 }
 
 export interface LlmUsageProfile {

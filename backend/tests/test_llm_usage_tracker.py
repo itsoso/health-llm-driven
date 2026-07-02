@@ -26,6 +26,16 @@ class _FakeProvider:
         return "完成回复"
 
 
+class _FailingProvider(_FakeProvider):
+    """模拟 provider 抛出上游 429/额度类异常."""
+
+    async def chat(self, messages, model=None, temperature=0.7, max_tokens=2000, stream=False, **kwargs):
+        raise RuntimeError(
+            "Error code: 429 - {'error': {'message': 'Your token-plan quota has been exhausted.', "
+            "'type': 'insufficient_quota', 'code': 'insufficient_quota'}}"
+        )
+
+
 @pytest.fixture
 def patch_session(monkeypatch, db):
     """让 record_usage 写入测试 SessionLocal."""
@@ -141,3 +151,26 @@ def test_usage_capture_summarizes_calls_and_resets(patch_session):
     assert summary["items"][0]["caller"] == "test.capture"
     assert summary["items"][0]["prompt_tokens"] == summary["prompt_tokens"]
     assert summarize_usage_capture() is None
+
+
+def test_wrap_provider_records_failure_error_context(patch_session):
+    """失败调用也要落每次调用账本,并保留可诊断的上游错误摘要."""
+    provider = wrap_provider(_FailingProvider(model="qwen3.7-plus"))
+    set_caller("test.quota", user_id=99)
+    token = begin_usage_capture()
+    try:
+        with pytest.raises(RuntimeError):
+            asyncio.run(provider.chat(messages=[{"role": "user", "content": "帮我分析"}]))
+        summary = summarize_usage_capture()
+    finally:
+        end_usage_capture(token)
+
+    rows = patch_session.query(LlmUsageLog).all()
+    assert len(rows) == 1
+    assert rows[0].success == 0
+    assert rows[0].error_type == "insufficient_quota"
+    assert rows[0].error_code == "insufficient_quota"
+    assert "token-plan quota" in rows[0].error_message
+    assert summary is not None
+    assert summary["failed_calls"] == 1
+    assert summary["items"][0]["error_type"] == "insufficient_quota"

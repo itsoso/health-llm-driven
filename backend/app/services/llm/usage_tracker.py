@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import time
 import json
+import re
 from contextvars import ContextVar, Token
 from typing import Any, Dict, List, Optional
 
@@ -142,6 +143,36 @@ def _price_usd(model: str, prompt_tokens: int, completion_tokens: int) -> float:
     return (prompt_tokens * in_price + completion_tokens * out_price) / 1_000_000
 
 
+def _compact_error_message(error: BaseException | str | None, *, max_len: int = 500) -> Optional[str]:
+    if error is None:
+        return None
+    text = str(error).strip()
+    if not text:
+        return None
+    text = re.sub(r"\s+", " ", text)
+    return text[:max_len]
+
+
+def _pick_error_field(error: BaseException | str | None, field: str) -> Optional[str]:
+    if error is None:
+        return None
+    for attr in (field, f"error_{field}"):
+        value = getattr(error, attr, None)
+        if value:
+            return str(value)[:64]
+    text = str(error)
+    # Handles both Python-dict-ish and JSON-ish upstream error payloads.
+    patterns = [
+        rf"['\"]{re.escape(field)}['\"]\s*:\s*['\"]([^'\"]+)['\"]",
+        rf"\b{re.escape(field)}=([A-Za-z0-9_.:-]+)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1)[:64]
+    return None
+
+
 def record_usage(
     provider: str,
     model: str,
@@ -152,6 +183,9 @@ def record_usage(
     user_id: Optional[int] = None,
     latency_ms: Optional[int] = None,
     success: bool = True,
+    error_type: Optional[str] = None,
+    error_code: Optional[str] = None,
+    error_message: Optional[str] = None,
 ) -> None:
     """写一条 LlmUsageLog (旁路, 失败只 log)."""
     prompt_tokens = _estimate_tokens(prompt_text, model)
@@ -170,6 +204,9 @@ def record_usage(
         "cost_usd": round(cost, 8),
         "latency_ms": latency_ms,
         "success": bool(success),
+        "error_type": error_type,
+        "error_code": error_code,
+        "error_message": error_message,
     }
     _capture_usage_entry(entry)
 
@@ -195,6 +232,9 @@ def record_usage(
                 cost_usd=cost,
                 latency_ms=latency_ms,
                 success=1 if success else 0,
+                error_type=error_type,
+                error_code=error_code,
+                error_message=error_message,
             )
             db.add(row)
             db.commit()
@@ -223,12 +263,14 @@ def wrap_provider(provider):
         start = time.monotonic()
         success = True
         result = ""
+        caught_error: BaseException | None = None
         try:
             result = await original_chat(messages, model=model, temperature=temperature,
                                          max_tokens=max_tokens, stream=False, **kwargs)
             return result
-        except Exception:
+        except Exception as exc:
             success = False
+            caught_error = exc
             raise
         finally:
             latency_ms = int((time.monotonic() - start) * 1000)
@@ -248,6 +290,9 @@ def wrap_provider(provider):
                 completion_text=completion_text,
                 latency_ms=latency_ms,
                 success=success,
+                error_type=_pick_error_field(caught_error, "type") if caught_error else None,
+                error_code=_pick_error_field(caught_error, "code") if caught_error else None,
+                error_message=_compact_error_message(caught_error) if caught_error else None,
             )
 
     provider.chat = chat_with_tracking
@@ -259,6 +304,7 @@ def wrap_provider(provider):
             start = time.monotonic()
             success = True
             collected: List[str] = []
+            caught_error: BaseException | None = None
             try:
                 async for evt in original_chat_stream(
                     messages, model=model, temperature=temperature,
@@ -267,8 +313,9 @@ def wrap_provider(provider):
                     if isinstance(evt, dict) and evt.get("type") == "content":
                         collected.append(evt.get("text") or "")
                     yield evt
-            except Exception:
+            except Exception as exc:
                 success = False
+                caught_error = exc
                 raise
             finally:
                 latency_ms = int((time.monotonic() - start) * 1000)
@@ -285,6 +332,9 @@ def wrap_provider(provider):
                     completion_text="".join(collected),
                     latency_ms=latency_ms,
                     success=success,
+                    error_type=_pick_error_field(caught_error, "type") if caught_error else None,
+                    error_code=_pick_error_field(caught_error, "code") if caught_error else None,
+                    error_message=_compact_error_message(caught_error) if caught_error else None,
                 )
         provider.chat_stream = chat_stream_with_tracking
 

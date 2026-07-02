@@ -355,6 +355,7 @@ function AssistantTransparencyPanel({ msg }: { msg: ChatMessage }) {
               <MetaRow label="LLM 轮次" value={profile.rounds.map(r => `${r.label} ${r.value}`).join('\n')} preserveLines />
             )}
             {profile.tokenLine && <MetaRow label="Token" value={profile.tokenLine} />}
+            {profile.errorLine && <MetaRow label="失败" value={profile.errorLine} />}
             {profile.sources.length > 0 && (
               <MetaRow label="引用数据" value={profile.sources.slice(0, 8).map(s => `· ${s}`).join('\n')} preserveLines />
             )}
