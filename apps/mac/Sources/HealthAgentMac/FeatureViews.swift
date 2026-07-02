@@ -1971,7 +1971,10 @@ private final class CommandReturnTextView: NSTextView {
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
         ) as? [URL]) ?? []
-        let hasBitmap = pb.availableType(from: [.png, .tiff]) != nil
+        // 位图形态因来源而异:截屏=png/tiff;微信/照片=public.jpeg;预览选区=com.adobe.pdf;
+        // 微信临时文件还可能是奇怪扩展名的 file-url(走不进 attachable 文件分支)。
+        // 只认 png/tiff 会漏掉这些(实测用户"贴不进") → 放宽为"NSImage 能读的都算图"。
+        let hasBitmap = pb.canReadObject(forClasses: [NSImage.self], options: nil)
         let decision = PastedContentClassifier.decide(
             pastedString: pb.string(forType: .string),
             hasBitmapImage: hasBitmap,
