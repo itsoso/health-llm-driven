@@ -50,6 +50,7 @@ Changed surfaces:
 - Backend runtime agenda cards include `next_action.source` and emit either an enabled `agenda.complete` action or a disabled completion action plus route fallback.
 - Follow-up: card action runtime state is now part of the shared mobile card render options, so server cards and inline GenUI cards can render executing / done / error feedback consistently.
 - Follow-up: `route.open` actions now refresh dependent Today / Agenda / Daily Artifact / WriteIntent data and show success feedback before navigation, instead of silently jumping away.
+- Follow-up: Mobile 饮食页文字/语音/拍照快记从默认打开完整 MealForm 调整为默认展示轻量确认卡;用户点“确认记录”才写入,点“修正”才进入完整表单。
 
 Design and plan:
 
@@ -86,6 +87,35 @@ DATABASE_URL='sqlite:///:memory:' TZ=Asia/Shanghai backend/.venv/bin/python -m p
 
 ```bash
 git diff --check
+# exit 0
+```
+
+Follow-up verification for lightweight diet capture:
+
+```bash
+cd mobile && npm test -- --runInBand --runTestsByPath app/__tests__/dietCapture.test.tsx
+# Test Suites: 1 passed, 1 total
+# Tests: 7 passed, 7 total
+```
+
+```bash
+cd mobile && npm test -- --runInBand --runTestsByPath app/__tests__/dietCapture.test.tsx components/chat/cards/__tests__/registry.test.tsx components/chat/__tests__/ChatBubbleStructuredSummary.test.tsx services/__tests__/chatCardActions.test.ts utils/__tests__/revaUiBlocks.test.ts components/chat/__tests__/ChatBubbleRevaUi.test.tsx components/chat/__tests__/ChatInputBar.test.tsx
+# Test Suites: 7 passed, 7 total
+# Tests: 85 passed, 85 total
+```
+
+```bash
+cd mobile && npx tsc --noEmit
+# exit 0
+```
+
+```bash
+cd mobile && npx eslint app/diet.tsx app/__tests__/dietCapture.test.tsx components/chat/ChatBubble.tsx services/chatCardActions.ts
+# exit 0
+```
+
+```bash
+git diff --check -- mobile/app/diet.tsx mobile/app/__tests__/dietCapture.test.tsx docs/plans/2026-06-30-interactive-chat-cards-design.md docs/plans/2026-06-30-interactive-chat-cards-implementation-plan.md docs/dossiers/2026-06-30-interactive-chat-cards.md
 # exit 0
 ```
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** FastAPI/Python backend card builders, Expo React Native card registry, Jest, pytest.
 
-**Current status (2026-07-01):** Tasks 1-3 and the generic `record` action protocol are implemented, verified, deployed to backend, and published through Mobile OTA. `diet_draft` now supports inline edit, save-and-confirm from edit mode, in-card completion feedback after `diet_record.create` succeeds, and post-confirm nutrition estimation/backfill when macros are missing. Mobile 饮食页文字/语音/拍照 FAB now uses draft-confirm-save instead of writing unconfirmed placeholder records. Release evidence is tracked in `docs/dossiers/2026-06-30-interactive-chat-cards.md`.
+**Current status (2026-07-01):** Tasks 1-3 and the generic `record` action protocol are implemented, verified, deployed to backend, and published through Mobile OTA. `diet_draft` now supports inline edit, save-and-confirm from edit mode, in-card completion feedback after `diet_record.create` succeeds, and post-confirm nutrition estimation/backfill when macros are missing. Mobile 饮食页文字/语音/拍照 FAB now uses draft-confirm-save instead of writing unconfirmed placeholder records; the default capture surface is a lightweight confirmation card, with full MealForm only after the user taps "修正". Release evidence is tracked in `docs/dossiers/2026-06-30-interactive-chat-cards.md`.
 
 ---
 
