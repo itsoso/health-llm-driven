@@ -36,6 +36,7 @@ import {
   sanitizeModelOptions,
 } from '@/components/assistant/modelCatalog';
 import { executeMedicalExamImportSkillForFile } from '@/services/chatMedicalExamImportSkill';
+import { pickPastedMedicalImportFile } from '@/services/pastedMedicalImportFile';
 
 const DEFAULT_SUGGESTIONS = [
   '分析我最近的代谢健康',
@@ -418,6 +419,11 @@ function AIAssistantInner() {
   const handleMedicalExamFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = '';
+    await importMedicalExamFile(file);
+  };
+
+  // 📎 选文件与 ⌘V 粘贴共用的导入核心(与 mac 端"粘贴=附件同路"语义一致)。
+  const importMedicalExamFile = async (file: File | null | undefined) => {
     if (!file || medicalExamImporting || streaming) return;
 
     setMedicalExamImporting(true);
@@ -644,6 +650,14 @@ function AIAssistantInner() {
               <textarea
                 value={input}
                 onChange={e => setInput(e.target.value)}
+                onPaste={e => {
+                  // 粘贴的图片/PDF(浏览器拷图/截屏/Finder 拷文件)→ 走 📎 同一条体检导入路;
+                  // 纯文字粘贴(无 file item)不拦截,照常进输入框。
+                  const file = pickPastedMedicalImportFile(e.clipboardData?.items);
+                  if (!file || medicalExamImporting || streaming) return;
+                  e.preventDefault();
+                  void importMedicalExamFile(file);
+                }}
                 onKeyDown={e => {
                   // IME composition (拼音/日文/韩文) 中按 Enter 是确认候选词,不是发送
                   if (e.nativeEvent.isComposing || e.keyCode === 229) return;
