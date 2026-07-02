@@ -58,21 +58,46 @@ final class WatchStore: ObservableObject {
         if let wc = error as? WatchConnectivityClient.WCError {
             switch wc {
             case .unreachable:
-                return "iPhone 未连接 —— 请在 iPhone 打开「健康助理」后下拉重试"
+                return "iPhone 未连接 —— 请在 iPhone 打开「阿衡」后下拉重试"
             case .badResponse:
                 return "数据异常,请下拉重试"
             case .relayFailed(let m):
-                if m.contains("未登录") { return "请先在 iPhone 上登录「健康助理」,再下拉重试" }
+                if m.contains("未登录") { return "请先在 iPhone 上登录「阿衡」,再下拉重试" }
                 if m.contains("401") { return "登录已过期,请在 iPhone 重新登录" }
                 if m.hasPrefix("HTTP") { return "服务器繁忙(\(m)),稍后下拉重试" }
                 return m   // 网络等系统错误原文,直说
             case .directFailed(let m):
                 return "\(m),稍后下拉重试"
             case .missingWatchToken:
-                return "请先在 iPhone 登录并同步 Watch,之后手表可独立刷新"
+                return "请先在 iPhone 登录阿衡并同步 Watch,之后手表可独立刷新"
             }
         }
         return "数据解析失败,请下拉重试"
+    }
+
+    /// 打点失败也要 fail loud,但不能把登录/token/网络状态吞成笼统「记录失败」。
+    static func recordErrorMessage(for error: WatchConnectivityClient.WCError) -> String {
+        switch error {
+        case .unreachable:
+            return "iPhone 未连接,请打开阿衡后重试"
+        case .badResponse:
+            return "记录返回异常,请在手机端确认"
+        case .relayFailed(let message):
+            if message.contains("未登录") {
+                return "请先在 iPhone 登录阿衡并同步 Watch"
+            }
+            if message.contains("401") {
+                return "登录已过期,请在 iPhone 重新登录"
+            }
+            if message.hasPrefix("HTTP") {
+                return "服务器繁忙(\(message)),稍后重试"
+            }
+            return message
+        case .directFailed(let message):
+            return "\(message),稍后重试"
+        case .missingWatchToken:
+            return "请先在 iPhone 登录阿衡并同步 Watch"
+        }
     }
 
     /// 打点:校验(WatchCompanionCore)→ 经 iPhone 中继。失败 fail loud,不假装成功。
@@ -106,6 +131,9 @@ final class WatchStore: ObservableObject {
         } catch let e as QuickRecordError {
             lastRecordOK = false
             lastError = Self.message(for: e)
+        } catch let e as WatchConnectivityClient.WCError {
+            lastRecordOK = false
+            lastError = Self.recordErrorMessage(for: e)
         } catch is WatchStoreError {
             lastRecordOK = false
             lastError = "解析失败,请在手机端确认"
