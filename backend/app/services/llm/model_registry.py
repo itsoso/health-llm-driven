@@ -378,3 +378,28 @@ def pick_reliable_tool_model_id(
                 if m.speed_tier == target:
                     return m.id
     return models[0].id
+
+
+# ──── 快模型路由 (延迟优化: 简单记录/查询回合走最快的可靠工具调用模型) ────
+# speed_tier 从快到慢的枚举顺序, 用于"选最快的可靠工具调用模型"。
+_SPEED_TIER_ORDER = ("fast", "balanced", "reasoning")
+
+
+def pick_fast_tool_model_id(only_available: bool = True) -> Optional[str]:
+    """选**最快**的 reliable_tool_calling=True 可用聊天模型 id, 供简单回合快路由。
+
+    为什么必须 reliable_tool_calling=True: 简单记录/查询回合几乎一定要调工具
+    (health_record/health_query/health_manage), 不会调工具的快模型会直接把这类
+    回合搞坏 (吐文本冒充成功=静默丢数据)。所以先按 speed_tier (fast→balanced→
+    reasoning) 找, 每档里只考虑 reliable_tool_calling 的模型, 命中最快那档的第一个。
+
+    无任何可靠+可用聊天模型时返回 None (调用方维持现状, 不做快路由)。
+    """
+    models = [m for m in list_models(only_available=only_available) if m.reliable_tool_calling]
+    if not models:
+        return None
+    for tier in _SPEED_TIER_ORDER:
+        for m in models:
+            if m.speed_tier == tier:
+                return m.id
+    return models[0].id

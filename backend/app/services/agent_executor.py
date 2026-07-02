@@ -34,6 +34,10 @@ MAX_TOOL_ROUNDS = 8
 # 旧值 4000 会把 Opus 4.7 的长回复硬截断(用户需手动点"继续")。
 # Opus 4.7 / GPT-5.5 / Gemini 3.1 均支持远高于此, 8000 覆盖绝大多数长方案。
 ANSWER_MAX_TOKENS = 8000
+# 快路由回合 (简单记录/查询) 的答案 token 上限。简单回合的答案 (已记录/几步/多少毫升)
+# 从不需要 8000, 长尾解码本身就是延迟的一部分 —— 只对 fast-routed turn 收紧到 2000,
+# 其它一切 (建议/分析/复盘/长方案) 仍用 ANSWER_MAX_TOKENS。
+FAST_ROUTE_ANSWER_MAX_TOKENS = 2000
 INTERRUPTED_COMPLETION_NOTICE = "\n\n[回复因长度限制中断，请让我接着上文继续。]"
 AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -1666,12 +1670,62 @@ _TOOL_TO_SOURCE_LABEL = {
 }
 
 
+# 工具 → 思考过程 status 事件里展示的**短**中文名 (mac 端"正在……"胶囊)。
+# 与 _TOOL_TO_SOURCE_LABEL (数据源溯源, 更长) 独立: 这里要短、动词化。
+# 未映射的工具 → 原始名 (见 _tool_status_label)。
+_TOOL_TO_STATUS_LABEL = {
+    "health_query": "查询健康数据",
+    "health_record": "写入记录",
+    "health_manage": "管理记录",
+    "health_analysis": "深度分析",
+    "knowledge_search": "检索知识库",
+    "realtime_search": "联网搜索",
+}
+
+
+def _tool_status_label(func_name: Optional[str]) -> str:
+    """工具名 → 思考过程 status 事件的短中文标签; 未知工具回退原始名。"""
+    if not func_name:
+        return "工具"
+    return _TOOL_TO_STATUS_LABEL.get(func_name, func_name)
+
+
 _RECORD_INTENT_RE = re.compile(
     r"(记录|打卡|新增|录入|保存|吃了|喝了|服药|已服用|已吃|已喝|删除|修改|撤销|更新)"
 )
 _ADVICE_OR_ANALYSIS_RE = re.compile(
-    r"(分析|解读|建议|方案|风险|评估|为什么|怎么|如何|基于|结合|补剂|叶酸|训练|运动|饮食方案|适合)"
+    r"(分析|解读|建议|方案|风险|评估|为什么|怎么|如何|基于|结合|补剂|叶酸|训练|运动|饮食方案|适合"
+    r"|复盘|综合|趋势|规划|计划安排|该不该|要不要|值不值|意味着|说明什么)"
 )
+# 简单查询意图 — "我今天喝了多少水" / "查一下我的体重" / "最近血压是多少" 这类
+# 单次取数回合。命中这些词但**不**命中 _ADVICE_OR_ANALYSIS_RE 时算 fast-eligible。
+# 保守: 只列明确的取数动词/疑问词, 复盘/综合/趋势等已在 advice 正则里被排除。
+_SIMPLE_QUERY_INTENT_RE = re.compile(
+    r"(查一?下|查询|查看|看一?下|多少|几次|几步|有没有|是多少|多高|多重|多长|"
+    r"今天|昨天|本周|这周|最近|昨晚|列出|显示|告诉我|我的.{0,6}(数据|记录|情况|状态))"
+)
+
+
+def _is_fast_eligible_turn(
+    message: str,
+    *,
+    has_images: bool,
+    has_file: bool,
+) -> bool:
+    """本回合是否可以路由到 FAST 模型 (延迟优化)。
+
+    fast-eligible = 无图片/附件 且 (记录意图 或 简单查询意图) 且 **不是** 建议/分析/
+    复盘/综合类回合。建议/分析类要用户的质量模型 (qwen3.7-plus), 简单记录/查询才走快模型。
+
+    保守优先: 拿不准 (既非记录也非简单查询, 或命中 advice) → False = 用质量模型。
+    宁可慢而对, 不要快而错。
+    """
+    text = message or ""
+    if has_images or has_file:
+        return False
+    if _ADVICE_OR_ANALYSIS_RE.search(text):
+        return False
+    return bool(_RECORD_INTENT_RE.search(text) or _SIMPLE_QUERY_INTENT_RE.search(text))
 
 
 def _allow_twin_evidence_fallback(message: str) -> bool:
@@ -1885,6 +1939,9 @@ class AgentExecutor:
         self._http_client: Optional[httpx.AsyncClient] = None
         self._request_model_id: Optional[str] = None
         self._prefer_fast_record_model = False
+        # 本回合是否被 fast-route 到快模型 (简单记录/查询)。仅用于把答案 max_tokens
+        # 从 ANSWER_MAX_TOKENS 收紧到 FAST_ROUTE_ANSWER_MAX_TOKENS —— 见 _answer_max_tokens。
+        self._fast_route_simple_turn = False
         self._last_provider_model_name: Optional[str] = None
         self._request_model_tool_fallback_used = False
         self._model_fallback_reasons: List[str] = []
@@ -1908,6 +1965,33 @@ class AgentExecutor:
     def _record_tool_model_name(self, model_name: Optional[str]) -> None:
         if model_name and model_name not in self._tool_model_names:
             self._tool_model_names.append(model_name)
+
+    def _answer_max_tokens(self) -> int:
+        """本回合答案生成的 max_tokens。fast-routed 简单回合收紧到
+        FAST_ROUTE_ANSWER_MAX_TOKENS (简单答案的长尾解码是延迟的一部分);
+        其它一切回合仍用 ANSWER_MAX_TOKENS。"""
+        return (
+            FAST_ROUTE_ANSWER_MAX_TOKENS
+            if self._fast_route_simple_turn
+            else ANSWER_MAX_TOKENS
+        )
+
+    @staticmethod
+    def _status_event(
+        stage: str,
+        *,
+        detail: Optional[str] = None,
+        round: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """构造真实思考过程 status SSE 事件 (mac 端据此显示"正在……",替代按时长猜)。
+
+        契约 (mac client 精确对齐):
+            {"event": "status", "data": {"stage": <str>, "detail": <str|None>, "round": <int|None>}}
+
+        纯埋点、纯附加: 未知 event 客户端会 tolerate。调用点须 fail-soft 包裹
+        (镜像 perf_pre_llm), 任何构造/emit 异常绝不断主链路。
+        """
+        return {"event": "status", "data": {"stage": stage, "detail": detail, "round": round}}
 
     async def _run_multi_model_stream(
         self,
@@ -2128,6 +2212,7 @@ class AgentExecutor:
         self._current_user_id = user_id
         self._request_model_id = _extract_model_id_from_extra_context(extra_context)
         self._request_model_tool_fallback_used = False
+        self._fast_route_simple_turn = False
         self._model_fallback_reasons = []
         self._tool_model_names = []
         self._prefer_fast_record_model = (
@@ -2136,6 +2221,29 @@ class AgentExecutor:
             and bool(_RECORD_INTENT_RE.search(message or ""))
             and not bool(_ADVICE_OR_ANALYSIS_RE.search(message or ""))
         )
+        # 2026-07-02: FAST-MODEL 路由 — 简单记录/查询回合走最快的可靠工具调用模型,
+        # 建议/分析/复盘等仍用用户偏好的质量模型 (qwen3.7-plus)。
+        # 只替换"默认"模型: 用户在 UI 显式选了模型 (_request_model_id 已由 extra_context
+        # 填充) 时**绝不**覆盖, 尊重显式选择。安全 (确定性 SafetyGuardian) 与模型无关。
+        # 可观测性: 复用 _request_model_id → provider 路由, [perf.agent] log 与 done.meta
+        # 会自动显示快模型。
+        if self._request_model_id is None and _is_fast_eligible_turn(
+            message or "", has_images=bool(images), has_file=bool(file_base64)
+        ):
+            try:
+                from app.services.llm.model_registry import pick_fast_tool_model_id
+
+                fast_id = pick_fast_tool_model_id()
+                if fast_id:
+                    self._request_model_id = fast_id
+                    self._fast_route_simple_turn = True
+                    self._record_model_fallback_reason("fast_route_simple_turn")
+                    logger.info(
+                        "[agent_executor] fast-route simple turn user=%s model=%s msg=%r",
+                        user_id, fast_id, (message or "")[:60],
+                    )
+            except Exception as e:  # noqa: BLE001 — 快路由失败绝不断主链路, 退回默认模型
+                logger.warning("[agent_executor] fast-route failed, keep default: %s", e)
         self._last_provider_model_name = None
         # 可解释性: 记录本次回答用到的数据源. 必须在 system prompt / inspection 前初始化.
         sources_used: list = []
@@ -2255,6 +2363,9 @@ class AgentExecutor:
             should_send_raw_images = self._should_send_raw_images_to_primary_model(user_id)
             vision_description = None
             if not should_send_raw_images:
+                # 真实思考过程: 图片/视觉预处理 (4–20s 的 vision_ms 块) 即将开始。
+                # 仅在会真的跑独立 vision 预处理时发 (原图直传多模态模型时无此阶段)。
+                yield self._status_event("vision", detail=None)
                 vision_description = await self._try_import_medical_report_images(user_id, images)
                 if not vision_description:
                     vision_description = await self._analyze_image_with_vision(message, images)
@@ -2330,6 +2441,13 @@ class AgentExecutor:
                     if self._should_synthesize_with_requested_model_after_tools(tool_executed_count)
                     else tools
                 )
+                # 真实思考过程: 本轮 LLM prefill/decide 等待即将开始 (TTFT 主来源)。
+                # synthesis = 前面轮已执行过工具 且 本轮不再带工具 (模型正在写最终答案);
+                # 否则 thinking (还在决策/可能再调工具)。纯附加、fail-soft (dict 构造不会抛)。
+                if tool_executed_count > 0 and not round_tools:
+                    yield self._status_event("synthesis", round=round_idx + 1)
+                else:
+                    yield self._status_event("thinking", round=round_idx + 1)
                 _round_start = time.time()
                 streamed_text = ""
                 streamed_tool_calls: List[Dict[str, Any]] = []
@@ -2510,6 +2628,12 @@ class AgentExecutor:
                                 "round": round_idx + 1,
                             },
                         }
+                        # 真实思考过程: 本工具即将在串行循环里执行 (short 中文名给"正在……"胶囊)。
+                        # 纯附加、fail-soft (dict 构造不会抛)。与上面 tool_call (带 args, UI 用)
+                        # 独立: status 走思考过程可视化通道, 客户端可只订阅其一。
+                        yield self._status_event(
+                            "tool", detail=_tool_status_label(func_name), round=round_idx + 1
+                        )
                         # 2026-05-14: tool_call 加进 sources_used
                         _tool_label = _TOOL_TO_SOURCE_LABEL.get(func_name)
                         if _tool_label and _tool_label not in sources_used:
@@ -3591,7 +3715,9 @@ class AgentExecutor:
             if self._prefer_fast_record_model else messages,
             "model": None,
             "temperature": 0.3,
-            "max_tokens": ANSWER_MAX_TOKENS,
+            # fast-routed 简单回合把答案 token 收紧到 2000 (长尾解码是延迟一部分),
+            # 其它回合保持 8000。见 _answer_max_tokens。
+            "max_tokens": self._answer_max_tokens(),
         }
         if pass_tools:
             stream_kwargs["tools"] = pass_tools
