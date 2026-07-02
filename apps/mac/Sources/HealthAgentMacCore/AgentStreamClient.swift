@@ -4,17 +4,27 @@ public struct AgentStreamRequest: Encodable, Equatable, Sendable {
     public let message: String
     public let conversationID: Int?
     public let extraContext: String?
+    /// 输入通道声明(传输层,非 LLM 参数):mac 助手是打字输入 → "typed"。
+    /// 后端据此对症状类记录免二次确认;语音/未声明通道 fail-closed 保留确认。
+    public let channel: String
 
-    public init(message: String, conversationID: Int? = nil, extraContext: String? = nil) {
+    public init(
+        message: String,
+        conversationID: Int? = nil,
+        extraContext: String? = nil,
+        channel: String = "typed"
+    ) {
         self.message = message
         self.conversationID = conversationID
         self.extraContext = extraContext
+        self.channel = channel
     }
 
     enum CodingKeys: String, CodingKey {
         case message
         case conversationID = "conversation_id"
         case extraContext = "extra_context"
+        case channel
     }
 }
 

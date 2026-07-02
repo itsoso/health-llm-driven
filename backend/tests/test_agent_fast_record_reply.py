@@ -29,7 +29,7 @@ def test_symptom_record_json_becomes_friendly_line_not_raw_json():
         "duration_minutes": None,
     }
     reply = _fast_record_reply_from_tool_results([_tool_msg(record)])
-    assert reply == "已记录症状：打喷嚏（说「撤销」可删除）"  # 免确认前置后回显带撤销出口
+    assert reply == "已记录症状：打喷嚏（记录号 19,说「撤销」可删除）"  # 回显带记录号:撤销回合快路由只剩这行上下文
     assert "{" not in reply and "body_part" not in reply
 
 
@@ -54,9 +54,12 @@ def test_friendly_confirmation_covers_common_record_shapes():
     assert _friendly_record_confirmation({"id": 1, "foo": "bar"}) == "✅ 已记录"
 
 
-def test_batch_array_result_confirms_count_not_json():
+def test_array_result_reports_lookup_not_creation():
+    # 数组只来自 health_manage list(无创建路径返回数组)。对抗评审实测:
+    # 撤销回合的 list 结果曾被答成"✅已记录 2 条"= 假写入宣称。
     reply = _fast_record_reply_from_tool_results([_tool_msg([{"id": 1}, {"id": 2}])])
-    assert reply == "✅ 已记录 2 条"
+    assert "已记录" not in reply
+    assert reply == "查到 2 条记录（记录号: 1, 2）"
 
 
 def test_plain_text_tool_result_passes_through():

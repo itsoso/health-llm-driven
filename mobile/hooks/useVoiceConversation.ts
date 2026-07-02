@@ -424,7 +424,9 @@ export function useVoiceConversation() {
 
     try {
       let lastFailedTool = '';  // 同一 tool 连续失败只提示一次
-      for await (const evt of streamChat(userText, conversationIdRef.current, undefined, ac.signal)) {
+      // channel='voice':语音转写可能失真(1.2s 静默即自动提交,用户未必复核),
+      // 症状类记录在后端保留确认前置。
+      for await (const evt of streamChat(userText, conversationIdRef.current, undefined, ac.signal, undefined, 'voice')) {
         if (evt.type === 'token' || evt.type === 'tool') {
           const chunk = evt.content || '';
           if (!chunk) continue;

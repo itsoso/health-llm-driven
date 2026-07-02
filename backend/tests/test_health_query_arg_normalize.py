@@ -46,3 +46,36 @@ def test_dimension_wins_over_alias():
     # 同时有 dimension 和 type → dimension 优先,不被覆盖
     a = norm({"dimension": "sleep", "type": "lab_results"})
     assert a["dimension"] == "sleep"
+
+
+# ──── MRI 假阴回归(prod 实锤:Claude-4.7 内联 JSON + medical_records) ────
+
+
+def test_medical_records_and_imaging_aliases_normalize_to_medical_exam():
+    from app.services.agent_executor import _normalize_health_query_args
+    for raw in ("medical_records", "medical_record", "imaging", "mri", "影像", "影像报告", "检查报告"):
+        out = _normalize_health_query_args({"type": raw})
+        assert out["dimension"] == "medical_exam", raw
+
+
+def test_claude_inline_params_payload_recovers_end_to_end():
+    # prod 日志原始形状:{"tool":..,"params":{...}} —— 恢复层曾只认 parameters/arguments
+    from app.services.agent_executor import _extract_inline_tool_call, _normalize_health_query_args
+    text = '我先查一下你的膝关节MRI相关记录。\n{"tool":"health_query","params":{"type":"medical_records","keyword":"膝关节MRI"}}'
+    tools = [{"function": {"name": "health_query"}}]
+    call = _extract_inline_tool_call(text, tools)
+    assert call is not None
+    import json as _json
+    args = _json.loads(call["function"]["arguments"])
+    assert args.get("type") == "medical_records"  # params 容器被解开,参数不再丢失
+    normalized = _normalize_health_query_args(args)
+    assert normalized["dimension"] == "medical_exam"
+
+
+def test_anthropic_style_input_container_also_recovers():
+    from app.services.agent_executor import _extract_inline_tool_call
+    import json as _json
+    text = '{"name":"health_query","input":{"dimension":"medical_exam"}}'
+    call = _extract_inline_tool_call(text, [{"function": {"name": "health_query"}}])
+    assert call is not None
+    assert _json.loads(call["function"]["arguments"])["dimension"] == "medical_exam"

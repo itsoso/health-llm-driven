@@ -181,6 +181,12 @@ _HEALTH_QUERY_DIM_ALIASES: Dict[str, str] = {
     "化验报告": "medical_exam", "exam": "medical_exam", "medical": "medical_exam",
     "blood_test": "medical_exam", "bloodtest": "medical_exam", "checkup": "medical_exam",
     "体检": "medical_exam",
+    # 影像类查询(实测 Claude 传 type=medical_records 问膝关节 MRI):影像报告
+    # 也存 MedicalExam,统一归到 medical_exam 维度。
+    "medical_records": "medical_exam", "medical_record": "medical_exam",
+    "medical_report": "medical_exam", "imaging": "medical_exam",
+    "radiology": "medical_exam", "mri": "medical_exam",
+    "影像": "medical_exam", "影像报告": "medical_exam", "检查报告": "medical_exam",
     "gene": "genetic", "genes": "genetic", "genetics": "genetic", "基因": "genetic",
     "bp": "blood_pressure", "血压": "blood_pressure",
     "meds": "medication", "medications": "medication", "用药": "medication",
@@ -773,11 +779,17 @@ def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str
                     }
             return None
 
-        args = (
-            payload.get("parameters")
-            if "parameters" in payload
-            else payload.get("arguments", (fn or {}).get("arguments", {}))
-        )
+        # 参数容器键因模型而异:OpenAI 风格 parameters/arguments、Anthropic 风格
+        # input、口语化 params/args。实测 Claude-Opus-4.7(langbridge)吐
+        # {"tool":"health_query","params":{...}} —— 只认 parameters/arguments 会把
+        # args 丢成 {},下游 dimension 默认 comprehensive → 拿睡眠数据答 MRI 问题。
+        args: Any = None
+        for container_key in ("parameters", "params", "arguments", "input", "args"):
+            if container_key in payload:
+                args = payload[container_key]
+                break
+        if args is None:
+            args = (fn or {}).get("arguments", {})
         if isinstance(args, str):
             try:
                 args = _loads_lenient(args)  # 弯/全角引号 + 截断兜底
@@ -991,8 +1003,12 @@ def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
 
     # symptom (/symptoms): body_part + description
     # 症状已免确认前置(直接写) → 回显里给撤销出口,替代原先的"是这样吗?"。
+    # 回显必须带记录号:撤销回合走快路由,上下文只剩这行回显 —— 没有 id,
+    # 模型删不了(对抗评审实测撤销死环:list 结果又被误读成"已记录 N 条")。
     if s("description") is not None and ("body_part" in record or "severity" in record):
-        return f"已记录症状：{record.get('description')}（说「撤销」可删除）"
+        rid = record.get("id")
+        rid_part = f"记录号 {rid},说「撤销」可删除" if rid else "说「撤销」可删除"
+        return f"已记录症状：{record.get('description')}（{rid_part}）"
     # blood pressure
     if s("systolic") is not None and s("diastolic") is not None:
         return f"已记录血压 {record.get('systolic')}/{record.get('diastolic')} mmHg"
@@ -1074,8 +1090,15 @@ def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
             append_safety_warning()
             continue
         if isinstance(payload, list):
-            # Array of created records (batch) — confirm count, never dump JSON.
-            replies.append(f"✅ 已记录 {len(payload)} 条")
+            # 数组结果来自 health_manage list(查 ID/查记录)——绝不能说"已记录 N 条":
+            # 对抗评审实测,用户说"撤销"、模型转去 list 查 ID,却被答复"✅已记录 2 条"
+            # = 假写入宣称。当前没有任何 health_record 创建路径返回数组。
+            if not payload:
+                replies.append("没有找到相关记录")
+            else:
+                ids = [str(it.get("id")) for it in payload if isinstance(it, dict) and it.get("id")]
+                id_part = f"（记录号: {', '.join(ids[:5])}）" if ids else ""
+                replies.append(f"查到 {len(payload)} 条记录{id_part}")
             append_safety_warning()
             continue
         # Plain-text tool result (already human-readable) — show as-is.
@@ -1089,14 +1112,17 @@ def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
     return "\n".join(deduped).strip()
 
 
-def _auto_confirm_fast_record_args(tool_name: str, func_args: Any) -> Any:
+def _auto_confirm_fast_record_args(
+    tool_name: str, func_args: Any, channel: Optional[str] = None
+) -> Any:
     """Skip the two-turn confirmation gate for pure fast-record requests.
 
-    分级 + 分通道:
-    - AUTO 集(water/diet/... + symptom/rhinitis):打字通道直接写(回显+可撤销)。
-    - symptom/rhinitis 在**语音通道**(data.source ∈ 语音来源)保留确认前置 ——
-      语音转写失真率高、watch 表盘回显易被忽略;打字是用户逐字敲的,复述确认
-      纯属重复(用户明确否决,2026-07-02)。
+    分级 + 分通道(channel 来自**客户端传输层声明**,绝不信 LLM 工具参数——
+    对抗评审证伪过 arg-based 守卫:tool schema 无 source 字段,模型是该字段
+    唯一可能作者=不可信):
+    - AUTO 集(water/diet/...):任何通道直接写。
+    - symptom/rhinitis:仅 channel=="typed"(打字,用户逐字敲的)免确认;
+      语音/未声明通道(旧客户端、Siri 单轮无屏无法撤销)fail-closed 保留确认。
     - NEVER 集(medication/dose/financial/...)与 unknown kind:恒确认(fail-closed)。
     """
 
@@ -1111,7 +1137,7 @@ def _auto_confirm_fast_record_args(tool_name: str, func_args: Any) -> Any:
     requires_confirmation = (
         kind not in _FAST_RECORD_AUTO_CONFIRM_KINDS
         or kind in _FAST_RECORD_NEVER_AUTO_CONFIRM_KINDS
-        or (kind in _VOICE_CONFIRM_FIRST_KINDS and _record_source_is_voice(args))
+        or (kind in _TYPED_ONLY_AUTO_CONFIRM_KINDS and channel != "typed")
     )
     if requires_confirmation:
         data = args.get("data")
@@ -1161,20 +1187,11 @@ _FAST_RECORD_AUTO_CONFIRM_KINDS = {
     "symptom",
     "rhinitis",
 }
-# 症状类在语音通道保留确认前置(转写失真 + 表盘回显易漏);打字通道免确认。
-_VOICE_CONFIRM_FIRST_KINDS = {"symptom", "rhinitis"}
-# schema 注明 source=语音来源(apple_watch/airpods/mobile);打字聊天不设 source。
-_VOICE_RECORD_SOURCES = {"apple_watch", "watch", "airpods", "siri", "voice", "mobile"}
-
-
-def _record_source_is_voice(args: dict) -> bool:
-    data = args.get("data")
-    candidates = [args.get("source")]
-    if isinstance(data, dict):
-        candidates.append(data.get("source"))
-    return any(
-        str(raw or "").strip().lower() in _VOICE_RECORD_SOURCES for raw in candidates if raw
-    )
+# 症状类仅打字通道免确认;语音/未声明通道保留确认前置(转写失真 + Siri 单轮
+# 无法撤销)。channel 由客户端传输层声明(AgentRequest.channel),绝不读 LLM
+# 工具参数——对抗评审证伪过 arg-based 守卫(schema 无 source 字段,模型是该
+# 字段唯一可能作者=不可信=生产死代码)。
+_TYPED_ONLY_AUTO_CONFIRM_KINDS = {"symptom", "rhinitis"}
 
 
 # 医疗级/不可逆/资金类:永远确认前置。unknown kind 也走确认(fail-closed,
@@ -1977,6 +1994,7 @@ class AgentExecutor:
         self._current_user_id: Optional[int] = None
         self._http_client: Optional[httpx.AsyncClient] = None
         self._request_model_id: Optional[str] = None
+        self._turn_channel: Optional[str] = None
         self._prefer_fast_record_model = False
         # 本回合是否被 fast-route 到快模型 (简单记录/查询)。仅用于把答案 max_tokens
         # 从 ANSWER_MAX_TOKENS 收紧到 FAST_ROUTE_ANSWER_MAX_TOKENS —— 见 _answer_max_tokens。
@@ -2227,10 +2245,14 @@ class AgentExecutor:
         file_base64: Optional[str] = None,
         file_name: Optional[str] = None,
         extra_context: Optional[str] = None,
+        channel: Optional[str] = None,
     ) -> AsyncGenerator[Dict, None]:
         """运行 Agent 循环，SSE 流式输出"""
         from app.services.llm.usage_tracker import set_caller
         set_caller("agent_executor.run_stream", user_id=user_id)
+        # 输入通道(客户端传输层声明,typed/voice/siri):症状类记录的确认策略依赖它。
+        # 非法/未声明一律 None → fail-closed(症状保留确认)。
+        self._turn_channel = channel if channel in ("typed", "voice", "siri") else None
         # OpenClaw provider 不支持 function calling，记录类意图委托给 OpenClaw Gateway（有 skill）
         has_tools_support = bool(settings.agent_base_url and settings.agent_api_key) or settings.llm_provider != "openclaw"
         if not has_tools_support and (_needs_skill(message) or images or file_base64):
@@ -2655,7 +2677,9 @@ class AgentExecutor:
                         if func_name:
                             _round_tool_names.append(func_name)
                         if self._prefer_fast_record_model:
-                            func_args = _auto_confirm_fast_record_args(func_name, func_args)
+                            func_args = _auto_confirm_fast_record_args(
+                                func_name, func_args, channel=self._turn_channel
+                            )
                         tool_id = tc["id"]
 
                         # 通知前端正在执行工具
@@ -4331,7 +4355,16 @@ class AgentExecutor:
             "medication": "/medication/medications/me",
         }
 
-        path = endpoint_map.get(dim, endpoint_map["comprehensive"])
+        # 未知 dimension 绝不静默回退 comprehensive:实测 Claude 传 type=medical_records
+        # 问膝关节 MRI,被默认成 Garmin 睡眠/心率 → 模型诚实答"没找到 MRI"(假阴)。
+        # fail-loud 列合法值,模型下一轮自纠(1 轮换正确数据,优于静默错数据)。
+        path = endpoint_map.get(dim)
+        if path is None:
+            valid_dims = ", ".join(sorted(endpoint_map))
+            return (
+                f"Error: 未知 dimension '{dim}'。合法值: {valid_dims}。"
+                f"请重新调用 health_query 并从中选择(体检/化验/影像报告 → medical_exam)。"
+            )
 
         # 如果查的是基因指标，从结果中过滤特定指标
         # 走 _api_get_json 拿完整数据 (基因常 >3000 字符, 文本版会被截断导致过滤失效)
@@ -4368,7 +4401,11 @@ class AgentExecutor:
                 data = {}
         today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
 
-        if args.pop("_fast_record_requires_confirmation", False):
+        # medication 是医疗级写入:无论快/慢路径恒确认前置。快路径由 gate 置 flag;
+        # 慢路径(quality 模型 / telegram 直调)此前 medication 无任何确认 ——
+        # pre-existing 洞,对抗评审揪出。跨轮机制不变:模型复述→用户"是的"→
+        # 重调带 confirmed=true → _confirm_or_describe 放行。
+        if args.pop("_fast_record_requires_confirmation", False) or rtype == "medication":
             check = _confirm_or_describe(
                 args,
                 data,
@@ -4629,9 +4666,14 @@ class AgentExecutor:
                 return "Error: symptom 必须提供 body_part (eye/respiratory/skin/digestive/musculoskeletal/head/general/other)"
             if not description:
                 return "Error: symptom 必须提供 description (如 '眼睛痒' / '右膝盖钝痛')"
-            # 标记 source=voice 便于前端区分手工 / 语音入口
+            # provenance 按真实通道打标(SymptomCreate 只收 manual|voice|siri):
+            # typed 聊天=manual;siri=siri;其余(语音/未声明)=voice。此前硬编码
+            # voice 把打字记录也标成语音,污染任何依赖 source 的下游区分。
             payload = dict(data)
-            payload.setdefault("source", "voice")
+            channel = getattr(self, "_turn_channel", None)
+            default_source = "manual" if channel == "typed" else ("siri" if channel == "siri" else "voice")
+            if payload.get("source") not in ("manual", "voice", "siri"):
+                payload["source"] = default_source
             return await self._api_post(f"{base}/symptoms", headers, payload)
 
         if rtype in record_map:

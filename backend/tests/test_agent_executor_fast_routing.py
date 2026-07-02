@@ -269,24 +269,31 @@ async def test_explicit_model_override_is_honored(db, auth_user_and_headers, mon
 # unknown kind fail-closed 走确认。对抗:模型预置 confirmed=true 必须被剥掉。
 
 
-def _auto_confirm(kind: str, *, pre_confirmed: bool = False) -> dict:
+def _auto_confirm(kind: str, *, pre_confirmed: bool = False, channel: str | None = None) -> dict:
     args = {"record_type": kind, "data": {"description": "x", "body_part": "general"}}
     if pre_confirmed:
         args["confirmed"] = True
         args["data"]["confirmed"] = True
-    out = ae._auto_confirm_fast_record_args("health_record", args)
+    out = ae._auto_confirm_fast_record_args("health_record", args, channel=channel)
     return out
 
 
-def test_symptom_record_auto_confirms_no_second_ask():
-    out = _auto_confirm("symptom")
+def test_symptom_record_auto_confirms_on_typed_channel():
+    out = _auto_confirm("symptom", channel="typed")
     assert out["confirmed"] is True
     assert out["data"]["confirmed"] is True
     assert "_fast_record_requires_confirmation" not in out
 
 
-def test_rhinitis_record_auto_confirms():
-    out = _auto_confirm("rhinitis")
+def test_symptom_without_channel_fails_closed_to_confirmation():
+    # 旧客户端/Siri/未声明通道:症状保留确认前置(传输层 fail-closed)
+    out = _auto_confirm("symptom", pre_confirmed=True, channel=None)
+    assert out.get("confirmed") is not True
+    assert out["_fast_record_requires_confirmation"] is True
+
+
+def test_rhinitis_record_auto_confirms_on_typed_channel():
+    out = _auto_confirm("rhinitis", channel="typed")
     assert out["confirmed"] is True
 
 
@@ -321,20 +328,40 @@ def test_symptom_friendly_echo_offers_undo():
     assert "撤销" in reply
 
 
-def test_symptom_via_voice_source_keeps_confirmation():
-    # 语音通道(watch/mobile 语音)转写失真率高 → 症状保留确认前置
-    for source in ("apple_watch", "mobile", "airpods"):
-        args = {"record_type": "symptom", "data": {"description": "头痛", "body_part": "head", "source": source}}
-        out = ae._auto_confirm_fast_record_args("health_record", args)
-        assert out["_fast_record_requires_confirmation"] is True, source
+def test_symptom_friendly_echo_carries_record_id_for_undo_turn():
+    # 撤销回合走快路由只带上一行回显 → 回显必须含记录号,否则模型无 id 可删
+    reply = ae._friendly_record_confirmation({"id": 19, "description": "舌头尖溃疡", "body_part": "other"})
+    assert "记录号 19" in reply
+    assert "撤销" in reply
+
+
+def test_list_tool_result_never_claims_records_created():
+    # 对抗评审实测:撤销回合模型 list 查 ID,数组结果曾被答成"✅已记录 2 条"(假写入宣称)
+    import json as _json
+    msgs = [{"role": "tool", "content": _json.dumps([
+        {"id": 18, "description": "a"}, {"id": 19, "description": "b"},
+    ], ensure_ascii=False)}]
+    reply = ae._fast_record_reply_from_tool_results(msgs)
+    assert "已记录" not in reply
+    assert "查到 2 条" in reply
+    assert "18" in reply and "19" in reply
+
+
+def test_symptom_via_voice_channels_keeps_confirmation():
+    # 语音/siri 通道转写失真率高(且 Siri 单轮无法撤销)→ 症状保留确认前置
+    for channel in ("voice", "siri"):
+        args = {"record_type": "symptom", "data": {"description": "头痛", "body_part": "head"}}
+        out = ae._auto_confirm_fast_record_args("health_record", args, channel=channel)
+        assert out["_fast_record_requires_confirmation"] is True, channel
         assert "confirmed" not in out
 
 
-def test_water_via_watch_still_auto_confirms():
-    # 语音守卫只作用于症状类;低风险数值记录(water)语音照旧免确认
-    args = {"record_type": "water", "data": {"amount": 250, "source": "apple_watch"}}
-    out = ae._auto_confirm_fast_record_args("health_record", args)
-    assert out["confirmed"] is True
+def test_water_auto_confirms_regardless_of_channel():
+    # 通道守卫只作用于症状类;低风险数值记录(water)任何通道免确认
+    for channel in (None, "voice", "typed"):
+        args = {"record_type": "water", "data": {"amount": 250}}
+        out = ae._auto_confirm_fast_record_args("health_record", args, channel=channel)
+        assert out["confirmed"] is True, channel
 
 
 @pytest.mark.asyncio
@@ -352,6 +379,7 @@ async def test_typed_symptom_writes_without_confirmation_roundtrip(db):
     args = ae._auto_confirm_fast_record_args(
         "health_record",
         {"record_type": "symptom", "data": {"body_part": "other", "description": "舌头尖溃疡"}},
+        channel="typed",
     )
     result = await executor._exec_health_record("http://x", {}, args)
 

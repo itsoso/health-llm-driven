@@ -257,6 +257,9 @@ class AgentRequest(BaseModel):
     # 入口 deeplink 携带的结构化上下文 (JSON string), 注入到 LLM prompt 不展示给用户.
     # 例: SNP 详情页点"详细聊饮食方案" → context 带当前页正展示的食材条目.
     extra_context: Optional[str] = Field(default=None, max_length=4000)
+    # 输入通道(传输层声明,typed=打字 / voice=语音转写 / siri):症状类记录的
+    # 确认策略依赖它 —— typed 免二次确认,语音/未声明 fail-closed 保留确认。
+    channel: Optional[str] = Field(default=None, max_length=16)
 
     @field_validator("image_base64")
     @classmethod
@@ -346,6 +349,7 @@ async def agent_stream(
     file_b64 = req.file_base64
     file_nm = req.file_name
     extra_ctx = req.extra_context
+    chan = req.channel
 
     # GenUI 短路: caps=genui-v1 + 图表意图 + 无图片/附件 → 确定性出 reva-ui block,
     # 跳过 AgentExecutor/LLM (R4: 数值只来自 DB)。命中即持久化消息并直接 SSE 回放。
@@ -413,6 +417,7 @@ async def agent_stream(
                     file_base64=file_b64,
                     file_name=file_nm,
                     extra_context=extra_ctx,
+                    channel=chan,
                 ):
                     if event.get("event") == "token":
                         tc = event.get("data", {}).get("content")

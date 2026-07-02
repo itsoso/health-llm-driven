@@ -80,9 +80,12 @@ export async function* streamChat(
   images?: { base64?: string; type?: string }[],
   signal?: AbortSignal,
   extraContext?: string,
+  channel: 'typed' | 'voice' | 'siri' = 'typed',
 ): AsyncGenerator<StreamEvent, void, unknown> {
   const token = await getToken();
-  const body: Record<string, any> = { message };
+  // channel = 传输层输入通道声明(非 LLM 参数):打字免症状二次确认;
+  // 语音(转写有失真风险)fail-closed 保留确认 —— 语音入口必须显式传 'voice'。
+  const body: Record<string, any> = { message, channel };
   if (conversationId) body.conversation_id = conversationId;
   if (extraContext && extraContext.trim()) body.extra_context = extraContext.trim();
   if (images && images.length > 0) {
