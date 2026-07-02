@@ -1042,6 +1042,27 @@ def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
     return "✅ 已记录"
 
 
+def _safety_warning_suffix_from_tool_results(messages: List[Dict[str, Any]]) -> str:
+    """收集 tool results 里的 '⚠️ 安全提示' 文本段(写后安全评估 :2763 追加的)。
+
+    post_record_quality 的新回复模板从 record args/画像组装,不看 tool result ——
+    曾把安全文本从用户可见回复中整体丢掉(老客户端不渲染 safety 卡,文本是唯一
+    载体;CI test_agent_stream_keeps_safety_text_visible_for_old_clients 抓出)。
+    加层不减层:无论哪个模板产出 final_text,安全后缀都必须强制携带。
+    """
+    warnings: list[str] = []
+    for message in messages:
+        if message.get("role") != "tool":
+            continue
+        content = str(message.get("content") or "")
+        marker_idx = content.find(SAFETY_WARNING_MARKER)
+        if marker_idx >= 0:
+            segment = content[marker_idx:].strip()
+            if segment and segment not in warnings:
+                warnings.append(segment)
+    return "\n\n".join(warnings)
+
+
 def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
     """Build a final user-visible reply directly from record tool results."""
 
@@ -2866,6 +2887,12 @@ class AgentExecutor:
                         )
                         if not final_text:
                             final_text = _fast_record_reply_from_tool_results(messages)
+                        # 安全文本强制携带(加层不减层):quality 模板不看 tool result,
+                        # 曾把写后安全评估的 '⚠️ 安全提示' 从回复里整体丢掉 —— 老客户端
+                        # 不渲染 safety 卡,这行文本是其唯一载体。
+                        safety_suffix = _safety_warning_suffix_from_tool_results(messages)
+                        if safety_suffix and safety_suffix not in final_text:
+                            final_text = f"{final_text}\n\n{safety_suffix}" if final_text else safety_suffix
                         if final_text:
                             for i in range(0, len(final_text), 20):
                                 chunk = final_text[i:i + 20]
