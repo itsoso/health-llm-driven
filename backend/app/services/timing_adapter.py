@@ -33,7 +33,7 @@ _RELATION_TO_ANCHOR = {
 }
 
 # category 判定为「补剂」的取值(其余视为药物)
-_SUPPLEMENT_CATEGORIES = {"supplement", "保健品", "膳食补充剂"}
+_SUPPLEMENT_CATEGORIES = {"supplement", "补剂", "保健品", "膳食补充剂"}
 
 # 螯合/间隔对:(名称关键字组 A, 名称关键字组 B, 最小间隔小时)。methodology §5。
 _INTERVAL_PAIRS = [

@@ -42,6 +42,14 @@ def test_supplement_mapping():
     assert it.fixed_time is None
 
 
+def test_chinese_supplement_category_mapping():
+    # 中文 category「补剂」必须归 supplement 域,否则脊柱投影/反向完成 ref 全按药展示
+    for cat in ("补剂", "保健品", "膳食补充剂"):
+        it = medication_to_item(_med(id=12, name="维生素D3", category=cat))
+        assert it.domain == "supplement", cat
+        assert it.deferrable is True
+
+
 def test_no_timing_relation_is_anytime():
     it = medication_to_item(_med(id=2, name="某药", category="处方药"))
     assert it.anchor == ANCHOR_ANYTIME
