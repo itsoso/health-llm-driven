@@ -4,6 +4,13 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import {
+  buildRunTraceRows,
+  formatRunTraceTitle,
+  runTraceTone,
+  summarizeRunDetail,
+  type RunDetail,
+} from './llmRunTrace';
 
 interface PerfRow {
   label: string;
@@ -125,6 +132,10 @@ function LLMPerformanceInner() {
   const [stats, setStats] = useState<PerfRow[]>([]);
   const [failures, setFailures] = useState<Failure[]>([]);
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([]);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [runDetail, setRunDetail] = useState<RunDetail | null>(null);
+  const [runLoading, setRunLoading] = useState(false);
+  const [runErr, setRunErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [days, setDays] = useState(7);
@@ -165,6 +176,26 @@ function LLMPerformanceInner() {
     load();
   }, [load]);
 
+  const loadRunDetail = useCallback(async (runId: string | null | undefined) => {
+    const cleaned = (runId || '').trim();
+    if (!token || !cleaned) return;
+    setSelectedRunId(cleaned);
+    setRunLoading(true);
+    setRunErr(null);
+    setRunDetail(null);
+    try {
+      const resp = await fetch(`/api/v1/admin/llm/runs/${encodeURIComponent(cleaned)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) throw new Error(`run ${resp.status}`);
+      setRunDetail(await resp.json());
+    } catch (e: any) {
+      setRunErr(e.message || '加载 run trace 失败');
+    } finally {
+      setRunLoading(false);
+    }
+  }, [token]);
+
   const fmt = (v: number | null | undefined) => v == null ? '—' : String(v);
   const fmtPct = (v: number | null) => v == null ? '—' : `${(v * 100).toFixed(1)}%`;
   const fmtTokens = (v: number) => v >= 1_000_000 ? `${(v / 1_000_000).toFixed(2)}M` : `${(v / 1000).toFixed(1)}k`;
@@ -185,6 +216,9 @@ function LLMPerformanceInner() {
     }
   };
   const maxDayTokens = Math.max(1, ...(usage?.by_day || []).map(d => d.total_tokens));
+  const runSummary = runDetail ? summarizeRunDetail(runDetail) : null;
+  const runRows = runDetail ? buildRunTraceRows(runDetail) : [];
+  const runTone = runDetail ? runTraceTone(runDetail) : 'ok';
 
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4">
@@ -497,7 +531,18 @@ function LLMPerformanceInner() {
                           </td>
                           <td className="px-4 py-2 font-mono">{f.provider}</td>
                           <td className="px-4 py-2 font-mono">{f.model}</td>
-                          <td className="px-4 py-2 font-mono text-slate-500">{f.caller || '—'}</td>
+                          <td className="px-4 py-2">
+                            <div className="font-mono text-slate-500">{f.caller || '—'}</div>
+                            {f.run_id && (
+                              <button
+                                type="button"
+                                onClick={() => loadRunDetail(f.run_id)}
+                                className="mt-1 font-mono text-xs text-emerald-700 hover:text-emerald-900 hover:underline"
+                              >
+                                {fmtTrace(f.run_id)}
+                              </button>
+                            )}
+                          </td>
                           <td className="px-4 py-2 text-right font-mono text-slate-400">{f.user_id ?? '—'}</td>
                           <td className="px-4 py-2 text-right font-mono text-rose-500">
                             {f.latency_ms != null ? `${f.latency_ms}ms` : '—'}
@@ -554,7 +599,17 @@ function LLMPerformanceInner() {
                           <div className="text-xs text-slate-500">{call.email || call.username || '—'}</div>
                         </td>
                         <td className="px-4 py-2">
-                          <div className="font-mono text-slate-900">{fmtTrace(call.run_id)}</div>
+                          {call.run_id ? (
+                            <button
+                              type="button"
+                              onClick={() => loadRunDetail(call.run_id)}
+                              className="font-mono text-emerald-700 hover:text-emerald-900 hover:underline"
+                            >
+                              {fmtTrace(call.run_id)}
+                            </button>
+                          ) : (
+                            <div className="font-mono text-slate-400">—</div>
+                          )}
                           <div className="font-mono text-xs text-slate-500">{call.caller || '—'}</div>
                         </td>
                         <td className="px-4 py-2">
@@ -592,6 +647,93 @@ function LLMPerformanceInner() {
                 </table>
               </div>
             </div>
+
+            {selectedRunId && (
+              <div className="bg-white rounded-lg border overflow-hidden mt-6">
+                <div className={`px-4 py-3 border-b flex items-start justify-between gap-4 ${
+                  runTone === 'warn' ? 'bg-amber-50 border-amber-100' : 'bg-emerald-50 border-emerald-100'
+                }`}>
+                  <div>
+                    <h2 className="font-semibold text-slate-900">Run Trace · {formatRunTraceTitle(selectedRunId)}</h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      串起一次回复里的 LLM 调用、失败、恢复和 token 消耗
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedRunId(null);
+                      setRunDetail(null);
+                      setRunErr(null);
+                    }}
+                    className="rounded-md border bg-white px-2 py-1 text-xs text-slate-500 hover:text-slate-900"
+                  >
+                    关闭
+                  </button>
+                </div>
+                {runLoading ? (
+                  <div className="px-4 py-8 text-center text-slate-400 text-sm">加载 run trace…</div>
+                ) : runErr ? (
+                  <div className="px-4 py-6 text-sm text-rose-700 bg-rose-50 border-t border-rose-100">
+                    {runErr}
+                  </div>
+                ) : runDetail && runSummary ? (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 p-4 border-b">
+                      {[
+                        ['调用', runSummary.calls],
+                        ['失败', runSummary.failures],
+                        ['Tokens', runSummary.tokens],
+                        ['延迟', runSummary.latency],
+                        ['恢复', runSummary.recovery],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-lg bg-slate-50 px-3 py-2">
+                          <div className="text-xs text-slate-500">{label}</div>
+                          <div className="mt-1 font-mono text-sm text-slate-900 truncate">{value}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-50">
+                          <tr className="text-left text-xs text-slate-500 uppercase">
+                            <th className="px-4 py-2">调用</th>
+                            <th className="px-4 py-2">caller</th>
+                            <th className="px-4 py-2 text-right">tokens</th>
+                            <th className="px-4 py-2 text-right">延迟</th>
+                            <th className="px-4 py-2">状态</th>
+                            <th className="px-4 py-2">错误 / 恢复</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {runRows.map(row => (
+                            <tr key={row.id} className="border-t hover:bg-slate-50">
+                              <td className="px-4 py-2 font-mono text-slate-900">{row.label}</td>
+                              <td className="px-4 py-2 font-mono text-slate-500">{row.caller}</td>
+                              <td className="px-4 py-2 text-right font-mono">{row.tokens}</td>
+                              <td className="px-4 py-2 text-right font-mono text-slate-500">{row.latency}</td>
+                              <td className="px-4 py-2">
+                                <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                                  row.status === '成功' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                                }`}>
+                                  {row.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2 text-xs max-w-[420px]">
+                                <div className={row.error === '—' ? 'text-slate-400' : 'text-rose-600'}>{row.error}</div>
+                                <div className={row.recovery === '—' ? 'mt-1 text-slate-400' : 'mt-1 font-mono text-slate-600'}>
+                                  {row.recovery}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            )}
           </>
         )}
       </div>
