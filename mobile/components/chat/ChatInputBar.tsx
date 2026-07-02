@@ -475,19 +475,22 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
               }}
             />
             <Text style={styles.menuSectionTitle}>模式</Text>
-            {AGENT_MODES.map(mode => (
-              <ModeMenuItem
-                key={mode.id}
-                icon={mode.icon}
-                label={`${mode.label}模式`}
-                selected={agentMode === mode.id}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setAgentMode(mode.id);
-                  setShowMenu(false);
-                }}
-              />
-            ))}
+            <View testID="agent-mode-segmented-row" style={styles.modeSegmentedRow}>
+              {AGENT_MODES.map(mode => (
+                <ModeSegmentItem
+                  key={mode.id}
+                  icon={mode.icon}
+                  label={mode.label}
+                  accessibilityLabel={`${mode.label}模式`}
+                  selected={agentMode === mode.id}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setAgentMode(mode.id);
+                    setShowMenu(false);
+                  }}
+                />
+              ))}
+            </View>
           </Pressable>
         </Pressable>
       </Modal>
@@ -514,14 +517,16 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
   );
 }
 
-function ModeMenuItem({
+function ModeSegmentItem({
   icon,
   label,
+  accessibilityLabel,
   selected,
   onPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
+  accessibilityLabel: string;
   selected: boolean;
   onPress: () => void;
 }) {
@@ -532,13 +537,10 @@ function ModeMenuItem({
       activeOpacity={0.68}
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel}
     >
-      <View style={styles.modeMenuIconWrap}>
-        <Ionicons name={icon} size={18} color={selected ? C.green500 : C.ink2} />
-      </View>
+      <Ionicons name={icon} size={15} color={selected ? C.green500 : C.ink2} />
       <Text style={[styles.modeMenuLabel, selected && styles.modeMenuLabelActive]}>{label}</Text>
-      {selected && <Ionicons name="checkmark-circle" size={18} color={C.green500} />}
     </TouchableOpacity>
   );
 }
@@ -745,30 +747,33 @@ const styles = StyleSheet.create({
     width: 38, height: 38, borderRadius: 12, backgroundColor: C.paper,
     alignItems: 'center', justifyContent: 'center',
   },
-  modeMenuItem: {
-    minHeight: 42,
+  modeSegmentedRow: {
+    minHeight: 36,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    borderRadius: revaRadii.md,
-    paddingHorizontal: 10,
-    marginBottom: 4,
+    gap: 4,
+    padding: 3,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.paper2,
   },
-  modeMenuItemActive: {
-    backgroundColor: C.green50,
-  },
-  modeMenuIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+  modeMenuItem: {
+    flex: 1,
+    minHeight: 30,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 10,
+    borderRadius: revaRadii.pill,
+    paddingHorizontal: 8,
+  },
+  modeMenuItemActive: {
     backgroundColor: C.paper,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: revaSemantic.normal.line,
   },
   modeMenuLabel: {
-    flex: 1,
     fontFamily: revaFonts.sans,
-    fontSize: 14,
+    fontSize: 13,
     color: C.ink2,
     fontWeight: '700',
   } as TextStyle,

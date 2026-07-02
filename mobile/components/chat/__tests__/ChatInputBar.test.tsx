@@ -144,6 +144,22 @@ describe('ChatInputBar', () => {
     );
   });
 
+  it('renders agent modes as a single compact segmented row in the attachment menu', () => {
+    const { getByLabelText, getByTestId, getByText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('附件菜单'));
+
+    const modeRow = StyleSheet.flatten(getByTestId('agent-mode-segmented-row').props.style);
+    expect(modeRow.flexDirection).toBe('row');
+    expect(modeRow.minHeight).toBeLessThanOrEqual(38);
+    expect(getByText('日常')).toBeTruthy();
+    expect(getByText('深思')).toBeTruthy();
+    expect(getByText('识图')).toBeTruthy();
+    expect(getByLabelText('深思模式')).toBeTruthy();
+  });
+
   it('sends typed text when Enter is pressed in the composer', () => {
     const onSend = jest.fn();
     const { getByLabelText } = render(
