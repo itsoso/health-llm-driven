@@ -21,11 +21,10 @@ describe('main tab labels', () => {
     });
   });
 
-  it('hides the global tab bar on the chat tab for an immersive assistant surface', () => {
+  it('keeps the four global tabs visible on the assistant surface', () => {
     expect(getMainTabBarPresentation('chat')).toEqual({
-      layout: 'immersive',
+      layout: 'docked',
       overlaysContent: false,
-      hidden: true,
     });
   });
 });
