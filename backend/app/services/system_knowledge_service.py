@@ -2269,13 +2269,17 @@ def build_evidence_card_for_twin(
     relevance = _filter_claims_for_message_relevance(claims, message)
     if message is not None:
         claims = relevance["claims"]
+    # 多来源导入(dedao 批次)会出现同题 claim 重复;同一张卡里只留一份。
+    claims = _dedupe_claims_by_title(claims)
     if not claims:
         return None
 
     return {
         "type": "system_knowledge_evidence",
         "data": {
-            "entity": result["entities"][0] if result["entities"] else {},
+            # entity 跟随排序后的第一条 claim(相关性重排后 entities[0]
+            # 可能已不是 claims 的主题 → 卡标题"血压"配 HbA1c claims 的错位)。
+            "entity": _entity_for_claims(result["entities"], claims),
             "claims": claims[:3],
             "claim_boundary": result["claim_boundary"],
             "retrieval": {
@@ -2285,6 +2289,32 @@ def build_evidence_card_for_twin(
             },
         },
     }
+
+
+def _dedupe_claims_by_title(claims: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for claim in claims:
+        key = re.sub(r"\s+", "", str(claim.get("title") or claim.get("doc_id") or "")).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(claim)
+    return unique
+
+
+def _entity_for_claims(
+    entities: list[dict[str, Any]],
+    claims: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if not entities:
+        return {}
+    top_entity_id = str(claims[0].get("entity_id") or "") if claims else ""
+    if top_entity_id:
+        for entity in entities:
+            if str(entity.get("entity_id") or "") == top_entity_id:
+                return entity
+    return entities[0]
 
 
 _KB_RELEVANCE_STOP_TERMS = {
@@ -2315,7 +2345,30 @@ _KB_RELEVANCE_STOP_TERMS = {
     "帮我",
     "结合",
     "基于",
+    # 闭类功能/疑问词(非领域词,开集领域词绝不进这里)。prod 实测
+    # "适合"命中《HbA1c 适合作为 8-12 周复查闭环》标题 → 运动问题弹血糖卡。
+    "适合",
+    "怎样",
+    "怎么",
+    "如何",
+    "什么",
+    "哪些",
+    "可以",
+    "需要",
+    "注意",
+    "作为",
+    "优先",
+    "为什么",
+    "多少",
 }
+
+# CJK 滑窗 bigram 会产出跨词垃圾("样的"/"的运"/"天我")。含这些高频功能字的
+# 组合几乎不可能是领域词,直接丢弃 —— 领域词(血压/叶酸/尿酸/睡眠)不含它们。
+_KB_RELEVANCE_JUNK_CHARS = set("的我了吗呢你他她它是在把给被就都还很请和与或及等这那")
+
+
+def _is_junk_relevance_term(term: str) -> bool:
+    return any(ch in _KB_RELEVANCE_JUNK_CHARS for ch in term)
 
 
 def _filter_claims_for_message_relevance(
@@ -2328,6 +2381,12 @@ def _filter_claims_for_message_relevance(
     user can record dinner while their Twin contains MTHFR/9p21 risks. In that
     case the evidence card should appear only if the message actually asks
     about the matching topic.
+
+    准入只认「锚点字段」(doc_id/标题/entity/matched_conditions);正文/摘要/
+    metadata 命中只参与排序、不作准入 —— 慢病 claim 正文普遍含"运动/饮食"等
+    生活方式词,按全文准入会让任何泛生活方式问题钓出无关慢病卡(prod 实锤:
+    "今天我适合怎样的运动?" → 血压/HbA1c 卡)。方向同 anchored-allowlist 教训:
+    身份匹配用锚点,不用子串扫全文。
     """
 
     if not message:
@@ -2336,21 +2395,25 @@ def _filter_claims_for_message_relevance(
     terms = [
         term
         for term in _semantic_query_terms(message)
-        if term not in _KB_RELEVANCE_STOP_TERMS and len(term) >= 2
+        if term not in _KB_RELEVANCE_STOP_TERMS
+        and len(term) >= 2
+        and not _is_junk_relevance_term(term)
     ]
     if not terms:
         return {"claims": [], "matched_terms": []}
 
     ranked: list[tuple[float, dict[str, Any], list[str]]] = []
     for claim in claims:
-        text = _claim_search_text_from_serialized(claim)
-        matched_terms = [term for term in terms if term in text]
-        if not matched_terms:
+        anchor_text = _claim_anchor_text_from_serialized(claim)
+        anchor_matched = [term for term in terms if term in anchor_text]
+        if not anchor_matched:
             continue
+        body_text = _claim_search_text_from_serialized(claim)
+        body_matched = [term for term in terms if term in body_text]
         confidence = claim.get("confidence")
         confidence_bonus = float(confidence or 0.0) * 0.05
-        score = len(matched_terms) + confidence_bonus
-        ranked.append((score, claim, matched_terms))
+        score = len(anchor_matched) * 2 + len(body_matched) + confidence_bonus
+        ranked.append((score, claim, anchor_matched))
 
     ranked.sort(key=lambda item: (-item[0], str(item[1].get("doc_id") or "")))
     return {
@@ -2359,6 +2422,25 @@ def _filter_claims_for_message_relevance(
             term for _score, _claim, matched in ranked for term in matched
         ),
     }
+
+
+def _claim_anchor_text_from_serialized(claim: dict[str, Any]) -> str:
+    """主题锚点字段:决定 claim 是否与本轮消息相关的准入文本。
+
+    刻意不含 summary/body/sources/metadata —— 那些是内容,不是身份。
+    """
+    fields: list[str] = [
+        str(claim.get("doc_id") or ""),
+        str(claim.get("title") or ""),
+        str(claim.get("entity_type") or ""),
+        str(claim.get("entity_id") or ""),
+    ]
+    conditions = claim.get("matched_conditions") or []
+    if isinstance(conditions, list):
+        fields.extend(str(item) for item in conditions)
+    else:
+        fields.append(str(conditions))
+    return " ".join(fields).lower()
 
 
 def _claim_search_text_from_serialized(claim: dict[str, Any]) -> str:
