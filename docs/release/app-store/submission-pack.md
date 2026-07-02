@@ -85,6 +85,10 @@ The adapted review checklist is `docs/release/app-store/adapted-review-checklist
 Immediately before an App Store submission, run the stricter final gate. It must fail if demo credentials are still placeholders, App Store Connect credentials are unavailable, or no App Store-ready screenshot set is provided:
 
 ```bash
+export APP_STORE_REVIEW_DEMO_ACCOUNT="..."
+export APP_STORE_REVIEW_DEMO_PASSWORD="..."
+export APP_STORE_REVIEW_CONTACT_PHONE="+8613800138000"
+
 python3 scripts/check_app_store_release_pack.py \
   --final-submit \
   --screenshot-dir design/screenshots/app-store/<build-id>-ready
@@ -153,4 +157,4 @@ Do not submit until:
       `APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/<build-id>-ready python3 scripts/check_app_store_release_pack.py`.
 - [ ] Privacy policy URL is publicly reachable: `curl -fsSI https://health.executor.life/privacy`.
 - [ ] A production IPA or EAS build is visible in App Store Connect.
-- [ ] A human has replaced the demo account placeholder in Review Notes.
+- [ ] The release machine has `APP_STORE_REVIEW_DEMO_ACCOUNT`, `APP_STORE_REVIEW_DEMO_PASSWORD`, and `APP_STORE_REVIEW_CONTACT_PHONE`, or a human has filled the equivalent Review Detail fields in App Store Connect.

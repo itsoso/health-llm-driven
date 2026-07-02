@@ -6,7 +6,11 @@ import sys
 import zlib
 from pathlib import Path
 
-from scripts.check_app_store_release_pack import validate_app_review_redlines, validate_release_narrative
+from scripts.check_app_store_release_pack import (
+    validate_app_review_redlines,
+    validate_demo_review_credentials,
+    validate_release_narrative,
+)
 
 REQUIRED_SCREENSHOT_NAMES = [
     "00-launch",
@@ -118,6 +122,33 @@ def test_app_store_release_pack_final_submit_fails_loud_without_human_materials(
     assert "final submit requires APP_STORE_SCREENSHOT_DIR or --screenshot-dir" in result.stderr
     assert "final submit requires replacing demo account placeholders" in result.stderr
     assert "missing App Store Connect credentials" in result.stderr
+
+
+def test_demo_review_credentials_accept_env_for_final_submit_with_placeholder_notes():
+    review_notes = (
+        "- Demo account: `[NEEDS APP STORE REVIEW DEMO ACCOUNT]`\n"
+        "- Password: `[NEEDS APP STORE REVIEW DEMO PASSWORD]`\n"
+    )
+
+    failures = validate_demo_review_credentials(
+        review_notes,
+        final_submit=True,
+        env={
+            "APP_STORE_REVIEW_DEMO_ACCOUNT": "app-review@example.com",
+            "APP_STORE_REVIEW_DEMO_PASSWORD": "review-password",
+            "APP_STORE_REVIEW_CONTACT_PHONE": "+8613800138000",
+        },
+    )
+
+    assert failures == []
+
+
+def test_demo_review_credentials_rejects_checked_in_secret_outside_final_submit():
+    review_notes = "- Demo account: `app-review@example.com`\n- Password: `review-password`\n"
+
+    failures = validate_demo_review_credentials(review_notes, final_submit=False, env={})
+
+    assert "review notes must keep explicit demo-account placeholders" in "\n".join(failures)
 
 
 def test_release_narrative_rejects_stale_public_positioning():

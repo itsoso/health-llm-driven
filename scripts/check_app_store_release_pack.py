@@ -65,6 +65,12 @@ DEMO_PLACEHOLDERS = [
     "[NEEDS APP STORE REVIEW DEMO ACCOUNT]",
     "[NEEDS APP STORE REVIEW DEMO PASSWORD]",
 ]
+DEMO_ENV_KEYS = [
+    "APP_STORE_REVIEW_DEMO_ACCOUNT",
+    "APP_STORE_REVIEW_DEMO_PASSWORD",
+]
+REVIEW_CONTACT_PHONE_ENV = "APP_STORE_REVIEW_CONTACT_PHONE"
+REVIEW_CONTACT_PHONE_RE = re.compile(r"^\+[1-9]\d{1,14}(?:[\s-]\d+)*$")
 CURRENT_BOTTOM_NAV_TEXT = "今日 / 阿衡 / 记录 / 我"
 CURRENT_POSITIONING_TERM = "健康参谋"
 STALE_USER_VISIBLE_RELEASE_TERMS = [
@@ -213,6 +219,40 @@ def validate_app_review_redlines(source_texts: Mapping[str, str]) -> list[str]:
     return failures
 
 
+def validate_demo_review_credentials(
+    review_notes: str,
+    *,
+    final_submit: bool,
+    env: Mapping[str, str] = os.environ,
+) -> list[str]:
+    failures: list[str] = []
+    remaining_placeholders = [placeholder for placeholder in DEMO_PLACEHOLDERS if placeholder in review_notes]
+    missing_placeholders = [placeholder for placeholder in DEMO_PLACEHOLDERS if placeholder not in review_notes]
+    missing_env = [key for key in DEMO_ENV_KEYS if not env.get(key, "").strip()]
+
+    if final_submit:
+        if remaining_placeholders and missing_env:
+            failures.append(
+                "final submit requires replacing demo account placeholders in review notes "
+                "or setting APP_STORE_REVIEW_DEMO_ACCOUNT and APP_STORE_REVIEW_DEMO_PASSWORD: "
+                + ", ".join(remaining_placeholders)
+            )
+        contact_phone = env.get(REVIEW_CONTACT_PHONE_ENV, "").strip()
+        if not contact_phone:
+            failures.append("final submit requires APP_STORE_REVIEW_CONTACT_PHONE for App Store Review contact")
+        elif not REVIEW_CONTACT_PHONE_RE.match(contact_phone):
+            failures.append(
+                "APP_STORE_REVIEW_CONTACT_PHONE must use international format, for example +8613800138000"
+            )
+    elif missing_placeholders:
+        failures.append(
+            "review notes must keep explicit demo-account placeholders until final submit; "
+            "use APP_STORE_REVIEW_DEMO_ACCOUNT and APP_STORE_REVIEW_DEMO_PASSWORD on the release machine"
+        )
+
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -310,15 +350,12 @@ def main() -> int:
         if url not in submission and url not in read_text("docs/plans/2026-06-28-app-store-mvp-release-batch2-plan.md"):
             failures.append(f"missing official reference URL: {url}")
 
-    if args.final_submit:
-        remaining_placeholders = [placeholder for placeholder in DEMO_PLACEHOLDERS if placeholder in review_notes]
-        if remaining_placeholders:
-            failures.append(
-                "final submit requires replacing demo account placeholders in review notes: "
-                + ", ".join(remaining_placeholders)
-            )
-    elif DEMO_PLACEHOLDERS[0] not in review_notes:
-        failures.append("review notes must keep an explicit demo-account placeholder until owner provides credentials")
+    failures.extend(
+        validate_demo_review_credentials(
+            review_notes,
+            final_submit=args.final_submit,
+        )
+    )
 
     ios_preflight_args = [
         sys.executable,
