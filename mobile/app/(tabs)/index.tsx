@@ -29,6 +29,7 @@ import { getSafetyReport, type SafetyAlert } from '../../services/safety';
 import api from '../../services/api';
 import { spacing } from '../../constants/theme';
 import { useFloatingTabBarHeight } from '../../hooks/useFloatingTabBarHeight';
+import { useToast } from '../../hooks/useToast';
 import { useDashboardData, useLatestGarmin } from '../../hooks/useDashboardData';
 import { useMedicationReminders } from '../../hooks/useMedicationReminders';
 import { useBehaviorLoopReminders } from '../../hooks/useBehaviorLoopReminders';
@@ -68,9 +69,13 @@ import { useHomeColdStartTrace } from '../../services/perfTrace';
 import {
   getTodayDynamicView,
   hasRenderableTodayDynamicView,
+  type TodayDynamicTrigger,
   type TodayDynamicView,
 } from '../../services/todayDynamicView';
-import { dispatchChatCardAction } from '../../services/chatCardActions';
+import {
+  dispatchChatCardAction,
+  type ChatCardActionResult,
+} from '../../services/chatCardActions';
 import {
   buildDailyArtifactAskRoute,
   buildDailyArtifactBasisRoute,
@@ -101,6 +106,7 @@ interface TwinSnapshot {
 export default function TodayScreen() {
   const router = useRouter();
   const qc = useQueryClient();
+  const toast = useToast();
   const revaFontsLoaded = useRevaFonts();
   // 悬浮胶囊 tab bar 是 absolute,不占布局流;底部内容须按其真实高度留白,
   // 否则最后一块快捷动作会被 tab bar 半遮盖(硬编码 110 在大安全区机型不够)。
@@ -108,6 +114,7 @@ export default function TodayScreen() {
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [artifactCompleting, setArtifactCompleting] = useState(false);
   const [artifactSkipping, setArtifactSkipping] = useState(false);
+  const [todayDynamicTrigger, setTodayDynamicTrigger] = useState<TodayDynamicTrigger>('open');
   const artifactImpressionKeyRef = useRef<string | null>(null);
 
   const safetyQuery = useQuery({
@@ -138,9 +145,9 @@ export default function TodayScreen() {
   });
 
   const todayDynamicViewQuery = useQuery({
-    queryKey: ['today-dynamic-view', 'mobile.today'],
+    queryKey: ['today-dynamic-view', 'mobile.today', todayDynamicTrigger],
     queryFn: () => getTodayDynamicView({
-      trigger: 'open',
+      trigger: todayDynamicTrigger,
       clientContext: todayDynamicClientContext(),
     }),
     staleTime: 30 * 1000,
@@ -184,6 +191,7 @@ export default function TodayScreen() {
 
   const onRefresh = useCallback(async () => {
     setManualRefreshing(true);
+    setTodayDynamicTrigger('pull_refresh');
     try {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['safety', 'me'] }),
@@ -276,11 +284,11 @@ export default function TodayScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     completeNow.mutate(ref, {
       onSuccess: () => {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        emitNotificationFeedback('success');
         setHeroCompleting(false);
       },
       onError: () => {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        emitNotificationFeedback('error');
         Alert.alert('完成失败', '没有保存成功,请稍后重试。');
         setHeroCompleting(false);
       },
@@ -328,13 +336,14 @@ export default function TodayScreen() {
           topActionId: action.id,
           deliveredContext: dailyArtifactContext(artifact, 'home', { action: 'complete' }),
         }).catch(() => {});
+        setTodayDynamicTrigger('action_completed');
         qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] });
         qc.invalidateQueries({ queryKey: ['today-dynamic-view', 'mobile.today'] });
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        emitNotificationFeedback('success');
         setArtifactCompleting(false);
       },
       onError: () => {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        emitNotificationFeedback('error');
         Alert.alert('完成失败', '没有保存成功,请稍后重试。');
         setArtifactCompleting(false);
       },
@@ -356,6 +365,7 @@ export default function TodayScreen() {
       skipReason: reason,
       deliveredContext: dailyArtifactContext(artifact, 'home', { action: 'skip' }),
     }).then(() => {
+      setTodayDynamicTrigger('action_completed');
       qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] });
       qc.invalidateQueries({ queryKey: ['today-dynamic-view', 'mobile.today'] });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -391,21 +401,32 @@ export default function TodayScreen() {
   ) => {
     try {
       const result = await dispatchChatCardAction(action);
+      setTodayDynamicTrigger('action_completed');
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['today-dynamic-view', 'mobile.today'] }),
+        qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] }),
+        qc.invalidateQueries({ queryKey: ['timeline', 'today'] }),
+        qc.invalidateQueries({ queryKey: ['agenda', 'today'] }),
+        qc.invalidateQueries({ queryKey: ['write-intents'] }),
+        qc.invalidateQueries({ queryKey: ['diet'] }),
+        qc.invalidateQueries({ queryKey: ['dashboard'] }),
+      ]);
+      emitNotificationFeedback('success');
+      toast.show(
+        dynamicCardActionSuccessMessage(action, result),
+        dynamicCardActionSuccessType(action, result),
+      );
       if (result.route) {
         router.push(result.route as any);
-        return;
       }
-      qc.invalidateQueries({ queryKey: ['today-dynamic-view', 'mobile.today'] });
-      qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] });
-      qc.invalidateQueries({ queryKey: ['timeline', 'today'] });
-      qc.invalidateQueries({ queryKey: ['agenda', 'today'] });
     } catch (error) {
+      emitNotificationFeedback('error');
       Alert.alert('操作失败', descriptor.type === 'runtime_agenda'
         ? '暂时无法打开健康编排,请稍后重试。'
         : '没有执行成功,请稍后重试。');
       throw error;
     }
-  }, [qc, router]);
+  }, [qc, router, toast]);
 
   // ── 身体信号:只给首页当前行动验证所需的紧凑指标,完整历史留在数据页。 ──
   const bodyStatsValues = {
@@ -577,6 +598,43 @@ function todayDynamicClientContext(): Record<string, unknown> {
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null,
     client_capabilities: ['daily_artifact', 'runtime_agenda'],
   };
+}
+
+function dynamicCardActionSuccessMessage(
+  action: ChatCardActionDescriptor,
+  result: ChatCardActionResult,
+): string {
+  if (result.route || action.action === 'route.open') return '已打开';
+  if (action.action === 'diet_record.create') {
+    if (result.nutrition_status === 'estimated') return '已记录饮食，营养已估算';
+    if (result.nutrition_status === 'estimate_failed') return '已记录饮食，营养估算稍后补充';
+    return '已记录饮食';
+  }
+  if (result.status === 'dismissed' || action.action === 'write_intent.dismiss') return '已忽略';
+  return '已执行';
+}
+
+function dynamicCardActionSuccessType(
+  action: ChatCardActionDescriptor,
+  result: ChatCardActionResult,
+): 'info' | 'error' | 'success' {
+  if (action.action === 'diet_record.create' && result.nutrition_status === 'estimate_failed') {
+    return 'info';
+  }
+  return 'success';
+}
+
+function emitNotificationFeedback(type: 'success' | 'error') {
+  const haptics = Haptics as typeof Haptics & {
+    notificationAsync?: (feedbackType: unknown) => Promise<void>;
+    NotificationFeedbackType?: { Success?: unknown; Error?: unknown };
+  };
+  const feedbackType = type === 'success'
+    ? haptics.NotificationFeedbackType?.Success
+    : haptics.NotificationFeedbackType?.Error;
+  if (typeof haptics.notificationAsync === 'function' && feedbackType) {
+    haptics.notificationAsync(feedbackType).catch(() => {});
+  }
 }
 
 function extractDailyArtifactFromDynamicView(view: TodayDynamicView | null | undefined): DailyArtifact | null {

@@ -144,6 +144,18 @@ describe('todayDynamicView service', () => {
                   requires_manual_confirm: true,
                   payload: { source: { object_type: 'health_protocol', object_id: 7 } },
                 },
+                {
+                  label: '确认早餐记录',
+                  action: 'diet_record.create',
+                  endpoint: '/diet/records',
+                  requires_manual_confirm: true,
+                  payload: {
+                    record: {
+                      food_items: '鸡蛋 2 个',
+                      meal_type: 'breakfast',
+                    },
+                  },
+                },
               ],
             } as any,
           ],
@@ -154,6 +166,7 @@ describe('todayDynamicView service', () => {
     expect(view.sections[0].cards[0].actions).toEqual([
       expect.objectContaining({ action: 'route.open', payload: { route: '/(tabs)/chat?prompt=hrv' } }),
       expect.objectContaining({ action: 'agenda.complete', requires_manual_confirm: true }),
+      expect.objectContaining({ action: 'diet_record.create', requires_manual_confirm: true }),
     ]);
   });
 });
