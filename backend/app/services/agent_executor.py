@@ -4425,11 +4425,13 @@ class AgentExecutor:
             "spo2": "/spo2/me/latest-night",
             "spo2_sleep_correlation": f"/spo2/me/sleep-correlation?days={days}",
             "body_battery": f"/garmin-analysis/me/body-battery?days={days}",
-            "stress": f"/garmin-analysis/me/stress?days={days}",
-            "weight": "/weight/records/me/recent?limit=10",
+            # stress 没有独立分析端点; garmin 日行含 stress_level, 按天数取行。
+            "stress": f"/daily-health/garmin/me?limit={days}",
+            "weight": "/weight/records/me?limit=10",
             "blood_pressure": "/blood-pressure/records/me?limit=10",
             "supplements": f"/supplements/me/stats?days={days}",
-            "water": "/water/records/me/today",
+            # water 与 diet 同型: 只有 /me/date/{record_date}, 无 /me/today。
+            "water": f"/water/records/me/date/{today}",
             # diet 没有 /me/today 端点, 只有 /me/date/{record_date}; 用 today() 拼路径.
             "diet": f"/diet/records/me/date/{today}",
             # exercise 既包含 ExerciseRecord (手动录入的锻炼如俯卧撑/瑜伽),
@@ -4440,7 +4442,7 @@ class AgentExecutor:
             # 默认用 workout (真实运动数据); 用户说"我做了 20 个俯卧撑"那种才走 exercise
             "exercise": f"/workout/me?days={days}",
             "workout": f"/workout/me?days={days}",
-            "manual_exercise": f"/exercise/me?days={days}",
+            "manual_exercise": f"/daily-health/exercise/me?days={days}",
             # medical_exam 维度在上面已短路到 MedicalIndicator 表, 不经过此 map.
             "genetic": "/genetic/variants/me",
             "genetic_cognitive": "/genetic/profile/me/cognitive",
