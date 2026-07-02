@@ -155,6 +155,29 @@ P0 App Store 当前 UI ready 截图已推进:
 - `APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/batch5-ready-20260630 python3 scripts/check_app_store_release_pack.py` 已通过。
 - `--final-submit` 现在只剩 demo account/password 和 ASC credentials 阻塞。
 
+## 第十五批实现切片
+
+P1 Chat 快速记录后的质量反馈已发版:
+
+- Backend/Web 已通过 `./deploy.sh -a -y` 部署到生产,线上 SHA 为 `b4a93c3be4fe51280b9ebfb481b61cf0d5107582`,健康分 `60/60 PASS`,skills manifest `22 = 22`。
+- Mobile 已发布 production OTA,最终 update group 为 `d50e6084-32a0-4172-89b3-b2a8670b5cae`,iOS update 为 `019f20c4-d7c3-7aa1-b666-68b19481287a`,runtime `1.3.1`,commit `409842670f329d34ca5963c15cb7f40a2e33f6db`。
+- Mac 已重新打包安装并打开 `/Applications/阿衡.app`,本机进程验证为 `HealthAgentMac`。
+- 生产 smoke 覆盖 post-record quality:快速记录后返回 `record_quality` 卡,包含记录确认、质量解读和下一步建议,不把记录成功当作最终体验终点。
+- Dossier `docs/dossiers/2026-07-01-chat-post-record-quality.md` 已回写到 `shipped`。
+
+## 第十六批实现切片
+
+P2 HealthKit / Watch 本周验收已复核:
+
+- HealthKit 前台自动同步已挂到 `mobile/app/_layout.tsx`:登录且未锁屏时启动,App 回前台后 best-effort 同步近 2 天;未授权、服务端 consent 缺失、冷却中、并发中或失败均不阻断主 UI。
+- 服务端 `/devices/healthkit/import` 已有分类型 consent gate、撤权即时拒收、每条记录 provenance 和 source 写入,避免只依赖客户端 HealthKit 权限。
+- Watch summary 已消费 rolling runtime,保留 top action、due items、freshness、runtime context、手动完成/跳过/稍后边界;短答仍走安全门,不做腕上长诊断对话。
+- 本轮验证:
+  - `cd mobile && ./node_modules/.bin/jest --runTestsByPath services/__tests__/healthKitForegroundSync.test.ts hooks/__tests__/useHealthKitForegroundSync.test.ts plugins/__tests__/withWatchApp.test.js --runInBand` -> 3 suites / 14 tests passed。
+  - `DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai backend/venv/bin/python -m pytest backend/tests/test_healthkit_adapter.py backend/tests/test_watch_summary.py backend/tests/test_watch_actions.py backend/tests/test_watch_ask.py backend/tests/test_watch_voice_record_failclosed.py -q --no-cov` -> 85 passed。
+  - `swift test --package-path apps/watch` -> 56 passed。
+- 剩余不是代码闸,而是真机/EAS/签名闸:Watch 上设备、HealthKit background delivery entitlement 和 AppIntent 真机验证仍依赖一次 production native build / TestFlight 或本地签名包,以及对应 Apple/EAS 凭据。
+
 ## 本周不做
 
 - 不把 App Store 发布伪装成已完成:缺 demo account、ASC credentials、人审截图时必须停在 pending。
@@ -165,6 +188,6 @@ P0 App Store 当前 UI ready 截图已推进:
 ## 后续顺序
 
 1. 补 Review Notes demo account/password 和 ASC credentials,再跑 `--final-submit`。
-2. 继续 Daily Artifact 主屏真机点击动线截图。
+2. 继续 Daily Artifact 主屏真机点击动线截图,重点验证完成/跳过/问阿衡/查看依据/去执行的承接页。
 3. 继续 Chat card action 成功后的局部刷新/跳转反馈和记录页联动。
-4. 视签名条件推进 Watch 真机和二维码发版。
+4. 凭证到位后推进 Watch 真机和二维码/ TestFlight 原生包发版;否则仅保持 Swift/Core 和后端合同绿灯。
