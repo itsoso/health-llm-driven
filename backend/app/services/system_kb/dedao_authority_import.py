@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from hashlib import sha256
 import json
 from typing import Any, Iterable
 from urllib.error import HTTPError, URLError
@@ -96,6 +97,7 @@ class DedaoAuthorityPullReport:
     http_status: int | None
     import_report: DedaoAuthorityImportReport
     error: str = ""
+    source_sha256: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -103,6 +105,7 @@ class DedaoAuthorityPullReport:
             "source_url": self.source_url,
             "http_status": self.http_status,
             "error": self.error,
+            "source_sha256": self.source_sha256,
             "import_report": self.import_report.to_dict(),
         }
 
@@ -129,6 +132,7 @@ class DedaoAuthorityPullGate:
                 "source_url": self.pull_report.source_url,
                 "http_status": self.pull_report.http_status,
                 "error": self.pull_report.error,
+                "source_sha256": self.pull_report.source_sha256,
             },
             "counts": {
                 "total": import_report.total,
@@ -289,6 +293,7 @@ def dry_run_import_dedao_authority_pack_from_kbase(
         source_url=source_url,
         http_status=http_status,
         import_report=import_report,
+        source_sha256=sha256(body.encode("utf-8")).hexdigest(),
     )
 
 

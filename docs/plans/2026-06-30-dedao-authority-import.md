@@ -14,7 +14,7 @@ Use `dry_run_import_dedao_authority_pack_from_kbase(base_url, token)` or the CLI
 
 Use `evaluate_dedao_authority_pull_gate(report)` when the caller needs an unattended pass/warn/fail decision. The gate is still read-only: it wraps the pull report, counts findings, and emits redacted issue refs without raw Dedao record payloads.
 
-The redacted gate artifact declares `artifact_schema = dedao_authority_pull_gate_v1` and `generated_at` so downstream jobs can validate the JSON contract before consuming it.
+The redacted gate artifact declares `artifact_schema = dedao_authority_pull_gate_v1`, `generated_at`, and `pull.source_sha256` so downstream jobs can validate the JSON contract and skip unchanged packs before consuming it.
 
 ## Safety Rules
 

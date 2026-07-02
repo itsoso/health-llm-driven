@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
 import json
 from urllib.error import HTTPError
 
@@ -149,12 +150,13 @@ def test_dry_run_blocks_blocked_review_status():
 
 def test_pull_report_fetches_jsonl_with_bearer_and_sanitizes_token():
     seen = {}
+    body = _line()
 
     def opener(request, *, timeout):
         seen["url"] = request.full_url
         seen["authorization"] = request.headers.get("Authorization")
         seen["timeout"] = timeout
-        return _FakeHTTPResponse(_line())
+        return _FakeHTTPResponse(body)
 
     report = dry_run_import_dedao_authority_pack_from_kbase(
         "https://kbase.example/",
@@ -166,6 +168,7 @@ def test_pull_report_fetches_jsonl_with_bearer_and_sanitizes_token():
 
     assert report.status == "ok"
     assert report.http_status == 200
+    assert report.source_sha256 == sha256(body.encode("utf-8")).hexdigest()
     assert report.source_url == "https://kbase.example/api/projects/health/authority-pack/export?format=jsonl&limit=7"
     assert seen == {
         "url": report.source_url,
@@ -343,3 +346,23 @@ def test_pull_gate_redacted_artifact_has_schema_and_generation_time():
 
     assert redacted["artifact_schema"] == "dedao_authority_pull_gate_v1"
     assert redacted["generated_at"] == "2026-07-02T00:00:00Z"
+
+
+def test_pull_gate_redacted_artifact_includes_source_hash_without_raw_payload():
+    raw_text = "raw source text should not be copied into gate artifact"
+    body = _line(summary=raw_text)
+
+    def opener(request, *, timeout):
+        return _FakeHTTPResponse(body)
+
+    report = dry_run_import_dedao_authority_pack_from_kbase(
+        "https://kbase.example",
+        "secret-token",
+        opener=opener,
+    )
+
+    gate = evaluate_dedao_authority_pull_gate(report)
+    serialized = json.dumps(gate.to_redacted_dict(generated_at="2026-07-02T00:00:00Z"), ensure_ascii=False)
+
+    assert sha256(body.encode("utf-8")).hexdigest() in serialized
+    assert raw_text not in serialized
