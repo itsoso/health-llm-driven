@@ -609,7 +609,13 @@ def _streaming_leak_forming(text: str) -> bool:
     candidates = [i for i in (lb, ob) if i != -1]
     if not candidates or min(candidates) > _LEAK_PREAMBLE_MAX_CHARS:
         return False
-    hits = {m.group(1) for m in _QUOTED_ALLOWLIST_KEY_RE.finditer(s[min(candidates):])}
+    start = min(candidates)
+    hits = {m.group(1) for m in _QUOTED_ALLOWLIST_KEY_RE.finditer(s[start:])}
+    # `[{` 数组套对象 = 工具结果列表的签名(没人未围栏手贴这种形态):首个白名单键
+    # 一出现就得停,等凑满 2 个键时前面的 delta 已经漏出去了(流式不可撤回)。
+    # 裸对象 `{...}` 维持 ≥2 键 —— 用户主动贴的 {"calories":500} 不能误伤。
+    if re.match(r"\[\s*\{", s[start:]):
+        return len(hits) >= 1
     return len(hits) >= _TOOL_RESULT_MIN_FIELD_HITS
 
 
@@ -1770,6 +1776,12 @@ def _tool_status_label(func_name: Optional[str]) -> str:
 _RECORD_INTENT_RE = re.compile(
     r"(记录|打卡|新增|录入|保存|吃了|喝了|服药|已服用|已吃|已喝|删除|修改|撤销|更新)"
 )
+# 疑问守卫:"我今天**喝了多少**水"/"**吃了什么**"是查询不是记录 —— record 动词(吃了/喝了)
+# 命中但句子是疑问形态时,绝不能按记录意图走(否则确定性回复对查询回"✅ 已记录",
+# 实测线上截图复现)。守卫只列把陈述翻成疑问的词,"记录喝水500ml"等真记录不受影响。
+_RECORD_INTERROGATIVE_GUARD_RE = re.compile(
+    r"(多少|什么|啥|哪些|哪个|几[个次杯步条克组天分]|有没有|是不是|多不多|够不够|吗|[??])"
+)
 _ADVICE_OR_ANALYSIS_RE = re.compile(
     r"(分析|解读|建议|方案|风险|评估|为什么|怎么|如何|基于|结合|补剂|叶酸|训练|运动|饮食方案|适合"
     r"|复盘|综合|趋势|规划|计划安排|该不该|要不要|值不值|意味着|说明什么)"
@@ -2325,6 +2337,8 @@ class AgentExecutor:
             and not file_base64
             and bool(_RECORD_INTENT_RE.search(message or ""))
             and not bool(_ADVICE_OR_ANALYSIS_RE.search(message or ""))
+            # 疑问句("喝了多少水"/"吃了什么")= 查询,不是记录 —— 见守卫正则注释。
+            and not bool(_RECORD_INTERROGATIVE_GUARD_RE.search(message or ""))
         )
         # 2026-07-02: FAST-MODEL 路由 — 简单记录/查询回合走最快的可靠工具调用模型,
         # 建议/分析/复盘等仍用用户偏好的质量模型 (qwen3.7-plus)。
@@ -2679,7 +2693,20 @@ class AgentExecutor:
                 logger.info(f"LLM response type={type(response).__name__}, is_dict={isinstance(response, dict)}, has_tool_calls={isinstance(response, dict) and bool(response.get('tool_calls'))}, preview={str(response)[:200]}")
 
                 if isinstance(response, dict) and not response.get("tool_calls"):
-                    inline_tool_call = _extract_inline_tool_call(response.get("content") or "", round_tools)
+                    _resp_content = response.get("content") or ""
+                    # 数据完整性硬门:**数组形工具结果回显**(`[{` + 白名单字段键)绝不参与
+                    # inline 工具调用恢复 —— 查询结果 record 形字段会被误认成 health_record
+                    # 写意图,把用户已有记录重复写一遍(测试实测:泄漏回显被恢复成
+                    # health_record ×7)。写意图 payload 是单对象({"record_type":...}),
+                    # 工具结果是数组,形态可区分;只挡数组形,合法弱模型写恢复不受影响。
+                    _is_result_echo = bool(
+                        re.search(r"\[\s*\{", _resp_content)
+                        and _QUOTED_ALLOWLIST_KEY_RE.search(_resp_content)
+                    )
+                    inline_tool_call = (
+                        None if _is_result_echo
+                        else _extract_inline_tool_call(_resp_content, round_tools)
+                    )
                     if inline_tool_call:
                         logger.warning(
                             "[agent_executor] recovered inline tool JSON as tool_call: %s",
@@ -2931,7 +2958,13 @@ class AgentExecutor:
                         "tools": list(_round_tool_names),
                     })
 
-                    if self._prefer_fast_record_model:
+                    # 硬门(诚实不变量):确定性"已记录…"回复只允许在本轮**真的执行过写工具**
+                    # 后出现 —— 只读工具(health_query 等)成功≠写入,谎报"已记录"比慢更糟。
+                    # 非写回合 fall through 到 continue,让下一轮 LLM 用工具结果作答。
+                    _round_executed_write_tool = any(
+                        t in ("health_record", "health_manage") for t in _round_tool_names
+                    )
+                    if self._prefer_fast_record_model and _round_executed_write_tool:
                         combined_post_record_quality = combine_post_record_quality_responses(post_record_qualities)
                         final_text = (
                             str(combined_post_record_quality.get("reply") or "").strip()
@@ -2980,7 +3013,20 @@ class AgentExecutor:
                     # 回显(用户截图:记录后正文是 {"id":231,...} / {"record_date":...})。
                     # 整条是裸 JSON 且本轮确有工具结果 → 用工具结果合成"已记录…",绝不裸露。
                     if _looks_like_bare_tool_json(final_text):
-                        synthesized = _fast_record_reply_from_tool_results(messages)
+                        # 按本轮实际执行过的工具选兜底口径:有写工具 → "已记录…";
+                        # 只读回合 → 查询味自然语言(绝不能对查询谎报"✅ 已记录")。
+                        _turn_had_write_tool = any(
+                            t in ("health_record", "health_manage") for t in (tools_used or [])
+                        )
+                        if _turn_had_write_tool:
+                            synthesized = _fast_record_reply_from_tool_results(messages)
+                        else:
+                            # 查询回合:绝不谎报"已记录"。工具结果无现成人话字段时给
+                            # 非空中性兜底 —— 空串会触发空回复重试链,弱模型每轮重放
+                            # 同样的裸 JSON,越试漏得越多(测试实测)。
+                            synthesized = _natural_language_from_tool_results(messages) or (
+                                "已查到相关数据,但这轮没能整理成回答;请再问一次或换个问法。"
+                            )
                         if synthesized.strip():
                             final_text = synthesized
                             streamed_to_client = False
@@ -2992,7 +3038,12 @@ class AgentExecutor:
                     # 模型用自然语言重答。写回 final_text 保证 message.meta / reload 也是干净的。
                     elif _leaks_tool_result_json(final_text):
                         streamed_to_client = False
-                        final_text = _natural_language_from_tool_results(messages)
+                        # 非空兜底:空串会走空回复重试链,弱模型每轮重放同样的泄漏,
+                        # 越试漏得越多(测试实测:前言 ×7 + 最终不可用)。宁可一句
+                        # 中性话术收尾,也不给重试风暴机会。
+                        final_text = _natural_language_from_tool_results(messages) or (
+                            "已查到相关数据,但这轮没能整理成回答;请再问一次或换个问法。"
+                        )
                     if not final_text.strip():
                         # 空回复 → 走非流式重试链 (这些是新生成文本,需要 emit)。
                         streamed_to_client = False
