@@ -88,6 +88,12 @@ class ReconciliationDecisionRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
 
 
+class ReconciliationAutoMergeRequest(BaseModel):
+    # 空 = 什么都不自动(ships DISABLED);admin 显式传低危 entity_type 才对其 entity_align 自动合。
+    enabled_entity_types: list[str] = Field(default_factory=list)
+    limit: int = Field(default=200, ge=1, le=1000)
+
+
 @router.get("/entity/{entity_type}/{entity_id}", summary="获取系统知识库实体与关联 claim")
 def get_knowledge_entity(
     entity_type: str,
@@ -364,6 +370,65 @@ def unalign_reconciliation_candidate(
         return unalign_candidate(db, candidate_id, actor=f"admin:{admin_user.id}")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@admin_router.post(
+    "/reconciliation/judge",
+    summary="对 open 候选跑 LLM judge(Phase B P5;advisory,写 relation_tag/score,不自动合)",
+)
+def run_reconciliation_judge(
+    limit: int = Query(200, ge=1, le=1000),
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    # judge-only:enabled_entity_types 空 → 只分类不自动合并
+    from app.services.kb_reconciliation_judge import run_judge_and_auto
+
+    result = run_judge_and_auto(db, actor=f"admin:{admin_user.id}", enabled_entity_types=frozenset(), limit=limit)
+    _record_audit(db, doc_id=None, op="reconciliation_judge", actor=f"admin:{admin_user.id}",
+                  diff={"judged": result["judged"]})
+    return result
+
+
+@admin_router.post(
+    "/reconciliation/auto_merge",
+    summary=("P5 无人自动合(**默认 DISABLED**:只对显式 enabled_entity_types 的 entity_align 跑)。"
+             "⚠️ 运营纪律:P6 影子审计 + 速率熔断上线前,enabled_entity_types **必须留空**"
+             "(§10:τ=0.95 会放过部分近似,无运行时后备不得开任何 type 的 auto)。"),
+)
+def run_reconciliation_auto_merge(
+    body: "ReconciliationAutoMergeRequest",
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    # 显式传入 enabled_entity_types 才自动;空集 = 什么都不自动(ships DISABLED)。
+    from app.services.kb_reconciliation_judge import run_judge_and_auto
+
+    result = run_judge_and_auto(
+        db,
+        actor=f"admin:{admin_user.id}",
+        enabled_entity_types=frozenset(body.enabled_entity_types or ()),
+        limit=body.limit,
+    )
+    _record_audit(db, doc_id=None, op="reconciliation_auto_merge", actor=f"admin:{admin_user.id}",
+                  diff={"auto_merged": result["auto_merged"], "enabled": result["enabled_entity_types"]})
+    return result
+
+
+@admin_router.post(
+    "/reconciliation/eval",
+    summary="P5 判重/auto eval(Phase B;测 precision + auto FP,不改 serving)",
+)
+def run_reconciliation_eval(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    from app.services.kb_reconciliation_eval import run_dedup_judge_eval
+
+    result = run_dedup_judge_eval(db)
+    _record_audit(db, doc_id=None, op="reconciliation_eval", actor=f"admin:{admin_user.id}",
+                  diff={"n": result["n"], "auto_approve_fp": result["auto_approve_fp"]})
+    return result
 
 
 @admin_router.get("/eval_report", summary="系统知识库 eval case 运行报告")

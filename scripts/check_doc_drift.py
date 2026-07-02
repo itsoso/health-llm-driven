@@ -52,6 +52,8 @@ EXPECTED: dict = {
     },
     "specialists_count": 13,
     "twin_partitions": 15,
+    # KB 对账 auto-approve 阈(founder ratified §10)。运行时真闸(C8);此处钉死防悄悄调低无 CI 拦。
+    "kb_auto_approve_tau": "0.95",
 }
 
 
@@ -338,6 +340,18 @@ def main() -> int:
     # web pages 在 CLAUDE.md / ARCHITECTURE.md 里写法灵活, 放宽到存在即可
     # 如果 doc 里确实写了 "X 路由" / "X 页面" 就要对齐
     # (避免误报: 若 doc 里 web 数字没提, 不算 fail)
+
+    # 4b. KB 对账 auto-approve τ 钉死 (founder ratified §10)。悄悄调低 τ 无 CI 拦 = 安全护栏缺口。
+    judge_src = BACKEND / "app" / "services" / "kb_reconciliation_judge.py"
+    if judge_src.exists():
+        m = re.search(r"_AUTO_APPROVE_TAU\s*=\s*([0-9.]+)", judge_src.read_text(encoding="utf-8"))
+        if not m:
+            failures.append("  kb_auto_approve_tau: 未在 kb_reconciliation_judge.py 找到 _AUTO_APPROVE_TAU")
+        elif m.group(1) != EXPECTED["kb_auto_approve_tau"]:
+            failures.append(
+                f"  kb_auto_approve_tau: 代码 _AUTO_APPROVE_TAU={m.group(1)} != 钉死值 "
+                f"{EXPECTED['kb_auto_approve_tau']}(改 τ 须 founder 批 + 同步 EXPECTED + 设计 §10)"
+            )
 
     # 5. System-map 代码派生事实 (docs/_generated/system-map.json) 与代码一致。
     #    System-map 防漂移核心: 计数/roster 只准从代码生成进无人手改的 JSON, committed 与
