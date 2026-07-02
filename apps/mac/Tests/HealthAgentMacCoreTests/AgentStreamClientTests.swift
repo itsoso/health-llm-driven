@@ -106,6 +106,188 @@ final class AgentStreamClientTests: XCTestCase {
         ])
     }
 
+    func testParserDecodesStatusStageEvents() throws {
+        // 真后端阶段事件:首 token 之前零或多次 status。全字段容错。
+        let payload = """
+        data: {"event":"status","data":{"stage":"vision","detail":null,"round":null}}
+
+        data: {"event":"status","data":{"stage":"thinking","round":1}}
+
+        data: {"event":"status","data":{"stage":"tool","detail":"查询健康数据","round":2}}
+
+        data: {"event":"status","data":{"stage":"synthesis"}}
+
+        data: {"event":"token","data":{"content":"回答"}}
+
+        """
+        let events = try AgentStreamParser.parse(payload)
+        XCTAssertEqual(events, [
+            .status(stage: "vision", detail: nil, round: nil),
+            .status(stage: "thinking", detail: nil, round: 1),
+            .status(stage: "tool", detail: "查询健康数据", round: 2),
+            .status(stage: "synthesis", detail: nil, round: nil),
+            .token("回答")
+        ])
+    }
+
+    func testParserTreatsBlankStatusDetailAsNil() throws {
+        // detail 为空白 → 归一成 nil(不把空串当中文工具名)。
+        let payload = """
+        data: {"event":"status","data":{"stage":"tool","detail":"   "}}
+
+        """
+        let events = try AgentStreamParser.parse(payload)
+        XCTAssertEqual(events, [.status(stage: "tool", detail: nil, round: nil)])
+    }
+
+    func testParserToleratesUnknownStatusStage() throws {
+        // 未知 stage 仍解出 .status(ViewModel 负责兜底到「阿衡正在思考…」)。
+        let payload = """
+        data: {"event":"status","data":{"stage":"future_mystery_stage"}}
+
+        """
+        let events = try AgentStreamParser.parse(payload)
+        XCTAssertEqual(events, [.status(stage: "future_mystery_stage", detail: nil, round: nil)])
+    }
+
+    func testParserIgnoresStatusEventWithoutStage() throws {
+        // stage 缺失 → 事件无意义,像未知事件一样忽略(不产出 .status)。
+        let payload = """
+        data: {"event":"status","data":{"detail":"查询健康数据"}}
+
+        data: {"event":"token","data":{"content":"仍然到达"}}
+
+        """
+        let events = try AgentStreamParser.parse(payload)
+        XCTAssertEqual(events, [.token("仍然到达")])
+    }
+
+    func testParserStillIgnoresUnknownEventTypes() throws {
+        // 回归:未知事件类型继续被忽略(back-compat 未受 status 支持影响)。
+        let payload = """
+        data: {"event":"some_future_event","data":{"foo":"bar"}}
+
+        data: {"event":"token","data":{"content":"正文"}}
+
+        """
+        let events = try AgentStreamParser.parse(payload)
+        XCTAssertEqual(events, [.token("正文")])
+    }
+
+    func testStatusTextMapsEveryStageToExpectedKey() {
+        XCTAssertEqual(AgentChatViewModel.statusText(stage: "vision", detail: nil, round: nil).key, "Recognizing image…")
+
+        XCTAssertEqual(AgentChatViewModel.statusText(stage: "thinking", detail: nil, round: 1).key, "Reva is thinking…")
+        XCTAssertEqual(AgentChatViewModel.statusText(stage: "thinking", detail: nil, round: nil).key, "Reva is thinking…")
+        XCTAssertEqual(AgentChatViewModel.statusText(stage: "thinking", detail: nil, round: 2).key, "Reva is organizing thoughts…")
+
+        let tool = AgentChatViewModel.statusText(stage: "tool", detail: "查询健康数据", round: 2)
+        XCTAssertEqual(tool.key, "Working: %@…")
+        XCTAssertEqual(tool.detail, "查询健康数据")
+        XCTAssertEqual(AgentChatViewModel.statusText(stage: "tool", detail: nil, round: nil).key, "Calling a tool…")
+        XCTAssertNil(AgentChatViewModel.statusText(stage: "tool", detail: nil, round: nil).detail)
+
+        XCTAssertEqual(AgentChatViewModel.statusText(stage: "synthesis", detail: nil, round: nil).key, "Reva is composing a reply…")
+
+        // 未知 stage 兜底
+        XCTAssertEqual(AgentChatViewModel.statusText(stage: "future_mystery_stage", detail: nil, round: nil).key, "Reva is thinking…")
+    }
+
+    func testStatusTextLocalizesToChinese() {
+        // View 用 appText/L10n 解析出的中文文案对齐契约表。
+        XCTAssertEqual(L10n.text("Recognizing image…", language: .zh), "正在识别图片…")
+        XCTAssertEqual(L10n.text("Reva is thinking…", language: .zh), "阿衡正在思考…")
+        XCTAssertEqual(L10n.text("Reva is organizing thoughts…", language: .zh), "正在整理思路…")
+        XCTAssertEqual(L10n.text("Calling a tool…", language: .zh), "正在调用工具…")
+        XCTAssertEqual(L10n.text("Reva is composing a reply…", language: .zh), "正在整理回答…")
+        // tool detail 插值:格式串 + 中文工具名 → 正在<detail>…
+        let template = L10n.text("Working: %@…", language: .zh)
+        XCTAssertEqual(String(format: template, "查询健康数据"), "正在查询健康数据…")
+    }
+
+    @MainActor
+    func testViewModelMapsStatusStagesToLiveStatusAndClearsOnFirstToken() async {
+        let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+            continuation.yield(.start(conversationID: 3))
+            continuation.yield(.status(stage: "thinking", detail: nil, round: 1))
+            continuation.yield(.status(stage: "tool", detail: "查询健康数据", round: 2))
+            continuation.yield(.token("正文开始"))
+            continuation.yield(.done(
+                conversationID: 3, messageID: 4,
+                completionStatus: "complete", model: "m", sourcesUsed: [],
+                toolsUsed: [], elapsedMs: nil, llmRounds: nil
+            ))
+            continuation.finish()
+        }
+        let model = AgentChatViewModel(streamService: StaticAgentStreamService(stream: stream))
+        await model.send("分析")
+
+        // 首 token / done 到达后 live status 已清空 → View 退回时间轮换兜底。
+        XCTAssertNil(model.liveStatusText)
+        XCTAssertNil(model.liveStatusDetail)
+    }
+
+    @MainActor
+    func testViewModelHoldsToolStatusBeforeFirstToken() async throws {
+        // 在 stream 尚未收到首 token / done 之前观测:tool 阶段的 status 已被映射到
+        // liveStatusText(证明 status 立即生效、未被 60ms token 节流吞掉)。用一个
+        // 不自动结束的 stream + 并发 send,yield 两个 status 后在完成前断言。
+        let box = StreamContinuationBox()
+        let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+            box.continuation = continuation
+        }
+        let model = AgentChatViewModel(streamService: StaticAgentStreamService(stream: stream))
+        let sendTask = Task { await model.send("分析") }
+
+        box.continuation?.yield(.start(conversationID: 3))
+        box.continuation?.yield(.status(stage: "thinking", detail: nil, round: 1))
+        box.continuation?.yield(.status(stage: "tool", detail: "查询健康数据", round: 2))
+
+        // 让消费循环处理已排队的事件后再断言(尚未 finish → live status 仍在)。
+        try await pollUntil { model.liveStatusText == "Working: %@…" }
+        XCTAssertEqual(model.liveStatusText, "Working: %@…")
+        XCTAssertEqual(model.liveStatusDetail, "查询健康数据")
+
+        box.continuation?.finish()
+        await sendTask.value
+
+        // stream 结束后清空,退回时间轮换兜底。
+        XCTAssertNil(model.liveStatusText)
+        XCTAssertNil(model.liveStatusDetail)
+    }
+
+    /// Spins the run loop until `condition` holds or a short timeout elapses.
+    /// Used to observe main-actor state a concurrent stream mutates.
+    @MainActor
+    private func pollUntil(
+        timeout: TimeInterval = 2.0,
+        _ condition: @MainActor () -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            if Date() > deadline {
+                XCTFail("condition not met before timeout")
+                return
+            }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+    }
+
+    @MainActor
+    func testViewModelClearsLiveStatusOnStreamError() async {
+        let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+            continuation.yield(.start(conversationID: 3))
+            continuation.yield(.status(stage: "thinking", detail: nil, round: 1))
+            continuation.yield(.error("boom"))
+            continuation.finish()
+        }
+        let model = AgentChatViewModel(streamService: StaticAgentStreamService(stream: stream))
+        await model.send("分析")
+
+        XCTAssertNil(model.liveStatusText)
+        XCTAssertNil(model.liveStatusDetail)
+    }
+
     func testParserToleratesMissingToolsUsed() throws {
         // 后端 tools_used 未上线前缺失 → 解析为空数组(容错,不崩)
         let payload = """
@@ -933,6 +1115,12 @@ private struct StaticAgentStreamService: AgentStreamServicing {
     func stream(message: String, conversationID: Int?, extraContext: String?) -> AsyncThrowingStream<AgentStreamEvent, Error> {
         stream
     }
+}
+
+/// Holds an AsyncThrowingStream continuation so a test can drive events by hand
+/// and observe view-model state mid-stream (before finishing).
+private final class StreamContinuationBox: @unchecked Sendable {
+    var continuation: AsyncThrowingStream<AgentStreamEvent, Error>.Continuation?
 }
 
 private final class CapturingAgentStreamService: AgentStreamServicing, @unchecked Sendable {

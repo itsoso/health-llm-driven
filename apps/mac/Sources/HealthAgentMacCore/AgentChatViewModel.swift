@@ -649,6 +649,14 @@ public final class AgentChatViewModel {
     /// 流式中的中途 perf 提示(perf_pre_llm);done 到达后清空。目前仅暂存,供未来
     /// 「组装中…」实时提示消费——主瀑布图始终从最终 message.perf 渲染。
     public var livePreLLMPerf: MessagePerf?
+    /// 后端真实阶段(`status` 事件)映射出的实时提示 **L10n key**(vision/thinking/
+    /// tool/synthesis)。View 用 `appText` 解析成本地化文案。首 token / done / error
+    /// 到达即清空 → View 退回时间轮换兜底。nil = 没有真实阶段信号(老后端 / 已进入正文流)。
+    /// tool 阶段带 detail 时,key 为格式串 `"Working: %@…"`,由 View 用 `liveStatusDetail`
+    /// 插值(detail 是后端给的中文工具名,必须原样显示)。
+    public var liveStatusText: String?
+    /// tool 阶段的中文工具名(后端 `status.detail`);仅当 `liveStatusText` 是格式串时有值。
+    public var liveStatusDetail: String?
     public var lastPrompt: String?
     public var preparedDraft: String?
     public var contextItems: [AgentContextItem] = []
@@ -824,6 +832,7 @@ public final class AgentChatViewModel {
         streamingTask?.cancel()
         streamingTask = nil
         isStreaming = false
+        clearLiveStatus()
     }
 
     public func send(_ text: String) async {
@@ -834,6 +843,7 @@ public final class AgentChatViewModel {
 
         errorMessage = nil
         toolActivities = []
+        clearLiveStatus()
         isStreaming = true
         runState = .preparing
         lastPrompt = message
@@ -874,8 +884,19 @@ public final class AgentChatViewModel {
                 switch event {
                 case .start(let id):
                     conversationID = id ?? conversationID
+                case .status(let stage, let detail, let round):
+                    // Real backend stage hint. Status events are rare (a handful
+                    // before the first token) — apply immediately, bypassing the
+                    // 60ms token flush throttle (that throttle only guards token
+                    // repaints; status is not batched).
+                    let mapped = Self.statusText(stage: stage, detail: detail, round: round)
+                    liveStatusText = mapped.key
+                    liveStatusDetail = mapped.detail
                 case .token(let content):
                     runState = .streaming
+                    // First real token → drop the live status line; the transcript
+                    // now streams actual content and ThinkingStatusLine is torn down.
+                    clearLiveStatus()
                     guard messages.contains(where: { $0.id == assistantID }) else {
                         isStreaming = false
                         return
@@ -933,19 +954,23 @@ public final class AgentChatViewModel {
                         }
                     }
                     livePreLLMPerf = nil
+                    clearLiveStatus()
                     runState = .completed
                 case .error(let message):
                     errorMessage = message
+                    clearLiveStatus()
                 }
             }
         } catch is CancellationError {
             // View reload / new request cancelled this stream — not a real failure.
             flushPendingTokens()
+            clearLiveStatus()
             isStreaming = false
             return
         } catch let urlError as URLError where urlError.code == .cancelled {
             // URLSession's -999 (NSURLErrorCancelled) — same benign case.
             flushPendingTokens()
+            clearLiveStatus()
             isStreaming = false
             return
         } catch {
@@ -974,6 +999,7 @@ public final class AgentChatViewModel {
             attachments = []
         }
         persistCurrentConversation()
+        clearLiveStatus()
         isStreaming = false
     }
 
@@ -992,6 +1018,7 @@ public final class AgentChatViewModel {
         labReportImports = []
         contextItems = []
         preparedDraft = nil
+        clearLiveStatus()
     }
 
     /// Refreshes the history list from the backend (`GET /agent/conversations`),
@@ -1374,6 +1401,14 @@ public final class AgentChatViewModel {
             }
     }
 
+    /// Clears the real-stage live status (both key and dynamic detail) so the
+    /// ThinkingStatusLine falls back to its time-based rotation until the next
+    /// `status` event, and no stale label survives into the next turn.
+    private func clearLiveStatus() {
+        liveStatusText = nil
+        liveStatusDetail = nil
+    }
+
     private func updateProposedAction(_ action: AgentProposedAction, status: AgentProposedActionStatus) {
         guard let index = proposedActions.firstIndex(where: { $0.id == action.id }) else {
             return
@@ -1565,6 +1600,40 @@ public final class AgentChatViewModel {
             merged.append(trimmed)
         }
         return merged
+    }
+
+    /// Maps a real backend `status` stage → an L10n **key** (English fallback) plus
+    /// an optional dynamic detail. The View resolves `key` through `appText`/`L10n`
+    /// to the localized string; when `detail` is non-nil the key is a `%@` format
+    /// string and the View interpolates the (Chinese) tool label verbatim. Keys
+    /// (not raw zh) keep this on the same localization pattern as the time-based
+    /// fallback copy. Unknown stages → "Reva is thinking…".
+    ///
+    /// Stage table (backend contract):
+    /// - `vision`     → "Recognizing image…"                     (正在识别图片…)
+    /// - `thinking`   → round≥2 "Reva is organizing thoughts…" else "Reva is thinking…"
+    ///                  (正在整理思路… / 阿衡正在思考…)
+    /// - `tool`       → detail non-nil "Working: %@…" + detail   (正在<detail>…)
+    ///                  detail nil "Calling a tool…"             (正在调用工具…)
+    /// - `synthesis`  → "Reva is composing a reply…"             (正在整理回答…)
+    nonisolated static func statusText(stage: String, detail: String?, round: Int?) -> (key: String, detail: String?) {
+        switch stage {
+        case "vision":
+            return ("Recognizing image…", nil)
+        case "thinking":
+            return ((round ?? 1) >= 2 ? "Reva is organizing thoughts…" : "Reva is thinking…", nil)
+        case "tool":
+            if let detail, !detail.trimmingCharacters(in: .whitespaces).isEmpty {
+                // detail is a Chinese tool label from the backend (e.g. 查询健康数据);
+                // the View splices it into the localized template so it shows verbatim.
+                return ("Working: %@…", detail)
+            }
+            return ("Calling a tool…", nil)
+        case "synthesis":
+            return ("Reva is composing a reply…", nil)
+        default:
+            return ("Reva is thinking…", nil)
+        }
     }
 
     private static let medicalExamImportSafetyNote = "OCR/AI 解析结果需要复核后再用于判断。"

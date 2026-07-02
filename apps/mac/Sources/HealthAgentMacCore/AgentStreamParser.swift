@@ -5,6 +5,11 @@ public enum AgentStreamEvent: Equatable, Sendable {
     case token(String)
     case tool(name: String?, success: Bool?)
     case toolDetails(AgentToolEvent)
+    /// Real backend progress stage (`status` event). Arrives zero-or-more times
+    /// BEFORE the first `token` (vision / thinking / tool / synthesis). Optional —
+    /// old backends never emit it, in which case the UI keeps its time-based
+    /// "thinking…" fallback. All fields tolerate absence.
+    case status(stage: String, detail: String?, round: Int?)
     /// Mid-stream perf hint (`perf_pre_llm`): arrives right when prompt assembly
     /// finishes, before the first token. Optional — old backends never emit it.
     /// The main waterfall renders from the final `done.perf`; this is only a live
@@ -104,6 +109,21 @@ public enum AgentStreamParser {
                         result: eventData?["result"] as? String,
                         round: eventData?["round"] as? Int
                     ))
+                case "status":
+                    // Real mid-stream stage hint. `stage` is required for the
+                    // event to mean anything; missing → ignore (treated like an
+                    // unknown event). `detail` / `round` are optional.
+                    guard let stage = eventData?["stage"] as? String,
+                          !stage.trimmingCharacters(in: .whitespaces).isEmpty else {
+                        return nil
+                    }
+                    let detail = (eventData?["detail"] as? String)
+                        .flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
+                    return .status(
+                        stage: stage,
+                        detail: detail,
+                        round: eventData?["round"] as? Int
+                    )
                 case "perf_pre_llm":
                     return .perfPreLLM(
                         preLLMMs: eventData?["pre_llm_ms"] as? Int,

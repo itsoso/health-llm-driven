@@ -315,6 +315,14 @@ public enum L10n {
         "Reva is thinking…": "阿衡正在思考…",
         "Reva is organizing…": "阿衡正在整理…",
         "Checking your records…": "正在查你的记录…",
+        // Real backend stage hints (`status` SSE event). Mapped from stage →
+        // L10n key in AgentChatViewModel.statusText; "Working: %@…" splices the
+        // backend's Chinese tool label (detail) verbatim.
+        "Recognizing image…": "正在识别图片…",
+        "Reva is organizing thoughts…": "正在整理思路…",
+        "Working: %@…": "正在%@…",
+        "Calling a tool…": "正在调用工具…",
+        "Reva is composing a reply…": "正在整理回答…",
         "Completed": "已完成",
         "Partial": "部分完成",
         "Failed": "失败",

@@ -261,7 +261,8 @@ struct AgentChatView: View {
                         text: $draft,
                         focusToken: editorFocusToken,
                         measuredHeight: $composerTextHeight,
-                        onPasteImage: { handlePastedImage($0) }
+                        onPasteImage: { handlePastedImage($0) },
+                        onPasteFileURLs: { urls in urls.forEach { attach($0) } }
                     ) {
                         sendDraft()
                     }
@@ -662,7 +663,9 @@ struct AgentChatView: View {
                         // never overclaim "checking records" on a plain analysis turn.
                         ThinkingStatusLine(
                             language: appLanguageRaw,
-                            isToolTurn: !viewModel.toolActivities.isEmpty
+                            isToolTurn: !viewModel.toolActivities.isEmpty,
+                            liveStatusKey: viewModel.liveStatusText,
+                            liveStatusDetail: viewModel.liveStatusDetail
                         )
                     }
                     ForEach(actions) { action in
@@ -1301,6 +1304,12 @@ private struct ThinkingStatusLine: View {
     /// True once a tool activity has surfaced this turn — only then do we claim
     /// "checking your records", never on a plain analysis turn.
     let isToolTurn: Bool
+    /// Real backend stage (`status` SSE event) → L10n key, from the view model.
+    /// When non-nil this drives the copy; nil → time-based fallback below.
+    let liveStatusKey: String?
+    /// Chinese tool label for the `tool` stage; interpolated into `liveStatusKey`
+    /// when it is the "Working: %@…" format string.
+    let liveStatusDetail: String?
 
     /// 0 = initial copy, 1 = after ~6s. Kept minimal; a static line is fine too.
     @State private var phase = 0
@@ -1308,21 +1317,37 @@ private struct ThinkingStatusLine: View {
     var body: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text(appText(statusKey, language))
+            Text(statusText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .transition(.opacity)
-                .id(statusKey)
+                .id(statusText)
         }
         .task {
             // Cheap one-shot: advance to the "organizing" copy after ~6s if the
             // token hasn't arrived (this view is torn down the moment it does).
+            // Harmless when real status events drive the copy — `statusText`
+            // ignores `phase` while `liveStatusKey` is non-nil.
             try? await Task.sleep(nanoseconds: 6_000_000_000)
             withAnimation(.easeInOut(duration: 0.25)) { phase = 1 }
         }
     }
 
-    private var statusKey: String {
+    /// Prefer the real backend stage when present; otherwise keep the original
+    /// time-based rotation (full back-compat with old backends that never emit
+    /// `status`).
+    private var statusText: String {
+        if let liveStatusKey {
+            let template = appText(liveStatusKey, language)
+            if let liveStatusDetail {
+                return String(format: template, liveStatusDetail)
+            }
+            return template
+        }
+        return appText(fallbackKey, language)
+    }
+
+    private var fallbackKey: String {
         if isToolTurn { return "Checking your records…" }
         return phase == 0 ? "Reva is thinking…" : "Reva is organizing…"
     }
@@ -1810,20 +1835,23 @@ private struct PromptCommandTextEditor: NSViewRepresentable {
     // throwaway binding for call sites that use a fixed frame instead.
     var measuredHeight: Binding<CGFloat> = .constant(0)
     let onCommandReturn: () -> Void
-    // ⌘V 粘贴图片回调(默认 nil:快速记录等调用点不接图片附件)。
+    // ⌘V 粘贴图片/文件回调(默认 nil:快速记录等调用点不接附件)。
     var onPasteImage: ((NSImage) -> Void)? = nil
+    var onPasteFileURLs: (([URL]) -> Void)? = nil
 
     init(
         text: Binding<String>,
         focusToken: Int,
         measuredHeight: Binding<CGFloat> = .constant(0),
         onPasteImage: ((NSImage) -> Void)? = nil,
+        onPasteFileURLs: (([URL]) -> Void)? = nil,
         onCommandReturn: @escaping () -> Void
     ) {
         self._text = text
         self.focusToken = focusToken
         self.measuredHeight = measuredHeight
         self.onPasteImage = onPasteImage
+        self.onPasteFileURLs = onPasteFileURLs
         self.onCommandReturn = onCommandReturn
     }
 
@@ -1836,6 +1864,7 @@ private struct PromptCommandTextEditor: NSViewRepresentable {
         textView.delegate = context.coordinator
         textView.onCommandReturn = onCommandReturn
         textView.onPasteImage = onPasteImage
+        textView.onPasteFileURLs = onPasteFileURLs
         textView.isRichText = false
         textView.importsGraphics = false
         textView.allowsUndo = true
@@ -1866,6 +1895,7 @@ private struct PromptCommandTextEditor: NSViewRepresentable {
         guard let textView = context.coordinator.textView else { return }
         textView.onCommandReturn = onCommandReturn
         textView.onPasteImage = onPasteImage
+        textView.onPasteFileURLs = onPasteFileURLs
         if textView.string != text {
             textView.string = text
             context.coordinator.recomputeHeight()
@@ -1930,17 +1960,39 @@ private struct PromptCommandTextEditor: NSViewRepresentable {
 private final class CommandReturnTextView: NSTextView {
     var onCommandReturn: (() -> Void)?
     var onPasteImage: ((NSImage) -> Void)?
+    var onPasteFileURLs: (([URL]) -> Void)?
 
-    // ⌘V 粘贴:剪贴板里有图片(截图/拷贝的图)且无文本时 → 作为图片附件,而非往输入框塞。
-    // 有文本则走正常纯文本粘贴(isRichText=false / importsGraphics=false)。
+    // ⌘V 粘贴:判定交给 PastedContentClassifier(纯函数,单测覆盖)。
+    // 首版"有文本就放弃图"挡掉了浏览器拷图(图+URL文本)和 Finder 拷文件(file-url+文件名),
+    // 现按内容形态分流:文件→附原文件;位图(伴生 URL 文本也算)→附图;散文→纯文本粘贴。
     override func paste(_ sender: Any?) {
         let pb = NSPasteboard.general
-        let hasText = (pb.string(forType: .string)?.isEmpty == false)
-        if !hasText,
-           let images = pb.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage],
-           let image = images.first {
-            onPasteImage?(image)
-            return
+        let fileURLs = (pb.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL]) ?? []
+        let hasBitmap = pb.availableType(from: [.png, .tiff]) != nil
+        let decision = PastedContentClassifier.decide(
+            pastedString: pb.string(forType: .string),
+            hasBitmapImage: hasBitmap,
+            fileURLs: fileURLs
+        )
+        // 回调未接线或位图读取失败 → 回退 super.paste,绝不吞掉一次粘贴(Rule#1)。
+        switch decision {
+        case .attachFiles(let urls):
+            if let onPasteFileURLs {
+                onPasteFileURLs(urls)
+                return
+            }
+        case .attachBitmap:
+            if let onPasteImage,
+               let images = pb.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage],
+               let image = images.first {
+                onPasteImage(image)
+                return
+            }
+        case .pasteText:
+            break
         }
         super.paste(sender)
     }
