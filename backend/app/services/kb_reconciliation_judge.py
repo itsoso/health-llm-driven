@@ -20,6 +20,7 @@ backstop 是**:(1) prescriptive floor(entity_type + 药名/剂量内容);(2) rev
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -93,30 +94,65 @@ def _doc_view(doc: KBDocument) -> Dict[str, Any]:
     }
 
 
+def _run_sync(coro: Any) -> Any:
+    """从同步代码安全跑协程。无运行 loop → asyncio.run(干净新 loop);已在运行 loop(async 上下文)
+    → 独立线程跑,避免嵌套 loop hang(见 weak_model_toolcalling_defense:asyncio.run 遇运行中 loop 会炸)。"""
+    import asyncio
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+        return ex.submit(lambda: asyncio.run(coro)).result()
+
+
+def _parse_judge_json(text: str) -> Dict[str, Any]:
+    """从(可能带 ```json 围栏 / 弯引号)的模型文本抽 JSON。弱模型不吐纯 JSON 是常态,兜底解析。"""
+    t = (text or "").strip()
+    if "```" in t:
+        t = re.sub(r"```(?:json)?", "", t)
+    # 归一化中文/弯引号 → ASCII(弱模型常吐 “ ” ‘ ’)
+    t = t.translate({0x201C: 0x22, 0x201D: 0x22, 0x2018: 0x27, 0x2019: 0x27})
+    start, end = t.find("{"), t.rfind("}")
+    if start < 0 or end < 0 or end <= start:
+        return {"relation_tag": None, "score": 0.0, "rationale": "unparseable"}
+    try:
+        obj = json.loads(t[start : end + 1])
+    except (json.JSONDecodeError, ValueError):
+        return {"relation_tag": None, "score": 0.0, "rationale": "invalid_json"}
+    if not isinstance(obj, dict):
+        return {"relation_tag": None, "score": 0.0, "rationale": "not_object"}
+    return {"relation_tag": obj.get("relation_tag"), "score": obj.get("score"),
+            "rationale": str(obj.get("rationale") or "")[:500]}
+
+
 def _default_classifier(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
-    """默认 LLM 分类器。任何失败 → 保守 {relation_tag:None, score:0.0} → 不触发 auto(fail-safe)。"""
+    """默认 LLM 分类器。用**真接口** `provider.chat(messages)`(async→sync 桥)—— P5 原先误调
+    不存在的 `provider.complete()` → 每次 AttributeError → fail-safe score 0(judge 从未真跑)。
+    任何失败仍 → 保守 {None,0.0}(不自动);输出交 caller 的 `_normalize_verdict` 再夹死。"""
     try:
         from app.services.llm.factory import get_llm_provider
 
         provider = get_llm_provider()
         prompt = (
-            "你是知识库跨源判重器。判断两条目是否为**同一指称的重复**。只输出 JSON:\n"
-            '{"relation_tag":"duplicate|agree|complementary|conflict","score":0..1,"rationale":"..."}\n'
+            "你是知识库跨源判重器。判断两条目是否为**同一指称的重复**。只输出 JSON,无其它文字:\n"
+            '{"relation_tag":"duplicate|agree|complementary|conflict","score":0.0,"rationale":"..."}\n'
             "duplicate=同一实体/同一 claim 的重复;complementary=相关但内容互补(勿合);"
-            "conflict=矛盾(勿合);agree=一致但非重复。score=你对该判定的置信度。\n"
+            "conflict=矛盾/不同状态(勿合);agree=一致但非重复。score∈[0,1]=你对该判定的置信度。\n"
             f"条目A: {json.dumps(left, ensure_ascii=False)}\n条目B: {json.dumps(right, ensure_ascii=False)}"
         )
-        raw = provider.complete(prompt)  # 同步补全
-        text = raw if isinstance(raw, str) else getattr(raw, "content", str(raw))
-        start, end = text.find("{"), text.rfind("}")
-        if start < 0 or end < 0:
-            return {"relation_tag": None, "score": 0.0, "rationale": "unparseable"}
-        obj = json.loads(text[start : end + 1])
-        tag = obj.get("relation_tag")
-        score = float(obj.get("score") or 0.0)
-        if tag not in _VALID_TAGS:
-            tag, score = None, 0.0
-        return {"relation_tag": tag, "score": max(0.0, min(1.0, score)), "rationale": str(obj.get("rationale") or "")[:500]}
+        messages = [{"role": "user", "content": prompt}]
+        raw = _run_sync(provider.chat(messages, temperature=0.0, max_tokens=400))
+        if isinstance(raw, str):
+            text = raw
+        elif isinstance(raw, dict):  # tool_calls 形态兜底
+            text = str(raw.get("content") or raw.get("text") or "")
+        else:
+            text = str(raw or "")
+        return _parse_judge_json(text)
     except Exception as exc:  # noqa: BLE001 — judge 失败必须 fail-safe(不自动),不得抛断扫描
         return {"relation_tag": None, "score": 0.0, "rationale": f"judge_error: {type(exc).__name__}"}
 

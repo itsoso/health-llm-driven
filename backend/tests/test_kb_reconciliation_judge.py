@@ -422,3 +422,61 @@ def test_preview_disabled_type_would_not_merge(db):
     res = preview_auto_merge(db, enabled_entity_types=frozenset(), classifier=_fake_classifier)  # 空启用
     assert res["would_auto_merge_count"] == 0 and res["would_skip_count"] == 1
     assert any("DISABLED" in r for r in res["would_skip_sample"][0]["reasons"])
+
+
+# ── judge 接口修复:_default_classifier 用真 provider.chat(P5 曾误调不存在的 .complete)──
+
+from app.services.kb_reconciliation_judge import _default_classifier, _parse_judge_json, _run_sync
+
+
+def test_parse_judge_json_variants():
+    # 纯 JSON
+    assert _parse_judge_json('{"relation_tag":"duplicate","score":0.9}')["relation_tag"] == "duplicate"
+    # ```json 围栏
+    assert _parse_judge_json('```json\n{"relation_tag":"agree","score":0.4}\n```')["relation_tag"] == "agree"
+    # 弯引号(弱模型常吐)
+    got = _parse_judge_json('{“relation_tag”:“conflict”,“score”:0.7}')
+    assert got["relation_tag"] == "conflict"
+    # 前后带解释文字
+    assert _parse_judge_json('好的,判定如下:{"relation_tag":"complementary","score":0.2} 完毕')["relation_tag"] == "complementary"
+    # 无 JSON / 非法
+    assert _parse_judge_json("我觉得它们是重复的")["relation_tag"] is None
+    assert _parse_judge_json("")["relation_tag"] is None
+
+
+def test_default_classifier_uses_chat_not_complete(monkeypatch):
+    """回归 P5 bug:必须调 provider.chat(async),不调不存在的 .complete。"""
+    calls = {}
+
+    class _FakeProvider:
+        async def chat(self, messages, **kwargs):
+            calls["messages"] = messages
+            calls["kwargs"] = kwargs
+            return '{"relation_tag":"duplicate","score":0.97,"rationale":"same entity"}'
+        # 故意不提供 complete —— 若代码还调 .complete 会 AttributeError
+
+    import app.services.llm.factory as factory
+    monkeypatch.setattr(factory, "get_llm_provider", lambda: _FakeProvider())
+
+    out = _default_classifier({"title": "A"}, {"title": "B"})
+    assert out["relation_tag"] == "duplicate" and out["score"] == 0.97
+    assert calls["kwargs"].get("temperature") == 0.0  # 判重用确定性温度
+    assert calls["messages"][0]["role"] == "user"
+
+
+def test_default_classifier_chat_raises_is_failsafe(monkeypatch):
+    class _BoomProvider:
+        async def chat(self, messages, **kwargs):
+            raise RuntimeError("provider down")
+
+    import app.services.llm.factory as factory
+    monkeypatch.setattr(factory, "get_llm_provider", lambda: _BoomProvider())
+    out = _default_classifier({"title": "A"}, {"title": "B"})
+    assert out["relation_tag"] is None and out["score"] == 0.0
+    assert "judge_error" in out["rationale"]
+
+
+def test_run_sync_no_running_loop():
+    async def _c():
+        return 42
+    assert _run_sync(_c()) == 42
