@@ -83,6 +83,11 @@ class DedaoKbaseReviewedArtifactsPublishRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
 
 
+class ReconciliationDecisionRequest(BaseModel):
+    action: Literal["approve_merge", "reject", "defer"]
+    note: str | None = Field(default=None, max_length=1000)
+
+
 @router.get("/entity/{entity_type}/{entity_id}", summary="获取系统知识库实体与关联 claim")
 def get_knowledge_entity(
     entity_type: str,
@@ -303,6 +308,62 @@ def get_reconciliation_candidates(
         limit=limit,
         offset=offset,
     )
+
+
+@admin_router.patch(
+    "/reconciliation/candidates/{candidate_id}",
+    summary="对账候选裁决(Phase B P4;approve_merge=首个 serving mutation / reject / defer)",
+)
+def review_reconciliation_candidate(
+    candidate_id: int,
+    body: "ReconciliationDecisionRequest",
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    from app.models.system_knowledge import KBReconciliationCandidate
+
+    actor = f"admin:{admin_user.id}"
+    if body.action == "approve_merge":
+        # 人工 approve → 合并(conflict/prescriptive/无锚 → 硬拒 400,fail-loud)
+        from app.services.kb_reconciliation_merge import merge_candidate
+
+        try:
+            return merge_candidate(db, candidate_id, actor=actor)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    # reject / defer:仅改 status,不动 serving
+    cand = (
+        db.query(KBReconciliationCandidate)
+        .filter(KBReconciliationCandidate.id == candidate_id)
+        .first()
+    )
+    if cand is None:
+        raise HTTPException(status_code=404, detail="candidate 不存在")
+    if cand.status != "open":
+        raise HTTPException(status_code=400, detail=f"candidate status={cand.status},非 open 不可裁决")
+    cand.status = "rejected" if body.action == "reject" else "deferred"
+    cand.reviewed_by = actor
+    _record_audit(db, doc_id=None, op=f"reconciliation_{body.action}", actor=actor,
+                  diff={"candidate_id": candidate_id})
+    return {"candidate_id": candidate_id, "status": cand.status}
+
+
+@admin_router.post(
+    "/reconciliation/candidates/{candidate_id}/unalign",
+    summary="撤销一次 merge(Phase B P4;字节还原,可逆性是 P5 auto 的前置)",
+)
+def unalign_reconciliation_candidate(
+    candidate_id: int,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    from app.services.kb_reconciliation_merge import unalign_candidate
+
+    try:
+        return unalign_candidate(db, candidate_id, actor=f"admin:{admin_user.id}")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @admin_router.get("/eval_report", summary="系统知识库 eval case 运行报告")

@@ -194,3 +194,24 @@
 10. **CI 策略**:动 judge prompt/模型 的 PR 是否**阻断式**跑 `--with-llm` 真 judge eval(关 R7,代价 LLM-cost CI 步,仅 judge-touching diff)。
 
 > **净结论**:**P3 现在可开工**(纯 additive、零 mutation、零 auto,I1–I7 平凡成立,还产出 gold/τ 校准需要的真候选分布)。三道硬前置在**开任一自动合之前**必须全绿:merge↔unalign 字节往返测、逐 type 零 FP eval、处方 anchored allowlist 扩展。
+
+---
+
+## 10. Ratified 决定(2026-07-01 founder 拍板)+ 由此定死的实现约束
+
+§9.8 四问已拍。两处比设计推荐**更激进**,由此**抬升**若干护栏为强制:
+
+| # | 决定 | 落法 |
+|---|---|---|
+| 精度地板 | **全局 τ=0.95**(非逐 type 零 FP) | `can_auto_approve` C8 = `judge_score >= 0.95`,统一常量 `_AUTO_APPROVE_TAU`,doc-drift 钉;eval 不再是**硬 gate** 但仍**必跑**:测精度 + 6 条不变量断言(count/unalign 往返/no-unreviewed-served/canonical=down-dedao/处方硬拒/license 不放宽)。 |
+| v1 auto 范围 | **低危 entity_align 先开,医疗 claim 恒人工**(=推荐) | `can_auto_approve` 对 `kind=='claim_overlap'` 且 entity_type∈{medication,supplement,gene,regimen,drug} 一律返 False(走人);entity_align 低危 type 才 auto。 |
+| license 序 | **internal 最严 + 未知 fail-closed**(=推荐) | `_LICENSE_RANK={internal_transformed_claims:3, licensed_transformed_content:2, public_reference:1}`;strictest=最高;未知→当最严;合并后 canonical 取两侧最严;任何会**放宽** canonical 的合并**硬拒 + 审计**。 |
+| 同类 reviewed×reviewed auto | **强信号下允许自动**(比推荐激进) | auto 允许 archive 一个**已服务 reviewed** 文档 → 三重护栏强制:(a)`unalign` 必字节往返可逆(可逆性成主安全网);(b)同类 auto 需**服务端硬合取** `title_norm ∧ alias_overlap ∧ shared_neighborhood`(非 judge 自报);(c)count 不变量 + 审计 airtight。 |
+
+**由 τ=0.95 + 同类 auto 组合抬升的强制项(P4/P5 实现不可省)**:
+1. **P4 必与 unalign 同 PR** —— 可逆性现在是主安全网,不是可选。merge↔unalign 字节往返测是 P4 的发布闸。
+2. **eval harness 仍 P5 必交**(measure 不 gate):跑精度 + 6 不变量断言;τ 是 gate。
+3. **P6 影子审计 + 按 `llm_dedup_judge` actor 的速率熔断**从"nice-to-have"升为**开 auto 前必接的运行时后备**(因为 τ=0.95 会放过部分近似)。
+4. 医疗 claim 恒人工(I4)+ conflict/prescriptive 人机同硬拒不变。
+
+**分阶段执行**:P4(人工 merge + unalign,首个 serving mutation)先上、过 safety review;P5(judge + can_auto_approve 9 闸 + eval + auto executor)后上,auto ships DISABLED,逐 entity_type 开关由 admin 显式启用且只对低危 entity_align。
