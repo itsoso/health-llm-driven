@@ -1,14 +1,15 @@
 import React from 'react';
-import { StyleSheet, Text, TextStyle, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
-import type { CardSpec } from './types';
+import type { CardRenderOptions, CardSpec } from './types';
 import {
   revaColors as C,
   revaFonts,
   revaRadii,
   revaSemantic,
 } from '../../../constants/revaTheme';
+import { updateDietRecord, type DietRecordCreate, type MealType } from '../../../services/diet';
 
 interface RecordQualityData {
   domain?: unknown;
@@ -21,6 +22,8 @@ interface RecordQualityData {
   next_action?: unknown;
   expanded_sections?: unknown;
   next_meal_detail?: unknown;
+  adjust_record?: unknown;
+  adjust_saved?: unknown;
   boundary?: unknown;
 }
 
@@ -28,6 +31,19 @@ interface MetricItem {
   label: string;
   value: string;
 }
+
+interface RecordQualityViewProps extends RecordQualityData {
+  onCardDataChange?: (data: RecordQualityData) => void;
+}
+
+const ADJUST_ACCENT = '#C97A2E';
+
+const MEAL_LABELS: Record<MealType, string> = {
+  breakfast: '早餐',
+  lunch: '午餐',
+  dinner: '晚餐',
+  snack: '加餐',
+};
 
 function text(value: unknown): string | undefined {
   if (typeof value === 'string') {
@@ -76,6 +92,38 @@ function objectValue(value: unknown): Record<string, unknown> | undefined {
   return undefined;
 }
 
+function numberValue(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function editNumber(value: unknown): string {
+  const parsed = numberValue(value);
+  return parsed == null ? '' : String(Math.round(parsed * 10) / 10);
+}
+
+/** 非负数字文本 → 保留一位小数; 空/负/非数字 → undefined (不写该字段) */
+function sanitizeNumberText(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 10) / 10 : undefined;
+}
+
+function mealTypeValue(value: unknown): MealType {
+  const raw = text(value);
+  return raw && raw in MEAL_LABELS ? (raw as MealType) : 'snack';
+}
+
+function integerRecordId(value: unknown): number | undefined {
+  const parsed = numberValue(value);
+  return parsed != null && Number.isInteger(parsed) ? parsed : undefined;
+}
+
 function domainMeta(domain?: unknown): { icon: string; fg: string; bg: string; badge: string } {
   if (text(domain) === 'exercise') {
     return { icon: 'fitness-outline', fg: '#C2487A', bg: '#F7E4EC', badge: '运动' };
@@ -83,7 +131,8 @@ function domainMeta(domain?: unknown): { icon: string; fg: string; bg: string; b
   return { icon: 'restaurant-outline', fg: '#C97A2E', bg: '#F6E9DA', badge: '饮食' };
 }
 
-export function RecordQualityCardView(data: RecordQualityData) {
+export function RecordQualityCardView(props: RecordQualityViewProps) {
+  const { onCardDataChange, ...data } = props;
   const meta = domainMeta(data.domain);
   const title = text(data.title) || '已记录';
   const summary = text(data.summary);
@@ -99,6 +148,12 @@ export function RecordQualityCardView(data: RecordQualityData) {
   const nextAction = text(data.next_action);
   const nextMealDetail = objectValue(data.next_meal_detail);
   const showNextMealDetail = Boolean(hasExpandedSection(data.expanded_sections, 'next_meal') && nextMealDetail);
+  const adjustRecord = objectValue(data.adjust_record);
+  const adjustRecordId = adjustRecord ? integerRecordId(adjustRecord.record_id) : undefined;
+  const showAdjustEditor = Boolean(
+    hasExpandedSection(data.expanded_sections, 'adjust_record') && adjustRecord && adjustRecordId != null,
+  );
+  const savedMarker = data.adjust_saved === true && !showAdjustEditor;
   const boundary = text(data.boundary) || '健康管理建议，不替代医生诊断、处方或治疗。';
 
   return (
@@ -179,6 +234,33 @@ export function RecordQualityCardView(data: RecordQualityData) {
         </View>
       ) : null}
 
+      {showAdjustEditor && adjustRecord && adjustRecordId != null ? (
+        <AdjustRecordEditor
+          recordId={adjustRecordId}
+          seed={adjustRecord}
+          onSaved={(applied) => {
+            if (!onCardDataChange) return;
+            const remainingSections = (Array.isArray(data.expanded_sections) ? data.expanded_sections : [])
+              .map((item) => text(item))
+              .filter((item): item is string => Boolean(item) && item !== 'adjust_record');
+            onCardDataChange({
+              ...data,
+              ...applied.cardFace,
+              adjust_record: applied.adjustRecord,
+              expanded_sections: remainingSections,
+              adjust_saved: true,
+            });
+          }}
+        />
+      ) : null}
+
+      {savedMarker ? (
+        <View style={styles.savedRow}>
+          <Ionicons name="checkmark-circle" size={13} color={C.green600} />
+          <Text maxFontSizeMultiplier={1.2} style={styles.savedText}>已更新</Text>
+        </View>
+      ) : null}
+
       {showNextMealDetail && nextMealDetail ? (
         <View style={styles.nextMealPanel}>
           <Text maxFontSizeMultiplier={1.15} style={styles.nextMealTitle}>
@@ -235,6 +317,200 @@ export function RecordQualityCardView(data: RecordQualityData) {
   );
 }
 
+interface AdjustApplied {
+  /** 更新后卡面的 summary + metrics(就地刷新用) */
+  cardFace: { summary: string; metrics: MetricItem[] };
+  /** 更新后的 adjust_record seed(下次再展开时以最新值填充) */
+  adjustRecord: Record<string, unknown>;
+}
+
+/** 聊天内饮食记录调整器 — 就地编辑并直接 updateDietRecord, 不离开聊天 */
+function AdjustRecordEditor({
+  recordId,
+  seed,
+  onSaved,
+}: {
+  recordId: number;
+  seed: Record<string, unknown>;
+  onSaved: (applied: AdjustApplied) => void;
+}) {
+  const [mealType, setMealType] = React.useState<MealType>(() => mealTypeValue(seed.meal_type));
+  const [food, setFood] = React.useState(() => text(seed.food_items) || '');
+  const [calories, setCalories] = React.useState(() => editNumber(seed.calories));
+  const [protein, setProtein] = React.useState(() => editNumber(seed.protein));
+  const [carbs, setCarbs] = React.useState(() => editNumber(seed.carbs));
+  const [fat, setFat] = React.useState(() => editNumber(seed.fat));
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState(false);
+  const [collapsed, setCollapsed] = React.useState(false);
+
+  const buildPatch = React.useCallback((): Partial<DietRecordCreate> => {
+    // food_items + meal_type 始终随保存写回; 数字仅在有效值时带上(空/负 → 不覆盖后端值)
+    const patch: Partial<DietRecordCreate> = { meal_type: mealType, food_items: food.trim() };
+    const cal = sanitizeNumberText(calories);
+    const pro = sanitizeNumberText(protein);
+    const car = sanitizeNumberText(carbs);
+    const fatValue = sanitizeNumberText(fat);
+    if (cal != null) patch.calories = cal;
+    if (pro != null) patch.protein = pro;
+    if (car != null) patch.carbs = car;
+    if (fatValue != null) patch.fat = fatValue;
+    return patch;
+  }, [mealType, food, calories, protein, carbs, fat]);
+
+  const handleSave = React.useCallback(async () => {
+    if (saving) return; // action-lock: 防双击
+    setSaving(true);
+    setError(false);
+    const patch = buildPatch();
+    try {
+      const updated = await updateDietRecord(recordId, patch);
+      const savedMealType = (updated.meal_type as MealType) || mealType;
+      const savedFood = updated.food_items || food.trim();
+      const summary = buildSummary(savedMealType, updated.calories, updated.protein, updated.carbs, updated.fat);
+      const metrics = buildMetrics(updated.calories, updated.protein, updated.carbs, updated.fat);
+      const adjustRecord: Record<string, unknown> = { record_id: recordId, meal_type: savedMealType, food_items: savedFood };
+      if (updated.calories != null) adjustRecord.calories = updated.calories;
+      if (updated.protein != null) adjustRecord.protein = updated.protein;
+      if (updated.carbs != null) adjustRecord.carbs = updated.carbs;
+      if (updated.fat != null) adjustRecord.fat = updated.fat;
+      setCollapsed(true);
+      onSaved({ cardFace: { summary, metrics }, adjustRecord });
+    } catch {
+      setError(true);
+      setSaving(false); // 失败保留输入, 允许重试
+    }
+  }, [saving, buildPatch, recordId, mealType, food, onSaved]);
+
+  if (collapsed) return null;
+
+  return (
+    <View style={styles.adjustPanel}>
+      <Text maxFontSizeMultiplier={1.15} style={styles.adjustHint}>就地修正这条记录，保存后直接更新</Text>
+      <View style={styles.mealTypeRow}>
+        {(Object.keys(MEAL_LABELS) as MealType[]).map((key) => (
+          <Pressable
+            key={key}
+            onPress={() => setMealType(key)}
+            disabled={saving}
+            accessibilityRole="button"
+            accessibilityLabel={`餐次 ${MEAL_LABELS[key]}`}
+            accessibilityState={{ selected: mealType === key }}
+            style={[styles.mealChip, mealType === key && styles.mealChipActive]}
+          >
+            <Text style={[styles.mealChipText, mealType === key && styles.mealChipTextActive]}>
+              {MEAL_LABELS[key]}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      <TextInput
+        accessibilityLabel="食物描述"
+        value={food}
+        onChangeText={setFood}
+        editable={!saving}
+        placeholder="食物描述"
+        placeholderTextColor={C.ink4}
+        multiline
+        style={styles.foodInput}
+      />
+      <View style={styles.macroGrid}>
+        <AdjustNumberInput label="热量" unit="kcal" value={calories} onChangeText={setCalories} editable={!saving} />
+        <AdjustNumberInput label="蛋白" unit="g" value={protein} onChangeText={setProtein} editable={!saving} />
+        <AdjustNumberInput label="碳水" unit="g" value={carbs} onChangeText={setCarbs} editable={!saving} />
+        <AdjustNumberInput label="脂肪" unit="g" value={fat} onChangeText={setFat} editable={!saving} />
+      </View>
+      {error ? (
+        <Text maxFontSizeMultiplier={1.15} style={styles.adjustError}>保存失败，请重试</Text>
+      ) : null}
+      <View style={styles.adjustActionRow}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="取消修正"
+          disabled={saving}
+          onPress={() => setCollapsed(true)}
+          style={({ pressed }) => [styles.cancelButton, saving && styles.buttonDisabled, pressed && !saving && { opacity: 0.86 }]}
+        >
+          <Text style={styles.cancelButtonText}>取消</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="保存修正"
+          accessibilityState={{ disabled: saving, busy: saving }}
+          disabled={saving}
+          onPress={handleSave}
+          style={({ pressed }) => [styles.saveButton, saving && styles.saveButtonBusy, pressed && !saving && { opacity: 0.86 }]}
+        >
+          {saving ? <ActivityIndicator size="small" color="#fff" /> : (
+            <Ionicons name="checkmark-circle" size={14} color="#fff" />
+          )}
+          <Text style={styles.saveButtonText}>{saving ? '保存中' : '保存修正'}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function AdjustNumberInput({
+  label,
+  unit,
+  value,
+  onChangeText,
+  editable,
+}: {
+  label: string;
+  unit: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  editable: boolean;
+}) {
+  return (
+    <View style={styles.macroCell}>
+      <Text style={styles.macroCellLabel}>{label}</Text>
+      <TextInput
+        accessibilityLabel={label}
+        value={value}
+        onChangeText={onChangeText}
+        editable={editable}
+        keyboardType="decimal-pad"
+        placeholder="0"
+        placeholderTextColor={C.ink4}
+        style={styles.macroCellInput}
+      />
+      <Text style={styles.macroCellUnit}>{unit}</Text>
+    </View>
+  );
+}
+
+function buildSummary(
+  mealType: MealType,
+  calories: number | null,
+  protein: number | null,
+  carbs: number | null,
+  fat: number | null,
+): string {
+  const parts = [MEAL_LABELS[mealType] || '餐食'];
+  if (calories != null) parts.push(`${Math.round(calories)} kcal`);
+  if (protein != null) parts.push(`蛋白 ${Math.round(protein)}g`);
+  if (carbs != null) parts.push(`碳水 ${Math.round(carbs)}g`);
+  if (fat != null) parts.push(`脂肪 ${Math.round(fat)}g`);
+  return parts.join(' · ');
+}
+
+function buildMetrics(
+  calories: number | null,
+  protein: number | null,
+  carbs: number | null,
+  fat: number | null,
+): MetricItem[] {
+  return [
+    calories != null ? { label: '热量', value: `${Math.round(calories)}kcal` } : null,
+    protein != null ? { label: '蛋白', value: `${Math.round(protein)}g` } : null,
+    carbs != null ? { label: '碳水', value: `${Math.round(carbs)}g` } : null,
+    fat != null ? { label: '脂肪', value: `${Math.round(fat)}g` } : null,
+  ].filter((item): item is MetricItem => item != null);
+}
+
 export const RecordQualityCardSpec: CardSpec<RecordQualityData> = {
   type: 'record_quality',
   label: '记录后建议',
@@ -244,7 +520,9 @@ export const RecordQualityCardSpec: CardSpec<RecordQualityData> = {
   build() {
     return null;
   },
-  render: (data) => <RecordQualityCardView {...data} />,
+  render: (data, options?: CardRenderOptions) => (
+    <RecordQualityCardView {...data} onCardDataChange={options?.onCardDataChange} />
+  ),
 };
 
 const styles = StyleSheet.create({
@@ -457,5 +735,156 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: C.ink3,
     lineHeight: 15,
+  } as TextStyle,
+  adjustPanel: {
+    marginTop: 9,
+    gap: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
+  adjustHint: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: C.ink3,
+    lineHeight: 16,
+  } as TextStyle,
+  mealTypeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+  },
+  mealChip: {
+    minHeight: 30,
+    justifyContent: 'center',
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.paper2,
+    paddingHorizontal: 11,
+  },
+  mealChipActive: {
+    backgroundColor: ADJUST_ACCENT,
+  },
+  mealChipText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    color: C.ink2,
+    fontWeight: '800',
+  } as TextStyle,
+  mealChipTextActive: {
+    color: '#fff',
+  } as TextStyle,
+  foodInput: {
+    minHeight: 44,
+    borderRadius: revaRadii.sm,
+    backgroundColor: C.paper2,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    color: C.ink1,
+  } as TextStyle,
+  macroGrid: {
+    flexDirection: 'row',
+    gap: 7,
+  },
+  macroCell: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 3,
+  },
+  macroCellLabel: {
+    fontFamily: revaFonts.sans,
+    fontSize: 10,
+    color: C.ink3,
+    fontWeight: '700',
+  } as TextStyle,
+  macroCellInput: {
+    width: '100%',
+    minHeight: 34,
+    borderRadius: revaRadii.sm,
+    backgroundColor: C.paper2,
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+    fontFamily: revaFonts.mono,
+    fontSize: 13,
+    color: C.ink1,
+    textAlign: 'center',
+  } as TextStyle,
+  macroCellUnit: {
+    fontFamily: revaFonts.mono,
+    fontSize: 9.5,
+    color: C.ink3,
+  } as TextStyle,
+  adjustError: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    fontWeight: '700',
+    color: revaSemantic.risk.fg,
+    lineHeight: 16,
+  } as TextStyle,
+  adjustActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  cancelButton: {
+    flex: 0.82,
+    minHeight: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: revaRadii.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.lineStrong,
+    backgroundColor: C.surface,
+  },
+  cancelButtonText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    color: C.ink2,
+    fontWeight: '900',
+  } as TextStyle,
+  saveButton: {
+    flex: 1.18,
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderRadius: revaRadii.sm,
+    backgroundColor: C.green500,
+  },
+  saveButtonBusy: {
+    opacity: 0.72,
+  },
+  saveButtonText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    color: '#fff',
+    fontWeight: '900',
+  } as TextStyle,
+  buttonDisabled: {
+    opacity: 0.58,
+  },
+  savedRow: {
+    marginTop: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+  },
+  savedText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    fontWeight: '900',
+    color: C.green700,
+    lineHeight: 16,
   } as TextStyle,
 });

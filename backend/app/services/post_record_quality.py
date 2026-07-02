@@ -458,6 +458,59 @@ def _result_is_failed(result: str) -> bool:
     return bool(result and (result.startswith("Error") or result.startswith("[NEEDS_CONFIRMATION]")))
 
 
+def _record_id_from_write(result: str, record_data: dict) -> Optional[int]:
+    """写入后的记录 id 来源: 工具 result 是持久化后的 DietRecordResponse JSON(含 id)。
+
+    record_data 是 LLM 的入参(food/meal/macros),不含 DB 分配的 id ——
+    故先解析 result JSON 的 ``id``,再兜底 record_data.get("id")(某些直调路径会回填)。
+    """
+    parsed = parse_tool_record_result(result)
+    for source in (parsed, record_data):
+        raw = source.get("id") if isinstance(source, dict) else None
+        if isinstance(raw, bool):  # True/False 不是合法 id
+            continue
+        if isinstance(raw, int):
+            return raw
+        if isinstance(raw, str) and raw.strip().isdigit():
+            return int(raw.strip())
+    return None
+
+
+def _diet_meal_type_value(record_data: dict) -> str:
+    """归一 meal_type 到 breakfast/lunch/dinner/snack(mobile 编辑器按此渲染)。
+
+    _exec_health_record 已把中文映射成 english,但直调/降级路径可能仍是中文,
+    故这里再收口一次;无法识别时回退 snack(与写入端 setdefault 一致)。
+    """
+    raw = str(record_data.get("meal_type") or "").strip().lower()
+    if raw in _MEAL_TYPE_ZH:
+        return raw
+    zh_map = {"早餐": "breakfast", "午餐": "lunch", "晚餐": "dinner", "加餐": "snack", "夜宵": "snack"}
+    return zh_map.get(raw, "snack")
+
+
+def _diet_adjust_record_seed(record_id: int, record_data: dict) -> dict[str, Any]:
+    """就地调整器的种子: 取 record_data 原始值,None 保留 None(不格式化展示串)。"""
+    food_raw = record_data.get("food_items") or record_data.get("food")
+    if isinstance(food_raw, list):
+        food_items = "、".join(
+            (str(f.get("name") or f) if isinstance(f, dict) else str(f)).strip()
+            for f in food_raw
+            if f is not None
+        )
+    else:
+        food_items = str(food_raw or "").strip()
+    return {
+        "record_id": record_id,
+        "meal_type": _diet_meal_type_value(record_data),
+        "food_items": food_items,
+        "calories": _number_or_none(record_data.get("calories") or record_data.get("kcal")),
+        "protein": _number_or_none(record_data.get("protein")),
+        "carbs": _number_or_none(record_data.get("carbs") or record_data.get("carbohydrates")),
+        "fat": _number_or_none(record_data.get("fat")),
+    }
+
+
 def build_post_record_quality_response(
     record_type: Any,
     record_data: Any,
@@ -514,6 +567,20 @@ def build_post_record_quality_response(
         }
         if progress:
             card_data["progress"] = progress
+        record_id = _record_id_from_write(result, record_data)
+        if record_id is not None:
+            adjust_action = _inline_expand_action(
+                "adjust-record",
+                "调整记录",
+                "adjust_record",
+                {
+                    "expanded_sections": ["adjust_record"],
+                    "adjust_record": _diet_adjust_record_seed(record_id, record_data),
+                },
+            )
+        else:
+            # 拿不到 id 无法就地调整 → 至少跳真正的饮食页(不再去通用记录 tab)。
+            adjust_action = _route_action("open-diet", "去饮食页调整", "/diet")
         return {
             "reply": re.sub(r"\s+", " ", reply).strip()[:280],
             "cards": [{
@@ -530,7 +597,7 @@ def build_post_record_quality_response(
                         },
                         style="primary",
                     ),
-                    _route_action("open-record", "调整记录", "/(tabs)/record"),
+                    adjust_action,
                 ],
             }],
         }

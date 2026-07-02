@@ -101,7 +101,15 @@ def test_diet_record_quality_response_uses_personal_context_and_next_action():
 
     assert response["cards"][0]["type"] == "record_quality"
     assert response["cards"][0]["data"]["domain"] == "diet"
-    assert response["cards"][0]["actions"][0]["action"] == "route.open"
+    # actions[0] 是"看下一餐建议"就地展开(chat 内),不是路由跳转;
+    # 无 result → 无 record_id → "调整记录"兜底为跳饮食页(open-diet)。
+    actions = response["cards"][0]["actions"]
+    assert actions[0]["id"] == "show-next-meal"
+    assert actions[0]["action"] == "ui.inline.expand"
+    assert actions[0]["payload"]["target"] == "next_meal"
+    assert actions[1]["id"] == "open-diet"
+    assert actions[1]["action"] == "route.open"
+    assert actions[1]["payload"]["route"] == "/diet"
 
 
 def test_exercise_record_quality_response_is_actionable_without_medical_claims():

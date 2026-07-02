@@ -133,7 +133,24 @@ def test_diet_quality_response_uses_today_totals_and_actionable_routes(db, auth_
     assert card["actions"][0]["payload"]["patch"]["expanded_sections"] == ["next_meal"]
     assert card["actions"][0]["payload"]["patch"]["next_meal_detail"]["title"] == "下一餐建议"
     assert "煎牛肉能量碗" in card["actions"][0]["payload"]["patch"]["next_meal_detail"]["context"]
-    assert card["actions"][1]["payload"]["route"] == "/(tabs)/record"
+
+    # "调整记录" 从"跳记录 tab"改成聊天内展开调整器: result 带 id 时走 inline-expand,
+    # 种子取 record_data 原始值(键名与 mobile 编辑器契约精确对齐)。
+    adjust = card["actions"][1]
+    assert adjust["id"] == "adjust-record"
+    assert adjust["action"] == "ui.inline.expand"
+    assert adjust["payload"]["target"] == "adjust_record"
+    assert "route" not in adjust["payload"]
+    assert adjust["payload"]["patch"]["expanded_sections"] == ["adjust_record"]
+    assert adjust["payload"]["patch"]["adjust_record"] == {
+        "record_id": 2,
+        "meal_type": "lunch",
+        "food_items": "煎牛肉能量碗, 水煮蛋, 姜黄鲜柠维C茶",
+        "calories": 770.0,
+        "protein": 30.0,
+        "carbs": 70.0,
+        "fat": 17.0,
+    }
     assert all("问阿衡" not in action["label"] for action in card["actions"])
 
 
@@ -156,6 +173,59 @@ def test_diet_quality_response_ignores_numeric_contraindication_noise():
     text = response["reply"] + " ".join(response["cards"][0]["data"]["personal_cautions"])
     assert "「5」" not in text
     assert "禁忌里包含" not in text
+
+
+def test_diet_adjust_action_falls_back_to_diet_page_without_record_id():
+    # 拿不到 record_id(result 非 JSON / 无 id) → 兜底跳真正饮食页, 不再去 /(tabs)/record。
+    response = build_post_record_quality_response(
+        "diet",
+        {"meal_type": "dinner", "food_items": "牛肉饭", "protein": 28, "calories": 650},
+        result="",
+        personal_context="",
+    )
+
+    assert response is not None
+    adjust = response["cards"][0]["actions"][1]
+    assert adjust["id"] == "open-diet"
+    assert adjust["label"] == "去饮食页调整"
+    assert adjust["action"] == "route.open"
+    assert adjust["payload"]["route"] == "/diet"
+    assert "adjust_record" not in adjust["payload"]
+
+
+def test_diet_adjust_seed_preserves_none_macros_and_normalizes_zh_meal():
+    # 缺失宏量保留 None(不填 0), 中文 meal_type 归一到 english。
+    response = build_post_record_quality_response(
+        "diet",
+        {"meal_type": "早餐", "food_items": "白粥", "calories": 200},
+        result='{"id": 77}',
+        personal_context="",
+    )
+
+    seed = response["cards"][0]["actions"][1]["payload"]["patch"]["adjust_record"]
+    assert seed["record_id"] == 77
+    assert seed["meal_type"] == "breakfast"
+    assert seed["food_items"] == "白粥"
+    assert seed["calories"] == 200.0
+    assert seed["protein"] is None
+    assert seed["carbs"] is None
+    assert seed["fat"] is None
+
+
+def test_exercise_actions_unchanged_by_diet_adjust_work():
+    # 本次只改 diet;exercise 卡 actions 保持不变(查看运动记录/继续记录/问阿衡恢复)。
+    response = build_post_record_quality_response(
+        "exercise",
+        {"exercise_type": "俯卧撑", "sets": 3, "reps": 20, "duration": 8},
+        result='{"id": 9}',
+        personal_context="",
+    )
+
+    actions = response["cards"][0]["actions"]
+    assert [a["id"] for a in actions] == ["open-workouts", "open-record", "ask-recovery"]
+    assert actions[0]["payload"]["route"] == "/workout-list"
+    assert actions[1]["payload"]["route"] == "/(tabs)/record"
+    assert all(a["id"] != "adjust-record" for a in actions)
 
 
 def test_multi_record_quality_responses_are_aggregated_not_last_one_wins():

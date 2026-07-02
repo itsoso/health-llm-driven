@@ -294,20 +294,44 @@ function readInlineExpandPatch(action: ChatCardActionDescriptor): Record<string,
   return Object.keys(patch).length > 0 ? patch : null;
 }
 
+const INLINE_EXPAND_SECTIONS = new Set(['next_meal', 'adjust_record']);
+
 function sanitizeInlinePatch(source: Record<string, unknown>): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
   if (Array.isArray(source.expanded_sections)) {
     const sections = source.expanded_sections
       .map(textValue)
       .filter((item): item is string => Boolean(item))
-      .filter((item) => item === 'next_meal');
+      .filter((item) => INLINE_EXPAND_SECTIONS.has(item));
     if (sections.length > 0) patch.expanded_sections = sections.slice(0, 4);
   }
   const detail = source.next_meal_detail;
   if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
     patch.next_meal_detail = sanitizeNextMealDetail(detail as Record<string, unknown>);
   }
+  const adjust = source.adjust_record;
+  if (adjust && typeof adjust === 'object' && !Array.isArray(adjust)) {
+    const sanitized = sanitizeAdjustRecord(adjust as Record<string, unknown>);
+    if (sanitized) patch.adjust_record = sanitized;
+  }
   return patch;
+}
+
+const ADJUST_MEAL_TYPES = new Set(['breakfast', 'lunch', 'dinner', 'snack']);
+
+function sanitizeAdjustRecord(source: Record<string, unknown>): Record<string, unknown> | null {
+  const recordId = numberValue(source.record_id);
+  if (recordId == null || !Number.isInteger(recordId)) return null;
+  const adjust: Record<string, unknown> = { record_id: recordId };
+  const mealType = textValue(source.meal_type);
+  if (mealType && ADJUST_MEAL_TYPES.has(mealType)) adjust.meal_type = mealType;
+  const foodItems = foodItemsValue(source.food_items);
+  if (foodItems) adjust.food_items = foodItems;
+  for (const key of ['calories', 'protein', 'carbs', 'fat'] as const) {
+    const parsed = numberValue(source[key]);
+    if (parsed != null) adjust[key] = parsed;
+  }
+  return adjust;
 }
 
 function sanitizeNextMealDetail(source: Record<string, unknown>): Record<string, unknown> {
