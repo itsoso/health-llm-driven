@@ -109,3 +109,19 @@ def admin_expand_kb_neighborhood(
         "node_count": len(nodes),
         "hops": hops,
     }
+
+
+def admin_get_document(db: Session, doc_id: str) -> Dict[str, Any] | None:
+    """admin 读单文档全量(serialize_document,含 draft/archived,**不套 serving 门**)。
+
+    供 provenance lineage 面板:reviewer 看某文档的 origin / source_repo@commit / license_scope /
+    external_sources / provenance_lineage(P4 合并折入的来源)/ merged_into。与邻域图同属 **admin-only
+    bypass 面**(reviewer 要看 draft 才审得动),受同一条 import-lint runtime 护栏约束 —— 绝不被
+    lookup_for_twin / knowledge_librarian / search_knowledge 调用。只读已转换面,不碰原始笔记。
+    """
+    from app.services.system_knowledge_service import serialize_document
+
+    doc = db.query(KBDocument).filter(KBDocument.doc_id == doc_id).first()
+    if doc is None:
+        return None
+    return serialize_document(doc)

@@ -263,6 +263,26 @@ def get_system_knowledge_graph(
     return result
 
 
+@admin_router.get(
+    "/document/{doc_id:path}",
+    summary="系统知识库单文档全量(admin;provenance lineage 面板;含 draft/archived,不套 serving 门)",
+)
+def get_system_knowledge_document(
+    doc_id: str,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    # 治理隔离:admin-only bypass 面(reviewer 看 provenance / P4 折入来源 / merged_into),
+    # 与 /graph 同属;runtime serving(reviewed 门)不受影响。
+    from app.services.system_knowledge_graph import admin_get_document
+
+    doc = admin_get_document(db, doc_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="知识库文档不存在")
+    _record_audit(db, doc_id=doc_id, op="admin_document_view", actor=f"admin:{admin_user.id}")
+    return doc
+
+
 @admin_router.post(
     "/reconciliation/scan",
     summary="跨源对账 detector 扫描(Phase B P3;只写候选旁路表,零 serving mutation)",

@@ -134,3 +134,35 @@ def test_isolation_admin_sees_draft_but_serving_gate_excludes_it(db):
         .first()
     )
     assert served_seed is not None
+
+
+def test_admin_get_document_returns_full_provenance(db):
+    """admin 单文档读:含 draft/archived,serialize_document 全量含 metadata.provenance_lineage。"""
+    from app.services.system_knowledge_graph import admin_get_document
+
+    db.add(KBDocument(
+        doc_id="c:hp:merged", doc_type="entity", entity_type="condition", title="幽门螺杆菌",
+        is_archived=False,
+        metadata_json={
+            "origin": "down-dedao-llm-wiki", "review_status": "reviewed",
+            "license_scope": "internal_transformed_claims",
+            "aliases": ["Hp", "pylori"],
+            "provenance_lineage": [
+                {"folded_doc_id": "kb:hp", "origin": "dedao-kbase-export",
+                 "license_scope": "internal_transformed_claims", "folded_by": "admin:1"}
+            ],
+        },
+    ))
+    db.commit()
+    doc = admin_get_document(db, "c:hp:merged")
+    assert doc is not None
+    assert doc["metadata"]["origin"] == "down-dedao-llm-wiki"
+    assert doc["metadata"]["provenance_lineage"][0]["folded_doc_id"] == "kb:hp"
+    assert admin_get_document(db, "does_not_exist") is None
+
+
+def test_admin_get_document_under_runtime_import_lint():
+    """admin_get_document 与图同属 admin bypass 面 —— 已由 test_no_runtime_module_imports_the_graph_module
+    覆盖(runtime 不 import system_knowledge_graph)。此处占位确认它在同模块。"""
+    from app.services import system_knowledge_graph as g
+    assert hasattr(g, "admin_get_document") and hasattr(g, "admin_expand_kb_neighborhood")

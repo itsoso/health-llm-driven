@@ -19,6 +19,7 @@ import {
 import { CoverageMatrixView, CoverageMatrix } from './CoverageMatrixView';
 import { KnowledgeGraphView, GraphData, GraphNode } from './KnowledgeGraphView';
 import { BreakerStatus, ReconciliationQueueView, ReconQueueData, ReconScanResult } from './ReconciliationQueueView';
+import { ProvenanceLineageView, KBDocPayload } from './ProvenanceLineageView';
 
 interface CoverageReportResponse {
   coverage_matrix?: CoverageMatrix;
@@ -143,6 +144,8 @@ export default function KnowledgeAdminPage() {
   const [reconKind, setReconKind] = useState('');
   const [reconShadow, setReconShadow] = useState(false);
   const [reconActionError, setReconActionError] = useState<string | null>(null);
+  const [provInput, setProvInput] = useState('');
+  const [provDocId, setProvDocId] = useState('');
   const [reconScanResult, setReconScanResult] = useState<ReconScanResult | undefined>(undefined);
 
   useEffect(() => {
@@ -190,6 +193,16 @@ export default function KnowledgeAdminPage() {
       return res.data;
     },
     enabled: isAuthenticated && !!user?.is_admin && !!graphSeed,
+  });
+
+  const provQuery = useQuery<KBDocPayload>({
+    queryKey: ['admin-knowledge-document', provDocId],
+    queryFn: async () => {
+      const res = await api.get(`/admin/knowledge/document/${encodeURIComponent(provDocId)}`);
+      return res.data;
+    },
+    enabled: isAuthenticated && !!user?.is_admin && !!provDocId,
+    retry: false, // 404 不重试(文档不存在直接显示)
   });
 
   const reconQuery = useQuery<ReconQueueData>({
@@ -477,6 +490,16 @@ export default function KnowledgeAdminPage() {
           onUnalign={(id) => reconUnalignMutation.mutate(id)}
           actionPending={reconActionMutation.isPending || reconUnalignMutation.isPending}
           actionError={reconActionError}
+        />
+
+        <ProvenanceLineageView
+          data={provQuery.data}
+          loading={provQuery.isFetching}
+          docId={provDocId}
+          input={provInput}
+          onInputChange={setProvInput}
+          onLookup={() => setProvDocId(provInput.trim())}
+          notFound={provQuery.isError}
         />
 
         <section className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
