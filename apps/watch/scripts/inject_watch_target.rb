@@ -23,6 +23,14 @@ abort("✗ 源目录不存在: #{src_dir}") unless Dir.exist?(src_dir)
 
 project = Xcodeproj::Project.open(proj_path)
 
+def ensure_plist_value(plist_path, key, value)
+  abort("✗ plist 不存在: #{plist_path}") unless File.exist?(plist_path)
+  cmd = '/usr/libexec/PlistBuddy'
+  return if system(cmd, '-c', "Set :#{key} #{value}", plist_path, out: File::NULL, err: File::NULL)
+  ok = system(cmd, '-c', "Add :#{key} string #{value}", plist_path, out: File::NULL, err: File::NULL)
+  abort("✗ 写 plist 失败: #{plist_path} #{key}=#{value}") unless ok
+end
+
 # 版本号必须与主 app 一致(否则 watchOS 校验报版本不匹配)。
 configured_main_target_name = ENV['REVA_MAIN_TARGET_NAME'].to_s.strip
 main_t = nil
@@ -86,8 +94,7 @@ target.build_configurations.each do |c|
   bs.delete('INFOPLIST_KEY_WKCompanionAppBundleIdentifier')
   bs.delete('INFOPLIST_KEY_CFBundleIconName')
   # 注:显示名不写进 pbxproj(中文会让 CocoaPods 读 pbxproj 时 ASCII-8BIT 崩);
-  # 腕上显示名走 watch target 的 Info.plist(GENERATE_INFOPLIST_FILE 默认取 PRODUCT_NAME),
-  # 需中文时在 W3 设备步骤里改 Info.plist CFBundleDisplayName。
+  # 腕上显示名走 watch target 的 Info.plist,本脚本在下方用 PlistBuddy 幂等写入。
   # 不再强制 CODE_SIGNING_ALLOWED=NO —— 发版时 EAS/xcodebuild 要给 watch target 签名,
   # 强制 NO 会让嵌入二进制未签名 → "not signed with the same certificate as the parent app"。
   bs['PRODUCT_NAME'] = watch_name
@@ -99,6 +106,10 @@ target.build_configurations.each do |c|
   bs['CODE_SIGN_ENTITLEMENTS'] = "#{watch_name}/RevaWatch.entitlements"
   bs.delete('CODE_SIGN_INJECT_BASE_ENTITLEMENTS')
 end
+
+watch_plist = File.join(src_dir, 'Info.plist')
+ensure_plist_value(watch_plist, 'CFBundleDisplayName', '阿衡')
+ensure_plist_value(watch_plist, 'CFBundleName', '阿衡')
 
 # 源文件组 + 引用(幂等:先清掉本 target 已有的 RevaWatch 源 build files)
 group = project.main_group.find_subpath(watch_name, true)
@@ -162,6 +173,10 @@ if Dir.exist?(comp_dir)
     bs['CODE_SIGN_ENTITLEMENTS'] = "#{comp_name}/RevaComplication.entitlements"
     bs.delete('CODE_SIGN_INJECT_BASE_ENTITLEMENTS')
   end
+
+  comp_plist = File.join(comp_dir, 'Info.plist')
+  ensure_plist_value(comp_plist, 'CFBundleDisplayName', '阿衡')
+  ensure_plist_value(comp_plist, 'CFBundleName', '阿衡')
 
   cgroup = project.main_group.find_subpath(comp_name, true)
   cgroup.path = comp_name
