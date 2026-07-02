@@ -358,18 +358,50 @@ export async function* streamChat(
   }
 }
 
-export async function getConversations(titleLike?: string): Promise<Conversation[]> {
+export interface ConversationsPage {
+  items: Conversation[];
+  total: number;
+}
+
+/**
+ * 分页拉取对话列表。透传 offset/limit/title_like 给 /agent/conversations
+ * (后端返回 { items, total, limit, offset })，返回 items + total 供无限下拉判断
+ * 是否还有更多 (items.length < total)。
+ *
+ * 后端约束: limit ∈ [1, 100] (agent.py list_conversations Query 校验)。
+ * 请求失败会抛错 (fail-loud) — 调用方负责保留已加载列表并展示重试。
+ */
+export async function getConversationsPage({
+  offset = 0,
+  limit = 20,
+  titleLike,
+}: { offset?: number; limit?: number; titleLike?: string } = {}): Promise<ConversationsPage> {
   const token = await getToken();
-  const params = new URLSearchParams({ limit: '20' });
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (titleLike) params.set('title_like', titleLike);
-  // /agent/conversations 返回分页包装 { items, total, limit, offset } (web 同款),
-  // 不是裸数组 — 必须取 .items, 否则历史列表渲染为空/错位。
   const res = await fetch(`${BASE_URL}/agent/conversations?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) return [];
+  if (!res.ok) {
+    throw new Error(`getConversationsPage failed: ${res.status}`);
+  }
   const data = await res.json();
-  return data.items ?? [];
+  const items: Conversation[] = data.items ?? [];
+  const total: number = typeof data.total === 'number' ? data.total : items.length;
+  return { items, total };
+}
+
+/**
+ * 兼容旧调用方 (voice-chat / useChatEngine 的 briefing 探测) — 取第一页 items。
+ * 失败时返回空数组 (保持历史行为: 这些调用方不处理异常)。
+ */
+export async function getConversations(titleLike?: string): Promise<Conversation[]> {
+  try {
+    const { items } = await getConversationsPage({ limit: 20, titleLike });
+    return items;
+  } catch {
+    return [];
+  }
 }
 
 export async function getConversationMessages(

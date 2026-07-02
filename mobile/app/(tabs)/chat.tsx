@@ -8,7 +8,7 @@ import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
-import { deleteConversation, getConversations, updateConversationTitle } from '../../services/chat';
+import { deleteConversation, getConversations, getConversationsPage, updateConversationTitle } from '../../services/chat';
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
 import ChatInputBar, { type ChatInputSendOptions } from '../../components/chat/ChatInputBar';
 import ChatBubble from '../../components/chat/ChatBubble';
@@ -53,6 +53,9 @@ const SUGGESTIONS: SuggestionCard[] = [
 ];
 
 const CHAT_BOTTOM_BREATHING_SPACE = 4;
+
+// 对话历史无限下拉每页条数 (后端 limit 上限 100)
+const HISTORY_PAGE_SIZE = 20;
 
 function guessSuggestionIcon(text: string): SuggestionCard['icon'] {
   if (/体检|化验|指标|LDL|HbA1c|尿酸|血压|血脂|血糖/i.test(text)) return 'document-text-outline';
@@ -112,6 +115,9 @@ export default function ChatScreen() {
   const [conversations, setConversations] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
+  const [historyLoadMoreError, setHistoryLoadMoreError] = useState(false);
   const [llmModelId, setLlmModelId] = useState<string | null>(null);
   const [llmOptions, setLlmOptions] = useState<ModelOption[]>([]);
   const [llmSaving, setLlmSaving] = useState<string | null>(null);
@@ -339,18 +345,48 @@ export default function ChatScreen() {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
   }, [opener, refreshCoachHomeState, sendMessage]);
 
+  // 加载第一页 (打开 sheet / 重试 / 搜索变化时调用) — 重置所有分页状态。
   const loadConversationHistory = useCallback(async () => {
     setHistoryLoading(true);
     setHistoryError(null);
+    setHistoryLoadMoreError(false);
     try {
-      const items = await getConversations();
+      const { items, total } = await getConversationsPage({ offset: 0, limit: HISTORY_PAGE_SIZE });
       setConversations(items);
+      setHistoryTotal(total);
     } catch {
       setHistoryError('加载历史对话失败');
     } finally {
       setHistoryLoading(false);
     }
   }, []);
+
+  // 下拉到底 → 追加下一页。按 id 去重, 不打乱已有顺序 (并发保护)。
+  const loadMoreConversations = useCallback(async () => {
+    if (historyLoading || historyLoadingMore) return;
+    // 用函数式读到当前长度, 避免闭包读到旧的 conversations
+    let currentLen = 0;
+    setConversations(prev => { currentLen = prev.length; return prev; });
+    if (currentLen >= historyTotal) return;
+    setHistoryLoadingMore(true);
+    setHistoryLoadMoreError(false);
+    try {
+      const { items, total } = await getConversationsPage({
+        offset: currentLen,
+        limit: HISTORY_PAGE_SIZE,
+      });
+      setHistoryTotal(total);
+      setConversations(prev => {
+        const seen = new Set(prev.map((c: any) => c.id));
+        const appended = items.filter((c: any) => !seen.has(c.id));
+        return appended.length > 0 ? [...prev, ...appended] : prev;
+      });
+    } catch {
+      setHistoryLoadMoreError(true);
+    } finally {
+      setHistoryLoadingMore(false);
+    }
+  }, [historyLoading, historyLoadingMore, historyTotal]);
 
   const openHistory = useCallback(() => {
     setToolMenuVisible(false);
@@ -398,7 +434,11 @@ export default function ChatScreen() {
       setHistoryError('删除失败，请稍后重试');
       return;
     }
-    setConversations(prev => prev.filter(item => item.id !== id));
+    setConversations(prev => {
+      const next = prev.filter(item => item.id !== id);
+      if (next.length !== prev.length) setHistoryTotal(t => Math.max(0, t - 1));
+      return next;
+    });
     if (conversationId === id) {
       handleNewChat();
     }
@@ -709,6 +749,11 @@ export default function ChatScreen() {
         loading={historyLoading}
         error={historyError}
         onRetry={loadConversationHistory}
+        hasMore={conversations.length < historyTotal}
+        loadingMore={historyLoadingMore}
+        loadMoreError={historyLoadMoreError}
+        onLoadMore={loadMoreConversations}
+        total={historyTotal}
       />
     </SafeAreaView>
   );

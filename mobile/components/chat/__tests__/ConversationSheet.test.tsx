@@ -1,4 +1,5 @@
 import React from 'react';
+import { FlatList } from 'react-native';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 
 import ConversationSheet from '../ConversationSheet';
@@ -113,5 +114,156 @@ describe('ConversationSheet pinning', () => {
       <ConversationSheet {...baseProps} conversations={conversations as any} />
     );
     expect(getByText('2026-04-25')).toBeTruthy();
+  });
+});
+
+// 生成一页普通对话 (非置顶, 保持相对顺序稳定)
+function makeConvs(ids: number[]) {
+  return ids.map(id => ({
+    id,
+    title: `对话 ${id}`,
+    created_at: '2026-04-25T01:00:00Z',
+    updated_at: '2026-04-25T01:00:00Z',
+  }));
+}
+
+const firePageEnd = (renderResult: any) => {
+  const list = renderResult.UNSAFE_getByType(FlatList);
+  list.props.onEndReached({ distanceFromEnd: 0 });
+};
+
+describe('ConversationSheet 无限下拉分页', () => {
+  it('onEndReached 在 hasMore 且未加载时触发 onLoadMore', () => {
+    const onLoadMore = jest.fn();
+    const rr = render(
+      <ConversationSheet
+        {...baseProps}
+        conversations={makeConvs([1, 2, 3]) as any}
+        hasMore
+        loadingMore={false}
+        loadMoreError={false}
+        onLoadMore={onLoadMore}
+        total={57}
+      />
+    );
+    firePageEnd(rr);
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it('end-guard: 已全部加载 (hasMore=false) 时 onEndReached 不越界', () => {
+    const onLoadMore = jest.fn();
+    const rr = render(
+      <ConversationSheet
+        {...baseProps}
+        conversations={makeConvs([1, 2, 3]) as any}
+        hasMore={false}
+        loadingMore={false}
+        onLoadMore={onLoadMore}
+        total={3}
+      />
+    );
+    firePageEnd(rr);
+    expect(onLoadMore).not.toHaveBeenCalled();
+  });
+
+  it('end-guard: 正在加载中 (loadingMore) 时 onEndReached 不重复触发', () => {
+    const onLoadMore = jest.fn();
+    const rr = render(
+      <ConversationSheet
+        {...baseProps}
+        conversations={makeConvs([1, 2, 3]) as any}
+        hasMore
+        loadingMore
+        onLoadMore={onLoadMore}
+        total={57}
+      />
+    );
+    firePageEnd(rr);
+    expect(onLoadMore).not.toHaveBeenCalled();
+  });
+
+  it('end-guard: 处于加载失败态时 onEndReached 不自动重试 (等用户点重试)', () => {
+    const onLoadMore = jest.fn();
+    const rr = render(
+      <ConversationSheet
+        {...baseProps}
+        conversations={makeConvs([1, 2, 3]) as any}
+        hasMore
+        loadingMore={false}
+        loadMoreError
+        onLoadMore={onLoadMore}
+        total={57}
+      />
+    );
+    firePageEnd(rr);
+    expect(onLoadMore).not.toHaveBeenCalled();
+  });
+
+  it('append: 追加下一页后所有行都渲染, 顺序不打乱', () => {
+    const rr = render(
+      <ConversationSheet
+        {...baseProps}
+        conversations={makeConvs([1, 2, 3]) as any}
+        hasMore
+        total={6}
+      />
+    );
+    // 追加第二页
+    rr.rerender(
+      <ConversationSheet
+        {...baseProps}
+        conversations={makeConvs([1, 2, 3, 4, 5, 6]) as any}
+        hasMore={false}
+        total={6}
+      />
+    );
+    const rows = rr
+      .getAllByRole('button')
+      .filter((n: any) => typeof n.props.accessibilityLabel === 'string' && n.props.accessibilityLabel.startsWith('对话:'));
+    const labels = rows.map((r: any) => r.props.accessibilityLabel);
+    expect(labels).toEqual([
+      '对话: 对话 1', '对话: 对话 2', '对话: 对话 3',
+      '对话: 对话 4', '对话: 对话 5', '对话: 对话 6',
+    ]);
+  });
+
+  it('footer: 全部加载完且总数超过一页时显示 "没有更多了"', () => {
+    const rr = render(
+      <ConversationSheet
+        {...baseProps}
+        conversations={makeConvs([1, 2, 3]) as any}
+        hasMore={false}
+        total={25}
+      />
+    );
+    expect(rr.getByText('没有更多了')).toBeTruthy();
+  });
+
+  it('footer: 总数不足一页 (total<=20) 时不显示 "没有更多了"', () => {
+    const rr = render(
+      <ConversationSheet
+        {...baseProps}
+        conversations={makeConvs([1, 2, 3]) as any}
+        hasMore={false}
+        total={3}
+      />
+    );
+    expect(rr.queryByText('没有更多了')).toBeNull();
+  });
+
+  it('footer: 加载失败显示 "加载失败，点击重试" 且点击调用 onLoadMore', () => {
+    const onLoadMore = jest.fn();
+    const rr = render(
+      <ConversationSheet
+        {...baseProps}
+        conversations={makeConvs([1, 2, 3]) as any}
+        hasMore
+        loadMoreError
+        onLoadMore={onLoadMore}
+        total={57}
+      />
+    );
+    fireEvent.press(rr.getByLabelText('加载失败，点击重试'));
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  View, Text, Modal, Pressable, ScrollView, TouchableOpacity,
+  View, Text, Modal, Pressable, FlatList, TouchableOpacity,
   StyleSheet, Alert, ActivityIndicator, useWindowDimensions,
   TextInput,
 } from 'react-native';
@@ -25,12 +25,20 @@ interface Props {
   loading?: boolean;
   error?: string | null;
   onRetry?: () => void;
+  /** 无限下拉分页 */
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  loadMoreError?: boolean;
+  onLoadMore?: () => void;
+  /** 后端返回的总条数 (决定是否显示 "没有更多了" footer) */
+  total?: number;
 }
 
 export default function ConversationSheet({
   visible, onClose, conversations, setConversations,
   currentConversationId, onSelectConversation, onDeleteConversation,
   onRenameConversation, loading, error, onRetry,
+  hasMore, loadingMore, loadMoreError, onLoadMore, total,
 }: Props) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
@@ -52,11 +60,15 @@ export default function ConversationSheet({
     ((b.updated_at || b.created_at || '') as string).localeCompare(
       (a.updated_at || a.created_at || '') as string,
     );
-  const sortedConversations = [
-    ...conversations.filter((c: any) => isBriefing(titleOf(c))).sort(byNewest),
-    ...conversations.filter((c: any) => isWeekly(titleOf(c))).sort(byNewest),
-    ...conversations.filter((c: any) => !isPinned(titleOf(c))),
-  ];
+  // 置顶排序只作用于"当前已加载"的条目 (无限下拉追加时不打乱已有相对顺序)。
+  const sortedConversations = useMemo(
+    () => [
+      ...conversations.filter((c: any) => isBriefing(titleOf(c))).sort(byNewest),
+      ...conversations.filter((c: any) => isWeekly(titleOf(c))).sort(byNewest),
+      ...conversations.filter((c: any) => !isPinned(titleOf(c))),
+    ],
+    [conversations],
+  );
 
   const startRename = (item: any) => {
     setEditingId(item.id);
@@ -119,11 +131,21 @@ export default function ConversationSheet({
               <Text style={styles.loadingText}>还没有历史对话</Text>
             </View>
           ) : (
-            <ScrollView style={{ maxHeight: listMaxHeight }} showsVerticalScrollIndicator={false}>
-              {sortedConversations.slice(0, 20).map((item: any) => {
+            <FlatList
+              style={{ maxHeight: listMaxHeight }}
+              data={sortedConversations}
+              keyExtractor={(item: any) => String(item.id)}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              onEndReachedThreshold={0.3}
+              onEndReached={() => {
+                // 还有更多 + 不在加载中 → 拉下一页。上层用 id 去重、按 total 收口。
+                if (hasMore && !loadingMore && !loadMoreError) onLoadMore?.();
+              }}
+              renderItem={({ item }: { item: any }) => {
                 const isEditing = editingId === item.id;
                 return (
-                  <View key={item.id} style={[styles.row, currentConversationId === item.id && styles.rowActive]}>
+                  <View style={[styles.row, currentConversationId === item.id && styles.rowActive]}>
                     {isEditing ? (
                       <View style={styles.editWrap}>
                         <TextInput
@@ -201,13 +223,67 @@ export default function ConversationSheet({
                     )}
                   </View>
                 );
-              })}
-            </ScrollView>
+              }}
+              ListFooterComponent={
+                <ListFooter
+                  loadingMore={loadingMore}
+                  loadMoreError={loadMoreError}
+                  hasMore={hasMore}
+                  total={total}
+                  onLoadMore={onLoadMore}
+                />
+              }
+            />
           )}
         </Pressable>
       </Pressable>
     </Modal>
   );
+}
+
+// 一页条数 (与 chat.tsx 的 HISTORY_PAGE_SIZE 对齐) — 仅用于决定
+// "没有更多了" 是否值得显示 (总数超过一页才有翻页语义)。
+const PAGE_SIZE_FOR_END_HINT = 20;
+
+function ListFooter({
+  loadingMore, loadMoreError, hasMore, total, onLoadMore,
+}: {
+  loadingMore?: boolean;
+  loadMoreError?: boolean;
+  hasMore?: boolean;
+  total?: number;
+  onLoadMore?: () => void;
+}) {
+  if (loadMoreError) {
+    return (
+      <TouchableOpacity
+        onPress={onLoadMore}
+        style={styles.footer}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel="加载失败，点击重试"
+      >
+        <Ionicons name="reload-outline" size={16} color={revaSemantic.risk.fg} />
+        <Text style={[styles.footerText, { color: revaSemantic.risk.fg }]}>加载失败，点击重试</Text>
+      </TouchableOpacity>
+    );
+  }
+  if (loadingMore) {
+    return (
+      <View style={styles.footer} accessibilityLabel="加载更多中">
+        <ActivityIndicator size="small" color={C.green500} />
+      </View>
+    );
+  }
+  // 全部加载完 & 总数超过一页 → 提示到底
+  if (!hasMore && (total ?? 0) > PAGE_SIZE_FOR_END_HINT) {
+    return (
+      <View style={styles.footer}>
+        <Text style={styles.footerText}>没有更多了</Text>
+      </View>
+    );
+  }
+  return null;
 }
 
 const styles = StyleSheet.create({
@@ -250,4 +326,9 @@ const styles = StyleSheet.create({
     borderRadius: revaRadii.md, backgroundColor: C.green500,
   },
   retryBtnText: { fontFamily: revaFonts.sans, fontSize: 14, color: '#fff', fontWeight: '500' },
+  footer: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 16,
+  },
+  footerText: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink3 },
 });

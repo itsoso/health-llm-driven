@@ -4,6 +4,7 @@ import { Keyboard, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockOpenHistory = jest.fn();
+const mockOpenHistoryPage = jest.fn();
 const mockPush = jest.fn();
 const mockSendMessage = jest.fn();
 const mockFetchConversationStarters = jest.fn();
@@ -45,6 +46,8 @@ jest.mock('@react-navigation/bottom-tabs', () => ({
 jest.mock('../../../services/chat', () => ({
   deleteConversation: jest.fn(),
   getConversations: (...args: any[]) => mockOpenHistory(...args),
+  // 历史列表现在走分页接口 — 打开 sheet 时调它 (返回 { items, total })
+  getConversationsPage: (...args: any[]) => mockOpenHistoryPage(...args),
   updateConversationTitle: jest.fn(),
 }));
 
@@ -131,6 +134,7 @@ describe('ChatScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockOpenHistory.mockResolvedValue([]);
+    mockOpenHistoryPage.mockResolvedValue({ items: [], total: 0 });
     mockFetchConversationStarters.mockResolvedValue({ opener: null, suggestions: null });
     mockFetchMemoryOpener.mockResolvedValue([]);
     mockRecordCardAdherence.mockResolvedValue({});
@@ -153,7 +157,7 @@ describe('ChatScreen', () => {
     });
 
     await waitFor(() => {
-      expect(mockOpenHistory).toHaveBeenCalled();
+      expect(mockOpenHistoryPage).toHaveBeenCalled();
     });
   });
 
@@ -313,7 +317,7 @@ describe('ChatScreen', () => {
     });
 
     await waitFor(() => {
-      expect(mockOpenHistory).toHaveBeenCalled();
+      expect(mockOpenHistoryPage).toHaveBeenCalled();
     });
     expect(mockPush).not.toHaveBeenCalledWith(expect.objectContaining({
       pathname: '/voice-chat',

@@ -7,6 +7,7 @@ const mockLoadConversation = jest.fn();
 const mockNewChat = jest.fn();
 const mockSendMessage = jest.fn();
 const mockGetConversations = jest.fn();
+const mockGetConversationsPage = jest.fn();
 const mockDeleteConversation = jest.fn();
 
 jest.mock('expo-router', () => ({
@@ -37,6 +38,7 @@ jest.mock('../../../hooks/useChatEngine', () => ({
 
 jest.mock('../../../services/chat', () => ({
   getConversations: (...args: any[]) => mockGetConversations(...args),
+  getConversationsPage: (...args: any[]) => mockGetConversationsPage(...args),
   deleteConversation: (...args: any[]) => mockDeleteConversation(...args),
   updateConversationTitle: jest.fn(),
 }));
@@ -85,14 +87,18 @@ import ChatScreen from '../../../app/(tabs)/chat';
 describe('ChatScreen history entry', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetConversations.mockResolvedValue([
-      {
-        id: 88,
-        title: '恢复能力分析',
-        created_at: '2026-05-14T09:00:00Z',
-        updated_at: '2026-05-14T09:30:00Z',
-      },
-    ]);
+    // 历史列表现在走分页接口 getConversationsPage (返回 { items, total })
+    mockGetConversationsPage.mockResolvedValue({
+      items: [
+        {
+          id: 88,
+          title: '恢复能力分析',
+          created_at: '2026-05-14T09:00:00Z',
+          updated_at: '2026-05-14T09:30:00Z',
+        },
+      ],
+      total: 1,
+    });
   });
 
   it('opens conversation history from the coach header', async () => {
@@ -102,7 +108,7 @@ describe('ChatScreen history entry', () => {
       fireEvent.press(getByLabelText('对话历史'));
     });
 
-    await waitFor(() => expect(mockGetConversations).toHaveBeenCalled());
+    await waitFor(() => expect(mockGetConversationsPage).toHaveBeenCalled());
     expect(await findByText('恢复能力分析')).toBeTruthy();
   });
 });
