@@ -96,6 +96,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
   const [justSent, setJustSent] = useState(false);  // 刚发送, 按钮停留 1s 避免误切 mic
   const { pendingImages, removeImage, clearImages, pickImage, takePhoto } = useMediaPicker();
   const textInputRef = useRef<TextInput>(null);
+  const lastKeyboardSubmitAtRef = useRef(0);
   const canSend = (!!input.trim() || pendingImages.length > 0) && !isStreaming;
 
   const handleSend = useCallback((text?: string) => {
@@ -112,6 +113,21 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
     setJustSent(true);
     setTimeout(() => setJustSent(false), 1000);
   }, [agentMode, input, pendingImages, onSend, clearImages]);
+
+  const handleKeyboardSubmit = useCallback(() => {
+    if (!canSend) return;
+    const now = Date.now();
+    if (now - lastKeyboardSubmitAtRef.current < 250) return;
+    lastKeyboardSubmitAtRef.current = now;
+    handleSend();
+  }, [canSend, handleSend]);
+
+  const handleTextInputKeyPress = useCallback((event: any) => {
+    const key = event?.nativeEvent?.key;
+    if (key === 'Enter' || key === 'Return' || key === '\n') {
+      handleKeyboardSubmit();
+    }
+  }, [handleKeyboardSubmit]);
 
   const voice = useVoiceRecording({
     onTranscript: (text) => {
@@ -399,8 +415,10 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
                 placeholderTextColor={C.ink3}
                 value={input}
                 onChangeText={setInput}
-                onSubmitEditing={() => handleSend()}
+                onKeyPress={handleTextInputKeyPress}
+                onSubmitEditing={handleKeyboardSubmit}
                 returnKeyType="send"
+                submitBehavior="submit"
                 multiline
                 maxLength={2000}
                 accessibilityLabel="消息输入框"

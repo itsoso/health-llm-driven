@@ -144,6 +144,18 @@ describe('ChatInputBar', () => {
     );
   });
 
+  it('sends typed text when Enter is pressed in the composer', () => {
+    const onSend = jest.fn();
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+
+    fireEvent.changeText(getByLabelText('消息输入框'), '记录晚餐吃了鸡胸肉');
+    fireEvent(getByLabelText('消息输入框'), 'keyPress', { nativeEvent: { key: 'Enter' } });
+
+    expect(onSend).toHaveBeenCalledWith('记录晚餐吃了鸡胸肉', null, undefined);
+  });
+
   it('runs the medical exam import skill from the attachment menu', async () => {
     const DocumentPicker = require('expo-document-picker');
     DocumentPicker.getDocumentAsync.mockResolvedValueOnce({
