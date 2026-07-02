@@ -461,7 +461,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
             style={styles.menuSheet}
             onPress={e => e.stopPropagation()}
           >
-            <View style={styles.menuHandle} />
+            <View testID="attachment-menu-handle" style={styles.menuHandle} />
             <View testID="attachment-action-grid" style={styles.attachmentGrid}>
               <AttachmentGridItem icon="camera-outline" label="拍照" desc="食物/数据" onPress={handleTakePhoto} />
               <AttachmentGridItem icon="image-outline" label="相册" desc="最多9张" onPress={handlePickImage} />
@@ -504,7 +504,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
             style={styles.menuSheet}
             onPress={e => e.stopPropagation()}
           >
-            <View style={styles.menuHandle} />
+            <View testID="medical-exam-import-menu-handle" style={styles.menuHandle} />
             <View style={styles.medicalImportHeader}>
               <Text style={styles.menuLabel}>导入体检报告</Text>
               <Text style={styles.menuDesc}>写入体检记录，并在对话中生成可复核卡片</Text>
@@ -746,7 +746,7 @@ const styles = StyleSheet.create({
   },
   menuHandle: {
     width: 36, height: 4, borderRadius: 2, backgroundColor: C.ink4,
-    alignSelf: 'center', marginBottom: revaSpacing.s4,
+    alignSelf: 'center', marginBottom: 8,
   },
   medicalImportHeader: {
     paddingHorizontal: 4,

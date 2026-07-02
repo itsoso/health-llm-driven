@@ -87,6 +87,17 @@ describe('ChatInputBar', () => {
     expect(menuSheet.paddingBottom).toBeLessThanOrEqual(28);
   });
 
+  it('keeps the attachment menu handle close to the action grid', () => {
+    const { getByLabelText, getByTestId } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('附件菜单'));
+
+    const handle = StyleSheet.flatten(getByTestId('attachment-menu-handle').props.style);
+    expect(handle.marginBottom).toBeLessThanOrEqual(10);
+  });
+
   it('renders attachment actions as a compact two-column grid', () => {
     const { getByLabelText, getByTestId, getByText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
