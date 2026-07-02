@@ -1264,6 +1264,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/llm/usage-dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin LLM Token/套餐成本总览
+         * @description 管理员视角的 LLM 使用账本.
+         *
+         *     - 全局/单用户 token、调用数、成功率、延迟。
+         *     - TokenPlan 固定月费按窗口内 token 份额分摊,用于观察 698/月套餐的有效单价。
+         *     - 兼容历史日志: provider=openai 但 model 属于 TokenPlan 注册模型时,仍归入 TokenPlan。
+         */
+        get: operations["usage_dashboard_api_v1_admin_llm_usage_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/llm/performance-stats": {
         parameters: {
             query?: never;
@@ -1273,7 +1297,7 @@ export interface paths {
         };
         /**
          * LLM 性能聚合 (p50/p95 + 成功率 + 成本)
-         * @description 按 model/provider/caller 聚合 llm_usage_log, 返回 p50/p95/p99/avg/
+         * @description 按 model/provider/caller 聚合 llm_usage_logs, 返回 p50/p95/p99/avg/
          *     success_rate/total_tokens/cost. 来自 2026-05-13 用户诉求 (积累性能优化).
          *
          *     group_by: model / provider / caller (默认 model)
@@ -7339,7 +7363,7 @@ export interface paths {
         };
         /**
          * Get My Daily Artifact
-         * @description Return today's compact top-action artifact.
+         * @description Return the compact top-action artifact, optionally pinned to a date/action.
          */
         get: operations["get_my_daily_artifact_api_v1_daily_artifact_me_get"];
         put?: never;
@@ -13797,6 +13821,176 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/knowledge/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 系统知识库邻域图(admin,种子+hops≤2;含 draft 节点) */
+        get: operations["get_system_knowledge_graph_api_v1_admin_knowledge_graph_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/reconciliation/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 跨源对账 detector 扫描(Phase B P3;只写候选旁路表,零 serving mutation) */
+        post: operations["scan_reconciliation_candidates_api_v1_admin_knowledge_reconciliation_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/reconciliation/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 跨源对账候选队列(Phase B P3;只读) */
+        get: operations["get_reconciliation_candidates_api_v1_admin_knowledge_reconciliation_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/reconciliation/breaker": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** auto 熔断状态(P6;**粘性**:reset 后任一检出误合即熔断,直到显式人工 reset) */
+        get: operations["get_reconciliation_breaker_api_v1_admin_knowledge_reconciliation_breaker_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/reconciliation/breaker/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 人工复位熔断(P6;审计化,确认 reset 前误合已复核;新误合会再次熔断) */
+        post: operations["post_reconciliation_breaker_reset_api_v1_admin_knowledge_reconciliation_breaker_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/reconciliation/candidates/{candidate_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 对账候选裁决(Phase B P4;approve_merge=首个 serving mutation / reject / defer) */
+        patch: operations["review_reconciliation_candidate_api_v1_admin_knowledge_reconciliation_candidates__candidate_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/reconciliation/candidates/{candidate_id}/unalign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 撤销一次 merge(Phase B P4;字节还原,可逆性是 P5 auto 的前置) */
+        post: operations["unalign_reconciliation_candidate_api_v1_admin_knowledge_reconciliation_candidates__candidate_id__unalign_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/reconciliation/judge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 对 open 候选跑 LLM judge(Phase B P5;advisory,写 relation_tag/score,不自动合) */
+        post: operations["run_reconciliation_judge_api_v1_admin_knowledge_reconciliation_judge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/reconciliation/auto_merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** P5 无人自动合(**默认 DISABLED**:只对显式 enabled_entity_types 的 entity_align 跑)。⚠️ 运营纪律:P6 影子审计 + 速率熔断上线前,enabled_entity_types **必须留空**(§10:τ=0.95 会放过部分近似,无运行时后备不得开任何 type 的 auto)。 */
+        post: operations["run_reconciliation_auto_merge_api_v1_admin_knowledge_reconciliation_auto_merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/reconciliation/eval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** P5 判重/auto eval(Phase B;测 precision + auto FP,不改 serving) */
+        post: operations["run_reconciliation_eval_api_v1_admin_knowledge_reconciliation_eval_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/knowledge/eval_report": {
         parameters: {
             query?: never;
@@ -18773,6 +18967,8 @@ export interface components {
             file_name?: string | null;
             /** Extra Context */
             extra_context?: string | null;
+            /** Channel */
+            channel?: string | null;
         };
         /** AmbientAudioInputResponse */
         AmbientAudioInputResponse: {
@@ -19574,6 +19770,14 @@ export interface components {
              * @default other
              */
             category: string;
+        };
+        /** BreakerResetRequest */
+        BreakerResetRequest: {
+            /**
+             * Note
+             * @description 必填:说明误合已如何复核处理
+             */
+            note: string;
         };
         /** CalDAVCredentialIn */
         CalDAVCredentialIn: {
@@ -27326,6 +27530,26 @@ export interface components {
              */
             remaining: number;
         };
+        /** ReconciliationAutoMergeRequest */
+        ReconciliationAutoMergeRequest: {
+            /** Enabled Entity Types */
+            enabled_entity_types?: string[];
+            /**
+             * Limit
+             * @default 200
+             */
+            limit: number;
+        };
+        /** ReconciliationDecisionRequest */
+        ReconciliationDecisionRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "approve_merge" | "reject" | "defer" | "confirm_shadow";
+            /** Note */
+            note?: string | null;
+        };
         /** RegimenInstantiate */
         RegimenInstantiate: {
             /** Template Id */
@@ -33437,6 +33661,38 @@ export interface operations {
                 include_journalctl?: boolean;
                 /** @description 强制跳过 Redis 缓存 */
                 refresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    usage_dashboard_api_v1_admin_llm_usage_dashboard_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                user_id?: number | null;
             };
             header?: never;
             path?: never;
@@ -43469,7 +43725,9 @@ export interface operations {
     get_my_daily_artifact_api_v1_daily_artifact_me_get: {
         parameters: {
             query?: {
+                artifact_date?: string | null;
                 followup_within_days?: number;
+                top_action_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -48357,7 +48615,9 @@ export interface operations {
     agent_stream_api_v1_agent_stream_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "x-reva-client-caps"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -53501,6 +53761,302 @@ export interface operations {
         };
     };
     get_system_knowledge_coverage_report_api_v1_admin_knowledge_coverage_report_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_system_knowledge_graph_api_v1_admin_knowledge_graph_get: {
+        parameters: {
+            query: {
+                /** @description 种子文档 doc_id */
+                seed: string;
+                hops?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scan_reconciliation_candidates_api_v1_admin_knowledge_reconciliation_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_reconciliation_candidates_api_v1_admin_knowledge_reconciliation_candidates_get: {
+        parameters: {
+            query?: {
+                /** @description open|approved|rejected|deferred */
+                status?: string | null;
+                /** @description entity_align|claim_overlap */
+                kind?: string | null;
+                /** @description duplicate|agree|conflict|complementary */
+                relation_tag?: string | null;
+                /** @description 只看待影子复核的 auto 合(强制 status=approved) */
+                shadow_pending?: boolean;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_reconciliation_breaker_api_v1_admin_knowledge_reconciliation_breaker_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    post_reconciliation_breaker_reset_api_v1_admin_knowledge_reconciliation_breaker_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BreakerResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_reconciliation_candidate_api_v1_admin_knowledge_reconciliation_candidates__candidate_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReconciliationDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unalign_reconciliation_candidate_api_v1_admin_knowledge_reconciliation_candidates__candidate_id__unalign_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_reconciliation_judge_api_v1_admin_knowledge_reconciliation_judge_post: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_reconciliation_auto_merge_api_v1_admin_knowledge_reconciliation_auto_merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReconciliationAutoMergeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_reconciliation_eval_api_v1_admin_knowledge_reconciliation_eval_post: {
         parameters: {
             query?: never;
             header?: never;

@@ -324,9 +324,15 @@ async def test_medication_lookup_corrupt_json_no_raw_error_leak(db):
         async def get(self, url, headers=None): return _Resp()
 
     executor._http_client = _Client()
+    # medication 恒确认前置(2026-07-02):带 confirmed=true 越过确认闸,
+    # 本测试专测确认后的 lookup 损坏兜底路径。
     result = await executor._execute_tool(
         tool_name="health_record",
-        args_raw=json.dumps({"record_type": "medication", "data": {"medication_name": "二甲双胍"}}),
+        args_raw=json.dumps({
+            "record_type": "medication",
+            "confirmed": True,
+            "data": {"medication_name": "二甲双胍", "confirmed": True},
+        }),
         user_token="t",
     )
     s = str(result)
