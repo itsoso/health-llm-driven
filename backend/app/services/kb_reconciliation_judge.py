@@ -136,12 +136,14 @@ def _normalize_verdict(v: Any) -> Dict[str, Any]:
 
 
 def classify_candidate(
-    db: Session, cand: KBReconciliationCandidate, *, classifier: Optional[Classifier] = None
+    db: Session, cand: KBReconciliationCandidate, *, classifier: Optional[Classifier] = None,
+    commit: bool = True,
 ) -> Dict[str, Any]:
     """advisory 分类。写回 candidate.relation_tag + score + signals['judge']。
 
     **对任意 classifier fail-safe**:分类器抛异常 → 保守 {None,0.0}(不抛断扫描);
     输出经 `_normalize_verdict` 夹死(非法 tag→None、score clamp)。安全不依赖分类器自律。
+    commit=False:只在 session 内写不提交(供 dry-run preview 末尾整体 rollback)。
     """
     left, right = _sides(db, cand)
     if left is None or right is None:
@@ -163,7 +165,8 @@ def classify_candidate(
     sig = dict(cand.signals or {})
     sig["judge"] = {"version": JUDGE_VERSION, **verdict}
     cand.signals = sig
-    db.commit()
+    if commit:
+        db.commit()
     return verdict
 
 
@@ -311,6 +314,63 @@ def confirm_shadow_audit(db: Session, candidate_id: int, *, actor: str) -> Dict[
                    diff={"candidate_id": candidate_id}))
     db.commit()
     return {"candidate_id": candidate_id, "shadow_audit": "confirmed"}
+
+
+def preview_auto_merge(
+    db: Session,
+    *,
+    enabled_entity_types: Optional[frozenset] = None,
+    classifier: Optional[Classifier] = None,
+    limit: int = 200,
+) -> Dict[str, Any]:
+    """**Dry-run**:跑真 judge + 9 闸,报「会 auto 合的候选」+ 各 skip 理由,**零 serving mutation、
+    零候选状态改动**(judge 的 relation_tag/score 写在 SAVEPOINT 里,结束 rollback)。
+
+    首次为某 entity_type 开 auto 前的 look-before-you-leap:人先看真 judge 在真候选上会合掉哪些
+    (含真实分数),确认这批对再翻 enable —— τ=0.95(比零误合激进)下的补偿控制。
+    """
+    enabled = frozenset(enabled_entity_types or ())
+    opens = (
+        db.query(KBReconciliationCandidate)
+        .filter(KBReconciliationCandidate.status == "open")
+        .order_by(KBReconciliationCandidate.id.asc())
+        .limit(max(1, min(int(limit or 200), 1000)))
+        .all()
+    )
+    would_merge: List[Dict[str, Any]] = []
+    would_skip: List[Dict[str, Any]] = []
+    breaker = auto_breaker_status(db)
+    # judge 的 advisory 写入用 commit=False 只留在 session,函数末整体 rollback →
+    # 预览零副作用(连 judge 分数都不落库)。前置的 scan/候选已各自 commit,不受影响。
+    try:
+        for cand in opens:
+            verdict = classify_candidate(db, cand, classifier=classifier, commit=False)
+            ok, reasons = can_auto_approve(db, cand, enabled_entity_types=enabled, breaker=breaker)
+            row = {
+                "candidate_id": cand.id,
+                "left_doc_id": cand.left_doc_id,
+                "right_doc_id": cand.right_doc_id,
+                "entity_type": cand.entity_type,
+                "canonical_hint": cand.canonical_hint,
+                "judge": {"relation_tag": verdict.get("relation_tag"), "score": verdict.get("score")},
+            }
+            if ok:
+                would_merge.append(row)
+            else:
+                would_skip.append({**row, "reasons": reasons})
+    finally:
+        db.rollback()  # 丢弃全部未提交 judge 写入 → 候选状态与调用前一致
+    return {
+        "dry_run": True,
+        "previewed": len(opens),
+        "would_auto_merge": would_merge,
+        "would_auto_merge_count": len(would_merge),
+        "would_skip_count": len(would_skip),
+        "would_skip_sample": would_skip[:20],
+        "enabled_entity_types": sorted(enabled),
+        "tau": _AUTO_APPROVE_TAU,
+        "breaker_tripped": breaker.get("tripped"),
+    }
 
 
 def run_judge_and_auto(

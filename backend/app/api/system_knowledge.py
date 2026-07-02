@@ -464,6 +464,29 @@ def run_reconciliation_auto_merge(
 
 
 @admin_router.post(
+    "/reconciliation/auto_merge/preview",
+    summary=("Dry-run:跑真 judge + 9 闸,报「会 auto 合的候选」+ 各 skip 理由,**零 serving mutation**。"
+             "首次为某 entity_type 开 auto 前先 preview 眼看这批(含真实分数)再翻 enable。"),
+)
+def preview_reconciliation_auto_merge(
+    body: "ReconciliationAutoMergeRequest",
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    from app.services.kb_reconciliation_judge import preview_auto_merge
+
+    result = preview_auto_merge(
+        db,
+        enabled_entity_types=frozenset(body.enabled_entity_types or ()),
+        limit=body.limit,
+    )
+    _record_audit(db, doc_id=None, op="reconciliation_auto_merge_preview", actor=f"admin:{admin_user.id}",
+                  diff={"would_auto_merge_count": result["would_auto_merge_count"],
+                        "enabled": result["enabled_entity_types"]})
+    return result
+
+
+@admin_router.post(
     "/reconciliation/eval",
     summary="P5 判重/auto eval(Phase B;测 precision + auto FP,不改 serving)",
 )

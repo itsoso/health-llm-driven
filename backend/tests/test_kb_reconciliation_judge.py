@@ -370,3 +370,55 @@ def test_shadow_pending_list_not_buried_by_pagination(db, monkeypatch):
     assert res["total"] == 1  # total = 真 pending 数,不看页
     assert len(res["candidates"]) == 1
     assert res["candidates"][0]["shadow_audit"]["status"] == "pending"
+
+
+# ── Dry-run preview:首次开 auto 前 look-before-you-leap(零副作用)──
+
+from app.services.kb_reconciliation_judge import preview_auto_merge
+
+
+def test_preview_reports_would_merge_with_zero_side_effects(db):
+    """preview 报会合的候选 + 分数,但**不改任何状态**(连 judge 的 relation_tag/score 都 rollback)。"""
+    _doc(db, "dd:p", origin=DOWN, review_status="reviewed", entity_type="condition", title="dup实体P")
+    _doc(db, "kb:p", origin=KBASE, review_status="draft", entity_type="condition", title="dup实体P别名")
+    cid = _cand(db, "dd:p", "kb:p", relation_tag=None, score=0.0)
+
+    before_tag = _get(db, cid).relation_tag
+    before_score = _get(db, cid).score
+    before_status = _get(db, cid).status
+
+    res = preview_auto_merge(db, enabled_entity_types=frozenset({"condition"}), classifier=_fake_classifier)
+    assert res["dry_run"] is True
+    assert res["would_auto_merge_count"] == 1
+    assert res["would_auto_merge"][0]["candidate_id"] == cid
+    assert res["would_auto_merge"][0]["judge"]["score"] == 0.99  # 报了真判分
+
+    # 零副作用:candidate 状态逐字段与调用前一致(judge 写入被 savepoint rollback)
+    db.expire_all()
+    after = _get(db, cid)
+    assert after.relation_tag == before_tag
+    assert after.score == before_score
+    assert after.status == before_status == "open"
+    assert db.query(KBDocument).filter_by(doc_id="kb:p").first().is_archived is False
+
+
+def test_preview_shows_skip_reasons_for_blocked(db):
+    """被硬拒的候选进 would_skip 且带理由(conflict/处方/未启用)—— 人能看清为何不合。"""
+    # 冲突对(状态反义)
+    _doc(db, "dd:pos", origin=DOWN, review_status="reviewed", entity_type="condition", title="抗体阳性")
+    _doc(db, "kb:neg", origin=KBASE, review_status="draft", entity_type="condition", title="抗体阴性")
+    _cand(db, "dd:pos", "kb:neg", relation_tag="duplicate", score=0.99)
+    res = preview_auto_merge(db, enabled_entity_types=frozenset({"condition"}), classifier=_fake_classifier)
+    assert res["would_auto_merge_count"] == 0
+    assert res["would_skip_count"] == 1
+    assert any("冲突" in r for r in res["would_skip_sample"][0]["reasons"])
+
+
+def test_preview_disabled_type_would_not_merge(db):
+    """未启用的 type:preview 显示 would_skip(默认 DISABLED 的可视化)。"""
+    _doc(db, "dd:q", origin=DOWN, review_status="reviewed", entity_type="condition", title="dup实体Q")
+    _doc(db, "kb:q", origin=KBASE, review_status="draft", entity_type="condition", title="dup实体Q别名")
+    _cand(db, "dd:q", "kb:q", relation_tag="duplicate", score=0.99)
+    res = preview_auto_merge(db, enabled_entity_types=frozenset(), classifier=_fake_classifier)  # 空启用
+    assert res["would_auto_merge_count"] == 0 and res["would_skip_count"] == 1
+    assert any("DISABLED" in r for r in res["would_skip_sample"][0]["reasons"])
