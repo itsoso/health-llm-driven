@@ -177,6 +177,7 @@ Pre-release review notes:
 - Skills manifest: local 22 = online 22.
 - Mobile OTA: production branch, runtime `1.3.1`, update group `59d8577f-8264-4aa9-98f0-e30bb5bf8f95`, iOS update `019f17ff-34e6-7802-b443-874c7d6b7226`.
 - Follow-up Mobile OTA for action-state feedback: production branch, runtime `1.3.1`, update group `a2a87b94-bc48-4870-86b4-42e5c0db907e`, iOS update `019f1bb2-f9f4-738d-ac62-434ce2d3570d`, commit `501f2e19e28cd20d116240194096bad6f3bd75ac`, message `Chat card action feedback`.
+- Follow-up Mobile OTA for lightweight diet capture: production branch, runtime `1.3.1`, update group `77fb523f-40d0-45df-81aa-b7ea3a7b70f4`, iOS update `019f20a1-8e34-7b4d-81f8-97fba5d3ccb0`, commit `b7b2cdb6b6cff36ea242919725c13850963caed7`, message `饮食快记轻量确认卡`.
 
 ## G6 · 上线验证
 
@@ -185,6 +186,7 @@ Pre-release review notes:
 - Production route check: unauthenticated `POST /api/v1/agent/stream` on `127.0.0.1:8000` returned `401`, confirming service reachability and auth boundary.
 - OTA dashboard: https://expo.dev/accounts/itsoso/projects/health-pilot/updates/59d8577f-8264-4aa9-98f0-e30bb5bf8f95
 - Follow-up OTA dashboard: https://expo.dev/accounts/itsoso/projects/health-pilot/updates/a2a87b94-bc48-4870-86b4-42e5c0db907e
+- Lightweight diet capture OTA dashboard: https://expo.dev/accounts/itsoso/projects/health-pilot/updates/77fb523f-40d0-45df-81aa-b7ea3a7b70f4
 
 ## S8 · 沉淀
 
