@@ -462,18 +462,20 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
             onPress={e => e.stopPropagation()}
           >
             <View style={styles.menuHandle} />
-            <MenuItem icon="camera-outline" label="拍照" desc="拍摄食物或健康数据" onPress={handleTakePhoto} />
-            <MenuItem icon="image-outline" label="相册" desc="选择多张图片（最多9张）" onPress={handlePickImage} />
-            <MenuItem icon="document-outline" label="文件" desc="上传文档或报告" onPress={handlePickFile} />
-            <MenuItem
-              icon="document-text-outline"
-              label="导入体检报告"
-              desc={medicalImportBusy ? '正在写入体检基线' : 'PDF/图片入库并生成动态卡片'}
-              onPress={() => {
-                setShowMenu(false);
-                setShowMedicalImportMenu(true);
-              }}
-            />
+            <View testID="attachment-action-grid" style={styles.attachmentGrid}>
+              <AttachmentGridItem icon="camera-outline" label="拍照" desc="食物/数据" onPress={handleTakePhoto} />
+              <AttachmentGridItem icon="image-outline" label="相册" desc="最多9张" onPress={handlePickImage} />
+              <AttachmentGridItem icon="document-outline" label="文件" desc="文档/报告" onPress={handlePickFile} />
+              <AttachmentGridItem
+                icon="document-text-outline"
+                label="导入体检报告"
+                desc={medicalImportBusy ? '导入中' : '入库成卡片'}
+                onPress={() => {
+                  setShowMenu(false);
+                  setShowMedicalImportMenu(true);
+                }}
+              />
+            </View>
             <Text style={styles.menuSectionTitle}>模式</Text>
             <View testID="agent-mode-segmented-row" style={styles.modeSegmentedRow}>
               {AGENT_MODES.map(mode => (
@@ -541,6 +543,26 @@ function ModeSegmentItem({
     >
       <Ionicons name={icon} size={15} color={selected ? C.green500 : C.ink2} />
       <Text style={[styles.modeMenuLabel, selected && styles.modeMenuLabelActive]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function AttachmentGridItem({ icon, label, desc, onPress }: { icon: any; label: string; desc: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity
+      style={styles.attachmentGridItem}
+      onPress={onPress}
+      activeOpacity={0.68}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <View style={styles.attachmentGridIconWrap}>
+        <Ionicons name={icon} size={18} color={C.ink1} />
+      </View>
+      <View style={styles.attachmentGridText}>
+        <Text style={styles.attachmentGridLabel} numberOfLines={1}>{label}</Text>
+        <Text style={styles.attachmentGridDesc} numberOfLines={1}>{desc}</Text>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -747,6 +769,49 @@ const styles = StyleSheet.create({
     width: 38, height: 38, borderRadius: 12, backgroundColor: C.paper,
     alignItems: 'center', justifyContent: 'center',
   },
+  attachmentGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 2,
+  },
+  attachmentGridItem: {
+    width: '48%',
+    minHeight: 62,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 9,
+    borderRadius: revaRadii.lg,
+    backgroundColor: C.paper,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
+  attachmentGridIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    backgroundColor: C.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachmentGridText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  attachmentGridLabel: {
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    color: C.ink1,
+    fontWeight: '800',
+  } as TextStyle,
+  attachmentGridDesc: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    color: C.ink3,
+    marginTop: 1,
+  } as TextStyle,
   modeSegmentedRow: {
     minHeight: 36,
     flexDirection: 'row',

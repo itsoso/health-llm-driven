@@ -75,6 +75,23 @@ describe('ChatInputBar', () => {
       .toBe(revaColors.surface);
   });
 
+  it('renders attachment actions as a compact two-column grid', () => {
+    const { getByLabelText, getByTestId, getByText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('附件菜单'));
+
+    const actionGrid = StyleSheet.flatten(getByTestId('attachment-action-grid').props.style);
+    expect(actionGrid.flexDirection).toBe('row');
+    expect(actionGrid.flexWrap).toBe('wrap');
+    expect(actionGrid.gap).toBeLessThanOrEqual(8);
+    expect(getByText('拍照')).toBeTruthy();
+    expect(getByText('相册')).toBeTruthy();
+    expect(getByText('文件')).toBeTruthy();
+    expect(getByLabelText('导入体检报告')).toBeTruthy();
+  });
+
   it('renders only one compact composer row by default', () => {
     const { getByTestId, queryByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
