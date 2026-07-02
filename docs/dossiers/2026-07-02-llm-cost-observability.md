@@ -105,11 +105,13 @@ pnpm --dir frontend exec tsc --noEmit
 ## G5/G6 · 部署与上线验证
 
 - 代码提交: `7c57350e`。
+- Mac 端补充提交: `b4b6f7b9`。
 - Web/Backend 部署: `./deploy.sh -y`。
 - 受控迁移: `20260702_180000_add_llm_usage_error_context` 已应用。
 - 部署健康度: `60/60 ✅ PASS`。
 - Skills manifest: 本地 22 = 线上 22。
 - Mobile OTA: production channel, runtime `1.3.1`, update group `df0e5731-3476-4510-b506-7133a51940c2`, iOS update `019f214f-7c92-7ce7-8439-d0c141eb7d78`。
+- Mac 本地发布: `apps/mac/scripts/package-app.sh --install --open` 已安装 `/Applications/阿衡.app`，进程 `HealthAgentMac` 已运行。
 - 线上验证:
   - `https://health.executor.life/api/v1/health` 返回 `healthy`。
   - `https://health.executor.life/admin/llm-performance` 返回 HTTP 200。
