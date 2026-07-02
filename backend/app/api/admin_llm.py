@@ -9,19 +9,136 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app.api.admin import get_admin_user
 from app.api.deps import get_db
 from app.config import settings
+from app.models.llm_usage import LlmUsageLog
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/llm", tags=["admin"])
+
+
+def _safe_int(value) -> int:
+    return int(value or 0)
+
+
+def _safe_float(value, digits: int = 4) -> float:
+    return round(float(value or 0.0), digits)
+
+
+def _success_rate(success_calls: int, calls: int) -> Optional[float]:
+    if calls <= 0:
+        return None
+    return round(success_calls / calls, 4)
+
+
+def _tokenplan_model_names() -> list[str]:
+    """TokenPlan 兼容 OpenAI 协议,历史日志里 provider 可能仍是 openai.
+
+    Admin 成本看板用模型名兜底归类,保证旧日志不会从 698/月套餐账本里漏掉.
+    """
+    names = {settings.tokenplan_model}
+    try:
+        from app.services.llm.model_registry import MODELS
+
+        names.update(m.model for m in MODELS if m.provider == "tokenplan")
+    except Exception:
+        logger.debug("[admin.llm.usage] model registry unavailable", exc_info=True)
+    return sorted(name for name in names if name)
+
+
+def _tokenplan_condition(tokenplan_models: list[str]):
+    clauses = [LlmUsageLog.provider == "tokenplan"]
+    if tokenplan_models:
+        clauses.append(LlmUsageLog.model.in_(tokenplan_models))
+    return or_(*clauses)
+
+
+def _provider_family_expr(tokenplan_models: list[str]):
+    whens = [(LlmUsageLog.provider == "tokenplan", "tokenplan")]
+    if tokenplan_models:
+        whens.append((LlmUsageLog.model.in_(tokenplan_models), "tokenplan"))
+    return case(*whens, else_=LlmUsageLog.provider)
+
+
+def _usage_filters(since: datetime, until: datetime, user_id: Optional[int] = None):
+    filters = [LlmUsageLog.created_at >= since, LlmUsageLog.created_at <= until]
+    if user_id is not None:
+        filters.append(LlmUsageLog.user_id == user_id)
+    return filters
+
+
+def _rollup_row(row, *, tokenplan_tokens_total: int, monthly_budget_cny: float) -> dict:
+    calls = _safe_int(row.calls)
+    success_calls = _safe_int(row.success_calls)
+    failed_calls = max(0, calls - success_calls)
+    tokenplan_tokens = _safe_int(row.tokenplan_tokens)
+    allocated = (
+        monthly_budget_cny * tokenplan_tokens / tokenplan_tokens_total
+        if tokenplan_tokens_total > 0
+        else 0.0
+    )
+    effective = (
+        allocated * 1000 / tokenplan_tokens
+        if tokenplan_tokens > 0
+        else None
+    )
+    return {
+        "calls": calls,
+        "success_calls": success_calls,
+        "failed_calls": failed_calls,
+        "success_rate": _success_rate(success_calls, calls),
+        "prompt_tokens": _safe_int(row.prompt_tokens),
+        "completion_tokens": _safe_int(row.completion_tokens),
+        "total_tokens": _safe_int(row.total_tokens),
+        "tokenplan_calls": _safe_int(row.tokenplan_calls),
+        "tokenplan_tokens": tokenplan_tokens,
+        "cost_usd": _safe_float(row.cost_usd, 6),
+        "allocated_plan_cost_cny": round(allocated, 2),
+        "effective_cny_per_1k_tokens": round(effective, 4) if effective is not None else None,
+        "avg_latency_ms": _safe_int(row.avg_latency_ms),
+        "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None,
+    }
+
+
+def _usage_aggregates(tokenplan_condition):
+    success_expr = case((LlmUsageLog.success == 1, 1), else_=0)
+    tokenplan_call_expr = case((tokenplan_condition, 1), else_=0)
+    tokenplan_token_expr = case((tokenplan_condition, LlmUsageLog.total_tokens), else_=0)
+    return [
+        func.count(LlmUsageLog.id).label("calls"),
+        func.coalesce(func.sum(success_expr), 0).label("success_calls"),
+        func.coalesce(func.sum(LlmUsageLog.prompt_tokens), 0).label("prompt_tokens"),
+        func.coalesce(func.sum(LlmUsageLog.completion_tokens), 0).label("completion_tokens"),
+        func.coalesce(func.sum(LlmUsageLog.total_tokens), 0).label("total_tokens"),
+        func.coalesce(func.sum(tokenplan_call_expr), 0).label("tokenplan_calls"),
+        func.coalesce(func.sum(tokenplan_token_expr), 0).label("tokenplan_tokens"),
+        func.coalesce(func.sum(LlmUsageLog.cost_usd), 0.0).label("cost_usd"),
+        func.coalesce(func.avg(LlmUsageLog.latency_ms), 0).label("avg_latency_ms"),
+        func.max(LlmUsageLog.created_at).label("last_seen_at"),
+    ]
+
+
+def _percentile(values: list[int], percentile: float) -> Optional[int]:
+    if not values:
+        return None
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    rank = (len(ordered) - 1) * percentile
+    lower = int(rank)
+    upper = min(lower + 1, len(ordered) - 1)
+    weight = rank - lower
+    return int(round(ordered[lower] * (1 - weight) + ordered[upper] * weight))
 
 
 class LLMStatusResponse(BaseModel):
@@ -32,6 +149,182 @@ class LLMStatusResponse(BaseModel):
     has_api_key: bool
 
 
+@router.get("/usage-dashboard", summary="Admin LLM Token/套餐成本总览")
+def usage_dashboard(
+    days: int = Query(30, ge=1, le=120),
+    user_id: Optional[int] = Query(None, ge=1),
+    admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """管理员视角的 LLM 使用账本.
+
+    - 全局/单用户 token、调用数、成功率、延迟。
+    - TokenPlan 固定月费按窗口内 token 份额分摊,用于观察 698/月套餐的有效单价。
+    - 兼容历史日志: provider=openai 但 model 属于 TokenPlan 注册模型时,仍归入 TokenPlan。
+    """
+    until = datetime.now(timezone.utc)
+    since = until - timedelta(days=days)
+    tokenplan_models = _tokenplan_model_names()
+    is_tokenplan = _tokenplan_condition(tokenplan_models)
+    provider_family = _provider_family_expr(tokenplan_models)
+    filters = _usage_filters(since, until, user_id)
+    global_filters = _usage_filters(since, until)
+    monthly_budget_cny = float(getattr(settings, "tokenplan_monthly_budget_cny", 698.0) or 0.0)
+
+    tokenplan_tokens_total = _safe_int(
+        db.query(func.coalesce(func.sum(case((is_tokenplan, LlmUsageLog.total_tokens), else_=0)), 0))
+        .filter(*global_filters)
+        .scalar()
+    )
+
+    overall_row = db.query(*_usage_aggregates(is_tokenplan)).filter(*filters).one()
+    overall = _rollup_row(
+        overall_row,
+        tokenplan_tokens_total=tokenplan_tokens_total,
+        monthly_budget_cny=monthly_budget_cny,
+    )
+
+    by_user_rows = (
+        db.query(
+            LlmUsageLog.user_id.label("user_id"),
+            User.name.label("name"),
+            User.email.label("email"),
+            User.username.label("username"),
+            *_usage_aggregates(is_tokenplan),
+        )
+        .outerjoin(User, User.id == LlmUsageLog.user_id)
+        .filter(*filters)
+        .group_by(LlmUsageLog.user_id, User.name, User.email, User.username)
+        .order_by(func.coalesce(func.sum(LlmUsageLog.total_tokens), 0).desc())
+        .limit(100)
+        .all()
+    )
+    by_user = []
+    for row in by_user_rows:
+        item = _rollup_row(
+            row,
+            tokenplan_tokens_total=tokenplan_tokens_total,
+            monthly_budget_cny=monthly_budget_cny,
+        )
+        item.update({
+            "user_id": row.user_id,
+            "name": row.name,
+            "email": row.email,
+            "username": row.username,
+            "share_pct": round(item["tokenplan_tokens"] / tokenplan_tokens_total, 4)
+            if tokenplan_tokens_total > 0 else 0.0,
+        })
+        by_user.append(item)
+
+    by_provider_rows = (
+        db.query(
+            provider_family.label("provider"),
+            *_usage_aggregates(is_tokenplan),
+        )
+        .filter(*filters)
+        .group_by(provider_family)
+        .order_by(func.coalesce(func.sum(LlmUsageLog.total_tokens), 0).desc())
+        .all()
+    )
+    by_provider = []
+    for row in by_provider_rows:
+        item = _rollup_row(
+            row,
+            tokenplan_tokens_total=tokenplan_tokens_total,
+            monthly_budget_cny=monthly_budget_cny,
+        )
+        item["provider"] = row.provider or "unknown"
+        by_provider.append(item)
+
+    by_model_rows = (
+        db.query(
+            provider_family.label("provider"),
+            LlmUsageLog.model.label("model"),
+            *_usage_aggregates(is_tokenplan),
+        )
+        .filter(*filters)
+        .group_by(provider_family, LlmUsageLog.model)
+        .order_by(func.coalesce(func.sum(LlmUsageLog.total_tokens), 0).desc())
+        .limit(100)
+        .all()
+    )
+    by_model = []
+    for row in by_model_rows:
+        item = _rollup_row(
+            row,
+            tokenplan_tokens_total=tokenplan_tokens_total,
+            monthly_budget_cny=monthly_budget_cny,
+        )
+        item.update({"provider": row.provider or "unknown", "model": row.model or "unknown"})
+        by_model.append(item)
+
+    by_caller_rows = (
+        db.query(
+            LlmUsageLog.caller.label("caller"),
+            func.max(provider_family).label("provider"),
+            *_usage_aggregates(is_tokenplan),
+        )
+        .filter(*filters)
+        .group_by(LlmUsageLog.caller)
+        .order_by(func.coalesce(func.sum(LlmUsageLog.total_tokens), 0).desc())
+        .limit(100)
+        .all()
+    )
+    by_caller = []
+    for row in by_caller_rows:
+        item = _rollup_row(
+            row,
+            tokenplan_tokens_total=tokenplan_tokens_total,
+            monthly_budget_cny=monthly_budget_cny,
+        )
+        item.update({"caller": row.caller or "unknown", "provider": row.provider or "unknown"})
+        by_caller.append(item)
+
+    day_expr = func.date(LlmUsageLog.created_at)
+    by_day_rows = (
+        db.query(
+            day_expr.label("day"),
+            *_usage_aggregates(is_tokenplan),
+        )
+        .filter(*filters)
+        .group_by(day_expr)
+        .order_by(day_expr.asc())
+        .all()
+    )
+    by_day = []
+    for row in by_day_rows:
+        item = _rollup_row(
+            row,
+            tokenplan_tokens_total=tokenplan_tokens_total,
+            monthly_budget_cny=monthly_budget_cny,
+        )
+        item["day"] = str(row.day)
+        by_day.append(item)
+
+    return {
+        "window": {
+            "days": days,
+            "since": since.isoformat(),
+            "until": until.isoformat(),
+            "user_id": user_id,
+        },
+        "plan": {
+            "name": getattr(settings, "tokenplan_plan_name", "TokenPlan 698/月"),
+            "currency": "CNY",
+            "monthly_budget_cny": round(monthly_budget_cny, 2),
+            "allocation_basis": "窗口内 TokenPlan token 占全局 TokenPlan token 份额分摊月费",
+            "tokenplan_model_names": tokenplan_models,
+            "legacy_provider_note": "历史 openai provider + TokenPlan 模型名的日志会自动归入 TokenPlan",
+        },
+        "overall": overall,
+        "by_user": by_user,
+        "by_provider": by_provider,
+        "by_model": by_model,
+        "by_caller": by_caller,
+        "by_day": by_day,
+    }
+
+
 @router.get("/performance-stats", summary="LLM 性能聚合 (p50/p95 + 成功率 + 成本)")
 def performance_stats(
     days: int = 7,
@@ -39,55 +332,70 @@ def performance_stats(
     admin: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
-    """按 model/provider/caller 聚合 llm_usage_log, 返回 p50/p95/p99/avg/
+    """按 model/provider/caller 聚合 llm_usage_logs, 返回 p50/p95/p99/avg/
     success_rate/total_tokens/cost. 来自 2026-05-13 用户诉求 (积累性能优化).
 
     group_by: model / provider / caller (默认 model)
     days: 时间窗口 (默认 7 天)
     """
-    from datetime import datetime, timedelta, timezone
-    from sqlalchemy import text
 
     if group_by not in ("model", "provider", "caller"):
         raise HTTPException(400, detail="group_by 必须是 model / provider / caller")
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    tokenplan_models = _tokenplan_model_names()
+    label_expr = {
+        "model": LlmUsageLog.model,
+        "provider": _provider_family_expr(tokenplan_models),
+        "caller": LlmUsageLog.caller,
+    }[group_by]
 
-    sql = text(f"""
-        SELECT
-            {group_by} AS label,
-            COUNT(*) AS n,
-            ROUND(AVG(latency_ms)::numeric, 0) AS avg_ms,
-            ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms)::numeric, 0) AS p50_ms,
-            ROUND(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)::numeric, 0) AS p95_ms,
-            ROUND(percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms)::numeric, 0) AS p99_ms,
-            ROUND(AVG(CASE WHEN success = 1 THEN 1.0 ELSE 0.0 END)::numeric, 4) AS success_rate,
-            SUM(total_tokens) AS total_tokens,
-            ROUND(SUM(cost_usd)::numeric, 4) AS cost_usd
-        FROM llm_usage_log
-        WHERE created_at >= :cutoff AND latency_ms IS NOT NULL
-        GROUP BY {group_by}
-        ORDER BY n DESC
-    """)
-    rows = db.execute(sql, {"cutoff": cutoff}).fetchall()
+    rows = (
+        db.query(
+            label_expr.label("label"),
+            LlmUsageLog.latency_ms,
+            LlmUsageLog.success,
+            LlmUsageLog.total_tokens,
+            LlmUsageLog.cost_usd,
+        )
+        .filter(LlmUsageLog.created_at >= cutoff, LlmUsageLog.latency_ms.isnot(None))
+        .all()
+    )
+
+    buckets: dict[str, dict] = {}
+    for row in rows:
+        label = row.label or "unknown"
+        bucket = buckets.setdefault(
+            label,
+            {"latencies": [], "success": 0, "total_tokens": 0, "cost_usd": 0.0},
+        )
+        bucket["latencies"].append(int(row.latency_ms or 0))
+        bucket["success"] += 1 if int(row.success or 0) == 1 else 0
+        bucket["total_tokens"] += int(row.total_tokens or 0)
+        bucket["cost_usd"] += float(row.cost_usd or 0.0)
+
+    stats = []
+    for label, bucket in buckets.items():
+        latencies = bucket["latencies"]
+        n = len(latencies)
+        avg_ms = int(round(sum(latencies) / n)) if n else None
+        stats.append({
+            "label": label,
+            "n": n,
+            "avg_ms": avg_ms,
+            "p50_ms": _percentile(latencies, 0.5),
+            "p95_ms": _percentile(latencies, 0.95),
+            "p99_ms": _percentile(latencies, 0.99),
+            "success_rate": round(bucket["success"] / n, 4) if n else None,
+            "total_tokens": bucket["total_tokens"],
+            "cost_usd": round(bucket["cost_usd"], 4),
+        })
+    stats.sort(key=lambda r: r["n"], reverse=True)
 
     return {
         "window": {"days": days, "since": cutoff.isoformat()},
         "group_by": group_by,
-        "stats": [
-            {
-                "label": r.label,
-                "n": r.n,
-                "avg_ms": int(r.avg_ms) if r.avg_ms is not None else None,
-                "p50_ms": int(r.p50_ms) if r.p50_ms is not None else None,
-                "p95_ms": int(r.p95_ms) if r.p95_ms is not None else None,
-                "p99_ms": int(r.p99_ms) if r.p99_ms is not None else None,
-                "success_rate": float(r.success_rate) if r.success_rate is not None else None,
-                "total_tokens": int(r.total_tokens) if r.total_tokens is not None else 0,
-                "cost_usd": float(r.cost_usd) if r.cost_usd is not None else 0.0,
-            }
-            for r in rows
-        ],
+        "stats": stats,
     }
 
 

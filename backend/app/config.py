@@ -14,6 +14,8 @@ class Settings(BaseSettings):
 
     # === LLM 成本告警 ===
     llm_daily_cost_alert_usd: float = 1.0  # 24h LLM 成本超过此值就 log warning
+    tokenplan_plan_name: str = "TokenPlan 698/月"
+    tokenplan_monthly_budget_cny: float = 698.0  # 阿里云百炼 TokenPlan 月套餐成本,用于 Admin 成本摊销
 
     # === LLM Provider 统一配置 ===
     llm_provider: str = "tokenplan"  # tokenplan (默认, 阿里云 MiniMax) | openclaw | openai | ollama

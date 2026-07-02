@@ -63,6 +63,8 @@ from app.models.review import DailyReview, PeriodReview, ReviewPeriod
 from app.models.user_api_key import UserApiKey
 # 聊天模型
 from app.models.chat import ChatConversation, ChatMessage
+# LLM 使用量 / 成本追踪
+from app.models.llm_usage import LlmUsageLog
 # AI 洞察模型
 from app.models.ai_insights import AIInsight, RealtimeRecommendation
 # 情绪追踪模型
@@ -257,6 +259,7 @@ __all__ = [
     # 聊天模型
     "ChatConversation",
     "ChatMessage",
+    "LlmUsageLog",
     # AI 洞察模型
     "AIInsight",
     "RealtimeRecommendation",

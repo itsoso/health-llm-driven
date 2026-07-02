@@ -1,6 +1,19 @@
 # LLM Token 成本 & Eval 度量体系
 
-_最后更新: 2026-04-30_
+_最后更新: 2026-07-02_
+
+## 2026-07 Admin 成本看板增量
+
+已新增 Admin 级全局看板: `GET /api/v1/admin/llm/usage-dashboard`，前端入口为 `/admin/llm-performance`。
+
+当前度量口径:
+
+- `LlmUsageLog` 仍是单次调用真源,记录 provider / model / caller / user_id / prompt tokens / completion tokens / latency / success。
+- TokenPlan 月套餐按 `TOKENPLAN_MONTHLY_BUDGET_CNY` 摊销,默认 `698.0`;套餐名由 `TOKENPLAN_PLAN_NAME` 控制,默认 `TokenPlan 698/月`。
+- Admin 看板同时输出全局、按用户、按 provider、按 model、按 caller、按天的聚合。
+- TokenPlan 兼容 OpenAI 协议,历史日志里可能有 `provider=openai` 但 model 实际属于 TokenPlan;看板会按 TokenPlan 模型名归类,避免 698 月费账本漏数。
+- 新调用从 provider factory 开始会把 TokenPlan / Moonshot / Zhipu / LangBridge 等 OpenAI-compatible 代理写成真实 provider,不再全部混成 `openai`。
+- `allocated_plan_cost_cny` 是按窗口内 TokenPlan token 份额分摊月费,不是边际消耗;`effective_cny_per_1k_tokens` 用于观察当前套餐利用率。
 
 ## 一、现状（已建成，不要重做）
 

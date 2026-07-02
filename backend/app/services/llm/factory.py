@@ -60,33 +60,41 @@ def _create_from_entry(entry) -> LLMProvider:
     from app.services.llm.providers.openai_provider import OpenAIProvider
 
     if entry.provider == "openai-proxy":
-        return OpenAIProvider(
+        provider = OpenAIProvider(
             api_key=settings.openai_api_key,
             base_url=settings.openai_base_url,
             model=entry.model,
         )
+        provider.provider_name = "openai-proxy"
+        return provider
     if entry.provider == "tokenplan":
-        return OpenAIProvider(
+        provider = OpenAIProvider(
             api_key=settings.tokenplan_api_key,
             base_url=settings.tokenplan_base_url,
             model=entry.model,
         )
+        provider.provider_name = "tokenplan"
+        return provider
     if entry.provider == "moonshot":
         if not settings.moonshot_api_key:
             raise ValueError("MOONSHOT_API_KEY 未配置, 无法用 Kimi")
-        return OpenAIProvider(
+        provider = OpenAIProvider(
             api_key=settings.moonshot_api_key,
             base_url=settings.moonshot_base_url,
             model=entry.model,
         )
+        provider.provider_name = "moonshot"
+        return provider
     if entry.provider == "zhipu":
         if not settings.zhipu_api_key:
             raise ValueError("ZHIPU_API_KEY 未配置, 无法用 GLM")
-        return OpenAIProvider(
+        provider = OpenAIProvider(
             api_key=settings.zhipu_api_key,
             base_url=settings.zhipu_base_url,
             model=entry.model,
         )
+        provider.provider_name = "zhipu"
+        return provider
     if entry.provider == "openclaw":
         return _create_openclaw_provider()
     if entry.provider == "langbridge-proxy":
@@ -94,11 +102,13 @@ def _create_from_entry(entry) -> LLMProvider:
             raise ValueError("LANGBRIDGE_GATEWAY_API_KEY 未配置, 无法用商用模型 gateway")
         if not settings.langbridge_gateway_base_url:
             raise ValueError("LANGBRIDGE_GATEWAY_BASE_URL 未配置")
-        return OpenAIProvider(
+        provider = OpenAIProvider(
             api_key=settings.langbridge_gateway_api_key,
             base_url=settings.langbridge_gateway_base_url,
             model=entry.model,
         )
+        provider.provider_name = "langbridge-proxy"
+        return provider
     raise ValueError(f"unknown entry.provider: {entry.provider}")
 
 
@@ -129,7 +139,9 @@ def _create_tokenplan_provider() -> LLMProvider:
     if not api_key:
         raise ValueError("TOKENPLAN_API_KEY 未配置")
     logger.info(f"[LLM Factory] TokenPlan: model={model} base={base_url[:50]}")
-    return OpenAIProvider(api_key=api_key, base_url=base_url, model=model)
+    provider = OpenAIProvider(api_key=api_key, base_url=base_url, model=model)
+    provider.provider_name = "tokenplan"
+    return provider
 
 
 def _create_ollama_provider() -> LLMProvider:
