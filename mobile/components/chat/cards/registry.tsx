@@ -82,6 +82,7 @@ const ALLOWED_ACTIONS = new Set([
   'write_intent.confirm',
   'write_intent.dismiss',
   'route.open',
+  'ui.inline.expand',
 ]);
 
 /**
@@ -159,6 +160,7 @@ function StatefulCardRenderer({
   options: CardRenderOptions;
 }) {
   const [data, setData] = React.useState(descriptor.data);
+  const [localDoneActionKeys, setLocalDoneActionKeys] = React.useState<Record<string, true>>({});
   try {
     const actions = normalizeCardActions(descriptor.actions)
       .map((action) => rewriteActionForCurrentCardData(action, descriptor.type, data));
@@ -179,10 +181,11 @@ function StatefulCardRenderer({
           {actions.map((action) => {
             const actionKey = getCardActionRuntimeKey(action, descriptor);
             const actionState = options.actionStateByKey?.[actionKey];
+            const localDone = localDoneActionKeys[actionKey] === true;
             const isBusy = actionState === 'running';
-            const isDone = actionState === 'done';
+            const isDone = actionState === 'done' || localDone;
             const isDisabled = !!action.disabled_reason || isBusy || isDone;
-            const visibleLabel = getActionRuntimeLabel(action, actionState);
+            const visibleLabel = getActionRuntimeLabel(action, localDone ? 'done' : actionState);
             const supportText = action.disabled_reason || (actionState === 'error' ? '刚刚失败，可重试' : null);
             return (
               <View key={actionKey} style={styles.actionItem}>
@@ -202,6 +205,14 @@ function StatefulCardRenderer({
                   disabled={isDisabled}
                   onPress={() => {
                     if (isDisabled) return;
+                    if (action.action === 'ui.inline.expand') {
+                      const patch = readInlineExpandPatch(action);
+                      if (patch) {
+                        setData((current: any) => mergeCardDataPatch(current, patch));
+                        setLocalDoneActionKeys((prev) => ({ ...prev, [actionKey]: true }));
+                      }
+                      return;
+                    }
                     options.onAction?.(action, currentDescriptor);
                   }}
                 >
@@ -269,7 +280,60 @@ function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCar
 
 function isSafeVisibleAction(action: ChatCardActionDescriptor): boolean {
   if (action.action === 'route.open') return isSafeInternalRoute(action.payload?.route);
+  if (action.action === 'ui.inline.expand') return readInlineExpandPatch(action) != null;
   return action.requires_manual_confirm === true;
+}
+
+function readInlineExpandPatch(action: ChatCardActionDescriptor): Record<string, unknown> | null {
+  if (action.action !== 'ui.inline.expand') return null;
+  if (action.endpoint) return null;
+  const target = textValue(action.payload?.target);
+  const rawPatch = action.payload?.patch;
+  if (!target || !rawPatch || typeof rawPatch !== 'object' || Array.isArray(rawPatch)) return null;
+  const patch = sanitizeInlinePatch(rawPatch as Record<string, unknown>);
+  return Object.keys(patch).length > 0 ? patch : null;
+}
+
+function sanitizeInlinePatch(source: Record<string, unknown>): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  if (Array.isArray(source.expanded_sections)) {
+    const sections = source.expanded_sections
+      .map(textValue)
+      .filter((item): item is string => Boolean(item))
+      .filter((item) => item === 'next_meal');
+    if (sections.length > 0) patch.expanded_sections = sections.slice(0, 4);
+  }
+  const detail = source.next_meal_detail;
+  if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+    patch.next_meal_detail = sanitizeNextMealDetail(detail as Record<string, unknown>);
+  }
+  return patch;
+}
+
+function sanitizeNextMealDetail(source: Record<string, unknown>): Record<string, unknown> {
+  const detail: Record<string, unknown> = {};
+  for (const key of ['title', 'summary', 'context', 'continue_prompt'] as const) {
+    const value = textValue(source[key]);
+    if (value) detail[key] = value;
+  }
+  for (const key of ['options', 'rationale'] as const) {
+    const values = readTextList(source[key], 6);
+    if (values.length > 0) detail[key] = values;
+  }
+  return detail;
+}
+
+function readTextList(value: unknown, limit = 4): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(textValue)
+    .filter((item): item is string => Boolean(item))
+    .slice(0, limit);
+}
+
+function mergeCardDataPatch(current: any, patch: Record<string, unknown>): any {
+  const base = current && typeof current === 'object' && !Array.isArray(current) ? current : {};
+  return { ...base, ...patch };
 }
 
 function rewriteActionForCurrentCardData(
@@ -345,6 +409,7 @@ function getActionRuntimeLabel(
   if (state === 'running') return '执行中';
   if (state === 'done') {
     if (action.action === 'route.open') return '已打开';
+    if (action.action === 'ui.inline.expand') return '已展开';
     if (action.action === 'diet_record.create') return '已记录';
     if (action.action === 'write_intent.dismiss') return '已忽略';
     return '已完成';

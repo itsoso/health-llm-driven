@@ -101,6 +101,21 @@ def _clean_items(values: list[Any]) -> list[str]:
     return out
 
 
+def _is_meaningful_diet_caution_item(value: Any) -> bool:
+    raw = str(value or "").strip()
+    if not raw:
+        return False
+    normalized = re.sub(r"\s+", "", raw)
+    lower = normalized.lower()
+    if lower in {"无", "暂无", "没有", "none", "null", "nil", "n/a", "na"}:
+        return False
+    if re.fullmatch(r"\d+(?:\.\d+)?", normalized):
+        return False
+    if re.fullmatch(r"[\W_]+", normalized, re.UNICODE):
+        return False
+    return True
+
+
 def _context_line_items(personal_context: str, label: str) -> list[str]:
     m = re.search(rf"{re.escape(label)}[:：]\s*([^\n]+)", personal_context or "")
     return _clean_items([m.group(1)]) if m else []
@@ -270,6 +285,8 @@ def _diet_personal_cautions(record_data: dict, context: PersonalContextPack) -> 
     if context.has_condition("高血压", "血压") and any(word in combined for word in ("咸", "盐", "酱", "汤", "腌", "外卖")):
         cautions.append("有血压管理目标时，留意这餐钠盐和汤汁摄入。")
     for item in context.allergies:
+        if not _is_meaningful_diet_caution_item(item):
+            continue
         if item and item in food_text:
             cautions.append(f"你的禁忌里包含「{item}」，请确认这餐没有误食。")
             break
@@ -331,6 +348,26 @@ def _route_action(action_id: str, label: str, route: str, *, style: str = "secon
     }
 
 
+def _inline_expand_action(
+    action_id: str,
+    label: str,
+    target: str,
+    patch: dict[str, Any],
+    *,
+    style: str = "secondary",
+) -> dict[str, Any]:
+    return {
+        "id": action_id,
+        "label": label,
+        "action": "ui.inline.expand",
+        "payload": {
+            "target": target,
+            "patch": patch,
+        },
+        "style": style,
+    }
+
+
 def _chat_prompt_action(action_id: str, label: str, prompt: str, *, badge: str = "记录建议") -> dict[str, Any]:
     prompt_text = re.sub(r"\s+", " ", prompt).strip()[:240]
     route = (
@@ -338,6 +375,63 @@ def _chat_prompt_action(action_id: str, label: str, prompt: str, *, badge: str =
         f"&badge={quote(badge, safe='')}"
     )
     return _route_action(action_id, label, route)
+
+
+def _diet_next_meal_detail(
+    *,
+    meal: str,
+    food_label: str,
+    record_data: dict,
+    context: PersonalContextPack,
+    totals: Optional[DietDayTotals],
+    next_action: str,
+) -> dict[str, Any]:
+    protein = _number_or_none(record_data.get("protein"))
+    remaining = totals.remaining_protein_g if totals else None
+    if context.has_condition("胃溃疡", "胃炎", "胃病", "反流", "GERD"):
+        options = [
+            "温热鱼/豆腐 + 熟蔬菜 + 少量米饭，少油少辣。",
+            "鸡胸/鸡蛋 + 南瓜或土豆 + 绿叶菜，饮品选温水。",
+        ]
+    elif remaining and remaining >= 35:
+        options = [
+            "鱼/鸡胸/瘦牛肉 150-200g + 熟蔬菜 + 半份主食。",
+            "豆腐/鸡蛋 + 希腊酸奶或牛奶，补足蛋白但别堆夜宵。",
+        ]
+    elif protein is not None and protein < 25:
+        options = [
+            "下一餐先放一份明确蛋白：鱼、鸡胸、豆腐或鸡蛋。",
+            "主食减半，搭配深色蔬菜，避免只吃碳水。",
+        ]
+    else:
+        options = [
+            "保持一份蛋白 + 两拳蔬菜 + 一小份主食。",
+            "晚些如果饿，优先无糖酸奶/鸡蛋/豆腐，避免高糖零食。",
+        ]
+    rationale: list[str] = []
+    if totals:
+        rationale.append(
+            f"今日已记录 {totals.meals_count} 餐，蛋白 {totals.protein:.0f}/{totals.protein_target_g}g，"
+            f"还差约 {totals.remaining_protein_g}g。"
+        )
+    if context.has_condition("胃溃疡", "胃炎", "胃病", "反流", "GERD"):
+        rationale.append("你的胃部/反流背景下，下一餐优先温和、少刺激。")
+    if protein is not None:
+        rationale.append(f"刚记录的{meal}蛋白约 {protein:.0f}g，可据此安排下一餐。")
+    if not rationale:
+        rationale.append("基于刚记录的饮食，下一餐优先补齐结构而不是继续加热量。")
+    context_line = f"刚记录{meal}：{food_label}"
+    macro = _macro_summary(record_data)
+    if macro:
+        context_line += f"；{macro}"
+    return {
+        "title": "下一餐建议",
+        "summary": next_action,
+        "context": context_line,
+        "options": options,
+        "rationale": rationale[:3],
+        "continue_prompt": "可以继续在这里问阿衡：如果只能外卖，下一餐怎么选。",
+    }
 
 
 def _exercise_record_summary(record_data: dict) -> tuple[str, str]:
@@ -393,6 +487,14 @@ def build_post_record_quality_response(
         cautions = _diet_personal_cautions(record_data, context)
         next_action = _diet_next_action(record_data, context, totals)
         progress = _diet_progress_data(totals)
+        next_meal_detail = _diet_next_meal_detail(
+            meal=meal,
+            food_label=food_label,
+            record_data=record_data,
+            context=context,
+            totals=totals,
+            next_action=next_action,
+        )
         caution_line = f"个人提醒：{cautions[0]}" if cautions else "个人提醒：暂无明显禁忌信号，继续观察餐后体感。"
         progress_line = (
             f"今日蛋白 {progress['protein_total_g']}/{progress['protein_target_g']}g，"
@@ -418,17 +520,17 @@ def build_post_record_quality_response(
                 "type": "record_quality",
                 "data": card_data,
                 "actions": [
-                    _route_action("open-diet-plan", "看下一餐建议", "/diet-plan", style="primary"),
-                    _route_action("open-record", "调整记录", "/(tabs)/record"),
-                    _chat_prompt_action(
-                        "ask-next-meal",
-                        "问阿衡下一餐",
-                        (
-                            f"基于我刚记录的{meal}（{food_label}；{_macro_summary(record_data) or '营养估算待补全'}），"
-                            "结合我的健康档案和今天累计进度，给我下一餐怎么吃，列出2个可执行选项。"
-                        ),
-                        badge="饮食记录",
+                    _inline_expand_action(
+                        "show-next-meal",
+                        "看下一餐建议",
+                        "next_meal",
+                        {
+                            "expanded_sections": ["next_meal"],
+                            "next_meal_detail": next_meal_detail,
+                        },
+                        style="primary",
                     ),
+                    _route_action("open-record", "调整记录", "/(tabs)/record"),
                 ],
             }],
         }

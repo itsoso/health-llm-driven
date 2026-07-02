@@ -126,14 +126,36 @@ def test_diet_quality_response_uses_today_totals_and_actionable_routes(db, auth_
     assert card["data"]["progress"]["protein_total_g"] == 37
     assert card["data"]["progress"]["protein_target_g"] == 112
     assert card["data"]["progress"]["remaining_protein_g"] == 75
-    assert card["actions"][0]["payload"]["route"] == "/diet-plan"
+    assert [action["label"] for action in card["actions"]] == ["看下一餐建议", "调整记录"]
+    assert card["actions"][0]["action"] == "ui.inline.expand"
+    assert card["actions"][0]["payload"]["target"] == "next_meal"
+    assert "route" not in card["actions"][0]["payload"]
+    assert card["actions"][0]["payload"]["patch"]["expanded_sections"] == ["next_meal"]
+    assert card["actions"][0]["payload"]["patch"]["next_meal_detail"]["title"] == "下一餐建议"
+    assert "煎牛肉能量碗" in card["actions"][0]["payload"]["patch"]["next_meal_detail"]["context"]
     assert card["actions"][1]["payload"]["route"] == "/(tabs)/record"
-    assert card["actions"][2]["action"] == "route.open"
-    assert "阿衡" in card["actions"][2]["label"]
-    diet_follow_up_route = unquote(card["actions"][2]["payload"]["route"])
-    assert diet_follow_up_route.startswith("/(tabs)/chat?")
-    assert "煎牛肉能量碗" in diet_follow_up_route
-    assert "下一餐" in diet_follow_up_route
+    assert all("问阿衡" not in action["label"] for action in card["actions"])
+
+
+def test_diet_quality_response_ignores_numeric_contraindication_noise():
+    response = build_post_record_quality_response(
+        "diet",
+        {
+            "meal_type": "lunch",
+            "food_items": "5分熟牛排, 杂粮饭, 西兰花",
+            "calories": 720,
+            "protein": 42,
+            "carbs": 55,
+            "fat": 20,
+        },
+        result='{"id": 12}',
+        personal_context="[用户健康档案]\n过敏/禁忌: 5, 海鲜\n",
+    )
+
+    assert response is not None
+    text = response["reply"] + " ".join(response["cards"][0]["data"]["personal_cautions"])
+    assert "「5」" not in text
+    assert "禁忌里包含" not in text
 
 
 def test_multi_record_quality_responses_are_aggregated_not_last_one_wins():

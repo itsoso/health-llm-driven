@@ -19,6 +19,8 @@ interface RecordQualityData {
   primary_judgement?: unknown;
   personal_cautions?: unknown;
   next_action?: unknown;
+  expanded_sections?: unknown;
+  next_meal_detail?: unknown;
   boundary?: unknown;
 }
 
@@ -36,12 +38,12 @@ function text(value: unknown): string | undefined {
   return undefined;
 }
 
-function textList(value: unknown): string[] {
+function textList(value: unknown, limit = 2): string[] {
   const items = Array.isArray(value) ? value : value == null ? [] : [value];
   return items
     .map((item) => text(item))
     .filter((item): item is string => Boolean(item))
-    .slice(0, 2);
+    .slice(0, limit);
 }
 
 function metricList(value: unknown): MetricItem[] {
@@ -61,6 +63,17 @@ function metricList(value: unknown): MetricItem[] {
 function progressValue(progress: unknown, key: string): string | undefined {
   if (!progress || typeof progress !== 'object') return undefined;
   return text((progress as Record<string, unknown>)[key]);
+}
+
+function hasExpandedSection(value: unknown, section: string): boolean {
+  return Array.isArray(value) && value.some((item) => text(item) === section);
+}
+
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return undefined;
 }
 
 function domainMeta(domain?: unknown): { icon: string; fg: string; bg: string; badge: string } {
@@ -84,6 +97,8 @@ export function RecordQualityCardView(data: RecordQualityData) {
   const judgement = text(data.primary_judgement);
   const cautions = textList(data.personal_cautions);
   const nextAction = text(data.next_action);
+  const nextMealDetail = objectValue(data.next_meal_detail);
+  const showNextMealDetail = Boolean(hasExpandedSection(data.expanded_sections, 'next_meal') && nextMealDetail);
   const boundary = text(data.boundary) || '健康管理建议，不替代医生诊断、处方或治疗。';
 
   return (
@@ -161,6 +176,55 @@ export function RecordQualityCardView(data: RecordQualityData) {
           <Text maxFontSizeMultiplier={1.2} style={styles.nextActionText}>
             {nextAction}
           </Text>
+        </View>
+      ) : null}
+
+      {showNextMealDetail && nextMealDetail ? (
+        <View style={styles.nextMealPanel}>
+          <Text maxFontSizeMultiplier={1.15} style={styles.nextMealTitle}>
+            {text(nextMealDetail.title) || '下一餐建议'}
+          </Text>
+          {text(nextMealDetail.context) ? (
+            <Text maxFontSizeMultiplier={1.15} style={styles.nextMealContext}>
+              {text(nextMealDetail.context)}
+            </Text>
+          ) : null}
+          {text(nextMealDetail.summary) ? (
+            <Text maxFontSizeMultiplier={1.18} style={styles.nextMealSummary}>
+              {text(nextMealDetail.summary)}
+            </Text>
+          ) : null}
+          {textList(nextMealDetail.options, 4).length > 0 ? (
+            <View style={styles.nextMealList}>
+              {textList(nextMealDetail.options, 4).map((item, index) => (
+                <View key={`${item}-${index}`} style={styles.nextMealListItem}>
+                  <Text maxFontSizeMultiplier={1.1} style={styles.nextMealIndex}>
+                    {index + 1}
+                  </Text>
+                  <Text maxFontSizeMultiplier={1.18} style={styles.nextMealListText}>
+                    {item}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+          {textList(nextMealDetail.rationale, 4).length > 0 ? (
+            <View style={styles.rationaleBox}>
+              {textList(nextMealDetail.rationale, 4).map((item, index) => (
+                <View key={`${item}-${index}`} style={styles.rationaleItem}>
+                  <Ionicons name="sparkles-outline" size={11} color={C.green600} />
+                  <Text maxFontSizeMultiplier={1.15} style={styles.rationaleText}>
+                    {item}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+          {text(nextMealDetail.continue_prompt) ? (
+            <Text maxFontSizeMultiplier={1.15} style={styles.continuePrompt}>
+              {text(nextMealDetail.continue_prompt)}
+            </Text>
+          ) : null}
         </View>
       ) : null}
 
@@ -304,6 +368,88 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: C.green700,
     lineHeight: 17,
+  } as TextStyle,
+  nextMealPanel: {
+    marginTop: 8,
+    gap: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+  },
+  nextMealTitle: {
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    fontWeight: '900',
+    color: C.ink1,
+    lineHeight: 18,
+  } as TextStyle,
+  nextMealContext: {
+    fontFamily: revaFonts.sans,
+    fontSize: 10,
+    color: C.ink3,
+    lineHeight: 15,
+  } as TextStyle,
+  nextMealSummary: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    fontWeight: '800',
+    color: C.green700,
+    lineHeight: 17,
+  } as TextStyle,
+  nextMealList: {
+    gap: 6,
+  },
+  nextMealListItem: {
+    flexDirection: 'row',
+    gap: 7,
+    alignItems: 'flex-start',
+  },
+  nextMealIndex: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    overflow: 'hidden',
+    textAlign: 'center',
+    fontFamily: revaFonts.mono,
+    fontSize: 10,
+    fontWeight: '900',
+    lineHeight: 18,
+    color: C.green700,
+    backgroundColor: C.green50,
+  } as TextStyle,
+  nextMealListText: {
+    flex: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    color: C.ink1,
+    lineHeight: 16,
+  } as TextStyle,
+  rationaleBox: {
+    gap: 4,
+    paddingTop: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+  },
+  rationaleItem: {
+    flexDirection: 'row',
+    gap: 5,
+    alignItems: 'flex-start',
+  },
+  rationaleText: {
+    flex: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 10,
+    color: C.ink2,
+    lineHeight: 15,
+  } as TextStyle,
+  continuePrompt: {
+    fontFamily: revaFonts.sans,
+    fontSize: 10,
+    color: C.ink3,
+    lineHeight: 15,
   } as TextStyle,
   boundary: {
     marginTop: 9,

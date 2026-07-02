@@ -9,6 +9,7 @@ export interface ChatCardActionResult {
   status: 'completed' | 'dismissed' | 'opened';
   route?: string;
   nutrition_status?: DietNutritionStatus;
+  patch?: Record<string, unknown>;
 }
 
 export async function dispatchChatCardAction(
@@ -37,9 +38,61 @@ export async function dispatchChatCardAction(
       return { status: 'dismissed' };
     case 'route.open':
       return { status: 'opened', route: readRoute(action) };
+    case 'ui.inline.expand':
+      return { status: 'completed', patch: readInlinePatch(action) };
     default:
       throw new Error('unsupported_card_action');
   }
+}
+
+function readInlinePatch(action: ChatCardActionDescriptor): Record<string, unknown> {
+  const target = optionalText(action.payload?.target);
+  const patch = action.payload?.patch;
+  if (!target || !patch || typeof patch !== 'object' || Array.isArray(patch)) {
+    throw new Error('invalid_inline_patch_action');
+  }
+  return sanitizeInlinePatch(patch as Record<string, unknown>);
+}
+
+function sanitizeInlinePatch(source: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const expanded = source.expanded_sections;
+  if (Array.isArray(expanded)) {
+    const sections = expanded
+      .map(optionalText)
+      .filter((item): item is string => Boolean(item))
+      .filter((item) => ['next_meal'].includes(item));
+    if (sections.length > 0) out.expanded_sections = sections.slice(0, 4);
+  }
+  const detail = source.next_meal_detail;
+  if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+    out.next_meal_detail = sanitizeNextMealDetail(detail as Record<string, unknown>);
+  }
+  if (Object.keys(out).length === 0) {
+    throw new Error('invalid_inline_patch_action');
+  }
+  return out;
+}
+
+function sanitizeNextMealDetail(source: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of ['title', 'summary', 'context', 'continue_prompt'] as const) {
+    const value = optionalText(source[key]);
+    if (value) out[key] = value;
+  }
+  for (const key of ['options', 'rationale'] as const) {
+    const values = readOptionalTextList(source[key]);
+    if (values.length > 0) out[key] = values;
+  }
+  return out;
+}
+
+function readOptionalTextList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(optionalText)
+    .filter((item): item is string => Boolean(item))
+    .slice(0, 6);
 }
 
 async function createDietRecordFromCard(action: ChatCardActionDescriptor): Promise<DietNutritionStatus> {

@@ -43,6 +43,7 @@ const ALLOWED_DYNAMIC_ACTIONS = new Set([
   'write_intent.confirm',
   'write_intent.dismiss',
   'route.open',
+  'ui.inline.expand',
 ]);
 
 export async function getTodayDynamicView(
@@ -150,6 +151,14 @@ function normalizeActions(value: unknown): ChatCardActionDescriptor[] | undefine
 function isSafeAction(action: ChatCardActionDescriptor): boolean {
   if (action.action === 'route.open') {
     return isSafeInternalRoute(action.payload?.route);
+  }
+  if (action.action === 'ui.inline.expand') {
+    return Boolean(
+      typeof action.payload?.target === 'string' &&
+      action.payload?.patch &&
+      typeof action.payload.patch === 'object' &&
+      !Array.isArray(action.payload.patch),
+    );
   }
   return action.requires_manual_confirm === true;
 }

@@ -340,7 +340,7 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertFalse(html.contains("<tag>"))
     }
 
-    func testDynamicCardRendersSafeRouteActionsOnly() throws {
+    func testDynamicCardRendersSafeRouteAndInlineActionsOnly() throws {
         let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
             type: "record_quality",
             data: .object([
@@ -350,13 +350,32 @@ final class ChatTranscriptHTMLTests: XCTestCase {
             ]),
             actions: [
                 AgentDynamicCardActionDescriptor(
-                    id: "ask-next-meal",
-                    label: "问阿衡下一餐",
-                    action: "route.open",
+                    id: "show-next-meal",
+                    label: "看下一餐建议",
+                    action: "ui.inline.expand",
                     payload: .object([
-                        "route": .string("/(tabs)/chat?prompt=下一餐怎么吃&badge=饮食记录")
+                        "target": .string("next_meal"),
+                        "patch": .object([
+                            "expanded_sections": .array([.string("next_meal")]),
+                            "next_meal_detail": .object([
+                                "title": .string("下一餐建议"),
+                                "summary": .string("下一餐补约 45g 蛋白，少油少刺激。"),
+                                "options": .array([.string("鱼/豆腐 + 熟蔬菜")]),
+                                "rationale": .array([.string("今日蛋白仍有缺口")]),
+                                "continue_prompt": .string("可以继续在这里问阿衡：如果只能外卖，怎么选。")
+                            ])
+                        ])
                     ]),
                     style: "primary"
+                ),
+                AgentDynamicCardActionDescriptor(
+                    id: "open-record",
+                    label: "调整记录",
+                    action: "route.open",
+                    payload: .object([
+                        "route": .string("/(tabs)/record")
+                    ]),
+                    style: "secondary"
                 ),
                 AgentDynamicCardActionDescriptor(
                     id: "unsafe-external",
@@ -380,8 +399,12 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         ))
 
         XCTAssertTrue(html.contains("dynamic-card-actions"))
-        XCTAssertTrue(html.contains("问阿衡下一餐"))
-        XCTAssertTrue(html.contains("/(tabs)/chat?prompt=下一餐怎么吃&amp;badge=饮食记录"))
+        XCTAssertTrue(html.contains("看下一餐建议"))
+        XCTAssertTrue(html.contains("dynamic-card-inline-action"))
+        XCTAssertTrue(html.contains("下一餐补约 45g 蛋白"))
+        XCTAssertTrue(html.contains("鱼/豆腐 + 熟蔬菜"))
+        XCTAssertTrue(html.contains("/(tabs)/record"))
+        XCTAssertFalse(html.contains("问阿衡下一餐"))
         XCTAssertFalse(html.contains("外部链接"))
         XCTAssertFalse(html.contains("直接写入"))
         XCTAssertFalse(html.contains("https://example.test"))

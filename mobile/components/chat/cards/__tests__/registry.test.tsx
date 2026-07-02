@@ -100,7 +100,7 @@ describe('renderCard 安全降级', () => {
     expect(getByText('已设置每日提醒：臀中肌训练')).toBeTruthy();
   });
 
-  it('renders record quality cards with personal cautions and route actions', () => {
+  it('renders record quality cards with personal cautions and inline next-meal actions', () => {
     const onAction = jest.fn();
     const descriptor = {
       type: 'record_quality',
@@ -126,11 +126,23 @@ describe('renderCard 安全降级', () => {
       },
       actions: [
         {
-          id: 'open-diet-plan',
-          label: '看晚餐建议',
-          action: 'route.open',
-          endpoint: '/diet-plan',
-          payload: { route: '/diet-plan' },
+          id: 'show-next-meal',
+          label: '看下一餐建议',
+          action: 'ui.inline.expand',
+          style: 'primary',
+          payload: {
+            target: 'next_meal',
+            patch: {
+              expanded_sections: ['next_meal'],
+              next_meal_detail: {
+                title: '下一餐建议',
+                summary: '晚餐优先 40g 蛋白，少油少刺激。',
+                options: ['鱼/豆腐 + 熟蔬菜 + 少量主食', '鸡胸/鸡蛋 + 南瓜 + 绿叶菜'],
+                rationale: ['午餐后今日蛋白还差约 75g', '胃溃疡背景下避免冷饮和强刺激'],
+                continue_prompt: '可以继续问阿衡：如果今晚只能外卖，怎么选。',
+              },
+            },
+          },
         },
       ],
     } as any;
@@ -145,11 +157,11 @@ describe('renderCard 安全降级', () => {
     expect(getByText('已记 1040 kcal · 2 餐 · 还差约 75g 蛋白')).toBeTruthy();
     expect(getByText('胃溃疡记录在案，冷饮/酸性饮品可能刺激胃，建议观察耐受。')).toBeTruthy();
 
-    fireEvent.press(getByText('看晚餐建议'));
-    expect(onAction).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'route.open', endpoint: '/diet-plan', payload: { route: '/diet-plan' } }),
-      expect.objectContaining({ type: 'record_quality' }),
-    );
+    fireEvent.press(getByText('看下一餐建议'));
+    expect(onAction).not.toHaveBeenCalled();
+    expect(getByText('下一餐建议')).toBeTruthy();
+    expect(getByText('鱼/豆腐 + 熟蔬菜 + 少量主食')).toBeTruthy();
+    expect(getByText('可以继续问阿衡：如果今晚只能外卖，怎么选。')).toBeTruthy();
   });
 
   it('renders confirmable diet draft cards with next action guidance', () => {

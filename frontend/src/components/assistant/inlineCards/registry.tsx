@@ -26,7 +26,7 @@ export const CARD_MAP: Record<string, CardSpec> = Object.fromEntries(
   CARD_REGISTRY.map(c => [c.type, c]),
 );
 
-const ALLOWED_ACTIONS = new Set(['route.open']);
+const ALLOWED_ACTIONS = new Set(['route.open', 'ui.inline.expand']);
 
 /** 派发: 本地关键词 + 数据可用性双门限, 第一张 build 成功的卡片胜出 */
 export async function dispatchCard(ctx: CardContext): Promise<{ type: string; data: any } | null> {
@@ -73,6 +73,9 @@ export function renderCard(desc: ServerCardDescriptor): React.ReactElement | nul
         <div className="flex flex-wrap gap-2">
           {actions.map((action) => {
             const route = readRouteAction(action);
+            if (action.action === 'ui.inline.expand') {
+              return renderInlineExpandAction(action);
+            }
             if (!route) return null;
             return (
               <a
@@ -119,7 +122,7 @@ function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCar
       action.label.trim().length > 0 &&
       typeof action.action === 'string' &&
       ALLOWED_ACTIONS.has(action.action) &&
-      readRouteAction(action) != null
+      isSafeAction(action)
     ))
     .map(action => ({
       ...action,
@@ -130,6 +133,12 @@ function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCar
     }));
 }
 
+function isSafeAction(action: ChatCardActionDescriptor): boolean {
+  if (action.action === 'route.open') return readRouteAction(action) != null;
+  if (action.action === 'ui.inline.expand') return readInlineNextMealDetail(action) != null;
+  return false;
+}
+
 function readRouteAction(action: ChatCardActionDescriptor): string | null {
   const route = action.payload?.route;
   if (typeof route !== 'string') return null;
@@ -137,4 +146,78 @@ function readRouteAction(action: ChatCardActionDescriptor): string | null {
   if (route.startsWith('//')) return null;
   if (/[\u0000-\u001f\u007f]/.test(route)) return null;
   return route;
+}
+
+function renderInlineExpandAction(action: ChatCardActionDescriptor): React.ReactElement | null {
+  const detail = readInlineNextMealDetail(action);
+  if (!detail) return null;
+  return (
+    <details
+      key={action.id || `${action.action}:${action.label}`}
+      className={[
+        'w-full rounded-2xl border px-3 py-2 text-xs',
+        action.style === 'primary'
+          ? 'border-emerald-200 bg-emerald-50 text-slate-800'
+          : 'border-slate-200 bg-white text-slate-700',
+      ].join(' ')}
+    >
+      <summary className="cursor-pointer list-none font-semibold text-emerald-700">
+        {action.label}
+      </summary>
+      <div className="mt-2 space-y-2">
+        <div className="font-bold text-slate-900">{detail.title || '下一餐建议'}</div>
+        {detail.context ? <div className="text-[11px] leading-5 text-slate-500">{detail.context}</div> : null}
+        {detail.summary ? <div className="font-semibold leading-5 text-emerald-700">{detail.summary}</div> : null}
+        {detail.options.length > 0 ? (
+          <ol className="space-y-1 pl-4 text-[11px] leading-5 text-slate-800">
+            {detail.options.map((item) => <li key={item}>{item}</li>)}
+          </ol>
+        ) : null}
+        {detail.rationale.length > 0 ? (
+          <div className="space-y-1 rounded-xl bg-white/70 px-2 py-2 text-[11px] leading-5 text-slate-600">
+            {detail.rationale.map((item) => <div key={item}>依据：{item}</div>)}
+          </div>
+        ) : null}
+        {detail.continue_prompt ? <div className="text-[11px] leading-5 text-slate-500">{detail.continue_prompt}</div> : null}
+      </div>
+    </details>
+  );
+}
+
+function readInlineNextMealDetail(action: ChatCardActionDescriptor): {
+  title: string;
+  summary: string;
+  context: string;
+  options: string[];
+  rationale: string[];
+  continue_prompt: string;
+} | null {
+  if (action.action !== 'ui.inline.expand') return null;
+  if (action.endpoint) return null;
+  const patch = action.payload?.patch;
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return null;
+  const detail = (patch as Record<string, unknown>).next_meal_detail;
+  if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return null;
+  const raw = detail as Record<string, unknown>;
+  return {
+    title: text(raw.title),
+    summary: text(raw.summary),
+    context: text(raw.context),
+    options: textList(raw.options, 6),
+    rationale: textList(raw.rationale, 6),
+    continue_prompt: text(raw.continue_prompt),
+  };
+}
+
+function text(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value.trim().slice(0, 500);
+}
+
+function textList(value: unknown, limit: number): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(text)
+    .filter(Boolean)
+    .slice(0, limit);
 }

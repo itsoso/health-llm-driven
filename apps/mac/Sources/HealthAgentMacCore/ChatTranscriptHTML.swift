@@ -716,11 +716,14 @@ public enum ChatTranscriptHTML {
 
     private static func dynamicCardActionsHTML(_ actions: [AgentDynamicCardActionDescriptor]) -> String {
         let items = actions.compactMap { action -> String? in
-            guard action.action == "route.open" else {
+            let label = action.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !label.isEmpty else {
                 return nil
             }
-            let label = action.label.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !label.isEmpty,
+            if action.action == "ui.inline.expand" {
+                return inlineExpandActionHTML(action, label: label)
+            }
+            guard action.action == "route.open",
                   let route = action.payload?["route"]?.stringValue?
                     .trimmingCharacters(in: .whitespacesAndNewlines),
                   isSafeInternalRoute(route) else {
@@ -735,6 +738,59 @@ public enum ChatTranscriptHTML {
             return ""
         }
         return "<div class=\"dynamic-card-actions\">\(items.joined())</div>"
+    }
+
+    private static func inlineExpandActionHTML(
+        _ action: AgentDynamicCardActionDescriptor,
+        label: String
+    ) -> String? {
+        let target = action.payload?["target"]?.stringValue?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard action.endpoint == nil,
+              !target.isEmpty,
+              let detail = action.payload?["patch"]?["next_meal_detail"] else {
+            return nil
+        }
+        let title = detail["title"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let summary = detail["summary"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let context = detail["context"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let continuePrompt = detail["continue_prompt"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let options = detail["options"]?.arrayValue?.compactMap {
+            $0.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty }.prefix(6) ?? []
+        let rationale = detail["rationale"]?.arrayValue?.compactMap {
+            $0.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty }.prefix(6) ?? []
+        var body = "<div class=\"dynamic-inline-detail\">"
+        body += "<div class=\"dynamic-inline-title\">\(escape(title?.isEmpty == false ? title! : "下一餐建议"))</div>"
+        if let context, !context.isEmpty {
+            body += "<div class=\"dynamic-inline-context\">\(escape(context))</div>"
+        }
+        if let summary, !summary.isEmpty {
+            body += "<div class=\"dynamic-inline-summary\">\(escape(summary))</div>"
+        }
+        if !options.isEmpty {
+            body += "<ol class=\"dynamic-inline-list\">"
+            for option in options {
+                body += "<li>\(escape(option))</li>"
+            }
+            body += "</ol>"
+        }
+        if !rationale.isEmpty {
+            body += "<div class=\"dynamic-inline-rationale\">"
+            for item in rationale {
+                body += "<div>依据：\(escape(item))</div>"
+            }
+            body += "</div>"
+        }
+        if let continuePrompt, !continuePrompt.isEmpty {
+            body += "<div class=\"dynamic-inline-context\">\(escape(continuePrompt))</div>"
+        }
+        body += "</div>"
+        let styleClass = action.style == "primary" ? "primary" : "secondary"
+        return """
+        <details class="dynamic-card-inline-action \(styleClass)"><summary>\(escape(label))</summary>\(body)</details>
+        """
     }
 
     private static func isSafeInternalRoute(_ route: String) -> Bool {

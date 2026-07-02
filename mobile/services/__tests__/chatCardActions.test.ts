@@ -99,6 +99,28 @@ describe('dispatchChatCardAction', () => {
     });
   });
 
+  it('returns inline UI patches without opening a route', async () => {
+    await expect(dispatchChatCardAction({
+      label: '看下一餐建议',
+      action: 'ui.inline.expand',
+      payload: {
+        target: 'next_meal',
+        patch: {
+          expanded_sections: ['next_meal'],
+          next_meal_detail: { title: '下一餐建议' },
+        },
+      },
+    })).resolves.toEqual({
+      status: 'completed',
+      patch: {
+        expanded_sections: ['next_meal'],
+        next_meal_detail: { title: '下一餐建议' },
+      },
+    });
+
+    expect(mockApiPost).not.toHaveBeenCalled();
+  });
+
   it('rejects scheme-relative and control-character route actions', async () => {
     await expect(dispatchChatCardAction({
       label: '打开外部站点',

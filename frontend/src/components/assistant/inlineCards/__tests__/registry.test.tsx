@@ -167,8 +167,8 @@ describe('renderCard', () => {
       data: { title: '午餐已记录', summary: '牛肉饭' },
       actions: [
         {
-          id: 'ask-next-meal',
-          label: '问阿衡下一餐',
+          id: 'open-health-chat',
+          label: '打开阿衡',
           action: 'route.open',
           payload: { route: '/(tabs)/chat?prompt=test' },
           style: 'primary',
@@ -177,8 +177,42 @@ describe('renderCard', () => {
     });
 
     const html = renderToStaticMarkup(r!);
-    expect(html).toContain('问阿衡下一餐');
+    expect(html).toContain('打开阿衡');
     expect(html).toContain('/(tabs)/chat?prompt=test');
+  });
+
+  it('renders inline next-meal actions as same-page details instead of links', () => {
+    const r = renderCard({
+      type: 'record_quality',
+      data: { title: '午餐已记录', summary: '牛肉饭' },
+      actions: [
+        {
+          id: 'show-next-meal',
+          label: '看下一餐建议',
+          action: 'ui.inline.expand',
+          payload: {
+            target: 'next_meal',
+            patch: {
+              expanded_sections: ['next_meal'],
+              next_meal_detail: {
+                title: '下一餐建议',
+                summary: '晚餐优先补 40g 蛋白。',
+                options: ['鱼/豆腐 + 熟蔬菜', '鸡胸 + 南瓜'],
+                rationale: ['午餐后蛋白仍有缺口'],
+                continue_prompt: '可以继续问阿衡：如果只能外卖，怎么选。',
+              },
+            },
+          },
+          style: 'primary',
+        },
+      ],
+    });
+
+    const html = renderToStaticMarkup(r!);
+    expect(html).toContain('看下一餐建议');
+    expect(html).toContain('晚餐优先补 40g 蛋白。');
+    expect(html).toContain('鱼/豆腐 + 熟蔬菜');
+    expect(html).not.toContain('href=');
   });
 
   it('filters scheme-relative route actions from backend cards', () => {
@@ -259,8 +293,8 @@ describe('renderServerCards', () => {
         data: { title: '午餐已记录' },
         actions: [
           {
-            id: 'ask-next-meal',
-            label: '问阿衡下一餐',
+            id: 'open-health-chat',
+            label: '打开阿衡',
             action: 'route.open',
             payload: { route: '/(tabs)/chat?prompt=test' },
           },
