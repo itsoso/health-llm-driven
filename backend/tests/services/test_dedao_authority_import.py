@@ -366,3 +366,23 @@ def test_pull_gate_redacted_artifact_includes_source_hash_without_raw_payload():
 
     assert sha256(body.encode("utf-8")).hexdigest() in serialized
     assert raw_text not in serialized
+
+
+def test_pull_gate_redacted_artifact_marks_unchanged_source_hash():
+    body = _line()
+
+    def opener(request, *, timeout):
+        return _FakeHTTPResponse(body)
+
+    report = dry_run_import_dedao_authority_pack_from_kbase(
+        "https://kbase.example",
+        "secret-token",
+        opener=opener,
+    )
+
+    gate = evaluate_dedao_authority_pull_gate(report)
+    same = gate.to_redacted_dict(previous_source_sha256=report.source_sha256)
+    different = gate.to_redacted_dict(previous_source_sha256="different-hash")
+
+    assert same["source_unchanged"] is True
+    assert different["source_unchanged"] is False

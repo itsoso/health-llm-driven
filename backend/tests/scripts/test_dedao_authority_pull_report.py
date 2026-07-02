@@ -51,3 +51,11 @@ def test_main_redacted_output_writes_versioned_artifact(tmp_path, capsys):
     assert payload["artifact_schema"] == "dedao_authority_pull_gate_v1"
     assert payload["generated_at"].endswith("Z")
     assert "redacted_output:" in captured.out
+
+
+def test_read_previous_source_sha256_from_artifact(tmp_path):
+    module = _load_script_module()
+    artifact_path = tmp_path / "previous.json"
+    artifact_path.write_text(json.dumps({"pull": {"source_sha256": "abc123"}}), encoding="utf-8")
+
+    assert module._read_previous_source_sha256(artifact_path) == "abc123"

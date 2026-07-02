@@ -45,6 +45,7 @@ def _print_gate_text(payload: dict) -> None:
     print(f"source: {pull.get('source_url') or '-'}")
     print(f"http_status: {pull.get('http_status') or '-'}")
     print(f"fetch_status: {pull.get('status') or '-'}")
+    print(f"source_unchanged: {payload.get('source_unchanged')}")
     if pull.get("error"):
         print(f"error: {pull['error']}")
     print(f"total: {counts['total']}")
@@ -75,6 +76,21 @@ def _utc_timestamp() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def _read_previous_source_sha256(artifact_path: str | Path) -> str:
+    if not artifact_path:
+        return ""
+    try:
+        payload = json.loads(Path(artifact_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    pull = payload.get("pull")
+    if not isinstance(pull, dict):
+        return ""
+    return str(pull.get("source_sha256") or "").strip()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default=os.getenv("DEDAO_KBASE_BASE_URL", ""))
@@ -94,6 +110,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Write the redacted gate JSON artifact to this path.",
     )
     parser.add_argument(
+        "--previous-artifact",
+        default="",
+        help="Read a previous redacted gate artifact and mark source_unchanged when hashes match.",
+    )
+    parser.add_argument(
         "--fail-on-warn",
         action="store_true",
         help="Return non-zero for warn gate status as well as fail.",
@@ -108,7 +129,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.gate or args.redacted_json or args.redacted_output:
         gate = evaluate_dedao_authority_pull_gate(report)
-        payload = gate.to_redacted_dict(generated_at=_utc_timestamp())
+        payload = gate.to_redacted_dict(
+            generated_at=_utc_timestamp(),
+            previous_source_sha256=_read_previous_source_sha256(args.previous_artifact),
+        )
         redacted_json = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
         if args.redacted_output:
             _write_output_text(redacted_json, args.redacted_output)

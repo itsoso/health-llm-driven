@@ -118,11 +118,17 @@ class DedaoAuthorityPullGate:
     warn_count: int
     pull_report: DedaoAuthorityPullReport
 
-    def to_redacted_dict(self, *, generated_at: str = "") -> dict[str, Any]:
+    def to_redacted_dict(self, *, generated_at: str = "", previous_source_sha256: str = "") -> dict[str, Any]:
         import_report = self.pull_report.import_report
+        source_unchanged = bool(
+            previous_source_sha256
+            and self.pull_report.source_sha256
+            and previous_source_sha256 == self.pull_report.source_sha256
+        )
         return {
             "artifact_schema": HEALTH_AUTHORITY_GATE_ARTIFACT_SCHEMA,
             "generated_at": generated_at,
+            "source_unchanged": source_unchanged,
             "status": self.status,
             "reasons": list(self.reasons),
             "fail_count": self.fail_count,

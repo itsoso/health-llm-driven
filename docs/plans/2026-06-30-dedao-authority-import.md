@@ -57,4 +57,16 @@ backend/venv/bin/python scripts/dedao_authority_pull_report.py \
   --redacted-output artifacts/dedao-authority-gate.json
 ```
 
+Compare with the previous artifact and mark unchanged packs:
+
+```bash
+DEDAO_KBASE_BASE_URL=https://kbase.executor.life \
+DEDAO_KBASE_TOKEN=... \
+backend/venv/bin/python scripts/dedao_authority_pull_report.py \
+  --previous-artifact artifacts/dedao-authority-gate.json \
+  --redacted-output artifacts/dedao-authority-gate.json
+```
+
+When the previous and current `pull.source_sha256` values match, the artifact includes `source_unchanged = true` so downstream jobs can skip duplicate work.
+
 Add `--fail-on-warn` when a CI caller should reject packs with blocked, duplicate, or missing-source records even if accepted review candidates are present.
