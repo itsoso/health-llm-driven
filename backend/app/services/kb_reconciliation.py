@@ -421,6 +421,30 @@ def list_reconciliation_candidates(
     }
 
 
+def list_shadow_pending(db: Session, *, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
+    """待影子复核的 auto 合(P6)。**全量** approved 里过滤再分页 —— 不做页内过滤
+    (页内过滤会把 pending 项埋进后页且 total 虚报 0 = 人环 fail-open,对抗审计抓过)。
+    approved+抽中数量本身很小(≤ 每轮 1-2 笔),全量加载有界。"""
+    limit = max(1, min(int(limit or 100), 500))
+    offset = max(0, int(offset or 0))
+    rows = (
+        db.query(KBReconciliationCandidate)
+        .filter(KBReconciliationCandidate.status == "approved")
+        .order_by(KBReconciliationCandidate.id.desc())
+        .all()
+    )
+    pending = [
+        r for r in rows
+        if ((r.decision or {}).get("shadow_audit") or {}).get("status") == "pending"
+    ]
+    return {
+        "total": len(pending),
+        "limit": limit,
+        "offset": offset,
+        "candidates": [_candidate_dict(r) for r in pending[offset : offset + limit]],
+    }
+
+
 def _candidate_dict(row: KBReconciliationCandidate) -> Dict[str, Any]:
     return {
         "id": row.id,
@@ -436,4 +460,6 @@ def _candidate_dict(row: KBReconciliationCandidate) -> Dict[str, Any]:
         "status": row.status,
         "detected_at": row.detected_at.isoformat() if row.detected_at else None,
         "reviewed_by": row.reviewed_by,
+        # 影子审计标记(P6 抽样复核;非抽中为 None)。只暴露 flag,不暴露整份 reverse manifest。
+        "shadow_audit": (row.decision or {}).get("shadow_audit"),
     }

@@ -194,3 +194,179 @@ def test_deterministic_conflict_blocks_auto_even_if_judge_says_duplicate(db):
     cid = _cand(db, "dd:pos", "kb:unk", relation_tag="duplicate", score=0.99)
     ok, reasons = can_auto_approve(db, _get(db, cid), enabled_entity_types=frozenset({"condition"}))
     assert ok is False and any("冲突" in r for r in reasons)
+
+
+# ── P6 运行时后备:影子审计 + 速率熔断 + 单次运行帽(开 auto 前必接)──
+
+from app.services.kb_reconciliation_judge import (
+    JUDGE_ACTOR,
+    auto_breaker_status,
+    confirm_shadow_audit,
+)
+from app.services.kb_reconciliation_merge import merge_candidate, unalign_candidate
+
+
+def _auto_merge_pair(db, n, *, et="condition"):
+    """造第 n 对(reviewed down-dedao × draft kbase)并以 JUDGE_ACTOR 合并 = 模拟一笔 auto 合。"""
+    _doc(db, f"dd:{n}", origin=DOWN, review_status="reviewed", entity_type=et, title=f"实体{n}")
+    _doc(db, f"kb:{n}", origin=KBASE, review_status="draft", entity_type=et, title=f"实体{n}别名")
+    cid = _cand(db, f"dd:{n}", f"kb:{n}")
+    merge_candidate(db, cid, actor=JUDGE_ACTOR)
+    return cid
+
+
+def test_breaker_trips_on_detected_fp_and_blocks_auto(db):
+    """2 笔 auto 合,人 unalign 其中 1 笔(检出误合)→ 率 1/2 > 1/200 → 熔断,C10 拒一切 auto。"""
+    c1 = _auto_merge_pair(db, 1)
+    _auto_merge_pair(db, 2)
+    assert auto_breaker_status(db)["tripped"] is False  # 未检出误合 → 不熔断
+
+    unalign_candidate(db, c1, actor="admin:9")  # 人工撤销 auto 合 = 检出一笔误合
+    b = auto_breaker_status(db)
+    assert b["tripped"] is True and b["detected_fp"] == 1
+
+    # 熔断中:新候选即便全闸绿也被 C10 拒
+    _doc(db, "dd:new", origin=DOWN, review_status="reviewed", entity_type="condition")
+    _doc(db, "kb:new", origin=KBASE, review_status="draft", entity_type="condition")
+    cid = _cand(db, "dd:new", "kb:new")
+    ok, reasons = can_auto_approve(db, _get(db, cid), enabled_entity_types=frozenset({"condition"}))
+    assert ok is False and any("C10" in r for r in reasons)
+
+
+def test_human_merge_unalign_does_not_trip_breaker(db):
+    """人工合并被撤销(merged_by=人)不计入 judge 熔断窗口 —— 熔断只按机器 actor 圈定。"""
+    _doc(db, "dd:h", origin=DOWN, review_status="reviewed", entity_type="condition")
+    _doc(db, "kb:h", origin=KBASE, review_status="draft", entity_type="condition")
+    cid = _cand(db, "dd:h", "kb:h")
+    merge_candidate(db, cid, actor="admin:1")  # 人工合
+    unalign_candidate(db, cid, actor="admin:2")
+    assert auto_breaker_status(db)["tripped"] is False  # 窗口里没有 judge 的 auto 合
+
+
+def test_shadow_audit_sampling_and_confirm(db, monkeypatch):
+    """抽样=1(monkeypatch)→ 每笔 auto 合都标 shadow pending;confirm 后转 confirmed。"""
+    import app.services.kb_reconciliation_judge as m
+
+    monkeypatch.setattr(m, "_SHADOW_AUDIT_EVERY", 1)
+    _doc(db, "dd:s", origin=DOWN, review_status="reviewed", entity_type="condition", title="dup实体S")
+    _doc(db, "kb:s", origin=KBASE, review_status="draft", entity_type="condition", title="dup实体S别名")
+    _cand(db, "dd:s", "kb:s", relation_tag=None, score=0.0)
+    res = run_judge_and_auto(db, actor="admin:1", enabled_entity_types=frozenset({"condition"}),
+                             classifier=_fake_classifier)
+    assert res["auto_merged"] == 1 and res["shadow_enqueued"] == 1
+
+    cand = db.query(KBReconciliationCandidate).first()
+    assert (cand.decision or {}).get("shadow_audit", {}).get("status") == "pending"
+    confirm_shadow_audit(db, cand.id, actor="admin:1")
+    cand = db.query(KBReconciliationCandidate).first()
+    assert cand.decision["shadow_audit"]["status"] == "confirmed"
+    # 已确认不可重复确认
+    import pytest as _pytest
+    with _pytest.raises(ValueError):
+        confirm_shadow_audit(db, cand.id, actor="admin:1")
+
+
+def test_auto_per_run_cap(db, monkeypatch):
+    """单次运行帽:cap=1 时两笔可自动的只合 1 笔,auto_capped fail-loud,其余留人工。"""
+    import app.services.kb_reconciliation_judge as m
+
+    monkeypatch.setattr(m, "_MAX_AUTO_PER_RUN", 1)
+    for i in range(2):
+        _doc(db, f"dd:c{i}", origin=DOWN, review_status="reviewed", entity_type="condition", title=f"dup实体{i}")
+        _doc(db, f"kb:c{i}", origin=KBASE, review_status="draft", entity_type="condition", title=f"dup实体{i}x")
+        _cand(db, f"dd:c{i}", f"kb:c{i}", relation_tag=None, score=0.0)
+    res = run_judge_and_auto(db, actor="admin:1", enabled_entity_types=frozenset({"condition"}),
+                             classifier=_fake_classifier)
+    assert res["auto_merged"] == 1
+    assert res["auto_capped"] is True
+    assert res["left_for_human"] == 1
+
+
+def test_merge_error_mid_batch_contained(db, monkeypatch):
+    """闸后 merge 抛 ValueError(竞态)→ 单条计入 auto_merge_errors,批次不炸。"""
+    import app.services.kb_reconciliation_judge as m
+
+    _doc(db, "dd:e", origin=DOWN, review_status="reviewed", entity_type="condition", title="dup实体E")
+    _doc(db, "kb:e", origin=KBASE, review_status="draft", entity_type="condition", title="dup实体Ex")
+    _cand(db, "dd:e", "kb:e", relation_tag=None, score=0.0)
+
+    def _boom_merge(db_, cid_, *, actor):
+        raise ValueError("竞态:文档已被并发修改")
+
+    monkeypatch.setattr(m, "merge_candidate", _boom_merge)
+    res = run_judge_and_auto(db, actor="admin:1", enabled_entity_types=frozenset({"condition"}),
+                             classifier=_fake_classifier)
+    assert res["auto_merge_errors"] == 1
+    assert res["auto_merged"] == 0
+    assert res["judged"] == 1  # 批次跑完,没中断
+
+
+def test_unalign_records_merged_by_for_breaker(db):
+    """unalign 审计行必须带 merged_by(熔断按它圈定 auto 误合)。"""
+    from app.models.system_knowledge import KBAudit
+
+    cid = _auto_merge_pair(db, 7)
+    unalign_candidate(db, cid, actor="admin:1")
+    row = db.query(KBAudit).filter(KBAudit.op == "entity_align_unaligned").first()
+    assert row.diff.get("merged_by") == JUDGE_ACTOR
+
+
+# ── 对抗回归(skeptic 抓的 fail-open):粘性熔断不稀释自愈 + 显式 reset + 影子队列不埋页 ──
+
+from app.services.kb_reconciliation_judge import reset_auto_breaker
+
+
+def test_breaker_sticky_no_dilution_self_heal(db):
+    """对抗回归:1 笔误合后,再多干净 auto 合也**不自愈**(旧窗口率会被稀释复位,粘性不会)。"""
+    c1 = _auto_merge_pair(db, 1)
+    unalign_candidate(db, c1, actor="admin:9")  # 检出 1 笔误合 → 熔断
+    assert auto_breaker_status(db)["tripped"] is True
+    for i in range(12):  # 一打新的干净 auto 合(模拟在途轮次喂稀释)
+        _auto_merge_pair(db, 100 + i)
+    assert auto_breaker_status(db)["tripped"] is True  # 仍熔断:粘性,不被稀释
+
+
+def test_breaker_reset_restores_and_new_fp_retrips(db):
+    """显式人工 reset(审计化)才恢复;reset 后**新**误合再次熔断。"""
+    c1 = _auto_merge_pair(db, 1)
+    unalign_candidate(db, c1, actor="admin:9")
+    assert auto_breaker_status(db)["tripped"] is True
+
+    b = reset_auto_breaker(db, actor="admin:9", note="误合已复核:实体确非重复,已回滚")
+    assert b["tripped"] is False  # reset 前的误合已被确认处理
+
+    # 恢复后可正常 auto(C10 放行)
+    _doc(db, "dd:ok", origin=DOWN, review_status="reviewed", entity_type="condition")
+    _doc(db, "kb:ok", origin=KBASE, review_status="draft", entity_type="condition")
+    cid = _cand(db, "dd:ok", "kb:ok")
+    ok, reasons = can_auto_approve(db, _get(db, cid), enabled_entity_types=frozenset({"condition"}))
+    assert ok is True, reasons
+
+    # reset 后新误合 → 再次熔断
+    c2 = _auto_merge_pair(db, 2)
+    unalign_candidate(db, c2, actor="admin:9")
+    assert auto_breaker_status(db)["tripped"] is True
+
+
+def test_shadow_pending_list_not_buried_by_pagination(db, monkeypatch):
+    """对抗回归:pending 项不被页内过滤埋没 —— 专用查询全量过滤,total 不虚报。"""
+    import app.services.kb_reconciliation_judge as m
+    from app.services.kb_reconciliation import list_shadow_pending
+
+    monkeypatch.setattr(m, "_SHADOW_AUDIT_EVERY", 1)
+    _doc(db, "dd:sp", origin=DOWN, review_status="reviewed", entity_type="condition", title="dup埋没")
+    _doc(db, "kb:sp", origin=KBASE, review_status="draft", entity_type="condition", title="dup埋没x")
+    _cand(db, "dd:sp", "kb:sp", relation_tag=None, score=0.0)
+    run_judge_and_auto(db, actor="admin:1", enabled_entity_types=frozenset({"condition"}),
+                       classifier=_fake_classifier)
+    # 再塞一堆高分 approved 干扰项(会把 pending 挤出旧实现的第一页)
+    for i in range(5):
+        _doc(db, f"dd:n{i}", origin=DOWN, review_status="reviewed", entity_type="condition", title=f"噪声{i}")
+        _doc(db, f"kb:n{i}", origin=KBASE, review_status="draft", entity_type="condition", title=f"噪声{i}x")
+        cid = _cand(db, f"dd:n{i}", f"kb:n{i}", score=0.999)
+        merge_candidate(db, cid, actor="admin:1")  # 人工合,无 shadow 标
+
+    res = list_shadow_pending(db, limit=2, offset=0)
+    assert res["total"] == 1  # total = 真 pending 数,不看页
+    assert len(res["candidates"]) == 1
+    assert res["candidates"][0]["shadow_audit"]["status"] == "pending"

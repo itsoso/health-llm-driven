@@ -84,7 +84,7 @@ class DedaoKbaseReviewedArtifactsPublishRequest(BaseModel):
 
 
 class ReconciliationDecisionRequest(BaseModel):
-    action: Literal["approve_merge", "reject", "defer"]
+    action: Literal["approve_merge", "reject", "defer", "confirm_shadow"]
     note: str | None = Field(default=None, max_length=1000)
 
 
@@ -299,11 +299,18 @@ def get_reconciliation_candidates(
     status: str | None = Query("open", description="open|approved|rejected|deferred"),
     kind: str | None = Query(None, description="entity_align|claim_overlap"),
     relation_tag: str | None = Query(None, description="duplicate|agree|conflict|complementary"),
+    shadow_pending: bool = Query(False, description="只看待影子复核的 auto 合(强制 status=approved)"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     admin_user: User = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
+    if shadow_pending:
+        # 全量 approved 过滤后分页(页内过滤会埋 pending + total 虚报 = 人环 fail-open)
+        from app.services.kb_reconciliation import list_shadow_pending
+
+        return list_shadow_pending(db, limit=limit, offset=offset)
+
     from app.services.kb_reconciliation import list_reconciliation_candidates
 
     return list_reconciliation_candidates(
@@ -314,6 +321,37 @@ def get_reconciliation_candidates(
         limit=limit,
         offset=offset,
     )
+
+
+@admin_router.get(
+    "/reconciliation/breaker",
+    summary="auto 熔断状态(P6;**粘性**:reset 后任一检出误合即熔断,直到显式人工 reset)",
+)
+def get_reconciliation_breaker(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    from app.services.kb_reconciliation_judge import auto_breaker_status
+
+    return auto_breaker_status(db)
+
+
+class BreakerResetRequest(BaseModel):
+    note: str = Field(..., min_length=5, max_length=500, description="必填:说明误合已如何复核处理")
+
+
+@admin_router.post(
+    "/reconciliation/breaker/reset",
+    summary="人工复位熔断(P6;审计化,确认 reset 前误合已复核;新误合会再次熔断)",
+)
+def post_reconciliation_breaker_reset(
+    body: BreakerResetRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    from app.services.kb_reconciliation_judge import reset_auto_breaker
+
+    return reset_auto_breaker(db, actor=f"admin:{admin_user.id}", note=body.note)
 
 
 @admin_router.patch(
@@ -338,7 +376,6 @@ def review_reconciliation_candidate(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
-    # reject / defer:仅改 status,不动 serving
     cand = (
         db.query(KBReconciliationCandidate)
         .filter(KBReconciliationCandidate.id == candidate_id)
@@ -346,6 +383,17 @@ def review_reconciliation_candidate(
     )
     if cand is None:
         raise HTTPException(status_code=404, detail="candidate 不存在")
+
+    if body.action == "confirm_shadow":
+        # 影子复核确认:人看过这笔 auto 合,判定正确(判定错误 → 走 unalign,那才是误合信号)
+        from app.services.kb_reconciliation_judge import confirm_shadow_audit
+
+        try:
+            return confirm_shadow_audit(db, candidate_id, actor=actor)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    # reject / defer:仅改 status,不动 serving
     if cand.status != "open":
         raise HTTPException(status_code=400, detail=f"candidate status={cand.status},非 open 不可裁决")
     cand.status = "rejected" if body.action == "reject" else "deferred"

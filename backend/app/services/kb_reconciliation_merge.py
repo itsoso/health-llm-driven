@@ -320,6 +320,7 @@ def unalign_candidate(db: Session, candidate_id: int, *, actor: str) -> Dict[str
             em = dict(e.metadata_json or {}); em.pop("superseded_by_align", None)
             e.metadata_json = em
 
+    merged_by = cand.reviewed_by  # 重置前抓原合并者(auto=JUDGE_ACTOR)→ 熔断按此圈定误合
     cand.status = "open"
     cand.reviewed_by = None
     cand.reviewed_at = None
@@ -327,7 +328,7 @@ def unalign_candidate(db: Session, candidate_id: int, *, actor: str) -> Dict[str
 
     from app.models.system_knowledge import KBAudit
     db.add(KBAudit(doc_id=canonical.doc_id, op="entity_align_unaligned", actor=actor, diff={
-        "candidate_id": cand.id, "restored_loser": loser.doc_id,
+        "candidate_id": cand.id, "restored_loser": loser.doc_id, "merged_by": merged_by,
     }))
     db.commit()
     return {"unaligned": True, "candidate_id": cand.id}

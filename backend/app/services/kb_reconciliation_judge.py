@@ -25,7 +25,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from app.models.system_knowledge import KBDocument, KBReconciliationCandidate
+from app.models.system_knowledge import KBAudit, KBDocument, KBReconciliationCandidate
 from app.services.kb_reconciliation import _norm_title
 from app.services.kb_reconciliation_merge import (
     _is_prescriptive,
@@ -37,6 +37,12 @@ from app.services.kb_reconciliation_merge import (
 JUDGE_VERSION = "v1"
 JUDGE_ACTOR = f"llm_dedup_judge:{JUDGE_VERSION}"  # 机器 actor,永非人 reviewer_id(审计可辨 + 熔断可圈)
 _AUTO_APPROVE_TAU = 0.95  # founder ratified 全局阈(§10);doc-drift 钉此常量
+
+# ── P6 运行时后备(§10:开任何 entity_type 的 auto 前必接)──
+_SHADOW_AUDIT_EVERY = 20   # 每 20 笔 auto 合抽 1 笔进影子人工复核(founder Q7:1/20 抽样)
+_MAX_AUTO_PER_RUN = 20     # 单次运行 auto 合上限(爆炸半径帽;到帽即停 auto,fail-loud auto_capped)
+_BREAKER_WINDOW = 200      # 熔断窗口:最近 200 笔 auto 合
+_BREAKER_FP_BUDGET = 1.0 / 200  # 误合率预算(founder Q7:≤1/200);检出率**严格超**预算即熔断
 # 医疗/处方类 entity_type:永不 auto(#2;与 claim_overlap 恒人工叠加)。
 _AUTO_NEVER_ENTITY_TYPES = frozenset(
     {"medication", "drug", "supplement", "diet", "nutrient", "gene", "regimen", "dose", "dosage"}
@@ -171,11 +177,84 @@ def _strong_signal_conjunction(cand: KBReconciliationCandidate, left: KBDocument
     return bool(lt) and lt == rt
 
 
+_MERGE_AUDIT_OPS = ("entity_align_approved", "claim_merge_source_folded")
+
+
+def auto_breaker_status(db: Session) -> Dict[str, Any]:
+    """**粘性**熔断(§10 P6,按 JUDGE_ACTOR 圈定):上次人工 reset 之后,**任何**一笔 auto 合被人
+    unalign(= 检出误合)即熔断,且**保持熔断直到显式人工 reset**(`reset_auto_breaker`)。
+
+    为什么粘性而非滑动窗口率:窗口率会被后续干净合**稀释自愈**(对抗审计实测:1 误合 + 10 笔在途
+    干净合即回到预算内),与「人工复核后方可恢复」矛盾。粘性 = 严格 fail-closed(比 1/200 预算更严,
+    over-refuse 方向);rate/window 仅作观测报告。确定性、无新表:全从 KBAudit 推。
+    诚实说明:merge 审计行若缺 candidate_id 只影响观测 rate 的分母;熔断判定只依赖 unalign 行的
+    merged_by(当前代码恒写),不受其影响。
+    """
+    # 上次人工 reset(无则从头算)。id 单调,拿最新一条。
+    last_reset = (
+        db.query(KBAudit)
+        .filter(KBAudit.op == "breaker_reset")
+        .order_by(KBAudit.id.desc())
+        .first()
+    )
+    reset_id = last_reset.id if last_reset is not None else 0
+    # reset 之后检出的 auto 误合(unalign 行 merged_by==JUDGE_ACTOR)。unalign 是稀少人工动作,
+    # 且已按 id > reset_id 过滤,规模有界。
+    unaligns = (
+        db.query(KBAudit)
+        .filter(KBAudit.op == "entity_align_unaligned", KBAudit.id > reset_id)
+        .all()
+    )
+    detected_fp = sum(1 for u in unaligns if (u.diff or {}).get("merged_by") == JUDGE_ACTOR)
+    tripped = detected_fp >= 1  # 粘性:reset 后任一检出误合即熔断,不自愈
+
+    # 观测用滑动窗口率(信息性,不参与判定)
+    recent = (
+        db.query(KBAudit)
+        .filter(KBAudit.actor == JUDGE_ACTOR, KBAudit.op.in_(_MERGE_AUDIT_OPS))
+        .order_by(KBAudit.ts.desc(), KBAudit.id.desc())
+        .limit(_BREAKER_WINDOW)
+        .all()
+    )
+    window = len(recent)
+    return {
+        "tripped": tripped,
+        "detected_fp": detected_fp,
+        "since_reset_audit_id": reset_id,
+        "window": window,
+        "rate": round(detected_fp / window, 4) if window else None,
+        "budget": _BREAKER_FP_BUDGET,
+        "semantics": "sticky: any detected FP since last human reset trips until explicit reset",
+    }
+
+
+def reset_auto_breaker(db: Session, *, actor: str, note: str = "") -> Dict[str, Any]:
+    """人工复位熔断(审计化):确认 reset 前的误合已复核处理。之后**新**检出误合会再次熔断。"""
+    db.add(KBAudit(doc_id=None, op="breaker_reset", actor=actor, diff={"note": note[:500]}))
+    db.commit()
+    return auto_breaker_status(db)
+
+
 def can_auto_approve(
-    db: Session, cand: KBReconciliationCandidate, *, enabled_entity_types: frozenset
+    db: Session,
+    cand: KBReconciliationCandidate,
+    *,
+    enabled_entity_types: frozenset,
+    breaker: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, List[str]]:
-    """9 闸服务端硬门(re-read live rows,不信 judge)。全 True 才可无人自动合。返回 (ok, reasons)。"""
+    """9+ 闸服务端硬门(re-read live rows,不信 judge)。全 True 才可无人自动合。返回 (ok, reasons)。
+
+    breaker 可传预计算结果(批量循环省查询);None 则现算。熔断中 → 一律拒(C10)。
+    """
     reasons: List[str] = []
+    # C10 粘性熔断:上次人工 reset 后有任一检出误合 → 全体 auto 停(fail-closed,先判;
+    # 不自愈,与「人工复核后方可恢复」逐字一致 —— reset 走 /reconciliation/breaker/reset 审计化端点)
+    b = breaker if breaker is not None else auto_breaker_status(db)
+    if b.get("tripped"):
+        return False, [
+            f"C10 熔断中(粘性):上次 reset 后检出 {b.get('detected_fp')} 笔 auto 误合;"
+            f"人工复核并显式 reset 后方可恢复"
+        ]
     # 先过人工合并同一道硬闸(conflict/prescriptive/无 reviewed 锚)。
     ok, why, canonical_id = can_merge(db, cand)
     if not ok:
@@ -213,6 +292,27 @@ def can_auto_approve(
     return (len(reasons) == 0), reasons
 
 
+def confirm_shadow_audit(db: Session, candidate_id: int, *, actor: str) -> Dict[str, Any]:
+    """影子复核确认:人看过这笔 auto 合,判定正确。(判定错误 → 走 unalign,那才是误合信号。)"""
+    cand = (
+        db.query(KBReconciliationCandidate)
+        .filter(KBReconciliationCandidate.id == candidate_id)
+        .first()
+    )
+    if cand is None:
+        raise ValueError("candidate 不存在")
+    shadow = (cand.decision or {}).get("shadow_audit") or {}
+    if cand.status != "approved" or shadow.get("status") != "pending":
+        raise ValueError("非待影子复核的 auto 合,无可确认")
+    decision = dict(cand.decision or {})
+    decision["shadow_audit"] = {**shadow, "status": "confirmed", "confirmed_by": actor}
+    cand.decision = decision
+    db.add(KBAudit(doc_id=None, op="shadow_audit_confirmed", actor=actor,
+                   diff={"candidate_id": candidate_id}))
+    db.commit()
+    return {"candidate_id": candidate_id, "shadow_audit": "confirmed"}
+
+
 def run_judge_and_auto(
     db: Session,
     *,
@@ -236,19 +336,56 @@ def run_judge_and_auto(
     judged = 0
     auto_merged = 0
     left_for_human = 0
+    auto_capped = False
+    auto_merge_errors = 0
+    shadow_enqueued = 0
+    # 影子抽样位置:每轮随机(否则 cap=20 下永远只抽每轮第 1 笔 = 确定性位置可被排序操纵)
+    import random as _random
+    shadow_pos = _random.randrange(_SHADOW_AUDIT_EVERY)
+    breaker = auto_breaker_status(db)  # 起点快照仅供返回值观测
     for cand in opens:
         classify_candidate(db, cand, classifier=classifier)
         judged += 1
-        ok, _reasons = can_auto_approve(db, cand, enabled_entity_types=enabled)
-        if ok:
-            merge_candidate(db, cand.id, actor=JUDGE_ACTOR)
-            auto_merged += 1
-        else:
+        if auto_merged >= _MAX_AUTO_PER_RUN:
+            # 单次运行帽:到帽后剩余全部留人工(fail-loud,不静默继续无人合)
+            auto_capped = True
             left_for_human += 1
+            continue
+        # 熔断每候选**现算**(breaker=None):并发 unalign 落地即刻生效,不吃整轮陈旧快照
+        # (对抗审计实测:陈旧快照正是稀释自愈的喂料口)。粘性熔断下查询有界,量小可承受。
+        ok, _reasons = can_auto_approve(db, cand, enabled_entity_types=enabled, breaker=None)
+        if not ok:
+            left_for_human += 1
+            continue
+        try:
+            merge_candidate(db, cand.id, actor=JUDGE_ACTOR)
+        except ValueError:
+            # 闸后竞态(文档被并发改/删等):单条失败不炸批,计数暴露,留人工
+            auto_merge_errors += 1
+            left_for_human += 1
+            continue
+        auto_merged += 1
+        # 影子审计抽样(founder Q7:1/20 为下限;短轮次会过抽 = 保守方向):
+        # 抽中的 auto 合标 pending,等人静默复核;人若判误合 → unalign → 粘性熔断。
+        if auto_merged % _SHADOW_AUDIT_EVERY == shadow_pos or _SHADOW_AUDIT_EVERY == 1:
+            decision = dict(cand.decision or {})
+            decision["shadow_audit"] = {
+                "status": "pending",
+                "requested_at": datetime.now(timezone.utc).isoformat(),
+            }
+            cand.decision = decision
+            db.add(KBAudit(doc_id=None, op="shadow_audit_enqueued", actor=JUDGE_ACTOR,
+                           diff={"candidate_id": cand.id}))
+            db.commit()
+            shadow_enqueued += 1
     return {
         "judged": judged,
         "auto_merged": auto_merged,
         "left_for_human": left_for_human,
+        "auto_capped": auto_capped,
+        "auto_merge_errors": auto_merge_errors,
+        "shadow_enqueued": shadow_enqueued,
+        "breaker": breaker,
         "enabled_entity_types": sorted(enabled),
         "tau": _AUTO_APPROVE_TAU,
         "ran_at": datetime.now(timezone.utc).isoformat(),
