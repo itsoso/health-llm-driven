@@ -14,6 +14,32 @@ const MOBILITY_WORDS = ['拉伸', '柔韧', '放松', '活动度'];
 const CARDIO_ONLY_WORDS = ['跑步', '健走', '步行', '快走', '慢跑', '骑行'];
 const STRENGTH_WORDS = ['训练', '运动', '力量', '锻炼', '俯卧撑', '深蹲', '核心'];
 const NUTRITION_WORDS = ['饮食', '餐', '蛋白', '热量', '碳水', '脂肪', '补水', '喝水'];
+const DIET_RECORD_WORDS = [
+  '记录饮食',
+  '饮食记录',
+  '饮食打卡',
+  '餐食记录',
+  '记录早餐',
+  '记录午餐',
+  '记录晚餐',
+  '记录加餐',
+  '打卡早餐',
+  '打卡午餐',
+  '打卡晚餐',
+  '早餐打卡',
+  '午餐打卡',
+  '晚餐打卡',
+  '拍照记录',
+  '文字记录',
+  '语音记录',
+  '记一餐',
+  '记餐',
+  'log meal',
+  'meal log',
+  'food log',
+];
+const DIET_RECORD_VERBS = ['记录', '打卡', '拍照', '文字', '语音', 'log'];
+const DIET_RECORD_OBJECTS = ['饮食', '餐', '早餐', '午餐', '晚餐', '加餐', 'meal', 'food'];
 const MEDICATION_WORDS = ['用药', '服药', '药', '补剂', '维生素'];
 const EXAM_WORDS = ['体检', '化验', '复查', '检查', '指标'];
 
@@ -86,7 +112,8 @@ export function buildDailyArtifactExecuteRoute(
   }
 
   const text = actionText(action);
-  if (NUTRITION_WORDS.some((word) => text.includes(word))) return '/diet-plan';
+  const nutritionRoute = routeForNutritionActionText(text);
+  if (nutritionRoute) return nutritionRoute;
   if (MEDICATION_WORDS.some((word) => text.includes(word))) return '/medications';
   if (EXAM_WORDS.some((word) => text.includes(word))) return '/medical-exams';
 
@@ -110,6 +137,17 @@ export function inferDailyArtifactMovementTarget(
   const strengthLike = STRENGTH_WORDS.some((word) => text.includes(word));
   if (cardioOnly && !strengthLike) return null;
   return strengthLike ? 'strength' : null;
+}
+
+export function routeForNutritionActionText(text: string | null | undefined): '/diet' | '/diet-plan' | null {
+  const normalized = (text || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (DIET_RECORD_WORDS.some((word) => normalized.includes(word.toLowerCase()))) return '/diet';
+  const hasRecordIntent = DIET_RECORD_VERBS.some((word) => normalized.includes(word.toLowerCase()));
+  const hasDietObject = DIET_RECORD_OBJECTS.some((word) => normalized.includes(word.toLowerCase()));
+  if (hasRecordIntent && hasDietObject) return '/diet';
+  if (NUTRITION_WORDS.some((word) => normalized.includes(word.toLowerCase()))) return '/diet-plan';
+  return null;
 }
 
 export function createDailyArtifactChatContext(

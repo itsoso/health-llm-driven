@@ -658,6 +658,22 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(mockPush).toHaveBeenCalledWith('/diet-plan');
   });
 
+  it('routes a nutrition record fallback action to diet capture, not the diet plan', () => {
+    mockDailyPlanActions = [{
+      action_key: 'record-breakfast',
+      domain: 'nutrition',
+      title: '记录早餐',
+      why: '早晨记录后才能判断今天摄入。',
+      when: 'morning',
+      source_card_id: null,
+    }];
+
+    const { getByLabelText } = render(<TodayScreen />);
+    fireEvent.press(getByLabelText('补齐今天记录'));
+
+    expect(mockPush).toHaveBeenCalledWith('/diet');
+  });
+
   // ── 90-day metabolic cycle strip ──
 
   it('promotes an active 90-day health cycle as the home cockpit', () => {

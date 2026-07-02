@@ -75,6 +75,7 @@ import {
   buildDailyArtifactAskRoute,
   buildDailyArtifactBasisRoute,
   buildDailyArtifactExecuteRoute,
+  routeForNutritionActionText,
 } from '../../utils/dailyArtifactNavigation';
 import type {
   ChatCardActionDescriptor,
@@ -234,7 +235,14 @@ export default function TodayScreen() {
         router.push({ pathname: '/card/[id]' as any, params: { id: String(action.source_card_id) } });
         return;
       }
-      if (action.domain === 'nutrition') router.push('/diet-plan' as any);
+      if (action.domain === 'nutrition') {
+        const route = routeForNutritionActionText([
+          action.title,
+          action.why,
+          action.metric_key,
+        ].filter(Boolean).join(' ')) ?? '/diet-plan';
+        router.push(route as any);
+      }
       else if (action.domain === 'movement') router.push('/movement-plan' as any);
       else if (action.domain === 'sleep') router.push('/sleep' as any);
       else if (isBodyMeasurementAction(action)) router.push('/body-measurements?focus=morning' as any);

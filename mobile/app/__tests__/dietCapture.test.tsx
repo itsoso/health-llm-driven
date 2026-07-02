@@ -6,6 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 const mockRouteParams: Record<string, string> = { capture: 'photo' };
 const mockMealForm = jest.fn();
+const mockEstimate = jest.fn();
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ back: jest.fn() }),
@@ -42,6 +43,14 @@ jest.mock('../../hooks/useDiet', () => ({
     data: { meals: [], meals_count: 0, total_calories: 0, total_protein: 0, total_carbs: 0, total_fat: 0 },
     refetch: jest.fn(),
     isRefetching: false,
+  }),
+}));
+
+jest.mock('../../hooks/useDietEstimate', () => ({
+  useDietEstimate: () => ({
+    estimate: mockEstimate,
+    pendingIds: new Set(),
+    failedIds: new Set(),
   }),
 }));
 
@@ -111,6 +120,7 @@ import DietScreen from '../diet';
 describe('DietScreen capture deeplink', () => {
   beforeEach(() => {
     mockMealForm.mockClear();
+    mockEstimate.mockClear();
     jest.clearAllMocks();
     Object.keys(mockRouteParams).forEach((key) => { delete mockRouteParams[key]; });
   });
@@ -124,7 +134,7 @@ describe('DietScreen capture deeplink', () => {
     });
   });
 
-  it('turns photo capture into a confirmable draft without auto-saving', async () => {
+  it('turns photo capture into a lightweight confirm card without auto-saving', async () => {
     const dietService = require('../../services/diet');
     mockRouteParams.capture = 'photo';
     (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
@@ -142,56 +152,99 @@ describe('DietScreen capture deeplink', () => {
       error: null,
     });
 
-    render(<DietScreen />);
+    const { getByText } = render(<DietScreen />);
 
     await waitFor(() => {
       expect(dietService.recognizeFood).toHaveBeenCalledWith('photo-base64');
     });
     await waitFor(() => {
-      expect(mockMealForm).toHaveBeenCalledWith(expect.objectContaining({
-        initialDescription: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
-        initialCalories: 770,
-        initialProtein: 30,
-        initialCarbs: 70,
-        initialFat: 17,
-      }));
+      expect(getByText('待确认饮食')).toBeTruthy();
     });
+    expect(getByText('煎牛肉能量碗 + 姜黄鲜柠维C茶')).toBeTruthy();
+    expect(getByText('770 kcal · 蛋白 30g')).toBeTruthy();
+    expect(mockMealForm).not.toHaveBeenCalled();
     expect(dietService.createDietRecord).not.toHaveBeenCalled();
   });
 
-  it('turns text entry into a confirmable draft without auto-saving', async () => {
+  it('turns text entry into a lightweight confirm card without auto-saving', async () => {
     const dietService = require('../../services/diet');
     const promptSpy = jest.spyOn(Alert, 'prompt').mockImplementationOnce((_title, _message, callback) => {
       if (typeof callback === 'function') callback('鸡胸肉 200g + 糙米饭一碗');
     });
 
-    const { getByTestId } = render(<DietScreen />);
+    const { getByTestId, getByText } = render(<DietScreen />);
     fireEvent.press(getByTestId('diet-fab-text'));
+
+    await waitFor(() => {
+      expect(getByText('待确认饮食')).toBeTruthy();
+    });
+    expect(getByText('鸡胸肉 200g + 糙米饭一碗')).toBeTruthy();
+    expect(mockMealForm).not.toHaveBeenCalled();
+    expect(dietService.createDietRecord).not.toHaveBeenCalled();
+    promptSpy.mockRestore();
+  });
+
+  it('turns voice text into a lightweight confirm card without auto-saving', async () => {
+    const dietService = require('../../services/diet');
+    const promptSpy = jest.spyOn(Alert, 'prompt').mockImplementationOnce((_title, _message, callback) => {
+      if (typeof callback === 'function') callback('晚饭吃了鸡胸肉和一碗米饭');
+    });
+
+    const { getByTestId, getByText } = render(<DietScreen />);
+    fireEvent.press(getByTestId('diet-fab-voice'));
+
+    await waitFor(() => {
+      expect(getByText('待确认饮食')).toBeTruthy();
+    });
+    expect(getByText('晚饭吃了鸡胸肉和一碗米饭')).toBeTruthy();
+    expect(mockMealForm).not.toHaveBeenCalled();
+    expect(dietService.createDietRecord).not.toHaveBeenCalled();
+    promptSpy.mockRestore();
+  });
+
+  it('saves a lightweight diet draft from the confirm card', async () => {
+    const dietService = require('../../services/diet');
+    dietService.createDietRecord.mockResolvedValueOnce({ id: 88 });
+    const promptSpy = jest.spyOn(Alert, 'prompt').mockImplementationOnce((_title, _message, callback) => {
+      if (typeof callback === 'function') callback('鸡胸肉 200g + 糙米饭一碗');
+    });
+
+    const { getByTestId, getByText } = render(<DietScreen />);
+    fireEvent.press(getByTestId('diet-fab-text'));
+    await waitFor(() => {
+      expect(getByText('待确认饮食')).toBeTruthy();
+    });
+
+    fireEvent.press(getByText('确认记录'));
+
+    await waitFor(() => {
+      expect(dietService.createDietRecord).toHaveBeenCalledWith(expect.objectContaining({
+        food_items: '鸡胸肉 200g + 糙米饭一碗',
+        record_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      }));
+    });
+    expect(mockEstimate).toHaveBeenCalledWith(88, { kind: 'text', description: '鸡胸肉 200g + 糙米饭一碗' });
+    promptSpy.mockRestore();
+  });
+
+  it('opens the full meal form only when users choose to revise a draft', async () => {
+    const promptSpy = jest.spyOn(Alert, 'prompt').mockImplementationOnce((_title, _message, callback) => {
+      if (typeof callback === 'function') callback('鸡胸肉 200g + 糙米饭一碗');
+    });
+
+    const { getByTestId, getByText } = render(<DietScreen />);
+    fireEvent.press(getByTestId('diet-fab-text'));
+    await waitFor(() => {
+      expect(getByText('待确认饮食')).toBeTruthy();
+    });
+
+    fireEvent.press(getByText('修正'));
 
     await waitFor(() => {
       expect(mockMealForm).toHaveBeenCalledWith(expect.objectContaining({
         initialDescription: '鸡胸肉 200g + 糙米饭一碗',
       }));
     });
-    expect(dietService.createDietRecord).not.toHaveBeenCalled();
-    promptSpy.mockRestore();
-  });
-
-  it('turns voice text into a confirmable draft without auto-saving', async () => {
-    const dietService = require('../../services/diet');
-    const promptSpy = jest.spyOn(Alert, 'prompt').mockImplementationOnce((_title, _message, callback) => {
-      if (typeof callback === 'function') callback('晚饭吃了鸡胸肉和一碗米饭');
-    });
-
-    const { getByTestId } = render(<DietScreen />);
-    fireEvent.press(getByTestId('diet-fab-voice'));
-
-    await waitFor(() => {
-      expect(mockMealForm).toHaveBeenCalledWith(expect.objectContaining({
-        initialDescription: '晚饭吃了鸡胸肉和一碗米饭',
-      }));
-    });
-    expect(dietService.createDietRecord).not.toHaveBeenCalled();
     promptSpy.mockRestore();
   });
 

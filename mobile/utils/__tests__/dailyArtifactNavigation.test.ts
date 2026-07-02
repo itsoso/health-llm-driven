@@ -5,6 +5,7 @@ import {
   buildDailyArtifactBasisRoute,
   buildDailyArtifactExecuteRoute,
   inferDailyArtifactMovementTarget,
+  routeForNutritionActionText,
 } from '../dailyArtifactNavigation';
 
 function action(overrides: Partial<DailyArtifactTopAction> = {}): DailyArtifactTopAction {
@@ -92,6 +93,32 @@ describe('dailyArtifactNavigation', () => {
     expect(buildDailyArtifactExecuteRoute(artifact({ top_action: training }), training)).toBe(
       '/guided-task?domain=strength&completeType=health_protocol&completeId=7&slot=21%3A00',
     );
+  });
+
+  it('routes diet record actions to the diet capture screen instead of the diet plan', () => {
+    const breakfastLog = action({
+      id: 'breakfast-log',
+      title: '记录早餐',
+      do_now: '把今天早餐拍照或文字记录下来。',
+      source: null,
+    });
+
+    expect(routeForNutritionActionText('记录早餐')).toBe('/diet');
+    expect(routeForNutritionActionText('记录今天早餐')).toBe('/diet');
+    expect(routeForNutritionActionText('把早餐拍照记录下来')).toBe('/diet');
+    expect(buildDailyArtifactExecuteRoute(artifact({ top_action: breakfastLog }), breakfastLog)).toBe('/diet');
+  });
+
+  it('keeps nutrition advice actions on the diet plan screen', () => {
+    const nutritionPlan = action({
+      id: 'protein-breakfast',
+      title: '早餐补足 30g 蛋白',
+      do_now: '查看今天这一餐怎么吃。',
+      source: null,
+    });
+
+    expect(routeForNutritionActionText('早餐补足 30g 蛋白')).toBe('/diet-plan');
+    expect(buildDailyArtifactExecuteRoute(artifact({ top_action: nutritionPlan }), nutritionPlan)).toBe('/diet-plan');
   });
 
   it('falls back to Aheng chat, not timeline, for unsupported source-backed actions', () => {

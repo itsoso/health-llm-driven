@@ -41,6 +41,11 @@ type DietRouteParams = {
   fat?: string | string[];
 };
 
+type DietQuickDraft = {
+  record: DietRecordCreate;
+  source: EstimateSource | null;
+};
+
 function guessMealType(): DietRecordCreate['meal_type'] {
   const h = new Date().getHours();
   if (h < 10) return 'breakfast';
@@ -81,6 +86,27 @@ function needsNutritionBackfill(record: Partial<DietRecordCreate>): boolean {
     .some((value) => typeof value !== 'number' || !Number.isFinite(value));
 }
 
+function buildDietDraft(defaults: Partial<DietRecordCreate>, recordDate = todayStr()): DietRecordCreate {
+  return {
+    record_date: defaults.record_date ?? recordDate,
+    meal_type: defaults.meal_type ?? guessMealType(),
+    food_items: defaults.food_items?.trim() || '未命名餐食',
+    calories: defaults.calories,
+    protein: defaults.protein,
+    carbs: defaults.carbs,
+    fat: defaults.fat,
+    fiber: defaults.fiber,
+    alcohol_units: defaults.alcohol_units,
+    notes: defaults.notes,
+  };
+}
+
+function formatDraftMetric(value: number | undefined, precision = 0): string | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const rounded = precision > 0 ? Math.round(value * 10 ** precision) / 10 ** precision : Math.round(value);
+  return `${rounded}`;
+}
+
 export default function DietScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<DietRouteParams>();
@@ -103,23 +129,40 @@ export default function DietScreen() {
   const [formDefaults, setFormDefaults] = useState<Partial<DietRecordCreate>>({});
   const [editingRecord, setEditingRecord] = useState<DietRecord | null>(null);
   const [draftEstimateSource, setDraftEstimateSource] = useState<EstimateSource | null>(null);
+  const [quickDraft, setQuickDraft] = useState<DietQuickDraft | null>(null);
 
   const openDietDraft = useCallback((
     defaults: Partial<DietRecordCreate>,
     source: EstimateSource | null,
     toastMessage = '已生成草稿,确认后写入',
   ) => {
-    setDate(todayStr());
+    const record = buildDietDraft(defaults);
+    setDate(record.record_date);
     setEditingRecord(null);
     setDraftEstimateSource(source);
-    setFormDefaults({
-      meal_type: defaults.meal_type ?? guessMealType(),
-      ...defaults,
-    });
-    setShowForm(true);
+    setFormDefaults(record);
+    setQuickDraft({ record, source });
+    setShowForm(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     toast.show(toastMessage, 'success');
   }, [toast]);
+
+  const saveNewDietRecord = useCallback(async (
+    record: DietRecordCreate,
+    source: EstimateSource | null,
+  ) => {
+    const created = await createDietRecord(record);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    qc.invalidateQueries({ queryKey: ['diet'] });
+    if (created?.id && source && needsNutritionBackfill(record)) {
+      sourceMapRef.current.set(created.id, source);
+      toast.show('已保存 · 营养后台估算中', 'success');
+      estimate(created.id, source);
+    } else {
+      toast.show('已保存饮食', 'success');
+    }
+    return created;
+  }, [estimate, qc, toast]);
 
   const retryEstimate = useCallback((record: DietRecord) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -130,29 +173,54 @@ export default function DietScreen() {
 
   const handleSave = useCallback(async (record: DietRecordCreate) => {
     try {
-      let created: DietRecord | undefined;
       if (editingRecord) {
         await updateDietRecord(editingRecord.id, record);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        qc.invalidateQueries({ queryKey: ['diet'] });
       } else {
-        created = await createDietRecord(record);
+        await saveNewDietRecord(record, draftEstimateSource);
       }
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowForm(false);
       setEditingRecord(null);
       setFormDefaults({});
       setDraftEstimateSource(null);
-      qc.invalidateQueries({ queryKey: ['diet'] });
-      if (!editingRecord && created?.id && draftEstimateSource && needsNutritionBackfill(record)) {
-        sourceMapRef.current.set(created.id, draftEstimateSource);
-        toast.show('已保存 · 营养后台估算中', 'success');
-        estimate(created.id, draftEstimateSource);
-      } else if (!editingRecord) {
-        toast.show('已保存饮食', 'success');
-      }
+      setQuickDraft(null);
     } catch {
       Alert.alert(editingRecord ? '更新失败' : '保存失败', '请稍后再试');
     }
-  }, [draftEstimateSource, editingRecord, estimate, qc, toast]);
+  }, [draftEstimateSource, editingRecord, qc, saveNewDietRecord]);
+
+  const handleConfirmQuickDraft = useCallback(async () => {
+    if (!quickDraft) return;
+    try {
+      await saveNewDietRecord(quickDraft.record, quickDraft.source);
+      setQuickDraft(null);
+      setShowForm(false);
+      setEditingRecord(null);
+      setFormDefaults({});
+      setDraftEstimateSource(null);
+    } catch {
+      Alert.alert('保存失败', '请稍后再试');
+    }
+  }, [quickDraft, saveNewDietRecord]);
+
+  const handleReviseQuickDraft = useCallback(() => {
+    if (!quickDraft) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setFormDefaults(quickDraft.record);
+    setDraftEstimateSource(quickDraft.source);
+    setEditingRecord(null);
+    setQuickDraft(null);
+    setShowForm(true);
+  }, [quickDraft]);
+
+  const handleCancelQuickDraft = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setQuickDraft(null);
+    setFormDefaults({});
+    setDraftEstimateSource(null);
+    toast.show('已取消草稿', 'info');
+  }, [toast]);
 
   // P1-b: 点「常吃」chip → 直接入库(用历史营养素中位数)+ 5s undo. 失败要让用户感知 (rule#1).
   // 「常吃」也是「我现在又吃了这个」= 现在, 同 recordThenEstimate 在 submit 时现取 todayStr(),
@@ -194,6 +262,8 @@ export default function DietScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setEditingRecord(r);
     setFormDefaults({});
+    setQuickDraft(null);
+    setDraftEstimateSource(null);
     setShowForm(true);
   }, []);
 
@@ -294,6 +364,7 @@ export default function DietScreen() {
     draftConsumedRef.current = true;
     setDate(todayStr());
     setEditingRecord(null);
+    setQuickDraft(null);
     setDraftEstimateSource(null);
     setFormDefaults({
       meal_type: readRouteMealType(params.meal_type) ?? guessMealType(),
@@ -397,10 +468,19 @@ export default function DietScreen() {
         )}
 
         {/* 常吃一键复用 (P1-b): 不在编辑/表单态时显示 */}
-        {!showForm && (
+        {!showForm && !quickDraft && (
           <FrequentFoodsRow
             foods={frequentQuery.data ?? []}
             onPick={handlePickFrequent}
+          />
+        )}
+
+        {quickDraft && !showForm && (
+          <QuickDietDraftCard
+            draft={quickDraft.record}
+            onConfirm={handleConfirmQuickDraft}
+            onRevise={handleReviseQuickDraft}
+            onCancel={handleCancelQuickDraft}
           />
         )}
 
@@ -415,6 +495,7 @@ export default function DietScreen() {
               setEditingRecord(null);
               setFormDefaults({});
               setDraftEstimateSource(null);
+              setQuickDraft(null);
             }}
             initialDescription={formDefaults.food_items}
             initialCalories={formDefaults.calories}
@@ -510,6 +591,84 @@ function NutriPill({ label, value, unit, color }: { label: string; value: string
   );
 }
 
+function QuickDietDraftCard({
+  draft,
+  onConfirm,
+  onRevise,
+  onCancel,
+}: {
+  draft: DietRecordCreate;
+  onConfirm: () => void;
+  onRevise: () => void;
+  onCancel: () => void;
+}) {
+  const calories = formatDraftMetric(draft.calories);
+  const protein = formatDraftMetric(draft.protein);
+  const carbs = formatDraftMetric(draft.carbs);
+  const fat = formatDraftMetric(draft.fat);
+  const primaryMetrics = [
+    calories ? `${calories} kcal` : null,
+    protein ? `蛋白 ${protein}g` : null,
+  ].filter(Boolean).join(' · ');
+  const secondaryMetrics = [
+    carbs ? `碳水 ${carbs}g` : null,
+    fat ? `脂肪 ${fat}g` : null,
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <View style={styles.quickDraftCard}>
+      <View style={styles.quickDraftHeader}>
+        <View style={styles.quickIcon}>
+          <Ionicons name="sparkles" size={17} color={C.green500} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={txt.quickOverline}>草稿待确认</Text>
+          <Text style={txt.quickTitle}>待确认饮食</Text>
+        </View>
+        <View style={styles.quickMealChip}>
+          <Text style={txt.quickMealChipText}>{MEAL_LABEL[draft.meal_type] ?? '餐食'}</Text>
+        </View>
+      </View>
+
+      <Text style={txt.quickFood}>{draft.food_items}</Text>
+      {primaryMetrics ? <Text style={txt.quickMacro}>{primaryMetrics}</Text> : null}
+      {secondaryMetrics ? <Text style={txt.quickMacroMuted}>{secondaryMetrics}</Text> : null}
+      <Text style={txt.quickHint}>确认后写入今天饮食;需要改餐次或营养再点修正。</Text>
+
+      <View style={styles.quickActions}>
+        <TouchableOpacity
+          style={styles.quickConfirmBtn}
+          onPress={onConfirm}
+          activeOpacity={0.82}
+          accessibilityRole="button"
+          accessibilityLabel="确认记录饮食"
+        >
+          <Ionicons name="checkmark" size={17} color={C.greenOn} />
+          <Text style={txt.quickConfirmText}>确认记录</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.quickSecondaryBtn}
+          onPress={onRevise}
+          activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel="修正饮食草稿"
+        >
+          <Text style={txt.quickSecondaryText}>修正</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.quickGhostBtn}
+          onPress={onCancel}
+          activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel="取消饮食草稿"
+        >
+          <Text style={txt.quickGhostText}>取消</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 // Reva 设计语言:暖 paper 底 / 暖白 surface 卡 / 活力绿 / r-lg 18 / 数字等宽 mono / light-first 软阴影。
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
@@ -556,6 +715,53 @@ const styles = StyleSheet.create({
     marginTop: -revaSpacing.s2,
     marginBottom: revaSpacing.s4,
   },
+  quickDraftCard: {
+    backgroundColor: C.surface,
+    borderRadius: revaRadii.lg,
+    padding: revaSpacing.s4,
+    marginBottom: revaSpacing.s4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    ...revaShadows.sm,
+  },
+  quickDraftHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: revaSpacing.s3 },
+  quickIcon: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: C.green50,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  quickMealChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.paper2,
+  },
+  quickActions: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2, marginTop: revaSpacing.s4 },
+  quickConfirmBtn: {
+    flex: 1.5,
+    minHeight: 42,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.green500,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  quickSecondaryBtn: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.green50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickGhostBtn: {
+    minHeight: 42,
+    paddingHorizontal: revaSpacing.s3,
+    borderRadius: revaRadii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
 
 // 数字/计数/指标值/单位/日期走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
@@ -573,5 +779,15 @@ const txt = {
   retryText: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '600' } as TextStyle,
   swipeText: { fontFamily: revaFonts.sans, fontSize: 11, color: '#fff', fontWeight: '600' } as TextStyle,
   agentLinkText: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '600' } as TextStyle,
+  quickOverline: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, fontWeight: '700' } as TextStyle,
+  quickTitle: { fontFamily: revaFonts.sans, fontSize: 17, color: C.ink1, fontWeight: '800', marginTop: 2 } as TextStyle,
+  quickMealChipText: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, fontWeight: '700' } as TextStyle,
+  quickFood: { fontFamily: revaFonts.sans, fontSize: 16, lineHeight: 22, color: C.ink1, fontWeight: '700' } as TextStyle,
+  quickMacro: { fontFamily: revaFonts.mono, fontSize: 14, color: C.ink1, fontWeight: '700', marginTop: revaSpacing.s2 } as TextStyle,
+  quickMacroMuted: { fontFamily: revaFonts.mono, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,
+  quickHint: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, color: C.ink3, marginTop: revaSpacing.s3 } as TextStyle,
+  quickConfirmText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.greenOn, fontWeight: '800' } as TextStyle,
+  quickSecondaryText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.green600, fontWeight: '800' } as TextStyle,
+  quickGhostText: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink3, fontWeight: '700' } as TextStyle,
   empty: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink3, textAlign: 'center', paddingVertical: 30 } as TextStyle,
 };
