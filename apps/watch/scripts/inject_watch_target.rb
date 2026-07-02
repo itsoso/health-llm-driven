@@ -96,21 +96,19 @@ target.build_configurations.each do |c|
   bs.delete('INFOPLIST_KEY_CFBundleDisplayName')              # 幂等清理:历史中文值会让 CocoaPods 崩
   bs['DEVELOPMENT_TEAM'] = team_id                            # EAS 不为 watch target 注 team → 必须烤进工程(见上)
   bs['CODE_SIGN_STYLE'] = 'Automatic'                         # 配 -allowProvisioningUpdates 自动建 watch profile
-  # App Store profile for the companion watch app currently has no extra capabilities.
-  # Leaving CODE_SIGN_ENTITLEMENTS unset prevents Xcode/EAS from validating main-app
-  # HealthKit/Siri/App Group entitlements against the watch profile during archive.
-  bs.delete('CODE_SIGN_ENTITLEMENTS')
-  bs['CODE_SIGN_INJECT_BASE_ENTITLEMENTS'] = 'NO'
+  bs['CODE_SIGN_ENTITLEMENTS'] = "#{watch_name}/RevaWatch.entitlements"
+  bs.delete('CODE_SIGN_INJECT_BASE_ENTITLEMENTS')
 end
 
 # 源文件组 + 引用(幂等:先清掉本 target 已有的 RevaWatch 源 build files)
 group = project.main_group.find_subpath(watch_name, true)
+group.path = watch_name
 group.set_source_tree('SOURCE_ROOT')
 group.clear
 
 existing = target.source_build_phase.files_references.map(&:real_path).map(&:to_s)
 Dir.glob(File.join(src_dir, '*.swift')).sort.each do |f|
-  ref = group.new_file(f)
+  ref = group.new_file(File.basename(f))
   next if existing.include?(File.expand_path(f))
   target.add_file_references([ref])
 end
@@ -123,13 +121,13 @@ if Dir.exist?(asset_catalog)
     next unless ref&.path&.end_with?('Assets.xcassets') || ref&.path&.include?('AppIcon.appiconset/') || ref&.path&.include?('IconFiles/')
     build_file.remove_from_project
   end
-  asset_ref = group.new_file(asset_catalog)
+  asset_ref = group.new_file('Assets.xcassets')
   target.resources_build_phase.add_file_reference(asset_ref)
   puts "✓ 已把 Assets.xcassets 加进 #{watch_name} resources"
 
   icon_pngs = Dir.glob(File.join(asset_catalog, 'AppIcon.appiconset', '*.png')).sort
   icon_pngs.each do |png|
-    ref = group.new_file(png)
+    ref = group.new_file(File.join('Assets.xcassets', 'AppIcon.appiconset', File.basename(png)))
     target.resources_build_phase.add_file_reference(ref)
   end
   puts "✓ 已把 #{icon_pngs.size} 个 watch icon PNG 加进 #{watch_name} resources"
@@ -161,16 +159,17 @@ if Dir.exist?(comp_dir)
     bs['CURRENT_PROJECT_VERSION'] = cv
     bs['DEVELOPMENT_TEAM'] = team_id                          # 同 watch app:EAS 不注 team → 烤进工程
     bs['CODE_SIGN_STYLE'] = 'Automatic'
-    bs.delete('CODE_SIGN_ENTITLEMENTS')
-    bs['CODE_SIGN_INJECT_BASE_ENTITLEMENTS'] = 'NO'
+    bs['CODE_SIGN_ENTITLEMENTS'] = "#{comp_name}/RevaComplication.entitlements"
+    bs.delete('CODE_SIGN_INJECT_BASE_ENTITLEMENTS')
   end
 
   cgroup = project.main_group.find_subpath(comp_name, true)
+  cgroup.path = comp_name
   cgroup.set_source_tree('SOURCE_ROOT')
   cgroup.clear
   cexisting = comp.source_build_phase.files_references.map(&:real_path).map(&:to_s)
   Dir.glob(File.join(comp_dir, '*.swift')).sort.each do |f|
-    ref = cgroup.new_file(f)
+    ref = cgroup.new_file(File.basename(f))
     next if cexisting.include?(File.expand_path(f))
     comp.add_file_references([ref])
   end
@@ -204,10 +203,11 @@ if File.exist?(bridge_src)
     dest = File.join(bridge_dir, 'WatchPhoneBridge.swift')
     FileUtils.cp(bridge_src, dest)
     bgroup = project.main_group.find_subpath("#{main_group_path}/WatchBridge", true)
+    bgroup.path = "#{main_group_path}/WatchBridge"
     bgroup.set_source_tree('SOURCE_ROOT')
     main_refs = main_target.source_build_phase.files_references.map(&:real_path).map(&:to_s)
     unless main_refs.include?(File.expand_path(dest))
-      main_target.add_file_references([bgroup.new_file(dest)])
+      main_target.add_file_references([bgroup.new_file(File.basename(dest))])
     end
     puts "✓ WatchPhoneBridge.swift 已加进主 target #{main_target.name}"
 
