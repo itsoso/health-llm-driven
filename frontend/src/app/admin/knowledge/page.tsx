@@ -18,7 +18,7 @@ import {
 } from './reviewHelpers';
 import { CoverageMatrixView, CoverageMatrix } from './CoverageMatrixView';
 import { KnowledgeGraphView, GraphData, GraphNode } from './KnowledgeGraphView';
-import { ReconciliationQueueView, ReconQueueData, ReconScanResult } from './ReconciliationQueueView';
+import { BreakerStatus, ReconciliationQueueView, ReconQueueData, ReconScanResult } from './ReconciliationQueueView';
 
 interface CoverageReportResponse {
   coverage_matrix?: CoverageMatrix;
@@ -141,6 +141,8 @@ export default function KnowledgeAdminPage() {
   const [graphNode, setGraphNode] = useState<GraphNode | null>(null);
   const [reconStatus, setReconStatus] = useState('open');
   const [reconKind, setReconKind] = useState('');
+  const [reconShadow, setReconShadow] = useState(false);
+  const [reconActionError, setReconActionError] = useState<string | null>(null);
   const [reconScanResult, setReconScanResult] = useState<ReconScanResult | undefined>(undefined);
 
   useEffect(() => {
@@ -191,10 +193,11 @@ export default function KnowledgeAdminPage() {
   });
 
   const reconQuery = useQuery<ReconQueueData>({
-    queryKey: ['admin-knowledge-reconciliation', reconStatus, reconKind],
+    queryKey: ['admin-knowledge-reconciliation', reconStatus, reconKind, reconShadow],
     queryFn: async () => {
       const params = new URLSearchParams({ status: reconStatus, limit: '100' });
       if (reconKind) params.set('kind', reconKind);
+      if (reconShadow) params.set('shadow_pending', 'true');
       const res = await api.get(`/admin/knowledge/reconciliation/candidates?${params.toString()}`);
       return res.data;
     },
@@ -209,6 +212,64 @@ export default function KnowledgeAdminPage() {
     onSuccess: (result) => {
       setReconScanResult(result);
       queryClient.invalidateQueries({ queryKey: ['admin-knowledge-reconciliation'] });
+    },
+  });
+
+  const breakerQuery = useQuery<BreakerStatus>({
+    queryKey: ['admin-knowledge-breaker'],
+    queryFn: async () => {
+      const res = await api.get('/admin/knowledge/reconciliation/breaker');
+      return res.data;
+    },
+    enabled: isAuthenticated && !!user?.is_admin,
+  });
+
+  // P4/P6 裁决:approve_merge(serving mutation)/ reject / defer / confirm_shadow。
+  // 400 = 服务端硬拒(conflict/处方/无锚/LIFO)—— 必须把 detail 亮给 reviewer,不吞。
+  const reconActionMutation = useMutation({
+    mutationFn: async ({ id, action }: { id: number; action: string }) => {
+      const res = await api.patch(`/admin/knowledge/reconciliation/candidates/${id}`, { action });
+      return res.data;
+    },
+    onSuccess: () => {
+      setReconActionError(null);
+      queryClient.invalidateQueries({ queryKey: ['admin-knowledge-reconciliation'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-knowledge-breaker'] });
+    },
+    onError: (err: unknown) => {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setReconActionError(detail || '操作失败');
+    },
+  });
+
+  const reconUnalignMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await api.post(`/admin/knowledge/reconciliation/candidates/${id}/unalign`);
+      return res.data;
+    },
+    onSuccess: () => {
+      setReconActionError(null);
+      queryClient.invalidateQueries({ queryKey: ['admin-knowledge-reconciliation'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-knowledge-breaker'] });
+    },
+    onError: (err: unknown) => {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setReconActionError(detail || '撤销失败');
+    },
+  });
+
+  const breakerResetMutation = useMutation({
+    mutationFn: async (note: string) => {
+      const res = await api.post('/admin/knowledge/reconciliation/breaker/reset', { note });
+      return res.data;
+    },
+    onSuccess: () => {
+      setReconActionError(null);
+      queryClient.invalidateQueries({ queryKey: ['admin-knowledge-breaker'] });
+    },
+    onError: (err: unknown) => {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setReconActionError(detail || '复位失败');
     },
   });
 
@@ -407,6 +468,15 @@ export default function KnowledgeAdminPage() {
           kind={reconKind}
           onStatusChange={setReconStatus}
           onKindChange={setReconKind}
+          shadowOnly={reconShadow}
+          onShadowOnlyChange={setReconShadow}
+          breaker={breakerQuery.data}
+          onBreakerReset={(note) => breakerResetMutation.mutate(note)}
+          resettingBreaker={breakerResetMutation.isPending}
+          onAction={(id, action) => reconActionMutation.mutate({ id, action })}
+          onUnalign={(id) => reconUnalignMutation.mutate(id)}
+          actionPending={reconActionMutation.isPending || reconUnalignMutation.isPending}
+          actionError={reconActionError}
         />
 
         <section className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
