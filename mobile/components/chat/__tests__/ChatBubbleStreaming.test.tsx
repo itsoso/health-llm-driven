@@ -125,6 +125,48 @@ describe('ChatBubble streaming degraded render', () => {
     expect(getByText('今晚优先固定睡眠时间。')).toBeTruthy();
   });
 
+  // 流式期间跳过 sanitizeAiContent + extractRevaUiBlocks 两条重正则 (perf fix).
+  // 判别用: [附图: …] 会被 sanitize 剥掉; ```reva-ui``` fence 会被 extract 抽成卡片.
+  // 流式中两者都应"未处理" → 原文逐字显示, 无 reva-ui 卡片视图.
+  const CONTENT_WITH_MARKERS = [
+    '这是回复[附图: lab.jpg]正文。',
+    '',
+    '```reva-ui',
+    '{"v":1,"component":"line_chart","title":"趋势","x":["1","2"],"series":[{"name":"a","points":[1,2]}]}',
+    '```',
+  ].join('\n');
+
+  it('skips sanitize/extract while streaming (原文直渲, 无 reva-ui 卡片)', () => {
+    const { queryByTestId, getByText } = renderBubble({
+      id: 'assistant-streaming-markers',
+      role: 'assistant',
+      content: CONTENT_WITH_MARKERS,
+      streaming: true,
+    });
+
+    // 未跑 extract → 不生成 reva-ui 卡片视图.
+    expect(queryByTestId('assistant-reva-ui-cards')).toBeNull();
+    // 未跑 sanitize → [附图: …] 与 ```reva-ui``` fence 原样出现在纯文本里.
+    expect(getByText(CONTENT_WITH_MARKERS)).toBeTruthy();
+    // 仍是纯 Text 降级路径, 无富 Markdown.
+    expect(queryByTestId('rich-markdown')).toBeNull();
+    expect(mockMarkdownMount).not.toHaveBeenCalled();
+  });
+
+  it('runs sanitize/extract once streaming finishes (剥附图 + 抽 reva-ui 卡片)', () => {
+    const { queryByTestId, queryByText } = renderBubble({
+      id: 'assistant-done-markers',
+      role: 'assistant',
+      content: CONTENT_WITH_MARKERS,
+      streaming: false,
+    });
+
+    // done 后 extract 生效 → reva-ui 卡片视图出现.
+    expect(queryByTestId('assistant-reva-ui-cards')).toBeTruthy();
+    // done 后 sanitize 生效 → [附图: …] 被剥掉, fence 源码不再逐字显示.
+    expect(queryByText(CONTENT_WITH_MARKERS)).toBeNull();
+  });
+
   it('renders rich Markdown once streaming has finished (terminal state unchanged)', () => {
     const { getByTestId } = renderBubble({
       id: 'assistant-done',

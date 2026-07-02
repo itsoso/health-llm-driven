@@ -111,6 +111,25 @@ async function* streamTokenCardThenWait() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
+// 快路由: 一批 token 紧挨着到达 (worst case for the ~80ms 攒批 throttle).
+// 攒批后终态必须是逐 token 顺序拼接, 不丢字、不乱序.
+const BURST_TOKENS = ['第一', '段。', '第二', '段。', '第三', '段。', '收尾。'];
+async function* streamTokenBurstThenDone() {
+  yield { type: 'start', conversationId: 777 };
+  for (const t of BURST_TOKENS) {
+    yield { type: 'token', content: t };
+  }
+  yield { type: 'done', conversationId: 777, messageId: 2 };
+}
+
+// 攒批后走 error 分支: 已接收 token 必须先 flush, 再拼错误尾巴.
+async function* streamTokenBurstThenError() {
+  yield { type: 'start', conversationId: 777 };
+  yield { type: 'token', content: '开头一段' };
+  yield { type: 'token', content: '还没说完' };
+  yield { type: 'error', content: '请求出错，请稍后再试' };
+}
+
 async function* streamQuotaErrorAsToken() {
   yield { type: 'start', conversationId: 777, thought: '正在理解你的问题' };
   yield {
@@ -298,6 +317,42 @@ describe('useChatEngine', () => {
     await act(async () => {
       finishStream?.();
       await Promise.resolve();
+    });
+  });
+
+  it('batches bursty tokens without dropping or reordering (攒批终态逐段拼接)', async () => {
+    mockStreamChat.mockImplementation(streamTokenBurstThenDone);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('快路由压测');
+    });
+
+    // 终态: 逐 token 顺序拼接, 一字不差 (最后一批必 flush).
+    await waitFor(() => {
+      const assistant = result.current.messages.find(m => m.role === 'assistant');
+      expect(assistant?.content).toBe(BURST_TOKENS.join(''));
+      expect(assistant?.streaming).toBe(false);
+    });
+  });
+
+  it('flushes buffered tokens before an error tail (攒批不吞已接收内容)', async () => {
+    mockStreamChat.mockImplementation(streamTokenBurstThenError);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('中途报错');
+    });
+
+    await waitFor(() => {
+      const assistant = result.current.messages.find(m => m.role === 'assistant');
+      // 已接收的两批 token 都保留 (未被吞), 且顺序不变, 位于错误尾巴 (❌) 之前.
+      const content = assistant?.content ?? '';
+      expect(content).toContain('开头一段还没说完');
+      expect(content).toContain('❌');
+      expect(content.indexOf('开头一段还没说完')).toBeLessThan(content.indexOf('❌'));
     });
   });
 

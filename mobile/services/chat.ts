@@ -58,7 +58,7 @@ export interface LlmUsageProfile {
 export type AgentPerfProfile = AgentPerfProfileLike;
 
 export interface StreamEvent {
-  type: 'start' | 'token' | 'tool' | 'card' | 'done' | 'error';
+  type: 'start' | 'token' | 'tool' | 'status' | 'card' | 'done' | 'error';
   content?: string;
   /** 面向用户的安全思考/进度摘要,不包含模型原始推理链或工具参数。 */
   thought?: string;
@@ -106,6 +106,31 @@ function toolThoughtLabel(toolName?: string): string {
   if (tool.includes('diet')) return '饮食数据';
   if (tool.includes('sleep')) return '睡眠数据';
   return '相关数据';
+}
+
+/**
+ * 把后端 `status` SSE 事件 (token 前的阶段进度) 映射为面向用户的中文思考行。
+ * stage: vision | thinking | tool | synthesis。未知 stage → 返回 undefined (调用方忽略)。
+ */
+function statusStageThought(
+  stage?: string,
+  detail?: string | null,
+  round?: number | null,
+): string | undefined {
+  const s = (stage || '').trim();
+  const trimmedDetail = typeof detail === 'string' ? detail.trim() : '';
+  switch (s) {
+    case 'vision':
+      return '识别图片中';
+    case 'thinking':
+      return typeof round === 'number' && round >= 2 ? '整理思路' : '正在思考';
+    case 'tool':
+      return trimmedDetail ? `正在${trimmedDetail}` : '调用工具中';
+    case 'synthesis':
+      return '整理回复中';
+    default:
+      return undefined;
+  }
 }
 
 /**
@@ -238,6 +263,12 @@ export async function* streamChat(
           recordType: parsed.data?.record_type,
           recordData: parsed.data?.record_data,
         };
+      } else if (parsed.event === 'status') {
+        // TTFT 期间后端多次推送阶段状态 (token 前): vision/thinking/tool/synthesis.
+        // 映射为面向用户的中文思考行, 复用 thinkingSteps 管线 (useChatEngine appendThinkingStep
+        // 会渲染任意 evt.thought). 未知 stage → 返回 undefined, 保持既有 fall-through 忽略行为.
+        const thought = statusStageThought(parsed.data?.stage, parsed.data?.detail, parsed.data?.round);
+        if (thought) return { type: 'status', thought };
       } else if (parsed.event === 'card' || parsed.event === 'proposed_card') {
         const descriptor = parsed.data?.descriptor || parsed.data?.card || parsed.data;
         if (descriptor && typeof descriptor.type === 'string') {

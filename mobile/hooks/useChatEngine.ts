@@ -486,6 +486,20 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
     let streamConversationId = targetConversationId;
 
+    // Token 攒批: 快路由 (deepseek-v4-flash) 后每个 SSE chunk 到达快得多, 逐 chunk
+    // setMessages 全数组 map 是热点. 累积到缓冲, 每 ~80ms flush 一次; done/error/card/
+    // 循环结束/异常 前都强制 flush → 不丢字、不改消息顺序 (缓冲按到达顺序追加, 整块合并).
+    // 声明在 try 外, 让 catch 也能收尾 flush 已接收内容 (避免异常吞掉最后一批).
+    let pendingTokenText = '';
+    let tokenFlushTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushTokenBuffer = () => {
+      if (tokenFlushTimer) { clearTimeout(tokenFlushTimer); tokenFlushTimer = null; }
+      if (!pendingTokenText) return;
+      const batch = pendingTokenText;
+      pendingTokenText = '';
+      setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: mergeAssistantStreamContent(m.content, batch) } : m));
+    };
+
     try {
       const toolsUsed: Set<string> = new Set();
       const streamedCardKeys: Set<string> = new Set();
@@ -507,10 +521,14 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           const incoming = sanitizeChatErrorMessage(evt.content || '', '');
           if (incoming) {
             if (!gotFirstToken) { gotFirstToken = true; clearTimeout(slowTimer); }
-            setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: mergeAssistantStreamContent(m.content, incoming) } : m));
+            pendingTokenText += incoming;
+            if (!tokenFlushTimer) {
+              tokenFlushTimer = setTimeout(flushTokenBuffer, 80);
+            }
           }
           if (evt.toolName) toolsUsed.add(evt.toolName);
         } else if (evt.type === 'card') {
+          flushTokenBuffer();
           const serverCards = renderServerCards(evt.card ? [evt.card] : []);
           const uniqueCards = serverCards.filter((card) => {
             const key = serverCardKey(card);
@@ -523,6 +541,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           }
         } else if (evt.type === 'done') {
           sawDone = true;
+          flushTokenBuffer();
           if (evt.conversationId) {
             streamConversationId = evt.conversationId;
             if (!targetConversationId) setConversationId(evt.conversationId);
@@ -572,6 +591,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             }
           }
         } else if (evt.type === 'error') {
+          flushTokenBuffer();
           const errMsg = sanitizeChatErrorMessage(evt.content, '请求出错，请稍后再试');
           setMessages(prev => prev.map(m => m.id === aId ? {
             ...m,
@@ -582,6 +602,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           } : m));
         }
       }
+      flushTokenBuffer();
       if (!sawDone) {
         setMessages(prev => prev.map(m => m.id === aId ? {
           ...m,
@@ -592,6 +613,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         } : m));
       }
     } catch (err: any) {
+      flushTokenBuffer();
       const isAbort = err?.message === 'aborted';
       if (!isAbort && streamConversationId) {
         const recovered = await recoverConversationFromServer(streamConversationId);
@@ -605,6 +627,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           : (isAbort ? '[App 切换到后台，回复中断。请重新提问]' : `[错误] ${sanitizeChatErrorMessage(err?.message, '请求失败')}`),
       } : m));
     } finally {
+      flushTokenBuffer(); // 收尾: 清残留 timer + 保证最后一批不丢字 (幂等)
       clearTimeout(slowTimer);
       abortRef.current = null;
       streamingRef.current = false;

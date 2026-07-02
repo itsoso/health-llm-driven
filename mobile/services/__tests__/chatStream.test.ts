@@ -265,6 +265,88 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('maps status stage events to Chinese thinking rows (token 前的实时状态行)', async () => {
+    const iter = streamChat('看看这张体检照片');
+    const first = iter.next();
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+
+    // vision → 识别图片中
+    xhr.responseText =
+      'data: {"event":"status","data":{"stage":"vision","detail":null,"round":null}}\n\n';
+    xhr.onprogress?.();
+    await expect(first).resolves.toEqual({
+      value: { type: 'status', thought: '识别图片中' },
+      done: false,
+    });
+
+    // thinking round 1 → 正在思考
+    const second = iter.next();
+    xhr.responseText += 'data: {"event":"status","data":{"stage":"thinking","round":1}}\n\n';
+    xhr.onprogress?.();
+    await expect(second).resolves.toEqual({
+      value: { type: 'status', thought: '正在思考' },
+      done: false,
+    });
+
+    // thinking round 2 → 整理思路
+    const third = iter.next();
+    xhr.responseText += 'data: {"event":"status","data":{"stage":"thinking","round":2}}\n\n';
+    xhr.onprogress?.();
+    await expect(third).resolves.toEqual({
+      value: { type: 'status', thought: '整理思路' },
+      done: false,
+    });
+
+    // tool with detail → 正在<detail>
+    const fourth = iter.next();
+    xhr.responseText += 'data: {"event":"status","data":{"stage":"tool","detail":"查睡眠数据"}}\n\n';
+    xhr.onprogress?.();
+    await expect(fourth).resolves.toEqual({
+      value: { type: 'status', thought: '正在查睡眠数据' },
+      done: false,
+    });
+
+    // tool without detail → 调用工具中
+    const fifth = iter.next();
+    xhr.responseText += 'data: {"event":"status","data":{"stage":"tool","detail":null}}\n\n';
+    xhr.onprogress?.();
+    await expect(fifth).resolves.toEqual({
+      value: { type: 'status', thought: '调用工具中' },
+      done: false,
+    });
+
+    // synthesis → 整理回复中
+    const sixth = iter.next();
+    xhr.responseText += 'data: {"event":"status","data":{"stage":"synthesis"}}\n\n';
+    xhr.onprogress?.();
+    await expect(sixth).resolves.toEqual({
+      value: { type: 'status', thought: '整理回复中' },
+      done: false,
+    });
+
+    await iter.return?.(undefined as any);
+  });
+
+  it('ignores unknown status stages (保持 fall-through 忽略行为)', async () => {
+    const iter = streamChat('随便问问');
+    const first = iter.next();
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+
+    // 未知 stage 应被丢弃 (无 event 产出), 后续 token 正常
+    xhr.responseText =
+      'data: {"event":"status","data":{"stage":"quantum-flux"}}\n\n' +
+      'data: {"event":"token","data":{"content":"你好"}}\n\n';
+    xhr.onprogress?.();
+
+    await expect(first).resolves.toEqual({
+      value: { type: 'token', content: '你好' },
+      done: false,
+    });
+    await iter.return?.(undefined as any);
+  });
+
   it('allows longer commercial gateway replies before timing out', async () => {
     const iter = streamChat('use commercial model');
     const first = iter.next();

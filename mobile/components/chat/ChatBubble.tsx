@@ -84,10 +84,19 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
   const speechTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechActiveRef = useRef(false);
   const speechHandleRef = useRef<SpeakHandle | null>(null);
-  const displayText = useMemo(() => sanitizeAiContent(item.content), [item.content]);
+  // 流式期间跳过 sanitizeAiContent + extractRevaUiBlocks 这两条 O(n) 正则:
+  // 每个 token 批次都对全量累积文本重跑一遍 → 整轮回复退化为 O(n²), 长回复打满
+  // JS 线程 (镜像 113-121 行 "流式期间纯 Text, done 后才 Markdown" 的既有策略).
+  // 流式降级路径 (468 行) 用的就是纯文本, 而 reva-ui 块本就只在 done 后可用 →
+  // 流式中用原始 item.content 直渲, 终态 (item.streaming 转 false) 才跑全量处理, 行为无损.
+  const streamingBubble = !isUser && !!item.streaming;
+  const displayText = useMemo(
+    () => (streamingBubble ? item.content : sanitizeAiContent(item.content)),
+    [streamingBubble, item.content],
+  );
   const revaUiContent = useMemo(
-    () => (!isUser ? extractRevaUiBlocks(displayText) : { text: displayText, cards: [] }),
-    [displayText, isUser],
+    () => (!isUser && !streamingBubble ? extractRevaUiBlocks(displayText) : { text: displayText, cards: [] }),
+    [displayText, isUser, streamingBubble],
   );
   const assistantText = revaUiContent.text;
   const structuredSummary = useMemo(
@@ -115,7 +124,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
   // markdown 预处理 + react-native-markdown-display 整树重渲, 长回复打满 JS 线程,
   // 帧率掉/触摸输入迟滞 (mac 端同类病见 #129/#132). 流式中降级为 plain <Text>
   // (保留换行), 流完 (item.streaming 转 false) 才走富 markdown —— 终态结果不变.
-  const isStreaming = !isUser && !!item.streaming;
+  const isStreaming = streamingBubble;
   const renderedMarkdown = useMemo(
     () => (isStreaming ? '' : preprocessMarkdownTables(visibleAssistantMarkdown)),
     [isStreaming, visibleAssistantMarkdown],
