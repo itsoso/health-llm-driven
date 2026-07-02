@@ -26,6 +26,7 @@ import {
 } from '../../constants/revaTheme';
 
 const CANCEL_THRESHOLD = 80;
+const COMPOSER_HIT_SLOP = { top: 6, right: 6, bottom: 6, left: 6 };
 
 type ChatAgentMode = 'daily' | 'deep' | 'vision';
 
@@ -360,7 +361,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
       <View testID="chat-composer-surface" style={styles.composerSurface}>
         {/* 输入栏 */}
         <View style={styles.inputBar}>
-          <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn} accessibilityLabel="附件菜单">
+          <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="附件菜单">
             <Ionicons name={showMenu ? 'close' : 'add'} size={22} color={C.ink1} />
           </TouchableOpacity>
 
@@ -429,7 +430,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
           {/* 右侧按钮：发送 / 语音切换
               刚发送 (justSent) 时保持发送按钮样式 disabled 1s, 避免立即切回 mic 导致误触再次录音 */}
           {canSend ? (
-            <TouchableOpacity onPress={() => handleSend()} style={styles.sendBtn} accessibilityLabel="发送消息">
+            <TouchableOpacity onPress={() => handleSend()} style={styles.sendBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="发送消息">
               <Ionicons name="arrow-up" size={20} color="#fff" />
             </TouchableOpacity>
           ) : justSent ? (
@@ -440,6 +441,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
             <TouchableOpacity
               onPress={voiceMode ? stopVoiceInput : startVoiceInput}
               style={voiceMode ? styles.keyboardBtn : styles.voiceInputBtn}
+              hitSlop={COMPOSER_HIT_SLOP}
               accessibilityLabel={voiceMode ? '切回键盘输入' : '语音输入'}
               accessibilityHint={voiceMode ? '回到文字输入框' : '切换到按住说话，将语音转成文字'}
             >
@@ -603,12 +605,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   plusBtn: {
-    width: 34, height: 34, borderRadius: 17,
+    width: 32, height: 32, borderRadius: 16,
     backgroundColor: C.paper2, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line,
     alignItems: 'center', justifyContent: 'center',
   },
   inputWrap: {
-    minHeight: 34,
+    minHeight: 32,
     flex: 1, flexDirection: 'row', alignItems: 'flex-end',
     backgroundColor: C.paper, borderRadius: revaRadii.pill,
     borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
@@ -620,27 +622,27 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1, fontFamily: revaFonts.sans, fontSize: 15, maxHeight: 82, color: C.ink1,
-    paddingTop: 5, paddingBottom: 5,
+    paddingTop: 4, paddingBottom: 4,
   },
   sendBtn: {
-    width: 34, height: 34, borderRadius: 17,
+    width: 32, height: 32, borderRadius: 16,
     backgroundColor: C.green500,
     alignItems: 'center', justifyContent: 'center',
     ...revaShadows.sm,
   },
   modeBtn: {
-    width: 34, height: 34, borderRadius: 17,
+    width: 32, height: 32, borderRadius: 16,
     alignItems: 'center', justifyContent: 'center',
   },
   voiceInputBtn: {
-    width: 34, height: 34, borderRadius: 17,
+    width: 32, height: 32, borderRadius: 16,
     backgroundColor: C.paper,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.green500,
     alignItems: 'center', justifyContent: 'center',
   },
   keyboardBtn: {
-    width: 34, height: 34, borderRadius: 17,
+    width: 32, height: 32, borderRadius: 16,
     backgroundColor: C.paper,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
@@ -649,7 +651,7 @@ const styles = StyleSheet.create({
 
   /* ── 按住说话按钮（微信风格） ── */
   holdToTalkBtn: {
-    flex: 1, minHeight: 34, borderRadius: revaRadii.pill,
+    flex: 1, minHeight: 32, borderRadius: revaRadii.pill,
     backgroundColor: C.paper,
     borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
     flexDirection: 'row',

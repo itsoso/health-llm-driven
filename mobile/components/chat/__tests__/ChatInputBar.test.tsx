@@ -141,6 +141,29 @@ describe('ChatInputBar', () => {
     expect(styleOf(getByLabelText('语音输入')).width).toBeLessThanOrEqual(34);
   });
 
+  it('keeps the visible composer chrome slim while preserving touch targets', () => {
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    const styleOf = (node: any) => {
+      const style = node.props.style;
+      return StyleSheet.flatten(typeof style === 'function' ? style({ pressed: false }) : style);
+    };
+    const minHitSlop = (node: any) => Math.min(
+      node.props.hitSlop?.top ?? 0,
+      node.props.hitSlop?.right ?? 0,
+      node.props.hitSlop?.bottom ?? 0,
+      node.props.hitSlop?.left ?? 0,
+    );
+
+    expect(styleOf(getByLabelText('附件菜单')).width).toBeLessThanOrEqual(32);
+    expect(styleOf(getByLabelText('消息输入框，长按语音输入')).minHeight).toBeLessThanOrEqual(32);
+    expect(styleOf(getByLabelText('语音输入')).width).toBeLessThanOrEqual(32);
+    expect(minHitSlop(getByLabelText('附件菜单'))).toBeGreaterThanOrEqual(6);
+    expect(minHitSlop(getByLabelText('语音输入'))).toBeGreaterThanOrEqual(6);
+  });
+
   it('uses the bottom microphone for voice input instead of voice conversation', () => {
     const { getByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
