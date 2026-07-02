@@ -990,8 +990,9 @@ def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
         return value if value not in (None, "", []) else None
 
     # symptom (/symptoms): body_part + description
+    # 症状已免确认前置(直接写) → 回显里给撤销出口,替代原先的"是这样吗?"。
     if s("description") is not None and ("body_part" in record or "severity" in record):
-        return f"已记录症状：{record.get('description')}"
+        return f"已记录症状：{record.get('description')}（说「撤销」可删除）"
     # blood pressure
     if s("systolic") is not None and s("diastolic") is not None:
         return f"已记录血压 {record.get('systolic')}/{record.get('diastolic')} mmHg"
@@ -1089,7 +1090,15 @@ def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
 
 
 def _auto_confirm_fast_record_args(tool_name: str, func_args: Any) -> Any:
-    """Skip the two-turn confirmation gate for pure fast-record requests."""
+    """Skip the two-turn confirmation gate for pure fast-record requests.
+
+    分级 + 分通道:
+    - AUTO 集(water/diet/... + symptom/rhinitis):打字通道直接写(回显+可撤销)。
+    - symptom/rhinitis 在**语音通道**(data.source ∈ 语音来源)保留确认前置 ——
+      语音转写失真率高、watch 表盘回显易被忽略;打字是用户逐字敲的,复述确认
+      纯属重复(用户明确否决,2026-07-02)。
+    - NEVER 集(medication/dose/financial/...)与 unknown kind:恒确认(fail-closed)。
+    """
 
     if tool_name != "health_record":
         return func_args
@@ -1099,7 +1108,12 @@ def _auto_confirm_fast_record_args(tool_name: str, func_args: Any) -> Any:
         return func_args
 
     kind = _fast_record_kind(args)
-    if kind not in _FAST_RECORD_AUTO_CONFIRM_KINDS or kind in _FAST_RECORD_NEVER_AUTO_CONFIRM_KINDS:
+    requires_confirmation = (
+        kind not in _FAST_RECORD_AUTO_CONFIRM_KINDS
+        or kind in _FAST_RECORD_NEVER_AUTO_CONFIRM_KINDS
+        or (kind in _VOICE_CONFIRM_FIRST_KINDS and _record_source_is_voice(args))
+    )
+    if requires_confirmation:
         data = args.get("data")
         args.pop("confirmed", None)
         args.pop("confirm", None)
@@ -1140,7 +1154,31 @@ _FAST_RECORD_AUTO_CONFIRM_KINDS = {
     "exercise",
     "reminder",
     "supplement",
+    # symptom/rhinitis:确认后置(回显+可撤销)替代确认前置 —— 记录可逆、
+    # 非医疗级(≠用药/剂量),写错方向顶多 over-alarm(安全方向);缺
+    # body_part/description 会 fail-loud 自然追问,不是复述式确认。
+    # 每条症状都二次询问被用户明确否决(2026-07-02)。
+    "symptom",
+    "rhinitis",
 }
+# 症状类在语音通道保留确认前置(转写失真 + 表盘回显易漏);打字通道免确认。
+_VOICE_CONFIRM_FIRST_KINDS = {"symptom", "rhinitis"}
+# schema 注明 source=语音来源(apple_watch/airpods/mobile);打字聊天不设 source。
+_VOICE_RECORD_SOURCES = {"apple_watch", "watch", "airpods", "siri", "voice", "mobile"}
+
+
+def _record_source_is_voice(args: dict) -> bool:
+    data = args.get("data")
+    candidates = [args.get("source")]
+    if isinstance(data, dict):
+        candidates.append(data.get("source"))
+    return any(
+        str(raw or "").strip().lower() in _VOICE_RECORD_SOURCES for raw in candidates if raw
+    )
+
+
+# 医疗级/不可逆/资金类:永远确认前置。unknown kind 也走确认(fail-closed,
+# 见 _auto_confirm_fast_record_args:不在 AUTO 集即要求确认)。
 _FAST_RECORD_NEVER_AUTO_CONFIRM_KINDS = {
     "adherence",
     "dose",
@@ -1153,8 +1191,6 @@ _FAST_RECORD_NEVER_AUTO_CONFIRM_KINDS = {
     "medicine",
     "payment",
     "prescription",
-    "rhinitis",
-    "symptom",
 }
 _FAST_RECORD_KIND_ALIASES = {
     "bp": "blood_pressure",

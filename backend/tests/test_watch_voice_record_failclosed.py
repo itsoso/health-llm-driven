@@ -88,7 +88,12 @@ def test_fast_record_unknown_type_keeps_manual_confirmation_gate():
 
 
 def test_fast_record_symptom_keeps_manual_confirmation_gate():
-    original = {"record_type": "symptom", "data": {"body_part": "head", "description": "头痛"}}
+    # watch 语音通道(source=apple_watch):症状保留确认前置(转写失真+表盘回显易漏)。
+    # 打字通道的症状免确认见 test_agent_executor_fast_routing.py。
+    original = {
+        "record_type": "symptom",
+        "data": {"body_part": "head", "description": "头痛", "source": "apple_watch"},
+    }
 
     out = _auto_confirm_fast_record_args("health_record", original)
 
@@ -141,11 +146,13 @@ async def test_symptom_execution_requires_manual_confirmation(db):
         raise AssertionError("unconfirmed symptom must not reach API write")
 
     executor._api_post = _must_not_post
+    # 语音通道(source=apple_watch)的症状:端到端仍确认前置,不落库。
+    # (watch 真实路径是直连 /watch 端点不经 executor;此契约钉 agent 路径的语音语义。)
     args = _auto_confirm_fast_record_args(
         "health_record",
         {
             "record_type": "symptom",
-            "data": {"body_part": "head", "description": "头痛"},
+            "data": {"body_part": "head", "description": "头痛", "source": "apple_watch"},
         },
     )
     result = await executor._exec_health_record(

@@ -29,7 +29,7 @@ def test_symptom_record_json_becomes_friendly_line_not_raw_json():
         "duration_minutes": None,
     }
     reply = _fast_record_reply_from_tool_results([_tool_msg(record)])
-    assert reply == "已记录症状：打喷嚏"
+    assert reply == "已记录症状：打喷嚏（说「撤销」可删除）"  # 免确认前置后回显带撤销出口
     assert "{" not in reply and "body_part" not in reply
 
 

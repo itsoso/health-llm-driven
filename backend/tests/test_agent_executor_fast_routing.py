@@ -262,3 +262,99 @@ async def test_explicit_model_override_is_honored(db, auth_user_and_headers, mon
     assert _FAST_ID not in created
     # selected_model is the registry display name (entry.model), not the id
     assert done["selected_model"] == "commercial/Claude-Opus-4.7"
+
+
+# ──── auto-confirm 分级: _auto_confirm_fast_record_args ────
+# symptom/rhinitis 免确认前置(回显+可撤销);医疗级/资金类永远确认;
+# unknown kind fail-closed 走确认。对抗:模型预置 confirmed=true 必须被剥掉。
+
+
+def _auto_confirm(kind: str, *, pre_confirmed: bool = False) -> dict:
+    args = {"record_type": kind, "data": {"description": "x", "body_part": "general"}}
+    if pre_confirmed:
+        args["confirmed"] = True
+        args["data"]["confirmed"] = True
+    out = ae._auto_confirm_fast_record_args("health_record", args)
+    return out
+
+
+def test_symptom_record_auto_confirms_no_second_ask():
+    out = _auto_confirm("symptom")
+    assert out["confirmed"] is True
+    assert out["data"]["confirmed"] is True
+    assert "_fast_record_requires_confirmation" not in out
+
+
+def test_rhinitis_record_auto_confirms():
+    out = _auto_confirm("rhinitis")
+    assert out["confirmed"] is True
+
+
+def test_medication_always_requires_confirmation_even_if_model_preconfirms():
+    out = _auto_confirm("medication", pre_confirmed=True)
+    assert out.get("confirmed") is not True
+    assert out["data"].get("confirmed") is not True
+    assert out["_fast_record_requires_confirmation"] is True
+
+
+def test_dose_and_payment_stay_confirm_first():
+    for kind in ("dose", "payment", "prescription", "adherence"):
+        out = _auto_confirm(kind, pre_confirmed=True)
+        assert out.get("confirmed") is not True, kind
+        assert out["_fast_record_requires_confirmation"] is True, kind
+
+
+def test_unknown_kind_fails_closed_to_confirmation():
+    out = _auto_confirm("mystery_kind", pre_confirmed=True)
+    assert out.get("confirmed") is not True
+    assert out["_fast_record_requires_confirmation"] is True
+
+
+def test_water_still_auto_confirms():
+    out = _auto_confirm("water")
+    assert out["confirmed"] is True
+
+
+def test_symptom_friendly_echo_offers_undo():
+    reply = ae._friendly_record_confirmation({"description": "舌头尖溃疡", "body_part": "other"})
+    assert "已记录症状" in reply
+    assert "撤销" in reply
+
+
+def test_symptom_via_voice_source_keeps_confirmation():
+    # 语音通道(watch/mobile 语音)转写失真率高 → 症状保留确认前置
+    for source in ("apple_watch", "mobile", "airpods"):
+        args = {"record_type": "symptom", "data": {"description": "头痛", "body_part": "head", "source": source}}
+        out = ae._auto_confirm_fast_record_args("health_record", args)
+        assert out["_fast_record_requires_confirmation"] is True, source
+        assert "confirmed" not in out
+
+
+def test_water_via_watch_still_auto_confirms():
+    # 语音守卫只作用于症状类;低风险数值记录(water)语音照旧免确认
+    args = {"record_type": "water", "data": {"amount": 250, "source": "apple_watch"}}
+    out = ae._auto_confirm_fast_record_args("health_record", args)
+    assert out["confirmed"] is True
+
+
+@pytest.mark.asyncio
+async def test_typed_symptom_writes_without_confirmation_roundtrip(db):
+    # 打字通道症状:auto-confirm 后端到端直达 API 写入(不再 [NEEDS_CONFIRMATION])
+    executor = AgentExecutor(db)
+    posted = {}
+
+    async def _capture_post(url, headers, payload):
+        posted["url"] = url
+        posted["payload"] = payload
+        return '{"id": 1, "body_part": "other", "description": "舌头尖溃疡"}'
+
+    executor._api_post = _capture_post
+    args = ae._auto_confirm_fast_record_args(
+        "health_record",
+        {"record_type": "symptom", "data": {"body_part": "other", "description": "舌头尖溃疡"}},
+    )
+    result = await executor._exec_health_record("http://x", {}, args)
+
+    assert "NEEDS_CONFIRMATION" not in result
+    assert posted["url"].endswith("/symptoms")
+    assert posted["payload"]["description"] == "舌头尖溃疡"
