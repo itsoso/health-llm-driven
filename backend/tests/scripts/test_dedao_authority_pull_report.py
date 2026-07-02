@@ -26,3 +26,13 @@ def test_gate_exit_code_can_fail_on_warning():
     module = _load_script_module()
 
     assert module._exit_code_for_gate("warn", fail_on_warn=True) == 1
+
+
+def test_write_output_text_creates_parent_directory(tmp_path):
+    module = _load_script_module()
+    output_path = tmp_path / "reports" / "dedao-gate.json"
+
+    written_path = module._write_output_text("{\"status\":\"pass\"}\n", output_path)
+
+    assert written_path == output_path
+    assert output_path.read_text(encoding="utf-8") == "{\"status\":\"pass\"}\n"

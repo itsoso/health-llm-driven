@@ -46,4 +46,13 @@ DEDAO_KBASE_TOKEN=... \
 backend/venv/bin/python scripts/dedao_authority_pull_report.py --gate --redacted-json
 ```
 
+Write the same redacted gate artifact to a file for CI or scheduled jobs:
+
+```bash
+DEDAO_KBASE_BASE_URL=https://kbase.executor.life \
+DEDAO_KBASE_TOKEN=... \
+backend/venv/bin/python scripts/dedao_authority_pull_report.py \
+  --redacted-output artifacts/dedao-authority-gate.json
+```
+
 Add `--fail-on-warn` when a CI caller should reject packs with blocked, duplicate, or missing-source records even if accepted review candidates are present.

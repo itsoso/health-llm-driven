@@ -63,6 +63,13 @@ def _exit_code_for_gate(status: str, *, fail_on_warn: bool) -> int:
     return 0
 
 
+def _write_output_text(text: str, output_path: str | Path) -> Path:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default=os.getenv("DEDAO_KBASE_BASE_URL", ""))
@@ -77,6 +84,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Print the gate artifact without raw record payloads.",
     )
     parser.add_argument(
+        "--redacted-output",
+        default="",
+        help="Write the redacted gate JSON artifact to this path.",
+    )
+    parser.add_argument(
         "--fail-on-warn",
         action="store_true",
         help="Return non-zero for warn gate status as well as fail.",
@@ -89,13 +101,18 @@ def main(argv: list[str] | None = None) -> int:
         limit=args.limit,
         timeout=args.timeout,
     )
-    if args.gate or args.redacted_json:
+    if args.gate or args.redacted_json or args.redacted_output:
         gate = evaluate_dedao_authority_pull_gate(report)
         payload = gate.to_redacted_dict()
+        redacted_json = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+        if args.redacted_output:
+            _write_output_text(redacted_json, args.redacted_output)
         if args.as_json or args.redacted_json:
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            print(redacted_json, end="")
         else:
             _print_gate_text(payload)
+            if args.redacted_output:
+                print(f"redacted_output: {args.redacted_output}")
         return _exit_code_for_gate(gate.status, fail_on_warn=args.fail_on_warn)
 
     payload = report.to_dict()
