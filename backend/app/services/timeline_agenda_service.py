@@ -167,12 +167,18 @@ def complete_by_ref(
     title: Optional[str] = None,
     scheduled_for: Optional[datetime] = None,
     slot: Optional[str] = None,
+    skip_writeback: bool = False,
 ) -> Dict[str, Any]:
     """按 {object_type, object_id[, slot]} 闭环完成(push + mobile 手里就这俩/仨键)。
 
     懒物化:先查当日同 source(同 slot)的议程 HealthEvent,没有就现物化一条(pending),
     再委托既有 `complete_agenda_event` 做生命周期翻态 + 双轨回写真实 source。
     所有不变量(单次事务、幂等、回写失败不翻 done 且 422)都由 complete_agenda_event 守。
+
+    skip_writeback=True:调用方**已自行写过**真实 source(如 `POST /medication/logs` 已落
+    MedicationLog),此处只翻 HealthEvent 生命周期账本,**不**再经 complete_item 二次回写领域行
+    —— 否则同一次「已服」会落两条 MedicationLog(第二条另占一个 taken_time 槽或撞 uq fail-loud)。
+    透传给 complete_agenda_event(那里守原子 claim / 终态门控不变,仅短路领域回写)。
 
     title 不传则 None —— confirmed_data.title 对药即药名(L3),但已核实 HealthEvent.
     confirmed_data 不进任何 Twin/LLM/orchestrator/export 读路径,存它是受限且与既有
@@ -222,7 +228,7 @@ def complete_by_ref(
         )
     return complete_agenda_event(
         db, user_id, ev.id, status=status, skip_reason=skip_reason,
-        track=track, value=value,
+        track=track, value=value, skip_writeback=skip_writeback,
     )
 
 
@@ -258,6 +264,7 @@ def complete_agenda_event(
     skip_reason: Optional[str] = None,
     track: Optional[str] = None,
     value: Optional[Dict[str, Any]] = None,
+    skip_writeback: bool = False,
 ) -> Dict[str, Any]:
     """闭环完成 / 跳过一个议程 HealthEvent。
 
@@ -285,6 +292,9 @@ def complete_agenda_event(
     track / value 可选:不传(既有 event_id 端点调用方)→ 沿用 ref 内的 track、无手工量,
     行为与改前完全一致;传入(统一 /agenda/complete 手工轨)→ 把用户实际量/剂量透传给
     complete_item(否则会静默丢失用户填的 volume_ml / actual_dosage)。
+
+    skip_writeback=True:跳过步骤 3 的领域回写(调用方已自写源行)。原子 claim + 终态门控
+    (步骤 1/2)照常执行 → HealthEvent 生命周期正常翻态,但不二次写领域记录(source_write=None)。
     """
     if status not in ("done", "skipped"):
         raise ValueError(f"未知 status: {status}(应为 done|skipped)")
@@ -347,8 +357,12 @@ def complete_agenda_event(
 
     # F2:done 与 skipped 都回写真实 source(skip 也写源行 → today_status 翻 skipped,
     # 不再 re-nag、跨视图一致)。仅抢到转移的事务回写;失败 → 整事务回滚(状态转移一并撤)。
+    #
+    # skip_writeback:调用方已自行写过真实 source(如 API 层 log_medication 已落 MedicationLog),
+    # 此处只提交生命周期翻态,不再二次回写(否则同一「已服」落两条依从行)。领域真相仍单条,
+    # 幂等/终态门控/原子 claim 上面全部照常生效——短路的仅是重复的领域写。
     write_result: Optional[Dict[str, Any]] = None
-    if ev.complete_ref:
+    if ev.complete_ref and not skip_writeback:
         ref = ev.complete_ref
         object_type = ref.get("object_type")
         object_id = ref.get("object_id")

@@ -163,6 +163,74 @@ async def restore_medication(
     return {"message": "药品已恢复"}
 
 
+def _resolve_dose_slot(med: Medication, taken_time: Optional[str]) -> Optional[str]:
+    """多剂药 → 本次「已服」对应的时间线剂次槽("HH:MM");单剂 → None(与存量逐字节同)。
+
+    脊柱把真多剂(reminder_times ≥2)展开成每槽一条 HealthEvent(complete_ref 带 slot);
+    单剂/每日一次无 slot。为把这次打卡完成到**正确那一剂**,按 taken_time 归一化匹配
+    reminder_times:命中 → 用该槽;不命中 → 回退最早的排程槽(reminder_times[0])。
+    单剂药永远返回 None(不引入 slot 键,守存量单剂闭环零变化)。
+    """
+    times = [t for t in (med.reminder_times or []) if t]
+    if len(times) < 2:
+        return None  # 单剂/每日一次:不分槽
+
+    def _min(hhmm: Optional[str]) -> Optional[int]:
+        if not hhmm:
+            return None
+        try:
+            h, m = (int(x) for x in str(hhmm).split(":")[:2])
+            return h * 60 + m
+        except (ValueError, AttributeError):
+            return None
+
+    want = _min(taken_time)
+    if want is not None:
+        for t in times:
+            if _min(t) == want:
+                return t  # 命中排程剂次槽
+    return times[0]  # 不命中 → 完成最早排程剂次槽
+
+
+def _writeback_agenda_completion(
+    db: Session, user_id: int, med: Medication, data: "MedicationLogCreate",
+) -> None:
+    """把这次「已服/漏服」反向完成时间线上对应的 HealthEvent(反向完成链)。
+
+    log_medication 已把依从事实(MedicationLog)落库;这里只翻议程 HealthEvent 的
+    agenda_status 账本,让待办计数 / 复盘完成率 / 手表 due 项与打卡一致。
+
+    环形终止:MedicationLog 本次已由 API 层写过,故走 skip_writeback=True —— 完成链只做
+    原子 claim + 生命周期翻态,**不**再经 complete_item 二次写领域行(否则同一「已服」落两条)。
+    object_type 按药的 category 走 timing_adapter._domain(与脊柱/day_schedule 同一映射:
+    补剂类 category → 'supplement',其余 → 'medication')—— 同源映射保证本 ref 与脊柱物化的
+    HealthEvent ref 一致,懒物化去重命中同一条。真多剂按 taken_time 定位对应剂次槽。
+
+    失败语义(不假装成功):log 是已落库的依从事实,完成链失败绝不 500 也不回滚 log ——
+    记 warning(fail-loud 可查,非 debug 静默),响应照常成功。展示层 done 态本就从
+    get_today_status 派生会自愈,滞后的只是 agenda_status 账本。
+    当天无对应时间线事件(未排程/未物化)→ complete_by_ref 懒物化后完成,不报错。
+    """
+    from app.services import timeline_agenda_service as tas
+    from app.services.timing_adapter import _domain
+
+    object_type = _domain(med)  # 'supplement' 或 'medication'(category 权威映射)
+    agenda_status = "skipped" if data.status == "skipped" else "done"
+    skip_reason = data.skip_reason if agenda_status == "skipped" else None
+    slot = _resolve_dose_slot(med, data.taken_time)
+    try:
+        tas.complete_by_ref(
+            db, user_id, object_type, med.id,
+            status=agenda_status, skip_reason=skip_reason,
+            slot=slot, skip_writeback=True,
+        )
+    except Exception as e:  # noqa: BLE001 — 依从事实已落库,完成链失败不拖垮打卡
+        logger.warning(
+            "[medication] agenda writeback failed user=%s med=%s status=%s slot=%s: %s",
+            user_id, med.id, agenda_status, slot, e,
+        )
+
+
 @router.post("/logs")
 async def log_medication(
     data: MedicationLogCreate,
@@ -181,6 +249,10 @@ async def log_medication(
         actual_dosage=data.actual_dosage,
         notes=data.notes,
     )
+    # 反向完成链:打卡后翻时间线对应 HealthEvent(仅当药存在且属本人;log 已落库,完成链失败不 500)。
+    med = medication_service.get_medication(db, data.medication_id, current_user.id)
+    if med is not None:
+        _writeback_agenda_completion(db, current_user.id, med, data)
     return {
         "id": log.id,
         "medication_id": log.medication_id,

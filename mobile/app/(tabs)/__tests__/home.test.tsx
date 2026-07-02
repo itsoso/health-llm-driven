@@ -781,7 +781,7 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(refreshControl.props.refreshing).toBe(false);
   });
 
-  it('does not show completed-only medication and supplement summaries on Today', () => {
+  it('collapses medication and supplement into compact all-done summary rows on Today', () => {
     mockDashboardData = {
       medicationToday: [
         {
@@ -811,11 +811,16 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
       ],
     };
 
-    const { queryByLabelText, queryByText } = render(<TodayScreen />);
+    const { getByText, getAllByText, queryByText } = render(<TodayScreen />);
 
-    expect(queryByLabelText('今日用药补剂摘要')).toBeNull();
-    expect(queryByText('用药 / 补剂')).toBeNull();
-    expect(queryByText('今日已全部完成')).toBeNull();
+    // 两条紧凑汇总行(用药 / 补剂),各自全服完态
+    expect(getByText('用药')).toBeTruthy();
+    expect(getByText('补剂')).toBeTruthy();
+    expect(getAllByText('今日已全部服用')).toHaveLength(2);
+    expect(getByText('2/2 已服')).toBeTruthy();
+    expect(getByText('1/1 已服')).toBeTruthy();
+
+    // 首页不再渲染逐项药名与已服按钮
     expect(queryByText('二甲双胍')).toBeNull();
     expect(queryByText('Magnesium')).toBeNull();
   });
