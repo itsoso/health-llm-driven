@@ -31,9 +31,11 @@ async def test_medication_autocreates_when_not_registered(db):
     with patch.object(ex, "_api_get_json", new=AsyncMock(side_effect=fake_get_json)), \
          patch.object(ex, "_api_post_json", new=AsyncMock(side_effect=fake_post_json)), \
          patch.object(ex, "_api_post", new=AsyncMock(side_effect=fake_post)):
+        # medication 恒确认前置(2026-07-02):带 confirmed 测确认后的 auto-create 路径
         result = await ex._exec_health_record("http://x", {}, {
             "record_type": "medication",
-            "data": {"medication_name": "阿奇霉素", "dosage": "2粒"},
+            "confirmed": True,
+            "data": {"medication_name": "阿奇霉素", "dosage": "2粒", "confirmed": True},
         })
 
     assert "未找到" not in result
@@ -68,7 +70,8 @@ async def test_medication_logs_existing_active_without_creating(db):
          patch.object(ex, "_api_post", new=AsyncMock(side_effect=fake_post)):
         result = await ex._exec_health_record("http://x", {}, {
             "record_type": "medication",
-            "data": {"medication_name": "二甲双胍"},
+            "confirmed": True,
+            "data": {"medication_name": "二甲双胍", "confirmed": True},
         })
 
     assert "未找到" not in result
@@ -91,7 +94,8 @@ async def test_medication_autocreate_failure_is_graceful(db):
          patch.object(ex, "_api_post", new=AsyncMock()):
         result = await ex._exec_health_record("http://x", {}, {
             "record_type": "medication",
-            "data": {"medication_name": "阿奇霉素"},
+            "confirmed": True,
+            "data": {"medication_name": "阿奇霉素", "confirmed": True},
         })
 
     assert "没成功" in result  # 友好兜底, 不抛
