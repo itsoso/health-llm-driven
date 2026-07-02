@@ -6,9 +6,11 @@ import pytest
 
 from app.services.llm.usage_tracker import (
     begin_usage_capture,
+    clear_run_id,
     end_usage_capture,
     summarize_usage_capture,
     set_caller,
+    set_run_id,
     wrap_provider,
     record_usage,
     _caller_ctx,
@@ -36,6 +38,15 @@ class _FailingProvider(_FakeProvider):
         )
 
 
+class _FallbackProvider(_FakeProvider):
+    def __init__(self, model="commercial/GPT-5.5"):
+        super().__init__(model=model)
+        self.provider_name = "langbridge-proxy"
+
+    async def chat(self, messages, model=None, temperature=0.7, max_tokens=2000, stream=False, **kwargs):
+        return "备用模型回复"
+
+
 @pytest.fixture
 def patch_session(monkeypatch, db):
     """让 record_usage 写入测试 SessionLocal."""
@@ -54,8 +65,10 @@ def patch_session(monkeypatch, db):
 def _reset_caller():
     """每个测试重置 ContextVar，避免泄漏。"""
     token = _caller_ctx.set(None)
+    run_token = set_run_id(None)
     yield
     _caller_ctx.reset(token)
+    clear_run_id(run_token)
 
 
 def test_wrap_provider_resolves_model_from_self_model(patch_session):
@@ -153,8 +166,34 @@ def test_usage_capture_summarizes_calls_and_resets(patch_session):
     assert summarize_usage_capture() is None
 
 
-def test_wrap_provider_records_failure_error_context(patch_session):
+def test_usage_capture_carries_run_id_to_rows_and_summary(patch_session):
+    run_token = set_run_id("run_123")
+    token = begin_usage_capture()
+    try:
+        record_usage(
+            provider="fake",
+            model="gpt-4o-mini",
+            prompt_text="hello",
+            completion_text="ok",
+            caller="test.run",
+            user_id=7,
+        )
+        summary = summarize_usage_capture()
+    finally:
+        end_usage_capture(token)
+        clear_run_id(run_token)
+
+    row = patch_session.query(LlmUsageLog).one()
+    assert row.run_id == "run_123"
+    assert summary["run_id"] == "run_123"
+    assert summary["items"][0]["run_id"] == "run_123"
+
+
+def test_wrap_provider_records_failure_error_context(patch_session, monkeypatch):
     """失败调用也要落每次调用账本,并保留可诊断的上游错误摘要."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "llm_auto_recovery_enabled", False)
     provider = wrap_provider(_FailingProvider(model="qwen3.7-plus"))
     set_caller("test.quota", user_id=99)
     token = begin_usage_capture()
@@ -174,3 +213,39 @@ def test_wrap_provider_records_failure_error_context(patch_session):
     assert summary is not None
     assert summary["failed_calls"] == 1
     assert summary["items"][0]["error_type"] == "insufficient_quota"
+
+
+def test_wrap_provider_recovers_quota_error_with_fallback_provider(
+    patch_session,
+    monkeypatch,
+):
+    """额度类错误自动转备用模型:保留主模型失败账本,返回备用模型结果."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "llm_auto_recovery_enabled", True)
+    monkeypatch.setattr(settings, "llm_recovery_model_id", "gpt-5.5")
+    monkeypatch.setattr(
+        "app.services.llm.recovery.create_provider_for_model_id",
+        lambda model_id: wrap_provider(_FallbackProvider()),
+    )
+
+    provider = wrap_provider(_FailingProvider(model="qwen3.7-plus"))
+    set_caller("test.recover", user_id=99)
+    token = begin_usage_capture()
+    try:
+        result = asyncio.run(provider.chat(messages=[{"role": "user", "content": "帮我分析"}]))
+        summary = summarize_usage_capture()
+    finally:
+        end_usage_capture(token)
+
+    assert result == "备用模型回复"
+    rows = patch_session.query(LlmUsageLog).order_by(LlmUsageLog.id.asc()).all()
+    assert len(rows) == 2
+    assert rows[0].success == 0
+    assert rows[0].error_class == "quota_exhausted"
+    assert rows[0].recovery_action == "fallback_attempted"
+    assert rows[0].recovery_model == "gpt-5.5"
+    assert rows[1].success == 1
+    assert rows[1].provider == "langbridge-proxy"
+    assert summary["failed_calls"] == 1
+    assert summary["items"][0]["recovery_action"] == "fallback_attempted"

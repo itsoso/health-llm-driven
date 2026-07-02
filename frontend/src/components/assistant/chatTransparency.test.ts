@@ -61,10 +61,14 @@ describe('chatTransparency', () => {
         failed_calls: 1,
         items: [
           {
+            run_id: 'run_abc1234567890',
             success: false,
+            error_class: 'quota_exhausted',
             error_type: 'insufficient_quota',
             error_code: 'insufficient_quota',
             error_message: 'Your token-plan quota has been exhausted.',
+            recovery_action: 'fallback_attempted',
+            recovery_model: 'gpt-5.5',
           },
         ],
       },
@@ -72,6 +76,7 @@ describe('chatTransparency', () => {
 
     expect(profile.visible).toBe(true);
     expect(profile.errorLine).toBe('失败 1 次 · insufficient_quota · Your token-plan quota has been exhausted.');
+    expect(profile.traceLine).toBe('run run_abc1234567890 · fallback_attempted · 备用 gpt-5.5');
   });
 
   it('formats compact durations and tokens', () => {

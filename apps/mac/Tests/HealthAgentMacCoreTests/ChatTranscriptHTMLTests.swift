@@ -202,6 +202,7 @@ final class ChatTranscriptHTMLTests: XCTestCase {
 
     func testMetaFooterRendersFailedTokenUsageReason() {
         let usage = LLMUsageProfile(
+            runID: "run_abc1234567890",
             calls: 1,
             promptTokens: 0,
             completionTokens: 0,
@@ -212,6 +213,7 @@ final class ChatTranscriptHTMLTests: XCTestCase {
             providers: ["tokenplan"],
             items: [
                 LLMUsageCall(
+                    runID: "run_abc1234567890",
                     provider: "tokenplan",
                     model: "qwen3.7-plus",
                     caller: "agent.answer",
@@ -223,7 +225,9 @@ final class ChatTranscriptHTMLTests: XCTestCase {
                     success: false,
                     errorType: "insufficient_quota",
                     errorCode: "insufficient_quota",
-                    errorMessage: "Your token-plan quota has been exhausted."
+                    errorMessage: "Your token-plan quota has been exhausted.",
+                    recoveryAction: "fallback_attempted",
+                    recoveryModel: "gpt-5.5"
                 )
             ]
         )
@@ -238,6 +242,9 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertTrue(html.contains("失败 1次"))
         XCTAssertTrue(html.contains("qwen3.7-plus"))
         XCTAssertTrue(html.contains("insufficient_quota"))
+        XCTAssertTrue(html.contains("run run_abc1234567890"))
+        XCTAssertTrue(html.contains("fallback_attempted"))
+        XCTAssertTrue(html.contains("备用 gpt-5.5"))
     }
 
     func testMetaFooterEmptyWhenNoMeta() {

@@ -356,6 +356,7 @@ function AssistantTransparencyPanel({ msg }: { msg: ChatMessage }) {
             )}
             {profile.tokenLine && <MetaRow label="Token" value={profile.tokenLine} />}
             {profile.errorLine && <MetaRow label="失败" value={profile.errorLine} />}
+            {profile.traceLine && <MetaRow label="追踪" value={profile.traceLine} />}
             {profile.sources.length > 0 && (
               <MetaRow label="引用数据" value={profile.sources.slice(0, 8).map(s => `· ${s}`).join('\n')} preserveLines />
             )}

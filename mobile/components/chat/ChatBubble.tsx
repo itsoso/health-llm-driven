@@ -1277,6 +1277,7 @@ function AgentTransparencyPanel({ profile }: { profile: AgentTransparencyProfile
     ...(profile.rounds.length > 0 ? [{ label: 'LLM 轮次', value: profile.rounds.map(r => `${r.label} ${r.value}`).join('\n') }] : []),
     ...(profile.tokenLine ? [{ label: 'Token', value: profile.tokenLine }] : []),
     ...(profile.errorLine ? [{ label: '失败', value: profile.errorLine }] : []),
+    ...(profile.traceLine ? [{ label: '追踪', value: profile.traceLine }] : []),
   ];
   return (
     <View style={styles.transparencyPanel}>

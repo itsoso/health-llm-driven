@@ -33,6 +33,8 @@ _MODEL_PRICING: Dict[str, tuple] = {
 # 调用方上下文 — orchestrator / specialist / endpoint 可以通过 set_caller() 标注自己
 _caller_ctx: ContextVar[Optional[str]] = ContextVar("llm_caller", default=None)
 _user_id_ctx: ContextVar[Optional[int]] = ContextVar("llm_user_id", default=None)
+_run_id_ctx: ContextVar[Optional[str]] = ContextVar("llm_run_id", default=None)
+_recovery_depth_ctx: ContextVar[int] = ContextVar("llm_recovery_depth", default=0)
 _usage_capture_ctx: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar(
     "llm_usage_capture",
     default=None,
@@ -45,6 +47,15 @@ def set_caller(caller: str, user_id: Optional[int] = None) -> None:
     _caller_ctx.set(caller)
     if user_id is not None:
         _user_id_ctx.set(user_id)
+
+
+def set_run_id(run_id: Optional[str]) -> Token[Optional[str]]:
+    """Bind all LLM calls in the current request to a trace/run id."""
+    return _run_id_ctx.set(run_id)
+
+
+def clear_run_id(token: Token[Optional[str]]) -> None:
+    _run_id_ctx.reset(token)
 
 
 def begin_usage_capture() -> Token[Optional[List[Dict[str, Any]]]]:
@@ -92,6 +103,7 @@ def summarize_usage_capture() -> Optional[Dict[str, Any]]:
             providers.append(provider)
 
     return {
+        "run_id": _run_id_ctx.get(),
         "calls": len(captured),
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
@@ -186,6 +198,10 @@ def record_usage(
     error_type: Optional[str] = None,
     error_code: Optional[str] = None,
     error_message: Optional[str] = None,
+    error_class: Optional[str] = None,
+    recovery_action: Optional[str] = None,
+    recovery_model: Optional[str] = None,
+    run_id: Optional[str] = None,
 ) -> None:
     """写一条 LlmUsageLog (旁路, 失败只 log)."""
     prompt_tokens = _estimate_tokens(prompt_text, model)
@@ -193,20 +209,25 @@ def record_usage(
     cost = _price_usd(model, prompt_tokens, completion_tokens)
     resolved_caller = caller or _caller_ctx.get() or "unknown"
     resolved_user_id = user_id if user_id is not None else _user_id_ctx.get()
+    resolved_run_id = run_id if run_id is not None else _run_id_ctx.get()
     entry = {
         "provider": provider,
         "model": model,
         "caller": resolved_caller,
         "user_id": resolved_user_id,
+        "run_id": resolved_run_id,
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
         "total_tokens": prompt_tokens + completion_tokens,
         "cost_usd": round(cost, 8),
         "latency_ms": latency_ms,
         "success": bool(success),
+        "error_class": error_class,
         "error_type": error_type,
         "error_code": error_code,
         "error_message": error_message,
+        "recovery_action": recovery_action,
+        "recovery_model": recovery_model,
     }
     _capture_usage_entry(entry)
 
@@ -226,15 +247,19 @@ def record_usage(
                 model=model,
                 caller=resolved_caller,
                 user_id=resolved_user_id,
+                run_id=resolved_run_id,
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 total_tokens=prompt_tokens + completion_tokens,
                 cost_usd=cost,
                 latency_ms=latency_ms,
                 success=1 if success else 0,
+                error_class=error_class,
                 error_type=error_type,
                 error_code=error_code,
                 error_message=error_message,
+                recovery_action=recovery_action,
+                recovery_model=recovery_model,
             )
             db.add(row)
             db.commit()
@@ -264,6 +289,7 @@ def wrap_provider(provider):
         success = True
         result = ""
         caught_error: BaseException | None = None
+        primary_recorded = False
         try:
             result = await original_chat(messages, model=model, temperature=temperature,
                                          max_tokens=max_tokens, stream=False, **kwargs)
@@ -271,29 +297,93 @@ def wrap_provider(provider):
         except Exception as exc:
             success = False
             caught_error = exc
-            raise
-        finally:
-            latency_ms = int((time.monotonic() - start) * 1000)
             actual_model = (
                 model
                 or getattr(provider, "model", None)
                 or getattr(provider, "default_model", None)
                 or "unknown"
             )
-            prompt_text = _messages_to_text(messages)
-            # result 可能是 str 或 dict (tool_calls), 后者只记 0 completion tokens
-            completion_text = result if isinstance(result, str) else ""
-            record_usage(
-                provider=provider.provider_name,
-                model=actual_model,
-                prompt_text=prompt_text,
-                completion_text=completion_text,
-                latency_ms=latency_ms,
-                success=success,
-                error_type=_pick_error_field(caught_error, "type") if caught_error else None,
-                error_code=_pick_error_field(caught_error, "code") if caught_error else None,
-                error_message=_compact_error_message(caught_error) if caught_error else None,
-            )
+            if _recovery_depth_ctx.get() <= 0:
+                from app.config import settings
+                from app.services.llm.recovery import (
+                    diagnose_llm_error,
+                    pick_recovery_model_id,
+                    try_recover_chat,
+                )
+
+                diagnosis = diagnose_llm_error(exc)
+                recovery_model = None
+                if getattr(settings, "llm_auto_recovery_enabled", True) and diagnosis.recoverable:
+                    recovery_model = pick_recovery_model_id(
+                        diagnosis,
+                        primary_provider=getattr(provider, "provider_name", None),
+                        primary_model=actual_model,
+                    )
+                if recovery_model:
+                    latency_ms = int((time.monotonic() - start) * 1000)
+                    record_usage(
+                        provider=provider.provider_name,
+                        model=actual_model,
+                        prompt_text=_messages_to_text(messages),
+                        completion_text="",
+                        latency_ms=latency_ms,
+                        success=False,
+                        error_class=diagnosis.error_class,
+                        error_type=_pick_error_field(exc, "type"),
+                        error_code=_pick_error_field(exc, "code"),
+                        error_message=_compact_error_message(exc),
+                        recovery_action="fallback_attempted",
+                        recovery_model=recovery_model,
+                    )
+                    primary_recorded = True
+
+                recovery_depth_token = _recovery_depth_ctx.set(_recovery_depth_ctx.get() + 1)
+                try:
+                    ok, recovered, _recovery_model, _diagnosis = await try_recover_chat(
+                        exc,
+                        messages=messages,
+                        model=model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        primary_provider=getattr(provider, "provider_name", None),
+                        primary_model=actual_model,
+                        kwargs=dict(kwargs),
+                        recovery_model_id=recovery_model,
+                    )
+                finally:
+                    _recovery_depth_ctx.reset(recovery_depth_token)
+                if ok:
+                    return recovered
+            raise
+        finally:
+            if not primary_recorded:
+                latency_ms = int((time.monotonic() - start) * 1000)
+                actual_model = (
+                    model
+                    or getattr(provider, "model", None)
+                    or getattr(provider, "default_model", None)
+                    or "unknown"
+                )
+                prompt_text = _messages_to_text(messages)
+                # result 可能是 str 或 dict (tool_calls), 后者只记 0 completion tokens
+                completion_text = result if isinstance(result, str) else ""
+                error_class = None
+                if caught_error is not None:
+                    from app.services.llm.recovery import diagnose_llm_error
+
+                    error_class = diagnose_llm_error(caught_error).error_class
+                record_usage(
+                    provider=provider.provider_name,
+                    model=actual_model,
+                    prompt_text=prompt_text,
+                    completion_text=completion_text,
+                    latency_ms=latency_ms,
+                    success=success,
+                    error_class=error_class,
+                    error_type=_pick_error_field(caught_error, "type") if caught_error else None,
+                    error_code=_pick_error_field(caught_error, "code") if caught_error else None,
+                    error_message=_compact_error_message(caught_error) if caught_error else None,
+                )
 
     provider.chat = chat_with_tracking
 
@@ -325,6 +415,11 @@ def wrap_provider(provider):
                     or getattr(provider, "default_model", None)
                     or "unknown"
                 )
+                error_class = None
+                if caught_error is not None:
+                    from app.services.llm.recovery import diagnose_llm_error
+
+                    error_class = diagnose_llm_error(caught_error).error_class
                 record_usage(
                     provider=provider.provider_name,
                     model=actual_model,
@@ -332,6 +427,7 @@ def wrap_provider(provider):
                     completion_text="".join(collected),
                     latency_ms=latency_ms,
                     success=success,
+                    error_class=error_class,
                     error_type=_pick_error_field(caught_error, "type") if caught_error else None,
                     error_code=_pick_error_field(caught_error, "code") if caught_error else None,
                     error_message=_compact_error_message(caught_error) if caught_error else None,

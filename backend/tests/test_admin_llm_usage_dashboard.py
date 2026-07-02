@@ -155,6 +155,36 @@ def test_usage_dashboard_reports_global_user_and_plan_cost(client, db):
     assert caller_rows["watch.ask"]["provider"] == "tokenplan"
 
 
+def test_usage_dashboard_reports_tokenplan_quota_guard(client, db, monkeypatch):
+    admin = _make_user(db, admin=True, name="管理员")
+    user = _make_user(db, name="Alice")
+    monkeypatch.setattr("app.api.admin_llm.settings.tokenplan_monthly_token_quota", 10_000)
+
+    _log(
+        db,
+        user_id=user.id,
+        provider="tokenplan",
+        model="qwen3.7-plus",
+        caller="agent.stream",
+        prompt_tokens=8_000,
+        completion_tokens=1_600,
+    )
+
+    response = client.get(
+        "/api/v1/admin/llm/usage-dashboard?days=30",
+        headers=_headers(admin),
+    )
+
+    assert response.status_code == 200
+    guard = response.json()["plan"]["quota_guard"]
+    assert guard["monthly_token_quota"] == 10_000
+    assert guard["tokens_used_month"] == 9_600
+    assert guard["quota_utilization_pct"] == 0.96
+    assert guard["level"] == "critical"
+    assert guard["recommended_runtime_policy"] == "degrade"
+    assert any("备用模型" in action for action in guard["suggested_actions"])
+
+
 def test_performance_stats_is_sqlite_safe_and_normalizes_tokenplan_provider(client, db):
     admin = _make_user(db, admin=True, name="管理员")
     user = _make_user(db, name="Alice")
@@ -231,3 +261,42 @@ def test_recent_calls_and_failures_include_error_context(client, db):
     failed = failures.json()["failures"][0]
     assert failed["error_code"] == "insufficient_quota"
     assert "quota" in failed["error_message"]
+
+
+def test_run_detail_groups_llm_calls_by_run_id(client, db):
+    admin = _make_user(db, admin=True, name="管理员")
+    user = _make_user(db, name="Alice")
+    run_id = "run_abc123"
+    _log(
+        db,
+        user_id=user.id,
+        provider="tokenplan",
+        model="qwen3.7-plus",
+        caller="agent.stream",
+        prompt_tokens=1000,
+        completion_tokens=200,
+    )
+    db.query(LlmUsageLog).order_by(LlmUsageLog.id.desc()).first().run_id = run_id
+    _log(
+        db,
+        user_id=user.id,
+        provider="langbridge-proxy",
+        model="commercial/GPT-5.5",
+        caller="agent.stream",
+        prompt_tokens=800,
+        completion_tokens=300,
+    )
+    db.query(LlmUsageLog).order_by(LlmUsageLog.id.desc()).first().run_id = run_id
+    db.commit()
+
+    response = client.get(
+        f"/api/v1/admin/llm/runs/{run_id}",
+        headers=_headers(admin),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run_id"] == run_id
+    assert payload["summary"]["calls"] == 2
+    assert payload["summary"]["total_tokens"] == 2300
+    assert payload["calls"][0]["run_id"] == run_id

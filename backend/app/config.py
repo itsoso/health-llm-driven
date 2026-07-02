@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     llm_daily_cost_alert_usd: float = 1.0  # 24h LLM 成本超过此值就 log warning
     tokenplan_plan_name: str = "TokenPlan 698/月"
     tokenplan_monthly_budget_cny: float = 698.0  # 阿里云百炼 TokenPlan 月套餐成本,用于 Admin 成本摊销
+    tokenplan_monthly_token_quota: int = 0  # 0=未知;配置后 Admin 才能做额度阈值预警
+    llm_auto_recovery_enabled: bool = True  # quota/rate_limit/timeout/provider_error 自动尝试备用模型
+    llm_recovery_model_id: Optional[str] = None  # 为空则按可用模型自动挑选非 TokenPlan/快速可靠模型
 
     # === LLM Provider 统一配置 ===
     llm_provider: str = "tokenplan"  # tokenplan (默认, 阿里云 MiniMax) | openclaw | openai | ollama

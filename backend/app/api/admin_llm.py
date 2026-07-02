@@ -77,6 +77,70 @@ def _usage_filters(since: datetime, until: datetime, user_id: Optional[int] = No
     return filters
 
 
+def _month_start_utc(now: datetime) -> datetime:
+    return datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+
+
+def _budget_guard(
+    *,
+    monthly_token_quota: int,
+    tokens_used_month: int,
+    now: datetime,
+) -> dict:
+    if monthly_token_quota <= 0:
+        return {
+            "monthly_token_quota": 0,
+            "tokens_used_month": tokens_used_month,
+            "quota_utilization_pct": None,
+            "projected_month_tokens": None,
+            "projected_quota_utilization_pct": None,
+            "level": "unknown",
+            "recommended_runtime_policy": "observe",
+            "suggested_actions": ["配置 TOKENPLAN_MONTHLY_TOKEN_QUOTA 后启用 50/80/95% 额度预警"],
+        }
+
+    month_start = _month_start_utc(now)
+    elapsed_days = max((now - month_start).total_seconds() / 86400, 1 / 24)
+    projected = int(round(tokens_used_month / elapsed_days * 30))
+    used_pct = tokens_used_month / monthly_token_quota
+    projected_pct = projected / monthly_token_quota
+    pressure = max(used_pct, projected_pct)
+    if pressure >= 0.95:
+        level = "critical"
+        policy = "degrade"
+        actions = [
+            "自动优先备用模型或快速模型,避免继续触发 429",
+            "降低深思轮次和长上下文回填",
+            "检查阿里云百炼 TokenPlan 套餐余量或升级额度",
+        ]
+    elif pressure >= 0.8:
+        level = "warn"
+        policy = "conserve"
+        actions = [
+            "默认使用快速/均衡模型处理低风险对话",
+            "限制重复图表和长历史上下文",
+            "关注近 24 小时 Top 用户和 Top caller",
+        ]
+    elif pressure >= 0.5:
+        level = "watch"
+        policy = "observe"
+        actions = ["关注本月消耗趋势,暂不影响用户体验"]
+    else:
+        level = "ok"
+        policy = "normal"
+        actions = ["额度压力正常"]
+    return {
+        "monthly_token_quota": monthly_token_quota,
+        "tokens_used_month": tokens_used_month,
+        "quota_utilization_pct": round(used_pct, 4),
+        "projected_month_tokens": projected,
+        "projected_quota_utilization_pct": round(projected_pct, 4),
+        "level": level,
+        "recommended_runtime_policy": policy,
+        "suggested_actions": actions,
+    }
+
+
 def _rollup_row(row, *, tokenplan_tokens_total: int, monthly_budget_cny: float) -> dict:
     calls = _safe_int(row.calls)
     success_calls = _safe_int(row.success_calls)
@@ -135,6 +199,7 @@ def _usage_log_payload(row: LlmUsageLog, user: User | None = None) -> dict:
         "model": row.model,
         "caller": row.caller,
         "user_id": row.user_id,
+        "run_id": row.run_id,
         "name": getattr(user, "name", None) if user else None,
         "email": getattr(user, "email", None) if user else None,
         "username": getattr(user, "username", None) if user else None,
@@ -144,9 +209,12 @@ def _usage_log_payload(row: LlmUsageLog, user: User | None = None) -> dict:
         "cost_usd": _safe_float(row.cost_usd, 8),
         "latency_ms": row.latency_ms,
         "success": bool(row.success),
+        "error_class": row.error_class,
         "error_type": row.error_type,
         "error_code": row.error_code,
         "error_message": row.error_message,
+        "recovery_action": row.recovery_action,
+        "recovery_model": row.recovery_model,
         "created_at": row.created_at.isoformat(),
     }
 
@@ -193,10 +261,16 @@ def usage_dashboard(
     filters = _usage_filters(since, until, user_id)
     global_filters = _usage_filters(since, until)
     monthly_budget_cny = float(getattr(settings, "tokenplan_monthly_budget_cny", 698.0) or 0.0)
+    monthly_token_quota = int(getattr(settings, "tokenplan_monthly_token_quota", 0) or 0)
 
     tokenplan_tokens_total = _safe_int(
         db.query(func.coalesce(func.sum(case((is_tokenplan, LlmUsageLog.total_tokens), else_=0)), 0))
         .filter(*global_filters)
+        .scalar()
+    )
+    tokenplan_tokens_month = _safe_int(
+        db.query(func.coalesce(func.sum(case((is_tokenplan, LlmUsageLog.total_tokens), else_=0)), 0))
+        .filter(*_usage_filters(_month_start_utc(until), until))
         .scalar()
     )
 
@@ -338,6 +412,11 @@ def usage_dashboard(
             "allocation_basis": "窗口内 TokenPlan token 占全局 TokenPlan token 份额分摊月费",
             "tokenplan_model_names": tokenplan_models,
             "legacy_provider_note": "历史 openai provider + TokenPlan 模型名的日志会自动归入 TokenPlan",
+            "quota_guard": _budget_guard(
+                monthly_token_quota=monthly_token_quota,
+                tokens_used_month=tokenplan_tokens_month,
+                now=until,
+            ),
         },
         "overall": overall,
         "by_user": by_user,
@@ -449,10 +528,14 @@ def performance_failures(
                 "model": r.model,
                 "caller": r.caller,
                 "user_id": r.user_id,
+                "run_id": r.run_id,
                 "latency_ms": r.latency_ms,
+                "error_class": r.error_class,
                 "error_type": r.error_type,
                 "error_code": r.error_code,
                 "error_message": r.error_message,
+                "recovery_action": r.recovery_action,
+                "recovery_model": r.recovery_model,
                 "created_at": r.created_at.isoformat(),
             }
             for r in rows
@@ -487,6 +570,38 @@ def recent_calls(
             "user_id": user_id,
         },
         "calls": [_usage_log_payload(row, user) for row, user in rows],
+    }
+
+
+@router.get("/runs/{run_id}", summary="单次回复 LLM 调用 trace")
+def run_detail(
+    run_id: str,
+    admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """按 run_id 串起一次 Agent 回复里的所有 LLM 调用."""
+    rows = (
+        db.query(LlmUsageLog, User)
+        .outerjoin(User, User.id == LlmUsageLog.user_id)
+        .filter(LlmUsageLog.run_id == run_id)
+        .order_by(LlmUsageLog.created_at.asc(), LlmUsageLog.id.asc())
+        .all()
+    )
+    if not rows:
+        raise HTTPException(404, "run_id 不存在")
+    calls = [_usage_log_payload(row, user) for row, user in rows]
+    return {
+        "run_id": run_id,
+        "summary": {
+            "calls": len(calls),
+            "failed_calls": sum(1 for call in calls if not call["success"]),
+            "prompt_tokens": sum(call["prompt_tokens"] for call in calls),
+            "completion_tokens": sum(call["completion_tokens"] for call in calls),
+            "total_tokens": sum(call["total_tokens"] for call in calls),
+            "cost_usd": round(sum(float(call["cost_usd"] or 0.0) for call in calls), 8),
+            "latency_ms": sum(int(call["latency_ms"] or 0) for call in calls),
+        },
+        "calls": calls,
     }
 
 
@@ -651,6 +766,7 @@ class ModelInfo(BaseModel):
     note: str = ""
     capabilities: list[str] = Field(default_factory=list)
     chat_selectable: bool = True
+    supports_streaming: bool = True  # False = 整段生成 (无 SSE)
     available: bool       # env 是否齐全
     is_active: bool       # 当前选中的
 
@@ -680,6 +796,7 @@ def list_available_models(admin: User = Depends(get_admin_user)):
             note=m.note,
             capabilities=list(m.capabilities),
             chat_selectable=m.chat_selectable,
+            supports_streaming=m.supports_streaming,
             available=m.id in available_ids,
             is_active=(active == m.id),
         ))

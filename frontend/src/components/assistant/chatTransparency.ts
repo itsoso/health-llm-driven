@@ -1,11 +1,16 @@
 export interface LlmUsageCallLike {
+  run_id?: string | null;
   success?: boolean | null;
+  error_class?: string | null;
   error_type?: string | null;
   error_code?: string | null;
   error_message?: string | null;
+  recovery_action?: string | null;
+  recovery_model?: string | null;
 }
 
 export interface LlmUsageProfileLike {
+  run_id?: string | null;
   calls?: number | null;
   prompt_tokens?: number | null;
   completion_tokens?: number | null;
@@ -59,6 +64,7 @@ export interface AgentTransparencyProfile {
   headline: string;
   tokenLine?: string;
   errorLine?: string;
+  traceLine?: string;
   bands: AgentTransparencyBand[];
   stages: AgentTransparencyRow[];
   rounds: AgentTransparencyRow[];
@@ -148,6 +154,17 @@ function buildErrorLine(usage?: LlmUsageProfileLike | null): string | undefined 
   return parts.join(' · ');
 }
 
+function buildTraceLine(usage?: LlmUsageProfileLike | null): string | undefined {
+  if (!usage) return undefined;
+  const runId = cleanText(usage.run_id || usage.items?.find(item => item?.run_id)?.run_id);
+  const recovery = usage.items?.find(item => item?.recovery_action || item?.recovery_model);
+  const parts: string[] = [];
+  if (runId) parts.push(`run ${runId.slice(0, 18)}`);
+  if (recovery?.recovery_action) parts.push(cleanText(recovery.recovery_action));
+  if (recovery?.recovery_model) parts.push(`备用 ${cleanText(recovery.recovery_model)}`);
+  return parts.length ? parts.join(' · ') : undefined;
+}
+
 function buildBands(perf: AgentPerfProfileLike | null | undefined, elapsedMs: number): AgentTransparencyBand[] {
   const total = positive(perf?.total_ms) || elapsedMs;
   if (!total) return [];
@@ -218,16 +235,18 @@ export function buildAgentTransparency(input: AgentTransparencyInput): AgentTran
   const tools = uniqueClean(input.toolsUsed);
   const tokenLine = buildTokenLine(input.llmUsage);
   const errorLine = buildErrorLine(input.llmUsage);
+  const traceLine = buildTraceLine(input.llmUsage);
   const bands = buildBands(input.perf, total);
   const stages = buildStages(input.perf);
   const rounds = buildRounds(input);
-  const visible = headlineParts.length > 0 || !!tokenLine || !!errorLine || sources.length > 0 || tools.length > 0;
+  const visible = headlineParts.length > 0 || !!tokenLine || !!errorLine || !!traceLine || sources.length > 0 || tools.length > 0;
 
   return {
     visible,
     headline: headlineParts.join(' · '),
     tokenLine,
     errorLine,
+    traceLine,
     bands,
     stages,
     rounds,

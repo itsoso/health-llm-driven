@@ -15,6 +15,7 @@
 - "记录一下每一次调用的Token使用情况，输入token和输出token，并且在端上做简要输出（mac web mobile 上，归入到成本和性能剖析的逻辑里边）"
 - "类似于mac app上做的透视"
 - "继续执行"
+- "可以 按照顺序执行"
 
 ## G1 · 准入裁决
 
@@ -32,7 +33,11 @@
   - 增加失败调用的错误摘要字段，支撑 429/额度/鉴权/上游错误诊断。
   - 增加 Admin 最近逐次调用明细。
   - Web/Mobile 对话透视面板展示失败摘要。
+  - 增加 TokenPlan 月度预算阈值、用量水位、 projected 月用量与 Admin 告警。
+  - 增加 LLM 失败分类和显式配置备用模型的一跳恢复,避免普通异常静默吞掉或随机换模型产生额外成本。
+  - 增加单次回复 `run_id` trace,串联 backend 账本、Admin run detail、Web/Mobile/Mac 端上透视。
 - 安全边界: 只记录上游错误摘要，长度限制 500，不记录 prompt、响应正文、密钥或完整请求体。
+- 成本边界: 自动恢复只在 `LLM_RECOVERY_MODEL_ID` 显式配置且可用时触发;不从 registry 随机挑选可用模型。
 
 ## 现状发现
 
@@ -40,6 +45,7 @@
 - 已有 `backend/app/api/admin_llm.py` 汇总全局、用户、模型、调用方、失败样本。
 - 已有 Mac/Web/Mobile 单次回复透视面板消费 `llm_usage` 和 `perf`。
 - 缺口: 失败样本没有 `error_type/error_code/error_message`；Admin 没有逐次调用列表；端上透视不显示失败摘要。
+- 第二轮缺口: Admin 缺预算水位/超额预警；额度错误只能失败不能恢复；单次回复和后台账本缺稳定 trace id。
 
 ## 交付记录
 
@@ -53,6 +59,12 @@
   - 对话透视面板展示失败摘要。
 - Mobile:
   - 对话透视面板展示失败摘要。
+- 第二轮:
+  - `llm_usage_logs` 新增 `run_id/error_class/recovery_action/recovery_model`。
+  - `usage_tracker` 增加 request 级 run trace、失败分类和显式备用模型恢复。
+  - `/api/v1/admin/llm/usage-dashboard` 增加 `quota_guard`。
+  - `/api/v1/admin/llm/runs/{run_id}` 增加单次 run 明细。
+  - Web/Mobile/Mac 透视面板展示 run trace 和恢复摘要。
 
 ## G2 · 可行性 + 安全压测
 
@@ -67,12 +79,17 @@
 
 ```bash
 DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai ./backend/.venv/bin/python -m pytest backend/tests/test_llm_usage_tracker.py backend/tests/test_admin_llm_usage_dashboard.py -q --no-cov
-# 11 passed
+# 15 passed
 ```
 
 ```bash
 DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai ./backend/.venv/bin/python -m pytest backend/tests/test_managed_migrations.py -q --no-cov
 # 7 passed
+```
+
+```bash
+DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai ./backend/.venv/bin/python -m pytest backend/tests/test_agent_executor_fast_routing.py -q --no-cov
+# 51 passed
 ```
 
 ```bash
@@ -95,11 +112,19 @@ pnpm --dir frontend exec tsc --noEmit
 # exit 0
 ```
 
+```bash
+npm run generate-types # frontend
+npm run generate-types # mobile
+# OpenAPI 类型已同步
+```
+
 ## G4 · 安全闸
 
 - 无健康建议路径变更。
 - 无用药、诊断、基因、化验、CGM、HealthKit 写路径变更。
 - 新增字段为运维错误摘要,限制 500 字符。
+- 自动恢复只处理 quota/rate-limit/timeout/5xx 等基础设施失败;auth/unknown 不恢复。
+- 备用模型必须显式配置,避免成本不可控。
 - 裁决:GO。
 
 ## G5/G6 · 部署与上线验证

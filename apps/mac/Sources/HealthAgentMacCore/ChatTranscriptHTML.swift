@@ -284,6 +284,9 @@ public enum ChatTranscriptHTML {
         if failed > 0 {
             summary += " · 失败 \(failed)次"
         }
+        if let runID = cleanMetaValue(usage.runID ?? usage.items.compactMap(\.runID).first), !runID.isEmpty {
+            summary += " · run \(String(runID.prefix(18)))"
+        }
         if let cost = usage.costUsd, cost > 0 {
             summary += " · \(costLabel(cost))"
         }
@@ -301,6 +304,12 @@ public enum ChatTranscriptHTML {
                 if let reason = failureReasonLabel(item) {
                     value += " · \(reason)"
                 }
+            }
+            if let recovery = cleanMetaValue(item.recoveryAction), !recovery.isEmpty {
+                value += " · \(recovery)"
+            }
+            if let recoveryModel = cleanMetaValue(item.recoveryModel), !recoveryModel.isEmpty {
+                value += " · 备用 \(recoveryModel)"
             }
             return "<li>\(escape(name))：\(escape(value))</li>"
         }.joined()

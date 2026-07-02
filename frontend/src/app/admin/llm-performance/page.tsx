@@ -56,6 +56,17 @@ interface UsageByDay extends UsageRollup {
   day: string;
 }
 
+interface QuotaGuard {
+  monthly_token_quota: number;
+  tokens_used_month: number;
+  quota_utilization_pct: number | null;
+  projected_month_tokens: number | null;
+  projected_quota_utilization_pct: number | null;
+  level: 'unknown' | 'ok' | 'watch' | 'warn' | 'critical';
+  recommended_runtime_policy: string;
+  suggested_actions: string[];
+}
+
 interface UsageDashboard {
   window: {
     days: number;
@@ -70,6 +81,7 @@ interface UsageDashboard {
     allocation_basis: string;
     tokenplan_model_names: string[];
     legacy_provider_note: string;
+    quota_guard: QuotaGuard;
   };
   overall: UsageRollup;
   by_user: UsageByUser[];
@@ -86,9 +98,13 @@ interface Failure {
   caller: string | null;
   user_id: number | null;
   latency_ms: number | null;
+  run_id?: string | null;
+  error_class?: string | null;
   error_type?: string | null;
   error_code?: string | null;
   error_message?: string | null;
+  recovery_action?: string | null;
+  recovery_model?: string | null;
   created_at: string;
 }
 
@@ -154,10 +170,20 @@ function LLMPerformanceInner() {
   const fmtTokens = (v: number) => v >= 1_000_000 ? `${(v / 1_000_000).toFixed(2)}M` : `${(v / 1000).toFixed(1)}k`;
   const fmtCny = (v: number | null | undefined) => v == null ? '—' : `¥${v.toFixed(2)}`;
   const fmtUsd = (v: number | null | undefined) => v == null ? '—' : `$${v.toFixed(4)}`;
+  const fmtTrace = (v: string | null | undefined) => v ? v.slice(0, 18) : '—';
   const pctColor = (v: number | null) => v == null ? 'text-slate-400'
     : v >= 0.95 ? 'text-emerald-500'
     : v >= 0.85 ? 'text-amber-500'
     : 'text-rose-500';
+  const guardTone = (level: QuotaGuard['level'] | undefined) => {
+    switch (level) {
+      case 'critical': return 'border-rose-200 bg-rose-50 text-rose-800';
+      case 'warn': return 'border-amber-200 bg-amber-50 text-amber-800';
+      case 'watch': return 'border-sky-200 bg-sky-50 text-sky-800';
+      case 'ok': return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+      default: return 'border-slate-200 bg-slate-50 text-slate-700';
+    }
+  };
   const maxDayTokens = Math.max(1, ...(usage?.by_day || []).map(d => d.total_tokens));
 
   return (
@@ -226,6 +252,31 @@ function LLMPerformanceInner() {
                       {usage.overall.effective_cny_per_1k_tokens == null ? '—' : fmtCny(usage.overall.effective_cny_per_1k_tokens)}
                     </p>
                     <p className="mt-2 text-sm text-slate-500">每 1k TokenPlan token</p>
+                  </div>
+                </div>
+
+                <div className={`rounded-lg border p-4 mb-6 ${guardTone(usage.plan.quota_guard?.level)}`}>
+                  <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-medium opacity-80">TokenPlan 额度治理</div>
+                      <div className="mt-1 text-xl font-semibold">
+                        {usage.plan.quota_guard.level.toUpperCase()} · {usage.plan.quota_guard.recommended_runtime_policy}
+                      </div>
+                      <div className="mt-1 text-sm opacity-80">
+                        本月 {fmtTokens(usage.plan.quota_guard.tokens_used_month)}
+                        {usage.plan.quota_guard.monthly_token_quota > 0
+                          ? ` / ${fmtTokens(usage.plan.quota_guard.monthly_token_quota)} (${fmtPct(usage.plan.quota_guard.quota_utilization_pct)})`
+                          : ' · 未配置月 token 额度'}
+                        {usage.plan.quota_guard.projected_month_tokens != null
+                          ? ` · 预计 ${fmtTokens(usage.plan.quota_guard.projected_month_tokens)}`
+                          : ''}
+                      </div>
+                    </div>
+                    <div className="max-w-xl text-sm">
+                      {usage.plan.quota_guard.suggested_actions.map(action => (
+                        <div key={action}>· {action}</div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -435,6 +486,7 @@ function LLMPerformanceInner() {
                         <th className="px-4 py-2 text-right">user</th>
                         <th className="px-4 py-2 text-right">latency</th>
                         <th className="px-4 py-2">错误摘要</th>
+                        <th className="px-4 py-2">恢复</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -451,10 +503,14 @@ function LLMPerformanceInner() {
                             {f.latency_ms != null ? `${f.latency_ms}ms` : '—'}
                           </td>
                           <td className="px-4 py-2 text-xs text-rose-600 max-w-[280px]">
-                            <div className="font-mono">{f.error_code || f.error_type || '—'}</div>
+                            <div className="font-mono">{f.error_code || f.error_type || f.error_class || '—'}</div>
                             {f.error_message && (
                               <div className="mt-1 text-slate-500 line-clamp-2">{f.error_message}</div>
                             )}
+                          </td>
+                          <td className="px-4 py-2 text-xs text-slate-500">
+                            <div className="font-mono">{f.recovery_action || '—'}</div>
+                            {f.recovery_model && <div className="font-mono">{f.recovery_model}</div>}
                           </td>
                         </tr>
                       ))}
@@ -477,7 +533,7 @@ function LLMPerformanceInner() {
                     <tr className="text-left text-xs text-slate-500 uppercase">
                       <th className="px-4 py-2">时间</th>
                       <th className="px-4 py-2">用户</th>
-                      <th className="px-4 py-2">caller</th>
+                      <th className="px-4 py-2">run / caller</th>
                       <th className="px-4 py-2">模型</th>
                       <th className="px-4 py-2 text-right">tokens</th>
                       <th className="px-4 py-2 text-right">延迟</th>
@@ -497,7 +553,10 @@ function LLMPerformanceInner() {
                           <div className="font-medium text-slate-900">{call.name || call.username || `User ${call.user_id ?? 'unknown'}`}</div>
                           <div className="text-xs text-slate-500">{call.email || call.username || '—'}</div>
                         </td>
-                        <td className="px-4 py-2 font-mono text-slate-500">{call.caller || '—'}</td>
+                        <td className="px-4 py-2">
+                          <div className="font-mono text-slate-900">{fmtTrace(call.run_id)}</div>
+                          <div className="font-mono text-xs text-slate-500">{call.caller || '—'}</div>
+                        </td>
                         <td className="px-4 py-2">
                           <div className="font-mono text-slate-900">{call.model}</div>
                           <div className="text-xs text-slate-500">{call.provider}</div>
@@ -517,9 +576,14 @@ function LLMPerformanceInner() {
                           </span>
                         </td>
                         <td className="px-4 py-2 text-xs max-w-[320px]">
-                          <div className="font-mono text-rose-600">{call.error_code || call.error_type || '—'}</div>
+                          <div className="font-mono text-rose-600">{call.error_code || call.error_type || call.error_class || '—'}</div>
                           {call.error_message && (
                             <div className="mt-1 text-slate-500 line-clamp-2">{call.error_message}</div>
+                          )}
+                          {(call.recovery_action || call.recovery_model) && (
+                            <div className="mt-1 font-mono text-slate-500">
+                              {call.recovery_action || 'recovery'} {call.recovery_model ? `→ ${call.recovery_model}` : ''}
+                            </div>
                           )}
                         </td>
                       </tr>

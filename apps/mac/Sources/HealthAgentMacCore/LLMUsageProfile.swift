@@ -1,6 +1,7 @@
 import Foundation
 
 public struct LLMUsageCall: Codable, Equatable, Sendable {
+    public let runID: String?
     public let provider: String?
     public let model: String?
     public let caller: String?
@@ -13,9 +14,12 @@ public struct LLMUsageCall: Codable, Equatable, Sendable {
     public let errorType: String?
     public let errorCode: String?
     public let errorMessage: String?
+    public let recoveryAction: String?
+    public let recoveryModel: String?
 
     private enum CodingKeys: String, CodingKey {
         case provider, model, caller, success
+        case runID = "run_id"
         case promptTokens = "prompt_tokens"
         case completionTokens = "completion_tokens"
         case totalTokens = "total_tokens"
@@ -24,9 +28,12 @@ public struct LLMUsageCall: Codable, Equatable, Sendable {
         case errorType = "error_type"
         case errorCode = "error_code"
         case errorMessage = "error_message"
+        case recoveryAction = "recovery_action"
+        case recoveryModel = "recovery_model"
     }
 
     public init(
+        runID: String? = nil,
         provider: String? = nil,
         model: String? = nil,
         caller: String? = nil,
@@ -38,8 +45,11 @@ public struct LLMUsageCall: Codable, Equatable, Sendable {
         success: Bool? = nil,
         errorType: String? = nil,
         errorCode: String? = nil,
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        recoveryAction: String? = nil,
+        recoveryModel: String? = nil
     ) {
+        self.runID = runID
         self.provider = provider
         self.model = model
         self.caller = caller
@@ -52,10 +62,13 @@ public struct LLMUsageCall: Codable, Equatable, Sendable {
         self.errorType = errorType
         self.errorCode = errorCode
         self.errorMessage = errorMessage
+        self.recoveryAction = recoveryAction
+        self.recoveryModel = recoveryModel
     }
 }
 
 public struct LLMUsageProfile: Codable, Equatable, Sendable {
+    public let runID: String?
     public let calls: Int?
     public let promptTokens: Int?
     public let completionTokens: Int?
@@ -69,6 +82,7 @@ public struct LLMUsageProfile: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case calls, models, providers, items
+        case runID = "run_id"
         case promptTokens = "prompt_tokens"
         case completionTokens = "completion_tokens"
         case totalTokens = "total_tokens"
@@ -78,6 +92,7 @@ public struct LLMUsageProfile: Codable, Equatable, Sendable {
     }
 
     public init(
+        runID: String? = nil,
         calls: Int? = nil,
         promptTokens: Int? = nil,
         completionTokens: Int? = nil,
@@ -89,6 +104,7 @@ public struct LLMUsageProfile: Codable, Equatable, Sendable {
         providers: [String] = [],
         items: [LLMUsageCall] = []
     ) {
+        self.runID = runID
         self.calls = calls
         self.promptTokens = promptTokens
         self.completionTokens = completionTokens
@@ -103,6 +119,7 @@ public struct LLMUsageProfile: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        runID = try? c.decode(String.self, forKey: .runID)
         calls = try? c.decode(Int.self, forKey: .calls)
         promptTokens = try? c.decode(Int.self, forKey: .promptTokens)
         completionTokens = try? c.decode(Int.self, forKey: .completionTokens)

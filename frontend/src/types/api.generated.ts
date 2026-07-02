@@ -1329,6 +1329,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/llm/recent-calls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 最近 LLM 调用明细
+         * @description 按时间倒序返回逐次 LLM 调用账本,用于定位用户、调用方、模型和失败原因.
+         */
+        get: operations["recent_calls_api_v1_admin_llm_recent_calls_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/llm/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 单次回复 LLM 调用 trace
+         * @description 按 run_id 串起一次 Agent 回复里的所有 LLM 调用.
+         */
+        get: operations["run_detail_api_v1_admin_llm_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/llm/status": {
         parameters: {
             query?: never;
@@ -25997,6 +26037,11 @@ export interface components {
              * @default true
              */
             chat_selectable: boolean;
+            /**
+             * Supports Streaming
+             * @default true
+             */
+            supports_streaming: boolean;
             /** Available */
             available: boolean;
             /** Is Active */
@@ -26032,6 +26077,11 @@ export interface components {
             note: string;
             /** Capabilities */
             capabilities?: string[];
+            /**
+             * Supports Streaming
+             * @default true
+             */
+            supports_streaming: boolean;
         };
         /**
          * MoodCalendar
@@ -33760,6 +33810,70 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recent_calls_api_v1_admin_llm_recent_calls_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                limit?: number;
+                user_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_detail_api_v1_admin_llm_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;

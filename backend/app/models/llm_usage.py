@@ -21,13 +21,18 @@ class LlmUsageLog(Base):
     cost_usd = Column(Float, nullable=False, default=0.0)
     latency_ms = Column(Integer, nullable=True)
     success = Column(Integer, nullable=False, default=1)  # 0/1, 失败也记
+    run_id = Column(String(64), nullable=True)
+    error_class = Column(String(64), nullable=True)
     error_type = Column(String(64), nullable=True)
     error_code = Column(String(64), nullable=True)
     error_message = Column(String(500), nullable=True)
+    recovery_action = Column(String(64), nullable=True)
+    recovery_model = Column(String(128), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (
         Index('idx_llm_usage_created', 'created_at'),
         Index('idx_llm_usage_user_created', 'user_id', 'created_at'),
         Index('idx_llm_usage_caller', 'caller'),
+        Index('idx_llm_usage_run_id', 'run_id'),
     )

@@ -6,6 +6,7 @@ OpenClaw 降级为 fallback 渠道。
 import asyncio
 import json
 import logging
+import uuid
 from typing import Optional, List
 
 
@@ -424,12 +425,16 @@ async def agent_stream(
             from app.database import SessionLocal as _SessionLocal
             from app.services.llm.usage_tracker import (
                 begin_usage_capture,
+                clear_run_id,
                 end_usage_capture,
                 set_caller,
+                set_run_id,
                 summarize_usage_capture,
             )
             bg_db = _SessionLocal()
+            run_id = f"run_{uuid.uuid4().hex[:16]}"
             usage_capture_token = begin_usage_capture()
+            run_id_token = set_run_id(run_id)
             set_caller("agent.stream", user_id=user_id)
             try:
                 executor_bg = AgentExecutor(bg_db)
@@ -452,6 +457,7 @@ async def agent_stream(
                             full_text_buf.append(tc)
                     # 在 done 事件里附加动态卡片, 失败静默
                     if event.get("event") == "done":
+                        event.setdefault("data", {})["run_id"] = run_id
                         try:
                             from app.services.inline_cards import build_cards, extract_inline_card_blocks
                             existing = event.get("data", {}).get("cards")
@@ -497,6 +503,10 @@ async def agent_stream(
                     pass
                 try:
                     end_usage_capture(usage_capture_token)
+                except Exception:
+                    pass
+                try:
+                    clear_run_id(run_id_token)
                 except Exception:
                     pass
                 try:

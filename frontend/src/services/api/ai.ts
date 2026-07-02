@@ -59,6 +59,7 @@ export interface ChatMessage {
 }
 
 export interface LlmUsageCall {
+  run_id?: string | null;
   provider?: string;
   model?: string;
   caller?: string;
@@ -68,12 +69,16 @@ export interface LlmUsageCall {
   cost_usd?: number;
   latency_ms?: number | null;
   success?: boolean;
+  error_class?: string | null;
   error_type?: string | null;
   error_code?: string | null;
   error_message?: string | null;
+  recovery_action?: string | null;
+  recovery_model?: string | null;
 }
 
 export interface LlmUsageProfile {
+  run_id?: string | null;
   calls?: number;
   prompt_tokens?: number;
   completion_tokens?: number;
