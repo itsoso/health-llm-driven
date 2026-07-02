@@ -9,6 +9,7 @@ import { dispatchCard, renderServerCards } from '../components/chat/cards';
 import type { ChatCardActionDescriptor, ServerCardDescriptor } from '../components/chat/cards/types';
 import api, { BASE_URL } from '../services/api';
 import { emitClientEvent } from '../services/clientEvents';
+import { sanitizeChatErrorMessage } from '../utils/chatErrorMessage';
 
 function normalizeImageHost(baseUrl: string): string {
   return String(baseUrl || '').replace(/\/+$/, '').replace(/\/api(?:\/v\d+)?$/, '');
@@ -497,7 +498,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             void rememberConversationId(evt.conversationId);
           }
         } else if (evt.type === 'token' || evt.type === 'tool') {
-          const incoming = evt.content || '';
+          const incoming = sanitizeChatErrorMessage(evt.content || '', '');
           if (incoming) {
             if (!gotFirstToken) { gotFirstToken = true; clearTimeout(slowTimer); }
             setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: mergeAssistantStreamContent(m.content, incoming) } : m));
@@ -562,7 +563,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             }
           }
         } else if (evt.type === 'error') {
-          const errMsg = (evt.content || '').trim() || '请求出错，请稍后再试';
+          const errMsg = sanitizeChatErrorMessage(evt.content, '请求出错，请稍后再试');
           setMessages(prev => prev.map(m => m.id === aId ? {
             ...m,
             completionStatus: 'error',
@@ -591,8 +592,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         ...m,
         completionStatus: isAbort ? 'interrupted' : 'error',
         content: stripThinkingPlaceholder(m.content)
-          ? (isAbort ? stripThinkingPlaceholder(m.content) + '\n\n[回复中断，已保留已接收内容]' : stripThinkingPlaceholder(m.content) + `\n❌ ${err?.message || '请求失败'}`)
-          : (isAbort ? '[App 切换到后台，回复中断。请重新提问]' : `[错误] ${err?.message || '请求失败'}`),
+          ? (isAbort ? stripThinkingPlaceholder(m.content) + '\n\n[回复中断，已保留已接收内容]' : stripThinkingPlaceholder(m.content) + `\n❌ ${sanitizeChatErrorMessage(err?.message, '请求失败')}`)
+          : (isAbort ? '[App 切换到后台，回复中断。请重新提问]' : `[错误] ${sanitizeChatErrorMessage(err?.message, '请求失败')}`),
       } : m));
     } finally {
       clearTimeout(slowTimer);

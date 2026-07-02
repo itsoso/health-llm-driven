@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user_required
+from app.services.llm.error_messages import safe_llm_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -440,7 +441,7 @@ async def agent_stream(
                     await chunk_queue.put(f"data: {json.dumps(event, ensure_ascii=False)}\n\n")
             except Exception as e:
                 logger.error(f"Agent bg 流式异常: {e}", exc_info=True)
-                err = {"event": "error", "data": {"message": str(e)}}
+                err = {"event": "error", "data": {"message": safe_llm_error_message(e)}}
                 try:
                     await chunk_queue.put(f"data: {json.dumps(err, ensure_ascii=False)}\n\n")
                 except Exception:

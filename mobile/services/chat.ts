@@ -1,5 +1,6 @@
 import { getToken } from './auth';
 import { BASE_URL } from './api';
+import { sanitizeChatErrorMessage } from '../utils/chatErrorMessage';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -223,7 +224,10 @@ export async function* streamChat(
           cards: Array.isArray(parsed.data?.cards) ? parsed.data.cards : undefined,
         };
       } else if (parsed.event === 'error') {
-        return { type: 'error', content: parsed.data?.message || '请求失败' };
+        return {
+          type: 'error',
+          content: sanitizeChatErrorMessage(parsed.data?.message || parsed.data?.detail, '请求失败'),
+        };
       }
     } catch {
       // non-JSON line, skip

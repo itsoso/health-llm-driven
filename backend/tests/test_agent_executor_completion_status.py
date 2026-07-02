@@ -49,6 +49,10 @@ def test_completion_status_marks_stop_finish_reason_as_complete():
     assert _completion_status_from_finish_reason("stop") == "complete"
 
 
+def test_completion_status_marks_error_finish_reason_as_error():
+    assert _completion_status_from_finish_reason("error") == "error"
+
+
 @pytest.mark.asyncio
 async def test_health_query_blood_pressure_uses_existing_records_endpoint(db):
     executor = AgentExecutor(db)

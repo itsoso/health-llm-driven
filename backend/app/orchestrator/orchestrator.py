@@ -25,6 +25,7 @@ from app.orchestrator.schema import (
 )
 from app.orchestrator.specialists import all_specialists, get_specialist
 from app.services.episode.validator import validate_text, TextValidationResult
+from app.services.llm.error_messages import safe_llm_error_message
 from app.twin.builder import build_twin
 from app.twin.formatter import twin_to_prompt_blob
 from app.twin.schema import HealthTwin
@@ -1947,7 +1948,7 @@ async def stream_orchestrator(
             except Exception as e:  # noqa: BLE001
                 logger.exception("[orchestrator.stream] 未捕获异常")
                 try:
-                    await chunk_queue.put(_sse("error", {"detail": str(e)}))
+                    await chunk_queue.put(_sse("error", {"message": safe_llm_error_message(e)}))
                 except Exception:
                     pass
         finally:

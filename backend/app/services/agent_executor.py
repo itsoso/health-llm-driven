@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.services.tool_schema_registry import get_health_tools
 from app.services.lab_plausibility import annotate_if_implausible
+from app.services.llm.error_messages import safe_llm_error_message
 from app.services.post_record_quality import (
     build_post_record_quality_response,
     combine_post_record_quality_responses,
@@ -153,6 +154,8 @@ def _completion_status_from_finish_reason(finish_reason: Optional[str]) -> str:
     """Map provider finish_reason to a small client-facing completion status."""
     if finish_reason == "length":
         return "interrupted"
+    if finish_reason == "error":
+        return "error"
     if finish_reason in ("stop", "tool_calls", "function_call"):
         return "complete"
     if not finish_reason:
@@ -2978,9 +2981,10 @@ class AgentExecutor:
 
         except Exception as e:
             logger.error(f"Agent 执行异常: {e}", exc_info=True)
-            error_msg = f"Agent 执行遇到问题: {str(e)}"
+            error_msg = safe_llm_error_message(e)
             yield {"event": "token", "data": {"content": error_msg}}
             full_reply = error_msg
+            final_finish_reason = "error"
         finally:
             if self._http_client:
                 await self._http_client.aclose()

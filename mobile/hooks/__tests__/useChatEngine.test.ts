@@ -111,6 +111,15 @@ async function* streamTokenCardThenWait() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
+async function* streamQuotaErrorAsToken() {
+  yield { type: 'start', conversationId: 777, thought: '正在理解你的问题' };
+  yield {
+    type: 'token',
+    content: "Agent 执行遇到问题: Error code: 429 - {'error': {'message': 'Your token-plan quota has been exhausted.', 'type': 'insufficient_quota', 'code': 'insufficient_quota'}}",
+  };
+  yield { type: 'done', conversationId: 777, messageId: 2 };
+}
+
 describe('useChatEngine', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -289,6 +298,25 @@ describe('useChatEngine', () => {
     await act(async () => {
       finishStream?.();
       await Promise.resolve();
+    });
+  });
+
+  it('sanitizes provider quota errors that arrive as legacy token text', async () => {
+    mockStreamChat.mockImplementation(streamQuotaErrorAsToken);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('我适合怎样的锻炼');
+    });
+
+    await waitFor(() => {
+      const assistant = result.current.messages.find(m => m.role === 'assistant');
+      expect(assistant?.content).toContain('模型额度');
+      expect(assistant?.content).toContain('切换模型');
+      expect(assistant?.content).not.toContain('insufficient_quota');
+      expect(assistant?.content).not.toContain('token-plan quota');
+      expect(assistant?.content).not.toContain('Error code: 429');
     });
   });
 
