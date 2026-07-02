@@ -184,6 +184,34 @@ describe('ChatScreen', () => {
     expect(queryByText('Qwen3.7 Plus 推理 · 阿里')).toBeNull();
   });
 
+  it('keeps the chat header visually compact without removing controls', async () => {
+    const { getByLabelText, getByTestId } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(mockFetchConversationStarters).toHaveBeenCalled();
+    });
+
+    const styleOf = (node: any) => StyleSheet.flatten(node.props.style);
+    const minHitSlop = (node: any) => {
+      const { hitSlop } = node.props;
+      if (typeof hitSlop === 'number') return hitSlop;
+      return Math.min(
+        hitSlop?.top ?? 0,
+        hitSlop?.right ?? 0,
+        hitSlop?.bottom ?? 0,
+        hitSlop?.left ?? 0,
+      );
+    };
+
+    expect(styleOf(getByTestId('chat-header-surface')).minHeight).toBeLessThanOrEqual(40);
+    expect(styleOf(getByLabelText('新建对话')).width).toBeLessThanOrEqual(28);
+    expect(styleOf(getByLabelText('对话历史')).width).toBeLessThanOrEqual(28);
+    expect(styleOf(getByLabelText('更多会诊操作')).width).toBeLessThanOrEqual(28);
+    expect(minHitSlop(getByLabelText('新建对话'))).toBeGreaterThanOrEqual(8);
+    expect(minHitSlop(getByLabelText('对话历史'))).toBeGreaterThanOrEqual(8);
+    expect(minHitSlop(getByLabelText('更多会诊操作'))).toBeGreaterThanOrEqual(8);
+  });
+
   it('opens model switching from the top-left header instead of the more sheet', async () => {
     mockLlmPreference = {
       model_id: 'qwen3.7-plus',
