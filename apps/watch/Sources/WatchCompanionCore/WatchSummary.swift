@@ -209,6 +209,80 @@ public struct WatchRuntimeSummary: Codable, Sendable, Equatable {
     }
 }
 
+private func watchDecisionBasisLines(
+    rationale: String?,
+    runtimeContext: WatchRuntimeContext?,
+    maxCount: Int
+) -> [String] {
+    guard maxCount > 0 else { return [] }
+    var lines: [String] = []
+
+    func append(_ value: String?) {
+        let cleaned = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !cleaned.isEmpty, !lines.contains(cleaned) else { return }
+        lines.append(cleaned)
+    }
+
+    append(rationale)
+    append(runtimeContext?.currentStateSummary)
+    append(watchVerificationLine(runtimeContext?.verificationWindow))
+    append(runtimeContext?.safetyBoundary)
+
+    return Array(lines.prefix(maxCount))
+}
+
+private func watchVerificationLine(_ window: WatchRuntimeVerificationWindow?) -> String? {
+    guard let window else { return nil }
+    let metrics = uniqueWatchMetricLabels(window.metrics)
+    if let days = window.windowDays, !metrics.isEmpty {
+        return "验证: \(days)天 · \(metrics.joined(separator: " / "))"
+    }
+    if let days = window.windowDays {
+        return "验证: \(days)天"
+    }
+    if !metrics.isEmpty {
+        return "验证: \(metrics.joined(separator: " / "))"
+    }
+    return nil
+}
+
+private func uniqueWatchMetricLabels(_ metrics: [String]) -> [String] {
+    var seen: Set<String> = []
+    var result: [String] = []
+    for metric in metrics {
+        let label = watchMetricLabel(metric)
+        guard !label.isEmpty, !seen.contains(label) else { continue }
+        seen.insert(label)
+        result.append(label)
+    }
+    return result
+}
+
+private func watchMetricLabel(_ metric: String) -> String {
+    switch metric {
+    case "post_meal_walk_completed":
+        return "餐后步行"
+    case "waist_cm":
+        return "腰围"
+    case "weight", "weight_kg":
+        return "体重"
+    case "sleep_score":
+        return "睡眠"
+    case "hrv", "hrv_ms":
+        return "HRV"
+    case "systolic_bp":
+        return "收缩压"
+    case "diastolic_bp":
+        return "舒张压"
+    case "fasting_glucose":
+        return "空腹血糖"
+    default:
+        return metric
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "_", with: " ")
+    }
+}
+
 public struct WatchTopAction: Codable, Sendable {
     public let title: String
     public let kind: String
@@ -259,6 +333,14 @@ public struct WatchTopAction: Codable, Sendable {
         return watchCompletableKinds.contains(kind)
     }
 
+    public func decisionBasisLines(maxCount: Int = 3) -> [String] {
+        watchDecisionBasisLines(
+            rationale: rationaleShort,
+            runtimeContext: runtimeContext,
+            maxCount: maxCount
+        )
+    }
+
     enum CodingKeys: String, CodingKey {
         case title, kind, source
         case timeWindow = "time_window"
@@ -296,6 +378,14 @@ public struct WatchDueItem: Codable, Sendable, Identifiable {
         guard let id = actionId, !id.isEmpty else { return false }
         guard source?.objectType == "health_protocol" else { return false }
         return watchCompletableKinds.contains(kind)
+    }
+
+    public func decisionBasisLines(maxCount: Int = 2) -> [String] {
+        watchDecisionBasisLines(
+            rationale: nil,
+            runtimeContext: runtimeContext,
+            maxCount: maxCount
+        )
     }
 
     enum CodingKeys: String, CodingKey {

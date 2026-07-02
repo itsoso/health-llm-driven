@@ -199,9 +199,15 @@ struct TodayStatusView: View {
                 actionMetaLine(action)
             }
             Spacer(minLength: 4)
-            Image(systemName: "chevron.right")
-                .font(.caption2)
+            Text("只读")
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(RevaWatch.ink2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(RevaWatch.focusBg)
+                )
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
@@ -218,9 +224,9 @@ struct TodayStatusView: View {
     @ViewBuilder
     private func actionMetaLine(_ action: WatchTopAction) -> some View {
         let window = timeWindowLabel(action.timeWindow)
-        let rationale = action.rationaleShort
         let rx = action.prescription
-        if window != nil || rationale != nil || rx != nil {
+        let basisLines = action.decisionBasisLines(maxCount: 3)
+        if window != nil || !basisLines.isEmpty || rx != nil {
             VStack(alignment: .leading, spacing: 2) {
                 if let window {
                     Label(window, systemImage: "clock")
@@ -228,11 +234,11 @@ struct TodayStatusView: View {
                         .foregroundStyle(RevaWatch.ink2)
                 }
                 if let rx { prescriptionLine(rx) }
-                if let rationale, !rationale.isEmpty {
-                    Text(rationale)
+                ForEach(Array(basisLines.enumerated()), id: \.offset) { index, line in
+                    Text(line)
                         .font(.caption2)
                         .foregroundStyle(RevaWatch.ink2)
-                        .lineLimit(2)
+                        .lineLimit(index == 0 ? 2 : 1)
                 }
             }
         }
@@ -332,6 +338,12 @@ struct TodayStatusView: View {
                     Text(window)
                         .font(.caption2)
                         .foregroundStyle(RevaWatch.ink2)
+                }
+                if let basis = item.decisionBasisLines(maxCount: 1).first {
+                    Text(basis)
+                        .font(.caption2)
+                        .foregroundStyle(RevaWatch.ink2)
+                        .lineLimit(1)
                 }
             }
             Spacer(minLength: 4)

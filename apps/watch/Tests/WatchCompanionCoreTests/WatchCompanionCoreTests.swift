@@ -123,6 +123,52 @@ final class WatchSummaryTests: XCTestCase {
         XCTAssertEqual(s.topAction?.runtimeContext?.verificationWindow?.windowDays, 7)
     }
 
+    func testTopActionDecisionBasisUsesRuntimeContextForWatchReadableLines() throws {
+        let data = Data("""
+        {"status":{"light":"green","readiness_score":80,"headline":"h"},
+         "top_action":{"title":"晚餐后步行 15 分钟","kind":"movement","time_window":"evening",
+                       "rationale_short":"餐后是今天最短的代谢干预窗口。",
+                       "action_id":"agenda-health_protocol-8",
+                       "source":{"object_type":"health_protocol","object_id":8},
+                       "runtime_context":{
+                         "current_state_summary":"晚餐后血糖管理优先。",
+                         "safety_boundary":"这是健康管理建议, 不替代医生诊断。",
+                         "verification_window":{"metrics":["post_meal_walk_completed","waist_cm"],"window_days":7}
+                       }},
+         "agenda":{"total":1,"pending":1},"quick_actions":[],"push_items":[],"generated_at":"x"}
+        """.utf8)
+        let s = try WatchSummary.decode(data)
+
+        XCTAssertEqual(
+            s.topAction?.decisionBasisLines(maxCount: 3),
+            [
+                "餐后是今天最短的代谢干预窗口。",
+                "晚餐后血糖管理优先。",
+                "验证: 7天 · 餐后步行 / 腰围",
+            ]
+        )
+    }
+
+    func testDueItemDecisionBasisFallsBackToVerificationWindow() throws {
+        let data = Data("""
+        {"status":{"light":"green","readiness_score":80,"headline":"h"},
+         "top_action":null,
+         "agenda":{"total":1,"pending":1},
+         "due_items":[
+           {"title":"睡前补镁","kind":"supplement","time_window":"bedtime",
+            "action_id":"agenda-health_protocol-9",
+            "source":{"object_type":"health_protocol","object_id":9},
+            "runtime_context":{
+              "verification_window":{"metrics":["sleep_score"],"window_days":14}
+            }}
+         ],
+         "quick_actions":[],"push_items":[],"generated_at":"x"}
+        """.utf8)
+        let s = try WatchSummary.decode(data)
+
+        XCTAssertEqual(s.dueItems.first?.decisionBasisLines(maxCount: 2), ["验证: 14天 · 睡眠"])
+    }
+
     func testDecodeNullTopAction() throws {
         let data = Data("""
         {"status":{"light":"gray","readiness_score":null,"headline":"今日暂无待办"},
