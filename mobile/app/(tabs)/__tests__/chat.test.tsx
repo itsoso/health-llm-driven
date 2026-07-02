@@ -260,14 +260,17 @@ describe('ChatScreen', () => {
   });
 
   it('keeps the chat header compact', async () => {
-    const { getByTestId } = render(<ChatScreen />);
+    const { getByLabelText, getByTestId } = render(<ChatScreen />);
 
     await waitFor(() => {
       expect(getByTestId('chat-header-surface')).toBeTruthy();
     });
     const headerSurface = StyleSheet.flatten(getByTestId('chat-header-surface').props.style);
-    expect(headerSurface.minHeight).toBeLessThanOrEqual(46);
-    expect(headerSurface.paddingVertical).toBeLessThanOrEqual(3);
+    expect(headerSurface.minHeight).toBeLessThanOrEqual(42);
+    expect(headerSurface.paddingVertical).toBeLessThanOrEqual(2);
+    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style).width).toBeLessThanOrEqual(30);
+    expect(StyleSheet.flatten(getByLabelText('对话历史').props.style).width).toBeLessThanOrEqual(30);
+    expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style).width).toBeLessThanOrEqual(30);
   });
 
   it('starts a new chat from a first-level header action', async () => {

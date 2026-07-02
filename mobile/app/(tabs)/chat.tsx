@@ -502,7 +502,7 @@ export default function ChatScreen() {
               accessibilityLabel="新建对话"
               accessibilityRole="button"
             >
-              <Ionicons name="add" size={19} color={C.ink1} />
+              <Ionicons name="add" size={18} color={C.ink1} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={openHistory}
@@ -512,7 +512,7 @@ export default function ChatScreen() {
               accessibilityHint="查看和切换历史对话"
               accessibilityRole="button"
             >
-              <Ionicons name="time-outline" size={18} color={C.green500} />
+              <Ionicons name="time-outline" size={17} color={C.green500} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setToolMenuVisible(true)}
@@ -521,7 +521,7 @@ export default function ChatScreen() {
               accessibilityLabel="更多会诊操作"
               accessibilityRole="button"
             >
-              <Ionicons name="ellipsis-horizontal" size={19} color={C.ink1} />
+              <Ionicons name="ellipsis-horizontal" size={18} color={C.ink1} />
             </TouchableOpacity>
           </View>
         </View>
@@ -755,17 +755,17 @@ const styles = StyleSheet.create({
   headerWrap: {
     paddingHorizontal: revaSpacing.s3,
     paddingTop: 0,
-    paddingBottom: 3,
+    paddingBottom: 2,
   },
   headerSurface: {
-    minHeight: 44,
+    minHeight: 42,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingLeft: 10,
-    paddingRight: 4,
-    paddingVertical: 3,
-    borderRadius: 20,
+    gap: 5,
+    paddingLeft: 9,
+    paddingRight: 3,
+    paddingVertical: 2,
+    borderRadius: 18,
     backgroundColor: C.surface2,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
@@ -774,12 +774,12 @@ const styles = StyleSheet.create({
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
   },
   headerAction: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.surface,
@@ -787,9 +787,9 @@ const styles = StyleSheet.create({
     borderColor: C.line,
   },
   headerActionAccent: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.green50,
@@ -798,9 +798,9 @@ const styles = StyleSheet.create({
     ...revaShadows.sm,
   },
   headerMenuAction: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: C.surface,
