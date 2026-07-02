@@ -317,7 +317,7 @@ describe('DynamicTodayRenderer', () => {
     expect(queryByText('Bad')).toBeNull();
   });
 
-  it('suppresses duplicate low-signal dynamic cards already covered by the daily artifact', () => {
+  it('ignores unregistered chat cards instead of rendering the full Chat CARD_MAP on Today', () => {
     const { getByText, queryByText } = render(
       <DynamicTodayRenderer
         view={makeView({
@@ -331,14 +331,14 @@ describe('DynamicTodayRenderer', () => {
                   type: 'discovery',
                   data: {
                     title: '阿衡动态生成的餐后步行',
-                    summary: '重复解释不应该再占首页。',
+                    summary: 'Chat 卡片不应该绕过 Today atom registry。',
                   },
                 },
                 {
                   type: 'discovery',
                   data: {
                     title: '最近睡眠连续性变好',
-                    summary: '这个不同题,应该保留。',
+                    summary: '即使不是重复题,也不能绕过 Today atom registry。',
                   },
                 },
               ],
@@ -349,8 +349,8 @@ describe('DynamicTodayRenderer', () => {
     );
 
     expect(getByText('阿衡动态生成的餐后步行')).toBeTruthy();
-    expect(queryByText('重复解释不应该再占首页。')).toBeNull();
-    expect(getByText('最近睡眠连续性变好')).toBeTruthy();
-    expect(getByText('这个不同题,应该保留。')).toBeTruthy();
+    expect(queryByText('Chat 卡片不应该绕过 Today atom registry。')).toBeNull();
+    expect(queryByText('最近睡眠连续性变好')).toBeNull();
+    expect(queryByText('即使不是重复题,也不能绕过 Today atom registry。')).toBeNull();
   });
 });

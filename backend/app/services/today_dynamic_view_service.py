@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.services import agenda_service, daily_artifact_service
+from app.services.atomic_capability_registry import validate_dynamic_view
 
 GENERATED_BY = "aheng_today_view_v1"
 SURFACE = "mobile.today"
@@ -39,7 +40,7 @@ def build_today_dynamic_view(
         or daily_artifact_service.DEFAULT_SAFETY_BOUNDARY
     )
 
-    return {
+    view = {
         "view_id": f"today:{artifact_date}:{context_hash[:12]}",
         "surface": SURFACE,
         "trigger": trigger,
@@ -50,6 +51,14 @@ def build_today_dynamic_view(
         "safety_boundary": safety_boundary,
         "sections": _compose_sections(artifact, runtime),
     }
+    _assert_registered_capabilities(view)
+    return view
+
+
+def _assert_registered_capabilities(view: dict[str, Any]) -> None:
+    violations = validate_dynamic_view(view)
+    if violations:
+        raise ValueError(f"invalid_dynamic_view: {'; '.join(violations)}")
 
 
 def _compose_sections(artifact: dict[str, Any], runtime: dict[str, Any]) -> list[dict[str, Any]]:

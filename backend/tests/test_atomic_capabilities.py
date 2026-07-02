@@ -1,0 +1,215 @@
+"""AtomicCapability registry contracts for Agent Native DynamicView."""
+
+from __future__ import annotations
+
+import pytest
+
+
+def test_today_dynamic_view_uses_registered_atomic_capabilities(monkeypatch):
+    from app.services import today_dynamic_view_service
+    from app.services.atomic_capability_registry import (
+        get_atomic_capability,
+        validate_dynamic_view,
+    )
+
+    runtime_action = _runtime_action("smart_daily_plan_action_walk", "晚餐后步行 15 分钟")
+
+    def fake_artifact(db, user_id, followup_within_days=7):
+        assert user_id == 42
+        assert followup_within_days == 7
+        return _artifact("smart_daily_plan_action_sleep", "今晚提前 30 分钟睡前准备")
+
+    def fake_runtime(db, user_id, days=7, max_items_per_day=3):
+        assert user_id == 42
+        assert days == 7
+        assert max_items_per_day == 3
+        return _runtime(runtime_action)
+
+    monkeypatch.setattr(today_dynamic_view_service.daily_artifact_service, "build_daily_artifact", fake_artifact)
+    monkeypatch.setattr(today_dynamic_view_service.agenda_service, "runtime_range_view", fake_runtime)
+
+    view = today_dynamic_view_service.build_today_dynamic_view(object(), 42)
+    card_types = {
+        card["type"]
+        for section in view["sections"]
+        for card in section["cards"]
+    }
+
+    assert card_types == {"daily_artifact", "runtime_agenda"}
+    assert validate_dynamic_view(view) == []
+    for card_type in card_types:
+        capability = get_atomic_capability(card_type)
+        assert capability is not None
+        assert "mobile.today" in capability.surfaces
+        assert capability.first_class_objects
+        assert capability.telemetry_events
+
+
+def test_dynamic_view_validation_flags_unknown_card_type():
+    from app.services.atomic_capability_registry import validate_dynamic_view
+
+    view = {
+        "surface": "mobile.today",
+        "sections": [
+            {
+                "slot": "hero",
+                "cards": [
+                    {
+                        "type": "model_generated_widget",
+                        "data": {},
+                    }
+                ],
+            }
+        ],
+    }
+
+    assert validate_dynamic_view(view) == [
+        "sections[0].cards[0]: unknown AtomicCapability card type 'model_generated_widget'"
+    ]
+
+
+def test_dynamic_view_validation_requires_payload_fields():
+    from app.services.atomic_capability_registry import validate_dynamic_view
+
+    view = {
+        "surface": "mobile.today",
+        "sections": [
+            {
+                "slot": "hero",
+                "cards": [
+                    {
+                        "type": "daily_artifact",
+                        "data": {
+                            "generated_by": "daily_artifact_runtime_v1",
+                            "top_action": None,
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+
+    assert validate_dynamic_view(view) == [
+        "sections[0].cards[0]: daily_artifact data missing required field 'artifact_date'",
+        "sections[0].cards[0]: daily_artifact data missing required field 'safety_boundary'",
+    ]
+
+
+def test_dynamic_view_validation_rejects_actions_outside_capability_allowlist():
+    from app.services.atomic_capability_registry import validate_dynamic_view
+
+    view = {
+        "surface": "mobile.today",
+        "sections": [
+            {
+                "slot": "runtime",
+                "cards": [
+                    {
+                        "type": "runtime_agenda",
+                        "data": {
+                            "mode": "runtime",
+                            "generated_by": "rolling_health_runtime_v1",
+                            "start": "2026-06-29",
+                            "end": "2026-07-05",
+                            "next_action": {},
+                            "days": [],
+                        },
+                        "actions": [
+                            {
+                                "id": "unsafe-write",
+                                "label": "直接写入",
+                                "action": "diet_record.create",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+    assert validate_dynamic_view(view) == [
+        "sections[0].cards[0].actions[0]: action 'diet_record.create' is not allowed for runtime_agenda"
+    ]
+
+
+def test_today_dynamic_view_fails_loud_when_composer_emits_unregistered_card(monkeypatch):
+    from app.services import today_dynamic_view_service
+
+    def fake_artifact(db, user_id, followup_within_days=7):
+        return _artifact("smart_daily_plan_action_sleep", "今晚提前 30 分钟睡前准备")
+
+    def fake_runtime(db, user_id, days=7, max_items_per_day=3):
+        return _runtime(_runtime_action("smart_daily_plan_action_walk", "晚餐后步行 15 分钟"))
+
+    def fake_sections(artifact, runtime):
+        return [
+            {
+                "slot": "hero",
+                "priority": 100,
+                "cards": [{"type": "model_generated_widget", "data": {}}],
+            }
+        ]
+
+    monkeypatch.setattr(today_dynamic_view_service.daily_artifact_service, "build_daily_artifact", fake_artifact)
+    monkeypatch.setattr(today_dynamic_view_service.agenda_service, "runtime_range_view", fake_runtime)
+    monkeypatch.setattr(today_dynamic_view_service, "_compose_sections", fake_sections)
+
+    with pytest.raises(ValueError, match="invalid_dynamic_view"):
+        today_dynamic_view_service.build_today_dynamic_view(object(), 42)
+
+
+def _runtime_action(action_id: str, title: str):
+    return {
+        "id": action_id,
+        "type": "movement",
+        "title": title,
+        "time_window": "evening",
+        "priority_tier": "P1",
+        "runtime_context": {
+            "current_state_summary": "晚餐后是今天最短的代谢干预窗口。",
+            "replan_reason": "today_smart_rank",
+            "safety_boundary": "这是健康管理行动建议, 不替代医生诊断。",
+            "verification_window": {
+                "metrics": ["post_meal_walk_completed", "waist_cm", "hrv"],
+                "window_days": 7,
+            },
+        },
+    }
+
+
+def _artifact(action_id: str, title: str):
+    return {
+        "artifact_date": "2026-06-29",
+        "generated_by": "daily_artifact_runtime_v1",
+        "source": {"kind": "agenda.runtime_range"},
+        "empty_state": False,
+        "state": {"label": "今日最重要行动", "tone": "focused", "summary": "先完成餐后步行。"},
+        "top_action": {
+            "id": action_id,
+            "title": title,
+            "actions": {"complete": {"enabled": True}, "skip": {"requires_reason": True}},
+        },
+        "evidence": [],
+        "confidence": "medium",
+        "freshness": {"status": "fresh", "sources": ["agenda.runtime_range"]},
+        "safety_boundary": "这是健康管理行动建议, 不替代医生诊断。",
+    }
+
+
+def _runtime(runtime_action: dict):
+    return {
+        "mode": "runtime",
+        "generated_by": "rolling_health_runtime_v1",
+        "horizon_days": 7,
+        "start": "2026-06-29",
+        "end": "2026-07-05",
+        "next_action": runtime_action,
+        "runtime_context": {"safety_boundary": "这是健康管理行动建议, 不替代医生诊断。"},
+        "days": [
+            {
+                "date": "2026-06-29",
+                "next_action": runtime_action,
+                "time_windows": [{"label": "evening", "items": [runtime_action]}],
+            },
+        ],
+    }

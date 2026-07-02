@@ -50,6 +50,11 @@ describe('todayDynamicAtoms', () => {
   it('resolves the closed atom from render metadata before falling back to type', () => {
     expect(resolveTodayDynamicAtom({ type: 'agent_atom', render: { atom: 'daily_artifact' }, data: {} })).toBe('daily_artifact');
     expect(resolveTodayDynamicAtom({ type: 'runtime_agenda', data: {} })).toBe('runtime_agenda');
+    expect(resolveTodayDynamicAtom({
+      type: 'runtime_agenda',
+      render: { atom: 'future_runtime_agenda' },
+      data: {},
+    })).toBe('runtime_agenda');
   });
 
   it('collects promoted DailyArtifact titles from generic atom envelopes', () => {

@@ -6,7 +6,7 @@ import type {
   ChatCardActionRuntimeState,
   ServerCardDescriptor,
 } from '../chat/cards/types';
-import { CARD_MAP, renderCard } from '../chat/cards';
+import { renderCard } from '../chat/cards';
 import type { AgendaSkipReason } from '../../services/agenda';
 import type {
   DailyArtifact,
@@ -46,11 +46,18 @@ export const TODAY_DYNAMIC_ATOMS: Record<string, TodayDynamicAtomSpec> = {
     atom: 'daily_artifact',
     render: renderDailyArtifactAtom,
   },
+  runtime_agenda: {
+    atom: 'runtime_agenda',
+    render: renderRegisteredChatAtom,
+  },
 };
 
 export function resolveTodayDynamicAtom(card: TodayDynamicCard): string {
   const atom = card.render?.atom;
-  return typeof atom === 'string' && atom.trim() ? atom.trim() : card.type;
+  const explicitAtom = typeof atom === 'string' && atom.trim() ? atom.trim() : null;
+  if (explicitAtom && TODAY_DYNAMIC_ATOMS[explicitAtom]) return explicitAtom;
+  if (TODAY_DYNAMIC_ATOMS[card.type]) return card.type;
+  return explicitAtom ?? card.type;
 }
 
 export function collectTodayDynamicPromotedTitleKeys(view: TodayDynamicView | null | undefined): Set<string> {
@@ -81,11 +88,13 @@ export function renderTodayDynamicAtom(args: TodayDynamicAtomRenderArgs): React.
   const atom = resolveTodayDynamicAtom(args.card);
   const spec = TODAY_DYNAMIC_ATOMS[atom];
   if (spec) return spec.render(args);
-  const registeredType = CARD_MAP[atom] ? atom : args.card.type;
-  if (!CARD_MAP[registeredType]) return null;
+  return null;
+}
 
+function renderRegisteredChatAtom(args: TodayDynamicAtomRenderArgs): React.ReactElement | null {
+  const atom = resolveTodayDynamicAtom(args.card);
   const descriptor: ServerCardDescriptor = {
-    type: registeredType,
+    type: atom,
     data: args.card.data,
     actions: args.card.actions,
   };
