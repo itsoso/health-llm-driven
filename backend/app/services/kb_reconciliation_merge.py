@@ -137,6 +137,10 @@ def can_merge(
     left, right = _sides(db, cand)
     if left is None or right is None:
         return False, "端点文档缺失(可能已被归档/删)", None
+    # belt-and-suspenders:eval_case 是 gold 夹具,任一侧命中 → 硬拒(护住 gold eval 集不被合污染;
+    # 修 detector 前遗留的 eval_case 候选也被这道挡住)。
+    if "eval_case" in ((left.doc_type or ""), (right.doc_type or "")):
+        return False, "eval_case gold 夹具不可合并(护 gold eval 集)", None
     if cand.relation_tag == "conflict":
         return False, "conflict → 人工 conflict-review,merge 硬拒(I4)", None
     if _is_prescriptive(left) or _is_prescriptive(right):

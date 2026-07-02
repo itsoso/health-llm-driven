@@ -33,6 +33,10 @@ from app.services.system_knowledge_service import _normalize_knowledge_text
 DOWN_DEDAO_ORIGIN = "down-dedao-llm-wiki"
 UNKNOWN = "unknown"
 _ENTITY_DOC_TYPE = "entity"
+# eval_case 是**gold eval 夹具**(测 judge/检索用),不是可去重的知识条目。它们与被测的真 claim
+# title 高度相似 → 会系统性配对进队列(prod 实测 33 候选里 14 条牵涉 eval_case = 42% 噪声),且一旦
+# 被合并会污染 gold eval 集或 serving KB。故对账**从源头排除** eval_case;merge 侧再加一道 belt。
+_EXCLUDED_DOC_TYPES = frozenset({"eval_case"})
 
 # 确定性信号权重(纯结构,informational;P5 judge 才定 τ)。
 # edge_neighborhood/alias_overlap 是**语义对齐**信号(找 Hp vs 幽门螺杆菌 这类别名级跨源重复,
@@ -194,7 +198,12 @@ def detect_reconciliation_candidates(
     幂等:已存在的 pair_key 跳过(不复活已 rejected/approved 候选、不改其 status)。
     返回 {created, skipped_existing, truncated, scanned_docs, total_open}。
     """
-    docs = db.query(KBDocument).filter(KBDocument.is_archived.is_(False)).all()
+    docs = (
+        db.query(KBDocument)
+        .filter(KBDocument.is_archived.is_(False),
+                KBDocument.doc_type.notin_(_EXCLUDED_DOC_TYPES))  # gold eval 夹具不参与对账
+        .all()
+    )
     by_hash, by_entity, by_title = _build_buckets(docs)
 
     # pair -> 触发的信号集合。key 恒为 (lo, hi) = sorted doc_ids。
