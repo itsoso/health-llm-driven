@@ -374,3 +374,41 @@ private final class InMemoryConversationStore: AgentConversationStoring, @unchec
         saved.append(conversations)
     }
 }
+
+// MARK: - 证据面板回灌(2026-07-03 bug:打开历史对话后右侧证据面板空占位)
+
+extension AgentConversationHistoryTests {
+    @MainActor
+    func testLoadConversationRehydratesSourcesUsedFromLastAssistant() {
+        let model = AgentChatViewModel(conversationStore: nil, remoteSource: nil)
+        let snapshot = AgentConversationSnapshot(conversationID: 7, title: "红参分析", messages: [
+            .init(role: .user, content: "分析红参"),
+            .init(
+                role: .assistant,
+                content: "分析结果……",
+                model: "qwen3.7-max",
+                sourcesUsed: ["Garmin 数据 (14 天)", "化验报告 (23 次)", "系统知识库"],
+                completionStatus: "complete"
+            ),
+        ])
+
+        model.loadConversation(snapshot)
+
+        // 气泡按 per-message meta 渲染"引用 N 项数据",证据面板必须同源非空
+        XCTAssertEqual(model.lastSourcesUsed.count, 3)
+        XCTAssertTrue(model.lastSourcesUsed.contains("系统知识库"))
+        XCTAssertEqual(model.lastModel, "qwen3.7-max")
+        XCTAssertEqual(model.lastCompletionStatus, "complete")
+    }
+
+    @MainActor
+    func testLoadConversationWithoutAssistantClearsPanel() {
+        let model = AgentChatViewModel(conversationStore: nil, remoteSource: nil)
+        model.lastSourcesUsed = ["残留"]
+        model.loadConversation(AgentConversationSnapshot(conversationID: 8, title: "空", messages: [
+            .init(role: .user, content: "刚开头"),
+        ]))
+        XCTAssertTrue(model.lastSourcesUsed.isEmpty)
+        XCTAssertNil(model.lastModel)
+    }
+}
