@@ -421,7 +421,8 @@ reminder: {"title":"明早复查血压","priority":"high"}
 - "我的 ALT 历史" / "甲状腺过去几年的趋势"
 - 用户想看某个指标的随时间变化
 
-参数 name 是中文/英文都行 (LDL / 低密度脂蛋白). since 是 YYYY-MM-DD, 不传就给最近 1 年.
+**要查多个指标时,务必用 names 一次列全**(如 names=['LDL','ALT','TSH','HDL']),不要一个个分多次调用 —— 一次调用即返回全部(结果按指标名分组在 by_name 里),省一轮 LLM 往返。单个指标用 name 也可。
+name/names 是中文/英文都行 (LDL / 低密度脂蛋白). since 是 YYYY-MM-DD, 不传就给最近 1 年.
 返回每条: record_date / value / unit / is_abnormal / reference_low / reference_high.
 注意: 血压不是化验表指标。用户问"血压/BP/收缩压/舒张压"时优先用 health_query(dimension='blood_pressure');
 如果误调用本工具, 后端会桥接到 blood_pressure_records 并返回标准化 BP/SBP/DBP 结构.
@@ -430,9 +431,14 @@ reminder: {"title":"明早复查血压","priority":"high"}
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "**优先用这个查多个指标**: 要看的多个指标名列表(中英文均可), 如 ['LDL','ALT','TSH','HDL']. 一次调用返回全部, 结果按指标名分组在 by_name. 最多 20 个.",
+                    },
                     "name": {
                         "type": "string",
-                        "description": "指标名, 中英文均可 (LDL / 低密度脂蛋白胆固醇 / ALT / 谷丙转氨酶). 不传则返回最近全部异常项.",
+                        "description": "单个指标名, 中英文均可 (LDL / 低密度脂蛋白胆固醇). 查多个请改用 names. 都不传则返回最近全部异常项.",
                     },
                     "since": {
                         "type": "string",

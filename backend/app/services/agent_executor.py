@@ -5185,28 +5185,13 @@ class AgentExecutor:
                 pass
             return f"Error: 化验指标入库失败: {e}"
 
-    async def _exec_query_lab_indicators(
-        self, base: str, headers: dict, args: dict
-    ) -> str:
-        """查询 MedicalIndicator (跨次体检的单指标历史). 直接读 DB, 不走 HTTP."""
+    _MAX_LAB_BATCH_NAMES = 20  # 单次批量最多查这么多指标(防滥用/超时)
+
+    def _query_one_lab_indicator(self, name: str, since, limit: int) -> dict:
+        """单指标历史查询(BP 桥接 + MedicalIndicator)。返回 dict(调用方 json.dumps)。同步读 self.db。"""
         from sqlalchemy import or_, desc as sa_desc
 
-        if self._current_user_id is None:
-            return "Error: 当前会话无 user_id, 无法查询"
-
-        name = (args.get("name") or "").strip()
-        since_str = args.get("since")
-        limit = max(1, min(int(args.get("limit") or 20), 100))
-
-        try:
-            from datetime import date as _date
-            if since_str:
-                since = datetime.strptime(since_str, "%Y-%m-%d").date()
-            else:
-                since = _date.today() - timedelta(days=365)
-        except Exception:
-            return f"Error: since 必须是 YYYY-MM-DD, got {since_str!r}"
-
+        name = (name or "").strip()
         if name and _is_blood_pressure_indicator_name(name):
             from app.models.blood_pressure import BloodPressureRecord
 
@@ -5225,24 +5210,18 @@ class AgentExecutor:
             )
             items = [_blood_pressure_indicator_item(record) for record in rows]
             if not items:
-                return json.dumps(
-                    {
-                        "count": 0,
-                        "metric_key": "blood_pressure",
-                        "items": [],
-                        "hint": "未找到血压记录；血压属于 vital sign，会从 blood_pressure_records 查询，不属于 MedicalIndicator 化验表。",
-                    },
-                    ensure_ascii=False,
-                )
-            return json.dumps(
-                {
-                    "count": len(items),
+                return {
+                    "count": 0,
                     "metric_key": "blood_pressure",
-                    "source": "blood_pressure_records",
-                    "items": items,
-                },
-                ensure_ascii=False,
-            )
+                    "items": [],
+                    "hint": "未找到血压记录；血压属于 vital sign，会从 blood_pressure_records 查询，不属于 MedicalIndicator 化验表。",
+                }
+            return {
+                "count": len(items),
+                "metric_key": "blood_pressure",
+                "source": "blood_pressure_records",
+                "items": items,
+            }
 
         from app.models.family_health import MedicalIndicator
 
@@ -5259,7 +5238,7 @@ class AgentExecutor:
             ))
         rows = q.order_by(sa_desc(MedicalIndicator.record_date)).limit(limit).all()
         if not rows:
-            return json.dumps({"count": 0, "items": [], "hint": f"未找到 {name or '任何'} 指标"}, ensure_ascii=False)
+            return {"count": 0, "items": [], "hint": f"未找到 {name or '任何'} 指标"}
         items = [
             {
                 "name": r.name, "name_en": r.name_en,
@@ -5271,7 +5250,63 @@ class AgentExecutor:
             }
             for r in rows
         ]
-        return json.dumps({"count": len(items), "items": items}, ensure_ascii=False)
+        return {"count": len(items), "items": items}
+
+    async def _exec_query_lab_indicators(
+        self, base: str, headers: dict, args: dict
+    ) -> str:
+        """查询 MedicalIndicator (跨次体检的指标历史). 直接读 DB, 不走 HTTP.
+
+        **批量**: 传 names=[...] 一次查多个指标(省 LLM 往返轮);单指标传 name(shape 向后兼容不变)。
+        """
+        if self._current_user_id is None:
+            return "Error: 当前会话无 user_id, 无法查询"
+
+        since_str = args.get("since")
+        limit = max(1, min(int(args.get("limit") or 20), 100))
+        try:
+            from datetime import date as _date
+            since = (datetime.strptime(since_str, "%Y-%m-%d").date()
+                     if since_str else _date.today() - timedelta(days=365))
+        except Exception:
+            return f"Error: since 必须是 YYYY-MM-DD, got {since_str!r}"
+
+        # 批量路径:names(list)优先。去重、保序、去空、封顶。
+        raw_names = args.get("names")
+        # 弱模型兜底:names 可能被吐成字符串化的 JSON 数组(如 '["LDL","ALT"]')→ 试解析。
+        if isinstance(raw_names, str):
+            s = raw_names.strip()
+            if s.startswith("["):
+                try:
+                    parsed = json.loads(s)
+                    if isinstance(parsed, list):
+                        raw_names = parsed
+                except Exception:
+                    pass  # 解析失败 → 落回单指标路径(fail-safe)
+        if isinstance(raw_names, list):
+            seen: set[str] = set()
+            names: list[str] = []
+            for n in raw_names:
+                s = str(n or "").strip()
+                if s and s not in seen:
+                    seen.add(s)
+                    names.append(s)
+            names = names[: self._MAX_LAB_BATCH_NAMES]
+            if names:
+                by_name = {n: self._query_one_lab_indicator(n, since, limit) for n in names}
+                total = sum(v.get("count", 0) for v in by_name.values())
+                truncated = len([x for x in raw_names if str(x or "").strip()]) > self._MAX_LAB_BATCH_NAMES
+                return json.dumps(
+                    {"batch": True, "count": total, "queried": names,
+                     "by_name": by_name, "truncated": truncated},
+                    ensure_ascii=False,
+                )
+
+        # 单指标(向后兼容:返回原 shape)
+        return json.dumps(
+            self._query_one_lab_indicator(args.get("name"), since, limit),
+            ensure_ascii=False,
+        )
 
     async def _api_get_json(self, url: str, headers: dict):
         """HTTP GET, 返回解析后的 JSON (list/dict)。
