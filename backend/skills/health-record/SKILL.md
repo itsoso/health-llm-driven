@@ -234,6 +234,19 @@ curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: a
   -d '{"record_date":"$(date +%Y-%m-%d)","checkins":[{"supplement_id":1,"taken":true},{"supplement_id":2,"taken":true}]}'
 ```
 
+### 补剂不在清单里?→ 先建档再打卡(不要报"未找到"放弃)
+
+用户拍照/口述的新补剂(如"记录这个补剂 正官庄红参液")若不在清单,先建档:
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $HEALTH_API_TOKEN" -H "Content-Type: application/json" \
+  "$HEALTH_API_URL/supplements/definitions" \
+  -d '{"name":"正官庄红参液","dosage":"10mL","category":"herbal"}'
+```
+
+响应返回新 `id`,随后按上面"打卡"步骤用该 id 记录。回复里说明"已加入补剂库并打卡",
+并带补剂号方便用户说「撤销」移除。建档可逆(DELETE /supplements/definitions/{id})。
+
 ### 补剂不在列表中 → 先创建定义再打卡
 
 ```bash

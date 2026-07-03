@@ -4720,7 +4720,30 @@ class AgentExecutor:
                         f"{base}/nfc/tap", headers,
                         {"action": "supplement", "supplement_id": matched["id"]}
                     )
-                return f"未找到名为 '{name}' 的活跃补剂"
+                # 没匹配到活跃补剂 → 自动建档再打卡(镜像 medication 先例,见下方 :4646)。
+                # 旧行为报"未找到"把用户推去手动页面 —— 拍照/口述识别出的新补剂
+                # (实测:正官庄红参液)记录直接失败。建档可逆(补剂管理页可停用/删),
+                # 且新条目进入 DSI 安全规则覆盖面(加层不减层,只增覆盖)。
+                create_payload = {"name": name}
+                for k in ("dosage", "timing", "category", "description"):
+                    if data.get(k):
+                        create_payload[k] = data[k]
+                created, cerr = await self._api_post_json(
+                    f"{base}/supplements/definitions", headers, create_payload
+                )
+                if cerr or not isinstance(created, dict) or not created.get("id"):
+                    logger.warning(f"[health_record] supplement 自动建档失败: {cerr}")
+                    return f"补剂记录暂时没成功(自动建档 '{name}' 时{cerr or '未知错误'}),你可以稍后再试一次。"
+                tap_result = await self._api_post(
+                    f"{base}/nfc/tap", headers,
+                    {"action": "supplement", "supplement_id": created["id"]}
+                )
+                if tap_result.startswith("Error"):
+                    return f"已把「{name}」加入补剂库(补剂号 {created['id']}),但今日打卡没成功({tap_result})。"
+                return json.dumps(
+                    {"message": f"已把「{name}」加入补剂库并完成今日打卡（补剂号 {created['id']}，说「撤销」可移除）"},
+                    ensure_ascii=False,
+                )
             return "Error: 需要提供补剂名称（supplement_name）"
 
         # medication: 用药记录
