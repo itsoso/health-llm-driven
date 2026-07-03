@@ -267,6 +267,11 @@ def test_wrap_provider_recovers_quota_error_with_fallback_provider(
         "app.services.llm.recovery.create_provider_for_model_id",
         lambda model_id: wrap_provider(_FallbackProvider()),
     )
+    # env 无关化:gpt-5.5 是 langbridge 条目,registry 按 LANGBRIDGE_* env 门控——
+    # 本地带 .env 时 _env_available=True 假绿,CI 无 .env 时 False → 恢复中止 →
+    # 429 直抛(CI 唯一红)。本测试的意图是 quota→fallback 流程,不是 env 可用性
+    # 策略,故对 availability 打桩。
+    monkeypatch.setattr("app.services.llm.recovery._env_available", lambda mid: True)
 
     provider = wrap_provider(_FailingProvider(model="qwen3.7-plus"))
     set_caller("test.recover", user_id=99)
