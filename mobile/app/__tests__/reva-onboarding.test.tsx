@@ -26,6 +26,11 @@ describe('RevaOnboardingScreen demo mode', () => {
     const { getByText } = render(<RevaOnboardingScreen />);
 
     expect(getByText('示例模式 · 不写入你的 Twin')).toBeTruthy();
+    expect(getByText('三种入口，同一条安全行动流')).toBeTruthy();
+    expect(getByText('合成数据')).toBeTruthy();
+    expect(getByText('示例报告')).toBeTruthy();
+    expect(getByText('真实 HealthKit')).toBeTruthy();
+    expect(getByText('退出示例不会写入真实 Twin')).toBeTruthy();
     expect(getByText('安全脑拦截')).toBeTruthy();
     expect(getByText('证据卡')).toBeTruthy();
     expect(getByText('今日最重要行动')).toBeTruthy();

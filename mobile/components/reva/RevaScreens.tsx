@@ -344,6 +344,32 @@ export function DemoOnRampView({ onDone }: { onDone: () => void }) {
         </View>
 
         <Card>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <Icon name="route" size={20} color={C.green500} />
+            <Text style={{ flex: 1, fontWeight: '800', fontSize: 17, color: C.ink1 }}>三种入口，同一条安全行动流</Text>
+          </View>
+          {([
+            ['database', '合成数据', '立即看到安全脑、证据卡和今日行动,用于 60 秒演示。'],
+            ['file-text', '示例报告', '用脱敏体检报告走解析、异常排序和证据解释。'],
+            ['watch', '真实 HealthKit', '授权后进入同一流程,再把真实数据写入你的 Twin。'],
+          ] as const).map(([icon, title, text], index) => (
+            <View key={title} style={[s.demoEntryRow, index === 2 && { borderBottomWidth: 0 }]}>
+              <View style={s.demoEntryIcon}>
+                <Icon name={icon} size={16} color={C.green500} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={s.demoEntryTitle}>{title}</Text>
+                <Text style={s.demoEntryText}>{text}</Text>
+              </View>
+            </View>
+          ))}
+          <View style={s.demoIsolationPill}>
+            <Icon name="shield-check" size={13} color={C.green600} />
+            <Text style={s.demoIsolationText}>退出示例不会写入真实 Twin</Text>
+          </View>
+        </Card>
+
+        <Card>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
             <Icon name="shield-alert" size={20} color="#D5503A" />
             <Text style={{ fontWeight: '800', fontSize: 17, color: C.ink1 }}>安全脑拦截</Text>
@@ -404,4 +430,10 @@ const s = StyleSheet.create({
   demoEvidenceRow: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, paddingVertical: 10, gap: 3 },
   demoEvidenceLabel: { fontFamily: 'IBMPlexMono', fontSize: 11, fontWeight: '600', letterSpacing: 0, color: C.green600 },
   demoEvidenceText: { fontSize: 13.5, lineHeight: 20, color: C.ink2 },
+  demoEntryRow: { flexDirection: 'row', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, paddingVertical: 10 },
+  demoEntryIcon: { width: 30, height: 30, borderRadius: 10, backgroundColor: C.green50, alignItems: 'center', justifyContent: 'center' },
+  demoEntryTitle: { fontSize: 14, fontWeight: '800', color: C.ink1, marginBottom: 2 },
+  demoEntryText: { fontSize: 12.8, lineHeight: 18, color: C.ink2 },
+  demoIsolationPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: C.green50 },
+  demoIsolationText: { fontSize: 12, fontWeight: '700', color: C.green600 },
 });

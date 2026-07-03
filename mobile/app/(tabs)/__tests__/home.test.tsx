@@ -1,10 +1,12 @@
 /* eslint-disable @typescript-eslint/no-require-imports, import/first */
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockPush = jest.fn();
 const mockInvalidateQueries = jest.fn();
 const mockApiPost = jest.fn();
+const mockDispatchChatCardAction = jest.fn();
+const mockToastShow = jest.fn();
 let mockDailyPlanActions: unknown[] = [];
 let mockDailyArtifact: any = null;
 let mockTodayDynamicView: any = null;
@@ -13,6 +15,7 @@ let mockSafetyAlerts: any[] = [];
 let mockActiveCycle: any = null;
 let mockDashboardData: any = null;
 let mockRefetchingKeys = new Set<string>();
+let mockUseQueryKeys: unknown[][] = [];
 // 时间线 now-item:Hero 现在读 /timeline/today 的 now(时间感知最相关项),不再读清晨第一项。
 let mockTimeline: any = null;
 
@@ -28,6 +31,7 @@ jest.mock('../../../components/reva/useRevaFonts', () => ({
 
 jest.mock('@tanstack/react-query', () => ({
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
+    if (Array.isArray(queryKey)) mockUseQueryKeys.push([...queryKey]);
     const key = Array.isArray(queryKey) ? queryKey.join(':') : String(queryKey);
     const isRefetching = mockRefetchingKeys.has(key);
     if (key.includes('safety')) {
@@ -96,12 +100,23 @@ jest.mock('../../../hooks/useTheme', () => ({
   }),
 }));
 
+jest.mock('../../../hooks/useToast', () => ({
+  useToast: () => ({
+    show: mockToastShow,
+    showUndoable: jest.fn(),
+  }),
+}));
+
 jest.mock('../../../services/safety', () => ({
   getSafetyReport: jest.fn(),
 }));
 
 jest.mock('../../../services/dailyPlan', () => ({
   getDailyOperatingPlan: jest.fn(),
+}));
+
+jest.mock('../../../services/chatCardActions', () => ({
+  dispatchChatCardAction: (...args: any[]) => mockDispatchChatCardAction(...args),
 }));
 
 jest.mock('../../../services/api', () => ({
@@ -134,7 +149,9 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     mockActiveCycle = null;
     mockDashboardData = null;
     mockRefetchingKeys = new Set<string>();
+    mockUseQueryKeys = [];
     mockTimeline = null;
+    mockDispatchChatCardAction.mockResolvedValue({ status: 'completed' });
   });
 
   // 构造一个最小的 /timeline/today 响应:now 指向给定 item。
@@ -147,6 +164,14 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
       past: { completed_count: 0, events: [] },
       counts: { actionable: 1, overdue: 0, info: 0 },
     };
+  }
+
+  function wasDynamicViewRequestedWith(trigger: string) {
+    return mockUseQueryKeys.some((key) =>
+      key[0] === 'today-dynamic-view' &&
+      key[1] === 'mobile.today' &&
+      key[2] === trigger,
+    );
   }
 
   // ── #1 Hero readiness uses the real Garmin Training Readiness, not body_battery ──
@@ -489,6 +514,115 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(getByText('阿衡动态生成的餐后步行')).toBeTruthy();
     expect(queryByText('7天验证节奏')).toBeNull();
     expect(queryByLabelText('现在该做:旧 Hero 行动')).toBeNull();
+  });
+
+  it('requests the Aheng DynamicView with the open trigger on first render', () => {
+    render(<TodayScreen />);
+
+    expect(wasDynamicViewRequestedWith('open')).toBe(true);
+  });
+
+  it('requests a pull-refresh DynamicView when the user refreshes Today', async () => {
+    const { UNSAFE_getByType } = render(<TodayScreen />);
+    const { RefreshControl } = require('react-native');
+
+    await act(async () => {
+      await UNSAFE_getByType(RefreshControl).props.onRefresh();
+    });
+
+    expect(wasDynamicViewRequestedWith('pull_refresh')).toBe(true);
+  });
+
+  it('requests an action-completed DynamicView after skipping the primary Daily Artifact', async () => {
+    mockApiPost.mockResolvedValue({ data: { id: 1, event_type: 'skipped' } });
+    mockDailyArtifact = {
+      artifact_date: '2026-06-29',
+      empty_state: false,
+      state: { label: '今日最重要行动', tone: 'focused', summary: '先处理今日行动。' },
+      top_action: {
+        id: 'walk-10m',
+        title: '午饭后步行 10 分钟',
+        do_now: '餐后走一圈。',
+        actions: { complete: { enabled: false }, skip: { requires_reason: true } },
+      },
+      evidence: [{ kind: 'why_now', label: 'Why now', summary: '餐后窗口' }],
+      confidence: 'medium',
+      freshness: { status: 'fresh', sources: ['runtime'] },
+      safety_boundary: '健康管理行动建议,不替代医生诊断。',
+    };
+
+    const { getByLabelText, getByText } = render(<TodayScreen />);
+
+    fireEvent.press(getByLabelText('跳过今日最重要行动'));
+    fireEvent.press(getByText('太累'));
+
+    await waitFor(() => expect(wasDynamicViewRequestedWith('action_completed')).toBe(true));
+  });
+
+  it('shows success feedback and refreshes dependent data after a DynamicView card action', async () => {
+    mockDispatchChatCardAction.mockResolvedValueOnce({
+      status: 'completed',
+      nutrition_status: 'estimated',
+    });
+    mockTodayDynamicView = {
+      view_id: 'today:2026-06-29:action',
+      surface: 'mobile.today',
+      trigger: 'open',
+      generated_by: 'aheng_today_view_v1',
+      context_hash: 'action',
+      sections: [
+        {
+          slot: 'insight',
+          priority: 80,
+          cards: [
+            {
+              type: 'discovery',
+              data: {
+                title: '早餐记录待确认',
+                summary: '阿衡已整理早餐草稿。',
+              },
+              actions: [
+                {
+                  id: 'confirm-breakfast',
+                  label: '确认记录',
+                  action: 'diet_record.create',
+                  endpoint: '/diet/records',
+                  requires_manual_confirm: true,
+                  payload: {
+                    record: {
+                      food_items: '鸡蛋 2 个',
+                      meal_type: 'breakfast',
+                    },
+                  },
+                  style: 'primary',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const { getByText } = render(<TodayScreen />);
+    mockInvalidateQueries.mockClear();
+
+    fireEvent.press(getByText('确认记录'));
+
+    await waitFor(() => {
+      expect(mockDispatchChatCardAction).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'diet_record.create',
+      }));
+    });
+    await waitFor(() => {
+      expect(mockToastShow).toHaveBeenCalledWith('已记录饮食，营养已估算', 'success');
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['today-dynamic-view', 'mobile.today'] });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['daily-artifact', 'me'] });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['timeline', 'today'] });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['agenda', 'today'] });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['write-intents'] });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['diet'] });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboard'] });
   });
 
   it('does not repeat the Aheng-promoted action in the following timeline strip', () => {

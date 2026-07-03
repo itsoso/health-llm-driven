@@ -40,6 +40,7 @@ export interface GetTodayDynamicViewOptions {
 
 const ALLOWED_DYNAMIC_ACTIONS = new Set([
   'agenda.complete',
+  'diet_record.create',
   'write_intent.confirm',
   'write_intent.dismiss',
   'route.open',
