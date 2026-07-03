@@ -15,7 +15,7 @@ Twin 层的薄数据收集器 —— 过渡期。
 """
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import desc
@@ -141,10 +141,31 @@ def fetch_supplement_today(db: Session, user_id: int) -> Dict[str, Any]:
             for row in rows
         ]
 
+        # "在服"分段:近 14 天有 taken=true 打卡的才算正在服用;库里其余
+        # active 定义只是"已登记"。防 LLM 把补剂库存量当当前摄入负担
+        # (实测:24 种库存被说成"你目前有 24 种补剂,再加红参会增加负担")。
+        taking_window_days = 14
+        window_start = today - timedelta(days=taking_window_days - 1)
+        taken_id_rows = (
+            db.query(SupplementRecord.supplement_id)
+            .filter(
+                SupplementRecord.user_id == user_id,
+                SupplementRecord.record_date >= window_start,
+                SupplementRecord.taken == True,  # noqa: E712
+            )
+            .distinct()
+            .all()
+        )
+        taken_ids = {r[0] for r in taken_id_rows}
+        taking_names = [i["name"] for i in items if i["id"] in taken_ids]
+
         return {
             "active_supplements": items,
             "taken_today_count": sum(1 for i in items if i["taken"]),
             "total_active_count": len(items),
+            "taking_recent_count": len(taking_names),
+            "taking_recent_names": taking_names,
+            "taking_window_days": taking_window_days,
         }
     except Exception as e:
         logger.warning(f"[twin.collectors] supplement 失败: {e}")

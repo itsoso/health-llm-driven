@@ -341,10 +341,22 @@ def twin_to_prompt_blob(twin: HealthTwin, max_abnormal: int = 5, max_genes: int 
                 line += f" | 7日依从率 {twin.medication.adherence_7d_pct:.0f}%"
             lines.append(line)
 
-    # ─── 补剂今日打卡
+    # ─── 补剂:在服 vs 在库分开说(防 LLM 把库存量当当前摄入负担)
     s = twin.supplement
     if s.total_active_count > 0:
-        lines.append(f"补剂: 今日 {s.taken_today_count}/{s.total_active_count} 已打卡")
+        if s.taking_recent_count > 0:
+            names = "、".join(s.taking_recent_names[:12])
+            more = " 等" if len(s.taking_recent_names) > 12 else ""
+            lines.append(
+                f"补剂(在服): 近{s.taking_window_days}天实际在服 {s.taking_recent_count} 种"
+                f"({names}{more}), 今日已打卡 {s.taken_today_count} 种; "
+                f"补剂库共登记 {s.total_active_count} 种, 其余近期无打卡·不应计入当前摄入负担"
+            )
+        else:
+            lines.append(
+                f"补剂: 补剂库登记 {s.total_active_count} 种, 但近{s.taking_window_days}天无打卡记录"
+                f"(不代表正在服用)"
+            )
 
     # ─── 基因配置（结构化摘要）
     if twin.gene_config and twin.gene_config.has_data:

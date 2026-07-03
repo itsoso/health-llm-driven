@@ -1890,13 +1890,26 @@ def _inspect_user_data_sources(db, user_id: int) -> list:
         pass
 
     try:
-        from app.models.supplement import SupplementDefinition
+        from datetime import date as _date, timedelta as _timedelta
+        from app.models.supplement import SupplementDefinition, SupplementRecord
         sup = db.query(SupplementDefinition.id).filter(
             SupplementDefinition.user_id == user_id,
             SupplementDefinition.is_active == True,  # noqa: E712
         ).count()
         if sup:
-            sources.append(f"当前补剂 ({sup} 种)")
+            # 在服(近14天有打卡)≠ 在库(is_active 定义数):标签也别混("当前
+            # 补剂 24 种"曾被 LLM 当成当前摄入负担)。
+            taking = (
+                db.query(SupplementRecord.supplement_id)
+                .filter(
+                    SupplementRecord.user_id == user_id,
+                    SupplementRecord.record_date >= _date.today() - _timedelta(days=13),
+                    SupplementRecord.taken == True,  # noqa: E712
+                )
+                .distinct()
+                .count()
+            )
+            sources.append(f"在服补剂 ({taking} 种, 库 {sup} 种)")
     except Exception:
         pass
 

@@ -255,6 +255,13 @@ class SupplementState(BaseModel):
     # {id, name, dosage, timing, taken}
     taken_today_count: int = 0
     total_active_count: int = 0
+    # "在服"分段(加法字段,2026-07-03):is_active 语义是"在库未归档",不是
+    # "正在服用"—— 二者混淆曾让 LLM 把 24 种库存说成"你目前有 24 种补剂"
+    # (红参适用性分析 case)。在服 = 近 taking_window_days 天有 taken 打卡。
+    # 安全规则(DSI)仍用全量 active_supplements(加层不减层,不收窄安全输入)。
+    taking_recent_count: int = 0
+    taking_recent_names: List[str] = Field(default_factory=list)
+    taking_window_days: int = 14
 
 
 # ─────────────────────────── Genetic ───────────────────────────────────
