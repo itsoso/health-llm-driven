@@ -16,7 +16,7 @@ If the reviewer cannot sign in, please contact support@executor.life.
 2. Go to `今日` to see the current health summary and next suggested action.
 3. Go to `阿衡` and ask: `今天应该先做什么健康行动？`
 4. Go to `记录` and record a simple water or exercise entry.
-5. Go to `我 -> 数据连接` to view Apple Health / Garmin / data source controls.
+5. Go to `我 -> 数据连接` to view Apple Health and data source controls.
 6. Go to `我 -> 健康档案 -> 导入体检报告` to see report import entry.
 7. Go to `我 -> 账号与隐私 -> 隐私政策` to view privacy explanation.
 8. Go to `我 -> 账号与隐私 -> 删除账号与数据` to see the in-app deletion request flow. Do not confirm deletion unless the review team wants to test the request path.
@@ -39,6 +39,6 @@ The request is recorded in an auditable backend workflow. The user is told that 
 
 ## Notes For Review
 
-- Some data screens may show empty states if the demo account has not authorized Apple Health on the reviewer device.
-- HealthKit data is optional; the app remains usable with manual records and demo account data.
-- Apple Watch and iPhone HealthKit behavior should be tested on physical devices when possible.
+- The demo account is pre-loaded with sample health data, so `今日`, `时间线`, and `阿衡` show non-empty content **without requiring HealthKit authorization on the review device**.
+- HealthKit / Apple Watch sync is optional and additive; the app is fully usable from the demo account's pre-loaded records.
+- Apple Watch and iPhone HealthKit behavior should be tested on physical devices when possible (HealthKit cannot return data in the simulator).
