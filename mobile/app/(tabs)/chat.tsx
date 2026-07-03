@@ -546,15 +546,7 @@ export default function ChatScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.headerWrap}>
         <View testID="chat-header-surface" style={styles.headerSurface}>
-          <TouchableOpacity
-            onPress={() => router.navigate('/(tabs)/me')}
-            hitSlop={8}
-            style={styles.avatarButton}
-            accessibilityLabel="我，打开个人中心与设置"
-            accessibilityRole="button"
-          >
-            <Text maxFontSizeMultiplier={1.15} style={txt.avatarText}>阿</Text>
-          </TouchableOpacity>
+          {/* 「阿」头像已删（与标题「阿衡」重复）——「我」入口挪进右侧「…」工具 sheet。 */}
           <LlmModelPicker
             variant="header"
             currentLabel={headerLlmLabel}
@@ -789,12 +781,20 @@ export default function ChatScreen() {
             <View style={styles.toolSheetHeader}>
               <View>
                 <Text style={txt.toolSheetTitle}>会诊工具</Text>
-                <Text style={txt.toolSheetSub}>分享、删除等低频操作</Text>
+                <Text style={txt.toolSheetSub}>个人中心、分享、删除等低频操作</Text>
               </View>
               <TouchableOpacity onPress={() => setToolMenuVisible(false)} hitSlop={8} accessibilityLabel="关闭会诊工具">
                 <Ionicons name="close" size={22} color={C.ink2} />
               </TouchableOpacity>
             </View>
+            <ToolMenuRow
+              icon="person-circle-outline"
+              label="我 · 个人中心与设置"
+              onPress={() => {
+                setToolMenuVisible(false);
+                router.navigate('/(tabs)/me');
+              }}
+            />
             {messages.some(isShareableChatMessage) && (
               <ToolMenuRow
                 icon={selectionMode ? 'close' : 'checkbox-outline'}
@@ -913,16 +913,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-  },
-  avatarButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.green50, // = brandLight（Reva 浅绿 tint）
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: revaSemantic.normal.line,
   },
   briefingStrip: {
     flexDirection: 'row',
@@ -1177,7 +1167,6 @@ const styles = StyleSheet.create({
 });
 
 const txt = {
-  avatarText: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '800', color: C.green600 } as TextStyle,
   briefingLabel: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '700', color: C.ink3 } as TextStyle,
   briefingSummary: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '700', color: C.ink1, marginTop: 1 } as TextStyle,
   recordTrayLabel: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '700', color: C.ink2 } as TextStyle,
