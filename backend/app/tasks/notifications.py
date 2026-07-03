@@ -185,7 +185,7 @@ def _trend_push_body_for_user(db, user_id: int, reports: list, today: date | Non
             and _is_exercise_undertraining_risk(first_risk)
             and _recovery_gate_active(db, user_id, today)
         ):
-            return "⚠️ 恢复优先：近期恢复信号偏低，今天先按 Agent 建议降强度或休息，不把运动不足作为今日目标。"
+            return "⚠️ 恢复优先：近期恢复信号偏低，今天先按阿衡建议降强度或休息，不把运动不足作为今日目标。"
         return f"⚠️ {first_risk}"
 
     improving = [r for r in reports if r.trend_direction == "improving"]
