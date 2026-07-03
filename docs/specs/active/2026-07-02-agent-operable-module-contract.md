@@ -107,3 +107,48 @@ agent_operations: full | read_only | opt_out(<理由>)
 - 不为每对象手写专属工具(通用三件套 + 注册表驱动,工具数不膨胀)。
 - 不给 agent 开"绕过确认档位"的口子:档位由注册表定,LLM/prompt 改不了。
 - opt_out 对象(基因导入、账号删除、支付类)不因本契约被迫开放。
+
+## 落地状态(2026-07-03)
+
+task #43 已落地:
+
+- **注册表**:`backend/app/services/agent_ops_registry.py`(纯数据,pgx_cpic_table
+  风格;与前端 `atomic_capability_registry.py` 通过 object_type 对齐,见 §3.5)。
+- **CI 闸**:`backend/tests/test_agent_ops_registry.py` —— 全部 source-derived
+  (AST 扫 `agent_executor` 的 record_type 分支 / manage 映射 / query dimension
+  + 直接 import 活的 `_FAST_RECORD_*_CONFIRM_KINDS`),注册表与 executor 双向
+  比对,任一侧单改 → CI 红。随 backend pytest 在 CI 每次跑。
+
+### 盘点出的空洞(均已在注册表显式挂账,gap/opt_out 字段)
+
+1. **waist / sleep / excretion**:health_manage list/update/delete 有,
+   health_record **create 缺** ——"记腰围 82"走不通(UI 有录入口)。
+2. **supplement(打卡记录)**:create 有(auto),**list/update/delete 缺**
+   (health_manage 只映射了 supplement_definition);后果:auto 写入的当日打卡
+   **无撤销通路**(undo 只能撤自动建档的定义),违反 §3.3 硬要求 2,已用
+   `undo_gap` 挂账。
+3. **goal**:UI 有(web goals 页 / mobile Goals),agent 三件套零通路(整对象 gap)。
+4. **medical_exam**:指标级读 OK(canonical 层);报告级 list 无通路。
+5. **intervention_cycle**:status/start 有(专属工具);历史列表/参数调整/取消
+   无通路。
+6. **慢路径确认门不齐**:mood / supplement_group / garmin_sync 不在 AUTO 集
+   (快路由 fail-closed 恒确认),但慢路径(quality 模型直调)无
+   `_confirm_or_describe` —— 与 medication 修过的洞同类,未修。
+7. **死代码**:`_exec_health_record` 的 `record_map["supplement"]` 不可达
+   (supplement 分支恒 return)。
+8. **per-op confirm 只在 create 有执行机制**(快路由 gate);§3.1 示例里
+   delete 的 `typed_only` 档位尚无 executor 执行点,注册表如实只在 create
+   登记 confirm。
+
+### 确认档位现状(镜像 executor 活集合,CI 强制)
+
+- `auto`:water / weight / blood_pressure / diet / exercise / reminder / supplement
+- `typed_only`:symptom / rhinitis
+- `never_auto`:illness / medication(executor NEVER 集∩注册面)+ fail-closed
+  兜底(mood / supplement_group / garmin_sync / intervention_cycle)
+
+### opt_out 登记
+
+genetic_profile 建档/改删(导入+人审)· medical_exam 数值(人工核对管线)·
+health_query 聚合面(只读)· garmin_sync / supplement_group 的记录管理
+(触发/批量动作,非记录对象)。

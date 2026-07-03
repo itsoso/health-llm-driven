@@ -461,16 +461,16 @@ export default function ChatScreen() {
   }, []);
 
   const toggleMessageSelection = useCallback((id: string) => {
-    setSelectedMessageIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      if (next.size === 0) {
-        setSelectionMode(false);
-      }
-      return next;
-    });
-  }, []);
+    // 先算出下一个 Set 再 setState — updater 内不做副作用 (setSelectionMode),
+    // 避免并发渲染下 updater 重放导致 double-fire.
+    const next = new Set(selectedMessageIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedMessageIds(next);
+    if (next.size === 0) {
+      setSelectionMode(false);
+    }
+  }, [selectedMessageIds]);
 
   // 微信式: 长按某条消息 → 进入多选模式并默认选中该条.
   const enterSelectionWith = useCallback((id: string) => {

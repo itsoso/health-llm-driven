@@ -2,6 +2,7 @@ import {
   getMainTabAccessibilityLabels,
   getMainTabBarPresentation,
   getMainTabLabels,
+  getMainTabRouteNames,
 } from '../_layout';
 
 describe('main tab labels', () => {
@@ -12,6 +13,13 @@ describe('main tab labels', () => {
 
   it('keeps the assistant tab accessibility label aligned with Aheng', () => {
     expect(getMainTabAccessibilityLabels().chat).toBe('阿衡，与健康参谋对话');
+  });
+
+  it('pins the tab route segments — deep links depend on "chat" staying stable', () => {
+    // router.push('/(tabs)/chat'), notification routing, and share deep links
+    // all hardcode these segments; a silent rename breaks them at runtime.
+    expect(getMainTabRouteNames()).toEqual(['index', 'chat', 'record', 'me']);
+    expect(getMainTabRouteNames()).toContain('chat');
   });
 
   it('keeps the custom tab bar docked in layout flow instead of covering page content', () => {

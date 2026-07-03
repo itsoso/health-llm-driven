@@ -139,6 +139,12 @@ export function getMainTabLabels() {
   return MAIN_TAB_ORDER.map((name) => TAB_META[name].label);
 }
 
+// 路由 segment 是深链契约 (router.push('/(tabs)/chat')、通知路由、分享深链均依赖),
+// 导出只读快照供测试钉死, 防止静默改名.
+export function getMainTabRouteNames(): MainTabName[] {
+  return [...MAIN_TAB_ORDER];
+}
+
 export function getMainTabAccessibilityLabels() {
   return Object.fromEntries(
     MAIN_TAB_ORDER.map((name) => [name, TAB_META[name].accessibilityLabel]),

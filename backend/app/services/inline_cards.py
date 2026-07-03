@@ -3,7 +3,8 @@
 在对话 SSE `done` 事件里附加 `cards: [{type, data}]`, 前端 Web/iPad + Expo iPhone 自动渲染.
 
 设计原则:
-- 纯查询, 不改写数据; 失败静默降级 (空列表)
+- 纯查询, 不改写数据; 单 builder 失败降级跳过, 但绝不静默 —— 组装后输出
+  telemetry: builder 真异常 (卡片被 DROP) 走 WARNING, gate 未命中 (正常) 走 DEBUG
 - 关键词 + Twin 数据双门限, 两者都命中才推卡片
 - 单次最多 3 张卡, 避免过度干扰阅读
 """
@@ -690,51 +691,74 @@ def build_cards(db: Session, user_id: int, query: str) -> List[Dict[str, Any]]:
     """根据用户输入和 Twin 数据, 构造动态卡片列表
 
     返回 list[{type, data}], 前端直接塞进 SSE done 事件.
-    单次 ≤ MAX_CARDS. 任何异常都降级为空列表.
+    单次 ≤ MAX_CARDS. 单 builder 异常不阻塞其他卡片, 返回 shape 不变;
+    但组装后必须输出 telemetry —— builder 真异常 (卡片被 DROP, 与"当天本来就没数据"
+    是两回事) 走 WARNING 带 builder 名 + 异常 repr, gate 未命中 (正常) 走 DEBUG。
     """
     if not query or len(query) > 500:
         return []
     out: List[Dict[str, Any]] = []
+    considered: List[str] = []
+    emitted: List[str] = []
+    gate_miss: List[str] = []
+    dropped: List[Dict[str, str]] = []
     for card_type, builder in _BUILDERS:
         if card_type == "record_intent_skip":
             continue
+        considered.append(card_type)
         try:
             data = builder(db, user_id, query)
-            if data:
-                card: Dict[str, Any] = {"type": card_type, "data": data}
-                if card_type == "runtime_agenda":
-                    card["actions"] = _runtime_agenda_actions(data)
-                if card_type == "diet_draft":
-                    card["actions"] = _diet_draft_actions(data)
-                if card_type == "operating_review":
-                    card["actions"] = [
-                        {
-                            "id": "open-operating-review",
-                            "label": "查看复盘详情",
-                            "action": "route.open",
-                            "payload": {"route": "/my-progress"},
-                            "style": "primary",
-                        }
-                    ]
-                if card_type == "metric_chart":
-                    metric = data.get("metric") if isinstance(data, dict) else None
-                    route_type = _metric_history_route_type(metric)
-                    card["actions"] = [
-                        {
-                            "id": f"open-{metric or 'metric'}-history",
-                            "label": _metric_history_label(data) if isinstance(data, dict) else "查看指标历史",
-                            "action": "route.open",
-                            "payload": {
-                                "route": f"/indicator-history?type={route_type}",
-                            },
-                            "style": "secondary",
-                        }
-                    ]
-                out.append(card)
-                if len(out) >= MAX_CARDS:
-                    break
+            if not data:
+                gate_miss.append(card_type)
+                continue
+            card: Dict[str, Any] = {"type": card_type, "data": data}
+            if card_type == "runtime_agenda":
+                card["actions"] = _runtime_agenda_actions(data)
+            if card_type == "diet_draft":
+                card["actions"] = _diet_draft_actions(data)
+            if card_type == "operating_review":
+                card["actions"] = [
+                    {
+                        "id": "open-operating-review",
+                        "label": "查看复盘详情",
+                        "action": "route.open",
+                        "payload": {"route": "/my-progress"},
+                        "style": "primary",
+                    }
+                ]
+            if card_type == "metric_chart":
+                metric = data.get("metric") if isinstance(data, dict) else None
+                route_type = _metric_history_route_type(metric)
+                card["actions"] = [
+                    {
+                        "id": f"open-{metric or 'metric'}-history",
+                        "label": _metric_history_label(data) if isinstance(data, dict) else "查看指标历史",
+                        "action": "route.open",
+                        "payload": {
+                            "route": f"/indicator-history?type={route_type}",
+                        },
+                        "style": "secondary",
+                    }
+                ]
+            out.append(card)
+            emitted.append(card_type)
+            if len(out) >= MAX_CARDS:
+                break
         except Exception as e:
             logger.debug("[inline_cards] builder %s raised: %s", card_type, e)
+            dropped.append({"builder": card_type, "reason": repr(e)})
+    # 组装 telemetry: 有 builder 真异常 → WARNING (fail-loud, 历史上此类静默丢卡
+    # 造成过多次线上事故); 全部正常 (含 gate 未命中) → DEBUG。不记 query 原文 (隐私)。
+    if dropped:
+        logger.warning(
+            "[inline_cards] user=%s composition dropped=%s considered=%s emitted=%s gate_miss=%s",
+            user_id, dropped, considered, emitted, gate_miss,
+        )
+    else:
+        logger.debug(
+            "[inline_cards] user=%s composition considered=%s emitted=%s gate_miss=%s",
+            user_id, considered, emitted, gate_miss,
+        )
     return out
 
 

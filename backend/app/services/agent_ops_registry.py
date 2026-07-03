@@ -1,0 +1,474 @@
+"""Agent Ops registry — Agent-Operable Module Contract 的后端操作面单一真源。
+
+spec: docs/specs/active/2026-07-02-agent-operable-module-contract.md §3.1
+姊妹注册表: app/services/atomic_capability_registry.py —— 那张表管**前端**
+AtomicCapability(卡片 schema / 可挂动作 / surface);本表是它的**后端操作面
+twin**:agent 能对哪个一等对象做什么操作(create/read/list/update/delete)、
+确认档位、撤销通路。两表通过 object_type 对齐(spec §3.5)。
+
+纯数据(pgx_cpic_table 风格):**不 import agent_executor** —— 一致性由
+tests/test_agent_ops_registry.py 的 CI 闸负责:用 AST 扫 agent_executor 源码
+(record_type 分支 / manage 映射 / query dimension)+ 直接 import 活的确认档位
+集合,与本表双向比对。executor 加/删通路而不改本表 → CI 红(spec §3.4)。
+
+诚实盘点原则:本表登记**当前真实覆盖**,不是愿景 ——
+- 没有通路的格子用 ``{"gap": True, "reason": ...}`` 显式挂账;
+- 刻意不开放的用 ``{"opt_out": "<理由>"}``(医疗边界/人审要求/只读面);
+- 整个对象无 agent 通路 → 顶层 ``{"gap": True, "reason": ...}`` 或
+  ``{"opt_out": ...}``。
+
+条目 schema(registry_violations() 结构校验)::
+
+    AGENT_OPS[object_type] =
+        {"opt_out": <reason>}                      # 整对象刻意不开放
+      | {"gap": True, "reason": <reason>}          # 整对象空洞(有 UI 面无 agent 通路)
+      | {op: entry for op in ("create","read","list","update","delete")}
+
+    entry =
+        {"tool": ..., "via": ..., <op 专属字段>}    # 真实通路
+      | {"opt_out": <reason>}
+      | {"gap": True, "reason": <reason>}
+
+    create(tool=health_record)额外字段:
+        record_type  — _exec_health_record 的 rtype(canonical 名,别名不入表)
+        confirm      — "auto" | "typed_only" | "never_auto"(spec §3.2;
+                       镜像 executor 的 _FAST_RECORD_*_CONFIRM_KINDS 活集合)
+        undo         — auto/typed_only 写入必填(spec §3.3 撤销通路);
+                       通路缺失时 undo=None + undo_gap=<理由> 显式挂账
+    read(tool=health_query)额外字段:
+        dimensions   — 该对象经 health_query 可读的 dimension 枚举
+    list/update/delete(tool=health_manage)额外字段:
+        record_type  — _exec_health_manage 的 list_paths/record_paths 映射键
+
+确认档位现状(诚实说明):confirm 目前只有 create 有执行机制(快路由
+_auto_confirm_fast_record_args gate);spec §3.1 示例里 delete 的 typed_only
+档位尚无 executor 执行点,故本表不在 delete 上登记 confirm —— 见 spec
+"落地状态(2026-07-03)" gap 清单。
+"""
+from __future__ import annotations
+
+from typing import Any, Dict
+
+OPS: tuple[str, ...] = ("create", "read", "list", "update", "delete")
+CONFIRM_TIERS: frozenset[str] = frozenset({"auto", "typed_only", "never_auto"})
+
+
+AGENT_OPS: Dict[str, Dict[str, Any]] = {
+    # ── 日常打卡记录(auto 档:可逆、非医疗级、写错方向安全)────────────
+    "water": {
+        "create": {
+            "tool": "health_record", "record_type": "water", "confirm": "auto",
+            "via": "health_record(water) → POST /water/records/quick",
+            "undo": "health_manage(delete water {record_id})",
+        },
+        "read": {"tool": "health_query", "dimensions": ("water",),
+                 "via": "health_query(water) → GET /water/records/me/date/{today}"},
+        "list": {"tool": "health_manage", "record_type": "water",
+                 "via": "GET /water/records/me"},
+        "update": {"tool": "health_manage", "record_type": "water",
+                   "via": "PUT /water/records/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "water",
+                   "via": "DELETE /water/records/{id}"},
+    },
+    "diet": {
+        "create": {
+            "tool": "health_record", "record_type": "diet", "confirm": "auto",
+            "via": "health_record(diet) → POST /diet/records",
+            "undo": "health_manage(delete diet {record_id})",
+        },
+        "read": {"tool": "health_query", "dimensions": ("diet",),
+                 "via": "health_query(diet) → GET /diet/records/me/date/{today}"},
+        "list": {"tool": "health_manage", "record_type": "diet",
+                 "via": "GET /diet/records/me"},
+        "update": {"tool": "health_manage", "record_type": "diet",
+                   "via": "PUT /diet/records/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "diet",
+                   "via": "DELETE /diet/records/{id}"},
+    },
+    "weight": {
+        "create": {
+            "tool": "health_record", "record_type": "weight", "confirm": "auto",
+            "via": "health_record(weight) → POST /weight/records",
+            "undo": "health_manage(delete weight {record_id})",
+        },
+        "read": {"tool": "health_query", "dimensions": ("weight",),
+                 "via": "health_query(weight) → GET /weight/records/me"},
+        "list": {"tool": "health_manage", "record_type": "weight",
+                 "via": "GET /weight/records/me"},
+        "update": {"tool": "health_manage", "record_type": "weight",
+                   "via": "PUT /weight/records/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "weight",
+                   "via": "DELETE /weight/records/{id}"},
+    },
+    "blood_pressure": {
+        "create": {
+            "tool": "health_record", "record_type": "blood_pressure", "confirm": "auto",
+            "via": "health_record(blood_pressure) → POST /blood-pressure/records",
+            "undo": "health_manage(delete blood_pressure {record_id})",
+        },
+        "read": {"tool": "health_query", "dimensions": ("blood_pressure",),
+                 "via": "health_query(blood_pressure) → GET /blood-pressure/records/me"},
+        "list": {"tool": "health_manage", "record_type": "blood_pressure",
+                 "via": "GET /blood-pressure/records/me"},
+        "update": {"tool": "health_manage", "record_type": "blood_pressure",
+                   "via": "PUT /blood-pressure/records/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "blood_pressure",
+                   "via": "DELETE /blood-pressure/records/{id}"},
+    },
+    "exercise": {
+        "create": {
+            "tool": "health_record", "record_type": "exercise", "confirm": "auto",
+            "via": "health_record(exercise) → POST /daily-health/exercise",
+            "undo": "health_manage(delete exercise {record_id})",
+        },
+        # exercise/workout 读 WorkoutRecord(Garmin 同步), manual_exercise 读
+        # ExerciseRecord(手动录入) —— 见 _exec_health_query endpoint_map 注释。
+        "read": {"tool": "health_query",
+                 "dimensions": ("exercise", "workout", "manual_exercise"),
+                 "via": "health_query(exercise|workout|manual_exercise)"},
+        "list": {"tool": "health_manage", "record_type": "exercise",
+                 "via": "GET /daily-health/exercise/me"},
+        "update": {"tool": "health_manage", "record_type": "exercise",
+                   "via": "PUT /daily-health/exercise/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "exercise",
+                   "via": "DELETE /daily-health/exercise/{id}"},
+    },
+    "reminder": {
+        "create": {
+            "tool": "health_record", "record_type": "reminder", "confirm": "auto",
+            "via": "health_record(reminder) → POST /reminders/me",
+            "undo": "health_manage(delete reminder {record_id})",
+        },
+        # health_query 无 reminder dimension —— 读走 manage list(非 gap:同一数据面)。
+        "read": {"tool": "health_manage", "record_type": "reminder",
+                 "via": "health_manage(list reminder)"},
+        "list": {"tool": "health_manage", "record_type": "reminder",
+                 "via": "GET /reminders/me?status=all"},
+        "update": {"tool": "health_manage", "record_type": "reminder",
+                   "via": "PUT /reminders/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "reminder",
+                   "via": "DELETE /reminders/{id}"},
+    },
+    "mood": {
+        # 不在 AUTO 集 → 快路由 fail-closed 恒确认(=never_auto 语义)。
+        # 已知洞:慢路径无 _confirm_or_describe(与 medication 修过的洞同类),
+        # 见 spec 落地状态 #6。
+        "create": {
+            "tool": "health_record", "record_type": "mood", "confirm": "never_auto",
+            "via": "health_record(mood) → POST /mood/records",
+            "undo": "health_manage(delete mood {record_id})",
+        },
+        "read": {"tool": "health_manage", "record_type": "mood",
+                 "via": "health_manage(list mood)"},
+        "list": {"tool": "health_manage", "record_type": "mood",
+                 "via": "GET /mood/records/me"},
+        "update": {"tool": "health_manage", "record_type": "mood",
+                   "via": "PUT /mood/records/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "mood",
+                   "via": "DELETE /mood/records/{id}"},
+    },
+
+    # ── manage-only 对象(create 空洞:UI 有录入口,agent 建不了)──────────
+    "waist": {
+        "create": {"gap": True,
+                   "reason": "UI 有腰围记录入口,health_record 无 waist record_type —— '记腰围 82'走不通"},
+        "read": {"tool": "health_manage", "record_type": "waist",
+                 "via": "health_manage(list waist)"},
+        "list": {"tool": "health_manage", "record_type": "waist",
+                 "via": "GET /waist/records/me"},
+        "update": {"tool": "health_manage", "record_type": "waist",
+                   "via": "PUT /waist/records/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "waist",
+                   "via": "DELETE /waist/records/{id}"},
+    },
+    "sleep": {
+        "create": {"gap": True,
+                   "reason": "睡眠数据主走 Garmin 同步;手动补录无 health_record 通路(manage 改/删反而有)"},
+        "read": {"tool": "health_query", "dimensions": ("sleep",),
+                 "via": "health_query(sleep) → GET /garmin-analysis/me/sleep"},
+        "list": {"tool": "health_manage", "record_type": "sleep",
+                 "via": "GET /sleep/records/me"},
+        "update": {"tool": "health_manage", "record_type": "sleep",
+                   "via": "PUT /sleep/records/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "sleep",
+                   "via": "DELETE /sleep/records/{id}"},
+    },
+    "excretion": {
+        "create": {"gap": True,
+                   "reason": "UI 有排泄记录入口,health_record 无 excretion record_type"},
+        "read": {"tool": "health_manage", "record_type": "excretion",
+                 "via": "health_manage(list excretion)"},
+        "list": {"tool": "health_manage", "record_type": "excretion",
+                 "via": "GET /excretion/records/me"},
+        "update": {"tool": "health_manage", "record_type": "excretion",
+                   "via": "PUT /excretion/records/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "excretion",
+                   "via": "DELETE /excretion/records/{id}"},
+    },
+
+    # ── 症状/疾病(typed_only:打字免确认,语音/未声明通道确认前置)────────
+    "symptom": {
+        "create": {
+            "tool": "health_record", "record_type": "symptom", "confirm": "typed_only",
+            "via": "health_record(symptom) → POST /symptoms",
+            "undo": "health_manage(delete symptom {record_id})",
+        },
+        "read": {"tool": "health_manage", "record_type": "symptom",
+                 "via": "health_manage(list symptom)"},
+        "list": {"tool": "health_manage", "record_type": "symptom",
+                 "via": "GET /symptoms/me"},
+        "update": {"tool": "health_manage", "record_type": "symptom",
+                   "via": "PUT /symptoms/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "symptom",
+                   "via": "DELETE /symptoms/{id}"},
+    },
+    "rhinitis": {
+        # rhinitis 打卡转 illness_episode(illness_name=鼻炎发作),管理面复用 illness。
+        "create": {
+            "tool": "health_record", "record_type": "rhinitis", "confirm": "typed_only",
+            "via": "health_record(rhinitis) → POST /illness/episodes(illness_name=鼻炎发作)",
+            "undo": "health_manage(delete illness {record_id})",
+        },
+        "read": {"tool": "health_manage", "record_type": "illness",
+                 "via": "复用 illness:health_manage(list illness)"},
+        "list": {"tool": "health_manage", "record_type": "illness",
+                 "via": "GET /illness/episodes/all"},
+        "update": {"tool": "health_manage", "record_type": "illness",
+                   "via": "PUT /illness/episodes/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "illness",
+                   "via": "DELETE /illness/episodes/{id}"},
+    },
+    "illness": {
+        "create": {
+            "tool": "health_record", "record_type": "illness", "confirm": "never_auto",
+            "via": "health_record(illness) → POST /illness/episodes",
+            "undo": "health_manage(delete illness {record_id})",
+        },
+        "read": {"tool": "health_manage", "record_type": "illness",
+                 "via": "health_manage(list illness)"},
+        "list": {"tool": "health_manage", "record_type": "illness",
+                 "via": "GET /illness/episodes/all"},
+        "update": {"tool": "health_manage", "record_type": "illness",
+                   "via": "PUT /illness/episodes/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "illness",
+                   "via": "DELETE /illness/episodes/{id}"},
+    },
+
+    # ── 医疗级(never_auto:恒确认前置,spec §3.2)────────────────────────
+    "medication": {
+        "create": {
+            "tool": "health_record", "record_type": "medication", "confirm": "never_auto",
+            "via": "health_record(medication) 未注册自动建档 → POST /medication/medications",
+            "undo": "health_manage(delete medication {record_id})",
+        },
+        "read": {"tool": "health_query", "dimensions": ("medication",),
+                 "via": "health_query(medication) → GET /medication/medications/me"},
+        "list": {"tool": "health_manage", "record_type": "medication",
+                 "via": "GET /medication/medications/me?active_only=false"},
+        "update": {"tool": "health_manage", "record_type": "medication",
+                   "via": "PUT /medication/medications/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "medication",
+                   "via": "DELETE /medication/medications/{id}"},
+    },
+    "medication_log": {
+        # 同一 health_record(medication) 通路:匹配/建档后写服药 log。
+        "create": {
+            "tool": "health_record", "record_type": "medication", "confirm": "never_auto",
+            "via": "health_record(medication) → POST /medication/logs(status=taken)",
+            "undo": "health_manage(delete medication_log {record_id})",
+        },
+        "read": {"tool": "health_manage", "record_type": "medication_log",
+                 "via": "health_manage(list medication_log) → GET /medication/today/me"},
+        "list": {"tool": "health_manage", "record_type": "medication_log",
+                 "via": "GET /medication/today/me"},
+        "update": {"tool": "health_manage", "record_type": "medication_log",
+                   "via": "PUT /medication/logs/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "medication_log",
+                   "via": "DELETE /medication/logs/{id}"},
+    },
+
+    # ── 补剂三兄弟 ─────────────────────────────────────────────────────────
+    "supplement": {
+        # 补剂打卡(intake 记录)。undo 空洞:auto 写入却撤不了当日打卡
+        # (health_manage 只有 supplement_definition 映射)—— spec 落地状态 #2。
+        "create": {
+            "tool": "health_record", "record_type": "supplement", "confirm": "auto",
+            "via": "health_record(supplement) 名称匹配活跃定义 → POST /nfc/tap(action=supplement)",
+            "undo": None,
+            "undo_gap": "打卡记录无 health_manage 删除通路(仅 supplement_definition 可删),撤销只能撤自动建档的定义",
+        },
+        "read": {"tool": "health_query", "dimensions": ("supplements",),
+                 "via": "health_query(supplements) → GET /supplements/me/stats"},
+        "list": {"gap": True,
+                 "reason": "health_manage 无 supplement intake 记录映射(只有 supplement_definition)"},
+        "update": {"gap": True,
+                   "reason": "同 list:intake 记录不可经 agent 修改"},
+        "delete": {"gap": True,
+                   "reason": "同 list:intake 记录不可经 agent 删除 → auto 打卡无撤销通路"},
+    },
+    "supplement_definition": {
+        # spec §5 First Application:supplement 自动建档(镜像 medication 先例)。
+        "create": {
+            "tool": "health_record", "record_type": "supplement", "confirm": "auto",
+            "via": "health_record(supplement) 查无活跃匹配 → 自动建档 POST /supplements/definitions",
+            "undo": "health_manage(delete supplement_definition {record_id})",
+        },
+        "read": {"tool": "health_manage", "record_type": "supplement_definition",
+                 "via": "health_manage(list supplement_definition)"},
+        "list": {"tool": "health_manage", "record_type": "supplement_definition",
+                 "via": "GET /supplements/me/definitions?active_only=false"},
+        "update": {"tool": "health_manage", "record_type": "supplement_definition",
+                   "via": "PUT /supplements/definitions/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "supplement_definition",
+                   "via": "DELETE /supplements/definitions/{id}"},
+    },
+    "supplement_group": {
+        # 批量打卡动作(按时段),非独立记录对象。不在 AUTO 集 → fail-closed 恒确认。
+        "create": {
+            "tool": "health_record", "record_type": "supplement_group", "confirm": "never_auto",
+            "via": "health_record(supplement_group) → POST /nfc/tap(action=supplement_group, timing)",
+        },
+        "read": {"opt_out": "批量打卡动作,无独立记录;个体打卡见 supplement,定义见 supplement_definition"},
+        "list": {"opt_out": "同 read:非独立记录对象"},
+        "update": {"opt_out": "同 read:非独立记录对象"},
+        "delete": {"opt_out": "同 read:非独立记录对象"},
+    },
+
+    # ── 触发动作/只读面 ────────────────────────────────────────────────────
+    "garmin_sync": {
+        # 同步触发动作,非记录对象。不在 AUTO 集 → fail-closed 恒确认。
+        "create": {
+            "tool": "health_record", "record_type": "garmin_sync", "confirm": "never_auto",
+            "via": "health_record(garmin_sync) → POST /data-collection/garmin/me/sync?days=1",
+        },
+        "read": {"opt_out": "同步结果经 wearable/garmin/activity 等维度读(见 health_query 对象)"},
+        "list": {"opt_out": "同步触发动作,无独立记录可管理"},
+        "update": {"opt_out": "同步触发动作,无独立记录可管理"},
+        "delete": {"opt_out": "同步触发动作,无独立记录可管理"},
+    },
+    "medical_exam": {
+        "create": {"opt_out": "化验/体检数值只走文件导入+LLM解析+人工核对管线,agent 不得代写数值(R4)"},
+        # canonical read 层(health_read.read_medical_indicators, 与 Twin 同源)。
+        "read": {"tool": "health_query", "dimensions": ("medical_exam",),
+                 "via": "health_query(medical_exam) → canonical MedicalIndicator 读层"},
+        "list": {"gap": True,
+                 "reason": "报告级列表无 agent 通路;指标级读走 health_query(medical_exam)"},
+        "update": {"opt_out": "数值修正走人工核对管线,不开放 agent 改"},
+        "delete": {"opt_out": "体检报告不开放 agent 删除"},
+    },
+    "genetic_profile": {
+        "create": {"opt_out": "基因数据只能走文件导入+人审,agent 不得代写(spec §3.1 示例)"},
+        "read": {"tool": "health_query",
+                 "dimensions": ("genetic", "genetic_cognitive",
+                                "genetic_personality", "genetic_comprehensive"),
+                 "via": "health_query(genetic*) → GET /genetic/variants/me 等"},
+        "list": {"tool": "health_query",
+                 "via": "health_query(genetic) 即全量变异列表"},
+        "update": {"opt_out": "基因档案不开放 agent 修改"},
+        "delete": {"opt_out": "基因档案不开放 agent 删除(隐私 Tier 最高,删除走账号级流程)"},
+    },
+    "health_query": {
+        # 共享只读分析面(task #43 (d)):不属于单一对象的聚合/可穿戴分析维度挂这里。
+        # wearable/garmin 是 canonical 读层(health_read._WEARABLE_DIMS)的别名维度。
+        "create": {"opt_out": "聚合分析视图,只读"},
+        "read": {"tool": "health_query",
+                 "dimensions": ("comprehensive", "heart_rate", "hrv", "activity",
+                                "spo2", "spo2_sleep_correlation", "body_battery",
+                                "stress", "wearable", "garmin"),
+                 "via": "health_query(各分析维度) → garmin-analysis / spo2 / canonical wearable 读层"},
+        "list": {"opt_out": "聚合分析视图,只读"},
+        "update": {"opt_out": "聚合分析视图,只读"},
+        "delete": {"opt_out": "聚合分析视图,只读"},
+    },
+
+    # ── 专属工具对象(通用三件套之外,如实登记)──────────────────────────
+    "intervention_cycle": {
+        "create": {
+            "tool": "intervention_cycle", "confirm": "never_auto",
+            "via": "intervention_cycle(action=start) — 显式 confirmed=true 恒确认",
+        },
+        "read": {"tool": "intervention_cycle",
+                 "via": "intervention_cycle(action=status)"},
+        "list": {"gap": True, "reason": "只有当前周期 status,历史周期列表无 agent 通路"},
+        "update": {"gap": True, "reason": "周期参数调整无 agent 通路(R16:处方/激素类恒 clinician_review)"},
+        "delete": {"gap": True, "reason": "取消/删除周期无 agent 通路"},
+    },
+
+    # ── 整对象空洞(有 UI 面,agent 三件套零通路)────────────────────────
+    "goal": {
+        "gap": True,
+        "reason": "UI 有(web goals 页 / mobile Goals tab),agent create/read/list/update/delete 零通路 —— '帮我把目标改成…'走不通",
+    },
+}
+
+
+def get_agent_ops(object_type: str) -> Dict[str, Any] | None:
+    return AGENT_OPS.get(str(object_type or "").strip())
+
+
+def registry_violations() -> list[str]:
+    """结构校验:返回违反条目 schema 的问题清单(CI 闸第一道)。"""
+    violations: list[str] = []
+    for obj, ops in AGENT_OPS.items():
+        if not isinstance(ops, dict):
+            violations.append(f"{obj}: expected dict")
+            continue
+        if "opt_out" in ops or ops.get("gap") is True:
+            reason = ops.get("opt_out") or ops.get("reason")
+            if not (isinstance(reason, str) and reason.strip()):
+                violations.append(f"{obj}: 整对象 opt_out/gap 必须给非空理由")
+            continue
+        missing = [op for op in OPS if op not in ops]
+        if missing:
+            violations.append(f"{obj}: 缺操作格 {missing}(五格每格要么有通路、要么 opt_out/gap,spec §3.4)")
+        for op in OPS:
+            entry = ops.get(op)
+            if entry is not None:
+                violations.extend(_entry_violations(obj, op, entry))
+    return violations
+
+
+def _entry_violations(obj: str, op: str, entry: Any) -> list[str]:
+    v: list[str] = []
+    path = f"{obj}.{op}"
+    if not isinstance(entry, dict):
+        return [f"{path}: expected dict"]
+    if "opt_out" in entry:
+        if not (isinstance(entry["opt_out"], str) and entry["opt_out"].strip()):
+            v.append(f"{path}: opt_out 理由必须非空")
+        return v
+    if entry.get("gap") is True:
+        if not (isinstance(entry.get("reason"), str) and entry["reason"].strip()):
+            v.append(f"{path}: gap 必须带非空 reason")
+        return v
+    tool = entry.get("tool")
+    if not (isinstance(tool, str) and tool.strip()):
+        v.append(f"{path}: 通路条目必须有 tool")
+    if not (isinstance(entry.get("via"), str) and entry["via"].strip()):
+        v.append(f"{path}: 通路条目必须有 via")
+    if op == "create":
+        confirm = entry.get("confirm")
+        if confirm not in CONFIRM_TIERS:
+            v.append(f"{path}: confirm 必须 ∈ {sorted(CONFIRM_TIERS)}(got {confirm!r})")
+        if tool == "health_record" and not entry.get("record_type"):
+            v.append(f"{path}: health_record create 必须给 record_type")
+        if confirm in ("auto", "typed_only"):
+            undo = entry.get("undo")
+            undo_gap = entry.get("undo_gap")
+            if not (
+                (isinstance(undo, str) and undo.strip())
+                or (isinstance(undo_gap, str) and undo_gap.strip())
+            ):
+                v.append(f"{path}: auto/typed_only 写入必须有 undo 通路或显式 undo_gap 理由(spec §3.3)")
+    if op == "read" and tool == "health_query":
+        dims = entry.get("dimensions")
+        if not (
+            isinstance(dims, tuple)
+            and dims
+            and all(isinstance(d, str) and d.strip() for d in dims)
+        ):
+            v.append(f"{path}: health_query read 必须给非空 dimensions tuple")
+    if op in ("list", "update", "delete") and tool == "health_manage":
+        if not entry.get("record_type"):
+            v.append(f"{path}: health_manage {op} 必须给 record_type(manage 映射键)")
+    return v
