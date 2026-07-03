@@ -123,8 +123,8 @@ export default function AiProfileScreen() {
 
       <View style={styles.agentWrap}>
         <AgentFeedbackLink
-          label="跟 Agent 校准我的画像"
-          accessibilityLabel="跟 Agent 校准我的画像"
+          label="跟阿衡校准我的画像"
+          accessibilityLabel="跟阿衡校准我的画像"
           prompt="请基于 AI 当前记住的事实和建议成绩单，帮我找出可能不准确的画像、建议命中或未中的模式，以及我应该补充哪些反馈。"
           context={createAiProfileAgentContext({
             facts: (facts.data ?? []) as any,
@@ -359,8 +359,8 @@ function ScorecardTab(props: {
       </View>
 
       <AgentFeedbackLink
-        label="跟 Agent 分析建议命中率"
-        accessibilityLabel="跟 Agent 分析建议命中率"
+        label="跟阿衡分析建议命中率"
+        accessibilityLabel="跟阿衡分析建议命中率"
         prompt="请基于这份 AI 建议成绩单，分析哪些方向建议更有效、哪些偏离较多，并提出下阶段反馈和改进策略。"
         context={createAiProfileAgentContext({ scorecard: data as any })}
         badge={`近 ${data.window_days} 天命中率 ${overall.hit_rate.toFixed(0)}%`}

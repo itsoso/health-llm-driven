@@ -120,10 +120,10 @@ export default function SupplementCheckin({ supplements, onToggle, onChat }: Pro
           onPress={onChat}
           style={styles.agentLink}
           accessibilityRole="button"
-          accessibilityLabel="跟 Agent 调整补剂安排"
+          accessibilityLabel="跟阿衡调整补剂安排"
         >
           <Ionicons name="chatbubble-ellipses-outline" size={15} color={C.green500} />
-          <Text style={txt.agentLink}>跟 Agent 调整补剂安排</Text>
+          <Text style={txt.agentLink}>跟阿衡调整补剂安排</Text>
           <Ionicons name="chevron-forward" size={14} color={C.green500} />
         </Pressable>
       )}

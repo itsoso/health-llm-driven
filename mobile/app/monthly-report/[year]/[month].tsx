@@ -89,8 +89,8 @@ export default function MonthlyReportDetailScreen() {
         </Text>
 
         <AgentFeedbackLink
-          label="跟 Agent 复盘本月"
-          accessibilityLabel="跟 Agent 复盘本月"
+          label="跟阿衡复盘本月"
+          accessibilityLabel="跟阿衡复盘本月"
           prompt="请基于本月健康报告做一次月度复盘：总结有效和偏离的建议，解释关键指标变化，并给出下月优先行动安排。"
           context={createMonthlyReportAgentContext({ year, month, report: r } as any)}
           badge={`${formatMonth(year, month)}复盘`}

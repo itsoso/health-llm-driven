@@ -165,10 +165,10 @@ export default function DietPlanScreen() {
             style={[styles.agentLink, { backgroundColor: C.green50, borderColor: C.green500 }]}
             activeOpacity={0.75}
             accessibilityRole="button"
-            accessibilityLabel="跟 Agent 优化饮食饮水补剂方案"
+            accessibilityLabel="跟阿衡优化饮食饮水补剂方案"
           >
             <Ionicons name="chatbubble-ellipses-outline" size={16} color={C.green500} />
-            <Text style={[styles.agentLinkText, { color: C.green500 }]}>跟 Agent 优化饮食 · 饮水 · 补剂</Text>
+            <Text style={[styles.agentLinkText, { color: C.green500 }]}>跟阿衡优化饮食 · 饮水 · 补剂</Text>
             <Ionicons name="chevron-forward" size={15} color={C.green500} />
           </TouchableOpacity>
           {data.next_meal && (
@@ -221,7 +221,7 @@ export default function DietPlanScreen() {
           {/* 实验建议 */}
           {data.proposed_experiments && data.proposed_experiments.length > 0 && (
             <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.line }]}>
-              <Text style={[styles.cardTitle, { color: C.ink1 }]}>Agent 实验建议</Text>
+              <Text style={[styles.cardTitle, { color: C.ink1 }]}>阿衡实验建议</Text>
               {data.proposed_experiments.map((e: any, i: number) => (
                 <View key={i} style={styles.experimentRow}>
                   <Text style={[styles.experimentTitle, { color: C.ink1 }]}>{e.title}</Text>

@@ -459,10 +459,10 @@ export default function DietScreen() {
             onPress={handleChatDiet}
             activeOpacity={0.75}
             accessibilityRole="button"
-            accessibilityLabel="跟 Agent 详细聊今日饮食"
+            accessibilityLabel="跟阿衡详细聊今日饮食"
           >
             <Ionicons name="chatbubble-ellipses-outline" size={16} color={C.green500} />
-            <Text style={[txt.agentLinkText, { color: C.green500 }]}>跟 Agent 详细聊{dateLabel}饮食</Text>
+            <Text style={[txt.agentLinkText, { color: C.green500 }]}>跟阿衡详细聊{dateLabel}饮食</Text>
             <Ionicons name="chevron-forward" size={15} color={C.green500} style={{ marginLeft: 'auto' }} />
           </TouchableOpacity>
         )}

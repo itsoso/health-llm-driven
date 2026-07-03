@@ -38,11 +38,11 @@ export default function AgentAgendaPanel({ agenda, onOpenItem }: Props) {
     <DashboardCard
       icon="pulse-outline"
       kicker={agenda.date.slice(5)}
-      title="Agent 议程"
+      title="阿衡议程"
       collapsible
       defaultCollapsed
       trailing={<CardCountBadge value={totalItems} />}
-      accessibilityLabel="Agent 议程"
+      accessibilityLabel="阿衡议程"
     >
       {agenda.sections.slice(0, 3).map(section => {
         const meta = sectionMeta(section.key, c);

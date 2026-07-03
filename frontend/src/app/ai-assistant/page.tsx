@@ -7,7 +7,7 @@
  * 跟 mobile chat tab 同管道, 共享 LLM_PROVIDER (默认 TokenPlan).
  *
  * 历史: 该路由从 nav / dashboard / footer / 测试里被引, 但 page.tsx 一直缺,
- * 用户访问就 404. 此页用 Agent stream + ChatView 渲染.
+ * 用户访问就 404. 此页用阿衡 stream + ChatView 渲染.
  */
 
 import { Suspense, useEffect, useRef, useState } from 'react';
@@ -427,10 +427,10 @@ function AIAssistantInner() {
     if (!text || sharing) return;
     setSharing(true);
     try {
-      const res = await sharedApi.createTextShare('健康 Agent · 对话节选', text);
+      const res = await sharedApi.createTextShare('健康阿衡 · 对话节选', text);
       const shareUrl = res.data.share_url;
       if (navigator.share) {
-        await navigator.share({ title: '健康 Agent · 对话节选', text: '我分享了一段健康 Agent 对话', url: shareUrl });
+        await navigator.share({ title: '健康阿衡 · 对话节选', text: '我分享了一段健康阿衡对话', url: shareUrl });
       } else {
         await navigator.clipboard?.writeText(shareUrl);
         window.alert('分享链接已复制');

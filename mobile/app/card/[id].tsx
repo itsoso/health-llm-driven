@@ -167,10 +167,10 @@ export default function ActionCardDetailScreen() {
   const hasMetric = !!card.metric_key && (card.baseline_value || card.target_value || card.actual_value);
   const hasChecklist = Array.isArray(card.checklist) && card.checklist.length > 0;
   const agentActionLabel = isClosed
-    ? '跟 Agent 复盘这个建议'
+    ? '跟阿衡复盘这个建议'
     : alreadyDecided
-      ? '跟 Agent 调整执行方案'
-      : '跟 Agent 讨论这个建议';
+      ? '跟阿衡调整执行方案'
+      : '跟阿衡讨论这个建议';
 
   return (
     <>
@@ -320,7 +320,7 @@ export default function ActionCardDetailScreen() {
             <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
               <View style={styles.cardHead}>
                 <Ionicons name="sparkles-outline" size={16} color={c.brand} />
-                <Text style={[styles.cardTitle, { color: c.labelPrimary }]}>Agent 评估</Text>
+                <Text style={[styles.cardTitle, { color: c.labelPrimary }]}>阿衡评估</Text>
                 {card.latest_assessment.score != null && (
                   <Text style={[styles.cardMeta, { color: c.brand }]}>
                     {card.latest_assessment.score}/10

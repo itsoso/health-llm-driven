@@ -54,7 +54,7 @@ const TONE: Record<InsightItem['tone'], { fg: string; bg: string }> = {
 const INSIGHT_GROUPS: InsightGroup[] = [
   {
     title: '进展与闭环',
-    subtitle: '看 Agent 建议是否真的带来改善。',
+    subtitle: '看阿衡建议是否真的带来改善。',
     items: [
       {
         title: '我的进度',

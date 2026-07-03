@@ -160,7 +160,7 @@ function GoalsExecutionHeader({
             </View>
           ))
         ) : (
-          <Text style={txt.emptyInline}>暂无拆解动作，先让 Agent 调整目标。</Text>
+          <Text style={txt.emptyInline}>暂无拆解动作，先让阿衡调整目标。</Text>
         )}
       </View>
 
@@ -170,8 +170,8 @@ function GoalsExecutionHeader({
           <Text style={txt.actionText}>{generating ? 'AI 分析中...' : 'AI 生成目标'}</Text>
         </TouchableOpacity>
         <AgentFeedbackLink
-          label="跟 Agent 调整健康目标"
-          accessibilityLabel="跟 Agent 调整健康目标"
+          label="跟阿衡调整健康目标"
+          accessibilityLabel="跟阿衡调整健康目标"
           prompt="请基于我的当前健康目标，判断目标是否合理、优先级是否需要调整，并拆解成接下来 7 天可执行的行动。"
           context={createGoalsAgentContext(goals as any)}
           badge={`活跃目标 ${goals.length} 个`}

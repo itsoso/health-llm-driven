@@ -417,8 +417,8 @@ export default function RecordScreen() {
                 <Text style={txt.empty}>暂无身体数据</Text>
               )}
               <AgentFeedbackLink
-                label="跟 Agent 看身体和血压趋势"
-                accessibilityLabel="跟 Agent 看身体和血压趋势"
+                label="跟阿衡看身体和血压趋势"
+                accessibilityLabel="跟阿衡看身体和血压趋势"
                 prompt="请基于我的体重、腰围和血压记录, 复盘近期趋势和风险, 并给出今天饮食、饮水、运动和睡眠上的调整建议。"
                 context={createBodyMetricsAgentContext({
                   date: today,
@@ -553,10 +553,10 @@ export default function RecordScreen() {
             style={styles.agentLink}
             activeOpacity={0.75}
             accessibilityRole="button"
-            accessibilityLabel="跟 Agent 调整今日饮水"
+            accessibilityLabel="跟阿衡调整今日饮水"
           >
             <Ionicons name="chatbubble-ellipses-outline" size={15} color={C.green500} />
-            <Text style={txt.agentLink}>跟 Agent 调整今日饮水</Text>
+            <Text style={txt.agentLink}>跟阿衡调整今日饮水</Text>
             <Ionicons name="chevron-forward" size={14} color={C.green500} />
           </TouchableOpacity>
         </HealthCard>
@@ -584,7 +584,7 @@ function getRecordFocusReason(entry: QuickRecordEntry, gaps: RecordGapState) {
   }
   if (entry.key === 'diet') {
     if (gaps.isMealWindow && gaps.missingMeal) return '当前餐窗还没记录，先补餐食会影响热量和蛋白目标。';
-    if (gaps.missingMeal) return '今天还没有餐食记录，先补一餐让 Agent 有依据。';
+    if (gaps.missingMeal) return '今天还没有餐食记录，先补一餐让阿衡有依据。';
     return '补充餐食细节，帮助复盘今天的营养目标。';
   }
   if (entry.key === 'preworkout') return '跑前先确认配速、心率上限和血氧风险。';
@@ -630,10 +630,10 @@ function RecordFocusCard({
           onPress={onAskAgent}
           activeOpacity={0.76}
           accessibilityRole="button"
-          accessibilityLabel={`询问 Agent 为什么优先记录${entry.label}`}
+          accessibilityLabel={`询问阿衡为什么优先记录${entry.label}`}
         >
           <Ionicons name="chatbubble-ellipses-outline" size={15} color={entry.color} />
-          <Text style={[txt.recordFocusSecondaryText, { color: entry.color }]}>问 Agent</Text>
+          <Text style={[txt.recordFocusSecondaryText, { color: entry.color }]}>问阿衡</Text>
         </TouchableOpacity>
       </View>
     </View>

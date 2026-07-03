@@ -139,8 +139,8 @@ export default function MemoryScreen() {
         </View>
 
         <AgentFeedbackLink
-          label="跟 Agent 校准这些记忆"
-          accessibilityLabel="跟 Agent 校准这些记忆"
+          label="跟阿衡校准这些记忆"
+          accessibilityLabel="跟阿衡校准这些记忆"
           prompt="请基于 AI 当前关于我的记忆，帮我找出可能不准确、过期或需要补充的内容，并说明这些记忆会怎样影响健康建议。"
           context={createMemoryAgentContext({ facts: mainFacts as any, stats: statsQuery.data as any })}
           badge={`AI 记忆 ${totalAll} 条`}

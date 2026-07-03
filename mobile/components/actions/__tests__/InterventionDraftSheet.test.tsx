@@ -63,7 +63,7 @@ describe('InterventionDraftSheet', () => {
     );
 
     expect(getByText('加入今日计划')).toBeTruthy();
-    expect(getByText('来自 Agent 建议')).toBeTruthy();
+    expect(getByText('来自阿衡建议')).toBeTruthy();
     expect(getByText('今天执行')).toBeTruthy();
     expect(getByText('执行检查项')).toBeTruthy();
     expect(getByText('如何验证')).toBeTruthy();

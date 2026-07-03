@@ -141,8 +141,8 @@ export default function DirectivesScreen() {
 
       <View style={styles.agentWrap}>
         <AgentFeedbackLink
-          label="跟 Agent 检查指令冲突"
-          accessibilityLabel="跟 Agent 检查指令冲突"
+          label="跟阿衡检查指令冲突"
+          accessibilityLabel="跟阿衡检查指令冲突"
           prompt="请基于我当前给 AI 的硬性指令，检查是否存在冲突、过期、表达不清或需要补充边界的地方。涉及用药和诊断时只整理问题，不给处方。"
           context={createDirectivesAgentContext(directives as any)}
           badge={`硬性指令 ${directives.length} 条`}
@@ -159,7 +159,7 @@ export default function DirectivesScreen() {
                 <Ionicons name="shield-checkmark-outline" size={24} color={c.brand} />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.emptyTitle}>先给 Agent 一条硬边界</Text>
+                <Text style={styles.emptyTitle}>先给阿衡一条硬边界</Text>
                 <Text style={styles.emptyHint}>适合放必须遵守的限制、目标或禁忌。</Text>
               </View>
             </View>

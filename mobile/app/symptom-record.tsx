@@ -159,8 +159,8 @@ export default function SymptomRecordScreen() {
           </View>
 
           <AgentFeedbackLink
-            label="跟 Agent 复盘这个症状"
-            accessibilityLabel="跟 Agent 复盘这个症状"
+            label="跟阿衡复盘这个症状"
+            accessibilityLabel="跟阿衡复盘这个症状"
             prompt="请基于我正在记录的症状, 帮我复盘可能诱因、需要补充的问题、居家观察和记录建议，并明确哪些情况需要尽快就医。不要给出确定诊断。"
             context={createSymptomAgentContext({
               date: today,

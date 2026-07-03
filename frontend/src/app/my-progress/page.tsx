@@ -185,7 +185,7 @@ function MyProgressInner() {
             <div className="text-3xl mb-2">🌱</div>
             <div className="text-base font-medium mb-1">这段时间还没有 AI 建议</div>
             <div className="text-sm text-slate-500 max-w-md mx-auto">
-              Agent 主动产建议:<br />
+              阿衡主动产建议:<br />
               · Safety 触发的告警 (心率 / 睡眠 / 血压异常)<br />
               · 周日 21:07 自动生成的本周建议<br />
               · Specialist 在你提问时产出的建议
@@ -257,7 +257,7 @@ function MyProgressInner() {
               <div className="mb-6">
                 <div className="flex items-baseline gap-2 mb-2">
                   <h2 className="text-sm font-medium">验证中 ({data.verifying_cards.length})</h2>
-                  <span className="text-xs text-slate-500">已接受并做完, 等 Agent 拉数据评估</span>
+                  <span className="text-xs text-slate-500">已接受并做完, 等阿衡拉数据评估</span>
                 </div>
                 <div className="space-y-2">
                   {data.verifying_cards.map(c => <CardRow key={c.id} card={c} />)}
@@ -270,7 +270,7 @@ function MyProgressInner() {
               <div>
                 <div className="flex items-baseline gap-2 mb-2">
                   <h2 className="text-sm font-medium">已闭环 ({data.closed_cards.length})</h2>
-                  <span className="text-xs text-slate-500">Agent 已自动评估完成</span>
+                  <span className="text-xs text-slate-500">阿衡已自动评估完成</span>
                 </div>
                 <div className="space-y-2">
                   {data.closed_cards.map(c => <CardRow key={c.id} card={c} />)}

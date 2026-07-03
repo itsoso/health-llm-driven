@@ -80,7 +80,7 @@ export async function getAgentAgenda(today: string): Promise<AgentAgenda> {
     date: today,
     focus,
     sections: [
-      { key: 'watching' as const, title: 'Agent 正在观察', items: watching },
+      { key: 'watching' as const, title: '阿衡正在观察', items: watching },
       { key: 'waiting' as const, title: '等待验证', items: waiting },
       { key: 'missing_data' as const, title: '需要补证据', items: missingData },
     ].filter(section => section.items.length > 0),

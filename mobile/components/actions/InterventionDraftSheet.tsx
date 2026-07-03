@@ -222,7 +222,7 @@ export default function InterventionDraftSheet({ visible, draft, isSaving, onClo
 
 function getSourceLabel(sourceType?: string): string {
   if (sourceType === 'sleep_spo2') return '来自血氧分析';
-  if (sourceType === 'chat') return '来自 Agent 建议';
+  if (sourceType === 'chat') return '来自阿衡建议';
   return '来自健康建议';
 }
 
