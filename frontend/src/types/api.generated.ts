@@ -32,6 +32,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/phone/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 发送手机号验证码
+         * @description 发送手机号验证码，用于一期手机号一体化登录/注册。
+         */
+        post: operations["send_phone_code_api_v1_auth_phone_code_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/phone/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 手机号验证码登录或注册
+         * @description 验证码正确则登录；新手机号自动创建一个最小账号。
+         */
+        post: operations["login_by_phone_code_api_v1_auth_phone_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -144,6 +184,46 @@ export interface paths {
          * @description 修改当前用户密码
          */
         post: operations["change_password_api_v1_auth_change_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/password/set": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 设置初始密码
+         * @description 手机号/微信等无密码账号设置初始密码。
+         */
+        post: operations["set_initial_password_api_v1_auth_password_set_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/password/change": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 修改密码
+         * @description 修改当前用户密码。新路径供移动端账号安全页使用。
+         */
+        post: operations["change_password_alias_api_v1_auth_password_change_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13878,6 +13958,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/knowledge/document/{doc_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 系统知识库单文档全量(admin;provenance lineage 面板;含 draft/archived,不套 serving 门) */
+        get: operations["get_system_knowledge_document_api_v1_admin_knowledge_document__doc_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/knowledge/reconciliation/scan": {
         parameters: {
             query?: never;
@@ -14008,6 +14105,23 @@ export interface paths {
         put?: never;
         /** P5 无人自动合(**默认 DISABLED**:只对显式 enabled_entity_types 的 entity_align 跑)。⚠️ 运营纪律:P6 影子审计 + 速率熔断上线前,enabled_entity_types **必须留空**(§10:τ=0.95 会放过部分近似,无运行时后备不得开任何 type 的 auto)。 */
         post: operations["run_reconciliation_auto_merge_api_v1_admin_knowledge_reconciliation_auto_merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/reconciliation/auto_merge/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dry-run:跑真 judge + 9 闸,报「会 auto 合的候选」+ 各 skip 理由,**零 serving mutation**。首次为某 entity_type 开 auto 前先 preview 眼看这批(含真实分数)再翻 enable。 */
+        post: operations["preview_reconciliation_auto_merge_api_v1_admin_knowledge_reconciliation_auto_merge_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -26731,6 +26845,17 @@ export interface components {
             new_password: string;
         };
         /**
+         * PasswordSet
+         * @description 设置初始密码
+         */
+        PasswordSet: {
+            /**
+             * New Password
+             * @description 新密码
+             */
+            new_password: string;
+        };
+        /**
          * PendingEventsSummary
          * @description 待确认事件摘要
          */
@@ -27112,6 +27237,72 @@ export interface components {
             generated_by: string;
             /** Predictions */
             predictions: components["schemas"]["PersonalPredictionItem"][];
+        };
+        /**
+         * PhoneCodeLogin
+         * @description 手机号验证码登录/注册
+         */
+        PhoneCodeLogin: {
+            /**
+             * Phone
+             * @description 手机号
+             */
+            phone: string;
+            /**
+             * Code
+             * @description 验证码
+             */
+            code: string;
+        };
+        /**
+         * PhoneCodeRequest
+         * @description 请求手机号验证码
+         */
+        PhoneCodeRequest: {
+            /**
+             * Phone
+             * @description 手机号
+             */
+            phone: string;
+            /**
+             * Purpose
+             * @description 验证码用途
+             * @default login
+             */
+            purpose: string;
+        };
+        /**
+         * PhoneCodeResponse
+         * @description 手机号验证码发送结果
+         */
+        PhoneCodeResponse: {
+            /** Message */
+            message: string;
+            /** Phone */
+            phone: string;
+            /** Expires In Seconds */
+            expires_in_seconds: number;
+            /** Dev Code */
+            dev_code?: string | null;
+        };
+        /**
+         * PhoneLoginToken
+         * @description 手机号登录结果
+         */
+        PhoneLoginToken: {
+            /** Access Token */
+            access_token: string;
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type: string;
+            user: components["schemas"]["app__schemas__auth__UserResponse"];
+            /**
+             * Is New User
+             * @default false
+             */
+            is_new_user: boolean;
         };
         /** PlanFeedbackRequest */
         PlanFeedbackRequest: {
@@ -31713,6 +31904,15 @@ export interface components {
              * @default false
              */
             onboarding_completed: boolean;
+            /** Phone */
+            phone?: string | null;
+            /** Phone Verified At */
+            phone_verified_at?: string | null;
+            /**
+             * Has Password
+             * @default false
+             */
+            has_password: boolean;
         };
         /**
          * DietRecordCreate
@@ -31890,6 +32090,72 @@ export interface operations {
             };
         };
     };
+    send_phone_code_api_v1_auth_phone_code_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhoneCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhoneCodeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    login_by_phone_code_api_v1_auth_phone_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhoneCodeLogin"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhoneLoginToken"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     login_api_v1_auth_login_post: {
         parameters: {
             query?: never;
@@ -32030,6 +32296,72 @@ export interface operations {
         };
     };
     change_password_api_v1_auth_change_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_initial_password_api_v1_auth_password_set_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordSet"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_password_alias_api_v1_auth_password_change_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -53927,6 +54259,37 @@ export interface operations {
             };
         };
     };
+    get_system_knowledge_document_api_v1_admin_knowledge_document__doc_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     scan_reconciliation_candidates_api_v1_admin_knowledge_reconciliation_scan_post: {
         parameters: {
             query?: never;
@@ -54138,6 +54501,39 @@ export interface operations {
         };
     };
     run_reconciliation_auto_merge_api_v1_admin_knowledge_reconciliation_auto_merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReconciliationAutoMergeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_reconciliation_auto_merge_api_v1_admin_knowledge_reconciliation_auto_merge_preview_post: {
         parameters: {
             query?: never;
             header?: never;
