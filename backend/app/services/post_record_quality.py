@@ -311,6 +311,26 @@ def _diet_primary_judgement(record_data: dict, totals: Optional[DietDayTotals]) 
     return base + "。"
 
 
+def _diet_headline_sentence(meal: str, record_data: dict) -> str:
+    """一句话确认 + 单个头条数字(热量/蛋白)。
+
+    移动端已用结构化饮食卡渲染完整食材/宏量/进度 —— 这行文本只为无卡客户端
+    (Siri 朗读 / watch 纯文本) 兜底自立。缺失的数字直接省略,绝不编造:
+    两者都在 → "已记录午餐:770 kcal,蛋白 30g。"; 只有热量/只有蛋白 → 只带那一个;
+    都没有 → "已记录午餐。"(founder 截图的多段墙由此收敛)。
+    """
+    kcal = _number_or_none(record_data.get("calories") or record_data.get("kcal"))
+    protein = _number_or_none(record_data.get("protein"))
+    bits: list[str] = []
+    if kcal is not None:
+        bits.append(f"{kcal:.0f} kcal")
+    if protein is not None:
+        bits.append(f"蛋白 {protein:.0f}g")
+    if bits:
+        return f"已记录{meal}：{'，'.join(bits)}。"
+    return f"已记录{meal}。"
+
+
 def _diet_next_action(record_data: dict, context: PersonalContextPack, totals: Optional[DietDayTotals]) -> str:
     protein = _number_or_none(record_data.get("protein"))
     if totals and totals.remaining_protein_g > 0:
@@ -548,13 +568,13 @@ def build_post_record_quality_response(
             totals=totals,
             next_action=next_action,
         )
-        caution_line = f"个人提醒：{cautions[0]}" if cautions else "个人提醒：暂无明显禁忌信号，继续观察餐后体感。"
-        progress_line = (
-            f"今日蛋白 {progress['protein_total_g']}/{progress['protein_target_g']}g，"
-            f"还差约 {progress['remaining_protein_g']}g。"
-            if progress else ""
-        )
-        reply = f"已记录{meal}：{food_label}。{judgement}{caution_line} {progress_line}下一步：{next_action}"
+        # 回复文本压到最多 2 句:头条确认 + 一句人话备注。完整食材/宏量/进度/判断
+        # 由移动端结构化饮食卡承载,文本不再复述那堵墙(founder 截图投诉)。备注优先
+        # 用个人提醒(过敏/慢病更值得无卡客户端听见),否则用确定性的下一步建议;两者
+        # 皆为当前代码已确定性产出的字段,并同样在卡上呈现,不新增/不臆造。
+        note = cautions[0] if cautions else next_action
+        headline = _diet_headline_sentence(meal, record_data)
+        reply = f"{headline}{note}" if note else headline
         card_data: dict[str, Any] = {
             "domain": "diet",
             "title": f"{meal}已记录",

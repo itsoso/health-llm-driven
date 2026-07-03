@@ -74,7 +74,10 @@ def test_error_tool_result_passes_through():
     assert reply.startswith("Error")
 
 
-def test_diet_record_quality_response_uses_personal_context_and_next_action():
+def test_diet_reply_is_two_sentences_headline_plus_note_not_a_wall():
+    # founder 截图投诉:饮食回复是多段墙(食材枚举 + 宏量标签行 + 逐条宏量 + 建议)。
+    # 移动端已用结构化饮食卡渲染这些数字 → 文本压到 ≤2 句(头条确认 + 一句备注),
+    # 无卡客户端(Siri/watch)仍能自立。此处有胃溃疡背景 → 备注取个人提醒(高价值)。
     response = _post_record_quality_response(
         "diet",
         {
@@ -90,14 +93,49 @@ def test_diet_record_quality_response_uses_personal_context_and_next_action():
 
     assert response is not None
     reply = response["reply"]
-    assert "已记录午餐" in reply
-    assert "蛋白" in reply and "30g" in reply
-    assert "胃溃疡" in reply
-    assert "酸" in reply or "冷" in reply
-    assert "下一步" in reply
-    assert "要不要算热量" not in reply
+    # 句 1:确认 + 头条数字。
+    assert reply.startswith("已记录午餐：770 kcal，蛋白 30g。")
+    # 句 2:一句人话备注 —— 胃溃疡背景优先给个人提醒(过敏/慢病更值得无卡端听见)。
+    assert "胃溃疡" in reply and ("酸" in reply or "冷" in reply)
+    # 墙的残骸不得复述进文本:标签行/逐条宏量/进度句/"下一步:"前缀/emoji。
+    assert "碳水" not in reply and "脂肪" not in reply and "纤维" not in reply
+    assert "今日蛋白" not in reply and "下一步" not in reply and "个人提醒" not in reply
+    assert "✅" not in reply
     assert "{" not in reply
-    assert len(reply) <= 220
+    assert reply.count("。") <= 2
+    assert len(reply) <= 120
+
+    # 无个人提醒时,备注回退到确定性的下一步建议(仍是当前代码已产出的字段)。
+    plain = _post_record_quality_response(
+        "diet",
+        {"meal_type": "dinner", "food_items": "鸡胸肉沙拉", "calories": 420, "protein": 38},
+        personal_context="",
+    )
+    assert plain is not None
+    plain_reply = plain["reply"]
+    assert plain_reply.startswith("已记录晚餐：420 kcal，蛋白 38g。")
+    assert len(plain_reply) > len("已记录晚餐：420 kcal，蛋白 38g。")  # 有第二句备注
+    assert plain_reply.count("。") <= 2
+
+    # 缺数字时省略,绝不编造:无热量无蛋白 → 头条退化成 "已记录早餐。"
+    no_numbers = _post_record_quality_response(
+        "diet",
+        {"meal_type": "breakfast", "food_items": "白粥"},
+        personal_context="",
+    )
+    assert no_numbers is not None
+    assert no_numbers["reply"].startswith("已记录早餐。")
+    assert "kcal" not in no_numbers["reply"] and "蛋白 " not in no_numbers["reply"]
+
+    # 只有热量没蛋白 → 头条只带热量。
+    kcal_only = _post_record_quality_response(
+        "diet",
+        {"meal_type": "lunch", "food_items": "牛肉面", "calories": 560},
+        personal_context="",
+    )
+    assert kcal_only is not None
+    assert kcal_only["reply"].startswith("已记录午餐：560 kcal。")
+    assert "蛋白 " not in kcal_only["reply"].split("。")[0]
 
     assert response["cards"][0]["type"] == "record_quality"
     assert response["cards"][0]["data"]["domain"] == "diet"

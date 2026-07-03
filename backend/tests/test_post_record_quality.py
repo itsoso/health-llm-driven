@@ -117,9 +117,16 @@ def test_diet_quality_response_uses_today_totals_and_actionable_routes(db, auth_
     )
 
     assert response is not None
-    assert "已记录午餐" in response["reply"]
-    assert "今日蛋白" in response["reply"]
-    assert "{" not in response["reply"]
+    # 回复压到 ≤2 句:头条确认(带头条数字) + 一句人话备注。完整宏量/进度只在卡上。
+    reply = response["reply"]
+    assert reply.startswith("已记录午餐：")
+    assert "770 kcal" in reply and "蛋白 30g" in reply
+    # 墙里的宏量标签行 / 逐条宏量 / 进度句不再复述进文本(卡承载)。
+    assert "碳水" not in reply and "脂肪" not in reply and "纤维" not in reply
+    assert "今日蛋白" not in reply
+    assert "下一步" not in reply and "个人提醒" not in reply
+    assert reply.count("。") <= 2  # 至多两句
+    assert "✅" not in reply and "{" not in reply
 
     card = response["cards"][0]
     assert card["type"] == "record_quality"
