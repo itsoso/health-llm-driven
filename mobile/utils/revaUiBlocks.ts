@@ -6,6 +6,9 @@ const REVA_UI_COMPONENT_TYPES: Record<string, ServerCardDescriptor['type']> = {
   metric_line_chart: 'metric_line_chart',
   metric_empty_state: 'metric_empty_state',
   diet_draft: 'diet_draft',
+  record_quality: 'record_quality',
+  diet_quality: 'record_quality',
+  meal_quality: 'record_quality',
 };
 
 export interface ExtractedRevaUiBlocks {

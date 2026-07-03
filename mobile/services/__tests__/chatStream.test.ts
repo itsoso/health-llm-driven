@@ -120,6 +120,7 @@ describe('streamChat', () => {
 
     expect(xhr.setRequestHeader).toHaveBeenCalledWith('X-Reva-Client-Caps', expect.stringContaining('genui-v1'));
     expect(xhr.setRequestHeader).toHaveBeenCalledWith('X-Reva-Client-Caps', expect.stringContaining('genui-components-v1'));
+    expect(xhr.setRequestHeader).toHaveBeenCalledWith('X-Reva-Client-Caps', expect.stringContaining('genui-record-quality-v1'));
 
     xhr.responseText =
       'data: {"event":"done","data":{"conversation_id":42,"message_id":99}}\n\n';

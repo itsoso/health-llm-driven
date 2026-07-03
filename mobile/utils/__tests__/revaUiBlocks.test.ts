@@ -107,6 +107,37 @@ describe('extractRevaUiBlocks', () => {
     ]);
   });
 
+  it('turns fenced reva-ui record_quality JSON into a diet quality card descriptor', () => {
+    const text = [
+      '午餐已经记录，下面是这餐之后的建议:',
+      '',
+      '```reva-ui',
+      '{"v":1,"schema":"reva.record_quality.v1","component":"record_quality","domain":"diet","title":"午餐已记录","summary":"770 kcal · 蛋白 30g · 碳水 70g","metrics":[{"label":"热量","value":"770kcal"},{"label":"蛋白","value":"30g"}],"progress":{"protein_total_g":37,"protein_target_g":112,"remaining_protein_g":75,"calories_total":1040,"meals_count":2},"primary_judgement":"蛋白质到位，但晚餐仍要补足。","personal_cautions":["胃溃疡记录在案，冷饮/酸性饮品可能刺激胃。"],"next_action":"晚餐优先 40g 蛋白，少油少刺激。","boundary":"健康管理建议，不替代医生诊断或治疗。","actions":[{"id":"show-next-meal","label":"看下一餐建议","action":"ui.inline.expand","payload":{"target":"next_meal","patch":{"expanded_sections":["next_meal"],"next_meal_detail":{"title":"下一餐建议","summary":"鱼/豆腐 + 熟蔬菜 + 少量主食","options":["鱼/豆腐 + 熟蔬菜 + 少量主食"],"continue_prompt":"如果今晚只能外卖，怎么选？"}}}}]}',
+      '```',
+    ].join('\n');
+
+    const result = extractRevaUiBlocks(text);
+
+    expect(result.text).toBe('午餐已经记录，下面是这餐之后的建议:');
+    expect(result.cards).toEqual([
+      {
+        type: 'record_quality',
+        data: expect.objectContaining({
+          component: 'record_quality',
+          domain: 'diet',
+          title: '午餐已记录',
+          primary_judgement: '蛋白质到位，但晚餐仍要补足。',
+        }),
+        actions: [
+          expect.objectContaining({
+            action: 'ui.inline.expand',
+            label: '看下一餐建议',
+          }),
+        ],
+      },
+    ]);
+  });
+
   it('strips unsupported or malformed reva-ui blocks instead of leaking raw JSON', () => {
     const result = extractRevaUiBlocks('说明\n```reva-ui\nnot-json\n```\n结束');
 

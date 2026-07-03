@@ -19,6 +19,7 @@ jest.mock('../../../services/speakWithUserVoice', () => ({
 }));
 jest.mock('../../../services/chatResultActions', () => ({
   saveAssistantReplyAsMemory: jest.fn(),
+  createRecordFromAssistantReply: jest.fn(),
 }));
 jest.mock('../../../services/chatCardActions', () => ({
   dispatchChatCardAction: jest.fn(),
@@ -121,5 +122,25 @@ describe('ChatBubble reva-ui blocks', () => {
     expect(getByText(/基于 2 天真实数据/)).toBeTruthy();
     expect(queryByText(/```reva-ui/)).toBeNull();
     expect(queryByText(/"component":"metric_line_chart"/)).toBeNull();
+  });
+
+  it('renders record_quality reva-ui blocks as native diet quality cards', () => {
+    const content = [
+      '午餐已经记录，下面是这餐之后的建议:',
+      '',
+      '```reva-ui',
+      '{"v":1,"schema":"reva.record_quality.v1","component":"record_quality","domain":"diet","title":"午餐已记录","summary":"770 kcal · 蛋白 30g · 碳水 70g","metrics":[{"label":"热量","value":"770kcal"},{"label":"蛋白","value":"30g"}],"progress":{"protein_total_g":37,"protein_target_g":112,"remaining_protein_g":75,"calories_total":1040,"meals_count":2},"primary_judgement":"蛋白质到位，但晚餐仍要补足。","personal_cautions":["胃溃疡记录在案，冷饮/酸性饮品可能刺激胃。"],"next_action":"晚餐优先 40g 蛋白，少油少刺激。","boundary":"健康管理建议，不替代医生诊断或治疗。"}',
+      '```',
+    ].join('\n');
+
+    const { getByText, queryByText } = renderBubble(content);
+
+    expect(getByText('午餐已记录')).toBeTruthy();
+    expect(getByText('770 kcal · 蛋白 30g · 碳水 70g')).toBeTruthy();
+    expect(getByText('37/112g')).toBeTruthy();
+    expect(getByText('蛋白质到位，但晚餐仍要补足。')).toBeTruthy();
+    expect(getByText('胃溃疡记录在案，冷饮/酸性饮品可能刺激胃。')).toBeTruthy();
+    expect(queryByText(/```reva-ui/)).toBeNull();
+    expect(queryByText(/"component":"record_quality"/)).toBeNull();
   });
 });
