@@ -19,6 +19,7 @@ COMPOSITE_UNIQUE_TABLES = {
     "garmin_data": ["record_date"],
     "weight_records": ["record_date"],
     "daily_recommendations": ["recommendation_date"],
+    "monthly_reports": ["year", "month"],
     "checkin_records": ["template_id", "checkin_date"],
     "health_analysis_cache": ["analysis_date", "cache_type"],
     "habit_records": ["habit_id", "record_date"],
