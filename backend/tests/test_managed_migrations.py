@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, inspect, text
 
-from app.services.managed_migrations import apply_managed_migrations
+from app.services.managed_migrations import _split_sql_statements, apply_managed_migrations
 
 
 def test_apply_managed_migrations_runs_matching_dialect_once(tmp_path: Path):
@@ -39,6 +39,28 @@ def test_apply_managed_migrations_runs_matching_dialect_once(tmp_path: Path):
     with engine.connect() as conn:
         count = conn.execute(text("SELECT COUNT(*) FROM schema_migrations")).scalar_one()
     assert count == 1
+
+
+def test_split_sql_statements_keeps_postgres_dollar_quoted_blocks_intact():
+    statements = _split_sql_statements(
+        """
+        -- Semicolons inside the DO block must not split the statement.
+        DO $$
+        BEGIN
+            RAISE NOTICE 'first';
+            RAISE NOTICE 'second';
+        END $$;
+
+        CREATE TABLE example_items (
+            id SERIAL PRIMARY KEY
+        );
+        """
+    )
+
+    assert len(statements) == 2
+    assert statements[0].startswith("DO $$")
+    assert statements[0].endswith("END $$")
+    assert statements[1].startswith("CREATE TABLE example_items")
 
 
 def test_managed_system_knowledge_migration_creates_phase0_tables():

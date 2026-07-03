@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
+import re
 from typing import Iterable
 
 from sqlalchemy import Engine, text
@@ -23,6 +24,8 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 """
+
+_DOLLAR_QUOTE_RE = re.compile(r"\$[A-Za-z_][A-Za-z_0-9]*\$|\$\$")
 
 
 @dataclass(frozen=True)
@@ -95,7 +98,79 @@ def _split_sql_statements(sql: str) -> list[str]:
     no_comments = "\n".join(
         line for line in sql.splitlines() if not line.lstrip().startswith("--")
     )
-    return [part.strip() for part in no_comments.split(";") if part.strip()]
+    statements: list[str] = []
+    buffer: list[str] = []
+    in_single_quote = False
+    in_double_quote = False
+    dollar_quote_tag: str | None = None
+    index = 0
+
+    while index < len(no_comments):
+        char = no_comments[index]
+
+        if dollar_quote_tag is not None:
+            if no_comments.startswith(dollar_quote_tag, index):
+                buffer.append(dollar_quote_tag)
+                index += len(dollar_quote_tag)
+                dollar_quote_tag = None
+                continue
+            buffer.append(char)
+            index += 1
+            continue
+
+        if in_single_quote:
+            buffer.append(char)
+            if char == "'" and index + 1 < len(no_comments) and no_comments[index + 1] == "'":
+                buffer.append(no_comments[index + 1])
+                index += 2
+                continue
+            if char == "'":
+                in_single_quote = False
+            index += 1
+            continue
+
+        if in_double_quote:
+            buffer.append(char)
+            if char == '"':
+                in_double_quote = False
+            index += 1
+            continue
+
+        if char == "'":
+            in_single_quote = True
+            buffer.append(char)
+            index += 1
+            continue
+
+        if char == '"':
+            in_double_quote = True
+            buffer.append(char)
+            index += 1
+            continue
+
+        if char == "$":
+            match = _DOLLAR_QUOTE_RE.match(no_comments, index)
+            if match:
+                dollar_quote_tag = match.group(0)
+                buffer.append(dollar_quote_tag)
+                index = match.end()
+                continue
+
+        if char == ";":
+            statement = "".join(buffer).strip()
+            if statement:
+                statements.append(statement)
+            buffer = []
+            index += 1
+            continue
+
+        buffer.append(char)
+        index += 1
+
+    statement = "".join(buffer).strip()
+    if statement:
+        statements.append(statement)
+    return statements
 
 
 def apply_managed_migrations(engine: Engine, migrations_dir: str | Path) -> MigrationRunResult:
