@@ -67,6 +67,9 @@ export interface LlmUsageCall {
   completion_tokens?: number;
   total_tokens?: number;
   cost_usd?: number;
+  cost_cny?: number;
+  cost_estimated?: boolean;
+  cost_source?: string;
   latency_ms?: number | null;
   success?: boolean;
   error_class?: string | null;
@@ -84,6 +87,9 @@ export interface LlmUsageProfile {
   completion_tokens?: number;
   total_tokens?: number;
   cost_usd?: number;
+  cost_cny?: number;
+  cost_estimated?: boolean;
+  cost_sources?: string[];
   latency_ms?: number | null;
   failed_calls?: number;
   models?: string[];

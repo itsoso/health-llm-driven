@@ -10,8 +10,13 @@ from app.database import get_db
 from app.models.llm_usage import LlmUsageLog
 from app.api.deps import get_current_user_required
 from app.models.user import User
+from app.config import settings
 
 router = APIRouter(prefix="/llm-usage", tags=["llm-usage"])
+
+
+def _cost_cny(value: float) -> float:
+    return float(value or 0.0) * float(getattr(settings, "llm_cost_usd_to_cny", 7.2) or 0.0)
 
 
 @router.get("/summary", summary="LLM 用量/成本聚合 (默认最近 7 天)")
@@ -66,20 +71,24 @@ def usage_summary(
             "calls": int(overall.calls),
             "tokens": int(overall.tokens),
             "cost_usd": round(float(overall.cost_usd), 4),
+            "cost_cny_estimate": round(_cost_cny(float(overall.cost_usd)), 4),
             "avg_latency_ms": int(overall.avg_latency_ms or 0),
         },
         "by_caller": [
             {"caller": r.caller, "calls": int(r.calls), "tokens": int(r.tokens),
-             "cost_usd": round(float(r.cost_usd), 4)}
+             "cost_usd": round(float(r.cost_usd), 4),
+             "cost_cny_estimate": round(_cost_cny(float(r.cost_usd)), 4)}
             for r in by_caller_rows
         ],
         "by_model": [
             {"model": r.model, "calls": int(r.calls), "tokens": int(r.tokens),
-             "cost_usd": round(float(r.cost_usd), 4)}
+             "cost_usd": round(float(r.cost_usd), 4),
+             "cost_cny_estimate": round(_cost_cny(float(r.cost_usd)), 4)}
             for r in by_model_rows
         ],
         "by_day": [
-            {"day": str(r.day), "calls": int(r.calls), "cost_usd": round(float(r.cost_usd), 4)}
+            {"day": str(r.day), "calls": int(r.calls), "cost_usd": round(float(r.cost_usd), 4),
+             "cost_cny_estimate": round(_cost_cny(float(r.cost_usd)), 4)}
             for r in by_day_rows
         ],
     }

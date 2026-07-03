@@ -13,6 +13,7 @@ from app.services.llm.usage_tracker import (
     set_run_id,
     wrap_provider,
     record_usage,
+    estimate_usage_cost,
     _caller_ctx,
 )
 from app.models.llm_usage import LlmUsageLog
@@ -213,6 +214,44 @@ def test_wrap_provider_records_failure_error_context(patch_session, monkeypatch)
     assert summary is not None
     assert summary["failed_calls"] == 1
     assert summary["items"][0]["error_type"] == "insufficient_quota"
+
+
+def test_tokenplan_qwen_cost_is_estimated_and_exposed(patch_session):
+    """TokenPlan/Qwen 新模型要有费用估算,不能因为旧价格表缺失显示 0."""
+    token = begin_usage_capture()
+    try:
+        record_usage(
+            provider="tokenplan",
+            model="qwen3.7-plus",
+            prompt_text="hello " * 1000,
+            completion_text="ok " * 200,
+            caller="test.cost",
+            user_id=3,
+            latency_ms=321,
+        )
+        summary = summarize_usage_capture()
+    finally:
+        end_usage_capture(token)
+
+    row = patch_session.query(LlmUsageLog).one()
+    assert row.cost_usd > 0
+    assert summary is not None
+    assert summary["cost_usd"] > 0
+    assert summary["cost_cny"] > 0
+    assert summary["cost_estimated"] is True
+    assert "builtin:qwen3.7-plus" in summary["cost_sources"]
+    assert summary["items"][0]["cost_source"] == "builtin:qwen3.7-plus"
+
+
+def test_model_pricing_json_override(monkeypatch):
+    """真实账单口径可通过环境配置覆盖,不需要改代码发版."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "llm_model_pricing_json", '{"qwen3.7-plus":[2,4]}')
+    estimate = estimate_usage_cost("tokenplan", "qwen3.7-plus", 1_000_000, 500_000)
+
+    assert estimate.cost_usd == 4.0
+    assert estimate.source == "env:qwen3.7-plus"
 
 
 def test_wrap_provider_recovers_quota_error_with_fallback_provider(

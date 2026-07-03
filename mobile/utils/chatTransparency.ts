@@ -16,6 +16,8 @@ export interface LlmUsageProfileLike {
   completion_tokens?: number | null;
   total_tokens?: number | null;
   cost_usd?: number | null;
+  cost_cny?: number | null;
+  cost_estimated?: boolean | null;
   failed_calls?: number | null;
   items?: LlmUsageCallLike[] | null;
 }
@@ -112,6 +114,12 @@ function formatCostUsd(value?: number | null): string | null {
   return `$${value.toFixed(6).replace(/0+$/, '').replace(/\.$/, '')}`;
 }
 
+function formatCostCny(value?: number | null): string | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
+  if (value < 0.01) return `¥${value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}`;
+  return `¥${value.toFixed(2)}`;
+}
+
 function buildTokenLine(usage?: LlmUsageProfileLike | null): string | undefined {
   if (!usage) return undefined;
   const input = positive(usage.prompt_tokens);
@@ -125,8 +133,8 @@ function buildTokenLine(usage?: LlmUsageProfileLike | null): string | undefined 
   ];
   const calls = positive(usage.calls);
   if (calls > 1) parts.push(`${Math.round(calls)}次`);
-  const cost = formatCostUsd(usage.cost_usd);
-  if (cost) parts.push(cost);
+  const cost = formatCostCny(usage.cost_cny) || formatCostUsd(usage.cost_usd);
+  if (cost) parts.push(`${usage.cost_estimated === false ? '' : '约'}${cost}`);
   return parts.join(' · ');
 }
 

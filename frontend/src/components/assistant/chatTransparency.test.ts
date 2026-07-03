@@ -13,6 +13,8 @@ describe('chatTransparency', () => {
         completion_tokens: 620,
         total_tokens: 2460,
         cost_usd: 0.0042,
+        cost_cny: 0.0302,
+        cost_estimated: true,
       },
       sourcesUsed: ['Garmin 数据 (14 天 HRV/睡眠/RHR)', '化验报告 (23 次)'],
       toolsUsed: ['health_manage', 'health_record'],
@@ -35,7 +37,7 @@ describe('chatTransparency', () => {
 
     expect(profile.visible).toBe(true);
     expect(profile.headline).toBe('29.2s · 5轮 · qwen3.7-plus');
-    expect(profile.tokenLine).toBe('Token 输入 1.8k · 输出 620 · 总 2.5k · 5次 · $0.0042');
+    expect(profile.tokenLine).toBe('Token 输入 1.8k · 输出 620 · 总 2.5k · 5次 · 约¥0.03');
     expect(profile.bands.map(b => b.label)).toEqual(['组装', '首字节', '生成', '工具']);
     expect(profile.stages).toContainEqual({ label: '系统提示', value: '26ms' });
     expect(profile.rounds[0].value).toBe('生成 4.1s · 工具 15ms · health_manage');

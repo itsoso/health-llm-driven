@@ -170,6 +170,8 @@ final class ChatTranscriptHTMLTests: XCTestCase {
             completionTokens: 420,
             totalTokens: 2220,
             costUsd: 0.0004,
+            costCny: 0.0029,
+            costEstimated: true,
             latencyMs: 1200,
             models: ["qwen3.7-plus"],
             providers: ["tokenplan"],
@@ -182,6 +184,8 @@ final class ChatTranscriptHTMLTests: XCTestCase {
                     completionTokens: 300,
                     totalTokens: 1300,
                     costUsd: 0.0003,
+                    costCny: 0.0022,
+                    costEstimated: true,
                     latencyMs: 900,
                     success: true
                 )
@@ -197,6 +201,7 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         )
         XCTAssertTrue(html.contains("Token 输入 1.8k"))
         XCTAssertTrue(html.contains("输出 420"))
+        XCTAssertTrue(html.contains("约¥0.0029"))
         XCTAssertTrue(html.contains("qwen3.7-plus"))
     }
 

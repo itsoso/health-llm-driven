@@ -13,22 +13,57 @@ import logging
 import time
 import json
 import re
+from dataclasses import dataclass
 from contextvars import ContextVar, Token
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# 价格表: $/1M tokens (input, output). 找不到的模型回退到 0.0 (只算 token 不算钱).
-# 来源: openai pricing 2026-04, qwen/openclaw 内部估算.
-_MODEL_PRICING: Dict[str, tuple] = {
+# 默认估算表: $/1M tokens (input, output). 真实账单以 provider / TokenPlan 后台为准。
+# 可用 LLM_MODEL_PRICING_JSON 覆盖,避免价格漂移时必须发版。
+_MODEL_PRICING: Dict[str, Tuple[float, float]] = {
     "gpt-4o-mini": (0.15, 0.60),
     "gpt-4o": (2.50, 10.00),
     "gpt-4-turbo": (10.00, 30.00),
+    "qwen3.7-plus": (0.40, 1.20),
+    "qwen3.7-max": (1.20, 3.60),
+    "qwen3.6-plus": (0.40, 1.20),
+    "qwen3.6-flash": (0.05, 0.20),
     "qwen-vl-max": (1.50, 4.50),
+    "deepseek-v4-pro": (0.75, 2.40),
+    "deepseek-v4-flash": (0.10, 0.30),
+    "deepseek-v3.2": (0.30, 0.90),
+    "kimi-k2.7-code": (0.80, 2.40),
+    "kimi-k2.6": (0.50, 1.50),
+    "kimi-k2.5": (0.50, 1.50),
+    "glm-5.2": (0.30, 0.90),
+    "glm-5.1": (0.25, 0.75),
+    "glm-5": (0.20, 0.60),
+    "minimax-m2.5": (0.80, 2.40),
+    "commercial/gpt-5.5": (10.00, 30.00),
     "openclaw:main": (0.20, 0.80),  # 估算
     "openclaw/main": (0.20, 0.80),
     "llama3": (0.0, 0.0),  # 本地 ollama 不计费
 }
+_PROVIDER_DEFAULT_PRICING: Dict[str, Tuple[float, float]] = {
+    "tokenplan": (0.50, 1.50),
+    "openai": (0.50, 1.50),
+    "openai-proxy": (0.50, 1.50),
+    "langbridge-proxy": (2.00, 6.00),
+    "openclaw": (0.20, 0.80),
+}
+_LOCAL_PROVIDERS = {"ollama", "local"}
+
+
+@dataclass(frozen=True)
+class UsageCostEstimate:
+    cost_usd: float
+    cost_cny: float
+    input_usd_per_million: float
+    output_usd_per_million: float
+    estimated: bool
+    source: str
+    pricing_unit: str = "USD_PER_1M_TOKENS"
 
 # 调用方上下文 — orchestrator / specialist / endpoint 可以通过 set_caller() 标注自己
 _caller_ctx: ContextVar[Optional[str]] = ContextVar("llm_caller", default=None)
@@ -86,6 +121,7 @@ def summarize_usage_capture() -> Optional[Dict[str, Any]]:
     completion_tokens = sum(int(item.get("completion_tokens") or 0) for item in captured)
     total_tokens = sum(int(item.get("total_tokens") or 0) for item in captured)
     cost_usd = sum(float(item.get("cost_usd") or 0.0) for item in captured)
+    cost_cny = sum(float(item.get("cost_cny") or 0.0) for item in captured)
     latency_values = [
         int(item["latency_ms"])
         for item in captured
@@ -109,6 +145,13 @@ def summarize_usage_capture() -> Optional[Dict[str, Any]]:
         "completion_tokens": completion_tokens,
         "total_tokens": total_tokens,
         "cost_usd": round(cost_usd, 8),
+        "cost_cny": round(cost_cny, 6),
+        "cost_estimated": any(bool(item.get("cost_estimated")) for item in captured),
+        "cost_sources": sorted({
+            str(item.get("cost_source") or "").strip()
+            for item in captured
+            if str(item.get("cost_source") or "").strip()
+        }),
         "latency_ms": sum(latency_values) if latency_values else None,
         "failed_calls": sum(1 for item in captured if not item.get("success", True)),
         "models": models,
@@ -149,10 +192,147 @@ def _messages_to_text(messages: List[Dict[str, Any]]) -> str:
     return "\n".join(parts)
 
 
+def _normalize_price_key(value: str | None) -> str:
+    return str(value or "").strip().lower()
+
+
+def _parse_pricing_pair(value: Any) -> Optional[Tuple[float, float]]:
+    try:
+        if isinstance(value, (list, tuple)) and len(value) >= 2:
+            return float(value[0]), float(value[1])
+        if isinstance(value, dict):
+            input_price = (
+                value.get("input")
+                if "input" in value
+                else value.get("input_usd_per_million", value.get("prompt"))
+            )
+            output_price = (
+                value.get("output")
+                if "output" in value
+                else value.get("output_usd_per_million", value.get("completion"))
+            )
+            if input_price is not None and output_price is not None:
+                return float(input_price), float(output_price)
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
+def _pricing_overrides() -> Dict[str, Tuple[float, float]]:
+    try:
+        from app.config import settings
+
+        raw = getattr(settings, "llm_model_pricing_json", None)
+    except Exception:
+        raw = None
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except Exception as exc:
+        logger.warning("[LLM Usage] LLM_MODEL_PRICING_JSON 解析失败,使用内置估算表: %s", exc)
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+
+    overrides: Dict[str, Tuple[float, float]] = {}
+    for key, value in parsed.items():
+        pair = _parse_pricing_pair(value)
+        if pair:
+            overrides[_normalize_price_key(key)] = pair
+        elif isinstance(value, dict):
+            default_pair = _parse_pricing_pair(value.get("default"))
+            if default_pair:
+                overrides[f"{_normalize_price_key(key)}:*"] = default_pair
+            for nested_key, nested_value in value.items():
+                if nested_key == "default":
+                    continue
+                nested_pair = _parse_pricing_pair(nested_value)
+                if nested_pair:
+                    overrides[_normalize_price_key(nested_key)] = nested_pair
+    return overrides
+
+
+def _builtin_pricing_for(provider: str, model: str) -> Tuple[Tuple[float, float], str]:
+    provider_key = _normalize_price_key(provider)
+    model_key = _normalize_price_key(model)
+    if provider_key in _LOCAL_PROVIDERS:
+        return (0.0, 0.0), "local_provider"
+
+    candidates = [
+        model_key,
+        model_key.split(":", 1)[0],
+        model_key.split("/", 1)[0],
+    ]
+    for key in candidates:
+        if key in _MODEL_PRICING:
+            return _MODEL_PRICING[key], f"builtin:{key}"
+
+    if model_key.startswith("qwen") and "flash" in model_key:
+        return (0.05, 0.20), "builtin_family:qwen_flash"
+    if model_key.startswith("qwen") and any(word in model_key for word in ("max", "pro")):
+        return (1.20, 3.60), "builtin_family:qwen_reasoning"
+    if model_key.startswith("qwen"):
+        return (0.40, 1.20), "builtin_family:qwen_balanced"
+    if model_key.startswith("deepseek") and any(word in model_key for word in ("pro", "reason")):
+        return (0.75, 2.40), "builtin_family:deepseek_reasoning"
+    if model_key.startswith("deepseek") and "flash" in model_key:
+        return (0.10, 0.30), "builtin_family:deepseek_flash"
+    if model_key.startswith("deepseek"):
+        return (0.30, 0.90), "builtin_family:deepseek_balanced"
+    if model_key.startswith("kimi"):
+        return (0.50, 1.50), "builtin_family:kimi"
+    if model_key.startswith("glm"):
+        return (0.30, 0.90), "builtin_family:glm"
+    if model_key.startswith("minimax"):
+        return (0.80, 2.40), "builtin_family:minimax"
+    if model_key.startswith("gpt-"):
+        return (0.50, 1.50), "builtin_family:gpt_unknown"
+    if provider_key in _PROVIDER_DEFAULT_PRICING:
+        return _PROVIDER_DEFAULT_PRICING[provider_key], f"provider_default:{provider_key}"
+    return (0.0, 0.0), "unpriced"
+
+
+def estimate_usage_cost(
+    provider: str,
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+) -> UsageCostEstimate:
+    provider_key = _normalize_price_key(provider)
+    model_key = _normalize_price_key(model)
+    overrides = _pricing_overrides()
+    override_keys = [f"{provider_key}:{model_key}", model_key, f"{provider_key}:*"]
+    pricing: Optional[Tuple[float, float]] = None
+    source = ""
+    for key in override_keys:
+        if key in overrides:
+            pricing = overrides[key]
+            source = f"env:{key}"
+            break
+    if pricing is None:
+        pricing, source = _builtin_pricing_for(provider, model)
+
+    input_price, output_price = pricing
+    cost_usd = (prompt_tokens * input_price + completion_tokens * output_price) / 1_000_000
+    try:
+        from app.config import settings
+
+        usd_to_cny = float(getattr(settings, "llm_cost_usd_to_cny", 7.2) or 0.0)
+    except Exception:
+        usd_to_cny = 7.2
+    return UsageCostEstimate(
+        cost_usd=cost_usd,
+        cost_cny=cost_usd * usd_to_cny,
+        input_usd_per_million=input_price,
+        output_usd_per_million=output_price,
+        estimated=source != "local_provider",
+        source=source,
+    )
+
+
 def _price_usd(model: str, prompt_tokens: int, completion_tokens: int) -> float:
-    pricing = _MODEL_PRICING.get(model) or _MODEL_PRICING.get(model.split(":")[0]) or (0.0, 0.0)
-    in_price, out_price = pricing
-    return (prompt_tokens * in_price + completion_tokens * out_price) / 1_000_000
+    return estimate_usage_cost("", model, prompt_tokens, completion_tokens).cost_usd
 
 
 def _compact_error_message(error: BaseException | str | None, *, max_len: int = 500) -> Optional[str]:
@@ -206,7 +386,7 @@ def record_usage(
     """写一条 LlmUsageLog (旁路, 失败只 log)."""
     prompt_tokens = _estimate_tokens(prompt_text, model)
     completion_tokens = _estimate_tokens(completion_text, model)
-    cost = _price_usd(model, prompt_tokens, completion_tokens)
+    cost = estimate_usage_cost(provider, model, prompt_tokens, completion_tokens)
     resolved_caller = caller or _caller_ctx.get() or "unknown"
     resolved_user_id = user_id if user_id is not None else _user_id_ctx.get()
     resolved_run_id = run_id if run_id is not None else _run_id_ctx.get()
@@ -219,7 +399,13 @@ def record_usage(
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
         "total_tokens": prompt_tokens + completion_tokens,
-        "cost_usd": round(cost, 8),
+        "cost_usd": round(cost.cost_usd, 8),
+        "cost_cny": round(cost.cost_cny, 6),
+        "cost_estimated": cost.estimated,
+        "cost_source": cost.source,
+        "pricing_unit": cost.pricing_unit,
+        "input_usd_per_million": cost.input_usd_per_million,
+        "output_usd_per_million": cost.output_usd_per_million,
         "latency_ms": latency_ms,
         "success": bool(success),
         "error_class": error_class,
@@ -251,7 +437,7 @@ def record_usage(
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 total_tokens=prompt_tokens + completion_tokens,
-                cost_usd=cost,
+                cost_usd=cost.cost_usd,
                 latency_ms=latency_ms,
                 success=1 if success else 0,
                 error_class=error_class,

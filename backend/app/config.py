@@ -14,6 +14,8 @@ class Settings(BaseSettings):
 
     # === LLM 成本告警 ===
     llm_daily_cost_alert_usd: float = 1.0  # 24h LLM 成本超过此值就 log warning
+    llm_cost_usd_to_cny: float = 7.2  # 端上/看板把按量美元估算换算成人民币展示
+    llm_model_pricing_json: Optional[str] = None  # 可覆盖模型价格: {"qwen3.7-plus":[0.4,1.2]} ($/1M input/output)
     tokenplan_plan_name: str = "TokenPlan 698/月"
     tokenplan_monthly_budget_cny: float = 698.0  # 阿里云百炼 TokenPlan 月套餐成本,用于 Admin 成本摊销
     tokenplan_monthly_token_quota: int = 0  # 0=未知;配置后 Admin 才能做额度阈值预警

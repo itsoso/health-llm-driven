@@ -35,6 +35,7 @@ interface UsageRollup {
   tokenplan_calls: number;
   tokenplan_tokens: number;
   cost_usd: number;
+  cost_cny_estimate: number;
   allocated_plan_cost_cny: number;
   effective_cny_per_1k_tokens: number | null;
   avg_latency_ms: number;
@@ -123,6 +124,9 @@ interface RecentCall extends Failure {
   completion_tokens: number;
   total_tokens: number;
   cost_usd: number;
+  cost_cny: number;
+  cost_estimated: boolean;
+  cost_source?: string | null;
   success: boolean;
 }
 

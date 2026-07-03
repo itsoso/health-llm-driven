@@ -287,8 +287,8 @@ public enum ChatTranscriptHTML {
         if let runID = cleanMetaValue(usage.runID ?? usage.items.compactMap(\.runID).first), !runID.isEmpty {
             summary += " · run \(String(runID.prefix(18)))"
         }
-        if let cost = usage.costUsd, cost > 0 {
-            summary += " · \(costLabel(cost))"
+        if let cost = costDisplayLabel(cny: usage.costCny, usd: usage.costUsd, estimated: usage.costEstimated) {
+            summary += " · \(cost)"
         }
 
         let rows = usage.items.enumerated().map { index, item -> String in
@@ -353,6 +353,27 @@ public enum ChatTranscriptHTML {
             return String(format: "$%.4f", value)
         }
         return String(format: "$%.2f", value)
+    }
+
+    private static func cnyCostLabel(_ value: Double) -> String {
+        if value < 0.01 {
+            let formatted = String(format: "¥%.4f", value)
+            return formatted
+                .replacingOccurrences(of: "0+$", with: "", options: .regularExpression)
+                .replacingOccurrences(of: "\\.$", with: "", options: .regularExpression)
+        }
+        return String(format: "¥%.2f", value)
+    }
+
+    private static func costDisplayLabel(cny: Double?, usd: Double?, estimated: Bool?) -> String? {
+        let prefix = estimated == false ? "" : "约"
+        if let cny, cny > 0 {
+            return prefix + cnyCostLabel(cny)
+        }
+        if let usd, usd > 0 {
+            return prefix + costLabel(usd)
+        }
+        return nil
     }
 
     private static func fallbackReasonLabel(_ reason: String) -> String {

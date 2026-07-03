@@ -9,6 +9,9 @@ export interface LlmRunCall {
   completion_tokens: number;
   total_tokens: number;
   cost_usd: number;
+  cost_cny?: number;
+  cost_estimated?: boolean;
+  cost_source?: string | null;
   latency_ms?: number | null;
   success: boolean;
   error_class?: string | null;
@@ -29,6 +32,8 @@ export interface RunDetail {
     completion_tokens: number;
     total_tokens: number;
     cost_usd: number;
+    cost_cny?: number;
+    cost_estimated?: boolean;
     latency_ms: number;
   };
   calls: LlmRunCall[];

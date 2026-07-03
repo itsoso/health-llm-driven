@@ -22,6 +22,7 @@ from app.api.deps import get_db
 from app.config import settings
 from app.models.llm_usage import LlmUsageLog
 from app.models.user import User
+from app.services.llm.usage_tracker import estimate_usage_cost
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/llm", tags=["admin"])
@@ -33,6 +34,10 @@ def _safe_int(value) -> int:
 
 def _safe_float(value, digits: int = 4) -> float:
     return round(float(value or 0.0), digits)
+
+
+def _cost_cny_from_usd(value: float) -> float:
+    return float(value or 0.0) * float(getattr(settings, "llm_cost_usd_to_cny", 7.2) or 0.0)
 
 
 def _success_rate(success_calls: int, calls: int) -> Optional[float]:
@@ -61,6 +66,77 @@ def _tokenplan_condition(tokenplan_models: list[str]):
     if tokenplan_models:
         clauses.append(LlmUsageLog.model.in_(tokenplan_models))
     return or_(*clauses)
+
+
+def _usage_cost_sql_expr():
+    """SQL-side fallback so Admin rollups can estimate older rows with cost_usd=0."""
+    model = func.lower(LlmUsageLog.model)
+    provider = func.lower(LlmUsageLog.provider)
+    input_rate = case(
+        (model == "gpt-4o-mini", 0.15),
+        (model == "gpt-4o", 2.50),
+        (model == "gpt-4-turbo", 10.00),
+        (model == "qwen3.7-plus", 0.40),
+        (model == "qwen3.7-max", 1.20),
+        (model == "qwen3.6-plus", 0.40),
+        (model == "qwen3.6-flash", 0.05),
+        (model == "qwen-vl-max", 1.50),
+        (model == "deepseek-v4-pro", 0.75),
+        (model == "deepseek-v4-flash", 0.10),
+        (model == "deepseek-v3.2", 0.30),
+        (model == "kimi-k2.7-code", 0.80),
+        (model.like("kimi%"), 0.50),
+        (model == "glm-5.1", 0.25),
+        (model.like("glm%"), 0.30),
+        (model == "minimax-m2.5", 0.80),
+        (model.like("qwen%flash%"), 0.05),
+        (model.like("qwen%max%"), 1.20),
+        (model.like("qwen%pro%"), 1.20),
+        (model.like("qwen%"), 0.40),
+        (model.like("deepseek%flash%"), 0.10),
+        (model.like("deepseek%pro%"), 0.75),
+        (model.like("deepseek%"), 0.30),
+        (model.like("gpt-%"), 0.50),
+        (provider == "langbridge-proxy", 2.00),
+        (provider == "openclaw", 0.20),
+        (provider.in_(("tokenplan", "openai", "openai-proxy")), 0.50),
+        else_=0.0,
+    )
+    output_rate = case(
+        (model == "gpt-4o-mini", 0.60),
+        (model == "gpt-4o", 10.00),
+        (model == "gpt-4-turbo", 30.00),
+        (model == "qwen3.7-plus", 1.20),
+        (model == "qwen3.7-max", 3.60),
+        (model == "qwen3.6-plus", 1.20),
+        (model == "qwen3.6-flash", 0.20),
+        (model == "qwen-vl-max", 4.50),
+        (model == "deepseek-v4-pro", 2.40),
+        (model == "deepseek-v4-flash", 0.30),
+        (model == "deepseek-v3.2", 0.90),
+        (model == "kimi-k2.7-code", 2.40),
+        (model.like("kimi%"), 1.50),
+        (model == "glm-5.1", 0.75),
+        (model.like("glm%"), 0.90),
+        (model == "minimax-m2.5", 2.40),
+        (model.like("qwen%flash%"), 0.20),
+        (model.like("qwen%max%"), 3.60),
+        (model.like("qwen%pro%"), 3.60),
+        (model.like("qwen%"), 1.20),
+        (model.like("deepseek%flash%"), 0.30),
+        (model.like("deepseek%pro%"), 2.40),
+        (model.like("deepseek%"), 0.90),
+        (model.like("gpt-%"), 1.50),
+        (provider == "langbridge-proxy", 6.00),
+        (provider == "openclaw", 0.80),
+        (provider.in_(("tokenplan", "openai", "openai-proxy")), 1.50),
+        else_=0.0,
+    )
+    estimated = (
+        func.coalesce(LlmUsageLog.prompt_tokens, 0) * input_rate
+        + func.coalesce(LlmUsageLog.completion_tokens, 0) * output_rate
+    ) / 1_000_000.0
+    return case((LlmUsageLog.cost_usd > 0, LlmUsageLog.cost_usd), else_=estimated)
 
 
 def _provider_family_expr(tokenplan_models: list[str]):
@@ -156,6 +232,7 @@ def _rollup_row(row, *, tokenplan_tokens_total: int, monthly_budget_cny: float) 
         if tokenplan_tokens > 0
         else None
     )
+    cost_usd = _safe_float(row.cost_usd, 6)
     return {
         "calls": calls,
         "success_calls": success_calls,
@@ -166,7 +243,8 @@ def _rollup_row(row, *, tokenplan_tokens_total: int, monthly_budget_cny: float) 
         "total_tokens": _safe_int(row.total_tokens),
         "tokenplan_calls": _safe_int(row.tokenplan_calls),
         "tokenplan_tokens": tokenplan_tokens,
-        "cost_usd": _safe_float(row.cost_usd, 6),
+        "cost_usd": cost_usd,
+        "cost_cny_estimate": round(_cost_cny_from_usd(cost_usd), 4),
         "allocated_plan_cost_cny": round(allocated, 2),
         "effective_cny_per_1k_tokens": round(effective, 4) if effective is not None else None,
         "avg_latency_ms": _safe_int(row.avg_latency_ms),
@@ -178,6 +256,7 @@ def _usage_aggregates(tokenplan_condition):
     success_expr = case((LlmUsageLog.success == 1, 1), else_=0)
     tokenplan_call_expr = case((tokenplan_condition, 1), else_=0)
     tokenplan_token_expr = case((tokenplan_condition, LlmUsageLog.total_tokens), else_=0)
+    cost_expr = _usage_cost_sql_expr()
     return [
         func.count(LlmUsageLog.id).label("calls"),
         func.coalesce(func.sum(success_expr), 0).label("success_calls"),
@@ -186,13 +265,29 @@ def _usage_aggregates(tokenplan_condition):
         func.coalesce(func.sum(LlmUsageLog.total_tokens), 0).label("total_tokens"),
         func.coalesce(func.sum(tokenplan_call_expr), 0).label("tokenplan_calls"),
         func.coalesce(func.sum(tokenplan_token_expr), 0).label("tokenplan_tokens"),
-        func.coalesce(func.sum(LlmUsageLog.cost_usd), 0.0).label("cost_usd"),
+        func.coalesce(func.sum(cost_expr), 0.0).label("cost_usd"),
         func.coalesce(func.avg(LlmUsageLog.latency_ms), 0).label("avg_latency_ms"),
         func.max(LlmUsageLog.created_at).label("last_seen_at"),
     ]
 
 
 def _usage_log_payload(row: LlmUsageLog, user: User | None = None) -> dict:
+    if float(row.cost_usd or 0.0) > 0:
+        cost_usd = float(row.cost_usd or 0.0)
+        cost_cny = _cost_cny_from_usd(cost_usd)
+        cost_estimated = True
+        cost_source = "logged_estimate"
+    else:
+        estimate = estimate_usage_cost(
+            row.provider,
+            row.model,
+            _safe_int(row.prompt_tokens),
+            _safe_int(row.completion_tokens),
+        )
+        cost_usd = estimate.cost_usd
+        cost_cny = estimate.cost_cny
+        cost_estimated = estimate.estimated
+        cost_source = estimate.source
     return {
         "id": row.id,
         "provider": row.provider,
@@ -206,7 +301,10 @@ def _usage_log_payload(row: LlmUsageLog, user: User | None = None) -> dict:
         "prompt_tokens": _safe_int(row.prompt_tokens),
         "completion_tokens": _safe_int(row.completion_tokens),
         "total_tokens": _safe_int(row.total_tokens),
-        "cost_usd": _safe_float(row.cost_usd, 8),
+        "cost_usd": round(cost_usd, 8),
+        "cost_cny": round(cost_cny, 6),
+        "cost_estimated": cost_estimated,
+        "cost_source": cost_source,
         "latency_ms": row.latency_ms,
         "success": bool(row.success),
         "error_class": row.error_class,
@@ -458,7 +556,7 @@ def performance_stats(
             LlmUsageLog.latency_ms,
             LlmUsageLog.success,
             LlmUsageLog.total_tokens,
-            LlmUsageLog.cost_usd,
+            _usage_cost_sql_expr().label("cost_usd"),
         )
         .filter(LlmUsageLog.created_at >= cutoff, LlmUsageLog.latency_ms.isnot(None))
         .all()
@@ -599,6 +697,8 @@ def run_detail(
             "completion_tokens": sum(call["completion_tokens"] for call in calls),
             "total_tokens": sum(call["total_tokens"] for call in calls),
             "cost_usd": round(sum(float(call["cost_usd"] or 0.0) for call in calls), 8),
+            "cost_cny": round(sum(float(call.get("cost_cny") or 0.0) for call in calls), 6),
+            "cost_estimated": any(bool(call.get("cost_estimated")) for call in calls),
             "latency_ms": sum(int(call["latency_ms"] or 0) for call in calls),
         },
         "calls": calls,

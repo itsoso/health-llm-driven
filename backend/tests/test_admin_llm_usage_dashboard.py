@@ -40,6 +40,7 @@ def _log(
     completion_tokens: int,
     success: int = 1,
     latency_ms: int = 1200,
+    cost_usd: float = 0.01,
     error_type: str | None = None,
     error_code: str | None = None,
     error_message: str | None = None,
@@ -53,7 +54,7 @@ def _log(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=prompt_tokens + completion_tokens,
-            cost_usd=0.01,
+            cost_usd=cost_usd,
             latency_ms=latency_ms,
             success=success,
             error_type=error_type,
@@ -183,6 +184,33 @@ def test_usage_dashboard_reports_tokenplan_quota_guard(client, db, monkeypatch):
     assert guard["level"] == "critical"
     assert guard["recommended_runtime_policy"] == "degrade"
     assert any("备用模型" in action for action in guard["suggested_actions"])
+
+
+def test_usage_dashboard_estimates_cost_for_legacy_zero_cost_rows(client, db):
+    admin = _make_user(db, admin=True, name="管理员")
+    user = _make_user(db, name="Alice")
+
+    _log(
+        db,
+        user_id=user.id,
+        provider="tokenplan",
+        model="qwen3.7-plus",
+        caller="agent.chat",
+        prompt_tokens=1_000_000,
+        completion_tokens=500_000,
+        cost_usd=0,
+    )
+
+    response = client.get(
+        "/api/v1/admin/llm/usage-dashboard?days=30",
+        headers=_headers(admin),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["overall"]["cost_usd"] == 1.0
+    assert payload["overall"]["cost_cny_estimate"] == 7.2
+    assert payload["by_user"][0]["cost_usd"] == 1.0
 
 
 def test_performance_stats_is_sqlite_safe_and_normalizes_tokenplan_provider(client, db):
