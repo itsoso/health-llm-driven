@@ -17,6 +17,7 @@ import {
   type FrequentSupplement,
   type FrequentWater,
 } from '../../services/records';
+import BackToChatBar from '../../components/common/BackToChatBar';
 import FrequentChipsRow from '../../components/records/FrequentChipsRow';
 import { filterMedicationRecordItems } from '../../services/medicationFilters';
 import { invalidateRecordMutation, queryKeys } from '../../applib/queryKeys';
@@ -231,6 +232,8 @@ export default function RecordScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.green500} />} showsVerticalScrollIndicator={false}>
+        {/* 返回阿衡 (agent-native shell: 无底部 Tab Bar, chat 是主屏) */}
+        <BackToChatBar style={styles.backToChat} />
         <Text style={txt.title}>健康记录</Text>
 
         {/* Quick navigation */}
@@ -742,6 +745,7 @@ function NutritionCircle({ label, value, unit, color }: { label: string; value: 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
   content: { padding: revaSpacing.s4, paddingBottom: 118 },
+  backToChat: { marginBottom: revaSpacing.s3 },
   promptStack: { marginBottom: revaSpacing.s3 },
 
   // Quick navigation

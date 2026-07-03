@@ -26,6 +26,7 @@ import { emitClientEvent } from '../../services/clientEvents';
 import { fetchMemoryOpener, type MemoryOpenerItem } from '../../services/memoryOpener';
 import { getLlmPreference, updateLlmPreference, type ModelOption } from '../../services/llmPreference';
 import { recordCardAdherence, recordCardDecision } from '../../services/actionCards';
+import { useTodayTimeline } from '../../hooks/useTodayTimeline';
 import {
   revaColors as C,
   revaRadii,
@@ -53,6 +54,25 @@ const SUGGESTIONS: SuggestionCard[] = [
 ];
 
 const CHAT_BOTTOM_BREATHING_SPACE = 4;
+
+// 记录托盘：5 个快捷入口，路由全部复用 record.tsx / settings.tsx 现有屏，不造新流程。
+//   拍照记餐 → /diet?capture=photo（record.tsx「拍一下」同路由）
+//   饮水 / 更多 → /(tabs)/record（饮水记录在记录屏内联区，无独立路由）
+//   体重 → /body-measurements（record.tsx「体重腰围」同路由）
+//   用药 → /medications（用药管理屏）
+const RECORD_TRAY: {
+  key: string;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  route: string;
+  a11y: string;
+}[] = [
+  { key: 'diet', label: '拍照记餐', icon: 'camera-outline', route: '/diet?capture=photo', a11y: '拍照记录餐食' },
+  { key: 'water', label: '饮水', icon: 'water-outline', route: '/(tabs)/record', a11y: '记录饮水' },
+  { key: 'weight', label: '体重', icon: 'body-outline', route: '/body-measurements', a11y: '记录体重' },
+  { key: 'medication', label: '用药', icon: 'medical-outline', route: '/medications', a11y: '记录用药' },
+  { key: 'more', label: '更多', icon: 'ellipsis-horizontal', route: '/(tabs)/record', a11y: '更多记录方式' },
+];
 
 // 对话历史无限下拉每页条数 (后端 limit 上限 100)
 const HISTORY_PAGE_SIZE = 20;
@@ -108,6 +128,8 @@ export default function ChatScreen() {
   } = chat;
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
+  // 今日简报条：真实数字来自 /timeline/today（待办 / 已完成计数），不伪造指标。
+  const todayTimeline = useTodayTimeline();
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
@@ -517,10 +539,22 @@ export default function ChatScreen() {
     : '系统默认';
   const headerLlmLabel = compactLlmHeaderLabel(activeLlmLabel);
 
+  // 今日简报条摘要：只用后端已给的真实计数（待办 / 已完成），拿不到就用中性占位文案，绝不编造指标。
+  const briefingSummary = buildBriefingSummary(todayTimeline.data);
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.headerWrap}>
         <View testID="chat-header-surface" style={styles.headerSurface}>
+          <TouchableOpacity
+            onPress={() => router.navigate('/(tabs)/me')}
+            hitSlop={8}
+            style={styles.avatarButton}
+            accessibilityLabel="我，打开个人中心与设置"
+            accessibilityRole="button"
+          >
+            <Text maxFontSizeMultiplier={1.15} style={txt.avatarText}>阿</Text>
+          </TouchableOpacity>
           <LlmModelPicker
             variant="header"
             currentLabel={headerLlmLabel}
@@ -568,6 +602,27 @@ export default function ChatScreen() {
           </View>
         </View>
       </View>
+
+      {/* 今日简报条：点进「今日」屏（'/(tabs)/today'；组根 index 已改为 Redirect→chat）。数字来自 /timeline/today 真实计数。 */}
+      <TouchableOpacity
+        style={styles.briefingStrip}
+        onPress={() => router.navigate('/(tabs)/today')}
+        activeOpacity={0.75}
+        accessibilityRole="button"
+        accessibilityLabel={`今日简报：${briefingSummary}`}
+        accessibilityHint="打开今日屏，查看告警、待办和身体信号"
+      >
+        <View style={styles.briefingIconWrap}>
+          <Ionicons name="today-outline" size={15} color={C.green500} />
+        </View>
+        <View style={styles.briefingTextWrap}>
+          <Text maxFontSizeMultiplier={1.2} style={txt.briefingLabel}>今日简报</Text>
+          <Text maxFontSizeMultiplier={1.2} style={txt.briefingSummary} numberOfLines={1}>
+            {briefingSummary}
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={C.ink3} />
+      </TouchableOpacity>
 
       <View style={{ flex: 1 }}>
         <FlatList
@@ -686,6 +741,27 @@ export default function ChatScreen() {
             </TouchableOpacity>
           </View>
         )}
+        {!selectionMode && !keyboardVisible && (
+          <View style={styles.recordTray} accessibilityRole="toolbar">
+            {RECORD_TRAY.map((entry) => (
+              <TouchableOpacity
+                key={entry.key}
+                style={styles.recordTrayItem}
+                onPress={() => router.navigate(entry.route as any)}
+                activeOpacity={0.72}
+                accessibilityRole="button"
+                accessibilityLabel={entry.a11y}
+              >
+                <View style={styles.recordTrayIcon}>
+                  <Ionicons name={entry.icon} size={17} color={C.green600} />
+                </View>
+                <Text maxFontSizeMultiplier={1.15} style={txt.recordTrayLabel} numberOfLines={1}>
+                  {entry.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
         <ChatInputBar
           onSend={handleSend}
           isStreaming={isStreaming}
@@ -770,6 +846,20 @@ function compactLlmHeaderLabel(label: string): string {
     .trim();
 }
 
+// 今日简报条副标题：只消费后端 timeline 的真实计数。都没有 → 中性占位（不编造指标）。
+function buildBriefingSummary(
+  timeline: ReturnType<typeof useTodayTimeline>['data'] | undefined,
+): string {
+  if (!timeline) return '查看今日待办与身体信号';
+  const actionable = Math.max(0, Math.round(timeline.counts?.actionable ?? 0));
+  const completed = Math.max(0, Math.round(timeline.past?.completed_count ?? 0));
+  const parts: string[] = [];
+  if (actionable > 0) parts.push(`${actionable} 项待办`);
+  if (completed > 0) parts.push(`${completed} 项已完成`);
+  if (parts.length === 0) return '今天暂无待办 · 查看身体信号';
+  return parts.join(' · ');
+}
+
 function ToolMenuRow({
   icon,
   label,
@@ -823,6 +913,43 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+  },
+  avatarButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green50, // = brandLight（Reva 浅绿 tint）
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: revaSemantic.normal.line,
+  },
+  briefingStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: revaSpacing.s2,
+    marginHorizontal: revaSpacing.s3,
+    marginTop: 2,
+    marginBottom: 4,
+    paddingHorizontal: revaSpacing.s3,
+    paddingVertical: 8,
+    borderRadius: revaRadii.lg,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    ...revaShadows.sm,
+  },
+  briefingIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green50,
+  },
+  briefingTextWrap: {
+    flex: 1,
+    minWidth: 0,
   },
   headerAction: {
     width: 28,
@@ -1019,9 +1146,41 @@ const styles = StyleSheet.create({
   shareButtonDisabled: {
     opacity: 0.45,
   },
+  recordTray: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 4,
+    marginHorizontal: revaSpacing.s4,
+    marginBottom: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+    borderRadius: revaRadii.lg,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    ...revaShadows.sm,
+  },
+  recordTrayItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 2,
+  },
+  recordTrayIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green50,
+  },
 });
 
 const txt = {
+  avatarText: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '800', color: C.green600 } as TextStyle,
+  briefingLabel: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '700', color: C.ink3 } as TextStyle,
+  briefingSummary: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '700', color: C.ink1, marginTop: 1 } as TextStyle,
+  recordTrayLabel: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '700', color: C.ink2 } as TextStyle,
   headerTitle: { fontFamily: revaFonts.sans, fontSize: 20, fontWeight: '800', color: C.ink1 } as TextStyle,
   headerMeta: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2, fontWeight: '600' } as TextStyle,
   streamingBadge: { fontFamily: revaFonts.sans, fontSize: 11, color: C.green500, fontWeight: '700' } as TextStyle,

@@ -11,9 +11,14 @@ const mockGetConversationsPage = jest.fn();
 const mockDeleteConversation = jest.fn();
 
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), setParams: jest.fn() },
+  router: { push: jest.fn(), navigate: jest.fn(), setParams: jest.fn() },
   useLocalSearchParams: () => ({}),
   useFocusEffect: (cb: () => void | (() => void)) => cb(),
+}));
+
+// 今日简报条走 React Query 的 useTodayTimeline;测试无 QueryClientProvider,mock 掉。
+jest.mock('../../../hooks/useTodayTimeline', () => ({
+  useTodayTimeline: () => ({ data: undefined }),
 }));
 
 jest.mock('@react-navigation/bottom-tabs', () => ({

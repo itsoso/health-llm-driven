@@ -127,11 +127,20 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         {canGoBack ? (
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="返回">
             <Ionicons name="chevron-back" size={24} color={C.ink1} />
           </TouchableOpacity>
         ) : (
-          <View style={styles.backBtn} />
+          // Agent-native shell: 「我」tab 无底部 Tab Bar, 左上给回主屏(阿衡)出口。
+          <TouchableOpacity
+            onPress={() => router.navigate('/(tabs)/chat')}
+            style={styles.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel="返回阿衡"
+            accessibilityHint="回到与阿衡的对话主屏"
+          >
+            <Ionicons name="chevron-back" size={24} color={C.green500} />
+          </TouchableOpacity>
         )}
         <Text style={txt.title}>{canGoBack ? '设置' : '我'}</Text>
         <View style={{ width: 40 }} />
