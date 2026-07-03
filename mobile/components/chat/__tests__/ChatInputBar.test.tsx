@@ -235,6 +235,50 @@ describe('ChatInputBar', () => {
     expect(onSend).toHaveBeenCalledWith('记录晚餐吃了鸡胸肉', null, undefined);
   });
 
+  it('updates the composer when a follow-up prompt is injected after mount', () => {
+    const { getByLabelText, rerender } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    rerender(
+      <ChatInputBar
+        onSend={jest.fn()}
+        isStreaming={false}
+        initialText="请基于上一条建议继续追问"
+      />,
+    );
+
+    expect(getByLabelText('消息输入框').props.value).toBe('请基于上一条建议继续追问');
+  });
+
+  it('updates the composer when the same follow-up prompt is injected again', () => {
+    const onSend = jest.fn();
+    const prompt = '请基于上一条建议继续追问';
+    const { getByLabelText, rerender } = render(
+      <ChatInputBar
+        onSend={onSend}
+        isStreaming={false}
+        initialText={prompt}
+        initialTextKey={1}
+      />,
+    );
+
+    fireEvent(getByLabelText('消息输入框'), 'keyPress', { nativeEvent: { key: 'Enter' } });
+    expect(onSend).toHaveBeenCalledWith(prompt, null, undefined);
+    expect(getByLabelText('消息输入框').props.value).toBe('');
+
+    rerender(
+      <ChatInputBar
+        onSend={onSend}
+        isStreaming={false}
+        initialText={prompt}
+        initialTextKey={2}
+      />,
+    );
+
+    expect(getByLabelText('消息输入框').props.value).toBe(prompt);
+  });
+
   it('runs the medical exam import skill from the attachment menu', async () => {
     const DocumentPicker = require('expo-document-picker');
     DocumentPicker.getDocumentAsync.mockResolvedValueOnce({

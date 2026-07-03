@@ -79,14 +79,16 @@ function PulsingRing() {
 interface Props {
   onSend: (text: string, images?: PendingImage[] | null, options?: ChatInputSendOptions) => void;
   isStreaming: boolean;
-  /** Populated once on first mount; subsequent changes are ignored. */
+  /** Prefills the composer when callers deep-link into chat with a prompt. */
   initialText?: string;
+  /** Bumps when callers need to inject the same prompt text again. */
+  initialTextKey?: string | number;
   /** Reserved for callers that keep composer API aligned with chat-level voice entry. */
   conversationId?: number;
   onMedicalExamImportResult?: (result: ChatMedicalExamImportSkillResult) => void;
 }
 
-export default function ChatInputBar({ onSend, isStreaming, initialText, onMedicalExamImportResult }: Props) {
+export default function ChatInputBar({ onSend, isStreaming, initialText, initialTextKey, onMedicalExamImportResult }: Props) {
   const [input, setInput] = useState(initialText ?? '');
   const [showMenu, setShowMenu] = useState(false);
   const [showMedicalImportMenu, setShowMedicalImportMenu] = useState(false);
@@ -99,6 +101,11 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, onMedic
   const textInputRef = useRef<TextInput>(null);
   const lastKeyboardSubmitAtRef = useRef(0);
   const canSend = (!!input.trim() || pendingImages.length > 0) && !isStreaming;
+
+  React.useEffect(() => {
+    if (initialText == null) return;
+    setInput(prev => (prev === initialText ? prev : initialText));
+  }, [initialText, initialTextKey]);
 
   const handleSend = useCallback((text?: string) => {
     const msg = (text || input).trim();

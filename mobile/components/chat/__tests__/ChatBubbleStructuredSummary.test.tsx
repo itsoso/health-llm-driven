@@ -19,6 +19,7 @@ jest.mock('../../../services/speakWithUserVoice', () => ({
 }));
 jest.mock('../../../services/chatResultActions', () => ({
   saveAssistantReplyAsMemory: jest.fn(),
+  createRecordFromAssistantReply: jest.fn(),
 }));
 jest.mock('../../../services/chatCardActions', () => ({
   dispatchChatCardAction: jest.fn(),
@@ -79,11 +80,12 @@ jest.mock('../../actions/InterventionDraftSheet', () => {
 });
 
 const ChatBubble = require('../ChatBubble').default;
-const { saveAssistantReplyAsMemory } = require('../../../services/chatResultActions');
+const { saveAssistantReplyAsMemory, createRecordFromAssistantReply } = require('../../../services/chatResultActions');
 const { dispatchChatCardAction } = require('../../../services/chatCardActions');
 const { renderCard, __mockCard } = require('../cards');
 const { sharePlainText } = require('../../../utils/share');
 const { router } = require('expo-router');
+const { createInterventionDraft } = require('../../../services/actionCards');
 
 function renderBubble(content: string) {
   const qc = new QueryClient();
@@ -158,6 +160,38 @@ describe('ChatBubble structured summary', () => {
     await waitFor(() => {
       expect(saveAssistantReplyAsMemory).toHaveBeenCalledWith('建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。');
     });
+  });
+
+  it('adds an assistant reply to today plan directly from the result action', async () => {
+    createInterventionDraft.mockResolvedValueOnce({ id: 77 });
+
+    const { getByText } = renderBubble('今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。');
+
+    fireEvent.press(getByText('加入今日计划'));
+
+    await waitFor(() => {
+      expect(createInterventionDraft).toHaveBeenCalled();
+    });
+    expect(mockToastShow).toHaveBeenCalledWith('已加入今日计划', 'success');
+  });
+
+  it('creates a record from a diet-like assistant reply instead of only opening the record tab', async () => {
+    createRecordFromAssistantReply.mockResolvedValueOnce({
+      status: 'created',
+      type: 'diet',
+      message: '已记录午餐：煎牛肉能量碗 + 姜黄鲜柠维C茶',
+    });
+    const content = '✅ 已记录午餐 — 煎牛肉能量碗 + 姜黄鲜柠维C茶，770 kcal（蛋白 30g / 碳水 70g / 脂肪 17g）';
+
+    const { getByText } = renderBubble(content);
+
+    fireEvent.press(getByText('生成记录'));
+
+    await waitFor(() => {
+      expect(createRecordFromAssistantReply).toHaveBeenCalledWith(content);
+    });
+    expect(router.push).not.toHaveBeenCalledWith('/(tabs)/record');
+    expect(mockToastShow).toHaveBeenCalledWith('已记录午餐：煎牛肉能量碗 + 姜黄鲜柠维C茶', 'success');
   });
 
   it('shares assistant replies under the 阿衡 persona', async () => {

@@ -20,7 +20,7 @@ import type { ColorPalette } from '../../hooks/useTheme';
 import type { UIMessage } from '../../hooks/useChatEngine';
 import { invalidateQueryKeys, queryKeys } from '../../applib/queryKeys';
 import { createInterventionDraft } from '../../services/actionCards';
-import { saveAssistantReplyAsMemory } from '../../services/chatResultActions';
+import { createRecordFromAssistantReply, saveAssistantReplyAsMemory } from '../../services/chatResultActions';
 import { buildInterventionDraft, type InterventionDraft } from '../../services/interventionDraft';
 import { speakWithUserVoice, type SpeakHandle } from '../../services/speakWithUserVoice';
 import { dispatchChatCardAction, type ChatCardActionResult } from '../../services/chatCardActions';
@@ -80,6 +80,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
   const [savingDraft, setSavingDraft] = useState(false);
   const [showActions, setShowActions] = useState(false);  // 长按显示操作
   const [speaking, setSpeaking] = useState(false);
+  const [resultActionBusy, setResultActionBusy] = useState<'plan' | 'memory' | 'record' | 'followup' | null>(null);
   const [cardActionStateByKey, setCardActionStateByKey] = useState<Record<string, ChatCardActionRuntimeState>>({});
   const speechTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechActiveRef = useRef(false);
@@ -298,7 +299,37 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
     }));
   };
 
+  const handleAddToTodayPlan = async () => {
+    if (!assistantTextForActions || resultActionBusy) return;
+    setResultActionBusy('plan');
+    try {
+      const nextDraft = buildInterventionDraft({
+        title: inferActionTitle(assistantTextForActions),
+        advice: assistantTextForActions,
+        sourceType: 'chat',
+        sourceId: item.id,
+      });
+      await createInterventionDraft(nextDraft);
+      await invalidateQueryKeys(qc, [
+        queryKeys.actionCards,
+        queryKeys.todayCoachRoot,
+        queryKeys.agentAgendaRoot,
+        ['agenda', 'today'],
+        ['daily-artifact', 'me'],
+        ['today-dynamic-view', 'mobile.today'],
+      ]);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      toast.show('已加入今日计划', 'success');
+    } catch {
+      toast.show('加入今日计划失败，请稍后重试', 'error');
+    } finally {
+      setResultActionBusy(null);
+    }
+  };
+
   const handleSaveMemory = async () => {
+    if (!assistantTextForActions || resultActionBusy) return;
+    setResultActionBusy('memory');
     try {
       await saveAssistantReplyAsMemory(assistantTextForActions);
       await invalidateQueryKeys(qc, [['memory-facts'], ['memory-stats']]);
@@ -306,20 +337,50 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
       toast.show('已保存到记忆', 'success');
     } catch {
       toast.show('保存记忆失败，请稍后重试', 'error');
+    } finally {
+      setResultActionBusy(null);
     }
   };
 
-  const handleCreateRecord = () => {
-    router.push('/(tabs)/record' as any);
+  const handleCreateRecord = async () => {
+    if (!assistantTextForActions || resultActionBusy) return;
+    setResultActionBusy('record');
+    try {
+      const result = await createRecordFromAssistantReply(assistantTextForActions);
+      await invalidateQueryKeys(qc, [
+        queryKeys.dashboard,
+        ['timeline', 'today'],
+        ['diet'],
+        ['today-dynamic-view', 'mobile.today'],
+      ]);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      if (result.status === 'created') {
+        toast.show(result.message || '已生成记录', 'success');
+      } else {
+        toast.show(result.message, 'info');
+        router.push(result.route as any);
+      }
+    } catch {
+      toast.show('生成记录失败，请稍后重试', 'error');
+    } finally {
+      setResultActionBusy(null);
+    }
   };
 
   const handleContinueFollowUp = () => {
+    if (resultActionBusy) return;
+    setResultActionBusy('followup');
+    const title = inferActionTitle(assistantTextForActions);
     router.push({
       pathname: '/(tabs)/chat',
       params: {
-        prompt: '请基于上一条建议，继续细化成今天能执行的步骤。',
+        prompt: `请基于「${title}」继续追问，先问我一个最关键的确认问题，再细化成今天能执行的一步。`,
+        promptNonce: String(Date.now()),
       },
     } as any);
+    Haptics.selectionAsync().catch(() => {});
+    toast.show('已放到输入框', 'info');
+    setTimeout(() => setResultActionBusy(null), 250);
   };
 
   const submitDraft = async (nextDraft: InterventionDraft) => {
@@ -499,25 +560,33 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
                   icon="add-circle-outline"
                   label="加入今日计划"
                   color={C.green500}
-                  onPress={openDraft}
+                  onPress={handleAddToTodayPlan}
+                  loading={resultActionBusy === 'plan'}
+                  disabled={!!resultActionBusy}
                 />
                 <ResultActionButton
                   icon="bookmark-outline"
                   label="保存记忆"
                   color={ACTION_PURPLE}
                   onPress={handleSaveMemory}
+                  loading={resultActionBusy === 'memory'}
+                  disabled={!!resultActionBusy}
                 />
                 <ResultActionButton
                   icon="create-outline"
                   label="生成记录"
                   color={ACTION_TEAL}
                   onPress={handleCreateRecord}
+                  loading={resultActionBusy === 'record'}
+                  disabled={!!resultActionBusy}
                 />
                 <ResultActionButton
                   icon="chatbubble-ellipses-outline"
                   label="继续追问"
                   color={C.blue500}
                   onPress={handleContinueFollowUp}
+                  loading={resultActionBusy === 'followup'}
+                  disabled={!!resultActionBusy}
                 />
               </View>
             ) : null}
@@ -598,20 +667,34 @@ function ResultActionButton({
   label,
   color,
   onPress,
+  loading,
+  disabled,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   color: string;
   onPress: () => void;
+  loading?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [resultActionStyles.button, pressed && resultActionStyles.pressed]}
+      disabled={disabled}
+      style={({ pressed }) => [
+        resultActionStyles.button,
+        pressed && !disabled && resultActionStyles.pressed,
+        disabled && resultActionStyles.disabled,
+      ]}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled, busy: !!loading }}
     >
-      <Ionicons name={icon} size={13} color={color} />
+      {loading ? (
+        <ActivityIndicator size="small" color={color} />
+      ) : (
+        <Ionicons name={icon} size={13} color={color} />
+      )}
       <Text style={[resultActionStyles.label, { color }]} numberOfLines={1}>
         {label}
       </Text>
@@ -905,6 +988,7 @@ const resultActionStyles = StyleSheet.create({
     paddingHorizontal: 9,
   },
   pressed: { opacity: 0.78 },
+  disabled: { opacity: 0.58 },
   label: {
     fontFamily: revaFonts.sans,
     fontSize: 11,

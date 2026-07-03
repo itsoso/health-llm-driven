@@ -130,9 +130,10 @@ export default function ChatScreen() {
   // Context from alert / push / Siri deep-link. Read ONCE on first mount, then cleared.
   // autoSend=1 (from Siri HealthAnalysisOpenIntent) → directly send instead of prefilling.
   // context (JSON string) → 注入到 LLM system prompt 作为深化基础, 不展示在 user 消息里
-  const params = useLocalSearchParams<{ prompt?: string; badge?: string; autoSend?: string; context?: string; newChat?: string }>();
+  const params = useLocalSearchParams<{ prompt?: string; badge?: string; autoSend?: string; context?: string; newChat?: string; promptNonce?: string }>();
   const [contextBadge, setContextBadge] = useState<string | null>(null);
   const [initialInput, setInitialInput] = useState<string | undefined>(undefined);
+  const [initialInputKey, setInitialInputKey] = useState(0);
   const lastContextKey = useRef<string | null>(null);
 
   // P1: opener — chat tab mount 时拉一次, 用户发了第一条 message 后自动隐藏.
@@ -227,6 +228,7 @@ export default function ChatScreen() {
         autoSend: params.autoSend ?? '',
         context: params.context ?? '',
         newChat: params.newChat ?? '',
+        promptNonce: params.promptNonce ?? '',
       });
       if (lastContextKey.current === contextKey) return;
       lastContextKey.current = contextKey;
@@ -243,13 +245,14 @@ export default function ChatScreen() {
           sendMessage(params.prompt, null, { extraContext: params.context, forceNewConversation });
         } else {
           setInitialInput(params.prompt);
+          setInitialInputKey(key => key + 1);
         }
       }
-      try { router.setParams({ prompt: undefined, badge: undefined, autoSend: undefined, context: undefined, newChat: undefined } as any); } catch {}
+      try { router.setParams({ prompt: undefined, badge: undefined, autoSend: undefined, context: undefined, newChat: undefined, promptNonce: undefined } as any); } catch {}
     } else {
       lastContextKey.current = null;
     }
-  }, [newChat, params.prompt, params.badge, params.autoSend, params.context, params.newChat, sendMessage]);
+  }, [newChat, params.prompt, params.badge, params.autoSend, params.context, params.newChat, params.promptNonce, sendMessage]);
 
   useEffect(() => { loadLatestConversation(); }, [loadLatestConversation]);
 
@@ -687,6 +690,7 @@ export default function ChatScreen() {
           onSend={handleSend}
           isStreaming={isStreaming}
           initialText={initialInput}
+          initialTextKey={initialInputKey}
           conversationId={conversationId}
           onMedicalExamImportResult={handleMedicalExamImportResult}
         />
