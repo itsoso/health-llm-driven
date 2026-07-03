@@ -100,6 +100,49 @@ describe('renderCard 安全降级', () => {
     expect(getByText('已设置每日提醒：臀中肌训练')).toBeTruthy();
   });
 
+  it('renders diet record cards with meal visuals (calorie hero + food chips)', () => {
+    const r = renderCard({
+      type: 'record',
+      data: {
+        type: 'diet',
+        detail: '已记录',
+        meal_type: 'lunch',
+        food: '鸡胸肉 + 糙米饭 + 西兰花',
+        calories: 520.4,
+        protein: 42,
+        carbs: 55,
+        fat: 14,
+      },
+    });
+    expect(r).not.toBeNull();
+
+    const { getByText } = render(r!);
+    // 餐次标题 + 类目 badge.
+    expect(getByText('午餐已记录')).toBeTruthy();
+    expect(getByText('饮食')).toBeTruthy();
+    // 热量 hero 走 Math.round (520.4 → 520);hero 是嵌套 Text (数字 + " kcal"),
+    // 用 substring 匹配整段文本, 并确认取整后的数字进了 hero.
+    expect(getByText('kcal', { exact: false })).toBeTruthy();
+    expect(getByText(/520/)).toBeTruthy();
+    // 食材拆成独立 chip.
+    expect(getByText('鸡胸肉')).toBeTruthy();
+    expect(getByText('糙米饭')).toBeTruthy();
+    expect(getByText('西兰花')).toBeTruthy();
+  });
+
+  it('falls back to the simple record row for a bare diet record (no food/macros)', () => {
+    const r = renderCard({
+      type: 'record',
+      data: { type: 'diet', detail: '已记录早餐' },
+    });
+    expect(r).not.toBeNull();
+
+    const { getByText, queryByText } = render(r!);
+    // 无 food/macros → 走简单行, 显示 detail, 不出现餐食可视化标题.
+    expect(getByText('已记录早餐')).toBeTruthy();
+    expect(queryByText('饮食')).toBeNull();
+  });
+
   it('renders record quality cards with personal cautions and inline next-meal actions', () => {
     const onAction = jest.fn();
     const descriptor = {

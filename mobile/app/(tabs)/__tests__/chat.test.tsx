@@ -133,6 +133,10 @@ jest.mock('../../../components/chat/OpenerCard', () => {
   return MockOpenerCard;
 });
 jest.mock('../../../components/chat/ChatInputBar', () => 'ChatInputBar');
+// BriefingStrip / RecordTray 走 React Query + useToast (record 一键饮水), 本 suite 无 provider;
+// 它们的内部行为各自有专属测试, 这里 mock 掉避免 provider 依赖。ChatHeader 保留真实 (断言其 DOM)。
+jest.mock('../../../components/chat/BriefingStrip', () => 'BriefingStrip');
+jest.mock('../../../components/chat/RecordTray', () => 'RecordTray');
 
 import ChatScreen from '../chat';
 

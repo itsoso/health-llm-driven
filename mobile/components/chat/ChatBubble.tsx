@@ -1133,6 +1133,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     paddingVertical: 10,
   },
+  // 完成态 slim pill: 一条 hairline 行, 展开时在下方补步骤列表.
+  thinkingPill: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    marginBottom: 10,
+    borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    backgroundColor: C.paper2,
+  },
+  thinkingPillHeader: {
+    minHeight: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+  },
+  thinkingPillList: {
+    gap: 6,
+    paddingHorizontal: 11,
+    paddingBottom: 9,
+    paddingTop: 2,
+  },
   thinkingHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1287,6 +1311,7 @@ const txt = {
   bubbleUser: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 22, color: '#fff' } as TextStyle,
   // 与 markdownStyles body (fontSize 15 / lineHeight 23) 对齐, 流式→终态切 markdown 时无跳动
   streaming: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 23, color: C.ink1 } as TextStyle,
+  thinkingPillLabel: { flexShrink: 1, fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 16, fontWeight: '800', color: C.ink2 } as TextStyle,
   thinkingTitle: { fontFamily: revaFonts.sans, fontSize: 12.5, lineHeight: 17, fontWeight: '900', color: C.ink1 } as TextStyle,
   thinkingSubtitle: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, color: C.ink3 } as TextStyle,
   thinkingProgressText: { fontFamily: revaFonts.mono, fontSize: 10.5, lineHeight: 13, fontWeight: '800', color: C.green700 } as TextStyle,
@@ -1304,20 +1329,60 @@ const txt = {
 };
 
 function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?: boolean }) {
+  // 完成态默认折叠成一条 slim pill;流式态保持实时进度展开 (用户要看到它在干活).
+  const [expanded, setExpanded] = React.useState(false);
   if (steps.length === 0) return null;
-  const title = streaming ? '阿衡正在思考' : '思考完成';
+
   const latestStep = steps[steps.length - 1];
+
+  // 完成态: slim pill 行 (勾 + 「思考完成 · N 步」+ 折叠箭头), 点击展开/收起步骤列表.
+  if (!streaming) {
+    const summary = `思考完成 · ${steps.length} 步`;
+    return (
+      <View testID="assistant-thinking-panel" style={styles.thinkingPill}>
+        <Pressable
+          onPress={() => setExpanded((prev) => !prev)}
+          style={({ pressed }) => [styles.thinkingPillHeader, pressed && styles.actionBtnPressed]}
+          accessibilityRole="button"
+          accessibilityLabel={expanded ? '收起思考步骤' : '展开思考步骤'}
+          accessibilityState={{ expanded }}
+        >
+          <Ionicons name="checkmark-circle" size={15} color={C.green500} />
+          <Text style={txt.thinkingPillLabel} numberOfLines={1}>{summary}</Text>
+          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={C.ink3} />
+        </Pressable>
+        {expanded ? (
+          <View style={styles.thinkingPillList}>
+            {steps.map((step, index) => (
+              <View
+                key={`${step}-${index}`}
+                style={styles.thinkingStepRow}
+                accessibilityLabel={`已完成步骤:${step}`}
+              >
+                <View style={styles.thinkingStepIndex}>
+                  <Text style={txt.thinkingStepIndex}>{index + 1}</Text>
+                </View>
+                <Text style={txt.thinkingStep} numberOfLines={2}>{step}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
+  // 流式态: 实时进度面板 (header + 进度条 + 步骤列表), 保持不变.
   const progressText = `${steps.length}/${steps.length}`;
   return (
     <View
       testID="assistant-thinking-panel"
       style={styles.thinkingPanel}
-      accessibilityLabel={`${title},当前步骤:${latestStep}`}
+      accessibilityLabel={`阿衡正在思考,当前步骤:${latestStep}`}
     >
       <View style={styles.thinkingHeader}>
-        <Ionicons name={streaming ? 'pulse-outline' : 'checkmark-circle-outline'} size={16} color={C.green500} />
+        <Ionicons name="pulse-outline" size={16} color={C.green500} />
         <View style={styles.thinkingHeaderCopy}>
-          <Text style={txt.thinkingTitle}>{title}</Text>
+          <Text style={txt.thinkingTitle}>阿衡正在思考</Text>
           <Text style={[txt.thinkingSubtitle, styles.thinkingSubtitle]} numberOfLines={1}>
             整理健康数据和下一步建议
           </Text>
@@ -1327,11 +1392,11 @@ function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?:
         </View>
       </View>
       <View style={styles.thinkingProgressTrack}>
-        <View style={[styles.thinkingProgressFill, { width: streaming ? '78%' : '100%' }]} />
+        <View style={[styles.thinkingProgressFill, { width: '78%' }]} />
       </View>
       <View style={styles.thinkingList}>
         {steps.map((step, index) => {
-          const active = streaming && index === steps.length - 1;
+          const active = index === steps.length - 1;
           return (
             <View
               key={`${step}-${index}`}

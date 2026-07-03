@@ -1,0 +1,89 @@
+import React from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, TextStyle } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import type { useTodayTimeline } from '../../hooks/useTodayTimeline';
+import {
+  revaColors as C,
+  revaRadii,
+  revaSpacing,
+  revaShadows,
+  revaFonts,
+} from '../../constants/revaTheme';
+
+type TimelineData = ReturnType<typeof useTodayTimeline>['data'];
+
+// 今日简报条副标题：只消费后端 timeline 的真实计数。都没有 → 中性占位（不编造指标）。
+export function buildBriefingSummary(timeline: TimelineData | undefined): string {
+  if (!timeline) return '查看今日待办与身体信号';
+  const actionable = Math.max(0, Math.round(timeline.counts?.actionable ?? 0));
+  const completed = Math.max(0, Math.round(timeline.past?.completed_count ?? 0));
+  const parts: string[] = [];
+  if (actionable > 0) parts.push(`${actionable} 项待办`);
+  if (completed > 0) parts.push(`${completed} 项已完成`);
+  if (parts.length === 0) return '今天暂无待办 · 查看身体信号';
+  return parts.join(' · ');
+}
+
+/**
+ * 今日简报条：点进「今日」屏 ('/(tabs)/today')。数字来自 /timeline/today 真实计数。
+ */
+export default function BriefingStrip({ timeline }: { timeline: TimelineData | undefined }) {
+  const briefingSummary = buildBriefingSummary(timeline);
+  return (
+    <TouchableOpacity
+      style={styles.briefingStrip}
+      onPress={() => router.navigate('/(tabs)/today')}
+      activeOpacity={0.75}
+      accessibilityRole="button"
+      accessibilityLabel={`今日简报：${briefingSummary}`}
+      accessibilityHint="打开今日屏，查看告警、待办和身体信号"
+    >
+      <View style={styles.briefingIconWrap}>
+        <Ionicons name="today-outline" size={15} color={C.green500} />
+      </View>
+      <View style={styles.briefingTextWrap}>
+        <Text maxFontSizeMultiplier={1.2} style={txt.briefingLabel}>今日简报</Text>
+        <Text maxFontSizeMultiplier={1.2} style={txt.briefingSummary} numberOfLines={1}>
+          {briefingSummary}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={16} color={C.ink3} />
+    </TouchableOpacity>
+  );
+}
+
+const styles = StyleSheet.create({
+  briefingStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: revaSpacing.s2,
+    marginHorizontal: revaSpacing.s3,
+    marginTop: 2,
+    marginBottom: 4,
+    paddingHorizontal: revaSpacing.s3,
+    paddingVertical: 8,
+    borderRadius: revaRadii.lg,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    ...revaShadows.sm,
+  },
+  briefingIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green50,
+  },
+  briefingTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+});
+
+const txt = {
+  briefingLabel: { fontFamily: revaFonts.sans, fontSize: 11, fontWeight: '700', color: C.ink3 } as TextStyle,
+  briefingSummary: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '700', color: C.ink1, marginTop: 1 } as TextStyle,
+};

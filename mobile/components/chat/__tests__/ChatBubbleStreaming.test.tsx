@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import type { UIMessage } from '../../../hooks/useChatEngine';
@@ -125,8 +125,8 @@ describe('ChatBubble streaming degraded render', () => {
     expect(getByText('今晚优先固定睡眠时间。')).toBeTruthy();
   });
 
-  it('keeps completed thinking steps visible after streaming finishes', () => {
-    const { getByLabelText, getByText } = renderBubble({
+  it('collapses completed thinking steps into a slim pill (expand to reveal steps)', () => {
+    const { getByLabelText, getByText, queryByText, queryByLabelText } = renderBubble({
       id: 'assistant-finished-thinking',
       role: 'assistant',
       content: '今天饮食总结如下。',
@@ -134,13 +134,23 @@ describe('ChatBubble streaming degraded render', () => {
       thinkingSteps: ['正在理解你的问题', '读取记录信息', '整理回复中'],
     });
 
-    expect(getByText('思考完成')).toBeTruthy();
-    expect(getByText('3/3')).toBeTruthy();
+    // 完成态默认折叠成一条 slim pill: 「思考完成 · N 步」, 步骤列表隐藏.
+    expect(getByText('思考完成 · 3 步')).toBeTruthy();
+    expect(queryByText('正在理解你的问题')).toBeNull();
+    expect(queryByLabelText('已完成步骤:整理回复中')).toBeNull();
+    // 助手正文不受折叠影响, 始终可见.
+    expect(getByText('今天饮食总结如下。')).toBeTruthy();
+
+    // 点 pill 展开 → 步骤列表出现.
+    fireEvent.press(getByLabelText('展开思考步骤'));
     expect(getByText('正在理解你的问题')).toBeTruthy();
     expect(getByText('读取记录信息')).toBeTruthy();
     expect(getByText('整理回复中')).toBeTruthy();
     expect(getByLabelText('已完成步骤:整理回复中')).toBeTruthy();
-    expect(getByText('今天饮食总结如下。')).toBeTruthy();
+
+    // 再点收起 → 步骤列表重新隐藏.
+    fireEvent.press(getByLabelText('收起思考步骤'));
+    expect(queryByText('读取记录信息')).toBeNull();
   });
 
   // 流式期间跳过 sanitizeAiContent + extractRevaUiBlocks 两条重正则 (perf fix).
