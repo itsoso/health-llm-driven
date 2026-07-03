@@ -235,3 +235,21 @@ def test_medical_exam_keyword_with_mri_modality_matches_body_part_summary(db):
 
     out = _exec(db, uid, keyword="膝关节MRI")
     assert "左膝关节内外侧盘状半月板" in out
+
+
+def test_medical_exam_keyword_keeps_report_summary_when_indicator_rows_match(db):
+    uid = 10
+    db.add(MedicalExam(
+        user_id=uid,
+        exam_date=date(2026, 7, 1),
+        exam_type="other",
+        overall_assessment="左膝关节半月板信号异常，建议结合骨科查体评估。",
+        created_at=datetime.now(timezone.utc),
+    ))
+    db.add(_make_indicator(uid, "左膝关节腔及髌上囊", None, "", date.today(), is_abnormal=True))
+    db.commit()
+
+    out = _exec(db, uid, keyword="膝关节MRI")
+    assert "相关检查报告摘要" in out
+    assert "左膝关节半月板信号异常" in out
+    assert "左膝关节腔及髌上囊" in out

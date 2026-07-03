@@ -124,6 +124,9 @@ def read_medical_indicators(
                     MedicalIndicator.item_code.ilike(f"%{up}%"),
                     MedicalIndicator.value_text.ilike(f"%{term}%"),
                 ])
+            summaries = _latest_medical_exam_summary_lines(
+                db, user_id, since=since, keyword=name, limit=8
+            )
             rows = (
                 db.query(MedicalIndicator)
                 .filter(
@@ -136,16 +139,16 @@ def read_medical_indicators(
                 .all()
             )
             if not rows:
-                summaries = _latest_medical_exam_summary_lines(
-                    db, user_id, since=since, keyword=name, limit=8
-                )
                 if summaries:
                     return "\n".join([
                         f"未找到名为「{name}」的归一化化验指标；但找到相关检查报告摘要:",
                         *summaries,
                     ])
                 return f"未找到化验/体检/影像指标「{name}」(最近 {window_days} 天内)。可能未录入, 或换个指标名再试。"
-            lines = [f"化验指标「{rows[0].name}」时间序列 (最近 {len(rows)} 条):"]
+            lines = []
+            if summaries:
+                lines.extend(["相关检查报告摘要:", *summaries, ""])
+            lines.append(f"化验指标「{rows[0].name}」时间序列 (最近 {len(rows)} 条):")
             lines.extend(_format_indicator_line(r) for r in rows)
             return "\n".join(lines)
 
