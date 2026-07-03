@@ -9,6 +9,9 @@ interface User {
   id: number;
   username: string | null;
   email: string | null;
+  phone?: string | null;
+  phone_verified_at?: string | null;
+  has_password?: boolean;
   name: string;
   birth_date: string | null;
   gender: string | null;

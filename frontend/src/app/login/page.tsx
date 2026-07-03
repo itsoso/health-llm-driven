@@ -14,7 +14,7 @@ function LoginForm() {
   useEffect(() => { document.title = '登录 | 健康管理'; }, []);
 
   const [formData, setFormData] = useState({
-    username: '',
+    identifier: '',
     password: '',
   });
   const [error, setError] = useState('');
@@ -32,7 +32,7 @@ function LoginForm() {
     setError('');
     setIsLoading(true);
 
-    const result = await login(formData.username, formData.password);
+    const result = await login(formData.identifier, formData.password);
 
     if (result.success) {
       const savedRedirect = sessionStorage.getItem('redirect_after_login');
@@ -74,16 +74,19 @@ function LoginForm() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                用户名或邮箱
+              <label htmlFor="login-identifier" className="block text-sm font-semibold text-gray-700 mb-2">
+                手机号 / 邮箱 / 用户名
               </label>
               <input
+                id="login-identifier"
                 type="text"
                 required
-                value={formData.username}
-                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                inputMode="text"
+                autoComplete="username"
+                value={formData.identifier}
+                onChange={(e) => setFormData({ ...formData, identifier: e.target.value })}
                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
-                placeholder="请输入用户名或邮箱"
+                placeholder="请输入手机号、邮箱或用户名"
               />
             </div>
 

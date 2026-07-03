@@ -67,6 +67,7 @@ public enum L10n {
         "Checking login...": "正在检查登录状态...",
         "Sign in with your executor.life account.": "使用 executor.life 账号登录。",
         "Username or email": "用户名或邮箱",
+        "Phone, email, or username": "手机号、邮箱或用户名",
         "Password": "密码",
         "Sign In": "登录",
         "Signing in...": "正在登录...",

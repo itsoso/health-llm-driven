@@ -23,7 +23,7 @@ struct LoginView: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                TextField(appText("Username or email", appLanguageRaw), text: $username)
+                TextField(appText("Phone, email, or username", appLanguageRaw), text: $username)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { submitIfReady() }
                 SecureField(appText("Password", appLanguageRaw), text: $password)
