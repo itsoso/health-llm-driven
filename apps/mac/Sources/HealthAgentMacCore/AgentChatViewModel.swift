@@ -738,6 +738,7 @@ public final class AgentChatViewModel {
             self.currentConversationSnapshotID = latest.id
             self.conversationID = latest.conversationID
             self.messages = latest.messages
+            rehydrateLastAssistantMeta()
         }
         rebuildProposedActions()
     }
@@ -1118,6 +1119,7 @@ public final class AgentChatViewModel {
             guard currentConversationSnapshotID == conversation.id else { return }
             messages = detail
             lastPrompt = detail.last(where: { $0.role == .user })?.content
+            rehydrateLastAssistantMeta()
             rebuildProposedActions()
             historyNotice = nil
             cacheLoadedMessages(detail, for: conversation)
@@ -1141,12 +1143,23 @@ public final class AgentChatViewModel {
         conversationID = conversation.conversationID
         messages = conversation.messages
         errorMessage = nil
-        lastCompletionStatus = nil
-        lastModel = nil
-        lastSourcesUsed = []
         toolActivities = []
         lastPrompt = conversation.messages.last(where: { $0.role == .user })?.content
+        // 证据面板/状态 chip 从最后一条 assistant 消息回灌 —— 这些是 per-message
+        // 持久化的(气泡里"引用 N 项数据"就来自它),此前打开历史对话被硬清空,
+        // 造成"气泡有引用、右侧证据面板空占位"的分裂(用户实测截图)。
+        rehydrateLastAssistantMeta()
         rebuildProposedActions()
+    }
+
+    /// 从当前 messages 的最后一条 assistant 消息恢复"最近一轮"元数据
+    /// (lastSourcesUsed / lastModel / lastCompletionStatus)。直播流的 done
+    /// 事件仍会覆盖为最新值;无 assistant 消息时回到空态。
+    func rehydrateLastAssistantMeta() {
+        let lastAssistant = messages.last(where: { $0.role == .assistant })
+        lastSourcesUsed = lastAssistant?.sourcesUsed ?? []
+        lastModel = lastAssistant?.model
+        lastCompletionStatus = lastAssistant?.completionStatus
     }
 
     /// Writes the freshly-loaded messages back into the cached snapshot so a later

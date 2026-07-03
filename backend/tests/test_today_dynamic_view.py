@@ -121,6 +121,207 @@ def test_today_dynamic_view_rejects_unknown_surface(client, auth_user_and_header
     assert resp.status_code == 422
 
 
+# ── R4 安全地板(pin_safety_floor)不变量 ──
+
+
+def test_today_dynamic_view_pins_safety_floor_above_hero_on_critical(
+    client,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.services import today_dynamic_view_service
+
+    user, headers = auth_user_and_headers
+    _patch_artifact_and_runtime(today_dynamic_view_service, monkeypatch, user)
+    monkeypatch.setattr(
+        today_dynamic_view_service,
+        "_evaluate_safety_alerts",
+        lambda db, user_id: ([_critical_alert()], 0),
+    )
+
+    resp = client.post("/api/v1/dynamic-views/today", headers=headers, json=_request_body())
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+
+    # 安全 section 恒在 index 0(hero 之上),priority 高于 hero
+    assert body["sections"][0]["slot"] == "safety"
+    safety_section = body["sections"][0]
+    hero = next(section for section in body["sections"] if section["slot"] == "hero")
+    assert safety_section["priority"] == 120
+    assert safety_section["priority"] > hero["priority"]
+
+    card = safety_section["cards"][0]
+    assert card["type"] == "safety"
+    assert card["id"] == "safety-alert:bp_hypertensive_crisis"
+    assert card["render"]["atom"] == "safety"
+    assert card["render"]["priority"] == 120
+    assert card["data"]["title"] == "血压达到高血压危象水平"
+    assert card["data"]["severity"] == "critical"
+    assert card["data"]["requires_medical_attention"] is True
+    assert card["data"]["boundary"]
+    assert card["data"]["rule_id"] == "bp_hypertensive_crisis"
+
+    # 安全卡唯一允许的动作:route.open 到安全告警页,绝无写路径
+    assert [a["action"] for a in card["actions"]] == ["route.open"]
+    assert card["actions"][0]["payload"] == {"route": "/(tabs)/alerts"}
+
+    # CRITICAL 活跃 → TTL 归零,客户端缓存立即过期(不许 60s 藏 CRITICAL)
+    assert body["expires_at"] == body["generated_at"]
+
+
+def test_today_dynamic_view_no_alerts_no_safety_section_and_normal_ttl(
+    client,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from datetime import datetime
+
+    from app.services import today_dynamic_view_service
+
+    user, headers = auth_user_and_headers
+    _patch_artifact_and_runtime(today_dynamic_view_service, monkeypatch, user)
+    monkeypatch.setattr(
+        today_dynamic_view_service, "_evaluate_safety_alerts", lambda db, user_id: ([], 0)
+    )
+
+    resp = client.post("/api/v1/dynamic-views/today", headers=headers, json=_request_body())
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert "safety" not in {section["slot"] for section in body["sections"]}
+    # 无 CRITICAL → 正常 60s TTL
+    generated = datetime.fromisoformat(body["generated_at"])
+    expires = datetime.fromisoformat(body["expires_at"])
+    assert (expires - generated).total_seconds() == 60
+
+
+def test_today_dynamic_view_injects_advisory_when_safety_evaluation_unavailable(
+    client,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.services import today_dynamic_view_service
+
+    user, headers = auth_user_and_headers
+    _patch_artifact_and_runtime(today_dynamic_view_service, monkeypatch, user)
+
+    def boom(db, user_id):
+        raise RuntimeError("twin build exploded")
+
+    monkeypatch.setattr(today_dynamic_view_service, "_evaluate_safety_alerts", boom)
+
+    resp = client.post("/api/v1/dynamic-views/today", headers=headers, json=_request_body())
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+
+    # fail-loud:评估不可用绝不静默省略,注入确定性 advisory 卡钉在最上面
+    assert body["sections"][0]["slot"] == "safety"
+    card = body["sections"][0]["cards"][0]
+    assert card["type"] == "safety"
+    assert card["data"]["title"] == "安全评估不可用"
+    assert card["data"]["severity"] == "high"
+    assert card["data"]["requires_medical_attention"] is True
+    assert card["data"]["rule_id"] == "safety.evaluation_unavailable"
+    assert [a["action"] for a in card["actions"]] == ["route.open"]
+    # 评估退化 → 同样跳过 TTL 缓存(不能确认没有 CRITICAL)
+    assert body["expires_at"] == body["generated_at"]
+
+
+def test_today_dynamic_view_partial_rule_failure_injects_fail_safe_advisory(
+    client,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.services import today_dynamic_view_service
+
+    user, headers = auth_user_and_headers
+    _patch_artifact_and_runtime(today_dynamic_view_service, monkeypatch, user)
+    # 规则级部分失败(failed_rule_count>0):alerts 为空也必须出 guardian 的 HIGH advisory
+    monkeypatch.setattr(
+        today_dynamic_view_service, "_evaluate_safety_alerts", lambda db, user_id: ([], 2)
+    )
+
+    resp = client.post("/api/v1/dynamic-views/today", headers=headers, json=_request_body())
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["sections"][0]["slot"] == "safety"
+    card = body["sections"][0]["cards"][0]
+    assert card["data"]["rule_id"] == "safety.evaluation_incomplete"
+    assert card["data"]["severity"] == "high"
+    assert card["data"]["requires_medical_attention"] is True
+    assert body["expires_at"] == body["generated_at"]
+
+
+def test_today_dynamic_view_context_hash_changes_when_alert_appears(
+    client,
+    auth_user_and_headers,
+    monkeypatch,
+):
+    from app.services import today_dynamic_view_service
+
+    user, headers = auth_user_and_headers
+    _patch_artifact_and_runtime(today_dynamic_view_service, monkeypatch, user)
+
+    monkeypatch.setattr(
+        today_dynamic_view_service, "_evaluate_safety_alerts", lambda db, user_id: ([], 0)
+    )
+    quiet = client.post("/api/v1/dynamic-views/today", headers=headers, json=_request_body())
+    assert quiet.status_code == 200, quiet.text
+
+    monkeypatch.setattr(
+        today_dynamic_view_service,
+        "_evaluate_safety_alerts",
+        lambda db, user_id: ([_critical_alert()], 0),
+    )
+    alerted = client.post("/api/v1/dynamic-views/today", headers=headers, json=_request_body())
+    assert alerted.status_code == 200, alerted.text
+
+    # 同一 artifact/runtime/trigger/client_context,只有告警出现 → hash 与 view_id 必须翻转
+    assert quiet.json()["context_hash"] != alerted.json()["context_hash"]
+    assert quiet.json()["view_id"] != alerted.json()["view_id"]
+
+
+def _patch_artifact_and_runtime(service_module, monkeypatch, user):
+    """安全地板测试共用的 artifact/runtime stub(与既有测试同 shape)。"""
+    runtime_action = _runtime_action("smart_daily_plan_action_walk", "晚餐后步行 15 分钟")
+
+    def fake_artifact(db, user_id, followup_within_days=7):
+        assert user_id == user.id
+        return _artifact("smart_daily_plan_action_sleep", "今晚提前 30 分钟睡前准备")
+
+    def fake_runtime(db, user_id, days=7, max_items_per_day=3):
+        assert user_id == user.id
+        return _runtime(runtime_action)
+
+    monkeypatch.setattr(service_module.daily_artifact_service, "build_daily_artifact", fake_artifact)
+    monkeypatch.setattr(service_module.agenda_service, "runtime_range_view", fake_runtime)
+
+
+def _request_body():
+    return {
+        "surface": "mobile.today",
+        "trigger": "open",
+        "client_context": {"timezone": "Asia/Shanghai", "client_capabilities": ["daily_artifact"]},
+    }
+
+
+def _critical_alert():
+    from app.agents.safety_guardian.schema import Alert, Severity
+
+    return Alert(
+        rule_id="bp_hypertensive_crisis",
+        category="vitals",
+        severity=Severity.CRITICAL,
+        title="血压达到高血压危象水平",
+        message="收缩压 ≥ 180 mmHg,建议立即处理。",
+        action="立即静坐休息 5 分钟后复测;若仍 ≥180/120 或伴随胸痛/视物模糊,立即就医。",
+        requires_medical_attention=True,
+    )
+
+
 def _runtime_action(action_id: str, title: str):
     return {
         "id": action_id,

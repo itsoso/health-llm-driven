@@ -1,11 +1,11 @@
 # App Store Review Notes Draft
 
-> Demo account seeded on production 2026-07-03 (backend/scripts/seed_demo_account.py); login + 今日/时间线/工件 non-empty verified via live API.
+> Demo account seeded on production 2026-07-03 and verified via live API (login + 今日/时间线/工件 non-empty). Real credentials live OUTSIDE git: docs/release/app-store/demo-credentials.local.md (gitignored) + APP_STORE_REVIEW_DEMO_ACCOUNT/PASSWORD env at final submit.
 
 ## Reviewer Access
 
-- Demo account: `appreview@executor.life`
-- Password: `98f3BVYy2ePGnmAa1`
+- Demo account: `[NEEDS APP STORE REVIEW DEMO ACCOUNT]`
+- Password: `[NEEDS APP STORE REVIEW DEMO PASSWORD]`
 - Region: China / United States compatible.
 
 If the reviewer cannot sign in, please contact support@executor.life.

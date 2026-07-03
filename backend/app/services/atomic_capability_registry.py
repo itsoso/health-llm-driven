@@ -49,6 +49,28 @@ CAPABILITIES: tuple[AtomicCapability, ...] = (
         telemetry_events=("impression", "open", "dismiss"),
         execution="read_only_route_open",
     ),
+    AtomicCapability(
+        # R4 安全地板卡:SafetyGuardian CRITICAL/HIGH 告警钉在 Today 视图 hero 之上。
+        # data 形状 = agent_executor._safety_alert_card_descriptor(mobile SafetyCard 契约)。
+        # 唯一允许的动作是 route.open 到安全告警页 —— 安全卡永不携带写路径。
+        id="safety",
+        version="v1",
+        card_type="safety",
+        first_class_objects=("HealthTwin",),
+        surfaces=("mobile.today", "mobile.chat"),
+        data_required_fields=(
+            "title",
+            "severity",
+            "summary",
+            "recommendations",
+            "boundary",
+            "requires_medical_attention",
+        ),
+        action_types=("route.open",),
+        safety_boundary="alert_non_diagnostic",
+        telemetry_events=("impression", "open"),
+        execution="read_only_route_open",
+    ),
 )
 
 _CAPABILITY_BY_CARD_TYPE = {capability.card_type: capability for capability in CAPABILITIES}

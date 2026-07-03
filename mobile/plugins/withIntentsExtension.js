@@ -18,6 +18,84 @@ const path = require('path');
 const fs = require('fs');
 
 const APP_GROUP = 'group.life.executor.health';
+// Legacy internal project name. The Expo-generated project is now named after the
+// sanitized app name ("阿衡" → "app"), so HealthPilot is only a last-resort fallback.
+const LEGACY_PROJECT_NAME = 'HealthPilot';
+const SIRI_GROUP_NAME = 'SiriIntents';
+const SIRI_SWIFT_FILE = 'HealthPilotSiri.swift';
+
+function findTargetUuidByName(xcodeProject, targetName) {
+  const targets = xcodeProject.pbxNativeTargetSection();
+  for (const [uuid, target] of Object.entries(targets || {})) {
+    const name = String(target?.name || '').replace(/^"|"$/g, '');
+    if (!uuid.endsWith('_comment') && name === targetName) {
+      return uuid;
+    }
+  }
+  return null;
+}
+
+function listXcodeprojNames(iosRoot) {
+  if (!iosRoot || !fs.existsSync(iosRoot)) return [];
+  return fs.readdirSync(iosRoot)
+    .filter((entry) => entry.endsWith('.xcodeproj'))
+    .map((entry) => path.basename(entry, '.xcodeproj'))
+    .sort();
+}
+
+// Resolve the main app target: Expo modRequest.projectName first, then whatever
+// *.xcodeproj actually exists on disk, then legacy HealthPilot as last resort.
+// THROWS when nothing matches — a silent skip here means the Siri Swift file is
+// written to disk but never compiled, i.e. Siri silently missing from the build.
+function resolveMainTarget(xcodeProject, modRequest = {}) {
+  const candidates = [];
+  if (modRequest.projectName) candidates.push(modRequest.projectName);
+  for (const name of listXcodeprojNames(modRequest.platformProjectRoot)) {
+    if (!candidates.includes(name)) candidates.push(name);
+  }
+  if (!candidates.includes(LEGACY_PROJECT_NAME)) candidates.push(LEGACY_PROJECT_NAME);
+
+  for (const name of candidates) {
+    const uuid = findTargetUuidByName(xcodeProject, name);
+    if (uuid) return { name, uuid };
+  }
+  throw new Error(
+    `withIntentsExtension could not find main app target (tried: ${candidates.join(', ')}); ` +
+    'refusing to continue — Siri intents would be silently missing from the build.',
+  );
+}
+
+// Idempotent group creation (mirrors withRokidPushupApk.ensureResourcesGroup):
+// repeated prebuild without --clean must not stack duplicate SiriIntents groups.
+function ensureSiriIntentsGroup(xcodeProject, groupPath) {
+  const existingKey = xcodeProject.findPBXGroupKey({ name: SIRI_GROUP_NAME });
+  if (existingKey) {
+    // Heal stale legacy paths (e.g. HealthPilot/SiriIntents left by old plugin
+    // versions) so the group always points at where the Swift file is written.
+    const existingGroup = xcodeProject.getPBXGroupByKey(existingKey);
+    const currentPath = String(existingGroup?.path || '').replace(/^"|"$/g, '');
+    if (existingGroup && currentPath !== groupPath) {
+      existingGroup.path = groupPath;
+    }
+    return existingKey;
+  }
+
+  const siriGroup = xcodeProject.addPbxGroup([], SIRI_GROUP_NAME, groupPath);
+  const mainGroup = xcodeProject.getFirstProject()?.firstProject?.mainGroup;
+  if (mainGroup) {
+    xcodeProject.addToPbxGroup(siriGroup.uuid, mainGroup);
+  }
+  return siriGroup.uuid;
+}
+
+function hasFileReference(xcodeProject, fileName) {
+  const refs = xcodeProject.pbxFileReferenceSection();
+  return Object.values(refs || {}).some((ref) => (
+    ref &&
+    typeof ref === 'object' &&
+    (ref.path === fileName || ref.path === `"${fileName}"`)
+  ));
+}
 
 function withIntentsExtension(config) {
   // 1. Entitlements: Siri + App Group + Keychain Sharing (legacy fallback)
@@ -40,10 +118,17 @@ function withIntentsExtension(config) {
 
   // 3. Write single Swift file to main app target
   config = withXcodeProject(config, (mod) => {
-    const proj = mod.modRequest.projectRoot;
     const xcodeProject = mod.modResults;
+    const iosRoot = mod.modRequest.platformProjectRoot;
 
-    const siriPath = path.join(proj, 'ios', 'HealthPilot', 'SiriIntents');
+    // Resolve target FIRST and fail loud — never write the Swift file without
+    // wiring it into the Sources build phase (that was the silent-skip bug).
+    const { name: mainTargetName, uuid: mainTargetUuid } = resolveMainTarget(
+      xcodeProject,
+      mod.modRequest,
+    );
+
+    const siriPath = path.join(iosRoot, mainTargetName, SIRI_GROUP_NAME);
     if (!fs.existsSync(siriPath)) {
       fs.mkdirSync(siriPath, { recursive: true });
     }
@@ -63,35 +148,34 @@ function withIntentsExtension(config) {
       if (fs.existsSync(p)) fs.unlinkSync(p);
     }
 
-    const singleFile = 'HealthPilotSiri.swift';
-    const filePath = path.join(siriPath, singleFile);
-    fs.writeFileSync(filePath, buildSiriSwift(APP_GROUP), 'utf-8');
-
-    // Add single file to main app target's Sources build phase
-    const mainTargetName = 'HealthPilot';
-    const targets = xcodeProject.pbxNativeTargetSection();
-    let mainTargetUuid = null;
-    for (const [uuid, target] of Object.entries(targets)) {
-      if (target.name === mainTargetName && !uuid.endsWith('_comment')) {
-        mainTargetUuid = uuid;
-        break;
+    // Older plugin versions hardcoded ios/HealthPilot/SiriIntents; drop that
+    // orphaned copy when the generated project dir is named differently.
+    if (mainTargetName !== LEGACY_PROJECT_NAME) {
+      const legacySiriPath = path.join(iosRoot, LEGACY_PROJECT_NAME, SIRI_GROUP_NAME);
+      if (fs.existsSync(legacySiriPath)) {
+        fs.rmSync(legacySiriPath, { recursive: true, force: true });
       }
     }
 
-    const siriGroup = xcodeProject.addPbxGroup(
-      [],
-      'SiriIntents',
-      'HealthPilot/SiriIntents',
-    );
-    const mainGroup = xcodeProject.getFirstProject().firstProject.mainGroup;
-    xcodeProject.addToPbxGroup(siriGroup.uuid, mainGroup);
+    const filePath = path.join(siriPath, SIRI_SWIFT_FILE);
+    fs.writeFileSync(filePath, buildSiriSwift(APP_GROUP), 'utf-8');
 
-    if (mainTargetUuid) {
-      xcodeProject.addSourceFile(
-        singleFile,
+    const siriGroupKey = ensureSiriIntentsGroup(
+      xcodeProject,
+      `${mainTargetName}/${SIRI_GROUP_NAME}`,
+    );
+
+    if (!hasFileReference(xcodeProject, SIRI_SWIFT_FILE)) {
+      const added = xcodeProject.addSourceFile(
+        SIRI_SWIFT_FILE,
         { target: mainTargetUuid },
-        siriGroup.uuid,
+        siriGroupKey,
       );
+      if (!added) {
+        throw new Error(
+          `withIntentsExtension failed to add ${SIRI_SWIFT_FILE} to the ${mainTargetName} Sources build phase`,
+        );
+      }
     }
 
     return mod;
@@ -467,3 +551,9 @@ struct HealthPilotShortcuts: AppShortcutsProvider {
 module.exports = withIntentsExtension;
 // Exported for template-content tests (mirrors _patchPodfileContents convention).
 module.exports._buildSiriSwift = buildSiriSwift;
+module.exports._resolveMainTarget = resolveMainTarget;
+module.exports._findTargetUuidByName = findTargetUuidByName;
+module.exports._ensureSiriIntentsGroup = ensureSiriIntentsGroup;
+module.exports._hasFileReference = hasFileReference;
+module.exports._LEGACY_PROJECT_NAME = LEGACY_PROJECT_NAME;
+module.exports._SIRI_SWIFT_FILE = SIRI_SWIFT_FILE;

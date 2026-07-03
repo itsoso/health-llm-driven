@@ -80,3 +80,4 @@ docs/fundraising/
 # Design fixtures contain real Tier-5 health data + PII — never commit (keep SAMPLE-* only)
 design/fixtures/*.json
 !design/fixtures/SAMPLE-*.json
+docs/release/app-store/demo-credentials.local.md

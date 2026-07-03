@@ -22,7 +22,7 @@
   - `mobile/services/chatCardActions.ts`:写动作执行层,要求 `requires_manual_confirm=true`。
   - `mobile/hooks/useChatEngine.ts`:流式 `card` / `done.cards` 下发进入 UIMessage。
 - 缺口:
-  - UI 层原先只按 action allowlist 过滤,缺少 `requires_manual_confirm=true` 的写动作仍会显示,点击后才失败。
+  - UI 层原先只按 action allowlist 过滤,不校验 `requires_manual_confirm=true`:若后端下发缺少人工确认标记的写动作,按钮会先显示、点击后才被服务层拒绝。**当时后端尚未下发任何写动作卡片**,所以这不是已发生的线上"点击后才失败"事故;本批属于对后端尚未启用的契约做前瞻性、只加不减的纵深防御(additive defense-in-depth),而非修复存量漏洞。
   - 多卡 `cards_group` 子卡 action 虽已有实现,缺少回归测试。
 - 硬边界:
   - 不放宽写动作 endpoint。

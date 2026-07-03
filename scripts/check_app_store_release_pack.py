@@ -69,6 +69,11 @@ DEMO_ENV_KEYS = [
     "APP_STORE_REVIEW_DEMO_ACCOUNT",
     "APP_STORE_REVIEW_DEMO_PASSWORD",
 ]
+DEMO_CREDENTIAL_LINES = [
+    # (label of the review-notes line, placeholder token, env fallback key)
+    ("Demo account", DEMO_PLACEHOLDERS[0], DEMO_ENV_KEYS[0]),
+    ("Password", DEMO_PLACEHOLDERS[1], DEMO_ENV_KEYS[1]),
+]
 REVIEW_CONTACT_PHONE_ENV = "APP_STORE_REVIEW_CONTACT_PHONE"
 REVIEW_CONTACT_PHONE_RE = re.compile(r"^\+[1-9]\d{1,14}(?:[\s-]\d+)*$")
 CURRENT_BOTTOM_NAV_TEXT = "今日 / 阿衡 / 记录 / 我"
@@ -219,6 +224,18 @@ def validate_app_review_redlines(source_texts: Mapping[str, str]) -> list[str]:
     return failures
 
 
+def _parse_demo_credential_value(review_notes: str, label: str) -> str | None:
+    """Return the value on the `- <label>:` review-notes line, or None when the line is absent."""
+    match = re.search(
+        rf"^\s*[-*]?\s*{re.escape(label)}\s*[::]\s*(.*)$",
+        review_notes,
+        re.MULTILINE,
+    )
+    if match is None:
+        return None
+    return match.group(1).strip().strip("`").strip()
+
+
 def validate_demo_review_credentials(
     review_notes: str,
     *,
@@ -226,16 +243,35 @@ def validate_demo_review_credentials(
     env: Mapping[str, str] = os.environ,
 ) -> list[str]:
     failures: list[str] = []
-    remaining_placeholders = [placeholder for placeholder in DEMO_PLACEHOLDERS if placeholder in review_notes]
     missing_placeholders = [placeholder for placeholder in DEMO_PLACEHOLDERS if placeholder not in review_notes]
-    missing_env = [key for key in DEMO_ENV_KEYS if not env.get(key, "").strip()]
 
     if final_submit:
-        if remaining_placeholders and missing_env:
+        # Fail closed: each credential line must be present with a real (non-placeholder,
+        # non-empty) value, or keep the explicit placeholder and supply the value via env.
+        # Deleting or blanking a line is never a valid final-submit state — a checker that
+        # only looks for leftover placeholder tokens would pass with no credentials at all.
+        unresolved_placeholders: list[str] = []
+        for label, placeholder, env_key in DEMO_CREDENTIAL_LINES:
+            value = _parse_demo_credential_value(review_notes, label)
+            if value is None:
+                failures.append(
+                    f"final submit requires a `{label}:` line in review-notes.zh-CN.md; "
+                    "the line is missing (deleting it does not satisfy the demo-credential gate)"
+                )
+                continue
+            if not value:
+                failures.append(
+                    f"final submit requires a non-empty `{label}:` value in review-notes.zh-CN.md; "
+                    "a blank credential does not satisfy the demo-credential gate"
+                )
+                continue
+            if value in DEMO_PLACEHOLDERS and not env.get(env_key, "").strip():
+                unresolved_placeholders.append(placeholder)
+        if unresolved_placeholders:
             failures.append(
                 "final submit requires replacing demo account placeholders in review notes "
                 "or setting APP_STORE_REVIEW_DEMO_ACCOUNT and APP_STORE_REVIEW_DEMO_PASSWORD: "
-                + ", ".join(remaining_placeholders)
+                + ", ".join(unresolved_placeholders)
             )
         contact_phone = env.get(REVIEW_CONTACT_PHONE_ENV, "").strip()
         if not contact_phone:

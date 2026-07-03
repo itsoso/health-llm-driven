@@ -107,6 +107,17 @@ def test_diet_record_quality_response_uses_personal_context_and_next_action():
     assert actions[0]["id"] == "show-next-meal"
     assert actions[0]["action"] == "ui.inline.expand"
     assert actions[0]["payload"]["target"] == "next_meal"
+    # mobile registry.readInlineExpandPatch 硬性契约: 带 endpoint 直接拒;
+    # payload.patch 必须是对象且 sanitize 后非空(expanded_sections ∈
+    # {next_meal, adjust_record} / next_meal_detail 为对象), 否则客户端丢弃该按钮。
+    assert "endpoint" not in actions[0]
+    patch = actions[0]["payload"]["patch"]
+    assert isinstance(patch, dict)
+    assert patch["expanded_sections"] == ["next_meal"]
+    next_meal_detail = patch["next_meal_detail"]
+    assert isinstance(next_meal_detail, dict)
+    assert next_meal_detail["title"] and next_meal_detail["summary"]
+    assert isinstance(next_meal_detail["options"], list) and next_meal_detail["options"]
     assert actions[1]["id"] == "open-diet"
     assert actions[1]["action"] == "route.open"
     assert actions[1]["payload"]["route"] == "/diet"

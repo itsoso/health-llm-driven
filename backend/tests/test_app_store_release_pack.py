@@ -143,6 +143,74 @@ def test_demo_review_credentials_accept_env_for_final_submit_with_placeholder_no
     assert failures == []
 
 
+def test_demo_review_credentials_final_submit_accepts_real_values_in_notes():
+    review_notes = (
+        "- Demo account: `demo-reviewer@example.com`\n"
+        "- Password: `real-review-password`\n"
+    )
+
+    failures = validate_demo_review_credentials(
+        review_notes,
+        final_submit=True,
+        env={"APP_STORE_REVIEW_CONTACT_PHONE": "+8613800138000"},
+    )
+
+    assert failures == []
+
+
+def test_demo_review_credentials_final_submit_fails_closed_when_lines_deleted():
+    # Deleting the credential lines must fail even with env vars set: there is no
+    # placeholder left to substitute, so the pasted notes would carry no credentials.
+    review_notes = "## Reviewer Access\n\n- Region: China / United States compatible.\n"
+
+    failures = validate_demo_review_credentials(
+        review_notes,
+        final_submit=True,
+        env={
+            "APP_STORE_REVIEW_DEMO_ACCOUNT": "app-review@example.com",
+            "APP_STORE_REVIEW_DEMO_PASSWORD": "review-password",
+            "APP_STORE_REVIEW_CONTACT_PHONE": "+8613800138000",
+        },
+    )
+
+    joined = "\n".join(failures)
+    assert "final submit requires a `Demo account:` line" in joined
+    assert "final submit requires a `Password:` line" in joined
+
+
+def test_demo_review_credentials_final_submit_fails_closed_on_blank_values():
+    review_notes = "- Demo account: ``\n- Password:\n"
+
+    failures = validate_demo_review_credentials(
+        review_notes,
+        final_submit=True,
+        env={
+            "APP_STORE_REVIEW_DEMO_ACCOUNT": "app-review@example.com",
+            "APP_STORE_REVIEW_DEMO_PASSWORD": "review-password",
+            "APP_STORE_REVIEW_CONTACT_PHONE": "+8613800138000",
+        },
+    )
+
+    joined = "\n".join(failures)
+    assert "non-empty `Demo account:` value" in joined
+    assert "non-empty `Password:` value" in joined
+
+
+def test_demo_review_credentials_final_submit_placeholders_without_env_fail():
+    review_notes = (
+        "- Demo account: `[NEEDS APP STORE REVIEW DEMO ACCOUNT]`\n"
+        "- Password: `[NEEDS APP STORE REVIEW DEMO PASSWORD]`\n"
+    )
+
+    failures = validate_demo_review_credentials(
+        review_notes,
+        final_submit=True,
+        env={"APP_STORE_REVIEW_CONTACT_PHONE": "+8613800138000"},
+    )
+
+    assert "final submit requires replacing demo account placeholders" in "\n".join(failures)
+
+
 def test_demo_review_credentials_rejects_checked_in_secret_outside_final_submit():
     review_notes = "- Demo account: `app-review@example.com`\n- Password: `review-password`\n"
 

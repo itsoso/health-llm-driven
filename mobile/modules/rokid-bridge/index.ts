@@ -5,6 +5,8 @@ import {
   type EventSubscription,
 } from 'expo-modules-core';
 
+import { APP_DISPLAY_NAME } from '../../constants/brand';
+
 export const ROKID_SDK_ARTIFACTS = {
   clientM: 'com.rokid.cxr:client-m:1.2.2',
   clientL: 'com.rokid.cxr:client-l:1.0.3',
@@ -495,7 +497,7 @@ export function buildRokidCapabilityGateway(
   if (networkPreconditionFailure) {
     blockers.push('Rokid 眼镜网络未就绪: 请确认眼镜已连 WiFi、手机和眼镜同网或 companion 已建立数据通道。');
   } else if (companionBleSuspected) {
-    blockers.push('Rokid companion 疑似仍占用眼镜蓝牙: iOS 一次只能一个 central。请完全退出/划掉 Rokid AI / Hi Rokid 后回 Reva 刷新。');
+    blockers.push(`Rokid companion 疑似仍占用眼镜蓝牙: iOS 一次只能一个 central。请完全退出/划掉 Rokid AI / Hi Rokid 后回${APP_DISPLAY_NAME}刷新。`);
   } else if (silentCustomView) {
     blockers.push('CXR-L CustomView 静默: openCustomView 未收到 callback/notify, 不应再阻塞运动和饮食主流程。');
   } else if (customViewCompletionFailureWithNotify) {
@@ -583,7 +585,7 @@ export function buildRokidCapabilityGateway(
       detail: bleReady
         ? '眼镜链路可用。'
         : companionBleSuspected
-          ? '疑似 Rokid AI / Hi Rokid 仍占用眼镜蓝牙; 请完全退出 companion 后回 Reva 刷新。'
+          ? `疑似 Rokid AI / Hi Rokid 仍占用眼镜蓝牙; 请完全退出 companion 后回${APP_DISPLAY_NAME}刷新。`
           : 'Rokid AI / Hi Rokid 可能仍占用或眼镜未在线。',
       source: 'RGCxrClientBLE.connectionStatePublisher',
       recommendedSurface: 'rokid_glasses',
@@ -652,7 +654,7 @@ export function buildRokidCapabilityGateway(
       id: 'pushup_backend_session',
       label: '俯卧撑后端会话',
       state: 'ready',
-      detail: 'Reva 可接收 pose/rep 事件; 眼镜端 App 或本地计数都可写入同一会话。',
+      detail: `${APP_DISPLAY_NAME}可接收 pose/rep 事件; 眼镜端 App 或本地计数都可写入同一会话。`,
       source: 'Rokid push-up session API',
       recommendedSurface: 'backend',
       priority: 80,
@@ -662,7 +664,7 @@ export function buildRokidCapabilityGateway(
       label: '手机端兜底',
       state: 'ready',
       detail: '食物拍照、语音输入和本地俯卧撑计数保持可用。',
-      source: 'Reva mobile routes',
+      source: `${APP_DISPLAY_NAME} mobile routes`,
       recommendedSurface: 'mobile',
       priority: 90,
     },
@@ -728,8 +730,8 @@ export function getRokidDeviceValidationSteps(
         ? `当前包已链接 ${iosClient}。`
         : sdkRequestedButUnlinked
           ? `Rokid SDK 编译开关已打开, 但 native 未导入 RGCxrClient: ${status?.sdkLinkedReason ?? status?.iosSdkDependencyMode ?? 'unknown'}。`
-        : '安装 Rokid 版 Reva 包, 确认 ROKID_IOS_SDK_ENABLED=1。',
-      actionLabel: '安装 Rokid 版 Reva',
+        : `安装 Rokid 版${APP_DISPLAY_NAME}包, 确认 ROKID_IOS_SDK_ENABLED=1。`,
+      actionLabel: `安装 Rokid 版${APP_DISPLAY_NAME}`,
       done: sdkLinked,
       blocked: platform !== 'ios' || status?.bridgeAvailable === false,
     },
@@ -743,7 +745,7 @@ export function getRokidDeviceValidationSteps(
     {
       id: 'rokid_authorized',
       title: 'CXR-L 授权',
-      detail: authorized ? '授权 token 可用。' : '在 Reva 中完成 CXR-L 授权回调后继续。',
+      detail: authorized ? '授权 token 可用。' : `在${APP_DISPLAY_NAME}中完成 CXR-L 授权回调后继续。`,
       actionLabel: '授权 Rokid',
       done: authorized,
     },
@@ -753,16 +755,16 @@ export function getRokidDeviceValidationSteps(
       detail: glassesBleConnected
         ? `Rokid CXR-L 已连接眼镜蓝牙链路${bleDevice ? `: ${bleDevice}` : ''}。`
         : companionBleSuspected
-          ? `疑似 Rokid AI / Hi Rokid 仍占用眼镜蓝牙 central${bleDevice ? `: ${bleDevice}` : ''}。请从系统后台完全划掉 Rokid AI / Hi Rokid, 再回 Reva 刷新。`
-        : `Rokid CXR-L 还未连接到眼镜蓝牙链路${bleDevice ? `: ${bleDevice}` : ''}。授权完成后请「完全退出」Rokid AI / Hi Rokid(它会独占眼镜蓝牙, 一次只能一个 App 连眼镜), 再回 Reva 刷新。`,
+          ? `疑似 Rokid AI / Hi Rokid 仍占用眼镜蓝牙 central${bleDevice ? `: ${bleDevice}` : ''}。请从系统后台完全划掉 Rokid AI / Hi Rokid, 再回${APP_DISPLAY_NAME}刷新。`
+        : `Rokid CXR-L 还未连接到眼镜蓝牙链路${bleDevice ? `: ${bleDevice}` : ''}。授权完成后请「完全退出」Rokid AI / Hi Rokid(它会独占眼镜蓝牙, 一次只能一个 App 连眼镜), 再回${APP_DISPLAY_NAME}刷新。`,
       actionLabel: '打开 Rokid AI / Hi Rokid',
       done: glassesBleConnected,
     }] : []),
     {
       id: 'custom_view_running',
-      title: 'Reva 眼镜视图',
-      detail: customViewRunning ? 'CustomView 已在眼镜端运行。' : '打开 Reva CustomView, 确认眼镜端已经显示。',
-      actionLabel: '打开 Reva 眼镜视图',
+      title: `${APP_DISPLAY_NAME}眼镜视图`,
+      detail: customViewRunning ? 'CustomView 已在眼镜端运行。' : `打开${APP_DISPLAY_NAME} CustomView, 确认眼镜端已经显示。`,
+      actionLabel: `打开${APP_DISPLAY_NAME}眼镜视图`,
       done: customViewRunning,
     },
     {
@@ -834,7 +836,7 @@ export async function requestRokidAuthorization(options?: {
     'requestAuthorization',
     native.requestAuthorization(
       options?.scopes ?? ['device_control', 'audio_stream'],
-      options?.appName ?? 'Reva',
+      options?.appName ?? APP_DISPLAY_NAME,
     ),
     ROKID_NATIVE_CALL_TIMEOUT_MS.authorization,
   );
@@ -861,8 +863,8 @@ export async function openRokidCustomView(view: string): Promise<Record<string, 
 }
 
 export function createRokidRevaCustomViewLayout(options?: RevaCustomViewOptions): string {
-  const title = options?.title ?? 'Reva Health';
-  const body = options?.body ?? '等待 Reva 投递下一条健康行动';
+  const title = options?.title ?? APP_DISPLAY_NAME;
+  const body = options?.body ?? `等待${APP_DISPLAY_NAME}投递下一条健康行动`;
   const priority = options?.priority ?? 'manual_confirm';
   return JSON.stringify({
     type: 'LinearLayout',

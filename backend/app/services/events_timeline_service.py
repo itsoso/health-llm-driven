@@ -78,13 +78,23 @@ def build_timeline(
     events.extend(_medications(db, user_id, since_date))
     events.extend(_exams(db, user_id, since_date))
 
-    # 按时间倒序。
-    # 不变量:所有 occurred_at 必须 **tz-aware UTC**(workout 是真 UTC 时点,其余源用
-    # datetime.combine(..., tzinfo=timezone.utc) 把"日期 + 代表性整点"标成 UTC)。混入 naive
-    # 会让此处 sort 抛 TypeError(can't compare offset-naive and offset-aware)→ 整条 timeline
-    # 变空白。新增源时务必给 occurred_at 带 tzinfo。
-    events.sort(key=lambda e: e.occurred_at, reverse=True)
+    # 按时间倒序。两层防御:
+    # 1. 约定(源头):所有 occurred_at 必须 **tz-aware UTC**(workout 是真 UTC 时点,其余源用
+    #    datetime.combine(..., tzinfo=timezone.utc) 把"日期 + 代表性整点"标成 UTC)。
+    #    新增源时务必给 occurred_at 带 tzinfo —— tests/test_events_timeline_tz.py 守这条不变量。
+    # 2. 兜底(此处):排序 key 只读地把 naive 按 UTC 对待(不改 occurred_at 本身)。
+    #    否则未来某个源漏了 tzinfo,aware×naive 比较抛 TypeError → /api/v1/timeline 整条 500、
+    #    today_timeline 静默丢当日观测 —— 一个源的疏漏不该炸掉全部源。
+    events.sort(key=_sort_key_utc, reverse=True)
     return events[:limit]
+
+
+def _sort_key_utc(e: TimelineEvent) -> datetime:
+    """排序专用:naive 按 UTC 对待(read-only),不回写 occurred_at。"""
+    dt = e.occurred_at
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def _workouts(db: Session, user_id: int, since: datetime) -> List[TimelineEvent]:

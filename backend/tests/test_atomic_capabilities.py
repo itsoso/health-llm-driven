@@ -27,6 +27,8 @@ def test_today_dynamic_view_uses_registered_atomic_capabilities(monkeypatch):
 
     monkeypatch.setattr(today_dynamic_view_service.daily_artifact_service, "build_daily_artifact", fake_artifact)
     monkeypatch.setattr(today_dynamic_view_service.agenda_service, "runtime_range_view", fake_runtime)
+    # db=object() 无法真评估;stub 成「零告警、零规则失败」保持本测试原意(hero/runtime 组合)。
+    monkeypatch.setattr(today_dynamic_view_service, "_evaluate_safety_alerts", lambda db, user_id: ([], 0))
 
     view = today_dynamic_view_service.build_today_dynamic_view(object(), 42)
     card_types = {
@@ -141,7 +143,7 @@ def test_today_dynamic_view_fails_loud_when_composer_emits_unregistered_card(mon
     def fake_runtime(db, user_id, days=7, max_items_per_day=3):
         return _runtime(_runtime_action("smart_daily_plan_action_walk", "晚餐后步行 15 分钟"))
 
-    def fake_sections(artifact, runtime):
+    def fake_sections(artifact, runtime, safety_cards):
         return [
             {
                 "slot": "hero",
@@ -152,10 +154,24 @@ def test_today_dynamic_view_fails_loud_when_composer_emits_unregistered_card(mon
 
     monkeypatch.setattr(today_dynamic_view_service.daily_artifact_service, "build_daily_artifact", fake_artifact)
     monkeypatch.setattr(today_dynamic_view_service.agenda_service, "runtime_range_view", fake_runtime)
+    monkeypatch.setattr(today_dynamic_view_service, "_evaluate_safety_alerts", lambda db, user_id: ([], 0))
     monkeypatch.setattr(today_dynamic_view_service, "_compose_sections", fake_sections)
 
     with pytest.raises(ValueError, match="invalid_dynamic_view"):
         today_dynamic_view_service.build_today_dynamic_view(object(), 42)
+
+
+def test_safety_capability_registered_with_pinned_read_only_actions():
+    """安全地板卡的能力契约:只允许 route.open,读侧,永不携带写路径。"""
+    from app.services.atomic_capability_registry import get_atomic_capability
+
+    capability = get_atomic_capability("safety")
+    assert capability is not None
+    assert "mobile.today" in capability.surfaces
+    assert capability.action_types == ("route.open",)
+    assert capability.execution == "read_only_route_open"
+    for field in ("title", "severity", "summary", "boundary", "requires_medical_attention"):
+        assert field in capability.data_required_fields
 
 
 def _runtime_action(action_id: str, title: str):

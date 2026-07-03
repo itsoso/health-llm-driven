@@ -853,7 +853,7 @@ function buildAuthDiagnosticLines(status?: RokidIntegrationStatus) {
     lines.push(`Companion: ${status.companionServerScheme}://${status.companionServerHost}${device}`);
   }
   if (status.nativeAppVersion || status.nativeBuildNumber) {
-    lines.push(`Reva build: version=${status.nativeAppVersion ?? 'unknown'} · build=${status.nativeBuildNumber ?? 'unknown'}`);
+    lines.push(`${APP_DISPLAY_NAME} build: version=${status.nativeAppVersion ?? 'unknown'} · build=${status.nativeBuildNumber ?? 'unknown'}`);
   }
   if (
     typeof status.sdkLinked === 'boolean'

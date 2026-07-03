@@ -57,7 +57,7 @@ jest.mock('../../modules/rokid-bridge', () => {
     createRokidRevaCustomViewLayout: (options?: any) => JSON.stringify({
       type: 'LinearLayout',
       children: [
-        { props: { text: options?.title ?? 'Reva Health' } },
+        { props: { text: options?.title ?? '阿衡' } },
         { props: { text: options?.body ?? '' } },
         { props: { text: options?.priority ?? 'manual_confirm' } },
       ],
@@ -1766,7 +1766,7 @@ describe('RokidHealthScreen', () => {
 
     await waitFor(() => {
       expect(screen.getByText('SDK 请求但未导入')).toBeTruthy();
-      expect(screen.getByText('Reva build: version=1.3.0 · build=153')).toBeTruthy();
+      expect(screen.getByText('阿衡 build: version=1.3.0 · build=153')).toBeTruthy();
       expect(screen.getByText('SDK linkage: sdkLinked=false · mode=requested_but_unlinked · reason=sdk_requested_callback_macro_but_RGCxrClient_unavailable')).toBeTruthy();
       expect(screen.getByText('CXR-L API: callbackApi=true · notify=setNotifyEventListenCmds')).toBeTruthy();
     });

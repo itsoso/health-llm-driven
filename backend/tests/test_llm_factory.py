@@ -57,6 +57,7 @@ class TestLangBridgeProxy:
     def test_entry_builds_openai_provider_pointing_at_gateway(self):
         from app.services.llm.factory import _create_from_entry
         from app.services.llm.model_registry import get_model
+        from app.services.llm.providers.openai_provider import OpenAIProvider
 
         entry = get_model("claude-opus-4.7")
         assert entry is not None, "claude-opus-4.7 entry 应注册"
@@ -67,8 +68,11 @@ class TestLangBridgeProxy:
             mock_settings.langbridge_gateway_api_key = "test-token"
             mock_settings.langbridge_gateway_base_url = "https://base.executor.life/api/llm"
             provider = _create_from_entry(entry)
-            # 复用 OpenAIProvider, 协议层等价
-            assert provider.provider_name == "openai"
+            # OpenAI-compatible 保证由 provider 类承担(复用 OpenAIProvider 协议层);
+            # provider_name 自 token 成本核算(cf2d54f5)起标注真实路由 "langbridge-proxy",
+            # 供 usage dashboard 按路由归因, 不再伪装成 "openai"。
+            assert isinstance(provider, OpenAIProvider)
+            assert provider.provider_name == "langbridge-proxy"
             assert provider.base_url == "https://base.executor.life/api/llm"
             assert provider.api_key == "test-token"
             assert provider.model == "commercial/Claude-Opus-4.7"

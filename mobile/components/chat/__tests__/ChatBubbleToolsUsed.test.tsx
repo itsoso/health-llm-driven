@@ -1,5 +1,5 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import type { UIMessage } from '../../../hooks/useChatEngine';
@@ -78,9 +78,13 @@ function renderBubble(message: UIMessage) {
 
 const CONTENT = '已为你记录今天的体重。';
 
-describe('ChatBubble 调用 Skill 展示', () => {
-  it('toolsUsed 非空且非流式 → 渲染 "调用 Skill" + 每个 Skill 名', () => {
-    const { getByText } = renderBubble({
+// 透视面板 (AgentTransparencyPanel) 折叠头的展开按钮 accessibilityLabel —
+// toolsUsed 现在经 buildAgentTransparency 收进这个面板, 展开后以 "调用 Skill" 行 + chip 呈现.
+const EXPAND_LABEL = '展开执行透视';
+
+describe('ChatBubble 调用 Skill 展示 (透视面板)', () => {
+  it('toolsUsed 非空且非流式 → 渲染透视面板, 展开后可见 "调用 Skill" + 每个 Skill 名', () => {
+    const { getByText, queryByText, getByLabelText } = renderBubble({
       id: 'assistant-tools',
       role: 'assistant',
       content: CONTENT,
@@ -88,13 +92,20 @@ describe('ChatBubble 调用 Skill 展示', () => {
       toolsUsed: ['health_record', 'health_query'],
     });
 
+    // 面板默认折叠: 头部可见, Skill 明细尚未展开
+    const expander = getByLabelText(EXPAND_LABEL);
+    expect(expander).toBeTruthy();
+    expect(queryByText('调用 Skill')).toBeNull();
+
+    // 展开 → Skill 名对用户可见
+    fireEvent.press(expander);
     expect(getByText('调用 Skill')).toBeTruthy();
     expect(getByText('health_record')).toBeTruthy();
     expect(getByText('health_query')).toBeTruthy();
   });
 
-  it('toolsUsed 空 → 不渲染 "调用 Skill" 块', () => {
-    const { queryByText } = renderBubble({
+  it('toolsUsed 空 → 不渲染透视面板 (无 "调用 Skill" 块)', () => {
+    const { queryByText, queryByLabelText } = renderBubble({
       id: 'assistant-no-tools',
       role: 'assistant',
       content: CONTENT,
@@ -102,22 +113,24 @@ describe('ChatBubble 调用 Skill 展示', () => {
       toolsUsed: [],
     });
 
+    expect(queryByLabelText(EXPAND_LABEL)).toBeNull();
     expect(queryByText('调用 Skill')).toBeNull();
   });
 
   it('toolsUsed undefined → 不渲染', () => {
-    const { queryByText } = renderBubble({
+    const { queryByText, queryByLabelText } = renderBubble({
       id: 'assistant-undef-tools',
       role: 'assistant',
       content: CONTENT,
       streaming: false,
     });
 
+    expect(queryByLabelText(EXPAND_LABEL)).toBeNull();
     expect(queryByText('调用 Skill')).toBeNull();
   });
 
   it('流式期 (streaming) 即使有 toolsUsed 也不渲染', () => {
-    const { queryByText } = renderBubble({
+    const { queryByText, queryByLabelText } = renderBubble({
       id: 'assistant-streaming-tools',
       role: 'assistant',
       content: CONTENT,
@@ -125,6 +138,7 @@ describe('ChatBubble 调用 Skill 展示', () => {
       toolsUsed: ['health_record'],
     });
 
+    expect(queryByLabelText(EXPAND_LABEL)).toBeNull();
     expect(queryByText('调用 Skill')).toBeNull();
   });
 });

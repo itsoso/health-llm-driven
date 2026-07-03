@@ -15,6 +15,17 @@ from app.services.agent_executor import (
 )
 
 
+# mobile/components/chat/cards/registry.tsx 的 ALLOWED_ACTIONS 客户端硬门:
+# 卡片 action 不在此集合内会被客户端直接丢弃。后端发卡必须落在这个面里。
+CLIENT_ACTION_ALLOWLIST = {
+    "agenda.complete",
+    "write_intent.confirm",
+    "write_intent.dismiss",
+    "route.open",
+    "ui.inline.expand",
+}
+
+
 def _stream_from(fake_call_llm):
     """把旧式 fake_call_llm(messages, tools) -> dict 适配成 run_stream 现在用的
     _call_llm_stream(messages, tools) -> AsyncIterator[event]。
@@ -453,13 +464,20 @@ async def test_agent_stream_emits_record_card_after_fast_diet_record(db, auth_us
     card_events = [event for event in events if event.get("event") == "card"]
     assert len(card_events) == 1
     card = card_events[0]["data"]["descriptor"]
-    assert card == {
-        "type": "record",
-        "data": {
-            "type": "diet",
-            "detail": "已记录早餐：两个鸡蛋,一杯牛奶",
-        },
-    }
+    # post_record_quality 升级后, 饮食记录发结构化 record_quality 卡(带 actions/个性化字段),
+    # 不再是扁平 record 卡。逐字段断言承重项, 不整卡盲等值(附加字段允许演进)。
+    assert card["type"] == "record_quality"
+    assert card["data"]["domain"] == "diet"
+    assert card["data"]["title"] == "早餐已记录"
+    assert card["data"]["summary"] == "两个鸡蛋,一杯牛奶"
+    assert card["data"]["next_action"], "record_quality 卡必须带下一步行动"
+    assert card["data"]["boundary"], "非诊断边界声明不允许缺失"
+    actions = card.get("actions") or []
+    assert actions, "record_quality 卡必须带 actions"
+    for action in actions:
+        assert action["action"] in CLIENT_ACTION_ALLOWLIST, f"客户端会丢弃越界 action: {action}"
+        assert action.get("id") and action.get("label"), f"action 缺 id/label: {action}"
+    assert card_events[0]["data"]["anchor"] == "post_record_quality"
     assert events.index(card_events[0]) > next(i for i, e in enumerate(events) if e.get("event") == "tool_result")
     done_idx = next(i for i, e in enumerate(events) if e.get("event") == "done")
     assert events.index(card_events[0]) < done_idx
@@ -532,30 +550,36 @@ async def test_agent_stream_emits_safety_card_after_record_safety_alert(db, auth
     ]
 
     card_events = [event for event in events if event.get("event") == "card"]
-    cards = [event["data"]["descriptor"] for event in card_events]
-    record_card = {
-        "type": "record",
-        "data": {
-            "type": "diet",
-            "detail": "已记录晚餐：牛肉面",
-        },
-    }
-    safety_card = {
-        "type": "safety",
-        "data": {
-            "title": "今天不建议高强度训练",
-            "severity": "high",
-            "summary": "睡眠不足且 HRV 明显低于近期基线，建议把训练降级。",
-            "recommendations": ["改为 20 分钟低强度步行或拉伸"],
-            "boundary": "这不是诊断；如出现急性不适或持续症状，请及时就医。",
-            "requires_medical_attention": True,
-            "rule_id": "training.high_intensity_not_recommended",
-            "category": "training_load",
-        },
-    }
+    assert len(card_events) == 2
+    record_card = card_events[0]["data"]["descriptor"]
+    safety_card = card_events[1]["data"]["descriptor"]
 
-    assert cards == [record_card, safety_card]
-    assert card_events[0]["data"]["anchor"] == "tool_result"
+    # 记录卡升级为结构化 record_quality(post_record_quality 产出, 带 actions);
+    # 承重字段逐一断言, 不整卡盲等值。
+    assert record_card["type"] == "record_quality"
+    assert record_card["data"]["domain"] == "diet"
+    assert record_card["data"]["title"] == "晚餐已记录"
+    assert record_card["data"]["summary"] == "牛肉面"
+    assert record_card["data"]["boundary"], "非诊断边界声明不允许缺失"
+    assert record_card.get("actions"), "record_quality 卡必须带 actions"
+    for action in record_card["actions"]:
+        assert action["action"] in CLIENT_ACTION_ALLOWLIST, f"客户端会丢弃越界 action: {action}"
+
+    # 安全卡是确定性裁决输出 — 每个承重字段显式断言, 覆盖面不缩水(加层不减层)。
+    assert safety_card["type"] == "safety"
+    safety_data = safety_card["data"]
+    assert safety_data["title"] == "今天不建议高强度训练"
+    assert safety_data["severity"] == "high"
+    assert safety_data["summary"] == "睡眠不足且 HRV 明显低于近期基线，建议把训练降级。"
+    assert safety_data["recommendations"] == ["改为 20 分钟低强度步行或拉伸"]
+    assert safety_data["boundary"] == "这不是诊断；如出现急性不适或持续症状，请及时就医。"
+    assert safety_data["requires_medical_attention"] is True
+    assert safety_data["rule_id"] == "training.high_intensity_not_recommended"
+    assert safety_data["category"] == "training_load"
+    for action in safety_card.get("actions") or []:
+        assert action["action"] in CLIENT_ACTION_ALLOWLIST, f"客户端会丢弃越界 action: {action}"
+
+    assert card_events[0]["data"]["anchor"] == "post_record_quality"
     assert card_events[1]["data"]["anchor"] == "safety_alert"
 
     done_idx = next(i for i, e in enumerate(events) if e.get("event") == "done")
