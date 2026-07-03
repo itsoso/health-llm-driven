@@ -125,6 +125,24 @@ describe('ChatBubble streaming degraded render', () => {
     expect(getByText('今晚优先固定睡眠时间。')).toBeTruthy();
   });
 
+  it('keeps completed thinking steps visible after streaming finishes', () => {
+    const { getByLabelText, getByText } = renderBubble({
+      id: 'assistant-finished-thinking',
+      role: 'assistant',
+      content: '今天饮食总结如下。',
+      streaming: false,
+      thinkingSteps: ['正在理解你的问题', '读取记录信息', '整理回复中'],
+    });
+
+    expect(getByText('思考完成')).toBeTruthy();
+    expect(getByText('3/3')).toBeTruthy();
+    expect(getByText('正在理解你的问题')).toBeTruthy();
+    expect(getByText('读取记录信息')).toBeTruthy();
+    expect(getByText('整理回复中')).toBeTruthy();
+    expect(getByLabelText('已完成步骤:整理回复中')).toBeTruthy();
+    expect(getByText('今天饮食总结如下。')).toBeTruthy();
+  });
+
   // 流式期间跳过 sanitizeAiContent + extractRevaUiBlocks 两条重正则 (perf fix).
   // 判别用: [附图: …] 会被 sanitize 剥掉; ```reva-ui``` fence 会被 extract 抽成卡片.
   // 流式中两者都应"未处理" → 原文逐字显示, 无 reva-ui 卡片视图.

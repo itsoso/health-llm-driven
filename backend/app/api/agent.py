@@ -33,6 +33,89 @@ router = APIRouter()
 # 不持久化, 进程内即可; 多 worker 各自一份没关系 (同一连接通常落同一 worker).
 _RECENT_DUP_CACHE: dict[tuple[int, str], float] = {}
 _DUP_WINDOW_SECONDS = 3.0
+_MAX_THINKING_STEPS = 8
+_THINKING_STEPS_KIND = "safe_progress_summary"
+_TOOL_THOUGHT_LABELS = {
+    "health_query": "健康数据",
+    "health_record": "记录信息",
+    "health_manage": "健康记录",
+}
+
+
+def _tool_thought_label(tool_name: str | None) -> str:
+    tool = (tool_name or "").strip()
+    if not tool:
+        return "相关数据"
+    if tool in _TOOL_THOUGHT_LABELS:
+        return _TOOL_THOUGHT_LABELS[tool]
+    if "weather" in tool or "environment" in tool:
+        return "环境数据"
+    if "calendar" in tool:
+        return "日程上下文"
+    if "medical" in tool or "exam" in tool or "lab" in tool:
+        return "体检数据"
+    if "genetic" in tool:
+        return "基因数据"
+    if "supplement" in tool:
+        return "补剂数据"
+    if "diet" in tool:
+        return "饮食数据"
+    if "sleep" in tool:
+        return "睡眠数据"
+    return "相关数据"
+
+
+def _status_stage_thought(stage: str | None, detail: str | None = None, round: int | None = None) -> str | None:
+    s = (stage or "").strip()
+    trimmed_detail = (detail or "").strip()
+    if s == "vision":
+        return "识别图片中"
+    if s == "thinking":
+        return "整理思路" if isinstance(round, int) and round >= 2 else "正在思考"
+    if s == "tool":
+        return f"正在{trimmed_detail}" if trimmed_detail else "调用工具中"
+    if s == "synthesis":
+        return "整理回复中"
+    return None
+
+
+def _thought_step_from_agent_event(event: dict | None) -> str | None:
+    """Map SSE events to safe user-facing progress summaries.
+
+    These are not model chain-of-thought: they are coarse transport/tool/status
+    labels that the mobile client already displays live.
+    """
+    if not isinstance(event, dict):
+        return None
+    name = event.get("event")
+    data = event.get("data") if isinstance(event.get("data"), dict) else {}
+    if name == "agent_start":
+        return "正在理解你的问题"
+    if name == "tool_call":
+        return f"读取{_tool_thought_label(data.get('tool'))}"
+    if name == "tool_result":
+        label = _tool_thought_label(data.get("tool"))
+        return f"已取得{label}" if data.get("success") else f"{label}暂时不可用"
+    if name == "status":
+        return _status_stage_thought(data.get("stage"), data.get("detail"), data.get("round"))
+    return None
+
+
+def _append_thinking_step(current: list[str] | None, next_step: str | None) -> list[str]:
+    normalized = (next_step or "").strip()
+    existing = [str(s).strip() for s in (current or []) if str(s).strip()]
+    if not normalized or normalized in existing:
+        return existing[-_MAX_THINKING_STEPS:]
+    return [*existing, normalized][-_MAX_THINKING_STEPS:]
+
+
+def _normalize_thinking_steps(steps: list | None) -> list[str]:
+    out: list[str] = []
+    for step in steps or []:
+        normalized = str(step or "").strip()
+        if normalized and normalized not in out:
+            out.append(normalized)
+    return out[-_MAX_THINKING_STEPS:]
 
 
 def _merge_card_descriptors(*groups: list | None) -> list:
@@ -99,6 +182,27 @@ def _persist_done_llm_usage(db: Session, message_id: int | None, usage: dict | N
         db.commit()
     except Exception as e:  # noqa: BLE001
         logger.debug("[agent.stream] persist llm usage skipped: %s", e)
+
+
+def _persist_done_thinking_steps(db: Session, message_id: int | None, steps: list | None) -> None:
+    """Persist safe progress summaries into OpenClawMessage.meta for history restore."""
+
+    normalized = _normalize_thinking_steps(steps)
+    if not message_id or not normalized:
+        return
+    try:
+        from app.models.openclaw import OpenClawMessage
+
+        msg = db.query(OpenClawMessage).filter(OpenClawMessage.id == message_id).first()
+        if not msg:
+            return
+        meta = dict(msg.meta or {})
+        meta["thinking_steps"] = normalized
+        meta["thinking_steps_kind"] = _THINKING_STEPS_KIND
+        msg.meta = meta
+        db.commit()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[agent.stream] persist thinking steps skipped: %s", e)
 
 
 def _check_recent_dup(user_id: int, message: str) -> bool:
@@ -238,8 +342,15 @@ def _maybe_genui_chart_events(
     conv = svc.get_or_create_conversation(user_id, conversation_id, title=message)
     svc.save_message(conv.id, "user", message)
     ai_msg = svc.save_message(conv.id, "assistant", full_reply)
+    thinking_steps = ["正在理解你的问题", "整理回复中"]
     try:
-        ai_msg.meta = {"mode": "agent", "genui": True, "sources_used": ["设备数据"]}
+        ai_msg.meta = {
+            "mode": "agent",
+            "genui": True,
+            "sources_used": ["设备数据"],
+            "thinking_steps": thinking_steps,
+            "thinking_steps_kind": _THINKING_STEPS_KIND,
+        }
         db.commit()
     except Exception as e:  # noqa: BLE001
         logger.debug("[agent.stream] genui meta write skipped: %s", e)
@@ -255,6 +366,7 @@ def _maybe_genui_chart_events(
                 "elapsed_ms": 0,
                 "mode": "agent",
                 "genui": True,
+                "thinking_steps": thinking_steps,
             },
         },
     ]
@@ -440,6 +552,7 @@ async def agent_stream(
                 executor_bg = AgentExecutor(bg_db)
                 # 累积 LLM 流式输出, done 时扫描 fenced ```menu_share 块 (L1 分享菜单)
                 full_text_buf: list = []
+                thinking_steps: list[str] = []
                 async for event in executor_bg.run_stream(
                     user_id=user_id,
                     message=msg_text,
@@ -455,9 +568,15 @@ async def agent_stream(
                         tc = event.get("data", {}).get("content")
                         if isinstance(tc, str):
                             full_text_buf.append(tc)
+                    thinking_steps = _append_thinking_step(
+                        thinking_steps,
+                        _thought_step_from_agent_event(event),
+                    )
                     # 在 done 事件里附加动态卡片, 失败静默
                     if event.get("event") == "done":
                         event.setdefault("data", {})["run_id"] = run_id
+                        if thinking_steps:
+                            event.setdefault("data", {})["thinking_steps"] = thinking_steps
                         try:
                             from app.services.inline_cards import build_cards, extract_inline_card_blocks
                             existing = event.get("data", {}).get("cards")
@@ -487,6 +606,14 @@ async def agent_stream(
                                 )
                         except Exception as e:  # noqa: BLE001
                             logger.debug("[agent.stream] attach llm usage skipped: %s", e)
+                        try:
+                            _persist_done_thinking_steps(
+                                bg_db,
+                                event.get("data", {}).get("message_id"),
+                                thinking_steps,
+                            )
+                        except Exception as e:  # noqa: BLE001
+                            logger.debug("[agent.stream] attach thinking steps skipped: %s", e)
                     await chunk_queue.put(f"data: {json.dumps(event, ensure_ascii=False)}\n\n")
             except Exception as e:
                 logger.error(f"Agent bg 流式异常: {e}", exc_info=True)

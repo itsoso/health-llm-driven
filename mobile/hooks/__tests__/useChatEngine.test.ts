@@ -42,7 +42,7 @@ jest.mock('../../services/clientEvents', () => ({
   emitClientEvent: jest.fn(),
 }));
 
-import { useChatEngine } from '../useChatEngine';
+import { restoreMessagesFromHistory, useChatEngine } from '../useChatEngine';
 
 let finishStream: (() => void) | undefined;
 let failStream: (() => void) | undefined;
@@ -149,6 +149,27 @@ describe('useChatEngine', () => {
     mockGetConversationMessages.mockResolvedValue({ total_messages: 0, messages: [] });
     mockDeleteConversation.mockResolvedValue(true);
     mockRenderServerCards.mockImplementation((cards: any[]) => Array.isArray(cards) ? cards : []);
+  });
+
+  it('restores persisted safe thinking steps from assistant history meta', () => {
+    const restored = restoreMessagesFromHistory([
+      {
+        id: 42,
+        role: 'assistant',
+        content: '今天饮食总结如下。',
+        created_at: '2026-07-03T12:00:00Z',
+        meta: {
+          thinking_steps: ['正在理解你的问题', '读取记录信息', '整理回复中'],
+          thinking_steps_kind: 'safe_progress_summary',
+        },
+      },
+    ]);
+
+    expect(restored[0]).toEqual(expect.objectContaining({
+      role: 'assistant',
+      content: '今天饮食总结如下。',
+      thinkingSteps: ['正在理解你的问题', '读取记录信息', '整理回复中'],
+    }));
   });
 
   it('restores the last active conversation after the chat page is remounted', async () => {

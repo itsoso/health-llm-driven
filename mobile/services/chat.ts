@@ -62,6 +62,7 @@ export interface StreamEvent {
   content?: string;
   /** 面向用户的安全思考/进度摘要,不包含模型原始推理链或工具参数。 */
   thought?: string;
+  thinkingSteps?: string[];
   conversationId?: number;
   messageId?: number;
   anchor?: string;
@@ -303,6 +304,7 @@ export async function* streamChat(
           sourcesUsed: Array.isArray(parsed.data?.sources_used) ? parsed.data.sources_used : undefined,
           toolsUsed: Array.isArray(parsed.data?.tools_used) ? parsed.data.tools_used : undefined,
           completionStatus: parsed.data?.completion_status,
+          thinkingSteps: normalizeThinkingSteps(parsed.data?.thinking_steps),
           cards: Array.isArray(parsed.data?.cards) ? parsed.data.cards : undefined,
         };
       } else if (parsed.event === 'error') {
@@ -356,6 +358,16 @@ export async function* streamChat(
       if (evt !== doneSentinel && evt) yield evt;
     }
   }
+}
+
+function normalizeThinkingSteps(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: string[] = [];
+  for (const step of value) {
+    const normalized = String(step || '').trim();
+    if (normalized && !out.includes(normalized)) out.push(normalized);
+  }
+  return out.length > 0 ? out.slice(-8) : undefined;
 }
 
 export interface ConversationsPage {

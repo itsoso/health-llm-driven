@@ -62,7 +62,18 @@ function applyMeta(msg: any): Partial<UIMessage> {
     sourcesUsed: Array.isArray(meta.sources_used) ? meta.sources_used : undefined,
     toolsUsed: Array.isArray(meta.tools_used) ? meta.tools_used : undefined,
     completionStatus: typeof meta.completion_status === 'string' ? meta.completion_status : undefined,
+    thinkingSteps: normalizeThinkingSteps(meta.thinking_steps ?? meta.thought_steps),
   };
+}
+
+function normalizeThinkingSteps(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: string[] = [];
+  for (const step of value) {
+    const normalized = String(step || '').trim();
+    if (normalized && !out.includes(normalized)) out.push(normalized);
+  }
+  return out.length > 0 ? out.slice(-MAX_THINKING_STEPS) : undefined;
 }
 
 function absolutizeHistoryImageUri(uri: string, imageHost: string): string | undefined {
@@ -560,6 +571,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             sourcesUsed: evt.sourcesUsed,
             toolsUsed: evt.toolsUsed,
             completionStatus: evt.completionStatus,
+            thinkingSteps: evt.thinkingSteps?.length ? evt.thinkingSteps : m.thinkingSteps,
           } : m));
           const rawDoneCards = Array.isArray((evt as any).cards) ? (evt as any).cards : [];
           const serverCards = renderServerCards(rawDoneCards).filter((card) => {
