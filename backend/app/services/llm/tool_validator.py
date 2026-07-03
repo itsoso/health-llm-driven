@@ -28,6 +28,8 @@ import logging
 from datetime import datetime, date, timedelta, timezone
 from typing import Any, Dict, Optional
 
+from app.services.health_query_dimensions import normalize_health_query_args
+
 # 北京时区 (UTC+8) — 用户活动以中国本地日期为准
 BEIJING_TZ = timezone(timedelta(hours=8))
 
@@ -349,8 +351,12 @@ def _coerce_int_range(
 def _validate_query(
     args: Dict[str, Any], warnings: list, db, user_id: Optional[int],
 ) -> Optional[str]:
+    normalized = normalize_health_query_args(args)
+    args.clear()
+    args.update(normalized)
     _coerce_enum("health_query", args, "dimension", _QUERY_DIMENSIONS, "comprehensive", warnings)
     _coerce_int_range("health_query", args, "days", 1, 365, 7, warnings)
+    _coerce_int_range("health_query", args, "uploaded_days", 1, 365, 1, warnings)
     # indicator 只在 medical_exam / genetic 有意义, 其余 dim silent drop
     if args.get("indicator") and args.get("dimension") not in _INDICATOR_ALLOWED_DIMS:
         _metric("health_query", "indicator", "irrelevant_to_dim")

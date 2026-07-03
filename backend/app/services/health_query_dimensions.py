@@ -1,0 +1,86 @@
+"""health_query dimension normalization shared by schema guard and executor."""
+from __future__ import annotations
+
+import re
+from typing import Any, Dict
+
+
+HEALTH_QUERY_DIM_ALIASES: Dict[str, str] = {
+    "lab_results": "medical_exam",
+    "lab_result": "medical_exam",
+    "lab": "medical_exam",
+    "labs": "medical_exam",
+    "化验": "medical_exam",
+    "化验结果": "medical_exam",
+    "化验报告": "medical_exam",
+    "exam": "medical_exam",
+    "medical": "medical_exam",
+    "blood_test": "medical_exam",
+    "bloodtest": "medical_exam",
+    "checkup": "medical_exam",
+    "体检": "medical_exam",
+    "medical_records": "medical_exam",
+    "medical_record": "medical_exam",
+    "medical_report": "medical_exam",
+    "imaging": "medical_exam",
+    "radiology": "medical_exam",
+    "mri": "medical_exam",
+    "ct": "medical_exam",
+    "xray": "medical_exam",
+    "x-ray": "medical_exam",
+    "ultrasound": "medical_exam",
+    "影像": "medical_exam",
+    "影像报告": "medical_exam",
+    "检查报告": "medical_exam",
+    "核磁": "medical_exam",
+    "磁共振": "medical_exam",
+    "ct报告": "medical_exam",
+    "x光": "medical_exam",
+    "b超": "medical_exam",
+    "gene": "genetic",
+    "genes": "genetic",
+    "genetics": "genetic",
+    "基因": "genetic",
+    "bp": "blood_pressure",
+    "血压": "blood_pressure",
+    "meds": "medication",
+    "medications": "medication",
+    "用药": "medication",
+}
+
+HEALTH_QUERY_DIM_KEYS = ("dimension", "type", "query_type", "category", "kind")
+
+
+def normalize_health_query_args(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize model-generated health_query args without losing unknown fields."""
+    a = dict(args or {})
+    if not a.get("dimension"):
+        for key in HEALTH_QUERY_DIM_KEYS:
+            if key != "dimension" and a.get(key):
+                a["dimension"] = a[key]
+                break
+
+    dim = a.get("dimension")
+    if isinstance(dim, str):
+        stripped = dim.strip()
+        a["dimension"] = HEALTH_QUERY_DIM_ALIASES.get(stripped.lower(), stripped)
+
+    if not a.get("days"):
+        time_range = a.get("time_range") or a.get("range") or a.get("time")
+        if time_range is not None:
+            match = re.search(r"\d+", str(time_range))
+            if match:
+                a["days"] = int(match.group())
+
+    if not a.get("uploaded_days"):
+        uploaded_range = (
+            a.get("uploaded_range")
+            or a.get("upload_range")
+            or a.get("created_range")
+        )
+        if uploaded_range is not None:
+            match = re.search(r"\d+", str(uploaded_range))
+            if match:
+                a["uploaded_days"] = int(match.group())
+
+    return a

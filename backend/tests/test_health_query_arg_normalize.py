@@ -53,9 +53,28 @@ def test_dimension_wins_over_alias():
 
 def test_medical_records_and_imaging_aliases_normalize_to_medical_exam():
     from app.services.agent_executor import _normalize_health_query_args
-    for raw in ("medical_records", "medical_record", "imaging", "mri", "影像", "影像报告", "检查报告"):
+    for raw in (
+        "medical_records",
+        "medical_record",
+        "imaging",
+        "mri",
+        "核磁",
+        "磁共振",
+        "ct",
+        "xray",
+        "ultrasound",
+        "影像",
+        "影像报告",
+        "检查报告",
+    ):
         out = _normalize_health_query_args({"type": raw})
         assert out["dimension"] == "medical_exam", raw
+
+
+def test_uploaded_range_alias_normalizes_to_uploaded_days():
+    a = norm({"type": "medical_records", "uploaded_range": "近1天"})
+    assert a["dimension"] == "medical_exam"
+    assert a["uploaded_days"] == 1
 
 
 def test_claude_inline_params_payload_recovers_end_to_end():

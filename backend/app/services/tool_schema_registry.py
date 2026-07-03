@@ -52,9 +52,12 @@ dimension 选择指南 (按场景):
   supplements      — 补剂服用依从率
 
 【体检 / 基因 / 用药】
-  medical_exam     — 化验/体检指标 (读归一化指标表, 与 Twin 同源).
+  medical_exam     — 化验/体检/影像报告 (MRI/核磁/CT/X光/B超/胃镜等也在这里; 读归一化指标表 + 最近检查报告摘要, 与 Twin 同源).
                      不传 indicator → 返回用户全部化验指标清单 + 每项最新值 (问"我有哪些化验指标"走这里).
                      传 indicator (如 'HCY'/'LDL'/'HbA1c') → 返回该指标时间序列.
+                     传 keyword (如 '膝关节MRI'/'核磁'/'影像') → 查询相关体检/影像条目.
+                     问"昨天上传的记录/最近导入的报告" → 用 dimension='medical_exam' + uploaded_days 或 uploaded_since,
+                     返回按上传/导入时间排序的体检/影像报告清单.
                      化验是低频数据, days 自动放宽到至少 365 天, 不会因 days 太小漏数据.
   genetic          — 基因位点 (必须配 indicator 参数, 如 'MTHFR', 'APOE')
   genetic_cognitive / genetic_personality / genetic_comprehensive — 整合性基因解读
@@ -85,6 +88,18 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
                     "indicator": {
                         "type": "string",
                         "description": "具体指标名 (仅 medical_exam / genetic). 例: HCY, LDL, HbA1c, MTHFR, APOE",
+                    },
+                    "keyword": {
+                        "type": "string",
+                        "description": "体检/影像报告关键词 (仅 medical_exam). 例: 膝关节MRI, 核磁, 胃镜, CT",
+                    },
+                    "uploaded_days": {
+                        "type": "integer",
+                        "description": "按上传/导入时间查询最近几天的体检/影像报告. 例: 昨天上传=1",
+                    },
+                    "uploaded_since": {
+                        "type": "string",
+                        "description": "按上传/导入时间查询, 起始 ISO 日期或时间. 例: 2026-07-02",
                     },
                 },
                 "required": ["dimension"],

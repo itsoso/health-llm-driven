@@ -224,6 +224,14 @@ class TestQueryGuard:
         assert v["data"]["dimension"] == "comprehensive"
         assert any("dimension" in w for w in v["warnings"])
 
+    def test_query_dimension_alias_normalized_before_enum_guard(self):
+        v = validate_tool_call("health_query", {"type": "medical_records", "days": 1})
+        assert v["data"]["dimension"] == "medical_exam"
+        assert v["data"]["days"] == 1
+
+        v = validate_tool_call("health_query", {"dimension": "mri"})
+        assert v["data"]["dimension"] == "medical_exam"
+
     def test_valid_dimension_kept(self):
         v = validate_tool_call("health_query", {"dimension": "hrv", "days": 14})
         assert v["data"]["dimension"] == "hrv"

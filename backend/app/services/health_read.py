@@ -23,7 +23,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import func, or_
@@ -55,10 +55,21 @@ def canonical_read(
     *,
     days=7,
     indicator: str = "",
+    keyword: str = "",
+    uploaded_since: str = "",
+    uploaded_days=None,
 ) -> Optional[str]:
     """统一 canonical 读入口. 返回紧凑文本; None = 此维度未迁移(调用方回退旧路径)."""
     if dimension == "medical_exam":
-        return read_medical_indicators(db, user_id, indicator=indicator, days=days)
+        return read_medical_indicators(
+            db,
+            user_id,
+            indicator=indicator,
+            days=days,
+            keyword=keyword,
+            uploaded_since=uploaded_since,
+            uploaded_days=uploaded_days,
+        )
     if dimension in _WEARABLE_DIMS:
         return read_wearable_daily(db, user_id, days=days, focus=dimension)
     return None
@@ -66,7 +77,14 @@ def canonical_read(
 
 # ── 化验/体检 → MedicalIndicator (与 Twin fetch_latest_labs 同源) ─────────
 def read_medical_indicators(
-    db: Session, user_id: Optional[int], *, indicator: str = "", days=7
+    db: Session,
+    user_id: Optional[int],
+    *,
+    indicator: str = "",
+    days=7,
+    keyword: str = "",
+    uploaded_since: str = "",
+    uploaded_days=None,
 ) -> str:
     """化验/体检维度: 直接读 MedicalIndicator (与 Twin fetch_latest_labs 同源).
 
@@ -78,39 +96,63 @@ def read_medical_indicators(
     if user_id is None:
         return "Error: 当前会话无 user_id, 无法查询化验指标"
 
+    if uploaded_since or uploaded_days:
+        return read_recent_medical_exam_uploads(
+            db,
+            user_id,
+            uploaded_since=uploaded_since,
+            uploaded_days=uploaded_days,
+            keyword=keyword or indicator,
+        )
+
     window_days = _window_days(days, floor=365)  # 化验低频, 放宽到 >=365 天
     since = date.today() - timedelta(days=window_days)
 
     from app.models.family_health import MedicalIndicator
 
-    name = (indicator or "").strip()
+    name = (indicator or keyword or "").strip()
     try:
         if name:
-            up = name.upper()
+            clauses = []
+            for term in _keyword_terms(name):
+                up = term.upper()
+                clauses.extend([
+                    MedicalIndicator.name == term,
+                    MedicalIndicator.name_en == up,
+                    MedicalIndicator.name.ilike(f"%{term}%"),
+                    MedicalIndicator.name_en.ilike(f"%{term}%"),
+                    MedicalIndicator.item_code.ilike(f"%{up}%"),
+                    MedicalIndicator.value_text.ilike(f"%{term}%"),
+                ])
             rows = (
                 db.query(MedicalIndicator)
                 .filter(
                     MedicalIndicator.user_id == user_id,
                     MedicalIndicator.record_date >= since,
-                    or_(
-                        MedicalIndicator.name == name,
-                        MedicalIndicator.name_en == up,
-                        MedicalIndicator.name.ilike(f"%{name}%"),
-                        MedicalIndicator.name_en.ilike(f"%{name}%"),
-                        MedicalIndicator.item_code.ilike(f"%{up}%"),
-                    ),
+                    or_(*clauses),
                 )
                 .order_by(sa_desc(MedicalIndicator.record_date), sa_desc(MedicalIndicator.id))
                 .limit(20)
                 .all()
             )
             if not rows:
-                return f"未找到化验指标「{name}」(最近 {window_days} 天内)。可能未录入, 或换个指标名再试。"
+                summaries = _latest_medical_exam_summary_lines(
+                    db, user_id, since=since, keyword=name, limit=8
+                )
+                if summaries:
+                    return "\n".join([
+                        f"未找到名为「{name}」的归一化化验指标；但找到相关检查报告摘要:",
+                        *summaries,
+                    ])
+                return f"未找到化验/体检/影像指标「{name}」(最近 {window_days} 天内)。可能未录入, 或换个指标名再试。"
             lines = [f"化验指标「{rows[0].name}」时间序列 (最近 {len(rows)} 条):"]
             lines.extend(_format_indicator_line(r) for r in rows)
             return "\n".join(lines)
 
         # 无 indicator: 指标清单 + 每项最新值. 按 name 取最新一条.
+        summaries = _latest_medical_exam_summary_lines(
+            db, user_id, since=since, keyword="", limit=5
+        )
         latest_date = (
             db.query(
                 MedicalIndicator.name.label("name"),
@@ -142,20 +184,80 @@ def read_medical_indicators(
             seen.add(r.name)
             uniq.append(r)
         if not uniq:
+            if summaries:
+                return "\n".join([
+                    "未找到归一化化验指标；但找到最近检查报告摘要:",
+                    *summaries,
+                ])
             return (
-                f"未找到任何化验/体检指标 (最近 {window_days} 天内)。"
+                f"未找到任何化验/体检/影像指标 (最近 {window_days} 天内)。"
                 "用户可能还没录入体检报告; 可让用户拍照上传体检单或口述化验结果。"
             )
         abnormal = [r for r in uniq if r.is_abnormal]
         header = f"共有 {len(uniq)} 项化验指标 (取每项最新值"
         header += f", 其中 {len(abnormal)} 项异常):" if abnormal else "):"
-        lines = [header]
+        lines = []
+        if summaries:
+            lines.extend(["最近检查报告摘要:", *summaries, ""])
+        lines.append(header)
         lines.extend(_format_indicator_line(r) for r in uniq)
         return "\n".join(lines)
     except Exception as e:
         logger.error("[health_read] 查询 MedicalIndicator 失败: %s", e)
         _safe_rollback(db)
         return f"Error: 查询化验指标失败: {e}"
+
+
+def read_recent_medical_exam_uploads(
+    db: Session,
+    user_id: Optional[int],
+    *,
+    uploaded_since: str = "",
+    uploaded_days=None,
+    keyword: str = "",
+) -> str:
+    """按上传/导入时间列出 MedicalExam,用于"昨天上传的记录"这类查询."""
+    if user_id is None:
+        return "Error: 当前会话无 user_id, 无法查询体检/影像上传记录"
+
+    since_dt = _parse_uploaded_since(uploaded_since, uploaded_days)
+    from app.models.medical_exam import MedicalExam
+
+    try:
+        q = db.query(MedicalExam).filter(
+            MedicalExam.user_id == user_id,
+            MedicalExam.created_at >= since_dt,
+        )
+        kw = (keyword or "").strip()
+        if kw:
+            q = q.filter(_medical_exam_keyword_clause(MedicalExam, kw))
+        rows = (
+            q.order_by(sa_desc(MedicalExam.created_at), sa_desc(MedicalExam.id))
+            .limit(20)
+            .all()
+        )
+        if not rows:
+            since_s = since_dt.date().isoformat()
+            kw_s = f"、关键词「{kw}」" if kw else ""
+            return f"未找到 {since_s} 以来上传/导入的体检/影像报告{kw_s}。"
+
+        lines = [
+            f"最近上传/导入的体检/影像报告 (自 {since_dt.date().isoformat()} 起, {len(rows)} 份):"
+        ]
+        for exam in rows:
+            created = exam.created_at.isoformat() if exam.created_at else "?"
+            exam_date = exam.exam_date.isoformat() if exam.exam_date else "?"
+            summary = _clean_summary(exam.overall_assessment or "")
+            if summary:
+                summary = f"；摘要: {summary}"
+            lines.append(
+                f"- exam_id={exam.id}；检查日期 {exam_date}；上传/导入 {created}；类型 {exam.exam_type or 'other'}{summary}"
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        logger.error("[health_read] 查询 MedicalExam 上传记录失败: %s", e)
+        _safe_rollback(db)
+        return f"Error: 查询体检/影像上传记录失败: {e}"
 
 
 def _format_indicator_line(r) -> str:
@@ -185,6 +287,94 @@ def _format_indicator_line(r) -> str:
         hi = r.reference_high if r.reference_high is not None else ""
         ref = f" 参考 {lo}-{hi}"
     return f"- {r.name}: {val}{unit} ({date_s}){stale} [{flag}]{ref}"
+
+
+def _latest_medical_exam_summary_lines(
+    db: Session,
+    user_id: int,
+    *,
+    since: date,
+    keyword: str = "",
+    limit: int = 5,
+) -> list[str]:
+    from app.models.medical_exam import MedicalExam
+
+    q = db.query(MedicalExam).filter(
+        MedicalExam.user_id == user_id,
+        MedicalExam.exam_date >= since,
+    )
+    kw = (keyword or "").strip()
+    if kw:
+        q = q.filter(_medical_exam_keyword_clause(MedicalExam, kw))
+    rows = (
+        q.order_by(sa_desc(MedicalExam.exam_date), sa_desc(MedicalExam.id))
+        .limit(limit)
+        .all()
+    )
+    lines: list[str] = []
+    for exam in rows:
+        summary = _clean_summary(exam.overall_assessment or "")
+        if not summary:
+            continue
+        exam_date = exam.exam_date.isoformat() if exam.exam_date else "?"
+        lines.append(
+            f"- exam_id={exam.id}；{exam_date}；类型 {exam.exam_type or 'other'}；{summary}"
+        )
+    return lines
+
+
+def _clean_summary(text: str, *, limit: int = 180) -> str:
+    compact = " ".join((text or "").split())
+    if len(compact) <= limit:
+        return compact
+    return compact[:limit].rstrip() + "..."
+
+
+def _parse_uploaded_since(uploaded_since: str = "", uploaded_days=None) -> datetime:
+    raw = (uploaded_since or "").strip()
+    if raw:
+        try:
+            if "T" in raw:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            parsed_date = date.fromisoformat(raw[:10])
+            return datetime.combine(parsed_date, time.min, tzinfo=timezone.utc)
+        except ValueError:
+            pass
+    days = _window_days(uploaded_days, floor=1) if uploaded_days else 1
+    return datetime.now(timezone.utc) - timedelta(days=days)
+
+
+def _medical_exam_keyword_clause(model, keyword: str):
+    clauses = []
+    for term in _keyword_terms(keyword):
+        clauses.extend([
+            model.overall_assessment.ilike(f"%{term}%"),
+            model.exam_type.ilike(f"%{term}%"),
+            model.body_system.ilike(f"%{term}%"),
+        ])
+    return or_(*clauses)
+
+
+def _keyword_terms(keyword: str) -> list[str]:
+    raw = (keyword or "").strip()
+    if not raw:
+        return []
+    terms: list[str] = [raw]
+    normalized = raw
+    for token in (
+        "MRI", "mri", "MR", "mr", "核磁", "磁共振", "影像", "报告",
+        "检查", "片子", "CT", "ct", "X光", "x光", "X线", "x线", "B超", "b超",
+    ):
+        normalized = normalized.replace(token, "")
+    normalized = normalized.strip(" ：:，,。；;（）()[]【】")
+    if len(normalized) >= 2:
+        terms.append(normalized)
+    deduped: list[str] = []
+    for term in terms:
+        if term and term not in deduped:
+            deduped.append(term)
+    return deduped
 
 
 # ── 可穿戴 daily → GarminData + 多源合并 (与 Twin 同源) ────────────────────

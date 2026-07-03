@@ -23,6 +23,7 @@ from app.config import settings
 from app.services.tool_schema_registry import get_health_tools
 from app.services.lab_plausibility import annotate_if_implausible
 from app.services.llm.error_messages import safe_llm_error_message
+from app.services.health_query_dimensions import normalize_health_query_args
 from app.services.post_record_quality import (
     build_post_record_quality_response,
     combine_post_record_quality_responses,
@@ -171,55 +172,12 @@ def _append_interrupted_notice(text: str, finish_reason: Optional[str]) -> str:
     return f"{text.rstrip()}{INTERRUPTED_COMPLETION_NOTICE}"
 
 
-# health_query 维度别名:模型(含 Opus)常把 dimension 猜成 type/query_type=lab_results。
-# 实测 bug:Claude-Opus-4.7 连查两次 `type=lab_results`/`query_type=lab_results`(参数名+值都错)
-# → dimension 默认成 comprehensive → 查了 Garmin 综合数据而非化验 → "拉不到化验"。
-# 这里做执行层容错(弱模型 tool-calling 防御套路),把别名归一到真实 dimension。
-_HEALTH_QUERY_DIM_ALIASES: Dict[str, str] = {
-    "lab_results": "medical_exam", "lab_result": "medical_exam", "lab": "medical_exam",
-    "labs": "medical_exam", "化验": "medical_exam", "化验结果": "medical_exam",
-    "化验报告": "medical_exam", "exam": "medical_exam", "medical": "medical_exam",
-    "blood_test": "medical_exam", "bloodtest": "medical_exam", "checkup": "medical_exam",
-    "体检": "medical_exam",
-    # 影像类查询(实测 Claude 传 type=medical_records 问膝关节 MRI):影像报告
-    # 也存 MedicalExam,统一归到 medical_exam 维度。
-    "medical_records": "medical_exam", "medical_record": "medical_exam",
-    "medical_report": "medical_exam", "imaging": "medical_exam",
-    "radiology": "medical_exam", "mri": "medical_exam",
-    "影像": "medical_exam", "影像报告": "medical_exam", "检查报告": "medical_exam",
-    "gene": "genetic", "genes": "genetic", "genetics": "genetic", "基因": "genetic",
-    "bp": "blood_pressure", "血压": "blood_pressure",
-    "meds": "medication", "medications": "medication", "用药": "medication",
-}
-# 接受作为 dimension 的别名参数名(模型用 type/query_type/category 代替 dimension)。
-_HEALTH_QUERY_DIM_KEYS = ("dimension", "type", "query_type", "category", "kind")
-
-
 def _normalize_health_query_args(args: Dict[str, Any]) -> Dict[str, Any]:
     """容错归一 health_query 参数:别名参数名→dimension、别名值→规范 dimension、time_range→days。
 
     纯函数(可单测)。不认识的值原样保留(交给下游 endpoint 映射/兜底)。
     """
-    import re as _re
-    a = dict(args or {})
-    # 1) dimension 缺失/为空 → 从别名参数名补
-    if not a.get("dimension"):
-        for k in _HEALTH_QUERY_DIM_KEYS:
-            if k != "dimension" and a.get(k):
-                a["dimension"] = a[k]
-                break
-    # 2) dimension 值别名归一
-    dim = a.get("dimension")
-    if isinstance(dim, str):
-        a["dimension"] = _HEALTH_QUERY_DIM_ALIASES.get(dim.strip().lower(), dim.strip())
-    # 3) days 缺失 → 从 time_range/range 解析("14d"/"30天"/"近7天")
-    if not a.get("days"):
-        tr = a.get("time_range") or a.get("range") or a.get("time")
-        if tr is not None:
-            m = _re.search(r"\d+", str(tr))
-            if m:
-                a["days"] = int(m.group())
-    return a
+    return normalize_health_query_args(args)
 
 
 def _infer_record_type_from_payload(payload: Dict[str, Any]) -> Optional[str]:
@@ -3399,6 +3357,8 @@ class AgentExecutor:
             "",
             "## 分析规则",
             "- 简单查询（'今天步数多少'）→ health_query",
+            "- 用户问'昨天/最近上传的记录/报告/体检/检查'时,不要默认查综合可穿戴数据;优先调用 health_query(dimension='medical_exam', uploaded_days=1/7)。若包含 MRI/核磁/CT/X光/B超/胃镜/影像/膝关节 等关键词,同时传 keyword。",
+            "- 用户问 MRI/核磁/CT/X光/B超/胃镜/影像报告时,调用 health_query(dimension='medical_exam', keyword='用户原词');不要说没看到报告,除非工具明确返回未找到。",
             "- 趋势分析（'最近睡眠怎么样'）→ health_analysis",
             "- 跨领域复杂问题（'我的补剂方案合理吗'、'从基因角度看我该怎么调整'）→ health_analysis(type=orchestrator, question=...)",
             "",
@@ -4451,6 +4411,11 @@ class AgentExecutor:
         dim = args.get("dimension", "comprehensive")
         days = args.get("days", 7)
         indicator = args.get("indicator", "")
+        keyword = args.get("keyword") or args.get("keywords") or args.get("query") or ""
+        if isinstance(keyword, list):
+            keyword = " ".join(str(x) for x in keyword if x)
+        uploaded_since = args.get("uploaded_since") or args.get("created_since") or ""
+        uploaded_days = args.get("uploaded_days") or args.get("created_days")
         today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
 
         # Canonical 归一读层 (docs/design-canonical-read-layer.md): 已迁维度直读
@@ -4462,7 +4427,14 @@ class AgentExecutor:
         from app.services import health_read
 
         canonical = health_read.canonical_read(
-            self.db, self._current_user_id, dim, days=days, indicator=indicator
+            self.db,
+            self._current_user_id,
+            dim,
+            days=days,
+            indicator=indicator,
+            keyword=str(keyword or ""),
+            uploaded_since=str(uploaded_since or ""),
+            uploaded_days=uploaded_days,
         )
         if canonical is not None:
             return canonical

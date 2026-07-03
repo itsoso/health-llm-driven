@@ -4,11 +4,12 @@ P0: 之前 medical_exam 走原始 /medical-exams/me HTTP, 经 _api_get 截断成
 化验项查空/不全. 现改读归一化 MedicalIndicator 表 (与 Twin fetch_latest_labs 同源).
 """
 import asyncio
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
 from app.models.family_health import MedicalIndicator
+from app.models.medical_exam import MedicalExam
 from app.services.agent_executor import AgentExecutor
 
 
@@ -150,7 +151,6 @@ def test_no_data_friendly_message(db):
 
 def test_days_window_widened_for_low_freq_labs(db):
     """化验是低频数据: 即便 days=7, 3 个月前的化验也要能查到 (窗口被放宽到>=365)."""
-    from datetime import timedelta
     uid = 6
     db.add(_make_indicator(uid, "低密度脂蛋白", 3.2, "mmol/L",
                            date.today() - timedelta(days=90)))
@@ -161,7 +161,6 @@ def test_days_window_widened_for_low_freq_labs(db):
 
 def test_stale_indicator_marked_old(db):
     """>180 天的化验应标注 (较旧·约N天前),避免 LLM 当现值给建议(safety NIT)。"""
-    from datetime import timedelta
     uid = 1
     old = date.today() - timedelta(days=200)
     recent = date.today() - timedelta(days=10)
@@ -177,3 +176,62 @@ def test_stale_indicator_marked_old(db):
     jin_line = next(l for l in out.splitlines() if "近期指标" in l)
     assert "较旧" in chen_line
     assert "较旧" not in jin_line
+
+
+def test_recent_uploaded_medical_exams_are_listed_by_created_at(db):
+    uid = 7
+    db.add_all([
+        MedicalExam(
+            user_id=uid,
+            exam_date=date(2026, 7, 1),
+            exam_type="other",
+            overall_assessment="左膝关节内外侧盘状半月板考虑，并半月板水平损伤。",
+            created_at=datetime.now(timezone.utc) - timedelta(hours=2),
+        ),
+        MedicalExam(
+            user_id=uid,
+            exam_date=date(2025, 8, 27),
+            exam_type="comprehensive",
+            overall_assessment="年度体检旧报告。",
+            created_at=datetime.now(timezone.utc) - timedelta(days=20),
+        ),
+    ])
+    db.commit()
+
+    out = _exec(db, uid, uploaded_days=1)
+    assert "最近上传/导入的体检/影像报告" in out
+    assert "左膝关节内外侧盘状半月板" in out
+    assert "年度体检旧报告" not in out
+
+
+def test_medical_exam_query_includes_latest_report_summaries(db):
+    uid = 8
+    db.add(MedicalExam(
+        user_id=uid,
+        exam_date=date(2026, 6, 30),
+        exam_type="other",
+        overall_assessment="右膝关节内侧半月板后角损伤，关节腔少量积液。",
+        created_at=datetime.now(timezone.utc),
+    ))
+    db.add(_make_indicator(uid, "右膝关节腔及髌上囊", None, "", date.today(), is_abnormal=True))
+    db.commit()
+
+    out = _exec(db, uid)
+    assert "最近检查报告摘要" in out
+    assert "右膝关节内侧半月板后角损伤" in out
+    assert "右膝关节腔及髌上囊" in out
+
+
+def test_medical_exam_keyword_with_mri_modality_matches_body_part_summary(db):
+    uid = 9
+    db.add(MedicalExam(
+        user_id=uid,
+        exam_date=date(2026, 7, 1),
+        exam_type="other",
+        overall_assessment="左膝关节内外侧盘状半月板考虑，并半月板水平损伤。",
+        created_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+
+    out = _exec(db, uid, keyword="膝关节MRI")
+    assert "左膝关节内外侧盘状半月板" in out
