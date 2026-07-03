@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import {
   login as loginApi,
+  loginByPhoneCode as loginByPhoneCodeApi,
   logout as logoutApi,
   getToken,
   fetchCurrentUser,
@@ -25,6 +26,7 @@ interface AuthState {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (username: string, password: string) => Promise<void>;
+  loginByPhoneCode: (phone: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -34,6 +36,7 @@ const AuthContext = createContext<AuthState>({
   isLoading: true,
   isAuthenticated: false,
   login: async () => {},
+  loginByPhoneCode: async () => {},
   logout: async () => {},
 });
 
@@ -103,6 +106,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(result.user);
   }, []);
 
+  const loginByPhoneCode = useCallback(async (phone: string, code: string) => {
+    const result = await loginByPhoneCodeApi(phone, code);
+    setToken(result.access_token);
+    setUser(result.user);
+  }, []);
+
   const logout = useCallback(async () => {
     await logoutApi();
     setToken(null);
@@ -113,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, token, isLoading, isAuthenticated, login, logout }}
+      value={{ user, token, isLoading, isAuthenticated, login, loginByPhoneCode, logout }}
     >
       {children}
     </AuthContext.Provider>

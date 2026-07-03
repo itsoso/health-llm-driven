@@ -14,13 +14,20 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
-import { loadCredentials, saveCredentials } from '../services/auth';
+import { loadCredentials, requestPhoneCode, saveCredentials } from '../services/auth';
 import { APP_DISPLAY_NAME } from '../constants/brand';
+
+type LoginMode = 'phone' | 'account';
 
 export default function LoginScreen() {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
-  const { login } = useAuth();
+  const { login, loginByPhoneCode } = useAuth();
+  const [mode, setMode] = useState<LoginMode>('phone');
+  const [phone, setPhone] = useState('');
+  const [code, setCode] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
+  const [phoneHint, setPhoneHint] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -42,7 +49,49 @@ export default function LoginScreen() {
     };
   }, []);
 
-  const handleLogin = async () => {
+  const handleRequestCode = async () => {
+    const trimmed = phone.trim();
+    if (!trimmed) {
+      Alert.alert('提示', '请输入手机号');
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await requestPhoneCode(trimmed, 'login');
+      setCodeSent(true);
+      if (result.dev_code) {
+        setCode(result.dev_code);
+        setPhoneHint('开发验证码已自动填入');
+      } else {
+        setPhoneHint(`验证码已发送至 ${result.phone}`);
+      }
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.detail || err?.message || '验证码发送失败，请稍后重试';
+      Alert.alert('发送失败', msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePhoneLogin = async () => {
+    if (!phone.trim() || !code.trim()) {
+      Alert.alert('提示', '请输入手机号和验证码');
+      return;
+    }
+    setLoading(true);
+    try {
+      await loginByPhoneCode(phone.trim(), code.trim());
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.detail || err?.message || '登录失败，请重试';
+      Alert.alert('登录失败', msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAccountLogin = async () => {
     if (!username.trim() || !password.trim()) {
       Alert.alert('提示', '请输入用户名和密码');
       return;
@@ -61,6 +110,11 @@ export default function LoginScreen() {
     }
   };
 
+  const switchMode = (next: LoginMode) => {
+    setMode(next);
+    setPhoneHint('');
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView
@@ -76,85 +130,172 @@ export default function LoginScreen() {
         </View>
 
         <View style={styles.form}>
-          <View style={styles.inputWrap}>
-            <Ionicons
-              name="person-outline"
-              size={20}
-              color={c.labelTertiary}
-              style={styles.inputIcon}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="用户名"
-              placeholderTextColor={c.labelTertiary}
-              autoCapitalize="none"
-              autoCorrect={false}
-              value={username}
-              onChangeText={setUsername}
-              accessibilityLabel="用户名输入框"
-            />
-          </View>
+          {mode === 'phone' ? (
+            <>
+              <View style={styles.inputWrap}>
+                <Ionicons
+                  name="call-outline"
+                  size={20}
+                  color={c.labelTertiary}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="请输入手机号"
+                  placeholderTextColor={c.labelTertiary}
+                  keyboardType="phone-pad"
+                  textContentType="telephoneNumber"
+                  autoComplete="tel"
+                  value={phone}
+                  onChangeText={(text) => {
+                    setPhone(text);
+                    setCodeSent(false);
+                    setPhoneHint('');
+                  }}
+                  onSubmitEditing={handleRequestCode}
+                  accessibilityLabel="手机号输入框"
+                />
+              </View>
 
-          <View style={styles.inputWrap}>
-            <Ionicons
-              name="lock-closed-outline"
-              size={20}
-              color={c.labelTertiary}
-              style={styles.inputIcon}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="密码"
-              placeholderTextColor={c.labelTertiary}
-              secureTextEntry={!showPassword}
-              value={password}
-              onChangeText={setPassword}
-              onSubmitEditing={handleLogin}
-              accessibilityLabel="密码输入框"
-            />
-            <TouchableOpacity
-              onPress={() => setShowPassword(!showPassword)}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons
-                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                size={20}
-                color={c.labelTertiary}
-              />
-            </TouchableOpacity>
-          </View>
+              {codeSent && (
+                <View style={styles.inputWrap}>
+                  <Ionicons
+                    name="keypad-outline"
+                    size={20}
+                    color={c.labelTertiary}
+                    style={styles.inputIcon}
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="请输入验证码"
+                    placeholderTextColor={c.labelTertiary}
+                    keyboardType="number-pad"
+                    textContentType="oneTimeCode"
+                    autoComplete="sms-otp"
+                    value={code}
+                    onChangeText={setCode}
+                    onSubmitEditing={handlePhoneLogin}
+                    accessibilityLabel="验证码输入框"
+                  />
+                </View>
+              )}
 
-          <TouchableOpacity
-            style={styles.rememberRow}
-            onPress={() => setRemember((v) => !v)}
-            activeOpacity={0.7}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: remember }}
-            accessibilityLabel="记住密码"
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons
-              name={remember ? 'checkbox' : 'square-outline'}
-              size={20}
-              color={remember ? c.brand : c.labelTertiary}
-            />
-            <Text style={styles.rememberText}>记住密码</Text>
-          </TouchableOpacity>
+              {phoneHint ? <Text style={styles.hintText}>{phoneHint}</Text> : null}
 
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleLogin}
-            disabled={loading}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel="登录"
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>登录</Text>
-            )}
-          </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, loading && styles.buttonDisabled]}
+                onPress={codeSent ? handlePhoneLogin : handleRequestCode}
+                disabled={loading}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={codeSent ? '登录或注册' : '获取验证码'}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>{codeSent ? '登录 / 注册' : '获取验证码'}</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => switchMode('account')}
+                style={styles.secondaryButton}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.secondaryText}>账号密码登录</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <View style={styles.inputWrap}>
+                <Ionicons
+                  name="person-outline"
+                  size={20}
+                  color={c.labelTertiary}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="用户名 / 邮箱 / 手机号"
+                  placeholderTextColor={c.labelTertiary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  value={username}
+                  onChangeText={setUsername}
+                  accessibilityLabel="用户名输入框"
+                />
+              </View>
+
+              <View style={styles.inputWrap}>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={20}
+                  color={c.labelTertiary}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="密码"
+                  placeholderTextColor={c.labelTertiary}
+                  secureTextEntry={!showPassword}
+                  value={password}
+                  onChangeText={setPassword}
+                  onSubmitEditing={handleAccountLogin}
+                  accessibilityLabel="密码输入框"
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={20}
+                    color={c.labelTertiary}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={styles.rememberRow}
+                onPress={() => setRemember((v) => !v)}
+                activeOpacity={0.7}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: remember }}
+                accessibilityLabel="记住密码"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons
+                  name={remember ? 'checkbox' : 'square-outline'}
+                  size={20}
+                  color={remember ? c.brand : c.labelTertiary}
+                />
+                <Text style={styles.rememberText}>记住密码</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.button, loading && styles.buttonDisabled]}
+                onPress={handleAccountLogin}
+                disabled={loading}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="登录"
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>登录</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => switchMode('phone')}
+                style={styles.secondaryButton}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.secondaryText}>手机号登录 / 注册</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -209,6 +350,11 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
     fontSize: 14,
     color: c.labelSecondary,
   },
+  hintText: {
+    color: c.brand,
+    fontSize: 13,
+    lineHeight: 18,
+  },
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -246,6 +392,15 @@ const createStyles = (c: ColorPalette) => StyleSheet.create({
   buttonText: {
     color: '#fff',
     fontSize: 17,
+    fontWeight: '600',
+  },
+  secondaryButton: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  secondaryText: {
+    color: c.brand,
+    fontSize: 14,
     fontWeight: '600',
   },
 });

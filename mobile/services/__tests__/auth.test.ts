@@ -29,6 +29,7 @@ jest.mock('../../modules/shared-keychain', () => ({
 
 import {
   login, logout, getToken, isLoggedIn, fetchCurrentUser,
+  requestPhoneCode, loginByPhoneCode, setPassword, changePassword,
   saveCredentials, loadCredentials, clearCredentials,
 } from '../auth';
 import api, { TOKEN_KEY } from '../api';
@@ -93,6 +94,67 @@ describe('services/auth', () => {
 
       await expect(login('alice', 'hunter2')).resolves.toBeDefined();
       expect(SecureStore.setItemAsync).toHaveBeenCalled();
+    });
+  });
+
+  describe('phone auth', () => {
+    it('requests a phone login code', async () => {
+      mockedApi.post.mockResolvedValueOnce({
+        data: {
+          message: '验证码已发送',
+          phone: '+8613800138000',
+          expires_in_seconds: 300,
+          dev_code: '123456',
+        },
+      } as never);
+
+      const result = await requestPhoneCode('13800138000');
+
+      expect(mockedApi.post).toHaveBeenCalledWith('/auth/phone/code', {
+        phone: '13800138000',
+        purpose: 'login',
+      });
+      expect(result.dev_code).toBe('123456');
+    });
+
+    it('logs in by phone code and stores the returned token', async () => {
+      mockedApi.post.mockResolvedValueOnce({
+        data: {
+          access_token: 'tok_phone',
+          token_type: 'bearer',
+          is_new_user: true,
+          user: { id: 8, username: 'phone_8', phone: '+8613800138000' },
+        },
+      } as never);
+
+      const result = await loginByPhoneCode('13800138000', '123456');
+
+      expect(mockedApi.post).toHaveBeenCalledWith('/auth/phone/login', {
+        phone: '13800138000',
+        code: '123456',
+      });
+      expect(SecureStore.setItemAsync).toHaveBeenCalledWith(TOKEN_KEY, 'tok_phone');
+      expect(mockedSave).toHaveBeenCalledWith('tok_phone');
+      expect(result.is_new_user).toBe(true);
+    });
+  });
+
+  describe('password management', () => {
+    it('sets an initial password for phone-first accounts', async () => {
+      mockedApi.post.mockResolvedValueOnce({ data: { message: '密码设置成功' } } as never);
+
+      await expect(setPassword('new-passphrase')).resolves.toEqual({ message: '密码设置成功' });
+      expect(mockedApi.post).toHaveBeenCalledWith('/auth/password/set', { new_password: 'new-passphrase' });
+    });
+
+    it('changes an existing password', async () => {
+      mockedApi.post.mockResolvedValueOnce({ data: { message: '密码修改成功' } } as never);
+
+      await expect(changePassword('old-passphrase', 'new-passphrase')).resolves.toEqual({ message: '密码修改成功' });
+      expect(mockedApi.post).toHaveBeenCalledWith('/auth/password/change', {
+        old_password: 'old-passphrase',
+        new_password: 'new-passphrase',
+      });
     });
   });
 

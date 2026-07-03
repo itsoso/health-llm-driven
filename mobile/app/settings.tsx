@@ -220,6 +220,9 @@ export default function SettingsScreen() {
 
         <Text style={txt.sectionLabel}>账号与隐私</Text>
         <View style={styles.card}>
+          <SettingRow icon="key-outline" label="账号安全"
+            value={(user as any)?.has_password ? '修改密码' : '设置密码'}
+            onPress={() => router.push('/account-security' as any)} />
           <SettingRow icon="shield-checkmark-outline" label="隐私政策"
             onPress={() => router.push('/privacy-policy' as any)} />
           <SettingRow icon="people-outline" label="家庭健康"

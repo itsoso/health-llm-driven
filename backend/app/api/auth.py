@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from app.database import get_db
@@ -13,11 +14,22 @@ from app.models.user import User, GarminCredential
 from app.models.agent_audit_log import AgentAuditLog
 from app.schemas.auth import (
     UserRegister, UserLogin, Token, UserResponse, UserUpdate,
-    PasswordChange, BindWebLogin, GarminCredentialCreate, GarminCredentialResponse,
+    PhoneCodeRequest, PhoneCodeResponse, PhoneCodeLogin, PhoneLoginToken,
+    PasswordChange, PasswordSet, BindWebLogin, GarminCredentialCreate, GarminCredentialResponse,
     GarminSyncRequest, GarminSyncResponse,
     GarminTestConnectionResponse, GarminMFAVerifyRequest, GarminMFAVerifyResponse
 )
 from app.services.auth import auth_service, garmin_credential_service, AuthService
+from app.services.phone_auth import (
+    InvalidPhoneNumber,
+    PhoneCodeCooldown,
+    PhoneCodeDeliveryFailed,
+    PhoneCodeDeliveryNotConfigured,
+    consume_phone_code,
+    issue_phone_code,
+    mask_phone,
+    normalize_phone,
+)
 from app.api.deps import get_current_user, get_current_user_required
 import logging
 import asyncio
@@ -46,8 +58,46 @@ def user_to_response(user: User, db: Session) -> UserResponse:
         created_at=user.created_at,
         has_garmin_credentials=has_garmin,
         avatar_url=getattr(user, 'avatar_url', None),
-        onboarding_completed=getattr(user, 'onboarding_completed', False) or False
+        onboarding_completed=getattr(user, 'onboarding_completed', False) or False,
+        phone=getattr(user, 'phone', None),
+        phone_verified_at=getattr(user, 'phone_verified_at', None),
+        has_password=bool(getattr(user, 'hashed_password', None)),
     )
+
+
+def _issue_token_response(user: User, db: Session) -> Token:
+    access_token = auth_service.create_access_token(
+        data={"sub": str(user.id), "username": user.username}
+    )
+    return Token(
+        access_token=access_token,
+        token_type="bearer",
+        user=user_to_response(user, db)
+    )
+
+
+def _unique_phone_username(db: Session, phone: str) -> str:
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    base = f"phone_{digits[-11:] or digits}"
+    username = base
+    suffix = 1
+    while auth_service.get_user_by_username(db, username):
+        suffix += 1
+        username = f"{base}_{suffix}"
+    return username
+
+
+def _ensure_active_approved(user: User) -> None:
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户已被禁用"
+        )
+    if not user.is_approved:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户尚未通过管理员审核，请等待审核通过后再登录"
+        )
 
 
 @router.post("/register", summary="用户注册")
@@ -132,6 +182,95 @@ async def register(request: Request, user_data: UserRegister, db: Session = Depe
     }
 
 
+@router.post("/phone/code", response_model=PhoneCodeResponse, summary="发送手机号验证码")
+@limiter.limit("10/minute")
+async def send_phone_code(
+    request: Request,
+    payload: PhoneCodeRequest,
+    db: Session = Depends(get_db),
+):
+    """发送手机号验证码，用于一期手机号一体化登录/注册。"""
+    try:
+        issued = issue_phone_code(
+            db,
+            payload.phone,
+            purpose=payload.purpose,
+            request_ip=request.client.host if request.client else None,
+        )
+    except InvalidPhoneNumber as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except PhoneCodeCooldown as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+    except (PhoneCodeDeliveryFailed, PhoneCodeDeliveryNotConfigured) as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    return PhoneCodeResponse(
+        message="验证码已发送",
+        phone=issued.phone,
+        expires_in_seconds=issued.expires_in_seconds,
+        dev_code=issued.dev_code,
+    )
+
+
+@router.post("/phone/login", response_model=PhoneLoginToken, summary="手机号验证码登录或注册")
+@limiter.limit("10/minute")
+async def login_by_phone_code(
+    request: Request,
+    payload: PhoneCodeLogin,
+    db: Session = Depends(get_db),
+):
+    """验证码正确则登录；新手机号自动创建一个最小账号。"""
+    try:
+        phone = consume_phone_code(db, payload.phone, payload.code, purpose="login")
+    except (InvalidPhoneNumber, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    now = datetime.now(timezone.utc)
+    user = auth_service.get_user_by_phone(db, phone)
+    is_new_user = False
+    if user is None:
+        from app.config import settings
+
+        user = User(
+            username=_unique_phone_username(db, phone),
+            email=None,
+            hashed_password=None,
+            name="阿衡用户",
+            phone=phone,
+            phone_verified_at=now,
+            is_active=True,
+            is_approved=bool(settings.auth_phone_registration_auto_approve),
+            onboarding_completed=False,
+        )
+        db.add(user)
+        try:
+            db.commit()
+            db.refresh(user)
+        except IntegrityError as exc:
+            db.rollback()
+            user = auth_service.get_user_by_phone(db, phone)
+            if user is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="手机号已被其他账号使用，请联系客服处理",
+                ) from exc
+        is_new_user = True
+        logger.info("手机号新用户注册: user_id=%s phone=%s", user.id, mask_phone(phone))
+    else:
+        user.phone_verified_at = now
+        db.commit()
+        db.refresh(user)
+
+    _ensure_active_approved(user)
+    token = _issue_token_response(user, db)
+    return PhoneLoginToken(
+        access_token=token.access_token,
+        token_type=token.token_type,
+        user=token.user,
+        is_new_user=is_new_user,
+    )
+
+
 @router.post("/login", response_model=Token, summary="用户登录")
 @limiter.limit("5/minute")  # 每分钟最多5次登录尝试
 async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
@@ -166,16 +305,7 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
             detail="账户尚未通过管理员审核，请等待审核通过后再登录"
         )
 
-    # 生成令牌
-    access_token = auth_service.create_access_token(
-        data={"sub": str(user.id), "username": user.username}
-    )
-
-    return Token(
-        access_token=access_token,
-        token_type="bearer",
-        user=user_to_response(user, db)
-    )
+    return _issue_token_response(user, db)
 
 
 @router.post("/login/json", response_model=Token, summary="用户登录（JSON格式）")
@@ -201,16 +331,7 @@ async def login_json(request: Request, login_data: UserLogin, db: Session = Depe
             detail="账户已被禁用"
         )
 
-    # 生成令牌
-    access_token = auth_service.create_access_token(
-        data={"sub": str(user.id), "username": user.username}
-    )
-
-    return Token(
-        access_token=access_token,
-        token_type="bearer",
-        user=user_to_response(user, db)
-    )
+    return _issue_token_response(user, db)
 
 
 @router.get("/me", response_model=UserResponse, summary="获取当前用户信息")
@@ -318,17 +439,53 @@ async def change_password(
     db: Session = Depends(get_db)
 ):
     """修改当前用户密码"""
-    # 验证旧密码
+    return _change_password(password_data, current_user, db)
+
+
+@router.post("/password/set", summary="设置初始密码")
+async def set_initial_password(
+    password_data: PasswordSet,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """手机号/微信等无密码账号设置初始密码。"""
+    if current_user.hashed_password:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="账号已设置密码，请使用修改密码"
+        )
+    current_user.hashed_password = auth_service.get_password_hash(password_data.new_password)
+    db.commit()
+    return {"message": "密码设置成功"}
+
+
+@router.post("/password/change", summary="修改密码")
+async def change_password_alias(
+    password_data: PasswordChange,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """修改当前用户密码。新路径供移动端账号安全页使用。"""
+    return _change_password(password_data, current_user, db)
+
+
+def _change_password(
+    password_data: PasswordChange,
+    current_user: User,
+    db: Session,
+):
+    if not current_user.hashed_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="当前账号尚未设置密码"
+        )
     if not auth_service.verify_password(password_data.old_password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="旧密码错误"
         )
-
-    # 更新密码
     current_user.hashed_password = auth_service.get_password_hash(password_data.new_password)
     db.commit()
-
     return {"message": "密码修改成功"}
 
 

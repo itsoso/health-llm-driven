@@ -180,6 +180,14 @@ describe('SettingsScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/privacy-policy');
   });
 
+  it('opens account security for password management', () => {
+    const { getByText } = render(<SettingsScreen />);
+
+    fireEvent.press(getByText('账号安全'));
+
+    expect(mockPush).toHaveBeenCalledWith('/account-security');
+  });
+
   it('lets the user request account deletion from the app', async () => {
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((title, message, buttons) => {
       if (title === '删除账号与数据') {

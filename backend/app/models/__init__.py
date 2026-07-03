@@ -1,5 +1,6 @@
 """数据模型"""
 from app.models.user import User
+from app.models.phone_auth import PhoneAuthCode
 from app.models.basic_health import BasicHealthData
 from app.models.medical_exam import MedicalExam, MedicalExamItem
 from app.models.disease import DiseaseRecord
@@ -168,6 +169,7 @@ from app.models.fitness_plan import FitnessPlan
 __all__ = [
     "FitnessPlan",
     "User",
+    "PhoneAuthCode",
     "BasicHealthData",
     "MedicalExam",
     "MedicalExamItem",

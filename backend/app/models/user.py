@@ -30,7 +30,8 @@ class User(Base):
     avatar_url = Column(String, nullable=True)  # 头像URL
     birth_date = Column(Date, nullable=True)  # 用于计算年龄
     gender = Column(String, nullable=True)  # 男/女
-    phone = Column(String, nullable=True)  # 手机号
+    phone = Column(String, unique=True, index=True, nullable=True)  # E.164 手机号
+    phone_verified_at = Column(DateTime(timezone=True), nullable=True)  # 手机号归属验证时间
     onboarding_completed = Column(Boolean, default=False)  # 是否完成新手引导
 
     # Concierge: 保健医生邮箱 (Doctor Weekly Report 接收人)

@@ -26,6 +26,31 @@ class Token(BaseModel):
     user: "UserResponse"
 
 
+class PhoneCodeRequest(BaseModel):
+    """请求手机号验证码"""
+    phone: str = Field(..., min_length=5, max_length=32, description="手机号")
+    purpose: str = Field(default="login", pattern="^login$", description="验证码用途")
+
+
+class PhoneCodeResponse(BaseModel):
+    """手机号验证码发送结果"""
+    message: str
+    phone: str
+    expires_in_seconds: int
+    dev_code: Optional[str] = None
+
+
+class PhoneCodeLogin(BaseModel):
+    """手机号验证码登录/注册"""
+    phone: str = Field(..., min_length=5, max_length=32, description="手机号")
+    code: str = Field(..., min_length=4, max_length=12, description="验证码")
+
+
+class PhoneLoginToken(Token):
+    """手机号登录结果"""
+    is_new_user: bool = False
+
+
 class TokenData(BaseModel):
     """令牌数据"""
     user_id: Optional[int] = None
@@ -47,6 +72,9 @@ class UserResponse(BaseModel):
     has_garmin_credentials: bool = False
     avatar_url: Optional[str] = None
     onboarding_completed: bool = False
+    phone: Optional[str] = None
+    phone_verified_at: Optional[datetime] = None
+    has_password: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -61,6 +89,11 @@ class UserUpdate(BaseModel):
 class PasswordChange(BaseModel):
     """修改密码"""
     old_password: str = Field(..., description="旧密码")
+    new_password: str = Field(..., min_length=6, max_length=100, description="新密码")
+
+
+class PasswordSet(BaseModel):
+    """设置初始密码"""
     new_password: str = Field(..., min_length=6, max_length=100, description="新密码")
 
 

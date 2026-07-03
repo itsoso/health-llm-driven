@@ -8,8 +8,11 @@ import {
 
 export interface User {
   id: number;
-  username: string;
+  username?: string;
   email?: string;
+  phone?: string;
+  phone_verified_at?: string;
+  has_password?: boolean;
   nickname?: string;
   avatar_url?: string;
 }
@@ -18,6 +21,17 @@ export interface LoginResponse {
   access_token: string;
   token_type: string;
   user: User;
+}
+
+export interface PhoneCodeResponse {
+  message: string;
+  phone: string;
+  expires_in_seconds: number;
+  dev_code?: string | null;
+}
+
+export interface PhoneLoginResponse extends LoginResponse {
+  is_new_user: boolean;
 }
 
 export interface AccountDeletionRequestResponse {
@@ -39,6 +53,48 @@ export async function login(
   });
   await SecureStore.setItemAsync(TOKEN_KEY, data.access_token);
   saveTokenToSharedKeychain(data.access_token).catch(() => {});
+  return data;
+}
+
+export async function requestPhoneCode(
+  phone: string,
+  purpose: 'login' = 'login',
+): Promise<PhoneCodeResponse> {
+  const { data } = await api.post<PhoneCodeResponse>('/auth/phone/code', {
+    phone,
+    purpose,
+  });
+  return data;
+}
+
+export async function loginByPhoneCode(
+  phone: string,
+  code: string,
+): Promise<PhoneLoginResponse> {
+  const { data } = await api.post<PhoneLoginResponse>('/auth/phone/login', {
+    phone,
+    code,
+  });
+  await SecureStore.setItemAsync(TOKEN_KEY, data.access_token);
+  saveTokenToSharedKeychain(data.access_token).catch(() => {});
+  return data;
+}
+
+export async function setPassword(newPassword: string): Promise<{ message: string }> {
+  const { data } = await api.post<{ message: string }>('/auth/password/set', {
+    new_password: newPassword,
+  });
+  return data;
+}
+
+export async function changePassword(
+  oldPassword: string,
+  newPassword: string,
+): Promise<{ message: string }> {
+  const { data } = await api.post<{ message: string }>('/auth/password/change', {
+    old_password: oldPassword,
+    new_password: newPassword,
+  });
   return data;
 }
 

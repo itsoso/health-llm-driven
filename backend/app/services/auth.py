@@ -7,6 +7,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy.orm import Session
 from app.models.user import User, GarminCredential
 from app.config import settings
+from app.services.phone_auth import InvalidPhoneNumber, normalize_phone
 import logging
 import base64
 import hashlib
@@ -86,11 +87,19 @@ class AuthService:
     @staticmethod
     def authenticate_user(db: Session, username_or_email: str, password: str) -> Optional[User]:
         """验证用户登录"""
+        identifier = (username_or_email or "").strip()
         # 尝试通过用户名查找
-        user = db.query(User).filter(User.username == username_or_email).first()
+        user = db.query(User).filter(User.username == identifier).first()
         if not user:
             # 尝试通过邮箱查找
-            user = db.query(User).filter(User.email == username_or_email).first()
+            user = db.query(User).filter(User.email == identifier).first()
+        if not user:
+            try:
+                phone = normalize_phone(identifier)
+            except InvalidPhoneNumber:
+                phone = None
+            if phone:
+                user = db.query(User).filter(User.phone == phone).first()
 
         if not user:
             return None
@@ -132,6 +141,11 @@ class AuthService:
     def get_user_by_username(db: Session, username: str) -> Optional[User]:
         """通过用户名获取用户"""
         return db.query(User).filter(User.username == username).first()
+
+    @staticmethod
+    def get_user_by_phone(db: Session, phone: str) -> Optional[User]:
+        """通过规范化手机号获取用户"""
+        return db.query(User).filter(User.phone == phone).first()
 
 
 class GarminCredentialService:

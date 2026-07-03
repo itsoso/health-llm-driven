@@ -242,6 +242,19 @@ class Settings(BaseSettings):
     # 邀请码配置
     default_invite_code: str = "LLM"  # 默认邀请码
 
+    # 手机号一体化登录注册
+    auth_phone_code_dev_echo: bool = False  # dev/test 可在响应中回显验证码；生产必须关闭
+    auth_phone_code_log_delivery: bool = True  # dev/test 无短信通道时允许写日志投递
+    auth_phone_code_ttl_minutes: int = 5
+    auth_phone_code_resend_seconds: int = 60
+    auth_phone_code_max_attempts: int = 5
+    auth_phone_registration_auto_approve: bool = True
+    aliyun_sms_access_key_id: Optional[str] = None  # 为空则复用 aliyun_access_key_id
+    aliyun_sms_access_key_secret: Optional[str] = None  # 为空则复用 aliyun_access_key_secret
+    aliyun_sms_sign_name: Optional[str] = None
+    aliyun_sms_template_code: Optional[str] = None
+    aliyun_sms_region_id: str = "cn-hangzhou"
+
     # CORS 配置，逗号分隔的允许来源列表
     cors_allow_origins: str = ""
 
