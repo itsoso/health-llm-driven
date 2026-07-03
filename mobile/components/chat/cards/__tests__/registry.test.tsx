@@ -515,10 +515,50 @@ describe('renderCard 安全降级', () => {
     } as any);
     expect(element).not.toBeNull();
 
-    const { getByText } = render(element!);
-    fireEvent.press(getByText('已记录'));
+    const { getByText, queryByText } = render(element!);
+    expect(getByText('已写入今日饮食')).toBeTruthy();
+    expect(queryByText('已记录')).toBeNull();
 
     expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it('drops diet draft cards that are actually delete or undo intents', () => {
+    const descriptor = {
+      type: 'diet_draft',
+      data: {
+        meal_type: 'dinner',
+        food_items: '我刚才不小心删除了',
+        calories: 0,
+        protein: 0,
+        carbs: 0,
+        fat: 0,
+      },
+      actions: [
+        {
+          id: 'confirm-delete-as-diet',
+          label: '确认记录',
+          action: 'diet_record.create',
+          endpoint: '/diet/records',
+          requires_manual_confirm: true,
+          payload: {
+            record: {
+              meal_type: 'dinner',
+              food_items: '我刚才不小心删除了',
+            },
+          },
+        },
+      ],
+    } as any;
+
+    expect(renderCard(descriptor, { onAction: jest.fn() })).toBeNull();
+    expect(renderServerCards([descriptor])).toEqual([]);
+    expect(renderCard({
+      ...descriptor,
+      data: {
+        ...descriptor.data,
+        food_items: '恢复刚才误删的晚餐',
+      },
+    }, { onAction: jest.fn() })).toBeNull();
   });
 
   it('shows in-card completion feedback after a diet draft is recorded', () => {

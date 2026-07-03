@@ -25,6 +25,7 @@ LLM Tool Call 守门 — 所有 health_record / record_type=X 的参数过这一
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, date, timedelta, timezone
 from typing import Any, Dict, Optional
 
@@ -34,6 +35,42 @@ from app.services.health_query_dimensions import normalize_health_query_args
 BEIJING_TZ = timezone(timedelta(hours=8))
 
 logger = logging.getLogger(__name__)
+
+
+_DIET_MANAGEMENT_INTENT_MARKERS = (
+    "删除",
+    "删掉",
+    "删了",
+    "删去",
+    "移除",
+    "撤销",
+    "取消记录",
+    "取消这一餐",
+    "取消这餐",
+    "误删",
+    "不小心删",
+    "恢复",
+    "找回",
+)
+
+
+def _flatten_text(value: Any) -> str:
+    if isinstance(value, (list, tuple, set)):
+        return " ".join(_flatten_text(item) for item in value if item is not None)
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _looks_like_diet_management_intent(value: Any) -> bool:
+    """LLM 有时把“删除/误删这餐”当成 diet.food_items, 写库前硬拦截."""
+    raw = _flatten_text(value)
+    if not raw:
+        return False
+    normalized = re.sub(r"\s+", "", raw).lower()
+    if not normalized:
+        return False
+    return any(marker.lower() in normalized for marker in _DIET_MANAGEMENT_INTENT_MARKERS)
 
 
 # ─────────────────────── 数值范围白名单 ──────────────────────
@@ -250,7 +287,28 @@ def validate_health_record(
     # 3. 引用 ID 存在性 + 越权
     _validate_reference_id(rtype, data, warnings, db, user_id)
 
-    # 4. 必填检查 (返回 error)
+    # 4. 饮食记录的管理意图硬阻断:
+    # "我刚才不小心删除了/删除这一餐/撤销这顿" 是 health_manage 语义,
+    # 绝不能被上下文带偏写成一条 0 kcal 晚餐。
+    if rtype == "diet" and _looks_like_diet_management_intent(data.get("food_items")):
+        msg = "[tool_validator] diet.food_items 疑似删除/撤销已有饮食记录, 阻止作为新饮食写入"
+        warnings.append(msg)
+        logger.warning("%s: %r", msg, data.get("food_items"))
+        _metric(rtype, "food_items", "management_intent", action="rejected")
+        error = (
+            "Error: 用户是在删除/撤销/恢复已有饮食记录, 不能调用 health_record 新增 diet。"
+            "请改用 health_manage(record_type='diet', operation='list') 查候选记录; "
+            "若已有 record_id 再调用 health_manage(..., operation='delete' 或 update)。"
+        )
+        if warnings:
+            logger.info(f"[tool_validator] {rtype} 守门触发 {len(warnings)} 条")
+        return {
+            "data": data,
+            "warnings": warnings,
+            "error": error,
+        }
+
+    # 5. 必填检查 (返回 error)
     error = _validate_required(rtype, data, warnings)
 
     if warnings:

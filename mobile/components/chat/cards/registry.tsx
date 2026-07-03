@@ -142,6 +142,7 @@ export function renderCard(
       </View>
     );
   }
+  if (!isRenderableServerCard(descriptor)) return null;
   const spec = CARD_MAP[descriptor.type];
   if (!spec) {
     if (__DEV__) console.warn(`[cards] unknown card type: ${descriptor.type}`);
@@ -174,11 +175,19 @@ function StatefulCardRenderer({
       },
     });
     if (!actions.length || !options.onAction) return rendered;
+    const visibleActions = actions.filter((action) => {
+      const actionKey = getCardActionRuntimeKey(action, descriptor);
+      const actionState = options.actionStateByKey?.[actionKey];
+      const localDone = localDoneActionKeys[actionKey] === true;
+      const isDone = actionState === 'done' || localDone;
+      return !(action.action === 'diet_record.create' && isDone);
+    });
+    if (!visibleActions.length) return rendered;
     return (
       <View style={styles.actionShell}>
         {rendered}
         <View style={styles.actionBar}>
-          {actions.map((action) => {
+          {visibleActions.map((action) => {
             const actionKey = getCardActionRuntimeKey(action, descriptor);
             const actionState = options.actionStateByKey?.[actionKey];
             const localDone = localDoneActionKeys[actionKey] === true;
@@ -253,11 +262,40 @@ function StatefulCardRenderer({
  */
 export function renderServerCards(cards?: ServerCardDescriptor[] | null): ServerCardDescriptor[] {
   if (!Array.isArray(cards)) return [];
-  return cards.filter((c) => c && typeof c.type === 'string' && CARD_MAP[c.type]).map((c) => ({
+  return cards.filter((c) => (
+    c && typeof c.type === 'string' && CARD_MAP[c.type] && isRenderableServerCard(c)
+  )).map((c) => ({
     type: c.type,
     data: c.data,
     actions: normalizeCardActions(c.actions),
   }));
+}
+
+function isRenderableServerCard(descriptor: ServerCardDescriptor): boolean {
+  if (descriptor.type !== 'diet_draft') return true;
+  const foodItems = foodItemsValue(descriptor.data?.food_items);
+  return !looksLikeDietManagementIntent(foodItems);
+}
+
+function looksLikeDietManagementIntent(value?: string): boolean {
+  if (!value) return false;
+  const normalized = value.replace(/\s+/g, '').toLowerCase();
+  if (!normalized) return false;
+  return [
+    '删除',
+    '删掉',
+    '删了',
+    '删去',
+    '移除',
+    '撤销',
+    '取消记录',
+    '取消这一餐',
+    '取消这餐',
+    '误删',
+    '不小心删',
+    '恢复',
+    '找回',
+  ].some((marker) => normalized.includes(marker.toLowerCase()));
 }
 
 function normalizeCardActions(actions: ServerCardDescriptor['actions']): ChatCardActionDescriptor[] {

@@ -115,6 +115,7 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
 常见错误 (不要犯):
 - weight 必须用 data.weight, 不要放在顶层 args.weight
 - diet 必须有 food_items, 不能只传 calories
+- "删除这一餐/撤销这顿/我刚才不小心删除了" 是管理已有饮食记录, 不要作为 diet.food_items 写入; 改用 health_manage
 - record_date 如果用户没明说具体日期, 默认填今天 (不要填未来日期)
 - 中文日期/时间要转成 ISO 格式 (例: "昨天早上 8 点" → record_date='YYYY-MM-DD', taken_time='08:00')
 

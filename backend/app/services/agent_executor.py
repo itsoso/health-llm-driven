@@ -3356,6 +3356,7 @@ class AgentExecutor:
             "- **核心原则：所有记录操作必须调用 health_record 工具才算完成。绝对不能口头说'已记录'而不调用工具。**",
             "- **新增记录**调用 health_record；**修改/删除已有记录**必须调用 health_manage。不要说'没有删除功能'。",
             "- 用户要删除重复记录时: 先 health_manage(list) 或 health_query(diet) 查候选 ID；如果用户已明确 ID, 直接 health_manage(delete)。",
+            "- 用户说'删除这一餐'、'撤销这顿'、'我刚才不小心删除了'、'把晚餐删掉/恢复'时,这是管理已有饮食记录,绝不能把这句话作为 diet.food_items 新增一条晚餐;先查候选记录并确认。",
             "- 饮水、补剂打卡：直接执行，不需确认",
             "- 血压、血糖、体重：执行后复述确认数值（'已记录血压 138/92'）",
             "- 用户说'吃了XX'：药瓶/保健品名(鱼油/维C/B族等) → record_type=supplement；食物 → record_type=diet",

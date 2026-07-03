@@ -1,6 +1,8 @@
 """tool_call_validator 单测 — 守门所有 LLM 给的 tool_call 参数."""
 from datetime import date, datetime, timedelta
 
+import pytest
+
 from app.services.llm.tool_validator import validate_health_record, validate_tool_call
 
 
@@ -107,6 +109,46 @@ class TestRequiredFields:
         v = validate_health_record("water", {})
         assert v["error"] is not None
         assert "amount" in v["error"]
+
+
+class TestDietManagementIntentGuard:
+    @pytest.mark.parametrize("food_items", [
+        "我刚才不小心删除了",
+        "删除这一餐",
+        "把这餐删掉",
+        "撤销刚才这顿晚餐",
+        "恢复刚才误删的晚餐",
+        ["误删了这条饮食记录"],
+    ])
+    def test_delete_or_undo_intent_never_becomes_diet_food_items(self, food_items):
+        v = validate_tool_call("health_record", {
+            "record_type": "diet",
+            "data": {
+                "meal_type": "dinner",
+                "food_items": food_items,
+                "calories": 0,
+                "protein": 0,
+                "carbs": 0,
+                "fat": 0,
+            },
+        })
+
+        assert v["error"] is not None
+        assert "health_manage" in v["error"]
+        assert any("删除/撤销" in warning for warning in v["warnings"])
+
+    def test_normal_dinner_record_still_passes(self):
+        v = validate_tool_call("health_record", {
+            "record_type": "diet",
+            "data": {
+                "meal_type": "dinner",
+                "food_items": "酸菜牛肉面 400g + 青菜",
+                "calories": 680,
+                "protein": 36,
+            },
+        })
+
+        assert v["error"] is None
 
 
 # ───────────── 引用 ID 越权 ─────────────
