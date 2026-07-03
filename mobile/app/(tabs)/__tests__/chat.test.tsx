@@ -21,10 +21,16 @@ let mockIsStreaming = false;
 jest.mock('expo-router', () => ({
   router: {
     push: (...args: any[]) => mockPush(...args),
+    navigate: (...args: any[]) => mockPush(...args),
     setParams: (...args: any[]) => mockSetParams(...args),
   },
   useLocalSearchParams: () => mockRouteParams,
   useFocusEffect: (cb: any) => cb(),
+}));
+
+// 今日简报条走 React Query 的 useTodayTimeline;测试无 QueryClientProvider,mock 掉。
+jest.mock('../../../hooks/useTodayTimeline', () => ({
+  useTodayTimeline: () => ({ data: undefined }),
 }));
 
 jest.mock('../../../hooks/useChatEngine', () => ({
@@ -127,6 +133,10 @@ jest.mock('../../../components/chat/OpenerCard', () => {
   return MockOpenerCard;
 });
 jest.mock('../../../components/chat/ChatInputBar', () => 'ChatInputBar');
+// BriefingStrip / RecordTray 走 React Query + useToast (record 一键饮水), 本 suite 无 provider;
+// 它们的内部行为各自有专属测试, 这里 mock 掉避免 provider 依赖。ChatHeader 保留真实 (断言其 DOM)。
+jest.mock('../../../components/chat/BriefingStrip', () => 'BriefingStrip');
+jest.mock('../../../components/chat/RecordTray', () => 'RecordTray');
 
 import ChatScreen from '../chat';
 
@@ -161,7 +171,9 @@ describe('ChatScreen', () => {
     });
   });
 
-  it('uses a short readable model label in the chat header', async () => {
+  it('shows 阿衡 in the header and hides the model name inline (revealed on pull-down)', async () => {
+    // Agent-native header (2026-07-03): 只露品牌名「阿衡 ⌄」, 模型名收进下拉 sheet。
+    // 当前模型仍进 picker trigger 的 accessibilityLabel(供读屏 + 打开 sheet 时勾选)。
     mockLlmPreference = {
       model_id: 'qwen3.7-plus',
       options: [
@@ -176,12 +188,19 @@ describe('ChatScreen', () => {
       ],
     };
 
-    const { getByText, queryByText } = render(<ChatScreen />);
+    const { getByText, queryByText, getByLabelText } = render(<ChatScreen />);
 
+    // 品牌名可见。
     await waitFor(() => {
-      expect(getByText('Qwen3.7 Plus')).toBeTruthy();
+      expect(getByText('阿衡')).toBeTruthy();
     });
+    // 模型名(完整 or 压缩)都不再内联显示在 header。
     expect(queryByText('Qwen3.7 Plus 推理 · 阿里')).toBeNull();
+    expect(queryByText('Qwen3.7 Plus')).toBeNull();
+    // 但仍可通过 picker trigger 的无障碍标签拿到当前(压缩)模型名 → 点开 sheet 切换。
+    await waitFor(() => {
+      expect(getByLabelText('切换 AI 模型，当前 Qwen3.7 Plus')).toBeTruthy();
+    });
   });
 
   it('keeps the chat header visually compact without removing controls', async () => {

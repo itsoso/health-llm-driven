@@ -100,6 +100,49 @@ describe('renderCard 安全降级', () => {
     expect(getByText('已设置每日提醒：臀中肌训练')).toBeTruthy();
   });
 
+  it('renders diet record cards with meal visuals (calorie hero + food chips)', () => {
+    const r = renderCard({
+      type: 'record',
+      data: {
+        type: 'diet',
+        detail: '已记录',
+        meal_type: 'lunch',
+        food: '鸡胸肉 + 糙米饭 + 西兰花',
+        calories: 520.4,
+        protein: 42,
+        carbs: 55,
+        fat: 14,
+      },
+    });
+    expect(r).not.toBeNull();
+
+    const { getByText } = render(r!);
+    // 餐次标题 + 类目 badge.
+    expect(getByText('午餐已记录')).toBeTruthy();
+    expect(getByText('饮食')).toBeTruthy();
+    // 热量 hero 走 Math.round (520.4 → 520);hero 是嵌套 Text (数字 + " kcal"),
+    // 用 substring 匹配整段文本, 并确认取整后的数字进了 hero.
+    expect(getByText('kcal', { exact: false })).toBeTruthy();
+    expect(getByText(/520/)).toBeTruthy();
+    // 食材拆成独立 chip.
+    expect(getByText('鸡胸肉')).toBeTruthy();
+    expect(getByText('糙米饭')).toBeTruthy();
+    expect(getByText('西兰花')).toBeTruthy();
+  });
+
+  it('falls back to the simple record row for a bare diet record (no food/macros)', () => {
+    const r = renderCard({
+      type: 'record',
+      data: { type: 'diet', detail: '已记录早餐' },
+    });
+    expect(r).not.toBeNull();
+
+    const { getByText, queryByText } = render(r!);
+    // 无 food/macros → 走简单行, 显示 detail, 不出现餐食可视化标题.
+    expect(getByText('已记录早餐')).toBeTruthy();
+    expect(queryByText('饮食')).toBeNull();
+  });
+
   it('renders record quality cards with personal cautions and inline next-meal actions', () => {
     const onAction = jest.fn();
     const descriptor = {
@@ -214,11 +257,17 @@ describe('renderCard 安全降级', () => {
     expect(element).not.toBeNull();
 
     const { getByText } = render(element!);
-    expect(getByText('待确认饮食记录')).toBeTruthy();
-    expect(getByText('午餐')).toBeTruthy();
-    expect(getByText('煎牛肉能量碗 + 姜黄鲜柠维C茶')).toBeTruthy();
-    expect(getByText('热量 770kcal')).toBeTruthy();
-    expect(getByText('蛋白 30g')).toBeTruthy();
+    // 结构化餐食卡: 标题带餐次 + 状态, 草稿态有「草稿」chip。
+    expect(getByText('午餐 · 待确认')).toBeTruthy();
+    expect(getByText('草稿')).toBeTruthy();
+    // food_items 拆成独立食材 chip。
+    expect(getByText('煎牛肉能量碗')).toBeTruthy();
+    expect(getByText('姜黄鲜柠维C茶')).toBeTruthy();
+    // 卡路里 hero(数字 + 单位)。
+    expect(getByText('kcal', { exact: false })).toBeTruthy();
+    // 2×2 营养网格: 标签 + 克数分开渲染。
+    expect(getByText('蛋白质')).toBeTruthy();
+    expect(getByText('30g')).toBeTruthy();
     expect(getByText('置信度 82% · 来源: 对话/图片')).toBeTruthy();
     expect(getByText('餐后轻走 10 分钟')).toBeTruthy();
     expect(getByText('营养为估算值,确认后写入今日饮食记录。')).toBeTruthy();
@@ -366,9 +415,14 @@ describe('renderCard 安全降级', () => {
 
     expect(element).not.toBeNull();
     const { getByText } = render(element!);
-    expect(getByText('鸡胸肉 200g + 杂粮饭 100g + 西兰花')).toBeTruthy();
-    expect(getByText('晚餐')).toBeTruthy();
-    expect(getByText('蛋白 46g')).toBeTruthy();
+    // food_items 数组 → 每项一个食材 chip。
+    expect(getByText('鸡胸肉 200g')).toBeTruthy();
+    expect(getByText('杂粮饭 100g')).toBeTruthy();
+    expect(getByText('西兰花')).toBeTruthy();
+    // 餐次进标题, 草稿态有「草稿」chip。
+    expect(getByText('晚餐 · 待确认')).toBeTruthy();
+    expect(getByText('蛋白质')).toBeTruthy();
+    expect(getByText('46g')).toBeTruthy();
   });
 
   it('renders server card actions and dispatches through onAction', () => {
@@ -516,7 +570,9 @@ describe('renderCard 安全降级', () => {
     expect(element).not.toBeNull();
 
     const { getByText, queryByText } = render(element!);
-    expect(getByText('已写入今日饮食')).toBeTruthy();
+    // 已记录态: 标题「午餐已记录」+ hero 勾图标; 不再有独立「已写入今日饮食」标题行。
+    expect(getByText('午餐已记录')).toBeTruthy();
+    // action-bar 的 done 态「已记录」按钮被 registry 隐藏, 卡内也不再有「已记录」文本。
     expect(queryByText('已记录')).toBeNull();
 
     expect(onAction).not.toHaveBeenCalled();
@@ -601,8 +657,10 @@ describe('renderCard 安全降级', () => {
     expect(element).not.toBeNull();
 
     const { getByText } = render(element!);
-    expect(getByText('已写入今日饮食')).toBeTruthy();
-    expect(getByText('午餐 · 770 kcal · 蛋白 30g')).toBeTruthy();
+    // 已记录态: 标题「午餐已记录」; 卡路里/营养在 hero + 网格; 下一步 + 帮助文案保留。
+    expect(getByText('午餐已记录')).toBeTruthy();
+    expect(getByText('kcal', { exact: false })).toBeTruthy();
+    expect(getByText('蛋白质')).toBeTruthy();
     expect(getByText('下一步: 餐后轻走 10 分钟')).toBeTruthy();
     expect(getByText('可在记录页继续修正,阿衡会把这餐纳入今日饮食进度。')).toBeTruthy();
   });

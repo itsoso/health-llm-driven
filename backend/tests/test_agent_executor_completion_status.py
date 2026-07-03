@@ -262,7 +262,10 @@ async def test_agent_stream_finishes_pure_record_turn_from_tool_result(db, auth_
     )
 
     assert len(calls) == 1
-    assert "已记录晚餐：牛肉饭" in rendered
+    # 饮食回复已压到 ≤2 句(确定性 quality 层): 无宏量数字 → 头条退化成 "已记录晚餐。",
+    # 食材名/宏量由结构化卡承载,不再复述进文本(founder 截图的多段墙已收敛)。
+    assert "已记录晚餐。" in rendered
+    assert "牛肉饭" not in rendered  # 食材不再进文本
     assert events[-1]["event"] == "done"
 
 
@@ -1188,7 +1191,10 @@ async def test_agent_stream_falls_back_to_tool_result_when_model_synthesis_is_em
         if event.get("event") == "token"
     )
 
-    assert "已记录早餐：两个豆腐包子" in rendered
+    # 2 轮综合为空 → 回退到确定性 quality 回复(非空)。饮食回复已压到 ≤2 句:
+    # 无宏量 → "已记录早餐。" + 一句备注;食材名由结构化卡承载,不再进文本。
+    assert "已记录早餐。" in rendered
+    assert "两个豆腐包子" not in rendered  # 食材不再进文本
     assert "没有收到模型的有效回复" not in rendered
     assert events[-1]["event"] == "done"
 

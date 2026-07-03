@@ -121,7 +121,8 @@ jest.mock('expo-notifications', () => ({
 // generic react-query mock they degrade to null/empty — that's fine for the home
 // feed structure assertions. We only assert on the cards that take props from index.
 
-import TodayScreen from '../index';
+// 今日屏实体已从 index.tsx 挪到 today.tsx (index 现为 Redirect→chat, 见 _layout.tsx)
+import TodayScreen from '../today';
 
 describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
   beforeEach(() => {

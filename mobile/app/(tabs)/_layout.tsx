@@ -2,37 +2,29 @@ import React from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useTheme } from '../../hooks/useTheme';
 import { useGPSOnboardingPrompt } from '../../hooks/useGPSOnboardingPrompt';
-import {
-  FLOATING_TAB_BAR_BAR_HEIGHT,
-  FLOATING_TAB_BAR_PADDING_TOP,
-  FLOATING_TAB_BAR_MIN_BOTTOM,
-} from '../../hooks/useFloatingTabBarHeight';
 
 /**
- * Phase 4 (2026-05-29): Tab 3 → 4. 加 "我" tab — settings.tsx 已是完整 hub
- * (20+ 入口) 但只能通过 EnvironmentCard 齿轮进; 暴露成 tab 解决深页"无家可回".
- * 同一组件靠 router.canGoBack() 切 "设置"/"我" 标题.
+ * Phase 5 (2026-07-03): Agent-native shell. 移除底部 Tab Bar, 阿衡(chat) 成为主屏
+ * (initialRouteName="chat" + tabBar 渲染 null)。今日/记录/我 降级为二级屏, 靠 chat 里
+ * 的 avatar / 今日简报条 / 记录托盘 进入, 各二级屏顶部有「返回阿衡」。
+ *   - 保留全部 Tabs.Screen + TAB_META + getMainTab* 导出 (深链契约: router.push('/(tabs)/chat')
+ *     / 通知路由 / 分享深链 均依赖这些 segment, 不能静默改)。
  *
- * Phase 3 (2026-05-14): Tab 2 → 3. "+" FAB 推进为第三 Tab "记录", 底部 3 个 tab
- * (今日 / 会诊 / 记录), 移除右下悬浮 "+" 按钮.
- *
+ * Phase 4 (2026-05-29): Tab 3 → 4. 加 "我" tab.
+ * Phase 3 (2026-05-14): Tab 2 → 3. "+" FAB 推进为第三 Tab "记录".
  * Phase 2 (2026-05-11): Tab 收敛 4 → 2 (今日 + 会诊).
  *
- * 隐藏 (href:null, 仍可程序化导航):
- *   - alerts (内容已合并进首页, 但仍保留独立路由便于"查看全部")
- *   - record (改成首页 FAB, 但旧入口保留)
- *   - journal (低频, 移到设置或首页折叠区)
- *
- * 重新暴露:
- *   - chat (原 hidden, 现在是第二 Tab)
- *   - me (settings 复用, 现在是第四 Tab)
- *
- * 备份: 旧 layout 在 git history. 文件没动, 只改 Tabs.Screen.options.href.
+ * 隐藏 (href:null, 仍可程序化导航): alerts / journal.
+ * 备份: 旧带 bar 的 layout 在 git history.
  */
+
+// expo-router 的权威 initial-route 配置: <Tabs initialRouteName> 单独用不可靠
+// (实测冷启动仍落 index), unstable_settings 才是文档路径, 同时充当深链 anchor。
+export const unstable_settings = {
+  initialRouteName: 'chat',
+};
 
 export default function TabLayout() {
   const { c } = useTheme();
@@ -42,11 +34,17 @@ export default function TabLayout() {
   return (
     <View style={{ flex: 1 }}>
       <Tabs
-        tabBar={(props) => <RevaTabBar {...props} />}
+        // 阿衡 chat 是 agent-native 主屏。
+        initialRouteName="chat"
+        // 无底部 Tab Bar：二级屏靠 chat 里的入口 + 各自顶部「返回阿衡」导航。
+        tabBar={() => null}
         screenOptions={{ headerShown: false }}
       >
+        {/* index = 纯 Redirect → chat (expo-router "/" 永远落 index, 见 index.tsx 注释)。 */}
         <Tabs.Screen name="index" options={createTabScreenOptions('index')} />
         <Tabs.Screen name="chat" options={createTabScreenOptions('chat')} />
+        {/* 原「今日」屏实体, 从 index.tsx 挪来 — chat 顶部今日简报条指向这里。 */}
+        <Tabs.Screen name="today" options={{ title: '今日' }} />
         <Tabs.Screen name="record" options={createTabScreenOptions('record')} />
         <Tabs.Screen name="me" options={createTabScreenOptions('me')} />
         {/* 隐藏路由 — 文件保留, 仍可程序化导航 (router.push('/alerts') 等). */}
@@ -168,90 +166,6 @@ function createTabScreenOptions(name: MainTabName) {
     ),
   };
 }
-
-function RevaTabBar({ state, navigation }: BottomTabBarProps) {
-  const { c } = useTheme();
-  const insets = useSafeAreaInsets();
-  const routes = state.routes.filter((r): r is typeof r & { name: MainTabName } => r.name in TAB_META);
-  const activeKey = state.routes[state.index]?.key;
-  return (
-    <View
-      style={[
-        capsule.wrap,
-        {
-          paddingBottom: Math.max(insets.bottom, FLOATING_TAB_BAR_MIN_BOTTOM),
-          backgroundColor: c.bgPrimary,
-          borderTopColor: c.separator,
-        },
-      ]}
-    >
-      <View style={[capsule.bar, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-        {routes.map((route) => {
-          const meta = TAB_META[route.name];
-          const focused = route.key === activeKey;
-          const color = focused ? c.brand : c.labelTertiary;
-          const onPress = () => {
-            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-            if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
-          };
-          return (
-            <TouchableOpacity
-              key={route.key}
-              accessibilityRole="button"
-              accessibilityState={focused ? { selected: true } : {}}
-              accessibilityLabel={meta.label}
-              activeOpacity={0.7}
-              onPress={onPress}
-              style={[capsule.item, focused && { backgroundColor: c.brandLight }]}
-            >
-              <Ionicons name={focused ? meta.icon : meta.iconOutline} size={22} color={color} />
-              <Text style={[capsule.label, { color, fontWeight: focused ? '700' : '500' }]} numberOfLines={1}>
-                {meta.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
-
-function isMainTabName(name: string | undefined): name is MainTabName {
-  return !!name && name in TAB_META;
-}
-
-const capsule = StyleSheet.create({
-  wrap: {
-    paddingHorizontal: 16,
-    paddingTop: FLOATING_TAB_BAR_PADDING_TOP,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  bar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: FLOATING_TAB_BAR_BAR_HEIGHT,
-    borderRadius: 28,
-    paddingHorizontal: 6,
-    borderWidth: 1,
-    shadowColor: '#16201B',
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
-  },
-  item: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
-    paddingVertical: 7,
-    marginHorizontal: 2,
-    borderRadius: 22,
-  },
-  label: {
-    fontSize: 10,
-  },
-});
 
 const modalStyles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },

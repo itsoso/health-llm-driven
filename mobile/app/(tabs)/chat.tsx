@@ -8,13 +8,15 @@ import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
-import { deleteConversation, getConversations, getConversationsPage, updateConversationTitle } from '../../services/chat';
+import { deleteConversation, getConversationsPage, updateConversationTitle } from '../../services/chat';
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
 import ChatInputBar, { type ChatInputSendOptions } from '../../components/chat/ChatInputBar';
 import ChatBubble from '../../components/chat/ChatBubble';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import OpenerCard from '../../components/chat/OpenerCard';
-import LlmModelPicker from '../../components/chat/LlmModelPicker';
+import ChatHeader from '../../components/chat/ChatHeader';
+import BriefingStrip from '../../components/chat/BriefingStrip';
+import RecordTray from '../../components/chat/RecordTray';
 import {
   buildConversationOpenerReplyContext,
   buildConversationOpenerReplyMessage,
@@ -26,6 +28,7 @@ import { emitClientEvent } from '../../services/clientEvents';
 import { fetchMemoryOpener, type MemoryOpenerItem } from '../../services/memoryOpener';
 import { getLlmPreference, updateLlmPreference, type ModelOption } from '../../services/llmPreference';
 import { recordCardAdherence, recordCardDecision } from '../../services/actionCards';
+import { useTodayTimeline } from '../../hooks/useTodayTimeline';
 import {
   revaColors as C,
   revaRadii,
@@ -108,6 +111,8 @@ export default function ChatScreen() {
   } = chat;
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
+  // 今日简报条：真实数字来自 /timeline/today（待办 / 已完成计数），不伪造指标。
+  const todayTimeline = useTodayTimeline();
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
@@ -515,59 +520,24 @@ export default function ChatScreen() {
   const activeLlmLabel = llmModelId
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
-  const headerLlmLabel = compactLlmHeaderLabel(activeLlmLabel);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.headerWrap}>
-        <View testID="chat-header-surface" style={styles.headerSurface}>
-          <LlmModelPicker
-            variant="header"
-            currentLabel={headerLlmLabel}
-            currentModelId={llmModelId}
-            options={llmOptions}
-            savingModelId={llmSaving}
-            error={llmError}
-            onSelect={handleSelectModel}
-          />
-          <View style={styles.headerRight}>
-            {isStreaming && (
-              <View style={styles.streamingBadge} accessibilityLabel="回复中">
-                <View style={styles.streamingDot} />
-                <Text style={txt.streamingBadge}>回复中</Text>
-              </View>
-            )}
-            <TouchableOpacity
-              onPress={handleNewChat}
-              hitSlop={8}
-              style={styles.headerAction}
-              accessibilityLabel="新建对话"
-              accessibilityRole="button"
-            >
-              <Ionicons name="add" size={18} color={C.ink1} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={openHistory}
-              hitSlop={8}
-              style={styles.headerActionAccent}
-              accessibilityLabel="对话历史"
-              accessibilityHint="查看和切换历史对话"
-              accessibilityRole="button"
-            >
-              <Ionicons name="time-outline" size={17} color={C.green500} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setToolMenuVisible(true)}
-              hitSlop={8}
-              style={styles.headerMenuAction}
-              accessibilityLabel="更多会诊操作"
-              accessibilityRole="button"
-            >
-              <Ionicons name="ellipsis-horizontal" size={18} color={C.ink1} />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
+      <ChatHeader
+        activeLlmLabel={activeLlmLabel}
+        llmModelId={llmModelId}
+        llmOptions={llmOptions}
+        llmSaving={llmSaving}
+        llmError={llmError}
+        isStreaming={isStreaming}
+        onSelectModel={handleSelectModel}
+        onNewChat={handleNewChat}
+        onOpenHistory={openHistory}
+        onOpenToolMenu={() => setToolMenuVisible(true)}
+      />
+
+      {/* 今日简报条：点进「今日」屏（'/(tabs)/today'）。数字来自 /timeline/today 真实计数。 */}
+      <BriefingStrip timeline={todayTimeline.data} />
 
       <View style={{ flex: 1 }}>
         <FlatList
@@ -686,6 +656,7 @@ export default function ChatScreen() {
             </TouchableOpacity>
           </View>
         )}
+        {!selectionMode && !keyboardVisible && <RecordTray />}
         <ChatInputBar
           onSend={handleSend}
           isStreaming={isStreaming}
@@ -713,12 +684,20 @@ export default function ChatScreen() {
             <View style={styles.toolSheetHeader}>
               <View>
                 <Text style={txt.toolSheetTitle}>会诊工具</Text>
-                <Text style={txt.toolSheetSub}>分享、删除等低频操作</Text>
+                <Text style={txt.toolSheetSub}>个人中心、分享、删除等低频操作</Text>
               </View>
               <TouchableOpacity onPress={() => setToolMenuVisible(false)} hitSlop={8} accessibilityLabel="关闭会诊工具">
                 <Ionicons name="close" size={22} color={C.ink2} />
               </TouchableOpacity>
             </View>
+            <ToolMenuRow
+              icon="person-circle-outline"
+              label="我 · 个人中心与设置"
+              onPress={() => {
+                setToolMenuVisible(false);
+                router.navigate('/(tabs)/me');
+              }}
+            />
             {messages.some(isShareableChatMessage) && (
               <ToolMenuRow
                 icon={selectionMode ? 'close' : 'checkbox-outline'}
@@ -763,13 +742,6 @@ export default function ChatScreen() {
   );
 }
 
-function compactLlmHeaderLabel(label: string): string {
-  return label
-    .split(' · ')[0]
-    .replace(/\s+(推理|均衡|快速)$/u, '')
-    .trim();
-}
-
 function ToolMenuRow({
   icon,
   label,
@@ -800,88 +772,6 @@ function ToolMenuRow({
 // Reva 设计语言: 暖白 paper 屏底 / surface 卡 / green500 主色 / r-lg 18 / 软阴影. 文字走 Manrope.
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
-  headerWrap: {
-    paddingHorizontal: revaSpacing.s3,
-    paddingTop: 0,
-    paddingBottom: 2,
-  },
-  headerSurface: {
-    minHeight: 40,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingLeft: 8,
-    paddingRight: 2,
-    paddingVertical: 2,
-    borderRadius: 17,
-    backgroundColor: C.surface2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    ...revaShadows.sm,
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  headerAction: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-  },
-  headerActionAccent: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.green50,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: revaSemantic.normal.line,
-    ...revaShadows.sm,
-  },
-  headerMenuAction: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-  },
-  streamingBadge: {
-    minHeight: 26,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 7,
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.green50,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: revaSemantic.normal.line,
-  },
-  streamingDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: C.green500,
-  },
-  historyAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    marginRight: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: revaRadii.sm,
-    backgroundColor: C.surface,
-  },
   messageList: { padding: revaSpacing.s4, paddingBottom: 8 },
   // P3-3: 会诊页 opener "我记得你 X" banner
   memoryOpener: {
@@ -1022,13 +912,9 @@ const styles = StyleSheet.create({
 });
 
 const txt = {
-  headerTitle: { fontFamily: revaFonts.sans, fontSize: 20, fontWeight: '800', color: C.ink1 } as TextStyle,
-  headerMeta: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2, fontWeight: '600' } as TextStyle,
-  streamingBadge: { fontFamily: revaFonts.sans, fontSize: 11, color: C.green500, fontWeight: '700' } as TextStyle,
   welcomeInline: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, fontWeight: '700', flexShrink: 1 } as TextStyle,
   sugChipText: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink1, fontWeight: '600', flexShrink: 1 } as TextStyle,
   contextBanner: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green500, flex: 1, fontWeight: '500' } as TextStyle,
-  historyAction: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, fontWeight: '600' } as TextStyle,
   memoryLabel: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, fontWeight: '700' } as TextStyle,
   memoryAction: { fontFamily: revaFonts.sans, fontSize: 11, color: C.green500, fontWeight: '700' } as TextStyle,
   memoryBody: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, lineHeight: 18 } as TextStyle,

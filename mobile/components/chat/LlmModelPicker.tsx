@@ -81,22 +81,16 @@ export default function LlmModelPicker({
         accessibilityLabel={`切换 AI 模型，当前 ${currentLabel}`}
       >
         {isHeader ? (
-          <>
-            <View style={styles.headerTitleRow}>
-              <Text style={txt.headerTitle} numberOfLines={1}>阿衡</Text>
-              {savingModelId ? (
-                <ActivityIndicator size="small" color={C.ink3} />
-              ) : (
-                <Ionicons name="chevron-down" size={14} color={C.ink3} />
-              )}
-            </View>
-            <View style={styles.headerModelRow}>
-              <Ionicons name="hardware-chip-outline" size={11} color={C.ink3} />
-              <Text style={txt.headerModel} numberOfLines={1}>
-                {savingModelId ? '模型切换中...' : currentLabel}
-              </Text>
-            </View>
-          </>
+          // Agent-native header: 只露品牌名 "阿衡 ⌄"，模型名收进下拉 sheet。
+          // 切换中给一个 ActivityIndicator 替代 chevron，保留可感知反馈。
+          <View style={styles.headerTitleRow}>
+            <Text maxFontSizeMultiplier={1.2} style={txt.headerTitle} numberOfLines={1}>阿衡</Text>
+            {savingModelId ? (
+              <ActivityIndicator size="small" color={C.ink3} />
+            ) : (
+              <Ionicons name="chevron-down" size={16} color={C.ink3} />
+            )}
+          </View>
         ) : (
           <>
             <Ionicons name="hardware-chip-outline" size={15} color={C.green500} />
@@ -214,20 +208,14 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     borderRadius: 0,
     backgroundColor: 'transparent',
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    flexDirection: 'row',
     gap: 0,
     shadowOpacity: 0,
     elevation: 0,
   },
   headerTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    maxWidth: '100%',
-  },
-  headerModelRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -285,8 +273,7 @@ const styles = StyleSheet.create({
 });
 
 const txt = {
-  headerTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 18, fontWeight: '800', lineHeight: 21 } as TextStyle,
-  headerModel: { fontFamily: revaFonts.sans, color: C.ink3, fontSize: 11, fontWeight: '600', lineHeight: 14, flexShrink: 1 } as TextStyle,
+  headerTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 19, fontWeight: '800', lineHeight: 24 } as TextStyle,
   triggerTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 15, fontWeight: '700' } as TextStyle,
   triggerModel: { fontFamily: revaFonts.sans, color: C.ink3, fontSize: 13, flexShrink: 1 } as TextStyle,
   sheetTitle: { fontFamily: revaFonts.sans, color: C.ink1, fontSize: 17, fontWeight: '700' } as TextStyle,

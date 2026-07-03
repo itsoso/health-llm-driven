@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, TextInput, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CardShell } from './CardShell';
+import { MEAL_ICONS, MACRO_HUES, MacroBar, IngredientChips } from './mealCardVisuals';
 import type {
   CardRenderOptions,
   CardSpec,
@@ -10,6 +11,7 @@ import type {
 } from './types';
 import { revaColors as C, revaFonts, revaRadii, revaSemantic } from '../../../constants/revaTheme';
 
+// 饮食类目 accent (橙) = 「是饮食卡」装饰色, 保留字面量 (= legacy orange/tintOrange).
 const DIET_ACCENT = '#C97A2E';
 const DIET_TINT = '#F6E9DA';
 
@@ -42,6 +44,8 @@ interface DietDraftData {
   suggestions?: unknown;
   post_meal_walk?: unknown;
   boundary?: unknown;
+  time?: unknown;
+  recorded_at?: unknown;
 }
 
 interface DietDraftCardViewProps extends DietDraftData {
@@ -79,6 +83,20 @@ function foodText(value: unknown): string | undefined {
   return text(value);
 }
 
+/** 拆 food_items 成独立食材条 (数组 or " + " 分隔的字符串), 供 chip 渲染。 */
+function foodChips(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map(text).filter((item): item is string => Boolean(item)).slice(0, 8);
+  }
+  const joined = text(value);
+  if (!joined) return [];
+  return joined
+    .split(/\s*[+＋]\s*/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
 function numberValue(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value.trim()) {
@@ -98,13 +116,13 @@ function listText(value: unknown): string[] {
   return raw.map(text).filter((item): item is string => Boolean(item)).slice(0, 3);
 }
 
+// 2×2 营养网格: 只渲染 data 里非空的 macro。热量走上面的 hero, 不重复进网格。
 function macroRows(data: DietDraftData) {
   return [
-    { label: '热量', value: numberValue(data.calories), suffix: 'kcal', color: '#FF6723' },
-    { label: '蛋白', value: numberValue(data.protein), suffix: 'g', color: '#C2487A' },
-    { label: '碳水', value: numberValue(data.carbs), suffix: 'g', color: '#C98A1E' },
-    { label: '脂肪', value: numberValue(data.fat), suffix: 'g', color: '#7C5CBF' },
-    { label: '纤维', value: numberValue(data.fiber), suffix: 'g', color: C.green500 },
+    { label: '蛋白质', value: numberValue(data.protein), suffix: 'g', color: MACRO_HUES.protein },
+    { label: '碳水', value: numberValue(data.carbs), suffix: 'g', color: MACRO_HUES.carbs },
+    { label: '脂肪', value: numberValue(data.fat), suffix: 'g', color: MACRO_HUES.fat },
+    { label: '膳食纤维', value: numberValue(data.fiber), suffix: 'g', color: MACRO_HUES.fiber },
   ].filter((row) => row.value != null && row.value >= 0);
 }
 
@@ -120,6 +138,14 @@ function sourceLabel(value: unknown): string | undefined {
   const source = text(value);
   if (!source) return undefined;
   return `来源: ${SOURCE_LABELS[source] || source}`;
+}
+
+/** 仅当 data 里有明确时点 (time / recorded_at 的 HH:MM) 才回显, 不伪造。 */
+function mealTimeLabel(data: DietDraftData): string | undefined {
+  const raw = text(data.time) ?? text(data.recorded_at);
+  if (!raw) return undefined;
+  const match = raw.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/);
+  return match ? match[0] : undefined;
 }
 
 function postMealWalkText(value: unknown): string | undefined {
@@ -153,21 +179,18 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const [draftProtein, setDraftProtein] = React.useState(() => editNumber(data.protein));
   const [draftCarbs, setDraftCarbs] = React.useState(() => editNumber(data.carbs));
   const [draftFat, setDraftFat] = React.useState(() => editNumber(data.fat));
-  const foodItems = foodText(data.food_items) || '待确认餐食';
-  const mealType = text(data.meal_type);
-  const mealLabel = mealType ? (MEAL_LABELS[mealType] || mealType) : '餐食';
+  const chips = foodChips(data.food_items);
+  const mealType = mealTypeValue(data.meal_type);
+  const mealLabel = MEAL_LABELS[mealType] || '餐食';
   const macros = macroRows(data);
+  const caloriesValue = numberValue(data.calories);
+  const timeLabel = mealTimeLabel(data);
   const meta = [confidenceLabel(data.confidence), sourceLabel(data.source)].filter(Boolean).join(' · ');
   const suggestions = listText(data.suggestions);
   const walkText = postMealWalkText(data.post_meal_walk);
   const boundary = text(data.boundary) || '营养为估算值,确认后写入今日饮食记录。';
   const isRecorded = data.confirmActionState === 'done';
   const canConfirmFromEditor = Boolean(data.confirmAction && data.onConfirmAction && !data.confirmAction.disabled_reason);
-  const recordedSummary = [
-    mealLabel,
-    numberValue(data.calories) != null ? `${Math.round(numberValue(data.calories)!)} kcal` : null,
-    numberValue(data.protein) != null ? `蛋白 ${Math.round(numberValue(data.protein)!)}g` : null,
-  ].filter(Boolean).join(' · ');
   const recordedNextStep = walkText || suggestions[0] || '下一餐按目标补足蛋白和蔬菜';
   const publishDraftChange = React.useCallback((overrides: Partial<DraftEditValues> = {}) => {
     const values: DraftEditValues = {
@@ -197,18 +220,51 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
 
   return (
     <CardShell
-      icon="restaurant-outline"
+      icon={MEAL_ICONS[mealType]}
       iconColor={DIET_ACCENT}
-      title={isRecorded ? '已记录饮食' : '待确认饮食记录'}
-      badge={mealLabel}
-      badgeColor={DIET_ACCENT}
+      title={isRecorded ? `${mealLabel}已记录` : `${mealLabel} · 待确认`}
+      // 已记录态靠标题「…已记录」+ hero 勾图标表达, 不再加 badge(避免与 action-bar「已记录」撞文本);
+      // 草稿态给「草稿」chip。
+      badge={isRecorded ? undefined : '草稿'}
+      badgeColor={revaSemantic.caution.fg}
       bg={DIET_TINT}
     >
-      <View style={styles.inlineHeader}>
-        <Text maxFontSizeMultiplier={1.15} style={styles.inlineHint}>
-          {isRecorded ? '这餐已进入今日饮食进度' : '确认前可修正餐次、食物和营养估算'}
-        </Text>
-        {!isRecorded ? (
+      {/* 卡尔路里 hero：大号等宽数字 + 单位。无每日目标字段 → 不造「占今日 X%」。 */}
+      <View style={styles.heroRow}>
+        <View style={styles.heroLeft}>
+          <Text maxFontSizeMultiplier={1.18} style={styles.heroCal}>
+            {caloriesValue != null ? `${Math.round(caloriesValue)}` : '--'}
+            <Text style={styles.heroUnit}> kcal</Text>
+          </Text>
+          {timeLabel ? (
+            <View style={styles.timePill}>
+              <Ionicons name="time-outline" size={11} color={C.ink3} />
+              <Text maxFontSizeMultiplier={1.15} style={styles.timeText}>{timeLabel}</Text>
+            </View>
+          ) : null}
+        </View>
+        {isRecorded ? (
+          <Ionicons name="checkmark-circle" size={20} color={C.green500} />
+        ) : null}
+      </View>
+
+      {/* 分段营养条：按热量占比 (蛋白×4 / 碳水×4 / 脂肪×9 / 纤维×2) 拆一条横条。 */}
+      <MacroBar
+        protein={numberValue(data.protein)}
+        carbs={numberValue(data.carbs)}
+        fat={numberValue(data.fat)}
+        fiber={numberValue(data.fiber)}
+        style={styles.macroBar}
+      />
+
+      {/* 食材 chips */}
+      <IngredientChips items={chips} fallback="待确认餐食" style={styles.chipsWrap} />
+
+      {!isRecorded ? (
+        <View style={styles.inlineHeader}>
+          <Text maxFontSizeMultiplier={1.15} style={styles.inlineHint}>
+            确认前可修正餐次、食物和营养估算
+          </Text>
           <Pressable
             onPress={() => setEditing((prev) => !prev)}
             accessibilityRole="button"
@@ -218,12 +274,8 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
             <Ionicons name={editing ? 'chevron-up' : 'create-outline'} size={12} color={DIET_ACCENT} />
             <Text style={styles.editButtonText}>{editing ? '收起' : '修正'}</Text>
           </Pressable>
-        ) : null}
-      </View>
-
-      <Text maxFontSizeMultiplier={1.25} style={styles.food} numberOfLines={3}>
-        {foodItems}
-      </Text>
+        </View>
+      ) : null}
 
       {editing ? (
         <View style={styles.editor}>
@@ -343,15 +395,17 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
         </View>
       ) : null}
 
+      {/* 2×2 营养网格：彩色圆点 + 标签 + 克数，只渲染存在的 macro。 */}
       {macros.length > 0 ? (
         <View style={styles.macroGrid}>
           {macros.map((row) => (
-            <View key={row.label} style={styles.macroPill}>
-              <Text maxFontSizeMultiplier={1.1} style={styles.macroLabel}>
-                {row.label}{' '}
-                <Text style={[styles.macroValue, { color: row.color }]}>
-                  {Math.round(row.value!)}{row.suffix}
-                </Text>
+            <View key={row.label} style={styles.macroCell}>
+              <View style={[styles.macroDot, { backgroundColor: row.color }]} />
+              <Text maxFontSizeMultiplier={1.1} style={styles.macroLabel} numberOfLines={1}>
+                {row.label}
+              </Text>
+              <Text maxFontSizeMultiplier={1.1} style={[styles.macroValue, { color: row.color }]}>
+                {Math.round(row.value!)}{row.suffix}
               </Text>
             </View>
           ))}
@@ -359,20 +413,16 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
       ) : null}
 
       {meta ? (
-        <Text maxFontSizeMultiplier={1.15} style={styles.meta}>
-          {meta}
-        </Text>
+        <View style={styles.metaRow}>
+          <Ionicons name="sparkles-outline" size={12} color={C.ink3} />
+          <Text maxFontSizeMultiplier={1.15} style={styles.meta}>
+            {meta}
+          </Text>
+        </View>
       ) : null}
 
       {isRecorded ? (
         <View style={styles.recordedBox}>
-          <View style={styles.recordedTitleRow}>
-            <Ionicons name="checkmark-circle" size={15} color={C.green600} />
-            <Text maxFontSizeMultiplier={1.15} style={styles.recordedTitle}>已写入今日饮食</Text>
-          </View>
-          {recordedSummary ? (
-            <Text maxFontSizeMultiplier={1.15} style={styles.recordedSummary}>{recordedSummary}</Text>
-          ) : null}
           <Text maxFontSizeMultiplier={1.15} style={styles.recordedNext}>下一步: {recordedNextStep}</Text>
           <Text maxFontSizeMultiplier={1.15} style={styles.recordedHelp}>
             可在记录页继续修正,阿衡会把这餐纳入今日饮食进度。
@@ -462,11 +512,54 @@ function DraftNumberInput({
 }
 
 const styles = StyleSheet.create({
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  heroLeft: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    flexShrink: 1,
+  },
+  heroCal: {
+    fontFamily: revaFonts.mono,
+    fontSize: 30,
+    fontWeight: '800',
+    color: C.ink1,
+    fontVariant: ['tabular-nums'] as const,
+  } as TextStyle,
+  heroUnit: {
+    fontFamily: revaFonts.mono,
+    fontSize: 13,
+    fontWeight: '400',
+    color: C.ink3,
+  } as TextStyle,
+  timePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    alignSelf: 'center',
+  },
+  timeText: {
+    fontFamily: revaFonts.mono,
+    fontSize: 11,
+    color: C.ink3,
+    fontVariant: ['tabular-nums'] as const,
+  } as TextStyle,
+  macroBar: {
+    marginTop: 10,
+  },
+  chipsWrap: {
+    marginTop: 10,
+  },
   inlineHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 8,
+    marginTop: 10,
   },
   inlineHint: {
     flex: 1,
@@ -495,13 +588,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: DIET_ACCENT,
     fontWeight: '800',
-  } as TextStyle,
-  food: {
-    fontFamily: revaFonts.sans,
-    fontSize: 15,
-    lineHeight: 21,
-    fontWeight: '800',
-    color: C.ink1,
   } as TextStyle,
   editor: {
     gap: 9,
@@ -624,34 +710,41 @@ const styles = StyleSheet.create({
   macroGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 7,
-    marginTop: 9,
+    marginTop: 10,
   },
-  macroPill: {
+  macroCell: {
+    width: '50%',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    paddingHorizontal: 8,
+    gap: 6,
     paddingVertical: 5,
   },
+  macroDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
   macroLabel: {
+    flex: 1,
     fontFamily: revaFonts.sans,
-    fontSize: 11,
-    color: C.ink3,
+    fontSize: 12,
+    color: C.ink2,
     fontWeight: '700',
   } as TextStyle,
   macroValue: {
     fontFamily: revaFonts.mono,
-    fontSize: 11.5,
+    fontSize: 13,
     fontWeight: '900',
     fontVariant: ['tabular-nums'] as const,
   } as TextStyle,
+  metaRow: {
+    marginTop: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
   meta: {
-    marginTop: 8,
+    flex: 1,
     fontFamily: revaFonts.sans,
     fontSize: 11.5,
     color: C.ink3,
@@ -667,24 +760,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 9,
   },
-  recordedTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  recordedTitle: {
-    fontFamily: revaFonts.sans,
-    fontSize: 13,
-    color: C.green700,
-    fontWeight: '900',
-  } as TextStyle,
-  recordedSummary: {
-    fontFamily: revaFonts.sans,
-    fontSize: 12.2,
-    lineHeight: 17,
-    color: C.ink2,
-    fontWeight: '800',
-  } as TextStyle,
   recordedNext: {
     fontFamily: revaFonts.sans,
     fontSize: 12,
