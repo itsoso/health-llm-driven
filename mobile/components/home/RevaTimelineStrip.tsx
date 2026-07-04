@@ -15,7 +15,7 @@ import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'rea
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 
-import { revaColors as C, revaDriver, type RevaDriver } from '../../constants/revaTheme';
+import { revaColors as C, revaDriver, revaSemantic, type RevaDriver } from '../../constants/revaTheme';
 import { Card, Chip, Icon, PlanItem, SectionLabel } from '../reva/RevaKit';
 import {
   useCompleteAgendaItem,
@@ -59,6 +59,29 @@ function refKey(ref: TimelineCompleteRef): string {
 
 function isRisk(item: TodayTimelineItem): boolean {
   return item.severity === 'critical' || item.severity === 'high';
+}
+
+// 已过时段:某项带精确时点(scheduled_for HH:MM)且已比当前时刻晚 > 2 小时 → 标「已过时段」。
+// 后端 /timeline/today 按 scheduled_for 升序排(today_timeline_service.build_today_spine →
+// today_spine_meds.sort_key),清晨漏掉的项仍排在最前;这里只加提示 tag,不在客户端重排
+// (排序是服务端职责;真正的「过时下沉」应在后端 sort_key 里做,见报告的 backend seam)。
+// 只对未完成、未跳过项标。阈值 2h,threshold 用 caution/ink3 弱提示,绝不用红(不是告警)。
+const OVERDUE_MINUTES = 120;
+function minutesFromHHMM(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+function isOverdue(item: TodayTimelineItem, now: Date): boolean {
+  if (item.status === 'completed' || item.status === 'skipped') return false;
+  const mins = minutesFromHHMM(item.scheduled_for);
+  if (mins == null) return false;
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  return nowMins - mins > OVERDUE_MINUTES;
 }
 
 // 「为什么这项在这」:工作块(kind==='work')优先归 work;否则映射 item.driver。
@@ -266,6 +289,7 @@ export default function RevaTimelineStrip({
   const visible = expand ? rows : rows.slice(0, MAX_VISIBLE);
   const hidden = rows.length - visible.length;
   const countsLabel = `待办 ${rows.length} · 已完成 ${past.completed_count}`;
+  const now = new Date();
 
   return (
     <View>
@@ -281,8 +305,9 @@ export default function RevaTimelineStrip({
           // 工作块永不可完成(后端 can_complete=false),只是日程占位 → 视觉弱化、无勾。
           const completable = Boolean(item.can_complete && item.complete_ref && !done && !isWork);
           const isOpen = openIds.has(item.id);
-          // 标记行是否要画:有驱动来源 / 风险 / 可完成 / 「开始」/ 在途 → 都需要一条下区。
-          const showMarker = Boolean(dk) || isRisk(item) || domain || completable || pending;
+          const overdue = isOverdue(item, now);
+          // 标记行是否要画:有驱动来源 / 风险 / 已过时段 / 可完成 / 「开始」/ 在途 → 都需要一条下区。
+          const showMarker = Boolean(dk) || isRisk(item) || overdue || domain || completable || pending;
           // 左色条颜色:有驱动 → 驱动色;否则透明(不画条,优雅降级)。
           const barColor = dk ? revaDriver[dk].fg : 'transparent';
           // 设备核对类信息行 → 跳设备一致性页(可操作);其余信息行 → 展开全文。
@@ -318,6 +343,12 @@ export default function RevaTimelineStrip({
                 <View style={[styles.subRow, last && { borderBottomWidth: 0 }]}>
                   {dk ? <DriverChip driver={dk} /> : null}
                   {isRisk(item) ? <Chip status="risk">需关注</Chip> : null}
+                  {overdue ? (
+                    <View style={styles.overdueTag}>
+                      <Icon name="clock" size={11} color={C.ink3} />
+                      <Text style={styles.overdueText}>已过时段</Text>
+                    </View>
+                  ) : null}
                   {pending ? (
                     <View style={styles.pendingPill}>
                       <ActivityIndicator size="small" color={C.green500} />
@@ -421,6 +452,19 @@ const styles = StyleSheet.create({
   // 没有「开始」按钮时,跳过自己靠右(否则由 startBtn 的 marginLeft:auto 一起带到右侧)。
   skipBtnRight: { marginLeft: 'auto' },
   skipText: { color: C.ink2, fontWeight: '600', fontSize: 12.5 },
+  // 「已过时段」弱提示 tag:琥珀底 + 灰墨字。是提示不是告警,绝不用红。
+  overdueTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    backgroundColor: revaSemantic.caution.bg,
+    borderColor: revaSemantic.caution.line,
+  },
+  overdueText: { color: C.ink3, fontWeight: '600', fontSize: 11 },
   pendingPill: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   pendingText: { fontSize: 12, color: C.ink3 },
   moreRow: {

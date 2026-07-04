@@ -7,23 +7,40 @@ export interface TrajectoryDisplayInput {
   claim_boundary?: string | null;
 }
 
+// 指标 key → 中文显示名的单一真相源。verify_by / trajectory / target_state_variable
+// 以及 today 各卡的验证 chip 都走这一份;缺映射的原始 key 原样返回(绝不显示英文残缺词)。
+// 历史坑:weight / systolic_bp / body_fat_pct 之前只在别处映射,这里漏了 → 首页「验证」chip
+// 泄漏出 "weight / systoli…"(截断在词中间)。补齐后凡是这里有的都出中文。
+const METRIC_LABELS: Record<string, string> = {
+  // trajectory / anchor 语义变量
+  waist_cm: '腰围',
+  blood_pressure: '血压',
+  metabolic_labs: '代谢指标',
+  metabolic_health_anchor: '代谢锚点',
+  training_readiness_score: '训练准备度',
+  sleep_score: '睡眠分',
+  sleep_duration_h: '睡眠时长',
+  sleep_hours: '睡眠时长',
+  hrv_status: 'HRV',
+  hrv: 'HRV',
+  recovery_capacity_anchor: '恢复锚点',
+  pace_of_aging: '衰老速度代理',
+  biological_age_delta_years: '生物年龄差',
+  methylation_report: '甲基化报告',
+  // 常见生理/化验/体测指标 key(与后端 twin/labs/body_composition 字段对齐)
+  weight: '体重',
+  bmi: 'BMI',
+  body_fat_pct: '体脂率',
+  systolic_bp: '收缩压',
+  diastolic_bp: '舒张压',
+  spo2: '血氧',
+  steps: '步数',
+  resting_hr: '静息心率',
+};
+
 export function stateVariableLabel(value?: string | null): string | null {
   if (!value) return null;
-  const labels: Record<string, string> = {
-    waist_cm: '腰围',
-    blood_pressure: '血压',
-    metabolic_labs: '代谢指标',
-    metabolic_health_anchor: '代谢锚点',
-    training_readiness_score: '训练准备度',
-    sleep_score: '睡眠分',
-    sleep_duration_h: '睡眠时长',
-    hrv_status: 'HRV',
-    recovery_capacity_anchor: '恢复锚点',
-    pace_of_aging: '衰老速度代理',
-    biological_age_delta_years: '生物年龄差',
-    methylation_report: '甲基化报告',
-  };
-  return labels[value] ?? value;
+  return METRIC_LABELS[value] ?? value;
 }
 
 export function horizonLabel(value?: string | null): string | null {

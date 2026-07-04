@@ -4,6 +4,12 @@ import { fireEvent, render } from '@testing-library/react-native';
 import DailyArtifactCard from '../DailyArtifactCard';
 import type { DailyArtifact } from '../../../services/dailyArtifact';
 
+// RN style prop 可能是数组/嵌套;拍平成单对象方便断言颜色。
+function flattenStyle(style: unknown): Record<string, unknown> {
+  if (Array.isArray(style)) return Object.assign({}, ...style.map(flattenStyle));
+  return (style && typeof style === 'object' ? style : {}) as Record<string, unknown>;
+}
+
 function makeArtifact(overrides: Partial<DailyArtifact> = {}): DailyArtifact {
   return {
     artifact_date: '2026-06-27',
@@ -131,7 +137,8 @@ describe('DailyArtifactCard', () => {
 
     expect(getAllByText('优先睡眠与轻活动')).toHaveLength(1);
     expect(getAllByText('腰围、血压、BMI、血糖血脂或基因信号提示代谢风险轨迹正在形成。')).toHaveLength(1);
-    expect(getByText('后续用睡眠分和腰围验证。')).toBeTruthy();
+    // 「如何验证」行的泛化 filler 被换成实名句(defect ④):action.verify_by.metrics=['waist_cm'] → 腰围。
+    expect(getByText('后续观察 腰围 的变化。')).toBeTruthy();
     expect(getAllByTestId('daily-artifact-evidence')).toHaveLength(1);
   });
 
@@ -201,5 +208,93 @@ describe('DailyArtifactCard', () => {
     expect(getByText('暂无今日重点')).toBeTruthy();
     expect(getByText('今天暂无需要突出的健康行动。')).toBeTruthy();
     expect(queryByLabelText('完成今日最重要行动')).toBeNull();
+  });
+
+  // ── defect ①:do_now 复读标题时,「查看并确认」子行折成 affordance,不再抄一遍标题 ──
+  it('collapses a do_now that echoes the title (with affordance prefix) to just the affordance', () => {
+    const { getByText, queryByText } = render(
+      <DailyArtifactCard
+        artifact={makeArtifact({
+          top_action: {
+            ...makeArtifact().top_action!,
+            title: '今日训练:今天恢复/休息,暂停高强度;优先睡眠与轻活动',
+            do_now: '查看并确认: 今日训练:今天恢复/休息,暂停高强度;优先睡眠与轻活动',
+          } as any,
+        })}
+      />,
+    );
+
+    // 大标题清洗后显示
+    expect(getByText('恢复/休息:暂停高强度;优先睡眠与轻活动')).toBeTruthy();
+    // do_now 子行只留 affordance 文案,不复读整句标题
+    expect(getByText('查看并确认')).toBeTruthy();
+    expect(queryByText('查看并确认: 今日训练:今天恢复/休息,暂停高强度;优先睡眠与轻活动')).toBeNull();
+  });
+
+  it('keeps a genuinely distinct do_now instruction intact', () => {
+    const { getByText } = render(
+      <DailyArtifactCard
+        artifact={makeArtifact({
+          top_action: {
+            ...makeArtifact().top_action!,
+            title: '午饭后步行 10 分钟',
+            do_now: '穿好鞋,从办公室楼下走一圈。',
+          } as any,
+        })}
+      />,
+    );
+
+    expect(getByText('穿好鞋,从办公室楼下走一圈。')).toBeTruthy();
+  });
+
+  // ── defect ③:高可信 badge 用正向(success 绿)配色,绝不用 risk 红 ──
+  it('tints the 高可信 confidence badge with success green, never risk red', () => {
+    const { getByText } = render(
+      <DailyArtifactCard
+        artifact={makeArtifact({
+          confidence: 'high',
+          state: { label: '今日状态', tone: 'urgent', summary: '紧急态' },
+        })}
+      />,
+    );
+
+    const badge = getByText('高可信');
+    const flat = flattenStyle(badge.parent?.props?.style);
+    // 文案色 = success 绿(revaSemantic.normal.fg),不是 risk 红(#D5503A)。
+    expect(flat.color).toBe('#1F8A5B');
+    expect(flat.color).not.toBe('#D5503A');
+  });
+
+  it('tints the 待补数 (low) confidence badge with caution amber', () => {
+    const { getByText } = render(
+      <DailyArtifactCard artifact={makeArtifact({ confidence: 'low' })} />,
+    );
+
+    const flat = flattenStyle(getByText('待补数').parent?.props?.style);
+    expect(flat.color).toBe('#C98A1E'); // revaSemantic.caution.fg
+  });
+
+  // ── defect ④:无具体验证指标时,「如何验证」filler 行整条丢掉(不留废话) ──
+  it('drops the verification evidence row when no concrete metrics exist', () => {
+    const base = makeArtifact();
+    const { queryByText } = render(
+      <DailyArtifactCard
+        artifact={makeArtifact({
+          top_action: {
+            ...base.top_action!,
+            verify_by: undefined,
+            target_state_variable: null,
+            verification_signal: null,
+            trajectory_context: undefined,
+          } as any,
+          evidence: [
+            { kind: 'verification', label: 'Verification', summary: '后续用这些信号验证是否有效。' },
+          ],
+        })}
+      />,
+    );
+
+    expect(queryByText('后续用这些信号验证是否有效。')).toBeNull();
+    expect(queryByText('如何验证')).toBeNull();
   });
 });

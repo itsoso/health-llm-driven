@@ -102,4 +102,39 @@ describe('RevaTimelineStrip', () => {
     expect(getByText('补水 300ml')).toBeTruthy();
     expect(getByText('待办 1 · 已完成 1')).toBeTruthy();
   });
+
+  // ── defect ⑤:带精确时点且已过 >2h 的项标「已过时段」(弱提示,不重排、不标红) ──
+  describe('overdue tag', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-06-29T15:06:00'));
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('tags an item scheduled >2h in the past as 已过时段', () => {
+      mockTimeline.items = [
+        item('early', '晨间体重', { scheduled_for: '08:00' }), // 15:06 时已过 >2h
+        item('soon', '午后补水', { scheduled_for: '14:30' }), // 仅过 36 分钟,不标
+      ];
+
+      const { getByText, queryAllByText } = render(<RevaTimelineStrip />);
+
+      expect(getByText('晨间体重')).toBeTruthy();
+      expect(getByText('午后补水')).toBeTruthy();
+      // 只有 08:00 那条被标,14:30 那条不标
+      expect(queryAllByText('已过时段')).toHaveLength(1);
+    });
+
+    it('does not tag items without a precise scheduled_for time', () => {
+      mockTimeline.items = [
+        item('windowed', '午间用药', { scheduled_for: null }),
+      ];
+
+      const { queryByText } = render(<RevaTimelineStrip />);
+
+      expect(queryByText('已过时段')).toBeNull();
+    });
+  });
 });

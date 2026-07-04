@@ -16,6 +16,7 @@ import type {
 import {
   buildTrajectorySummary,
   buildVerifySummary,
+  stateVariableLabel,
 } from '../../services/trajectoryDisplay';
 import { formatHealthActionTitle } from '../../utils/actionCopy';
 import { Icon } from '../reva/RevaKit';
@@ -48,8 +49,13 @@ export default function DailyArtifactCard({
   const busy = completing || skipping;
   const trajectorySummary = topAction ? buildTrajectorySummary(topAction) : null;
   const verifySummary = topAction ? buildVerifySummary(topAction) : null;
+  // 「如何验证」用到的具体中文指标名(体重 / 腰围 / 收缩压…),用于把泛化 filler 换成实名句。
+  const verifyMetricNames = topAction ? verifyMetrics(topAction) : [];
   const visibleEvidence = topAction
-    ? buildVisibleEvidence(artifact?.evidence ?? [], topAction, trajectorySummary, verifySummary)
+    ? rewriteVerificationEvidence(
+        buildVisibleEvidence(artifact?.evidence ?? [], topAction, trajectorySummary, verifySummary),
+        verifyMetricNames,
+      )
     : [];
   const doNow = topAction ? conciseActionCopy(topAction.do_now, topAction.title) : null;
   const canComplete = Boolean(
@@ -76,8 +82,8 @@ export default function DailyArtifactCard({
             <Text style={styles.headerHint} numberOfLines={1}>{state.summary}</Text>
           ) : null}
         </View>
-        <View style={[styles.statusPill, toneStyle(state?.tone)]}>
-          <Text style={[styles.statusPillText, toneTextStyle(state?.tone)]}>
+        <View style={[styles.statusPill, confidenceToneStyle(artifact?.confidence)]}>
+          <Text style={[styles.statusPillText, confidenceToneTextStyle(artifact?.confidence)]}>
             {confidenceLabel(artifact?.confidence)}
           </Text>
         </View>
@@ -284,12 +290,42 @@ function hasCompletionSource(action: DailyArtifactTopAction): boolean {
   return Boolean(source?.object_type && source.object_id != null);
 }
 
+// do_now「执行」子行的 affordance 前缀:后端有时把整条标题原样塞进 do_now,再前缀
+// 「查看并确认:」/「今日训练:」——渲染出来就是标题在大字下面又抄了一遍(用户实拍的重复)。
+const AFFORDANCE_PREFIX_RE = /^\s*查看并确认\s*[:：]?\s*(?:今日训练\s*[:：]\s*)?/u;
+const AFFORDANCE_LABEL = '查看并确认';
+
+// do_now 与标题去重:剥掉 affordance 前缀后,若剩余与标题(原始/清洗后任一)高度相似(>60% 归一化
+// 包含),说明这行只是标题的复读 —— 有 affordance 前缀就只留「查看并确认」这一 chip 文案,
+// 没有前缀(纯复读)就整行丢掉。压制处理会保持点击行为不变(调用方 onPress 不受文案影响)。
 function conciseActionCopy(copy?: string | null, title?: string | null): string | null {
   if (!copy) return null;
-  const normalizedCopy = normalizeCopy(copy);
-  if (!normalizedCopy) return null;
-  if (normalizedCopy === normalizeCopy(title)) return null;
-  return copy.trim();
+  const trimmed = copy.trim();
+  if (!trimmed) return null;
+
+  const hadAffordancePrefix = AFFORDANCE_PREFIX_RE.test(trimmed);
+  const stripped = trimmed.replace(AFFORDANCE_PREFIX_RE, '').trim();
+  const bodyForCompare = stripped || trimmed;
+
+  if (isTitleEcho(bodyForCompare, title)) {
+    return hadAffordancePrefix ? AFFORDANCE_LABEL : null;
+  }
+  return trimmed;
+}
+
+// 归一化包含判定:copy 与标题(原始 + formatHealthActionTitle 清洗后)任一方向包含,
+// 且被包含串占较长串 >60% → 视为「同一句话」。避免只按精确相等漏掉标题被复读的情况。
+function isTitleEcho(copy: string, title?: string | null): boolean {
+  const a = normalizeCopy(copy);
+  if (!a) return false;
+  for (const t of [title, formatHealthActionTitle(title)]) {
+    const b = normalizeCopy(t);
+    if (!b) continue;
+    if (a === b) return true;
+    const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+    if (longer.includes(shorter) && shorter.length / longer.length > 0.6) return true;
+  }
+  return false;
 }
 
 function stripSummaryPrefix(summary: string): string {
@@ -335,6 +371,46 @@ function evidencePriority(item: DailyArtifactEvidence): number {
   return 3;
 }
 
+// 「如何验证」行去 filler:后端有时给「后续用这些信号验证是否有效。」这类什么都没说的泛化句。
+// 有具体验证指标(体重 / 腰围 / 收缩压…)→ 换成实名句「后续观察 X / Y 的变化。」;
+// 一个具体指标都没有 → 整行丢掉(不留 filler)。非 verification 行原样透传。
+function rewriteVerificationEvidence(
+  evidence: DailyArtifactEvidence[],
+  metricNames: string[],
+): DailyArtifactEvidence[] {
+  return evidence.flatMap((item) => {
+    if (!isVerificationEvidence(item)) return [item];
+    if (metricNames.length === 0) return []; // 无指标 → 丢掉泛化 filler 行
+    return [{ ...item, summary: `后续观察 ${metricNames.join(' / ')} 的变化。` }];
+  });
+}
+
+function isVerificationEvidence(item: DailyArtifactEvidence): boolean {
+  return `${item.kind} ${item.label}`.toLowerCase().includes('verification');
+}
+
+// 从 action 抽出用于验证的具体中文指标名列表(verify_by.metrics + target/verification 信号),
+// 去重、去空。走 stateVariableLabel 单一真相源;缺映射的 key 原样返回(不显示英文残缺词)。
+function verifyMetrics(action: DailyArtifactTopAction): string[] {
+  const raw: (string | null | undefined)[] = [];
+  const verifyBy = (action as { verify_by?: { metrics?: unknown } }).verify_by;
+  if (Array.isArray(verifyBy?.metrics)) {
+    for (const m of verifyBy.metrics) if (typeof m === 'string') raw.push(m);
+  }
+  raw.push(action.verification_signal ?? null);
+  raw.push(action.target_state_variable ?? null);
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const key of raw) {
+    const label = stateVariableLabel(key ?? null);
+    if (label && !seen.has(label)) {
+      seen.add(label);
+      names.push(label);
+    }
+  }
+  return names;
+}
+
 function normalizeCopy(value?: string | null): string {
   return String(value ?? '')
     .replace(/[：:]\s*/gu, ':')
@@ -343,16 +419,25 @@ function normalizeCopy(value?: string | null): string {
     .toLowerCase();
 }
 
-function toneStyle(tone?: string | null) {
-  if (tone === 'urgent') return { backgroundColor: revaSemantic.risk.bg, borderColor: revaSemantic.risk.line };
-  if (tone === 'focused') return { backgroundColor: revaSemantic.info.bg, borderColor: revaSemantic.info.line };
-  return { backgroundColor: revaSemantic.normal.bg, borderColor: revaSemantic.normal.line };
+// 可信度 pill 配色跟「可信度」这个正向信号走,不跟 state.tone(紧急态)走:
+// 高可信 = 正向 → success 绿;中可信 = 中性 → info 蓝;低/待补数 = 提示补数 → caution 琥珀。
+// 之前误用 tone 上色,tone=urgent 时会把「高可信」染成红色,读成告警(语义色误用)。
+function confidenceToneStyle(confidence?: string | null) {
+  const s = confidenceSemantic(confidence);
+  return { backgroundColor: s.bg, borderColor: s.line };
 }
 
-function toneTextStyle(tone?: string | null) {
-  if (tone === 'urgent') return { color: revaSemantic.risk.fg };
-  if (tone === 'focused') return { color: revaSemantic.info.fg };
-  return { color: revaSemantic.normal.fg };
+function confidenceToneTextStyle(confidence?: string | null) {
+  return { color: confidenceSemantic(confidence).fg };
+}
+
+// 中性(中可信 / 缺省):走 Reva 中性 token(纸底 + 灰线 + 次级墨),不占任何临床语义色。
+const CONFIDENCE_NEUTRAL = { fg: C.ink2, bg: C.paper2, line: C.lineStrong };
+
+function confidenceSemantic(confidence?: string | null) {
+  if (confidence === 'high') return revaSemantic.normal; // 正向:绿
+  if (confidence === 'low') return revaSemantic.caution; // 待补数:琥珀
+  return CONFIDENCE_NEUTRAL; // 中可信 / 缺省:中性(绝不用 risk 红)
 }
 
 const styles = StyleSheet.create({

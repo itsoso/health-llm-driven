@@ -2,6 +2,7 @@ import {
   buildBoundarySummary,
   buildTrajectorySummary,
   buildVerifySummary,
+  stateVariableLabel,
 } from '../trajectoryDisplay';
 import type { SmartAgendaItem } from '../agenda';
 
@@ -50,5 +51,33 @@ describe('trajectoryDisplay', () => {
 
   it('renders safety boundary copy from claim boundary', () => {
     expect(buildBoundarySummary(smartItem())).toBe('边界: 用于上游健康管理排序, 不替代医生诊断。');
+  });
+
+  // ── defect ②:指标 key → 中文名的单一真相源,补齐历史漏映射的 key ──
+  describe('stateVariableLabel (single source of metric labels)', () => {
+    it('maps previously-leaking English metric keys to Chinese names', () => {
+      // 这些 key 之前在 trajectoryDisplay 的表里缺失,导致首页「验证」chip 泄漏英文残缺词。
+      expect(stateVariableLabel('weight')).toBe('体重');
+      expect(stateVariableLabel('systolic_bp')).toBe('收缩压');
+      expect(stateVariableLabel('diastolic_bp')).toBe('舒张压');
+      expect(stateVariableLabel('body_fat_pct')).toBe('体脂率');
+      expect(stateVariableLabel('waist_cm')).toBe('腰围');
+    });
+
+    it('falls back to the raw key for unknown metrics (never crashes, never English fragment)', () => {
+      // 未知 key 原样返回一个完整词,不产生词中间截断(截断由容器 numberOfLines 负责,不切词内)。
+      expect(stateVariableLabel('some_unknown_metric')).toBe('some_unknown_metric');
+      expect(stateVariableLabel(null)).toBeNull();
+      expect(stateVariableLabel(undefined)).toBeNull();
+    });
+
+    it('produces an all-Chinese verify summary for the metrics that used to leak', () => {
+      const summary = buildVerifySummary({
+        verify_by: { metrics: ['weight', 'waist_cm', 'systolic_bp'] },
+      });
+      expect(summary).toBe('体重 / 腰围 / 收缩压');
+      // 断言没有英文残留(排除 defect ② 的 "weight / 腰围 / systoli…" 泄漏)。
+      expect(summary).not.toMatch(/[a-z_]/i);
+    });
   });
 });

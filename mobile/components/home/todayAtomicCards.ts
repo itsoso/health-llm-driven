@@ -1,6 +1,7 @@
 import type { DailyArtifact } from '../../services/dailyArtifact';
 import type { SafetyAlert } from '../../services/safety';
 import { formatHealthActionTitle } from '../../utils/actionCopy';
+import { stateVariableLabel } from '../../services/trajectoryDisplay';
 
 export type TodayAtomicCardKind = 'daily_artifact' | 'safety_alert';
 
@@ -125,17 +126,7 @@ function uniqueValues(values: (string | null)[]): string[] {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
 }
 
+// 单一真相源:services/trajectoryDisplay.ts 的 stateVariableLabel(缺映射原样返回)。
 function metricLabel(value: string | null | undefined): string | null {
-  switch (value) {
-    case 'sleep_score': return '睡眠分';
-    case 'sleep_hours': return '睡眠时长';
-    case 'waist_cm': return '腰围';
-    case 'body_fat_pct': return '体脂率';
-    case 'systolic_bp': return '收缩压';
-    case 'diastolic_bp': return '舒张压';
-    case 'hrv': return 'HRV';
-    case 'steps': return '步数';
-    case 'weight': return '体重';
-    default: return value ?? null;
-  }
+  return stateVariableLabel(value ?? null);
 }
