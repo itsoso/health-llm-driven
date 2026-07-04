@@ -40,6 +40,7 @@ const DIET_RECORD_WORDS = [
 ];
 const DIET_RECORD_VERBS = ['记录', '打卡', '拍照', '文字', '语音', 'log'];
 const DIET_RECORD_OBJECTS = ['饮食', '餐', '早餐', '午餐', '晚餐', '加餐', 'meal', 'food'];
+const DIET_PHOTO_WORDS = ['拍照记餐', '拍照记录', '拍照打卡', '拍一下', '拍餐', '拍饭', '相机'];
 const MEDICATION_WORDS = ['用药', '服药', '药', '补剂', '维生素'];
 const EXAM_WORDS = ['体检', '化验', '复查', '检查', '指标'];
 
@@ -99,11 +100,18 @@ export function buildDailyArtifactExecuteRoute(
   action: DailyArtifactTopAction,
   options: { nowDeepLink?: string | null } = {},
 ): DailyArtifactNavigationRoute {
+  const text = actionText(action);
+  const nutritionRoute = routeForNutritionActionText(text);
   const explicit = firstUsableRoute(
     explicitRouteFromAction(action),
     options.nowDeepLink,
   );
-  if (explicit) return explicit;
+  if (explicit) {
+    if (nutritionRoute === '/diet?capture=photo' && isGenericDietRoute(explicit)) {
+      return nutritionRoute;
+    }
+    return explicit;
+  }
 
   const movementTarget = inferDailyArtifactMovementTarget(action);
   if (movementTarget === 'recovery') return '/movement-plan';
@@ -111,8 +119,6 @@ export function buildDailyArtifactExecuteRoute(
     return appendCompleteRef(`/guided-task?domain=${movementTarget}`, sourceFromAction(action));
   }
 
-  const text = actionText(action);
-  const nutritionRoute = routeForNutritionActionText(text);
   if (nutritionRoute) return nutritionRoute;
   if (MEDICATION_WORDS.some((word) => text.includes(word))) return '/medications';
   if (EXAM_WORDS.some((word) => text.includes(word))) return '/medical-exams';
@@ -139,15 +145,30 @@ export function inferDailyArtifactMovementTarget(
   return strengthLike ? 'strength' : null;
 }
 
-export function routeForNutritionActionText(text: string | null | undefined): '/diet' | '/diet-plan' | null {
+export function routeForNutritionActionText(text: string | null | undefined): '/diet' | '/diet?capture=photo' | '/diet-plan' | null {
   const normalized = (text || '').trim().toLowerCase();
   if (!normalized) return null;
+  if (isPhotoDietRecordText(normalized)) return '/diet?capture=photo';
   if (DIET_RECORD_WORDS.some((word) => normalized.includes(word.toLowerCase()))) return '/diet';
   const hasRecordIntent = DIET_RECORD_VERBS.some((word) => normalized.includes(word.toLowerCase()));
   const hasDietObject = DIET_RECORD_OBJECTS.some((word) => normalized.includes(word.toLowerCase()));
   if (hasRecordIntent && hasDietObject) return '/diet';
   if (NUTRITION_WORDS.some((word) => normalized.includes(word.toLowerCase()))) return '/diet-plan';
   return null;
+}
+
+function isPhotoDietRecordText(normalized: string): boolean {
+  if (/拍照\s*(或|\/|和|、)\s*(文字|语音)/u.test(normalized)) return false;
+  const hasPhotoIntent = DIET_PHOTO_WORDS.some((word) => normalized.includes(word.toLowerCase()));
+  if (!hasPhotoIntent) return false;
+  if (normalized.includes('记餐')) return true;
+  return DIET_RECORD_OBJECTS.some((word) => normalized.includes(word.toLowerCase()));
+}
+
+function isGenericDietRoute(route: string): boolean {
+  const [path, query = ''] = route.split('?');
+  if (path !== '/diet') return false;
+  return !/(^|&)capture=photo(&|$)/.test(query);
 }
 
 export function createDailyArtifactChatContext(
