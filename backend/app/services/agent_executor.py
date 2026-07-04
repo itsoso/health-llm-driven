@@ -3359,7 +3359,7 @@ class AgentExecutor:
             "- 用户说'删除这一餐'、'撤销这顿'、'我刚才不小心删除了'、'把晚餐删掉/恢复'时,这是管理已有饮食记录,绝不能把这句话作为 diet.food_items 新增一条晚餐;先查候选记录并确认。",
             "- 饮水、补剂打卡：直接执行，不需确认",
             "- 血压、血糖、体重：执行后复述确认数值（'已记录血压 138/92'）",
-            "- 用户说'吃了XX'：药瓶/保健品名(鱼油/维C/B族等) → record_type=supplement；食物 → record_type=diet",
+            "- 用户说'吃了/服用了XX'：若包含药名、药物剂型(胶囊/缓释片/颗粒/口服液等)、mg/毫克、处方/用药语境 → record_type=medication；补剂/保健品名(鱼油/维C/B族等) → record_type=supplement；明确食物或餐次 → record_type=diet",
             "- 用户说'早上的药都吃了' → record_type=supplement_group, timing=morning",
             "- 用户明确要设置提醒/闹钟/每天几点提醒,且已给出时间 → 调用 health_record(record_type=reminder, data={title,message,remind_at,recurrence})。每日提醒用 recurrence=daily; remind_at 必须是带 +08:00 的 ISO 时间; 只有 HH:MM 时按下一次北京时间生成。不能回复“系统接口限制”或让用户自己去手机/手表设置。",
             "- 如果上一轮已在问'几点提醒',用户只回复'10:30'这类时间,要继承上一轮任务标题和内容,直接创建 reminder; 不要丢失上下文。",

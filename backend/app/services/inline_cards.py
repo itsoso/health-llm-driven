@@ -224,7 +224,42 @@ def _looks_like_diet_record(q: str) -> bool:
         return False
     if _is_water_only_record(q):
         return False
+    if _looks_like_non_diet_intake(q):
+        return False
     return bool(re.search(r"吃了|刚吃|早餐|早饭|午餐|中饭|晚餐|晚饭|加餐|夜宵|零食|餐食|食物", q))
+
+
+def _looks_like_non_diet_intake(q: str) -> bool:
+    normalized = re.sub(r"\s+", "", q).lower()
+    if not normalized:
+        return False
+
+    medication_markers = (
+        "替普瑞酮",
+        "施维舒",
+        "奥美拉唑",
+        "雷贝拉唑",
+        "泮托拉唑",
+        "埃索美拉唑",
+        "阿莫西林",
+        "布洛芬",
+        "氯雷他定",
+        "西替利嗪",
+        "孟鲁司特",
+        "二甲双胍",
+        "美沙拉嗪",
+    )
+    if any(marker.lower() in normalized for marker in medication_markers):
+        return True
+    if re.search(r"服药|吃药|用药|药物|药品|处方药|非处方药", normalized):
+        return True
+    if re.search(r"(?:胶囊|缓释片|肠溶片|分散片|口服液|滴剂|喷雾|吸入剂|颗粒)", normalized):
+        return True
+    if re.search(r"\d+(?:\.\d+)?(?:mg|毫克|μg|ug)\b", normalized):
+        return True
+    if re.search(r"(?:拉唑|瑞酮|霉素|沙星|洛芬|司特|他汀|地平|沙坦|普利|格列|替丁)", normalized):
+        return True
+    return False
 
 
 def _infer_meal_type_from_query(q: str) -> str:
@@ -513,11 +548,16 @@ def _build_vitals(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]
         if not g:
             return None
         d: Dict[str, Any] = {}
-        if g.total_sleep_duration: d["sleep"] = f"{g.total_sleep_duration/60:.1f}h"
-        if g.resting_heart_rate: d["hr"] = f"{g.resting_heart_rate}bpm"
-        if getattr(g, "hrv", None) is not None: d["hrv"] = f"{float(g.hrv):.1f}ms"
-        if g.body_battery_most_charged: d["battery"] = str(g.body_battery_most_charged)
-        if g.steps: d["steps"] = f"{g.steps:,}"
+        if g.total_sleep_duration:
+            d["sleep"] = f"{g.total_sleep_duration/60:.1f}h"
+        if g.resting_heart_rate:
+            d["hr"] = f"{g.resting_heart_rate}bpm"
+        if getattr(g, "hrv", None) is not None:
+            d["hrv"] = f"{float(g.hrv):.1f}ms"
+        if g.body_battery_most_charged:
+            d["battery"] = str(g.body_battery_most_charged)
+        if g.steps:
+            d["steps"] = f"{g.steps:,}"
         if getattr(g, "stress_level", None) is not None:
             d["stress"] = str(g.stress_level)
         return d or None
@@ -534,15 +574,22 @@ def _build_sleep(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
         _t = date.today()
         _rows = merged_daily_rows(db, user_id, since=_t, until=_t)
         g = _rows[0] if _rows else None
-        if not g: return None
+        if not g:
+            return None
         d: Dict[str, Any] = {}
-        if getattr(g, "sleep_score", None) is not None: d["score"] = g.sleep_score
-        if g.total_sleep_duration: d["duration_h"] = g.total_sleep_duration / 60
-        if getattr(g, "deep_sleep_duration", None) is not None: d["deep_min"] = round(g.deep_sleep_duration)
-        if getattr(g, "rem_sleep_duration", None) is not None: d["rem_min"] = round(g.rem_sleep_duration)
-        if getattr(g, "light_sleep_duration", None) is not None: d["light_min"] = round(g.light_sleep_duration)
+        if getattr(g, "sleep_score", None) is not None:
+            d["score"] = g.sleep_score
+        if g.total_sleep_duration:
+            d["duration_h"] = g.total_sleep_duration / 60
+        if getattr(g, "deep_sleep_duration", None) is not None:
+            d["deep_min"] = round(g.deep_sleep_duration)
+        if getattr(g, "rem_sleep_duration", None) is not None:
+            d["rem_min"] = round(g.rem_sleep_duration)
+        if getattr(g, "light_sleep_duration", None) is not None:
+            d["light_min"] = round(g.light_sleep_duration)
         awake = getattr(g, "awake_duration", None)
-        if awake is not None: d["awake_min"] = round(awake)
+        if awake is not None:
+            d["awake_min"] = round(awake)
         return d or None
     except Exception as e:
         logger.debug("sleep card failed: %s", e)
@@ -560,14 +607,18 @@ def _build_weight(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]
                   .filter(WeightRecord.user_id == user_id)
                   .order_by(desc(WeightRecord.record_date))
                   .limit(7).all())
-        if not recs: return None
+        if not recs:
+            return None
         recs_asc = list(reversed(recs))
         vals = [float(r.weight) for r in recs_asc if getattr(r, "weight", None) is not None]
-        if not vals: return None
+        if not vals:
+            return None
         out: Dict[str, Any] = {"current_kg": vals[-1], "trend_7d": vals}
-        if len(vals) >= 2: out["change_7d_kg"] = round(vals[-1] - vals[0], 2)
+        if len(vals) >= 2:
+            out["change_7d_kg"] = round(vals[-1] - vals[0], 2)
         bmi = getattr(recs_asc[-1], "bmi", None)
-        if bmi is not None: out["bmi"] = float(bmi)
+        if bmi is not None:
+            out["bmi"] = float(bmi)
         return out
     except Exception as e:
         logger.debug("weight card failed: %s", e)
@@ -583,14 +634,21 @@ def _build_bp(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
                .filter(BloodPressureRecord.user_id == user_id)
                .order_by(desc(BloodPressureRecord.measured_at))
                .first())
-        if not r or r.systolic is None or r.diastolic is None: return None
+        if not r or r.systolic is None or r.diastolic is None:
+            return None
         s, d = r.systolic, r.diastolic
-        if s >= 180 or d >= 120: cat, col = "高血压急症", "#AF52DE"
-        elif s >= 140 or d >= 90: cat, col = "高血压 2 期", "#FF453A"
-        elif s >= 130 or d >= 80: cat, col = "高血压 1 期", "#FF6723"
-        elif s >= 120 and d < 80: cat, col = "血压升高", "#FF9F0A"
-        elif s < 90 or d < 60:    cat, col = "偏低", "#5AC8FA"
-        else:                     cat, col = "正常", "#30D158"
+        if s >= 180 or d >= 120:
+            cat, col = "高血压急症", "#AF52DE"
+        elif s >= 140 or d >= 90:
+            cat, col = "高血压 2 期", "#FF453A"
+        elif s >= 130 or d >= 80:
+            cat, col = "高血压 1 期", "#FF6723"
+        elif s >= 120 and d < 80:
+            cat, col = "血压升高", "#FF9F0A"
+        elif s < 90 or d < 60:
+            cat, col = "偏低", "#5AC8FA"
+        else:
+            cat, col = "正常", "#30D158"
         m = r.measured_at
         return {
             "systolic": s, "diastolic": d,
@@ -610,14 +668,15 @@ def _build_supplement(db: Session, user_id: int, q: str) -> Optional[Dict[str, A
         from app.models.supplement import SupplementDefinition, SupplementRecord
         defs = (db.query(SupplementDefinition)
                   .filter(SupplementDefinition.user_id == user_id,
-                          SupplementDefinition.is_active == True)
+                          SupplementDefinition.is_active)
                   .all())
-        if not defs: return None
+        if not defs:
+            return None
         today_str = date.today().isoformat()
         taken_ids = set(r.supplement_id for r in (db.query(SupplementRecord)
                                                     .filter(SupplementRecord.user_id == user_id,
                                                             SupplementRecord.record_date == today_str,
-                                                            SupplementRecord.taken == True)
+                                                            SupplementRecord.taken)
                                                     .all()))
         checked = sum(1 for s in defs if s.id in taken_ids)
         pending_names = [s.name for s in defs if s.id not in taken_ids]

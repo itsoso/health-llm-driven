@@ -221,6 +221,19 @@ def test_inline_cards_diet_draft_does_not_trigger_for_water_record():
     assert all(card["type"] != "diet_draft" for card in cards)
 
 
+def test_inline_cards_diet_draft_does_not_trigger_for_medication_intake():
+    from app.services import inline_cards
+
+    for query in [
+        "记录刚吃了替普瑞酮",
+        "记录刚服用了替普瑞酮胶囊（施维舒）",
+        "记录刚吃了奥美拉唑20mg",
+    ]:
+        cards = inline_cards.build_cards(db=None, user_id=3, query=query)
+
+        assert all(card["type"] != "diet_draft" for card in cards)
+
+
 def test_inline_cards_builds_operating_review_card(monkeypatch):
     from app.services import inline_cards
 
