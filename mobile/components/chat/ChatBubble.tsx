@@ -1159,13 +1159,14 @@ const styles = StyleSheet.create({
   },
   // 完成态 slim pill: 一条 hairline 行, 展开时在下方补步骤列表.
   thinkingPill: {
-    alignSelf: 'flex-start',
-    maxWidth: '100%',
+    alignSelf: 'stretch',
+    width: '100%',
     marginBottom: 10,
-    borderRadius: revaRadii.pill,
+    borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.green100,
     backgroundColor: C.paper2,
+    overflow: 'hidden',
   },
   thinkingPillHeader: {
     minHeight: 30,
@@ -1179,7 +1180,9 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 11,
     paddingBottom: 9,
-    paddingTop: 2,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
   },
   thinkingHeader: {
     flexDirection: 'row',
@@ -1335,7 +1338,7 @@ const txt = {
   bubbleUser: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 22, color: '#fff' } as TextStyle,
   // 与 markdownStyles body (fontSize 15 / lineHeight 23) 对齐, 流式→终态切 markdown 时无跳动
   streaming: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 23, color: C.ink1 } as TextStyle,
-  thinkingPillLabel: { flexShrink: 1, fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 16, fontWeight: '800', color: C.ink2 } as TextStyle,
+  thinkingPillLabel: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 16, fontWeight: '800', color: C.ink2 } as TextStyle,
   thinkingTitle: { fontFamily: revaFonts.sans, fontSize: 12.5, lineHeight: 17, fontWeight: '900', color: C.ink1 } as TextStyle,
   thinkingSubtitle: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, color: C.ink3 } as TextStyle,
   thinkingProgressText: { fontFamily: revaFonts.mono, fontSize: 10.5, lineHeight: 13, fontWeight: '800', color: C.green700 } as TextStyle,

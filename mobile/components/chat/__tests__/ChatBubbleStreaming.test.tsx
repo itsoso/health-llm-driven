@@ -126,7 +126,7 @@ describe('ChatBubble streaming degraded render', () => {
   });
 
   it('collapses completed thinking steps into a slim pill (expand to reveal steps)', () => {
-    const { getByLabelText, getByText, queryByText, queryByLabelText } = renderBubble({
+    const { getByLabelText, getByTestId, getByText, queryByText, queryByLabelText } = renderBubble({
       id: 'assistant-finished-thinking',
       role: 'assistant',
       content: '今天饮食总结如下。',
@@ -136,6 +136,8 @@ describe('ChatBubble streaming degraded render', () => {
 
     // 完成态默认折叠成一条 slim pill: 「思考完成 · N 步」, 步骤列表隐藏.
     expect(getByText('思考完成 · 3 步')).toBeTruthy();
+    const panelStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
+    expect(panelStyle.alignSelf).toBe('stretch');
     expect(queryByText('正在理解你的问题')).toBeNull();
     expect(queryByLabelText('已完成步骤:整理回复中')).toBeNull();
     // 助手正文不受折叠影响, 始终可见.
