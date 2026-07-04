@@ -407,10 +407,14 @@ export default function ChatScreen() {
     setSelectedMessageIds(new Set());
   }, []);
 
+  // 今日简报条可见性: 冷启显示; 用户点 X 或新建对话后隐藏(founder: 新窗口要干净画布)。
+  const [briefingHidden, setBriefingHidden] = useState(false);
+
   const handleNewChat = useCallback(() => {
     setToolMenuVisible(false);
     exitSelectionMode();
     setContextBadge(null);
+    setBriefingHidden(true);
     newChat();
     void refreshCoachHomeState();
   }, [exitSelectionMode, newChat, refreshCoachHomeState]);
@@ -537,7 +541,9 @@ export default function ChatScreen() {
       />
 
       {/* 今日简报条：点进「今日」屏（'/(tabs)/today'）。数字来自 /timeline/today 真实计数。 */}
-      <BriefingStrip timeline={todayTimeline.data} />
+      {!briefingHidden && (
+        <BriefingStrip timeline={todayTimeline.data} onDismiss={() => setBriefingHidden(true)} />
+      )}
 
       <View style={{ flex: 1 }}>
         <FlatList

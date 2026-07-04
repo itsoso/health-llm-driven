@@ -28,7 +28,13 @@ export function buildBriefingSummary(timeline: TimelineData | undefined): string
 /**
  * 今日简报条：点进「今日」屏 ('/(tabs)/today')。数字来自 /timeline/today 真实计数。
  */
-export default function BriefingStrip({ timeline }: { timeline: TimelineData | undefined }) {
+export default function BriefingStrip({
+  timeline,
+  onDismiss,
+}: {
+  timeline: TimelineData | undefined;
+  onDismiss?: () => void;
+}) {
   const briefingSummary = buildBriefingSummary(timeline);
   return (
     <TouchableOpacity
@@ -49,6 +55,18 @@ export default function BriefingStrip({ timeline }: { timeline: TimelineData | u
         </Text>
       </View>
       <Ionicons name="chevron-forward" size={16} color={C.ink3} />
+      {onDismiss ? (
+        <TouchableOpacity
+          onPress={onDismiss}
+          hitSlop={10}
+          style={styles.briefingDismiss}
+          accessibilityRole="button"
+          accessibilityLabel="关闭今日简报"
+          accessibilityHint="隐藏这条简报，可从今日屏查看完整内容"
+        >
+          <Ionicons name="close" size={15} color={C.ink3} />
+        </TouchableOpacity>
+      ) : null}
     </TouchableOpacity>
   );
 }
@@ -80,6 +98,15 @@ const styles = StyleSheet.create({
   briefingTextWrap: {
     flex: 1,
     minWidth: 0,
+  },
+  briefingDismiss: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 2,
+    backgroundColor: C.paper2,
   },
 });
 

@@ -104,7 +104,14 @@ export default function RecordTray() {
       void handleWaterQuickLog();
       return;
     }
-    router.navigate(entry.route as any);
+    // 栈路由必须 push:navigate 会复用栈里已有实例(diet 的 captureConsumedRef 已耗尽
+    // + capture 参数 effect 不重发)→ 落页不开相机(founder 真机实测 bug)。
+    // tab 路由 ('/(tabs)/…') 保持 navigate(tab 不该叠实例)。
+    if (entry.route.startsWith('/(tabs)')) {
+      router.navigate(entry.route as any);
+    } else {
+      router.push(entry.route as any);
+    }
   }, [handleWaterQuickLog]);
 
   return (

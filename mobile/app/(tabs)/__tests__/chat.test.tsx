@@ -155,6 +155,32 @@ describe('ChatScreen', () => {
     mockIsStreaming = false;
   });
 
+  it('briefing strip hides on dismiss and stays hidden after 新建对话', async () => {
+    const { UNSAFE_getAllByType, UNSAFE_queryAllByType, getByLabelText } = render(<ChatScreen />);
+
+    // 冷启可见(mock 成字符串组件 'BriefingStrip')
+    const strips = UNSAFE_getAllByType('BriefingStrip' as any);
+    expect(strips.length).toBe(1);
+    expect(typeof strips[0].props.onDismiss).toBe('function');
+
+    // 点 X → 隐藏
+    await act(async () => {
+      strips[0].props.onDismiss();
+    });
+    expect(UNSAFE_queryAllByType('BriefingStrip' as any).length).toBe(0);
+  });
+
+  it('新建对话 hides the briefing strip by default', async () => {
+    const { UNSAFE_getAllByType, UNSAFE_queryAllByType, getByLabelText } = render(<ChatScreen />);
+    expect(UNSAFE_getAllByType('BriefingStrip' as any).length).toBe(1);
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('新建对话'));
+    });
+    expect(mockNewChat).toHaveBeenCalled();
+    expect(UNSAFE_queryAllByType('BriefingStrip' as any).length).toBe(0);
+  });
+
   it('shows a visible history entry on the private coach page', async () => {
     const { getAllByText, getByLabelText } = render(<ChatScreen />);
 

@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 const mockRecordWater = jest.fn();
 const mockDeleteWater = jest.fn();
 const mockNavigate = jest.fn();
+const mockPush = jest.fn();
 const mockToastShow = jest.fn();
 
 jest.mock('../../../services/records', () => ({
@@ -16,7 +17,10 @@ jest.mock('../../../applib/queryKeys', () => ({
   invalidateRecordMutation: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('expo-router', () => ({
-  router: { navigate: (...args: any[]) => mockNavigate(...args) },
+  router: {
+    navigate: (...args: any[]) => mockNavigate(...args),
+    push: (...args: any[]) => mockPush(...args),
+  },
 }));
 jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn().mockResolvedValue(undefined),
@@ -101,12 +105,23 @@ describe('RecordTray water quick-log', () => {
     expect(mockRecordWater).not.toHaveBeenCalled();
   });
 
-  it('non-water entries navigate to their routes', async () => {
+  it('stack routes use push so diet capture param re-fires (regression: navigate 复用旧实例不开相机)', async () => {
     const { getByLabelText } = renderTray();
 
     await act(async () => {
       fireEvent.press(getByLabelText('拍照记录餐食'));
     });
-    expect(mockNavigate).toHaveBeenCalledWith('/diet?capture=photo');
+    expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo');
+    expect(mockNavigate).not.toHaveBeenCalledWith('/diet?capture=photo');
+  });
+
+  it('tab routes keep navigate (不叠 tab 实例)', async () => {
+    const { getByLabelText } = renderTray();
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('更多记录方式'));
+    });
+    expect(mockNavigate).toHaveBeenCalledWith('/(tabs)/record');
+    expect(mockPush).not.toHaveBeenCalledWith('/(tabs)/record');
   });
 });
