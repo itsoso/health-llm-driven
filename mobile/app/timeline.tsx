@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { fetchTimeline, type TimelineEvent } from '../services/timeline';
+import { normalizeHealthActionRoute } from '../utils/dailyArtifactNavigation';
 import {
   revaColors as C,
   revaRadii,
@@ -39,8 +40,8 @@ export default function TimelineScreen() {
   const grouped = useMemo(() => groupByDay(events), [events]);
 
   const handleTap = (e: TimelineEvent) => {
-    if (!e.deep_link) return;
-    const path = e.deep_link.startsWith('/') ? e.deep_link : `/${e.deep_link}`;
+    const path = normalizeHealthActionRoute(e.deep_link, `${e.title} ${e.subtitle ?? ''}`);
+    if (!path) return;
     router.push(path as any);
   };
 

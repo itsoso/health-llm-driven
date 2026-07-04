@@ -5,6 +5,7 @@ import {
   buildDailyArtifactBasisRoute,
   buildDailyArtifactExecuteRoute,
   inferDailyArtifactMovementTarget,
+  normalizeHealthActionRoute,
   routeForNutritionActionText,
 } from '../dailyArtifactNavigation';
 
@@ -133,6 +134,12 @@ describe('dailyArtifactNavigation', () => {
     } as any);
 
     expect(buildDailyArtifactExecuteRoute(artifact({ top_action: photoLog }), photoLog)).toBe('/diet?capture=photo');
+  });
+
+  it('upgrades raw generic diet routes when the surrounding action text means photo meal capture', () => {
+    expect(normalizeHealthActionRoute('/diet', '拍照记餐 打开相机拍一下今天午餐')).toBe('/diet?capture=photo');
+    expect(normalizeHealthActionRoute('/diet', '记录午餐')).toBe('/diet');
+    expect(normalizeHealthActionRoute('/diet?capture=photo', '拍照记餐')).toBe('/diet?capture=photo');
   });
 
   it('keeps nutrition advice actions on the diet plan screen', () => {

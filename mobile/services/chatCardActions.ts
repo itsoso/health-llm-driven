@@ -2,6 +2,7 @@ import api from './api';
 import { confirmWriteIntent, dismissWriteIntent } from './writeIntents';
 import type { ChatCardActionDescriptor } from '../components/chat/cards/types';
 import { isSafeInternalRoute } from '../utils/internalRoutes';
+import { normalizeHealthActionRoute } from '../utils/dailyArtifactNavigation';
 
 type DietNutritionStatus = 'not_needed' | 'estimated' | 'estimate_failed';
 
@@ -153,7 +154,7 @@ function readRoute(action: ChatCardActionDescriptor): string {
   if (!isSafeInternalRoute(route)) {
     throw new Error('invalid_route_action');
   }
-  return route;
+  return normalizeHealthActionRoute(route, action.label) ?? route;
 }
 
 function readDietRecord(action: ChatCardActionDescriptor): Record<string, unknown> {

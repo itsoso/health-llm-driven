@@ -59,10 +59,21 @@ class TestParseQuickRecord:
         assert t == "supplement"
         assert "维生素" in d["name"]
 
+    def test_supplement_with_spaced_verb_does_not_become_diet(self):
+        t, d = _parse_quick_record("吃了 维生素D")
+        assert t == "supplement"
+        assert "维生素" in d["name"]
+
     def test_supplement_fish_oil(self):
         t, d = _parse_quick_record("补剂鱼油")
         assert t == "supplement"
         assert "鱼油" in d["name"]
+
+    def test_medication_intake_does_not_become_diet(self):
+        for text in ("吃了 替普瑞酮", "午餐替普瑞酮胶囊（施维舒）"):
+            t, d = _parse_quick_record(text)
+            assert t is None
+            assert d is None
 
     def test_unrecognized(self):
         t, d = _parse_quick_record("今天天气不错")

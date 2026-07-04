@@ -1,4 +1,5 @@
 import api from './api';
+import { isMedicationRecordItem } from './medicationFilters';
 
 export type AssistantRecordActionResult =
   | {
@@ -120,6 +121,7 @@ function sanitizeFoodText(value: string): string | null {
     .trim();
   if (!cleaned || cleaned.length < 2) return null;
   if (/^(整体评价|进度更新|建议|目标|本餐|这餐)$/.test(cleaned)) return null;
+  if (isMedicationRecordItem({ name: cleaned })) return null;
   return cleaned.slice(0, 120);
 }
 

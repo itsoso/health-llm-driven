@@ -90,6 +90,21 @@ describe('RevaTimelineStrip', () => {
     expect(mockPush).toHaveBeenCalledWith('/agenda');
   });
 
+  it('opens photo meal timeline actions in camera capture instead of the generic diet page', () => {
+    mockTimeline.items = [
+      item('photo-meal', '拍照记餐', {
+        subtitle: '打开相机拍一下今天午餐',
+        deep_link: '/diet',
+      }),
+    ];
+
+    const { getByText } = render(<RevaTimelineStrip />);
+
+    fireEvent.press(getByText('拍照记餐'));
+
+    expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo');
+  });
+
   it('keeps calendar work blocks out of the Today next-actions strip', () => {
     mockTimeline.items = [
       item('work', '年终总结会议', { kind: 'work', driver: 'plan_driven' }),

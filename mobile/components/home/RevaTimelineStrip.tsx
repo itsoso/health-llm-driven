@@ -29,6 +29,7 @@ import type {
 } from '../../services/todayTimeline';
 import SkipReasonSheet from './SkipReasonSheet';
 import { formatHealthActionTitle } from '../../utils/actionCopy';
+import { normalizeHealthActionRoute } from '../../utils/dailyArtifactNavigation';
 
 const MAX_VISIBLE = 3;
 const MOBILITY_WORDS = ['拉伸', '柔韧'];
@@ -170,9 +171,9 @@ export default function RevaTimelineStrip({
   }, []);
 
   const openDeepLink = useCallback(
-    (link: string | null) => {
-      if (!link) return;
-      const path = link.startsWith('/') ? link : `/${link}`;
+    (link: string | null, contextText?: string | null) => {
+      const path = normalizeHealthActionRoute(link, contextText);
+      if (!path) return;
       router.push(path as any);
     },
     [router],
@@ -318,7 +319,7 @@ export default function RevaTimelineStrip({
           const onToggle = completable
             ? () => onComplete(item)
             : item.deep_link
-              ? () => openDeepLink(item.deep_link)
+              ? () => openDeepLink(item.deep_link, `${item.title} ${item.subtitle ?? ''}`)
               : deviceLink
                 ? () => router.push(deviceLink as any)
                 : () => toggleOpen(item.id);

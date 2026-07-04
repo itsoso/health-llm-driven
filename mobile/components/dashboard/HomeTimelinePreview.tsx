@@ -15,6 +15,7 @@ import { fetchTimeline, type TimelineEvent } from '../../services/timeline';
 import { ColorPalette, useTheme } from '../../hooks/useTheme';
 import { spacing } from '../../constants/theme';
 import DashboardCard from './DashboardCard';
+import { normalizeHealthActionRoute } from '../../utils/dailyArtifactNavigation';
 
 export default function HomeTimelinePreview() {
   const { c } = useTheme();
@@ -34,8 +35,8 @@ export default function HomeTimelinePreview() {
   const previewEvents = events.slice(0, 3);
 
   const onTap = (e: TimelineEvent) => {
-    if (!e.deep_link) return;
-    const path = e.deep_link.startsWith('/') ? e.deep_link : `/${e.deep_link}`;
+    const path = normalizeHealthActionRoute(e.deep_link, `${e.title} ${e.subtitle ?? ''}`);
+    if (!path) return;
     router.push(path as any);
   };
 

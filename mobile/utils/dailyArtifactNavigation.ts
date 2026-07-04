@@ -107,10 +107,7 @@ export function buildDailyArtifactExecuteRoute(
     options.nowDeepLink,
   );
   if (explicit) {
-    if (nutritionRoute === '/diet?capture=photo' && isGenericDietRoute(explicit)) {
-      return nutritionRoute;
-    }
-    return explicit;
+    return normalizeHealthActionRoute(explicit, text) ?? explicit;
   }
 
   const movementTarget = inferDailyArtifactMovementTarget(action);
@@ -155,6 +152,18 @@ export function routeForNutritionActionText(text: string | null | undefined): '/
   if (hasRecordIntent && hasDietObject) return '/diet';
   if (NUTRITION_WORDS.some((word) => normalized.includes(word.toLowerCase()))) return '/diet-plan';
   return null;
+}
+
+export function normalizeHealthActionRoute(route: string | null | undefined, actionTextValue: string | null | undefined): string | null {
+  const normalizedRoute = normalizeInternalRoute(route);
+  if (!normalizedRoute) return null;
+  if (
+    routeForNutritionActionText(actionTextValue) === '/diet?capture=photo' &&
+    isGenericDietRoute(normalizedRoute)
+  ) {
+    return '/diet?capture=photo';
+  }
+  return normalizedRoute;
 }
 
 function isPhotoDietRecordText(normalized: string): boolean {
@@ -241,13 +250,18 @@ function firstUsableRoute(...values: (string | null | undefined)[]): string | nu
 }
 
 function normalizeAppRoute(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const route = value.trim();
-  if (!route || /^https?:\/\//i.test(route)) return null;
-  const normalized = route.startsWith('/') ? route : `/${route}`;
+  const normalized = normalizeInternalRoute(value);
+  if (!normalized) return null;
   if (/^\/voice-chat\b/i.test(normalized)) return null;
   if (normalized === '/timeline') return null;
   return normalized;
+}
+
+function normalizeInternalRoute(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const route = value.trim();
+  if (!route || /^https?:\/\//i.test(route)) return null;
+  return route.startsWith('/') ? route : `/${route}`;
 }
 
 function firstString(...values: unknown[]): string | null {

@@ -76,6 +76,7 @@ import {
   buildDailyArtifactAskRoute,
   buildDailyArtifactBasisRoute,
   buildDailyArtifactExecuteRoute,
+  normalizeHealthActionRoute,
   routeForNutritionActionText,
 } from '../../utils/dailyArtifactNavigation';
 import type {
@@ -257,8 +258,8 @@ export default function TodayScreen() {
   // 都没有(空态)→ 补齐今天记录。
   const onHeroAction = useCallback(() => {
     if (nowItem?.deep_link) {
-      const link = nowItem.deep_link;
-      router.push((link.startsWith('/') ? link : `/${link}`) as any);
+      const link = normalizeHealthActionRoute(nowItem.deep_link, `${nowItem.title} ${nowItem.subtitle ?? ''}`);
+      if (link) router.push(link as any);
       return;
     }
     if (nextAction) openPlanAction(nextAction);

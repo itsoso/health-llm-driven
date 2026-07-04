@@ -41,6 +41,12 @@ describe('chatResultActions', () => {
     )).toBe('加餐草莓奶油蛋糕 150g + 草莓 50g');
   });
 
+  it('does not infer a diet quick record from medication-like assistant text', () => {
+    expect(buildQuickRecordTextFromAssistantReply(
+      '✅ 已记录午餐 — 替普瑞酮胶囊（施维舒）。请按医嘱服用。',
+    )).toBeNull();
+  });
+
   it('creates a quick record from assistant text when a deterministic record can be inferred', async () => {
     (api.post as jest.Mock).mockResolvedValueOnce({
       data: {

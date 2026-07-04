@@ -23,6 +23,7 @@ import {
   revaShadows,
   revaFonts,
 } from '../../constants/revaTheme';
+import { normalizeHealthActionRoute } from '../../utils/dailyArtifactNavigation';
 
 interface Props {
   opener: ConversationOpener;
@@ -74,7 +75,8 @@ export default function OpenerCard({ opener, onQuickReply }: Props) {
   const onCardPress = () => {
     if (opener.deep_link) {
       try {
-        router.push(opener.deep_link as any);
+        const route = normalizeHealthActionRoute(opener.deep_link, openerText);
+        if (route) router.push(route as any);
       } catch {
         /* invalid path — fall through silently */
       }

@@ -35,6 +35,7 @@ import type {
   TimelineCompleteRef,
   TodayTimelineItem,
 } from '../../services/todayTimeline';
+import { normalizeHealthActionRoute } from '../../utils/dailyArtifactNavigation';
 
 const MAX_VISIBLE_ITEMS = 5;
 
@@ -52,9 +53,9 @@ export default function TodayTimelineBlock() {
   const [pendingRef, setPendingRef] = useState<string | null>(null);
 
   const openDeepLink = useCallback(
-    (link: string | null) => {
-      if (!link) return;
-      const path = link.startsWith('/') ? link : `/${link}`;
+    (link: string | null, contextText?: string | null) => {
+      const path = normalizeHealthActionRoute(link, contextText);
+      if (!path) return;
       router.push(path as any);
     },
     [router],
@@ -248,14 +249,14 @@ function OutcomeRow({
   item: TodayTimelineItem;
   styles: ReturnType<typeof createStyles>;
   s: ReturnType<typeof useTheme>['s'];
-  onPress: (link: string | null) => void;
+  onPress: (link: string | null, contextText?: string | null) => void;
 }) {
   const arrow = item.proof?.direction === 'down' ? 'arrow-down' : 'arrow-up';
   return (
     <TouchableOpacity
       style={[styles.outcomeCard, { backgroundColor: s.success.bg }]}
       activeOpacity={item.deep_link ? 0.7 : 1}
-      onPress={() => onPress(item.deep_link)}
+      onPress={() => onPress(item.deep_link, `${item.title} ${item.subtitle ?? ''}`)}
     >
       <Ionicons name={item.icon as any} size={20} color={s.success.solid} />
       <View style={styles.outcomeBody}>
@@ -307,14 +308,14 @@ function ItemRow({
   locked: boolean;
   onComplete: (item: TodayTimelineItem) => void;
   onStart: (item: TodayTimelineItem, domain: string) => void;
-  onPressRow: (link: string | null) => void;
+  onPressRow: (link: string | null, contextText?: string | null) => void;
 }) {
   const domain = movementDomain(item);
   return (
     <TouchableOpacity
       style={styles.itemRow}
       activeOpacity={item.deep_link ? 0.7 : 1}
-      onPress={() => onPressRow(item.deep_link)}
+      onPress={() => onPressRow(item.deep_link, `${item.title} ${item.subtitle ?? ''}`)}
     >
       <View style={[styles.iconCircle, { backgroundColor: tint(item.color) }]}>
         <Ionicons name={item.icon as any} size={16} color={item.color} />
@@ -371,13 +372,13 @@ function PastRow({
   item: TodayTimelineItem;
   styles: ReturnType<typeof createStyles>;
   c: ColorPalette;
-  onPress: (link: string | null) => void;
+  onPress: (link: string | null, contextText?: string | null) => void;
 }) {
   return (
     <TouchableOpacity
       style={styles.pastRow}
       activeOpacity={item.deep_link ? 0.7 : 1}
-      onPress={() => onPress(item.deep_link)}
+      onPress={() => onPress(item.deep_link, `${item.title} ${item.subtitle ?? ''}`)}
     >
       <Ionicons name={item.icon as any} size={14} color={item.color} />
       <Text style={styles.pastTitle} numberOfLines={1}>
