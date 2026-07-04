@@ -2367,6 +2367,26 @@ def _dedupe_preserve_order(values: list[str]) -> list[str]:
     return result
 
 
+# 证据卡专属排除: 治理元声明不是健康知识, 不该占用户可见的 claim 席位
+# (卡底免责行已是 boundary 的专属展示位)。谓词收窄到元句/元实体,
+# 绝不误伤 CBT-I 等正经含"医学边界"字样的临床 claim。Prompt 侧不受影响。
+_EVIDENCE_CARD_META_SENTENCE = "健康建议必须保留医学边界"
+_EVIDENCE_CARD_META_ENTITY_IDS = {"medical-boundary"}
+
+
+def _is_meta_boundary_claim(claim: dict[str, Any]) -> bool:
+    title = str(claim.get("title") or "")
+    entity_id = str(claim.get("entity_id") or "")
+    return (
+        _EVIDENCE_CARD_META_SENTENCE in title
+        or entity_id in _EVIDENCE_CARD_META_ENTITY_IDS
+    )
+
+
+def _drop_meta_boundary_claims(claims: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [c for c in claims if not _is_meta_boundary_claim(c)]
+
+
 def build_evidence_card_for_message(db: Session, message: str) -> dict[str, Any] | None:
     """Build a mobile evidence card for explicit gene questions.
 
@@ -2380,14 +2400,15 @@ def build_evidence_card_for_message(db: Session, message: str) -> dict[str, Any]
         return None
 
     result = lookup_for_twin(db, twin)
-    if not result["entities"] or not result["claims"]:
+    claims = _drop_meta_boundary_claims(result["claims"])
+    if not result["entities"] or not claims:
         return None
 
     return {
         "type": "system_knowledge_evidence",
         "data": {
             "entity": result["entities"][0],
-            "claims": result["claims"][:3],
+            "claims": claims[:3],
             "claim_boundary": result["claim_boundary"],
         },
     }
@@ -2408,7 +2429,7 @@ def build_evidence_card_for_twin(
     """
 
     result = lookup_for_twin(db, twin)
-    claims = result["claims"]
+    claims = _drop_meta_boundary_claims(result["claims"])
     relevance = _filter_claims_for_message_relevance(claims, message)
     if message is not None:
         claims = relevance["claims"]
@@ -2461,6 +2482,11 @@ def _entity_for_claims(
 
 
 _KB_RELEVANCE_STOP_TERMS = {
+    # 万金油词: 任何 advice 类消息都含, 会把「医学边界」类元 claim 锚进证据卡
+    # (prod 实锤: 建议 chip 文本命中「健康建议必须保留医学边界」标题)。
+    "建议",
+    "健康",
+    "医学",
     "我",
     "我的",
     "最近",

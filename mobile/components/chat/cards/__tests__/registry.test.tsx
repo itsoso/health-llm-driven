@@ -875,8 +875,11 @@ describe('renderCard 安全降级', () => {
     const r = renderCard(descriptor, { onAction });
     expect(r).not.toBeNull();
 
-    const { getByText } = render(r!);
+    const { getByText, queryByText } = render(r!);
     expect(getByText('7天复盘')).toBeTruthy();
+    // badge 为中文"复盘",不再泄漏英文 "Review"
+    expect(getByText('复盘')).toBeTruthy();
+    expect(queryByText('Review')).toBeNull();
     expect(getByText('完成率 75%')).toBeTruthy();
     expect(getByText('预测回测: 1/1 支持')).toBeTruthy();
     expect(getByText(/累计 35-45 分钟中等强度活动/)).toBeTruthy();
@@ -886,6 +889,44 @@ describe('renderCard 安全降级', () => {
       expect.objectContaining({ action: 'route.open' }),
       expect.objectContaining({ type: 'operating_review' }),
     );
+  });
+
+  it('operating review with 0/0 actions shows accumulating state, not a misleading 0%', () => {
+    const descriptor = {
+      type: 'operating_review',
+      data: {
+        window_days: 30,
+        start_date: '2026-06-05',
+        end_date: '2026-07-04',
+        execution: {
+          total_events: 0,
+          completed_events: 0,
+          completion_rate: 0,
+        },
+        // 真实预测指标 chips 应保留
+        metrics: [
+          { metric: 'weight', delta: 2.1 },
+          { metric: 'sleep_score', delta: 7 },
+          { metric: 'hrv', delta: -15 },
+        ],
+      },
+    } as any;
+    const r = renderCard(descriptor);
+    expect(r).not.toBeNull();
+
+    const { getByText, queryByText } = render(r!);
+    // 平静的积累态文案取代 0% 大数字
+    expect(getByText('行动数据积累中')).toBeTruthy();
+    expect(getByText('首个 30 天复盘将在有行动记录后生成')).toBeTruthy();
+    // 误导性的 0% / 0/0 hero 不再出现
+    expect(queryByText('完成率 0%')).toBeNull();
+    expect(queryByText(/0\/0 个行动/)).toBeNull();
+    // 真实预测 chips 仍然渲染
+    expect(getByText('体重 +2.1')).toBeTruthy();
+    expect(getByText('睡眠评分 +7')).toBeTruthy();
+    expect(getByText('HRV -15')).toBeTruthy();
+    // badge 仍为中文
+    expect(getByText('复盘')).toBeTruthy();
   });
 
   it('renders metric chart cards from backend health data', () => {

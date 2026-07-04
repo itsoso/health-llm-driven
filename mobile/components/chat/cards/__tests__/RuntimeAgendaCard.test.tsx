@@ -153,4 +153,29 @@ describe('RuntimeAgendaCard via registry renderCard', () => {
     // boundary 用后端下发的文案
     expect(getByText('这是健康管理行动建议, 不替代医生诊断。')).toBeTruthy();
   });
+
+  it('maps domain-key kind (training) to Chinese instead of leaking the raw English token', () => {
+    const { getByText, queryByText } = renderRuntimeAgendaCard({
+      next_action: {
+        title: '力量训练 3 组',
+        kind: 'training',
+      },
+    });
+
+    // kind=training 应显示"训练",而不是原始英文 "training"
+    expect(getByText('训练')).toBeTruthy();
+    expect(queryByText('training')).toBeNull();
+  });
+
+  it('renders unknown kind as-is (underscores→spaces, no crash, no mid-word truncation)', () => {
+    const { getByText } = renderRuntimeAgendaCard({
+      next_action: {
+        title: '未知领域行动',
+        kind: 'brand_new_domain',
+      },
+    });
+
+    // 未知 key 兜底: 仅把下划线换成空格, 不截断
+    expect(getByText('brand new domain')).toBeTruthy();
+  });
 });

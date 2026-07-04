@@ -267,14 +267,19 @@ function formatActionKind(value: string | undefined): string | undefined {
   const map: Record<string, string> = {
     movement: '运动',
     exercise: '运动',
+    training: '训练',
     hydration: '饮水',
     nutrition: '饮食',
     diet: '饮食',
     medication: '用药',
     supplement: '补剂',
     sleep: '睡眠',
+    recovery: '恢复',
     review: '复查',
     lab_review: '复查',
+    checkup: '复查',
+    data_quality: '数据核对',
+    correction: '数据订正',
   };
   return map[value] || value.replace(/_/g, ' ');
 }

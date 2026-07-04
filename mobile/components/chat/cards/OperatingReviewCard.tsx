@@ -113,6 +113,8 @@ export function OperatingReviewCardView(data: OperatingReviewData) {
   const completionRate = pct(data.execution?.completion_rate);
   const completed = text(data.execution?.completed_events) || '0';
   const total = text(data.execution?.total_events) || '0';
+  const totalActions = num(data.execution?.total_events) ?? 0;
+  const hasActions = totalActions > 0;
   const metrics = Array.isArray(data.metrics) ? data.metrics.slice(0, 3) : [];
   const results = Array.isArray(data.prediction_backtest?.results)
     ? data.prediction_backtest.results.slice(0, 2)
@@ -126,24 +128,35 @@ export function OperatingReviewCardView(data: OperatingReviewData) {
       icon="analytics-outline"
       iconColor={C.green700}
       title={`${windowDays}天复盘`}
-      badge="Review"
+      badge="复盘"
       badgeColor={C.green500}
       bg={C.green50}
     >
-      <View style={styles.hero}>
-        <View style={styles.rate}>
-          <Text maxFontSizeMultiplier={1.2} style={styles.rateText}>{completionRate}</Text>
-          <Text maxFontSizeMultiplier={1.2} style={styles.rateLabel}>完成率</Text>
+      {hasActions ? (
+        <View style={styles.hero}>
+          <View style={styles.rate}>
+            <Text maxFontSizeMultiplier={1.2} style={styles.rateText}>{completionRate}</Text>
+            <Text maxFontSizeMultiplier={1.2} style={styles.rateLabel}>完成率</Text>
+          </View>
+          <View style={styles.heroText}>
+            <Text maxFontSizeMultiplier={1.3} style={styles.summary} numberOfLines={2}>
+              完成率 {completionRate}
+            </Text>
+            <Text maxFontSizeMultiplier={1.2} style={styles.meta} numberOfLines={1}>
+              {completed}/{total} 个行动 · {text(data.start_date) || '--'} 至 {text(data.end_date) || '--'}
+            </Text>
+          </View>
         </View>
-        <View style={styles.heroText}>
-          <Text maxFontSizeMultiplier={1.3} style={styles.summary} numberOfLines={2}>
-            完成率 {completionRate}
+      ) : (
+        <View style={styles.accumulating}>
+          <Text maxFontSizeMultiplier={1.3} style={styles.accumulatingTitle} numberOfLines={2}>
+            行动数据积累中
           </Text>
-          <Text maxFontSizeMultiplier={1.2} style={styles.meta} numberOfLines={1}>
-            {completed}/{total} 个行动 · {text(data.start_date) || '--'} 至 {text(data.end_date) || '--'}
+          <Text maxFontSizeMultiplier={1.2} style={styles.accumulatingBody} numberOfLines={2}>
+            首个 {windowDays} 天复盘将在有行动记录后生成
           </Text>
         </View>
-      </View>
+      )}
 
       <Text maxFontSizeMultiplier={1.2} style={styles.predictionTitle}>
         {predictionSummary(data)}
@@ -236,6 +249,23 @@ const styles = StyleSheet.create({
     fontFamily: revaFonts.sans,
     fontSize: 12,
     color: C.ink3,
+  } as TextStyle,
+  accumulating: {
+    paddingVertical: 2,
+  },
+  accumulatingTitle: {
+    fontFamily: revaFonts.sans,
+    fontSize: 15,
+    fontWeight: '800',
+    color: C.ink1,
+    lineHeight: 20,
+  } as TextStyle,
+  accumulatingBody: {
+    marginTop: 4,
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    color: C.ink3,
+    lineHeight: 17,
   } as TextStyle,
   predictionTitle: {
     marginTop: 10,
