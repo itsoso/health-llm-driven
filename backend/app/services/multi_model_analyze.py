@@ -1,29 +1,24 @@
-"""OpenClaw 多模型分析客户端（向后兼容包装器）
-
-NOTE: 新代码应使用 app.services.llm.get_llm_provider().multi_model_analyze()
-此模块保留用于向后兼容。
-"""
+"""Unified multi-model analysis client."""
 import logging
-from typing import Dict, Any
-
-from app.config import settings
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
 
-class OpenClawAnalyzeClient:
-    """OpenClaw 多模型分析客户端 - 委托给 LLM Provider"""
+class MultiModelAnalyzeClient:
+    """Delegate multi-model analysis to the configured first-party LLM provider."""
 
     async def analyze(self, prompt: str) -> Dict[str, Any]:
-        """提交分析并等待结果。委托给统一的 LLM Provider。"""
+        """Submit an analysis prompt and return the provider aggregation."""
         try:
             from app.services.llm import get_llm_provider
             from app.services.llm.usage_tracker import set_caller
-            set_caller("openclaw_analyze.multi_model")
+
+            set_caller("multi_model_analyze")
             provider = get_llm_provider()
             return await provider.multi_model_analyze(prompt)
         except Exception as e:
-            logger.error(f"[OpenClaw分析] 分析失败: {e}")
+            logger.error("[multi-model] analysis failed: %s", e)
             return {
                 "status": "error",
                 "model_results": [],

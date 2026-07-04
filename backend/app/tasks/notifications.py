@@ -536,7 +536,7 @@ def generate_daily_insights_for_all():
     为当天有 Garmin 数据的活跃用户生成多维度健康分析。
     """
     from app.models.daily_health import GarminData, DietRecord, WorkoutRecord
-    from app.services.openclaw_analyze import OpenClawAnalyzeClient
+    from app.services.multi_model_analyze import MultiModelAnalyzeClient
 
     logger.info("[健康复盘] 开始")
     today = date.today()
@@ -566,7 +566,7 @@ def generate_daily_insights_for_all():
 def _generate_daily_insight_for_user(user_id: int, today: date):
     """为单个用户生成每日健康复盘"""
     from app.models.daily_health import GarminData, DietRecord, WorkoutRecord
-    from app.services.openclaw_analyze import OpenClawAnalyzeClient
+    from app.services.multi_model_analyze import MultiModelAnalyzeClient
 
     with SessionLocal() as db:
         # 聚合当日 Garmin 数据
@@ -652,8 +652,8 @@ def _generate_daily_insight_for_user(user_id: int, today: date):
 
         prompt = "\n\n".join(parts)
 
-        # 调用 OpenClaw 多模型分析
-        client = OpenClawAnalyzeClient()
+        # 调用统一多模型分析
+        client = MultiModelAnalyzeClient()
         analysis = run_async(client.analyze(prompt))
 
         # 推送通知
@@ -976,7 +976,7 @@ def send_weekly_review_invite():
 
 
 # ---------------------------------------------------------------------------
-# 工具函数：写入 OpenClaw "每日健康简报" 对话
+# 工具函数：写入 Agent "每日健康简报" 对话
 # ---------------------------------------------------------------------------
 
 BRIEFING_CONVERSATION_TITLE = "每日健康简报"  # 历史复用条目的旧标题（向后兼容查询用）
@@ -989,16 +989,16 @@ def _briefing_title_for(target_date: date) -> str:
 
 def _get_or_create_briefing_conversation(db, user_id: int, target_date: date):
     """获取或创建用户当天的「每日健康简报」对话（每天独立一条）"""
-    from app.models.openclaw import OpenClawConversation
+    from app.models.agent_conversation import AgentConversation
 
     title = _briefing_title_for(target_date)
-    conv = db.query(OpenClawConversation).filter(
-        OpenClawConversation.user_id == user_id,
-        OpenClawConversation.title == title,
+    conv = db.query(AgentConversation).filter(
+        AgentConversation.user_id == user_id,
+        AgentConversation.title == title,
     ).first()
 
     if not conv:
-        conv = OpenClawConversation(user_id=user_id, title=title)
+        conv = AgentConversation(user_id=user_id, title=title)
         db.add(conv)
         db.commit()
         db.refresh(conv)
@@ -1014,18 +1014,18 @@ def _write_briefing_message(db, user_id: int, content: str, target_date: date):
 
     返回 (conversation_id, message_id), 供上层写 Clinical Journal SOAP 溯源.
     """
-    from app.models.openclaw import OpenClawMessage
+    from app.models.agent_conversation import AgentMessage
 
     conv = _get_or_create_briefing_conversation(db, user_id, target_date)
 
     # 同日 assistant message 已存在 → update
     existing = (
-        db.query(OpenClawMessage)
+        db.query(AgentMessage)
         .filter(
-            OpenClawMessage.conversation_id == conv.id,
-            OpenClawMessage.role == "assistant",
+            AgentMessage.conversation_id == conv.id,
+            AgentMessage.role == "assistant",
         )
-        .order_by(OpenClawMessage.created_at.desc())
+        .order_by(AgentMessage.created_at.desc())
         .first()
     )
     if existing:
@@ -1036,7 +1036,7 @@ def _write_briefing_message(db, user_id: int, content: str, target_date: date):
         db.refresh(existing)
         return conv.id, existing.id
 
-    msg = OpenClawMessage(
+    msg = AgentMessage(
         conversation_id=conv.id,
         role="assistant",
         content=content,
@@ -1053,13 +1053,13 @@ WEEKLY_REPORT_TITLE = "每周健康周报"
 
 def _get_or_create_weekly_conversation(db, user_id: int):
     """获取或创建用户的「每周健康周报」独立对话"""
-    from app.models.openclaw import OpenClawConversation
-    conv = db.query(OpenClawConversation).filter(
-        OpenClawConversation.user_id == user_id,
-        OpenClawConversation.title == WEEKLY_REPORT_TITLE,
+    from app.models.agent_conversation import AgentConversation
+    conv = db.query(AgentConversation).filter(
+        AgentConversation.user_id == user_id,
+        AgentConversation.title == WEEKLY_REPORT_TITLE,
     ).first()
     if not conv:
-        conv = OpenClawConversation(user_id=user_id, title=WEEKLY_REPORT_TITLE)
+        conv = AgentConversation(user_id=user_id, title=WEEKLY_REPORT_TITLE)
         db.add(conv)
         db.commit()
         db.refresh(conv)
@@ -1068,9 +1068,9 @@ def _get_or_create_weekly_conversation(db, user_id: int):
 
 def _write_weekly_report_message(db, user_id: int, content: str):
     """将周报内容写入独立「每周健康周报」对话，与日报分开"""
-    from app.models.openclaw import OpenClawMessage
+    from app.models.agent_conversation import AgentMessage
     conv = _get_or_create_weekly_conversation(db, user_id)
-    msg = OpenClawMessage(conversation_id=conv.id, role="assistant", content=content)
+    msg = AgentMessage(conversation_id=conv.id, role="assistant", content=content)
     db.add(msg)
     conv.updated_at = datetime.now(UTC)
     db.commit()
@@ -1192,7 +1192,7 @@ def evaluate_and_push_safety(user_id: int):
 def generate_daily_briefing_message():
     """
     每日健康简报（07:35 执行）
-    为有 Garmin 设备的活跃用户生成简报并写入 OpenClaw 对话。
+    为有 Garmin 设备的活跃用户生成简报并写入 Agent 对话。
     """
     from app.models.user import GarminCredential
     from app.models.daily_health import GarminData, DietRecord, WaterIntake
@@ -1244,7 +1244,7 @@ def _generate_daily_briefing_for_user(user_id: int, target_date: date):
 
         if not garmin:
             # 检查最近 N 天内有几次缺数据 — 连续缺 ≥3 天就停止生成假简报, 改发一次"sync 可能挂了"提醒
-            from app.models.openclaw import OpenClawConversation, OpenClawMessage
+            from app.models.agent_conversation import AgentConversation, AgentMessage
             recent_no_data_days = db.query(GarminData).filter(
                 GarminData.user_id == user_id,
                 GarminData.record_date >= target_date - timedelta(days=2),
@@ -1256,10 +1256,10 @@ def _generate_daily_briefing_for_user(user_id: int, target_date: date):
                 logger.warning(f"[每日简报] 用户 {user_id} 最近 3 天均无 Garmin 数据，跳过占位简报")
                 # 检查是否已经发过 sync 中断提醒, 避免每天重发
                 title = _briefing_title_for(target_date)
-                already_warned = db.query(OpenClawConversation).join(OpenClawMessage).filter(
-                    OpenClawConversation.user_id == user_id,
-                    OpenClawConversation.title == title,
-                    OpenClawMessage.content.like("%Garmin 同步可能中断%"),
+                already_warned = db.query(AgentConversation).join(AgentMessage).filter(
+                    AgentConversation.user_id == user_id,
+                    AgentConversation.title == title,
+                    AgentMessage.content.like("%Garmin 同步可能中断%"),
                 ).first()
                 if not already_warned:
                     warn_msg = (
@@ -1472,7 +1472,7 @@ def _generate_daily_briefing_for_user(user_id: int, target_date: date):
 def generate_weekly_report_message():
     """
     每周健康报告（周一 09:05 执行）
-    收集 7 天数据生成周报并写入 OpenClaw 对话。
+    收集 7 天数据生成周报并写入 Agent 对话。
     """
     from app.models.user import GarminCredential
     from app.utils.timezone import get_china_today

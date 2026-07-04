@@ -27,7 +27,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.chat import ChatConversation
 from app.api.deps import get_current_user_required
-from app.services.openclaw_service import OpenClawService
+from app.services.agent_executor import AgentExecutor
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -333,17 +333,18 @@ async def siri_say(
     # 使用专属 Siri 对话（不影响普通对话列表的排序）
     conversation_id = get_or_create_siri_conversation(current_user.id, db)
 
-    # Siri 快捷指令 HTTP 超时约 25-30s，通过 OpenClaw stream 收集完整回复
+    # Siri 快捷指令 HTTP 超时约 25-30s，通过第一方 Agent stream 收集完整回复
     SIRI_TIMEOUT = 25
-    openclaw_service = OpenClawService(db)
+    agent = AgentExecutor(db)
     try:
         full_reply = ""
         async def collect_reply():
             nonlocal full_reply
-            async for event in openclaw_service.send_message_stream(
+            async for event in agent.run_stream(
                 user_id=current_user.id,
                 message=message,
                 conversation_id=conversation_id,
+                channel="siri",
             ):
                 if event.get("event") == "token":
                     full_reply += event.get("data", {}).get("content", "")

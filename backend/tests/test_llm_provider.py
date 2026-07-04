@@ -7,7 +7,6 @@ from app.services.llm.base import LLMProvider
 from app.services.llm.factory import create_llm_provider, get_llm_provider, reset_llm_provider
 from app.services.llm.providers.openai_provider import OpenAIProvider
 from app.services.llm.providers.ollama_provider import OllamaProvider
-from app.services.llm.providers.openclaw_provider import OpenClawProvider
 
 
 class _MockSettings:
@@ -186,18 +185,10 @@ class TestLLMProviderFactory:
         assert isinstance(provider, OllamaProvider)
         assert provider.provider_name == "ollama"
 
-    def test_create_openclaw_provider(self):
-        """创建 OpenClaw provider"""
-        mock_s = _MockSettings(
-            openclaw_base_url="https://bot.test.com/v1",
-            openclaw_api_key="oc-test",
-            openclaw_model="openclaw:main",
-        )
-        with patch("app.services.llm.factory.settings", mock_s):
-            provider = create_llm_provider("openclaw")
-        assert isinstance(provider, OpenClawProvider)
-        assert provider.provider_name == "openclaw"
-        assert provider.api_key == "oc-test"
+    def test_openclaw_provider_is_retired_to_tokenplan(self):
+        """OpenClaw provider 已下线，显式请求应失败而不是静默代理。"""
+        with pytest.raises(ValueError, match="未知的 LLM provider 类型"):
+            create_llm_provider("openclaw")
 
     def test_create_unknown_provider_raises(self):
         """未知 provider 类型抛出 ValueError"""
@@ -229,21 +220,10 @@ class TestLLMProviderFactory:
         assert provider.base_url == "https://proxy.example.com/v1"
         assert provider.model == "gpt-4"
 
-    def test_fallback_to_legacy_openclaw_config(self):
-        """新配置不存在时回退到遗留 OpenClaw 配置"""
-        mock_s = _MockSettings(
-            openclaw_base_url="https://bot.executor.life/v1",
-            openclaw_api_key="oc-legacy",
-            openclaw_model="openclaw:main",
-        )
-        with patch("app.services.llm.factory.settings", mock_s):
-            provider = create_llm_provider("openclaw")
-        assert isinstance(provider, OpenClawProvider)
-        assert provider.api_key == "oc-legacy"
-
     def test_get_llm_provider_singleton(self):
         """get_llm_provider 返回单例"""
         mock_s = _MockSettings(
+            llm_provider="openai",
             openai_api_key="sk-test",
             openai_base_url=None,
             openai_model="gpt-4o-mini",
@@ -256,6 +236,7 @@ class TestLLMProviderFactory:
     def test_reset_clears_singleton(self):
         """reset_llm_provider 清除单例"""
         mock_s = _MockSettings(
+            llm_provider="openai",
             openai_api_key="sk-test",
             openai_base_url=None,
             openai_model="gpt-4o-mini",
@@ -509,193 +490,6 @@ class TestOllamaProvider:
         assert result[0]["images"] == ["raw_base64_data"]
 
 
-# ============================================================
-# TestOpenClawProvider - OpenClaw Provider 测试
-# ============================================================
-
-class TestOpenClawProvider:
-    """测试 OpenClaw Provider"""
-
-    def test_init(self):
-        """初始化参数"""
-        p = OpenClawProvider(
-            base_url="https://bot.test.com/v1",
-            api_key="oc-test",
-            model="openclaw:main",
-        )
-        assert p.base_url == "https://bot.test.com/v1"
-        assert p.api_key == "oc-test"
-        assert p.model == "openclaw:main"
-        assert p.provider_name == "openclaw"
-
-    def test_trailing_slash_stripped(self):
-        """base_url 尾部斜杠被去除"""
-        p = OpenClawProvider(base_url="https://bot.test.com/v1/")
-        assert p.base_url == "https://bot.test.com/v1"
-
-    def test_supports_multi_model_false_without_analyze_url(self):
-        """未配置 analyze_url 时不支持多模型"""
-        p = OpenClawProvider(base_url="https://bot.test.com/v1")
-        assert p.supports_multi_model is False
-
-    def test_supports_multi_model_true_with_analyze_url(self):
-        """配置 analyze_url 后支持多模型"""
-        p = OpenClawProvider(
-            base_url="https://bot.test.com/v1",
-            analyze_url="https://base.executor.life/api/openclaw/analyze",
-        )
-        assert p.supports_multi_model is True
-
-    def test_get_headers_with_api_key(self):
-        """带 API key 的请求头"""
-        p = OpenClawProvider(api_key="oc-test")
-        headers = p._get_headers()
-        assert headers["Authorization"] == "Bearer oc-test"
-        assert headers["Content-Type"] == "application/json"
-
-    def test_get_headers_without_api_key(self):
-        """无 API key 的请求头"""
-        p = OpenClawProvider(api_key=None)
-        headers = p._get_headers()
-        assert "Authorization" not in headers
-
-    @pytest.mark.asyncio
-    async def test_chat_non_streaming(self):
-        """非流式 chat 调用 OpenClaw"""
-        p = OpenClawProvider(
-            base_url="https://bot.test.com/v1",
-            api_key="oc-test",
-            model="openclaw:main",
-        )
-
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "choices": [{"message": {"content": "你好！我是健康助手"}}]
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        mock_cls, mock_client = _mock_httpx_client(post_response=mock_response)
-
-        with patch(
-            "app.services.llm.providers.openclaw_provider.httpx.AsyncClient", mock_cls
-        ):
-            result = await p.chat(
-                messages=[{"role": "user", "content": "你好"}],
-                stream=False,
-            )
-
-        assert result == "你好！我是健康助手"
-        mock_client.post.assert_called_once()
-        call_args = mock_client.post.call_args
-        assert "/chat/completions" in call_args[0][0]
-        headers = call_args[1]["headers"]
-        assert headers["Authorization"] == "Bearer oc-test"
-
-    @pytest.mark.asyncio
-    async def test_multi_model_without_analyze_url(self):
-        """未配置 analyze_url 时回退到单模型"""
-        p = OpenClawProvider(
-            base_url="https://bot.test.com/v1",
-            api_key="oc-test",
-        )
-        assert p.supports_multi_model is False
-
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "choices": [{"message": {"content": "单模型结果"}}]
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        mock_cls, mock_client = _mock_httpx_client(post_response=mock_response)
-
-        with patch(
-            "app.services.llm.providers.openclaw_provider.httpx.AsyncClient", mock_cls
-        ):
-            result = await p.multi_model_analyze("分析数据")
-
-        assert result["status"] == "completed"
-        assert result["aggregation"] == "单模型结果"
-
-    @pytest.mark.asyncio
-    async def test_multi_model_submit_and_poll(self):
-        """多模型分析: submit + poll 流程"""
-        p = OpenClawProvider(
-            base_url="https://bot.test.com/v1",
-            api_key="oc-test",
-            analyze_url="https://base.executor.life/api/openclaw/analyze",
-            analyze_api_key="oc-analyze-key",
-            kim_user_id="test_user",
-        )
-        assert p.supports_multi_model is True
-
-        submit_response = MagicMock()
-        submit_response.json.return_value = {"ok": True, "batch_id": "batch-123"}
-        submit_response.raise_for_status = MagicMock()
-
-        poll_response = MagicMock()
-        poll_response.json.return_value = {
-            "status": "completed",
-            "model_results": [{"model": "gpt4", "content": "结果1"}],
-            "aggregation": "综合分析结果",
-        }
-        poll_response.raise_for_status = MagicMock()
-
-        mock_cls, mock_client = _mock_httpx_client(
-            post_response=submit_response,
-            get_response=poll_response,
-        )
-
-        with patch(
-            "app.services.llm.providers.openclaw_provider.httpx.AsyncClient", mock_cls
-        ), patch(
-            "app.services.llm.providers.openclaw_provider.asyncio.sleep",
-            new_callable=AsyncMock,
-        ):
-            result = await p.multi_model_analyze("分析我的运动数据")
-
-        assert result["status"] == "completed"
-        assert result["aggregation"] == "综合分析结果"
-        assert len(result["model_results"]) == 1
-
-    @pytest.mark.asyncio
-    async def test_multi_model_submit_failure(self):
-        """多模型分析: submit 失败"""
-        p = OpenClawProvider(
-            base_url="https://bot.test.com/v1",
-            analyze_url="https://base.executor.life/api/openclaw/analyze",
-            analyze_api_key="oc-key",
-            kim_user_id="user",
-        )
-
-        submit_response = MagicMock()
-        submit_response.json.return_value = {"ok": False, "error": "服务繁忙"}
-        submit_response.raise_for_status = MagicMock()
-
-        mock_cls, mock_client = _mock_httpx_client(post_response=submit_response)
-
-        with patch(
-            "app.services.llm.providers.openclaw_provider.httpx.AsyncClient", mock_cls
-        ):
-            result = await p.multi_model_analyze("测试")
-
-        assert result["status"] == "error"
-        assert "提交分析失败" in result["aggregation"]
-
-    def test_build_vision_messages(self):
-        """构建 OpenClaw vision 消息格式"""
-        messages = [
-            {"role": "system", "content": "系统提示"},
-            {"role": "user", "content": "分析这张图"},
-        ]
-        result = OpenClawProvider._build_vision_messages(
-            messages, "data:image/jpeg;base64,abc"
-        )
-        assert len(result) == 2
-        assert isinstance(result[1]["content"], list)
-        assert result[1]["content"][0]["type"] == "text"
-        assert result[1]["content"][1]["type"] == "image_url"
-
-
 # ---- Function Calling / Tools Tests ----
 
 class TestOpenAIProviderTools:
@@ -743,100 +537,3 @@ class TestOpenAIProviderTools:
             # tools 应通过 **kwargs 透传
             call_kwargs = mock_to_thread.call_args
             assert "tools" in str(call_kwargs)
-
-
-class TestOpenClawProviderTools:
-    """OpenClaw Provider tools 参数测试"""
-
-    @pytest.fixture
-    def provider(self):
-        return OpenClawProvider(
-            base_url="https://test.com/v1",
-            api_key="test-key",
-        )
-
-    @pytest.fixture
-    def sample_tools(self):
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": "record_water",
-                    "description": "记录饮水量",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "amount_ml": {"type": "integer"}
-                        },
-                        "required": ["amount_ml"],
-                    },
-                },
-            }
-        ]
-
-    @pytest.mark.asyncio
-    async def test_chat_with_tools_includes_in_payload(self, provider, sample_tools):
-        """tools 参数应包含在 HTTP payload 中"""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "choices": [{"message": {"content": "已记录", "tool_calls": None}}]
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("httpx.AsyncClient") as MockClient:
-            mock_instance = AsyncMock()
-            mock_instance.post.return_value = mock_response
-            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-            mock_instance.__aexit__ = AsyncMock(return_value=None)
-            MockClient.return_value = mock_instance
-
-            result = await provider.chat(
-                messages=[{"role": "user", "content": "喝水250"}],
-                tools=sample_tools,
-            )
-            # 验证 POST payload 包含 tools
-            post_call = mock_instance.post.call_args
-            payload = post_call.kwargs.get("json", {})
-            assert "tools" in payload
-            assert payload["tools"] == sample_tools
-
-    @pytest.mark.asyncio
-    async def test_chat_with_tool_calls_returns_dict(self, provider):
-        """当 LLM 返回 tool_calls 时，chat 应返回包含 tool_calls 的结构"""
-        tool_calls_data = [
-            {
-                "id": "call_123",
-                "type": "function",
-                "function": {"name": "record_water", "arguments": '{"amount_ml": 250}'},
-            }
-        ]
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "choices": [
-                {
-                    "message": {
-                        "content": None,
-                        "tool_calls": tool_calls_data,
-                    }
-                }
-            ]
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("httpx.AsyncClient") as MockClient:
-            mock_instance = AsyncMock()
-            mock_instance.post.return_value = mock_response
-            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-            mock_instance.__aexit__ = AsyncMock(return_value=None)
-            MockClient.return_value = mock_instance
-
-            result = await provider.chat(
-                messages=[{"role": "user", "content": "喝水250"}],
-                tools=[{"type": "function", "function": {"name": "record_water"}}],
-            )
-            # tool_calls 时返回 dict 而非 str
-            assert isinstance(result, dict)
-            assert "tool_calls" in result
-            assert result["tool_calls"][0]["function"]["name"] == "record_water"

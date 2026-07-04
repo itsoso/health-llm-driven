@@ -45,8 +45,6 @@ pytest-cov==4.1.0
 pytest-timeout==2.4.0
 
 psutil==5.9.0
-# SSH 远程管理 (OpenClaw Skills)
-paramiko>=3.4.0
 # 阿里云智能搜索 (夸克搜索)
 alibabacloud_iqs20241111==1.6.3
 alibabacloud_tea_openapi>=0.3.0

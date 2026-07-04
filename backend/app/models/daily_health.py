@@ -462,7 +462,7 @@ class WorkoutAnalysisResult(Base):
     id = Column(Integer, primary_key=True, index=True)
     workout_id = Column(Integer, ForeignKey("workout_records.id"), nullable=False, index=True)
     user_id = Column(Integer, nullable=False, index=True)
-    source = Column(String(50), nullable=False)  # "openclaw_multi", "openai", "rule_engine"
+    source = Column(String(50), nullable=False)  # "multi_model", "openai", "rule_engine"
     status = Column(String(20))  # "completed", "partial", "timeout", "error"
     aggregation = Column(Text)  # 综合分析结论
     model_results = Column(Text)  # 各模型独立结果 (JSON array)

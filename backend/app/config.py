@@ -23,13 +23,13 @@ class Settings(BaseSettings):
     llm_recovery_model_id: Optional[str] = None  # 为空则按可用模型自动挑选非 TokenPlan/快速可靠模型
 
     # === LLM Provider 统一配置 ===
-    llm_provider: str = "tokenplan"  # tokenplan (默认, 阿里云 MiniMax) | openclaw | openai | ollama
+    llm_provider: str = "tokenplan"  # tokenplan (默认, 阿里云 MiniMax) | openai | ollama
     llm_api_key: Optional[str] = None
     llm_base_url: Optional[str] = None
     llm_model: str = "gpt-4o-mini"
     llm_vision_model: str = "qwen-vl-max"
     agent_model: Optional[str] = None  # Hermes Agent 专用模型（默认复用 llm_model）
-    agent_base_url: Optional[str] = None  # Agent 专用 LLM 端点（默认复用 OpenClaw Gateway）
+    agent_base_url: Optional[str] = None  # Agent 专用 LLM 端点
     agent_api_key: Optional[str] = None  # Agent 专用 API Key
     llm_vision_api_key: Optional[str] = None  # 独立 Vision API key（如 DashScope）
     llm_vision_base_url: Optional[str] = "https://dashscope.aliyuncs.com/compatible-mode/v1"
@@ -50,11 +50,6 @@ class Settings(BaseSettings):
     # Ollama 本地模型配置
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3"
-
-    # OpenClaw 多模型分析配置（可选）
-    openclaw_analyze_url: Optional[str] = None
-    openclaw_analyze_api_key: Optional[str] = None
-    openclaw_analyze_user_id: Optional[str] = None
 
     # OpenAI配置
     openai_api_key: Optional[str] = None
@@ -100,19 +95,6 @@ class Settings(BaseSettings):
     # 微信小程序配置
     wechat_appid: Optional[str] = None  # 小程序 AppID
     wechat_secret: Optional[str] = None  # 小程序 AppSecret
-
-    # OpenClaw 配置 (AI 对话服务)
-    openclaw_base_url: str = ""
-    openclaw_api_key: Optional[str] = None
-    openclaw_model: str = "openclaw:main"
-
-    # OpenClaw Gateway
-    openclaw_gateway_url: str = ""
-    openclaw_runtime_base_dir: str = "/srv/health-platform/tenants"
-    assistant_openclaw_allowed_hosts: str = "127.0.0.1,localhost,bot.executor.life"
-    assistant_openclaw_health_check_ttl_seconds: int = 60
-    openclaw_ssh_host: str = ""
-    openclaw_ssh_port: int = 22222
 
     # 站点 URL（用于生成分享链接、Webhook 回调、Siri 快捷指令等）
     site_base_url: str = ""

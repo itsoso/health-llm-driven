@@ -1,4 +1,4 @@
-"""健康上下文服务 — 为 OpenClaw Native 模式提供丰富的用户健康摘要
+"""健康上下文服务 — 为 Agent 提供丰富的用户健康摘要
 
 设计目标：
 - 800-1200 tokens 输出，~15 次 DB 查询
@@ -22,7 +22,7 @@ _context_cache: dict[int, tuple[float, str]] = {}  # user_id -> (timestamp, cont
 _CACHE_TTL = 300  # 5 分钟
 
 # ── 系统规则 + Skill 路由表（注入到 system message） ─────
-OPENCLAW_HEALTH_SYSTEM_RULES = """你是用户的 AI 健康助理，能通过 Skills 查询数据、记录健康信息和执行分析。
+AGENT_HEALTH_SYSTEM_RULES = """你是用户的 AI 健康助理，能通过 Skills 查询数据、记录健康信息和执行分析。
 
 ## 你的能力（Skills）
 

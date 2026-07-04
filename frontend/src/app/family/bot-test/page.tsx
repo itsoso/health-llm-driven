@@ -57,8 +57,8 @@ function BotTestContent() {
       const botRes = await familyApi.sendBotMessage('text', text);
       if (botRes.data.reply) {
         addMessage('bot', botRes.data.reply);
-      } else if (botRes.data.action?.type === 'forward_to_openclaw') {
-        addMessage('bot', '💬 这条消息会转发给 AI 助手处理（实际微信场景下由 OpenClaw 回复）');
+      } else if (botRes.data.action?.type === 'forward_to_agent') {
+        addMessage('bot', '💬 这条消息会转发给阿衡 Agent 处理');
       }
     } catch (e: any) {
       addMessage('bot', `❌ 错误: ${e.response?.data?.detail || e.message}`);

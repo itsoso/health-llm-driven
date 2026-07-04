@@ -105,9 +105,6 @@ from app.api import (
     onboarding,
     data_export,
     health_trend,
-    openclaw,
-    assistant_openclaw,
-    openclaw_skills,
     shared_conversation,
     skills,
     feedback,
@@ -278,9 +275,6 @@ api_router.include_router(safety.router, tags=["safety"])
 api_router.include_router(orchestrator.router, tags=["orchestrator"])
 api_router.include_router(agent.router, prefix="/agent", tags=["agent"])
 api_router.include_router(dynamic_views.router)
-api_router.include_router(openclaw.router)
-api_router.include_router(assistant_openclaw.router)
-api_router.include_router(openclaw_skills.router)
 api_router.include_router(shared_conversation.router)
 api_router.include_router(skills.router, prefix="/skills", tags=["skills"])
 api_router.include_router(feedback.router)

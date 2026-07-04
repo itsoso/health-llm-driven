@@ -13,8 +13,7 @@ scope: health-llm-driven
 | 类别 | 位置 | 谁用 | 用途 |
 |---|---|---|---|
 | **研发 agent skill** | `.claude/skills/*/SKILL.md` | Claude Code 自动发现;Codex/Cursor/其他 agent 直接读同一文件作为项目协议 | 研发导航、产品流水线、部署、OTA、安全评审、doc drift 修复 |
-| **产品运行时 skill** | `backend/skills/*/SKILL.md` | Reva 后端 / OpenClaw Gateway | 登录态用户的健康查询、记录、分析等产品能力 |
-| **外部分发 skill** | `openclaw-skills/*` | 第三方 OpenClaw 主机 | 可复制安装的外部技能包,调用方自带 URL/token |
+| **产品运行时 skill** | `backend/skills/*/SKILL.md` | Reva 后端第一方 Agent | 登录态用户的健康查询、记录、分析等产品能力 |
 
 **不要混用**:研发 agent skill 管“怎么改这个仓库”;产品运行时 skill 管“用户/外部 agent 怎么使用健康能力”。
 

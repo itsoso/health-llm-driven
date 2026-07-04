@@ -121,7 +121,7 @@ class SelfTestResponse(BaseModel):
     ok: bool
     model_id: Optional[str]    # user 偏好里的 id (None = 系统默认)
     actual_model: Optional[str]  # provider 实际 init 时的 model name (e.g. 'qwen3.6-plus')
-    actual_provider: Optional[str]  # 'tokenplan' / 'openai-proxy' / 'openclaw' 等
+    actual_provider: Optional[str]  # 'tokenplan' / 'openai-proxy' / 'langbridge-proxy' 等
     base_url: Optional[str]
     latency_ms: Optional[int]
     sample_reply: Optional[str]

@@ -177,14 +177,14 @@ def test_complete_bad_status_400(client, db, auth_user_and_headers):
 # ─────────────────────────── past 投影 ───────────────────────────
 
 def _write_briefing(db, user_id, content="今日 HRV 偏低,注意恢复。"):
-    from app.models.openclaw import OpenClawConversation, OpenClawMessage
+    from app.models.agent_conversation import AgentConversation, AgentMessage
     from app.tasks.notifications import _briefing_title_for
 
-    conv = OpenClawConversation(user_id=user_id, title=_briefing_title_for(date.today()))
+    conv = AgentConversation(user_id=user_id, title=_briefing_title_for(date.today()))
     db.add(conv)
     db.commit()
     db.refresh(conv)
-    msg = OpenClawMessage(conversation_id=conv.id, role="assistant", content=content,
+    msg = AgentMessage(conversation_id=conv.id, role="assistant", content=content,
                           created_at=datetime.now(timezone.utc))
     db.add(msg)
     db.commit()

@@ -37,7 +37,7 @@
 2. **Verification before write** — 高确定性数值（体重/血压/疾病）写库前必须 LLM 复述+用户确认
 3. **Tool schema 描述加厚** — 给 LLM 解释*为什么*选这个参数，不只是 type（对应 Anthropic 的 ACI / Poka-yoke）
 4. **Memory 注入分 stage 可观测** — 4 stage 每个独立 ok/chars/count/error，写 audit
-5. **Provider failover** — 主 LLM 失败兜底走 OpenClaw，不让用户看见故障
+5. **Provider failover** — 主 LLM 失败走模型注册表内的可用 provider，不让用户看见故障
 6. **Streaming + 按句 TTS** — 不等整段，第一句出来就播
 7. **Prompt blob from Twin** — 数据先固化成 HealthTwin schema，再格式化为 prompt 段；不让 prompt 直接拼数据库行
 
@@ -181,7 +181,7 @@ if check is not None:
 4. **side effects 要说** — 写库 / 触发推送 / 影响疾病追踪都要在 description 里点出，让 LLM 自己升级谨慎度
 5. **enum > free string** — 选择有限的字段（type、dimension、analysis_type）必须用 `enum`，业界共识
 
-**别在后端做容错适配**：用户/AI 调错路径时，**修 schema 不修 router**。后端不该兜 LLM 的错（与 OpenClaw Skills 原则一致）。
+**别在后端做容错适配**：用户/AI 调错路径时，**修 schema 不修 router**。后端不该兜 LLM 的错（与 Agent Skills 原则一致）。
 
 **当前未启用，但应该启用的**：
 - OpenAI strict mode (`"strict": true` + `additionalProperties: false`) — 强约束 LLM 输出 JSON 严格匹配 schema，TokenPlan 接的 OpenAI 兼容协议应该支持，需验证
@@ -244,15 +244,14 @@ trace["stages"][name] = {
 async def _call_llm(system_prompt, user_prompt) -> str:
     text = await _try(None)            # 默认 provider (TokenPlan / OpenAI)
     if not text:
-        text = await _try("openclaw")  # 兜底 OpenClaw
+        text = await _try("tokenplan")  # 显式兜底到注册表内 provider
     return text or ""
 ```
 
 **Provider 优先级**（见 `app/services/llm/factory.py`）：
 1. `tokenplan` — 阿里云 OpenAI 兼容套餐，国内直连低延迟，**当前生产默认**
-2. `openclaw` — fallback，function calling 不支持但能保证有回答
-3. `openai` — 配 API key 时可用
-4. `ollama` — 本地开发
+2. `openai` — 配 API key 时可用
+3. `ollama` — 本地开发
 
 **两个失败模式都要兜**：
 - 网络层失败（超时/5xx）→ raise → catch 走 fallback
@@ -393,9 +392,9 @@ _NEEDS_SKILL_RE = re.compile(
 ```
 
 **判定**：
-- 命中 = 用户想"记录/写库"，走 OpenClaw skill（function calling）
-- 不命中 = 查询/分析/对话，走 Orchestrator（specialist + arbitration）
-- 含图片/文件 = 强制走 skill 路径（OpenClaw 有 vision）
+- 命中 = 用户想"记录/写库"，走 AgentExecutor tool-calling
+- 不命中 = 查询/分析/对话，走 AgentExecutor 或 Orchestrator（specialist + arbitration）
+- 含图片/文件 = 走 AgentExecutor vision/file 路径
 
 **为什么用正则不用 LLM 路由**：
 - 正则零延迟、可预测、可回归测试
@@ -563,7 +562,7 @@ _NEEDS_SKILL_RE = re.compile(
 - **Andrej Karpathy — "verification is the bottleneck"** ([blog](https://karpathy.bearblog.dev/) + 多次推文)
   generation cheap / verification expensive、autonomy slider、"decade of agents"。§2 / L9 autonomy slider 取自此。
 - **Anthropic — [Model Context Protocol](https://modelcontextprotocol.io/)**
-  我们的 MCP server (`mcp-server/`) + skills 包 (`openclaw-skills/`) 的协议基础。
+  我们的 MCP server (`mcp-server/`) 的协议基础。
 
 更新约定：新引一篇业界文，加到本节，并在文档对应章节加 inline 链接。
 

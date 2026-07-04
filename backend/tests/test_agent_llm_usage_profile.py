@@ -4,16 +4,16 @@ from app.api.agent import (
     _persist_done_thinking_steps,
     _thought_step_from_agent_event,
 )
-from app.models.openclaw import OpenClawConversation, OpenClawMessage
+from app.models.agent_conversation import AgentConversation, AgentMessage
 
 
 def test_persist_done_llm_usage_preserves_existing_meta(db):
-    conv = OpenClawConversation(user_id=1, title="usage profile")
+    conv = AgentConversation(user_id=1, title="usage profile")
     db.add(conv)
     db.commit()
     db.refresh(conv)
 
-    msg = OpenClawMessage(
+    msg = AgentMessage(
         conversation_id=conv.id,
         role="assistant",
         content="ok",
@@ -57,12 +57,12 @@ def test_persist_done_llm_usage_preserves_existing_meta(db):
 
 
 def test_persist_done_thinking_steps_preserves_existing_meta(db):
-    conv = OpenClawConversation(user_id=1, title="thinking profile")
+    conv = AgentConversation(user_id=1, title="thinking profile")
     db.add(conv)
     db.commit()
     db.refresh(conv)
 
-    msg = OpenClawMessage(
+    msg = AgentMessage(
         conversation_id=conv.id,
         role="assistant",
         content="ok",

@@ -1,7 +1,7 @@
 """Unified Health Agent API — 统一健康助理端点
 
 所有对话（记录、查询、分析、图片识别）统一走此入口。
-OpenClaw 降级为 fallback 渠道。
+旧外部网关已下线，所有对话统一走第一方 Agent。
 """
 import asyncio
 import json
@@ -141,7 +141,7 @@ def _merge_card_descriptors(*groups: list | None) -> list:
 
 
 def _persist_done_cards(db: Session, message_id: int | None, cards: list) -> None:
-    """Persist cards appended by the API wrapper into OpenClawMessage.meta.
+    """Persist cards appended by the API wrapper into AgentMessage.meta.
 
     AgentExecutor already writes its own metadata before yielding `done`. The
     route wrapper may append inline/query cards afterwards, so it must patch the
@@ -152,9 +152,9 @@ def _persist_done_cards(db: Session, message_id: int | None, cards: list) -> Non
     if not message_id or not cards:
         return
     try:
-        from app.models.openclaw import OpenClawMessage
+        from app.models.agent_conversation import AgentMessage
 
-        msg = db.query(OpenClawMessage).filter(OpenClawMessage.id == message_id).first()
+        msg = db.query(AgentMessage).filter(AgentMessage.id == message_id).first()
         if not msg:
             return
         meta = dict(msg.meta or {})
@@ -166,14 +166,14 @@ def _persist_done_cards(db: Session, message_id: int | None, cards: list) -> Non
 
 
 def _persist_done_llm_usage(db: Session, message_id: int | None, usage: dict | None) -> None:
-    """Persist per-answer token/cost profile into OpenClawMessage.meta."""
+    """Persist per-answer token/cost profile into AgentMessage.meta."""
 
     if not message_id or not isinstance(usage, dict) or not usage:
         return
     try:
-        from app.models.openclaw import OpenClawMessage
+        from app.models.agent_conversation import AgentMessage
 
-        msg = db.query(OpenClawMessage).filter(OpenClawMessage.id == message_id).first()
+        msg = db.query(AgentMessage).filter(AgentMessage.id == message_id).first()
         if not msg:
             return
         meta = dict(msg.meta or {})
@@ -185,15 +185,15 @@ def _persist_done_llm_usage(db: Session, message_id: int | None, usage: dict | N
 
 
 def _persist_done_thinking_steps(db: Session, message_id: int | None, steps: list | None) -> None:
-    """Persist safe progress summaries into OpenClawMessage.meta for history restore."""
+    """Persist safe progress summaries into AgentMessage.meta for history restore."""
 
     normalized = _normalize_thinking_steps(steps)
     if not message_id or not normalized:
         return
     try:
-        from app.models.openclaw import OpenClawMessage
+        from app.models.agent_conversation import AgentMessage
 
-        msg = db.query(OpenClawMessage).filter(OpenClawMessage.id == message_id).first()
+        msg = db.query(AgentMessage).filter(AgentMessage.id == message_id).first()
         if not msg:
             return
         meta = dict(msg.meta or {})
@@ -275,7 +275,7 @@ def _maybe_genui_chart_events(
     - caps 缺 genui-v1 / 非图表意图 / 数据不足 → None。
     - events 复用 `agent_stream` 现有 shape: token (data.content 含 ```reva-ui block)
       + done ({conversation_id, message_id, elapsed_ms, mode})。
-    - assistant 消息写入与普通路径同一 durable store (OpenClawService), 含 reva-ui
+    - assistant 消息写入与普通路径同一 durable store (AgentConversationService), 含 reva-ui
       文本 → 历史/恢复可见, message_id 真实。
     """
     if GENUI_CAP not in (caps or []):
@@ -335,10 +335,10 @@ def _maybe_genui_chart_events(
             )
         full_reply = f"{intro}\n\n{render_reva_ui_block(block)}"
 
-    # 持久化: 与 AgentExecutor.run_stream 相同的 OpenClawService 会话/消息存储。
-    from app.services.openclaw_service import OpenClawService
+    # 持久化: 与 AgentExecutor.run_stream 相同的 AgentConversationService 会话/消息存储。
+    from app.services.agent_conversation_service import AgentConversationService
 
-    svc = OpenClawService(db)
+    svc = AgentConversationService(db)
     conv = svc.get_or_create_conversation(user_id, conversation_id, title=message)
     svc.save_message(conv.id, "user", message)
     ai_msg = svc.save_message(conv.id, "assistant", full_reply)
@@ -670,6 +670,85 @@ async def agent_stream(
     )
 
 
+@router.post("/send", summary="统一健康助理非流式对话")
+async def agent_send(
+    request: Request,
+    req: AgentRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Non-streaming wrapper for clients that cannot consume SSE reliably.
+
+    This endpoint intentionally reuses the first-party AgentExecutor instead of
+    any external gateway. It collects token events into one reply and returns
+    the durable conversation/message ids written by the executor.
+    """
+
+    has_images = bool(req.image_base64 or req.images)
+    if not req.message.strip() and not has_images and not req.file_base64:
+        raise HTTPException(status_code=400, detail="消息不能为空")
+
+    if _check_recent_dup(current_user.id, req.message):
+        raise HTTPException(
+            status_code=429,
+            detail="请求过于频繁，请稍候。（同一消息 3 秒内已发送）",
+        )
+
+    all_images: List[dict] = []
+    if req.images:
+        all_images = [{"base64": img.base64, "type": img.type} for img in req.images]
+    elif req.image_base64:
+        all_images = [{"base64": req.image_base64, "type": req.image_type or "jpeg"}]
+
+    auth_header = request.headers.get("authorization", "")
+    user_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
+
+    from app.services.agent_executor import AgentExecutor
+
+    reply_parts: list[str] = []
+    done_data: dict = {}
+    try:
+        executor = AgentExecutor(db)
+        async for event in executor.run_stream(
+            user_id=current_user.id,
+            message=req.message.strip(),
+            conversation_id=req.conversation_id,
+            user_auth_token=user_token,
+            images=all_images or None,
+            file_base64=req.file_base64,
+            file_name=req.file_name,
+            extra_context=req.extra_context,
+            channel=req.channel,
+        ):
+            if event.get("event") == "token":
+                content = event.get("data", {}).get("content")
+                if isinstance(content, str):
+                    reply_parts.append(content)
+            elif event.get("event") == "done":
+                data = event.get("data")
+                if isinstance(data, dict):
+                    done_data = data
+            elif event.get("event") == "error":
+                data = event.get("data") if isinstance(event.get("data"), dict) else {}
+                raise HTTPException(status_code=500, detail=safe_llm_error_message(data.get("message")))
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.exception("[agent.send] failed: %s", e)
+        raise HTTPException(status_code=500, detail=safe_llm_error_message(str(e))) from e
+
+    if not done_data:
+        raise HTTPException(status_code=500, detail="Agent 未返回完成状态")
+
+    return {
+        "reply": "".join(reply_parts),
+        "conversation_id": done_data.get("conversation_id"),
+        "message_id": done_data.get("message_id"),
+        "mode": "agent",
+        "elapsed_ms": done_data.get("elapsed_ms"),
+    }
+
+
 @router.get("/conversations", summary="统一健康助理对话列表")
 async def list_conversations(
     limit: int = Query(30, ge=1, le=100),
@@ -681,14 +760,14 @@ async def list_conversations(
     """List current user's Agent conversations (paginated).
 
     返回 {items, total, limit, offset} —— 前端历史记录用 offset 做上一页/下一页翻页。
-    AgentExecutor persists conversations through OpenClawService so mobile/web
+    AgentExecutor persists conversations through AgentConversationService so mobile/web
     can resume interrupted streams from the same durable message store.
     """
     from sqlalchemy import func
-    from app.models.openclaw import OpenClawMessage
-    from app.services.openclaw_service import OpenClawService
+    from app.models.agent_conversation import AgentMessage
+    from app.services.agent_conversation_service import AgentConversationService
 
-    service = OpenClawService(db)
+    service = AgentConversationService(db)
     total = service.count_conversations(current_user.id, title_like=title_like)
     convs = service.get_conversations(current_user.id, limit, title_like=title_like, offset=offset)
     conv_ids = [c.id for c in convs]
@@ -696,19 +775,19 @@ async def list_conversations(
     if conv_ids:
         subq = (
             db.query(
-                OpenClawMessage.conversation_id,
-                func.max(OpenClawMessage.id).label("max_id"),
+                AgentMessage.conversation_id,
+                func.max(AgentMessage.id).label("max_id"),
             )
             .filter(
-                OpenClawMessage.conversation_id.in_(conv_ids),
-                OpenClawMessage.role == "user",
+                AgentMessage.conversation_id.in_(conv_ids),
+                AgentMessage.role == "user",
             )
-            .group_by(OpenClawMessage.conversation_id)
+            .group_by(AgentMessage.conversation_id)
             .subquery()
         )
         rows = (
-            db.query(OpenClawMessage.conversation_id, OpenClawMessage.content)
-            .join(subq, OpenClawMessage.id == subq.c.max_id)
+            db.query(AgentMessage.conversation_id, AgentMessage.content)
+            .join(subq, AgentMessage.id == subq.c.max_id)
             .all()
         )
         last_msgs = {r[0]: (r[1] or "")[:80] for r in rows}
@@ -738,9 +817,9 @@ async def get_conversation(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    from app.services.openclaw_service import OpenClawService
+    from app.services.agent_conversation_service import AgentConversationService
 
-    service = OpenClawService(db)
+    service = AgentConversationService(db)
     conv = service.get_conversation_detail(current_user.id, conversation_id)
     if not conv:
         raise HTTPException(status_code=404, detail="对话不存在")
@@ -788,9 +867,9 @@ async def delete_conversation(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    from app.services.openclaw_service import OpenClawService
+    from app.services.agent_conversation_service import AgentConversationService
 
-    service = OpenClawService(db)
+    service = AgentConversationService(db)
     ok = service.delete_conversation(current_user.id, conversation_id)
     if not ok:
         raise HTTPException(status_code=404, detail="对话不存在")
@@ -804,9 +883,9 @@ async def update_conversation_title(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    from app.services.openclaw_service import OpenClawService
+    from app.services.agent_conversation_service import AgentConversationService
 
-    service = OpenClawService(db)
+    service = AgentConversationService(db)
     try:
         conv = service.update_conversation_title(current_user.id, conversation_id, body.title)
     except ValueError as exc:
@@ -819,6 +898,35 @@ async def update_conversation_title(
         "updated_at": str(conv.updated_at),
         "mode": "agent",
     }
+
+
+@router.post("/messages/{message_id}/rate", summary="评价统一健康助理消息")
+async def rate_agent_message(
+    message_id: int,
+    payload: dict,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    rating = payload.get("rating")
+    if rating not in (1, -1):
+        raise HTTPException(status_code=400, detail="rating must be 1 or -1")
+
+    from app.models.agent_conversation import AgentConversation, AgentMessage
+
+    msg = (
+        db.query(AgentMessage)
+        .join(AgentConversation, AgentConversation.id == AgentMessage.conversation_id)
+        .filter(
+            AgentMessage.id == message_id,
+            AgentConversation.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not msg:
+        raise HTTPException(status_code=404, detail="消息不存在")
+    msg.rating = None if msg.rating == rating else rating
+    db.commit()
+    return {"ok": True, "rating": msg.rating}
 
 
 @router.get("/conversation-opener", summary="Chat 起手未读续接 — AI 主动开场白")

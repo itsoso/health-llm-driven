@@ -179,8 +179,8 @@ async def test_run_stream_query_json_leak_is_suppressed_and_stored_clean(db, aut
     assert "今天只有早餐记录,没有午餐" in token_texts
 
     # 落库的完整回复也是干净的 (reload 侧)
-    from app.models.openclaw import OpenClawMessage
-    saved = db.query(OpenClawMessage).filter_by(role="assistant").one()
+    from app.models.agent_conversation import AgentMessage
+    saved = db.query(AgentMessage).filter_by(role="assistant").one()
     assert "record_date" not in saved.content
     assert "meal_type" not in saved.content
     assert "今天只有早餐记录,没有午餐" in saved.content
@@ -228,7 +228,7 @@ async def test_run_stream_user_requested_json_block_is_not_suppressed(db, auth_u
     assert '"protein": 30' in token_texts
 
     # 落库同样完整保留 (reload 侧)
-    from app.models.openclaw import OpenClawMessage
-    saved = db.query(OpenClawMessage).filter_by(role="assistant").one()
+    from app.models.agent_conversation import AgentMessage
+    saved = db.query(AgentMessage).filter_by(role="assistant").one()
     assert "```json" in saved.content
     assert '"calories": 220' in saved.content

@@ -7,7 +7,7 @@ import pytest
 from app.agents.safety_guardian.schema import Alert, Severity
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.user_profile import UserProfile
-from app.models.openclaw import OpenClawMessage
+from app.models.agent_conversation import AgentMessage
 from app.services.agent_executor import (
     INTERRUPTED_COMPLETION_NOTICE,
     AgentExecutor,
@@ -320,7 +320,7 @@ async def test_agent_stream_reports_tools_used_in_done_and_meta(db, auth_user_an
     assert "sources_used" in done["data"]
 
     # 持久化 meta 也要带 tools_used, 否则历史消息 reload 看不到。
-    ai_msg = db.query(OpenClawMessage).filter_by(id=done["data"]["message_id"]).first()
+    ai_msg = db.query(AgentMessage).filter_by(id=done["data"]["message_id"]).first()
     assert ai_msg is not None
     assert ai_msg.meta["tools_used"] == ["health_query"]
 
@@ -350,7 +350,7 @@ async def test_agent_stream_tools_used_empty_when_no_tool_call(db, auth_user_and
     assert done["event"] == "done"
     assert done["data"]["tools_used"] == []
 
-    ai_msg = db.query(OpenClawMessage).filter_by(id=done["data"]["message_id"]).first()
+    ai_msg = db.query(AgentMessage).filter_by(id=done["data"]["message_id"]).first()
     assert ai_msg is not None
     assert ai_msg.meta["tools_used"] == []
 
@@ -486,7 +486,7 @@ async def test_agent_stream_emits_record_card_after_fast_diet_record(db, auth_us
     assert events.index(card_events[0]) < done_idx
     assert events[done_idx]["data"]["cards"] == [card]
 
-    saved = db.query(OpenClawMessage).filter_by(id=events[done_idx]["data"]["message_id"]).first()
+    saved = db.query(AgentMessage).filter_by(id=events[done_idx]["data"]["message_id"]).first()
     assert saved is not None
     assert saved.meta["cards"] == [card]
 
@@ -588,7 +588,7 @@ async def test_agent_stream_emits_safety_card_after_record_safety_alert(db, auth
     done_idx = next(i for i, e in enumerate(events) if e.get("event") == "done")
     assert events[done_idx]["data"]["cards"] == [record_card, safety_card]
 
-    saved = db.query(OpenClawMessage).filter_by(id=events[done_idx]["data"]["message_id"]).first()
+    saved = db.query(AgentMessage).filter_by(id=events[done_idx]["data"]["message_id"]).first()
     assert saved is not None
     assert saved.meta["cards"] == [record_card, safety_card]
 
@@ -692,7 +692,7 @@ async def test_agent_stream_marks_length_limited_answer_as_interrupted(db, auth_
         if event.get("event") == "token"
     )
     done = events[-1]
-    saved = db.query(OpenClawMessage).filter_by(role="assistant").one()
+    saved = db.query(AgentMessage).filter_by(role="assistant").one()
 
     assert INTERRUPTED_COMPLETION_NOTICE in rendered
     assert done["event"] == "done"

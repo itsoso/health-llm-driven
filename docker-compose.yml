@@ -58,10 +58,6 @@ services:
       OPENAI_API_KEY: ${LLM_API_KEY:-}
       OPENAI_BASE_URL: ${LLM_BASE_URL:-}
       OPENAI_MODEL: ${LLM_MODEL:-gpt-4o-mini}
-      # OpenClaw
-      OPENCLAW_BASE_URL: ${OPENCLAW_BASE_URL:-https://bot.executor.life/v1}
-      OPENCLAW_API_KEY: ${OPENCLAW_API_KEY:-}
-      OPENCLAW_MODEL: ${OPENCLAW_MODEL:-openclaw:main}
       # Garmin
       GARMIN_EMAIL: ${GARMIN_EMAIL:-}
       GARMIN_PASSWORD: ${GARMIN_PASSWORD:-}

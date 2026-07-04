@@ -31,7 +31,7 @@ def create_llm_provider(provider_type: Optional[str] = None) -> LLMProvider:
             if entry:
                 logger.info(f"[LLM Factory] 用 admin 选定模型 {entry.id} (provider={entry.provider})")
                 return _create_from_entry(entry)
-        provider_type = getattr(settings, "llm_provider", "openclaw")
+        provider_type = getattr(settings, "llm_provider", "tokenplan")
 
     provider_type = provider_type.lower().strip()
     logger.info(f"[LLM Factory] 创建 provider: {provider_type}")
@@ -42,16 +42,10 @@ def create_llm_provider(provider_type: Optional[str] = None) -> LLMProvider:
         return _create_tokenplan_provider()
     elif provider_type == "ollama":
         return _create_ollama_provider()
-    elif provider_type == "openclaw":
-        try:
-            return _create_openclaw_provider()
-        except Exception as e:
-            logger.warning(f"[LLM Factory] OpenClaw 创建失败，回退到 OpenAI: {e}")
-            return _create_openai_provider()
     else:
         raise ValueError(
             f"未知的 LLM provider 类型: {provider_type!r}，"
-            f"支持的类型: openclaw, openai, ollama, tokenplan"
+            f"支持的类型: openai, ollama, tokenplan"
         )
 
 
@@ -95,8 +89,6 @@ def _create_from_entry(entry) -> LLMProvider:
         )
         provider.provider_name = "zhipu"
         return provider
-    if entry.provider == "openclaw":
-        return _create_openclaw_provider()
     if entry.provider == "langbridge-proxy":
         if not settings.langbridge_gateway_api_key:
             raise ValueError("LANGBRIDGE_GATEWAY_API_KEY 未配置, 无法用商用模型 gateway")
@@ -154,30 +146,6 @@ def _create_ollama_provider() -> LLMProvider:
     return OllamaProvider(
         base_url=base_url,
         model=model,
-    )
-
-
-def _create_openclaw_provider() -> LLMProvider:
-    """创建 OpenClaw provider，兼容遗留配置"""
-    from app.services.llm.providers.openclaw_provider import OpenClawProvider
-
-    # 新配置优先，回退到遗留配置
-    base_url = getattr(settings, "llm_openclaw_base_url", None) or settings.openclaw_base_url
-    api_key = getattr(settings, "llm_openclaw_api_key", None) or settings.openclaw_api_key
-    model = getattr(settings, "llm_openclaw_model", None) or settings.openclaw_model
-
-    # 多模型分析配置（可选）
-    analyze_url = getattr(settings, "llm_openclaw_analyze_url", None)
-    analyze_api_key = getattr(settings, "llm_openclaw_analyze_api_key", None)
-    kim_user_id = getattr(settings, "llm_openclaw_kim_user_id", None)
-
-    return OpenClawProvider(
-        base_url=base_url,
-        api_key=api_key,
-        model=model,
-        analyze_url=analyze_url,
-        analyze_api_key=analyze_api_key,
-        kim_user_id=kim_user_id,
     )
 
 

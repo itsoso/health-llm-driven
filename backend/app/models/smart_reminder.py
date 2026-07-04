@@ -39,7 +39,7 @@ class SmartReminder(Base):
     fired_at = Column(DateTime(timezone=True), nullable=True)
 
     # 来源
-    source = Column(String(50), default="health_assistant")  # health_assistant / openclaw / manual
+    source = Column(String(50), default="health_assistant")  # health_assistant / agent / manual
 
     # 额外数据（如位置、关联事件等）
     extra_data = Column(JSON, nullable=True)

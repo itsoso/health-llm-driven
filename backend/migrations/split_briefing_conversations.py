@@ -8,7 +8,7 @@
 
 操作:
   对每个 user_id, 找出所有 title='每日健康简报' (旧格式) 的对话,
-  按 OpenClawMessage.created_at 的中国日期分组,
+  按 AgentMessage.created_at 的中国日期分组,
   每个日期新建一条 title='每日健康简报 · MM-DD' 的对话,
   把消息 reassign 到对应的新对话, 然后删掉旧的空对话.
 
@@ -32,7 +32,7 @@ from sqlalchemy import func
 sys.path.insert(0, ".")
 
 from app.database import SessionLocal
-from app.models.openclaw import OpenClawConversation, OpenClawMessage
+from app.models.agent_conversation import AgentConversation, AgentMessage
 
 CHINA_TZ = timezone(timedelta(hours=8))
 OLD_TITLE = "每日健康简报"
@@ -46,10 +46,10 @@ def china_date(dt: datetime):
 
 def split_for_user(db, user_id: int, apply: bool):
     legacy_convs = (
-        db.query(OpenClawConversation)
+        db.query(AgentConversation)
         .filter(
-            OpenClawConversation.user_id == user_id,
-            OpenClawConversation.title == OLD_TITLE,
+            AgentConversation.user_id == user_id,
+            AgentConversation.title == OLD_TITLE,
         )
         .all()
     )
@@ -61,9 +61,9 @@ def split_for_user(db, user_id: int, apply: bool):
 
     for legacy in legacy_convs:
         msgs = (
-            db.query(OpenClawMessage)
-            .filter(OpenClawMessage.conversation_id == legacy.id)
-            .order_by(OpenClawMessage.created_at.asc())
+            db.query(AgentMessage)
+            .filter(AgentMessage.conversation_id == legacy.id)
+            .order_by(AgentMessage.created_at.asc())
             .all()
         )
         if not msgs:
@@ -84,10 +84,10 @@ def split_for_user(db, user_id: int, apply: bool):
             new_title = f"{OLD_TITLE} · {d.strftime('%m-%d')}"
             # 已存在则复用 (幂等)
             existing = (
-                db.query(OpenClawConversation)
+                db.query(AgentConversation)
                 .filter(
-                    OpenClawConversation.user_id == user_id,
-                    OpenClawConversation.title == new_title,
+                    AgentConversation.user_id == user_id,
+                    AgentConversation.title == new_title,
                 )
                 .first()
             )
@@ -95,7 +95,7 @@ def split_for_user(db, user_id: int, apply: bool):
                 target = existing
                 print(f"    {new_title}: 复用已存在 conv {existing.id}, 追加 {len(day_msgs)} 条")
             else:
-                target = OpenClawConversation(user_id=user_id, title=new_title)
+                target = AgentConversation(user_id=user_id, title=new_title)
                 if apply:
                     db.add(target)
                     db.flush()
@@ -114,8 +114,8 @@ def split_for_user(db, user_id: int, apply: bool):
             # 旧对话清空后删除
             db.flush()
             remaining = (
-                db.query(func.count(OpenClawMessage.id))
-                .filter(OpenClawMessage.conversation_id == legacy.id)
+                db.query(func.count(AgentMessage.id))
+                .filter(AgentMessage.conversation_id == legacy.id)
                 .scalar()
             )
             if remaining == 0:
@@ -136,8 +136,8 @@ def main():
 
     with SessionLocal() as db:
         user_ids = [
-            uid for (uid,) in db.query(OpenClawConversation.user_id)
-            .filter(OpenClawConversation.title == OLD_TITLE)
+            uid for (uid,) in db.query(AgentConversation.user_id)
+            .filter(AgentConversation.title == OLD_TITLE)
             .distinct()
             .all()
         ]

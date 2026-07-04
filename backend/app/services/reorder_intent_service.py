@@ -4,7 +4,7 @@
 docs/prd/2026-06-19-proactive-planning-prd.md §3.D2 + §5。
 
 ⚠️ 财务硬边界(本期 = SCAFFOLD,过财务安全评审):
-- confirm 走到「调快手电商 skill 下单」时,`kuaishou_skill_gateway.place_order` 抛
+- confirm 走到「调快手电商 Agent action 下单」时,`kuaishou_skill_gateway.place_order` 抛
   NotImplementedError → 本 service 抛 `ReorderSkillNotReady`(API 转 501),意图退回
   **安全态 user_confirmed**(已确认但未下单),**绝不**标 order_placed。
 - 后端永不处理支付凭据、永不扣款、永不无逐笔确认下单。

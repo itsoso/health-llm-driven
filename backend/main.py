@@ -20,7 +20,7 @@ from app.scheduler import start_scheduler
 from app.utils.logging_config import setup_beijing_logging
 from app.config import settings
 import app.models.smart_reminder  # noqa: F401 - ensure table creation
-import app.models.interaction_feedback  # noqa: F401 - OpenClaw Native 反馈系统
+import app.models.interaction_feedback  # noqa: F401 - Agent 反馈系统
 import app.models.genetic_data  # noqa: F401 - 基因数据表
 import app.models.llm_usage  # noqa: F401 - LLM 用量追踪表
 import app.models.open_loop_history  # noqa: F401 - Open-Loop 推送历史 + dedup
@@ -289,9 +289,7 @@ REQUEST_TIMEOUT = 60  # 普通请求超时 60 秒（从 120 降低，避免 work
 SLOW_REQUEST_THRESHOLD = 5  # 超过 5 秒记录慢请求警告
 # SSE/流式端点不受超时限制
 STREAMING_PATHS = {
-    "/api/v1/openclaw/stream",
     "/api/v1/chat/stream",
-    "/api/v1/assistant-openclaw/stream",
     "/api/v1/agent/stream",
     "/api/v1/orchestrator/chat/stream",
 }

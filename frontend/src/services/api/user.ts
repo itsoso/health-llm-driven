@@ -84,7 +84,7 @@ export const notificationApi = {
 
 export const feedbackApi = {
   submit: (data: {
-    conversation_type: 'chat' | 'openclaw';
+    conversation_type: 'chat' | 'agent';
     conversation_id: number;
     message_id: number;
     rating: 1 | 5;

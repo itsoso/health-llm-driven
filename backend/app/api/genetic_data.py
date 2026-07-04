@@ -1215,8 +1215,8 @@ category 分类规则:
         for i, img_b64 in enumerate(images):
             try:
                 # 压缩图片
-                from app.services.openclaw_service import OpenClawService
-                compressed = OpenClawService._compress_image_static(img_b64)
+                from app.services.agent_conversation_service import AgentConversationService
+                compressed = AgentConversationService.compress_image_base64(img_b64)
 
                 loop = asyncio.new_event_loop()
                 result = loop.run_until_complete(

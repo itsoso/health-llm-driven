@@ -161,7 +161,7 @@ class AIInsightsService:
 
     # ========== LLM 调用方法 ==========
 
-    async def _call_openclaw(self, system_prompt: str, user_message: str) -> Optional[str]:
+    async def _call_llm(self, system_prompt: str, user_message: str) -> Optional[str]:
         """调用 LLM Provider 生成内容"""
         try:
             provider = get_llm_provider()
@@ -224,7 +224,7 @@ class AIInsightsService:
         user_message = self._build_daily_review_user_message(target_date, snapshot, profile, goals)
 
         # 调用 AI 生成复盘
-        content = await self._call_openclaw(system_prompt, user_message)
+        content = await self._call_llm(system_prompt, user_message)
         if not content:
             logger.error(f"Failed to generate daily insight for user {user_id}")
             return None
@@ -383,7 +383,7 @@ class AIInsightsService:
         user_message = self._build_realtime_recommendation_user_message(context_data)
 
         # 调用 AI 生成建议
-        content = await self._call_openclaw(system_prompt, user_message)
+        content = await self._call_llm(system_prompt, user_message)
         if not content:
             logger.error(f"Failed to generate recommendation for user {user_id}")
             return None

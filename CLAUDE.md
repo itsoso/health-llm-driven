@@ -58,7 +58,7 @@ harness 是演进系统,每次执行后把新坑沉淀回对应 agent 定义。
 
 ## Project Overview
 
-AI-driven health management platform with a Next.js web frontend, FastAPI backend, an Expo React Native app for iPhone/iPad, a WeChat mini program, and a standalone MCP server. Integrates Garmin/Withings wearables, LLM-based health analysis, and an OpenClaw AI assistant.
+AI-driven health management platform with a Next.js web frontend, FastAPI backend, an Expo React Native app for iPhone/iPad, a WeChat mini program, and a standalone MCP server. Integrates Garmin/Withings wearables, LLM-based health analysis, and a first-party health Agent.
 
 ## ⚠️ 移动端构建方向（2026-04-19 决定）
 
@@ -88,7 +88,6 @@ Root is a **pnpm workspace** (`pnpm-workspace.yaml` → `packages/*`) **plus sev
 | `packages/mini-program/` | WeChat mini program (uni-app) | `pnpm` (workspace) | `weixin` client |
 | `packages/shared/` | TypeScript | `pnpm` (workspace) | Shared types/utilities |
 | `mcp-server/` | Python | `pip` + `venv/` | Standalone MCP server |
-| `openclaw-skills/` | Markdown | — | Distributable OpenClaw skill packs (see "Skills: two locations" below) |
 
 ## Local Dev Gotchas
 
@@ -250,7 +249,7 @@ python server.py     # See mcp-server/README.md for tool list
 ./deploy.sh -l   # View logs
 ```
 
-Backend deploy automatically syncs `backend/skills/*/SKILL.md` to the OpenClaw Gateway. Post-deploy, `backend/scripts/system_health_score.py` runs — on failure, deploy auto-rollbacks.
+Backend deploy validates the first-party `backend/skills/*/SKILL.md` manifest. Post-deploy, `backend/scripts/system_health_score.py` runs — on failure, deploy auto-rollbacks.
 
 ### Database Migrations
 
@@ -282,7 +281,7 @@ Collectors + Services (L1) ← Garmin/Withings/CGM/化验/基因/环境/补剂/�
 - `orchestrator.py` — `run_orchestrator` (非流式) / `stream_orchestrator` (SSE)
 - 共享 context：Recovery Coach 的 readiness_zone 自动传递给 Movement Coach
 - 对话记忆：注入 `conversation_memory_service` 到 LLM prompt
-- LLM 失败自动回退 OpenClaw provider
+- LLM 失败走模型注册表内的 provider failover
 
 **13 Specialists** (`app/agents/`):
 
@@ -342,19 +341,19 @@ The Next.js `rewrites` in `next.config.js` proxies `/api/:path*` to the backend'
 ```
 用户输入
     ↓
-needsSkill 正则匹配？(记录/打卡/吃了/早午晚餐...)
-    ↓ YES                    ↓ NO
-OpenClaw Gateway          Agent Executor / Orchestrator
-(skill 写入数据库)        (纯分析/问答)
+Agent Executor (/api/v1/agent/stream or /api/v1/agent/send)
+    ↓
+tool-calling 写库 / health_advice 调 Orchestrator / 普通问答
 ```
 
-- **数据记录意图** → 走 OpenClaw（skill 才能调 POST API 写入）
-- **分析/知识/问答** → 走 Orchestrator（11 specialist 协作）
-- **有附件（图片/文件）** → 走 OpenClaw（支持多模态）
+- **数据记录意图** → AgentExecutor tool-calling 写入受控 API
+- **分析/知识/问答** → AgentExecutor 或 Orchestrator（specialist 协作）
+- **有附件（图片/文件）** → AgentExecutor 多模态路径
 
 Two entry points:
-- `POST /api/v1/openclaw/stream` (SSE) — routed when `needsSkill` matches
-- `POST /api/v1/orchestrator/chat` / `POST /api/v1/orchestrator/chat/stream` — routed otherwise
+- `POST /api/v1/agent/stream` (SSE) — mobile/web/Mac 主入口
+- `POST /api/v1/agent/send` — 不方便消费 SSE 的客户端入口
+- `POST /api/v1/orchestrator/chat` / `POST /api/v1/orchestrator/chat/stream` — 深度分析/专家协作入口
 
 ### Key API Endpoints (Multi-Agent System)
 
@@ -387,19 +386,17 @@ Two entry points:
 
 Backend uses JWT tokens. Frontend stores token in `localStorage` under key `auth_token`. Axios request interceptor in `api.ts` attaches `Authorization: Bearer {token}` header automatically. Mobile app uses `expo-secure-store` for the same key.
 
-### OpenClaw + LLM Configuration
+### Agent + LLM Configuration
 
 Backend supports multiple LLM providers via `app/config.py`:
-- `LLM_PROVIDER`: `openai` | `ollama` | `openclaw` | `tokenplan`
+- `LLM_PROVIDER`: `openai` | `ollama` | `tokenplan`
 - `LLM_VISION_MODEL` — separate vision model
-- `OPENCLAW_MODEL=openclaw:main`（冒号自动转斜杠）
-- LLM 失败自动回退到 OpenClaw provider
+- LLM 失败走模型注册表内的 provider failover
 
 **Provider 类型与切换**：模型 registry 在 `backend/app/services/llm/model_registry.py`。每个 `ModelEntry.provider` 决定走哪条客户端路径：
 - `openai-proxy` — `OPENAI_API_KEY` + `OPENAI_BASE_URL` (代理 CDN)
 - `tokenplan` — 阿里云 TokenPlan 套餐 (qwen/deepseek/glm/minimax)
 - `moonshot` / `zhipu` — 官方直连 (独立 key, 默认未配)
-- `openclaw` — 内部 OpenClaw 网关
 - `langbridge-proxy` — **走 browser-llm-orchestrator 的 `/api/llm/*` 代理**, 透明用 Claude / GPT / Gemini (含 vision)。需 `LANGBRIDGE_GATEWAY_BASE_URL` + `LANGBRIDGE_GATEWAY_API_KEY` 才会在 admin 下拉里出现。当前暴露 `claude-opus-4.7` / `gpt-5.5` / `gemini-3.1-pro` 三条 entry。
 
 切换粒度：admin 全局 (`set_active_model_id`) / per-user (`user_profile.llm_model_id`)。`create_provider_for_user(user_id, db)` 每次新建,不缓存,用户切换立刻生效。
@@ -408,14 +405,13 @@ Backend supports multiple LLM providers via `app/config.py`:
 
 **LLM Harness 设计与方法论**：见 [`docs/HARNESS.md`](docs/HARNESS.md) — source-aware fast path / verification before write / tool schema 加厚 / memory 4-stage / provider failover / streaming TTS / Twin → prompt blob。新加 specialist / source / tool / memory stage 时**必须**同 PR 更新 HARNESS.md。
 
-**Skills: two locations — know which one to edit**
+**Skills: one runtime location**
 
 | Location | Lifetime | Auth context | Use case |
 |---|---|---|---|
-| `backend/skills/*/SKILL.md` | Deployed with backend; synced to OpenClaw Gateway by `deploy.sh -b` | Runs as the logged-in user (JWT already attached) | Features that write/read **this user's** data via our API |
-| `openclaw-skills/*/` (+ root `README.md`) | Independent distributable; copied into `~/.openclaw/skills/` on any OpenClaw host | Caller supplies `HEALTH_API_URL` + `HEALTH_API_TOKEN` per install | Skills meant to be installable into third-party OpenClaw instances (Telegram bots, Discord, etc.) |
+| `backend/skills/*/SKILL.md` | Deployed with backend; exposed through first-party Agent skills manifest | Runs as the logged-in user (JWT already attached) | Features that write/read **this user's** data via our API |
 
-**Rule of thumb**: adding a feature for logged-in web/mobile users → `backend/skills/`. Packaging a skill for external distribution → `openclaw-skills/`. Skills that exist in **both** (e.g. `health-query`, `health-record`) are intentional — the two are separate releases with different auth models.
+**Rule of thumb**: adding a feature for logged-in web/mobile users → `backend/skills/`. Do not add external skill distribution packages unless a new, explicit product decision restores that surface.
 
 Per memory: **do not add backend route aliases to accommodate wrong skill calls** — update `SKILL.md` to be more explicit about the correct API path.
 
@@ -596,6 +592,5 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 | `CLAUDE.md` | Claude Code 工作指南（本文件） |
 | `AGENTS.md` | AI Agent 开发规范（安全/日志/测试/性能/隐私的权威来源） |
 | `.cursor/rules/00-agents-bootstrap.mdc` | Cursor 规则：强制读取并遵守 AGENTS.md |
-| `backend/skills/*/SKILL.md` | OpenClaw Skill 定义（随后端部署） |
-| `openclaw-skills/` | 独立可分发的 OpenClaw Skill 包 |
+| `backend/skills/*/SKILL.md` | 第一方 Agent Skill 定义（随后端部署） |
 | `backend/data/knowledge_chromadb/` | 得到 wiki 知识库索引 |

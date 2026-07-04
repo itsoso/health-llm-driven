@@ -1,4 +1,4 @@
-"""交互反馈模型 — OpenClaw Native 自我优化基础设施"""
+"""交互反馈模型 — Agent 自我优化基础设施"""
 from datetime import UTC, datetime
 from sqlalchemy import Column, Integer, String, DateTime, Text, Float, Boolean, ForeignKey, Index
 from app.database import Base
@@ -12,7 +12,7 @@ class InteractionFeedback(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
 
     # 关联的消息（支持两种对话来源）
-    conversation_type = Column(String(20), nullable=False)  # "chat" / "openclaw"
+    conversation_type = Column(String(20), nullable=False)  # "chat" / "agent"
     conversation_id = Column(Integer, nullable=False)
     message_id = Column(Integer, nullable=False)
 

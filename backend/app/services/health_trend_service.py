@@ -218,7 +218,7 @@ class HealthTrendService:
     # ==================== 结果解析 ====================
 
     def _parse_analysis_result(self, raw: Dict[str, Any]) -> Dict[str, Any]:
-        """解析 OpenClaw 分析结果"""
+        """解析多模型分析结果"""
         aggregation = raw.get("aggregation", "")
 
         # 提取趋势方向
@@ -269,7 +269,7 @@ class HealthTrendService:
     def _store_report(self, user_id: int, report_date: date, dimension: str, period: str,
                       trend_direction: str, raw_data_summary: Dict, insights: List[str],
                       suggestions: List[str], risk_alerts: List[str], full_report: str,
-                      openclaw_batch_id: str, model_results: List) -> HealthTrendReport:
+                      analysis_batch_id: str, model_results: List) -> HealthTrendReport:
         """存储趋势报告（upsert）"""
         existing = self.db.query(HealthTrendReport).filter(
             HealthTrendReport.user_id == user_id,
@@ -285,7 +285,7 @@ class HealthTrendService:
             existing.suggestions = suggestions
             existing.risk_alerts = risk_alerts
             existing.full_report = full_report
-            existing.openclaw_batch_id = openclaw_batch_id
+            existing.analysis_batch_id = analysis_batch_id
             existing.model_results = model_results
             self.db.commit()
             return existing
@@ -301,7 +301,7 @@ class HealthTrendService:
             suggestions=suggestions,
             risk_alerts=risk_alerts,
             full_report=full_report,
-            openclaw_batch_id=openclaw_batch_id,
+            analysis_batch_id=analysis_batch_id,
             model_results=model_results,
         )
         self.db.add(report)
@@ -389,7 +389,7 @@ class HealthTrendService:
                     suggestions=parsed["suggestions"],
                     risk_alerts=parsed["risk_alerts"],
                     full_report=parsed["full_report"],
-                    openclaw_batch_id="",
+                    analysis_batch_id="",
                     model_results=raw_result.get("model_results", []),
                 )
                 analyzed_dims.append(dimension)

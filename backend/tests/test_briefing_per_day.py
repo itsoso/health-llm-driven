@@ -6,7 +6,7 @@ from app.tasks.notifications import (
     _get_or_create_briefing_conversation,
     _write_briefing_message,
 )
-from app.models.openclaw import OpenClawConversation, OpenClawMessage
+from app.models.agent_conversation import AgentConversation, AgentMessage
 
 
 def test_briefing_title_uses_date(db):
@@ -34,12 +34,12 @@ def test_write_message_lands_in_correct_day_bucket(db):
     _write_briefing_message(db, user_id=7, content="今日 4-25 简报", target_date=date(2026, 4, 25))
     _write_briefing_message(db, user_id=7, content="今日 4-26 简报", target_date=date(2026, 4, 26))
 
-    convs = db.query(OpenClawConversation).filter(OpenClawConversation.user_id == 7).order_by(OpenClawConversation.title).all()
+    convs = db.query(AgentConversation).filter(AgentConversation.user_id == 7).order_by(AgentConversation.title).all()
     assert len(convs) == 2
     assert convs[0].title == "每日健康简报 · 04-25"
     assert convs[1].title == "每日健康简报 · 04-26"
 
-    msgs_25 = db.query(OpenClawMessage).filter(OpenClawMessage.conversation_id == convs[0].id).all()
-    msgs_26 = db.query(OpenClawMessage).filter(OpenClawMessage.conversation_id == convs[1].id).all()
+    msgs_25 = db.query(AgentMessage).filter(AgentMessage.conversation_id == convs[0].id).all()
+    msgs_26 = db.query(AgentMessage).filter(AgentMessage.conversation_id == convs[1].id).all()
     assert len(msgs_25) == 1 and "4-25" in msgs_25[0].content
     assert len(msgs_26) == 1 and "4-26" in msgs_26[0].content

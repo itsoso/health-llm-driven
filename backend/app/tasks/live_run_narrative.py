@@ -143,7 +143,7 @@ def generate_narrative(self, run_id: int) -> dict:
                 recent_runs_summary=_summarize_recent_runs(db, s.user_id, s.id),
             )
 
-            provider = create_llm_provider(None) or create_llm_provider("openclaw")
+            provider = create_llm_provider(None)
             if provider is None:
                 raise RuntimeError("no llm provider available")
 

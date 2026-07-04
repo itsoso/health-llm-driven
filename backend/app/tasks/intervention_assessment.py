@@ -102,7 +102,7 @@ def _assess_single_card(db, card: ActionCard) -> dict:
     # 调用 LLM
     provider = create_llm_provider(None)
     if not provider:
-        provider = create_llm_provider("openclaw")
+        provider = create_llm_provider(None)
 
     response = asyncio.run(provider.chat(
         messages=[

@@ -25,8 +25,8 @@ class HealthTrendReport(Base):
     risk_alerts = Column(JSON, nullable=True)  # 风险提醒
     full_report = Column(Text, nullable=True)  # 完整报告文本
 
-    # OpenClaw 元数据
-    openclaw_batch_id = Column(String(100), nullable=True)
+    # 多模型分析元数据。物理列名沿用历史字段，避免线上迁移阻断。
+    analysis_batch_id = Column("openclaw_batch_id", String(100), nullable=True)
     model_results = Column(JSON, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

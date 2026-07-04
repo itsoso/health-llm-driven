@@ -1,6 +1,6 @@
 """Shared chat utilities — image upload, compression.
 
-Used by both AgentExecutor and OpenClawService to avoid duplication.
+Used by AgentExecutor and conversation services to avoid duplication.
 """
 import base64
 import logging

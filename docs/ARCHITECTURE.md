@@ -21,7 +21,7 @@
                                                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │                              Backend: FastAPI (Python 3.12)                          │
-│                  health-api.executor.life · 164 API 路由 · 324 services            │
+│                  health-api.executor.life · 161 API 路由 · 319 services            │
 │  ┌───────────┐  ┌──────────┐  ┌─────────────────┐  ┌────────────────────┐            │
 │  │ Auth+JWT  │  │ Router   │  │ Orchestrator    │  │ Agent Executor     │            │
 │  │           │  │ dispatch │  │ (13 specialist) │  │ (tool-calling LLM) │            │
@@ -47,7 +47,7 @@
   │          │ │  pubsub) │  │ worker+beat │    │ tokenplan (qwen/ │  │ qweather    │
   │          │ │          │  │             │    │ glm/deepseek/    │  │ APNs        │
   │          │ │          │  │             │    │ minimax) / kimi  │  │ Telegram    │
-  │          │ │          │  │             │    │ / openclaw       │  │ WeChat MP   │
+  │          │ │          │  │             │    │ / local dev      │  │ WeChat MP   │
   └──────────┘ └──────────┘  └─────────────┘    └──────────────────┘  └─────────────┘
 ```
 
@@ -63,13 +63,13 @@
 
 | 端 | Stack | 位置 | 规模 |
 |---|---|---|---|
-| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 164 API 路由, 324 services, 107 models, 66 Celery 任务 |
+| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 161 API 路由, 319 services, 106 models, 66 Celery 任务 |
 | **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 117 路由 |
 | **Mac Desktop** | Swift 6 + SwiftUI + URLSession async/await + Keychain + MenuBarExtra | `apps/mac/` | 原生桌面 P0: Today / Agent / Record / Import / Jobs / Trace |
 | **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 70 页 |
 | **WeChat 小程序** | uni-app (pnpm workspace) | `packages/mini-program/` | 独立发布 |
-| **MCP Server** | Python (独立) | `mcp-server/` | 第三方 OpenClaw 宿主用 |
-| **OpenClaw Skills** | Markdown | `backend/skills/` (22 个, 随后端部署) + `openclaw-skills/` (独立分发) | 22 + 12 |
+| **MCP Server** | Python (独立) | `mcp-server/` | 受控外部工具入口 |
+| **Agent Skills** | Markdown | `backend/skills/` (随后端部署) | 第一方 Agent 运行时技能 |
 
 **Monorepo**: pnpm workspace (仅 `packages/*`) + 独立 npm/pip 根目录 (`backend/`, `frontend/`, `mobile/`, `mcp-server/`).
 
@@ -85,7 +85,7 @@
 |------|------|
 | `backend/app/database.py` | 数据库连接、`get_db` 依赖 |
 | `backend/app/config.py` | Pydantic Settings, 所有 env 定义 |
-| `backend/app/models/*.py` | 107 个 SQLAlchemy ORM 模型 |
+| `backend/app/models/*.py` | 106 个 SQLAlchemy ORM 模型 |
 | `backend/app/twin/schema.py` | HealthTwin 15 分区 Pydantic schema |
 | `backend/main.py` 中间件 | 安全头 / CORS / 限流 / request context |
 | `backend/tests/conftest.py` | 测试基础设施 |
@@ -114,7 +114,7 @@
 
 | 目录 | 职责 |
 |------|------|
-| `backend/app/api/*.py` | 164 条 API 路由 |
+| `backend/app/api/*.py` | 161 条 API 路由 |
 | `backend/app/services/*.py` | 323 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/` / `genui/`;多源去重见 `device_source_priority` + `garmin_daily_merged`) |
 | `backend/app/tasks/*.py` | 66 Celery 异步任务 |
 | `frontend/src/app/*/page.tsx` | 70 Web 页 |
@@ -132,8 +132,7 @@
 | `docs/ARCHITECTURE.md` | **本文件** — 架构说明 |
 | `docs/HARNESS.md` | LLM Harness 设计方法论 |
 | `docs/FUTURE_ROADMAP.md` | 战略盘点 + 决策追踪 |
-| `backend/skills/*/SKILL.md` | OpenClaw Skill 定义(随后端部署) |
-| `openclaw-skills/` | 独立可分发的 OpenClaw Skill 包 |
+| `backend/skills/*/SKILL.md` | 第一方 Agent Skill 定义(随后端部署) |
 
 ---
 
@@ -155,7 +154,7 @@
 │  Orchestrator (orchestrator.py)    │  ← 深度分析路径
 │  - intent.py 关键字分类            │
 │  - specialists.py 注册表顺序调度   │
-│  - LLM 合成 + 失败回退 OpenClaw    │
+│  - LLM 合成 + provider failover    │
 │  - Streaming SSE (stream_orchestrator)│
 └───────────────┬────────────────────┘
                 │
@@ -263,7 +262,7 @@ api/agent.py::agent_stream
     │
     │ SSE agent_start: {conversation_id}
     │ - 新会话在 done 前切走时, mobile 也已持有 conversationId
-    │ - 回到 chat tab/App active 时按 conversationId 拉 `/openclaw/conversations/{id}`
+    │ - 回到 chat tab/App active 时按 conversationId 拉 `/agent/conversations/{id}`
     │ - 若极早切走还没收到 start, fallback 按真实最近对话拉取, 不优先旧"每日健康简报"
     ▼
 _build_system_prompt
@@ -324,7 +323,7 @@ Celery beat (每小时) → garmin_sync.sync_user_garmin_data(user_id)
           respiration_samples, workout_records, ...
     │
     ├─ trigger auto_analyze_workout (Celery task, 若有新 workout)
-    │   └─ PostRunAnalyzeService.openclaw.analyze → WorkoutAnalysisResult
+    │   └─ PostRunAnalyzeService.analyzer.analyze → WorkoutAnalysisResult
     │       └─ PushService.send_notification (workout_analysis)
     │
     ├─ AnomalyDetectionService.detect_anomalies → [AnomalyAlert]
@@ -343,7 +342,7 @@ Celery beat (每小时) → garmin_sync.sync_user_garmin_data(user_id)
 | 域 | 路由前缀 | 关键端点 |
 |---|---|---|
 | **Auth** | `/auth` | `/login` `/register` `/refresh` |
-| **Agent/Chat** | `/agent` `/openclaw` `/orchestrator` | `/agent/stream` (主对话入口) `/openclaw/conversations` (历史) `/orchestrator/chat/stream` (深度分析) |
+| **Agent/Chat** | `/agent` `/orchestrator` | `/agent/stream` (主对话入口) `/agent/conversations` (历史) `/orchestrator/chat/stream` (深度分析) |
 | **Twin/Safety** | `/twin` `/safety` | `/twin/me` `/safety/me` `/safety/audit` `/safety/explain` |
 | **Records** | `/diet` `/water` `/weight` `/waist` `/blood-pressure` `/exercise` `/checkin` `/medication` `/supplements` `/illness` | RESTful CRUD, `/records/me/date/{YYYY-MM-DD}` |
 | **Devices** | `/data-collection/garmin/me/*` `/cgm` | Garmin 同步 `/sync?days=N`, CGM batch |
@@ -471,14 +470,12 @@ APNs topic 用 `ios_bundle_id` per-device (绑定 token 时上报), 防 `DeviceT
 - `model_registry.py` — **单一真相源**, 9 个模型 entry (speed_tier fast/balanced/reasoning + requires_env 验证)
 - `providers/openai_provider.py` — 兼容 OpenAI 协议 (用于 gpt/qwen/glm/moonshot/zhipu, 都走 OpenAI 兼容)
 - `providers/ollama_provider.py` — 本地
-- `providers/openclaw_provider.py` — 内部 OpenClaw 网关
 - `usage_tracker.py` — wrap provider, 记录 token 用量
 
 可选模型 (当前 `.env`):
 - **OpenAI proxy**: gpt-4o-mini (fast), gpt-4o (balanced)
 - **TokenPlan (阿里百炼套餐)**: qwen3.6-plus (reasoning), deepseek-v3.2, glm-5, MiniMax-M2.5
 - **Moonshot (需独立 key)**: kimi-k2
-- **OpenClaw**: openclaw-main
 
 切换: `POST /admin/llm/select-model {model_id}` (admin, 进程内, 重启失效; 永久改 `.env`)。
 
@@ -497,7 +494,7 @@ Perf 打点: 每次 LLM 调用写 `metric: llm_call provider=<host> model=<m> la
 `services/memory_service.py` / `conversation_memory_service.py`:
 1. **Prompt 前取**: `get_relevant_memories(user_id, limit=5)` 语义匹配放 system prompt
 2. **对话后抽**: `extract_facts_from_dialog` 异步抽, 写 `memory_facts`
-3. **OpenClaw skill 调用**: memory skill 给外部 agent 用
+3. **Agent skill 调用**: 第一方 Agent runtime 读取必要记忆
 4. **Tier**: tier="user_profile"/"episodic"/"emotional"/"goal", confidence 0-1
 
 ### 10.4 Streaming per-sentence TTS
@@ -506,7 +503,7 @@ Mobile `useVoiceConversation`: LLM stream token → 累到真标点 → `stripMa
 
 ### 10.5 Provider failover
 
-`agent_executor._call_llm` 失败时 fallback 到 openclaw provider (低质量兜底)。
+`agent_executor._call_llm` 失败时走模型注册表内的可用 provider failover, 不再依赖外部网关。
 
 ---
 
@@ -646,7 +643,7 @@ DATABASE_URL=postgresql://health_user:***@localhost:5432/health_db
 REDIS_URL=redis://localhost:6379/0
 
 # LLM
-LLM_PROVIDER=openai  # openai|tokenplan|openclaw|ollama
+LLM_PROVIDER=tokenplan  # openai|tokenplan|ollama
 OPENAI_API_KEY=sk-...
 OPENAI_BASE_URL=https://api.openai-proxy.com/v1
 OPENAI_MODEL=gpt-4o-mini
@@ -744,7 +741,7 @@ GARMIN_ENCRYPTION_KEY=mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
 | `docs/HARNESS.md` | LLM Harness 方法论 | 做 LLM 相关任务前 |
 | `docs/FUTURE_ROADMAP.md` | 战略决策 + 盲点追踪 | 每周五 review |
 | `~/work/personal/PRACTICES/` | 跨项目经验沉淀 | 做移动端 / Expo native module 前 |
-| `backend/skills/*/SKILL.md` | OpenClaw Skill 定义 | 改对话能力边界时 |
+| `backend/skills/*/SKILL.md` | 第一方 Agent Skill 定义 | 改对话能力边界时 |
 
 ### 16.3 演进 log
 

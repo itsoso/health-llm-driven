@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class FeedbackCreateRequest(BaseModel):
     """用户提交反馈（👍👎）"""
-    conversation_type: str = Field(..., pattern="^(chat|openclaw)$")
+    conversation_type: str = Field(..., pattern="^(chat|agent)$")
     conversation_id: int
     message_id: int
     rating: int = Field(..., ge=1, le=5)  # 1=👎, 5=👍
@@ -17,7 +17,7 @@ class FeedbackCreateRequest(BaseModel):
 
 class FeedbackImplicitRequest(BaseModel):
     """后端自动记录隐式信号"""
-    conversation_type: str = Field(..., pattern="^(chat|openclaw)$")
+    conversation_type: str = Field(..., pattern="^(chat|agent)$")
     conversation_id: int
     message_id: int
     skill_used: Optional[str] = None

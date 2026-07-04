@@ -26,7 +26,7 @@ from app.models.daily_health import DietRecord, GarminData, SupplementIntake, Wa
 from app.models.desktop_job import DesktopJob
 from app.models.genetic_data import GeneticImportJob, GeneticProfile, GeneticVariant
 from app.models.memory_fact import MemoryFact
-from app.models.openclaw import OpenClawConversation, OpenClawMessage
+from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.supplement import SupplementDefinition, SupplementRecord
 from app.models.system_knowledge import KBDocument, KBEdge
 from app.models.user import User
@@ -862,10 +862,10 @@ def get_desktop_conversation_trace(
     """Return a desktop-friendly trace summary for one Agent conversation."""
 
     conv = (
-        db.query(OpenClawConversation)
+        db.query(AgentConversation)
         .filter(
-            OpenClawConversation.id == conversation_id,
-            OpenClawConversation.user_id == current_user.id,
+            AgentConversation.id == conversation_id,
+            AgentConversation.user_id == current_user.id,
         )
         .first()
     )
@@ -873,9 +873,9 @@ def get_desktop_conversation_trace(
         raise HTTPException(status_code=404, detail="Conversation trace 不存在")
 
     messages = (
-        db.query(OpenClawMessage)
-        .filter(OpenClawMessage.conversation_id == conv.id)
-        .order_by(OpenClawMessage.created_at.asc(), OpenClawMessage.id.asc())
+        db.query(AgentMessage)
+        .filter(AgentMessage.conversation_id == conv.id)
+        .order_by(AgentMessage.created_at.asc(), AgentMessage.id.asc())
         .all()
     )
     assistant_messages = [m for m in messages if m.role == "assistant"]

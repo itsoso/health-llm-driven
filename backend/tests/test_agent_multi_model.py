@@ -131,8 +131,8 @@ async def test_multi_model_stream_lead_tools_once_then_synthesizes(db, auth_user
     assert done["mode"] == "multi_model"
     assert "Claude Opus 4.7" in done["model"] and "GPT-5.5" in done["model"]
 
-    from app.services.openclaw_service import OpenClawService
-    conv = OpenClawService(db).get_conversation_detail(user.id, done["conversation_id"])
+    from app.services.agent_conversation_service import AgentConversationService
+    conv = AgentConversationService(db).get_conversation_detail(user.id, done["conversation_id"])
     assistant_msgs = [m for m in conv.messages if m.role == "assistant"]
     assert len(assistant_msgs) == 1  # exactly one synthesis message, not one per panel model
     assert "SYNTHESIS REPORT" in (assistant_msgs[0].content or "")

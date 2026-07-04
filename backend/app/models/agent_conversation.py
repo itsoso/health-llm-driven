@@ -1,13 +1,20 @@
-"""OpenClaw Channel 对话模型"""
+"""Agent conversation persistence models.
+
+The physical table names are kept for compatibility with existing production
+data. New code should use AgentConversation / AgentMessage names.
+"""
 from datetime import UTC, datetime
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Index
+
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
+
 from app.database import Base
 
 
-class OpenClawConversation(Base):
-    """OpenClaw 对话会话"""
+class AgentConversation(Base):
+    """Unified health assistant conversation."""
+
     __tablename__ = "openclaw_conversations"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -18,10 +25,10 @@ class OpenClawConversation(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
     messages = relationship(
-        "OpenClawMessage",
+        "AgentMessage",
         back_populates="conversation",
         cascade="all, delete-orphan",
-        order_by="OpenClawMessage.created_at",
+        order_by="AgentMessage.created_at",
     )
 
     __table_args__ = (
@@ -29,8 +36,9 @@ class OpenClawConversation(Base):
     )
 
 
-class OpenClawMessage(Base):
-    """OpenClaw 对话消息"""
+class AgentMessage(Base):
+    """Unified health assistant message."""
+
     __tablename__ = "openclaw_messages"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -40,14 +48,11 @@ class OpenClawMessage(Base):
         nullable=False,
         index=True,
     )
-    role = Column(String(20), nullable=False)  # user / assistant
+    role = Column(String(20), nullable=False)
     content = Column(Text, nullable=False)
     image_url = Column(Text, nullable=True)
-    rating = Column(Integer, nullable=True)  # 1=thumbs up, -1=thumbs down, NULL=unrated
-    # 2026-05-14: 性能 + 可解释性 meta (assistant 消息才有).
-    # {elapsed_ms, llm_ms, llm_rounds, llm_rounds_ms, model, sources_used}
-    # 用户离开页面回来 reload conversation 时, 前端能恢复 chat bubble footer.
+    rating = Column(Integer, nullable=True)
     meta = Column(JSONB, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
-    conversation = relationship("OpenClawConversation", back_populates="messages")
+    conversation = relationship("AgentConversation", back_populates="messages")

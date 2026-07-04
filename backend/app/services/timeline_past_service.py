@@ -2,7 +2,7 @@
 
 把两类「系统在固定时点替你跑了什么」投影成 past 时间线项,让用户能回溯
 「为什么 7:30 收到简报 / 23:00 收到一条异常」:
-  - 晨间简报(7:30):OpenClawMessage(role=assistant,会话标题「每日健康简报 · MM-DD」)
+  - 晨间简报(7:30):AgentMessage(role=assistant,会话标题「每日健康简报 · MM-DD」)
   - 异常检测(23:00):AnomalyAlert
 
 硬边界(与 _outcome_items 同一道闸,past 投影**必须**也过这道闸):
@@ -31,27 +31,27 @@ _HOME_HIDDEN_SEVERITY = {"critical"}
 def briefing_past_items(db: Session, user_id: int, on_date: date) -> List[Dict[str, Any]]:
     """当日晨间简报 → past 时间线项(kind=insight,association_only)。"""
     try:
-        from app.models.openclaw import OpenClawConversation, OpenClawMessage
+        from app.models.agent_conversation import AgentConversation, AgentMessage
         from app.tasks.notifications import _briefing_title_for
 
         title = _briefing_title_for(on_date)
         conv = (
-            db.query(OpenClawConversation)
+            db.query(AgentConversation)
             .filter(
-                OpenClawConversation.user_id == user_id,
-                OpenClawConversation.title == title,
+                AgentConversation.user_id == user_id,
+                AgentConversation.title == title,
             )
             .first()
         )
         if conv is None:
             return []
         msg = (
-            db.query(OpenClawMessage)
+            db.query(AgentMessage)
             .filter(
-                OpenClawMessage.conversation_id == conv.id,
-                OpenClawMessage.role == "assistant",
+                AgentMessage.conversation_id == conv.id,
+                AgentMessage.role == "assistant",
             )
-            .order_by(OpenClawMessage.created_at.desc())
+            .order_by(AgentMessage.created_at.desc())
             .first()
         )
         if msg is None:

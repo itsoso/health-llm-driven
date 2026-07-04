@@ -101,14 +101,8 @@ from app.models.health_event import HealthEvent, EventSource, EventStatus
 from app.models.anomaly_alert import AnomalyAlert
 # 健康趋势预测
 from app.models.health_trend import HealthTrendReport
-# OpenClaw Channel
-from app.models.openclaw import OpenClawConversation, OpenClawMessage
-# 智能助理专用 OpenClaw
-from app.models.assistant_openclaw import (
-    AssistantOpenClawBinding,
-    AssistantOpenClawConversation,
-    AssistantOpenClawMessage,
-)
+# Agent 对话持久化(物理表名沿用早期历史表, 代码层使用 Agent 命名)
+from app.models.agent_conversation import AgentConversation, AgentMessage
 # 对话记忆
 from app.models.conversation_memory import ConversationMemory
 # 对话分享
@@ -300,13 +294,8 @@ __all__ = [
     "AnomalyAlert",
     # 健康趋势预测
     "HealthTrendReport",
-    # OpenClaw Channel
-    "OpenClawConversation",
-    "OpenClawMessage",
-    # 智能助理专用 OpenClaw
-    "AssistantOpenClawBinding",
-    "AssistantOpenClawConversation",
-    "AssistantOpenClawMessage",
+    "AgentConversation",
+    "AgentMessage",
     # 对话记忆
     "ConversationMemory",
     # 对话分享

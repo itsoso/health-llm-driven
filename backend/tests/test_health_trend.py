@@ -150,7 +150,7 @@ class TestParseAnalysisResult:
     """分析结果解析测试"""
 
     def test_parse_valid_result(self, service):
-        """应正确解析 OpenClaw 返回的结果"""
+        """应正确解析 多模型分析返回的结果"""
         raw = {
             "status": "completed",
             "aggregation": """趋势方向：improving
@@ -192,7 +192,7 @@ class TestStoreReport:
             suggestions=["保持饮食计划"],
             risk_alerts=[],
             full_report="完整报告内容",
-            openclaw_batch_id="batch-123",
+            analysis_batch_id="batch-123",
             model_results=[],
         )
 
@@ -210,13 +210,13 @@ class TestStoreReport:
             user_id=test_user.id, report_date=today, dimension="weight", period="7d",
             trend_direction="stable", raw_data_summary={}, insights=["旧洞察"],
             suggestions=[], risk_alerts=[], full_report="旧报告",
-            openclaw_batch_id="batch-1", model_results=[],
+            analysis_batch_id="batch-1", model_results=[],
         )
         service._store_report(
             user_id=test_user.id, report_date=today, dimension="weight", period="7d",
             trend_direction="improving", raw_data_summary={}, insights=["新洞察"],
             suggestions=[], risk_alerts=[], full_report="新报告",
-            openclaw_batch_id="batch-2", model_results=[],
+            analysis_batch_id="batch-2", model_results=[],
         )
 
         reports = db.query(HealthTrendReport).filter(
@@ -239,7 +239,7 @@ class TestGetLatest:
                 user_id=test_user.id, report_date=today, dimension=dim, period="7d",
                 trend_direction="stable", raw_data_summary={}, insights=["测试"],
                 suggestions=[], risk_alerts=[], full_report="报告",
-                openclaw_batch_id="b1", model_results=[],
+                analysis_batch_id="b1", model_results=[],
             )
 
         result = service.get_latest(test_user.id)

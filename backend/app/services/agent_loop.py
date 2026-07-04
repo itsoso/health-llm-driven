@@ -166,7 +166,7 @@ async def post_sync_reasoning(
         set_caller("agent_loop.run", user_id=user_id)
         provider = create_llm_provider(None)  # 默认 provider
         if not provider:
-            provider = create_llm_provider("openclaw")
+            provider = create_llm_provider(None)
 
         response = await provider.chat(
             messages=[

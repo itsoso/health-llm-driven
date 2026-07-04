@@ -1,4 +1,4 @@
-"""健康上下文 API — 暴露交叉分析数据供 OpenClaw Skills 调用"""
+"""健康上下文 API — 暴露交叉分析数据供内部 Agent/Skills 调用"""
 import logging
 from datetime import date, timedelta
 

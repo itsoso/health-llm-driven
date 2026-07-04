@@ -13,7 +13,7 @@ describe('prettyModelName', () => {
 
   it('gracefully cleans unknown ids', () => {
     expect(prettyModelName('vendor/some-model-2.0')).toBe('some model');
-    expect(prettyModelName('openclaw:main')).toBe('main');
+    expect(prettyModelName('vendor:main')).toBe('main');
   });
 
   it('returns null for empty input', () => {

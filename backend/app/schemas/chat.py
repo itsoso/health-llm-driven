@@ -12,7 +12,7 @@ class ChatSendRequest(BaseModel):
     image_type: Optional[str] = "jpeg"
     file_base64: Optional[str] = None  # 文件 base64（PDF/TXT 等）
     file_name: Optional[str] = None    # 文件名（用于判断类型）
-    mode: Optional[str] = None  # None=健康助理, "proxy"=OpenClaw代理
+    mode: Optional[str] = None  # None=健康助理, "proxy"=旧代理模式
 
 
 class ChatMessageResponse(BaseModel):

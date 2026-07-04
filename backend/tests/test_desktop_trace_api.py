@@ -1,18 +1,18 @@
 def test_desktop_trace_returns_conversation_metadata(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
 
-    from app.models.openclaw import OpenClawConversation, OpenClawMessage
+    from app.models.agent_conversation import AgentConversation, AgentMessage
 
-    conv = OpenClawConversation(user_id=user.id, title="Trace test")
+    conv = AgentConversation(user_id=user.id, title="Trace test")
     db.add(conv)
     db.commit()
     db.refresh(conv)
-    db.add(OpenClawMessage(
+    db.add(AgentMessage(
         conversation_id=conv.id,
         role="user",
         content="为什么 4.7 没回复？",
     ))
-    db.add(OpenClawMessage(
+    db.add(AgentMessage(
         conversation_id=conv.id,
         role="assistant",
         content="这次是模型返回空内容。",
@@ -46,7 +46,7 @@ def test_desktop_trace_returns_conversation_metadata(client, db, auth_user_and_h
 def test_desktop_trace_is_scoped_to_current_user(client, db, auth_user_and_headers):
     _user, headers = auth_user_and_headers
 
-    from app.models.openclaw import OpenClawConversation
+    from app.models.agent_conversation import AgentConversation
     from app.models.user import User
 
     other = User(
@@ -60,7 +60,7 @@ def test_desktop_trace_is_scoped_to_current_user(client, db, auth_user_and_heade
     db.add(other)
     db.commit()
     db.refresh(other)
-    conv = OpenClawConversation(user_id=other.id, title="private")
+    conv = AgentConversation(user_id=other.id, title="private")
     db.add(conv)
     db.commit()
     db.refresh(conv)

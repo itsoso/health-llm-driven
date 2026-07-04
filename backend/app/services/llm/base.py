@@ -10,7 +10,7 @@ class LLMProvider(ABC):
     """
     LLM Provider 抽象基类
 
-    所有 LLM 后端（OpenAI、Ollama、OpenClaw 等）都需要实现此接口。
+    所有 LLM 后端（OpenAI、Ollama 等）都需要实现此接口。
     支持普通对话、流式对话、视觉分析和多模型分析。
     """
 
@@ -81,7 +81,7 @@ class LLMProvider(ABC):
     ) -> AsyncIterator[Dict[str, Any]]:
         """结构化流式调用 — 默认实现 (非实时, 降级为单次 chat)。
 
-        OpenAI provider 覆盖此方法做真实时流式; 其它 provider (OpenClaw / Ollama)
+        OpenAI provider 覆盖此方法做真实时流式; 其它 provider (Ollama)
         不实现真流式 tool-calling — 这里用一次非流式 chat() 把结果转成等价的
         结构化事件序列, 保证 agent 流式循环对所有 provider 都能工作 (只是看不到
         逐 token 效果)。
@@ -125,7 +125,7 @@ class LLMProvider(ABC):
         """
         多模型分析（可选实现）
 
-        默认回退到单模型 chat 调用。仅 OpenClaw 等支持多模型聚合的 provider
+        默认回退到单模型 chat 调用。支持多模型聚合的 provider 可覆盖此方法
         需要覆盖此方法。
 
         Args:

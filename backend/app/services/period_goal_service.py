@@ -245,7 +245,7 @@ class PeriodGoalService:
             status="active",
             focus_areas=goal_json.get("focus_areas", []),
             summary=goal_json.get("summary", ""),
-            ai_model=settings.openclaw_model,
+            ai_model=getattr(settings, "tokenplan_model", "") or getattr(settings, "llm_provider", "tokenplan"),
         )
         self.db.add(goal)
         self.db.flush()

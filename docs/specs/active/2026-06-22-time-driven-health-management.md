@@ -4,7 +4,7 @@
 > Owner: Reva / Personal Health OS
 > Updated: 2026-06-22
 > Related PRD/PDD: docs/prd/reva-personal-health-os-prd.md · docs/prd/2026-06-19-proactive-planning-prd.md · docs/specs/active/2026-06-17-day-timing-schedule.md · docs/specs/active/2026-06-19-p1-pre-event-reminders.md · docs/specs/archive/2026-06-18-calendar-v2.md
-> Related code: backend/app/api/schedule.py · backend/app/services/{day_schedule_service,timing_solver,timing_adapter,schedule_diet_sleep,agenda_service}.py · backend/app/tasks/event_reminders.py · backend/app/api/{agenda,rokid,write_intents,reorder_intents}.py · openclaw-skills/{nutrition-advisor,supplement-advisor,workout-coach,reminder-setter}/SKILL.md
+> Related code: backend/app/api/schedule.py · backend/app/services/{day_schedule_service,timing_solver,timing_adapter,schedule_diet_sleep,agenda_service}.py · backend/app/tasks/event_reminders.py · backend/app/api/{agenda,rokid,write_intents,reorder_intents}.py · backend/skills
 
 ## 1. Decision
 
@@ -98,7 +98,7 @@ Increment 1 已合并 main(`f1ca1802`,未部署),实现了 §7 流水线
 - `event_reminders` 已定义事件前提醒,复用推送、通知预算和去重。
 - Calendar v2 已把 CalDAV/.ics 的忙碌块输入到 day schedule,且对 LLM 只暴露脱敏 busy block。
 - Rokid 已有俯卧撑 session/event/review 链路,但仍是俯卧撑专用。
-- OpenClaw skills 已覆盖营养、补剂、训练、提醒等入口,但外部技能不是核心安全裁判。
+- backend Agent skills 已覆盖营养、补剂、训练、提醒等入口,但技能不是核心安全裁判。
 - `WriteIntent` / `ReorderIntent` 已经表达“建议写回/建议下单”的手动确认边界。
 
 不足也很明确:
@@ -151,7 +151,7 @@ RequirementAdmission:
 - 不自动更改处方药、补剂剂量、慢病治疗方案或复查周期下限。
 - 不把摄像头原始图像默认上传到后端或 LLM。
 - 不自动点外卖、付款、预约医生、设置闹钟;这些都是 `manual_confirm` 外部意图。
-- 不把 OpenClaw skills 作为核心医疗/安全推理层;skills 是受控入口和执行通道。
+- 不把 Agent skills 作为核心医疗/安全推理层;skills 是受控入口和执行通道。
 - 不在第一版做完整 habit/game/streak 社交化激励。
 - 不为每个场景造新表和新 API;优先复用 `HealthProtocol`、`HealthAgendaItem`、`ExecutionEvent`、`WriteIntent`。
 
@@ -201,7 +201,7 @@ RequirementAdmission:
   - `backend/app/services/rokid_pushup.py`
   - `backend/app/services/rokid_pushup_review.py`
   - 已支持 session、event ingest、finish、review,但不是通用 hardware observation。
-- OpenClaw skills:
+- Agent skills:
   - `nutrition-advisor`: 饮食建议和记录入口。
   - `supplement-advisor`: 补剂建议入口,需检查用药/慢病。
   - `workout-coach`: 训练前准备、训练后同步/分析入口。

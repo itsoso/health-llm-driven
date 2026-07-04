@@ -290,7 +290,7 @@ def auto_analyze_workout(self, user_id: int, workout_id: int):
 
             # 单次 event loop 完成分析 + 推送通知
             async def _analyze_and_notify():
-                result = await service.openclaw.analyze(prompt)
+                result = await service.analyzer.analyze(prompt)
                 service._save_analysis_result(user_id, workout_id, prompt, result)
 
                 # 构造推送: 标题用运动类型 + 一行概况, 正文取 aggregation 的第一段 (跳过 markdown 标题行).

@@ -1,10 +1,10 @@
 /**
  * Medical Exams API client — 化验/体检记录列表 + 详情.
  *
- * P6 (2026-05-04): 用户已经有 16 份化验报告 (OpenClaw skill 上传), 但 mobile
+ * P6 (2026-05-04): 用户已经有 16 份化验报告, 但 mobile
  * 没有专门的化验列表页 — 上传完没法回看. 这是 dead-end.
  *
- * 这次只做查看 (上传仍走 chat → OpenClaw skill, 那是 OCR 工作量太大暂不重做),
+ * 这次只做查看 (上传仍走 chat → Agent OCR 流程),
  * 但至少让用户能 1) 看历史时间线 2) 看异常项 3) 看趋势对比.
  */
 import api from './api';

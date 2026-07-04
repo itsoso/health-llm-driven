@@ -1221,7 +1221,7 @@ async def _call_llm(
 
     主路径走 settings.llm_provider (默认 tokenplan / 阿里云 MiniMax),
     失败回退到 openai (DashScope vision key 也可作 OpenAI-兼容).
-    OpenClaw 已退役为非默认 provider, 不再作为兜底.
+    外部旧 provider 已退役, 不再作为兜底.
 
     lite_mode (2026-05-28): trivial query 走 lite path 时降 max_tokens 到 300
         (默认 900). 不换模型 → 不影响 voice, 只省生成时长.

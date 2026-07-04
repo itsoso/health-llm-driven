@@ -388,7 +388,7 @@ async def explain_alert(
         {"role": "user", "content": user_prompt},
     ]
 
-    # 先尝试默认 provider，失败则回退到 OpenClaw
+    # 先尝试默认 provider，失败则回退到 TokenPlan。
     async def _try_provider(provider_type: Optional[str]) -> Optional[str]:
         try:
             from app.services.llm import get_llm_provider
@@ -419,7 +419,7 @@ async def explain_alert(
 
     explanation = await _try_provider(None)  # 默认 provider
     if not explanation:
-        explanation = await _try_provider("openclaw")  # fallback
+        explanation = await _try_provider("tokenplan")  # fallback
 
     if explanation:
         _EXPLAIN_CACHE[cache_key] = (now, explanation)

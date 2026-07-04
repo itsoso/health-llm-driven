@@ -239,8 +239,8 @@ async def test_run_stream_emits_multiple_token_events_for_real_streaming(db, aut
     assert rendered == "".join(deltas)
     assert events[-1]["event"] == "done"
     # 落库的完整回复 = 流式拼接结果
-    from app.models.openclaw import OpenClawMessage
-    saved = db.query(OpenClawMessage).filter_by(role="assistant").one()
+    from app.models.agent_conversation import AgentMessage
+    saved = db.query(AgentMessage).filter_by(role="assistant").one()
     assert saved.content == rendered
 
 

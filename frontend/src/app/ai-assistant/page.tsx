@@ -3,7 +3,7 @@
 /**
  * /ai-assistant —— Web 智能助理对话页 (2026-05-12 重建, 2026-05-13 切 agentApi).
  *
- * 之前用 openclawApi (独立 LLM key, 双倍成本). 改用 agentApi → /agent/stream
+ * 统一使用 agentApi → /agent/stream，避免多套对话通道带来的成本和状态分裂。
  * 跟 mobile chat tab 同管道, 共享 LLM_PROVIDER (默认 TokenPlan).
  *
  * 历史: 该路由从 nav / dashboard / footer / 测试里被引, 但 page.tsx 一直缺,

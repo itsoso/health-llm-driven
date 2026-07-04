@@ -66,7 +66,7 @@ class ClinicalJournalEntry(Base):
     plan = Column(Text)          # 行动建议 / 复查日期
 
     # 来源溯源 (用于回放)
-    source_conversation_id = Column(Integer, index=True)  # OpenClawConversation.id
+    source_conversation_id = Column(Integer, index=True)  # AgentConversation.id
     source_message_id = Column(Integer)                   # 触发的 message.id
     used_specialists = Column(String(200))                # 'recovery_coach,fuel_strategist'
 

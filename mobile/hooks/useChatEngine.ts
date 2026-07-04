@@ -375,7 +375,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   }, [loadConversationFromServer]);
 
   // AppState: App 回前台时, 如果当前消息有 streaming 态但 iOS 已切到 background
-  // 30s+ 把 stream 杀掉了, 客户端本地是残缺消息. 服务端 stream 到 OpenClaw 后端
+  // 30s+ 把 stream 杀掉了, 客户端本地是残缺消息. 服务端 Agent stream
   // 会持续跑并把最终 message 写 conversation. 这里 active 时重新拉服务端最新消息
   // 把断掉的 AI 回复补齐.
   const appStateRef = useRef(AppState.currentState);

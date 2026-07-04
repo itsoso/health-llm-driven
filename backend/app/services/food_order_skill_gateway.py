@@ -1,7 +1,7 @@
-"""外卖下单 OpenClaw skill 网关 —— P5 external-action `food_order` 的执行接缝(本期 = STUB)。
+"""外卖下单 Agent 网关 —— P5 external-action `food_order` 的执行接缝(本期 = STUB)。
 
-⚠️ 这是**交接契约**:真正的下单由另一团队开发的「外卖 OpenClaw skill」执行,
-该 skill 在用户已授权的、**用户自有的外卖账号**下运行,后端**永不**处理支付凭据、
+⚠️ 这是**交接契约**:真正的下单未来只能由本系统受控 Agent 执行,
+并且必须在用户已授权的、**用户自有的外卖账号**下运行;后端**永不**处理支付凭据、
 永不扣款、永不替用户下单。本文件是后端侧调用该 skill 的唯一接缝。
 
 本期(P5)skill 契约尚未就绪 → `place_order` 直接 `raise NotImplementedError`。
@@ -14,13 +14,13 @@ write_intent_service 的 food_order confirm 分支**根本不调本网关**(确�
 ────────────────────────────────────────────────────────────────────────
 外卖 skill 契约(团队需提供的接口形态,实现期对齐)
 ────────────────────────────────────────────────────────────────────────
-调用方向:backend(本网关)──▶ OpenClaw Gateway ──▶ 外卖 skill(用户账号)
+调用方向:backend(本网关)──▶ 本系统 Agent action runtime ──▶ 外卖账号动作(用户授权)
 
 入参(EXPECTED INPUT):
     user_id: int                本系统用户 id(把订单回链健康对象 + 审计)
     dish_summary: str           菜品/套餐摘要(用户已确认的可见摘要,非处方)
     merchant: str | None        商家名(SKU 选择辅助)
-    delivery_address_ref: str   用户已授权的配送地址引用(opaque token,由 OpenClaw
+    delivery_address_ref: str   用户已授权的配送地址引用(opaque token,由账号授权层
         | None                  账号绑定层提供;后端不存明文地址即可 —— L3 数据按 user_id 隔离)
     confirmation_token: str     本次逐笔强确认的一次性 token(human-in-the-loop 证明,
                                 绑定到 WriteIntent.id + user_id,服务端签发,防重放)
@@ -34,7 +34,7 @@ write_intent_service 的 food_order confirm 分支**根本不调本网关**(确�
     }
 
 鉴权(AUTH):
-    skill 以用户自有外卖账号身份运行(OpenClaw 账号绑定);后端只传 address_ref +
+    Agent action 以用户自有外卖账号身份运行;后端只传 address_ref +
     一次性 confirmation_token,**不传** 支付密码 / 银行卡 / 任何支付凭据。
 
 失败语义:
@@ -65,7 +65,7 @@ async def place_order(
     """调外卖 skill 下单。**本期 = STUB,恒抛 NotImplementedError(财务硬门)。**
 
     契约(入参/出参/鉴权)见模块 docstring —— 团队据此实现该 skill 后,把本函数体
-    换成真实的 OpenClaw skill 调用。在此之前,**没有任何调用方**会走到这里下单:
+    换成真实的 Agent action 调用。在此之前,**没有任何调用方**会走到这里下单:
     food_order 的 confirm 分支不调本函数,只产出良性 acknowledged 草稿态。
 
     Returns(契约就绪后):
@@ -78,6 +78,6 @@ async def place_order(
     """
     raise NotImplementedError(
         "外卖 skill 契约未就绪:P5 仅搭建到下单接缝为止,真实下单由团队开发的"
-        "外卖 OpenClaw skill(用户自有账号)执行。在 skill 就绪并通过财务安全评审前,"
+        "外卖 Agent action(用户自有账号)执行。在 action 就绪并通过财务安全评审前,"
         "本网关恒抛 NotImplementedError —— 后端不下单、不扣款、不处理支付凭据。"
     )

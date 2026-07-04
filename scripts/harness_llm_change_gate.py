@@ -32,8 +32,6 @@ HIGH_RISK_RULES: tuple[tuple[str, str], ...] = (
     ("backend/app/api/llm_usage.py", "LLM service/runtime"),
     ("backend/app/api/user_llm_preference.py", "LLM service/runtime"),
     ("backend/skills/**", "runtime skill/prompt"),
-    ("backend/skills-external/**", "runtime skill/prompt"),
-    ("openclaw-skills/**", "runtime skill/prompt"),
     ("backend/eval/**", "LLM/eval harness"),
     ("scripts/harness_llm_regression_gate.py", "LLM/eval harness"),
 )

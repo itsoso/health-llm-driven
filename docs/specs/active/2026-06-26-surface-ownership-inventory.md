@@ -4,7 +4,7 @@
 > Owner: Reva / Personal Health OS
 > Updated: 2026-06-26
 > Related PRD/PDD: docs/specs/reva-product-governance-spec.md · docs/prd/reva-personal-health-os-prd.md · docs/prd/2026-06-15-global-product-requirements.md · docs/plans/2026-06-26-reva-global-product-architecture-plan.md
-> Related code: mobile/app · apps/watch · apps/mac · apps/rokid-pushup-glasses · frontend/src/app · openclaw-skills · backend/app/api
+> Related code: mobile/app · apps/watch · apps/mac · apps/rokid-pushup-glasses · frontend/src/app · mcp-server · backend/app/api
 
 ## 1. Decision
 
@@ -27,7 +27,7 @@ Disposition vocabulary:
 | Rokid | Hands-free execution | food photo/voice, push-up coaching, workout guidance, voice agenda when command-ready | dashboard, multi-page admin, noisy proactive broadcast | Keep |
 | Mac | Workbench | file/lab import, long agent workflows, trace review, calendar/planning review, local QR/release ops | replace mobile daily loop, duplicate health judgment | Keep |
 | Web | Admin/history/doctor/family | reports, history, doctor/family/admin, compatibility and generated API inspection | lead consumer daily execution | Converge / Archive daily pages |
-| OpenClaw / MCP | Controlled extension | documented health query/record/analyze skills with auth and audit | bypass safety, direct unmanaged writes, private data fanout | Keep with guardrails |
+| MCP | Controlled extension | documented health query/record/analyze tools with auth and audit | bypass safety, direct unmanaged writes, private data fanout | Keep with guardrails |
 | Backend | Product source of truth | Health Twin, Safety Gate, Agenda, Router, Program, Audit, Write autonomy | client-owned health decisions | Keep |
 
 ## 3. Mobile Inventory
@@ -98,16 +98,13 @@ Watch must consume backend Agenda, WatchSummary, and notification decisions. It 
 
 Rokid is execution-only until auth, BLE, CustomView readiness, voice command readiness, and capture/session persistence are all green.
 
-## 8. OpenClaw / MCP Inventory
+## 8. MCP Inventory
 
 | Area | Representative Files | Disposition |
 |---|---|---|
-| Record skills | `openclaw-skills/health-record`, `medication-tracker`, `nutrition-advisor`, `workout-coach`, `reminder-setter` | Keep with audit |
-| Query and analysis skills | `health-query`, `health-analysis`, `health-data-summary`, `multi-source-integration`, `sleep-deep-analysis`, `spo2-analysis` | Keep with least privilege |
-| Domain skills | `rhinitis-tracker`, `supplement-advisor`, `exercise-recovery`, `genetic-analysis`, `family-health` | Keep behind safety boundaries |
 | MCP server | `mcp-server/` | Keep as controlled extension |
 
-External agents must use documented APIs/skills, auth, audit, and source ownership. They must not bypass SafetyGuardian or write-autonomy gates.
+External agents must use documented APIs/tools, auth, audit, and source ownership. They must not bypass SafetyGuardian or write-autonomy gates.
 
 ## 9. Backend Inventory
 
@@ -138,7 +135,7 @@ Backend remains the product source of truth.
 Every non-trivial product feature must answer:
 
 ```yaml
-surface_owner: Mobile | Apple Watch | Rokid | Mac | Web | OpenClaw / MCP | Backend
+surface_owner: Mobile | Apple Watch | Rokid | Mac | Web | MCP | Backend
 target_entry: Today | Agenda | Capture | Programs | Review | Workbench | Admin | Execution | Extension
 source_of_truth: backend object or client-local state
 cross_surface_contract: Agenda | NotificationDecision | WriteIntent | DesktopJob | WatchSummary | other

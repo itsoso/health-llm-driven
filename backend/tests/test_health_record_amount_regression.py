@@ -273,7 +273,7 @@ async def test_run_stream_with_extra_context_does_not_crash_before_first_event(d
 
     executor = AgentExecutor(db)
 
-    class FakeOpenClawService:
+    class FakeAgentConversationService:
         def __init__(self, db):
             self.db = db
 
@@ -286,7 +286,7 @@ async def test_run_stream_with_extra_context_does_not_crash_before_first_event(d
         def build_messages(self, conv_id, limit=15):
             return [{"role": "user", "content": "今天怎么安排"}]
 
-    with patch("app.services.openclaw_service.OpenClawService", FakeOpenClawService), \
+    with patch("app.services.agent_conversation_service.AgentConversationService", FakeAgentConversationService), \
          patch.object(executor, "_build_system_prompt", return_value="system"), \
          patch("app.services.agent_executor._inspect_user_data_sources", return_value=["twin"]):
         stream = executor.run_stream(

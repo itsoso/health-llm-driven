@@ -41,8 +41,6 @@ _MODEL_PRICING: Dict[str, Tuple[float, float]] = {
     "glm-5": (0.20, 0.60),
     "minimax-m2.5": (0.80, 2.40),
     "commercial/gpt-5.5": (10.00, 30.00),
-    "openclaw:main": (0.20, 0.80),  # 估算
-    "openclaw/main": (0.20, 0.80),
     "llama3": (0.0, 0.0),  # 本地 ollama 不计费
 }
 _PROVIDER_DEFAULT_PRICING: Dict[str, Tuple[float, float]] = {
@@ -50,7 +48,6 @@ _PROVIDER_DEFAULT_PRICING: Dict[str, Tuple[float, float]] = {
     "openai": (0.50, 1.50),
     "openai-proxy": (0.50, 1.50),
     "langbridge-proxy": (2.00, 6.00),
-    "openclaw": (0.20, 0.80),
 }
 _LOCAL_PROVIDERS = {"ollama", "local"}
 

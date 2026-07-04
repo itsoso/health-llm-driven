@@ -25,7 +25,7 @@ async def get_current_user(
 
     认证优先级：
     1. JWT Bearer Token (Authorization: Bearer <jwt>)
-    2. X-API-Key 头 (用户 API Key，供 OpenClaw Skills / 外部系统使用)
+    2. X-API-Key 头 (用户 API Key，供 Agent Skills / 外部系统使用)
     """
     # 1. 尝试 JWT 认证
     if token:

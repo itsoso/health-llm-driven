@@ -98,7 +98,6 @@ def _usage_cost_sql_expr():
         (model.like("deepseek%"), 0.30),
         (model.like("gpt-%"), 0.50),
         (provider == "langbridge-proxy", 2.00),
-        (provider == "openclaw", 0.20),
         (provider.in_(("tokenplan", "openai", "openai-proxy")), 0.50),
         else_=0.0,
     )
@@ -128,7 +127,6 @@ def _usage_cost_sql_expr():
         (model.like("deepseek%"), 0.90),
         (model.like("gpt-%"), 1.50),
         (provider == "langbridge-proxy", 6.00),
-        (provider == "openclaw", 0.80),
         (provider.in_(("tokenplan", "openai", "openai-proxy")), 1.50),
         else_=0.0,
     )
@@ -724,10 +722,6 @@ def llm_status(
         model = settings.tokenplan_model
         base = settings.tokenplan_base_url
         has_key = bool(settings.tokenplan_api_key)
-    elif provider_type == "openclaw":
-        model = settings.openclaw_model
-        base = settings.openclaw_base_url
-        has_key = bool(settings.openclaw_api_key)
     elif provider_type == "ollama":
         model = settings.ollama_model
         base = settings.ollama_base_url
@@ -737,7 +731,7 @@ def llm_status(
         base = ""
         has_key = False
 
-    available = ["openclaw", "openai", "ollama"]
+    available = ["openai", "ollama"]
     if settings.tokenplan_api_key:
         available.append("tokenplan")
 
@@ -751,7 +745,7 @@ def llm_status(
 
 
 class LLMSwitchRequest(BaseModel):
-    provider: str  # openai | openclaw | ollama | tokenplan
+    provider: str  # openai | ollama | tokenplan
 
 
 @router.post("/switch")
@@ -765,7 +759,7 @@ def llm_switch(
 
     生产场景永久切换请改 .env + 重启服务.
     """
-    valid = {"openai", "openclaw", "ollama", "tokenplan"}
+    valid = {"openai", "ollama", "tokenplan"}
     if req.provider not in valid:
         raise HTTPException(400, f"不支持的 provider: {req.provider}, 可选 {sorted(valid)}")
 
@@ -816,8 +810,6 @@ async def llm_ping(
         model = settings.openai_model
     elif provider_type == "tokenplan":
         model = settings.tokenplan_model
-    elif provider_type == "openclaw":
-        model = settings.openclaw_model
     elif provider_type == "ollama":
         model = settings.ollama_model
 
@@ -907,8 +899,6 @@ def list_available_models(admin: User = Depends(get_admin_user)):
         fm = settings.openai_model
     elif fp == "tokenplan":
         fm = settings.tokenplan_model
-    elif fp == "openclaw":
-        fm = settings.openclaw_model
     else:
         fm = "?"
 

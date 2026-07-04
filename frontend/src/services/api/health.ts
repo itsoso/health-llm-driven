@@ -278,7 +278,7 @@ export const healthTrendApi = {
     api.post<{ analyzed_dimensions: string[] }>('/health-trends/generate'),
 };
 
-// OpenClaw Skills 远程管理 (admin only)
+// 推荐/建议
 export const dailyRecommendationApi = {
   getRecommendations: (userId: number, useLlm: boolean = true) =>
     api.get(`/daily-recommendation/user/${userId}/recommendations`, { params: { use_llm: useLlm } }),
@@ -297,7 +297,7 @@ export const bodyCompositionApi = {
     api.get<BodyAnalysisResult>('/body-composition/analysis/me'),
 };
 
-// OpenClaw AI 对话接口
+// 女性健康
 export const womensHealthApi = {
   startPeriod: (start_date: string, flow_intensity: string = 'moderate') =>
     api.post<MenstrualCycleItem>('/womens-health/period/start', { start_date, flow_intensity }),

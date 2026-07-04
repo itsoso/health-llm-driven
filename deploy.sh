@@ -198,7 +198,7 @@ verify_deployment() {
     fi
 }
 
-wait_for_skills_manifest() {
+wait_for_agent_skills_manifest() {
     print_step "验证 skills manifest 可达..."
     LOCAL_COUNT=$(find backend/skills -maxdepth 2 -name SKILL.md 2>/dev/null | wc -l | tr -d ' ')
     REMOTE_COUNT=0
@@ -416,8 +416,8 @@ deploy_backend() {
         exit 1
     fi
 
-    # 4.5 后端健康通过后再验证 OpenClaw skills manifest，避免冷启动误报。
-    wait_for_skills_manifest
+    # 4.5 后端健康通过后再验证第一方 Agent skills manifest，避免冷启动误报。
+    wait_for_agent_skills_manifest
 
     print_success "后端部署完成"
 }

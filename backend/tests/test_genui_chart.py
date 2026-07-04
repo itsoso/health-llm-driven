@@ -902,11 +902,11 @@ def test_agent_stream_genui_caps_present_emits_block_no_llm(
     assert "line_chart" in _decoded and '"component"' in _decoded
 
     # done 事件携带真实 message_id, 且消息已持久化到对话存储
-    from app.services.openclaw_service import OpenClawService
+    from app.services.agent_conversation_service import AgentConversationService
 
-    convs = OpenClawService(db).get_conversations(user.id, limit=10)
+    convs = AgentConversationService(db).get_conversations(user.id, limit=10)
     assert convs, "短路应创建/复用对话"
-    detail = OpenClawService(db).get_conversation_detail(user.id, convs[0].id)
+    detail = AgentConversationService(db).get_conversation_detail(user.id, convs[0].id)
     assistant_msgs = [m for m in detail.messages if m.role == "assistant"]
     assert assistant_msgs, "assistant 消息必须持久化"
     assert any("reva-ui" in (m.content or "") for m in assistant_msgs)

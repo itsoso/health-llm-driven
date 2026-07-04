@@ -7,7 +7,7 @@ docs/specs/active/2026-06-22-p5-reorder-ordering.md(一等对象准入 Gate)。
 **本表是「下单」财务面**,要单独的状态机 + 审计 + 逐笔强确认,故立为独立一等对象。
 
 ⚠️ 财务硬边界(本期 = SCAFFOLD,过财务安全评审):
-- 真正下单由**快手电商 OpenClaw skill**(另一团队开发,契约未就绪)执行,用用户自有快手账号。
+- 真正下单未来只能由**快手电商 Agent action**(契约未就绪)执行,用用户自有快手账号。
 - 本期到「调 skill」为止就 STOP:`kuaishou_skill_gateway.place_order` raise NotImplementedError,
   confirm 走到那一步 → API 返回 501;**绝不**标 `order_placed`、绝不有可执行的支付/扣款路径。
 - 后端永不处理支付凭据、永不自动扣款、永不无逐笔确认下单。

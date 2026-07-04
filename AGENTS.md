@@ -621,7 +621,7 @@ class ExampleModel(Base):
 - **Claude Code** 可以自动发现 `.claude/skills/*`;仍必须受本文件和 `docs/governance/*` 硬规则裁判。
 - **Codex / Cursor / 其他 agent** 不假设 Claude 工具存在;但在本项目内,遇到 binding 表里的触发场景时,必须直接读取对应 `.claude/skills/<name>/SKILL.md` 作为项目协议,再用自己的工具满足同一套 Gate。
 - 如果全局 openskills 已提供同名 skill,可以用 `npx openskills read <skill-name>`;否则以仓库内 `.claude/skills/<name>/SKILL.md` 为准。
-- 这里说的是**研发 agent skill**。`backend/skills/*` 和 `openclaw-skills/*` 是产品运行时/外部分发技能,不得当作编码 agent 的研发流程入口。
+- 这里说的是**研发 agent skill**。`backend/skills/*` 是产品运行时技能,不得当作编码 agent 的研发流程入口。
 
 <skills_system priority="1">
 

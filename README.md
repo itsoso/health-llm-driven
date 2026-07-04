@@ -101,7 +101,7 @@ See [`docs/HEALTH_WORLDVIEW.md`](docs/HEALTH_WORLDVIEW.md), [`docs/HARNESS.md`](
 | Mobile | Expo / React Native / TypeScript |
 | Watch | Swift Package + watchOS app modules |
 | Web | Next.js 14, React 18, TypeScript |
-| LLM | TokenPlan/OpenAI-compatible providers, OpenAI, OpenClaw fallback, local dev providers |
+| LLM | TokenPlan/OpenAI-compatible providers, OpenAI, and local dev providers |
 | Knowledge / retrieval | Internal knowledge services and RAG paths |
 | Deployment | `deploy.sh`, systemd, PM2, Nginx |
 
@@ -117,7 +117,6 @@ apps/mac/       Native Mac app workbench
 frontend/       Next.js web app
 docs/           Current architecture, PRD, plans, governance, reports, archive
 scripts/        Migration, release, deployment, and verification helpers
-openclaw-skills/ Public skill distribution assets
 mcp-server/     MCP server integration
 packages/       Workspace packages
 ```

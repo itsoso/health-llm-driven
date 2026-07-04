@@ -76,7 +76,7 @@ async def create_reminder(
         remind_at=remind_at,
         priority=request.priority,
         recurrence=request.recurrence,
-        source="openclaw_skill",
+        source="agent_skill",
         status="pending",
     )
     db.add(reminder)

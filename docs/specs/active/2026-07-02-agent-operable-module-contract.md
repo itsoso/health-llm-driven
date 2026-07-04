@@ -68,8 +68,8 @@ over-alarm(安全)还是 under-alarm(危险)?
    报合法值清单让它自纠(health_query 教训)。
 4. **安全耦合只增不减**:写入喂安全规则的对象(补剂→DSI、用药→DDI),agent
    可写=安全脑覆盖面变大,这是**支持**开放 create 的理由,不是反对。
-5. **SKILL.md 同步**:executor 内置通路和 OpenClaw skill 两条路同一能力,
-   改一边必改另一边(本次:supplement 自动建档两边同 PR)。
+5. **SKILL.md 同步**:executor 内置通路和 `backend/skills` 同一能力,
+   改一边必改另一边(本次:supplement 自动建档同 PR)。
 
 ### 3.4 CI 闸(落地后生效,task #43)
 

@@ -3,7 +3,6 @@
  *
  * 后端给的是带前缀和补丁版本号的内部 id, 例如:
  *   commercial/Claude-Opus-4.7  → Claude Opus
- *   openclaw:main               → 健康助理
  *   tokenplan/qwen3.7-plus     → Qwen
  * 消费者只需要一个干净的家族名: 去掉 provider 前缀 / 补丁版本号 / 连字符.
  *

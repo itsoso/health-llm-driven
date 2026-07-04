@@ -1123,7 +1123,7 @@ async def post_run_analyze(
     db: Session = Depends(get_db)
 ):
     """
-    跑后智能分析：同步Garmin → 检测最新运动 → OpenClaw多模型分析
+    跑后智能分析：同步Garmin → 检测最新运动 → 多模型分析
 
     支持三种触发方式：
     1. AI助手对话（通过 action 系统）

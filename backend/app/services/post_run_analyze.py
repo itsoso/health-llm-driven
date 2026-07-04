@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.daily_health import WorkoutRecord, GarminData, WorkoutAnalysisResult
 from app.models.user_profile import UserProfile
-from app.services.openclaw_analyze import OpenClawAnalyzeClient
+from app.services.multi_model_analyze import MultiModelAnalyzeClient
 from app.utils.timezone import get_china_now, get_china_today
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ class PostRunAnalyzeService:
 
     def __init__(self, db: Session):
         self.db = db
-        self.openclaw = OpenClawAnalyzeClient()
+        self.analyzer = MultiModelAnalyzeClient()
 
     async def analyze(
         self,
@@ -56,8 +56,8 @@ class PostRunAnalyzeService:
         # Step 4: Build analysis prompt
         prompt = self._build_prompt(user_id, workout, workout_data)
 
-        # Step 5: Call OpenClaw multi-model analysis
-        analysis = await self.openclaw.analyze(prompt)
+        # Step 5: Call unified multi-model analysis
+        analysis = await self.analyzer.analyze(prompt)
 
         # Step 6: Save analysis result to DB
         self._save_analysis_result(user_id, workout.id, prompt, analysis)
@@ -331,7 +331,7 @@ class PostRunAnalyzeService:
             record = WorkoutAnalysisResult(
                 workout_id=workout_id,
                 user_id=user_id,
-                source="openclaw_multi",
+                source="multi_model",
                 status=analysis.get("status", "error"),
                 aggregation=analysis.get("aggregation", ""),
                 model_results=model_results_json,

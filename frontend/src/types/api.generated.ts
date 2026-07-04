@@ -3840,9 +3840,9 @@ export interface paths {
          *     幂等保护 (2026-05-11, 2026-05-13 调整): 1 秒窗口内, 同 user + 同 exercise_type
          *     + 同 reps + 同 sets + 同 duration_seconds 视为双击重复, 直接返回已有记录, 不重复写.
          *
-         *     历史 5s 窗口太长, 用户做"俯卧撑两组 1 组 15 个" 时 OpenClaw 连续 POST 两次
+         *     历史 5s 窗口太长, 用户做"俯卧撑两组 1 组 15 个" 时 Agent 连续 POST 两次
          *     完全相同字段, 第 2 组被 dedup 吃掉. 移动端有 useRef 锁兜底防双击, 后端 1s
-         *     够拦防真双击, 而 OpenClaw / 用户连续打卡两组通常 ≥ 1.5s 间隔不会被误吃.
+         *     够拦防真双击, 而 Agent / 用户连续打卡两组通常 ≥ 1.5s 间隔不会被误吃.
          */
         post: operations["create_exercise_record_api_v1_daily_health_exercise_post"];
         delete?: never;
@@ -8525,7 +8525,7 @@ export interface paths {
         put?: never;
         /**
          * Post Run Analyze
-         * @description 跑后智能分析：同步Garmin → 检测最新运动 → OpenClaw多模型分析
+         * @description 跑后智能分析：同步Garmin → 检测最新运动 → 多模型分析
          *
          *     支持三种触发方式：
          *     1. AI助手对话（通过 action 系统）
@@ -10674,6 +10674,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 统一健康助理非流式对话
+         * @description Non-streaming wrapper for clients that cannot consume SSE reliably.
+         *
+         *     This endpoint intentionally reuses the first-party AgentExecutor instead of
+         *     any external gateway. It collects token events into one reply and returns
+         *     the durable conversation/message ids written by the executor.
+         */
+        post: operations["agent_send_api_v1_agent_send_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/conversations": {
         parameters: {
             query?: never;
@@ -10686,7 +10710,7 @@ export interface paths {
          * @description List current user's Agent conversations (paginated).
          *
          *     返回 {items, total, limit, offset} —— 前端历史记录用 offset 做上一页/下一页翻页。
-         *     AgentExecutor persists conversations through OpenClawService so mobile/web
+         *     AgentExecutor persists conversations through AgentConversationService so mobile/web
          *     can resume interrupted streams from the same durable message store.
          */
         get: operations["list_conversations_api_v1_agent_conversations_get"];
@@ -10715,6 +10739,23 @@ export interface paths {
         head?: never;
         /** 重命名统一健康助理对话 */
         patch: operations["update_conversation_title_api_v1_agent_conversations__conversation_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/agent/messages/{message_id}/rate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 评价统一健康助理消息 */
+        post: operations["rate_agent_message_api_v1_agent_messages__message_id__rate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/agent/conversation-opener": {
@@ -10806,331 +10847,6 @@ export interface paths {
         put?: never;
         /** Post Today Dynamic View */
         post: operations["post_today_dynamic_view_api_v1_dynamic_views_today_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/openclaw/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * OpenClaw 流式对话
-         * @description 流式发送消息到 OpenClaw Gateway，SSE 实时返回
-         */
-        post: operations["stream_message_api_v1_openclaw_stream_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/openclaw/send": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * OpenClaw 非流式对话
-         * @description 非流式发送消息到 OpenClaw Gateway，收集完整回复后一次性返回（适用于不支持 SSE 的客户端）
-         */
-        post: operations["send_message_api_v1_openclaw_send_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/openclaw/conversations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** OpenClaw 对话列表 */
-        get: operations["list_conversations_api_v1_openclaw_conversations_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/openclaw/conversations/{conversation_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** OpenClaw 对话详情 */
-        get: operations["get_conversation_api_v1_openclaw_conversations__conversation_id__get"];
-        put?: never;
-        post?: never;
-        /** 删除 OpenClaw 对话 */
-        delete: operations["delete_conversation_api_v1_openclaw_conversations__conversation_id__delete"];
-        options?: never;
-        head?: never;
-        /** 重命名 OpenClaw 对话 */
-        patch: operations["update_conversation_title_api_v1_openclaw_conversations__conversation_id__patch"];
-        trace?: never;
-    };
-    "/api/v1/openclaw/messages/{message_id}/rate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * 评价 OpenClaw 消息质量
-         * @description 对 OpenClaw 助手消息进行 thumbs up/down 评价
-         */
-        post: operations["rate_message_api_v1_openclaw_messages__message_id__rate_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/openclaw/rating-stats": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * OpenClaw 消息评价统计
-         * @description 获取当前用户的 OpenClaw 消息评价统计
-         */
-        get: operations["get_rating_stats_api_v1_openclaw_rating_stats_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/assistant-openclaw/binding/me": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 获取当前账号的智能助理 OpenClaw 绑定 */
-        get: operations["get_my_binding_api_v1_assistant_openclaw_binding_me_get"];
-        /** 保存当前账号的智能助理 OpenClaw 绑定 */
-        put: operations["save_my_binding_api_v1_assistant_openclaw_binding_me_put"];
-        post?: never;
-        /** 删除当前账号的智能助理 OpenClaw 绑定 */
-        delete: operations["delete_my_binding_api_v1_assistant_openclaw_binding_me_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/assistant-openclaw/binding/me/test": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 测试智能助理 OpenClaw 绑定 */
-        post: operations["test_my_binding_api_v1_assistant_openclaw_binding_me_test_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/assistant-openclaw/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 智能助理专用 OpenClaw 流式对话 */
-        post: operations["stream_message_api_v1_assistant_openclaw_stream_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/assistant-openclaw/conversations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 智能助理 OpenClaw 对话列表 */
-        get: operations["list_conversations_api_v1_assistant_openclaw_conversations_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/assistant-openclaw/conversations/{conversation_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 智能助理 OpenClaw 对话详情 */
-        get: operations["get_conversation_api_v1_assistant_openclaw_conversations__conversation_id__get"];
-        put?: never;
-        post?: never;
-        /** 删除智能助理 OpenClaw 对话 */
-        delete: operations["delete_conversation_api_v1_assistant_openclaw_conversations__conversation_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/openclaw/skills/gateway/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** OpenClaw Gateway 状态 */
-        get: operations["gateway_status_api_v1_openclaw_skills_gateway_status_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/openclaw/skills/gateway/restart": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 重启 OpenClaw Gateway */
-        post: operations["restart_gateway_api_v1_openclaw_skills_gateway_restart_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/openclaw/skills/clawhub/search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 搜索 ClawHub 公共 Skills */
-        post: operations["clawhub_search_api_v1_openclaw_skills_clawhub_search_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/openclaw/skills/clawhub/install": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 从 ClawHub 安装 Skill */
-        post: operations["clawhub_install_api_v1_openclaw_skills_clawhub_install_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/openclaw/skills": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 列出所有 Skills */
-        get: operations["list_skills_api_v1_openclaw_skills_get"];
-        put?: never;
-        /** 创建或更新 Skill */
-        post: operations["create_or_update_skill_api_v1_openclaw_skills_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/openclaw/skills/{name}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 获取 Skill 详情 */
-        get: operations["get_skill_api_v1_openclaw_skills__name__get"];
-        put?: never;
-        post?: never;
-        /** 删除 Skill */
-        delete: operations["delete_skill_api_v1_openclaw_skills__name__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/openclaw/skills/{name}/toggle": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** 启用/禁用 Skill */
-        put: operations["toggle_skill_api_v1_openclaw_skills__name__toggle_put"];
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -11230,7 +10946,7 @@ export interface paths {
         };
         /**
          * Skills 打包清单（一键安装/更新）
-         * @description 返回所有 Skills 的打包 JSON，供 OpenClaw 一键安装或更新
+         * @description 返回所有 Skills 的打包 JSON，供 Agent 一键安装或更新
          */
         get: operations["get_skills_manifest_api_v1_skills_manifest_json_get"];
         put?: never;
@@ -11270,7 +10986,7 @@ export interface paths {
         };
         /**
          * Get Skill Raw
-         * @description 获取 Skill 原始 SKILL.md 内容（供 OpenClaw 直接安装）
+         * @description 获取 Skill 原始 SKILL.md 内容（供 Agent 直接安装）
          */
         get: operations["get_skill_raw_api_v1_skills__skill_name__raw_get"];
         put?: never;
@@ -11290,9 +11006,9 @@ export interface paths {
         };
         /**
          * Get Install Command
-         * @description 生成 OpenClaw 一键安装/更新命令
+         * @description 生成 Agent 一键安装/更新命令
          *
-         *     在任意 OpenClaw 对话中粘贴返回的内容即可安装或更新此 Skill。
+         *     在支持 Skill 安装的 Agent 中粘贴返回的内容即可安装或更新此 Skill。
          */
         get: operations["get_install_command_api_v1_skills__skill_name__install_command_get"];
         put?: never;
@@ -19234,37 +18950,6 @@ export interface components {
             web?: components["schemas"]["AssistantDashboardDeviceLayout"] | null;
             mobile?: components["schemas"]["AssistantDashboardDeviceLayout"] | null;
         };
-        /** AssistantOpenClawBindingRequest */
-        AssistantOpenClawBindingRequest: {
-            /**
-             * Display Name
-             * @default 我的 OpenClaw
-             */
-            display_name: string;
-            /** Gateway Url */
-            gateway_url: string;
-            /** Gateway Token */
-            gateway_token?: string | null;
-            /**
-             * Enabled
-             * @default false
-             */
-            enabled: boolean;
-        };
-        /** AssistantOpenClawBindingTestRequest */
-        AssistantOpenClawBindingTestRequest: {
-            /** Gateway Url */
-            gateway_url?: string | null;
-            /** Gateway Token */
-            gateway_token?: string | null;
-        };
-        /** AssistantOpenClawSendRequest */
-        AssistantOpenClawSendRequest: {
-            /** Message */
-            message: string;
-            /** Conversation Id */
-            conversation_id?: number | null;
-        };
         /** AudioInputCreate */
         AudioInputCreate: {
             /** Intent */
@@ -20743,16 +20428,6 @@ export interface components {
             /** Alert Id */
             alert_id: number;
         };
-        /** ClawHubInstallRequest */
-        ClawHubInstallRequest: {
-            /** Slug */
-            slug: string;
-        };
-        /** ClawHubSearchRequest */
-        ClawHubSearchRequest: {
-            /** Query */
-            query: string;
-        };
         /**
          * ClearCacheResponse
          * @description 清理缓存响应
@@ -21022,6 +20697,11 @@ export interface components {
              * @default 0
              */
             pending_count: number;
+        };
+        /** ConversationTitleUpdate */
+        ConversationTitleUpdate: {
+            /** Title */
+            title: string;
         };
         /** CopyDayRequest */
         CopyDayRequest: {
@@ -26700,24 +26380,6 @@ export interface components {
              */
             primary_goal: "weight_loss" | "glucose" | "blood_pressure" | "sleep" | "hrv" | "rhinitis" | "general";
         };
-        /** OpenClawSendRequest */
-        OpenClawSendRequest: {
-            /** Message */
-            message: string;
-            /** Conversation Id */
-            conversation_id?: number | null;
-            /** Image Base64 */
-            image_base64?: string | null;
-            /**
-             * Image Type
-             * @default jpeg
-             */
-            image_type: string | null;
-            /** File Base64 */
-            file_base64?: string | null;
-            /** File Name */
-            file_name?: string | null;
-        };
         /** OpenLoopFeedback */
         OpenLoopFeedback: {
             /**
@@ -27702,11 +27364,6 @@ export interface components {
              */
             include_health_data: boolean;
         };
-        /** RateMessageRequest */
-        RateMessageRequest: {
-            /** Rating */
-            rating: number;
-        };
         /**
          * RealtimeRecommendationResponse
          * @description 实时建议响应
@@ -28584,22 +28241,6 @@ export interface components {
              */
             reminder_message: string;
         };
-        /** SkillCreateRequest */
-        SkillCreateRequest: {
-            /** Name */
-            name: string;
-            /** Skill Md Content */
-            skill_md_content: string;
-            /**
-             * Enabled
-             * @default true
-             */
-            enabled: boolean;
-            /** Env */
-            env?: Record<string, never> | null;
-            /** Api Key */
-            api_key?: string | null;
-        };
         /**
          * SkillPerformanceSummary
          * @description 单个 Skill 的性能概览
@@ -28623,11 +28264,6 @@ export interface components {
             has_canary: boolean;
             /** Canary Version */
             canary_version?: string | null;
-        };
-        /** SkillToggleRequest */
-        SkillToggleRequest: {
-            /** Enabled */
-            enabled: boolean;
         };
         /** SleepDailyTrend */
         SleepDailyTrend: {
@@ -31855,16 +31491,6 @@ export interface components {
             value?: number | null;
             /** Epoch Ms */
             epoch_ms?: number | null;
-        };
-        /** ConversationTitleUpdate */
-        app__api__agent__ConversationTitleUpdate: {
-            /** Title */
-            title: string;
-        };
-        /** ConversationTitleUpdate */
-        app__api__openclaw__ConversationTitleUpdate: {
-            /** Title */
-            title: string;
         };
         /**
          * UserResponse
@@ -49101,6 +48727,39 @@ export interface operations {
             };
         };
     };
+    agent_send_api_v1_agent_send_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_conversations_api_v1_agent_conversations_get: {
         parameters: {
             query?: {
@@ -49212,7 +48871,42 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["app__api__agent__ConversationTitleUpdate"];
+                "application/json": components["schemas"]["ConversationTitleUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rate_agent_message_api_v1_agent_messages__message_id__rate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                message_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
             };
         };
         responses: {
@@ -49306,748 +49000,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TodayDynamicViewRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    stream_message_api_v1_openclaw_stream_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OpenClawSendRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    send_message_api_v1_openclaw_send_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OpenClawSendRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_conversations_api_v1_openclaw_conversations_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-                /** @description 按标题模糊过滤，如 '每日健康简报' */
-                title_like?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_conversation_api_v1_openclaw_conversations__conversation_id__get: {
-        parameters: {
-            query?: {
-                /** @description 只返回最近 N 天的消息（省略返回全部） */
-                days?: number | null;
-            };
-            header?: never;
-            path: {
-                conversation_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_conversation_api_v1_openclaw_conversations__conversation_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                conversation_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_conversation_title_api_v1_openclaw_conversations__conversation_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                conversation_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["app__api__openclaw__ConversationTitleUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    rate_message_api_v1_openclaw_messages__message_id__rate_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                message_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RateMessageRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_rating_stats_api_v1_openclaw_rating_stats_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    get_my_binding_api_v1_assistant_openclaw_binding_me_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    save_my_binding_api_v1_assistant_openclaw_binding_me_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AssistantOpenClawBindingRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_my_binding_api_v1_assistant_openclaw_binding_me_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    test_my_binding_api_v1_assistant_openclaw_binding_me_test_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AssistantOpenClawBindingTestRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    stream_message_api_v1_assistant_openclaw_stream_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AssistantOpenClawSendRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_conversations_api_v1_assistant_openclaw_conversations_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_conversation_api_v1_assistant_openclaw_conversations__conversation_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                conversation_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_conversation_api_v1_assistant_openclaw_conversations__conversation_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                conversation_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    gateway_status_api_v1_openclaw_skills_gateway_status_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    restart_gateway_api_v1_openclaw_skills_gateway_restart_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    clawhub_search_api_v1_openclaw_skills_clawhub_search_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ClawHubSearchRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    clawhub_install_api_v1_openclaw_skills_clawhub_install_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ClawHubInstallRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_skills_api_v1_openclaw_skills_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    create_or_update_skill_api_v1_openclaw_skills_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SkillCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_skill_api_v1_openclaw_skills__name__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_skill_api_v1_openclaw_skills__name__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    toggle_skill_api_v1_openclaw_skills__name__toggle_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SkillToggleRequest"];
             };
         };
         responses: {

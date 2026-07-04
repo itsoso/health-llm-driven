@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from app.database import get_db
 from app.models.user import User
 from app.models.chat import ChatConversation, ChatMessage
-from app.models.openclaw import OpenClawConversation, OpenClawMessage
+from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.shared_conversation import SharedConversation
 from app.api.deps import get_current_user_required
 
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/shared", tags=["shared-conversation"])
 
 class ShareRequest(BaseModel):
     conversation_id: int
-    source_type: str = "health"  # health / openclaw
+    source_type: str = "health"  # health / agent
 
 
 class TextShareRequest(BaseModel):
@@ -91,16 +91,16 @@ def create_share(
 ):
     """创建对话分享链接"""
     # 查询对话和消息
-    if req.source_type == "openclaw":
-        conv = db.query(OpenClawConversation).filter(
-            OpenClawConversation.id == req.conversation_id,
-            OpenClawConversation.user_id == current_user.id,
+    if req.source_type == "agent":
+        conv = db.query(AgentConversation).filter(
+            AgentConversation.id == req.conversation_id,
+            AgentConversation.user_id == current_user.id,
         ).first()
         if not conv:
             raise HTTPException(status_code=404, detail="对话不存在")
-        msgs = db.query(OpenClawMessage).filter(
-            OpenClawMessage.conversation_id == conv.id,
-        ).order_by(OpenClawMessage.created_at).all()
+        msgs = db.query(AgentMessage).filter(
+            AgentMessage.conversation_id == conv.id,
+        ).order_by(AgentMessage.created_at).all()
     else:
         conv = db.query(ChatConversation).filter(
             ChatConversation.id == req.conversation_id,

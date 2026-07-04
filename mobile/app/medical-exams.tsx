@@ -7,7 +7,7 @@
  * - 每条卡片显示: 日期 + 医院 + 项目数 + 异常项数(红字) + AI overall_assessment 摘要
  * - 点击进入详情 (vs 上次对比, 突出变化最大的指标)
  *
- * NOTE: 上传仍走 chat → OpenClaw skill (那是 OCR 流程, 改造工时太大暂不重做).
+ * NOTE: 上传仍走 chat → Agent OCR 流程.
  * 这里只解决"上传后看得见" 这一断点.
  */
 import React, { useCallback, useMemo } from 'react';

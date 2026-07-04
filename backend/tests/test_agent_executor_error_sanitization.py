@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Provider/API 原始异常不得进入阿衡可见回复或落库内容。"""
 
-from app.models.openclaw import OpenClawMessage
+from app.models.agent_conversation import AgentMessage
 from app.services.agent_executor import AgentExecutor
 
 
@@ -48,7 +48,7 @@ async def test_run_stream_sanitizes_tokenplan_quota_error_token_and_storage(
     assert "模型额度" in visible_text
     assert "切换模型" in visible_text
 
-    saved = db.query(OpenClawMessage).filter_by(role="assistant").one()
+    saved = db.query(AgentMessage).filter_by(role="assistant").one()
     assert "insufficient_quota" not in saved.content
     assert "token-plan quota" not in saved.content
     assert "Error code: 429" not in saved.content

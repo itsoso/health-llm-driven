@@ -521,7 +521,7 @@ export async function getTodayExternalRecommendations(): Promise<TodayExternalRe
   return await get(API_ENDPOINTS.EXTERNAL_RECOMMENDATIONS.TODAY);
 }
 
-// ===== OpenClaw AI 对话 =====
+// ===== Agent AI 对话 =====
 
 export async function chatSend(message: string, conversationId?: number, mode?: string): Promise<any> {
   return await post(API_ENDPOINTS.CHAT.SEND, {
@@ -551,10 +551,10 @@ export async function recognizeFood(imageBase64: string, imageType: string = 'im
   return await post(API_ENDPOINTS.DIET_AI.RECOGNIZE, { image_base64: imageBase64, image_type: imageType });
 }
 
-// ===== OpenClaw API =====
+// ===== Agent API =====
 
-export async function openclawSend(message: string, conversationId?: number, imageBase64?: string, imageType?: string): Promise<{ reply: string; conversation_id: number; message_id: number }> {
-  return await post(API_ENDPOINTS.OPENCLAW.SEND, {
+export async function agentSend(message: string, conversationId?: number, imageBase64?: string, imageType?: string): Promise<{ reply: string; conversation_id: number; message_id: number }> {
+  return await post(API_ENDPOINTS.AGENT.SEND, {
     message,
     conversation_id: conversationId || undefined,
     image_base64: imageBase64 || undefined,
@@ -562,25 +562,25 @@ export async function openclawSend(message: string, conversationId?: number, ima
   });
 }
 
-export async function openclawGetConversations(limit: number = 20): Promise<any[]> {
-  return await get(`${API_ENDPOINTS.OPENCLAW.CONVERSATIONS}?limit=${limit}`);
+export async function agentGetConversations(limit: number = 20): Promise<any[]> {
+  return await get(`${API_ENDPOINTS.AGENT.CONVERSATIONS}?limit=${limit}`);
 }
 
-export async function openclawGetConversation(conversationId: number): Promise<any> {
-  return await get(`${API_ENDPOINTS.OPENCLAW.CONVERSATIONS}/${conversationId}`);
+export async function agentGetConversation(conversationId: number): Promise<any> {
+  return await get(`${API_ENDPOINTS.AGENT.CONVERSATIONS}/${conversationId}`);
 }
 
-export async function openclawDeleteConversation(conversationId: number): Promise<void> {
-  return await del(`${API_ENDPOINTS.OPENCLAW.CONVERSATIONS}/${conversationId}`);
+export async function agentDeleteConversation(conversationId: number): Promise<void> {
+  return await del(`${API_ENDPOINTS.AGENT.CONVERSATIONS}/${conversationId}`);
 }
 
-export async function openclawRateMessage(messageId: number, rating: 1 | -1): Promise<{ ok: boolean }> {
-  return await post(`${API_ENDPOINTS.OPENCLAW.RATE}/${messageId}/rate`, { rating });
+export async function agentRateMessage(messageId: number, rating: 1 | -1): Promise<{ ok: boolean }> {
+  return await post(`${API_ENDPOINTS.AGENT.RATE}/${messageId}/rate`, { rating });
 }
 
 export async function getQuickQuestions(limit: number = 6): Promise<{ id: number; question: string }[]> {
   try {
-    return await get(`${API_ENDPOINTS.OPENCLAW.QUICK_QUESTIONS}?limit=${limit}`);
+    return await get(`${API_ENDPOINTS.AGENT.QUICK_QUESTIONS}?limit=${limit}`);
   } catch (e) {
     console.error('获取快捷问题失败:', e);
     return [];

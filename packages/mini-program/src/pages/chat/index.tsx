@@ -1,15 +1,15 @@
 /**
- * 健康问答对话页面 - OpenClaw 智能助理
+ * 健康问答对话页面 - 阿衡 Agent
  */
 import { View, Text, Input, ScrollView } from '@tarojs/components';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Taro from '@tarojs/taro';
 import {
-  openclawSend,
-  openclawGetConversations,
-  openclawGetConversation,
-  openclawDeleteConversation,
-  openclawRateMessage,
+  agentSend,
+  agentGetConversations,
+  agentGetConversation,
+  agentDeleteConversation,
+  agentRateMessage,
   getQuickQuestions,
   chatTranscribe,
   recognizeFood,
@@ -71,7 +71,7 @@ export default function Chat() {
   // 加载对话列表
   const loadConversations = useCallback(async () => {
     try {
-      const list = await openclawGetConversations();
+      const list = await agentGetConversations();
       setConversations(list || []);
     } catch (e) {
       console.error('加载对话列表失败:', e);
@@ -81,7 +81,7 @@ export default function Chat() {
   // 加载指定对话的消息
   const loadConversation = useCallback(async (convId: number) => {
     try {
-      const detail = await openclawGetConversation(convId);
+      const detail = await agentGetConversation(convId);
       setMessages(detail.messages || []);
       setConversationId(convId);
       setShowHistory(false);
@@ -129,7 +129,7 @@ export default function Chat() {
     setTimeout(() => scrollToBottom(), 50);
 
     try {
-      const result = await openclawSend(msg, conversationId);
+      const result = await agentSend(msg, conversationId);
 
       // 更新会话 ID
       if (!conversationId && result.conversation_id) {
@@ -176,7 +176,7 @@ export default function Chat() {
   // 删除对话
   const handleDeleteConversation = async (convId: number) => {
     try {
-      await openclawDeleteConversation(convId);
+      await agentDeleteConversation(convId);
       setConversations(prev => prev.filter(c => c.id !== convId));
       if (conversationId === convId) {
         handleNewChat();
@@ -190,7 +190,7 @@ export default function Chat() {
   // 消息评价
   const handleRateMessage = async (messageId: number, rating: 1 | -1) => {
     try {
-      await openclawRateMessage(messageId, rating);
+      await agentRateMessage(messageId, rating);
       setMessages(prev => prev.map(m =>
         m.id === messageId ? { ...m, rating: m.rating === rating ? null : rating } : m
       ));
@@ -423,7 +423,7 @@ export default function Chat() {
           <Text className="header-icon">{showHistory ? '✕' : '☰'}</Text>
         </View>
         <View className="header-center">
-          <Text className="header-title">OpenClaw</Text>
+          <Text className="header-title">阿衡</Text>
         </View>
         <View className="header-right" onClick={handleNewChat}>
           <Text className="header-icon">+</Text>
@@ -523,9 +523,9 @@ export default function Chat() {
             <View className="welcome-icon-wrap">
               <Text className="welcome-icon">🐾</Text>
             </View>
-            <Text className="welcome-title">OpenClaw 智能助理</Text>
+            <Text className="welcome-title">阿衡健康参谋</Text>
             <Text className="welcome-desc">
-              通过 Skills 自主访问你的健康数据，提供个性化的智能健康服务
+              通过你的健康数据和安全规则，提供个性化的日常健康建议
             </Text>
             <View className="quick-questions">
               {quickQuestions.map((q, idx) => (

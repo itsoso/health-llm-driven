@@ -110,7 +110,7 @@ struct BackendConversationDetail: Decodable, Sendable {
 
 /// Reads conversation history from the backend so Mac matches web/mobile (which
 /// both read `/agent/conversations`). The Mac stream already persists through the
-/// same `OpenClawService`, so the durable list is the single source of truth;
+/// same Agent conversation store, so the durable list is the single source of truth;
 /// the local `UserDefaultsAgentConversationStore` is only an offline cache.
 public protocol AgentConversationRemoteSourcing: Sendable {
     /// Fetches the conversation list (most-recent first), mapped to snapshots.

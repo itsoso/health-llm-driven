@@ -1,9 +1,9 @@
-"""微信 Bot 消息路由 — OpenClaw Native
+"""微信 Bot 消息路由 — first-party Agent
 
-所有消息统一转发到 OpenClaw Gateway：
-- 文字 → OpenClaw stream
-- 图片 → OpenClaw stream（带 image_base64，利用 vision + Skills）
-- 语音 → 假设已转文字 → OpenClaw stream
+所有消息统一转发到阿衡第一方 Agent：
+- 文字 → Agent stream
+- 图片 → Agent stream（带 image_base64）
+- 语音 → 假设已转文字 → Agent stream
 """
 import logging
 from typing import Dict, Any
@@ -14,14 +14,14 @@ logger = logging.getLogger(__name__)
 
 
 class WeChatBotHandler:
-    """微信消息处理器 — OpenClaw Native 模式"""
+    """微信消息处理器 — first-party Agent 模式"""
 
     def __init__(self, db: Session):
         self.db = db
 
     async def handle_message(self, msg: Dict[str, Any]) -> Dict[str, Any]:
         """
-        统一消息入口 — 全部走 OpenClaw。
+        统一消息入口 — 全部走第一方 Agent。
 
         Args:
             msg: {
@@ -44,7 +44,7 @@ class WeChatBotHandler:
         if not content.strip():
             return {"reply": "请发送文字、照片或语音消息。", "action": None}
 
-        # 所有消息类型统一走 OpenClaw
+        # 所有消息类型统一走第一方 Agent
         image_base64 = None
         image_type = "jpeg"
         message = content.strip()
@@ -56,32 +56,33 @@ class WeChatBotHandler:
             # 企业微信通常已将语音转为文字
             message = content.strip()
 
-        # 调用 OpenClaw stream，收集完整回复
-        reply = await self._call_openclaw(user_id, message, image_base64, image_type)
+        # 调用 Agent stream，收集完整回复
+        reply = await self._call_agent(user_id, message, image_base64, image_type)
 
         return {
             "reply": reply,
-            "action": {"type": "openclaw_reply"},
+            "action": {"type": "agent_reply"},
         }
 
-    async def _call_openclaw(
+    async def _call_agent(
         self,
         user_id: int,
         message: str,
         image_base64: str | None = None,
         image_type: str = "jpeg",
     ) -> str:
-        """调用 OpenClaw stream 并收集完整回复"""
+        """调用第一方 Agent stream 并收集完整回复"""
         try:
-            from app.services.openclaw_service import OpenClawService
-            service = OpenClawService(self.db)
+            from app.services.agent_executor import AgentExecutor
+
+            service = AgentExecutor(self.db)
 
             full_reply = ""
-            async for event in service.send_message_stream(
+            images = [{"base64": image_base64, "type": image_type}] if image_base64 else None
+            async for event in service.run_stream(
                 user_id=user_id,
                 message=message,
-                image_base64=image_base64,
-                image_type=image_type,
+                images=images,
             ):
                 if event.get("event") == "token":
                     full_reply += event.get("data", {}).get("content", "")
@@ -89,5 +90,5 @@ class WeChatBotHandler:
             return full_reply or "收到了，但暂时无法回复，请稍后再试。"
 
         except Exception as e:
-            logger.error(f"OpenClaw 调用失败: {e}", exc_info=True)
+            logger.error(f"Agent 调用失败: {e}", exc_info=True)
             return "抱歉，系统暂时繁忙，请稍后再试。"

@@ -81,7 +81,7 @@ class TestFeedbackAPI:
         response = client.post(
             "/api/v1/feedback",
             json={
-                "conversation_type": "openclaw",
+                "conversation_type": "agent",
                 "conversation_id": 2,
                 "message_id": 20,
                 "rating": 1,
@@ -306,7 +306,7 @@ class TestImplicitSignals:
         feedback_service.record_implicit(
             db=db,
             user_id=test_user.id,
-            conversation_type="openclaw",
+            conversation_type="agent",
             conversation_id=5,
             message_id=50,
             skill_used="health-record",
@@ -317,7 +317,7 @@ class TestImplicitSignals:
         feedback = feedback_service.record_implicit(
             db=db,
             user_id=test_user.id,
-            conversation_type="openclaw",
+            conversation_type="agent",
             conversation_id=5,
             message_id=50,
             error_type="timeout",
@@ -395,7 +395,7 @@ class TestSkillRegistry:
 
     @pytest.fixture(autouse=True)
     def _stub_gateway_sync(self, monkeypatch):
-        """测试环境下不连远程 OpenClaw Gateway（CI 无 SSH 通路）"""
+        """测试环境下跳过外部分发同步（CI 无远程通路）"""
         from app.services import skill_registry as skill_registry_mod
         monkeypatch.setattr(
             skill_registry_mod.SkillRegistry,

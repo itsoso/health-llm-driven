@@ -1,6 +1,6 @@
 """Agent conversation history API tests."""
 
-from app.models.openclaw import OpenClawConversation, OpenClawMessage
+from app.models.agent_conversation import AgentConversation, AgentMessage
 from app.models.user import User
 from app.api.agent import _merge_card_descriptors
 
@@ -20,16 +20,16 @@ def _create_user(db, suffix: str) -> User:
     return user
 
 
-def _create_conversation(db, user_id: int, title: str = "测试对话") -> OpenClawConversation:
-    conv = OpenClawConversation(user_id=user_id, title=title, session_key=f"test-{user_id}")
+def _create_conversation(db, user_id: int, title: str = "测试对话") -> AgentConversation:
+    conv = AgentConversation(user_id=user_id, title=title, session_key=f"test-{user_id}")
     db.add(conv)
     db.commit()
     db.refresh(conv)
     return conv
 
 
-def _add_message(db, conversation_id: int, role: str, content: str) -> OpenClawMessage:
-    msg = OpenClawMessage(conversation_id=conversation_id, role=role, content=content)
+def _add_message(db, conversation_id: int, role: str, content: str) -> AgentMessage:
+    msg = AgentMessage(conversation_id=conversation_id, role=role, content=content)
     db.add(msg)
     db.commit()
     db.refresh(msg)
@@ -61,11 +61,45 @@ def test_agent_conversations_list_returns_user_history_with_last_user_message(
     assert items[0]["last_message"] == "最近血糖怎么样？"
 
 
+def test_agent_send_collects_first_party_executor_stream(client, auth_user_and_headers, monkeypatch):
+    _, headers = auth_user_and_headers
+
+    async def fake_run_stream(self, **kwargs):
+        assert kwargs["message"] == "小程序非流式入口"
+        assert kwargs["conversation_id"] is None
+        yield {"event": "token", "data": {"content": "已接入"}}
+        yield {"event": "token", "data": {"content": "第一方 Agent"}}
+        yield {
+            "event": "done",
+            "data": {"conversation_id": 123, "message_id": 456, "elapsed_ms": 17},
+        }
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream",
+        fake_run_stream,
+    )
+
+    res = client.post(
+        "/api/v1/agent/send",
+        headers=headers,
+        json={"message": "小程序非流式入口"},
+    )
+
+    assert res.status_code == 200
+    assert res.json() == {
+        "reply": "已接入第一方 Agent",
+        "conversation_id": 123,
+        "message_id": 456,
+        "mode": "agent",
+        "elapsed_ms": 17,
+    }
+
+
 def test_agent_conversations_pagination_offset_and_total(client, db, auth_user_and_headers):
     """翻页:total 反映全部,limit/offset 切出当前页,不与其它页重叠。"""
     user, headers = auth_user_and_headers
     for i in range(5):
-        conv = OpenClawConversation(user_id=user.id, title=f"对话{i}", session_key=f"pg-{user.id}-{i}")
+        conv = AgentConversation(user_id=user.id, title=f"对话{i}", session_key=f"pg-{user.id}-{i}")
         db.add(conv)
     db.commit()
 
@@ -151,7 +185,7 @@ def test_agent_conversation_delete_removes_owned_conversation(client, db, auth_u
 
     assert res.status_code == 200
     assert res.json()["ok"] is True
-    assert db.query(OpenClawConversation).filter(OpenClawConversation.id == conv.id).first() is None
+    assert db.query(AgentConversation).filter(AgentConversation.id == conv.id).first() is None
 
 
 def test_agent_conversation_title_update_renames_owned_conversation(
@@ -190,17 +224,42 @@ def test_agent_conversation_title_update_enforces_user_isolation(
     assert other_conv.title == "其他人的对话"
 
 
-def test_openclaw_conversation_title_update_uses_same_store(client, db, auth_user_and_headers):
+def test_agent_message_rate_toggles_owned_message(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
-    conv = _create_conversation(db, user.id, "旧标题")
+    conv = _create_conversation(db, user.id, "评价对话")
+    msg = _add_message(db, conv.id, "assistant", "可评价的回复")
 
-    res = client.patch(
-        f"/api/v1/openclaw/conversations/{conv.id}",
+    res = client.post(
+        f"/api/v1/agent/messages/{msg.id}/rate",
         headers=headers,
-        json={"title": "移动端新标题"},
+        json={"rating": 1},
+    )
+    assert res.status_code == 200
+    assert res.json()["rating"] == 1
+    db.refresh(msg)
+    assert msg.rating == 1
+
+    res2 = client.post(
+        f"/api/v1/agent/messages/{msg.id}/rate",
+        headers=headers,
+        json={"rating": 1},
+    )
+    assert res2.status_code == 200
+    assert res2.json()["rating"] is None
+    db.refresh(msg)
+    assert msg.rating is None
+
+
+def test_agent_message_rate_enforces_user_isolation(client, db, auth_user_and_headers):
+    _, headers = auth_user_and_headers
+    other = _create_user(db, "rate_isolated")
+    other_conv = _create_conversation(db, other.id, "别人的回复")
+    other_msg = _add_message(db, other_conv.id, "assistant", "不可评价")
+
+    res = client.post(
+        f"/api/v1/agent/messages/{other_msg.id}/rate",
+        headers=headers,
+        json={"rating": 1},
     )
 
-    assert res.status_code == 200
-    assert res.json()["title"] == "移动端新标题"
-    db.refresh(conv)
-    assert conv.title == "移动端新标题"
+    assert res.status_code == 404

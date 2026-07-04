@@ -376,7 +376,7 @@ def _execute(db: Session, wi: WriteIntent) -> str:
         # P3(D1):复购提醒。确认 = **仅确认知悉(acknowledge)**,绝不下单/购买/支付。
         # 本期不调任何电商 skill、不建 ReorderIntent —— 那是 PRD §3.D2(P5)的财务面,
         # 要过 governance 一等对象 Gate + 财务安全评审。这里 confirm 只把意图标记为已处理。
-        # D2 落地时,会把这里的 acknowledge 换成「调快手电商 OpenClaw skill 下单」(仍逐笔强确认)。
+        # D2 落地时,会把这里的 acknowledge 换成「调快手电商 Agent action 下单」(仍逐笔强确认)。
         return "acknowledged"
     if wi.kind == "alarm_set":
         # P5 external-action:闹钟设置。确认 → 建一条 SmartReminder(后端只**记录**提醒,
@@ -435,7 +435,7 @@ def _execute(db: Session, wi: WriteIntent) -> str:
         # 财务硬边界:此分支**绝不**下单、绝不付款、绝不触碰任何支付字段、绝不调外卖网关。
         # 仓库里唯一能"下单"的入口是 food_order_skill_gateway.place_order,它恒抛
         # NotImplementedError —— 本分支根本不调它(财务路径在代码上可证为惰性 inert)。
-        # 真实下单待外卖 OpenClaw skill 就绪 + 财务安全评审后,才会逐笔强确认接入。
+        # 真实下单待本系统 Agent action 就绪 + 财务安全评审后,才会逐笔强确认接入。
         return "acknowledged"
     if wi.kind == "environment_actuation":
         # P5 external-action:环境/家居设备下行 —— **ACK + event only**。

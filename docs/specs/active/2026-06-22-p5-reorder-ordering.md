@@ -4,15 +4,15 @@
 - 范围:`backend/` only。不触 `apps/` / `mobile/`。
 - 关联 PRD:`docs/prd/2026-06-19-proactive-planning-prd.md` §3.D2 + §5。
 - 关联治理:`docs/specs/reva-product-governance-spec.md` §8(一等对象准入 Gate)。
-- 自治层级:**T3**(替你做外部动作:调快手电商 skill 下单)+ **财务硬门**(逐笔强确认)。
+- 自治层级:**T3**(替你做外部动作:调第一方 Agent 电商连接器下单)+ **财务硬门**(逐笔强确认)。
 
 ## ⚠️ 财务硬边界(评审重点)
 
-**本期 = SCAFFOLD:搭建到「调快手电商 skill」的接缝为止就 STOP。**
+**本期 = SCAFFOLD:搭建到「调快手电商连接器」的接缝为止就 STOP。**
 
-- 真正下单由另一团队开发的**快手电商 OpenClaw skill** 执行,在用户**已授权的、自有的
+- 真正下单由待评审的**第一方 Agent 快手电商连接器**执行,在用户**已授权的、自有的
   快手账号**下运行。后端**永不**处理支付凭据、**永不**扣款、**永不**无逐笔确认下单。
-- 该 skill 契约**未就绪** → `kuaishou_skill_gateway.place_order` 恒抛 `NotImplementedError`;
+- 该连接器契约**未就绪** → `kuaishou_skill_gateway.place_order` 恒抛 `NotImplementedError`;
   `confirm` 走到此处 → service 抛 `ReorderSkillNotReady` → API 返回 **HTTP 501**,
   意图停在安全态 `user_confirmed`(已确认未下单),**绝不**标 `order_placed`。
 - 无任何「自动 / 影子(shadow)下单」层。每单 = `manual_confirm`,human-in-the-loop。
@@ -32,7 +32,7 @@
 
 ```yaml
 RequirementAdmission:
-  request: 复购下单 —— 用户确认 → 调快手电商 skill 用其自有账号下单(SCAFFOLD)
+  request: 复购下单 —— 用户确认 → 调第一方 Agent 快手电商连接器用其自有账号下单(SCAFFOLD)
   classification: new_product_behavior
   first_user_fit: 中产慢病早期用户,补剂快用完时一键复购(省去手动找货/下单)
   core_loop_step: 执行迁移(T3)—— 把「该补货」的提议落成真实补货动作
@@ -52,14 +52,14 @@ RequirementAdmission:
     - 不自动扣款 / 不存储或传输任何支付凭据
     - 不实现任何 auto / shadow / 静默循环下单层
     - 后端不代用户输入支付凭据;skill 用用户自有账号
-    - 本期不真下单(skill 契约未就绪 → 501)
+    - 本期不真下单(连接器契约未就绪 → 501)
   smallest_end_to_end_slice: 单品、一次性、manual_confirm,skill 打桩(place_order 抛
     NotImplementedError;confirm→501)—— 证明对象 + 状态机 + 财务边界 + 审计,不碰钱
   stale_surface_to_remove_or_archive: 无(P3 reorder_nudge 仍是独立的提醒路径)
   spec_required: yes
 ```
 
-Gate result: **accepted(SCAFFOLD;真实下单待 skill 契约 + 财务安全评审)**
+Gate result: **accepted(SCAFFOLD;真实下单待连接器契约 + 财务安全评审)**
 - Object mapping: `ReorderIntent`(财务一等对象,状态机 proposed→user_confirmed→order_placed|order_failed|cancelled)
 - Surface: `POST/GET /api/v1/reorder-intents` + `/{id}/confirm` + `/{id}/cancel`
 - Safety boundary: red-flag(财务)+ privacy(外部账号)—— 逐笔强确认 + 不碰支付凭据 + skill 用户自有账号
@@ -113,7 +113,7 @@ POST /api/v1/reorder-intents/{id}/cancel
   幂等:同 (user,supplement,proposed) 已有 → 返回既有(不重复建)。
 - `GET /api/v1/reorder-intents?status=` → `{"items": [ReorderIntentView]}`(按 user 过滤;可选 status)。
 - `POST /api/v1/reorder-intents/{id}/confirm`
-  → **本期 501**(skill 未就绪;意图停 user_confirmed)。不存在/非本人 → 404;月额超限 → 409;
+  → **本期 501**(连接器未就绪;意图停 user_confirmed)。不存在/非本人 → 404;月额超限 → 409;
   (契约就绪后)下单业务失败 → 200 + status=order_failed。
 - `POST /api/v1/reorder-intents/{id}/cancel` → `ReorderIntentView`(cancelled)。不存在/非本人 → 404。
 
@@ -128,18 +128,18 @@ ReorderIntentView = {
 }
 ```
 
-## 快手电商 skill 契约(交接 —— 团队需提供)
+## 快手电商连接器契约(交接 —— 团队需提供)
 
 源:`backend/app/services/kuaishou_skill_gateway.py` 模块 docstring(权威)。
 
-- 调用方向:backend(网关)──▶ OpenClaw Gateway ──▶ 快手电商 skill(用户自有账号)。
+- 调用方向:backend(网关)──▶ 第一方 Agent commerce connector(用户自有账号)。
 - **入参**:`supplement_id:int`、`quantity:int(>0)`、`user_kuaishou_account_ref:str`
   (用户已授权快手账号引用 / openid,非密码非支付凭据)、`confirmation_token:str`
   (本次逐笔确认的一次性 token,绑 ReorderIntent.id+user_id,服务端签发,防重放)、
   `brand?:str`、`spec?:str`。
 - **出参**:`{"status":"placed"|"failed", "order_id":str|null,
   "estimated_delivery":str|null(ISO), "error":str|null}`。
-- **鉴权**:skill 以用户自有快手账号身份运行(OpenClaw 账号绑定);后端只传 account_ref +
+- **鉴权**:连接器以用户自有快手账号身份运行;后端只传 account_ref +
   一次性 token,**不传**支付密码/银行卡/任何支付凭据。
 - **回调**(异步落单时):`POST /api/v1/reorder-intents/{id}/order-callback`(本期未实现;
   同步返回即可。回调需带 confirmation_token 校验 + 幂等)。
@@ -150,7 +150,7 @@ ReorderIntentView = {
 
 - 模型:`backend/app/models/reorder_intent.py`(注册于 `models/__init__.py`)
 - 迁移:`backend/migrations/managed/20260622_120000_create_reorder_intents.{postgresql,sqlite}.sql`
-- skill 网关 STUB:`backend/app/services/kuaishou_skill_gateway.py`(`place_order` + `KuaishouSkillError`)
+- 电商连接器 STUB:`backend/app/services/kuaishou_skill_gateway.py`(`place_order` + `KuaishouSkillError`)
 - service:`backend/app/services/reorder_intent_service.py`
   (propose/confirm/cancel/list + `ReorderSkillNotReady`/`ReorderCapExceeded`)
 - 路由:`backend/app/api/reorder_intents.py`(挂 `app/api/main.py`,前缀 `/reorder-intents`)
@@ -159,8 +159,8 @@ ReorderIntentView = {
 
 ## 已知后续(本期不做 / 待评审)
 
-- 真实下单:把 `place_order` STUB 换成真 OpenClaw skill 调用(需 skill 契约 + 财务安全评审)。
+- 真实下单:把 `place_order` STUB 换成真第一方 Agent 连接器调用(需连接器契约 + 财务安全评审)。
 - 异步下单回调端点 `/{id}/order-callback`(confirmation_token 校验 + 幂等)。
 - 「常驻自动复购」放开:显式开关 UI + 月额上限默认值 + 允许常驻的品类白名单 + 每单通知(不静默)。
-- 月额已花金额的真实来源(skill 回参成交价 → `_monthly_spent_cents` 接入;本期恒 0)。
+- 月额已花金额的真实来源(连接器回参成交价 → `_monthly_spent_cents` 接入;本期恒 0)。
 - mobile/web 前端对接(对齐上方 API 契约;写出口用生成 schema 标注防漂移)。

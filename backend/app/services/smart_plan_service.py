@@ -684,7 +684,8 @@ class SmartPlanService:
             raise ValueError("AI 生成计划失败，请稍后重试")
         if acute_training_guardrail:
             plan_json = apply_acute_training_guardrail(plan_json, acute_training_guardrail)
-        self._add_reasoning(debug_info, f"LLM 生成成功，模型: {settings.openclaw_model}", "success")
+        ai_model = getattr(settings, "tokenplan_model", "") or getattr(settings, "llm_provider", "tokenplan")
+        self._add_reasoning(debug_info, f"LLM 生成成功，模型: {ai_model}", "success")
         self._add_reasoning(debug_info, f"focus_areas: {plan_json.get('focus_areas', [])}", "goal")
         insights = plan_json.get("insights", [])
         risks = plan_json.get("risks", [])
@@ -703,7 +704,7 @@ class SmartPlanService:
             ai_insights=insights,
             ai_risks=risks,
             weekly_summary=plan_json.get("weekly_summary", ""),
-            ai_model=settings.openclaw_model,
+            ai_model=ai_model,
         )
         self.db.add(plan)
         self.db.flush()

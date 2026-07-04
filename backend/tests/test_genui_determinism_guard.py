@@ -181,10 +181,10 @@ def test_agent_history_placeholder_helper():
 async def test_history_reva_ui_replaced_before_reaching_llm(db, monkeypatch):
     """历史里助手带 reva-ui block; 下一轮 LLM 收到的 messages 必须是占位符, 不是格式本身。"""
     from app.services.agent_executor import AgentExecutor
-    from app.services.openclaw_service import OpenClawService
+    from app.services.agent_conversation_service import AgentConversationService
 
     user, _ = create_authenticated_user(db)
-    svc = OpenClawService(db)
+    svc = AgentConversationService(db)
     conv = svc.get_or_create_conversation(user.id, None, title="趋势")
     # 上一轮: 用户问 + 助手回复带一个真 reva-ui block (确定性短路曾产出的历史)
     svc.save_message(conv.id, "user", "画一下我的血压趋势")
@@ -216,7 +216,7 @@ async def test_history_reva_ui_replaced_before_reaching_llm(db, monkeypatch):
 async def test_fabricated_llm_block_stripped_before_persist(db, monkeypatch):
     """LLM 吐出伪造 reva-ui block → 落库的 assistant 消息里被整块剥掉。"""
     from app.services.agent_executor import AgentExecutor
-    from app.services.openclaw_service import OpenClawService
+    from app.services.agent_conversation_service import AgentConversationService
 
     user, _ = create_authenticated_user(db)
 
@@ -231,7 +231,7 @@ async def test_fabricated_llm_block_stripped_before_persist(db, monkeypatch):
     async for _evt in executor.run_stream(user.id, "分析我的血压", conversation_id=None):
         pass
 
-    svc = OpenClawService(db)
+    svc = AgentConversationService(db)
     convs = svc.get_conversations(user.id, limit=5)
     assert convs
     detail = svc.get_conversation_detail(user.id, convs[0].id)
@@ -355,11 +355,11 @@ def test_agent_stream_short_circuit_block_survives_guard(
     assert "line_chart" in body
 
     # 持久化的 assistant 消息仍含 reva-ui block (短路路径不经输出 strip)。
-    from app.services.openclaw_service import OpenClawService
+    from app.services.agent_conversation_service import AgentConversationService
 
-    convs = OpenClawService(db).get_conversations(user.id, limit=10)
+    convs = AgentConversationService(db).get_conversations(user.id, limit=10)
     assert convs
-    detail = OpenClawService(db).get_conversation_detail(user.id, convs[0].id)
+    detail = AgentConversationService(db).get_conversation_detail(user.id, convs[0].id)
     assistant_msgs = [m for m in detail.messages if m.role == "assistant"]
     assert any("reva-ui" in (m.content or "") for m in assistant_msgs), (
         "短路产出的 block 必须存活于落库消息"

@@ -108,5 +108,5 @@ confirm → executed, executed_ref="acknowledged"  (不下单)
 
 ## 已知后续(本期不做)
 
-- D2(P5):`reorder_nudge` confirm → 调快手电商 OpenClaw skill 下单(财务面,新增
-  `ReorderIntent` 一等对象,逐笔强确认 + 月额上限 + 每单通知)。先定 skill 契约 + 过安全评审。
+- D2(P5):`reorder_nudge` confirm → 调第一方 Agent 快手电商连接器下单(财务面,新增
+  `ReorderIntent` 一等对象,逐笔强确认 + 月额上限 + 每单通知)。先定连接器契约 + 过安全评审。

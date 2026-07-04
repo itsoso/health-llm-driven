@@ -2,7 +2,7 @@
  * 共享 SSE (Server-Sent Events) 解析工具。
  *
  * 支持两种模式：
- * 1. 简单模式 (parseSimpleSSE): `data: {json}\n` — OpenClaw / Agent 使用
+ * 1. 简单模式 (parseSimpleSSE): `data: {json}\n` — Agent 使用
  * 2. 完整模式 (parseFullSSE):  `event: xxx\ndata: xxx\n\n` — Orchestrator 使用
  */
 
@@ -14,7 +14,7 @@ export interface SSEDataEvent {
 
 /**
  * 从 fetch Response 创建 async generator，逐条 yield SSE 数据事件。
- * 适用于简单 `data: {json}\n` 格式（OpenClaw / Agent stream）。
+ * 适用于简单 `data: {json}\n` 格式（Agent stream）。
  *
  * 支持 AbortSignal 取消。
  */

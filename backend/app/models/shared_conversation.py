@@ -17,7 +17,7 @@ class SharedConversation(Base):
                          default=lambda: secrets.token_hex(16))
 
     # 来源对话
-    source_type = Column(String(20), nullable=False, default="health")  # health / openclaw
+    source_type = Column(String(20), nullable=False, default="health")  # health / agent
     source_conversation_id = Column(Integer, nullable=False)
 
     # 快照数据（JSON 存储消息列表）

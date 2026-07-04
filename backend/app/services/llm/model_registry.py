@@ -11,7 +11,6 @@ speed_tier:
 provider:
   - openai-proxy : 走 OPENAI_BASE_URL (代理), 用 OPENAI_API_KEY
   - tokenplan    : 走 TOKENPLAN_BASE_URL (阿里百炼), 用 TOKENPLAN_API_KEY
-  - openclaw     : 走 OPENCLAW_BASE_URL
   - moonshot     : 月之暗面官方 API (需独立 KIMI_API_KEY, 暂未配置)
   - zhipu        : 智谱 GLM 官方 API (需独立 ZHIPU_API_KEY, 暂未配置)
 """
@@ -250,9 +249,6 @@ MODELS: List[ModelEntry] = [
         reliable_tool_calling=False,
     ),
 
-    # OpenClaw 已从可选 LLM 通道下线 (2026-06: 无用户使用, 主链路走 tokenplan/langbridge)。
-    # 注意: OpenClawService/models 仍在为 Siri / 微信 bot / /agent 会话持久化服务, 那是另一回事。
-
     # ──── 商用模型 (经 browser-llm-orchestrator LangBridge gateway) ────
     # 透明走 https://base.executor.life/api/llm , OpenAI 协议兼容, 支持 vision.
     # 切换粒度 = user_profile.llm_model_id, admin 也可用 set_active_model_id 全局切.
@@ -321,7 +317,6 @@ def _env_present(env_name: str, settings) -> bool:
     mapping = {
         "OPENAI_API_KEY": "openai_api_key",
         "TOKENPLAN_API_KEY": "tokenplan_api_key",
-        "OPENCLAW_API_KEY": "openclaw_api_key",
         "MOONSHOT_API_KEY": "moonshot_api_key",
         "ZHIPU_API_KEY": "zhipu_api_key",
         "LANGBRIDGE_GATEWAY_API_KEY": "langbridge_gateway_api_key",

@@ -391,7 +391,7 @@ def _gen_llm_pattern_mining(db: Session, user_id: int) -> Optional[InsightCandid
 
     Cost:
       - 最多 1 次 LLM call / user / day (generate_daily_insight 幂等保证)
-      - gpt-4o-mini 或 openclaw, max_tokens=600
+      - gpt-4o-mini 或 tokenplan, max_tokens=600
     """
     from app.models.memory_fact import MemoryFact
     from app.models.daily_health import GarminData, DietRecord

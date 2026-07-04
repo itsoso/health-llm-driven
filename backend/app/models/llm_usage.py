@@ -9,7 +9,7 @@ class LlmUsageLog(Base):
     __tablename__ = "llm_usage_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    provider = Column(String(32), nullable=False)   # openclaw / openai / ollama
+    provider = Column(String(32), nullable=False)   # tokenplan / openai / ollama / langbridge-proxy
     model = Column(String(64), nullable=False)
     # 哪个调用方触发: orchestrator / safety_explain / weekly_report / ...
     caller = Column(String(64), nullable=True)

@@ -1,5 +1,5 @@
 """
-聊天对话模型 — DEPRECATED: 新代码请使用 OpenClawConversation / OpenClawMessage
+聊天对话模型 — DEPRECATED: 新代码请使用 AgentConversation / AgentMessage
 """
 from datetime import UTC, datetime
 from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Index
@@ -14,7 +14,7 @@ class ChatConversation(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     title = Column(String(200), default="新对话")
-    mode = Column(String(20), nullable=True, default=None)  # None=健康助理, "proxy"=OpenClaw代理
+    mode = Column(String(20), nullable=True, default=None)  # None=健康助理, "proxy"=旧代理模式
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 

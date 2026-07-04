@@ -44,7 +44,6 @@ vi.mock('@/services/api', () => ({
   dataCollectionApi: { syncGarmin: vi.fn() },
   healthTrendApi: { getLatest: vi.fn().mockResolvedValue({ data: null }) },
   onboardingApi: { getStatus: vi.fn().mockResolvedValue({ data: { profile_data: null } }), saveStep1: vi.fn(), saveStep2: vi.fn(), complete: vi.fn(), skip: vi.fn() },
-  openclawApi: { getConversations: vi.fn().mockResolvedValue({ data: [] }), streamMessage: vi.fn() },
   familyApi: { getReports: vi.fn().mockResolvedValue({ data: [] }), getReportDetail: vi.fn().mockResolvedValue({ data: null }), getIndicatorTrend: vi.fn().mockResolvedValue({ data: [] }) },
   feedbackApi: { submit: vi.fn() },
   sharedApi: { createShare: vi.fn() },

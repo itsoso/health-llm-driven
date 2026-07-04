@@ -2106,8 +2106,8 @@ class AgentExecutor:
         sources_used: list = ["多模型综合 (Claude Opus 4.7 · GPT-5.5 · Gemini 3.1 Pro)"]
         model_label = "Claude Opus 4.7 + GPT-5.5 + Gemini 3.1 Pro (综合)"
 
-        from app.services.openclaw_service import OpenClawService
-        svc = OpenClawService(self.db)
+        from app.services.agent_conversation_service import AgentConversationService
+        svc = AgentConversationService(self.db)
         conv = svc.get_or_create_conversation(user_id, conversation_id, title=message)
         svc.save_message(conv.id, "user", message)
 
@@ -2280,13 +2280,6 @@ class AgentExecutor:
         # 输入通道(客户端传输层声明,typed/voice/siri):症状类记录的确认策略依赖它。
         # 非法/未声明一律 None → fail-closed(症状保留确认)。
         self._turn_channel = channel if channel in ("typed", "voice", "siri") else None
-        # OpenClaw provider 不支持 function calling，记录类意图委托给 OpenClaw Gateway（有 skill）
-        has_tools_support = bool(settings.agent_base_url and settings.agent_api_key) or settings.llm_provider != "openclaw"
-        if not has_tools_support and (_needs_skill(message) or images or file_base64):
-            async for evt in self._delegate_to_openclaw(user_id, message, conversation_id, user_auth_token, images, file_base64, file_name):
-                yield evt
-            return
-
         # 多模型综合分析 (商用三强 panel)。仅纯文本分析回合走此路径;
         # 带图片/附件时回退普通单模型路径 (panel 是文本综合, 不处理多模态)。
         if _extract_multi_model_flag(extra_context) and not images and not file_base64:
@@ -2353,10 +2346,10 @@ class AgentExecutor:
             except Exception:  # noqa: BLE001
                 return 0
 
-        # 1. 获取或创建会话（复用 OpenClaw 的对话管理）
+        # 1. 获取或创建会话（第一方 Agent 对话管理）
         _t_stage = time.time()
-        from app.services.openclaw_service import OpenClawService
-        svc = OpenClawService(self.db)
+        from app.services.agent_conversation_service import AgentConversationService
+        svc = AgentConversationService(self.db)
         conv = svc.get_or_create_conversation(user_id, conversation_id, title=message)
 
         # 保存用户消息（含图片标记）
@@ -3306,29 +3299,6 @@ class AgentExecutor:
             logger.debug(f"[Vision] primary model image capability check skipped: {e}")
             return False
 
-    async def _delegate_to_openclaw(
-        self, user_id: int, message: str,
-        conversation_id: Optional[int] = None,
-        user_auth_token: Optional[str] = None,
-        images: Optional[List[dict]] = None,
-        file_base64: Optional[str] = None,
-        file_name: Optional[str] = None,
-    ) -> AsyncGenerator[Dict, None]:
-        """委托给 OpenClaw Gateway（支持 Skill 写入数据）"""
-        from app.services.openclaw_service import OpenClawService
-        svc = OpenClawService(self.db)
-        image_b64 = images[0]["base64"] if images else None
-        image_type = images[0].get("type", "jpeg") if images else "jpeg"
-        async for evt in svc.send_message_stream(
-            user_id=user_id,
-            message=message,
-            conversation_id=conversation_id,
-            image_base64=image_b64,
-            image_type=image_type,
-            user_auth_token=user_auth_token,
-        ):
-            yield evt
-
     def _build_system_prompt(
         self, user_id: int, conv_id: int, user_auth_token: Optional[str], lite: bool = False
     ) -> str:
@@ -3562,8 +3532,6 @@ class AgentExecutor:
                     model_label = f"OpenAI {_settings.openai_model}"
                 elif provider == "tokenplan":
                     model_label = f"Aliyun TokenPlan {_settings.tokenplan_model}"
-                elif provider == "openclaw":
-                    model_label = f"OpenClaw {_settings.openclaw_model}"
                 else:
                     model_label = provider
             parts.append(
@@ -3685,7 +3653,7 @@ class AgentExecutor:
         """解析本次回合应使用的 provider + 是否传 tools。
 
         被 _call_llm (非流式) 和 _call_llm_stream (流式) 共用,确保两条路径的
-        provider 路由完全一致 (fast-record / request-model / user-pref / OpenClaw
+        provider 路由完全一致 (fast-record / request-model / user-pref
         tool-stripping)。返回 (provider, pass_tools)。
         """
         provider = None
@@ -3719,11 +3687,9 @@ class AgentExecutor:
             from app.services.llm.model_registry import get_active_model_id
             effective_model_id = get_active_model_id()
 
-        # OpenClaw 不吃 tools 字段; wrap_provider 是 in-place patch, isinstance 仍可识别.
         # Some OpenAI-compatible gateways treat an explicit empty tools array as
         # a tool-mode request and can return content="" with finish_reason="stop".
-        from app.services.llm.providers.openclaw_provider import OpenClawProvider
-        pass_tools = None if isinstance(provider, OpenClawProvider) else tools
+        pass_tools = tools
 
         # ──── 工具调用能力门控 (从源头减少弱模型吐坏工具调用; #147/#161 兜底解析仍在) ────
         # 仅当本回合确实要传 tools 且已确定的 effective_model 不可靠时, 才换一个可靠模型。
