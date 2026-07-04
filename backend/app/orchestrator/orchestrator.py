@@ -986,6 +986,30 @@ def _finding_is_safety_or_data_gap(finding: SpecialistFinding) -> bool:
     return False
 
 
+def _collect_evidence_claim_ids(findings: List[SpecialistFinding]) -> List[str]:
+    """Distinct KB claim doc_ids handed to the LLM as evidence across all findings.
+
+    Union of each finding's top-level ``evidence_refs`` and any per-item
+    ``evidence_refs`` nested in ``finding.findings``. Order-preserving, deduped.
+    """
+    seen: set[str] = set()
+    ordered: List[str] = []
+
+    def _add(ref: Any) -> None:
+        if isinstance(ref, str) and ref and ref not in seen:
+            seen.add(ref)
+            ordered.append(ref)
+
+    for finding in findings:
+        for ref in getattr(finding, "evidence_refs", None) or []:
+            _add(ref)
+        for item in getattr(finding, "findings", None) or []:
+            if isinstance(item, dict):
+                for ref in item.get("evidence_refs") or []:
+                    _add(ref)
+    return ordered
+
+
 def _specialist_audit_snapshot(findings: List[SpecialistFinding]) -> List[Dict[str, Any]]:
     """Build specialist audit payload with system-KB evidence coverage.
 
@@ -1454,6 +1478,19 @@ async def run_orchestrator(
     # v3 cross-cutting safety: 所有 LLM 终态自由文本统一过 validator
     safety = _safety_wrap(synthesis, source="orchestrator.run")
     synthesis = safety.safe_text
+
+    # 旁路观测: KB 证据引用率 —— 提供给 LLM 的 claim 里有多少在终稿里显现 (cheap substring).
+    # 失败绝不影响主流程。
+    try:
+        from app.services.system_knowledge_service import record_kb_citation_usage
+        record_kb_citation_usage(
+            db,
+            _collect_evidence_claim_ids(findings),
+            synthesis,
+            source="orchestrator.run",
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[orchestrator] kb_citation_usage audit bypass 失败: {e}")
 
     # 信任循环: 把 specialist 的 proposed_cards 落地为 ActionCard
     persisted_card_ids = _persist_proposed_cards(db, user_id, findings)
@@ -1934,6 +1971,17 @@ async def stream_orchestrator(
                     )
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"[orchestrator.stream] orchestrator_run audit bypass 失败: {e}")
+
+                try:
+                    from app.services.system_knowledge_service import record_kb_citation_usage
+                    record_kb_citation_usage(
+                        bg_db,
+                        _collect_evidence_claim_ids(findings),
+                        full,
+                        source="orchestrator.stream",
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"[orchestrator.stream] kb_citation_usage audit bypass 失败: {e}")
 
                 await chunk_queue.put(_sse("done", {
                     "total_ms": total_ms,

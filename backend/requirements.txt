@@ -59,3 +59,9 @@ dashscope>=1.23.0
 # CalDAV 日历同步(timing-solver 议程驱动;无现成 CalDAV 客户端替代,当前维护版本,exact pin)
 caldav==3.2.1
 icalendar==7.1.3
+
+# 中文分词(System KB v2 检索:多词中文查询在 "simple" tsvector / char-bigram 下近乎失效,
+# jieba 提供词级切分让 FTS + BM25 命中率回升)。
+# 依赖例外:jieba 0.42.1 是最后一个 release(2020),违反本仓库"6 个月内有更新"的新依赖规则;
+# 但它是事实标准的成熟中文分词器,已在 founder 批准的 KB 升级计划里作为明确例外。exact pin。
+jieba==0.42.1

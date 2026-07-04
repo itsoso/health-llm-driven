@@ -124,6 +124,48 @@ def test_nonreviewed_claim_is_not_flagged(tmp_path):
     assert report["status"] == "pass", report["problems"]
 
 
+def test_catches_duplicate_claim_title_and_sources(tmp_path):
+    # two reviewed claims with different doc_ids but identical title+sources = true dup
+    d = _build_seed(
+        tmp_path,
+        claims=[
+            _reviewed("claim:c_dedao_salt", "claim", title="血压风险管理先识别高钠来源", sources=["dedao:x"]),
+            _reviewed("claim:c_salt", "claim", title="血压风险管理先识别高钠来源", sources=["dedao:x"]),
+        ],
+        entities=[_reviewed("entity:intervention:salt-reduction", "entity")],
+        relations=[
+            _edge("claim:c_dedao_salt", "entity:intervention:salt-reduction"),
+            _edge("claim:c_salt", "entity:intervention:salt-reduction"),
+        ],
+        counts={"claims": 2, "entities": 1, "relations": 2},
+    )
+    report = check_seed_integrity(d)
+    assert report["status"] == "fail"
+    assert len(report["duplicate_titles"]) == 1
+    assert sorted(report["duplicate_titles"][0]["doc_ids"]) == ["claim:c_dedao_salt", "claim:c_salt"]
+    assert any("duplicate claim title+sources" in p for p in report["problems"])
+
+
+def test_same_title_different_sources_is_not_flagged(tmp_path):
+    # template-instantiated near-dups (same title, different source-course) are NOT dups
+    d = _build_seed(
+        tmp_path,
+        claims=[
+            _reviewed("claim:c_a", "claim", title="减重阶段需要力量训练", sources=["dedao:2020-2021"]),
+            _reviewed("claim:c_b", "claim", title="减重阶段需要力量训练", sources=["dedao:2021-2022"]),
+        ],
+        entities=[_reviewed("entity:intervention:strength-training", "entity")],
+        relations=[
+            _edge("claim:c_a", "entity:intervention:strength-training"),
+            _edge("claim:c_b", "entity:intervention:strength-training"),
+        ],
+        counts={"claims": 2, "entities": 1, "relations": 2},
+    )
+    report = check_seed_integrity(d)
+    assert report["status"] == "pass", report["problems"]
+    assert report["duplicate_titles"] == []
+
+
 def test_real_seed_is_clean():
     # the shipped seed must always satisfy the guard
     seed = Path(__file__).resolve().parents[1] / "data" / "system_kb_v2_seed"

@@ -111,6 +111,29 @@ jobs:
           python -m eval run --suite insight --baseline main --fail-on-regression
           python -m eval run --suite retrieval --baseline main --fail-on-regression
 
+      - name: System KB retrieval eval (observation mode)
+        working-directory: backend
+        env:
+          SECRET_KEY: test-secret-key-32-chars-minimum!!
+          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
+          DATABASE_URL: "sqlite:///:memory:"
+          TZ: Asia/Shanghai
+        # 观察周(2026-07):软 gate, 只打印 recall@5/recall@10/MRR + 每 case pass/rank,
+        # 不阻塞合并。稳定后再复议是否转硬 gate(与既有 Golden Set continue-on-error 同属
+        # 一次 observability 复议, 那道 gate 现状不动)。ephemeral SQLite, 无 LLM 成本;
+        # FTS 走 precomputed-text 回退(tsvector 是 PG-only), retrieval_legs 里如实标注。
+        continue-on-error: true
+        run: |
+          python scripts/run_system_kb_eval.py --json | tee /tmp/system_kb_eval_metrics.json
+
+      - name: Upload System KB eval metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: system-kb-eval-metrics
+          path: /tmp/system_kb_eval_metrics.json
+          if-no-files-found: ignore
+
   frontend-build:
     runs-on: ubuntu-latest
     steps:

@@ -46,6 +46,7 @@ def compile_down_dedao_wiki_artifacts(
     existing_docs = _load_existing_doc_ids(base_artifact_dir)
     existing_placeholders = _load_existing_placeholder_doc_ids(base_artifact_dir)
     existing_relations = _load_existing_relation_keys(base_artifact_dir)
+    entity_titles = _load_existing_entity_titles(base_artifact_dir)
 
     result = DownDedaoBridgeResult(source_root=source_root, base_artifact_dir=base_artifact_dir)
 
@@ -54,13 +55,14 @@ def compile_down_dedao_wiki_artifacts(
         gene_knowledge = _read_json(gene_knowledge_path)
         for entity in _iter_gene_entities(gene_knowledge.get("entities") or {}):
             doc = _entity_to_document(entity, gene_knowledge, now)
+            _index_entity_title(doc, entity_titles)
             if doc["doc_id"] not in existing_docs or doc["doc_id"] in existing_placeholders:
                 result.entities.append(doc)
                 existing_docs.add(doc["doc_id"])
                 existing_placeholders.discard(doc["doc_id"])
 
         for claim in gene_knowledge.get("claims") or []:
-            doc = _claim_to_document(claim, gene_knowledge, now)
+            doc = _claim_to_document(claim, gene_knowledge, now, entity_titles)
             if doc["doc_id"] not in existing_docs:
                 result.claims.append(doc)
                 existing_docs.add(doc["doc_id"])
@@ -75,6 +77,7 @@ def compile_down_dedao_wiki_artifacts(
             existing_placeholders,
             existing_relations,
             now,
+            entity_titles,
         )
 
     for page_path in sorted(artifact_root.glob("*.json")):
@@ -172,6 +175,51 @@ def _load_existing_relation_keys(root: Path) -> set[tuple[str, str, str]]:
     }
 
 
+def _load_existing_entity_titles(root: Path) -> dict[str, str]:
+    """Map ``entity:<type>:<id>`` -> display title from the seed entities file.
+
+    Used to prefix generic claim titles with their linked-entity context so that
+    template-instantiated claims (many rows sharing one boilerplate title, e.g.
+    "减重阶段需要力量训练保护功能能力") read as "<entity>:<claim>" and no longer
+    look like accidental duplicates in the KB.
+    """
+    titles: dict[str, str] = {}
+    for row in _read_jsonl(root / "entities.jsonl"):
+        _index_entity_title(row, titles)
+    return titles
+
+
+def _index_entity_title(entity_doc: dict[str, Any], titles: dict[str, str]) -> None:
+    doc_id = entity_doc.get("doc_id")
+    title = entity_doc.get("title")
+    if doc_id and title and str(doc_id).startswith("entity:"):
+        titles[str(doc_id)] = str(title)
+
+
+def _contextualize_claim_title(
+    title: str,
+    entity_type: Any,
+    entity_id: Any,
+    entity_titles: dict[str, str],
+) -> str:
+    """Prefix a claim title with its linked-entity context (``<entity>:<title>``).
+
+    Deterministic and idempotent: the entity display title is preferred, falling
+    back to the raw ``entity_id`` when no entity doc is known. A title already
+    carrying its prefix is left unchanged so repeated compilation is a no-op.
+    """
+    if not title or not entity_type or not entity_id:
+        return title
+    doc_id = f"entity:{entity_type}:{entity_id}"
+    context = entity_titles.get(doc_id) or str(entity_id)
+    if not context:
+        return title
+    prefix = f"{context}:"
+    if title.startswith(prefix):
+        return title
+    return f"{prefix}{title}"
+
+
 def _merge_jsonl(path: Path, rows: list[dict[str, Any]], key_fields: tuple[str, ...]) -> int:
     existing_rows = _read_jsonl(path)
     if not rows:
@@ -207,6 +255,7 @@ def _import_system_kb_export(
     existing_placeholders: set[str],
     existing_relations: set[tuple[str, str, str]],
     now: datetime,
+    entity_titles: dict[str, str],
 ) -> None:
     source = {
         "version": payload.get("version"),
@@ -226,6 +275,7 @@ def _import_system_kb_export(
         if not isinstance(entity, dict):
             continue
         doc = _entity_to_document(entity, source, now)
+        _index_entity_title(doc, entity_titles)
         if doc["doc_id"] not in existing_docs or doc["doc_id"] in existing_placeholders:
             result.entities.append(doc)
             existing_docs.add(doc["doc_id"])
@@ -234,7 +284,7 @@ def _import_system_kb_export(
     for claim in payload.get("claims") or []:
         if not isinstance(claim, dict):
             continue
-        doc = _claim_to_document(claim, source, now)
+        doc = _claim_to_document(claim, source, now, entity_titles)
         if doc["doc_id"] not in existing_docs:
             result.claims.append(doc)
             existing_docs.add(doc["doc_id"])
@@ -354,16 +404,25 @@ def _entity_to_document(entity: dict[str, Any], source: dict[str, Any], now: dat
     }
 
 
-def _claim_to_document(claim: dict[str, Any], source: dict[str, Any], now: datetime) -> dict[str, Any]:
+def _claim_to_document(
+    claim: dict[str, Any],
+    source: dict[str, Any],
+    now: datetime,
+    entity_titles: dict[str, str] | None = None,
+) -> dict[str, Any]:
     claim_id = claim.get("claim_id") or claim.get("doc_id", "").replace("claim:", "")
     body = claim.get("body") or claim.get("summary") or claim.get("title") or claim_id
     metadata = claim.get("metadata") or {}
+    raw_title = claim.get("title") or claim_id
+    title = _contextualize_claim_title(
+        raw_title, claim.get("entity_type"), claim.get("entity_id"), entity_titles or {}
+    )
     return {
         "doc_id": f"claim:{claim_id}",
         "doc_type": "claim",
         "entity_type": claim.get("entity_type"),
         "entity_id": claim.get("entity_id"),
-        "title": claim.get("title") or claim_id,
+        "title": title,
         "summary": claim.get("summary") or _summary_from_body(body),
         "body": _compact_body(body, limit=1600),
         "confidence": _float_or_default(claim.get("confidence"), 0.68),

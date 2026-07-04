@@ -140,6 +140,20 @@ async def startup_event():
     import app.models.family  # noqa: F401 — 确保家庭管理表被创建
     import app.models.family_health  # noqa: F401 — 确保体检报告/用药/复查表被创建
     settings.validate_required_security()
+    # 中文分词器启动探针: System KB 检索依赖 jieba(硬依赖)。在启动时一次性 warm
+    # (付掉字典构建 + userdict 成本, 而非每次查询), 并在缺失时 fail-loud(ERROR 级),
+    # 不静默退化到未分词的坏检索行为。缺失不 crash 启动(检索层会降级到 bigram), 但日志
+    # 必须响亮, 让运维立即察觉依赖漏装。
+    try:
+        import logging as _logging
+        from app.services.zh_tokenize import check_zh_tokenizer_available
+        check_zh_tokenizer_available()
+        _logging.getLogger("main").info("[startup] 中文分词器(jieba)就绪")
+    except Exception as _e:  # noqa: BLE001
+        import logging as _logging
+        _logging.getLogger("main").error(
+            f"[startup] 中文分词器(jieba)不可用 —— System KB 中文多词检索将退化到 bigram, "
+            f"命中率下降。请安装 jieba==0.42.1。原因: {_e}")
     # 基因租户隔离前置校验: Postgres superuser 会绕过 RLS(含 FORCE)→ genetic_raw_files
     # 行级隔离退化为仅应用层 WHERE。基因是最敏感数据, 启动时 fail-loud 告警(不静默)。
     try:

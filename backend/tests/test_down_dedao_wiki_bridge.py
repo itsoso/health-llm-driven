@@ -116,6 +116,106 @@ def test_compile_down_dedao_wiki_artifacts_converts_gene_drug_claims(tmp_path):
     assert placeholder["metadata"]["review_status"] == "reviewed"
 
 
+def test_claim_titles_are_prefixed_with_linked_entity_context(tmp_path):
+    # Two source batches instantiate the SAME boilerplate claim title against the
+    # same entity. The bridge must prefix them with the entity's display title so
+    # they read "力量训练:减重阶段需要力量训练" instead of a bare generic title.
+    source_root = tmp_path / "down-dedao"
+    _write_json(
+        source_root / "artifacts" / "gene_knowledge.json",
+        {"id": "gene_knowledge_v2", "version": "t", "entities": {}, "claims": []},
+    )
+    _write_json(
+        source_root / "artifacts" / "system_kb_export.json",
+        {
+            "version": "test-export",
+            "entities": [
+                {
+                    "doc_id": "entity:intervention:strength-training",
+                    "entity_type": "intervention",
+                    "entity_id": "strength-training",
+                    "title": "力量训练",
+                    "summary": "力量训练实体页。",
+                    "body": "力量训练用于保护功能能力。",
+                }
+            ],
+            "claims": [
+                {
+                    "claim_id": "c_batch_a_strength_training",
+                    "entity_type": "intervention",
+                    "entity_id": "strength-training",
+                    "title": "减重阶段需要力量训练保护功能能力",
+                    "summary": "力量训练保护功能能力。",
+                    "body": "健康管理建议。",
+                    "sources": ["dedao:batch-a"],
+                },
+                {
+                    "claim_id": "c_batch_b_strength_training",
+                    "entity_type": "intervention",
+                    "entity_id": "strength-training",
+                    "title": "减重阶段需要力量训练保护功能能力",
+                    "summary": "力量训练保护功能能力。",
+                    "body": "健康管理建议。",
+                    "sources": ["dedao:batch-b"],
+                },
+            ],
+        },
+    )
+
+    result = compile_down_dedao_wiki_artifacts(
+        source_root=source_root,
+        base_artifact_dir=tmp_path / "seed",
+        now=datetime(2026, 5, 18, tzinfo=UTC),
+    )
+
+    titles = {claim["doc_id"]: claim["title"] for claim in result.claims}
+    assert titles["claim:c_batch_a_strength_training"] == "力量训练:减重阶段需要力量训练保护功能能力"
+    assert titles["claim:c_batch_b_strength_training"] == "力量训练:减重阶段需要力量训练保护功能能力"
+
+
+def test_claim_title_contextualization_is_idempotent_and_falls_back_to_entity_id(tmp_path):
+    # No entity doc for the linkage -> fall back to the raw entity_id; and a title
+    # already carrying its prefix must not be prefixed twice.
+    source_root = tmp_path / "down-dedao"
+    _write_json(
+        source_root / "artifacts" / "gene_knowledge.json",
+        {"id": "gene_knowledge_v2", "version": "t", "entities": {}, "claims": []},
+    )
+    _write_json(
+        source_root / "artifacts" / "system_kb_export.json",
+        {
+            "version": "test-export",
+            "entities": [],
+            "claims": [
+                {
+                    "claim_id": "c_no_entity_doc",
+                    "entity_type": "biomarker",
+                    "entity_id": "HbA1c",
+                    "title": "HbA1c 适合作为 8-12 周复查闭环",
+                    "body": "健康管理建议。",
+                },
+                {
+                    "claim_id": "c_already_prefixed",
+                    "entity_type": "biomarker",
+                    "entity_id": "HbA1c",
+                    "title": "HbA1c:HbA1c 适合作为 8-12 周复查闭环",
+                    "body": "健康管理建议。",
+                },
+            ],
+        },
+    )
+
+    result = compile_down_dedao_wiki_artifacts(
+        source_root=source_root,
+        base_artifact_dir=tmp_path / "seed",
+        now=datetime(2026, 5, 18, tzinfo=UTC),
+    )
+    titles = {claim["doc_id"]: claim["title"] for claim in result.claims}
+    assert titles["claim:c_no_entity_doc"] == "HbA1c:HbA1c 适合作为 8-12 周复查闭环"
+    # already-prefixed stays single-prefixed (idempotent)
+    assert titles["claim:c_already_prefixed"] == "HbA1c:HbA1c 适合作为 8-12 周复查闭环"
+
+
 def test_compile_down_dedao_wiki_artifacts_imports_topic_pages_with_licensed_content_and_skips_private_notes(tmp_path):
     source_root = tmp_path / "down-dedao"
     _write_json(

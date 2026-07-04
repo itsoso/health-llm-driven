@@ -34,6 +34,44 @@ def test_release_gate_manifest_count_validation_detects_drift(tmp_path):
     ]
 
 
+def test_release_gate_detects_duplicate_claim_titles(tmp_path):
+    from scripts.run_external_health_knowledge_release_gate import detect_duplicate_claim_titles
+
+    artifact_dir = tmp_path / "seed"
+    artifact_dir.mkdir()
+    (artifact_dir / "claims.jsonl").write_text(
+        # a & b: identical title+sources -> duplicate; c: same title, different sources -> NOT a duplicate
+        '{"doc_id":"claim:a","title":"血压风险管理先识别高钠来源","sources":["dedao:x"]}\n'
+        '{"doc_id":"claim:b","title":"血压风险管理先识别高钠来源","sources":["dedao:x"]}\n'
+        '{"doc_id":"claim:c","title":"血压风险管理先识别高钠来源","sources":["dedao:y"]}\n',
+        encoding="utf-8",
+    )
+
+    report = detect_duplicate_claim_titles(artifact_dir)
+
+    assert report["status"] == "fail"
+    assert report["duplicate_title_count"] == 1
+    assert len(report["duplicates"]) == 1
+    assert sorted(report["duplicates"][0]["doc_ids"]) == ["claim:a", "claim:b"]
+
+
+def test_release_gate_passes_duplicate_titles_when_sources_differ(tmp_path):
+    from scripts.run_external_health_knowledge_release_gate import detect_duplicate_claim_titles
+
+    artifact_dir = tmp_path / "seed"
+    artifact_dir.mkdir()
+    (artifact_dir / "claims.jsonl").write_text(
+        '{"doc_id":"claim:a","title":"减重阶段需要力量训练","sources":["dedao:2020-2021"]}\n'
+        '{"doc_id":"claim:b","title":"减重阶段需要力量训练","sources":["dedao:2021-2022"]}\n',
+        encoding="utf-8",
+    )
+
+    report = detect_duplicate_claim_titles(artifact_dir)
+
+    assert report["status"] == "pass"
+    assert report["duplicate_title_count"] == 0
+
+
 def test_release_gate_script_runs_jsonl_import_lint_and_eval_against_fresh_sqlite(tmp_path):
     backend_root = Path(__file__).resolve().parents[1]
     script = backend_root / "scripts" / "run_external_health_knowledge_release_gate.py"
@@ -68,6 +106,8 @@ def test_release_gate_script_runs_jsonl_import_lint_and_eval_against_fresh_sqlit
     assert report["database"]["created_schema"] is True
     assert report["jsonl"]["files"]["claims.jsonl"]["count"] >= 447
     assert report["jsonl"]["duplicate_count"] == 0
+    assert report["duplicate_titles"]["status"] == "pass"
+    assert report["duplicate_titles"]["duplicate_title_count"] == 0
     assert report["import"]["documents"] >= 841
     assert report["import"]["edges"] >= 3309
     assert all(value == 0 for value in report["lint"]["summary"].values())

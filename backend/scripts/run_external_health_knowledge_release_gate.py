@@ -86,6 +86,51 @@ def lint_jsonl_artifacts(artifact_dir: Path) -> dict[str, Any]:
     }
 
 
+def _claim_title_sources_key(row: dict[str, Any]) -> tuple[Any, tuple[Any, ...]]:
+    sources = row.get("sources")
+    if isinstance(sources, list):
+        source_key = tuple(sorted(str(s) for s in sources))
+    elif sources is None:
+        source_key = ()
+    else:
+        source_key = (str(sources),)
+    return (row.get("title"), source_key)
+
+
+def detect_duplicate_claim_titles(artifact_dir: Path) -> dict[str, Any]:
+    """Detect claims that share an identical (title, sources) pair.
+
+    Distinct from the serving-key duplicate check (which keys on doc_id): two claims
+    can carry different doc_ids yet be true content duplicates when their title AND
+    sources match. Template over-generalization produced 7 such pairs; this gate keeps
+    the count at zero so a future re-introduction fails loudly like manifest/orphan.
+    """
+    path = artifact_dir / "claims.jsonl"
+    groups: dict[tuple[Any, tuple[Any, ...]], list[str]] = {}
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue  # parse errors are surfaced by lint_jsonl_artifacts
+            key = _claim_title_sources_key(row)
+            groups.setdefault(key, []).append(str(row.get("doc_id")))
+
+    duplicates = [
+        {"title": title, "sources": list(sources), "doc_ids": doc_ids}
+        for (title, sources), doc_ids in groups.items()
+        if len(doc_ids) > 1
+    ]
+    duplicate_title_count = sum(len(dup["doc_ids"]) - 1 for dup in duplicates)
+    return {
+        "status": "fail" if duplicates else "pass",
+        "duplicate_title_count": duplicate_title_count,
+        "duplicates": duplicates,
+    }
+
+
 def validate_artifact_manifest_counts(artifact_dir: Path) -> dict[str, Any]:
     """Validate manifest counts against JSONL artifact line counts."""
 
@@ -169,6 +214,7 @@ def run_release_gate(
 
     jsonl_report = lint_jsonl_artifacts(artifact_dir)
     manifest_report = validate_artifact_manifest_counts(artifact_dir)
+    duplicate_title_report = detect_duplicate_claim_titles(artifact_dir)
 
     db = SessionLocal()
     try:
@@ -182,6 +228,7 @@ def run_release_gate(
     failed = (
         bool(jsonl_report["parse_errors"])
         or int(jsonl_report["duplicate_count"]) > 0
+        or int(duplicate_title_report["duplicate_title_count"]) > 0
         or manifest_report["status"] != "pass"
         or int(import_report.get("skipped_documents") or 0) > 0
         or lint_issue_count > 0
@@ -192,6 +239,7 @@ def run_release_gate(
         "database": database_report,
         "jsonl": jsonl_report,
         "manifest": manifest_report,
+        "duplicate_titles": duplicate_title_report,
         "import": import_report,
         "lint": lint_report,
         "eval": eval_report,
@@ -222,6 +270,11 @@ def _print_text_report(report: dict[str, Any]) -> None:
         "  manifest: "
         f"status={report['manifest']['status']} "
         f"mismatches={len(report['manifest']['mismatches'])}"
+    )
+    print(
+        "  duplicate_titles: "
+        f"status={report['duplicate_titles']['status']} "
+        f"count={report['duplicate_titles']['duplicate_title_count']}"
     )
     print(f"  lint: {report['lint']['summary']}")
     print(f"  eval: {report['eval']['passed']}/{report['eval']['total']} pass")

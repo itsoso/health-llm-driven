@@ -533,6 +533,99 @@ def update_claim_review(
     return get_claim_bundle(db, claim.doc_id, include_archived=True)
 
 
+def _write_kb_observability_audit(db: Session, op: str, diff: dict[str, Any]) -> None:
+    """Bypass audit writer for retrieval observability (kb_zero_hit / kb_citation_usage).
+
+    Mirrors app/agents/audit.py: audit is a side channel — a failure here must
+    NEVER break the calling retrieval/synthesis path. Logs a WARNING and rolls
+    back on failure, then returns.
+    """
+    try:
+        db.add(KBAudit(doc_id=None, op=op, actor="system", diff=diff))
+        db.commit()
+    except Exception as exc:  # noqa: BLE001 - audit is best-effort, never fail the caller
+        logger.warning("[system_kb] %s audit write failed (bypassed): %s", op, exc)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _claim_appears_in_text(title: str, entity_id: str, text: str) -> bool:
+    """Cheap heuristic: did this KB claim visibly inform the answer text?
+
+    Not exact attribution — an observability signal. A claim counts as "used" when
+    its entity_id (e.g. a biomarker/drug id) or a distinctive term from its title
+    surfaces in the answer:
+      * English/numeric title tokens of length >= 3 → whole-token substring;
+      * Chinese title spans → any 3-gram of the span appears in the answer
+        (3-gram, not the whole sentence, since answers paraphrase).
+    """
+    if not text:
+        return False
+    haystack = text.lower()
+    if entity_id and len(entity_id) >= 3 and entity_id.lower() in haystack:
+        return True
+    title = (title or "").strip()
+    if not title:
+        return False
+    for token in re.findall(r"[A-Za-z0-9]{3,}", title):
+        if token.lower() in haystack:
+            return True
+    for span in re.findall(r"[一-鿿]{3,}", title):
+        for i in range(len(span) - 2):
+            if span[i : i + 3] in text:
+                return True
+    return False
+
+
+def record_kb_citation_usage(
+    db: Session,
+    provided_claim_ids: list[str],
+    answer_text: str,
+    *,
+    source: str = "orchestrator",
+) -> dict[str, Any] | None:
+    """Bypass-audit how many provided KB claims visibly informed the final answer.
+
+    ``provided`` = distinct claim doc_ids that were handed to the LLM as evidence.
+    ``used`` = subset whose title/entity_id text appears in ``answer_text`` (cheap
+    substring check). Writes op="kb_citation_usage". Never raises — audit failure
+    must not affect the caller. Returns the diff dict (or None if nothing provided).
+    """
+    provided = _dedupe_preserve_order([cid for cid in (provided_claim_ids or []) if cid])
+    if not provided:
+        return None
+    try:
+        rows = (
+            db.query(KBDocument.doc_id, KBDocument.title, KBDocument.entity_id)
+            .filter(KBDocument.doc_id.in_(provided))
+            .all()
+        )
+        meta = {r.doc_id: (r.title or "", r.entity_id or "") for r in rows}
+        used_ids = [
+            cid
+            for cid in provided
+            if _claim_appears_in_text(meta.get(cid, ("", ""))[0], meta.get(cid, ("", ""))[1], answer_text)
+        ]
+        diff = {
+            "source": source,
+            "provided": len(provided),
+            "used": len(used_ids),
+            "used_ids": used_ids,
+        }
+    except Exception as exc:  # noqa: BLE001 - resolution failure must not break synthesis
+        logger.warning("[system_kb] kb_citation_usage computation failed (bypassed): %s", exc)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+    _write_kb_observability_audit(db, op="kb_citation_usage", diff=diff)
+    return diff
+
+
 def search_knowledge(
     db: Session,
     query: str,
@@ -650,6 +743,24 @@ def search_knowledge(
     )
     selected = fused[: max(1, min(limit, 50))]
 
+    # Observability: a zero-hit search is a KB coverage gap signal. Bypass-audit it
+    # (never blocks the caller). channel_stats show which legs also came up empty.
+    if not selected:
+        _write_kb_observability_audit(
+            db,
+            op="kb_zero_hit",
+            diff={
+                "query": (normalized_query or "")[:200],
+                "source": "search_knowledge",
+                "channel_stats": {
+                    "lexical": len(lexical_ranked),
+                    "fts": len(fts_ranked),
+                    "vector": len(vector_ranked),
+                    "graph": len(graph_ranked),
+                },
+            },
+        )
+
     return {
         "query": normalized_query,
         "results": [
@@ -697,7 +808,22 @@ def _postgres_fts_rank_documents(
     if not normalized_query:
         return []
 
-    ts_query = func.websearch_to_tsquery("simple", normalized_query)
+    # Segment the query into words before websearch_to_tsquery. With the indexed
+    # text also segmented (_document_search_text), the "simple" config now matches
+    # Chinese word-for-word instead of treating a whole multi-word clause as one
+    # opaque token. No PG extension is installed. Falls back to the raw query if
+    # jieba is unavailable (loud failure is the boot-time probe).
+    tsquery_input = normalized_query
+    try:
+        from app.services.zh_tokenize import seg_text
+
+        segmented_query = seg_text(normalized_query)
+        if segmented_query:
+            tsquery_input = segmented_query
+    except Exception:  # noqa: BLE001
+        logger.warning("[system_kb] jieba segmentation unavailable for FTS query; using raw query")
+
+    ts_query = func.websearch_to_tsquery("simple", tsquery_input)
     rank = func.ts_rank_cd(KBDocument.tsv, ts_query)
     query_builder = (
         db.query(KBDocument, rank.label("rank"))
@@ -759,6 +885,23 @@ def lookup_for_twin(db: Session, twin: dict[str, Any]) -> dict[str, Any]:
         excluded_claim_ids=matched_claim_ids,
     )
     matched_claims.extend(graph_claims)
+
+    # Observability: a Twin lookup that matched no claim is a KB coverage gap for
+    # the user's current state. Bypass-audit it (never blocks the caller).
+    if not matched_claims:
+        _write_kb_observability_audit(
+            db,
+            op="kb_zero_hit",
+            diff={
+                "query": ",".join(f"{et}:{eid}" for et, eid in sorted(entity_keys))[:200],
+                "source": "lookup_for_twin",
+                "channel_stats": {
+                    "entity_keys": len(entity_keys),
+                    "entities": len(entities),
+                    "contextual_entities": len(contextual_entities),
+                },
+            },
+        )
 
     return {
         "entities": [serialize_document(entity) for entity in entities],
@@ -2687,7 +2830,15 @@ def _score_precomputed_search_text(document: KBDocument, terms: list[str]) -> fl
 
 
 def _query_terms(query: str) -> list[str]:
-    """Tokenize mixed Chinese/English KB queries without external deps."""
+    """Tokenize mixed Chinese/English KB queries.
+
+    Primary terms come from jieba word segmentation (drug-name aware); the
+    existing char-bigram sliding window is UNIONED in as additional fallback
+    terms (\u52a0\u5c42\u4e0d\u51cf\u5c42) so recall never regresses relative to the pre-jieba
+    behavior. jieba is a hard dependency \u2014 if it is somehow unavailable at
+    runtime this degrades to bigrams-only rather than crashing the query path
+    (the loud failure is a boot-time ``check_zh_tokenizer_available()`` probe).
+    """
 
     seen: set[str] = set()
     terms: list[str] = []
@@ -2699,6 +2850,23 @@ def _query_terms(query: str) -> list[str]:
         seen.add(value)
         terms.append(value)
 
+    # Primary: jieba word tokens (keeps \u9ad8\u8840\u538b/\u8fd0\u52a8/\u5efa\u8bae and drug names intact).
+    # Skip length-1 Chinese tokens: a single hanzi (\u51cf/\u5242/\u5417) carries almost no
+    # discriminative signal and only adds BM25 noise that dilutes specific hits
+    # (measured: including them regressed contraindication ranks on the eval set);
+    # the char-bigram fallback below already covers 2-grams. English/numeric
+    # single-char tokens are kept (they can be meaningful, e.g. a lab code).
+    try:
+        from app.services.zh_tokenize import seg_text
+
+        for token in seg_text(query or "").split():
+            if len(token) == 1 and "\u4e00" <= token <= "\u9fff":
+                continue
+            add(token)
+    except Exception:  # noqa: BLE001 - boot probe is the loud path; here stay resilient
+        logger.warning("[system_kb] jieba segmentation unavailable in _query_terms; using bigrams only")
+
+    # Additional (unioned, never replacing): regex words + Chinese char bigrams.
     for token in re.findall(r"[A-Za-z0-9_+.-]+|[\u4e00-\u9fff]+", query or ""):
         add(token)
         if re.fullmatch(r"[\u4e00-\u9fff]+", token) and len(token) > 2:
@@ -3230,7 +3398,21 @@ def _document_search_text(document: KBDocument) -> str:
         " ".join(document.applies_when or []),
         " ".join(document.recommends_lookup or []),
     ]
-    return "\n".join(str(chunk) for chunk in chunks if chunk)
+    raw = "\n".join(str(chunk) for chunk in chunks if chunk)
+    # Append a jieba-segmented (space-separated) view so PostgreSQL
+    # to_tsvector("simple", ...) and the precomputed-text scorer see real word
+    # boundaries for Chinese. The raw text is kept verbatim so English tokens /
+    # doc_ids / numbers are untouched (加层不减层). Reindexing must be re-run
+    # after deploy for existing rows to pick up the segmented text.
+    try:
+        from app.services.zh_tokenize import seg_text
+
+        segmented = seg_text(raw)
+        if segmented:
+            return raw + "\n" + segmented
+    except Exception:  # noqa: BLE001 - boot probe is the loud path; indexing stays resilient
+        logger.warning("[system_kb] jieba segmentation unavailable in _document_search_text; indexing raw only")
+    return raw
 
 
 def _compact_issue(document: KBDocument) -> dict[str, Any]:

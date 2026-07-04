@@ -68,6 +68,17 @@ def _is_reviewed(row: dict[str, Any]) -> bool:
     return isinstance(meta, dict) and meta.get("review_status") == "reviewed"
 
 
+def _claim_title_sources_key(row: dict[str, Any]) -> tuple[Any, tuple[Any, ...]]:
+    sources = row.get("sources")
+    if isinstance(sources, list):
+        source_key = tuple(sorted(str(s) for s in sources))
+    elif sources is None:
+        source_key = ()
+    else:
+        source_key = (str(sources),)
+    return (row.get("title"), source_key)
+
+
 def check_seed_integrity(artifact_dir: Path) -> dict[str, Any]:
     """Return a report dict; ``status == "pass"`` iff the seed is release-gate clean."""
     artifact_dir = Path(artifact_dir)
@@ -122,6 +133,27 @@ def check_seed_integrity(artifact_dir: Path) -> dict[str, Any]:
     orphan_claims = sorted(cid for cid in claim_rows if cid not in linked)
     orphan_entities = sorted(eid for eid in entity_ids if eid not in linked)
 
+    # --- gate 3: no duplicate claims (identical title + sources) ---------------
+    # A doc_id-unique claim can still be a true content duplicate when its title AND
+    # sources match another; the release-gate's serving-key check (doc_id) misses it.
+    title_groups: dict[tuple[Any, tuple[Any, ...]], list[str]] = {}
+    for row in _read_rows(artifact_dir / "claims.jsonl"):
+        doc_id = row.get("doc_id")
+        if not doc_id:
+            continue
+        title_groups.setdefault(_claim_title_sources_key(row), []).append(str(doc_id))
+    duplicate_titles = [
+        {"title": title, "sources": list(sources), "doc_ids": sorted(doc_ids)}
+        for (title, sources), doc_ids in title_groups.items()
+        if len(doc_ids) > 1
+    ]
+    for dup in duplicate_titles:
+        problems.append(
+            f"duplicate claim title+sources: {dup['title']!r} "
+            f"sources={dup['sources']} appears in {dup['doc_ids']} — "
+            f"keep the canonical claim (most edges) and re-point its edges."
+        )
+
     for cid in orphan_claims:
         row = claim_rows[cid]
         want = row.get("recommends_lookup") or []
@@ -141,6 +173,7 @@ def check_seed_integrity(artifact_dir: Path) -> dict[str, Any]:
         "actual_counts": actual_counts,
         "orphan_claims": orphan_claims,
         "orphan_entities": orphan_entities,
+        "duplicate_titles": duplicate_titles,
     }
 
 
