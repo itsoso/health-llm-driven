@@ -279,6 +279,53 @@ describe('renderCard 安全降级', () => {
     );
   });
 
+  it('renders medication draft cards with safe route actions', () => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'medication_draft',
+      data: {
+        medication_name: '替普瑞酮胶囊（施维舒）',
+        dose: '20mg',
+        confidence: 0.9,
+        source: 'chat',
+        suggestions: ['确认前核对药名、剂量和服用时间'],
+        boundary: '确认后记录为已服用; 不替代医嘱, 不调整剂量。',
+      },
+      actions: [
+        {
+          id: 'open-medication-draft',
+          label: '去用药页记录',
+          action: 'route.open',
+          style: 'primary',
+          payload: { route: '/medications?draft=medication&name=%E6%9B%BF%E6%99%AE%E7%91%9E%E9%85%AE' },
+        },
+        {
+          id: 'ask-medication-draft',
+          label: '问阿衡',
+          action: 'route.open',
+          style: 'secondary',
+          payload: { route: '/chat?prompt=%E8%AF%B7%E5%B8%AE%E6%88%91%E6%A0%B8%E5%AF%B9' },
+        },
+      ],
+    } as any;
+
+    const element = renderCard(descriptor, { onAction });
+    expect(element).not.toBeNull();
+
+    const { getByText } = render(element!);
+    expect(getByText('用药 · 待确认')).toBeTruthy();
+    expect(getByText('替普瑞酮胶囊（施维舒）')).toBeTruthy();
+    expect(getByText('20mg')).toBeTruthy();
+    expect(getByText('置信度 90% · 来源: 对话')).toBeTruthy();
+    expect(getByText('确认后记录为已服用; 不替代医嘱, 不调整剂量。')).toBeTruthy();
+
+    fireEvent.press(getByText('去用药页记录'));
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'route.open' }),
+      expect.objectContaining({ type: 'medication_draft' }),
+    );
+  });
+
   it('lets users edit a diet draft inline before confirming it', () => {
     const onAction = jest.fn();
     const descriptor = {

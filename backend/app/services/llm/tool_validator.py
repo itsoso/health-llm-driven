@@ -25,49 +25,16 @@ LLM Tool Call 守门 — 所有 health_record / record_type=X 的参数过这一
 from __future__ import annotations
 
 import logging
-import re
 from datetime import datetime, date, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from app.services.health_query_dimensions import normalize_health_query_args
+from app.services.intake_intent_classifier import classify_intake_intent
 
 # 北京时区 (UTC+8) — 用户活动以中国本地日期为准
 BEIJING_TZ = timezone(timedelta(hours=8))
 
 logger = logging.getLogger(__name__)
-
-
-_DIET_MANAGEMENT_INTENT_MARKERS = (
-    "删除",
-    "删掉",
-    "删了",
-    "删去",
-    "移除",
-    "撤销",
-    "取消记录",
-    "取消这一餐",
-    "取消这餐",
-    "误删",
-    "不小心删",
-    "恢复",
-    "找回",
-)
-
-_NON_DIET_INTAKE_MARKERS = (
-    "替普瑞酮",
-    "施维舒",
-    "奥美拉唑",
-    "雷贝拉唑",
-    "泮托拉唑",
-    "埃索美拉唑",
-    "阿莫西林",
-    "布洛芬",
-    "氯雷他定",
-    "西替利嗪",
-    "孟鲁司特",
-    "二甲双胍",
-    "美沙拉嗪",
-)
 
 
 def _flatten_text(value: Any) -> str:
@@ -80,35 +47,12 @@ def _flatten_text(value: Any) -> str:
 
 def _looks_like_diet_management_intent(value: Any) -> bool:
     """LLM 有时把“删除/误删这餐”当成 diet.food_items, 写库前硬拦截."""
-    raw = _flatten_text(value)
-    if not raw:
-        return False
-    normalized = re.sub(r"\s+", "", raw).lower()
-    if not normalized:
-        return False
-    return any(marker.lower() in normalized for marker in _DIET_MANAGEMENT_INTENT_MARKERS)
+    return classify_intake_intent(_flatten_text(value)).kind == "diet_management"
 
 
 def _looks_like_non_diet_intake(value: Any) -> bool:
     """药物/补剂摄入不能落成 DietRecord, 写库前硬拦截."""
-    raw = _flatten_text(value)
-    if not raw:
-        return False
-    normalized = re.sub(r"\s+", "", raw).lower()
-    if not normalized:
-        return False
-
-    if any(marker.lower() in normalized for marker in _NON_DIET_INTAKE_MARKERS):
-        return True
-    if re.search(r"服药|吃药|用药|药物|药品|处方药|非处方药|抗生素|止痛药|胃药", normalized):
-        return True
-    if re.search(r"(?:胶囊|缓释片|肠溶片|分散片|口服液|滴剂|喷雾|吸入剂|颗粒)", normalized):
-        return True
-    if re.search(r"\d+(?:\.\d+)?(?:mg|毫克|μg|ug|iu|单位)", normalized):
-        return True
-    if re.search(r"(?:拉唑|瑞酮|霉素|沙星|洛芬|司特|他汀|地平|沙坦|普利|格列|替丁)", normalized):
-        return True
-    return False
+    return classify_intake_intent(_flatten_text(value)).kind in {"medication", "supplement"}
 
 
 # ─────────────────────── 数值范围白名单 ──────────────────────

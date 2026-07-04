@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.services import agenda_service
 from app.services.health_operating_review import build_health_operating_review
+from app.services.intake_intent_classifier import classify_intake_intent
 from app.services.metric_chart_cards import build_metric_chart
 
 logger = logging.getLogger(__name__)
@@ -220,46 +221,7 @@ def _is_water_only_record(q: str) -> bool:
 
 
 def _looks_like_diet_record(q: str) -> bool:
-    if not _is_record_intent(q):
-        return False
-    if _is_water_only_record(q):
-        return False
-    if _looks_like_non_diet_intake(q):
-        return False
-    return bool(re.search(r"吃了|刚吃|早餐|早饭|午餐|中饭|晚餐|晚饭|加餐|夜宵|零食|餐食|食物", q))
-
-
-def _looks_like_non_diet_intake(q: str) -> bool:
-    normalized = re.sub(r"\s+", "", q).lower()
-    if not normalized:
-        return False
-
-    medication_markers = (
-        "替普瑞酮",
-        "施维舒",
-        "奥美拉唑",
-        "雷贝拉唑",
-        "泮托拉唑",
-        "埃索美拉唑",
-        "阿莫西林",
-        "布洛芬",
-        "氯雷他定",
-        "西替利嗪",
-        "孟鲁司特",
-        "二甲双胍",
-        "美沙拉嗪",
-    )
-    if any(marker.lower() in normalized for marker in medication_markers):
-        return True
-    if re.search(r"服药|吃药|用药|药物|药品|处方药|非处方药", normalized):
-        return True
-    if re.search(r"(?:胶囊|缓释片|肠溶片|分散片|口服液|滴剂|喷雾|吸入剂|颗粒)", normalized):
-        return True
-    if re.search(r"\d+(?:\.\d+)?(?:mg|毫克|μg|ug)\b", normalized):
-        return True
-    if re.search(r"(?:拉唑|瑞酮|霉素|沙星|洛芬|司特|他汀|地平|沙坦|普利|格列|替丁)", normalized):
-        return True
-    return False
+    return classify_intake_intent(q).kind == "diet"
 
 
 def _infer_meal_type_from_query(q: str) -> str:
@@ -379,6 +341,31 @@ def _diet_draft_route(data: Dict[str, Any]) -> str:
     return f"/diet?{urlencode(params)}"
 
 
+def _medication_draft_actions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    name = data.get("medication_name") if isinstance(data.get("medication_name"), str) else ""
+    prompt = f"请帮我核对{name}的用药记录，不要建议我自行停药、换药或改剂量。" if name else "请帮我核对刚才的用药记录。"
+    return [
+        {
+            "id": "open-medication-draft",
+            "label": "去用药页记录",
+            "action": "route.open",
+            "payload": {
+                "route": f"/medications?{urlencode({'draft': 'medication', 'name': name})}",
+            },
+            "style": "primary",
+        },
+        {
+            "id": "ask-medication-draft",
+            "label": "问阿衡",
+            "action": "route.open",
+            "payload": {
+                "route": f"/chat?{urlencode({'prompt': prompt})}",
+            },
+            "style": "secondary",
+        },
+    ]
+
+
 # ── individual builders ────────────────────────────────────────────
 
 def _build_metric_chart(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
@@ -492,12 +479,13 @@ def _build_runtime_agenda(db: Session, user_id: int, q: str) -> Optional[Dict[st
 
 
 def _build_diet_draft(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
-    if not _looks_like_diet_record(q):
+    intent = classify_intake_intent(q)
+    if intent.kind != "diet":
         return None
-    food_items = _extract_food_items(q)
+    food_items = intent.text or _extract_food_items(q)
     if not food_items:
         return None
-    meal_type = _infer_meal_type_from_query(q)
+    meal_type = intent.slots.get("meal_type") if isinstance(intent.slots.get("meal_type"), str) else _infer_meal_type_from_query(q)
     calories = _extract_number(
         q,
         r"(?:热量|约|大约|总共)?\s*(\d+(?:\.\d+)?)\s*(?:kcal|千卡|大卡|卡路里)",
@@ -530,6 +518,30 @@ def _build_diet_draft(db: Session, user_id: int, q: str) -> Optional[Dict[str, A
             data[key] = value
     if meal_type in {"lunch", "dinner"} or (isinstance(calories, (int, float)) and calories >= 300):
         data["post_meal_walk"] = {"recommended": True, "minutes": 10}
+    return data
+
+
+def _build_medication_draft(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
+    intent = classify_intake_intent(q)
+    if intent.kind != "medication":
+        return None
+    medication_name = intent.text.strip()
+    if not medication_name:
+        return None
+    data: Dict[str, Any] = {
+        "medication_name": medication_name,
+        "confidence": intent.confidence,
+        "source": "chat",
+        "suggestions": [
+            "确认前核对药名、剂量和服用时间",
+            "如药品不在清单中, 先添加到用药管理",
+        ],
+        "boundary": "确认后记录为已服用; 不替代医嘱, 不调整剂量。",
+    }
+    if intent.slots.get("dose"):
+        data["dose"] = intent.slots["dose"]
+    if intent.slots.get("taken_time"):
+        data["taken_time"] = intent.slots["taken_time"]
     return data
 
 
@@ -733,6 +745,7 @@ def _build_diet(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
 
 _BUILDERS = [
     ("record_intent_skip", lambda db, uid, q: None),
+    ("medication_draft", _build_medication_draft),
     ("diet_draft", _build_diet_draft),
     ("metric_chart", _build_metric_chart),
     ("operating_review", _build_operating_review),
@@ -773,6 +786,8 @@ def build_cards(db: Session, user_id: int, query: str) -> List[Dict[str, Any]]:
             card: Dict[str, Any] = {"type": card_type, "data": data}
             if card_type == "runtime_agenda":
                 card["actions"] = _runtime_agenda_actions(data)
+            if card_type == "medication_draft":
+                card["actions"] = _medication_draft_actions(data)
             if card_type == "diet_draft":
                 card["actions"] = _diet_draft_actions(data)
             if card_type == "operating_review":

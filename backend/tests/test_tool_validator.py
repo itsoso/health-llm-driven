@@ -157,6 +157,8 @@ class TestDietMedicationGuard:
         "替普瑞酮胶囊（施维舒）",
         "奥美拉唑20mg",
         ["刚服用了", "雷贝拉唑肠溶片 10mg"],
+        "鱼油",
+        "维生素D3",
     ])
     def test_medication_terms_never_become_diet_food_items(self, food_items):
         v = validate_tool_call("health_record", {
@@ -172,7 +174,7 @@ class TestDietMedicationGuard:
         })
 
         assert v["error"] is not None
-        assert "medication" in v["error"]
+        assert "medication" in v["error"] or "supplement" in v["error"]
         assert any("药物" in warning for warning in v["warnings"])
 
     def test_food_with_similar_context_still_passes(self):

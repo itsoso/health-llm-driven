@@ -234,6 +234,45 @@ def test_inline_cards_diet_draft_does_not_trigger_for_medication_intake():
         assert all(card["type"] != "diet_draft" for card in cards)
 
 
+def test_inline_cards_builds_medication_draft_for_medication_intake():
+    from app.services import inline_cards
+
+    cards = inline_cards.build_cards(db=None, user_id=3, query="记录刚吃了替普瑞酮胶囊（施维舒）")
+
+    assert cards[0]["type"] == "medication_draft"
+    assert cards[0]["data"]["medication_name"] == "替普瑞酮胶囊（施维舒）"
+    assert cards[0]["data"]["source"] == "chat"
+    assert cards[0]["data"]["confidence"] == 0.9
+    assert cards[0]["actions"] == [
+        {
+            "id": "open-medication-draft",
+            "label": "去用药页记录",
+            "action": "route.open",
+            "payload": {
+                "route": "/medications?draft=medication&name=%E6%9B%BF%E6%99%AE%E7%91%9E%E9%85%AE%E8%83%B6%E5%9B%8A%EF%BC%88%E6%96%BD%E7%BB%B4%E8%88%92%EF%BC%89"
+            },
+            "style": "primary",
+        },
+        {
+            "id": "ask-medication-draft",
+            "label": "问阿衡",
+            "action": "route.open",
+            "payload": {
+                "route": "/chat?prompt=%E8%AF%B7%E5%B8%AE%E6%88%91%E6%A0%B8%E5%AF%B9%E6%9B%BF%E6%99%AE%E7%91%9E%E9%85%AE%E8%83%B6%E5%9B%8A%EF%BC%88%E6%96%BD%E7%BB%B4%E8%88%92%EF%BC%89%E7%9A%84%E7%94%A8%E8%8D%AF%E8%AE%B0%E5%BD%95%EF%BC%8C%E4%B8%8D%E8%A6%81%E5%BB%BA%E8%AE%AE%E6%88%91%E8%87%AA%E8%A1%8C%E5%81%9C%E8%8D%AF%E3%80%81%E6%8D%A2%E8%8D%AF%E6%88%96%E6%94%B9%E5%89%82%E9%87%8F%E3%80%82"
+            },
+            "style": "secondary",
+        },
+    ]
+
+
+def test_inline_cards_diet_management_does_not_create_diet_draft():
+    from app.services import inline_cards
+
+    cards = inline_cards.build_cards(db=None, user_id=3, query="删除这一餐")
+
+    assert all(card["type"] != "diet_draft" for card in cards)
+
+
 def test_inline_cards_builds_operating_review_card(monkeypatch):
     from app.services import inline_cards
 
