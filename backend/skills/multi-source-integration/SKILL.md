@@ -3,7 +3,7 @@ name: multi-source-integration
 description: Integrate multi-source health data — unified timeline from Garmin (minute-level), diet (meal-level), labs (month/year), and genetics (one-time). Cross-modal correlation analysis, data completeness reporting, and integrated health profile generation.
 version: 1.0.0
 metadata:
-  openclaw:
+  agent:
     requires:
       env: [HEALTH_API_URL, HEALTH_API_TOKEN]
       bins: [curl]

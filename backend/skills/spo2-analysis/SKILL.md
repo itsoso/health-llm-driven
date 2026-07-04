@@ -3,7 +3,7 @@ name: spo2-analysis
 description: 夜间血氧 SpO2 时间序列分析 — 查看逐分钟 SpO2 曲线、氧减指数 (ODI)、低氧事件统计、多夜趋势，用于睡眠呼吸暂停 (OSAHS) 筛查和夜间氧合评估。
 version: 1.0.0
 metadata:
-  openclaw:
+  agent:
     requires:
       env: [HEALTH_API_URL, HEALTH_API_TOKEN]
       bins: [curl]

@@ -3,7 +3,7 @@ name: chronic-risk-assessment
 description: Assess chronic disease risk — cardiovascular (modified Framingham), metabolic syndrome (IDF criteria), and 90-day trend analysis. Integrates wearable data (Garmin), labs, vitals, and genetic markers for personalized risk scoring with confidence intervals.
 version: 1.0.0
 metadata:
-  openclaw:
+  agent:
     requires:
       env: [HEALTH_API_URL, HEALTH_API_TOKEN]
       bins: [curl]

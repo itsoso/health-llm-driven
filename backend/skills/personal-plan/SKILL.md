@@ -3,7 +3,7 @@ name: personal-plan
 description: 生成并保存个性化健康计划（训练、饮食、恢复、复查等），支持从对话中创建任意时间跨度的计划并固化到首页。当用户要求制定计划、安排时间表、创建方案时使用。
 version: 1.0.0
 metadata:
-  openclaw:
+  agent:
     requires:
       env: [HEALTH_API_URL, HEALTH_API_TOKEN]
       bins: [curl]

@@ -125,7 +125,7 @@ set_caller("genetic.pdf_vision", user_id=current_user.id)
 ## §4 Mobile 侧 (红)
 
 - ✅ 有 `medical-exams.tsx` 列表页 + `medical-exam-detail.tsx` 详情页 (含对比)
-- 🔴 **没有上传入口** — 注释 (medicalExams.ts:L7) 承认 "上传仍走 chat → OpenClaw skill, 那是 OCR 工作量太大暂不重做"
+- 🔴 **没有上传入口** — 体检导入应走一方 Agent 上传/OCR/结构化链路,不再依赖外部分发 skill
 - 🔴 **没有任何基因数据页面** (list/detail/upload 全无)
 - 🔴 没有 DocumentPicker / 相机 OCR 的封装
 

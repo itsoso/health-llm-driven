@@ -1,8 +1,4 @@
-"""Agent conversation persistence models.
-
-The physical table names are kept for compatibility with existing production
-data. New code should use AgentConversation / AgentMessage names.
-"""
+"""Agent conversation persistence models."""
 from datetime import UTC, datetime
 
 from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text
@@ -15,7 +11,7 @@ from app.database import Base
 class AgentConversation(Base):
     """Unified health assistant conversation."""
 
-    __tablename__ = "openclaw_conversations"
+    __tablename__ = "agent_conversations"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
@@ -32,19 +28,19 @@ class AgentConversation(Base):
     )
 
     __table_args__ = (
-        Index("ix_openclaw_conv_user_updated", "user_id", "updated_at"),
+        Index("ix_agent_conv_user_updated", "user_id", "updated_at"),
     )
 
 
 class AgentMessage(Base):
     """Unified health assistant message."""
 
-    __tablename__ = "openclaw_messages"
+    __tablename__ = "agent_messages"
 
     id = Column(Integer, primary_key=True, index=True)
     conversation_id = Column(
         Integer,
-        ForeignKey("openclaw_conversations.id", ondelete="CASCADE"),
+        ForeignKey("agent_conversations.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

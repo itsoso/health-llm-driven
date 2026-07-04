@@ -57,7 +57,7 @@ Claude 的竞品调研有两类价值：
 | **Twin 状态镜像** | ✅ real | `twin/schema.py:463` 16 分区；`build_twin` 三阶段并行 filler；~45 消费者；60s Redis 缓存；`twin_to_prompt_blob` 带分区新鲜度；69 测试 | TwinSnapshot 仅 cycle 路径写，无周期快照；`quality_grade` 算了没人读；并存 legacy `DigitalTwinService` |
 | **Trajectory / 预测** | 🟡 partial | `health_trajectory.py` 当前态风险快照（state_variable/horizon/uncertainty 合同，3 消费者含 agenda top-action）；personal baseline z-score；RHR 偏离哨兵 | **无任何前向预测**——全是回顾性；`_prediction_backtest_placeholder` 硬返回 `not_ready`；`trajectory_watch` 因缺快照饿死 |
 | **Safety 安全门** | ✅ real | 62 条 `@register` 规则、registry 引擎、7+ 消费面；watch 症状路径 fail-loud→fail-safe HIGH advisory；R4 guidance 校验 + AdviceGuard | **当前分支** fail-loud `failed_rule_count` 只有 `watch.py:337` 一个消费者；竞品报告复核 `origin/main` 后指出用药/自治写等路径已扩接，剩余重点应窄到 `guardian.py`/报告面/orchestrator under-alarm；LLM 合成层仍需对抗门 |
-| **LLM/工具综合** | ✅ real | Orchestrator 合成带 safety wrap + memory + system-KB 注入；AgentExecutor 统一 tool-calling + 弱模型门控；provider failover；SSE 流式 | 4 个聊天入口并存；OpenClaw skill 分支在默认 tokenplan provider 下走不到；IQS grounding 失败返回 `''` 永不阻断 |
+| **LLM/工具综合** | ✅ real | Orchestrator 合成带 safety wrap + memory + system-KB 注入；AgentExecutor 统一 tool-calling + 弱模型门控；provider failover；SSE 流式 | 聊天入口正在收敛到一方 Agent；IQS grounding 失败返回 `''` 永不阻断 |
 | **Action Ranker 排序** | ✅ real | `action_ranker` 读 `item['trajectory_context']` 套 `_TRAJECTORY_LEVEL_BOOST {high:45, attention:25}`；trajectory_context 在 agenda_service 构建并端到端测试 | 两套未统一排序公式：`action_ranker`（watch）vs `agenda_service._rank_score`（smart_today），两端排序数学不同 |
 | **Agenda 执行合同** | ✅ real | 后端单一合同 `health_agenda_contract_v1` + smart_today top-N + 时序 today-spine；mobile 共用完成路径；HealthProtocol `today_status` 喂脊柱 | 6:00 Celery "daily plan" 建的是 **legacy AIScheduler 晨报，不是 DailyOperatingPlan**；DOP 只在读时惰性生成；三套规划面并存 |
 | **Surface 执行** | ✅ real | `complete_by_ref/complete_agenda_event` 物化 HealthEvent 并双写真实源（MedicationLog/SupplementRecord/WaterIntake/DietRecord/ExerciseRecord）；**原子 DB 认领防虚高依从**；mobile Hero 内联完成 + watch 一键 + timeline 全汇于此 | 已接通路径无大缺口；voice_actionable 安全正确地从 `source_model` 派生 |
@@ -65,7 +65,7 @@ Claude 的竞品调研有两类价值：
 | **Outcome Review 复盘** | 🟡 partial | ActionCard 结果评分（`outcome_grader` Celery → accuracy_score）；InterventionCycle/OutcomeMetric（baseline→recheck→delta，RCV 显著性）；health_operating_review 带归因 caveat | InterventionCycle recheck **无定时自动复测**，只在用户/LLM 显式调用时闭；预测 backtest 是 inert 占位；结果评分只覆盖 ActionCard，不覆盖自由文本 agent 输出 |
 | **Causal Memory 因果记忆** | 🟡 partial | `causal_memory.derive_causal_notes`（事件×指标，\|pct\|≥5%）；AgentAuditLog→推理轨迹/eval/审计；TwinSnapshot dedupe；intervention_significance RCV 门 | **有意做弱**（时序关联、硬编码"相关非因果"、小白名单）；crystallize 入库环刻意 inert（只产草稿）；`protocol_learning_watch` 写 `notified=False` 审计行**无人读**（开环） |
 | **Knowledge 知识库** | 🟡 beta | System-KB v2 reviewed-first DB 支撑（**419 claims / 219 entities / 3171 relations，100% reviewed**）；hybrid search + twin-match + prompt 注入；导入/服务/eval 三处 reviewed 门；**34/34 eval slice 通过**；confidence 衰减按 beat 运行 | KB eval 仅测试期跑，无生产/定时 eval 信号；legacy ChromaDB RAG 已默认关闭，仅显式 `LEGACY_KNOWLEDGE_RUNTIME_ENABLED=true` 时可作为旧路径启用；vector 流是同义词扩展不是真 embedding |
-| **External Agent 外部** | 🟡 partial | OpenClaw SSE 代理上线带 per-user `HEALTH_API_TOKEN` 注入（真多租户 skill 鉴权）；22 个 SKILL.md；可分发 skills 部署校验；assistant-openclaw BYO 绑定测试 | `_needs_skill` OpenClaw 分支在默认 provider 下死；MCP server（18 工具）未挂载无生产消费；Telegram inbound 单硬编码用户；kuaishou/food_order/skills-hub 是 `NotImplementedError`/不存在仓库的桩 |
+| **Agent / MCP 外部** | 🟡 partial | 一方 Agent 运行时 skills 随后端部署；MCP server（18 工具）仍可作为中立协议入口 | 外部分发通道不再走第三方网关；MCP server 未挂载无生产消费；Telegram inbound 单硬编码用户；kuaishou/food_order/skills-hub 是 `NotImplementedError`/不存在仓库的桩 |
 
 ### 1.2 一等对象账本（是否真接进每日闭环）
 
@@ -240,7 +240,7 @@ Enter键 = Write权限 × 个体化先验 × 闭环验证
 
 > 愿景 PRD 自己也点名"surface 太多"。核验给出**确切的重复实体**——这是 Phase 0 必须收口的：
 
-- **4 个聊天入口**：`/agent/stream`（canonical tool-calling）、`/orchestrator/chat[/stream]`（只读专家综合）、`/openclaw/stream`（legacy，前端注释已迁走砍一半 LLM 成本却仍接着）、`/assistant-openclaw/stream`（BYO）。mobile 只用 `/agent/stream`，web 接三个。
+- **聊天入口收敛**：`/agent/stream` 是 canonical tool-calling；`/orchestrator/chat[/stream]` 保留只读专家综合；legacy channel/BYO channel 已退役，mobile 和 web 都应默认走一方 Agent。
 - **6+ 个 today plan/score/coach 面**同时被不同屏消费：`/daily-plan`、`/smart-plan`（WeeklyPlan）、`/movement/plan`、`/diet-plan`、`/daily-recommendation`、`/health-score`——一个不死，比死了更糟。
 - **2 个 Twin**：canonical `/twin/me`（16 分区、~45 消费者）vs legacy `/digital-twin/*`（8 端点、自带 BMR/TDEE/health-score/report）。mobile 读 `/twin/me`，web 首页仍读 `/digital-twin/report`。
 - **2 个 N-of-1 估计器**：`personal_models/treatment_effect.py`（端点，`verdict=improved_in_cycle`）vs `services/effect_estimator.py`（prompt-blob，`is_effective`），仅共用 clinician-gate 关键词表。
@@ -319,7 +319,7 @@ Enter键 = Write权限 × 个体化先验 × 闭环验证
 target_user:                    # 默认 35-55 慢病早期男性，偏离要给理由
 health_problem_or_goal:
 first_class_object:             # 必须落 Twin/Problem/Program/Protocol/Agenda/WriteIntent/InterventionCycle/ActionCard 之一，否则不做
-surface_owner:                  # Mobile/Watch/Rokid/Mac/Web/OpenClaw/Backend（按 surface-ownership-inventory）
+surface_owner:                  # Mobile/Watch/Rokid/Mac/Web/Agent/MCP/Backend（按 surface-ownership-inventory）
 core_loop_step:                 # 必须改进核心环，不是新增并列页
 daily_artifact_impact:          # 是否改善每日工件：状态判断/top action/证据/完成/skip reason
 habituation_guard:              # 是否限制行动数、动态投递、记录跳过原因、监控周衰减

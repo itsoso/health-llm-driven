@@ -17,7 +17,7 @@
 | **Twin**(`twin/builder.py` + `_collectors.fetch_latest_labs`) | 归一表 `MedicalIndicator` | ✅ 正常,能看到化验 |
 | **health_query**(`agent_executor.py` 化验维度) | 原始 `/medical-exams/me` HTTP API,再经 `_api_get` **3000 字符截断成前 10 条** | ❌ 截断 + 日期窗 + 走原始表 → 查空/查不全 |
 
-这不是孤例,是**一整类 bug**:任何"Twin 读 A 层、工具读 B 层"的地方都会在某天打架。全局 review 还发现**三套会话端点**(`/openclaw/conversations`、`/assistant-openclaw/conversations`、`/agent/conversations`)是同款"重复读路径"病。**"读路径分叉"是本仓库一个反复出现的主题。**
+这不是孤例,是**一整类 bug**:任何"Twin 读 A 层、工具读 B 层"的地方都会在某天打架。全局 review 还发现过多套会话端点并存(legacy channel/BYO channel/一方 Agent)的同款"重复读路径"病。**"读路径分叉"是本仓库一个反复出现的主题。**
 
 ---
 
@@ -92,7 +92,7 @@
 
 2. **health_read 抽到哪一层**:新建 `backend/app/services/health_read_service.py`,还是扩 `biomarker_service` + `multi_source_integration_service` 暴露统一查询接口?倾向后者(复用,不新造)。
 
-3. **OpenClaw skills 的 health-query**(`backend/skills/health-query`)是**另一套 auth/client 上下文**(第三方 OpenClaw 实例)——这次**不动**,只统一 agent 内的 health_query。但长期它也应调同一 service 层。
+3. **一方 Agent skill 的 health-query**(`backend/skills/health-query`)应复用同一 auth/client 上下文,避免再次产生独立读路径。长期所有查询入口都应调同一 service 层。
 
 ---
 
@@ -101,7 +101,7 @@
 - ❌ 不重写 Twin(快照模型是对的)。
 - ❌ 不砍 health_query(查询工具是必要的)。
 - ❌ 不动写入路径(本文档只谈读)。
-- ❌ 不在本轮碰 OpenClaw 第三方 skill 的 auth 模型。
+- ❌ 不在本轮新增外部 Agent 分发 auth 模型。
 
 ---
 

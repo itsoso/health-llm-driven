@@ -56,7 +56,7 @@ def test_connection_consent_grant_and_revoke(client, auth_user_and_headers):
         headers=headers,
         json={
             "grantee_type": "external_agent",
-            "grantee_id": "openclaw",
+            "grantee_id": "aheng-agent",
             "scopes": ["labs.read"],
             "purpose": "reviewed health analysis",
         },

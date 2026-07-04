@@ -3,7 +3,7 @@ name: health-analysis
 description: Get AI health analysis, daily recommendations, health trend predictions, and health scores. Use when the user asks for health advice, trend analysis, risk assessment, or wellness recommendations.
 version: 1.0.0
 metadata:
-  openclaw:
+  agent:
     requires:
       env: [HEALTH_API_URL, HEALTH_API_TOKEN]
       bins: [curl]

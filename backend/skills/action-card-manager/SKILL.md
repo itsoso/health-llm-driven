@@ -3,7 +3,7 @@ name: action-card-manager
 description: 管理首页行动卡片 — 创建、查询、完成、归档。当用户想把某条建议固化到首页、查看当前行动计划、标记完成，使用这个 skill。
 version: 1.0.0
 metadata:
-  openclaw:
+  agent:
     requires:
       env: [HEALTH_API_URL, HEALTH_API_TOKEN]
       bins: [curl]

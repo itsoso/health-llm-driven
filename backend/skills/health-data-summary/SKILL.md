@@ -3,7 +3,7 @@ name: health-data-summary
 description: 综合查询健康数据 — Digital Health Twin 快照、Safety 告警、长期趋势、Orchestrator 多专家分析。当用户想了解自己的整体健康状况、趋势变化、安全风险时使用。
 version: 1.0.0
 metadata:
-  openclaw:
+  agent:
     requires:
       env: [HEALTH_API_URL, HEALTH_API_TOKEN]
       bins: [curl]

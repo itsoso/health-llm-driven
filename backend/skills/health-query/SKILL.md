@@ -3,7 +3,7 @@ name: health-query
 description: Query health data from the Health Management System - steps, heart rate, HRV, SpO2, sleep, weight, blood pressure, workouts, diet, and checkin status. Use when the user asks about their health metrics, fitness data, or daily stats.
 version: 1.0.0
 metadata:
-  openclaw:
+  agent:
     requires:
       env: [HEALTH_API_URL, HEALTH_API_TOKEN]
       bins: [curl]

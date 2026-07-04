@@ -251,7 +251,7 @@ DailyOperatingPlan.actions 注入当日用药条目(补 0% 缺口)
 | Twin 分区 | `backend/app/twin/schema.py:MedicationState` | 加 course_phase/days_left |
 | 疗程→复查 | `backend/app/services/medication_course_service.py` | 复用(PPI→胃镜已映射) |
 | 安全规则 | `backend/app/agents/safety_guardian/rules/{ddi,pgx,dsi}.py` | 复用 + 补长期 PPI |
-| OpenClaw skill | `backend/skills/medication-tracker/SKILL.md` | 复用(对话式录入) |
+| 一方 Agent skill | `backend/skills/medication-tracker/SKILL.md` | 复用(对话式录入) |
 | 前端页 | `frontend/src/app/medication/page.tsx` | 加方案视图 |
 | 移动端 | `mobile/app/medications.tsx`、`mobile/services/medicationReminders.ts` | 加方案录入屏;Android 通知待补 |
 | 通知 | `backend/app/services/notification/push_service.py` | 复用 |

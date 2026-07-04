@@ -3,7 +3,7 @@
 > Status: code-derived baseline
 > Updated: 2026-06-27
 > Owner: Reva / Personal Health OS
-> Source basis: repo-wide inventory plus focused reading of `README.md`, `docs/specs/reva-product-governance-spec.md`, `docs/prd/reva-personal-health-os-prd.md`, `docs/prd/2026-06-16-health-leverage-action-os-pdd.md`, `docs/rfc-agent-native-health-os.md`, `docs/ARCHITECTURE.md`, `docs/specs/active/2026-06-26-surface-ownership-inventory.md`, backend domain models/services/APIs/tests, and Mobile/Watch/Mac/Web/OpenClaw/MCP surfaces.
+> Source basis: repo-wide inventory plus focused reading of `README.md`, `docs/specs/reva-product-governance-spec.md`, `docs/prd/reva-personal-health-os-prd.md`, `docs/prd/2026-06-16-health-leverage-action-os-pdd.md`, `docs/rfc-agent-native-health-os.md`, `docs/ARCHITECTURE.md`, `docs/specs/active/2026-06-26-surface-ownership-inventory.md`, backend domain models/services/APIs/tests, and Mobile/Watch/Mac/Web/Agent/MCP surfaces.
 > Competitive correction: incorporates [`../reports/2026-06-27-competitive-benchmark-and-prd-critique.md`](../reports/2026-06-27-competitive-benchmark-and-prd-critique.md). The long-term strategy now treats Daily Artifact, trust-custodianship, deterministic safety, honest evidence language, heterogeneous-user validation, and 5-minute on-ramp as first-order roadmap constraints.
 
 ## 1. One-Line Product Definition
@@ -387,7 +387,7 @@ Web 不应继续作为主 consumer daily loop 的竞争入口。
 - 噪声式 proactive broadcast。
 - 绕过 auth、BLE、CustomView、voice readiness、session persistence 和 safety gate 的写操作。
 
-### 5.6 OpenClaw / MCP
+### 5.6 Agent / MCP
 
 定位：受控外部 agent 扩展。
 
@@ -524,7 +524,7 @@ Agent 应服务于 health loop，而不是替代 health loop：
 
 - L3/L4 健康数据、token、药物、基因、报告和家庭数据必须按最小权限处理。
 - 所有用户数据访问必须带用户隔离。
-- 外部 agent、MCP、OpenClaw 和 proactive writes 必须可审计。
+- 外部 agent、MCP 和 proactive writes 必须可审计。
 - 系统不得把“观察性关联”包装成确定性因果。
 
 ### Reliability
@@ -568,7 +568,7 @@ Agent 应服务于 health loop，而不是替代 health loop：
 - AgendaService、HealthProtocolService、HealthProblemService、WatchSummary、ActionRanker、ProactiveCoordinator。
 - Digital Health Twin、SafetyGuardian、WearableRouter、DeviceSourcePriority。
 - Agent Executor、Orchestrator、specialists、tool schema、specialist tools feature flag。
-- Mobile Today/Record/Agenda/Intervention/Review，Watch Today/quick actions，Mac workbench，Web history/admin，OpenClaw/MCP skills。
+- Mobile Today/Record/Agenda/Intervention/Review，Watch Today/quick actions，Mac workbench，Web history/admin，Agent/MCP skills。
 - 测试已经覆盖 HealthProtocol、Agenda contract、Health OS API、surface ownership 等关键路径。
 
 ### 9.2 Partially Implemented Or Fragmented
@@ -716,7 +716,7 @@ Reva 的长期系统目标是成为：
 建设重点：
 
 - 5 分钟 on-ramp：合成数据、示例报告、真实 HealthKit 三入口，60-300 秒内展示安全脑、证据卡和 Daily Artifact。
-- OpenClaw/MCP skills 成为受控 extension layer。
+- Agent/MCP skills 成为受控 extension layer。
 - 医生、家人、企业健康和设备合作有不同权限边界。
 - API contract 稳定，客户端只做 surface，不做独立健康裁决。
 
@@ -753,7 +753,7 @@ Reva 的长期系统目标是成为：
 
 - 让所有人对“Reva 当前是什么”达成一致。
 - 停止新增并列 daily loop。
-- 把 Mobile/Watch/Mac/Web/OpenClaw/MCP 归位。
+- 把 Mobile/Watch/Mac/Web/Agent/MCP 归位。
 
 关键交付：
 

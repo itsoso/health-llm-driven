@@ -167,7 +167,7 @@ LLM 与工具综合层
 | G1.8 | Mobile 收敛为 Today / Agenda / Capture / Programs / Review | 现有 Mobile routes 已覆盖这些概念，但仍有许多并行入口 | 还需要清理 route metadata 和导航；admin/debug/过期 daily flows 应从主导航隐藏或归档 | 阶段 0 / 阶段 1 |
 | G1.9 | Programs 成为用户可见的 8-12 周运营单元 | `HealthProgram` model/API/tests 已存在；protocol 可以挂到 program | Program templates、跨对象进展、Review 集成和器官系统 program map 尚未在 Mobile Today/Programs 成为一等能力 | 阶段 1 / 阶段 2 |
 | G1.10 | Mac 保持 workbench，Web 保持历史/admin/family/doctor 场景 | surface ownership doc 已存在 | 部分 Web/Mobile/Mac 工作流仍重叠；每日消费者流程需要在用户验证后更明确地归档或收敛 | 阶段 0 / 阶段 4 |
-| G1.11 | 外部 agent 输出必须落到一等对象 | MCP/OpenClaw skills 和 tool registry 已存在 | 并非所有外部/LLM 分析路径都被强制创建 `Problem`、`Protocol`、`Agenda`、`WriteIntent`、`Review`，或显式标记为 explain-only | 阶段 2 |
+| G1.11 | 外部 agent 输出必须落到一等对象 | 一方 Agent skills、MCP 和 tool registry 已存在 | 并非所有外部/LLM 分析路径都被强制创建 `Problem`、`Protocol`、`Agenda`、`WriteIntent`、`Review`，或显式标记为 explain-only | 阶段 2 |
 
 ### P2：IoT、环境与供应链缺口
 
@@ -175,7 +175,7 @@ LLM 与工具综合层
 |---|---|---|---|---|
 | G2.1 | 卧室环境闭环 | `BedroomEnvironmentSnapshot`、`BedroomAutomationEvent`、`bedroom_environment_service`、Home Assistant webhook 和 `bedroom_outcome_analyzer` 已存在 | `HomeAssistantAdapter` scene allowlist、scene downlink、`BedroomSleepProtocol`、Agenda projection、Mobile UI 和睡眠复盘尚未完成 | 阶段 5 |
 | G2.2 | 设备 observation 在不扩大隐私风险的前提下闭合 Agenda item | `device_observation` schema/service/API 和测试已存在；raw media 被阻断 | 还缺更多设备类型、provider auth、用户同意 UX、Agenda 映射和 Review 渲染 | 阶段 5 |
-| G2.3 | 补剂物流和购买边界 | supplement inventory、reorder nudge、deep link 和 `ReorderIntent` 骨架已存在 | 真实下单有意保持 inert；OpenClaw/commerce skill contract、账号绑定、confirmation token、callbacks 和财务安全 review 待补 | 阶段 5 |
+| G2.3 | 补剂物流和购买边界 | supplement inventory、reorder nudge、deep link 和 `ReorderIntent` 骨架已存在 | 真实下单有意保持 inert；commerce Agent contract、账号绑定、confirmation token、callbacks 和财务安全 review 待补 | 阶段 5 |
 | G2.4 | 个性化补剂搭配或生产 | supplement recommendation 和 safety rules 已存在 | 缺少受监管供应链模型、批次质量、PGx/DDI/DSI 审批流、生产伙伴边界和上市后 outcome tracking | 阶段 5+ |
 | G2.5 | 办公环境和工位健康闭环 | device observation 已支持 posture/screen events | 智能桌椅/屏幕集成、隐私 UX、人体工学 protocols 和 outcome linkage 尚未产品化 | 阶段 5 |
 

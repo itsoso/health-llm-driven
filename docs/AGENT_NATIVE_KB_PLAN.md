@@ -410,7 +410,7 @@ CREATE TABLE kb_audit (
 | [[project_agent_native_principles]] "Protocol-first LLM-second" | 在此体现 | claim.applies_when 是 protocol，Planner LLM 不能绕过 |
 | [[feedback_data_before_analysis]] P-a/P-b 切分 | Phase 0 = P-a，Phase 2 = P-b | 数据先采全（claim 库），再做分析消费（specialist 改造） |
 | `agent_audit_log` 表 | 复用 | crystallize.py 从这里挖隐性规则 |
-| OpenClaw skills | 解耦 | skill 不直接读 KB，仍走 API |
+| 一方 Agent skills | 解耦 | skill 不直接读 KB，仍走 API |
 
 ---
 

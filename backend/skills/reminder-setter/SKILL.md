@@ -3,7 +3,7 @@ name: reminder-setter
 description: 设置健康提醒 — 服药提醒、复查提醒、运动提醒、饮水提醒等。当用户要求设置提醒、定时通知、到时间提醒做某事时使用。
 version: 1.0.0
 metadata:
-  openclaw:
+  agent:
     requires:
       env: [HEALTH_API_URL, HEALTH_API_TOKEN]
       bins: [curl]

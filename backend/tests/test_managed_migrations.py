@@ -222,3 +222,64 @@ def test_semicolon_inside_comment_does_not_break_statement(tmp_path: Path):
 
     assert [m.id for m in result.applied] == ["20260609_000001_comment_semicolon"]
     assert "comment_semi" in inspect(engine).get_table_names()
+
+
+def test_retire_legacy_agent_table_names_sqlite_migration_preserves_data(tmp_path: Path):
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
+    sqlite_file = migrations_dir / "20260704_200000_retire_legacy_agent_table_names.sqlite.sql"
+    postgres_file = migrations_dir / "20260704_200000_retire_legacy_agent_table_names.postgresql.sql"
+
+    assert sqlite_file.exists()
+    assert postgres_file.exists()
+
+    isolated = tmp_path / "managed"
+    isolated.mkdir()
+    (isolated / sqlite_file.name).write_text(sqlite_file.read_text(encoding="utf-8"), encoding="utf-8")
+
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY)"
+        ))
+        conn.execute(text(
+            "CREATE TABLE openclaw_conversations ("
+            "id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, title TEXT, updated_at DATETIME)"
+        ))
+        conn.execute(text(
+            "CREATE TABLE openclaw_messages ("
+            "id INTEGER PRIMARY KEY, conversation_id INTEGER NOT NULL, role TEXT, content TEXT)"
+        ))
+        conn.execute(text(
+            "CREATE TABLE health_trend_reports ("
+            "id INTEGER PRIMARY KEY, openclaw_batch_id TEXT)"
+        ))
+        conn.execute(text(
+            "INSERT INTO openclaw_conversations (id, user_id, title, updated_at) "
+            "VALUES (10, 3, '阿衡', '2026-07-04 12:00:00')"
+        ))
+        conn.execute(text(
+            "INSERT INTO openclaw_messages (id, conversation_id, role, content) "
+            "VALUES (20, 10, 'assistant', 'ok')"
+        ))
+        conn.execute(text(
+            "INSERT INTO health_trend_reports (id, openclaw_batch_id) VALUES (30, 'batch-1')"
+        ))
+
+    result = apply_managed_migrations(engine, isolated)
+
+    assert [m.id for m in result.applied] == ["20260704_200000_retire_legacy_agent_table_names"]
+    tables = inspect(engine).get_table_names()
+    assert "agent_conversations" in tables
+    assert "agent_messages" in tables
+    assert "openclaw_conversations" not in tables
+    assert "openclaw_messages" not in tables
+    assert "analysis_batch_id" in [c["name"] for c in inspect(engine).get_columns("health_trend_reports")]
+    assert "openclaw_batch_id" not in [c["name"] for c in inspect(engine).get_columns("health_trend_reports")]
+
+    with engine.connect() as conn:
+        title = conn.execute(text("SELECT title FROM agent_conversations WHERE id = 10")).scalar_one()
+        content = conn.execute(text("SELECT content FROM agent_messages WHERE id = 20")).scalar_one()
+        batch_id = conn.execute(text("SELECT analysis_batch_id FROM health_trend_reports WHERE id = 30")).scalar_one()
+    assert title == "阿衡"
+    assert content == "ok"
+    assert batch_id == "batch-1"

@@ -82,7 +82,7 @@ Daily Artifact
         108 个 API router, 65 个 SQLAlchemy 模型
 前端:   213 个 .tsx, 69 个顶级路由
 移动:   90 个 .tsx, 5 个 Tab
-Skills: 22 个 OpenClaw skill
+Skills: 随后端部署的一方 Agent skill
 记忆:   4 层 (working/episodic/semantic/procedural) + 10 entity 类型 + 16 relation predicate
 ```
 

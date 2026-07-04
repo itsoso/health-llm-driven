@@ -3,7 +3,7 @@ name: family-health
 description: Family health management - medical reports, medications, review calendar, family daily health check. Use when user asks about family members' health, medical exams, medications, checkup schedules, or wants to manage health for parents/spouse/children.
 version: 1.0.0
 metadata:
-  openclaw:
+  agent:
     requires:
       env: [HEALTH_API_URL, HEALTH_API_TOKEN]
       bins: [curl]

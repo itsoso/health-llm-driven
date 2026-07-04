@@ -192,7 +192,7 @@ HealthProtocol:
 - **R7 Checkup & Specialty Screening Planner**:按年龄/性别/家族史/既往异常/症状/可穿戴异常/医生指令生成检查建议(区分 wellness/复查/就诊/急性红旗),输出 项目+时间窗+理由+来源+风险边界+是否需医生确认,全进 Agenda;不越界为诊断。
 - **R8 Training Prescription & Readiness Gate**:recovery_decision green/yellow/red 作训练 gate;输入 RingConn 睡眠/HRV/SpO2/皮温 + Garmin readiness/load/recovery + Apple 活动/主观疲劳 + 症状;训练前 30-60min 在 Watch/Mobile 出现;训练后捕获 RPE/疼痛 + Garmin workout 事实;**急性病/低氧/症状优先于 Garmin readiness**。
 - **R9 Outcome Proof**:每个 Program 绑 primary/secondary metrics;每个 action 标是否影响 outcome;7/30/90 复盘 = 执行率+指标变化+复查结果+个人响应强弱+下周期调整;temporal association 明确「非因果」;代谢周期输出 baseline→latest→target。
-- **R10 三端职责**:Mobile 主体验(Today/Agenda/Capture/Programs/Review + HealthKit/Watch 配对/语音/照片饮食);Mac 深度工作台(快速记录/导入/Agent 长对话/Trace,不复制健康判断);Web 后台/报告/历史兼容/Apple Health XML fallback;Watch 腕上执行;OpenClaw/MCP 受控外部入口(最小权限+审计)。
+- **R10 三端职责**:Mobile 主体验(Today/Agenda/Capture/Programs/Review + HealthKit/Watch 配对/语音/照片饮食);Mac 深度工作台(快速记录/导入/Agent 长对话/Trace,不复制健康判断);Web 后台/报告/历史兼容/Apple Health XML fallback;Watch 腕上执行;Agent/MCP 受控外部入口(最小权限+审计)。
 
 **R11–R16(本 PRD 新增)**:
 - **R11 HealthProtocol 协议层 + 双轨录入**

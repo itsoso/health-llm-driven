@@ -4,14 +4,14 @@
 
 > 日期: 2026-06-15  
 > 状态: v0.1 代码事实驱动 PRD, 用于下一轮产品重设计  
-> 范围: 后端、Mobile、Mac App、Web、Apple Watch / HealthKit、OpenClaw / MCP 外部 Agent 入口  
+> 范围: 后端、Mobile、Mac App、Web、Apple Watch / HealthKit、Agent / MCP 外部入口
 > 目标: 把现有健康系统从“功能集合”重构为“面向中年人持续变健康的时间、日程和可穿戴驱动 Personal Health OS”
 
 ---
 
 ## 0. 一句话结论
 
-当前项目已经不是早期健康记录应用。代码里已经存在 Digital Health Twin、Biomarker 标准化、InterventionCycle、DailyOperatingPlan、ActionCard、InterventionEvent、Health Operating Review、多专家 Agent、安全规则、多可穿戴数据源、Mobile 主体验、Mac 桌面工作台、Web 管理/历史体验、OpenClaw/MCP 外部 Agent 能力。
+当前项目已经不是早期健康记录应用。代码里已经存在 Digital Health Twin、Biomarker 标准化、InterventionCycle、DailyOperatingPlan、ActionCard、InterventionEvent、Health Operating Review、多专家 Agent、安全规则、多可穿戴数据源、Mobile 主体验、Mac 桌面工作台、Web 管理/历史体验、Agent/MCP 外部能力。
 
 真正的下一阶段不是继续横向加功能,而是把这些能力收敛成一个一等公民产品对象:
 
@@ -88,7 +88,7 @@ Web / 外部入口:
 - `frontend/src/app/page.tsx`, `dashboard/page.tsx`, `digital-twin/page.tsx`, `settings/components/AppleWatchSection.tsx`: Web 首页、仪表盘、数字孪生、Apple Health 文件导入。
 - `packages/mini-program/src/app.config.ts`: 小程序历史入口。
 - `mcp-server/README.md`: MCP 暴露健康查询/记录/分析工具。
-- `openclaw-skills/README.md`: OpenClaw 多渠道技能分发。
+- `backend/skills/*/SKILL.md`: 一方 Agent 运行时技能。
 
 文档:
 
@@ -158,7 +158,7 @@ Web / 外部入口:
 | Voice / food input | 语音对话、quick-record、饮食文本估算、拍照识别、tool validator | 应合并成低摩擦 Food Capture 协议 |
 | Mac App | Swift-native 今日驾驶舱、Agent、快速记录、导入中心、任务中心、Trace | 是桌面工作台,不是移动端替代品 |
 | Web | 大量历史页面、仪表盘、后台、Apple Health XML 导入 | 需要收敛为后台/深度分析/历史兼容,不再承担主体验 |
-| OpenClaw / MCP | 多渠道技能和健康 MCP server | 是外部 Agent 接入层,需按权限和可审计性治理 |
+| Agent / MCP | 一方 Agent skills 和健康 MCP server | 是外部 Agent 接入层,需按权限和可审计性治理 |
 
 ### 3.2 当前最大产品债
 
@@ -607,7 +607,7 @@ Apple Watch:
 - 腕上执行和反馈。
 - 只做轻量 companion。
 
-OpenClaw / MCP:
+Agent / MCP:
 
 - 外部 Agent 通道。
 - 需要最小权限、审计日志、scope/token 治理。
@@ -898,7 +898,7 @@ OpenClaw / MCP:
 | Web | 历史功能、dashboard、digital twin、admin、settings、Apple Health XML 导入 | 后台、报告、隐私、兼容 |
 | Apple Watch | iOS 通知镜像、HealthKit 数据来源 | 轻量 companion: 状态、记录、确认 |
 | Mini Program | 多历史页面和打卡/AI/设备绑定 | 历史兼容或渠道实验 |
-| OpenClaw/MCP | 外部 Agent 技能和工具 | 受控外部入口 |
+| Agent/MCP | 外部 Agent 技能和工具 | 受控外部入口 |
 
 ---
 

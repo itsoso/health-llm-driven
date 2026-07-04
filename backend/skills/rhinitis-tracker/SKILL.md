@@ -3,7 +3,7 @@ name: rhinitis-tracker
 description: Track rhinitis symptoms (sneezing, nasal congestion, runny nose), record episodes, query history and environment alerts. Use when the user mentions sneezing, nasal symptoms, rhinitis, or nose-related health issues.
 version: 1.0.0
 metadata:
-  openclaw:
+  agent:
     requires:
       env: [HEALTH_API_URL, HEALTH_API_TOKEN]
       bins: [curl]

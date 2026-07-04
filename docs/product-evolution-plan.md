@@ -81,7 +81,7 @@ Health Twin 建档(体检 + 戒指 + 可选 CGM)
 
 ### MVP(0-3 月):跑通一条代谢闭环 + 一个难言之隐入口
 - 🔧 **聚焦版首页**:从通用健康改为「今日身体状态 + 该做的 3 件事」,中年男性视角(复用 `mobile/app/(tabs)/index.tsx`)
-- 🆕 **隐私问诊入口**:ED/脱发/精力 轻问诊流(隐私 Tier + 隐名)→ 接 OpenClaw skill 履约
+- 🆕 **隐私问诊入口**:ED/脱发/精力 轻问诊流(隐私 Tier + 隐名)→ 接一方 Agent 履约
 - ✅ **体检报告 AI 解读**:已有 `upload_medical_exam_text` + exam-explain → 作为建 Twin 钩子
 - ✅ **代谢闭环**:`MetabolicSpecialist` + `episodes.py` + `personal_outcome.py` 已就位 → 串成「体检→分析→12周 Episode→对比卡」
 - 🆕 **指标对比卡**:N 周前 vs 现在(肝酶/血脂/CGM TIR)—— 信任时刻的 UI

@@ -182,6 +182,8 @@ async def startup_event():
         insp = inspect(engine)
 
         def _add_col(table: str, col: str, col_type: str):
+            if not insp.has_table(table):
+                return
             existing = [c["name"] for c in insp.get_columns(table)]
             if col not in existing:
                 db.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
@@ -189,8 +191,8 @@ async def startup_event():
         _add_col("chat_conversations", "mode", "VARCHAR(20) DEFAULT NULL")
         _add_col("garmin_credentials", "sync_in_progress", "BOOLEAN DEFAULT false")
         _add_col("garmin_credentials", "sync_started_at", "TIMESTAMP DEFAULT NULL")
-        _add_col("openclaw_messages", "rating", "INTEGER DEFAULT NULL")
-        _add_col("openclaw_messages", "image_url", "VARCHAR(500) DEFAULT NULL")
+        _add_col("agent_messages", "rating", "INTEGER DEFAULT NULL")
+        _add_col("agent_messages", "image_url", "VARCHAR(500) DEFAULT NULL")
         _add_col("users", "is_managed", "BOOLEAN DEFAULT false")
         _add_col("users", "managed_by", "INTEGER DEFAULT NULL")
         # H1-B: 推送规则分级 + 用户偏好

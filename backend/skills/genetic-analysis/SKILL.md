@@ -3,7 +3,7 @@ name: genetic-analysis
 description: Query and analyze user genetic test data (基因检测). Cross-reference genetics with medical reports, Garmin wearable data, and current health status for personalized nutrition, exercise, drug sensitivity, disease risk, and sleep advice.
 version: 1.1.0
 metadata:
-  openclaw:
+  agent:
     requires:
       env: [HEALTH_API_URL, HEALTH_API_TOKEN]
       bins: [curl]
