@@ -21,6 +21,7 @@ opener 把 ActionCard 检验日 / anomaly_alert / case_thread / memory_fact 四�
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -28,9 +29,57 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
+from app.services.memory_snippet import sanitize_memory_snippet
+
 logger = logging.getLogger(__name__)
 
 CHINA_TZ = ZoneInfo("Asia/Shanghai")
+
+# ── card title 人性化 ──
+# 尾部软化/礼貌语 (opener 模板已自带追问, 这些是噪声)
+_TITLE_TRAILING_SUFFIXES = ("，请注意", ",请注意", "，请留意", "请注意", "请留意")
+# 括号内阈值说明 (全角/半角) — "（阈值 95%）" / "(阈值 95%)"
+_TITLE_THRESHOLD_PAREN = re.compile(r"[（(]\s*阈值[^）)]*[）)]")
+# 截断时优先切在这些子句边界之后
+_TITLE_CLAUSE_BOUNDARY = "，,。；;、"
+_TITLE_MAX_LEN = 24
+
+
+def humanize_card_title(title: str) -> str:
+    """把带告警措辞的原始标题整形成能内联进 opener 模板的短语。
+
+    e.g. "血氧饱和度偏低：94.0%（阈值 95%），请注意" → "血氧饱和度偏低：94.0%"
+
+    - 剥尾部"，请注意"/"请注意"礼貌语
+    - 剥括号内阈值说明 (（阈值…）/(阈值…))
+    - 去尾部悬挂标点
+    - 超 ~24 字在子句边界截断 + 省略号
+    纯字符串, 不改 source/quick_replies/priority 契约。
+    """
+    if not title:
+        return ""
+    s = title.strip()
+    # 阈值括号 (可能在中间)
+    s = _TITLE_THRESHOLD_PAREN.sub("", s)
+    # 尾部礼貌语 (反复剥, 处理 "…（阈值…），请注意" 剥括号后新暴露的尾巴)
+    changed = True
+    while changed:
+        changed = False
+        s = s.strip()
+        for suf in _TITLE_TRAILING_SUFFIXES:
+            if s.endswith(suf):
+                s = s[: -len(suf)]
+                changed = True
+    # 去尾部悬挂标点/空白
+    s = s.rstrip("，,。；;、：: ").strip()
+    if len(s) <= _TITLE_MAX_LEN:
+        return s
+    # 超长 → 在子句边界截 (窗口内最后一个边界符之后)
+    window = s[:_TITLE_MAX_LEN]
+    last_boundary = max((window.rfind(b) for b in _TITLE_CLAUSE_BOUNDARY), default=-1)
+    if last_boundary >= 6:
+        return window[:last_boundary].rstrip("，,。；;、：: ") + "…"
+    return window.rstrip("，,。；;、：: ") + "…"
 
 
 @dataclass
@@ -104,7 +153,8 @@ def _try_action_card_due(db: Session, user_id: int) -> Optional[OpenerSuggestion
         chk = chk.replace(tzinfo=timezone.utc)
     days_until = max(0, (chk.astimezone(CHINA_TZ).date() - datetime.now(CHINA_TZ).date()).days)
 
-    title = (card.title or "").strip()[:40] or "之前的建议"
+    # 卡标题可能是告警文案 ("…（阈值 95%），请注意"), 内联前人性化。
+    title = humanize_card_title((card.title or "").strip()[:40]) or "之前的建议"
 
     if days_until == 0:
         text = f"今天就是「{title}」的检验日，做到了吗？"
@@ -270,7 +320,9 @@ def _try_recent_memory_fact(db: Session, user_id: int) -> Optional[OpenerSuggest
     # 简单拼: subject predicate object — "你 提到 鼻炎"
     subj = (fact.subject or "你").strip()[:30]
     pred = _predicate_human(fact.predicate)
-    obj = (fact.object_value or "").strip()[:50]
+    # object_value 可能是上游过度提取残留的 JSON blob — serve 前整形。
+    # 整形后没剩下有意义内容 → 跳过这条 opener (没线索好过一坨垃圾)。
+    obj = sanitize_memory_snippet(fact.object_value, max_len=50)
 
     if not obj:
         return None

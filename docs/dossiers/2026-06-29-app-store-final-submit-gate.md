@@ -5,7 +5,7 @@
 | slug | `app-store-final-submit-gate` |
 | 创建日期 | 2026-06-29 |
 | 当前阶段 | S8 沉淀 |
-| 状态 | shipped-local-gate-screenshot-ready-human-credentials-pending |
+| 状态 | shipped-local-gate-final-submit-preflight-passed |
 | 负责 | Codex |
 | 反馈环 | local tests / final-submit gate |
 
@@ -84,6 +84,9 @@
   - PASS: `APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/batch5-ready-20260630 python3 scripts/check_app_store_release_pack.py`。
   - EXPECTED FAIL: `python3 scripts/check_app_store_release_pack.py --final-submit --screenshot-dir design/screenshots/app-store/batch5-ready-20260630`
     - 截图闸已通过;仍因 demo account/password 占位符和缺 ASC credentials 返回 1。
+- 2026-07-03 更新:
+  - PASS: `set -a; source .env; set +a; python3 scripts/check_app_store_release_pack.py --final-submit --screenshot-dir design/screenshots/app-store/batch5-ready-20260630`。
+    - 发布机 `.env` 提供 Review demo credentials、审核联系手机号和 ASC credentials;凭证不写入 git。
 - PASS: `python3 -m py_compile scripts/check_app_store_release_pack.py scripts/check_ios_app_store_submission.py`
 
 ## G4 · 安全闸
@@ -97,7 +100,8 @@
 
 ## G5 · 部署健康闸
 
-- 本地 release gate PASS;final-submit 按预期因人审材料缺失 FAIL。
+- 本地 release gate PASS。
+- 加载发布机 `.env` 后 final-submit preflight PASS。
 
 ## S7 · 上线验证
 
@@ -105,12 +109,10 @@
 
 ## G6 · 验证闸(人在环)
 
-- App Store 最终提交仍需用户提供:
-  - demo account / password;
-  - App Store Connect credentials。
-  - App Store-ready screenshot directory 已有候选:`design/screenshots/app-store/batch5-ready-20260630`。
+- PASS:发布机已具备 demo account / password、审核联系手机号、App Store Connect credentials 和 App Store-ready screenshot directory。
+- pending:App Store Connect 页面人工提交、build processing 和审核状态。
 
 ## S8 · 沉淀
 
 - App Store MVP release dossier 已记录 Batch 9 final-submit gate 与 2026-06-30 ready 截图候选。
-- 状态 -> **shipped-local-gate-screenshot-ready-human-credentials-pending**。
+- 状态 -> **shipped-local-gate-final-submit-preflight-passed**。

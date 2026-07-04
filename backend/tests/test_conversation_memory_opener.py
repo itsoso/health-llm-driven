@@ -81,6 +81,43 @@ def test_opener_respects_k_param(client, db):
     assert len(resp.json()["items"]) == 1
 
 
+def test_opener_sanitizes_json_blob_memory_content(client, db):
+    user, headers = _user_headers(db, "sanitize_blob")
+    db.add(ConversationMemory(
+        user_id=user.id,
+        memory_type="medical",
+        content='{"建议":"鼻炎发作时优先生理盐水冲洗。", "注意事项": "不要连续使用含麻黄碱喷剂。"}',
+        status="active",
+    ))
+    db.commit()
+
+    resp = client.get("/api/v1/conversation-memory/opener", headers=headers)
+    body = resp.json()
+
+    assert resp.status_code == 200
+    content = body["items"][0]["content"]
+    assert "鼻炎发作时优先生理盐水冲洗" in content
+    assert "建议" not in content
+    assert "注意事项" not in content
+    assert "{" not in content
+
+
+def test_opener_skips_memory_when_sanitized_content_is_empty(client, db):
+    user, headers = _user_headers(db, "skip_blob")
+    db.add(ConversationMemory(
+        user_id=user.id,
+        memory_type="medical",
+        content='{"x":"短"}',
+        status="active",
+    ))
+    db.commit()
+
+    resp = client.get("/api/v1/conversation-memory/opener", headers=headers)
+
+    assert resp.status_code == 200
+    assert resp.json() == {"items": []}
+
+
 def test_opener_requires_auth(client):
     resp = client.get("/api/v1/conversation-memory/opener")
     assert resp.status_code in (401, 403)

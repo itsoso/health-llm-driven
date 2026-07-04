@@ -28,7 +28,7 @@ jest.mock('../../../hooks/useToast', () => ({
   useToast: () => ({ show: mockToastShow }),
 }));
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn() },
+  router: { push: jest.fn(), setParams: jest.fn() },
 }));
 jest.mock('react-native-markdown-display', () => {
   const React = require('react');
@@ -160,6 +160,7 @@ describe('ChatBubble structured summary', () => {
     await waitFor(() => {
       expect(saveAssistantReplyAsMemory).toHaveBeenCalledWith('建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。');
     });
+    expect(getByText('已保存')).toBeTruthy();
   });
 
   it('adds an assistant reply to today plan directly from the result action', async () => {
@@ -192,6 +193,20 @@ describe('ChatBubble structured summary', () => {
     });
     expect(router.push).not.toHaveBeenCalledWith('/(tabs)/record');
     expect(mockToastShow).toHaveBeenCalledWith('已记录午餐：煎牛肉能量碗 + 姜黄鲜柠维C茶', 'success');
+    expect(getByText('已生成')).toBeTruthy();
+  });
+
+  it('injects follow-up prompts into the current chat input instead of pushing the same tab', () => {
+    const { getByText } = renderBubble('晚餐后散步 15 分钟，明早观察 HRV 和主观恢复。');
+
+    fireEvent.press(getByText('继续追问'));
+
+    expect(router.setParams).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining('继续追问'),
+      promptNonce: expect.any(String),
+    }));
+    expect(router.push).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/(tabs)/chat' }));
+    expect(getByText('已放入输入框')).toBeTruthy();
   });
 
   it('shares assistant replies under the 阿衡 persona', async () => {

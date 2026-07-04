@@ -9,6 +9,7 @@ from app.api.deps import get_current_user_required
 from app.database import get_db
 from app.models.user import User
 from app.services.conversation_memory_service import get_top_memory_for_opener
+from app.services.memory_snippet import sanitize_memory_snippet
 
 router = APIRouter(prefix="/conversation-memory", tags=["conversation-memory"])
 
@@ -40,12 +41,17 @@ def get_opener_memories(
 
     items: List[Dict[str, Any]] = []
     for m in memories:
+        # content 可能是上游过度提取残留的 JSON blob — serve 前整形。
+        # 整形后没剩下有意义内容 → 跳过 (不显示 "我记得你: <一坨 JSON>")。
+        content = sanitize_memory_snippet(m.content, max_len=60)
+        if not content:
+            continue
         items.append(
             {
                 "id": m.id,
                 "type": m.memory_type,
                 "type_label": _TYPE_LABELS.get(m.memory_type, "记忆"),
-                "content": m.content,
+                "content": content,
             }
         )
     return {"items": items}

@@ -9,6 +9,7 @@ import pytest
 from app.services.conversation_opener import (
     OpenerSuggestion,
     compute_conversation_opener,
+    humanize_card_title,
 )
 
 
@@ -56,6 +57,61 @@ def test_action_card_due_today_uses_today_phrase(db):
     assert out is not None
     assert "今天" in out.text or "明天" in out.text  # 临界条件按 day 算
     assert out.source == "action_card_due"
+
+
+def test_action_card_due_humanizes_noisy_alert_title(db):
+    from app.models.action_card import ActionCard
+
+    now = datetime.now(timezone.utc)
+    db.add(ActionCard(
+        user_id=1,
+        title="血氧饱和度偏低：94.0%（阈值 95%），请注意",
+        content="...",
+        status="active",
+        source_type="orchestrator",
+        check_back_date=now,
+    ))
+    db.commit()
+
+    out = compute_conversation_opener(db, user_id=1)
+
+    assert out is not None
+    assert "血氧饱和度偏低：94.0%" in out.text
+    assert "阈值" not in out.text
+    assert "请注意" not in out.text
+
+
+def test_humanize_card_title_shortens_long_clause_at_boundary():
+    title = "长期高强度训练安排需要调整，结合最近睡眠和 HRV 明显恢复不足，请注意"
+
+    out = humanize_card_title(title)
+
+    assert out == "长期高强度训练安排需要调整…"
+
+
+def test_humanize_card_title_strips_fullwidth_threshold_paren():
+    out = humanize_card_title("血氧饱和度偏低：94.0%（阈值 95%），请注意")
+    assert out == "血氧饱和度偏低：94.0%"
+
+
+def test_humanize_card_title_strips_halfwidth_threshold_paren():
+    out = humanize_card_title("血氧饱和度偏低：94.0%(阈值 95%),请注意")
+    assert out == "血氧饱和度偏低：94.0%"
+
+
+def test_humanize_card_title_noop_on_clean_title():
+    # 已经干净的标题不该被动到
+    assert humanize_card_title("提前晚餐") == "提前晚餐"
+    assert humanize_card_title("走 6000 步") == "走 6000 步"
+
+
+def test_humanize_card_title_strips_bare_polite_suffix():
+    assert humanize_card_title("血压偏高：165/102，请注意") == "血压偏高：165/102"
+
+
+def test_humanize_card_title_empty_returns_empty():
+    assert humanize_card_title("") == ""
+    assert humanize_card_title("   ") == ""
 
 
 def test_action_card_already_graded_ignored(db):
@@ -303,6 +359,30 @@ def test_recent_semantic_memory_fact_picked(db):
     assert out is not None
     assert out.source == "memory_fact"
     assert "鼻塞" in out.text
+
+
+def test_recent_memory_fact_sanitizes_json_blob_before_opener(db):
+    from app.models.memory_fact import MemoryFact
+
+    now = datetime.now(timezone.utc)
+    db.add(MemoryFact(
+        user_id=1,
+        tier="semantic",
+        subject="你",
+        predicate="has_condition",
+        object_value='{"药品":"按说明书需要时服用。", "注意事项": "有肝病时慎用，出现不适及时就医。"}',
+        confidence=0.8,
+        sources=[],
+        last_reinforced_at=now - timedelta(days=2),
+    ))
+    db.commit()
+
+    out = compute_conversation_opener(db, user_id=1)
+
+    assert out is not None
+    assert "按说明书需要时服用" in out.text
+    assert "注意事项" not in out.text
+    assert "{" not in out.text
 
 
 def test_working_tier_memory_skipped(db):

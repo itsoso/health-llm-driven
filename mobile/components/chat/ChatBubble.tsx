@@ -50,6 +50,9 @@ import {
 const ACTION_PURPLE = '#7C5CBF';
 const ACTION_TEAL = '#2F9E8F';
 
+type ResultActionKey = 'plan' | 'memory' | 'record' | 'followup';
+type ResultActionDoneLabels = Partial<Record<ResultActionKey, string>>;
+
 // Markdown 样式走共享 factory (constants/markdownStyles, 4 个屏共用, 不动它的 ColorPalette 契约).
 // Reva light-first → 用映射到 reva token 的精简调色板算一次, 模块级静态 (无 dark 实例态).
 const MD_PALETTE = {
@@ -80,7 +83,8 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
   const [savingDraft, setSavingDraft] = useState(false);
   const [showActions, setShowActions] = useState(false);  // 长按显示操作
   const [speaking, setSpeaking] = useState(false);
-  const [resultActionBusy, setResultActionBusy] = useState<'plan' | 'memory' | 'record' | 'followup' | null>(null);
+  const [resultActionBusy, setResultActionBusy] = useState<ResultActionKey | null>(null);
+  const [resultActionDoneLabels, setResultActionDoneLabels] = useState<ResultActionDoneLabels>({});
   const [cardActionStateByKey, setCardActionStateByKey] = useState<Record<string, ChatCardActionRuntimeState>>({});
   const speechTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechActiveRef = useRef(false);
@@ -299,6 +303,10 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
     }));
   };
 
+  const markResultActionDone = (key: ResultActionKey, label: string) => {
+    setResultActionDoneLabels(prev => ({ ...prev, [key]: label }));
+  };
+
   const handleAddToTodayPlan = async () => {
     if (!assistantTextForActions || resultActionBusy) return;
     setResultActionBusy('plan');
@@ -319,6 +327,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
         ['today-dynamic-view', 'mobile.today'],
       ]);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      markResultActionDone('plan', '已加入');
       toast.show('已加入今日计划', 'success');
     } catch {
       toast.show('加入今日计划失败，请稍后重试', 'error');
@@ -334,6 +343,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
       await saveAssistantReplyAsMemory(assistantTextForActions);
       await invalidateQueryKeys(qc, [['memory-facts'], ['memory-stats']]);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      markResultActionDone('memory', '已保存');
       toast.show('已保存到记忆', 'success');
     } catch {
       toast.show('保存记忆失败，请稍后重试', 'error');
@@ -355,8 +365,10 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
       ]);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       if (result.status === 'created') {
+        markResultActionDone('record', '已生成');
         toast.show(result.message || '已生成记录', 'success');
       } else {
+        markResultActionDone('record', '去记录页');
         toast.show(result.message, 'info');
         router.push(result.route as any);
       }
@@ -371,15 +383,22 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
     if (resultActionBusy) return;
     setResultActionBusy('followup');
     const title = inferActionTitle(assistantTextForActions);
-    router.push({
-      pathname: '/(tabs)/chat',
-      params: {
-        prompt: `请基于「${title}」继续追问，先问我一个最关键的确认问题，再细化成今天能执行的一步。`,
-        promptNonce: String(Date.now()),
-      },
-    } as any);
-    Haptics.selectionAsync().catch(() => {});
-    toast.show('已放到输入框', 'info');
+    const params = {
+      prompt: `请基于「${title}」继续追问，先问我一个最关键的确认问题，再细化成今天能执行的一步。`,
+      promptNonce: String(Date.now()),
+    };
+    try {
+      if (typeof (router as any).setParams === 'function') {
+        (router as any).setParams(params);
+      } else {
+        router.push({ pathname: '/(tabs)/chat', params } as any);
+      }
+    } catch {
+      router.push({ pathname: '/(tabs)/chat', params } as any);
+    }
+    Promise.resolve(Haptics.selectionAsync()).catch(() => {});
+    markResultActionDone('followup', '已放入输入框');
+    toast.show('已放入输入框', 'info');
     setTimeout(() => setResultActionBusy(null), 250);
   };
 
@@ -557,32 +576,32 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
             {!item.streaming && assistantTextForActions ? (
               <View style={styles.resultActionGrid}>
                 <ResultActionButton
-                  icon="add-circle-outline"
-                  label="加入今日计划"
+                  icon={resultActionDoneLabels.plan ? 'checkmark-circle-outline' : 'add-circle-outline'}
+                  label={resultActionDoneLabels.plan || '加入今日计划'}
                   color={C.green500}
                   onPress={handleAddToTodayPlan}
                   loading={resultActionBusy === 'plan'}
                   disabled={!!resultActionBusy}
                 />
                 <ResultActionButton
-                  icon="bookmark-outline"
-                  label="保存记忆"
+                  icon={resultActionDoneLabels.memory ? 'checkmark-circle-outline' : 'bookmark-outline'}
+                  label={resultActionDoneLabels.memory || '保存记忆'}
                   color={ACTION_PURPLE}
                   onPress={handleSaveMemory}
                   loading={resultActionBusy === 'memory'}
                   disabled={!!resultActionBusy}
                 />
                 <ResultActionButton
-                  icon="create-outline"
-                  label="生成记录"
+                  icon={resultActionDoneLabels.record ? 'checkmark-circle-outline' : 'create-outline'}
+                  label={resultActionDoneLabels.record || '生成记录'}
                   color={ACTION_TEAL}
                   onPress={handleCreateRecord}
                   loading={resultActionBusy === 'record'}
                   disabled={!!resultActionBusy}
                 />
                 <ResultActionButton
-                  icon="chatbubble-ellipses-outline"
-                  label="继续追问"
+                  icon={resultActionDoneLabels.followup ? 'checkmark-circle-outline' : 'chatbubble-ellipses-outline'}
+                  label={resultActionDoneLabels.followup || '继续追问'}
                   color={C.blue500}
                   onPress={handleContinueFollowUp}
                   loading={resultActionBusy === 'followup'}

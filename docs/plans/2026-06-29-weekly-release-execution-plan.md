@@ -153,7 +153,7 @@ P0 App Store 当前 UI ready 截图已推进:
 - `sanitize_app_store_screenshots.py` 增加 `00-launch` 与 `02-chat` 高风险健康内容遮罩,并用回归测试锁住。
 - 生成 `design/screenshots/app-store/batch5-ready-20260630`,尺寸为 1290 x 2796,`privacy_status=sanitized`, `app_store_ready=true`。
 - `APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/batch5-ready-20260630 python3 scripts/check_app_store_release_pack.py` 已通过。
-- `--final-submit` 现在只剩 demo account/password 和 ASC credentials 阻塞。
+- 2026-07-03 加载发布机 `.env` 后,`--final-submit --screenshot-dir design/screenshots/app-store/batch5-ready-20260630` 已通过;凭证不写入 git。
 
 ## 第十五批实现切片
 
@@ -180,14 +180,14 @@ P2 HealthKit / Watch 本周验收已复核:
 
 ## 本周不做
 
-- 不把 App Store 发布伪装成已完成:缺 demo account、ASC credentials、人审截图时必须停在 pending。
+- 不把 App Store 发布伪装成已完成:final-submit preflight 通过不等于 App Store Connect 已提交或已过审。
 - 不做处方、剂量、诊断承诺。
 - 不做大范围技术符号重命名,避免破坏构建和历史文档。
 - 不把 IoT、补剂下单、供应链自治作为本周上架卖点。
 
 ## 后续顺序
 
-1. 补 Review Notes demo account/password 和 ASC credentials,再跑 `--final-submit`。
+1. 触发 App Store Connect production build / submit 前,再次加载发布机 `.env` 跑 `--final-submit`。
 2. 继续 Daily Artifact 主屏真机点击动线截图,重点验证完成/跳过/问阿衡/查看依据/去执行的承接页。
 3. 继续 Chat card action 成功后的局部刷新/跳转反馈和记录页联动。
-4. 凭证到位后推进 Watch 真机和二维码/ TestFlight 原生包发版;否则仅保持 Swift/Core 和后端合同绿灯。
+4. 推进 Watch 真机和二维码原生包发版;默认不走 TestFlight,除非用户明确指定。

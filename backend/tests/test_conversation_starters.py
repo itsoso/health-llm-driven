@@ -332,6 +332,67 @@ def test_acute_illness_suppresses_training_and_marked_critical():
     assert any("发热" in s and "休息" in s for s in out)
 
 
+def test_acute_illness_dedupes_repeated_names():
+    """修 founder 截图 '我有鼻炎发作、鼻炎发作症状': 重复病症名去重。"""
+    from app.services.conversation_starters import _build_candidates
+
+    signals = _make_signals(
+        should_rest_from_training=True,
+        illness_names=["鼻炎发作", "鼻炎发作"],
+    )
+    cands = [c for c in _build_candidates(signals) if "休息和恢复" in c.text]
+    assert cands
+    text = cands[0].text
+    # 去重: 只出现一次
+    assert text.count("鼻炎发作") == 1
+    # 已带"发作"结尾 → 不再补"症状" (避免"发作症状"结巴)
+    assert "发作症状" not in text
+    assert text == "我有鼻炎发作，今天该怎么休息和恢复？"
+
+
+def test_acute_illness_dedupes_tokens_inside_single_name():
+    """单个 name 里含 顿号/逗号 分隔的重复值也去重。"""
+    from app.services.conversation_starters import _build_candidates
+
+    signals = _make_signals(
+        should_rest_from_training=True,
+        illness_names=["鼻炎发作、鼻炎发作"],
+    )
+    cands = [c for c in _build_candidates(signals) if "休息和恢复" in c.text]
+    assert cands
+    assert cands[0].text == "我有鼻炎发作，今天该怎么休息和恢复？"
+
+
+def test_acute_illness_plain_name_still_gets_symptom_suffix():
+    """普通病症名 (不带发作/症状) 仍拼'症状' — 保持原措辞契约。"""
+    from app.services.conversation_starters import _build_candidates
+
+    signals = _make_signals(should_rest_from_training=True, illness_names=["发热"])
+    cands = [c for c in _build_candidates(signals) if "休息和恢复" in c.text]
+    assert cands
+    assert cands[0].text == "我有发热症状，今天该怎么休息和恢复？"
+
+
+def test_acute_illness_two_distinct_names_joined():
+    """不同病症名保序取前 2, 顿号连接。"""
+    from app.services.conversation_starters import _format_illness_phrase
+
+    assert _format_illness_phrase(["感冒", "发烧", "咳嗽"]) == "感冒、发烧"
+    assert _format_illness_phrase(["感冒", "感冒", "发烧"]) == "感冒、发烧"
+
+
+def test_acute_illness_name_ending_in_symptom_no_stutter():
+    """name 已以'症状'结尾 → 不再补'症状'。"""
+    from app.services.conversation_starters import _build_candidates
+
+    signals = _make_signals(
+        should_rest_from_training=True, illness_names=["过敏症状"]
+    )
+    cands = [c for c in _build_candidates(signals) if "休息和恢复" in c.text]
+    assert cands
+    assert cands[0].text == "我有过敏症状，今天该怎么休息和恢复？"
+
+
 def test_bp_stage2_is_critical_and_normal_bp_is_lower_priority():
     from app.services.conversation_starters import _build_candidates
 

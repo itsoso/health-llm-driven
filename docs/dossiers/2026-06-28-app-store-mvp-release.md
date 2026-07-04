@@ -4,8 +4,8 @@
 |---|---|
 | slug | `app-store-mvp-release` |
 | 创建日期 | 2026-06-28 |
-| 当前阶段 | S6 部署准备 |
-| 状态 | app-store-ready-screenshots-human-credentials-pending |
+| 当前阶段 | S7 上线验证 |
+| 状态 | app-store-ready-final-submit-preflight-passed |
 | 负责 | Codex |
 | 分支 | `main` |
 | 工作区 | `/Users/liqiuhua/work/personal/health-llm-driven` |
@@ -243,11 +243,12 @@ P0:
   - `scripts/prepare_app_store_screenshots.py`: 将 demo/sanitized 原始截图导出为 App Store Connect 接受尺寸,并写入 ready manifest。
   - `scripts/check_ios_app_store_submission.py`: iOS production build / App Store Connect submit 配置预检,默认不联网;真正上传前用 `--require-asc-credentials` 检查本机 ASC 凭证。
   - `scripts/sanitize_app_store_screenshots.py`: 将 private QA 截图生成 review-required sanitized candidate;不等于可提交截图。
-- pending:
+- ready / pending:
   - iOS production archive / EAS build 产出并进入 App Store Connect。
   - App Store Connect 手工填入隐私营养标签、metadata、Review Notes。
   - App Store-ready sanitized 截图候选已生成: `design/screenshots/app-store/batch5-ready-20260630`。
-  - 最终提交仍需用户提供 demo account/password 并在发布机器配置 ASC credentials。
+  - 2026-07-03 已确认发布机 `.env` 中存在 Review demo credentials、审核联系手机号和 ASC credentials;不写入 git。
+  - PASS: `set -a; source .env; set +a; python3 scripts/check_app_store_release_pack.py --final-submit --screenshot-dir design/screenshots/app-store/batch5-ready-20260630`。
 
 ## G5 · 部署健康闸
 
@@ -309,20 +310,22 @@ P0:
   - PASS: `backend/tests/test_app_store_release_pack.py` 拒绝 `Reva`、`复元`、`健康助理`、`守护神` 等旧用户可见叙事,并要求当时底部导航 `今日 / 私教 / 记录 / 我` 与定位词 `健康参谋`。
   - PASS: 后续 Mobile tab rename 批次把 release narrative gate 的当前底部导航推进为 `今日 / 阿衡 / 记录 / 我`,并把 `私教` 纳入 stale user-visible term。
   - PASS: `submission-pack.md` keywords 从 `健康助理` 收敛为 `阿衡` / `健康参谋`。
-- pending:
+- ready / pending:
   - App Store Connect build processing status。
   - App Store Connect production/distribution profile build。
   - App Store-ready sanitized screenshot set 已生成并过闸: `design/screenshots/app-store/batch5-ready-20260630`。
-  - 最终提交前必须跑 `python3 scripts/check_app_store_release_pack.py --final-submit --screenshot-dir <ready>`。
-  - 真正触发 EAS production build / submit 前,用 `python3 scripts/check_ios_app_store_submission.py --require-asc-credentials` 在发布机器上过闸。
+  - 最终提交前必须在发布机加载 `.env` 后跑 `python3 scripts/check_app_store_release_pack.py --final-submit --screenshot-dir <ready>`。
+  - 2026-07-03 已在发布机加载 `.env` 后通过 final-submit preflight;真正触发 EAS production build / submit 前仍需确认 App Store Connect 页面填写一致。
 
 ## S7 · 上线验证
 
+- PASS: final-submit preflight 已在本机加载 `.env` 后通过,覆盖 App Store-ready 截图、Review demo credentials、审核联系手机号和 ASC credentials。
 - pending: 需要真机或模拟器逐页验证 `我 -> 账号与隐私 -> 删除账号与数据`、HealthKit 权限文案、隐私政策入口。
 
 ## G6 · 验证闸
 
-- pending: App Store submission still requires human-provided demo account credentials and final App Store Connect manual entry.
+- PASS: App Store final-submit preflight 本地通过。
+- pending: App Store Connect production build processing、metadata/privacy 手工填写和最终人工提交。
 
 ## S8 · 沉淀
 

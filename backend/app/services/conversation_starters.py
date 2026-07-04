@@ -17,6 +17,7 @@ Design constraints:
 from __future__ import annotations
 
 import random
+import re
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
@@ -688,11 +689,35 @@ def _suggest_acwr(signals: StarterSignals) -> Optional[SuggestionCandidate]:
 
 def _suggest_acute_illness(signals: StarterSignals) -> Optional[SuggestionCandidate]:
     if signals.should_rest_from_training:
-        if signals.illness_names:
-            ill = "、".join(signals.illness_names[:2])
+        ill = _format_illness_phrase(signals.illness_names)
+        if ill:
+            # 若病症名已自带"发作"/"症状"结尾, 不再补"症状" (避免"发作症状"结巴)。
+            if ill.endswith(("发作", "症状", "急性发作")):
+                return SuggestionCandidate(100, f"我有{ill}，今天该怎么休息和恢复？")
             return SuggestionCandidate(100, f"我有{ill}症状，今天该怎么休息和恢复？")
         return SuggestionCandidate(100, "我身体不太舒服，今天该怎么休息和恢复？")
     return None
+
+
+def _format_illness_phrase(illness_names: Optional[list[str]]) -> str:
+    """把病症名列表整形成短语: 拆分隔符 → 去重 (保序) → 取前 2 → 顿号连接。
+
+    修 "鼻炎发作、鼻炎发作" 类重复: 上游可能有多条同名 active illness,
+    也可能单个 name 里已含 顿号/逗号 分隔的多值。
+    """
+    if not illness_names:
+        return ""
+    seen: set[str] = set()
+    tokens: list[str] = []
+    for raw in illness_names:
+        if not raw:
+            continue
+        for tok in re.split(r"[、,，]", raw):
+            tok = tok.strip()
+            if tok and tok not in seen:
+                seen.add(tok)
+                tokens.append(tok)
+    return "、".join(tokens[:2])
 
 
 # ── Environment (Twin-driven) ───────────────────────────────────────────

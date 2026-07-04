@@ -13,10 +13,10 @@ import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
 import ChatInputBar, { type ChatInputSendOptions } from '../../components/chat/ChatInputBar';
 import ChatBubble from '../../components/chat/ChatBubble';
 import ConversationSheet from '../../components/chat/ConversationSheet';
-import OpenerCard from '../../components/chat/OpenerCard';
 import ChatHeader from '../../components/chat/ChatHeader';
 import BriefingStrip from '../../components/chat/BriefingStrip';
 import RecordTray from '../../components/chat/RecordTray';
+import EmptyStateHome, { type EmptyStateSuggestion } from '../../components/chat/EmptyStateHome';
 import {
   buildConversationOpenerReplyContext,
   buildConversationOpenerReplyMessage,
@@ -81,14 +81,6 @@ function decorateSuggestions(items: SuggestionMeta[] | null | undefined): Sugges
     }))
     .slice(0, 4);
   return decorated.length > 0 ? decorated : null;
-}
-
-function formatMemoryOpenerText(items: MemoryOpenerItem[]): string {
-  return items
-    .map(item => item.content.trim().replace(/\s+/g, ' '))
-    .filter(Boolean)
-    .slice(0, 2)
-    .join(' · ');
 }
 
 function getSelfReportedAdherence(reply: string): number | null {
@@ -292,6 +284,17 @@ export default function ChatScreen() {
     setContextBadge(null);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
   }, [sendMessage]);
+
+  const handleStarterPress = useCallback((s: EmptyStateSuggestion, position: number) => {
+    // 点击埋点 (CTR 分子) — 旁路, 不阻塞发送
+    void emitClientEvent('starter_chip_clicked', {
+      key: s.key,
+      priority: s.priority,
+      position,
+      source: 'chat',
+    });
+    handleSend(s.text, null);
+  }, [handleSend]);
 
   const handleMedicalExamImportResult = useCallback((result: ChatMedicalExamImportSkillResult) => {
     isNearBottom.current = true;
@@ -558,67 +561,14 @@ export default function ChatScreen() {
           onScroll={(e) => { const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent; isNearBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 120; }}
           scrollEventThrottle={100}
           ListEmptyComponent={
-            <View>
-              {memoryOpener.length > 0 && (
-                <Pressable
-                  style={({ pressed }) => [styles.memoryOpener, pressed && styles.memoryOpenerPressed]}
-                  onPress={() => router.push('/memory')}
-                  accessibilityRole="button"
-                  accessibilityLabel="查看和校准 AI 记忆"
-                >
-                  <View style={styles.memoryIconWrap}>
-                    <Ionicons name="bookmark-outline" size={14} color={C.green500} />
-                  </View>
-                  <View style={styles.memoryTextWrap}>
-                    <View style={styles.memoryHeader}>
-                      <Text style={txt.memoryLabel}>记忆线索</Text>
-                      <Text style={txt.memoryAction}>校准</Text>
-                    </View>
-                    <Text style={txt.memoryBody} numberOfLines={3}>
-                      {formatMemoryOpenerText(memoryOpener)}
-                    </Text>
-                  </View>
-                </Pressable>
-              )}
-              {opener && (
-                <OpenerCard
-                  opener={opener}
-                  onQuickReply={handleOpenerQuickReply}
-                />
-              )}
-              <View style={styles.welcome}>
-                <View style={styles.welcomeInline}>
-                  <Ionicons name="sparkles" size={14} color={C.green500} />
-                  <Text style={txt.welcomeInline} numberOfLines={1}>
-                    阿衡 · {opener ? '或者问我别的' : '会带上你的健康上下文'}
-                  </Text>
-                </View>
-                <View style={styles.sugGrid}>
-                  {starterSuggestions.map((s, position) => (
-                    <TouchableOpacity
-                      key={s.text}
-                      style={styles.sugChip}
-                      onPress={() => {
-                        // 点击埋点 (CTR 分子) — 旁路, 不阻塞发送
-                        void emitClientEvent('starter_chip_clicked', {
-                          key: s.key,
-                          priority: s.priority,
-                          position,
-                          source: 'chat',
-                        });
-                        handleSend(s.text, null);
-                      }}
-                      activeOpacity={0.72}
-                      accessibilityRole="button"
-                      accessibilityLabel={`向阿衡提问: ${s.text}`}
-                    >
-                      <Ionicons name={s.icon} size={13} color={C.green500} />
-                      <Text style={txt.sugChipText} numberOfLines={1}>{s.text}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            </View>
+            <EmptyStateHome
+              memoryOpener={memoryOpener}
+              opener={opener}
+              suggestions={starterSuggestions}
+              onOpenMemory={() => router.push('/memory')}
+              onOpenerQuickReply={handleOpenerQuickReply}
+              onSuggestionPress={handleStarterPress}
+            />
           }
         />
 
@@ -779,40 +729,6 @@ function ToolMenuRow({
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
   messageList: { padding: revaSpacing.s4, paddingBottom: 8 },
-  // P3-3: 会诊页 opener "我记得你 X" banner
-  memoryOpener: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: revaSpacing.s2,
-    backgroundColor: C.surface,
-    paddingHorizontal: revaSpacing.s3,
-    paddingVertical: revaSpacing.s3,
-    borderRadius: revaRadii.lg,
-    marginHorizontal: revaSpacing.s4,
-    marginBottom: revaSpacing.s2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    ...revaShadows.sm,
-  },
-  memoryOpenerPressed: { opacity: 0.72 },
-  memoryIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.green50,
-  },
-  memoryTextWrap: {
-    flex: 1,
-    minWidth: 0,
-  },
-  memoryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 3,
-  },
   imageViewerOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',
     justifyContent: 'center', alignItems: 'center',
@@ -847,31 +763,6 @@ const styles = StyleSheet.create({
     gap: revaSpacing.s2,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: C.line,
-  },
-  welcome: { paddingTop: revaSpacing.s3, paddingHorizontal: revaSpacing.s4, gap: revaSpacing.s2 },
-  welcomeInline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 6,
-  },
-  sugGrid: {
-    width: '100%',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  sugChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    maxWidth: '100%',
   },
   contextBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -918,12 +809,7 @@ const styles = StyleSheet.create({
 });
 
 const txt = {
-  welcomeInline: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, fontWeight: '700', flexShrink: 1 } as TextStyle,
-  sugChipText: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink1, fontWeight: '600', flexShrink: 1 } as TextStyle,
   contextBanner: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green500, flex: 1, fontWeight: '500' } as TextStyle,
-  memoryLabel: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, fontWeight: '700' } as TextStyle,
-  memoryAction: { fontFamily: revaFonts.sans, fontSize: 11, color: C.green500, fontWeight: '700' } as TextStyle,
-  memoryBody: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, lineHeight: 18 } as TextStyle,
   shareBarTitle: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink1, fontWeight: '700' } as TextStyle,
   shareBarSub: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, marginTop: 2 } as TextStyle,
   cancelSelectionButton: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, fontWeight: '700' } as TextStyle,
