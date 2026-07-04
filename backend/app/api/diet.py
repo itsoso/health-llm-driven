@@ -28,9 +28,24 @@ from app.schemas.diet import (
 )
 from statistics import median
 from app.services.ai.food_recognition import food_recognition_service
+from app.services.intake_intent_classifier import classify_intake_intent
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _assert_diet_food_items_allowed(food_items: str) -> None:
+    intent = classify_intake_intent(food_items)
+    if intent.kind == "diet_management":
+        raise HTTPException(
+            status_code=400,
+            detail="删除、撤销或恢复饮食记录不能作为饮食记录写入，请使用饮食记录管理操作。",
+        )
+    if intent.kind in {"medication", "supplement"}:
+        raise HTTPException(
+            status_code=400,
+            detail="药物或补剂摄入不能作为饮食记录写入，请使用用药或补剂记录。",
+        )
 
 
 @router.post("/records", response_model=DietRecordResponse)
@@ -40,6 +55,7 @@ def create_diet_record(
     db: Session = Depends(get_db)
 ):
     """创建饮食记录（需要登录）"""
+    _assert_diet_food_items_allowed(record.food_items)
     try:
         logger.info(f"用户 {current_user.id} 创建饮食记录: {record.meal_type}, {record.food_items[:50] if record.food_items else ''}")
 
@@ -453,6 +469,8 @@ def update_diet_record(
         raise HTTPException(status_code=403, detail="无权更新他人的饮食记录")
 
     update_dict = update_data.model_dump(exclude_unset=True)
+    if update_dict.get("food_items") is not None:
+        _assert_diet_food_items_allowed(update_dict["food_items"])
     if 'meal_type' in update_dict and update_dict['meal_type']:
         update_dict['meal_type'] = update_dict['meal_type'].value
     if 'meal_time' in update_dict and update_dict['meal_time']:

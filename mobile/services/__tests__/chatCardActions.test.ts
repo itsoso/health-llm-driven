@@ -186,6 +186,26 @@ describe('dispatchChatCardAction', () => {
     }));
   });
 
+  it('does not treat words containing nac as NAC supplement intake', async () => {
+    await dispatchChatCardAction({
+      label: '确认记录',
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      requires_manual_confirm: true,
+      payload: {
+        record: {
+          food_items: '测试snack',
+          meal_type: 'snack',
+        },
+      },
+    });
+
+    expect(mockApiPost).toHaveBeenCalledWith('/diet/records', expect.objectContaining({
+      food_items: '测试snack',
+      meal_type: 'snack',
+    }));
+  });
+
   it('estimates and backfills nutrition after confirming a diet record without macros', async () => {
     mockApiPost
       .mockResolvedValueOnce({ data: { id: 88, food_items: '牛肉面', meal_type: 'lunch' } })
@@ -262,6 +282,27 @@ describe('dispatchChatCardAction', () => {
         },
       },
     })).rejects.toThrow('unsupported_card_action_endpoint');
+
+    expect(mockApiPost).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['我刚才不小心删除了', 'invalid_diet_food_items_management'],
+    ['替普瑞酮胶囊（施维舒）', 'invalid_diet_food_items_non_diet'],
+    ['鱼油', 'invalid_diet_food_items_non_diet'],
+  ])('rejects non-food diet card payloads before posting: %s', async (foodItems, errorCode) => {
+    await expect(dispatchChatCardAction({
+      label: '确认记录',
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      requires_manual_confirm: true,
+      payload: {
+        record: {
+          food_items: foodItems,
+          meal_type: 'dinner',
+        },
+      },
+    })).rejects.toThrow(errorCode);
 
     expect(mockApiPost).not.toHaveBeenCalled();
   });

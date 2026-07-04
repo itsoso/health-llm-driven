@@ -11,6 +11,7 @@ from app.services.intake_intent_classifier import classify_intake_intent
     ("记录刚吃了奥美拉唑20mg", "medication"),
     ("吃了鱼油", "supplement"),
     ("吃了维生素D3", "supplement"),
+    ("测试snack", "unknown"),
     ("喝了300ml水", "water"),
     ("删除这一餐", "diet_management"),
     ("我刚才不小心删除了", "diet_management"),

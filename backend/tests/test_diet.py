@@ -118,6 +118,27 @@ class TestDietAPI:
         )
         assert response.status_code == 401
 
+    @pytest.mark.parametrize("food_items", [
+        "我刚才不小心删除了",
+        "删除这一餐",
+        "替普瑞酮胶囊（施维舒）",
+        "鱼油",
+    ])
+    def test_create_diet_record_rejects_non_food_items(self, client, auth_headers, food_items):
+        """REST API 防御纵深: 管理意图/药物/补剂不能直接落成 DietRecord。"""
+        response = client.post(
+            "/api/v1/diet/records",
+            json={
+                "record_date": str(date.today()),
+                "meal_type": "dinner",
+                "food_items": food_items,
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400
+        assert "不能作为饮食记录" in response.json()["detail"]
+
     def test_implausible_past_record_date_is_clamped_to_server_today(
         self, client, auth_headers, caplog
     ):
@@ -280,6 +301,24 @@ class TestDietAPI:
         assert update_response.status_code == 200
         assert update_response.json()["calories"] == 500
         assert update_response.json()["notes"] == "更新后的备注"
+
+    def test_update_diet_record_rejects_non_food_items(self, client, auth_headers, sample_diet_data):
+        """更新饮食记录也不能把药物/删除意图写进 food_items。"""
+        create_response = client.post(
+            "/api/v1/diet/records",
+            json=sample_diet_data,
+            headers=auth_headers
+        )
+        record_id = create_response.json()["id"]
+
+        update_response = client.put(
+            f"/api/v1/diet/records/{record_id}",
+            json={"food_items": "替普瑞酮胶囊（施维舒）"},
+            headers=auth_headers,
+        )
+
+        assert update_response.status_code == 400
+        assert "不能作为饮食记录" in update_response.json()["detail"]
 
 
 class TestDietValidation:

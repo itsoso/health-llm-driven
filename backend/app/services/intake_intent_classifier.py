@@ -170,7 +170,15 @@ def _looks_like_medication(normalized: str) -> bool:
 def _looks_like_supplement(raw: str, normalized: str) -> bool:
     if re.search(r"维\s*c\s*(?:茶|饮|饮料|果汁|柠檬|柠)", raw, re.I):
         return False
-    return _has_any(normalized, SUPPLEMENT_MARKERS)
+    for marker in SUPPLEMENT_MARKERS:
+        lowered = marker.lower()
+        if lowered.isascii():
+            if re.search(rf"(?<![a-z0-9]){re.escape(lowered)}(?![a-z0-9])", normalized, re.I):
+                return True
+            continue
+        if lowered in normalized:
+            return True
+    return False
 
 
 def _looks_like_diet(raw: str, normalized: str) -> bool:
