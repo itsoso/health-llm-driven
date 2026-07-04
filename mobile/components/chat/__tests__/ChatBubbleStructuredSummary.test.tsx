@@ -196,6 +196,38 @@ describe('ChatBubble structured summary', () => {
     expect(getByText('已生成')).toBeTruthy();
   });
 
+  it('refreshes today execution surfaces after generating a record from an assistant reply', async () => {
+    createRecordFromAssistantReply.mockResolvedValueOnce({
+      status: 'created',
+      type: 'diet',
+      message: '已记录午餐',
+    });
+    const qc = new QueryClient();
+    const invalidateSpy = jest.spyOn(qc, 'invalidateQueries');
+    const message: UIMessage = {
+      id: 'assistant-record-refresh',
+      role: 'assistant',
+      content: '✅ 已记录午餐 — 煎牛肉能量碗 + 姜黄鲜柠维C茶，770 kcal',
+      streaming: false,
+    };
+
+    const { getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.press(getByText('生成记录'));
+
+    await waitFor(() => {
+      expect(mockToastShow).toHaveBeenCalledWith('已记录午餐', 'success');
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['timeline', 'today'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['agenda', 'today'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['daily-artifact', 'me'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['today-dynamic-view', 'mobile.today'] });
+  });
+
   it('injects follow-up prompts into the current chat input instead of pushing the same tab', () => {
     const { getByText } = renderBubble('晚餐后散步 15 分钟，明早观察 HRV 和主观恢复。');
 

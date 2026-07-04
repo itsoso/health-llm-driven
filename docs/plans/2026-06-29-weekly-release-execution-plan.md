@@ -178,6 +178,15 @@ P2 HealthKit / Watch 本周验收已复核:
   - `swift test --package-path apps/watch` -> 56 passed。
 - 剩余不是代码闸,而是真机/EAS/签名闸:Watch 上设备、HealthKit background delivery entitlement 和 AppIntent 真机验证仍依赖一次 production native build / TestFlight 或本地签名包,以及对应 Apple/EAS 凭据。
 
+## 第十七批实现切片
+
+P1 Chat 回复级生成记录闭环已推进:
+
+- 对齐卡片级 action 的成功刷新语义:回复底部「生成记录」成功后,同步刷新 `dashboard`、`dataHealth`、`todayCoach`、`agentAgenda`、`timeline/today`、`agenda/today`、`daily-artifact/me`、`diet` 和 `today-dynamic-view/mobile.today`。
+- 解决的体验断点:用户在阿衡回复里生成饮食/饮水/体重等记录后,首页 Daily Artifact、今日计划和记录页不再停留旧缓存。
+- 保持最小打扰:生成成功后仍只给 toast 和按钮完成态,不自动跳走;只有不能自动生成记录时才打开记录页。
+- 回归测试覆盖 `ChatBubbleStructuredSummary`:生成记录后必须刷新今日执行面,避免后续再次出现“点了生成记录但今日页无感”的问题。
+
 ## 本周不做
 
 - 不把 App Store 发布伪装成已完成:final-submit preflight 通过不等于 App Store Connect 已提交或已过审。
@@ -189,5 +198,4 @@ P2 HealthKit / Watch 本周验收已复核:
 
 1. 触发 App Store Connect production build / submit 前,再次加载发布机 `.env` 跑 `--final-submit`。
 2. 继续 Daily Artifact 主屏真机点击动线截图,重点验证完成/跳过/问阿衡/查看依据/去执行的承接页。
-3. 继续 Chat card action 成功后的局部刷新/跳转反馈和记录页联动。
-4. 推进 Watch 真机和二维码原生包发版;默认不走 TestFlight,除非用户明确指定。
+3. 推进 Watch 真机和二维码原生包发版;默认不走 TestFlight,除非用户明确指定。

@@ -359,7 +359,12 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
       const result = await createRecordFromAssistantReply(assistantTextForActions);
       await invalidateQueryKeys(qc, [
         queryKeys.dashboard,
+        queryKeys.dataHealth,
+        queryKeys.todayCoachRoot,
+        queryKeys.agentAgendaRoot,
         ['timeline', 'today'],
+        ['agenda', 'today'],
+        ['daily-artifact', 'me'],
         ['diet'],
         ['today-dynamic-view', 'mobile.today'],
       ]);
