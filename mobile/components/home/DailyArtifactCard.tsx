@@ -71,8 +71,10 @@ export default function DailyArtifactCard({
     <View style={styles.card} testID="daily-artifact-card">
       <View style={styles.header}>
         <View style={styles.headerText}>
-          <Text style={styles.overline}>今日焦点</Text>
-          <Text style={styles.stateLabel}>{state?.label ?? '今日状态'}</Text>
+          <Text style={styles.overline}>今日行动</Text>
+          {topAction && state?.summary ? (
+            <Text style={styles.headerHint} numberOfLines={1}>{state.summary}</Text>
+          ) : null}
         </View>
         <View style={[styles.statusPill, toneStyle(state?.tone)]}>
           <Text style={[styles.statusPillText, toneTextStyle(state?.tone)]}>
@@ -88,18 +90,16 @@ export default function DailyArtifactCard({
           accessibilityRole="button"
           accessibilityLabel={`今日最重要行动:${displayTitle || topAction.title}`}
         >
-          <View style={styles.actionHead}>
-            <Text style={styles.actionTag}>现在只做</Text>
+          <View style={styles.actionMetaRow}>
             <Text style={styles.freshnessText} numberOfLines={1}>
               {[topAction.priority_tier, freshnessLabel(artifact)].filter(Boolean).join(' · ')}
             </Text>
+            <Icon name="chevron-right" size={16} color={C.ink3} />
           </View>
           <Text style={styles.title} numberOfLines={2}>{displayTitle || topAction.title}</Text>
           {doNow ? (
-            <View style={styles.executeRow}>
-              <View style={styles.executeIcon}>
-                <Icon name={canComplete ? 'check' : 'play'} size={14} color={C.green600} />
-              </View>
+            <View style={styles.doNowRow}>
+              <Icon name={canComplete ? 'check-circle-2' : 'play-circle'} size={17} color={C.green600} />
               <Text style={styles.executeText} numberOfLines={2}>{doNow}</Text>
             </View>
           ) : null}
@@ -126,6 +126,7 @@ export default function DailyArtifactCard({
         <View style={styles.emptyBlock}>
           <Icon name="check-circle-2" size={20} color={C.green500} />
           <View style={styles.emptyCopy}>
+            <Text style={styles.emptyTitle}>{state?.label ?? '暂无今日重点'}</Text>
             <Text style={styles.summary}>{state?.summary ?? '今天暂无需要突出的健康行动。'}</Text>
           </View>
         </View>
@@ -360,61 +361,51 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
     borderRadius: revaRadii.lg,
-    padding: 18,
-    gap: 15,
-    ...revaShadows.md,
+    padding: 17,
+    gap: 14,
+    ...revaShadows.sm,
   },
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   loadingText: { fontSize: 14, color: C.ink2 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   headerText: { flex: 1, minWidth: 0 },
   overline: {
-    fontFamily: 'IBMPlexMono',
-    fontSize: 10,
-    letterSpacing: 0.8,
-    color: C.ink3,
-  },
-  stateLabel: {
-    marginTop: 3,
     fontFamily: 'Manrope',
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 13,
+    lineHeight: 17,
     fontWeight: '800',
-    color: C.ink1,
+    color: C.green700,
+  },
+  headerHint: {
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 17,
+    color: C.ink3,
   },
   statusPill: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: revaRadii.pill,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
   },
   statusPillText: { fontSize: 12, fontWeight: '700' },
   actionBlock: {
-    backgroundColor: C.surface2,
+    backgroundColor: C.surface,
     borderRadius: revaRadii.md,
-    padding: 15,
-    gap: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    padding: 14,
+    gap: 9,
   },
-  actionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
-  actionTag: { fontSize: 12, fontWeight: '800', color: C.green600 },
+  actionMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
   freshnessText: { flexShrink: 1, fontSize: 12, color: C.ink3 },
-  title: { fontFamily: 'Manrope', fontSize: 20, lineHeight: 27, fontWeight: '800', color: C.ink1 },
+  title: { fontFamily: 'Manrope', fontSize: 19, lineHeight: 26, fontWeight: '800', color: C.ink1 },
   summary: { fontSize: 14, lineHeight: 20, color: C.ink2 },
-  executeRow: {
+  doNowRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 9,
-    backgroundColor: C.surface,
-    borderRadius: revaRadii.sm,
-    padding: 10,
-  },
-  executeIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: C.green50,
-    alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
+    paddingTop: 1,
   },
   executeText: { flex: 1, minWidth: 0, fontSize: 14, lineHeight: 20, color: C.ink2, fontWeight: '600' },
   summaryChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -424,7 +415,7 @@ const styles = StyleSheet.create({
     borderRadius: revaRadii.sm,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
-    backgroundColor: C.surface,
+    backgroundColor: C.surface2,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
@@ -432,6 +423,7 @@ const styles = StyleSheet.create({
   summaryChipText: { marginTop: 2, fontSize: 12.5, color: C.green700, fontWeight: '800' },
   emptyBlock: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   emptyCopy: { flex: 1, minWidth: 0, gap: 3 },
+  emptyTitle: { fontSize: 15, lineHeight: 20, fontWeight: '800', color: C.ink1 },
   evidenceList: {
     gap: 8,
     paddingTop: 2,
@@ -462,10 +454,10 @@ const styles = StyleSheet.create({
   },
   basisLinkText: { fontSize: 12.5, fontWeight: '800', color: C.green600 },
   safety: { fontSize: 11.5, lineHeight: 16, color: C.ink3 },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   primaryButton: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 44,
     borderRadius: revaRadii.sm,
     backgroundColor: C.green500,
     flexDirection: 'row',
@@ -477,7 +469,7 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.45 },
   primaryText: { color: C.greenOn, fontSize: 14, fontWeight: '800' },
   secondaryButton: {
-    minHeight: 42,
+    minHeight: 44,
     borderRadius: revaRadii.sm,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.lineStrong,
@@ -489,7 +481,7 @@ const styles = StyleSheet.create({
   secondaryText: { color: C.ink2, fontSize: 14, fontWeight: '700' },
   askButton: {
     minWidth: 72,
-    height: 42,
+    height: 44,
     borderRadius: revaRadii.sm,
     alignItems: 'center',
     justifyContent: 'center',

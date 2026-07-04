@@ -305,7 +305,7 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
 
     const { getByText, queryByLabelText } = render(<TodayScreen />);
 
-    expect(getByText('今日焦点')).toBeTruthy();
+    expect(getByText('今日行动')).toBeTruthy();
     expect(getByText('午饭后步行 10 分钟')).toBeTruthy();
     expect(queryByLabelText('现在该做:旧 Hero 行动')).toBeNull();
   });

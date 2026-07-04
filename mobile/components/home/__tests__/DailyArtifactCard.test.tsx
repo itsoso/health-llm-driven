@@ -59,16 +59,18 @@ describe('DailyArtifactCard', () => {
       <DailyArtifactCard artifact={makeArtifact()} />,
     );
 
-    expect(getByText('今日焦点')).toBeTruthy();
+    expect(getByText('今日行动')).toBeTruthy();
     expect(getByText('午饭后步行 10 分钟')).toBeTruthy();
+    expect(getByText('穿好鞋,从办公室楼下走一圈。')).toBeTruthy();
     expect(getByText('决策依据')).toBeTruthy();
     expect(getByText('餐后血糖窗口更适合轻活动。')).toBeTruthy();
-    expect(getByText('现在只做')).toBeTruthy();
     expect(getByText('目标')).toBeTruthy();
     expect(getByText('腰围 · 90天上游轨迹')).toBeTruthy();
     expect(getByText('验证')).toBeTruthy();
     expect(getByText('腰围 · 7天 · 不确定性: 中')).toBeTruthy();
     expect(getAllByTestId('daily-artifact-evidence')).toHaveLength(2);
+    expect(queryByText('今日焦点')).toBeNull();
+    expect(queryByText('现在只做')).toBeNull();
     expect(queryByText('不应显示')).toBeNull();
   });
 
