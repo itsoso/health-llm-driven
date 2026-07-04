@@ -15,7 +15,7 @@ def test_surface_ownership_inventory_covers_core_surfaces_and_mobile_entries():
         "Rokid",
         "Mac",
         "Web",
-        "OpenClaw / MCP",
+        "MCP",  # OpenClaw 运行时已退役(dfe336d1), MCP 作为受控扩展保留
         "Backend",
     ]:
         assert surface in text

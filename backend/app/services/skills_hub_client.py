@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 from typing import Optional
 from urllib.request import urlopen, Request
-from urllib.error import URLError
 
 logger = logging.getLogger(__name__)
 
