@@ -10757,6 +10757,14 @@ export interface paths {
          *
          *     This endpoint is fail-soft: it never raises (except auth) and falls back to
          *     stable defaults on any internal error.
+         *
+         *     LLM polish (progressive enhancement, flag `starter_llm_polish_enabled`):
+         *     the RULES compute the chips; a cheap LLM optionally rewrites the wording and
+         *     a deterministic verify gate rejects anything invented (fail-safe = rule text).
+         *     On a cache hit we serve the polished text; on a miss we serve the RULE text
+         *     immediately and warm the cache in a background task. Each suggestion carries
+         *     an additive `polished: bool` so adoption is eyeball-able in logs. Flag off /
+         *     redis down / provider error → byte-identical to the pure-rules behavior.
          */
         get: operations["conversation_starters_api_v1_agent_conversation_starters_get"];
         put?: never;
