@@ -626,10 +626,13 @@ def test_endpoint_returns_structured_cards_with_key_and_priority(client, db, aut
     suggestions = r.json()["suggestions"]
     assert suggestions and isinstance(suggestions[0], dict)
     for s in suggestions:
-        assert set(s.keys()) == {"text", "key", "priority"}
+        # Legacy fields are the stable mobile contract; `polished` is an additive
+        # field from the starter-polish overlay (bool), extra-safe for clients.
+        assert {"text", "key", "priority"}.issubset(s.keys())
         assert isinstance(s["text"], str) and s["text"]
         assert isinstance(s["key"], str) and s["key"]
         assert isinstance(s["priority"], int)
+        assert isinstance(s["polished"], bool)
     # the water card is attributed to _suggest_water
     assert any(s["key"] == "water" for s in suggestions)
 

@@ -343,6 +343,40 @@ LLM 看到"已过期"会主动说"建议你重新测一下"，看到 raw timesta
 
 ---
 
+## 7.6. Starter polish — rules-cast-facts → LLM 改写 → 确定性 verify gate (2026-07)
+
+**问题**: 首页对话起手 chip 由 21 条确定性规则生成 (`conversation_starters._build_candidates`), 内容正确但措辞生硬 ("今天恢复评分 40，帮我安排轻负荷或休息日方案")。想让措辞更自然, 又绝不能让 LLM 编造规则没说过的数字/实体/医嘱。
+
+**做法**: RULES 仍是唯一事实源, LLM 只改写措辞, 一道**确定性** verify gate 拒掉 LLM 编造的内容, 回退到规则模板文本。**fail-safe = 规则文本, 永远。**
+
+```
+RULES → cast facts → LLM 改写 → verify gate → serve
+                                    ↓ reject
+                                 规则模板文本
+```
+
+**self-grounding 锚点**: facts 直接从模板文本抽 (数字/单位), 不重构 21 个 generator。凡模板文本里已出现的数字/实体都是规则批准的 —— verify gate 就拿"两条源文本的并集"当锚点集。
+
+**verify_polished 四道** (`app/services/starter_polish.py`, 纯函数, 硬单测):
+- **number anchoring**: 输出里每个数字串 (含小数/百分号) 必须逐字出现在源文本, 否则拒。
+- **red-word denylist**: 剂量/mg/毫克/停药/加量/减量/换药/服用/每天吃/处方 —— 源文本没出现就拒 (源里有 = 规则已经说了, 放行)。
+- **form check**: 必须以 ？/? 结尾, 或不含祈使标记 (应该/必须/立即去); 裸命令句拒。
+- **length**: strip 后 6..40 字, 越界拒。
+- synthesis 合并项额外: `combines` 必须是输入 key, 且文本对两条源文本的并集过全部上面四道。
+
+**弱模型 JSON 防御** (glm/minimax 教训): 剥 code fence → 弯引号归一 → `json.loads`, 失败再正则抠 `[...]` 数组; 任何解析失败 → 返回 None (调用方回退规则)。**永不抛到 endpoint。**
+
+**cache + progressive enhancement**: `signals_hash = sha256(sorted [key+text])[:16]`, Redis key `starter_polish:{user_id}:{hash}` TTL 6h。命中 → 服务润色文本; miss → 立即服务规则文本 + FastAPI `BackgroundTasks` 后台 warm (endpoint 是 sync `def`, 用 framework-native BackgroundTasks 而非线程/celery)。响应加 `polished: true/false` (additive, 移动端 Pydantic extra-safe) 便于日志里量化 adoption。
+
+**flag / 模型**: `STARTER_LLM_POLISH_ENABLED`(默认 True)+ `STARTER_LLM_POLISH_MODEL_ID=deepseek-v4-flash`(fast 档 + 可靠 + 纯文本, 最便宜)。flag 关 / redis down / provider error → 与纯规则行为**字节一致**。usage 记账走 wrap_provider + `set_caller("starter_polish")`, 免费接上。
+
+**反模式**:
+- ❌ 让 LLM 直接产 chip (无锚点 = 编造数字, 健康场景直接说错)。
+- ❌ 把 verify 建成"LLM 自评" (judge 只 advisory); 这里 gate 是确定性纯函数。
+- ❌ 同步等 LLM 阻塞 endpoint; 起手 chip 是启动关键路径, 必须立即返回规则文本。
+
+---
+
 ## 8. 路由：什么时候走 Orchestrator vs Skill
 
 **业界对应**：Anthropic 把 *routing*（分类后分流）列为五大 workflow pattern 之一，建议"separation of concerns and building more specialized prompts"。我们用正则做 router 而不是 LLM 做 router 是个有意识的取舍 — Anthropic 也强调 *"start with the simplest solution"*。

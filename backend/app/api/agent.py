@@ -10,7 +10,7 @@ import uuid
 from typing import Optional, List
 
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
@@ -850,6 +850,7 @@ def conversation_opener(
 
 @router.get("/conversation-starters", summary="新对话页 prompts — 动态建议 chip")
 def conversation_starters(
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
@@ -857,8 +858,17 @@ def conversation_starters(
 
     This endpoint is fail-soft: it never raises (except auth) and falls back to
     stable defaults on any internal error.
+
+    LLM polish (progressive enhancement, flag `starter_llm_polish_enabled`):
+    the RULES compute the chips; a cheap LLM optionally rewrites the wording and
+    a deterministic verify gate rejects anything invented (fail-safe = rule text).
+    On a cache hit we serve the polished text; on a miss we serve the RULE text
+    immediately and warm the cache in a background task. Each suggestion carries
+    an additive `polished: bool` so adoption is eyeball-able in logs. Flag off /
+    redis down / provider error → byte-identical to the pure-rules behavior.
     """
     from dataclasses import asdict
+    from app.config import settings
     from app.services.conversation_opener import compute_conversation_opener
     from app.services.conversation_starters import compute_conversation_suggestion_cards
 
@@ -873,12 +883,101 @@ def conversation_starters(
     # plain-string shape too (see conversationOpener.ts / ai-assistant page).
     cards = compute_conversation_suggestion_cards(db, current_user.id, limit=4)
 
+    suggestions = _resolve_starter_suggestions(
+        cards, current_user.id, background_tasks, settings
+    )
+
     return {
         "opener": asdict(opener) if opener else None,
-        "suggestions": [
-            {"text": c.text, "key": c.key, "priority": c.priority} for c in cards
-        ],
+        "suggestions": suggestions,
     }
+
+
+def _resolve_starter_suggestions(cards, user_id, background_tasks, settings) -> list[dict]:
+    """Apply LLM-polish overlay to rule cards, fail-safe to pure rule text.
+
+    Returns the suggestion dicts. Every path is fail-soft: any error, a disabled
+    flag, or an unavailable Redis all yield the byte-identical pure-rules shape
+    (text/key/priority + polished=False).
+    """
+    rule_dicts = [
+        {"text": c.text, "key": c.key, "priority": c.priority, "polished": False}
+        for c in cards
+    ]
+
+    if not getattr(settings, "starter_llm_polish_enabled", True):
+        return rule_dicts
+
+    try:
+        from app.services import starter_polish
+
+        sig_hash = starter_polish.signals_hash(cards)
+        cached = starter_polish.read_cached_polish(user_id, sig_hash)
+        if cached:
+            # Cache hit: serve polished. Map polished text back onto the current
+            # rule cards by key so priority/ordering stay rule-authoritative, and
+            # any brand-new key (e.g. synthesis) is appended.
+            return _merge_cached_polish(cards, cached)
+
+        # Cache miss: serve rule text NOW; warm the cache off the response path.
+        background_tasks.add_task(
+            starter_polish.warm_polish_cache, user_id, list(cards), sig_hash
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[conversation_starters] polish overlay bypass: {e}")
+
+    return rule_dicts
+
+
+def _merge_cached_polish(cards, cached: list) -> list[dict]:
+    """Overlay cached polished text onto the current rule cards.
+
+    Rule cards remain the source of truth for which chips exist and their order.
+    For each rule card, if the cache has a polished entry for its key, serve the
+    polished text (+ polished flag); otherwise serve rule text. A cached
+    synthesis item (key not among rule cards) is appended at the end.
+    """
+    by_key = {}
+    synthesis_entries = []
+    for entry in cached:
+        if not isinstance(entry, dict):
+            continue
+        key = str(entry.get("key") or "")
+        if key == "synthesis" or entry.get("synthesis"):
+            synthesis_entries.append(entry)
+        else:
+            by_key.setdefault(key, entry)
+
+    out: list[dict] = []
+    for c in cards:
+        hit = by_key.get(c.key)
+        if hit and hit.get("text"):
+            out.append(
+                {
+                    "text": str(hit["text"]),
+                    "key": c.key,
+                    "priority": c.priority,
+                    "polished": bool(hit.get("polished")),
+                }
+            )
+        else:
+            out.append(
+                {"text": c.text, "key": c.key, "priority": c.priority, "polished": False}
+            )
+
+    for syn in synthesis_entries[:1]:  # at most one synthesis
+        if syn.get("text"):
+            out.append(
+                {
+                    "text": str(syn["text"]),
+                    "key": "synthesis",
+                    "priority": int(syn.get("priority") or 0),
+                    "polished": True,
+                    "synthesis": True,
+                    "combines": list(syn.get("combines") or []),
+                }
+            )
+    return out
 
 
 @router.get("/tools", summary="列出可用工具")

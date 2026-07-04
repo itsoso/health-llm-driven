@@ -223,6 +223,13 @@ class Settings(BaseSettings):
     # 多模型 panel(高风险裁决多模型投票):primitive,默认关
     multi_model_panel: bool = False
 
+    # 首页对话起手 chip 的 LLM 润色(rules-cast-facts → LLM rewrites → verify gate)。
+    # RULES 仍是唯一事实源;LLM 只改写措辞,确定性 verify gate 拒掉 LLM 编造的内容,
+    # 回退到规则模板文本。fail-safe = 规则文本。默认开;一键关回纯规则行为(字节一致)。
+    starter_llm_polish_enabled: bool = True
+    # 润色用的便宜快模型 id(model_registry): fast 档 + 可靠 + 纯文本, 无 vision 开销。
+    starter_llm_polish_model_id: str = "deepseek-v4-flash"
+
     # Legacy Chroma/RAG 知识库运行时开关。
     # 默认 False: 用户问答与 health agent 只能使用 reviewed System KB。
     # 仅在本地调试旧索引时显式打开。
