@@ -133,10 +133,9 @@ jest.mock('../../../components/chat/OpenerCard', () => {
   return MockOpenerCard;
 });
 jest.mock('../../../components/chat/ChatInputBar', () => 'ChatInputBar');
-// BriefingStrip / RecordTray 走 React Query + useToast (record 一键饮水), 本 suite 无 provider;
+// BriefingStrip 走 React Query, 本 suite 无 provider;
 // 它们的内部行为各自有专属测试, 这里 mock 掉避免 provider 依赖。ChatHeader 保留真实 (断言其 DOM)。
 jest.mock('../../../components/chat/BriefingStrip', () => 'BriefingStrip');
-jest.mock('../../../components/chat/RecordTray', () => 'RecordTray');
 
 import ChatScreen from '../chat';
 
@@ -153,6 +152,21 @@ describe('ChatScreen', () => {
     mockLlmPreference = { model_id: null, options: [] };
     mockMessages = [];
     mockIsStreaming = false;
+  });
+
+  it('empty chat auto-summons keyboard: autoFocusToken >0 on focus and bumps on 新建对话 (GPT-style)', async () => {
+    const { UNSAFE_getAllByType, getByLabelText } = render(<ChatScreen />);
+
+    const bar = () => UNSAFE_getAllByType('ChatInputBar' as any)[0];
+    // 空对话首次获得焦点 → token 已递增(>0), 键盘默认唤起
+    const initial = bar().props.autoFocusToken;
+    expect(initial).toBeGreaterThan(0);
+
+    // 新建对话 → 再次递增(新窗口也唤起)
+    await act(async () => {
+      fireEvent.press(getByLabelText('新建对话'));
+    });
+    expect(bar().props.autoFocusToken).toBeGreaterThan(initial);
   });
 
   it('briefing strip hides on dismiss and stays hidden after 新建对话', async () => {

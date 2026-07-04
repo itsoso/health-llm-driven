@@ -15,7 +15,6 @@ import ChatBubble from '../../components/chat/ChatBubble';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import ChatHeader from '../../components/chat/ChatHeader';
 import BriefingStrip from '../../components/chat/BriefingStrip';
-import RecordTray from '../../components/chat/RecordTray';
 import EmptyStateHome, { type EmptyStateSuggestion } from '../../components/chat/EmptyStateHome';
 import {
   buildConversationOpenerReplyContext,
@@ -265,6 +264,24 @@ export default function ChatScreen() {
     }, [])
   );
 
+  // GPT/Gemini 式: 空对话(新窗口/冷启)获得焦点 → 默认唤起键盘;
+  // 有历史的对话不弹, 不打断阅读。token 传给 ChatInputBar 触发聚焦。
+  const [composerFocusToken, setComposerFocusToken] = useState(0);
+  const messagesEmptyRef = useRef(true);
+  messagesEmptyRef.current = messages.length === 0;
+  // 单次触发守卫: 每个 focus 会话只 bump 一次(blur 清理时复位)。
+  // 也防测试环境 useFocusEffect mock 每渲染重跑导致 setState 死循环。
+  const focusBumpedRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!focusBumpedRef.current && messagesEmptyRef.current) {
+        focusBumpedRef.current = true;
+        setComposerFocusToken((n) => n + 1);
+      }
+      return () => { focusBumpedRef.current = false; };
+    }, [])
+  );
+
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', (event) => {
       setKeyboardVisible(true);
@@ -418,6 +435,7 @@ export default function ChatScreen() {
     exitSelectionMode();
     setContextBadge(null);
     setBriefingHidden(true);
+    setComposerFocusToken((n) => n + 1);
     newChat();
     void refreshCoachHomeState();
   }, [exitSelectionMode, newChat, refreshCoachHomeState]);
@@ -612,7 +630,6 @@ export default function ChatScreen() {
             </TouchableOpacity>
           </View>
         )}
-        {!selectionMode && !keyboardVisible && <RecordTray />}
         <ChatInputBar
           onSend={handleSend}
           isStreaming={isStreaming}
@@ -620,6 +637,7 @@ export default function ChatScreen() {
           initialTextKey={initialInputKey}
           conversationId={conversationId}
           onMedicalExamImportResult={handleMedicalExamImportResult}
+          autoFocusToken={composerFocusToken}
         />
         <View testID="chat-bottom-spacer" style={{ height: bottomSpacerHeight }} />
       </View>

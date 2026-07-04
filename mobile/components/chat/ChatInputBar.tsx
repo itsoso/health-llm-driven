@@ -86,9 +86,11 @@ interface Props {
   /** Reserved for callers that keep composer API aligned with chat-level voice entry. */
   conversationId?: number;
   onMedicalExamImportResult?: (result: ChatMedicalExamImportSkillResult) => void;
+  /** 变化(>0)即请求聚焦输入框 — GPT/Gemini 式默认唤起键盘;空对话进入时由 chat.tsx 递增。 */
+  autoFocusToken?: number;
 }
 
-export default function ChatInputBar({ onSend, isStreaming, initialText, initialTextKey, onMedicalExamImportResult }: Props) {
+export default function ChatInputBar({ onSend, isStreaming, initialText, initialTextKey, onMedicalExamImportResult, autoFocusToken }: Props) {
   const [input, setInput] = useState(initialText ?? '');
   const [showMenu, setShowMenu] = useState(false);
   const [showMedicalImportMenu, setShowMedicalImportMenu] = useState(false);
@@ -106,6 +108,17 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     if (initialText == null) return;
     setInput(prev => (prev === initialText ? prev : initialText));
   }, [initialText, initialTextKey]);
+
+  // GPT/Gemini 式默认唤起键盘: chat.tsx 在「空对话获得焦点」时递增 token。
+  // (2026-07-04 founder 拍板反转旧「不 auto-focus」设计 — 仅限空对话, 回到有
+  //  历史的对话不弹, 不打断阅读。)延迟等 tab 过渡完成; 流式/语音时不抢焦点。
+  React.useEffect(() => {
+    if (!autoFocusToken) return;
+    if (isStreaming || voiceMode) return;
+    const t = setTimeout(() => textInputRef.current?.focus(), 380);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFocusToken]);
 
   const handleSend = useCallback((text?: string) => {
     const msg = (text || input).trim();

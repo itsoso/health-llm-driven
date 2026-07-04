@@ -86,16 +86,11 @@ jest.mock('../OpenerCard', () => {
   MockOpenerCard.displayName = 'MockOpenerCard';
   return MockOpenerCard;
 });
-// BriefingStrip / RecordTray 依赖 React Query provider (record 一键饮水), 本 suite 无 provider → mock 掉。
+// BriefingStrip 依赖 React Query provider, 本 suite 无 provider → mock 掉。
 jest.mock('../BriefingStrip', () => {
   const MockBriefingStrip = () => <MockText>BriefingStrip</MockText>;
   MockBriefingStrip.displayName = 'MockBriefingStrip';
   return MockBriefingStrip;
-});
-jest.mock('../RecordTray', () => {
-  const MockRecordTray = () => <MockText>RecordTray</MockText>;
-  MockRecordTray.displayName = 'MockRecordTray';
-  return MockRecordTray;
 });
 
 import ChatScreen from '../../../app/(tabs)/chat';
