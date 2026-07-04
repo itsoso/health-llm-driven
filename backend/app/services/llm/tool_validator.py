@@ -53,6 +53,22 @@ _DIET_MANAGEMENT_INTENT_MARKERS = (
     "找回",
 )
 
+_NON_DIET_INTAKE_MARKERS = (
+    "替普瑞酮",
+    "施维舒",
+    "奥美拉唑",
+    "雷贝拉唑",
+    "泮托拉唑",
+    "埃索美拉唑",
+    "阿莫西林",
+    "布洛芬",
+    "氯雷他定",
+    "西替利嗪",
+    "孟鲁司特",
+    "二甲双胍",
+    "美沙拉嗪",
+)
+
 
 def _flatten_text(value: Any) -> str:
     if isinstance(value, (list, tuple, set)):
@@ -71,6 +87,28 @@ def _looks_like_diet_management_intent(value: Any) -> bool:
     if not normalized:
         return False
     return any(marker.lower() in normalized for marker in _DIET_MANAGEMENT_INTENT_MARKERS)
+
+
+def _looks_like_non_diet_intake(value: Any) -> bool:
+    """药物/补剂摄入不能落成 DietRecord, 写库前硬拦截."""
+    raw = _flatten_text(value)
+    if not raw:
+        return False
+    normalized = re.sub(r"\s+", "", raw).lower()
+    if not normalized:
+        return False
+
+    if any(marker.lower() in normalized for marker in _NON_DIET_INTAKE_MARKERS):
+        return True
+    if re.search(r"服药|吃药|用药|药物|药品|处方药|非处方药|抗生素|止痛药|胃药", normalized):
+        return True
+    if re.search(r"(?:胶囊|缓释片|肠溶片|分散片|口服液|滴剂|喷雾|吸入剂|颗粒)", normalized):
+        return True
+    if re.search(r"\d+(?:\.\d+)?(?:mg|毫克|μg|ug|iu|单位)", normalized):
+        return True
+    if re.search(r"(?:拉唑|瑞酮|霉素|沙星|洛芬|司特|他汀|地平|沙坦|普利|格列|替丁)", normalized):
+        return True
+    return False
 
 
 # ─────────────────────── 数值范围白名单 ──────────────────────
@@ -308,7 +346,28 @@ def validate_health_record(
             "error": error,
         }
 
-    # 5. 必填检查 (返回 error)
+    # 5. 药物/补剂摄入硬阻断:
+    # "刚吃了替普瑞酮/奥美拉唑20mg" 是 medication 语义,
+    # 绝不能被"吃了"这个词带偏写成饮食。
+    if rtype == "diet" and _looks_like_non_diet_intake(data.get("food_items")):
+        msg = "[tool_validator] diet.food_items 疑似药物/补剂摄入, 阻止作为新饮食写入"
+        warnings.append(msg)
+        logger.warning("%s: %r", msg, data.get("food_items"))
+        _metric(rtype, "food_items", "non_diet_intake", action="rejected")
+        error = (
+            "Error: diet.food_items 疑似药物/补剂摄入, 不能作为饮食记录写入。"
+            "请改用 health_record(record_type='medication', data={...}); "
+            "如果是保健品/补剂, 请用 record_type='supplement'。"
+        )
+        if warnings:
+            logger.info(f"[tool_validator] {rtype} 守门触发 {len(warnings)} 条")
+        return {
+            "data": data,
+            "warnings": warnings,
+            "error": error,
+        }
+
+    # 6. 必填检查 (返回 error)
     error = _validate_required(rtype, data, warnings)
 
     if warnings:

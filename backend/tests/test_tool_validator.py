@@ -151,6 +151,43 @@ class TestDietManagementIntentGuard:
         assert v["error"] is None
 
 
+class TestDietMedicationGuard:
+    @pytest.mark.parametrize("food_items", [
+        "替普瑞酮",
+        "替普瑞酮胶囊（施维舒）",
+        "奥美拉唑20mg",
+        ["刚服用了", "雷贝拉唑肠溶片 10mg"],
+    ])
+    def test_medication_terms_never_become_diet_food_items(self, food_items):
+        v = validate_tool_call("health_record", {
+            "record_type": "diet",
+            "data": {
+                "meal_type": "lunch",
+                "food_items": food_items,
+                "calories": 0,
+                "protein": 0,
+                "carbs": 0,
+                "fat": 0,
+            },
+        })
+
+        assert v["error"] is not None
+        assert "medication" in v["error"]
+        assert any("药物" in warning for warning in v["warnings"])
+
+    def test_food_with_similar_context_still_passes(self):
+        v = validate_tool_call("health_record", {
+            "record_type": "diet",
+            "data": {
+                "meal_type": "snack",
+                "food_items": "瑞士卷一小块",
+                "calories": 120,
+            },
+        })
+
+        assert v["error"] is None
+
+
 # ───────────── 引用 ID 越权 ─────────────
 
 

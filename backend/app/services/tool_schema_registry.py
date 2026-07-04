@@ -115,6 +115,7 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
 常见错误 (不要犯):
 - weight 必须用 data.weight, 不要放在顶层 args.weight
 - diet 必须有 food_items, 不能只传 calories
+- 药名/药物剂型/mg 剂量(如 替普瑞酮、奥美拉唑20mg、胶囊、肠溶片)不是 diet, 应改用 medication；补剂/保健品改用 supplement
 - "删除这一餐/撤销这顿/我刚才不小心删除了" 是管理已有饮食记录, 不要作为 diet.food_items 写入; 改用 health_manage
 - record_date 如果用户没明说具体日期, 默认填今天 (不要填未来日期)
 - 中文日期/时间要转成 ISO 格式 (例: "昨天早上 8 点" → record_date='YYYY-MM-DD', taken_time='08:00')
@@ -153,6 +154,7 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
 water: {"amount": 250}  // 毫升, **必填整数 1-5000**. 用户没提具体毫升数就先问'喝了多少 ml?', 不要自己默认
 diet:  {"meal_type": "breakfast|lunch|dinner|snack",  // 用英文枚举
         "food_items": "牛奶 200ml + 面包 1 片",      // 必填, 不能只给 calories
+        // 注意: 药名/剂型/mg 剂量不是食物; 用 medication 或 supplement, 不要写 diet
         "calories": 450,                              // 必填/强烈建议, 用户没提就 LLM 根据份量估
         "protein": 25, "carbs": 55, "fat": 12, "fiber": 6,  // 强烈建议一并估算, 单位 g
         "record_date": "2026-05-05"}                  // 可选, 默认今天
