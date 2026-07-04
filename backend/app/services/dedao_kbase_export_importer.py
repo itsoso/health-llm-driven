@@ -14,6 +14,7 @@ from app.services.down_dedao_wiki_bridge import (
     _ensure_relation_endpoint_entities,
     _import_system_kb_export,
     _load_existing_doc_ids,
+    _load_existing_entity_titles,
     _load_existing_placeholder_doc_ids,
     _load_existing_relation_keys,
 )
@@ -73,7 +74,10 @@ def compile_dedao_kbase_export_payload_artifacts(
     existing_docs = _load_existing_doc_ids(base_artifact_dir)
     existing_placeholders = _load_existing_placeholder_doc_ids(base_artifact_dir)
     existing_relations = _load_existing_relation_keys(base_artifact_dir)
-    _import_system_kb_export(payload, bridge_result, existing_docs, existing_placeholders, existing_relations, now)
+    entity_titles = _load_existing_entity_titles(base_artifact_dir)
+    _import_system_kb_export(
+        payload, bridge_result, existing_docs, existing_placeholders, existing_relations, now, entity_titles
+    )
     _ensure_relation_endpoint_entities(bridge_result, existing_docs, base_artifact_dir, now)
 
     _normalize_export_metadata(bridge_result, payload)
