@@ -15,5 +15,6 @@ export { BPCardView } from './BPCard';
 export { ScoreCardView } from './ScoreCard';
 export { RecordCardView } from './RecordCard';
 export { MedicationDraftCardView } from './MedicationDraftCard';
+export { SupplementDraftCardView } from './SupplementDraftCard';
 export { DietCardView } from './DietCard';
 export { RuntimeAgendaCardView } from './RuntimeAgendaCard';

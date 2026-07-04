@@ -366,6 +366,35 @@ def _medication_draft_actions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     ]
 
 
+def _supplement_draft_actions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    name = data.get("supplement_name") if isinstance(data.get("supplement_name"), str) else ""
+    prompt = (
+        f"请帮我核对{name}的补剂记录，注意剂量、服用时间和与药物/疾病的相互作用。"
+        if name
+        else "请帮我核对刚才的补剂记录。"
+    )
+    return [
+        {
+            "id": "open-supplement-draft",
+            "label": "去补剂页记录",
+            "action": "route.open",
+            "payload": {
+                "route": f"/supplement-inventory?{urlencode({'draft': 'supplement', 'name': name})}",
+            },
+            "style": "primary",
+        },
+        {
+            "id": "ask-supplement-draft",
+            "label": "问阿衡",
+            "action": "route.open",
+            "payload": {
+                "route": f"/chat?{urlencode({'prompt': prompt})}",
+            },
+            "style": "secondary",
+        },
+    ]
+
+
 # ── individual builders ────────────────────────────────────────────
 
 def _build_metric_chart(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
@@ -543,6 +572,25 @@ def _build_medication_draft(db: Session, user_id: int, q: str) -> Optional[Dict[
     if intent.slots.get("taken_time"):
         data["taken_time"] = intent.slots["taken_time"]
     return data
+
+
+def _build_supplement_draft(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
+    intent = classify_intake_intent(q)
+    if intent.kind != "supplement":
+        return None
+    supplement_name = intent.text.strip()
+    if not supplement_name:
+        return None
+    return {
+        "supplement_name": supplement_name,
+        "confidence": intent.confidence,
+        "source": "chat",
+        "suggestions": [
+            "确认前核对补剂名、剂量和服用时间",
+            "如正在用药或有慢病, 先核对相互作用",
+        ],
+        "boundary": "确认后记录为已服用; 如正在用药或有慢病, 先核对相互作用。",
+    }
 
 
 def _build_vitals(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
@@ -746,6 +794,7 @@ def _build_diet(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
 _BUILDERS = [
     ("record_intent_skip", lambda db, uid, q: None),
     ("medication_draft", _build_medication_draft),
+    ("supplement_draft", _build_supplement_draft),
     ("diet_draft", _build_diet_draft),
     ("metric_chart", _build_metric_chart),
     ("operating_review", _build_operating_review),
@@ -788,6 +837,8 @@ def build_cards(db: Session, user_id: int, query: str) -> List[Dict[str, Any]]:
                 card["actions"] = _runtime_agenda_actions(data)
             if card_type == "medication_draft":
                 card["actions"] = _medication_draft_actions(data)
+            if card_type == "supplement_draft":
+                card["actions"] = _supplement_draft_actions(data)
             if card_type == "diet_draft":
                 card["actions"] = _diet_draft_actions(data)
             if card_type == "operating_review":

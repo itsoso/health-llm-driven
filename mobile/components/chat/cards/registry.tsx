@@ -32,6 +32,7 @@ import { ScoreCardSpec } from './ScoreCard';
 import { RecordCardSpec } from './RecordCard';
 import { RecordQualityCardSpec } from './RecordQualityCard';
 import { MedicationDraftCardSpec } from './MedicationDraftCard';
+import { SupplementDraftCardSpec } from './SupplementDraftCard';
 import { DietCardSpec } from './DietCard';
 import { DietDraftCardSpec } from './DietDraftCard';
 import { WorkoutCardSpec } from './WorkoutCard';
@@ -50,6 +51,7 @@ export const CARD_REGISTRY: CardSpec[] = [
   RecordCardSpec,      // 记录类优先 - 避免被分析类误触
   RecordQualityCardSpec,
   MedicationDraftCardSpec,
+  SupplementDraftCardSpec,
   DietDraftCardSpec,
   SleepCardSpec,
   WeightCardSpec,

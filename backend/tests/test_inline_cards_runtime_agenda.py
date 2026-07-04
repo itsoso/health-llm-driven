@@ -265,6 +265,37 @@ def test_inline_cards_builds_medication_draft_for_medication_intake():
     ]
 
 
+def test_inline_cards_builds_supplement_draft_for_supplement_intake():
+    from app.services import inline_cards
+
+    cards = inline_cards.build_cards(db=None, user_id=3, query="记录刚吃了鱼油")
+
+    assert cards[0]["type"] == "supplement_draft"
+    assert cards[0]["data"]["supplement_name"] == "鱼油"
+    assert cards[0]["data"]["source"] == "chat"
+    assert cards[0]["data"]["confidence"] == 0.82
+    assert cards[0]["actions"] == [
+        {
+            "id": "open-supplement-draft",
+            "label": "去补剂页记录",
+            "action": "route.open",
+            "payload": {
+                "route": "/supplement-inventory?draft=supplement&name=%E9%B1%BC%E6%B2%B9"
+            },
+            "style": "primary",
+        },
+        {
+            "id": "ask-supplement-draft",
+            "label": "问阿衡",
+            "action": "route.open",
+            "payload": {
+                "route": "/chat?prompt=%E8%AF%B7%E5%B8%AE%E6%88%91%E6%A0%B8%E5%AF%B9%E9%B1%BC%E6%B2%B9%E7%9A%84%E8%A1%A5%E5%89%82%E8%AE%B0%E5%BD%95%EF%BC%8C%E6%B3%A8%E6%84%8F%E5%89%82%E9%87%8F%E3%80%81%E6%9C%8D%E7%94%A8%E6%97%B6%E9%97%B4%E5%92%8C%E4%B8%8E%E8%8D%AF%E7%89%A9%2F%E7%96%BE%E7%97%85%E7%9A%84%E7%9B%B8%E4%BA%92%E4%BD%9C%E7%94%A8%E3%80%82"
+            },
+            "style": "secondary",
+        },
+    ]
+
+
 def test_inline_cards_diet_management_does_not_create_diet_draft():
     from app.services import inline_cards
 

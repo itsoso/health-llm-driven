@@ -326,6 +326,51 @@ describe('renderCard 安全降级', () => {
     );
   });
 
+  it('renders supplement draft cards with safe route actions', () => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'supplement_draft',
+      data: {
+        supplement_name: '鱼油',
+        confidence: 0.82,
+        source: 'chat',
+        suggestions: ['确认前核对补剂名、剂量和服用时间'],
+        boundary: '确认后记录为已服用; 如正在用药或有慢病, 先核对相互作用。',
+      },
+      actions: [
+        {
+          id: 'open-supplement-draft',
+          label: '去补剂页记录',
+          action: 'route.open',
+          style: 'primary',
+          payload: { route: '/supplement-inventory?draft=supplement&name=%E9%B1%BC%E6%B2%B9' },
+        },
+        {
+          id: 'ask-supplement-draft',
+          label: '问阿衡',
+          action: 'route.open',
+          style: 'secondary',
+          payload: { route: '/chat?prompt=%E8%AF%B7%E5%B8%AE%E6%88%91%E6%A0%B8%E5%AF%B9' },
+        },
+      ],
+    } as any;
+
+    const element = renderCard(descriptor, { onAction });
+    expect(element).not.toBeNull();
+
+    const { getByText } = render(element!);
+    expect(getByText('补剂 · 待确认')).toBeTruthy();
+    expect(getByText('鱼油')).toBeTruthy();
+    expect(getByText('置信度 82% · 来源: 对话')).toBeTruthy();
+    expect(getByText('确认后记录为已服用; 如正在用药或有慢病, 先核对相互作用。')).toBeTruthy();
+
+    fireEvent.press(getByText('去补剂页记录'));
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'route.open' }),
+      expect.objectContaining({ type: 'supplement_draft' }),
+    );
+  });
+
   it('lets users edit a diet draft inline before confirming it', () => {
     const onAction = jest.fn();
     const descriptor = {
