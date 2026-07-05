@@ -137,6 +137,11 @@ python -m evals.comparative.judge \
     --judge-model <不参赛的模型> --out evals/comparative/out/scores.jsonl
 ```
 
+> **multi_turn 判分面**:有 `turns` 的记录,judge 收到的是显式分轮对话
+> (`[第N轮 用户]` / `[第N轮 回答]`,含追问的问题文本),不是 "---" 拼接的扁平 answer ——
+> 否则 judge 看不到追问问的是什么、分不清轮次边界,会把回指了前轮承诺的回答误判"记忆失败"
+> (2026-07-06 multi_turn_endoscopy_recheck 实测误判后修复)。
+>
 > **判分口径 / judge 模型硬约束**:judge 模型**必须用不参赛的模型**。
 > 若参赛臂用了 `gpt-*`(chatgpt 臂)和小巴内部模型,judge 就不能再用同族,避免自评偏袒。
 > 例如参赛是 `gpt-4o-mini`,judge 可选 `claude-*` 或 `qwen-*`(经 backend registry 可达者)。

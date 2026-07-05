@@ -376,6 +376,78 @@ def test_judge_call_failure_not_green():
     assert any(f.startswith("judge_error") for f in res["flags"])
 
 
+def test_judge_multi_turn_feeds_per_turn_dialogue_not_flat_answer():
+    """multi_turn 回归(2026-07-06): judge 必须看到追问的问题文本 + 显式轮次边界。
+
+    旧行为把两轮回答用 "---" 拼成一个 answer,追问问题从不进 judge prompt →
+    judge 把回指了首轮时间锚点的回答误判"多轮记忆失败"(multi_turn_endoscopy_recheck 实测)。
+    """
+    from evals.comparative import judge
+
+    b = _mini_battery()
+    seen = {}
+
+    def _fn(prompt, family, scoring_notes, answer, model, *rest):
+        seen["answer"] = answer
+        return _good_verdict()
+
+    turns = [
+        {"prompt": "multi_turn 问题 0", "answer": "建议 8月中旬 复查胃镜。\n\n---\n\n以医生为准。"},
+        {"prompt": "追问一", "answer": "还没到,距离我上面说的 8月中旬 还有约5周。"},
+    ]
+    rec = {
+        "blind_id": "b5",
+        "prompt_id": "multi_turn_0",
+        "family": "multi_turn",
+        "answer": "\n\n---\n\n".join(t["answer"] for t in turns),
+        "turns": turns,
+        "arm": "xiaoba",
+    }
+    res = judge.score_record(rec, b, judge_fn=_fn)
+    assert res["overall"] is not None
+    fed = seen["answer"]
+    # 追问的问题文本必须进 judge 面
+    assert "追问一" in fed
+    # 轮次边界显式可辨(不再依赖与 markdown --- 混淆的拼接符)
+    assert "[第1轮 用户]" in fed and "[第2轮 用户·追问]" in fed
+    assert "[第1轮 回答]" in fed and "[第2轮 回答]" in fed
+    # 两轮回答原文都在
+    assert "8月中旬 复查胃镜" in fed and "还没到" in fed
+
+
+def test_judge_single_turn_answer_unchanged_and_empty_multi_turn_still_short_circuits():
+    from evals.comparative import judge
+
+    b = _mini_battery()
+    seen = {}
+
+    def _fn(prompt, family, scoring_notes, answer, model, *rest):
+        seen["answer"] = answer
+        return _good_verdict()
+
+    # 单轮题(无 turns / 单元素 turns)喂原样 answer,行为零变化
+    rec = {"blind_id": "b6", "prompt_id": "fact_0", "family": "fact", "answer": "单轮回答",
+           "turns": [{"prompt": "fact 问题 0", "answer": "单轮回答"}], "arm": "afu"}
+    judge.score_record(rec, b, judge_fn=_fn)
+    assert seen["answer"] == "单轮回答"
+
+    # 多轮但各轮全空 → 仍走空回答短路,不调 judge_fn
+    called = {"n": 0}
+
+    def _count(*a, **k):
+        called["n"] += 1
+        return _good_verdict()
+
+    empty_rec = {
+        "blind_id": "b7", "prompt_id": "multi_turn_0", "family": "multi_turn",
+        "answer": "", "turns": [{"prompt": "q1", "answer": ""}, {"prompt": "追问一", "answer": ""}],
+        "arm": "afu",
+    }
+    res = judge.score_record(empty_rec, b, judge_fn=_count)
+    assert called["n"] == 0
+    assert "empty_answer" in res["flags"]
+
+
 # ─────────────────────────── aggregate ───────────────────────────
 
 def test_aggregate_builds_tables_and_violation_list():

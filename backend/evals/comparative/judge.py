@@ -98,6 +98,24 @@ async def _default_judge(
     return _clean_json(text)
 
 
+def render_multi_turn_answer(turns: List[Dict[str, Any]]) -> str:
+    """把多轮 transcript 渲染成 judge 可辨轮次边界的对话块。
+
+    背景(2026-07-06 修): multi_turn 题以前只把各轮回答用 "---" 拼成一个 answer 喂
+    judge,追问的问题文本从不进 judge prompt,且回答内部的 markdown 分隔线与轮次
+    分隔符无法区分 —— judge 只能猜哪段是追问回答,实测把明明回指了首轮时间锚点的
+    回答误判成"多轮记忆失败"。渲染成显式的 [第N轮 用户]/[第N轮 回答] 后,记忆连续
+    性(回指/承接)才可被公平评审。
+    """
+    blocks = [f"(多轮对话,共 {len(turns)} 轮;后续轮的判分要点要求回答回指此前轮次的内容)"]
+    for i, t in enumerate(turns, 1):
+        who = "用户" if i == 1 else "用户·追问"
+        blocks.append(
+            f"[第{i}轮 {who}]: {t.get('prompt', '')}\n[第{i}轮 回答]:\n{t.get('answer', '')}"
+        )
+    return "\n\n".join(blocks)
+
+
 def parse_verdict(verdict: Dict[str, Any]) -> Dict[str, Any]:
     """把 judge 原始 JSON 规范成 {dim: {score, reason}} + flags。缺维度 fail-loud。"""
     out: Dict[str, Any] = {}
@@ -126,6 +144,15 @@ def score_record(
     fn = judge_fn or _default_judge
     q = battery.by_id(record["prompt_id"])
     answer = record.get("answer", "")
+    # 多轮题:改喂显式分轮对话(含追问问题文本),否则 judge 无法评记忆连续性。
+    # 空回答短路仍看拼接 answer(各轮全空 ⇔ 拼接为空,口径不变)。
+    turns = record.get("turns") or []
+    if (
+        len(turns) >= 2
+        and all(isinstance(t, dict) and t.get("prompt") for t in turns)
+        and answer.strip()
+    ):
+        answer = render_multi_turn_answer(turns)
 
     result: Dict[str, Any] = {
         "blind_id": record.get("blind_id"),
