@@ -530,6 +530,96 @@ def test_returned_dict_serializable():
     assert d["quick_replies"] == ["a", "b"]
 
 
+# ─────────────── C1 cold-start: synthesized onboarding opener ───────────────
+
+
+def test_synthesize_cold_start_opener_shape_and_actions():
+    """Deterministic synthetic opener: source=cold_start, 3 action quick replies
+    matching the contract's COLD_START_ACTIONS, asdict-serializable."""
+    from dataclasses import asdict
+    from app.services.conversation_opener import (
+        COLD_START_ACTIONS,
+        synthesize_cold_start_opener,
+    )
+
+    out = synthesize_cold_start_opener()
+    assert out.source == "cold_start"
+    assert out.source_id is None
+    assert out.text and "小巴" in out.text  # 小巴 self-intro
+    assert [qr.action for qr in out.quick_replies] == list(COLD_START_ACTIONS)
+
+    d = asdict(out)
+    assert [q["action"] for q in d["quick_replies"]] == list(COLD_START_ACTIONS)
+    assert all(q["label"] for q in d["quick_replies"])
+
+
+def test_synthesize_cold_start_opener_is_deterministic():
+    """No DB / no RNG — two calls are byte-identical."""
+    from dataclasses import asdict
+    from app.services.conversation_opener import synthesize_cold_start_opener
+
+    assert asdict(synthesize_cold_start_opener()) == asdict(synthesize_cold_start_opener())
+
+
+def test_cold_start_opener_text_and_labels_pass_guidance_red_lines():
+    """R4: the persona copy must not contain quantified/imperative diet or
+    imperative movement prescriptions (guidance_validator must NOT flag it)."""
+    from app.services.conversation_opener import synthesize_cold_start_opener
+    from app.services.guidance_validator import sanitize_guidance
+
+    out = synthesize_cold_start_opener()
+    assert sanitize_guidance(out.text).flagged is False
+    for qr in out.quick_replies:
+        assert sanitize_guidance(qr.label).flagged is False
+
+
+def test_cold_start_source_ignored_by_opener_quick_reply_handler(db):
+    """A cold-start quick reply is handled by LOCAL client navigation; if the
+    client ever POSTs one as opener context, the ActionCard side-effect handler
+    must ignore it (source != action_card_due) — no accidental state change."""
+    from app.services.opener_quick_reply import apply_opener_quick_reply_context
+
+    ctx = (
+        '{"entry": "conversation_opener_quick_reply", "source": "cold_start", '
+        '"user_reply": "拍一张今天的饭"}'
+    )
+    assert apply_opener_quick_reply_context(db, user_id=1, message="hi", extra_context=ctx) is None
+
+
+# ─────────────── C1 cold-start: is_cold_start_user ───────────────
+
+
+def test_is_cold_start_user_true_for_zero_data(db):
+    from app.services.conversation_starters import is_cold_start_user
+
+    assert is_cold_start_user(db, user_id=1) is True
+
+
+def test_is_cold_start_user_false_after_a_single_signal(db):
+    from datetime import date
+    from app.models.daily_health import WaterIntake
+    from app.services.conversation_starters import is_cold_start_user
+
+    db.add(WaterIntake(
+        user_id=1,
+        record_date=date.today(),
+        intake_time=datetime.now(timezone.utc),
+        amount_ml=250,
+        drink_type="water",
+    ))
+    db.commit()
+    assert is_cold_start_user(db, user_id=1) is False
+
+
+def test_is_cold_start_user_fail_soft_returns_false_on_error(db):
+    """Signal collection error → NOT cold-start (safer than injecting a synthetic
+    opener onto an established user whose collection transiently failed)."""
+    from app.services import conversation_starters as cs
+
+    with patch.object(cs, "_collect_signals", side_effect=Exception("boom")):
+        assert cs.is_cold_start_user(db, user_id=1) is False
+
+
 # ─────────────── HTTP endpoint /agent/conversation-opener ───────────────
 
 

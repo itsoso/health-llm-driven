@@ -470,6 +470,24 @@ def _collect_signals(db: Session, user_id: int) -> StarterSignals:
     )
 
 
+def is_cold_start_user(db: Session, user_id: int) -> bool:
+    """True iff this user has zero usable health signal (cold-start / onboarding).
+
+    Reuses the SAME zero-signal determination (`_collect_signals` +
+    `_has_any_user_signal`) that decides onboarding chips, so the top-level
+    `onboarding` flag and the onboarding chip branch can never disagree.
+
+    Fail-soft: on any error, returns False (NOT cold-start). A brand-new user
+    who errors here just loses the synthetic opener and falls back to the normal
+    (empty) opener — safer than injecting a synthetic opener onto an established
+    user whose signal collection transiently failed.
+    """
+    try:
+        return not _has_any_user_signal(_collect_signals(db, user_id))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _has_any_user_signal(signals: StarterSignals) -> bool:
     return bool(
         signals.latest_exam_date

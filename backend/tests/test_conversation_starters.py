@@ -77,7 +77,10 @@ def _make_signals(**overrides):
 def test_endpoint_returns_onboarding_suggestions_for_zero_data_user(client, auth_user_and_headers):
     """Cold-start: a brand-new user with no data gets onboarding activation chips
     (connect device / log a meal / upload exam), NOT generic 'analyze my X' prompts
-    they have no data for. Chips carry key='onboarding' for activation CTR tracking."""
+    they have no data for. Chips carry key='onboarding' for activation CTR tracking.
+
+    C1 contract: the response also carries a top-level onboarding=True flag and a
+    synthesized cold-start opener (see the dedicated cold-start tests below)."""
     from app.services.conversation_starters import ONBOARDING_SUGGESTIONS
 
     _, headers = auth_user_and_headers
@@ -86,10 +89,89 @@ def test_endpoint_returns_onboarding_suggestions_for_zero_data_user(client, auth
 
     assert r.status_code == 200
     payload = r.json()
-    assert payload["opener"] is None
+    assert payload["onboarding"] is True
+    assert payload["opener"] is not None  # synthesized cold-start opener
     assert [s["text"] for s in payload["suggestions"]] == ONBOARDING_SUGGESTIONS
     assert all(s["key"] == "onboarding" for s in payload["suggestions"])
     assert all("priority" in s for s in payload["suggestions"])
+
+
+# ──────────────────────────────────────────────────────────────────────
+# C1 cold-start pack — top-level `onboarding` flag + synthesized opener with
+# action-bearing quick replies. (P0-3, 2026-07-05)
+# ──────────────────────────────────────────────────────────────────────
+
+
+def test_cold_start_endpoint_synthesizes_opener_with_three_action_quick_replies(
+    client, auth_user_and_headers
+):
+    """Zero-data user → onboarding=True + non-empty opener whose quick_replies are
+    exactly the 3 action chips (photo_meal / record_weight / connect_device)."""
+    from app.services.conversation_opener import COLD_START_ACTIONS
+
+    _, headers = auth_user_and_headers
+
+    r = client.get("/api/v1/agent/conversation-starters", headers=headers)
+    assert r.status_code == 200
+    payload = r.json()
+
+    assert payload["onboarding"] is True
+    opener = payload["opener"]
+    assert opener is not None
+    assert opener["source"] == "cold_start"
+    assert isinstance(opener["text"], str) and opener["text"].strip()
+    # 小巴 self-intro is present in the synthetic greeting.
+    assert "小巴" in opener["text"]
+
+    qrs = opener["quick_replies"]
+    assert len(qrs) == 3
+    assert all(isinstance(q, dict) for q in qrs)  # structured (label+action), not plain str
+    assert [q["action"] for q in qrs] == list(COLD_START_ACTIONS)
+    assert all(isinstance(q["label"], str) and q["label"].strip() for q in qrs)
+
+
+def test_established_user_has_no_onboarding_flag_and_normal_opener_channel(
+    client, db, auth_user_and_headers
+):
+    """A user with real data must NOT get onboarding=True and must NOT get the
+    cold-start opener — the opener comes from the normal signal channel (here:
+    none, since only a water record exists), and the flag is absent (not just
+    False)."""
+    from app.models.daily_health import WaterIntake
+
+    user, headers = auth_user_and_headers
+    db.add(WaterIntake(
+        user_id=user.id,
+        record_date=date.today(),
+        intake_time=datetime.now(timezone.utc),
+        amount_ml=300,
+        drink_type="water",
+    ))
+    db.commit()
+
+    r = client.get("/api/v1/agent/conversation-starters", headers=headers)
+    assert r.status_code == 200
+    payload = r.json()
+
+    # Additive flag: absent for established users (legacy clients unaffected).
+    assert "onboarding" not in payload
+    # No synthetic cold-start opener leaked onto an established user.
+    if payload["opener"] is not None:
+        assert payload["opener"]["source"] != "cold_start"
+    # Established user still gets real data chips (water), not onboarding chips.
+    assert all(s["key"] != "onboarding" for s in payload["suggestions"])
+
+
+def test_cold_start_opener_quick_reply_labels_are_user_facing(client, auth_user_and_headers):
+    """The three action chips read as human first-step invitations, matching the
+    contract's user-view labels."""
+    _, headers = auth_user_and_headers
+
+    r = client.get("/api/v1/agent/conversation-starters", headers=headers)
+    qrs = {q["action"]: q["label"] for q in r.json()["opener"]["quick_replies"]}
+    assert "饭" in qrs["photo_meal"]
+    assert "体重" in qrs["record_weight"]
+    assert "手表" in qrs["connect_device"] or "数据" in qrs["connect_device"]
 
 
 def test_endpoint_includes_exam_hint_when_recent_exam_exists(client, db, auth_user_and_headers):
