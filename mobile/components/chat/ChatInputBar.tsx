@@ -1,5 +1,4 @@
 import React, { useCallback, useRef, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View, TextInput, TouchableOpacity, StyleSheet, Text,
   Modal, Pressable, ActivityIndicator, TextStyle, ScrollView,
@@ -77,8 +76,6 @@ function PulsingRing() {
   return <ReAnimated.View style={[styles.pulsingRing, animStyle]} />;
 }
 
-const COMPOSER_MODE_KEY = 'chat_composer_mode_v1';
-
 interface Props {
   onSend: (text: string, images?: PendingImage[] | null, options?: ChatInputSendOptions) => void;
   isStreaming: boolean;
@@ -98,18 +95,6 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const [showMenu, setShowMenu] = useState(false);
   const [showMedicalImportMenu, setShowMedicalImportMenu] = useState(false);
   const [medicalImportBusy, setMedicalImportBusy] = useState(false);
-  const [voiceMode, setVoiceMode] = useState(false);
-  // 微信语义: 键盘⇄语音是被记住的偏好(中国用户肌肉记忆 — DeepSeek/阿福同款)。
-  // 只有显式切换才持久化; 转写落地后的瞬时回切不覆写偏好。
-  const voiceModeRef = useRef(false);
-  voiceModeRef.current = voiceMode;
-  React.useEffect(() => {
-    let cancelled = false;
-    AsyncStorage.getItem(COMPOSER_MODE_KEY)
-      .then((v) => { if (!cancelled && v === 'voice') setVoiceMode(true); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
   const [agentMode, setAgentMode] = useState<ChatAgentMode>('daily');
   const [cancelHint, setCancelHint] = useState(false);
   const [justSent, setJustSent] = useState(false);  // 刚发送, 按钮停留 1s 避免误切 mic
@@ -128,10 +113,9 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   //  历史的对话不弹, 不打断阅读。)延迟等 tab 过渡完成; 流式/语音时不抢焦点。
   React.useEffect(() => {
     if (!autoFocusToken) return;
-    if (isStreaming || voiceMode) return;
+    if (isStreaming) return;
     const t = setTimeout(() => {
-      // 竞态防护: 挂载时异步恢复的语音偏好可能晚于 token — 触发时再确认一次
-      if (!voiceModeRef.current) textInputRef.current?.focus();
+      textInputRef.current?.focus();
     }, 380);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -170,7 +154,6 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const voice = useVoiceRecording({
     onTranscript: (text) => {
       setInput(prev => prev ? prev + ' ' + text : text);
-      setVoiceMode(false);
       // 不 auto-focus TextInput — 避免触发软键盘弹出, 让用户直接点右侧发送按钮
       // (之前为了"按 return 发送"加过 focus, 但实际用户按发送按钮即可, 软键盘是多余的)
     },
@@ -205,29 +188,16 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     voice.stopAndTranscribe();
   }, [voice]);
 
-  const startVoiceInput = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setVoiceMode(true);
-    AsyncStorage.setItem(COMPOSER_MODE_KEY, 'voice').catch(() => {});
-  }, []);
-
-  const stopVoiceInput = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setVoiceMode(false);
-    AsyncStorage.setItem(COMPOSER_MODE_KEY, 'keyboard').catch(() => {});
-  }, []);
-
   const focusTextInput = useCallback(() => {
     textInputRef.current?.focus();
   }, []);
 
   const handleInputLongPress = useCallback((pageY: number) => {
-    if (canSend || voiceMode || isStreaming) return;
+    if (canSend || isStreaming) return;
     inputHoldActiveRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setVoiceMode(false);
     handleHoldStart(pageY);
-  }, [canSend, handleHoldStart, isStreaming, voiceMode]);
+  }, [canSend, handleHoldStart, isStreaming]);
 
   const handleInputPressOut = useCallback(() => {
     if (!inputHoldActiveRef.current) return;
@@ -404,70 +374,43 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
             <Ionicons name={showMenu ? 'close' : 'add'} size={22} color={C.ink1} />
           </TouchableOpacity>
 
-          {voiceMode && !canSend ? (
-            /* 语音模式：按住说话按钮 */
-            <Pressable
-              onPressIn={(e) => handleHoldStart(e.nativeEvent.pageY)}
-              onPressOut={handleHoldEnd}
-              onTouchMove={(e) => handleHoldMove(e.nativeEvent.pageY)}
-              style={({ pressed }) => [
-                styles.holdToTalkBtn,
-                pressed && styles.holdToTalkBtnActive,
-                voice.isRecording && styles.holdToTalkBtnRecording,
-              ]}
-              accessibilityLabel="按住说话"
-            >
-              <Ionicons
-                name="mic"
-                size={18}
-                color={voice.isRecording ? '#FF453A' : C.ink2}
-                style={{ marginRight: 4 }}
-              />
-              <Text style={[
-                styles.holdToTalkText,
-                voice.isRecording && styles.holdToTalkTextRecording,
-              ]}>
-                {voice.isRecording ? '松开 结束' : '按住 说话'}
-              </Text>
-            </Pressable>
-          ) : (
-            /* 键盘模式：文本输入框 */
-            <Pressable
-              style={({ pressed }) => [
-                styles.inputWrap,
-                pressed && styles.inputWrapPressed,
-              ]}
-              onPress={focusTextInput}
-              onLongPress={(e) => handleInputLongPress(e.nativeEvent.pageY)}
-              onPressOut={handleInputPressOut}
-              onTouchMove={(e) => {
-                if (inputHoldActiveRef.current) handleHoldMove(e.nativeEvent.pageY);
-              }}
-              delayLongPress={260}
-              accessibilityRole="button"
-              accessibilityLabel="消息输入框，长按语音输入"
-              accessibilityHint="点击输入文字，长按录音并转成文字"
-            >
-              <TextInput
-                ref={textInputRef}
-                style={styles.textInput}
-                placeholder={MODE_PLACEHOLDER[agentMode]}
-                placeholderTextColor={C.ink3}
-                value={input}
-                onChangeText={setInput}
-                onKeyPress={handleTextInputKeyPress}
-                onSubmitEditing={handleKeyboardSubmit}
-                returnKeyType="send"
-                submitBehavior="submit"
-                multiline
-                maxLength={2000}
-                accessibilityLabel="消息输入框"
-              />
-            </Pressable>
-          )}
+          {/* 文本输入框 — 语音走「长按输入框」(placeholder 已提示「或按住说话」),
+              不再有右侧独立麦克风按钮(founder 2026-07-05: Claude 式极简, 去冗余)。 */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.inputWrap,
+              pressed && styles.inputWrapPressed,
+            ]}
+            onPress={focusTextInput}
+            onLongPress={(e) => handleInputLongPress(e.nativeEvent.pageY)}
+            onPressOut={handleInputPressOut}
+            onTouchMove={(e) => {
+              if (inputHoldActiveRef.current) handleHoldMove(e.nativeEvent.pageY);
+            }}
+            delayLongPress={260}
+            accessibilityRole="button"
+            accessibilityLabel="消息输入框，长按语音输入"
+            accessibilityHint="点击输入文字，长按录音并转成文字"
+          >
+            <TextInput
+              ref={textInputRef}
+              style={styles.textInput}
+              placeholder={MODE_PLACEHOLDER[agentMode]}
+              placeholderTextColor={C.ink3}
+              value={input}
+              onChangeText={setInput}
+              onKeyPress={handleTextInputKeyPress}
+              onSubmitEditing={handleKeyboardSubmit}
+              returnKeyType="send"
+              submitBehavior="submit"
+              multiline
+              maxLength={2000}
+              accessibilityLabel="消息输入框"
+            />
+          </Pressable>
 
-          {/* 右侧按钮：发送 / 语音切换
-              刚发送 (justSent) 时保持发送按钮样式 disabled 1s, 避免立即切回 mic 导致误触再次录音 */}
+          {/* 右侧发送按钮 — 只在有内容时出现;刚发送 (justSent) 停留 1s 显示对勾。
+              空态不占位, 输入框自动占满(Claude 式:不放常驻麦克风冗余按钮)。 */}
           {canSend ? (
             <TouchableOpacity onPress={() => handleSend()} style={styles.sendBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="发送消息">
               <Ionicons name="arrow-up" size={20} color="#fff" />
@@ -476,21 +419,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
             <View style={[styles.sendBtn, { opacity: 0.4 }]}>
               <Ionicons name="checkmark" size={20} color="#fff" />
             </View>
-          ) : (
-            <TouchableOpacity
-              onPress={voiceMode ? stopVoiceInput : startVoiceInput}
-              style={voiceMode ? styles.keyboardBtn : styles.voiceInputBtn}
-              hitSlop={COMPOSER_HIT_SLOP}
-              accessibilityLabel={voiceMode ? '切回键盘输入' : '语音输入'}
-              accessibilityHint={voiceMode ? '回到文字输入框' : '切换到按住说话，将语音转成文字'}
-            >
-              <Ionicons
-                name={voiceMode ? 'keypad-outline' : 'mic-outline'}
-                size={20}
-                color={voiceMode ? C.ink1 : C.green500}
-              />
-            </TouchableOpacity>
-          )}
+          ) : null}
         </View>
       </View>
 
@@ -670,48 +599,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     ...revaShadows.sm,
   },
-  modeBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  voiceInputBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: C.paper,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.green500,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  keyboardBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: C.paper,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    alignItems: 'center', justifyContent: 'center',
-  },
-
-  /* ── 按住说话按钮（微信风格） ── */
-  holdToTalkBtn: {
-    flex: 1, minHeight: 32, borderRadius: revaRadii.pill,
-    backgroundColor: C.paper,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
-    flexDirection: 'row',
-    alignItems: 'center', justifyContent: 'center',
-    ...revaShadows.sm,
-  },
-  holdToTalkBtnActive: {
-    backgroundColor: '#E8E8E8',
-    transform: [{ scale: 0.98 }],
-  },
-  holdToTalkBtnRecording: {
-    backgroundColor: '#FFF0F0',
-    borderColor: '#FFD0D0',
-  },
-  holdToTalkText: {
-    fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '500', color: C.ink2,
-  } as TextStyle,
-  holdToTalkTextRecording: {
-    color: '#FF453A',
-  } as TextStyle,
 
   /* ── 录音中蒙层 ── */
   recordingOverlay: {

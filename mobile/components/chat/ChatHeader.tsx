@@ -107,7 +107,9 @@ export default function ChatHeader({
 const styles = StyleSheet.create({
   headerWrap: {
     paddingHorizontal: revaSpacing.s3,
-    paddingTop: 0,
+    // founder 2026-07-05: 0 让 header 顶着状态栏时钟, 显得挤。给一指呼吸,
+    // 时钟与「小巴」标题之间留清晰间隔(SafeAreaView 已托底 notch inset)。
+    paddingTop: 8,
     paddingBottom: 2,
   },
   headerSurface: {

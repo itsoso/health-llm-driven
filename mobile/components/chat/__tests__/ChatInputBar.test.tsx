@@ -10,7 +10,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 /* eslint-disable @typescript-eslint/no-require-imports */
 import React from 'react';
 import { StyleSheet } from 'react-native';
-import { fireEvent, render, waitFor, act } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import ChatInputBar from '../ChatInputBar';
 import { revaColors } from '../../../constants/revaTheme';
@@ -147,7 +147,6 @@ describe('ChatInputBar', () => {
 
     expect(styleOf(getByLabelText('附件菜单')).width).toBeGreaterThanOrEqual(40);
     expect(styleOf(getByLabelText('消息输入框，长按语音输入')).minHeight).toBeGreaterThanOrEqual(40);
-    expect(styleOf(getByLabelText('语音输入')).width).toBeGreaterThanOrEqual(40);
   });
 
   it('keeps the visible composer chrome slim while preserving touch targets', () => {
@@ -169,20 +168,17 @@ describe('ChatInputBar', () => {
     // 2026-07-05 工学契约翻转: 拇指高度对齐 GPT — 场 ≥48, 钮 ≥40(hitSlop 补足 44 有效)
     expect(styleOf(getByLabelText('附件菜单')).width).toBeGreaterThanOrEqual(40);
     expect(styleOf(getByLabelText('消息输入框，长按语音输入')).minHeight).toBeGreaterThanOrEqual(48);
-    expect(styleOf(getByLabelText('语音输入')).width).toBeGreaterThanOrEqual(40);
     expect(minHitSlop(getByLabelText('附件菜单'))).toBeGreaterThanOrEqual(6);
-    expect(minHitSlop(getByLabelText('语音输入'))).toBeGreaterThanOrEqual(6);
   });
 
-  it('uses the bottom microphone for voice input instead of voice conversation', () => {
-    const { getByLabelText } = render(
+  it('has no standalone right-side microphone button (founder 2026-07-05: Claude 式极简)', () => {
+    const { queryByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    fireEvent.press(getByLabelText('语音输入'));
-    fireEvent(getByLabelText('按住说话'), 'pressIn', { nativeEvent: { pageY: 300 } });
-
-    expect(mockStartRecording).toHaveBeenCalled();
+    // 右侧常驻麦克风/键盘切换按钮已删;空态输入框自动占满,语音走长按输入框。
+    expect(queryByLabelText('语音输入')).toBeNull();
+    expect(queryByLabelText('切回键盘输入')).toBeNull();
   });
 
   it('starts voice dictation by long-pressing the empty input field', () => {
@@ -329,26 +325,5 @@ describe('ChatInputBar', () => {
       });
     });
     expect(onMedicalExamImportResult).toHaveBeenCalledWith(skillResult);
-  });
-});
-
-
-describe('ChatInputBar composer mode persistence (微信语义)', () => {
-  beforeEach(() => { for (const k of Object.keys(mockStorage)) delete mockStorage[k]; });
-
-  it('restores voice mode from storage on mount (语音派用户不被键盘迎面拍)', async () => {
-    mockStorage['chat_composer_mode_v1'] = 'voice';
-    const { findByText } = render(
-      <ChatInputBar onSend={jest.fn()} isStreaming={false} />
-    );
-    expect(await findByText(/按住\s*说话/)).toBeTruthy();
-  });
-
-  it('explicit toggle persists the preference', async () => {
-    const { getByLabelText } = render(
-      <ChatInputBar onSend={jest.fn()} isStreaming={false} />
-    );
-    await act(async () => { fireEvent.press(getByLabelText('语音输入')); });
-    expect(mockStorage['chat_composer_mode_v1']).toBe('voice');
   });
 });
