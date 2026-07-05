@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -153,6 +154,7 @@ function importStatusToneClass(tone: GeneticImportStatusView['tone']): string {
 
 function GeneticContent() {
   const { isAuthenticated } = useAuth();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('nutrition');
   const [showAddTemplate, setShowAddTemplate] = useState(false);
@@ -481,7 +483,7 @@ function GeneticContent() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4" data-testid="genetic-variant-grid">
             {variants.map((v: Variant) => (
               <div key={v.id} className={`rounded-xl p-4 border ${RISK_COLORS[v.risk_level] || RISK_COLORS.info}`}>
                 <div className="flex justify-between items-start">
@@ -511,6 +513,23 @@ function GeneticContent() {
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* 跨页「提问」: 把当前分类的基因数据带去小巴对话 (预填, 不自动发送)。
+            契约 ?prompt=<encoded> 与 Mac / 后端动态卡 chat?prompt=... 一致。 */}
+        {!isLoading && variants.length > 0 && (
+          <div className="mb-6 flex justify-end">
+            <button
+              onClick={() => {
+                const label = CATEGORIES.find(c => c.key === activeTab)?.label || '基因';
+                const question = `结合我的${label}基因位点（共 ${variants.length} 个），给我个性化建议。`;
+                router.push(`/ai-assistant?prompt=${encodeURIComponent(question)}`);
+              }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-teal-300 text-teal-700 rounded-lg text-sm font-medium hover:bg-teal-50 transition"
+            >
+              💬 就这些位点提问小巴
+            </button>
           </div>
         )}
 

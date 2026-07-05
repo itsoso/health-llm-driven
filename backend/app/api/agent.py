@@ -6,6 +6,7 @@
 import asyncio
 import json
 import logging
+import time
 import uuid
 from typing import Optional, List
 
@@ -686,6 +687,37 @@ async def agent_stream(
     )
 
 
+# /send 保活流式聚合(2026-07-06):重量级深分析单回合可远超 60s,而 main.py 的
+# asyncio.wait_for 只计到 response start —— 非流式 JSON 要到回合结束才发出 start,
+# 必被杀成 504(评测实锤:补剂互作全查 / 胃溃疡根因多源推理)。
+# 修法:快窗内完成仍走历史非流式路径(错误保持 4xx/5xx);超窗切 chunked 响应,
+# 周期吐一个空格(RFC 8259 合法 JSON 前导空白)同时重置三层 idle 计时器 ——
+# 服务端 wait_for(response start 已发出)、nginx proxy_read_timeout(每次读重置,
+# 配 X-Accel-Buffering: no 不缓冲)、客户端 urllib/URLSession(socket idle 语义)。
+# 缓冲整个 body 再 json.loads 的客户端零契约变化。教训:有效超时=min(服务端,客户端),
+# 保活字节是唯一同时重置两端的方式(见 memory: llm-import-timeout-three-caps)。
+AGENT_SEND_KEEPALIVE_SECONDS = 10.0
+# 保底硬上限:流式豁免不能让真卡死的回合永远吊着 worker(main.py LONG_REQUEST_PATHS
+# 同款顾虑)。超限 → 取消回合 + in-body error,fail-loud。
+AGENT_SEND_HARD_CAP_SECONDS = 300.0
+
+
+class _AgentTurnError(Exception):
+    """Agent 回合级失败(error 事件 / 未返回 done)。携带已过 safe_llm_error_message 的安全文案。"""
+
+
+def _send_error_envelope(message: str) -> dict:
+    """流已开始(200 已发出)后的错误载体:形状与成功响应一致 + error 字段。"""
+    return {
+        "reply": "",
+        "conversation_id": None,
+        "message_id": None,
+        "mode": "agent",
+        "elapsed_ms": None,
+        "error": message,
+    }
+
+
 @router.post("/send", summary="统一健康助理非流式对话")
 async def agent_send(
     request: Request,
@@ -698,6 +730,10 @@ async def agent_send(
     This endpoint intentionally reuses the first-party AgentExecutor instead of
     any external gateway. It collects token events into one reply and returns
     the durable conversation/message ids written by the executor.
+
+    长回合(> AGENT_SEND_KEEPALIVE_SECONDS)返回 chunked JSON:前导空白是保活
+    字节,末尾才是完整 JSON 对象。流一旦开始,状态码已定格 200,错误改为
+    body.error 字段(消费方判 error 非空 = 失败)。快回合行为与历史完全一致。
     """
 
     has_images = bool(req.image_base64 or req.images)
@@ -721,9 +757,9 @@ async def agent_send(
 
     from app.services.agent_executor import AgentExecutor
 
-    reply_parts: list[str] = []
-    done_data: dict = {}
-    try:
+    async def _aggregate() -> dict:
+        reply_parts: list[str] = []
+        done_data: dict = {}
         executor = AgentExecutor(db)
         async for event in executor.run_stream(
             user_id=current_user.id,
@@ -746,23 +782,86 @@ async def agent_send(
                     done_data = data
             elif event.get("event") == "error":
                 data = event.get("data") if isinstance(event.get("data"), dict) else {}
-                raise HTTPException(status_code=500, detail=safe_llm_error_message(data.get("message")))
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001
-        logger.exception("[agent.send] failed: %s", e)
-        raise HTTPException(status_code=500, detail=safe_llm_error_message(str(e))) from e
+                raise _AgentTurnError(safe_llm_error_message(data.get("message")))
+        if not done_data:
+            raise _AgentTurnError("Agent 未返回完成状态")
+        return {
+            "reply": "".join(reply_parts),
+            "conversation_id": done_data.get("conversation_id"),
+            "message_id": done_data.get("message_id"),
+            "mode": "agent",
+            "elapsed_ms": done_data.get("elapsed_ms"),
+        }
 
-    if not done_data:
-        raise HTTPException(status_code=500, detail="Agent 未返回完成状态")
+    agg_task = asyncio.create_task(_aggregate())
 
-    return {
-        "reply": "".join(reply_parts),
-        "conversation_id": done_data.get("conversation_id"),
-        "message_id": done_data.get("message_id"),
-        "mode": "agent",
-        "elapsed_ms": done_data.get("elapsed_ms"),
-    }
+    # 快窗:绝大多数回合在这里完成,走历史非流式路径 + 原状态码语义。
+    finished, _ = await asyncio.wait({agg_task}, timeout=AGENT_SEND_KEEPALIVE_SECONDS)
+    if finished:
+        try:
+            return agg_task.result()
+        except _AgentTurnError as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
+        except HTTPException:
+            raise
+        except Exception as e:  # noqa: BLE001
+            logger.exception("[agent.send] failed: %s", e)
+            raise HTTPException(status_code=500, detail=safe_llm_error_message(str(e))) from e
+
+    started_at = time.monotonic()
+
+    async def _keepalive_body():
+        try:
+            while True:
+                if time.monotonic() - started_at > AGENT_SEND_HARD_CAP_SECONDS:
+                    logger.error(
+                        "[agent.send] turn exceeded hard cap %.0fs, cancelling",
+                        AGENT_SEND_HARD_CAP_SECONDS,
+                    )
+                    agg_task.cancel()
+                    try:
+                        await agg_task
+                    except (asyncio.CancelledError, Exception):  # noqa: BLE001 — 只等 unwind 完成
+                        pass
+                    yield json.dumps(
+                        _send_error_envelope("请求处理超时，请稍后重试"),
+                        ensure_ascii=False,
+                    )
+                    return
+                done_set, _ = await asyncio.wait(
+                    {agg_task}, timeout=AGENT_SEND_KEEPALIVE_SECONDS
+                )
+                if not done_set:
+                    yield " "  # JSON 合法前导空白 → 三层 idle 计时器全部重置
+                    continue
+                try:
+                    payload = agg_task.result()
+                except _AgentTurnError as e:
+                    payload = _send_error_envelope(str(e))
+                except Exception as e:  # noqa: BLE001
+                    logger.exception("[agent.send] streaming turn failed: %s", e)
+                    payload = _send_error_envelope(safe_llm_error_message(str(e)))
+                yield json.dumps(payload, ensure_ascii=False)
+                return
+        finally:
+            if not agg_task.done():
+                # 客户端断开:与历史行为一致(整请求被杀),取消回合,
+                # 不留孤儿任务占用请求级 db session。
+                agg_task.cancel()
+                try:
+                    await agg_task
+                except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                    pass
+
+    return StreamingResponse(
+        _keepalive_body(),
+        media_type="application/json",
+        headers={
+            "Cache-Control": "no-cache",
+            # nginx 不缓冲:保活字节必须实时到达客户端才能重置其 idle 计时器
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/conversations", summary="统一健康助理对话列表")

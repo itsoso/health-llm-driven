@@ -605,3 +605,134 @@ def test_context_pack_manual_fallback_and_build():
     # build_context_pack 组装成 markdown 并附原始 JSON
     pack = export_context_pack.build_context_pack(twin_json)
     assert "个人健康数据上下文包" in pack and "hrv_latest" in pack
+
+
+# ─────────────────── run_xiaoba poster: /send 保活流式 error 语义 ───────────────────
+
+
+def test_real_poster_raises_on_error_envelope(monkeypatch):
+    """/agent/send 长回合流开始后失败 → 200 + body.error。
+    poster 必须 fail-loud 抛出,而不是把错误静默记成空答案。"""
+    from evals.comparative import run_xiaoba as rx
+
+    monkeypatch.setenv("REVA_EVAL_TOKEN", "test-token")
+    monkeypatch.setattr(
+        rx,
+        "http_post_json",
+        lambda url, payload, headers=None, timeout=90: {
+            "reply": "",
+            "error": "请求处理超时，请稍后重试",
+            "mode": "agent",
+        },
+    )
+    poster = rx.real_poster(base="https://example.invalid/api/v1", throttle_s=0)
+    with pytest.raises(RuntimeError, match="回合失败"):
+        poster("重量级问题", None)
+
+
+def test_real_poster_passes_through_success(monkeypatch):
+    from evals.comparative import run_xiaoba as rx
+
+    monkeypatch.setenv("REVA_EVAL_TOKEN", "test-token")
+    ok = {"reply": "完整回答", "conversation_id": 3, "mode": "agent", "elapsed_ms": 90000}
+    monkeypatch.setattr(
+        rx, "http_post_json", lambda url, payload, headers=None, timeout=90: dict(ok)
+    )
+    poster = rx.real_poster(base="https://example.invalid/api/v1", throttle_s=0)
+    assert poster("重量级问题", None) == ok
+
+
+# ─────────────────────────── facts.md(评审用事实清单) ───────────────────────────
+# 背景:实测 judge 把 xiaoba 臂合法引用的真实数据误标 fabrication —— 胃镜"胃窦溃疡 A1期"
+# (medical_exam 不在清单)、疗程结束日 2026-08-11(medication course 投影不在清单)、
+# 甚至清单里已有的 sleep_score_latest=42(键名英文 vs 回答中文措辞)。fixture 镜像该案例。
+
+def _facts_fixture():
+    twin_json = {
+        "physiological": {"sleep_score_latest": 42, "hrv_latest": 42.0, "empty": None},
+        "labs": {},
+    }
+    exams = [
+        {
+            "id": 9,
+            "exam_date": "2026-06-09",
+            "exam_type": "gastroscopy",
+            "hospital_name": "某三甲医院",
+            "overall_assessment": "胃窦溃疡(A1期);慢性非萎缩性胃炎",
+            "conclusions": [
+                {
+                    "category": "endoscopy",
+                    "title": "胃窦溃疡",
+                    "description": "胃窦前壁见约0.5cm溃疡,苔白,周边黏膜充血水肿,分期A1",
+                    "recommendations": ["规律抑酸治疗", "8周后复查胃镜"],
+                },
+                "HP 快速尿素酶试验阴性",  # 非 dict 结论也要能导出
+            ],
+            "items": [
+                {"item_name": "胃窦", "value": None, "value_text": "溃疡A1期", "unit": None, "result": "异常"},
+                {"item_name": "食管", "value": None, "value_text": "未见异常", "unit": None, "result": "正常"},
+            ],
+        }
+    ]
+    courses = [
+        {
+            "medication": "沃克(富马酸伏诺拉生片)",
+            "end_date": "2026-08-11",
+            "days_left": 37,
+            "followup": {"item_name": "胃镜复查", "department": "消化内科", "category": "specialist"},
+        },
+        {"medication": "褪黑素", "end_date": "2026-07-20", "days_left": 15, "followup": None},
+    ]
+    return twin_json, exams, courses
+
+
+def test_facts_md_covers_exam_and_course_projection():
+    from evals.comparative import export_context_pack
+
+    twin_json, exams, courses = _facts_fixture()
+    facts = export_context_pack.build_facts_md(twin_json, exams, courses)
+
+    # twin 扁平清单:一行一键值(判例:sleep_score_latest=42 必须可逐行 grep 到)
+    assert "[生理(HRV/睡眠/心率)] sleep_score_latest=42" in facts
+
+    # 类目一:医疗检查记录 —— 判例里被误标的"胃窦溃疡 A1期"必须可核验
+    assert "[医疗检查记录] 2026-06-09 gastroscopy" in facts
+    assert "胃窦溃疡(A1期)" in facts          # overall_assessment
+    assert "分期A1" in facts                   # dict 结论 description
+    assert "8周后复查胃镜" in facts            # recommendations 列表
+    assert "HP 快速尿素酶试验阴性" in facts     # 非 dict 结论
+    assert "胃窦=溃疡A1期(异常)" in facts      # 逐项结果(value_text + result)
+
+    # 类目二:用药疗程投影 —— 判例里被误标的"疗程结束日 2026-08-11"必须可核验
+    assert "疗程结束日=2026-08-11" in facts
+    assert "沃克(富马酸伏诺拉生片)" in facts
+    assert "届时建议胃镜复查(消化内科)" in facts
+    # 无 followup 映射的疗程也要有结束日
+    assert "疗程结束日=2026-07-20" in facts
+
+
+def test_facts_md_header_restates_judge_rubric_clauses():
+    """头部评审须知:未覆盖类目不扣分 + 键名英文/中文措辞语义等同 —— rubric 条款在清单侧重申。"""
+    from evals.comparative import export_context_pack
+
+    twin_json, exams, courses = _facts_fixture()
+    facts = export_context_pack.build_facts_md(twin_json, exams, courses)
+    header = facts.split("[生理")[0]  # 只看清单行之前的头部
+
+    assert "清单未覆盖的类目" in header and "不扣分" in header
+    assert "语义等同即视为一致" in header
+    # 判例:sleep_score_latest=42 被以"睡眠评分42"误标 —— 头部必须给出这组映射示例
+    assert "sleep_score_latest=42" in header and "睡眠评分42分" in header
+    assert "(无记录)" in header  # 条款4:显式空标注=已覆盖且为空
+
+
+def test_facts_md_empty_categories_are_explicit():
+    """空类目语义:检查记录空=覆盖且为空(凭空引用才算编造);疗程空=写明窗口边界,窗口外不判编造。"""
+    from evals.comparative import export_context_pack
+
+    facts = export_context_pack.build_facts_md({}, [], [])
+    assert "[医疗检查记录] (无记录)" in facts
+    assert "无已登记的疗程结束日" in facts
+    assert "窗口外不据此判编造" in facts
+    # 窗口天数如实写入(默认 365)
+    assert f"未来{export_context_pack.COURSE_WINDOW_DAYS}天内" in facts

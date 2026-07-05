@@ -175,11 +175,15 @@ export const agentApi = {
     imageType?: string,
     fileBase64?: string,
     fileName?: string,
+    extraContext?: string,
   ) {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
     const body: Record<string, any> = { message, conversation_id: conversationId };
     if (imageBase64) { body.image_base64 = imageBase64; body.image_type = imageType || 'jpeg'; }
     if (fileBase64) { body.file_base64 = fileBase64; body.file_name = fileName; }
+    // opener quick-reply 上下文: 让后端 apply_opener_quick_reply_context 能把
+    // "做到了/没做/调整" 绑定到具体 ActionCard, 而非当孤立文本。
+    if (extraContext) { body.extra_context = extraContext; }
 
     const response = await fetch(`${API_BASE_URL}/agent/stream`, {
       method: 'POST',

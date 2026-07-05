@@ -90,6 +90,14 @@ def test_phone_code_send_fails_loud_when_delivery_is_not_configured(client, monk
     monkeypatch.setattr(settings, "auth_phone_code_dev_echo", False, raising=False)
     monkeypatch.setattr(settings, "debug", False, raising=False)
     monkeypatch.setattr(settings, "app_env", "production", raising=False)
+    monkeypatch.setattr(settings, "aliyun_access_key_id", None, raising=False)
+    monkeypatch.setattr(settings, "aliyun_access_key_secret", None, raising=False)
+    monkeypatch.setattr(settings, "aliyun_sms_access_key_id", None, raising=False)
+    monkeypatch.setattr(settings, "aliyun_sms_access_key_secret", None, raising=False)
+    monkeypatch.setattr(settings, "aliyun_sms_sign_name", None, raising=False)
+    monkeypatch.setattr(settings, "aliyun_sms_template_code", None, raising=False)
+    monkeypatch.setattr(settings, "aliyun_pnvs_sign_name", None, raising=False)
+    monkeypatch.setattr(settings, "aliyun_pnvs_template_code", None, raising=False)
 
     response = client.post("/api/v1/auth/phone/code", json={"phone": "13800138004"})
 

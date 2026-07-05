@@ -29,6 +29,9 @@ export REVA_EVAL_TOKEN="<你的评测账号 JWT>"                     # 必填
 # 商用模型臂(与 backend openai-proxy 同一套 env)
 export OPENAI_API_KEY="<key>"
 export OPENAI_BASE_URL="https://api.openai.com/v1"            # 或你的代理 base
+
+# judge / 常态化回归(§4 cadence 的默认 judge 走 tokenplan 的 kimi)
+export TOKENPLAN_API_KEY="<key>"                              # cadence 必填(judge 用)
 ```
 
 所有命令从 `backend/` 目录跑(和 pytest 一样)。示例把产物写到 `backend/evals/comparative/out/`。
@@ -46,20 +49,31 @@ mkdir -p evals/comparative/out
 
 ```bash
 python -m evals.comparative.run_xiaoba --out evals/comparative/out/transcripts_xiaoba.jsonl
+# 单题/子集验收: --only 逗号分隔题目 id(未知 id 直接 exit 2)
+python -m evals.comparative.run_xiaoba --only state_supplement_interaction --no-sanity --out /tmp/one.jsonl
 ```
 
 - 走 `/agent/send`(非流式)。轮次间自带 ~3.5s 节流(躲 `/agent/send` 的 3s 去重窗)。
 - `multi_turn` 题复用同一 `conversation_id` 串多轮。
 - 跑完打印写库 sanity(评测前后 twin 计数无变化 = 只读符合预期)。
+- 长回合下 `/agent/send` 返回保活流式 JSON(前导空白 + 末尾完整对象);流开始后的
+  失败在 `body.error`,poster 会 fail-loud 抛出记进 transcript 的 `error` 字段。
 
-### 1b. context pack(喂 chatgpt_context 臂)
+### 1b. context pack(喂 chatgpt_context 臂)+ facts 清单(喂 judge)
 
 ```bash
-python -m evals.comparative.export_context_pack --out evals/comparative/out/context_pack.md
+python -m evals.comparative.export_context_pack \
+    --out evals/comparative/out/context_pack.md \
+    --facts-out evals/comparative/out/facts.md
 ```
 
 - 拉 `GET /twin/me?fresh=true`,优先复用 backend 的 `twin_to_prompt_blob`(与线上 prompt 一致);
   schema 漂移则回退手工分区格式化(stderr 会告警,不静默)。
+- `--facts-out` 生成评审用「用户真实数据事实清单」(3c 的 `judge --facts` 消费):
+  twin 扁平清单 + **医疗检查记录**(`/medical-exams/me`,如胃镜「胃窦溃疡 A1期」)+
+  **用药疗程投影**(`/medication-course/upcoming`,疗程结束日是系统注入 prompt 的派生数据)。
+  这两个类目缺失时 judge 会把带数据臂的合法引用误标 `fabrication`。
+  头部自带评审须知(未覆盖类目不扣分 / 键名英文 vs 中文措辞语义等同)。
 
 ### 1c. 商用模型两臂
 
@@ -134,8 +148,13 @@ python -m evals.comparative.blind_pack \
 python -m evals.comparative.judge \
     --blind evals/comparative/out/blind.jsonl \
     --key evals/comparative/out/answer_key.json \
+    --facts evals/comparative/out/facts.md \
     --judge-model <不参赛的模型> --out evals/comparative/out/scores.jsonl
 ```
+
+> **`--facts` 强烈建议带上**(1b 生成):不带则退回严格模式 —— 任何题面外数值都算编造,
+> 会冤枉合法引用用户真实数据的臂(实测案例:胃镜 A1期 / 疗程结束日 / 睡眠评分 42 全被误标)。
+> 清单对所有臂同样适用,不泄露产品身份,不破坏盲评。
 
 > **multi_turn 判分面**:有 `turns` 的记录,judge 收到的是显式分轮对话
 > (`[第N轮 用户]` / `[第N轮 回答]`,含追问的问题文本),不是 "---" 拼接的扁平 answer ——
@@ -186,8 +205,60 @@ python -m evals.comparative.aggregate \
 
 ---
 
+## 4. 常态化(周跑回归 + 分数漂移闸)
+
+上面 1-3 是**多臂对照**的完整流程(手工臂 + 商用臂 + 盲评),用来一次性回答"数据管线值不值"的命题。
+常态化回归不需要每周重跑全部臂 —— 只盯**自家(小巴)**有没有变差。这就是 `cadence.py`:
+一条命令跑「小巴单臂回归 + 与上次比 + 漂移则报警」。
+
+```bash
+cd backend
+REVA_EVAL_TOKEN="<评测账号 JWT>" \
+TOKENPLAN_API_KEY="<judge 走 tokenplan 的 key>" \
+  python -m evals.comparative.cadence \
+    --run-id "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --facts evals/comparative/out/facts.md      # 可选:小巴带真数据时供 judge 核验
+```
+
+它做的事(全部串起来,复用 1-3 的模块,不重实现):
+
+1. `run_xiaoba` 跑全题库(16 题,只读,自带写库 sanity)。
+2. `judge`(默认 `--judge-model kimi-k2.6`,**不参赛**的月之暗面模型,走 `TOKENPLAN_API_KEY`)按七维打分。
+   - judge 模型可换:`--judge-model <别的不参赛模型>`。约束同 §3c —— 别撞参赛臂同族。
+3. 按家族聚合小巴一臂的 overall,追加一条记录到 `evals/comparative/history.jsonl`:
+   ```json
+   {"ts": "<run-id>", "run_id": "<run-id>", "scores_by_family": {"fact": 4.5, ...}, "overall": 4.2, "errors": {"transcript": 0, "judge": 0, "total": 0}}
+   ```
+   - **`ts` 用外部传入的 `--run-id`,不用当前时钟** —— 历史可复现、可回填、CI 可用 git sha 当 run-id。
+   - `history.jsonl` 是**留档时序**(只含聚合家族分,无 PII),可提交入库,用来跨周追漂移。
+4. 与历史里**上一条**逐家族比:任一家族 overall 掉分 `> --drift-threshold`(默认 `0.5`)→ 报警并打印掉分明细。
+
+**退出码语义**:
+
+| 退出码 | 含义 |
+|---|---|
+| `0` | 正常。**首跑**(无历史,记基线)或**所有家族相对上一条未掉超阈值**。 |
+| `2` | **漂移**(某家族掉分 > 阈值,stderr 打印 `家族: 旧分 → 新分 (掉 N)`)/ **缺凭证**(`REVA_EVAL_TOKEN` 或 `TOKENPLAN_API_KEY` 缺失)/ **judge 全失败**(无任何有效家族分 → 无从判回归,fail-loud 不假绿)。 |
+
+漂移判定是**保守**的:只对上一条和当前**两边都有分**的家族比;涨分绝不判红;恰好掉到阈值(`==`)判绿(严格大于才红)。
+即便判红,当前记录仍先落 `history.jsonl` 再报警(留档可回看,不因报警丢数据)。
+
+### 接 CI 的建议 —— 先观测一周,再转硬闸
+
+**不要一上来就把 `cadence` 当 CI 硬门。** 呼应仓库既定节奏(新安全类闸先 shadow / observation,稳了再 fail):
+
+1. **第 1 周(观测)**:每周跑一次 `cadence`,`--run-id` 用当周日期或 CI run 号,把 `history.jsonl` 提交入库。
+   即使 exit 2 也只当**观测信号**看 —— 人工判是真回归还是 judge 抖动 / 题库噪声。这一周校准阈值(`--drift-threshold`)。
+2. **稳定后**:确认阈值不误报(judge 同题重跑方差 < 阈值),再把 `cadence` 接成周跑 CI job 的**硬门**(exit 2 挂 job)。
+
+> **调度不在本模块自作主张** —— `cadence.py` 只提供命令 + 退出码,**不注册任何 cron / CI job**。
+> 周跑调度(GitHub Actions schedule / 服务器 cron / Celery beat)由维护者按上面节奏显式接,评测常态化的"什么时候转硬闸"是**产品/工程决策**,留给主 session。
+
+---
+
 ## 只读 & 隐私保证
 
 - 题库本身无"记录/写库"意图;`run_xiaoba` 跑完抓 twin 计数做写库 sanity,变化即 stderr 告警。
-- token/key 全部经 env(`REVA_EVAL_TOKEN` / `OPENAI_API_KEY`),代码不硬编码、不打印、不写进任何产物文件。
-- `context_pack.md` 含个人健康数据 —— 产物默认写到 `out/`,**不要提交**(评测本地跑完即用即弃)。
+- token/key 全部经 env(`REVA_EVAL_TOKEN` / `OPENAI_API_KEY` / `TOKENPLAN_API_KEY`),代码不硬编码、不打印、不写进任何产物文件。
+- `context_pack.md` / `facts.md` 含个人健康数据(含检查报告原文)—— 产物默认写到 `out/`,**不要提交**(评测本地跑完即用即弃)。
+- `history.jsonl`(§4 cadence 的留档时序)只含**聚合家族分**(无 PII、无回答原文),可安全提交入库以跨周追漂移。

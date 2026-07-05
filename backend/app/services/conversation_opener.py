@@ -160,14 +160,16 @@ def compute_conversation_opener(db: Session, user_id: int) -> Optional[OpenerSug
     优先级:
         1. ActionCard 检验日 ≤ 2 天 (priority=100)
         2. 24h 内 anomaly_alert 未确认 (priority=80)
-        3. 7 天内 case_thread 有更新 (priority=60)
-        4. 7 天内新写入 memory_fact (优先级最低, priority=40)
+        3. 登记慢病/结节的随访到期/逾期 (priority=70)
+        4. 7 天内 case_thread 有更新 (priority=60)
+        5. 7 天内新写入 memory_fact (优先级最低, priority=40)
     """
     # 旁路: 任何错误返回 None, 前端退化到 SUGGESTIONS
     try:
         opener = (
             _try_action_card_due(db, user_id)
             or _try_recent_anomaly(db, user_id)
+            or _try_problem_followup_due(db, user_id)
             or _try_active_case_thread(db, user_id)
             or _try_recent_memory_fact(db, user_id)
         )
@@ -299,6 +301,56 @@ def _deviation_word(pct: Optional[float]) -> str:
     if apct < 25:
         return "明显偏离"
     return "差很多"
+
+
+# ─────────────── strategy 2b: chronic-problem follow-up due ───────────────
+
+
+# 结节/分期括注 ("(Hp 阴性,胃窦后壁)") 剥掉再内联进 opener 模板。
+_PROBLEM_PAREN_RE = re.compile(r"[（(][^）)]*[）)]")
+
+
+def _short_problem_name(name: str) -> str:
+    s = _PROBLEM_PAREN_RE.sub("", name or "").strip()
+    return s.rstrip("，,。；;、：: ").strip()[:18]
+
+
+def _try_problem_followup_due(db: Session, user_id: int) -> Optional[OpenerSuggestion]:
+    """已登记慢病/结节的随访到期/逾期 → 续接式复查开场白。
+
+    复用 health_problem_service.due_followups(投影到时间线复查项的同一检测),让 opener
+    与议程复查一致。慢病/结节随访是 Health OS 与 habit tracker 的分水岭,却此前从不进
+    opener —— data-rich 用户 (有登记问题) 打开 chat 拿不到最该续接的复查话题。
+
+    取最紧迫的一条 (due_followups 按 next_due asc → 逾期最久的在前)。
+    """
+    from app.services import health_problem_service as prob_svc
+
+    fus = prob_svc.due_followups(db, user_id, within_days=14)
+    if not fus:
+        return None
+    fu = fus[0]
+    name = _short_problem_name(fu.get("name") or "")
+    if not name:
+        return None
+    overdue = bool(fu.get("overdue"))
+    what = (fu.get("what_to_check") or "").strip()
+    focus = f"(重点看 {what[:14]})" if what else ""
+    if overdue:
+        text = f"你「{name}」的复查已经到期了{focus}，安排上了吗？"
+        quick_replies = ["帮我安排复查", "已经查了", "看看上次结果"]
+    else:
+        text = f"你「{name}」快到复查时间了{focus}，要不要提前准备一下？"
+        quick_replies = ["帮我准备", "还没到别急", "看看要查什么"]
+
+    return OpenerSuggestion(
+        text=text,
+        source="health_problem",
+        source_id=fu.get("problem_id"),
+        quick_replies=quick_replies,
+        deep_link=f"/health-problems/{fu.get('problem_id')}" if fu.get("problem_id") else None,
+        priority=70,
+    )
 
 
 # ─────────────── strategy 3: active case_thread ───────────────

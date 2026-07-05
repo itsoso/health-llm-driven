@@ -178,9 +178,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--price-in", type=float, default=0.0, help="输入每百万 token USD 单价")
     ap.add_argument("--price-out", type=float, default=0.0, help="输出每百万 token USD 单价")
     ap.add_argument("--temperature", type=float, default=0.3)
+    ap.add_argument(
+        "--arm-name",
+        default=None,
+        help="臂标签覆盖(默认 chatgpt_bare/chatgpt_context;跑国产模型对照臂时必传,如 qwen_max_bare)",
+    )
     args = ap.parse_args(argv)
 
-    arm = ARM_BARE if args.arm == "bare" else ARM_CONTEXT
+    arm = args.arm_name or (ARM_BARE if args.arm == "bare" else ARM_CONTEXT)
     system_context: Optional[str] = None
     if args.arm == "with_context":
         if not args.context:
