@@ -55,4 +55,11 @@
 - 回归测试(`backend/tests/test_agent_conversations_api.py`):压缩时间尺度(中间件 1s + 回合 2.5s)断言 200 + 保活前导空白 + 完整 JSON;流后错误 envelope;快窗错误保持 500;硬上限真取消。16/16 绿。
 - 假绿排除实证:同一慢回合把保活窗抬到 > 中间件超时(=旧非流式行为)→ 确认 504;证明回归测试的绿来自提前 response start。
 - eval poster 单测(`test_comparative_eval.py`):error envelope fail-loud + 成功透传。31/31 绿。
-- 生产验收:待部署后跑 `python -m evals.comparative.run_xiaoba --only state_supplement_interaction,root_cause_ulcer_etiology`。
+- 生产验收(2026-07-06,deploy 45d24db2,健康度 60/60):
+  - `state_supplement_interaction`:**latency 100.5s(>60s),完整 2416 字回答,无 error** —— 修复前该场景确定性 504,实锤生效。
+  - `root_cause_ulcer_etiology` 首跑 `IncompleteRead(11 bytes)`:归因为**并发部署**(另一 agent 01:08:53 部署 18b68982,其 restart 01:10:14 SIGKILL 掐断流式中的连接;服务器 reflog + .env mtime + systemd Stopping 时间线铁证),非本修复缺陷。
+  - `root_cause_ulcer_etiology` 重跑:**latency 214.6s,响应 start 恰在快窗 10s([SLOW] 10012ms status=200),全程无 504/断流,完整 JSON** —— 传输层通过。但回答内容退化(重复开场白+拒答):内层 executor→localhost `POST /orchestrator/chat` 被 60s 中间件连杀 3 次(01:17:35/01:18:38/01:19:41,orchestrator 实际需 65s+)。**内层 hop 是独立缺陷**,已交由 /orchestrator/chat 保活修复任务(用户已启动的并行 session)。
+
+## 状态更新
+
+- S7 验证完成:传输层 504 修复上线并双题验证;遗留 = `/orchestrator/chat`(Siri 25s idle + executor 内层 hop)在并行 session 修。
