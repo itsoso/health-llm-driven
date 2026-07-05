@@ -677,3 +677,85 @@ def test_endpoint_isolates_users(client, db, auth_user_and_headers):
     r = client.get("/api/v1/agent/conversation-opener", headers=headers)
     assert r.status_code == 200
     assert r.json() == {"opener": None}
+
+
+# ─────────────── 优先级 2b: 慢病/结节随访到期 (health_problem) ───────────────
+
+
+def _add_problem(db, user_id, *, name, risk="P1", next_due=None, what_to_check=None, status="active"):
+    from app.models.health_problem import HealthProblem
+
+    p = HealthProblem(
+        user_id=user_id,
+        name=name,
+        risk_level=risk,
+        status=status,
+        follow_up={"next_due": str(next_due), "what_to_check": what_to_check} if next_due else None,
+    )
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    return p
+
+
+def test_overdue_problem_followup_becomes_opener(db):
+    """登记慢病的随访逾期 → health_problem opener，续接式复查话题。"""
+    p = _add_problem(
+        db, 1, name="胃溃疡(Hp 阴性,胃窦后壁)", risk="P1",
+        next_due=date.today() - timedelta(days=10), what_to_check="胃镜复查",
+    )
+    out = compute_conversation_opener(db, user_id=1)
+    assert out is not None
+    assert out.source == "health_problem"
+    assert out.source_id == p.id
+    # 括注剥掉，只留主名
+    assert "胃溃疡" in out.text
+    assert "(Hp" not in out.text
+    assert "到期" in out.text
+    assert len(out.quick_replies) >= 2
+    assert out.priority == 70
+
+
+def test_upcoming_problem_followup_uses_prepare_phrasing(db):
+    p = _add_problem(
+        db, 1, name="甲状腺结节(TI-RADS 3)", risk="P2",
+        next_due=date.today() + timedelta(days=5), what_to_check="甲状腺超声",
+    )
+    out = compute_conversation_opener(db, user_id=1)
+    assert out is not None
+    assert out.source == "health_problem"
+    assert "甲状腺结节" in out.text
+    assert "准备" in out.text
+
+
+def test_action_card_outranks_problem_followup(db):
+    """ActionCard(100) 优先级压过 health_problem(70)。"""
+    from app.models.action_card import ActionCard
+
+    now = datetime.now(timezone.utc)
+    db.add(ActionCard(
+        user_id=1, title="走 6000 步", content="...", status="active",
+        check_back_date=now + timedelta(days=1),
+    ))
+    _add_problem(db, 1, name="鼻炎", next_due=date.today() - timedelta(days=3))
+    db.commit()
+
+    out = compute_conversation_opener(db, user_id=1)
+    assert out is not None
+    assert out.source == "action_card_due"
+
+
+def test_problem_without_due_followup_is_not_opener(db):
+    """登记了问题但随访没到期(远期) → 不作为 opener(交给 chips 的管理线)。"""
+    _add_problem(
+        db, 1, name="鼻炎", next_due=date.today() + timedelta(days=90),
+    )
+    out = compute_conversation_opener(db, user_id=1)
+    # 90 天远超 within_days=14 窗口 → 无 opener
+    assert out is None or out.source != "health_problem"
+
+
+def test_problem_followup_isolates_users(db):
+    _add_problem(db, 2, name="别人的胃溃疡", next_due=date.today() - timedelta(days=5))
+    out = compute_conversation_opener(db, user_id=1)
+    assert out is None or out.source != "health_problem"
