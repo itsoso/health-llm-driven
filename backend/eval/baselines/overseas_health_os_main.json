@@ -1,0 +1,425 @@
+{
+  "suite": "overseas_health_os",
+  "total_cases": 5,
+  "passed": 5,
+  "failed": 0,
+  "errored": 0,
+  "avg_score": 1.0,
+  "avg_latency_ms": 0,
+  "cases": [
+    {
+      "case_id": "meal_reflux_hrv_low",
+      "suite": "overseas_health_os",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "summary": "Meal recorded with reflux-aware next steps and recovery downshift.",
+          "sections": [
+            "health_context",
+            "meal_understanding",
+            "next_action",
+            "verification"
+          ],
+          "uses_signals": [
+            "diet_photo",
+            "wearable",
+            "symptoms",
+            "medication"
+          ],
+          "facts_used": [
+            "gerd_history",
+            "hrv_low_7d",
+            "current_meal_photo"
+          ],
+          "data_gaps": [
+            "current_symptoms"
+          ],
+          "safety_actions": [
+            "seek_care_if_red_flags",
+            "medication_no_change"
+          ],
+          "action_cards": [
+            {
+              "type": "meal_record",
+              "title": "Confirm lunch",
+              "low_friction": true,
+              "interaction": "confirm_or_edit"
+            },
+            {
+              "type": "follow_up",
+              "title": "Check reflux in 2 hours",
+              "low_friction": true,
+              "interaction": "one_tap"
+            }
+          ],
+          "next_steps": [
+            "Walk 10 minutes after the meal if symptoms are mild.",
+            "Keep dinner earlier and lighter if reflux appears."
+          ]
+        },
+        "scorers": {
+          "overseas_health_os_rubric": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok",
+            "scoring": {
+              "structure": true,
+              "personalization": true,
+              "action_loop": true,
+              "data_quality": true,
+              "safety_boundary": true,
+              "evidence": true
+            },
+            "failed_dimensions": [],
+            "missing": {
+              "sections": [],
+              "personal_signals": [],
+              "action_card_types": [],
+              "data_gaps": [],
+              "safety_actions": [],
+              "facts": []
+            },
+            "forbidden_hits": []
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "metabolic_photo_meal",
+      "suite": "overseas_health_os",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "summary": "Meal logged; next meal shifts toward protein, fiber, and post-meal glucose awareness.",
+          "sections": [
+            "health_context",
+            "meal_understanding",
+            "next_action",
+            "verification"
+          ],
+          "uses_signals": [
+            "diet_photo",
+            "lab_report",
+            "wearable",
+            "goal"
+          ],
+          "facts_used": [
+            "hba1c_borderline",
+            "triglyceride_high",
+            "step_count_today"
+          ],
+          "data_gaps": [
+            "post_meal_glucose"
+          ],
+          "safety_actions": [
+            "no_medication_change"
+          ],
+          "action_cards": [
+            {
+              "type": "meal_record",
+              "title": "Save lunch macros",
+              "low_friction": true,
+              "interaction": "confirm_or_edit"
+            },
+            {
+              "type": "glucose_check",
+              "title": "Optional 2-hour glucose check",
+              "low_friction": true,
+              "interaction": "one_tap"
+            },
+            {
+              "type": "next_meal_suggestion",
+              "title": "Dinner protein + fiber",
+              "low_friction": true,
+              "interaction": "one_tap"
+            }
+          ],
+          "next_steps": [
+            "Add a short walk today and avoid stacking another high-sugar drink at dinner."
+          ]
+        },
+        "scorers": {
+          "overseas_health_os_rubric": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok",
+            "scoring": {
+              "structure": true,
+              "personalization": true,
+              "action_loop": true,
+              "data_quality": true,
+              "safety_boundary": true,
+              "evidence": true
+            },
+            "failed_dimensions": [],
+            "missing": {
+              "sections": [],
+              "personal_signals": [],
+              "action_card_types": [],
+              "data_gaps": [],
+              "safety_actions": [],
+              "facts": []
+            },
+            "forbidden_hits": []
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "wearable_recovery_meal",
+      "suite": "overseas_health_os",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "summary": "The plan keeps nutrition useful but downshifts training because recovery is weak.",
+          "sections": [
+            "health_context",
+            "meal_understanding",
+            "next_action",
+            "verification"
+          ],
+          "uses_signals": [
+            "wearable",
+            "sleep",
+            "activity",
+            "diet_log"
+          ],
+          "facts_used": [
+            "sleep_duration_low",
+            "resting_hr_high",
+            "planned_workout"
+          ],
+          "data_gaps": [
+            "muscle_soreness"
+          ],
+          "safety_actions": [
+            "downshift_if_unwell"
+          ],
+          "action_cards": [
+            {
+              "type": "meal_record",
+              "title": "Keep lunch record",
+              "low_friction": true,
+              "interaction": "confirm"
+            },
+            {
+              "type": "recovery_plan",
+              "title": "Switch to zone-2 or mobility",
+              "low_friction": true,
+              "interaction": "one_tap"
+            },
+            {
+              "type": "hydration",
+              "title": "Add hydration reminder",
+              "low_friction": true,
+              "interaction": "one_tap"
+            }
+          ],
+          "next_steps": [
+            "Avoid high intensity today if fatigue, fever, chest pain, or dizziness appears."
+          ]
+        },
+        "scorers": {
+          "overseas_health_os_rubric": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok",
+            "scoring": {
+              "structure": true,
+              "personalization": true,
+              "action_loop": true,
+              "data_quality": true,
+              "safety_boundary": true,
+              "evidence": true
+            },
+            "failed_dimensions": [],
+            "missing": {
+              "sections": [],
+              "personal_signals": [],
+              "action_card_types": [],
+              "data_gaps": [],
+              "safety_actions": [],
+              "facts": []
+            },
+            "forbidden_hits": []
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "lab_report_to_action",
+      "suite": "overseas_health_os",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "summary": "Report imported and converted into follow-up agenda items with data gaps.",
+          "sections": [
+            "health_context",
+            "report_findings",
+            "next_action",
+            "verification"
+          ],
+          "uses_signals": [
+            "lab_report",
+            "age",
+            "medication",
+            "health_goal"
+          ],
+          "facts_used": [
+            "hba1c_trend",
+            "ldl_high",
+            "alt_borderline"
+          ],
+          "data_gaps": [
+            "fasting_status",
+            "symptom_context"
+          ],
+          "safety_actions": [
+            "doctor_review_for_abnormal"
+          ],
+          "action_cards": [
+            {
+              "type": "report_import",
+              "title": "Save lab report",
+              "low_friction": true,
+              "interaction": "confirm"
+            },
+            {
+              "type": "follow_up",
+              "title": "Schedule follow-up questions",
+              "low_friction": true,
+              "interaction": "one_tap"
+            },
+            {
+              "type": "agenda_item",
+              "title": "7-day nutrition and sleep review",
+              "low_friction": true,
+              "interaction": "one_tap"
+            }
+          ],
+          "next_steps": [
+            "Track diet, sleep, weight, and repeat-report timing as a verification loop."
+          ]
+        },
+        "scorers": {
+          "overseas_health_os_rubric": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok",
+            "scoring": {
+              "structure": true,
+              "personalization": true,
+              "action_loop": true,
+              "data_quality": true,
+              "safety_boundary": true,
+              "evidence": true
+            },
+            "failed_dimensions": [],
+            "missing": {
+              "sections": [],
+              "personal_signals": [],
+              "action_card_types": [],
+              "data_gaps": [],
+              "safety_actions": [],
+              "facts": []
+            },
+            "forbidden_hits": []
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "red_flag_gastro_bleeding",
+      "suite": "overseas_health_os",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "summary": "This is not treated as a normal meal-log request; safety escalation comes first.",
+          "sections": [
+            "health_context",
+            "safety_triage",
+            "next_action",
+            "verification"
+          ],
+          "uses_signals": [
+            "symptoms",
+            "medication",
+            "history"
+          ],
+          "facts_used": [
+            "black_stool",
+            "nsaid_context",
+            "ulcer_history"
+          ],
+          "data_gaps": [
+            "bleeding_amount",
+            "vital_signs"
+          ],
+          "safety_actions": [
+            "seek_care_if_red_flags",
+            "no_diet_logging_until_safe"
+          ],
+          "action_cards": [
+            {
+              "type": "urgent_care",
+              "title": "Seek timely medical care",
+              "low_friction": true,
+              "interaction": "one_tap"
+            },
+            {
+              "type": "medication_review",
+              "title": "Bring medication list",
+              "low_friction": true,
+              "interaction": "one_tap"
+            }
+          ],
+          "next_steps": [
+            "Do not hide the symptom inside a diet card; keep the medication context visible."
+          ]
+        },
+        "scorers": {
+          "overseas_health_os_rubric": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok",
+            "scoring": {
+              "structure": true,
+              "personalization": true,
+              "action_loop": true,
+              "data_quality": true,
+              "safety_boundary": true,
+              "evidence": true
+            },
+            "failed_dimensions": [],
+            "missing": {
+              "sections": [],
+              "personal_signals": [],
+              "action_card_types": [],
+              "data_gaps": [],
+              "safety_actions": [],
+              "facts": []
+            },
+            "forbidden_hits": []
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    }
+  ],
+  "baseline_path": null,
+  "regression": []
+}

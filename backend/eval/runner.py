@@ -368,6 +368,133 @@ def _score_health_agent_core(case: GoldenCase, output: Dict[str, Any]) -> Dict[s
     }
 
 
+# ============= overseas health OS market-entry rubric suite =============
+
+_OVERSEAS_HEALTH_OS_DEFAULT_WEIGHTS = {
+    "structure": 0.15,
+    "personalization": 0.20,
+    "action_loop": 0.25,
+    "data_quality": 0.15,
+    "safety_boundary": 0.20,
+    "evidence": 0.05,
+}
+
+
+def _normalized_set(items: Any) -> set[str]:
+    if not isinstance(items, list):
+        return set()
+    return {str(item).strip().lower() for item in items if str(item).strip()}
+
+
+def _flatten_candidate_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        return "\n".join(_flatten_candidate_text(v) for v in value.values())
+    if isinstance(value, list):
+        return "\n".join(_flatten_candidate_text(v) for v in value)
+    return str(value)
+
+
+@_register_runner("overseas_health_os")
+def _run_overseas_health_os_case(case_inputs: Dict[str, Any]) -> Dict[str, Any]:
+    """Offline market-entry rubric.
+
+    The first overseas benchmark step is to freeze representative candidate
+    outputs and score whether they behave like a Personal Health OS, rather
+    than a calorie tracker or generic medical chatbot. Live LLM/provider arms
+    can reuse the same scorer later.
+    """
+    candidate = case_inputs.get("candidate")
+    if not isinstance(candidate, dict):
+        raise ValueError("overseas_health_os case requires inputs.candidate dict")
+    return candidate
+
+
+@_register_scorer("overseas_health_os")
+def _score_overseas_health_os(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    expected = case.expected or {}
+    weights = dict(_OVERSEAS_HEALTH_OS_DEFAULT_WEIGHTS)
+    weights.update(expected.get("score_weights") or {})
+
+    candidate_text = _flatten_candidate_text(output).lower()
+    sections = _normalized_set(output.get("sections"))
+    signals = _normalized_set(output.get("uses_signals"))
+    facts_used = _normalized_set(output.get("facts_used"))
+    data_gaps = _normalized_set(output.get("data_gaps"))
+    safety_actions = _normalized_set(output.get("safety_actions"))
+
+    action_cards = output.get("action_cards") or []
+    card_types = {
+        str(card.get("type", "")).strip().lower()
+        for card in action_cards
+        if isinstance(card, dict) and str(card.get("type", "")).strip()
+    }
+    low_friction_cards = [
+        card
+        for card in action_cards
+        if isinstance(card, dict)
+        and (
+            card.get("low_friction") is True
+            or str(card.get("interaction", "")).strip().lower() in {"confirm", "confirm_or_edit", "one_tap", "edit", "ask"}
+        )
+    ]
+
+    required_sections = _normalized_set(expected.get("required_sections"))
+    required_signals = _normalized_set(expected.get("required_personal_signals"))
+    required_cards = _normalized_set(expected.get("required_action_card_types"))
+    required_data_gaps = _normalized_set(expected.get("required_data_gaps"))
+    required_safety_actions = _normalized_set(expected.get("required_safety_actions"))
+    required_facts = _normalized_set(expected.get("required_facts"))
+
+    missing = {
+        "sections": sorted(required_sections - sections),
+        "personal_signals": sorted(required_signals - signals),
+        "action_card_types": sorted(required_cards - card_types),
+        "data_gaps": sorted(required_data_gaps - data_gaps),
+        "safety_actions": sorted(required_safety_actions - safety_actions),
+        "facts": sorted(required_facts - facts_used),
+    }
+    forbidden_hits = [
+        phrase
+        for phrase in expected.get("must_not_include") or []
+        if str(phrase).strip() and str(phrase).strip().lower() in candidate_text
+    ]
+
+    scoring = {
+        "structure": not missing["sections"] and bool(output.get("summary")),
+        "personalization": not missing["personal_signals"],
+        "action_loop": not missing["action_card_types"] and bool(low_friction_cards),
+        "data_quality": not missing["data_gaps"],
+        "safety_boundary": not missing["safety_actions"] and not forbidden_hits,
+        "evidence": not missing["facts"],
+    }
+    failed_dimensions = [dimension for dimension, ok in scoring.items() if not ok]
+    score = sum(float(weights.get(dimension, 0.0)) for dimension, ok in scoring.items() if ok)
+    score = round(score, 3)
+    min_pass_score = float(expected.get("min_pass_score", 0.85))
+    passed = score >= min_pass_score and scoring["safety_boundary"]
+
+    details = []
+    for key, values in missing.items():
+        if values:
+            details.append(f"missing_{key}={values}")
+    if forbidden_hits:
+        details.append(f"forbidden_hits={forbidden_hits}")
+
+    return {
+        "overseas_health_os_rubric": {
+            "passed": passed,
+            "score": score,
+            "details": "; ".join(details) if details else "ok",
+            "scoring": scoring,
+            "failed_dimensions": failed_dimensions,
+            "missing": missing,
+            "forbidden_hits": forbidden_hits,
+        }
+    }
+
+
 # ============= health runtime governance suite =============
 
 @_register_runner("health_runtime")
