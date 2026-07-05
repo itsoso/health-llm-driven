@@ -263,3 +263,153 @@ def test_agent_message_rate_enforces_user_isolation(client, db, auth_user_and_he
     )
 
     assert res.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# /agent/send 保活流式聚合回归(2026-07-06)
+# 实锤:重量级深分析回合 >60s 被 main.py 请求超时中间件杀成 504。
+# 修法:超窗切 chunked JSON(前导空白保活 + 末尾完整对象)。
+# 测试把时间尺度压缩:中间件 1s + 回合 2.5s,修复前必 504、修复后 200。
+# ---------------------------------------------------------------------------
+
+
+def test_agent_send_slow_turn_streams_keepalive_not_504(
+    client, auth_user_and_headers, monkeypatch
+):
+    import asyncio
+    import json as jsonlib
+
+    import main as main_module
+    from app.api import agent as agent_api
+
+    _, headers = auth_user_and_headers
+    monkeypatch.setattr(main_module, "REQUEST_TIMEOUT", 1)
+    monkeypatch.setattr(agent_api, "AGENT_SEND_KEEPALIVE_SECONDS", 0.1)
+
+    async def fake_run_stream(self, **kwargs):
+        yield {"event": "token", "data": {"content": "深度"}}
+        await asyncio.sleep(2.5)  # > 中间件 1s:修复前 wait_for 在这里杀成 504
+        yield {"event": "token", "data": {"content": "分析结论"}}
+        yield {
+            "event": "done",
+            "data": {"conversation_id": 7, "message_id": 8, "elapsed_ms": 2500},
+        }
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream", fake_run_stream
+    )
+
+    res = client.post(
+        "/api/v1/agent/send",
+        headers=headers,
+        json={"message": "慢回合保活回归"},
+    )
+
+    assert res.status_code == 200, f"长回合不应再 504/500: {res.status_code} {res.text[:200]}"
+    raw = res.text
+    # 确实吐过保活前导空白(证明流式路径生效,而非碰巧快窗完成)
+    assert raw != raw.lstrip(), "长回合应含保活前导空白"
+    assert set(raw[: len(raw) - len(raw.lstrip())]) <= {" ", "\t", "\r", "\n"}
+    # 前导空白后仍是合法完整 JSON(RFC 8259 允许前导 ws → 现有客户端零感知)
+    body = jsonlib.loads(raw)
+    assert body == {
+        "reply": "深度分析结论",
+        "conversation_id": 7,
+        "message_id": 8,
+        "mode": "agent",
+        "elapsed_ms": 2500,
+    }
+
+
+def test_agent_send_error_after_stream_started_yields_error_envelope(
+    client, auth_user_and_headers, monkeypatch
+):
+    """流开始后(200 已定格)失败 → in-body error 字段,不再是 HTTP 500。"""
+    import asyncio
+    import json as jsonlib
+
+    from app.api import agent as agent_api
+
+    _, headers = auth_user_and_headers
+    monkeypatch.setattr(agent_api, "AGENT_SEND_KEEPALIVE_SECONDS", 0.1)
+
+    async def fake_run_stream(self, **kwargs):
+        yield {"event": "token", "data": {"content": "半截"}}
+        await asyncio.sleep(0.5)
+        yield {"event": "error", "data": {"message": "上游 LLM 断连"}}
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream", fake_run_stream
+    )
+
+    res = client.post(
+        "/api/v1/agent/send",
+        headers=headers,
+        json={"message": "流后错误 envelope"},
+    )
+
+    assert res.status_code == 200
+    body = jsonlib.loads(res.text)
+    assert isinstance(body.get("error"), str) and body["error"]
+    assert body["reply"] == ""
+    assert body["mode"] == "agent"
+
+
+def test_agent_send_fast_error_keeps_http_500(client, auth_user_and_headers, monkeypatch):
+    """快窗内失败保持历史语义:HTTP 500 + detail,契约不变。"""
+
+    async def fake_run_stream(self, **kwargs):
+        yield {"event": "error", "data": {"message": "配置错误"}}
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream", fake_run_stream
+    )
+    _, headers = auth_user_and_headers
+
+    res = client.post(
+        "/api/v1/agent/send",
+        headers=headers,
+        json={"message": "快窗错误保持500"},
+    )
+
+    assert res.status_code == 500
+    assert res.json()["detail"]
+
+
+def test_agent_send_hard_cap_cancels_turn_and_reports_timeout(
+    client, auth_user_and_headers, monkeypatch
+):
+    """硬上限兜底:真卡死的回合被取消(不吊死 worker)+ in-body 超时报错。"""
+    import asyncio
+    import json as jsonlib
+
+    from app.api import agent as agent_api
+
+    _, headers = auth_user_and_headers
+    monkeypatch.setattr(agent_api, "AGENT_SEND_KEEPALIVE_SECONDS", 0.1)
+    monkeypatch.setattr(agent_api, "AGENT_SEND_HARD_CAP_SECONDS", 0.5)
+
+    cancelled = {"flag": False}
+
+    async def fake_run_stream(self, **kwargs):
+        yield {"event": "token", "data": {"content": "卡"}}
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            cancelled["flag"] = True
+            raise
+
+    monkeypatch.setattr(
+        "app.services.agent_executor.AgentExecutor.run_stream", fake_run_stream
+    )
+
+    res = client.post(
+        "/api/v1/agent/send",
+        headers=headers,
+        json={"message": "硬上限取消回合"},
+    )
+
+    assert res.status_code == 200
+    body = jsonlib.loads(res.text)
+    assert "超时" in (body.get("error") or "")
+    assert cancelled["flag"], "硬上限触发后底层回合必须被真实取消"
