@@ -13,8 +13,16 @@ from app.agents.safety_guardian.rules.guidance_red_lines import (
     movement_imperative_red_line,
 )
 from app.agents.safety_guardian.schema import Severity
+from app.config import settings
 from app.services.guidance_validator import sanitize_guidance
 from app.twin.schema import HealthTwin, TwinMeta
+
+
+@pytest.fixture
+def med_timing_on(monkeypatch):
+    """Enable the ships-disabled third family for the med-timing tests only."""
+    monkeypatch.setattr(settings, "med_timing_softening", True)
+    yield
 
 
 def _twin_with_guidance(text: str) -> HealthTwin:
@@ -218,3 +226,110 @@ def test_rules_silent_on_observational(text):
     twin = _twin_with_guidance(text)
     assert diet_prescription_red_line(twin) is None, f"diet rule false-positive: {text!r}"
     assert movement_imperative_red_line(twin) is None, f"movement rule false-positive: {text!r}"
+
+
+# ═════════════ third family: pseudo-prescriptive medication timing (P5) ═════════════
+#
+# ships-disabled behind ``settings.med_timing_softening`` (default False). Action =
+# SOFTEN (not full redaction): the prescriptive dosing-timing span is rewritten to
+# "遵医嘱/药师/说明书". Adversarial two-way coverage below (>=6 each direction).
+
+_MED_TIMING_LEAKS = [
+    # verified eval leaks (裁判点名的灰区措辞)
+    "6小时内可补服,超过12小时跳过",
+    "建议睡前使用鼻喷剂",
+    # realistic same-family leaks
+    "漏服后6小时内可以补服,超过12小时就跳过这次",
+    "每8小时服用一次",
+    "睡前用一次鼻喷剂",
+    "第2周开始减量",
+    "第4周停药",
+    "建议餐前30分钟服用他汀",
+    "记得每12小时吃一次布洛芬",
+]
+
+# Must NOT soften: public label facts, food-timing science, relayed doctor/pharmacist
+# orders, KB citations, and negated warnings ("不要自行…"). These are science comms
+# or transcription, NOT the system prescribing.
+_MED_TIMING_CLEAN = [
+    "PPI 一般建议餐前30分钟服用是公开说明书内容",  # label-fact framing
+    "维生素D随餐吸收更好",  # food-timing absorption, no dosing schedule
+    "医生开的医嘱是每天两次",  # relaying a doctor's order
+    "不要自行决定每8小时加一次",  # negated warning
+    "根据说明书,奥美拉唑通常在早餐前服用",  # label citation
+    "临床指南提到他汀多在睡前服用",  # clinical-guideline citation
+    "医嘱是睡前使用鼻喷剂,记得遵医嘱。",  # doctor-order relay w/ dosage form
+    "这餐约450kcal, 今日蛋白还差35g",  # observational (other-family clean)
+    "切勿睡前自行加用鼻喷剂",  # negated (切勿) imperative
+    "处方上写的是餐后服用,以处方为准",  # prescription-relay framing
+]
+
+
+@pytest.mark.parametrize("text", _MED_TIMING_LEAKS)
+def test_med_timing_softens_pseudo_prescription(med_timing_on, text):
+    r = sanitize_guidance(text)
+    assert r.flagged is True, f"med-timing leak slipped through: {text!r}"
+    assert "遵医嘱" in r.text, f"not softened to a defer-to-clinician note: {r.text!r}"
+    assert any(v.startswith("med_timing:") for v in r.violations)
+    # softened, never left as a bare imperative dosing schedule
+    assert text not in r.text
+
+
+@pytest.mark.parametrize("text", _MED_TIMING_CLEAN)
+def test_med_timing_clean_not_softened(med_timing_on, text):
+    r = sanitize_guidance(text)
+    med_hits = [v for v in r.violations if v.startswith("med_timing:")]
+    assert med_hits == [], f"med-timing false-positive on {text!r}: {med_hits}"
+
+
+# ─────────────────────── ships-disabled: default flag off = zero change ───────────
+
+
+@pytest.mark.parametrize("text", _MED_TIMING_LEAKS)
+def test_med_timing_disabled_by_default_leaves_text_untouched(text):
+    # No fixture → settings.med_timing_softening is its default (False).
+    assert settings.med_timing_softening is False
+    r = sanitize_guidance(text)
+    # None of these strings trip the DIET/MOVEMENT families, so with the third
+    # family off they must pass through byte-for-byte.
+    assert r.text == text, f"third family leaked while disabled: {text!r} -> {r.text!r}"
+    assert not any(v.startswith("med_timing:") for v in r.violations)
+
+
+# ─────────────────────── clause isolation (mixed strings) ───────────────────────
+
+
+def test_med_timing_softens_only_the_prescriptive_clause(med_timing_on):
+    # clause 1 is a system prescription (soften); clause 2 is a negated warning (keep).
+    text = "建议睡前使用鼻喷剂。不要自行每8小时加一次。"
+    r = sanitize_guidance(text)
+    assert r.flagged is True
+    assert "遵医嘱" in r.text
+    assert "不要自行每8小时加一次" in r.text  # negated clause left intact
+
+
+def test_med_timing_label_fact_clause_kept_prescriptive_clause_softened(med_timing_on):
+    text = "说明书写每8小时一次。建议睡前使用鼻喷剂。"
+    r = sanitize_guidance(text)
+    assert r.flagged is True
+    assert "说明书写每8小时一次" in r.text  # label-fact clause untouched
+    assert "遵医嘱" in r.text  # prescriptive clause softened
+
+
+# ─────────────────────── first-two families unaffected by the flag ───────────────
+
+
+def test_med_timing_flag_does_not_change_diet_or_movement_families(med_timing_on):
+    # Diet + movement families must behave identically regardless of the flag.
+    r_diet = sanitize_guidance("别吃米饭, 每天吃 50 克坚果。")
+    assert r_diet.flagged is True
+    assert "[已移除非处方化建议]" in r_diet.text
+    r_move = sanitize_guidance("立刻放慢, 必须做满 3 组。")
+    assert r_move.flagged is True
+    assert "自行调整" in r_move.text
+
+
+def test_med_timing_empty_and_observational_stay_clean(med_timing_on):
+    assert sanitize_guidance("").flagged is False
+    r = sanitize_guidance("这餐约 450kcal, 今日蛋白还差 35g。相关非因果。")
+    assert r.flagged is False

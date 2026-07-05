@@ -6,10 +6,21 @@ post-hoc (e.g. "这餐约 450kcal / 今日蛋白还差 35g"), never a real-time 
 dietary prescription ("别吃这个" / "每天吃 X 克" / "停止吃...").
 
 This module is a *pure* function that HARD-STRIPS / flags imperative+quantitative
-dietary tokens and imperative posture/training tokens from any LLM-generated
-guidance string BEFORE it is returned to the client. It sits behind the
-SafetyGuardian rules in ``rules/guidance_red_lines.py`` as a second layer:
-the rules raise CRITICAL/HIGH alerts, this validator actually rewrites the text.
+dietary tokens, imperative posture/training tokens, and (ships-disabled) pseudo-
+prescriptive medication-timing wording from any LLM-generated guidance string
+BEFORE it is returned to the client. It sits behind the SafetyGuardian rules in
+``rules/guidance_red_lines.py`` as a second layer: the rules raise CRITICAL/HIGH
+alerts, this validator actually rewrites the text.
+
+Three families:
+  1. Quantified/imperative DIET prescriptions → REDACT to a neutral placeholder.
+  2. Imperative MOVEMENT commands → SOFTEN to a non-imperative, see-a-clinician note.
+  3. Pseudo-prescriptive MEDICATION-TIMING ("每8小时服用一次", "建议睡前使用鼻喷剂",
+     "漏服后6小时补服/超12小时跳过", "第N周停/减药") → SOFTEN to "遵医嘱/药师/说明书".
+     Gated behind ``settings.med_timing_softening`` (default False = ships-disabled;
+     zero behaviour change until an eval arm validates the false-positive rate).
+     Negative guards (relaying a drug label / doctor's order / a negated warning)
+     are always on and never widen with the flag.
 
 Fail-loud contract: callers MUST log/audit when ``flagged`` is True (the
 returned ``violations`` list says what was stripped) — never silently alter the
@@ -104,8 +115,103 @@ _IMPERATIVE_MOVEMENT = [
     re.compile(r"(?i:\bmust\s+(?:do|complete|finish|perform)\b)\s*\d+\s*(?i:\b(?:sets?|reps?)\b)"),
 ]
 
+# ── 拟处方用药时序措辞 (pseudo-prescriptive medication timing) ─────────
+# R4 越界:系统主动开口给"具体服药间隔/时点/漏服窗/疗程调整"——像在开药, 而非
+# 观察记录。命中动作 = SOFTEN(改写为"遵医嘱/药师/说明书"), 不整段拦截。
+# 例(评测实锤漏杀): "6小时内可补服,超过12小时跳过" / "建议睡前使用鼻喷剂"
+# 命中锚点(缺一不构成越界, 靠组合避免误伤食物量词/吸收科普):
+#   剂型 / 具体药名药类 / 服药动词 / 时序 / 间隔 / 漏服窗 / 第N周疗程调整。
+# 负向守卫(始终生效, 与开关无关): 转述说明书/医嘱/药师/临床指南(label-fact) 或
+# 否定祈使("不要自行每8小时加一次") 不软化——那是科普/转述/告诫, 不是系统开处方。
+_MED_DOSAGE_FORM = (
+    r"(?:鼻喷剂|喷剂|滴剂|滴眼液|眼药水|栓剂|贴片|口服液|片剂|胶囊|颗粒|"
+    r"含片|糖浆|软膏|乳膏|针剂|注射液?|吸入剂|气雾剂|药膏)"
+)
+# 具体药名/药类 — 自包含小集(不引外部词库, 避免与并发 session 的 drug_lexicon 撞地盘)
+_MED_DRUG_CLASS = (
+    r"(?:PPI|P-CAB|他汀|降压药|抗凝药|华法林|阿司匹林|二甲双胍|胰岛素|"
+    r"奥美拉唑|雷贝拉唑|布洛芬|SSRI|抗生素|激素|沙丁胺醇|氯雷他定|地氯雷他定)"
+)
+# 服药动词 — 只认 服/吃/用/停/减/换/加(次), 与"食物量词/吸收"科普区分
+_MED_DOSE_VERB = r"(?:服用|服|吃|用|停|减量?|换|加(?:一次|次)?)"
+# 命令/建议动词 — 系统主动开口("建议…""每次…")
+_MED_ADVISORY = r"(?:建议|应该?|应当|需要|请|务必|一定要|最好|记得|每次)"
+# 时序锚点 — 睡前/饭前饭后/餐前餐后/空腹/晨起
+_MED_TIMING = r"(?:睡前|饭前|饭后|餐前|餐后|空腹|晨起|睡觉前|临睡前|早晚)"
+# 间隔锚点 — 每/隔/间隔 N 小时
+_MED_INTERVAL = r"(?:每|隔|间隔)\s*\d+\s*(?:小时|个小时|h|钟头)"
+# 漏服时间窗规则 — "6小时内可补服"/"超过12小时跳过"/"漏服后…小时"
+_MED_MISSED_DOSE = (
+    r"(?:漏服|忘(?:记|了)?(?:服|吃)|错过)[^。；;!?！？\n]{0,10}?\d+\s*(?:小时|个小时|h)"
+    r"|\d+\s*(?:小时|个小时|h)[^。；;!?！？\n]{0,6}?(?:内|后)[^。；;!?！？\n]{0,6}?(?:可)?补服"
+    r"|(?:超过|超出)\s*\d+\s*(?:小时|个小时|h)[^。；;!?！？\n]{0,6}?(?:跳过|不(?:用|要|需)?补|别补)"
+)
+# 第 N 周/天 停/减/换/加 药 — 疗程调整
+_MED_COURSE_ADJUST = (
+    r"第\s*\d+\s*(?:周|天|日|个月|月)[^。；;!?！？\n]{0,8}?"
+    r"(?:停药?|减药|减量|换药|加量|加药|停用)"
+)
+
+_MED_TIMING_PATTERNS = [
+    # A. 间隔服药: "每8小时服用" (间隔 + 服药动词)
+    re.compile(rf"{_MED_INTERVAL}[^。；;!?！？\n]{{0,8}}?{_MED_DOSE_VERB}"),
+    # B. advisory + 时序 + (动词|剂型|药名): "建议睡前使用鼻喷剂" / "建议餐前30分钟服用他汀"
+    re.compile(
+        rf"{_MED_ADVISORY}[^。；;!?！？\n]{{0,6}}?{_MED_TIMING}"
+        rf"[^。；;!?！？\n]{{0,8}}?(?:{_MED_DOSE_VERB}|{_MED_DOSAGE_FORM}|{_MED_DRUG_CLASS})"
+    ),
+    # C. 时序 + 剂型/药名 + 服药动词: "睡前他汀服用"
+    re.compile(
+        rf"{_MED_TIMING}[^。；;!?！？\n]{{0,6}}?(?:{_MED_DOSAGE_FORM}|{_MED_DRUG_CLASS})"
+        rf"[^。；;!?！？\n]{{0,4}}?{_MED_DOSE_VERB}"
+    ),
+    # C2. 时序 + 服药动词 + 剂型/药名: "睡前用一次鼻喷剂"(动词在剂型前)
+    re.compile(
+        rf"{_MED_TIMING}[^。；;!?！？\n]{{0,6}}?{_MED_DOSE_VERB}"
+        rf"[^。；;!?！？\n]{{0,8}}?(?:{_MED_DOSAGE_FORM}|{_MED_DRUG_CLASS})"
+    ),
+    # D. 漏服时间窗规则
+    re.compile(_MED_MISSED_DOSE),
+    # E. 第 N 周疗程调整
+    re.compile(_MED_COURSE_ADJUST),
+]
+
+# 负向守卫:同一 clause 内含转述/医嘱/说明书标记 → 转述科普, 不软化。
+_MED_LABEL_FACT = re.compile(
+    r"(?:说明书|公开资料|医嘱|医生(?:开|说|建议|叮嘱)|药师(?:说|建议)|"
+    r"处方(?:上|里|写)?|临床(?:研究|指南)|文献|资料显示|参考资料|药品标签|标签上|适应症)"
+)
+# 否定祈使前缀:命中片段前(同 clause, ≤12 字)有否定 → 告诫而非开处方, 不软化。
+_MED_NEG_PREFIX = re.compile(r"(?:不要|不能|别|请勿|不得|无需|不必|切勿|勿)")
+_SENTENCE_BOUNDARY = "。；;!?！？\n"
+
 _DIET_REDACTION = "[已移除非处方化建议]"
 _MOVEMENT_SOFTENER = "(如有需要可在身体允许范围内自行调整, 不适请咨询医生)"
+_MED_TIMING_SOFTENER = "(具体服用间隔/时点请遵医嘱、药师或药品说明书)"
+
+
+def _clause_around(blob: str, start: int, end: int) -> str:
+    """The sentence-level clause containing ``blob[start:end]`` (for guard checks)."""
+    left = max((blob.rfind(c, 0, start) for c in _SENTENCE_BOUNDARY), default=-1)
+    rights = [blob.find(c, end) for c in _SENTENCE_BOUNDARY]
+    rights = [r for r in rights if r != -1]
+    right = min(rights) if rights else len(blob)
+    return blob[left + 1: right]
+
+
+def _med_timing_guarded(blob: str, m: re.Match) -> bool:
+    """True → this med-timing match is a RELAY / NEGATION, NOT a system prescription,
+    so it must be left untouched. Fail-closed default is to soften (return False);
+    only explicit label-fact / negation cues suppress."""
+    clause = _clause_around(blob, m.start(), m.end())
+    if _MED_LABEL_FACT.search(clause):
+        return True
+    # negation must sit in the same clause, immediately before the match (≤12 chars)
+    window = blob[max(0, m.start() - 12): m.start()]
+    parts = re.split(rf"[{_SENTENCE_BOUNDARY}]", window)
+    if _MED_NEG_PREFIX.search(parts[-1]):
+        return True
+    return False
 
 
 @dataclass
@@ -124,6 +230,21 @@ def _redact(text: str, pattern: re.Pattern, replacement: str, violations: List[s
     def _sub(m: re.Match) -> str:
         violations.append(f"{kind}: {m.group(0)}")
         return replacement
+
+    return pattern.sub(_sub, text)
+
+
+def _soften_med_timing(text: str, pattern: re.Pattern, violations: List[str]) -> str:
+    """Soften pseudo-prescriptive med-timing matches, skipping relay/negation
+    matches (label-fact / doctor-order / negated imperative) which are science
+    communication, not the system prescribing. ``text`` is the FULL string so the
+    guards can inspect the surrounding clause."""
+
+    def _sub(m: re.Match) -> str:
+        if _med_timing_guarded(text, m):
+            return m.group(0)  # relay/negation — leave untouched
+        violations.append(f"med_timing: {m.group(0)}")
+        return _MED_TIMING_SOFTENER
 
     return pattern.sub(_sub, text)
 
@@ -156,8 +277,25 @@ def sanitize_guidance(text: str) -> GuidanceValidationResult:
     for pat in _IMPERATIVE_MOVEMENT:
         out = _redact(out, pat, _MOVEMENT_SOFTENER, violations, "movement_imperative")
 
+    # 第三家族(ships-disabled): 拟处方用药时序措辞软化。开关关时零行为变更。
+    # 负向 label-fact/否定守卫在 _soften_med_timing 内部, 与开关无关(不放宽)。
+    if _med_timing_enabled():
+        for pat in _MED_TIMING_PATTERNS:
+            out = _soften_med_timing(out, pat, violations)
+
     return GuidanceValidationResult(
         text=out,
         flagged=bool(violations),
         violations=violations,
     )
+
+
+def _med_timing_enabled() -> bool:
+    """Read the ships-disabled flag at call time (so tests can flip it via
+    ``settings``/monkeypatch without re-importing the module)."""
+    try:
+        from app.config import settings
+
+        return bool(getattr(settings, "med_timing_softening", False))
+    except Exception:  # pragma: no cover — config import must not break sanitization
+        return False
