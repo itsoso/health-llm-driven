@@ -705,9 +705,9 @@ function sourceLabel(source: string) {
 
 function ImportMetric({ label, value, risk }: { label: string; value: string; risk?: boolean }) {
   return (
-    <div className="min-w-[76px] rounded-xl bg-white px-3 py-2 ring-1 ring-emerald-100">
-      <div className="text-[10px] text-slate-400">{label}</div>
-      <div className={`mt-0.5 text-xs font-extrabold tabular-nums ${risk ? 'text-rose-600' : 'text-slate-900'}`}>
+    <div className="min-w-[76px] rounded-xl bg-white px-3 py-2 ring-1 ring-[#EDE7DA]">
+      <div className="text-[10px] text-[#948F80]">{label}</div>
+      <div className={`mt-0.5 text-xs font-extrabold tabular-nums ${risk ? 'text-[#B8791F]' : 'text-[#29261F]'}`}>
         {value}
       </div>
     </div>
@@ -723,9 +723,9 @@ export function MedicalExamImportResultCardView(data: MedicalExamImportResultDat
       emoji="📋"
       title="体检报告已导入"
       badge={abnormalCount > 0 ? `${abnormalCount} 项异常` : '待复核'}
-      badgeColor={abnormalCount > 0 ? '#E11D48' : '#059669'}
-      bg="#F0FDF4"
-      border="#BBF7D0"
+      badgeColor={abnormalCount > 0 ? '#B8791F' : '#C96442'}
+      bg="#FBF3EE"
+      border="#EDD9CF"
     >
       <div className="flex flex-wrap gap-2">
         <ImportMetric label="来源" value={sourceLabel(String(data.source))} />
@@ -734,19 +734,19 @@ export function MedicalExamImportResultCardView(data: MedicalExamImportResultDat
       </div>
 
       {(data.exam_date || data.hospital_name) && (
-        <div className="mt-2 line-clamp-2 text-xs text-slate-500">
+        <div className="mt-2 line-clamp-2 text-xs text-[#948F80]">
           {[data.exam_date, data.hospital_name].filter(Boolean).join(' · ')}
         </div>
       )}
 
       {data.conclusion && (
-        <div className="mt-2 line-clamp-2 text-xs leading-5 text-slate-700">
+        <div className="mt-2 line-clamp-2 text-xs leading-5 text-[#6B665A]">
           {data.conclusion}
         </div>
       )}
 
       {data.review_required !== false && (
-        <div className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800 ring-1 ring-amber-100">
+        <div className="mt-2 rounded-xl bg-[#F5EBD6] px-3 py-2 text-[11px] leading-5 text-[#8A5D14] ring-1 ring-[#EAD9B4]">
           {safetyNote}
         </div>
       )}
@@ -754,11 +754,11 @@ export function MedicalExamImportResultCardView(data: MedicalExamImportResultDat
       <div className="mt-3 flex flex-wrap gap-2">
         <a
           href="/medical-exams"
-          className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-50"
+          className="rounded-xl border border-[#E3C7BC] bg-white px-3 py-2 text-xs font-bold text-[#C96442] transition-colors hover:bg-[#FBF3EE]"
         >
           查看体检记录
         </a>
-        <span className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white">
+        <span className="rounded-xl bg-[#C96442] px-3 py-2 text-xs font-bold text-white">
           已放入对话上下文
         </span>
       </div>

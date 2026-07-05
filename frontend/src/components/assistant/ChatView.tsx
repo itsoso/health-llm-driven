@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, memo, useCallback, useMemo, useRef, useState } from 'react';
-import { Bookmark, Check, ChevronDown, Copy, Gauge, Share2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { Bookmark, Check, ChevronDown, Copy, Share2, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { ChatMessage } from '@/services/api/ai';
 import MarkdownRenderer from '@/components/assistant/MarkdownRenderer';
 import MealPlanCard from '@/components/assistant/MealPlanCard';
@@ -34,10 +34,18 @@ interface ChatViewProps {
 const LONG_PRESS_MS = 500;
 
 const STYLE = {
-  badgeClass: 'bg-teal-500/15 text-teal-300 ring-1 ring-teal-300/15',
-  assistantTextClass: 'text-zinc-100',
-  userBubbleClass: 'bg-[#2f2f2f] text-zinc-50',
+  assistantTextClass: 'text-[#29261F]',
+  userBubbleClass: 'bg-[#F3E4DC] text-[#29261F]',
 };
+
+/** 助理头像 — clay 圆角方块 "巴", 与顶栏品牌 mark 一致。 */
+function AssistantAvatar({ className = '' }: { className?: string }) {
+  return (
+    <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#C96442] text-[13px] font-semibold text-white ${className}`}>
+      巴
+    </div>
+  );
+}
 
 export default function ChatView({
   messages,
@@ -114,18 +122,16 @@ export default function ChatView({
         />
       ))}
       {loading && (
-        <div className="flex gap-3">
-          <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${STYLE.badgeClass}`}>
-            <Sparkles className="h-4 w-4" />
-          </div>
-          <div className="flex items-center gap-2 px-1 py-2.5">
-            <div className="flex gap-1.5 rounded-full bg-[#2f2f2f] px-3 py-2">
-              <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-300" style={{ animationDelay: '0ms' }} />
-              <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-300" style={{ animationDelay: '150ms' }} />
-              <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-300" style={{ animationDelay: '300ms' }} />
+        <div className="flex gap-3.5">
+          <AssistantAvatar className="mt-0.5" />
+          <div className="flex items-center gap-2 px-1 py-2">
+            <div className="flex gap-1.5 rounded-full bg-[#F0EDE4] px-3 py-2">
+              <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#C96442]" style={{ animationDelay: '0ms' }} />
+              <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#C96442]" style={{ animationDelay: '150ms' }} />
+              <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#C96442]" style={{ animationDelay: '300ms' }} />
             </div>
             {statusText && (
-              <span className="min-w-0 truncate text-[12px] leading-5 text-zinc-500">{statusText}</span>
+              <span className="min-w-0 truncate text-[12px] leading-5 text-[#948F80]">{statusText}</span>
             )}
           </div>
         </div>
@@ -180,10 +186,8 @@ const MessageRow = memo(function MessageRow({
     const cardEl = renderCard({ type: msg.card_type, data: msg.card_data });
     if (cardEl) {
       return (
-        <div className="flex gap-3 justify-start">
-          <div className={`mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${STYLE.badgeClass}`}>
-            <Sparkles className="h-4 w-4" />
-          </div>
+        <div className="flex gap-3.5 justify-start">
+          <AssistantAvatar className="mt-1" />
           <div className="min-w-0 flex-1">{cardEl}</div>
         </div>
       );
@@ -191,7 +195,7 @@ const MessageRow = memo(function MessageRow({
   }
   return (
     <div
-      className={`group flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'} ${shareSelectionMode && selectedForShare ? 'rounded-2xl bg-teal-400/[0.06] ring-1 ring-teal-300/20' : ''}`}
+      className={`group flex gap-3.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'} ${shareSelectionMode && selectedForShare ? 'rounded-2xl bg-[#F3E4DC]/60 ring-1 ring-[#C96442]/25' : ''}`}
       onContextMenu={
         canSelectForShare && !shareSelectionMode && onEnterSelectionWith
           ? e => {
@@ -213,29 +217,26 @@ const MessageRow = memo(function MessageRow({
           onClick={() => canSelectForShare && onToggleMessageSelection?.(msg.id)}
           className={`mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-all ${
             selectedForShare
-              ? 'border-teal-300 bg-teal-400 text-zinc-950'
+              ? 'border-[#C96442] bg-[#C96442] text-white'
               : canSelectForShare
-                ? 'border-white/15 bg-white/[0.04] text-transparent hover:border-teal-300/60'
-                : 'border-white/[0.06] bg-white/[0.02] text-transparent opacity-40'
+                ? 'border-[#D8D3C4] bg-[#FCFBF7] text-transparent hover:border-[#C96442]'
+                : 'border-[#E5E1D5] bg-transparent text-transparent opacity-40'
           }`}
           aria-label={selectedForShare ? '取消选择这条消息' : '选择这条消息'}
         >
           <Check className="h-3.5 w-3.5" />
         </button>
       )}
-      {msg.role === 'assistant' && (
-        <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${STYLE.badgeClass}`}>
-          <Sparkles className="h-4 w-4" />
-        </div>
-      )}
+      {msg.role === 'assistant' && <AssistantAvatar className="mt-0.5" />}
       {msg.role === 'user' && msg.created_at && (
-        <span className="self-center select-none text-[11px] text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100 shrink-0">
+        <span className="self-center select-none text-[11px] text-[#B4AF9F] opacity-0 transition-opacity group-hover:opacity-100 shrink-0">
           {new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
         </span>
       )}
-      <div className={`${msg.role === 'user' ? 'max-w-[min(80%,34rem)] rounded-[1.35rem] px-4 py-2.5 shadow-sm' : 'min-w-0 flex-1'} ${msg.role === 'user' ? STYLE.userBubbleClass : STYLE.assistantTextClass}`}>
+      <div className={`${msg.role === 'user' ? 'max-w-[min(80%,34rem)] rounded-[1.25rem] px-4 py-2.5' : 'min-w-0 flex-1'} ${msg.role === 'user' ? STYLE.userBubbleClass : STYLE.assistantTextClass}`}>
         {msg.role === 'assistant' ? (
           <div>
+            <div className="mb-2 text-[12px] font-semibold tracking-[0.04em] text-[#948F80]">健康小巴</div>
             <div className="text-[15px] leading-7">
               <AssistantBody content={msg.content} streaming={!done} />
             </div>
@@ -245,7 +246,7 @@ const MessageRow = memo(function MessageRow({
           <div>
             {msg.image_preview && <img src={msg.image_preview} alt="上传图片" className="mb-2 max-h-56 max-w-xs rounded-xl object-cover" />}
             {msg.file_name && (
-              <div className="mb-2 flex items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 text-sm">
+              <div className="mb-2 flex items-center gap-2 rounded-xl bg-[#FCFBF7] px-3 py-1.5 text-sm text-[#6B665A]">
                 <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
                 <span className="truncate">{msg.file_name}</span>
               </div>
@@ -255,28 +256,28 @@ const MessageRow = memo(function MessageRow({
         )}
       </div>
       {msg.role === 'assistant' && msg.created_at && (
-        <span className="mb-1 ml-1 self-end select-none text-[11px] text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100 shrink-0">
+        <span className="mb-1 ml-1 self-end select-none text-[11px] text-[#B4AF9F] opacity-0 transition-opacity group-hover:opacity-100 shrink-0">
           {new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
         </span>
       )}
       {msg.role === 'assistant' && msg.content && done && (
         <div className="ml-1 mt-1 flex items-center gap-0.5 self-end opacity-0 transition-opacity group-hover:opacity-100">
-          <button onClick={() => navigator.clipboard?.writeText(msg.content)} className="rounded-lg p-1.5 text-zinc-500 transition-all hover:bg-white/5 hover:text-zinc-200" title="复制">
+          <button onClick={() => navigator.clipboard?.writeText(msg.content)} className="rounded-lg p-1.5 text-[#948F80] transition-all hover:bg-[#F0EDE4] hover:text-[#29261F]" title="复制">
             <Copy className="h-3.5 w-3.5" />
           </button>
           {onShareMessages && (
-            <button onClick={() => onShareMessages([msg.id])} className="rounded-lg p-1.5 text-zinc-500 transition-all hover:bg-white/5 hover:text-teal-300" title="分享这条">
+            <button onClick={() => onShareMessages([msg.id])} className="rounded-lg p-1.5 text-[#948F80] transition-all hover:bg-[#F0EDE4] hover:text-[#C96442]" title="分享这条">
               <Share2 className="h-3.5 w-3.5" />
             </button>
           )}
-          <button onClick={() => onFeedback(msg.id, 5)} className={`rounded-lg p-1.5 transition-all ${feedback === 5 ? 'bg-teal-400/15 text-teal-300' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200'}`} title="helpful">
+          <button onClick={() => onFeedback(msg.id, 5)} className={`rounded-lg p-1.5 transition-all ${feedback === 5 ? 'bg-[#E4EDDD] text-[#5B7B4E]' : 'text-[#948F80] hover:bg-[#F0EDE4] hover:text-[#29261F]'}`} title="helpful">
             <ThumbsUp className="h-3.5 w-3.5" />
           </button>
-          <button onClick={() => onFeedback(msg.id, 1)} className={`rounded-lg p-1.5 transition-all ${feedback === 1 ? 'bg-rose-400/15 text-rose-300' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200'}`} title="not helpful">
+          <button onClick={() => onFeedback(msg.id, 1)} className={`rounded-lg p-1.5 transition-all ${feedback === 1 ? 'bg-[#F5E0DA] text-[#B4573A]' : 'text-[#948F80] hover:bg-[#F0EDE4] hover:text-[#29261F]'}`} title="not helpful">
             <ThumbsDown className="h-3.5 w-3.5" />
           </button>
           {onPinMessage && (
-            <button onClick={() => onPinMessage(msg.content, msg.id)} className="rounded-lg p-1.5 text-zinc-500 transition-all hover:bg-white/5 hover:text-amber-300" title="固化到首页">
+            <button onClick={() => onPinMessage(msg.content, msg.id)} className="rounded-lg p-1.5 text-[#948F80] transition-all hover:bg-[#F0EDE4] hover:text-[#B8791F]" title="固化到首页">
               <Bookmark className="h-3.5 w-3.5" />
             </button>
           )}
@@ -343,7 +344,7 @@ function renderTextBody(content: string, streaming?: boolean) {
   // 没有工具调用文本就走老路径 — 绝大多数消息命中这里.
   if (!hasToolCall(content)) {
     if (!content.trim()) return null;
-    return <MarkdownRenderer content={content} variant="dark" />;
+    return <MarkdownRenderer content={content} variant="warm" />;
   }
   const segments = parseToolCalls(content);
   const groups = groupSegments(segments);
@@ -364,7 +365,7 @@ function renderTextBody(content: string, streaming?: boolean) {
         if (!text.trim()) return null;
         return (
           <Fragment key={gi}>
-            <MarkdownRenderer content={text} variant="dark" />
+            <MarkdownRenderer content={text} variant="warm" />
           </Fragment>
         );
       })}
@@ -388,14 +389,14 @@ function groupSegments(segments: ChatSegment[]): ChatSegment[][] {
 
 function bandClass(kind: AgentTransparencyBand['kind']): string {
   switch (kind) {
-    case 'prellm': return 'bg-zinc-500/60';
-    case 'ttft': return 'bg-amber-400';
-    case 'gen': return 'bg-emerald-400';
-    case 'tool': return 'bg-sky-400';
-    case 'orch': return 'bg-rose-400';
+    case 'prellm': return 'bg-[#B4AF9F]';
+    case 'ttft': return 'bg-[#D6A24A]';
+    case 'gen': return 'bg-[#7FA06B]';
+    case 'tool': return 'bg-[#6E93B4]';
+    case 'orch': return 'bg-[#C96442]';
     case 'total':
     default:
-      return 'bg-teal-400';
+      return 'bg-[#8A9E7A]';
   }
 }
 
@@ -428,21 +429,21 @@ function AssistantTransparencyPanel({ msg }: { msg: ChatMessage }) {
   if (!profile.visible) return null;
 
   return (
-    <div className="mt-2.5 overflow-hidden rounded-xl border border-white/10 bg-white/[0.035]">
+    <div className="mt-3.5 w-fit max-w-full overflow-hidden rounded-[9px] border border-[#E5E1D5] bg-[#FCFBF7]">
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] text-zinc-500 transition-colors hover:text-teal-300"
+        className="flex w-full items-center gap-2 px-3 py-[7px] text-left text-[11.5px] text-[#948F80] transition-colors hover:text-[#C96442]"
         title="查看本轮执行透视"
       >
-        <Gauge className="h-3.5 w-3.5 text-teal-400/80" />
-        <span className="min-w-0 flex-1 truncate font-medium">透视 · {profile.headline || '本轮执行'}</span>
+        <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-[#5B7B4E]" />
+        <span className="min-w-0 flex-1 truncate font-medium rd-num">透视 · {profile.headline || '本轮执行'}</span>
         <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="border-t border-white/10 px-3 py-2.5 text-[11px] text-zinc-500">
+        <div className="border-t border-[#E5E1D5] px-3 py-2.5 text-[11px] text-[#6B665A]">
           {profile.bands.length > 0 && (
             <>
-              <div className="flex h-1.5 overflow-hidden rounded-full bg-white/10">
+              <div className="flex h-1.5 overflow-hidden rounded-full bg-[#EAE6DA]">
                 {profile.bands.map((band, index) => (
                   <span
                     key={`${band.kind}-${index}`}
@@ -451,7 +452,7 @@ function AssistantTransparencyPanel({ msg }: { msg: ChatMessage }) {
                   />
                 ))}
               </div>
-              <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10.5px] text-zinc-600">
+              <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10.5px] text-[#948F80]">
                 {profile.bands.map((band, index) => (
                   <span key={`${band.kind}-legend-${index}`}>{band.label} {formatDurationMs(band.ms)}</span>
                 ))}
@@ -474,10 +475,10 @@ function AssistantTransparencyPanel({ msg }: { msg: ChatMessage }) {
             )}
             {profile.tools.length > 0 && (
               <div className="grid grid-cols-[4.5rem_1fr] gap-2">
-                <span className="text-zinc-600">调用 Skill</span>
+                <span className="text-[#948F80]">调用 Skill</span>
                 <div className="flex flex-wrap gap-1.5">
                   {profile.tools.map(tool => (
-                    <span key={tool} className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono text-[10.5px] text-zinc-500">
+                    <span key={tool} className="rounded-full border border-[#E5E1D5] bg-[#F0EDE4] px-2 py-0.5 font-mono text-[10.5px] text-[#6B665A]">
                       {tool}
                     </span>
                   ))}
@@ -494,8 +495,8 @@ function AssistantTransparencyPanel({ msg }: { msg: ChatMessage }) {
 function MetaRow({ label, value, preserveLines = false }: { label: string; value: string; preserveLines?: boolean }) {
   return (
     <div className="grid grid-cols-[4.5rem_1fr] gap-2">
-      <span className="text-zinc-600">{label}</span>
-      <span className={`text-zinc-500 ${preserveLines ? 'whitespace-pre-wrap' : ''}`}>{value}</span>
+      <span className="text-[#948F80]">{label}</span>
+      <span className={`text-[#6B665A] rd-num ${preserveLines ? 'whitespace-pre-wrap' : ''}`}>{value}</span>
     </div>
   );
 }
