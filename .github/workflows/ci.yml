@@ -124,6 +124,15 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Restore previous Dedao authority gate artifact
+        if: steps.dedao-config.outputs.enabled == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: artifacts/previous-dedao-authority-gate.json
+          key: dedao-authority-gate-${{ github.head_ref || github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            dedao-authority-gate-${{ github.head_ref || github.ref_name }}-
+
       - name: Run Dedao authority pull gate
         if: steps.dedao-config.outputs.enabled == 'true'
         env:
@@ -132,7 +141,12 @@ jobs:
           TZ: Asia/Shanghai
         run: |
           mkdir -p artifacts
-          python scripts/dedao_authority_pull_report.py --gate --redacted-output artifacts/dedao-authority-gate.json
+          previous_args=()
+          if [ -s artifacts/previous-dedao-authority-gate.json ]; then
+            previous_args=(--previous-artifact artifacts/previous-dedao-authority-gate.json)
+          fi
+          python scripts/dedao_authority_pull_report.py --gate "${previous_args[@]}" --redacted-output artifacts/dedao-authority-gate.json
+          cp artifacts/dedao-authority-gate.json artifacts/previous-dedao-authority-gate.json
 
       - name: Upload Dedao authority gate artifact
         if: always() && steps.dedao-config.outputs.enabled == 'true'
@@ -140,6 +154,13 @@ jobs:
         with:
           name: dedao-authority-gate
           path: artifacts/dedao-authority-gate.json
+
+      - name: Save Dedao authority gate artifact for next run
+        if: always() && steps.dedao-config.outputs.enabled == 'true' && hashFiles('artifacts/dedao-authority-gate.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: artifacts/previous-dedao-authority-gate.json
+          key: dedao-authority-gate-${{ github.head_ref || github.ref_name }}-${{ github.run_id }}
 
   frontend-build:
     runs-on: ubuntu-latest

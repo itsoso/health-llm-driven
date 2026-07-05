@@ -76,3 +76,14 @@ def test_ci_runs_optional_dedao_authority_gate():
     assert "enabled=false" in workflow
     assert "scripts/dedao_authority_pull_report.py --gate" in workflow
     assert "--redacted-output artifacts/dedao-authority-gate.json" in workflow
+
+
+def test_ci_compares_dedao_authority_gate_with_previous_artifact():
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "Restore previous Dedao authority gate artifact" in workflow
+    assert "actions/cache/restore@v4" in workflow
+    assert "artifacts/previous-dedao-authority-gate.json" in workflow
+    assert "--previous-artifact artifacts/previous-dedao-authority-gate.json" in workflow
+    assert "Save Dedao authority gate artifact for next run" in workflow
+    assert "actions/cache/save@v4" in workflow
