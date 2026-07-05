@@ -14,6 +14,10 @@ TOP_KEYS = {"date", "current_window", "now", "items", "past", "counts"}
 COUNT_KEYS = {"actionable", "overdue", "info"}
 
 
+def _rhythm_items(spine):
+    return [it for it in spine["items"] if it.get("action_kind") == "day_rhythm"]
+
+
 def _add_today_workout(db, user_id: int):
     from app.models.daily_health import WorkoutRecord
 
@@ -35,7 +39,7 @@ def test_empty_user_valid_shape(db, auth_user_and_headers):
     user, _ = auth_user_and_headers
     spine = build_today_spine(db, user.id)
     assert set(spine.keys()) == TOP_KEYS
-    assert spine["items"] == []
+    assert _rhythm_items(spine), "空用户也应有低打扰日内时间骨架"
     assert spine["date"] == str(date.today())
     assert spine["current_window"] in {
         "morning", "noon", "afternoon", "evening", "bedtime", "anytime"}
@@ -43,6 +47,41 @@ def test_empty_user_valid_shape(db, auth_user_and_headers):
     assert spine["past"]["completed_count"] == 0
     assert set(spine["counts"].keys()) == COUNT_KEYS
     assert spine["counts"]["actionable"] == 0
+
+
+def test_day_rhythm_covers_user_day_without_becoming_tasks(db, auth_user_and_headers):
+    """用户视角完整时间动线:晨起/午间/下午/晚间/睡前都有低打扰系统时刻卡。"""
+    user, _ = auth_user_and_headers
+
+    spine = build_today_spine(db, user.id)
+    rhythm = _rhythm_items(spine)
+
+    assert {it["time_window"] for it in rhythm} >= {
+        "morning", "noon", "afternoon", "evening", "bedtime",
+    }
+    assert all(it["driver"] == "time_driven" for it in rhythm)
+    assert all(it["kind"] == "advisory" for it in rhythm)
+    assert all(it["can_complete"] is False for it in rhythm)
+    assert all(it["event_id"] is None for it in rhythm)
+    assert all(it["complete_ref"] is None for it in rhythm)
+
+
+def test_day_rhythm_skips_domains_already_covered():
+    """已有运动/饮食/睡眠类真实项时,系统时刻卡不重复提醒同一类事情。"""
+    import app.services.today_timeline_service as svc
+
+    existing = [
+        {"action_kind": "training", "time_window": "morning", "title": "晨练"},
+        {"action_kind": "diet", "time_window": "noon", "title": "午餐记录"},
+        {"action_kind": "sleep", "time_window": "bedtime", "title": "睡眠计划"},
+    ]
+
+    rhythm = svc._day_rhythm_items(existing)
+    ids = {it["id"] for it in rhythm}
+
+    assert "rhythm_morning_movement" not in ids
+    assert "rhythm_noon_meal" not in ids
+    assert "rhythm_bedtime_wind_down" not in ids
 
 
 def test_today_uses_user_profile_timezone(db, auth_user_and_headers, monkeypatch):
@@ -103,6 +142,21 @@ def test_driver_survives_response_model(client, auth_user_and_headers):
     assert actions, "应有 due 协议 action item"
     assert "driver" in actions[0], "driver 被 response_model 剥离 —— TodaySpineItem 需声明该字段"
     assert actions[0]["driver"] == "plan_driven"
+
+
+def test_day_rhythm_survives_response_model(client, auth_user_and_headers):
+    """time_driven 系统时刻卡必须穿过 response_model,否则移动端看不到完整时间动线。"""
+    _, h = auth_user_and_headers
+    r = client.get("/api/v1/timeline/today", headers=h)
+
+    assert r.status_code == 200
+    rhythm = [it for it in r.json()["items"] if it.get("action_kind") == "day_rhythm"]
+    assert rhythm, "response_model 不应剥离系统时刻卡"
+    assert {it["time_window"] for it in rhythm} >= {
+        "morning", "noon", "afternoon", "evening", "bedtime",
+    }
+    assert all(it["driver"] == "time_driven" for it in rhythm)
+    assert all(it["can_complete"] is False for it in rhythm)
 
 
 def test_auto_observed_protocol_counts_as_completed_not_actionable(client, db, auth_user_and_headers):

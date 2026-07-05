@@ -97,9 +97,8 @@ def _derive_driver(item: Dict[str, Any]) -> str:
     - 复查(checkup,health_problem 来源,预定到期)→ plan_driven。
     - 歧义(有常驻 source object 但 cadence 缺失)→ plan_driven(设计钦定:歧义偏 plan)。
 
-    注:当前 agenda 数据里没有独立的「晨起就绪/睡前流程」系统时刻卡 ——
-    这些概念若落地也是 cadence=daily 的常驻协议,会归 plan_driven;无干净的 time_driven
-    判据,故 time_driven 暂不从现有项派生(留作未来系统时刻卡的标记)。
+    注:系统时刻卡(晨起/午间/下午/晚间/睡前)不从 agenda 派生,由
+    _day_rhythm_items 显式标记为 time_driven。
     """
     cadence = item.get("cadence")
     if cadence == "event_triggered":
@@ -254,6 +253,122 @@ def _outcome_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
             "proof": proof,
         })
     return items
+
+
+_DAY_RHYTHM_SLOTS: List[Dict[str, Any]] = [
+    {
+        "id": "rhythm_morning_start",
+        "time_window": "morning",
+        "scheduled_for": "08:00",
+        "title": "晨起启动：补水并看今日重点",
+        "subtitle": "先补水,再确认小巴排好的第一件事。",
+        "icon": "sunny-outline",
+        "color": "#1E8A8A",
+        "priority": 18,
+        "skip_action_kinds": {"hydration"},
+    },
+    {
+        "id": "rhythm_morning_movement",
+        "time_window": "morning",
+        "scheduled_for": "08:10",
+        "title": "晨间活动：10 分钟轻活动",
+        "subtitle": "按今天状态选择散步、拉伸、八段锦或轻力量。",
+        "icon": "walk-outline",
+        "color": "#0A8F8F",
+        "priority": 17,
+        "skip_action_kinds": {"training", "activity"},
+    },
+    {
+        "id": "rhythm_noon_meal",
+        "time_window": "noon",
+        "scheduled_for": "12:30",
+        "title": "午餐窗口：拍照或一句话记餐",
+        "subtitle": "记录一餐后,小巴才能把下一餐建议调准。",
+        "icon": "restaurant-outline",
+        "color": "#FF9500",
+        "priority": 16,
+        "skip_action_kinds": {"diet"},
+    },
+    {
+        "id": "rhythm_afternoon_break",
+        "time_window": "afternoon",
+        "scheduled_for": "15:30",
+        "title": "下午恢复：起身、喝水、放松眼睛",
+        "subtitle": "工作间歇先做 2 分钟低成本恢复。",
+        "icon": "leaf-outline",
+        "color": "#34C759",
+        "priority": 15,
+        "skip_action_kinds": set(),
+    },
+    {
+        "id": "rhythm_evening_close",
+        "time_window": "evening",
+        "scheduled_for": "19:30",
+        "title": "晚间收口：补齐饮食和用药记录",
+        "subtitle": "把漏记的晚餐、补剂或药物补上,方便夜间复盘。",
+        "icon": "clipboard-outline",
+        "color": "#AF52DE",
+        "priority": 14,
+        "skip_action_kinds": {"diet", "medication", "supplement"},
+    },
+    {
+        "id": "rhythm_bedtime_wind_down",
+        "time_window": "bedtime",
+        "scheduled_for": "22:30",
+        "title": "睡前收尾：降低刺激,准备入睡",
+        "subtitle": "回看今天完成情况,把明早第一步留给小巴。",
+        "icon": "moon-outline",
+        "color": "#5AC8FA",
+        "priority": 13,
+        "skip_action_kinds": {"sleep", "recovery"},
+    },
+]
+
+
+def _day_rhythm_items(existing_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """用户视角的低打扰日内时间骨架。
+
+    它补的是「今天自然会经过哪些健康时刻」,不是新协议,所以:
+    - driver=time_driven:按时间窗口出现。
+    - kind=advisory:提示/引导,不写记录。
+    - can_complete=False:不制造新的确认负担。
+
+    若同一时间窗已有同域真实项(饮食/运动/睡眠/用药等),系统时刻卡让位,避免重复。
+    """
+    covered: set[tuple[str, str]] = set()
+    for item in existing_items:
+        action_kind = item.get("action_kind")
+        window = item.get("time_window") or "anytime"
+        if action_kind:
+            covered.add((str(action_kind), str(window)))
+
+    out: List[Dict[str, Any]] = []
+    for slot in _DAY_RHYTHM_SLOTS:
+        window = slot["time_window"]
+        skip_action_kinds = slot.get("skip_action_kinds") or set()
+        if any((kind, window) in covered for kind in skip_action_kinds):
+            continue
+        out.append({
+            "id": slot["id"],
+            "kind": "advisory",
+            "driver": "time_driven",
+            "time_window": window,
+            "scheduled_for": slot["scheduled_for"],
+            "title": slot["title"],
+            "subtitle": slot["subtitle"],
+            "icon": slot["icon"],
+            "color": slot["color"],
+            "status": "info",
+            "priority": int(slot["priority"]),
+            "can_complete": False,
+            "complete_ref": None,
+            "event_id": None,
+            "action_kind": "day_rhythm",
+            "deep_link": None,
+            "severity": None,
+            "proof": None,
+        })
+    return out
 
 
 # metric_key → 人话标签(与 events_timeline_service._METRIC_LABELS 风格一致,去单位)
@@ -431,6 +546,10 @@ def build_today_spine(db: Session, user_id: int) -> Dict[str, Any]:
     # 2.5) 今日工作块(CalDAV busy block)→ kind=work 工作域项(无标题,fail-soft)。
     #      跨域护城河:把工作日程合进日脊柱;隐私只用粗粒度 busy 接缝。
     items.extend(_work_items(db, user_id))
+
+    # 2.6) 用户视角完整时间动线:晨起/午间/下午/晚间/睡前的系统时刻卡。
+    #      它们是低打扰 advisory,不物化 HealthEvent,也不要求用户确认;已有同窗口同域真实项时让位。
+    items.extend(_day_rhythm_items(items))
 
     # 3) 过去项(今日已发生)→ past.events(observation)
     past_events: List[Dict[str, Any]] = []

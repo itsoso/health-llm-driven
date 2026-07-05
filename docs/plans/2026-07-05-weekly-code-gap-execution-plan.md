@@ -45,7 +45,7 @@
 | Phone-first auth | 手机号登录注册,可改密码 | 后端 phone code、Aliyun SMS、Mobile login/settings、测试存在 | 基本完成 | 生产 SMS 配置、账号绑定和 App/Mac/Web 登录入口 smoke |
 | LLM 成本与性能 | Admin 全局监控 + 每次 token + 端上透视 | Dossier shipped;Admin `/admin/llm-performance`;Mac/Web/Mobile profile 存在 | 已完成 | 继续加预算策略和异常告警,不是本批阻塞 |
 | Agent 操作面 | 每个一等对象默认 Agent 可操作 | registry 与 CI 已有;spec 已挂账 waist/sleep/excretion create、supplement undo、goal、medical_exam list 等缺口 | 部分完成 | 排入 P1/P2,按对象补 CRUD/opt_out |
-| 7 天健康运行时 | 未来 7 天日程化编排,低打扰执行 | rolling runtime spec 和部分 agenda/watch/today 实现存在 | 长期未闭环 | 日历/位置/药品/NFC/环境 IoT/失败原因自纠偏分阶段推进 |
+| 7 天健康运行时 | 未来 7 天日程化编排,低打扰执行 | rolling runtime spec 和部分 agenda/watch/today 实现存在;已补今日日内 time_driven 时间骨架 | 部分完成 | 继续推进日历/位置/药品/NFC/环境 IoT/失败原因自纠偏 |
 
 ## 新计划
 
@@ -129,6 +129,7 @@
     - 规则:LLM 只选组件/叙事,数据仍由确定性代码填充。
 
 14. **滚动 7 天健康运行时**
+    - 已完成 Slice: 今日时间线补晨起/午间/下午/晚间/睡前 `time_driven` 低打扰系统时刻卡;已有同窗口同域真实项时自动让位。
     - Calendar-aware 工作间歇、饮水、午休、运动、晚间建议。
     - 药品/NFC/固定位置确认先做 spec + 可行性验证,不直接承诺。
     - 失败原因驱动自纠偏,减少打扰而不是增加提醒。
