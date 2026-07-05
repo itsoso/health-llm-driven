@@ -57,6 +57,31 @@ def _isolate_twin_cache():
     _flush_twin_keys()
 
 
+@pytest.fixture(autouse=True)
+def _noop_twin_cache(monkeypatch):
+    """测试隔离(第二层):把 twin 缓存 get/set/invalidate 直接 no-op。
+
+    上面的 `_isolate_twin_cache` 只在用例边界 flush,管不住两类残留:
+    (a) 用例内部先请求(缓存了空 twin)、再写数据后重读——命中的还是用例内
+    刚缓存的陈旧 twin;(b) 上一用例触发的后台线程在边界 flush 之后才把
+    twin 写回 Redis。no-op 让 build_twin(use_cache=True) 在测试内永远
+    miss→重建,读端对任何 Redis 残留免疫,且行为与无 Redis 的 CI 完全一致。
+
+    builder/API 都是调用时 `from app.twin.cache import ...`,按模块属性
+    解析,patch 模块属性即可生效。保留 `_isolate_twin_cache` 不动:它仍负责
+    清掉进程外残留,且 test_safety_failloud_consumers 的注释依赖其语义。
+    """
+    from app.twin import cache as twin_cache
+
+    monkeypatch.setattr(twin_cache, "get_cached_twin", lambda user_id: None)
+    monkeypatch.setattr(
+        twin_cache,
+        "set_cached_twin",
+        lambda user_id, twin_json, ttl=twin_cache.TWIN_CACHE_TTL_SECONDS: False,
+    )
+    monkeypatch.setattr(twin_cache, "invalidate_twin", lambda user_id: None)
+
+
 @pytest.fixture(scope="function")
 def db():
     """创建测试数据库.
