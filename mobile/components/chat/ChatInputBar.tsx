@@ -96,6 +96,11 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const [showMedicalImportMenu, setShowMedicalImportMenu] = useState(false);
   const [medicalImportBusy, setMedicalImportBusy] = useState(false);
   const [agentMode, setAgentMode] = useState<ChatAgentMode>('daily');
+  // 空且未聚焦时把 TextInput 设成「摸不到」(pointerEvents none) → 触摸落到外层
+  // Pressable:轻点 → 聚焦打字,长按 → 干净地录音(不被 iOS 文本选择放大镜抢走、
+  // 不闪键盘)。一旦聚焦或有字 → 恢复可交互(光标/选择正常)。阿福/DeepSeek 同款。
+  const [isFocused, setIsFocused] = useState(false);
+  const inputInert = input.length === 0 && !isFocused;
   const [cancelHint, setCancelHint] = useState(false);
   const [justSent, setJustSent] = useState(false);  // 刚发送, 按钮停留 1s 避免误切 mic
   const { pendingImages, removeImage, clearImages, pickImage, takePhoto } = useMediaPicker();
@@ -394,11 +399,15 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
           >
             <TextInput
               ref={textInputRef}
-              style={styles.textInput}
+              // 空且未聚焦时「摸不到」→ 长按手势归外层 Pressable(录音),避免 iOS 文本
+              // 选择放大镜抢走 + 键盘闪现。聚焦/有字后恢复可交互(光标/选择正常)。
+              style={[styles.textInput, { pointerEvents: inputInert ? 'none' : 'auto' }]}
               placeholder={MODE_PLACEHOLDER[agentMode]}
               placeholderTextColor={C.ink3}
               value={input}
               onChangeText={setInput}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
               onKeyPress={handleTextInputKeyPress}
               onSubmitEditing={handleKeyboardSubmit}
               returnKeyType="send"

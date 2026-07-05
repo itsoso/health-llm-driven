@@ -193,6 +193,21 @@ describe('ChatInputBar', () => {
     expect(mockStopAndTranscribe).toHaveBeenCalled();
   });
 
+  it('makes the empty unfocused field inert so the hold-to-talk gesture wins (阿福/DeepSeek)', () => {
+    // 空且未聚焦 → TextInput pointerEvents:none → 长按落到外层 Pressable 录音,
+    // 不被 iOS 文本选择放大镜抢走、不闪键盘。聚焦/输入后恢复可交互。
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    const inert = StyleSheet.flatten(getByLabelText('消息输入框').props.style).pointerEvents;
+    expect(inert).toBe('none');
+
+    fireEvent(getByLabelText('消息输入框'), 'focus');
+    const afterFocus = StyleSheet.flatten(getByLabelText('消息输入框').props.style).pointerEvents;
+    expect(afterFocus).toBe('auto');
+  });
+
   it('sends the selected agent mode as chat context without polluting the user text', () => {
     const onSend = jest.fn();
     const { getByLabelText } = render(
