@@ -578,10 +578,19 @@ async def agent_stream(
                         if thinking_steps:
                             event.setdefault("data", {})["thinking_steps"] = thinking_steps
                         try:
-                            from app.services.inline_cards import build_cards, extract_inline_card_blocks
+                            from app.services.inline_cards import (
+                                build_cards,
+                                extract_inline_card_blocks,
+                                recorded_intake_kinds,
+                            )
                             existing = event.get("data", {}).get("cards")
-                            cards = build_cards(bg_db, user_id, msg_text)
                             inline = extract_inline_card_blocks("".join(full_text_buf))
+                            # 本轮已写入的摄入类记录 → 压制同 kind 的 query 派生草稿,
+                            # 防「已记录+再确认」重复写入(油桃加餐双卡实锤)。
+                            cards = build_cards(
+                                bg_db, user_id, msg_text,
+                                suppress_intake_kinds=recorded_intake_kinds(existing, inline),
+                            )
                             # LLM 主动输出的卡片优先，其次保留 AgentExecutor 已写入的
                             # system-KB evidence，再追加 query 派生卡片。历史恢复依赖
                             # message.meta.cards，所以合并后回写同一 assistant message。

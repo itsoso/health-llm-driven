@@ -507,6 +507,30 @@ def _build_runtime_agenda(db: Session, user_id: int, q: str) -> Optional[Dict[st
     }
 
 
+def _estimate_nutrition_from_table(db: Session, food_items: str) -> Optional[Dict[str, Any]]:
+    """单品 + 显式克数时查营养表折算;多品/无克数返回 None(诚实留空)。"""
+    text = (food_items or "").strip()
+    if not text or "+" in text or "、" in text:
+        return None
+    m = re.search(r"(?:约)?(\d+(?:\.\d+)?)\s*(?:g|克)", text)
+    if not m:
+        return None
+    grams = float(m.group(1))
+    name = re.split(r"[\s\d(（]", text, 1)[0].strip()
+    if len(name) < 1:
+        return None
+    try:
+        from app.services.food_nutrition_lookup import enrich_food_from_table
+        food: Dict[str, Any] = {"name": name, "quantity": grams, "unit": "g"}
+        enriched = enrich_food_from_table(db, food)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[inline_cards] nutrition table estimate failed: %s", e)
+        return None
+    keys = ("calories", "protein", "carbs", "fat", "fiber")
+    out = {k: enriched.get(k) for k in keys if enriched.get(k) is not None}
+    return out or None
+
+
 def _build_diet_draft(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
     intent = classify_intake_intent(q)
     if intent.kind != "diet":
@@ -523,7 +547,19 @@ def _build_diet_draft(db: Session, user_id: int, q: str) -> Optional[Dict[str, A
     carbs = _extract_number(q, r"(?:碳水|carbs?|碳水化合物)\s*(\d+(?:\.\d+)?)\s*(?:g|克)?")
     fat = _extract_number(q, r"(?:脂肪|fat)\s*(\d+(?:\.\d+)?)\s*(?:g|克)?")
     fiber = _extract_number(q, r"(?:纤维|fiber|膳食纤维)\s*(\d+(?:\.\d+)?)\s*(?:g|克)?")
-    confidence = 0.82 if calories is not None or sum(x is not None for x in (protein, carbs, fat, fiber)) >= 2 else 0.62
+    # 原话没数字 → 接营养表估算(与记录管线同源 food_nutrition_lookup),
+    # 单品且带克数才预填; 拿不准宁可留空(——)也不猜(founder 截图: 油桃草稿空数据)。
+    table_filled = False
+    if calories is None and all(x is None for x in (protein, carbs, fat, fiber)):
+        est = _estimate_nutrition_from_table(db, food_items)
+        if est:
+            calories = est.get("calories")
+            protein = est.get("protein")
+            carbs = est.get("carbs")
+            fat = est.get("fat")
+            fiber = est.get("fiber")
+            table_filled = calories is not None
+    confidence = 0.82 if (calories is not None and not table_filled) or sum(x is not None for x in (protein, carbs, fat, fiber)) >= 2 and not table_filled else (0.72 if table_filled else 0.62)
 
     data: Dict[str, Any] = {
         "meal_type": meal_type,
@@ -808,7 +844,53 @@ _BUILDERS = [
 ]
 
 
-def build_cards(db: Session, user_id: int, query: str) -> List[Dict[str, Any]]:
+_DRAFT_KIND_BY_CARD = {
+    "diet_draft": "diet",
+    "medication_draft": "medication",
+    "supplement_draft": "supplement",
+}
+
+
+def recorded_intake_kinds(*card_lists: Any) -> set:
+    """本轮已完成写入的摄入类 kind 集合(diet/medication/supplement)。
+
+    从 executor 已附的 record / record_quality 卡推断: record 用 data.type,
+    record_quality 用 data.domain。用于压制同轮 query 派生的 *_draft 卡 ——
+    否则「已记录 + 再确认草稿」并存, 用户点确认会把同一笔写两次
+    (founder 截图实锤: 油桃加餐已记录 40kcal, 下面又冒空数据草稿)。
+    """
+    kinds: set = set()
+    for cards in card_lists:
+        if not isinstance(cards, list):
+            continue
+        for c in cards:
+            if not isinstance(c, dict):
+                continue
+            data = c.get("data") if isinstance(c.get("data"), dict) else {}
+            t = c.get("type")
+            raw = ""
+            if t == "record":
+                raw = str(data.get("type") or "")
+            elif t == "record_quality":
+                raw = str(data.get("domain") or "")
+            else:
+                continue
+            if raw in {"diet", "meal", "snack", "food"}:
+                kinds.add("diet")
+            elif raw in {"medication", "med"}:
+                kinds.add("medication")
+            elif raw == "supplement":
+                kinds.add("supplement")
+    return kinds
+
+
+def build_cards(
+    db: Session,
+    user_id: int,
+    query: str,
+    *,
+    suppress_intake_kinds: Optional[set] = None,
+) -> List[Dict[str, Any]]:
     """根据用户输入和 Twin 数据, 构造动态卡片列表
 
     返回 list[{type, data}], 前端直接塞进 SSE done 事件.
@@ -823,8 +905,12 @@ def build_cards(db: Session, user_id: int, query: str) -> List[Dict[str, Any]]:
     emitted: List[str] = []
     gate_miss: List[str] = []
     dropped: List[Dict[str, str]] = []
+    suppressed = suppress_intake_kinds or set()
     for card_type, builder in _BUILDERS:
         if card_type == "record_intent_skip":
+            continue
+        if _DRAFT_KIND_BY_CARD.get(card_type) in suppressed:
+            dropped.append({"type": card_type, "reason": "already_recorded_this_turn"})
             continue
         considered.append(card_type)
         try:
