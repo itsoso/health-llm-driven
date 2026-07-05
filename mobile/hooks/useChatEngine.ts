@@ -21,6 +21,10 @@ export interface UIMessage extends ChatMessage {
   id: string;
   streaming?: boolean;
   thinkingSteps?: string[];
+  // P0-1 渐进渲染 (刀⑤): 首 token 前的"细状态行"标签 (中文人话), 由 status SSE 事件驱动。
+  // 例: "正在理解…" → "查看步数数据…" → "正在整理回答…"。首 token 到达即清空,
+  // 之后收进思考完成态 pill。仅流式期间存在, 从不落后端历史 (与 streaming 一样 ephemeral)。
+  currentStatus?: string;
   imageUris?: string[];
   isBriefing?: boolean;
   // 2026-07 State A「小巴先开口」: 用户发第一条消息时, 把当时可见的开场气泡文本
@@ -158,6 +162,13 @@ const PENDING_STREAM_STARTED_AT_KEY = 'chat:pending_stream_started_at:v1';
 const PENDING_STREAM_TTL_MS = 10 * 60 * 1000;
 const THINKING_PLACEHOLDER = '⏳ AI 正在思考中...';
 const MAX_THINKING_STEPS = 8;
+// P0-5 竞态守卫: 本地 stream 活跃且未超过此窗口时, focus-reload / app-active-reload
+// 不得用服务端半截 partial 覆盖本地流式态。超过窗口 (慢流 / 卡死) 才放行服务端恢复,
+// 避免永久霸占 UI。与 PENDING_STREAM_TTL_MS(10min, 冷启恢复用)不同 —— 这是前台活跃流的护栏。
+const LOCAL_STREAM_HOLD_MS = 30 * 1000;
+// P0-1 节流: 思考面板 (thinkingSteps) 更新最小间隔。快路由下 status/tool 事件密集到达,
+// 逐事件 setMessages 全量 map 会打满 JS 线程 —— 攒到 >=200ms 才 flush 一次思考步骤。
+const THINKING_FLUSH_MS = 200;
 
 function stripThinkingPlaceholder(content: string): string {
   return content.replace(THINKING_PLACEHOLDER, '');
@@ -254,6 +265,15 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   // 2026-05-14: 标记是否有正在进行的 stream — 离开页面回来时, 如果还在 stream
   // 后端 G-W9 bg task 还在跑), 重新 fetch 拉服务端最新消息.
   const streamingRef = useRef(false);
+  // P0-5 竞态守卫: 本地 stream 开始时间 (ms epoch)。stream 结束 (done/error/finally) 清 0。
+  // localStreamOwnsState() 据此判断"活跃且 <30s"→ 服务端 reload 必须让位, 不覆盖本地流式态。
+  const streamStartedAtRef = useRef(0);
+  const localStreamOwnsState = useCallback(() => {
+    if (!streamingRef.current) return false;
+    const startedAt = streamStartedAtRef.current;
+    if (!startedAt) return true; // 刚置 streaming、时间戳尚未落 → 保守持有本地态
+    return Date.now() - startedAt < LOCAL_STREAM_HOLD_MS;
+  }, []);
 
   // 2026-05-16 FIX: messages.length 不能直接进 useFocusEffect/AppState 的 deps.
   // 当 sendMessage 把 [userMsg, aiMsg] push 进 list, length 0→2 → callback 重建 →
@@ -272,12 +292,15 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
   const reloadCurrentFromServer = useCallback(async () => {
     if (!conversationId) return;
-    if (streamingRef.current) return;
+    // P0-5: 本地流式态活跃且 <30s → 让位, 不用服务端半截 partial 覆盖本地流。
+    // 只有流 done/error 或超过 30s (慢流/卡死) 后才放行服务端恢复。
+    if (localStreamOwnsState()) return;
     try {
       const { messages: msgs, total_messages } = await getConversationMessages(
         conversationId, { days: windowDays || DEFAULT_WINDOW_DAYS }
       );
-      if (streamingRef.current) return;
+      // 网络往返期间流可能又启动了 (用户快速再发一条) → 二次核查, 仍活跃则丢弃这次结果。
+      if (localStreamOwnsState()) return;
       setHasMoreHistory(total_messages > msgs.length);
       if (msgs.length === 0) return;
       const restored = restoreMessagesFromHistory(msgs, IMAGE_HOST, 'hist');
@@ -350,13 +373,14 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   }, [restoreCards]);
 
   const loadLatestConversation = useCallback(async (options?: { preferBriefing?: boolean }) => {
-    if (streamingRef.current) return;
+    // P0-5: 本地流式态活跃且 <30s → 不拉服务端最近对话覆盖当前流。
+    if (localStreamOwnsState()) return;
     try {
       const preferBriefing = options?.preferBriefing ?? true;
       const storedConversationId = await readStoredConversationId();
       if (storedConversationId) {
         const restoredStoredConversation = await loadConversationFromServer(storedConversationId, 'hist');
-        if (restoredStoredConversation || streamingRef.current) return;
+        if (restoredStoredConversation || localStreamOwnsState()) return;
         await forgetConversationId();
       }
 
@@ -371,12 +395,12 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         )
       );
       if (convs.length === 0) return;
-      if (streamingRef.current) return;
+      if (localStreamOwnsState()) return;
 
       const latestId = convs[0].id;
       await loadConversationFromServer(latestId, 'hist');
     } catch { console.warn('Failed to load latest conversation'); }
-  }, [loadConversationFromServer]);
+  }, [loadConversationFromServer, localStreamOwnsState]);
 
   // AppState: App 回前台时, 如果当前消息有 streaming 态但 iOS 已切到 background
   // 30s+ 把 stream 杀掉了, 客户端本地是残缺消息. 服务端 Agent stream
@@ -388,32 +412,35 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       const prev = appStateRef.current;
       appStateRef.current = next;
       if ((prev === 'background' || prev === 'inactive') && next === 'active') {
-        if (streamingRef.current) return;
+        // P0-5: 活跃本地流 (<30s) 持有本地态; 流被后台杀掉后 streamingRef 已复位 → 放行恢复。
+        if (localStreamOwnsState()) return;
         if (conversationId) {
           reloadCurrentFromServer();
-        } else if (streamingRef.current || messagesLengthRef.current > 0) {
+        } else if (messagesLengthRef.current > 0) {
           loadLatestConversation({ preferBriefing: false });
         }
       }
     });
     return () => sub.remove();
-  }, [conversationId, loadLatestConversation, reloadCurrentFromServer]);
+  }, [conversationId, loadLatestConversation, reloadCurrentFromServer, localStreamOwnsState]);
 
   // 2026-05-14 FIX-4 / 2026-05-15 resume: chat tab 重获 focus 时拉最新.
   // 新会话首次发送时 conversationId 可能在 done 前尚未回填；这种情况下按"最近对话"
   // 拉取, 避免用户切走后后台 task 已落库但 UI 永远停在本地 streaming placeholder。
   useFocusEffect(
     useCallback(() => {
-      if (streamingRef.current) {
+      // P0-5: 本地流式态活跃且 <30s → focus 回来不拉服务端, 让本地流继续拥有 UI。
+      // 只有流 done/error 或超过 30s (慢流/卡死) 后, focus reload 才允许服务端覆盖。
+      if (localStreamOwnsState()) {
         return () => { /* active stream owns local state; avoid overwriting it with partial server history */ };
       }
       if (conversationId) {
-        reloadCurrentFromServer().finally(() => { streamingRef.current = false; });
-      } else if (streamingRef.current || messagesLengthRef.current > 0) {
-        loadLatestConversation({ preferBriefing: false }).finally(() => { streamingRef.current = false; });
+        reloadCurrentFromServer();
+      } else if (messagesLengthRef.current > 0) {
+        loadLatestConversation({ preferBriefing: false });
       }
       return () => { /* unfocus 时不动 */ };
-    }, [conversationId, loadLatestConversation, reloadCurrentFromServer])
+    }, [conversationId, loadLatestConversation, reloadCurrentFromServer, localStreamOwnsState])
   );
 
   const loadConversation = useCallback(async (id: number) => {
@@ -487,6 +514,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     setMessages(prev => forceNewConversation ? [userMsg, aiMsg] : [...prev, userMsg, aiMsg]);
     setIsStreaming(true);
     streamingRef.current = true;
+    streamStartedAtRef.current = Date.now();  // P0-5: 记录流开始时刻, 供 30s 竞态守卫。
     void markPendingStream();
 
     const ac = new AbortController();
@@ -515,16 +543,37 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: mergeAssistantStreamContent(m.content, batch) } : m));
     };
 
+    // P0-1 思考面板节流: thought 事件在快路由下密集到达, 逐事件全量 setMessages map 打满 JS 线程。
+    // 攒到最新一批 thought, 每 >=200ms flush 一次 (append 去重, 上限 MAX_THINKING_STEPS)。
+    // done/error/循环结束/异常前强制 flush → 不丢最后一步。声明在 try 外, 让 catch/finally 也能收尾。
+    const pendingThoughts: string[] = [];
+    let thinkingFlushTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushThinkingBuffer = () => {
+      if (thinkingFlushTimer) { clearTimeout(thinkingFlushTimer); thinkingFlushTimer = null; }
+      if (pendingThoughts.length === 0) return;
+      const batch = pendingThoughts.splice(0, pendingThoughts.length);
+      setMessages(prev => prev.map(m => {
+        if (m.id !== aId) return m;
+        let steps = m.thinkingSteps;
+        for (const t of batch) steps = appendThinkingStep(steps, t);
+        return steps === m.thinkingSteps ? m : { ...m, thinkingSteps: steps };
+      }));
+    };
+    const queueThought = (thought: string) => {
+      pendingThoughts.push(thought);
+      if (!thinkingFlushTimer) {
+        thinkingFlushTimer = setTimeout(flushThinkingBuffer, THINKING_FLUSH_MS);
+      }
+    };
+
     try {
       const toolsUsed: Set<string> = new Set();
       const streamedCardKeys: Set<string> = new Set();
       let sawDone = false;
       for await (const evt of streamChat(finalMsg, targetConversationId, hasImages ? pendingImages : undefined, ac.signal, sendOpts?.extraContext)) {
         if (evt.thought) {
-          setMessages(prev => prev.map(m => m.id === aId ? {
-            ...m,
-            thinkingSteps: appendThinkingStep(m.thinkingSteps, evt.thought),
-          } : m));
+          // 节流进思考面板 (>=200ms 一批), 不逐事件 setMessages。
+          queueThought(evt.thought);
         }
         if (evt.type === 'start') {
           if (evt.conversationId) {
@@ -532,10 +581,26 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             if (!targetConversationId) setConversationId(evt.conversationId);
             void rememberConversationId(evt.conversationId);
           }
+        } else if (evt.type === 'status') {
+          // P0-1 (刀⑤): status 事件 → 气泡顶部单行状态。首 token 前才有意义,
+          // 首 token 到达后清空 (见下方 token 分支)。只在还没出正文时更新, 避免正文中途回退状态行。
+          if (!gotFirstToken && evt.statusLabel) {
+            const label = evt.statusLabel;
+            setMessages(prev => prev.map(m => (
+              m.id === aId && m.currentStatus !== label ? { ...m, currentStatus: label } : m
+            )));
+          }
         } else if (evt.type === 'token' || evt.type === 'tool') {
           const incoming = sanitizeChatErrorMessage(evt.content || '', '');
           if (incoming) {
-            if (!gotFirstToken) { gotFirstToken = true; clearTimeout(slowTimer); }
+            if (!gotFirstToken) {
+              gotFirstToken = true;
+              clearTimeout(slowTimer);
+              // 首 token 到达: 清空 status 行 (正文开始渲染, 状态行让位)。
+              setMessages(prev => prev.map(m => (
+                m.id === aId && m.currentStatus ? { ...m, currentStatus: undefined } : m
+              )));
+            }
             pendingTokenText += incoming;
             if (!tokenFlushTimer) {
               tokenFlushTimer = setTimeout(flushTokenBuffer, 80);
@@ -557,14 +622,16 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         } else if (evt.type === 'done') {
           sawDone = true;
           flushTokenBuffer();
+          flushThinkingBuffer();  // 收尾: 把节流缓冲里最后的思考步骤落盘 (done 可能覆盖为服务端权威列表)。
           if (evt.conversationId) {
             streamConversationId = evt.conversationId;
             if (!targetConversationId) setConversationId(evt.conversationId);
             void rememberConversationId(evt.conversationId);
           }
-          // 把耗时 + 模型名写入当前 assistant 消息 (ChatBubble 渲染 footer)
+          // 把耗时 + 模型名写入当前 assistant 消息 (ChatBubble 渲染 footer)。清空 status 行 (收进思考完成态 pill)。
           setMessages(prev => prev.map(m => m.id === aId ? {
             ...m,
+            currentStatus: undefined,
             elapsedMs: evt.elapsedMs,
             llmMs: evt.llmMs,
             llmRounds: evt.llmRounds,
@@ -608,9 +675,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           }
         } else if (evt.type === 'error') {
           flushTokenBuffer();
+          flushThinkingBuffer();
           const errMsg = sanitizeChatErrorMessage(evt.content, '请求出错，请稍后再试');
           setMessages(prev => prev.map(m => m.id === aId ? {
             ...m,
+            currentStatus: undefined,
             completionStatus: 'error',
             content: stripThinkingPlaceholder(m.content)
               ? stripThinkingPlaceholder(m.content) + `\n❌ ${errMsg}`
@@ -619,9 +688,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         }
       }
       flushTokenBuffer();
+      flushThinkingBuffer();
       if (!sawDone) {
         setMessages(prev => prev.map(m => m.id === aId ? {
           ...m,
+          currentStatus: undefined,
           completionStatus: 'interrupted',
           content: stripThinkingPlaceholder(m.content)
             ? `${stripThinkingPlaceholder(m.content)}\n\n[回复中断，已保留已接收内容]`
@@ -630,6 +701,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       }
     } catch (err: any) {
       flushTokenBuffer();
+      flushThinkingBuffer();
       const isAbort = err?.message === 'aborted';
       if (!isAbort && streamConversationId) {
         const recovered = await recoverConversationFromServer(streamConversationId);
@@ -637,6 +709,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       }
       setMessages(prev => prev.map(m => m.id === aId ? {
         ...m,
+        currentStatus: undefined,
         completionStatus: isAbort ? 'interrupted' : 'error',
         content: stripThinkingPlaceholder(m.content)
           ? (isAbort ? stripThinkingPlaceholder(m.content) + '\n\n[回复中断，已保留已接收内容]' : stripThinkingPlaceholder(m.content) + `\n❌ ${sanitizeChatErrorMessage(err?.message, '请求失败')}`)
@@ -644,11 +717,14 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       } : m));
     } finally {
       flushTokenBuffer(); // 收尾: 清残留 timer + 保证最后一批不丢字 (幂等)
+      flushThinkingBuffer(); // 收尾: 清思考节流 timer + 落最后一步 (幂等)
       clearTimeout(slowTimer);
       abortRef.current = null;
       streamingRef.current = false;
+      streamStartedAtRef.current = 0;  // P0-5: 流结束, 解除本地态霸占 → 允许服务端 reload 恢复。
       void clearPendingStream();
-      setMessages(prev => prev.map(m => m.id === aId ? { ...m, streaming: false } : m));
+      // 终态: 停 streaming + 兜底清 status 行 (无论 done/error/interrupt 都不残留状态行)。
+      setMessages(prev => prev.map(m => m.id === aId ? { ...m, streaming: false, currentStatus: undefined } : m));
       setIsStreaming(false);
     }
   }, [isStreaming, conversationId, opts.contextData, recoverConversationFromServer]);
