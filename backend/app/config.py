@@ -205,6 +205,11 @@ class Settings(BaseSettings):
     # 多模型 panel(高风险裁决多模型投票):primitive,默认关
     multi_model_panel: bool = False
 
+    # P1 数字锚定核验(citation anchor)—— shadow 模式:核验答案里引用的个人数值能否锚定到
+    # Twin,结果只进日志 + done.meta(不改写/不拦截答案)。默认 True(它本身就只观测,零行为
+    # 变化;enforcement 是二期,等 shadow 数据说话)。关掉 = 连观测都跳过。
+    citation_anchor_shadow: bool = True
+
     # 首页对话起手 chip 的 LLM 润色(rules-cast-facts → LLM rewrites → verify gate)。
     # RULES 仍是唯一事实源;LLM 只改写措辞,确定性 verify gate 拒掉 LLM 编造的内容,
     # 回退到规则模板文本。fail-safe = 规则文本。默认开;一键关回纯规则行为(字节一致)。
