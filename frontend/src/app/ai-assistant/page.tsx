@@ -64,13 +64,41 @@ const OPENER_SOURCE_LABEL: Record<string, string> = {
 
 const CONV_PAGE_SIZE = 20; // 历史记录每页条数
 
+/**
+ * 页面级暖色主题 (Claude / Anthropic 设计语言, 2026-07-05 重设计).
+ *
+ * 作用域严格限定在本页 —— 变量只挂在 .ai-assistant-theme 包裹层, 不改
+ * globals.css / tailwind.config, 其他路由外观零影响。颜色直接用 mockup hex,
+ * 组件里的 arbitrary-value class 也读同一批 hex (rail/picker/chat/markdown warm)。
+ */
+const THEME_CSS = `
+.ai-assistant-theme{
+  --rd-paper:#F7F5EF; --rd-rail:#F0EDE4; --rd-card:#FCFBF7;
+  --rd-hair:#E5E1D5; --rd-hair-strong:#D8D3C4;
+  --rd-ink:#29261F; --rd-ink-2:#6B665A; --rd-ink-3:#948F80;
+  --rd-clay:#C96442; --rd-clay-soft:#F3E4DC;
+  --rd-amber:#B8791F; --rd-amber-soft:#F5EBD6;
+  --rd-sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI","Microsoft YaHei",sans-serif;
+  --rd-serif:"Songti SC","Noto Serif SC","Iowan Old Style",Georgia,"Times New Roman",serif;
+  background:var(--rd-paper); color:var(--rd-ink); font-family:var(--rd-sans);
+}
+.ai-assistant-theme ::-webkit-scrollbar{width:9px;height:9px}
+.ai-assistant-theme ::-webkit-scrollbar-thumb{background:var(--rd-hair-strong);border-radius:8px}
+.ai-assistant-theme ::-webkit-scrollbar-track{background:transparent}
+.rd-serif{font-family:var(--rd-serif)}
+.rd-num{font-variant-numeric:tabular-nums}
+`;
+
 export default function AIAssistantPage() {
   // useSearchParams 需要 Suspense 边界, 否则 Next.js 14 build 报
   // "useSearchParams() should be wrapped in a suspense boundary".
   return (
-    <Suspense fallback={<div className="fixed inset-0 z-40 bg-[#212121]" />}>
-      <AIAssistantInner />
-    </Suspense>
+    <>
+      <style dangerouslySetInnerHTML={{ __html: THEME_CSS }} />
+      <Suspense fallback={<div className="fixed inset-0 z-40 bg-[#F7F5EF]" />}>
+        <AIAssistantInner />
+      </Suspense>
+    </>
   );
 }
 
@@ -497,17 +525,25 @@ function AIAssistantInner() {
   };
 
   return (
-    <main className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-[#212121] text-zinc-100">
-      <header className="relative z-[70] shrink-0 overflow-visible border-b border-white/[0.08] bg-[#212121]/95 px-3 py-2.5 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-1">
-            <button
-              onClick={() => setHistoryOpen(open => !open)}
-              className="mr-1 flex h-9 w-9 items-center justify-center rounded-xl text-zinc-400 transition-colors hover:bg-white/[0.08] hover:text-zinc-100"
-              title="打开/收起历史记录"
-            >
-              <PanelLeft className="h-4.5 w-4.5" />
-            </button>
+    <main className="ai-assistant-theme fixed inset-0 z-40 flex flex-col overflow-hidden text-[#29261F]">
+      <header className="relative z-[70] shrink-0 overflow-visible border-b border-[#E5E1D5] bg-[#F7F5EF]/95 px-4 py-2.5 backdrop-blur sm:px-6">
+        <div className="mx-auto flex max-w-3xl items-center gap-3">
+          <button
+            onClick={() => setHistoryOpen(open => !open)}
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-[#948F80] transition-colors hover:bg-[#EFEADD] hover:text-[#29261F]"
+            title="打开/收起历史记录"
+          >
+            <PanelLeft className="h-[1.05rem] w-[1.05rem]" />
+          </button>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] bg-[#C96442] text-[13px] font-semibold text-white">
+              巴
+            </span>
+            <span className="rd-serif hidden text-[17px] font-semibold tracking-[0.01em] text-[#29261F] sm:inline">
+              健康小巴
+            </span>
+          </div>
+          <div className="min-w-0">
             <LlmModelPicker
               currentLabel={llmPref.label || '系统默认'}
               currentModelId={llmPref.model_id}
@@ -518,9 +554,10 @@ function AIAssistantInner() {
               onSelect={selectModel}
             />
           </div>
+          <div className="flex-1" />
           <button
             onClick={startNewConversation}
-            className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-3 text-sm font-medium text-zinc-100 transition-colors hover:bg-white/[0.1]"
+            className="inline-flex h-9 items-center gap-2 rounded-[9px] border border-[#D8D3C4] px-3 text-[13px] font-medium text-[#6B665A] transition-colors hover:bg-[#FCFBF7] hover:text-[#29261F]"
           >
             <MessageSquarePlus className="h-4 w-4" />
             <span className="hidden sm:inline">新对话</span>
@@ -531,7 +568,7 @@ function AIAssistantInner() {
                 if (shareSelectionMode) exitShareSelection();
                 else setShareSelectionMode(true);
               }}
-              className="inline-flex h-9 items-center gap-2 rounded-xl border border-teal-300/20 bg-teal-400/10 px-3 text-sm font-medium text-teal-200 transition-colors hover:bg-teal-400/15"
+              className="inline-flex h-9 items-center gap-2 rounded-[9px] border border-[#C96442] px-3 text-[13px] font-medium text-[#C96442] transition-colors hover:bg-[#F3E4DC]"
             >
               {shareSelectionMode ? <X className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}
               <span className="hidden sm:inline">{shareSelectionMode ? '取消选择' : '选择分享'}</span>
@@ -560,13 +597,13 @@ function AIAssistantInner() {
         )}
 
         <div className="relative flex min-w-0 flex-1 flex-col">
-          <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 pb-32 pt-8 sm:px-6">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 pb-32 pt-8 sm:px-6">
             {messages.length === 0 && !streaming ? (
               <div className="mx-auto flex min-h-[60vh] max-w-3xl flex-col items-center justify-center text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-500/15 text-teal-300 ring-1 ring-teal-300/15">
-                  <Sparkles className="h-7 w-7" />
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#C96442] text-[26px] font-semibold text-white">
+                  巴
                 </div>
-                <h1 className="mt-5 text-2xl font-semibold tracking-tight text-zinc-50 sm:text-3xl">
+                <h1 className="rd-serif mt-5 text-2xl font-semibold tracking-[0.01em] text-[#29261F] sm:text-[28px]">
                   今天想了解什么？
                 </h1>
                 {opener && (
@@ -574,15 +611,15 @@ function AIAssistantInner() {
                     <button
                       type="button"
                       onClick={() => submitSuggestion(opener.text)}
-                      className="group w-full rounded-2xl border border-teal-300/25 bg-teal-400/[0.06] px-5 py-4 text-left transition-colors hover:border-teal-300/45 hover:bg-teal-400/[0.1]"
+                      className="group w-full rounded-2xl border border-[#EDD9CF] bg-[#FBF3EE] px-5 py-4 text-left transition-colors hover:border-[#C96442]"
                     >
                       <div className="mb-1.5 flex items-center gap-2">
-                        <Sparkles className="h-3.5 w-3.5 text-teal-300" />
-                        <span className="text-[11px] font-medium uppercase tracking-wider text-teal-300/80">
+                        <Sparkles className="h-3.5 w-3.5 text-[#C96442]" />
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.11em] text-[#C96442]">
                           {OPENER_SOURCE_LABEL[opener.source] ?? 'AI 续接'}
                         </span>
                       </div>
-                      <div className="text-[15px] leading-6 text-zinc-100">{opener.text}</div>
+                      <div className="text-[15px] leading-6 text-[#29261F]">{opener.text}</div>
                     </button>
                     {opener.quick_replies && opener.quick_replies.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-2">
@@ -591,7 +628,7 @@ function AIAssistantInner() {
                             key={reply}
                             type="button"
                             onClick={() => submitSuggestion(reply)}
-                            className="rounded-full border border-teal-300/25 bg-teal-400/[0.08] px-3 py-1.5 text-xs font-medium text-teal-100 transition-colors hover:border-teal-300/45 hover:bg-teal-400/[0.15]"
+                            className="rounded-full border border-[#EDD9CF] bg-[#F3E4DC] px-3 py-1.5 text-xs font-medium text-[#C96442] transition-colors hover:bg-[#EFD6CB]"
                           >
                             {reply}
                           </button>
@@ -605,7 +642,7 @@ function AIAssistantInner() {
                     <button
                       key={item}
                       onClick={() => submitSuggestion(item)}
-                      className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm text-zinc-300 transition-colors hover:border-teal-300/30 hover:bg-white/[0.07] hover:text-zinc-50"
+                      className="rounded-2xl border border-[#E5E1D5] bg-[#FCFBF7] px-4 py-3 text-left text-sm text-[#6B665A] transition-colors hover:border-[#C96442] hover:text-[#29261F]"
                     >
                       {item}
                     </button>
@@ -630,16 +667,16 @@ function AIAssistantInner() {
           </div>
 
           {shareSelectionMode && (
-            <div className="pointer-events-auto absolute inset-x-3 bottom-28 z-20 mx-auto flex max-w-3xl items-center justify-between gap-3 rounded-2xl border border-teal-300/20 bg-[#171717]/95 px-4 py-3 shadow-2xl shadow-black/40 backdrop-blur sm:inset-x-6">
+            <div className="pointer-events-auto absolute inset-x-4 bottom-28 z-20 mx-auto flex max-w-3xl items-center justify-between gap-3 rounded-2xl border border-[#D8D3C4] bg-[#FCFBF7]/97 px-4 py-3 shadow-xl shadow-[#29261F]/10 backdrop-blur sm:inset-x-6">
               <div className="min-w-0">
-                <div className="text-sm font-medium text-zinc-100">已选择 {selectedMessageIds.size} 条</div>
-                <div className="text-xs text-zinc-500">按对话顺序生成一个可分享链接</div>
+                <div className="text-sm font-medium text-[#29261F]">已选择 {selectedMessageIds.size} 条</div>
+                <div className="text-xs text-[#948F80]">按对话顺序生成一个可分享链接</div>
               </div>
               <button
                 type="button"
                 disabled={selectedMessageIds.size === 0 || sharing}
                 onClick={() => shareMessages()}
-                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-teal-300 px-4 text-sm font-semibold text-zinc-950 transition-colors hover:bg-teal-200 disabled:bg-zinc-700 disabled:text-zinc-500"
+                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-[#C96442] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#B4573A] disabled:bg-[#E5E1D5] disabled:text-[#948F80]"
               >
                 <Share2 className="h-4 w-4" />
                 {sharing ? '生成中…' : '分享'}
@@ -648,14 +685,14 @@ function AIAssistantInner() {
           )}
 
           {/* 输入区 */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-[#212121] via-[#212121] to-transparent px-3 pb-4 pt-10 sm:px-6">
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-[#F7F5EF] via-[#F7F5EF] to-transparent px-4 pb-4 pt-10 sm:px-6">
             <form
               id="ai-assistant-composer"
               onSubmit={e => {
                 e.preventDefault();
                 sendMessage();
               }}
-              className="pointer-events-auto mx-auto flex max-w-3xl items-end gap-2 rounded-[1.7rem] border border-white/10 bg-[#2f2f2f] p-2 shadow-2xl shadow-black/30"
+              className="pointer-events-auto mx-auto flex max-w-3xl items-end gap-2 rounded-[1.5rem] border border-[#D8D3C4] bg-[#FCFBF7] p-2 shadow-[0_1px_0_rgba(41,38,31,0.03),0_8px_24px_-12px_rgba(41,38,31,0.14)] focus-within:border-[#C96442]"
             >
               <input
                 ref={medicalExamInputRef}
@@ -669,7 +706,7 @@ function AIAssistantInner() {
                 type="button"
                 disabled={streaming || medicalExamImporting}
                 onClick={() => medicalExamInputRef.current?.click()}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-white/[0.08] hover:text-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-600"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#948F80] transition-colors hover:bg-[#F0EDE4] hover:text-[#29261F] disabled:cursor-not-allowed disabled:text-[#C7C2B4]"
                 title="导入体检报告"
                 aria-label="导入体检报告"
               >
@@ -701,23 +738,23 @@ function AIAssistantInner() {
                 placeholder={streaming ? '回答中…' : '发消息 (Enter 发送, Shift+Enter 换行)'}
                 disabled={streaming}
                 rows={1}
-                className="max-h-36 min-h-10 flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] leading-6 text-zinc-100 placeholder:text-zinc-500 focus:outline-none disabled:opacity-50"
+                className="max-h-36 min-h-10 flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] leading-6 text-[#29261F] placeholder:text-[#948F80] focus:outline-none disabled:opacity-50"
               />
               <button
                 type="submit"
                 disabled={!input.trim() || streaming}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-950 transition-colors hover:bg-white disabled:bg-zinc-600 disabled:text-zinc-400"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#C96442] text-white transition-colors hover:bg-[#B4573A] disabled:bg-[#E5E1D5] disabled:text-[#B4AF9F]"
                 title="发送"
               >
                 <ArrowUp className="h-5 w-5" />
               </button>
             </form>
             {medicalExamImportError && (
-              <p role="alert" className="pointer-events-auto mx-auto mt-2 max-w-3xl text-center text-[11px] text-rose-300">
+              <p role="alert" className="pointer-events-auto mx-auto mt-2 max-w-3xl text-center text-[11px] text-[#B4573A]">
                 {medicalExamImportError}
               </p>
             )}
-            <p className="pointer-events-none mx-auto mt-2 max-w-3xl text-center text-[11px] text-zinc-600">
+            <p className="pointer-events-none mx-auto mt-2 max-w-3xl text-center text-[11px] text-[#948F80]">
               健康建议不能替代医生诊断；紧急或明显异常请及时就医。
             </p>
           </div>

@@ -20,9 +20,9 @@ const TIER_LABEL: Record<string, string> = {
 };
 
 const TIER_STYLE: Record<string, string> = {
-  fast: 'bg-emerald-400/10 text-emerald-300',
-  balanced: 'bg-sky-400/10 text-sky-300',
-  reasoning: 'bg-violet-400/10 text-violet-300',
+  fast: 'bg-[#E4EDDD] text-[#5B7B4E]',
+  balanced: 'bg-[#E1EAF2] text-[#4A6B87]',
+  reasoning: 'bg-[#ECE3F1] text-[#7A5E8A]',
 };
 
 export default function LlmModelPicker({
@@ -71,48 +71,45 @@ export default function LlmModelPicker({
         aria-expanded={open}
         onClick={() => setOpen(value => !value)}
         disabled={disabled}
-        className="inline-flex min-w-0 items-center gap-2 rounded-xl px-2.5 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-[#D8D3C4] px-3 py-[5px] text-[12.5px] text-[#6B665A] transition-colors hover:border-[#C96442] disabled:cursor-not-allowed disabled:opacity-60"
         title="切换当前对话使用的 AI 模型"
       >
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal-500/15 text-teal-300">
-          <Brain className="h-3.5 w-3.5" />
-        </span>
-        <span className="truncate">健康小巴</span>
-        <span className="hidden max-w-[12rem] truncate text-xs font-normal text-zinc-500 sm:inline">
+        <Brain className="h-3.5 w-3.5 shrink-0 text-[#948F80]" />
+        <span className="max-w-[12rem] truncate font-medium text-[#29261F]">
           {savingModelId ? '切换中...' : currentLabel}
         </span>
         {savingModelId ? (
-          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-zinc-500" />
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-[#948F80]" />
         ) : (
-          <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-zinc-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+          <ChevronDown className={`h-3 w-3 shrink-0 text-[#948F80] transition-transform ${open ? 'rotate-180' : ''}`} />
         )}
       </button>
 
       {open && (
         <div
           data-testid="llm-model-picker-menu"
-          className="absolute left-0 top-full z-[80] mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/10 bg-[#2b2b2b] p-2 shadow-2xl shadow-black/50"
+          className="absolute left-0 top-full z-[80] mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[#E5E1D5] bg-[#FCFBF7] p-2 shadow-xl shadow-[#29261F]/12"
         >
-          <div className="px-2 pb-2 pt-1 text-xs text-zinc-500">本页直接切换，下一条消息立即生效</div>
+          <div className="px-2 pb-2 pt-1 text-xs text-[#948F80]">本页直接切换，下一条消息立即生效</div>
           <button
             type="button"
             onClick={() => selectModel(null)}
             className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left transition-colors ${
-              activeModelId === null ? 'bg-teal-500/10 text-teal-200' : 'text-zinc-200 hover:bg-white/[0.07]'
+              activeModelId === null ? 'bg-[#F3E4DC] text-[#C96442]' : 'text-[#29261F] hover:bg-[#F0EDE4]'
             }`}
           >
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-medium">系统默认</span>
-              <span className="block truncate text-xs text-zinc-500">使用管理员全局配置或服务器默认模型</span>
+              <span className="block truncate text-xs text-[#948F80]">使用管理员全局配置或服务器默认模型</span>
             </span>
-            {activeModelId === null && <Check className="h-4 w-4 text-teal-300" />}
+            {activeModelId === null && <Check className="h-4 w-4 text-[#C96442]" />}
           </button>
 
-          <div className="my-2 h-px bg-white/[0.08]" />
+          <div className="my-2 h-px bg-[#E5E1D5]" />
 
           <div className="max-h-80 overflow-y-auto">
             {visibleOptions.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-center text-xs text-zinc-500">
+              <div className="rounded-xl border border-dashed border-[#D8D3C4] px-3 py-6 text-center text-xs text-[#948F80]">
                 暂无可用模型
               </div>
             ) : (
@@ -124,24 +121,24 @@ export default function LlmModelPicker({
                     type="button"
                     onClick={() => selectModel(option.id)}
                     className={`flex w-full items-start gap-2 rounded-xl px-3 py-2.5 text-left transition-colors ${
-                      active ? 'bg-teal-500/10 text-teal-200' : 'text-zinc-200 hover:bg-white/[0.07]'
+                      active ? 'bg-[#F3E4DC] text-[#C96442]' : 'text-[#29261F] hover:bg-[#F0EDE4]'
                     }`}
                   >
                     <span className="min-w-0 flex-1">
                       <span className="flex min-w-0 items-center gap-2">
                         <span className="truncate text-sm font-medium">{option.label}</span>
-                        <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${TIER_STYLE[option.speed_tier] || 'bg-zinc-400/10 text-zinc-300'}`}>
+                        <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${TIER_STYLE[option.speed_tier] || 'bg-[#EAE6DA] text-[#6B665A]'}`}>
                           {TIER_LABEL[option.speed_tier] || option.speed_tier}
                         </span>
                       </span>
-                      <span className="mt-0.5 block truncate font-mono text-[11px] text-zinc-500">
+                      <span className="mt-0.5 block truncate font-mono text-[11px] text-[#948F80]">
                         {option.provider} · {option.model}
                       </span>
                       {option.note && (
-                        <span className="mt-0.5 block line-clamp-2 text-xs text-zinc-500">{option.note}</span>
+                        <span className="mt-0.5 block line-clamp-2 text-xs text-[#948F80]">{option.note}</span>
                       )}
                     </span>
-                    {active && <Check className="mt-0.5 h-4 w-4 shrink-0 text-teal-300" />}
+                    {active && <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#C96442]" />}
                   </button>
                 );
               })
@@ -149,7 +146,7 @@ export default function LlmModelPicker({
           </div>
 
           {error && (
-            <div className="mt-2 rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+            <div className="mt-2 rounded-xl border border-[#E3B9AC] bg-[#F7E3DC] px-3 py-2 text-xs text-[#B4573A]">
               {error}
             </div>
           )}

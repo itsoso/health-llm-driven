@@ -86,22 +86,22 @@ export default function ConversationHistoryRail({
   };
 
   return (
-    <aside className="hidden w-72 shrink-0 border-r border-white/[0.08] bg-[#171717] p-3 md:flex md:flex-col">
+    <aside className="hidden w-64 shrink-0 border-r border-[#E5E1D5] bg-[#F0EDE4] p-3 md:flex md:flex-col">
       <button
         onClick={onNew}
-        className="mb-3 flex h-10 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-zinc-100 transition-colors hover:bg-white/[0.08]"
+        className="mb-3 flex h-10 items-center justify-center gap-2 rounded-[10px] border border-[#D8D3C4] bg-[#FCFBF7] text-[13.5px] font-medium text-[#29261F] transition-colors hover:border-[#C96442]"
       >
         <MessageSquarePlus className="h-4 w-4" />
         新对话
       </button>
-      <div className="mb-2 flex items-center gap-2 px-2 text-xs font-medium text-zinc-500">
+      <div className="mb-2 flex items-center gap-2 px-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-[#948F80]">
         <Clock3 className="h-3.5 w-3.5" />
         历史记录
-        {loading && <span className="ml-auto text-[11px]">加载中</span>}
+        {loading && <span className="ml-auto text-[11px] normal-case tracking-normal">加载中</span>}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
         {conversations.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-white/10 px-3 py-8 text-center text-xs text-zinc-600">
+          <div className="rounded-xl border border-dashed border-[#D8D3C4] px-3 py-8 text-center text-xs text-[#948F80]">
             暂无历史对话
           </div>
         ) : (
@@ -111,8 +111,8 @@ export default function ConversationHistoryRail({
               return (
                 <div
                   key={conv.id}
-                  className={`group rounded-xl px-2 py-2 transition-colors ${
-                    conv.id === activeConvId ? 'bg-white/[0.09]' : 'hover:bg-white/[0.06]'
+                  className={`group rounded-lg px-2 py-2 transition-colors ${
+                    conv.id === activeConvId ? 'bg-[#F3E4DC]' : 'hover:bg-[#E8E4D8]'
                   }`}
                 >
                   {isEditing ? (
@@ -125,13 +125,13 @@ export default function ConversationHistoryRail({
                           onKeyDown={event => handleInputKeyDown(event, conv)}
                           autoFocus
                           disabled={savingId === conv.id}
-                          className="h-8 min-w-0 flex-1 rounded-lg border border-teal-300/30 bg-white/[0.08] px-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-teal-300/60"
+                          className="h-8 min-w-0 flex-1 rounded-lg border border-[#C96442]/50 bg-[#FCFBF7] px-2 text-sm text-[#29261F] outline-none placeholder:text-[#948F80] focus:border-[#C96442]"
                           placeholder="输入标题"
                         />
                         <button
                           onClick={() => saveTitle(conv)}
                           disabled={!draftTitle.trim() || savingId === conv.id}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-teal-200 transition-colors hover:bg-teal-400/10 disabled:text-zinc-600"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-[#C96442] transition-colors hover:bg-[#F3E4DC] disabled:text-[#B4AF9F]"
                           aria-label="保存标题"
                           title="保存标题"
                         >
@@ -139,7 +139,7 @@ export default function ConversationHistoryRail({
                         </button>
                         <button
                           onClick={cancelEdit}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/[0.08] hover:text-zinc-200"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-[#948F80] transition-colors hover:bg-[#E8E4D8] hover:text-[#29261F]"
                           aria-label="取消重命名"
                           title="取消"
                         >
@@ -147,20 +147,22 @@ export default function ConversationHistoryRail({
                         </button>
                       </div>
                       {errorId === conv.id && (
-                        <div className="px-1 text-[11px] text-red-300">重命名失败，请重试</div>
+                        <div className="px-1 text-[11px] text-[#B4573A]">重命名失败，请重试</div>
                       )}
                     </div>
                   ) : (
                     <div className="flex items-start gap-2">
                       <button onClick={() => onLoad(conv.id)} className="min-w-0 flex-1 text-left">
-                        <div className="truncate text-sm text-zinc-200">{conv.title || '新对话'}</div>
-                        <div className="mt-0.5 truncate text-xs text-zinc-600">
+                        <div className={`truncate text-[13px] ${conv.id === activeConvId ? 'font-medium text-[#C96442]' : 'text-[#29261F]'}`}>
+                          {conv.title || '新对话'}
+                        </div>
+                        <div className="mt-0.5 truncate text-[11.5px] text-[#948F80]">
                           {conv.last_message || relativeTime(conv.updated_at)}
                         </div>
                       </button>
                       <button
                         onClick={() => startEdit(conv)}
-                        className="mt-0.5 rounded-lg p-1.5 text-zinc-600 opacity-0 transition-all hover:bg-white/[0.08] hover:text-zinc-200 group-hover:opacity-100"
+                        className="mt-0.5 rounded-lg p-1.5 text-[#948F80] opacity-0 transition-all hover:bg-[#E8E4D8] hover:text-[#29261F] group-hover:opacity-100"
                         aria-label="重命名对话"
                         title="重命名对话"
                       >
@@ -168,7 +170,7 @@ export default function ConversationHistoryRail({
                       </button>
                       <button
                         onClick={() => onDelete(conv.id)}
-                        className="mt-0.5 rounded-lg p-1.5 text-zinc-600 opacity-0 transition-all hover:bg-red-500/10 hover:text-red-300 group-hover:opacity-100"
+                        className="mt-0.5 rounded-lg p-1.5 text-[#948F80] opacity-0 transition-all hover:bg-[#C96442]/10 hover:text-[#B4573A] group-hover:opacity-100"
                         title="删除对话"
                         aria-label="删除对话"
                       >
@@ -183,23 +185,23 @@ export default function ConversationHistoryRail({
         )}
       </div>
       {totalPages > 1 && (
-        <div className="mt-2 flex items-center justify-between gap-2 border-t border-white/[0.06] px-1 pt-2">
+        <div className="mt-2 flex items-center justify-between gap-2 border-t border-[#E5E1D5] px-1 pt-2">
           <button
             onClick={onPrevPage}
             disabled={page <= 1 || loading}
-            className="flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-zinc-300 transition-colors hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:text-zinc-600 disabled:hover:bg-transparent"
+            className="flex h-8 items-center gap-1 rounded-lg px-2 text-[11.5px] text-[#6B665A] transition-colors hover:bg-[#E8E4D8] disabled:cursor-not-allowed disabled:text-[#B4AF9F] disabled:hover:bg-transparent"
             aria-label="上一页"
           >
             <ChevronLeft className="h-3.5 w-3.5" />
             上一页
           </button>
-          <span className="text-[11px] tabular-nums text-zinc-500">
+          <span className="text-[11px] tabular-nums text-[#948F80]">
             第 {page} / {totalPages} 页
           </span>
           <button
             onClick={onNextPage}
             disabled={page >= totalPages || loading}
-            className="flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-zinc-300 transition-colors hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:text-zinc-600 disabled:hover:bg-transparent"
+            className="flex h-8 items-center gap-1 rounded-lg px-2 text-[11.5px] text-[#6B665A] transition-colors hover:bg-[#E8E4D8] disabled:cursor-not-allowed disabled:text-[#B4AF9F] disabled:hover:bg-transparent"
             aria-label="下一页"
           >
             下一页

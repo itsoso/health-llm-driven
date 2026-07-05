@@ -4,10 +4,12 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 
 const DISPLAY_FONT = '"Iowan Old Style", "Noto Serif SC", "Songti SC", serif';
+// warm (Claude 设计语言) 标题用 CJK 衬线优先, 让中文标题也拿到编辑感。
+const WARM_SERIF_FONT = '"Songti SC", "Noto Serif SC", "Iowan Old Style", Georgia, serif';
 const REVA_UI_FENCE_RE = /\n?```reva-ui\s*\n([\s\S]*?)\n?```\n?/g;
 const CHART_COLORS = ['#0f9f7a', '#2563eb', '#7c3aed', '#d97706', '#dc2626'];
 
-type Variant = 'dark' | 'light';
+type Variant = 'dark' | 'light' | 'warm';
 type MarkdownSegment =
   | { kind: 'markdown'; text: string }
   | { kind: 'chart'; data: RevaUiLineChartData }
@@ -107,7 +109,38 @@ const styles: Record<Variant, {
     a: 'text-emerald-600 underline hover:text-emerald-800',
     aHover: 'hover:text-emerald-800',
   },
+  // warm — Claude / Anthropic 暖色阅读语言 (仅 ai-assistant 页消费; light 留给 shared 页, 不动)。
+  warm: {
+    p: 'mb-3 last:mb-0 whitespace-pre-wrap text-[#29261F]',
+    ul: 'mb-3 ml-5 list-disc space-y-2 marker:text-[#C96442]',
+    ol: 'mb-3 ml-5 list-decimal space-y-2 marker:font-semibold marker:text-[#C96442]',
+    li: 'leading-7 text-[#29261F] pl-1',
+    h1: 'mb-3 mt-5 text-[19px] font-semibold first:mt-0 text-[#29261F] tracking-[0.01em]',
+    h2: 'mb-2 mt-5 text-[17px] font-semibold first:mt-0 text-[#29261F] border-l-2 border-[#C96442] pl-3',
+    h3: 'mb-2 mt-4 text-[11px] font-semibold first:mt-0 text-[#948F80] uppercase tracking-[0.09em]',
+    strong: 'font-semibold text-[#29261F]',
+    em: 'italic text-[#6B665A]',
+    inlineCode: 'rounded bg-[#F0EDE4] px-1.5 py-0.5 font-mono text-[12px] text-[#B4573A]',
+    codeBlock: 'my-2 block overflow-x-auto rounded-xl bg-[#F0EDE4] px-4 py-3 font-mono text-xs text-[#29261F]',
+    pre: 'my-3 overflow-x-auto rounded-xl bg-[#F0EDE4] p-4',
+    blockquote: 'my-3 rounded-r-lg border-l-2 border-[#C96442]/50 bg-[#FBF3EE] py-2 pl-4 text-sm text-[#6B665A]',
+    table: 'min-w-full overflow-hidden rounded-lg border border-[#E5E1D5] text-[13px] [font-variant-numeric:tabular-nums]',
+    thead: 'bg-[#F0EDE4]',
+    tr: 'border-b border-[#E5E1D5] last:border-0',
+    th: 'px-3 py-2 text-left font-medium text-[#29261F]',
+    td: 'px-3 py-2 text-[#29261F]',
+    hr: 'my-5 border-[#E5E1D5]',
+    a: 'text-[#C96442] underline-offset-2 underline transition-colors hover:text-[#B4573A]',
+    aHover: 'hover:text-[#B4573A]',
+  },
 };
+
+/** 标题字体: dark 用 Iowan 优先, warm 用 CJK 衬线优先, light 保持无衬线。 */
+function headingFont(variant: Variant): { fontFamily: string } | undefined {
+  if (variant === 'dark') return { fontFamily: DISPLAY_FONT };
+  if (variant === 'warm') return { fontFamily: WARM_SERIF_FONT };
+  return undefined;
+}
 
 // 工具步骤徽章 — running/done/failed 三态
 function ToolStep({ name, status }: { name?: string; status?: string }) {
@@ -171,9 +204,9 @@ function MarkdownRendererBase({
         ul: ({ children }) => <ul className={s.ul}>{children}</ul>,
         ol: ({ children }) => <ol className={s.ol}>{children}</ol>,
         li: ({ children }) => <li className={s.li}>{children}</li>,
-        h1: ({ children }) => <h1 className={s.h1} style={variant === 'dark' ? { fontFamily: DISPLAY_FONT } : undefined}>{children}</h1>,
-        h2: ({ children }) => <h2 className={s.h2} style={variant === 'dark' ? { fontFamily: DISPLAY_FONT } : undefined}>{children}</h2>,
-        h3: ({ children }) => <h3 className={s.h3} style={variant === 'dark' ? { fontFamily: DISPLAY_FONT } : undefined}>{children}</h3>,
+        h1: ({ children }) => <h1 className={s.h1} style={headingFont(variant)}>{children}</h1>,
+        h2: ({ children }) => <h2 className={s.h2} style={headingFont(variant)}>{children}</h2>,
+        h3: ({ children }) => <h3 className={s.h3} style={variant === 'warm' ? undefined : headingFont(variant)}>{children}</h3>,
         strong: ({ children }) => <strong className={s.strong}>{children}</strong>,
         em: ({ children }) => <em className={s.em}>{children}</em>,
         code: ({ ...props }: any) => {
