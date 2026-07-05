@@ -48,6 +48,18 @@ def _print_gate_text(payload: dict) -> None:
     print(f"source_unchanged: {payload.get('source_unchanged')}")
     if pull.get("error"):
         print(f"error: {pull['error']}")
+    actions = payload.get("recommended_actions") or []
+    print(
+        "recommended_actions: "
+        + (
+            ", ".join(
+                f"{item.get('priority', '-')}/{item.get('action', '-')}[{item.get('reason', '-')}]"
+                for item in actions
+                if isinstance(item, dict)
+            )
+            or "-"
+        ),
+    )
     print(f"total: {counts['total']}")
     print(f"accepted_for_review: {counts['accepted_for_review']}")
     print(f"blocked: {counts['blocked']}")

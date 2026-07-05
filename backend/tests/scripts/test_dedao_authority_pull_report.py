@@ -59,3 +59,30 @@ def test_read_previous_source_sha256_from_artifact(tmp_path):
     artifact_path.write_text(json.dumps({"pull": {"source_sha256": "abc123"}}), encoding="utf-8")
 
     assert module._read_previous_source_sha256(artifact_path) == "abc123"
+
+
+def test_gate_text_prints_recommended_actions(capsys):
+    module = _load_script_module()
+
+    module._print_gate_text(
+        {
+            "status": "pass",
+            "reasons": [],
+            "source_unchanged": False,
+            "pull": {"source_url": "https://kbase.example", "http_status": 200, "status": "ok"},
+            "counts": {
+                "total": 1,
+                "accepted_for_review": 1,
+                "blocked": 0,
+                "duplicates": 0,
+                "invalid": 0,
+                "missing_source_refs": 0,
+            },
+            "recommended_actions": [
+                {"action": "queue_review_import_dry_run", "priority": "info", "reason": "clean_pull"},
+            ],
+            "would_write": False,
+        },
+    )
+
+    assert "recommended_actions: info/queue_review_import_dry_run[clean_pull]" in capsys.readouterr().out

@@ -16,6 +16,8 @@ Use `evaluate_dedao_authority_pull_gate(report)` when the caller needs an unatte
 
 The redacted gate artifact declares `artifact_schema = dedao_authority_pull_gate_v1`, `generated_at`, and `pull.source_sha256` so downstream jobs can validate the JSON contract and skip unchanged packs before consuming it.
 
+The artifact also includes `recommended_actions`: machine-readable `{action, priority, reason}` entries for automation. Examples include `skip_import_unchanged_source`, `repair_invalid_records`, `block_import_until_reviewable_candidates_exist`, and `queue_review_import_dry_run`.
+
 ## Safety Rules
 
 - Unknown contract versions are invalid.
@@ -68,5 +70,7 @@ backend/venv/bin/python scripts/dedao_authority_pull_report.py \
 ```
 
 When the previous and current `pull.source_sha256` values match, the artifact includes `source_unchanged = true` so downstream jobs can skip duplicate work.
+
+Downstream jobs should prefer `recommended_actions` over parsing human-readable text output. A `blocker` action should stop import; a `review` action can populate reviewer queues; an `info` action can skip unchanged sources or continue a clean dry run.
 
 Add `--fail-on-warn` when a CI caller should reject packs with blocked, duplicate, or missing-source records even if accepted review candidates are present.

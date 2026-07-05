@@ -386,3 +386,52 @@ def test_pull_gate_redacted_artifact_marks_unchanged_source_hash():
 
     assert same["source_unchanged"] is True
     assert different["source_unchanged"] is False
+
+
+def test_pull_gate_recommends_skip_for_unchanged_source_hash():
+    body = _line()
+
+    def opener(request, *, timeout):
+        return _FakeHTTPResponse(body)
+
+    report = dry_run_import_dedao_authority_pack_from_kbase(
+        "https://kbase.example",
+        "secret-token",
+        opener=opener,
+    )
+
+    gate = evaluate_dedao_authority_pull_gate(report)
+    redacted = gate.to_redacted_dict(previous_source_sha256=report.source_sha256)
+
+    assert redacted["recommended_actions"] == [
+        {
+            "action": "skip_import_unchanged_source",
+            "priority": "info",
+            "reason": "source_unchanged",
+        },
+    ]
+
+
+def test_pull_gate_recommends_blocking_repairs_for_failed_report():
+    def opener(request, *, timeout):
+        return _FakeHTTPResponse("{not-json}\n")
+
+    report = dry_run_import_dedao_authority_pack_from_kbase(
+        "https://kbase.example",
+        "secret-token",
+        opener=opener,
+    )
+
+    gate = evaluate_dedao_authority_pull_gate(report)
+    redacted = gate.to_redacted_dict()
+
+    assert {
+        "action": "repair_invalid_records",
+        "priority": "blocker",
+        "reason": "invalid_records",
+    } in redacted["recommended_actions"]
+    assert {
+        "action": "block_import_until_reviewable_candidates_exist",
+        "priority": "blocker",
+        "reason": "no_accepted_candidates",
+    } in redacted["recommended_actions"]

@@ -133,6 +133,12 @@ class DedaoAuthorityPullGate:
             "reasons": list(self.reasons),
             "fail_count": self.fail_count,
             "warn_count": self.warn_count,
+            "recommended_actions": _recommended_gate_actions(
+                status=self.status,
+                reasons=self.reasons,
+                source_unchanged=source_unchanged,
+                accepted_count=len(import_report.accepted_for_review),
+            ),
             "pull": {
                 "status": self.pull_report.status,
                 "source_url": self.pull_report.source_url,
@@ -336,6 +342,51 @@ def evaluate_dedao_authority_pull_gate(report: DedaoAuthorityPullReport) -> Deda
         warn_count=len(warn_reasons),
         pull_report=report,
     )
+
+
+def _recommended_gate_actions(
+    *,
+    status: str,
+    reasons: list[str],
+    source_unchanged: bool,
+    accepted_count: int,
+) -> list[dict[str, str]]:
+    if source_unchanged:
+        return [
+            {
+                "action": "skip_import_unchanged_source",
+                "priority": "info",
+                "reason": "source_unchanged",
+            },
+        ]
+
+    actions: list[dict[str, str]] = []
+    action_by_reason = {
+        "fetch_failed": ("check_dedao_kbase_connection", "blocker"),
+        "invalid_records": ("repair_invalid_records", "blocker"),
+        "no_accepted_candidates": ("block_import_until_reviewable_candidates_exist", "blocker"),
+        "blocked_records": ("route_blocked_records_to_manual_review", "review"),
+        "duplicate_records": ("deduplicate_claim_ids_before_promotion", "review"),
+        "missing_source_refs": ("repair_missing_source_refs", "review"),
+    }
+    for reason in reasons:
+        mapped = action_by_reason.get(reason)
+        if not mapped:
+            continue
+        action, priority = mapped
+        actions.append({"action": action, "priority": priority, "reason": reason})
+
+    if status == "pass":
+        actions.append({"action": "queue_review_import_dry_run", "priority": "info", "reason": "clean_pull"})
+    elif status == "warn" and accepted_count > 0:
+        actions.append(
+            {
+                "action": "queue_review_import_with_warnings",
+                "priority": "review",
+                "reason": "reviewable_candidates_present",
+            },
+        )
+    return actions
 
 
 def _invalid_reason(record: dict[str, Any]) -> str:
