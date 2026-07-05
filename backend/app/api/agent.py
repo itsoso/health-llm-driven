@@ -983,6 +983,12 @@ def conversation_starters(
     This endpoint is fail-soft: it never raises (except auth) and falls back to
     stable defaults on any internal error.
 
+    Cold-start (C1 contract): a zero-signal user additionally gets a top-level
+    `onboarding: true` and a synthesized `opener` whose `quick_replies` carry an
+    `action` (photo_meal / record_weight / connect_device) for local navigation.
+    Established users get neither field change (opener from the normal channel,
+    no `onboarding` key) — additive and backward-compatible.
+
     LLM polish (progressive enhancement, flag `starter_llm_polish_enabled`):
     the RULES compute the chips; a cheap LLM optionally rewrites the wording and
     a deterministic verify gate rejects anything invented (fail-safe = rule text).
@@ -993,14 +999,31 @@ def conversation_starters(
     """
     from dataclasses import asdict
     from app.config import settings
-    from app.services.conversation_opener import compute_conversation_opener
-    from app.services.conversation_starters import compute_conversation_suggestion_cards
+    from app.services.conversation_opener import (
+        compute_conversation_opener,
+        synthesize_cold_start_opener,
+    )
+    from app.services.conversation_starters import (
+        compute_conversation_suggestion_cards,
+        is_cold_start_user,
+    )
+
+    # Cold-start (zero-signal) users get a synthetic onboarding opener + a
+    # top-level `onboarding: true` flag. The determination reuses the SAME
+    # zero-signal check as the onboarding chip branch (is_cold_start_user →
+    # _collect_signals + _has_any_user_signal), so the flag can never disagree
+    # with the chips the client renders. Established users: flag absent, opener
+    # comes from the normal signal channel — byte-identical to prior behavior.
+    cold_start = is_cold_start_user(db, current_user.id)
 
     opener = None
-    try:
-        opener = compute_conversation_opener(db, current_user.id)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"[conversation_starters] opener bypass: {e}")
+    if cold_start:
+        opener = synthesize_cold_start_opener()
+    else:
+        try:
+            opener = compute_conversation_opener(db, current_user.id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[conversation_starters] opener bypass: {e}")
 
     # Structured cards carry the generator `key` so the client can attribute
     # impressions/clicks per generator (CTR). Clients tolerate the legacy
@@ -1011,10 +1034,15 @@ def conversation_starters(
         cards, current_user.id, background_tasks, settings
     )
 
-    return {
+    payload = {
         "opener": asdict(opener) if opener else None,
         "suggestions": suggestions,
     }
+    # Additive top-level field: only present (and True) for cold-start users so
+    # legacy clients that don't read it are unaffected.
+    if cold_start:
+        payload["onboarding"] = True
+    return payload
 
 
 def _resolve_starter_suggestions(cards, user_id, background_tasks, settings) -> list[dict]:

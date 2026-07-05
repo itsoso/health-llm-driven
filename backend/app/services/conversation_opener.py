@@ -24,7 +24,7 @@ import logging
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import List, Optional, Union
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -82,15 +82,75 @@ def humanize_card_title(title: str) -> str:
     return window.rstrip("，,。；;、：: ") + "…"
 
 
+# Cold-start quick-reply actions. Items carrying one of these are handled by
+# LOCAL client navigation (photo picker / weight sheet / device link) instead of
+# being sent as chat text — see the C1 cold-start contract. Kept as a closed set
+# so the mobile client can exhaustively switch on it.
+COLD_START_ACTIONS = ("photo_meal", "record_weight", "connect_device")
+
+
+@dataclass
+class OpenerQuickReply:
+    """A quick-reply chip that navigates locally instead of sending text.
+
+    Serializes to {"label": ..., "action": ...}. `action` is one of
+    COLD_START_ACTIONS. Plain-string quick replies (the existing behavior) stay
+    strings; only cold-start action chips use this structured shape.
+    """
+    label: str                                      # 用户视角人话 ("拍一张今天的饭")
+    action: str                                     # COLD_START_ACTIONS 之一
+
+
+# A quick reply is either a plain string (send-as-text, existing behavior) or an
+# OpenerQuickReply (local-navigation, cold-start). asdict() serializes both.
+QuickReply = Union[str, OpenerQuickReply]
+
+
 @dataclass
 class OpenerSuggestion:
     """一条 chat opener 建议. 序列化给前端 (asdict)."""
     text: str                                       # AI 主动开场白 (≤ 80 字)
-    source: str                                     # 'action_card_due' / 'anomaly' / 'case_thread' / 'memory_fact'
+    source: str                                     # 'action_card_due' / 'anomaly' / 'case_thread' / 'memory_fact' / 'cold_start'
     source_id: Optional[int] = None                 # 对应记录 id, 前端 deep link
-    quick_replies: List[str] = field(default_factory=list)  # 1-3 个一键回复 chip
+    quick_replies: List[QuickReply] = field(default_factory=list)  # 1-3 个一键回复 chip
     deep_link: Optional[str] = None                 # 点开场白卡片本身跳哪
     priority: int = 0                               # 越大越先展示 (内部排序用)
+
+
+# ─────────────── cold-start: synthesized onboarding opener ───────────────
+
+# 小巴 (边牧人格) 自我介绍 + 一个具体的第一步邀请。确定性模板 (无 LLM), 供
+# 零数据新用户走既有 opener 通道拿到非空开场白。严禁量化/命令式健康处方 —
+# 全是"记录一件小事"的邀请, 守 guidance_validator 红线 (无剂量/无祈使饮食/无训练指令)。
+_COLD_START_OPENER_TEXT = (
+    "嗨，我是小巴，你的健康参谋 🐾。这里还看不到你的健康数据，"
+    "我们从记录一件小事开始吧——拍张今天的饭、记一下体重，或连上你的手表，"
+    "有了第一笔，我就能陪你一起往下看。"
+)
+
+
+def synthesize_cold_start_opener() -> OpenerSuggestion:
+    """Deterministic onboarding opener for a zero-data (cold-start) user.
+
+    No DB reads, no LLM — a stable synthetic greeting so a brand-new user sees a
+    warm first-step invitation instead of a blank chat. The three quick replies
+    carry an `action` (COLD_START_ACTIONS) so the client handles them via LOCAL
+    navigation (open photo picker / weight sheet / device link) rather than
+    sending text. Persona: 小巴, a faithful, gentle border collie (🐾); the copy
+    stays invitational — no quantified or imperative health prescription.
+    """
+    return OpenerSuggestion(
+        text=_COLD_START_OPENER_TEXT,
+        source="cold_start",
+        source_id=None,
+        quick_replies=[
+            OpenerQuickReply(label="拍一张今天的饭", action="photo_meal"),
+            OpenerQuickReply(label="记一下体重", action="record_weight"),
+            OpenerQuickReply(label="连接手表数据", action="connect_device"),
+        ],
+        deep_link=None,
+        priority=100,
+    )
 
 
 def compute_conversation_opener(db: Session, user_id: int) -> Optional[OpenerSuggestion]:
