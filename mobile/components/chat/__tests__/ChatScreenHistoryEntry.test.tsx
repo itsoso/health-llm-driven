@@ -50,7 +50,7 @@ jest.mock('../../../services/chat', () => ({
 
 jest.mock('../../../services/conversationOpener', () => ({
   fetchConversationOpener: jest.fn().mockResolvedValue(null),
-  fetchConversationStarters: jest.fn().mockResolvedValue({ opener: null, suggestions: [] }),
+  fetchConversationStarters: jest.fn().mockResolvedValue({ opener: null, suggestions: [], onboarding: false }),
 }));
 
 jest.mock('../../../services/memoryOpener', () => ({

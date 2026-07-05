@@ -116,14 +116,14 @@ export default function OpenerCard({ opener, onQuickReply }: Props) {
         <View style={styles.chipsRow}>
           {opener.quick_replies.map(reply => (
             <Pressable
-              key={reply}
+              key={reply.text}
               style={({ pressed }) => [styles.chip, pressed && styles.chipPressed]}
-              onPress={() => onQuickReply(reply)}
+              onPress={() => onQuickReply(reply.text)}
               accessibilityRole="button"
-              accessibilityLabel={`一键回复: ${reply}`}
+              accessibilityLabel={`一键回复: ${reply.text}`}
             >
-              <Ionicons name={quickReplyIcon(reply)} size={14} color={C.ink2} />
-              <Text style={txt.chip}>{formatQuickReplyLabel(reply)}</Text>
+              <Ionicons name={quickReplyIcon(reply.text)} size={14} color={C.ink2} />
+              <Text style={txt.chip}>{formatQuickReplyLabel(reply.text)}</Text>
             </Pressable>
           ))}
         </View>

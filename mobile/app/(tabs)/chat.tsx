@@ -27,8 +27,10 @@ import {
   buildConversationOpenerReplyMessage,
   fetchConversationStarters,
   type ConversationOpener,
+  type QuickReplyAction,
   type SuggestionMeta,
 } from '../../services/conversationOpener';
+import { navigateForQuickReplyAction } from '../../utils/quickReplyAction';
 import { emitClientEvent } from '../../services/clientEvents';
 import { fetchMemoryOpener, type MemoryOpenerItem } from '../../services/memoryOpener';
 import { getLlmPreference, updateLlmPreference, type ModelOption } from '../../services/llmPreference';
@@ -163,12 +165,17 @@ export default function ChatScreen() {
   const [opener, setOpener] = useState<ConversationOpener | null>(null);
   const [starterSuggestions, setStarterSuggestions] = useState<SuggestionCard[]>(SUGGESTIONS);
   const [startersReady, setStartersReady] = useState(false);
+  // 冷启动 (零信号新用户): 后端带 onboarding=true。此时禁止把 starters 回落成
+  // DEFAULT_SUGGESTIONS(那些假设有历史数据)——原样渲染后端返回的 onboarding chips。
+  const [startersOnboarding, setStartersOnboarding] = useState(false);
   const refreshConversationStarters = useCallback(async (shouldSkip?: () => boolean) => {
-    const { opener: newOpener, suggestions } = await fetchConversationStarters();
+    const { opener: newOpener, suggestions, onboarding } = await fetchConversationStarters();
     if (shouldSkip?.()) return;
     setOpener(newOpener);
+    setStartersOnboarding(onboarding);
     const decorated = decorateSuggestions(suggestions);
-    setStarterSuggestions(decorated || SUGGESTIONS);
+    // 冷启动: 用后端返回的 starters 原样渲染(哪怕为空也不回注默认); 老用户: 保持默认兜底。
+    setStarterSuggestions(decorated || (onboarding ? [] : SUGGESTIONS));
     setStartersReady(true);
   }, []);
 
@@ -392,6 +399,13 @@ export default function ChatScreen() {
     });
     handleSend(s.text, null);
   }, [handleSend]);
+
+  // 冷启动 quick reply / Quick Start 卡的 action → 本地导航(不发文本)。
+  // 埋点旁路, 不阻塞导航。路由映射的唯一真源在 utils/quickReplyAction.ts。
+  const handleQuickAction = useCallback((action: QuickReplyAction) => {
+    void emitClientEvent('cold_start_action_clicked', { action, source: 'chat' });
+    navigateForQuickReplyAction(action);
+  }, []);
 
   const handleMedicalExamImportResult = useCallback((result: ChatMedicalExamImportSkillResult) => {
     isNearBottom.current = true;
@@ -665,6 +679,8 @@ export default function ChatScreen() {
               opener={opener}
               onOpenMemory={() => router.push('/memory')}
               onOpenerQuickReply={handleOpenerQuickReply}
+              onboarding={startersOnboarding}
+              onQuickAction={handleQuickAction}
             />
           }
         />

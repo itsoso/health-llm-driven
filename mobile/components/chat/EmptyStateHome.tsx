@@ -28,9 +28,14 @@ import {
   TextStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { ConversationOpener } from '../../services/conversationOpener';
+import type {
+  ConversationOpener,
+  QuickReply,
+  QuickReplyAction,
+} from '../../services/conversationOpener';
 import { formatOpenerText } from './OpenerCard';
 import type { MemoryOpenerItem } from '../../services/memoryOpener';
+import { QUICK_ACTION_LABEL } from '../../utils/quickReplyAction';
 import {
   revaColors as C,
   revaRadii,
@@ -49,11 +54,25 @@ export type EmptyStateSuggestion = {
 // 气泡外「换个话题」中性 chip — 发送语义走同一条 onQuickReply 路径。
 export const CHANGE_TOPIC_REPLY = '换个话题';
 
+// 第三态 Quick Start 卡的三个动作 (冷启动契约枚举)，与开场气泡视觉语言一致。
+const QUICK_START_ACTIONS: {
+  action: QuickReplyAction;
+  icon: keyof typeof Ionicons.glyphMap;
+}[] = [
+  { action: 'photo_meal', icon: 'camera-outline' },
+  { action: 'record_weight', icon: 'body-outline' },
+  { action: 'connect_device', icon: 'watch-outline' },
+];
+
 interface Props {
   memoryOpener: MemoryOpenerItem[];
   opener: ConversationOpener | null;
   onOpenMemory: () => void;
   onOpenerQuickReply: (text: string) => void;
+  /** 冷启动 (零信号) 标记: 第三态 (opener 未到 + 无记忆) 渲染 Quick Start 卡而非仅问候。 */
+  onboarding?: boolean;
+  /** 带 action 的 quick reply / Quick Start 卡动作 → 本地导航 (不发文本)。 */
+  onQuickAction?: (action: QuickReplyAction) => void;
 }
 
 /**
@@ -111,6 +130,13 @@ function formatQuickReplyLabel(reply: string): string {
   return reply.replace(/[✅❌]/g, '').trim();
 }
 
+/** 冷启动 action → 图标 (气泡 quick reply + Quick Start 卡共用)。 */
+function quickActionIcon(action: QuickReplyAction): keyof typeof Ionicons.glyphMap {
+  if (action === 'photo_meal') return 'camera-outline';
+  if (action === 'record_weight') return 'body-outline';
+  return 'watch-outline';
+}
+
 /**
  * 记忆 footnote — 气泡内部 hairline 分隔的一行: 书签图标 + 文本 + 「校准」入口。
  * 复用外层的 formatMemoryOpenerText 清洗结果(never render raw memory)。
@@ -147,6 +173,8 @@ export default function EmptyStateHome({
   opener,
   onOpenMemory,
   onOpenerQuickReply,
+  onboarding = false,
+  onQuickAction,
 }: Props) {
   const memoryText = formatMemoryOpenerText(memoryOpener);
   const showMemory = memoryOpener.length > 0 && memoryText.length > 0;
@@ -177,20 +205,36 @@ export default function EmptyStateHome({
         <View style={styles.repliesRow}>
           {replies.map((reply, i) => {
             const tinted = i === 0;
+            // 带 action 的 reply → 本地导航 (不发文本); 否则走既有发送路径。
+            const onPress = reply.action && onQuickAction
+              ? () => onQuickAction(reply.action as QuickReplyAction)
+              : () => onOpenerQuickReply(reply.text);
+            const label = reply.action
+              ? QUICK_ACTION_LABEL[reply.action]
+              : formatQuickReplyLabel(reply.text);
+            // 无障碍标签: action reply 用动作标签; 文本 reply 保留原始文本(既有行为)。
+            const a11yLabel = reply.action ? label : reply.text;
             return (
               <Pressable
-                key={reply}
+                key={reply.action ? `action:${reply.action}` : `text:${reply.text}`}
                 style={({ pressed }) => [
                   styles.reply,
                   tinted ? styles.replyTinted : styles.replyNeutral,
                   pressed && styles.replyPressed,
                 ]}
-                onPress={() => onOpenerQuickReply(reply)}
+                onPress={onPress}
                 accessibilityRole="button"
-                accessibilityLabel={`一键回复: ${reply}`}
+                accessibilityLabel={`一键回复: ${a11yLabel}`}
               >
+                {reply.action && (
+                  <Ionicons
+                    name={quickActionIcon(reply.action)}
+                    size={13}
+                    color={tinted ? C.green600 : C.ink2}
+                  />
+                )}
                 <Text style={[txt.reply, tinted ? txt.replyTinted : txt.replyNeutral]}>
-                  {formatQuickReplyLabel(reply)}
+                  {label}
                 </Text>
               </Pressable>
             );
@@ -238,6 +282,46 @@ export default function EmptyStateHome({
               >
                 <Text style={txt.footnoteAction}>校准</Text>
               </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  // 冷启动第三态 (onboarding 但 opener 因故未到 + 无记忆) → Quick Start 卡:
+  // 三个首次价值动作, 视觉与开场气泡一致 (爪印头像 + 非对称圆角气泡 + Reva tokens)。
+  // opener 正常到达时上面已 return, 不会走到这里 → 不会气泡 + 卡 + chips 三层堆叠。
+  if (onboarding && onQuickAction) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.bubbleRow}>
+          <View style={styles.avatar}>
+            <Ionicons name="paw" size={15} color={C.green600} />
+          </View>
+          <View style={styles.bubble}>
+            <Text style={txt.bubbleBody}>
+              <Text style={txt.greetingInline}>{greeting}。</Text>
+              我是小巴，你的健康参谋。先从这三件事之一开始，我就能帮你看懂身体。
+            </Text>
+            <View style={styles.quickStartRow}>
+              {QUICK_START_ACTIONS.map(({ action, icon }) => (
+                <Pressable
+                  key={action}
+                  style={({ pressed }) => [styles.quickStartAction, pressed && styles.replyPressed]}
+                  onPress={() => onQuickAction(action)}
+                  accessibilityRole="button"
+                  accessibilityLabel={QUICK_ACTION_LABEL[action]}
+                >
+                  <View style={styles.quickStartIcon}>
+                    <Ionicons name={icon} size={16} color={C.green600} />
+                  </View>
+                  <Text style={txt.quickStartLabel} numberOfLines={1}>
+                    {QUICK_ACTION_LABEL[action]}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={14} color={C.ink3} style={{ marginLeft: 'auto' }} />
+                </Pressable>
+              ))}
             </View>
           </View>
         </View>
@@ -352,6 +436,34 @@ const styles = StyleSheet.create({
     borderColor: C.line,
   },
   replyPressed: { opacity: 0.6 },
+  // Quick Start 卡 (冷启动第三态): 气泡内部, hairline 分隔的动作列。
+  quickStartRow: {
+    marginTop: revaSpacing.s3,
+    paddingTop: revaSpacing.s2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+    gap: revaSpacing.s2,
+  },
+  quickStartAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: revaSpacing.s2,
+    minHeight: 44,
+    paddingHorizontal: revaSpacing.s2,
+    paddingVertical: revaSpacing.s2,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.paper2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
+  quickStartIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: revaRadii.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green50,
+  },
 });
 
 const txt = {
@@ -403,5 +515,11 @@ const txt = {
   } as TextStyle,
   replyNeutral: {
     color: C.ink2,
+  } as TextStyle,
+  quickStartLabel: {
+    fontFamily: revaFonts.sans,
+    fontSize: 14,
+    fontWeight: '700',
+    color: C.ink1,
   } as TextStyle,
 };

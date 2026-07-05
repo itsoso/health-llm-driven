@@ -27,7 +27,7 @@ describe('EmptyStateHome', () => {
     const opener = {
       text: '今天就是「提前晚餐」的检验日，做到了吗？',
       source: 'action_card_due',
-      quick_replies: ['做到了'],
+      quick_replies: [{ text: '做到了' }],
     } as any;
 
     const { getByText, getByLabelText } = render(
@@ -55,7 +55,7 @@ describe('EmptyStateHome', () => {
     const opener = {
       text: '今天就是「夜间血氧复盘」的检验日，做到了吗？',
       source: 'action_card_due',
-      quick_replies: ['做到了 ✅', '没做 ❌'],
+      quick_replies: [{ text: '做到了 ✅' }, { text: '没做 ❌' }],
     } as any;
 
     const { getByLabelText } = render(
@@ -82,7 +82,7 @@ describe('EmptyStateHome', () => {
     const opener = {
       text: '今天就是「提前晚餐」的检验日，做到了吗？',
       source: 'action_card_due',
-      quick_replies: ['做到了'],
+      quick_replies: [{ text: '做到了' }],
     } as any;
 
     const { queryByLabelText, getByText } = render(
@@ -129,5 +129,80 @@ describe('EmptyStateHome', () => {
     // No memory footnote/校准; only the standalone greeting block remains.
     expect(queryByLabelText('查看和校准 AI 记忆')).toBeNull();
     expect(getByText('今天想从哪里开始？')).toBeTruthy();
+  });
+
+  // ── 冷启动包 (P0-3) ─────────────────────────────────────────────────────
+  it('routes an action quick reply to onQuickAction (not onOpenerQuickReply)', () => {
+    const onOpenerQuickReply = jest.fn();
+    const onQuickAction = jest.fn();
+    const opener = {
+      text: '欢迎！先从这三件事之一开始。',
+      source: 'memory_fact',
+      quick_replies: [
+        { text: '拍照记一餐', action: 'photo_meal' },
+        { text: '做到了' },
+      ],
+    } as any;
+
+    const { getByLabelText } = render(
+      <EmptyStateHome
+        memoryOpener={[]}
+        opener={opener}
+        onOpenMemory={jest.fn()}
+        onOpenerQuickReply={onOpenerQuickReply}
+        onboarding
+        onQuickAction={onQuickAction}
+      />,
+    );
+
+    // action reply → 本地导航 handler, 不发文本。
+    fireEvent.press(getByLabelText('一键回复: 拍照记一餐'));
+    expect(onQuickAction).toHaveBeenCalledWith('photo_meal');
+    expect(onOpenerQuickReply).not.toHaveBeenCalledWith('拍照记一餐');
+
+    // 同一 opener 里无 action 的 reply 仍走既有发送路径。
+    fireEvent.press(getByLabelText('一键回复: 做到了'));
+    expect(onOpenerQuickReply).toHaveBeenCalledWith('做到了');
+  });
+
+  it('renders the Quick Start card in the third state (onboarding, no opener, no memory)', () => {
+    const onQuickAction = jest.fn();
+    const { getByLabelText, queryByText } = render(
+      <EmptyStateHome
+        memoryOpener={[]}
+        opener={null}
+        onOpenMemory={jest.fn()}
+        onOpenerQuickReply={jest.fn()}
+        onboarding
+        onQuickAction={onQuickAction}
+      />,
+    );
+
+    // 三个首次价值动作都在, 点击各走对应 action。
+    fireEvent.press(getByLabelText('拍照记一餐'));
+    expect(onQuickAction).toHaveBeenCalledWith('photo_meal');
+    fireEvent.press(getByLabelText('记录体重'));
+    expect(onQuickAction).toHaveBeenCalledWith('record_weight');
+    fireEvent.press(getByLabelText('连接设备'));
+    expect(onQuickAction).toHaveBeenCalledWith('connect_device');
+    // 冷启动第三态用卡替代 greeting-only, 不再只剩一句问候。
+    expect(queryByText('今天想从哪里开始？')).toBeNull();
+  });
+
+  it('keeps greeting-only third state when not onboarding (no Quick Start card)', () => {
+    const { queryByLabelText, getByText } = render(
+      <EmptyStateHome
+        memoryOpener={[]}
+        opener={null}
+        onOpenMemory={jest.fn()}
+        onOpenerQuickReply={jest.fn()}
+        onboarding={false}
+      />,
+    );
+
+    // 非冷启动 → 保持只有问候块, 不出 Quick Start 卡。
+    expect(getByText('今天想从哪里开始？')).toBeTruthy();
+    expect(queryByLabelText('记录体重')).toBeNull();
+    expect(queryByLabelText('连接设备')).toBeNull();
   });
 });

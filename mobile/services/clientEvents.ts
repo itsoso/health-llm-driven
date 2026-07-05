@@ -17,6 +17,8 @@ export type ClientEventName =
   // Phase 5 (2026-05-29) — starter chip CTR (调权从拍脑袋变成有据)
   | 'starter_chips_shown'         // 新对话空状态 chips 曝光 (CTR 分母)
   | 'starter_chip_clicked'        // 新对话 chip 点击 (CTR 分子)
+  // 冷启动包 (2026-07-05, P0-3) — 冷启动 quick reply / Quick Start 卡动作点击
+  | 'cold_start_action_clicked'   // meta: { action: 'photo_meal'|'record_weight'|'connect_device', source: 'chat' }
   // Watch leverage-action loop (2026-06-16)
   | 'watch_action_shown'
   | 'watch_action_completed'
