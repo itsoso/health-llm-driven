@@ -118,6 +118,13 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
       : []),
     [isUser, item.thinkingSteps],
   );
+  // P0-1 渐进渲染 (刀⑤): 首 token 前显示的"细状态行" —— 单行进度, 非大面板。
+  // 只在流式且尚无正文时展示; 首 token 到达后 useChatEngine 清空 currentStatus → 状态行消失,
+  // 交给思考完成态 pill。
+  const currentStatus = useMemo(
+    () => (!isUser && item.streaming ? String(item.currentStatus || '').trim() : ''),
+    [isUser, item.streaming, item.currentStatus],
+  );
   const visibleAssistantMarkdown = (
     thinkingSteps.length > 0 && visibleMarkdown === '⏳ AI 正在思考中...'
       ? ''
@@ -551,6 +558,9 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
             accessibilityLabel={`AI: ${assistantTextForActions || (revaUiContent.cards.length > 0 ? '图表卡片' : item.content)}`}
             accessibilityState={selectionMode ? { selected } : undefined}
           >
+            {currentStatus ? (
+              <StatusLine label={currentStatus} />
+            ) : null}
             {thinkingSteps.length > 0 ? (
               <ThinkingStepsPanel steps={thinkingSteps} streaming={item.streaming} />
             ) : null}
@@ -639,7 +649,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
                 </Pressable>
               </View>
             ) : null}
-            {item.streaming && thinkingSteps.length === 0 ? (
+            {item.streaming && thinkingSteps.length === 0 && !currentStatus ? (
               <ActivityIndicator size="small" color={C.green500} style={{ marginTop: 4 }} />
             ) : null}
             {/* 2026-05-13: 耗时 + 模型名 footer + 🔊 播报按钮 (流式结束才显示) */}
@@ -1145,6 +1155,14 @@ const styles = StyleSheet.create({
   imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 4 },
   msgImageSingle: { width: 160, height: 120, borderRadius: 10 },
   msgImageGrid: { width: 72, height: 72, borderRadius: 8 },
+  // 刀⑤ 细状态行: 单行, 小 spinner + 灰字, 无边框无背景 (低干扰), 首 token 前短暂出现.
+  statusLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginBottom: 2,
+    minHeight: 20,
+  },
   thinkingPanel: {
     alignSelf: 'stretch',
     minWidth: 260,
@@ -1337,6 +1355,7 @@ const txt = {
   bubbleUser: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 22, color: '#fff' } as TextStyle,
   // 与 markdownStyles body (fontSize 15 / lineHeight 23) 对齐, 流式→终态切 markdown 时无跳动
   streaming: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 23, color: C.ink1 } as TextStyle,
+  statusLine: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 12.5, lineHeight: 17, fontWeight: '700', color: C.ink3 } as TextStyle,
   thinkingPillLabel: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 16, fontWeight: '800', color: C.ink3 } as TextStyle,
   thinkingTitle: { fontFamily: revaFonts.sans, fontSize: 12.5, lineHeight: 17, fontWeight: '900', color: C.ink1 } as TextStyle,
   thinkingSubtitle: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, color: C.ink3 } as TextStyle,
@@ -1353,6 +1372,22 @@ const txt = {
   transparencyMono: { fontFamily: revaFonts.mono, fontSize: 10.5, lineHeight: 15, color: C.ink3 } as TextStyle,
   transparencyChip: { fontFamily: revaFonts.sans, fontSize: 10.5, lineHeight: 14, color: C.ink2, fontWeight: '700' } as TextStyle,
 };
+
+// P0-1 渐进渲染 (刀⑤): 首 token 前的"细状态行" —— 单行进度 + 小 spinner, 低干扰。
+// 例: "正在理解…" → "查看步数数据…" → "正在整理回答…"。首 token 到达后由上游清空 → 消失。
+function StatusLine({ label }: { label: string }) {
+  return (
+    <View
+      testID="assistant-status-line"
+      style={styles.statusLine}
+      accessibilityLiveRegion="polite"
+      accessibilityLabel={`小巴${label}`}
+    >
+      <ActivityIndicator size="small" color={C.green500} />
+      <Text style={txt.statusLine} numberOfLines={1}>{label}</Text>
+    </View>
+  );
+}
 
 function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?: boolean }) {
   // 完成态默认折叠成一条 slim pill;流式态保持实时进度展开 (用户要看到它在干活).

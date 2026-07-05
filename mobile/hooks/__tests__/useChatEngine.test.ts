@@ -139,6 +139,50 @@ async function* streamQuotaErrorAsToken() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
+// P0-5 竞态: start → conversationId 回填 (触发 focus-reload) → 已流出一段本地正文 → 暂停。
+// 暂停期间服务端只有半截 (user-only)。断言本地正文不被覆盖。
+async function* streamStartTokenThenWait() {
+  yield { type: 'start', conversationId: 777 };
+  yield { type: 'token', content: '本地流式正文，请勿覆盖。' };
+  await new Promise<void>((resolve) => {
+    finishStream = resolve;
+  });
+  yield { type: 'done', conversationId: 777, messageId: 2 };
+}
+
+// P0-1 status 状态机: accepted → tool(label) → 首 token → done。
+// 断言 currentStatus 依次变化, 首 token 到达即清空, 且 status 从不进思考步骤。
+async function* streamStatusThenToken() {
+  yield { type: 'start', conversationId: 777 };
+  yield { type: 'status', statusLabel: '正在理解…', statusStage: 'accepted' };
+  yield { type: 'status', statusLabel: '查看步数数据…', statusStage: 'tool' };
+  yield { type: 'token', content: '你今天走了 8000 步。' };
+  yield { type: 'done', conversationId: 777, messageId: 2 };
+}
+
+// P0-1: status 事件在首 token 前设置 currentStatus, 暂停在 token 前, 供断言中间态。
+async function* streamStatusThenWait() {
+  yield { type: 'start', conversationId: 777 };
+  yield { type: 'status', statusLabel: '正在理解…', statusStage: 'accepted' };
+  yield { type: 'status', statusLabel: '正在整理回答…', statusStage: 'synthesis' };
+  await new Promise<void>((resolve) => {
+    finishStream = resolve;
+  });
+  yield { type: 'token', content: '整理完成。' };
+  yield { type: 'done', conversationId: 777, messageId: 2 };
+}
+
+// 未知事件容错: 混入 useChatEngine 不认识的 type, 必须静默忽略, 不污染状态、不崩。
+async function* streamUnknownEventThenToken() {
+  yield { type: 'start', conversationId: 777 };
+  yield { type: 'mystery_future_event', payload: { anything: true } } as any;
+  yield { type: 'status', statusLabel: '正在理解…', statusStage: 'accepted' };
+  yield { type: 'another_unknown', foo: 'bar' } as any;
+  yield { type: 'token', content: '正常回答。' };
+  yield { type: 'yet_another_unknown' } as any;
+  yield { type: 'done', conversationId: 777, messageId: 2 };
+}
+
 describe('useChatEngine', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -524,5 +568,142 @@ describe('useChatEngine', () => {
       ]),
     );
     expect(mockGetConversationMessages).toHaveBeenCalledWith(777, { days: 7 });
+  });
+
+  // ── P0-5 竞态守卫: 流式活跃时 focus-reload 不用服务端半截 partial 覆盖本地流 ──
+  it('holds the local streaming bubble during an active stream even if the server only has a partial', async () => {
+    mockStreamChat.mockImplementation(streamStartTokenThenWait);
+    // 服务端此刻只落库了 user 消息 (assistant 还没写完) —— 若守卫失效会用它覆盖本地流。
+    mockGetConversationMessages.mockResolvedValue({
+      total_messages: 1,
+      messages: [
+        { id: 1, role: 'user', content: '半截问题', created_at: '2026-07-05T10:00:00Z' },
+      ],
+    });
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('请分析我的步数');
+    });
+
+    // conversationId 回填 → focus effect / reloadCurrentFromServer 的 callback 身份变化 →
+    // useFocusEffect mock 重跑。守卫应让位, 不覆盖本地已流出的正文。
+    // 等本地流式正文出现 (token 攒批 80ms flush) —— 这段窗口也给足 focus-reload 机会跑。
+    await waitFor(() => {
+      const assistant = result.current.messages.find(m => m.role === 'assistant');
+      expect(assistant?.content).toBe('本地流式正文，请勿覆盖。');
+      expect(assistant?.streaming).toBe(true);
+    });
+
+    // 服务端半截 (只有 user "半截问题") 不应替换掉本地这轮消息。
+    expect(result.current.messages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: 'user', content: '半截问题' }),
+      ]),
+    );
+    // 本地用户消息仍是原文 ("请分析我的步数"), 未被服务端历史替换。
+    expect(result.current.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: 'user', content: '请分析我的步数' }),
+      ]),
+    );
+
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
+
+    // 流结束后本地正文完整保留。
+    await waitFor(() => {
+      expect(result.current.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: 'assistant',
+            streaming: false,
+            content: '本地流式正文，请勿覆盖。',
+          }),
+        ]),
+      );
+    });
+  });
+
+  // ── P0-1 status 行状态机: accepted → tool → 首 token 清空; status 不进思考步骤 ──
+  it('surfaces status labels as currentStatus and clears them once the first token arrives', async () => {
+    mockStreamChat.mockImplementation(streamStatusThenWait);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('我今天走了多少步');
+    });
+
+    // 首 token 前: currentStatus 反映最新 status 标签 (synthesis 覆盖 accepted)。
+    await waitFor(() => {
+      const assistant = result.current.messages.find(m => m.role === 'assistant');
+      expect(assistant?.currentStatus).toBe('正在整理回答…');
+      expect(assistant?.streaming).toBe(true);
+    });
+
+    // status 标签绝不混进思考步骤列表 (刀⑤: 状态行与思考步骤分离)。
+    {
+      const assistant = result.current.messages.find(m => m.role === 'assistant');
+      expect(assistant?.thinkingSteps || []).not.toContain('正在整理回答…');
+      expect(assistant?.thinkingSteps || []).not.toContain('正在理解…');
+    }
+
+    // 放行首 token → currentStatus 被清空。
+    await act(async () => {
+      finishStream?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      const assistant = result.current.messages.find(m => m.role === 'assistant');
+      expect(assistant?.content).toBe('整理完成。');
+      expect(assistant?.currentStatus).toBeFalsy();
+    });
+  });
+
+  it('clears currentStatus on done even when statuses precede the tokens', async () => {
+    mockStreamChat.mockImplementation(streamStatusThenToken);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('步数分析');
+    });
+
+    await waitFor(() => {
+      const assistant = result.current.messages.find(m => m.role === 'assistant');
+      expect(assistant?.content).toBe('你今天走了 8000 步。');
+      expect(assistant?.streaming).toBe(false);
+      // 终态: status 行已清空 (收进思考完成态 pill)。
+      expect(assistant?.currentStatus).toBeFalsy();
+    });
+  });
+
+  // ── 未知事件容错: 混入未知 SSE type 必须静默忽略, 不崩、不污染 ──
+  it('silently ignores unknown stream event types without corrupting message state', async () => {
+    mockStreamChat.mockImplementation(streamUnknownEventThenToken);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('混入未知事件');
+    });
+
+    // 未知事件被忽略, 已知的 status/token/done 正常处理, 正文完整。
+    await waitFor(() => {
+      const assistant = result.current.messages.find(m => m.role === 'assistant');
+      expect(assistant?.content).toBe('正常回答。');
+      expect(assistant?.streaming).toBe(false);
+      expect(assistant?.currentStatus).toBeFalsy();
+    });
+
+    // 未知事件不应作为思考步骤或状态残留。
+    const assistant = result.current.messages.find(m => m.role === 'assistant');
+    expect(JSON.stringify(assistant?.thinkingSteps || [])).not.toContain('mystery_future_event');
+    expect(JSON.stringify(assistant?.thinkingSteps || [])).not.toContain('another_unknown');
   });
 });

@@ -69,6 +69,11 @@ export interface StreamEvent {
   /** 面向用户的安全思考/进度摘要,不包含模型原始推理链或工具参数。 */
   thought?: string;
   thinkingSteps?: string[];
+  // P0-1 渐进渲染: status SSE 事件映射出的"细状态行"标签 (中文人话), 首 token 前显示.
+  // 与 thought/thinkingSteps 分离 —— status 行是气泡顶部的单行进度, 不进思考步骤列表.
+  statusLabel?: string;
+  /** status 事件的原始阶段 (accepted / tool / synthesis), 供消费端语义判定。 */
+  statusStage?: string;
   conversationId?: number;
   messageId?: number;
   anchor?: string;
@@ -116,25 +121,32 @@ function toolThoughtLabel(toolName?: string): string {
 }
 
 /**
- * 把后端 `status` SSE 事件 (token 前的阶段进度) 映射为面向用户的中文思考行。
- * stage: vision | thinking | tool | synthesis。未知 stage → 返回 undefined (调用方忽略)。
+ * P0-1 渐进渲染 · status 行 (刀⑤): 把 status SSE 事件映射成气泡顶部的单行进度标签。
+ *
+ * 新契约 (backend additive): stage ∈ { accepted, tool, synthesis }。
+ *  - accepted   → 流一打开立刻发, 首 token 前显示 "正在理解…"。
+ *  - tool       → 每轮工具执行前发, label 是后端确定性映射的"中文人话"动词短语
+ *                 (如 "正在记录饮水…" / "查看步数数据…"), 无 label 时兜底 "正在处理…"。
+ *  - synthesis  → 最终回答开始生成时发, 显示 "正在整理回答…"。
+ *
+ * 兼容旧契约 stage ∈ { vision, thinking } 也给一个合理 label (avoid 空态)。
+ * 未知 stage → 返回 undefined (调用方忽略, 与既有 fall-through 一致)。
  */
-function statusStageThought(
-  stage?: string,
-  detail?: string | null,
-  round?: number | null,
-): string | undefined {
+function statusStageLabel(stage?: string, label?: string | null): string | undefined {
   const s = (stage || '').trim();
-  const trimmedDetail = typeof detail === 'string' ? detail.trim() : '';
+  const trimmedLabel = typeof label === 'string' ? label.trim() : '';
   switch (s) {
-    case 'vision':
-      return '识别图片中';
-    case 'thinking':
-      return typeof round === 'number' && round >= 2 ? '整理思路' : '正在思考';
+    case 'accepted':
+      return '正在理解…';
     case 'tool':
-      return trimmedDetail ? `正在${trimmedDetail}` : '调用工具中';
+      // label 来自后端确定性映射表 (工具名→动词短语); 缺失时兜底.
+      return trimmedLabel || '正在处理…';
     case 'synthesis':
-      return '整理回复中';
+      return '正在整理回答…';
+    case 'vision':
+      return '识别图片中…';
+    case 'thinking':
+      return '正在思考…';
     default:
       return undefined;
   }
@@ -271,11 +283,17 @@ export async function* streamChat(
           recordData: parsed.data?.record_data,
         };
       } else if (parsed.event === 'status') {
-        // TTFT 期间后端多次推送阶段状态 (token 前): vision/thinking/tool/synthesis.
-        // 映射为面向用户的中文思考行, 复用 thinkingSteps 管线 (useChatEngine appendThinkingStep
-        // 会渲染任意 evt.thought). 未知 stage → 返回 undefined, 保持既有 fall-through 忽略行为.
-        const thought = statusStageThought(parsed.data?.stage, parsed.data?.detail, parsed.data?.round);
-        if (thought) return { type: 'status', thought };
+        // P0-1 渐进渲染: TTFT 期间后端推送阶段状态 (token 前): accepted/tool/synthesis
+        // (兼容旧 vision/thinking). 映射为气泡顶部的"细状态行" (statusLabel), 而非思考步骤 ——
+        // status 行是 首 token 前的单行进度, 完成后收进思考完成态 pill (刀⑤).
+        // label 优先取后端确定性映射 (parsed.data.label), 缺失时按 stage 兜底.
+        // 未知 stage → 返回 undefined, 保持既有 fall-through 忽略行为 (调用方也会静默忽略未知事件).
+        const stage = typeof parsed.data?.stage === 'string' ? parsed.data.stage : undefined;
+        const statusLabel = statusStageLabel(
+          stage,
+          parsed.data?.label ?? parsed.data?.detail,
+        );
+        if (statusLabel) return { type: 'status', statusLabel, statusStage: stage };
       } else if (parsed.event === 'card' || parsed.event === 'proposed_card') {
         const descriptor = parsed.data?.descriptor || parsed.data?.card || parsed.data;
         if (descriptor && typeof descriptor.type === 'string') {

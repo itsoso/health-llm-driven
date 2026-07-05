@@ -266,63 +266,91 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
-  it('maps status stage events to Chinese thinking rows (token 前的实时状态行)', async () => {
+  it('maps status stage events to slim status-line labels (P0-1 新契约: accepted/tool/synthesis)', async () => {
+    const iter = streamChat('看看我今天走了多少步');
+    const first = iter.next();
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+
+    // accepted (流一打开) → 正在理解…
+    xhr.responseText =
+      'data: {"event":"status","data":{"stage":"accepted"}}\n\n';
+    xhr.onprogress?.();
+    await expect(first).resolves.toEqual({
+      value: { type: 'status', statusLabel: '正在理解…', statusStage: 'accepted' },
+      done: false,
+    });
+
+    // tool with label (后端确定性映射的中文动词短语) → 原样透传 label
+    const second = iter.next();
+    xhr.responseText +=
+      'data: {"event":"status","data":{"stage":"tool","round":1,"label":"查看步数数据…"}}\n\n';
+    xhr.onprogress?.();
+    await expect(second).resolves.toEqual({
+      value: { type: 'status', statusLabel: '查看步数数据…', statusStage: 'tool' },
+      done: false,
+    });
+
+    // tool without label → 兜底 "正在处理…"
+    const third = iter.next();
+    xhr.responseText += 'data: {"event":"status","data":{"stage":"tool","round":2}}\n\n';
+    xhr.onprogress?.();
+    await expect(third).resolves.toEqual({
+      value: { type: 'status', statusLabel: '正在处理…', statusStage: 'tool' },
+      done: false,
+    });
+
+    // synthesis → 正在整理回答…
+    const fourth = iter.next();
+    xhr.responseText += 'data: {"event":"status","data":{"stage":"synthesis"}}\n\n';
+    xhr.onprogress?.();
+    await expect(fourth).resolves.toEqual({
+      value: { type: 'status', statusLabel: '正在整理回答…', statusStage: 'synthesis' },
+      done: false,
+    });
+
+    await iter.return?.(undefined as any);
+  });
+
+  it('keeps backward-compat status stages (vision/thinking) as status-line labels', async () => {
     const iter = streamChat('看看这张体检照片');
     const first = iter.next();
     await Promise.resolve();
     const xhr = MockXMLHttpRequest.instances[0];
 
-    // vision → 识别图片中
+    // vision → 识别图片中…
     xhr.responseText =
-      'data: {"event":"status","data":{"stage":"vision","detail":null,"round":null}}\n\n';
+      'data: {"event":"status","data":{"stage":"vision"}}\n\n';
     xhr.onprogress?.();
     await expect(first).resolves.toEqual({
-      value: { type: 'status', thought: '识别图片中' },
+      value: { type: 'status', statusLabel: '识别图片中…', statusStage: 'vision' },
       done: false,
     });
 
-    // thinking round 1 → 正在思考
+    // thinking → 正在思考…
     const second = iter.next();
-    xhr.responseText += 'data: {"event":"status","data":{"stage":"thinking","round":1}}\n\n';
-    xhr.onprogress?.();
-    await expect(second).resolves.toEqual({
-      value: { type: 'status', thought: '正在思考' },
-      done: false,
-    });
-
-    // thinking round 2 → 整理思路
-    const third = iter.next();
     xhr.responseText += 'data: {"event":"status","data":{"stage":"thinking","round":2}}\n\n';
     xhr.onprogress?.();
-    await expect(third).resolves.toEqual({
-      value: { type: 'status', thought: '整理思路' },
+    await expect(second).resolves.toEqual({
+      value: { type: 'status', statusLabel: '正在思考…', statusStage: 'thinking' },
       done: false,
     });
 
-    // tool with detail → 正在<detail>
-    const fourth = iter.next();
-    xhr.responseText += 'data: {"event":"status","data":{"stage":"tool","detail":"查睡眠数据"}}\n\n';
-    xhr.onprogress?.();
-    await expect(fourth).resolves.toEqual({
-      value: { type: 'status', thought: '正在查睡眠数据' },
-      done: false,
-    });
+    await iter.return?.(undefined as any);
+  });
 
-    // tool without detail → 调用工具中
-    const fifth = iter.next();
-    xhr.responseText += 'data: {"event":"status","data":{"stage":"tool","detail":null}}\n\n';
-    xhr.onprogress?.();
-    await expect(fifth).resolves.toEqual({
-      value: { type: 'status', thought: '调用工具中' },
-      done: false,
-    });
+  it('prefers the deterministic label over a legacy detail field for the tool stage', async () => {
+    const iter = streamChat('查一下睡眠');
+    const first = iter.next();
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
 
-    // synthesis → 整理回复中
-    const sixth = iter.next();
-    xhr.responseText += 'data: {"event":"status","data":{"stage":"synthesis"}}\n\n';
+    // label 优先于 detail (兼容旧后端只发 detail 的场景 → 也能出状态行)
+    xhr.responseText =
+      'data: {"event":"status","data":{"stage":"tool","detail":"查睡眠数据"}}\n\n';
     xhr.onprogress?.();
-    await expect(sixth).resolves.toEqual({
-      value: { type: 'status', thought: '整理回复中' },
+    await expect(first).resolves.toEqual({
+      value: { type: 'status', statusLabel: '查睡眠数据', statusStage: 'tool' },
       done: false,
     });
 

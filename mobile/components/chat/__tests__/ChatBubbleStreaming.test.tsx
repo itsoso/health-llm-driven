@@ -104,6 +104,51 @@ describe('ChatBubble streaming degraded render', () => {
     expect(getByText(CONTENT)).toBeTruthy();
   });
 
+  it('renders a slim status line (not a panel) before the first token', () => {
+    const { getByTestId, getByText, queryByTestId } = renderBubble({
+      id: 'assistant-status-line',
+      role: 'assistant',
+      content: '⏳ AI 正在思考中...',
+      streaming: true,
+      currentStatus: '查看步数数据…',
+    });
+
+    // 细状态行出现, 文案即 currentStatus。
+    expect(getByTestId('assistant-status-line')).toBeTruthy();
+    expect(getByText('查看步数数据…')).toBeTruthy();
+    // 无思考步骤时不渲染大思考面板 (状态行是"细"行, 非面板)。
+    expect(queryByTestId('assistant-thinking-panel')).toBeNull();
+    // 未出正文 → 不走富 markdown。
+    expect(queryByTestId('rich-markdown')).toBeNull();
+  });
+
+  it('hides the status line once the assistant text is present (first token cleared it)', () => {
+    // 首 token 后, useChatEngine 会清空 currentStatus。这里模拟"已出正文 + currentStatus 被清"。
+    const { queryByTestId, getByText } = renderBubble({
+      id: 'assistant-status-cleared',
+      role: 'assistant',
+      content: '你今天走了 8000 步。',
+      streaming: true,
+      // currentStatus 未设置 (已清空)
+    });
+
+    expect(queryByTestId('assistant-status-line')).toBeNull();
+    expect(getByText('你今天走了 8000 步。')).toBeTruthy();
+  });
+
+  it('never shows the status line after streaming has finished', () => {
+    // 终态即使残留 currentStatus (兜底应已清), 组件也不显示状态行 (仅 streaming 时渲染)。
+    const { queryByTestId } = renderBubble({
+      id: 'assistant-status-done',
+      role: 'assistant',
+      content: '完成。',
+      streaming: false,
+      currentStatus: '正在整理回答…',
+    });
+
+    expect(queryByTestId('assistant-status-line')).toBeNull();
+  });
+
   it('renders streaming thinking steps above the assistant text', () => {
     const { getByLabelText, getByTestId, getByText, queryByTestId } = renderBubble({
       id: 'assistant-streaming-thinking',
