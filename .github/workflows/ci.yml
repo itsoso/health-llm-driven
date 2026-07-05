@@ -102,6 +102,45 @@ jobs:
           python -m eval run --suite insight --baseline main --fail-on-regression
           python -m eval run --suite retrieval --baseline main --fail-on-regression
 
+  dedao-authority-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check Dedao authority gate secrets
+        id: dedao-config
+        env:
+          DEDAO_KBASE_BASE_URL: ${{ secrets.DEDAO_KBASE_BASE_URL }}
+          DEDAO_KBASE_TOKEN: ${{ secrets.DEDAO_KBASE_TOKEN }}
+        run: |
+          if [ -n "$DEDAO_KBASE_BASE_URL" ] && [ -n "$DEDAO_KBASE_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Skipping Dedao authority gate because DEDAO_KBASE_BASE_URL or DEDAO_KBASE_TOKEN is not configured."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Dedao authority pull gate
+        if: steps.dedao-config.outputs.enabled == 'true'
+        env:
+          DEDAO_KBASE_BASE_URL: ${{ secrets.DEDAO_KBASE_BASE_URL }}
+          DEDAO_KBASE_TOKEN: ${{ secrets.DEDAO_KBASE_TOKEN }}
+          TZ: Asia/Shanghai
+        run: |
+          mkdir -p artifacts
+          python scripts/dedao_authority_pull_report.py --gate --redacted-output artifacts/dedao-authority-gate.json
+
+      - name: Upload Dedao authority gate artifact
+        if: always() && steps.dedao-config.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dedao-authority-gate
+          path: artifacts/dedao-authority-gate.json
+
   frontend-build:
     runs-on: ubuntu-latest
     steps:

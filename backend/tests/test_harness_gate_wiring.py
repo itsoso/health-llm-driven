@@ -65,3 +65,14 @@ def test_ci_runs_dossier_consistency_gate():
 
     assert "Check dossier consistency" in workflow
     assert "python backend/scripts/check_dossier_consistency.py" in workflow
+
+
+def test_ci_runs_optional_dedao_authority_gate():
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "dedao-authority-gate" in workflow
+    assert "DEDAO_KBASE_BASE_URL" in workflow
+    assert "DEDAO_KBASE_TOKEN" in workflow
+    assert "enabled=false" in workflow
+    assert "scripts/dedao_authority_pull_report.py --gate" in workflow
+    assert "--redacted-output artifacts/dedao-authority-gate.json" in workflow
