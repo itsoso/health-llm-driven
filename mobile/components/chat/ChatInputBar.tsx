@@ -28,41 +28,16 @@ import {
 const CANCEL_THRESHOLD = 80;
 const COMPOSER_HIT_SLOP = { top: 6, right: 6, bottom: 6, left: 6 };
 
-type ChatAgentMode = 'daily' | 'deep' | 'vision';
-
 export interface ChatInputSendOptions {
   extraContext?: string;
 }
 
-const AGENT_MODES: {
-  id: ChatAgentMode;
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-}[] = [
-  { id: 'daily', label: '日常', icon: 'flash-outline' },
-  { id: 'deep', label: '深思', icon: 'diamond-outline' },
-  { id: 'vision', label: '识图', icon: 'image-outline' },
-];
-
-const MODE_PLACEHOLDER: Record<ChatAgentMode, string> = {
-  daily: '问小巴，或按住说话',
-  deep: '让小巴深思一个计划',
-  vision: '拍照/报告后问小巴',
-};
-
-function buildAgentModeOptions(mode: ChatAgentMode): ChatInputSendOptions | undefined {
-  if (mode === 'daily') return undefined;
-  const instruction = mode === 'deep'
-    ? '先梳理目标、约束和健康风险边界，再给出可执行计划、验证信号和下一步确认动作。'
-    : '优先理解图片、报告或饮食运动线索，输出可确认的记录、复核卡片或下一步补充信息。';
-  return {
-    extraContext: JSON.stringify({
-      source: 'mobile_chat_composer',
-      mode,
-      instruction,
-    }),
-  };
-}
+// 2026-07-05 founder: 删掉「日常/深思/识图」三模式段。日常=无操作(默认);
+// 深思/识图的 instruction 之前经 extra_context 落到后端「入口上下文(用户正在
+// 看的具体方案)」注入点(那是给 SNP/饮食 deeplink「详细聊」用的),被错误框成
+// 「别重新生成方案」——与深思本意相反, 效果garbled;识图更是冗余(带图自动走
+// 视觉路径)。深浅由 agent 从问题判断, 不靠藏在附件菜单里的隐藏开关。
+const COMPOSER_PLACEHOLDER = '问小巴，或按住说话';
 
 function PulsingRing() {
   const scale = useSharedValue(1);
@@ -95,7 +70,6 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const [showMenu, setShowMenu] = useState(false);
   const [showMedicalImportMenu, setShowMedicalImportMenu] = useState(false);
   const [medicalImportBusy, setMedicalImportBusy] = useState(false);
-  const [agentMode, setAgentMode] = useState<ChatAgentMode>('daily');
   // 空且未聚焦时把 TextInput 设成「摸不到」(pointerEvents none) → 触摸落到外层
   // Pressable:轻点 → 聚焦打字,长按 → 干净地录音(不被 iOS 文本选择放大镜抢走、
   // 不闪键盘)。一旦聚焦或有字 → 恢复可交互(光标/选择正常)。阿福/DeepSeek 同款。
@@ -132,14 +106,13 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     onSend(
       msg || '请分析这些图片',
       pendingImages.length > 0 ? pendingImages : null,
-      buildAgentModeOptions(agentMode),
     );
     setInput('');
     clearImages();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setJustSent(true);
     setTimeout(() => setJustSent(false), 1000);
-  }, [agentMode, input, pendingImages, onSend, clearImages]);
+  }, [input, pendingImages, onSend, clearImages]);
 
   const handleKeyboardSubmit = useCallback(() => {
     if (!canSend) return;
@@ -402,7 +375,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
               // 空且未聚焦时「摸不到」→ 长按手势归外层 Pressable(录音),避免 iOS 文本
               // 选择放大镜抢走 + 键盘闪现。聚焦/有字后恢复可交互(光标/选择正常)。
               style={[styles.textInput, { pointerEvents: inputInert ? 'none' : 'auto' }]}
-              placeholder={MODE_PLACEHOLDER[agentMode]}
+              placeholder={COMPOSER_PLACEHOLDER}
               placeholderTextColor={C.ink3}
               value={input}
               onChangeText={setInput}
@@ -455,23 +428,6 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
                 }}
               />
             </View>
-            <Text style={styles.menuSectionTitle}>模式</Text>
-            <View testID="agent-mode-segmented-row" style={styles.modeSegmentedRow}>
-              {AGENT_MODES.map(mode => (
-                <ModeSegmentItem
-                  key={mode.id}
-                  icon={mode.icon}
-                  label={mode.label}
-                  accessibilityLabel={`${mode.label}模式`}
-                  selected={agentMode === mode.id}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setAgentMode(mode.id);
-                    setShowMenu(false);
-                  }}
-                />
-              ))}
-            </View>
           </Pressable>
         </Pressable>
       </Modal>
@@ -495,34 +451,6 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
         </Pressable>
       </Modal>
     </>
-  );
-}
-
-function ModeSegmentItem({
-  icon,
-  label,
-  accessibilityLabel,
-  selected,
-  onPress,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  accessibilityLabel: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={[styles.modeMenuItem, selected && styles.modeMenuItemActive]}
-      onPress={onPress}
-      activeOpacity={0.68}
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      accessibilityLabel={accessibilityLabel}
-    >
-      <Ionicons name={icon} size={15} color={selected ? C.green500 : C.ink2} />
-      <Text style={[styles.modeMenuLabel, selected && styles.modeMenuLabelActive]}>{label}</Text>
-    </TouchableOpacity>
   );
 }
 
@@ -690,15 +618,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingBottom: 8,
   },
-  menuSectionTitle: {
-    fontFamily: revaFonts.sans,
-    fontSize: 12,
-    fontWeight: '800',
-    color: C.ink3,
-    marginTop: 12,
-    marginBottom: 6,
-    paddingHorizontal: 4,
-  } as TextStyle,
   menuItem: {
     flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line,
@@ -749,39 +668,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: C.ink3,
     marginTop: 1,
-  } as TextStyle,
-  modeSegmentedRow: {
-    minHeight: 36,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    padding: 3,
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.paper2,
-  },
-  modeMenuItem: {
-    flex: 1,
-    minHeight: 30,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    borderRadius: revaRadii.pill,
-    paddingHorizontal: 8,
-  },
-  modeMenuItemActive: {
-    backgroundColor: C.paper,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: revaSemantic.normal.line,
-  },
-  modeMenuLabel: {
-    fontFamily: revaFonts.sans,
-    fontSize: 13,
-    color: C.ink2,
-    fontWeight: '700',
-  } as TextStyle,
-  modeMenuLabelActive: {
-    color: C.green500,
   } as TextStyle,
   menuLabel: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '500', color: C.ink1 } as TextStyle,
   menuDesc: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, marginTop: 1 } as TextStyle,

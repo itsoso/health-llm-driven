@@ -208,40 +208,19 @@ describe('ChatInputBar', () => {
     expect(afterFocus).toBe('auto');
   });
 
-  it('sends the selected agent mode as chat context without polluting the user text', () => {
-    const onSend = jest.fn();
-    const { getByLabelText } = render(
-      <ChatInputBar onSend={onSend} isStreaming={false} />,
-    );
-
-    fireEvent.press(getByLabelText('附件菜单'));
-    fireEvent.press(getByLabelText('深思模式'));
-    fireEvent.changeText(getByLabelText('消息输入框'), '帮我调整训练计划');
-    fireEvent.press(getByLabelText('发送消息'));
-
-    expect(onSend).toHaveBeenCalledWith(
-      '帮我调整训练计划',
-      null,
-      expect.objectContaining({
-        extraContext: expect.stringContaining('"mode":"deep"'),
-      }),
-    );
-  });
-
-  it('renders agent modes as a single compact segmented row in the attachment menu', () => {
-    const { getByLabelText, getByTestId, getByText } = render(
+  it('has no agent-mode segmented row (founder 2026-07-05: 三模式删除)', () => {
+    // 日常/深思/识图 已删:日常=默认无操作,深思/识图 的 instruction 之前经 extra_context
+    // 落到后端「入口上下文」注入点(给 deeplink「详细聊」用的)被错误框成「别重新生成
+    // 方案」,效果 garbled;识图 冗余(带图自动走视觉)。深浅由 agent 从问题判断。
+    const { getByLabelText, queryByText, queryByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
     fireEvent.press(getByLabelText('附件菜单'));
 
-    const modeRow = StyleSheet.flatten(getByTestId('agent-mode-segmented-row').props.style);
-    expect(modeRow.flexDirection).toBe('row');
-    expect(modeRow.minHeight).toBeLessThanOrEqual(38);
-    expect(getByText('日常')).toBeTruthy();
-    expect(getByText('深思')).toBeTruthy();
-    expect(getByText('识图')).toBeTruthy();
-    expect(getByLabelText('深思模式')).toBeTruthy();
+    expect(queryByTestId('agent-mode-segmented-row')).toBeNull();
+    expect(queryByText('深思')).toBeNull();
+    expect(queryByText('识图')).toBeNull();
   });
 
   it('sends typed text when Enter is pressed in the composer', () => {
@@ -253,7 +232,7 @@ describe('ChatInputBar', () => {
     fireEvent.changeText(getByLabelText('消息输入框'), '记录晚餐吃了鸡胸肉');
     fireEvent(getByLabelText('消息输入框'), 'keyPress', { nativeEvent: { key: 'Enter' } });
 
-    expect(onSend).toHaveBeenCalledWith('记录晚餐吃了鸡胸肉', null, undefined);
+    expect(onSend).toHaveBeenCalledWith('记录晚餐吃了鸡胸肉', null);
   });
 
   it('updates the composer when a follow-up prompt is injected after mount', () => {
@@ -285,7 +264,7 @@ describe('ChatInputBar', () => {
     );
 
     fireEvent(getByLabelText('消息输入框'), 'keyPress', { nativeEvent: { key: 'Enter' } });
-    expect(onSend).toHaveBeenCalledWith(prompt, null, undefined);
+    expect(onSend).toHaveBeenCalledWith(prompt, null);
     expect(getByLabelText('消息输入框').props.value).toBe('');
 
     rerender(
