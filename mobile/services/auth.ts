@@ -43,6 +43,28 @@ export interface AccountDeletionRequestResponse {
   message: string;
 }
 
+/**
+ * 持久化登录 token。永不 throw:后端登录已成功时,存储层瞬时故障
+ * (iOS 更新窗口 SecureStore 可能短暂不可用)不应让登录"失败"——
+ * 双写 SecureStore + 共享 keychain,全挂也保留内存态并 warn。
+ */
+async function persistToken(token: string): Promise<void> {
+  let secureStoreOk = false;
+  try {
+    await SecureStore.setItemAsync(TOKEN_KEY, token);
+    secureStoreOk = true;
+  } catch (e) {
+    console.warn('[auth] SecureStore write failed, relying on shared keychain:', e);
+  }
+  try {
+    await saveTokenToSharedKeychain(token);
+  } catch (e) {
+    if (!secureStoreOk) {
+      console.warn('[auth] shared keychain write also failed — 登录态仅存内存,冷启动需重登:', e);
+    }
+  }
+}
+
 export async function login(
   username: string,
   password: string,
@@ -51,8 +73,7 @@ export async function login(
     username,
     password,
   });
-  await SecureStore.setItemAsync(TOKEN_KEY, data.access_token);
-  saveTokenToSharedKeychain(data.access_token).catch(() => {});
+  await persistToken(data.access_token);
   return data;
 }
 
@@ -75,8 +96,7 @@ export async function loginByPhoneCode(
     phone,
     code,
   });
-  await SecureStore.setItemAsync(TOKEN_KEY, data.access_token);
-  saveTokenToSharedKeychain(data.access_token).catch(() => {});
+  await persistToken(data.access_token);
   return data;
 }
 

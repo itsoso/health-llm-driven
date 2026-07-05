@@ -95,6 +95,36 @@ describe('services/auth', () => {
       await expect(login('alice', 'hunter2')).resolves.toBeDefined();
       expect(SecureStore.setItemAsync).toHaveBeenCalled();
     });
+
+    it('登录仍成功当 SecureStore 写失败 — 降级共享 keychain,存储故障不否定已成功的登录', async () => {
+      mockedApi.post.mockResolvedValueOnce({
+        data: {
+          access_token: 'tok_fallback',
+          token_type: 'bearer',
+          user: { id: 7, username: 'alice' },
+        },
+      } as never);
+      (SecureStore.setItemAsync as jest.Mock).mockRejectedValueOnce(
+        new Error('keychain transiently locked'),
+      );
+
+      await expect(login('alice', 'hunter2')).resolves.toBeDefined();
+      expect(mockedSave).toHaveBeenCalledWith('tok_fallback');
+    });
+
+    it('双存储全挂也不抛 — 内存态兜底,只 warn', async () => {
+      mockedApi.post.mockResolvedValueOnce({
+        data: {
+          access_token: 'tok_memory_only',
+          token_type: 'bearer',
+          user: { id: 7, username: 'alice' },
+        },
+      } as never);
+      (SecureStore.setItemAsync as jest.Mock).mockRejectedValueOnce(new Error('locked'));
+      mockedSave.mockRejectedValueOnce(new Error('no module'));
+
+      await expect(login('alice', 'hunter2')).resolves.toBeDefined();
+    });
   });
 
   describe('phone auth', () => {

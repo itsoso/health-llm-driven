@@ -6,6 +6,7 @@ import React, {
   useCallback,
   type ReactNode,
 } from 'react';
+import { AppState } from 'react-native';
 import {
   login as loginApi,
   loginByPhoneCode as loginByPhoneCodeApi,
@@ -99,6 +100,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mounted = false;
     };
   }, []);
+
+  // 回前台自愈:冷启动窗口 keychain 瞬时读失败会把人留在登录页,
+  // transient 401/断网会让 user 悬空 —— 两者都不该需要手动重登。
+  // 只做恢复,绝不在这里清 token(删除 token 的唯一路径仍是显式 logout)。
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' || isLoading) return;
+      void (async () => {
+        try {
+          if (!token) {
+            const saved = await restoreSavedToken();
+            if (saved) {
+              setToken(saved);
+              saveTokenToSharedKeychain(saved).catch(() => {});
+              setUser(await fetchCurrentUser());
+            }
+          } else if (!user) {
+            setUser(await fetchCurrentUser());
+          }
+        } catch {
+          // transient — 下次回前台再试
+        }
+      })();
+    });
+    return () => sub.remove();
+  }, [token, user, isLoading]);
 
   const login = useCallback(async (username: string, password: string) => {
     const result = await loginApi(username, password);
