@@ -20,6 +20,18 @@ _TASK_TIER_TO_SPEED = {
     "casual": "fast",             # 闲聊 / 轻量
 }
 
+# ── 安全不变量(fail-closed):哪些任务档允许真的落到 fast(弱)模型 ──
+# 只有**明确无医疗内容生成**的档才准降到 fast:简单查数 / 记录写入的意图分类 /
+# 内部辅助任务。任何面向用户的医疗内容生成(健康建议 / 安全评估 / orchestrator
+# 合成 / 专科叙事)绝不允许降到 fast —— 弱模型编造/漏说医疗结论是不可接受的风险。
+#
+# 强制点在 pick_model_id_by_tier:tier 不在此白名单时,即便目标/回退档命中 fast 模型
+# 也会被地板到 non-fast(balanced)。当前**没有任何调用方**传入 fast-eligible 档
+# (orchestrator 合成一律 balanced+;watch 硬编码 balanced),所以此集合当前为空 =
+# 全仓库 tiered routing 不可能把用户可见回答降到 fast。将来若真有"记录写入意图分类"
+# 这类纯内部快任务,显式往这里加档名并配对抗测试,别偷偷放宽。
+_FAST_ELIGIBLE_TIERS: frozenset[str] = frozenset()
+
 # 目标 speed_tier 无可用模型时的回退顺序 —— 对注册表裁剪鲁棒(如套餐收敛后不再有 fast 档,
 # casual 自动落到 balanced,而不是返回 None 让任务路由整个失效)。
 _SPEED_FALLBACK = {
@@ -31,12 +43,21 @@ _SPEED_FALLBACK = {
 
 def pick_model_id_by_tier(task_tier: Optional[str], only_available: bool = True) -> Optional[str]:
     """按任务档选一个对应 speed_tier 的可用模型 id;目标档无模型时按 _SPEED_FALLBACK 降级;
-    全无 → None(调用方回退默认)。"""
-    speed = _TASK_TIER_TO_SPEED.get((task_tier or "").lower())
+    全无 → None(调用方回退默认)。
+
+    安全不变量(fail-closed):tier 不在 _FAST_ELIGIBLE_TIERS 时,绝不返回 fast 档模型 ——
+    fast 目标 / fast 回退项一律被跳过并地板到 non-fast。未知 tier → None(默认模型)。
+    """
+    tier_key = (task_tier or "").lower()
+    speed = _TASK_TIER_TO_SPEED.get(tier_key)
     if speed is None:
         return None
+    fast_allowed = tier_key in _FAST_ELIGIBLE_TIERS
     models = list_models(only_available=only_available)
     for target in _SPEED_FALLBACK.get(speed, (speed,)):
+        if target == "fast" and not fast_allowed:
+            # fail-closed:非白名单档不许落到弱模型,跳过 fast 继续找 balanced/reasoning。
+            continue
         for m in models:
             if getattr(m, "speed_tier", None) == target:
                 return m.id

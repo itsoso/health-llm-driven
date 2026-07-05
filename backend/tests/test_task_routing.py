@@ -32,8 +32,9 @@ def test_tier_for_intent_wiring():
     assert _tier_for_intent(_I(["longevity"])) == "high_stakes"
     assert _tier_for_intent(_I(["recovery"])) == "balanced"
     assert _tier_for_intent(_I(["fuel", "movement"])) == "balanced"
-    assert _tier_for_intent(_I(["general"])) == "casual"
-    assert _tier_for_intent(_I([])) == "casual"
+    # 安全不变量:合成路径永不降到 casual(=fast),general/空也地板到 balanced。
+    assert _tier_for_intent(_I(["general"])) == "balanced"
+    assert _tier_for_intent(_I([])) == "balanced"
 
 
 def test_routing_taken_when_flag_on():
