@@ -2152,6 +2152,74 @@ def _confirm_or_describe(args: dict, data: dict, *, preview: str) -> str | None:
     )
 
 
+def _citation_anchor_shadow_meta(db, user_id: int, answer_text: str) -> Optional[Dict[str, Any]]:
+    """P1 数字锚定核验(shadow)。核验最终答案里引用的个人数值能否锚定到 Twin,
+    只观测不干预:返回一个可放进 done.meta 的 additive 摘要 dict(客户端不读不炸)。
+
+    观测层铁律:**绝不打死回合**。任何异常吞掉并 log warning,把失败计数暴露到日志
+    (failed_count),不做静默 —— "捕获后静默返回" 是违规。开关关或答案为空返回 None。
+
+    Returns:
+        {total, anchored, unanchored_count, anchored_ratio, failed_count} 或 None。
+        unanchored 明细只进日志(可能含数值上下文),done.meta 只带计数,不外泄片段。
+    """
+    from app.config import settings
+
+    if not getattr(settings, "citation_anchor_shadow", False):
+        return None
+    if not answer_text or not answer_text.strip():
+        return None
+
+    failed_count = 0
+    try:
+        from app.twin.builder import build_twin
+        from app.services.citation_anchor import anchor_report
+
+        twin = build_twin(db, user_id, use_cache=True)
+        report = anchor_report(answer_text, twin)
+    except Exception as e:  # noqa: BLE001 — 观测层不打死回合, 但吞点必须计数+告警(非静默)
+        failed_count += 1
+        logger.warning(
+            "[citation_anchor] shadow eval failed user=%s failed_count=%s err=%s",
+            user_id, failed_count, e,
+        )
+        return {
+            "total": 0,
+            "anchored": 0,
+            "unanchored_count": 0,
+            "anchored_ratio": None,
+            "failed_count": failed_count,
+        }
+
+    unanchored = report.get("unanchored") or []
+    try:
+        logger.info(
+            "[citation_anchor] user=%s ratio=%s anchored=%s/%s unanchored=%s",
+            user_id,
+            report.get("anchored_ratio"),
+            report.get("anchored"),
+            report.get("total"),
+            len(unanchored),
+        )
+        # unanchored 明细(值 + 上下文片段)只进日志, 供 shadow 期人工核样本;
+        # 上限 5 条防日志膨胀。
+        for u in unanchored[:5]:
+            logger.info(
+                "[citation_anchor]   unanchored user=%s value=%s ctx=%r",
+                user_id, u.get("value"), (u.get("context_snippet") or "")[:60],
+            )
+    except Exception:  # noqa: BLE001 — 连日志都不能打死回合
+        failed_count += 1
+
+    return {
+        "total": report.get("total", 0),
+        "anchored": report.get("anchored", 0),
+        "unanchored_count": len(unanchored),
+        "anchored_ratio": report.get("anchored_ratio"),
+        "failed_count": failed_count,
+    }
+
+
 class AgentExecutor:
     """统一健康 Agent 执行器"""
 
@@ -2444,6 +2512,8 @@ class AgentExecutor:
         ai_msg = svc.save_message(conv.id, "assistant", full_reply)
         conv.updated_at = datetime.now(UTC)
         elapsed_ms = int((time.time() - start_time) * 1000)
+        # P1 数字锚定核验(shadow, additive; fail-soft 见 helper)。
+        citation_anchor = _citation_anchor_shadow_meta(self.db, user_id, full_reply)
         try:
             ai_msg.meta = {
                 "elapsed_ms": elapsed_ms,
@@ -2454,6 +2524,7 @@ class AgentExecutor:
                 "fallback_reasons": [],
                 "sources_used": sources_used,
                 "mode": "multi_model",
+                **({"citation_anchor": citation_anchor} if citation_anchor else {}),
             }
         except Exception as e:  # noqa: BLE001
             logger.warning("[multi_model] write meta 失败: %s", e)
@@ -2470,6 +2541,7 @@ class AgentExecutor:
             "fallback_reasons": [],
             "sources_used": sources_used,
             "mode": "multi_model",
+            **({"citation_anchor": citation_anchor} if citation_anchor else {}),
         }}
 
     async def run_stream(
@@ -3458,6 +3530,10 @@ class AgentExecutor:
                 (message or "")[:80],
             )
 
+        # P1 数字锚定核验(shadow): 观测最终答案里的个人数值能否锚定到 Twin。additive
+        # 摘要进 meta + done, 客户端不读不炸。内部全 fail-soft, 绝不打死回合。
+        citation_anchor = _citation_anchor_shadow_meta(self.db, user_id, full_reply)
+
         # 2026-05-14 FIX-7: 把性能 + 可解释性写到 message.meta, 用户回来 reload 能恢复 footer
         try:
             ai_msg.meta = {
@@ -3477,6 +3553,7 @@ class AgentExecutor:
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
                 "perf": perf,
+                **({"citation_anchor": citation_anchor} if citation_anchor else {}),
             }
         except Exception as e:
             logger.warning(f"[agent_executor] write meta 失败: {e}")
@@ -3504,6 +3581,7 @@ class AgentExecutor:
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
                 "perf": perf,
+                **({"citation_anchor": citation_anchor} if citation_anchor else {}),
             },
         }
 
