@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "project": {
+    "id": "health-llm-driven",
+    "name": "Reva Health"
+  },
+  "harnesses": [
+    {
+      "id": "health-operating-validate",
+      "name": "Health operating validate",
+      "stage": "commit",
+      "command": ["python3", "scripts/validate.py"],
+      "description": "Fast Agent Operating Harness gate for doc drift, dossier consistency, and report-only backend lint.",
+      "when_to_run": "Before handoff after code, docs, dossier, or system-map changes.",
+      "tags": ["health", "operating-harness", "validate", "system-map", "docs"],
+      "read_only": true,
+      "blocking": true,
+      "requires": [],
+      "evidence_paths": ["scripts/validate.py", "docs/design-agent-operating-harness.md"]
+    },
+    {
+      "id": "health-backend-smoke",
+      "name": "Health backend smoke",
+      "stage": "ci",
+      "command": ["python3", "-m", "pytest", "-q", "tests/test_smoke.py"],
+      "working_dir": "backend",
+      "description": "Backend smoke tests for core API availability and request validation.",
+      "when_to_run": "After touching backend routing, auth, app startup, or smoke-covered API contracts.",
+      "tags": ["health", "backend", "smoke", "ci"],
+      "read_only": true,
+      "blocking": true,
+      "requires": ["backend_test_deps"],
+      "evidence_paths": ["backend/tests/test_smoke.py"]
+    },
+    {
+      "id": "health-llm-regression-gate",
+      "name": "Health LLM regression gate",
+      "stage": "ci",
+      "command": ["python3", "scripts/harness_llm_regression_gate.py"],
+      "description": "Offline synthesis regression gate for invariant and health-agent-core golden suites, with live suites behind an explicit flag.",
+      "when_to_run": "After changing health agent prompts, synthesis policy, safety wording, or eval datasets.",
+      "tags": ["health", "llm", "eval", "offline", "synthesis", "golden"],
+      "read_only": true,
+      "blocking": true,
+      "requires": ["backend_test_deps"],
+      "evidence_paths": [
+        "scripts/harness_llm_regression_gate.py",
+        "backend/eval/datasets/invariants.yaml",
+        "backend/eval/datasets/health_agent_core.yaml"
+      ]
+    },
+    {
+      "id": "health-runtime-eval",
+      "name": "Health runtime eval",
+      "stage": "ci",
+      "command": ["python3", "-m", "eval", "run", "--suite", "health_runtime", "--baseline", "main", "--fail-on-regression"],
+      "working_dir": "backend",
+      "description": "Golden-set eval for health runtime behavior with baseline regression detection.",
+      "when_to_run": "After changing runtime evaluators, health runtime scoring, orchestrator outputs, or health data interpretation.",
+      "tags": ["health", "eval", "runtime", "baseline", "golden"],
+      "read_only": true,
+      "blocking": true,
+      "requires": ["backend_test_deps"],
+      "evidence_paths": [
+        "backend/eval/datasets/health_runtime.yaml",
+        "backend/eval/baselines/health_runtime_main.json",
+        "backend/tests/test_health_runtime_eval_suite.py"
+      ]
+    },
+    {
+      "id": "health-retrieval-eval",
+      "name": "Health retrieval eval",
+      "stage": "ci",
+      "command": ["python3", "-m", "eval", "run", "--suite", "retrieval", "--baseline", "main", "--fail-on-regression"],
+      "working_dir": "backend",
+      "description": "Golden-set eval for health retrieval behavior and baseline drift.",
+      "when_to_run": "After changing memory injection, hybrid retrieval, knowledge graph, or retrieval guard behavior.",
+      "tags": ["health", "eval", "retrieval", "memory", "baseline", "golden"],
+      "read_only": true,
+      "blocking": true,
+      "requires": ["backend_test_deps"],
+      "evidence_paths": [
+        "backend/eval/datasets/retrieval.yaml",
+        "backend/eval/baselines/retrieval_main.json",
+        "backend/tests/test_eval_retrieval_suite.py",
+        "backend/tests/test_retrieval_guard.py"
+      ]
+    },
+    {
+      "id": "health-memory-prime",
+      "name": "Health memory prime",
+      "stage": "manual",
+      "command": ["python3", "scripts/harness_memory_prime.py", "--keywords", "health-llm-driven,harness", "--limit", "8"],
+      "description": "Read-only selective Codex memory lookup for starting health harness work without loading the full registry.",
+      "when_to_run": "Before architecture, harness, or memory-sensitive work in health-llm-driven.",
+      "tags": ["health", "memory", "operating-harness", "manual"],
+      "read_only": true,
+      "blocking": false,
+      "requires": ["local_codex_memory"],
+      "evidence_paths": ["scripts/harness_memory_prime.py"]
+    },
+    {
+      "id": "health-langbridge-smoke",
+      "name": "Health LangBridge gateway smoke",
+      "stage": "release",
+      "command": ["python3", "backend/scripts/smoke_langbridge_gateway.py"],
+      "description": "End-to-end smoke from health to the browser-llm-orchestrator OpenAI-compatible gateway.",
+      "when_to_run": "Before or after changing cross-project LangBridge routing, gateway credentials, or model exposure.",
+      "tags": ["health", "llm-gateway", "smoke", "release", "network"],
+      "read_only": false,
+      "blocking": true,
+      "requires": ["network", "LANGBRIDGE_GATEWAY_BASE_URL", "LANGBRIDGE_GATEWAY_API_KEY", "llm_spend"],
+      "evidence_paths": ["backend/scripts/smoke_langbridge_gateway.py"]
+    }
+  ]
+}
