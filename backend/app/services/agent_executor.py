@@ -2677,7 +2677,8 @@ class AgentExecutor:
         # 非快路由回合 lite=False → prompt 逐字节不变。
         _t_stage = time.time()
         system_content = self._build_system_prompt(
-            user_id, conv.id, user_auth_token, lite=self._fast_route_simple_turn
+            user_id, conv.id, user_auth_token, lite=self._fast_route_simple_turn,
+            intent_query=message,
         )
         pre_stages["system_prompt_ms"] = _pre_stage(_t_stage)
         if self._fast_route_simple_turn:
@@ -3615,7 +3616,8 @@ class AgentExecutor:
             return False
 
     def _build_system_prompt(
-        self, user_id: int, conv_id: int, user_auth_token: Optional[str], lite: bool = False
+        self, user_id: int, conv_id: int, user_auth_token: Optional[str],
+        lite: bool = False, intent_query: Optional[str] = None,
     ) -> str:
         """构建统一 Agent 的 system prompt。
 
@@ -3731,7 +3733,9 @@ class AgentExecutor:
             from app.services.health_context_lite_service import (
                 build_lite_health_context, _get_time_period,
             )
-            health_ctx = build_lite_health_context(self.db, user_id)
+            # P2 意图分级: intent_query 存在时按纯知识 vs 个人判读裁剪个人上下文预算;
+            # None (默认 / 多模型综合入口) → 全量注入, 零回归。
+            health_ctx = build_lite_health_context(self.db, user_id, intent=intent_query)
             if health_ctx:
                 parts.append("\n## 用户健康档案")
                 parts.append(health_ctx)
