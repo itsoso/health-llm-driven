@@ -148,6 +148,39 @@ jobs:
           python scripts/dedao_authority_pull_report.py --gate "${previous_args[@]}" --redacted-output artifacts/dedao-authority-gate.json
           cp artifacts/dedao-authority-gate.json artifacts/previous-dedao-authority-gate.json
 
+      - name: Write Dedao authority gate summary
+        if: always() && steps.dedao-config.outputs.enabled == 'true' && hashFiles('artifacts/dedao-authority-gate.json') != ''
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path("artifacts/dedao-authority-gate.json").read_text(encoding="utf-8"))
+          counts = payload.get("counts", {})
+          actions = payload.get("recommended_actions") or []
+          lines = [
+              "## Dedao authority gate",
+              "",
+              f"- status: `{payload.get('status', '-')}`",
+              f"- source_unchanged: `{payload.get('source_unchanged')}`",
+              f"- reasons: `{', '.join(payload.get('reasons') or []) or '-'}`",
+              f"- accepted_for_review: `{counts.get('accepted_for_review', 0)}`",
+              f"- blocked: `{counts.get('blocked', 0)}`",
+              f"- invalid: `{counts.get('invalid', 0)}`",
+              "",
+              "### recommended_actions",
+          ]
+          if actions:
+              for action in actions:
+                  lines.append(
+                      f"- `{action.get('priority', '-')}` `{action.get('action', '-')}`: {action.get('reason', '-')}"
+                  )
+          else:
+              lines.append("- `info` `none`: -")
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+
       - name: Upload Dedao authority gate artifact
         if: always() && steps.dedao-config.outputs.enabled == 'true'
         uses: actions/upload-artifact@v4

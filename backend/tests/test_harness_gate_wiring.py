@@ -87,3 +87,13 @@ def test_ci_compares_dedao_authority_gate_with_previous_artifact():
     assert "--previous-artifact artifacts/previous-dedao-authority-gate.json" in workflow
     assert "Save Dedao authority gate artifact for next run" in workflow
     assert "actions/cache/save@v4" in workflow
+
+
+def test_ci_writes_dedao_authority_gate_step_summary():
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "Write Dedao authority gate summary" in workflow
+    assert "artifacts/dedao-authority-gate.json" in workflow
+    assert "GITHUB_STEP_SUMMARY" in workflow
+    assert "Dedao authority gate" in workflow
+    assert "recommended_actions" in workflow
