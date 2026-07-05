@@ -245,6 +245,11 @@ class Settings(BaseSettings):
     aliyun_sms_sign_name: Optional[str] = None
     aliyun_sms_template_code: Optional[str] = None
     aliyun_sms_region_id: str = "cn-hangzhou"
+    # 号码认证服务「短信认证」(dypnsapi) 免资质通道：个人认证账号可用，
+    # 签名/模板只能用控制台赠送值（如 恒创联众 / 100001），仅支持大陆手机号。
+    # 与 aliyun_sms_* 企业签名通道并存时，企业签名优先。
+    aliyun_pnvs_sign_name: Optional[str] = None
+    aliyun_pnvs_template_code: Optional[str] = None
 
     # CORS 配置，逗号分隔的允许来源列表
     cors_allow_origins: str = ""

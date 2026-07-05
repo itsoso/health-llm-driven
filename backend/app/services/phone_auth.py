@@ -149,12 +149,12 @@ def _aliyun_percent_encode(value: str) -> str:
     return urllib.parse.quote(str(value), safe="-_.~")
 
 
-def _aliyun_signature(params: dict[str, str], access_key_secret: str) -> str:
+def _aliyun_signature(params: dict[str, str], access_key_secret: str, http_method: str = "GET") -> str:
     canonical_query = "&".join(
         f"{_aliyun_percent_encode(key)}={_aliyun_percent_encode(params[key])}"
         for key in sorted(params)
     )
-    string_to_sign = f"GET&%2F&{_aliyun_percent_encode(canonical_query)}"
+    string_to_sign = f"{http_method}&%2F&{_aliyun_percent_encode(canonical_query)}"
     digest = hmac.new(
         f"{access_key_secret}&".encode("utf-8"),
         string_to_sign.encode("utf-8"),
@@ -205,6 +205,69 @@ def _send_aliyun_sms(phone: str, code: str) -> None:
         raise PhoneCodeDeliveryFailed("短信发送失败，请稍后再试")
 
 
+def _aliyun_pnvs_configured() -> bool:
+    return bool(
+        _aliyun_sms_access_key_id()
+        and _aliyun_sms_access_key_secret()
+        and settings.aliyun_pnvs_sign_name
+        and settings.aliyun_pnvs_template_code
+    )
+
+
+def _send_aliyun_pnvs_sms(phone: str, code: str) -> None:
+    """号码认证服务「短信认证」免资质通道（dypnsapi SendSmsVerifyCode）。
+
+    验证码仍由本服务生成并本地校验，平台只负责投递（TemplateParam 直传 code），
+    赠送签名/模板仅支持中国大陆手机号。
+    """
+
+    access_key_id = _aliyun_sms_access_key_id()
+    access_key_secret = _aliyun_sms_access_key_secret()
+    if not access_key_id or not access_key_secret:
+        raise PhoneCodeDeliveryNotConfigured("短信通道未配置，请稍后再试")
+    if not phone.startswith("+86"):
+        logger.error("[phone-auth] PNVS SMS only supports mainland numbers: %s", mask_phone(phone))
+        raise PhoneCodeDeliveryFailed("短信发送失败，请稍后再试")
+
+    params = {
+        "AccessKeyId": access_key_id,
+        "Action": "SendSmsVerifyCode",
+        "Format": "JSON",
+        "PhoneNumber": _aliyun_sms_phone_number(phone),
+        "SignatureMethod": "HMAC-SHA1",
+        "SignatureNonce": uuid.uuid4().hex,
+        "SignatureVersion": "1.0",
+        "SignName": settings.aliyun_pnvs_sign_name or "",
+        "TemplateCode": settings.aliyun_pnvs_template_code or "",
+        "TemplateParam": json.dumps(
+            {"code": code, "min": str(max(int(settings.auth_phone_code_ttl_minutes), 1))},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+        "Timestamp": _now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "Version": "2017-05-25",
+    }
+    params["Signature"] = _aliyun_signature(params, access_key_secret, http_method="POST")
+
+    try:
+        with httpx.Client(timeout=8.0) as client:
+            response = client.post("https://dypnsapi.aliyuncs.com/", data=params)
+            response.raise_for_status()
+            payload = response.json()
+    except Exception as exc:
+        logger.error("[phone-auth] Aliyun PNVS SMS request failed for %s: %s", mask_phone(phone), str(exc))
+        raise PhoneCodeDeliveryFailed("短信发送失败，请稍后再试") from exc
+
+    if payload.get("Code") != "OK":
+        logger.error(
+            "[phone-auth] Aliyun PNVS SMS rejected for %s: code=%s message=%s",
+            mask_phone(phone),
+            payload.get("Code"),
+            payload.get("Message"),
+        )
+        raise PhoneCodeDeliveryFailed("短信发送失败，请稍后再试")
+
+
 def _deliver_code(phone: str, code: str) -> Optional[str]:
     """Deliver code or return dev echo.
 
@@ -218,6 +281,10 @@ def _deliver_code(phone: str, code: str) -> Optional[str]:
 
     if _aliyun_sms_configured():
         _send_aliyun_sms(phone, code)
+        return None
+
+    if _aliyun_pnvs_configured():
+        _send_aliyun_pnvs_sms(phone, code)
         return None
 
     if settings.auth_phone_code_log_delivery and settings.app_env.lower() != "production":

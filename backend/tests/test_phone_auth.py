@@ -149,3 +149,129 @@ def test_phone_code_sends_via_aliyun_sms_when_configured(client, monkeypatch):
     assert params["TemplateCode"] == "SMS_123456"
     assert "Signature" in params
     assert len(json.loads(params["TemplateParam"])["code"]) == 6
+
+
+def _configure_pnvs(monkeypatch):
+    monkeypatch.setattr(settings, "auth_phone_code_dev_echo", False, raising=False)
+    monkeypatch.setattr(settings, "auth_phone_code_resend_seconds", 0, raising=False)
+    monkeypatch.setattr(settings, "debug", False, raising=False)
+    monkeypatch.setattr(settings, "app_env", "production", raising=False)
+    monkeypatch.setattr(settings, "aliyun_sms_access_key_id", "test-key", raising=False)
+    monkeypatch.setattr(settings, "aliyun_sms_access_key_secret", "test-secret", raising=False)
+    monkeypatch.setattr(settings, "aliyun_sms_sign_name", None, raising=False)
+    monkeypatch.setattr(settings, "aliyun_sms_template_code", None, raising=False)
+    monkeypatch.setattr(settings, "aliyun_pnvs_sign_name", "恒创联众", raising=False)
+    monkeypatch.setattr(settings, "aliyun_pnvs_template_code", "100001", raising=False)
+
+
+class _FakePnvsClient:
+    """Captures dypnsapi POST calls; response payload injected per test."""
+
+    captured: dict = {}
+    payload: dict = {}
+
+    def __init__(self, *args, **kwargs):
+        type(self).captured["timeout"] = kwargs.get("timeout")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def post(self, url, data):
+        type(self).captured["url"] = url
+        type(self).captured["params"] = data
+
+        payload = type(self).payload
+
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return payload
+
+        return FakeResponse()
+
+
+def test_phone_code_sends_via_aliyun_pnvs_when_configured(client, monkeypatch):
+    _configure_pnvs(monkeypatch)
+    _FakePnvsClient.captured = {}
+    _FakePnvsClient.payload = {"Code": "OK", "Success": True}
+
+    from app.services import phone_auth
+
+    monkeypatch.setattr(phone_auth, "httpx", SimpleNamespace(Client=_FakePnvsClient), raising=False)
+
+    response = client.post("/api/v1/auth/phone/code", json={"phone": "13800138006"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["phone"] == "+8613800138006"
+    assert body["dev_code"] is None
+    params = _FakePnvsClient.captured["params"]
+    assert _FakePnvsClient.captured["url"] == "https://dypnsapi.aliyuncs.com/"
+    assert params["Action"] == "SendSmsVerifyCode"
+    assert params["PhoneNumber"] == "13800138006"
+    assert params["SignName"] == "恒创联众"
+    assert params["TemplateCode"] == "100001"
+    assert "Signature" in params
+    template_param = json.loads(params["TemplateParam"])
+    assert len(template_param["code"]) == 6
+    assert template_param["min"] == "5"
+
+
+def test_phone_code_pnvs_rejection_fails_loud(client, monkeypatch):
+    _configure_pnvs(monkeypatch)
+    _FakePnvsClient.captured = {}
+    _FakePnvsClient.payload = {"Code": "Forbidden.NoPermission", "Success": False}
+
+    from app.services import phone_auth
+
+    monkeypatch.setattr(phone_auth, "httpx", SimpleNamespace(Client=_FakePnvsClient), raising=False)
+
+    response = client.post("/api/v1/auth/phone/code", json={"phone": "13800138007"})
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "短信发送失败，请稍后再试"
+
+
+def test_phone_code_prefers_enterprise_sms_channel_over_pnvs(client, monkeypatch):
+    _configure_pnvs(monkeypatch)
+    monkeypatch.setattr(settings, "aliyun_sms_sign_name", "小巴", raising=False)
+    monkeypatch.setattr(settings, "aliyun_sms_template_code", "SMS_654321", raising=False)
+
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"Code": "OK", "Message": "OK"}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, url, params):
+            captured["url"] = url
+            captured["params"] = params
+            return FakeResponse()
+
+    from app.services import phone_auth
+
+    monkeypatch.setattr(phone_auth, "httpx", SimpleNamespace(Client=FakeClient), raising=False)
+
+    response = client.post("/api/v1/auth/phone/code", json={"phone": "13800138008"})
+
+    assert response.status_code == 200
+    assert captured["url"] == "https://dysmsapi.aliyuncs.com/"
+    assert captured["params"]["SignName"] == "小巴"
