@@ -97,3 +97,19 @@ def test_ci_writes_dedao_authority_gate_step_summary():
     assert "GITHUB_STEP_SUMMARY" in workflow
     assert "Dedao authority gate" in workflow
     assert "recommended_actions" in workflow
+
+
+def test_scheduled_dedao_authority_gate_workflow_exists():
+    workflow_path = ROOT / ".github" / "workflows" / "dedao-authority-gate.yml"
+    workflow = workflow_path.read_text(encoding="utf-8")
+
+    assert "name: Dedao Authority Gate" in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "schedule:" in workflow
+    assert "DEDAO_KBASE_BASE_URL" in workflow
+    assert "DEDAO_KBASE_TOKEN" in workflow
+    assert "scripts/dedao_authority_pull_report.py --gate" in workflow
+    assert "--previous-artifact artifacts/previous-dedao-authority-gate.json" in workflow
+    assert "--redacted-output artifacts/dedao-authority-gate.json" in workflow
+    assert "GITHUB_STEP_SUMMARY" in workflow
+    assert "actions/upload-artifact@v4" in workflow

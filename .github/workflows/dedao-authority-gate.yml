@@ -1,0 +1,105 @@
+name: Dedao Authority Gate
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 22 * * *"
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  dedao-authority-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check Dedao authority gate secrets
+        id: dedao-config
+        env:
+          DEDAO_KBASE_BASE_URL: ${{ secrets.DEDAO_KBASE_BASE_URL }}
+          DEDAO_KBASE_TOKEN: ${{ secrets.DEDAO_KBASE_TOKEN }}
+        run: |
+          if [ -n "$DEDAO_KBASE_BASE_URL" ] && [ -n "$DEDAO_KBASE_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Skipping Dedao authority gate because DEDAO_KBASE_BASE_URL or DEDAO_KBASE_TOKEN is not configured."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Restore previous Dedao authority gate artifact
+        if: steps.dedao-config.outputs.enabled == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: artifacts/previous-dedao-authority-gate.json
+          key: dedao-authority-gate-scheduled-${{ github.run_id }}
+          restore-keys: |
+            dedao-authority-gate-scheduled-
+
+      - name: Run Dedao authority pull gate
+        if: steps.dedao-config.outputs.enabled == 'true'
+        env:
+          DEDAO_KBASE_BASE_URL: ${{ secrets.DEDAO_KBASE_BASE_URL }}
+          DEDAO_KBASE_TOKEN: ${{ secrets.DEDAO_KBASE_TOKEN }}
+          TZ: Asia/Shanghai
+        run: |
+          mkdir -p artifacts
+          previous_args=()
+          if [ -s artifacts/previous-dedao-authority-gate.json ]; then
+            previous_args=(--previous-artifact artifacts/previous-dedao-authority-gate.json)
+          fi
+          python scripts/dedao_authority_pull_report.py --gate "${previous_args[@]}" --redacted-output artifacts/dedao-authority-gate.json
+          cp artifacts/dedao-authority-gate.json artifacts/previous-dedao-authority-gate.json
+
+      - name: Write Dedao authority gate summary
+        if: always() && steps.dedao-config.outputs.enabled == 'true' && hashFiles('artifacts/dedao-authority-gate.json') != ''
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path("artifacts/dedao-authority-gate.json").read_text(encoding="utf-8"))
+          counts = payload.get("counts", {})
+          actions = payload.get("recommended_actions") or []
+          lines = [
+              "## Dedao authority gate",
+              "",
+              f"- status: `{payload.get('status', '-')}`",
+              f"- source_unchanged: `{payload.get('source_unchanged')}`",
+              f"- reasons: `{', '.join(payload.get('reasons') or []) or '-'}`",
+              f"- accepted_for_review: `{counts.get('accepted_for_review', 0)}`",
+              f"- blocked: `{counts.get('blocked', 0)}`",
+              f"- invalid: `{counts.get('invalid', 0)}`",
+              "",
+              "### recommended_actions",
+          ]
+          if actions:
+              for action in actions:
+                  lines.append(
+                      f"- `{action.get('priority', '-')}` `{action.get('action', '-')}`: {action.get('reason', '-')}"
+                  )
+          else:
+              lines.append("- `info` `none`: -")
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+
+      - name: Upload Dedao authority gate artifact
+        if: always() && steps.dedao-config.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dedao-authority-gate
+          path: artifacts/dedao-authority-gate.json
+
+      - name: Save Dedao authority gate artifact for next run
+        if: always() && steps.dedao-config.outputs.enabled == 'true' && hashFiles('artifacts/dedao-authority-gate.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: artifacts/previous-dedao-authority-gate.json
+          key: dedao-authority-gate-scheduled-${{ github.run_id }}
