@@ -24,7 +24,7 @@ export default {
     'pages/water/index',         // 饮水记录
     'pages/weight/index',        // 体重记录
     'pages/privacy/index',       // 隐私保护指引
-    'pages/chat/index',            // AI 对话（阿衡 Agent）
+    'pages/chat/index',            // AI 对话（小巴 Agent）
     'pages/ai-insights/index',     // AI 健康洞察（测试）
     'pages/mood/index',             // 情绪追踪
     'pages/health-report/index',    // 健康报告

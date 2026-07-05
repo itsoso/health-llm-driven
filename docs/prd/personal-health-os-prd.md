@@ -35,7 +35,7 @@ GPT Pro 的战略方向(Personal Health OS / Digital Health Twin / 主动干预�
 
 ### 1.2 GPT Pro 说错的(我的修正)
 
-- **social / 好友 / 私信 / 群聊 / PK:仓库里不存在。** 只有 AI agent 对话("阿衡")。→ "砍社交"是伪命题。
+- **social / 好友 / 私信 / 群聊 / PK:仓库里不存在。** 只有 AI agent 对话("小巴")。→ "砍社交"是伪命题。
 - **儿童模式:不存在。** 只有 vision.py 里一句"儿童游戏"文案。→ "砍儿童模式"是伪命题。
 - 基因 / 表观遗传**已存在且已加密**(`EncryptedString`),GPT Pro 把它定位成"背景层"是对的。
 

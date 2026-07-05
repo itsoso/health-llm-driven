@@ -370,7 +370,7 @@ app/_layout.tsx (root)
 ├── (tabs)/  — 3 tab
 │   ├── index.tsx     — 今日 dashboard
 │   ├── record.tsx    — 健康记录 (VitalsGrid + ActivityRings + Sparklines + ...)
-│   └── chat.tsx      — 阿衡健康参谋文字对话; header 提供历史 ConversationSheet / 语音 / 新建 / 删除
+│   └── chat.tsx      — 小巴健康参谋文字对话; header 提供历史 ConversationSheet / 语音 / 新建 / 删除
 │
 └── modal / stack pages — 40+
     ├── voice-chat.tsx (带 ?conversation_id=X 历史恢复)

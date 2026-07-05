@@ -1,5 +1,5 @@
 /**
- * 健康问答对话页面 - 阿衡 Agent
+ * 健康问答对话页面 - 小巴 Agent
  */
 import { View, Text, Input, ScrollView } from '@tarojs/components';
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -423,7 +423,7 @@ export default function Chat() {
           <Text className="header-icon">{showHistory ? '✕' : '☰'}</Text>
         </View>
         <View className="header-center">
-          <Text className="header-title">阿衡</Text>
+          <Text className="header-title">小巴</Text>
         </View>
         <View className="header-right" onClick={handleNewChat}>
           <Text className="header-icon">+</Text>
@@ -523,7 +523,7 @@ export default function Chat() {
             <View className="welcome-icon-wrap">
               <Text className="welcome-icon">🐾</Text>
             </View>
-            <Text className="welcome-title">阿衡健康参谋</Text>
+            <Text className="welcome-title">小巴健康参谋</Text>
             <Text className="welcome-desc">
               通过你的健康数据和安全规则，提供个性化的日常健康建议
             </Text>
