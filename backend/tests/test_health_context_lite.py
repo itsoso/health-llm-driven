@@ -121,10 +121,13 @@ class TestHealthContextLite:
 
     def test_cache_hit(self, db, test_user, test_profile):
         """5 分钟内第二次调用返回缓存"""
-        from app.services.health_context_lite_service import build_lite_health_context, _context_cache
+        from app.services.health_context_lite_service import (
+            build_lite_health_context, _context_cache, INJECTION_FULL,
+        )
 
         ctx1 = build_lite_health_context(db, test_user.id)
-        assert test_user.id in _context_cache
+        # cache key = (user_id, budget); 不传 intent → FULL 档
+        assert (test_user.id, INJECTION_FULL) in _context_cache
 
         # 修改用户名（但不应反映在缓存结果中）
         test_user.name = "李四"

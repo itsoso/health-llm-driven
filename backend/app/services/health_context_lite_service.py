@@ -8,6 +8,7 @@
 - 任何失败优雅降级，不影响对话
 """
 import logging
+import re
 import time
 from datetime import date, timedelta
 from typing import Optional
@@ -18,8 +19,53 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 # ── 内存缓存 ──────────────────────────────────────────
-_context_cache: dict[int, tuple[float, str]] = {}  # user_id -> (timestamp, context_str)
+# key = (user_id, budget) —— 不同注入档输出不同, 分开缓存, 避免 MINIMAL/FULL 互相污染。
+_context_cache: dict[tuple[int, str], tuple[float, str]] = {}
 _CACHE_TTL = 300  # 5 分钟
+
+# ── 注入档 (P2 意图分级) ────────────────────────────────
+# FULL:    维持现状全量注入 (个人判读意图 / 默认)。
+# MINIMAL: 纯知识题 —— 保留基础画像 (年龄/性别/慢病标签/用药/过敏/目标/基因静态标签),
+#          裁掉一切具体时序数值 (今日读数、7 日趋势、恢复就绪、病症天数、饮水/饮食、
+#          运动、预警、打卡、补剂服用状态、周计划、记忆), 避免污染通用知识回答。
+INJECTION_FULL = "full"
+INJECTION_MINIMAL = "minimal"
+
+# 纯知识题标志: 问定义 / 机制 / 分期 / 通用剂量 / 科普。命中 → MINIMAL 候选。
+_KNOWLEDGE_MARKERS = re.compile(
+    r"什么是|是什么|啥是|定义|概念|机制|原理|为什么会|怎么形成|分几期|分几级|"
+    r"分期|分级|分类|有哪些|区别是|区别在|科普|介绍一下|讲讲|讲一下|解释|"
+    r"一般|通常|正常范围|正常值|标准是|指南|循证|"
+    r"what is|what are|definition|mechanism|how does|stages of|difference between",
+    re.IGNORECASE,
+)
+
+# 个人判读标志: 一旦命中, 说明用户在问自己的情况 → 强制回退 FULL (fail-open 给足上下文)。
+# 覆盖第一/第二人称健康诉求、求助、适配性提问。保守宽松, 宁可多判 FULL。
+_PERSONAL_MARKERS = re.compile(
+    r"我的|我该|我要|我想|帮我|给我|我现在|我这|我最近|我今天|我能不能|我能否|"
+    r"我可以|我适合|适合我|适不适合|我需要|我是不是|我有没有|我会不会|"
+    r"怎么办|怎么调|如何改善|该不该|要不要吃|能不能吃|停不停|"
+    r"my |should i|can i|for me|do i need|am i",
+    re.IGNORECASE,
+)
+
+
+def classify_injection_budget(query: Optional[str]) -> str:
+    """判定该 query 的个人上下文注入档。
+
+    保守 fail-open: 只有当 query **明确是纯知识题** (命中知识标志) 且
+    **不含任何个人判读诉求** (未命中个人标志) 时才降级 MINIMAL;
+    任何拿不准 → FULL (宁可多给不可漏给, 安全相关上下文绝不因误判被削)。
+    """
+    q = (query or "").strip()
+    if not q:
+        return INJECTION_FULL
+    if _PERSONAL_MARKERS.search(q):
+        return INJECTION_FULL
+    if _KNOWLEDGE_MARKERS.search(q):
+        return INJECTION_MINIMAL
+    return INJECTION_FULL
 
 # ── 系统规则 + Skill 路由表（注入到 system message） ─────
 AGENT_HEALTH_SYSTEM_RULES = """你是用户的 AI 健康助理，能通过 Skills 查询数据、记录健康信息和执行分析。
@@ -80,23 +126,33 @@ def _get_time_period() -> tuple[str, str]:
     return now.strftime("%H:%M"), period
 
 
-def build_lite_health_context(db: Session, user_id: int) -> Optional[str]:
-    """构建健康上下文（~800-1200 tokens）"""
-    cached = _context_cache.get(user_id)
+def build_lite_health_context(
+    db: Session, user_id: int, intent: Optional[str] = None
+) -> Optional[str]:
+    """构建健康上下文（~800-1200 tokens）。
+
+    intent=None (默认): 全量注入, 行为逐字节等同旧实现 (零回归)。
+    intent 为纯知识意图字符串 (见 classify_injection_budget): 降级 MINIMAL,
+    只留基础画像, 裁掉具体时序数值。判据保守 fail-open —— 拿不准一律 FULL。
+    """
+    budget = classify_injection_budget(intent) if intent is not None else INJECTION_FULL
+    cache_key = (user_id, budget)
+    cached = _context_cache.get(cache_key)
     if cached and (time.time() - cached[0]) < _CACHE_TTL:
         return cached[1]
 
     try:
-        context = _build_context(db, user_id)
-        _context_cache[user_id] = (time.time(), context)
+        context = _build_context(db, user_id, budget=budget)
+        _context_cache[cache_key] = (time.time(), context)
         return context
     except Exception as e:
         logger.error(f"构建健康上下文失败(user={user_id}): {e}", exc_info=True)
         return None
 
 
-def _build_context(db: Session, user_id: int) -> str:
-    """构建完整上下文"""
+def _build_context(db: Session, user_id: int, budget: str = INJECTION_FULL) -> str:
+    """构建完整上下文。budget=MINIMAL 时裁掉所有具体时序数值段, 只留基础画像。"""
+    minimal = budget == INJECTION_MINIMAL
     from app.models.user import User
     from app.models.user_profile import UserProfile
     from app.models.daily_health import GarminData, WaterIntake, WorkoutRecord, DietRecord
@@ -212,13 +268,21 @@ def _build_context(db: Session, user_id: int) -> str:
             parts.append(" | ".join(diet_info))
 
     # ── 1d. 用户记忆 ────────────────────────────────────
-    try:
-        from app.services.conversation_memory_service import get_relevant_memories
-        memories_str = get_relevant_memories(db, user_id, limit=5)
-        if memories_str:
-            parts.append(memories_str)
-    except Exception:
-        pass
+    if not minimal:
+        try:
+            from app.services.conversation_memory_service import get_relevant_memories
+            memories_str = get_relevant_memories(db, user_id, limit=5)
+            if memories_str:
+                parts.append(memories_str)
+        except Exception:
+            pass
+
+    # ── MINIMAL 短路: 纯知识题只需基础画像 (含上方年龄/性别/身体/慢病/用药/过敏/目标) +
+    # 下方基因静态标签; 具体时序数值 (今日读数/趋势/恢复/病症天数/饮水/饮食/运动/预警/
+    # 打卡/补剂状态/周计划) 全部跳过 —— 避免污染通用知识回答, 也去掉「没问却翻病历」观感。
+    if minimal:
+        parts.append(_gene_context_section(db, user_id))
+        return "\n".join(p for p in parts if p)
 
     # ── 2. 今日 Garmin 数据 ──────────────────────────────
     latest_garmin = db.query(GarminData).filter(
@@ -573,6 +637,20 @@ def _build_context(db: Session, user_id: int) -> str:
         pass
 
     # ── 13. 基因特征（区分风险/优势/用药安全）────────────────
+    gene_section = _gene_context_section(db, user_id)
+    if gene_section:
+        parts.append(gene_section)
+
+    return "\n".join(parts)
+
+
+def _gene_context_section(db: Session, user_id: int) -> str:
+    """基因静态标签段 (用药安全/风险/待确认/优势)。
+
+    这是静态风险描述, 与今日读数无关, 且用药安全基因是安全相关字段 —— 因此
+    MINIMAL 与 FULL 两档都注入。任何异常 fail-soft 返回空串, 绝不打死主链路。
+    返回 "" 表示无可展示基因。
+    """
     try:
         from app.models.genetic_data import GeneticVariant
         from app.services.genetic_report import _resolve_active_profile
@@ -648,8 +726,7 @@ def _build_context(db: Session, user_id: int) -> str:
             if protective_genes:
                 gene_parts.append(f"优势基因: {' | '.join(protective_genes)}")
             if gene_parts:
-                parts.append("基因特征:\n" + "\n".join(gene_parts))
+                return "基因特征:\n" + "\n".join(gene_parts)
     except Exception:
         pass
-
-    return "\n".join(parts)
+    return ""
