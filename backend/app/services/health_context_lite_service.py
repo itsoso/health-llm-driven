@@ -314,6 +314,19 @@ def _build_context(db: Session, user_id: int) -> str:
             if changes:
                 parts.append(f"趋势: {', '.join(changes)}")
 
+    # ── 3b. 可穿戴 7 日紧凑摘要 ───────────────────────────
+    try:
+        from app.services.health_context_summary import (
+            build_wearable_context_summary,
+            format_wearable_context_summary_for_prompt,
+        )
+
+        wearable_summary = build_wearable_context_summary(db, user_id, days=7)
+        if wearable_summary:
+            parts.append(format_wearable_context_summary_for_prompt(wearable_summary))
+    except Exception as e:
+        logger.warning(f"构建可穿戴 7 日摘要失败(user={user_id}): {e}")
+
     # ── 4. 恢复就绪度 ─────────────────────────────────
     if latest_garmin:
         g = latest_garmin

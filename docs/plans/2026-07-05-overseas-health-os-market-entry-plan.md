@@ -338,6 +338,8 @@
 
 ### Task 4: Wearable Context Summary
 
+**Status:** DONE,Slice A DONE。已新增 `health_context_summary` 结构化 7 日可穿戴摘要,并接入 Agent 轻量健康上下文与饮食记录后的下一餐建议。摘要只传 sleep/HRV/RHR/activity 的聚合状态、恢复态和隐私边界;无数据时输出 `data_gap`。剩余:把 Apple Health 授权/同步状态前端化,并在 UI 卡片显式展示数据来源和置信度。
+
 **Files:**
 
 - Modify: `backend/app/twin/builder.py`

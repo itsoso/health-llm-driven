@@ -42,6 +42,9 @@ class PersonalContextPack:
     target_water_ml: Optional[int] = None
     weight_kg: Optional[float] = None
     protein_target_g: int = 80
+    wearable_recovery_state: Optional[str] = None
+    wearable_meal_biases: list[str] = field(default_factory=list)
+    wearable_summary: Optional[str] = None
 
     def has_condition(self, *keywords: str) -> bool:
         text = " ".join(self.conditions)
@@ -188,6 +191,9 @@ def extract_personal_context_pack(
     target_water_ml = _extract_target_water(personal_context)
     primary_goal: Optional[str] = None
     weight_kg: Optional[float] = None
+    wearable_recovery_state: Optional[str] = None
+    wearable_meal_biases: list[str] = []
+    wearable_summary: Optional[str] = None
 
     if db is not None and user_id is not None:
         try:
@@ -207,6 +213,21 @@ def extract_personal_context_pack(
                 user_id,
                 exc,
             )
+        try:
+            from app.services.health_context_summary import build_wearable_context_summary
+
+            summary = build_wearable_context_summary(db, user_id, days=7)
+            meal_context = summary.get("meal_guidance_context") if isinstance(summary, dict) else None
+            if isinstance(meal_context, dict) and summary.get("status") == "present":
+                wearable_recovery_state = str(meal_context.get("recovery_state") or "") or None
+                wearable_meal_biases = _clean_items(list(meal_context.get("meal_advice_bias") or []))
+                wearable_summary = str(meal_context.get("summary") or "").strip() or None
+        except Exception as exc:
+            logger.warning(
+                "[post_record_quality] wearable context lookup failed user_id=%s error=%s",
+                user_id,
+                exc,
+            )
 
     return PersonalContextPack(
         conditions=_clean_items(conditions),
@@ -216,6 +237,9 @@ def extract_personal_context_pack(
         target_water_ml=target_water_ml,
         weight_kg=weight_kg,
         protein_target_g=_protein_target_from_weight(weight_kg),
+        wearable_recovery_state=wearable_recovery_state,
+        wearable_meal_biases=wearable_meal_biases,
+        wearable_summary=wearable_summary,
     )
 
 
@@ -333,6 +357,20 @@ def _diet_headline_sentence(meal: str, record_data: dict) -> str:
 
 def _diet_next_action(record_data: dict, context: PersonalContextPack, totals: Optional[DietDayTotals]) -> str:
     protein = _number_or_none(record_data.get("protein"))
+    if context.wearable_recovery_state == "strained":
+        if totals and totals.remaining_protein_g > 0:
+            amount = min(40, max(25, totals.remaining_protein_g))
+            if context.has_condition("胃溃疡", "胃炎", "胃病", "反流", "GERD"):
+                return f"恢复状态偏紧，下一餐补约 {amount:.0f}g 蛋白，选温热少刺激，别用大热量缺口硬扛。"
+            return f"恢复状态偏紧，下一餐补约 {amount:.0f}g 蛋白和水分，避免高油高糖与过晚进食。"
+        if context.has_condition("胃溃疡", "胃炎", "胃病", "反流", "GERD"):
+            return "恢复状态偏紧，下一餐选温热少刺激、足蛋白但别太撑。"
+        return "恢复状态偏紧，下一餐选易消化蛋白、熟蔬菜和水分，不建议继续制造大热量缺口。"
+    if context.wearable_recovery_state == "recovered":
+        if totals and totals.remaining_protein_g > 0:
+            amount = min(45, max(25, totals.remaining_protein_g))
+            return f"恢复状态不错，下一餐按计划补约 {amount:.0f}g 蛋白，配蔬菜和适量主食。"
+        return "恢复状态不错，下一餐保持一份蛋白、两拳蔬菜和适量主食。"
     if totals and totals.remaining_protein_g > 0:
         amount = min(45, max(25, totals.remaining_protein_g))
         if context.has_condition("胃溃疡", "胃炎", "胃病", "反流", "GERD"):
@@ -408,10 +446,20 @@ def _diet_next_meal_detail(
 ) -> dict[str, Any]:
     protein = _number_or_none(record_data.get("protein"))
     remaining = totals.remaining_protein_g if totals else None
-    if context.has_condition("胃溃疡", "胃炎", "胃病", "反流", "GERD"):
+    if context.wearable_recovery_state == "strained":
+        options = [
+            "温热鱼/鸡蛋/豆腐 + 熟蔬菜 + 少量主食，先稳住恢复。",
+            "低油鸡胸/瘦肉粥 + 青菜 + 温水，避免夜间高糖高油。",
+        ]
+    elif context.has_condition("胃溃疡", "胃炎", "胃病", "反流", "GERD"):
         options = [
             "温热鱼/豆腐 + 熟蔬菜 + 少量米饭，少油少辣。",
             "鸡胸/鸡蛋 + 南瓜或土豆 + 绿叶菜，饮品选温水。",
+        ]
+    elif context.wearable_recovery_state == "recovered":
+        options = [
+            "鱼/鸡胸/瘦牛肉 150-200g + 熟蔬菜 + 适量主食。",
+            "豆腐/鸡蛋 + 深色蔬菜 + 米饭或土豆，按训练日结构补足。",
         ]
     elif remaining and remaining >= 35:
         options = [
@@ -429,6 +477,8 @@ def _diet_next_meal_detail(
             "晚些如果饿，优先无糖酸奶/鸡蛋/豆腐，避免高糖零食。",
         ]
     rationale: list[str] = []
+    if context.wearable_summary:
+        rationale.append(f"恢复状态依据: {context.wearable_summary}")
     if totals:
         rationale.append(
             f"今日已记录 {totals.meals_count} 餐，蛋白 {totals.protein:.0f}/{totals.protein_target_g}g，"
