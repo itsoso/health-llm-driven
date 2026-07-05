@@ -29,7 +29,7 @@ Status: draft for the next App Store submission.
 
 小巴，你忠实的健康参谋——面向长期健康管理的个人健康操作系统。它把你授权同步的 Apple Health / HealthKit 数据、Apple Watch 记录、体检报告、饮食运动记录、用药和补剂信息组织成可复盘的健康时间线，并通过 AI 帮你生成日常行动建议。
 
-你可以在“今日”看到当前最重要的健康行动，在“小巴”里用对话追问和执行记录，在“记录”里快速记录饮水、饮食、运动、体重、血压、症状、用药和补剂，在“我”里管理数据来源、健康档案、提醒、安全与隐私。
+打开即进入小巴。小巴对话是主入口,你可以从对话里的今日简报看到当前最重要的健康行动,通过输入栏和快捷入口完成记录,并从更多菜单进入个人中心管理数据来源、健康档案、提醒、安全与隐私。
 
 核心能力:
 
@@ -50,7 +50,7 @@ Status: draft for the next App Store submission.
 
 ### What's New
 
-本版本重构了移动端核心动线: 今日、小巴、记录、我。新增 App 内账号与数据删除请求入口，更新隐私政策说明，并优化 HealthKit、体检导入、快速记录和复盘入口。
+本版本重构了移动端核心动线: 打开即进入小巴,今日简报、记录和个人中心都从对话内进入。新增 App 内账号与数据删除请求入口，更新隐私政策说明，并优化 HealthKit、体检导入、快速记录和复盘入口。
 
 ## Review Notes
 
@@ -102,10 +102,10 @@ Use `docs/release/app-store/privacy-nutrition-label.draft.json` as the working s
 
 Use `docs/release/app-store/screenshot-runbook.md`. Required first pass:
 
-1. Today: next best health action.
+1. Xiaoba: open directly into 小巴, with today briefing and suggested next action visible.
 2. Chat: AI conversation with dynamic UI card.
-3. Record: fast food/water/workout recording.
-4. Me: data connections and health profile.
+3. Record: fast food/water/workout recording opened from the conversation entry points.
+4. Profile: personal center / data connections and health profile.
 5. Privacy: account deletion path.
 
 Candidate screenshot sets are not App Store-ready unless `manifest.json` marks them as `demo` or `sanitized` and the PNGs match accepted 6.9-inch portrait dimensions.

@@ -3,10 +3,11 @@ import {
   getMainTabBarPresentation,
   getMainTabLabels,
   getMainTabRouteNames,
+  unstable_settings,
 } from '../_layout';
 
-describe('main tab labels', () => {
-  it('uses Xiaoba as the assistant tab instead of private coach wording', () => {
+describe('agent-native mobile shell', () => {
+  it('uses Xiaoba as the single primary entry instead of private coach wording', () => {
     expect(getMainTabLabels()).toEqual(['今日', '小巴', '记录', '我']);
     expect(getMainTabLabels()).not.toContain('私教');
   });
@@ -22,17 +23,25 @@ describe('main tab labels', () => {
     expect(getMainTabRouteNames()).toContain('chat');
   });
 
-  it('keeps the custom tab bar docked in layout flow instead of covering page content', () => {
+  it('pins chat as the cold-start entry for the agent-native shell', () => {
+    expect(unstable_settings.initialRouteName).toBe('chat');
+  });
+
+  it('keeps the bottom tab bar hidden and out of layout flow', () => {
     expect(getMainTabBarPresentation()).toEqual({
-      layout: 'docked',
+      layout: 'hidden',
       overlaysContent: false,
+      visible: false,
+      primaryEntry: 'chat',
     });
   });
 
-  it('keeps the four global tabs visible on the assistant surface', () => {
+  it('keeps legacy tab segments reachable without making them visible global tabs', () => {
     expect(getMainTabBarPresentation('chat')).toEqual({
-      layout: 'docked',
+      layout: 'hidden',
       overlaysContent: false,
+      visible: false,
+      primaryEntry: 'chat',
     });
   });
 });

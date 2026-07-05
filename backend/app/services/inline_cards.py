@@ -343,6 +343,10 @@ def _diet_draft_route(data: Dict[str, Any]) -> str:
 
 def _medication_draft_actions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     name = data.get("medication_name") if isinstance(data.get("medication_name"), str) else ""
+    params = {"draft": "medication", "name": name}
+    dose = data.get("dose") if isinstance(data.get("dose"), str) else ""
+    if dose:
+        params["dose"] = dose
     prompt = f"请帮我核对{name}的用药记录，不要建议我自行停药、换药或改剂量。" if name else "请帮我核对刚才的用药记录。"
     return [
         {
@@ -350,7 +354,7 @@ def _medication_draft_actions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             "label": "去用药页记录",
             "action": "route.open",
             "payload": {
-                "route": f"/medications?{urlencode({'draft': 'medication', 'name': name})}",
+                "route": f"/medications?{urlencode(params)}",
             },
             "style": "primary",
         },

@@ -30,7 +30,7 @@ def test_extracts_basic_intake_slots():
 
     medication = classify_intake_intent("记录刚吃了奥美拉唑20mg")
     assert medication.kind == "medication"
-    assert medication.text == "奥美拉唑20mg"
+    assert medication.text == "奥美拉唑"
     assert medication.slots["dose"] == "20mg"
 
     diet = classify_intake_intent("记录晚餐吃了牛肉面 680kcal")

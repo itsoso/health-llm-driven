@@ -265,6 +265,19 @@ def test_inline_cards_builds_medication_draft_for_medication_intake():
     ]
 
 
+def test_inline_cards_medication_draft_route_carries_dose_when_present():
+    from app.services import inline_cards
+
+    cards = inline_cards.build_cards(db=None, user_id=3, query="记录刚吃了奥美拉唑20mg")
+
+    assert cards[0]["type"] == "medication_draft"
+    assert cards[0]["data"]["medication_name"] == "奥美拉唑"
+    assert cards[0]["data"]["dose"] == "20mg"
+    assert cards[0]["actions"][0]["payload"]["route"] == (
+        "/medications?draft=medication&name=%E5%A5%A5%E7%BE%8E%E6%8B%89%E5%94%91&dose=20mg"
+    )
+
+
 def test_inline_cards_builds_supplement_draft_for_supplement_intake():
     from app.services import inline_cards
 

@@ -93,8 +93,8 @@ export default function TabLayout() {
   );
 }
 
-// ── Reva 浮动胶囊 Tab Bar ─────────────────────────────────
-// "Liquid Glass" 风: 距边缘内缩, 圆角 = 半高 (真胶囊端), 柔光阴影; 选中态绿色软高亮 + 实心图标.
+// ── 小巴 agent-native shell 路由契约 ───────────────────────
+// 底部 Tab Bar 已移除;这些 route segment 只作为深链/通知/二级页入口保留。
 type MainTabName = 'index' | 'chat' | 'record' | 'me';
 
 type MainTabMeta = {
@@ -151,8 +151,10 @@ export function getMainTabAccessibilityLabels() {
 
 export function getMainTabBarPresentation(name?: MainTabName) {
   return {
-    layout: 'docked',
+    layout: 'hidden',
     overlaysContent: false,
+    visible: false,
+    primaryEntry: 'chat',
   } as const;
 }
 

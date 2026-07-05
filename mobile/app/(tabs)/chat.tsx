@@ -632,8 +632,8 @@ export default function ChatScreen() {
   }, [selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  // Chat tab 保留 docked 全局 tab bar。键盘弹起时直接为键盘留位,
-  // 收起时只保留输入框和 tab bar 之间的轻量分隔。
+  // 小巴是 agent-native 主屏,没有底部 Tab Bar。键盘弹起时直接为键盘留位,
+  // 收起时只保留输入框底部的轻量呼吸空间。
   const bottomSpacerHeight = keyboardVisible
     ? (Platform.OS === 'ios' ? keyboardHeight : 0)
     : CHAT_BOTTOM_BREATHING_SPACE;

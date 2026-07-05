@@ -97,12 +97,13 @@ def classify_intake_intent(query: Any) -> IntakeIntent:
 
     if _looks_like_medication(normalized):
         item = _extract_item_text(raw)
+        slots = _extract_medication_slots(item)
         return IntakeIntent(
             "medication",
             0.9,
             "medication_marker",
-            item,
-            _extract_medication_slots(item),
+            _strip_medication_slot_tokens(item, slots),
+            slots,
         )
 
     if _looks_like_supplement(raw, normalized):
@@ -263,6 +264,15 @@ def _extract_medication_slots(item: str) -> dict[str, Any]:
     if dose:
         slots["dose"] = dose.group(0)
     return slots
+
+
+def _strip_medication_slot_tokens(item: str, slots: dict[str, Any]) -> str:
+    cleaned = item
+    dose = slots.get("dose")
+    if isinstance(dose, str) and dose:
+        cleaned = cleaned.replace(dose, " ")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ：:，,;；。")
+    return cleaned or item
 
 
 def _is_vague_item(value: str) -> bool:

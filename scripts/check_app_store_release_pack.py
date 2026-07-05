@@ -76,7 +76,12 @@ DEMO_CREDENTIAL_LINES = [
 ]
 REVIEW_CONTACT_PHONE_ENV = "APP_STORE_REVIEW_CONTACT_PHONE"
 REVIEW_CONTACT_PHONE_RE = re.compile(r"^\+[1-9]\d{1,14}(?:[\s-]\d+)*$")
-CURRENT_BOTTOM_NAV_TEXT = "今日 / 小巴 / 记录 / 我"
+CURRENT_AGENT_NATIVE_ENTRY_TERMS = [
+    "打开即进入小巴",
+    "今日简报",
+    "记录",
+    "个人中心",
+]
 CURRENT_POSITIONING_TERM = "健康参谋"  # 2026-07-05 定位语终裁:参谋家族("小巴,你忠实的健康参谋")
 STALE_USER_VISIBLE_RELEASE_TERMS = [
     "Reva",
@@ -86,6 +91,8 @@ STALE_USER_VISIBLE_RELEASE_TERMS = [
     "守护神",
     "健康守护者",  # 2026-07-05 定位语终裁回参谋家族;守护者措辞不得再入发布材料
     "私教",
+    "今日 / 小巴 / 记录 / 我",  # 2026-07-05 agent-native shell:不再承诺底部四 Tab
+    "今日、小巴、记录、我",
 ]
 APP_REVIEW_REDLINE_GLOBS = [
     "docs/release/app-store/*.md",
@@ -181,8 +188,9 @@ def validate_release_narrative(
         if term in combined:
             failures.append(f"release text contains stale user-visible term: {term}")
 
-    if CURRENT_BOTTOM_NAV_TEXT not in combined and "今日、小巴、记录、我" not in combined:
-        failures.append(f"release text must use current bottom navigation labels: {CURRENT_BOTTOM_NAV_TEXT}")
+    for required in CURRENT_AGENT_NATIVE_ENTRY_TERMS:
+        if required not in combined:
+            failures.append(f"release text must describe current agent-native entry: {required}")
 
     if CURRENT_POSITIONING_TERM not in combined:
         failures.append(f"release text must include current positioning term: {CURRENT_POSITIONING_TERM}")

@@ -16,11 +16,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import {
-  listMedications, deactivateMedication, restoreMedication, type Medication,
+  listMedications, deactivateMedication, restoreMedication, addMedication, logMedication, type Medication,
 } from '../services/medications';
 import {
   revaColors as C,
@@ -38,8 +38,10 @@ type TabKey = 'active' | 'archived';
 
 export default function MedicationsScreen() {
   const router = useRouter();
+  const routeParams = useLocalSearchParams();
   const qc = useQueryClient();
   const [tab, setTab] = useState<TabKey>('active');
+  const [draftDismissed, setDraftDismissed] = useState(false);
   const toast = useToast();
 
   const activeQuery = useQuery<Medication[]>({
@@ -104,6 +106,37 @@ export default function MedicationsScreen() {
   const refetch = tab === 'active' ? activeQuery.refetch : allQuery.refetch;
   const today = new Date().toISOString().split('T')[0];
   const activeMedications = activeQuery.data || [];
+  const medicationDraft = useMemo(() => parseMedicationDraftParams(routeParams), [routeParams]);
+
+  const confirmDraftMut = useMutation({
+    mutationFn: async () => {
+      if (!medicationDraft) throw new Error('missing_medication_draft');
+      const existing = activeMedications.find((med) => sameMedicationName(med.name, medicationDraft.name));
+      const medication = existing ?? await addMedication({
+        name: medicationDraft.name,
+        dosage: medicationDraft.dose,
+        notes: '来自小巴用药草稿, 由用户确认后写入。',
+      });
+      await logMedication({
+        medication_id: medication.id,
+        taken_time: currentTimeLabel(),
+        status: 'taken',
+        actual_dosage: medicationDraft.dose,
+        notes: '小巴用药草稿确认记录。',
+      });
+      return medication;
+    },
+    onSuccess: (medication) => {
+      setDraftDismissed(true);
+      setTab('active');
+      qc.invalidateQueries({ queryKey: ['medications'] });
+      qc.invalidateQueries({ queryKey: ['medicationToday'] });
+      toast.show(`已记录 ${medication.name}`, 'success');
+    },
+    onError: () => {
+      Alert.alert('记录失败', '用药草稿没有保存成功, 请核对后重试。');
+    },
+  });
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -141,6 +174,44 @@ export default function MedicationsScreen() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => { refetch(); }} tintColor={C.green500} />}
       >
+        {medicationDraft && !draftDismissed && (
+          <View style={styles.draftCard}>
+            <View style={styles.draftHeader}>
+              <View style={styles.draftIcon}>
+                <Ionicons name="sparkles-outline" size={18} color={C.green500} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={txt.draftTitle}>小巴识别到用药草稿</Text>
+                <Text style={txt.draftHint}>确认后添加到用药清单, 并记录一次已服用。</Text>
+              </View>
+            </View>
+            <Text style={txt.draftName}>{medicationDraft.name}</Text>
+            {medicationDraft.dose ? <Text style={txt.draftDose}>{medicationDraft.dose}</Text> : null}
+            <View style={styles.draftActions}>
+              <TouchableOpacity
+                style={[styles.draftPrimary, confirmDraftMut.isPending && styles.draftDisabled]}
+                disabled={confirmDraftMut.isPending}
+                onPress={() => confirmDraftMut.mutate()}
+                accessibilityRole="button"
+                accessibilityLabel="确认记录用药"
+              >
+                <Ionicons name="checkmark" size={16} color="#fff" />
+                <Text style={txt.draftPrimary}>
+                  {confirmDraftMut.isPending ? '记录中' : '确认记录用药'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.draftSecondary}
+                onPress={() => setDraftDismissed(true)}
+                accessibilityRole="button"
+                accessibilityLabel="稍后处理用药草稿"
+              >
+                <Text style={txt.draftSecondary}>稍后处理</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={txt.draftBoundary}>不替代医嘱, 不自动调整剂量。</Text>
+          </View>
+        )}
         {activeMedications.length > 0 && (
           <AgentFeedbackLink
             label="跟小巴整理用药问题"
@@ -185,6 +256,42 @@ export default function MedicationsScreen() {
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+type MedicationDraftRouteParams = ReturnType<typeof useLocalSearchParams>;
+
+function parseMedicationDraftParams(params: MedicationDraftRouteParams) {
+  const draft = readParam(params.draft);
+  const name = readParam(params.name);
+  if (draft !== 'medication' || !name) return null;
+  return {
+    name,
+    dose: readParam(params.dose),
+  };
+}
+
+function readParam(value: unknown): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  try {
+    return decodeURIComponent(trimmed).trim() || undefined;
+  } catch {
+    return trimmed;
+  }
+}
+
+function sameMedicationName(left: string | null | undefined, right: string) {
+  const normalize = (value: string | null | undefined) => (value || '').replace(/\s+/g, '').toLowerCase();
+  return normalize(left) === normalize(right);
+}
+
+function currentTimeLabel() {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
 }
 
 function MedicationRow({
@@ -260,6 +367,45 @@ const styles = StyleSheet.create({
   center: { paddingTop: 80, alignItems: 'center' },
   empty: { paddingTop: 80, alignItems: 'center', paddingHorizontal: revaSpacing.s4 },
   list: { gap: revaSpacing.s2, paddingTop: revaSpacing.s2 },
+  draftCard: {
+    backgroundColor: C.surface,
+    borderRadius: revaRadii.lg,
+    padding: revaSpacing.s3,
+    marginBottom: revaSpacing.s3,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    ...revaShadows.sm,
+  },
+  draftHeader: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2 },
+  draftIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green50,
+  },
+  draftActions: { flexDirection: 'row', gap: revaSpacing.s2, marginTop: revaSpacing.s3 },
+  draftPrimary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    flex: 1,
+    borderRadius: revaRadii.pill,
+    paddingVertical: 10,
+    backgroundColor: C.green500,
+  },
+  draftDisabled: { opacity: 0.55 },
+  draftSecondary: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: revaRadii.pill,
+    paddingHorizontal: revaSpacing.s3,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    backgroundColor: C.paper2,
+  },
   row: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: C.surface, borderRadius: revaRadii.md,
@@ -278,4 +424,11 @@ const txt = {
   medName: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '600', color: C.ink1 } as TextStyle,
   medMeta: { fontFamily: revaFonts.mono, fontSize: 12, color: C.ink2, marginTop: 2 } as TextStyle,
   medPurpose: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,
+  draftTitle: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '800', color: C.ink1 } as TextStyle,
+  draftHint: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, color: C.ink2, marginTop: 2 } as TextStyle,
+  draftName: { fontFamily: revaFonts.sans, fontSize: 18, lineHeight: 24, fontWeight: '800', color: C.ink1, marginTop: revaSpacing.s3 } as TextStyle,
+  draftDose: { fontFamily: revaFonts.mono, fontSize: 13, fontWeight: '700', color: C.green700, marginTop: 4 } as TextStyle,
+  draftPrimary: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '800', color: '#fff' } as TextStyle,
+  draftSecondary: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '700', color: C.ink2 } as TextStyle,
+  draftBoundary: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, color: C.ink3, marginTop: revaSpacing.s2 } as TextStyle,
 };
