@@ -59,14 +59,21 @@ python -m evals.comparative.run_xiaoba --only state_supplement_interaction --no-
 - 长回合下 `/agent/send` 返回保活流式 JSON(前导空白 + 末尾完整对象);流开始后的
   失败在 `body.error`,poster 会 fail-loud 抛出记进 transcript 的 `error` 字段。
 
-### 1b. context pack(喂 chatgpt_context 臂)
+### 1b. context pack(喂 chatgpt_context 臂)+ facts 清单(喂 judge)
 
 ```bash
-python -m evals.comparative.export_context_pack --out evals/comparative/out/context_pack.md
+python -m evals.comparative.export_context_pack \
+    --out evals/comparative/out/context_pack.md \
+    --facts-out evals/comparative/out/facts.md
 ```
 
 - 拉 `GET /twin/me?fresh=true`,优先复用 backend 的 `twin_to_prompt_blob`(与线上 prompt 一致);
   schema 漂移则回退手工分区格式化(stderr 会告警,不静默)。
+- `--facts-out` 生成评审用「用户真实数据事实清单」(3c 的 `judge --facts` 消费):
+  twin 扁平清单 + **医疗检查记录**(`/medical-exams/me`,如胃镜「胃窦溃疡 A1期」)+
+  **用药疗程投影**(`/medication-course/upcoming`,疗程结束日是系统注入 prompt 的派生数据)。
+  这两个类目缺失时 judge 会把带数据臂的合法引用误标 `fabrication`。
+  头部自带评审须知(未覆盖类目不扣分 / 键名英文 vs 中文措辞语义等同)。
 
 ### 1c. 商用模型两臂
 
@@ -141,8 +148,13 @@ python -m evals.comparative.blind_pack \
 python -m evals.comparative.judge \
     --blind evals/comparative/out/blind.jsonl \
     --key evals/comparative/out/answer_key.json \
+    --facts evals/comparative/out/facts.md \
     --judge-model <不参赛的模型> --out evals/comparative/out/scores.jsonl
 ```
+
+> **`--facts` 强烈建议带上**(1b 生成):不带则退回严格模式 —— 任何题面外数值都算编造,
+> 会冤枉合法引用用户真实数据的臂(实测案例:胃镜 A1期 / 疗程结束日 / 睡眠评分 42 全被误标)。
+> 清单对所有臂同样适用,不泄露产品身份,不破坏盲评。
 
 > **multi_turn 判分面**:有 `turns` 的记录,judge 收到的是显式分轮对话
 > (`[第N轮 用户]` / `[第N轮 回答]`,含追问的问题文本),不是 "---" 拼接的扁平 answer ——
@@ -248,5 +260,5 @@ TOKENPLAN_API_KEY="<judge 走 tokenplan 的 key>" \
 
 - 题库本身无"记录/写库"意图;`run_xiaoba` 跑完抓 twin 计数做写库 sanity,变化即 stderr 告警。
 - token/key 全部经 env(`REVA_EVAL_TOKEN` / `OPENAI_API_KEY` / `TOKENPLAN_API_KEY`),代码不硬编码、不打印、不写进任何产物文件。
-- `context_pack.md` / `facts.md` 含个人健康数据 —— 产物默认写到 `out/`,**不要提交**(评测本地跑完即用即弃)。
+- `context_pack.md` / `facts.md` 含个人健康数据(含检查报告原文)—— 产物默认写到 `out/`,**不要提交**(评测本地跑完即用即弃)。
 - `history.jsonl`(§4 cadence 的留档时序)只含**聚合家族分**(无 PII、无回答原文),可安全提交入库以跨周追漂移。
