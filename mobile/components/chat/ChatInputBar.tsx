@@ -1,4 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View, TextInput, TouchableOpacity, StyleSheet, Text,
   Modal, Pressable, ActivityIndicator, TextStyle, ScrollView,
@@ -76,6 +77,8 @@ function PulsingRing() {
   return <ReAnimated.View style={[styles.pulsingRing, animStyle]} />;
 }
 
+const COMPOSER_MODE_KEY = 'chat_composer_mode_v1';
+
 interface Props {
   onSend: (text: string, images?: PendingImage[] | null, options?: ChatInputSendOptions) => void;
   isStreaming: boolean;
@@ -96,6 +99,17 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const [showMedicalImportMenu, setShowMedicalImportMenu] = useState(false);
   const [medicalImportBusy, setMedicalImportBusy] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
+  // 微信语义: 键盘⇄语音是被记住的偏好(中国用户肌肉记忆 — DeepSeek/阿福同款)。
+  // 只有显式切换才持久化; 转写落地后的瞬时回切不覆写偏好。
+  const voiceModeRef = useRef(false);
+  voiceModeRef.current = voiceMode;
+  React.useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(COMPOSER_MODE_KEY)
+      .then((v) => { if (!cancelled && v === 'voice') setVoiceMode(true); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [agentMode, setAgentMode] = useState<ChatAgentMode>('daily');
   const [cancelHint, setCancelHint] = useState(false);
   const [justSent, setJustSent] = useState(false);  // 刚发送, 按钮停留 1s 避免误切 mic
@@ -115,7 +129,10 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   React.useEffect(() => {
     if (!autoFocusToken) return;
     if (isStreaming || voiceMode) return;
-    const t = setTimeout(() => textInputRef.current?.focus(), 380);
+    const t = setTimeout(() => {
+      // 竞态防护: 挂载时异步恢复的语音偏好可能晚于 token — 触发时再确认一次
+      if (!voiceModeRef.current) textInputRef.current?.focus();
+    }, 380);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoFocusToken]);
@@ -191,11 +208,13 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const startVoiceInput = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setVoiceMode(true);
+    AsyncStorage.setItem(COMPOSER_MODE_KEY, 'voice').catch(() => {});
   }, []);
 
   const stopVoiceInput = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setVoiceMode(false);
+    AsyncStorage.setItem(COMPOSER_MODE_KEY, 'keyboard').catch(() => {});
   }, []);
 
   const focusTextInput = useCallback(() => {

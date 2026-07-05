@@ -1,7 +1,16 @@
+const mockStorage: Record<string, string> = {};
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  __esModule: true,
+  default: {
+    getItem: jest.fn((k: string) => Promise.resolve(mockStorage[k] ?? null)),
+    setItem: jest.fn((k: string, v: string) => { mockStorage[k] = v; return Promise.resolve(); }),
+  },
+}));
+
 /* eslint-disable @typescript-eslint/no-require-imports */
 import React from 'react';
 import { StyleSheet } from 'react-native';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, waitFor, act } from '@testing-library/react-native';
 
 import ChatInputBar from '../ChatInputBar';
 import { revaColors } from '../../../constants/revaTheme';
@@ -320,5 +329,26 @@ describe('ChatInputBar', () => {
       });
     });
     expect(onMedicalExamImportResult).toHaveBeenCalledWith(skillResult);
+  });
+});
+
+
+describe('ChatInputBar composer mode persistence (微信语义)', () => {
+  beforeEach(() => { for (const k of Object.keys(mockStorage)) delete mockStorage[k]; });
+
+  it('restores voice mode from storage on mount (语音派用户不被键盘迎面拍)', async () => {
+    mockStorage['chat_composer_mode_v1'] = 'voice';
+    const { findByText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />
+    );
+    expect(await findByText(/按住\s*说话/)).toBeTruthy();
+  });
+
+  it('explicit toggle persists the preference', async () => {
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />
+    );
+    await act(async () => { fireEvent.press(getByLabelText('语音输入')); });
+    expect(mockStorage['chat_composer_mode_v1']).toBe('voice');
   });
 });
