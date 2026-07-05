@@ -306,6 +306,11 @@ LONG_REQUEST_PATHS = {
     "/api/v1/medical-exams/import/image": 300,
     "/api/v1/medical-exams/import/text": 300,
 }
+# /api/v1/orchestrator/chat 刻意不在上面两表里:深分析回合 >ORCH_CHAT_KEEPALIVE_SECONDS
+# 时它自切 chunked keep-alive 流(response start 立即发出,下面的 wait_for 只计到 start),
+# 端点内自带 300s 硬上限兜底(api/orchestrator.py ORCH_CHAT_HARD_CAP_SECONDS)。
+# 别把它加进 LONG_REQUEST_PATHS——非流式整段等待会同时撞 nginx、Siri URLSession
+# (timeoutInterval=25, idle 语义)与浏览器的 idle 超时。
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):

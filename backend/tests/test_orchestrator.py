@@ -403,3 +403,170 @@ class TestOrchestratorAPI:
         assert "findings" in body
         assert "synthesis" in body
         assert "used_specialists" in body
+
+
+# ---------------------------------------------------------------------------
+# /orchestrator/chat 保活流式聚合回归(2026-07-06,与 /agent/send 同款模式)
+# 实锤:Siri HealthAnalysisIntent 走非流式 /orchestrator/chat,URLSession
+# timeoutInterval=25 是 idle 语义 —— 25s 内无字节客户端先断;>60s 再被
+# main.py 请求超时中间件杀成 504。修法:超窗切 chunked JSON(前导空白保活 +
+# 末尾完整对象)。测试把时间尺度压缩:中间件 1s + 回合 2.5s,修复前必 504、
+# 修复后 200。缓存显式打成 no-op:本地 Redis 命中会跳过流式路径造成假绿/假红。
+# ---------------------------------------------------------------------------
+
+
+def _disable_orch_cache(monkeypatch):
+    from app.api import orchestrator as orch_api
+
+    monkeypatch.setattr(orch_api, "_get_orch_cache", lambda key: None)
+    monkeypatch.setattr(orch_api, "_set_orch_cache", lambda key, data: None)
+
+
+def _fake_response(query: str, synthesis: str):
+    from app.orchestrator.schema import Intent, OrchestratorResponse
+
+    return OrchestratorResponse(
+        query=query,
+        intent=Intent(raw_query=query, categories=["knowledge"]),
+        synthesis=synthesis,
+        used_specialists=["knowledge_librarian"],
+        total_ms=2500,
+    )
+
+
+def test_orchestrator_chat_slow_turn_streams_keepalive_not_504(
+    client, db, monkeypatch
+):
+    import asyncio as aio
+    import json as jsonlib
+
+    import main as main_module
+    from app.api import orchestrator as orch_api
+    from tests.conftest import create_authenticated_user
+
+    monkeypatch.setattr(main_module, "REQUEST_TIMEOUT", 1)
+    monkeypatch.setattr(orch_api, "ORCH_CHAT_KEEPALIVE_SECONDS", 0.1)
+    _disable_orch_cache(monkeypatch)
+
+    async def fake_run_orchestrator(db, user_id, req):
+        await aio.sleep(2.5)  # > 中间件 1s:修复前 wait_for 在这里杀成 504
+        return _fake_response(req.query, "深度分析结论")
+
+    monkeypatch.setattr(orch_api, "run_orchestrator", fake_run_orchestrator)
+
+    _, token = create_authenticated_user(db)
+    res = client.post(
+        "/api/v1/orchestrator/chat",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"query": "慢回合保活回归", "stream": False},
+    )
+
+    assert res.status_code == 200, f"长回合不应再 504/500: {res.status_code} {res.text[:200]}"
+    raw = res.text
+    # 确实吐过保活前导空白(证明流式路径生效,而非碰巧快窗完成)
+    assert raw != raw.lstrip(), "长回合应含保活前导空白"
+    assert set(raw[: len(raw) - len(raw.lstrip())]) <= {" ", "\t", "\r", "\n"}
+    # 前导空白后仍是合法完整 JSON(RFC 8259 允许前导 ws → 现有客户端零感知:
+    # Siri JSONSerialization / frontend axios JSON.parse / skill curl+jq)
+    body = jsonlib.loads(raw)
+    assert body["query"] == "慢回合保活回归"
+    assert body["synthesis"] == "深度分析结论"
+    assert body["used_specialists"] == ["knowledge_librarian"]
+    assert "error" not in body
+
+
+def test_orchestrator_chat_error_after_stream_started_yields_error_envelope(
+    client, db, monkeypatch
+):
+    """流开始后(200 已定格)失败 → in-body error 字段 + 空 synthesis(Siri 自然降级)。"""
+    import asyncio as aio
+    import json as jsonlib
+
+    from app.api import orchestrator as orch_api
+    from tests.conftest import create_authenticated_user
+
+    monkeypatch.setattr(orch_api, "ORCH_CHAT_KEEPALIVE_SECONDS", 0.1)
+    _disable_orch_cache(monkeypatch)
+
+    async def fake_run_orchestrator(db, user_id, req):
+        await aio.sleep(0.5)
+        raise RuntimeError("上游 LLM 断连")
+
+    monkeypatch.setattr(orch_api, "run_orchestrator", fake_run_orchestrator)
+
+    _, token = create_authenticated_user(db)
+    res = client.post(
+        "/api/v1/orchestrator/chat",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"query": "流后错误 envelope", "stream": False},
+    )
+
+    assert res.status_code == 200
+    body = jsonlib.loads(res.text)
+    assert isinstance(body.get("error"), str) and body["error"]
+    assert body["synthesis"] == ""
+    assert body["query"] == "流后错误 envelope"
+    # 形状与 OrchestratorResponse 对齐,老消费方按空结果渲染不炸
+    assert body["findings"] == []
+    assert body["intent"]["raw_query"] == "流后错误 envelope"
+
+
+def test_orchestrator_chat_fast_error_keeps_http_500(client, db, monkeypatch):
+    """快窗内失败保持历史语义:HTTP 500 + detail,契约不变。"""
+    from app.api import orchestrator as orch_api
+    from tests.conftest import create_authenticated_user
+
+    _disable_orch_cache(monkeypatch)
+
+    async def fake_run_orchestrator(db, user_id, req):
+        raise RuntimeError("配置错误")
+
+    monkeypatch.setattr(orch_api, "run_orchestrator", fake_run_orchestrator)
+
+    _, token = create_authenticated_user(db)
+    res = client.post(
+        "/api/v1/orchestrator/chat",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"query": "快窗错误保持500", "stream": False},
+    )
+
+    assert res.status_code == 500
+    assert res.json()["detail"]
+
+
+def test_orchestrator_chat_hard_cap_cancels_turn_and_reports_timeout(
+    client, db, monkeypatch
+):
+    """硬上限兜底:真卡死的回合被取消(不吊死 worker)+ in-body 超时报错。"""
+    import asyncio as aio
+    import json as jsonlib
+
+    from app.api import orchestrator as orch_api
+    from tests.conftest import create_authenticated_user
+
+    monkeypatch.setattr(orch_api, "ORCH_CHAT_KEEPALIVE_SECONDS", 0.1)
+    monkeypatch.setattr(orch_api, "ORCH_CHAT_HARD_CAP_SECONDS", 0.5)
+    _disable_orch_cache(monkeypatch)
+
+    cancelled = {"flag": False}
+
+    async def fake_run_orchestrator(db, user_id, req):
+        try:
+            await aio.sleep(30)
+        except aio.CancelledError:
+            cancelled["flag"] = True
+            raise
+
+    monkeypatch.setattr(orch_api, "run_orchestrator", fake_run_orchestrator)
+
+    _, token = create_authenticated_user(db)
+    res = client.post(
+        "/api/v1/orchestrator/chat",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"query": "硬上限取消回合", "stream": False},
+    )
+
+    assert res.status_code == 200
+    body = jsonlib.loads(res.text)
+    assert "超时" in (body.get("error") or "")
+    assert cancelled["flag"], "硬上限触发后底层回合必须被真实取消"
