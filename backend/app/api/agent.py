@@ -758,40 +758,78 @@ async def agent_send(
     from app.services.agent_executor import AgentExecutor
 
     async def _aggregate() -> dict:
+        # 可观测性 (P4): 在 usage capture 上下文内跑 executor,回合结束汇总 token/cost。
+        # 与 /stream bg 路径同模式 —— 没这层 summarize_usage_capture() 恒为 None,
+        # 评测就永远记不到 model/cost。fail-soft:capture 出问题绝不打死回合。
+        from app.services.agent_send_meta import build_send_meta
+        from app.services.llm.usage_tracker import (
+            begin_usage_capture,
+            clear_run_id,
+            end_usage_capture,
+            set_caller,
+            set_run_id,
+            summarize_usage_capture,
+        )
+
         reply_parts: list[str] = []
         done_data: dict = {}
-        executor = AgentExecutor(db)
-        async for event in executor.run_stream(
-            user_id=current_user.id,
-            message=req.message.strip(),
-            conversation_id=req.conversation_id,
-            user_auth_token=user_token,
-            images=all_images or None,
-            file_base64=req.file_base64,
-            file_name=req.file_name,
-            extra_context=req.extra_context,
-            channel=req.channel,
-        ):
-            if event.get("event") == "token":
-                content = event.get("data", {}).get("content")
-                if isinstance(content, str):
-                    reply_parts.append(content)
-            elif event.get("event") == "done":
-                data = event.get("data")
-                if isinstance(data, dict):
-                    done_data = data
-            elif event.get("event") == "error":
-                data = event.get("data") if isinstance(event.get("data"), dict) else {}
-                raise _AgentTurnError(safe_llm_error_message(data.get("message")))
-        if not done_data:
-            raise _AgentTurnError("Agent 未返回完成状态")
-        return {
-            "reply": "".join(reply_parts),
-            "conversation_id": done_data.get("conversation_id"),
-            "message_id": done_data.get("message_id"),
-            "mode": "agent",
-            "elapsed_ms": done_data.get("elapsed_ms"),
-        }
+        run_id = f"send_{uuid.uuid4().hex[:16]}"
+        usage_capture_token = begin_usage_capture()
+        run_id_token = set_run_id(run_id)
+        set_caller("agent.send", user_id=current_user.id)
+        try:
+            executor = AgentExecutor(db)
+            async for event in executor.run_stream(
+                user_id=current_user.id,
+                message=req.message.strip(),
+                conversation_id=req.conversation_id,
+                user_auth_token=user_token,
+                images=all_images or None,
+                file_base64=req.file_base64,
+                file_name=req.file_name,
+                extra_context=req.extra_context,
+                channel=req.channel,
+            ):
+                if event.get("event") == "token":
+                    content = event.get("data", {}).get("content")
+                    if isinstance(content, str):
+                        reply_parts.append(content)
+                elif event.get("event") == "done":
+                    data = event.get("data")
+                    if isinstance(data, dict):
+                        done_data = data
+                elif event.get("event") == "error":
+                    data = event.get("data") if isinstance(event.get("data"), dict) else {}
+                    raise _AgentTurnError(safe_llm_error_message(data.get("message")))
+            if not done_data:
+                raise _AgentTurnError("Agent 未返回完成状态")
+
+            # summarize 必须在 capture 上下文仍活着时取(end 之后 contextvar 被重置)。
+            usage_summary = None
+            try:
+                usage_summary = summarize_usage_capture()
+            except Exception:  # noqa: BLE001 — 可观测性附加项,失败不影响回合
+                usage_summary = None
+            meta = build_send_meta(done_data, usage_summary)
+
+            return {
+                "reply": "".join(reply_parts),
+                "conversation_id": done_data.get("conversation_id"),
+                "message_id": done_data.get("message_id"),
+                "mode": "agent",
+                "elapsed_ms": done_data.get("elapsed_ms"),
+                # 纯附加:老客户端不读 meta 不受影响。
+                "meta": meta,
+            }
+        finally:
+            try:
+                end_usage_capture(usage_capture_token)
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                clear_run_id(run_id_token)
+            except Exception:  # noqa: BLE001
+                pass
 
     agg_task = asyncio.create_task(_aggregate())
 
