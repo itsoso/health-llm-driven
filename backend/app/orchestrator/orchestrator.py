@@ -41,7 +41,10 @@ _user_pref_ctx: ContextVar[Optional[Tuple[int, Session]]] = ContextVar(
 # flag(settings.task_tiered_routing)默认关 → task_tier 被忽略 = 零行为变更。
 _task_tier_ctx: ContextVar[Optional[str]] = ContextVar("orch_task_tier", default=None)
 
-# 高风险类别 → reasoning 强模型;纯 general → fast;其余 → balanced
+# 高风险类别 → reasoning 强模型;其余 → balanced。
+# 安全不变量(fail-closed):orchestrator 合成永远产出面向用户的医疗内容(即便 intent
+# 落到 general 也跑完 specialist + LLM 叙事),所以**任何 intent 都不许降到 casual/fast**。
+# 地板是 balanced;高风险类别提到 reasoning。见 task_routing._FAST_ELIGIBLE_TIERS 的第二道闸。
 _HIGH_STAKES_CATEGORIES = {"safety", "chronic", "mental", "labs", "longevity"}
 
 # GenUI 能力协商: 客户端在 X-Reva-Client-Caps 头声明 'genui-v1' 才返回 reva-ui block。
@@ -147,8 +150,8 @@ def _tier_for_intent(intent) -> str:
     cats = set(getattr(intent, "categories", []) or [])
     if cats & _HIGH_STAKES_CATEGORIES:
         return "high_stakes"
-    if cats == {"general"} or not cats:
-        return "casual"
+    # general / 空 / recovery / fuel / movement 等一律 balanced —— 合成是医疗内容,
+    # 绝不降到 casual(=fast)。这是 fail-closed 地板,不是成本优化的可调项。
     return "balanced"
 
 
