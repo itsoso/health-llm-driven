@@ -1731,6 +1731,49 @@ def _tool_status_label(func_name: Optional[str]) -> str:
     return _TOOL_TO_STATUS_LABEL.get(func_name, func_name)
 
 
+# 2026-07-05 P0-1: 流式进度事件 (accepted/tool/synthesis)。
+# 工具名 → **完整的人话动词短语** (给 progress status 事件的 label 字段, 客户端
+# 直接展示成一行"正在……")。与 _TOOL_TO_STATUS_LABEL (更短、给旧 status.detail 通道)
+# 独立: 这里覆盖 tool_schema_registry 的全部工具名 + specialist_tools 的分析工具,
+# 未映射的一律兜底"正在处理…"(见 _tool_progress_label)。工具粒度不区分饮水/步数
+# (health_record 覆盖所有记录), 短语按工具语义写。
+_TOOL_PROGRESS_LABEL = {
+    # 核心工具 (tool_schema_registry.HEALTH_TOOLS)
+    "health_query": "查看健康数据…",
+    "health_record": "正在记录…",
+    "health_manage": "整理健康记录…",
+    "health_analysis": "深度分析中…",
+    "environment_check": "查看天气与环境…",
+    "supplement_guide": "查阅补剂方案…",
+    "upload_genetic_txt": "导入基因数据…",
+    "query_genetic_profile": "查阅基因数据…",
+    "upload_medical_exam_text": "录入体检报告…",
+    "query_lab_indicators": "查看化验指标…",
+    "intervention_cycle": "整理干预周期…",
+    "knowledge_search": "检索知识库…",
+    "realtime_search": "联网搜索中…",
+    "manage_plan": "整理健康计划…",
+    # specialist 分析工具 (specialist_tools.specialist_tool_schemas, flag 开时才注册)
+    "analyze_recovery": "评估恢复状态…",
+    "analyze_fuel": "分析营养方案…",
+    "analyze_movement": "评估训练负荷…",
+    "analyze_mental": "评估心理状态…",
+    "analyze_hypertension": "分析血压情况…",
+    "analyze_metabolic": "分析代谢指标…",
+    "analyze_rhinitis": "评估鼻炎症状…",
+    "analyze_longitudinal": "分析长期趋势…",
+    "analyze_longevity": "解读表型年龄…",
+}
+_TOOL_PROGRESS_FALLBACK = "正在处理…"
+
+
+def _tool_progress_label(func_name: Optional[str]) -> str:
+    """工具名 → 进度事件 label (完整人话动词短语); 未映射一律兜底"正在处理…"。"""
+    if not func_name:
+        return _TOOL_PROGRESS_FALLBACK
+    return _TOOL_PROGRESS_LABEL.get(func_name, _TOOL_PROGRESS_FALLBACK)
+
+
 _RECORD_INTENT_RE = re.compile(
     r"(记录|打卡|新增|录入|保存|吃了|喝了|服药|已服用|已吃|已喝|删除|修改|撤销|更新)"
 )
@@ -2077,6 +2120,32 @@ class AgentExecutor:
         """
         return {"event": "status", "data": {"stage": stage, "detail": detail, "round": round}}
 
+    @staticmethod
+    def _progress_event(
+        stage: str,
+        *,
+        round: Optional[int] = None,
+        label: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """构造 P0-1 流式进度事件 (flat 契约, 与既有 _status_event 独立、纯附加)。
+
+        契约 (两端一字不差):
+            {"type":"status","stage":"accepted"}                    — 流一打开立刻发
+            {"type":"status","stage":"tool","round":N,"label":"…"}  — 每轮工具执行前发
+            {"type":"status","stage":"synthesis"}                   — 最终答案开始生成前发
+
+        故意 flat (顶层 type/stage/label, 无 data 包裹): 与既有 {"event":"status",
+        "data":{...}} 家族区分, 客户端可只订阅其一。round/label 仅 tool 阶段带。
+        纯附加、fail-soft: 未知事件四端消费者都 tolerate (mobile chat.ts 落 undefined /
+        frontend evt.event??evt.type 落 status 分支 / mac default→nil)。
+        """
+        evt: Dict[str, Any] = {"type": "status", "stage": stage}
+        if round is not None:
+            evt["round"] = round
+        if label is not None:
+            evt["label"] = label
+        return evt
+
     async def _run_multi_model_stream(
         self,
         user_id: int,
@@ -2277,6 +2346,10 @@ class AgentExecutor:
         """运行 Agent 循环，SSE 流式输出"""
         from app.services.llm.usage_tracker import set_caller
         set_caller("agent_executor.run_stream", user_id=user_id)
+        # 2026-07-05 P0-1: 流式进度事件 —— 流一打开立刻发 accepted (任何 LLM/会话
+        # 组装之前, 目标 <100ms)。纯附加, 让客户端首 token 前 8s 有确定性反馈。
+        # 多模型分支也在此点之后, 所以 accepted 恒为任何路径的第一个 wire 事件。
+        yield self._progress_event("accepted")
         # 输入通道(客户端传输层声明,typed/voice/siri):症状类记录的确认策略依赖它。
         # 非法/未声明一律 None → fail-closed(症状保留确认)。
         self._turn_channel = channel if channel in ("typed", "voice", "siri") else None
@@ -2551,6 +2624,9 @@ class AgentExecutor:
                 # 否则 thinking (还在决策/可能再调工具)。纯附加、fail-soft (dict 构造不会抛)。
                 if tool_executed_count > 0 and not round_tools:
                     yield self._status_event("synthesis", round=round_idx + 1)
+                    # 2026-07-05 P0-1: 进度事件 (flat 契约) —— 最终回答开始生成前发。
+                    # 命中条件与既有 synthesis status 一致: 前面轮已跑过工具且本轮不带工具。
+                    yield self._progress_event("synthesis")
                 else:
                     yield self._status_event("thinking", round=round_idx + 1)
                 # 非流式模型: 多发一条带 detail 的 thinking 状态 (整段生成需等待)。
@@ -2760,6 +2836,11 @@ class AgentExecutor:
                         # 独立: status 走思考过程可视化通道, 客户端可只订阅其一。
                         yield self._status_event(
                             "tool", detail=_tool_status_label(func_name), round=round_idx + 1
+                        )
+                        # 2026-07-05 P0-1: 进度事件 (flat 契约) —— 每轮工具执行前发,
+                        # label 来自确定性映射表 (完整人话动词短语)。纯附加。
+                        yield self._progress_event(
+                            "tool", round=round_idx + 1, label=_tool_progress_label(func_name)
                         )
                         # 2026-05-14: tool_call 加进 sources_used
                         _tool_label = _TOOL_TO_SOURCE_LABEL.get(func_name)
@@ -3095,6 +3176,9 @@ class AgentExecutor:
                 # 达到工具轮次上限后，不要把半成品直接返回给用户。
                 # DeepSeek 这类模型更容易连续拆分工具查询；上限命中时强制做一次
                 # no-tools synthesis，用已有 tool_result 汇总成最终答案。
+                # 2026-07-05 P0-1: 进度事件 (flat 契约) —— 强制合成也是"最终回答开始生成",
+                # 命中 accepted→tool*→synthesis→done 契约的轮次耗尽分支。纯附加。
+                yield self._progress_event("synthesis")
                 messages.append({
                     "role": "user",
                     "content": (

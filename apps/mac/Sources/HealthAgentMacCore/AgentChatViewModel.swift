@@ -1645,6 +1645,10 @@ public final class AgentChatViewModel {
     /// - `synthesis`  → "Reva is composing a reply…"             (正在整理回答…)
     nonisolated static func statusText(stage: String, detail: String?, round: Int?) -> (key: String, detail: String?) {
         switch stage {
+        case "accepted":
+            // P0-1 progress family: stream just opened (before any LLM work). Gives the
+            // user deterministic feedback in the 8s before the first token.
+            return ("Reva received your message…", nil)
         case "vision":
             return ("Recognizing image…", nil)
         case "thinking":

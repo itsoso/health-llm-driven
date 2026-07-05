@@ -178,6 +178,47 @@ final class AgentStreamClientTests: XCTestCase {
         XCTAssertEqual(events, [.token("仍然到达")])
     }
 
+    func testParserDecodesFlatProgressEvents() throws {
+        // P0-1 进度事件 (flat 契约): 顶层 type=status 区分, 无 data 包裹。
+        // accepted / tool(round+label) / synthesis 都归一到 .status; label 折进 detail。
+        let payload = """
+        data: {"type":"status","stage":"accepted"}
+
+        data: {"type":"status","stage":"tool","round":1,"label":"查看健康数据…"}
+
+        data: {"type":"status","stage":"synthesis"}
+
+        data: {"event":"done","data":{"conversation_id":7,"message_id":3,"completion_status":"complete","sources_used":[]}}
+
+        """
+        let events = try AgentStreamParser.parse(payload)
+        XCTAssertEqual(events, [
+            .status(stage: "accepted", detail: nil, round: nil),
+            .status(stage: "tool", detail: "查看健康数据…", round: 1),
+            .status(stage: "synthesis", detail: nil, round: nil),
+            .done(
+                conversationID: 7,
+                messageID: 3,
+                completionStatus: "complete",
+                model: nil,
+                sourcesUsed: [],
+                toolsUsed: [],
+                elapsedMs: nil,
+                llmRounds: nil
+            ),
+        ])
+    }
+
+    func testParserFlatProgressLabelPrefersOverDetail() throws {
+        // 若 flat 进度事件同时带 label + detail, label 优先折进 detail。
+        let payload = """
+        data: {"type":"status","stage":"tool","round":2,"label":"联网搜索中…","detail":"ignored"}
+
+        """
+        let events = try AgentStreamParser.parse(payload)
+        XCTAssertEqual(events, [.status(stage: "tool", detail: "联网搜索中…", round: 2)])
+    }
+
     func testParserStillIgnoresUnknownEventTypes() throws {
         // 回归:未知事件类型继续被忽略(back-compat 未受 status 支持影响)。
         let payload = """
@@ -215,12 +256,21 @@ final class AgentStreamClientTests: XCTestCase {
 
         XCTAssertEqual(AgentChatViewModel.statusText(stage: "synthesis", detail: nil, round: nil).key, "Reva is composing a reply…")
 
+        // P0-1 progress family: accepted → its own phrase.
+        XCTAssertEqual(AgentChatViewModel.statusText(stage: "accepted", detail: nil, round: nil).key, "Reva received your message…")
+        XCTAssertNil(AgentChatViewModel.statusText(stage: "accepted", detail: nil, round: nil).detail)
+        // tool with a folded progress label renders via the same Working: %@… template.
+        let progressTool = AgentChatViewModel.statusText(stage: "tool", detail: "查看健康数据…", round: 1)
+        XCTAssertEqual(progressTool.key, "Working: %@…")
+        XCTAssertEqual(progressTool.detail, "查看健康数据…")
+
         // 未知 stage 兜底
         XCTAssertEqual(AgentChatViewModel.statusText(stage: "future_mystery_stage", detail: nil, round: nil).key, "Reva is thinking…")
     }
 
     func testStatusTextLocalizesToChinese() {
         // View 用 appText/L10n 解析出的中文文案对齐契约表。
+        XCTAssertEqual(L10n.text("Reva received your message…", language: .zh), "已收到，正在准备…")
         XCTAssertEqual(L10n.text("Recognizing image…", language: .zh), "正在识别图片…")
         XCTAssertEqual(L10n.text("Reva is thinking…", language: .zh), "小巴正在思考…")
         XCTAssertEqual(L10n.text("Reva is organizing thoughts…", language: .zh), "正在整理思路…")
