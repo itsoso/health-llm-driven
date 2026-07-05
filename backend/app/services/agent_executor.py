@@ -2169,6 +2169,21 @@ class AgentExecutor:
         self._request_model_tool_fallback_used = False
         self._model_fallback_reasons: List[str] = []
         self._tool_model_names: List[str] = []
+        # F3a 回合内 provider 死亡备忘: 同一次 run 里, selected provider 首次失败后
+        # 记住其 model_id, 后续轮不再重建/重试它 (省掉每轮 ~19s 的死等), 直接走稳定
+        # 回退选择。每回合入口重置。model_id=None (默认 provider, 无注册 id) 不可记忆。
+        # 分两级:
+        #   _dead_provider_model_ids       — 在**无工具轮**(合成/纯文本)失败 = 彻底死,
+        #                                    所有后续轮都不再选它。
+        #   _tool_dead_provider_model_ids  — 只在**工具轮**失败 (如商用网关不做非流式
+        #                                    tool-calling) = 仅工具轮不再选它; 无工具的
+        #                                    最终合成轮仍可用它 (Opus 合成质量不丢)。
+        self._dead_provider_model_ids: set[str] = set()
+        self._tool_dead_provider_model_ids: set[str] = set()
+        # _resolve_chat_provider 最近一次解析出的 effective model_id, 供非流式桥
+        # (_call_llm_stream 判断 supports_streaming) 与死亡备忘复用。2-tuple 返回契约
+        # 不变 (既有 test 依赖), 用实例属性旁路传递。
+        self._last_effective_model_id: Optional[str] = None
 
     def _display_model_name_for_id(self, model_id: Optional[str]) -> Optional[str]:
         if not model_id:
@@ -2291,6 +2306,9 @@ class AgentExecutor:
         self._last_provider_model_name = None
         self._model_fallback_reasons = []
         self._tool_model_names = []
+        self._dead_provider_model_ids = set()
+        self._tool_dead_provider_model_ids = set()
+        self._last_effective_model_id = None
         sources_used: list = ["多模型综合 (Claude Opus 4.7 · GPT-5.5 · Gemini 3.1 Pro)"]
         model_label = "Claude Opus 4.7 + GPT-5.5 + Gemini 3.1 Pro (综合)"
 
@@ -2492,6 +2510,9 @@ class AgentExecutor:
         self._fast_route_simple_turn = False
         self._model_fallback_reasons = []
         self._tool_model_names = []
+        self._dead_provider_model_ids = set()
+        self._tool_dead_provider_model_ids = set()
+        self._last_effective_model_id = None
         self._prefer_fast_record_model = (
             not images
             and not file_base64
@@ -3871,14 +3892,31 @@ class AgentExecutor:
         被 _call_llm (非流式) 和 _call_llm_stream (流式) 共用,确保两条路径的
         provider 路由完全一致 (fast-record / request-model / user-pref
         tool-stripping)。返回 (provider, pass_tools)。
+
+        副作用: 把本次解析出的 effective model_id 记到 self._last_effective_model_id
+        (2-tuple 返回契约不变, 既有 test 依赖)。供非流式桥 / 死亡备忘复用。
         """
         provider = None
         # 本回合最终会用到的 model_id (仅在能确定时填), 供工具能力门控判定。
         effective_model_id: Optional[str] = None
 
+        # F3a 回合内 provider 死亡备忘: 若本回合首选的 request/偏好 model 在同一次 run
+        # 里已经失败过, 不再重建它 (省掉每轮 ~19s 死等), 直接走稳定回退选择。
+        # 彻底死 (无工具轮也失败) → 全跳; 仅工具轮死 → 只有本轮带工具时跳。
+        request_model_dead = bool(
+            self._request_model_id
+            and (
+                self._request_model_id in self._dead_provider_model_ids
+                or (
+                    bool(tools)
+                    and self._request_model_id in self._tool_dead_provider_model_ids
+                )
+            )
+        )
+
         # Mac/桌面端手动路由: extra_context.model_id 是 model_registry 里的 id,
         # 只影响本次请求, 不改 user_profile 持久偏好.
-        if provider is None and self._request_model_id:
+        if provider is None and self._request_model_id and not request_model_dead:
             try:
                 from app.services.llm.factory import create_provider_for_model_id
                 provider = create_provider_for_model_id(self._request_model_id)
@@ -3890,6 +3928,18 @@ class AgentExecutor:
                     e,
                 )
                 provider = None
+
+        if request_model_dead:
+            # 首选模型本回合已死: 记一条日志, 直接落到稳定回退 (工具轮走可靠工具模型)。
+            logger.info(
+                "[agent_executor] 本回合跳过已失败 provider=%s (dead), 走稳定回退",
+                self._request_model_id,
+            )
+            self._record_model_fallback_reason("selected_provider_dead_this_turn")
+            provider = self._stable_fallback_provider(bool(tools))
+            # effective_model_id 保持 None: 稳定回退已自带工具门控, 下方 gate 不再重复。
+            self._last_effective_model_id = None
+            return provider, tools
 
         # 回退到默认 provider — 不传 model, 让 provider 用 init 时的默认
         # 2026-05-13: 用户级 LLM 偏好 — 优先读 user_profile.llm_model_id
@@ -3917,6 +3967,7 @@ class AgentExecutor:
             if gated is not None:
                 provider = gated
 
+        self._last_effective_model_id = effective_model_id
         return provider, pass_tools
 
     def _user_effective_model_id(self) -> Optional[str]:
@@ -3994,6 +4045,77 @@ class AgentExecutor:
             self._record_model_fallback_reason("preferred_model_tool_unreliable")
         return provider
 
+    def _remember_dead_provider(self, tool_specific: bool) -> None:
+        """F3a: 把本轮刚失败的 selected provider 的 model_id 记入回合内死亡备忘。
+
+        只记 request_model_id (mac/桌面显式选/fast-route 填充的注册 id) 或本次解析出的
+        effective_model_id。默认 provider (无注册 id, effective=None) 无法记忆 — 但它
+        本就是稳定回退目标, 不会陷入"每轮重试昂贵网关"的循环, 无需记。
+
+        tool_specific=True: 失败只发生在工具轮 (如商用网关不实现非流式 tool-calling),
+            仅记入 _tool_dead —— 之后的工具轮跳过它, 但无工具的合成轮仍可用它。
+        tool_specific=False: 无工具轮也失败 = 彻底死, 记入 _dead —— 所有后续轮跳过。
+        """
+        target = (
+            self._tool_dead_provider_model_ids
+            if tool_specific
+            else self._dead_provider_model_ids
+        )
+        for mid in (self._request_model_id, self._last_effective_model_id):
+            if mid:
+                target.add(mid)
+
+    def _stable_fallback_provider(self, pass_tools: bool):
+        """选定 provider 失败/已死时用的稳定回退 provider — failover 单一真源。
+
+        F2: 本轮**带工具**时, 回退目标必须经同一可靠工具模型选择逻辑
+        (复用 pick_reliable_tool_model_id + create_provider_for_model_id), 不许落到
+        MiniMax/glm 家族弱工具模型 (生产事故: 默认 tokenplan = MiniMax-M2.5 吐 XML
+        文本工具调用)。无可靠模型可用时才回默认 tokenplan 并 log。
+        非工具轮: 维持既有行为 (默认 tokenplan provider, 合成/纯文本轮不受影响)。
+
+        始终 fail-open 到"有一个可用 provider": 可靠模型不可用 → 默认 tokenplan;
+        默认 tokenplan 也建不了 → 全局单例 provider。任何一步都不把回合打死。
+        """
+        from app.services.llm.factory import create_llm_provider, get_llm_provider
+        from app.services.llm.pii_scrub import wrap_provider_pii_scrub
+        from app.services.llm.usage_tracker import wrap_provider
+
+        if pass_tools:
+            from app.services.llm.model_registry import pick_reliable_tool_model_id
+            fallback_id = pick_reliable_tool_model_id()
+            if fallback_id:
+                try:
+                    from app.services.llm.factory import create_provider_for_model_id
+                    provider = create_provider_for_model_id(fallback_id)
+                    self._last_provider_model_name = (
+                        getattr(provider, "model", None) or fallback_id
+                    )
+                    logger.info(
+                        "[agent_executor] tool-turn failover -> reliable model %s",
+                        fallback_id,
+                    )
+                    return provider
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(
+                        "[agent_executor] reliable failover model %s unavailable, "
+                        "falling back to default tokenplan: %s",
+                        fallback_id, e,
+                    )
+            else:
+                logger.warning(
+                    "[agent_executor] tool-turn failover: no reliable model available, "
+                    "falling back to default tokenplan (defensive parsing still on)"
+                )
+
+        try:
+            provider = wrap_provider_pii_scrub(wrap_provider(create_llm_provider("tokenplan")))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[agent_executor] tokenplan fallback unavailable: %s", e)
+            provider = get_llm_provider()
+        self._last_provider_model_name = getattr(provider, "model", None) or "tokenplan(fallback)"
+        return provider
+
     async def _call_llm(
         self, messages: List[Dict], tools: List[Dict],
     ) -> Any:
@@ -4031,21 +4153,20 @@ class AgentExecutor:
         try:
             return await provider.chat(**chat_kwargs)
         except Exception as e:  # noqa: BLE001
-            # 选定 provider 报错 → 回退到稳定的 tool-capable provider (tokenplan)。
+            # 选定 provider 报错 → 回退到稳定的 tool-capable provider。
             # 典型场景:langbridge 商用网关(GPT-5.5 等)的浏览器适配器只支持流式,
             # 不实现非流式 tool-calling chat() → 返回 500 "adapter has no chat() method"。
             # 不回退的话用户一选商用模型整个 agent 就不可用。二次失败再抛给上层兜底。
+            # F2: pass_tools 时回退目标经可靠工具模型选择 (_stable_fallback_provider),
+            # 不再无脑落到默认 tokenplan(MiniMax 弱工具模型)。
             logger.warning(
-                "[agent_executor] 选定 provider chat() 失败,回退 tokenplan: %s", e
+                "[agent_executor] 选定 provider chat() 失败,回退稳定 provider: %s", e
             )
+            self._remember_dead_provider(tool_specific=bool(pass_tools))
             if pass_tools and self._request_model_id:
                 self._request_model_tool_fallback_used = True
                 self._record_model_fallback_reason("selected_model_tool_chat_failed")
-            from app.services.llm.factory import create_llm_provider
-            from app.services.llm.pii_scrub import wrap_provider_pii_scrub
-            from app.services.llm.usage_tracker import wrap_provider
-            fb = wrap_provider_pii_scrub(wrap_provider(create_llm_provider("tokenplan")))
-            self._last_provider_model_name = getattr(fb, "model", None) or "tokenplan(fallback)"
+            fb = self._stable_fallback_provider(bool(pass_tools))
             return await fb.chat(**chat_kwargs)
 
     async def _call_llm_stream(
@@ -4092,6 +4213,29 @@ class AgentExecutor:
             or getattr(provider, "provider_name", None)
         )
 
+        # F3b 非流式桥: 若本回合 effective model 结构性非流式 (langbridge 商用模型经
+        # 万擎公网, 网关无 SSE, ttft≈total), 不再白等流式超时 —— 直接走非流式 chat()
+        # 并以单块产出适配回流式事件。工具能力门控已把不可靠工具模型换掉, 剩下的非流式
+        # 模型 (Opus/GPT-5.5/Gemini) 是可靠工具模型, 由它自己拿最终答案质量。
+        # chat() 失败 (如网关适配器不实现非流式 tool-calling) 走同一 failover。
+        if self._effective_model_is_non_streaming():
+            try:
+                result = await self._call_llm_nonstream_for_bridge(provider, stream_kwargs, pass_tools)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "[agent_executor] 非流式桥 chat() 失败,回退稳定 provider: %s", e
+                )
+                self._remember_dead_provider(tool_specific=bool(pass_tools))
+                if pass_tools and self._request_model_id:
+                    self._request_model_tool_fallback_used = True
+                    self._record_model_fallback_reason("selected_model_tool_bridge_failed")
+                async for evt in self._stream_via_stable_fallback(stream_kwargs, pass_tools):
+                    yield evt
+                return
+            async for evt in self._result_to_stream_events(result):
+                yield evt
+            return
+
         emitted_content = False
         try:
             async for evt in provider.chat_stream(**stream_kwargs):
@@ -4107,20 +4251,90 @@ class AgentExecutor:
                 )
                 yield {"type": "finish", "finish_reason": "error"}
                 return
-            # 流开始前/未发任何内容就报错 → 回退稳定的 tokenplan provider (镜像 _call_llm)。
+            # 流开始前/未发任何内容就报错 → 回退稳定 provider (F2: 带工具时经可靠工具模型)。
             logger.warning(
-                "[agent_executor] 选定 provider chat_stream() 失败,回退 tokenplan: %s", e
+                "[agent_executor] 选定 provider chat_stream() 失败,回退稳定 provider: %s", e
             )
+            self._remember_dead_provider(tool_specific=bool(pass_tools))
             if pass_tools and self._request_model_id:
                 self._request_model_tool_fallback_used = True
                 self._record_model_fallback_reason("selected_model_tool_stream_failed")
-            from app.services.llm.factory import create_llm_provider
-            from app.services.llm.pii_scrub import wrap_provider_pii_scrub
-            from app.services.llm.usage_tracker import wrap_provider
-            fb = wrap_provider_pii_scrub(wrap_provider(create_llm_provider("tokenplan")))
-            self._last_provider_model_name = getattr(fb, "model", None) or "tokenplan(fallback)"
-            async for evt in fb.chat_stream(**stream_kwargs):
+            async for evt in self._stream_via_stable_fallback(stream_kwargs, pass_tools):
                 yield evt
+
+    def _effective_model_is_non_streaming(self) -> bool:
+        """本回合 _resolve_chat_provider 解析出的 effective model 是否结构性非流式。
+
+        fail-soft: model_id 解析不出 / 未注册 / 读库异常 → False (走正常流式), 宁可
+        少走桥也不误判。工具门控把 provider 换成别的可靠模型时 (effective 是不可靠工具
+        模型), 该判定基于 effective_model_id, 门控后 provider 已换 — 但被换掉的不可靠
+        模型都是 tokenplan 流式模型, supports_streaming=True, 不会误进桥。非流式模型
+        (Opus/GPT-5.5/Gemini) 恒为可靠工具模型, 门控不会换它, effective 即真实 provider。
+        """
+        try:
+            from app.services.llm.model_registry import get_model
+            model_id = self._last_effective_model_id
+            if not model_id:
+                return False
+            entry = get_model(model_id)
+            if entry is None:
+                return False
+            return not entry.supports_streaming
+        except Exception:  # noqa: BLE001 — 路由判定绝不断主链路
+            return False
+
+    @staticmethod
+    async def _call_llm_nonstream_for_bridge(provider, stream_kwargs: Dict[str, Any], pass_tools) -> Any:
+        """非流式桥: 用 stream_kwargs 组一次非流式 chat() 调用, 返回整块结果。"""
+        chat_kwargs = {
+            "messages": stream_kwargs["messages"],
+            "model": stream_kwargs.get("model"),
+            "temperature": stream_kwargs.get("temperature", 0.3),
+            "max_tokens": stream_kwargs.get("max_tokens", ANSWER_MAX_TOKENS),
+            "stream": False,
+            "return_metadata": True,
+        }
+        if pass_tools:
+            chat_kwargs["tools"] = pass_tools
+        return await provider.chat(**chat_kwargs)
+
+    async def _stream_via_stable_fallback(
+        self, stream_kwargs: Dict[str, Any], pass_tools,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """把稳定回退 provider 的产出适配成流式事件。
+
+        回退目标 (F2: 带工具走可靠工具模型) 若非流式则用 chat() 单块产出, 否则真流式。
+        fail-open: 回退 provider 再失败也要产出一个 finish 事件让上层收尾, 不把回合打死。
+        """
+        fb = self._stable_fallback_provider(bool(pass_tools))
+        fb_non_streaming = self._provider_is_non_streaming(fb)
+        try:
+            if fb_non_streaming:
+                result = await self._call_llm_nonstream_for_bridge(fb, stream_kwargs, pass_tools)
+                async for evt in self._result_to_stream_events(result):
+                    yield evt
+            else:
+                async for evt in fb.chat_stream(**stream_kwargs):
+                    yield evt
+        except Exception as e:  # noqa: BLE001
+            # 回退也失败: 绝不把回合打死 — 发一个 error finish, 上层空回复重试链接管。
+            logger.warning("[agent_executor] 稳定回退 provider 也失败: %s", e)
+            yield {"type": "finish", "finish_reason": "error"}
+
+    @staticmethod
+    def _provider_is_non_streaming(provider) -> bool:
+        """按 provider.model 反查注册表判断是否结构性非流式。fail-soft → False。"""
+        try:
+            from app.services.llm.model_registry import MODELS
+            model_name = getattr(provider, "model", None)
+            if not model_name:
+                return False
+            for entry in MODELS:
+                if entry.model == model_name:
+                    return not entry.supports_streaming
+            return False
+        except Exception:  # noqa: BLE001
+            return False
 
     @staticmethod
     async def _result_to_stream_events(result: Any) -> AsyncGenerator[Dict[str, Any], None]:
