@@ -49,11 +49,15 @@ mkdir -p evals/comparative/out
 
 ```bash
 python -m evals.comparative.run_xiaoba --out evals/comparative/out/transcripts_xiaoba.jsonl
+# 单题/子集验收: --only 逗号分隔题目 id(未知 id 直接 exit 2)
+python -m evals.comparative.run_xiaoba --only state_supplement_interaction --no-sanity --out /tmp/one.jsonl
 ```
 
 - 走 `/agent/send`(非流式)。轮次间自带 ~3.5s 节流(躲 `/agent/send` 的 3s 去重窗)。
 - `multi_turn` 题复用同一 `conversation_id` 串多轮。
 - 跑完打印写库 sanity(评测前后 twin 计数无变化 = 只读符合预期)。
+- 长回合下 `/agent/send` 返回保活流式 JSON(前导空白 + 末尾完整对象);流开始后的
+  失败在 `body.error`,poster 会 fail-loud 抛出记进 transcript 的 `error` 字段。
 
 ### 1b. context pack(喂 chatgpt_context 臂)
 

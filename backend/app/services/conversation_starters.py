@@ -98,6 +98,18 @@ class StarterSignals:
     # 跟进随访(此前 chips 只看当前状态,push 才看随访)。
     overdue_lab_name: Optional[str] = None
 
+    # ── Registered chronic problems (HealthProblem · R13) ────────────────
+    # 慢病/结节登记是 Health OS 的分水岭 —— 用户已登记的鼻炎/胃溃疡/结节等,即使今天
+    # 没有急性发作 (should_rest_from_training=False),也应能开一条"管理/复查"对话线。
+    # 此前 chips/opener 只在 Twin.acute.illness_names 命中时才提慢病,导致 data-rich
+    # 用户 (有登记问题但当下无急症) 反而拿不到接地的慢病提示 → 回落泛泛模板。
+    top_problem_name: Optional[str] = None          # 最高优先级 active 问题名 (P0 在前)
+    top_problem_risk_level: Optional[str] = None    # P0/P1/P2
+    problem_followup_name: Optional[str] = None     # 到期/逾期随访的问题名
+    problem_followup_overdue: bool = False
+    problem_followup_risk_level: Optional[str] = None
+    problem_followup_what_to_check: Optional[str] = None
+
     # ── Today / current (Twin — physiological + behavioral + env + labs) ─
     readiness_score: Optional[int] = None
     readiness_level: Optional[str] = None  # poor/low/moderate/high/prime
@@ -390,6 +402,43 @@ def _collect_signals(db: Session, user_id: int) -> StarterSignals:
     except Exception:  # noqa: BLE001
         overdue_lab_name = None
 
+    # ── Registered chronic problems (HealthProblem · R13). Deterministic reads;
+    # reuses the SAME due-follow-up detection (health_problem_service.due_followups)
+    # that projects onto the agenda/timeline, so a chip↔timeline can't disagree.
+    # fail-soft: any error leaves all problem_* fields None/False.
+    top_problem_name: Optional[str] = None
+    top_problem_risk_level: Optional[str] = None
+    problem_followup_name: Optional[str] = None
+    problem_followup_overdue = False
+    problem_followup_risk_level: Optional[str] = None
+    problem_followup_what_to_check: Optional[str] = None
+    try:
+        from app.services import health_problem_service as _prob_svc
+
+        _problems = _prob_svc.list_problems(db, user_id, active_only=True)
+        if _problems:
+            # list_problems already sorts P0 first → most salient registered problem.
+            _top = _problems[0]
+            top_problem_name = (_top.name or None)
+            top_problem_risk_level = _top.risk_level or None
+
+        # Due/overdue chronic follow-up (most urgent first: due_followups sorts by
+        # next_due asc; take the earliest so an overdue one wins over a merely-due one).
+        _fus = _prob_svc.due_followups(db, user_id, within_days=14)
+        if _fus:
+            _fu = _fus[0]
+            problem_followup_name = _fu.get("name") or None
+            problem_followup_overdue = bool(_fu.get("overdue"))
+            problem_followup_risk_level = _fu.get("risk_level") or None
+            problem_followup_what_to_check = _fu.get("what_to_check") or None
+    except Exception:  # noqa: BLE001
+        top_problem_name = None
+        top_problem_risk_level = None
+        problem_followup_name = None
+        problem_followup_overdue = False
+        problem_followup_risk_level = None
+        problem_followup_what_to_check = None
+
     # ── Twin overlay (today / current state). Fail-soft. ─────────────────
     twin_kwargs: dict = {}
     try:
@@ -465,6 +514,12 @@ def _collect_signals(db: Session, user_id: int) -> StarterSignals:
         avg_sleep_score_7d=avg_sleep_score_7d,
         missing_hrv_days_7d=missing_hrv_days_7d,
         overdue_lab_name=overdue_lab_name,
+        top_problem_name=top_problem_name,
+        top_problem_risk_level=top_problem_risk_level,
+        problem_followup_name=problem_followup_name,
+        problem_followup_overdue=problem_followup_overdue,
+        problem_followup_risk_level=problem_followup_risk_level,
+        problem_followup_what_to_check=problem_followup_what_to_check,
         **twin_kwargs,
         **time_kwargs,
     )
@@ -507,6 +562,7 @@ def _has_any_user_signal(signals: StarterSignals) -> bool:
         or signals.hrv_today is not None
         or signals.systolic_bp is not None
         or signals.overdue_lab_name is not None
+        or signals.top_problem_name is not None
     )
 
 
@@ -626,6 +682,61 @@ def _suggest_lab_recheck(signals: StarterSignals) -> Optional[SuggestionCandidat
         60,
         f"我的 {signals.overdue_lab_name} 上次检查已超期，帮我安排复查并对比上次结果",
     )
+
+
+# ── Registered chronic problems (HealthProblem · R13) ────────────────────
+
+# 结节/分期类框架的括注 ("(Hp 阴性,胃窦后壁)" / "(TI-RADS 3)") 对 chip 太长且偏诊断,
+# 展示时剥掉,只留问题主名。名过长再截。
+_PROBLEM_PAREN_RE = re.compile(r"[（(][^）)]*[）)]")
+_PROBLEM_NAME_MAX = 18
+
+
+def _short_problem_name(name: Optional[str]) -> str:
+    if not name:
+        return ""
+    s = _PROBLEM_PAREN_RE.sub("", name).strip()
+    s = s.rstrip("，,。；;、：: ").strip()
+    return s[:_PROBLEM_NAME_MAX]
+
+
+def _suggest_problem_followup(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    """随访到期/逾期的登记问题 (慢病/结节) → 复查决策线。
+
+    复用 health_problem_service.due_followups(同一投影到时间线的检测),让 chip 与
+    议程复查项一致。P0/P1 逾期是高优先级(90),其余按到期/逾期给中高分。
+    """
+    name = _short_problem_name(signals.problem_followup_name)
+    if not name:
+        return None
+    risk = (signals.problem_followup_risk_level or "").upper()
+    what = (signals.problem_followup_what_to_check or "").strip()
+    focus = f"(重点看 {what[:14]})" if what else ""
+    if signals.problem_followup_overdue:
+        prio = 90 if risk in ("P0", "P1") else 70
+        return SuggestionCandidate(prio, f"「{name}」的复查已到期{focus}，帮我安排并对比上次")
+    prio = 70 if risk in ("P0", "P1") else 55
+    return SuggestionCandidate(prio, f"「{name}」快到复查时间了{focus}，帮我提前准备")
+
+
+def _suggest_health_problem(signals: StarterSignals) -> Optional[SuggestionCandidate]:
+    """已登记的慢病/结节 (无当下急症、无临期随访) → 日常管理/近况回顾线。
+
+    这是 data-rich 用户此前的接地盲区:登记了鼻炎/胃溃疡等问题,但今天既没有 Twin
+    acute 发作、随访也没到期时,之前一条相关 chip 都没有 → 回落泛泛模板。
+    与 followup chip 互斥:随访到期时让 followup 那条(更可执行)出场,避免两条同问题。
+    """
+    name = _short_problem_name(signals.top_problem_name)
+    if not name:
+        return None
+    # 若该问题正好有临期随访, 交给 _suggest_problem_followup(更具体), 这里让位避免重复。
+    if signals.problem_followup_name and _short_problem_name(
+        signals.problem_followup_name
+    ) == name:
+        return None
+    risk = (signals.top_problem_risk_level or "").upper()
+    prio = 65 if risk in ("P0", "P1") else 55
+    return SuggestionCandidate(prio, f"围绕我的「{name}」,最近该注意什么、怎么管理?")
 
 
 # ── Today body state (Twin-driven) ──────────────────────────────────────
@@ -862,6 +973,8 @@ _GENERATORS = (
     _suggest_supplement,
     _suggest_recovery_history,
     _suggest_lab_recheck,
+    _suggest_problem_followup,
+    _suggest_health_problem,
     # Today body state
     _suggest_readiness,
     _suggest_hrv_today,
@@ -881,6 +994,48 @@ _GENERATORS = (
     _suggest_late_night,
     _suggest_week_rhythm,
 )
+
+
+# Coarse theme per generator key — used ONLY to diversify the 4 served chips so a
+# user doesn't get 4 recovery/training variations. Keys not listed default to
+# their own name (so each is its own theme = never over-collapsed).
+_CATEGORY_BY_KEY: dict[str, str] = {
+    # recovery / training load / body readiness
+    "readiness": "recovery",
+    "hrv_today": "recovery",
+    "body_battery_stress": "recovery",
+    "acwr": "training",
+    "workout": "training",
+    "recovery_history": "recovery",
+    # nutrition / intake
+    "water": "nutrition",
+    "diet": "nutrition",
+    "supplement": "supplement",
+    # labs / exams / chronic problems (the grounded "check/compare" threads)
+    "exam": "labs",
+    "lab_recheck": "labs",
+    "bp": "labs",
+    "problem_followup": "chronic",
+    "health_problem": "chronic",
+    "acute_illness": "chronic",
+    "gene": "genetics",
+    "goal": "goal",
+    # environment
+    "aqi": "environment",
+    "uv": "environment",
+    "weather": "environment",
+    "outdoor_suitability": "environment",
+    # time-of-day rhythm
+    "morning": "rhythm",
+    "noon": "rhythm",
+    "evening": "rhythm",
+    "late_night": "rhythm",
+    "week_rhythm": "rhythm",
+}
+
+
+def _category_of(card: SuggestionCandidate) -> str:
+    return _CATEGORY_BY_KEY.get(card.key, card.key or "other")
 
 
 def _build_candidates(signals: StarterSignals) -> list[SuggestionCandidate]:
@@ -925,10 +1080,14 @@ def _select_cards(
     critical.sort(key=lambda c: -c.priority)
     chosen: list[SuggestionCandidate] = list(critical[:limit])
 
-    # Fill remaining slots from non-critical pool — weighted random sample.
+    # Fill remaining slots from non-critical pool — weighted random sample, but
+    # DIVERSIFIED so the served chips span distinct themes (no 4 recovery variants).
     slots = limit - len(chosen)
     if slots > 0 and rest:
-        picked = _weighted_sample(rest, k=min(slots, len(rest)), rng=rng)
+        used_categories = {_category_of(c) for c in chosen}
+        picked = _diverse_weighted_sample(
+            rest, k=min(slots, len(rest)), rng=rng, used_categories=used_categories
+        )
         chosen.extend(picked)
 
     # Fall back to defaults if still short.
@@ -967,3 +1126,35 @@ def _weighted_sample(
         keyed.append((u ** (1.0 / w), c))
     keyed.sort(key=lambda kv: kv[0], reverse=True)
     return [c for _, c in keyed[:k]]
+
+
+def _diverse_weighted_sample(
+    pool: list[SuggestionCandidate],
+    *,
+    k: int,
+    rng: random.Random,
+    used_categories: set[str],
+) -> list[SuggestionCandidate]:
+    """Pick k items, priority-weighted, but preferring UNUSED categories first.
+
+    Greedy round-based: at each step the eligible sub-pool is candidates whose
+    theme (`_category_of`) hasn't been chosen yet; we priority-weighted-sample ONE
+    from it. When every remaining candidate repeats an already-used category (the
+    user simply doesn't have 4 distinct themes), we relax and sample from the full
+    remainder. This keeps per-visit variety (RNG-driven within a tier) while
+    guaranteeing the served chips fan across themes when the supply allows —
+    fixing "4 recovery chips" for a training-heavy day.
+    """
+    if k >= len(pool):
+        return list(pool)
+    picked: list[SuggestionCandidate] = []
+    remaining = list(pool)
+    used = set(used_categories)
+    while len(picked) < k and remaining:
+        fresh = [c for c in remaining if _category_of(c) not in used]
+        tier = fresh if fresh else remaining
+        one = _weighted_sample(tier, k=1, rng=rng)[0]
+        picked.append(one)
+        remaining.remove(one)
+        used.add(_category_of(one))
+    return picked

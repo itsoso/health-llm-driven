@@ -728,3 +728,152 @@ def test_collect_signals_populates_local_time_fields(db, auth_user_and_headers):
     assert signals.local_hour is not None and 0 <= signals.local_hour <= 23
     assert signals.local_weekday is not None and 0 <= signals.local_weekday <= 6
     assert isinstance(signals.is_weekend, bool)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Registered chronic problems (HealthProblem · R13) — grounded chips for a
+# data-rich user whose chronic conditions previously never surfaced unless
+# acutely flaring. (2026-07 grounding-reliability improvement)
+# ──────────────────────────────────────────────────────────────────────
+
+
+def test_registered_problem_surfaces_management_chip():
+    """A registered chronic problem with no imminent follow-up still opens a
+    grounded management thread (previously: nothing → generic template)."""
+    from app.services.conversation_starters import _build_candidates
+
+    sig = _make_signals(top_problem_name="鼻炎", top_problem_risk_level="P2")
+    cands = _build_candidates(sig)
+    problem_cards = [c for c in cands if c.key == "health_problem"]
+    assert problem_cards
+    assert "鼻炎" in problem_cards[0].text
+
+
+def test_problem_name_parenthetical_is_stripped_in_chip():
+    from app.services.conversation_starters import _build_candidates
+
+    sig = _make_signals(top_problem_name="胃溃疡(Hp 阴性,胃窦后壁)", top_problem_risk_level="P1")
+    cands = _build_candidates(sig)
+    card = next(c for c in cands if c.key == "health_problem")
+    assert "胃溃疡" in card.text
+    assert "(Hp" not in card.text
+
+
+def test_overdue_problem_followup_chip_is_actionable():
+    from app.services.conversation_starters import _build_candidates
+
+    sig = _make_signals(
+        problem_followup_name="甲状腺结节(TI-RADS 3)",
+        problem_followup_overdue=True,
+        problem_followup_risk_level="P1",
+        problem_followup_what_to_check="甲状腺超声",
+    )
+    cands = _build_candidates(sig)
+    fu = [c for c in cands if c.key == "problem_followup"]
+    assert fu
+    assert "甲状腺结节" in fu[0].text
+    assert "复查" in fu[0].text and "到期" in fu[0].text
+    # P1 overdue → high (but non-critical) priority so it reliably surfaces.
+    assert fu[0].priority >= 80
+
+
+def test_problem_followup_and_management_chip_do_not_duplicate_same_problem():
+    """When a problem has a due follow-up, only the (more actionable) follow-up
+    chip appears — not two chips about the same condition."""
+    from app.services.conversation_starters import _build_candidates
+
+    sig = _make_signals(
+        top_problem_name="胃溃疡(Hp 阴性)",
+        top_problem_risk_level="P1",
+        problem_followup_name="胃溃疡(Hp 阴性)",
+        problem_followup_overdue=True,
+        problem_followup_risk_level="P1",
+    )
+    cands = _build_candidates(sig)
+    keys = [c.key for c in cands]
+    assert "problem_followup" in keys
+    assert "health_problem" not in keys  # ceded to the follow-up chip
+
+
+def test_registered_problem_makes_user_not_cold_start():
+    """A user with only a registered chronic problem is NOT cold-start — they get
+    grounded chips, never onboarding activation chips."""
+    from app.services.conversation_starters import _has_any_user_signal
+
+    sig = _make_signals(top_problem_name="鼻炎", top_problem_risk_level="P2")
+    assert _has_any_user_signal(sig) is True
+
+
+def test_endpoint_surfaces_registered_problem_for_data_rich_user(client, db, auth_user_and_headers):
+    """End-to-end: a seeded user with a registered health problem sees a grounded
+    chip about it (not the generic default template)."""
+    from app.models.health_problem import HealthProblem
+
+    user, headers = auth_user_and_headers
+    db.add(HealthProblem(
+        user_id=user.id, name="过敏性鼻炎", risk_level="P2", status="active",
+    ))
+    db.commit()
+
+    r = client.get("/api/v1/agent/conversation-starters", headers=headers)
+    assert r.status_code == 200
+    payload = r.json()
+    assert "onboarding" not in payload  # not treated as cold-start
+    texts = [s["text"] for s in payload["suggestions"]]
+    assert any("鼻炎" in t for t in texts)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Diversity — the 4 served chips should span distinct themes, not 4 variations
+# of one (e.g. all recovery/training). (2026-07 value/diversity improvement)
+# ──────────────────────────────────────────────────────────────────────
+
+
+def test_served_chips_are_diverse_across_themes():
+    from app.services.conversation_starters import (
+        _build_candidates,
+        _category_of,
+        _select_cards,
+    )
+
+    # A recovery-heavy day: readiness + hrv + body-battery all fire (recovery),
+    # plus a lab recheck, a registered problem, and an environment signal.
+    sig = _make_signals(
+        readiness_score=55,           # recovery
+        hrv_today=30, hrv_7d_avg_twin=42,   # recovery (low → fires)
+        body_battery=25,              # recovery
+        overdue_lab_name="LDL",       # labs
+        top_problem_name="鼻炎", top_problem_risk_level="P2",  # chronic
+        aqi=40, city="杭州",           # environment
+    )
+    cands = _build_candidates(sig)
+    # Must have enough recovery candidates to prove the guard matters.
+    recovery = [c for c in cands if _category_of(c) == "recovery"]
+    assert len(recovery) >= 2
+
+    # Across many seeds, the served set should reliably span >=3 distinct themes.
+    import random as _r
+    max_themes = 0
+    for seed in range(20):
+        out = _select_cards(cands, limit=4, rng=_r.Random(seed))
+        themes = {_category_of(c) for c in out}
+        max_themes = max(max_themes, len(themes))
+        # No single visit should be 4-of-the-same-theme when >=3 themes exist.
+        assert len(themes) >= 2
+    assert max_themes >= 3
+
+
+def test_diversity_relaxes_when_only_one_theme_available():
+    """If the user genuinely only has recovery signals, we still fill 4 slots
+    (diversity is a preference, not a hard cap that starves the list)."""
+    from app.services.conversation_starters import _build_candidates, _select_cards
+    import random as _r
+
+    sig = _make_signals(
+        readiness_score=55,
+        hrv_today=30, hrv_7d_avg_twin=42,
+        body_battery=25,
+    )
+    cands = _build_candidates(sig)
+    out = _select_cards(cands, limit=4, rng=_r.Random(0))
+    assert len(out) == 4  # defaults backfill; never starved
