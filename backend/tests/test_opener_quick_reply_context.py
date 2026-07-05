@@ -203,5 +203,6 @@ async def test_agent_stream_applies_opener_quick_reply_before_llm(db):
     assert card.actual_value == "71.2"
     assert "入口动作处理结果" in captured_system["text"]
     assert f"ActionCard #{card.id}" in captured_system["text"]
-    done = [e for e in events if e["event"] == "done"][-1]
+    # e.get: 流里混有 P0-1 扁平 status 进度事件 (无 "event" 键), 安全跳过
+    done = [e for e in events if e.get("event") == "done"][-1]
     assert "ActionCard" in done["data"]["sources_used"]

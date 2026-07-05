@@ -295,9 +295,13 @@ async def test_run_stream_with_extra_context_does_not_crash_before_first_event(d
             extra_context='{"from":"today"}',
         )
         first = await anext(stream)
+        second = await anext(stream)
         await stream.aclose()
 
-    assert first["event"] == "agent_start"
+    # P0-1 契约: 扁平 accepted 进度事件恒为流的首个事件 (<100ms, 任何 LLM 调用前),
+    # agent_start 紧随其后 —— extra_context 解析仍不得在这两个事件前崩。
+    assert first == {"type": "status", "stage": "accepted"}
+    assert second["event"] == "agent_start"
 
 
 # === Regression (2026-06): _api_get 字符截断损坏 JSON → 用药/补剂查找崩溃并把原始错误泄漏给用户 ===
