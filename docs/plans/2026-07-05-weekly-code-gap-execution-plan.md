@@ -177,4 +177,5 @@ python3 scripts/check_doc_drift.py
 - P0-4/P0-5 已完成:摄入 classifier 保持 diet/medication/supplement/water/diet_management 分流;用药草稿 route 携带 `dose`;Mobile 用药页支持从小巴草稿确认写入用药清单并记录一次已服用。
 - P0-6 已核对完成:当前 Chat 卡片 action 集合仍为 `agenda.complete`、`diet_record.create`、`route.open`、`ui.inline.expand` 等既有受控动作,Mobile dispatcher/registry 测试通过。
 - P1-7/P1-8 已完成代码闸验证:小巴首屏保留无底部 Tab 的 compact composer、空对话固定“拍照记一餐”chip;记录页“拍一下”直达 `/diet?capture=photo`;饮食页 `capture=photo` 生成待确认饮食草稿且不自动入库。移动端 smoke: `chat.test.tsx`、`recordEntry.test.tsx`、`dietCapture.test.tsx` 通过。
-- 待继续:P1-9 二维码 RC、P1-10/P1-11 HealthKit/Watch/手机号生产验证。
+- P1-9 已完成二维码 RC:release pack、iOS App Store preflight、doc drift、移动端 focused smoke、TypeScript 均通过;基于 `f4ac7f14` 构建 `20260705-124315-f4ac7f14`。ad-hoc 导出因 `life.executor.health`、Watch app、Watch extension 缺 ad-hoc profiles 失败,脚本回退 development 导出成功并上传。公开安装页: `https://health.executor.life/mobile-install/ios/20260705-124315-f4ac7f14/install.html`;manifest/IPA 均 HTTP 200,manifest bundle id 为 `life.executor.health`。本批未补拍 App Store-ready 截图集,final-submit 截图 gate 仍需单独跑。
+- 待继续:P1-10/P1-11 HealthKit/Watch/手机号生产验证;App Store final-submit 截图集补拍与人工审核仍单独挂账。
