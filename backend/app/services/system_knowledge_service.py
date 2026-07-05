@@ -2401,13 +2401,19 @@ def build_evidence_card_for_message(db: Session, message: str) -> dict[str, Any]
 
     result = lookup_for_twin(db, twin)
     claims = _drop_meta_boundary_claims(result["claims"])
-    if not result["entities"] or not claims:
+    if not claims:
+        return None
+
+    # 与 twin-fallback 卡同一实体解析:标题必须是首条 claim 的主题实体,
+    # 不是 entities[0](显式基因问答里也可能错位到无关生标)。
+    entity = _resolve_card_entity(db, result["entities"], claims)
+    if entity is None:
         return None
 
     return {
         "type": "system_knowledge_evidence",
         "data": {
-            "entity": result["entities"][0],
+            "entity": entity,
             "claims": claims[:3],
             "claim_boundary": result["claim_boundary"],
         },
@@ -2438,12 +2444,15 @@ def build_evidence_card_for_twin(
     if not claims:
         return None
 
+    # 卡标题实体 = 排序后首条 claim 的【自身主题实体】,解不出宁可不出卡。
+    entity = _resolve_card_entity(db, result["entities"], claims)
+    if entity is None:
+        return None
+
     return {
         "type": "system_knowledge_evidence",
         "data": {
-            # entity 跟随排序后的第一条 claim(相关性重排后 entities[0]
-            # 可能已不是 claims 的主题 → 卡标题"血压"配 HbA1c claims 的错位)。
-            "entity": _entity_for_claims(result["entities"], claims),
+            "entity": entity,
             "claims": claims[:3],
             "claim_boundary": result["claim_boundary"],
             "retrieval": {
@@ -2467,18 +2476,44 @@ def _dedupe_claims_by_title(claims: list[dict[str, Any]]) -> list[dict[str, Any]
     return unique
 
 
-def _entity_for_claims(
+def _resolve_card_entity(
+    db: Session,
     entities: list[dict[str, Any]],
     claims: list[dict[str, Any]],
-) -> dict[str, Any]:
-    if not entities:
-        return {}
-    top_entity_id = str(claims[0].get("entity_id") or "") if claims else ""
-    if top_entity_id:
-        for entity in entities:
-            if str(entity.get("entity_id") or "") == top_entity_id:
-                return entity
-    return entities[0]
+) -> dict[str, Any] | None:
+    """卡标题实体 = 排序后首条 claim 的【自身主题实体】,不是无关的 entities[0]。
+
+    prod 实锤:entities 来自 twin 结构字段(生标/基因),claims 来自 applies_when
+    条件命中(常是 condition 实体),两个池天然不相交 → 老逻辑 fallback 到
+    entities[0](用户首个 lab = 血压)→ 尿酸/鼻炎 claim 也顶着"血压"标题。
+    解析优先级:
+      ① claims[0].entity_id 命中 entities 池 → 用池内实体(字段最全)
+      ② 否则按 entity_id(+ entity_type)取 reviewed KB entity doc(真主题标题)
+      ③ 解不出 → None(fail-closed:宁可不出卡,绝不错标)
+    """
+    if not claims:
+        return None
+    top = claims[0]
+    top_entity_id = str(top.get("entity_id") or "")
+    top_entity_type = str(top.get("entity_type") or "")
+    if not top_entity_id:
+        return None
+
+    for entity in entities or []:
+        if str(entity.get("entity_id") or "") == top_entity_id:
+            return entity
+
+    query = db.query(KBDocument).filter(
+        KBDocument.doc_type == "entity",
+        KBDocument.entity_id == top_entity_id,
+        *_serving_document_filters(),
+    )
+    if top_entity_type:
+        query = query.filter(KBDocument.entity_type == top_entity_type)
+    entity_doc = query.order_by(KBDocument.entity_type.asc()).first()
+    if entity_doc is None:
+        return None
+    return serialize_document(entity_doc)
 
 
 _KB_RELEVANCE_STOP_TERMS = {
@@ -2540,6 +2575,122 @@ def _is_junk_relevance_term(term: str) -> bool:
     return any(ch in _KB_RELEVANCE_JUNK_CHARS for ch in term)
 
 
+# 强度修饰词:L = 修饰+主题(高血压)或 主题+修饰(血压高)时,2 字主题(血压)是
+# 真主题,不能当碎片丢 —— 否则"高尿酸/高血脂/血压高"这类问法会误杀出卡。
+_INTENSITY_MODIFIERS = ("高", "低", "偏", "超", "重度", "轻度", "中度", "重", "轻", "过", "正常", "异常")
+
+
+def _is_modifier_bounded_fragment(short: str, longer: str) -> bool:
+    """longer 是否只是「short + 强度修饰」或「强度修饰 + short」(此时 short 是主题)。"""
+    if longer.startswith(short) and longer[len(short):] in _INTENSITY_MODIFIERS:
+        return True
+    if longer.endswith(short) and longer[: len(longer) - len(short)] in _INTENSITY_MODIFIERS:
+        return True
+    return False
+
+
+# 证据卡消息相关性【专用】停用词 —— 只作用于 twin-fallback 证据卡的主题锚点,
+# 不进 specialist finding 匹配(那条路径 用药/风险 可能是真实领域信号)。
+#
+# 这些是 health-advice turn 的【指令样板 / 边界元词】:它们出现在几乎每个
+# "给建议但别当诊断、别直接给用药、列出不确定性边界、未来 N 天可执行" 的样板
+# 指令里,同时又出现在几乎每条 *_risk / *_boundary claim 的标题里 → 拿来当主题
+# 锚点必然把完全无关的慢病 claim 钓进证据卡。
+#
+# prod 实锤(founder CFTR 基因问答):消息主题是 CFTR/囊性纤维化(reviewed KB
+# 里无此 claim),但样板词 用药/边界/风险/临床/相关 命中 鼻炎/尿酸/血压/糖尿病
+# 边界 claim → 卡标题错位成"血压"。领域主题词(血压/叶酸/尿酸/CFTR)绝不进此表。
+_KB_CARD_RELEVANCE_STOP_TERMS = {
+    # —— health-advice turn 的边界/指令样板词 ——
+    "用药",
+    "边界",
+    "临床",
+    "风险",
+    "相关",
+    "诊断",
+    "建议",
+    "评估",
+    "监测",
+    "必须",  # prod 实锤主犯:几乎每条 *_boundary claim 标题都含"…建议必须保留…边界"
+    "复核",
+    "保留",
+    "治疗",
+    "决策",
+    "医生",
+    "沟通",
+    "决定",
+    "注意",
+    "结合",
+    # —— 结构化"基因发现"模板的字段标签词(中文)——
+    "标题",
+    "分类",
+    "结果",
+    "等级",
+    "位点",
+    "数据",
+    "动作",
+    "可执行",
+    "不确定性",
+    "性质",
+    "描述",
+    "关键",
+    "字段",
+    "类型",
+    "摘要",
+    "当前",
+    "上下文",
+    # —— 机器序列化的英文脚手架(gene_name/clinical_status/evidence_level/…)——
+    # 这些是字段名/分类值,不是用户主题;真正的英文主题词(生标名 HbA1c/LDL、
+    # 基因符号 MTHFR/APOE)不在此表,仍可作锚点。
+    "risk",
+    "disease",
+    "gene",
+    "genotype",
+    "genomic",
+    "finding",
+    "category",
+    "clinical",
+    "status",
+    "evidence",
+    "level",
+    "name",
+    "type",
+    "value",
+    "result",
+    "confirmation",
+    "requires",
+    "neutral",
+    "present",
+    "active",
+    "dtc",
+    "high",
+    "low",
+}
+
+
+def _is_card_relevance_stop_term(term: str) -> bool:
+    """卡片相关性锚点专用停用。
+
+    结构化"基因发现"块把大量【非主题】token 灌进消息:边界样板词、字段标签、
+    英文脚手架。它们与 *_boundary claim 标题/doc_id 的样板部分重叠 → 误命中。
+    规则(领域主题词:血压/叶酸/尿酸/HbA1c/MTHFR 均不被这些规则误伤):
+      · 显式样板/脚手架词表
+      · 纯数字("30 天"里的 30、基因型 "1200")
+      · 含下划线的 token(disease_risk / gene_name / clinical_status —— 机器字段名)
+      · 长度 <3 的纯 ASCII(id/gg/bp… 太短易撞;3+ 的脚手架 dtc/low 走上面词表,
+        真英文主题词 ldl/hdl/hba1c 得以保留)
+    """
+    if term in _KB_CARD_RELEVANCE_STOP_TERMS:
+        return True
+    if term.isdigit():
+        return True
+    if "_" in term:
+        return True
+    if term.isascii() and term.isalnum() and len(term) < 3:
+        return True
+    return False
+
+
 def _filter_claims_for_message_relevance(
     claims: list[dict[str, Any]],
     message: str | None,
@@ -2567,6 +2718,23 @@ def _filter_claims_for_message_relevance(
         if term not in _KB_RELEVANCE_STOP_TERMS
         and len(term) >= 2
         and not _is_junk_relevance_term(term)
+        and not _is_card_relevance_stop_term(term)
+    ]
+    # CJK 滑窗 bigram 会从更长共现词里漏出 2 字碎片:囊性"纤维"化 → 碎片"纤维",
+    # 撞上"膳食纤维"的 claim(prod 实锤:CFTR 问答弹膳食纤维卡)。若某 2 字词是
+    # 同批另一更长词的真子串,视为碎片丢弃 —— 但排除「强度修饰+主题」的情形
+    # (高尿酸/高血脂/血压高:主题词本身才是锚点,不能当碎片),否则误杀真问法。
+    longer_terms = [t for t in terms if len(t) >= 3]
+    terms = [
+        t
+        for t in terms
+        if not (
+            len(t) == 2
+            and any(
+                t != lt and t in lt and not _is_modifier_bounded_fragment(t, lt)
+                for lt in longer_terms
+            )
+        )
     ]
     if not terms:
         return {"claims": [], "matched_terms": []}
@@ -2597,11 +2765,15 @@ def _claim_anchor_text_from_serialized(claim: dict[str, Any]) -> str:
     """主题锚点字段:决定 claim 是否与本轮消息相关的准入文本。
 
     刻意不含 summary/body/sources/metadata —— 那些是内容,不是身份。
+    也【刻意不含 entity_type】—— 它是分类标签(gene/condition/biomarker),
+    不是用户主题;一旦纳入,机器序列化的"基因发现"块里的英文脚手架
+    (gene/condition/…)会命中它,把整类无关 claim 钓进证据卡
+    (prod 实锤:CFTR 基因发现块的 "gene"/"condition" 命中鼻炎/他汀 claim)。
+    主题身份留给 doc_id / title / entity_id / matched_conditions。
     """
     fields: list[str] = [
         str(claim.get("doc_id") or ""),
         str(claim.get("title") or ""),
-        str(claim.get("entity_type") or ""),
         str(claim.get("entity_id") or ""),
     ]
     conditions = claim.get("matched_conditions") or []

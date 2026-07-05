@@ -220,3 +220,151 @@ def test_golden_duplicate_dedao_claims_collapse_to_one(db):
     titles = [c.get("title") for c in card["data"]["claims"]]
     assert len(titles) == len(set(titles))
     assert titles.count("HbA1c 适合作为 8-12 周复查闭环") == 1
+
+
+# ── prod 实锤 (msg 5552):机器序列化的"基因发现"块 (CFTR, reviewed KB 无此 claim)
+#    却弹出"血压"证据卡。根因 2 处:①样板/脚手架词 (必须/用药/边界/gene_name/…) 把
+#    无关慢病 claim 钓进卡 ②卡 entity 恒取 entities[0]=用户首个 lab (血压),与 claims
+#    主题不符。以下三组测试钉死修复不回潮。
+
+def _seed_fiber_intervention_claim(db):
+    """膳食纤维 intervention claim —— 主题词"纤维"会与"囊性纤维化"的碎片"纤维"同形。"""
+    entity = KBDocument(
+        doc_id="entity:intervention:fiber-intake",
+        doc_type="entity",
+        entity_type="intervention",
+        entity_id="fiber-intake",
+        title="膳食纤维摄入",
+        summary="膳食纤维支持血糖与血脂管理。",
+        confidence=0.85,
+        evidence_level="B",
+        sources=["dedao:nutrition-01"],
+        last_confirmed=datetime(2026, 6, 1, tzinfo=UTC),
+        decay_rate="slow",
+        metadata_json={"review_status": "reviewed"},
+    )
+    claim = KBDocument(
+        doc_id="claim:c_fiber_glycemic_lipid_support",
+        doc_type="claim",
+        entity_type="intervention",
+        entity_id="fiber-intake",
+        title="膳食纤维摄入:膳食纤维支持血糖和血脂管理",
+        summary="逐步增加膳食纤维有助于血糖和血脂管理。",
+        body="不用于诊断或治疗。",
+        confidence=0.8,
+        evidence_level="B",
+        applies_when=["twin.labs.HbA1c >= 5.7"],
+        sources=["dedao:nutrition-01"],
+        last_confirmed=datetime(2026, 6, 1, tzinfo=UTC),
+        decay_rate="normal",
+        metadata_json={"review_status": "reviewed"},
+    )
+    db.add_all([entity, claim])
+    db.flush()
+    db.add(
+        KBEdge(
+            src_doc_id=entity.doc_id,
+            dst_doc_id=claim.doc_id,
+            relation="has_claim",
+            confidence=0.9,
+            source_claim_id=claim.doc_id,
+        )
+    )
+    db.commit()
+
+
+# founder 真实触发文案的最小化复刻:纯样板指令 + 结构化基因发现块 (英文脚手架)。
+_CFTR_GENOMIC_FINDING_MESSAGE = (
+    "请基于我的真实基因上下文，分析这个基因发现，并给出可执行建议。"
+    "注意：不要把基因风险当成诊断，不要直接给用药决定；请列出不确定性边界、"
+    "需要结合的化验/症状/生活方式数据，以及未来 30 天可执行动作。"
+    "基因发现：- 标题：CFTR · CFTR 相关疾病筛查位点 - 分类：disease_risk "
+    "- rsid：rs121908763 - 基因型：GG - 结果：CFTR 风险等位纯合筛查阳性，"
+    "需临床测序/汗氯确认 - 风险等级：high requires_confirmation "
+    "变异与囊性纤维化、支气管扩张有关。结果必须复核。"
+    "genomic_finding category=disease_risk clinical_status evidence_level gene_name id"
+)
+
+
+def test_golden_genomic_finding_boilerplate_pulls_no_chronic_card(db):
+    """CFTR 基因发现块 (KB 无 CFTR claim) 绝不因样板/脚手架词弹出无关慢病卡。"""
+    _seed_chronic_claims(db, hba1c_copies=1)
+    _seed_fiber_intervention_claim(db)
+    card = build_evidence_card_for_twin(
+        db, _CHRONIC_TWIN, message=_CFTR_GENOMIC_FINDING_MESSAGE
+    )
+    assert card is None
+
+
+def test_golden_card_entity_always_matches_top_claim_subject(db):
+    """卡 entity 必须是首条 claim 的自身主题实体,绝不错位到 entities[0]。
+
+    尿酸问句下,即使 BP 生标实体排在实体池首位,卡标题也必须是尿酸主题,不是血压。
+    """
+    _seed_chronic_claims(db, hba1c_copies=1)
+    # 追加一条尿酸 claim + 实体,条件命中同一 twin。
+    uric_entity = KBDocument(
+        doc_id="entity:condition:hyperuricemia-risk",
+        doc_type="entity",
+        entity_type="condition",
+        entity_id="hyperuricemia-risk",
+        title="尿酸风险",
+        summary="尿酸偏高的生活方式管理。",
+        confidence=0.85,
+        evidence_level="B",
+        sources=["dedao:chronic-uric"],
+        last_confirmed=datetime(2026, 6, 1, tzinfo=UTC),
+        decay_rate="slow",
+        metadata_json={"review_status": "reviewed"},
+    )
+    uric_claim = KBDocument(
+        doc_id="claim:c_uric_lifestyle",
+        doc_type="claim",
+        entity_type="condition",
+        entity_id="hyperuricemia-risk",
+        title="尿酸风险:尿酸偏高需结合酒精、含糖饮料、体重",
+        summary="尿酸偏高优先看生活方式而非直接用药。",
+        body="不用于诊断或治疗。",
+        confidence=0.82,
+        evidence_level="B",
+        applies_when=["twin.labs.HbA1c >= 5.7"],
+        sources=["dedao:chronic-uric"],
+        last_confirmed=datetime(2026, 6, 1, tzinfo=UTC),
+        decay_rate="normal",
+        metadata_json={"review_status": "reviewed"},
+    )
+    db.add_all([uric_entity, uric_claim])
+    db.flush()
+    db.add(
+        KBEdge(
+            src_doc_id=uric_entity.doc_id,
+            dst_doc_id=uric_claim.doc_id,
+            relation="has_claim",
+            confidence=0.9,
+            source_claim_id=uric_claim.doc_id,
+        )
+    )
+    db.commit()
+
+    card = build_evidence_card_for_twin(db, _CHRONIC_TWIN, message="分析我的尿酸偏高")
+    assert card is not None
+    claims = card["data"]["claims"]
+    assert claims[0]["entity_id"] == "hyperuricemia-risk"
+    # 卡标题实体 = 首条 claim 的主题实体 (尿酸风险),不是 entities 池首位的血压。
+    assert card["data"]["entity"].get("entity_id") == claims[0].get("entity_id")
+    assert card["data"]["entity"].get("title") == "尿酸风险"
+
+
+def test_golden_fiber_fragment_vs_real_fiber_question(db):
+    """区分"囊性纤维化"里的碎片"纤维"(不弹膳食纤维卡)与真问膳食纤维(要弹卡)。"""
+    _seed_chronic_claims(db, hba1c_copies=1)
+    _seed_fiber_intervention_claim(db)
+
+    # 碎片:纤维化 共现 → "纤维" 被判子串碎片丢弃 → 不误弹膳食纤维卡。
+    frag = build_evidence_card_for_twin(db, _CHRONIC_TWIN, message="囊性纤维化是什么？")
+    assert frag is None
+
+    # 真问膳食纤维:主题即纤维 → 卡正常出。
+    real = build_evidence_card_for_twin(db, _CHRONIC_TWIN, message="我需要多补充膳食纤维吗？")
+    assert real is not None
+    assert real["data"]["entity"].get("entity_id") == "fiber-intake"
