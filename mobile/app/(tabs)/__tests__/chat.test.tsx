@@ -734,9 +734,9 @@ describe('ChatScreen', () => {
     const { getByTestId } = render(<ChatScreen />);
     await waitFor(() => expect(mockFetchConversationStarters).toHaveBeenCalled());
 
-    // No global tab bar: spacer = insets.bottom (jest mock 为 0) + 12 呼吸;
-    // 真机 = home indicator 安全区 + 12 —— 输入栏悬浮不贴底 (阿福式)。
-    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 12 });
+    // No global tab bar: spacer = insets.bottom (jest mock 为 0) + 28 舒适呼吸区;
+    // 真机 = home indicator 安全区 + 28 —— 输入栏悬浮在拇指舒适弧区,不贴底。
+    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 28 });
 
     act(() => {
       keyboardListeners.keyboardDidShow({
