@@ -15,7 +15,13 @@ import ChatBubble from '../../components/chat/ChatBubble';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import ChatHeader from '../../components/chat/ChatHeader';
 import BriefingStrip from '../../components/chat/BriefingStrip';
-import EmptyStateHome, { type EmptyStateSuggestion } from '../../components/chat/EmptyStateHome';
+import EmptyStateHome, {
+  greetingForHour,
+  formatMemoryOpenerText,
+  type EmptyStateSuggestion,
+} from '../../components/chat/EmptyStateHome';
+import ComposerSuggestionsRow from '../../components/chat/ComposerSuggestionsRow';
+import { formatOpenerText } from '../../components/chat/OpenerCard';
 import {
   buildConversationOpenerReplyContext,
   buildConversationOpenerReplyMessage,
@@ -85,6 +91,26 @@ function decorateSuggestions(items: SuggestionMeta[] | null | undefined): Sugges
 function getSelfReportedAdherence(reply: string): number | null {
   if (/没做|未做|没有做|不算/.test(reply)) return 0;
   if (/做到|完成|已做|做了/.test(reply)) return 70;
+  return null;
+}
+
+/**
+ * State A「阿衡先开口」连续性: 把发送第一条消息时可见的开场气泡文本融成一句,
+ * 作为合成 assistant 消息注入到流顶。opener 优先, 退化到记忆-only 气泡文本。
+ * 返回 null → 当时没有可见开场(纯问候块) → 不注入。
+ */
+function buildOpeningContinuityText(
+  opener: ConversationOpener | null,
+  memoryOpener: MemoryOpenerItem[],
+): string | null {
+  const greeting = greetingForHour(new Date().getHours());
+  if (opener) {
+    return `${greeting}。${formatOpenerText(opener.text)}`;
+  }
+  const memoryText = formatMemoryOpenerText(memoryOpener);
+  if (memoryText.length > 0) {
+    return `${greeting}。${memoryText}`;
+  }
   return null;
 }
 
@@ -175,6 +201,15 @@ export default function ChatScreen() {
     if (!shouldSkip?.()) setMemoryOpener(items);
   }, []);
 
+  // Refs mirror current opener/memory/messages-empty so 值 can be read inside
+  // 空依赖回调(键盘礼仪 focus 回调 + State A 连续性注入)。每渲染同步。
+  const openerRef = useRef<ConversationOpener | null>(null);
+  openerRef.current = opener;
+  const memoryOpenerRef = useRef<MemoryOpenerItem[]>([]);
+  memoryOpenerRef.current = memoryOpener;
+  const messagesEmptyRef = useRef(true);
+  messagesEmptyRef.current = messages.length === 0;
+
   const refreshCoachHomeState = useCallback(async () => {
     await Promise.all([
       refreshConversationStarters(),
@@ -264,23 +299,46 @@ export default function ChatScreen() {
     }, [])
   );
 
-  // GPT/Gemini 式: 空对话(新窗口/冷启)获得焦点 → 默认唤起键盘;
-  // 有历史的对话不弹, 不打断阅读。token 传给 ChatInputBar 触发聚焦。
+  // 「阿衡先开口」键盘礼仪 (State A, 2026-07):
+  // 只在阿衡没话可说时(无 opener 且无记忆)才默认唤起键盘 —— 阿衡有开场消息时
+  // 不抢键盘, 让话先被看见(点输入框/chip 照常唤起)。有历史的对话也不弹。
+  // opener fetch 是异步的: 首次 focus 时可能还没落定, 用 startersReady flag 推迟 bump 决定;
+  // fetch 出错 → treat as blank → 照旧 bump。键盘已弹起后 opener 才到达 → 不回收(无 dismiss jank)。
   const [composerFocusToken, setComposerFocusToken] = useState(0);
-  const messagesEmptyRef = useRef(true);
-  messagesEmptyRef.current = messages.length === 0;
+  // startersReady 镜像成 ref, 供 focus 回调读(空依赖)。opener/memory/messages-empty
+  // refs 已在上方声明。
+  const startersReadyRef = useRef(false);
+  startersReadyRef.current = startersReady;
   // 单次触发守卫: 每个 focus 会话只 bump 一次(blur 清理时复位)。
   // 也防测试环境 useFocusEffect mock 每渲染重跑导致 setState 死循环。
   const focusBumpedRef = useRef(false);
+  // 有话可说(opener 或记忆)→ 抑制键盘; 没话(空 + fetch 已落定)→ 唤起。
+  const shouldBumpKeyboard = useCallback(() => {
+    if (!messagesEmptyRef.current) return false;
+    if (openerRef.current) return false;
+    if (memoryOpenerRef.current.length > 0) return false;
+    return true;
+  }, []);
   useFocusEffect(
     useCallback(() => {
-      if (!focusBumpedRef.current && messagesEmptyRef.current) {
+      // fetch 还没落定 → 先不决定, 等 startersReady 那个 effect 补 bump。
+      if (!focusBumpedRef.current && startersReadyRef.current && shouldBumpKeyboard()) {
         focusBumpedRef.current = true;
         setComposerFocusToken((n) => n + 1);
       }
       return () => { focusBumpedRef.current = false; };
-    }, [])
+    }, [shouldBumpKeyboard])
   );
+
+  // opener fetch 落定后补一次 bump 决定: 若 focus 时 fetch 还没回、这里落定后
+  // 判定阿衡确实没话 → 唤起键盘。落定后有 opener/记忆 → 保持不弹。
+  useEffect(() => {
+    if (!startersReady) return;
+    if (!focusBumpedRef.current && shouldBumpKeyboard()) {
+      focusBumpedRef.current = true;
+      setComposerFocusToken((n) => n + 1);
+    }
+  }, [startersReady, shouldBumpKeyboard]);
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', (event) => {
@@ -295,12 +353,34 @@ export default function ChatScreen() {
     return () => { showSub.remove(); hideSub.remove(); };
   }, []);
 
+  // State A: 用户发第一条消息时(空状态 + 有可见开场气泡), 把开场文本作为
+  // 合成 assistant 消息注入到流顶, 让被回答的那句话不随空状态卸载而消失。
+  // 只在 messages 为空时注入(prev.length===0 双保险); 合成消息 localOnly, 不落后端历史。
+  // React 会把这次 setMessages 与紧随的 sendMessage 内部 setMessages 批处理:
+  // [synthetic] → [synthetic, userMsg, aiMsg]。
+  const injectOpeningContinuity = useCallback((activeOpener: ConversationOpener | null) => {
+    if (messagesEmptyRef.current !== true) return;
+    const text = buildOpeningContinuityText(activeOpener, memoryOpenerRef.current);
+    if (!text) return;
+    setMessages(prev => {
+      if (prev.length > 0) return prev;
+      return [{
+        id: `opening-${Date.now()}`,
+        role: 'assistant',
+        content: text,
+        localOnly: true,
+        completionStatus: 'complete',
+      }, ...prev];
+    });
+  }, [setMessages]);
+
   const handleSend = useCallback((text: string, images?: any, options?: ChatInputSendOptions) => {
     isNearBottom.current = true;
+    injectOpeningContinuity(openerRef.current);
     sendMessage(text, images, options?.extraContext ? { extraContext: options.extraContext } : undefined);
     setContextBadge(null);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
-  }, [sendMessage]);
+  }, [injectOpeningContinuity, sendMessage]);
 
   const handleStarterPress = useCallback((s: EmptyStateSuggestion, position: number) => {
     // 点击埋点 (CTR 分子) — 旁路, 不阻塞发送
@@ -369,9 +449,10 @@ export default function ChatScreen() {
       refreshCoachHomeState().catch(err => console.warn('[chat] opener 刷新失败', err));
     }
     const messageText = activeOpener ? buildConversationOpenerReplyMessage(activeOpener, text) : text;
+    injectOpeningContinuity(activeOpener);
     sendMessage(messageText, null, extraContext ? { extraContext } : undefined);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
-  }, [opener, refreshCoachHomeState, sendMessage]);
+  }, [opener, injectOpeningContinuity, refreshCoachHomeState, sendMessage]);
 
   // 加载第一页 (打开 sheet / 重试 / 搜索变化时调用) — 重置所有分页状态。
   const loadConversationHistory = useCallback(async () => {
@@ -582,10 +663,8 @@ export default function ChatScreen() {
             <EmptyStateHome
               memoryOpener={memoryOpener}
               opener={opener}
-              suggestions={starterSuggestions}
               onOpenMemory={() => router.push('/memory')}
               onOpenerQuickReply={handleOpenerQuickReply}
-              onSuggestionPress={handleStarterPress}
             />
           }
         />
@@ -629,6 +708,13 @@ export default function ChatScreen() {
               <Text style={txt.shareButton}>{sharing ? '生成中' : '分享'}</Text>
             </TouchableOpacity>
           </View>
+        )}
+        {messages.length === 0 && !selectionMode && (
+          <ComposerSuggestionsRow
+            suggestions={starterSuggestions}
+            onCapturePhoto={() => router.push('/diet?capture=photo' as any)}
+            onSuggestionPress={handleStarterPress}
+          />
         )}
         <ChatInputBar
           onSend={handleSend}

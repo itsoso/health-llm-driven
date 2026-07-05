@@ -12,6 +12,7 @@ const mockFetchMemoryOpener = jest.fn();
 const mockRecordCardAdherence = jest.fn();
 const mockRecordCardDecision = jest.fn();
 const mockNewChat = jest.fn();
+const mockSetMessages = jest.fn();
 const mockSetParams = jest.fn();
 let mockRouteParams: Record<string, string | undefined> = {};
 let mockLlmPreference: any = { model_id: null, options: [] };
@@ -42,6 +43,7 @@ jest.mock('../../../hooks/useChatEngine', () => ({
     newChat: mockNewChat,
     loadLatestConversation: jest.fn(),
     loadConversation: jest.fn(),
+    setMessages: mockSetMessages,
   }),
 }));
 
@@ -120,18 +122,8 @@ jest.mock('../../../components/chat/ChatBubble', () => {
 });
 jest.mock('../../../components/chat/BrandCircle', () => 'BrandCircle');
 jest.mock('../../../components/chat/ConversationSheet', () => 'ConversationSheet');
-jest.mock('../../../components/chat/OpenerCard', () => {
-  const React = require('react');
-  const { Pressable, Text } = require('react-native');
-  const MockOpenerCard = ({ opener, onQuickReply }: any) => (
-    <Pressable accessibilityLabel="opener-done" onPress={() => onQuickReply(opener.quick_replies[0])}>
-      <Text>{opener.text}</Text>
-      <Text>{opener.quick_replies[0]}</Text>
-    </Pressable>
-  );
-  MockOpenerCard.displayName = 'MockOpenerCard';
-  return MockOpenerCard;
-});
+// EmptyStateHome renders real (opening bubble + quick-reply chips). It pulls
+// formatOpenerText from the real OpenerCard module, so we do NOT mock OpenerCard.
 jest.mock('../../../components/chat/ChatInputBar', () => 'ChatInputBar');
 // BriefingStrip 走 React Query, 本 suite 无 provider;
 // 它们的内部行为各自有专属测试, 这里 mock 掉避免 provider 依赖。ChatHeader 保留真实 (断言其 DOM)。
@@ -142,6 +134,10 @@ import ChatScreen from '../chat';
 describe('ChatScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // clearAllMocks 不排空 mockResolvedValueOnce 队列 —— 对 fetch mock 显式 reset,
+    // 免得上个 test 多排的 once-value 泄漏进下个 test 的 starter/opener 渲染。
+    mockFetchConversationStarters.mockReset();
+    mockFetchMemoryOpener.mockReset();
     mockOpenHistory.mockResolvedValue([]);
     mockOpenHistoryPage.mockResolvedValue({ items: [], total: 0 });
     mockFetchConversationStarters.mockResolvedValue({ opener: null, suggestions: null });
@@ -154,19 +150,52 @@ describe('ChatScreen', () => {
     mockIsStreaming = false;
   });
 
-  it('empty chat auto-summons keyboard: autoFocusToken >0 on focus and bumps on 新建对话 (GPT-style)', async () => {
+  it('empty chat with nothing to say auto-summons keyboard once opener fetch settles, and bumps on 新建对话', async () => {
+    // 阿衡没话可说(opener 缺席 + 无记忆) → fetch 落定后才唤起键盘。
+    mockFetchConversationStarters.mockResolvedValue({ opener: null, suggestions: null });
+    mockFetchMemoryOpener.mockResolvedValue([]);
+
     const { UNSAFE_getAllByType, getByLabelText } = render(<ChatScreen />);
 
     const bar = () => UNSAFE_getAllByType('ChatInputBar' as any)[0];
-    // 空对话首次获得焦点 → token 已递增(>0), 键盘默认唤起
-    const initial = bar().props.autoFocusToken;
-    expect(initial).toBeGreaterThan(0);
+    // opener fetch 落定后 → token 递增(>0), 键盘唤起。
+    let initial = 0;
+    await waitFor(() => {
+      initial = bar().props.autoFocusToken;
+      expect(initial).toBeGreaterThan(0);
+    });
 
     // 新建对话 → 再次递增(新窗口也唤起)
     await act(async () => {
       fireEvent.press(getByLabelText('新建对话'));
     });
     expect(bar().props.autoFocusToken).toBeGreaterThan(initial);
+  });
+
+  it('does NOT summon the keyboard when 阿衡 has an opening message (opener present)', async () => {
+    // 阿衡有开场消息 → 让话被看见, 不抢键盘。
+    mockFetchConversationStarters.mockResolvedValue({
+      opener: {
+        text: '今天就是「提前晚餐」的检验日，做到了吗？',
+        source: 'action_card_due',
+        source_id: 1,
+        quick_replies: ['做到了 ✅', '没做 ❌'],
+        deep_link: null,
+        priority: 100,
+      },
+      suggestions: null,
+    });
+    mockFetchMemoryOpener.mockResolvedValue([]);
+
+    const { UNSAFE_getAllByType, getByText } = render(<ChatScreen />);
+
+    const bar = () => UNSAFE_getAllByType('ChatInputBar' as any)[0];
+    // 等 opener 落定。opener.text 在气泡里紧跟折进的问候语, 用正则匹配同一 Text 段。
+    await waitFor(() => {
+      expect(getByText(/今天就是「提前晚餐」的检验日，做到了吗？/)).toBeTruthy();
+    });
+    // 键盘 token 始终保持 0 —— 阿衡有话说时不弹键盘。
+    expect(bar().props.autoFocusToken).toBe(0);
   });
 
   it('briefing strip hides on dismiss and stays hidden after 新建对话', async () => {
@@ -426,8 +455,8 @@ describe('ChatScreen', () => {
 
     const { getByLabelText } = render(<ChatScreen />);
 
-    await waitFor(() => expect(getByLabelText('opener-done')).toBeTruthy());
-    fireEvent.press(getByLabelText('opener-done'));
+    await waitFor(() => expect(getByLabelText('一键回复: 做到了 ✅')).toBeTruthy());
+    fireEvent.press(getByLabelText('一键回复: 做到了 ✅'));
 
     expect(mockSendMessage).toHaveBeenCalledWith(
       expect.stringContaining('AI 预测：7 天体重保持 ≤ 71.3kg'),
@@ -474,18 +503,18 @@ describe('ChatScreen', () => {
     const { getByLabelText, queryByText, getByText } = render(<ChatScreen />);
 
     await waitFor(() => {
-      expect(getByText('今天就是「夜间血氧复盘」的检验日，做到了吗？')).toBeTruthy();
+      expect(getByText(/今天就是「夜间血氧复盘」的检验日，做到了吗？/)).toBeTruthy();
       expect(getByText(/旧记忆/)).toBeTruthy();
     });
 
     await act(async () => {
-      fireEvent.press(getByLabelText('opener-done'));
+      fireEvent.press(getByLabelText('一键回复: 做到了 ✅'));
     });
 
     await waitFor(() => {
       expect(mockFetchConversationStarters).toHaveBeenCalledTimes(2);
       expect(mockFetchMemoryOpener).toHaveBeenCalledTimes(2);
-      expect(queryByText('今天就是「夜间血氧复盘」的检验日，做到了吗？')).toBeNull();
+      expect(queryByText(/今天就是「夜间血氧复盘」的检验日，做到了吗？/)).toBeNull();
       expect(getByText('复盘昨晚夜间血氧和睡眠恢复')).toBeTruthy();
       expect(getByText(/更新后的记忆/)).toBeTruthy();
     });
@@ -508,12 +537,40 @@ describe('ChatScreen', () => {
     expect(getByText('帮我提升补剂依从率（近7天完成率 42.9%）')).toBeTruthy();
   });
 
-  it('frames empty chat suggestions as direct next actions with health context', async () => {
-    const { getByText } = render(<ChatScreen />);
-
-    await waitFor(() => {
-      expect(getByText(/阿衡 · 会带上你的健康上下文/)).toBeTruthy();
+  it('shows a composer-adjacent chips row with the camera chip first on empty chat', async () => {
+    mockFetchConversationStarters.mockResolvedValue({
+      opener: null,
+      suggestions: [{ text: '分析我的睡眠质量', key: 'sleep', priority: 10 }],
     });
+
+    const { getByLabelText } = render(<ChatScreen />);
+
+    // Fixed 拍照记一餐 chip 存在 → 点击走 proven route push('/diet?capture=photo')。
+    await waitFor(() => {
+      expect(getByLabelText('拍照记一餐')).toBeTruthy();
+    });
+    fireEvent.press(getByLabelText('拍照记一餐'));
+    expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo');
+
+    // 动态 starter suggestion 也进 composer 行, 点击走既有发送。
+    await waitFor(() => {
+      expect(getByLabelText('向阿衡提问: 分析我的睡眠质量')).toBeTruthy();
+    });
+    fireEvent.press(getByLabelText('向阿衡提问: 分析我的睡眠质量'));
+    expect(mockSendMessage).toHaveBeenCalledWith('分析我的睡眠质量', null, undefined);
+  });
+
+  it('hides the composer chips row once the conversation has messages', async () => {
+    mockMessages = [
+      { id: 'u-1', role: 'user', content: '早餐吃了鸡蛋' },
+      { id: 'a-1', role: 'assistant', content: '好的。', completionStatus: 'complete' },
+    ];
+
+    const { queryByLabelText } = render(<ChatScreen />);
+
+    await waitFor(() => expect(mockFetchConversationStarters).toHaveBeenCalled());
+    // messages 非空 → composer chips row 不渲染。
+    expect(queryByLabelText('拍照记一餐')).toBeNull();
   });
 
   it('keeps the docked-tab chat composer close to the global tab bar and above the iOS keyboard', async () => {

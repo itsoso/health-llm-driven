@@ -4,25 +4,7 @@ import { fireEvent, render } from '@testing-library/react-native';
 import EmptyStateHome, {
   formatMemoryOpenerText,
   greetingForHour,
-  type EmptyStateSuggestion,
 } from '../EmptyStateHome';
-
-jest.mock('../OpenerCard', () => {
-  const React = require('react');
-  const { Pressable, Text } = require('react-native');
-  const MockOpenerCard = ({ opener, onQuickReply }: any) => (
-    <Pressable accessibilityLabel="opener-card" onPress={() => onQuickReply(opener.quick_replies[0])}>
-      <Text>{opener.text}</Text>
-    </Pressable>
-  );
-  MockOpenerCard.displayName = 'MockOpenerCard';
-  return MockOpenerCard;
-});
-
-const suggestions: EmptyStateSuggestion[] = [
-  { icon: 'moon-outline', text: '分析我的睡眠质量', key: 'sleep', priority: 10 },
-  { icon: 'fitness-outline', text: '给我运动建议', key: 'exercise', priority: 8 },
-];
 
 describe('EmptyStateHome', () => {
   it('maps local hour to lightweight greeting text', () => {
@@ -39,10 +21,9 @@ describe('EmptyStateHome', () => {
     ])).toBe('鼻炎发作时优先生理盐水冲洗。 避免连续使用喷剂。');
   });
 
-  it('renders memory, opener and starter suggestions with explicit handlers', () => {
+  it('renders the opening bubble: fused greeting + opener text + memory footnote inside', () => {
     const onOpenMemory = jest.fn();
     const onOpenerQuickReply = jest.fn();
-    const onSuggestionPress = jest.fn();
     const opener = {
       text: '今天就是「提前晚餐」的检验日，做到了吗？',
       source: 'action_card_due',
@@ -53,39 +34,100 @@ describe('EmptyStateHome', () => {
       <EmptyStateHome
         memoryOpener={[{ id: 1, type: 'allergy', type_label: '过敏', content: '对花粉过敏' }]}
         opener={opener}
-        suggestions={suggestions}
         onOpenMemory={onOpenMemory}
         onOpenerQuickReply={onOpenerQuickReply}
-        onSuggestionPress={onSuggestionPress}
+      />,
+    );
+
+    // greeting is folded INTO the bubble as the first sentence + opener text follows.
+    expect(getByText(/早上好|中午好|下午好|晚上好|夜深了/)).toBeTruthy();
+    expect(getByText(/今天就是「提前晚餐」的检验日，做到了吗？/)).toBeTruthy();
+    // memory footnote lives inside the bubble (sanitized text).
+    expect(getByText('对花粉过敏')).toBeTruthy();
+
+    // 校准 button reaches the memory calibration handler.
+    fireEvent.press(getByLabelText('查看和校准 AI 记忆'));
+    expect(onOpenMemory).toHaveBeenCalled();
+  });
+
+  it('renders quick replies below the bubble including a 换个话题 chip, all routed to onQuickReply', () => {
+    const onOpenerQuickReply = jest.fn();
+    const opener = {
+      text: '今天就是「夜间血氧复盘」的检验日，做到了吗？',
+      source: 'action_card_due',
+      quick_replies: ['做到了 ✅', '没做 ❌'],
+    } as any;
+
+    const { getByLabelText } = render(
+      <EmptyStateHome
+        memoryOpener={[]}
+        opener={opener}
+        onOpenMemory={jest.fn()}
+        onOpenerQuickReply={onOpenerQuickReply}
+      />,
+    );
+
+    // opener-provided quick replies call onQuickReply with the RAW reply text.
+    fireEvent.press(getByLabelText('一键回复: 做到了 ✅'));
+    expect(onOpenerQuickReply).toHaveBeenCalledWith('做到了 ✅');
+    fireEvent.press(getByLabelText('一键回复: 没做 ❌'));
+    expect(onOpenerQuickReply).toHaveBeenCalledWith('没做 ❌');
+
+    // appended 换个话题 chip routes through the SAME handler.
+    fireEvent.press(getByLabelText('换个话题'));
+    expect(onOpenerQuickReply).toHaveBeenCalledWith('换个话题');
+  });
+
+  it('omits the memory footnote when there is no memory', () => {
+    const opener = {
+      text: '今天就是「提前晚餐」的检验日，做到了吗？',
+      source: 'action_card_due',
+      quick_replies: ['做到了'],
+    } as any;
+
+    const { queryByLabelText, getByText } = render(
+      <EmptyStateHome
+        memoryOpener={[]}
+        opener={opener}
+        onOpenMemory={jest.fn()}
+        onOpenerQuickReply={jest.fn()}
+      />,
+    );
+
+    expect(getByText(/今天就是「提前晚餐」的检验日，做到了吗？/)).toBeTruthy();
+    // No footnote / 校准 affordance when memory is absent.
+    expect(queryByLabelText('查看和校准 AI 记忆')).toBeNull();
+  });
+
+  it('falls back to a memory-only bubble when opener is null but memory exists', () => {
+    const onOpenMemory = jest.fn();
+    const { getByText, getByLabelText } = render(
+      <EmptyStateHome
+        memoryOpener={[{ id: 1, type: 'medical', type_label: '医疗', content: '对花粉过敏' }]}
+        opener={null}
+        onOpenMemory={onOpenMemory}
+        onOpenerQuickReply={jest.fn()}
       />,
     );
 
     expect(getByText('今天想从哪里开始？')).toBeTruthy();
     expect(getByText('对花粉过敏')).toBeTruthy();
-    expect(getByText('今天就是「提前晚餐」的检验日，做到了吗？')).toBeTruthy();
-
     fireEvent.press(getByLabelText('查看和校准 AI 记忆'));
     expect(onOpenMemory).toHaveBeenCalled();
-
-    fireEvent.press(getByText('分析我的睡眠质量'));
-    expect(onSuggestionPress).toHaveBeenCalledWith(suggestions[0], 0);
-
-    fireEvent.press(getByLabelText('opener-card'));
-    expect(onOpenerQuickReply).toHaveBeenCalledWith('做到了');
   });
 
-  it('hides the memory card when cleanup leaves no sensible content', () => {
-    const { queryByText } = render(
+  it('hides the memory bubble when cleanup leaves no sensible content (standalone greeting only)', () => {
+    const { queryByLabelText, getByText } = render(
       <EmptyStateHome
         memoryOpener={[{ id: 1, type: 'medical', type_label: '医嘱', content: '{"x":"短"}' }]}
         opener={null}
-        suggestions={suggestions}
         onOpenMemory={jest.fn()}
         onOpenerQuickReply={jest.fn()}
-        onSuggestionPress={jest.fn()}
       />,
     );
 
-    expect(queryByText('记忆线索')).toBeNull();
+    // No memory footnote/校准; only the standalone greeting block remains.
+    expect(queryByLabelText('查看和校准 AI 记忆')).toBeNull();
+    expect(getByText('今天想从哪里开始？')).toBeTruthy();
   });
 });

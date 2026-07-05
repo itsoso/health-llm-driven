@@ -5,13 +5,18 @@
  * 所有 handler（发送 / 记忆跳转 / opener 快回复 / 埋点）仍留在 chat.tsx，
  * 本组件只负责排版与视觉。
  *
- * 视觉统一（founder 设备反馈 2026-07）:
- * - 三块内容（记忆线索 / 今日回访 opener / 或者问我别的）统一到 app 卡片语言:
- *   surface + hairline + revaRadii.lg，一致的 11px ink3 bold eyebrow（对齐 BriefingStrip 的「今日简报」label）。
- * - 顶部加一条轻量、纯客户端、基于 Date 的问候块（早上好/下午好/晚上好 + 一句静默引导），
- *   把原本挤在顶部的卡片下压，让整屏更有构图感。不做垂直居中（键盘交互）。
- * - 记忆线索 snippet 客户端防御式清洗（后端并行修复中，旧缓存文本仍可能到达）:
- *   剥离 JSON 残渣 + 折叠空白；清洗后若把残渣剥没了（<6 字）→ 整卡隐藏。
+ * 「阿衡先开口」(State A, 2026-07 founder CDS):
+ * - system content 不再是卡片家具, 而是阿衡在流里的开场消息气泡:
+ *   30pt 阿-avatar + 气泡(非对称圆角, surface + hairline)。
+ * - 问候语(早上好/下午好…)折进气泡当第一句, opener.text 接在后面。
+ * - 记忆 footnote 在气泡内部(hairline 分隔): 书签图标 + 清洗过的记忆文本 + 「校准」入口。
+ * - quick replies 在气泡外下方(chips), 追加一个「换个话题」中性 chip。
+ * - opener 为空但有记忆 → 退化成「记忆-only 气泡」(同一外壳, footnote 文本当正文)。
+ * - 两者都无 → 只保留独立问候块。
+ * - suggestion chips 已移到 composer 上方(chat.tsx), 本组件不再渲染「或者问我别的」。
+ *
+ * 记忆线索 snippet 客户端防御式清洗(后端并行修复中, 旧缓存文本仍可能到达):
+ * 剥离 JSON 残渣 + 折叠空白; 清洗后若把残渣剥没了(<6 字) → 隐藏 footnote。
  */
 import React from 'react';
 import {
@@ -23,8 +28,8 @@ import {
   TextStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import OpenerCard from './OpenerCard';
 import type { ConversationOpener } from '../../services/conversationOpener';
+import { formatOpenerText } from './OpenerCard';
 import type { MemoryOpenerItem } from '../../services/memoryOpener';
 import {
   revaColors as C,
@@ -41,13 +46,14 @@ export type EmptyStateSuggestion = {
   priority: number;
 };
 
+// 气泡外「换个话题」中性 chip — 发送语义走同一条 onQuickReply 路径。
+export const CHANGE_TOPIC_REPLY = '换个话题';
+
 interface Props {
   memoryOpener: MemoryOpenerItem[];
   opener: ConversationOpener | null;
-  suggestions: EmptyStateSuggestion[];
   onOpenMemory: () => void;
   onOpenerQuickReply: (text: string) => void;
-  onSuggestionPress: (s: EmptyStateSuggestion, position: number) => void;
 }
 
 /**
@@ -66,7 +72,7 @@ export function greetingForHour(hour: number): string {
  *
  * 后端偶发把结构化 JSON 片段漏进 memory content（历史教训: 旧缓存文本）。
  * 这里剥掉明显的 JSON 残渣（"key":"value" 片段、孤立引号/花括号），折叠空白。
- * 若清洗动作真的剥掉了东西且剩余 <6 字 → 返回空串（调用方隐藏整卡）；
+ * 若清洗动作真的剥掉了东西且剩余 <6 字 → 返回空串（调用方隐藏 footnote）；
  * 原文本身就干净（哪怕很短，如「旧记忆」）→ 原样保留。
  */
 export function formatMemoryOpenerText(items: MemoryOpenerItem[]): string {
@@ -94,80 +100,164 @@ function sanitizeMemorySnippet(text: string): string {
     .trim();
 }
 
+/**
+ * quick reply chip 文案 — 复用 opener 卡的冷静动作词, 但 chip 布局在气泡外。
+ * 直接内联而非从 OpenerCard 导, 避免耦合到已废弃的卡片(仅保留 formatOpenerText / label)。
+ */
+function formatQuickReplyLabel(reply: string): string {
+  if (/没做|未做|没有做|不算/.test(reply)) return '未完成';
+  if (/做到|完成|已做|做了/.test(reply)) return '完成了';
+  if (/调整|计划/.test(reply)) return '调整计划';
+  return reply.replace(/[✅❌]/g, '').trim();
+}
+
+/**
+ * 记忆 footnote — 气泡内部 hairline 分隔的一行: 书签图标 + 文本 + 「校准」入口。
+ * 复用外层的 formatMemoryOpenerText 清洗结果(never render raw memory)。
+ */
+function MemoryFootnote({
+  text,
+  onOpenMemory,
+}: {
+  text: string;
+  onOpenMemory: () => void;
+}) {
+  return (
+    <View style={styles.footnote}>
+      <View style={styles.footnoteLead}>
+        <Ionicons name="bookmark-outline" size={12} color={C.ink3} />
+        <Text style={txt.footnoteBody} numberOfLines={2}>
+          {text}
+        </Text>
+      </View>
+      <TouchableOpacity
+        onPress={onOpenMemory}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel="查看和校准 AI 记忆"
+      >
+        <Text style={txt.footnoteAction}>校准</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 export default function EmptyStateHome({
   memoryOpener,
   opener,
-  suggestions,
   onOpenMemory,
   onOpenerQuickReply,
-  onSuggestionPress,
 }: Props) {
   const memoryText = formatMemoryOpenerText(memoryOpener);
   const showMemory = memoryOpener.length > 0 && memoryText.length > 0;
   const greeting = greetingForHour(new Date().getHours());
 
+  // opener 存在 → 完整开场气泡(问候 + opener.text + 可选记忆 footnote + quick replies)。
+  if (opener) {
+    const openerText = formatOpenerText(opener.text);
+    // 气泡外 quick replies: opener 自带的 + 末尾追加「换个话题」中性 chip。
+    const replies = opener.quick_replies || [];
+    return (
+      <View style={styles.container}>
+        <View style={styles.bubbleRow}>
+          <View style={styles.avatar}>
+            <Text style={txt.avatarText}>阿</Text>
+          </View>
+          <View style={styles.bubble}>
+            <Text style={txt.bubbleBody}>
+              <Text style={txt.greetingInline}>{greeting}。</Text>
+              {openerText}
+            </Text>
+            {showMemory && (
+              <MemoryFootnote text={memoryText} onOpenMemory={onOpenMemory} />
+            )}
+          </View>
+        </View>
+
+        <View style={styles.repliesRow}>
+          {replies.map((reply, i) => {
+            const tinted = i === 0;
+            return (
+              <Pressable
+                key={reply}
+                style={({ pressed }) => [
+                  styles.reply,
+                  tinted ? styles.replyTinted : styles.replyNeutral,
+                  pressed && styles.replyPressed,
+                ]}
+                onPress={() => onOpenerQuickReply(reply)}
+                accessibilityRole="button"
+                accessibilityLabel={`一键回复: ${reply}`}
+              >
+                <Text style={[txt.reply, tinted ? txt.replyTinted : txt.replyNeutral]}>
+                  {formatQuickReplyLabel(reply)}
+                </Text>
+              </Pressable>
+            );
+          })}
+          <Pressable
+            style={({ pressed }) => [
+              styles.reply,
+              styles.replyNeutral,
+              pressed && styles.replyPressed,
+            ]}
+            onPress={() => onOpenerQuickReply(CHANGE_TOPIC_REPLY)}
+            accessibilityRole="button"
+            accessibilityLabel="换个话题"
+          >
+            <Text style={[txt.reply, txt.replyNeutral]}>{CHANGE_TOPIC_REPLY}</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  // opener 为空但有记忆 → 记忆-only 气泡(同一外壳, footnote 文本当正文)。
+  if (showMemory) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.greeting}>
+          <Text style={txt.greetingHi} numberOfLines={1}>{greeting}</Text>
+          <Text style={txt.greetingSub} numberOfLines={1}>今天想从哪里开始？</Text>
+        </View>
+        <View style={styles.bubbleRow}>
+          <View style={styles.avatar}>
+            <Text style={txt.avatarText}>阿</Text>
+          </View>
+          <View style={styles.bubble}>
+            <View style={styles.memoryOnlyLead}>
+              <Ionicons name="bookmark-outline" size={13} color={C.ink3} />
+              <Text style={txt.bubbleBody} numberOfLines={2}>{memoryText}</Text>
+            </View>
+            <View style={styles.memoryOnlyActionRow}>
+              <TouchableOpacity
+                onPress={onOpenMemory}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="查看和校准 AI 记忆"
+              >
+                <Text style={txt.footnoteAction}>校准</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  // 两者都无 → 只保留独立问候块。
   return (
     <View style={styles.container}>
-      {/* 轻量问候块：纯客户端 Date，压下卡片，给屏更有构图感。 */}
       <View style={styles.greeting}>
         <Text style={txt.greetingHi} numberOfLines={1}>{greeting}</Text>
         <Text style={txt.greetingSub} numberOfLines={1}>今天想从哪里开始？</Text>
-      </View>
-
-      {showMemory && (
-        <Pressable
-          style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-          onPress={onOpenMemory}
-          accessibilityRole="button"
-          accessibilityLabel="查看和校准 AI 记忆"
-        >
-          <View style={styles.cardEyebrowRow}>
-            <View style={styles.eyebrowLead}>
-              <Ionicons name="bookmark-outline" size={12} color={C.green500} />
-              <Text style={txt.eyebrow}>记忆线索</Text>
-            </View>
-            <Text style={txt.eyebrowAction}>校准</Text>
-          </View>
-          <Text style={txt.memoryBody} numberOfLines={2}>
-            {memoryText}
-          </Text>
-        </Pressable>
-      )}
-
-      {opener && (
-        <OpenerCard opener={opener} onQuickReply={onOpenerQuickReply} />
-      )}
-
-      <View style={styles.card}>
-        <View style={styles.cardEyebrowRow}>
-          <View style={styles.eyebrowLead}>
-            <Ionicons name="sparkles" size={12} color={C.green500} />
-            <Text style={txt.eyebrow} numberOfLines={1}>
-              阿衡 · {opener ? '或者问我别的' : '会带上你的健康上下文'}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.sugGrid}>
-          {suggestions.map((s, position) => (
-            <TouchableOpacity
-              key={s.text}
-              style={styles.sugChip}
-              onPress={() => onSuggestionPress(s, position)}
-              activeOpacity={0.72}
-              accessibilityRole="button"
-              accessibilityLabel={`向阿衡提问: ${s.text}`}
-            >
-              <Ionicons name={s.icon} size={13} color={C.green500} />
-              <Text style={txt.sugChipText} numberOfLines={1}>{s.text}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
       </View>
     </View>
   );
 }
 
-// Reva 卡片语言: surface + hairline + r-lg + 软阴影; 统一 eyebrow (11px ink3 bold).
+const AVATAR = 30;
+
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: revaSpacing.s4,
@@ -179,47 +269,89 @@ const styles = StyleSheet.create({
     paddingTop: revaSpacing.s2,
     paddingBottom: revaSpacing.s1,
   },
-  card: {
+  bubbleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: revaSpacing.s2,
+    paddingTop: revaSpacing.s2,
+  },
+  avatar: {
+    width: AVATAR,
+    height: AVATAR,
+    borderRadius: AVATAR / 2,
+    backgroundColor: C.green50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bubble: {
+    flexShrink: 1,
+    maxWidth: '86%',
     backgroundColor: C.surface,
-    borderRadius: revaRadii.lg,
+    // 非对称圆角: 左上贴近 avatar 收窄(4), 其余保持气泡感(16)。
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 16,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
     paddingHorizontal: revaSpacing.s3,
     paddingVertical: revaSpacing.s3,
     ...revaShadows.sm,
   },
-  cardPressed: { opacity: 0.72 },
-  cardEyebrowRow: {
+  footnote: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: revaSpacing.s2,
+    gap: revaSpacing.s2,
+    marginTop: revaSpacing.s2,
+    paddingTop: revaSpacing.s2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
   },
-  eyebrowLead: {
+  footnoteLead: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 5,
     flexShrink: 1,
     minWidth: 0,
   },
-  sugGrid: {
-    width: '100%',
+  memoryOnlyLead: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  memoryOnlyActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: revaSpacing.s2,
+    paddingTop: revaSpacing.s2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+  },
+  repliesRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
+    paddingLeft: AVATAR + revaSpacing.s2,
   },
-  sugChip: {
+  reply: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
+    gap: 4,
+    paddingHorizontal: revaSpacing.s3,
     paddingVertical: 7,
     borderRadius: revaRadii.pill,
-    backgroundColor: C.paper2,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    maxWidth: '100%',
   },
+  replyTinted: {
+    backgroundColor: C.green50,
+    borderColor: C.green100,
+  },
+  replyNeutral: {
+    backgroundColor: C.surface,
+    borderColor: C.line,
+  },
+  replyPressed: { opacity: 0.6 },
 });
 
 const txt = {
@@ -236,30 +368,46 @@ const txt = {
     fontWeight: '500',
     marginTop: 2,
   } as TextStyle,
-  eyebrow: {
+  avatarText: {
     fontFamily: revaFonts.sans,
-    fontSize: 11,
-    color: C.ink3,
+    fontSize: 14,
     fontWeight: '700',
+    color: C.green600,
+  } as TextStyle,
+  bubbleBody: {
+    fontFamily: revaFonts.sans,
+    fontSize: 15,
+    lineHeight: 22,
+    color: C.ink1,
+    fontWeight: '400',
     flexShrink: 1,
   } as TextStyle,
-  eyebrowAction: {
-    fontFamily: revaFonts.sans,
-    fontSize: 11,
-    color: C.green500,
-    fontWeight: '700',
+  greetingInline: {
+    fontWeight: '600',
+    color: C.ink1,
   } as TextStyle,
-  memoryBody: {
-    fontFamily: revaFonts.sans,
-    fontSize: 13,
-    color: C.ink2,
-    lineHeight: 18,
-  } as TextStyle,
-  sugChipText: {
+  footnoteBody: {
     fontFamily: revaFonts.sans,
     fontSize: 12,
-    color: C.ink1,
-    fontWeight: '600',
+    color: C.ink3,
+    lineHeight: 17,
     flexShrink: 1,
+  } as TextStyle,
+  footnoteAction: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    color: C.green600,
+    fontWeight: '700',
+  } as TextStyle,
+  reply: {
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    fontWeight: '600',
+  } as TextStyle,
+  replyTinted: {
+    color: C.green600,
+  } as TextStyle,
+  replyNeutral: {
+    color: C.ink2,
   } as TextStyle,
 };

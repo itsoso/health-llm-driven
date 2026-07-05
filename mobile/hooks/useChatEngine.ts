@@ -23,6 +23,10 @@ export interface UIMessage extends ChatMessage {
   thinkingSteps?: string[];
   imageUris?: string[];
   isBriefing?: boolean;
+  // 2026-07 State A「阿衡先开口」: 用户发第一条消息时, 把当时可见的开场气泡文本
+  // 作为一条合成 assistant 消息注入到流顶, 保住上下文连续性。仅本地展示,
+  // 从不 POST 到后端历史, reload 后不恢复(与 isBriefing 一样是 ephemeral)。
+  localOnly?: boolean;
   cardType?: string;
   cardData?: any;
   cardActions?: ChatCardActionDescriptor[];
