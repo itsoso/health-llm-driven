@@ -10618,6 +10618,10 @@ export interface paths {
          * @description 非流式综合分析。
          *
          *     返回完整 OrchestratorResponse（intent + findings + synthesis）。
+         *
+         *     长回合(> ORCH_CHAT_KEEPALIVE_SECONDS)返回 chunked JSON:前导空白是保活
+         *     字节,末尾才是完整 JSON 对象。流一旦开始,状态码已定格 200,错误改为
+         *     body.error 字段(消费方判 error 非空 = 失败)。快回合行为与历史完全一致。
          */
         post: operations["chat_api_v1_orchestrator_chat_post"];
         delete?: never;
@@ -10798,6 +10802,12 @@ export interface paths {
          *
          *     This endpoint is fail-soft: it never raises (except auth) and falls back to
          *     stable defaults on any internal error.
+         *
+         *     Cold-start (C1 contract): a zero-signal user additionally gets a top-level
+         *     `onboarding: true` and a synthesized `opener` whose `quick_replies` carry an
+         *     `action` (photo_meal / record_weight / connect_device) for local navigation.
+         *     Established users get neither field change (opener from the normal channel,
+         *     no `onboarding` key) — additive and backward-compatible.
          *
          *     LLM polish (progressive enhancement, flag `starter_llm_polish_enabled`):
          *     the RULES compute the chips; a cheap LLM optionally rewrites the wording and
