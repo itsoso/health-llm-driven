@@ -229,6 +229,31 @@ _BRACKET_TOOL_CALL_STRIP_RE = re.compile(
     re.S | re.I,
 )
 
+# XML/`<invoke>` 格式的内联工具调用。实测 MiniMax 经代理时把工具调用吐成 Anthropic 风格
+# 的 XML 标记而非结构化 tool_calls(生产实锤 2026-07-05):
+#   <invoke name="health_query">
+#   <parameter name="dimension">diet</parameter>
+#   <parameter name="days">7</parameter>
+#   </invoke>
+#   </minimax:tool_call>
+# 括号/JSON 两张网都漏这个格式 → 工具没执行(零数据)+ 原始 XML 语法泄漏给用户。
+# 客户端还见过同一 invoke 重复两次、`</minimax:tool_call>` 悬空无开标签的变体。
+# `_INVOKE_BLOCK_RE` 抓 name + 内部 <parameter> 序列;`_INVOKE_PARAM_RE` 逐个抽参数键值。
+# 剥离用 `_INVOKE_STRIP_RE`(整块 <invoke>…</invoke>)+ `_MINIMAX_TAG_STRIP_RE`(孤立开/闭标签)。
+_INVOKE_BLOCK_RE = re.compile(
+    r"<invoke\s+name\s*=\s*[\"']([^\"']+)[\"']\s*>(.*?)</invoke\s*>",
+    re.S | re.I,
+)
+_INVOKE_PARAM_RE = re.compile(
+    r"<parameter\s+name\s*=\s*[\"']([^\"']+)[\"']\s*>(.*?)</parameter\s*>",
+    re.S | re.I,
+)
+_INVOKE_STRIP_RE = re.compile(r"<invoke\b.*?</invoke\s*>", re.S | re.I)
+# 悬空 `<minimax:tool_call>` / `</minimax:tool_call>`(含无开标签的孤立闭标签)也一并剥掉。
+_MINIMAX_TAG_STRIP_RE = re.compile(r"</?\s*minimax:tool_call\s*>", re.I)
+# 流式期前缀检测:`<invoke` 或 `<minimax:tool_call` 一出现就抑制 live 下发(逐 token 泄漏兜底)。
+_XML_TOOLCALL_PREFIX_RE = re.compile(r"<\s*(?:invoke\b|/?\s*minimax:tool_call\b)", re.I)
+
 # Markdown 清单式工具调用:`Tool calls:\n- health_query`(无括号、无参数)。实测
 # Claude-Opus-4.7 经 langbridge 代理时**偶发**(多数仍结构化)把工具调用降级成这种文本 —
 # 既没结构化 tool_calls(没真执行=零数据)又把 "Tool calls:" 标记泄漏给用户。
@@ -404,6 +429,91 @@ def _strip_bracket_tool_markers(text: str) -> str:
     if not any(k in low for k in ("工具调用", "调用工具", "tool_call", "function_call", "tool call")):
         return text
     return _BRACKET_TOOL_CALL_STRIP_RE.sub("", text).strip()
+
+
+def _coerce_param_by_schema(value: str, param_schema: Optional[Dict[str, Any]]) -> Any:
+    """按注册工具 JSON schema 的声明类型 coerce 单个 <parameter> 原始字符串值。
+
+    XML 参数值天然是字符串;声明 integer/number/boolean 时按声明类型转换
+    (镜像括号格式分支的数值/布尔 coercion),schema 缺失或声明 string/无法解析时
+    回退到内容形状推断(`_coerce_bracket_value`,处理 JSON 数组/对象/裸数字等)。
+    """
+    val = (value or "").strip()
+    declared = (param_schema or {}).get("type") if isinstance(param_schema, dict) else None
+    if declared in ("integer", "number"):
+        try:
+            if declared == "integer" and re.fullmatch(r"-?\d+", val):
+                return int(val)
+            return int(val) if declared == "integer" else float(val)
+        except ValueError:
+            pass  # 声明是数值但值不是 → 回退内容推断,不丢参数
+    elif declared == "boolean":
+        low = val.lower()
+        if low in ("true", "false"):
+            return low == "true"
+    # 声明 string / object / array / 缺失 / 数值解析失败 → 内容形状推断兜底。
+    return _coerce_bracket_value(val)
+
+
+def _extract_xml_tool_call(raw: str, tools: Optional[List[Dict]], allowed: set) -> Optional[Dict[str, Any]]:
+    """Recover ``<invoke name="X"><parameter name="k">v</parameter>…</invoke>`` XML calls.
+
+    MiniMax 经代理时把工具调用吐成 Anthropic 风格 XML(生产实锤 2026-07-05),既没结构化
+    tool_calls 又把原始标记泄漏给用户。解析第一个 <invoke> 块:name 必须在注册表内(否则
+    不吞,保持可见——镜像 bracket/menu_share 守卫);<parameter> 值按工具 JSON schema 声明
+    类型做数值/布尔 coercion。多个 invoke 只取第一个并 log 总数(与现有单调用恢复语义一致)。
+    """
+    matches = _INVOKE_BLOCK_RE.findall(raw)
+    if not matches:
+        return None
+    # 按注册工具名建 param schema 索引,做类型 coercion。
+    schema_by_tool: Dict[str, Dict[str, Any]] = {}
+    for t in tools or []:
+        fn = t.get("function", {}) if isinstance(t, dict) else {}
+        nm = fn.get("name")
+        if nm:
+            props = (fn.get("parameters") or {}).get("properties") or {}
+            schema_by_tool[nm] = props if isinstance(props, dict) else {}
+    total = len(matches)
+    for name, body in matches:
+        if name not in allowed:
+            # 未注册工具名不吞:保持可见,避免把用户主动写的类似标记误当调用吞掉。
+            continue
+        props = schema_by_tool.get(name, {})
+        args: Dict[str, Any] = {}
+        for pkey, pval in _INVOKE_PARAM_RE.findall(body):
+            pkey = (pkey or "").strip()
+            if not pkey:
+                continue
+            args[pkey] = _coerce_param_by_schema(pval, props.get(pkey))
+        if total > 1:
+            logger.warning(
+                "[agent_executor] XML <invoke> 恢复:检出 %d 个 invoke,取第一个已注册的 %s",
+                total, name,
+            )
+        return {
+            "id": "inline_tool_call_0",
+            "type": "function",
+            "function": {"name": name, "arguments": json.dumps(args, ensure_ascii=False)},
+        }
+    return None
+
+
+def _strip_xml_tool_markers(text: str) -> str:
+    """Strip ``<invoke>…</invoke>`` blocks and orphan ``<minimax:tool_call>`` tags.
+
+    重试用尽 / name 不在白名单 / 参数解析失败时的兜底:任何情况都不能把原始工具语法
+    (含悬空无开标签的 ``</minimax:tool_call>``)留在用户可见正文里。镜像
+    ``_strip_bracket_tool_markers`` 的便宜预检 + 剥离。
+    """
+    if not text:
+        return text
+    low = text.lower()
+    if "<invoke" not in low and "minimax:tool_call" not in low:
+        return text
+    stripped = _INVOKE_STRIP_RE.sub("", text)
+    stripped = _MINIMAX_TAG_STRIP_RE.sub("", stripped)
+    return stripped.strip()
 
 
 def _strip_reva_ui_from_llm_text(text: str) -> str:
@@ -707,12 +817,21 @@ def _extract_inline_tool_call(text: str, tools: List[Dict]) -> Optional[Dict[str
     Also recovers the bracket signature format some models emit instead of JSON:
     ``[工具调用: health_query(type=lab_results, keywords=["Hcy"], days=7)]``
     (中英文冒号 + 可选方括号 + Python 调用风格参数).
+
+    Also recovers the XML/`<invoke>` format MiniMax emits via the proxy:
+    ``<invoke name="health_query"><parameter name="dimension">diet</parameter>…</invoke>``
+    (Anthropic-style tags, possibly wrapped in ``<minimax:tool_call>``).
     """
     raw = (text or "").strip()
     if not raw:
         return None
 
     allowed = {t.get("function", {}).get("name") for t in tools or []}
+
+    # XML/`<invoke>` 格式先尝试:它以 `<` 开头,与 JSON(`{`)/括号(`(`)路径互不干扰。
+    xml = _extract_xml_tool_call(raw, tools, allowed)
+    if xml is not None:
+        return xml
 
     # 括号格式先于 JSON 尝试:它含 `(` 不含起始 `{`,与 JSON 路径互不干扰。
     bracket = _extract_bracket_tool_call(raw, allowed)
@@ -2234,6 +2353,10 @@ class AgentExecutor:
                             "tool": fn, "success": not result.startswith("Error"),
                             "preview": result[:200], "result": result}}
                     continue
+                # 兜底:内联标记(括号 / XML `<invoke>`)未恢复成 tool_call(name 不在白名单等)时,
+                # 绝不能把裸工具语法当 lead 分析落进 final_text / 喂给下游多方分析。cheap-precheck no-op。
+                content = _strip_bracket_tool_markers(content)
+                content = _strip_xml_tool_markers(content)
                 lead_text = content
                 break
 
@@ -2665,6 +2788,9 @@ class AgentExecutor:
                                 or "工具调用" in streamed_text
                                 # Markdown 清单式 "Tool calls:" 同样抑制(英文标记)。
                                 or _TEXT_TOOLCALL_PREFIX_RE.search(streamed_text)
+                                # XML `<invoke ...` / `<minimax:tool_call>` 逐 token 形成中,
+                                # `</invoke>` 闭标签还没到 → 精确解析 match 不到。见到前缀即抑制。
+                                or _XML_TOOLCALL_PREFIX_RE.search(streamed_text)
                             )
                         ):
                             # 检测到内联工具调用(JSON 或括号标记) → 进入抑制模式,本轮不再 live 下发。
@@ -3053,6 +3179,12 @@ class AgentExecutor:
                     stripped = _strip_bracket_tool_markers(final_text)
                     if stripped != final_text:
                         final_text = stripped
+                        streamed_to_client = False
+                    # 同理:XML `<invoke>…</invoke>` 块 / 孤立 `<minimax:tool_call>` 标记(MiniMax 经代理)
+                    # 没能恢复成 tool_call 时,绝不能把裸 XML 语法留给用户。剥离后若空走空回复重试链。
+                    stripped_xml = _strip_xml_tool_markers(final_text)
+                    if stripped_xml != final_text:
+                        final_text = stripped_xml
                         streamed_to_client = False
                     # 兜底:弱模型(如 deepseek-v4-pro)把工具结果/参数裸 JSON 当最终回复
                     # 回显(用户截图:记录后正文是 {"id":231,...} / {"record_date":...})。
