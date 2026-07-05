@@ -1231,6 +1231,23 @@ public final class AgentChatViewModel {
         }
     }
 
+    /// Creates a public share link for a conversation and returns the URL for the
+    /// caller to copy / open. Returns nil (with a notice) on failure or when the
+    /// conversation has no durable backend id yet — never fabricates a link.
+    public func shareConversation(_ conversation: AgentConversationSnapshot) async -> URL? {
+        guard let conversationID = conversation.conversationID, let remoteSource else {
+            historyNotice = "这个对话还没同步到服务器，暂时无法分享。"
+            return nil
+        }
+        do {
+            return try await remoteSource.shareConversation(conversationID: conversationID)
+        } catch {
+            AppLogger.agent.error("conversation share failed: \(error.localizedDescription, privacy: .public)")
+            historyNotice = "生成分享链接失败，请检查网络后重试。"
+            return nil
+        }
+    }
+
     private func reportDeleteFailure(_ error: Error) {
         AppLogger.agent.error("conversation delete failed: \(error.localizedDescription, privacy: .public)")
         historyNotice = "删除未同步到服务器，可能在其它设备仍可见。"

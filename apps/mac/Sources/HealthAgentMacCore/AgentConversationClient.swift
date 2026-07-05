@@ -123,6 +123,9 @@ public protocol AgentConversationRemoteSourcing: Sendable {
     func deleteConversation(conversationID: Int) async throws
     /// Renames a conversation on the backend.
     func renameConversation(conversationID: Int, title: String) async throws
+    /// Creates (or refreshes) a public share link for a conversation and returns
+    /// the shareable URL (`https://…/shared/<token>`).
+    func shareConversation(conversationID: Int) async throws -> URL
 }
 
 // MARK: - Client
@@ -160,6 +163,24 @@ public final class AgentConversationClient: AgentConversationRemoteSourcing, @un
             "agent/conversations/\(conversationID)",
             body: TitleBody(title: title)
         )
+    }
+
+    public func shareConversation(conversationID: Int) async throws -> URL {
+        // Mac history rows are Agent conversations → source_type "agent". Backend
+        // reuses an existing active share (refreshing its snapshot) or mints one.
+        struct ShareBody: Encodable {
+            let conversation_id: Int
+            let source_type: String
+        }
+        struct ShareResponse: Decodable { let share_url: String }
+        let response: ShareResponse = try await apiClient.post(
+            "shared/create",
+            body: ShareBody(conversation_id: conversationID, source_type: "agent")
+        )
+        guard let url = URL(string: response.share_url) else {
+            throw APIError.emptyResponse
+        }
+        return url
     }
 
     // MARK: Mapping

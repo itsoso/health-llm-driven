@@ -811,6 +811,12 @@ struct AgentChatView: View {
                             },
                             onDelete: {
                                 viewModel.deleteConversation(conversation)
+                            },
+                            onRename: { newTitle in
+                                Task { await viewModel.renameConversation(conversation, to: newTitle) }
+                            },
+                            onShare: {
+                                await viewModel.shareConversation(conversation)
                             }
                         )
                     }
@@ -1760,7 +1766,17 @@ private struct AgentConversationHistoryRow: View {
     let isSelected: Bool
     let onLoad: () -> Void
     let onDelete: () -> Void
+    /// Push the edited title to the parent (which forwards to the backend). Called
+    /// only when the drafted title is non-empty and actually changed.
+    let onRename: (String) -> Void
+    /// Async: create a public share link and hand back the URL (nil on failure).
+    let onShare: () async -> URL?
     @AppStorage(AppLanguage.defaultsKey) private var appLanguageRaw = AppLanguage.defaultLanguage.rawValue
+    @State private var isRenaming = false
+    @State private var draftTitle = ""
+    @State private var isSharing = false
+    @State private var sharedURL: URL?
+    @State private var showShareConfirm = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -1787,20 +1803,78 @@ private struct AgentConversationHistoryRow: View {
             .buttonStyle(.plain)
             .help(appText("Load Chat", appLanguageRaw))
 
-            Button {
-                onDelete()
-            } label: {
-                Image(systemName: "trash")
+            HStack(spacing: 10) {
+                Button {
+                    guard !isSharing else { return }
+                    isSharing = true
+                    Task {
+                        let url = await onShare()
+                        isSharing = false
+                        guard let url else { return }
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                        sharedURL = url
+                        showShareConfirm = true
+                    }
+                } label: {
+                    if isSharing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .disabled(isSharing)
+                .help(appText("Share", appLanguageRaw))
+
+                Button {
+                    draftTitle = conversation.title
+                    isRenaming = true
+                } label: {
+                    Image(systemName: "pencil")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help(appText("Rename", appLanguageRaw))
+
+                Button {
+                    onDelete()
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help(appText("Delete", appLanguageRaw))
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help(appText("Delete", appLanguageRaw))
         }
         .padding(10)
         .background(
             isSelected ? Color.accentColor.opacity(0.10) : Color.secondary.opacity(0.07),
             in: RoundedRectangle(cornerRadius: 11, style: .continuous)
         )
+        .alert(appText("Rename conversation", appLanguageRaw), isPresented: $isRenaming) {
+            TextField(appText("New title", appLanguageRaw), text: $draftTitle)
+            Button(appText("Cancel", appLanguageRaw), role: .cancel) {}
+            Button(appText("Save", appLanguageRaw)) {
+                let trimmed = draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty, trimmed != conversation.title {
+                    onRename(trimmed)
+                }
+            }
+        }
+        .alert(
+            appText("Share link copied", appLanguageRaw),
+            isPresented: $showShareConfirm,
+            presenting: sharedURL
+        ) { url in
+            Button(appText("Open in browser", appLanguageRaw)) {
+                NSWorkspace.shared.open(url)
+            }
+            Button(appText("Cancel", appLanguageRaw), role: .cancel) {}
+        } message: { url in
+            Text(url.absoluteString)
+        }
     }
 
     private var historySubtitle: String {

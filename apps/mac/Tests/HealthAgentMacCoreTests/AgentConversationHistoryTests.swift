@@ -315,6 +315,135 @@ final class AgentConversationHistoryTests: XCTestCase {
         XCTAssertEqual(remote.deletedIDs, [42])
     }
 
+    // MARK: - Rename
+
+    @MainActor
+    func testRenamePushesToBackendThenUpdatesLocalTitle() async {
+        let id = AgentConversationClient.deterministicID(forConversationID: 42)
+        let snapshot = AgentConversationSnapshot(id: id, conversationID: 42, title: "旧标题", messages: [
+            .init(role: .user, content: "hi")
+        ])
+        let store = InMemoryConversationStore(seed: [snapshot])
+        let remote = FakeRemoteSource()
+        remote.list = [snapshot]
+        let model = AgentChatViewModel(conversationStore: store, remoteSource: remote)
+        await model.refreshConversationHistory()
+
+        await model.renameConversation(model.conversationHistory[0], to: "  新标题  ")
+
+        XCTAssertEqual(remote.renamed.map(\.0), [42])
+        XCTAssertEqual(remote.renamed.first?.1, "新标题")  // trimmed
+        XCTAssertEqual(model.conversationHistory[0].title, "新标题")
+        XCTAssertEqual(store.saved.last?.first?.title, "新标题")
+        XCTAssertNil(model.historyNotice)
+    }
+
+    @MainActor
+    func testRenameBackendFailureKeepsOldTitleAndSetsNotice() async {
+        let id = AgentConversationClient.deterministicID(forConversationID: 42)
+        let snapshot = AgentConversationSnapshot(id: id, conversationID: 42, title: "旧标题", messages: [
+            .init(role: .user, content: "hi")
+        ])
+        let store = InMemoryConversationStore(seed: [snapshot])
+        let remote = FakeRemoteSource()
+        remote.list = [snapshot]
+        remote.renameError = APIError.httpStatus(500, nil)
+        let model = AgentChatViewModel(conversationStore: store, remoteSource: remote)
+        await model.refreshConversationHistory()
+
+        await model.renameConversation(model.conversationHistory[0], to: "新标题")
+
+        // Backend rejected → local title must NOT fake success.
+        XCTAssertEqual(model.conversationHistory[0].title, "旧标题")
+        XCTAssertNotNil(model.historyNotice)
+    }
+
+    @MainActor
+    func testRenameIgnoresBlankTitle() async {
+        let id = AgentConversationClient.deterministicID(forConversationID: 42)
+        let snapshot = AgentConversationSnapshot(id: id, conversationID: 42, title: "旧标题", messages: [])
+        let remote = FakeRemoteSource()
+        remote.list = [snapshot]
+        let model = AgentChatViewModel(conversationStore: InMemoryConversationStore(seed: [snapshot]), remoteSource: remote)
+        await model.refreshConversationHistory()
+
+        await model.renameConversation(model.conversationHistory[0], to: "   ")
+
+        XCTAssertTrue(remote.renamed.isEmpty)
+        XCTAssertEqual(model.conversationHistory[0].title, "旧标题")
+    }
+
+    // MARK: - Share
+
+    @MainActor
+    func testShareReturnsURLAndHitsBackend() async {
+        let id = AgentConversationClient.deterministicID(forConversationID: 42)
+        let snapshot = AgentConversationSnapshot(id: id, conversationID: 42, title: "chat", messages: [])
+        let remote = FakeRemoteSource()
+        remote.list = [snapshot]
+        remote.shareURL = URL(string: "https://health.executor.life/shared/abc")!
+        let model = AgentChatViewModel(conversationStore: InMemoryConversationStore(seed: [snapshot]), remoteSource: remote)
+        await model.refreshConversationHistory()
+
+        let url = await model.shareConversation(model.conversationHistory[0])
+
+        XCTAssertEqual(url?.absoluteString, "https://health.executor.life/shared/abc")
+        XCTAssertEqual(remote.sharedIDs, [42])
+        XCTAssertNil(model.historyNotice)
+    }
+
+    @MainActor
+    func testShareFailureReturnsNilAndSetsNotice() async {
+        let id = AgentConversationClient.deterministicID(forConversationID: 42)
+        let snapshot = AgentConversationSnapshot(id: id, conversationID: 42, title: "chat", messages: [])
+        let remote = FakeRemoteSource()
+        remote.list = [snapshot]
+        remote.shareError = APIError.httpStatus(500, nil)
+        let model = AgentChatViewModel(conversationStore: InMemoryConversationStore(seed: [snapshot]), remoteSource: remote)
+        await model.refreshConversationHistory()
+
+        let url = await model.shareConversation(model.conversationHistory[0])
+
+        XCTAssertNil(url)
+        XCTAssertNotNil(model.historyNotice)
+    }
+
+    @MainActor
+    func testShareWithoutBackendIDReturnsNil() async {
+        // A conversation that only exists locally (no durable backend id) can't be shared.
+        let snapshot = AgentConversationSnapshot(conversationID: nil, title: "local only", messages: [])
+        let remote = FakeRemoteSource()
+        let model = AgentChatViewModel(conversationStore: nil, remoteSource: remote)
+
+        let url = await model.shareConversation(snapshot)
+
+        XCTAssertNil(url)
+        XCTAssertTrue(remote.sharedIDs.isEmpty)
+        XCTAssertNotNil(model.historyNotice)
+    }
+
+    // MARK: - Client share mapping
+
+    func testConversationClientCreatesShareLink() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/shared/create")
+            let body = request.bodyDataForTesting ?? Data()
+            let json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+            XCTAssertEqual(json?["conversation_id"] as? Int, 42)
+            XCTAssertEqual(json?["source_type"] as? String, "agent")
+            let data = """
+            {"share_token": "tok9", "share_url": "https://health.executor.life/shared/tok9", "expires_at": null}
+            """.data(using: .utf8)!
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+        }
+        let client = AgentConversationClient(apiClient: stubbedAPIClient())
+
+        let url = try await client.shareConversation(conversationID: 42)
+
+        XCTAssertEqual(url.absoluteString, "https://health.executor.life/shared/tok9")
+    }
+
     // MARK: - Helpers
 
     private func stubbedAPIClient() -> APIClient {
@@ -336,6 +465,10 @@ private final class FakeRemoteSource: AgentConversationRemoteSourcing, @unchecke
     var fetchedDetailIDs: [Int] = []
     var deletedIDs: [Int] = []
     var renamed: [(Int, String)] = []
+    var renameError: Error?
+    var sharedIDs: [Int] = []
+    var shareURL = URL(string: "https://health.executor.life/shared/tok-123")!
+    var shareError: Error?
 
     func fetchConversations(limit: Int, offset: Int) async throws -> [AgentConversationSnapshot] {
         if let listError { throw listError }
@@ -353,7 +486,14 @@ private final class FakeRemoteSource: AgentConversationRemoteSourcing, @unchecke
     }
 
     func renameConversation(conversationID: Int, title: String) async throws {
+        if let renameError { throw renameError }
         renamed.append((conversationID, title))
+    }
+
+    func shareConversation(conversationID: Int) async throws -> URL {
+        sharedIDs.append(conversationID)
+        if let shareError { throw shareError }
+        return shareURL
     }
 }
 
