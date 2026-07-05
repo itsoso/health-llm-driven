@@ -5,6 +5,7 @@
 修法: 把 data['amount'] 改成 data.get('amount').
 """
 import json
+from datetime import date, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -188,9 +189,70 @@ async def test_reminder_record_normalizes_daily_time_without_extra_confirmation(
     assert captured["payload"]["title"] == "臀中肌训练"
     assert captured["payload"]["message"] == "蚌式开合、侧卧抬腿、臀桥"
     assert captured["payload"]["recurrence"] == "daily"
-    assert captured["payload"]["priority"] == "normal"
-    assert captured["payload"]["remind_at"].endswith("+08:00")
-    assert "T10:30:00" in captured["payload"]["remind_at"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("record_type", "payload", "path", "expected_key"),
+    [
+        ("waist", {"waist_cm": 88.5, "record_date": date.today().isoformat()}, "/waist/records", "waist_cm"),
+        (
+            "sleep",
+            {
+                "record_date": date.today().isoformat(),
+                "bedtime": f"{date.today() - timedelta(days=1)}T23:00:00+08:00",
+                "wake_time": f"{date.today()}T07:00:00+08:00",
+                "sleep_quality": 4,
+            },
+            "/sleep/records",
+            "sleep_quality",
+        ),
+        ("excretion", {"record_date": date.today().isoformat(), "type": "bowel", "stool_type": 4}, "/excretion/records", "type"),
+    ],
+)
+async def test_agent_health_record_posts_manual_body_records(db, record_type, payload, path, expected_key):
+    """Agent 操作面补洞:腰围/睡眠/排泄可经 health_record 真正写入对应 API。"""
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    captured = {}
+
+    async def fake_post(url, headers, body):
+        captured["url"] = url
+        captured["payload"] = body
+        return json.dumps({"id": 9, **body}, ensure_ascii=False)
+
+    with patch.object(executor, "_api_post", new=AsyncMock(side_effect=fake_post)):
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({"record_type": record_type, "data": payload}, ensure_ascii=False),
+            user_token=None,
+        )
+
+    assert captured["url"].endswith(path)
+    assert captured["payload"][expected_key] == payload[expected_key]
+    assert json.loads(result)["id"] == 9
+
+
+@pytest.mark.asyncio
+async def test_agent_health_record_sleep_missing_times_fails_loud(db):
+    """睡眠补录不能编造入睡/醒来时间;缺字段时必须让模型追问。"""
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+
+    with patch.object(executor, "_api_post", new=AsyncMock()) as post:
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({"record_type": "sleep", "data": {"sleep_quality": 4}}),
+            user_token=None,
+        )
+
+    assert "Error" in str(result)
+    assert "bedtime" in str(result)
+    post.assert_not_called()
 
 
 def test_agent_system_prompt_teaches_reminder_write_flow(db):

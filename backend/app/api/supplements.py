@@ -14,6 +14,7 @@ from app.schemas.supplement import (
     SupplementDefinitionUpdate,
     SupplementDefinitionResponse,
     SupplementRecordCreate,
+    SupplementRecordUpdate,
     SupplementRecordResponse,
     SupplementBatchCheckin,
     SupplementWithRecord,
@@ -52,6 +53,16 @@ def _get_owned_supplement(db: Session, user_id: int, supplement_id: int) -> Supp
     if not supplement:
         raise HTTPException(status_code=404, detail="补剂不存在")
     return supplement
+
+
+def _get_owned_supplement_record(db: Session, user_id: int, record_id: int) -> SupplementRecord:
+    record = db.query(SupplementRecord).filter(
+        SupplementRecord.id == record_id,
+        SupplementRecord.user_id == user_id,
+    ).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="补剂打卡记录不存在")
+    return record
 
 
 # ========== 补剂定义 ==========
@@ -334,6 +345,35 @@ def get_my_records(
     if supplement_id:
         query = query.filter(SupplementRecord.supplement_id == supplement_id)
     return query.order_by(SupplementRecord.record_date.desc()).limit(limit).all()
+
+
+@router.put("/records/{record_id}", response_model=SupplementRecordResponse)
+def update_supplement_record(
+    record_id: int,
+    update: SupplementRecordUpdate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """更新当前用户的一条补剂打卡记录。"""
+    record = _get_owned_supplement_record(db, current_user.id, record_id)
+    for key, value in update.model_dump(exclude_unset=True).items():
+        setattr(record, key, value)
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+@router.delete("/records/{record_id}")
+def delete_supplement_record(
+    record_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """删除当前用户的一条补剂打卡记录。"""
+    record = _get_owned_supplement_record(db, current_user.id, record_id)
+    db.delete(record)
+    db.commit()
+    return {"message": "删除成功", "record_id": record_id}
 
 
 @router.get("/me/frequent", response_model=List[FrequentSupplement])

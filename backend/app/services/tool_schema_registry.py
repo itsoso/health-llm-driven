@@ -129,6 +129,7 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
                         "type": "string",
                         "enum": ["water", "weight", "blood_pressure", "exercise",
                                  "diet", "supplement", "supplement_group", "rhinitis",
+                                 "waist", "sleep", "excretion",
                                  "mood", "medication", "illness", "symptom",
                                  "garmin_sync", "reminder"],
                         "description": """记录类型:
@@ -138,6 +139,9 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
 - supplement_group: 按时段批量打卡 ("早上的药都吃了")
 - weight: 体重
 - blood_pressure: 血压
+- waist: 腰围厘米数
+- sleep: 手动补录睡眠 (必须有入睡/醒来时间和质量)
+- excretion: 排便/排尿记录
 - exercise: 用户手动录的简单锻炼 (俯卧撑/瑜伽等). 注意: Garmin 跑步手表自动同步, 不要让用户走这个
 - rhinitis: 鼻炎症状 (喷嚏/鼻塞/流涕)
 - mood: 情绪
@@ -162,6 +166,11 @@ supplement:       {"supplement_name": "鱼油"}          // 按名字匹配用�
 supplement_group: {"timing": "morning|noon|evening|bedtime"}
 weight:           {"weight": 72.2, "record_date": "2026-05-05"}  // weight 必须在 data 里, 不能放顶层!
 blood_pressure:   {"systolic": 120, "diastolic": 80, "record_date": "..."}
+waist:            {"waist_cm": 88.5, "record_date": "2026-05-05"} // 腰围厘米数
+sleep:            {"record_date": "2026-05-05", "bedtime": "2026-05-04T23:00:00+08:00",
+                   "wake_time": "2026-05-05T07:00:00+08:00", "sleep_quality": 4}
+excretion:        {"type": "bowel|urine", "record_date": "2026-05-05",
+                   "record_time": "08:30:00", "stool_type": 4, "notes": "正常"}
 exercise:         {"exercise_type": "俯卧撑", "reps": 10, "sets": 1}
                   或 {"exercise_type": "running", "duration": 30, "distance": 5.0}
 rhinitis:         {"sneezing": 2, "congestion": 1, "runny_nose": 0}  // 0-3 级
@@ -197,7 +206,7 @@ reminder:         {"title": "臀中肌训练", "message": "蚌式开合、侧卧
 不能回答"没有删除功能"。如果用户只说"删除一条"但有多条候选, 先用 list 查出 ID 并让用户确认。
 
 支持 record_type:
-- diet, water, weight, waist, blood_pressure, sleep, mood, excretion: 支持 list/update/delete
+- diet, water, weight, waist, blood_pressure, sleep, mood, excretion, supplement: 支持 list/update/delete
 - illness, medication, supplement_definition: 支持 list/update/delete
 - exercise, symptom, medication_log, reminder: 支持 list/update/delete
 """,
@@ -210,7 +219,7 @@ reminder:         {"title": "臀中肌训练", "message": "蚌式开合、侧卧
                             "diet", "water", "weight", "waist", "blood_pressure",
                             "sleep", "mood", "excretion", "exercise", "illness",
                             "symptom", "medication", "medication_log",
-                            "supplement_definition", "reminder",
+                            "supplement", "supplement_definition", "reminder",
                         ],
                         "description": "要管理的数据类型",
                     },
@@ -237,6 +246,7 @@ blood_pressure: {"systolic":120,"diastolic":78}
 illness: {"status":"resolved","severity":2}
 medication: {"name":"二甲双胍","dosage":"500mg"}
 supplement_definition: {"name":"维生素D","dosage":"2000IU"}
+supplement: {"taken":false,"notes":"误记,撤回"}
 exercise: {"reps":20,"sets":2}
 symptom: {"severity":2,"notes":"洗鼻后缓解"}
 medication_log: {"status":"skipped","skip_reason":"医生要求暂停"}

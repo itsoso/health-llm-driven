@@ -1284,6 +1284,9 @@ _FAST_RECORD_AUTO_CONFIRM_KINDS = {
     "exercise",
     "reminder",
     "supplement",
+    "waist",
+    "sleep",
+    "excretion",
     # symptom/rhinitis:确认后置(回显+可撤销)替代确认前置 —— 记录可逆、
     # 非医疗级(≠用药/剂量),写错方向顶多 over-alarm(安全方向);缺
     # body_part/description 会 fail-loud 自然追问,不是复述式确认。
@@ -5153,6 +5156,57 @@ class AgentExecutor:
             if not data.get("exercise_type"):
                 data["exercise_type"] = data.get("type") or data.get("name") or "其他"
 
+        # waist: 手动腰围记录。代谢闭环里腰围是关键指标,不能只靠 UI 手填。
+        if rtype == "waist":
+            data.setdefault("record_date", today)
+            for src in ("waist_cm", "waist", "value", "腰围"):
+                if src in args and "waist_cm" not in data:
+                    data["waist_cm"] = args[src]
+                    break
+                if src in data and src != "waist_cm" and "waist_cm" not in data:
+                    data["waist_cm"] = data.pop(src)
+                    break
+            if "waist_cm" not in data:
+                return (
+                    "Error: waist 记录必须提供 waist_cm（腰围厘米数）。例如 "
+                    '{"record_type":"waist","data":{"waist_cm":88.5}}'
+                )
+
+        # sleep: 手动睡眠补录。不要代猜入睡/醒来时间;缺字段 fail-loud 让模型追问。
+        if rtype == "sleep":
+            data.setdefault("record_date", today)
+            if "quality" in data and "sleep_quality" not in data:
+                data["sleep_quality"] = data.pop("quality")
+            missing = [
+                field for field in ("bedtime", "wake_time", "sleep_quality")
+                if data.get(field) in (None, "")
+            ]
+            if missing:
+                return (
+                    "Error: sleep 记录必须提供 bedtime、wake_time、sleep_quality(1-5). "
+                    f"缺少: {', '.join(missing)}. 例如 "
+                    '{"record_type":"sleep","data":{"record_date":"YYYY-MM-DD",'
+                    '"bedtime":"YYYY-MM-DDT23:00:00+08:00",'
+                    '"wake_time":"YYYY-MM-DDT07:00:00+08:00","sleep_quality":4}}'
+                )
+
+        # excretion: 排便/排尿记录。type 是下游统计的关键,缺失时明确追问。
+        if rtype == "excretion":
+            data.setdefault("record_date", today)
+            type_map = {
+                "大便": "bowel", "排便": "bowel", "便便": "bowel", "stool": "bowel",
+                "小便": "urine", "排尿": "urine", "尿": "urine", "pee": "urine",
+            }
+            raw_type = data.get("type") or data.get("excretion_type") or args.get("type")
+            if raw_type in type_map:
+                raw_type = type_map[raw_type]
+            if raw_type not in ("bowel", "urine"):
+                return (
+                    "Error: excretion 记录必须提供 type=bowel 或 urine. "
+                    "如果用户没说清楚,请先问是排便还是排尿。"
+                )
+            data["type"] = raw_type
+
         if rtype == "reminder":
             data = _normalize_reminder_record_data(data)
             args["data"] = data
@@ -5280,6 +5334,9 @@ class AgentExecutor:
             "exercise": ("/daily-health/exercise", "POST", data),
             "diet": ("/diet/records", "POST", data),
             "supplement": ("/supplements/records", "POST", data),
+            "waist": ("/waist/records", "POST", data),
+            "sleep": ("/sleep/records", "POST", data),
+            "excretion": ("/excretion/records", "POST", data),
             # rhinitis 走 special case (见上方 rtype=="rhinitis" 分支), 不在 record_map 里
             "mood": ("/mood/records", "POST", data),
             "garmin_sync": ("/data-collection/garmin/me/sync?days=1", "POST", {}),
@@ -5343,6 +5400,7 @@ class AgentExecutor:
             "symptom": "/symptoms/me?limit=20",
             "medication": "/medication/medications/me?active_only=false",
             "medication_log": "/medication/today/me",
+            "supplement": "/supplements/me/records?limit=20",
             "supplement_definition": "/supplements/me/definitions?active_only=false",
             "reminder": "/reminders/me?status=all&limit=50",
         }
@@ -5360,13 +5418,14 @@ class AgentExecutor:
             "symptom": "/symptoms/{id}",
             "medication": "/medication/medications/{id}",
             "medication_log": "/medication/logs/{id}",
+            "supplement": "/supplements/records/{id}",
             "supplement_definition": "/supplements/definitions/{id}",
             "reminder": "/reminders/{id}",
         }
         update_supported = {
             "diet", "water", "weight", "waist", "blood_pressure",
             "sleep", "mood", "excretion", "illness", "medication",
-            "supplement_definition", "exercise", "symptom", "medication_log",
+            "supplement", "supplement_definition", "exercise", "symptom", "medication_log",
             "reminder",
         }
 

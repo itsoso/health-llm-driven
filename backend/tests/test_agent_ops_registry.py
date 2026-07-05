@@ -10,7 +10,7 @@ query dimension 而不改注册表(或反之)→ 本文件红,空洞在 CI 暴�
 import ast
 from pathlib import Path
 
-from app.services import agent_executor, health_read
+from app.services import agent_executor, health_read, tool_schema_registry
 from app.services.agent_ops_registry import AGENT_OPS, registry_violations
 
 _normalize = agent_executor._normalize_fast_record_kind
@@ -215,3 +215,44 @@ def test_spec_doc_records_landing_state():
     text = spec.read_text(encoding="utf-8")
     assert "agent_ops_registry" in text, "spec 必须引用注册表文件名(§3.4 落地)"
     assert "落地状态" in text, "spec 缺 '## 落地状态' 盘点章节(task #43 交付物)"
+
+
+def _tool_function(name: str) -> dict:
+    for tool in tool_schema_registry.HEALTH_TOOLS:
+        fn = tool.get("function") or {}
+        if fn.get("name") == name:
+            return fn
+    raise AssertionError(f"找不到工具 schema: {name}")
+
+
+def _tool_enum(tool_name: str, prop: str) -> set:
+    fn = _tool_function(tool_name)
+    params = fn.get("parameters") or {}
+    props = params.get("properties") or {}
+    schema = props.get(prop) or {}
+    return set(schema.get("enum") or [])
+
+
+def test_p2_agent_create_gaps_are_closed_for_manual_body_records():
+    for obj in ("waist", "sleep", "excretion"):
+        entry = AGENT_OPS[obj]["create"]
+        assert not entry.get("gap"), f"{obj}.create 不能再是 gap"
+        assert entry["tool"] == "health_record"
+        assert entry["record_type"] == obj
+        assert entry["confirm"] == "auto"
+        assert entry.get("undo")
+
+
+def test_p2_supplement_intake_records_are_manageable():
+    for op in ("list", "update", "delete"):
+        entry = AGENT_OPS["supplement"][op]
+        assert not entry.get("gap"), f"supplement.{op} 不能再是 gap"
+        assert entry["tool"] == "health_manage"
+        assert entry["record_type"] == "supplement"
+    assert AGENT_OPS["supplement"]["create"]["undo"] == "health_manage(delete supplement {record_id})"
+    assert "undo_gap" not in AGENT_OPS["supplement"]["create"]
+
+
+def test_tool_schemas_expose_p2_agent_record_and_manage_types():
+    assert {"waist", "sleep", "excretion"} <= _tool_enum("health_record", "record_type")
+    assert "supplement" in _tool_enum("health_manage", "record_type")

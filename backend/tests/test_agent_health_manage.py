@@ -152,6 +152,75 @@ async def test_health_manage_lists_reminders(db):
 
 
 @pytest.mark.asyncio
+async def test_health_manage_lists_supplement_records(db):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+    captured = {}
+
+    async def fake_get(url, headers):
+        captured["url"] = url
+        return '[{"id":15,"supplement_id":7,"taken":true}]'
+
+    with patch.object(executor, "_api_get", new=AsyncMock(side_effect=fake_get)):
+        result = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({"record_type": "supplement", "operation": "list"}),
+            user_token="test-token",
+        )
+
+    assert captured["url"].endswith("/supplements/me/records?limit=20")
+    assert json.loads(result)[0]["id"] == 15
+
+
+@pytest.mark.asyncio
+async def test_health_manage_updates_and_deletes_supplement_record_by_id(db):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+    captured = {}
+
+    async def fake_put(url, headers, payload):
+        captured["put_url"] = url
+        captured["payload"] = payload
+        return '{"id":15,"taken":false,"notes":"误记"}'
+
+    async def fake_delete(url, headers):
+        captured["delete_url"] = url
+        return '{"message":"删除成功","record_id":15}'
+
+    with patch.object(executor, "_api_put", new=AsyncMock(side_effect=fake_put)):
+        updated = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": "supplement",
+                "operation": "update",
+                "record_id": 15,
+                "data": {"taken": False, "notes": "误记"},
+            }),
+            user_token="test-token",
+        )
+    with patch.object(executor, "_api_delete", new=AsyncMock(side_effect=fake_delete)):
+        deleted = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": "supplement",
+                "operation": "delete",
+                "record_id": 15,
+            }),
+            user_token="test-token",
+        )
+
+    assert captured["put_url"].endswith("/supplements/records/15")
+    assert captured["payload"] == {"taken": False, "notes": "误记"}
+    assert json.loads(updated)["taken"] is False
+    assert captured["delete_url"].endswith("/supplements/records/15")
+    assert json.loads(deleted)["record_id"] == 15
+
+
+@pytest.mark.asyncio
 async def test_health_manage_updates_exercise_record_by_id(db):
     from app.services.agent_executor import AgentExecutor
 

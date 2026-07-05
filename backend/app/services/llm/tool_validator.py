@@ -346,7 +346,7 @@ _PLAN_ACTIONS = {"generate_weekly", "complete_item", "save_to_card"}
 _MANAGE_RECORD_TYPES = {
     "diet", "water", "weight", "waist", "blood_pressure",
     "sleep", "mood", "excretion", "exercise", "illness", "symptom",
-    "medication", "medication_log", "supplement_definition", "reminder",
+    "medication", "medication_log", "supplement", "supplement_definition", "reminder",
 }
 _MANAGE_OPERATIONS = {"list", "update", "delete"}
 _CARD_TYPES = {"plan", "insight", "recommendation"}
