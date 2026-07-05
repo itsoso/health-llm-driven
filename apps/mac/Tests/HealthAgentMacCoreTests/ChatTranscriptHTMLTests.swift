@@ -580,3 +580,25 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertEqual((parsed ?? [])?.count, 2)
     }
 }
+
+// MARK: - mac 死键防线:不可执行的 route.open 不画按钮(2026-07-05)
+
+extension ChatTranscriptHTMLTests {
+    func testUnactionableRouteOpenButtonIsNotRendered() {
+        let actions = [
+            AgentDynamicCardActionDescriptor(
+                id: "dead", label: "去神秘页", action: "route.open",
+                payload: .object(["route": .string("/mystery-screen")]), style: "primary"
+            ),
+            AgentDynamicCardActionDescriptor(
+                id: "ok", label: "去用药页记录", action: "route.open",
+                payload: .object(["route": .string("/medications?draft=1")]), style: "primary"
+            ),
+        ]
+        guard let html = ChatTranscriptHTML.dynamicCardHTML(type: "medication_draft", render: nil, data: .object([:]), actions: actions) else {
+            return XCTFail("card html should render")
+        }
+        XCTAssertFalse(html.contains("去神秘页"), "mac 执行不了的路由不该渲染按钮(死键)")
+        XCTAssertTrue(html.contains("去用药页记录"), "已映射路由的按钮应保留")
+    }
+}

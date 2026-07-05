@@ -783,7 +783,10 @@ public enum ChatTranscriptHTML {
             guard action.action == "route.open",
                   let route = action.payload?["route"]?.stringValue?
                     .trimmingCharacters(in: .whitespacesAndNewlines),
-                  isSafeInternalRoute(route) else {
+                  isSafeInternalRoute(route),
+                  // mac 执行不了的路由不画按钮 —— 死键点了没反应比没有按钮更糟
+                  // (Rule#1:不假装成功)。可执行 = /chat?prompt 或已映射侧边栏页。
+                  DynamicCardRouting.isActionable(route: route) else {
                 return nil
             }
             let styleClass = action.style == "primary" ? "primary" : "secondary"

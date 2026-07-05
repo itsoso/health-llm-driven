@@ -37,3 +37,25 @@ def test_extracts_basic_intake_slots():
     assert diet.kind == "diet"
     assert diet.text == "牛肉面"
     assert diet.slots["meal_type"] == "dinner"
+
+
+# ──── "打卡:X"/"记录 X" 前缀清洗(mac medication_draft 实锤) ────
+from app.services.intake_intent_classifier import classify_intake_intent
+
+
+def test_bare_checkin_prefix_with_colon_strips_verb():
+    intent = classify_intake_intent("打卡：替普瑞酮胶囊")
+    assert intent.kind == "medication"
+    assert intent.text == "替普瑞酮胶囊"  # 曾整成 "打卡：替普瑞酮胶囊"
+
+
+def test_bare_record_prefix_space_strips_verb():
+    intent = classify_intake_intent("记录 维生素D")
+    assert intent.text == "维生素D"
+
+
+def test_consumption_verb_paths_unchanged():
+    intent = classify_intake_intent("记录我今天吃了牛肉面")
+    assert intent.kind == "diet"
+    assert "牛肉面" in intent.text
+    assert "记录" not in intent.text

@@ -587,9 +587,16 @@ async def agent_stream(
                             inline = extract_inline_card_blocks("".join(full_text_buf))
                             # 本轮已写入的摄入类记录 → 压制同 kind 的 query 派生草稿,
                             # 防「已记录+再确认」重复写入(油桃加餐双卡实锤)。
+                            # 且只要 health_record 已接手(含待确认态):对话流拥有该
+                            # 任务,草稿卡的"去 X 页记录"主按钮会把用户引离"说'是的'
+                            # 即完成"的确认流(实锤:打卡替普瑞酮 → 确认问句与
+                            # medication_draft 双路互搏;mac 上该按钮还曾是静默死键)。
+                            suppress = recorded_intake_kinds(existing, inline)
+                            if "health_record" in (event.get("data", {}).get("tools_used") or []):
+                                suppress = set(suppress) | {"medication", "supplement", "diet"}
                             cards = build_cards(
                                 bg_db, user_id, msg_text,
-                                suppress_intake_kinds=recorded_intake_kinds(existing, inline),
+                                suppress_intake_kinds=suppress,
                             )
                             # LLM 主动输出的卡片优先，其次保留 AgentExecutor 已写入的
                             # system-KB evidence，再追加 query 派生卡片。历史恢复依赖
