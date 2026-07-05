@@ -86,12 +86,17 @@ def test_agent_send_collects_first_party_executor_stream(client, auth_user_and_h
     )
 
     assert res.status_code == 200
-    assert res.json() == {
-        "reply": "已接入第一方 Agent",
-        "conversation_id": 123,
-        "message_id": 456,
-        "mode": "agent",
-        "elapsed_ms": 17,
+    body = res.json()
+    # 老字段零变化(additive meta 上线后契约不回退)。
+    assert body["reply"] == "已接入第一方 Agent"
+    assert body["conversation_id"] == 123
+    assert body["message_id"] == 456
+    assert body["mode"] == "agent"
+    assert body["elapsed_ms"] == 17
+    # 纯附加 meta 恒存在(即使没模型/成本也给结构,值为 None)。
+    assert "meta" in body and isinstance(body["meta"], dict)
+    assert set(body["meta"].keys()) == {
+        "model", "rounds", "usage", "cost_estimate", "latency", "tools_used"
     }
 
 
@@ -312,13 +317,13 @@ def test_agent_send_slow_turn_streams_keepalive_not_504(
     assert set(raw[: len(raw) - len(raw.lstrip())]) <= {" ", "\t", "\r", "\n"}
     # 前导空白后仍是合法完整 JSON(RFC 8259 允许前导 ws → 现有客户端零感知)
     body = jsonlib.loads(raw)
-    assert body == {
-        "reply": "深度分析结论",
-        "conversation_id": 7,
-        "message_id": 8,
-        "mode": "agent",
-        "elapsed_ms": 2500,
-    }
+    # 老字段零变化;additive meta 也随保活路径一起回(与快窗一致)。
+    assert body["reply"] == "深度分析结论"
+    assert body["conversation_id"] == 7
+    assert body["message_id"] == 8
+    assert body["mode"] == "agent"
+    assert body["elapsed_ms"] == 2500
+    assert isinstance(body.get("meta"), dict)
 
 
 def test_agent_send_error_after_stream_started_yields_error_envelope(

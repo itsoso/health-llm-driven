@@ -1,7 +1,8 @@
 """run_xiaoba.py —— 对部署的小巴 (Reva) API 自动跑全题库。
 
 臂: xiaoba。走 POST /agent/send(非流式简单)。
-- 采集: 回答文本 + 延迟 + meta(conversation_id / mode / elapsed_ms;model/cost 若响应带则收)。
+- 采集: 回答文本 + 延迟 + meta(conversation_id / mode / elapsed_ms / model / rounds /
+  usage / cost_estimate / latency / tools_used —— P4 可观测性 meta,拿不到成本给 None 不填 0)。
 - multi_turn: 同一 conversation_id 串起首问 + follow_ups,测记忆连续性。
 - 只读评测: 题库本身无"记录"意图。跑完做 sanity 检查 —— 抓评测窗口前后的
   记录计数(饮水/饮食/体重等),若新增则告警(评测不该写库)。
@@ -70,6 +71,8 @@ def _run_one(q, poster: Poster) -> Transcript:
     conv_id: Optional[int] = None
     answers: List[str] = []
     meta: Dict[str, Any] = {}
+    last_model: Optional[str] = None
+    total_cost: Optional[float] = None  # None = 拿不到成本(诚实);拿到就累加
     try:
         for prompt in q.turns():
             t0 = time.monotonic()
@@ -77,19 +80,31 @@ def _run_one(q, poster: Poster) -> Transcript:
             latency_ms = int((time.monotonic() - t0) * 1000)
             reply = str(resp.get("reply", ""))
             conv_id = resp.get("conversation_id", conv_id)
+            # /agent/send 的可观测性 meta(P4):{model, rounds, usage, cost_estimate, latency, tools_used}。
+            resp_meta = resp.get("meta") if isinstance(resp.get("meta"), dict) else {}
             turn_meta = {
                 "conversation_id": resp.get("conversation_id"),
                 "mode": resp.get("mode"),
                 "elapsed_ms": resp.get("elapsed_ms"),
+                "model": resp_meta.get("model"),
+                "rounds": resp_meta.get("rounds"),
+                "latency": resp_meta.get("latency"),
+                "tools_used": resp_meta.get("tools_used"),
             }
-            usage = resp.get("usage") or resp.get("llm_usage")
+            # usage:新 meta.usage 优先,回退历史顶层 usage/llm_usage。
+            usage = resp_meta.get("usage") or resp.get("usage") or resp.get("llm_usage")
             if isinstance(usage, dict):
                 turn_meta["usage"] = usage
+            cost_block = resp_meta.get("cost_estimate")
+            if isinstance(cost_block, dict) and isinstance(cost_block.get("value_usd"), (int, float)):
+                turn_meta["cost_usd"] = float(cost_block["value_usd"])
+                total_cost = (total_cost or 0.0) + float(cost_block["value_usd"])
+            if resp_meta.get("model"):
+                last_model = str(resp_meta["model"])
             turns.append(Turn(prompt=prompt, answer=reply, latency_ms=latency_ms, meta=turn_meta))
             answers.append(reply)
         meta["conversation_id"] = conv_id
-        # 多轮时把每轮 elapsed_ms 之和留档
-        meta["model"] = None  # 小巴不回传具体 model 名;留位以对齐其他臂 schema
+        meta["model"] = last_model  # 小巴现在回传具体 model 名(P4 可观测性);拿不到才 None
         combined = "\n\n---\n\n".join(answers) if len(answers) > 1 else (answers[0] if answers else "")
         return Transcript(
             arm=ARM,
@@ -97,7 +112,7 @@ def _run_one(q, poster: Poster) -> Transcript:
             family=q.family,
             answer=combined,
             latency_ms=sum(t.latency_ms for t in turns),
-            cost=None,
+            cost=total_cost,  # 拿到真实成本则累加,否则 None(诚实,不填 0)
             requires_personal_data=q.requires_personal_data,
             turns=[t.__dict__ for t in turns],
             meta=meta,
