@@ -1,0 +1,11 @@
+# 评测产物 —— 绝不入库。
+# context_pack.md 含个人健康数据;transcripts / blind / scores / answer_key / report 是运行输出。
+out/
+context_pack.md
+transcripts*.jsonl
+blind.jsonl
+answer_key.json
+scores.jsonl
+report.md
+manual_*.md
+!manual_arm_template.md
