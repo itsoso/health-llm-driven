@@ -734,8 +734,9 @@ describe('ChatScreen', () => {
     const { getByTestId } = render(<ChatScreen />);
     await waitFor(() => expect(mockFetchConversationStarters).toHaveBeenCalled());
 
-    // No global tab bar: the composer only needs a tiny bottom breath.
-    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 4 });
+    // No global tab bar: spacer = insets.bottom (jest mock 为 0) + 12 呼吸;
+    // 真机 = home indicator 安全区 + 12 —— 输入栏悬浮不贴底 (阿福式)。
+    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 12 });
 
     act(() => {
       keyboardListeners.keyboardDidShow({

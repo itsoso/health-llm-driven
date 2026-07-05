@@ -5,7 +5,7 @@ import {
   Alert, Keyboard, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { deleteConversation, getConversationsPage, updateConversationTitle } from '../../services/chat';
@@ -62,7 +62,8 @@ const SUGGESTIONS: SuggestionCard[] = [
   { icon: 'trending-up-outline', text: 'HRV趋势分析', key: 'default', priority: 0 },
 ];
 
-const CHAT_BOTTOM_BREATHING_SPACE = 4;
+// 阿福式悬浮输入栏: home indicator 安全区之上再留一指呼吸, 不贴屏幕底边。
+const CHAT_BOTTOM_BREATHING_SPACE = 12;
 
 // 对话历史无限下拉每页条数 (后端 limit 上限 100)
 const HISTORY_PAGE_SIZE = 20;
@@ -632,11 +633,13 @@ export default function ChatScreen() {
   }, [selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  // 小巴是 agent-native 主屏,没有底部 Tab Bar。键盘弹起时直接为键盘留位,
-  // 收起时只保留输入框底部的轻量呼吸空间。
+  const insets = useSafeAreaInsets();
+  // 小巴是 agent-native 主屏,没有底部 Tab Bar。键盘弹起时直接为键盘留位;
+  // 收起时 = 底部安全区(SafeAreaView 只包 top, home indicator 由这里补) + 呼吸空间,
+  // 输入栏悬浮在 home indicator 之上而非压进去(founder 2026-07-05: 参考阿福)。
   const bottomSpacerHeight = keyboardVisible
     ? (Platform.OS === 'ios' ? keyboardHeight : 0)
-    : CHAT_BOTTOM_BREATHING_SPACE;
+    : insets.bottom + CHAT_BOTTOM_BREATHING_SPACE;
   const activeLlmLabel = llmModelId
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
