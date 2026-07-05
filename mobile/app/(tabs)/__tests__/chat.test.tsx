@@ -140,7 +140,7 @@ describe('ChatScreen', () => {
     mockFetchMemoryOpener.mockReset();
     mockOpenHistory.mockResolvedValue([]);
     mockOpenHistoryPage.mockResolvedValue({ items: [], total: 0 });
-    mockFetchConversationStarters.mockResolvedValue({ opener: null, suggestions: null });
+    mockFetchConversationStarters.mockResolvedValue({ opener: null, suggestions: null, onboarding: false });
     mockFetchMemoryOpener.mockResolvedValue([]);
     mockRecordCardAdherence.mockResolvedValue({});
     mockRecordCardDecision.mockResolvedValue({});
@@ -152,7 +152,7 @@ describe('ChatScreen', () => {
 
   it('empty chat with nothing to say auto-summons keyboard once opener fetch settles, and bumps on 新建对话', async () => {
     // 小巴没话可说(opener 缺席 + 无记忆) → fetch 落定后才唤起键盘。
-    mockFetchConversationStarters.mockResolvedValue({ opener: null, suggestions: null });
+    mockFetchConversationStarters.mockResolvedValue({ opener: null, suggestions: null, onboarding: false });
     mockFetchMemoryOpener.mockResolvedValue([]);
 
     const { UNSAFE_getAllByType, getByLabelText } = render(<ChatScreen />);
@@ -179,11 +179,12 @@ describe('ChatScreen', () => {
         text: '今天就是「提前晚餐」的检验日，做到了吗？',
         source: 'action_card_due',
         source_id: 1,
-        quick_replies: ['做到了 ✅', '没做 ❌'],
+        quick_replies: [{ text: '做到了 ✅' }, { text: '没做 ❌' }],
         deep_link: null,
         priority: 100,
       },
       suggestions: null,
+      onboarding: false,
     });
     mockFetchMemoryOpener.mockResolvedValue([]);
 
@@ -446,11 +447,12 @@ describe('ChatScreen', () => {
         text: '今天就是「AI 预测：7 天体重保持 ≤ 71.3kg」的检验日，做到了吗？',
         source: 'action_card_due',
         source_id: 88,
-        quick_replies: ['做到了 ✅', '没做 ❌', '调整下计划'],
+        quick_replies: [{ text: '做到了 ✅' }, { text: '没做 ❌' }, { text: '调整下计划' }],
         deep_link: '/action-cards/88',
         priority: 100,
       },
       suggestions: null,
+      onboarding: false,
     });
 
     const { getByLabelText } = render(<ChatScreen />);
@@ -485,15 +487,17 @@ describe('ChatScreen', () => {
           text: '今天就是「夜间血氧复盘」的检验日，做到了吗？',
           source: 'action_card_due',
           source_id: 89,
-          quick_replies: ['做到了 ✅', '没做 ❌', '调整下计划'],
+          quick_replies: [{ text: '做到了 ✅' }, { text: '没做 ❌' }, { text: '调整下计划' }],
           deep_link: '/action-cards/89',
           priority: 100,
         },
         suggestions: null,
+        onboarding: false,
       })
       .mockResolvedValueOnce({
         opener: null,
         suggestions: [{ text: '复盘昨晚夜间血氧和睡眠恢复', key: 'recovery_history', priority: 60 }],
+        onboarding: false,
       });
 
     mockFetchMemoryOpener
@@ -571,6 +575,153 @@ describe('ChatScreen', () => {
     await waitFor(() => expect(mockFetchConversationStarters).toHaveBeenCalled());
     // messages 非空 → composer chips row 不渲染。
     expect(queryByLabelText('拍照记一餐')).toBeNull();
+  });
+
+  // ── 冷启动包 (P0-3) ─────────────────────────────────────────────────────
+  it('cold start (onboarding=true) does NOT fall back to DEFAULT_SUGGESTIONS', async () => {
+    // 零信号冷启动用户: 后端带 onboarding=true + 它自己的 onboarding chips。
+    // 客户端禁止把 starters 回落成假设有历史数据的 DEFAULT_SUGGESTIONS。
+    mockFetchConversationStarters.mockResolvedValue({
+      opener: null,
+      suggestions: [{ text: '连接我的 Garmin / Apple Watch', key: 'onboarding', priority: 100 }],
+      onboarding: true,
+    });
+
+    const { getByLabelText, queryByText } = render(<ChatScreen />);
+
+    // 后端返回的 onboarding chip 原样渲染进 composer 行。
+    await waitFor(() => {
+      expect(getByLabelText('向小巴提问: 连接我的 Garmin / Apple Watch')).toBeTruthy();
+    });
+    // DEFAULT_SUGGESTIONS 的文案(假设有历史数据)不出现。
+    expect(queryByText('今天的健康状况如何？')).toBeNull();
+    expect(queryByText('HRV趋势分析')).toBeNull();
+  });
+
+  it('cold start with empty backend starters still suppresses DEFAULT_SUGGESTIONS', async () => {
+    // onboarding=true 但后端 suggestions 为空 → 仍不回注默认(只剩固定拍照 chip)。
+    mockFetchConversationStarters.mockResolvedValue({
+      opener: null,
+      suggestions: null,
+      onboarding: true,
+    });
+
+    const { getByLabelText, queryByText } = render(<ChatScreen />);
+
+    await waitFor(() => expect(getByLabelText('拍照记一餐')).toBeTruthy());
+    expect(queryByText('今天的健康状况如何？')).toBeNull();
+    expect(queryByText('分析我的睡眠质量')).toBeNull();
+  });
+
+  it('an action quick reply navigates locally instead of sending text', async () => {
+    // 冷启动 opener 的 quick reply 带 action → 点击走本地导航, 不发文本。
+    mockFetchConversationStarters.mockResolvedValue({
+      opener: {
+        text: '欢迎！先从这三件事之一开始，我就能帮你看懂身体。',
+        source: 'memory_fact',
+        source_id: null,
+        quick_replies: [
+          { text: '拍照记一餐', action: 'photo_meal' },
+          { text: '记录体重', action: 'record_weight' },
+          { text: '连接设备', action: 'connect_device' },
+        ],
+        deep_link: null,
+        priority: 5,
+      },
+      suggestions: null,
+      onboarding: true,
+    });
+
+    const { getByLabelText } = render(<ChatScreen />);
+
+    await waitFor(() => expect(getByLabelText('一键回复: 记录体重')).toBeTruthy());
+    fireEvent.press(getByLabelText('一键回复: 记录体重'));
+
+    // record_weight → /body-measurements 本地导航, 不发消息。
+    expect(mockPush).toHaveBeenCalledWith('/body-measurements');
+    expect(mockSendMessage).not.toHaveBeenCalled();
+
+    fireEvent.press(getByLabelText('一键回复: 连接设备'));
+    expect(mockPush).toHaveBeenCalledWith('/settings');
+
+    fireEvent.press(getByLabelText('一键回复: 拍照记一餐'));
+    expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo');
+    // 三个 action 全程零发送。
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('a no-action quick reply still sends text (behavior unchanged)', async () => {
+    mockFetchConversationStarters.mockResolvedValue({
+      opener: {
+        text: '今天就是「提前晚餐」的检验日，做到了吗？',
+        source: 'action_card_due',
+        source_id: 7,
+        quick_replies: [{ text: '做到了 ✅' }, { text: '没做 ❌' }],
+        deep_link: null,
+        priority: 100,
+      },
+      suggestions: null,
+      onboarding: false,
+    });
+
+    const { getByLabelText } = render(<ChatScreen />);
+
+    await waitFor(() => expect(getByLabelText('一键回复: 做到了 ✅')).toBeTruthy());
+    fireEvent.press(getByLabelText('一键回复: 做到了 ✅'));
+
+    // 无 action → 走既有发送路径, 不做本地导航。
+    expect(mockSendMessage).toHaveBeenCalled();
+    expect(mockSendMessage.mock.calls[0][0]).toContain('做到了 ✅');
+    expect(mockPush).not.toHaveBeenCalledWith('/body-measurements');
+    expect(mockPush).not.toHaveBeenCalledWith('/settings');
+  });
+
+  it('third state (onboarding, no opener, no memory) shows the Quick Start card', async () => {
+    // opener 因故未到 + 无记忆, 但 onboarding=true → 出 Quick Start 卡(三动作)。
+    mockFetchConversationStarters.mockResolvedValue({
+      opener: null,
+      suggestions: null,
+      onboarding: true,
+    });
+    mockFetchMemoryOpener.mockResolvedValue([]);
+
+    const { getByLabelText, getAllByLabelText } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      // Quick Start 卡的三个动作按钮都在。
+      expect(getByLabelText('记录体重')).toBeTruthy();
+      expect(getByLabelText('连接设备')).toBeTruthy();
+    });
+
+    // 点卡里的「连接设备」→ 本地导航 /settings。
+    fireEvent.press(getByLabelText('连接设备'));
+    expect(mockPush).toHaveBeenCalledWith('/settings');
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('does NOT show the Quick Start card when the opener arrives (no bubble+card+chips stacking)', async () => {
+    // opener 正常到达 → 走开场气泡, 不出 Quick Start 卡。
+    mockFetchConversationStarters.mockResolvedValue({
+      opener: {
+        text: '今天就是「提前晚餐」的检验日，做到了吗？',
+        source: 'action_card_due',
+        source_id: 1,
+        quick_replies: [{ text: '做到了 ✅' }, { text: '没做 ❌' }],
+        deep_link: null,
+        priority: 100,
+      },
+      suggestions: null,
+      onboarding: true,
+    });
+
+    const { getByText, queryByLabelText } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(getByText(/今天就是「提前晚餐」的检验日，做到了吗？/)).toBeTruthy();
+    });
+    // Quick Start 卡的「记录体重」/「连接设备」动作按钮不渲染(opener 气泡已占位)。
+    expect(queryByLabelText('记录体重')).toBeNull();
+    expect(queryByLabelText('连接设备')).toBeNull();
   });
 
   it('keeps the docked-tab chat composer close to the global tab bar and above the iOS keyboard', async () => {
