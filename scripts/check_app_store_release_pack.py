@@ -80,6 +80,7 @@ CURRENT_BOTTOM_NAV_TEXT = "今日 / 小巴 / 记录 / 我"
 CURRENT_POSITIONING_TERM = "健康守护者"
 STALE_USER_VISIBLE_RELEASE_TERMS = [
     "Reva",
+    "阿衡",  # 2026-07-05 改名小巴;旧人格名不得再出现在发布材料
     "复元",
     "健康助理",
     "守护神",

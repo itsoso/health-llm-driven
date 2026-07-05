@@ -12,7 +12,7 @@ Recommended first pass:
 ## Core Screens
 
 1. `今日`: next health action and timeline.
-2. `阿衡`: chat + dynamic UI card.
+2. `小巴`: chat + dynamic UI card.
 3. `记录`: fast food, water, supplement, workout, body metric entry.
 4. `我`: data connections and health profile hub.
 5. `隐私政策`: HealthKit, AI, account deletion, medical boundary.
@@ -102,7 +102,7 @@ APP_STORE_SCREENSHOT_DIR=design/screenshots/app-store/<build-id>-ready \
 
 - [ ] No diagnosis, treatment, prescription, or dosage-change promise appears in screenshots.
 - [ ] No private user PII, raw lab values, genotype, medication details, or family data is visible unless using a dedicated demo account.
-- [ ] Bottom navigation labels are `今日 / 阿衡 / 记录 / 我`.
+- [ ] Bottom navigation labels are `今日 / 小巴 / 记录 / 我`.
 - [ ] Chat screenshot shows a bounded dynamic card, not raw JSON.
 - [ ] Record screenshot shows quick food/water/workout entry.
 - [ ] Me screenshot shows `账号与隐私` and data controls.

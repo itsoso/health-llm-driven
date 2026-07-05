@@ -7,7 +7,7 @@
 
 ## 1. Decision
 
-Reva 的未来产品形态不再围绕固定页面堆功能。每一个用户可见功能都必须沉淀为一个 `AtomicCapability`: 符合 Reva 设计规范、拥有完整输入/状态/动作/安全边界的闭合组件。阿衡只负责编排这些已注册能力,根据时间、地点、天气、用户健康状态、计划、执行反馈和当前意图动态组合成 `DynamicView`。
+Reva 的未来产品形态不再围绕固定页面堆功能。每一个用户可见功能都必须沉淀为一个 `AtomicCapability`: 符合 Reva 设计规范、拥有完整输入/状态/动作/安全边界的闭合组件。小巴只负责编排这些已注册能力,根据时间、地点、天气、用户健康状态、计划、执行反馈和当前意图动态组合成 `DynamicView`。
 
 页面和端不再是功能的所有者。Today、Chat、Watch、Mac、Web 都只是 surface shell:
 
@@ -111,7 +111,7 @@ Surface shell 的职责只有四个:
 
 ## 5. Agent Composer Permissions
 
-阿衡可以做:
+小巴可以做:
 
 - 选择哪些 `AtomicCapability` 进入当前视图。
 - 决定 section、优先级、分组和解释文案。
@@ -119,7 +119,7 @@ Surface shell 的职责只有四个:
 - 根据时间、地点、天气、数据新鲜度、计划和执行反馈触发 proactive view 或 push。
 - 在安全边界内生成非医疗诊断式的摘要和建议语气。
 
-阿衡不可以做:
+小巴不可以做:
 
 - 生成任意 JSX、HTML、React Native 组件或未注册 card type。
 - 下发任意 endpoint、任意 write payload 或绕过 action allowlist。
@@ -150,4 +150,4 @@ Surface shell 的职责只有四个:
 - Mobile Today 作为 shell 优先渲染 DynamicView,不可用时回退旧首页。
 - Chat card registry 和 action allowlist 是后续 capability registry 的前身。
 
-后续应把饮食、睡眠、训练、药物/补剂、慢病提醒、复查、预测回测和连接健康都按此范式登记为 `AtomicCapability`,再交给阿衡在 Today、Chat、Watch、Mac、Web 中动态组合。
+后续应把饮食、睡眠、训练、药物/补剂、慢病提醒、复查、预测回测和连接健康都按此范式登记为 `AtomicCapability`,再交给小巴在 Today、Chat、Watch、Mac、Web 中动态组合。

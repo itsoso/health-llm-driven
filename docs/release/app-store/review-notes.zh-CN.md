@@ -14,7 +14,7 @@ If the reviewer cannot sign in, please contact support@executor.life.
 
 1. Open the app and sign in with the demo account.
 2. Go to `今日` to see the current health summary and next suggested action.
-3. Go to `阿衡` and ask: `今天应该先做什么健康行动？`
+3. Go to `小巴` and ask: `今天应该先做什么健康行动？`
 4. Go to `记录` and record a simple water or exercise entry.
 5. Go to `我 -> 数据连接` to view Apple Health and data source controls.
 6. Go to `我 -> 健康档案 -> 导入体检报告` to see report import entry.
@@ -39,6 +39,6 @@ The request is recorded in an auditable backend workflow. The user is told that 
 
 ## Notes For Review
 
-- The demo account is pre-loaded with sample health data, so `今日`, `时间线`, and `阿衡` show non-empty content **without requiring HealthKit authorization on the review device**.
+- The demo account is pre-loaded with sample health data, so `今日`, `时间线`, and `小巴` show non-empty content **without requiring HealthKit authorization on the review device**.
 - HealthKit / Apple Watch sync is optional and additive; the app is fully usable from the demo account's pre-loaded records.
 - Apple Watch and iPhone HealthKit behavior should be tested on physical devices when possible (HealthKit cannot return data in the simulator).

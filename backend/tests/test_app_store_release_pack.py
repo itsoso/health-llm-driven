@@ -222,7 +222,7 @@ def test_demo_review_credentials_rejects_checked_in_secret_outside_final_submit(
 def test_release_narrative_rejects_stale_public_positioning():
     failures = validate_release_narrative(
         submission=(
-            "Reva 是你的健康助理。"
+            "Reva 是你的健康助理。阿衡帮你管理健康。"
             "本版本重构了移动端核心动线: 今日、私教、记录、我的。"
         ),
         review_notes="Go to `私教` and ask a question.",
@@ -232,6 +232,7 @@ def test_release_narrative_rejects_stale_public_positioning():
     assert "release text contains stale user-visible term: Reva" in failures
     assert "release text contains stale user-visible term: 健康助理" in failures
     assert "release text contains stale user-visible term: 私教" in failures
+    assert "release text contains stale user-visible term: 阿衡" in failures  # 2026-07-05 改名小巴
     assert "release text must use current bottom navigation labels: 今日 / 小巴 / 记录 / 我" in failures
     assert "release text must include current positioning term: 健康守护者" in failures
 
