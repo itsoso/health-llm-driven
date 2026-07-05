@@ -12,7 +12,7 @@ describe('main tab labels', () => {
   });
 
   it('keeps the assistant tab accessibility label aligned with Xiaoba', () => {
-    expect(getMainTabAccessibilityLabels().chat).toBe('小巴，与忠实的健康守护者对话');
+    expect(getMainTabAccessibilityLabels().chat).toBe('小巴，与忠实的健康参谋对话');
   });
 
   it('pins the tab route segments — deep links depend on "chat" staying stable', () => {

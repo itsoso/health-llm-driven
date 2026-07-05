@@ -115,7 +115,7 @@ export const TAB_META: Record<MainTabName, MainTabMeta> = {
   },
   chat: {
     label: '小巴',
-    accessibilityLabel: '小巴，与忠实的健康守护者对话',
+    accessibilityLabel: '小巴，与忠实的健康参谋对话',
     icon: 'chatbubbles',
     iconOutline: 'chatbubbles-outline',
   },

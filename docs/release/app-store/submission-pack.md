@@ -27,7 +27,7 @@ Status: draft for the next App Store submission.
 
 ### Description
 
-小巴是面向长期健康管理的个人健康操作系统。它把你授权同步的 Apple Health / HealthKit 数据、Apple Watch 记录、体检报告、饮食运动记录、用药和补剂信息组织成可复盘的健康时间线，并通过 AI 帮你生成日常行动建议。
+小巴，你忠实的健康参谋——面向长期健康管理的个人健康操作系统。它把你授权同步的 Apple Health / HealthKit 数据、Apple Watch 记录、体检报告、饮食运动记录、用药和补剂信息组织成可复盘的健康时间线，并通过 AI 帮你生成日常行动建议。
 
 你可以在“今日”看到当前最重要的健康行动，在“小巴”里用对话追问和执行记录，在“记录”里快速记录饮水、饮食、运动、体重、血压、症状、用药和补剂，在“我”里管理数据来源、健康档案、提醒、安全与隐私。
 
@@ -46,7 +46,7 @@ Status: draft for the next App Store submission.
 
 ### Keywords
 
-健康记录,Apple Watch,HealthKit,体检报告,饮食记录,运动记录,睡眠,用药提醒,补剂,小巴,中和知微,健康守护者
+健康记录,Apple Watch,HealthKit,体检报告,饮食记录,运动记录,睡眠,用药提醒,补剂,小巴,中和知微,健康参谋
 
 ### What's New
 

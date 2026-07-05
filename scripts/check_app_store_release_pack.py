@@ -77,13 +77,14 @@ DEMO_CREDENTIAL_LINES = [
 REVIEW_CONTACT_PHONE_ENV = "APP_STORE_REVIEW_CONTACT_PHONE"
 REVIEW_CONTACT_PHONE_RE = re.compile(r"^\+[1-9]\d{1,14}(?:[\s-]\d+)*$")
 CURRENT_BOTTOM_NAV_TEXT = "今日 / 小巴 / 记录 / 我"
-CURRENT_POSITIONING_TERM = "健康守护者"
+CURRENT_POSITIONING_TERM = "健康参谋"  # 2026-07-05 定位语终裁:参谋家族("小巴,你忠实的健康参谋")
 STALE_USER_VISIBLE_RELEASE_TERMS = [
     "Reva",
     "阿衡",  # 2026-07-05 改名小巴;旧人格名不得再出现在发布材料
     "复元",
     "健康助理",
     "守护神",
+    "健康守护者",  # 2026-07-05 定位语终裁回参谋家族;守护者措辞不得再入发布材料
     "私教",
 ]
 APP_REVIEW_REDLINE_GLOBS = [
