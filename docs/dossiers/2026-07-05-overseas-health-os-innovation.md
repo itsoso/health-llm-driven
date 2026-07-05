@@ -64,3 +64,20 @@
 
 - 下一批把 lbclaw / ChatGPT / 阿福 / 小巴的同题输出接入同一个 case schema,先人工采样,再考虑自动化。
 - 再下一批把 `overseas_health_os` 纳入 release gate 的可选质量闸,避免早期 UI/饮食链路改动破坏 Health OS 差异化。
+
+## S7 · 第二批交付物(2026-07-05)
+
+- 范围:Task 3 Meal Health Loop 的文本记餐动态 UI 最小闭环。
+- 后端:`diet_draft` 卡片增加结构化 `next_meal_detail`,并下发 `ui.inline.expand` 的“看下一餐建议”动作。
+- Mobile:`DietDraftCard` 支持原地展开下一餐建议,保留确认写入、修正和低打扰交互。
+- 安全边界:确认写入仍需 manual-confirm;新增 action 只做本地展开,不写库、不跳页、不调用外部服务。
+- PASS:`cd backend && DATABASE_URL=sqlite:///:memory: TZ=Asia/Shanghai venv/bin/python -m pytest tests/test_inline_cards_runtime_agenda.py tests/test_inline_cards_intake_dedup.py -q --no-cov`
+  - 26 passed。
+- PASS:`cd mobile && ./node_modules/.bin/jest --runTestsByPath services/__tests__/chatCardActions.test.ts components/chat/__tests__/ChatBubbleStructuredSummary.test.tsx components/chat/cards/__tests__/registry.test.tsx --runInBand --silent=false`
+  - 3 suites passed,80 tests passed。
+
+## S8 · 下一批剩余
+
+- 小巴对话内拍照直接生成 `diet_draft`,减少跳转到饮食页再拍照的链路。
+- 确认写入后展示更明确的今日饮食进度反馈卡。
+- 进入 Task 4:Wearable Context Summary,把 7 天 sleep/HRV/RHR/activity 摘要注入饮食建议。

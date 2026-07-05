@@ -173,6 +173,20 @@ def test_inline_cards_builds_confirmable_diet_draft_card():
             "确认后更新今日饮食进度",
             "如估算不准，可去饮食页修正",
         ],
+        "next_meal_detail": {
+            "title": "下一餐建议",
+            "summary": "下一餐优先补足蛋白和蔬菜,避免连续高油高糖。",
+            "context": "基于本餐营养估算和今日饮食闭环生成,确认记录后会纳入今日进度。",
+            "options": [
+                "鱼/鸡胸/瘦牛肉 150-200g + 熟蔬菜 + 半份主食",
+                "豆腐/鸡蛋 + 希腊酸奶或牛奶,补足蛋白缺口",
+            ],
+            "rationale": [
+                "这餐已有明确热量和蛋白估算,下一餐重点是补齐蛋白和纤维。",
+                "餐后轻走 10 分钟作为低打扰代谢行动。",
+            ],
+            "continue_prompt": "基于这餐和今天目标,帮我安排下一餐",
+        },
         "post_meal_walk": {"recommended": True, "minutes": 10},
         "boundary": "营养为估算值,确认后写入今日饮食记录。",
     }
@@ -203,6 +217,19 @@ def test_inline_cards_builds_confirmable_diet_draft_card():
         "optimistic": True,
     }
     assert cards[0]["actions"][1] == {
+        "id": "expand-next-meal",
+        "label": "看下一餐建议",
+        "action": "ui.inline.expand",
+        "payload": {
+            "target": "diet_draft",
+            "patch": {
+                "expanded_sections": ["next_meal"],
+                "next_meal_detail": cards[0]["data"]["next_meal_detail"],
+            },
+        },
+        "style": "secondary",
+    }
+    assert cards[0]["actions"][2] == {
         "id": "open-diet-edit",
         "label": "去饮食页修正",
         "action": "route.open",

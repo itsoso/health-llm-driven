@@ -302,7 +302,7 @@ def _diet_draft_actions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     confidence = data.get("confidence")
     if isinstance(confidence, (int, float)):
         record["notes"] = f"来源: chat; 置信度 {round(float(confidence) * 100)}%"
-    return [
+    actions = [
         {
             "id": "confirm-diet-draft",
             "label": "确认记录",
@@ -319,14 +319,30 @@ def _diet_draft_actions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             },
             "optimistic": True,
         },
-        {
-            "id": "open-diet-edit",
-            "label": "去饮食页修正",
-            "action": "route.open",
-            "payload": {"route": _diet_draft_route(data)},
-            "style": "secondary",
-        },
     ]
+    next_meal_detail = data.get("next_meal_detail")
+    if isinstance(next_meal_detail, dict) and next_meal_detail:
+        actions.append({
+            "id": "expand-next-meal",
+            "label": "看下一餐建议",
+            "action": "ui.inline.expand",
+            "payload": {
+                "target": "diet_draft",
+                "patch": {
+                    "expanded_sections": ["next_meal"],
+                    "next_meal_detail": next_meal_detail,
+                },
+            },
+            "style": "secondary",
+        })
+    actions.append({
+        "id": "open-diet-edit",
+        "label": "去饮食页修正",
+        "action": "route.open",
+        "payload": {"route": _diet_draft_route(data)},
+        "style": "secondary",
+    })
+    return actions
 
 
 def _diet_draft_route(data: Dict[str, Any]) -> str:
@@ -535,6 +551,40 @@ def _estimate_nutrition_from_table(db: Session, food_items: str) -> Optional[Dic
     return out or None
 
 
+def _build_next_meal_detail(data: Dict[str, Any]) -> Dict[str, Any]:
+    protein = data.get("protein")
+    calories = data.get("calories")
+    protein_num = float(protein) if isinstance(protein, (int, float)) else None
+    calories_num = float(calories) if isinstance(calories, (int, float)) else None
+
+    if protein_num is not None and protein_num >= 35:
+        summary = "下一餐保持蛋白和蔬菜,避免连续高油高糖。"
+        option_primary = "鱼/鸡胸/瘦牛肉 120-150g + 熟蔬菜 + 半份主食"
+        rationale_primary = "这餐蛋白已较充足,下一餐重点是稳定纤维和总热量。"
+    else:
+        summary = "下一餐优先补足蛋白和蔬菜,避免连续高油高糖。"
+        option_primary = "鱼/鸡胸/瘦牛肉 150-200g + 熟蔬菜 + 半份主食"
+        rationale_primary = "这餐已有明确热量和蛋白估算,下一餐重点是补齐蛋白和纤维。"
+
+    rationale = [rationale_primary]
+    if calories_num is not None and calories_num >= 650:
+        rationale.append("餐后轻走 10 分钟作为低打扰代谢行动。")
+    else:
+        rationale.append("如果晚些时候饥饿,优先加蛋白或酸奶,不要靠甜饮补能量。")
+
+    return {
+        "title": "下一餐建议",
+        "summary": summary,
+        "context": "基于本餐营养估算和今日饮食闭环生成,确认记录后会纳入今日进度。",
+        "options": [
+            option_primary,
+            "豆腐/鸡蛋 + 希腊酸奶或牛奶,补足蛋白缺口",
+        ],
+        "rationale": rationale,
+        "continue_prompt": "基于这餐和今天目标,帮我安排下一餐",
+    }
+
+
 def _build_diet_draft(db: Session, user_id: int, q: str) -> Optional[Dict[str, Any]]:
     intent = classify_intake_intent(q)
     if intent.kind != "diet":
@@ -587,6 +637,7 @@ def _build_diet_draft(db: Session, user_id: int, q: str) -> Optional[Dict[str, A
             data[key] = value
     if meal_type in {"lunch", "dinner"} or (isinstance(calories, (int, float)) and calories >= 300):
         data["post_meal_walk"] = {"recommended": True, "minutes": 10}
+    data["next_meal_detail"] = _build_next_meal_detail(data)
     return data
 
 

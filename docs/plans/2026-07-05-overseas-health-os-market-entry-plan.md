@@ -8,7 +8,7 @@
 
 **Tech Stack:** Mobile/Watch/Mac/Web, HealthKit/Garmin/Oura-style connectors, DietRecord, HealthTwin, HealthProblem, HealthProtocol, HealthAgendaItem, Dynamic UI cards, backend eval harness, token/cost observability。
 
-**Execution Status (2026-07-05):** 第一批已落地。已创建 product-pipeline dossier、`overseas_health_os` 离线评测 suite、5 条种子 case、`main` baseline 和 targeted pytest,用于后续接入 lbclaw / ChatGPT / 阿福 / 小巴同题评测。
+**Execution Status (2026-07-05):** 第一批已落地。已创建 product-pipeline dossier、`overseas_health_os` 离线评测 suite、5 条种子 case、`main` baseline 和 targeted pytest,用于后续接入 lbclaw / ChatGPT / 阿福 / 小巴同题评测。第二批已落地 Task 3 的文本记餐动态 UI 最小闭环: `diet_draft` 生成下一餐建议,移动端支持原地展开,确认写入仍走 manual-confirm。
 
 ---
 
@@ -316,6 +316,8 @@
 5. Commit。
 
 ### Task 3: Meal Health Loop 产品化
+
+**Status:** IN PROGRESS,Slice A DONE(文本记餐动态 UI)。已补齐 `diet_draft.next_meal_detail`、`看下一餐建议` 原地展开 action、移动端展开 UI 和相关测试。剩余:拍照入口从小巴对话直接生成草稿、确认后更细的今日饮食进度卡联动。
 
 **Files:**
 

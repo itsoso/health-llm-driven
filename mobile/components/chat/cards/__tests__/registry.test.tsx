@@ -757,6 +757,71 @@ describe('renderCard 安全降级', () => {
     expect(getByText('可在记录页继续修正,小巴会把这餐纳入今日饮食进度。')).toBeTruthy();
   });
 
+  it('expands next-meal guidance inside a diet draft card without dispatching an action', () => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'diet_draft',
+      data: {
+        food_items: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
+        meal_type: 'lunch',
+        calories: 770,
+        protein: 30,
+        carbs: 70,
+        fat: 17,
+        next_meal_detail: {
+          title: '下一餐建议',
+          summary: '下一餐优先补足蛋白和蔬菜,避免连续高油高糖。',
+          context: '基于本餐营养估算和今日饮食闭环生成。',
+          options: [
+            '鱼/鸡胸/瘦牛肉 150-200g + 熟蔬菜 + 半份主食',
+            '豆腐/鸡蛋 + 希腊酸奶或牛奶,补足蛋白缺口',
+          ],
+          rationale: ['这餐已有明确热量和蛋白估算。'],
+          continue_prompt: '基于这餐和今天目标,帮我安排下一餐',
+        },
+      },
+      actions: [
+        {
+          id: 'expand-next-meal',
+          label: '看下一餐建议',
+          action: 'ui.inline.expand',
+          payload: {
+            target: 'diet_draft',
+            patch: {
+              expanded_sections: ['next_meal'],
+              next_meal_detail: {
+                title: '下一餐建议',
+                summary: '下一餐优先补足蛋白和蔬菜,避免连续高油高糖。',
+                context: '基于本餐营养估算和今日饮食闭环生成。',
+                options: [
+                  '鱼/鸡胸/瘦牛肉 150-200g + 熟蔬菜 + 半份主食',
+                  '豆腐/鸡蛋 + 希腊酸奶或牛奶,补足蛋白缺口',
+                ],
+                rationale: ['这餐已有明确热量和蛋白估算。'],
+                continue_prompt: '基于这餐和今天目标,帮我安排下一餐',
+              },
+            },
+          },
+          style: 'secondary',
+        },
+      ],
+    } as any;
+
+    const element = renderCard(descriptor, { onAction });
+    expect(element).not.toBeNull();
+
+    const { getByText, queryByText } = render(element!);
+    expect(queryByText('鱼/鸡胸/瘦牛肉 150-200g + 熟蔬菜 + 半份主食')).toBeNull();
+
+    fireEvent.press(getByText('看下一餐建议'));
+
+    expect(getByText('下一餐建议')).toBeTruthy();
+    expect(getByText('下一餐优先补足蛋白和蔬菜,避免连续高油高糖。')).toBeTruthy();
+    expect(getByText('鱼/鸡胸/瘦牛肉 150-200g + 熟蔬菜 + 半份主食')).toBeTruthy();
+    expect(getByText('基于这餐和今天目标,帮我安排下一餐')).toBeTruthy();
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
   it('renders medical exam import result cards from runtime skills', () => {
     const r = renderCard({
       type: 'medical_exam_import_result',

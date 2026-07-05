@@ -43,6 +43,8 @@ interface DietDraftData {
   source?: unknown;
   suggestions?: unknown;
   post_meal_walk?: unknown;
+  expanded_sections?: unknown;
+  next_meal_detail?: unknown;
   boundary?: unknown;
   time?: unknown;
   recorded_at?: unknown;
@@ -114,6 +116,15 @@ function editNumber(value: unknown): string {
 function listText(value: unknown): string[] {
   const raw = Array.isArray(value) ? value : value == null ? [] : [value];
   return raw.map(text).filter((item): item is string => Boolean(item)).slice(0, 3);
+}
+
+function objectValue(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function hasExpandedSection(value: unknown, section: string): boolean {
+  return Array.isArray(value) && value.map(text).includes(section);
 }
 
 // 2×2 营养网格: 只渲染 data 里非空的 macro。热量走上面的 hero, 不重复进网格。
@@ -188,6 +199,10 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const meta = [confidenceLabel(data.confidence), sourceLabel(data.source)].filter(Boolean).join(' · ');
   const suggestions = listText(data.suggestions);
   const walkText = postMealWalkText(data.post_meal_walk);
+  const nextMealDetail = objectValue(data.next_meal_detail);
+  const showNextMealDetail = Boolean(
+    nextMealDetail && hasExpandedSection(data.expanded_sections, 'next_meal'),
+  );
   const boundary = text(data.boundary) || '营养为估算值,确认后写入今日饮食记录。';
   const isRecorded = data.confirmActionState === 'done';
   const canConfirmFromEditor = Boolean(data.confirmAction && data.onConfirmAction && !data.confirmAction.disabled_reason);
@@ -444,6 +459,57 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
               <Text maxFontSizeMultiplier={1.15} style={styles.nextText}>{item}</Text>
             </View>
           ))}
+        </View>
+      ) : null}
+
+      {showNextMealDetail && nextMealDetail ? (
+        <View style={styles.nextMealPanel}>
+          <View style={styles.nextMealHeader}>
+            <Ionicons name="restaurant-outline" size={14} color={C.green600} />
+            <Text maxFontSizeMultiplier={1.12} style={styles.nextMealTitle}>
+              {text(nextMealDetail.title) || '下一餐建议'}
+            </Text>
+          </View>
+          {text(nextMealDetail.summary) ? (
+            <Text maxFontSizeMultiplier={1.15} style={styles.nextMealSummary}>
+              {text(nextMealDetail.summary)}
+            </Text>
+          ) : null}
+          {text(nextMealDetail.context) ? (
+            <Text maxFontSizeMultiplier={1.15} style={styles.nextMealContext}>
+              {text(nextMealDetail.context)}
+            </Text>
+          ) : null}
+          {listText(nextMealDetail.options).length > 0 ? (
+            <View style={styles.nextMealOptions}>
+              {listText(nextMealDetail.options).map((item, index) => (
+                <View key={`${item}-${index}`} style={styles.nextMealOptionRow}>
+                  <Text style={styles.nextMealOptionIndex}>{index + 1}</Text>
+                  <Text maxFontSizeMultiplier={1.15} style={styles.nextMealOptionText}>
+                    {item}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+          {listText(nextMealDetail.rationale).length > 0 ? (
+            <View style={styles.nextMealRationale}>
+              {listText(nextMealDetail.rationale).map((item) => (
+                <View key={item} style={styles.nextMealReasonRow}>
+                  <Ionicons name="checkmark-circle-outline" size={12} color={C.green600} />
+                  <Text maxFontSizeMultiplier={1.15} style={styles.nextMealReasonText}>{item}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+          {text(nextMealDetail.continue_prompt) ? (
+            <View style={styles.continuePromptPill}>
+              <Ionicons name="chatbubble-ellipses-outline" size={12} color={C.green600} />
+              <Text maxFontSizeMultiplier={1.1} style={styles.continuePromptText}>
+                {text(nextMealDetail.continue_prompt)}
+              </Text>
+            </View>
+          ) : null}
         </View>
       ) : null}
 
@@ -796,6 +862,102 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     color: C.ink2,
     fontWeight: '700',
+  } as TextStyle,
+  nextMealPanel: {
+    marginTop: 10,
+    gap: 8,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    padding: 11,
+  },
+  nextMealHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  nextMealTitle: {
+    flex: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    color: C.green700,
+    fontWeight: '900',
+  } as TextStyle,
+  nextMealSummary: {
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    lineHeight: 19,
+    color: C.ink1,
+    fontWeight: '800',
+  } as TextStyle,
+  nextMealContext: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11.5,
+    lineHeight: 17,
+    color: C.ink3,
+    fontWeight: '700',
+  } as TextStyle,
+  nextMealOptions: {
+    gap: 6,
+  },
+  nextMealOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 7,
+  },
+  nextMealOptionIndex: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    overflow: 'hidden',
+    textAlign: 'center',
+    lineHeight: 18,
+    backgroundColor: C.green50,
+    color: C.green700,
+    fontFamily: revaFonts.mono,
+    fontSize: 11,
+    fontWeight: '900',
+  } as TextStyle,
+  nextMealOptionText: {
+    flex: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: C.ink2,
+    fontWeight: '800',
+  } as TextStyle,
+  nextMealRationale: {
+    gap: 4,
+  },
+  nextMealReasonRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 5,
+  },
+  nextMealReasonText: {
+    flex: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 11.5,
+    lineHeight: 17,
+    color: C.ink3,
+    fontWeight: '700',
+  } as TextStyle,
+  continuePromptPill: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  continuePromptText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11.5,
+    color: C.green700,
+    fontWeight: '900',
   } as TextStyle,
   boundaryRow: {
     marginTop: 8,
