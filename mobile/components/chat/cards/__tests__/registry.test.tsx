@@ -182,7 +182,7 @@ describe('renderCard 安全降级', () => {
                 summary: '晚餐优先 40g 蛋白，少油少刺激。',
                 options: ['鱼/豆腐 + 熟蔬菜 + 少量主食', '鸡胸/鸡蛋 + 南瓜 + 绿叶菜'],
                 rationale: ['午餐后今日蛋白还差约 75g', '胃溃疡背景下避免冷饮和强刺激'],
-                continue_prompt: '可以继续问阿衡：如果今晚只能外卖，怎么选。',
+                continue_prompt: '可以继续问小巴：如果今晚只能外卖，怎么选。',
               },
             },
           },
@@ -204,7 +204,7 @@ describe('renderCard 安全降级', () => {
     expect(onAction).not.toHaveBeenCalled();
     expect(getByText('下一餐建议')).toBeTruthy();
     expect(getByText('鱼/豆腐 + 熟蔬菜 + 少量主食')).toBeTruthy();
-    expect(getByText('可以继续问阿衡：如果今晚只能外卖，怎么选。')).toBeTruthy();
+    expect(getByText('可以继续问小巴：如果今晚只能外卖，怎么选。')).toBeTruthy();
   });
 
   it('renders confirmable diet draft cards with next action guidance', () => {
@@ -301,7 +301,7 @@ describe('renderCard 安全降级', () => {
         },
         {
           id: 'ask-medication-draft',
-          label: '问阿衡',
+          label: '问小巴',
           action: 'route.open',
           style: 'secondary',
           payload: { route: '/chat?prompt=%E8%AF%B7%E5%B8%AE%E6%88%91%E6%A0%B8%E5%AF%B9' },
@@ -347,7 +347,7 @@ describe('renderCard 安全降级', () => {
         },
         {
           id: 'ask-supplement-draft',
-          label: '问阿衡',
+          label: '问小巴',
           action: 'route.open',
           style: 'secondary',
           payload: { route: '/chat?prompt=%E8%AF%B7%E5%B8%AE%E6%88%91%E6%A0%B8%E5%AF%B9' },
@@ -754,7 +754,7 @@ describe('renderCard 安全降级', () => {
     expect(getByText('kcal', { exact: false })).toBeTruthy();
     expect(getByText('蛋白质')).toBeTruthy();
     expect(getByText('下一步: 餐后轻走 10 分钟')).toBeTruthy();
-    expect(getByText('可在记录页继续修正,阿衡会把这餐纳入今日饮食进度。')).toBeTruthy();
+    expect(getByText('可在记录页继续修正,小巴会把这餐纳入今日饮食进度。')).toBeTruthy();
   });
 
   it('renders medical exam import result cards from runtime skills', () => {
@@ -1305,7 +1305,7 @@ describe('renderServerCards 防御', () => {
             payload: { route: '/(tabs)/chat\ninject' },
           },
           {
-            label: '打开阿衡',
+            label: '打开小巴',
             action: 'route.open',
             payload: { route: '/(tabs)/chat?prompt=hrv' },
           },

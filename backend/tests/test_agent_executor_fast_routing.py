@@ -1,4 +1,4 @@
-"""Fast-model routing for simple 阿衡 turns (/api/v1/agent/stream).
+"""Fast-model routing for simple 小巴 turns (/api/v1/agent/stream).
 
 Simple record / simple query turns route to the FASTEST reliable-tool-calling
 model to cut latency; advice/analysis/复盘 turns keep the user's quality model

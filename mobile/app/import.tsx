@@ -121,7 +121,7 @@ export default function ImportScreen() {
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('需要相机权限', '在"设置 → 阿衡"中开启相机权限,才能拍摄化验单.');
+        Alert.alert('需要相机权限', '在"设置 → 小巴"中开启相机权限,才能拍摄化验单.');
         return;
       }
       const picked = await ImagePicker.launchCameraAsync({
@@ -144,7 +144,7 @@ export default function ImportScreen() {
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('需要相册权限', '在"设置 → 阿衡"中开启"照片"权限,才能选取化验单图片.');
+        Alert.alert('需要相册权限', '在"设置 → 小巴"中开启"照片"权限,才能选取化验单图片.');
         return;
       }
       const picked = await ImagePicker.launchImageLibraryAsync({
@@ -358,8 +358,8 @@ export default function ImportScreen() {
               </View>
               {!!result.detail && <Text style={txt.resultDetail}>{result.detail}</Text>}
               <AgentFeedbackLink
-                label="跟阿衡解读这次导入"
-                accessibilityLabel="跟阿衡解读这次导入"
+                label="跟小巴解读这次导入"
+                accessibilityLabel="跟小巴解读这次导入"
                 prompt="请基于我刚导入的健康档案结果，解释这次导入意味着什么、下一步该查看或补录什么，并给出后续健康管理行动建议。"
                 context={createImportResultAgentContext({ kind: result.kind, result })}
                 badge="导入结果"

@@ -165,13 +165,13 @@ describe('DailyArtifactCard', () => {
     expect(onPressAction).toHaveBeenCalledWith(artifact.top_action);
   });
 
-  it('uses 阿衡 as the visible assistant persona for the ask action', () => {
+  it('uses 小巴 as the visible assistant persona for the ask action', () => {
     const { getByLabelText, getByText, queryByLabelText } = render(
       <DailyArtifactCard artifact={makeArtifact()} />,
     );
 
-    expect(getByText('问阿衡')).toBeTruthy();
-    expect(getByLabelText('询问阿衡今日行动')).toBeTruthy();
+    expect(getByText('问小巴')).toBeTruthy();
+    expect(getByLabelText('询问小巴今日行动')).toBeTruthy();
     expect(queryByLabelText('询问 Reva 今日行动')).toBeNull();
   });
 

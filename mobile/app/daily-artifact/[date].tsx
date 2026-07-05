@@ -121,7 +121,7 @@ export default function DailyArtifactDetailScreen() {
             <Ionicons name="chevron-back" size={22} color={C.ink1} />
           </Pressable>
           <View style={styles.navTitleBlock}>
-            <Text style={styles.navEyebrow}>阿衡生成</Text>
+            <Text style={styles.navEyebrow}>小巴生成</Text>
             <Text style={styles.navTitle}>今日行动解读</Text>
           </View>
         </View>
@@ -141,11 +141,11 @@ export default function DailyArtifactDetailScreen() {
         </View>
 
         <Section title="为什么现在" icon="sparkles-outline">
-          <Text style={styles.bodyText}>{whyNow || '阿衡还没有给出足够明确的触发原因。'}</Text>
+          <Text style={styles.bodyText}>{whyNow || '小巴还没有给出足够明确的触发原因。'}</Text>
         </Section>
 
         <Section title="现在怎么做" icon="play-circle-outline">
-          <Text style={styles.bodyText}>{doNow || '先和阿衡确认执行步骤,避免把建议误当作已确认计划。'}</Text>
+          <Text style={styles.bodyText}>{doNow || '先和小巴确认执行步骤,避免把建议误当作已确认计划。'}</Text>
         </Section>
 
         <Section title="依据来自哪里" icon="git-branch-outline">
@@ -162,7 +162,7 @@ export default function DailyArtifactDetailScreen() {
               ))}
             </View>
           ) : (
-            <Text style={styles.bodyText}>这次生成没有附带可展示依据,建议先追问阿衡。</Text>
+            <Text style={styles.bodyText}>这次生成没有附带可展示依据,建议先追问小巴。</Text>
           )}
         </Section>
 
@@ -188,10 +188,10 @@ export default function DailyArtifactDetailScreen() {
           style={({ pressed }) => [styles.chatButton, pressed && styles.pressed]}
           onPress={() => router.push(buildDailyArtifactBasisChatRoute(payload as AgentContextPayload) as never)}
           accessibilityRole="button"
-          accessibilityLabel="继续和阿衡讨论今日行动"
+          accessibilityLabel="继续和小巴讨论今日行动"
         >
           <Ionicons name="chatbubble-ellipses-outline" size={18} color={C.greenOn} />
-          <Text style={styles.chatButtonText}>继续问阿衡</Text>
+          <Text style={styles.chatButtonText}>继续问小巴</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

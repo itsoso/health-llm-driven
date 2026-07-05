@@ -23,7 +23,7 @@ public enum ComplicationCache {
         guard let d = (store ?? sharedDefaults).dictionary(forKey: key),
               let toneRaw = d["tone"] as? String,
               let tone = ComplicationTone(rawValue: toneRaw) else {
-            return .init(tone: .gray, shortText: "阿衡", fullText: "阿衡", urgentBadge: 0)
+            return .init(tone: .gray, shortText: "小巴", fullText: "小巴", urgentBadge: 0)
         }
         return .init(
             tone: tone,

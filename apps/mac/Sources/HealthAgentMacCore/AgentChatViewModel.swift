@@ -1639,7 +1639,7 @@ public final class AgentChatViewModel {
     ///                  `detail: nil` so the View renders it AS-IS (L10n pass-through,
     ///                  no 正在 prefix, no %@ template).
     ///                  detail nil/blank: round≥2 "Reva is organizing thoughts…" else
-    ///                  "Reva is thinking…" (正在整理思路… / 阿衡正在思考…)
+    ///                  "Reva is thinking…" (正在整理思路… / 小巴正在思考…)
     /// - `tool`       → detail non-nil "Working: %@…" + detail   (正在<detail>…)
     ///                  detail nil "Calling a tool…"             (正在调用工具…)
     /// - `synthesis`  → "Reva is composing a reply…"             (正在整理回答…)

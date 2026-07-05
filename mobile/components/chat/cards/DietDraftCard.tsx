@@ -425,7 +425,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
         <View style={styles.recordedBox}>
           <Text maxFontSizeMultiplier={1.15} style={styles.recordedNext}>下一步: {recordedNextStep}</Text>
           <Text maxFontSizeMultiplier={1.15} style={styles.recordedHelp}>
-            可在记录页继续修正,阿衡会把这餐纳入今日饮食进度。
+            可在记录页继续修正,小巴会把这餐纳入今日饮食进度。
           </Text>
         </View>
       ) : null}

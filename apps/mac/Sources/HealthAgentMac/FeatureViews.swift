@@ -656,7 +656,7 @@ struct AgentChatView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     if showSpinner {
                         // Pre-first-token affordance: an informative animated status
-                        // line instead of a bare spinner (阿衡 TTFT is 2–14s, longer
+                        // line instead of a bare spinner (小巴 TTFT is 2–14s, longer
                         // on a silent tool round). Purely presentational — no stream,
                         // parse, or network behavior changes. `isToolTurn` only flips
                         // the copy when a tool activity has already surfaced, so we
@@ -1296,7 +1296,7 @@ struct AgentChatView: View {
 }
 
 /// Pre-first-token "thinking" affordance shown in the empty assistant bubble
-/// while 阿衡's TTFT (2–14s, longer on a silent tool round) elapses. Purely
+/// while 小巴's TTFT (2–14s, longer on a silent tool round) elapses. Purely
 /// presentational: a small spinner + a caption that cycles copy after ~6s so a
 /// long wait doesn't feel frozen. No stream/parse/network coupling.
 private struct ThinkingStatusLine: View {

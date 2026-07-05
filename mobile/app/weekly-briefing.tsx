@@ -138,8 +138,8 @@ export default function WeeklyBriefingScreen() {
             )}
 
             <AgentFeedbackLink
-              label="跟阿衡复盘本周建议"
-              accessibilityLabel="跟阿衡复盘本周建议"
+              label="跟小巴复盘本周建议"
+              accessibilityLabel="跟小巴复盘本周建议"
               prompt="请基于本周建议和执行状态，帮我判断哪些该保留、哪些要调整或放弃，并整理下周最重要的 3 个行动。"
               context={createWeeklyBriefingAgentContext(data as any)}
               badge={`本周建议 ${data.stats.total} 条`}

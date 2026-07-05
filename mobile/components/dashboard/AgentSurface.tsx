@@ -7,7 +7,7 @@
  * 3. Today Coach (今日重点)
  * 4. 空 (都没有时不渲染)
  *
- * 目标: 首页只露 1 张"阿衡当前最想说的话",不是 8 张卡堆叠.
+ * 目标: 首页只露 1 张"小巴当前最想说的话",不是 8 张卡堆叠.
  */
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator } from 'react-native';

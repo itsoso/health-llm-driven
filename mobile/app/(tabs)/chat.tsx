@@ -95,7 +95,7 @@ function getSelfReportedAdherence(reply: string): number | null {
 }
 
 /**
- * State A「阿衡先开口」连续性: 把发送第一条消息时可见的开场气泡文本融成一句,
+ * State A「小巴先开口」连续性: 把发送第一条消息时可见的开场气泡文本融成一句,
  * 作为合成 assistant 消息注入到流顶。opener 优先, 退化到记忆-only 气泡文本。
  * 返回 null → 当时没有可见开场(纯问候块) → 不注入。
  */
@@ -287,7 +287,7 @@ export default function ChatScreen() {
 
   useEffect(() => { loadLatestConversation(); }, [loadLatestConversation]);
 
-  // 点"阿衡" tab 进来时滚到对话最后, 方便看最新消息.
+  // 点"小巴" tab 进来时滚到对话最后, 方便看最新消息.
   // useFocusEffect 在每次 tab 获得 focus 时触发 (包括首次 mount).
   // 用 setTimeout 推迟一帧, 等 FlatList 排版完才能滚到正确位置.
   useFocusEffect(
@@ -299,8 +299,8 @@ export default function ChatScreen() {
     }, [])
   );
 
-  // 「阿衡先开口」键盘礼仪 (State A, 2026-07):
-  // 只在阿衡没话可说时(无 opener 且无记忆)才默认唤起键盘 —— 阿衡有开场消息时
+  // 「小巴先开口」键盘礼仪 (State A, 2026-07):
+  // 只在小巴没话可说时(无 opener 且无记忆)才默认唤起键盘 —— 小巴有开场消息时
   // 不抢键盘, 让话先被看见(点输入框/chip 照常唤起)。有历史的对话也不弹。
   // opener fetch 是异步的: 首次 focus 时可能还没落定, 用 startersReady flag 推迟 bump 决定;
   // fetch 出错 → treat as blank → 照旧 bump。键盘已弹起后 opener 才到达 → 不回收(无 dismiss jank)。
@@ -331,7 +331,7 @@ export default function ChatScreen() {
   );
 
   // opener fetch 落定后补一次 bump 决定: 若 focus 时 fetch 还没回、这里落定后
-  // 判定阿衡确实没话 → 唤起键盘。落定后有 opener/记忆 → 保持不弹。
+  // 判定小巴确实没话 → 唤起键盘。落定后有 opener/记忆 → 保持不弹。
   useEffect(() => {
     if (!startersReady) return;
     if (!focusBumpedRef.current && shouldBumpKeyboard()) {
@@ -594,7 +594,7 @@ export default function ChatScreen() {
     if (!message || sharing) return;
     setSharing(true);
     try {
-      await sharePlainText({ title: '阿衡 · 对话节选', message });
+      await sharePlainText({ title: '小巴 · 对话节选', message });
       exitSelectionMode();
     } catch {
       Alert.alert('分享失败', '请稍后重试');

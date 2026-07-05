@@ -131,13 +131,13 @@ export default function SettingsScreen() {
             <Ionicons name="chevron-back" size={24} color={C.ink1} />
           </TouchableOpacity>
         ) : (
-          // Agent-native shell: 「我」tab 无底部 Tab Bar, 左上给回主屏(阿衡)出口。
+          // Agent-native shell: 「我」tab 无底部 Tab Bar, 左上给回主屏(小巴)出口。
           <TouchableOpacity
             onPress={() => router.navigate('/(tabs)/chat')}
             style={styles.backBtn}
             accessibilityRole="button"
-            accessibilityLabel="返回阿衡"
-            accessibilityHint="回到与阿衡的对话主屏"
+            accessibilityLabel="返回小巴"
+            accessibilityHint="回到与小巴的对话主屏"
           >
             <Ionicons name="chevron-back" size={24} color={C.green500} />
           </TouchableOpacity>

@@ -22,7 +22,7 @@ function configForVariant(variant?: string, env: Record<string, string | undefin
     const buildConfig = require('../app.config').default;
     return buildConfig({
       config: {
-        name: '阿衡',
+        name: '小巴',
         slug: 'health-pilot',
       },
     } as any);
@@ -48,16 +48,16 @@ function configuredUrlSchemes(config: any) {
 }
 
 describe('app.config app links', () => {
-  it('uses 阿衡 as the user-visible production app name', () => {
+  it('uses 小巴 as the user-visible production app name', () => {
     const config = configForVariant('production');
 
-    expect(config.name).toBe('阿衡');
-    expect(config.ios?.infoPlist?.CFBundleDisplayName).toBe('阿衡');
+    expect(config.name).toBe('小巴');
+    expect(config.ios?.infoPlist?.CFBundleDisplayName).toBe('小巴');
   });
 
-  it('keeps user-visible variant names aligned with 阿衡', () => {
-    expect(configForVariant('development').ios?.infoPlist?.CFBundleDisplayName).toBe('阿衡 Dev');
-    expect(configForVariant('preview').ios?.infoPlist?.CFBundleDisplayName).toBe('阿衡 Preview');
+  it('keeps user-visible variant names aligned with 小巴', () => {
+    expect(configForVariant('development').ios?.infoPlist?.CFBundleDisplayName).toBe('小巴 Dev');
+    expect(configForVariant('preview').ios?.infoPlist?.CFBundleDisplayName).toBe('小巴 Preview');
   });
 
   it('adds the health share universal link domain to iOS builds', () => {

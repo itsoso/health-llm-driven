@@ -143,8 +143,8 @@ export default function MedicationsScreen() {
       >
         {activeMedications.length > 0 && (
           <AgentFeedbackLink
-            label="跟阿衡整理用药问题"
-            accessibilityLabel="跟阿衡整理用药问题"
+            label="跟小巴整理用药问题"
+            accessibilityLabel="跟小巴整理用药问题"
             prompt="请基于我的在用药品列表, 帮我整理今天的用药执行情况、可能需要向医生确认的问题、近期不适该如何描述。不要建议我自行停药、换药或改剂量。"
             context={createMedicationAgentContext({
               date: today,

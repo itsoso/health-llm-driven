@@ -131,7 +131,7 @@ def test_action_card_already_graded_ignored(db):
 
 
 def test_action_card_with_self_reported_adherence_ignored(db):
-    """用户已在阿衡 opener 反馈过做没做, 不应继续展示同一张复盘卡."""
+    """用户已在小巴 opener 反馈过做没做, 不应继续展示同一张复盘卡."""
     from app.models.action_card import ActionCard
 
     now = datetime.now(timezone.utc)

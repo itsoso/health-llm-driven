@@ -6,9 +6,9 @@ import { useTheme } from '../../hooks/useTheme';
 import { useGPSOnboardingPrompt } from '../../hooks/useGPSOnboardingPrompt';
 
 /**
- * Phase 5 (2026-07-03): Agent-native shell. 移除底部 Tab Bar, 阿衡(chat) 成为主屏
+ * Phase 5 (2026-07-03): Agent-native shell. 移除底部 Tab Bar, 小巴(chat) 成为主屏
  * (initialRouteName="chat" + tabBar 渲染 null)。今日/记录/我 降级为二级屏, 靠 chat 里
- * 的 avatar / 今日简报条 / 记录托盘 进入, 各二级屏顶部有「返回阿衡」。
+ * 的 avatar / 今日简报条 / 记录托盘 进入, 各二级屏顶部有「返回小巴」。
  *   - 保留全部 Tabs.Screen + TAB_META + getMainTab* 导出 (深链契约: router.push('/(tabs)/chat')
  *     / 通知路由 / 分享深链 均依赖这些 segment, 不能静默改)。
  *
@@ -34,9 +34,9 @@ export default function TabLayout() {
   return (
     <View style={{ flex: 1 }}>
       <Tabs
-        // 阿衡 chat 是 agent-native 主屏。
+        // 小巴 chat 是 agent-native 主屏。
         initialRouteName="chat"
-        // 无底部 Tab Bar：二级屏靠 chat 里的入口 + 各自顶部「返回阿衡」导航。
+        // 无底部 Tab Bar：二级屏靠 chat 里的入口 + 各自顶部「返回小巴」导航。
         tabBar={() => null}
         screenOptions={{ headerShown: false }}
       >
@@ -114,8 +114,8 @@ export const TAB_META: Record<MainTabName, MainTabMeta> = {
     iconOutline: 'sparkles-outline',
   },
   chat: {
-    label: '阿衡',
-    accessibilityLabel: '阿衡，与健康参谋对话',
+    label: '小巴',
+    accessibilityLabel: '小巴，与忠实的健康守护者对话',
     icon: 'chatbubbles',
     iconOutline: 'chatbubbles-outline',
   },

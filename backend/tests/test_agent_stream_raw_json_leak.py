@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""阿衡 QUERY 回答里泄漏工具结果原始 JSON 的抑制护栏 (Fix A)。
+"""小巴 QUERY 回答里泄漏工具结果原始 JSON 的抑制护栏 (Fix A)。
 
 回归 bug: 弱模型 (qwen3.7-max) 在合成轮把工具结果原始 JSON 数组粘进可见回答,
 例如对"午餐的wagas没有记录下来吗?"回复:

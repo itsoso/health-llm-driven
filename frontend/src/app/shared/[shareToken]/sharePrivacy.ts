@@ -45,7 +45,7 @@ export function buildSharedMetadata({
 }) {
   const description = sensitive
     ? SENSITIVE_SHARE_DESCRIPTION
-    : (firstMessage?.slice(0, 120) || '来自健康阿衡的分享');
+    : (firstMessage?.slice(0, 120) || '来自健康小巴的分享');
   return {
     title,
     description,

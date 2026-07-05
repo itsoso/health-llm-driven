@@ -181,7 +181,7 @@ export default function SnpDetailScreen() {
               {ACTION_SECTIONS.map(sec => {
                 const list = data.actions?.[sec.key] ?? [];
                 if (list.length === 0) return null;
-                // 跟阿衡详细聊本类 — 跳 chat tab 预填问题
+                // 跟小巴详细聊本类 — 跳 chat tab 预填问题
                 const chatPrompt = `针对我的 ${data.gene} 基因 (${data.user.genotype || data.variant_name}), 在${sec.title}方面, 结合我现在的化验/补剂/运动数据, 能否给我一个未来 30 天的具体执行方案?`;
                 // 把用户当前正在看的方案条目结构化打包透传给 LLM, 避免重新猜
                 const chatContext = {
@@ -208,7 +208,7 @@ export default function SnpDetailScreen() {
                         <Text style={[styles.actionLine, { color: c.labelSecondary }]}>{line}</Text>
                       </View>
                     ))}
-                    {/* 2026-05-14: 跟阿衡详细聊本类 — 让"详细行动"延伸进 chat */}
+                    {/* 2026-05-14: 跟小巴详细聊本类 — 让"详细行动"延伸进 chat */}
                     {(sec.key === 'nutrition_actions' || sec.key === 'supplement_actions' || sec.key === 'exercise_actions') && (
                       <TouchableOpacity
                         style={[styles.agentLink, { borderTopColor: c.separator }]}
@@ -220,7 +220,7 @@ export default function SnpDetailScreen() {
                       >
                         <Ionicons name="chatbubble-ellipses-outline" size={14} color={c.brand} />
                         <Text style={[styles.agentLinkText, { color: c.brand }]}>
-                          跟阿衡详细聊「{sec.title}」方案
+                          跟小巴详细聊「{sec.title}」方案
                         </Text>
                         <Ionicons name="chevron-forward" size={14} color={c.brand} style={{ marginLeft: 'auto' }} />
                       </TouchableOpacity>

@@ -241,7 +241,7 @@ describe('ChatBubble structured summary', () => {
     expect(getByText('已放入输入框')).toBeTruthy();
   });
 
-  it('shares assistant replies under the 阿衡 persona', async () => {
+  it('shares assistant replies under the 小巴 persona', async () => {
     sharePlainText.mockResolvedValueOnce(undefined);
 
     const { getByLabelText } = renderBubble('今天先补水 300ml, 晚饭后散步 15 分钟。');
@@ -250,7 +250,7 @@ describe('ChatBubble structured summary', () => {
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        title: '阿衡 · 建议',
+        title: '小巴 · 建议',
       }));
     });
   });

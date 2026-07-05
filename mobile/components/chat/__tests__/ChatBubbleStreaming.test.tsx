@@ -114,7 +114,7 @@ describe('ChatBubble streaming degraded render', () => {
     });
 
     expect(queryByTestId('rich-markdown')).toBeNull();
-    expect(getByText('阿衡正在思考')).toBeTruthy();
+    expect(getByText('小巴正在思考')).toBeTruthy();
     expect(getByText('2/2')).toBeTruthy();
     expect(getByText('正在理解你的问题')).toBeTruthy();
     expect(getByText('读取健康数据')).toBeTruthy();

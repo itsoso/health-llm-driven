@@ -144,7 +144,7 @@ describe('SettingsScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/app-diagnostics');
   });
 
-  it('uses 阿衡 in Siri voice recording examples', () => {
+  it('uses 小巴 in Siri voice recording examples', () => {
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     const { getByText } = render(<SettingsScreen />);
 
@@ -152,7 +152,7 @@ describe('SettingsScreen', () => {
 
     expect(alertSpy).toHaveBeenCalledWith(
       'Siri 语音记录',
-      expect.stringContaining('嘿 Siri，用 阿衡 记录喝了500ml水'),
+      expect.stringContaining('嘿 Siri，用 小巴 记录喝了500ml水'),
       expect.any(Array),
     );
     expect(alertSpy.mock.calls[0][1]).not.toContain('HealthPilot');

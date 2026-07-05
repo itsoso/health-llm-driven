@@ -77,7 +77,7 @@ export default function LlmModelPicker({
         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal-500/15 text-teal-300">
           <Brain className="h-3.5 w-3.5" />
         </span>
-        <span className="truncate">健康阿衡</span>
+        <span className="truncate">健康小巴</span>
         <span className="hidden max-w-[12rem] truncate text-xs font-normal text-zinc-500 sm:inline">
           {savingModelId ? '切换中...' : currentLabel}
         </span>

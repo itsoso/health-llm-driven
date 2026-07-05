@@ -1,6 +1,6 @@
 """微信 Bot 消息路由 — first-party Agent
 
-所有消息统一转发到阿衡第一方 Agent：
+所有消息统一转发到小巴第一方 Agent：
 - 文字 → Agent stream
 - 图片 → Agent stream（带 image_base64）
 - 语音 → 假设已转文字 → Agent stream

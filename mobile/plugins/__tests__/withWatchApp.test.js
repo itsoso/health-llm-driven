@@ -13,11 +13,11 @@ describe('withWatchApp privacy manifests', () => {
     expect(pluginSource).toContain('NSPhotoLibraryAddUsageDescription');
   });
 
-  it('uses 阿衡 as the generated watch app and complication display name', () => {
+  it('uses 小巴 as the generated watch app and complication display name', () => {
     const pluginSource = fs.readFileSync(path.join(__dirname, '..', 'withWatchApp.js'), 'utf8');
 
-    expect(pluginSource).toContain('<key>CFBundleDisplayName</key><string>阿衡</string>');
-    expect(pluginSource).toContain('<key>CFBundleName</key><string>阿衡</string>');
+    expect(pluginSource).toContain('<key>CFBundleDisplayName</key><string>小巴</string>');
+    expect(pluginSource).toContain('<key>CFBundleName</key><string>小巴</string>');
     expect(pluginSource).not.toContain('<key>CFBundleDisplayName</key><string>Reva</string>');
   });
 
@@ -53,14 +53,14 @@ describe('withWatchApp privacy manifests', () => {
     expect(injectorSource).not.toContain("project.targets.find { |t| t.name == 'HealthPilot' }");
   });
 
-  it('forces 阿衡 display names when the ruby watch injector runs without Expo templates', () => {
+  it('forces 小巴 display names when the ruby watch injector runs without Expo templates', () => {
     const injectorSource = fs.readFileSync(
       path.join(__dirname, '..', '..', '..', 'apps', 'watch', 'scripts', 'inject_watch_target.rb'),
       'utf8',
     );
 
-    expect(injectorSource).toContain("ensure_plist_value(watch_plist, 'CFBundleDisplayName', '阿衡')");
-    expect(injectorSource).toContain("ensure_plist_value(comp_plist, 'CFBundleDisplayName', '阿衡')");
+    expect(injectorSource).toContain("ensure_plist_value(watch_plist, 'CFBundleDisplayName', '小巴')");
+    expect(injectorSource).toContain("ensure_plist_value(comp_plist, 'CFBundleDisplayName', '小巴')");
   });
 
   it('declares the watch App Group in generated watch and complication entitlements', () => {

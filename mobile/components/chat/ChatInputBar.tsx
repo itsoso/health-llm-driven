@@ -46,9 +46,9 @@ const AGENT_MODES: {
 ];
 
 const MODE_PLACEHOLDER: Record<ChatAgentMode, string> = {
-  daily: '问阿衡，或按住说话',
-  deep: '让阿衡深思一个计划',
-  vision: '拍照/报告后问阿衡',
+  daily: '问小巴，或按住说话',
+  deep: '让小巴深思一个计划',
+  vision: '拍照/报告后问小巴',
 };
 
 function buildAgentModeOptions(mode: ChatAgentMode): ChatInputSendOptions | undefined {
@@ -285,7 +285,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('需要相机权限', '请在系统设置中允许阿衡使用相机。');
+        Alert.alert('需要相机权限', '请在系统设置中允许小巴使用相机。');
         return;
       }
       const picked = await ImagePicker.launchCameraAsync({
@@ -310,7 +310,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('需要相册权限', '请在系统设置中允许阿衡访问照片。');
+        Alert.alert('需要相册权限', '请在系统设置中允许小巴访问照片。');
         return;
       }
       const picked = await ImagePicker.launchImageLibraryAsync({

@@ -111,10 +111,10 @@ export default function SleepScreen() {
                 onPress={handleChatSleep}
                 activeOpacity={0.75}
                 accessibilityRole="button"
-                accessibilityLabel="跟阿衡详细聊睡眠"
+                accessibilityLabel="跟小巴详细聊睡眠"
               >
                 <Ionicons name="chatbubble-ellipses-outline" size={16} color={C.green500} />
-                <Text style={[txt.agentLinkText, { color: C.green500 }]}>跟阿衡详细聊睡眠</Text>
+                <Text style={[txt.agentLinkText, { color: C.green500 }]}>跟小巴详细聊睡眠</Text>
                 <Ionicons name="chevron-forward" size={15} color={C.green500} style={{ marginLeft: 'auto' }} />
               </TouchableOpacity>
             )}

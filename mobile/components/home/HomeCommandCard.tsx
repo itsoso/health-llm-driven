@@ -82,7 +82,7 @@ export default function HomeCommandCard({
         <View style={styles.headerLeft}>
           <View style={[styles.statusDot, { backgroundColor: c.brand }]} />
           <HomeText style={[styles.agentName, { color: c.labelPrimary }]}>
-            阿衡
+            小巴
           </HomeText>
           <HomeText style={[styles.agentStatus, { color: c.labelTertiary }]}>
             · {refreshing ? '同步中' : '后台监测中'}
@@ -95,7 +95,7 @@ export default function HomeCommandCard({
             { backgroundColor: c.brandLight, opacity: pressed ? 0.72 : 1 },
           ]}
           accessibilityRole="button"
-          accessibilityLabel="问阿衡原因"
+          accessibilityLabel="问小巴原因"
         >
           <Ionicons
             name="chatbubble-ellipses-outline"

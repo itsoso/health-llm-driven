@@ -158,10 +158,10 @@ export default function MovementPlanScreen() {
             style={[styles.agentLink, { backgroundColor: c.brandLight, borderColor: c.brand }]}
             activeOpacity={0.75}
             accessibilityRole="button"
-            accessibilityLabel="跟阿衡调整本周训练方案"
+            accessibilityLabel="跟小巴调整本周训练方案"
           >
             <Ionicons name="chatbubble-ellipses-outline" size={16} color={c.brand} />
-            <Text style={[styles.agentLinkText, { color: c.brand }]}>跟阿衡调整本周训练</Text>
+            <Text style={[styles.agentLinkText, { color: c.brand }]}>跟小巴调整本周训练</Text>
             <Ionicons name="chevron-forward" size={15} color={c.brand} />
           </TouchableOpacity>
 
@@ -259,12 +259,12 @@ export default function MovementPlanScreen() {
             </View>
           )}
 
-          {/* 阿衡实验建议 — metric badge (2026-05-12) */}
+          {/* 小巴实验建议 — metric badge (2026-05-12) */}
           {data.proposed_experiments && data.proposed_experiments.length > 0 && (
             <View style={[styles.card, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
               <View style={styles.cardHead}>
                 <Ionicons name="flask" size={14} color={c.brand} />
-                <Text style={[styles.cardTitle, { color: c.labelPrimary }]}>阿衡实验建议</Text>
+                <Text style={[styles.cardTitle, { color: c.labelPrimary }]}>小巴实验建议</Text>
               </View>
               {data.proposed_experiments.map((e: any, i: number) => (
                 <View key={i} style={[styles.experimentRow, { backgroundColor: c.bgPrimary, borderColor: c.separator }]}>

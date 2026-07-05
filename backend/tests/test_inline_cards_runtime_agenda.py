@@ -255,7 +255,7 @@ def test_inline_cards_builds_medication_draft_for_medication_intake():
         },
         {
             "id": "ask-medication-draft",
-            "label": "问阿衡",
+            "label": "问小巴",
             "action": "route.open",
             "payload": {
                 "route": "/chat?prompt=%E8%AF%B7%E5%B8%AE%E6%88%91%E6%A0%B8%E5%AF%B9%E6%9B%BF%E6%99%AE%E7%91%9E%E9%85%AE%E8%83%B6%E5%9B%8A%EF%BC%88%E6%96%BD%E7%BB%B4%E8%88%92%EF%BC%89%E7%9A%84%E7%94%A8%E8%8D%AF%E8%AE%B0%E5%BD%95%EF%BC%8C%E4%B8%8D%E8%A6%81%E5%BB%BA%E8%AE%AE%E6%88%91%E8%87%AA%E8%A1%8C%E5%81%9C%E8%8D%AF%E3%80%81%E6%8D%A2%E8%8D%AF%E6%88%96%E6%94%B9%E5%89%82%E9%87%8F%E3%80%82"
@@ -286,7 +286,7 @@ def test_inline_cards_builds_supplement_draft_for_supplement_intake():
         },
         {
             "id": "ask-supplement-draft",
-            "label": "问阿衡",
+            "label": "问小巴",
             "action": "route.open",
             "payload": {
                 "route": "/chat?prompt=%E8%AF%B7%E5%B8%AE%E6%88%91%E6%A0%B8%E5%AF%B9%E9%B1%BC%E6%B2%B9%E7%9A%84%E8%A1%A5%E5%89%82%E8%AE%B0%E5%BD%95%EF%BC%8C%E6%B3%A8%E6%84%8F%E5%89%82%E9%87%8F%E3%80%81%E6%9C%8D%E7%94%A8%E6%97%B6%E9%97%B4%E5%92%8C%E4%B8%8E%E8%8D%AF%E7%89%A9%2F%E7%96%BE%E7%97%85%E7%9A%84%E7%9B%B8%E4%BA%92%E4%BD%9C%E7%94%A8%E3%80%82"

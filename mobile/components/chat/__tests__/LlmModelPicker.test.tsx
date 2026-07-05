@@ -31,7 +31,7 @@ const options: ModelOption[] = [
 ];
 
 describe('Mobile LlmModelPicker', () => {
-  it('uses 阿衡 as the visible assistant persona', () => {
+  it('uses 小巴 as the visible assistant persona', () => {
     const onSelect = jest.fn();
     const { getByText, queryByText } = render(
       <LlmModelPicker
@@ -43,7 +43,7 @@ describe('Mobile LlmModelPicker', () => {
       />,
     );
 
-    expect(getByText('阿衡')).toBeTruthy();
+    expect(getByText('小巴')).toBeTruthy();
     expect(queryByText('健康 Agent')).toBeNull();
   });
 

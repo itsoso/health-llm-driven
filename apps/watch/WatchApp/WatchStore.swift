@@ -58,18 +58,18 @@ final class WatchStore: ObservableObject {
         if let wc = error as? WatchConnectivityClient.WCError {
             switch wc {
             case .unreachable:
-                return "iPhone 未连接 —— 请在 iPhone 打开「阿衡」后下拉重试"
+                return "iPhone 未连接 —— 请在 iPhone 打开「小巴」后下拉重试"
             case .badResponse:
                 return "数据异常,请下拉重试"
             case .relayFailed(let m):
-                if m.contains("未登录") { return "请先在 iPhone 上登录「阿衡」,再下拉重试" }
+                if m.contains("未登录") { return "请先在 iPhone 上登录「小巴」,再下拉重试" }
                 if m.contains("401") { return "登录已过期,请在 iPhone 重新登录" }
                 if m.hasPrefix("HTTP") { return "服务器繁忙(\(m)),稍后下拉重试" }
                 return m   // 网络等系统错误原文,直说
             case .directFailed(let m):
                 return "\(m),稍后下拉重试"
             case .missingWatchToken:
-                return "请先在 iPhone 登录阿衡并同步 Watch,之后手表可独立刷新"
+                return "请先在 iPhone 登录小巴并同步 Watch,之后手表可独立刷新"
             }
         }
         return "数据解析失败,请下拉重试"
@@ -79,12 +79,12 @@ final class WatchStore: ObservableObject {
     static func recordErrorMessage(for error: WatchConnectivityClient.WCError) -> String {
         switch error {
         case .unreachable:
-            return "iPhone 未连接,请打开阿衡后重试"
+            return "iPhone 未连接,请打开小巴后重试"
         case .badResponse:
             return "记录返回异常,请在手机端确认"
         case .relayFailed(let message):
             if message.contains("未登录") {
-                return "请先在 iPhone 登录阿衡并同步 Watch"
+                return "请先在 iPhone 登录小巴并同步 Watch"
             }
             if message.contains("401") {
                 return "登录已过期,请在 iPhone 重新登录"
@@ -96,7 +96,7 @@ final class WatchStore: ObservableObject {
         case .directFailed(let message):
             return "\(message),稍后重试"
         case .missingWatchToken:
-            return "请先在 iPhone 登录阿衡并同步 Watch"
+            return "请先在 iPhone 登录小巴并同步 Watch"
         }
     }
 

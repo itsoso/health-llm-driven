@@ -233,7 +233,7 @@ export default function SkillsPage() {
         <div className="mb-8">
           <h1 className="mb-2 text-2xl font-bold">Agent Skills</h1>
           <p className="text-gray-400">
-            阿衡自有 Agent 可用的健康技能目录。这里保留读取、复制、Manifest 和 API Key 管理，不再分发到外部网关。
+            小巴自有 Agent 可用的健康技能目录。这里保留读取、复制、Manifest 和 API Key 管理，不再分发到外部网关。
           </p>
         </div>
 
@@ -290,7 +290,7 @@ export default function SkillsPage() {
                   if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                   if (e.key === 'Enter') handleCreateKey();
                 }}
-                placeholder="输入名称（如：阿衡研发 Agent）"
+                placeholder="输入名称（如：小巴研发 Agent）"
                 className="flex-1 rounded-lg border border-purple-900/30 bg-[#0d0b14] px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-purple-500/50 focus:outline-none"
               />
               <button

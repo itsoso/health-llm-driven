@@ -54,7 +54,7 @@ const TONE: Record<InsightItem['tone'], { fg: string; bg: string }> = {
 const INSIGHT_GROUPS: InsightGroup[] = [
   {
     title: '进展与闭环',
-    subtitle: '看阿衡建议是否真的带来改善。',
+    subtitle: '看小巴建议是否真的带来改善。',
     items: [
       {
         title: '我的进度',
@@ -122,7 +122,7 @@ const INSIGHT_GROUPS: InsightGroup[] = [
   },
   {
     title: '指标与趋势',
-    subtitle: '从单项趋势进入阿衡解读和后续追问。',
+    subtitle: '从单项趋势进入小巴解读和后续追问。',
     items: [
       {
         title: '指标趋势',
@@ -158,7 +158,7 @@ export default function InsightsScreen() {
           <Text style={txt.kicker}>Insights</Text>
           <Text style={txt.title}>长期分析放在这里，今日只保留当下行动。</Text>
           <Text style={txt.subtitle}>
-            这些入口用于复盘、趋势和长期画像；首页今日继续交给阿衡按情境动态生成。
+            这些入口用于复盘、趋势和长期画像；首页今日继续交给小巴按情境动态生成。
           </Text>
         </View>
 

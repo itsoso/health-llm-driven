@@ -1,5 +1,5 @@
 /**
- * (tabs) 根路由 = 纯转发到阿衡 chat。
+ * (tabs) 根路由 = 纯转发到小巴 chat。
  *
  * expo-router 规则: 路径 "/" 永远解析到 index 路由, initialRouteName /
  * unstable_settings 都改不了这一点 —— 所以 agent-native「chat 即首页」

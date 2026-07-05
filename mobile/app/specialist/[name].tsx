@@ -152,8 +152,8 @@ function SpecialistScorecardContent({ name }: { name: string }) {
             </View>
 
             <AgentFeedbackLink
-              label="跟阿衡复盘这个专家建议"
-              accessibilityLabel="跟阿衡复盘这个专家建议"
+              label="跟小巴复盘这个专家建议"
+              accessibilityLabel="跟小巴复盘这个专家建议"
               prompt={`请基于${label}方向近 30 天的建议成绩单，分析哪些建议有效、哪些偏离，并给出下一轮建议应如何调整。`}
               context={createSpecialistScorecardAgentContext({ label, data: data as any })}
               badge={`${label}命中率 ${data.hit_rate.toFixed(0)}%`}

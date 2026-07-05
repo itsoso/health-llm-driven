@@ -90,7 +90,7 @@ describe('dispatchChatCardAction', () => {
 
   it('opens only app-local route actions', async () => {
     await expect(dispatchChatCardAction({
-      label: '打开阿衡',
+      label: '打开小巴',
       action: 'route.open',
       payload: { route: '/(tabs)/chat?prompt=hrv' },
     })).resolves.toEqual({

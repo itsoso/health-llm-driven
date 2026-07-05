@@ -141,8 +141,8 @@ export default function BodyMeasurementsScreen() {
           </View>
 
           <AgentFeedbackLink
-            label="跟阿衡看体重腰围趋势"
-            accessibilityLabel="跟阿衡看体重腰围趋势"
+            label="跟小巴看体重腰围趋势"
+            accessibilityLabel="跟小巴看体重腰围趋势"
             prompt="请基于我的体重和腰围记录, 复盘趋势和代谢风险, 结合今天饮食和运动给出调整建议。请说明我接下来还应该记录哪些数据。"
             context={createBodyMetricsAgentContext({
               date: today(),

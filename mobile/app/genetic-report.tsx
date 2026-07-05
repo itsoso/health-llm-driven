@@ -2,7 +2,7 @@
  * /genetic-report —— Mobile 基因报告页 (G-W2, 2026-05-12).
  *
  * Agent Native Mobile First: 不堆数据, 主动呈现.
- *   1. 顶部"基因阿衡对你说" LLM 一段总结 + [一键接受 top-3]
+ *   1. 顶部"基因小巴对你说" LLM 一段总结 + [一键接受 top-3]
  *   2. 关键命中位点 (risk 高→低), 每个 SNP 卡折叠展开
  *   3. 未命中位点 (灰色, "你这条还没测")
  *   4. 按 category 筛选 chip
@@ -161,7 +161,7 @@ export default function GeneticReportScreen() {
             <View style={[styles.agentCard, { backgroundColor: c.brandLight, borderColor: c.brand }]}>
               <View style={styles.agentHead}>
                 <Ionicons name="sparkles" size={16} color={c.brand} />
-                <Text style={[styles.agentTitle, { color: c.brand }]}>基因阿衡对你说</Text>
+                <Text style={[styles.agentTitle, { color: c.brand }]}>基因小巴对你说</Text>
               </View>
               {agentSummary ? (
                 <MarkdownText>{agentSummary}</MarkdownText>
@@ -179,8 +179,8 @@ export default function GeneticReportScreen() {
           {predictions && <PredictionBoundaryCard predictions={predictions} c={c} />}
 
           <AgentFeedbackLink
-            label="跟阿衡制定 30 天基因执行方案"
-            accessibilityLabel="跟阿衡制定 30 天基因执行方案"
+            label="跟小巴制定 30 天基因执行方案"
+            accessibilityLabel="跟小巴制定 30 天基因执行方案"
             prompt="请基于我的基因报告，制定一个 30 天健康执行方案：按优先级列出饮食、运动、补剂、复查指标和不确定性边界。不要把基因风险当成诊断。"
             context={createGeneticReportAgentContext({ report: data as any, summary: agentSummary, predictions: predictions as any })}
             badge={`基因命中 ${data.stats.hits}/${data.stats.total_known}`}

@@ -31,10 +31,10 @@ jest.mock('../services/auth', () => ({
 import LoginScreen from '../app/login';
 
 describe('LoginScreen', () => {
-  it('uses 阿衡 as the login brand name', () => {
+  it('uses 小巴 as the login brand name', () => {
     const { getByText, queryByText } = render(<LoginScreen />);
 
-    expect(getByText('阿衡')).toBeTruthy();
+    expect(getByText('小巴')).toBeTruthy();
     expect(queryByText('HealthPilot')).toBeNull();
   });
 });

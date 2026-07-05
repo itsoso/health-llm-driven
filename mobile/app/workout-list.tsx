@@ -106,10 +106,10 @@ export default function WorkoutListScreen() {
           onPress={handleChatWorkouts}
           activeOpacity={0.75}
           accessibilityRole="button"
-          accessibilityLabel="跟阿衡详细聊运动记录"
+          accessibilityLabel="跟小巴详细聊运动记录"
         >
           <Ionicons name="chatbubble-ellipses-outline" size={16} color={C.green500} />
-          <Text style={[txt.agentLinkText, { color: C.green500 }]}>跟阿衡详细聊运动安排</Text>
+          <Text style={[txt.agentLinkText, { color: C.green500 }]}>跟小巴详细聊运动安排</Text>
           <Ionicons name="chevron-forward" size={15} color={C.green500} style={{ marginLeft: 'auto' }} />
         </TouchableOpacity>
       )}

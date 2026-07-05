@@ -1,5 +1,5 @@
 /**
- * DataFreshnessPanel — 阿衡今天知道什么 / 不知道什么.
+ * DataFreshnessPanel — 小巴今天知道什么 / 不知道什么.
  * 用 DashboardCard 的 flat variant (无 shadow + 边框) 视觉次要化.
  */
 import React, { useMemo } from 'react';
@@ -100,13 +100,13 @@ export default function DataFreshnessPanel() {
       icon="pulse-outline"
       iconTint={c.bgPrimary}
       iconColor={c.brand}
-      kicker="阿衡数据视野"
+      kicker="小巴数据视野"
       title={title}
       collapsible
       defaultCollapsed={needAttention.length === 0}
       variant="flat"
       trailing={needAttention.length > 0 ? <CardCountBadge value={needAttention.length} /> : undefined}
-      accessibilityLabel="阿衡数据状态"
+      accessibilityLabel="小巴数据状态"
     >
       {fresh.length > 0 && (
         <View style={styles.row}>

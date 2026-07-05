@@ -235,7 +235,7 @@ async def login_by_phone_code(
             username=_unique_phone_username(db, phone),
             email=None,
             hashed_password=None,
-            name="阿衡用户",
+            name="小巴用户",
             phone=phone,
             phone_verified_at=now,
             is_active=True,

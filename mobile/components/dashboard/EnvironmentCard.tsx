@@ -237,7 +237,7 @@ export default function EnvironmentCard({ compact = false, mode = 'compact' }: E
               context: envContext,
               badge: loc?.city ? `${loc.city}环境` : '当前环境',
             })}
-            accessibilityLabel="让阿衡调整今天户外安排"
+            accessibilityLabel="让小巴调整今天户外安排"
           >
             <Ionicons name="sparkles-outline" size={14} color={c.brand} />
             <Text style={[styles.compactAgentText, { color: c.brand }]}>调整</Text>
@@ -321,8 +321,8 @@ export default function EnvironmentCard({ compact = false, mode = 'compact' }: E
       )}
 
       <AgentFeedbackLink
-        label="跟阿衡调整今天户外安排"
-        accessibilityLabel="跟阿衡调整今天户外安排"
+        label="跟小巴调整今天户外安排"
+        accessibilityLabel="跟小巴调整今天户外安排"
         prompt="请基于我当前城市的天气、空气质量和明日预报，给出今天户外运动、通勤防护、鼻炎/睡眠/补水方面的调整建议。"
         context={envContext}
         badge={loc?.city ? `${loc.city}环境` : '当前环境'}

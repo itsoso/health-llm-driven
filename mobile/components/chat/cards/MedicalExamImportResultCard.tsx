@@ -86,7 +86,7 @@ export function MedicalExamImportResultCardView(data: MedicalExamImportResultCar
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="让阿衡解读这次导入"
+          accessibilityLabel="让小巴解读这次导入"
           style={({ pressed }) => [styles.primaryAction, pressed && styles.pressed]}
           onPress={() => pushChatWithContext(router, {
             prompt: '请基于我刚导入的体检报告，解释异常/关键指标、需要复核的地方，以及接下来 30 天最重要的健康行动。',
@@ -110,7 +110,7 @@ export function MedicalExamImportResultCardView(data: MedicalExamImportResultCar
             newChat: false,
           })}
         >
-          <Text style={styles.primaryActionText}>让阿衡解读</Text>
+          <Text style={styles.primaryActionText}>让小巴解读</Text>
         </Pressable>
       </View>
     </CardShell>

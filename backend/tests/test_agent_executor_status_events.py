@@ -1,6 +1,6 @@
 """Thinking-process status SSE events + fast-route answer max_tokens cap.
 
-Two additive latency/UX features on the 阿衡 hot path (AgentExecutor.run_stream):
+Two additive latency/UX features on the 小巴 hot path (AgentExecutor.run_stream):
 
 1. Real thinking-process status events (思考过程可视化). The mac client used to guess
    "正在思考…" by elapsed time; the backend now emits REAL stage events with the exact

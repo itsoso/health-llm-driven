@@ -1,11 +1,11 @@
 /**
  * 今日 Tab —— Reva「今日」时间线优先布局 (2026-06-16 真机修正).
  *
- * 首页只留阿衡 Native 日常驱动,从上到下:
- *   问候头 → 阿衡动态今日行动 → 待确认写入 → 接下来 → 用药/补剂摘要
+ * 首页只留小巴 Native 日常驱动,从上到下:
+ *   问候头 → 小巴动态今日行动 → 待确认写入 → 接下来 → 用药/补剂摘要
  *   → 身体信号 → 情境天气 → 90 天周期兜底 → 快捷动作
  *
- * 深度分析(结果归因 / 生物年龄 / 抗衰下一步 / 设备一致性 / 阿衡话题)已移出首页,
+ * 深度分析(结果归因 / 生物年龄 / 抗衰下一步 / 设备一致性 / 小巴话题)已移出首页,
  * 见「我」tab 的「健康分析」分组(各组件路由仍可达)。
  * 数据缺失走"待记录"占位, 不掩盖空状态.
  */
@@ -476,7 +476,7 @@ export default function TodayScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: tabBarHeight + spacing.lg }]}
         refreshControl={<RefreshControl refreshing={manualRefreshing} onRefresh={onRefresh} />}
       >
-        {/* 0 · 返回阿衡 (agent-native shell: 无底部 Tab Bar, chat 是主屏) */}
+        {/* 0 · 返回小巴 (agent-native shell: 无底部 Tab Bar, chat 是主屏) */}
         <BackToChatBar />
 
         {/* 1 · 问候头 */}
@@ -531,7 +531,7 @@ export default function TodayScreen() {
           />
         ) : null}
 
-        {/* 待你确认(Write 层 v0:阿衡提议替你写一件事,确认才执行;空态不渲染) */}
+        {/* 待你确认(Write 层 v0:小巴提议替你写一件事,确认才执行;空态不渲染) */}
         <WriteIntentCard />
 
         {/* 3 · 接下来:只保留未完成且马上相关的行动条 */}
@@ -560,7 +560,7 @@ export default function TodayScreen() {
         {/* 7 · 90 天代谢周期兜底:没有当下行动时才露出,长期复盘主入口在「健康分析」。 */}
         {!hasAgentPrimaryAction && !heroHasNow ? <RevaCycleStrip /> : null}
 
-        {/* 深度分析(结果归因 / 生物年龄 / 抗衰下一步 / 设备一致性 / 阿衡话题)
+        {/* 深度分析(结果归因 / 生物年龄 / 抗衰下一步 / 设备一致性 / 小巴话题)
             已移出首页 → 「我」tab 的「健康分析」分组(信息架构:首页只留日常驱动)。 */}
 
         {isLoading && (

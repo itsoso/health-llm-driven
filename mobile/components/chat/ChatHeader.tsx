@@ -34,7 +34,7 @@ interface ChatHeaderProps {
 }
 
 /**
- * 会诊页顶部 header surface：模型选择器 (阿衡 ⌄) + 回复中徽标 + 新建/历史/工具三个动作。
+ * 会诊页顶部 header surface：模型选择器 (小巴 ⌄) + 回复中徽标 + 新建/历史/工具三个动作。
  * 纯 props 驱动, 无本地状态。testID 「chat-header-surface」+ a11y 标签保持稳定 (测试引用)。
  */
 export default function ChatHeader({
@@ -53,7 +53,7 @@ export default function ChatHeader({
   return (
     <View style={styles.headerWrap}>
       <View testID="chat-header-surface" style={styles.headerSurface}>
-        {/* 「阿」头像已删（与标题「阿衡」重复）——「我」入口挪进右侧「…」工具 sheet。 */}
+        {/* 「阿」头像已删（与标题「小巴」重复）——「我」入口挪进右侧「…」工具 sheet。 */}
         <LlmModelPicker
           variant="header"
           currentLabel={headerLlmLabel}

@@ -1,7 +1,7 @@
 /**
  * ComposerSuggestionsRow — composer 上方的横向建议 chip 行 (State A, 2026-07)。
  *
- * 「阿衡先开口」把 opener 抬成流里的开场气泡后, 建议 chip 从空状态卡片
+ * 「小巴先开口」把 opener 抬成流里的开场气泡后, 建议 chip 从空状态卡片
  * 下沉到贴着输入框的一行, 让「想问别的」的动作离手最近。
  *
  * - 第一颗 FIXED「拍照记一餐」(相机图标) → router.push('/diet?capture=photo')(proven route)。
@@ -55,7 +55,7 @@ export default function ComposerSuggestionsRow({
           style={({ pressed }) => [styles.chip, pressed && styles.chipPressed]}
           onPress={() => onSuggestionPress(s, position)}
           accessibilityRole="button"
-          accessibilityLabel={`向阿衡提问: ${s.text}`}
+          accessibilityLabel={`向小巴提问: ${s.text}`}
         >
           <Text style={txt.chip} numberOfLines={1}>{s.text}</Text>
         </Pressable>

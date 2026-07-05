@@ -14,7 +14,7 @@ struct RevaComplicationEntry: TimelineEntry {
 
 struct RevaComplicationProvider: TimelineProvider {
     func placeholder(in context: Context) -> RevaComplicationEntry {
-        .init(date: Date(), state: .init(tone: .gray, shortText: "阿衡", fullText: "阿衡", urgentBadge: 0))
+        .init(date: Date(), state: .init(tone: .gray, shortText: "小巴", fullText: "小巴", urgentBadge: 0))
     }
 
     func getSnapshot(in context: Context, completion: @escaping (RevaComplicationEntry) -> Void) {
@@ -52,7 +52,7 @@ struct RevaComplication: Widget {
         StaticConfiguration(kind: "RevaComplication", provider: RevaComplicationProvider()) { entry in
             RevaComplicationView(entry: entry)
         }
-        .configurationDisplayName("阿衡今日状态")
+        .configurationDisplayName("小巴今日状态")
         .description("状态灯 + 紧急提醒数")
         .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline])
     }

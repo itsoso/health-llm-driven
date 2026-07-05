@@ -831,8 +831,8 @@ final class WatchSessionResetTests: XCTestCase {
         XCTAssertNil(WatchSummaryCache(defaults: defaults).load(), "summary 缓存应被清空")
         let complication = ComplicationCache.load(in: defaults)
         XCTAssertEqual(complication.tone, .gray, "complication 应回到默认占位")
-        XCTAssertEqual(complication.shortText, "阿衡")
-        XCTAssertEqual(complication.fullText, "阿衡")
+        XCTAssertEqual(complication.shortText, "小巴")
+        XCTAssertEqual(complication.fullText, "小巴")
     }
 }
 

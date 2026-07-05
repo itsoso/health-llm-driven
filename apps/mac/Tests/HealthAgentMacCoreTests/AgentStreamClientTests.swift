@@ -157,7 +157,7 @@ final class AgentStreamClientTests: XCTestCase {
     }
 
     func testParserToleratesUnknownStatusStage() throws {
-        // 未知 stage 仍解出 .status(ViewModel 负责兜底到「阿衡正在思考…」)。
+        // 未知 stage 仍解出 .status(ViewModel 负责兜底到「小巴正在思考…」)。
         let payload = """
         data: {"event":"status","data":{"stage":"future_mystery_stage"}}
 
@@ -222,7 +222,7 @@ final class AgentStreamClientTests: XCTestCase {
     func testStatusTextLocalizesToChinese() {
         // View 用 appText/L10n 解析出的中文文案对齐契约表。
         XCTAssertEqual(L10n.text("Recognizing image…", language: .zh), "正在识别图片…")
-        XCTAssertEqual(L10n.text("Reva is thinking…", language: .zh), "阿衡正在思考…")
+        XCTAssertEqual(L10n.text("Reva is thinking…", language: .zh), "小巴正在思考…")
         XCTAssertEqual(L10n.text("Reva is organizing thoughts…", language: .zh), "正在整理思路…")
         XCTAssertEqual(L10n.text("Calling a tool…", language: .zh), "正在调用工具…")
         XCTAssertEqual(L10n.text("Reva is composing a reply…", language: .zh), "正在整理回答…")

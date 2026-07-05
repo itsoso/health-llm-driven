@@ -49,7 +49,7 @@ export function buildDailyArtifactAtomicContract(
     secondaryActions: hasAction
       ? [
           { id: 'explain_basis', label: '查看决策依据' },
-          { id: 'ask_reva', label: '问阿衡' },
+          { id: 'ask_reva', label: '问小巴' },
           { id: 'skip', label: '跳过' },
         ]
       : [],
@@ -80,7 +80,7 @@ export function buildSafetyAlertAtomicContract(
     primaryAction: picked
       ? { id: 'open_alerts', label: '查看安全提醒', route: '/(tabs)/alerts' }
       : null,
-    secondaryActions: picked ? [{ id: 'ask_reva', label: '问阿衡' }] : [],
+    secondaryActions: picked ? [{ id: 'ask_reva', label: '问小巴' }] : [],
     verificationSignals: [],
     safetyBoundary: picked ? '确定性安全规则优先于行动排序；需要时请联系医生或急救服务。' : null,
     dedupeKeys: picked?.title ? [picked.title] : [],

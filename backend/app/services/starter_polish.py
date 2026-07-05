@@ -34,7 +34,11 @@ logger = logging.getLogger(__name__)
 # 6h TTL — long enough to serve repeat visits cheaply, short enough that fresh
 # data (new signals → new hash → miss) re-polishes.
 _CACHE_TTL_SECONDS = 6 * 60 * 60
-_CACHE_PREFIX = "starter_polish"
+# v2: bumped when the persona/system-prompt changed (阿衡→小巴). The persona name
+# is NOT part of signals_hash, so without a prefix bump, stale pre-rename polished
+# texts (saying 阿衡) could serve up to _CACHE_TTL_SECONDS post-deploy. One-line bump
+# invalidates every old entry; future persona changes bump this again.
+_CACHE_PREFIX = "starter_polish:v2"
 
 
 # ── Verify-gate constants ────────────────────────────────────────────────
@@ -189,7 +193,7 @@ def _build_messages(cards: Sequence[Any], *, now) -> list[dict]:
     ]
     tod = _time_of_day_label(now)
     system = (
-        "你是阿衡,一个温和、具体、善于提问的健康参谋。"
+        "你是小巴,一个忠实、温和、具体、善于提问的健康守护者。"
         "你的任务:把给定的每条健康起手提示改写成更自然的一句提问。"
         "严格规则:"
         "① 只改写措辞,绝不新增任何数据、数字、指标、建议或结论;"

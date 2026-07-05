@@ -145,8 +145,8 @@ export default function LiveRunDetailScreen() {
         </View>
 
         <AgentFeedbackLink
-          label="跟阿衡聊这次实时跑"
-          accessibilityLabel="跟阿衡聊这次实时跑"
+          label="跟小巴聊这次实时跑"
+          accessibilityLabel="跟小巴聊这次实时跑"
           prompt="请基于这次实时跑做一次运动复盘: 解释配速、心率和触发事件，给出拉伸恢复建议，并安排下一次训练。最后指出你还需要我补充哪些体感反馈。"
           context={createLiveRunAgentContext(session as any)}
           badge={`实时跑 ${formatDistanceKm(session.total_distance_m)}km`}

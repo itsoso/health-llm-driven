@@ -89,7 +89,7 @@ describe('DailyArtifactDetailScreen', () => {
 
     const { getByLabelText } = render(<DailyArtifactDetailScreen />);
 
-    fireEvent.press(getByLabelText('继续和阿衡讨论今日行动'));
+    fireEvent.press(getByLabelText('继续和小巴讨论今日行动'));
     const pushed = mockPush.mock.calls[mockPush.mock.calls.length - 1]?.[0] as any;
     expect(pushed.pathname).toBe('/(tabs)/chat');
     expect(pushed.params.prompt).toContain('决策依据');

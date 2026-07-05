@@ -58,7 +58,7 @@ function BotTestContent() {
       if (botRes.data.reply) {
         addMessage('bot', botRes.data.reply);
       } else if (botRes.data.action?.type === 'forward_to_agent') {
-        addMessage('bot', '💬 这条消息会转发给阿衡 Agent 处理');
+        addMessage('bot', '💬 这条消息会转发给小巴 Agent 处理');
       }
     } catch (e: any) {
       addMessage('bot', `❌ 错误: ${e.response?.data?.detail || e.message}`);

@@ -97,8 +97,8 @@ export default function IndicatorHistoryScreen() {
 
         {series && series.length > 0 && (
           <AgentFeedbackLink
-            label="跟阿衡解读这个趋势"
-            accessibilityLabel="跟阿衡解读这个趋势"
+            label="跟小巴解读这个趋势"
+            accessibilityLabel="跟小巴解读这个趋势"
             prompt={`请基于我的${title}做一次趋势复盘: 解释最近变化、可能诱因、接下来 7 天的行动和还需要补充记录的数据。`}
             context={createTrendAgentContext({ type, title, range, series })}
             badge={`基于${title} · ${range}`}

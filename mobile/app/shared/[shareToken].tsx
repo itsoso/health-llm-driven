@@ -32,7 +32,7 @@ export default function SharedDeepLinkScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.card}>
         <Ionicons name="sparkles" size={28} color={c.brand} />
-        <Text style={styles.title}>正在打开阿衡</Text>
+        <Text style={styles.title}>正在打开小巴</Text>
         <Text style={styles.subtitle}>如果没有自动跳转, 可以手动进入对话继续查看。</Text>
         <ActivityIndicator color={c.brand} style={styles.spinner} />
         <TouchableOpacity style={styles.button} onPress={openChat} activeOpacity={0.85}>

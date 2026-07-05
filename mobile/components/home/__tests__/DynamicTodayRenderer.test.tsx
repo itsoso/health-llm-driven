@@ -9,10 +9,10 @@ function makeArtifact(): DailyArtifact {
   return {
     artifact_date: '2026-06-29',
     empty_state: false,
-    state: { label: '今日最重要行动', tone: 'focused', summary: '阿衡已生成今日行动。' },
+    state: { label: '今日最重要行动', tone: 'focused', summary: '小巴已生成今日行动。' },
     top_action: {
       id: 'walk',
-      title: '阿衡动态生成的餐后步行',
+      title: '小巴动态生成的餐后步行',
       why_now: '餐后窗口优先。',
       actions: { complete: { enabled: false }, skip: { requires_reason: true } },
     },
@@ -90,7 +90,7 @@ describe('DynamicTodayRenderer', () => {
     );
 
     expect(getByTestId('dynamic-today-view')).toBeTruthy();
-    expect(getByText('阿衡动态生成的餐后步行')).toBeTruthy();
+    expect(getByText('小巴动态生成的餐后步行')).toBeTruthy();
     expect(queryByText('7天验证节奏')).toBeNull();
     expect(queryByText('未来节奏')).toBeNull();
     expect(queryByText('查看7天计划')).toBeNull();
@@ -120,7 +120,7 @@ describe('DynamicTodayRenderer', () => {
     );
 
     expect(getByTestId('dynamic-today-view')).toBeTruthy();
-    expect(getByText('阿衡动态生成的餐后步行')).toBeTruthy();
+    expect(getByText('小巴动态生成的餐后步行')).toBeTruthy();
   });
 
   it('renders a registered runtime atom from render metadata when the envelope type is generic', () => {
@@ -313,7 +313,7 @@ describe('DynamicTodayRenderer', () => {
       />,
     );
 
-    expect(getByText('阿衡动态生成的餐后步行')).toBeTruthy();
+    expect(getByText('小巴动态生成的餐后步行')).toBeTruthy();
     expect(queryByText('Bad')).toBeNull();
   });
 
@@ -330,7 +330,7 @@ describe('DynamicTodayRenderer', () => {
                 {
                   type: 'discovery',
                   data: {
-                    title: '阿衡动态生成的餐后步行',
+                    title: '小巴动态生成的餐后步行',
                     summary: 'Chat 卡片不应该绕过 Today atom registry。',
                   },
                 },
@@ -348,7 +348,7 @@ describe('DynamicTodayRenderer', () => {
       />,
     );
 
-    expect(getByText('阿衡动态生成的餐后步行')).toBeTruthy();
+    expect(getByText('小巴动态生成的餐后步行')).toBeTruthy();
     expect(queryByText('Chat 卡片不应该绕过 Today atom registry。')).toBeNull();
     expect(queryByText('最近睡眠连续性变好')).toBeNull();
     expect(queryByText('即使不是重复题,也不能绕过 Today atom registry。')).toBeNull();

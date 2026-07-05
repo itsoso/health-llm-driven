@@ -96,7 +96,7 @@ export function TodayView({ onRisk }: { onRisk?: () => void }) {
                 </View>
               </>
             ) : (
-              <Empty text={d.loading ? '正在加载今日计划…' : '今日计划生成中 —— 阿衡会根据你的数据安排。'} />
+              <Empty text={d.loading ? '正在加载今日计划…' : '今日计划生成中 —— 小巴会根据你的数据安排。'} />
             )}
           </Card>
         </View>
@@ -255,7 +255,7 @@ export function RiskDetailView({ onBack, onAgent }: { onBack: () => void; onAgen
           <SectionLabel>12 周改善预测</SectionLabel>
           <Card><TrendChart series={series} target={3.4} /></Card>
         </View>
-        <Button variant="dark" size="lg" full icon="messages-square" onPress={onAgent}>问阿衡：怎么吃能降得更快？</Button>
+        <Button variant="dark" size="lg" full icon="messages-square" onPress={onAgent}>问小巴：怎么吃能降得更快？</Button>
       </ScrollView>
     </View>
   );
@@ -284,14 +284,14 @@ export function OnboardingView({ onDone }: { onDone: () => void }) {
             <RevaMark size={64} />
             <View>
               <Text style={{ fontWeight: '800', fontSize: 34, lineHeight: 40, letterSpacing: 0, color: C.ink1 }}>体检之后，{'\n'}主动健康的 90 天。</Text>
-              <Text style={{ fontSize: 16, lineHeight: 26, color: C.ink2, marginTop: 16 }}>阿衡把你的体检异常项，变成每天可执行的小计划，再用手环和复查数据验证它真的在改善。</Text>
+              <Text style={{ fontSize: 16, lineHeight: 26, color: C.ink2, marginTop: 16 }}>小巴把你的体检异常项，变成每天可执行的小计划，再用手环和复查数据验证它真的在改善。</Text>
             </View>
           </>
         ) : step === 1 ? (
           <View>
             <Chip status="info">第 1 步</Chip>
             <Text style={{ fontWeight: '800', fontSize: 26, color: C.ink1, marginTop: 14, marginBottom: 6, letterSpacing: 0 }}>导入你的体检报告</Text>
-            <Text style={{ fontSize: 15, color: C.ink2, lineHeight: 23, marginBottom: 20 }}>阿衡会自动识别异常项，并按心代谢风险排序。</Text>
+            <Text style={{ fontSize: 15, color: C.ink2, lineHeight: 23, marginBottom: 20 }}>小巴会自动识别异常项，并按心代谢风险排序。</Text>
             <Card pad={0}>
               <View style={[s.planRow, { alignItems: 'center' }]}>
                 <Icon name="file-text" size={18} color={C.ink3} />
@@ -322,7 +322,7 @@ export function OnboardingView({ onDone }: { onDone: () => void }) {
         ? footer('开始', () => setStep(1), '把体检异常项变成可执行的 90 天')
         : step === 1
           ? footer('继续', () => setStep(2), '支持三甲医院、美年、爱康等常见报告格式')
-          : footer('进入阿衡', onDone, '稍后也可以在「我的」里连接')}
+          : footer('进入小巴', onDone, '稍后也可以在「我的」里连接')}
     </View>
   );
 }
@@ -336,7 +336,7 @@ export function DemoOnRampView({ onDone }: { onDone: () => void }) {
           <RevaMark size={46} />
           <Chip status="info">示例模式 · 不写入你的 Twin</Chip>
           <Text style={{ fontWeight: '800', fontSize: 30, lineHeight: 36, letterSpacing: 0, color: C.ink1 }}>
-            5 分钟看见阿衡怎么工作
+            5 分钟看见小巴怎么工作
           </Text>
           <Text style={{ fontSize: 15, lineHeight: 23, color: C.ink2 }}>
             这是一组隔离示例数据,只用于演示安全边界、证据和今日行动闭环。不会写入数据库、Health Twin 或你的真实记录。
@@ -350,7 +350,7 @@ export function DemoOnRampView({ onDone }: { onDone: () => void }) {
             <Chip status="risk">R4 边界</Chip>
           </View>
           <Text style={{ fontSize: 14, lineHeight: 21, color: C.ink2 }}>
-            示例: 长期 PPI + 睡眠波动 + 用户询问补剂剂量。阿衡只给非处方化提醒,不生成剂量、不替你改药,并提示必要时咨询医生。
+            示例: 长期 PPI + 睡眠波动 + 用户询问补剂剂量。小巴只给非处方化提醒,不生成剂量、不替你改药,并提示必要时咨询医生。
           </Text>
         </Card>
 
@@ -387,7 +387,7 @@ export function DemoOnRampView({ onDone }: { onDone: () => void }) {
         </Card>
       </ScrollView>
       <View style={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 22, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line }}>
-        <Button size="lg" full onPress={onDone}>进入阿衡</Button>
+        <Button size="lg" full onPress={onDone}>进入小巴</Button>
       </View>
     </View>
   );

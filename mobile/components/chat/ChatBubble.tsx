@@ -481,7 +481,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
     Haptics.selectionAsync();
     try {
       await sharePlainText({
-        title: '阿衡 · 建议',
+        title: '小巴 · 建议',
         message,
       });
     } catch { /* 用户取消分享也会走这里, 不打扰 */ }
@@ -1403,12 +1403,12 @@ function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?:
     <View
       testID="assistant-thinking-panel"
       style={styles.thinkingPanel}
-      accessibilityLabel={`阿衡正在思考,当前步骤:${latestStep}`}
+      accessibilityLabel={`小巴正在思考,当前步骤:${latestStep}`}
     >
       <View style={styles.thinkingHeader}>
         <Ionicons name="pulse-outline" size={16} color={C.green500} />
         <View style={styles.thinkingHeaderCopy}>
-          <Text style={txt.thinkingTitle}>阿衡正在思考</Text>
+          <Text style={txt.thinkingTitle}>小巴正在思考</Text>
           <Text style={[txt.thinkingSubtitle, styles.thinkingSubtitle]} numberOfLines={1}>
             整理健康数据和下一步建议
           </Text>

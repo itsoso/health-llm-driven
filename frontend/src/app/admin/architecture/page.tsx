@@ -44,7 +44,7 @@ export default function ArchitecturePage() {
           <div className="space-y-10 text-[15px] leading-relaxed text-emerald-50">
             <Section title="1. 系统概述">
               <p>
-                阿衡是面向个人长期健康管理的自有 Agent 系统。核心链路是“对话即记录、数据驱动计划、
+                小巴是面向个人长期健康管理的自有 Agent 系统。核心链路是“对话即记录、数据驱动计划、
                 动态 UI 执行”，通过真实健康数据、知识库、可穿戴设备和多端交互，帮助用户降低日常记录成本，
                 并形成可验证的健康干预闭环。
               </p>

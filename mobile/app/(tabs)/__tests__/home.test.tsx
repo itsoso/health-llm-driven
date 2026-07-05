@@ -363,7 +363,7 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
 
     const { getByLabelText } = render(<TodayScreen />);
 
-    fireEvent.press(getByLabelText('询问阿衡今日行动'));
+    fireEvent.press(getByLabelText('询问小巴今日行动'));
     const route = mockPush.mock.calls[mockPush.mock.calls.length - 1]?.[0] as any;
     expect(route.pathname).toBe('/(tabs)/chat');
     expect(route.params.prompt).toContain('午饭后步行 10 分钟');
@@ -442,10 +442,10 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
               data: {
                 artifact_date: '2026-06-29',
                 empty_state: false,
-                state: { label: '今日最重要行动', tone: 'focused', summary: '阿衡已生成今日行动。' },
+                state: { label: '今日最重要行动', tone: 'focused', summary: '小巴已生成今日行动。' },
                 top_action: {
                   id: 'dynamic-walk',
-                  title: '阿衡动态生成的餐后步行',
+                  title: '小巴动态生成的餐后步行',
                   why_now: '餐后窗口优先。',
                   actions: { complete: { enabled: false }, skip: { requires_reason: true } },
                 },
@@ -487,7 +487,7 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     const { getByTestId, getByText, queryByLabelText, queryByText } = render(<TodayScreen />);
 
     expect(getByTestId('dynamic-today-view')).toBeTruthy();
-    expect(getByText('阿衡动态生成的餐后步行')).toBeTruthy();
+    expect(getByText('小巴动态生成的餐后步行')).toBeTruthy();
     expect(queryByText('7天验证节奏')).toBeNull();
     expect(queryByLabelText('现在该做:旧 Hero 行动')).toBeNull();
   });
@@ -498,7 +498,7 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
       kind: 'action',
       time_window: 'noon',
       scheduled_for: '12:30',
-      title: '阿衡动态生成的餐后步行',
+      title: '小巴动态生成的餐后步行',
       subtitle: '餐后窗口优先。',
       icon: 'walk-outline',
       color: '#1F8A5B',
@@ -529,10 +529,10 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
               data: {
                 artifact_date: '2026-06-29',
                 empty_state: false,
-                state: { label: '今日最重要行动', tone: 'focused', summary: '阿衡已生成今日行动。' },
+                state: { label: '今日最重要行动', tone: 'focused', summary: '小巴已生成今日行动。' },
                 top_action: {
                   id: 'dynamic-walk',
-                  title: '阿衡动态生成的餐后步行',
+                  title: '小巴动态生成的餐后步行',
                   why_now: '餐后窗口优先。',
                   actions: { complete: { enabled: false }, skip: { requires_reason: true } },
                 },
@@ -549,7 +549,7 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
 
     const { getAllByText } = render(<TodayScreen />);
 
-    expect(getAllByText('阿衡动态生成的餐后步行')).toHaveLength(1);
+    expect(getAllByText('小巴动态生成的餐后步行')).toHaveLength(1);
   });
 
   it('does not repeat an Aheng-promoted generic atom in the following timeline strip', () => {
@@ -558,7 +558,7 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
       kind: 'action',
       time_window: 'noon',
       scheduled_for: '12:30',
-      title: '阿衡动态生成的餐后步行',
+      title: '小巴动态生成的餐后步行',
       subtitle: '餐后窗口优先。',
       icon: 'walk-outline',
       color: '#1F8A5B',
@@ -591,10 +591,10 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
               data: {
                 artifact_date: '2026-06-29',
                 empty_state: false,
-                state: { label: '今日最重要行动', tone: 'focused', summary: '阿衡已生成今日行动。' },
+                state: { label: '今日最重要行动', tone: 'focused', summary: '小巴已生成今日行动。' },
                 top_action: {
                   id: 'dynamic-walk',
-                  title: '阿衡动态生成的餐后步行',
+                  title: '小巴动态生成的餐后步行',
                   why_now: '餐后窗口优先。',
                   actions: { complete: { enabled: false }, skip: { requires_reason: true } },
                 },
@@ -611,7 +611,7 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
 
     const { getAllByText } = render(<TodayScreen />);
 
-    expect(getAllByText('阿衡动态生成的餐后步行')).toHaveLength(1);
+    expect(getAllByText('小巴动态生成的餐后步行')).toHaveLength(1);
   });
 
   it('omits the noisy Twin freshness status row from the greeting header', () => {
@@ -928,7 +928,7 @@ describe('TodayScreen (Reva 今日 timeline-first layout)', () => {
     expect(queryByLabelText('语音记录')).toBeNull();
     expect(queryByLabelText('记录')).toBeNull();
     expect(queryByText('开始跑步')).toBeNull();
-    expect(queryByLabelText('试试阿衡')).toBeNull();
+    expect(queryByLabelText('试试小巴')).toBeNull();
 
     fireEvent.press(getByLabelText('补齐今天记录'));
     expect(mockPush).toHaveBeenCalledWith('/(tabs)/record');

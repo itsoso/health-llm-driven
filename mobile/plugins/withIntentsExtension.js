@@ -19,7 +19,7 @@ const fs = require('fs');
 
 const APP_GROUP = 'group.life.executor.health';
 // Legacy internal project name. The Expo-generated project is now named after the
-// sanitized app name ("阿衡" → "app"), so HealthPilot is only a last-resort fallback.
+// sanitized app name ("小巴" → "app"), so HealthPilot is only a last-resort fallback.
 const LEGACY_PROJECT_NAME = 'HealthPilot';
 const SIRI_GROUP_NAME = 'SiriIntents';
 const SIRI_SWIFT_FILE = 'HealthPilotSiri.swift';

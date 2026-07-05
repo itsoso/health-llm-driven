@@ -1,7 +1,7 @@
 const { buildShareText } = require('../MenuShareCard');
 
 describe('MenuShareCard', () => {
-  it('shares menu recommendations under the 阿衡 persona', async () => {
+  it('shares menu recommendations under the 小巴 persona', async () => {
     const message = buildShareText(
       {
         title: '今晚晚餐',
@@ -12,7 +12,7 @@ describe('MenuShareCard', () => {
       },
     );
 
-    expect(message).toContain('— 阿衡');
+    expect(message).toContain('— 小巴');
     expect(message).not.toContain('健康 Agent');
   });
 });

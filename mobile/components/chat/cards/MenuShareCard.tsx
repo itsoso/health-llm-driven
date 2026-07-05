@@ -65,7 +65,7 @@ export function buildShareText(d: MenuShareData): string {
     lines.push('', '买菜清单:');
     for (const s of d.shopping_list) lines.push(`· ${s}`);
   }
-  lines.push('', '— 阿衡');
+  lines.push('', '— 小巴');
   return lines.join('\n');
 }
 

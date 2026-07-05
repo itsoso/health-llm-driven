@@ -133,7 +133,7 @@ describe('todayDynamicView service', () => {
                   payload: { source: { object_type: 'health_protocol', object_id: 7 } },
                 },
                 {
-                  label: '打开阿衡',
+                  label: '打开小巴',
                   action: 'route.open',
                   payload: { route: '/(tabs)/chat?prompt=hrv' },
                 },

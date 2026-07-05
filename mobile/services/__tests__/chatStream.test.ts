@@ -51,7 +51,7 @@ describe('streamChat', () => {
     await Promise.resolve();
     const xhr = MockXMLHttpRequest.instances[0];
     xhr.responseText =
-      'data: {"event":"agent_start","data":{"message":"阿衡正在分析...","conversation_id":42}}\n\n';
+      'data: {"event":"agent_start","data":{"message":"小巴正在分析...","conversation_id":42}}\n\n';
     xhr.onprogress?.();
 
     await expect(first).resolves.toEqual({
@@ -68,7 +68,7 @@ describe('streamChat', () => {
     await Promise.resolve();
     const xhr = MockXMLHttpRequest.instances[0];
     xhr.responseText =
-      'data: {"event":"agent_start","data":{"message":"阿衡正在分析...","conversation_id":42}}\n\n';
+      'data: {"event":"agent_start","data":{"message":"小巴正在分析...","conversation_id":42}}\n\n';
     xhr.onprogress?.();
 
     await expect(first).resolves.toEqual({

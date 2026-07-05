@@ -9,9 +9,9 @@ describe('statusStagePhrase', () => {
   });
 
   it('maps thinking without detail to default phrase', () => {
-    expect(statusStagePhrase({ stage: 'thinking' })).toBe('阿衡正在思考');
-    expect(statusStagePhrase({ stage: 'thinking', detail: null })).toBe('阿衡正在思考');
-    expect(statusStagePhrase({ stage: 'thinking', detail: '   ' })).toBe('阿衡正在思考');
+    expect(statusStagePhrase({ stage: 'thinking' })).toBe('小巴正在思考');
+    expect(statusStagePhrase({ stage: 'thinking', detail: null })).toBe('小巴正在思考');
+    expect(statusStagePhrase({ stage: 'thinking', detail: '   ' })).toBe('小巴正在思考');
   });
 
   it('maps thinking with detail to the detail verbatim', () => {

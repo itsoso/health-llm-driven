@@ -334,7 +334,7 @@ export default function WorkoutDetailScreen() {
       const text = [
         summary,
         script ? `\n${script}` : '',
-        '\n— 阿衡',
+        '\n— 小巴',
       ].filter(Boolean).join('');
       await sharePlainText({ title: '运动记录', message: text });
     } catch (e: any) {
@@ -598,10 +598,10 @@ export default function WorkoutDetailScreen() {
                 activeOpacity={0.75}
                 style={[S.aiToolBtn, S.agentReviewBtn]}
                 accessibilityRole="button"
-                accessibilityLabel="跟阿衡复盘本次运动"
+                accessibilityLabel="跟小巴复盘本次运动"
               >
                 <Ionicons name="chatbubble-ellipses-outline" size={15} color={C.green500} />
-                <Text style={[T.agentReviewBtn, { marginLeft: 4 }]}>跟阿衡复盘这次</Text>
+                <Text style={[T.agentReviewBtn, { marginLeft: 4 }]}>跟小巴复盘这次</Text>
               </TouchableOpacity>
               {hasAnalysis && !analyzing && !postAnalyzing && (
                 <TouchableOpacity

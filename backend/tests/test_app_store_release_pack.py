@@ -232,8 +232,8 @@ def test_release_narrative_rejects_stale_public_positioning():
     assert "release text contains stale user-visible term: Reva" in failures
     assert "release text contains stale user-visible term: 健康助理" in failures
     assert "release text contains stale user-visible term: 私教" in failures
-    assert "release text must use current bottom navigation labels: 今日 / 阿衡 / 记录 / 我" in failures
-    assert "release text must include current positioning term: 健康参谋" in failures
+    assert "release text must use current bottom navigation labels: 今日 / 小巴 / 记录 / 我" in failures
+    assert "release text must include current positioning term: 健康守护者" in failures
 
 
 def test_app_review_redlines_reject_high_confidence_review_risks():
@@ -259,7 +259,7 @@ def test_app_review_redlines_allow_current_medical_boundary_disclaimers():
     failures = validate_app_review_redlines(
         {
             "docs/release/app-store/submission-pack.md": (
-                "阿衡提供健康记录、趋势解读和生活方式建议,不提供诊断、急救分诊、"
+                "小巴提供健康记录、趋势解读和生活方式建议,不提供诊断、急救分诊、"
                 "处方、治疗方案或药物剂量调整。任何医疗决策请咨询医生。"
             )
         }

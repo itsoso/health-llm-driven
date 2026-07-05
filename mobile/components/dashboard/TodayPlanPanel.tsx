@@ -208,7 +208,7 @@ export default function TodayPlanPanel({
 
         {actions.length === 0 ? (
           <Text style={[styles.compactEmptyText, { color: c.labelTertiary }]}>
-            先完成当前重点，阿衡会继续排队后续干预。
+            先完成当前重点，小巴会继续排队后续干预。
           </Text>
         ) : (
           <View style={styles.compactActionList}>

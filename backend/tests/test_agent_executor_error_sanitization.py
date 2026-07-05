@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Provider/API 原始异常不得进入阿衡可见回复或落库内容。"""
+"""Provider/API 原始异常不得进入小巴可见回复或落库内容。"""
 
 from app.models.agent_conversation import AgentMessage
 from app.services.agent_executor import AgentExecutor

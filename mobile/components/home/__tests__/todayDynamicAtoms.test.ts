@@ -10,10 +10,10 @@ function artifact(): DailyArtifact {
   return {
     artifact_date: '2026-06-29',
     empty_state: false,
-    state: { label: '今日最重要行动', tone: 'focused', summary: '阿衡已生成今日行动。' },
+    state: { label: '今日最重要行动', tone: 'focused', summary: '小巴已生成今日行动。' },
     top_action: {
       id: 'walk',
-      title: '阿衡动态生成的餐后步行',
+      title: '小巴动态生成的餐后步行',
       why_now: '餐后窗口优先。',
       actions: { complete: { enabled: false }, skip: { requires_reason: true } },
     },
@@ -60,7 +60,7 @@ describe('todayDynamicAtoms', () => {
   it('collects promoted DailyArtifact titles from generic atom envelopes', () => {
     const keys = collectTodayDynamicPromotedTitleKeys(view());
 
-    expect(keys.has('阿衡动态生成的餐后步行')).toBe(true);
+    expect(keys.has('小巴动态生成的餐后步行')).toBe(true);
   });
 
   it('suppresses runtime atoms when the DailyArtifact already owns the primary action', () => {
@@ -70,7 +70,7 @@ describe('todayDynamicAtoms', () => {
       type: 'agent_atom',
       render: { atom: 'runtime_agenda' },
       data: {
-        next_action: { title: '阿衡动态生成的餐后步行' },
+        next_action: { title: '小巴动态生成的餐后步行' },
       },
     }, promotedTitles);
 

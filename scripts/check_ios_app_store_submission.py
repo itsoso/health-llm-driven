@@ -29,7 +29,7 @@ REQUIRED_EXTENSION_BUNDLE_IDS = {
     "life.executor.health.watchkitapp.watchkitextension",
 }
 
-EXPECTED_APP_NAME = "阿衡"
+EXPECTED_APP_NAME = "小巴"
 
 
 def read_json(path: Path) -> dict[str, Any]:

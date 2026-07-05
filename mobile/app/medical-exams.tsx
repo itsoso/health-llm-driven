@@ -119,10 +119,10 @@ export default function MedicalExamsScreen() {
               badge: `基于 ${latestExam.exam_date} 体检报告`,
             })}
             accessibilityRole="button"
-            accessibilityLabel="跟阿衡详细聊最新体检报告"
+            accessibilityLabel="跟小巴详细聊最新体检报告"
           >
             <Ionicons name="chatbubble-ellipses-outline" size={16} color={c.brand} />
-            <Text style={[txt.agentLinkText, { color: c.brand }]}>跟阿衡详细聊最新报告</Text>
+            <Text style={[txt.agentLinkText, { color: c.brand }]}>跟小巴详细聊最新报告</Text>
             <Ionicons name="chevron-forward" size={15} color={c.brand} style={{ marginLeft: 'auto' }} />
           </Pressable>
         ) : null}

@@ -151,7 +151,7 @@ describe('ChatScreen', () => {
   });
 
   it('empty chat with nothing to say auto-summons keyboard once opener fetch settles, and bumps on 新建对话', async () => {
-    // 阿衡没话可说(opener 缺席 + 无记忆) → fetch 落定后才唤起键盘。
+    // 小巴没话可说(opener 缺席 + 无记忆) → fetch 落定后才唤起键盘。
     mockFetchConversationStarters.mockResolvedValue({ opener: null, suggestions: null });
     mockFetchMemoryOpener.mockResolvedValue([]);
 
@@ -172,8 +172,8 @@ describe('ChatScreen', () => {
     expect(bar().props.autoFocusToken).toBeGreaterThan(initial);
   });
 
-  it('does NOT summon the keyboard when 阿衡 has an opening message (opener present)', async () => {
-    // 阿衡有开场消息 → 让话被看见, 不抢键盘。
+  it('does NOT summon the keyboard when 小巴 has an opening message (opener present)', async () => {
+    // 小巴有开场消息 → 让话被看见, 不抢键盘。
     mockFetchConversationStarters.mockResolvedValue({
       opener: {
         text: '今天就是「提前晚餐」的检验日，做到了吗？',
@@ -194,7 +194,7 @@ describe('ChatScreen', () => {
     await waitFor(() => {
       expect(getByText(/今天就是「提前晚餐」的检验日，做到了吗？/)).toBeTruthy();
     });
-    // 键盘 token 始终保持 0 —— 阿衡有话说时不弹键盘。
+    // 键盘 token 始终保持 0 —— 小巴有话说时不弹键盘。
     expect(bar().props.autoFocusToken).toBe(0);
   });
 
@@ -227,7 +227,7 @@ describe('ChatScreen', () => {
   it('shows a visible history entry on the private coach page', async () => {
     const { getAllByText, getByLabelText } = render(<ChatScreen />);
 
-    expect(getAllByText('阿衡').length).toBeGreaterThan(0);
+    expect(getAllByText('小巴').length).toBeGreaterThan(0);
     await waitFor(() => {
       expect(getByLabelText('对话历史')).toBeTruthy();
     });
@@ -240,8 +240,8 @@ describe('ChatScreen', () => {
     });
   });
 
-  it('shows 阿衡 in the header and hides the model name inline (revealed on pull-down)', async () => {
-    // Agent-native header (2026-07-03): 只露品牌名「阿衡 ⌄」, 模型名收进下拉 sheet。
+  it('shows 小巴 in the header and hides the model name inline (revealed on pull-down)', async () => {
+    // Agent-native header (2026-07-03): 只露品牌名「小巴 ⌄」, 模型名收进下拉 sheet。
     // 当前模型仍进 picker trigger 的 accessibilityLabel(供读屏 + 打开 sheet 时勾选)。
     mockLlmPreference = {
       model_id: 'qwen3.7-plus',
@@ -261,7 +261,7 @@ describe('ChatScreen', () => {
 
     // 品牌名可见。
     await waitFor(() => {
-      expect(getByText('阿衡')).toBeTruthy();
+      expect(getByText('小巴')).toBeTruthy();
     });
     // 模型名(完整 or 压缩)都不再内联显示在 header。
     expect(queryByText('Qwen3.7 Plus 推理 · 阿里')).toBeNull();
@@ -554,9 +554,9 @@ describe('ChatScreen', () => {
 
     // 动态 starter suggestion 也进 composer 行, 点击走既有发送。
     await waitFor(() => {
-      expect(getByLabelText('向阿衡提问: 分析我的睡眠质量')).toBeTruthy();
+      expect(getByLabelText('向小巴提问: 分析我的睡眠质量')).toBeTruthy();
     });
-    fireEvent.press(getByLabelText('向阿衡提问: 分析我的睡眠质量'));
+    fireEvent.press(getByLabelText('向小巴提问: 分析我的睡眠质量'));
     expect(mockSendMessage).toHaveBeenCalledWith('分析我的睡眠质量', null, undefined);
   });
 

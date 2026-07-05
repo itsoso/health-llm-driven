@@ -27,7 +27,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
     /// Settings is pinned separately at the bottom of the sidebar (not in a section).
     /// Jobs/Trace remain reachable via right-rail panels or the command palette.
     public static let sidebarSections: [SidebarSection] = [
-        // 阿衡(助手)= 默认第一入口。无标题的顶部主操作区,置于所有分组之上。
+        // 小巴(助手)= 默认第一入口。无标题的顶部主操作区,置于所有分组之上。
         SidebarSection(id: "primary", titleKey: "",
                        items: [.agent, .record]),
         // 每日:今日(仪表盘)+ 日程(时间线·议程·日历 三合一标签页)。

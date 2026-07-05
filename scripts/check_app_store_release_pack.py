@@ -60,7 +60,7 @@ OFFICIAL_REFERENCE_URLS = [
     "https://developer.apple.com/app-store/review/guidelines/",
 ]
 
-EXPECTED_APP_NAME = "阿衡"
+EXPECTED_APP_NAME = "小巴"
 DEMO_PLACEHOLDERS = [
     "[NEEDS APP STORE REVIEW DEMO ACCOUNT]",
     "[NEEDS APP STORE REVIEW DEMO PASSWORD]",
@@ -76,8 +76,8 @@ DEMO_CREDENTIAL_LINES = [
 ]
 REVIEW_CONTACT_PHONE_ENV = "APP_STORE_REVIEW_CONTACT_PHONE"
 REVIEW_CONTACT_PHONE_RE = re.compile(r"^\+[1-9]\d{1,14}(?:[\s-]\d+)*$")
-CURRENT_BOTTOM_NAV_TEXT = "今日 / 阿衡 / 记录 / 我"
-CURRENT_POSITIONING_TERM = "健康参谋"
+CURRENT_BOTTOM_NAV_TEXT = "今日 / 小巴 / 记录 / 我"
+CURRENT_POSITIONING_TERM = "健康守护者"
 STALE_USER_VISIBLE_RELEASE_TERMS = [
     "Reva",
     "复元",
@@ -179,7 +179,7 @@ def validate_release_narrative(
         if term in combined:
             failures.append(f"release text contains stale user-visible term: {term}")
 
-    if CURRENT_BOTTOM_NAV_TEXT not in combined and "今日、阿衡、记录、我" not in combined:
+    if CURRENT_BOTTOM_NAV_TEXT not in combined and "今日、小巴、记录、我" not in combined:
         failures.append(f"release text must use current bottom navigation labels: {CURRENT_BOTTOM_NAV_TEXT}")
 
     if CURRENT_POSITIONING_TERM not in combined:

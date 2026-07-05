@@ -237,8 +237,8 @@ export default function SleepSpo2AnalysisScreen() {
             </View>
 
             <AgentFeedbackLink
-              label="跟阿衡制定今晚睡眠实验"
-              accessibilityLabel="跟阿衡制定今晚睡眠实验"
+              label="跟小巴制定今晚睡眠实验"
+              accessibilityLabel="跟小巴制定今晚睡眠实验"
               prompt="请基于昨晚夜间血氧和呼吸风险分析, 复盘风险等级与可能诱因, 帮我制定今晚可执行的睡眠实验，并列出需要补充的背景信息和什么时候应咨询医生。不要做医学诊断。"
               context={createSleepSpo2AgentContext(analysis)}
               badge={`夜间血氧 · ${selectedDate}`}

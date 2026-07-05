@@ -213,7 +213,7 @@ export default function VoiceChatScreen() {
             const lines = voice.turns
               .filter(t => t.text && t.text.trim())
               .map(t => {
-                const prefix = t.role === 'user' ? '我' : '阿衡';
+                const prefix = t.role === 'user' ? '我' : '小巴';
                 // 去掉 markdown 粗/斜/code 符号, 分享出去纯文本更干净
                 const clean = t.text
                   .replace(/\*\*(.+?)\*\*/g, '$1')
@@ -223,7 +223,7 @@ export default function VoiceChatScreen() {
                 return `${prefix}: ${clean}`;
               })
               .join('\n\n');
-            const header = `阿衡 · 语音对话 · ${dateStr}\n${'─'.repeat(20)}\n`;
+            const header = `小巴 · 语音对话 · ${dateStr}\n${'─'.repeat(20)}\n`;
             sharePlainText({
               title: '语音对话记录',
               message: header + lines,

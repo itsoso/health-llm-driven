@@ -356,7 +356,7 @@ def _medication_draft_actions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
         },
         {
             "id": "ask-medication-draft",
-            "label": "问阿衡",
+            "label": "问小巴",
             "action": "route.open",
             "payload": {
                 "route": f"/chat?{urlencode({'prompt': prompt})}",
@@ -385,7 +385,7 @@ def _supplement_draft_actions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
         },
         {
             "id": "ask-supplement-draft",
-            "label": "问阿衡",
+            "label": "问小巴",
             "action": "route.open",
             "payload": {
                 "route": f"/chat?{urlencode({'prompt': prompt})}",

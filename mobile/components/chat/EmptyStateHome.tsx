@@ -1,13 +1,13 @@
 /**
- * EmptyStateHome — 阿衡 会诊页「新对话」空状态首屏。
+ * EmptyStateHome — 小巴 会诊页「新对话」空状态首屏。
  *
  * 从 chat.tsx 抽出来（chat.tsx 500 行预算收紧）。纯 props-driven，
  * 所有 handler（发送 / 记忆跳转 / opener 快回复 / 埋点）仍留在 chat.tsx，
  * 本组件只负责排版与视觉。
  *
- * 「阿衡先开口」(State A, 2026-07 founder CDS):
- * - system content 不再是卡片家具, 而是阿衡在流里的开场消息气泡:
- *   30pt 阿-avatar + 气泡(非对称圆角, surface + hairline)。
+ * 「小巴先开口」(State A, 2026-07 founder CDS):
+ * - system content 不再是卡片家具, 而是小巴在流里的开场消息气泡:
+ *   30pt paw-avatar + 气泡(非对称圆角, surface + hairline)。
  * - 问候语(早上好/下午好…)折进气泡当第一句, opener.text 接在后面。
  * - 记忆 footnote 在气泡内部(hairline 分隔): 书签图标 + 清洗过的记忆文本 + 「校准」入口。
  * - quick replies 在气泡外下方(chips), 追加一个「换个话题」中性 chip。
@@ -161,7 +161,7 @@ export default function EmptyStateHome({
       <View style={styles.container}>
         <View style={styles.bubbleRow}>
           <View style={styles.avatar}>
-            <Text style={txt.avatarText}>阿</Text>
+            <Ionicons name="paw" size={15} color={C.green600} />
           </View>
           <View style={styles.bubble}>
             <Text style={txt.bubbleBody}>
@@ -222,7 +222,7 @@ export default function EmptyStateHome({
         </View>
         <View style={styles.bubbleRow}>
           <View style={styles.avatar}>
-            <Text style={txt.avatarText}>阿</Text>
+            <Ionicons name="paw" size={15} color={C.green600} />
           </View>
           <View style={styles.bubble}>
             <View style={styles.memoryOnlyLead}>
@@ -367,12 +367,6 @@ const txt = {
     color: C.ink3,
     fontWeight: '500',
     marginTop: 2,
-  } as TextStyle,
-  avatarText: {
-    fontFamily: revaFonts.sans,
-    fontSize: 14,
-    fontWeight: '700',
-    color: C.green600,
   } as TextStyle,
   bubbleBody: {
     fontFamily: revaFonts.sans,

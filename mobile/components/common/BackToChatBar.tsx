@@ -1,7 +1,7 @@
 /**
- * BackToChatBar — 二级屏 (今日 / 记录 / 我) 顶部的「返回阿衡」入口。
+ * BackToChatBar — 二级屏 (今日 / 记录 / 我) 顶部的「返回小巴」入口。
  *
- * Agent-native shell 去掉了底部 Tab Bar, 阿衡(chat) 是主屏; 二级屏需要一个一致的
+ * Agent-native shell 去掉了底部 Tab Bar, 小巴(chat) 是主屏; 二级屏需要一个一致的
  * 回主屏出口。走 useTheme().c 主题色 (自动明暗), 由调用方放在各自 SafeAreaView 内
  * (edges top) 顶部。点击 → router.navigate('/(tabs)/chat')。
  */
@@ -29,8 +29,8 @@ export default function BackToChatBar({
         activeOpacity={0.7}
         style={[styles.back, { backgroundColor: c.bgCard, borderColor: c.separator }]}
         accessibilityRole="button"
-        accessibilityLabel="返回阿衡"
-        accessibilityHint="回到与阿衡的对话主屏"
+        accessibilityLabel="返回小巴"
+        accessibilityHint="回到与小巴的对话主屏"
       >
         <Ionicons name="chevron-back" size={16} color={c.brand} />
         <Text
@@ -38,7 +38,7 @@ export default function BackToChatBar({
           style={[styles.label, { color: c.labelPrimary }]}
           numberOfLines={1}
         >
-          返回阿衡
+          返回小巴
         </Text>
       </TouchableOpacity>
       {right ? <View style={styles.right}>{right}</View> : null}

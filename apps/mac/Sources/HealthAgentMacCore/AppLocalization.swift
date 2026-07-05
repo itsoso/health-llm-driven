@@ -32,7 +32,7 @@ public enum L10n {
     }
 
     private static let zhCN: [String: String] = [
-        "Health Agent": "阿衡",
+        "Health Agent": "小巴",
         "Daily": "每日",
         "Insights": "洞察",
         "Resources": "资料",
@@ -311,10 +311,10 @@ public enum L10n {
         "Ready": "就绪",
         "Preparing": "准备中",
         "Generating": "生成中",
-        // Pre-first-token thinking affordance (阿衡 TTFT gap). English keys are the
+        // Pre-first-token thinking affordance (小巴 TTFT gap). English keys are the
         // fallback; zh strings shown for the default zh UI.
-        "Reva is thinking…": "阿衡正在思考…",
-        "Reva is organizing…": "阿衡正在整理…",
+        "Reva is thinking…": "小巴正在思考…",
+        "Reva is organizing…": "小巴正在整理…",
         "Checking your records…": "正在查你的记录…",
         // Real backend stage hints (`status` SSE event). Mapped from stage →
         // L10n key in AgentChatViewModel.statusText; "Working: %@…" splices the
