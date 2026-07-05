@@ -205,6 +205,12 @@ class Settings(BaseSettings):
     # 多模型 panel(高风险裁决多模型投票):primitive,默认关
     multi_model_panel: bool = False
 
+    # R4 guidance_validator 第三家族:拟处方用药时序措辞软化(「每8小时服用」「建议睡前
+    # 使用鼻喷剂」「漏服后6小时补服/超12小时跳过」「第N周停/减药」→ 软化为"遵医嘱/药师/说明书")。
+    # ships-disabled: 默认 False=零行为变更(前两家族不受影响)。上线后先在评测臂验证过杀率
+    # 再默认开。开关只控制第三家族命中→软化;负向 label-fact/医嘱/否定守卫始终生效(不放宽)。
+    med_timing_softening: bool = False
+
     # 首页对话起手 chip 的 LLM 润色(rules-cast-facts → LLM rewrites → verify gate)。
     # RULES 仍是唯一事实源;LLM 只改写措辞,确定性 verify gate 拒掉 LLM 编造的内容,
     # 回退到规则模板文本。fail-safe = 规则文本。默认开;一键关回纯规则行为(字节一致)。
