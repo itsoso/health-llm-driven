@@ -37,6 +37,11 @@ async def test_agent_start_includes_conversation_id_for_resume(db):
             if event.get("event") == "agent_start":
                 break
 
-    start = events[0]
+    # P0-1 (2026-07-05): a flat progress `accepted` event is now yielded first
+    # (stream-open feedback). agent_start is no longer literally index 0 — locate it
+    # by its `event` key instead of asserting position.
+    start = next(e for e in events if e.get("event") == "agent_start")
     assert start["event"] == "agent_start"
     assert isinstance(start["data"].get("conversation_id"), int)
+    # The very first wire event is the flat accepted progress event.
+    assert events[0] == {"type": "status", "stage": "accepted"}

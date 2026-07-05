@@ -84,7 +84,11 @@ public enum AgentStreamParser {
                     .first(where: { $0.hasPrefix("event:") })?
                     .replacingOccurrences(of: "event:", with: "")
                     .trimmingCharacters(in: .whitespaces)
-                let event = explicitEvent ?? json?["event"] as? String
+                // P0-1 进度事件 (flat 契约) 用顶层 `type` 而非 `event` 区分:
+                //   {"type":"status","stage":"accepted"} / {"type":"status","stage":"tool",...}
+                // 既有事件仍用 `event`。二者都归一到 `event`, 让 switch 复用同一 case。
+                let flatType = json?["type"] as? String
+                let event = explicitEvent ?? json?["event"] as? String ?? flatType
                 let eventData = (json?["data"] as? [String: Any]) ?? json
 
                 switch event {
@@ -111,14 +115,19 @@ public enum AgentStreamParser {
                         round: eventData?["round"] as? Int
                     ))
                 case "status":
-                    // Real mid-stream stage hint. `stage` is required for the
-                    // event to mean anything; missing → ignore (treated like an
-                    // unknown event). `detail` / `round` are optional.
+                    // Two `status` families both land here:
+                    //  1) legacy thinking-process: {"event":"status","data":{stage,detail,round}}
+                    //  2) P0-1 progress (flat):     {"type":"status","stage","round"?,"label"?}
+                    // `stage` is required either way; missing → ignore (unknown event).
+                    // The progress family carries a full human `label` (e.g. "查看健康数据…");
+                    // fold it into `detail` so the existing detail-rendering path surfaces it,
+                    // preferring `label` when present. `detail` / `round` are optional.
                     guard let stage = eventData?["stage"] as? String,
                           !stage.trimmingCharacters(in: .whitespaces).isEmpty else {
                         return nil
                     }
-                    let detail = (eventData?["detail"] as? String)
+                    let rawDetail = (eventData?["label"] as? String) ?? (eventData?["detail"] as? String)
+                    let detail = rawDetail
                         .flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
                     return .status(
                         stage: stage,

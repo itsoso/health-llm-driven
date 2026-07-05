@@ -279,8 +279,12 @@ function AIAssistantInner() {
             prev.map(m => (m.id === tempAssistantId ? { ...m, content: assistantBuf } : m)),
           );
         } else if (type === 'status') {
-          // 2026-07-02: 实时状态行。stage/detail → 中文短语, 未知 stage 返回 null 时忽略。
-          const phrase = statusStagePhrase(data);
+          // 实时状态行。两个 status 家族都进这里:
+          //  - 旧家族 {event:"status",data:{stage,detail,round}} → 字段在 evt.data
+          //  - P0-1 进度家族 (flat) {type:"status",stage,round?,label?} → 字段在 evt 顶层
+          // evt.data 缺失时 (flat) 用 evt 本身兜底, 让 stage/label 能被解析。
+          const statusData = evt.data ?? evt;
+          const phrase = statusStagePhrase(statusData);
           if (phrase !== null) {
             statusRef.current = phrase;
             setStatusText(phrase);

@@ -40,4 +40,28 @@ describe('statusStagePhrase', () => {
   it('trims surrounding whitespace in detail', () => {
     expect(statusStagePhrase({ stage: 'tool', detail: '  分析趋势  ' })).toBe('正在分析趋势');
   });
+
+  // ──── P0-1 flat progress family (accepted / tool label / synthesis) ────
+
+  it('maps accepted to the received-and-preparing phrase', () => {
+    expect(statusStagePhrase({ stage: 'accepted' })).toBe('已收到，正在准备…');
+  });
+
+  it('maps tool label (progress family) verbatim, taking priority over detail', () => {
+    // 新进度家族的 label 已是完整人话 → 原样显示 (不加"正在"前缀)。
+    expect(statusStagePhrase({ stage: 'tool', label: '查看健康数据…' })).toBe('查看健康数据…');
+    expect(statusStagePhrase({ stage: 'tool', round: 1, label: '正在记录…' })).toBe('正在记录…');
+    // label 优先于 detail。
+    expect(statusStagePhrase({ stage: 'tool', label: '联网搜索中…', detail: 'ignored' })).toBe(
+      '联网搜索中…',
+    );
+    // label 空白 → 回退旧 detail 行为。
+    expect(statusStagePhrase({ stage: 'tool', label: '   ', detail: '查询睡眠数据' })).toBe(
+      '正在查询睡眠数据',
+    );
+  });
+
+  it('maps synthesis from the flat progress family too', () => {
+    expect(statusStagePhrase({ stage: 'synthesis', round: null })).toBe('整理回复中');
+  });
 });
