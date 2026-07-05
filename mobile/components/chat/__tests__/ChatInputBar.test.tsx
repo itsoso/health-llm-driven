@@ -126,7 +126,7 @@ describe('ChatInputBar', () => {
     expect(queryByLabelText('Agent 模式')).toBeNull();
   });
 
-  it('keeps the keyboard composer controls compact', () => {
+  it('keyboard composer controls meet thumb ergonomics (founder 2026-07-05, GPT spec)', () => {
     const { getByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
@@ -136,9 +136,9 @@ describe('ChatInputBar', () => {
       return StyleSheet.flatten(typeof style === 'function' ? style({ pressed: false }) : style);
     };
 
-    expect(styleOf(getByLabelText('附件菜单')).width).toBeLessThanOrEqual(34);
-    expect(styleOf(getByLabelText('消息输入框，长按语音输入')).minHeight).toBeLessThanOrEqual(34);
-    expect(styleOf(getByLabelText('语音输入')).width).toBeLessThanOrEqual(34);
+    expect(styleOf(getByLabelText('附件菜单')).width).toBeGreaterThanOrEqual(40);
+    expect(styleOf(getByLabelText('消息输入框，长按语音输入')).minHeight).toBeGreaterThanOrEqual(40);
+    expect(styleOf(getByLabelText('语音输入')).width).toBeGreaterThanOrEqual(40);
   });
 
   it('keeps the visible composer chrome slim while preserving touch targets', () => {
@@ -157,9 +157,10 @@ describe('ChatInputBar', () => {
       node.props.hitSlop?.left ?? 0,
     );
 
-    expect(styleOf(getByLabelText('附件菜单')).width).toBeLessThanOrEqual(32);
-    expect(styleOf(getByLabelText('消息输入框，长按语音输入')).minHeight).toBeLessThanOrEqual(32);
-    expect(styleOf(getByLabelText('语音输入')).width).toBeLessThanOrEqual(32);
+    // 2026-07-05 工学契约翻转: 拇指高度对齐 GPT — 场 ≥48, 钮 ≥40(hitSlop 补足 44 有效)
+    expect(styleOf(getByLabelText('附件菜单')).width).toBeGreaterThanOrEqual(40);
+    expect(styleOf(getByLabelText('消息输入框，长按语音输入')).minHeight).toBeGreaterThanOrEqual(48);
+    expect(styleOf(getByLabelText('语音输入')).width).toBeGreaterThanOrEqual(40);
     expect(minHitSlop(getByLabelText('附件菜单'))).toBeGreaterThanOrEqual(6);
     expect(minHitSlop(getByLabelText('语音输入'))).toBeGreaterThanOrEqual(6);
   });
