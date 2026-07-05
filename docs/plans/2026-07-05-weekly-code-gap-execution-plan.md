@@ -45,7 +45,7 @@
 | Phone-first auth | 手机号登录注册,可改密码 | 后端 phone code、Aliyun SMS、Mobile login/settings、测试存在 | 基本完成 | 生产 SMS 配置、账号绑定和 App/Mac/Web 登录入口 smoke |
 | LLM 成本与性能 | Admin 全局监控 + 每次 token + 端上透视 | Dossier shipped;Admin `/admin/llm-performance`;Mac/Web/Mobile profile 存在 | 已完成 | 继续加预算策略和异常告警,不是本批阻塞 |
 | Agent 操作面 | 每个一等对象默认 Agent 可操作 | registry 与 CI 已有;spec 已挂账 waist/sleep/excretion create、supplement undo、goal、medical_exam list 等缺口 | 部分完成 | 排入 P1/P2,按对象补 CRUD/opt_out |
-| 7 天健康运行时 | 未来 7 天日程化编排,低打扰执行 | rolling runtime spec 和部分 agenda/watch/today 实现存在 | 长期未闭环 | 日历/位置/药品/NFC/环境 IoT/失败原因自纠偏分阶段推进 |
+| 7 天健康运行时 | 未来 7 天日程化编排,低打扰执行 | rolling runtime spec 和部分 agenda/watch/today 实现存在;已补今日日内 time_driven 时间骨架 | 部分完成 | 继续推进日历/位置/药品/NFC/环境 IoT/失败原因自纠偏 |
 
 ## 新计划
 
@@ -129,6 +129,7 @@
     - 规则:LLM 只选组件/叙事,数据仍由确定性代码填充。
 
 14. **滚动 7 天健康运行时**
+    - 已完成 Slice: 今日时间线补晨起/午间/下午/晚间/睡前 `time_driven` 低打扰系统时刻卡;已有同窗口同域真实项时自动让位。
     - Calendar-aware 工作间歇、饮水、午休、运动、晚间建议。
     - 药品/NFC/固定位置确认先做 spec + 可行性验证,不直接承诺。
     - 失败原因驱动自纠偏,减少打扰而不是增加提醒。
@@ -175,4 +176,5 @@ python3 scripts/check_doc_drift.py
 - P0-3 已完成:App Store release gate 不再要求 `今日 / 小巴 / 记录 / 我`;发布文案改为“打开即进入小巴,今日简报、记录和个人中心从对话内进入”。
 - P0-4/P0-5 已完成:摄入 classifier 保持 diet/medication/supplement/water/diet_management 分流;用药草稿 route 携带 `dose`;Mobile 用药页支持从小巴草稿确认写入用药清单并记录一次已服用。
 - P0-6 已核对完成:当前 Chat 卡片 action 集合仍为 `agenda.complete`、`diet_record.create`、`route.open`、`ui.inline.expand` 等既有受控动作,Mobile dispatcher/registry 测试通过。
-- 待继续:P1 小巴首屏动线真机/模拟器审计、拍照记餐 smoke、二维码 RC、HealthKit/Watch/手机号生产验证。
+- P1-7/P1-8 已完成代码闸验证:小巴首屏保留无底部 Tab 的 compact composer、空对话固定“拍照记一餐”chip;记录页“拍一下”直达 `/diet?capture=photo`;饮食页 `capture=photo` 生成待确认饮食草稿且不自动入库。移动端 smoke: `chat.test.tsx`、`recordEntry.test.tsx`、`dietCapture.test.tsx` 通过。
+- 待继续:P1-9 二维码 RC、P1-10/P1-11 HealthKit/Watch/手机号生产验证。

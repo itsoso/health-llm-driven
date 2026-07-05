@@ -30,6 +30,7 @@ window; a target below it is treated as a miss (rank ``None``), never fabricated
 
 from __future__ import annotations
 
+from dataclasses import fields
 from typing import Any, Iterable
 
 from sqlalchemy.orm import Session
@@ -89,6 +90,18 @@ def _run_eval_case(db: Session, document: KBDocument) -> dict[str, Any]:
 
     lookup_twin = expected.get("lookup_twin") or case_input.get("lookup_twin")
     required_claim_ids = set(expected.get("required_claim_ids") or [])
+    advice_guard_result = _run_advice_guard_expectation(case_id, expected.get("advice_guard"))
+    if advice_guard_result is not None:
+        expected_allowed = advice_guard_result.get("expected_allowed")
+        expected_reason = advice_guard_result.get("expected_reason")
+        if expected_allowed is not None and advice_guard_result.get("allowed") != expected_allowed:
+            failures.append(
+                f"advice_guard_allowed={advice_guard_result.get('allowed')} expected={expected_allowed}"
+            )
+        if expected_reason and advice_guard_result.get("reason") != expected_reason:
+            failures.append(
+                f"advice_guard_reason={advice_guard_result.get('reason')} expected={expected_reason}"
+            )
 
     # Ranked retrieval measurement (additive). Ranks are 1-based positions of the
     # first required target inside the ordered result list; None = not in probe window.
@@ -130,6 +143,7 @@ def _run_eval_case(db: Session, document: KBDocument) -> dict[str, Any]:
         "hit_rank": hit_rank,
         "search_rank": search_rank,
         "lookup_rank": lookup_rank,
+        "advice_guard": advice_guard_result,
         "targets": search_targets + lookup_targets,
     }
 
@@ -219,3 +233,51 @@ def _lookup_claim_ids_ranked(db: Session, twin: dict[str, Any]) -> list[str]:
 
 def _lookup_claim_ids(db: Session, twin: dict[str, Any]) -> set[str]:
     return set(_lookup_claim_ids_ranked(db, twin))
+
+
+def _run_advice_guard_expectation(
+    case_id: str,
+    guard_spec: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not guard_spec:
+        return None
+
+    from app.services.advice_guard import AdviceCandidate, AdviceGuard, AdviceGuardError
+
+    payload = dict(guard_spec.get("candidate") or {})
+    allowed_fields = {field.name for field in fields(AdviceCandidate)}
+    defaults = {
+        "user_id": 0,
+        "source": "system_kb_eval",
+        "source_id": case_id,
+        "domain": "metabolic",
+        "title": case_id,
+        "body": "",
+        "metric_key": "eval_case",
+        "target_value": "boundary",
+        "evidence_tier": "system_kb_eval",
+        "confidence": "medium",
+        "claim_boundary": "Health management guidance only; not diagnosis, prescription, or treatment.",
+        "evidence_refs": ["claim:system_kb_eval_boundary"],
+        "evidence_source_types": ["eval_case"],
+        "verification_metric": "human_review",
+        "risk_level": "medium",
+    }
+    defaults.update({key: value for key, value in payload.items() if key in allowed_fields})
+
+    try:
+        decision = AdviceGuard(existing=[]).evaluate(AdviceCandidate(**defaults))
+        return {
+            "allowed": decision.allowed,
+            "reason": decision.reason,
+            "expected_allowed": guard_spec.get("allowed"),
+            "expected_reason": guard_spec.get("reason"),
+        }
+    except AdviceGuardError as exc:
+        return {
+            "allowed": False,
+            "reason": "contract_error",
+            "error": str(exc),
+            "expected_allowed": guard_spec.get("allowed"),
+            "expected_reason": guard_spec.get("reason"),
+        }
