@@ -38,6 +38,14 @@ import {
 import { executeMedicalExamImportSkillForFile } from '@/services/chatMedicalExamImportSkill';
 import { pickPastedMedicalImportFile } from '@/services/pastedMedicalImportFile';
 import { statusStagePhrase } from '@/components/assistant/statusStagePhrase';
+import {
+  ConversationOpener,
+  QuickReply,
+  buildConversationOpenerReplyContext,
+  buildConversationOpenerReplyMessage,
+  normalizeOpener,
+  routeForQuickReplyAction,
+} from '@/components/assistant/conversationOpener';
 
 const DEFAULT_SUGGESTIONS = [
   '分析我最近的代谢健康',
@@ -45,15 +53,6 @@ const DEFAULT_SUGGESTIONS = [
   '结合基因和体检给我建议',
   '帮我复盘最近的睡眠质量',
 ];
-
-interface ConversationOpener {
-  text: string;
-  source: string;
-  source_id?: number | null;
-  quick_replies?: string[];
-  deep_link?: string | null;
-  priority?: number;
-}
 
 const OPENER_SOURCE_LABEL: Record<string, string> = {
   action_card_due: '今日检验',
@@ -207,6 +206,11 @@ function AIAssistantInner() {
 
   // 页面 mount: 若 URL 带 ?c=<id> 则自动加载该对话 (支持刷新/直达/分享).
   // 只跑一次 — 后续 URL 变更由用户操作 (load/new/stream done) 主动触发.
+  //
+  // 跨页「提问」入口: 其他页 (如 /genetic 的基因卡) 点提问会带 ?prompt=<encoded>
+  // 跳过来, 把问题预填进输入框 (不自动发送)。契约名 `prompt` 与 Mac / 后端
+  // 动态卡 `chat?prompt=...` 一致。仅在新/空对话生效, ?c= 会话恢复优先; 消费后
+  // 清掉该 param, 刷新不重复注入。
   const bootstrappedRef = useRef(false);
   useEffect(() => {
     if (bootstrappedRef.current) return;
@@ -219,6 +223,24 @@ function AIAssistantInner() {
         startNewConversation();
         syncConvUrl(undefined);
       });
+      return;
+    }
+    const prefill = searchParams.get('prompt');
+    if (prefill && prefill.trim()) {
+      // searchParams 已是解码后的值; 再兜一层 decode 容忍双重编码, 失败保底原值。
+      let text = prefill;
+      try {
+        text = decodeURIComponent(prefill);
+      } catch {
+        text = prefill;
+      }
+      // 跨页提问强制开新对话: 不接着上一条老对话续写 (省 context/token)。
+      // 页面 mount 时 activeConvId 本就是 undefined, 这里显式清空 messages 兜底,
+      // 保证 empty-state 新会话空态 + 预填输入, 用户直接回车即发。
+      setActiveConvId(undefined);
+      setMessages([]);
+      setInput(text);
+      syncConvUrl(undefined); // 清掉 ?prompt=, 回到干净 /ai-assistant
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -243,19 +265,9 @@ function AIAssistantInner() {
       } else {
         setStarterSuggestions(DEFAULT_SUGGESTIONS);
       }
-      const op = res.data?.opener;
-      setOpener(
-        op && typeof op.text === 'string' && op.text.trim()
-          ? {
-              text: op.text,
-              source: typeof op.source === 'string' ? op.source : '',
-              source_id: op.source_id ?? null,
-              quick_replies: Array.isArray(op.quick_replies) ? op.quick_replies.slice(0, 3) : [],
-              deep_link: typeof op.deep_link === 'string' ? op.deep_link : null,
-              priority: typeof op.priority === 'number' ? op.priority : 0,
-            }
-          : null,
-      );
+      // normalizeOpener 保留 source_id + 把 quick_replies 归一成 {text, action?}
+      // (镜像 mobile), 让带 action 的 chip 走本地导航、文本 chip 带 opener 上下文发送。
+      setOpener(normalizeOpener(res.data?.opener));
     } catch {
       setStarterSuggestions(DEFAULT_SUGGESTIONS);
       setOpener(null);
@@ -269,7 +281,7 @@ function AIAssistantInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeConvId]);
 
-  const sendMessage = async (overrideText?: string) => {
+  const sendMessage = async (overrideText?: string, extraContext?: string) => {
     const text = (overrideText ?? input).trim();
     if (!text || streaming) return;
     setInput('');
@@ -291,7 +303,15 @@ function AIAssistantInner() {
     statusRef.current = null;
 
     try {
-      for await (const evt of agentApi.streamMessage(text, activeConvId)) {
+      for await (const evt of agentApi.streamMessage(
+        text,
+        activeConvId,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        extraContext,
+      )) {
         if (!evt) continue;
         // /agent/stream event shape: { event, data: {content, conversation_id, ...} }
         const type = evt.event ?? evt.type;
@@ -426,6 +446,30 @@ function AIAssistantInner() {
   const submitSuggestion = (text: string) => {
     if (streaming) return;
     sendMessage(text);
+  };
+
+  // opener 一键回复。镜像 mobile 的两路分流:
+  //  - 带 action 的 chip (photo_meal/record_weight/connect_device, 冷启动包) →
+  //    本地导航, 不发消息。
+  //  - 纯文本 chip (做到了 / 没做 / 调整下计划) → 带 opener 上下文发送, 让后端
+  //    apply_opener_quick_reply_context 把回复绑定到具体 ActionCard (自报依从 /
+  //    调整请求 → 确定性写库), 而非当孤立文本。
+  const submitOpenerQuickReply = (reply: QuickReply) => {
+    if (streaming) return;
+    const activeOpener = opener;
+    if (reply.action) {
+      // 本地导航路: 与 mobile navigateForQuickReplyAction 一致, 只跳路由不发文本。
+      router.push(routeForQuickReplyAction(reply.action));
+      return;
+    }
+    if (!activeOpener) {
+      sendMessage(reply.text);
+      return;
+    }
+    const extraContext = buildConversationOpenerReplyContext(activeOpener, reply.text);
+    const messageText = buildConversationOpenerReplyMessage(activeOpener, reply.text);
+    setOpener(null); // 一次性开场, 点后收起 chip 组
+    sendMessage(messageText, extraContext);
   };
 
   const toggleMessageSelection = (messageId: number) => {
@@ -603,7 +647,7 @@ function AIAssistantInner() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#C96442] text-[26px] font-semibold text-white">
                   巴
                 </div>
-                <h1 className="rd-serif mt-5 text-2xl font-semibold tracking-[0.01em] text-[#29261F] sm:text-[28px]">
+                <h1 className="rd-serif mt-5 pb-1 text-2xl font-semibold leading-[1.3] tracking-[0.01em] text-[#29261F] sm:text-[28px] sm:leading-[1.25]">
                   今天想了解什么？
                 </h1>
                 {opener && (
@@ -625,12 +669,12 @@ function AIAssistantInner() {
                       <div className="mt-2 flex flex-wrap gap-2">
                         {opener.quick_replies.map(reply => (
                           <button
-                            key={reply}
+                            key={reply.text}
                             type="button"
-                            onClick={() => submitSuggestion(reply)}
+                            onClick={() => submitOpenerQuickReply(reply)}
                             className="rounded-full border border-[#EDD9CF] bg-[#F3E4DC] px-3 py-1.5 text-xs font-medium text-[#C96442] transition-colors hover:bg-[#EFD6CB]"
                           >
-                            {reply}
+                            {reply.text}
                           </button>
                         ))}
                       </div>
