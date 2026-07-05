@@ -54,6 +54,11 @@ def real_poster(base: Optional[str] = None, throttle_s: float = 3.5) -> Poster:
             payload["conversation_id"] = conversation_id
         resp = http_post_json(url, payload, headers=headers, timeout=120)
         last_call["t"] = time.monotonic()
+        # /agent/send 长回合改为 200 + 保活流式:流开始后的失败在 body.error 里
+        # (状态码已定格)。fail-loud:别把错误静默记成空答案。
+        err = resp.get("error") if isinstance(resp, dict) else None
+        if err:
+            raise RuntimeError(f"agent/send 回合失败: {err}")
         return resp
 
     return _post
@@ -138,9 +143,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--out", default="transcripts_xiaoba.jsonl", help="输出 JSONL 路径")
     ap.add_argument("--battery", default=None, help="题库路径(默认内置 battery.yaml)")
     ap.add_argument("--no-sanity", action="store_true", help="跳过写库 sanity 检查")
+    ap.add_argument("--only", default=None, help="逗号分隔题目 id,只跑这些(单题验收用)")
     args = ap.parse_args(argv)
 
     battery = load_battery(Path(args.battery) if args.battery else None)
+    if args.only:
+        wanted = {s.strip() for s in args.only.split(",") if s.strip()}
+        picked = [q for q in battery.questions if q.id in wanted]
+        missing = wanted - {q.id for q in picked}
+        if missing:
+            print(f"[xiaoba] --only 里题库找不到的 id: {sorted(missing)}", file=sys.stderr)
+            return 2
+        battery = battery.model_copy(update={"questions": picked})
     base = eval_base()
     headers = bearer_headers()
 

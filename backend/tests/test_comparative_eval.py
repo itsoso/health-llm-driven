@@ -533,3 +533,38 @@ def test_context_pack_manual_fallback_and_build():
     # build_context_pack 组装成 markdown 并附原始 JSON
     pack = export_context_pack.build_context_pack(twin_json)
     assert "个人健康数据上下文包" in pack and "hrv_latest" in pack
+
+
+# ─────────────────── run_xiaoba poster: /send 保活流式 error 语义 ───────────────────
+
+
+def test_real_poster_raises_on_error_envelope(monkeypatch):
+    """/agent/send 长回合流开始后失败 → 200 + body.error。
+    poster 必须 fail-loud 抛出,而不是把错误静默记成空答案。"""
+    from evals.comparative import run_xiaoba as rx
+
+    monkeypatch.setenv("REVA_EVAL_TOKEN", "test-token")
+    monkeypatch.setattr(
+        rx,
+        "http_post_json",
+        lambda url, payload, headers=None, timeout=90: {
+            "reply": "",
+            "error": "请求处理超时，请稍后重试",
+            "mode": "agent",
+        },
+    )
+    poster = rx.real_poster(base="https://example.invalid/api/v1", throttle_s=0)
+    with pytest.raises(RuntimeError, match="回合失败"):
+        poster("重量级问题", None)
+
+
+def test_real_poster_passes_through_success(monkeypatch):
+    from evals.comparative import run_xiaoba as rx
+
+    monkeypatch.setenv("REVA_EVAL_TOKEN", "test-token")
+    ok = {"reply": "完整回答", "conversation_id": 3, "mode": "agent", "elapsed_ms": 90000}
+    monkeypatch.setattr(
+        rx, "http_post_json", lambda url, payload, headers=None, timeout=90: dict(ok)
+    )
+    poster = rx.real_poster(base="https://example.invalid/api/v1", throttle_s=0)
+    assert poster("重量级问题", None) == ok

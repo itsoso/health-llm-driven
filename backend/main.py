@@ -306,6 +306,10 @@ LONG_REQUEST_PATHS = {
     "/api/v1/medical-exams/import/image": 300,
     "/api/v1/medical-exams/import/text": 300,
 }
+# /api/v1/agent/send 刻意不在上面两表里:重量级深分析回合 >60s 时它自切
+# chunked keep-alive 流(response start 立即发出,下面的 wait_for 只计到 start),
+# 端点内自带 300s 硬上限兜底(agent.py AGENT_SEND_HARD_CAP_SECONDS)。
+# 别把它加进 LONG_REQUEST_PATHS——非流式整段等待会同时撞 nginx 与客户端 idle 超时。
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
