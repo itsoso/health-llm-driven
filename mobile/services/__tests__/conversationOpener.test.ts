@@ -68,6 +68,33 @@ describe('fetchConversationOpener', () => {
     expect(out!.quick_replies[3]).toEqual({ text: '换个话题' });
   });
 
+  it('normalizes the backend asdict shape {label, action} (冷启动 OpenerQuickReply 真实线上字段名)', async () => {
+    mockGet.mockResolvedValueOnce({
+      data: {
+        opener: {
+          text: '嗨，我是小巴 🐾 先把第一条数据交给我吧。',
+          source: 'cold_start',
+          source_id: null,
+          quick_replies: [
+            { label: '拍一张今天的饭', action: 'photo_meal' },
+            { label: '记一下体重', action: 'record_weight' },
+            { label: '连接手表数据', action: 'connect_device' },
+          ],
+          deep_link: null,
+          priority: 100,
+        },
+      },
+    });
+
+    const out = await fetchConversationOpener();
+    expect(out!.source).toBe('cold_start');
+    expect(out!.quick_replies).toEqual([
+      { text: '拍一张今天的饭', action: 'photo_meal' },
+      { text: '记一下体重', action: 'record_weight' },
+      { text: '连接手表数据', action: 'connect_device' },
+    ]);
+  });
+
   it('drops an unknown action so the reply degrades to sending its text', async () => {
     mockGet.mockResolvedValueOnce({
       data: {

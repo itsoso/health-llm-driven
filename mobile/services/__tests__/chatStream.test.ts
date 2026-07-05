@@ -312,6 +312,40 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it('parses the flat status family the backend actually emits ({"type":"status",...}, web/mac 同源)', async () => {
+    const iter = streamChat('看看我今天走了多少步');
+    const first = iter.next();
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+
+    // 后端 agent_executor 发的是扁平 shape (无 event 包装) —— 两个家族语义等价, 都必须能解析。
+    xhr.responseText = 'data: {"type":"status","stage":"accepted"}\n\n';
+    xhr.onprogress?.();
+    await expect(first).resolves.toEqual({
+      value: { type: 'status', statusLabel: '正在理解…', statusStage: 'accepted' },
+      done: false,
+    });
+
+    const second = iter.next();
+    xhr.responseText +=
+      'data: {"type":"status","stage":"tool","round":1,"label":"查看健康数据…"}\n\n';
+    xhr.onprogress?.();
+    await expect(second).resolves.toEqual({
+      value: { type: 'status', statusLabel: '查看健康数据…', statusStage: 'tool' },
+      done: false,
+    });
+
+    const third = iter.next();
+    xhr.responseText += 'data: {"type":"status","stage":"synthesis"}\n\n';
+    xhr.onprogress?.();
+    await expect(third).resolves.toEqual({
+      value: { type: 'status', statusLabel: '正在整理回答…', statusStage: 'synthesis' },
+      done: false,
+    });
+
+    await iter.return?.(undefined as any);
+  });
+
   it('keeps backward-compat status stages (vision/thinking) as status-line labels', async () => {
     const iter = streamChat('看看这张体检照片');
     const first = iter.next();

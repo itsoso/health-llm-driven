@@ -248,6 +248,15 @@ export async function* streamChat(
     try {
       const parsed = JSON.parse(payload);
 
+      if (parsed.type === 'status' && !parsed.event) {
+        // 后端扁平进度家族 {"type":"status","stage",...,"label"?} (web/mac 同源契约),
+        // 与下面既有的 {"event":"status","data":{...}} 嵌套家族并存, 语义相同。
+        const stage = typeof parsed.stage === 'string' ? parsed.stage : undefined;
+        const statusLabel = statusStageLabel(stage, parsed.label);
+        if (statusLabel) return { type: 'status', statusLabel, statusStage: stage };
+        return undefined;
+      }
+
       if (parsed.event === 'agent_start') {
         return {
           type: 'start',

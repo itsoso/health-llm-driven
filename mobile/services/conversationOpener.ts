@@ -9,7 +9,8 @@ export type OpenerSource =
   | 'action_card_due'    // ActionCard 检验日 ≤ 2d
   | 'anomaly'            // 24h 内 anomaly_alert
   | 'case_thread'        // case_thread 3-7d 前更新
-  | 'memory_fact';       // 7d 内 memory fact
+  | 'memory_fact'        // 7d 内 memory fact
+  | 'cold_start';        // 零信号新用户合成开场白 (P0-3)
 
 /**
  * 冷启动契约 (P0-3): quick reply 可带一个本地导航 action。带 action 的 reply
@@ -38,10 +39,11 @@ export interface ConversationOpener {
 }
 
 /**
- * quick reply 兼容三种到达 shape (rollout / rollback 安全):
+ * quick reply 兼容四种到达 shape (rollout / rollback 安全):
  * - 纯字符串 (存量后端) → {text}
  * - {text} 对象
- * - {text, action} 对象 (冷启动包新契约); action 不在枚举内 → 丢弃 action (降级为发文本)。
+ * - {label} 对象 —— 后端 OpenerQuickReply 的 asdict 真实字段名 (冷启动包) → {text}
+ * - 带 action 的上述对象; action 不在枚举内 → 丢弃 action (降级为发文本)。
  */
 function normalizeQuickReply(r: unknown): QuickReply | null {
   if (typeof r === 'string') {
@@ -49,13 +51,19 @@ function normalizeQuickReply(r: unknown): QuickReply | null {
   }
   if (r && typeof r === 'object') {
     const o = r as Record<string, unknown>;
-    if (typeof o.text === 'string' && o.text.trim()) {
+    const text =
+      typeof o.text === 'string' && o.text.trim()
+        ? o.text
+        : typeof o.label === 'string' && o.label.trim()
+          ? o.label
+          : null;
+    if (text) {
       const action =
         typeof o.action === 'string' &&
         (QUICK_REPLY_ACTIONS as readonly string[]).includes(o.action)
           ? (o.action as QuickReplyAction)
           : undefined;
-      return action ? { text: o.text, action } : { text: o.text };
+      return action ? { text, action } : { text };
     }
   }
   return null;
