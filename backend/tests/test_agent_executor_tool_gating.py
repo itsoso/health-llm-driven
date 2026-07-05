@@ -275,24 +275,34 @@ async def test_provider_error_fallback_for_tools_returns_to_manual_model_for_fin
     auth_user_and_headers,
     monkeypatch,
 ):
-    """If Claude tool streaming falls back to Qwen, final synthesis still uses Claude."""
+    """F3b 非流式桥 + F2: Opus(结构性非流式) 走非流式 chat() 桥; 工具轮网关拒绝非流式
+    tool-calling → F2 回退到可靠工具模型(测试环境无可靠模型可用 → 默认 tokenplan
+    mock=Qwen)拿数据; 最终合成轮仍回 Opus 非流式桥。绝不走 chat_stream 白等超时。"""
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     provider_calls = []
     qwen_stream_calls = {"n": 0}
 
     class FakeClaudeProvider:
+        # Opus 结构性非流式 → agent 走 chat() 非流式桥, 不调 chat_stream。
         model = "commercial/Claude-Opus-4.7"
 
-        async def chat_stream(self, **kwargs):
+        async def chat(self, **kwargs):
             provider_calls.append({
                 "model": self.model,
                 "has_tools": bool(kwargs.get("tools")),
             })
             if kwargs.get("tools"):
-                raise RuntimeError("langbridge tool streaming unavailable")
-            yield {"type": "content", "text": "CLAUDE FINAL"}
-            yield {"type": "finish", "finish_reason": "stop"}
+                # 网关浏览器适配器不实现非流式 tool-calling → 500 (生产实况)。
+                raise RuntimeError(
+                    "Error code: 500 - adapter has no chat() method: TokenPlanAdapter"
+                )
+            return {"content": "CLAUDE FINAL", "finish_reason": "stop"}
+
+        async def chat_stream(self, **kwargs):
+            # 非流式模型不应被调 chat_stream — 命中即测试失败。
+            raise AssertionError("non-streaming model must not be called via chat_stream")
+            yield  # pragma: no cover — make this an async generator
 
     class FakeQwenProvider:
         model = "qwen3.7-max"
@@ -365,6 +375,8 @@ async def test_provider_error_fallback_for_tools_returns_to_manual_model_for_fin
     )
     done = events[-1]["data"]
 
+    # 工具轮: Opus 非流式桥 chat(tools) → 网关拒绝 → F2 回退到 Qwen (可靠工具模型)。
+    # 合成轮: Opus 非流式桥 chat(no-tools) → 成功产出最终答案。绝无 Opus chat_stream。
     assert provider_calls == [
         {"model": "commercial/Claude-Opus-4.7", "has_tools": True},
         {"model": "qwen3.7-max", "has_tools": True},
@@ -375,5 +387,5 @@ async def test_provider_error_fallback_for_tools_returns_to_manual_model_for_fin
     assert done["selected_model"] == "commercial/Claude-Opus-4.7"
     assert done["answer_model"] == "commercial/Claude-Opus-4.7"
     assert done["tool_models"] == ["qwen3.7-max"]
-    assert done["fallback_reasons"] == ["selected_model_tool_stream_failed"]
+    assert done["fallback_reasons"] == ["selected_model_tool_bridge_failed"]
     assert done["tools_used"] == ["environment_check"]
