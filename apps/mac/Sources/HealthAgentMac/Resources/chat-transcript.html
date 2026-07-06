@@ -258,6 +258,12 @@
     border: 1px solid var(--hr);
     background: var(--code-bg);
     font-variant-numeric: tabular-nums;
+    /* Column layout + consistent min-height so a stacked (label/value/sub) tile
+       and the single-value tiles line up on the same row baseline. */
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    min-height: 42px;
   }
   .dynamic-card-metric-label {
     font-size: 0.72em;
@@ -269,9 +275,21 @@
     font-size: 0.9em;
     font-weight: 800;
     color: var(--text);
+    /* Compound values are split into a nowrap primary + a sub-line, so the
+       primary never wraps mid-token inside the ~92px tile. */
+    white-space: nowrap;
   }
   .dynamic-card-metric-value.risk {
     color: #A6382C;
+  }
+  /* Secondary sub-line under a compound metric value (e.g. 今日蛋白 "还差81g"). */
+  .dynamic-card-metric-sub {
+    margin-top: 1px;
+    font-size: 0.72em;
+    font-weight: 600;
+    color: var(--secondary);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
   .dynamic-card-detail,
   .dynamic-card-conclusion,

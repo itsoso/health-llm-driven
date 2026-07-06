@@ -109,4 +109,19 @@ final class HealthAgentMacCoreTests: XCTestCase {
 
         XCTAssertEqual(action, .continueLaunching)
     }
+
+    func testSplitCompoundMetricValueStacksMiddotJoinedValue() {
+        // 今日蛋白's compound value splits on the middot into primary + secondary.
+        let split = ChatTranscriptHTML.splitCompoundMetricValue("33/114g · 还差81g")
+        XCTAssertEqual(split?.primary, "33/114g")
+        XCTAssertEqual(split?.secondary, "还差81g")
+    }
+
+    func testSplitCompoundMetricValueReturnsNilForPlainValue() {
+        // Plain single values (the 5 per-meal tiles) must NOT be split.
+        XCTAssertNil(ChatTranscriptHTML.splitCompoundMetricValue("430kcal"))
+        XCTAssertNil(ChatTranscriptHTML.splitCompoundMetricValue("15g"))
+        // A middot with an empty side is not a valid compound → single value.
+        XCTAssertNil(ChatTranscriptHTML.splitCompoundMetricValue("33/114g · "))
+    }
 }

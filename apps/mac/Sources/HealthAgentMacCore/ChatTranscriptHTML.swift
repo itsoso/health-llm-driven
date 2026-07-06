@@ -864,12 +864,41 @@ public enum ChatTranscriptHTML {
 
     private static func metricHTML(label: String, value: String, risk: Bool) -> String {
         let riskClass = risk ? " risk" : ""
+        // Compound value ("A · B", e.g. 今日蛋白 "33/114g · 还差81g") stacks into a
+        // primary value (nowrap) + a smaller sub-line, instead of wrapping mid-token
+        // into an ugly "33/114g·还 / 差81g" inside a ~92px tile. Generic: any middot
+        // (U+00B7)-joined value splits ONCE on the first separator; no separator →
+        // single value as before. Primary keeps the .risk clay-ink highlight.
+        if let (primary, secondary) = splitCompoundMetricValue(value) {
+            return """
+            <div class="dynamic-card-metric">
+              <div class="dynamic-card-metric-label">\(escape(label))</div>
+              <div class="dynamic-card-metric-value\(riskClass)">\(escape(primary))</div>
+              <div class="dynamic-card-metric-sub">\(escape(secondary))</div>
+            </div>
+            """
+        }
         return """
         <div class="dynamic-card-metric">
           <div class="dynamic-card-metric-label">\(escape(label))</div>
           <div class="dynamic-card-metric-value\(riskClass)">\(escape(value))</div>
         </div>
         """
+    }
+
+    /// Split a compound metric value on the FIRST middot (U+00B7) into a primary +
+    /// secondary part (surrounding whitespace trimmed). Returns nil when there is no
+    /// middot or either side is empty → caller renders a single value.
+    static func splitCompoundMetricValue(_ value: String) -> (primary: String, secondary: String)? {
+        guard let range = value.range(of: "\u{00B7}") else {
+            return nil
+        }
+        let primary = value[..<range.lowerBound].trimmingCharacters(in: .whitespaces)
+        let secondary = value[range.upperBound...].trimmingCharacters(in: .whitespaces)
+        guard !primary.isEmpty, !secondary.isEmpty else {
+            return nil
+        }
+        return (primary, secondary)
     }
 
     private static func sourceLabel(_ source: String) -> String {
