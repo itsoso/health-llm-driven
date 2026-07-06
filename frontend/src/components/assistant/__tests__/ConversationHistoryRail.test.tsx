@@ -39,6 +39,33 @@ describe('ConversationHistoryRail', () => {
     });
   });
 
+  it('keeps rename/delete actions always visible and confirms before deleting', () => {
+    // 曾是 opacity-0 hover 才现身 → founder 以为没有删除功能(触屏永不可见)。
+    const onDelete = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm');
+    render(
+      <ConversationHistoryRail
+        conversations={[
+          { id: 9, title: '对话B', created_at: '', updated_at: '2026-07-06T09:00:00Z' },
+        ]}
+        activeConvId={9}
+        loading={false}
+        onLoad={vi.fn()}
+        onDelete={onDelete}
+        onNew={vi.fn()}
+        onRename={vi.fn()}
+      />,
+    );
+
+    const del = screen.getByRole('button', { name: '删除对话' });
+    expect(del.className).not.toContain('opacity-0');
+    expect(screen.getByRole('button', { name: '重命名对话' }).className).not.toContain('opacity-0');
+
+    fireEvent.click(del);
+    expect(onDelete).toHaveBeenCalledWith(9); // 确认弹窗在 page 层(window.confirm),rail 只上抛
+    confirmSpy.mockRestore();
+  });
+
   it('shows prev/next pager and disables prev on first page', () => {
     const onNextPage = vi.fn();
     render(

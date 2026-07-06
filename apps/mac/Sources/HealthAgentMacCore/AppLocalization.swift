@@ -305,6 +305,7 @@ public enum L10n {
         "Rename": "重命名",
         "Rename conversation": "重命名对话",
         "New title": "新标题",
+        "Delete this conversation?": "删除这条对话？",
         "Share": "分享",
         "Share link copied": "分享链接已复制到剪贴板",
         "Open in browser": "在浏览器打开",

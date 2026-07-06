@@ -160,9 +160,11 @@ export default function ConversationHistoryRail({
                           {conv.last_message || relativeTime(conv.updated_at)}
                         </div>
                       </button>
+                      {/* 常显(曾 opacity-0 hover 才现身 → founder 以为没有删除功能;
+                          触屏上 hover-only 更是永不可见)。半透明弱化,悬停变实。 */}
                       <button
                         onClick={() => startEdit(conv)}
-                        className="mt-0.5 rounded-lg p-1.5 text-[#948F80] opacity-0 transition-all hover:bg-[#E8E4D8] hover:text-[#29261F] group-hover:opacity-100"
+                        className="mt-0.5 rounded-lg p-1.5 text-[#948F80] opacity-60 transition-all hover:bg-[#E8E4D8] hover:text-[#29261F] hover:opacity-100"
                         aria-label="重命名对话"
                         title="重命名对话"
                       >
@@ -170,7 +172,7 @@ export default function ConversationHistoryRail({
                       </button>
                       <button
                         onClick={() => onDelete(conv.id)}
-                        className="mt-0.5 rounded-lg p-1.5 text-[#948F80] opacity-0 transition-all hover:bg-[#C96442]/10 hover:text-[#B4573A] group-hover:opacity-100"
+                        className="mt-0.5 rounded-lg p-1.5 text-[#948F80] opacity-60 transition-all hover:bg-[#C96442]/10 hover:text-[#B4573A] hover:opacity-100"
                         title="删除对话"
                         aria-label="删除对话"
                       >

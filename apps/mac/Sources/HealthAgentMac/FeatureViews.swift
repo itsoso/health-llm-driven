@@ -1785,6 +1785,8 @@ private struct AgentConversationHistoryRow: View {
     @State private var isSharing = false
     @State private var sharedURL: URL?
     @State private var showShareConfirm = false
+    // 删除是毁灭性动作,一键直删太危险(web/mobile 都有确认步;mac 曾缺失)
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -1847,13 +1849,23 @@ private struct AgentConversationHistoryRow: View {
                 .help(appText("Rename", appLanguageRaw))
 
                 Button {
-                    onDelete()
+                    showDeleteConfirm = true
                 } label: {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .help(appText("Delete", appLanguageRaw))
+                .confirmationDialog(
+                    appText("Delete this conversation?", appLanguageRaw),
+                    isPresented: $showDeleteConfirm,
+                    titleVisibility: .visible
+                ) {
+                    Button(appText("Delete", appLanguageRaw), role: .destructive) {
+                        onDelete()
+                    }
+                    Button(appText("Cancel", appLanguageRaw), role: .cancel) {}
+                }
             }
         }
         .padding(10)
