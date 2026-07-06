@@ -205,12 +205,14 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   // 键盘聚焦(founder: 「长按语音, 短按要支持文本」), 否则正常转文字。
   const voiceBarPressInAtRef = useRef(0);
 
+  // 流式(回复中)不拦录音:打字在流式期间本来就允许(只有发送被 canSend 门着),
+  // 语音作为输入方式必须同权——转写只落输入框,不触发发送。曾在这里挡 isStreaming,
+  // founder 真机实锤「按住说话没反应」:回复中按住 = 完全装死零反馈(Rule#1 死键)。
   const handleVoiceBarPressIn = useCallback((pageY: number) => {
-    if (isStreaming) return;
     voiceBarPressInAtRef.current = Date.now();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     handleHoldStart(pageY);
-  }, [handleHoldStart, isStreaming]);
+  }, [handleHoldStart]);
 
   const handleVoiceBarPressOut = useCallback(() => {
     if (!voiceBarPressInAtRef.current) return;

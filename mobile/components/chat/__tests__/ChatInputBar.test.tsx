@@ -239,6 +239,27 @@ describe('ChatInputBar', () => {
     expect(getByLabelText('消息输入框')).toBeTruthy();
   });
 
+  it('hold-to-talk keeps working while assistant is streaming (founder 真机实锤: 回复中按住装死)', () => {
+    // 流式期间打字是允许的(只有发送被 canSend 门着), 语音输入必须同权:
+    // 录音→转写→落输入框, 不触发发送。曾有 isStreaming 早退 → 死键零反馈。
+    const { getByLabelText, getByTestId } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={true} />,
+    );
+
+    fireEvent.press(getByLabelText('切换语音输入'));
+    const bar = getByTestId('composer-voice-bar');
+
+    const nowSpy = jest.spyOn(Date, 'now')
+      .mockReturnValueOnce(10_000)
+      .mockReturnValueOnce(10_900);
+    fireEvent(bar, 'pressIn', { nativeEvent: { pageY: 300 } });
+    fireEvent(bar, 'pressOut');
+    nowSpy.mockRestore();
+
+    expect(mockStartRecording).toHaveBeenCalled();
+    expect(mockStopAndTranscribe).toHaveBeenCalled();
+  });
+
   it('persists composer mode and flips back to text with the transcript visible', async () => {
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
     const { getByLabelText, getByTestId } = render(
