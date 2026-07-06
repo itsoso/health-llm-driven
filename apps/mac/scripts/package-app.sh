@@ -157,6 +157,21 @@ if [[ "${INSTALL_AFTER_BUILD}" == "1" ]]; then
 fi
 
 if [[ "${OPEN_AFTER_BUILD}" == "1" ]]; then
+  # Lock 2 (installer side): quit any running 小巴 before launching, so `open`
+  # starts the freshly-installed/-built binary instead of fronting a stale one.
+  # This is the dev-loop + upgrade half of the single-instance guarantee (the
+  # in-app NSRunningApplication guard is Lock 1). Only runs when we're about to
+  # --open; a plain build never kills anything.
+  osascript -e 'quit app "小巴"' 2>/dev/null || true
+  # Fallback by executable name in case the display name changes or AppleScript
+  # can't reach it (ad-hoc app, no Apple event permission, etc.).
+  pkill -x HealthAgentMac 2>/dev/null || true
+  # Wait up to ~5s for it to actually terminate before we relaunch.
+  for _ in $(seq 1 10); do
+    pgrep -x HealthAgentMac >/dev/null 2>&1 || break
+    sleep 0.5
+  done
+
   if [[ "${INSTALL_AFTER_BUILD}" == "1" ]]; then
     open "/Applications/小巴.app"
   else

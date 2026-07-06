@@ -31,7 +31,14 @@ final class HealthAgentAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // First-wins: bring the already-running instance forward, then this
+        // duplicate bows out immediately. We call exit(0) rather than
+        // NSApplication.terminate(nil): at willFinishLaunching the app isn't fully
+        // up, and terminate() posts an ASYNC termination request that can let a
+        // window/side-effect flash before it fires. exit(0) guarantees the dupe
+        // dies here — before any UI or heavy init — so there is never more than
+        // one live process (belt-and-suspenders with LSMultipleInstancesProhibited).
         existingInstance.activate(options: [.activateAllWindows])
-        NSApplication.shared.terminate(nil)
+        exit(0)
     }
 }
