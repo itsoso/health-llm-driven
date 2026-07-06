@@ -68,6 +68,110 @@ def test_plain_text_tool_result_passes_through():
     assert reply == "未找到名为 '维生素X' 的活跃补剂"
 
 
+# ── raw-JSON leak in the empty-synthesis write-turn fallback (founder-reproduced) ──
+# run_c0cbea41e0cc46: health_manage list 结果被 _api_get 加尾注 / 硬字符截断 → 严格
+# json.loads 失败 → 旧代码掉进 plain-text 分支裸 dump[:160]。两方向钉死。
+
+
+def test_list_result_with_trailing_note_routes_to_lookup_not_raw_dump():
+    # _api_get 对合法数组加 "...(仅显示前10条)" 尾注 → 严格 json.loads 抛 "Extra data"。
+    # 修前:掉进 plain-text 分支裸 dump。修后:raw_decode 救回前缀 → 「查到 N 条记录」。
+    records = [
+        {"id": 1, "record_date": "2026-07-06", "meal_type": "lunch", "food_items": "襄阳牛肉面 1碗"},
+        {"id": 2, "record_date": "2026-07-05", "meal_type": "dinner", "food_items": "米饭+青菜"},
+    ]
+    content = json.dumps(records, ensure_ascii=False) + "\n...(仅显示前10条)"
+    # 前置断言:这段内容确实过不了严格 json.loads(否则测的不是本 bug)。
+    try:
+        json.loads(content)
+        raise AssertionError("fixture 应对严格 json.loads 失败")
+    except json.JSONDecodeError:
+        pass
+    reply = _fast_record_reply_from_tool_results([{"role": "tool", "content": content}])
+    assert reply == "查到 2 条记录（记录号: 1, 2）"
+    assert "record_date" not in reply and "meal_type" not in reply and "[{" not in reply
+
+
+def test_char_truncated_record_json_becomes_neutral_line_not_raw_dump():
+    # founder 精确复现: health_manage list 结果被硬字符截断到半个 token(`"calories":`),
+    # 严格 + 宽松都解析不回 → 旧代码裸 dump 前 160 字符。修后:锚定 leak 探测 → 中性人话。
+    # founder 的原始泄漏正是这段(run_c0cbea41e0cc46),截断到半个 "calories": token。
+    content = (
+        '[{"record_date": "2026-07-06", "meal_type": "lunch", "meal_time": null, '
+        '"food_items": "襄阳牛肉面 1碗（辣椒已用水冲洗）+ 鸡蛋 3/4个", '
+        '"food_id": null, "source": null, "calories":'
+    )
+    # 前置断言:严格 + 宽松都解析不回(这是最难的一档——救不回,只能靠锚定 leak 探测)。
+    try:
+        json.loads(content)
+        raise AssertionError("fixture 应对严格 json.loads 失败")
+    except json.JSONDecodeError:
+        pass
+    reply = _fast_record_reply_from_tool_results([{"role": "tool", "content": content}])
+    # 非空是承重的(memory: 空兜底 → 重试风暴 → 更多泄漏)。
+    assert reply.strip()
+    # 绝不外泄任何原始工具结果 JSON。
+    assert "record_date" not in reply
+    assert "meal_type" not in reply
+    assert "calories" not in reply
+    assert "食材" not in reply  # 不复述具体食物
+    assert "[{" not in reply and "{" not in reply
+    # 中性且不谎称已修改/已记录。
+    assert "已记录" not in reply and "已修改" not in reply
+
+
+def test_bare_single_key_truncated_dict_becomes_neutral_line_not_raw_dump():
+    # safety-review 复审发现的残留洞: _api_get 硬截断一个大**裸对象** `{...}` 到只剩
+    # 首个白名单键(`{"food_items":` / `{ "hrv":`)。此时 _recover 救不回、
+    # _leaks_tool_result_json 判不出、_streaming_leak_forming 对非 `[{` 的裸对象要求
+    # ≥2 键 → 全落空,旧代码仍裸 dump。结构起手护栏(以 `{`/`[` 开头)兜住。
+    for content, forbidden in (
+        ('{"food_items":', "food_items"),
+        ('{ "hrv":', "hrv"),
+        ('{"systolic": 120, "diastolic":', "systolic"),  # 两键但截断,宽松也救不回
+    ):
+        # 前置断言:严格解析确实失败(否则测的不是本洞)。
+        try:
+            json.loads(content)
+            raise AssertionError(f"fixture 应对严格 json.loads 失败: {content!r}")
+        except json.JSONDecodeError:
+            pass
+        reply = _fast_record_reply_from_tool_results([{"role": "tool", "content": content}])
+        assert reply.strip()  # 非空承重
+        assert reply == "已查到相关记录，但这轮没能整理成回答；请再说一次要改哪一条"
+        assert forbidden not in reply
+        assert "{" not in reply and "[" not in reply
+
+
+def test_human_readable_plain_text_still_shown_as_is_no_oversuppression():
+    # 真人话纯文本(无 JSON 结构、以中文/字母起手)不能被 leak 护栏或结构起手护栏误伤。
+    for text in (
+        "已更新记录",
+        "已删除该条饮食记录",
+        "没有找到符合条件的记录",
+        "你今天喝了 1500ml 水",
+        "OK, 已保存",  # 字母起手
+    ):
+        reply = _fast_record_reply_from_tool_results([{"role": "tool", "content": text}])
+        assert reply == text
+
+
+def test_lenient_only_array_with_smart_quotes_routes_to_lookup():
+    # 弱模型/代理吐全角引号数组(严格 json.loads 失败,_loads_lenient 可救)→ 「查到 N 条」。
+    content = (
+        '[{“id”:1,“record_date”:“2026-07-06”,“meal_type”:“lunch”},'
+        '{“id”:2,“record_date”:“2026-07-05”,“meal_type”:“dinner”}]'
+    )
+    try:
+        json.loads(content)
+        raise AssertionError("fixture 应对严格 json.loads 失败")
+    except json.JSONDecodeError:
+        pass
+    reply = _fast_record_reply_from_tool_results([{"role": "tool", "content": content}])
+    assert reply == "查到 2 条记录（记录号: 1, 2）"
+    assert "record_date" not in reply and "[{" not in reply
+
+
 def test_error_tool_result_passes_through():
     msg = {"role": "tool", "content": "Error: water amount 必须是整数毫升"}
     reply = _fast_record_reply_from_tool_results([msg])

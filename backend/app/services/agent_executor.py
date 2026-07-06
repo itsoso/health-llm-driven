@@ -1146,6 +1146,42 @@ def _safety_warning_suffix_from_tool_results(messages: List[Dict[str, Any]]) -> 
     return "\n\n".join(warnings)
 
 
+def _recover_tool_result_payload(content: str) -> Any:
+    """严格 json.loads 失败后,尽力把工具结果 content 救回成 list/dict。
+
+    _api_get 的返回不保证严格可解析(它自己在 docstring 里写明"可能被字符截断,
+    不可直接 json.loads"):list/dict 会被加尾注("...(仅显示前10条)"/"...(数据已截断)")
+    或硬字符截断。这些是**结构化工具结果**,不是人话纯文本 —— 不救回就会掉进裸 dump。
+
+    逐级救:
+      (1) 从第一个 `[`/`{` 起 raw_decode —— 吃掉尾部杂质,救回合法 JSON 前缀
+          (Path A:合法数组 + "...(仅显示前10条)" 尾注)。
+      (2) _loads_lenient —— 救弯/全角引号 + 可修复的截断(与 leak 护栏同一解析器)。
+    仍救不回(如硬截断到半个 token)返回 None,调用方走锚定 leak 探测兜底。
+    """
+    s = (content or "").strip()
+    if not s:
+        return None
+    lb = s.find("[")
+    ob = s.find("{")
+    starts = [i for i in (lb, ob) if i != -1]
+    if starts:
+        start = min(starts)
+        try:
+            payload, _ = json.JSONDecoder().raw_decode(s[start:])
+            if isinstance(payload, (list, dict)):
+                return payload
+        except json.JSONDecodeError:
+            pass
+    try:
+        payload = _loads_lenient(s)
+        if isinstance(payload, (list, dict)):
+            return payload
+    except json.JSONDecodeError:
+        pass
+    return None
+
+
 def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
     """Build a final user-visible reply directly from record tool results."""
 
@@ -1182,6 +1218,13 @@ def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
             payload = json.loads(content)
         except json.JSONDecodeError:
             payload = None
+        if payload is None:
+            # 严格 json.loads 失败,但 _api_get 会给 list/dict 加尾注
+            # ("...(仅显示前10条)" / "...(数据已截断)") 或硬字符截断 —— 这些都不是
+            # "人话纯文本",而是**结构化工具结果**。先按泄漏护栏用的宽松/前缀解析救回,
+            # 让它落进下面 dict/list 分支给出「查到 N 条」/友好确认,绝不裸 dump。
+            # (raw_decode 吃掉尾部杂质救回合法前缀;_loads_lenient 救弯引号+可修复的截断。)
+            payload = _recover_tool_result_payload(content)
         if isinstance(payload, dict):
             tool_message = payload.get("message")
             if isinstance(tool_message, str) and tool_message.strip():
@@ -1203,6 +1246,23 @@ def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
                 ids = [str(it.get("id")) for it in payload if isinstance(it, dict) and it.get("id")]
                 id_part = f"（记录号: {', '.join(ids[:5])}）" if ids else ""
                 replies.append(f"查到 {len(payload)} 条记录{id_part}")
+            append_safety_warning()
+            continue
+        # 到这里 payload 仍非 dict/list(连宽松/前缀解析都救不回,如硬字符截断到半个
+        # token 的 `[{"…"calories":`)。若 content 长得就是一段工具结果原始 JSON dump,
+        # **绝不**裸 dump[:160](founder 复现:那正是泄漏的来源)——改吐一句非空中性人话。
+        # 非空是承重的(memory:空兜底→重试风暴→更多泄漏)。真人话纯文本(无 JSON 结构)
+        # 仍原样透出。三层锚定,fail-closed 收口:
+        #   (1) _leaks_tool_result_json —— 整段可宽松解析的 dump;
+        #   (2) _streaming_leak_forming —— `[{"<白名单键>":` 数组签名(救截断到半 token 的);
+        #   (3) 结构起手 —— 去空白后以 `{`/`[` 开头 = 未救回的结构化载荷。补 (1)(2) 的洞:
+        #       裸对象 `{"food_items":` 截断在**单个**白名单键后,(1)(2) 都判不出((2) 对
+        #       非 `[{` 的裸对象要求 ≥2 键),但真人话工具结果永远以中文/字母起手
+        #       (已更新记录 / 你今天喝了… / 没有找到…),绝不以裸 `{`/`[` 开头 → 不误伤。
+        stripped = content.lstrip()
+        looks_structured = bool(stripped) and stripped[0] in "{["
+        if _leaks_tool_result_json(content) or _streaming_leak_forming(content) or looks_structured:
+            replies.append("已查到相关记录，但这轮没能整理成回答；请再说一次要改哪一条")
             append_safety_warning()
             continue
         # Plain-text tool result (already human-readable) — show as-is.
