@@ -90,6 +90,21 @@ function AppContent() {
       {/* 全局默认 headerShown: false — 任何新增 route 也不会意外露出 Expo stack 默认 header (e.g. "< (tabs)  timeline") */}
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        {/* 今日半屏 sheet — iOS 原生 formSheet 从聊天上滑出 (刀④, 2026-07-06)。
+            sheetAllowedDetents [0.5, 1]: 半高瞥待办, 拖到顶看全部; 抓手 + 下滑关全原生。
+            Android 上 formSheet 回退为整屏 modal (仍是「盖在聊天上、下滑关」语义)。 */}
+        <Stack.Screen
+          name="today-sheet"
+          options={{
+            headerShown: false,
+            presentation: 'formSheet',
+            sheetAllowedDetents: [0.5, 1],
+            sheetInitialDetentIndex: 0,
+            sheetGrabberVisible: true,
+            sheetCornerRadius: 20,
+            gestureEnabled: true,
+          }}
+        />
         <Stack.Screen name="settings" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="account-security" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="memory" options={{ headerShown: false, presentation: 'modal' }} />

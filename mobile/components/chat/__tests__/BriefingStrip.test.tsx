@@ -27,12 +27,12 @@ describe('BriefingStrip', () => {
     expect(queryByLabelText('关闭今日简报')).toBeNull();
   });
 
-  it('strip body still navigates to today', () => {
+  it('strip body opens the today half-sheet (formSheet over chat, not a full nav away)', () => {
     const { getByLabelText } = render(
       <BriefingStrip timeline={undefined} onDismiss={jest.fn()} />,
     );
     fireEvent.press(getByLabelText('今日简报：查看今日待办与身体信号'));
-    expect(mockNavigate).toHaveBeenCalledWith('/(tabs)/today');
+    expect(mockNavigate).toHaveBeenCalledWith('/today-sheet');
   });
 
   it('buildBriefingSummary uses only real counts and neutral fallbacks', () => {
