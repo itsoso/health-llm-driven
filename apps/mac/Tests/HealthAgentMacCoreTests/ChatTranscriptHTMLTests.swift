@@ -132,6 +132,23 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertTrue(html.contains("工具调用临时切到可靠模型"))
     }
 
+    func testMetaFooterRendersFastRouteReasonInChinese() {
+        // 快路由(简单查询自动切快模型)的 reason 必须渲染成中文,不能漏成 snake_case 原文
+        let html = ChatTranscriptHTML.metaFooterHTML(
+            model: "deepseek-v4-flash",
+            selectedModel: nil,
+            answerModel: "deepseek-v4-flash",
+            toolModels: [],
+            fallbackReasons: ["fast_route_simple_turn"],
+            elapsedMs: 2000,
+            llmRounds: 2,
+            sourcesUsed: [],
+            toolsUsed: []
+        )
+        XCTAssertTrue(html.contains("简单查询·自动用快模型"))
+        XCTAssertFalse(html.contains("fast_route_simple_turn"))
+    }
+
     func testMetaFooterOmitsSingleRound() {
         // llm_rounds == 1 没有展示意义 → 不输出「N 轮」
         let html = ChatTranscriptHTML.metaFooterHTML(

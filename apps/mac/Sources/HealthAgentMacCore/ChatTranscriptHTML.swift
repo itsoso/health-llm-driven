@@ -382,6 +382,8 @@ public enum ChatTranscriptHTML {
             return "工具调用临时切到可靠模型"
         case "preferred_model_tool_unreliable":
             return "偏好模型工具调用临时切到可靠模型"
+        case "fast_route_simple_turn":
+            return "简单查询·自动用快模型"
         default:
             return reason
         }
