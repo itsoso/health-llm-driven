@@ -135,8 +135,8 @@ export default function LlmModelPicker({
               activeOpacity={0.75}
             >
               <View style={styles.optionBody}>
-                <Text style={txt.optionTitle}>系统默认</Text>
-                <Text style={txt.optionMeta} numberOfLines={1}>使用管理员全局配置或服务器默认模型</Text>
+                <Text style={txt.optionTitle}>系统默认 · 智能路由</Text>
+                <Text style={txt.optionMeta} numberOfLines={2}>简单记录/查询自动用最快模型,分析建议用系统质量模型</Text>
               </View>
               {activeModelId === null && <Ionicons name="checkmark-circle" size={18} color={C.green500} />}
             </TouchableOpacity>

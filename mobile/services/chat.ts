@@ -96,6 +96,8 @@ export interface StreamEvent {
   // 2026-06-12: 本轮调用的 Skill / 工具名 (后端 done.tools_used; 去重保序, 空 [])
   toolsUsed?: string[];
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
+  // 2026-07-06: 模型路由透明化 — done.fallback_reasons (如 fast_route_simple_turn)
+  fallbackReasons?: string[];
   // SSE done 事件里的动态卡片，由 useChatEngine 交给 card registry 渲染
   cards?: StreamCardDescriptor[];
 }
@@ -337,6 +339,9 @@ export async function* streamChat(
           sourcesUsed: Array.isArray(parsed.data?.sources_used) ? parsed.data.sources_used : undefined,
           toolsUsed: Array.isArray(parsed.data?.tools_used) ? parsed.data.tools_used : undefined,
           completionStatus: parsed.data?.completion_status,
+          fallbackReasons: Array.isArray(parsed.data?.fallback_reasons)
+            ? parsed.data.fallback_reasons.filter((r: unknown) => typeof r === 'string' && r)
+            : undefined,
           thinkingSteps: normalizeThinkingSteps(parsed.data?.thinking_steps),
           cards: Array.isArray(parsed.data?.cards) ? parsed.data.cards : undefined,
         };

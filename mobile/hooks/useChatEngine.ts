@@ -10,6 +10,7 @@ import type { ChatCardActionDescriptor, ServerCardDescriptor } from '../componen
 import api, { BASE_URL } from '../services/api';
 import { emitClientEvent } from '../services/clientEvents';
 import { sanitizeChatErrorMessage } from '../utils/chatErrorMessage';
+import { mergeModelIntoExtraContext } from '../utils/chatExtraContext';
 
 function normalizeImageHost(baseUrl: string): string {
   return String(baseUrl || '').replace(/\/+$/, '').replace(/\/api(?:\/v\d+)?$/, '');
@@ -49,6 +50,8 @@ export interface UIMessage extends ChatMessage {
   // 2026-06-12: 本轮调用的 Skill / 工具名 (后端 done.tools_used / meta.tools_used), 对齐 mac/web
   toolsUsed?: string[];
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
+  // 2026-07-06: 模型路由透明化 — done.fallback_reasons / meta.fallback_reasons
+  fallbackReasons?: string[];
 }
 
 let msgCounter = 0;
@@ -70,6 +73,9 @@ function applyMeta(msg: any): Partial<UIMessage> {
     sourcesUsed: Array.isArray(meta.sources_used) ? meta.sources_used : undefined,
     toolsUsed: Array.isArray(meta.tools_used) ? meta.tools_used : undefined,
     completionStatus: typeof meta.completion_status === 'string' ? meta.completion_status : undefined,
+    fallbackReasons: Array.isArray(meta.fallback_reasons)
+      ? meta.fallback_reasons.filter((r: unknown): r is string => typeof r === 'string' && !!r)
+      : undefined,
     thinkingSteps: normalizeThinkingSteps(meta.thinking_steps ?? meta.thought_steps),
   };
 }
@@ -262,6 +268,12 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const briefingInjected = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  // 2026-07-06: 会话级显式模型选择 (聊天头部 LlmModelPicker)。null = 系统默认(智能路由)。
+  // 用 ref 而非 state: sendMessage 闭包无需因切模型而重建, 发送时读当前值即可。
+  const perMessageModelIdRef = useRef<string | null>(null);
+  const setPerMessageModelId = useCallback((modelId: string | null) => {
+    perMessageModelIdRef.current = (modelId || '').trim() || null;
+  }, []);
   // 2026-05-14: 标记是否有正在进行的 stream — 离开页面回来时, 如果还在 stream
   // 后端 G-W9 bg task 还在跑), 重新 fetch 拉服务端最新消息.
   const streamingRef = useRef(false);
@@ -520,6 +532,13 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     const ac = new AbortController();
     abortRef.current = ac;
 
+    // 逐条消息显式模型选择: 单点合并进 extraContext (Siri/opener/输入条所有路径统一走这里)。
+    // 显式 model_id 后端绝不被快路由/工具门控覆盖; null = 系统默认(保留快路由延迟优化)。
+    const extraContextWithModel = mergeModelIntoExtraContext(
+      sendOpts?.extraContext,
+      perMessageModelIdRef.current,
+    );
+
     let gotFirstToken = false;
     const slowTimer = setTimeout(() => {
       if (!gotFirstToken) {
@@ -579,7 +598,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       const toolsUsed: Set<string> = new Set();
       const streamedCardKeys: Set<string> = new Set();
       let sawDone = false;
-      for await (const evt of streamChat(finalMsg, targetConversationId, hasImages ? pendingImages : undefined, ac.signal, sendOpts?.extraContext)) {
+      for await (const evt of streamChat(finalMsg, targetConversationId, hasImages ? pendingImages : undefined, ac.signal, extraContextWithModel)) {
         if (evt.thought) {
           // 节流进思考面板 (>=200ms 一批), 不逐事件 setMessages。
           queueThought(evt.thought);
@@ -657,6 +676,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             sourcesUsed: evt.sourcesUsed,
             toolsUsed: evt.toolsUsed,
             completionStatus: evt.completionStatus,
+            fallbackReasons: evt.fallbackReasons,
             thinkingSteps: evt.thinkingSteps?.length ? evt.thinkingSteps : m.thinkingSteps,
           } : m));
           const rawDoneCards = Array.isArray((evt as any).cards) ? (evt as any).cards : [];
@@ -770,5 +790,6 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     hasMoreHistory,
     deleteCurrentConversation,
     setMessages,
+    setPerMessageModelId,
   };
 }

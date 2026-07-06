@@ -152,6 +152,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
       sourcesUsed: item.sourcesUsed,
       toolsUsed: item.toolsUsed,
       perf: item.perf,
+      fallbackReasons: item.fallbackReasons,
     }),
     [
       item.elapsedMs,
@@ -162,6 +163,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
       item.sourcesUsed,
       item.toolsUsed,
       item.perf,
+      item.fallbackReasons,
     ],
   );
 
@@ -1553,6 +1555,18 @@ function AgentTransparencyPanel({ profile }: { profile: AgentTransparencyProfile
               <View style={{ flex: 1, gap: 3 }}>
                 {profile.sources.slice(0, 8).map(source => (
                   <Text key={source} style={txt.transparencyValue}>· {source}</Text>
+                ))}
+              </View>
+            </View>
+          ) : null}
+          {profile.routing.length > 0 ? (
+            <View style={styles.transparencyRow}>
+              <Text style={txt.transparencyLabel}>路由</Text>
+              <View style={[styles.transparencyChipRow, { flex: 1 }]}>
+                {profile.routing.map(reason => (
+                  <View key={reason} style={styles.transparencyChip}>
+                    <Text style={txt.transparencyChip}>{reason}</Text>
+                  </View>
                 ))}
               </View>
             </View>
