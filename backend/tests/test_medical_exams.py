@@ -198,6 +198,47 @@ def test_import_image_ocr_success(client, db):
     assert "exam_id" in data
 
 
+def test_import_image_pathology_narrative_persists_conclusion(client, db):
+    """REST 上传路径: 病理报告(0 数值项, 只有诊断全文)入库,
+    overall_assessment 逐字保留, value=null 病理项不进数值异常门, value_text 落库。"""
+    from app.models.medical_exam import MedicalExam, MedicalExamItem
+
+    user, headers = _create_user(db)
+    dx = "胃窦后壁黏膜慢性轻度炎伴糜烂,另见小片炎性坏死渗出物,HP-"
+    mock_ocr = {
+        "report_category": "narrative_report",
+        "report_type": "pathology",
+        "report_date": "2026-05-17",
+        "institution": "测试医院病理科",
+        "items": [
+            {"name": "病理诊断", "value": None, "value_text": dx, "is_abnormal": True},
+        ],
+        "conclusion": dx,
+    }
+
+    with patch(
+        "app.api.medical_exams.recognize_medical_report",
+        new=AsyncMock(return_value=mock_ocr),
+    ):
+        resp = client.post(
+            "/api/v1/medical-exams/import/image",
+            files={"file": ("path.jpg", b"fake-jpeg-bytes", "image/jpeg")},
+            headers=headers,
+        )
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["conclusion"] == dx
+    assert data["abnormal_count"] == 0
+
+    exam = db.query(MedicalExam).filter(MedicalExam.id == data["exam_id"]).one()
+    assert exam.overall_assessment == dx
+    item = db.query(MedicalExamItem).filter(MedicalExamItem.exam_id == exam.id).one()
+    assert item.value is None
+    assert item.value_text == dx
+    assert item.is_abnormal == "normal"
+
+
 def test_import_image_ocr_error_passes_through(client, db):
     _, headers = _create_user(db)
     with patch(

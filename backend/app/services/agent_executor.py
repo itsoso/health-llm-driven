@@ -4621,7 +4621,13 @@ class AgentExecutor:
                     image_type=img.get("type", "jpeg"),
                 )
                 items = result.get("items") if isinstance(result, dict) else None
-                if not items or len(items) < 2:
+                items = items or []
+                conclusion = (result.get("conclusion") or "").strip() if isinstance(result, dict) else ""
+                # 准入门 (只加不减方向): 数值项 ≥2 OR 有诊断结论全文 → 入库。
+                # 两者都无才 skip (挡非报告照片噪声)。病理/影像报告常 0 数值项、
+                # 只有诊断全文, 旧的 len(items)<2 会把它们连同 conclusion 一起丢弃
+                # (exam_id=42 病理诊断全文丢失的根因)。
+                if len(items) < 2 and not conclusion:
                     continue
                 exam_date = None
                 if result.get("report_date"):
@@ -4639,6 +4645,8 @@ class AgentExecutor:
                     hospital_name=result.get("institution"),
                     notes="从聊天图片 OCR 自动导入",
                     source="agent_image_ocr",
+                    overall_assessment=conclusion or None,
+                    conclusions=result.get("conclusions"),
                 )
                 imported.append((exam, result, items))
 
@@ -4650,21 +4658,60 @@ class AgentExecutor:
             except Exception:
                 pass
 
-            total_items = sum(len(items) for _exam, _result, items in imported)
+            def _is_numeric(item: dict) -> bool:
+                """value 是有效数值才算数值项 (排除 value=null 的病理/影像自由文本项)。"""
+                v = item.get("value")
+                if v is None:
+                    return False
+                try:
+                    float(v)
+                    return True
+                except (ValueError, TypeError):
+                    return False
+
+            total_numeric = sum(
+                1
+                for _exam, _result, items in imported
+                for item in items
+                if _is_numeric(item)
+            )
+            # 红线#2: value=null 的病理项绝不进"数值异常门" —— 异常统计只数
+            # 有真实数值且标异常的项, 空值项不计入。
             abnormal_items = [
                 item
                 for _exam, _result, items in imported
                 for item in items
-                if item.get("is_abnormal")
+                if item.get("is_abnormal") and _is_numeric(item)
             ]
             abnormal_text = "；".join(
                 f"{item.get('name') or item.get('item_name') or item.get('name_en')} {item.get('value')} {item.get('unit') or ''}".strip()
                 for item in abnormal_items[:8]
             )
+            # 红线#1: 病理/影像/自由文本诊断只逐字回显, 严禁总结/改写/推断。
+            # 逐字截取诊断原文 (只做长度截断, 不改字), 优先于"N 项化验指标"叙述。
+            narrative_texts = []
+            for _exam, _result, _items in imported:
+                concl = (_result.get("conclusion") or "").strip() if isinstance(_result, dict) else ""
+                if concl:
+                    narrative_texts.append(concl)
             exam_ids = ", ".join(str(exam.id) for exam, _result, _items in imported)
-            note = f"已将图片中的 {total_items} 项化验指标写入系统，体检记录 ID: {exam_ids}。"
+
+            parts = []
+            if total_numeric:
+                parts.append(f"已将图片中的 {total_numeric} 项化验指标写入系统。")
+            if narrative_texts:
+                # 逐字照抄诊断原文 (仅长度截断, 不总结/改写)
+                _MAX_ECHO = 800
+                joined = "\n".join(narrative_texts)
+                echoed = joined if len(joined) <= _MAX_ECHO else (joined[:_MAX_ECHO] + "……(原文过长已截断)")
+                parts.append(f"报告诊断原文(逐字):\n{echoed}")
+            if not parts:
+                # 既无数值项也无诊断原文, 只落了空壳记录 —— 保守只报 ID, 不编造内容。
+                parts.append("已将图片中的报告写入系统。")
+            note = " ".join(parts) if len(parts) == 1 else "\n".join(parts)
+            note += f"\n体检记录 ID: {exam_ids}。"
             if abnormal_text:
-                note += f" 识别到异常/标记项：{abnormal_text}。"
+                note += f" 识别到异常/标记数值项：{abnormal_text}。"
             return note
         except Exception as e:
             logger.warning(f"[Vision] 医疗报告图片自动入库失败: {e}", exc_info=True)

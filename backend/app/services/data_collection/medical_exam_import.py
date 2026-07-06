@@ -32,10 +32,21 @@ class MedicalExamImportService:
         hospital_name: Optional[str] = None,
         notes: Optional[str] = None,
         source: str = "agent_text",
+        overall_assessment: Optional[str] = None,
+        conclusions: Optional[list] = None,
     ) -> MedicalExam:
-        """Persist already-structured lab items into the canonical exam tables."""
-        if not items_data:
-            raise ValueError("没有可导入的化验指标")
+        """Persist already-structured lab items into the canonical exam tables.
+
+        ``overall_assessment`` carries the verbatim narrative conclusion (病理/影像
+        诊断全文) and ``conclusions`` the structured结论列表. Narrative reports
+        (病理/影像) often have zero numeric items but a load-bearing diagnosis —
+        so we accept the import when EITHER numeric items OR an overall_assessment
+        is present, and only reject when both are empty.
+        """
+        has_items = bool(items_data)
+        has_narrative = bool(overall_assessment and str(overall_assessment).strip())
+        if not has_items and not has_narrative:
+            raise ValueError("既无化验指标也无诊断结论,无可导入内容")
 
         db_exam = MedicalExam(
             user_id=user_id,
@@ -43,6 +54,8 @@ class MedicalExamImportService:
             exam_type=exam_type,
             hospital_name=hospital_name,
             notes=notes,
+            overall_assessment=overall_assessment,
+            conclusions=conclusions,
         )
         db.add(db_exam)
         db.flush()
@@ -59,6 +72,10 @@ class MedicalExamImportService:
                 item_abnormal = "abnormal" if is_abnormal_raw else "normal"
             else:
                 item_abnormal = str(is_abnormal_raw or "normal")
+            # 红线#2: value=null 的病理/影像自由文本项绝不进数值异常门。
+            # 无数值时把异常标记压回 normal, 只保留 value_text 里的逐字诊断原文。
+            if value is None:
+                item_abnormal = "normal"
 
             item_payload = {
                 "category": item_data.get("category"),

@@ -11,34 +11,49 @@ from app.services.llm import get_vision_provider
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """你是一个医学报告识别助手。用户会上传体检报告的照片。
-请仔细识别报告中的所有检查指标，提取为结构化JSON。
+SYSTEM_PROMPT = """你是一个医学报告识别助手。用户会上传医学报告的照片。
+请仔细识别报告内容，提取为结构化JSON。报告分两大类：
+1. 数值化验单(血常规/生化/血脂等)：每项有数值+单位+参考范围。
+2. 叙述性报告(病理/影像/超声/内镜/心电等)：核心是文字诊断结论，往往没有数值。
 
 返回格式：
 {
-  "report_type": "血常规|生化|肝功能|肾功能|血脂|甲状腺|尿常规|其他",
+  "report_category": "numeric_lab | narrative_report",
+  "report_type": "血常规|生化|肝功能|肾功能|血脂|甲状腺|尿常规|pathology|imaging|ultrasound|endoscopy|ecg|其他",
   "report_date": "2026-01-15 或 null",
   "institution": "医院名称 或 null",
   "items": [
     {
-      "name": "指标中文名",
-      "name_en": "英文缩写（如ALT、LDL-C、HbA1c）",
-      "value": 数值,
-      "unit": "单位",
+      "name": "指标中文名 或 诊断条目名(如'病理诊断')",
+      "name_en": "英文缩写（如ALT、LDL-C、HbA1c）或 null",
+      "value": 数值 或 null,
+      "value_text": "非数值结果时逐字照抄的原文，数值项则为 null",
+      "unit": "单位 或 null",
       "reference_low": 参考下限或null,
       "reference_high": 参考上限或null,
       "is_abnormal": true/false,
       "abnormal_direction": "high|low|null"
     }
   ],
-  "conclusion": "报告结论文字（如有）"
+  "conclusion": "报告结论/诊断全文（逐字照抄，如有）"
 }
 
-注意：
-- 数值尽量转为数字，而非字符串
+数值化验单(numeric_lab)注意：
+- 数值尽量转为数字，而非字符串；此时 value_text 置 null
 - 参考范围如 "3.5-5.5" 拆为 reference_low=3.5, reference_high=5.5
 - 箭头↑↓或H/L标记表示异常
-- 如果照片模糊或不是体检报告，返回 {"error": "无法识别"}
+
+叙述性报告(narrative_report，含病理/影像/超声/内镜)注意：
+- 完整诊断文字必须放进顶层 "conclusion"，且**逐字照抄**报告原文
+- 每一条诊断/结论落一个 item：{"name": 条目名(如"病理诊断"/"影像所见"), "value": null, "value_text": 该条诊断的逐字原文}
+- 这类诊断项 value 必须为 null，绝不能把文字硬塞进 value 字段
+
+**严格约束（违反=错误输出）：**
+- value_text 与 conclusion 必须是报告原文的**逐字子串**，禁止总结、改写、推断、补全、删减
+- 不得新造病名、严重程度、治疗建议；报告没写的绝不添加；报告写了的绝不省略(如"HP-"、"建议短期治疗后复查"必须原样保留)
+- 只输出你在图片中确实看到的文字
+
+- 如果照片模糊或不是医学报告，返回 {"error": "无法识别"}
 """
 
 
