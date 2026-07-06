@@ -574,6 +574,13 @@ function AIAssistantInner() {
     <main className="ai-assistant-theme fixed inset-0 z-40 flex flex-col overflow-hidden text-[#29261F]">
       <header className="relative z-[70] shrink-0 overflow-visible border-b border-[#E5E1D5] bg-[#F7F5EF]/95 px-4 py-2.5 backdrop-blur sm:px-6">
         <div className="mx-auto flex max-w-3xl items-center gap-3">
+          {/* 千问式:品牌位在最左(founder 2026-07-06 定稿),开关在其右 */}
+          <Link href="/" title="回到首页" className="flex shrink-0 items-center gap-2 transition-opacity hover:opacity-80">
+            <Image src="/logo.png" alt="小巴" width={32} height={32} className="h-8 w-8" />
+            <span className="rd-serif hidden text-[17px] font-semibold tracking-[0.01em] text-[#29261F] sm:inline">
+              小巴
+            </span>
+          </Link>
           <button
             onClick={() => setHistoryOpen(open => !open)}
             className="flex h-9 w-9 items-center justify-center rounded-xl text-[#948F80] transition-colors hover:bg-[#EFEADD] hover:text-[#29261F]"
@@ -581,12 +588,6 @@ function AIAssistantInner() {
           >
             <PanelLeft className="h-[1.05rem] w-[1.05rem]" />
           </button>
-          {/* 千问式:左上角纯文字字标(图标在右上角 brand 位,豆包/阿福同款,免得左侧三件套挤成一坨) */}
-          <Link href="/" title="回到首页" className="hidden shrink-0 transition-opacity hover:opacity-80 sm:inline">
-            <span className="rd-serif text-[17px] font-semibold tracking-[0.01em] text-[#29261F]">
-              小巴
-            </span>
-          </Link>
           <div className="min-w-0">
             <LlmModelPicker
               currentLabel={llmPref.label || '系统默认'}
@@ -618,11 +619,6 @@ function AIAssistantInner() {
               <span className="hidden sm:inline">{shareSelectionMode ? '取消选择' : '选择分享'}</span>
             </button>
           )}
-          {/* 右上角品牌图标(千问/豆包/阿福 的 avatar 位)— mac 同款小巴图标,点击回首页;
-              此页 fixed 全屏盖住全站导航,这是主要回家路 */}
-          <Link href="/" title="回到首页" className="ml-0.5 shrink-0 transition-opacity hover:opacity-80">
-            <Image src="/logo.png" alt="小巴" width={36} height={36} className="h-9 w-9" />
-          </Link>
         </div>
       </header>
 
