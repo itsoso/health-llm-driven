@@ -129,6 +129,7 @@ export default function ChatScreen() {
     loadLatestConversation,
     loadConversation,
     setMessages,
+    setPerMessageModelId,
   } = chat;
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
@@ -239,11 +240,14 @@ export default function ChatScreen() {
       setLlmModelId(pref.model_id);
       setLlmOptions(pref.options || []);
       setLlmError(null);
+      // 选择器显示什么模型, 消息就用什么模型: 恢复的档案选择也按显式 model_id
+      // 逐条消息下发 (显式选择不被快路由覆盖); null=系统默认(智能路由)。
+      setPerMessageModelId(pref.model_id);
     }).catch(() => {
       if (!cancelled) setLlmError('模型列表加载失败');
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [setPerMessageModelId]);
 
   const handleSelectModel = useCallback(async (modelId: string | null) => {
     if (llmSaving || llmModelId === modelId) return;
@@ -253,12 +257,13 @@ export default function ChatScreen() {
       const pref = await updateLlmPreference(modelId);
       setLlmModelId(pref.model_id);
       setLlmOptions(pref.options || []);
+      setPerMessageModelId(pref.model_id);
     } catch (e: any) {
       setLlmError(e?.response?.data?.detail || e?.message || '模型切换失败');
     } finally {
       setLlmSaving(null);
     }
-  }, [llmModelId, llmSaving]);
+  }, [llmModelId, llmSaving, setPerMessageModelId]);
 
   useEffect(() => {
     if (params.prompt || params.badge || params.context) {

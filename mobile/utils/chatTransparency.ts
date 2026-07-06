@@ -47,6 +47,8 @@ export interface AgentTransparencyInput {
   sourcesUsed?: string[] | null;
   toolsUsed?: string[] | null;
   perf?: AgentPerfProfileLike | null;
+  // 2026-07-06: 模型路由透明化 — 后端 done.fallback_reasons / meta.fallback_reasons
+  fallbackReasons?: string[] | null;
 }
 
 export interface AgentTransparencyBand {
@@ -72,6 +74,8 @@ export interface AgentTransparencyProfile {
   rounds: AgentTransparencyRow[];
   sources: string[];
   tools: string[];
+  /** 模型路由原因(中文人话),如「简单查询·自动用快模型」。空数组=无自动切换。 */
+  routing: string[];
 }
 
 const STAGE_LABELS: Array<[string, string]> = [
@@ -83,6 +87,22 @@ const STAGE_LABELS: Array<[string, string]> = [
   ['history_ms', '历史回填'],
   ['vision_ms', '图像理解'],
 ];
+
+// 与 Mac ChatTranscriptHTML.fallbackReasonLabel、backend _record_model_fallback_reason
+// 的 reason 枚举对齐;未知 reason 原样显示(fail-open 到可见,不吞)。
+const ROUTING_REASON_LABELS: Record<string, string> = {
+  fast_route_simple_turn: '简单查询·自动用快模型',
+  selected_model_tool_unreliable: '工具调用临时切到可靠模型',
+  selected_model_tool_stream_failed: '工具调用临时切到可靠模型',
+  selected_model_tool_chat_failed: '工具调用临时切到可靠模型',
+  preferred_model_tool_unreliable: '偏好模型工具调用临时切到可靠模型',
+};
+
+export function routingReasonLabel(reason: string): string {
+  const key = String(reason || '').trim();
+  if (!key) return '';
+  return ROUTING_REASON_LABELS[key] || key;
+}
 
 function positive(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
@@ -241,13 +261,15 @@ export function buildAgentTransparency(input: AgentTransparencyInput): AgentTran
 
   const sources = uniqueClean(input.sourcesUsed);
   const tools = uniqueClean(input.toolsUsed);
+  // 去重在映射之后:不同 reason 可能映射同一中文标签(如 stream/chat failed)。
+  const routing = uniqueClean((input.fallbackReasons || []).map(routingReasonLabel));
   const tokenLine = buildTokenLine(input.llmUsage);
   const errorLine = buildErrorLine(input.llmUsage);
   const traceLine = buildTraceLine(input.llmUsage);
   const bands = buildBands(input.perf, total);
   const stages = buildStages(input.perf);
   const rounds = buildRounds(input);
-  const visible = headlineParts.length > 0 || !!tokenLine || !!errorLine || !!traceLine || sources.length > 0 || tools.length > 0;
+  const visible = headlineParts.length > 0 || !!tokenLine || !!errorLine || !!traceLine || sources.length > 0 || tools.length > 0 || routing.length > 0;
 
   return {
     visible,
@@ -260,5 +282,6 @@ export function buildAgentTransparency(input: AgentTransparencyInput): AgentTran
     rounds,
     sources,
     tools,
+    routing,
   };
 }

@@ -1,4 +1,4 @@
-import { buildAgentTransparency, formatDurationMs, formatTokenCount } from '../chatTransparency';
+import { buildAgentTransparency, formatDurationMs, formatTokenCount, routingReasonLabel } from '../chatTransparency';
 
 describe('chatTransparency', () => {
   it('builds a Mac-like run profile from perf, tokens, sources, and tools', () => {
@@ -89,5 +89,36 @@ describe('chatTransparency', () => {
     expect(formatDurationMs(44)).toBe('44ms');
     expect(formatDurationMs(4100)).toBe('4.1s');
     expect(formatTokenCount(2460)).toBe('2.5k');
+  });
+});
+
+describe('chatTransparency routing (模型路由透明化)', () => {
+  it('fast_route_simple_turn 映射成中文并进入 profile.routing', () => {
+    const profile = buildAgentTransparency({
+      model: 'deepseek-v4-flash',
+      elapsedMs: 2000,
+      fallbackReasons: ['fast_route_simple_turn'],
+    });
+    expect(profile.routing).toEqual(['简单查询·自动用快模型']);
+    expect(profile.visible).toBe(true);
+  });
+
+  it('工具切换类 reason 去重后只出一条标签', () => {
+    const profile = buildAgentTransparency({
+      elapsedMs: 1000,
+      fallbackReasons: ['selected_model_tool_unreliable', 'selected_model_tool_stream_failed'],
+    });
+    expect(profile.routing).toEqual(['工具调用临时切到可靠模型']);
+  });
+
+  it('未知 reason 原样透出(fail-open 到可见, 不吞)', () => {
+    expect(routingReasonLabel('some_future_reason')).toBe('some_future_reason');
+    const profile = buildAgentTransparency({ elapsedMs: 1, fallbackReasons: ['some_future_reason'] });
+    expect(profile.routing).toEqual(['some_future_reason']);
+  });
+
+  it('无 fallbackReasons 时 routing 为空数组', () => {
+    const profile = buildAgentTransparency({ elapsedMs: 1000, model: 'qwen3.7-max' });
+    expect(profile.routing).toEqual([]);
   });
 });
