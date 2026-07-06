@@ -256,3 +256,104 @@ final class RevaUIBlockTests: XCTestCase {
         return String(rest[..<end])
     }
 }
+
+// MARK: - menu_share 围栏剥离(2026-07-06:prose 泄漏原始 JSON 的根治)
+
+extension RevaUIBlockTests {
+
+    private var menuShareJSON: String {
+        """
+        {"title":"今晚养胃晚餐","items":[{"name":"小米南瓜粥","qty":"1碗","kcal":180},\
+        {"name":"清蒸鲈鱼","qty":"120g","protein":26}],"totals":{"kcal":430,"protein":30},\
+        "shopping_list":["小米","南瓜","鲈鱼"]}
+        """
+    }
+
+    /// fenced ```menu_share 被 split 整段剥离:不产 revaUI 段,markdown 段里无原始 JSON。
+    func testSplitStripsFencedMenuShareBlock() {
+        let md = "晚餐建议如下:\n\n```menu_share\n\(menuShareJSON)\n```\n\n吃完记得记录。"
+        let segments = RevaUIBlock.split(from: md)
+        XCTAssertFalse(segments.contains { if case .revaUI = $0 { return true } else { return false } },
+                       "menu_share 不应产出 revaUI 段")
+        let joined = segments.compactMap { seg -> String? in
+            if case .markdown(let t) = seg { return t } else { return nil }
+        }.joined(separator: "\n")
+        XCTAssertFalse(joined.contains("menu_share"), "原始 JSON 的围栏标记不应残留")
+        XCTAssertFalse(joined.contains("shopping_list"), "原始 JSON 字段不应残留")
+        XCTAssertTrue(joined.contains("晚餐建议如下"))
+        XCTAssertTrue(joined.contains("吃完记得记录"))
+    }
+
+    /// renderMessageBody:含 menu_share fence 的消息渲染出的 HTML 里绝无原始 JSON。
+    func testRenderMessageBodyDropsFencedMenuShareJSON() {
+        let md = "🍽 今晚这样吃:\n\n```menu_share\n\(menuShareJSON)\n```"
+        let html = ChatTranscriptHTML.renderMessageBody(markdown: md)
+        XCTAssertFalse(html.contains("menu_share"))
+        XCTAssertFalse(html.contains("shopping_list"))
+        XCTAssertFalse(html.contains("\"title\""))
+        XCTAssertTrue(html.contains("今晚这样吃"))
+    }
+
+    /// 畸形形态①:围栏前有 emoji 前缀(「🍽 ```menu_share」)仍被剥。
+    func testStripsMenuShareFenceWithEmojiPrefix() {
+        let md = "看这里:\n\n🍽 ```menu_share\n\(menuShareJSON)\n```"
+        let html = ChatTranscriptHTML.renderMessageBody(markdown: md)
+        XCTAssertFalse(html.contains("menu_share"))
+        XCTAssertFalse(html.contains("shopping_list"))
+        XCTAssertTrue(html.contains("看这里"))
+    }
+
+    /// 畸形形态②:未围栏的裸文本 menu_share {…} 残片被防御性剥离。
+    func testStripsInlineBareMenuShareRemnant() {
+        let text = "晚餐建议 🍽 menu_share \(menuShareJSON) 就这些。"
+        let cleaned = RevaUIBlock.stripInlineMenuShareRemnants(text)
+        XCTAssertFalse(cleaned.contains("menu_share"))
+        XCTAssertFalse(cleaned.contains("shopping_list"))
+        XCTAssertTrue(cleaned.contains("晚餐建议"))
+        XCTAssertTrue(cleaned.contains("就这些"))
+    }
+
+    /// 畸形形态③:inline code span `menu_share {…}` 也被剥(含闭合反引号)。
+    func testStripsInlineCodeSpanMenuShareRemnant() {
+        let text = "方案:`menu_share \(menuShareJSON)` 完。"
+        let cleaned = RevaUIBlock.stripInlineMenuShareRemnants(text)
+        XCTAssertFalse(cleaned.contains("menu_share"))
+        XCTAssertFalse(cleaned.contains("shopping_list"))
+        XCTAssertFalse(cleaned.contains("`"), "残留的反引号应一并清掉")
+        XCTAssertTrue(cleaned.contains("方案"))
+        XCTAssertTrue(cleaned.contains("完"))
+    }
+
+    /// 流式未闭合的 menu_share {… (无配平 })保守不删,避免误伤半截内容。
+    func testStripsNothingWhenMenuShareBraceUnbalanced() {
+        let text = "menu_share {\"title\":\"半截"
+        let cleaned = RevaUIBlock.stripInlineMenuShareRemnants(text)
+        XCTAssertEqual(cleaned, text, "未配平的 { 不应触发删除")
+    }
+
+    /// reva-ui 与 menu_share 同时出现:reva-ui 保留占位,menu_share 被剥。
+    func testRevaUIPreservedWhileMenuShareStripped() {
+        let md = "趋势:\n\n```reva-ui\n\(sampleJSON)\n```\n\n菜单:\n\n```menu_share\n\(menuShareJSON)\n```"
+        let html = ChatTranscriptHTML.renderMessageBody(markdown: md)
+        XCTAssertTrue(html.contains("class=\"reva-ui-chart\""), "reva-ui 图表占位应保留")
+        XCTAssertFalse(html.contains("menu_share"), "menu_share 原始 JSON 应被剥")
+        XCTAssertFalse(html.contains("shopping_list"))
+    }
+
+    /// displayText 层(copy/展示文本)同样剥掉 menu_share,不留原始 JSON。
+    func testDisplayTextStripsFencedMenuShare() {
+        let md = "晚餐:\n\n```menu_share\n\(menuShareJSON)\n```\n\n祝好。"
+        let displayed = AgentStructuredCommandParser.displayText(for: md)
+        XCTAssertFalse(displayed.contains("menu_share"))
+        XCTAssertFalse(displayed.contains("shopping_list"))
+        XCTAssertTrue(displayed.contains("晚餐"))
+        XCTAssertTrue(displayed.contains("祝好"))
+    }
+
+    /// 普通含 ```json 的叙述句里若字面提到 "menu_share" 一词但无 { 跟随,不被误删。
+    func testDoesNotStripBareMenuShareWordWithoutBrace() {
+        let text = "我们把这个卡片类型叫 menu_share,它由后端渲染。"
+        let cleaned = RevaUIBlock.stripInlineMenuShareRemnants(text)
+        XCTAssertEqual(cleaned, text, "无 { 跟随的 menu_share 词不应触发删除")
+    }
+}

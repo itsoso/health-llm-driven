@@ -619,3 +619,119 @@ extension ChatTranscriptHTMLTests {
         XCTAssertTrue(html.contains("去用药页记录"), "已映射路由的按钮应保留")
     }
 }
+
+// MARK: - menu_share 结构化菜单卡(2026-07-06)
+
+extension ChatTranscriptHTMLTests {
+
+    /// 完整 menu_share 结构化卡:header=title(绝不显示 "menu_share")、reason 副标、
+    /// 菜品表、总计、买菜清单;绝不是 generic key-value dump。
+    func testDynamicCardRendersMenuShareCardNotGenericDump() throws {
+        let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
+            type: "menu_share",
+            data: .object([
+                "title": .string("今晚养胃晚餐"),
+                "reason": .string("你有胃溃疡记录，选清淡易消化、蛋白到位的一餐。"),
+                "items": .array([
+                    .object([
+                        "name": .string("小米南瓜粥"),
+                        "qty": .string("1碗"),
+                        "kcal": .int(180),
+                        "protein": .double(4.5),
+                        "carbs": .int(38)
+                    ]),
+                    .object([
+                        "name": .string("清蒸鲈鱼"),
+                        "qty": .string("120g"),
+                        "kcal": .int(150),
+                        "protein": .int(26)
+                    ]),
+                    .object([
+                        "name": .string("水煮西兰花"),
+                        "qty": .string("100g")
+                    ])
+                ]),
+                "totals": .object([
+                    "kcal": .int(430),
+                    "protein": .double(33.5),
+                    "carbs": .int(46),
+                    "fat": .int(9)
+                ]),
+                "shopping_list": .array([
+                    .string("小米"),
+                    .string("南瓜"),
+                    .string("鲈鱼"),
+                    .string("西兰花")
+                ])
+            ])
+        ))
+
+        // header = title,不是类型名 "menu_share"
+        XCTAssertTrue(html.contains("menu-share-card"))
+        XCTAssertTrue(html.contains("今晚养胃晚餐"))
+        XCTAssertFalse(html.contains("dynamic-card-title\">menu_share"),
+                       "标题绝不应显示原始类型名 menu_share")
+        XCTAssertFalse(html.contains("generic-card"), "不应回退到 generic key-value dump")
+        // 不应出现 generic dump 的字段行(items: 3 项 等)
+        XCTAssertFalse(html.contains("dynamic-card-summary-row"))
+
+        // reason 副标
+        XCTAssertTrue(html.contains("你有胃溃疡记录"))
+        // 菜品与营养
+        XCTAssertTrue(html.contains("小米南瓜粥"))
+        XCTAssertTrue(html.contains("清蒸鲈鱼"))
+        XCTAssertTrue(html.contains("水煮西兰花"))
+        XCTAssertTrue(html.contains("180kcal"))
+        XCTAssertTrue(html.contains("蛋白4.5g"))
+        XCTAssertTrue(html.contains("蛋白26g"))
+        // 总计
+        XCTAssertTrue(html.contains("menu-share-totals"))
+        XCTAssertTrue(html.contains("430kcal"))
+        XCTAssertTrue(html.contains("33.5g"))
+        // 买菜清单
+        XCTAssertTrue(html.contains("买菜清单"))
+        XCTAssertTrue(html.contains("menu-share-chip"))
+        XCTAssertTrue(html.contains("鲈鱼"))
+        // 分享 affordance(纯展示,无 action)
+        XCTAssertTrue(html.contains("可分享给家人"))
+    }
+
+    /// 缺失所有可选字段(仅 items)也稳:不崩、不显类型名、无空表头列。
+    func testDynamicCardMenuShareToleratesMissingOptionalFields() throws {
+        let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
+            type: "menu_share",
+            data: .object([
+                "items": .array([
+                    .object(["name": .string("白粥")])
+                ])
+            ])
+        ))
+        XCTAssertTrue(html.contains("menu-share-card"))
+        XCTAssertTrue(html.contains("今日菜单")) // title 缺省
+        XCTAssertTrue(html.contains("白粥"))
+        XCTAssertFalse(html.contains("menu-share-totals"))
+        XCTAssertFalse(html.contains("买菜清单"))
+        // 无 qty / 营养 → 不画对应表头
+        XCTAssertFalse(html.contains("<th>分量</th>"))
+        XCTAssertFalse(html.contains("<th>营养</th>"))
+    }
+
+    /// XSS:menu_share 里的注入内容全部转义。
+    func testDynamicCardMenuShareEscapesInjection() throws {
+        let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
+            type: "menu_share",
+            data: .object([
+                "title": .string("晚餐<script>alert(1)</script>"),
+                "items": .array([
+                    .object(["name": .string("<img src=x onerror=alert(2)>")])
+                ]),
+                "shopping_list": .array([.string("<b>盐</b>")])
+            ])
+        ))
+        XCTAssertFalse(html.contains("<script"))
+        XCTAssertFalse(html.contains("<img"))
+        XCTAssertTrue(html.contains("&lt;script&gt;"))
+        XCTAssertTrue(html.contains("&lt;img"))
+        XCTAssertTrue(html.contains("&lt;b&gt;盐&lt;/b&gt;"))
+    }
+}

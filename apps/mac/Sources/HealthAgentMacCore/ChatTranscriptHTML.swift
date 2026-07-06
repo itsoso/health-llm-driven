@@ -82,15 +82,31 @@ public enum ChatTranscriptHTML {
         let src = markdown.isEmpty ? "" : markdown
         let segments = RevaUIBlock.split(from: src)
         // 至少有一个 reva-ui 块 → 分段渲染:普通段各自走 blocks,reva-ui 段换占位 div。
-        // 无块时退回原始单段路径(零行为变化)。
-        if segments.contains(where: { if case .revaUI = $0 { return true } else { return false } }) {
+        // 无块时退回原始单段路径(零行为变化,除防御性剥离 menu_share 残片外)。
+        //
+        // menu_share:fenced ```menu_share 块已被 `RevaUIBlock.split` 整段剥离(不产段);
+        // 这里再对每个普通 markdown 段做 `stripInlineMenuShareRemnants` 收尾,兜住未被围栏
+        // 包裹的 inline / 裸文本残片(founder 实测的畸形形态)。菜单的规范表示是 done 事件
+        // 里的结构化 dynamic card,prose 里绝不留原始 JSON。
+        let hasRevaUI = segments.contains(where: { if case .revaUI = $0 { return true } else { return false } })
+        // fenced ```menu_share 被 split 剥离后,segments 里只剩普通 markdown 段;此时若还走
+        // 原始 src 的单段路径,被剥离的 JSON 会重新出现。凡是「有 reva-ui 占位」或「split
+        // 把 markdown 段拼回来后与 src 不一致(= 剥离掉了 menu_share fence)」都走分段路径。
+        let markdownJoined = segments.compactMap { segment -> String? in
+            if case .markdown(let text) = segment { return text } else { return nil }
+        }.joined(separator: "\n")
+        let normalizedSrc = src.replacingOccurrences(of: "\r\n", with: "\n")
+        let strippedByFence = !hasRevaUI && markdownJoined != normalizedSrc
+
+        if hasRevaUI || strippedByFence {
             var html = ""
             for segment in segments {
                 switch segment {
                 case .markdown(let text):
-                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let cleaned = RevaUIBlock.stripInlineMenuShareRemnants(text)
+                    let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmed.isEmpty {
-                        html += renderMarkdownBlocksHTML(text)
+                        html += renderMarkdownBlocksHTML(cleaned)
                     }
                 case .revaUI(let rawJSON):
                     html += revaUIPlaceholderHTML(rawJSON: rawJSON)
@@ -98,7 +114,7 @@ public enum ChatTranscriptHTML {
             }
             return html
         }
-        return renderMarkdownBlocksHTML(src)
+        return renderMarkdownBlocksHTML(RevaUIBlock.stripInlineMenuShareRemnants(src))
     }
 
     /// 给一个已抽出的 reva-ui 原始 JSON 字符串生成占位 div。原始 JSON 经 base64 进 data 属性,
@@ -568,6 +584,8 @@ public enum ChatTranscriptHTML {
             html = safetyCardHTML(data)
         case "record_quality":
             html = recordQualityCardHTML(data)
+        case "menu_share":
+            html = menuShareCardHTML(data)
         default:
             html = genericDynamicCardHTML(type: rendererType, data: data)
         }
@@ -595,7 +613,8 @@ public enum ChatTranscriptHTML {
         "medical_exam_import_result",
         "system_knowledge_evidence",
         "safety",
-        "record_quality"
+        "record_quality",
+        "menu_share"
     ]
 
     private static func medicalExamImportCardHTML(_ data: AgentDynamicCardValue) -> String? {
@@ -784,6 +803,174 @@ public enum ChatTranscriptHTML {
         let remaining = cardNumber(value?["remaining_protein_g"]) ?? max(0, proteinTarget - proteinTotal)
         let valueText = "\(Int(proteinTotal.rounded()))/\(Int(proteinTarget.rounded()))g · 还差\(Int(remaining.rounded()))g"
         return metricHTML(label: "今日蛋白", value: valueText, risk: remaining > 0)
+    }
+
+    // MARK: - menu_share card (designed GenUI 菜单卡)
+
+    /// 渲染 `menu_share` 结构化菜单卡(暖色 Claude Design 调性)。
+    /// schema: { title, items:[{name,qty?,kcal?,protein?,carbs?,fat?,fiber?}], reason?,
+    ///           totals?:{kcal?,protein?,carbs?,fat?,fiber?}, shopping_list?:[str] }。
+    /// 所有可选字段缺失都安全降级(不产出对应块);header 恒为 title(绝不显示 "menu_share"),
+    /// body 是真菜单(菜品清单 + 营养 + 总计 + 买菜清单),不是 key-value dump。
+    /// 布局确定性:菜品用固定列的 `<table>`(浏览器排版),无 SwiftUI 弹性协商,零冻结风险。
+    static func menuShareCardHTML(_ data: AgentDynamicCardValue) -> String? {
+        guard case .object = data else {
+            return nil
+        }
+        let title = cardText(data["title"]) ?? "今日菜单"
+        let reason = cardText(data["reason"])
+
+        var html = """
+        <div class="dynamic-card menu-share-card">
+          <div class="dynamic-card-top">
+            <div>
+              <div class="dynamic-card-eyebrow">今日菜单</div>
+              <div class="dynamic-card-title">\(escape(title))</div>
+            </div>
+            <span class="dynamic-card-badge neutral">可分享给家人</span>
+          </div>
+        """
+        if let reason {
+            html += "<div class=\"menu-share-reason\">\(escape(reason))</div>"
+        }
+
+        let itemsTable = menuShareItemsTableHTML(data["items"])
+        if !itemsTable.isEmpty {
+            html += itemsTable
+        }
+
+        let totals = menuShareTotalsHTML(data["totals"])
+        if !totals.isEmpty {
+            html += totals
+        }
+
+        let shopping = menuShareShoppingListHTML(data["shopping_list"])
+        if !shopping.isEmpty {
+            html += shopping
+        }
+
+        html += "</div>"
+        return html
+    }
+
+    /// 菜品清单渲染成一张固定列的表:菜名 · 分量 · 关键营养(kcal / 蛋白 …)。
+    /// 每行的营养列只在有值时拼(全缺则该列显示 "—")。items 为空/非数组 → 返回 ""。
+    private static func menuShareItemsTableHTML(_ value: AgentDynamicCardValue?) -> String {
+        guard case .array(let items) = value, !items.isEmpty else {
+            return ""
+        }
+        // 是否有任一菜品带营养/分量列 —— 决定是否画对应表头(不给空列)。
+        var anyQty = false
+        var anyNutrient = false
+        for item in items {
+            if cardText(item["qty"]) != nil {
+                anyQty = true
+            }
+            if menuShareNutrientSummary(item) != nil {
+                anyNutrient = true
+            }
+        }
+
+        var header = "<tr><th>菜品</th>"
+        if anyQty {
+            header += "<th>分量</th>"
+        }
+        if anyNutrient {
+            header += "<th>营养</th>"
+        }
+        header += "</tr>"
+
+        var rows = ""
+        for item in items.prefix(12) {
+            let name = cardText(item["name"]) ?? "—"
+            var row = "<tr><td class=\"menu-share-dish\">\(escape(name))</td>"
+            if anyQty {
+                let qty = cardText(item["qty"]) ?? ""
+                row += "<td class=\"menu-share-qty\">\(escape(qty))</td>"
+            }
+            if anyNutrient {
+                let nutrient = menuShareNutrientSummary(item) ?? "—"
+                row += "<td class=\"menu-share-nutrient\">\(escape(nutrient))</td>"
+            }
+            row += "</tr>"
+            rows += row
+        }
+
+        return "<table class=\"menu-share-items\">\(header)\(rows)</table>"
+    }
+
+    /// 单个菜品的营养摘要:kcal · 蛋白Ng · 碳Ng · 脂Ng · 纤Ng(只拼有值的)。全缺 → nil。
+    private static func menuShareNutrientSummary(_ item: AgentDynamicCardValue) -> String? {
+        var parts: [String] = []
+        if let kcal = cardNumber(item["kcal"]) {
+            parts.append("\(menuShareNumberLabel(kcal))kcal")
+        }
+        if let protein = cardNumber(item["protein"]) {
+            parts.append("蛋白\(menuShareNumberLabel(protein))g")
+        }
+        if let carbs = cardNumber(item["carbs"]) {
+            parts.append("碳\(menuShareNumberLabel(carbs))g")
+        }
+        if let fat = cardNumber(item["fat"]) {
+            parts.append("脂\(menuShareNumberLabel(fat))g")
+        }
+        if let fiber = cardNumber(item["fiber"]) {
+            parts.append("纤\(menuShareNumberLabel(fiber))g")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// totals 摘要行(总计 kcal / 蛋白 / 碳 / 脂 / 纤,只显示有值的)。缺 → ""。
+    private static func menuShareTotalsHTML(_ value: AgentDynamicCardValue?) -> String {
+        guard let value, case .object = value else {
+            return ""
+        }
+        var chips: [(String, String)] = []
+        if let kcal = cardNumber(value["kcal"]) {
+            chips.append(("总热量", "\(menuShareNumberLabel(kcal))kcal"))
+        }
+        if let protein = cardNumber(value["protein"]) {
+            chips.append(("蛋白", "\(menuShareNumberLabel(protein))g"))
+        }
+        if let carbs = cardNumber(value["carbs"]) {
+            chips.append(("碳水", "\(menuShareNumberLabel(carbs))g"))
+        }
+        if let fat = cardNumber(value["fat"]) {
+            chips.append(("脂肪", "\(menuShareNumberLabel(fat))g"))
+        }
+        if let fiber = cardNumber(value["fiber"]) {
+            chips.append(("纤维", "\(menuShareNumberLabel(fiber))g"))
+        }
+        guard !chips.isEmpty else {
+            return ""
+        }
+        let cells = chips.map { label, value in
+            "<div class=\"menu-share-total\"><span class=\"menu-share-total-label\">\(escape(label))</span><span class=\"menu-share-total-value\">\(escape(value))</span></div>"
+        }.joined()
+        return "<div class=\"menu-share-totals\">\(cells)</div>"
+    }
+
+    /// 买菜清单(chips)。空/非数组 → ""。
+    private static func menuShareShoppingListHTML(_ value: AgentDynamicCardValue?) -> String {
+        let items = cardStringArray(value).prefix(24)
+        guard !items.isEmpty else {
+            return ""
+        }
+        let chips = items.map { "<span class=\"menu-share-chip\">\(escape($0))</span>" }.joined()
+        return """
+        <div class="menu-share-shopping">
+          <div class="menu-share-shopping-label">买菜清单</div>
+          <div class="menu-share-chips">\(chips)</div>
+        </div>
+        """
+    }
+
+    /// 营养数字紧凑标签:整数去掉小数;非整数保留一位小数。
+    private static func menuShareNumberLabel(_ value: Double) -> String {
+        if value.rounded() == value {
+            return String(Int(value))
+        }
+        return String(format: "%.1f", value)
     }
 
     private static func genericDynamicCardHTML(type: String, data: AgentDynamicCardValue) -> String? {

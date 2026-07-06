@@ -15,8 +15,14 @@ public enum RevaUIBlock: Equatable, Sendable {
     case revaUI(String)
 
     /// 把原始 markdown 切成「普通 markdown 段」与「reva-ui JSON 段」的有序序列。
-    /// 只识别 info string 恰为 `reva-ui`(去空白后)的围栏;其它语言的代码围栏(```json 等)
-    /// 不拦截,留给普通 markdown 路径(当前解析器会按文本展示,行为不变)。
+    ///
+    /// 两类受控围栏在 markdown 解析**之前**处理:
+    ///  - ```reva-ui  → 抽成 `.revaUI(rawJSON)` 段(WebView JS shell 自绘图表)。
+    ///  - ```menu_share → **整段剥离**(不产出任何段)。菜单卡的规范表示是后端 `done`
+    ///    事件里的结构化 dynamic card,prose 里的原始 JSON 只会重复且泄漏;因此这里只
+    ///    负责把它从文本里删干净(mirror reva-ui 的 pre-parse 抽取,只是落点是丢弃)。
+    ///
+    /// 其它语言的代码围栏(```json 等)不拦截,留给普通 markdown 路径(行为不变)。
     public static func split(from markdown: String) -> [RevaUIBlock] {
         let normalized = markdown.replacingOccurrences(of: "\r\n", with: "\n")
         let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
@@ -33,7 +39,7 @@ public enum RevaUIBlock: Equatable, Sendable {
 
         while i < lines.count {
             let line = lines[i]
-            if isRevaUIFenceOpen(line) {
+            if let info = fenceOpenInfo(line), info == "reva-ui" || info == "menu_share" {
                 // 向后找闭合围栏(单独一行的 ``` 或带尾随空白)。
                 var j = i + 1
                 var found = false
@@ -48,7 +54,10 @@ public enum RevaUIBlock: Equatable, Sendable {
                 }
                 if found {
                     flushMarkdown()
-                    segments.append(.revaUI(jsonLines.joined(separator: "\n")))
+                    if info == "reva-ui" {
+                        segments.append(.revaUI(jsonLines.joined(separator: "\n")))
+                    }
+                    // menu_share: 闭合围栏找到即整段剥离(不产段),原始 JSON 不进 prose。
                     i = j + 1
                     continue
                 } else {
@@ -68,10 +77,27 @@ public enum RevaUIBlock: Equatable, Sendable {
 
     /// 一行是否是 reva-ui 围栏的开始:```reva-ui(允许前导空白与围栏后的尾随空白)。
     static func isRevaUIFenceOpen(_ line: String) -> Bool {
+        fenceOpenInfo(line) == "reva-ui"
+    }
+
+    /// 一行若是代码围栏的开始,返回其 info string(去空白);否则 nil。
+    ///
+    /// 主路径:去空白后以 ``` 起头(与旧 `isRevaUIFenceOpen` 完全一致的严格判定,
+    /// 保证 reva-ui 与普通代码围栏的既有行为**零变化**)。
+    /// 容错路径:围栏前只允许**非字母数字的短前缀**(emoji / 符号,如 founder 实测的
+    /// 「🍽 ```menu_share」)。前缀里出现任何字母/数字就当普通 prose 行,不误判成围栏——
+    /// 避免把「用 ```json 包一下」这类叙述句错当围栏剥掉。
+    static func fenceOpenInfo(_ line: String) -> String? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        guard trimmed.hasPrefix("```") else { return false }
-        let info = trimmed.dropFirst(3).trimmingCharacters(in: .whitespaces)
-        return info == "reva-ui"
+        guard let fenceRange = trimmed.range(of: "```") else { return nil }
+        let prefix = trimmed[..<fenceRange.lowerBound]
+        // 前缀必须不含字母/数字(允许空、或纯 emoji/符号 + 空白)。
+        let hasAlnum = prefix.unicodeScalars.contains {
+            CharacterSet.alphanumerics.contains($0)
+        }
+        guard !hasAlnum else { return nil }
+        let info = trimmed[fenceRange.upperBound...].trimmingCharacters(in: .whitespaces)
+        return info
     }
 
     /// 一行是否是代码围栏的闭合:仅由 ``` 与空白组成(info string 必须为空)。
@@ -79,5 +105,64 @@ public enum RevaUIBlock: Equatable, Sendable {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard trimmed.hasPrefix("```") else { return false }
         return trimmed.dropFirst(3).trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// 防御性收尾:剥离 prose 里**未被围栏包裹**的 menu_share 残片,再交给 markdown 渲染。
+    ///
+    /// `split(from:)` 只吃 ```menu_share fenced block。但 founder 实测到的畸形形态还包括:
+    ///  - 单行 inline code span:`` `menu_share { … }` ``(单/多反引号,非三围栏)
+    ///  - 裸文本:`🍽 menu_share { … }`(连围栏都没有)
+    /// 这两种都会漏进 prose 泄漏原始 JSON。这里用「定位 `menu_share` token → 从其后第一个
+    /// `{` 起做括号配平 → 连同前导反引号/emoji 一起删」的方式删干净;找不到配平的 `}`
+    /// (流式未完整)则保守不删,避免误伤。菜单卡的规范表示是结构化 dynamic card,删掉
+    /// prose 残片不会丢信息。
+    static func stripInlineMenuShareRemnants(_ text: String) -> String {
+        guard text.contains("menu_share") else { return text }
+        var result = text
+        // 反复扫描,直到没有可删的 menu_share {…} 片段(一条消息可能多次泄漏)。
+        while let tokenRange = result.range(of: "menu_share") {
+            // 从 token 之后找第一个 '{'。
+            guard let braceStart = result[tokenRange.upperBound...].firstIndex(of: "{") else {
+                break
+            }
+            // 括号配平找到匹配的 '}'。
+            var depth = 0
+            var braceEnd: String.Index? = nil
+            var idx = braceStart
+            while idx < result.endIndex {
+                let ch = result[idx]
+                if ch == "{" {
+                    depth += 1
+                } else if ch == "}" {
+                    depth -= 1
+                    if depth == 0 {
+                        braceEnd = idx
+                        break
+                    }
+                }
+                idx = result.index(after: idx)
+            }
+            guard let end = braceEnd else {
+                // 未配平(流式 partial):保守不删,留给下次完整时处理。
+                break
+            }
+            // 向前吃掉紧邻的 emoji / 符号 / 反引号 / 空白前缀(如「🍽 」「`」)。
+            var deleteStart = tokenRange.lowerBound
+            while deleteStart > result.startIndex {
+                let prev = result.index(before: deleteStart)
+                let scalar = result[prev].unicodeScalars.first
+                let isAlnum = scalar.map { CharacterSet.alphanumerics.contains($0) } ?? false
+                let isNewline = result[prev] == "\n"
+                if isAlnum || isNewline { break }
+                deleteStart = prev
+            }
+            // 向后吃掉紧邻的反引号(闭合 inline code span)。
+            var deleteEnd = result.index(after: end)
+            while deleteEnd < result.endIndex, result[deleteEnd] == "`" {
+                deleteEnd = result.index(after: deleteEnd)
+            }
+            result.replaceSubrange(deleteStart..<deleteEnd, with: "")
+        }
+        return result
     }
 }

@@ -267,9 +267,21 @@ public enum AgentStructuredCommandParser {
         // 闭合 ``` 行当成 legacy 命令围栏删掉,导致 RevaUIBlock.split 把它判为「未闭合」而退回
         // 纯文本,图表占位永远生不出来(线上首个 reva-ui 块只渲染成裸文本的根因)。
         // 用同一个 split 作为围栏识别的唯一真源:reva-ui 段照搬,普通段才走清洗。
+        //
+        // menu_share:同一个 split 已把 ```menu_share fenced block **整段剥离**(不产段)。
+        // 菜单的规范表示是后端结构化 dynamic card(done 事件),prose 里的原始 JSON 只会重复
+        // 且泄漏——所以走 segment 分段路径把它删干净。分段路径同时兜住 reva-ui 保留 +
+        // menu_share 剥离;两者任一命中即启用(否则退回旧的整段清洗,行为零变化)。
         let segments = RevaUIBlock.split(from: result)
+        let hasRevaUI = segments.contains(where: { if case .revaUI = $0 { return true } else { return false } })
+        let markdownJoined = segments.compactMap { segment -> String? in
+            if case .markdown(let text) = segment { return text } else { return nil }
+        }.joined(separator: "\n")
+        let normalizedResult = result.replacingOccurrences(of: "\r\n", with: "\n")
+        // 无 reva-ui 但 split 拼回的 markdown 与原文不一致 → 说明剥掉了 menu_share fence。
+        let strippedMenuShare = !hasRevaUI && markdownJoined != normalizedResult
         let out: String
-        if segments.contains(where: { if case .revaUI = $0 { return true } else { return false } }) {
+        if hasRevaUI || strippedMenuShare {
             var pieces: [String] = []
             for segment in segments {
                 switch segment {
@@ -277,13 +289,15 @@ public enum AgentStructuredCommandParser {
                     // 原样重建闭合围栏(split 切掉了围栏标记本身,这里补回)。
                     pieces.append("```reva-ui\n" + rawJSON + "\n```")
                 case .markdown(let text):
-                    let cleaned = cleanDisplayLines(text)
+                    // 兜住未被围栏包裹的 menu_share 残片(inline / 裸文本畸形形态)。
+                    let deremnant = RevaUIBlock.stripInlineMenuShareRemnants(text)
+                    let cleaned = cleanDisplayLines(deremnant)
                     if !cleaned.isEmpty { pieces.append(cleaned) }
                 }
             }
             out = pieces.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         } else {
-            out = cleanDisplayLines(result)
+            out = cleanDisplayLines(RevaUIBlock.stripInlineMenuShareRemnants(result))
         }
         displayTextCache.setObject(StringBox(out), forKey: key)
         return out
