@@ -6,3 +6,8 @@ patches/
 # 本地 iOS/Android 原生目录走 prebuild 重新生成，不需要上传
 ios/
 android/
+
+# Rokid 眼镜端 Android APK (~20MB) — 与 iOS 构建无关（仅服务器托管供眼镜下载）。
+# 塞进 EAS 上传包会把 tarball 撑到 44MB，大上传在受限网络下被中途 EPIPE 重置。
+# 排除后 tarball 腰斩，上传稳定（2026-07-06 TestFlight build 209 实测）。
+assets/rokid/
