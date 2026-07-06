@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
   Platform, TextStyle,
-  Alert, Keyboard, Modal, Pressable, useWindowDimensions,
+  Alert, Dimensions, Keyboard, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -350,16 +350,34 @@ export default function ChatScreen() {
   }, [startersReady, shouldBumpKeyboard]);
 
   useEffect(() => {
-    const showSub = Keyboard.addListener('keyboardDidShow', (event) => {
-      setKeyboardVisible(true);
-      setKeyboardHeight(event.endCoordinates?.height || 0);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-    });
-    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
-      setKeyboardVisible(false);
-      setKeyboardHeight(0);
-    });
-    return () => { showSub.remove(); hideSub.remove(); };
+    // 豆包等第三方输入法首次唤起:键盘扩展进程冷启动,didShow 先报一个未装载完
+    // 的高度,装载完成后只发 (will|did)ChangeFrame **不再发 didShow** —— 只抓一次
+    // didShow 的高度会停在旧值,输入栏被压在键盘底下(founder 实锤截图)。
+    // 修:持续跟 frame 事件走。有 screenY 时用「窗口高 - 键盘顶边」的重叠高度
+    // (隐藏帧 screenY≥窗口高 → 0,天然处理 hide);无 screenY(测试/老事件)退回 height。
+    const applyKeyboardFrame = (event: any) => {
+      const end = event?.endCoordinates;
+      if (!end) return;
+      const windowH = Dimensions.get('window').height;
+      const height = typeof end.screenY === 'number'
+        ? Math.max(0, Math.round(windowH - end.screenY))
+        : Math.max(0, Math.round(end.height || 0));
+      setKeyboardVisible(height > 0);
+      setKeyboardHeight(height);
+    };
+    const subs = [
+      Keyboard.addListener('keyboardDidShow', (event) => {
+        applyKeyboardFrame(event);
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      }),
+      Keyboard.addListener('keyboardWillChangeFrame', applyKeyboardFrame),
+      Keyboard.addListener('keyboardDidChangeFrame', applyKeyboardFrame),
+      Keyboard.addListener('keyboardDidHide', () => {
+        setKeyboardVisible(false);
+        setKeyboardHeight(0);
+      }),
+    ];
+    return () => { subs.forEach(s => s.remove()); };
   }, []);
 
   // State A: 用户发第一条消息时(空状态 + 有可见开场气泡), 把开场文本作为

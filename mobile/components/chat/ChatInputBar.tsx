@@ -323,6 +323,11 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
             <Text style={styles.recordingDuration}>
               {Math.floor(voice.durationMs / 1000)}″
             </Text>
+            {!cancelHint && !!voice.partialText && (
+              <Text style={styles.recordingPartial} numberOfLines={2}>
+                {voice.partialText}
+              </Text>
+            )}
             <Text style={[styles.recordingHint, cancelHint && styles.recordingHintCancel]}>
               {cancelHint ? '松手取消' : '松手转文字，上滑取消'}
             </Text>
@@ -567,6 +572,10 @@ const styles = StyleSheet.create({
   recordingDuration: {
     fontFamily: revaFonts.mono, fontSize: 28, fontWeight: '700', color: '#fff',
     marginBottom: 8,
+  } as TextStyle,
+  recordingPartial: {
+    fontFamily: revaFonts.sans, fontSize: 16, color: '#fff',
+    textAlign: 'center', maxWidth: 280, marginBottom: 8,
   } as TextStyle,
   recordingHint: {
     fontFamily: revaFonts.sans, fontSize: 14, color: 'rgba(255,255,255,0.7)',
