@@ -28,6 +28,15 @@ Authorization: Bearer <DEDAO_KBASE_AUTH_TOKEN>
 
 The HTTP path is a transport for the reviewed export contract, not a runtime search authority. Health agents still serve from Reva's reviewed local System KB tables after import and review.
 
+The newer verified evidence transport exposes a pull manifest for consumer-side verification:
+
+```text
+https://kbase.executor.life/api/projects/health/evidence-pack/manifest
+Authorization: Bearer <DEDAO_KBASE_AUTH_TOKEN>
+```
+
+The manifest points to JSONL evidence packs and diff endpoints. Reva must verify the pack contract, source fingerprint, and blocked-record gate before producing any draft candidates.
+
 The importer intentionally does not scan the rest of the repo. This avoids accidental ingestion of:
 
 - raw Dedao course text;
@@ -144,6 +153,23 @@ Task:
 app.tasks.system_knowledge_lifecycle.sync_dedao_kbase_export_draft
 ```
 
+Verified evidence manifest dry-run. This checks the new pull contract and prints candidate counts without writing System KB artifacts, database rows, or serving indexes.
+
+```bash
+PYTHONPATH=backend \
+DEDAO_KBASE_AUTH_TOKEN="<private-token>" \
+backend/venv/bin/python backend/scripts/dry_run_dedao_kbase_evidence_pull.py \
+  --manifest-url https://kbase.executor.life/api/projects/health/evidence-pack/manifest \
+  --json-summary
+```
+
+Expected gate behavior:
+
+- source fingerprint mismatch rejects the whole pack;
+- `blocked` or `rejected` records are counted as blocked, never imported;
+- only `auto_usable` + `usable` records become draft candidates;
+- all accepted candidates remain `review_status=draft_candidate` until the normal review and release gate promotes them.
+
 Then run the normal release gate:
 
 ```bash
@@ -172,8 +198,10 @@ It must not become a runtime medical authority. Runtime agent tools should conti
 
 - Import service: `backend/app/services/dedao_kbase_export_importer.py`
 - CLI: `backend/scripts/ingest_dedao_kbase_export.py`
+- Verified evidence dry-run service: `backend/app/services/dedao_kbase_evidence_pull.py`
+- Verified evidence dry-run CLI: `backend/scripts/dry_run_dedao_kbase_evidence_pull.py`
 - Scheduled draft sync: `backend/app/tasks/system_knowledge_lifecycle.py`
 - Draft/review gate: `backend/app/services/system_knowledge_ingest.py`
 - Serving import gate: `backend/app/services/system_knowledge_importer.py`
 - Serving lookup filter: `backend/app/services/system_knowledge_service.py`
-- Tests: `backend/tests/test_dedao_kbase_export_importer.py`
+- Tests: `backend/tests/test_dedao_kbase_export_importer.py`, `backend/tests/test_dedao_kbase_evidence_pull.py`
