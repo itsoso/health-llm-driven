@@ -11,6 +11,8 @@
  */
 
 import { Suspense, useEffect, useRef, useState } from 'react';
+import Image from 'next/image';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowUp,
@@ -579,14 +581,13 @@ function AIAssistantInner() {
           >
             <PanelLeft className="h-[1.05rem] w-[1.05rem]" />
           </button>
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] bg-[#C96442] text-[13px] font-semibold text-white">
-              巴
-            </span>
+          {/* 千问式左上角品牌位:真 logo + 点击回首页(此页 fixed 全屏盖住全站导航,这是唯一回家路) */}
+          <Link href="/" title="回到首页" className="flex min-w-0 items-center gap-2 transition-opacity hover:opacity-80">
+            <Image src="/logo.png" alt="小巴" width={28} height={28} className="h-7 w-7 shrink-0 rounded-[8px]" />
             <span className="rd-serif hidden text-[17px] font-semibold tracking-[0.01em] text-[#29261F] sm:inline">
-              健康小巴
+              小巴
             </span>
-          </div>
+          </Link>
           <div className="min-w-0">
             <LlmModelPicker
               currentLabel={llmPref.label || '系统默认'}
@@ -644,9 +645,7 @@ function AIAssistantInner() {
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 pb-32 pt-8 sm:px-6">
             {messages.length === 0 && !streaming ? (
               <div className="mx-auto flex min-h-[60vh] max-w-3xl flex-col items-center justify-center text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#C96442] text-[26px] font-semibold text-white">
-                  巴
-                </div>
+                <Image src="/logo.png" alt="小巴" width={56} height={56} className="h-14 w-14 rounded-2xl" />
                 <h1 className="rd-serif mt-5 pb-1 text-2xl font-semibold leading-[1.3] tracking-[0.01em] text-[#29261F] sm:text-[28px] sm:leading-[1.25]">
                   今天想了解什么？
                 </h1>
