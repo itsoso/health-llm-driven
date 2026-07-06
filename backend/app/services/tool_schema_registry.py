@@ -494,11 +494,14 @@ action 选择:
           (met 达标 / improving 改善中 / worsening 变差 / flat 持平 / pending 待复查)。
           **没有进行中的周期时如实说"目前没有进行中的干预周期", 不要编造。**
           用户问"我的干预周期怎么样 / 这阵子调理有没有效 / 降 LDL 进展" 走这个。
+- list: 列出干预周期历史,含 active/completed/abandoned,用于用户问"之前做过哪些周期/历史干预"。
 - start: 为用户开启一个新的代谢干预周期 (锁基线 Twin 快照 + 基线化验 + 目标指标)。
           **写操作 → 必须先确认**: 第一次调用 (不带 confirmed) 会返回需要向用户复述确认的提示,
           用户明确同意后**重新调用并带 confirmed=true** 才真正建周期。
           目标指标由当前异常的代谢/血脂/血糖/肝指标自动推导 (如 LDL/尿酸/HbA1c 偏高)。
           用户说"开个周期验证下 / 我想系统调理代谢三个月 / 帮我跟踪降 LDL 的效果" 走这个。
+- update: 调整进行中周期的计划天数、目标指标或停止条件。**写操作 → 必须先确认**。
+- cancel: 取消进行中周期,状态改为 abandoned,保留历史记录。**写操作 → 必须先确认**。
 
 注意:
 - 这是健康自我管理工具, 不是医疗诊断或处方。提议/解读时措辞要"非诊断、建议结合医生"。
@@ -508,17 +511,46 @@ action 选择:
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["status", "start"],
-                        "description": "status 报当前周期进展; start 开启新周期 (写操作, 需确认)",
+                        "enum": ["status", "list", "start", "update", "cancel"],
+                        "description": "status 报当前周期进展; list 列历史; start/update/cancel 是写操作, 需确认",
+                    },
+                    "cycle_id": {
+                        "type": "integer",
+                        "description": "仅 update/cancel 可选: 指定周期 ID。不传则默认当前 active 周期。",
                     },
                     "days": {
                         "type": "integer",
                         "default": 90,
-                        "description": "仅 start: 周期天数, 默认 90 天",
+                        "description": "start/update: 周期天数, 默认 90 天; update 会重算 planned_end_date。",
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["all", "active", "completed", "abandoned"],
+                        "default": "all",
+                        "description": "仅 list: 历史周期状态过滤。",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "仅 list: 最多返回多少个周期。",
+                    },
+                    "target_specs": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "start/update 可选目标指标数组 [{code,target,direction}]。慎用,用户确认后再改。",
+                    },
+                    "stop_conditions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "update 可选停止/升级条件列表。",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "cancel 可选取消原因,仅用于本次回复说明。",
                     },
                     "confirmed": {
                         "type": "boolean",
-                        "description": "仅 start: 用户已明确同意开周期后置 true。首次提议不要带, 让确认流程走一遍。",
+                        "description": "start/update/cancel: 用户已明确同意后置 true。首次提议不要带, 让确认流程走一遍。",
                     },
                 },
                 "required": ["action"],

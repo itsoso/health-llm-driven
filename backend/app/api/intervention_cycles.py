@@ -1,13 +1,16 @@
 """干预周期 API — 起始 / 复查 / 查询 (Personal Health OS P2, 交互稿 ②④).
 
 - POST /intervention-cycles            开启代谢干预周期 (已有进行中则返回该周期)
+- GET  /intervention-cycles            干预周期历史列表
 - GET  /intervention-cycles/active     当前进行中的周期 (含 outcomes)
 - GET  /intervention-cycles/{id}       指定周期
+- PATCH /intervention-cycles/{id}      调整周期窗口/目标/停止条件
+- POST /intervention-cycles/{id}/cancel  取消周期 (保留历史)
 - POST /intervention-cycles/{id}/recheck  复查 (重算 delta/status)
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -27,6 +30,16 @@ router = APIRouter(prefix="/intervention-cycles", tags=["intervention-cycles"])
 class StartCycleRequest(BaseModel):
     days: int = 90
     target_specs: Optional[list] = None  # [{code, target, direction}]; 缺省自动推导
+
+
+class UpdateCycleRequest(BaseModel):
+    days: Optional[int] = None
+    target_specs: Optional[list] = None
+    stop_conditions: Optional[list] = None
+
+
+class CancelCycleRequest(BaseModel):
+    reason: Optional[str] = None
 
 
 def _outcome_dict(om) -> dict:
@@ -80,6 +93,18 @@ def start_cycle(
     return {"created": True, "cycle": _cycle_dict(cycle)}
 
 
+@router.get("")
+def list_cycles(
+    status: str = Query(default="all", pattern="^(all|active|completed|abandoned)$"),
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """列出当前用户干预周期历史,用于 Agent 和端上回顾。"""
+    cycles = ics.list_cycles(db, current_user.id, status=status, limit=limit)
+    return {"cycles": [_cycle_dict(c) for c in cycles]}
+
+
 @router.get("/active")
 def active_cycle(
     current_user: User = Depends(get_current_user_required),
@@ -96,6 +121,46 @@ def get_cycle(
     db: Session = Depends(get_db),
 ):
     return {"cycle": _cycle_dict(_get_owned_cycle(db, current_user.id, cycle_id))}
+
+
+@router.patch("/{cycle_id}")
+def update_cycle(
+    cycle_id: int,
+    body: UpdateCycleRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """调整进行中周期的窗口、目标或停止条件;不改历史基线。"""
+    c = _get_owned_cycle(db, current_user.id, cycle_id)
+    try:
+        c = ics.update_cycle_params(
+            db,
+            c,
+            days=body.days,
+            target_specs=body.target_specs,
+            stop_conditions=body.stop_conditions,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"cycle": _cycle_dict(c)}
+
+
+@router.post("/{cycle_id}/cancel")
+def cancel_cycle(
+    cycle_id: int,
+    body: CancelCycleRequest = CancelCycleRequest(),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """取消进行中的干预周期;保留历史记录,状态置为 abandoned。"""
+    c = _get_owned_cycle(db, current_user.id, cycle_id)
+    if c.status != "active":
+        raise HTTPException(status_code=400, detail="只能取消进行中的干预周期")
+    c = ics.complete_cycle(db, c, status="abandoned")
+    response = {"cycle": _cycle_dict(c)}
+    if body.reason:
+        response["cancel_reason"] = body.reason
+    return response
 
 
 @router.post("/{cycle_id}/recheck")

@@ -288,3 +288,17 @@ def test_p2_medical_exam_report_list_is_exposed_without_mutation():
     assert AGENT_OPS["medical_exam"]["update"].get("opt_out")
     assert AGENT_OPS["medical_exam"]["delete"].get("opt_out")
     assert "medical_exam" in _tool_enum("health_manage", "record_type")
+
+
+def test_p2_intervention_cycle_history_update_cancel_are_exposed():
+    assert AGENT_OPS["intervention_cycle"]["list"]["tool"] == "intervention_cycle"
+    assert AGENT_OPS["intervention_cycle"]["list"]["via"]
+    assert not AGENT_OPS["intervention_cycle"]["list"].get("gap")
+
+    assert AGENT_OPS["intervention_cycle"]["update"]["tool"] == "intervention_cycle"
+    assert AGENT_OPS["intervention_cycle"]["update"]["confirm"] == "never_auto"
+    assert not AGENT_OPS["intervention_cycle"]["update"].get("gap")
+
+    assert AGENT_OPS["intervention_cycle"]["delete"]["tool"] == "intervention_cycle"
+    assert AGENT_OPS["intervention_cycle"]["delete"]["confirm"] == "never_auto"
+    assert not AGENT_OPS["intervention_cycle"]["delete"].get("gap")

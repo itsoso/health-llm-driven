@@ -76,6 +76,77 @@ def test_intervention_cycle_api_flow(client, db, auth_user_and_headers):
     assert rr.json()["cycle"]["latest_snapshot_id"] is not None
 
 
+def test_intervention_cycle_list_update_cancel_api_flow(client, db, auth_user_and_headers):
+    from app.models.intervention_cycle import InterventionCycle
+    from app.models.user import User
+
+    user, headers = auth_user_and_headers
+    _ingest(db, user.id, [("低密度脂蛋白", 4.2, "mmol/L")], datetime.date(2026, 3, 1))
+
+    created = client.post("/api/v1/intervention-cycles", headers=headers, json={"days": 90})
+    assert created.status_code == 200, created.text
+    cycle = created.json()["cycle"]
+    cid = cycle["id"]
+
+    other = User(
+        username="other_cycle_owner",
+        email="other_cycle_owner@example.com",
+        hashed_password="x",
+        name="其他用户",
+        is_active=True,
+        is_approved=True,
+    )
+    db.add(other)
+    db.commit()
+    db.refresh(other)
+    other_cycle = InterventionCycle(
+        user_id=other.id,
+        cycle_type="metabolic_90d",
+        status="active",
+        start_date=datetime.date(2026, 3, 2),
+        planned_end_date=datetime.date(2026, 6, 2),
+        target_metrics=[{"code": "UA", "target": 380, "direction": "down"}],
+        stop_conditions=[],
+    )
+    db.add(other_cycle)
+    db.commit()
+    db.refresh(other_cycle)
+
+    listed = client.get("/api/v1/intervention-cycles?status=all&limit=20", headers=headers)
+    assert listed.status_code == 200, listed.text
+    cycles = listed.json()["cycles"]
+    assert [row["id"] for row in cycles] == [cid]
+    assert all(row["id"] != other_cycle.id for row in cycles)
+
+    updated = client.patch(
+        f"/api/v1/intervention-cycles/{cid}",
+        headers=headers,
+        json={
+            "days": 120,
+            "stop_conditions": ["肌痛或明显不适时暂停并咨询医生"],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    body = updated.json()["cycle"]
+    expected_end = (
+        datetime.date.fromisoformat(body["start_date"]) + datetime.timedelta(days=120)
+    ).isoformat()
+    assert body["planned_end_date"] == expected_end
+    assert body["stop_conditions"] == ["肌痛或明显不适时暂停并咨询医生"]
+
+    cancelled = client.post(
+        f"/api/v1/intervention-cycles/{cid}/cancel",
+        headers=headers,
+        json={"reason": "用户决定重新规划"},
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["cycle"]["status"] == "abandoned"
+
+    active = client.get("/api/v1/intervention-cycles/active", headers=headers)
+    assert active.status_code == 200
+    assert active.json()["cycle"] is None
+
+
 def test_get_cycle_404_for_other_user(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
     r = client.get("/api/v1/intervention-cycles/99999", headers=headers)

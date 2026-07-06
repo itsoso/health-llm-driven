@@ -395,9 +395,16 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
         },
         "read": {"tool": "intervention_cycle",
                  "via": "intervention_cycle(action=status)"},
-        "list": {"gap": True, "reason": "只有当前周期 status,历史周期列表无 agent 通路"},
-        "update": {"gap": True, "reason": "周期参数调整无 agent 通路(R16:处方/激素类恒 clinician_review)"},
-        "delete": {"gap": True, "reason": "取消/删除周期无 agent 通路"},
+        "list": {"tool": "intervention_cycle",
+                 "via": "intervention_cycle(action=list) / GET /intervention-cycles"},
+        "update": {
+            "tool": "intervention_cycle", "confirm": "never_auto",
+            "via": "intervention_cycle(action=update) / PATCH /intervention-cycles/{id}",
+        },
+        "delete": {
+            "tool": "intervention_cycle", "confirm": "never_auto",
+            "via": "intervention_cycle(action=cancel) / POST /intervention-cycles/{id}/cancel",
+        },
     },
 
     "goal": {

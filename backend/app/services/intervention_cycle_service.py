@@ -271,6 +271,81 @@ def get_active_cycle(db: Session, user_id: int) -> Optional[InterventionCycle]:
     )
 
 
+def list_cycles(
+    db: Session,
+    user_id: int,
+    *,
+    status: str = "all",
+    limit: int = 20,
+) -> list[InterventionCycle]:
+    """按用户列出干预周期历史,默认含 active/completed/abandoned。"""
+    query = db.query(InterventionCycle).filter(InterventionCycle.user_id == user_id)
+    if status and status != "all":
+        query = query.filter(InterventionCycle.status == status)
+    return (
+        query
+        .order_by(InterventionCycle.start_date.desc(), InterventionCycle.id.desc())
+        .limit(max(1, min(int(limit or 20), 100)))
+        .all()
+    )
+
+
+def update_cycle_params(
+    db: Session,
+    cycle: InterventionCycle,
+    *,
+    days: Optional[int] = None,
+    target_specs: Optional[list] = None,
+    stop_conditions: Optional[list] = None,
+) -> InterventionCycle:
+    """调整周期可配置参数;不改历史基线,只补新增目标的 baseline outcome。"""
+    if cycle.status != "active":
+        raise ValueError("只能调整进行中的干预周期")
+
+    if days is not None:
+        days_int = max(7, min(int(days), 365))
+        cycle.planned_end_date = cycle.start_date + timedelta(days=days_int)
+
+    if stop_conditions is not None:
+        cycle.stop_conditions = [
+            str(item).strip()
+            for item in stop_conditions
+            if str(item or "").strip()
+        ][:20]
+
+    if target_specs is not None:
+        specs = [
+            spec
+            for spec in target_specs
+            if isinstance(spec, dict) and str(spec.get("code") or "").strip()
+        ][:20]
+        cycle.target_metrics = specs
+
+        from app.services.biomarker_service import latest_observations
+        latest_obs = latest_observations(db, cycle.user_id)
+        existing_codes = {om.metric_code for om in cycle.outcomes}
+        for spec in specs:
+            code = str(spec["code"]).strip()
+            if code in existing_codes:
+                continue
+            obs = latest_obs.get(code)
+            db.add(OutcomeMetric(
+                cycle_id=cycle.id,
+                metric_code=code,
+                unit=(obs.normalized_unit if obs else None),
+                baseline_value=(obs.normalized_value if obs else None),
+                target_value=spec.get("target"),
+                direction=spec.get("direction", "down"),
+                status="pending",
+                baseline_observed_at=(obs.observed_at if obs else None),
+            ))
+            existing_codes.add(code)
+
+    db.commit()
+    db.refresh(cycle)
+    return cycle
+
+
 def intervention_proposal_prompt_blob(db: Session, user_id: int) -> str:
     """轻量主动提议: 用户有明确异常代谢杠杆 + 无 active 周期时, 提示 agent 可提议开 N-of-1 周期。
 

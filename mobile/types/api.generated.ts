@@ -13235,7 +13235,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Cycles
+         * @description 列出当前用户干预周期历史,用于 Agent 和端上回顾。
+         */
+        get: operations["list_cycles_api_v1_intervention_cycles_get"];
         put?: never;
         /**
          * Start Cycle
@@ -13276,6 +13280,30 @@ export interface paths {
         get: operations["get_cycle_api_v1_intervention_cycles__cycle_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Cycle
+         * @description 调整进行中周期的窗口、目标或停止条件;不改历史基线。
+         */
+        patch: operations["update_cycle_api_v1_intervention_cycles__cycle_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/intervention-cycles/{cycle_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Cycle
+         * @description 取消进行中的干预周期;保留历史记录,状态置为 abandoned。
+         */
+        post: operations["cancel_cycle_api_v1_intervention_cycles__cycle_id__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -19726,6 +19754,11 @@ export interface components {
              * @description 应用专用密码(非主密码)
              */
             password: string;
+        };
+        /** CancelCycleRequest */
+        CancelCycleRequest: {
+            /** Reason */
+            reason?: string | null;
         };
         /** CaptureOut */
         CaptureOut: {
@@ -29919,6 +29952,15 @@ export interface components {
             supplements?: Record<string, never>[];
             /** Goals */
             goals?: Record<string, never>;
+        };
+        /** UpdateCycleRequest */
+        UpdateCycleRequest: {
+            /** Days */
+            days?: number | null;
+            /** Target Specs */
+            target_specs?: unknown[] | null;
+            /** Stop Conditions */
+            stop_conditions?: unknown[] | null;
         };
         /** UpdateMetricRequest */
         UpdateMetricRequest: {
@@ -52575,6 +52617,38 @@ export interface operations {
             };
         };
     };
+    list_cycles_api_v1_intervention_cycles_get: {
+        parameters: {
+            query?: {
+                status?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     start_cycle_api_v1_intervention_cycles_post: {
         parameters: {
             query?: never;
@@ -52638,6 +52712,76 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_cycle_api_v1_intervention_cycles__cycle_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cycle_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCycleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_cycle_api_v1_intervention_cycles__cycle_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cycle_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CancelCycleRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -148,6 +148,68 @@ def test_start_no_double_open(db):
     assert n == 1
 
 
+def test_list_cycles_returns_history(db):
+    u = _mk_user(db)
+    _seed_abnormal_labs(db, u.id)
+    _exec(db, u.id, {"action": "start", "confirmed": True})
+
+    out = _exec(db, u.id, {"action": "list", "status": "all", "limit": 10})
+
+    assert "干预周期历史" in out
+    assert "active" in out
+    assert "#" in out
+
+
+def test_update_cycle_requires_confirmation_then_adjusts_days(db):
+    from app.services.intervention_cycle_service import get_active_cycle
+
+    u = _mk_user(db)
+    _seed_abnormal_labs(db, u.id)
+    _exec(db, u.id, {"action": "start", "confirmed": True, "days": 90})
+    cycle = get_active_cycle(db, u.id)
+    old_end = cycle.planned_end_date
+
+    first = _exec(db, u.id, {"action": "update", "cycle_id": cycle.id, "days": 120})
+    assert "[NEEDS_CONFIRMATION]" in first
+    db.refresh(cycle)
+    assert cycle.planned_end_date == old_end
+
+    second = _exec(db, u.id, {
+        "action": "update",
+        "cycle_id": cycle.id,
+        "days": 120,
+        "confirmed": True,
+    })
+    db.refresh(cycle)
+    assert "已调整" in second
+    assert cycle.planned_end_date == cycle.start_date + datetime.timedelta(days=120)
+
+
+def test_cancel_cycle_requires_confirmation_then_abandons(db):
+    from app.services.intervention_cycle_service import get_active_cycle
+
+    u = _mk_user(db)
+    _seed_abnormal_labs(db, u.id)
+    _exec(db, u.id, {"action": "start", "confirmed": True})
+    cycle = get_active_cycle(db, u.id)
+
+    first = _exec(db, u.id, {"action": "cancel", "cycle_id": cycle.id})
+    assert "[NEEDS_CONFIRMATION]" in first
+    db.refresh(cycle)
+    assert cycle.status == "active"
+
+    second = _exec(db, u.id, {
+        "action": "cancel",
+        "cycle_id": cycle.id,
+        "confirmed": True,
+        "reason": "用户决定重新规划",
+    })
+    db.refresh(cycle)
+    assert "已取消" in second
+    assert cycle.status == "abandoned"
+    assert get_active_cycle(db, u.id) is None
+
+
 # ── user 隔离 ───────────────────────────────────────────
 
 def test_user_isolation_status(db):

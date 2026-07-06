@@ -5671,7 +5671,7 @@ class AgentExecutor:
         return f"Error: 不支持的计划操作 {action}"
 
     async def _exec_intervention_cycle(self, args: dict) -> str:
-        """N-of-1 干预结局闭环工具 — status 报进展 / start 开周期 (写操作需确认).
+        """N-of-1 干预结局闭环工具 — status/list/start/update/cancel.
 
         直接复用 intervention_cycle_service (不重写 SQL/不重算 delta), 用户隔离靠
         self._current_user_id。service 是同步, 丢线程池避免阻塞事件循环。
@@ -5685,6 +5685,14 @@ class AgentExecutor:
 
         if action == "status":
             return await _aio.to_thread(self._intervention_status, user_id)
+
+        if action in {"list", "history"}:
+            status = str(args.get("status") or "all")
+            try:
+                limit = int(args.get("limit") or 20)
+            except (TypeError, ValueError):
+                limit = 20
+            return await _aio.to_thread(self._intervention_list, user_id, status, limit)
 
         if action == "start":
             # 写操作: 沿用 _confirm_or_describe 两段式确认门 (与 health_record 一致)。
@@ -5707,7 +5715,129 @@ class AgentExecutor:
                 days = 90
             return await _aio.to_thread(self._intervention_start, user_id, days)
 
+        if action == "update":
+            confirmed = args.get("confirmed") is True or args.get("confirm") is True
+            if not confirmed:
+                return (
+                    "[NEEDS_CONFIRMATION] 我准备调整你的干预周期参数。"
+                    "这会影响后续的计划窗口、目标指标或停止条件, 但不会改历史基线和已记录复查。"
+                    "请向用户复述要调整的内容并确认; 用户明确同意后重新调用 "
+                    "intervention_cycle(action='update', confirmed=true)。"
+                )
+            return await _aio.to_thread(self._intervention_update, user_id, args)
+
+        if action in {"cancel", "delete"}:
+            confirmed = args.get("confirmed") is True or args.get("confirm") is True
+            if not confirmed:
+                return (
+                    "[NEEDS_CONFIRMATION] 我准备取消当前干预周期。"
+                    "取消后会保留历史记录, 状态改为 abandoned, 不会删除既有数据。"
+                    "请向用户确认是否取消; 用户明确同意后重新调用 "
+                    "intervention_cycle(action='cancel', confirmed=true)。"
+                )
+            return await _aio.to_thread(self._intervention_cancel, user_id, args)
+
         return f"Error: 不支持的干预周期操作 {action}"
+
+    def _intervention_list(self, user_id: int, status: str, limit: int) -> str:
+        """列出当前用户干预周期历史。"""
+        from app.services import intervention_cycle_service as ics
+
+        if status not in {"all", "active", "completed", "abandoned"}:
+            status = "all"
+        cycles = ics.list_cycles(self.db, user_id, status=status, limit=limit)
+        if not cycles:
+            return "暂无干预周期历史。"
+
+        lines = []
+        for c in cycles:
+            start = c.start_date.isoformat() if c.start_date else "?"
+            end = c.planned_end_date.isoformat() if c.planned_end_date else "?"
+            target_count = len(c.target_metrics or [])
+            outcome_count = len(c.outcomes or [])
+            lines.append(
+                f"- #{c.id}: {c.status} · {c.cycle_type} · {start}→{end} · "
+                f"目标 {target_count} 项 · 结局 {outcome_count} 项"
+            )
+        return "干预周期历史:\n" + "\n".join(lines)
+
+    def _owned_intervention_cycle(self, user_id: int, cycle_id=None):
+        from app.models.intervention_cycle import InterventionCycle
+        from app.services import intervention_cycle_service as ics
+
+        if cycle_id is None:
+            return ics.get_active_cycle(self.db, user_id)
+        try:
+            cid = int(cycle_id)
+        except (TypeError, ValueError):
+            return None
+        if cid <= 0:
+            return None
+        return (
+            self.db.query(InterventionCycle)
+            .filter(InterventionCycle.id == cid, InterventionCycle.user_id == user_id)
+            .first()
+        )
+
+    def _intervention_update(self, user_id: int, args: dict) -> str:
+        """调整 active cycle 参数; 不修改历史基线。"""
+        from app.services import intervention_cycle_service as ics
+
+        cycle = self._owned_intervention_cycle(user_id, args.get("cycle_id"))
+        if cycle is None:
+            return "Error: 没有找到可调整的干预周期。请先 list/status 确认周期。"
+
+        days = args.get("days")
+        if days is not None:
+            try:
+                days = int(days)
+            except (TypeError, ValueError):
+                return "Error: days 必须是整数。"
+        target_specs = args.get("target_specs") if isinstance(args.get("target_specs"), list) else None
+        stop_conditions = (
+            args.get("stop_conditions") if isinstance(args.get("stop_conditions"), list) else None
+        )
+        if days is None and target_specs is None and stop_conditions is None:
+            return "Error: update 需要提供 days、target_specs 或 stop_conditions。"
+
+        try:
+            cycle = ics.update_cycle_params(
+                self.db,
+                cycle,
+                days=days,
+                target_specs=target_specs,
+                stop_conditions=stop_conditions,
+            )
+        except ValueError as exc:
+            return f"Error: {exc}"
+        except Exception:
+            self.db.rollback()
+            raise
+
+        end = cycle.planned_end_date.isoformat() if cycle.planned_end_date else "未设置"
+        return (
+            f"已调整干预周期 #{cycle.id}: 计划结束日 {end}, "
+            f"目标 {len(cycle.target_metrics or [])} 项, 停止条件 {len(cycle.stop_conditions or [])} 条。"
+        )
+
+    def _intervention_cancel(self, user_id: int, args: dict) -> str:
+        """取消 active cycle; 保留历史记录。"""
+        from app.services import intervention_cycle_service as ics
+
+        cycle = self._owned_intervention_cycle(user_id, args.get("cycle_id"))
+        if cycle is None:
+            return "Error: 没有找到可取消的干预周期。请先 list/status 确认周期。"
+        if cycle.status != "active":
+            return "Error: 只能取消进行中的干预周期。"
+
+        try:
+            cycle = ics.complete_cycle(self.db, cycle, status="abandoned")
+        except Exception:
+            self.db.rollback()
+            raise
+        reason = str(args.get("reason") or "").strip()
+        reason_text = f" 原因: {reason}" if reason else ""
+        return f"已取消干预周期 #{cycle.id}, 历史记录已保留。{reason_text}"
 
     def _intervention_status(self, user_id: int) -> str:
         """组织当前 active 周期的人话进展摘要 (无周期则友好提示)。"""
