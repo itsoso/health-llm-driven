@@ -31,6 +31,39 @@ final class HealthAgentMacCoreTests: XCTestCase {
         ])
     }
 
+    func testInsightsSectionConsolidatesToHubPlusGenetics() {
+        let sections = SidebarDestination.sidebarSections
+        let insights = sections.first { $0.id == "insights" }
+        XCTAssertNotNil(insights, "insights section must exist")
+        // 洞察收敛为两行:健康洞察 hub(.healthExtras)+ 基因。
+        XCTAssertEqual(insights?.items, [.healthExtras, .genetics])
+
+        // 复盘 / 肝脏趋势 不再是独立侧栏行(改由 hub 承载),但仍是有效 enum case
+        // (命令面板 / 证据深链 / 动态卡片路由用)。
+        XCTAssertFalse(SidebarDestination.sidebarVisible.contains(.review))
+        XCTAssertFalse(SidebarDestination.sidebarVisible.contains(.liver))
+        XCTAssertTrue(SidebarDestination.allCases.contains(.review))
+        XCTAssertTrue(SidebarDestination.allCases.contains(.liver))
+    }
+
+    func testOriginatorLivesInMedicationSection() {
+        let sections = SidebarDestination.sidebarSections
+        let medication = sections.first { $0.id == "medication" }
+        XCTAssertNotNil(medication, "medication section must exist")
+        XCTAssertEqual(medication?.items, [.prescriptions])
+        XCTAssertEqual(medication?.titleKey, "Medication")
+        // 原研药不再挂在洞察下。
+        let insights = sections.first { $0.id == "insights" }
+        XCTAssertFalse(insights?.items.contains(.prescriptions) ?? false)
+    }
+
+    func testHealthInsightsHubEntryAndTabLabelsLocalize() {
+        XCTAssertEqual(SidebarDestination.healthExtras.title(language: .zh), "健康洞察")
+        XCTAssertEqual(L10n.text("Advanced Abilities", language: .zh), "进阶能力")
+        XCTAssertEqual(L10n.text("Organ Trends", language: .zh), "器官趋势")
+        XCTAssertEqual(L10n.text("Review", language: .zh), "复盘")
+    }
+
     func testSidebarDestinationIconsResolveToAvailableSystemSymbols() {
         for destination in SidebarDestination.allCases {
             XCTAssertNotNil(

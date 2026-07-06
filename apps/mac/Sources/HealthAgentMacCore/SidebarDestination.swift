@@ -35,9 +35,15 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
                        items: [.today, .schedule]),
         SidebarSection(id: "health", titleKey: "Health",
                        items: [.data, .workouts, .goals]),
-        // 洞察:复盘(回顾/预测回测,非当日规划)归入此处 + 深度分析视图。
+        // 用药:原研药查询(处方→原研药 + 换药建议)是用药域的药物工具,不是分析视图。
+        SidebarSection(id: "medication", titleKey: "Medication",
+                       items: [.prescriptions]),
+        // 洞察:收敛为「健康洞察 hub + 基因」两行。hub(.healthExtras)内含
+        // 复盘(.review)· 进阶能力 · 器官趋势(.liver)三个标签页;.review / .liver
+        // 仍是有效 destination(命令面板/证据深链/动态卡片路由用),只是不再作为
+        // 独立侧栏行,而是打开 hub 并预选对应标签。基因作为独立参考域保留。
         SidebarSection(id: "insights", titleKey: "Insights",
-                       items: [.review, .healthExtras, .liver, .genetics, .prescriptions]),
+                       items: [.healthExtras, .genetics]),
         SidebarSection(id: "resources", titleKey: "Resources",
                        items: [.dataSources, .dataConnections, .knowledge]),
     ]
@@ -67,7 +73,7 @@ public enum SidebarDestination: String, CaseIterable, Identifiable, Sendable {
         case .dataConnections: L10n.text("Data Connections", language: language)
         case .prescriptions: L10n.text("Originator Drugs", language: language)
         case .liver: L10n.text("Liver Trend", language: language)
-        case .healthExtras: L10n.text("Health Extras", language: language)
+        case .healthExtras: L10n.text("Health Insights", language: language)
         case .genetics: L10n.text("Genetics", language: language)
         case .knowledge: L10n.text("Knowledge", language: language)
         case .workouts: L10n.text("Workouts", language: language)

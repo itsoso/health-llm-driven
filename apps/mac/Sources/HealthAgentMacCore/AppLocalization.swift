@@ -35,6 +35,10 @@ public enum L10n {
         "Health Agent": "小巴",
         "Daily": "每日",
         "Insights": "洞察",
+        // 洞察 hub(.healthExtras 承载)行标签 + 三个标签页标签。
+        "Health Insights": "健康洞察",
+        "Advanced Abilities": "进阶能力",
+        "Organ Trends": "器官趋势",
         "Resources": "资料",
         "Schedule": "日程",
         "Timeline": "时间线",

@@ -38,6 +38,7 @@ struct AppRootView: View {
                                 ForEach(section.items) { destination in
                                     sidebarRow(destination)
                                         .tag(destination)
+                                        .listRowBackground(sidebarRowBackground(destination))
                                 }
                             } header: {
                                 if !section.titleKey.isEmpty {
@@ -49,9 +50,16 @@ struct AppRootView: View {
                         Section {
                             sidebarRow(.settings)
                                 .tag(SidebarDestination.settings)
+                                .listRowBackground(sidebarRowBackground(.settings))
                         }
                     }
                     .listStyle(.sidebar)
+                    // 侧栏选中行高亮从系统蓝改为暖陶土(WarmPalette.clay,#C96442 light /
+                    // #D9784F warm-dark)。macOS 的 .sidebar List 默认用系统强调色画选中背景,
+                    // 焦点态会露出系统蓝;这里用显式 .listRowBackground 给选中行铺一层 clay,
+                    // 无论窗口是否 key、明暗模式,选中态都稳定呈现 redesign 的暖陶土。
+                    // .tint 让选中行文字/图标在 clay 底上仍走 accent 语义。未选中行透明,不变。
+                    .tint(WarmPalette.clay)
                     .navigationTitle(appText("Health Agent", appLanguageRaw))
                 } detail: {
                     detailView
@@ -103,23 +111,34 @@ struct AppRootView: View {
     }
 
     /// One sidebar row: localized label + icon, plus the agent context-basket badge.
+    /// Selected rows sit on a clay `.listRowBackground`, so their label + icon flip
+    /// to white for contrast; unselected rows keep the default warm-ink foreground.
     @ViewBuilder
     private func sidebarRow(_ destination: SidebarDestination) -> some View {
+        let isSelected = navigation.selection == destination
         HStack(spacing: 6) {
             Label(destination.title(language: AppLanguage(storedValue: appLanguageRaw)), systemImage: destination.systemImage)
+                .foregroundStyle(isSelected ? Color.white : Color.primary)
             if destination == .agent {
                 let basketCount = services.agentViewModel.contextItems.count
                 if basketCount > 0 {
                     Text("\(basketCount)")
                         .font(.caption2.weight(.bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(isSelected ? WarmPalette.clay : Color.white)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
-                        .background(WarmPalette.clay, in: Capsule())
+                        .background(isSelected ? Color.white : WarmPalette.clay, in: Capsule())
                         .help(appText("Items waiting in the context basket.", appLanguageRaw))
                 }
             }
         }
+    }
+
+    /// Selected sidebar row → clay fill (redesign accent). Unselected → clear, so the
+    /// default `.sidebar` list chrome (headers, hover) is untouched. Clay carries its
+    /// own light/warm-dark values, so this is correct in both appearances.
+    private func sidebarRowBackground(_ destination: SidebarDestination) -> Color {
+        navigation.selection == destination ? WarmPalette.clay : Color.clear
     }
 
     @ViewBuilder
@@ -137,9 +156,11 @@ struct AppRootView: View {
             ScheduleView(services: services)
         case .agenda:
             AgendaView(client: services.agendaClient)
-        case .review:
-            HealthOperatingReviewView(
-                client: services.healthOperatingReviewClient,
+        case .review, .liver, .healthExtras:
+            // 三者收进「健康洞察」hub;hub 用当前 selection 预选对应标签页。
+            InsightsHubView(
+                services: services,
+                navigation: navigation,
                 onAskAgent: askAgentWithContext
             )
         case .timeline:
@@ -171,10 +192,6 @@ struct AppRootView: View {
             DataConnectionsView(client: services.dataConnectionsClient, onAskAgent: askAgentWithContext)
         case .prescriptions:
             OriginatorView(client: services.originatorClient, onAskAgent: askAgentWithContext)
-        case .liver:
-            LiverTrendView(client: services.liverHealthClient, onAskAgent: askAgentWithContext)
-        case .healthExtras:
-            HealthExtrasView(client: services.healthExtrasClient, onAskAgent: askAgentWithContext)
         case .data:
             WorkspaceOverviewView(
                 viewModel: services.todayViewModel,
