@@ -122,6 +122,17 @@ async function* streamTokenBurstThenDone() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
+// Bug 1 原子性: 最后一批 token 紧挨 done 到达 (中间无 await gap → token flush timer
+// 还没触发就进了 done)。done 收尾必须把这最后一批折进同一次 setMessages 且同帧翻
+// streaming:false —— 否则 done 首帧 content 半量但 streaming 已 false, 渲染成生 markdown。
+async function* streamLastTokenThenDoneAtomic() {
+  yield { type: 'start', conversationId: 777 };
+  yield { type: 'token', content: '## 今日状态总览 ' };
+  // 最后一批, 紧接着 done, 不给 80ms flush timer 触发的机会。
+  yield { type: 'token', content: '这是最后一段正文。' };
+  yield { type: 'done', conversationId: 777, messageId: 2 };
+}
+
 // 攒批后走 error 分支: 已接收 token 必须先 flush, 再拼错误尾巴.
 async function* streamTokenBurstThenError() {
   yield { type: 'start', conversationId: 777 };
@@ -400,6 +411,32 @@ describe('useChatEngine', () => {
       expect(assistant?.content).toBe(BURST_TOKENS.join(''));
       expect(assistant?.streaming).toBe(false);
     });
+  });
+
+  it('lands the last token batch and streaming:false atomically on done (done 首帧内容完整)', async () => {
+    mockStreamChat.mockImplementation(streamLastTokenThenDoneAtomic);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('原子收尾压测');
+    });
+
+    // done 之后: 最后一批 token 不丢, streaming 已翻 false —— 二者同一帧完成。
+    // (若非原子, 会短暂出现 content 缺 "最后一段" 但 streaming:false 的中间态。)
+    // 注: 每个 token 经 sanitizeChatErrorMessage 会 trim, 故首批尾部空格被吃掉,
+    //     两批直接相接 —— 关键是两批都在、顺序对、streaming 已 false。
+    await waitFor(() => {
+      const assistant = result.current.messages.find(m => m.role === 'assistant');
+      expect(assistant?.content).toBe('## 今日状态总览这是最后一段正文。');
+      expect(assistant?.streaming).toBe(false);
+    });
+
+    // done 帧内容既包含首批也包含最后一批, 无残缺; thinking placeholder 已剥掉。
+    const assistant = result.current.messages.find(m => m.role === 'assistant');
+    expect(assistant?.content).not.toContain('⏳');
+    expect(assistant?.content).toContain('## 今日状态总览');
+    expect(assistant?.content).toContain('这是最后一段正文。');
   });
 
   it('flushes buffered tokens before an error tail (攒批不吞已接收内容)', async () => {

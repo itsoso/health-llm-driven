@@ -535,11 +535,20 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     // 声明在 try 外, 让 catch 也能收尾 flush 已接收内容 (避免异常吞掉最后一批).
     let pendingTokenText = '';
     let tokenFlushTimer: ReturnType<typeof setTimeout> | null = null;
-    const flushTokenBuffer = () => {
+    // 取出并清空 token 缓冲 (含 timer), 不自己 setMessages —— 让调用方把这最后一批
+    // 折进同一次 setMessages。done 收尾要用它保证「落最后内容」与「streaming:false」
+    // 在同一帧原子完成: 否则 flushTokenBuffer 与 finally 的 streaming:false 是两次
+    // 独立 setMessages, done 首帧可能 streaming 已翻 false 但 content 还是半量 →
+    // renderedMarkdown memo 拿旧内容, 首帧渲染成生 markdown, 下一次 setState 才刷对。
+    const drainPendingTokenText = () => {
       if (tokenFlushTimer) { clearTimeout(tokenFlushTimer); tokenFlushTimer = null; }
-      if (!pendingTokenText) return;
       const batch = pendingTokenText;
       pendingTokenText = '';
+      return batch;
+    };
+    const flushTokenBuffer = () => {
+      const batch = drainPendingTokenText();
+      if (!batch) return;
       setMessages(prev => prev.map(m => m.id === aId ? { ...m, content: mergeAssistantStreamContent(m.content, batch) } : m));
     };
 
@@ -621,7 +630,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           }
         } else if (evt.type === 'done') {
           sawDone = true;
-          flushTokenBuffer();
+          // done 收尾原子性: 把 token 缓冲里最后一批一起折进这次 setMessages, 且同帧
+          // 把 streaming 翻 false —— 不再靠 finally 的 streaming:false 分帧收尾。这样
+          // done 首帧就是「完整内容 + streaming:false」, ChatBubble 的 renderedMarkdown
+          // memo 拿到全量文本并走富 markdown, 不会先闪一帧生 markdown 再自动刷正。
+          const lastBatch = drainPendingTokenText();
           flushThinkingBuffer();  // 收尾: 把节流缓冲里最后的思考步骤落盘 (done 可能覆盖为服务端权威列表)。
           if (evt.conversationId) {
             streamConversationId = evt.conversationId;
@@ -631,6 +644,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           // 把耗时 + 模型名写入当前 assistant 消息 (ChatBubble 渲染 footer)。清空 status 行 (收进思考完成态 pill)。
           setMessages(prev => prev.map(m => m.id === aId ? {
             ...m,
+            content: lastBatch ? mergeAssistantStreamContent(m.content, lastBatch) : m.content,
+            streaming: false,
             currentStatus: undefined,
             elapsedMs: evt.elapsedMs,
             llmMs: evt.llmMs,

@@ -256,4 +256,39 @@ describe('ChatBubble streaming degraded render', () => {
     expect(getByTestId('rich-markdown')).toBeTruthy();
     expect(mockMarkdownMount).toHaveBeenCalled();
   });
+
+  // Bug 1 regression: LLM 吐脏 markdown (无空格标题 / 黏连表头分隔) 时, done 首帧就应
+  // 通过 normalize 后走富 markdown, 不再显示生 markdown 原文等 setState 才刷正。
+  const DIRTY_MARKDOWN = [
+    '##今日状态总览',
+    '',
+    '| 指标 | 数值 | 状态 || --- | --- | --- |',
+    '| 睡眠 | 7h | 良好 |',
+    '',
+    '###1. 今晚早睡',
+  ].join('\n');
+
+  it('normalizes dirty LLM markdown into a parseable rich tree on the done first frame', () => {
+    const { getByTestId, queryByText } = renderBubble({
+      id: 'assistant-done-dirty',
+      role: 'assistant',
+      content: DIRTY_MARKDOWN,
+      streaming: false,
+    });
+
+    // 走富 markdown 路径 (非纯文本降级), 且传入的是归一化后的内容。
+    expect(getByTestId('rich-markdown')).toBeTruthy();
+    expect(mockMarkdownMount).toHaveBeenCalled();
+    const rendered = mockMarkdownMount.mock.calls[mockMarkdownMount.mock.calls.length - 1][0];
+    // renderedMarkdown 非空且已补空格标题 / 拆开表格黏连行。
+    expect(typeof rendered).toBe('string');
+    expect(rendered.length).toBeGreaterThan(0);
+    expect(rendered).toContain('## 今日状态总览');
+    expect(rendered).toContain('### 1. 今晚早睡');
+    // 无空格黏连标题不再残留。
+    expect(rendered).not.toMatch(/^##今日/m);
+    expect(rendered).not.toMatch(/^###1\./m);
+    // 黏连表格分隔已被拆开处理, 不再逐字出现原始生 markdown 原文。
+    expect(queryByText(DIRTY_MARKDOWN)).toBeNull();
+  });
 });
