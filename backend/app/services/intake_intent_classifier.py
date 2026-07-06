@@ -78,12 +78,53 @@ _MEAL_LABELS = {
     "snack": ("加餐", "零食", "夜宵", "下午茶"),
 }
 
+# ──── 提问守卫(R4 边界 · founder 「午餐我吃了啥？」实锤) ────
+# 查询回合绝不产出 intake 写草稿。摄入动词 + 疑问词/疑问语气共现 → 判为提问,
+# 而非记录。所有 *_draft builder 都门控在 classify_intake_intent 上,故守卫放这里,
+# 三个 draft builder 一并继承。刻意 PRECISE:裸 "?" 不足以否决,必须与摄入动词共现。
+_INTAKE_VERB = r"(?:吃了|喝了|服了|用了|补了|吃|喝|服|用|补)"
+# 摄入动词 + (可选 的/了/过) + 疑问词:「吃了啥」「喝了多少」「补了几片」「午餐吃什么」
+_INTAKE_QUESTION_WORD_RE = re.compile(
+    _INTAKE_VERB + r"(?:的|了|过|点|些)?\s*(?:啥|什么|多少|几|哪些|哪)"
+)
+# 摄入动词 + 尾部问号:「…吃的啥？」「…喝了吗？」——问号锚定疑问语气
+_INTAKE_QUESTION_MARK_RE = re.compile(_INTAKE_VERB + r"[^?？]{0,12}[?？]")
+# 摄入动词 + 尾部是非语气词 吗/呢:「我吃了吗」「喝了呢」
+_INTAKE_YESNO_PARTICLE_RE = re.compile(_INTAKE_VERB + r"(?:了|过|的)?\s*(?:吗|呢)\s*[?？]?$")
+
+# 纯疑问 token(去空白后整串就是疑问词)——item 级第二层拒绝,即使漏过顶层守卫,
+# 抽出的 item 若只是疑问词也绝不成草稿。
+_PURE_QUESTION_TOKEN_RE = re.compile(r"^(?:啥|什么|多少|几|哪|哪些|吗|呢)$")
+
+
+def _is_intake_question(normalized: str) -> bool:
+    """摄入动词 + 疑问共现 → 提问(非记录)。PRECISE:三种独立信号任一命中。"""
+    if _INTAKE_QUESTION_WORD_RE.search(normalized):
+        return True
+    if _INTAKE_QUESTION_MARK_RE.search(normalized):
+        return True
+    if _INTAKE_YESNO_PARTICLE_RE.search(normalized):
+        return True
+    return False
+
+
+def _is_pure_question_item(item: str) -> bool:
+    """抽出的 item 去掉尾部问号/标点后若只剩疑问词 → 拒绝(item 级第二层)。"""
+    stripped = _normalize(item).strip("?？ ")
+    return bool(_PURE_QUESTION_TOKEN_RE.match(stripped))
+
 
 def classify_intake_intent(query: Any) -> IntakeIntent:
     raw = _flatten_text(query)
     normalized = _normalize(raw)
     if not normalized:
         return IntakeIntent("unknown", 0.0, "empty")
+
+    # 顶层提问守卫:在 diet/medication/supplement/water 分支之前。
+    # 提问(如「午餐我吃了啥？」)绝不落记录草稿。管理类(删除/恢复)不受此门——
+    # 那些是显式命令而非提问,且不产出 intake 写草稿。
+    if not _has_any(normalized, DIET_MANAGEMENT_MARKERS) and _is_intake_question(normalized):
+        return IntakeIntent("unknown", 0.3, "intake_question", raw)
 
     if _has_any(normalized, DIET_MANAGEMENT_MARKERS):
         return IntakeIntent("diet_management", 0.95, "diet_management", raw)
@@ -97,6 +138,8 @@ def classify_intake_intent(query: Any) -> IntakeIntent:
 
     if _looks_like_medication(normalized):
         item = _extract_item_text(raw)
+        if _is_pure_question_item(item):
+            return IntakeIntent("unknown", 0.3, "intake_question", raw)
         slots = _extract_medication_slots(item)
         return IntakeIntent(
             "medication",
@@ -107,11 +150,14 @@ def classify_intake_intent(query: Any) -> IntakeIntent:
         )
 
     if _looks_like_supplement(raw, normalized):
-        return IntakeIntent("supplement", 0.82, "supplement_marker", _extract_item_text(raw))
+        item = _extract_item_text(raw)
+        if _is_pure_question_item(item):
+            return IntakeIntent("unknown", 0.3, "intake_question", raw)
+        return IntakeIntent("supplement", 0.82, "supplement_marker", item)
 
     if _looks_like_diet(raw, normalized):
         item = _extract_food_text(raw) or _extract_item_text(raw)
-        if not item or _is_vague_item(item):
+        if not item or _is_vague_item(item) or _is_pure_question_item(item):
             return IntakeIntent("unknown", 0.35, "ambiguous", raw)
         return IntakeIntent(
             "diet",

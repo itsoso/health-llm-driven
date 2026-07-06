@@ -8,6 +8,7 @@ build_cards 压制同 kind *_draft; ② 草稿真发时(无本轮记录)单品+�
 """
 from app.models.food_nutrition import FoodItem, FoodNutrient
 from app.services.inline_cards import (
+    _build_diet_draft,
     _estimate_nutrition_from_table,
     build_cards,
     recorded_intake_kinds,
@@ -92,3 +93,30 @@ class TestNutritionTablePrefill:
         assert draft is not None
         assert draft["data"].get("calories") == 40.0
         assert draft["data"].get("confidence") == 0.72
+
+
+class TestInterrogativeNoDraft:
+    """提问回合绝不产出 intake 写草稿(R4 · founder 「午餐我吃了啥？」实锤)。
+
+    对照 TestDraftSuppression 的记录型 query「加餐吃了一个油桃」本会出草稿;
+    此处的提问必须相反 —— 不出任何 diet_draft。
+    """
+
+    def test_founder_interrogative_builds_no_diet_draft(self, db):
+        assert _build_diet_draft(db, 1, "午餐我吃了啥？") is None
+
+    def test_founder_interrogative_no_diet_draft_card(self, db):
+        cards = build_cards(db, 1, "午餐我吃了啥？")
+        assert not any(c["type"] == "diet_draft" for c in cards), \
+            "提问回合冒出了 diet_draft 草稿卡(R4 越界)"
+
+    def test_interrogative_battery_no_intake_draft_cards(self, db):
+        for q in ["今天吃了什么", "晚饭吃的啥？", "喝了多少水", "我吃了吗"]:
+            cards = build_cards(db, 1, q)
+            leaked = [c["type"] for c in cards
+                      if c["type"] in ("diet_draft", "medication_draft", "supplement_draft")]
+            assert not leaked, f"{q!r} 冒出写草稿: {leaked}"
+
+    def test_legit_record_still_builds_draft_control(self, db):
+        # 对照组:记录型 query 仍出草稿,证明守卫没把记录一并杀掉
+        assert _build_diet_draft(db, 1, "加餐吃了一个油桃") is not None

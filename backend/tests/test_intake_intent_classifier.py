@@ -59,3 +59,56 @@ def test_consumption_verb_paths_unchanged():
     assert intent.kind == "diet"
     assert "牛肉面" in intent.text
     assert "记录" not in intent.text
+
+
+# ──── 提问守卫(R4 边界 · founder 「午餐我吃了啥？」实锤) ────
+# 查询回合绝不产出 intake 写草稿。摄入动词 + 疑问共现 → 非记录。
+_RECORD_KINDS = {"diet", "medication", "supplement", "water"}
+
+
+@pytest.mark.parametrize("query", [
+    "午餐我吃了啥？",       # founder 精确复现
+    "今天吃了什么",
+    "午餐吃啥",
+    "晚饭吃的啥？",
+    "喝了多少水",
+    "今天吃了几顿",
+    "我吃了吗",
+    "今天喝了吗？",
+    "午餐吃什么",
+    "补了几片？",
+])
+def test_interrogatives_never_classify_as_record(query):
+    """摄入提问绝不落记录草稿——kind 不在 record 集合,理由为 intake_question。"""
+    result = classify_intake_intent(query)
+    assert result.kind not in _RECORD_KINDS, f"{query!r} 误判为 {result.kind}"
+    assert result.kind == "unknown"
+    assert result.reason == "intake_question"
+
+
+@pytest.mark.parametrize(("query", "kind"), [
+    ("记录午餐：牛肉面", "diet"),
+    ("午餐吃了牛肉面", "diet"),
+    ("刚吃了两个鸡蛋", "diet"),
+    ("喝了500ml水", "water"),
+    ("喝了一杯温水", "water"),
+    ("补了维生素D", "supplement"),
+])
+def test_legit_records_still_classify(query, kind):
+    """真实记录不被提问守卫误伤。"""
+    result = classify_intake_intent(query)
+    assert result.kind == kind, f"{query!r} 应为 {kind},实为 {result.kind}"
+
+
+def test_bare_question_mark_without_intake_verb_not_swept():
+    """裸问号(无摄入动词)不足以触发提问守卫——保持 PRECISE。"""
+    result = classify_intake_intent("今天天气怎么样？")
+    assert result.reason != "intake_question"
+
+
+def test_pure_question_item_rejected_second_layer():
+    """即使漏过顶层守卫,抽出的 item 若是纯疑问词也绝不成草稿。"""
+    # 「午餐吃了啥」——item 抽取会拿到 "啥",item 级第二层拒绝
+    result = classify_intake_intent("午餐吃了啥")
+    assert result.kind == "unknown"
+    assert result.text != "啥"  # 绝不带纯疑问 token 落草稿
