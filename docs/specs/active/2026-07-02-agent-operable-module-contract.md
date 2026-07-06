@@ -128,7 +128,9 @@ task #43 已落地:
 3. ✅ **goal**:已补 health_record create + health_manage list/update/delete;
    同时新增 `/goals/{id}` GET/PUT/DELETE 并按当前用户隔离。`帮我设一个目标`、
    `把目标暂停`、`删除这个目标` 不再只能靠 UI。
-4. **medical_exam**:指标级读 OK(canonical 层);报告级 list 无通路。
+4. ✅ **medical_exam**:指标级读走 canonical health_query 层;报告级 list
+   已补 health_manage list → `/medical-exams/me/reports` 紧凑摘要清单。
+   数值创建/修改/删除仍只走导入+人工核对管线,agent 不开放。
 5. **intervention_cycle**:status/start 有(专属工具);历史列表/参数调整/取消
    无通路。
 6. **慢路径确认门不齐**:mood / supplement_group / garmin_sync 不在 AUTO 集

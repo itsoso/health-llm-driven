@@ -175,6 +175,58 @@ async def test_health_manage_lists_supplement_records(db):
 
 
 @pytest.mark.asyncio
+async def test_health_manage_lists_medical_exam_report_summaries(db):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+    captured = {}
+
+    async def fake_get(url, headers):
+        captured["url"] = url
+        captured["headers"] = headers
+        return '[{"id":31,"exam_date":"2026-07-01","exam_type":"MRI","items_count":6}]'
+
+    with patch.object(executor, "_api_get", new=AsyncMock(side_effect=fake_get)):
+        result = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": "medical_exam",
+                "operation": "list",
+            }),
+            user_token="test-token",
+        )
+
+    assert captured["url"].endswith("/medical-exams/me/reports?limit=20")
+    assert captured["headers"]["Authorization"] == "Bearer test-token"
+    assert json.loads(result)[0]["id"] == 31
+
+
+@pytest.mark.asyncio
+async def test_health_manage_rejects_medical_exam_mutation(db):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+
+    with patch.object(executor, "_api_put", new=AsyncMock()) as put_mock:
+        result = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": "medical_exam",
+                "operation": "update",
+                "record_id": 31,
+                "data": {"overall_assessment": "改写报告"},
+            }),
+            user_token="test-token",
+        )
+
+    put_mock.assert_not_called()
+    assert "medical_exam" in result
+    assert "只支持 list" in result
+
+
+@pytest.mark.asyncio
 async def test_health_manage_updates_and_deletes_supplement_record_by_id(db):
     from app.services.agent_executor import AgentExecutor
 

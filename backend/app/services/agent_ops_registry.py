@@ -357,8 +357,8 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
         # canonical read 层(health_read.read_medical_indicators, 与 Twin 同源)。
         "read": {"tool": "health_query", "dimensions": ("medical_exam",),
                  "via": "health_query(medical_exam) → canonical MedicalIndicator 读层"},
-        "list": {"gap": True,
-                 "reason": "报告级列表无 agent 通路;指标级读走 health_query(medical_exam)"},
+        "list": {"tool": "health_manage", "record_type": "medical_exam",
+                 "via": "GET /medical-exams/me/reports"},
         "update": {"opt_out": "数值修正走人工核对管线,不开放 agent 改"},
         "delete": {"opt_out": "体检报告不开放 agent 删除"},
     },

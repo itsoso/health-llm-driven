@@ -277,3 +277,14 @@ def test_p2_goal_agent_crud_is_exposed():
 
     assert "goal" in _tool_enum("health_record", "record_type")
     assert "goal" in _tool_enum("health_manage", "record_type")
+
+
+def test_p2_medical_exam_report_list_is_exposed_without_mutation():
+    assert AGENT_OPS["medical_exam"]["list"]["tool"] == "health_manage"
+    assert AGENT_OPS["medical_exam"]["list"]["record_type"] == "medical_exam"
+    assert not AGENT_OPS["medical_exam"]["list"].get("gap")
+
+    assert AGENT_OPS["medical_exam"]["create"].get("opt_out")
+    assert AGENT_OPS["medical_exam"]["update"].get("opt_out")
+    assert AGENT_OPS["medical_exam"]["delete"].get("opt_out")
+    assert "medical_exam" in _tool_enum("health_manage", "record_type")

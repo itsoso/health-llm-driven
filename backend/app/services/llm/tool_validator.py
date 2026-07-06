@@ -348,7 +348,7 @@ _MANAGE_RECORD_TYPES = {
     "diet", "water", "weight", "waist", "blood_pressure",
     "sleep", "mood", "excretion", "exercise", "illness", "symptom",
     "medication", "medication_log", "supplement", "supplement_definition", "reminder",
-    "goal",
+    "goal", "medical_exam",
 }
 _MANAGE_OPERATIONS = {"list", "update", "delete"}
 _CARD_TYPES = {"plan", "insight", "recommendation"}
@@ -536,6 +536,14 @@ def _validate_health_manage(
         return f"Error: health_manage.record_type 必须是 {sorted(_MANAGE_RECORD_TYPES)} 之一."
     if not operation:
         return f"Error: health_manage.operation 必须是 {sorted(_MANAGE_OPERATIONS)} 之一."
+
+    if rtype == "medical_exam" and operation != "list":
+        return (
+            "Error: medical_exam 只支持 list 查询报告级清单; "
+            "体检报告/化验指标的创建、修改、删除必须走导入与人工核对管线。"
+        )
+
+    _coerce_int_range("health_manage", args, "limit", 1, 100, 20, warnings)
 
     if operation in {"update", "delete"}:
         record_id = args.get("record_id")

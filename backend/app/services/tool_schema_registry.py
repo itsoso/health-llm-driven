@@ -215,6 +215,7 @@ goal:             {"title": "每日快走30分钟", "goal_type": "exercise|diet|
 - diet, water, weight, waist, blood_pressure, sleep, mood, excretion, supplement: 支持 list/update/delete
 - illness, medication, supplement_definition: 支持 list/update/delete
 - exercise, symptom, medication_log, reminder, goal: 支持 list/update/delete
+- medical_exam: 仅支持 list, 返回体检/影像/病理/胃镜等报告级摘要清单;指标时间线请用 health_query(dimension=medical_exam)
 """,
             "parameters": {
                 "type": "object",
@@ -226,7 +227,7 @@ goal:             {"title": "每日快走30分钟", "goal_type": "exercise|diet|
                             "sleep", "mood", "excretion", "exercise", "illness",
                             "symptom", "medication", "medication_log",
                             "supplement", "supplement_definition", "reminder",
-                            "goal",
+                            "goal", "medical_exam",
                         ],
                         "description": "要管理的数据类型",
                     },
@@ -242,6 +243,11 @@ goal:             {"title": "每日快走30分钟", "goal_type": "exercise|diet|
                     "date": {
                         "type": "string",
                         "description": "list 可选日期 YYYY-MM-DD。饮食支持按日期汇总; 其他类型走最近列表。",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "list 返回条数上限, 默认 20, 最大 100。",
                     },
                     "data": {
                         "type": "object",

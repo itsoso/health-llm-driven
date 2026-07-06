@@ -6,10 +6,16 @@ import logging
 from datetime import datetime, date, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from typing import List
 from app.database import get_db
-from app.schemas.medical_exam import MedicalExamCreate, MedicalExamResponse, MedicalExamItemUpdate, MedicalExamItemResponse
+from app.schemas.medical_exam import (
+    MedicalExamCreate,
+    MedicalExamResponse,
+    MedicalExamItemUpdate,
+    MedicalExamItemResponse,
+    MedicalExamReportSummary,
+)
 from app.models.medical_exam import MedicalExam, MedicalExamItem
 from app.models.user import User
 from app.api.deps import get_current_user_required
@@ -148,6 +154,52 @@ def get_my_medical_exams(
         MedicalExam.user_id == current_user.id
     ).order_by(MedicalExam.exam_date.desc()).offset(skip).limit(limit).all()
     return exams
+
+
+def _medical_exam_report_summary(exam: MedicalExam) -> dict:
+    items = list(exam.items or [])
+    abnormal_count = sum(
+        1
+        for item in items
+        if str(item.is_abnormal or "").strip().lower() not in ("", "normal")
+    )
+    conclusions = exam.conclusions if isinstance(exam.conclusions, list) else []
+    overall_assessment = exam.overall_assessment
+    if overall_assessment and len(overall_assessment) > 500:
+        overall_assessment = overall_assessment[:500] + "..."
+    return {
+        "id": exam.id,
+        "exam_date": exam.exam_date,
+        "exam_type": exam.exam_type,
+        "body_system": exam.body_system,
+        "hospital_name": exam.hospital_name,
+        "doctor_name": exam.doctor_name,
+        "overall_assessment": overall_assessment,
+        "conclusions_count": len(conclusions),
+        "items_count": len(items),
+        "abnormal_items_count": abnormal_count,
+        "created_at": exam.created_at,
+    }
+
+
+@router.get("/me/reports", response_model=List[MedicalExamReportSummary])
+def get_my_medical_exam_report_summaries(
+    skip: int = 0,
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """获取当前用户的体检/检查报告级摘要列表,不返回全量指标明细。"""
+    exams = (
+        db.query(MedicalExam)
+        .options(selectinload(MedicalExam.items))
+        .filter(MedicalExam.user_id == current_user.id)
+        .order_by(MedicalExam.created_at.desc(), MedicalExam.exam_date.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return [_medical_exam_report_summary(exam) for exam in exams]
 
 
 # ========== Calibrate UI: 单条 item 校正 (OCR 抽错值后用户回写) ==========

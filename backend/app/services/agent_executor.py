@@ -5500,6 +5500,11 @@ class AgentExecutor:
         data = args.get("data") or {}
         target_date = args.get("date")
         today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
+        try:
+            limit = int(args.get("limit") or 20)
+        except (TypeError, ValueError):
+            limit = 20
+        limit = max(1, min(limit, 100))
 
         list_paths = {
             "diet": f"/diet/records/me/date/{target_date or today}" if target_date else "/diet/records/me?limit=20",
@@ -5519,6 +5524,7 @@ class AgentExecutor:
             "supplement_definition": "/supplements/me/definitions?active_only=false",
             "reminder": "/reminders/me?status=all&limit=50",
             "goal": "/goals/me",
+            "medical_exam": f"/medical-exams/me/reports?limit={limit}",
         }
         record_paths = {
             "diet": "/diet/records/{id}",

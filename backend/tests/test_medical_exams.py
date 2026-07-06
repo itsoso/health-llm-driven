@@ -1,6 +1,6 @@
 """体检数据API测试 — 所有端点强制 auth 到 current_user"""
 import uuid
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch, AsyncMock
 from app.models.user import User
 from app.services.auth import auth_service
@@ -73,6 +73,58 @@ def test_get_my_medical_exams(client, db, sample_medical_exam_data):
     resp = client.get("/api/v1/medical-exams/me", headers=headers)
     assert resp.status_code == 200
     assert len(resp.json()) > 0
+
+
+def test_get_my_medical_exam_report_summaries_is_compact_and_user_scoped(client, db):
+    """报告级列表返回紧凑摘要,不把所有 item 明细塞进 Agent 上下文。"""
+    from app.models.medical_exam import MedicalExam, MedicalExamItem
+
+    user, headers = _create_user(db)
+    other, _ = _create_user(db)
+
+    recent = MedicalExam(
+        user_id=user.id,
+        exam_date=date(2026, 7, 1),
+        exam_type="MRI",
+        body_system="skeletal",
+        hospital_name="杭州测试医院",
+        overall_assessment="左膝关节内外侧盘状半月板考虑，并半月板水平损伤。",
+        created_at=datetime.now(timezone.utc),
+    )
+    older = MedicalExam(
+        user_id=user.id,
+        exam_date=date(2026, 6, 1),
+        exam_type="blood_routine",
+        hospital_name="旧报告医院",
+        overall_assessment="血常规复查。",
+        created_at=datetime.now(timezone.utc) - timedelta(days=10),
+    )
+    other_exam = MedicalExam(
+        user_id=other.id,
+        exam_date=date(2026, 7, 2),
+        exam_type="CT",
+        overall_assessment="其他用户报告不应出现。",
+        created_at=datetime.now(timezone.utc) + timedelta(days=1),
+    )
+    db.add_all([recent, older, other_exam])
+    db.flush()
+    db.add_all([
+        MedicalExamItem(exam_id=recent.id, item_name="内侧半月板", is_abnormal="abnormal"),
+        MedicalExamItem(exam_id=recent.id, item_name="外侧半月板", is_abnormal="normal"),
+        MedicalExamItem(exam_id=older.id, item_name="白细胞", is_abnormal="normal"),
+    ])
+    db.commit()
+
+    resp = client.get("/api/v1/medical-exams/me/reports?limit=20", headers=headers)
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert [row["id"] for row in data] == [recent.id, older.id]
+    assert data[0]["items_count"] == 2
+    assert data[0]["abnormal_items_count"] == 1
+    assert data[0]["overall_assessment"].startswith("左膝关节")
+    assert "items" not in data[0]
+    assert all("其他用户" not in str(row) for row in data)
 
 
 def test_import_medical_exam_from_json(client, db):

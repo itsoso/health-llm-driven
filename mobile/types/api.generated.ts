@@ -3063,6 +3063,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/medical-exams/me/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Medical Exam Report Summaries
+         * @description 获取当前用户的体检/检查报告级摘要列表,不返回全量指标明细。
+         */
+        get: operations["get_my_medical_exam_report_summaries_api_v1_medical_exams_me_reports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/medical-exams/{exam_id}/explain": {
         parameters: {
             query?: never;
@@ -25681,6 +25701,46 @@ export interface components {
             notes?: string | null;
         };
         /**
+         * MedicalExamReportSummary
+         * @description 体检/检查报告级列表摘要,用于 Agent 报告清单,不包含全量 item 明细。
+         */
+        MedicalExamReportSummary: {
+            /** Id */
+            id: number;
+            /**
+             * Exam Date
+             * Format: date
+             */
+            exam_date: string;
+            /** Exam Type */
+            exam_type?: string | null;
+            /** Body System */
+            body_system?: string | null;
+            /** Hospital Name */
+            hospital_name?: string | null;
+            /** Doctor Name */
+            doctor_name?: string | null;
+            /** Overall Assessment */
+            overall_assessment?: string | null;
+            /**
+             * Conclusions Count
+             * @default 0
+             */
+            conclusions_count: number;
+            /**
+             * Items Count
+             * @default 0
+             */
+            items_count: number;
+            /**
+             * Abnormal Items Count
+             * @default 0
+             */
+            abnormal_items_count: number;
+            /** Created At */
+            created_at?: string | null;
+        };
+        /**
          * MedicalExamResponse
          * @description 体检记录响应
          */
@@ -36288,6 +36348,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MedicalExamResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_medical_exam_report_summaries_api_v1_medical_exams_me_reports_get: {
+        parameters: {
+            query?: {
+                skip?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MedicalExamReportSummary"][];
                 };
             };
             /** @description Validation Error */

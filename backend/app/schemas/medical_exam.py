@@ -88,3 +88,18 @@ class MedicalExamResponse(BaseModel):
     items: List[MedicalExamItemResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MedicalExamReportSummary(BaseModel):
+    """体检/检查报告级列表摘要,用于 Agent 报告清单,不包含全量 item 明细。"""
+    id: int
+    exam_date: date
+    exam_type: Optional[str] = None
+    body_system: Optional[str] = None
+    hospital_name: Optional[str] = None
+    doctor_name: Optional[str] = None
+    overall_assessment: Optional[str] = None
+    conclusions_count: int = 0
+    items_count: int = 0
+    abnormal_items_count: int = 0
+    created_at: Optional[datetime] = None
