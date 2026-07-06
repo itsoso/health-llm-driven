@@ -581,10 +581,9 @@ function AIAssistantInner() {
           >
             <PanelLeft className="h-[1.05rem] w-[1.05rem]" />
           </button>
-          {/* 千问式左上角品牌位:真 logo + 点击回首页(此页 fixed 全屏盖住全站导航,这是唯一回家路) */}
-          <Link href="/" title="回到首页" className="flex min-w-0 items-center gap-2 transition-opacity hover:opacity-80">
-            <Image src="/logo.png" alt="小巴" width={28} height={28} className="h-7 w-7 shrink-0 rounded-[8px]" />
-            <span className="rd-serif hidden text-[17px] font-semibold tracking-[0.01em] text-[#29261F] sm:inline">
+          {/* 千问式:左上角纯文字字标(图标在右上角 brand 位,豆包/阿福同款,免得左侧三件套挤成一坨) */}
+          <Link href="/" title="回到首页" className="hidden shrink-0 transition-opacity hover:opacity-80 sm:inline">
+            <span className="rd-serif text-[17px] font-semibold tracking-[0.01em] text-[#29261F]">
               小巴
             </span>
           </Link>
@@ -619,6 +618,11 @@ function AIAssistantInner() {
               <span className="hidden sm:inline">{shareSelectionMode ? '取消选择' : '选择分享'}</span>
             </button>
           )}
+          {/* 右上角品牌图标(千问/豆包/阿福 的 avatar 位)— mac 同款小巴图标,点击回首页;
+              此页 fixed 全屏盖住全站导航,这是主要回家路 */}
+          <Link href="/" title="回到首页" className="ml-0.5 shrink-0 transition-opacity hover:opacity-80">
+            <Image src="/logo.png" alt="小巴" width={36} height={36} className="h-9 w-9" />
+          </Link>
         </div>
       </header>
 
@@ -645,7 +649,7 @@ function AIAssistantInner() {
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 pb-32 pt-8 sm:px-6">
             {messages.length === 0 && !streaming ? (
               <div className="mx-auto flex min-h-[60vh] max-w-3xl flex-col items-center justify-center text-center">
-                <Image src="/logo.png" alt="小巴" width={56} height={56} className="h-14 w-14 rounded-2xl" />
+                <Image src="/logo.png" alt="小巴" width={64} height={64} className="h-16 w-16" />
                 <h1 className="rd-serif mt-5 pb-1 text-2xl font-semibold leading-[1.3] tracking-[0.01em] text-[#29261F] sm:text-[28px] sm:leading-[1.25]">
                   今天想了解什么？
                 </h1>
