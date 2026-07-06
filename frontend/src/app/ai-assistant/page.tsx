@@ -573,7 +573,9 @@ function AIAssistantInner() {
   return (
     <main className="ai-assistant-theme fixed inset-0 z-40 flex flex-col overflow-hidden text-[#29261F]">
       <header className="relative z-[70] shrink-0 overflow-visible border-b border-[#E5E1D5] bg-[#F7F5EF]/95 px-4 py-2.5 backdrop-blur sm:px-6">
-        <div className="mx-auto flex max-w-3xl items-center gap-3">
+        {/* 通栏:品牌钉在窗口真·最左(千问式)。曾套 max-w-3xl mx-auto,
+            宽窗口下"最左"漂到屏幕中间(founder 红框实锤)。 */}
+        <div className="flex items-center gap-3">
           {/* 千问式:品牌位在最左(founder 2026-07-06 定稿),开关在其右 */}
           <Link href="/" title="回到首页" className="flex shrink-0 items-center gap-2 transition-opacity hover:opacity-80">
             <Image src="/logo.png" alt="小巴" width={32} height={32} className="h-8 w-8" />
