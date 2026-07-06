@@ -605,7 +605,7 @@ struct AgentChatView: View {
     /// WKWebView 渲染的滚动对话区(自带滚动 + 自动滚底 + 文本选择)。
     private var transcriptWebView: some View {
         ChatTranscriptWebView(
-            messages: viewModel.renderedTranscript(),
+            messages: viewModel.renderedTranscript(language: appLanguageRaw),
             fontScale: AppFontScale(level: appFontScaleLevel).pointScale,
             onCopy: { id in handleWebCopy(messageID: id) },
             onRouteOpen: { route in handleWebRouteOpen(route) }
@@ -642,7 +642,12 @@ struct AgentChatView: View {
         if let last = viewModel.messages.last, last.role == .assistant {
             let actions = viewModel.proposedActions(for: last)
             let showChips = shouldShowFollowUpChips(for: last)
-            let showSpinner = viewModel.isStreaming && last.content.isEmpty
+            // Show the single-line ThinkingStatusLine ONLY in the brief pre-first-step
+            // gap. Once the live 思考过程 trace has ≥1 step, the trace (rendered inside
+            // the WebView bubble) is the sole thinking indicator — never stack both.
+            let showSpinner = viewModel.isStreaming
+                && last.content.isEmpty
+                && viewModel.liveThinkingSteps.isEmpty
             if !actions.isEmpty || showChips || showSpinner {
                 VStack(alignment: .leading, spacing: 8) {
                     if showSpinner {

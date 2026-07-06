@@ -179,6 +179,53 @@ public enum ChatTranscriptHTML {
         return html
     }
 
+    // MARK: - 思考过程 trace (safe progress summaries)
+
+    /// Renders the reviewable "思考过程" trace from the backend's safe progress
+    /// summaries (`thinking_steps`). Two modes, ONE component so live and finished
+    /// never look like two different UIs:
+    ///  - `live: true`  → a `<details open>` (steps visible) whose LAST step is the
+    ///    running one (pulsing dot) and earlier steps are done (a small linear
+    ///    check). Shown inside the streaming bubble while the answer composes.
+    ///  - `live: false` → a `<details>` collapsed by default; the header "思考过程"
+    ///    expands to review the finished turn's steps (all done). Survives reload
+    ///    because it reads the persisted `message.thinking_steps`.
+    ///
+    /// Icon: a plain disclosure chevron (▸/▾) on the header — NO brain/emoji glyph
+    /// (founder constraint). Step glyphs are a minimal dot / linear check, never 🧠.
+    /// Layout is deterministic: a fixed-width leading gutter (CSS `.tp-gutter`), no
+    /// measurement feedback loop. Every dynamic string is `escape(_:)`-ed (XSS).
+    /// Empty `steps` → "" (nothing rendered).
+    public static func thinkingTraceHTML(steps: [String], language: String, live: Bool, open: Bool? = nil) -> String {
+        let cleaned = steps
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !cleaned.isEmpty else { return "" }
+
+        let header = escape(L10n.text("Thinking process", language: AppLanguage(storedValue: language)))
+        let isOpen = open ?? live
+        let openAttr = isOpen ? " open" : ""
+
+        // In live mode the last step is "running"; every earlier step (and every
+        // step of a finished turn) is "done".
+        let lastIndex = cleaned.count - 1
+        let rows = cleaned.enumerated().map { index, step -> String in
+            let running = live && index == lastIndex
+            let stateClass = running ? "tp-running" : "tp-done"
+            let glyph = running
+                ? "<span class=\"tp-gutter tp-spinner\" aria-hidden=\"true\"></span>"
+                : "<span class=\"tp-gutter tp-check\" aria-hidden=\"true\"></span>"
+            return "<li class=\"tp-step \(stateClass)\">\(glyph)<span class=\"tp-label\">\(escape(step))</span></li>"
+        }.joined()
+
+        return """
+        <details class="thinking-trace\(live ? " thinking-trace-live" : "")"\(openAttr)>
+          <summary class="tp-summary">\(header)</summary>
+          <ul class="tp-steps">\(rows)</ul>
+        </details>
+        """
+    }
+
     // MARK: - Meta footer (模型 · 轮数 · 耗时 / 数据源 / Skill)
 
     /// 给一条助手消息生成 footer HTML 片段(模型/轮数/耗时一行 + 可折叠数据源 + Skill chips)。

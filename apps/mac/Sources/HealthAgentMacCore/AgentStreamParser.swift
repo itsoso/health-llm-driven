@@ -32,7 +32,11 @@ public enum AgentStreamEvent: Equatable, Sendable {
         // Per-answer stage-timing perf. Absent on old backends → nil → footer
         // renders unchanged (full back-compat).
         perf: MessagePerf? = nil,
-        llmUsage: LLMUsageProfile? = nil
+        llmUsage: LLMUsageProfile? = nil,
+        // Safe progress summaries (`done.thinking_steps`). The authoritative,
+        // persisted list of "思考过程" steps for this turn. Absent on old backends
+        // → empty → the collapsible trace simply isn't rendered.
+        thinkingSteps: [String] = []
     )
     case error(String)
 }
@@ -162,7 +166,9 @@ public enum AgentStreamParser {
                         ),
                         // perf absent on old backends → nil → footer unchanged.
                         perf: decode(MessagePerf.self, from: eventData?["perf"]),
-                        llmUsage: decode(LLMUsageProfile.self, from: eventData?["llm_usage"])
+                        llmUsage: decode(LLMUsageProfile.self, from: eventData?["llm_usage"]),
+                        // thinking_steps absent on old backends → [] → no trace.
+                        thinkingSteps: stringArray(eventData?["thinking_steps"])
                     )
                 case "error":
                     return .error(eventData?["message"] as? String ?? "Unknown stream error")

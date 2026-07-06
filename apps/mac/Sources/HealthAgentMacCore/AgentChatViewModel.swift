@@ -48,6 +48,10 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
     /// 每回复级阶段耗时(后端 done.perf,持久化在 message.meta.perf)。用于渲染延迟瀑布图。
     /// 老消息缺失 → nil → footer 行为不变(完整向后兼容)。
     public var perf: MessagePerf?
+    /// 「思考过程」步骤(后端 done.thinking_steps,持久化在 message.meta.thinking_steps)。
+    /// 每项是一条短的安全进度摘要(kind=safe_progress_summary,后端上限 8 条)。用于在
+    /// 完成的回复上渲染可折叠的「思考过程」披露。老消息缺失 → 空数组 → 不渲染该披露。
+    public var thinkingSteps: [String]
 
     /// 是否有任何可展示的 meta(footer 是否需要渲染)。
     public var hasMeta: Bool {
@@ -75,6 +79,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         toolsUsed: [String] = [],
         completionStatus: String? = nil,
         perf: MessagePerf? = nil,
+        thinkingSteps: [String] = [],
         cardType: String? = nil,
         cardRender: AgentDynamicCardRenderDescriptor? = nil,
         cardData: AgentDynamicCardValue? = nil,
@@ -101,11 +106,12 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.toolsUsed = toolsUsed
         self.completionStatus = completionStatus
         self.perf = perf
+        self.thinkingSteps = thinkingSteps
     }
 
     // 显式 Codable:历史快照(老版本无这些字段)用 decodeIfPresent 容错;数组缺失 → 空。
     private enum CodingKeys: String, CodingKey {
-        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, llmUsage, sourcesUsed, toolsUsed, completionStatus, perf, cardType, cardRender, cardData, cardActions
+        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, llmUsage, sourcesUsed, toolsUsed, completionStatus, perf, thinkingSteps, cardType, cardRender, cardData, cardActions
         case cardTypeSnake = "card_type"
         case cardRenderSnake = "card_render"
         case cardDataSnake = "card_data"
@@ -130,6 +136,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.toolsUsed = try c.decodeIfPresent([String].self, forKey: .toolsUsed) ?? []
         self.completionStatus = try c.decodeIfPresent(String.self, forKey: .completionStatus)
         self.perf = try c.decodeIfPresent(MessagePerf.self, forKey: .perf)
+        self.thinkingSteps = try c.decodeIfPresent([String].self, forKey: .thinkingSteps) ?? []
         self.cardType = try c.decodeIfPresent(String.self, forKey: .cardType)
             ?? c.decodeIfPresent(String.self, forKey: .cardTypeSnake)
         self.cardRender = try c.decodeIfPresent(AgentDynamicCardRenderDescriptor.self, forKey: .cardRender)
@@ -159,6 +166,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         try c.encode(toolsUsed, forKey: .toolsUsed)
         try c.encodeIfPresent(completionStatus, forKey: .completionStatus)
         try c.encodeIfPresent(perf, forKey: .perf)
+        try c.encode(thinkingSteps, forKey: .thinkingSteps)
         try c.encodeIfPresent(cardType, forKey: .cardType)
         try c.encodeIfPresent(cardRender, forKey: .cardRender)
         try c.encodeIfPresent(cardData, forKey: .cardData)
@@ -664,6 +672,11 @@ public final class AgentChatViewModel {
     public var liveStatusText: String?
     /// tool 阶段的中文工具名(后端 `status.detail`);仅当 `liveStatusText` 是格式串时有值。
     public var liveStatusDetail: String?
+    /// 本轮流式中已累积的「思考过程」步骤(从 `status` / `tool` SSE 事件即时派生,镜像
+    /// 后端 `_thought_step_from_agent_event`)。这是 LIVE 视图的数据源:每来一个阶段就追加
+    /// 一条,最后一条为「进行中」。`done` 到达后由 `done.thinking_steps` 回填进消息、清空此处。
+    /// 下一轮 send() 开头清空。空 = 尚无阶段信号(老后端 / 首步之前)。
+    public var liveThinkingSteps: [String] = []
     public var lastPrompt: String?
     public var preparedDraft: String?
     public var contextItems: [AgentContextItem] = []
@@ -682,6 +695,10 @@ public final class AgentChatViewModel {
     @ObservationIgnored private var _transcriptCacheMessages: [AgentChatMessage] = []
     @ObservationIgnored private var _transcriptCacheStreaming = false
     @ObservationIgnored private var _transcriptCacheProposed: [AgentProposedAction] = []
+    @ObservationIgnored private var _transcriptCacheLanguage = ""
+    // Live 思考过程 steps drive the streaming bubble's trace; include them in the
+    // cache key so an accumulating step repaints even when message content is empty.
+    @ObservationIgnored private var _transcriptCacheLiveThinking: [String] = []
 
     /// Set when the backend history list/detail fetch fell back to the local
     /// cache (offline / 401 / server error). The UI surfaces this so a stale
@@ -852,6 +869,7 @@ public final class AgentChatViewModel {
         errorMessage = nil
         toolActivities = []
         clearLiveStatus()
+        liveThinkingSteps = []
         isStreaming = true
         runState = .preparing
         lastPrompt = message
@@ -900,10 +918,16 @@ public final class AgentChatViewModel {
                     let mapped = Self.statusText(stage: stage, detail: detail, round: round)
                     liveStatusText = mapped.key
                     liveStatusDetail = mapped.detail
+                    // Accumulate the live 思考过程 trace. The step string mirrors the
+                    // backend's persisted label (see `_status_stage_thought`) so the
+                    // live list and the final `done.thinking_steps` stay identical.
+                    appendLiveThinkingStep(Self.liveThinkingStep(stage: stage, detail: detail, round: round))
                 case .token(let content):
                     runState = .streaming
-                    // First real token → drop the live status line; the transcript
-                    // now streams actual content and ThinkingStatusLine is torn down.
+                    // First real token → drop the transient status line; the
+                    // transcript now streams actual content and the trace disclosure
+                    // takes over. The accumulated `liveThinkingSteps` stay visible in
+                    // the streaming bubble until `done` backfills them into the message.
                     clearLiveStatus()
                     guard messages.contains(where: { $0.id == assistantID }) else {
                         isStreaming = false
@@ -930,7 +954,7 @@ public final class AgentChatViewModel {
                     // 中途 perf 提示:仅暂存(prompt 组装刚完成,首 token 前)。主瀑布图从
                     // 最终 done.perf 渲染;这里让「组装中…」等实时提示未来有据可依。
                     livePreLLMPerf = MessagePerf(preLLMMs: preLLMMs, preLLMStages: stages)
-                case .done(let id, _, let completionStatus, let model, let selectedModel, let answerModel, let toolModels, let fallbackReasons, let sourcesUsed, let toolsUsed, let elapsedMs, let llmRounds, let cards, let perf, let llmUsage):
+                case .done(let id, _, let completionStatus, let model, let selectedModel, let answerModel, let toolModels, let fallbackReasons, let sourcesUsed, let toolsUsed, let elapsedMs, let llmRounds, let cards, let perf, let llmUsage, let thinkingSteps):
                     conversationID = id ?? conversationID
                     lastCompletionStatus = completionStatus
                     lastModel = answerModel ?? model
@@ -955,6 +979,10 @@ public final class AgentChatViewModel {
                         messages[idx].completionStatus = completionStatus
                         // perf 缺失(老后端)→ 保留 nil,footer 行为不变。
                         if let perf { messages[idx].perf = perf }
+                        // 思考过程:优先用后端 done.thinking_steps(权威、已持久化);
+                        // 缺失(老后端)→ 回退到本轮 live 累积,保证完成后仍可折叠回看。
+                        let finalSteps = !thinkingSteps.isEmpty ? thinkingSteps : liveThinkingSteps
+                        messages[idx].thinkingSteps = finalSteps
                         if messages[idx].cardType == nil, let firstCard = cards.first {
                             messages[idx].cardType = firstCard.type
                             messages[idx].cardRender = firstCard.render
@@ -964,6 +992,10 @@ public final class AgentChatViewModel {
                     }
                     livePreLLMPerf = nil
                     clearLiveStatus()
+                    // Steps are now backfilled into the message → clear the live list
+                    // so the (still-streaming) bubble stops rendering its own copy and
+                    // the finished message shows the single collapsed disclosure.
+                    liveThinkingSteps = []
                     runState = .completed
                 case .error(let message):
                     errorMessage = message
@@ -1028,6 +1060,7 @@ public final class AgentChatViewModel {
         contextItems = []
         preparedDraft = nil
         clearLiveStatus()
+        liveThinkingSteps = []
     }
 
     /// Refreshes the history list from the backend (`GET /agent/conversations`),
@@ -1309,10 +1342,12 @@ public final class AgentChatViewModel {
     /// 在 View.body 里调用:读 messages/isStreaming/proposedActions 建立 Observation 依赖,
     /// 这三者真正变化才重渲;打字(只改 View 的 draft)命中缓存,不再每键重 parse markdown。
     /// 流式中的最后一条助手消息走 plain text(streaming=true);其余走富 markdown。
-    public func renderedTranscript() -> [ChatTranscriptHTML.RenderedMessage] {
+    public func renderedTranscript(language: String = AppLanguage.defaultLanguage.rawValue) -> [ChatTranscriptHTML.RenderedMessage] {
         if isStreaming == _transcriptCacheStreaming
             && messages == _transcriptCacheMessages
-            && proposedActions == _transcriptCacheProposed {
+            && proposedActions == _transcriptCacheProposed
+            && language == _transcriptCacheLanguage
+            && liveThinkingSteps == _transcriptCacheLiveThinking {
             return _transcriptCache
         }
         let lastID = messages.last?.id
@@ -1327,14 +1362,18 @@ public final class AgentChatViewModel {
                     actions: message.cardActions
                 ) ?? ""
                 : ""
-            // Pre-first-token: while the streaming assistant reply has no text (and
-            // no dynamic card yet), skip emitting its bubble entirely so the WebView
-            // shows nothing — the SwiftUI ThinkingStatusLine ("正在整理思路…") is the
-            // sole waiting cue. Without this the empty bubble renders a lone clay
-            // caret block AND the status line stacked = redundant/alarming. Once the
-            // first token arrives, content is non-empty → the bubble renders normally
-            // with the trailing caret. Completed messages are unaffected.
-            if isStreamingThis && content.isEmpty && cardHTML.isEmpty {
+            // Live 思考过程 trace for the streaming bubble (accumulating steps, last
+            // one running). Only the currently-streaming assistant message shows it.
+            let liveTraceHTML = isStreamingThis
+                ? ChatTranscriptHTML.thinkingTraceHTML(steps: liveThinkingSteps, language: language, live: true)
+                : ""
+            // Pre-first-token: while the streaming reply has no text, no card, AND no
+            // live thinking step yet, skip the bubble so the WebView shows nothing —
+            // the SwiftUI ThinkingStatusLine is the sole waiting cue for that brief
+            // gap. Once a status/thinking step arrives, the live trace renders here and
+            // ThinkingStatusLine is suppressed (see nativeTranscriptFooter) so exactly
+            // one thinking indicator shows. Completed messages are unaffected.
+            if isStreamingThis && content.isEmpty && cardHTML.isEmpty && liveTraceHTML.isEmpty {
                 return nil
             }
             let bodyHTML: String
@@ -1344,10 +1383,17 @@ public final class AgentChatViewModel {
                     + ChatTranscriptHTML.imageGalleryHTML(urls: message.remoteImageURLs)
             } else if isStreamingThis {
                 // 流式态:plain 文本(避免每 60ms 用更长全文重 parse markdown 的 O(n²))。
-                bodyHTML = cardHTML + "<div class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</div>"
+                // 思考过程 trace 置于顶部,内容气泡在下。
+                bodyHTML = liveTraceHTML + cardHTML + "<div class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</div>"
             } else {
+                // Finished assistant message: a collapsed (default) reviewable trace on
+                // top of the rendered answer. Reads persisted `message.thinkingSteps`
+                // so it survives conversation reload/scrollback. Empty → "" (no trace).
+                let traceHTML = message.role == .assistant
+                    ? ChatTranscriptHTML.thinkingTraceHTML(steps: message.thinkingSteps, language: language, live: false)
+                    : ""
                 let textHTML = content.isEmpty ? "" : ChatTranscriptHTML.renderMessageBody(markdown: content)
-                bodyHTML = cardHTML + textHTML
+                bodyHTML = traceHTML + cardHTML + textHTML
             }
             let showCopy = message.role == .assistant && !isStreamingThis && !content.isEmpty
             let footerHTML: String
@@ -1380,6 +1426,8 @@ public final class AgentChatViewModel {
         _transcriptCacheMessages = messages
         _transcriptCacheStreaming = isStreaming
         _transcriptCacheProposed = proposedActions
+        _transcriptCacheLanguage = language
+        _transcriptCacheLiveThinking = liveThinkingSteps
         _transcriptCache = rendered
         return rendered
     }
@@ -1456,6 +1504,46 @@ public final class AgentChatViewModel {
     private func clearLiveStatus() {
         liveStatusText = nil
         liveStatusDetail = nil
+    }
+
+    /// Appends a live 思考过程 step, mirroring the backend's dedup/cap semantics
+    /// (`_append_thinking_step`): trim, skip empties, skip an exact repeat of the
+    /// last step, and keep at most the most-recent `maxLiveThinkingSteps`.
+    private func appendLiveThinkingStep(_ step: String?) {
+        let normalized = (step ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return }
+        if liveThinkingSteps.last == normalized { return }
+        liveThinkingSteps.append(normalized)
+        if liveThinkingSteps.count > Self.maxLiveThinkingSteps {
+            liveThinkingSteps.removeFirst(liveThinkingSteps.count - Self.maxLiveThinkingSteps)
+        }
+    }
+
+    /// Matches the backend's `_MAX_THINKING_STEPS` (8) so the live trace never
+    /// grows past what the persisted list would show.
+    static let maxLiveThinkingSteps = 8
+
+    /// Live step label for a `status` stage, mirroring backend `_status_stage_thought`
+    /// so the live trace and the persisted `done.thinking_steps` read identically.
+    /// Returns nil for unknown stages (no step appended). `nonisolated` so it can be
+    /// called without main-actor hops, same as `statusText`.
+    nonisolated static func liveThinkingStep(stage: String, detail: String?, round: Int?) -> String? {
+        let trimmedDetail = (detail ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        switch stage {
+        case "accepted":
+            return "正在理解你的问题"
+        case "vision":
+            return "识别图片中"
+        case "thinking":
+            if let round, round >= 2 { return "整理思路" }
+            return "正在思考"
+        case "tool":
+            return trimmedDetail.isEmpty ? "调用工具中" : "正在\(trimmedDetail)"
+        case "synthesis":
+            return "整理回复中"
+        default:
+            return nil
+        }
     }
 
     private func updateProposedAction(_ action: AgentProposedAction, status: AgentProposedActionStatus) {

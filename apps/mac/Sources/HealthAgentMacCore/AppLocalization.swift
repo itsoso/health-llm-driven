@@ -331,6 +331,8 @@ public enum L10n {
         "Working: %@…": "正在%@…",
         "Calling a tool…": "正在调用工具…",
         "Reva is composing a reply…": "正在整理回答…",
+        // Collapsible reviewable thinking-process trace header (thinking_steps).
+        "Thinking process": "思考过程",
         "Completed": "已完成",
         "Partial": "部分完成",
         "Failed": "失败",

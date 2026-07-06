@@ -67,7 +67,7 @@ final class AgentStreamClientTests: XCTestCase {
         """
 
         let events = try AgentStreamParser.parse(payload)
-        guard case .done(_, _, _, _, _, _, _, _, _, _, _, _, _, _, let usage) = events.first else {
+        guard case .done(_, _, _, _, _, _, _, _, _, _, _, _, _, _, let usage, _) = events.first else {
             return XCTFail("expected done event")
         }
         XCTAssertEqual(usage?.calls, 1)

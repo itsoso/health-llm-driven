@@ -493,6 +493,85 @@
     font-size: 0.95em;
   }
 
+  /* 思考过程 trace:可折叠披露(思考过程 header + 逐步骤)。低调、暖调,不喧宾夺主。
+     header 用纯 chevron(▸/▾),无 brain/emoji;步骤 glyph 用线性点/勾。确定性布局:
+     固定宽度 leading gutter(.tp-gutter),不做宽度协商。live 态最后一步是 spinner。 */
+  .thinking-trace {
+    margin: 0 0 8px;
+    font-size: 0.8em;
+    color: var(--secondary);
+    border-left: 2px solid var(--assistant-border);
+    padding-left: 10px;
+  }
+  .thinking-trace > summary.tp-summary {
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    color: var(--secondary);
+    letter-spacing: 0.02em;
+  }
+  .thinking-trace > summary.tp-summary::-webkit-details-marker { display: none; }
+  .thinking-trace > summary.tp-summary::before {
+    content: "\25B8  "; /* ▸ */
+    color: var(--secondary);
+    opacity: 0.7;
+  }
+  .thinking-trace[open] > summary.tp-summary::before { content: "\25BE  "; } /* ▾ */
+  .thinking-trace .tp-steps {
+    list-style: none;
+    margin: 6px 0 2px;
+    padding: 0;
+  }
+  .thinking-trace .tp-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    margin: 3px 0;
+    line-height: 1.5;
+  }
+  /* Fixed-width leading gutter → rows align, layout width is deterministic. */
+  .thinking-trace .tp-gutter {
+    flex: 0 0 14px;
+    width: 14px;
+    height: 1.5em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .thinking-trace .tp-label { flex: 1 1 auto; }
+  /* Done step: a minimal linear check drawn in CSS (no glyph font, no emoji). */
+  .thinking-trace .tp-check {
+    position: relative;
+  }
+  .thinking-trace .tp-check::before {
+    content: "";
+    width: 5px;
+    height: 9px;
+    border: solid var(--accent);
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+    margin-top: -2px;
+    opacity: 0.75;
+  }
+  .thinking-trace .tp-done .tp-label { color: var(--secondary); }
+  /* Running step: a small pulsing accent dot + emphasized label. */
+  .thinking-trace .tp-spinner::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: tp-pulse 1s ease-in-out infinite;
+  }
+  .thinking-trace .tp-running .tp-label { color: var(--text); }
+  @keyframes tp-pulse {
+    0%, 100% { opacity: 0.35; transform: scale(0.8); }
+    50%      { opacity: 1;    transform: scale(1.1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .thinking-trace .tp-spinner::before { animation: none; opacity: 0.8; }
+  }
+
   /* 延迟瀑布图:紧凑色带 + 可折叠明细(tap 展开逐阶段/逐轮耗时) */
   .latency-waterfall {
     margin: 2px 0 4px;

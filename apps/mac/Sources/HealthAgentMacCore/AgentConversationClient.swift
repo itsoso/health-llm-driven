@@ -46,6 +46,9 @@ struct BackendConversationMessageMeta: Decodable, Sendable {
     let completionStatus: String?
     /// 每回复级阶段耗时(后端 message.meta.perf)。老消息缺失 → nil → footer 不变。
     let perf: MessagePerf?
+    /// 「思考过程」步骤(后端 message.meta.thinking_steps)。历史恢复时驱动可折叠的
+    /// 思考过程披露;老消息缺失 → 空 → 不渲染该披露。
+    let thinkingSteps: [String]
     let cards: [AgentDynamicCardDescriptor]
     let cardType: String?
     let cardData: AgentDynamicCardValue?
@@ -73,6 +76,7 @@ struct BackendConversationMessageMeta: Decodable, Sendable {
         case toolsUsed = "tools_used"
         case completionStatus = "completion_status"
         case perf
+        case thinkingSteps = "thinking_steps"
         case cards
         case cardType = "card_type"
         case cardData = "card_data"
@@ -92,6 +96,7 @@ struct BackendConversationMessageMeta: Decodable, Sendable {
         toolsUsed = (try? c.decode([String].self, forKey: .toolsUsed)) ?? []
         completionStatus = try? c.decode(String.self, forKey: .completionStatus)
         perf = try? c.decode(MessagePerf.self, forKey: .perf)
+        thinkingSteps = (try? c.decode([String].self, forKey: .thinkingSteps)) ?? []
         cards = (try? c.decode([AgentDynamicCardDescriptor].self, forKey: .cards)) ?? []
         cardType = try? c.decode(String.self, forKey: .cardType)
         cardData = try? c.decode(AgentDynamicCardValue.self, forKey: .cardData)
@@ -221,6 +226,7 @@ public final class AgentConversationClient: AgentConversationRemoteSourcing, @un
             toolsUsed: dto.meta?.toolsUsed ?? [],
             completionStatus: dto.meta?.completionStatus,
             perf: dto.meta?.perf,
+            thinkingSteps: dto.meta?.thinkingSteps ?? [],
             cardType: card?.type,
             cardRender: card?.render,
             cardData: card?.data,
