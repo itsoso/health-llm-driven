@@ -24,12 +24,14 @@ func drawAppIcon(size: CGFloat) -> NSImage {
     let rect = NSRect(x: 0, y: 0, width: size, height: size)
     NSGraphicsContext.current?.imageInterpolation = .high
 
+    // Warm "Claude Design" clay tile (#C96442) — replaces the old teal-blue that
+    // clashed with the new warm palette. White pulse + warm-cream sparkles.
     let background = NSBezierPath(roundedRect: rect, xRadius: size * 0.22, yRadius: size * 0.22)
-    NSColor(calibratedRed: 0.02, green: 0.55, blue: 0.55, alpha: 1).setFill()
+    NSColor(calibratedRed: 0.788, green: 0.392, blue: 0.259, alpha: 1).setFill()
     background.fill()
 
     let glow = NSBezierPath(ovalIn: NSRect(x: size * 0.46, y: size * 0.47, width: size * 0.42, height: size * 0.42))
-    NSColor(calibratedRed: 0.27, green: 1.0, blue: 0.86, alpha: 0.20).setFill()
+    NSColor(calibratedRed: 1.0, green: 0.89, blue: 0.82, alpha: 0.22).setFill()
     glow.fill()
 
     let cardRect = NSRect(x: size * 0.16, y: size * 0.18, width: size * 0.68, height: size * 0.64)
@@ -62,7 +64,7 @@ func drawAppIcon(size: CGFloat) -> NSImage {
         path.line(to: NSPoint(x: center.x - radius, y: center.y))
         path.line(to: NSPoint(x: center.x - radius * 0.25, y: center.y + radius * 0.25))
         path.close()
-        NSColor(calibratedRed: 0.37, green: 1.0, blue: 0.88, alpha: alpha).setFill()
+        NSColor(calibratedRed: 1.0, green: 0.925, blue: 0.855, alpha: alpha).setFill()
         path.fill()
     }
 

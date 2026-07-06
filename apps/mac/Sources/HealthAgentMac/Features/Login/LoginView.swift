@@ -13,9 +13,13 @@ struct LoginView: View {
     var body: some View {
         VStack(spacing: 20) {
             VStack(spacing: 8) {
-                Image(systemName: "heart.text.square.fill")
-                    .font(.system(size: 44))
-                    .foregroundStyle(Color.accentColor)
+                // Warm clay brand tile with the health-pulse glyph (matches the
+                // app icon + avatar treatment); tidy header size, not an oversized badge.
+                Image(systemName: "waveform.path.ecg")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 52, height: 52)
+                    .background(WarmPalette.clay, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 Text(appText("Health Agent", appLanguageRaw))
                     .font(.largeTitle.bold())
                 Text(appText("Sign in with your executor.life account.", appLanguageRaw))
