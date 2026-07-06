@@ -184,6 +184,8 @@ def _multidose_items(domain: str, med_id: int, s: Dict[str, Any],
         if log.get("status") == "taken"
     }
     taken_minutes.discard(None)
+    # 今日已服槽数(诚实 x/y 进度:让子项显示「今日 2/3 次」而非把每槽当独立待办充数)。
+    taken_slots = sum(1 for slot in slots if _minutes(slot) in taken_minutes)
 
     out: List[Dict[str, Any]] = []
     for slot in slots:
@@ -191,7 +193,7 @@ def _multidose_items(domain: str, med_id: int, s: Dict[str, Any],
         bits: List[str] = [f"建议 {slot}"]
         if timing_label:
             bits.append(timing_label)
-        bits.append(f"今日 {total} 次")
+        bits.append(f"今日 {taken_slots}/{total} 次")
         subtitle = " · ".join(bits)
         # id 带 slot 后缀 → 每槽脊柱行各有稳定唯一 id(now-marker / 客户端 key 不撞)。
         slot_id = slot.replace(":", "")
@@ -219,12 +221,19 @@ def _multidose_items(domain: str, med_id: int, s: Dict[str, Any],
 
 
 def sort_key(item: Dict[str, Any]):
-    """脊柱排序键:带时点(scheduled_for HH:MM)优先按时间升序,无时点者按时间窗;
-    同一时段内按优先级降序。返回 (has_time 0/1, 分钟数 or 大数, 时间窗序, -priority)。"""
+    """脊柱排序键:overdue(过期未完成)项**下沉**到所有当前项之后;当前项内带时点
+    (scheduled_for HH:MM)优先按时间升序,无时点者按时间窗;同一组内按优先级降序。
+
+    返回 (is_overdue 0/1, has_time 0/1, 分钟数 or 大数, 时间窗序, -priority)。
+    is_overdue 作首维 → 让「现在该做的」浮顶、过期项整体沉底(加层不减层:不删不藏,只排后)。
+    overdue 由 build_today_spine._mark_overdue 在 sort 前置于 item['status']。
+    """
+    is_overdue = 1 if item.get("status") == "overdue" else 0
     mn = _minutes(item.get("scheduled_for"))
     has_time = 0 if mn is not None else 1
     minutes = mn if mn is not None else 24 * 60 + 1  # 无时点 → 排在所有有时点项之后
     return (
+        is_overdue,
         has_time,
         minutes,
         _TW_ORDER.get(item.get("time_window"), 9),
