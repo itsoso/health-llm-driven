@@ -34,11 +34,26 @@ export function useVoiceRecording(opts?: {
     }
   }, []);
 
+  // 录音结束后把 audio session 从「录音模式」放回来 (allowsRecording:false)。
+  // iOS 上录音期间 session 是 record/playAndRecord 类别, 占着麦克风; 不显式释放,
+  // 下次点输入框键盘可能弹不出 / TextInput 摸不到 (键盘与麦克风 audio session 互斥)。
+  // stopAndTranscribe / cancelRecording 都必须走这里 —— 否则语音后键盘失效。
+  const releaseAudioSession = useCallback(async () => {
+    try {
+      await setAudioModeAsync({ allowsRecording: false });
+    } catch {
+      // 释放失败不阻断 UI; 但不静默吞掉调试信息。
+      if (__DEV__) console.warn('[useVoiceRecording] release audio session failed');
+    }
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       clearTimer();
       try { recorder.stop(); } catch {}
+      // 卸载时若还占着录音 session, 放回来 (不阻塞卸载, fire-and-forget)。
+      void setAudioModeAsync({ allowsRecording: false }).catch(() => {});
     };
   }, [clearTimer, recorder]);
 
@@ -87,12 +102,16 @@ export function useVoiceRecording(opts?: {
 
     if (cancelledRef.current) {
       try { await recorder.stop(); } catch {}
+      await releaseAudioSession();  // 释放录音 session, 否则语音后键盘弹不出。
       return;
     }
 
     setIsTranscribing(true);
     try {
       await recorder.stop();
+      // 停录音后立刻放回 session (在转写网络请求之前) —— 转写可能耗时几秒,
+      // 期间键盘/输入应已可用, 不必等转写回来才释放麦克风占用。
+      await releaseAudioSession();
       const uri = recorder.uri;
 
       if (!uri) {
@@ -113,15 +132,16 @@ export function useVoiceRecording(opts?: {
     } finally {
       setIsTranscribing(false);
     }
-  }, [opts, clearTimer, recorder]);
+  }, [opts, clearTimer, recorder, releaseAudioSession]);
 
   const cancelRecording = useCallback(async () => {
     cancelledRef.current = true;
     clearTimer();
     setIsRecording(false);
     try { await recorder.stop(); } catch {}
+    await releaseAudioSession();  // 取消同样要释放, 否则语音后键盘弹不出。
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-  }, [clearTimer, recorder]);
+  }, [clearTimer, recorder, releaseAudioSession]);
 
   return {
     isRecording,

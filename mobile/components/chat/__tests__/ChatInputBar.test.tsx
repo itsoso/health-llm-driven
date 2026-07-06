@@ -10,14 +10,24 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 /* eslint-disable @typescript-eslint/no-require-imports */
 import React from 'react';
 import { StyleSheet } from 'react-native';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import ChatInputBar from '../ChatInputBar';
 import { revaColors } from '../../../constants/revaTheme';
 
 const mockStartRecording = jest.fn();
 const mockStopAndTranscribe = jest.fn();
+const mockCancelRecording = jest.fn();
 const mockExecuteMedicalExamImport = jest.fn();
+const mockRouterPush = jest.fn();
+const mockStartDictation = jest.fn();
+const mockStopDictation = jest.fn();
+let latestVoiceRecordingOptions: any;
+let latestRealtimeDictationOptions: any;
+let mockRealtimeDictationState = {
+  isDictating: false,
+  error: null as string | null,
+};
 
 jest.mock('../../../hooks/useMediaPicker', () => ({
   useMediaPicker: () => ({
@@ -30,15 +40,30 @@ jest.mock('../../../hooks/useMediaPicker', () => ({
 }));
 
 jest.mock('../../../hooks/useVoiceRecording', () => ({
-  useVoiceRecording: () => ({
+  useVoiceRecording: (options: any) => {
+    latestVoiceRecordingOptions = options;
+    return ({
     isRecording: false,
     isTranscribing: false,
     durationMs: 0,
     startRecording: mockStartRecording,
     stopAndTranscribe: mockStopAndTranscribe,
-    cancelRecording: jest.fn(),
-  }),
+      cancelRecording: mockCancelRecording,
+    });
+  },
 }));
+
+jest.mock('../../../hooks/useRealtimeDictation', () => ({
+  useRealtimeDictation: (options: any) => {
+    latestRealtimeDictationOptions = options;
+    return {
+      isDictating: mockRealtimeDictationState.isDictating,
+      error: mockRealtimeDictationState.error,
+      startDictation: mockStartDictation,
+      stopDictation: mockStopDictation,
+    };
+  },
+}), { virtual: true });
 
 jest.mock('expo-document-picker', () => ({
   getDocumentAsync: jest.fn(),
@@ -49,7 +74,7 @@ jest.mock('../../../services/chatMedicalExamImportSkill', () => ({
 }));
 
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn() },
+  router: { push: (...args: any[]) => mockRouterPush(...args) },
 }));
 
 jest.mock('react-native-reanimated', () => {
@@ -71,6 +96,9 @@ jest.mock('react-native-reanimated', () => {
 describe('ChatInputBar', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    latestVoiceRecordingOptions = undefined;
+    latestRealtimeDictationOptions = undefined;
+    mockRealtimeDictationState = { isDictating: false, error: null };
   });
 
   it('uses Reva surface color for the attachment menu sheet', () => {
@@ -118,10 +146,21 @@ describe('ChatInputBar', () => {
     expect(actionGrid.flexDirection).toBe('row');
     expect(actionGrid.flexWrap).toBe('wrap');
     expect(actionGrid.gap).toBeLessThanOrEqual(8);
-    expect(getByText('拍照')).toBeTruthy();
+    expect(getByText('拍照记餐')).toBeTruthy();
     expect(getByText('相册')).toBeTruthy();
     expect(getByText('文件')).toBeTruthy();
     expect(getByLabelText('导入体检报告')).toBeTruthy();
+  });
+
+  it('routes the attachment camera entry to meal photo capture', () => {
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('附件菜单'));
+    fireEvent.press(getByLabelText('拍照记餐'));
+
+    expect(mockRouterPush).toHaveBeenCalledWith('/diet?capture=photo&return_to=chat');
   });
 
   it('renders only one compact composer row by default', () => {
@@ -130,13 +169,13 @@ describe('ChatInputBar', () => {
     );
 
     const composerSurface = StyleSheet.flatten(getByTestId('chat-composer-surface').props.style);
-    expect(composerSurface.backgroundColor).toBe(revaColors.surface);
+    expect(composerSurface.backgroundColor).toBe('#1F1F1F');
     expect(composerSurface.borderRadius).toBeLessThanOrEqual(22);
     expect(queryByLabelText('Agent 模式')).toBeNull();
   });
 
-  it('keyboard composer controls meet thumb ergonomics (founder 2026-07-05, GPT spec)', () => {
-    const { getByLabelText } = render(
+  it('keyboard composer controls meet thumb ergonomics in the WeChat-style layout', () => {
+    const { getByLabelText, getByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
@@ -146,11 +185,12 @@ describe('ChatInputBar', () => {
     };
 
     expect(styleOf(getByLabelText('附件菜单')).width).toBeGreaterThanOrEqual(40);
-    expect(styleOf(getByLabelText('消息输入框，长按语音输入')).minHeight).toBeGreaterThanOrEqual(40);
+    expect(styleOf(getByLabelText('按住说话')).width).toBeGreaterThanOrEqual(40);
+    expect(StyleSheet.flatten(getByTestId('wechat-composer-input').props.style).minHeight).toBeGreaterThanOrEqual(48);
   });
 
   it('keeps the visible composer chrome slim while preserving touch targets', () => {
-    const { getByLabelText } = render(
+    const { getByLabelText, getByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
@@ -167,45 +207,115 @@ describe('ChatInputBar', () => {
 
     // 2026-07-05 工学契约翻转: 拇指高度对齐 GPT — 场 ≥48, 钮 ≥40(hitSlop 补足 44 有效)
     expect(styleOf(getByLabelText('附件菜单')).width).toBeGreaterThanOrEqual(40);
-    expect(styleOf(getByLabelText('消息输入框，长按语音输入')).minHeight).toBeGreaterThanOrEqual(48);
+    expect(styleOf(getByLabelText('按住说话')).height).toBeGreaterThanOrEqual(40);
+    expect(StyleSheet.flatten(getByTestId('wechat-composer-input').props.style).minHeight).toBeGreaterThanOrEqual(48);
     expect(minHitSlop(getByLabelText('附件菜单'))).toBeGreaterThanOrEqual(6);
   });
 
-  it('has no standalone right-side microphone button (founder 2026-07-05: Claude 式极简)', () => {
-    const { queryByLabelText } = render(
+  it('renders WeChat-style visible voice controls by default', () => {
+    const { getByLabelText, getByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    // 右侧常驻麦克风/键盘切换按钮已删;空态输入框自动占满,语音走长按输入框。
-    expect(queryByLabelText('语音输入')).toBeNull();
-    expect(queryByLabelText('切回键盘输入')).toBeNull();
+    expect(getByLabelText('按住说话')).toBeTruthy();
+    expect(getByLabelText('实时语音转文字')).toBeTruthy();
+    const inputSurface = StyleSheet.flatten(getByTestId('wechat-composer-input').props.style);
+    expect(inputSurface.flexDirection).toBe('row');
+    expect(inputSurface.borderRadius).toBeLessThanOrEqual(10);
   });
 
-  it('starts voice dictation by long-pressing the empty input field', () => {
+  it('starts hold-to-talk voice input from the left speaker button', () => {
     const { getByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    fireEvent(getByLabelText('消息输入框，长按语音输入'), 'longPress', { nativeEvent: { pageY: 300 } });
-    fireEvent(getByLabelText('消息输入框，长按语音输入'), 'pressOut');
+    fireEvent(getByLabelText('按住说话'), 'pressIn', { nativeEvent: { pageX: 220, pageY: 300 } });
+    fireEvent(getByLabelText('按住说话'), 'pressOut');
 
     expect(mockStartRecording).toHaveBeenCalled();
     expect(mockStopAndTranscribe).toHaveBeenCalled();
   });
 
-  it('makes the empty unfocused field inert so the hold-to-talk gesture wins (阿福/DeepSeek)', () => {
-    // 空且未聚焦 → TextInput pointerEvents:none → 长按落到外层 Pressable 录音,
-    // 不被 iOS 文本选择放大镜抢走、不闪键盘。聚焦/输入后恢复可交互。
+  it('keeps the empty field directly focusable because voice has its own left button', () => {
     const { getByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    const inert = StyleSheet.flatten(getByLabelText('消息输入框').props.style).pointerEvents;
-    expect(inert).toBe('none');
+    expect(StyleSheet.flatten(getByLabelText('消息输入框').props.style).pointerEvents).toBe('auto');
+  });
 
-    fireEvent(getByLabelText('消息输入框'), 'focus');
-    const afterFocus = StyleSheet.flatten(getByLabelText('消息输入框').props.style).pointerEvents;
-    expect(afterFocus).toBe('auto');
+  it('recovers a tappable, focusable field after a voice→blur cycle (Bug 2: 语音后键盘可再弹)', () => {
+    const { getByLabelText, getByTestId } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    const field = getByLabelText('消息输入框');
+    fireEvent(field, 'focus');
+    expect(StyleSheet.flatten(field.props.style).pointerEvents).toBe('auto');
+    fireEvent(field, 'blur');
+    expect(StyleSheet.flatten(field.props.style).pointerEvents).toBe('auto');
+
+    fireEvent.press(getByTestId('wechat-composer-input'));
+    fireEvent(field, 'focus');
+    expect(StyleSheet.flatten(field.props.style).pointerEvents).toBe('auto');
+  });
+
+  it('cancels left hold-to-talk when the finger slides left', () => {
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent(getByLabelText('按住说话'), 'pressIn', { nativeEvent: { pageX: 260, pageY: 620 } });
+    fireEvent(getByLabelText('按住说话'), 'touchMove', { nativeEvent: { pageX: 120, pageY: 620 } });
+    fireEvent(getByLabelText('按住说话'), 'pressOut');
+
+    expect(mockCancelRecording).toHaveBeenCalled();
+    expect(mockStopAndTranscribe).not.toHaveBeenCalled();
+  });
+
+  it('keeps left hold-to-talk transcript editable when the finger slides right', () => {
+    const onSend = jest.fn();
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+
+    fireEvent(getByLabelText('按住说话'), 'pressIn', { nativeEvent: { pageX: 160, pageY: 620 } });
+    fireEvent(getByLabelText('按住说话'), 'touchMove', { nativeEvent: { pageX: 310, pageY: 620 } });
+    fireEvent(getByLabelText('按住说话'), 'pressOut');
+    act(() => {
+      latestVoiceRecordingOptions.onTranscript('记录午餐吃了鸡胸肉');
+    });
+
+    expect(mockStopAndTranscribe).toHaveBeenCalled();
+    expect(getByLabelText('消息输入框').props.value).toBe('记录午餐吃了鸡胸肉');
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('starts realtime dictation from the microphone inside the input field', () => {
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('实时语音转文字'));
+    act(() => {
+      latestRealtimeDictationOptions.onTranscript('记录今天喝水 500 毫升');
+    });
+
+    expect(mockStartDictation).toHaveBeenCalled();
+    expect(getByLabelText('消息输入框').props.value).toBe('记录今天喝水 500 毫升');
+  });
+
+  it('stops realtime dictation from the active microphone button', () => {
+    mockRealtimeDictationState = { isDictating: true, error: null };
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    const mic = getByLabelText('停止实时语音转文字');
+    fireEvent.press(mic);
+
+    expect(mic.props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
+    expect(mockStopDictation).toHaveBeenCalled();
   });
 
   it('sends the selected agent mode as chat context without polluting the user text', () => {

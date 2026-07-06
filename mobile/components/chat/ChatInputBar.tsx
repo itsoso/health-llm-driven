@@ -9,9 +9,11 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
+import { router } from 'expo-router';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
 import { useMediaPicker, type PendingImage } from '../../hooks/useMediaPicker';
 import { useVoiceRecording } from '../../hooks/useVoiceRecording';
+import { useRealtimeDictation } from '../../hooks/useRealtimeDictation';
 import {
   executeMedicalExamImportSkillForDocumentAsset,
   type ChatMedicalExamImportSkillResult,
@@ -26,7 +28,13 @@ import {
 } from '../../constants/revaTheme';
 
 const CANCEL_THRESHOLD = 80;
+const VOICE_SLIDE_THRESHOLD = 88;
 const COMPOSER_HIT_SLOP = { top: 6, right: 6, bottom: 6, left: 6 };
+const WECHAT_BAR_BG = '#1F1F1F';
+const WECHAT_INPUT_BG = '#2B2B2B';
+const WECHAT_INPUT_BG_ACTIVE = '#303631';
+const WECHAT_ICON = '#D7D7D7';
+const VOICE_WAVE_BARS = Array.from({ length: 28 }, (_, i) => i);
 
 type ChatAgentMode = 'daily' | 'deep' | 'vision';
 
@@ -96,16 +104,16 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const [showMedicalImportMenu, setShowMedicalImportMenu] = useState(false);
   const [medicalImportBusy, setMedicalImportBusy] = useState(false);
   const [agentMode, setAgentMode] = useState<ChatAgentMode>('daily');
-  // 空且未聚焦时把 TextInput 设成「摸不到」(pointerEvents none) → 触摸落到外层
-  // Pressable:轻点 → 聚焦打字,长按 → 干净地录音(不被 iOS 文本选择放大镜抢走、
-  // 不闪键盘)。一旦聚焦或有字 → 恢复可交互(光标/选择正常)。阿福/DeepSeek 同款。
-  const [isFocused, setIsFocused] = useState(false);
-  const inputInert = input.length === 0 && !isFocused;
   const [cancelHint, setCancelHint] = useState(false);
+  const [voiceGesture, setVoiceGesture] = useState<'send' | 'text' | 'cancel' | null>(null);
   const [justSent, setJustSent] = useState(false);  // 刚发送, 按钮停留 1s 避免误切 mic
-  const { pendingImages, removeImage, clearImages, pickImage, takePhoto } = useMediaPicker();
+  const { pendingImages, removeImage, clearImages, pickImage } = useMediaPicker();
   const textInputRef = useRef<TextInput>(null);
   const lastKeyboardSubmitAtRef = useRef(0);
+  const holdStartXRef = useRef(0);
+  const voiceGestureActiveRef = useRef(false);
+  const voiceCommitModeRef = useRef<'send' | 'text'>('send');
+  const realtimeBaseInputRef = useRef('');
   const canSend = (!!input.trim() || pendingImages.length > 0) && !isStreaming;
 
   React.useEffect(() => {
@@ -141,13 +149,37 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     setTimeout(() => setJustSent(false), 1000);
   }, [agentMode, input, pendingImages, onSend, clearImages]);
 
+  const handleRealtimeTranscript = useCallback((text: string) => {
+    const clean = text.trim();
+    const base = realtimeBaseInputRef.current.trim();
+    setInput(base ? `${base} ${clean}` : clean);
+  }, []);
+
+  const realtimeDictation = useRealtimeDictation({
+    onTranscript: handleRealtimeTranscript,
+  });
+
+  const handleRealtimeMicPress = useCallback(() => {
+    if (isStreaming) return;
+    if (realtimeDictation.isDictating) {
+      void realtimeDictation.stopDictation();
+      return;
+    }
+    realtimeBaseInputRef.current = input.trim();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void realtimeDictation.startDictation();
+  }, [input, isStreaming, realtimeDictation]);
+
   const handleKeyboardSubmit = useCallback(() => {
     if (!canSend) return;
     const now = Date.now();
     if (now - lastKeyboardSubmitAtRef.current < 250) return;
     lastKeyboardSubmitAtRef.current = now;
+    if (realtimeDictation.isDictating) {
+      void realtimeDictation.stopDictation();
+    }
     handleSend();
-  }, [canSend, handleSend]);
+  }, [canSend, handleSend, realtimeDictation]);
 
   const handleTextInputKeyPress = useCallback((event: any) => {
     const key = event?.nativeEvent?.key;
@@ -158,60 +190,75 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
 
   const voice = useVoiceRecording({
     onTranscript: (text) => {
-      setInput(prev => prev ? prev + ' ' + text : text);
-      // 不 auto-focus TextInput — 避免触发软键盘弹出, 让用户直接点右侧发送按钮
-      // (之前为了"按 return 发送"加过 focus, 但实际用户按发送按钮即可, 软键盘是多余的)
+      const clean = text.trim();
+      if (!clean) return;
+      if (voiceCommitModeRef.current === 'send') {
+        handleSend(clean);
+        return;
+      }
+      setInput(prev => prev ? `${prev.trim()} ${clean}` : clean);
+      textInputRef.current?.focus();
     },
   });
 
   const cancelledRef = useRef(false);
   const startYRef = useRef(0);
-  const inputHoldActiveRef = useRef(false);
 
-  const handleHoldStart = useCallback((pageY: number) => {
+  const handleHoldStart = useCallback((pageX: number, pageY: number) => {
+    if (isStreaming) return;
+    if (realtimeDictation.isDictating) {
+      void realtimeDictation.stopDictation();
+    }
     cancelledRef.current = false;
+    voiceGestureActiveRef.current = true;
+    voiceCommitModeRef.current = 'send';
+    holdStartXRef.current = pageX;
     startYRef.current = pageY;
+    setVoiceGesture('send');
     setCancelHint(false);
     voice.startRecording();
-  }, [voice]);
+  }, [isStreaming, realtimeDictation, voice]);
 
-  const handleHoldMove = useCallback((pageY: number) => {
-    if (!voice.isRecording || cancelledRef.current) return;
+  const handleHoldMove = useCallback((pageX: number, pageY: number) => {
+    if (!voiceGestureActiveRef.current || cancelledRef.current) return;
     const dy = startYRef.current - pageY;
-    if (dy > CANCEL_THRESHOLD) {
+    const dx = pageX - holdStartXRef.current;
+    if (dy > CANCEL_THRESHOLD || dx < -VOICE_SLIDE_THRESHOLD) {
       cancelledRef.current = true;
+      voiceGestureActiveRef.current = false;
+      setVoiceGesture('cancel');
       setCancelHint(false);
-      voice.cancelRecording();
+      void voice.cancelRecording();
+    } else if (dx > VOICE_SLIDE_THRESHOLD) {
+      voiceCommitModeRef.current = 'text';
+      setVoiceGesture('text');
+      setCancelHint(false);
     } else {
+      voiceCommitModeRef.current = 'send';
+      setVoiceGesture('send');
       setCancelHint(dy > 30);
     }
   }, [voice]);
 
   const handleHoldEnd = useCallback(() => {
     setCancelHint(false);
+    setVoiceGesture(null);
     if (cancelledRef.current) return;
-    voice.stopAndTranscribe();
+    if (!voiceGestureActiveRef.current) return;
+    voiceGestureActiveRef.current = false;
+    void voice.stopAndTranscribe();
   }, [voice]);
 
   const focusTextInput = useCallback(() => {
     textInputRef.current?.focus();
   }, []);
 
-  const handleInputLongPress = useCallback((pageY: number) => {
-    if (canSend || isStreaming) return;
-    inputHoldActiveRef.current = true;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    handleHoldStart(pageY);
-  }, [canSend, handleHoldStart, isStreaming]);
-
-  const handleInputPressOut = useCallback(() => {
-    if (!inputHoldActiveRef.current) return;
-    inputHoldActiveRef.current = false;
-    handleHoldEnd();
-  }, [handleHoldEnd]);
-
   const handlePickImage = useCallback(async () => { setShowMenu(false); await pickImage(); }, [pickImage]);
-  const handleTakePhoto = useCallback(async () => { setShowMenu(false); await takePhoto(); }, [takePhoto]);
+  const handleCaptureMealPhoto = useCallback(() => {
+    setShowMenu(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/diet?capture=photo&return_to=chat' as any);
+  }, []);
   const handlePickFile = useCallback(async () => {
     setShowMenu(false);
     try {
@@ -336,22 +383,39 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
       {/* 录音中全屏蒙层 */}
       {voice.isRecording && (
         <View style={styles.recordingOverlay}>
-          <View style={styles.recordingCenter}>
-            {cancelHint ? (
-              <View style={styles.cancelCircle}>
-                <Ionicons name="close" size={36} color="#fff" />
-              </View>
-            ) : (
-              <View style={styles.micCircle}>
-                <PulsingRing />
-                <Ionicons name="mic" size={36} color="#fff" />
-              </View>
-            )}
-            <Text style={styles.recordingDuration}>
-              {Math.floor(voice.durationMs / 1000)}″
-            </Text>
-            <Text style={[styles.recordingHint, cancelHint && styles.recordingHintCancel]}>
-              {cancelHint ? '松手取消' : '松手转文字，上滑取消'}
+          <View style={styles.wechatVoiceBubble}>
+            <View style={styles.wechatWaveRow}>
+              {VOICE_WAVE_BARS.map((bar) => (
+                <View
+                  key={bar}
+                  style={[
+                    styles.wechatWaveBar,
+                    { height: 8 + ((bar * 7) % 18) },
+                    bar > 18 && styles.wechatWaveBarLoud,
+                  ]}
+                />
+              ))}
+            </View>
+            <View style={styles.wechatBubbleTail} />
+          </View>
+          <Text style={styles.recordingDuration}>
+            {Math.floor(voice.durationMs / 1000)}″
+          </Text>
+          <View style={styles.wechatVoiceActions}>
+            <View style={[styles.wechatVoiceActionPill, voiceGesture === 'cancel' && styles.wechatVoiceActionActive]}>
+              <Text style={[styles.wechatVoiceActionText, voiceGesture === 'cancel' && styles.wechatVoiceActionTextActive]}>
+                取消
+              </Text>
+            </View>
+            <View style={[styles.wechatVoiceActionPill, voiceGesture === 'text' && styles.wechatVoiceActionActive]}>
+              <Text style={[styles.wechatVoiceActionText, voiceGesture === 'text' && styles.wechatVoiceActionTextActive]}>
+                滑到这里 转文字
+              </Text>
+            </View>
+          </View>
+          <View style={styles.wechatReleaseDock}>
+            <Text style={styles.wechatReleaseText}>
+              {cancelHint || voiceGesture === 'cancel' ? '松开 取消' : voiceGesture === 'text' ? '松开 转文字' : '松开 发送'}
             </Text>
           </View>
         </View>
@@ -375,51 +439,64 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
       <View testID="chat-composer-surface" style={styles.composerSurface}>
         {/* 输入栏 */}
         <View style={styles.inputBar}>
-          <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="附件菜单">
-            <Ionicons name={showMenu ? 'close' : 'add'} size={22} color={C.ink1} />
-          </TouchableOpacity>
-
-          {/* 文本输入框 — 语音走「长按输入框」(placeholder 已提示「或按住说话」),
-              不再有右侧独立麦克风按钮(founder 2026-07-05: Claude 式极简, 去冗余)。 */}
           <Pressable
+            onPressIn={(e) => handleHoldStart(e.nativeEvent.pageX, e.nativeEvent.pageY)}
+            onTouchMove={(e) => handleHoldMove(e.nativeEvent.pageX, e.nativeEvent.pageY)}
+            onPressOut={handleHoldEnd}
+            style={({ pressed }) => [
+              styles.voiceModeBtn,
+              (pressed || voiceGesture != null) && styles.voiceModeBtnActive,
+            ]}
+            hitSlop={COMPOSER_HIT_SLOP}
+            accessibilityRole="button"
+            accessibilityLabel="按住说话"
+            accessibilityHint="按住开始语音输入，左滑取消，右滑转文字"
+          >
+            <Ionicons name="volume-medium-outline" size={25} color={WECHAT_ICON} />
+          </Pressable>
+
+          <Pressable
+            testID="wechat-composer-input"
             style={({ pressed }) => [
               styles.inputWrap,
+              realtimeDictation.isDictating && styles.inputWrapDictating,
               pressed && styles.inputWrapPressed,
             ]}
             onPress={focusTextInput}
-            onLongPress={(e) => handleInputLongPress(e.nativeEvent.pageY)}
-            onPressOut={handleInputPressOut}
-            onTouchMove={(e) => {
-              if (inputHoldActiveRef.current) handleHoldMove(e.nativeEvent.pageY);
-            }}
-            delayLongPress={260}
             accessibilityRole="button"
-            accessibilityLabel="消息输入框，长按语音输入"
-            accessibilityHint="点击输入文字，长按录音并转成文字"
+            accessibilityLabel="消息输入框容器"
+            accessibilityHint="点击输入文字，点右侧麦克风实时转文字"
           >
             <TextInput
               ref={textInputRef}
-              // 空且未聚焦时「摸不到」→ 长按手势归外层 Pressable(录音),避免 iOS 文本
-              // 选择放大镜抢走 + 键盘闪现。聚焦/有字后恢复可交互(光标/选择正常)。
-              style={[styles.textInput, { pointerEvents: inputInert ? 'none' : 'auto' }]}
+              style={[styles.textInput, { pointerEvents: 'auto' }]}
               placeholder={MODE_PLACEHOLDER[agentMode]}
-              placeholderTextColor={C.ink3}
+              placeholderTextColor="#7F7F7F"
               value={input}
               onChangeText={setInput}
-              onFocus={() => setIsFocused(true)}
-              onBlur={() => setIsFocused(false)}
               onKeyPress={handleTextInputKeyPress}
               onSubmitEditing={handleKeyboardSubmit}
               returnKeyType="send"
               submitBehavior="submit"
+              selectionColor={C.greenBright}
               multiline
               maxLength={2000}
               accessibilityLabel="消息输入框"
             />
+            <TouchableOpacity
+              onPress={handleRealtimeMicPress}
+              style={[styles.inlineMicBtn, realtimeDictation.isDictating && styles.inlineMicBtnActive]}
+              hitSlop={COMPOSER_HIT_SLOP}
+              activeOpacity={0.72}
+              accessibilityRole="button"
+              accessibilityState={{ selected: realtimeDictation.isDictating }}
+              accessibilityLabel={realtimeDictation.isDictating ? '停止实时语音转文字' : '实时语音转文字'}
+            >
+              {realtimeDictation.isDictating && <PulsingRing />}
+              <Ionicons name="mic" size={21} color={realtimeDictation.isDictating ? '#FFFFFF' : WECHAT_ICON} />
+            </TouchableOpacity>
           </Pressable>
 
-          {/* 右侧发送按钮 — 只在有内容时出现;刚发送 (justSent) 停留 1s 显示对勾。
-              空态不占位, 输入框自动占满(Claude 式:不放常驻麦克风冗余按钮)。 */}
           {canSend ? (
             <TouchableOpacity onPress={() => handleSend()} style={styles.sendBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="发送消息">
               <Ionicons name="arrow-up" size={20} color="#fff" />
@@ -428,7 +505,11 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
             <View style={[styles.sendBtn, { opacity: 0.4 }]}>
               <Ionicons name="checkmark" size={20} color="#fff" />
             </View>
-          ) : null}
+          ) : (
+            <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="附件菜单">
+              <Ionicons name={showMenu ? 'close' : 'add'} size={28} color={WECHAT_ICON} />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -442,7 +523,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
           >
             <View testID="attachment-menu-handle" style={styles.menuHandle} />
             <View testID="attachment-action-grid" style={styles.attachmentGrid}>
-              <AttachmentGridItem icon="camera-outline" label="拍照" desc="食物/数据" onPress={handleTakePhoto} />
+              <AttachmentGridItem icon="camera-outline" label="拍照记餐" desc="确认后写入" onPress={handleCaptureMealPhoto} />
               <AttachmentGridItem icon="image-outline" label="相册" desc="最多9张" onPress={handlePickImage} />
               <AttachmentGridItem icon="document-outline" label="文件" desc="文档/报告" onPress={handlePickFile} />
               <AttachmentGridItem
@@ -565,42 +646,64 @@ function MenuItem({ icon, label, desc, onPress }: { icon: any; label: string; de
 const styles = StyleSheet.create({
   /* ── 输入栏 ── */
   composerSurface: {
-    marginHorizontal: revaSpacing.s3,
-    marginTop: 3,
-    marginBottom: 2,
-    borderRadius: 22,
-    backgroundColor: C.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    ...revaShadows.sm,
+    marginHorizontal: 0,
+    marginTop: 0,
+    marginBottom: 0,
+    borderRadius: 0,
+    backgroundColor: WECHAT_BAR_BG,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#2A2A2A',
   },
   inputBar: {
-    flexDirection: 'row', alignItems: 'flex-end', gap: 5,
-    paddingHorizontal: 7,
-    paddingTop: 6,
-    paddingBottom: 6,
-    backgroundColor: 'transparent',
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 10,
+    paddingTop: 9,
+    paddingBottom: 9,
+    backgroundColor: WECHAT_BAR_BG,
+  },
+  voiceModeBtn: {
+    width: 42, height: 42, borderRadius: 21,
+    borderWidth: 2, borderColor: WECHAT_ICON,
+    backgroundColor: '#171717',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  voiceModeBtnActive: {
+    borderColor: C.greenBright,
+    backgroundColor: '#0E241C',
   },
   plusBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: C.paper2, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line,
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: '#171717', borderWidth: 2, borderColor: WECHAT_ICON,
     alignItems: 'center', justifyContent: 'center',
   },
   inputWrap: {
-    // 2026-07-05 founder: 拇指工学对齐 GPT(场高 ~48-52pt; 旧 32 低于 HIG 44pt)
     minHeight: 48,
-    flex: 1, flexDirection: 'row', alignItems: 'flex-end',
-    backgroundColor: C.paper, borderRadius: revaRadii.pill,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
-    paddingHorizontal: 14, paddingVertical: 5,
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: WECHAT_INPUT_BG, borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#343434',
+    paddingLeft: 16, paddingRight: 5, paddingVertical: 4,
   },
   inputWrapPressed: {
-    backgroundColor: C.paper2,
-    borderColor: C.green100,
+    backgroundColor: '#303030',
+    borderColor: '#3B3B3B',
+  },
+  inputWrapDictating: {
+    backgroundColor: WECHAT_INPUT_BG_ACTIVE,
+    borderColor: C.greenBright,
   },
   textInput: {
-    flex: 1, fontFamily: revaFonts.sans, fontSize: 16, maxHeight: 96, color: C.ink1,
+    flex: 1, fontFamily: revaFonts.sans, fontSize: 16, maxHeight: 96, color: '#F5F5F5',
     paddingTop: 8, paddingBottom: 8,
+  },
+  inlineMicBtn: {
+    width: 38, height: 38, borderRadius: 19,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'transparent',
+    overflow: 'hidden',
+  },
+  inlineMicBtnActive: {
+    backgroundColor: C.green500,
+    ...revaShadows.sm,
   },
   sendBtn: {
     width: 40, height: 40, borderRadius: 20,
@@ -612,39 +715,105 @@ const styles = StyleSheet.create({
   /* ── 录音中蒙层 ── */
   recordingOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.78)',
     zIndex: 100,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  recordingCenter: {
     alignItems: 'center',
-  },
-  micCircle: {
-    width: 80, height: 80, borderRadius: 40,
-    backgroundColor: '#FF453A',
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 16,
-  },
-  cancelCircle: {
-    width: 80, height: 80, borderRadius: 40,
-    backgroundColor: '#999',
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 16,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
   },
   pulsingRing: {
     position: 'absolute',
-    width: 80, height: 80, borderRadius: 40,
-    borderWidth: 3, borderColor: 'rgba(255,69,58,0.4)',
+    width: 36, height: 36, borderRadius: 18,
+    borderWidth: 2, borderColor: 'rgba(58,210,159,0.5)',
+  },
+  wechatVoiceBubble: {
+    minWidth: 210,
+    minHeight: 92,
+    borderRadius: 20,
+    backgroundColor: '#45C681',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 30,
+    marginBottom: 18,
+  },
+  wechatBubbleTail: {
+    position: 'absolute',
+    bottom: -10,
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    backgroundColor: '#45C681',
+    transform: [{ rotate: '45deg' }],
+  },
+  wechatWaveRow: {
+    height: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  wechatWaveBar: {
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: 'rgba(11,87,51,0.55)',
+  },
+  wechatWaveBarLoud: {
+    backgroundColor: 'rgba(11,87,51,0.75)',
   },
   recordingDuration: {
-    fontFamily: revaFonts.mono, fontSize: 28, fontWeight: '700', color: '#fff',
-    marginBottom: 8,
+    fontFamily: revaFonts.mono, fontSize: 20, fontWeight: '700', color: '#EDEDED',
+    marginBottom: 170,
   } as TextStyle,
-  recordingHint: {
-    fontFamily: revaFonts.sans, fontSize: 14, color: 'rgba(255,255,255,0.7)',
+  wechatVoiceActions: {
+    position: 'absolute',
+    left: 18,
+    right: 18,
+    bottom: 116,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  wechatVoiceActionPill: {
+    minWidth: 132,
+    minHeight: 62,
+    borderRadius: 31,
+    backgroundColor: '#222222',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    transform: [{ rotate: '-7deg' }],
+  },
+  wechatVoiceActionActive: {
+    backgroundColor: '#303A34',
+    borderWidth: 1,
+    borderColor: C.greenBright,
+  },
+  wechatVoiceActionText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 16,
+    color: '#EDEDED',
+    fontWeight: '700',
   } as TextStyle,
-  recordingHintCancel: {
-    color: '#FF453A', fontWeight: '600',
+  wechatVoiceActionTextActive: {
+    color: C.greenBright,
+  } as TextStyle,
+  wechatReleaseDock: {
+    position: 'absolute',
+    left: -30,
+    right: -30,
+    bottom: 0,
+    minHeight: 88,
+    borderTopLeftRadius: 120,
+    borderTopRightRadius: 120,
+    backgroundColor: 'rgba(240,240,240,0.82)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 10,
+  },
+  wechatReleaseText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 18,
+    color: '#111111',
+    fontWeight: '800',
   } as TextStyle,
 
   /* ── 识别中 ── */
