@@ -8,6 +8,7 @@ import {
   Clock3,
   MessageSquarePlus,
   Pencil,
+  Search,
   Trash2,
   X,
 } from 'lucide-react';
@@ -26,6 +27,9 @@ interface ConversationHistoryRailProps {
   totalPages?: number;    // 总页数
   onPrevPage?: () => void;
   onNextPage?: () => void;
+  /** 受控搜索框(按标题+内容);父层拿到值后 debounce 调 /agent/conversations?search= */
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
 }
 
 export default function ConversationHistoryRail({
@@ -40,6 +44,8 @@ export default function ConversationHistoryRail({
   totalPages = 1,
   onPrevPage,
   onNextPage,
+  searchValue,
+  onSearchChange,
 }: ConversationHistoryRailProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
@@ -94,6 +100,28 @@ export default function ConversationHistoryRail({
         <MessageSquarePlus className="h-4 w-4" />
         新对话
       </button>
+      {onSearchChange && (
+        <div className="relative mb-3">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#948F80]" />
+          <input
+            aria-label="搜索对话"
+            value={searchValue ?? ''}
+            onChange={event => onSearchChange(event.target.value)}
+            className="h-9 w-full rounded-[10px] border border-[#D8D3C4] bg-[#FCFBF7] pl-8 pr-8 text-[13px] text-[#29261F] outline-none placeholder:text-[#948F80] focus:border-[#C96442]"
+            placeholder="搜索标题或内容"
+          />
+          {!!searchValue && (
+            <button
+              onClick={() => onSearchChange('')}
+              className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-[#948F80] transition-colors hover:bg-[#E8E4D8] hover:text-[#29261F]"
+              aria-label="清除搜索"
+              title="清除搜索"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      )}
       <div className="mb-2 flex items-center gap-2 px-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-[#948F80]">
         <Clock3 className="h-3.5 w-3.5" />
         历史记录
@@ -102,7 +130,7 @@ export default function ConversationHistoryRail({
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
         {conversations.length === 0 ? (
           <div className="rounded-xl border border-dashed border-[#D8D3C4] px-3 py-8 text-center text-xs text-[#948F80]">
-            暂无历史对话
+            {searchValue ? '未找到匹配的对话' : '暂无历史对话'}
           </div>
         ) : (
           <div className="space-y-1">

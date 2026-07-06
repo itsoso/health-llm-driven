@@ -1083,12 +1083,12 @@ public final class AgentChatViewModel {
     /// 401 / 5xx) the existing cache is kept and `historyNotice` is set so the UI
     /// can tell the user it's showing a possibly-stale local copy — never silently
     /// cleared. No-op when no remote source is wired (e.g. unit tests, previews).
-    public func refreshConversationHistory(limit: Int = 30) async {
+    public func refreshConversationHistory(limit: Int = 30, search: String? = nil) async {
         guard let remoteSource else { return }
         isLoadingHistory = true
         defer { isLoadingHistory = false }
         do {
-            let remote = try await remoteSource.fetchConversations(limit: limit, offset: 0)
+            let remote = try await remoteSource.fetchConversations(limit: limit, offset: 0, search: search)
             // The backend list carries no messages. Don't let it wipe transcripts
             // we already have cached: keep the open chat's live messages, and keep
             // any previously-cached transcript for the rest (so offline-open still
@@ -1107,8 +1107,13 @@ public final class AgentChatViewModel {
                 return snapshot
             }
             conversationHistory = merged
-            conversationStore?.saveConversations(merged)
+            let isSearching = (search?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+            // 搜索结果是过滤子集,不能覆盖离线全量缓存;也不 auto-open(用户在筛选)。
+            if !isSearching {
+                conversationStore?.saveConversations(merged)
+            }
             historyNotice = nil
+            if isSearching { return }
 
             // Keep the visible transcript in sync with other devices. The list
             // endpoint intentionally omits messages, so after reconciling the

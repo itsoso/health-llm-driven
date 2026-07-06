@@ -418,3 +418,50 @@ def test_agent_send_hard_cap_cancels_turn_and_reports_timeout(
     body = jsonlib.loads(res.text)
     assert "超时" in (body.get("error") or "")
     assert cancelled["flag"], "硬上限触发后底层回合必须被真实取消"
+
+
+def test_agent_conversations_search_matches_title_and_content(
+    client, db, auth_user_and_headers
+):
+    """search 同时命中标题与消息正文;user-isolation 不破。"""
+    user, headers = auth_user_and_headers
+    # A: 命中标题
+    conv_title = _create_conversation(db, user.id, "睡眠质量复盘")
+    _add_message(db, conv_title.id, "user", "帮我看看最近怎么样")
+    # B: 标题不含关键词, 但消息正文含
+    conv_body = _create_conversation(db, user.id, "随便聊聊")
+    _add_message(db, conv_body.id, "user", "我的睡眠总是很浅")
+    # C: 都不含
+    conv_miss = _create_conversation(db, user.id, "训练计划")
+    _add_message(db, conv_miss.id, "user", "今天练腿")
+    # 他人含关键词 — 必须被隔离
+    other = _create_user(db, "search_other")
+    other_conv = _create_conversation(db, other.id, "睡眠问题")
+    _add_message(db, other_conv.id, "user", "睡不好")
+
+    res = client.get("/api/v1/agent/conversations?search=睡眠", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    ids = {it["id"] for it in data["items"]}
+    assert conv_title.id in ids  # 标题命中
+    assert conv_body.id in ids   # 正文命中
+    assert conv_miss.id not in ids
+    assert other_conv.id not in ids  # 用户隔离
+    assert data["total"] == 2
+
+
+def test_agent_conversations_search_no_duplicate_rows_on_multi_message_match(
+    client, db, auth_user_and_headers
+):
+    """一条对话里多条消息都命中关键词 → 结果仍只出现一次(EXISTS 而非 join)。"""
+    user, headers = auth_user_and_headers
+    conv = _create_conversation(db, user.id, "健康问答")
+    _add_message(db, conv.id, "user", "血压有点高")
+    _add_message(db, conv.id, "assistant", "血压需要持续监测")
+    _add_message(db, conv.id, "user", "血压怎么降")
+
+    res = client.get("/api/v1/agent/conversations?search=血压", headers=headers)
+    data = res.json()
+    ids = [it["id"] for it in data["items"]]
+    assert ids.count(conv.id) == 1
+    assert data["total"] == 1

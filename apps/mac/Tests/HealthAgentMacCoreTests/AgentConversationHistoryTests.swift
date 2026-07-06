@@ -127,6 +127,32 @@ final class AgentConversationHistoryTests: XCTestCase {
     }
 
     @MainActor
+    func testSearchForwardsTermAndDoesNotClobberOfflineCache() async {
+        // 全量缓存有 2 条;搜索只返回 1 条子集 —— 不能覆盖离线全量缓存。
+        let store = InMemoryConversationStore(seed: [])
+        let remote = FakeRemoteSource()
+        remote.list = [
+            AgentConversationSnapshot(conversationID: 1, title: "睡眠复盘", messages: []),
+            AgentConversationSnapshot(conversationID: 2, title: "训练计划", messages: []),
+        ]
+        remote.searchResult = [
+            AgentConversationSnapshot(conversationID: 1, title: "睡眠复盘", messages: []),
+        ]
+        let model = AgentChatViewModel(conversationStore: store, remoteSource: remote)
+
+        // 全量拉取 → 缓存写入 2 条
+        await model.refreshConversationHistory()
+        XCTAssertEqual(store.saved.last?.count, 2)
+
+        // 搜索 → 列表变子集, 但缓存不被子集覆盖(仍是 2 条)
+        await model.refreshConversationHistory(search: "睡眠")
+        XCTAssertEqual(remote.lastSearch, "睡眠")
+        XCTAssertEqual(model.conversationHistory.count, 1)
+        XCTAssertEqual(model.conversationHistory.first?.conversationID, 1)
+        XCTAssertEqual(store.saved.last?.count, 2, "搜索子集不得覆盖离线全量缓存")
+    }
+
+    @MainActor
     func testRefreshFallsBackToLocalCacheAndSetsNoticeOnFailure() async {
         let local = AgentConversationSnapshot(conversationID: 99, title: "local only", messages: [
             .init(role: .user, content: "cached")
@@ -469,9 +495,16 @@ private final class FakeRemoteSource: AgentConversationRemoteSourcing, @unchecke
     var sharedIDs: [Int] = []
     var shareURL = URL(string: "https://health.executor.life/shared/tok-123")!
     var shareError: Error?
+    /// Records the last search term the VM forwarded (nil = unfiltered fetch).
+    var lastSearch: String?
+    /// When set, fetches with a non-empty search return this instead of `list`.
+    var searchResult: [AgentConversationSnapshot]?
 
-    func fetchConversations(limit: Int, offset: Int) async throws -> [AgentConversationSnapshot] {
+    func fetchConversations(limit: Int, offset: Int, search: String?) async throws -> [AgentConversationSnapshot] {
+        lastSearch = search
         if let listError { throw listError }
+        let term = search?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !term.isEmpty, let searchResult { return searchResult }
         return list
     }
 

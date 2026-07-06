@@ -20,6 +20,8 @@ struct AgentChatView: View {
     @State private var contextBundleName = ""
     @State private var selectedToolActivity: AgentToolActivity?
     @State private var historyPage = 0
+    @State private var historySearchText = ""
+    @State private var historySearchTask: Task<Void, Never>?
     @State private var composerTextHeight: CGFloat = 0
 
     private static let historyPageSize = 6
@@ -769,7 +771,7 @@ struct AgentChatView: View {
                 systemImage: "point.3.connected.trianglepath.dotted"
             )
 
-            if !viewModel.conversationHistory.isEmpty || viewModel.historyNotice != nil || viewModel.isLoadingHistory {
+            if !viewModel.conversationHistory.isEmpty || viewModel.historyNotice != nil || viewModel.isLoadingHistory || !historySearchText.isEmpty {
                 Divider()
 
                 HStack {
@@ -788,7 +790,7 @@ struct AgentChatView: View {
                             .background(Color.secondary.opacity(0.10), in: Capsule())
                     }
                     Button {
-                        Task { await viewModel.refreshConversationHistory() }
+                        Task { await viewModel.refreshConversationHistory(search: historySearchText) }
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
@@ -798,6 +800,38 @@ struct AgentChatView: View {
                     .help(appText("Refresh", appLanguageRaw))
                 }
 
+                // 搜索框(标题+内容);300ms 防抖后按 search 重拉,清空回全量。
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField(appText("Search title or content", appLanguageRaw), text: $historySearchText)
+                        .textFieldStyle(.plain)
+                        .font(.callout)
+                    if !historySearchText.isEmpty {
+                        Button {
+                            historySearchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help(appText("Clear search", appLanguageRaw))
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .onChange(of: historySearchText) { _, newValue in
+                    historyPage = 0
+                    historySearchTask?.cancel()
+                    historySearchTask = Task {
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        if Task.isCancelled { return }
+                        await viewModel.refreshConversationHistory(search: newValue)
+                    }
+                }
+
                 // Offline / 401 / server-error: the list below is the local cache,
                 // not the live backend. Say so instead of pretending it's current.
                 if let notice = viewModel.historyNotice {
@@ -805,6 +839,13 @@ struct AgentChatView: View {
                         .font(.caption2)
                         .foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if viewModel.conversationHistory.isEmpty && !historySearchText.isEmpty && !viewModel.isLoadingHistory {
+                    Text(appText("No conversations match your search", appLanguageRaw))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 8)
                 }
 
                 VStack(alignment: .leading, spacing: 8) {

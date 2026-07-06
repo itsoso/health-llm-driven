@@ -44,22 +44,49 @@ class AgentConversationService:
         self.db.refresh(conv)
         return conv
 
+    def _apply_search(self, q, *, title_like: Optional[str], search: Optional[str]):
+        """Filter conversations by title (title_like) or title∪message-content (search).
+
+        `search` 匹配标题 OR 任一消息正文(ilike),对应"按标题和内容搜索"。
+        `title_like` 保留旧行为(仅标题),search 优先。用 EXISTS 子查询避免 join
+        导致的重复行 + 无需 distinct。
+        """
+        term = (search or "").strip()
+        if term:
+            pattern = f"%{term}%"
+            msg_exists = (
+                self.db.query(AgentMessage.id)
+                .filter(
+                    AgentMessage.conversation_id == AgentConversation.id,
+                    AgentMessage.content.ilike(pattern),
+                )
+                .exists()
+            )
+            return q.filter((AgentConversation.title.ilike(pattern)) | msg_exists)
+        if title_like:
+            return q.filter(AgentConversation.title.ilike(f"%{title_like}%"))
+        return q
+
     def get_conversations(
         self,
         user_id: int,
         limit: int = 20,
         title_like: Optional[str] = None,
         offset: int = 0,
+        search: Optional[str] = None,
     ) -> List[AgentConversation]:
         q = self.db.query(AgentConversation).filter(AgentConversation.user_id == user_id)
-        if title_like:
-            q = q.filter(AgentConversation.title.ilike(f"%{title_like}%"))
+        q = self._apply_search(q, title_like=title_like, search=search)
         return q.order_by(AgentConversation.updated_at.desc()).offset(offset).limit(limit).all()
 
-    def count_conversations(self, user_id: int, title_like: Optional[str] = None) -> int:
+    def count_conversations(
+        self,
+        user_id: int,
+        title_like: Optional[str] = None,
+        search: Optional[str] = None,
+    ) -> int:
         q = self.db.query(AgentConversation).filter(AgentConversation.user_id == user_id)
-        if title_like:
-            q = q.filter(AgentConversation.title.ilike(f"%{title_like}%"))
+        q = self._apply_search(q, title_like=title_like, search=search)
         return q.count()
 
     def get_conversation_detail(self, user_id: int, conversation_id: int) -> Optional[AgentConversation]:

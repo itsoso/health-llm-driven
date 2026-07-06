@@ -120,7 +120,8 @@ struct BackendConversationDetail: Decodable, Sendable {
 public protocol AgentConversationRemoteSourcing: Sendable {
     /// Fetches the conversation list (most-recent first), mapped to snapshots.
     /// Snapshots carry no messages yet — call `fetchDetail` when one is opened.
-    func fetchConversations(limit: Int, offset: Int) async throws -> [AgentConversationSnapshot]
+    /// `search` matches title ∪ message content (backend EXISTS subquery); nil = all.
+    func fetchConversations(limit: Int, offset: Int, search: String?) async throws -> [AgentConversationSnapshot]
     /// Fetches a single conversation's full message list.
     func fetchDetail(conversationID: Int) async throws -> [AgentChatMessage]
     /// Deletes a conversation on the backend. No-op-safe to call before syncing
@@ -142,10 +143,13 @@ public final class AgentConversationClient: AgentConversationRemoteSourcing, @un
         self.apiClient = apiClient
     }
 
-    public func fetchConversations(limit: Int = 30, offset: Int = 0) async throws -> [AgentConversationSnapshot] {
-        let response: BackendConversationList = try await apiClient.get(
-            "agent/conversations?limit=\(limit)&offset=\(offset)"
-        )
+    public func fetchConversations(limit: Int = 30, offset: Int = 0, search: String? = nil) async throws -> [AgentConversationSnapshot] {
+        var path = "agent/conversations?limit=\(limit)&offset=\(offset)"
+        if let term = search?.trimmingCharacters(in: .whitespacesAndNewlines), !term.isEmpty {
+            let encoded = term.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? term
+            path += "&search=\(encoded)"
+        }
+        let response: BackendConversationList = try await apiClient.get(path)
         return response.items.map { Self.snapshot(from: $0) }
     }
 

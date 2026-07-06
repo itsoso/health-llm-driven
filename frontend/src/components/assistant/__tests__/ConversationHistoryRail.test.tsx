@@ -66,6 +66,59 @@ describe('ConversationHistoryRail', () => {
     confirmSpy.mockRestore();
   });
 
+  it('renders a search box and forwards typed queries to onSearchChange', () => {
+    const onSearchChange = vi.fn();
+    render(
+      <ConversationHistoryRail
+        conversations={[]}
+        loading={false}
+        onLoad={vi.fn()}
+        onDelete={vi.fn()}
+        onNew={vi.fn()}
+        onRename={vi.fn()}
+        searchValue=""
+        onSearchChange={onSearchChange}
+      />,
+    );
+
+    const box = screen.getByLabelText('搜索对话');
+    fireEvent.change(box, { target: { value: '睡眠' } });
+    expect(onSearchChange).toHaveBeenCalledWith('睡眠');
+  });
+
+  it('shows a search-specific empty state when a query yields no matches', () => {
+    render(
+      <ConversationHistoryRail
+        conversations={[]}
+        loading={false}
+        onLoad={vi.fn()}
+        onDelete={vi.fn()}
+        onNew={vi.fn()}
+        onRename={vi.fn()}
+        searchValue="睡眠"
+        onSearchChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('未找到匹配的对话')).toBeTruthy();
+    // 清除按钮出现(有搜索词时)
+    expect(screen.getByLabelText('清除搜索')).toBeTruthy();
+  });
+
+  it('hides the search box when onSearchChange is not provided (back-compat)', () => {
+    render(
+      <ConversationHistoryRail
+        conversations={[]}
+        loading={false}
+        onLoad={vi.fn()}
+        onDelete={vi.fn()}
+        onNew={vi.fn()}
+        onRename={vi.fn()}
+      />,
+    );
+    expect(screen.queryByLabelText('搜索对话')).toBeNull();
+    expect(screen.getByText('暂无历史对话')).toBeTruthy();
+  });
+
   it('shows prev/next pager and disables prev on first page', () => {
     const onNextPage = vi.fn();
     render(

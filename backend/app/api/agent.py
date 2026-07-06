@@ -906,13 +906,15 @@ async def agent_send(
 async def list_conversations(
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0, description="分页偏移(翻页用)"),
-    title_like: Optional[str] = Query(None, description="按标题模糊过滤"),
+    title_like: Optional[str] = Query(None, description="按标题模糊过滤(旧参数,仅标题)"),
+    search: Optional[str] = Query(None, description="按标题和消息内容搜索"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
     """List current user's Agent conversations (paginated).
 
     返回 {items, total, limit, offset} —— 前端历史记录用 offset 做上一页/下一页翻页。
+    `search` 同时匹配标题与消息正文;`title_like` 保留旧的仅标题过滤。
     AgentExecutor persists conversations through AgentConversationService so mobile/web
     can resume interrupted streams from the same durable message store.
     """
@@ -921,8 +923,10 @@ async def list_conversations(
     from app.services.agent_conversation_service import AgentConversationService
 
     service = AgentConversationService(db)
-    total = service.count_conversations(current_user.id, title_like=title_like)
-    convs = service.get_conversations(current_user.id, limit, title_like=title_like, offset=offset)
+    total = service.count_conversations(current_user.id, title_like=title_like, search=search)
+    convs = service.get_conversations(
+        current_user.id, limit, title_like=title_like, offset=offset, search=search
+    )
     conv_ids = [c.id for c in convs]
     last_msgs = {}
     if conv_ids:

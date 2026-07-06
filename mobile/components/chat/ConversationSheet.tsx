@@ -32,6 +32,9 @@ interface Props {
   onLoadMore?: () => void;
   /** 后端返回的总条数 (决定是否显示 "没有更多了" footer) */
   total?: number;
+  /** 受控搜索框(按标题+内容);父层拿到值后 debounce 重拉。 */
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
 }
 
 export default function ConversationSheet({
@@ -39,6 +42,7 @@ export default function ConversationSheet({
   currentConversationId, onSelectConversation, onDeleteConversation,
   onRenameConversation, loading, error, onRetry,
   hasMore, loadingMore, loadMoreError, onLoadMore, total,
+  searchValue, onSearchChange,
 }: Props) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
@@ -110,6 +114,31 @@ export default function ConversationSheet({
         >
           <View style={styles.handle} />
           <Text style={styles.title}>对话历史</Text>
+          {onSearchChange && (
+            <View style={styles.searchWrap}>
+              <Ionicons name="search-outline" size={16} color={C.ink3} style={styles.searchIcon} />
+              <TextInput
+                accessibilityLabel="搜索对话"
+                value={searchValue ?? ''}
+                onChangeText={onSearchChange}
+                style={styles.searchInput}
+                placeholder="搜索标题或内容"
+                placeholderTextColor={C.ink3}
+                returnKeyType="search"
+                autoCorrect={false}
+              />
+              {!!searchValue && (
+                <TouchableOpacity
+                  onPress={() => onSearchChange('')}
+                  hitSlop={8}
+                  accessibilityLabel="清除搜索"
+                  style={styles.searchClear}
+                >
+                  <Ionicons name="close-circle" size={18} color={C.ink3} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
           {loading ? (
             <View style={styles.loadingWrap}>
               <ActivityIndicator size="small" color={C.green500} />
@@ -127,8 +156,8 @@ export default function ConversationSheet({
             </View>
           ) : conversations.length === 0 ? (
             <View style={styles.loadingWrap}>
-              <Ionicons name="chatbubbles-outline" size={28} color={C.ink3} />
-              <Text style={styles.loadingText}>还没有历史对话</Text>
+              <Ionicons name={searchValue ? 'search-outline' : 'chatbubbles-outline'} size={28} color={C.ink3} />
+              <Text style={styles.loadingText}>{searchValue ? '未找到匹配的对话' : '还没有历史对话'}</Text>
             </View>
           ) : (
             <FlatList
@@ -301,6 +330,15 @@ const styles = StyleSheet.create({
     alignSelf: 'center', marginBottom: revaSpacing.s4,
   },
   title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1, marginBottom: 12 },
+  searchWrap: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: C.paper2, borderRadius: revaRadii.md,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: C.line,
+    paddingHorizontal: 10, marginBottom: 12, height: 40,
+  },
+  searchIcon: { marginRight: 6 },
+  searchInput: { flex: 1, fontFamily: revaFonts.sans, fontSize: 15, color: C.ink1, paddingVertical: 0 },
+  searchClear: { marginLeft: 6 },
   loadingWrap: { alignItems: 'center', paddingVertical: 20, gap: 8 },
   loadingText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink3 },
   row: {

@@ -111,6 +111,7 @@ function AIAssistantInner() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [convPage, setConvPage] = useState(1);   // 历史记录当前页(1-based)
   const [convTotal, setConvTotal] = useState(0); // 全部对话条数(翻页用)
+  const [convSearch, setConvSearch] = useState(''); // 历史记录搜索词(标题+内容)
   const [historyOpen, setHistoryOpen] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [input, setInput] = useState('');
@@ -177,11 +178,11 @@ function AIAssistantInner() {
     }
   };
 
-  const refreshConversations = async (targetPage: number = convPage) => {
+  const refreshConversations = async (targetPage: number = convPage, search: string = convSearch) => {
     setHistoryLoading(true);
     try {
       const offset = (targetPage - 1) * CONV_PAGE_SIZE;
-      const res = await agentApi.getConversations(CONV_PAGE_SIZE, offset);
+      const res = await agentApi.getConversations(CONV_PAGE_SIZE, offset, search);
       setConversations(res.data.items || []);
       setConvTotal(res.data.total || 0);
       setConvPage(targetPage);
@@ -192,9 +193,25 @@ function AIAssistantInner() {
     }
   };
 
+  const convSearchMounted = useRef(false);
   useEffect(() => {
     refreshConversations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 搜索防抖:输入变化 300ms 后回到第 1 页重新拉取(标题+内容)。
+  // 跳过挂载首跑 —— 上面的 mount effect 已做首屏拉取,避免双拉。
+  useEffect(() => {
+    if (!convSearchMounted.current) {
+      convSearchMounted.current = true;
+      return;
+    }
+    const t = setTimeout(() => {
+      refreshConversations(1, convSearch);
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [convSearch]);
 
   // 把当前 conversation id 写进 URL (?c=<id>), 用 replace 不污染历史栈.
   // id 为空 → 回到无 ?c 的干净 URL (新对话未发消息).
@@ -640,6 +657,8 @@ function AIAssistantInner() {
             onNextPage={() => {
               if (convPage < Math.ceil(convTotal / CONV_PAGE_SIZE)) refreshConversations(convPage + 1);
             }}
+            searchValue={convSearch}
+            onSearchChange={setConvSearch}
           />
         )}
 

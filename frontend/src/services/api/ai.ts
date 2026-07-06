@@ -156,8 +156,11 @@ export const chatApi = {
 // ===== 统一健康 Agent API =====
 export const agentApi = {
   // 分页返回 {items,total,limit,offset};历史记录用 offset 做上一页/下一页翻页。
-  getConversations: (limit: number = 30, offset: number = 0) =>
-    api.get<ConversationPage>(`/agent/conversations?limit=${limit}&offset=${offset}`),
+  // search 同时匹配标题与消息内容(后端 EXISTS 子查询)。
+  getConversations: (limit: number = 30, offset: number = 0, search?: string) => {
+    const q = search?.trim() ? `&search=${encodeURIComponent(search.trim())}` : '';
+    return api.get<ConversationPage>(`/agent/conversations?limit=${limit}&offset=${offset}${q}`);
+  },
 
   getConversation: (conversationId: number) =>
     api.get<ConversationDetail & { total_messages?: number }>(`/agent/conversations/${conversationId}`),

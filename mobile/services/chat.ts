@@ -425,10 +425,13 @@ export async function getConversationsPage({
   offset = 0,
   limit = 20,
   titleLike,
-}: { offset?: number; limit?: number; titleLike?: string } = {}): Promise<ConversationsPage> {
+  search,
+}: { offset?: number; limit?: number; titleLike?: string; search?: string } = {}): Promise<ConversationsPage> {
   const token = await getToken();
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (titleLike) params.set('title_like', titleLike);
+  // search 同时匹配标题与消息内容(后端 EXISTS 子查询)
+  if (search && search.trim()) params.set('search', search.trim());
   const res = await fetch(`${BASE_URL}/agent/conversations?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
   });

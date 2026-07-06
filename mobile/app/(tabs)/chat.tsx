@@ -145,6 +145,9 @@ export default function ChatScreen() {
   const [historyTotal, setHistoryTotal] = useState(0);
   const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
   const [historyLoadMoreError, setHistoryLoadMoreError] = useState(false);
+  const [historySearch, setHistorySearch] = useState(''); // 会话搜索词(标题+内容)
+  // fetch 回调用 ref 读到最新搜索词(避免 stale 闭包 + 反复重建 callback)
+  const historySearchRef = useRef('');
   const [llmModelId, setLlmModelId] = useState<string | null>(null);
   const [llmOptions, setLlmOptions] = useState<ModelOption[]>([]);
   const [llmSaving, setLlmSaving] = useState<string | null>(null);
@@ -499,7 +502,9 @@ export default function ChatScreen() {
     setHistoryError(null);
     setHistoryLoadMoreError(false);
     try {
-      const { items, total } = await getConversationsPage({ offset: 0, limit: HISTORY_PAGE_SIZE });
+      const { items, total } = await getConversationsPage({
+        offset: 0, limit: HISTORY_PAGE_SIZE, search: historySearchRef.current,
+      });
       setConversations(items);
       setHistoryTotal(total);
     } catch {
@@ -522,6 +527,7 @@ export default function ChatScreen() {
       const { items, total } = await getConversationsPage({
         offset: currentLen,
         limit: HISTORY_PAGE_SIZE,
+        search: historySearchRef.current,
       });
       setHistoryTotal(total);
       setConversations(prev => {
@@ -538,9 +544,27 @@ export default function ChatScreen() {
 
   const openHistory = useCallback(() => {
     setToolMenuVisible(false);
+    // 每次打开清空搜索,始终从全量历史开始(ref 同步清,openHistory 拉取读到空)
+    historySearchRef.current = '';
+    setHistorySearch('');
     setHistoryVisible(true);
     loadConversationHistory();
   }, [loadConversationHistory]);
+
+  // 搜索词变化:同步更新 ref(fetch 回调读它)+ 受控 state。
+  const onHistorySearchChange = useCallback((v: string) => {
+    historySearchRef.current = v;
+    setHistorySearch(v);
+  }, []);
+
+  // 搜索防抖:仅 historySearch 变化触发(不依赖 historyVisible,避免开 sheet 时
+  // 与 openHistory 的即时拉取双拉)。sheet 未开时早退。
+  useEffect(() => {
+    if (!historyVisible) return;
+    const t = setTimeout(() => { loadConversationHistory(); }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historySearch]);
 
   const exitSelectionMode = useCallback(() => {
     setSelectionMode(false);
@@ -840,6 +864,8 @@ export default function ChatScreen() {
         loadMoreError={historyLoadMoreError}
         onLoadMore={loadMoreConversations}
         total={historyTotal}
+        searchValue={historySearch}
+        onSearchChange={onHistorySearchChange}
       />
     </SafeAreaView>
   );
