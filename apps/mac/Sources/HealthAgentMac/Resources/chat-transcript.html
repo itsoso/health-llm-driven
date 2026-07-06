@@ -1300,12 +1300,15 @@
     appendOrUpdateLast: function (msg) {
       var existing = findRow(msg.id);
       if (existing) {
+        // 流式更新同一条消息:仅在用户已接近底部时跟随(尊重上滑翻历史)。
         var newRow = makeRow(msg);
         existing.replaceWith(newRow);
+        scrollToBottomIfNeeded(false);
       } else {
+        // 追加新消息(用户刚发送 / 新回合开始):必须强制滚到底,让新内容可见。
         root.appendChild(makeRow(msg));
+        scrollToBottomIfNeeded(true);
       }
-      scrollToBottomIfNeeded(false);
     },
     setFontScale: function (scale) {
       document.documentElement.style.setProperty("--font-scale", String(scale));
