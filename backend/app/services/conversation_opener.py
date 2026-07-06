@@ -40,6 +40,9 @@ CHINA_TZ = ZoneInfo("Asia/Shanghai")
 _TITLE_TRAILING_SUFFIXES = ("，请注意", ",请注意", "，请留意", "请注意", "请留意")
 # 括号内阈值说明 (全角/半角) — "（阈值 95%）" / "(阈值 95%)"
 _TITLE_THRESHOLD_PAREN = re.compile(r"[（(]\s*阈值[^）)]*[）)]")
+# 开头的 [内部指标键] 前缀: 只吃 ASCII 字母/数字/下划线的 key (如 [spo2_avg]/[hrv]);
+# 不误伤中文方括号内容 (如 「血压」类人话不会命中, 且我们只剥行首这一个)。
+_TITLE_METRIC_KEY_PREFIX = re.compile(r"^\s*[\[［]\s*[A-Za-z][A-Za-z0-9_]*\s*[\]］]\s*")
 # 截断时优先切在这些子句边界之后
 _TITLE_CLAUSE_BOUNDARY = "，,。；;、"
 _TITLE_MAX_LEN = 24
@@ -59,6 +62,9 @@ def humanize_card_title(title: str) -> str:
     if not title:
         return ""
     s = title.strip()
+    # 存量兜底: 剥掉标题开头的 [内部指标键] 前缀 (如 "[spo2_avg] 血氧…" → "血氧…")。
+    # 新卡已不再拼这个前缀 (anomaly_detection_service), 但 DB 里旧卡仍带 —— 绝不漏进用户文本。
+    s = _TITLE_METRIC_KEY_PREFIX.sub("", s).strip()
     # 阈值括号 (可能在中间)
     s = _TITLE_THRESHOLD_PAREN.sub("", s)
     # 尾部礼貌语 (反复剥, 处理 "…（阈值…），请注意" 剥括号后新暴露的尾巴)
