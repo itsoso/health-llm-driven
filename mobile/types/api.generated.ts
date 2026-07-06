@@ -6288,6 +6288,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supplements/records/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Supplement Record
+         * @description 更新当前用户的一条补剂打卡记录。
+         */
+        put: operations["update_supplement_record_api_v1_supplements_records__record_id__put"];
+        post?: never;
+        /**
+         * Delete Supplement Record
+         * @description 删除当前用户的一条补剂打卡记录。
+         */
+        delete: operations["delete_supplement_record_api_v1_supplements_records__record_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supplements/me/frequent": {
         parameters: {
             query?: never;
@@ -10694,6 +10718,10 @@ export interface paths {
          *     This endpoint intentionally reuses the first-party AgentExecutor instead of
          *     any external gateway. It collects token events into one reply and returns
          *     the durable conversation/message ids written by the executor.
+         *
+         *     长回合(> AGENT_SEND_KEEPALIVE_SECONDS)返回 chunked JSON:前导空白是保活
+         *     字节,末尾才是完整 JSON 对象。流一旦开始,状态码已定格 200,错误改为
+         *     body.error 字段(消费方判 error 非空 = 失败)。快回合行为与历史完全一致。
          */
         post: operations["agent_send_api_v1_agent_send_post"];
         delete?: never;
@@ -18200,6 +18228,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/goals/{goal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Goal
+         * @description 获取当前用户的单个目标
+         */
+        get: operations["get_goal_api_v1_goals__goal_id__get"];
+        /**
+         * Update Goal
+         * @description 更新当前用户的目标
+         */
+        put: operations["update_goal_api_v1_goals__goal_id__put"];
+        post?: never;
+        /**
+         * Delete Goal
+         * @description 删除当前用户的目标
+         */
+        delete: operations["delete_goal_api_v1_goals__goal_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/goals/{goal_id}/progress": {
         parameters: {
             query?: never;
@@ -23882,6 +23938,35 @@ export interface components {
          * @enum {string}
          */
         GoalType: "diet" | "exercise" | "sleep" | "water" | "supplement" | "outdoor" | "weight" | "other";
+        /**
+         * GoalUpdate
+         * @description 更新目标
+         */
+        GoalUpdate: {
+            goal_type?: components["schemas"]["GoalType"] | null;
+            goal_period?: components["schemas"]["GoalPeriod"] | null;
+            /** Title */
+            title?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Target Value */
+            target_value?: number | null;
+            /** Target Unit */
+            target_unit?: string | null;
+            /** Current Value */
+            current_value?: number | null;
+            /** Start Date */
+            start_date?: string | null;
+            /** End Date */
+            end_date?: string | null;
+            /** Implementation Steps */
+            implementation_steps?: string | null;
+            status?: components["schemas"]["GoalStatus"] | null;
+            /** Priority */
+            priority?: number | null;
+            /** Notes */
+            notes?: string | null;
+        };
         /** GuidedTaskOut */
         GuidedTaskOut: {
             /** Domain */
@@ -29304,6 +29389,15 @@ export interface components {
             user_id: number;
             /** Created At */
             created_at?: string | null;
+        };
+        /** SupplementRecordUpdate */
+        SupplementRecordUpdate: {
+            /** Taken */
+            taken?: boolean | null;
+            /** Taken Time */
+            taken_time?: string | null;
+            /** Notes */
+            notes?: string | null;
         };
         /** SupplementWithRecord */
         SupplementWithRecord: {
@@ -41831,6 +41925,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SupplementRecordResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_supplement_record_api_v1_supplements_records__record_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplementRecordUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplementRecordResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_supplement_record_api_v1_supplements_records__record_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                record_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -60615,6 +60775,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GoalResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_goal_api_v1_goals__goal_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                goal_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_goal_api_v1_goals__goal_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                goal_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoalUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_goal_api_v1_goals__goal_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                goal_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
                 };
             };
             /** @description Validation Error */

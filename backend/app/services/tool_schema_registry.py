@@ -119,6 +119,7 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
 - "删除这一餐/撤销这顿/我刚才不小心删除了" 是管理已有饮食记录, 不要作为 diet.food_items 写入; 改用 health_manage
 - record_date 如果用户没明说具体日期, 默认填今天 (不要填未来日期)
 - 中文日期/时间要转成 ISO 格式 (例: "昨天早上 8 点" → record_date='YYYY-MM-DD', taken_time='08:00')
+- 创建/调整长期健康目标用 goal；查询/修改/删除已有目标用 health_manage(record_type=goal)
 
 完整参数示例见 data 字段描述.
 """,
@@ -131,7 +132,7 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
                                  "diet", "supplement", "supplement_group", "rhinitis",
                                  "waist", "sleep", "excretion",
                                  "mood", "medication", "illness", "symptom",
-                                 "garmin_sync", "reminder"],
+                                 "garmin_sync", "reminder", "goal"],
                         "description": """记录类型:
 - water: 饮水 ("喝了杯水" / "喝了咖啡")
 - diet: 饮食 ("早餐吃了…" / "吃了牛排")
@@ -149,7 +150,8 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
 - illness: 生病 / 急性症状周期 (感冒/流感/发烧). 用户明确说"我感冒了/生病了/发烧了"优先记录 illness
 - symptom: 身体症状记录 (咳嗽/嗓子疼/鼻塞/流涕/眼痒/膝盖痛/皮肤起疹 等). **不需要慢病档案**, 任何偶发症状都走这个；感冒相关症状用 body_part=respiratory/general
 - garmin_sync: 触发 Garmin 数据立即同步
-- reminder: 设置提醒""",
+- reminder: 设置提醒
+- goal: 设置健康目标 ("从今天开始每天快走30分钟" / "90天把腰围降到82cm")""",
                     },
                     "data": {
                         "type": "object",
@@ -184,7 +186,11 @@ symptom:          {"body_part": "eye|respiratory|skin|digestive|musculoskeletal|
 garmin_sync:      {}
 reminder:         {"title": "臀中肌训练", "message": "蚌式开合、侧卧抬腿、臀桥",
                    "remind_at": "2026-06-30T10:30:00+08:00",
-                   "recurrence": "daily", "priority": "normal"}""",
+                   "recurrence": "daily", "priority": "normal"}
+goal:             {"title": "每日快走30分钟", "goal_type": "exercise|diet|sleep|water|supplement|outdoor|weight|other",
+                   "goal_period": "daily|weekly|monthly|yearly", "target_value": 30,
+                   "target_unit": "分钟", "start_date": "2026-07-05",
+                   "implementation_steps": "1. 晚饭后快走\\n2. 心率保持轻中等强度"}""",
                     },
                 },
                 "required": ["record_type", "data"],
@@ -208,7 +214,7 @@ reminder:         {"title": "臀中肌训练", "message": "蚌式开合、侧卧
 支持 record_type:
 - diet, water, weight, waist, blood_pressure, sleep, mood, excretion, supplement: 支持 list/update/delete
 - illness, medication, supplement_definition: 支持 list/update/delete
-- exercise, symptom, medication_log, reminder: 支持 list/update/delete
+- exercise, symptom, medication_log, reminder, goal: 支持 list/update/delete
 """,
             "parameters": {
                 "type": "object",
@@ -220,6 +226,7 @@ reminder:         {"title": "臀中肌训练", "message": "蚌式开合、侧卧
                             "sleep", "mood", "excretion", "exercise", "illness",
                             "symptom", "medication", "medication_log",
                             "supplement", "supplement_definition", "reminder",
+                            "goal",
                         ],
                         "description": "要管理的数据类型",
                     },
@@ -251,6 +258,7 @@ exercise: {"reps":20,"sets":2}
 symptom: {"severity":2,"notes":"洗鼻后缓解"}
 medication_log: {"status":"skipped","skip_reason":"医生要求暂停"}
 reminder: {"title":"明早复查血压","priority":"high"}
+goal: {"title":"每日快走 30 分钟","status":"paused","notes":"膝盖恢复期暂停"}
 """,
                     },
                 },

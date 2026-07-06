@@ -49,6 +49,61 @@ def test_get_user_goals(client, auth_user_and_headers):
     assert len(data) > 0
 
 
+def test_goal_detail_update_delete_are_user_scoped(client, db, auth_user_and_headers):
+    """目标详情、更新、删除必须按当前用户隔离。"""
+    from tests.conftest import create_authenticated_user
+
+    user, headers = auth_user_and_headers
+    other_user, other_token = create_authenticated_user(db)
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+
+    goal_data = {
+        "user_id": user.id,
+        "goal_type": "exercise",
+        "goal_period": "daily",
+        "title": "每日运动",
+        "target_value": 30.0,
+        "target_unit": "分钟",
+        "start_date": date.today().isoformat(),
+    }
+    created = client.post("/api/v1/goals", json=goal_data, headers=headers)
+    assert created.status_code == 200
+    goal_id = created.json()["id"]
+
+    detail = client.get(f"/api/v1/goals/{goal_id}", headers=headers)
+    assert detail.status_code == 200
+    assert detail.json()["title"] == "每日运动"
+
+    forbidden_detail = client.get(f"/api/v1/goals/{goal_id}", headers=other_headers)
+    assert forbidden_detail.status_code == 404
+
+    updated = client.put(
+        f"/api/v1/goals/{goal_id}",
+        json={"title": "每日快走 30 分钟", "status": "paused", "notes": "膝盖恢复期"},
+        headers=headers,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["title"] == "每日快走 30 分钟"
+    assert updated.json()["status"] == "paused"
+
+    forbidden_update = client.put(
+        f"/api/v1/goals/{goal_id}",
+        json={"title": "越权修改"},
+        headers=other_headers,
+    )
+    assert forbidden_update.status_code == 404
+
+    forbidden_delete = client.delete(f"/api/v1/goals/{goal_id}", headers=other_headers)
+    assert forbidden_delete.status_code == 404
+
+    deleted = client.delete(f"/api/v1/goals/{goal_id}", headers=headers)
+    assert deleted.status_code == 200
+    assert deleted.json()["record_id"] == goal_id
+
+    detail_after_delete = client.get(f"/api/v1/goals/{goal_id}", headers=headers)
+    assert detail_after_delete.status_code == 404
+
+
 def test_update_goal_progress(client, auth_user_and_headers):
     """测试更新目标进展"""
     user, headers = auth_user_and_headers

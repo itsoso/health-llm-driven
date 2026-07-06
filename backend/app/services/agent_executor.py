@@ -1287,6 +1287,7 @@ _FAST_RECORD_AUTO_CONFIRM_KINDS = {
     "waist",
     "sleep",
     "excretion",
+    "goal",
     # symptom/rhinitis:确认后置(回显+可撤销)替代确认前置 —— 记录可逆、
     # 非医疗级(≠用药/剂量),写错方向顶多 over-alarm(安全方向);缺
     # body_part/description 会 fail-loud 自然追问,不是复述式确认。
@@ -1298,7 +1299,7 @@ _FAST_RECORD_AUTO_CONFIRM_KINDS = {
 # 无法撤销)。channel 由客户端传输层声明(AgentRequest.channel),绝不读 LLM
 # 工具参数——对抗评审证伪过 arg-based 守卫(schema 无 source 字段,模型是该
 # 字段唯一可能作者=不可信=生产死代码)。
-_TYPED_ONLY_AUTO_CONFIRM_KINDS = {"symptom", "rhinitis"}
+_TYPED_ONLY_AUTO_CONFIRM_KINDS = {"symptom", "rhinitis", "goal"}
 
 
 # 医疗级/不可逆/资金类:永远确认前置。unknown kind 也走确认(fail-closed,
@@ -5262,6 +5263,68 @@ class AgentExecutor:
             data = _normalize_reminder_record_data(data)
             args["data"] = data
 
+        if rtype == "goal":
+            data.setdefault("start_date", today)
+            title = data.get("title") or data.get("name") or args.get("title")
+            if not title:
+                return (
+                    "Error: goal 记录必须提供 title. 例如 "
+                    '{"record_type":"goal","data":{"title":"每日快走30分钟",'
+                    '"goal_type":"exercise","goal_period":"daily","start_date":"YYYY-MM-DD"}}'
+                )
+            data["title"] = str(title).strip()
+
+            if "target" in data and "target_value" not in data:
+                data["target_value"] = data.pop("target")
+            if "unit" in data and "target_unit" not in data:
+                data["target_unit"] = data.pop("unit")
+            if "period" in data and "goal_period" not in data:
+                data["goal_period"] = data.pop("period")
+            if "type" in data and "goal_type" not in data:
+                data["goal_type"] = data.pop("type")
+            if isinstance(data.get("implementation_steps"), list):
+                data["implementation_steps"] = "\n".join(
+                    f"{idx + 1}. {step}" for idx, step in enumerate(data["implementation_steps"])
+                )
+
+            goal_type_map = {
+                "饮食": "diet",
+                "吃饭": "diet",
+                "运动": "exercise",
+                "锻炼": "exercise",
+                "睡眠": "sleep",
+                "喝水": "water",
+                "饮水": "water",
+                "补剂": "supplement",
+                "户外": "outdoor",
+                "体重": "weight",
+                "腰围": "weight",
+                "其他": "other",
+            }
+            goal_period_map = {
+                "每天": "daily",
+                "每日": "daily",
+                "日": "daily",
+                "每周": "weekly",
+                "周": "weekly",
+                "每月": "monthly",
+                "月": "monthly",
+                "每年": "yearly",
+                "年": "yearly",
+            }
+            allowed_goal_types = {"diet", "exercise", "sleep", "water", "supplement", "outdoor", "weight", "other"}
+            allowed_goal_periods = {"daily", "weekly", "monthly", "yearly"}
+            raw_goal_type = str(data.get("goal_type") or "other").strip()
+            raw_goal_period = str(data.get("goal_period") or "daily").strip()
+            data["goal_type"] = goal_type_map.get(raw_goal_type, raw_goal_type).lower()
+            data["goal_period"] = goal_period_map.get(raw_goal_period, raw_goal_period).lower()
+            if data["goal_type"] not in allowed_goal_types:
+                data["goal_type"] = "other"
+            if data["goal_period"] not in allowed_goal_periods:
+                data["goal_period"] = "daily"
+            data.setdefault("status", "active")
+            data.setdefault("priority", 5)
+
         # rhinitis: 症状计数转 illness_episode (复用 illness 流程, 跟 rhinitis-tracker skill 对齐)
         if rtype == "rhinitis":
             sneezing = int(data.get("sneezing", 0) or 0)
@@ -5392,6 +5455,7 @@ class AgentExecutor:
             "mood": ("/mood/records", "POST", data),
             "garmin_sync": ("/data-collection/garmin/me/sync?days=1", "POST", {}),
             "reminder": ("/reminders/me", "POST", data),
+            "goal": ("/goals", "POST", data),
         }
 
         # symptom: 通用身体症状 (眼痒/嗓子疼 ...). 不再需要 profile_id (新 /symptoms 表,
@@ -5454,6 +5518,7 @@ class AgentExecutor:
             "supplement": "/supplements/me/records?limit=20",
             "supplement_definition": "/supplements/me/definitions?active_only=false",
             "reminder": "/reminders/me?status=all&limit=50",
+            "goal": "/goals/me",
         }
         record_paths = {
             "diet": "/diet/records/{id}",
@@ -5472,12 +5537,13 @@ class AgentExecutor:
             "supplement": "/supplements/records/{id}",
             "supplement_definition": "/supplements/definitions/{id}",
             "reminder": "/reminders/{id}",
+            "goal": "/goals/{id}",
         }
         update_supported = {
             "diet", "water", "weight", "waist", "blood_pressure",
             "sleep", "mood", "excretion", "illness", "medication",
             "supplement", "supplement_definition", "exercise", "symptom", "medication_log",
-            "reminder",
+            "reminder", "goal",
         }
 
         if operation == "list":

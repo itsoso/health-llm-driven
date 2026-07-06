@@ -125,7 +125,9 @@ task #43 已落地:
    list/update/delete,`记腰围 82`、手动睡眠补录、排便/排尿记录不再只能靠 UI。
 2. ✅ **supplement(打卡记录)**:已补 health_manage list/update/delete;
    auto 写入的当日打卡现在具备真实撤销通路(`DELETE /supplements/records/{id}`)。
-3. **goal**:UI 有(web goals 页 / mobile Goals),agent 三件套零通路(整对象 gap)。
+3. ✅ **goal**:已补 health_record create + health_manage list/update/delete;
+   同时新增 `/goals/{id}` GET/PUT/DELETE 并按当前用户隔离。`帮我设一个目标`、
+   `把目标暂停`、`删除这个目标` 不再只能靠 UI。
 4. **medical_exam**:指标级读 OK(canonical 层);报告级 list 无通路。
 5. **intervention_cycle**:status/start 有(专属工具);历史列表/参数调整/取消
    无通路。
@@ -141,7 +143,7 @@ task #43 已落地:
 ### 确认档位现状(镜像 executor 活集合,CI 强制)
 
 - `auto`:water / weight / blood_pressure / diet / exercise / reminder / supplement
-- `typed_only`:symptom / rhinitis
+- `typed_only`:symptom / rhinitis / goal
 - `never_auto`:illness / medication(executor NEVER 集∩注册面)+ fail-closed
   兜底(mood / supplement_group / garmin_sync / intervention_cycle)
 

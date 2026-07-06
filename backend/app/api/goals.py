@@ -5,7 +5,7 @@ from typing import List, Optional, Dict, Any
 from datetime import date
 from pydantic import BaseModel
 from app.database import get_db
-from app.schemas.goal import GoalCreate, GoalResponse, GoalProgressCreate
+from app.schemas.goal import GoalCreate, GoalResponse, GoalProgressCreate, GoalUpdate
 from app.models.goal import Goal, GoalProgress, GoalStatus, GoalType, GoalPeriod
 from app.models.user import User
 from app.services.goal_management import GoalManagementService
@@ -110,6 +110,50 @@ def get_user_goals(
         return service.get_user_goals(db, current_user.id, status_enum, goal_type_enum, goal_period_enum)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"无效的参数: {str(e)}")
+
+
+@router.get("/{goal_id}", response_model=GoalResponse)
+def get_goal(
+    goal_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """获取当前用户的单个目标"""
+    service = GoalManagementService()
+    goal = service.get_goal_for_user(db, current_user.id, goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="目标不存在")
+    return goal
+
+
+@router.put("/{goal_id}", response_model=GoalResponse)
+def update_goal(
+    goal_id: int,
+    goal_update: GoalUpdate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """更新当前用户的目标"""
+    update_data = goal_update.model_dump(exclude_unset=True)
+    service = GoalManagementService()
+    goal = service.update_goal_for_user(db, current_user.id, goal_id, update_data)
+    if not goal:
+        raise HTTPException(status_code=404, detail="目标不存在")
+    return goal
+
+
+@router.delete("/{goal_id}", response_model=dict)
+def delete_goal(
+    goal_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """删除当前用户的目标"""
+    service = GoalManagementService()
+    deleted = service.delete_goal_for_user(db, current_user.id, goal_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="目标不存在")
+    return {"message": "删除成功", "record_id": goal_id}
 
 
 @router.post("/{goal_id}/progress", response_model=dict)

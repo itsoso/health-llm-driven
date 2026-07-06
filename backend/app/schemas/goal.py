@@ -22,6 +22,23 @@ class GoalCreate(BaseModel):
     notes: Optional[str] = None
 
 
+class GoalUpdate(BaseModel):
+    """更新目标"""
+    goal_type: Optional[GoalType] = None
+    goal_period: Optional[GoalPeriod] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    target_value: Optional[float] = None
+    target_unit: Optional[str] = None
+    current_value: Optional[float] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    implementation_steps: Optional[str] = None
+    status: Optional[GoalStatus] = None
+    priority: Optional[int] = None
+    notes: Optional[str] = None
+
+
 class GoalResponse(BaseModel):
     """目标响应"""
     id: int

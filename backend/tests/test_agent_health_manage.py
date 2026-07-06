@@ -288,3 +288,100 @@ async def test_health_manage_updates_remaining_record_types(db, record_type, pat
     assert captured["url"].endswith(path)
     assert captured["payload"] == payload
     assert json.loads(result)["id"] == int(path.rsplit("/", 1)[1])
+
+
+@pytest.mark.asyncio
+async def test_health_record_creates_goal(db):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+
+    captured = {}
+
+    async def fake_post(url, headers, payload):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["payload"] = payload
+        return json.dumps({"id": 22, **payload}, ensure_ascii=False)
+
+    with patch.object(executor, "_api_post", new=AsyncMock(side_effect=fake_post)):
+        result = await executor._execute_tool(
+            tool_name="health_record",
+            args_raw=json.dumps({
+                "record_type": "goal",
+                "data": {
+                    "title": "90 天把腰围降到 82cm",
+                    "goal_type": "weight",
+                    "goal_period": "daily",
+                    "target_value": 82,
+                    "target_unit": "cm",
+                    "start_date": "2026-07-05",
+                },
+            }),
+            user_token="test-token",
+        )
+
+    assert captured["url"].endswith("/goals")
+    assert captured["headers"]["Authorization"] == "Bearer test-token"
+    assert captured["payload"]["title"] == "90 天把腰围降到 82cm"
+    assert captured["payload"]["goal_type"] == "weight"
+    assert json.loads(result)["id"] == 22
+
+
+@pytest.mark.asyncio
+async def test_health_manage_lists_updates_and_deletes_goals(db):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+    captured = {}
+
+    async def fake_get(url, headers):
+        captured["list_url"] = url
+        return '[{"id":22,"title":"每日运动30分钟"}]'
+
+    async def fake_put(url, headers, payload):
+        captured["put_url"] = url
+        captured["payload"] = payload
+        return json.dumps({"id": 22, **payload}, ensure_ascii=False)
+
+    async def fake_delete(url, headers):
+        captured["delete_url"] = url
+        return '{"message":"删除成功","record_id":22}'
+
+    with patch.object(executor, "_api_get", new=AsyncMock(side_effect=fake_get)):
+        listed = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({"record_type": "goal", "operation": "list"}),
+            user_token="test-token",
+        )
+    with patch.object(executor, "_api_put", new=AsyncMock(side_effect=fake_put)):
+        updated = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": "goal",
+                "operation": "update",
+                "record_id": 22,
+                "data": {"status": "paused", "notes": "膝盖恢复期暂停"},
+            }),
+            user_token="test-token",
+        )
+    with patch.object(executor, "_api_delete", new=AsyncMock(side_effect=fake_delete)):
+        deleted = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": "goal",
+                "operation": "delete",
+                "record_id": 22,
+            }),
+            user_token="test-token",
+        )
+
+    assert captured["list_url"].endswith("/goals/me")
+    assert json.loads(listed)[0]["id"] == 22
+    assert captured["put_url"].endswith("/goals/22")
+    assert captured["payload"] == {"status": "paused", "notes": "膝盖恢复期暂停"}
+    assert json.loads(updated)["status"] == "paused"
+    assert captured["delete_url"].endswith("/goals/22")
+    assert json.loads(deleted)["record_id"] == 22

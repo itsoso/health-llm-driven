@@ -256,3 +256,24 @@ def test_p2_supplement_intake_records_are_manageable():
 def test_tool_schemas_expose_p2_agent_record_and_manage_types():
     assert {"waist", "sleep", "excretion"} <= _tool_enum("health_record", "record_type")
     assert "supplement" in _tool_enum("health_manage", "record_type")
+
+
+def test_p2_goal_agent_crud_is_exposed():
+    create = AGENT_OPS["goal"]["create"]
+    assert create["tool"] == "health_record"
+    assert create["record_type"] == "goal"
+    assert create["confirm"] == "typed_only"
+    assert create["undo"] == "health_manage(delete goal {record_id})"
+
+    read = AGENT_OPS["goal"]["read"]
+    assert read["tool"] == "health_manage"
+    assert read["record_type"] == "goal"
+
+    for op in ("list", "update", "delete"):
+        entry = AGENT_OPS["goal"][op]
+        assert not entry.get("gap"), f"goal.{op} 不能再是 gap"
+        assert entry["tool"] == "health_manage"
+        assert entry["record_type"] == "goal"
+
+    assert "goal" in _tool_enum("health_record", "record_type")
+    assert "goal" in _tool_enum("health_manage", "record_type")

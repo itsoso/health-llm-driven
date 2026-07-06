@@ -400,10 +400,20 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
         "delete": {"gap": True, "reason": "取消/删除周期无 agent 通路"},
     },
 
-    # ── 整对象空洞(有 UI 面,agent 三件套零通路)────────────────────────
     "goal": {
-        "gap": True,
-        "reason": "UI 有(web goals 页 / mobile Goals tab),agent create/read/list/update/delete 零通路 —— '帮我把目标改成…'走不通",
+        "create": {
+            "tool": "health_record", "record_type": "goal", "confirm": "typed_only",
+            "via": "health_record(goal) → POST /goals",
+            "undo": "health_manage(delete goal {record_id})",
+        },
+        "read": {"tool": "health_manage", "record_type": "goal",
+                 "via": "health_manage(list goal) / GET /goals/{id}"},
+        "list": {"tool": "health_manage", "record_type": "goal",
+                 "via": "GET /goals/me"},
+        "update": {"tool": "health_manage", "record_type": "goal",
+                   "via": "PUT /goals/{id}"},
+        "delete": {"tool": "health_manage", "record_type": "goal",
+                   "via": "DELETE /goals/{id}"},
     },
 }
 

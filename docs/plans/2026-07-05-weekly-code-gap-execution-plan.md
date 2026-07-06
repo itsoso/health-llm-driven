@@ -44,7 +44,7 @@
 | Watch | 腕上快速记录、短答、执行反馈 | Watch summary/quick record/voice food draft/ask endpoint 与测试存在 | 部分完成 | 真机签名验证;不承诺第三方 App 长按表冠唤醒,改为 complication/AppIntent/快捷入口 |
 | Phone-first auth | 手机号登录注册,可改密码 | 后端 phone code、Aliyun SMS、Mobile login/settings、测试存在 | 基本完成 | 生产 SMS 配置、账号绑定和 App/Mac/Web 登录入口 smoke |
 | LLM 成本与性能 | Admin 全局监控 + 每次 token + 端上透视 | Dossier shipped;Admin `/admin/llm-performance`;Mac/Web/Mobile profile 存在 | 已完成 | 继续加预算策略和异常告警,不是本批阻塞 |
-| Agent 操作面 | 每个一等对象默认 Agent 可操作 | registry 与 CI 已有;本批已补 waist/sleep/excretion create 与 supplement 打卡 list/update/delete/undo;goal、medical_exam list、intervention_cycle 仍挂账 | 部分完成 | 继续按对象补 goal CRUD、medical_exam 报告级 list、intervention_cycle 历史/调整/取消 |
+| Agent 操作面 | 每个一等对象默认 Agent 可操作 | registry 与 CI 已有;本批已补 waist/sleep/excretion create、supplement 打卡 list/update/delete/undo 与 goal CRUD;medical_exam list、intervention_cycle 仍挂账 | 部分完成 | 继续按对象补 medical_exam 报告级 list、intervention_cycle 历史/调整/取消 |
 | 7 天健康运行时 | 未来 7 天日程化编排,低打扰执行 | rolling runtime spec 和部分 agenda/watch/today 实现存在;已补今日日内 time_driven 时间骨架 | 部分完成 | 继续推进日历/位置/药品/NFC/环境 IoT/失败原因自纠偏 |
 
 ## 新计划
@@ -120,7 +120,7 @@
 12. **Agent 操作面补洞**
     - [x] 补 `waist/sleep/excretion` create。
     - [x] 补 supplement 打卡 list/update/delete/undo。
-    - 补 goal Agent CRUD。
+    - [x] 补 goal Agent CRUD。
     - 补 medical_exam 报告级 list。
     - 补 intervention_cycle 历史/调整/取消。
 
@@ -180,4 +180,5 @@ python3 scripts/check_doc_drift.py
 - P1-9 已完成二维码 RC:release pack、iOS App Store preflight、doc drift、移动端 focused smoke、TypeScript 均通过;基于 `f4ac7f14` 构建 `20260705-124315-f4ac7f14`。ad-hoc 导出因 `life.executor.health`、Watch app、Watch extension 缺 ad-hoc profiles 失败,脚本回退 development 导出成功并上传。公开安装页: `https://health.executor.life/mobile-install/ios/20260705-124315-f4ac7f14/install.html`;manifest/IPA 均 HTTP 200,manifest bundle id 为 `life.executor.health`。本批未补拍 App Store-ready 截图集,final-submit 截图 gate 仍需单独跑。
 - P1-10/P1-11 已完成自动化与只读生产验证:后端 HealthKit/Watch/手机号登录 focused tests `136 passed`;Mobile HealthKit foreground sync + auth/login tests `33 passed`;Watch Swift core tests `61 passed`;QR IPA 内主 bundle 为 `life.executor.health`、display name `小巴`、包含 `com.apple.developer.healthkit=true`,并嵌入 `life.executor.health.watchkitapp` 与 `life.executor.health.watchkitapp.watchkitextension`。生产只读检查显示 SMS dev echo 关闭、PNVS 通道已配置,user id=3 同时绑定 `itsoso@126.com` 与 `+8613486176286`,手机号已验证且账号 active/approved。未擅自触发真实短信;真机 HealthKit 授权/撤权、Watch 表上操作和短信实发仍需设备交互验收。
 - P2-12 第一批已完成:Agent 操作面补齐 `waist/sleep/excretion` create 与 supplement 打卡 `list/update/delete/undo`;同步 tool schema、tool validator、ops registry、executor 和补剂 API,并回写操作面契约。验证:`test_agent_ops_registry.py`、`test_agent_health_manage.py`、`test_health_record_amount_regression.py`、`test_supplements.py`、`test_supplement_record_autocreate.py`、`test_waist_and_daily_plan.py`、`test_sleep_record.py`、`test_excretion.py` 合计 `115 passed`。
-- 待继续:App Store final-submit 截图集补拍与人工审核;真机 HealthKit/Watch/SMS 实操验收;P2 Agent 操作面第二批(goal CRUD、medical_exam 报告级 list、intervention_cycle 历史/调整/取消)。
+- P2-12 第二批已完成:Agent 操作面补齐 `goal` create/read/list/update/delete;新增 `/goals/{id}` 详情/更新/删除 API 并按当前用户隔离;同步 tool schema、tool validator、ops registry、executor 和目标 API,并回写操作面契约。聚焦验证:`test_agent_health_manage.py::test_health_record_creates_goal`、`test_health_manage_lists_updates_and_deletes_goals`、`test_agent_ops_registry.py::test_p2_goal_agent_crud_is_exposed`、`test_goals.py::test_goal_detail_update_delete_are_user_scoped` 通过。
+- 待继续:App Store final-submit 截图集补拍与人工审核;真机 HealthKit/Watch/SMS 实操验收;P2 Agent 操作面后续批次(medical_exam 报告级 list、intervention_cycle 历史/调整/取消)。

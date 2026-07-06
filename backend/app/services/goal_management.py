@@ -106,6 +106,51 @@ class GoalManagementService:
 
             return goals
 
+    def get_goal_for_user(
+        self,
+        db: Session,
+        user_id: int,
+        goal_id: int,
+    ) -> Optional[Goal]:
+        """按用户隔离获取单个目标"""
+        return db.query(Goal).filter(
+            Goal.id == goal_id,
+            Goal.user_id == user_id,
+        ).first()
+
+    def update_goal_for_user(
+        self,
+        db: Session,
+        user_id: int,
+        goal_id: int,
+        update_data: Dict[str, Any],
+    ) -> Optional[Goal]:
+        """按用户隔离更新目标"""
+        goal = self.get_goal_for_user(db, user_id, goal_id)
+        if not goal:
+            return None
+
+        for field, value in update_data.items():
+            if hasattr(goal, field):
+                setattr(goal, field, value)
+        db.commit()
+        db.refresh(goal)
+        return goal
+
+    def delete_goal_for_user(
+        self,
+        db: Session,
+        user_id: int,
+        goal_id: int,
+    ) -> bool:
+        """按用户隔离删除目标"""
+        goal = self.get_goal_for_user(db, user_id, goal_id)
+        if not goal:
+            return False
+        db.delete(goal)
+        db.commit()
+        return True
+
     def update_goal_progress(
         self,
         db: Session,

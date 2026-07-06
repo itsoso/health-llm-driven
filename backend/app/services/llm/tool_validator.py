@@ -230,6 +230,7 @@ def _validate_required(
         "exercise": ["exercise_type"],
         "medication": [],  # medication_id 或 medication_name 二选一, 由 API 层判
         "illness": ["name"],
+        "goal": ["title"],
     }
     needs = required.get(rtype, [])
     missing = [f for f in needs if not data.get(f)]
@@ -347,6 +348,7 @@ _MANAGE_RECORD_TYPES = {
     "diet", "water", "weight", "waist", "blood_pressure",
     "sleep", "mood", "excretion", "exercise", "illness", "symptom",
     "medication", "medication_log", "supplement", "supplement_definition", "reminder",
+    "goal",
 }
 _MANAGE_OPERATIONS = {"list", "update", "delete"}
 _CARD_TYPES = {"plan", "insight", "recommendation"}
