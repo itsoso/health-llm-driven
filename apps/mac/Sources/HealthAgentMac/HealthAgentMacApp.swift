@@ -25,10 +25,17 @@ struct HealthAgentMacApp: App {
             .appFontScale(AppFontScale(level: appFontScaleLevel))
             .fontScaleKeyboardShortcuts(level: $appFontScaleLevel)
         } label: {
+            // Menu-bar status glyph. Use a native SF Symbol so macOS sizes it to
+            // standard menu-bar metrics (matches wifi/battery/input-source), at a
+            // clean regular weight. A plain pulse/waveform reads best at this size —
+            // the old baked 18pt template PNG (pulse + 3 sparkles) rendered heavier
+            // and busier than its neighbors ("还是偏大一些"). Template/monochrome:
+            // macOS auto-tints it white on the dark bar, so no color applies here.
             Label {
                 Text(appText("Health Agent", appLanguageRaw))
             } icon: {
-                Image(nsImage: AppBrandIcon.statusBarImage)
+                Image(systemName: "waveform.path.ecg")
+                    .font(.system(size: 15, weight: .regular))
             }
         }
         .commands {
