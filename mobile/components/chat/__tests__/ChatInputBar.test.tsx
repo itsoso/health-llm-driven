@@ -34,6 +34,7 @@ jest.mock('../../../hooks/useVoiceRecording', () => ({
     isRecording: false,
     isTranscribing: false,
     durationMs: 0,
+    partialText: '',
     startRecording: mockStartRecording,
     stopAndTranscribe: mockStopAndTranscribe,
     cancelRecording: jest.fn(),

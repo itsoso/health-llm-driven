@@ -121,12 +121,10 @@ task #43 已落地:
 
 ### 盘点出的空洞(均已在注册表显式挂账,gap/opt_out 字段)
 
-1. **waist / sleep / excretion**:health_manage list/update/delete 有,
-   health_record **create 缺** ——"记腰围 82"走不通(UI 有录入口)。
-2. **supplement(打卡记录)**:create 有(auto),**list/update/delete 缺**
-   (health_manage 只映射了 supplement_definition);后果:auto 写入的当日打卡
-   **无撤销通路**(undo 只能撤自动建档的定义),违反 §3.3 硬要求 2,已用
-   `undo_gap` 挂账。
+1. ✅ **waist / sleep / excretion**:已补 health_record create + health_manage
+   list/update/delete,`记腰围 82`、手动睡眠补录、排便/排尿记录不再只能靠 UI。
+2. ✅ **supplement(打卡记录)**:已补 health_manage list/update/delete;
+   auto 写入的当日打卡现在具备真实撤销通路(`DELETE /supplements/records/{id}`)。
 3. **goal**:UI 有(web goals 页 / mobile Goals),agent 三件套零通路(整对象 gap)。
 4. **medical_exam**:指标级读 OK(canonical 层);报告级 list 无通路。
 5. **intervention_cycle**:status/start 有(专属工具);历史列表/参数调整/取消

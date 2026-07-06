@@ -340,6 +340,85 @@ class TestSupplementRecordAPI:
         data = response.json()
         assert isinstance(data, list)
 
+    def test_update_and_delete_my_supplement_record(self, client, db, auth_headers, sample_supplement_definition, test_user):
+        """补剂打卡记录必须可由 agent undo/update, 且只作用于当前用户。"""
+        create_response = client.post(
+            "/api/v1/supplements/definitions",
+            json=sample_supplement_definition,
+            headers=auth_headers,
+        )
+        supplement_id = create_response.json()["id"]
+        record_response = client.post(
+            "/api/v1/supplements/records",
+            json={
+                "supplement_id": supplement_id,
+                "user_id": test_user.id,
+                "record_date": str(date.today()),
+                "taken": True,
+                "notes": "已服用",
+            },
+            headers=auth_headers,
+        )
+        record_id = record_response.json()["id"]
+
+        update = client.put(
+            f"/api/v1/supplements/records/{record_id}",
+            json={"taken": False, "notes": "误记,撤回"},
+            headers=auth_headers,
+        )
+        assert update.status_code == 200
+        assert update.json()["taken"] is False
+        assert update.json()["notes"] == "误记,撤回"
+
+        delete = client.delete(f"/api/v1/supplements/records/{record_id}", headers=auth_headers)
+        assert delete.status_code == 200
+        assert db.query(SupplementRecord).filter(SupplementRecord.id == record_id).count() == 0
+
+    def test_supplement_record_update_delete_are_scoped_to_current_user(self, client, db, auth_headers):
+        """不能通过 record_id 修改/删除其他用户的补剂打卡。"""
+        other = User(
+            username="supp_record_other",
+            email="supp-record-other@example.com",
+            hashed_password="hashed_password",
+            name="另一个用户",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(other)
+        db.commit()
+        db.refresh(other)
+        from app.models.supplement import SupplementDefinition
+
+        other_supp = SupplementDefinition(user_id=other.id, name="鱼油", is_active=True)
+        db.add(other_supp)
+        db.commit()
+        db.refresh(other_supp)
+        other_record = SupplementRecord(
+            user_id=other.id,
+            supplement_id=other_supp.id,
+            record_date=date.today(),
+            taken=True,
+            notes="other",
+        )
+        db.add(other_record)
+        db.commit()
+        db.refresh(other_record)
+
+        update = client.put(
+            f"/api/v1/supplements/records/{other_record.id}",
+            json={"taken": False},
+            headers=auth_headers,
+        )
+        delete = client.delete(
+            f"/api/v1/supplements/records/{other_record.id}",
+            headers=auth_headers,
+        )
+
+        assert update.status_code == 404
+        assert delete.status_code == 404
+        db.refresh(other_record)
+        assert other_record.taken is True
+
     def test_get_my_stats(self, client, auth_headers, sample_supplement_definition):
         """测试获取我的补剂统计"""
         # 创建补剂
