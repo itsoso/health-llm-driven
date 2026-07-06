@@ -141,6 +141,20 @@ describe('useVoiceRecording', () => {
     expect(transcribeAudio).not.toHaveBeenCalled();
   }, 10000);
 
+  it('极速轻点: start 在途中就被取消 → 不进入录音态(无幽灵录音)', async () => {
+    const { result } = renderHook(() => useVoiceRecording());
+
+    let startPromise: Promise<void>;
+    await act(async () => {
+      startPromise = result.current.startRecording(); // 不 await — 模拟在途
+      await result.current.cancelRecording();          // pressOut 抢先到达
+      await startPromise!;
+    });
+
+    expect(result.current.isRecording).toBe(false);
+    expect(mockVoiceCancel).toHaveBeenCalled();
+  });
+
   it('取消: 上滑取消后不产出任何转写', async () => {
     const onTranscript = jest.fn();
     const { result } = renderHook(() => useVoiceRecording({ onTranscript }));

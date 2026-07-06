@@ -122,6 +122,18 @@ export function useVoiceRecording(opts?: {
         recorder.record();
       }
 
+      if (cancelledRef.current) {
+        // 按下后极快松手(轻点):start 还在途中就被 cancelRecording — 不得进入
+        // 录音态, 否则出「幽灵录音」(蒙层常驻、无人来 stop)。
+        readyRef.current = false;
+        if (usingFallbackRef.current) {
+          try { recorder.stop(); } catch {}
+        } else {
+          Voice.cancel().catch(() => {});
+        }
+        try { await setAudioModeAsync({ allowsRecording: false }); } catch {}
+        return;
+      }
       readyRef.current = true;
       setIsRecording(true);
       setDurationMs(0);

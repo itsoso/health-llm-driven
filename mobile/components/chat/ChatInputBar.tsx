@@ -1,11 +1,12 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, TextInput, TouchableOpacity, StyleSheet, Text,
   Modal, Pressable, ActivityIndicator, TextStyle, ScrollView,
-  Alert,
+  Alert, Keyboard,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -37,7 +38,16 @@ export interface ChatInputSendOptions {
 // 看的具体方案)」注入点(那是给 SNP/饮食 deeplink「详细聊」用的),被错误框成
 // 「别重新生成方案」——与深思本意相反, 效果garbled;识图更是冗余(带图自动走
 // 视觉路径)。深浅由 agent 从问题判断, 不靠藏在附件菜单里的隐藏开关。
-const COMPOSER_PLACEHOLDER = '问小巴，或按住说话';
+const COMPOSER_PLACEHOLDER = '问小巴';
+
+// 2026-07-06 founder: 参考微信输入框重设计。旧方案在同一个面上叠「点按打字 +
+// 长按录音」(靠 pointerEvents:none 把戏), 短按聚焦在真机上不可靠 —— 改成微信
+// 式显式双模态: 文本态 = 纯原生 TextInput(点按 100% 可靠); 语音态 = 整条
+// 「按住 说话」大按压面(按住录音/上滑取消/**轻点切回键盘**)。左侧一颗
+// 模式切换钮, 模式记忆到 AsyncStorage(微信同款: 记住你上次用哪种)。
+const COMPOSER_MODE_KEY = 'chat_composer_mode';
+// pressOut 距 pressIn 小于该值视为「轻点」→ 切回键盘, 不算一次录音。
+const VOICE_BAR_TAP_MS = 250;
 
 function PulsingRing() {
   const scale = useSharedValue(1);
@@ -70,11 +80,10 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const [showMenu, setShowMenu] = useState(false);
   const [showMedicalImportMenu, setShowMedicalImportMenu] = useState(false);
   const [medicalImportBusy, setMedicalImportBusy] = useState(false);
-  // 空且未聚焦时把 TextInput 设成「摸不到」(pointerEvents none) → 触摸落到外层
-  // Pressable:轻点 → 聚焦打字,长按 → 干净地录音(不被 iOS 文本选择放大镜抢走、
-  // 不闪键盘)。一旦聚焦或有字 → 恢复可交互(光标/选择正常)。阿福/DeepSeek 同款。
-  const [isFocused, setIsFocused] = useState(false);
-  const inputInert = input.length === 0 && !isFocused;
+  // 微信式双模态: 'text' = 键盘打字, 'voice' = 按住说话大按压面。
+  const [composerMode, setComposerMode] = useState<'text' | 'voice'>('text');
+  const composerModeRef = useRef<'text' | 'voice'>('text');
+  composerModeRef.current = composerMode;
   const [cancelHint, setCancelHint] = useState(false);
   const [justSent, setJustSent] = useState(false);  // 刚发送, 按钮停留 1s 避免误切 mic
   const { pendingImages, removeImage, clearImages, pickImage, takePhoto } = useMediaPicker();
@@ -87,6 +96,29 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     setInput(prev => (prev === initialText ? prev : initialText));
   }, [initialText, initialTextKey]);
 
+  // 恢复上次的输入模式(微信同款记忆);读失败静默留在文本态 — 纯偏好, 不值得打扰。
+  useEffect(() => {
+    AsyncStorage.getItem(COMPOSER_MODE_KEY)
+      .then(v => { if (v === 'voice') setComposerMode('voice'); })
+      .catch(() => {});
+  }, []);
+
+  const switchComposerMode = useCallback((mode: 'text' | 'voice', opts?: { focus?: boolean }) => {
+    setComposerMode(mode);
+    AsyncStorage.setItem(COMPOSER_MODE_KEY, mode).catch(() => {});
+    if (mode === 'voice') {
+      Keyboard.dismiss();
+    } else if (opts?.focus) {
+      // 等 TextInput 挂载完成再聚焦(模式切换是条件渲染)
+      setTimeout(() => textInputRef.current?.focus(), 50);
+    }
+  }, []);
+
+  const toggleComposerMode = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    switchComposerMode(composerModeRef.current === 'text' ? 'voice' : 'text', { focus: true });
+  }, [switchComposerMode]);
+
   // GPT/Gemini 式默认唤起键盘: chat.tsx 在「空对话获得焦点」时递增 token。
   // (2026-07-04 founder 拍板反转旧「不 auto-focus」设计 — 仅限空对话, 回到有
   //  历史的对话不弹, 不打断阅读。)延迟等 tab 过渡完成; 流式/语音时不抢焦点。
@@ -94,6 +126,8 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     if (!autoFocusToken) return;
     if (isStreaming) return;
     const t = setTimeout(() => {
+      // 用户偏好语音态时不抢着弹键盘
+      if (composerModeRef.current === 'voice') return;
       textInputRef.current?.focus();
     }, 380);
     return () => clearTimeout(t);
@@ -132,14 +166,14 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const voice = useVoiceRecording({
     onTranscript: (text) => {
       setInput(prev => prev ? prev + ' ' + text : text);
-      // 不 auto-focus TextInput — 避免触发软键盘弹出, 让用户直接点右侧发送按钮
-      // (之前为了"按 return 发送"加过 focus, 但实际用户按发送按钮即可, 软键盘是多余的)
+      // 转写结果落进输入框后切到文本态给用户过目/编辑(发送键此时可见),
+      // 但不 auto-focus — 避免软键盘弹出打断, 用户直接点发送即可。
+      setComposerMode('text');
     },
   });
 
   const cancelledRef = useRef(false);
   const startYRef = useRef(0);
-  const inputHoldActiveRef = useRef(false);
 
   const handleHoldStart = useCallback((pageY: number) => {
     cancelledRef.current = false;
@@ -166,22 +200,32 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     voice.stopAndTranscribe();
   }, [voice]);
 
-  const focusTextInput = useCallback(() => {
-    textInputRef.current?.focus();
-  }, []);
+  // ── 语音态「按住 说话」大按压面 ──
+  // 按下即录(专用面, 无需长按延迟); 松手: <250ms 视为轻点 → 取消录音并切回
+  // 键盘聚焦(founder: 「长按语音, 短按要支持文本」), 否则正常转文字。
+  const voiceBarPressInAtRef = useRef(0);
 
-  const handleInputLongPress = useCallback((pageY: number) => {
-    if (canSend || isStreaming) return;
-    inputHoldActiveRef.current = true;
+  const handleVoiceBarPressIn = useCallback((pageY: number) => {
+    if (isStreaming) return;
+    voiceBarPressInAtRef.current = Date.now();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     handleHoldStart(pageY);
-  }, [canSend, handleHoldStart, isStreaming]);
+  }, [handleHoldStart, isStreaming]);
 
-  const handleInputPressOut = useCallback(() => {
-    if (!inputHoldActiveRef.current) return;
-    inputHoldActiveRef.current = false;
+  const handleVoiceBarPressOut = useCallback(() => {
+    if (!voiceBarPressInAtRef.current) return;
+    const heldMs = Date.now() - voiceBarPressInAtRef.current;
+    voiceBarPressInAtRef.current = 0;
+    if (cancelledRef.current) { setCancelHint(false); return; } // 上滑取消已处理
+    if (heldMs < VOICE_BAR_TAP_MS) {
+      cancelledRef.current = true;
+      setCancelHint(false);
+      voice.cancelRecording();
+      switchComposerMode('text', { focus: true });
+      return;
+    }
     handleHoldEnd();
-  }, [handleHoldEnd]);
+  }, [handleHoldEnd, switchComposerMode, voice]);
 
   const handlePickImage = useCallback(async () => { setShowMenu(false); await pickImage(); }, [pickImage]);
   const handleTakePhoto = useCallback(async () => { setShowMenu(false); await takePhoto(); }, [takePhoto]);
@@ -353,51 +397,59 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
       <View testID="chat-composer-surface" style={styles.composerSurface}>
         {/* 输入栏 */}
         <View style={styles.inputBar}>
-          <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="附件菜单">
-            <Ionicons name={showMenu ? 'close' : 'add'} size={22} color={C.ink1} />
+          {/* 左:语音/键盘模式切换(微信位) */}
+          <TouchableOpacity
+            onPress={toggleComposerMode}
+            style={styles.modeBtn}
+            hitSlop={COMPOSER_HIT_SLOP}
+            accessibilityLabel={composerMode === 'text' ? '切换语音输入' : '切换键盘输入'}
+          >
+            {composerMode === 'text' ? (
+              <Ionicons name="mic-outline" size={23} color={C.ink1} />
+            ) : (
+              <MaterialCommunityIcons name="keyboard-outline" size={23} color={C.ink1} />
+            )}
           </TouchableOpacity>
 
-          {/* 文本输入框 — 语音走「长按输入框」(placeholder 已提示「或按住说话」),
-              不再有右侧独立麦克风按钮(founder 2026-07-05: Claude 式极简, 去冗余)。 */}
-          <Pressable
-            style={({ pressed }) => [
-              styles.inputWrap,
-              pressed && styles.inputWrapPressed,
-            ]}
-            onPress={focusTextInput}
-            onLongPress={(e) => handleInputLongPress(e.nativeEvent.pageY)}
-            onPressOut={handleInputPressOut}
-            onTouchMove={(e) => {
-              if (inputHoldActiveRef.current) handleHoldMove(e.nativeEvent.pageY);
-            }}
-            delayLongPress={260}
-            accessibilityRole="button"
-            accessibilityLabel="消息输入框，长按语音输入"
-            accessibilityHint="点击输入文字，长按录音并转成文字"
-          >
-            <TextInput
-              ref={textInputRef}
-              // 空且未聚焦时「摸不到」→ 长按手势归外层 Pressable(录音),避免 iOS 文本
-              // 选择放大镜抢走 + 键盘闪现。聚焦/有字后恢复可交互(光标/选择正常)。
-              style={[styles.textInput, { pointerEvents: inputInert ? 'none' : 'auto' }]}
-              placeholder={COMPOSER_PLACEHOLDER}
-              placeholderTextColor={C.ink3}
-              value={input}
-              onChangeText={setInput}
-              onFocus={() => setIsFocused(true)}
-              onBlur={() => setIsFocused(false)}
-              onKeyPress={handleTextInputKeyPress}
-              onSubmitEditing={handleKeyboardSubmit}
-              returnKeyType="send"
-              submitBehavior="submit"
-              multiline
-              maxLength={2000}
-              accessibilityLabel="消息输入框"
-            />
-          </Pressable>
+          {composerMode === 'voice' ? (
+            /* 语音态:整条「按住 说话」大按压面 — 按住录音, 上滑取消, 轻点切回键盘 */
+            <Pressable
+              testID="composer-voice-bar"
+              style={({ pressed }) => [styles.voiceBar, pressed && styles.voiceBarPressed]}
+              onPressIn={(e) => handleVoiceBarPressIn(e.nativeEvent.pageY)}
+              onPressOut={handleVoiceBarPressOut}
+              onTouchMove={(e) => {
+                if (voice.isRecording) handleHoldMove(e.nativeEvent.pageY);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="按住说话"
+              accessibilityHint="按住录音松手转文字，上滑取消，轻点切回键盘输入"
+            >
+              <Text style={styles.voiceBarText}>按住 说话</Text>
+            </Pressable>
+          ) : (
+            /* 文本态:纯原生 TextInput — 点按聚焦 100% 可靠, 不再叠长按手势
+               (旧 pointerEvents:none 把戏在真机上短按不可靠, 已废) */
+            <View testID="composer-input-wrap" style={styles.inputWrap}>
+              <TextInput
+                ref={textInputRef}
+                style={styles.textInput}
+                placeholder={COMPOSER_PLACEHOLDER}
+                placeholderTextColor={C.ink3}
+                value={input}
+                onChangeText={setInput}
+                onKeyPress={handleTextInputKeyPress}
+                onSubmitEditing={handleKeyboardSubmit}
+                returnKeyType="send"
+                submitBehavior="submit"
+                multiline
+                maxLength={2000}
+                accessibilityLabel="消息输入框"
+              />
+            </View>
+          )}
 
-          {/* 右侧发送按钮 — 只在有内容时出现;刚发送 (justSent) 停留 1s 显示对勾。
-              空态不占位, 输入框自动占满(Claude 式:不放常驻麦克风冗余按钮)。 */}
+          {/* 右:有内容 → 发送(微信「发送」位);刚发完停留 1s 对勾;否则附件 + */}
           {canSend ? (
             <TouchableOpacity onPress={() => handleSend()} style={styles.sendBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="发送消息">
               <Ionicons name="arrow-up" size={20} color="#fff" />
@@ -406,7 +458,11 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
             <View style={[styles.sendBtn, { opacity: 0.4 }]}>
               <Ionicons name="checkmark" size={20} color="#fff" />
             </View>
-          ) : null}
+          ) : (
+            <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="附件菜单">
+              <Ionicons name={showMenu ? 'close' : 'add'} size={22} color={C.ink1} />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -527,10 +583,24 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
     paddingHorizontal: 14, paddingVertical: 5,
   },
-  inputWrapPressed: {
+  modeBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  voiceBar: {
+    minHeight: 48,
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.paper, borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
+  },
+  voiceBarPressed: {
     backgroundColor: C.paper2,
     borderColor: C.green100,
   },
+  voiceBarText: {
+    fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '600',
+    color: C.ink1, letterSpacing: 1,
+  } as TextStyle,
   textInput: {
     flex: 1, fontFamily: revaFonts.sans, fontSize: 16, maxHeight: 96, color: C.ink1,
     paddingTop: 8, paddingBottom: 8,

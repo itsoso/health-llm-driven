@@ -17,7 +17,10 @@ import { revaColors } from '../../../constants/revaTheme';
 
 const mockStartRecording = jest.fn();
 const mockStopAndTranscribe = jest.fn();
+const mockCancelRecording = jest.fn();
 const mockExecuteMedicalExamImport = jest.fn();
+// 组件传给 useVoiceRecording 的 opts(onTranscript 流转测试用)
+let latestVoiceOpts: { onTranscript?: (text: string) => void } | undefined;
 
 jest.mock('../../../hooks/useMediaPicker', () => ({
   useMediaPicker: () => ({
@@ -30,15 +33,18 @@ jest.mock('../../../hooks/useMediaPicker', () => ({
 }));
 
 jest.mock('../../../hooks/useVoiceRecording', () => ({
-  useVoiceRecording: () => ({
-    isRecording: false,
-    isTranscribing: false,
-    durationMs: 0,
-    partialText: '',
-    startRecording: mockStartRecording,
-    stopAndTranscribe: mockStopAndTranscribe,
-    cancelRecording: jest.fn(),
-  }),
+  useVoiceRecording: (opts?: { onTranscript?: (text: string) => void }) => {
+    latestVoiceOpts = opts;
+    return {
+      isRecording: false,
+      isTranscribing: false,
+      durationMs: 0,
+      partialText: '',
+      startRecording: mockStartRecording,
+      stopAndTranscribe: mockStopAndTranscribe,
+      cancelRecording: mockCancelRecording,
+    };
+  },
 }));
 
 jest.mock('expo-document-picker', () => ({
@@ -72,6 +78,13 @@ jest.mock('react-native-reanimated', () => {
 describe('ChatInputBar', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // 模式记忆跨用例泄漏防护:上个用例切过语音态会让后续挂载异步翻模式
+    Object.keys(mockStorage).forEach(k => delete mockStorage[k]);
+    latestVoiceOpts = undefined;
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('uses Reva surface color for the attachment menu sheet', () => {
@@ -137,7 +150,7 @@ describe('ChatInputBar', () => {
   });
 
   it('keyboard composer controls meet thumb ergonomics (founder 2026-07-05, GPT spec)', () => {
-    const { getByLabelText } = render(
+    const { getByLabelText, getByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
@@ -147,11 +160,11 @@ describe('ChatInputBar', () => {
     };
 
     expect(styleOf(getByLabelText('附件菜单')).width).toBeGreaterThanOrEqual(40);
-    expect(styleOf(getByLabelText('消息输入框，长按语音输入')).minHeight).toBeGreaterThanOrEqual(40);
+    expect(styleOf(getByTestId('composer-input-wrap')).minHeight).toBeGreaterThanOrEqual(40);
   });
 
   it('keeps the visible composer chrome slim while preserving touch targets', () => {
-    const { getByLabelText } = render(
+    const { getByLabelText, getByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
@@ -168,45 +181,79 @@ describe('ChatInputBar', () => {
 
     // 2026-07-05 工学契约翻转: 拇指高度对齐 GPT — 场 ≥48, 钮 ≥40(hitSlop 补足 44 有效)
     expect(styleOf(getByLabelText('附件菜单')).width).toBeGreaterThanOrEqual(40);
-    expect(styleOf(getByLabelText('消息输入框，长按语音输入')).minHeight).toBeGreaterThanOrEqual(48);
+    expect(styleOf(getByTestId('composer-input-wrap')).minHeight).toBeGreaterThanOrEqual(48);
     expect(minHitSlop(getByLabelText('附件菜单'))).toBeGreaterThanOrEqual(6);
   });
 
-  it('has no standalone right-side microphone button (founder 2026-07-05: Claude 式极简)', () => {
-    const { queryByLabelText } = render(
+  it('renders WeChat-style mode toggle on the left; text field stays natively tappable', () => {
+    // 2026-07-06 founder: 参考微信重设计。文本态 = 纯原生 TextInput(不再有
+    // pointerEvents:none 把戏 → 短按聚焦 100% 可靠), 语音入口 = 左侧切换钮。
+    const { getByLabelText, queryByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    // 右侧常驻麦克风/键盘切换按钮已删;空态输入框自动占满,语音走长按输入框。
-    expect(queryByLabelText('语音输入')).toBeNull();
-    expect(queryByLabelText('切回键盘输入')).toBeNull();
+    expect(getByLabelText('切换语音输入')).toBeTruthy();
+    expect(queryByTestId('composer-voice-bar')).toBeNull();
+    const fieldStyle = StyleSheet.flatten(getByLabelText('消息输入框').props.style);
+    expect(fieldStyle.pointerEvents).toBeUndefined();
   });
 
-  it('starts voice dictation by long-pressing the empty input field', () => {
-    const { getByLabelText } = render(
+  it('toggle switches to hold-to-talk bar; holding records, releasing transcribes', () => {
+    const { getByLabelText, getByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    fireEvent(getByLabelText('消息输入框，长按语音输入'), 'longPress', { nativeEvent: { pageY: 300 } });
-    fireEvent(getByLabelText('消息输入框，长按语音输入'), 'pressOut');
+    fireEvent.press(getByLabelText('切换语音输入'));
+    const bar = getByTestId('composer-voice-bar');
+
+    const nowSpy = jest.spyOn(Date, 'now')
+      .mockReturnValueOnce(10_000)   // pressIn
+      .mockReturnValueOnce(10_800);  // pressOut: held 800ms → 转写
+    fireEvent(bar, 'pressIn', { nativeEvent: { pageY: 300 } });
+    fireEvent(bar, 'pressOut');
+    nowSpy.mockRestore();
 
     expect(mockStartRecording).toHaveBeenCalled();
     expect(mockStopAndTranscribe).toHaveBeenCalled();
+    expect(mockCancelRecording).not.toHaveBeenCalled();
   });
 
-  it('makes the empty unfocused field inert so the hold-to-talk gesture wins (阿福/DeepSeek)', () => {
-    // 空且未聚焦 → TextInput pointerEvents:none → 长按落到外层 Pressable 录音,
-    // 不被 iOS 文本选择放大镜抢走、不闪键盘。聚焦/输入后恢复可交互。
-    const { getByLabelText } = render(
+  it('quick tap on the voice bar flips back to keyboard instead of recording (founder: 短按要支持文本)', () => {
+    const { getByLabelText, getByTestId, queryByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    const inert = StyleSheet.flatten(getByLabelText('消息输入框').props.style).pointerEvents;
-    expect(inert).toBe('none');
+    fireEvent.press(getByLabelText('切换语音输入'));
+    const bar = getByTestId('composer-voice-bar');
 
-    fireEvent(getByLabelText('消息输入框'), 'focus');
-    const afterFocus = StyleSheet.flatten(getByLabelText('消息输入框').props.style).pointerEvents;
-    expect(afterFocus).toBe('auto');
+    const nowSpy = jest.spyOn(Date, 'now')
+      .mockReturnValueOnce(10_000)   // pressIn
+      .mockReturnValueOnce(10_120);  // pressOut: 120ms < 250ms → 轻点
+    fireEvent(bar, 'pressIn', { nativeEvent: { pageY: 300 } });
+    fireEvent(bar, 'pressOut');
+    nowSpy.mockRestore();
+
+    expect(mockCancelRecording).toHaveBeenCalled();
+    expect(mockStopAndTranscribe).not.toHaveBeenCalled();
+    expect(queryByTestId('composer-voice-bar')).toBeNull();
+    expect(getByLabelText('消息输入框')).toBeTruthy();
+  });
+
+  it('persists composer mode and flips back to text with the transcript visible', async () => {
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    const { getByLabelText, getByTestId } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('切换语音输入'));
+    expect(getByTestId('composer-voice-bar')).toBeTruthy();
+    await waitFor(() =>
+      expect(AsyncStorage.setItem).toHaveBeenCalledWith('chat_composer_mode', 'voice'));
+
+    // 转写结果落框 → 自动回文本态给用户过目, 发送键可见
+    latestVoiceOpts?.onTranscript?.('今天走了八千步');
+    await waitFor(() => expect(getByLabelText('消息输入框').props.value).toBe('今天走了八千步'));
+    expect(getByLabelText('发送消息')).toBeTruthy();
   });
 
   it('has no agent-mode segmented row (founder 2026-07-05: 三模式删除)', () => {
