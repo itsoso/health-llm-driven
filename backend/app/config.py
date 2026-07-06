@@ -231,6 +231,7 @@ class Settings(BaseSettings):
     # dedao-kbase -> Reva System KB draft 同步配置。
     # export URL 是传输通道，不是运行时医疗权威；同步结果始终先进入 draft/review gate。
     dedao_kbase_export_url: Optional[str] = None
+    dedao_kbase_evidence_manifest_url: Optional[str] = None
     dedao_kbase_auth_token: Optional[str] = None
     dedao_kbase_source_root: str = "/Users/liqiuhua/work/personal/down-dedao"
     system_kb_artifact_dir: Optional[str] = None

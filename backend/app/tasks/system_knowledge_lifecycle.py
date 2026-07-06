@@ -23,6 +23,7 @@ from app.services.dedao_kbase_export_importer import (
     compile_dedao_kbase_export_payload_artifacts,
     fetch_dedao_kbase_export_payload,
 )
+from app.services.dedao_kbase_evidence_pull import dry_run_dedao_kbase_evidence_pull
 from app.services.system_knowledge_crystallize import draft_crystallized_claim_candidates
 from app.services.system_knowledge_eval import run_system_kb_eval_cases
 from app.services.system_knowledge_ingest import validate_artifact_review_gate, write_draft_artifacts
@@ -115,6 +116,65 @@ def sync_dedao_kbase_export_draft_once(
     return report
 
 
+def sync_dedao_kbase_evidence_pull_dry_run_once(
+    db: Session,
+    *,
+    manifest_url: str | None,
+    auth_token: str | None,
+    actor: str = "system",
+) -> dict[str, Any]:
+    """Fetch a dedao-kbase evidence pull manifest and persist a redacted dry-run audit."""
+    manifest_url = (manifest_url or "").strip()
+    if not manifest_url:
+        return {
+            "status": "skipped",
+            "reason": "missing_manifest_url",
+            "would_write": False,
+        }
+
+    report = dry_run_dedao_kbase_evidence_pull(
+        manifest_url=manifest_url,
+        auth_token=auth_token,
+    )
+    candidate_evidence_ids = [
+        str(candidate.get("evidence_id"))
+        for candidate in report.get("candidates", [])
+        if candidate.get("evidence_id")
+    ]
+    audit_diff = {
+        "status": report["status"],
+        "manifest_url": manifest_url,
+        "consumer_contract": report["consumer_contract"],
+        "project_id": report["project_id"],
+        "target_system": report["target_system"],
+        "pack_id": report["pack_id"],
+        "source_fingerprint": report["source_fingerprint"],
+        "manifest_record_count": report.get("manifest_record_count"),
+        "total_records": report["total_records"],
+        "accepted_candidates": report["accepted_candidates"],
+        "review_required_records": report["review_required_records"],
+        "blocked_records": report["blocked_records"],
+        "rejected_reasons": report.get("rejected_reasons") or {},
+        "gate_checks": report.get("gate_checks") or [],
+        "candidate_evidence_ids": candidate_evidence_ids,
+        "would_write": False,
+    }
+    db.add(
+        KBAudit(
+            doc_id=None,
+            op="dedao_kbase_evidence_pull_dry_run",
+            actor=actor,
+            diff=audit_diff,
+        )
+    )
+    db.commit()
+    return {
+        **report,
+        "manifest_url": manifest_url,
+        "candidate_evidence_ids": candidate_evidence_ids,
+    }
+
+
 def run_system_kb_lifecycle_once(
     db: Session,
     *,
@@ -197,4 +257,23 @@ def sync_dedao_kbase_export_draft() -> dict[str, Any]:
             actor="celery:dedao_kbase_export_sync",
         )
     logger.info("[dedao_kbase_export_sync] done: %s", result.get("status"))
+    return result
+
+
+@celery_app.task(time_limit=600, name="app.tasks.system_knowledge_lifecycle.sync_dedao_kbase_evidence_pull_dry_run")
+def sync_dedao_kbase_evidence_pull_dry_run() -> dict[str, Any]:
+    """Scheduled dedao-kbase evidence pull preflight.
+
+    This task writes only a redacted dry-run audit. It never imports serving KB
+    rows or draft artifacts.
+    """
+    logger.info("[dedao_kbase_evidence_pull_dry_run] start")
+    with SessionLocal() as db:
+        result = sync_dedao_kbase_evidence_pull_dry_run_once(
+            db,
+            manifest_url=settings.dedao_kbase_evidence_manifest_url,
+            auth_token=settings.dedao_kbase_auth_token,
+            actor="celery:dedao_kbase_evidence_pull_dry_run",
+        )
+    logger.info("[dedao_kbase_evidence_pull_dry_run] done: %s", result.get("status"))
     return result

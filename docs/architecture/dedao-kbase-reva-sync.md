@@ -143,6 +143,7 @@ Required settings:
 
 ```text
 DEDAO_KBASE_EXPORT_URL=https://kbase.executor.life/api/system-kb/export
+DEDAO_KBASE_EVIDENCE_MANIFEST_URL=https://kbase.executor.life/api/projects/health/evidence-pack/manifest
 DEDAO_KBASE_AUTH_TOKEN=<private-token>
 SYSTEM_KB_ARTIFACT_DIR=/opt/health-app/backend/data/system_kb_v2_seed
 ```
@@ -153,7 +154,7 @@ Task:
 app.tasks.system_knowledge_lifecycle.sync_dedao_kbase_export_draft
 ```
 
-Verified evidence manifest dry-run. This checks the new pull contract and prints candidate counts without writing System KB artifacts, database rows, or serving indexes.
+Verified evidence manifest dry-run. This checks the new pull contract and prints candidate counts without writing System KB artifacts, serving indexes, or raw candidate bodies. The scheduled task stores only a redacted `KBAudit(op="dedao_kbase_evidence_pull_dry_run")` summary for the operations dashboard.
 
 ```bash
 PYTHONPATH=backend \
@@ -161,6 +162,12 @@ DEDAO_KBASE_AUTH_TOKEN="<private-token>" \
 backend/venv/bin/python backend/scripts/dry_run_dedao_kbase_evidence_pull.py \
   --manifest-url https://kbase.executor.life/api/projects/health/evidence-pack/manifest \
   --json-summary
+```
+
+Task:
+
+```text
+app.tasks.system_knowledge_lifecycle.sync_dedao_kbase_evidence_pull_dry_run
 ```
 
 Expected gate behavior:

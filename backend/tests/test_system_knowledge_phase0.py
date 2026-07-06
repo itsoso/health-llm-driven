@@ -1108,6 +1108,45 @@ def test_admin_operations_dashboard_surfaces_dedao_kbase_draft_sync(client, db, 
     assert "dedao_kbase_draft_review_needed" in payload["action_items"]
 
 
+def test_admin_operations_dashboard_surfaces_dedao_kbase_evidence_pull(client, db, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    db.add(
+        KBAudit(
+            doc_id=None,
+            op="dedao_kbase_evidence_pull_dry_run",
+            actor="celery:dedao_kbase_evidence_pull_dry_run",
+            diff={
+                "status": "dry_run",
+                "manifest_url": "https://kbase.executor.life/api/projects/health/evidence-pack/manifest",
+                "project_id": "health",
+                "target_system": "health-llm-driven",
+                "pack_id": "vep_123",
+                "source_fingerprint": "fingerprint-123",
+                "total_records": 12,
+                "accepted_candidates": 2,
+                "review_required_records": 3,
+                "blocked_records": 1,
+                "candidate_evidence_ids": ["dedao:book:claim-a", "dedao:book:claim-b"],
+                "would_write": False,
+            },
+        )
+    )
+    db.commit()
+
+    response = client.get("/api/v1/admin/knowledge/operations_dashboard", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    latest = payload["latest_dedao_kbase_evidence_pull"]
+    assert latest["op"] == "dedao_kbase_evidence_pull_dry_run"
+    assert latest["diff"]["pack_id"] == "vep_123"
+    assert latest["diff"]["accepted_candidates"] == 2
+    assert latest["diff"]["would_write"] is False
+    assert "dedao_kbase_evidence_candidates_review_needed" in payload["action_items"]
+    assert "dedao_kbase_evidence_blocked_records_present" in payload["action_items"]
+
+
 def test_admin_operations_dashboard_flags_stale_source_freshness(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
     user.is_admin = True

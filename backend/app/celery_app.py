@@ -290,6 +290,13 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=4, minute=10, day_of_week=1),
     },
 
+    # 每周一 04:20 拉取 dedao-kbase verified evidence manifest,只写脱敏 dry-run audit。
+    # 不导入 draft artifacts,不进入 serving KB;运营面板用它查看候选/blocked 预检结果。
+    "dedao-kbase-evidence-pull-dry-run": {
+        "task": "app.tasks.system_knowledge_lifecycle.sync_dedao_kbase_evidence_pull_dry_run",
+        "schedule": crontab(hour=4, minute=20, day_of_week=1),
+    },
+
     # 每周一 04:30 系统级 KB 生命周期维护:
     # lint + confidence decay + multi-user crystallize draft report.
     "system-kb-lifecycle": {

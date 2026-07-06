@@ -146,3 +146,16 @@ def test_system_kb_reindex_task_registered_and_scheduled():
     assert entry is not None
     assert entry["task"] == "app.tasks.system_knowledge_lifecycle.run_system_kb_reindex"
     assert entry["schedule"] == crontab(hour=4, minute=50, day_of_week=1)
+
+
+def test_dedao_kbase_evidence_pull_task_registered_and_scheduled():
+    from celery.schedules import crontab
+
+    from app.celery_app import celery_app
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_evidence_pull_dry_run  # noqa: F401
+
+    assert "app.tasks.system_knowledge_lifecycle.sync_dedao_kbase_evidence_pull_dry_run" in celery_app.tasks
+    entry = celery_app.conf.beat_schedule.get("dedao-kbase-evidence-pull-dry-run")
+    assert entry is not None
+    assert entry["task"] == "app.tasks.system_knowledge_lifecycle.sync_dedao_kbase_evidence_pull_dry_run"
+    assert entry["schedule"] == crontab(hour=4, minute=20, day_of_week=1)

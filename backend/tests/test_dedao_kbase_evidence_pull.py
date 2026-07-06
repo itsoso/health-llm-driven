@@ -99,6 +99,49 @@ def test_dedao_kbase_evidence_pull_cli_prints_json_summary():
     assert summary["would_write"] is False
 
 
+def test_dedao_kbase_evidence_pull_task_writes_redacted_dry_run_audit(db):
+    from app.models.system_knowledge import KBAudit
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_evidence_pull_dry_run_once
+
+    manifest = _manifest()
+    records = [
+        _record("dedao:book:claim-safe", risk_tier="auto_usable", quality_status="usable"),
+        _record("dedao:book:claim-review", risk_tier="assistive_only", quality_status="needs_review"),
+        _record("dedao:book:claim-blocked", risk_tier="blocked", quality_status="rejected"),
+    ]
+    server, thread = _start_server(manifest, records)
+    try:
+        manifest_url = f"http://127.0.0.1:{server.server_port}/api/projects/health/evidence-pack/manifest"
+        report = sync_dedao_kbase_evidence_pull_dry_run_once(
+            db,
+            manifest_url=manifest_url,
+            auth_token="secret-token",
+            actor="test:dedao-evidence-pull",
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert report["status"] == "dry_run"
+    assert report["would_write"] is False
+    assert report["accepted_candidates"] == 1
+    assert report["review_required_records"] == 1
+    assert report["blocked_records"] == 1
+
+    audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_evidence_pull_dry_run").one()
+    assert audit.actor == "test:dedao-evidence-pull"
+    assert audit.diff["status"] == "dry_run"
+    assert audit.diff["manifest_url"] == manifest_url
+    assert audit.diff["pack_id"] == "vep_test"
+    assert audit.diff["source_fingerprint"] == "fp-test"
+    assert audit.diff["accepted_candidates"] == 1
+    assert audit.diff["candidate_evidence_ids"] == ["dedao:book:claim-safe"]
+    assert audit.diff["would_write"] is False
+    assert "candidates" not in audit.diff
+    assert "transformed summary only" not in json.dumps(audit.diff, ensure_ascii=False)
+
+
 def _manifest() -> dict:
     return {
         "consumer_contract": "verified_evidence_pull_manifest_v1",
