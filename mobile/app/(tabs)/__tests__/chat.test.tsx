@@ -292,10 +292,11 @@ describe('ChatScreen', () => {
       );
     };
 
+    // 2026-07-06 重设计:平铺 header + 无边框图标钮,36pt 触达友好上限。
     expect(styleOf(getByTestId('chat-header-surface')).minHeight).toBeLessThanOrEqual(40);
-    expect(styleOf(getByLabelText('新建对话')).width).toBeLessThanOrEqual(28);
-    expect(styleOf(getByLabelText('对话历史')).width).toBeLessThanOrEqual(28);
-    expect(styleOf(getByLabelText('更多会诊操作')).width).toBeLessThanOrEqual(28);
+    expect(styleOf(getByLabelText('新建对话')).width).toBeLessThanOrEqual(40);
+    expect(styleOf(getByLabelText('对话历史')).width).toBeLessThanOrEqual(40);
+    expect(styleOf(getByLabelText('更多会诊操作')).width).toBeLessThanOrEqual(40);
     expect(minHitSlop(getByLabelText('新建对话'))).toBeGreaterThanOrEqual(8);
     expect(minHitSlop(getByLabelText('对话历史'))).toBeGreaterThanOrEqual(8);
     expect(minHitSlop(getByLabelText('更多会诊操作'))).toBeGreaterThanOrEqual(8);
@@ -388,10 +389,12 @@ describe('ChatScreen', () => {
     });
     const headerSurface = StyleSheet.flatten(getByTestId('chat-header-surface').props.style);
     expect(headerSurface.minHeight).toBeLessThanOrEqual(42);
-    expect(headerSurface.paddingVertical).toBeLessThanOrEqual(2);
-    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style).width).toBeLessThanOrEqual(30);
-    expect(StyleSheet.flatten(getByLabelText('对话历史').props.style).width).toBeLessThanOrEqual(30);
-    expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style).width).toBeLessThanOrEqual(30);
+    // 平铺 header 无外壳边框(founder 2026-07-06:去掉紧贴状态栏的卡片外壳)。
+    expect(headerSurface.borderWidth ?? 0).toBe(0);
+    expect(headerSurface.backgroundColor).toBeUndefined();
+    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style).width).toBeLessThanOrEqual(40);
+    expect(StyleSheet.flatten(getByLabelText('对话历史').props.style).width).toBeLessThanOrEqual(40);
+    expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style).width).toBeLessThanOrEqual(40);
   });
 
   it('starts a new chat from a first-level header action', async () => {

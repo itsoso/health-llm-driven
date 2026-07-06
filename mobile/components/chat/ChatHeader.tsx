@@ -7,8 +7,6 @@ import {
   revaColors as C,
   revaRadii,
   revaSpacing,
-  revaShadows,
-  revaSemantic,
   revaFonts,
 } from '../../constants/revaTheme';
 
@@ -74,29 +72,32 @@ export default function ChatHeader({
             onPress={onNewChat}
             hitSlop={8}
             style={styles.headerAction}
+            activeOpacity={0.55}
             accessibilityLabel="新建对话"
             accessibilityRole="button"
           >
-            <Ionicons name="add" size={18} color={C.ink1} />
+            <Ionicons name="create-outline" size={22} color={C.ink2} />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={onOpenHistory}
             hitSlop={8}
-            style={styles.headerActionAccent}
+            style={styles.headerAction}
+            activeOpacity={0.55}
             accessibilityLabel="对话历史"
             accessibilityHint="查看和切换历史对话"
             accessibilityRole="button"
           >
-            <Ionicons name="time-outline" size={17} color={C.green500} />
+            <Ionicons name="time-outline" size={22} color={C.ink2} />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={onOpenToolMenu}
             hitSlop={8}
-            style={styles.headerMenuAction}
+            style={styles.headerAction}
+            activeOpacity={0.55}
             accessibilityLabel="更多会诊操作"
             accessibilityRole="button"
           >
-            <Ionicons name="ellipsis-horizontal" size={18} color={C.ink1} />
+            <Ionicons name="ellipsis-horizontal" size={22} color={C.ink2} />
           </TouchableOpacity>
         </View>
       </View>
@@ -106,72 +107,42 @@ export default function ChatHeader({
 
 const styles = StyleSheet.create({
   headerWrap: {
-    paddingHorizontal: revaSpacing.s3,
-    // founder 2026-07-05: 0 让 header 顶着状态栏时钟, 显得挤。给一指呼吸,
-    // 时钟与「小巴」标题之间留清晰间隔(SafeAreaView 已托底 notch inset)。
-    paddingTop: 8,
-    paddingBottom: 2,
+    paddingHorizontal: revaSpacing.s4,
+    // 与状态栏时钟留清晰呼吸(SafeAreaView 托底 notch inset)。
+    paddingTop: 10,
+    paddingBottom: 4,
   },
+  // 平铺 header(2026-07-06 重设计):去掉带边框的「卡片」外壳 —— 它紧贴状态栏
+  // 时钟显得挤、且和奶油底色打架。标题与操作直接落在 paper 背景上,更干净。
   headerSurface: {
     minHeight: 40,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingLeft: 8,
-    paddingRight: 2,
-    paddingVertical: 2,
-    borderRadius: 17,
-    backgroundColor: C.surface2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    ...revaShadows.sm,
+    gap: 6,
   },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 2,
   },
+  // 三个动作统一为无边框图标钮(founder:加号/历史两个按钮不好看 → 去掉不一致的
+  // 绿色底 + 描边圆圈,归一为极简同款,靠 hitSlop 保证触达)。
   headerAction: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: C.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-  },
-  headerActionAccent: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.green50,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: revaSemantic.normal.line,
-    ...revaShadows.sm,
-  },
-  headerMenuAction: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
   },
   streamingBadge: {
     minHeight: 26,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 7,
+    paddingHorizontal: 9,
     borderRadius: revaRadii.pill,
     backgroundColor: C.green50,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: revaSemantic.normal.line,
+    marginRight: 2,
   },
   streamingDot: {
     width: 6,
