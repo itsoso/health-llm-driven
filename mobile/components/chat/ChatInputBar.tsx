@@ -2,7 +2,7 @@ import React, { useCallback, useRef, useState } from 'react';
 import {
   View, TextInput, TouchableOpacity, StyleSheet, Text,
   Modal, Pressable, ActivityIndicator, TextStyle, ScrollView,
-  Alert,
+  Alert, Keyboard,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -46,8 +46,9 @@ export interface ChatInputSendOptions {
 // 视觉路径)。深浅由 agent 从问题判断, 不靠藏在附件菜单里的隐藏开关。
 const COMPOSER_PLACEHOLDER = '问小巴';
 
-// 2026-07-06 founder: 完全按微信输入栏复刻。左侧固定喇叭按住说话,
-// 文本框保持原生可点可编辑, 框内右侧麦克风负责实时听写。
+// 2026-07-06 founder: 完全按微信输入栏复刻。左侧喇叭先切到「按住说话」,
+// 语音模式左侧变键盘;文本模式框内右侧麦克风负责实时听写。
+type ComposerInputMode = 'text' | 'voice';
 
 function PulsingRing() {
   const scale = useSharedValue(1);
@@ -81,6 +82,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const [showMedicalImportMenu, setShowMedicalImportMenu] = useState(false);
   const [medicalImportBusy, setMedicalImportBusy] = useState(false);
   const [cancelHint, setCancelHint] = useState(false);
+  const [inputMode, setInputMode] = useState<ComposerInputMode>('text');
   const [voiceGesture, setVoiceGesture] = useState<'send' | 'text' | 'cancel' | null>(null);
   const [justSent, setJustSent] = useState(false);  // 刚发送, 按钮停留 1s 避免误切 mic
   const { pendingImages, removeImage, clearImages, pickImage, takePhoto } = useMediaPicker();
@@ -94,6 +96,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
 
   React.useEffect(() => {
     if (initialText == null) return;
+    setInputMode('text');
     setInput(prev => (prev === initialText ? prev : initialText));
   }, [initialText, initialTextKey]);
 
@@ -103,6 +106,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   React.useEffect(() => {
     if (!autoFocusToken) return;
     if (isStreaming) return;
+    setInputMode('text');
     const t = setTimeout(() => {
       textInputRef.current?.focus();
     }, 380);
@@ -171,8 +175,9 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
         handleSend(clean);
         return;
       }
+      setInputMode('text');
       setInput(prev => prev ? `${prev.trim()} ${clean}` : clean);
-      textInputRef.current?.focus();
+      setTimeout(() => textInputRef.current?.focus(), 30);
     },
   });
 
@@ -223,7 +228,24 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     void voice.stopAndTranscribe();
   }, [voice]);
 
+  const switchToVoiceMode = useCallback(() => {
+    if (realtimeDictation.isDictating) {
+      void realtimeDictation.stopDictation();
+    }
+    textInputRef.current?.blur();
+    Keyboard.dismiss();
+    setInputMode('voice');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [realtimeDictation]);
+
+  const switchToTextMode = useCallback(() => {
+    setInputMode('text');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setTimeout(() => textInputRef.current?.focus(), 30);
+  }, []);
+
   const focusTextInput = useCallback(() => {
+    setInputMode('text');
     textInputRef.current?.focus();
   }, []);
 
@@ -410,68 +432,84 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
         {/* 输入栏 */}
         <View style={styles.inputBar}>
           <Pressable
-            onPressIn={(e) => handleHoldStart(e.nativeEvent.pageX, e.nativeEvent.pageY)}
-            onTouchMove={(e) => handleHoldMove(e.nativeEvent.pageX, e.nativeEvent.pageY)}
-            onPressOut={handleHoldEnd}
+            onPress={inputMode === 'text' ? switchToVoiceMode : switchToTextMode}
             style={({ pressed }) => [
               styles.voiceModeBtn,
-              (pressed || voiceGesture != null) && styles.voiceModeBtnActive,
+              pressed && styles.voiceModeBtnPressed,
             ]}
             hitSlop={COMPOSER_HIT_SLOP}
             accessibilityRole="button"
-            accessibilityLabel="按住说话"
-            accessibilityHint="按住开始语音输入，左滑取消，右滑转文字"
+            accessibilityLabel={inputMode === 'text' ? '切换到按住说话' : '切换到键盘输入'}
+            accessibilityHint={inputMode === 'text' ? '点击切换为微信式按住说话' : '点击回到文字输入'}
           >
-            <Ionicons name="volume-medium-outline" size={25} color={WECHAT_ICON} />
+            <Ionicons name={inputMode === 'text' ? 'volume-medium-outline' : 'keypad-outline'} size={25} color={WECHAT_ICON} />
           </Pressable>
 
-          <Pressable
-            testID="wechat-composer-input"
-            style={({ pressed }) => [
-              styles.inputWrap,
-              realtimeDictation.isDictating && styles.inputWrapDictating,
-              pressed && styles.inputWrapPressed,
-            ]}
-            onPress={focusTextInput}
-            accessibilityRole="button"
-            accessibilityLabel="消息输入框容器"
-            accessibilityHint="点击输入文字，点右侧麦克风实时转文字"
-          >
-            <TextInput
-              ref={textInputRef}
-              style={[styles.textInput, { pointerEvents: 'auto' }]}
-              placeholder={COMPOSER_PLACEHOLDER}
-              placeholderTextColor="#7F7F7F"
-              value={input}
-              onChangeText={setInput}
-              onKeyPress={handleTextInputKeyPress}
-              onSubmitEditing={handleKeyboardSubmit}
-              returnKeyType="send"
-              submitBehavior="submit"
-              selectionColor={C.greenBright}
-              multiline
-              maxLength={2000}
-              accessibilityLabel="消息输入框"
-            />
-            <TouchableOpacity
-              onPress={handleRealtimeMicPress}
-              style={[styles.inlineMicBtn, realtimeDictation.isDictating && styles.inlineMicBtnActive]}
-              hitSlop={COMPOSER_HIT_SLOP}
-              activeOpacity={0.72}
+          {inputMode === 'voice' ? (
+            <Pressable
+              testID="wechat-hold-to-talk-surface"
+              onPressIn={(e) => handleHoldStart(e.nativeEvent.pageX, e.nativeEvent.pageY)}
+              onTouchMove={(e) => handleHoldMove(e.nativeEvent.pageX, e.nativeEvent.pageY)}
+              onPressOut={handleHoldEnd}
+              style={({ pressed }) => [
+                styles.holdToTalkSurface,
+                (pressed || voiceGesture != null) && styles.holdToTalkSurfaceActive,
+              ]}
               accessibilityRole="button"
-              accessibilityState={{ selected: realtimeDictation.isDictating }}
-              accessibilityLabel={realtimeDictation.isDictating ? '停止实时语音转文字' : '实时语音转文字'}
+              accessibilityLabel="按住说话"
+              accessibilityHint="按住开始语音输入，左滑取消，右滑转文字"
             >
-              {realtimeDictation.isDictating && <PulsingRing />}
-              <Ionicons name="mic" size={21} color={realtimeDictation.isDictating ? '#FFFFFF' : WECHAT_ICON} />
-            </TouchableOpacity>
-          </Pressable>
+              <Text style={styles.holdToTalkText}>按住 说话</Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              testID="wechat-composer-input"
+              style={({ pressed }) => [
+                styles.inputWrap,
+                realtimeDictation.isDictating && styles.inputWrapDictating,
+                pressed && styles.inputWrapPressed,
+              ]}
+              onPress={focusTextInput}
+              accessibilityRole="button"
+              accessibilityLabel="消息输入框容器"
+              accessibilityHint="点击输入文字，点右侧麦克风实时转文字"
+            >
+              <TextInput
+                ref={textInputRef}
+                style={[styles.textInput, { pointerEvents: 'auto' }]}
+                placeholder={COMPOSER_PLACEHOLDER}
+                placeholderTextColor="#7F7F7F"
+                value={input}
+                onChangeText={setInput}
+                onKeyPress={handleTextInputKeyPress}
+                onSubmitEditing={handleKeyboardSubmit}
+                returnKeyType="send"
+                submitBehavior="submit"
+                selectionColor={C.greenBright}
+                multiline
+                maxLength={2000}
+                accessibilityLabel="消息输入框"
+              />
+              <TouchableOpacity
+                onPress={handleRealtimeMicPress}
+                style={[styles.inlineMicBtn, realtimeDictation.isDictating && styles.inlineMicBtnActive]}
+                hitSlop={COMPOSER_HIT_SLOP}
+                activeOpacity={0.72}
+                accessibilityRole="button"
+                accessibilityState={{ selected: realtimeDictation.isDictating }}
+                accessibilityLabel={realtimeDictation.isDictating ? '停止实时语音转文字' : '实时语音转文字'}
+              >
+                {realtimeDictation.isDictating && <PulsingRing />}
+                <Ionicons name="mic" size={21} color={realtimeDictation.isDictating ? '#FFFFFF' : WECHAT_ICON} />
+              </TouchableOpacity>
+            </Pressable>
+          )}
 
-          {canSend ? (
+          {inputMode === 'text' && canSend ? (
             <TouchableOpacity onPress={() => handleSend()} style={styles.sendBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="发送消息">
               <Ionicons name="arrow-up" size={20} color="#fff" />
             </TouchableOpacity>
-          ) : justSent ? (
+          ) : inputMode === 'text' && justSent ? (
             <View style={[styles.sendBtn, { opacity: 0.4 }]}>
               <Ionicons name="checkmark" size={20} color="#fff" />
             </View>
@@ -592,9 +630,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#171717',
     alignItems: 'center', justifyContent: 'center',
   },
-  voiceModeBtnActive: {
-    borderColor: C.greenBright,
-    backgroundColor: '#0E241C',
+  voiceModeBtnPressed: {
+    backgroundColor: '#242424',
+    borderColor: '#EFEFEF',
   },
   plusBtn: {
     width: 42, height: 42, borderRadius: 21,
@@ -615,6 +653,29 @@ const styles = StyleSheet.create({
   inputWrapDictating: {
     backgroundColor: WECHAT_INPUT_BG_ACTIVE,
     borderColor: C.greenBright,
+  },
+  holdToTalkSurface: {
+    minHeight: 48,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: WECHAT_INPUT_BG,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#343434',
+    paddingHorizontal: 18,
+  },
+  holdToTalkSurfaceActive: {
+    backgroundColor: '#333333',
+    borderColor: '#3F3F3F',
+  },
+  holdToTalkText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '700',
+    color: '#F2F2F2',
+    letterSpacing: 0,
   },
   textInput: {
     flex: 1, fontFamily: revaFonts.sans, fontSize: 16, maxHeight: 96, color: '#F5F5F5',

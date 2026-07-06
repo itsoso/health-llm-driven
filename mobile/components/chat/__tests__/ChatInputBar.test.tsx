@@ -175,20 +175,40 @@ describe('ChatInputBar', () => {
     );
 
     expect(flattenedStyle(getByLabelText('附件菜单')).width).toBeGreaterThanOrEqual(40);
-    expect(flattenedStyle(getByLabelText('按住说话')).width).toBeGreaterThanOrEqual(40);
+    expect(flattenedStyle(getByLabelText('切换到按住说话')).width).toBeGreaterThanOrEqual(40);
     expect(flattenedStyle(getByTestId('wechat-composer-input')).minHeight).toBeGreaterThanOrEqual(48);
   });
 
-  it('renders WeChat-style visible voice controls by default', () => {
-    const { getByLabelText, getByTestId } = render(
+  it('renders WeChat-style text mode by default with speaker toggle and inline microphone', () => {
+    const { getByLabelText, getByTestId, queryByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    expect(getByLabelText('按住说话')).toBeTruthy();
+    expect(getByLabelText('切换到按住说话')).toBeTruthy();
     expect(getByLabelText('实时语音转文字')).toBeTruthy();
+    expect(queryByTestId('wechat-hold-to-talk-surface')).toBeNull();
     const inputSurface = flattenedStyle(getByTestId('wechat-composer-input'));
     expect(inputSurface.flexDirection).toBe('row');
     expect(inputSurface.borderRadius).toBeLessThanOrEqual(10);
+  });
+
+  it('switches the speaker button into WeChat hold-to-talk mode and back to keyboard input', () => {
+    const { getByLabelText, getByTestId, getByText, queryByTestId } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('切换到按住说话'));
+
+    expect(getByLabelText('切换到键盘输入')).toBeTruthy();
+    expect(getByTestId('wechat-hold-to-talk-surface')).toBeTruthy();
+    expect(getByText('按住 说话')).toBeTruthy();
+    expect(queryByTestId('wechat-composer-input')).toBeNull();
+    expect(mockStartRecording).not.toHaveBeenCalled();
+
+    fireEvent.press(getByLabelText('切换到键盘输入'));
+
+    expect(getByLabelText('切换到按住说话')).toBeTruthy();
+    expect(getByTestId('wechat-composer-input')).toBeTruthy();
   });
 
   it('keeps the empty field directly focusable because voice has its own left button', () => {
@@ -215,26 +235,28 @@ describe('ChatInputBar', () => {
     expect(StyleSheet.flatten(field.props.style).pointerEvents).toBe('auto');
   });
 
-  it('starts hold-to-talk voice input from the left speaker button', () => {
-    const { getByLabelText } = render(
+  it('starts hold-to-talk voice input from the center hold button after switching modes', () => {
+    const { getByLabelText, getByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    fireEvent(getByLabelText('按住说话'), 'pressIn', { nativeEvent: { pageX: 220, pageY: 300 } });
-    fireEvent(getByLabelText('按住说话'), 'pressOut');
+    fireEvent.press(getByLabelText('切换到按住说话'));
+    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 220, pageY: 300 } });
+    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
 
     expect(mockStartRecording).toHaveBeenCalled();
     expect(mockStopAndTranscribe).toHaveBeenCalled();
   });
 
   it('cancels left hold-to-talk when the finger slides left', () => {
-    const { getByLabelText } = render(
+    const { getByLabelText, getByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    fireEvent(getByLabelText('按住说话'), 'pressIn', { nativeEvent: { pageX: 260, pageY: 620 } });
-    fireEvent(getByLabelText('按住说话'), 'touchMove', { nativeEvent: { pageX: 120, pageY: 620 } });
-    fireEvent(getByLabelText('按住说话'), 'pressOut');
+    fireEvent.press(getByLabelText('切换到按住说话'));
+    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 260, pageY: 620 } });
+    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'touchMove', { nativeEvent: { pageX: 120, pageY: 620 } });
+    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
 
     expect(mockCancelRecording).toHaveBeenCalled();
     expect(mockStopAndTranscribe).not.toHaveBeenCalled();
@@ -242,13 +264,14 @@ describe('ChatInputBar', () => {
 
   it('keeps left hold-to-talk transcript editable when the finger slides right', () => {
     const onSend = jest.fn();
-    const { getByLabelText } = render(
+    const { getByLabelText, getByTestId } = render(
       <ChatInputBar onSend={onSend} isStreaming={false} />,
     );
 
-    fireEvent(getByLabelText('按住说话'), 'pressIn', { nativeEvent: { pageX: 160, pageY: 620 } });
-    fireEvent(getByLabelText('按住说话'), 'touchMove', { nativeEvent: { pageX: 310, pageY: 620 } });
-    fireEvent(getByLabelText('按住说话'), 'pressOut');
+    fireEvent.press(getByLabelText('切换到按住说话'));
+    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 160, pageY: 620 } });
+    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'touchMove', { nativeEvent: { pageX: 310, pageY: 620 } });
+    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
     act(() => {
       latestVoiceRecordingOptions.onTranscript('记录午餐吃了鸡胸肉');
     });
@@ -260,12 +283,13 @@ describe('ChatInputBar', () => {
 
   it('sends left hold-to-talk transcript by default on release', () => {
     const onSend = jest.fn();
-    const { getByLabelText } = render(
+    const { getByLabelText, getByTestId } = render(
       <ChatInputBar onSend={onSend} isStreaming={false} />,
     );
 
-    fireEvent(getByLabelText('按住说话'), 'pressIn', { nativeEvent: { pageX: 160, pageY: 620 } });
-    fireEvent(getByLabelText('按住说话'), 'pressOut');
+    fireEvent.press(getByLabelText('切换到按住说话'));
+    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 160, pageY: 620 } });
+    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
     act(() => {
       latestVoiceRecordingOptions.onTranscript('今天走了八千步');
     });
@@ -273,14 +297,33 @@ describe('ChatInputBar', () => {
     expect(onSend).toHaveBeenCalledWith('今天走了八千步', null);
   });
 
+  it('stays in hold-to-talk mode after sending a released voice transcript', () => {
+    const onSend = jest.fn();
+    const { getByLabelText, getByTestId } = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('切换到按住说话'));
+    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 160, pageY: 620 } });
+    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
+    act(() => {
+      latestVoiceRecordingOptions.onTranscript('今天走了八千步');
+    });
+
+    expect(onSend).toHaveBeenCalledWith('今天走了八千步', null);
+    expect(getByLabelText('切换到键盘输入')).toBeTruthy();
+    expect(getByTestId('wechat-hold-to-talk-surface')).toBeTruthy();
+  });
+
   it('keeps hold-to-talk transcript editable instead of sending while assistant is streaming', () => {
     const onSend = jest.fn();
-    const { getByLabelText } = render(
+    const { getByLabelText, getByTestId } = render(
       <ChatInputBar onSend={onSend} isStreaming={true} />,
     );
 
-    fireEvent(getByLabelText('按住说话'), 'pressIn', { nativeEvent: { pageX: 160, pageY: 620 } });
-    fireEvent(getByLabelText('按住说话'), 'pressOut');
+    fireEvent.press(getByLabelText('切换到按住说话'));
+    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 160, pageY: 620 } });
+    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
     act(() => {
       latestVoiceRecordingOptions.onTranscript('先记到输入框');
     });
