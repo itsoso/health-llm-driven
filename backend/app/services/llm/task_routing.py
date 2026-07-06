@@ -18,6 +18,10 @@ _TASK_TIER_TO_SPEED = {
     "high_stakes": "reasoning",   # safety / 抗衰裁决 / 临床
     "balanced": "balanced",       # 综合分析
     "casual": "fast",             # 闲聊 / 轻量
+    # 内部工具决策轮 (agent tool-decision round): 只产出结构化 function call,
+    # 无任何面向用户的医疗正文。这是**唯一**被显式授权降到 fast 的档 (见下方白名单)。
+    # 合成/答案轮不走这个档 —— 它们无 tools, 由质量模型生成医疗结论。
+    "tool_routing": "fast",
 }
 
 # ── 安全不变量(fail-closed):哪些任务档允许真的落到 fast(弱)模型 ──
@@ -26,11 +30,17 @@ _TASK_TIER_TO_SPEED = {
 # 合成 / 专科叙事)绝不允许降到 fast —— 弱模型编造/漏说医疗结论是不可接受的风险。
 #
 # 强制点在 pick_model_id_by_tier:tier 不在此白名单时,即便目标/回退档命中 fast 模型
-# 也会被地板到 non-fast(balanced)。当前**没有任何调用方**传入 fast-eligible 档
-# (orchestrator 合成一律 balanced+;watch 硬编码 balanced),所以此集合当前为空 =
-# 全仓库 tiered routing 不可能把用户可见回答降到 fast。将来若真有"记录写入意图分类"
-# 这类纯内部快任务,显式往这里加档名并配对抗测试,别偷偷放宽。
-_FAST_ELIGIBLE_TIERS: frozenset[str] = frozenset()
+# 也会被地板到 non-fast(balanced)。将来若真有"记录写入意图分类"这类纯内部快任务,
+# 显式往这里加档名并配对抗测试,别偷偷放宽。
+#
+# 2026-07-06:加入 "tool_routing" —— agent 工具决策轮 (tool-decision round)。
+# 该档**只**代表"模型输出一个结构化 function call"这一步 (agent_executor 的带 tools 轮),
+# 绝无面向用户的医疗正文:安全评估是确定性 SafetyGuardian、写入受 R4 draft/confirm 门控,
+# 都与这一步用哪个模型无关。合成/答案轮 (无 tools) 恒不走此档,仍由质量模型生成医疗结论。
+# 说明:此白名单只声明"该内部档**允许**降到 fast";落到具体模型时,tool 轮必须是
+# reliable_tool_calling=True 的 fast 模型 (由 agent_executor 经 pick_reliable_tool_model_id
+# 选,而非本文件的 pick_model_id_by_tier —— 后者不保证工具可靠性)。见 test_task_routing*。
+_FAST_ELIGIBLE_TIERS: frozenset[str] = frozenset({"tool_routing"})
 
 # 目标 speed_tier 无可用模型时的回退顺序 —— 对注册表裁剪鲁棒(如套餐收敛后不再有 fast 档,
 # casual 自动落到 balanced,而不是返回 None 让任务路由整个失效)。

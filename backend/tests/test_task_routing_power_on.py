@@ -93,6 +93,41 @@ def test_no_tier_ever_routes_to_fast_model_in_real_registry():
             )
 
 
+def test_tool_routing_tier_reaches_fast_model():
+    """内部工具决策档 "tool_routing" 被授权 → 有 fast 模型时确实路由到 fast。
+    (与 user-facing 档形成对照: 只有这个内部档能落 fast。)"""
+    fake = [
+        _FakeModel("flash-x", "fast"),
+        _FakeModel("bal-x", "balanced"),
+        _FakeModel("reason-x", "reasoning"),
+    ]
+    with patch.object(task_routing, "list_models", return_value=fake):
+        mid = pick_model_id_by_tier("tool_routing", only_available=False)
+    assert mid == "flash-x", f"tool_routing 应落 fast,实际 {mid}"
+
+
+def test_tool_routing_tier_falls_back_off_fast_when_no_fast_model():
+    """tool_routing 是唯一 fast-eligible 档, 但注册表无 fast 时仍按 _SPEED_FALLBACK 降级
+    (不 crash、不返回 None): 落到 balanced。此时 agent_executor 会因'非 fast'而放弃快路由。"""
+    fake = [_FakeModel("bal-x", "balanced"), _FakeModel("reason-x", "reasoning")]
+    with patch.object(task_routing, "list_models", return_value=fake):
+        mid = pick_model_id_by_tier("tool_routing", only_available=False)
+    assert mid == "bal-x"
+
+
+def test_tool_routing_tier_does_not_enforce_tool_reliability():
+    """安全说明测试: pick_model_id_by_tier 只看 speed_tier, **不**看 reliable_tool_calling。
+    所以即便某个 fast 模型工具调用不可靠, 这个函数也会返回它 —— 正因如此, 工具轮的
+    具体模型选择由 agent_executor 走 pick_reliable_tool_model_id (强制可靠), 而非本函数。
+    这条钉死该职责边界, 防有人误以为 pick_model_id_by_tier 已保证工具可靠性。"""
+    # 只有一个 fast 模型, 且它工具不可靠 —— 但 _FakeModel 无 reliable 字段, 用真注册表反证:
+    # 真注册表里 glm-5 是 fast 但 reliable_tool_calling=False。
+    from app.services.llm.model_registry import get_model
+    glm5 = get_model("glm-5")
+    assert glm5 is not None and glm5.speed_tier == "fast"
+    assert glm5.reliable_tool_calling is False  # fast 但不可靠 → 单靠 tier 路由会选中它
+
+
 def test_casual_floored_off_fast_even_when_fast_model_exists():
     """即便注册表里明明有 fast 模型,casual(非 fast-eligible)也必须地板到 balanced。"""
     fake = [
@@ -116,10 +151,21 @@ def test_casual_never_fast_even_if_only_fast_and_reasoning_exist():
     assert mid == "reason-x", f"casual 宁可 reasoning 也不许 fast,实际 {mid}"
 
 
-def test_fast_eligible_allowlist_is_empty_by_default():
-    """通电前置断言:当前没有任何档被授权降到 fast。
-    有人往白名单加档时这条会红,逼其显式确认 + 配对抗测试。"""
-    assert task_routing._FAST_ELIGIBLE_TIERS == frozenset()
+def test_fast_eligible_allowlist_is_exactly_tool_routing():
+    """通电前置断言(收紧版):唯一被授权降到 fast 的档是内部工具决策轮 "tool_routing"。
+    任何**新增**面向用户档进白名单都会让这条红,逼其显式确认 + 配对抗测试。
+    (2026-07-06 前此集合为空;工具决策轮延迟优化显式加入 "tool_routing" —— 无医疗正文。)"""
+    assert task_routing._FAST_ELIGIBLE_TIERS == frozenset({"tool_routing"})
+
+
+def test_only_internal_tool_routing_tier_is_fast_eligible():
+    """不变量:白名单里绝不含任何面向用户的档 —— 医疗内容生成档一律不可 fast。"""
+    user_facing_tiers = {"high_stakes", "balanced", "casual"}
+    assert not (task_routing._FAST_ELIGIBLE_TIERS & user_facing_tiers), (
+        "面向用户的任务档不得进入 fast 白名单"
+    )
+    # 且 tool_routing 映射到 fast speed（它就是为快而生的内部档）。
+    assert task_routing._TASK_TIER_TO_SPEED["tool_routing"] == "fast"
 
 
 # ─────────────────────────────────────────────────────────────

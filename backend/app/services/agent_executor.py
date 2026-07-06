@@ -2237,6 +2237,16 @@ class AgentExecutor:
         # 本回合是否被 fast-route 到快模型 (简单记录/查询)。仅用于把答案 max_tokens
         # 从 ANSWER_MAX_TOKENS 收紧到 FAST_ROUTE_ANSWER_MAX_TOKENS —— 见 _answer_max_tokens。
         self._fast_route_simple_turn = False
+        # 本**轮**是否被工具决策轮快路由到 fast 模型 (task_tiered_routing, 见
+        # _maybe_fast_route_tool_round)。仅在带 tools 的轮为 True, 每轮入口重置。
+        # 作用: 该轮的模型输出**只**当作工具决策 —— content 不 live 下发; 若该轮
+        # 直接答文本 (无 tool_calls), 丢弃并强制在**强模型**上重合成 (安全不变量:
+        # 面向用户的医疗正文绝不来自 fast 模型)。
+        self._tool_round_fast_routed = False
+        # 本轮之前是否已执行过任何工具 (旁路 tool_executed_count>0 给 _resolve_chat_provider)。
+        # 默认路径下合成轮仍带 tools, 靠这个把"首个工具决策轮"与"工具后合成轮"分开:
+        # 只有**尚无工具执行**时才把带 tools 的轮降 fast; 一旦跑过工具, 后续 (合成) 轮留强模型。
+        self._turn_any_tool_executed = False
         self._last_provider_model_name: Optional[str] = None
         self._request_model_tool_fallback_used = False
         self._model_fallback_reasons: List[str] = []
@@ -2584,6 +2594,8 @@ class AgentExecutor:
         self._request_model_id = _extract_model_id_from_extra_context(extra_context)
         self._request_model_tool_fallback_used = False
         self._fast_route_simple_turn = False
+        self._tool_round_fast_routed = False
+        self._turn_any_tool_executed = False
         self._model_fallback_reasons = []
         self._tool_model_names = []
         self._dead_provider_model_ids = set()
@@ -2862,6 +2874,9 @@ class AgentExecutor:
                 streamed_tool_calls: List[Dict[str, Any]] = []
                 stream_finish_reason: Optional[str] = None
                 streamed_to_client = False
+                # 每轮入口重置工具决策轮快路由标记; _call_llm_stream → _resolve_chat_provider
+                # → _maybe_fast_route_tool_round 会在本轮命中时置 True (仅带 tools 的轮可能命中)。
+                self._tool_round_fast_routed = False
                 # 弱模型会把 tool-call JSON 当正文吐出(无结构化 tool_calls)。一旦累积
                 # 文本可被 _extract_inline_tool_call 识别成工具调用,立刻停止 live 下发
                 # 并撤回已发标记 —— 这段 JSON 后面会被恢复成真正的 tool_call (content 置空),
@@ -2907,7 +2922,10 @@ class AgentExecutor:
                         ):
                             inline_suppressed = True
                             streamed_to_client = False
-                        if not inline_suppressed:
+                        # 工具决策轮快路由 (fast 模型): 本轮输出只当工具决策, content 绝不
+                        # live 下发 —— 若最终是直接答文本 (无 tool_calls), 会被丢弃并在强模型
+                        # 重合成 (安全不变量: 面向用户的医疗正文绝不来自 fast 模型)。
+                        if not inline_suppressed and not self._tool_round_fast_routed:
                             streamed_to_client = True
                             # 2026-07-01: TTFT — 第一个真正下发给客户端的 token 时刻 (纯埋点)。
                             if first_token_at is None:
@@ -3008,6 +3026,26 @@ class AgentExecutor:
                     # 轮次用尽仍是文本式 → 剥掉标记避免泄漏(用户至少不看到裸 "Tool calls:")。
                     response = {**response, "content": _strip_text_tool_call(botched)}
 
+                # ──── 工具决策轮快路由安全兜底: fast 模型直接答文本时丢弃, 强模型重合成 ────
+                # 到这里所有 tool-call 恢复 (结构化 / inline JSON / 文本式重试) 都已尝试完。
+                # 若本轮是 fast 工具决策轮却仍**没有** tool_calls 而是产出了用户可见正文,
+                # 那是 fast 模型在直接回答医疗问题 —— 安全不变量禁止 (面向用户医疗正文绝不
+                # 来自 fast 模型)。该 content 已被上面的下发门控抑制 (从未 live 发出), 这里
+                # 清空它: final_text 变空 → 走既有空回复重试链, 在**强模型** (_call_llm(msgs,[]),
+                # 无 tools → 不再快路由) 上重新生成答案。纯附加、fail-closed。
+                if (
+                    self._tool_round_fast_routed
+                    and isinstance(response, dict)
+                    and not response.get("tool_calls")
+                    and (response.get("content") or "").strip()
+                ):
+                    logger.info(
+                        "[agent_executor] fast tool-round answered directly (no tool_call); "
+                        "discarding fast-model text, will re-synthesize on strong model."
+                    )
+                    self._record_model_fallback_reason("fast_tool_round_direct_answer_resynthesized")
+                    response = {**response, "content": ""}
+
                 # 检查是否有 tool_call
                 if isinstance(response, dict) and response.get("tool_calls"):
                     self._record_tool_model_name(self._last_provider_model_name or model_name)
@@ -3017,7 +3055,9 @@ class AgentExecutor:
                     # 思考过程: 真流式下已逐 delta 下发过, 这里只补 full_reply,
                     # 不重复 yield token (避免客户端看到双份)。inline-recovery 路径
                     # 会把 content 置空 → text_content 为空也不发。
-                    if text_content:
+                    # fast 工具决策轮: 该轮 content (工具调用前的 preamble) 也来自 fast 模型,
+                    # 不下发、不计入 full_reply —— 最终医疗正文由后续合成轮的强模型产出。
+                    if text_content and not self._tool_round_fast_routed:
                         if not streamed_to_client:
                             yield {"event": "token", "data": {"content": text_content}}
                         full_reply += text_content
@@ -3102,6 +3142,9 @@ class AgentExecutor:
                         result_for_record_card = result
                         safety_cards: list[dict] = []
                         tool_executed_count += 1
+                        # 旁路给 _maybe_fast_route_tool_round: 一旦跑过工具, 后续 (合成) 轮
+                        # 即便仍带 tools 也不再降 fast (留在强模型产出医疗正文)。
+                        self._turn_any_tool_executed = True
 
                         # 写操作成功后内联安全检查。
                         # 注意: 软失败(如"未找到…"/"暂时没成功")不含 "Error" 字样, 旧逻辑会把
@@ -4043,6 +4086,19 @@ class AgentExecutor:
         # a tool-mode request and can return content="" with finish_reason="stop".
         pass_tools = tools
 
+        # ──── 工具决策轮快路由 (延迟优化, flag 门控, fail-closed) ────
+        # 只把**工具决策轮** (本回合带 tools) 降到一个 fast + reliable_tool_calling 模型;
+        # 合成/答案轮 (round_tools=[] → pass_tools falsy) 恒不命中, 仍由质量模型生成医疗正文。
+        # 生产实测: 「我胃还有点痛,怎么办?」的 tool 轮 34s (qwen3.7-max reasoning) 主导时延,
+        # 但该轮只需吐一个 health_record 结构化 tool_call —— 不需要重推理模型。
+        # 该分支只改**默认/偏好模型**路径 (无显式 UI 选模型), 且 fail-closed:命中新档一律
+        # 换成 reliable_tool_calling 的 fast 模型, 无则维持现状。命中后 effective_model_id
+        # 更新为该 fast 模型, 下方工具门控/非流式判定据此运作。
+        if pass_tools:
+            fast_tool = self._maybe_fast_route_tool_round(effective_model_id)
+            if fast_tool is not None:
+                provider, effective_model_id = fast_tool
+
         # ──── 工具调用能力门控 (从源头减少弱模型吐坏工具调用; #147/#161 兜底解析仍在) ────
         # 仅当本回合确实要传 tools 且已确定的 effective_model 不可靠时, 才换一个可靠模型。
         # 拿不准 (effective_model_id=None / 未注册) → 保守不动, 依赖兜底解析。
@@ -4055,6 +4111,76 @@ class AgentExecutor:
 
         self._last_effective_model_id = effective_model_id
         return provider, pass_tools
+
+    def _maybe_fast_route_tool_round(self, effective_model_id: Optional[str]):
+        """工具决策轮 → fast + reliable_tool_calling 模型 (flag 门控, fail-closed)。
+
+        命中时返回 (fast_provider, fast_model_id);不命中 → None (维持现状,零变更)。
+
+        触发条件 (全部满足):
+          1. settings.task_tiered_routing 开 (flag off → 恒 None = 逐字节现状);
+          2. 无显式 UI 选模型 (_request_model_id): 用户/桌面显式选的模型自己拥有工具轮,
+             我们只优化**默认/偏好模型**这条会落到 qwen3.7-max reasoning 的路径;
+          3. 非既有整轮快路由 (_prefer_fast_record_model / _fast_route_simple_turn):
+             那两条已把整轮 (含合成) 降到 fast, 不再叠加;
+          4. task_routing 里 "tool_routing" 档确被授权降 fast (单一真源不变量);
+          5. 存在一个 fast 档的 reliable_tool_calling=True 可用模型。
+        任一不满足 → None。这样 fast 模型吐坏工具调用时, 既有 tool-turn failover +
+        #147/#161 三层兜底解析仍是安全网 (被换后的 fast 模型走同一 _call_llm/_stream 路径)。
+        """
+        from app.config import settings
+
+        if not getattr(settings, "task_tiered_routing", False):
+            return None
+        # 尊重显式选择 / 不叠加既有整轮快路由。
+        if self._request_model_id or self._prefer_fast_record_model or self._fast_route_simple_turn:
+            return None
+        # 只降**首个工具决策轮**: 默认路径下合成轮仍带 tools, 一旦跑过工具就留强模型
+        # (安全: 工具后那一轮多半是写医疗正文的合成轮)。首轮直接答文本→安全兜底丢弃重合成。
+        if self._turn_any_tool_executed:
+            return None
+        try:
+            from app.services.llm.task_routing import _FAST_ELIGIBLE_TIERS
+            from app.services.llm.model_registry import (
+                pick_reliable_tool_model_id,
+                get_model,
+            )
+        except Exception:  # noqa: BLE001 — 快路由不可用绝不断主链路
+            return None
+        # 单一真源不变量:该内部档必须被显式授权降 fast, 否则不走 (防有人偷偷去授权后此处失守)。
+        if "tool_routing" not in _FAST_ELIGIBLE_TIERS:
+            return None
+        # 具体模型必须 reliable_tool_calling=True (tool 轮几乎必调工具, 不会调工具的快模型
+        # 会静默丢数据) 且真是 fast 档。pick_reliable_tool_model_id(near="fast") 优先 fast 档
+        # 的可靠模型;拿到后再核 speed_tier=="fast", 不是则视为无可用 fast → 维持现状。
+        try:
+            fast_id = pick_reliable_tool_model_id(near_speed_tier="fast")
+        except Exception:  # noqa: BLE001
+            return None
+        if not fast_id or fast_id == effective_model_id:
+            return None
+        entry = get_model(fast_id)
+        if entry is None or entry.speed_tier != "fast" or not entry.reliable_tool_calling:
+            # 无 fast 档可靠模型 (只回退到 balanced/reasoning) → 不做快路由, fail-open 现状。
+            return None
+        try:
+            from app.services.llm.factory import create_provider_for_model_id
+            provider = create_provider_for_model_id(fast_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "[agent_executor] tool-round fast route %s unavailable, keep default: %s",
+                fast_id, e,
+            )
+            return None
+        # 标记本轮为 fast 工具决策轮: 调用方 (run_stream 主循环) 据此
+        # (a) 不 live 下发该轮 content; (b) 该轮无 tool_calls 直接答文本时丢弃并在强模型重合成。
+        self._tool_round_fast_routed = True
+        self._record_model_fallback_reason("tool_round_fast_routed")
+        logger.info(
+            "[agent_executor] tool-round fast route: %s -> %s (user=%s)",
+            effective_model_id, fast_id, self._current_user_id,
+        )
+        return provider, fast_id
 
     def _user_effective_model_id(self) -> Optional[str]:
         """复算 create_provider_for_user 选中的 model_id (admin global / user pref),
