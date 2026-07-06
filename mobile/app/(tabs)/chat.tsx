@@ -683,7 +683,7 @@ export default function ChatScreen() {
         onOpenToolMenu={() => setToolMenuVisible(true)}
       />
 
-      {/* 今日简报条：点进「今日」屏（'/(tabs)/today'）。数字来自 /timeline/today 真实计数。 */}
+      {/* 今日简报条：上滑出「今日」半屏 sheet（'/today-sheet'，原生 formSheet，不离开对话）。数字来自 /timeline/today 真实计数。 */}
       {!briefingHidden && (
         <BriefingStrip timeline={todayTimeline.data} onDismiss={() => setBriefingHidden(true)} />
       )}

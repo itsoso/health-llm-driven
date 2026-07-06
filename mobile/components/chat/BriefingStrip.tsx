@@ -26,7 +26,8 @@ export function buildBriefingSummary(timeline: TimelineData | undefined): string
 }
 
 /**
- * 今日简报条：点进「今日」屏 ('/(tabs)/today')。数字来自 /timeline/today 真实计数。
+ * 今日简报条：从聊天上滑出「今日」半屏 sheet ('/today-sheet', 原生 formSheet)。
+ * 用户不离开对话即可瞥待办/时间线, 下滑关闭回到对话。数字来自 /timeline/today 真实计数。
  */
 export default function BriefingStrip({
   timeline,
@@ -39,11 +40,11 @@ export default function BriefingStrip({
   return (
     <TouchableOpacity
       style={styles.briefingStrip}
-      onPress={() => router.navigate('/(tabs)/today')}
+      onPress={() => router.navigate('/today-sheet')}
       activeOpacity={0.75}
       accessibilityRole="button"
       accessibilityLabel={`今日简报：${briefingSummary}`}
-      accessibilityHint="打开今日屏，查看告警、待办和身体信号"
+      accessibilityHint="上滑出今日半屏，查看告警、待办和身体信号，下滑关闭"
     >
       <View style={styles.briefingIconWrap}>
         <Ionicons name="today-outline" size={15} color={C.green500} />
