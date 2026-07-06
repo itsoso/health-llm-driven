@@ -15,6 +15,7 @@ import ChatBubble from '../../components/chat/ChatBubble';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import ChatHeader from '../../components/chat/ChatHeader';
 import BriefingStrip from '../../components/chat/BriefingStrip';
+import TodayContent from '../../components/home/TodayContent';
 import EmptyStateHome, {
   greetingForHour,
   formatMemoryOpenerText,
@@ -411,6 +412,7 @@ export default function ChatScreen() {
 
   const handleSend = useCallback((text: string, images?: any, options?: ChatInputSendOptions) => {
     isNearBottom.current = true;
+    setBriefingExpanded(false); // 发消息即收起今日面板,回到对话流
     injectOpeningContinuity(openerRef.current);
     sendMessage(text, images, options?.extraContext ? { extraContext: options.extraContext } : undefined);
     setContextBadge(null);
@@ -573,6 +575,8 @@ export default function ChatScreen() {
 
   // 今日简报条可见性: 冷启显示; 用户点 X 或新建对话后隐藏(founder: 新窗口要干净画布)。
   const [briefingHidden, setBriefingHidden] = useState(false);
+  // agent-native:今日在对话页内联展开(动态 UI 面板),不跳独立 sheet 页。
+  const [briefingExpanded, setBriefingExpanded] = useState(false);
 
   const handleNewChat = useCallback(() => {
     setToolMenuVisible(false);
@@ -707,12 +711,23 @@ export default function ChatScreen() {
         onOpenToolMenu={() => setToolMenuVisible(true)}
       />
 
-      {/* 今日简报条：上滑出「今日」半屏 sheet（'/today-sheet'，原生 formSheet，不离开对话）。数字来自 /timeline/today 真实计数。 */}
+      {/* 今日简报条(agent-native):点按在对话页内联展开「今日」动态 UI 面板，不跳独立页。 */}
       {!briefingHidden && (
-        <BriefingStrip timeline={todayTimeline.data} onDismiss={() => setBriefingHidden(true)} />
+        <BriefingStrip
+          timeline={todayTimeline.data}
+          expanded={briefingExpanded}
+          onPress={() => setBriefingExpanded(v => !v)}
+          onDismiss={briefingExpanded ? undefined : () => setBriefingHidden(true)}
+        />
       )}
 
       <View style={{ flex: 1 }}>
+        {/* 展开态：今日以内联面板呈现在对话页（占据消息区），composer 仍在下方；收起回到对话。 */}
+        {briefingExpanded ? (
+          <View testID="chat-today-inline-panel" style={{ flex: 1 }}>
+            <TodayContent mode="inline" />
+          </View>
+        ) : (
         <FlatList
           ref={flatListRef}
           data={messages}
@@ -735,6 +750,7 @@ export default function ChatScreen() {
             />
           }
         />
+        )}
 
         {contextBadge && (
           <View style={styles.contextBanner}>

@@ -27,12 +27,30 @@ describe('BriefingStrip', () => {
     expect(queryByLabelText('关闭今日简报')).toBeNull();
   });
 
-  it('strip body opens the today half-sheet (formSheet over chat, not a full nav away)', () => {
+  it('falls back to the today half-sheet nav only when no onPress is provided (back-compat)', () => {
     const { getByLabelText } = render(
       <BriefingStrip timeline={undefined} onDismiss={jest.fn()} />,
     );
     fireEvent.press(getByLabelText('今日简报：查看今日待办与身体信号'));
     expect(mockNavigate).toHaveBeenCalledWith('/today-sheet');
+  });
+
+  it('agent-native: onPress toggles inline expand instead of navigating to a page', () => {
+    const onPress = jest.fn();
+    const { getByLabelText } = render(
+      <BriefingStrip timeline={undefined} onPress={onPress} expanded={false} />,
+    );
+    fireEvent.press(getByLabelText('今日简报：查看今日待办与身体信号'));
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).not.toHaveBeenCalled(); // 不跳独立页
+  });
+
+  it('reflects expanded state on the accessibility node', () => {
+    const { getByLabelText } = render(
+      <BriefingStrip timeline={undefined} onPress={jest.fn()} expanded />,
+    );
+    const node = getByLabelText('今日简报：查看今日待办与身体信号');
+    expect(node.props.accessibilityState?.expanded).toBe(true);
   });
 
   it('buildBriefingSummary uses only real counts and neutral fallbacks', () => {

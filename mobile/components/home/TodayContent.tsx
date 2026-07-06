@@ -109,10 +109,13 @@ interface TwinSnapshot {
  *   - "screen": 深链/通知落地的整屏 (顶部渲染「返回小巴」)。
  *   - "sheet":  聊天上滑出的半屏 formSheet (用原生抓手 + 下滑关, 不渲染返回条; 不占 top 安全区)。
  */
-export type TodayContentMode = 'screen' | 'sheet';
+// 'inline':嵌进聊天页的动态 UI 面板(agent-native:不跳独立页,今日以卡在对话里展开)。
+//          与 'sheet' 一样不渲染返回条;但不套 SafeAreaView(由父容器定界),不留 tab bar 底距。
+export type TodayContentMode = 'screen' | 'sheet' | 'inline';
 
 export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentMode }) {
-  const isSheet = mode === 'sheet';
+  const isInline = mode === 'inline';
+  const isSheet = mode === 'sheet' || isInline;
   const router = useRouter();
   const qc = useQueryClient();
   const revaFontsLoaded = useRevaFonts();
@@ -485,8 +488,9 @@ export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentM
     <ScrollView
       contentContainerStyle={[
         styles.content,
-        { paddingBottom: tabBarHeight + spacing.lg },
-        // sheet 模式顶部不占 top 安全区(SafeAreaView 已按 sheet 收边),给抓手留一点呼吸。
+        // inline 面板嵌在聊天页,底部是输入框而非悬浮 tab bar,不留 tab bar 距。
+        { paddingBottom: (isInline ? 0 : tabBarHeight) + spacing.lg },
+        // sheet/inline 模式顶部不占 top 安全区,给抓手/面板一点呼吸。
         isSheet ? { paddingTop: spacing.sm } : null,
       ]}
       refreshControl={<RefreshControl refreshing={manualRefreshing} onRefresh={onRefresh} />}
@@ -586,6 +590,11 @@ export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentM
       )}
     </ScrollView>
   );
+
+  // inline 模式:嵌进聊天页,父容器已定界高度,直接返回 body(不套 SafeAreaView)。
+  if (isInline) {
+    return body;
+  }
 
   // sheet 模式:formSheet 已是盖在聊天上的原生浮层, 不再套 top 安全区 (那会在抓手下方留一条空白)。
   // 只用 SafeAreaView 收底部安全区; 状态栏样式交给根 Stack。

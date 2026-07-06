@@ -26,25 +26,31 @@ export function buildBriefingSummary(timeline: TimelineData | undefined): string
 }
 
 /**
- * 今日简报条：从聊天上滑出「今日」半屏 sheet ('/today-sheet', 原生 formSheet)。
- * 用户不离开对话即可瞥待办/时间线, 下滑关闭回到对话。数字来自 /timeline/today 真实计数。
+ * 今日简报条(agent-native:不跳独立页)。默认 onPress 在对话页内联展开「今日」
+ * 动态 UI 面板(由 chat.tsx 传入 toggle + expanded);未传 onPress 时回退旧的
+ * 原生半屏 sheet 导航(向后兼容)。数字来自 /timeline/today 真实计数。
  */
 export default function BriefingStrip({
   timeline,
   onDismiss,
+  onPress,
+  expanded = false,
 }: {
   timeline: TimelineData | undefined;
   onDismiss?: () => void;
+  onPress?: () => void;
+  expanded?: boolean;
 }) {
   const briefingSummary = buildBriefingSummary(timeline);
   return (
     <TouchableOpacity
-      style={styles.briefingStrip}
-      onPress={() => router.navigate('/today-sheet')}
+      style={[styles.briefingStrip, expanded && styles.briefingStripExpanded]}
+      onPress={onPress ?? (() => router.navigate('/today-sheet'))}
       activeOpacity={0.75}
       accessibilityRole="button"
+      accessibilityState={{ expanded }}
       accessibilityLabel={`今日简报：${briefingSummary}`}
-      accessibilityHint="上滑出今日半屏，查看告警、待办和身体信号，下滑关闭"
+      accessibilityHint={expanded ? '收起今日面板，回到对话' : '在对话内展开今日待办、身体信号与未来节奏'}
     >
       <View style={styles.briefingIconWrap}>
         <Ionicons name="today-outline" size={15} color={C.green500} />
@@ -55,7 +61,7 @@ export default function BriefingStrip({
           {briefingSummary}
         </Text>
       </View>
-      <Ionicons name="chevron-forward" size={16} color={C.ink3} />
+      <Ionicons name={expanded ? 'chevron-down' : 'chevron-forward'} size={16} color={C.ink3} />
       {onDismiss ? (
         <TouchableOpacity
           onPress={onDismiss}
@@ -87,6 +93,10 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
     ...revaShadows.sm,
+  },
+  briefingStripExpanded: {
+    borderColor: C.green500,
+    backgroundColor: C.green50,
   },
   briefingIconWrap: {
     width: 28,
