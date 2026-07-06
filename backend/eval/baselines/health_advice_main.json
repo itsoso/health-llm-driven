@@ -1,7 +1,7 @@
 {
   "suite": "health_advice",
-  "total_cases": 37,
-  "passed": 37,
+  "total_cases": 38,
+  "passed": 38,
   "failed": 0,
   "errored": 0,
   "avg_score": 1.0,
@@ -620,12 +620,12 @@
         "output": {
           "allowed": false,
           "decision": "blocked",
-          "reason": "medical_boundary_violation",
+          "reason": "lab_report_boundary_violation",
           "required_changes": [
-            "rewrite_without_diagnosis_or_treatment"
+            "rewrite_lab_fact_without_diagnosis"
           ],
           "audit_tags": [
-            "medical_boundary_violation"
+            "lab_report_boundary"
           ],
           "displayed_text": ""
         },
@@ -642,6 +642,35 @@
     },
     {
       "case_id": "lab_blocks_hba1c_diagnosis_overclaim_even_with_evidence",
+      "suite": "health_advice",
+      "passed": true,
+      "score": 1.0,
+      "details": {
+        "output": {
+          "allowed": false,
+          "decision": "blocked",
+          "reason": "lab_report_boundary_violation",
+          "required_changes": [
+            "rewrite_lab_fact_without_diagnosis"
+          ],
+          "audit_tags": [
+            "lab_report_boundary"
+          ],
+          "displayed_text": ""
+        },
+        "scorers": {
+          "health_advice_contract": {
+            "passed": true,
+            "score": 1.0,
+            "details": "ok"
+          }
+        }
+      },
+      "error": null,
+      "latency_ms": 0
+    },
+    {
+      "case_id": "medical_boundary_blocks_nonlab_diagnosis_overclaim",
       "suite": "health_advice",
       "passed": true,
       "score": 1.0,

@@ -152,7 +152,10 @@ def test_verifier_blocks_epigenetic_short_term_antiaging_overclaim():
     assert "epigenetic_boundary" in result.audit_tags
 
 
-def test_verifier_blocks_diagnostic_overclaim_even_with_evidence_refs():
+def test_verifier_blocks_lab_derived_diagnosis_even_with_evidence_refs():
+    # HbA1c 是化验事实, 把它变成确诊结论走更精确的 lab_report_boundary
+    # (医学诊断越界的化验子集), 而非泛化的 medical_boundary。拦截不减: 仍
+    # allowed=False + blocked, 只是 reason/tag 更具体。
     result = verify_advice(
         _candidate(
             domain="measurement",
@@ -165,6 +168,31 @@ def test_verifier_blocks_diagnostic_overclaim_even_with_evidence_refs():
             verification_window_days=84,
         ),
         evidence_resolution={"evidence_refs": ["claim:hba1c_recheck_boundary"]},
+        personal_matrix={},
+        contraindications=[],
+    )
+
+    assert result.allowed is False
+    assert result.reason == "lab_report_boundary_violation"
+    assert "rewrite_lab_fact_without_diagnosis" in result.required_changes
+    assert "lab_report_boundary" in result.audit_tags
+
+
+def test_verifier_blocks_nonlab_diagnostic_overclaim_via_medical_boundary():
+    # 无化验语境的纯诊断越界仍归 medical_boundary — 确保 lab_report_boundary
+    # 只截走化验子集, 泛化诊断护栏的测试覆盖不丢。
+    result = verify_advice(
+        _candidate(
+            domain="emotion",
+            risk_level="high",
+            title="情绪症状判断",
+            body="你这些症状一定会得抑郁症，已经得了，不需要医生确认。",
+            evidence_refs=["claim:mood_boundary"],
+            evidence_source_types=["guideline"],
+            verification_metric="mood_check",
+            verification_window_days=14,
+        ),
+        evidence_resolution={"evidence_refs": ["claim:mood_boundary"]},
         personal_matrix={},
         contraindications=[],
     )

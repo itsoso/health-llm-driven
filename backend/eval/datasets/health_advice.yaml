@@ -402,8 +402,8 @@ cases:
       must_not_include: ["自行加量"]
 
   - id: lab_blocks_hba1c_diagnosis_overclaim
-    description: HbA1c result cannot become a diagnosis claim.
-    tags: [lab, high_risk]
+    description: HbA1c result cannot become a diagnosis claim (lab-derived → lab_report_boundary).
+    tags: [lab, high_risk, lab_report_boundary]
     candidate:
       domain: measurement
       risk_level: high
@@ -415,14 +415,14 @@ cases:
     expected:
       allowed: false
       decision: blocked
-      reason: medical_boundary_violation
-      required_changes_contains: [rewrite_without_diagnosis_or_treatment]
-      audit_tags_contains: [medical_boundary_violation]
+      reason: lab_report_boundary_violation
+      required_changes_contains: [rewrite_lab_fact_without_diagnosis]
+      audit_tags_contains: [lab_report_boundary]
       must_not_include: ["确诊糖尿病"]
 
   - id: lab_blocks_hba1c_diagnosis_overclaim_even_with_evidence
-    description: Evidence refs cannot make a direct diagnosis claim safe.
-    tags: [lab, high_risk, medical_boundary]
+    description: Evidence refs cannot make a lab-derived diagnosis claim safe (lab_report_boundary).
+    tags: [lab, high_risk, lab_report_boundary]
     candidate:
       domain: measurement
       risk_level: high
@@ -435,10 +435,30 @@ cases:
     expected:
       allowed: false
       decision: blocked
+      reason: lab_report_boundary_violation
+      required_changes_contains: [rewrite_lab_fact_without_diagnosis]
+      audit_tags_contains: [lab_report_boundary]
+      must_not_include: ["确诊糖尿病"]
+
+  - id: medical_boundary_blocks_nonlab_diagnosis_overclaim
+    description: Non-lab diagnostic overclaim still routes to the generic medical_boundary guard.
+    tags: [medical_boundary, high_risk]
+    candidate:
+      domain: emotion
+      risk_level: high
+      title: "情绪症状判断"
+      body: "你这些症状一定会得抑郁症，已经得了，不需要医生确认。"
+      evidence_refs: [claim:mood_boundary]
+      evidence_source_types: [guideline]
+      verification_metric: mood_check
+      verification_window_days: 14
+    expected:
+      allowed: false
+      decision: blocked
       reason: medical_boundary_violation
       required_changes_contains: [rewrite_without_diagnosis_or_treatment]
       audit_tags_contains: [medical_boundary_violation]
-      must_not_include: ["确诊糖尿病"]
+      must_not_include: ["一定会得抑郁症"]
 
   - id: lab_allows_hba1c_recheck_program
     description: HbA1c risk can support bounded recheck and lifestyle action.
