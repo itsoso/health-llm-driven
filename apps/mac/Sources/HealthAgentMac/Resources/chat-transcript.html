@@ -15,43 +15,55 @@
     --bubble-radius: 14px;
     --gap: 14px;
 
+    /* ── Warm "Claude Design" palette (light) ──────────────────────────────
+       Same tokens as the web frontend + the SwiftUI WarmPalette. The chat
+       WebView is transparent (drawsBackground=false) so bubbles sit on the
+       warm-paper SwiftUI backdrop; the assistant bubble is a readable warm
+       card + hairline + subtle shadow (was near-invisible gray), the user
+       bubble is clay-soft with clay ink (was system blue). */
     --bg: transparent;
-    --user-bubble: rgba(10, 132, 255, 0.16);
-    --user-border: rgba(10, 132, 255, 0.30);
-    --assistant-bubble: rgba(120, 120, 128, 0.10);
-    --assistant-border: rgba(120, 120, 128, 0.16);
-    --text: #1d1d1f;
-    --secondary: rgba(60, 60, 67, 0.6);
-    --accent: #0a84ff;
-    --code-bg: rgba(120, 120, 128, 0.14);
-    --table-border: rgba(120, 120, 128, 0.28);
-    --hr: rgba(120, 120, 128, 0.3);
+    --user-bubble: rgba(201, 100, 66, 0.12);
+    --user-border: rgba(201, 100, 66, 0.26);
+    --user-text: #A24F31;
+    --assistant-bubble: #FCFBF7;
+    --assistant-border: #E5E1D5;
+    --assistant-shadow: rgba(41, 38, 31, 0.06);
+    --text: #29261F;
+    --secondary: #6B665A;
+    --accent: #C96442;
+    --code-bg: #F5F2E9;
+    --table-border: #D8D3C4;
+    --hr: #E5E1D5;
 
-    /* latency waterfall band colors (pre-LLM 灰 / TTFT 琥珀 / 生成 绿 / 工具 蓝 / 分析 红) */
-    --wf-prellm: rgba(120, 120, 128, 0.55);
-    --wf-ttft: #f5a623;
-    --wf-gen: #34c759;
-    --wf-tool: #0a84ff;
-    --wf-orch: #ff3b30;
+    /* latency waterfall band colors (pre-LLM 暖灰 / TTFT 琥珀 / 生成 鼠尾草 / 工具 珊瑚 / 分析 深珊瑚) */
+    --wf-prellm: #B8B2A2;
+    --wf-ttft: #B8791F;
+    --wf-gen: #5F7A55;
+    --wf-tool: #C96442;
+    --wf-orch: #C0453B;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --user-bubble: rgba(10, 132, 255, 0.28);
-      --user-border: rgba(10, 132, 255, 0.42);
-      --assistant-bubble: rgba(120, 120, 128, 0.18);
-      --assistant-border: rgba(255, 255, 255, 0.08);
-      --text: #f5f5f7;
-      --secondary: rgba(235, 235, 245, 0.6);
-      --accent: #4aa3ff;
-      --code-bg: rgba(255, 255, 255, 0.10);
-      --table-border: rgba(255, 255, 255, 0.18);
-      --hr: rgba(255, 255, 255, 0.16);
+      /* Warm dark — warm near-black paper, warm card, warm off-white ink,
+         clay brightened as accent. Not the system cool gray. */
+      --user-bubble: rgba(217, 120, 79, 0.20);
+      --user-border: rgba(217, 120, 79, 0.40);
+      --user-text: #E29273;
+      --assistant-bubble: #26221A;
+      --assistant-border: #3A352B;
+      --assistant-shadow: rgba(0, 0, 0, 0.28);
+      --text: #F0EBE0;
+      --secondary: #B8B2A2;
+      --accent: #D9784F;
+      --code-bg: #2C2820;
+      --table-border: #47412F;
+      --hr: #3A352B;
 
-      --wf-prellm: rgba(160, 160, 168, 0.55);
-      --wf-ttft: #ffb340;
-      --wf-gen: #30d158;
-      --wf-tool: #4aa3ff;
-      --wf-orch: #ff453a;
+      --wf-prellm: #8A8574;
+      --wf-ttft: #D9A04A;
+      --wf-gen: #8FA982;
+      --wf-tool: #D9784F;
+      --wf-orch: #E07A6E;
     }
   }
 
@@ -90,22 +102,27 @@
   .row.user .bubble {
     background: var(--user-bubble);
     border-color: var(--user-border);
+    color: var(--user-text);
     max-width: 620px;
+    border-bottom-right-radius: 5px;
   }
   .row.assistant .bubble {
     background: var(--assistant-bubble);
     border-color: var(--assistant-border);
+    box-shadow: 0 1px 2px var(--assistant-shadow);
     max-width: 100%;
     width: 100%;
+    border-bottom-left-radius: 5px;
   }
 
   .meta {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 0.78em;
+    font-family: "Songti SC", "Noto Serif SC", "Iowan Old Style", Georgia, serif;
+    font-size: 0.86em;
     font-weight: 600;
-    color: var(--secondary);
+    color: var(--text);
     margin-bottom: 6px;
   }
   .copy-btn {
@@ -118,13 +135,20 @@
     border-radius: 6px;
   }
   .copy-btn:hover { background: var(--code-bg); color: var(--accent); }
-  .copy-btn.copied { color: #34c759; }
+  .copy-btn.copied { color: #5F7A55; }
 
   .body > *:first-child { margin-top: 0; }
   .body > *:last-child { margin-bottom: 0; }
   .body p { margin: 0.5em 0; }
-  .body h1, .body h2 { font-size: 1.18em; font-weight: 700; margin: 0.7em 0 0.4em; }
-  .body h3, .body h4 { font-size: 1.05em; font-weight: 600; margin: 0.6em 0 0.3em; }
+  /* Serif display headings (Claude Design), warm ink. */
+  .body h1, .body h2, .body h3, .body h4 {
+    font-family: "Songti SC", "Noto Serif SC", "Iowan Old Style", Georgia, serif;
+    color: var(--text);
+  }
+  .body h1, .body h2 { font-size: 1.2em; font-weight: 600; margin: 0.7em 0 0.4em; }
+  .body h3, .body h4 { font-size: 1.06em; font-weight: 600; margin: 0.6em 0 0.3em; }
+  .body b, .body strong { color: var(--user-text); }
+  .body table { font-variant-numeric: tabular-nums; }
   .body ul, .body ol { margin: 0.4em 0; padding-left: 1.4em; }
   .body li { margin: 0.2em 0; }
   .body code {
@@ -173,8 +197,8 @@
     margin: 2px 0 10px;
     padding: 12px;
     border-radius: 12px;
-    border: 1px solid rgba(48, 176, 112, 0.24);
-    background: linear-gradient(180deg, rgba(48, 176, 112, 0.12), rgba(48, 176, 112, 0.05));
+    border: 1px solid rgba(95, 122, 85, 0.28);
+    background: linear-gradient(180deg, rgba(95, 122, 85, 0.12), rgba(95, 122, 85, 0.045));
   }
   .dynamic-card + p,
   .dynamic-card + div.streaming-text {
@@ -208,19 +232,19 @@
     border: 1px solid transparent;
   }
   .dynamic-card-badge.risk {
-    color: #b42318;
-    background: rgba(255, 69, 58, 0.14);
-    border-color: rgba(255, 69, 58, 0.22);
+    color: #A6382C;
+    background: rgba(192, 69, 59, 0.14);
+    border-color: rgba(192, 69, 59, 0.24);
   }
   .dynamic-card-badge.neutral {
-    color: #177245;
-    background: rgba(48, 176, 112, 0.14);
-    border-color: rgba(48, 176, 112, 0.22);
+    color: #4B6242;
+    background: rgba(95, 122, 85, 0.16);
+    border-color: rgba(95, 122, 85, 0.26);
   }
   .dynamic-card-badge.caution {
-    color: #8a5a00;
-    background: rgba(255, 214, 10, 0.16);
-    border-color: rgba(255, 214, 10, 0.24);
+    color: #8A5A12;
+    background: rgba(184, 121, 31, 0.16);
+    border-color: rgba(184, 121, 31, 0.26);
   }
   .dynamic-card-metrics {
     display: grid;
@@ -231,8 +255,9 @@
     min-width: 0;
     padding: 7px 8px;
     border-radius: 8px;
-    border: 1px solid rgba(120, 120, 128, 0.14);
-    background: rgba(255, 255, 255, 0.52);
+    border: 1px solid var(--hr);
+    background: var(--code-bg);
+    font-variant-numeric: tabular-nums;
   }
   .dynamic-card-metric-label {
     font-size: 0.72em;
@@ -246,7 +271,7 @@
     color: var(--text);
   }
   .dynamic-card-metric-value.risk {
-    color: #b42318;
+    color: #A6382C;
   }
   .dynamic-card-detail,
   .dynamic-card-conclusion,
@@ -266,9 +291,9 @@
   .dynamic-card-warning {
     padding: 7px 8px;
     border-radius: 8px;
-    color: #8a5a00;
-    background: rgba(255, 214, 10, 0.14);
-    border: 1px solid rgba(255, 214, 10, 0.24);
+    color: #8A5A12;
+    background: rgba(184, 121, 31, 0.14);
+    border: 1px solid rgba(184, 121, 31, 0.26);
   }
   .dynamic-card-actions {
     display: flex;
@@ -283,37 +308,37 @@
     min-height: 28px;
     padding: 5px 10px;
     border-radius: 999px;
-    border: 1px solid rgba(48, 176, 112, 0.22);
+    border: 1px solid rgba(95, 122, 85, 0.26);
     color: var(--text);
-    background: rgba(255, 255, 255, 0.58);
+    background: var(--code-bg);
     font-size: 0.82em;
     font-weight: 800;
     text-decoration: none;
   }
   .dynamic-card-action.primary {
     color: white;
-    background: #1f9b65;
-    border-color: #1f9b65;
+    background: #5F7A55;
+    border-color: #5F7A55;
   }
   .dynamic-card-action.secondary {
-    color: #177245;
+    color: #4B6242;
   }
   .evidence-card,
   .generic-card {
-    border-color: rgba(10, 132, 255, 0.20);
-    background: linear-gradient(180deg, rgba(10, 132, 255, 0.11), rgba(10, 132, 255, 0.045));
+    border-color: rgba(201, 100, 66, 0.22);
+    background: linear-gradient(180deg, rgba(201, 100, 66, 0.10), rgba(201, 100, 66, 0.04));
   }
   .safety-card-risk {
-    border-color: rgba(255, 69, 58, 0.24);
-    background: linear-gradient(180deg, rgba(255, 69, 58, 0.12), rgba(255, 69, 58, 0.05));
+    border-color: rgba(192, 69, 59, 0.26);
+    background: linear-gradient(180deg, rgba(192, 69, 59, 0.12), rgba(192, 69, 59, 0.045));
   }
   .safety-card-caution {
-    border-color: rgba(255, 214, 10, 0.24);
-    background: linear-gradient(180deg, rgba(255, 214, 10, 0.14), rgba(255, 214, 10, 0.05));
+    border-color: rgba(184, 121, 31, 0.26);
+    background: linear-gradient(180deg, rgba(184, 121, 31, 0.14), rgba(184, 121, 31, 0.05));
   }
   .safety-card-info {
-    border-color: rgba(10, 132, 255, 0.20);
-    background: linear-gradient(180deg, rgba(10, 132, 255, 0.10), rgba(10, 132, 255, 0.04));
+    border-color: rgba(201, 100, 66, 0.20);
+    background: linear-gradient(180deg, rgba(201, 100, 66, 0.09), rgba(201, 100, 66, 0.035));
   }
   .safety-card-summary {
     color: var(--text);
@@ -331,8 +356,8 @@
     margin: 0;
     padding: 6px 8px;
     border-radius: 8px;
-    border: 1px solid rgba(120, 120, 128, 0.14);
-    background: rgba(255, 255, 255, 0.52);
+    border: 1px solid var(--hr);
+    background: var(--code-bg);
     color: var(--text);
     font-size: 0.86em;
   }
@@ -341,9 +366,9 @@
     margin-top: 9px;
     padding: 3px 8px;
     border-radius: 999px;
-    color: #b42318;
-    background: rgba(255, 69, 58, 0.12);
-    border: 1px solid rgba(255, 69, 58, 0.20);
+    color: #A6382C;
+    background: rgba(192, 69, 59, 0.12);
+    border: 1px solid rgba(192, 69, 59, 0.22);
     font-size: 0.78em;
     font-weight: 800;
   }
@@ -367,39 +392,39 @@
   }
   @media (prefers-color-scheme: dark) {
     .dynamic-card-metric {
-      background: rgba(255, 255, 255, 0.06);
-      border-color: rgba(255, 255, 255, 0.08);
+      background: var(--code-bg);
+      border-color: var(--hr);
     }
     .dynamic-card-badge.risk,
     .dynamic-card-metric-value.risk {
-      color: #ff8a80;
+      color: #E8998C;
     }
     .dynamic-card-badge.neutral {
-      color: #7ee0a3;
+      color: #9CBB8E;
     }
     .dynamic-card-badge.caution {
-      color: #ffd66b;
+      color: #E4B872;
     }
     .safety-card-recommendations li {
-      background: rgba(255, 255, 255, 0.06);
-      border-color: rgba(255, 255, 255, 0.08);
+      background: var(--code-bg);
+      border-color: var(--hr);
     }
     .dynamic-card-action {
-      background: rgba(255, 255, 255, 0.08);
-      border-color: rgba(255, 255, 255, 0.10);
+      background: var(--code-bg);
+      border-color: var(--hr);
     }
     .dynamic-card-action.secondary {
-      color: #7ee0a3;
+      color: #9CBB8E;
     }
     .safety-card-attention {
-      color: #ff8a80;
-      background: rgba(255, 69, 58, 0.10);
-      border-color: rgba(255, 69, 58, 0.18);
+      color: #E8998C;
+      background: rgba(224, 122, 110, 0.12);
+      border-color: rgba(224, 122, 110, 0.20);
     }
     .dynamic-card-warning {
-      color: #ffd66b;
-      background: rgba(255, 214, 10, 0.10);
-      border-color: rgba(255, 214, 10, 0.18);
+      color: #E4B872;
+      background: rgba(217, 160, 74, 0.12);
+      border-color: rgba(217, 160, 74, 0.20);
     }
   }
 
@@ -535,10 +560,11 @@
     margin: 6px 0 10px;
     padding: 12px 12px 8px;
     border-radius: 12px;
-    border: 1px solid var(--table-border);
-    background: rgba(120, 120, 128, 0.06);
+    border: 1px solid var(--hr);
+    background: var(--code-bg);
     color: var(--secondary);
     font-size: 0.86em;
+    font-variant-numeric: tabular-nums;
   }
   .reva-ui-chart.rendered { color: var(--text); }
   .reva-ui-title {
@@ -566,22 +592,23 @@
   .reva-ui-line-device { stroke-width: 1; opacity: 0.55; }
   /* latest 标注 callout 框 + 引线 */
   .reva-ui-callout-leader { stroke: var(--secondary); stroke-width: 1; stroke-dasharray: 2 2; }
-  .reva-ui-callout-box { fill: rgba(30, 30, 32, 0.92); stroke: rgba(255, 255, 255, 0.18); stroke-width: 1; }
-  .reva-ui-callout-text { fill: #fff; font-size: 10px; font-weight: 700; }
+  .reva-ui-callout-box { fill: #26221A; stroke: rgba(240, 235, 224, 0.20); stroke-width: 1; }
+  .reva-ui-callout-text { fill: #F0EBE0; font-size: 10px; font-weight: 700; }
   @media (prefers-color-scheme: light) {
-    .reva-ui-callout-box { fill: rgba(255, 255, 255, 0.96); stroke: rgba(0, 0, 0, 0.16); }
-    .reva-ui-callout-text { fill: #1d1d1f; }
+    .reva-ui-callout-box { fill: #FCFBF7; stroke: rgba(41, 38, 31, 0.18); }
+    .reva-ui-callout-text { fill: #29261F; }
   }
-  .reva-ui-ann-warn { stroke: #ff453a; fill: #ff453a; }
+  .reva-ui-ann-warn { stroke: #C0453B; fill: #C0453B; }
   .reva-ui-ann-info { stroke: var(--accent); fill: var(--accent); }
-  .reva-ui-ann-good { stroke: #34c759; fill: #34c759; }
+  .reva-ui-ann-good { stroke: #5F7A55; fill: #5F7A55; }
   .reva-ui-annlabel { font-size: 9px; font-weight: 700; }
-  .reva-ui-annlabel.warn { fill: #ff453a; }
+  .reva-ui-annlabel.warn { fill: #C0453B; }
   .reva-ui-annlabel.info { fill: var(--accent); }
-  .reva-ui-annlabel.good { fill: #177245; }
+  .reva-ui-annlabel.good { fill: #4B6242; }
   @media (prefers-color-scheme: dark) {
-    .reva-ui-annlabel.good { fill: #7ee0a3; }
-    .reva-ui-chart { background: rgba(255, 255, 255, 0.04); }
+    .reva-ui-annlabel.good { fill: #9CBB8E; }
+    .reva-ui-ann-warn { stroke: #E07A6E; fill: #E07A6E; }
+    .reva-ui-ann-good { stroke: #8FA982; fill: #8FA982; }
   }
   .reva-ui-legend {
     display: flex;
@@ -641,8 +668,8 @@
     align-items: center;
     border-radius: 999px;
     padding: 2px 8px;
-    background: rgba(255, 159, 10, 0.12);
-    color: #b36b00;
+    background: rgba(184, 121, 31, 0.14);
+    color: #8A5A12;
     font-size: 0.72em;
     font-weight: 700;
   }
@@ -657,7 +684,7 @@
     border: 1px solid var(--hr);
     border-radius: 10px;
     padding: 7px 9px;
-    background: rgba(255, 159, 10, 0.08);
+    background: rgba(184, 121, 31, 0.08);
     color: var(--secondary);
   }
 
@@ -731,15 +758,18 @@
   var REVA_VW = 600;       // viewBox 宽
   var REVA_VH = 260;       // viewBox 高
   var REVA_PAD = { top: 14, right: 16, bottom: 34, left: 44 };
-  var REVA_COLORS = ["#0a84ff", "#34c759", "#ff9f0a", "#bf5af2", "#ff453a", "#64d2ff"];
+  // Warm "Claude Design" chart series palette — sage / clay / amber, warm neutral,
+  // clay-ink, sky-sage. Colors only; series-selection & draw logic untouched (R4:
+  // chart numbers stay backend-deterministic, this is pure restyle).
+  var REVA_COLORS = ["#5F7A55", "#C96442", "#B8791F", "#A24F31", "#8C7BB0", "#7FA6A0"];
 
-  // 角色 → 固定调色板 + 线型(dark-mode 双安全的 system 色)。缺省/未知角色回退默认。
-  // teal=7d hero,tan/amber=30d,blue=Apple Watch device,灰=raw 噪声背景。
+  // 角色 → 固定调色板 + 线型(warm, dark-mode 双安全)。缺省/未知角色回退默认。
+  // sage=7d hero,amber=30d,clay=Apple Watch device,暖灰=raw 噪声背景。
   var REVA_ROLE_STYLE = {
-    raw:     { color: "#8e8e93", lineClass: "reva-ui-line-raw",    dots: false, dotR: 0   },
-    avg_7d:  { color: "#30b070", lineClass: "reva-ui-line-avg7",   dots: false, dotR: 0   },
-    avg_30d: { color: "#d99a3a", lineClass: "reva-ui-line-avg30",  dots: false, dotR: 0   },
-    device:  { color: "#0a84ff", lineClass: "reva-ui-line-device", dots: true,  dotR: 2.6 },
+    raw:     { color: "#948F80", lineClass: "reva-ui-line-raw",    dots: false, dotR: 0   },
+    avg_7d:  { color: "#5F7A55", lineClass: "reva-ui-line-avg7",   dots: false, dotR: 0   },
+    avg_30d: { color: "#B8791F", lineClass: "reva-ui-line-avg30",  dots: false, dotR: 0   },
+    device:  { color: "#C96442", lineClass: "reva-ui-line-device", dots: true,  dotR: 2.6 },
     value:   { color: null,      lineClass: "reva-ui-line",        dots: true,  dotR: 3   }
   };
   // 解析一个 series 的有效样式:role 命中表则用之(color 缺省回退调色板槽);否则走 value。

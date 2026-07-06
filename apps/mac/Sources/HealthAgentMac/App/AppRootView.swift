@@ -115,7 +115,7 @@ struct AppRootView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
-                        .background(Color.accentColor, in: Capsule())
+                        .background(WarmPalette.clay, in: Capsule())
                         .help(appText("Items waiting in the context basket.", appLanguageRaw))
                 }
             }
@@ -216,10 +216,17 @@ struct AppRootView: View {
         }
     }
 
+    /// A card "提问 / Ask Agent" action: open a FRESH conversation (Fix B — saves
+    /// context/tokens, mirrors the web contract) and drop the clean question into
+    /// the composer input, ready to send (Fix A). The card prompts are already
+    /// self-contained (they inline the metric/finding data), so we deliberately do
+    /// NOT push `item` into the 已选上下文 basket here — that regression turned a
+    /// question into a silent context chip + a wall of "### 当前上下文" text. The
+    /// context-package panel stays a first-class feature via the separate explicit
+    /// "Add Context" button (`addAgentContext`), which is untouched.
     private func askAgentWithContext(_ prompt: String, _ item: AgentContextItem?) {
-        let currentContext = services.agentViewModel.contextItems
-        let handoffContext = currentContext + (item.map { [$0] } ?? [])
-        services.agentViewModel.prepareDraftForNewConversation(prompt, contextItems: handoffContext)
+        _ = item // intentionally not injected as a context chip; see note above.
+        services.agentViewModel.prepareDraftForNewConversation(prompt, contextItems: [])
         navigation.selection = .agent
     }
 
@@ -271,7 +278,7 @@ private struct SidebarAccountHeader: View {
         HStack(spacing: 9) {
             Image(systemName: "person.crop.circle.fill")
                 .font(.title2)
-                .foregroundStyle(.teal)
+                .foregroundStyle(WarmPalette.clay)
             VStack(alignment: .leading, spacing: 1) {
                 Text(primaryLabel)
                     .font(.callout.weight(.semibold))

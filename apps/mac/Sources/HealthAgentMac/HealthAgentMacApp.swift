@@ -102,7 +102,7 @@ struct TodayView: View {
             let layout = DesktopDashboardLayoutPolicy.metrics(forAvailableWidth: Double(proxy.size.width))
 
             ZStack {
-                Color(nsColor: .controlBackgroundColor)
+                WarmPalette.paper
                     .ignoresSafeArea()
 
                 ScrollView {
@@ -272,8 +272,8 @@ struct TodayView: View {
                                 .font(.caption.weight(.semibold))
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 5)
-                                .background(Color.teal.opacity(0.10), in: Capsule())
-                                .foregroundStyle(.teal)
+                                .background(WarmPalette.claySoft, in: Capsule())
+                                .foregroundStyle(WarmPalette.clayInk)
                         }
                     }
                     .padding(.top, 6)
@@ -335,12 +335,12 @@ struct TodayView: View {
         .padding(AppCardStyle.padding)
         .background {
             RoundedRectangle(cornerRadius: AppCardStyle.cornerRadius, style: .continuous)
-                .fill(.background)
+                .fill(WarmPalette.card)
                 .overlay(alignment: .topTrailing) {
                     RoundedRectangle(cornerRadius: AppCardStyle.cornerRadius, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [Color.teal.opacity(0.14), Color.blue.opacity(0.07), Color.clear],
+                                colors: [WarmPalette.claySoft.opacity(0.9), WarmPalette.amberSoft.opacity(0.55), Color.clear],
                                 startPoint: .topTrailing,
                                 endPoint: .bottomLeading
                             )
@@ -348,7 +348,7 @@ struct TodayView: View {
                 }
         }
         .overlay(panelStroke())
-        .shadow(color: Color.black.opacity(0.045), radius: 18, y: 10)
+        .shadow(color: Color.black.opacity(0.06), radius: 18, y: 10)
     }
 
     private func metricGrid(_ metrics: [DesktopDashboardMetric]) -> some View {

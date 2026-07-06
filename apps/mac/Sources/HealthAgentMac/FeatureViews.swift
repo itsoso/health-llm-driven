@@ -89,11 +89,14 @@ struct AgentChatView: View {
         .padding(.bottom, 18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(
+            // Warm paper backdrop the transparent chat WebView sits on top of
+            // (WKWebView drawsBackground=false), so bubbles read on warm paper —
+            // not the old window-gray + system-blue tint.
             LinearGradient(
                 colors: [
-                    Color(nsColor: .windowBackgroundColor),
-                    Color.accentColor.opacity(0.05),
-                    Color(nsColor: .windowBackgroundColor)
+                    WarmPalette.paper,
+                    WarmPalette.claySoft.opacity(0.35),
+                    WarmPalette.paper
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -291,10 +294,10 @@ struct AgentChatView: View {
             // `.textBackgroundColor` is the system text-field white and stays
             // correct in dark mode; a slightly stronger border keeps the white
             // box legible against the composer card.
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(WarmPalette.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+                    .stroke(WarmPalette.hair2, lineWidth: 1)
             }
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil, perform: handleFileDrop)
 
@@ -311,10 +314,10 @@ struct AgentChatView: View {
             composerStatusLine
         }
         .padding(18)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(WarmPalette.card2, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+                .stroke(WarmPalette.hair, lineWidth: 1)
         }
         .fileImporter(
             isPresented: $isAttachImporterPresented,
@@ -356,7 +359,7 @@ struct AgentChatView: View {
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 30, height: 30)
-                    .background(canSend ? Color.accentColor : Color.secondary.opacity(0.35), in: Circle())
+                    .background(canSend ? WarmPalette.clay : WarmPalette.ink3.opacity(0.45), in: Circle())
             }
             .buttonStyle(.plain)
             .disabled(!canSend)
@@ -425,11 +428,11 @@ struct AgentChatView: View {
                 Text(appText("Web Search", appLanguageRaw))
             }
             .font(.caption.weight(.medium))
-            .foregroundStyle(viewModel.webSearchEnabled ? Color.accentColor : .secondary)
+            .foregroundStyle(viewModel.webSearchEnabled ? WarmPalette.clay : WarmPalette.ink2)
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
             .background(
-                (viewModel.webSearchEnabled ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.08)),
+                (viewModel.webSearchEnabled ? WarmPalette.claySoft : WarmPalette.card2),
                 in: Capsule()
             )
         }
@@ -729,8 +732,8 @@ struct AgentChatView: View {
                             .padding(.vertical, 7)
                     }
                     .buttonStyle(.plain)
-                    .background(Color.accentColor.opacity(0.10), in: Capsule())
-                    .foregroundStyle(Color.accentColor)
+                    .background(WarmPalette.claySoft, in: Capsule())
+                    .foregroundStyle(WarmPalette.clayInk)
                     .help(chip.prompt)
                 }
             }
@@ -1014,10 +1017,10 @@ struct AgentChatView: View {
             Spacer()
         }
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(WarmPalette.rail, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+                .stroke(WarmPalette.hair, lineWidth: 1)
         }
     }
 
@@ -1043,7 +1046,7 @@ struct AgentChatView: View {
                 .font(.callout)
                 .foregroundStyle(.white)
                 .frame(width: 28, height: 28)
-                .background(Color.accentColor.opacity(0.85), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .background(WarmPalette.clay, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(title)
@@ -1060,7 +1063,7 @@ struct AgentChatView: View {
             }
         }
         .padding(10)
-        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(WarmPalette.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func toolActivityText(_ status: AgentToolActivityStatus) -> String {
@@ -1357,7 +1360,7 @@ private struct AgentContextItemCard: View {
                 Image(systemName: iconName)
                     .foregroundStyle(.white)
                     .frame(width: 24, height: 24)
-                    .background(Color.accentColor.opacity(0.82), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background(WarmPalette.clay, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.title)
                         .font(.caption.weight(.semibold))
@@ -1382,10 +1385,10 @@ private struct AgentContextItemCard: View {
             }
         }
         .padding(10)
-        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(WarmPalette.claySoft.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.accentColor.opacity(0.12), lineWidth: 1)
+                .stroke(WarmPalette.clay.opacity(0.22), lineWidth: 1)
         }
     }
 
