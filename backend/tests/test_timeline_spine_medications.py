@@ -47,9 +47,30 @@ def _log_taken(db, user_id, med_id, hhmm):
     db.commit()
 
 
+def _pin_morning_clock(monkeypatch):
+    """把脊柱时钟钉到清晨(上海 05:30),让所有测试时点(06:00+)都还没过 2h 宽限窗
+    → status 恒 pending、排序恒按时点升序,不被 past-due 下沉逻辑(_mark_overdue)干扰。
+
+    这些用例只验「进脊柱 / 时点 / 排序」,与当下时刻无关;不钉时钟则墙钟到下午会随机翻
+    overdue(CI 是 UTC runner + TZ=Asia/Shanghai,午后跑必红)。含时点断言必须钉死时钟。
+    """
+    import app.services.today_timeline_service as svc
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            base = datetime(2026, 6, 15, 21, 30, tzinfo=timezone.utc)  # = 次日 05:30 上海
+            return base.astimezone(tz) if tz else base.replace(tzinfo=None)
+
+    monkeypatch.setattr(svc, "datetime", FixedDateTime)
+
+
 # ───────────────── 1. 药+补剂进脊柱,带真实时点 + complete_ref ─────────────────
 
-def test_medication_and_supplement_appear_with_times_and_ref(db, auth_user_and_headers):
+def test_medication_and_supplement_appear_with_times_and_ref(
+    db, auth_user_and_headers, monkeypatch,
+):
+    _pin_morning_clock(monkeypatch)  # 钉清晨:验 pending/ref,与 past-due 下沉解耦
     user, _ = auth_user_and_headers
     med = _add_med(db, user.id, "二甲双胍", category="处方药",
                    reminder="08:00", timing_relation="after_meal", meal_anchor="breakfast")
@@ -152,8 +173,9 @@ def test_completed_medication_grouped_done_not_upcoming(db, auth_user_and_header
     )
 
 
-def test_multidose_partial_is_still_pending(db, auth_user_and_headers):
+def test_multidose_partial_is_still_pending(db, auth_user_and_headers, monkeypatch):
     """每日 2 次只服 1 次 → 仍 pending(taken<total)。"""
+    _pin_morning_clock(monkeypatch)  # 钉清晨:与 past-due 下沉解耦(只验 pending 语义)
     user, _ = auth_user_and_headers
     med = _add_med(db, user.id, "一天两次药", category="处方药", reminder="08:00", times_per_day=2)
     _log_taken(db, user.id, med.id, "08:00")  # 1/2
@@ -181,7 +203,8 @@ def test_medication_not_double_counted(db, auth_user_and_headers):
 
 # ───────────────── 5. 时间排序:scheduled_for 升序,anytime 在后 ─────────────────
 
-def test_items_time_ordered_timed_before_anytime(db, auth_user_and_headers):
+def test_items_time_ordered_timed_before_anytime(db, auth_user_and_headers, monkeypatch):
+    _pin_morning_clock(monkeypatch)  # 钉清晨:无 overdue 下沉,验纯时点升序排序
     user, _ = auth_user_and_headers
     _add_med(db, user.id, "晚药20点", category="处方药", reminder="20:00")
     _add_med(db, user.id, "早药06点", category="处方药", reminder="06:00")

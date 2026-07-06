@@ -482,6 +482,52 @@ def _work_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
     return items
 
 
+# 过期宽限窗(分钟):项的确定时点已比当前本地时刻早超过此值且未完成 → status='overdue'。
+# 2h 与客户端 RevaTimelineStrip 的 OVERDUE_MINUTES 对齐,避免服务端/客户端判定漂移;
+# 也避免「早上 8 点就把 7 点的项打成过期」——刚过一会儿仍算当前项。
+_OVERDUE_GRACE_MIN = 120
+
+
+def _actionable_unit_key(item: Dict[str, Any]):
+    """actionable rollup 去重键:一个「待办单位」的稳定身份。
+
+    BID/TID 药在展示层展开成每时段一行(complete_ref 带不同 slot),但它们是**同一个**
+    待办单位(同一种药当天)。rollup 计数按 (object_type, object_id) 折叠(丢 slot),让
+    一天多次的一种药算 1 个单位而非 N 个。无 complete_ref 的项各自独立(用 item id 兜底)。
+    """
+    ref = item.get("complete_ref")
+    if ref and ref.get("object_type") is not None and ref.get("object_id") is not None:
+        return (ref["object_type"], ref["object_id"])
+    return item.get("id")
+
+
+def _mark_overdue(items: List[Dict[str, Any]], now: datetime) -> None:
+    """把过期未完成的确定时点项标为 status='overdue'(就地改,加层不减层)。
+
+    判据(全部满足才标):
+    - 可完成(can_complete=True)—— 已完成/已跳过/只读项不标。
+    - 带确定时点(scheduled_for HH:MM)—— 无时点项无从判「过期」,不标。
+    - 该时点已比当前本地时刻早超过 _OVERDUE_GRACE_MIN(2h 宽限)。
+
+    只置状态,不动 can_complete(过期项仍可补记)、不删项、不隐藏 —— 下沉靠 sort_key 读 status。
+    时区:now 已是用户本地时间(build_today_spine 传入),cur_min 用本地时分。
+    """
+    cur_min = now.hour * 60 + now.minute
+    for it in items:
+        if not it.get("can_complete"):
+            continue
+        sched = it.get("scheduled_for")
+        if not sched:
+            continue
+        try:
+            h, m = (int(x) for x in str(sched).split(":")[:2])
+        except (ValueError, AttributeError):
+            continue
+        sched_min = h * 60 + m
+        if cur_min - sched_min > _OVERDUE_GRACE_MIN:
+            it["status"] = "overdue"
+
+
 def build_today_spine(db: Session, user_id: int) -> Dict[str, Any]:
     """组合今日统一时间线(只读投影)。
 
@@ -570,8 +616,13 @@ def build_today_spine(db: Session, user_id: int) -> Dict[str, Any]:
     #      回溯增强项,失败降级不拖垮 past。
     past_events.extend(_past_projection_items(db, user_id, today))
 
-    # 排序:带真实时点(scheduled_for)的项按时间升序在前,无时点项按时间窗兜底,
-    # 同时段内按优先级降序(见 today_spine_meds.sort_key)。统一时间轴 —— 一份按时间排好的议程。
+    # 2.7) past-due 下沉标记:过了服药/复查时点(超 2h 宽限、按用户本地时间)且未完成的项
+    #      → status='overdue'。让「现在该做的」浮顶、过期项下沉(排序里用 status 判,见 sort_key)。
+    #      只加层不减层:overdue 不删项、不改可完成性,仅置状态 + 影响排序。在 sort 前置状态。
+    _mark_overdue(items, now)
+
+    # 排序:overdue 项下沉到当前待办之后;其余按真实时点(scheduled_for)升序在前,
+    # 无时点项按时间窗兜底,同时段内按优先级降序(见 today_spine_meds.sort_key)。
     items.sort(key=sort_key)
 
     # now-marker:时间感知地挑「现在该做什么」单项 id(当下/下一项,非清晨第一项)。
@@ -579,7 +630,12 @@ def build_today_spine(db: Session, user_id: int) -> Dict[str, Any]:
     now_item_id = select_now_item(items, now)
 
     counts = {
-        "actionable": sum(1 for it in items if it["can_complete"]),
+        # actionable:按待办「单位」去重 —— 一种 BID/TID 药当天算 1 个单位(不是 N 个时段),
+        # 否则一天吃 3 次的一种药会把待办数吹成 3 倍(alert fatigue)。子项仍按时段分别可打卡,
+        # 只有 rollup 计数按 (object_type, object_id) 折叠(见 _actionable_unit_key)。
+        "actionable": len({
+            _actionable_unit_key(it) for it in items if it["can_complete"]
+        }),
         "overdue": sum(1 for it in items if it.get("status") == "overdue"),
         "info": sum(1 for it in items if it["kind"] == "advisory"),
     }

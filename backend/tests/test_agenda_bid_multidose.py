@@ -14,10 +14,28 @@ MedicationLog),确定性 taken_time 用 slot(非 wall-clock)。
 单一核(complete_by_ref → complete_agenda_event),不 fork 完成路径。slot 走 JSON complete_ref,
 无迁移。
 """
-from datetime import date
+from datetime import date, datetime, timezone
 
 from app.models.medication import Medication, MedicationLog
 from app.utils.timezone import get_china_today
+
+
+def _pin_morning_clock(monkeypatch):
+    """钉脊柱时钟到清晨(上海 05:30)→ 08:00/20:00 时点都还没过 2h 宽限窗,status 恒 pending。
+
+    此文件验「BID 两剂各成独立行 / 各自闭环」,与当下时刻无关;不钉时钟则墙钟到上午 10 点后
+    08:00 槽会被 past-due 下沉逻辑(today_timeline_service._mark_overdue)翻 overdue,断言
+    status=='pending' 随机红(CI UTC runner + TZ=Asia/Shanghai)。含时点断言必须钉死时钟。
+    """
+    import app.services.today_timeline_service as svc
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            base = datetime(2026, 6, 15, 21, 30, tzinfo=timezone.utc)  # = 次日 05:30 上海
+            return base.astimezone(tz) if tz else base.replace(tzinfo=None)
+
+    monkeypatch.setattr(svc, "datetime", FixedDateTime)
 
 
 def _seed_bid(db, user_id: int, name: str = "二甲双胍",
@@ -52,12 +70,13 @@ def _taken_logs(db, user_id: int, med_id: int):
 
 # ───────────────────── 1. BID 两剂:两行 distinct slot → 两条 log ─────────────────────
 
-def test_bid_two_slots_two_spine_items_two_logs(db, auth_user_and_headers):
+def test_bid_two_slots_two_spine_items_two_logs(db, auth_user_and_headers, monkeypatch):
     """reminder_times ["08:00","20:00"] → 脊柱两条 distinct slot 行 → 两剂各完成 →
     恰两条 MedicationLog(distinct taken_time),两条都 done(F5b 核心:依从不被折成一次)。"""
     from app.services.today_timeline_service import build_today_spine
     from app.services import timeline_agenda_service as tas
 
+    _pin_morning_clock(monkeypatch)  # 钉清晨:两槽都未过期,验 pending / 两行独立完成
     user, _ = auth_user_and_headers
     med = _seed_bid(db, user.id, reminder_times=["08:00", "20:00"])
 
