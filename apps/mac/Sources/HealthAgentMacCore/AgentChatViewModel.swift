@@ -1316,7 +1316,7 @@ public final class AgentChatViewModel {
             return _transcriptCache
         }
         let lastID = messages.last?.id
-        let rendered = messages.map { message -> ChatTranscriptHTML.RenderedMessage in
+        let rendered = messages.compactMap { message -> ChatTranscriptHTML.RenderedMessage? in
             let isStreamingThis = isStreaming && message.id == lastID && message.role == .assistant
             let content = displayContent(for: message)
             let cardHTML = message.role == .assistant
@@ -1327,6 +1327,16 @@ public final class AgentChatViewModel {
                     actions: message.cardActions
                 ) ?? ""
                 : ""
+            // Pre-first-token: while the streaming assistant reply has no text (and
+            // no dynamic card yet), skip emitting its bubble entirely so the WebView
+            // shows nothing — the SwiftUI ThinkingStatusLine ("正在整理思路…") is the
+            // sole waiting cue. Without this the empty bubble renders a lone clay
+            // caret block AND the status line stacked = redundant/alarming. Once the
+            // first token arrives, content is non-empty → the bubble renders normally
+            // with the trailing caret. Completed messages are unaffected.
+            if isStreamingThis && content.isEmpty && cardHTML.isEmpty {
+                return nil
+            }
             let bodyHTML: String
             if message.role == .user {
                 // 用户消息纯文本:转义 + 换行保留,不解析 markdown。

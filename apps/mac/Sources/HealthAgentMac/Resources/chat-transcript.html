@@ -688,8 +688,11 @@
     color: var(--secondary);
   }
 
-  /* 流式光标 */
-  .body.streaming::after {
+  /* 流式光标:仅在流式文本非空时,把闪烁的 caret 拼在已流出的文本尾部。
+     防御:pre-first-token 的空气泡由 Swift 侧 renderedTranscript 直接不发出
+     (ThinkingStatusLine 是唯一等待提示),这里再加一道 —— caret 只挂在
+     .streaming-text 有内容时,空 div 不会孤零零显示一个 clay 方块。 */
+  .body.streaming .streaming-text:not(:empty)::after {
     content: "▌";
     color: var(--accent);
     animation: blink 1s step-start infinite;
