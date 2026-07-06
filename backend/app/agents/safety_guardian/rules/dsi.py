@@ -17,26 +17,9 @@ from app.utils.timezone import get_china_today
 
 
 # ─────────────────────── 补剂名关键字库 ─────────────────
-
-SUPP_ALIASES = {
-    "calcium": ["calcium", "钙", "碳酸钙", "柠檬酸钙"],
-    "iron": ["iron", "铁", "血红素铁", "硫酸亚铁", "甘氨酸亚铁"],
-    "zinc": ["zinc", "锌", "甘氨酸锌"],
-    "magnesium": ["magnesium", "镁", "甘氨酸镁", "苏糖酸镁"],
-    "omega3": ["omega", "鱼油", "fish oil", "epa", "dha"],
-    "vitamin_k": ["vitamin k", "维生素 k", "vitamin-k", "vk"],
-    "st_johns_wort": ["st john", "贯叶连翘", "圣约翰草"],
-    "grapefruit": ["grapefruit", "葡萄柚", "西柚"],
-    "ginkgo": ["ginkgo", "银杏"],
-    "garlic": ["garlic", "大蒜"],
-    "curcumin": ["curcumin", "姜黄素", "turmeric"],
-    "coq10": ["coq10", "co-q10", "辅酶 q10", "辅酶q10", "ubiquinol"],
-    "vitamin_d": ["vitamin d", "维生素 d", "vitamin-d"],
-    "b12": ["b12", "甲钴胺", "cyanocobalamin", "methylcobalamin"],
-    "folate": ["folate", "叶酸", "methyl folate", "甲基叶酸"],
-    "niacin": ["niacin", "烟酸", "nicotinic"],
-    "probiotic": ["probiotic", "益生菌", "lactobif", "akk", "akkermansia", "lactobacillus"],
-}
+# 单一事实源在 app.services.drug_lexicon(与 ddi 药名库、KB 对账处方 gate 共用)。
+# 保留 SUPP_ALIASES 名字与语义,内容逐字节不变。
+from app.services.drug_lexicon import SUPPLEMENT_CLASS_ALIASES as SUPP_ALIASES
 
 
 def _supplement_names(twin: HealthTwin) -> List[str]:

@@ -255,3 +255,46 @@ def test_nonprescriptive_claim_still_merges(db):
     cid = _cand(db, "dd:sleep", "kb:sleep", kind="claim_overlap")
     res = merge_candidate(db, cid, actor="admin:1")  # 不抛
     assert res["merged"] is True
+
+
+# ── 对抗回归 #3:扩词后,无剂量的**未列名药**名 claim(generic entity_type)也硬拒(I4 收窄残余)──
+# 旧 gate 只认 ~25 命名高危药 + 剂量数字 → 布洛芬/氨氯地平/阿莫西林/左甲状腺素/lisinopril
+# 这类**无剂量、未列名**药名会漏合。单一事实源词库(drug_lexicon)接入后必须硬拒。
+# 用**非处方** entity_type(condition),迫使**内容层药名 gate**(而非 entity_type 地板)
+# 成为唯一拒绝点 —— 证明扩词真在起作用,而非 entity_type 兜底。
+
+@pytest.mark.parametrize("drug_title", [
+    "布洛芬", "氨氯地平", "阿莫西林", "左甲状腺素", "他克莫司", "别嘌醇",
+    "lisinopril", "amlodipine", "ibuprofen", "levothyroxine",
+])
+def test_named_drug_without_dose_hard_rejected(db, drug_title):
+    _doc(db, "dd:x", origin=DOWN, entity_type="condition", doc_type="claim",
+         title=f"{drug_title}的作用机制")
+    _doc(db, "kb:x", origin=KBASE, review_status="draft", entity_type="condition",
+         doc_type="claim", title=f"{drug_title}用途说明")
+    cid = _cand(db, "dd:x", "kb:x", kind="claim_overlap")
+    cobj = db.query(KBReconciliationCandidate).filter_by(id=cid).first()
+    ok, reason, _ = can_merge(db, cobj)
+    assert ok is False and "处方" in reason  # 药名内容 gate 拒(非 entity_type / 无锚)
+    with pytest.raises(ValueError):
+        merge_candidate(db, cid, actor="admin:1")
+
+
+# ── 对抗回归 #4:扩词**不**过度收严 —— 食物/草药名、撞常用词的短子串仍可合(收窄误伤)──
+# 保持 over-refuse 偏向 ≠ 把「西柚/大蒜/银杏/地铁通勤」这类良性科普 claim 也拒掉。
+# 食物/草药类刻意不入 gate;歧义短子串(铁→地铁、iron→environment、pril→April)去了歧义。
+
+@pytest.mark.parametrize("t1,t2", [
+    ("西柚富含维生素C", "葡萄柚的营养价值"),      # 食物(grapefruit 排除类)
+    ("大蒜的抗菌作用", "大蒜素与日常饮食"),        # 食物/草药(garlic 排除类)
+    ("银杏叶的传统用途", "银杏与记忆的科普"),      # 草药(ginkgo 排除类)
+    ("益生菌与肠道菌群", "酸奶里的益生菌"),        # 补剂但非处方(probiotic 排除类)
+    ("地铁通勤与久坐问题", "通勤方式影响活动量"),  # 铁 陷阱(地铁)
+    ("环境噪音影响睡眠", "the ambient environment"),  # iron⊂environ / 英文陷阱
+])
+def test_expanded_gate_does_not_over_refuse_benign(db, t1, t2):
+    _doc(db, "dd:b", origin=DOWN, entity_type="concept", doc_type="claim", title=t1)
+    _doc(db, "kb:b", origin=KBASE, review_status="draft", entity_type="concept",
+         doc_type="claim", title=t2)
+    res = merge_candidate(db, _cand(db, "dd:b", "kb:b", kind="claim_overlap"), actor="admin:1")
+    assert res["merged"] is True  # 良性 claim 未被扩词误伤

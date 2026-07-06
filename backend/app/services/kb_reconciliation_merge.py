@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from app.models.system_knowledge import KBDocument, KBEdge, KBReconciliationCandidate
+from app.services.drug_lexicon import prescriptive_free_text_terms
 from app.services.kb_reconciliation import _norm_title, resolve_canonical
 from app.services.personal_models.intervention_priors import is_clinician_gated_metric
 
@@ -43,22 +44,14 @@ _DOSE_RE = _re.compile(
 )
 # 处方/药名锚点集(中英,is_clinician_gated_metric 是化验指标形、**不含药名**,这里补齐 I4 地板)。
 # R4 保守:命中即拒走人工;宁可 over-refuse(多进人工队列)也不 under-gate 药物安全语义。
-# ⚠️ **已知残余**(评审量化):这是「有剂量数字 或 命名高危药」的**地板**,不是通用药名探测器 ——
-# 未列名药(布洛芬/氨氯地平…)+ 无剂量数字 + generic entity_type 会漏 gate。缓解:P4 是**人工**合并
-# (reviewer 看得见药名);P5 auto **对 claim_overlap 一律不自动**(见 §10 #2)→ auto 路径不触此残余。
-# 后续:从 safety_guardian ddi/dsi/pgx 药名词库扩为单一事实源(已开 follow-up task)。
-_PRESCRIPTIVE_TERMS = frozenset({
-    # 剂量/用药动词(中)
-    "剂量", "服用", "口服", "顿服", "维持量", "负荷量", "停药", "减量", "加量", "滴定", "用法用量",
-    # 常见药名/类(中)
-    "二甲双胍", "华法林", "阿托伐他汀", "辛伐他汀", "他汀", "阿司匹林", "氯吡格雷", "胰岛素",
-    "泼尼松", "甲氨蝶呤", "利伐沙班", "达比加群", "质子泵抑制剂",
-    # 剂量/用药(英)
-    "dose", "dosage", "titrat", "mg/kg", "maintenance dose", "loading dose", "posology",
-    # 常见药名/类(英,词干)
-    "metformin", "warfarin", "statin", "atorvastatin", "simvastatin", "aspirin", "clopidogrel",
-    "insulin", "prednis", "methotrexate", "rivaroxaban", "dabigatran", "ssri", "nsaid",
-})
+#
+# **单一事实源**:药名/剂量词库现由 `drug_lexicon.prescriptive_free_text_terms()` 派生自
+# SafetyGuardian 的 ddi/dsi 药名库 + 常见药补集(消除本文件曾手抄一份会漂移的副本)。往安全词库
+# 加药名 → 自动进本 gate。旧「~25 命名高危药地板」的残余(布洛芬/氨氯地平/阿莫西林/左甲状腺素/
+# lisinopril 等未列名药漏 gate)由此**大幅收窄**;派生集对自由文本去了歧义短子串(钙/铁/iron/pril…),
+# 保持 over-refuse 偏向的同时不误伤良性 claim(见 test_nonprescriptive_claim_still_merges)。
+# **仍非** 100% 通用药名探测器(食物/草药类刻意不入 gate;极冷门药可能仍漏)—— 但 P4 是人工合并、
+# P5 auto 对 药/补剂 claim_overlap 一律不自动(§10 #2),残余不触自动路径。
 
 
 def _prescriptive_text_blob(doc: KBDocument) -> str:
@@ -76,7 +69,7 @@ def _is_prescriptive_text(doc: KBDocument) -> bool:
         return False
     if _DOSE_RE.search(blob):
         return True
-    return any(term in blob for term in _PRESCRIPTIVE_TERMS)
+    return any(term in blob for term in prescriptive_free_text_terms())
 
 
 def _now_iso() -> str:

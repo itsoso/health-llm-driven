@@ -24,61 +24,10 @@ from app.twin.schema import HealthTwin
 
 
 # ─────────────────────────── 药名关键字库 ─────────────────────────
-
-
-# 每个"药物类"下面列出常见中英文别名（小写 + 正则友好）
-DRUG_ALIASES = {
-    "glp1": [
-        "替尔泊肽", "tirzepatide", "司美格鲁肽", "semaglutide", "利拉鲁肽",
-        "liraglutide", "杜拉糖肽", "dulaglutide", "艾塞那肽", "exenatide",
-        "毕马西肽", "lixisenatide",
-    ],
-    "insulin": ["胰岛素", "insulin", "优泌林", "甘精", "门冬", "德谷", "赖脯"],
-    "sulfonylurea": [
-        "格列", "gliclazide", "glimepiride", "glibenclamide", "磺脲",
-        "glipizide", "tolbutamide",
-    ],
-    "cetirizine": ["西替利嗪", "cetirizine", "仙特明", "zyrtec"],
-    "first_gen_antihistamine": [
-        "苯海拉明", "diphenhydramine", "氯苯那敏", "扑尔敏", "chlorpheniramine",
-        "异丙嗪", "promethazine", "羟嗪", "hydroxyzine",
-    ],
-    "benzodiazepine": [
-        "艾司唑仑", "阿普唑仑", "劳拉西泮", "地西泮", "氯硝西泮",
-        "diazepam", "alprazolam", "lorazepam", "clonazepam", "estazolam", "midazolam",
-    ],
-    "opioid": [
-        "吗啡", "芬太尼", "可待因", "曲马多", "羟考酮", "氢可酮",
-        "morphine", "fentanyl", "codeine", "tramadol", "oxycodone", "hydrocodone",
-    ],
-    "warfarin": ["华法林", "warfarin"],
-    "antiplatelet": ["氯吡格雷", "clopidogrel", "阿司匹林", "aspirin"],
-    "mao_inhibitor": ["苯乙肼", "异丙烟肼", "mao", "phenelzine", "selegiline"],
-    "metformin": ["二甲双胍", "metformin", "格华止"],
-    "mometasone_nasal": ["糠酸莫米松", "mometasone", "内舒拿", "nasonex"],
-    "ipratropium_nasal": ["异丙托溴铵", "ipratropium", "爱全乐", "atrovent"],
-    "cyp3a4_strong_inhibitor": [
-        "利托那韦", "ritonavir", "克拉霉素", "clarithromycin",
-        "酮康唑", "ketoconazole", "伊曲康唑", "itraconazole",
-        "泊沙康唑", "posaconazole", "考比司他", "cobicistat",
-    ],
-    "nsaid": [
-        "布洛芬", "ibuprofen", "双氯芬酸", "diclofenac", "萘普生", "naproxen",
-        "塞来昔布", "celecoxib", "美洛昔康", "meloxicam",
-    ],
-    "acei_arb": [
-        "普利", "pril", "沙坦", "sartan", "依那普利", "enalapril",
-        "缬沙坦", "valsartan", "氯沙坦", "losartan",
-    ],
-    "ssri": [
-        "舍曲林", "sertraline", "氟西汀", "fluoxetine", "帕罗西汀", "paroxetine",
-        "西酞普兰", "citalopram", "艾司西酞普兰", "escitalopram",
-    ],
-    "statin": [
-        "他汀", "statin", "辛伐他汀", "simvastatin", "阿托伐他汀", "atorvastatin",
-        "瑞舒伐他汀", "rosuvastatin", "普伐他汀", "pravastatin",
-    ],
-}
+# 单一事实源已抽到 app.services.drug_lexicon(SafetyGuardian 规则与 KB 对账处方 gate
+# 共用,消除重复)。此处保留 DRUG_ALIASES 名字与语义,内容逐字节不变;新增/改药名去改
+# drug_lexicon.DRUG_CLASS_ALIASES,对账 gate 会自动跟随。
+from app.services.drug_lexicon import DRUG_CLASS_ALIASES as DRUG_ALIASES
 
 
 def _med_names(twin: HealthTwin) -> List[str]:
