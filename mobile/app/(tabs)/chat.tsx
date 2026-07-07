@@ -163,6 +163,8 @@ export default function ChatScreen() {
   // context (JSON string) → 注入到 LLM system prompt 作为深化基础, 不展示在 user 消息里
   const params = useLocalSearchParams<{ prompt?: string; badge?: string; autoSend?: string; context?: string; newChat?: string; promptNonce?: string }>();
   const [contextBadge, setContextBadge] = useState<string | null>(null);
+  const [contextPayload, setContextPayload] = useState<string | null>(null);
+  const [contextInspectorVisible, setContextInspectorVisible] = useState(false);
   const [initialInput, setInitialInput] = useState<string | undefined>(undefined);
   const [initialInputKey, setInitialInputKey] = useState(0);
   const lastContextKey = useRef<string | null>(null);
@@ -285,7 +287,10 @@ export default function ChatScreen() {
       if (forceNewConversation) {
         newChat();
       }
-      if (params.badge) setContextBadge(params.badge);
+      if (params.badge || params.context) {
+        setContextBadge(params.badge || '上下文');
+        setContextPayload(params.context || null);
+      }
       if (params.prompt) {
         if (params.autoSend === '1') {
           sendMessage(params.prompt, null, { fromSiri: true, extraContext: params.context, forceNewConversation });
@@ -416,6 +421,8 @@ export default function ChatScreen() {
     injectOpeningContinuity(openerRef.current);
     sendMessage(text, images, options?.extraContext ? { extraContext: options.extraContext } : undefined);
     setContextBadge(null);
+    setContextPayload(null);
+    setContextInspectorVisible(false);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
   }, [injectOpeningContinuity, sendMessage]);
 
@@ -582,6 +589,8 @@ export default function ChatScreen() {
     setToolMenuVisible(false);
     exitSelectionMode();
     setContextBadge(null);
+    setContextPayload(null);
+    setContextInspectorVisible(false);
     setBriefingHidden(true);
     setComposerFocusToken((n) => n + 1);
     newChat();
@@ -604,10 +613,18 @@ export default function ChatScreen() {
     await loadConversation(id);
     isNearBottom.current = true;
     setContextBadge(null);
+    setContextPayload(null);
+    setContextInspectorVisible(false);
     setSelectionMode(false);
     setSelectedMessageIds(new Set());
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 120);
   }, [loadConversation]);
+
+  const clearContext = useCallback(() => {
+    setContextBadge(null);
+    setContextPayload(null);
+    setContextInspectorVisible(false);
+  }, []);
 
   const handleDeleteConversation = useCallback(async (id: number) => {
     const ok = await deleteConversation(id);
@@ -754,13 +771,27 @@ export default function ChatScreen() {
 
         {contextBadge && (
           <View style={styles.contextBanner}>
-            <Ionicons name="link-outline" size={13} color={C.green500} />
-            <Text style={txt.contextBanner} numberOfLines={1}>
-              基于 {contextBadge}
-            </Text>
-            <TouchableOpacity onPress={() => setContextBadge(null)} hitSlop={8}>
+            <Pressable
+              onPress={() => setContextInspectorVisible(true)}
+              style={({ pressed }) => [styles.contextBannerButton, pressed && styles.contextBannerPressed]}
+              accessibilityRole="button"
+              accessibilityLabel={`查看上下文：${contextBadge}`}
+            >
+              <Ionicons name="link-outline" size={13} color={C.green500} />
+              <Text style={txt.contextBanner} numberOfLines={1}>
+                基于 {contextBadge}
+              </Text>
+              <Ionicons name="chevron-up-outline" size={13} color={C.ink3} />
+            </Pressable>
+            <Pressable
+              onPress={clearContext}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="清除上下文"
+              style={({ pressed }) => [styles.contextClearButton, pressed && styles.contextBannerPressed]}
+            >
               <Ionicons name="close" size={14} color={C.ink3} />
-            </TouchableOpacity>
+            </Pressable>
           </View>
         )}
 
@@ -819,6 +850,38 @@ export default function ChatScreen() {
           <TouchableOpacity style={styles.imageViewerClose} onPress={() => setViewingImage(null)}>
             <Ionicons name="close-circle" size={32} color="#fff" />
           </TouchableOpacity>
+        </Pressable>
+      </Modal>
+      <Modal visible={!!contextBadge && contextInspectorVisible} transparent animationType="fade" onRequestClose={() => setContextInspectorVisible(false)}>
+        <Pressable style={styles.contextModalOverlay} onPress={() => setContextInspectorVisible(false)}>
+          <Pressable style={styles.contextSheet}>
+            <View style={styles.contextSheetHeader}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={txt.contextSheetTitle}>本轮上下文</Text>
+                <Text style={txt.contextSheetSub} numberOfLines={1}>来源：{contextBadge}</Text>
+              </View>
+              <Pressable
+                onPress={() => setContextInspectorVisible(false)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="关闭上下文详情"
+              >
+                <Ionicons name="close" size={20} color={C.ink2} />
+              </Pressable>
+            </View>
+            <Text selectable style={txt.contextPayload} numberOfLines={10}>
+              {formatContextPayload(contextPayload)}
+            </Text>
+            <Pressable
+              onPress={clearContext}
+              style={({ pressed }) => [styles.contextRemoveButton, pressed && styles.contextBannerPressed]}
+              accessibilityRole="button"
+              accessibilityLabel="移除上下文"
+            >
+              <Ionicons name="unlink-outline" size={15} color={revaSemantic.risk.fg} />
+              <Text style={txt.contextRemoveButton}>移除上下文</Text>
+            </Pressable>
+          </Pressable>
         </Pressable>
       </Modal>
       <Modal visible={toolMenuVisible} transparent animationType="fade" onRequestClose={() => setToolMenuVisible(false)}>
@@ -914,6 +977,16 @@ function ToolMenuRow({
   );
 }
 
+function formatContextPayload(value: string | null): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '没有附加详情。';
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
 // Reva 设计语言: 暖白 paper 屏底 / surface 卡 / green500 主色 / r-lg 18 / 软阴影. 文字走 Manrope.
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
@@ -956,8 +1029,61 @@ const styles = StyleSheet.create({
   contextBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     marginHorizontal: revaSpacing.s4, marginBottom: 4,
-    paddingHorizontal: revaSpacing.s3, paddingVertical: 6,
+    paddingHorizontal: 6, paddingVertical: 5,
     backgroundColor: C.green50, borderRadius: revaRadii.md,
+  },
+  contextBannerButton: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 7,
+    borderRadius: revaRadii.sm,
+  },
+  contextBannerPressed: {
+    opacity: 0.75,
+  },
+  contextClearButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.55)',
+  },
+  contextModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(16,24,20,0.26)',
+    justifyContent: 'flex-end',
+    paddingHorizontal: revaSpacing.s3,
+    paddingBottom: revaSpacing.s4,
+  },
+  contextSheet: {
+    backgroundColor: C.paper,
+    borderRadius: revaRadii.xl,
+    padding: revaSpacing.s4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    gap: revaSpacing.s3,
+    ...revaShadows.lg,
+  },
+  contextSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: revaSpacing.s3,
+  },
+  contextRemoveButton: {
+    minHeight: 38,
+    borderRadius: revaRadii.pill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: C.paper2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
   },
   shareBar: {
     flexDirection: 'row',
@@ -999,6 +1125,10 @@ const styles = StyleSheet.create({
 
 const txt = {
   contextBanner: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green500, flex: 1, fontWeight: '500' } as TextStyle,
+  contextSheetTitle: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '900', color: C.ink1 } as TextStyle,
+  contextSheetSub: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,
+  contextPayload: { fontFamily: revaFonts.mono, fontSize: 11.5, lineHeight: 17, color: C.ink2, backgroundColor: C.paper2, borderRadius: revaRadii.md, padding: revaSpacing.s3 } as TextStyle,
+  contextRemoveButton: { fontFamily: revaFonts.sans, fontSize: 13, color: revaSemantic.risk.fg, fontWeight: '800' } as TextStyle,
   shareBarTitle: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink1, fontWeight: '700' } as TextStyle,
   shareBarSub: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, marginTop: 2 } as TextStyle,
   cancelSelectionButton: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, fontWeight: '700' } as TextStyle,

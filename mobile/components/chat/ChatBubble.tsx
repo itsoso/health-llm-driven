@@ -44,13 +44,18 @@ import {
   type AgentTransparencyBand,
   type AgentTransparencyProfile,
 } from '../../utils/chatTransparency';
+import {
+  deriveChatResultActions,
+  type ChatResultActionKey,
+  type ChatResultActionHint,
+} from '../../utils/chatResultActionHints';
 
 // 结果操作按钮的装饰性 hue (加入计划绿/保存记忆紫/生成记录青/继续追问蓝) ——
 // 「是哪个动作」的色码, 非临床好坏, 保留 Reva 亮色调色板字面量.
 const ACTION_PURPLE = '#7C5CBF';
 const ACTION_TEAL = '#2F9E8F';
 
-type ResultActionKey = 'plan' | 'memory' | 'record' | 'followup';
+type ResultActionKey = ChatResultActionKey;
 type ResultActionDoneLabels = Partial<Record<ResultActionKey, string>>;
 
 // Markdown 样式走共享 factory (constants/markdownStyles, 4 个屏共用, 不动它的 ColorPalette 契约).
@@ -131,6 +136,14 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
       : visibleMarkdown
   );
   const assistantTextForActions = assistantText.trim();
+  const resultActions = useMemo(
+    () => deriveChatResultActions({
+      text: assistantTextForActions,
+      toolsUsed: item.toolsUsed,
+      sourcesUsed: item.sourcesUsed,
+    }),
+    [assistantTextForActions, item.toolsUsed, item.sourcesUsed],
+  );
   // 流式期间故意不跑 preprocessMarkdownTables + <Markdown> 整树渲染:
   // visibleMarkdown 每个 token 批次都变, memo 会失效 → 每秒 10-20 次全量
   // markdown 预处理 + react-native-markdown-display 整树重渲, 长回复打满 JS 线程,
@@ -590,40 +603,26 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
             {assistantTextForActions && !item.streaming ? (
               <AttributionChips text={assistantTextForActions} />
             ) : null}
-            {!item.streaming && assistantTextForActions ? (
+            {!item.streaming && assistantTextForActions && resultActions.length > 0 ? (
               <View style={styles.resultActionGrid}>
-                <ResultActionButton
-                  icon={resultActionDoneLabels.plan ? 'checkmark-circle-outline' : 'add-circle-outline'}
-                  label={resultActionDoneLabels.plan || '加入今日计划'}
-                  color={C.green500}
-                  onPress={handleAddToTodayPlan}
-                  loading={resultActionBusy === 'plan'}
-                  disabled={!!resultActionBusy}
-                />
-                <ResultActionButton
-                  icon={resultActionDoneLabels.memory ? 'checkmark-circle-outline' : 'bookmark-outline'}
-                  label={resultActionDoneLabels.memory || '保存记忆'}
-                  color={ACTION_PURPLE}
-                  onPress={handleSaveMemory}
-                  loading={resultActionBusy === 'memory'}
-                  disabled={!!resultActionBusy}
-                />
-                <ResultActionButton
-                  icon={resultActionDoneLabels.record ? 'checkmark-circle-outline' : 'create-outline'}
-                  label={resultActionDoneLabels.record || '生成记录'}
-                  color={ACTION_TEAL}
-                  onPress={handleCreateRecord}
-                  loading={resultActionBusy === 'record'}
-                  disabled={!!resultActionBusy}
-                />
-                <ResultActionButton
-                  icon={resultActionDoneLabels.followup ? 'checkmark-circle-outline' : 'chatbubble-ellipses-outline'}
-                  label={resultActionDoneLabels.followup || '继续追问'}
-                  color={C.blue500}
-                  onPress={handleContinueFollowUp}
-                  loading={resultActionBusy === 'followup'}
-                  disabled={!!resultActionBusy}
-                />
+                {resultActions.map((action, index) => (
+                  <ResultActionButton
+                    key={action.key}
+                    action={action}
+                    icon={getResultActionIcon(action.key, resultActionDoneLabels)}
+                    label={resultActionDoneLabels[action.key] || getResultActionLabel(action.key)}
+                    color={getResultActionColor(action.key)}
+                    onPress={getResultActionHandler(action.key, {
+                      plan: handleAddToTodayPlan,
+                      memory: handleSaveMemory,
+                      record: handleCreateRecord,
+                      followup: handleContinueFollowUp,
+                    })}
+                    loading={resultActionBusy === action.key}
+                    disabled={!!resultActionBusy}
+                    wide={resultActions.length === 1 || (index === 0 && action.priority === 'primary')}
+                  />
+                ))}
               </View>
             ) : null}
             {!item.streaming && assistantTextForActions && transparency.visible ? (
@@ -699,26 +698,33 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
 }
 
 function ResultActionButton({
+  action,
   icon,
   label,
   color,
   onPress,
   loading,
   disabled,
+  wide,
 }: {
+  action: ChatResultActionHint;
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   color: string;
   onPress: () => void;
   loading?: boolean;
   disabled?: boolean;
+  wide?: boolean;
 }) {
+  const primary = action.priority === 'primary';
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => [
         resultActionStyles.button,
+        wide && resultActionStyles.buttonWide,
+        primary && resultActionStyles.buttonPrimary,
         pressed && !disabled && resultActionStyles.pressed,
         disabled && resultActionStyles.disabled,
       ]}
@@ -731,11 +737,55 @@ function ResultActionButton({
       ) : (
         <Ionicons name={icon} size={13} color={color} />
       )}
-      <Text style={[resultActionStyles.label, { color }]} numberOfLines={1}>
+      <Text style={[resultActionStyles.label, primary && resultActionStyles.labelPrimary, { color }]} numberOfLines={1}>
         {label}
       </Text>
     </Pressable>
   );
+}
+
+function getResultActionLabel(key: ResultActionKey): string {
+  switch (key) {
+    case 'plan': return '加入今日计划';
+    case 'memory': return '保存记忆';
+    case 'record': return '生成记录';
+    case 'followup':
+    default:
+      return '继续追问';
+  }
+}
+
+function getResultActionIcon(
+  key: ResultActionKey,
+  doneLabels: ResultActionDoneLabels,
+): keyof typeof Ionicons.glyphMap {
+  if (doneLabels[key]) return 'checkmark-circle-outline';
+  switch (key) {
+    case 'plan': return 'add-circle-outline';
+    case 'memory': return 'bookmark-outline';
+    case 'record': return 'create-outline';
+    case 'followup':
+    default:
+      return 'chatbubble-ellipses-outline';
+  }
+}
+
+function getResultActionColor(key: ResultActionKey): string {
+  switch (key) {
+    case 'plan': return C.green500;
+    case 'memory': return ACTION_PURPLE;
+    case 'record': return ACTION_TEAL;
+    case 'followup':
+    default:
+      return C.blue500;
+  }
+}
+
+function getResultActionHandler(
+  key: ResultActionKey,
+  handlers: Record<ResultActionKey, () => void>,
+): () => void {
+  return handlers[key];
 }
 
 function getCardActionSuccessMessage(
@@ -1023,12 +1073,25 @@ const resultActionStyles = StyleSheet.create({
     backgroundColor: C.paper2,
     paddingHorizontal: 9,
   },
+  buttonWide: {
+    width: '100%',
+  },
+  buttonPrimary: {
+    minHeight: 36,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+  },
   pressed: { opacity: 0.78 },
   disabled: { opacity: 0.58 },
   label: {
     fontFamily: revaFonts.sans,
     fontSize: 11,
     fontWeight: '800',
+  } as TextStyle,
+  labelPrimary: {
+    fontSize: 12,
+    fontWeight: '900',
   } as TextStyle,
 });
 
@@ -1164,6 +1227,38 @@ const styles = StyleSheet.create({
     gap: 7,
     marginBottom: 2,
     minHeight: 20,
+  },
+  progressStrip: {
+    alignSelf: 'stretch',
+    gap: 7,
+    marginBottom: 8,
+    paddingBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: C.line,
+  },
+  progressStages: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  progressStage: {
+    flex: 1,
+    minHeight: 22,
+    borderRadius: revaRadii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.paper2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    paddingHorizontal: 4,
+  },
+  progressStageActive: {
+    backgroundColor: C.green50,
+    borderColor: C.green100,
+  },
+  progressStageDone: {
+    backgroundColor: C.surface,
+    borderColor: C.green100,
   },
   thinkingPanel: {
     alignSelf: 'stretch',
@@ -1358,6 +1453,8 @@ const txt = {
   // 与 markdownStyles body (fontSize 15 / lineHeight 23) 对齐, 流式→终态切 markdown 时无跳动
   streaming: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 23, color: C.ink1 } as TextStyle,
   statusLine: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 12.5, lineHeight: 17, fontWeight: '700', color: C.ink3 } as TextStyle,
+  progressStage: { fontFamily: revaFonts.sans, fontSize: 10.5, lineHeight: 13, fontWeight: '800', color: C.ink3 } as TextStyle,
+  progressStageActive: { color: C.green700 } as TextStyle,
   thinkingPillLabel: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 16, fontWeight: '800', color: C.ink3 } as TextStyle,
   thinkingTitle: { fontFamily: revaFonts.sans, fontSize: 12.5, lineHeight: 17, fontWeight: '900', color: C.ink1 } as TextStyle,
   thinkingSubtitle: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, color: C.ink3 } as TextStyle,
@@ -1377,16 +1474,60 @@ const txt = {
 
 // P0-1 渐进渲染 (刀⑤): 首 token 前的"细状态行" —— 单行进度 + 小 spinner, 低干扰。
 // 例: "正在理解…" → "查看步数数据…" → "正在整理回答…"。首 token 到达后由上游清空 → 消失。
+const STREAMING_PROCESS_STAGES = [
+  { label: '理解', match: /理解|问题|意图/ },
+  { label: '查数据', match: /查|查看|读取|数据|记录|步数|指标|健康|工具/ },
+  { label: '生成建议', match: /整理|生成|建议|回答|回复|总结/ },
+  { label: '安全检查', match: /安全|检查|核对|边界|风险/ },
+];
+
+function inferStreamingStage(label: string): number {
+  const index = STREAMING_PROCESS_STAGES.findIndex(stage => stage.match.test(label));
+  if (index >= 0) return index;
+  return 0;
+}
+
 function StatusLine({ label }: { label: string }) {
+  const activeIndex = inferStreamingStage(label);
   return (
     <View
-      testID="assistant-status-line"
-      style={styles.statusLine}
+      testID="assistant-progress-strip"
+      style={styles.progressStrip}
       accessibilityLiveRegion="polite"
       accessibilityLabel={`小巴${label}`}
     >
-      <ActivityIndicator size="small" color={C.green500} />
-      <Text style={txt.statusLine} numberOfLines={1}>{label}</Text>
+      <View testID="assistant-status-line" style={styles.statusLine}>
+        <ActivityIndicator size="small" color={C.green500} />
+        <Text style={txt.statusLine} numberOfLines={1}>{label}</Text>
+      </View>
+      <View style={styles.progressStages}>
+        {STREAMING_PROCESS_STAGES.map((stage, index) => {
+          const active = index === activeIndex;
+          const done = index < activeIndex;
+          return (
+            <View
+              key={stage.label}
+              style={[
+                styles.progressStage,
+                done && styles.progressStageDone,
+                active && styles.progressStageActive,
+              ]}
+            >
+              <Text
+                style={[
+                  txt.progressStage,
+                  (active || done) && txt.progressStageActive,
+                ]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.78}
+              >
+                {stage.label}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
     </View>
   );
 }

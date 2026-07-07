@@ -567,6 +567,36 @@ describe('ChatScreen', () => {
     expect(mockSendMessage).toHaveBeenCalledWith('分析我的睡眠质量', null, undefined);
   });
 
+  it('lets users inspect and remove the context attached to the chat', async () => {
+    mockRouteParams = {
+      badge: '体检报告',
+      context: JSON.stringify({
+        source: 'medical_exam',
+        highlights: ['HbA1c 5.8%', 'LDL-C 3.4 mmol/L'],
+      }),
+    };
+
+    const { getByLabelText, getByText, queryByText } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(getByText('基于 体检报告')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('查看上下文：体检报告'));
+    });
+
+    expect(getByText('本轮上下文')).toBeTruthy();
+    expect(getByText('来源：体检报告')).toBeTruthy();
+    expect(getByText(/HbA1c 5.8%/)).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('移除上下文'));
+    });
+
+    expect(queryByText('基于 体检报告')).toBeNull();
+  });
+
   it('hides the composer chips row once the conversation has messages', async () => {
     mockMessages = [
       { id: 'u-1', role: 'user', content: '早餐吃了鸡蛋' },
