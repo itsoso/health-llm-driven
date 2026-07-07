@@ -84,7 +84,7 @@ const EXPAND_LABEL = '展开执行透视';
 
 describe('ChatBubble 调用 Skill 展示 (透视面板)', () => {
   it('toolsUsed 非空且非流式 → 渲染透视面板, 展开后可见 "调用 Skill" + 每个 Skill 名', () => {
-    const { getByText, queryByText, getByLabelText } = renderBubble({
+    const { getByText, queryByText, getByLabelText, getByTestId } = renderBubble({
       id: 'assistant-tools',
       role: 'assistant',
       content: CONTENT,
@@ -95,10 +95,16 @@ describe('ChatBubble 调用 Skill 展示 (透视面板)', () => {
     // 面板默认折叠: 头部可见, Skill 明细尚未展开
     const expander = getByLabelText(EXPAND_LABEL);
     expect(expander).toBeTruthy();
+    expect(getByTestId('agent-transparency-panel')).toHaveStyle({
+      alignSelf: 'flex-start',
+    });
     expect(queryByText('调用 Skill')).toBeNull();
 
     // 展开 → Skill 名对用户可见
     fireEvent.press(expander);
+    expect(getByTestId('agent-transparency-panel')).toHaveStyle({
+      alignSelf: 'stretch',
+    });
     expect(getByText('调用 Skill')).toBeTruthy();
     expect(getByText('health_record')).toBeTruthy();
     expect(getByText('health_query')).toBeTruthy();
