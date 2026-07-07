@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
-  Platform, TextStyle,
+  Platform, TextStyle, KeyboardAvoidingView,
   Alert, Dimensions, Keyboard, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -137,7 +137,6 @@ export default function ChatScreen() {
   // 今日简报条：真实数字来自 /timeline/today（待办 / 已完成计数），不伪造指标。
   const todayTimeline = useTodayTimeline();
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
@@ -340,7 +339,6 @@ export default function ChatScreen() {
         ? Math.max(0, Math.round(windowH - end.screenY))
         : Math.max(0, Math.round(end.height || 0));
       setKeyboardVisible(height > 0);
-      setKeyboardHeight(height);
     };
     const subs = [
       Keyboard.addListener('keyboardDidShow', (event) => {
@@ -351,7 +349,6 @@ export default function ChatScreen() {
       Keyboard.addListener('keyboardDidChangeFrame', applyKeyboardFrame),
       Keyboard.addListener('keyboardDidHide', () => {
         setKeyboardVisible(false);
-        setKeyboardHeight(0);
       }),
     ];
     return () => { subs.forEach(s => s.remove()); };
@@ -666,12 +663,10 @@ export default function ChatScreen() {
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  // 小巴是 agent-native 主屏,没有底部 Tab Bar。键盘弹起时直接为键盘留位;
-  // 收起时 = 底部安全区(SafeAreaView 只包 top, home indicator 由这里补) + 呼吸空间,
-  // 输入栏悬浮在 home indicator 之上而非压进去(founder 2026-07-05: 参考阿福)。
-  const bottomSpacerHeight = keyboardVisible
-    ? (Platform.OS === 'ios' ? keyboardHeight : 0)
-    : insets.bottom + CHAT_BOTTOM_BREATHING_SPACE;
+  // 小巴是 agent-native 主屏,没有底部 Tab Bar。键盘弹起时交给 KeyboardAvoidingView
+  // 对齐键盘上沿;收起时 = 底部安全区(SafeAreaView 只包 top, home indicator 由这里补)
+  // + 呼吸空间,让输入栏悬浮在 home indicator 之上而非压进去。
+  const bottomSpacerHeight = keyboardVisible ? 0 : insets.bottom + CHAT_BOTTOM_BREATHING_SPACE;
   const activeLlmLabel = llmModelId
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
@@ -701,7 +696,10 @@ export default function ChatScreen() {
         />
       )}
 
-      <View style={{ flex: 1 }}>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingBody}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         {/* 展开态：今日以内联面板呈现在对话页（占据消息区），composer 仍在下方；收起回到对话。 */}
         {briefingExpanded ? (
           <View testID="chat-today-inline-panel" style={{ flex: 1 }}>
@@ -803,7 +801,7 @@ export default function ChatScreen() {
           autoFocusToken={composerFocusToken}
         />
         <View testID="chat-bottom-spacer" style={{ height: bottomSpacerHeight }} />
-      </View>
+      </KeyboardAvoidingView>
 
       <Modal visible={!!viewingImage} transparent animationType="fade" onRequestClose={() => setViewingImage(null)}>
         <Pressable style={styles.imageViewerOverlay} onPress={() => setViewingImage(null)}>
@@ -953,6 +951,7 @@ function formatContextPayload(value: string | null): string {
 // Reva 设计语言: 暖白 paper 屏底 / surface 卡 / green500 主色 / r-lg 18 / 软阴影. 文字走 Manrope.
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
+  keyboardAvoidingBody: { flex: 1 },
   messageList: { padding: revaSpacing.s4, paddingBottom: 8 },
   imageViewerOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',

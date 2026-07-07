@@ -750,7 +750,7 @@ describe('ChatScreen', () => {
     expect(queryByLabelText('连接设备')).toBeNull();
   });
 
-  it('keeps the agent-native chat composer compact and above the iOS keyboard', async () => {
+  it('keeps the agent-native chat composer aligned to the keyboard without a large spacer', async () => {
     const keyboardListeners: Record<string, (event: any) => void> = {};
     jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
       keyboardListeners[String(eventName)] = callback;
@@ -760,7 +760,7 @@ describe('ChatScreen', () => {
     const { getByTestId } = render(<ChatScreen />);
     await waitFor(() => expect(mockFetchConversationStarters).toHaveBeenCalled());
 
-    // No global tab bar: spacer = insets.bottom (jest mock 为 0) + 28 舒适呼吸区;
+    // No global tab bar: closed keyboard spacer = insets.bottom (jest mock 为 0) + 28 舒适呼吸区;
     // 真机 = home indicator 安全区 + 28 —— 输入栏悬浮在拇指舒适弧区,不贴底。
     expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 28 });
 
@@ -770,7 +770,8 @@ describe('ChatScreen', () => {
       });
     });
 
-    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 336 });
+    // 键盘弹起后由 KeyboardAvoidingView 对齐键盘,不再塞入整块 keyboardHeight 空白。
+    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 0 });
   });
 
   it('shows a visible cancel action after long-pressing a message into multi-select', async () => {
