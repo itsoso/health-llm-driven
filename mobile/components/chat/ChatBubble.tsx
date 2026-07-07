@@ -837,7 +837,85 @@ function sanitizeAiContent(raw: string): string {
   // LLM 主动输出的 fenced ```menu_share/```card_xxx JSON 块 — 后端会解析成结构化卡片,
   // 文本里要剥掉, 不然用户看到一坨 JSON 源码
   s = s.replace(/```(?:menu_share|card_[a-z_]+)\s*\n[\s\S]*?\n```\s*/g, '');
+  s = stripLeakedStructuredJsonFragments(s);
   return s.trim();
+}
+
+const LEAKED_STRUCTURED_JSON_KEY_RE = /["“](items|name|qty|kcal|protein|carbs|fat|fiber|totals|shopping_list|component|schema|v)["”]\s*[:：]/;
+const LEAKED_STRUCTURED_JSON_KEY_SCAN_RE = /["“](items|name|qty|kcal|protein|carbs|fat|fiber|totals|shopping_list|component|schema|v)["”]\s*[:：]/g;
+const JSONISH_LINE_START_RE = /^\s*[\{\[]/;
+const JSONISH_CONTINUATION_RE = /^\s*[\]},]/;
+const FENCE_LINE_RE = /^\s*```/;
+
+function stripLeakedStructuredJsonFragments(raw: string): string {
+  const lines = raw.split('\n');
+  const out: string[] = [];
+  let inFence = false;
+  let skipDanglingFence = false;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (skipDanglingFence) {
+      if (!trimmed) continue;
+      if (FENCE_LINE_RE.test(trimmed)) {
+        skipDanglingFence = false;
+        continue;
+      }
+      skipDanglingFence = false;
+    }
+
+    if (FENCE_LINE_RE.test(trimmed)) {
+      inFence = !inFence;
+      out.push(line);
+      continue;
+    }
+
+    if (!inFence && JSONISH_LINE_START_RE.test(line)) {
+      const candidate = collectJsonishFragment(lines, i);
+      if (candidate && isLeakedStructuredJsonFragment(candidate.text)) {
+        i = candidate.end;
+        skipDanglingFence = true;
+        continue;
+      }
+    }
+
+    out.push(line);
+  }
+
+  return out.join('\n');
+}
+
+function collectJsonishFragment(lines: string[], start: number): { text: string; end: number } | null {
+  const chunk: string[] = [];
+  let end = start;
+
+  for (let i = start; i < Math.min(lines.length, start + 32); i += 1) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (!trimmed || FENCE_LINE_RE.test(trimmed)) break;
+    if (i > start && !JSONISH_CONTINUATION_RE.test(line) && !LEAKED_STRUCTURED_JSON_KEY_RE.test(line)) break;
+    chunk.push(line);
+    end = i;
+  }
+
+  return chunk.length > 0 ? { text: chunk.join('\n'), end } : null;
+}
+
+function isLeakedStructuredJsonFragment(fragment: string): boolean {
+  const keys = new Set<string>();
+  for (const match of fragment.matchAll(LEAKED_STRUCTURED_JSON_KEY_SCAN_RE)) {
+    keys.add(match[1]);
+  }
+
+  const hasMenuShape = (
+    (keys.has('shopping_list') || keys.has('totals'))
+    && (keys.has('items') || keys.has('name'))
+    && ['qty', 'kcal', 'protein', 'carbs', 'fat', 'fiber'].some(key => keys.has(key))
+  );
+  const hasRevaUiShape = keys.has('component') && (keys.has('v') || keys.has('schema'));
+  return hasMenuShape || hasRevaUiShape;
 }
 
 /** 把 markdown 文本剥成"能给 TTS 念"的纯文本 — 去标题/粗斜/列表标记/链接/表格管道. */

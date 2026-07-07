@@ -261,6 +261,33 @@ describe('ChatBubble streaming degraded render', () => {
     expect(queryByText(CONTENT_WITH_MARKERS)).toBeNull();
   });
 
+  it('strips leaked menu JSON fragments from completed assistant replies', () => {
+    const content = [
+      '### 🛒 购物清单',
+      '- 鲈鱼或鳕鱼 200g（让鱼摊处理好，回家直接蒸）',
+      '- 糙米 1 杯（提前泡 30 分钟更好煮）',
+      '{“name”:“清蒸鲈鱼/鳕鱼”,“qty”:“200g”,“kcal”:200,“protein”:40},{“name”:“糙米饭”,“qty”:“100g熟重”,“kcal”:110,“carbs”:23},{“name”:“西兰花”,“qty”:“150g”,“kcal”:70,“fiber”:4},{“name”:“鸡蛋羹”,“qty”:“1个蛋”,“kcal”:70,“protein”:6}]',
+      ',“totals”:{“kcal”:450,“protein”:52,“carbs”:25,“fat”:14},“shopping_list”:[“鲈鱼或鳕鱼 200g”,“糙米 1 杯”,“西兰花 1 颗”,“鸡蛋 1 个”]}',
+      '```',
+      '',
+      '吃完后跟我说一声，我帮你记录并启动夜间禁食倒计时。',
+    ].join('\n');
+
+    const { getByText, queryByText } = renderBubble({
+      id: 'assistant-done-menu-json-leak',
+      role: 'assistant',
+      content,
+      streaming: false,
+    });
+
+    expect(getByText(/购物清单/)).toBeTruthy();
+    expect(getByText(/鲈鱼或鳕鱼 200g/)).toBeTruthy();
+    expect(getByText(/吃完后跟我说一声/)).toBeTruthy();
+    expect(queryByText(/shopping_list/)).toBeNull();
+    expect(queryByText(/“qty”/)).toBeNull();
+    expect(queryByText(/```/)).toBeNull();
+  });
+
   it('renders rich Markdown once streaming has finished (terminal state unchanged)', () => {
     const { getByTestId } = renderBubble({
       id: 'assistant-done',
