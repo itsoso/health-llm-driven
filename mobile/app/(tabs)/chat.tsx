@@ -782,7 +782,7 @@ export default function ChatScreen() {
         )}
 
         {selectionMode && (
-          <View style={styles.shareBar}>
+          <View testID="chat-selection-rail" style={styles.shareBar}>
             <TouchableOpacity
               onPress={exitSelectionMode}
               hitSlop={8}
@@ -795,17 +795,17 @@ export default function ChatScreen() {
             </TouchableOpacity>
             <View style={{ flex: 1 }}>
               <Text style={txt.shareBarTitle}>已选择 {selectedMessageIds.size} 条</Text>
-              <Text style={txt.shareBarSub}>按当前对话顺序生成分享链接</Text>
+              <Text style={txt.shareBarSub}>按当前对话顺序生成分享内容</Text>
             </View>
             <TouchableOpacity
               onPress={shareSelectedMessages}
               disabled={selectedMessageIds.size === 0 || sharing}
               style={[styles.shareButton, (selectedMessageIds.size === 0 || sharing) && styles.shareButtonDisabled]}
-              accessibilityLabel="分享已选消息"
+              accessibilityLabel="分享选中内容"
               accessibilityRole="button"
             >
               <Ionicons name="share-outline" size={16} color="#fff" />
-              <Text style={txt.shareButton}>{sharing ? '生成中' : '分享'}</Text>
+              <Text style={txt.shareButton}>{sharing ? '生成中' : '分享选中内容'}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -1086,14 +1086,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: revaSpacing.s3,
-    marginHorizontal: revaSpacing.s4,
-    marginBottom: 8,
-    padding: revaSpacing.s3,
-    borderRadius: revaRadii.lg,
+    marginHorizontal: 0,
+    marginBottom: 0,
+    paddingHorizontal: revaSpacing.s4,
+    paddingVertical: 10,
+    borderRadius: 0,
     backgroundColor: C.surface,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
-    ...revaShadows.sm,
   },
   cancelSelectionButton: {
     flexDirection: 'row',
@@ -1110,7 +1110,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 14,
+    paddingHorizontal: 13,
     paddingVertical: 9,
     borderRadius: revaRadii.pill,
     backgroundColor: C.green500,

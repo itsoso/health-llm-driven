@@ -860,7 +860,7 @@ describe('ChatScreen', () => {
       { id: 'a-1', role: 'assistant', content: '建议今天午后散步 10 分钟。', completionStatus: 'complete' },
     ];
 
-    const { UNSAFE_queryAllByType, getByLabelText } = render(<ChatScreen />);
+    const { UNSAFE_queryAllByType, getByLabelText, getByTestId, getByText } = render(<ChatScreen />);
 
     await waitFor(() => expect(getByLabelText('message-u-1')).toBeTruthy());
     expect(UNSAFE_queryAllByType('ChatInputBar' as any).length).toBe(1);
@@ -870,6 +870,12 @@ describe('ChatScreen', () => {
     });
 
     expect(UNSAFE_queryAllByType('ChatInputBar' as any).length).toBe(0);
+    expect(getByText('分享选中内容')).toBeTruthy();
+    expect(getByTestId('chat-selection-rail')).toHaveStyle({
+      marginHorizontal: 0,
+      borderRadius: 0,
+      borderTopWidth: StyleSheet.hairlineWidth,
+    });
 
     await act(async () => {
       fireEvent.press(getByLabelText('取消多选'));
