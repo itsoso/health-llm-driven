@@ -18,6 +18,7 @@ let mockRouteParams: Record<string, string | undefined> = {};
 let mockLlmPreference: any = { model_id: null, options: [] };
 let mockMessages: any[] = [];
 let mockIsStreaming = false;
+let mockTodayTimelineData: any = undefined;
 
 jest.mock('expo-router', () => ({
   router: {
@@ -31,7 +32,7 @@ jest.mock('expo-router', () => ({
 
 // 今日简报条走 React Query 的 useTodayTimeline;测试无 QueryClientProvider,mock 掉。
 jest.mock('../../../hooks/useTodayTimeline', () => ({
-  useTodayTimeline: () => ({ data: undefined }),
+  useTodayTimeline: () => ({ data: mockTodayTimelineData }),
 }));
 
 jest.mock('../../../hooks/useChatEngine', () => ({
@@ -128,6 +129,7 @@ jest.mock('../../../components/chat/ChatInputBar', () => 'ChatInputBar');
 // BriefingStrip 走 React Query, 本 suite 无 provider;
 // 它们的内部行为各自有专属测试, 这里 mock 掉避免 provider 依赖。ChatHeader 保留真实 (断言其 DOM)。
 jest.mock('../../../components/chat/BriefingStrip', () => 'BriefingStrip');
+jest.mock('../../../components/home/TodayContent', () => 'TodayContent');
 
 import ChatScreen from '../chat';
 
@@ -148,6 +150,7 @@ describe('ChatScreen', () => {
     mockLlmPreference = { model_id: null, options: [] };
     mockMessages = [];
     mockIsStreaming = false;
+    mockTodayTimelineData = undefined;
   });
 
   it('does NOT auto-summon the keyboard when an empty chat opens with no opener', async () => {
@@ -601,6 +604,36 @@ describe('ChatScreen', () => {
     await waitFor(() => expect(mockFetchConversationStarters).toHaveBeenCalled());
     // messages 非空 → composer chips row 不渲染。
     expect(queryByLabelText('拍照记一餐')).toBeNull();
+  });
+
+  it('promotes the current timeline focus into the empty chat cockpit', async () => {
+    mockTodayTimelineData = {
+      now: 'walk-after-dinner',
+      items: [
+        {
+          id: 'walk-after-dinner',
+          title: '晚餐后步行 12 分钟',
+          subtitle: '餐后血糖风险窗口',
+          status: 'due',
+        },
+      ],
+      counts: { actionable: 2, overdue: 1, info: 0 },
+      past: { completed_count: 0, events: [] },
+    };
+
+    const { getByText, getByLabelText, getByTestId } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(getByText('今日操作台')).toBeTruthy();
+      expect(getByText('晚餐后步行 12 分钟')).toBeTruthy();
+      expect(getByText('1 件已逾期')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('打开今日操作台'));
+    });
+
+    expect(getByTestId('chat-today-inline-panel')).toBeTruthy();
   });
 
   // ── 冷启动包 (P0-3) ─────────────────────────────────────────────────────

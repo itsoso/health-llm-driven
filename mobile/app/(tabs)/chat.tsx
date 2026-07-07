@@ -20,6 +20,7 @@ import EmptyStateHome, {
   greetingForHour,
   formatMemoryOpenerText,
   type EmptyStateSuggestion,
+  type EmptyStateTodayFocus,
 } from '../../components/chat/EmptyStateHome';
 import ComposerSuggestionsRow from '../../components/chat/ComposerSuggestionsRow';
 import { formatOpenerText } from '../../components/chat/OpenerCard';
@@ -37,6 +38,7 @@ import { fetchMemoryOpener, type MemoryOpenerItem } from '../../services/memoryO
 import { getLlmPreference, updateLlmPreference, type ModelOption } from '../../services/llmPreference';
 import { recordCardAdherence, recordCardDecision } from '../../services/actionCards';
 import { useTodayTimeline } from '../../hooks/useTodayTimeline';
+import type { TodayTimelineResponse } from '../../services/todayTimeline';
 import {
   revaColors as C,
   revaRadii,
@@ -117,6 +119,26 @@ function buildOpeningContinuityText(
     return `${greeting}。${memoryText}`;
   }
   return null;
+}
+
+function buildEmptyStateTodayFocus(
+  timeline: TodayTimelineResponse | undefined,
+): EmptyStateTodayFocus | null {
+  if (!timeline?.now || !Array.isArray(timeline.items)) return null;
+  const item = timeline.items.find(candidate => candidate.id === timeline.now);
+  if (!item?.title) return null;
+  const overdue = Math.max(0, timeline.counts?.overdue ?? 0);
+  const actionable = Math.max(0, timeline.counts?.actionable ?? 0);
+  const urgencyLabel = overdue > 0
+    ? `${overdue} 件已逾期`
+    : actionable > 0
+      ? `${actionable} 件待确认`
+      : null;
+  return {
+    title: item.title,
+    subtitle: item.subtitle,
+    urgencyLabel,
+  };
 }
 
 export default function ChatScreen() {
@@ -670,6 +692,7 @@ export default function ChatScreen() {
   const activeLlmLabel = llmModelId
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
+  const emptyStateTodayFocus = buildEmptyStateTodayFocus(todayTimeline.data);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -725,6 +748,8 @@ export default function ChatScreen() {
               onOpenerQuickReply={handleOpenerQuickReply}
               onboarding={startersOnboarding}
               onQuickAction={handleQuickAction}
+              todayFocus={emptyStateTodayFocus}
+              onOpenToday={() => setBriefingExpanded(true)}
             />
           }
         />

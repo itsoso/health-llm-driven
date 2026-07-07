@@ -30,7 +30,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import type {
   ConversationOpener,
-  QuickReply,
   QuickReplyAction,
 } from '../../services/conversationOpener';
 import { formatOpenerText } from './OpenerCard';
@@ -49,6 +48,12 @@ export type EmptyStateSuggestion = {
   text: string;
   key: string;
   priority: number;
+};
+
+export type EmptyStateTodayFocus = {
+  title: string;
+  subtitle?: string | null;
+  urgencyLabel?: string | null;
 };
 
 // 气泡外「换个话题」中性 chip — 发送语义走同一条 onQuickReply 路径。
@@ -73,6 +78,10 @@ interface Props {
   onboarding?: boolean;
   /** 带 action 的 quick reply / Quick Start 卡动作 → 本地导航 (不发文本)。 */
   onQuickAction?: (action: QuickReplyAction) => void;
+  /** 从 /timeline/today 派生的当前行动;为空则不渲染,不做客户端伪造。 */
+  todayFocus?: EmptyStateTodayFocus | null;
+  /** 打开聊天页内联 Today 面板。 */
+  onOpenToday?: () => void;
 }
 
 /**
@@ -168,6 +177,51 @@ function MemoryFootnote({
   );
 }
 
+function TodayCockpit({
+  focus,
+  onOpenToday,
+}: {
+  focus?: EmptyStateTodayFocus | null;
+  onOpenToday?: () => void;
+}) {
+  if (!focus || !onOpenToday) return null;
+  const subtitle = focus.subtitle?.trim();
+  const urgency = focus.urgencyLabel?.trim();
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.todayCockpit, pressed && styles.replyPressed]}
+      onPress={onOpenToday}
+      accessibilityRole="button"
+      accessibilityLabel="打开今日操作台"
+    >
+      <View style={styles.todayCockpitHeader}>
+        <View style={styles.todayCockpitMark}>
+          <Ionicons name="pulse-outline" size={15} color={C.green600} />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={txt.todayCockpitEyebrow} numberOfLines={1}>今日操作台</Text>
+          <Text style={txt.todayCockpitLabel} numberOfLines={1}>现在该做</Text>
+        </View>
+        {urgency ? (
+          <View style={styles.todayCockpitPill}>
+            <Text style={txt.todayCockpitPill} numberOfLines={1}>{urgency}</Text>
+          </View>
+        ) : null}
+      </View>
+      <View style={styles.todayCockpitBody}>
+        <Text style={txt.todayCockpitTitle} numberOfLines={2}>{focus.title}</Text>
+        {subtitle ? (
+          <Text style={txt.todayCockpitSub} numberOfLines={1}>{subtitle}</Text>
+        ) : null}
+      </View>
+      <View style={styles.todayCockpitAction}>
+        <Text style={txt.todayCockpitAction}>查看今日</Text>
+        <Ionicons name="chevron-forward" size={14} color={C.green600} />
+      </View>
+    </Pressable>
+  );
+}
+
 export default function EmptyStateHome({
   memoryOpener,
   opener,
@@ -175,10 +229,13 @@ export default function EmptyStateHome({
   onOpenerQuickReply,
   onboarding = false,
   onQuickAction,
+  todayFocus,
+  onOpenToday,
 }: Props) {
   const memoryText = formatMemoryOpenerText(memoryOpener);
   const showMemory = memoryOpener.length > 0 && memoryText.length > 0;
   const greeting = greetingForHour(new Date().getHours());
+  const todayCockpit = <TodayCockpit focus={todayFocus} onOpenToday={onOpenToday} />;
 
   // opener 存在 → 完整开场气泡(问候 + opener.text + 可选记忆 footnote + quick replies)。
   if (opener) {
@@ -187,6 +244,7 @@ export default function EmptyStateHome({
     const replies = opener.quick_replies || [];
     return (
       <View style={styles.container}>
+        {todayCockpit}
         <View style={styles.bubbleRow}>
           <View style={styles.avatar}>
             <Ionicons name="paw" size={15} color={C.green600} />
@@ -260,6 +318,7 @@ export default function EmptyStateHome({
   if (showMemory) {
     return (
       <View style={styles.container}>
+        {todayCockpit}
         <View style={styles.greeting}>
           <Text style={txt.greetingHi} numberOfLines={1}>{greeting}</Text>
           <Text style={txt.greetingSub} numberOfLines={1}>今天想从哪里开始？</Text>
@@ -295,6 +354,7 @@ export default function EmptyStateHome({
   if (onboarding && onQuickAction) {
     return (
       <View style={styles.container}>
+        {todayCockpit}
         <View style={styles.bubbleRow}>
           <View style={styles.avatar}>
             <Ionicons name="paw" size={15} color={C.green600} />
@@ -332,6 +392,7 @@ export default function EmptyStateHome({
   // 两者都无 → 只保留独立问候块。
   return (
     <View style={styles.container}>
+      {todayCockpit}
       <View style={styles.greeting}>
         <Text style={txt.greetingHi} numberOfLines={1}>{greeting}</Text>
         <Text style={txt.greetingSub} numberOfLines={1}>今天想从哪里开始？</Text>
@@ -464,6 +525,48 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: C.green50,
   },
+  todayCockpit: {
+    backgroundColor: C.surface,
+    borderRadius: revaRadii.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    paddingHorizontal: revaSpacing.s3,
+    paddingVertical: revaSpacing.s3,
+    gap: revaSpacing.s2,
+    ...revaShadows.sm,
+  },
+  todayCockpitHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: revaSpacing.s2,
+  },
+  todayCockpitMark: {
+    width: 30,
+    height: 30,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  todayCockpitPill: {
+    maxWidth: 96,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    paddingHorizontal: revaSpacing.s2,
+    paddingVertical: 4,
+  },
+  todayCockpitBody: {
+    paddingLeft: 38,
+    gap: 2,
+  },
+  todayCockpitAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 2,
+  },
 });
 
 const txt = {
@@ -521,5 +624,44 @@ const txt = {
     fontSize: 14,
     fontWeight: '700',
     color: C.ink1,
+  } as TextStyle,
+  todayCockpitEyebrow: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    fontWeight: '800',
+    color: C.green600,
+  } as TextStyle,
+  todayCockpitLabel: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    fontWeight: '600',
+    color: C.ink3,
+    marginTop: 1,
+  } as TextStyle,
+  todayCockpitPill: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    fontWeight: '800',
+    color: C.green600,
+  } as TextStyle,
+  todayCockpitTitle: {
+    fontFamily: revaFonts.sans,
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: '800',
+    color: C.ink1,
+  } as TextStyle,
+  todayCockpitSub: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '500',
+    color: C.ink3,
+  } as TextStyle,
+  todayCockpitAction: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    fontWeight: '800',
+    color: C.green600,
   } as TextStyle,
 };
