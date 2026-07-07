@@ -51,10 +51,15 @@ import {
   type DailyArtifact,
   type DailyArtifactTopAction,
 } from '../../services/dailyArtifact';
+import {
+  buildTodayBriefingOverview,
+  getTodayMorningBriefing,
+} from '../../services/todayBriefingOverview';
 import BackToChatBar from '../common/BackToChatBar';
 import RevaGreetingHeader from './RevaGreetingHeader';
 import RevaHeroCard from './RevaHeroCard';
 import DailyArtifactCard from './DailyArtifactCard';
+import TodayBriefingOverview from './TodayBriefingOverview';
 import WriteIntentCard from './WriteIntentCard';
 import RevaTimelineStrip from './RevaTimelineStrip';
 import RevaCycleStrip from './RevaCycleStrip';
@@ -154,6 +159,13 @@ export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentM
     staleTime: 60 * 1000,
   });
 
+  const morningBriefingQuery = useQuery({
+    queryKey: ['ai-scheduler', 'morning-briefing'],
+    queryFn: getTodayMorningBriefing,
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
+
   const todayDynamicViewQuery = useQuery({
     queryKey: ['today-dynamic-view', 'mobile.today'],
     queryFn: () => getTodayDynamicView({
@@ -207,6 +219,7 @@ export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentM
         qc.invalidateQueries({ queryKey: ['twin', 'me'] }),
         qc.invalidateQueries({ queryKey: ['daily-plan', 'me'] }),
         qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] }),
+        qc.invalidateQueries({ queryKey: ['ai-scheduler', 'morning-briefing'] }),
         qc.invalidateQueries({ queryKey: ['today-dynamic-view', 'mobile.today'] }),
         qc.invalidateQueries({ queryKey: ['timeline', 'today'] }),
         qc.invalidateQueries({ queryKey: ['agenda', 'today'] }),
@@ -465,6 +478,23 @@ export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentM
     nowItem?.subtitle,
   ].filter(Boolean).join(' ');
   const hasAgentPrimaryAction = primaryArtifactContract.render.show;
+  const briefingRows = useMemo(() => buildTodayBriefingOverview({
+    morningBriefing: morningBriefingQuery.data ?? null,
+    weatherResponse: dashboardQuery.data?.weather ?? null,
+    airQuality: dashboardQuery.data?.airQuality ?? null,
+    dailyPlan: dailyPlanQuery.data ?? null,
+    dailyArtifact: primaryArtifact,
+    timeline: timelineQuery.data ?? null,
+    recentGarminDaily: dashboardQuery.data?.garminDaily ?? null,
+  }), [
+    dashboardQuery.data?.airQuality,
+    dashboardQuery.data?.garminDaily,
+    dashboardQuery.data?.weather,
+    dailyPlanQuery.data,
+    morningBriefingQuery.data,
+    primaryArtifact,
+    timelineQuery.data,
+  ]);
 
   // Hero now-action 显示值:全部直接透传后端 timeline 的 now-item(R4:不在前端造处方/诊断措辞)。
   // 风险时 lever 标「风险」,否则用 now-item 的 time_window 中文化作为 lever。空态标题给「补齐今天记录」。
@@ -501,6 +531,20 @@ export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentM
 
       {/* 1 · 问候头 */}
       <RevaGreetingHeader name={profileName} />
+
+      {/* 聊天/半屏入口:把用户期待的简报分区先聚合露出。 */}
+      {isSheet ? (
+        <TodayBriefingOverview
+          rows={briefingRows}
+          loading={
+            morningBriefingQuery.isLoading ||
+            dashboardQuery.isLoading ||
+            dailyPlanQuery.isLoading ||
+            dailyArtifactQuery.isLoading ||
+            timelineQuery.isLoading
+          }
+        />
+      ) : null}
 
       {/* 2 · Daily Artifact(今日状态 + 一个 top action)。接口不可用时回退既有 Hero。 */}
       {canRenderDynamicToday ? (
