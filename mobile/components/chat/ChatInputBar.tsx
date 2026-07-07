@@ -72,7 +72,7 @@ interface Props {
   /** Reserved for callers that keep composer API aligned with chat-level voice entry. */
   conversationId?: number;
   onMedicalExamImportResult?: (result: ChatMedicalExamImportSkillResult) => void;
-  /** 变化(>0)即请求聚焦输入框 — GPT/Gemini 式默认唤起键盘;空对话进入时由 chat.tsx 递增。 */
+  /** 变化(>0)即请求聚焦输入框;默认打开页面不会自动递增。 */
   autoFocusToken?: number;
 }
 
@@ -101,9 +101,8 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     setInput(prev => (prev === initialText ? prev : initialText));
   }, [initialText, initialTextKey]);
 
-  // GPT/Gemini 式默认唤起键盘: chat.tsx 在「空对话获得焦点」时递增 token。
-  // (2026-07-04 founder 拍板反转旧「不 auto-focus」设计 — 仅限空对话, 回到有
-  //  历史的对话不弹, 不打断阅读。)延迟等 tab 过渡完成; 流式时不抢焦点。
+  // 明确用户动作触发的聚焦:默认进入页面不拉键盘,避免首屏被键盘占掉。
+  // 延迟等 tab 过渡完成;流式时不抢焦点。
   React.useEffect(() => {
     if (!autoFocusToken) return;
     if (isStreaming) return;

@@ -150,26 +150,19 @@ describe('ChatScreen', () => {
     mockIsStreaming = false;
   });
 
-  it('empty chat with nothing to say auto-summons keyboard once opener fetch settles, and bumps on 新建对话', async () => {
-    // 小巴没话可说(opener 缺席 + 无记忆) → fetch 落定后才唤起键盘。
+  it('does NOT auto-summon the keyboard when an empty chat opens with no opener', async () => {
+    // 默认打开小巴页时不抢键盘;只有用户主动点输入框/快捷 chip 时才进入输入。
     mockFetchConversationStarters.mockResolvedValue({ opener: null, suggestions: null, onboarding: false });
     mockFetchMemoryOpener.mockResolvedValue([]);
 
-    const { UNSAFE_getAllByType, getByLabelText } = render(<ChatScreen />);
+    const { UNSAFE_getAllByType } = render(<ChatScreen />);
 
     const bar = () => UNSAFE_getAllByType('ChatInputBar' as any)[0];
-    // opener fetch 落定后 → token 递增(>0), 键盘唤起。
-    let initial = 0;
     await waitFor(() => {
-      initial = bar().props.autoFocusToken;
-      expect(initial).toBeGreaterThan(0);
+      expect(mockFetchConversationStarters).toHaveBeenCalled();
+      expect(mockFetchMemoryOpener).toHaveBeenCalled();
     });
-
-    // 新建对话 → 再次递增(新窗口也唤起)
-    await act(async () => {
-      fireEvent.press(getByLabelText('新建对话'));
-    });
-    expect(bar().props.autoFocusToken).toBeGreaterThan(initial);
+    expect(bar().props.autoFocusToken).toBe(0);
   });
 
   it('does NOT summon the keyboard when 小巴 has an opening message (opener present)', async () => {

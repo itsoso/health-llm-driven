@@ -322,46 +322,9 @@ export default function ChatScreen() {
     }, [])
   );
 
-  // 「小巴先开口」键盘礼仪 (State A, 2026-07):
-  // 只在小巴没话可说时(无 opener 且无记忆)才默认唤起键盘 —— 小巴有开场消息时
-  // 不抢键盘, 让话先被看见(点输入框/chip 照常唤起)。有历史的对话也不弹。
-  // opener fetch 是异步的: 首次 focus 时可能还没落定, 用 startersReady flag 推迟 bump 决定;
-  // fetch 出错 → treat as blank → 照旧 bump。键盘已弹起后 opener 才到达 → 不回收(无 dismiss jank)。
+  // 输入框聚焦只由明确用户动作触发。默认打开小巴页不拉起系统键盘,
+  // 避免截图里的首屏被键盘占掉;点输入框/chip/新建对话仍可进入输入。
   const [composerFocusToken, setComposerFocusToken] = useState(0);
-  // startersReady 镜像成 ref, 供 focus 回调读(空依赖)。opener/memory/messages-empty
-  // refs 已在上方声明。
-  const startersReadyRef = useRef(false);
-  startersReadyRef.current = startersReady;
-  // 单次触发守卫: 每个 focus 会话只 bump 一次(blur 清理时复位)。
-  // 也防测试环境 useFocusEffect mock 每渲染重跑导致 setState 死循环。
-  const focusBumpedRef = useRef(false);
-  // 有话可说(opener 或记忆)→ 抑制键盘; 没话(空 + fetch 已落定)→ 唤起。
-  const shouldBumpKeyboard = useCallback(() => {
-    if (!messagesEmptyRef.current) return false;
-    if (openerRef.current) return false;
-    if (memoryOpenerRef.current.length > 0) return false;
-    return true;
-  }, []);
-  useFocusEffect(
-    useCallback(() => {
-      // fetch 还没落定 → 先不决定, 等 startersReady 那个 effect 补 bump。
-      if (!focusBumpedRef.current && startersReadyRef.current && shouldBumpKeyboard()) {
-        focusBumpedRef.current = true;
-        setComposerFocusToken((n) => n + 1);
-      }
-      return () => { focusBumpedRef.current = false; };
-    }, [shouldBumpKeyboard])
-  );
-
-  // opener fetch 落定后补一次 bump 决定: 若 focus 时 fetch 还没回、这里落定后
-  // 判定小巴确实没话 → 唤起键盘。落定后有 opener/记忆 → 保持不弹。
-  useEffect(() => {
-    if (!startersReady) return;
-    if (!focusBumpedRef.current && shouldBumpKeyboard()) {
-      focusBumpedRef.current = true;
-      setComposerFocusToken((n) => n + 1);
-    }
-  }, [startersReady, shouldBumpKeyboard]);
 
   useEffect(() => {
     // 豆包等第三方输入法首次唤起:键盘扩展进程冷启动,didShow 先报一个未装载完
