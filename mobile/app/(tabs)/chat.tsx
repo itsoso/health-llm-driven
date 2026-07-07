@@ -890,6 +890,14 @@ export default function ChatScreen() {
                 router.navigate('/(tabs)/me');
               }}
             />
+            <ToolMenuRow
+              icon="mic-circle-outline"
+              label="连续语音对话"
+              onPress={() => {
+                setToolMenuVisible(false);
+                router.navigate('/voice-chat');
+              }}
+            />
             {messages.some(isShareableChatMessage) && (
               <ToolMenuRow
                 icon={selectionMode ? 'close' : 'checkbox-outline'}

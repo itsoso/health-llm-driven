@@ -466,8 +466,8 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
             ]}
             hitSlop={COMPOSER_HIT_SLOP}
             accessibilityRole="button"
-            accessibilityLabel={inputMode === 'text' ? '切换到按住说话' : '切换到键盘输入'}
-            accessibilityHint={inputMode === 'text' ? '点击切换为微信式按住说话' : '点击回到文字输入'}
+            accessibilityLabel={inputMode === 'text' ? '语音消息' : '键盘输入'}
+            accessibilityHint={inputMode === 'text' ? '切换后按住发送语音消息' : '回到文字输入'}
           >
             <Ionicons name={inputMode === 'text' ? 'volume-medium-outline' : 'keypad-outline'} size={25} color={WECHAT_ICON} />
           </Pressable>
@@ -483,8 +483,8 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
                 (pressed || voiceGesture != null) && styles.holdToTalkSurfaceActive,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="按住说话"
-              accessibilityHint="按住开始语音输入，左滑取消，右滑转文字"
+              accessibilityLabel="按住发送语音消息"
+              accessibilityHint="按住录音，松开发送；右滑转文字，左滑取消"
             >
               <Text style={styles.holdToTalkText}>按住 说话</Text>
             </Pressable>
@@ -499,7 +499,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
               onPress={focusTextInput}
               accessibilityRole="button"
               accessibilityLabel="消息输入框容器"
-              accessibilityHint="点击输入文字，点右侧麦克风实时转文字"
+              accessibilityHint="点击输入文字；右侧麦克风会听写到输入框"
             >
               <TextInput
                 ref={textInputRef}
@@ -524,7 +524,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
                 activeOpacity={0.72}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isRealtimeMicActive }}
-                accessibilityLabel={isRealtimeMicActive ? '停止实时语音转文字' : '实时语音转文字'}
+                accessibilityLabel={isRealtimeMicActive ? '停止听写到输入框' : '听写到输入框'}
               >
                 {isRealtimeMicActive && <PulsingRing />}
                 <Ionicons name="mic" size={21} color={isRealtimeMicActive ? '#FFFFFF' : WECHAT_ICON} />

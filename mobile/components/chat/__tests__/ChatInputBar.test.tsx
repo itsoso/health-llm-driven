@@ -175,7 +175,7 @@ describe('ChatInputBar', () => {
     );
 
     expect(flattenedStyle(getByLabelText('附件菜单')).width).toBeGreaterThanOrEqual(40);
-    expect(flattenedStyle(getByLabelText('切换到按住说话')).width).toBeGreaterThanOrEqual(40);
+    expect(flattenedStyle(getByLabelText('语音消息')).width).toBeGreaterThanOrEqual(40);
     expect(flattenedStyle(getByTestId('wechat-composer-input')).minHeight).toBeGreaterThanOrEqual(48);
   });
 
@@ -184,8 +184,8 @@ describe('ChatInputBar', () => {
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    expect(getByLabelText('切换到按住说话')).toBeTruthy();
-    expect(getByLabelText('实时语音转文字')).toBeTruthy();
+    expect(getByLabelText('语音消息')).toBeTruthy();
+    expect(getByLabelText('听写到输入框')).toBeTruthy();
     expect(queryByTestId('wechat-hold-to-talk-surface')).toBeNull();
     const inputSurface = flattenedStyle(getByTestId('wechat-composer-input'));
     expect(inputSurface.flexDirection).toBe('row');
@@ -197,17 +197,17 @@ describe('ChatInputBar', () => {
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    fireEvent.press(getByLabelText('切换到按住说话'));
+    fireEvent.press(getByLabelText('语音消息'));
 
-    expect(getByLabelText('切换到键盘输入')).toBeTruthy();
+    expect(getByLabelText('键盘输入')).toBeTruthy();
     expect(getByTestId('wechat-hold-to-talk-surface')).toBeTruthy();
     expect(getByText('按住 说话')).toBeTruthy();
     expect(queryByTestId('wechat-composer-input')).toBeNull();
     expect(mockStartRecording).not.toHaveBeenCalled();
 
-    fireEvent.press(getByLabelText('切换到键盘输入'));
+    fireEvent.press(getByLabelText('键盘输入'));
 
-    expect(getByLabelText('切换到按住说话')).toBeTruthy();
+    expect(getByLabelText('语音消息')).toBeTruthy();
     expect(getByTestId('wechat-composer-input')).toBeTruthy();
   });
 
@@ -240,7 +240,7 @@ describe('ChatInputBar', () => {
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    fireEvent.press(getByLabelText('切换到按住说话'));
+    fireEvent.press(getByLabelText('语音消息'));
     fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 220, pageY: 300 } });
     fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
 
@@ -253,7 +253,7 @@ describe('ChatInputBar', () => {
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    fireEvent.press(getByLabelText('切换到按住说话'));
+    fireEvent.press(getByLabelText('语音消息'));
     fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 260, pageY: 620 } });
     fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'touchMove', { nativeEvent: { pageX: 120, pageY: 620 } });
     fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
@@ -268,7 +268,7 @@ describe('ChatInputBar', () => {
       <ChatInputBar onSend={onSend} isStreaming={false} />,
     );
 
-    fireEvent.press(getByLabelText('切换到按住说话'));
+    fireEvent.press(getByLabelText('语音消息'));
     fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 160, pageY: 620 } });
     fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'touchMove', { nativeEvent: { pageX: 310, pageY: 620 } });
     fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
@@ -287,7 +287,7 @@ describe('ChatInputBar', () => {
       <ChatInputBar onSend={onSend} isStreaming={false} />,
     );
 
-    fireEvent.press(getByLabelText('切换到按住说话'));
+    fireEvent.press(getByLabelText('语音消息'));
     fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 160, pageY: 620 } });
     fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
     act(() => {
@@ -303,7 +303,7 @@ describe('ChatInputBar', () => {
       <ChatInputBar onSend={onSend} isStreaming={false} />,
     );
 
-    fireEvent.press(getByLabelText('切换到按住说话'));
+    fireEvent.press(getByLabelText('语音消息'));
     fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 160, pageY: 620 } });
     fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
     act(() => {
@@ -311,7 +311,7 @@ describe('ChatInputBar', () => {
     });
 
     expect(onSend).toHaveBeenCalledWith('今天走了八千步', null);
-    expect(getByLabelText('切换到键盘输入')).toBeTruthy();
+    expect(getByLabelText('键盘输入')).toBeTruthy();
     expect(getByTestId('wechat-hold-to-talk-surface')).toBeTruthy();
   });
 
@@ -321,7 +321,7 @@ describe('ChatInputBar', () => {
       <ChatInputBar onSend={onSend} isStreaming={true} />,
     );
 
-    fireEvent.press(getByLabelText('切换到按住说话'));
+    fireEvent.press(getByLabelText('语音消息'));
     fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 160, pageY: 620 } });
     fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
     act(() => {
@@ -337,7 +337,7 @@ describe('ChatInputBar', () => {
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    fireEvent.press(getByLabelText('实时语音转文字'));
+    fireEvent.press(getByLabelText('听写到输入框'));
     act(() => {
       latestRealtimeDictationOptions.onTranscript('记录今天喝水 500 毫升');
     });
@@ -352,7 +352,7 @@ describe('ChatInputBar', () => {
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    const mic = getByLabelText('停止实时语音转文字');
+    const mic = getByLabelText('停止听写到输入框');
     expect(mic.props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
 
     fireEvent.press(mic);
@@ -366,11 +366,11 @@ describe('ChatInputBar', () => {
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    fireEvent.press(getByLabelText('停止实时语音转文字'));
+    fireEvent.press(getByLabelText('停止听写到输入框'));
 
     expect(mockStopDictation).toHaveBeenCalled();
-    expect(queryByLabelText('停止实时语音转文字')).toBeNull();
-    expect(getByLabelText('实时语音转文字').props.accessibilityState)
+    expect(queryByLabelText('停止听写到输入框')).toBeNull();
+    expect(getByLabelText('听写到输入框').props.accessibilityState)
       .toEqual(expect.objectContaining({ selected: false }));
     expect(flattenedStyle(getByTestId('wechat-composer-input')).borderColor).toBe('#343434');
   });

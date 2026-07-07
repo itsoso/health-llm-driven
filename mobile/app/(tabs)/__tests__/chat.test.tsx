@@ -876,6 +876,24 @@ describe('ChatScreen', () => {
     expect(getByText('会诊工具')).toBeTruthy();
   });
 
+  it('keeps continuous voice as a clearly named low-frequency voice entry', async () => {
+    const { getByLabelText, queryByLabelText } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(getByLabelText('更多会诊操作')).toBeTruthy();
+    });
+    expect(queryByLabelText('开始语音对话')).toBeNull();
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('更多会诊操作'));
+    });
+    await act(async () => {
+      fireEvent.press(getByLabelText('连续语音对话'));
+    });
+
+    expect(mockPush).toHaveBeenCalledWith('/voice-chat');
+  });
+
   it('starts a new conversation when opened from an Agent context entry', async () => {
     mockRouteParams = {
       prompt: '请基于我近 7 天睡眠数据分析今晚最该调整的 3 件事。',
