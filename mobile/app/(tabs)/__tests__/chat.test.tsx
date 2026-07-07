@@ -854,6 +854,32 @@ describe('ChatScreen', () => {
     });
   });
 
+  it('lets the multi-select action rail replace the composer while selecting messages', async () => {
+    mockMessages = [
+      { id: 'u-1', role: 'user', content: '早餐吃了鸡蛋和咖啡' },
+      { id: 'a-1', role: 'assistant', content: '建议今天午后散步 10 分钟。', completionStatus: 'complete' },
+    ];
+
+    const { UNSAFE_queryAllByType, getByLabelText } = render(<ChatScreen />);
+
+    await waitFor(() => expect(getByLabelText('message-u-1')).toBeTruthy());
+    expect(UNSAFE_queryAllByType('ChatInputBar' as any).length).toBe(1);
+
+    await act(async () => {
+      fireEvent(getByLabelText('message-u-1'), 'longPress');
+    });
+
+    expect(UNSAFE_queryAllByType('ChatInputBar' as any).length).toBe(0);
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('取消多选'));
+    });
+
+    await waitFor(() => {
+      expect(UNSAFE_queryAllByType('ChatInputBar' as any).length).toBe(1);
+    });
+  });
+
   it('keeps new chat out of the low-frequency more sheet', async () => {
     mockFetchConversationStarters
       .mockResolvedValueOnce({

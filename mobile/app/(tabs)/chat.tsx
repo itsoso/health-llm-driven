@@ -816,15 +816,17 @@ export default function ChatScreen() {
             onSuggestionPress={handleStarterPress}
           />
         )}
-        <ChatInputBar
-          onSend={handleSend}
-          isStreaming={isStreaming}
-          initialText={initialInput}
-          initialTextKey={initialInputKey}
-          conversationId={conversationId}
-          onMedicalExamImportResult={handleMedicalExamImportResult}
-          autoFocusToken={composerFocusToken}
-        />
+        {!selectionMode && (
+          <ChatInputBar
+            onSend={handleSend}
+            isStreaming={isStreaming}
+            initialText={initialInput}
+            initialTextKey={initialInputKey}
+            conversationId={conversationId}
+            onMedicalExamImportResult={handleMedicalExamImportResult}
+            autoFocusToken={composerFocusToken}
+          />
+        )}
         <View testID="chat-bottom-spacer" style={{ height: bottomSpacerHeight }} />
       </KeyboardAvoidingView>
 
