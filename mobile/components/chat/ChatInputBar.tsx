@@ -83,6 +83,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const [medicalImportBusy, setMedicalImportBusy] = useState(false);
   const [cancelHint, setCancelHint] = useState(false);
   const [inputMode, setInputMode] = useState<ComposerInputMode>('text');
+  const [realtimeMicIntent, setRealtimeMicIntent] = useState<'idle' | 'starting' | 'stopping'>('idle');
   const [voiceGesture, setVoiceGesture] = useState<'send' | 'text' | 'cancel' | null>(null);
   const [justSent, setJustSent] = useState(false);  // 刚发送, 按钮停留 1s 避免误切 mic
   const { pendingImages, removeImage, clearImages, pickImage, takePhoto } = useMediaPicker();
@@ -137,28 +138,55 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const realtimeDictation = useRealtimeDictation({
     onTranscript: handleRealtimeTranscript,
   });
+  const isRealtimeMicActive = realtimeMicIntent === 'starting'
+    ? true
+    : realtimeMicIntent === 'stopping'
+      ? false
+      : realtimeDictation.isDictating;
+
+  React.useEffect(() => {
+    if (realtimeMicIntent === 'starting' && realtimeDictation.isDictating) {
+      setRealtimeMicIntent('idle');
+      return;
+    }
+    if (realtimeMicIntent === 'stopping' && !realtimeDictation.isDictating) {
+      setRealtimeMicIntent('idle');
+    }
+  }, [realtimeDictation.isDictating, realtimeMicIntent]);
+
+  React.useEffect(() => {
+    if (realtimeDictation.error) {
+      setRealtimeMicIntent('idle');
+    }
+  }, [realtimeDictation.error]);
+
+  const stopRealtimeDictation = useCallback(() => {
+    setRealtimeMicIntent('stopping');
+    void realtimeDictation.stopDictation();
+  }, [realtimeDictation]);
 
   const handleRealtimeMicPress = useCallback(() => {
     if (isStreaming) return;
-    if (realtimeDictation.isDictating) {
-      void realtimeDictation.stopDictation();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (isRealtimeMicActive) {
+      stopRealtimeDictation();
       return;
     }
     realtimeBaseInputRef.current = input.trim();
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setRealtimeMicIntent('starting');
     void realtimeDictation.startDictation();
-  }, [input, isStreaming, realtimeDictation]);
+  }, [input, isRealtimeMicActive, isStreaming, realtimeDictation, stopRealtimeDictation]);
 
   const handleKeyboardSubmit = useCallback(() => {
     if (!canSend) return;
     const now = Date.now();
     if (now - lastKeyboardSubmitAtRef.current < 250) return;
     lastKeyboardSubmitAtRef.current = now;
-    if (realtimeDictation.isDictating) {
-      void realtimeDictation.stopDictation();
+    if (isRealtimeMicActive) {
+      stopRealtimeDictation();
     }
     handleSend();
-  }, [canSend, handleSend, realtimeDictation]);
+  }, [canSend, handleSend, isRealtimeMicActive, stopRealtimeDictation]);
 
   const handleTextInputKeyPress = useCallback((event: any) => {
     const key = event?.nativeEvent?.key;
@@ -185,8 +213,8 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const startYRef = useRef(0);
 
   const handleHoldStart = useCallback((pageX: number, pageY: number) => {
-    if (realtimeDictation.isDictating) {
-      void realtimeDictation.stopDictation();
+    if (isRealtimeMicActive) {
+      stopRealtimeDictation();
     }
     cancelledRef.current = false;
     voiceGestureActiveRef.current = true;
@@ -196,7 +224,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     setVoiceGesture('send');
     setCancelHint(false);
     voice.startRecording();
-  }, [realtimeDictation, voice]);
+  }, [isRealtimeMicActive, stopRealtimeDictation, voice]);
 
   const handleHoldMove = useCallback((pageX: number, pageY: number) => {
     if (!voiceGestureActiveRef.current || cancelledRef.current) return;
@@ -229,14 +257,14 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   }, [voice]);
 
   const switchToVoiceMode = useCallback(() => {
-    if (realtimeDictation.isDictating) {
-      void realtimeDictation.stopDictation();
+    if (isRealtimeMicActive) {
+      stopRealtimeDictation();
     }
     textInputRef.current?.blur();
     Keyboard.dismiss();
     setInputMode('voice');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [realtimeDictation]);
+  }, [isRealtimeMicActive, stopRealtimeDictation]);
 
   const switchToTextMode = useCallback(() => {
     setInputMode('text');
@@ -466,7 +494,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
               testID="wechat-composer-input"
               style={({ pressed }) => [
                 styles.inputWrap,
-                realtimeDictation.isDictating && styles.inputWrapDictating,
+                isRealtimeMicActive && styles.inputWrapDictating,
                 pressed && styles.inputWrapPressed,
               ]}
               onPress={focusTextInput}
@@ -492,15 +520,15 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
               />
               <TouchableOpacity
                 onPress={handleRealtimeMicPress}
-                style={[styles.inlineMicBtn, realtimeDictation.isDictating && styles.inlineMicBtnActive]}
+                style={[styles.inlineMicBtn, isRealtimeMicActive && styles.inlineMicBtnActive]}
                 hitSlop={COMPOSER_HIT_SLOP}
                 activeOpacity={0.72}
                 accessibilityRole="button"
-                accessibilityState={{ selected: realtimeDictation.isDictating }}
-                accessibilityLabel={realtimeDictation.isDictating ? '停止实时语音转文字' : '实时语音转文字'}
+                accessibilityState={{ selected: isRealtimeMicActive }}
+                accessibilityLabel={isRealtimeMicActive ? '停止实时语音转文字' : '实时语音转文字'}
               >
-                {realtimeDictation.isDictating && <PulsingRing />}
-                <Ionicons name="mic" size={21} color={realtimeDictation.isDictating ? '#FFFFFF' : WECHAT_ICON} />
+                {isRealtimeMicActive && <PulsingRing />}
+                <Ionicons name="mic" size={21} color={isRealtimeMicActive ? '#FFFFFF' : WECHAT_ICON} />
               </TouchableOpacity>
             </Pressable>
           )}

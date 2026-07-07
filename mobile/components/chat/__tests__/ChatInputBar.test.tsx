@@ -353,10 +353,26 @@ describe('ChatInputBar', () => {
     );
 
     const mic = getByLabelText('停止实时语音转文字');
+    expect(mic.props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
+
     fireEvent.press(mic);
 
-    expect(mic.props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
     expect(mockStopDictation).toHaveBeenCalled();
+  });
+
+  it('immediately returns the inline microphone to inactive state on the second tap', () => {
+    mockRealtimeDictationState = { isDictating: true, error: null };
+    const { getByLabelText, getByTestId, queryByLabelText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('停止实时语音转文字'));
+
+    expect(mockStopDictation).toHaveBeenCalled();
+    expect(queryByLabelText('停止实时语音转文字')).toBeNull();
+    expect(getByLabelText('实时语音转文字').props.accessibilityState)
+      .toEqual(expect.objectContaining({ selected: false }));
+    expect(flattenedStyle(getByTestId('wechat-composer-input')).borderColor).toBe('#343434');
   });
 
   it('sends typed text when Enter is pressed in the composer', () => {
