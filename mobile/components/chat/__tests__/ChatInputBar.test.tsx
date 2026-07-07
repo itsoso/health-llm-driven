@@ -158,13 +158,15 @@ describe('ChatInputBar', () => {
     expect(mockTakePhoto).toHaveBeenCalled();
   });
 
-  it('renders only one compact WeChat-style composer row by default', () => {
+  it('renders a warm-white composer coordinated with the page (not the old dark bar)', () => {
     const { getByTestId, queryByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
     const composerSurface = StyleSheet.flatten(getByTestId('chat-composer-surface').props.style);
-    expect(composerSurface.backgroundColor).toBe('#1F1F1F');
+    // 2026-07-07 founder「不协调」:输入栏收回 revaTheme 暖白,不再是深色 #1F1F1F。
+    expect(composerSurface.backgroundColor).toBe(revaColors.surface2);
+    expect(composerSurface.backgroundColor).not.toBe('#1F1F1F');
     expect(composerSurface.borderRadius).toBeLessThanOrEqual(8);
     expect(queryByLabelText('Agent 模式')).toBeNull();
   });
@@ -179,12 +181,15 @@ describe('ChatInputBar', () => {
     expect(flattenedStyle(getByTestId('wechat-composer-input')).minHeight).toBeGreaterThanOrEqual(48);
   });
 
-  it('renders WeChat-style text mode by default with speaker toggle and inline microphone', () => {
+  it('renders WeChat-style text mode with a MIC toggle (not a speaker icon) + inline microphone', () => {
     const { getByLabelText, getByTestId, queryByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
     expect(getByLabelText('语音消息')).toBeTruthy();
+    // 2026-07-07 founder:左键曾用喇叭图标(volume,读作"播放声音",语义反了)→ 改麦克风轮廓。
+    expect(getByTestId('icon-mic-outline')).toBeTruthy();
+    expect(queryByTestId('icon-volume-medium-outline')).toBeNull();
     expect(getByLabelText('听写到输入框')).toBeTruthy();
     expect(queryByTestId('wechat-hold-to-talk-surface')).toBeNull();
     const inputSurface = flattenedStyle(getByTestId('wechat-composer-input'));
@@ -372,7 +377,7 @@ describe('ChatInputBar', () => {
     expect(queryByLabelText('停止听写到输入框')).toBeNull();
     expect(getByLabelText('听写到输入框').props.accessibilityState)
       .toEqual(expect.objectContaining({ selected: false }));
-    expect(flattenedStyle(getByTestId('wechat-composer-input')).borderColor).toBe('#343434');
+    expect(flattenedStyle(getByTestId('wechat-composer-input')).borderColor).toBe(revaColors.line);
   });
 
   it('sends typed text when Enter is pressed in the composer', () => {

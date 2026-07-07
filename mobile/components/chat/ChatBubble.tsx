@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, TextStyle,
-  Alert, ActivityIndicator, Pressable,
+  Alert, ActivityIndicator, Pressable, Animated, Easing,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -54,6 +54,37 @@ import {
 // 「是哪个动作」的色码, 非临床好坏, 保留 Reva 亮色调色板字面量.
 const ACTION_PURPLE = '#7C5CBF';
 const ACTION_TEAL = '#2F9E8F';
+
+/**
+ * 诚实的「思考中」不定量进度条(2026-07-07 修:原本恒 4/4 + 写死 78% 是 UI 谎报,
+ * 与小巴「忠实」人格 + 仓库 fail-loud 铁律冲突)。LLM 不知道总步数,任何百分比/分母
+ * 都是编的;改成一段来回滑动的 indeterminate 段,只诚实表达「在做」,不谎报进度。
+ */
+function ThinkingIndeterminateBar() {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 1100,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim]);
+  // 段宽 ~38% 轨道;translateX 从 -40% 滑到 +140%(轨道自身 overflow:hidden 裁掉两端)
+  const translateX = anim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['-110%', '260%'],
+  });
+  return (
+    <View style={styles.thinkingProgressTrack} accessibilityElementsHidden>
+      <Animated.View style={[styles.thinkingProgressFill, { width: '38%', transform: [{ translateX }] }]} />
+    </View>
+  );
+}
 
 type ResultActionKey = ChatResultActionKey;
 type ResultActionDoneLabels = Partial<Record<ResultActionKey, string>>;
@@ -1661,8 +1692,9 @@ function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?:
     );
   }
 
-  // 流式态: 实时进度面板 (header + 进度条 + 步骤列表), 保持不变.
-  const progressText = `${steps.length}/${steps.length}`;
+  // 流式态: 实时进度面板 (header + indeterminate 条 + 步骤列表).
+  // 诚实计数:只显示「已进行 N 步」,不编造 N/N 分母(总步数未知)。
+  const progressText = `第 ${steps.length} 步`;
   return (
     <View
       testID="assistant-thinking-panel"
@@ -1681,9 +1713,7 @@ function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?:
           <Text style={txt.thinkingProgressText}>{progressText}</Text>
         </View>
       </View>
-      <View style={styles.thinkingProgressTrack}>
-        <View style={[styles.thinkingProgressFill, { width: '78%' }]} />
-      </View>
+      <ThinkingIndeterminateBar />
       <View style={styles.thinkingList}>
         {steps.map((step, index) => {
           const active = index === steps.length - 1;

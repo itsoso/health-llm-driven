@@ -167,7 +167,7 @@ describe('ChatBubble streaming degraded render', () => {
   });
 
   it('renders streaming thinking steps above the assistant text', () => {
-    const { getByLabelText, getByTestId, getByText, queryByTestId } = renderBubble({
+    const { getByLabelText, getByTestId, getByText, queryByTestId, queryByText } = renderBubble({
       id: 'assistant-streaming-thinking',
       role: 'assistant',
       content: '今晚优先固定睡眠时间。',
@@ -177,7 +177,9 @@ describe('ChatBubble streaming degraded render', () => {
 
     expect(queryByTestId('rich-markdown')).toBeNull();
     expect(getByText('小巴正在思考')).toBeTruthy();
-    expect(getByText('2/2')).toBeTruthy();
+    // 2026-07-07:诚实计数「第 N 步」,不再编造 N/N 分母(总步数未知=假进度)。
+    expect(getByText('第 2 步')).toBeTruthy();
+    expect(queryByText('2/2')).toBeNull();
     expect(getByText('正在理解你的问题')).toBeTruthy();
     expect(getByText('读取健康数据')).toBeTruthy();
     expect(getByLabelText('当前步骤:读取健康数据')).toBeTruthy();

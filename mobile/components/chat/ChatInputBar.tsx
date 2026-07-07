@@ -29,10 +29,12 @@ import {
 const CANCEL_THRESHOLD = 80;
 const VOICE_SLIDE_THRESHOLD = 88;
 const COMPOSER_HIT_SLOP = { top: 6, right: 6, bottom: 6, left: 6 };
-const WECHAT_BAR_BG = '#1F1F1F';
-const WECHAT_INPUT_BG = '#2B2B2B';
-const WECHAT_INPUT_BG_ACTIVE = '#303631';
-const WECHAT_ICON = '#D7D7D7';
+// 2026-07-07 founder「这个按钮不协调」:深色 #1F1F1F 输入栏贴在暖奶油页上割裂,
+// 且微信真实输入栏本就是浅灰(不是深色)。收回 revaTheme 暖白语言,与页面同调。
+const COMPOSER_BAR_BG = C.surface2;        // 输入栏底:微微抬起的暖白
+const COMPOSER_INPUT_BG = C.surface;       // 输入框:纯白卡
+const COMPOSER_INPUT_BG_ACTIVE = C.green50; // 听写中:暖绿提示
+const COMPOSER_ICON = C.ink2;              // 图标:次级墨色
 const VOICE_WAVE_BARS = Array.from({ length: 28 }, (_, i) => i);
 
 export interface ChatInputSendOptions {
@@ -469,7 +471,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
             accessibilityLabel={inputMode === 'text' ? '语音消息' : '键盘输入'}
             accessibilityHint={inputMode === 'text' ? '切换后按住发送语音消息' : '回到文字输入'}
           >
-            <Ionicons name={inputMode === 'text' ? 'volume-medium-outline' : 'keypad-outline'} size={25} color={WECHAT_ICON} />
+            <Ionicons name={inputMode === 'text' ? 'mic-outline' : 'keypad-outline'} size={25} color={COMPOSER_ICON} />
           </Pressable>
 
           {inputMode === 'voice' ? (
@@ -505,7 +507,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
                 ref={textInputRef}
                 style={[styles.textInput, { pointerEvents: 'auto' }]}
                 placeholder={COMPOSER_PLACEHOLDER}
-                placeholderTextColor="#7F7F7F"
+                placeholderTextColor={C.ink3}
                 value={input}
                 onChangeText={setInput}
                 onKeyPress={handleTextInputKeyPress}
@@ -527,7 +529,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
                 accessibilityLabel={isRealtimeMicActive ? '停止听写到输入框' : '听写到输入框'}
               >
                 {isRealtimeMicActive && <PulsingRing />}
-                <Ionicons name="mic" size={21} color={isRealtimeMicActive ? '#FFFFFF' : WECHAT_ICON} />
+                <Ionicons name="mic" size={21} color={isRealtimeMicActive ? '#FFFFFF' : COMPOSER_ICON} />
               </TouchableOpacity>
             </Pressable>
           )}
@@ -542,7 +544,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
             </View>
           ) : (
             <TouchableOpacity onPress={toggleMenu} style={styles.plusBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="附件菜单">
-              <Ionicons name={showMenu ? 'close' : 'add'} size={28} color={WECHAT_ICON} />
+              <Ionicons name={showMenu ? 'close' : 'add'} size={28} color={COMPOSER_ICON} />
             </TouchableOpacity>
           )}
         </View>
@@ -640,45 +642,45 @@ const styles = StyleSheet.create({
     marginTop: 0,
     marginBottom: 0,
     borderRadius: 0,
-    backgroundColor: WECHAT_BAR_BG,
+    backgroundColor: COMPOSER_BAR_BG,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#2A2A2A',
+    borderTopColor: C.line,
   },
   inputBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: 10,
     paddingTop: 9,
     paddingBottom: 9,
-    backgroundColor: WECHAT_BAR_BG,
+    backgroundColor: COMPOSER_BAR_BG,
   },
   voiceModeBtn: {
     width: 42, height: 42, borderRadius: 21,
-    borderWidth: 2, borderColor: WECHAT_ICON,
-    backgroundColor: '#171717',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
+    backgroundColor: C.paper2,
     alignItems: 'center', justifyContent: 'center',
   },
   voiceModeBtnPressed: {
-    backgroundColor: '#242424',
-    borderColor: '#EFEFEF',
+    backgroundColor: C.line,
+    borderColor: C.lineStrong,
   },
   plusBtn: {
     width: 42, height: 42, borderRadius: 21,
-    backgroundColor: '#171717', borderWidth: 2, borderColor: WECHAT_ICON,
+    backgroundColor: C.paper2, borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
     alignItems: 'center', justifyContent: 'center',
   },
   inputWrap: {
     minHeight: 48,
     flex: 1, flexDirection: 'row', alignItems: 'center',
-    backgroundColor: WECHAT_INPUT_BG, borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: '#343434',
+    backgroundColor: COMPOSER_INPUT_BG, borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: C.line,
     paddingLeft: 16, paddingRight: 5, paddingVertical: 4,
   },
   inputWrapPressed: {
-    backgroundColor: '#303030',
-    borderColor: '#3B3B3B',
+    backgroundColor: C.surface2,
+    borderColor: C.lineStrong,
   },
   inputWrapDictating: {
-    backgroundColor: WECHAT_INPUT_BG_ACTIVE,
+    backgroundColor: COMPOSER_INPUT_BG_ACTIVE,
     borderColor: C.greenBright,
   },
   holdToTalkSurface: {
@@ -686,26 +688,26 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: WECHAT_INPUT_BG,
+    backgroundColor: COMPOSER_INPUT_BG,
     borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#343434',
+    borderColor: C.line,
     paddingHorizontal: 18,
   },
   holdToTalkSurfaceActive: {
-    backgroundColor: '#333333',
-    borderColor: '#3F3F3F',
+    backgroundColor: C.green50,
+    borderColor: C.green500,
   },
   holdToTalkText: {
     fontFamily: revaFonts.sans,
     fontSize: 22,
     lineHeight: 28,
     fontWeight: '700',
-    color: '#F2F2F2',
+    color: C.ink1,
     letterSpacing: 0,
   },
   textInput: {
-    flex: 1, fontFamily: revaFonts.sans, fontSize: 16, maxHeight: 96, color: '#F5F5F5',
+    flex: 1, fontFamily: revaFonts.sans, fontSize: 16, maxHeight: 96, color: C.ink1,
     paddingTop: 8, paddingBottom: 8,
   },
   inlineMicBtn: {
