@@ -148,8 +148,11 @@ def validate(require_asc_credentials: bool) -> list[str]:
         failures.append(f"ASC app id must be a numeric string, got {asc_app_id!r}")
 
     submit_groups = submit_ios.get("groups")
-    if not isinstance(submit_groups, list) or not submit_groups:
-        failures.append("EAS submit production must name at least one TestFlight group")
+    if submit_groups:
+        failures.append(
+            "EAS submit production must not set TestFlight groups; "
+            "Apple currently rejects internal group assignment after upload"
+        )
 
     run_mobile_tf = ROOT / "scripts/_run-mobile-tf.sh"
     if not run_mobile_tf.exists():
