@@ -15,6 +15,7 @@ import re
 import time
 from datetime import UTC, datetime, timezone, timedelta
 from typing import AsyncGenerator, Dict, Any, List, Optional
+from urllib.parse import urlencode
 
 import httpx
 from sqlalchemy.orm import Session
@@ -1067,6 +1068,10 @@ def _build_fast_record_messages(messages: List[Dict[str, Any]]) -> List[Dict[str
                 "必须调用 health_record 或 health_manage 工具。不要做健康分析，"
                 "不要输出长建议。若用户提到多条记录，尽量一次性发起多个 tool_call；"
                 "信息不足时只用一句中文追问。"
+                "用户查询全天饮食/热量/吃了什么时，调用 health_query(dimension='diet')。"
+                "用户说修改晚餐/午餐/早餐/加餐的实际摄入时，先调用 health_manage("
+                "record_type='diet', operation='list', meal_type='dinner/lunch/breakfast/snack') "
+                "查询候选记录；拿到真实 ID 后再 health_manage(update)。"
                 "**若用户的回复是对上一轮助手提问的简短确认/回应**(消息里带「[上一轮助手问我:…]」"
                 "且回复是「记录」「好」「嗯」之类),结合上一轮助手的提问判断要记录什么,不要重新泛问。"
             ),
@@ -1536,6 +1541,36 @@ _MEAL_TYPE_ZH = {
     "snack": "加餐",
 }
 
+_MEAL_TYPE_ALIASES = {
+    "breakfast": "breakfast",
+    "早餐": "breakfast",
+    "早饭": "breakfast",
+    "上午": "breakfast",
+    "lunch": "lunch",
+    "午餐": "lunch",
+    "午饭": "lunch",
+    "中餐": "lunch",
+    "dinner": "dinner",
+    "晚餐": "dinner",
+    "晚饭": "dinner",
+    "正餐晚": "dinner",
+    "supper": "dinner",
+    "snack": "snack",
+    "加餐": "snack",
+    "零食": "snack",
+    "点心": "snack",
+    "夜宵": "snack",
+}
+
+
+def _normalize_diet_meal_type(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    key = str(value).strip().lower()
+    if not key:
+        return None
+    return _MEAL_TYPE_ALIASES.get(key, key)
+
 
 def _summarize_record_data(kind: str, record_data: Any) -> str:
     """Build a clean human summary from the structured args the model wrote.
@@ -1548,7 +1583,7 @@ def _summarize_record_data(kind: str, record_data: Any) -> str:
         return ""
     if kind == "diet":
         food = str(record_data.get("food_items") or record_data.get("food") or "").strip()
-        meal = _MEAL_TYPE_ZH.get(str(record_data.get("meal_type") or "").strip().lower(), "")
+        meal = _MEAL_TYPE_ZH.get(_normalize_diet_meal_type(record_data.get("meal_type")) or "", "")
         if food:
             return f"已记录{meal + '：' if meal else '饮食 '}{food}"
     elif kind == "water":
@@ -5297,10 +5332,9 @@ class AgentExecutor:
         if rtype == "diet":
             data.setdefault("record_date", today)
             data.setdefault("meal_type", "snack")
-            # 中文 meal_type 映射
-            meal_type_map = {"早餐": "breakfast", "午餐": "lunch", "晚餐": "dinner", "加餐": "snack", "夜宵": "snack"}
-            if data.get("meal_type") in meal_type_map:
-                data["meal_type"] = meal_type_map[data["meal_type"]]
+            normalized_meal_type = _normalize_diet_meal_type(data.get("meal_type"))
+            if normalized_meal_type:
+                data["meal_type"] = normalized_meal_type
             if isinstance(data.get("food_items"), list):
                 data["food_items"] = ", ".join(
                     (f.get("name", str(f)) if isinstance(f, dict) else str(f))
@@ -5641,7 +5675,7 @@ class AgentExecutor:
             "mood": ("/mood/records", "POST", data),
             "garmin_sync": ("/data-collection/garmin/me/sync?days=1", "POST", {}),
             "reminder": ("/reminders/me", "POST", data),
-            "goal": ("/goals/", "POST", data),
+            "goal": ("/goals", "POST", data),
         }
 
         # symptom: 通用身体症状 (眼痒/嗓子疼 ...). 不再需要 profile_id (新 /symptoms 表,
@@ -5685,15 +5719,23 @@ class AgentExecutor:
         record_id = args.get("record_id")
         data = args.get("data") or {}
         target_date = args.get("date")
-        today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
+        target_meal_type = _normalize_diet_meal_type(args.get("meal_type") or data.get("meal_type"))
+        if record_type == "diet" and target_meal_type:
+            data["meal_type"] = target_meal_type
         try:
             limit = int(args.get("limit") or 20)
         except (TypeError, ValueError):
             limit = 20
         limit = max(1, min(limit, 100))
+        diet_query: dict[str, Any] = {"limit": limit}
+        if target_date:
+            diet_query["start_date"] = target_date
+            diet_query["end_date"] = target_date
+        if target_meal_type:
+            diet_query["meal_type"] = target_meal_type
 
         list_paths = {
-            "diet": f"/diet/records/me/date/{target_date or today}" if target_date else "/diet/records/me?limit=20",
+            "diet": f"/diet/records/me?{urlencode(diet_query)}",
             "water": "/water/records/me?limit=20",
             "weight": "/weight/records/me?limit=20",
             "waist": "/waist/records/me?limit=20",

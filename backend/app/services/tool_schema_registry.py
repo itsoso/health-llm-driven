@@ -249,6 +249,11 @@ goal:             {"title": "每日快走30分钟", "goal_type": "exercise|diet|
                         "default": 20,
                         "description": "list 返回条数上限, 默认 20, 最大 100。",
                     },
+                    "meal_type": {
+                        "type": "string",
+                        "enum": ["breakfast", "lunch", "dinner", "snack"],
+                        "description": "diet list/update 可选餐次。用户说早餐/早饭=breakfast, 午餐/午饭=lunch, 晚餐/晚饭=dinner, 加餐/夜宵=snack。",
+                    },
                     "data": {
                         "type": "object",
                         "description": """update 的字段补丁。例如:

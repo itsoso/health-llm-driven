@@ -313,6 +313,11 @@ class TestQueryGuard:
         v = validate_tool_call("health_query", {"dimension": "mri"})
         assert v["data"]["dimension"] == "medical_exam"
 
+    @pytest.mark.parametrize("alias", ["food", "calories", "饮食", "热量", "全天饮食"])
+    def test_diet_query_dimension_aliases_are_normalized(self, alias):
+        v = validate_tool_call("health_query", {"dimension": alias})
+        assert v["data"]["dimension"] == "diet"
+
     def test_valid_dimension_kept(self):
         v = validate_tool_call("health_query", {"dimension": "hrv", "days": 14})
         assert v["data"]["dimension"] == "hrv"

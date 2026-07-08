@@ -66,6 +66,67 @@ async def test_health_manage_updates_diet_record_by_id(db):
 
 
 @pytest.mark.asyncio
+async def test_health_manage_lists_diet_candidates_by_explicit_meal_type(db):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+
+    captured = {}
+
+    async def fake_get(url, headers):
+        captured["url"] = url
+        return '[{"id":605,"meal_type":"dinner","food_items":"原晚餐"}]'
+
+    with patch.object(executor, "_api_get", new=AsyncMock(side_effect=fake_get)):
+        result = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": "diet",
+                "operation": "list",
+                "date": "2026-07-08",
+                "meal_type": "晚餐",
+                "limit": 50,
+            }),
+            user_token="test-token",
+        )
+
+    assert captured["url"].endswith(
+        "/diet/records/me?limit=50&start_date=2026-07-08&end_date=2026-07-08&meal_type=dinner"
+    )
+    assert json.loads(result)[0]["id"] == 605
+
+
+@pytest.mark.asyncio
+async def test_health_manage_update_normalizes_zh_diet_meal_type_patch(db):
+    from app.services.agent_executor import AgentExecutor
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = 3
+
+    captured = {}
+
+    async def fake_put(url, headers, payload):
+        captured["payload"] = payload
+        return '{"id":605,"meal_type":"dinner"}'
+
+    with patch.object(executor, "_api_put", new=AsyncMock(side_effect=fake_put)):
+        result = await executor._execute_tool(
+            tool_name="health_manage",
+            args_raw=json.dumps({
+                "record_type": "diet",
+                "operation": "update",
+                "record_id": 605,
+                "data": {"meal_type": "晚餐", "food_items": "蛋黄酥 2/3"},
+            }),
+            user_token="test-token",
+        )
+
+    assert captured["payload"]["meal_type"] == "dinner"
+    assert json.loads(result)["meal_type"] == "dinner"
+
+
+@pytest.mark.asyncio
 async def test_health_manage_deletes_exercise_record_by_id(db):
     from app.services.agent_executor import AgentExecutor
 

@@ -16,6 +16,7 @@ import pytest
 from app.services import agent_executor as ae
 from app.services.agent_executor import (
     AgentExecutor,
+    _build_fast_record_messages,
     _is_fast_eligible_turn,
 )
 from app.services.llm import model_registry as reg
@@ -107,6 +108,18 @@ def test_ambiguous_falls_to_quality_model():
     assert _is_fast_eligible_turn("你好呀", has_images=False, has_file=False) is False
 
 
+def test_fast_record_prompt_routes_diet_queries_and_meal_scoped_edits():
+    routed = _build_fast_record_messages([
+        {"role": "user", "content": "查询全天饮食和热量，修改晚餐实际摄入数据"},
+    ])
+
+    system = routed[0]["content"]
+    assert "health_query(dimension='diet')" in system
+    assert "health_manage" in system
+    assert "meal_type" in system
+    assert "dinner" in system
+
+
 # ──── end-to-end routing through run_stream ────
 
 # The concrete fast model id used in these tests. Registry picks it deterministically
@@ -136,6 +149,9 @@ class _FakeProvider:
 
     def __init__(self, model_id):
         self.model = model_id
+
+    async def chat(self, **kwargs):  # noqa: ARG002
+        return "OK"
 
     async def chat_stream(self, **kwargs):  # noqa: ARG002
         yield {"type": "content", "text": "OK"}

@@ -46,6 +46,21 @@ HEALTH_QUERY_DIM_ALIASES: Dict[str, str] = {
     "meds": "medication",
     "medications": "medication",
     "用药": "medication",
+    "diet": "diet",
+    "food": "diet",
+    "foods": "diet",
+    "meal": "diet",
+    "meals": "diet",
+    "calorie": "diet",
+    "calories": "diet",
+    "nutrition": "diet",
+    "饮食": "diet",
+    "饮食记录": "diet",
+    "吃饭": "diet",
+    "吃了什么": "diet",
+    "热量": "diet",
+    "卡路里": "diet",
+    "全天饮食": "diet",
 }
 
 HEALTH_QUERY_DIM_KEYS = ("dimension", "type", "query_type", "category", "kind")
