@@ -471,7 +471,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
             accessibilityLabel={inputMode === 'text' ? '语音消息' : '键盘输入'}
             accessibilityHint={inputMode === 'text' ? '切换后按住发送语音消息' : '回到文字输入'}
           >
-            <Ionicons name={inputMode === 'text' ? 'mic-outline' : 'keypad-outline'} size={25} color={COMPOSER_ICON} />
+            <Ionicons name={inputMode === 'text' ? 'volume-medium-outline' : 'keypad-outline'} size={25} color={COMPOSER_ICON} />
           </Pressable>
 
           {inputMode === 'voice' ? (

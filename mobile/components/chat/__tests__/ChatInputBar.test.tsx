@@ -181,15 +181,17 @@ describe('ChatInputBar', () => {
     expect(flattenedStyle(getByTestId('wechat-composer-input')).minHeight).toBeGreaterThanOrEqual(48);
   });
 
-  it('renders WeChat-style text mode with a MIC toggle (not a speaker icon) + inline microphone', () => {
+  it('renders WeChat-style text mode with a speaker toggle + inline microphone', () => {
     const { getByLabelText, getByTestId, queryByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
     expect(getByLabelText('语音消息')).toBeTruthy();
-    // 2026-07-07 founder:左键曾用喇叭图标(volume,读作"播放声音",语义反了)→ 改麦克风轮廓。
-    expect(getByTestId('icon-mic-outline')).toBeTruthy();
-    expect(queryByTestId('icon-volume-medium-outline')).toBeNull();
+    const speakerIcon = getByTestId('icon-volume-medium-outline');
+    expect(speakerIcon).toBeTruthy();
+    expect(speakerIcon.props.color).toBe(revaColors.ink2);
+    expect(speakerIcon.props.color).not.toBe('#000000');
+    expect(queryByTestId('icon-mic-outline')).toBeNull();
     expect(getByLabelText('听写到输入框')).toBeTruthy();
     expect(queryByTestId('wechat-hold-to-talk-surface')).toBeNull();
     const inputSurface = flattenedStyle(getByTestId('wechat-composer-input'));
