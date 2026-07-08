@@ -1,9 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
-  Platform, TextStyle,
-  Alert, Dimensions, Keyboard, Modal, Pressable, useWindowDimensions,
-  AppState,
+  TextStyle,
+  Alert, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -38,6 +37,7 @@ import { emitClientEvent } from '../../services/clientEvents';
 import { fetchMemoryOpener, type MemoryOpenerItem } from '../../services/memoryOpener';
 import { getLlmPreference, updateLlmPreference, type ModelOption } from '../../services/llmPreference';
 import { recordCardAdherence, recordCardDecision } from '../../services/actionCards';
+import { useChatKeyboardDock } from '../../hooks/useChatKeyboardDock';
 import { useTodayTimeline } from '../../hooks/useTodayTimeline';
 import type { TodayTimelineResponse } from '../../services/todayTimeline';
 import {
@@ -159,8 +159,6 @@ export default function ChatScreen() {
   const isNearBottom = useRef(true);
   // 今日简报条：真实数字来自 /timeline/today（待办 / 已完成计数），不伪造指标。
   const todayTimeline = useTodayTimeline();
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
@@ -348,53 +346,6 @@ export default function ChatScreen() {
   // 输入框聚焦只由明确用户动作触发。默认打开小巴页不拉起系统键盘,
   // 避免截图里的首屏被键盘占掉;点输入框/chip/新建对话仍可进入输入。
   const [composerFocusToken, setComposerFocusToken] = useState(0);
-
-  useEffect(() => {
-    // 豆包等第三方输入法首次唤起:键盘扩展进程冷启动,didShow 先报一个未装载完
-    // 的高度,装载完成后只发 (will|did)ChangeFrame **不再发 didShow** —— 只抓一次
-    // didShow 的高度会停在旧值,输入栏被压在键盘底下(founder 实锤截图)。
-    // 修:持续跟 frame 事件走,并用手动 spacer 代替 KeyboardAvoidingView。KAV 在从其他
-    // App 回前台时容易保留旧 padding,导致 composer 漂到页面中部。
-    const applyKeyboardFrame = (event: any) => {
-      const end = event?.endCoordinates;
-      if (!end) return;
-      const windowH = Dimensions.get('window').height;
-      const height = typeof end.screenY === 'number'
-        ? Math.max(0, Math.round(windowH - end.screenY))
-        : Math.max(0, Math.round(end.height || 0));
-      setKeyboardVisible(height > 0);
-      setKeyboardHeight(height);
-    };
-    const clearKeyboardFrame = () => {
-      setKeyboardVisible(false);
-      setKeyboardHeight(0);
-    };
-    const syncKeyboardMetrics = () => {
-      const metrics = typeof Keyboard.metrics === 'function' ? Keyboard.metrics() : undefined;
-      if (metrics) {
-        applyKeyboardFrame({ endCoordinates: metrics });
-      } else {
-        clearKeyboardFrame();
-      }
-    };
-    const subs = [
-      Keyboard.addListener('keyboardDidShow', (event) => {
-        applyKeyboardFrame(event);
-        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-      }),
-      Keyboard.addListener('keyboardWillChangeFrame', applyKeyboardFrame),
-      Keyboard.addListener('keyboardDidChangeFrame', applyKeyboardFrame),
-      Keyboard.addListener('keyboardDidHide', clearKeyboardFrame),
-      AppState.addEventListener('change', (state) => {
-        if (state === 'active') {
-          syncKeyboardMetrics();
-        } else {
-          clearKeyboardFrame();
-        }
-      }),
-    ];
-    return () => { subs.forEach(s => s.remove()); };
-  }, []);
 
   // State A: 用户发第一条消息时(空状态 + 有可见开场气泡), 把开场文本作为
   // 合成 assistant 消息注入到流顶, 让被回答的那句话不随空状态卸载而消失。
@@ -705,10 +656,16 @@ export default function ChatScreen() {
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const handleKeyboardShown = useCallback(() => {
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+  }, []);
   // 小巴是 agent-native 主屏,没有底部 Tab Bar。键盘弹起时用 overlap spacer 对齐键盘
   // 上沿;收起时 = 底部安全区(SafeAreaView 只包 top, home indicator 由这里补)+ 呼吸空间。
-  const keyboardSpacerHeight = Platform.OS === 'ios' && keyboardVisible ? keyboardHeight : 0;
-  const bottomSpacerHeight = keyboardVisible ? keyboardSpacerHeight : insets.bottom + CHAT_BOTTOM_BREATHING_SPACE;
+  const { bottomSpacerHeight } = useChatKeyboardDock({
+    bottomInset: insets.bottom,
+    restingSpace: CHAT_BOTTOM_BREATHING_SPACE,
+    onKeyboardShown: handleKeyboardShown,
+  });
   const activeLlmLabel = llmModelId
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';

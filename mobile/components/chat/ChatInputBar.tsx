@@ -51,6 +51,7 @@ const COMPOSER_PLACEHOLDER = '问小巴';
 // 2026-07-06 founder: 完全按微信输入栏复刻。左侧喇叭先切到「按住说话」,
 // 语音模式左侧变键盘;文本模式框内右侧麦克风负责实时听写。
 type ComposerInputMode = 'text' | 'voice';
+type ComposerVisualMode = 'keyboard' | 'holdToTalk' | 'dictating' | 'dictationDisabled';
 
 function PulsingRing() {
   const scale = useSharedValue(1);
@@ -103,6 +104,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const [cancelHint, setCancelHint] = useState(false);
   const [inputMode, setInputMode] = useState<ComposerInputMode>('text');
   const [realtimeMicIntent, setRealtimeMicIntent] = useState<'idle' | 'starting' | 'stopping'>('idle');
+  const [realtimeMicDisabled, setRealtimeMicDisabled] = useState(false);
   const [voiceGesture, setVoiceGesture] = useState<'send' | 'text' | 'cancel' | null>(null);
   const [justSent, setJustSent] = useState(false);  // 刚发送, 按钮停留 1s 避免误切 mic
   const { pendingImages, removeImage, clearImages, pickImage, takePhoto } = useMediaPicker();
@@ -161,6 +163,26 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     : realtimeMicIntent === 'stopping'
       ? false
       : realtimeDictation.isDictating;
+  const composerVisualMode: ComposerVisualMode = inputMode === 'voice'
+    ? 'holdToTalk'
+    : isRealtimeMicActive
+      ? 'dictating'
+      : realtimeMicDisabled
+        ? 'dictationDisabled'
+        : 'keyboard';
+  const isHoldToTalkMode = composerVisualMode === 'holdToTalk';
+  const isDictationDisabled = composerVisualMode === 'dictationDisabled';
+  const isDictatingVisual = composerVisualMode === 'dictating';
+  const inlineMicAccessibilityLabel = isDictatingVisual
+    ? '停止实时语音转文字'
+    : isDictationDisabled
+      ? '语音监听已关闭'
+      : '听写到输入框';
+  const inlineMicAccessibilityHint = isDictatingVisual
+    ? '停止后输入框会保留已经听写的文字'
+    : isDictationDisabled
+      ? '再次点击开启实时语音转文字'
+      : '点击后实时语音转文字到输入框';
 
   React.useEffect(() => {
     if (realtimeMicIntent === 'starting' && realtimeDictation.isDictating) {
@@ -175,11 +197,13 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   React.useEffect(() => {
     if (realtimeDictation.error) {
       setRealtimeMicIntent('idle');
+      setRealtimeMicDisabled(false);
     }
   }, [realtimeDictation.error]);
 
-  const stopRealtimeDictation = useCallback(() => {
+  const stopRealtimeDictation = useCallback((options?: { markDisabled?: boolean }) => {
     setRealtimeMicIntent('stopping');
+    setRealtimeMicDisabled(options?.markDisabled === true);
     void realtimeDictation.stopDictation();
   }, [realtimeDictation]);
 
@@ -187,10 +211,11 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     if (isStreaming) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (isRealtimeMicActive) {
-      stopRealtimeDictation();
+      stopRealtimeDictation({ markDisabled: true });
       return;
     }
     realtimeBaseInputRef.current = input.trim();
+    setRealtimeMicDisabled(false);
     setRealtimeMicIntent('starting');
     void realtimeDictation.startDictation();
   }, [input, isRealtimeMicActive, isStreaming, realtimeDictation, stopRealtimeDictation]);
@@ -495,10 +520,12 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
             )}
           </Pressable>
 
-          {inputMode === 'voice' ? (
+          {isHoldToTalkMode ? (
             <Pressable
               testID="wechat-hold-to-talk-surface"
               onPressIn={(e) => handleHoldStart(e.nativeEvent.pageX, e.nativeEvent.pageY)}
+              onMoveShouldSetResponder={() => true}
+              onResponderMove={(e) => handleHoldMove(e.nativeEvent.pageX, e.nativeEvent.pageY)}
               onTouchMove={(e) => handleHoldMove(e.nativeEvent.pageX, e.nativeEvent.pageY)}
               onPressOut={handleHoldEnd}
               style={({ pressed }) => [
@@ -516,7 +543,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
               testID="wechat-composer-input"
               style={({ pressed }) => [
                 styles.inputWrap,
-                isRealtimeMicActive && styles.inputWrapDictating,
+                isDictatingVisual && styles.inputWrapDictating,
                 pressed && styles.inputWrapPressed,
               ]}
               onPress={focusTextInput}
@@ -540,17 +567,43 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
                 maxLength={2000}
                 accessibilityLabel="消息输入框"
               />
+              {isDictatingVisual && (
+                <View style={styles.dictationStatusPill}>
+                  <Text
+                    style={styles.dictationStatusText}
+                    numberOfLines={1}
+                    accessibilityLabel="正在听写"
+                  >
+                    正在听写
+                  </Text>
+                </View>
+              )}
+              {isDictationDisabled && (
+                <View style={[styles.dictationStatusPill, styles.dictationStatusPillDisabled]}>
+                  <Text
+                    style={[styles.dictationStatusText, styles.dictationStatusTextDisabled]}
+                    numberOfLines={1}
+                  >
+                    已关闭
+                  </Text>
+                </View>
+              )}
               <TouchableOpacity
                 onPress={handleRealtimeMicPress}
-                style={[styles.inlineMicBtn, isRealtimeMicActive && styles.inlineMicBtnActive]}
+                style={[styles.inlineMicBtn, isDictatingVisual && styles.inlineMicBtnActive]}
                 hitSlop={COMPOSER_HIT_SLOP}
                 activeOpacity={0.72}
                 accessibilityRole="button"
-                accessibilityState={{ selected: isRealtimeMicActive }}
-                accessibilityLabel={isRealtimeMicActive ? '停止听写到输入框' : '听写到输入框'}
+                accessibilityState={{ selected: isDictatingVisual }}
+                accessibilityLabel={inlineMicAccessibilityLabel}
+                accessibilityHint={inlineMicAccessibilityHint}
               >
-                {isRealtimeMicActive && <PulsingRing />}
-                <Ionicons name="mic" size={21} color={isRealtimeMicActive ? '#FFFFFF' : COMPOSER_ICON} />
+                {isDictatingVisual && <PulsingRing />}
+                <Ionicons
+                  name={isDictationDisabled ? 'mic-off' : 'mic'}
+                  size={21}
+                  color={isDictatingVisual ? '#FFFFFF' : isDictationDisabled ? C.ink3 : COMPOSER_ICON}
+                />
               </TouchableOpacity>
             </Pressable>
           )}
@@ -770,6 +823,30 @@ const styles = StyleSheet.create({
   textInput: {
     flex: 1, fontFamily: revaFonts.sans, fontSize: 16, maxHeight: 96, color: C.ink1,
     paddingTop: 8, paddingBottom: 8,
+  },
+  dictationStatusPill: {
+    minWidth: 62,
+    minHeight: 28,
+    borderRadius: 14,
+    paddingHorizontal: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green100,
+    marginLeft: 6,
+  },
+  dictationStatusPillDisabled: {
+    backgroundColor: C.surface2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
+  dictationStatusText: {
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '600',
+    color: C.green700,
+  },
+  dictationStatusTextDisabled: {
+    color: C.ink3,
   },
   inlineMicBtn: {
     width: 38, height: 38, borderRadius: 19,

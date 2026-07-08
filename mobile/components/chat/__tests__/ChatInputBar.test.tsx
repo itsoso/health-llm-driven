@@ -369,7 +369,8 @@ describe('ChatInputBar', () => {
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    const mic = getByLabelText('停止听写到输入框');
+    expect(getByLabelText('正在听写')).toBeTruthy();
+    const mic = getByLabelText('停止实时语音转文字');
     expect(mic.props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
 
     fireEvent.press(mic);
@@ -383,13 +384,39 @@ describe('ChatInputBar', () => {
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    fireEvent.press(getByLabelText('停止听写到输入框'));
+    fireEvent.press(getByLabelText('停止实时语音转文字'));
 
     expect(mockStopDictation).toHaveBeenCalled();
-    expect(queryByLabelText('停止听写到输入框')).toBeNull();
-    expect(getByLabelText('听写到输入框').props.accessibilityState)
+    expect(queryByLabelText('停止实时语音转文字')).toBeNull();
+    expect(getByLabelText('语音监听已关闭').props.accessibilityState)
       .toEqual(expect.objectContaining({ selected: false }));
     expect(flattenedStyle(getByTestId('wechat-composer-input')).borderColor).toBe(revaColors.line);
+  });
+
+  it('lets the inline microphone toggle from disabled back into realtime voice-to-text', () => {
+    mockRealtimeDictationState = { isDictating: true, error: null };
+    const { getByLabelText, rerender } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('停止实时语音转文字'));
+    rerender(<ChatInputBar onSend={jest.fn()} isStreaming={false} />);
+    fireEvent.press(getByLabelText('语音监听已关闭'));
+
+    expect(mockStartDictation).toHaveBeenCalled();
+  });
+
+  it('hides inline dictation while the left voice mode is in hold-to-talk', () => {
+    const { getByLabelText, queryByLabelText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('语音消息'));
+
+    expect(getByLabelText('键盘输入')).toBeTruthy();
+    expect(getByLabelText('按住发送语音消息')).toBeTruthy();
+    expect(queryByLabelText('听写到输入框')).toBeNull();
+    expect(queryByLabelText('实时语音转文字')).toBeNull();
   });
 
   it('sends typed text when Enter is pressed in the composer', () => {
