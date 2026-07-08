@@ -64,6 +64,14 @@
       "expo-router",
       "expo-secure-store",
       "expo-document-picker",
+      "expo-audio",
+      [
+        "@react-native-voice/voice",
+        {
+          "microphonePermission": "用于语音输入、健康记录听写和小巴对话",
+          "speechRecognitionPermission": "识别你的语音,和小巴连续对话"
+        }
+      ],
       [
         "expo-location",
         {

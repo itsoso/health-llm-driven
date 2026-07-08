@@ -6,6 +6,7 @@ const mockVoiceStart = jest.fn().mockResolvedValue(undefined);
 const mockVoiceStop = jest.fn().mockResolvedValue(undefined);
 const mockVoiceDestroy = jest.fn().mockResolvedValue(undefined);
 const mockVoiceRemoveAllListeners = jest.fn();
+const mockVoiceIsAvailable = jest.fn().mockResolvedValue(1);
 const mockSetAudioModeAsync = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('@react-native-voice/voice', () => ({
@@ -14,6 +15,7 @@ jest.mock('@react-native-voice/voice', () => ({
     start: (...args: any[]) => mockVoiceStart(...args),
     stop: (...args: any[]) => mockVoiceStop(...args),
     destroy: (...args: any[]) => mockVoiceDestroy(...args),
+    isAvailable: (...args: any[]) => mockVoiceIsAvailable(...args),
     removeAllListeners: (...args: any[]) => mockVoiceRemoveAllListeners(...args),
   },
 }));
@@ -27,6 +29,7 @@ const mockedVoice = Voice as any;
 describe('useRealtimeDictation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockVoiceIsAvailable.mockResolvedValue(1);
     mockedVoice.onSpeechPartialResults = undefined;
     mockedVoice.onSpeechResults = undefined;
     mockedVoice.onSpeechEnd = undefined;
@@ -45,6 +48,20 @@ describe('useRealtimeDictation', () => {
     );
     expect(mockVoiceStart).toHaveBeenCalledWith('zh-CN');
     expect(result.current.isDictating).toBe(true);
+  });
+
+  it('does not enter realtime dictation when native speech recognition is unavailable', async () => {
+    mockVoiceIsAvailable.mockResolvedValueOnce(0);
+    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn() }));
+
+    await act(async () => {
+      await result.current.startDictation();
+    });
+
+    expect(mockVoiceIsAvailable).toHaveBeenCalled();
+    expect(mockVoiceStart).not.toHaveBeenCalled();
+    expect(result.current.isDictating).toBe(false);
+    expect(result.current.error).toBe('当前设备不可用语音识别');
   });
 
   it('emits partial speech results as realtime composer text', async () => {

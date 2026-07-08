@@ -89,6 +89,11 @@ export function useRealtimeDictation({
     latestTextRef.current = '';
     setError(null);
     try {
+      const available = await Voice.isAvailable();
+      if (!available) {
+        setError('当前设备不可用语音识别');
+        return;
+      }
       await setRecordingMode(true);
       activeRef.current = true;
       setIsDictating(true);

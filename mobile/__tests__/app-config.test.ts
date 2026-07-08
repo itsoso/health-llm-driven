@@ -1,4 +1,5 @@
 const { buildWatchInjectionEnv } = require('../plugins/withWatchApp');
+const appJson = require('../app.json');
 
 function configForVariant(variant?: string, env: Record<string, string | undefined> = {}) {
   const previous = process.env.APP_VARIANT;
@@ -117,5 +118,18 @@ describe('app.config app links', () => {
       'cxrl',
       'life.executor.health.rokid',
     ]));
+  });
+
+  it('declares native voice permissions for both hold-to-talk and realtime dictation', () => {
+    const plugins = appJson.expo.plugins;
+
+    expect(plugins).toContain('expo-audio');
+    expect(plugins).toContainEqual([
+      '@react-native-voice/voice',
+      expect.objectContaining({
+        microphonePermission: expect.stringContaining('语音输入'),
+        speechRecognitionPermission: expect.stringContaining('识别你的语音'),
+      }),
+    ]);
   });
 });
