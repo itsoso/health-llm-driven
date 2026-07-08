@@ -29,6 +29,7 @@ import {
 const CANCEL_THRESHOLD = 80;
 const VOICE_SLIDE_THRESHOLD = 88;
 const COMPOSER_HIT_SLOP = { top: 6, right: 6, bottom: 6, left: 6 };
+const RECORDING_OVERLAY_TOP_INSET = 64;
 // 2026-07-07 founder「这个按钮不协调」:深色 #1F1F1F 输入栏贴在暖奶油页上割裂,
 // 且微信真实输入栏本就是浅灰(不是深色)。收回 revaTheme 暖白语言,与页面同调。
 const COMPOSER_BAR_BG = C.surface2;        // 输入栏底:微微抬起的暖白
@@ -113,6 +114,8 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const holdStartXRef = useRef(0);
   const voiceGestureActiveRef = useRef(false);
   const voiceCommitModeRef = useRef<'send' | 'text'>('send');
+  const voiceDraftBaseRef = useRef('');
+  const voiceDraftPreviewRef = useRef('');
   const realtimeBaseInputRef = useRef('');
   const canSend = (!!input.trim() || pendingImages.length > 0) && !isStreaming;
 
@@ -243,14 +246,31 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
       const clean = text.trim();
       if (!clean) return;
       if (!isStreaming && voiceCommitModeRef.current === 'send') {
+        voiceDraftPreviewRef.current = '';
         handleSend(clean);
         return;
       }
       setInputMode('text');
-      setInput(prev => prev ? `${prev.trim()} ${clean}` : clean);
+      setInput(prev => {
+        if (voiceDraftPreviewRef.current) {
+          const base = voiceDraftBaseRef.current.trim();
+          return base ? `${base} ${clean}` : clean;
+        }
+        return prev ? `${prev.trim()} ${clean}` : clean;
+      });
+      voiceDraftPreviewRef.current = '';
       setTimeout(() => textInputRef.current?.focus(), 30);
     },
   });
+
+  React.useEffect(() => {
+    if (voiceGesture !== 'text' || !voice.isRecording) return;
+    const clean = voice.partialText.trim();
+    if (!clean || clean === voiceDraftPreviewRef.current) return;
+    const base = voiceDraftBaseRef.current.trim();
+    voiceDraftPreviewRef.current = clean;
+    setInput(base ? `${base} ${clean}` : clean);
+  }, [voice.partialText, voice.isRecording, voiceGesture]);
 
   const cancelledRef = useRef(false);
   const startYRef = useRef(0);
@@ -262,6 +282,8 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     cancelledRef.current = false;
     voiceGestureActiveRef.current = true;
     voiceCommitModeRef.current = 'send';
+    voiceDraftBaseRef.current = input.trim();
+    voiceDraftPreviewRef.current = '';
     holdStartXRef.current = pageX;
     startYRef.current = pageY;
     setVoiceGesture('send');
@@ -276,6 +298,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     if (dy > CANCEL_THRESHOLD || dx < -VOICE_SLIDE_THRESHOLD) {
       cancelledRef.current = true;
       voiceGestureActiveRef.current = false;
+      voiceDraftPreviewRef.current = '';
       setVoiceGesture('cancel');
       setCancelHint(false);
       void voice.cancelRecording();
@@ -285,6 +308,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
       setCancelHint(false);
     } else {
       voiceCommitModeRef.current = 'send';
+      voiceDraftPreviewRef.current = '';
       setVoiceGesture('send');
       setCancelHint(dy > 30);
     }
@@ -445,20 +469,32 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
 
       {/* 录音中全屏蒙层 */}
       {voice.isRecording && (
-        <View style={styles.recordingOverlay}>
+        <View testID="wechat-recording-overlay" style={styles.recordingOverlay}>
           <View style={styles.wechatVoiceBubble}>
-            <View style={styles.wechatWaveRow}>
-              {VOICE_WAVE_BARS.map((bar) => (
-                <View
-                  key={bar}
-                  style={[
-                    styles.wechatWaveBar,
-                    { height: 8 + ((bar * 7) % 18) },
-                    bar > 18 && styles.wechatWaveBarLoud,
-                  ]}
-                />
-              ))}
-            </View>
+            {voice.partialText.trim() ? (
+              <View
+                style={styles.wechatVoiceTextPreview}
+                accessible
+                accessibilityLabel="实时语音转文字预览"
+              >
+                <Text style={styles.wechatVoiceTextPreviewText} numberOfLines={2}>
+                  {voice.partialText.trim()}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.wechatWaveRow}>
+                {VOICE_WAVE_BARS.map((bar) => (
+                  <View
+                    key={bar}
+                    style={[
+                      styles.wechatWaveBar,
+                      { height: 8 + ((bar * 7) % 18) },
+                      bar > 18 && styles.wechatWaveBarLoud,
+                    ]}
+                  />
+                ))}
+              </View>
+            )}
             <View style={styles.wechatBubbleTail} />
           </View>
           <Text style={styles.recordingDuration}>
@@ -867,7 +903,7 @@ const styles = StyleSheet.create({
 
   /* ── 录音中蒙层 ── */
   recordingOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    position: 'absolute', top: RECORDING_OVERLAY_TOP_INSET, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.78)',
     zIndex: 100,
     alignItems: 'center',
@@ -889,6 +925,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 30,
     marginBottom: 18,
   },
+  wechatVoiceTextPreview: {
+    maxWidth: 280,
+    minWidth: 190,
+    minHeight: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wechatVoiceTextPreviewText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '700',
+    color: '#115738',
+    textAlign: 'center',
+  } as TextStyle,
   wechatBubbleTail: {
     position: 'absolute',
     bottom: -10,

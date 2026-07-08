@@ -17,6 +17,12 @@ const mockStartDictation = jest.fn();
 const mockStopDictation = jest.fn();
 let latestVoiceRecordingOptions: any;
 let latestRealtimeDictationOptions: any;
+let mockVoiceRecordingState = {
+  isRecording: false,
+  isTranscribing: false,
+  durationMs: 0,
+  partialText: '',
+};
 let mockRealtimeDictationState = {
   isDictating: false,
   error: null as string | null,
@@ -36,10 +42,10 @@ jest.mock('../../../hooks/useVoiceRecording', () => ({
   useVoiceRecording: (options: any) => {
     latestVoiceRecordingOptions = options;
     return {
-      isRecording: false,
-      isTranscribing: false,
-      durationMs: 0,
-      partialText: '',
+      isRecording: mockVoiceRecordingState.isRecording,
+      isTranscribing: mockVoiceRecordingState.isTranscribing,
+      durationMs: mockVoiceRecordingState.durationMs,
+      partialText: mockVoiceRecordingState.partialText,
       startRecording: mockStartRecording,
       stopAndTranscribe: mockStopAndTranscribe,
       cancelRecording: mockCancelRecording,
@@ -93,6 +99,7 @@ describe('ChatInputBar', () => {
     jest.clearAllMocks();
     latestVoiceRecordingOptions = undefined;
     latestRealtimeDictationOptions = undefined;
+    mockVoiceRecordingState = { isRecording: false, isTranscribing: false, durationMs: 0, partialText: '' };
     mockRealtimeDictationState = { isDictating: false, error: null };
   });
 
@@ -296,6 +303,45 @@ describe('ChatInputBar', () => {
     expect(mockStopAndTranscribe).toHaveBeenCalled();
     expect(getByLabelText('消息输入框').props.value).toBe('记录午餐吃了鸡胸肉');
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('shows live text while hold-to-talk voice is recording', () => {
+    mockVoiceRecordingState = {
+      isRecording: true,
+      isTranscribing: false,
+      durationMs: 1200,
+      partialText: '今天晚餐吃了鸡胸肉',
+    };
+
+    const { getByText, getByLabelText, getByTestId } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    expect(flattenedStyle(getByTestId('wechat-recording-overlay')).top).toBeGreaterThanOrEqual(52);
+    expect(getByLabelText('实时语音转文字预览')).toBeTruthy();
+    expect(getByText('今天晚餐吃了鸡胸肉')).toBeTruthy();
+  });
+
+  it('syncs hold-to-talk partial text into the input draft while sliding right to text', () => {
+    const { getByLabelText, getByTestId, getByText, rerender } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('语音消息'));
+    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 160, pageY: 620 } });
+    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'touchMove', { nativeEvent: { pageX: 310, pageY: 620 } });
+
+    mockVoiceRecordingState = {
+      isRecording: true,
+      isTranscribing: false,
+      durationMs: 1200,
+      partialText: '今天晚餐吃了鸡胸肉',
+    };
+    rerender(<ChatInputBar onSend={jest.fn()} isStreaming={false} />);
+
+    expect(getByText('今天晚餐吃了鸡胸肉')).toBeTruthy();
+    fireEvent.press(getByLabelText('键盘输入'));
+    expect(getByLabelText('消息输入框').props.value).toBe('今天晚餐吃了鸡胸肉');
   });
 
   it('sends left hold-to-talk transcript by default on release', () => {
