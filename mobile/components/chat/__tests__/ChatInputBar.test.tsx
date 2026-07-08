@@ -465,6 +465,24 @@ describe('ChatInputBar', () => {
     expect(queryByLabelText('实时语音转文字')).toBeNull();
   });
 
+  it('stops and hides active inline dictation when tapping the send button', () => {
+    mockRealtimeDictationState = { isDictating: true, error: null };
+    const onSend = jest.fn();
+    const { getByLabelText, queryByLabelText } = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+
+    fireEvent.changeText(getByLabelText('消息输入框'), '听写完成的文字');
+    fireEvent.press(getByLabelText('发送消息'));
+
+    expect(mockStopDictation).toHaveBeenCalled();
+    expect(onSend).toHaveBeenCalledWith('听写完成的文字', null);
+    expect(queryByLabelText('停止实时语音转文字')).toBeNull();
+    expect(queryByLabelText('正在听写')).toBeNull();
+    expect(queryByLabelText('听写到输入框')).toBeNull();
+    expect(queryByLabelText('语音监听已关闭')).toBeNull();
+  });
+
   it('sends typed text when Enter is pressed in the composer', () => {
     const onSend = jest.fn();
     const { getByLabelText } = render(

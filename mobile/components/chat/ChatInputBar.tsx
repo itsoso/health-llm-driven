@@ -186,6 +186,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     : isDictationDisabled
       ? '再次点击开启实时语音转文字'
       : '点击后实时语音转文字到输入框';
+  const shouldHideInlineMicAfterSend = justSent && !input.trim() && pendingImages.length === 0;
 
   React.useEffect(() => {
     if (realtimeMicIntent === 'starting' && realtimeDictation.isDictating) {
@@ -223,13 +224,13 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     void realtimeDictation.startDictation();
   }, [input, isRealtimeMicActive, isStreaming, realtimeDictation, stopRealtimeDictation]);
 
-  const handleKeyboardSubmit = useCallback(() => {
+  const handleSubmitComposer = useCallback(() => {
     if (!canSend) return;
     const now = Date.now();
     if (now - lastKeyboardSubmitAtRef.current < 250) return;
     lastKeyboardSubmitAtRef.current = now;
     if (isRealtimeMicActive) {
-      stopRealtimeDictation();
+      stopRealtimeDictation({ markDisabled: true });
     }
     handleSend();
   }, [canSend, handleSend, isRealtimeMicActive, stopRealtimeDictation]);
@@ -237,9 +238,9 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const handleTextInputKeyPress = useCallback((event: any) => {
     const key = event?.nativeEvent?.key;
     if (key === 'Enter' || key === 'Return' || key === '\n') {
-      handleKeyboardSubmit();
+      handleSubmitComposer();
     }
-  }, [handleKeyboardSubmit]);
+  }, [handleSubmitComposer]);
 
   const voice = useVoiceRecording({
     onTranscript: (text) => {
@@ -595,7 +596,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
                 value={input}
                 onChangeText={setInput}
                 onKeyPress={handleTextInputKeyPress}
-                onSubmitEditing={handleKeyboardSubmit}
+                onSubmitEditing={handleSubmitComposer}
                 returnKeyType="send"
                 submitBehavior="submit"
                 selectionColor={C.greenBright}
@@ -603,7 +604,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
                 maxLength={2000}
                 accessibilityLabel="消息输入框"
               />
-              {isDictatingVisual && (
+              {!shouldHideInlineMicAfterSend && isDictatingVisual && (
                 <View style={styles.dictationStatusPill}>
                   <Text
                     style={styles.dictationStatusText}
@@ -614,7 +615,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
                   </Text>
                 </View>
               )}
-              {isDictationDisabled && (
+              {!shouldHideInlineMicAfterSend && isDictationDisabled && (
                 <View style={[styles.dictationStatusPill, styles.dictationStatusPillDisabled]}>
                   <Text
                     style={[styles.dictationStatusText, styles.dictationStatusTextDisabled]}
@@ -624,28 +625,30 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
                   </Text>
                 </View>
               )}
-              <TouchableOpacity
-                onPress={handleRealtimeMicPress}
-                style={[styles.inlineMicBtn, isDictatingVisual && styles.inlineMicBtnActive]}
-                hitSlop={COMPOSER_HIT_SLOP}
-                activeOpacity={0.72}
-                accessibilityRole="button"
-                accessibilityState={{ selected: isDictatingVisual }}
-                accessibilityLabel={inlineMicAccessibilityLabel}
-                accessibilityHint={inlineMicAccessibilityHint}
-              >
-                {isDictatingVisual && <PulsingRing />}
-                <Ionicons
-                  name={isDictationDisabled ? 'mic-off' : 'mic'}
-                  size={21}
-                  color={isDictatingVisual ? '#FFFFFF' : isDictationDisabled ? C.ink3 : COMPOSER_ICON}
-                />
-              </TouchableOpacity>
+              {!shouldHideInlineMicAfterSend && (
+                <TouchableOpacity
+                  onPress={handleRealtimeMicPress}
+                  style={[styles.inlineMicBtn, isDictatingVisual && styles.inlineMicBtnActive]}
+                  hitSlop={COMPOSER_HIT_SLOP}
+                  activeOpacity={0.72}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isDictatingVisual }}
+                  accessibilityLabel={inlineMicAccessibilityLabel}
+                  accessibilityHint={inlineMicAccessibilityHint}
+                >
+                  {isDictatingVisual && <PulsingRing />}
+                  <Ionicons
+                    name={isDictationDisabled ? 'mic-off' : 'mic'}
+                    size={21}
+                    color={isDictatingVisual ? '#FFFFFF' : isDictationDisabled ? C.ink3 : COMPOSER_ICON}
+                  />
+                </TouchableOpacity>
+              )}
             </Pressable>
           )}
 
           {inputMode === 'text' && canSend ? (
-            <TouchableOpacity onPress={() => handleSend()} style={styles.sendBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="发送消息">
+            <TouchableOpacity onPress={handleSubmitComposer} style={styles.sendBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="发送消息">
               <Ionicons name="arrow-up" size={20} color="#fff" />
             </TouchableOpacity>
           ) : inputMode === 'text' && justSent ? (
