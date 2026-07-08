@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports, import/first */
 import React from 'react';
-import { Keyboard, StyleSheet } from 'react-native';
+import { AppState, Keyboard, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockOpenHistory = jest.fn();
@@ -783,7 +783,7 @@ describe('ChatScreen', () => {
     expect(queryByLabelText('连接设备')).toBeNull();
   });
 
-  it('keeps the agent-native chat composer aligned to the keyboard without a large spacer', async () => {
+  it('keeps the agent-native chat composer aligned to the keyboard with a keyboard-overlap spacer', async () => {
     const keyboardListeners: Record<string, (event: any) => void> = {};
     jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
       keyboardListeners[String(eventName)] = callback;
@@ -803,8 +803,47 @@ describe('ChatScreen', () => {
       });
     });
 
-    // 键盘弹起后由 KeyboardAvoidingView 对齐键盘,不再塞入整块 keyboardHeight 空白。
-    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 0 });
+    // iOS 键盘覆盖页面;手动 spacer 等于键盘 overlap,把输入栏锚到键盘上沿,不再依赖
+    // KeyboardAvoidingView 的内部 padding。
+    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 336 });
+  });
+
+  it('resyncs the composer position when returning from another app with the keyboard still visible', async () => {
+    const keyboardListeners: Record<string, (event: any) => void> = {};
+    let appStateHandler: ((state: string) => void) | null = null;
+    jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
+      keyboardListeners[String(eventName)] = callback;
+      return { remove: jest.fn() } as any;
+    });
+    jest.spyOn(AppState, 'addEventListener').mockImplementation(((_type: string, callback: (state: string) => void) => {
+      appStateHandler = callback;
+      return { remove: jest.fn() };
+    }) as never);
+    const originalMetrics = (Keyboard as any).metrics;
+    (Keyboard as any).metrics = jest.fn(() => ({ height: 336 }));
+
+    try {
+      const { getByTestId } = render(<ChatScreen />);
+      await waitFor(() => expect(mockFetchConversationStarters).toHaveBeenCalled());
+
+      act(() => {
+        keyboardListeners.keyboardDidShow({
+          endCoordinates: { height: 336 },
+        });
+      });
+      act(() => {
+        keyboardListeners.keyboardDidHide({});
+      });
+      expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 28 });
+
+      act(() => {
+        appStateHandler?.('active');
+      });
+
+      expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 336 });
+    } finally {
+      (Keyboard as any).metrics = originalMetrics;
+    }
   });
 
   it('shows a visible cancel action after long-pressing a message into multi-select', async () => {

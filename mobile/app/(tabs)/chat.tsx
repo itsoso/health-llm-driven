@@ -1,8 +1,9 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
-  Platform, TextStyle, KeyboardAvoidingView,
+  Platform, TextStyle,
   Alert, Dimensions, Keyboard, Modal, Pressable, useWindowDimensions,
+  AppState,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -159,6 +160,7 @@ export default function ChatScreen() {
   // 今日简报条：真实数字来自 /timeline/today（待办 / 已完成计数），不伪造指标。
   const todayTimeline = useTodayTimeline();
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
@@ -351,8 +353,8 @@ export default function ChatScreen() {
     // 豆包等第三方输入法首次唤起:键盘扩展进程冷启动,didShow 先报一个未装载完
     // 的高度,装载完成后只发 (will|did)ChangeFrame **不再发 didShow** —— 只抓一次
     // didShow 的高度会停在旧值,输入栏被压在键盘底下(founder 实锤截图)。
-    // 修:持续跟 frame 事件走。有 screenY 时用「窗口高 - 键盘顶边」的重叠高度
-    // (隐藏帧 screenY≥窗口高 → 0,天然处理 hide);无 screenY(测试/老事件)退回 height。
+    // 修:持续跟 frame 事件走,并用手动 spacer 代替 KeyboardAvoidingView。KAV 在从其他
+    // App 回前台时容易保留旧 padding,导致 composer 漂到页面中部。
     const applyKeyboardFrame = (event: any) => {
       const end = event?.endCoordinates;
       if (!end) return;
@@ -361,6 +363,19 @@ export default function ChatScreen() {
         ? Math.max(0, Math.round(windowH - end.screenY))
         : Math.max(0, Math.round(end.height || 0));
       setKeyboardVisible(height > 0);
+      setKeyboardHeight(height);
+    };
+    const clearKeyboardFrame = () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+    };
+    const syncKeyboardMetrics = () => {
+      const metrics = typeof Keyboard.metrics === 'function' ? Keyboard.metrics() : undefined;
+      if (metrics) {
+        applyKeyboardFrame({ endCoordinates: metrics });
+      } else {
+        clearKeyboardFrame();
+      }
     };
     const subs = [
       Keyboard.addListener('keyboardDidShow', (event) => {
@@ -369,8 +384,13 @@ export default function ChatScreen() {
       }),
       Keyboard.addListener('keyboardWillChangeFrame', applyKeyboardFrame),
       Keyboard.addListener('keyboardDidChangeFrame', applyKeyboardFrame),
-      Keyboard.addListener('keyboardDidHide', () => {
-        setKeyboardVisible(false);
+      Keyboard.addListener('keyboardDidHide', clearKeyboardFrame),
+      AppState.addEventListener('change', (state) => {
+        if (state === 'active') {
+          syncKeyboardMetrics();
+        } else {
+          clearKeyboardFrame();
+        }
       }),
     ];
     return () => { subs.forEach(s => s.remove()); };
@@ -685,10 +705,10 @@ export default function ChatScreen() {
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  // 小巴是 agent-native 主屏,没有底部 Tab Bar。键盘弹起时交给 KeyboardAvoidingView
-  // 对齐键盘上沿;收起时 = 底部安全区(SafeAreaView 只包 top, home indicator 由这里补)
-  // + 呼吸空间,让输入栏悬浮在 home indicator 之上而非压进去。
-  const bottomSpacerHeight = keyboardVisible ? 0 : insets.bottom + CHAT_BOTTOM_BREATHING_SPACE;
+  // 小巴是 agent-native 主屏,没有底部 Tab Bar。键盘弹起时用 overlap spacer 对齐键盘
+  // 上沿;收起时 = 底部安全区(SafeAreaView 只包 top, home indicator 由这里补)+ 呼吸空间。
+  const keyboardSpacerHeight = Platform.OS === 'ios' && keyboardVisible ? keyboardHeight : 0;
+  const bottomSpacerHeight = keyboardVisible ? keyboardSpacerHeight : insets.bottom + CHAT_BOTTOM_BREATHING_SPACE;
   const activeLlmLabel = llmModelId
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
@@ -719,10 +739,7 @@ export default function ChatScreen() {
         />
       )}
 
-      <KeyboardAvoidingView
-        style={styles.keyboardAvoidingBody}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <View style={styles.keyboardAvoidingBody}>
         {/* 展开态：今日以内联面板呈现在对话页（占据消息区），composer 仍在下方；收起回到对话。 */}
         {briefingExpanded ? (
           <View testID="chat-today-inline-panel" style={{ flex: 1 }}>
@@ -828,7 +845,7 @@ export default function ChatScreen() {
           />
         )}
         <View testID="chat-bottom-spacer" style={{ height: bottomSpacerHeight }} />
-      </KeyboardAvoidingView>
+      </View>
 
       <Modal visible={!!viewingImage} transparent animationType="fade" onRequestClose={() => setViewingImage(null)}>
         <Pressable style={styles.imageViewerOverlay} onPress={() => setViewingImage(null)}>
