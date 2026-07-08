@@ -1480,6 +1480,7 @@ private struct AttachmentChip: View {
         case .dedaoFolder: "folder"
         case .appleHealthExport: "heart.text.square"
         case .medicalFile: "doc.richtext"
+        case .image: "photo"
         case .unknown: "doc"
         }
     }
@@ -3625,7 +3626,10 @@ struct RecordHubView: View {
 
         do {
             let intakeItem = try await FileIntakeService.inspect(url: url)
-            guard intakeItem.sourceKind == .medicalFile,
+            // This is the explicit "import lab report" UI, so a plain photo here IS
+            // meant as a lab report — accept `.image` (jpg/png) as well as `.medicalFile`
+            // (pdf). The MIME allowlist is the real gate on what the backend can OCR.
+            guard intakeItem.sourceKind == .medicalFile || intakeItem.sourceKind == .image,
                   LabReportUploadMime.isSupported(forExtension: url.pathExtension) else {
                 labUploadStatus = appText("Please choose a supported lab PDF or image.", appLanguageRaw)
                 return
@@ -4001,7 +4005,7 @@ struct ImportCenterView: View {
         switch kind {
         case .genomeText:
             return "新基因数据已入库。等解析完成后，结合最近化验和补剂清单，告诉我哪些 SNP 现在最该关注，以及对应的生活方式/补剂调整。"
-        case .medicalFile:
+        case .medicalFile, .image:
             return "刚导入的化验/医疗文件解析完后，列出偏离参考范围的指标，按风险排序，每条给一段解释和下一步行动。"
         case .appleHealthExport:
             return "Apple Health 数据导入完毕后，给我最近 30 天的活动、睡眠、心率趋势综合摘要，并指出与基线的明显偏差。"
@@ -4016,7 +4020,7 @@ struct ImportCenterView: View {
         switch kind {
         case .genomeText: "gene_reanalysis"
         case .dedaoFolder: "dedao_compile"
-        case .medicalFile, .appleHealthExport: "medical_import"
+        case .medicalFile, .image, .appleHealthExport: "medical_import"
         case .unknown: "medical_import"
         }
     }

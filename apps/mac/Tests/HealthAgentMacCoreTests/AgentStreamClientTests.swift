@@ -1095,6 +1095,81 @@ final class AgentStreamClientTests: XCTestCase {
     }
 
     @MainActor
+    func testAgentChatViewModelSendsFoodPhotoToAgentWithoutLabImport() async throws {
+        // A meal photo classifies as `.image`, so it must NOT hit the lab-report
+        // import path at all, and its bytes must reach `/agent/stream` as a chat
+        // image so the multimodal/food path can run.
+        let service = CapturingAgentStreamService()
+        let labUpload = FailingLabUploadService()
+        let model = AgentChatViewModel(streamService: service, labUploadService: labUpload)
+
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("health-mac-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let photo = tempDir.appendingPathComponent("lunch.jpg")
+        try Data([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10]).write(to: photo)
+        model.addAttachment(.init(url: photo, name: "lunch.jpg", sourceKind: .image, sha256: "sha256:lunch"))
+
+        await model.send("记录午餐")
+
+        XCTAssertEqual(labUpload.importedURLs, [], "food photo must not be routed to lab import")
+        XCTAssertNil(model.errorMessage, "lab-import must never abort a food-photo turn")
+        let images = try XCTUnwrap(service.imagesSeen.last)
+        XCTAssertEqual(images.count, 1, "the photo bytes must reach /agent/stream")
+        XCTAssertEqual(images.first?.type, "jpeg")
+        XCTAssertFalse(images.first?.base64.isEmpty ?? true)
+        XCTAssertEqual(model.messages.first(where: { $0.role == .user })?.content, "记录午餐")
+    }
+
+    @MainActor
+    func testAgentChatViewModelDoesNotAbortWhenLabImportFails() async throws {
+        // A genuine .medicalFile whose OCR fails (「无法识别」/422) must be skipped,
+        // NOT throw and abort the whole send.
+        let service = CapturingAgentStreamService()
+        let labUpload = FailingLabUploadService()
+        let model = AgentChatViewModel(streamService: service, labUploadService: labUpload)
+        model.addAttachment(.init(
+            url: URL(fileURLWithPath: "/tmp/not-a-lab.pdf"),
+            name: "not-a-lab.pdf",
+            sourceKind: .medicalFile,
+            sha256: "sha256:pdf"
+        ))
+
+        await model.send("这是什么")
+
+        XCTAssertEqual(labUpload.importedURLs.count, 1, "import was attempted for the .medicalFile")
+        XCTAssertNil(model.errorMessage, "a failed lab import must not abort the turn")
+        XCTAssertEqual(service.messages, ["这是什么"], "the turn still reached /agent/stream")
+    }
+
+    @MainActor
+    func testAgentChatViewModelStreamsFoodPhotoAsSingleImageBase64Field() throws {
+        // The encoded request must use the backend's single-image fields
+        // (image_base64 + image_type), matching mobile's contract.
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("health-mac-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let photo = tempDir.appendingPathComponent("meal.png")
+        let bytes = Data([0x89, 0x50, 0x4E, 0x47])
+        try bytes.write(to: photo)
+        let model = AgentChatViewModel(streamService: CapturingAgentStreamService())
+        model.addAttachment(.init(url: photo, name: "meal.png", sourceKind: .image, sha256: "sha256:meal"))
+
+        let images = model.buildChatImages(excludingImportedHashes: [])
+        XCTAssertEqual(images.count, 1)
+        XCTAssertEqual(images.first?.type, "png")
+        XCTAssertEqual(images.first?.base64, bytes.base64EncodedString())
+
+        let request = AgentStreamRequest(message: "记录午餐", images: images)
+        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any]
+        XCTAssertEqual(json?["image_base64"] as? String, bytes.base64EncodedString())
+        XCTAssertEqual(json?["image_type"] as? String, "png")
+        XCTAssertNil(json?["images"], "a single image must use image_base64, not images[]")
+    }
+
+    @MainActor
     func testAgentChatViewModelAlwaysRequestsStructuredMarkdownReplies() async throws {
         let service = CapturingAgentStreamService()
         let model = AgentChatViewModel(streamService: service)
@@ -1223,7 +1298,7 @@ final class AgentStreamClientTests: XCTestCase {
 private struct StaticAgentStreamService: AgentStreamServicing {
     let stream: AsyncThrowingStream<AgentStreamEvent, Error>
 
-    func stream(message: String, conversationID: Int?, extraContext: String?) -> AsyncThrowingStream<AgentStreamEvent, Error> {
+    func stream(message: String, conversationID: Int?, extraContext: String?, images: [AgentChatImage]) -> AsyncThrowingStream<AgentStreamEvent, Error> {
         stream
     }
 }
@@ -1238,12 +1313,14 @@ private final class CapturingAgentStreamService: AgentStreamServicing, @unchecke
     nonisolated(unsafe) var extraContext: String?
     nonisolated(unsafe) var extraContexts: [String?] = []
     nonisolated(unsafe) var messages: [String] = []
+    nonisolated(unsafe) var imagesSeen: [[AgentChatImage]] = []
     nonisolated(unsafe) var streams: [AsyncThrowingStream<AgentStreamEvent, Error>] = []
 
-    func stream(message: String, conversationID: Int?, extraContext: String?) -> AsyncThrowingStream<AgentStreamEvent, Error> {
+    func stream(message: String, conversationID: Int?, extraContext: String?, images: [AgentChatImage]) -> AsyncThrowingStream<AgentStreamEvent, Error> {
         self.extraContext = extraContext
         self.extraContexts.append(extraContext)
         self.messages.append(message)
+        self.imagesSeen.append(images)
         if !streams.isEmpty {
             return streams.removeFirst()
         }
@@ -1271,7 +1348,7 @@ private final class SequencedAgentStreamService: AgentStreamServicing, @unchecke
         self.streams = streams
     }
 
-    func stream(message: String, conversationID: Int?, extraContext: String?) -> AsyncThrowingStream<AgentStreamEvent, Error> {
+    func stream(message: String, conversationID: Int?, extraContext: String?, images: [AgentChatImage]) -> AsyncThrowingStream<AgentStreamEvent, Error> {
         messages.append(message)
         if streams.isEmpty {
             return AsyncThrowingStream { continuation in continuation.finish() }
@@ -1291,5 +1368,16 @@ private final class StubLabUploadService: LabUploadServicing, @unchecked Sendabl
     func importReport(fileURL: URL) async throws -> LabUploadResult {
         importedURLs.append(fileURL)
         return result
+    }
+}
+
+/// A lab-upload service that always fails, mirroring the backend 422 「无法识别」
+/// a non-lab image triggers. Used to prove the send path stays alive.
+private final class FailingLabUploadService: LabUploadServicing, @unchecked Sendable {
+    nonisolated(unsafe) var importedURLs: [URL] = []
+
+    func importReport(fileURL: URL) async throws -> LabUploadResult {
+        importedURLs.append(fileURL)
+        throw APIError.httpStatus(422, "无法识别")
     }
 }

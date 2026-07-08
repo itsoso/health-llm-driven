@@ -908,7 +908,7 @@ public final class AgentChatViewModel {
         }
 
         do {
-            let importedReports = try await importLabReportAttachmentsIfNeeded()
+            let importedReports = await importLabReportAttachmentsIfNeeded()
             if let firstImport = importedReports.first {
                 attachDynamicCard(
                     medicalExamImportDynamicCard(for: firstImport),
@@ -916,10 +916,15 @@ public final class AgentChatViewModel {
                     toolName: "medical_exam_import"
                 )
             }
+            // Attach photo bytes so the agent's multimodal/vision path can run
+            // (food recognition for 「记录午餐」, etc). Lab reports already imported
+            // above are excluded — they surface as a structured exam card instead.
+            let chatImages = buildChatImages(excludingImportedHashes: Set(importedReports.map(\.sourceHash)))
             for try await event in streamService.stream(
                 message: message,
                 conversationID: conversationID,
-                extraContext: buildExtraContext()
+                extraContext: buildExtraContext(),
+                images: chatImages
             ) {
                 switch event {
                 case .start(let id):
@@ -1625,8 +1630,55 @@ public final class AgentChatViewModel {
         return String(data: data, encoding: .utf8)
     }
 
+    /// Attempts a medical-exam import ONLY for genuinely-medical attachments
+    /// (`.medicalFile`, i.e. PDFs / documents dropped as lab reports). Plain photos
+    /// classify as `.image` and are intentionally excluded — a food photo must NOT
+    /// be force-routed to lab-report OCR; it flows to the agent's multimodal path.
+    ///
+    /// Import is best-effort and NEVER fatal: a report that the backend cannot OCR
+    /// (「无法识别」 / 422) is skipped rather than aborting the whole chat turn, so the
+    /// attached image still reaches `/agent/stream`. It does not `throw`.
+    /// Base64-encodes attached photos for the agent's multimodal path. Only true
+    /// image files (`.image`) are sent; PDFs / documents (`.medicalFile`) go through
+    /// lab-report import, not vision. Reports already imported this turn are skipped
+    /// (their hash is in `excludingImportedHashes`) so a lab photo isn't double-fed.
+    /// Backend caps at 9 images and ~7.5MB each; we mirror that defensively.
+    func buildChatImages(excludingImportedHashes: Set<String>) -> [AgentChatImage] {
+        let maxImages = 9
+        let maxBytesPerImage = 7_500_000
+        var built: [AgentChatImage] = []
+        for attachment in attachments {
+            guard attachment.sourceKind == .image else { continue }
+            guard !excludingImportedHashes.contains(attachment.sha256) else { continue }
+            guard let data = try? Data(contentsOf: attachment.url), !data.isEmpty else {
+                AppLogger.agent.info("chat image skipped: unreadable attachment")
+                continue
+            }
+            guard data.count <= maxBytesPerImage else {
+                AppLogger.agent.info("chat image skipped: exceeds size cap")
+                continue
+            }
+            let type = Self.imageSubtype(forExtension: attachment.url.pathExtension)
+            built.append(AgentChatImage(base64: data.base64EncodedString(), type: type))
+            if built.count >= maxImages { break }
+        }
+        return built
+    }
+
+    /// Maps a file extension to the bare image subtype the backend `ImageItem`
+    /// expects (no `image/` prefix), matching mobile's client. Unknown → "jpeg".
+    static func imageSubtype(forExtension ext: String) -> String {
+        switch ext.lowercased() {
+        case "png": return "png"
+        case "webp": return "webp"
+        case "heic": return "heic"
+        case "jpg", "jpeg": return "jpeg"
+        default: return "jpeg"
+        }
+    }
+
     @discardableResult
-    private func importLabReportAttachmentsIfNeeded() async throws -> [LabReportImportContext] {
+    private func importLabReportAttachmentsIfNeeded() async -> [LabReportImportContext] {
         guard let labUploadService else { return [] }
         let medicalAttachments = attachments.filter {
             $0.sourceKind == .medicalFile && LabReportUploadMime.isSupported(forExtension: $0.url.pathExtension)
@@ -1638,15 +1690,24 @@ public final class AgentChatViewModel {
             guard !labReportImports.contains(where: { $0.sourceHash == attachment.sha256 }) else {
                 continue
             }
-            let result = try await labUploadService.importReport(fileURL: attachment.url)
-            let item = LabReportImportContext(
-                fileName: attachment.name,
-                sourceHash: attachment.sha256,
-                sourceKind: attachment.sourceKind,
-                result: result
-            )
-            labReportImports.append(item)
-            imported.append(item)
+            do {
+                let result = try await labUploadService.importReport(fileURL: attachment.url)
+                let item = LabReportImportContext(
+                    fileName: attachment.name,
+                    sourceHash: attachment.sha256,
+                    sourceKind: attachment.sourceKind,
+                    result: result
+                )
+                labReportImports.append(item)
+                imported.append(item)
+            } catch {
+                // Not a recognizable lab report (or a transient upload failure) —
+                // skip this attachment's lab-import and let it flow to the agent as a
+                // normal chat image/document. Never abort the turn.
+                AppLogger.agent.info(
+                    "lab-report import skipped for attachment (non-fatal): \(error.localizedDescription, privacy: .public)"
+                )
+            }
         }
         return imported
     }

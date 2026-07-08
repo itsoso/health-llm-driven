@@ -1,5 +1,18 @@
 import Foundation
 
+/// A chat image forwarded to the agent's multimodal/vision path. Mirrors the
+/// backend `ImageItem` contract (`{base64, type}`); `type` is a bare subtype such
+/// as "jpeg" / "png" (no `image/` prefix), matching mobile's client (`chat.ts`).
+public struct AgentChatImage: Encodable, Equatable, Sendable {
+    public let base64: String
+    public let type: String
+
+    public init(base64: String, type: String) {
+        self.base64 = base64
+        self.type = type
+    }
+}
+
 public struct AgentStreamRequest: Encodable, Equatable, Sendable {
     public let message: String
     public let conversationID: Int?
@@ -7,17 +20,23 @@ public struct AgentStreamRequest: Encodable, Equatable, Sendable {
     /// 输入通道声明(传输层,非 LLM 参数):mac 助手是打字输入 → "typed"。
     /// 后端据此对症状类记录免二次确认;语音/未声明通道 fail-closed 保留确认。
     public let channel: String
+    /// Chat images for the agent's vision path. Encoded to match the backend
+    /// `AgentRequest` schema: a single image → `image_base64` + `image_type`;
+    /// two or more → `images: [{base64, type}]`. Same shape mobile sends.
+    public let images: [AgentChatImage]
 
     public init(
         message: String,
         conversationID: Int? = nil,
         extraContext: String? = nil,
-        channel: String = "typed"
+        channel: String = "typed",
+        images: [AgentChatImage] = []
     ) {
         self.message = message
         self.conversationID = conversationID
         self.extraContext = extraContext
         self.channel = channel
+        self.images = images
     }
 
     enum CodingKeys: String, CodingKey {
@@ -25,6 +44,26 @@ public struct AgentStreamRequest: Encodable, Equatable, Sendable {
         case conversationID = "conversation_id"
         case extraContext = "extra_context"
         case channel
+        case imageBase64 = "image_base64"
+        case imageType = "image_type"
+        case images
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(message, forKey: .message)
+        try container.encodeIfPresent(conversationID, forKey: .conversationID)
+        try container.encodeIfPresent(extraContext, forKey: .extraContext)
+        try container.encode(channel, forKey: .channel)
+        // Match the backend contract exactly: single image on the legacy
+        // image_base64/image_type fields, multiple on images[]. Zero images ⇒
+        // neither key is emitted (byte-identical to the old request).
+        if images.count == 1, let only = images.first {
+            try container.encode(only.base64, forKey: .imageBase64)
+            try container.encode(only.type, forKey: .imageType)
+        } else if images.count > 1 {
+            try container.encode(images, forKey: .images)
+        }
     }
 }
 
@@ -32,8 +71,26 @@ public protocol AgentStreamServicing: Sendable {
     func stream(
         message: String,
         conversationID: Int?,
-        extraContext: String?
+        extraContext: String?,
+        images: [AgentChatImage]
     ) -> AsyncThrowingStream<AgentStreamEvent, Error>
+}
+
+public extension AgentStreamServicing {
+    /// Back-compat convenience: callers that don't attach images keep the
+    /// original 3-argument call site.
+    func stream(
+        message: String,
+        conversationID: Int?,
+        extraContext: String?
+    ) -> AsyncThrowingStream<AgentStreamEvent, Error> {
+        stream(
+            message: message,
+            conversationID: conversationID,
+            extraContext: extraContext,
+            images: []
+        )
+    }
 }
 
 public final class AgentStreamClient: AgentStreamServicing, @unchecked Sendable {
@@ -72,12 +129,14 @@ public final class AgentStreamClient: AgentStreamServicing, @unchecked Sendable 
     public func stream(
         message: String,
         conversationID: Int? = nil,
-        extraContext: String? = nil
+        extraContext: String? = nil,
+        images: [AgentChatImage] = []
     ) -> AsyncThrowingStream<AgentStreamEvent, Error> {
         stream(request: AgentStreamRequest(
             message: message,
             conversationID: conversationID,
-            extraContext: extraContext
+            extraContext: extraContext,
+            images: images
         ))
     }
 

@@ -380,6 +380,39 @@ final class MacP0FeatureTests: XCTestCase {
         XCTAssertEqual(dedaoItem.sourceKind, .dedaoFolder)
     }
 
+    /// A plain photo (jpg/png/heic/webp) must NOT classify as `.medicalFile` — that
+    /// force-routed every image to lab-report OCR and hard-failed 「记录午餐」+photo
+    /// with a 422 「无法识别」. It must classify as `.image` so it flows to the agent's
+    /// multimodal/vision path instead.
+    func testFileIntakeClassifiesPhotoAsImageNotMedicalFile() async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("health-mac-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        for ext in ["jpg", "jpeg", "png", "heic", "webp"] {
+            let photo = tempDir.appendingPathComponent("lunch.\(ext)")
+            try Data([0x01, 0x02, 0x03, 0x04]).write(to: photo)
+            let item = try await FileIntakeService.inspect(url: photo)
+            XCTAssertEqual(item.sourceKind, .image, "\(ext) should classify as .image")
+            XCTAssertNotEqual(item.sourceKind, .medicalFile, "\(ext) must not force-route to lab OCR")
+        }
+    }
+
+    /// A PDF here is almost always a lab report / medical document, so it must stay
+    /// `.medicalFile` and remain eligible for the medical-exam import path.
+    func testFileIntakeClassifiesPDFAsMedicalFile() async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("health-mac-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let pdf = tempDir.appendingPathComponent("report.pdf")
+        try Data("%PDF-1.4".utf8).write(to: pdf)
+        let item = try await FileIntakeService.inspect(url: pdf)
+        XCTAssertEqual(item.sourceKind, .medicalFile)
+    }
+
     func testRecordClientPostsQuickRecordText() async throws {
         URLProtocolStub.handler = { request in
             XCTAssertEqual(request.httpMethod, "POST")
