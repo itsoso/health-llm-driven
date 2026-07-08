@@ -9,7 +9,7 @@ import { dispatchCard, renderServerCards } from '../components/chat/cards';
 import type { ChatCardActionDescriptor, ServerCardDescriptor } from '../components/chat/cards/types';
 import api, { BASE_URL } from '../services/api';
 import { emitClientEvent } from '../services/clientEvents';
-import { sanitizeChatErrorMessage } from '../utils/chatErrorMessage';
+import { sanitizeChatErrorMessage, sanitizeChatStreamToken } from '../utils/chatErrorMessage';
 import { mergeModelIntoExtraContext } from '../utils/chatExtraContext';
 
 function normalizeImageHost(baseUrl: string): string {
@@ -619,7 +619,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             )));
           }
         } else if (evt.type === 'token' || evt.type === 'tool') {
-          const incoming = sanitizeChatErrorMessage(evt.content || '', '');
+          const incoming = sanitizeChatStreamToken(evt.content || '');
           if (incoming) {
             if (!gotFirstToken) {
               gotFirstToken = true;

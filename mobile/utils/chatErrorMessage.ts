@@ -38,3 +38,13 @@ export function sanitizeChatErrorMessage(raw: unknown, fallback = '请求出错�
   }
   return GENERIC_MODEL_ERROR_MESSAGE;
 }
+
+export function sanitizeChatStreamToken(raw: unknown): string {
+  const value = typeof raw === 'string' ? raw : String(raw || '');
+  if (!value) return '';
+
+  const trimmed = value.trim();
+  if (!trimmed || !looksLikeProviderError(trimmed)) return value;
+
+  return sanitizeChatErrorMessage(trimmed, '');
+}

@@ -133,6 +133,15 @@ async function* streamLastTokenThenDoneAtomic() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
+async function* streamMarkdownBoundaryWhitespaceThenDone() {
+  yield { type: 'start', conversationId: 777 };
+  yield { type: 'token', content: '## 今日状态总览\n\n' };
+  yield { type: 'token', content: '- **天气**：14℃ · 阴天\n' };
+  yield { type: 'token', content: '- **空气质量**：良好\n\n' };
+  yield { type: 'token', content: '### 今日行动\n' };
+  yield { type: 'done', conversationId: 777, messageId: 2 };
+}
+
 // 攒批后走 error 分支: 已接收 token 必须先 flush, 再拼错误尾巴.
 async function* streamTokenBurstThenError() {
   yield { type: 'start', conversationId: 777 };
@@ -424,11 +433,9 @@ describe('useChatEngine', () => {
 
     // done 之后: 最后一批 token 不丢, streaming 已翻 false —— 二者同一帧完成。
     // (若非原子, 会短暂出现 content 缺 "最后一段" 但 streaming:false 的中间态。)
-    // 注: 每个 token 经 sanitizeChatErrorMessage 会 trim, 故首批尾部空格被吃掉,
-    //     两批直接相接 —— 关键是两批都在、顺序对、streaming 已 false。
     await waitFor(() => {
       const assistant = result.current.messages.find(m => m.role === 'assistant');
-      expect(assistant?.content).toBe('## 今日状态总览这是最后一段正文。');
+      expect(assistant?.content).toBe('## 今日状态总览 这是最后一段正文。');
       expect(assistant?.streaming).toBe(false);
     });
 
@@ -437,6 +444,30 @@ describe('useChatEngine', () => {
     expect(assistant?.content).not.toContain('⏳');
     expect(assistant?.content).toContain('## 今日状态总览');
     expect(assistant?.content).toContain('这是最后一段正文。');
+  });
+
+  it('preserves markdown whitespace across streamed token boundaries', async () => {
+    mockStreamChat.mockImplementation(streamMarkdownBoundaryWhitespaceThenDone);
+
+    const { result } = renderHook(() => useChatEngine());
+
+    act(() => {
+      void result.current.sendMessage('看今日简报');
+    });
+
+    await waitFor(() => {
+      const assistant = result.current.messages.find(m => m.role === 'assistant');
+      expect(assistant?.content).toBe([
+        '## 今日状态总览',
+        '',
+        '- **天气**：14℃ · 阴天',
+        '- **空气质量**：良好',
+        '',
+        '### 今日行动',
+        '',
+      ].join('\n'));
+      expect(assistant?.streaming).toBe(false);
+    });
   });
 
   it('flushes buffered tokens before an error tail (攒批不吞已接收内容)', async () => {
