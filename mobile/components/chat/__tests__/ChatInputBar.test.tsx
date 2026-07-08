@@ -207,8 +207,18 @@ describe('ChatInputBar', () => {
     fireEvent.press(getByLabelText('语音消息'));
 
     expect(getByLabelText('键盘输入')).toBeTruthy();
+    expect(queryByTestId('icon-keypad-outline')).toBeNull();
+    const keyboardIcon = flattenedStyle(getByTestId('wechat-keyboard-icon'));
+    expect(keyboardIcon.width).toBeLessThanOrEqual(22);
+    expect(keyboardIcon.height).toBeLessThanOrEqual(18);
+    expect(flattenedStyle(getByTestId('wechat-keyboard-icon-frame')).borderColor).toBe(revaColors.ink2);
     expect(getByTestId('wechat-hold-to-talk-surface')).toBeTruthy();
-    expect(getByText('按住 说话')).toBeTruthy();
+    const holdText = getByText('按住 说话');
+    expect(holdText).toBeTruthy();
+    const holdTextStyle = flattenedStyle(holdText);
+    expect(holdTextStyle.fontFamily).toBeUndefined();
+    expect(holdTextStyle.fontSize).toBeLessThanOrEqual(17);
+    expect(holdTextStyle.lineHeight).toBeLessThanOrEqual(24);
     expect(queryByTestId('wechat-composer-input')).toBeNull();
     expect(mockStartRecording).not.toHaveBeenCalled();
 

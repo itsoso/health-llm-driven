@@ -64,6 +64,23 @@ function PulsingRing() {
   return <ReAnimated.View style={[styles.pulsingRing, animStyle]} />;
 }
 
+function WeChatKeyboardIcon() {
+  return (
+    <View testID="wechat-keyboard-icon" style={styles.wechatKeyboardIcon}>
+      <View testID="wechat-keyboard-icon-frame" style={styles.wechatKeyboardIconFrame}>
+        <View style={styles.wechatKeyboardGrid}>
+          {Array.from({ length: 9 }, (_, index) => (
+            <View key={index} style={styles.wechatKeyboardKey} />
+          ))}
+        </View>
+        <View style={styles.wechatKeyboardBottomRow}>
+          <View style={styles.wechatKeyboardSpaceKey} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
 interface Props {
   onSend: (text: string, images?: PendingImage[] | null, options?: ChatInputSendOptions) => void;
   isStreaming: boolean;
@@ -471,7 +488,11 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
             accessibilityLabel={inputMode === 'text' ? '语音消息' : '键盘输入'}
             accessibilityHint={inputMode === 'text' ? '切换后按住发送语音消息' : '回到文字输入'}
           >
-            <Ionicons name={inputMode === 'text' ? 'volume-medium-outline' : 'keypad-outline'} size={25} color={COMPOSER_ICON} />
+            {inputMode === 'text' ? (
+              <Ionicons name="volume-medium-outline" size={25} color={COMPOSER_ICON} />
+            ) : (
+              <WeChatKeyboardIcon />
+            )}
           </Pressable>
 
           {inputMode === 'voice' ? (
@@ -663,6 +684,47 @@ const styles = StyleSheet.create({
     backgroundColor: C.line,
     borderColor: C.lineStrong,
   },
+  wechatKeyboardIcon: {
+    width: 22,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wechatKeyboardIconFrame: {
+    width: 19,
+    height: 15,
+    borderWidth: 1.8,
+    borderColor: COMPOSER_ICON,
+    borderRadius: 2.5,
+    paddingHorizontal: 2,
+    paddingTop: 2,
+    paddingBottom: 1.5,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  wechatKeyboardGrid: {
+    width: 13,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 1.5,
+  },
+  wechatKeyboardKey: {
+    width: 2.6,
+    height: 2.6,
+    borderRadius: 0.5,
+    backgroundColor: COMPOSER_ICON,
+  },
+  wechatKeyboardBottomRow: {
+    width: 13,
+    alignItems: 'center',
+  },
+  wechatKeyboardSpaceKey: {
+    width: 8,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: COMPOSER_ICON,
+  },
   plusBtn: {
     width: 42, height: 42, borderRadius: 21,
     backgroundColor: C.paper2, borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
@@ -699,10 +761,9 @@ const styles = StyleSheet.create({
     borderColor: C.green500,
   },
   holdToTalkText: {
-    fontFamily: revaFonts.sans,
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '700',
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '600',
     color: C.ink1,
     letterSpacing: 0,
   },
