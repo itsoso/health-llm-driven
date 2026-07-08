@@ -118,6 +118,10 @@ interface TwinSnapshot {
 //          与 'sheet' 一样不渲染返回条;但不套 SafeAreaView(由父容器定界),不留 tab bar 底距。
 export type TodayContentMode = 'screen' | 'sheet' | 'inline';
 
+export function shouldRenderMedicationSummary(mode: TodayContentMode): boolean {
+  return mode === 'screen';
+}
+
 export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentMode }) {
   const isInline = mode === 'inline';
   const isSheet = mode === 'sheet' || isInline;
@@ -601,11 +605,13 @@ export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentM
       {/* 3 · 接下来:只保留未完成且马上相关的行动条 */}
       <RevaTimelineStrip excludeTitles={timelineExcludedTitles} />
 
-      {/* 4 · 用药 / 补剂:完成态合并成摘要,待完成项再展开 */}
-      <HomeMedicationSummary
-        items={dashboardQuery.data?.medicationToday ?? []}
-        onChanged={() => qc.invalidateQueries({ queryKey: ['dashboard'] })}
-      />
+      {/* 4 · 用药 / 补剂:整屏保留摘要;聊天 sheet/inline 已由「接下来」承载,避免重复。 */}
+      {shouldRenderMedicationSummary(mode) ? (
+        <HomeMedicationSummary
+          items={dashboardQuery.data?.medicationToday ?? []}
+          onChanged={() => qc.invalidateQueries({ queryKey: ['dashboard'] })}
+        />
+      ) : null}
 
       {/* 5 · 身体信号:围绕当前行动验证,不再把完整 dashboard 堆在首页 */}
       <TodaySignalsPanel

@@ -74,4 +74,33 @@ describe('buildTodayBriefingOverview', () => {
     expect(rows.find(row => row.id === 'advice')?.value).toBe('暂无新的行动建议');
     expect(rows.find(row => row.id === 'yesterday')?.value).toBe('昨日数据待同步');
   });
+
+  it('localizes backend enum and English environment copy before rendering', () => {
+    const rows = buildTodayBriefingOverview({
+      weatherResponse: {
+        weather: { temperature: 14, weather: 'Cloudy', humidity: 91 },
+        exercise_advice: 'Enjoy your outdoor activities.',
+      },
+      airQuality: {
+        aqi: 0,
+        aqi_description: 'Excellent',
+        pm25: 6,
+        primary_pollutant: 'PM2.5',
+        advice_general: 'Enjoy your outdoor activities.',
+      },
+      dailyPlan: {
+        plan_date: '2026-07-07',
+        primary_goal: 'metabolic_health',
+        status: 'active',
+        state_summary: {},
+        actions: [],
+      },
+    });
+
+    expect(rows.find(row => row.id === 'weather')?.value).toBe('14° · 多云 · 湿度 91%');
+    expect(rows.find(row => row.id === 'weather')?.detail).toBe('适合户外活动');
+    expect(rows.find(row => row.id === 'air')?.value).toBe('AQI 0 · 优');
+    expect(rows.find(row => row.id === 'air')?.detail).toBe('PM2.5 6 · 首要污染物 PM2.5 · 适合户外活动');
+    expect(rows.find(row => row.id === 'plan')?.value).toBe('代谢健康');
+  });
 });

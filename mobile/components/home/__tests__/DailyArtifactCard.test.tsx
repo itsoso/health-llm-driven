@@ -66,6 +66,8 @@ describe('DailyArtifactCard', () => {
     );
 
     expect(getByText('今日行动')).toBeTruthy();
+    expect(getByText('建议行动')).toBeTruthy();
+    expect(getByText('今日重点 · 数据已更新')).toBeTruthy();
     expect(getByText('午饭后步行 10 分钟')).toBeTruthy();
     expect(getByText('穿好鞋,从办公室楼下走一圈。')).toBeTruthy();
     expect(getByText('决策依据')).toBeTruthy();
@@ -77,6 +79,8 @@ describe('DailyArtifactCard', () => {
     expect(getAllByTestId('daily-artifact-evidence')).toHaveLength(2);
     expect(queryByText('今日焦点')).toBeNull();
     expect(queryByText('现在只做')).toBeNull();
+    expect(queryByText('中可信')).toBeNull();
+    expect(queryByText('P1 · 1 个来源 · 新鲜')).toBeNull();
     expect(queryByText('不应显示')).toBeNull();
   });
 
@@ -248,7 +252,7 @@ describe('DailyArtifactCard', () => {
   });
 
   // ── defect ③:高可信 badge 用正向(success 绿)配色,绝不用 risk 红 ──
-  it('tints the 高可信 confidence badge with success green, never risk red', () => {
+  it('tints the 重点行动 confidence badge with success green, never risk red', () => {
     const { getByText } = render(
       <DailyArtifactCard
         artifact={makeArtifact({
@@ -258,19 +262,19 @@ describe('DailyArtifactCard', () => {
       />,
     );
 
-    const badge = getByText('高可信');
+    const badge = getByText('重点行动');
     const flat = flattenStyle(badge.parent?.props?.style);
     // 文案色 = success 绿(revaSemantic.normal.fg),不是 risk 红(#D5503A)。
     expect(flat.color).toBe('#1F8A5B');
     expect(flat.color).not.toBe('#D5503A');
   });
 
-  it('tints the 待补数 (low) confidence badge with caution amber', () => {
+  it('tints the 待补数据 (low) confidence badge with caution amber', () => {
     const { getByText } = render(
       <DailyArtifactCard artifact={makeArtifact({ confidence: 'low' })} />,
     );
 
-    const flat = flattenStyle(getByText('待补数').parent?.props?.style);
+    const flat = flattenStyle(getByText('待补数据').parent?.props?.style);
     expect(flat.color).toBe('#C98A1E'); // revaSemantic.caution.fg
   });
 

@@ -79,6 +79,17 @@ def test_generate_followup_recall_proposes_and_is_idempotent(db):
     assert len(svc.list_pending(db, u.id)) == 1
 
 
+def test_generate_followup_recall_does_not_reappear_after_decision(db):
+    u = _mk_user(db)
+    _due_problem(db, u.id)
+    assert svc.generate_followup_recall(db, u.id) == 1
+    wi_id = svc.list_pending(db, u.id)[0]["id"]
+    svc.confirm(db, u.id, wi_id)
+
+    assert svc.generate_followup_recall(db, u.id) == 0
+    assert svc.list_pending(db, u.id) == []
+
+
 def test_confirm_executes_creates_reminder(db):
     u = _mk_user(db)
     wi = svc.propose(db, u.id, kind="checkup_reminder", title="复查胃镜", description="查胃镜",
@@ -238,6 +249,17 @@ def test_recheck_due_no_same_day_renag(db):
         if it["kind"] == "recheck_due":
             svc.dismiss(db, u.id, it["id"])
     assert svc.generate_recheck_due(db, u.id) == 0  # 同日忽略后不重复
+
+
+def test_recheck_due_does_not_reappear_after_decision(db):
+    u = _mk_user(db)
+    _cycle_ending(db, u.id, days_from_today=0)
+    assert svc.generate_recheck_due(db, u.id) == 1
+    wi_id = [x for x in svc.list_pending(db, u.id) if x["kind"] == "recheck_due"][0]["id"]
+    svc.confirm(db, u.id, wi_id)
+
+    assert svc.generate_recheck_due(db, u.id) == 0
+    assert [x for x in svc.list_pending(db, u.id) if x["kind"] == "recheck_due"] == []
 
 
 def test_confirm_recheck_due_creates_reminder(db):

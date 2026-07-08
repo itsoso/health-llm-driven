@@ -95,7 +95,7 @@ export default function WriteIntentCard() {
     },
   });
 
-  const items: WriteIntent[] = q.data ?? [];
+  const items: WriteIntent[] = (q.data ?? []).filter((it) => shouldShowIntent(it, actionStateById[it.id]));
   // 空态 / 出错 → 不渲染(不显示噪声卡)
   if (q.isError || items.length === 0) return null;
 
@@ -209,6 +209,13 @@ export default function WriteIntentCard() {
       </Card>
     </View>
   );
+}
+
+function shouldShowIntent(it: WriteIntent, actionState?: IntentActionState): boolean {
+  if (actionState === 'confirmed' || actionState === 'dismissed') return false;
+  if (actionState === 'running' || actionState === 'error') return true;
+  const status = String(it.status ?? '').trim().toLowerCase();
+  return !status || status === 'pending' || status === 'proposed';
 }
 
 const styles = StyleSheet.create({

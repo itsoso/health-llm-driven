@@ -45,6 +45,46 @@ def list_pending(db: Session, user_id: int) -> List[Dict[str, Any]]:
     return [_view(r) for r in rows]
 
 
+def _has_decided_target(
+    db: Session,
+    user_id: int,
+    kind: str,
+    target_type: Optional[str],
+    target_id,
+    *,
+    payload_key: Optional[str] = None,
+    payload_value: Any = None,
+) -> bool:
+    """同一个生成源已被用户确认/忽略过 → 不再重新生成待确认项。
+
+    复查类目标会随到期日推进,所以支持用 payload_key 比对同一到期批次;以后 source 的
+    next_due / planned_end_date 变化后,仍可重新进入提醒窗口。
+    """
+    rows = (
+        db.query(WriteIntent)
+        .filter(
+            WriteIntent.user_id == user_id,
+            WriteIntent.kind == kind,
+            WriteIntent.target_type == target_type,
+            WriteIntent.target_id == target_id,
+            WriteIntent.status != "pending",
+        )
+        .order_by(WriteIntent.created_at.desc())
+        .all()
+    )
+    if not rows:
+        return False
+    if payload_key is None:
+        return True
+    expected = None if payload_value is None else str(payload_value)
+    for row in rows:
+        payload = row.payload or {}
+        actual = payload.get(payload_key)
+        if (None if actual is None else str(actual)) == expected:
+            return True
+    return False
+
+
 def propose(
     db: Session,
     user_id: int,
@@ -475,6 +515,16 @@ def generate_followup_recall(db: Session, user_id: int, within_days: int = 14) -
     for f in prob_svc.due_followups(db, user_id, within_days=within_days):
         name = f.get("name")
         remind_at = _remind_at_for(f.get("next_due"), f.get("overdue"))
+        if _has_decided_target(
+            db,
+            user_id,
+            "checkup_reminder",
+            "health_problem",
+            f.get("problem_id"),
+            payload_key="next_due",
+            payload_value=f.get("next_due"),
+        ):
+            continue
         wi = propose(
             db,
             user_id,
@@ -584,6 +634,16 @@ def generate_recheck_due(db: Session, user_id: int, within_days: int = 7) -> int
     days_left = (cycle.planned_end_date - today).days
     if days_left > within_days:
         return 0  # 还没到复测窗口
+    if _has_decided_target(
+        db,
+        user_id,
+        "recheck_due",
+        "intervention_cycle",
+        cycle.id,
+        payload_key="planned_end_date",
+        payload_value=cycle.planned_end_date.isoformat(),
+    ):
+        return 0
 
     _beijing = timezone(timedelta(hours=8))
     last = (
@@ -926,6 +986,17 @@ def generate_doctor_booking_drafts(db: Session, user_id: int, within_days: int =
 
     created = 0
     for rs in rows:
+        next_due_value = rs.next_due_date.isoformat() if rs.next_due_date else None
+        if _has_decided_target(
+            db,
+            user_id,
+            "doctor_booking",
+            "review_schedule",
+            rs.id,
+            payload_key="next_due_date",
+            payload_value=next_due_value,
+        ):
+            continue
         if _proposed_same_day_local(db, user_id, "doctor_booking", "review_schedule", rs.id):
             continue
         dept = rs.department or "对应科室"
@@ -946,7 +1017,7 @@ def generate_doctor_booking_drafts(db: Session, user_id: int, within_days: int =
                 "department": rs.department,
                 "hospital": rs.hospital,
                 "item_name": rs.item_name,
-                "next_due_date": rs.next_due_date.isoformat() if rs.next_due_date else None,
+                "next_due_date": next_due_value,
             },
             commit=False,
         )

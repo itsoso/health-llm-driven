@@ -81,7 +81,7 @@ function buildWeatherRow(weatherResponse?: WeatherResponse | null): TodayBriefin
   const weather = weatherResponse?.weather;
   const pieces: string[] = [];
   if (typeof weather?.temperature === 'number') pieces.push(`${Math.round(weather.temperature)}°`);
-  const weatherText = cleanText(weather?.weather);
+  const weatherText = localizeWeatherText(weather?.weather);
   if (weatherText) pieces.push(weatherText);
   if (typeof weather?.humidity === 'number') pieces.push(`湿度 ${Math.round(weather.humidity)}%`);
 
@@ -90,17 +90,18 @@ function buildWeatherRow(weatherResponse?: WeatherResponse | null): TodayBriefin
     label: '天气',
     icon: 'partly-sunny-outline',
     value: pieces.length > 0 ? pieces.join(' · ') : '天气待同步',
-    detail: cleanText(weatherResponse?.exercise_advice) || '用于安排户外、通勤和训练强度',
+    detail: localizeEnvironmentAdvice(weatherResponse?.exercise_advice) || '用于安排户外、通勤和训练强度',
   };
 }
 
 function buildAirQualityRow(airQuality?: AirQuality | null): TodayBriefingRow {
   const aqi = typeof airQuality?.aqi === 'number' ? Math.round(airQuality.aqi) : null;
-  const description = cleanText(
+  const description = localizeAirQualityText(
     airQuality?.aqi_description ||
     airQuality?.category ||
     airQuality?.description ||
     airQuality?.level,
+    aqi,
   );
   const value = aqi != null
     ? `AQI ${aqi}${description ? ` · ${description}` : ''}`
@@ -109,7 +110,7 @@ function buildAirQualityRow(airQuality?: AirQuality | null): TodayBriefingRow {
   const detail = [
     typeof airQuality?.pm25 === 'number' ? `PM2.5 ${Math.round(airQuality.pm25)}` : null,
     cleanText(airQuality?.primary_pollutant) ? `首要污染物 ${cleanText(airQuality?.primary_pollutant)}` : null,
-    cleanText(airQuality?.advice_general || airQuality?.health_effect),
+    localizeEnvironmentAdvice(airQuality?.advice_general || airQuality?.health_effect),
   ].filter(Boolean).join(' · ');
 
   return {
@@ -128,7 +129,7 @@ function buildPlanRow(
 ): TodayBriefingRow {
   const actions = planActions(dailyPlan);
   const morningGoals = findMorningSection(morningBriefing, /目标|提醒|计划/);
-  const primaryGoal = cleanText(dailyPlan?.primary_goal);
+  const primaryGoal = localizePlanGoal(dailyPlan?.primary_goal);
   const firstAction = actions[0];
   const timelineCount = Math.max(0, Math.round(timeline?.counts?.actionable ?? 0));
   const value = primaryGoal || cleanText(firstAction?.title) || firstItem(morningGoals) || '今日规划待生成';
@@ -264,6 +265,116 @@ function firstItem(section?: MorningBriefingSection | null): string {
 
 function cleanText(value: unknown): string {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+}
+
+function localizeWeatherText(value: unknown): string {
+  const text = cleanText(value);
+  if (!text) return '';
+  if (hasCjk(text)) return text;
+  const key = text.toLowerCase();
+  const exact: Record<string, string> = {
+    clear: '晴',
+    sunny: '晴',
+    cloudy: '多云',
+    clouds: '多云',
+    overcast: '阴',
+    'partly cloudy': '多云',
+    rain: '雨',
+    rainy: '雨',
+    snow: '雪',
+    fog: '雾',
+    mist: '雾',
+    haze: '霾',
+    thunderstorm: '雷阵雨',
+    windy: '有风',
+  };
+  if (exact[key]) return exact[key];
+  if (key.includes('cloud')) return '多云';
+  if (key.includes('clear') || key.includes('sun')) return '晴';
+  if (key.includes('rain') || key.includes('shower')) return '雨';
+  if (key.includes('snow')) return '雪';
+  if (key.includes('fog') || key.includes('mist')) return '雾';
+  if (key.includes('haze') || key.includes('smog')) return '霾';
+  if (key.includes('thunder') || key.includes('storm')) return '雷阵雨';
+  if (key.includes('wind')) return '有风';
+  return '天气已同步';
+}
+
+function localizeAirQualityText(value: unknown, aqi?: number | null): string {
+  const text = cleanText(value);
+  if (text && hasCjk(text)) return text;
+  const key = text.toLowerCase();
+  const exact: Record<string, string> = {
+    excellent: '优',
+    good: '良',
+    moderate: '中等',
+    fair: '良',
+    unhealthy: '不健康',
+    'unhealthy for sensitive groups': '对敏感人群不健康',
+    'very unhealthy': '非常不健康',
+    hazardous: '危险',
+  };
+  if (exact[key]) return exact[key];
+  if (key.includes('excellent')) return '优';
+  if (key.includes('good')) return '良';
+  if (key.includes('moderate')) return '中等';
+  if (key.includes('sensitive')) return '对敏感人群不健康';
+  if (key.includes('very unhealthy')) return '非常不健康';
+  if (key.includes('unhealthy')) return '不健康';
+  if (key.includes('hazard')) return '危险';
+  if (typeof aqi === 'number') return airQualityCategoryByAqi(aqi);
+  return '';
+}
+
+function airQualityCategoryByAqi(aqi: number): string {
+  if (aqi <= 50) return '优';
+  if (aqi <= 100) return '良';
+  if (aqi <= 150) return '轻度污染';
+  if (aqi <= 200) return '中度污染';
+  if (aqi <= 300) return '重度污染';
+  return '严重污染';
+}
+
+function localizeEnvironmentAdvice(value: unknown): string {
+  const text = cleanText(value);
+  if (!text) return '';
+  if (hasCjk(text)) return text;
+  const key = text.toLowerCase();
+  if (key.includes('outdoor') || key.includes('activit')) return '适合户外活动';
+  if (key.includes('ventilat')) return '可适度通风';
+  if (key.includes('mask')) return '外出建议佩戴口罩';
+  if (key.includes('limit') || key.includes('avoid')) return '减少长时间户外活动';
+  return '';
+}
+
+function localizePlanGoal(value: unknown): string {
+  const text = cleanText(value);
+  if (!text) return '';
+  if (hasCjk(text)) return text;
+  const key = text.toLowerCase();
+  const exact: Record<string, string> = {
+    metabolic_health: '代谢健康',
+    metabolism: '代谢健康',
+    weight_loss: '体重管理',
+    body_composition: '体成分管理',
+    cardiovascular: '心血管健康',
+    cardio_fitness: '心肺体能',
+    sleep: '睡眠恢复',
+    sleep_recovery: '睡眠恢复',
+    recovery: '恢复',
+    movement: '活动',
+    nutrition: '营养',
+    hydration: '补水',
+    medication_safety: '用药安全',
+    disease_risk: '疾病风险管理',
+  };
+  if (exact[key]) return exact[key];
+  if (/^[a-z0-9_ -]+$/i.test(text)) return '今日健康目标';
+  return text;
+}
+
+function hasCjk(value: string): boolean {
+  return /[\u3400-\u9fff]/u.test(value);
 }
 
 function pickLatestHistoricalGarmin(rows?: GarminDailyRow[] | null): GarminDailyRow | null {

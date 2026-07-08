@@ -141,6 +141,17 @@ def test_doctor_booking_same_day_no_renag(db):
     assert svc.generate_doctor_booking_drafts(db, u.id) == 0
 
 
+def test_doctor_booking_does_not_reappear_after_confirm(db):
+    u = _mk_user(db)
+    _due_review(db, u.id, item="上消化道内镜(胃镜)", overdue=True)
+    assert svc.generate_doctor_booking_drafts(db, u.id) == 1
+    wi_id = [it for it in svc.list_pending(db, u.id) if it["kind"] == "doctor_booking"][0]["id"]
+    svc.confirm(db, u.id, wi_id)
+
+    assert svc.generate_doctor_booking_drafts(db, u.id) == 0
+    assert [it for it in svc.list_pending(db, u.id) if it["kind"] == "doctor_booking"] == []
+
+
 # ═══════════════════════ 3. food_order(DRAFT ONLY,可证惰性)═══════════════════════
 
 # 任何疑似支付凭据的键 —— 断言它们绝不被持久化到 WriteIntent.payload。

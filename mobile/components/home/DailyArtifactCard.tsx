@@ -98,7 +98,7 @@ export default function DailyArtifactCard({
         >
           <View style={styles.actionMetaRow}>
             <Text style={styles.freshnessText} numberOfLines={1}>
-              {[topAction.priority_tier, freshnessLabel(artifact)].filter(Boolean).join(' · ')}
+              {[priorityLabel(topAction.priority_tier), freshnessLabel(artifact)].filter(Boolean).join(' · ')}
             </Text>
             <Icon name="chevron-right" size={16} color={C.ink3} />
           </View>
@@ -261,19 +261,28 @@ export default function DailyArtifactCard({
 
 function confidenceLabel(confidence?: string | null): string {
   switch (confidence) {
-    case 'high': return '高可信';
-    case 'medium': return '中可信';
-    case 'low': return '待补数';
-    default: return '今日';
+    case 'high': return '重点行动';
+    case 'medium': return '建议行动';
+    case 'low': return '待补数据';
+    default: return '今日建议';
+  }
+}
+
+function priorityLabel(priority?: string | null): string | null {
+  switch (priority) {
+    case 'P0': return '优先处理';
+    case 'P1': return '今日重点';
+    case 'P2': return '可安排';
+    default: return priority ? '今日重点' : null;
   }
 }
 
 function freshnessLabel(artifact?: DailyArtifact | null): string {
   const freshness = artifact?.freshness?.status;
-  const sourceCount = artifact?.freshness?.sources?.length ?? 0;
-  if (freshness === 'fresh') return sourceCount ? `${sourceCount} 个来源 · 新鲜` : '数据新鲜';
+  if (freshness === 'fresh') return '数据已更新';
   if (freshness === 'limited') return '数据有限';
-  return freshness || '今日编排';
+  if (freshness === 'stale') return '等待更新';
+  return freshness ? '数据已同步' : '今日编排';
 }
 
 function evidenceLabel(label: string): string {
@@ -420,7 +429,7 @@ function normalizeCopy(value?: string | null): string {
 }
 
 // 可信度 pill 配色跟「可信度」这个正向信号走,不跟 state.tone(紧急态)走:
-// 高可信 = 正向 → success 绿;中可信 = 中性 → info 蓝;低/待补数 = 提示补数 → caution 琥珀。
+// 重点行动 = 正向 → success 绿;建议行动 = 中性;待补数据 = 提示补数 → caution 琥珀。
 // 之前误用 tone 上色,tone=urgent 时会把「高可信」染成红色,读成告警(语义色误用)。
 function confidenceToneStyle(confidence?: string | null) {
   const s = confidenceSemantic(confidence);

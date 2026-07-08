@@ -99,9 +99,11 @@ describe('WriteIntentCard', () => {
     resolveConfirm({ status: 'executed', executed_ref: 'smart_reminder:55' });
 
     await waitFor(() => {
-      expect(getByText('已确认')).toBeTruthy();
+      expect(queryByText('复查到期:空腹血糖 / 糖化血红蛋白')).toBeNull();
     });
     expect(queryByText('执行中')).toBeNull();
+    expect(queryByText('已确认')).toBeNull();
+    expect(getByText('复查到期:血脂四项')).toBeTruthy();
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['write-intents'] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['timeline', 'today'] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['agenda', 'today'] });
@@ -111,5 +113,45 @@ describe('WriteIntentCard', () => {
 
     unmount();
     qc.clear();
+  });
+
+  it('does not render write intents that are already decided by the server', async () => {
+    mockGetWriteIntents.mockResolvedValue([
+      {
+        id: 201,
+        kind: 'doctor_booking',
+        title: '复查已逾期:上消化道内镜(胃镜)',
+        description: '上消化道内镜复查到期。',
+        status: 'executed',
+        source: 'review_schedule',
+        trust_tier: 'manual_confirm',
+        target_type: 'review_schedule',
+        target_id: 9,
+        payload: null,
+        executed_ref: 'smart_reminder:9',
+        created_at: '2026-07-01T09:00:00Z',
+      },
+      {
+        id: 202,
+        kind: 'doctor_booking',
+        title: '复查已逾期:血脂四项',
+        description: '血脂四项复查到期。',
+        status: 'dismissed',
+        source: 'review_schedule',
+        trust_tier: 'manual_confirm',
+        target_type: 'review_schedule',
+        target_id: 10,
+        payload: null,
+        executed_ref: null,
+        created_at: '2026-07-01T09:00:00Z',
+      },
+    ]);
+
+    const { toJSON, queryByText } = renderWithQuery(<WriteIntentCard />);
+
+    await waitFor(() => expect(mockGetWriteIntents).toHaveBeenCalled());
+    expect(queryByText('复查已逾期:上消化道内镜(胃镜)')).toBeNull();
+    expect(queryByText('复查已逾期:血脂四项')).toBeNull();
+    expect(toJSON()).toBeNull();
   });
 });
