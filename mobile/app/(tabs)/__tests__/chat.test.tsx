@@ -689,6 +689,40 @@ describe('ChatScreen', () => {
     expect(getByText('基于 刚保存午餐 + 今日饮食记录')).toBeTruthy();
   });
 
+  it('shows readable saved diet context details instead of raw JSON', async () => {
+    mockMessages = [{
+      id: 'diet-card-3',
+      role: 'assistant',
+      content: '',
+      cardType: 'diet_draft',
+      cardData: { food_items: '牛肉面', meal_type: 'lunch' },
+      cardActionResult: {
+        status: 'completed',
+        record: {
+          id: 88,
+          record_date: '2026-07-09',
+          meal_type: 'lunch',
+          food_items: '牛肉面',
+          calories: 620,
+        },
+      },
+    }];
+
+    const { getByLabelText, getByText } = render(<ChatScreen />);
+    await act(async () => {
+      fireEvent(getByLabelText('complete-card-action-diet-card-3'), 'responderRelease');
+    });
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('查看上下文：刚保存午餐 + 今日饮食记录'));
+    });
+
+    expect(getByText(/数据源/)).toBeTruthy();
+    expect(getByText(/刚保存的午餐记录/)).toBeTruthy();
+    expect(getByText(/今日饮食数据库/)).toBeTruthy();
+    expect(getByText(/午餐 · 牛肉面 · 620 kcal/)).toBeTruthy();
+  });
+
   it('hides the composer chips row once the conversation has messages', async () => {
     mockMessages = [
       { id: 'u-1', role: 'user', content: '早餐吃了鸡蛋' },

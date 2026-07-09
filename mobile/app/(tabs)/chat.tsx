@@ -980,10 +980,46 @@ function formatContextPayload(value: string | null): string {
   const raw = String(value || '').trim();
   if (!raw) return '没有附加详情。';
   try {
-    return JSON.stringify(JSON.parse(raw), null, 2);
+    const parsed = JSON.parse(raw);
+    return formatKnownContextPayload(parsed) || JSON.stringify(parsed, null, 2);
   } catch {
     return raw;
   }
+}
+
+function formatKnownContextPayload(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const source = value as Record<string, unknown>;
+  if (source.source !== 'chat_card_action' || source.event !== 'diet_record_saved') return null;
+
+  const sources = Array.isArray(source.sources)
+    ? source.sources.map(textValue).filter((item): item is string => Boolean(item))
+    : [];
+  const record = normalizeDietContextRecord(source.record);
+  const lines: string[] = [];
+
+  if (sources.length > 0) {
+    lines.push('数据源');
+    sources.forEach(item => lines.push(`- ${item}`));
+  }
+
+  if (record) {
+    const meal = mealTypeLabel(String(record.meal_type || ''));
+    const foodItems = textValue(record.food_items);
+    const calories = normalizeNumberValue(record.calories);
+    const pieces = [
+      meal,
+      foodItems,
+      calories != null ? `${Math.round(calories)} kcal` : undefined,
+    ].filter((item): item is string => Boolean(item));
+    if (pieces.length > 0) {
+      if (lines.length > 0) lines.push('');
+      lines.push('记录摘要');
+      lines.push(pieces.join(' · '));
+    }
+  }
+
+  return lines.length > 0 ? lines.join('\n') : null;
 }
 
 function mergeExtraContext(primary?: string, secondary?: string | null): string | undefined {
