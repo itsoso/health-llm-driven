@@ -593,6 +593,11 @@ export default function ChatScreen() {
     handleSend(TODAY_DIET_CALORIE_QUERY, null);
   }, [handleSend]);
 
+  const handleOpenDietCorrection = useCallback(() => {
+    setContextInspectorVisible(false);
+    router.push('/diet' as any);
+  }, []);
+
   const handleCardActionCompleted = useCallback((event: {
     action: ChatCardActionDescriptor;
     descriptor: ServerCardDescriptor;
@@ -787,6 +792,17 @@ export default function ChatScreen() {
               >
                 <Ionicons name="analytics-outline" size={12} color={C.green600} />
                 <Text style={txt.contextQuickAction} numberOfLines={1}>查今日热量</Text>
+              </Pressable>
+            )}
+            {hasSavedDietContext && (
+              <Pressable
+                onPress={handleOpenDietCorrection}
+                style={({ pressed }) => [styles.contextQuickAction, pressed && styles.contextBannerPressed]}
+                accessibilityRole="button"
+                accessibilityLabel="去饮食页修正刚保存的记录"
+              >
+                <Ionicons name="create-outline" size={12} color={C.green600} />
+                <Text style={txt.contextQuickAction} numberOfLines={1}>修正</Text>
               </Pressable>
             )}
             <Pressable

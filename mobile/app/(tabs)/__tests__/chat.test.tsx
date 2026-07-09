@@ -762,6 +762,37 @@ describe('ChatScreen', () => {
     expect(mockSendMessage.mock.calls[0][2].extraContext).toContain('牛肉面');
   });
 
+  it('opens the diet record page to correct a saved diet record', async () => {
+    mockMessages = [{
+      id: 'diet-card-5',
+      role: 'assistant',
+      content: '',
+      cardType: 'diet_draft',
+      cardData: { food_items: '牛肉面', meal_type: 'lunch' },
+      cardActionResult: {
+        status: 'completed',
+        record: {
+          id: 88,
+          record_date: '2026-07-09',
+          meal_type: 'lunch',
+          food_items: '牛肉面',
+          calories: 620,
+        },
+      },
+    }];
+
+    const { getByLabelText } = render(<ChatScreen />);
+    await act(async () => {
+      fireEvent(getByLabelText('complete-card-action-diet-card-5'), 'responderRelease');
+    });
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('去饮食页修正刚保存的记录'));
+    });
+
+    expect(mockPush).toHaveBeenCalledWith('/diet');
+  });
+
   it('hides the composer chips row once the conversation has messages', async () => {
     mockMessages = [
       { id: 'u-1', role: 'user', content: '早餐吃了鸡蛋' },
