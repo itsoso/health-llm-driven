@@ -106,8 +106,15 @@ jest.mock('../../../hooks/useTheme', () => ({
 
 jest.mock('../../../components/chat/ChatBubble', () => {
   const React = require('react');
-  const { Pressable, Text } = require('react-native');
-  const MockChatBubble = ({ item, selectionMode, selected, onToggleSelected, onEnterSelection }: any) => (
+  const { Pressable, Text, View } = require('react-native');
+  const MockChatBubble = ({
+    item,
+    selectionMode,
+    selected,
+    onToggleSelected,
+    onEnterSelection,
+    onCardActionCompleted,
+  }: any) => (
     <Pressable
       accessibilityLabel={`message-${item.id}`}
       accessibilityState={selectionMode ? { selected } : undefined}
@@ -116,6 +123,28 @@ jest.mock('../../../components/chat/ChatBubble', () => {
     >
       <Text>{item.content}</Text>
       <Text>{selectionMode ? (selected ? 'selected' : 'unselected') : 'normal'}</Text>
+      {item.cardType === 'diet_draft' ? (
+        <View
+          accessibilityRole="button"
+          accessibilityLabel={`complete-card-action-${item.id}`}
+          onStartShouldSetResponder={() => true}
+          onResponderRelease={() => onCardActionCompleted?.({
+            action: {
+              action: 'diet_record.create',
+              label: '确认记录',
+              endpoint: '/diet/records',
+              requires_manual_confirm: true,
+            },
+            descriptor: {
+              type: 'diet_draft',
+              data: item.cardData,
+            },
+            result: item.cardActionResult,
+          })}
+        >
+          <Text>complete-card-action</Text>
+        </View>
+      ) : null}
     </Pressable>
   );
   MockChatBubble.displayName = 'MockChatBubble';
@@ -591,6 +620,73 @@ describe('ChatScreen', () => {
     });
 
     expect(queryByText('基于 体检报告')).toBeNull();
+  });
+
+  it('shows a local saved diet confirmation after a diet card action completes', async () => {
+    mockMessages = [{
+      id: 'diet-card-1',
+      role: 'assistant',
+      content: '',
+      cardType: 'diet_draft',
+      cardData: { food_items: '牛肉面', meal_type: 'lunch' },
+      cardActionResult: {
+        status: 'completed',
+        nutrition_status: 'estimated',
+        record: {
+          id: 88,
+          record_date: '2026-07-09',
+          meal_type: 'lunch',
+          food_items: '牛肉面',
+          calories: 620,
+          protein: 28,
+          carbs: 78,
+          fat: 18,
+        },
+      },
+    }];
+
+    const { getByLabelText } = render(<ChatScreen />);
+    await act(async () => {
+      fireEvent(getByLabelText('complete-card-action-diet-card-1'), 'responderRelease');
+    });
+
+    expect(mockSetMessages).toHaveBeenCalledWith(expect.any(Function));
+    const updater = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+    const nextMessages = updater(mockMessages);
+    expect(nextMessages[nextMessages.length - 1]).toMatchObject({
+      role: 'assistant',
+      localOnly: true,
+      completionStatus: 'complete',
+    });
+    expect(nextMessages[nextMessages.length - 1].content).toContain('已保存午餐 · 620 kcal');
+    expect(nextMessages[nextMessages.length - 1].content).toContain('下条消息会基于这条记录和今日饮食记录回答');
+  });
+
+  it('shows saved diet context source after a diet card action completes', async () => {
+    mockMessages = [{
+      id: 'diet-card-2',
+      role: 'assistant',
+      content: '',
+      cardType: 'diet_draft',
+      cardData: { food_items: '牛肉面', meal_type: 'lunch' },
+      cardActionResult: {
+        status: 'completed',
+        record: {
+          id: 88,
+          record_date: '2026-07-09',
+          meal_type: 'lunch',
+          food_items: '牛肉面',
+          calories: 620,
+        },
+      },
+    }];
+
+    const { getByLabelText, getByText } = render(<ChatScreen />);
+    await act(async () => {
+      fireEvent(getByLabelText('complete-card-action-diet-card-2'), 'responderRelease');
+    });
+
+    expect(getByText('基于 刚保存午餐 + 今日饮食记录')).toBeTruthy();
   });
 
   it('hides the composer chips row once the conversation has messages', async () => {

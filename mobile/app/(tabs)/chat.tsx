@@ -593,13 +593,19 @@ export default function ChatScreen() {
     descriptor: ServerCardDescriptor;
     result: ChatCardActionResult;
   }) => {
+    const statusMessage = buildCardActionStatusMessage(event);
+    if (statusMessage) {
+      isNearBottom.current = true;
+      setMessages(prev => [...prev, statusMessage]);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+    }
     const context = buildCardActionExtraContext(event);
     if (!context) return;
     pendingCardActionContextRef.current = context.payload;
     setContextBadge(context.badge);
     setContextPayload(context.payload);
     setContextInspectorVisible(false);
-  }, []);
+  }, [setMessages]);
 
   const handleDeleteConversation = useCallback(async (id: number) => {
     const ok = await deleteConversation(id);
@@ -1006,13 +1012,40 @@ function buildCardActionExtraContext(event: {
   if (!record) return null;
   const mealLabel = mealTypeLabel(String(record.meal_type || ''));
   return {
-    badge: `刚保存${mealLabel}`,
+    badge: `刚保存${mealLabel} + 今日饮食记录`,
     payload: JSON.stringify({
       source: 'chat_card_action',
       event: 'diet_record_saved',
+      sources: [`刚保存的${mealLabel}记录`, '今日饮食数据库'],
       instruction: '用户刚刚在对话卡片里确认保存了这条饮食记录。下一轮如果用户询问是否保存、今天/本餐饮食或热量，必须先结合这条记录和数据库查询回答，不要重新询问这顿饭吃了什么。',
       record,
     }),
+  };
+}
+
+function buildCardActionStatusMessage(event: {
+  action: ChatCardActionDescriptor;
+  descriptor: ServerCardDescriptor;
+  result: ChatCardActionResult;
+}): UIMessage | null {
+  if (event.action.action !== 'diet_record.create' || event.descriptor.type !== 'diet_draft') return null;
+  const record = normalizeDietContextRecord(event.result.record);
+  if (!record) return null;
+  const mealLabel = mealTypeLabel(String(record.meal_type || ''));
+  const calories = normalizeNumberValue(record.calories);
+  const foodItems = textValue(record.food_items);
+  const title = `已保存${mealLabel}${calories != null ? ` · ${Math.round(calories)} kcal` : ''}`;
+  const details = [
+    foodItems,
+    '可在饮食页修正；下条消息会基于这条记录和今日饮食记录回答。',
+  ].filter(Boolean);
+  return {
+    id: `card-action-status-${Date.now()}`,
+    role: 'assistant',
+    content: [title, ...details].join('\n'),
+    localOnly: true,
+    completionStatus: 'complete',
+    toolsUsed: ['card_action'],
   };
 }
 
