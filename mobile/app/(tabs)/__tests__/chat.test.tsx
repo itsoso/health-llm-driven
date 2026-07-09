@@ -752,12 +752,13 @@ describe('ChatScreen', () => {
     });
 
     expect(mockSendMessage).toHaveBeenCalledWith(
-      '查询今天全天饮食和热量',
+      expect.stringContaining('请先查询今天数据库里的所有饮食记录'),
       null,
       expect.objectContaining({
         extraContext: expect.stringContaining('diet_record_saved'),
       }),
     );
+    expect(mockSendMessage.mock.calls[0][0]).toContain('结合刚保存的这条记录');
     expect(mockSendMessage.mock.calls[0][2].extraContext).toContain('牛肉面');
   });
 

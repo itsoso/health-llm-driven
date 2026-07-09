@@ -74,6 +74,7 @@ const CHAT_BOTTOM_BREATHING_SPACE = 28;
 
 // 对话历史无限下拉每页条数 (后端 limit 上限 100)
 const HISTORY_PAGE_SIZE = 20;
+const TODAY_DIET_CALORIE_QUERY = '请先查询今天数据库里的所有饮食记录，再结合刚保存的这条记录，汇总全天饮食、总热量和蛋白质/碳水/脂肪。不要只凭本轮对话猜测。';
 
 function guessSuggestionIcon(text: string): SuggestionCard['icon'] {
   if (/体检|化验|指标|LDL|HbA1c|尿酸|血压|血脂|血糖/i.test(text)) return 'document-text-outline';
@@ -589,7 +590,7 @@ export default function ChatScreen() {
   }, []);
 
   const handleAskTodayDietCalories = useCallback(() => {
-    handleSend('查询今天全天饮食和热量', null);
+    handleSend(TODAY_DIET_CALORIE_QUERY, null);
   }, [handleSend]);
 
   const handleCardActionCompleted = useCallback((event: {
@@ -1074,7 +1075,7 @@ function buildCardActionExtraContext(event: {
       source: 'chat_card_action',
       event: 'diet_record_saved',
       sources: [`刚保存的${mealLabel}记录`, '今日饮食数据库'],
-      instruction: '用户刚刚在对话卡片里确认保存了这条饮食记录。下一轮如果用户询问是否保存、今天/本餐饮食或热量，必须先结合这条记录和数据库查询回答，不要重新询问这顿饭吃了什么。',
+      instruction: '用户刚刚在对话卡片里确认保存了这条饮食记录。下一轮如果用户询问是否保存、今天/本餐饮食或热量，必须先查询今日饮食数据库，再结合这条记录回答，不要重新询问这顿饭吃了什么，也不要只凭对话猜测。',
       record,
     }),
   };
