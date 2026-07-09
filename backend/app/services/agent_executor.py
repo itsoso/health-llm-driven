@@ -4781,6 +4781,10 @@ class AgentExecutor:
         if not settings.llm_vision_base_url or not settings.llm_vision_api_key:
             return None
 
+        structured_food = await self._analyze_food_images_with_structured_vision(user_message, images)
+        if structured_food:
+            return structured_food
+
         vision_model = settings.llm_vision_model or "qwen-vl-max"
         vision_messages: List[Dict[str, Any]] = [
             {"role": "system", "content": (
@@ -4823,6 +4827,99 @@ class AgentExecutor:
         except Exception as e:
             logger.warning(f"[Vision] 图片分析异常: {e}")
             return None
+
+    async def _analyze_food_images_with_structured_vision(self, user_message: str, images: List[dict]) -> Optional[str]:
+        """Prefer strict food-recognition JSON over free-form vision prose."""
+        if not images:
+            return None
+        try:
+            from app.services.ai.food_recognition import food_recognition_service
+            summaries: List[str] = []
+            errors: List[str] = []
+            for img in images[:3]:
+                result = await food_recognition_service.recognize_food_from_base64(
+                    img.get("base64") or "",
+                    image_type=img.get("type", "jpeg"),
+                )
+                if result.get("success") and result.get("foods"):
+                    summaries.append(self._format_food_recognition_for_agent(user_message, result))
+                elif result.get("error"):
+                    errors.append(str(result.get("error")))
+            if summaries:
+                return "\n".join(summaries)
+            if self._looks_like_food_photo_context(user_message) and self._food_recognition_found_no_food(errors):
+                return (
+                    "结构化餐食识别结果: 图片中未识别到可记录的食物。"
+                    "不要把截图里的营养卡、按钮、输入框或界面文字当作 food_items。"
+                    "请让用户重新拍摄餐食本身, 或补充真实食物名称和份量。"
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[Vision] structured food recognition failed, fallback to generic vision: %s", e)
+        return None
+
+    def _food_recognition_found_no_food(self, errors: List[str]) -> bool:
+        joined = " ".join(errors)
+        return bool(re.search(r"未识别到(?:可记录的)?食物|重新拍摄餐食|不是食物|not food", joined, re.I))
+
+    def _format_food_recognition_for_agent(self, user_message: str, result: Dict[str, Any]) -> str:
+        meal_type = self._infer_meal_type_for_food_image(user_message)
+        foods: List[str] = []
+        for food in result.get("foods") or []:
+            if not isinstance(food, dict):
+                continue
+            name = str(food.get("name") or "").strip()
+            if not name:
+                continue
+            quantity = str(food.get("quantity") or "").strip()
+            kcal = food.get("calories")
+            parts = [name]
+            if quantity:
+                parts.append(quantity)
+            if isinstance(kcal, (int, float)):
+                parts.append(f"约{round(float(kcal))}kcal")
+            foods.append(" ".join(parts))
+        totals = {
+            "calories": result.get("total_calories"),
+            "protein": result.get("total_protein"),
+            "carbs": result.get("total_carbs"),
+            "fat": result.get("total_fat"),
+        }
+        total_text = ", ".join(
+            f"{key}={value}"
+            for key, value in totals.items()
+            if isinstance(value, (int, float))
+        )
+        return (
+            "结构化餐食识别结果: "
+            f"meal_type={meal_type}; foods={' + '.join(foods)}; totals({total_text}). "
+            "如果用户意图是记录饮食, 请调用 health_record(record_type='diet', data={meal_type, food_items, calories, protein, carbs, fat, fiber, record_date})。"
+            "food_items 只能使用真实食物名称和份量, 绝对不要包含营养卡、保存并确认、今日饮食等界面文案。"
+        )
+
+    def _infer_meal_type_for_food_image(self, user_message: str) -> str:
+        text = (user_message or "").lower()
+        if re.search(r"早餐|早饭|breakfast", text):
+            return "breakfast"
+        if re.search(r"午餐|午饭|中饭|lunch", text):
+            return "lunch"
+        if re.search(r"晚餐|晚饭|dinner", text):
+            return "dinner"
+        if re.search(r"加餐|零食|snack", text):
+            return "snack"
+        hour = datetime.now(BEIJING_TZ).hour
+        if hour < 10:
+            return "breakfast"
+        if hour < 14:
+            return "lunch"
+        if hour < 20:
+            return "dinner"
+        return "snack"
+
+    def _looks_like_food_photo_context(self, user_message: str) -> bool:
+        text = user_message or ""
+        if not text.strip():
+            return True
+        return bool(re.search(r"食物|饮食|餐|饭|吃|热量|卡路里|蛋白|碳水|脂肪|kcal|calorie", text, re.I))
 
     async def _try_import_medical_report_images(self, user_id: int, images: List[dict]) -> Optional[str]:
         """Detect lab-report images in chat, persist recognized indicators, and summarize.

@@ -12,6 +12,7 @@ import { deleteConversation, getConversationsPage, updateConversationTitle } fro
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
 import ChatInputBar, { type ChatInputSendOptions } from '../../components/chat/ChatInputBar';
 import ChatBubble from '../../components/chat/ChatBubble';
+import type { ChatCardActionDescriptor, ServerCardDescriptor } from '../../components/chat/cards/types';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import ChatHeader from '../../components/chat/ChatHeader';
 import BriefingStrip from '../../components/chat/BriefingStrip';
@@ -51,6 +52,7 @@ import {
 import { sharePlainText } from '../../utils/share';
 import { buildSelectedChatShareMessage, isShareableChatMessage } from '../../utils/chatShareSelection';
 import type { ChatMedicalExamImportSkillResult } from '../../services/chatMedicalExamImportSkill';
+import type { ChatCardActionResult } from '../../services/chatCardActions';
 
 type SuggestionCard = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -186,6 +188,7 @@ export default function ChatScreen() {
   const [contextBadge, setContextBadge] = useState<string | null>(null);
   const [contextPayload, setContextPayload] = useState<string | null>(null);
   const [contextInspectorVisible, setContextInspectorVisible] = useState(false);
+  const pendingCardActionContextRef = useRef<string | null>(null);
   const [initialInput, setInitialInput] = useState<string | undefined>(undefined);
   const [initialInputKey, setInitialInputKey] = useState(0);
   const lastContextKey = useRef<string | null>(null);
@@ -372,7 +375,10 @@ export default function ChatScreen() {
     isNearBottom.current = true;
     setBriefingExpanded(false); // 发消息即收起今日面板,回到对话流
     injectOpeningContinuity(openerRef.current);
-    sendMessage(text, images, options?.extraContext ? { extraContext: options.extraContext } : undefined);
+    const pendingCardContext = pendingCardActionContextRef.current;
+    const extraContext = mergeExtraContext(options?.extraContext, pendingCardContext);
+    sendMessage(text, images, extraContext ? { extraContext } : undefined);
+    pendingCardActionContextRef.current = null;
     setContextBadge(null);
     setContextPayload(null);
     setContextInspectorVisible(false);
@@ -541,6 +547,7 @@ export default function ChatScreen() {
   const handleNewChat = useCallback(() => {
     setToolMenuVisible(false);
     exitSelectionMode();
+    pendingCardActionContextRef.current = null;
     setContextBadge(null);
     setContextPayload(null);
     setContextInspectorVisible(false);
@@ -565,6 +572,7 @@ export default function ChatScreen() {
   const handleSelectConversation = useCallback(async (id: number) => {
     await loadConversation(id);
     isNearBottom.current = true;
+    pendingCardActionContextRef.current = null;
     setContextBadge(null);
     setContextPayload(null);
     setContextInspectorVisible(false);
@@ -574,8 +582,22 @@ export default function ChatScreen() {
   }, [loadConversation]);
 
   const clearContext = useCallback(() => {
+    pendingCardActionContextRef.current = null;
     setContextBadge(null);
     setContextPayload(null);
+    setContextInspectorVisible(false);
+  }, []);
+
+  const handleCardActionCompleted = useCallback((event: {
+    action: ChatCardActionDescriptor;
+    descriptor: ServerCardDescriptor;
+    result: ChatCardActionResult;
+  }) => {
+    const context = buildCardActionExtraContext(event);
+    if (!context) return;
+    pendingCardActionContextRef.current = context.payload;
+    setContextBadge(context.badge);
+    setContextPayload(context.payload);
     setContextInspectorVisible(false);
   }, []);
 
@@ -650,9 +672,10 @@ export default function ChatScreen() {
         selected={selectedMessageIds.has(item.id)}
         onToggleSelected={toggleMessageSelection}
         onEnterSelection={!selectionMode && shareable ? enterSelectionWith : undefined}
+        onCardActionCompleted={handleCardActionCompleted}
       />
     );
-  }, [selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith]);
+  }, [selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith, handleCardActionCompleted]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -954,6 +977,93 @@ function formatContextPayload(value: string | null): string {
     return JSON.stringify(JSON.parse(raw), null, 2);
   } catch {
     return raw;
+  }
+}
+
+function mergeExtraContext(primary?: string, secondary?: string | null): string | undefined {
+  const first = String(primary || '').trim();
+  const second = String(secondary || '').trim();
+  if (!first) return second || undefined;
+  if (!second) return first || undefined;
+  const firstObject = parseJsonObject(first);
+  const secondObject = parseJsonObject(second);
+  if (firstObject && secondObject) {
+    return JSON.stringify({ ...secondObject, ...firstObject });
+  }
+  return JSON.stringify({
+    extra_context: first,
+    recent_card_action_context: secondObject || second,
+  });
+}
+
+function buildCardActionExtraContext(event: {
+  action: ChatCardActionDescriptor;
+  descriptor: ServerCardDescriptor;
+  result: ChatCardActionResult;
+}): { badge: string; payload: string } | null {
+  if (event.action.action !== 'diet_record.create' || event.descriptor.type !== 'diet_draft') return null;
+  const record = normalizeDietContextRecord(event.result.record);
+  if (!record) return null;
+  const mealLabel = mealTypeLabel(String(record.meal_type || ''));
+  return {
+    badge: `刚保存${mealLabel}`,
+    payload: JSON.stringify({
+      source: 'chat_card_action',
+      event: 'diet_record_saved',
+      instruction: '用户刚刚在对话卡片里确认保存了这条饮食记录。下一轮如果用户询问是否保存、今天/本餐饮食或热量，必须先结合这条记录和数据库查询回答，不要重新询问这顿饭吃了什么。',
+      record,
+    }),
+  };
+}
+
+function normalizeDietContextRecord(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const source = raw as Record<string, unknown>;
+  const foodItems = textValue(source.food_items);
+  const mealType = textValue(source.meal_type);
+  if (!foodItems && !mealType) return null;
+  const out: Record<string, unknown> = {};
+  for (const key of ['id', 'record_date', 'meal_type', 'food_items', 'notes'] as const) {
+    const value = source[key];
+    if (typeof value === 'number' && Number.isFinite(value)) out[key] = value;
+    if (typeof value === 'string' && value.trim()) out[key] = value.trim();
+  }
+  for (const key of ['calories', 'protein', 'carbs', 'fat', 'fiber', 'alcohol_units'] as const) {
+    const value = normalizeNumberValue(source[key]);
+    if (value != null) out[key] = value;
+  }
+  return out;
+}
+
+function parseJsonObject(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function textValue(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const out = value.trim();
+  return out || undefined;
+}
+
+function normalizeNumberValue(value: unknown): number | undefined {
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.trim()) : NaN;
+  if (!Number.isFinite(parsed) || parsed < 0) return undefined;
+  return Math.round(parsed * 10) / 10;
+}
+
+function mealTypeLabel(mealType: string): string {
+  switch (mealType) {
+    case 'breakfast': return '早餐';
+    case 'lunch': return '午餐';
+    case 'dinner': return '晚餐';
+    case 'snack': return '加餐';
+    default: return '饮食';
   }
 }
 

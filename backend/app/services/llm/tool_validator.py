@@ -25,6 +25,7 @@ LLM Tool Call 守门 — 所有 health_record / record_type=X 的参数过这一
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, date, timedelta, timezone
 from typing import Any, Dict, Optional
 
@@ -53,6 +54,25 @@ def _looks_like_diet_management_intent(value: Any) -> bool:
 def _looks_like_non_diet_intake(value: Any) -> bool:
     """药物/补剂摄入不能落成 DietRecord, 写库前硬拦截."""
     return classify_intake_intent(_flatten_text(value)).kind in {"medication", "supplement"}
+
+
+def _looks_like_food_ui_text(value: Any) -> bool:
+    """OCR/vision 偶尔把卡片 UI 文案当食物名, 写库前硬拦截."""
+    normalized = re.sub(r"\s+", "", _flatten_text(value)).lower()
+    if not normalized:
+        return False
+    if re.fullmatch(r"(?:和)?(?:早餐|午餐|晚餐|加餐|餐食)?(?:食品?)?营养卡", normalized):
+        return True
+    return any(marker in normalized for marker in (
+        "营养卡",
+        "保存并确认",
+        "确认记录",
+        "今日饮食",
+        "待确认",
+        "完成修正",
+        "去饮食页修正",
+        "看下一餐建议",
+    ))
 
 
 # ─────────────────────── 数值范围白名单 ──────────────────────
@@ -270,7 +290,27 @@ def validate_health_record(
     # 3. 引用 ID 存在性 + 越权
     _validate_reference_id(rtype, data, warnings, db, user_id)
 
-    # 4. 饮食记录的管理意图硬阻断:
+    # 4. 食物识别 UI 文案硬阻断:
+    # 截图/卡片里出现的「午餐食品营养卡」「保存并确认」不是食物,
+    # 不能写成 0 kcal 的 DietRecord。
+    if rtype == "diet" and _looks_like_food_ui_text(data.get("food_items")):
+        msg = "[tool_validator] diet.food_items 疑似界面文案, 阻止作为新饮食写入"
+        warnings.append(msg)
+        logger.warning("%s: %r", msg, data.get("food_items"))
+        _metric(rtype, "food_items", "ui_text", action="rejected")
+        error = (
+            "Error: diet.food_items 疑似界面文案/按钮文字, 不能作为饮食记录写入。"
+            "请重新识别真实食物名称和份量; 如果图片中只有卡片或文字, 应请用户补充餐食内容。"
+        )
+        if warnings:
+            logger.info(f"[tool_validator] {rtype} 守门触发 {len(warnings)} 条")
+        return {
+            "data": data,
+            "warnings": warnings,
+            "error": error,
+        }
+
+    # 5. 饮食记录的管理意图硬阻断:
     # "我刚才不小心删除了/删除这一餐/撤销这顿" 是 health_manage 语义,
     # 绝不能被上下文带偏写成一条 0 kcal 晚餐。
     if rtype == "diet" and _looks_like_diet_management_intent(data.get("food_items")):
@@ -291,7 +331,7 @@ def validate_health_record(
             "error": error,
         }
 
-    # 5. 药物/补剂摄入硬阻断:
+    # 6. 药物/补剂摄入硬阻断:
     # "刚吃了替普瑞酮/奥美拉唑20mg" 是 medication 语义,
     # 绝不能被"吃了"这个词带偏写成饮食。
     if rtype == "diet" and _looks_like_non_diet_intake(data.get("food_items")):
@@ -312,7 +352,7 @@ def validate_health_record(
             "error": error,
         }
 
-    # 6. 必填检查 (返回 error)
+    # 7. 必填检查 (返回 error)
     error = _validate_required(rtype, data, warnings)
 
     if warnings:

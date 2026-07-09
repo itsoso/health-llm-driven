@@ -120,3 +120,12 @@ class TestInterrogativeNoDraft:
     def test_legit_record_still_builds_draft_control(self, db):
         # 对照组:记录型 query 仍出草稿,证明守卫没把记录一并杀掉
         assert _build_diet_draft(db, 1, "加餐吃了一个油桃") is not None
+
+
+class TestUiCopyNoDietDraft:
+    def test_food_card_ui_copy_builds_no_diet_draft(self, db):
+        assert _build_diet_draft(db, 1, "和午餐食品营养卡") is None
+
+    def test_food_card_ui_copy_no_diet_draft_card(self, db):
+        cards = build_cards(db, 1, "和午餐食品营养卡")
+        assert not any(c["type"] == "diet_draft" for c in cards)

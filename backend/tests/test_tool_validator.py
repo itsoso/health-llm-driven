@@ -190,6 +190,44 @@ class TestDietMedicationGuard:
         assert v["error"] is None
 
 
+class TestDietUiTextGuard:
+    @pytest.mark.parametrize("food_items", [
+        "和午餐食品营养卡",
+        "午餐食品营养卡",
+        "保存并确认",
+        "确认记录",
+        ["今日饮食", "待确认"],
+    ])
+    def test_ui_copy_never_becomes_diet_food_items(self, food_items):
+        v = validate_tool_call("health_record", {
+            "record_type": "diet",
+            "data": {
+                "meal_type": "lunch",
+                "food_items": food_items,
+                "calories": 0,
+                "protein": 0,
+                "carbs": 0,
+                "fat": 0,
+            },
+        })
+
+        assert v["error"] is not None
+        assert "界面文案" in v["error"]
+        assert any("界面文案" in warning for warning in v["warnings"])
+
+    def test_real_lunch_food_still_passes(self):
+        v = validate_tool_call("health_record", {
+            "record_type": "diet",
+            "data": {
+                "meal_type": "lunch",
+                "food_items": "鸡胸肉 200g + 糙米饭 100g",
+                "calories": 520,
+            },
+        })
+
+        assert v["error"] is None
+
+
 # ───────────── 引用 ID 越权 ─────────────
 
 

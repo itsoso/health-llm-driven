@@ -34,6 +34,28 @@ def _is_record_intent(q: str) -> bool:
     return bool(re.search(r"记录|打卡|吃了|喝了|服药|刚吃|刚喝", q))
 
 
+def _looks_like_food_ui_text(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, (list, tuple, set)):
+        value = " ".join(str(item) for item in value if item is not None)
+    normalized = re.sub(r"\s+", "", str(value)).lower()
+    if not normalized:
+        return False
+    if re.fullmatch(r"(?:和)?(?:早餐|午餐|晚餐|加餐|餐食)?(?:食品?)?营养卡", normalized):
+        return True
+    return any(marker in normalized for marker in (
+        "营养卡",
+        "保存并确认",
+        "确认记录",
+        "今日饮食",
+        "待确认",
+        "完成修正",
+        "去饮食页修正",
+        "看下一餐建议",
+    ))
+
+
 def _is_runtime_agenda_query(q: str) -> bool:
     ql = q.lower()
     if re.search(r"7天|七天|未来|接下来|接下去|这周|一周|计划|安排|编排|运行时|下一步|该做|重点", ql):
@@ -591,6 +613,8 @@ def _build_diet_draft(db: Session, user_id: int, q: str) -> Optional[Dict[str, A
         return None
     food_items = intent.text or _extract_food_items(q)
     if not food_items:
+        return None
+    if _looks_like_food_ui_text(food_items):
         return None
     meal_type = intent.slots.get("meal_type") if isinstance(intent.slots.get("meal_type"), str) else _infer_meal_type_from_query(q)
     calories = _extract_number(

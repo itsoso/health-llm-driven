@@ -13,6 +13,95 @@ from app.services.llm import get_vision_provider
 logger = logging.getLogger(__name__)
 
 
+def _as_number(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number < 0:
+        return None
+    return round(number, 1)
+
+
+def _looks_like_food_ui_text(value: Any) -> bool:
+    normalized = re.sub(r"\s+", "", str(value or "")).lower()
+    if not normalized:
+        return False
+    if re.fullmatch(r"(?:和)?(?:早餐|午餐|晚餐|加餐|餐食)?(?:食品?)?营养卡", normalized):
+        return True
+    return any(marker in normalized for marker in (
+        "营养卡",
+        "保存并确认",
+        "确认记录",
+        "今日饮食",
+        "待确认",
+        "完成修正",
+        "去饮食页修正",
+        "看下一餐建议",
+    ))
+
+
+def sanitize_food_recognition_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Drop OCR/UI copy that a vision model mis-labeled as food."""
+    if not isinstance(result, dict):
+        return {
+            "success": False,
+            "error": "AI响应格式错误，请重试",
+            "foods": [],
+        }
+
+    foods = result.get("foods")
+    if not isinstance(foods, list):
+        foods = []
+
+    cleaned: List[Dict[str, Any]] = []
+    for raw in foods:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "").strip()
+        if not name or _looks_like_food_ui_text(name):
+            continue
+        item = dict(raw)
+        item["name"] = name[:80]
+        cleaned.append(item)
+
+    result["foods"] = cleaned
+    if not cleaned:
+        result["success"] = False
+        result["error"] = "图片中未识别到可记录的食物，请重新拍摄餐食本身。"
+        result.setdefault("meal_description", "未识别到可记录的食物")
+        result["total_calories"] = 0
+        result["total_protein"] = 0
+        result["total_carbs"] = 0
+        result["total_fat"] = 0
+        return result
+
+    totals = {
+        "total_calories": 0.0,
+        "total_protein": 0.0,
+        "total_carbs": 0.0,
+        "total_fat": 0.0,
+    }
+    mapping = {
+        "calories": "total_calories",
+        "protein": "total_protein",
+        "carbs": "total_carbs",
+        "fat": "total_fat",
+    }
+    for food in cleaned:
+        for src, dst in mapping.items():
+            value = _as_number(food.get(src))
+            if value is not None:
+                totals[dst] += value
+    if any(value > 0 for value in totals.values()):
+        for key, value in totals.items():
+            result[key] = int(round(value)) if key == "total_calories" else round(value, 1)
+    result["success"] = True
+    return result
+
+
 def extract_json_from_text(text: str) -> str:
     """
     从文本中提取JSON内容，处理各种可能的格式
@@ -195,9 +284,10 @@ class FoodRecognitionService:
             # 验证返回的数据结构
             if "foods" not in result:
                 result["foods"] = []
+            result = sanitize_food_recognition_result(result)
 
             foods_count = len(result.get('foods', []))
-            logger.info(f"食物识别成功: {foods_count} 种食物")
+            logger.info(f"食物识别完成: success={result.get('success')} foods={foods_count}")
 
             if foods_count > 0:
                 food_names = [f.get('name', '未知') for f in result['foods']]
@@ -309,7 +399,7 @@ class FoodRecognitionService:
             try:
                 result = json.loads(json_content)
                 result["success"] = True
-                return result
+                return sanitize_food_recognition_result(result)
             except json.JSONDecodeError as e:
                 logger.error(f"JSON解析失败: {e}, 内容: {json_content[:500]}")
                 return {

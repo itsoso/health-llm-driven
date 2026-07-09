@@ -278,7 +278,7 @@ export function renderServerCards(cards?: ServerCardDescriptor[] | null): Server
 function isRenderableServerCard(descriptor: ServerCardDescriptor): boolean {
   if (descriptor.type !== 'diet_draft') return true;
   const foodItems = foodItemsValue(descriptor.data?.food_items);
-  return !looksLikeDietManagementIntent(foodItems);
+  return !looksLikeDietManagementIntent(foodItems) && !looksLikeUiFoodText(foodItems);
 }
 
 function looksLikeDietManagementIntent(value?: string): boolean {
@@ -299,6 +299,23 @@ function looksLikeDietManagementIntent(value?: string): boolean {
     '不小心删',
     '恢复',
     '找回',
+  ].some((marker) => normalized.includes(marker.toLowerCase()));
+}
+
+function looksLikeUiFoodText(value?: string): boolean {
+  if (!value) return false;
+  const normalized = value.replace(/\s+/g, '').toLowerCase();
+  if (!normalized) return false;
+  if (/^(?:和)?(?:早餐|午餐|晚餐|加餐|餐食)?(?:食品?)?营养卡$/.test(normalized)) return true;
+  return [
+    '营养卡',
+    '保存并确认',
+    '确认记录',
+    '今日饮食',
+    '待确认',
+    '完成修正',
+    '去饮食页修正',
+    '看下一餐建议',
   ].some((marker) => normalized.includes(marker.toLowerCase()));
 }
 

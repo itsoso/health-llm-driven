@@ -109,9 +109,22 @@ interface Props {
   onToggleSelected?: (id: string) => void;
   /** 微信式: 长按这条消息进入多选模式 (仅可分享的消息才传). 进入后默认选中该条. */
   onEnterSelection?: (id: string) => void;
+  onCardActionCompleted?: (event: {
+    action: ChatCardActionDescriptor;
+    descriptor: ServerCardDescriptor;
+    result: ChatCardActionResult;
+  }) => void;
 }
 
-function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = false, onToggleSelected, onEnterSelection }: Props) {
+function ChatBubbleInner({
+  item,
+  onViewImage,
+  selectionMode = false,
+  selected = false,
+  onToggleSelected,
+  onEnterSelection,
+  onCardActionCompleted,
+}: Props) {
   const qc = useQueryClient();
   const toast = useToast();
   const isUser = item.role === 'user';
@@ -264,6 +277,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         setCardActionStateByKey(prev => ({ ...prev, [actionKey]: 'done' }));
         toast.show(getCardActionSuccessMessage(action, result), getCardActionSuccessType(action, result));
+        onCardActionCompleted?.({ action, descriptor, result });
         if (result.route) {
           router.push(result.route as any);
         }
@@ -294,7 +308,7 @@ function ChatBubbleInner({ item, onViewImage, selectionMode = false, selected = 
     }
 
     await execute();
-  }, [cardActionStateByKey, qc, toast]);
+  }, [cardActionStateByKey, onCardActionCompleted, qc, toast]);
 
   if (item.cardType && item.cardData) {
     const rendered = renderCard(

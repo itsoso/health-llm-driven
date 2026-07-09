@@ -206,9 +206,9 @@ describe('dispatchChatCardAction', () => {
     }));
   });
 
-  it('estimates and backfills nutrition after confirming a diet record without macros', async () => {
+  it('estimates, backfills, and returns the saved diet record after confirming a diet record without macros', async () => {
     mockApiPost
-      .mockResolvedValueOnce({ data: { id: 88, food_items: '牛肉面', meal_type: 'lunch' } })
+      .mockResolvedValueOnce({ data: { id: 88, food_items: '牛肉面', meal_type: 'lunch', record_date: '2026-07-09' } })
       .mockResolvedValueOnce({
         data: {
           success: true,
@@ -218,6 +218,18 @@ describe('dispatchChatCardAction', () => {
           total_fat: 18,
         },
       });
+    mockApiPut.mockResolvedValueOnce({
+      data: {
+        id: 88,
+        record_date: '2026-07-09',
+        food_items: '牛肉面',
+        meal_type: 'lunch',
+        calories: 620,
+        protein: 28,
+        carbs: 78,
+        fat: 18,
+      },
+    });
 
     await expect(dispatchChatCardAction({
       label: '确认记录',
@@ -230,7 +242,20 @@ describe('dispatchChatCardAction', () => {
           meal_type: 'lunch',
         },
       },
-    })).resolves.toEqual({ status: 'completed', nutrition_status: 'estimated' });
+    })).resolves.toEqual({
+      status: 'completed',
+      nutrition_status: 'estimated',
+      record: expect.objectContaining({
+        id: 88,
+        record_date: '2026-07-09',
+        food_items: '牛肉面',
+        meal_type: 'lunch',
+        calories: 620,
+        protein: 28,
+        carbs: 78,
+        fat: 18,
+      }),
+    });
 
     expect(mockApiPost).toHaveBeenNthCalledWith(1, '/diet/records', expect.objectContaining({
       food_items: '牛肉面',
@@ -290,6 +315,8 @@ describe('dispatchChatCardAction', () => {
     ['我刚才不小心删除了', 'invalid_diet_food_items_management'],
     ['替普瑞酮胶囊（施维舒）', 'invalid_diet_food_items_non_diet'],
     ['鱼油', 'invalid_diet_food_items_non_diet'],
+    ['和午餐食品营养卡', 'invalid_diet_food_items_ui_text'],
+    ['保存并确认', 'invalid_diet_food_items_ui_text'],
   ])('rejects non-food diet card payloads before posting: %s', async (foodItems, errorCode) => {
     await expect(dispatchChatCardAction({
       label: '确认记录',

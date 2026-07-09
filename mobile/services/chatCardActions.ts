@@ -12,6 +12,7 @@ export interface ChatCardActionResult {
   route?: string;
   nutrition_status?: DietNutritionStatus;
   patch?: Record<string, unknown>;
+  record?: Record<string, unknown>;
 }
 
 export async function dispatchChatCardAction(
@@ -26,10 +27,7 @@ export async function dispatchChatCardAction(
     case 'diet_record.create':
       assertManualConfirm(action);
       assertEndpoint(action, '/diet/records');
-      return {
-        status: 'completed',
-        nutrition_status: await createDietRecordFromCard(action),
-      };
+      return createDietRecordFromCard(action);
     case 'write_intent.confirm':
       assertManualConfirm(action);
       await confirmWriteIntent(readWriteIntentId(action));
@@ -97,13 +95,32 @@ function readOptionalTextList(raw: unknown): string[] {
     .slice(0, 6);
 }
 
-async function createDietRecordFromCard(action: ChatCardActionDescriptor): Promise<DietNutritionStatus> {
+async function createDietRecordFromCard(action: ChatCardActionDescriptor): Promise<ChatCardActionResult> {
   const record = readDietRecord(action);
   const { data } = await api.post('/diet/records', record);
-  if (!needsNutritionEstimate(record)) return 'not_needed';
+  let savedRecord = normalizeSavedDietRecord(data);
+  if (!needsNutritionEstimate(record)) {
+    return compactActionResult({
+      status: 'completed',
+      nutrition_status: 'not_needed',
+      record: savedRecord,
+    });
+  }
   const recordId = readOptionalNumericId(data?.id);
-  if (!recordId) return 'estimate_failed';
-  return backfillEstimatedNutrition(recordId, record);
+  if (!recordId) {
+    return compactActionResult({
+      status: 'completed',
+      nutrition_status: 'estimate_failed',
+      record: savedRecord,
+    });
+  }
+  const estimated = await backfillEstimatedNutrition(recordId, record);
+  if (estimated.record) savedRecord = estimated.record;
+  return compactActionResult({
+    status: 'completed',
+    nutrition_status: estimated.status,
+    record: savedRecord,
+  });
 }
 
 function assertManualConfirm(action: ChatCardActionDescriptor): void {
@@ -187,16 +204,26 @@ function needsNutritionEstimate(record: Record<string, unknown>): boolean {
   return ['calories', 'protein', 'carbs', 'fat'].some((key) => !isUsableNutritionNumber(record[key]));
 }
 
-async function backfillEstimatedNutrition(recordId: number, record: Record<string, unknown>): Promise<DietNutritionStatus> {
+async function backfillEstimatedNutrition(
+  recordId: number,
+  record: Record<string, unknown>,
+): Promise<{ status: DietNutritionStatus; record?: Record<string, unknown> }> {
   try {
     const foodItems = readFoodItems(record.food_items);
     const { data } = await api.post(`/diet/estimate-nutrition?food_description=${encodeURIComponent(foodItems)}`);
     const patch = readNutritionPatch(data, record);
-    if (!Object.keys(patch).length) return 'estimate_failed';
-    await api.put(`/diet/records/${recordId}`, patch);
-    return 'estimated';
+    if (!Object.keys(patch).length) return { status: 'estimate_failed' };
+    const updated = await api.put(`/diet/records/${recordId}`, patch);
+    return {
+      status: 'estimated',
+      record: normalizeSavedDietRecord(updated?.data) ?? {
+        id: recordId,
+        ...record,
+        ...patch,
+      },
+    };
   } catch {
-    return 'estimate_failed';
+    return { status: 'estimate_failed' };
   }
 }
 
@@ -251,12 +278,62 @@ function readFoodItems(raw: unknown): string {
 }
 
 function assertDietFoodItemsAllowed(foodItems: string): void {
+  if (looksLikeUiFoodText(foodItems)) {
+    throw new Error('invalid_diet_food_items_ui_text');
+  }
   if (looksLikeDietManagementIntent(foodItems)) {
     throw new Error('invalid_diet_food_items_management');
   }
   if (looksLikeNonDietIntake(foodItems)) {
     throw new Error('invalid_diet_food_items_non_diet');
   }
+}
+
+function looksLikeUiFoodText(value: string): boolean {
+  const normalized = value.replace(/\s+/g, '').toLowerCase();
+  if (!normalized) return false;
+  if (/^(?:和)?(?:早餐|午餐|晚餐|加餐|餐食)?(?:食品?)?营养卡$/.test(normalized)) return true;
+  return [
+    '营养卡',
+    '保存并确认',
+    '确认记录',
+    '今日饮食',
+    '待确认',
+    '完成修正',
+    '去饮食页修正',
+    '看下一餐建议',
+  ].some((marker) => normalized.includes(marker.toLowerCase()));
+}
+
+function normalizeSavedDietRecord(raw: unknown): Record<string, unknown> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const source = raw as Record<string, unknown>;
+  const id = readOptionalNumericId(source.id);
+  if (!id) return undefined;
+  const hasDietShape = Boolean(
+    optionalText(source.food_items) ||
+    optionalText(source.meal_type) ||
+    optionalText(source.record_date),
+  );
+  if (!hasDietShape) return undefined;
+  const out: Record<string, unknown> = { id };
+  for (const key of ['record_date', 'meal_type', 'food_items', 'notes'] as const) {
+    const value = optionalText(source[key]);
+    if (value) out[key] = value;
+  }
+  for (const key of ['calories', 'protein', 'carbs', 'fat', 'fiber', 'alcohol_units'] as const) {
+    const value = normalizeOptionalNutritionNumber(source[key]);
+    if (value != null) out[key] = value;
+  }
+  return out;
+}
+
+function compactActionResult(result: ChatCardActionResult): ChatCardActionResult {
+  if (!result.record) {
+    const { record: _record, ...rest } = result;
+    return rest;
+  }
+  return result;
 }
 
 function looksLikeDietManagementIntent(value: string): boolean {

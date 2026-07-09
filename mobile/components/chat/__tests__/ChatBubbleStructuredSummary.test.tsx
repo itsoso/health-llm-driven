@@ -342,7 +342,17 @@ describe('ChatBubble structured summary', () => {
   });
 
   it('shows diet-specific success feedback after confirming a diet card', async () => {
-    dispatchChatCardAction.mockResolvedValueOnce({ status: 'completed' });
+    const onCardActionCompleted = jest.fn();
+    dispatchChatCardAction.mockResolvedValueOnce({
+      status: 'completed',
+      record: {
+        id: 91,
+        record_date: '2026-07-09',
+        food_items: '鸡胸肉 200g',
+        meal_type: 'lunch',
+        calories: 280,
+      },
+    });
     renderCard.mockImplementationOnce((descriptor: any, options: any) => {
       const { Pressable, Text } = require('react-native');
       return (
@@ -370,7 +380,7 @@ describe('ChatBubble structured summary', () => {
 
     const { getByText } = render(
       <QueryClientProvider client={qc}>
-        <ChatBubble item={message} />
+        <ChatBubble item={message} onCardActionCompleted={onCardActionCompleted} />
       </QueryClientProvider>,
     );
 
@@ -379,6 +389,19 @@ describe('ChatBubble structured summary', () => {
     await waitFor(() => {
       expect(mockToastShow).toHaveBeenCalledWith('已记录饮食', 'success');
     });
+    expect(onCardActionCompleted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: expect.objectContaining({ action: 'diet_record.create' }),
+        descriptor: expect.objectContaining({ type: 'diet_draft' }),
+        result: expect.objectContaining({
+          record: expect.objectContaining({
+            id: 91,
+            meal_type: 'lunch',
+            food_items: '鸡胸肉 200g',
+          }),
+        }),
+      }),
+    );
   });
 
   it('shows nutrition estimation feedback after confirming an incomplete diet card', async () => {

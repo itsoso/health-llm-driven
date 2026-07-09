@@ -517,6 +517,35 @@ describe('renderCard 安全降级', () => {
     expect(getByText('46g')).toBeTruthy();
   });
 
+  it('does not render diet drafts built from captured UI copy instead of food', () => {
+    const element = renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'lunch',
+        food_items: '和午餐食品营养卡',
+        calories: 0,
+        protein: 0,
+        carbs: 0,
+        fat: 0,
+      },
+      actions: [{
+        id: 'confirm-diet-draft',
+        label: '确认记录',
+        action: 'diet_record.create',
+        endpoint: '/diet/records',
+        requires_manual_confirm: true,
+        payload: {
+          record: {
+            meal_type: 'lunch',
+            food_items: '和午餐食品营养卡',
+          },
+        },
+      }],
+    } as any);
+
+    expect(element).toBeNull();
+  });
+
   it('renders server card actions and dispatches through onAction', () => {
     const onAction = jest.fn();
     const descriptor = {
