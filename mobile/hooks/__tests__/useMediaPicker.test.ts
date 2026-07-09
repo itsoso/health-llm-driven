@@ -5,6 +5,7 @@ const mockRequestMediaLibraryPermissions = jest.fn();
 const mockLaunchImageLibrary = jest.fn();
 const mockRequestCameraPermissions = jest.fn();
 const mockLaunchCamera = jest.fn();
+const mockReadAsStringAsync = jest.fn();
 
 jest.mock('expo-image-picker', () => ({
   requestMediaLibraryPermissionsAsync: (...args: any[]) => mockRequestMediaLibraryPermissions(...args),
@@ -16,6 +17,11 @@ jest.mock('expo-image-picker', () => ({
 const mockGetDocument = jest.fn();
 jest.mock('expo-document-picker', () => ({
   getDocumentAsync: (...args: any[]) => mockGetDocument(...args),
+}));
+
+jest.mock('expo-file-system/legacy', () => ({
+  EncodingType: { Base64: 'base64' },
+  readAsStringAsync: (...args: any[]) => mockReadAsStringAsync(...args),
 }));
 
 jest.spyOn(Alert, 'alert');
@@ -100,17 +106,19 @@ describe('useMediaPicker', () => {
       expect(result.current.pendingImage?.type).toBe('jpeg');
     });
 
-    it('defaults to empty string when base64 is null', async () => {
+    it('reads base64 from selected image uri when picker omits inline base64', async () => {
       mockRequestMediaLibraryPermissions.mockResolvedValue({ granted: true });
       mockLaunchImageLibrary.mockResolvedValue({
         canceled: false,
         assets: [{ uri: 'file:///p.jpg', base64: null, mimeType: 'image/jpeg' }],
       });
+      mockReadAsStringAsync.mockResolvedValue('read-from-file');
 
       const { result } = renderHook(() => useMediaPicker());
       await act(async () => { await result.current.pickImage(); });
 
-      expect(result.current.pendingImage?.base64).toBe('');
+      expect(mockReadAsStringAsync).toHaveBeenCalledWith('file:///p.jpg', { encoding: 'base64' });
+      expect(result.current.pendingImage?.base64).toBe('read-from-file');
     });
   });
 
@@ -141,6 +149,29 @@ describe('useMediaPicker', () => {
       expect(result.current.pendingImage).toEqual({
         uri: 'file:///camera.jpg',
         base64: 'camdata',
+        type: 'jpeg',
+      });
+      expect(mockLaunchCamera).toHaveBeenCalledWith(expect.objectContaining({
+        mediaTypes: ['images'],
+        base64: true,
+      }));
+    });
+
+    it('reads base64 from camera uri when the camera result only has a file uri', async () => {
+      mockRequestCameraPermissions.mockResolvedValue({ granted: true });
+      mockLaunchCamera.mockResolvedValue({
+        canceled: false,
+        assets: [{ uri: 'file:///camera-only-uri.jpg', base64: undefined, mimeType: 'image/jpeg' }],
+      });
+      mockReadAsStringAsync.mockResolvedValue('camera-file-base64');
+
+      const { result } = renderHook(() => useMediaPicker());
+      await act(async () => { await result.current.takePhoto(); });
+
+      expect(mockReadAsStringAsync).toHaveBeenCalledWith('file:///camera-only-uri.jpg', { encoding: 'base64' });
+      expect(result.current.pendingImage).toEqual({
+        uri: 'file:///camera-only-uri.jpg',
+        base64: 'camera-file-base64',
         type: 'jpeg',
       });
     });
