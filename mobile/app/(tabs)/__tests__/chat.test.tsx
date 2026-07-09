@@ -723,6 +723,44 @@ describe('ChatScreen', () => {
     expect(getByText(/午餐 · 牛肉面 · 620 kcal/)).toBeTruthy();
   });
 
+  it('asks today diet calories with the saved diet context attached', async () => {
+    mockMessages = [{
+      id: 'diet-card-4',
+      role: 'assistant',
+      content: '',
+      cardType: 'diet_draft',
+      cardData: { food_items: '牛肉面', meal_type: 'lunch' },
+      cardActionResult: {
+        status: 'completed',
+        record: {
+          id: 88,
+          record_date: '2026-07-09',
+          meal_type: 'lunch',
+          food_items: '牛肉面',
+          calories: 620,
+        },
+      },
+    }];
+
+    const { getByLabelText } = render(<ChatScreen />);
+    await act(async () => {
+      fireEvent(getByLabelText('complete-card-action-diet-card-4'), 'responderRelease');
+    });
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('基于刚保存饮食查询今日热量'));
+    });
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      '查询今天全天饮食和热量',
+      null,
+      expect.objectContaining({
+        extraContext: expect.stringContaining('diet_record_saved'),
+      }),
+    );
+    expect(mockSendMessage.mock.calls[0][2].extraContext).toContain('牛肉面');
+  });
+
   it('hides the composer chips row once the conversation has messages', async () => {
     mockMessages = [
       { id: 'u-1', role: 'user', content: '早餐吃了鸡蛋' },

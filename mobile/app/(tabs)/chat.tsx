@@ -588,6 +588,10 @@ export default function ChatScreen() {
     setContextInspectorVisible(false);
   }, []);
 
+  const handleAskTodayDietCalories = useCallback(() => {
+    handleSend('查询今天全天饮食和热量', null);
+  }, [handleSend]);
+
   const handleCardActionCompleted = useCallback((event: {
     action: ChatCardActionDescriptor;
     descriptor: ServerCardDescriptor;
@@ -699,6 +703,7 @@ export default function ChatScreen() {
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
   const emptyStateTodayFocus = buildEmptyStateTodayFocus(todayTimeline.data);
+  const hasSavedDietContext = isSavedDietContextPayload(contextPayload);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -772,6 +777,17 @@ export default function ChatScreen() {
               </Text>
               <Ionicons name="chevron-up-outline" size={13} color={C.ink3} />
             </Pressable>
+            {hasSavedDietContext && (
+              <Pressable
+                onPress={handleAskTodayDietCalories}
+                style={({ pressed }) => [styles.contextQuickAction, pressed && styles.contextBannerPressed]}
+                accessibilityRole="button"
+                accessibilityLabel="基于刚保存饮食查询今日热量"
+              >
+                <Ionicons name="analytics-outline" size={12} color={C.green600} />
+                <Text style={txt.contextQuickAction} numberOfLines={1}>查今日热量</Text>
+              </Pressable>
+            )}
             <Pressable
               onPress={clearContext}
               hitSlop={8}
@@ -1022,6 +1038,11 @@ function formatKnownContextPayload(value: unknown): string | null {
   return lines.length > 0 ? lines.join('\n') : null;
 }
 
+function isSavedDietContextPayload(value: string | null): boolean {
+  const parsed = parseJsonObject(String(value || '').trim());
+  return parsed?.source === 'chat_card_action' && parsed?.event === 'diet_record_saved';
+}
+
 function mergeExtraContext(primary?: string, secondary?: string | null): string | undefined {
   const first = String(primary || '').trim();
   const second = String(secondary || '').trim();
@@ -1195,6 +1216,17 @@ const styles = StyleSheet.create({
   contextBannerPressed: {
     opacity: 0.75,
   },
+  contextQuickAction: {
+    minHeight: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    borderRadius: revaRadii.pill,
+    backgroundColor: '#fff',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(31,138,91,0.18)',
+  },
   contextClearButton: {
     width: 28,
     height: 28,
@@ -1275,6 +1307,7 @@ const styles = StyleSheet.create({
 
 const txt = {
   contextBanner: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green500, flex: 1, fontWeight: '500' } as TextStyle,
+  contextQuickAction: { fontFamily: revaFonts.sans, fontSize: 11.5, color: C.green600, fontWeight: '800' } as TextStyle,
   contextSheetTitle: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '900', color: C.ink1 } as TextStyle,
   contextSheetSub: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,
   contextPayload: { fontFamily: revaFonts.mono, fontSize: 11.5, lineHeight: 17, color: C.ink2, backgroundColor: C.paper2, borderRadius: revaRadii.md, padding: revaSpacing.s3 } as TextStyle,
