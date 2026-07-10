@@ -136,6 +136,12 @@ public enum ChatTranscriptHTML {
         var pendingBullets: [String] = []
         var pendingNumbered: [String] = []
         var pendingTableRows: [[String]] = []
+        // 有序列表跨"被子 bullet 打断"仍连续编号:LLM 常把每个顶级条目都写成 "1.",
+        // 且插在条目间的子 bullet 会把 <ol> 冲断成一串单条列表 → 浏览器每个都从 1 显示。
+        // 用跨 flush 的运行计数 + <ol start=N> 让编号延续;只在真正的列表分界
+        // (标题/段落/分割线)重置回 1。
+        var numberedNext = 1        // 下一个有序 <li> 该显示的序号
+        var numberedRunStart = 1    // 当前 pending run 的 <ol start> 起始值
 
         func flushBullets() {
             guard !pendingBullets.isEmpty else { return }
@@ -144,7 +150,8 @@ public enum ChatTranscriptHTML {
         }
         func flushNumbered() {
             guard !pendingNumbered.isEmpty else { return }
-            html += "<ol>" + pendingNumbered.map { "<li>\($0)</li>" }.joined() + "</ol>"
+            let startAttr = numberedRunStart > 1 ? " start=\"\(numberedRunStart)\"" : ""
+            html += "<ol\(startAttr)>" + pendingNumbered.map { "<li>\($0)</li>" }.joined() + "</ol>"
             pendingNumbered = []
         }
         func flushTable() {
@@ -168,11 +175,13 @@ public enum ChatTranscriptHTML {
             switch block {
             case .heading(let level, let text):
                 flushAll()
+                numberedNext = 1
                 let clampedLevel = min(max(level, 1), 4)
                 let inner = inlineMarkdown(escape(text))
                 html += "<h\(clampedLevel)>\(inner)</h\(clampedLevel)>"
             case .paragraph(let text):
                 flushAll()
+                numberedNext = 1
                 html += "<p>\(inlineMarkdown(escape(text)))</p>"
             case .bullet(let text):
                 flushNumbered()
@@ -181,13 +190,17 @@ public enum ChatTranscriptHTML {
             case .numbered(_, let text):
                 flushBullets()
                 flushTable()
+                // 忽略源里的 index(LLM 常全写 "1"),用运行计数;pending 为空=新一段的起点
+                if pendingNumbered.isEmpty { numberedRunStart = numberedNext }
                 pendingNumbered.append(inlineMarkdown(escape(text)))
+                numberedNext += 1
             case .tableRow(let columns):
                 flushBullets()
                 flushNumbered()
                 pendingTableRows.append(columns.map { inlineMarkdown(escape($0)) })
             case .divider:
                 flushAll()
+                numberedNext = 1
                 html += "<hr/>"
             }
         }

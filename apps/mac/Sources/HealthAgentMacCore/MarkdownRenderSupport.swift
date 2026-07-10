@@ -176,10 +176,17 @@ public enum MarkdownRenderSupport {
             return nil
         }
         let prefix = String(line[..<dotIndex])
-        guard !prefix.isEmpty, prefix.allSatisfy(\.isNumber) else {
+        // 前缀必须是 1-3 位数字:排除 "2024. 年度报告" 这类年份/长数字被误判成列表项。
+        guard !prefix.isEmpty, prefix.count <= 3, prefix.allSatisfy(\.isNumber) else {
             return nil
         }
-        let text = line[line.index(after: dotIndex)...].trimmingCharacters(in: .whitespaces)
+        // 点后必须是空白或行尾(真正的有序列表 "1. text"):否则 "3.5 mmol/L 属于正常"
+        // 这类小数会被拆成序号 3 + "5 mmol/L…" —— 健康文本数字密集,这是最高频的误渲染。
+        let afterDot = line.index(after: dotIndex)
+        guard afterDot == line.endIndex || line[afterDot].isWhitespace else {
+            return nil
+        }
+        let text = line[afterDot...].trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else {
             return nil
         }

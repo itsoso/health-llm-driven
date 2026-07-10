@@ -89,6 +89,28 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertTrue(html.contains("<h2>Title</h2>"))
     }
 
+    func testOrderedListContinuesAcrossNestedBullets() {
+        // LLM 常把每个顶级条目都写成 "1.",插在条目间的子 bullet 会把 <ol> 冲断成单条列表 →
+        // 修复前每个都显示 "1."。修复后应连续:后续 <ol> 带 start="2"/"3"。
+        let md = "1. 蛋白质\n- 目标\n- 紧急\n1. 木糖醇\n- 行动\n1. 激素\n- 方案"
+        let html = ChatTranscriptHTML.renderMessageBody(markdown: md)
+        XCTAssertTrue(html.contains("start=\"2\""), "第二个顶级条目应从 2 起: \(html)")
+        XCTAssertTrue(html.contains("start=\"3\""), "第三个顶级条目应从 3 起: \(html)")
+    }
+
+    func testDecimalNotRenderedAsOrderedList() {
+        // "3.5 mmol/L 属于正常" 是小数,点后无空格 → 不该被当有序列表项拆成 "3. 5 mmol/L…"。
+        let html = ChatTranscriptHTML.renderMessageBody(markdown: "3.5 mmol/L 属于正常")
+        XCTAssertFalse(html.contains("<ol"), "小数不应渲染成有序列表: \(html)")
+        XCTAssertTrue(html.contains("3.5 mmol/L"), "小数原文应保留: \(html)")
+    }
+
+    func testYearPrefixNotRenderedAsOrderedList() {
+        // "2024. 年度报告" 的 4 位年份前缀不该被当序号(前缀长度 ≤3 守卫)。
+        let html = ChatTranscriptHTML.renderMessageBody(markdown: "2024. 年度报告")
+        XCTAssertFalse(html.contains("<ol"), "4 位年份前缀不应渲染成有序列表: \(html)")
+    }
+
     // MARK: - JS string injection safety
 
     func testRenderedMessageJSStringEscapesQuotesAndScriptClose() {

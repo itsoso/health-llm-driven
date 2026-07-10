@@ -38,6 +38,10 @@ struct HealthAgentMacApp: App {
                     .font(.system(size: 15, weight: .regular))
             }
         }
+        // MenuBarRootView 是按弹窗样式设计的(固定宽 250、状态芯片 HStack、ProgressView
+        // 转子、多行 caption)。不设 style 会默认 .menu,把这些自定义布局降级成菜单项
+        // (frame 被忽略、芯片挤压、转子不渲染)。显式用 .window 让它按设计渲染。
+        .menuBarExtraStyle(.window)
         .commands {
             CommandMenu(appText("Health Agent", appLanguageRaw)) {
                 Button(appText("Today", appLanguageRaw)) { appServices.navigation.selection = .today }
