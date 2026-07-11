@@ -107,6 +107,7 @@
 - T5.1 发布回归：Mobile 全量 `233 suites / 1626 tests`、受影响 focused `66 tests`、TypeScript 通过；Backend 饮食/营养/事件联合回归 `112 tests` 通过；lint `0 errors`（保留全仓 97 条既有 warnings）；pre-commit、doc drift 与 Dossier consistency 全绿。
 - T5.2 发布前回归：Backend 识别清洗/营养校准/Diet API/Agent vision 联合 `74 tests` 通过；Mobile focused `24 tests` 与全量 `233 suites / 1626 tests` 通过；TypeScript 通过，OpenAPI 生成仅新增 4 行份量字段；lint `0 errors`（97 条既有 warnings）；带项目 venv 的全部 pre-commit、doc drift 与 Dossier consistency 通过。独立审查另以 RED 测试修复“益生菌酸奶”被补剂规则误删的假阳性。
 - T5.2 首次 CI run `29164922239` 中 type drift 在补齐 Frontend 生成类型后通过，但 Linux `a-b` 分片连续两次远超历史绿灯的 4 分 23 秒，并在 `test_agent_health_manage.py` 与 `test_agent_intervention_cycle_tool.py` 边界失去输出；该边界组合本机 `30/30` 通过，`c-d` 重跑也在 3 分 36 秒通过。判定为既有进程级顺序污染而非饮食断言回归，将 86 个 `a-b` 测试文件拆为非 Agent、`agent_[a-h]`、`agent_[i-z]` 三个互斥进程；文件覆盖校验为 `86 -> 86`、差集 0。
+- T5.2 CI run `29166225719` 验证上述三个新分片分别在 3 分 2 秒、2 分 15 秒和 1 分 24 秒通过；同轮旧 `t[f-z]+u` 分片在 69% 处进入 `test_twin_builder.py` 后冻结，并被 20 分钟上限终止，其他 16 个作业均通过。本机同命令 `392/392` 在 31.23 秒通过；据逐用例日志将其拆为 `t[f-v]`、`t[w-z]`、`u` 三个干净进程，原 24 个文件覆盖校验仍为 `24 -> 24`、差集 0。
 - Linux 全仓权威闸门：GitHub Actions run `29163241845` SUCCESS；frontend、Mobile、macOS、type drift、backend quality、10 个后端测试分片及最终 backend enforcement 全部通过。
 
 ## G4 · 安全闸
