@@ -10,7 +10,8 @@ jobs:
   backend-test-shards:
     name: backend-test-${{ matrix.label }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Allows one 10-minute process timeout plus a fresh retry and setup time.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:

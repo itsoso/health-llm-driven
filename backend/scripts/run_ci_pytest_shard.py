@@ -1,99 +1,91 @@
 #!/usr/bin/env python3
-"""Run each pytest file in a CI shard in a fresh Python process."""
+"""Run a pytest shard with a process deadline and one timeout retry."""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-import fnmatch
-import glob
-from pathlib import Path
+import os
+import signal
 import subprocess
 import sys
 
 
-def _option_values(arguments: Sequence[str], option: str) -> list[str]:
-    values: list[str] = []
-    index = 0
-    while index < len(arguments):
-        argument = arguments[index]
-        if argument.startswith(f"{option}="):
-            values.append(argument.split("=", 1)[1])
-        elif argument == option and index + 1 < len(arguments):
-            index += 1
-            values.append(arguments[index])
-        index += 1
-    return values
+DEFAULT_TIMEOUT_SECONDS = 600
+DEFAULT_MAX_ATTEMPTS = 2
+TIMEOUT_EXIT_CODE = 124
 
 
-def discover_test_files(
-    inputs: Sequence[str],
-    pytest_args: Sequence[str] = (),
-) -> list[Path]:
-    """Expand file, directory, and glob inputs into unique test files."""
-    discovered: list[Path] = []
-    seen: set[Path] = set()
-    ignored_paths = [Path(value) for value in _option_values(pytest_args, "--ignore")]
-    ignored_globs = _option_values(pytest_args, "--ignore-glob")
-
-    for raw_input in inputs:
-        matches = sorted(
-            (Path(match) for match in glob.glob(raw_input, recursive=True)),
-            key=lambda path: str(path),
-        )
-        if not matches and Path(raw_input).exists():
-            matches = [Path(raw_input)]
-
-        for match in matches:
-            candidates = sorted(match.rglob("test_*.py")) if match.is_dir() else (match,)
-            for candidate in candidates:
-                is_test_file = (
-                    candidate.is_file()
-                    and candidate.name.startswith("test_")
-                    and candidate.suffix == ".py"
-                )
-                is_ignored_path = any(
-                    candidate == ignored or ignored in candidate.parents
-                    for ignored in ignored_paths
-                )
-                is_ignored_glob = any(
-                    fnmatch.fnmatch(str(candidate), pattern)
-                    for pattern in ignored_globs
-                )
-                if (
-                    is_test_file
-                    and not is_ignored_path
-                    and not is_ignored_glob
-                    and candidate not in seen
-                ):
-                    discovered.append(candidate)
-                    seen.add(candidate)
-
-    return discovered
+def build_pytest_command(
+    path_inputs: Sequence[str],
+    pytest_args: Sequence[str],
+) -> list[str]:
+    return [sys.executable, "-m", "pytest", *path_inputs, *pytest_args]
 
 
-def build_pytest_commands(files: Sequence[Path], pytest_args: Sequence[str]) -> list[list[str]]:
-    return [
-        [sys.executable, "-m", "pytest", str(test_file), *pytest_args]
-        for test_file in files
-    ]
+def _terminate_process_group(process: subprocess.Popen) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+
+    try:
+        process.wait(timeout=5)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    process.wait()
 
 
-def run_test_files(
-    files: Sequence[Path],
+def run_attempt(command: list[str], timeout_seconds: int) -> int:
+    process = subprocess.Popen(command, start_new_session=True)
+    try:
+        return process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired as exc:
+        _terminate_process_group(process)
+        raise subprocess.TimeoutExpired(command, timeout_seconds) from exc
+
+
+def run_shard(
+    path_inputs: Sequence[str],
     pytest_args: Sequence[str],
     *,
-    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+    attempt_runner: Callable[[list[str], int], int] = run_attempt,
 ) -> int:
-    commands = build_pytest_commands(files, pytest_args)
-    total = len(commands)
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be at least 1")
 
-    for index, command in enumerate(commands, start=1):
-        print(f"[ci-shard] {index}/{total} {command[3]}", flush=True)
-        result = runner(command, check=False)
-        if result.returncode != 0:
-            return result.returncode
+    command = build_pytest_command(path_inputs, pytest_args)
+    for attempt in range(1, max_attempts + 1):
+        print(
+            f"[ci-shard] attempt {attempt}/{max_attempts}, "
+            f"deadline={timeout_seconds}s",
+            flush=True,
+        )
+        try:
+            return_code = attempt_runner(command, timeout_seconds)
+        except subprocess.TimeoutExpired:
+            print(
+                f"[ci-shard] attempt {attempt} exceeded {timeout_seconds}s",
+                file=sys.stderr,
+                flush=True,
+            )
+            if attempt == max_attempts:
+                return TIMEOUT_EXIT_CODE
+            print("[ci-shard] retrying in a fresh process", flush=True)
+            continue
 
-    return 0
+        # Assertion and collection failures are deterministic signals. Do not
+        # hide them behind a retry; only process-level timeouts get one retry.
+        return return_code
+
+    return TIMEOUT_EXIT_CODE
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -105,13 +97,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     separator = arguments.index("--")
     path_inputs = arguments[:separator]
     pytest_args = arguments[separator + 1 :]
-    files = discover_test_files(path_inputs, pytest_args)
-    if not files:
-        print(f"no test files found for inputs: {path_inputs}", file=sys.stderr)
+    if not path_inputs:
+        print("at least one pytest path is required", file=sys.stderr)
         return 2
 
-    print(f"[ci-shard] discovered {len(files)} test files", flush=True)
-    return run_test_files(files, pytest_args)
+    return run_shard(path_inputs, pytest_args)
 
 
 if __name__ == "__main__":

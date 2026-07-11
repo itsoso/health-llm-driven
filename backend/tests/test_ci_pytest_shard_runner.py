@@ -2,86 +2,102 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import subprocess
 import sys
+import time
+
+import pytest
 
 
-def test_discover_test_files_expands_globs_directories_and_deduplicates(tmp_path):
-    from scripts.run_ci_pytest_shard import discover_test_files
+def test_build_pytest_command_keeps_the_shard_in_one_process():
+    from scripts.run_ci_pytest_shard import build_pytest_command
 
-    tests_dir = tmp_path / "tests"
-    nested_dir = tests_dir / "services"
-    nested_dir.mkdir(parents=True)
-    first = tests_dir / "test_alpha.py"
-    second = tests_dir / "test_beta.py"
-    nested = nested_dir / "test_nested.py"
-    helper = nested_dir / "helper.py"
-    for path in (first, second, nested, helper):
-        path.write_text("\n", encoding="utf-8")
-
-    discovered = discover_test_files(
-        [
-            str(tests_dir / "test_*.py"),
-            str(first),
-            str(nested_dir),
-        ]
+    command = build_pytest_command(
+        ["tests/test_alpha.py", "tests/test_beta.py"],
+        ["-q", "--no-cov"],
     )
 
-    assert discovered == [first, second, nested]
-
-
-def test_discover_test_files_applies_pytest_ignore_rules(tmp_path):
-    from scripts.run_ci_pytest_shard import discover_test_files
-
-    tests_dir = tmp_path / "tests"
-    services_dir = tests_dir / "services"
-    services_dir.mkdir(parents=True)
-    keep = tests_dir / "test_alpha.py"
-    ignored_glob = tests_dir / "test_beta.py"
-    ignored_dir = services_dir / "test_service.py"
-    for path in (keep, ignored_glob, ignored_dir):
-        path.write_text("\n", encoding="utf-8")
-
-    discovered = discover_test_files(
-        [str(tests_dir)],
-        [
-            f"--ignore={services_dir}",
-            f"--ignore-glob={tests_dir / 'test_beta*.py'}",
-        ],
-    )
-
-    assert discovered == [keep]
-
-
-def test_build_pytest_commands_uses_one_process_per_file(tmp_path):
-    from scripts.run_ci_pytest_shard import build_pytest_commands
-
-    files = [tmp_path / "test_alpha.py", tmp_path / "test_beta.py"]
-
-    commands = build_pytest_commands(files, ["-q", "--no-cov"])
-
-    assert commands == [
-        [sys.executable, "-m", "pytest", str(files[0]), "-q", "--no-cov"],
-        [sys.executable, "-m", "pytest", str(files[1]), "-q", "--no-cov"],
+    assert command == [
+        sys.executable,
+        "-m",
+        "pytest",
+        "tests/test_alpha.py",
+        "tests/test_beta.py",
+        "-q",
+        "--no-cov",
     ]
 
 
-def test_run_test_files_stops_and_propagates_first_failure(tmp_path):
-    from scripts.run_ci_pytest_shard import run_test_files
+def test_run_shard_retries_timeout_in_a_fresh_process():
+    from scripts.run_ci_pytest_shard import run_shard
 
-    files = [
-        tmp_path / "test_alpha.py",
-        tmp_path / "test_beta.py",
-        tmp_path / "test_gamma.py",
-    ]
-    calls: list[list[str]] = []
+    calls: list[tuple[list[str], int]] = []
 
-    def fake_runner(command: list[str], *, check: bool) -> subprocess.CompletedProcess:
-        calls.append(command)
-        return subprocess.CompletedProcess(command, 7 if "test_beta.py" in command[3] else 0)
+    def fake_attempt(command: list[str], timeout_seconds: int) -> int:
+        calls.append((command, timeout_seconds))
+        if len(calls) == 1:
+            raise subprocess.TimeoutExpired(command, timeout_seconds)
+        return 0
 
-    return_code = run_test_files(files, ["-q"], runner=fake_runner)
+    return_code = run_shard(
+        ["tests/test_alpha.py"],
+        ["-q"],
+        timeout_seconds=600,
+        max_attempts=2,
+        attempt_runner=fake_attempt,
+    )
+
+    assert return_code == 0
+    assert len(calls) == 2
+    assert calls[0][0] == calls[1][0]
+
+
+def test_run_shard_does_not_retry_assertion_failure():
+    from scripts.run_ci_pytest_shard import run_shard
+
+    calls = 0
+
+    def fake_attempt(_command: list[str], _timeout_seconds: int) -> int:
+        nonlocal calls
+        calls += 1
+        return 7
+
+    return_code = run_shard(
+        ["tests/test_alpha.py"],
+        ["-q"],
+        timeout_seconds=600,
+        max_attempts=2,
+        attempt_runner=fake_attempt,
+    )
 
     assert return_code == 7
-    assert [Path(command[3]).name for command in calls] == ["test_alpha.py", "test_beta.py"]
+    assert calls == 1
+
+
+def test_run_shard_returns_timeout_code_after_final_timeout():
+    from scripts.run_ci_pytest_shard import TIMEOUT_EXIT_CODE, run_shard
+
+    def always_timeout(command: list[str], timeout_seconds: int) -> int:
+        raise subprocess.TimeoutExpired(command, timeout_seconds)
+
+    return_code = run_shard(
+        ["tests/test_alpha.py"],
+        ["-q"],
+        timeout_seconds=600,
+        max_attempts=2,
+        attempt_runner=always_timeout,
+    )
+
+    assert return_code == TIMEOUT_EXIT_CODE
+
+
+def test_run_attempt_terminates_a_hung_process_group():
+    from scripts.run_ci_pytest_shard import run_attempt
+
+    command = [sys.executable, "-c", "import time; time.sleep(60)"]
+    started_at = time.monotonic()
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        run_attempt(command, timeout_seconds=1)
+
+    assert time.monotonic() - started_at < 5
