@@ -155,6 +155,76 @@ def _extract_desktop_response_instruction(extra_context: Optional[str]) -> Optio
     return instruction[:1200]
 
 
+# ── 意图专属 prompt 块门控(2026-07-11 token 优化 #5)─────────────────────
+# menu_share(739 chars)只在餐食/菜单类问题有用;基因解读规则(356 chars)只在
+# 基因/补剂类回合有用 —— 二者曾无条件每轮全发(占空用户 full prompt 20%)。
+# fail-open:intent_query 缺失(如多模型路径未传)→ 照旧全发,行为零变化。
+# 二者均非安全块(安全/R4/worldview 恒发,不进任何门控)。
+_MENU_INTENT_RE = re.compile(
+    r"吃啥|吃什么|吃点什么|怎么吃|菜单|食谱|餐食|餐单|早餐|午餐|晚餐|加餐|三餐|夜宵|带饭|做什么菜"
+)
+# 补剂/保健品也放行:补剂建议是基因解读的主要相邻流(FADS1/优势基因误判风险在此)。
+_GENE_INTENT_RE = re.compile(
+    r"基因|遗传|SNP|位点|rs\d+|甲基化|MTHFR|APOE|FADS|COMT|CYP|SLCO|补剂|保健品|鱼油|维生素",
+    re.IGNORECASE,
+)
+
+
+def _wants_menu_share_block(intent_query: Optional[str]) -> bool:
+    if intent_query is None:
+        return True
+    return bool(_MENU_INTENT_RE.search(intent_query))
+
+
+def _wants_gene_rules_block(intent_query: Optional[str]) -> bool:
+    if intent_query is None:
+        return True
+    return bool(_GENE_INTENT_RE.search(intent_query))
+
+
+_GENE_RULES_PROMPT_BLOCK = (
+    "## 基因解读规则（必须遵守）",
+    "- 标记为[优势]的基因是保护性基因，不要误判为需要干预的风险基因",
+    "- FADS1 TT = 东亚高效转化型，植物源Omega-3转化能力强，是优势基因",
+    "- SOD2 AA(Ala/Ala) = MnSOD线粒体转运效率高，是优势基因",
+    "- GPX1 GG = 谷胱甘肽过氧化物酶活性正常，不需要额外干预",
+    "- ⚠️用药安全基因必须优先展示和警告（CYP2D6慢代谢→止痛药危险、SLCO1B1 CT→他汀肌病风险）",
+    "- 补剂推荐必须交叉参考体检历史（肾结石→维D/钙谨慎、肝功异常→某些补剂禁忌）",
+    "- 补剂剂量不能简单按mg数比较不同剂型（如MitoQ 5mg ≈ 线粒体内CoQ10 200-500mg）",
+    "- 补剂受法规限制剂量时（如钾99mg/粒），优先推荐饮食策略而非加量",
+    "",
+)
+
+_MENU_SHARE_PROMPT_BLOCK = (
+    "## 菜单输出 (可分享卡片)",
+    "用户问'今晚吃啥/明天早餐/给我个晚餐建议/三餐怎么吃'类问题时,",
+    "在正常文字回复**之外**, 额外附一段 fenced JSON 代码块, 标识为 menu_share,",
+    "前端会自动渲染成可分享给家人的卡片 (微信/朋友圈分享):",
+    "",
+    "```menu_share",
+    "{",
+    '  "title": "今晚晚餐建议",',
+    '  "reason": "晚上控碳, 蛋白 50g+ 帮助 HRV 恢复",',
+    '  "items": [',
+    '    {"name": "鸡胸肉", "qty": "200g", "kcal": 220, "protein": 46},',
+    '    {"name": "糙米饭", "qty": "150g", "kcal": 175, "carbs": 38},',
+    '    {"name": "西兰花", "qty": "200g", "kcal": 70, "fiber": 5}',
+    "  ],",
+    '  "totals": {"kcal": 465, "protein": 52, "carbs": 48, "fat": 12},',
+    '  "shopping_list": ["鸡胸肉 200g", "糙米 1 杯", "西兰花 1 颗"]',
+    "}",
+    "```",
+    "",
+    "约束:",
+    "- title 必填 8 字以内 (如'今晚晚餐建议'/'明天早餐')",
+    "- items 必填 3-6 个食材, 每项 name 必填, qty/kcal 尽量给",
+    "- totals 给当餐总和, shopping_list 是给家人买菜的清单",
+    "- 只在用户明确要餐食/菜单建议时输出, 普通营养咨询不要输出",
+    "- JSON 必须 valid, 不要 trailing comma, 不要注释",
+    "",
+)
+
+
 def _project_orchestrator_result(result: str) -> str:
     """把 /orchestrator/chat 的完整 JSON 投影成二次合成真正需要的精简形。
 
@@ -5018,42 +5088,9 @@ class AgentExecutor:
             "- 严重异常（HRV持续偏低、SpO2<92%、血压异常）→ 建议就医",
             "- 涉及药物的建议：附加'请咨询医生'免责声明",
             "",
-            "## 基因解读规则（必须遵守）",
-            "- 标记为[优势]的基因是保护性基因，不要误判为需要干预的风险基因",
-            "- FADS1 TT = 东亚高效转化型，植物源Omega-3转化能力强，是优势基因",
-            "- SOD2 AA(Ala/Ala) = MnSOD线粒体转运效率高，是优势基因",
-            "- GPX1 GG = 谷胱甘肽过氧化物酶活性正常，不需要额外干预",
-            "- ⚠️用药安全基因必须优先展示和警告（CYP2D6慢代谢→止痛药危险、SLCO1B1 CT→他汀肌病风险）",
-            "- 补剂推荐必须交叉参考体检历史（肾结石→维D/钙谨慎、肝功异常→某些补剂禁忌）",
-            "- 补剂剂量不能简单按mg数比较不同剂型（如MitoQ 5mg ≈ 线粒体内CoQ10 200-500mg）",
-            "- 补剂受法规限制剂量时（如钾99mg/粒），优先推荐饮食策略而非加量",
-            "",
-            "## 菜单输出 (可分享卡片)",
-            "用户问'今晚吃啥/明天早餐/给我个晚餐建议/三餐怎么吃'类问题时,",
-            "在正常文字回复**之外**, 额外附一段 fenced JSON 代码块, 标识为 menu_share,",
-            "前端会自动渲染成可分享给家人的卡片 (微信/朋友圈分享):",
-            "",
-            "```menu_share",
-            "{",
-            '  "title": "今晚晚餐建议",',
-            '  "reason": "晚上控碳, 蛋白 50g+ 帮助 HRV 恢复",',
-            '  "items": [',
-            '    {"name": "鸡胸肉", "qty": "200g", "kcal": 220, "protein": 46},',
-            '    {"name": "糙米饭", "qty": "150g", "kcal": 175, "carbs": 38},',
-            '    {"name": "西兰花", "qty": "200g", "kcal": 70, "fiber": 5}',
-            "  ],",
-            '  "totals": {"kcal": 465, "protein": 52, "carbs": 48, "fat": 12},',
-            '  "shopping_list": ["鸡胸肉 200g", "糙米 1 杯", "西兰花 1 颗"]',
-            "}",
-            "```",
-            "",
-            "约束:",
-            "- title 必填 8 字以内 (如'今晚晚餐建议'/'明天早餐')",
-            "- items 必填 3-6 个食材, 每项 name 必填, qty/kcal 尽量给",
-            "- totals 给当餐总和, shopping_list 是给家人买菜的清单",
-            "- 只在用户明确要餐食/菜单建议时输出, 普通营养咨询不要输出",
-            "- JSON 必须 valid, 不要 trailing comma, 不要注释",
-            "",
+            # 意图门控(token 优化 #5):命中/未知才发,与旧行为逐字节一致
+            *(_GENE_RULES_PROMPT_BLOCK if _wants_gene_rules_block(intent_query) else ()),
+            *(_MENU_SHARE_PROMPT_BLOCK if _wants_menu_share_block(intent_query) else ()),
             "## 安全与边界 (R4 — 必须严格遵守)",
             "- 解读异常指标/给健康建议时,先调用 knowledge_search 取依据;无命中就如实说明依据来自通用知识,**绝不编造引用或具体研究**。",
             "- **不得把补剂/保健品作为针对某指标异常的治疗或\"护X\"方案推荐**(例:不得说\"姜黄素/NAC 护肝\")。补剂相关一律表述为\"是否需要请医生评估\";任何剂量数字必须注明\"须医生确认\"。",

@@ -72,3 +72,39 @@ def test_projection_fails_open_on_non_orchestrator_payloads():
     assert _project_orchestrator_result("Error: 上游超时") == "Error: 上游超时"
     other = json.dumps({"items": [1, 2, 3]})
     assert _project_orchestrator_result(other) == other
+
+
+def test_intent_block_gating_menu_and_gene():
+    """#5 意图门控:命中才发;None fail-open 全发(多模型路径未传 intent)。"""
+    from app.services.agent_executor import (
+        _wants_gene_rules_block,
+        _wants_menu_share_block,
+    )
+
+    # menu:餐食类命中, 记录/查询类不发
+    assert _wants_menu_share_block("今晚吃啥好")
+    assert _wants_menu_share_block("给我个晚餐建议")
+    assert not _wants_menu_share_block("记录我喝了500ml水")
+    assert not _wants_menu_share_block("最近血压怎么样")
+    # gene:基因/补剂相邻流命中(FADS1 优势基因误判风险在补剂建议里)
+    assert _wants_gene_rules_block("从基因角度看我该怎么调整")
+    assert _wants_gene_rules_block("我的补剂方案合理吗")
+    assert _wants_gene_rules_block("鱼油还要不要吃")
+    assert not _wants_gene_rules_block("今天步数多少")
+    # fail-open:未传 intent → 全发, 行为与旧版一致
+    assert _wants_menu_share_block(None) and _wants_gene_rules_block(None)
+
+
+def test_intent_blocks_preserve_exact_text_when_included():
+    """门控块内容与旧内联文本一致的关键锚点(防抽取时改字)。"""
+    from app.services.agent_executor import (
+        _GENE_RULES_PROMPT_BLOCK,
+        _MENU_SHARE_PROMPT_BLOCK,
+    )
+
+    assert _GENE_RULES_PROMPT_BLOCK[0] == "## 基因解读规则（必须遵守）"
+    assert any("FADS1 TT" in line for line in _GENE_RULES_PROMPT_BLOCK)
+    assert any("SLCO1B1" in line for line in _GENE_RULES_PROMPT_BLOCK)
+    assert _MENU_SHARE_PROMPT_BLOCK[0] == "## 菜单输出 (可分享卡片)"
+    assert any("```menu_share" in line for line in _MENU_SHARE_PROMPT_BLOCK)
+    assert _GENE_RULES_PROMPT_BLOCK[-1] == "" and _MENU_SHARE_PROMPT_BLOCK[-1] == ""
