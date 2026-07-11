@@ -1,19 +1,37 @@
 const storage: Record<string, string> = {};
 let mockScope = 'user-7';
+let mockFailLegacyCleanup = false;
+const assertSecureStoreKey = (key: string) => {
+  if (!/^[a-zA-Z0-9._-]+$/.test(key)) throw new Error('invalid secure-store key');
+};
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: {
     getItem: jest.fn(async (key: string) => storage[key] ?? null),
     setItem: jest.fn(async (key: string, value: string) => { storage[key] = value; }),
-    removeItem: jest.fn(async (key: string) => { delete storage[key]; }),
+    removeItem: jest.fn(async (key: string) => {
+      if (mockFailLegacyCleanup && key === 'chat:conversation_continuity:v1') {
+        throw new Error('legacy cleanup unavailable');
+      }
+      delete storage[key];
+    }),
   },
 }));
 
 jest.mock('expo-secure-store', () => ({
-  getItemAsync: jest.fn(async (key: string) => storage[key] ?? null),
-  setItemAsync: jest.fn(async (key: string, value: string) => { storage[key] = value; }),
-  deleteItemAsync: jest.fn(async (key: string) => { delete storage[key]; }),
+  getItemAsync: jest.fn(async (key: string) => {
+    assertSecureStoreKey(key);
+    return storage[key] ?? null;
+  }),
+  setItemAsync: jest.fn(async (key: string, value: string) => {
+    assertSecureStoreKey(key);
+    storage[key] = value;
+  }),
+  deleteItemAsync: jest.fn(async (key: string) => {
+    assertSecureStoreKey(key);
+    delete storage[key];
+  }),
 }));
 
 jest.mock('../authStorageScope', () => ({
@@ -41,7 +59,12 @@ describe('conversationContinuity', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockScope = 'user-7';
+    mockFailLegacyCleanup = false;
     Object.keys(storage).forEach(key => delete storage[key]);
+  });
+
+  it('uses a SecureStore-compatible account-scoped key', () => {
+    expect(conversationContinuityStorageKey('user-7')).toMatch(/^[a-zA-Z0-9._-]+$/);
   });
 
   it('persists only a compact verified resource receipt', async () => {
@@ -53,6 +76,13 @@ describe('conversationContinuity', () => {
       receipt,
       storedAt: 1000,
     });
+    await expect(loadPendingWriteReceipt(2000)).resolves.toEqual(receipt);
+  });
+
+  it('persists and restores continuity when legacy AsyncStorage cleanup is unavailable', async () => {
+    mockFailLegacyCleanup = true;
+
+    await expect(rememberVerifiedWriteReceipt(receipt, 1000)).resolves.toBeUndefined();
     await expect(loadPendingWriteReceipt(2000)).resolves.toEqual(receipt);
   });
 

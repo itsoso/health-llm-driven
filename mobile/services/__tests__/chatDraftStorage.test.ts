@@ -2,6 +2,7 @@ const storage: Record<string, string> = {};
 const files: Record<string, string> = {};
 const secureStorage: Record<string, string> = {};
 let mockScope = 'user-7';
+let mockFailLegacyCleanup = false;
 const mockMakeDirectory = jest.fn(async (_uri?: string, _options?: unknown) => undefined);
 const mockWriteFile = jest.fn(async (uri: string, content: string, _options?: unknown) => { files[uri] = content; });
 const mockCopyFile = jest.fn(async ({ from, to }: { from: string; to: string }) => {
@@ -9,20 +10,37 @@ const mockCopyFile = jest.fn(async ({ from, to }: { from: string; to: string }) 
 });
 const mockDeleteFile = jest.fn(async (uri: string, _options?: unknown) => { delete files[uri]; });
 const mockReadFile = jest.fn(async (uri: string, _options?: unknown) => files[uri]);
+const assertSecureStoreKey = (key: string) => {
+  if (!/^[a-zA-Z0-9._-]+$/.test(key)) throw new Error('invalid secure-store key');
+};
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: {
     getItem: jest.fn(async (key: string) => storage[key] ?? null),
     setItem: jest.fn(async (key: string, value: string) => { storage[key] = value; }),
-    removeItem: jest.fn(async (key: string) => { delete storage[key]; }),
+    removeItem: jest.fn(async (key: string) => {
+      if (mockFailLegacyCleanup && key === 'chat:composer_draft:v1') {
+        throw new Error('legacy cleanup unavailable');
+      }
+      delete storage[key];
+    }),
   },
 }));
 
 jest.mock('expo-secure-store', () => ({
-  getItemAsync: jest.fn(async (key: string) => secureStorage[key] ?? null),
-  setItemAsync: jest.fn(async (key: string, value: string) => { secureStorage[key] = value; }),
-  deleteItemAsync: jest.fn(async (key: string) => { delete secureStorage[key]; }),
+  getItemAsync: jest.fn(async (key: string) => {
+    assertSecureStoreKey(key);
+    return secureStorage[key] ?? null;
+  }),
+  setItemAsync: jest.fn(async (key: string, value: string) => {
+    assertSecureStoreKey(key);
+    secureStorage[key] = value;
+  }),
+  deleteItemAsync: jest.fn(async (key: string) => {
+    assertSecureStoreKey(key);
+    delete secureStorage[key];
+  }),
 }));
 
 jest.mock('../authStorageScope', () => ({
@@ -63,6 +81,11 @@ describe('chatDraftStorage', () => {
     Object.keys(files).forEach(key => delete files[key]);
     Object.keys(secureStorage).forEach(key => delete secureStorage[key]);
     mockScope = 'user-7';
+    mockFailLegacyCleanup = false;
+  });
+
+  it('uses a SecureStore-compatible account-scoped text key', () => {
+    expect(chatDraftTextStorageKey('user-7')).toMatch(/^[a-zA-Z0-9._-]+$/);
   });
 
   it('persists text and image metadata without base64 health content', async () => {
@@ -115,6 +138,16 @@ describe('chatDraftStorage', () => {
       images: [{ uri: keptUri, base64: '', type: 'jpeg', draftCreatedAt: 100 }],
     });
     expect(JSON.parse(storage[chatDraftStorageKey(mockScope)]).images).toHaveLength(1);
+  });
+
+  it('restores protected text when legacy AsyncStorage cleanup is unavailable', async () => {
+    secureStorage[chatDraftTextStorageKey(mockScope)] = '继续记录午餐';
+    mockFailLegacyCleanup = true;
+
+    await expect(loadChatDraft()).resolves.toEqual({
+      text: '继续记录午餐',
+      images: [],
+    });
   });
 
   it('removes corrupt snapshots instead of crashing composer startup', async () => {

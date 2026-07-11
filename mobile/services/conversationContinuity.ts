@@ -4,8 +4,8 @@ import * as SecureStore from 'expo-secure-store';
 import { normalizeWriteReceipt, type WriteReceipt } from './writeReceipt';
 import { getAuthStorageScope } from './authStorageScope';
 
-const LEGACY_CHAT_CONTINUITY_STORAGE_KEY = 'chat:conversation_continuity:v1';
-const CHAT_CONTINUITY_STORAGE_KEY_PREFIX = 'chat:conversation_continuity:v2';
+const LEGACY_CHAT_CONTINUITY_METADATA_KEY = 'chat:conversation_continuity:v1';
+const CHAT_CONTINUITY_STORAGE_KEY_PREFIX = 'chat_conversation_continuity_v2';
 const CONTINUITY_VERSION = 1;
 const CONTINUITY_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_EXTRA_CONTEXT_LENGTH = 3900;
@@ -19,7 +19,7 @@ interface StoredConversationContinuity {
 let mutationQueue: Promise<void> = Promise.resolve();
 
 export function conversationContinuityStorageKey(scope: string): string {
-  return `${CHAT_CONTINUITY_STORAGE_KEY_PREFIX}:${scope}`;
+  return `${CHAT_CONTINUITY_STORAGE_KEY_PREFIX}_${scope}`;
 }
 
 async function currentStorageKey(): Promise<string> {
@@ -27,9 +27,10 @@ async function currentStorageKey(): Promise<string> {
 }
 
 async function removeLegacyDeviceScopedReceipt(): Promise<void> {
+  // The legacy colon-delimited key was valid only for AsyncStorage. Native
+  // SecureStore rejected it before any receipt could be written.
   await Promise.allSettled([
-    AsyncStorage.removeItem(LEGACY_CHAT_CONTINUITY_STORAGE_KEY),
-    SecureStore.deleteItemAsync(LEGACY_CHAT_CONTINUITY_STORAGE_KEY),
+    AsyncStorage.removeItem(LEGACY_CHAT_CONTINUITY_METADATA_KEY),
   ]);
 }
 

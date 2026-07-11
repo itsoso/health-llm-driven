@@ -77,6 +77,7 @@
 - [x] T5 识别/确认/纠错/分享埋点与 p50/p95 看板（backend deploy + OTA）
 - [x] T5.1 端侧照片压缩、相机返回后计时、成功样本分位数与无正文纠错率（backend deploy + OTA）
 - [x] T5.2 模型输出边界、份量真实性、识别日志脱敏与可操作错误语义（backend deploy + OTA）
+- [x] T5.3 Agent 草稿、写入连续性和确认卡回执的 iOS SecureStore 兼容（OTA）
 - [ ] T6 模拟器视觉、真机微信/小红书、生产数据闭环验收
 - 并发检查：2026-07-11 `origin/main` 与当前干净集成 worktree 一致；原始用户工作区不纳入暂存。
 
@@ -90,6 +91,7 @@
 - 上线前复核发现生产 `food_items` 为空，原校准迁移只能更新既有行，导致营养表校准在生产无法命中。标准部署现于受控迁移后幂等执行 `seed_food_nutrition.py`，并以测试锁定 6 项审核食物、6 项营养值和严格 `calibration_names`，不允许泛化“鸡肉”进入鸡胸肉校准范围。
 - T5.1：相机不再直接生成 12MP 原图 Base64；饮食与聊天共用 OTA-safe 图片承重工具，最长边限制 1568px、JPEG q0.7 且不放大小图，并在识别/草稿持久化后清理临时编码文件。相机返回后显示“正在优化照片”，完成后才开始上传识别；埋点新增无正文的端侧准备耗时、压缩后字节数和确认纠错标记。观察看板只以 completed 样本计算 p50/p95，同时单列 attempts、failures、cancelled 和 correction rate，避免把取景和取消时间当成模型时延。
 - T5.2：视觉 JSON 现在经过字段白名单、有限数值、最多 12 项、重复项和 intake intent 清洗；药物、补剂、卡片文字不会进入饮食草稿，负值/非数字/越界置信度转为未知。照片份量新增 `portion_basis` / `portion_confidence`，营养表校准后仍保持视觉估算；Mobile 显示“表值 × 估算份量”和定性识别信号，不再把模型自报置信度展示为精确百分比。正常与异常识别日志只记录长度、计数和错误类型，供应商正文、食物名和异常正文不写日志或回传。
+- T5.3：iOS 原生模拟器暴露对话草稿、最新已验证写入回执和确认卡防重复回执使用了带冒号的非法 SecureStore 键，导致草稿恢复、跨轮饮食上下文和卡片回执静默降级。三类敏感值现使用仅含字母、数字、点、下划线和连字符的用户隔离键；AsyncStorage 元数据/索引键保持兼容，旧版 completion tombstone 继续可识别，且不再尝试删除从未能写入 Keychain 的非法旧键。
 
 ## G3 · 测试闸
 
@@ -106,6 +108,7 @@
 - 2026-07-12 上线前生产只读审计：近 30 天 116 条饮食记录中，AI 标记、图片、`food_id` 和新版饮食终态事件样本均为 0；因此当前不能宣称真实识别准确率或时延达标，需新 TestFlight/OTA 产生样本后再验收。
 - T5.1 发布回归：Mobile 全量 `233 suites / 1626 tests`、受影响 focused `66 tests`、TypeScript 通过；Backend 饮食/营养/事件联合回归 `112 tests` 通过；lint `0 errors`（保留全仓 97 条既有 warnings）；pre-commit、doc drift 与 Dossier consistency 全绿。
 - T5.2 发布前回归：Backend 识别清洗/营养校准/Diet API/Agent vision 联合 `74 tests` 通过；Mobile focused `24 tests` 与全量 `233 suites / 1626 tests` 通过；TypeScript 通过，OpenAPI 生成仅新增 4 行份量字段；lint `0 errors`（97 条既有 warnings）；带项目 venv 的全部 pre-commit、doc drift 与 Dossier consistency 通过。独立审查另以 RED 测试修复“益生菌酸奶”被补剂规则误删的假阳性。
+- T5.3 原生存储回归：先以严格 SecureStore 键校验得到 15 个 RED 失败，并以 2 个 RED 用例锁定遗留清理失败不得阻断新存储；最终 focused `5 suites / 114 tests`、全量 `233 suites / 1632 tests` 通过；TypeScript 通过，lint `0 errors`（97 条既有 warnings）。iPhone 17 Pro 模拟器连续重载仅保留无定位能力的 GPS 警告，不再出现 `[ChatInputBar] draft restore failed`、`draft persistence failed` 或非法 SecureStore 键错误。
 - T5.2 首次 CI run `29164922239` 中 type drift 在补齐 Frontend 生成类型后通过，但 Linux `a-b` 分片连续两次远超历史绿灯的 4 分 23 秒，并在 `test_agent_health_manage.py` 与 `test_agent_intervention_cycle_tool.py` 边界失去输出；该边界组合本机 `30/30` 通过，`c-d` 重跑也在 3 分 36 秒通过。判定为既有进程级顺序污染而非饮食断言回归，将 86 个 `a-b` 测试文件拆为非 Agent、`agent_[a-h]`、`agent_[i-z]` 三个互斥进程；文件覆盖校验为 `86 -> 86`、差集 0。
 - T5.2 CI run `29166225719` 验证上述三个新分片分别在 3 分 2 秒、2 分 15 秒和 1 分 24 秒通过；同轮旧 `t[f-z]+u` 分片在 69% 处进入 `test_twin_builder.py` 后冻结，并被 20 分钟上限终止，其他 16 个作业均通过。本机同命令 `392/392` 在 31.23 秒通过；据逐用例日志将其拆为 `t[f-v]`、`t[w-z]`、`u` 三个干净进程，原 24 个文件覆盖校验仍为 `24 -> 24`、差集 0。
 - T5.2 CI run `29166933157` 中 `t[f-v]`、`t[w-z]`、`u` 已分别在 1 分 44 秒、1 分 25 秒和 1 分 28 秒通过；唯一剩余的旧 `s` 大分片进入 `test_schedule_into_agenda.py` 后失去输出，其他 18 个作业均通过。本机同一 643 项命令也在该模块首个用例后停住，但该模块单跑 `8/8`、与前一模块配对 `26/26`、`s[c-k]` 分组 `55/55` 均通过，确认是更长前序造成的进程状态污染；将 58 个 `s` 文件拆为 `s[a-b]`、`s[c-k]`、`s[l-z]`，覆盖校验为 `58 -> 58`、差集 0。

@@ -56,6 +56,7 @@ jest.mock('../../services/clientEvents', () => ({
 
 import { restoreMessagesFromHistory, useChatEngine } from '../useChatEngine';
 import { getAuthStorageScope } from '../../services/authStorageScope';
+import { conversationContinuityStorageKey } from '../../services/conversationContinuity';
 
 let finishStream: (() => void) | undefined;
 let failStream: (() => void) | undefined;
@@ -1649,7 +1650,7 @@ describe('useChatEngine', () => {
   });
 
   it('carries the latest verified write receipt into the next structured request context', async () => {
-    mockAsyncStorage[scopedStorageKey('chat:conversation_continuity:v2')] = JSON.stringify({
+    mockAsyncStorage[conversationContinuityStorageKey(TEST_STORAGE_SCOPE)] = JSON.stringify({
       version: 1,
       storedAt: Date.now(),
       receipt: {
@@ -1683,14 +1684,14 @@ describe('useChatEngine', () => {
         }),
       },
     }));
-    expect(mockAsyncStorage[scopedStorageKey('chat:conversation_continuity:v2')]).toBeDefined();
+    expect(mockAsyncStorage[conversationContinuityStorageKey(TEST_STORAGE_SCOPE)]).toBeDefined();
 
     await act(async () => {
       finishStream?.();
       await Promise.resolve();
     });
     await waitFor(() => {
-      expect(mockAsyncStorage[scopedStorageKey('chat:conversation_continuity:v2')]).toBeUndefined();
+      expect(mockAsyncStorage[conversationContinuityStorageKey(TEST_STORAGE_SCOPE)]).toBeUndefined();
     });
   });
 
@@ -1703,7 +1704,7 @@ describe('useChatEngine', () => {
     });
 
     await waitFor(() => {
-      const stored = JSON.parse(mockAsyncStorage[scopedStorageKey('chat:conversation_continuity:v2')]);
+      const stored = JSON.parse(mockAsyncStorage[conversationContinuityStorageKey(TEST_STORAGE_SCOPE)]);
       expect(stored.receipt).toEqual(expect.objectContaining({
         operationId: 'health_record:diet:81',
         resourceType: 'diet_record',
