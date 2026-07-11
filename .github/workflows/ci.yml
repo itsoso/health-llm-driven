@@ -40,8 +40,13 @@ jobs:
           # A Linux-only teardown leak between them can otherwise stall the
           # combined shard after test_telegram_webhook.py completes. Twin tests
           # also need a clean process after the earlier t* modules.
-          - label: s
-            paths: "tests/test_s*.py"
+          - label: s-a-b
+            paths: "tests/test_s[a-b]*.py"
+          - label: s-c-k
+            paths: "tests/test_s[c-k]*.py"
+            extra_args: "-vv"
+          - label: s-l-z
+            paths: "tests/test_s[l-z]*.py"
           - label: t-a-e
             paths: "tests/test_t[a-e]*.py"
           - label: t-f-v
