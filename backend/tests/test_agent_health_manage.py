@@ -435,7 +435,7 @@ async def test_health_record_creates_goal(db):
             user_token="test-token",
         )
 
-    assert captured["url"].endswith("/goals")
+    assert captured["url"].endswith("/goals/")
     assert captured["headers"]["Authorization"] == "Bearer test-token"
     assert captured["payload"]["title"] == "90 天把腰围降到 82cm"
     assert captured["payload"]["goal_type"] == "weight"

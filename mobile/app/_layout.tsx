@@ -92,7 +92,7 @@ function AppContent() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         {/* 今日半屏 sheet — iOS 原生 formSheet 从聊天上滑出 (刀④, 2026-07-06)。
             sheetAllowedDetents [0.5, 1]: 半高瞥待办, 拖到顶看全部; 抓手 + 下滑关全原生。
-            Android 上 formSheet 回退为整屏 modal (仍是「盖在聊天上、下滑关」语义)。 */}
+            不支持 formSheet 的环境回退为整屏 modal (仍是「盖在聊天上、下滑关」语义)。 */}
         <Stack.Screen
           name="today-sheet"
           options={{

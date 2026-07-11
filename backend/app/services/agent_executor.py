@@ -6920,7 +6920,7 @@ class AgentExecutor:
             "mood": ("/mood/records", "POST", data),
             "garmin_sync": ("/data-collection/garmin/me/sync?days=1", "POST", {}),
             "reminder": ("/reminders/me", "POST", data),
-            "goal": ("/goals", "POST", data),
+            "goal": ("/goals/", "POST", data),
         }
 
         # symptom: 通用身体症状 (眼痒/嗓子疼 ...). 不再需要 profile_id (新 /symptoms 表,

@@ -243,7 +243,14 @@ async def test_advice_turn_tool_round_fast_synthesis_strong(db, auth_user_and_he
             return {"content": "STRONG SYNTHESIS", "finish_reason": "stop"}
 
     async def fake_exec_tool(name, args, token):
-        return "已记录胃痛症状"
+        return json.dumps(
+            {
+                "id": 42,
+                "resource_type": "symptom_record",
+                "message": "已记录胃痛症状",
+            },
+            ensure_ascii=False,
+        )
 
     user_provider = FakeProvider(strong)
     _wire(executor, monkeypatch, lambda mid: FakeProvider(mid), user_provider=user_provider)

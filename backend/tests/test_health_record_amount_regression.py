@@ -340,10 +340,31 @@ async def test_run_stream_with_extra_context_does_not_crash_before_first_event(d
             self.db = db
 
         def get_or_create_conversation(self, user_id, conversation_id=None, title=None):
-            return type("Conversation", (), {"id": 123})()
+            from app.models.agent_conversation import AgentConversation
+
+            conversation = AgentConversation(user_id=user_id, title=title)
+            self.db.add(conversation)
+            self.db.commit()
+            self.db.refresh(conversation)
+            return conversation
 
         def save_message(self, *args, **kwargs):
             return None
+
+        def save_user_message_once(self, conv_id, user_id, content, **kwargs):
+            from app.models.agent_conversation import AgentMessage
+
+            message = AgentMessage(
+                conversation_id=conv_id,
+                role="user",
+                content=content,
+                image_url=kwargs.get("image_url"),
+                meta=kwargs.get("meta") or {},
+            )
+            self.db.add(message)
+            self.db.commit()
+            self.db.refresh(message)
+            return message, True
 
         def build_messages(self, conv_id, limit=15):
             return [{"role": "user", "content": "今天怎么安排"}]
@@ -358,12 +379,13 @@ async def test_run_stream_with_extra_context_does_not_crash_before_first_event(d
         )
         first = await anext(stream)
         second = await anext(stream)
+        third = await anext(stream)
         await stream.aclose()
 
-    # P0-1 契约: 扁平 accepted 进度事件恒为流的首个事件 (<100ms, 任何 LLM 调用前),
-    # agent_start 紧随其后 —— extra_context 解析仍不得在这两个事件前崩。
+    # P0-1 契约: accepted 恒为首事件;持久化 ACK 必须先于模型工作状态。
     assert first == {"type": "status", "stage": "accepted"}
-    assert second["event"] == "agent_start"
+    assert second["event"] == "request_persisted"
+    assert third["event"] == "agent_start"
 
 
 # === Regression (2026-06): _api_get 字符截断损坏 JSON → 用药/补剂查找崩溃并把原始错误泄漏给用户 ===
