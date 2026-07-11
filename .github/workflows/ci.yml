@@ -7,7 +7,50 @@ on:
     branches: [main]
 
 jobs:
-  backend-tests:
+  backend-test-shards:
+    name: backend-test-${{ matrix.label }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: a-b
+            paths: "tests/test_[a-b]*.py"
+          - label: c-d
+            paths: "tests/test_[c-d]*.py"
+          - label: e-g
+            paths: "tests/test_[e-g]*.py"
+          - label: h-j
+            paths: "tests/test_[h-j]*.py"
+          - label: k-m
+            paths: "tests/test_[k-m]*.py"
+          - label: n-r
+            paths: "tests/test_[n-r]*.py"
+          - label: s-u
+            paths: "tests/test_[s-u]*.py"
+          - label: v-z
+            paths: "tests/test_[v-z]*.py tests/services/"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Run tests (${{ matrix.label }})
+        working-directory: backend
+        env:
+          SECRET_KEY: test-secret-key-32-chars-minimum!!
+          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
+          DATABASE_URL: "sqlite:///:memory:"
+          TZ: Asia/Shanghai
+        run: pytest ${{ matrix.paths }} -q --no-cov --tb=short --maxfail=5 --timeout=120 --timeout-method=thread
+
+  backend-quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,74 +81,6 @@ jobs:
         run: |
           pip install ruff
           ruff check app/ --select F821,F822,E9 --output-format=github
-
-      # Keep each shard in a fresh pytest process. The suite is now 5,800+ tests;
-      # one process accumulates asyncio/global state and has repeatedly stalled the
-      # Linux runner for hours even though the same tests pass in isolation.
-      - name: Run tests (A-F)
-        id: backend_tests_af
-        continue-on-error: true
-        working-directory: backend
-        env:
-          SECRET_KEY: test-secret-key-32-chars-minimum!!
-          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
-          DATABASE_URL: "sqlite:///:memory:"
-          # 生产/Celery/全部业务时区基准是 Asia/Shanghai(get_china_today/get_china_now/date.today)。
-          # GitHub runner 默认 UTC,使 `date.today()`(随 OS 时区)与确定性中国日基准在每天
-          # 16:00–24:00 UTC(= 次日 00:00–08:00 北京)的窗口差一天,让依赖"今日"键的依从/协议/
-          # 议程/用药测试随 CI 触发时刻随机变红(午夜边界 flake;同一 commit 换时刻就绿)。这些
-          # 断言两两冲突(test_log_taken 要 date.today()、test_agenda_complete_medication 要
-          # get_china_today()),只在 date.today()==get_china_today() 即 runner=Asia/Shanghai 时
-          # 同时成立 —— 与生产服务器时区一致。钉到 Asia/Shanghai 让 CI 与生产同基准,消除该类
-          # boundary flake(不改任何断言)。
-          TZ: Asia/Shanghai
-        run: pytest tests/test_[a-f]*.py -q --no-cov --tb=short --maxfail=5 --timeout=120 --timeout-method=thread
-
-      - name: Run tests (G-M)
-        id: backend_tests_gm
-        continue-on-error: true
-        working-directory: backend
-        env:
-          SECRET_KEY: test-secret-key-32-chars-minimum!!
-          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
-          DATABASE_URL: "sqlite:///:memory:"
-          TZ: Asia/Shanghai
-        run: pytest tests/test_[g-m]*.py -q --no-cov --tb=short --maxfail=5 --timeout=120 --timeout-method=thread
-
-      - name: Run tests (N-S)
-        id: backend_tests_ns
-        continue-on-error: true
-        working-directory: backend
-        env:
-          SECRET_KEY: test-secret-key-32-chars-minimum!!
-          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
-          DATABASE_URL: "sqlite:///:memory:"
-          TZ: Asia/Shanghai
-        run: pytest tests/test_[n-s]*.py -q --no-cov --tb=short --maxfail=5 --timeout=120 --timeout-method=thread
-
-      - name: Run tests (T-Z + nested suites)
-        id: backend_tests_tz
-        continue-on-error: true
-        working-directory: backend
-        env:
-          SECRET_KEY: test-secret-key-32-chars-minimum!!
-          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
-          DATABASE_URL: "sqlite:///:memory:"
-          TZ: Asia/Shanghai
-        run: pytest tests/test_[t-z]*.py tests/services/ -q --no-cov --tb=short --maxfail=5 --timeout=120 --timeout-method=thread
-
-      - name: Enforce backend test shards
-        if: always()
-        env:
-          TESTS_AF: ${{ steps.backend_tests_af.outcome }}
-          TESTS_GM: ${{ steps.backend_tests_gm.outcome }}
-          TESTS_NS: ${{ steps.backend_tests_ns.outcome }}
-          TESTS_TZ: ${{ steps.backend_tests_tz.outcome }}
-        run: |
-          printf 'backend test shards: A-F=%s G-M=%s N-S=%s T-Z=%s\n' "$TESTS_AF" "$TESTS_GM" "$TESTS_NS" "$TESTS_TZ"
-          if [[ "$TESTS_AF" != success || "$TESTS_GM" != success || "$TESTS_NS" != success || "$TESTS_TZ" != success ]]; then
-            exit 1
-          fi
 
       - name: Check CLAUDE.md doc drift
         env:
@@ -178,6 +153,21 @@ jobs:
           name: system-kb-eval-metrics
           path: /tmp/system_kb_eval_metrics.json
           if-no-files-found: ignore
+
+  backend-tests:
+    runs-on: ubuntu-latest
+    needs: [backend-test-shards, backend-quality]
+    if: ${{ always() }}
+    steps:
+      - name: Enforce backend test and quality gates
+        env:
+          TEST_SHARDS: ${{ needs.backend-test-shards.result }}
+          QUALITY_GATES: ${{ needs.backend-quality.result }}
+        run: |
+          printf 'backend gates: test-shards=%s quality=%s\n' "$TEST_SHARDS" "$QUALITY_GATES"
+          if [[ "$TEST_SHARDS" != success || "$QUALITY_GATES" != success ]]; then
+            exit 1
+          fi
 
   frontend-build:
     runs-on: ubuntu-latest
