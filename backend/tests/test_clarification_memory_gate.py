@@ -202,3 +202,56 @@ class TestClarificationDialogClinicianGate:
 
         fact = db.query(MemoryFact).filter(MemoryFact.user_id == user.id).one()
         assert fact.predicate == "is_value"
+
+
+# ─────────────── Batch-1 token-perf: dialog extractor 降档 flash ───────────────
+
+
+def test_dialog_extractor_uses_flash_model(monkeypatch):
+    """对话事实抽取必须走 settings.dialog_extract_model_id (默认 deepseek-v4-flash)。"""
+    import asyncio
+    from app.config import settings
+    from app.services.memory_dialog_extractor import extract_facts_from_dialog
+
+    seen = []
+
+    class _FakeProvider:
+        async def chat(self, messages, **kwargs):
+            return (
+                '{"facts": [{"subject": "user.sleep.pillow_height", '
+                '"predicate": "is_value", "object_value": "高枕头", "confidence": 0.8}]}'
+            )
+
+    import app.services.llm.factory as factory
+
+    def _capture(model_id):
+        seen.append(model_id)
+        return _FakeProvider()
+
+    monkeypatch.setattr(factory, "create_provider_for_model_id", _capture)
+
+    facts = asyncio.run(extract_facts_from_dialog("我换了个高枕头"))
+    assert seen == [settings.dialog_extract_model_id]
+    assert settings.dialog_extract_model_id == "deepseek-v4-flash"
+    assert facts and facts[0].object_value == "高枕头"
+
+
+def test_dialog_extractor_failsoft_when_flash_unavailable(monkeypatch):
+    """降档模型创建失败 → fail-soft 回退默认 provider, 抽取仍工作 (不断业务)。"""
+    import asyncio
+    from app.services.memory_dialog_extractor import extract_facts_from_dialog
+
+    class _FallbackProvider:
+        async def chat(self, messages, **kwargs):
+            return '{"facts": [{"subject": "user.diet.coffee", "predicate": "has_history", "object_value": "每天两杯", "confidence": 0.7}]}'
+
+    import app.services.llm.factory as factory
+
+    monkeypatch.setattr(
+        factory, "create_provider_for_model_id",
+        lambda model_id: (_ for _ in ()).throw(ValueError("未注册")),
+    )
+    monkeypatch.setattr(factory, "get_llm_provider", lambda: _FallbackProvider())
+
+    facts = asyncio.run(extract_facts_from_dialog("我每天喝两杯咖啡"))
+    assert facts and facts[0].object_value == "每天两杯"

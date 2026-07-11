@@ -141,12 +141,14 @@ def extract_from_content(
         return ExtractedFields()
 
     try:
-        from app.services.llm.factory import get_llm_provider
+        from app.config import settings
+        from app.services.llm.factory import create_provider_for_extraction
         from app.services.llm.usage_tracker import set_caller
         from app.utils.async_helpers import run_async
 
         set_caller("action_card.extract_fields", user_id=user_id)
-        provider = get_llm_provider()
+        # Batch-1 token-perf: 纯抽取, 降档 flash; 创建失败 fail-soft 回退默认 provider。
+        provider = create_provider_for_extraction(settings.action_card_extract_model_id)
         messages = [
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": _USER_TEMPLATE.format(

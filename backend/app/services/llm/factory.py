@@ -225,6 +225,25 @@ def create_provider_for_model_id(model_id: str) -> LLMProvider:
     return wrap_provider_pii_scrub(wrap_provider(raw))
 
 
+def create_provider_for_extraction(model_id: str) -> LLMProvider:
+    """便宜快模型抽取档 provider,创建失败 **fail-soft** 回退默认 provider。
+
+    纯抽取/判重类调用点(memory / dialog / directive / kb-judge / action-card)用它把默认
+    强模型降档到便宜 flash 档。`model_id` 未注册 / provider env 缺失 → create_provider_for_model_id
+    抛 ValueError,这里记 WARNING 并回退到 `get_llm_provider()`(= 这些调用点原本的 provider
+    路径),绝不因降档配置错误而中断业务。回退是可观测的(WARNING 日志),不是静默吞掉。
+    """
+    try:
+        return create_provider_for_model_id(model_id)
+    except Exception as exc:  # noqa: BLE001 — 降档配置错误必须 fail-soft 回退强模型, 不断业务
+        logger.warning(
+            "[LLM Factory] 抽取档模型 %s 创建失败, fail-soft 回退默认 provider: %s",
+            model_id,
+            exc,
+        )
+        return get_llm_provider()
+
+
 def create_provider_for_user(user_id: int, db, task_tier: str | None = None) -> LLMProvider:
     """用户级 LLM 偏好 (2026-05-13).
 

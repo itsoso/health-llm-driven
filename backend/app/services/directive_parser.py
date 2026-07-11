@@ -49,12 +49,14 @@ PARSE_PROMPT_SYSTEM = """你是健康指令解析助手. 把用户/健康教练/
 def _parse_with_llm(text: str) -> List[dict]:
     """调 LLM 解析. 失败返回 []."""
     try:
-        from app.services.llm.factory import get_llm_provider
+        from app.config import settings
+        from app.services.llm.factory import create_provider_for_extraction
         from app.services.llm.usage_tracker import set_caller
         import asyncio
 
         set_caller("directive_parser", user_id=None)
-        provider = get_llm_provider()
+        # Batch-1 token-perf: 纯解析, 降档 flash; 创建失败 fail-soft 回退默认 provider。
+        provider = create_provider_for_extraction(settings.directive_parse_model_id)
 
         async def _go():
             result = await provider.chat(

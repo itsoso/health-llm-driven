@@ -456,12 +456,35 @@ def test_default_classifier_uses_chat_not_complete(monkeypatch):
         # 故意不提供 complete —— 若代码还调 .complete 会 AttributeError
 
     import app.services.llm.factory as factory
-    monkeypatch.setattr(factory, "get_llm_provider", lambda: _FakeProvider())
+    monkeypatch.setattr(factory, "create_provider_for_model_id", lambda model_id: _FakeProvider())
 
     out = _default_classifier({"title": "A"}, {"title": "B"})
     assert out["relation_tag"] == "duplicate" and out["score"] == 0.97
     assert calls["kwargs"].get("temperature") == 0.0  # 判重用确定性温度
     assert calls["messages"][0]["role"] == "user"
+
+
+def test_default_classifier_uses_flash_model(monkeypatch):
+    """Batch-1 token-perf: judge 走 settings.kb_reconciliation_judge_model_id
+    (默认 deepseek-v4-flash), advisory 判重, 不占强模型。"""
+    from app.config import settings
+
+    seen = {}
+
+    class _FakeProvider:
+        async def chat(self, messages, **kwargs):
+            return '{"relation_tag":"agree","score":0.3}'
+
+    def _capture(model_id):
+        seen["model_id"] = model_id
+        return _FakeProvider()
+
+    import app.services.llm.factory as factory
+    monkeypatch.setattr(factory, "create_provider_for_model_id", _capture)
+
+    _default_classifier({"title": "A"}, {"title": "B"})
+    assert seen["model_id"] == settings.kb_reconciliation_judge_model_id
+    assert settings.kb_reconciliation_judge_model_id == "deepseek-v4-flash"
 
 
 def test_default_classifier_chat_raises_is_failsafe(monkeypatch):
@@ -470,7 +493,7 @@ def test_default_classifier_chat_raises_is_failsafe(monkeypatch):
             raise RuntimeError("provider down")
 
     import app.services.llm.factory as factory
-    monkeypatch.setattr(factory, "get_llm_provider", lambda: _BoomProvider())
+    monkeypatch.setattr(factory, "create_provider_for_model_id", lambda model_id: _BoomProvider())
     out = _default_classifier({"title": "A"}, {"title": "B"})
     assert out["relation_tag"] is None and out["score"] == 0.0
     assert "judge_error" in out["rationale"]

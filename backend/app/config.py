@@ -223,6 +223,17 @@ class Settings(BaseSettings):
     # 润色用的便宜快模型 id(model_registry): fast 档 + 可靠 + 纯文本, 无 vision 开销。
     starter_llm_polish_model_id: str = "deepseek-v4-flash"
 
+    # Batch-1 token-perf(计划 #8):纯抽取/判重类内部 LLM 调用点从默认强模型降档到便宜快
+    # 模型(deepseek-v4-flash)。这些调用点输出均为结构化字段/判重裁决,**不生成用户可见医疗
+    # 建议正文**,零 R4 风险。每字段独立 env 可覆盖(同名大写)= 可逐点回滚;flash provider
+    # 创建失败时经 factory.create_provider_for_extraction fail-soft 退回 get_llm_provider(),
+    # 绝不断业务。
+    memory_extract_model_id: str = "deepseek-v4-flash"          # conversation_memory_service._extract_with_llm
+    dialog_extract_model_id: str = "deepseek-v4-flash"          # memory_dialog_extractor.extract_facts_from_dialog
+    directive_parse_model_id: str = "deepseek-v4-flash"         # directive_parser._parse_with_llm
+    kb_reconciliation_judge_model_id: str = "deepseek-v4-flash" # kb_reconciliation_judge._default_classifier
+    action_card_extract_model_id: str = "deepseek-v4-flash"     # action_card_extractor.extract_from_content
+
     # Legacy Chroma/RAG 知识库运行时开关。
     # 默认 False: 用户问答与 health agent 只能使用 reviewed System KB。
     # 仅在本地调试旧索引时显式打开。

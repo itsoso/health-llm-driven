@@ -243,3 +243,54 @@ def test_opener_falls_back_to_other_types_when_short(db):
     top = get_top_memory_for_opener(db, user.id, k=2)
     types = {m.memory_type for m in top}
     assert "fact" in types or "instruction" in types
+
+
+# ─────────────── Batch-1 token-perf: LLM 兜底抽取降档 flash ───────────────
+
+
+def test_extract_with_llm_uses_flash_model(monkeypatch):
+    """LLM 兜底抽取必须走 settings.memory_extract_model_id (默认 deepseek-v4-flash),
+    输出为结构化事实, 不占默认强模型。"""
+    import asyncio
+    from app.config import settings
+    from app.services import conversation_memory_service as svc
+
+    seen = []
+
+    class _FakeProvider:
+        async def chat(self, messages, **kwargs):
+            return '[{"content": "我对花生过敏", "type": "allergy"}]'
+
+    import app.services.llm.factory as factory
+
+    def _capture(model_id):
+        seen.append(model_id)
+        return _FakeProvider()
+
+    monkeypatch.setattr(factory, "create_provider_for_model_id", _capture)
+
+    out = asyncio.run(svc._extract_with_llm("医生说我对花生严重过敏"))
+    assert seen == [settings.memory_extract_model_id]
+    assert settings.memory_extract_model_id == "deepseek-v4-flash"
+    assert ("我对花生过敏", "allergy") in out
+
+
+def test_extract_with_llm_failsoft_when_flash_unavailable(monkeypatch):
+    """降档模型创建失败 → fail-soft 回退默认 provider, 抽取仍工作 (不断业务)。"""
+    import asyncio
+    from app.services import conversation_memory_service as svc
+
+    class _FallbackProvider:
+        async def chat(self, messages, **kwargs):
+            return '[{"content": "我在服用二甲双胍", "type": "medical"}]'
+
+    import app.services.llm.factory as factory
+
+    def _boom(model_id):
+        raise ValueError(f"未注册的 model_id: {model_id}")
+
+    monkeypatch.setattr(factory, "create_provider_for_model_id", _boom)
+    monkeypatch.setattr(factory, "get_llm_provider", lambda: _FallbackProvider())
+
+    out = asyncio.run(svc._extract_with_llm("我长期在吃二甲双胍"))
+    assert ("我在服用二甲双胍", "medical") in out

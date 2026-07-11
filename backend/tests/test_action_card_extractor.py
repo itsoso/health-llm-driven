@@ -172,7 +172,7 @@ def test_extract_whitespace_content_short_circuits():
 def test_extract_happy_path():
     """LLM 返回合规 JSON → 字段全部抽到."""
     fake_json = '{"metric_key": "weight", "baseline_value": "82kg", "target_value": "80kg", "verification_days": 14}'
-    with patch("app.services.llm.factory.get_llm_provider",
+    with patch("app.services.llm.factory.create_provider_for_model_id",
                return_value=_mock_llm_returning(fake_json)), \
          patch("app.services.llm.usage_tracker.set_caller"):
         out = extract_from_content("减重计划: 7天减2斤", title="减重", user_id=1)
@@ -184,7 +184,7 @@ def test_extract_happy_path():
 def test_extract_with_codeblock_wrapping():
     """LLM 习惯用 markdown 代码块包 JSON, 必须能解开."""
     fake = '```json\n{"metric_key": "hrv", "verification_days": 7}\n```'
-    with patch("app.services.llm.factory.get_llm_provider",
+    with patch("app.services.llm.factory.create_provider_for_model_id",
                return_value=_mock_llm_returning(fake)), \
          patch("app.services.llm.usage_tracker.set_caller"):
         out = extract_from_content("观察 HRV 一周", "HRV 实验")
@@ -194,7 +194,7 @@ def test_extract_with_codeblock_wrapping():
 
 def test_extract_invalid_json_returns_empty():
     """LLM 返回非 JSON 不抛异常, 返回空."""
-    with patch("app.services.llm.factory.get_llm_provider",
+    with patch("app.services.llm.factory.create_provider_for_model_id",
                return_value=_mock_llm_returning("这不是 JSON, 是闲聊")), \
          patch("app.services.llm.usage_tracker.set_caller"):
         out = extract_from_content("内容", "标题")
@@ -203,7 +203,7 @@ def test_extract_invalid_json_returns_empty():
 
 def test_extract_non_dict_json_returns_empty():
     """LLM 返回 list/str/数字 也不能崩."""
-    with patch("app.services.llm.factory.get_llm_provider",
+    with patch("app.services.llm.factory.create_provider_for_model_id",
                return_value=_mock_llm_returning("[1, 2, 3]")), \
          patch("app.services.llm.usage_tracker.set_caller"):
         out = extract_from_content("内容")
@@ -216,7 +216,7 @@ def test_extract_llm_exception_returns_empty():
     async def boom(**kw):
         raise RuntimeError("network down")
     bad_provider.chat = boom
-    with patch("app.services.llm.factory.get_llm_provider",
+    with patch("app.services.llm.factory.create_provider_for_model_id",
                return_value=bad_provider), \
          patch("app.services.llm.usage_tracker.set_caller"):
         out = extract_from_content("内容")
@@ -226,7 +226,7 @@ def test_extract_llm_exception_returns_empty():
 def test_extract_llm_returns_invalid_metric_key_filtered():
     """LLM 编造白名单外的 metric (如 mood / happiness) 必须被过滤."""
     fake = '{"metric_key": "mood", "verification_days": 7}'
-    with patch("app.services.llm.factory.get_llm_provider",
+    with patch("app.services.llm.factory.create_provider_for_model_id",
                return_value=_mock_llm_returning(fake)), \
          patch("app.services.llm.usage_tracker.set_caller"):
         out = extract_from_content("情绪追踪")
@@ -238,11 +238,51 @@ def test_extract_llm_returns_invalid_metric_key_filtered():
 def test_extract_truncates_long_content_does_not_crash():
     """长文不应崩 (内部限制 2000)."""
     fake = '{}'
-    with patch("app.services.llm.factory.get_llm_provider",
+    with patch("app.services.llm.factory.create_provider_for_model_id",
                return_value=_mock_llm_returning(fake)), \
          patch("app.services.llm.usage_tracker.set_caller"):
         out = extract_from_content("a" * 100000)
     assert out == ExtractedFields()
+
+
+# ─────────────── Batch-1 token-perf: 降档到便宜快模型 ───────────────
+
+
+def test_extract_uses_configured_flash_model():
+    """回归 token-perf 批1: 抽取器必须走 settings.action_card_extract_model_id
+    (默认 deepseek-v4-flash), 而不是默认强模型。"""
+    from app.config import settings
+
+    seen: list = []
+
+    def _capture(model_id):
+        seen.append(model_id)
+        return _mock_llm_returning('{"metric_key": "hrv", "verification_days": 7}')
+
+    with patch("app.services.llm.factory.create_provider_for_model_id",
+               side_effect=_capture), \
+         patch("app.services.llm.usage_tracker.set_caller"):
+        out = extract_from_content("观察 HRV 一周", "HRV 实验", user_id=1)
+
+    assert seen == [settings.action_card_extract_model_id]
+    assert settings.action_card_extract_model_id == "deepseek-v4-flash"
+    assert out.metric_key == "hrv"
+
+
+def test_extract_failsoft_when_flash_unavailable():
+    """降档模型创建失败 → fail-soft 回退默认 provider, 抽取仍成功 (不断业务)。"""
+    fallback = _mock_llm_returning('{"metric_key": "weight", "verification_days": 7}')
+
+    def _boom(model_id):
+        raise ValueError(f"未注册的 model_id: {model_id}")
+
+    with patch("app.services.llm.factory.create_provider_for_model_id",
+               side_effect=_boom), \
+         patch("app.services.llm.factory.get_llm_provider", return_value=fallback), \
+         patch("app.services.llm.usage_tracker.set_caller"):
+        out = extract_from_content("减重计划", "减重", user_id=1)
+
+    assert out.metric_key == "weight"
 
 
 # ─────────────────────── 白名单覆盖 sanity ────────────────────────

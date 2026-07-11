@@ -24,7 +24,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel
 
-from app.services.llm.factory import get_llm_provider
+from app.config import settings
+from app.services.llm.factory import create_provider_for_extraction
 
 logger = logging.getLogger(__name__)
 
@@ -91,9 +92,10 @@ async def extract_facts_from_dialog(
     prompt = _EXTRACT_PROMPT % full_text[:1500]
 
     try:
-        provider = get_llm_provider()
         from app.services.llm.usage_tracker import set_caller
         set_caller("memory.dialog_extractor")
+        # Batch-1 token-perf: 纯抽取, 降档 flash; 创建失败 fail-soft 回退默认 provider。
+        provider = create_provider_for_extraction(settings.dialog_extract_model_id)
         # provider.chat 接受 messages 数组而不是 string
         raw = await provider.chat(
             messages=[

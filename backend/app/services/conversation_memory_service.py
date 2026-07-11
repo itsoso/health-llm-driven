@@ -114,7 +114,8 @@ def _extract_with_regex(user_msg: str) -> List[tuple[str, str]]:
 async def _extract_with_llm(user_msg: str) -> List[tuple[str, str]]:
     """LLM 兜底: 正则没抓到时跑一次 LLM 抽取. 失败返回空 (不影响主流程)."""
     try:
-        from app.services.llm import get_llm_provider
+        from app.config import settings
+        from app.services.llm.factory import create_provider_for_extraction
 
         prompt = (
             "从下面这段用户健康对话里提取需要长期记住的事实, 输出 JSON 数组. "
@@ -122,7 +123,8 @@ async def _extract_with_llm(user_msg: str) -> List[tuple[str, str]]:
             "没有需要记的就返回 []. 只返回 JSON 数组本身, 不要解释.\n\n"
             f"用户消息:\n{user_msg}"
         )
-        provider = get_llm_provider()
+        # Batch-1 token-perf: 纯抽取, 降档 flash; 创建失败 fail-soft 回退默认 provider。
+        provider = create_provider_for_extraction(settings.memory_extract_model_id)
         result = await provider.chat(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,

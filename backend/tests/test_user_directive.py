@@ -155,3 +155,51 @@ class TestPromptInject:
         db.add(d)
         db.commit()
         assert get_active_directives_for_prompt(db, user_id=99) == ""
+
+
+# ─────────────── Batch-1 token-perf: directive parser 降档 flash ───────────────
+
+
+def test_parse_with_llm_uses_flash_model(monkeypatch):
+    """指令解析必须走 settings.directive_parse_model_id (默认 deepseek-v4-flash)。"""
+    from app.config import settings
+    from app.services import directive_parser
+
+    seen = []
+
+    class _FakeProvider:
+        async def chat(self, messages, **kwargs):
+            return '[{"kind": "lifestyle", "instruction": "限酒", "severity": "strong"}]'
+
+    import app.services.llm.factory as factory
+
+    def _capture(model_id):
+        seen.append(model_id)
+        return _FakeProvider()
+
+    monkeypatch.setattr(factory, "create_provider_for_model_id", _capture)
+
+    out = directive_parser._parse_with_llm("以后限酒")
+    assert seen == [settings.directive_parse_model_id]
+    assert settings.directive_parse_model_id == "deepseek-v4-flash"
+    assert out and out[0]["kind"] == "lifestyle"
+
+
+def test_parse_with_llm_failsoft_when_flash_unavailable(monkeypatch):
+    """降档模型创建失败 → fail-soft 回退默认 provider, 解析仍工作 (不断业务)。"""
+    from app.services import directive_parser
+
+    class _FallbackProvider:
+        async def chat(self, messages, **kwargs):
+            return '[{"kind": "target_override", "instruction": "LDL<2.6", "metric_key": "ldl", "target_value": "<2.6", "severity": "strong"}]'
+
+    import app.services.llm.factory as factory
+
+    monkeypatch.setattr(
+        factory, "create_provider_for_model_id",
+        lambda model_id: (_ for _ in ()).throw(ValueError("未注册")),
+    )
+    monkeypatch.setattr(factory, "get_llm_provider", lambda: _FallbackProvider())
+
+    out = directive_parser._parse_with_llm("把 LDL 控制在 2.6 以下")
+    assert out and out[0]["kind"] == "target_override"

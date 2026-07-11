@@ -134,9 +134,12 @@ def _default_classifier(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str
     不存在的 `provider.complete()` → 每次 AttributeError → fail-safe score 0(judge 从未真跑)。
     任何失败仍 → 保守 {None,0.0}(不自动);输出交 caller 的 `_normalize_verdict` 再夹死。"""
     try:
-        from app.services.llm.factory import get_llm_provider
+        from app.config import settings
+        from app.services.llm.factory import create_provider_for_extraction
 
-        provider = get_llm_provider()
+        # Batch-1 token-perf: judge 是 advisory 判重(安全由服务端硬闸负责,非 judge 自报),
+        # 降档 flash; 创建失败 fail-soft 回退默认 provider。
+        provider = create_provider_for_extraction(settings.kb_reconciliation_judge_model_id)
         prompt = (
             "你是知识库跨源判重器。判断两条目是否为**同一指称的重复**。只输出 JSON,无其它文字:\n"
             '{"relation_tag":"duplicate|agree|complementary|conflict","score":0.0,"rationale":"..."}\n'

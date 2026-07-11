@@ -115,3 +115,32 @@ class TestProviderSingleton:
             p2 = get_llm_provider()
             assert mock_create.call_count == 2
         reset_llm_provider()
+
+
+class TestExtractionProvider:
+    """Batch-1 token-perf: 抽取档 provider 助手 —— 命中时用降档模型, 失败 fail-soft 回退。"""
+
+    def test_returns_flash_provider_when_available(self):
+        from app.services.llm.factory import create_provider_for_extraction
+
+        flash = object()
+        with patch("app.services.llm.factory.create_provider_for_model_id",
+                   return_value=flash) as cp, \
+             patch("app.services.llm.factory.get_llm_provider") as gp:
+            got = create_provider_for_extraction("deepseek-v4-flash")
+        assert got is flash
+        cp.assert_called_once_with("deepseek-v4-flash")
+        gp.assert_not_called()  # 命中降档模型时绝不碰默认强模型
+
+    def test_failsoft_falls_back_on_unregistered_model(self):
+        """降档模型未注册 / env 缺失 → 回退 get_llm_provider(), 绝不抛。"""
+        from app.services.llm.factory import create_provider_for_extraction
+
+        sentinel = object()
+        with patch("app.services.llm.factory.create_provider_for_model_id",
+                   side_effect=ValueError("未注册的 model_id: nope")), \
+             patch("app.services.llm.factory.get_llm_provider",
+                   return_value=sentinel) as gp:
+            got = create_provider_for_extraction("nope")
+        assert got is sentinel
+        gp.assert_called_once()
