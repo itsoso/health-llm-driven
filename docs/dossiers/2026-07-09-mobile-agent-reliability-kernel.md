@@ -4,8 +4,8 @@
 |---|---|
 | slug | `mobile-agent-reliability-kernel` |
 | 创建日期 | 2026-07-09 |
-| 当前阶段 | S6 部署 |
-| 状态 | releasing |
+| 当前阶段 | S7 上线验证 |
+| 状态 | verifying |
 | 负责 | Codex |
 | 反馈环 | Mobile Jest / TypeScript / backend pytest / EAS production build / TestFlight |
 
@@ -97,7 +97,7 @@
 ## S5 · 实现
 
 - 委托：health-harness-orchestrator（Codex 在当前 session 顺序执行；共享状态任务不并行写同一文件）。
-- 分支 / commit：当前项目约定直接在 `main`；提交与 push 需在完成 G3/G4 后评估远端差异。
+- 分支 / commit：在独立集成分支完成后按项目约定推入 `main`；发布代码范围为 `c656a9349` 至 `601a147bc`，生产与 EAS 均锁定 `601a147bc7361a3f9911939c8d704f3467da40f6`。
 - 已落地：统一 AgentTurn / Composer 状态机、写入回执、账户隔离、请求 ACK 与断流恢复、输入草稿和图片恢复、双语音入口互斥、提交后停听、Today Focus 和来源可见性。
 - 第二轮加固：server-side `client_turn_id` 幂等、未最终落盘回复禁止回放、软写失败 fail-closed、跨天卡片回执身份、私有健康图片签名访问、部分图片失败回滚、语音最终文本与 hydration 竞态防护。
 - 发布前加固：单个模型响应的完整写计划在任何工具执行前封存；恢复时 `planned / in_flight / uncertain` 一律 fail-closed；会话图片引用、删除和 tombstone 清理使用跨线程/跨进程生命周期锁并在文件锁后读取最新 DB 引用；非持久化 Agent 请求在 HTTP 与 Mobile 消息终态上统一为可重试中断。
@@ -110,8 +110,9 @@
 - 静态检查：Mobile `tsc --noEmit`、Backend `ruff` / `py_compile`、`git diff --check` 均通过。
 - 构建链：全新 `npm ci` 成功，`expo-modules-autolinking` patch 真实应用；修复了旧 patch 非标准空白上下文导致 `patch-package` 解析失败且被 `|| true` 掩盖的问题。
 - 真实 PostgreSQL：主业务连接池保持未占用；turn lock 专用池 `pool_size=8 / max_overflow=0`；跨 worker 全局槽上限 `16`，超限 fail-closed。
-- 文档闸：43 份 Dossier 一致性通过；system-map/doc drift 检查通过，代码派生 service roster 更新为 `324`。
+- 文档闸：43 份 Dossier 一致性通过；system-map/doc drift 检查通过，代码派生 system-map 已同步。
 - App Store 提交预检：bundle `life.executor.health`、ASC app `6763569720`、EAS production profile 与 auto-submit 脚本通过。
+- GitHub CI：最终发布 run `29149653614` 全绿；frontend、backend-quality、8 个 backend pytest shard、backend-tests 汇总、mobile-typecheck、mac-build 与 type-drift 全部通过。完整 backend 基线为 `5853 passed / 1 skipped`。
 - **裁决：PASS**。锁屏状态下无法完成本轮模拟器截图和真实麦克风验证；真机音频、键盘遮挡和前后台切换仍归入 G6，不以自动化测试代替。
 
 ## G4 · 安全闸
@@ -125,19 +126,29 @@
 
 ## S6 · 部署
 
-- 自动化与构建链闸已通过；准备提交、推送、通过 `deploy.sh` 部署 backend，再触发 EAS production build + auto-submit。
+- 2026-07-11 通过唯一发布入口 `./deploy.sh -b -y` 部署 `601a147bc`；部署前生成 PostgreSQL 备份 `/opt/health-app/backups/health_db_2026-07-11_18-48.sql.gz`，force-RLS 表数据完整性检查通过。
+- 受控迁移账本无待执行迁移；系统知识库导入 `880 documents / 3313 edges`，重建后为 `895 documents / 895 dense vectors`，backend 为 `pgvector:text-embedding-v4`。
+- backend、Celery worker 与 beat 重启成功；公网 `/api/v1/health` 返回 API、database、Redis、Celery 全部 `healthy`。
+- 通过 `scripts/_run-mobile-tf.sh` 发起 EAS production build + auto-submit：App `1.3.1 (220)`，Build ID `5bcaddf5-ac46-4b04-b51f-8c783123b51f`，Submission ID `9ba5b73e-58f9-40dd-ad86-69cdfe5f961d`。
 
 ## G5 · 部署健康闸
 
-- 待部署。
+- 部署脚本健康评分 `60/60 PASS`；线上 skills manifest 与本地均为 `22`。
+- 独立公网检查确认 `api=running`、`database=connected`、`redis=connected`、`celery=connected`。
+- EAS 构建状态 `FINISHED`、`error=null`，commit、production channel、SDK 55、版本和 build number 均与发布目标一致。
+- **裁决：PASS**。
 
 ## S7 · 上线验证
 
 - iPhone 17 Pro Simulator 原生构建、安装和启动成功（0 errors，9 warnings）；macOS 当前锁屏，截图、键盘遮挡、前后台恢复和双语音交互仍待解锁后验证。
+- EAS 已返回 `Submitted your app to Apple App Store Connect`，Apple 成功接收 `1.3.1 (220)` 二进制；当前处于 Apple processing，通常 5-10 分钟后进入 TestFlight。
+- 构建证据：`https://expo.dev/accounts/itsoso/projects/health-pilot/builds/5bcaddf5-ac46-4b04-b51f-8c783123b51f`；提交证据：`https://expo.dev/accounts/itsoso/projects/health-pilot/submissions/9ba5b73e-58f9-40dd-ad86-69cdfe5f961d`。
 
 ## G6 · 验证闸
 
-- 待用户真机确认。
+- 生产后端、IPA 构建和 App Store Connect 上传验证已通过。
+- 待完成：Apple processing 结束后在真机安装 build `220`，验证左右语音入口、实时听写二次点击 disable、提交后释放监听、键盘遮挡/前后台恢复、Markdown 首次渲染和图片恢复。
+- **裁决：PENDING**。发布链已完成，但不以自动化和上传成功替代真机交互验收。
 
 ## S8 · 沉淀
 
