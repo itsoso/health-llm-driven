@@ -15,8 +15,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - label: a-b
-            paths: "tests/test_[a-b]*.py"
+          # The agent test family can leave Linux process state behind when it
+          # follows the other a/b modules in the same pytest process. Discover
+          # the non-agent a/b files from tests/ so future files stay covered,
+          # then isolate agent tests in two deterministic processes.
+          - label: a-b-rest
+            paths: "tests"
+            extra_args: "--ignore=tests/services --ignore-glob='tests/test_[c-z]*.py' --ignore-glob='tests/test_agent_*.py'"
+          - label: agent-a-h
+            paths: "tests/test_agent_[a-h]*.py"
+          - label: agent-i-z
+            paths: "tests/test_agent_[i-z]*.py"
           - label: c-d
             paths: "tests/test_[c-d]*.py"
           - label: e-g
