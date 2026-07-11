@@ -34,6 +34,11 @@ jest.mock('expo-image-manipulator', () => ({
   SaveFormat: { JPEG: 'jpeg', PNG: 'png', WEBP: 'webp' },
 }));
 
+const mockDeleteTemporaryImage = jest.fn().mockResolvedValue(undefined);
+jest.mock('expo-file-system/legacy', () => ({
+  deleteAsync: (...args: any[]) => mockDeleteTemporaryImage(...args),
+}));
+
 const mockMaterializeDraftImages = jest.fn();
 const mockDeleteDraftImage = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../services/chatDraftStorage', () => ({
@@ -118,6 +123,10 @@ describe('useMediaPicker', () => {
       expect(mockMaterializeDraftImages).toHaveBeenCalledWith([
         expect.objectContaining({ uri: 'file:///small.jpg', base64: 'tiny-jpeg', type: 'jpeg' }),
       ]);
+      expect(mockDeleteTemporaryImage).toHaveBeenCalledWith(
+        'file:///small.jpg',
+        { idempotent: true },
+      );
     });
 
     it('resizes by the LONGER edge — portrait photo resizes by height', async () => {

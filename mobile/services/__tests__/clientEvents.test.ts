@@ -102,6 +102,8 @@ describe('client reliability events', () => {
       phase: 'completed',
       duration_ms: 4321,
       server_total_ms: 3890,
+      client_prepare_ms: 125,
+      payload_bytes: 482_304,
       food_count: 2,
       table_calibrated_count: 1,
       food_items: 'private meal content',
@@ -110,8 +112,26 @@ describe('client reliability events', () => {
       phase: 'completed',
       duration_ms: 4321,
       server_total_ms: 3890,
+      client_prepare_ms: 125,
+      payload_bytes: 482_304,
       food_count: 2,
       table_calibrated_count: 1,
+    });
+  });
+
+  it('keeps only the privacy-safe correction flag on confirmation events', () => {
+    expect(sanitizeClientEventMeta('diet_photo_confirmation_terminal', {
+      phase: 'completed',
+      duration_ms: 640,
+      verified: true,
+      corrected: true,
+      original_food_items: 'private original meal',
+      revised_food_items: 'private revised meal',
+    })).toEqual({
+      phase: 'completed',
+      duration_ms: 640,
+      verified: true,
+      corrected: true,
     });
   });
 });

@@ -103,11 +103,20 @@ export function sanitizeClientEventMeta(
     if (durationMs !== undefined) sanitized.duration_ms = durationMs;
     const serverTotalMs = numberInRange(meta.server_total_ms, 300_000);
     if (serverTotalMs !== undefined) sanitized.server_total_ms = serverTotalMs;
+    if (name === 'diet_photo_recognition_terminal') {
+      const clientPrepareMs = numberInRange(meta.client_prepare_ms, 300_000);
+      const payloadBytes = numberInRange(meta.payload_bytes, 20 * 1024 * 1024);
+      if (clientPrepareMs !== undefined) sanitized.client_prepare_ms = clientPrepareMs;
+      if (payloadBytes !== undefined) sanitized.payload_bytes = payloadBytes;
+    }
     if (foodCount !== undefined) sanitized.food_count = foodCount;
     if (tableCount !== undefined && (foodCount === undefined || tableCount <= foodCount)) {
       sanitized.table_calibrated_count = tableCount;
     }
     if (typeof meta.verified === 'boolean') sanitized.verified = meta.verified;
+    if (name === 'diet_photo_confirmation_terminal' && typeof meta.corrected === 'boolean') {
+      sanitized.corrected = meta.corrected;
+    }
     if (typeof meta.has_photo === 'boolean') sanitized.has_photo = meta.has_photo;
     if (typeof meta.error_code === 'string' && SAFE_TOKEN.test(meta.error_code)) {
       sanitized.error_code = meta.error_code;

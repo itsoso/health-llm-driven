@@ -28,6 +28,11 @@ jest.mock('expo-document-picker', () => ({
   getDocumentAsync: jest.fn(),
 }));
 
+const mockDeleteTemporaryImage = jest.fn().mockResolvedValue(undefined);
+jest.mock('expo-file-system/legacy', () => ({
+  deleteAsync: (...args: any[]) => mockDeleteTemporaryImage(...args),
+}));
+
 jest.mock('../../services/chatDraftStorage', () => ({
   materializeDraftImages: async (images: any[]) => images,
   deleteDraftImage: jest.fn().mockResolvedValue(undefined),
@@ -80,6 +85,7 @@ describe('useMediaPicker — old binary (image-manipulator native module absent)
       base64: 'picker-inline-b64',
       type: 'jpeg',
     });
+    expect(mockDeleteTemporaryImage).not.toHaveBeenCalled();
   });
 
   it('still EXCLUDES an asset with falsy base64 and alerts — never emits base64:""', async () => {

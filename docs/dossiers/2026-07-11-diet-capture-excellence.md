@@ -75,6 +75,7 @@
 - [x] T3 服务端照片草稿身份、单次大载荷和写入幂等（backend deploy + OTA）
 - [x] T4 3:4 高质感饮食分享卡、图片生成和系统分享（EAS）
 - [x] T5 识别/确认/纠错/分享埋点与 p50/p95 看板（backend deploy + OTA）
+- [ ] T5.1 端侧照片压缩、相机返回后计时、成功样本分位数与无正文纠错率（backend deploy + OTA）
 - [ ] T6 模拟器视觉、真机微信/小红书、生产数据闭环验收
 - 并发检查：2026-07-11 `origin/main` 与当前干净集成 worktree 一致；原始用户工作区不纳入暂存。
 
@@ -86,6 +87,7 @@
 - T4：新增固定 3:4 饮食故事卡；iOS 以 point/PixelRatio、Android 以 bitmap pixel 分别请求，模拟器实测输出 1080x1440 PNG。等待受保护图片加载，5 秒无终态自动使用指标版卡片；图片或原生捕获不可用时降级为不含私有 URL/标识的文本系统分享，系统分享结束后释放临时 PNG。分享图不含用户名或其他健康数据。
 - T5：新增无正文的识别/确认/分享终态事件，观测聚合直接输出各阶段样本数、失败数、p50、p95；识别响应另带 vision/calibration/photo_draft/total 分段耗时。
 - 上线前复核发现生产 `food_items` 为空，原校准迁移只能更新既有行，导致营养表校准在生产无法命中。标准部署现于受控迁移后幂等执行 `seed_food_nutrition.py`，并以测试锁定 6 项审核食物、6 项营养值和严格 `calibration_names`，不允许泛化“鸡肉”进入鸡胸肉校准范围。
+- T5.1：相机不再直接生成 12MP 原图 Base64；饮食与聊天共用 OTA-safe 图片承重工具，最长边限制 1568px、JPEG q0.7 且不放大小图，并在识别/草稿持久化后清理临时编码文件。相机返回后显示“正在优化照片”，完成后才开始上传识别；埋点新增无正文的端侧准备耗时、压缩后字节数和确认纠错标记。观察看板只以 completed 样本计算 p50/p95，同时单列 attempts、failures、cancelled 和 correction rate，避免把取景和取消时间当成模型时延。
 
 ## G3 · 测试闸
 
@@ -99,6 +101,7 @@
 - 营养目录部署补丁 focused regression：32 passed；`bash -n deploy.sh` 与全部 pre-commit hooks passed。
 - Linux 全仓权威闸门：GitHub Actions run `29159958346` attempt 3 SUCCESS；四个首轮冻结分片均通过失败作业重跑恢复，最终 Backend tests enforcement 通过。
 - 待执行：真机微信/小红书目标应用投递。Backend 全仓本地测试仍保留既有跨用例污染问题，Linux CI 为全仓权威闸门。
+- 2026-07-12 上线前生产只读审计：近 30 天 116 条饮食记录中，AI 标记、图片、`food_id` 和新版饮食终态事件样本均为 0；因此当前不能宣称真实识别准确率或时延达标，需新 TestFlight/OTA 产生样本后再验收。
 
 ## G4 · 安全闸
 

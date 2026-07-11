@@ -86,26 +86,44 @@ def test_client_events_stats_computes_diet_capture_latency_and_failures(db):
     db.add(user)
     db.commit()
     db.refresh(user)
-    for duration in (1200, 2400, 6200, 9100):
+    for index, duration in enumerate((1200, 2400, 6200, 9100), start=1):
         _seed(db, user.id, "diet_photo_recognition_terminal", {
             "phase": "completed", "duration_ms": duration,
+            "client_prepare_ms": index * 100,
+            "payload_bytes": index * 100 * 1024,
             "food_count": 2, "table_calibrated_count": 1,
         })
     _seed(db, user.id, "diet_photo_recognition_terminal", {
-        "phase": "failed", "duration_ms": 3100, "error_code": "vision_timeout",
+        "phase": "failed", "duration_ms": 290000, "error_code": "vision_timeout",
+        "food_count": 0, "table_calibrated_count": 0,
+    })
+    _seed(db, user.id, "diet_photo_recognition_terminal", {
+        "phase": "cancelled", "duration_ms": 280000,
         "food_count": 0, "table_calibrated_count": 0,
     })
     _seed(db, user.id, "diet_photo_confirmation_terminal", {
         "phase": "completed", "duration_ms": 420, "verified": True,
+        "corrected": True,
     })
     db.commit()
 
     stats = client_events_stats(db, utc_now() - timedelta(days=7), user_id=None)
 
     recognition = stats["diet_capture_ms"]["recognition"]
-    assert recognition["n"] == 5
-    assert recognition["failures"] == 1
-    assert recognition["p50"] <= recognition["p95"]
+    assert recognition == {
+        "n": 4,
+        "attempts": 6,
+        "p50": 4300,
+        "p95": 8665,
+        "failures": 1,
+        "cancelled": 1,
+        "client_prepare_p50": 250,
+        "client_prepare_p95": 385,
+        "payload_kb_p50": 250,
+        "payload_kb_p95": 385,
+    }
     assert stats["diet_capture_ms"]["confirmation"] == {
-        "n": 1, "p50": 420, "p95": 420, "failures": 0,
+        "n": 1, "attempts": 1, "p50": 420, "p95": 420,
+        "failures": 0, "cancelled": 0,
+        "corrected": 1, "correction_rate_pct": 100.0,
     }

@@ -79,15 +79,18 @@ apis:
   - POST /diet/records accepts Idempotency-Key and owner-bound photo draft reference
   - GET /diet/photo-drafts/{token}/status validates a restored owner-bound pending draft
 events:
-  - diet_capture_stage
-  - diet_capture_corrected
-  - diet_share_opened
+  - diet_photo_recognition_terminal
+  - diet_photo_confirmation_terminal
+  - diet_share_terminal
 models: existing DietRecord; owner-scoped DietPhotoDraft; user-scoped compact SecureStore snapshot
 fields:
   - FoodItem.food_id
   - FoodItem.source
   - FoodItem.calibration_names
   - FoodRecognitionResponse.total_fiber
+  - diet_photo_recognition_terminal.client_prepare_ms
+  - diet_photo_recognition_terminal.payload_bytes
+  - diet_photo_confirmation_terminal.corrected
 backward_compatibility: legacy base64 create remains during rollout
 migrations:
   - backend/migrations/managed/20260711_200000_create_diet_photo_drafts.postgresql.sql
@@ -144,6 +147,14 @@ Then an exact 1080x1440 privacy-safe image opens in the iOS system share sheet a
 Given a protected meal image never finishes loading
 When five seconds elapse in the share preview
 Then the card switches to a complete metric layout and sharing remains available
+
+Given a 4032x3024 camera image on a binary with expo-image-manipulator
+When the camera returns the local image URI
+Then the app resizes the longest edge to 1568px, encodes JPEG at q0.7 and sends only the resulting Base64
+
+Given recognition events include completed, failed and cancelled attempts
+When the observation dashboard computes latency
+Then p50/p95 use completed events only while attempts, failures and cancellations remain separately visible
 ```
 
 ## 12. Verification Plan
@@ -151,9 +162,11 @@ Then the card switches to a complete metric layout and sharing remains available
 ```bash
 PYTHONPATH=backend pytest backend/tests/test_food_recognition_sanitizer.py backend/tests/test_food_nutrition_lookup.py backend/tests/test_diet.py -q
 cd mobile && npm test -- --runTestsByPath app/__tests__/dietCapture.test.tsx --runInBand
+cd mobile && npm test -- --runTestsByPath hooks/__tests__/useMediaPicker.test.ts hooks/__tests__/useMediaPicker.oldBinary.test.ts services/__tests__/clientEvents.test.ts --runInBand
 cd mobile && npx tsc --noEmit
-python scripts/check_doc_drift.py
-python backend/scripts/check_dossier_consistency.py
+DATABASE_URL=sqlite:///:memory: PYTHONPATH=backend pytest backend/tests/test_client_events.py backend/tests/test_observability_client_events.py -q
+python3 scripts/check_doc_drift.py
+python3 backend/scripts/check_dossier_consistency.py
 git diff --check
 ```
 
@@ -171,3 +184,4 @@ Deploy backend additive response fields before Mobile. Preserve legacy create pa
 | Date | Change | Reason |
 |---|---|---|
 | 2026-07-11 | Initial active spec | Begin P0 accuracy and explainability implementation |
+| 2026-07-12 | Bound camera payload and correct latency semantics | Prevent raw-photo memory/network cost and misleading p50/p95 |

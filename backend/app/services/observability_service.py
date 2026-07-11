@@ -408,7 +408,12 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
         "diet_share_terminal": "share",
     }
     diet_durations: Dict[str, list] = {key: [] for key in diet_event_map.values()}
+    diet_attempts: Dict[str, int] = {key: 0 for key in diet_event_map.values()}
     diet_failures: Dict[str, int] = {key: 0 for key in diet_event_map.values()}
+    diet_cancelled: Dict[str, int] = {key: 0 for key in diet_event_map.values()}
+    diet_corrections = 0
+    diet_prepare_ms: list[float] = []
+    diet_payload_kb: list[float] = []
 
     for name, meta in rows:
         by_event[name] = by_event.get(name, 0) + 1
@@ -429,11 +434,32 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
                 cold_start_incomplete += 1
         elif name in diet_event_map:
             stage = diet_event_map[name]
+            diet_attempts[stage] += 1
+            phase = meta.get("phase")
             duration = meta.get("duration_ms")
-            if isinstance(duration, (int, float)) and not isinstance(duration, bool):
+            if (
+                phase == "completed"
+                and isinstance(duration, (int, float))
+                and not isinstance(duration, bool)
+            ):
                 diet_durations[stage].append(float(duration))
-            if meta.get("phase") == "failed":
+            if phase == "failed":
                 diet_failures[stage] += 1
+            elif phase == "cancelled":
+                diet_cancelled[stage] += 1
+            if (
+                name == "diet_photo_confirmation_terminal"
+                and phase == "completed"
+                and meta.get("corrected") is True
+            ):
+                diet_corrections += 1
+            if name == "diet_photo_recognition_terminal" and phase == "completed":
+                prepare_ms = meta.get("client_prepare_ms")
+                payload_bytes = meta.get("payload_bytes")
+                if isinstance(prepare_ms, (int, float)) and not isinstance(prepare_ms, bool):
+                    diet_prepare_ms.append(float(prepare_ms))
+                if isinstance(payload_bytes, (int, float)) and not isinstance(payload_bytes, bool):
+                    diet_payload_kb.append(float(payload_bytes) / 1024.0)
 
     starter_ctr: Dict[str, dict] = {}
     for key in sorted(set(impressions) | set(clicks)):
@@ -453,10 +479,30 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
         stage_p95 = _percentile(values, 95)
         diet_capture_ms[stage] = {
             "n": len(values),
+            "attempts": diet_attempts[stage],
             "p50": round(stage_p50) if stage_p50 is not None else None,
             "p95": round(stage_p95) if stage_p95 is not None else None,
             "failures": diet_failures[stage],
+            "cancelled": diet_cancelled[stage],
         }
+    prepare_p50 = _percentile(diet_prepare_ms, 50)
+    prepare_p95 = _percentile(diet_prepare_ms, 95)
+    payload_p50 = _percentile(diet_payload_kb, 50)
+    payload_p95 = _percentile(diet_payload_kb, 95)
+    diet_capture_ms["recognition"].update({
+        "client_prepare_p50": round(prepare_p50) if prepare_p50 is not None else None,
+        "client_prepare_p95": round(prepare_p95) if prepare_p95 is not None else None,
+        "payload_kb_p50": round(payload_p50) if payload_p50 is not None else None,
+        "payload_kb_p95": round(payload_p95) if payload_p95 is not None else None,
+    })
+    completed_confirmations = diet_capture_ms["confirmation"]["n"]
+    diet_capture_ms["confirmation"].update({
+        "corrected": diet_corrections,
+        "correction_rate_pct": (
+            round(100.0 * diet_corrections / completed_confirmations, 1)
+            if completed_confirmations else None
+        ),
+    })
     return {
         "total": sum(by_event.values()),
         "by_event": by_event,

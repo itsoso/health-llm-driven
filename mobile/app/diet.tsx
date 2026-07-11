@@ -36,6 +36,13 @@ import {
   loadDietPhotoDraft,
   saveDietPhotoDraft,
 } from '../services/dietPhotoDraftStorage';
+import {
+  base64DecodedByteLength,
+  cleanupPreparedUploadImages,
+  imagePickerEncodingOptions,
+  prepareImageForUploadSafe,
+} from '../utils/imageUpload';
+import type { PreparedUploadImage } from '../utils/imageUpload';
 
 const MEAL_LABEL: Record<string, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' };
 const VALID_MEAL_TYPES = new Set(['breakfast', 'lunch', 'dinner', 'snack']);
@@ -58,7 +65,7 @@ type DietQuickDraft = {
   source: EstimateSource | null;
 };
 
-type PhotoCaptureStage = 'idle' | 'capturing' | 'recognizing' | 'draft_ready' | 'saving' | 'saved' | 'failed';
+type PhotoCaptureStage = 'idle' | 'capturing' | 'preparing' | 'recognizing' | 'draft_ready' | 'saving' | 'saved' | 'failed';
 
 const NON_DIET_DRAFT_ALERT = {
   title: '这不是饮食记录',
@@ -189,6 +196,17 @@ function mergeRevisedDraft(
     }
   }
   return corrected;
+}
+
+function photoDraftWasCorrected(
+  original: Partial<DietRecordCreate>,
+  revision: DietRecordCreate,
+): boolean {
+  const normalizedText = (value: unknown) => String(value ?? '').trim().replace(/\s+/g, ' ');
+  if (original.meal_type !== revision.meal_type) return true;
+  if (normalizedText(original.food_items) !== normalizedText(revision.food_items)) return true;
+  return (['calories', 'protein', 'carbs', 'fat', 'fiber'] as const)
+    .some(key => (original[key] ?? null) !== (revision[key] ?? null));
 }
 
 export function buildEditedDietPatch(
@@ -361,7 +379,6 @@ export default function DietScreen() {
       });
     return () => { active = false; };
   // Restore exactly when the authenticated owner changes.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, authUserId]);
 
   const saveNewDietRecord = useCallback(async (
@@ -394,6 +411,11 @@ export default function DietScreen() {
   }, [estimate]);
 
   const handleSave = useCallback(async (record: DietRecordCreate) => {
+    const isPhotoCorrection = !editingRecord && (
+      draftEstimateSource?.kind === 'photo' || Boolean(formDefaults.photo_draft_token)
+    );
+    const corrected = isPhotoCorrection && photoDraftWasCorrected(formDefaults, record);
+    const confirmationStartedAt = Date.now();
     try {
       if (editingRecord) {
         await updateDietRecord(editingRecord.id, buildEditedDietPatch(editingRecord, record));
@@ -407,6 +429,14 @@ export default function DietScreen() {
           });
         }
         await saveNewDietRecord(revised, draftEstimateSource);
+        if (isPhotoCorrection) {
+          void emitClientEvent('diet_photo_confirmation_terminal', {
+            phase: 'completed',
+            duration_ms: Date.now() - confirmationStartedAt,
+            verified: true,
+            corrected,
+          });
+        }
       }
       setShowForm(false);
       setEditingRecord(null);
@@ -415,6 +445,15 @@ export default function DietScreen() {
       setQuickDraft(null);
       activeDraftRef.current = false;
     } catch (error) {
+      if (isPhotoCorrection) {
+        void emitClientEvent('diet_photo_confirmation_terminal', {
+          phase: 'failed',
+          duration_ms: Date.now() - confirmationStartedAt,
+          verified: false,
+          corrected,
+          error_code: 'record_write_failed',
+        });
+      }
       if (formDefaults.photo_draft_token && isUnavailablePhotoDraftError(error)) {
         if (authUserId) await clearDietPhotoDraft(authUserId).catch(() => undefined);
         activeDraftRef.current = false;
@@ -427,7 +466,7 @@ export default function DietScreen() {
       }
       Alert.alert(editingRecord ? '更新失败' : '保存失败', '请稍后再试');
     }
-  }, [authUserId, draftEstimateSource, editingRecord, formDefaults, qc, saveNewDietRecord]);
+  }, [authUserId, draftEstimateSource, editingRecord, formDefaults, qc, saveNewDietRecord, toast]);
 
   const handleConfirmQuickDraft = useCallback(async () => {
     if (!quickDraft) return;
@@ -445,6 +484,7 @@ export default function DietScreen() {
           phase: 'completed',
           duration_ms: Date.now() - confirmationStartedAt,
           verified: true,
+          corrected: false,
         });
       }
       const recordContext = {
@@ -658,7 +698,12 @@ export default function DietScreen() {
   }, [openDietDraft]);
 
   const handlePhoto = useCallback(async () => {
-    const recognitionStartedAt = Date.now();
+    const captureStartedAt = Date.now();
+    let recognitionStartedAt: number | null = null;
+    let clientPrepareMs = 0;
+    let payloadBytes = 0;
+    let preparedImage: PreparedUploadImage | null = null;
+    const elapsedSinceRecognition = () => Date.now() - (recognitionStartedAt ?? captureStartedAt);
     try {
       setPhotoCaptureStage('capturing');
       const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -666,33 +711,49 @@ export default function DietScreen() {
         setPhotoCaptureStage('idle');
         Alert.alert('需要相机权限', '请在设置中开启相机权限');
         void emitClientEvent('diet_photo_recognition_terminal', {
-          phase: 'cancelled', duration_ms: Date.now() - recognitionStartedAt,
+          phase: 'cancelled', duration_ms: Date.now() - captureStartedAt,
           food_count: 0, table_calibrated_count: 0, error_code: 'camera_permission_denied',
         });
         return;
       }
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
-        quality: 0.8,
-        base64: true,
+        ...imagePickerEncodingOptions(),
       });
-      if (result.canceled || !result.assets[0]?.base64) {
+      if (result.canceled || !result.assets[0]) {
         setPhotoCaptureStage('idle');
         void emitClientEvent('diet_photo_recognition_terminal', {
-          phase: 'cancelled', duration_ms: Date.now() - recognitionStartedAt,
+          phase: 'cancelled', duration_ms: Date.now() - captureStartedAt,
           food_count: 0, table_calibrated_count: 0,
         });
         return;
       }
-      const imageBase64 = result.assets[0].base64;
+      recognitionStartedAt = Date.now();
+      setPhotoCaptureStage('preparing');
+      const prepareStartedAt = Date.now();
+      preparedImage = await prepareImageForUploadSafe(result.assets[0]);
+      clientPrepareMs = Date.now() - prepareStartedAt;
+      if (!preparedImage) {
+        setPhotoCaptureStage('failed');
+        void emitClientEvent('diet_photo_recognition_terminal', {
+          phase: 'failed', duration_ms: elapsedSinceRecognition(),
+          client_prepare_ms: clientPrepareMs, payload_bytes: 0,
+          food_count: 0, table_calibrated_count: 0, error_code: 'image_prepare_failed',
+        });
+        Alert.alert('照片处理失败', '请重新拍摄，或改用相册中的清晰餐食照片。');
+        return;
+      }
+      const imageBase64 = preparedImage.base64;
+      payloadBytes = base64DecodedByteLength(imageBase64);
       setPhotoCaptureStage('recognizing');
       const recognized = await recognizeFood(imageBase64);
       if (!recognized.success) {
         setPhotoCaptureStage('failed');
         Alert.alert('识别失败', recognized.error || '没有识别出可记录的餐食,请重拍或改用文字记录。');
         void emitClientEvent('diet_photo_recognition_terminal', {
-          phase: 'failed', duration_ms: Date.now() - recognitionStartedAt,
+          phase: 'failed', duration_ms: elapsedSinceRecognition(),
           server_total_ms: recognized.timing_ms?.total,
+          client_prepare_ms: clientPrepareMs, payload_bytes: payloadBytes,
           food_count: 0, table_calibrated_count: 0, error_code: 'recognition_failed',
         });
         return;
@@ -703,16 +764,19 @@ export default function DietScreen() {
         setPhotoCaptureStage('failed');
         Alert.alert('识别失败', '没有识别出可记录的餐食,请重拍或改用文字记录。');
         void emitClientEvent('diet_photo_recognition_terminal', {
-          phase: 'failed', duration_ms: Date.now() - recognitionStartedAt,
+          phase: 'failed', duration_ms: elapsedSinceRecognition(),
           server_total_ms: recognized.timing_ms?.total,
+          client_prepare_ms: clientPrepareMs, payload_bytes: payloadBytes,
           food_count: 0, table_calibrated_count: 0, error_code: 'empty_recognition',
         });
         return;
       }
       void emitClientEvent('diet_photo_recognition_terminal', {
         phase: 'completed',
-        duration_ms: Date.now() - recognitionStartedAt,
+        duration_ms: elapsedSinceRecognition(),
         server_total_ms: recognized.timing_ms?.total,
+        client_prepare_ms: clientPrepareMs,
+        payload_bytes: payloadBytes,
         food_count: recognized.foods.length,
         table_calibrated_count: recognized.foods.filter(food => food.nutrition_basis === 'food_table').length,
       });
@@ -741,10 +805,13 @@ export default function DietScreen() {
     } catch {
       setPhotoCaptureStage('failed');
       void emitClientEvent('diet_photo_recognition_terminal', {
-        phase: 'failed', duration_ms: Date.now() - recognitionStartedAt,
+        phase: 'failed', duration_ms: elapsedSinceRecognition(),
+        client_prepare_ms: clientPrepareMs, payload_bytes: payloadBytes,
         food_count: 0, table_calibrated_count: 0, error_code: 'capture_pipeline_failed',
       });
       Alert.alert('拍照失败', '请稍后重试');
+    } finally {
+      await cleanupPreparedUploadImages([preparedImage]);
     }
   }, [openDietDraft]);
 
@@ -879,7 +946,7 @@ export default function DietScreen() {
           />
         )}
 
-        {!showForm && !quickDraft && (photoCaptureStage === 'capturing' || photoCaptureStage === 'recognizing' || photoCaptureStage === 'saving') && (
+        {!showForm && !quickDraft && (photoCaptureStage === 'capturing' || photoCaptureStage === 'preparing' || photoCaptureStage === 'recognizing' || photoCaptureStage === 'saving') && (
           <PhotoCaptureStatusCard stage={photoCaptureStage} />
         )}
 
@@ -1025,7 +1092,9 @@ function PhotoCaptureStatusCard({ stage }: { stage: PhotoCaptureStage }) {
     ? '正在保存饮食'
     : stage === 'capturing'
       ? '正在打开相机'
-      : '正在识别餐食';
+      : stage === 'preparing'
+        ? '正在优化照片'
+        : '正在识别餐食';
   const detail = stage === 'saving'
     ? '保存成功后会立即更新今日饮食进度。'
     : '识别完成后先给你确认草稿，不会自动写入。';

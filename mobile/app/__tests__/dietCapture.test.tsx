@@ -10,6 +10,8 @@ const mockEstimate = jest.fn();
 const mockRouterPush = jest.fn();
 const mockPushChatWithContext = jest.fn();
 const mockEmitClientEvent = jest.fn().mockResolvedValue(undefined);
+const mockManipulateAsync = jest.fn();
+const mockDeleteTemporaryImage = jest.fn().mockResolvedValue(undefined);
 const mockLoadDietPhotoDraft = jest.fn().mockResolvedValue(null);
 const mockSaveDietPhotoDraft = jest.fn().mockResolvedValue(undefined);
 const mockClearDietPhotoDraft = jest.fn().mockResolvedValue(undefined);
@@ -36,6 +38,15 @@ jest.mock('expo-haptics', () => ({
 jest.mock('expo-image-picker', () => ({
   requestCameraPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
   launchCameraAsync: jest.fn().mockResolvedValue({ canceled: true, assets: [] }),
+}));
+
+jest.mock('expo-image-manipulator', () => ({
+  manipulateAsync: (...args: any[]) => mockManipulateAsync(...args),
+  SaveFormat: { JPEG: 'jpeg', PNG: 'png', WEBP: 'webp' },
+}));
+
+jest.mock('expo-file-system/legacy', () => ({
+  deleteAsync: (...args: any[]) => mockDeleteTemporaryImage(...args),
 }));
 
 jest.mock('react-native-view-shot', () => ({ captureRef: jest.fn() }));
@@ -159,6 +170,12 @@ describe('DietScreen capture deeplink', () => {
     mockLoadDietPhotoDraft.mockResolvedValue(null);
     mockSaveDietPhotoDraft.mockResolvedValue(undefined);
     mockClearDietPhotoDraft.mockResolvedValue(undefined);
+    mockManipulateAsync.mockResolvedValue({
+      uri: 'file:///diet-photo-small.jpg',
+      width: 1568,
+      height: 1176,
+      base64: 'photo-base64',
+    });
     mockAuthUserId = 7;
     Object.keys(mockRouteParams).forEach((key) => { delete mockRouteParams[key]; });
     mockDailyMeals.splice(0, mockDailyMeals.length);
@@ -178,7 +195,13 @@ describe('DietScreen capture deeplink', () => {
     mockRouteParams.capture = 'photo';
     (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
       canceled: false,
-      assets: [{ base64: 'photo-base64' }],
+      assets: [{ uri: 'file:///diet-photo.heic', width: 4032, height: 3024 }],
+    });
+    mockManipulateAsync.mockResolvedValueOnce({
+      uri: 'file:///diet-photo-small.jpg',
+      width: 1568,
+      height: 1176,
+      base64: 'QUJDRA==',
     });
     dietService.recognizeFood.mockResolvedValueOnce({
       success: true,
@@ -194,8 +217,20 @@ describe('DietScreen capture deeplink', () => {
     const { getByText } = render(<DietScreen />);
 
     await waitFor(() => {
-      expect(dietService.recognizeFood).toHaveBeenCalledWith('photo-base64');
+      expect(dietService.recognizeFood).toHaveBeenCalledWith('QUJDRA==');
     });
+    expect(ImagePicker.launchCameraAsync).toHaveBeenCalledWith(expect.objectContaining({
+      mediaTypes: ['images'],
+      base64: false,
+    }));
+    expect(ImagePicker.launchCameraAsync).toHaveBeenCalledWith(
+      expect.not.objectContaining({ quality: expect.anything() }),
+    );
+    expect(mockManipulateAsync).toHaveBeenCalledWith(
+      'file:///diet-photo.heic',
+      [{ resize: { width: 1568 } }],
+      { compress: 0.7, format: 'jpeg', base64: true },
+    );
     await waitFor(() => {
       expect(getByText('待确认饮食')).toBeTruthy();
     });
@@ -208,9 +243,17 @@ describe('DietScreen capture deeplink', () => {
       expect.objectContaining({
         phase: 'completed',
         duration_ms: expect.any(Number),
+        client_prepare_ms: expect.any(Number),
+        payload_bytes: 4,
         food_count: 1,
       }),
     );
+    await waitFor(() => {
+      expect(mockDeleteTemporaryImage).toHaveBeenCalledWith(
+        'file:///diet-photo-small.jpg',
+        { idempotent: true },
+      );
+    });
   });
 
   it('persists a server-backed photo draft without persisting base64 bytes', async () => {
@@ -438,6 +481,10 @@ describe('DietScreen capture deeplink', () => {
       fiber: undefined,
       photo_draft_token: 'photo-draft-corrected-88',
     }));
+    expect(mockEmitClientEvent).toHaveBeenCalledWith(
+      'diet_photo_confirmation_terminal',
+      expect.objectContaining({ phase: 'completed', verified: true, corrected: true }),
+    );
     expect(mockClearDietPhotoDraft).toHaveBeenCalledWith(7);
   });
 
@@ -754,7 +801,7 @@ describe('DietScreen capture deeplink', () => {
       );
       expect(mockEmitClientEvent).toHaveBeenCalledWith(
         'diet_photo_confirmation_terminal',
-        expect.objectContaining({ phase: 'completed', verified: true }),
+        expect.objectContaining({ phase: 'completed', verified: true, corrected: false }),
       );
     });
   });

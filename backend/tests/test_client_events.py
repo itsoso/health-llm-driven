@@ -101,9 +101,21 @@ def test_client_events_stats_empty(db):
         "starter_ctr": {},
         "home_cold_start_ms": {"n": 0, "p50": None, "p95": None, "incomplete": 0},
         "diet_capture_ms": {
-            "recognition": {"n": 0, "p50": None, "p95": None, "failures": 0},
-            "confirmation": {"n": 0, "p50": None, "p95": None, "failures": 0},
-            "share": {"n": 0, "p50": None, "p95": None, "failures": 0},
+            "recognition": {
+                "n": 0, "attempts": 0, "p50": None, "p95": None,
+                "failures": 0, "cancelled": 0,
+                "client_prepare_p50": None, "client_prepare_p95": None,
+                "payload_kb_p50": None, "payload_kb_p95": None,
+            },
+            "confirmation": {
+                "n": 0, "attempts": 0, "p50": None, "p95": None,
+                "failures": 0, "cancelled": 0,
+                "corrected": 0, "correction_rate_pct": None,
+            },
+            "share": {
+                "n": 0, "attempts": 0, "p50": None, "p95": None,
+                "failures": 0, "cancelled": 0,
+            },
         },
     }
 
@@ -306,6 +318,8 @@ def test_reliability_terminal_events_reject_invalid_contract(
         "phase": "completed",
         "duration_ms": 4321,
         "server_total_ms": 3890,
+        "client_prepare_ms": 125,
+        "payload_bytes": 482_304,
         "food_count": 2,
         "table_calibrated_count": 1,
     }),
@@ -313,6 +327,7 @@ def test_reliability_terminal_events_reject_invalid_contract(
         "phase": "completed",
         "duration_ms": 640,
         "verified": True,
+        "corrected": False,
     }),
     ("diet_share_terminal", {
         "phase": "completed",
@@ -341,6 +356,8 @@ def test_diet_capture_events_accept_only_numeric_privacy_safe_metrics(
     {"phase": "completed", "duration_ms": 100, "food_count": 1, "table_calibrated_count": 2},
     {"phase": "completed", "duration_ms": 100, "food_count": 1, "table_calibrated_count": 0,
      "food_items": "private meal"},
+    {"phase": "completed", "duration_ms": 100, "client_prepare_ms": 100,
+     "payload_bytes": 20 * 1024 * 1024 + 1, "food_count": 1, "table_calibrated_count": 0},
 ])
 def test_diet_capture_events_reject_invalid_or_private_meta(
     client, auth_user_and_headers, meta

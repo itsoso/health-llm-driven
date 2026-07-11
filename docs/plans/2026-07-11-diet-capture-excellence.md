@@ -73,14 +73,35 @@
 4. Share the local PNG through the system share sheet; keep text fallback.
 5. Verify desktop/mobile view dimensions and commit.
 
-### Task 5: Measurement and release
+### Task 5: Bounded photo payload and truthful latency
+
+**Files:**
+- Create: `mobile/utils/imageUpload.ts`
+- Modify: `mobile/hooks/useMediaPicker.ts`
+- Modify: `mobile/app/diet.tsx`
+- Modify: `mobile/services/clientEvents.ts`
+- Modify: `backend/app/api/client_events.py`
+- Modify: `backend/app/services/observability_service.py`
+- Test: `mobile/app/__tests__/dietCapture.test.tsx`
+- Test: `mobile/hooks/__tests__/useMediaPicker.test.ts`
+- Test: `mobile/services/__tests__/clientEvents.test.ts`
+- Test: `backend/tests/test_client_events.py`
+- Test: `backend/tests/test_observability_client_events.py`
+
+1. Add RED tests proving the diet camera does not emit raw 12MP Base64 and emits bounded preparation metrics.
+2. Reuse one OTA-safe image helper for chat and diet: longest edge 1568px, JPEG q0.7, no upscale.
+3. Start recognition timing after the camera returns and surface a visible image-preparation state.
+4. Aggregate p50/p95 from completed events only; expose attempts, failures, cancellations, preparation latency, payload size and privacy-safe correction rate.
+5. Run affected Mobile/Backend regressions and commit.
+
+### Task 6: Measurement and release
 
 **Files:**
 - Modify: `backend/app/api/diet.py`
 - Modify: `mobile/services/clientEvents.ts`
 - Modify: `docs/dossiers/2026-07-11-diet-capture-excellence.md`
 
-1. Record privacy-safe stage timings and correction/share events.
+1. Record privacy-safe stage timings, payload size, confirmation correction flag and share events.
 2. Run full affected backend/mobile suites, doc drift and Dossier consistency.
 3. Deploy backend, verify health score and production aggregate samples.
 4. Build/submit TestFlight because Task 4 adds a native module.

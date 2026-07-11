@@ -85,7 +85,8 @@ _DIET_CAPTURE_EVENT_SCHEMAS = {
     "diet_photo_recognition_terminal": {
         "allowed": frozenset({
             "phase", "duration_ms", "server_total_ms", "food_count",
-            "table_calibrated_count", "error_code",
+            "table_calibrated_count", "client_prepare_ms", "payload_bytes",
+            "error_code",
         }),
         "required": frozenset({
             "phase", "duration_ms", "food_count", "table_calibrated_count",
@@ -93,7 +94,9 @@ _DIET_CAPTURE_EVENT_SCHEMAS = {
         "phases": frozenset({"completed", "failed", "cancelled"}),
     },
     "diet_photo_confirmation_terminal": {
-        "allowed": frozenset({"phase", "duration_ms", "verified", "error_code"}),
+        "allowed": frozenset({
+            "phase", "duration_ms", "verified", "corrected", "error_code",
+        }),
         "required": frozenset({"phase", "duration_ms", "verified"}),
         "phases": frozenset({"completed", "failed"}),
     },
@@ -169,19 +172,24 @@ class EventIn(BaseModel):
         if self.meta.get("phase") not in diet_schema["phases"]:
             raise ValueError("invalid diet capture event phase")
 
-        for key in ("duration_ms", "server_total_ms"):
+        for key in ("duration_ms", "server_total_ms", "client_prepare_ms"):
             value = self.meta.get(key)
             if value is not None and (
                 type(value) not in {int, float} or not 0 <= value <= 300_000
             ):
                 raise ValueError(f"invalid diet capture event {key}")
+        payload_bytes = self.meta.get("payload_bytes")
+        if payload_bytes is not None and (
+            type(payload_bytes) is not int or not 0 <= payload_bytes <= 20 * 1024 * 1024
+        ):
+            raise ValueError("invalid diet capture event payload_bytes")
         for key in ("food_count", "table_calibrated_count"):
             value = self.meta.get(key)
             if value is not None and (type(value) is not int or not 0 <= value <= 20):
                 raise ValueError(f"invalid diet capture event {key}")
         if self.meta.get("table_calibrated_count", 0) > self.meta.get("food_count", 0):
             raise ValueError("table calibrated count exceeds food count")
-        for key in ("verified", "has_photo"):
+        for key in ("verified", "corrected", "has_photo"):
             if key in self.meta and type(self.meta[key]) is not bool:
                 raise ValueError(f"invalid diet capture event {key}")
         error_code = self.meta.get("error_code")
