@@ -7,7 +7,7 @@
 | 当前阶段 | S7 上线验证 |
 | 状态 | device_validation_pending |
 | 负责 | Codex |
-| 反馈环 | Backend pytest / Mobile Jest + TypeScript / Simulator / backend deploy / EAS TestFlight |
+| 反馈环 | Backend pytest / Mobile Jest + TypeScript / Simulator / backend deploy / EAS TestFlight + production OTA |
 
 ## Correct Course
 
@@ -75,7 +75,7 @@
 - [x] T3 服务端照片草稿身份、单次大载荷和写入幂等（backend deploy + OTA）
 - [x] T4 3:4 高质感饮食分享卡、图片生成和系统分享（EAS）
 - [x] T5 识别/确认/纠错/分享埋点与 p50/p95 看板（backend deploy + OTA）
-- [ ] T5.1 端侧照片压缩、相机返回后计时、成功样本分位数与无正文纠错率（backend deploy + OTA）
+- [x] T5.1 端侧照片压缩、相机返回后计时、成功样本分位数与无正文纠错率（backend deploy + OTA）
 - [ ] T6 模拟器视觉、真机微信/小红书、生产数据闭环验收
 - 并发检查：2026-07-11 `origin/main` 与当前干净集成 worktree 一致；原始用户工作区不纳入暂存。
 
@@ -102,6 +102,8 @@
 - Linux 全仓权威闸门：GitHub Actions run `29159958346` attempt 3 SUCCESS；四个首轮冻结分片均通过失败作业重跑恢复，最终 Backend tests enforcement 通过。
 - 待执行：真机微信/小红书目标应用投递。Backend 全仓本地测试仍保留既有跨用例污染问题，Linux CI 为全仓权威闸门。
 - 2026-07-12 上线前生产只读审计：近 30 天 116 条饮食记录中，AI 标记、图片、`food_id` 和新版饮食终态事件样本均为 0；因此当前不能宣称真实识别准确率或时延达标，需新 TestFlight/OTA 产生样本后再验收。
+- T5.1 发布回归：Mobile 全量 `233 suites / 1626 tests`、受影响 focused `66 tests`、TypeScript 通过；Backend 饮食/营养/事件联合回归 `112 tests` 通过；lint `0 errors`（保留全仓 97 条既有 warnings）；pre-commit、doc drift 与 Dossier consistency 全绿。
+- Linux 全仓权威闸门：GitHub Actions run `29163241845` SUCCESS；frontend、Mobile、macOS、type drift、backend quality、10 个后端测试分片及最终 backend enforcement 全部通过。
 
 ## G4 · 安全闸
 
@@ -113,9 +115,10 @@
 ## S6 · 部署
 
 - 路由：backend deploy -> type sync -> TestFlight。因新增原生分享依赖，本版本不向缺少该模块的旧二进制发送 OTA。
-- Backend 已从干净的 `origin/main` 部署两次：先发布完整功能与迁移，再发布营养目录部署不变量；最终生产 commit 为 `285dd666d13cd85d7624712f0f0b6098d3aeafd0`。
-- 第二次部署前 PostgreSQL 备份：`/opt/health-app/backups/health_db_2026-07-12_01-07.sql.gz`，38 MB，权限 `0600`，完整性与 force-RLS 检查通过。
+- Backend 已从干净的 `origin/main` 完成第三次增量部署；最终生产 commit 为 `612de0bc54aa0b83f25ee4a116a0b161bc08820d`。
+- 第三次部署前 PostgreSQL 备份：`/opt/health-app/backups/health_db_2026-07-12_02-27.sql.gz`，38 MB，权限 `0600`，完整性与 force-RLS 检查通过。
 - TestFlight 构建：版本 `1.3.1 (221)`，EAS build `a6886f1c-d94f-4463-8a2e-90aeb12bce4c`；submission `4e54e7b1-1a9c-498c-8569-83deb950514a` 已成功上传 App Store Connect。
+- production OTA：runtime `1.3.1`，update group `7a83e627-d87d-49df-8a83-de59c2867567`，iOS update `019f5272-ec99-760e-ad91-7097c018a0db`；EAS `update:view` 复核 branch、commit、runtime 与非回滚状态一致。
 
 ## G5 · 部署健康闸
 
@@ -123,6 +126,7 @@
 - 部署内营养目录 seed 明确输出 `6 food_items, 6 food_nutrients`；部署后只读 SQL 复核为 6/6，豆腐校准名仅 `北豆腐/老豆腐`，鸡胸肉校准名不含泛化“鸡肉”。
 - `health-backend`、`celery-worker`、`celery-beat` 均为 active；部署健康分 `60/60 PASS`；skills manifest 本地/线上均为 22。
 - 公网及服务器本机 `/api/v1/health` 均返回 healthy，API、PostgreSQL、Redis、Celery 全部 connected/running。
+- T5.1 增量部署后 `health-backend` 为 active；公网 `/api/v1/health` 再次返回 healthy，production OTA 已绑定同一代码 commit。
 - **裁决：PASS**。
 
 ## S7 · 上线验证
@@ -130,6 +134,7 @@
 - iPhone 17 Pro 模拟器已验证照片确认、固定 1080x1440 分享图、系统分享面板与无重叠布局。
 - Backend 生产迁移、营养目录、服务状态和公网健康检查已验证。
 - TestFlight `1.3.1 (221)` 已成功上传 App Store Connect；Apple 处理完成状态尚未单独核实，因此不宣称当前已可安装。
+- build 221 对应 runtime `1.3.1` 的 production OTA 已发布；设备冷启或后台超过 30 秒后可拉取。当前生产仍无新版终态样本，不宣称真实 p50/p95 或纠错率已达标。
 - 待真机验证：相机实拍 -> 识别 -> 修正 -> 确认单次写入，以及分享图分别投递微信和小红书。
 
 ## G6 · 验证闸
