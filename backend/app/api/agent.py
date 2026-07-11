@@ -1468,15 +1468,17 @@ class RecipeStepPayload(BaseModel):
 
 
 class RecipeCreatePayload(BaseModel):
-    name: str = Field(..., max_length=200)
-    trigger_phrases: List[str] = Field(..., min_length=1, max_length=10)
-    steps: List[RecipeStepPayload] = Field(..., min_length=1, max_length=20)
-    created_from_conversation_id: Optional[int] = None
+    # 上限与 service 常量对齐(name 100 / phrases 5 / steps 10),错误信息一致。
+    # created_from_conversation_id 不收:手建配方无来源对话;
+    # save-from-conversation 端点会在 ownership 校验后正确回填(安全评审次要项)。
+    name: str = Field(..., max_length=100)
+    trigger_phrases: List[str] = Field(..., min_length=1, max_length=5)
+    steps: List[RecipeStepPayload] = Field(..., min_length=1, max_length=10)
 
 
 class RecipeSaveFromConversationPayload(BaseModel):
-    name: str = Field(..., max_length=200)
-    trigger_phrases: List[str] = Field(..., min_length=1, max_length=10)
+    name: str = Field(..., max_length=100)
+    trigger_phrases: List[str] = Field(..., min_length=1, max_length=5)
 
 
 @router.post("/recipes", summary="创建程序性配方")
@@ -1494,7 +1496,6 @@ def create_agent_recipe(
             name=payload.name,
             trigger_phrases=payload.trigger_phrases,
             steps=[step.model_dump() for step in payload.steps],
-            created_from_conversation_id=payload.created_from_conversation_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

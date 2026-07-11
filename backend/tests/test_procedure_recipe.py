@@ -192,6 +192,46 @@ def test_trigger_phrase_guards(db):
         recipe_svc.create_recipe(db, user.id, name="二号", trigger_phrases=["晨间打卡"], steps=step)
 
 
+def test_recipe_count_cap_fail_loud(db):
+    """安全评审必改:per-user 配方数量上限 — 超限 fail-loud 拒绝(防表膨胀 + 每消息匹配开销无界)。"""
+    user, _ = create_authenticated_user(db)
+    step = [{"tool": "health_record", "args_template": {"record_type": "water", "data": {"amount": 100}}}]
+    for i in range(recipe_svc.MAX_RECIPES_PER_USER):
+        recipe_svc.create_recipe(
+            db, user.id, name=f"配方{i}", trigger_phrases=[f"触发短语{i:02d}"], steps=step,
+        )
+    with pytest.raises(ValueError, match="上限"):
+        recipe_svc.create_recipe(
+            db, user.id, name="超限", trigger_phrases=["超限短语"], steps=step,
+        )
+    # 隔离:另一个用户不受影响
+    other, _ = create_authenticated_user(db)
+    recipe_svc.create_recipe(db, other.id, name="别人", trigger_phrases=["别人的短语"], steps=step)
+
+
+def test_validate_steps_rejects_never_auto_kind_at_save(db):
+    """安全评审硬化:never_auto kind(用药等)存入时即拒 —— 重放永远要求确认=纯死重量,
+    且避免药名/剂量多写进一处明文 JSONB。"""
+    user, _ = create_authenticated_user(db)
+    med_step = [{
+        "tool": "health_record",
+        "args_template": {"record_type": "medication", "data": {"name": "替普瑞酮", "dose": "50mg"}},
+    }]
+    with pytest.raises(ValueError, match="人工确认"):
+        recipe_svc.create_recipe(
+            db, user.id, name="毒配方", trigger_phrases=["吃药打卡"], steps=med_step,
+        )
+    # kind 藏进 data 层同样拒(与确认门同一 kind 推导)
+    nested = [{
+        "tool": "health_record",
+        "args_template": {"data": {"record_type": "dose", "name": "华法林"}},
+    }]
+    with pytest.raises(ValueError, match="人工确认"):
+        recipe_svc.create_recipe(
+            db, user.id, name="毒配方2", trigger_phrases=["换个说法"], steps=nested,
+        )
+
+
 # ─────────────────────────── 确定性重放 ───────────────────────────
 
 @pytest.mark.asyncio

@@ -36,6 +36,9 @@ BEIJING_TZ = timezone(timedelta(hours=8))
 ALLOWED_RECIPE_TOOLS = frozenset({"health_record"})
 
 MAX_STEPS = 10
+# 安全评审必改:防单用户无限造配方(表膨胀 + match_trigger 每消息 O(配方×短语) 开销)。
+# 30 × 5 短语 = 每消息最多 150 次精确等值比较,开销有界。
+MAX_RECIPES_PER_USER = 30
 MAX_TRIGGER_PHRASES = 5
 MIN_TRIGGER_LEN = 2   # 单字短语("好"/"嗯")误触发风险太高,拒绝
 MAX_TRIGGER_LEN = 40
@@ -165,6 +168,19 @@ def validate_steps(steps: Any) -> List[Dict[str, Any]]:
                 f"步骤 {index} 工具「{tool or '(空)'}」不允许入配方"
                 f"(允许: {sorted(ALLOWED_RECIPE_TOOLS)})"
             )
+        # 安全评审硬化:never_auto kind(用药等)重放永远要求确认、永不可能自动执行,
+        # 存进配方是纯死重量,且把药名/剂量多写进一处明文 JSONB。存入时直接拒绝。
+        # 函数级 import 避免与 agent_executor 的相互引用成环(对方也函数级引本模块)。
+        from app.services.agent_executor import (
+            _fast_record_kind,
+            _FAST_RECORD_NEVER_AUTO_CONFIRM_KINDS,
+        )
+        raw_args = step.get("args_template")
+        step_kind = _fast_record_kind(raw_args if isinstance(raw_args, dict) else {})
+        if step_kind in _FAST_RECORD_NEVER_AUTO_CONFIRM_KINDS:
+            raise ValueError(
+                f"步骤 {index} 类型「{step_kind}」需逐次人工确认,不支持存入配方"
+            )
         args_template = step.get("args_template")
         if not isinstance(args_template, dict) or not args_template:
             raise ValueError(f"步骤 {index} 缺少 args_template")
@@ -184,6 +200,11 @@ def create_recipe(
     steps: Any,
     created_from_conversation_id: Optional[int] = None,
 ) -> ProcedureRecipe:
+    existing_count = (
+        db.query(ProcedureRecipe).filter(ProcedureRecipe.user_id == user_id).count()
+    )
+    if existing_count >= MAX_RECIPES_PER_USER:
+        raise ValueError(f"配方数量已达上限({MAX_RECIPES_PER_USER}),请先删除不用的配方")
     recipe = ProcedureRecipe(
         user_id=user_id,
         name=_validate_name(name),
