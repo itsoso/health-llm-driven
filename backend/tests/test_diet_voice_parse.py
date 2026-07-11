@@ -92,6 +92,7 @@ def test_food_table_enriches_missing_nutrition_before_memory(db, auth):
         food_id="cfc:chicken_breast",
         canonical_name="鸡胸肉",
         aliases=["鸡胸肉", "鸡肉"],
+        calibration_names=["鸡胸肉"],
         locale="zh-CN",
         source="china_food_composition",
         source_ref="test-fixture",

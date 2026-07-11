@@ -21,7 +21,7 @@ export interface NutritionPatch {
 /** 一条待估算任务: 记录已入库 (有 id), 用 source 决定走哪条 LLM 估算. */
 export type EstimateSource =
   | { kind: 'text'; description: string }
-  | { kind: 'photo'; imageBase64: string }
+  | { kind: 'photo'; imageBase64?: string }
   | { kind: 'voice'; rawText: string };
 
 function hasValue(p: NutritionPatch): boolean {
@@ -30,6 +30,7 @@ function hasValue(p: NutritionPatch): boolean {
 
 async function runEstimate(source: EstimateSource): Promise<NutritionPatch> {
   if (source.kind === 'photo') {
+    if (!source.imageBase64) return {};
     const r = await recognizeFood(source.imageBase64);
     const desc = r.meal_description || (r.foods ?? []).map(f => f.name).filter(Boolean).join('、');
     return {

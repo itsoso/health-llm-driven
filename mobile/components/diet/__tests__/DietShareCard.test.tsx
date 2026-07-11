@@ -1,11 +1,14 @@
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { PixelRatio, Share } from 'react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockCaptureRef = jest.fn().mockResolvedValue('file:///meal-share.png');
+const mockReleaseCapture = jest.fn();
 const mockShareAsync = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('react-native-view-shot', () => ({
   captureRef: (...args: any[]) => mockCaptureRef(...args),
+  releaseCapture: (...args: any[]) => mockReleaseCapture(...args),
 }));
 
 jest.mock('expo-sharing', () => ({
@@ -18,7 +21,11 @@ jest.mock('expo-haptics', () => ({
   NotificationFeedbackType: { Success: 'success' },
 }));
 
-import DietShareCard, { DietShareSheet } from '../DietShareCard';
+import DietShareCard, {
+  DIET_SHARE_IMAGE_TIMEOUT_MS,
+  DietShareSheet,
+  dietShareCaptureDimensions,
+} from '../DietShareCard';
 import type { DietRecord } from '../../../services/diet';
 
 const record: DietRecord = {
@@ -42,6 +49,7 @@ const record: DietRecord = {
 describe('DietShareCard', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(Share, 'share').mockResolvedValue({ action: Share.sharedAction });
   });
 
   it('renders a privacy-safe 3:4 meal story with real record data', () => {
@@ -57,6 +65,13 @@ describe('DietShareCard', () => {
     expect(getByText('67g')).toBeTruthy();
     expect(getByText('营养表校准')).toBeTruthy();
     expect(queryByText('user_id')).toBeNull();
+  });
+
+  it('labels user-corrected nutrition as manually confirmed', () => {
+    const { getByText } = render(
+      <DietShareCard record={{ ...record, source: 'user_corrected' }} dateLabel="7月11日 · 午餐" />,
+    );
+    expect(getByText('手动确认')).toBeTruthy();
   });
 
   it('captures exactly 1080x1440 and opens the system image share sheet', async () => {
@@ -76,7 +91,12 @@ describe('DietShareCard', () => {
     await waitFor(() => {
       expect(mockCaptureRef).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ format: 'png', quality: 1, width: 1080, height: 1440 }),
+        expect.objectContaining({
+          format: 'png',
+          quality: 1,
+          width: 1080 / PixelRatio.get(),
+          height: 1440 / PixelRatio.get(),
+        }),
       );
       expect(mockShareAsync).toHaveBeenCalledWith(
         'file:///meal-share.png',
@@ -87,6 +107,79 @@ describe('DietShareCard', () => {
         duration_ms: expect.any(Number),
         has_photo: false,
       }));
+      expect(mockReleaseCapture).toHaveBeenCalledWith('file:///meal-share.png');
     });
+  });
+
+  it('uses native pixel units on Android and point units on iOS', () => {
+    expect(dietShareCaptureDimensions('android', 3)).toEqual({ width: 1080, height: 1440 });
+    expect(dietShareCaptureDimensions('ios', 3)).toEqual({ width: 360, height: 480 });
+  });
+
+  it('waits for the protected meal image before enabling capture', async () => {
+    const { getByLabelText, getByTestId } = render(
+      <DietShareSheet
+        visible
+        record={{ ...record, image_url: '/api/v1/upload/files/diet/1/meal.png' }}
+        dateLabel="7月11日 · 午餐"
+        imageSource={{ uri: 'https://health.executor.life/private-meal.png' }}
+        onClose={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(getByLabelText('分享饮食图片'));
+    expect(mockCaptureRef).not.toHaveBeenCalled();
+
+    fireEvent(getByTestId('diet-share-image'), 'load');
+    fireEvent.press(getByLabelText('分享饮食图片'));
+    await waitFor(() => expect(mockCaptureRef).toHaveBeenCalled());
+  });
+
+  it('falls back to privacy-safe text sharing when image sharing is unavailable', async () => {
+    const Sharing = require('expo-sharing');
+    Sharing.isAvailableAsync.mockResolvedValueOnce(false);
+    const onShareTerminal = jest.fn();
+    const { getByText } = render(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+        onShareTerminal={onShareTerminal}
+      />,
+    );
+
+    fireEvent.press(getByText('分享图片'));
+
+    await waitFor(() => {
+      expect(Share.share).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('鸡胸肉 200g、杂粮饭 1碗'),
+      }));
+      expect(onShareTerminal).toHaveBeenCalledWith(expect.objectContaining({
+        phase: 'completed', has_photo: false,
+      }));
+    });
+  });
+
+  it('falls back to the metric card when a protected image never settles', async () => {
+    jest.useFakeTimers();
+    const { getByLabelText, getByText, queryByTestId } = render(
+      <DietShareSheet
+        visible
+        record={{ ...record, image_url: '/api/v1/upload/files/diet/1/meal.png' }}
+        dateLabel="7月11日 · 午餐"
+        imageSource={{ uri: 'https://health.executor.life/private-meal.png' }}
+        onClose={jest.fn()}
+      />,
+    );
+
+    await act(async () => {
+      jest.advanceTimersByTime(DIET_SHARE_IMAGE_TIMEOUT_MS);
+    });
+    expect(queryByTestId('diet-share-image')).toBeNull();
+    expect(getByText('分享图片')).toBeTruthy();
+    fireEvent.press(getByLabelText('分享饮食图片'));
+    await waitFor(() => expect(mockCaptureRef).toHaveBeenCalled());
+    jest.useRealTimers();
   });
 });

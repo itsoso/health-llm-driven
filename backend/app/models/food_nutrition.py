@@ -15,6 +15,7 @@ class FoodItem(Base):
     food_id = Column(String(120), primary_key=True)
     canonical_name = Column(String(200), nullable=False, index=True)
     aliases = Column(JSONB, default=list, nullable=False)
+    calibration_names = Column(JSONB, default=list, nullable=False)
     locale = Column(String(20), nullable=False, default="zh-CN")
     source = Column(String(80), nullable=False)
     source_ref = Column(String(200), nullable=True)

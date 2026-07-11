@@ -80,27 +80,31 @@
 
 ## S5 · 实现
 
-- T1：明确克重且命中审核食物表时覆盖模型营养值；无法换算克重时保留视觉估算并明确来源；Agent 照片入口复用同一校准，去掉重复视觉调用。
+- T1：明确克重且命中审核食物表时覆盖模型营养值；只有数据层 `calibration_names` 显式批准的身份可覆盖，部分表字段采用 `mixed` 来源，“鸡肉/鸡蛋/豆腐”等泛化名称保留视觉估算并提示核对。商业多模态模型收到食物语境或 Mobile 默认纯图片提示时也必须先经过同一清洗与校准链路；普通视觉降级描述明确禁止作为饮食写入参数。
 - T2：确认卡展示逐项食物、份量、热量、置信度、营养表/视觉估算来源，低置信或未校准份量提示核对。
-- T3：识别成功返回 owner-scoped `photo_draft_token`，确认不再重复上传 Base64；令牌强制幂等、跨用户不可认领、取消立即清理、24 小时后由既有每日清理任务回收。
-- T4：新增固定 3:4 饮食故事卡，捕获为 1080x1440 PNG，并通过系统分享面板投递微信/小红书；分享图不含用户名或其他健康数据。
+- T3：识别成功返回 owner-scoped `photo_draft_token`，确认不再重复上传 Base64；确认、取消和过期清理用行锁串行化，成功确认后由 DietRecord 接管图片并删除草稿行，取消/过期擦除识别正文且在图片删除成功后删行，删除失败保留最小重试句柄并显式报错。正式记录删除采用可恢复 tombstone，每日任务按数据库引用恢复或物理删除。Mobile 以用户隔离的 SecureStore 保存 24 小时紧凑快照，不保存 Base64 或无界模型正文，进程重启后可恢复并继续确认或取消；缓存写入失败不阻断服务端确认，App 启动即执行过期物理清理。
+- T4：新增固定 3:4 饮食故事卡；iOS 以 point/PixelRatio、Android 以 bitmap pixel 分别请求，模拟器实测输出 1080x1440 PNG。等待受保护图片加载，5 秒无终态自动使用指标版卡片；图片或原生捕获不可用时降级为不含私有 URL/标识的文本系统分享，系统分享结束后释放临时 PNG。分享图不含用户名或其他健康数据。
 - T5：新增无正文的识别/确认/分享终态事件，观测聚合直接输出各阶段样本数、失败数、p50、p95；识别响应另带 vision/calibration/photo_draft/total 分段耗时。
 
 ## G3 · 测试闸
 
-- focused backend regression：120 passed。
-- focused Mobile regression：37 passed；TypeScript check passed。
+- 最新 focused backend regression：179 passed、1 PostgreSQL-only test skipped；同一并发测试在本机真实 PostgreSQL 运行 1 passed，覆盖 confirm/confirm、confirm/cancel、confirm/purge、cancel/purge。
+- 合并最新主干后 full Mobile regression：233 suites、1625 passed；最终整改 focused regression：40 passed；TypeScript check passed。
+- managed migration：SQLite 12 passed；PostgreSQL 实跑确认 `豆腐` 默认不校准、`北豆腐` 可校准、未知行默认关闭。
 - Dossier consistency、OpenAPI type generation、system-map generation、doc-drift checks passed。
-- 待执行：全量 backend/Mobile、模拟器截图、真机微信/小红书分享与生产验证。
+- iPhone 17 Pro 模拟器原生构建成功；430x932 页面和分享预览无重叠，系统分享面板成功接收 PNG；像素检查为 1080x1440、非空图像。
+- 待执行：真机微信/小红书目标应用投递与生产验证。Backend 全仓本地测试仍保留既有跨用例污染问题，Linux CI 为全仓权威闸门。
 
 ## G4 · 安全闸
 
 - 触发：健康数据写入、AI 营养估算、私有图片和社交分享。
-- 待复审。
+- 已落实：owner scope、确认/取消/清理行锁、真实 PostgreSQL 竞态证明、确认幂等、取消后正文擦除、草稿与正式记录图片失败可重试、SecureStore 用户隔离且非阻断、恢复前服务端 token 终态校验、编辑时 Mobile/Backend 双层 provenance 清理、分享前显式操作、分享产物去身份化和临时文件释放。
+- 同一独立审查代理连续五轮核对；最后一轮未发现 P0/P1/P2。
+- **裁决：PASS**。
 
 ## S6 · 部署
 
-- 路由：backend deploy -> type sync -> Mobile OTA；T4 native dependency 走 TestFlight。
+- 路由：backend deploy -> type sync -> TestFlight。因新增原生分享依赖，本版本不向缺少该模块的旧二进制发送 OTA。
 
 ## G5 · 部署健康闸
 

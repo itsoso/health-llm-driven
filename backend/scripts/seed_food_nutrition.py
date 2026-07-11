@@ -48,6 +48,7 @@ def seed_food_nutrition(db, seed_file: Path = DEFAULT_SEED_FILE) -> dict[str, in
             "food_id": food_id,
             "canonical_name": row["canonical_name"],
             "aliases": row.get("aliases") or [],
+            "calibration_names": row.get("calibration_names") or [],
             "locale": row.get("locale") or "zh-CN",
             "source": row["source"],
             "source_ref": row.get("source_ref"),

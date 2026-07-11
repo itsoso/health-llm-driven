@@ -26,6 +26,7 @@ import LoginScreen from './login';
 // Side-effect import: TaskManager.defineTask 必须在 module load 时跑 (React 树挂载前).
 import { registerBackgroundLocationTask } from '../services/backgroundLocationTask';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
+import { loadDietPhotoDraft } from '../services/dietPhotoDraftStorage';
 import {
   View,
   ActivityIndicator,
@@ -44,7 +45,7 @@ export const unstable_settings = {
 function AppContent() {
   const { c } = useTheme();
   const styles = useMemo(() => createStyles(c), [c]);
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const { isLocked, authenticate } = useBiometricLock(isAuthenticated);
 
   useNotifications(isAuthenticated);
@@ -62,6 +63,13 @@ function AppContent() {
       registerBackgroundLocationTask();
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id) return;
+    void loadDietPhotoDraft(user.id).catch((error) => {
+      console.warn('[DietPhotoDraft] startup expiry check failed', error);
+    });
+  }, [isAuthenticated, user?.id]);
 
   useEffect(() => {
     if (isAuthenticated && isLocked) {

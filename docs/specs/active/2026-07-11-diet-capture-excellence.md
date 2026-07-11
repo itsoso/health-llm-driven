@@ -77,17 +77,21 @@ photo/text/voice -> candidate foods -> deterministic calibration -> visible draf
 apis:
   - POST /diet/recognize returns canonical foods, totals, provenance and photo draft reference
   - POST /diet/records accepts Idempotency-Key and owner-bound photo draft reference
+  - GET /diet/photo-drafts/{token}/status validates a restored owner-bound pending draft
 events:
   - diet_capture_stage
   - diet_capture_corrected
   - diet_share_opened
-models: existing DietRecord; photo draft storage selected in Task 3
+models: existing DietRecord; owner-scoped DietPhotoDraft; user-scoped compact SecureStore snapshot
 fields:
   - FoodItem.food_id
   - FoodItem.source
+  - FoodItem.calibration_names
   - FoodRecognitionResponse.total_fiber
 backward_compatibility: legacy base64 create remains during rollout
-migration: only if durable photo draft storage is required after spike
+migrations:
+  - backend/migrations/managed/20260711_200000_create_diet_photo_drafts.postgresql.sql
+  - backend/migrations/managed/20260711_201000_add_food_calibration_names.postgresql.sql
 ```
 
 ## 9. Safety, Privacy, And Medical Boundary
@@ -113,9 +117,33 @@ Given a user confirms the same draft twice after a timeout
 When both requests carry the same idempotency key
 Then exactly one DietRecord exists and both responses identify it
 
+Given confirm and cancel or expiry race for the same photo draft
+When the operations execute concurrently
+Then a row lock selects exactly one terminal owner and a confirmed record image is never deleted
+
+Given a draft contains an ambiguous alias such as "鸡肉" or "鸡蛋"
+When reviewed-table calibration runs
+Then the model estimate remains visible for correction and no arbitrary canonical food is claimed
+
+Given a reviewed row has generic canonical name "豆腐" but calibration_names only include "北豆腐" and "老豆腐"
+When recognition returns "豆腐 100g"
+Then table values do not override the visual estimate
+
+Given the Mobile process terminates while an owner-scoped photo draft is pending
+When the same user reopens the diet screen within 24 hours
+Then the token is validated as pending before the compact draft is restored without storing or retransmitting image Base64
+
+Given a user changes a recognized food identity but leaves its old macros untouched
+When the draft or confirmed record is saved
+Then stale macros and AI provenance are cleared while non-nutrition-only edits preserve existing provenance
+
 Given a confirmed meal
 When the user taps share
-Then a 3:4 privacy-safe image opens in the iOS system share sheet
+Then an exact 1080x1440 privacy-safe image opens in the iOS system share sheet after its meal image is ready
+
+Given a protected meal image never finishes loading
+When five seconds elapse in the share preview
+Then the card switches to a complete metric layout and sharing remains available
 ```
 
 ## 12. Verification Plan

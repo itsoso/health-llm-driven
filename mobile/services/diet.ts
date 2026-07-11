@@ -20,6 +20,8 @@ export interface DietRecord {
   image_url: string | null;
   notes: string | null;
   health_tips: string | null;
+  ai_recognized?: number | null;
+  ai_confidence?: number | null;
 }
 
 export interface DietRecordCreate {
@@ -44,6 +46,24 @@ export interface DietRecordCreate {
   ai_confidence?: number;
   ai_raw_result?: FoodRecognitionResponse;
   health_tips?: string;
+}
+
+export interface DietRecordUpdate {
+  meal_type?: MealType;
+  food_items?: string;
+  food_id?: string | null;
+  source?: string | null;
+  calories?: number | null;
+  protein?: number | null;
+  carbs?: number | null;
+  fat?: number | null;
+  fiber?: number | null;
+  alcohol_units?: number | null;
+  notes?: string | null;
+  health_tips?: string | null;
+  ai_recognized?: number | null;
+  ai_confidence?: number | null;
+  ai_raw_result?: FoodRecognitionResponse | null;
 }
 
 export interface DailyDietSummary {
@@ -167,7 +187,7 @@ export async function createDietRecord(record: DietRecordCreate): Promise<DietRe
   return data;
 }
 
-export async function updateDietRecord(id: number, patch: Partial<DietRecordCreate>): Promise<DietRecord> {
+export async function updateDietRecord(id: number, patch: DietRecordUpdate): Promise<DietRecord> {
   const { data } = await api.put<DietRecord>(`/diet/records/${id}`, patch);
   return data;
 }
@@ -187,6 +207,15 @@ export async function recognizeFood(imageBase64: string): Promise<FoodRecognitio
 
 export async function discardDietPhotoDraft(token: string): Promise<void> {
   await api.delete(`/diet/photo-drafts/${encodeURIComponent(token)}`);
+}
+
+export async function getDietPhotoDraftStatus(
+  token: string,
+): Promise<{ status: 'pending'; expires_at: string }> {
+  const { data } = await api.get<{ status: 'pending'; expires_at: string }>(
+    `/diet/photo-drafts/${encodeURIComponent(token)}/status`,
+  );
+  return data;
 }
 
 export async function estimateNutrition(description: string): Promise<FoodRecognitionResponse> {

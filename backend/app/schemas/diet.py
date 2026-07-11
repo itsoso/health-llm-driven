@@ -62,6 +62,14 @@ class DietRecordUpdate(BaseModel):
     alcohol_units: Optional[float] = None
     notes: Optional[str] = None
     health_tips: Optional[str] = None
+    ai_recognized: Optional[int] = None
+    ai_confidence: Optional[float] = None
+    ai_raw_result: Optional[Any] = None
+
+
+class DietPhotoDraftStatusResponse(BaseModel):
+    status: str
+    expires_at: datetime
 
 
 MEAL_TYPE_ZH = {

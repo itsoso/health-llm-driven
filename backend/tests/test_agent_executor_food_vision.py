@@ -15,6 +15,7 @@ async def test_structured_food_vision_calibrates_before_building_agent_context(
         food_id="cfc:chicken_breast",
         canonical_name="鸡胸肉",
         aliases=["鸡肉"],
+        calibration_names=["鸡胸肉"],
         locale="zh-CN",
         source="china_food_composition",
         source_ref="test-fixture",
@@ -97,3 +98,15 @@ async def test_generic_vision_fallback_does_not_repeat_structured_recognition(
 
     assert result is None
     assert calls == 1
+
+
+def test_commercial_multimodal_food_photos_still_use_structured_preprocessing(
+    db, monkeypatch
+):
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, "_should_send_raw_images_to_primary_model", lambda _user_id: True)
+
+    assert executor._should_preprocess_attached_images(1, "记录这张午餐照片") is True
+    assert executor._should_preprocess_attached_images(1, "请分析这些图片") is True
+    assert executor._should_preprocess_attached_images(1, "帮我记一下") is True
+    assert executor._should_preprocess_attached_images(1, "看看这张风景照片") is False

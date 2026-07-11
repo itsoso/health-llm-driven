@@ -1,6 +1,7 @@
 """饮食记录API测试"""
+from datetime import date, datetime, timedelta, timezone
+
 import pytest
-from datetime import date
 from app.models.user import User
 from app.models.daily_health import DietPhotoDraft, DietRecord
 from app.models.food_nutrition import FoodItem, FoodNutrient
@@ -298,6 +299,106 @@ class TestDietAPI:
         assert deleted.status_code == 200
         assert not files[0].exists()
 
+    def test_delete_diet_record_retries_a_failed_private_image_cleanup(
+        self, client, db, auth_headers, test_user, sample_diet_data, tmp_path, monkeypatch
+    ):
+        from app.api import diet as diet_api
+        from app.api import upload as upload_api
+
+        upload_root = tmp_path / "uploads"
+        monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(upload_root))
+        created = client.post(
+            "/api/v1/diet/records",
+            json={
+                **sample_diet_data,
+                "image_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
+                "image_type": "png",
+            },
+            headers=auth_headers,
+        )
+        assert created.status_code == 200
+        real_remove = diet_api._remove_diet_image_file
+
+        def fail_tombstone_once(path):
+            if path and ".deleting-" in str(path):
+                raise OSError("disk busy")
+            return real_remove(path)
+
+        monkeypatch.setattr(diet_api, "_remove_diet_image_file", fail_tombstone_once)
+        deleted = client.delete(
+            f"/api/v1/diet/records/{created.json()['id']}",
+            headers=auth_headers,
+        )
+
+        assert deleted.status_code == 200
+        owner_root = upload_root / "diet" / str(test_user.id)
+        assert len(list(owner_root.glob("*.deleting-*"))) == 1
+        assert db.query(DietRecord).filter(DietRecord.id == created.json()["id"]).first() is None
+
+        monkeypatch.setattr(diet_api, "_remove_diet_image_file", real_remove)
+        assert diet_api.reconcile_staged_diet_image_deletions(db) == 1
+        assert list(owner_root.glob("*")) == []
+
+    def test_delete_diet_record_keeps_record_when_image_lock_is_busy(
+        self, client, db, auth_headers, test_user, sample_diet_data, tmp_path, monkeypatch
+    ):
+        from app.api import diet as diet_api
+        from app.api import upload as upload_api
+
+        upload_root = tmp_path / "uploads"
+        monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(upload_root))
+        created = client.post(
+            "/api/v1/diet/records",
+            json={
+                **sample_diet_data,
+                "image_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
+                "image_type": "png",
+            },
+            headers=auth_headers,
+        )
+        assert created.status_code == 200
+        image_path = next((upload_root / "diet" / str(test_user.id)).glob("*"))
+        monkeypatch.setattr(diet_api, "_stage_diet_image_delete", lambda *_args: None)
+
+        deleted = client.delete(
+            f"/api/v1/diet/records/{created.json()['id']}",
+            headers=auth_headers,
+        )
+
+        assert deleted.status_code == 409
+        assert image_path.exists()
+        assert db.query(DietRecord).filter(DietRecord.id == created.json()["id"]).one()
+
+    def test_diet_image_tombstone_is_restored_when_record_still_references_it(
+        self, db, test_user, tmp_path, monkeypatch
+    ):
+        from app.api import diet as diet_api
+        from app.api import upload as upload_api
+
+        upload_root = tmp_path / "uploads"
+        owner_root = upload_root / "diet" / str(test_user.id)
+        owner_root.mkdir(parents=True)
+        original = owner_root / "referenced.png"
+        original.write_bytes(b"private-image")
+        monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(upload_root))
+        record = DietRecord(
+            user_id=test_user.id,
+            record_date=date.today(),
+            meal_type="lunch",
+            food_items="仍在引用的午餐",
+            image_url=f"/api/v1/upload/files/diet/{test_user.id}/referenced.png",
+        )
+        db.add(record)
+        db.commit()
+
+        staged = diet_api._stage_diet_image_delete(record.image_url, test_user.id)
+        assert staged is not None
+        diet_api._release_staged_diet_image_lock(staged)
+        assert not original.exists()
+
+        assert diet_api.reconcile_staged_diet_image_deletions(db) == 1
+        assert original.read_bytes() == b"private-image"
+
     def test_delete_diet_record_never_deletes_a_legacy_global_image(
         self, client, db, auth_headers, test_user, tmp_path, monkeypatch
     ):
@@ -328,6 +429,78 @@ class TestDietAPI:
 
         assert deleted.status_code == 200
         assert legacy_file.exists()
+
+    def test_editing_food_clears_stale_nutrition_and_ai_provenance(
+        self, client, db, auth_headers, test_user
+    ):
+        record = DietRecord(
+            user_id=test_user.id,
+            record_date=date.today(),
+            meal_type="lunch",
+            food_items="鸡胸肉 200g",
+            food_id="cfc:chicken_breast",
+            source="china_food_composition",
+            calories=330,
+            protein=62,
+            carbs=0,
+            fat=7.2,
+            fiber=0,
+            ai_recognized=True,
+            ai_confidence=0.92,
+            ai_raw_result='{"foods":[{"name":"鸡胸肉"}]}',
+            health_tips="旧模型建议",
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+
+        updated = client.put(
+            f"/api/v1/diet/records/{record.id}",
+            json={
+                "food_items": "三文鱼 180g",
+                "calories": 330,
+                "protein": 62,
+                "carbs": 0,
+                "fat": 7.2,
+            },
+            headers=auth_headers,
+        )
+
+        assert updated.status_code == 200
+        assert updated.json()["source"] == "user_corrected"
+        assert updated.json()["food_id"] is None
+        assert updated.json()["calories"] is None
+        assert updated.json()["protein"] is None
+        db.refresh(record)
+        assert record.ai_recognized is False
+        assert record.ai_confidence is None
+        assert record.ai_raw_result is None
+        assert record.health_tips is None
+
+    def test_photo_draft_status_fails_closed_after_expiry(
+        self, client, db, auth_headers, test_user
+    ):
+        draft = DietPhotoDraft(
+            token="expired-status-photo-draft-123456",
+            user_id=test_user.id,
+            image_url=None,
+            image_type="jpeg",
+            recognition_result={"success": True, "foods": [{"name": "私有餐食"}]},
+            status="pending",
+            expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
+        db.add(draft)
+        db.commit()
+
+        response = client.get(
+            f"/api/v1/diet/photo-drafts/{draft.token}/status",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 410
+        db.refresh(draft)
+        assert draft.status == "expired"
+        assert draft.recognition_result == {}
 
     def test_implausible_past_record_date_is_clamped_to_server_today(
         self, client, auth_headers, caplog
@@ -566,6 +739,7 @@ class TestDietAPI:
             food_id="cfc:chicken_breast",
             canonical_name="鸡胸肉",
             aliases=["鸡肉"],
+            calibration_names=["鸡胸肉"],
             locale="zh-CN",
             source="china_food_composition",
             source_ref="test-fixture",
@@ -728,9 +902,12 @@ class TestDietAPI:
         assert first.json()["image_url"]
         assert db.query(DietRecord).count() == 1
         assert len(list(upload_root.rglob("*.png"))) == 1
-        draft = db.query(DietPhotoDraft).one()
-        assert draft.status == "consumed"
-        assert draft.consumed_record_id == first.json()["id"]
+        assert db.query(DietPhotoDraft).count() == 0
+        cancelled_after_confirm = client.delete(
+            f"/api/v1/diet/photo-drafts/{token}",
+            headers=auth_headers,
+        )
+        assert cancelled_after_confirm.status_code == 409
 
     def test_photo_draft_is_owner_scoped_and_cancel_removes_image(
         self, client, db, auth_headers, tmp_path, monkeypatch
@@ -787,9 +964,7 @@ class TestDietAPI:
 
         assert forbidden.status_code == 404
         assert cancelled.status_code == 204
-        draft = db.query(DietPhotoDraft).one()
-        assert draft.status == "cancelled"
-        assert draft.image_url is None
+        assert db.query(DietPhotoDraft).count() == 0
         assert list(upload_root.rglob("*.png")) == []
 
     @pytest.mark.parametrize("recognized_name", ["沃克", "伏诺拉生", "保存并确认"])

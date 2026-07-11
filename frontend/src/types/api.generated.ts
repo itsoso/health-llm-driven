@@ -5824,6 +5824,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/diet/photo-drafts/{token}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Photo Draft Status */
+        get: operations["get_photo_draft_status_api_v1_diet_photo_drafts__token__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/diet/photo-drafts/{token}": {
         parameters: {
             query?: never;
@@ -21990,6 +22007,16 @@ export interface components {
              */
             timezone: string;
         };
+        /** DietPhotoDraftStatusResponse */
+        DietPhotoDraftStatusResponse: {
+            /** Status */
+            status: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
         /**
          * DietRecordResponse
          * @description 饮食记录响应
@@ -22080,6 +22107,12 @@ export interface components {
             notes?: string | null;
             /** Health Tips */
             health_tips?: string | null;
+            /** Ai Recognized */
+            ai_recognized?: number | null;
+            /** Ai Confidence */
+            ai_confidence?: number | null;
+            /** Ai Raw Result */
+            ai_raw_result?: unknown | null;
         };
         /**
          * DietStats
@@ -27798,8 +27831,6 @@ export interface components {
             trigger_phrases: string[];
             /** Steps */
             steps: components["schemas"]["RecipeStepPayload"][];
-            /** Created From Conversation Id */
-            created_from_conversation_id?: number | null;
         };
         /** RecipeSaveFromConversationPayload */
         RecipeSaveFromConversationPayload: {
@@ -41455,6 +41486,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FoodRecognitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_photo_draft_status_api_v1_diet_photo_drafts__token__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DietPhotoDraftStatusResponse"];
                 };
             };
             /** @description Validation Error */

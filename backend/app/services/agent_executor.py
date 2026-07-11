@@ -3958,13 +3958,14 @@ class AgentExecutor:
         messages.insert(0, {"role": "system", "content": system_content})
         pre_stages["history_ms"] = _pre_stage(_t_stage)
 
-        # 如果有图片：LangBridge 商用模型自身支持多模态，必须直接传原图；
-        # 其它模型保留原来的"先用独立 vision 识别，再降级直传"路径。
+        # 如果有图片：明确的普通图片可直传商用多模态模型；食物语境和
+        # Mobile 的默认纯图片提示必须先走结构化识别，避免 provider 选择
+        # 绕过饮食清洗、校准与写入边界。
         _t_stage = time.time()
         if images:
-            should_send_raw_images = self._should_send_raw_images_to_primary_model(user_id)
+            should_preprocess_images = self._should_preprocess_attached_images(user_id, message)
             vision_description = None
-            if not should_send_raw_images:
+            if should_preprocess_images:
                 # 真实思考过程: 图片/视觉预处理 (4–20s 的 vision_ms 块) 即将开始。
                 # 仅在会真的跑独立 vision 预处理时发 (原图直传多模态模型时无此阶段)。
                 yield self._status_event("vision", detail=None)
@@ -5334,6 +5335,20 @@ class AgentExecutor:
             logger.debug(f"[Vision] primary model image capability check skipped: {e}")
             return False
 
+    def _should_preprocess_attached_images(self, user_id: int, message: str) -> bool:
+        """Keep food-photo sanitation/calibration ahead of every primary model.
+
+        Commercial multimodal models may receive general images directly, but
+        diet writes require the same deterministic structured path as every
+        other provider so provider choice cannot change persistence accuracy.
+        """
+        return (
+            not self._should_send_raw_images_to_primary_model(user_id)
+            or self._looks_like_food_photo_context(message)
+            or self._is_default_image_analysis_prompt(message)
+            or self._looks_like_image_record_intent(message)
+        )
+
     def _build_system_prompt(
         self, user_id: int, conv_id: int, user_auth_token: Optional[str],
         lite: bool = False, intent_query: Optional[str] = None,
@@ -6332,11 +6347,9 @@ class AgentExecutor:
         vision_model = settings.llm_vision_model or "qwen-vl-max"
         vision_messages: List[Dict[str, Any]] = [
             {"role": "system", "content": (
-                "你是一个食物识别助手。用户会发送食物照片，请你：\n"
-                "1. 识别图片中所有食物的名称和大致份量\n"
-                "2. 估算每种食物的热量(kcal)\n"
-                "3. 估算这顿饭的总热量\n"
-                "用简洁的中文回复，格式如：三文鱼150g(约250kcal)、黑米饭200g(约230kcal)、蔬菜100g(约30kcal)，总计约510kcal。"
+                "你是普通图片内容分析助手。客观描述图片中的主要对象、文字和场景。"
+                "不要估算食物热量或宏量营养，不要生成任何健康数据写入参数；"
+                "餐食的结构化识别由独立且可校准的链路负责。用简洁中文回复。"
             )},
             {"role": "user", "content": [
                 {"type": "text", "text": user_message or "请识别这张图片中的食物"},
@@ -6364,7 +6377,10 @@ class AgentExecutor:
             resp = await client.post(url, headers=headers, json=payload)
             if resp.status_code == 200:
                 data = resp.json()
-                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                description = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                if not description:
+                    return None
+                return f"普通图片描述（非结构化，不得据此写入饮食记录）: {description}"
             else:
                 logger.warning(f"[Vision] 图片分析失败: HTTP {resp.status_code} {resp.text[:200]}")
                 return None
@@ -6525,6 +6541,24 @@ class AgentExecutor:
         if not text.strip():
             return True
         return bool(re.search(r"食物|饮食|餐|饭|吃|热量|卡路里|蛋白|碳水|脂肪|kcal|calorie", text, re.I))
+
+    @staticmethod
+    def _is_default_image_analysis_prompt(user_message: str) -> bool:
+        normalized = re.sub(r"[\s。.!！?？]+", "", user_message or "").lower()
+        return normalized in {
+            "请分析这些图片",
+            "请分析这张图片",
+            "分析这些图片",
+            "分析这张图片",
+        }
+
+    @staticmethod
+    def _looks_like_image_record_intent(user_message: str) -> bool:
+        return bool(re.search(
+            r"记录(?:一下|下)?|帮我记(?:一下|下)?|记下来|打卡|录入|保存(?:一下|下)?|\b(?:log|record|save)\b",
+            user_message or "",
+            re.I,
+        ))
 
     async def _try_import_medical_report_images(self, user_id: int, images: List[dict]) -> Optional[str]:
         """Detect lab-report images in chat, persist recognized indicators, and summarize.

@@ -1,7 +1,7 @@
 /* eslint-disable import/first, @typescript-eslint/no-require-imports */
 import React from 'react';
 import { Alert } from 'react-native';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 const mockRouteParams: Record<string, string> = { capture: 'photo' };
@@ -10,7 +10,11 @@ const mockEstimate = jest.fn();
 const mockRouterPush = jest.fn();
 const mockPushChatWithContext = jest.fn();
 const mockEmitClientEvent = jest.fn().mockResolvedValue(undefined);
+const mockLoadDietPhotoDraft = jest.fn().mockResolvedValue(null);
+const mockSaveDietPhotoDraft = jest.fn().mockResolvedValue(undefined);
+const mockClearDietPhotoDraft = jest.fn().mockResolvedValue(undefined);
 const mockDailyMeals: any[] = [];
+let mockAuthUserId: number | null = 7;
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ back: jest.fn(), push: (...args: any[]) => mockRouterPush(...args) }),
@@ -54,7 +58,17 @@ jest.mock('../../hooks/useDiet', () => ({
 }));
 
 jest.mock('../../hooks/useAuth', () => ({
-  useAuth: () => ({ token: 'test-token' }),
+  useAuth: () => ({
+    token: mockAuthUserId ? 'test-token' : null,
+    user: mockAuthUserId ? { id: mockAuthUserId } : null,
+    isLoading: false,
+  }),
+}));
+
+jest.mock('../../services/dietPhotoDraftStorage', () => ({
+  loadDietPhotoDraft: (...args: any[]) => mockLoadDietPhotoDraft(...args),
+  saveDietPhotoDraft: (...args: any[]) => mockSaveDietPhotoDraft(...args),
+  clearDietPhotoDraft: (...args: any[]) => mockClearDietPhotoDraft(...args),
 }));
 
 jest.mock('../../services/clientEvents', () => ({
@@ -76,6 +90,10 @@ jest.mock('../../services/diet', () => ({
   estimateNutrition: jest.fn(),
   recognizeFood: jest.fn(),
   discardDietPhotoDraft: jest.fn().mockResolvedValue(undefined),
+  getDietPhotoDraftStatus: jest.fn().mockResolvedValue({
+    status: 'pending',
+    expires_at: '2026-07-12T00:00:00Z',
+  }),
   getFrequentFoods: jest.fn().mockResolvedValue([]),
 }));
 
@@ -131,13 +149,17 @@ jest.mock('../../utils/agentContext', () => ({
   pushChatWithContext: (...args: any[]) => mockPushChatWithContext(...args),
 }));
 
-import DietScreen from '../diet';
+import DietScreen, { buildEditedDietPatch } from '../diet';
 
 describe('DietScreen capture deeplink', () => {
   beforeEach(() => {
     mockMealForm.mockClear();
     mockEstimate.mockClear();
     jest.clearAllMocks();
+    mockLoadDietPhotoDraft.mockResolvedValue(null);
+    mockSaveDietPhotoDraft.mockResolvedValue(undefined);
+    mockClearDietPhotoDraft.mockResolvedValue(undefined);
+    mockAuthUserId = 7;
     Object.keys(mockRouteParams).forEach((key) => { delete mockRouteParams[key]; });
     mockDailyMeals.splice(0, mockDailyMeals.length);
   });
@@ -189,6 +211,317 @@ describe('DietScreen capture deeplink', () => {
         food_count: 1,
       }),
     );
+  });
+
+  it('persists a server-backed photo draft without persisting base64 bytes', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ base64: 'private-photo-base64' }],
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      foods: [{ name: '鸡胸肉', quantity: '200g' }],
+      meal_description: '鸡胸肉 200g',
+      total_calories: 330,
+      photo_draft_token: 'photo-draft-persisted-88',
+      error: null,
+    });
+
+    render(<DietScreen />);
+
+    await waitFor(() => {
+      expect(mockSaveDietPhotoDraft).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({
+          photo_draft_token: 'photo-draft-persisted-88',
+          image_base64: undefined,
+          food_items: '鸡胸肉 200g',
+        }),
+      );
+    });
+    expect(JSON.stringify(mockSaveDietPhotoDraft.mock.calls[0])).not.toContain('private-photo-base64');
+  });
+
+  it('restores a pending photo draft before starting a new camera capture', async () => {
+    mockLoadDietPhotoDraft.mockResolvedValueOnce({
+      version: 1,
+      saved_at: Date.now() - 1_000,
+      expires_at: Date.now() + 60_000,
+      record: {
+        record_date: '2026-07-11',
+        meal_type: 'lunch',
+        food_items: '已恢复的鸡胸肉 200g',
+        calories: 330,
+        photo_draft_token: 'restored-photo-draft-88',
+        idempotency_key: 'diet-photo:restored-photo-draft-88',
+        ai_recognized: 1,
+      },
+    });
+    mockRouteParams.capture = 'photo';
+
+    const { getByText } = render(<DietScreen />);
+
+    await waitFor(() => {
+      expect(getByText('已恢复的鸡胸肉 200g')).toBeTruthy();
+    });
+    expect(ImagePicker.requestCameraPermissionsAsync).not.toHaveBeenCalled();
+  });
+
+  it('does not revive a terminal server draft when SecureStore deletion failed', async () => {
+    mockLoadDietPhotoDraft.mockResolvedValueOnce({
+      version: 1,
+      saved_at: Date.now() - 1_000,
+      expires_at: Date.now() + 60_000,
+      record: {
+        record_date: '2026-07-11',
+        meal_type: 'lunch',
+        food_items: '不应复活的餐食',
+        photo_draft_token: 'terminal-photo-draft-88',
+      },
+    });
+    const dietService = require('../../services/diet');
+    dietService.getDietPhotoDraftStatus.mockRejectedValueOnce({ response: { status: 404 } });
+
+    const { queryByText } = render(<DietScreen />);
+
+    await waitFor(() => expect(mockClearDietPhotoDraft).toHaveBeenCalledWith(7));
+    expect(queryByText('不应复活的餐食')).toBeNull();
+  });
+
+  it('clears stale macros and provenance when an existing meal identity changes', () => {
+    expect(buildEditedDietPatch({
+      id: 90,
+      user_id: 7,
+      record_date: '2026-07-11',
+      meal_type: 'lunch',
+      food_items: '鸡胸肉 200g',
+      food_id: 'cfc:chicken_breast',
+      source: 'china_food_composition',
+      calories: 330,
+      protein: 62,
+      carbs: 0,
+      fat: 7.2,
+      fiber: 0,
+      alcohol_units: null,
+      image_url: null,
+      notes: null,
+      health_tips: '旧建议',
+      ai_recognized: 1,
+      ai_confidence: 0.9,
+    }, {
+      record_date: '2026-07-11',
+      meal_type: 'lunch',
+      food_items: '三文鱼 180g',
+      calories: 330,
+      protein: 62,
+      carbs: 0,
+      fat: 7.2,
+    })).toEqual(expect.objectContaining({
+      food_items: '三文鱼 180g',
+      food_id: null,
+      calories: null,
+      protein: null,
+      carbs: null,
+      fat: null,
+      fiber: null,
+      source: 'user_corrected',
+      ai_recognized: 0,
+      ai_confidence: null,
+      ai_raw_result: null,
+      health_tips: null,
+    }));
+  });
+
+  it('preserves fiber and provenance when an existing meal only changes meal type', () => {
+    const patch = buildEditedDietPatch({
+      id: 91,
+      user_id: 7,
+      record_date: '2026-07-11',
+      meal_type: 'lunch',
+      food_items: '鸡胸肉 200g',
+      food_id: 'cfc:chicken_breast',
+      source: 'china_food_composition',
+      calories: 330,
+      protein: 62,
+      carbs: 0,
+      fat: 7.2,
+      fiber: 4,
+      alcohol_units: null,
+      image_url: null,
+      notes: null,
+      health_tips: '原建议',
+      ai_recognized: 1,
+      ai_confidence: 0.9,
+    }, {
+      record_date: '2026-07-11',
+      meal_type: 'dinner',
+      food_items: '鸡胸肉 200g',
+      calories: 330,
+      protein: 62,
+      carbs: 0,
+      fat: 7.2,
+    });
+
+    expect(patch.meal_type).toBe('dinner');
+    expect(patch).not.toHaveProperty('fiber');
+    expect(patch).not.toHaveProperty('source');
+    expect(patch).not.toHaveProperty('ai_recognized');
+    expect(patch).not.toHaveProperty('ai_confidence');
+    expect(patch).not.toHaveProperty('ai_raw_result');
+  });
+
+  it('clears an in-memory photo draft when the authenticated owner changes', async () => {
+    mockLoadDietPhotoDraft.mockResolvedValueOnce({
+      version: 1,
+      saved_at: Date.now() - 1_000,
+      expires_at: Date.now() + 60_000,
+      record: {
+        record_date: '2026-07-11',
+        meal_type: 'lunch',
+        food_items: '账号一的私有餐食',
+        photo_draft_token: 'owner-one-photo-draft-88',
+      },
+    });
+    const { getByText, queryByText, rerender } = render(<DietScreen />);
+    await waitFor(() => expect(getByText('账号一的私有餐食')).toBeTruthy());
+
+    mockAuthUserId = 8;
+    mockLoadDietPhotoDraft.mockResolvedValueOnce(null);
+    rerender(<DietScreen />);
+
+    await waitFor(() => expect(mockLoadDietPhotoDraft).toHaveBeenCalledWith(8));
+    expect(queryByText('账号一的私有餐食')).toBeNull();
+  });
+
+  it('drops stale recognition provenance when a photo draft food is corrected', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ base64: 'photo-base64' }],
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      foods: [{
+        name: '鸡胸肉', quantity: '200g', food_id: 'cfc:chicken_breast',
+        source: 'china_food_composition', nutrition_basis: 'food_table', confidence: 0.9,
+      }],
+      meal_description: '鸡胸肉 200g',
+      total_calories: 330,
+      total_fiber: 5,
+      photo_draft_token: 'photo-draft-corrected-88',
+      error: null,
+    });
+    dietService.createDietRecord.mockResolvedValueOnce({ id: 88 });
+
+    const { getByText, getByTestId } = render(<DietScreen />);
+    await waitFor(() => expect(getByText('待确认饮食')).toBeTruthy());
+    fireEvent.press(getByText('修正'));
+    await waitFor(() => expect(getByTestId('meal-form')).toBeTruthy());
+    const formProps = mockMealForm.mock.calls[mockMealForm.mock.calls.length - 1][0];
+    await act(async () => {
+      await formProps.onSubmit({
+        record_date: '2026-07-11', meal_type: 'lunch', food_items: '三文鱼 180g',
+        calories: 360, protein: 38, carbs: 0, fat: 22,
+      });
+    });
+
+    expect(dietService.createDietRecord).toHaveBeenCalledWith(expect.objectContaining({
+      food_items: '三文鱼 180g',
+      source: 'user_corrected',
+      food_id: undefined,
+      ai_raw_result: undefined,
+      ai_confidence: undefined,
+      ai_recognized: 0,
+      fiber: undefined,
+      photo_draft_token: 'photo-draft-corrected-88',
+    }));
+    expect(mockClearDietPhotoDraft).toHaveBeenCalledWith(7);
+  });
+
+  it('still confirms a corrected photo draft when SecureStore refresh fails', async () => {
+    mockLoadDietPhotoDraft.mockResolvedValueOnce({
+      version: 1,
+      saved_at: Date.now() - 1_000,
+      expires_at: Date.now() + 60_000,
+      record: {
+        record_date: '2026-07-11', meal_type: 'lunch', food_items: '鸡胸肉 200g',
+        photo_draft_token: 'secure-store-failure-token-88',
+      },
+    });
+    mockSaveDietPhotoDraft.mockRejectedValueOnce(new Error('keychain unavailable'));
+    const dietService = require('../../services/diet');
+    dietService.createDietRecord.mockResolvedValueOnce({ id: 89 });
+    const { getByText, getByTestId } = render(<DietScreen />);
+    await waitFor(() => expect(getByText('鸡胸肉 200g')).toBeTruthy());
+    fireEvent.press(getByText('修正'));
+    await waitFor(() => expect(getByTestId('meal-form')).toBeTruthy());
+    const formProps = mockMealForm.mock.calls[mockMealForm.mock.calls.length - 1][0];
+
+    await act(async () => {
+      await formProps.onSubmit({
+        record_date: '2026-07-11', meal_type: 'lunch', food_items: '鸡胸肉 180g',
+        calories: 300, protein: 55, carbs: 0, fat: 7,
+      });
+    });
+
+    expect(dietService.createDietRecord).toHaveBeenCalledWith(expect.objectContaining({
+      photo_draft_token: 'secure-store-failure-token-88',
+      food_items: '鸡胸肉 180g',
+    }));
+  });
+
+  it('discards the server photo draft when correction form is cancelled', async () => {
+    mockLoadDietPhotoDraft.mockResolvedValueOnce({
+      version: 1,
+      saved_at: Date.now() - 1_000,
+      expires_at: Date.now() + 60_000,
+      record: {
+        record_date: '2026-07-11', meal_type: 'lunch', food_items: '鸡胸肉 200g',
+        photo_draft_token: 'restored-cancel-token-88',
+      },
+    });
+    const dietService = require('../../services/diet');
+    const { getByText, getByTestId } = render(<DietScreen />);
+    await waitFor(() => expect(getByText('待确认饮食')).toBeTruthy());
+    fireEvent.press(getByText('修正'));
+    await waitFor(() => expect(getByTestId('meal-form')).toBeTruthy());
+    const formProps = mockMealForm.mock.calls[mockMealForm.mock.calls.length - 1][0];
+    await act(async () => {
+      await formProps.onCancel();
+    });
+
+    await waitFor(() => {
+      expect(dietService.discardDietPhotoDraft).toHaveBeenCalledWith('restored-cancel-token-88');
+      expect(mockClearDietPhotoDraft).toHaveBeenCalledWith(7);
+    });
+  });
+
+  it('clears an expired restored draft instead of trapping the user in retries', async () => {
+    mockLoadDietPhotoDraft.mockResolvedValueOnce({
+      version: 1,
+      saved_at: Date.now() - 1_000,
+      expires_at: Date.now() + 60_000,
+      record: {
+        record_date: '2026-07-11', meal_type: 'lunch', food_items: '过期餐食',
+        photo_draft_token: 'expired-server-token-88',
+      },
+    });
+    const dietService = require('../../services/diet');
+    dietService.createDietRecord.mockRejectedValueOnce({ response: { status: 410 } });
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const { getByText, queryByText } = render(<DietScreen />);
+    await waitFor(() => expect(getByText('过期餐食')).toBeTruthy());
+
+    fireEvent.press(getByText('确认记录'));
+
+    await waitFor(() => {
+      expect(mockClearDietPhotoDraft).toHaveBeenCalledWith(7);
+      expect(alertSpy).toHaveBeenCalledWith('照片草稿已失效', '请重新拍照识别这一餐。');
+      expect(queryByText('过期餐食')).toBeNull();
+    });
   });
 
   it('shows recognition progress while a meal photo is being analyzed', async () => {
@@ -530,7 +863,7 @@ describe('DietScreen capture deeplink', () => {
     alertSpy.mockRestore();
   });
 
-  it('opens a premium share preview from a confirmed meal row', () => {
+  it('opens a premium share preview from a confirmed meal row', async () => {
     mockDailyMeals.push({
       id: 88,
       user_id: 1,
@@ -555,5 +888,6 @@ describe('DietScreen capture deeplink', () => {
     expect(getByText('分享这一餐')).toBeTruthy();
     expect(getByText('高清 3:4 图片 · 微信与小红书')).toBeTruthy();
     expect(getByText('这一餐，有据可查')).toBeTruthy();
+    await waitFor(() => expect(mockLoadDietPhotoDraft).toHaveBeenCalledWith(7));
   });
 });

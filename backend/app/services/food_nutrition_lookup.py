@@ -22,7 +22,6 @@ _NUTRIENT_FIELDS = (
     ("fiber", "fiber_g_per_100g"),
 )
 
-
 @dataclass(frozen=True)
 class FoodNutritionMatch:
     food_id: str
@@ -79,10 +78,20 @@ def calibrate_recognized_foods(
             continue
 
         food["quantity_grams"] = round(grams, 1)
-        food["source"] = match.source
-        food["nutrition_basis"] = "food_table"
+        table_values = {
+            output_key: _scale_nutrient(getattr(match.nutrient, nutrient_key), grams)
+            for output_key, nutrient_key in _NUTRIENT_FIELDS
+        }
+        available_count = sum(value is not None for value in table_values.values())
+        if available_count == 0:
+            food["source"] = "ai_estimate"
+            food["nutrition_basis"] = "vision_estimate"
+            continue
+        fully_calibrated = available_count == len(_NUTRIENT_FIELDS)
+        food["source"] = match.source if fully_calibrated else "mixed"
+        food["nutrition_basis"] = "food_table" if fully_calibrated else "mixed"
         for output_key, nutrient_key in _NUTRIENT_FIELDS:
-            table_value = _scale_nutrient(getattr(match.nutrient, nutrient_key), grams)
+            table_value = table_values[output_key]
             _log_divergence(food, output_key, table_value)
             if table_value is not None:
                 food[output_key] = table_value
@@ -113,71 +122,56 @@ def _enrich_food_with_match(
 
 
 def find_food_matches(db: Session, names: list[Any]) -> dict[str, FoodNutritionMatch]:
-    """Resolve a batch of canonical names and aliases without N+1 queries."""
+    """Resolve only curator-approved calibration identities without N+1 queries."""
     raw_names = sorted({str(name or "").strip() for name in names if str(name or "").strip()})
     requested = {normalize_food_key(name) for name in raw_names}
     requested.discard("")
     if not requested:
         return {}
 
-    candidate_filters = [FoodItem.canonical_name.in_(raw_names)]
     if db.get_bind().dialect.name == "sqlite":
-        alias_values = func.json_each(FoodItem.aliases).table_valued("key", "value").alias("food_alias")
-        candidate_filters.append(
-            exists(
-                select(1)
-                .select_from(alias_values)
-                .where(alias_values.c.value.in_(raw_names))
-            )
+        calibration_values = (
+            func.json_each(FoodItem.calibration_names)
+            .table_valued("key", "value")
+            .alias("food_calibration_name")
+        )
+        candidate_filter = exists(
+            select(1)
+            .select_from(calibration_values)
+            .where(calibration_values.c.value.in_(raw_names))
         )
     else:
-        candidate_filters.extend(FoodItem.aliases.contains([name]) for name in raw_names)
+        candidate_filter = or_(
+            *(FoodItem.calibration_names.contains([name]) for name in raw_names)
+        )
     rows = (
         db.query(FoodItem, FoodNutrient)
         .join(FoodNutrient, FoodNutrient.food_id == FoodItem.food_id)
-        .filter(FoodItem.is_active.is_(True), or_(*candidate_filters))
+        .filter(FoodItem.is_active.is_(True), candidate_filter)
         .order_by(FoodItem.food_id.asc())
         .all()
     )
-    matches: dict[str, FoodNutritionMatch] = {}
-    # Canonical identities win if an alias is shared by multiple catalog items.
+    candidates: dict[str, list[FoodNutritionMatch]] = {}
     for item, nutrient in rows:
-        canonical_key = normalize_food_key(item.canonical_name)
-        if canonical_key in requested:
-            matches[canonical_key] = _to_match(item, nutrient)
-    for item, nutrient in rows:
-        aliases = (item.aliases or []) if isinstance(item.aliases, list) else []
-        for key in requested.intersection({normalize_food_key(alias) for alias in aliases}):
-            matches.setdefault(key, _to_match(item, nutrient))
-    return matches
+        calibration_names = (
+            item.calibration_names
+            if isinstance(item.calibration_names, list)
+            else []
+        )
+        for key in requested.intersection({normalize_food_key(name) for name in calibration_names}):
+            candidates.setdefault(key, []).append(_to_match(item, nutrient))
+    return {
+        key: values[0]
+        for key, values in candidates.items()
+        if len({value.food_id for value in values}) == 1
+    }
 
 
 def find_food_match(db: Session, name: str) -> FoodNutritionMatch | None:
     key = normalize_food_key(name)
     if not key:
         return None
-
-    exact = (
-        db.query(FoodItem, FoodNutrient)
-        .join(FoodNutrient, FoodNutrient.food_id == FoodItem.food_id)
-        .filter(FoodItem.is_active.is_(True), FoodItem.canonical_name == name)
-        .first()
-    )
-    if exact is not None:
-        return _to_match(*exact)
-
-    rows = (
-        db.query(FoodItem, FoodNutrient)
-        .join(FoodNutrient, FoodNutrient.food_id == FoodItem.food_id)
-        .filter(FoodItem.is_active.is_(True))
-        .limit(1000)
-        .all()
-    )
-    for item, nutrient in rows:
-        terms = [item.canonical_name, *((item.aliases or []) if isinstance(item.aliases, list) else [])]
-        if key in {normalize_food_key(term) for term in terms}:
-            return _to_match(item, nutrient)
-    return None
+    return find_food_matches(db, [name]).get(key)
 
 
 def normalize_food_key(value: Any) -> str:

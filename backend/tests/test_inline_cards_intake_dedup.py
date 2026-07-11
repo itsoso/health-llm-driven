@@ -60,7 +60,13 @@ class TestDraftSuppression:
 
 class TestNutritionTablePrefill:
     def _seed(self, db):
-        db.add(FoodItem(food_id="youtao", canonical_name="油桃", aliases=[], source="test"))
+        db.add(FoodItem(
+            food_id="youtao",
+            canonical_name="油桃",
+            aliases=[],
+            calibration_names=["油桃"],
+            source="test",
+        ))
         db.add(FoodNutrient(
             food_id="youtao", kcal_per_100g=50.0, protein_g_per_100g=1.25,
             carbs_g_per_100g=12.5, fat_g_per_100g=0.0, fiber_g_per_100g=1.25,

@@ -2,6 +2,8 @@
 import os
 import json
 import logging
+import fcntl
+import threading
 import uuid
 from time import perf_counter
 from urllib.parse import urlsplit
@@ -29,6 +31,7 @@ from app.schemas.diet import (
     CreateDietFromImageRequest,
     VoiceFoodParseRequest,
     VoiceFoodParseResponse,
+    DietPhotoDraftStatusResponse,
 )
 from statistics import median
 from app.services.ai.food_recognition import (
@@ -45,6 +48,8 @@ from app.services.private_uploads import refresh_private_upload_url
 router = APIRouter()
 logger = logging.getLogger(__name__)
 PHOTO_DRAFT_TTL = timedelta(hours=24)
+_ACTIVE_DIET_IMAGE_DELETION_GUARD = threading.Lock()
+_ACTIVE_DIET_IMAGE_DELETIONS: set[str] = set()
 
 
 def _assert_diet_food_items_allowed(food_items: str) -> None:
@@ -159,16 +164,129 @@ def _assert_diet_user_access(user_id: int, current_user: User) -> None:
         raise HTTPException(status_code=403, detail="无权读取他人的饮食记录")
 
 
+StagedDietImageDeletion = tuple[str, str, int]
+
+
+def _release_staged_diet_image_lock(staged_deletion: StagedDietImageDeletion) -> None:
+    _, staged, lock_fd = staged_deletion
+    with _ACTIVE_DIET_IMAGE_DELETION_GUARD:
+        _ACTIVE_DIET_IMAGE_DELETIONS.discard(staged)
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+    except OSError:
+        pass
+    try:
+        os.close(lock_fd)
+    except OSError:
+        pass
+
+
 def _stage_diet_image_delete(
     image_url: str | None,
     owner_id: int,
-) -> tuple[str, str] | None:
+) -> StagedDietImageDeletion | None:
     original = _diet_image_file_path(image_url, owner_id)
     if not original or not os.path.isfile(original):
         return None
     staged = f"{original}.deleting-{uuid.uuid4().hex}"
-    os.replace(original, staged)
-    return original, staged
+    lock_fd = os.open(original, os.O_RDONLY)
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(lock_fd)
+        return None
+    with _ACTIVE_DIET_IMAGE_DELETION_GUARD:
+        _ACTIVE_DIET_IMAGE_DELETIONS.add(staged)
+    try:
+        os.replace(original, staged)
+    except Exception:
+        _release_staged_diet_image_lock((original, staged, lock_fd))
+        raise
+    return original, staged, lock_fd
+
+
+def _restore_staged_diet_image(staged_deletion: StagedDietImageDeletion) -> None:
+    original, staged, _ = staged_deletion
+    try:
+        if os.path.exists(staged) and not os.path.exists(original):
+            os.replace(staged, original)
+    finally:
+        _release_staged_diet_image_lock(staged_deletion)
+
+
+def _finalize_staged_diet_image(staged_deletion: StagedDietImageDeletion) -> None:
+    _, staged, _ = staged_deletion
+    try:
+        _remove_diet_image_file(staged)
+    finally:
+        _release_staged_diet_image_lock(staged_deletion)
+
+
+def reconcile_staged_diet_image_deletions(db: Session) -> int:
+    """Reconcile crash-safe image tombstones against owner-scoped DB references."""
+    from app.api.upload import UPLOAD_DIR
+
+    upload_root = os.path.realpath(os.path.join(UPLOAD_DIR, "diet"))
+    if not os.path.isdir(upload_root):
+        return 0
+    candidates: list[str] = []
+    for current_root, _directories, filenames in os.walk(upload_root, followlinks=False):
+        for filename in filenames:
+            if ".deleting-" in filename:
+                candidates.append(os.path.join(current_root, filename))
+
+    reconciled = 0
+    failures: list[str] = []
+    for path in candidates:
+        candidate = os.path.realpath(path)
+        if not candidate.startswith(f"{upload_root}{os.sep}"):
+            continue
+        with _ACTIVE_DIET_IMAGE_DELETION_GUARD:
+            if candidate in _ACTIVE_DIET_IMAGE_DELETIONS:
+                continue
+        lock_fd = None
+        try:
+            lock_fd = os.open(candidate, os.O_RDONLY)
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            original = candidate.split(".deleting-", 1)[0]
+            relative = os.path.relpath(original, upload_root).split(os.sep)
+            if len(relative) != 2 or not relative[0].isdigit():
+                continue
+            owner_id = int(relative[0])
+            image_url = f"/api/v1/upload/files/diet/{owner_id}/{os.path.basename(original)}"
+            referenced = db.query(DietRecordModel.id).filter(
+                DietRecordModel.user_id == owner_id,
+                DietRecordModel.image_url == image_url,
+            ).first() or db.query(DietPhotoDraft.token).filter(
+                DietPhotoDraft.user_id == owner_id,
+                DietPhotoDraft.image_url == image_url,
+            ).first()
+            if referenced and not os.path.exists(original):
+                os.replace(candidate, original)
+            else:
+                _remove_diet_image_file(candidate)
+            reconciled += 1
+        except FileNotFoundError:
+            continue
+        except BlockingIOError:
+            continue
+        except OSError as exc:
+            failures.append(f"{candidate}:{exc}")
+        finally:
+            if lock_fd is not None:
+                try:
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                except OSError:
+                    pass
+                try:
+                    os.close(lock_fd)
+                except OSError:
+                    pass
+    if failures:
+        raise RuntimeError(
+            "diet_image_tombstone_reconcile_failed: " + "; ".join(failures[:5])
+        )
+    return reconciled
 
 
 def _is_photo_draft_expired(draft: DietPhotoDraft) -> bool:
@@ -209,9 +327,16 @@ def _create_diet_photo_draft(
 def _expire_photo_draft(db: Session, draft: DietPhotoDraft) -> None:
     image_path = _diet_image_file_path(draft.image_url, draft.user_id)
     draft.status = "expired"
-    draft.image_url = None
+    draft.recognition_result = {}
+    db.flush()
+    try:
+        _remove_diet_image_file(image_path)
+    except OSError:
+        # Persist the scrubbed retry row before surfacing the cleanup failure.
+        db.commit()
+        raise
+    db.delete(draft)
     db.commit()
-    _remove_diet_image_file(image_path)
 
 
 def purge_expired_diet_photo_drafts(
@@ -228,17 +353,18 @@ def purge_expired_diet_photo_drafts(
                 & (DietPhotoDraft.expires_at <= cutoff)
             ),
             (
-                (DietPhotoDraft.status == "expired")
-                & DietPhotoDraft.image_url.is_not(None)
+                DietPhotoDraft.status.in_(("expired", "cancelled"))
             ),
         )
-    ).all()
+    ).with_for_update(skip_locked=True).all()
     if not drafts:
         return 0
 
     for draft in drafts:
-        draft.status = "expired"
-    db.commit()
+        if draft.status == "pending":
+            draft.status = "expired"
+        draft.recognition_result = {}
+    db.flush()
 
     purged = 0
     failures: list[str] = []
@@ -246,7 +372,7 @@ def purge_expired_diet_photo_drafts(
         image_path = _diet_image_file_path(draft.image_url, draft.user_id)
         try:
             _remove_diet_image_file(image_path)
-            draft.image_url = None
+            db.delete(draft)
             purged += 1
         except OSError as exc:
             failures.append(f"{draft.token}:{exc}")
@@ -314,6 +440,12 @@ def create_diet_record(
                 DietPhotoDraft.user_id == current_user.id,
             ).with_for_update().first()
             if photo_draft is None:
+                existing = db.query(DietRecordModel).filter(
+                    DietRecordModel.user_id == current_user.id,
+                    DietRecordModel.client_action_id == effective_idempotency_key,
+                ).first()
+                if existing:
+                    return _convert_to_response(existing)
                 raise HTTPException(status_code=404, detail="饮食照片草稿不存在或无权访问")
             if photo_draft.status == "consumed" and photo_draft.consumed_record_id:
                 existing = db.query(DietRecordModel).filter(
@@ -378,9 +510,10 @@ def create_diet_record(
         try:
             db.flush()
             if photo_draft is not None:
-                photo_draft.status = "consumed"
-                photo_draft.consumed_record_id = db_record.id
-                photo_draft.consumed_at = datetime.now(timezone.utc)
+                # The record now owns the private image. Remove the short-lived
+                # recognition payload in the same transaction; idempotent retries
+                # are resolved by DietRecord.client_action_id.
+                db.delete(photo_draft)
             db.commit()
         except IntegrityError:
             db.rollback()
@@ -735,7 +868,9 @@ def update_diet_record(
     current_user: User = Depends(get_current_user_required),
 ):
     """更新饮食记录（需登录，且只能更新自己的记录）"""
-    record = db.query(DietRecordModel).filter(DietRecordModel.id == record_id).first()
+    record = db.query(DietRecordModel).filter(
+        DietRecordModel.id == record_id
+    ).with_for_update().first()
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
     if record.user_id != current_user.id:
@@ -744,10 +879,37 @@ def update_diet_record(
     update_dict = update_data.model_dump(exclude_unset=True)
     if update_dict.get("food_items") is not None:
         _assert_diet_food_items_allowed(update_dict["food_items"])
+    food_changed = (
+        "food_items" in update_dict
+        and " ".join(str(update_dict["food_items"] or "").split())
+        != " ".join(str(record.food_items or "").split())
+    )
+    nutrient_fields = ("calories", "protein", "carbs", "fat", "fiber")
+    nutrition_changed = any(
+        key in update_dict and update_dict[key] != getattr(record, key)
+        for key in nutrient_fields
+    )
+    if food_changed:
+        update_dict["food_id"] = None
+        for key in nutrient_fields:
+            if key not in update_dict or update_dict[key] == getattr(record, key):
+                update_dict[key] = None
+    if food_changed or nutrition_changed:
+        update_dict["source"] = "user_corrected"
+        update_dict["ai_recognized"] = 0
+        update_dict["ai_confidence"] = None
+        update_dict["ai_raw_result"] = None
+        update_dict["health_tips"] = None
     if 'meal_type' in update_dict and update_dict['meal_type']:
         update_dict['meal_type'] = update_dict['meal_type'].value
     if 'meal_time' in update_dict and update_dict['meal_time']:
         update_dict['meal_time'] = update_dict['meal_time'].strftime('%H:%M')
+    if update_dict.get("ai_raw_result") is not None and not isinstance(
+        update_dict["ai_raw_result"], str
+    ):
+        update_dict["ai_raw_result"] = json.dumps(
+            update_dict["ai_raw_result"], ensure_ascii=False
+        )
 
     for key, value in update_dict.items():
         setattr(record, key, value)
@@ -764,28 +926,32 @@ def delete_diet_record(
     current_user: User = Depends(get_current_user_required),
 ):
     """删除饮食记录（需登录，且只能删除自己的记录）"""
-    record = db.query(DietRecordModel).filter(DietRecordModel.id == record_id).first()
+    record = db.query(DietRecordModel).filter(
+        DietRecordModel.id == record_id
+    ).with_for_update().first()
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
     if record.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权删除他人的饮食记录")
 
+    image_path = _diet_image_file_path(record.image_url, current_user.id)
     staged_image = _stage_diet_image_delete(record.image_url, current_user.id)
+    if image_path and os.path.isfile(image_path) and staged_image is None:
+        raise HTTPException(status_code=409, detail="饮食图片正在处理中，请稍后重试删除")
     try:
         db.delete(record)
         db.commit()
     except Exception:
         db.rollback()
         if staged_image:
-            original, staged = staged_image
             try:
-                os.replace(staged, original)
+                _restore_staged_diet_image(staged_image)
             except OSError as restore_error:
                 logger.error("饮食记录删除失败后图片恢复失败: %s", restore_error)
         raise
     if staged_image:
         try:
-            _remove_diet_image_file(staged_image[1])
+            _finalize_staged_diet_image(staged_image)
         except OSError as cleanup_error:
             logger.error("饮食记录删除后图片清理失败: %s", cleanup_error)
     return {
@@ -931,6 +1097,33 @@ async def recognize_food(
         raise HTTPException(status_code=500, detail=f"识别失败: {str(e)}")
 
 
+@router.get(
+    "/photo-drafts/{token}/status",
+    response_model=DietPhotoDraftStatusResponse,
+)
+def get_photo_draft_status(
+    token: str,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    draft = db.query(DietPhotoDraft).filter(
+        DietPhotoDraft.token == token,
+        DietPhotoDraft.user_id == current_user.id,
+    ).with_for_update().first()
+    if draft is None:
+        raise HTTPException(status_code=404, detail="饮食照片草稿不存在或无权访问")
+    if draft.status != "pending" or _is_photo_draft_expired(draft):
+        if draft.status == "pending":
+            draft.status = "expired"
+            draft.recognition_result = {}
+            db.commit()
+        raise HTTPException(status_code=410, detail="饮食照片草稿已失效")
+    return DietPhotoDraftStatusResponse(
+        status=draft.status,
+        expires_at=draft.expires_at,
+    )
+
+
 @router.delete("/photo-drafts/{token}", status_code=204)
 def discard_photo_draft(
     token: str,
@@ -940,17 +1133,33 @@ def discard_photo_draft(
     draft = db.query(DietPhotoDraft).filter(
         DietPhotoDraft.token == token,
         DietPhotoDraft.user_id == current_user.id,
-    ).first()
+    ).with_for_update().first()
     if draft is None:
+        confirmed = db.query(DietRecordModel).filter(
+            DietRecordModel.user_id == current_user.id,
+            DietRecordModel.client_action_id == f"diet-photo:{token}",
+        ).first()
+        if confirmed is not None:
+            raise HTTPException(status_code=409, detail="已确认的饮食照片不能取消")
         raise HTTPException(status_code=404, detail="饮食照片草稿不存在或无权访问")
     if draft.status == "consumed":
         raise HTTPException(status_code=409, detail="已确认的饮食照片不能取消")
     if draft.status == "pending":
-        image_path = _diet_image_file_path(draft.image_url, current_user.id)
         draft.status = "cancelled"
-        draft.image_url = None
-        db.commit()
+        draft.recognition_result = {}
+    if draft.status not in {"cancelled", "expired"}:
+        raise HTTPException(status_code=409, detail="饮食照片草稿已不可用")
+    draft.recognition_result = {}
+    db.flush()
+    image_path = _diet_image_file_path(draft.image_url, current_user.id)
+    try:
         _remove_diet_image_file(image_path)
+    except OSError as exc:
+        db.commit()
+        logger.error("饮食照片草稿取消后图片清理失败: token=%s error=%s", token, exc)
+        raise HTTPException(status_code=500, detail="草稿已取消，图片清理将在后台重试") from exc
+    db.delete(draft)
+    db.commit()
     return None
 
 

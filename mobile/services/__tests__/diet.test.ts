@@ -1,15 +1,17 @@
 /* eslint-disable import/first */
 
 const mockApiPost = jest.fn();
+const mockApiGet = jest.fn();
 
 jest.mock('../api', () => ({
   __esModule: true,
   default: {
     post: (...args: any[]) => mockApiPost(...args),
+    get: (...args: any[]) => mockApiGet(...args),
   },
 }));
 
-import { createDietRecord, recognizeFood } from '../diet';
+import { createDietRecord, getDietPhotoDraftStatus, recognizeFood } from '../diet';
 
 describe('diet service', () => {
   beforeEach(() => {
@@ -77,5 +79,16 @@ describe('diet service', () => {
       image_type: 'jpeg',
       create_photo_draft: true,
     });
+  });
+
+  it('validates a restored photo draft against the owner-scoped server status', async () => {
+    mockApiGet.mockResolvedValueOnce({
+      data: { status: 'pending', expires_at: '2026-07-12T00:00:00Z' },
+    });
+
+    await expect(getDietPhotoDraftStatus('draft/token')).resolves.toEqual(
+      expect.objectContaining({ status: 'pending' }),
+    );
+    expect(mockApiGet).toHaveBeenCalledWith('/diet/photo-drafts/draft%2Ftoken/status');
   });
 });

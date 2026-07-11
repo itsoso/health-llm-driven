@@ -4,6 +4,7 @@ from sqlalchemy import event
 from app.models.food_nutrition import FoodItem, FoodNutrient
 from app.services.food_nutrition_lookup import (
     calibrate_recognized_foods,
+    enrich_food_from_table,
     quantity_as_grams,
 )
 
@@ -12,7 +13,8 @@ def _add_chicken_breast(db):
     db.add(FoodItem(
         food_id="cfc:chicken_breast",
         canonical_name="鸡胸肉",
-        aliases=["鸡肉"],
+        aliases=["鸡肉", "鸡胸"],
+        calibration_names=["鸡胸肉", "鸡胸"],
         locale="zh-CN",
         source="china_food_composition",
         source_ref="test-fixture",
@@ -97,7 +99,7 @@ def test_calibrate_recognized_foods_keeps_model_estimate_without_weight(db):
     assert "quantity_grams" not in calibrated[0]
 
 
-def test_calibrate_recognized_foods_matches_reviewed_alias(db):
+def test_calibrate_recognized_foods_keeps_ambiguous_alias_as_vision_estimate(db):
     _add_chicken_breast(db)
 
     calibrated = calibrate_recognized_foods(db, [{
@@ -106,9 +108,94 @@ def test_calibrate_recognized_foods_matches_reviewed_alias(db):
         "calories": 999,
     }])
 
+    assert calibrated[0].get("food_id") is None
+    assert calibrated[0]["calories"] == 999
+    assert calibrated[0]["nutrition_basis"] == "vision_estimate"
+
+
+def test_single_food_enrichment_also_rejects_ambiguous_alias(db):
+    _add_chicken_breast(db)
+
+    enriched = enrich_food_from_table(db, {
+        "name": "鸡肉",
+        "quantity": "100g",
+        "calories": None,
+    })
+
+    assert enriched.get("food_id") is None
+    assert enriched["calories"] is None
+
+
+def test_calibrate_recognized_foods_matches_specific_reviewed_alias(db):
+    _add_chicken_breast(db)
+
+    calibrated = calibrate_recognized_foods(db, [{
+        "name": "鸡胸",
+        "quantity": "100g",
+        "calories": 999,
+    }])
+
     assert calibrated[0]["food_id"] == "cfc:chicken_breast"
     assert calibrated[0]["calories"] == 165.0
     assert calibrated[0]["nutrition_basis"] == "food_table"
+
+
+def test_generic_canonical_name_is_not_calibrated_without_curator_opt_in(db):
+    db.add(FoodItem(
+        food_id="cfc:tofu_firm",
+        canonical_name="豆腐",
+        aliases=["北豆腐", "老豆腐"],
+        calibration_names=["北豆腐", "老豆腐"],
+        locale="zh-CN",
+        source="china_food_composition",
+    ))
+    db.add(FoodNutrient(
+        food_id="cfc:tofu_firm",
+        kcal_per_100g=76.0,
+        protein_g_per_100g=8.0,
+        carbs_g_per_100g=1.9,
+        fat_g_per_100g=4.8,
+        fiber_g_per_100g=0.3,
+        source="china_food_composition",
+    ))
+    db.commit()
+
+    generic = calibrate_recognized_foods(db, [{
+        "name": "豆腐", "quantity": "100g", "calories": 120,
+    }])
+    specific = calibrate_recognized_foods(db, [{
+        "name": "北豆腐", "quantity": "100g", "calories": 120,
+    }])
+
+    assert generic[0].get("food_id") is None
+    assert generic[0]["calories"] == 120
+    assert generic[0]["nutrition_basis"] == "vision_estimate"
+    assert specific[0]["food_id"] == "cfc:tofu_firm"
+    assert specific[0]["calories"] == 76.0
+
+
+def test_calibrate_recognized_foods_marks_partial_table_rows_as_mixed(db):
+    _add_chicken_breast(db)
+    nutrient = db.query(FoodNutrient).filter(
+        FoodNutrient.food_id == "cfc:chicken_breast"
+    ).one()
+    nutrient.fiber_g_per_100g = None
+    db.commit()
+
+    calibrated = calibrate_recognized_foods(db, [{
+        "name": "鸡胸肉",
+        "quantity": "100g",
+        "calories": 999,
+        "protein": 1,
+        "carbs": 50,
+        "fat": 40,
+        "fiber": 8,
+    }])
+
+    assert calibrated[0]["calories"] == 165.0
+    assert calibrated[0]["fiber"] == 8
+    assert calibrated[0]["source"] == "mixed"
+    assert calibrated[0]["nutrition_basis"] == "mixed"
 
 
 def test_batch_match_queries_only_requested_food_candidates(db):
@@ -129,5 +216,4 @@ def test_batch_match_queries_only_requested_food_candidates(db):
         event.remove(db.bind, "before_cursor_execute", capture_statement)
 
     assert len(statements) == 1
-    assert "canonical_name IN" in statements[0]
-    assert "aliases" in statements[0]
+    assert "calibration_names" in statements[0]

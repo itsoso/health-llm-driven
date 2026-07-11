@@ -5,6 +5,9 @@ import {
   Image,
   ImageSourcePropType,
   Modal,
+  PixelRatio,
+  Platform,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -14,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
-import { captureRef } from 'react-native-view-shot';
+import { captureRef, releaseCapture } from 'react-native-view-shot';
 
 import {
   revaColors as C,
@@ -32,6 +35,15 @@ const MEAL_LABEL: Record<string, string> = {
   dinner: '晚餐',
   snack: '加餐',
 };
+export const DIET_SHARE_IMAGE_TIMEOUT_MS = 5_000;
+
+export function dietShareCaptureDimensions(
+  platform = Platform.OS,
+  pixelRatio = PixelRatio.get(),
+): { width: number; height: number } {
+  const pointScale = platform === 'ios' ? Math.max(pixelRatio, 1) : 1;
+  return { width: 1080 / pointScale, height: 1440 / pointScale };
+}
 
 function metric(value: number | null | undefined, precision = 0): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '--';
@@ -41,7 +53,7 @@ function metric(value: number | null | undefined, precision = 0): string {
 
 function nutritionSourceLabel(source?: string | null): string {
   if (!source || source === 'ai_estimate' || source === 'photo') return '智能估算';
-  if (source === 'manual') return '手动确认';
+  if (source === 'manual' || source === 'user_corrected') return '手动确认';
   if (source === 'mixed') return '多来源校准';
   return '营养表校准';
 }
@@ -50,11 +62,19 @@ export type DietShareCardProps = {
   record: DietRecord;
   dateLabel: string;
   imageSource?: ImageSourcePropType;
+  onImageReady?: () => void;
+  forceImageFallback?: boolean;
 };
 
-export default function DietShareCard({ record, dateLabel, imageSource }: DietShareCardProps) {
+export default function DietShareCard({
+  record,
+  dateLabel,
+  imageSource,
+  onImageReady,
+  forceImageFallback = false,
+}: DietShareCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
-  const showImage = Boolean(imageSource) && !imageFailed;
+  const showImage = Boolean(imageSource) && !imageFailed && !forceImageFallback;
   const calories = metric(record.calories);
   const sourceLabel = nutritionSourceLabel(record.source);
 
@@ -70,10 +90,15 @@ export default function DietShareCard({ record, dateLabel, imageSource }: DietSh
 
       {showImage ? (
         <Image
+          testID="diet-share-image"
           source={imageSource}
           style={styles.mealImage}
           resizeMode="cover"
-          onError={() => setImageFailed(true)}
+          onLoad={onImageReady}
+          onError={() => {
+            setImageFailed(true);
+            onImageReady?.();
+          }}
         />
       ) : (
         <View style={styles.metricHero}>
@@ -165,23 +190,58 @@ export function DietShareSheet({
 }: DietShareSheetProps) {
   const cardRef = useRef<View>(null);
   const [sharing, setSharing] = useState(false);
+  const [imageReady, setImageReady] = useState(!imageSource);
+  const [imageTimedOut, setImageTimedOut] = useState(false);
+
+  React.useEffect(() => {
+    setImageReady(!imageSource);
+    setImageTimedOut(false);
+  }, [imageSource, visible]);
+
+  React.useEffect(() => {
+    if (!visible || !imageSource || imageReady) return undefined;
+    const timeout = setTimeout(() => {
+      setImageTimedOut(true);
+      setImageReady(true);
+    }, DIET_SHARE_IMAGE_TIMEOUT_MS);
+    return () => clearTimeout(timeout);
+  }, [imageReady, imageSource, visible]);
+
+  const shareTextFallback = async () => {
+    await Share.share({
+      title: '分享饮食打卡',
+      message: [
+        `${dateLabel} · ${MEAL_LABEL[record.meal_type] ?? '餐食'}`,
+        record.food_items,
+        `${metric(record.calories)} kcal · 蛋白质 ${metric(record.protein)}g · 碳水 ${metric(record.carbs)}g · 脂肪 ${metric(record.fat, 1)}g`,
+        '来自小巴饮食记录',
+      ].join('\n'),
+    });
+  };
 
   const handleShare = async () => {
-    if (sharing || !cardRef.current) return;
+    if (sharing || !imageReady || !cardRef.current) return;
     const startedAt = Date.now();
+    let captureUri: string | null = null;
     setSharing(true);
     try {
       if (!await Sharing.isAvailableAsync()) {
-        throw new Error('system_share_unavailable');
+        await shareTextFallback();
+        onShareTerminal?.({
+          phase: 'completed',
+          duration_ms: Date.now() - startedAt,
+          has_photo: false,
+        });
+        return;
       }
-      const uri = await captureRef(cardRef, {
+      const dimensions = dietShareCaptureDimensions();
+      captureUri = await captureRef(cardRef, {
         format: 'png',
         quality: 1,
-        width: 1080,
-        height: 1440,
+        ...dimensions,
         result: 'tmpfile',
       });
-      await Sharing.shareAsync(uri, {
+      await Sharing.shareAsync(captureUri, {
         mimeType: 'image/png',
         UTI: 'public.png',
         dialogTitle: '分享饮食打卡',
@@ -193,14 +253,30 @@ export function DietShareSheet({
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
-      onShareTerminal?.({
-        phase: 'failed',
-        duration_ms: Date.now() - startedAt,
-        has_photo: Boolean(record.image_url),
-        error_code: 'image_share_failed',
-      });
-      Alert.alert('分享失败', '图片生成失败，请稍后重试');
+      try {
+        await shareTextFallback();
+        onShareTerminal?.({
+          phase: 'completed',
+          duration_ms: Date.now() - startedAt,
+          has_photo: false,
+        });
+      } catch {
+        onShareTerminal?.({
+          phase: 'failed',
+          duration_ms: Date.now() - startedAt,
+          has_photo: Boolean(record.image_url),
+          error_code: 'image_share_failed',
+        });
+        Alert.alert('分享失败', '图片和文字分享均不可用，请稍后重试');
+      }
     } finally {
+      if (captureUri) {
+        try {
+          releaseCapture(captureUri);
+        } catch {
+          // Temporary-file cleanup is best effort after the system share promise settles.
+        }
+      }
       setSharing(false);
     }
   };
@@ -232,24 +308,30 @@ export function DietShareSheet({
 
           <View style={styles.previewFrame}>
             <View ref={cardRef} collapsable={false} style={styles.captureSurface}>
-              <DietShareCard record={record} dateLabel={dateLabel} imageSource={imageSource} />
+              <DietShareCard
+                record={record}
+                dateLabel={dateLabel}
+                imageSource={imageSource}
+                onImageReady={() => setImageReady(true)}
+                forceImageFallback={imageTimedOut}
+              />
             </View>
           </View>
 
           <TouchableOpacity
-            style={[styles.shareButton, sharing && styles.shareButtonDisabled]}
+            style={[styles.shareButton, (sharing || !imageReady) && styles.shareButtonDisabled]}
             onPress={handleShare}
-            disabled={sharing}
+            disabled={sharing || !imageReady}
             activeOpacity={0.84}
             accessibilityRole="button"
             accessibilityLabel="分享饮食图片"
           >
-            {sharing ? (
+            {sharing || !imageReady ? (
               <ActivityIndicator size="small" color={C.greenOn} />
             ) : (
               <Ionicons name="share-outline" size={19} color={C.greenOn} />
             )}
-            <Text style={styles.shareButtonText}>{sharing ? '生成中' : '分享图片'}</Text>
+            <Text style={styles.shareButtonText}>{!imageReady ? '图片加载中' : sharing ? '生成中' : '分享图片'}</Text>
           </TouchableOpacity>
         </SafeAreaView>
       </View>
