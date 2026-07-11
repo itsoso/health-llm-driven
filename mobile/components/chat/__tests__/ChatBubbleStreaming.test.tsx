@@ -198,12 +198,13 @@ describe('ChatBubble streaming degraded render', () => {
       thinkingSteps: ['正在理解你的问题', '读取记录信息', '整理回复中'],
     });
 
-    // 完成态默认折叠成低干扰状态行: 「思考完成 · N 步」, 步骤列表隐藏.
+    // 完成态默认折叠成低干扰胶囊: 「思考完成 · N 步」, 步骤列表隐藏.
     expect(getByText('思考完成 · 3 步')).toBeTruthy();
     const panelStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
-    expect(panelStyle.alignSelf).toBe('stretch');
+    expect(panelStyle.alignSelf).toBe('flex-start');
+    expect(panelStyle.borderRadius).toBeGreaterThanOrEqual(14);
     expect(panelStyle.borderWidth ?? 0).toBe(0);
-    expect(panelStyle.backgroundColor).toBe('transparent');
+    expect(panelStyle.backgroundColor).not.toBe('transparent');
     expect(queryByText('正在理解你的问题')).toBeNull();
     expect(queryByLabelText('已完成步骤:整理回复中')).toBeNull();
     // 助手正文不受折叠影响, 始终可见.
@@ -301,34 +302,6 @@ describe('ChatBubble streaming degraded render', () => {
     // Terminal state goes through the rich markdown path.
     expect(getByTestId('rich-markdown')).toBeTruthy();
     expect(mockMarkdownMount).toHaveBeenCalled();
-  });
-
-  it('does not show write actions for generic explanations', () => {
-    const { getByText, queryByText } = renderBubble({
-      id: 'assistant-generic-actions',
-      role: 'assistant',
-      content: '胆固醇是血脂的一类指标，LDL-C 升高通常代表心血管风险更高。',
-      streaming: false,
-    });
-
-    expect(getByText('继续追问')).toBeTruthy();
-    expect(queryByText('加入今日计划')).toBeNull();
-    expect(queryByText('保存记忆')).toBeNull();
-    expect(queryByText('生成记录')).toBeNull();
-  });
-
-  it('shows contextual write actions for executable health advice', () => {
-    const { getByText, queryByText } = renderBubble({
-      id: 'assistant-plan-actions',
-      role: 'assistant',
-      content: '今日建议：晚饭后步行 10 分钟，23:00 前上床。',
-      streaming: false,
-    });
-
-    expect(getByText('加入今日计划')).toBeTruthy();
-    expect(getByText('继续追问')).toBeTruthy();
-    expect(queryByText('保存记忆')).toBeNull();
-    expect(queryByText('生成记录')).toBeNull();
   });
 
   // Bug 1 regression: LLM 吐脏 markdown (无空格标题 / 黏连表头分隔) 时, done 首帧就应

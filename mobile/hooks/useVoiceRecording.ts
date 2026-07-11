@@ -11,6 +11,15 @@ import {
 } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import { transcribeAudio } from '../services/transcribe';
+import { durationBucket, emitClientEvent } from '../services/clientEvents';
+import {
+  claimVoiceSession,
+  isVoiceSessionOwner,
+  releaseVoiceSession,
+  runVoiceSessionCommand,
+  runVoiceSessionStart,
+  type VoiceSessionLease,
+} from '../services/voiceSessionCoordinator';
 
 export interface VoiceRecordingState {
   isRecording: boolean;
@@ -47,6 +56,25 @@ export function useVoiceRecording(opts?: {
   const latestTextRef = useRef('');
   // stopAndTranscribe 等待最终结果的 resolver;Voice 事件回调经它交卷。
   const finalizeRef = useRef<((text: string) => void) | null>(null);
+  const startSeqRef = useRef(0);
+  const transcriptionSeqRef = useRef(0);
+  const sessionStartedAtRef = useRef(0);
+  const terminalSentRef = useRef(false);
+  const voiceLeaseRef = useRef<VoiceSessionLease | null>(null);
+
+  const emitTerminal = useCallback((
+    phase: 'completed' | 'failed' | 'cancelled',
+    errorCode?: string,
+  ) => {
+    if (!sessionStartedAtRef.current || terminalSentRef.current) return;
+    terminalSentRef.current = true;
+    void emitClientEvent('voice_input_terminal', {
+      phase,
+      duration_bucket: durationBucket(sessionStartedAtRef.current),
+      action_type: 'hold',
+      ...(errorCode ? { error_code: errorCode } : {}),
+    });
+  }, []);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
@@ -71,14 +99,21 @@ export function useVoiceRecording(opts?: {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      if (sessionStartedAtRef.current && !terminalSentRef.current) {
+        emitTerminal('cancelled', 'component_unmounted');
+      }
+      startSeqRef.current += 1;
+      transcriptionSeqRef.current += 1;
       clearTimer();
-      Voice.stop().catch(() => {});
-      try { recorder.stop(); } catch {}
-      // 卸载时若还占着录音 session, 放回来 (不阻塞卸载, fire-and-forget)。
-      void setAudioModeAsync({ allowsRecording: false }).catch(() => {});
+      const lease = voiceLeaseRef.current;
+      void runVoiceSessionCommand(lease, async () => {
+        try { await Voice.stop(); } catch {}
+        try { await recorder.stop(); } catch {}
+        await setAudioModeAsync({ allowsRecording: false }).catch(() => {});
+      }).finally(() => releaseVoiceSession(lease));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clearTimer]);
+  }, [clearTimer, emitTerminal, recorder]);
 
   /**
    * 每次开录都重挂 Voice 全局回调:voice-chat 页 unmount 时会 Voice.destroy +
@@ -86,6 +121,7 @@ export function useVoiceRecording(opts?: {
    */
   const attachVoiceHandlers = useCallback(() => {
     Voice.onSpeechPartialResults = (e: SpeechResultsEvent) => {
+      if (!isVoiceSessionOwner(voiceLeaseRef.current)) return;
       const v = e.value?.[0] || '';
       if (v) {
         latestTextRef.current = v;
@@ -93,15 +129,18 @@ export function useVoiceRecording(opts?: {
       }
     };
     Voice.onSpeechResults = (e: SpeechResultsEvent) => {
+      if (!isVoiceSessionOwner(voiceLeaseRef.current)) return;
       const v = e.value?.[0] || latestTextRef.current;
       latestTextRef.current = v;
       setPartialText(v);
       finalizeRef.current?.(v);
     };
     Voice.onSpeechEnd = () => {
+      if (!isVoiceSessionOwner(voiceLeaseRef.current)) return;
       finalizeRef.current?.(latestTextRef.current);
     };
     Voice.onSpeechError = () => {
+      if (!isVoiceSessionOwner(voiceLeaseRef.current)) return;
       // 已有 partial 时不当失败:iOS 在 stop 边缘常报 1110(no speech)之类,
       // 拿已识别文本交卷;完全没字的情形由 stopAndTranscribe 的空文本分支提示。
       finalizeRef.current?.(latestTextRef.current);
@@ -109,6 +148,16 @@ export function useVoiceRecording(opts?: {
   }, []);
 
   const startRecording = useCallback(async () => {
+    const lease = claimVoiceSession('hold');
+    voiceLeaseRef.current = lease;
+    sessionStartedAtRef.current = Date.now();
+    terminalSentRef.current = false;
+    transcriptionSeqRef.current += 1;
+    const seq = startSeqRef.current + 1;
+    startSeqRef.current = seq;
+    const isCurrentStart = () => (
+      startSeqRef.current === seq && isVoiceSessionOwner(lease)
+    );
     try {
       readyRef.current = false;
       cancelledRef.current = false;
@@ -116,25 +165,62 @@ export function useVoiceRecording(opts?: {
       setPartialText('');
 
       const perm = await requestRecordingPermissionsAsync();
+      if (!isCurrentStart()) {
+        await runVoiceSessionCommand(lease, releaseAudioSession);
+        releaseVoiceSession(lease);
+        return false;
+      }
       if (!perm.granted) {
+        releaseVoiceSession(lease);
+        emitTerminal('failed', 'microphone_permission_denied');
         Alert.alert('需要麦克风权限', '请在 iPhone 设置 → 小巴 → 麦克风 中开启权限');
-        return;
+        return false;
       }
 
-      await setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-      });
-
-      try {
-        attachVoiceHandlers();
-        await Voice.start('zh-CN');
-        usingFallbackRef.current = false;
-      } catch {
-        // 端上识别不可用(系统听写被关等)→ 降级旧链路:录音 + 云端转写
-        usingFallbackRef.current = true;
-        await recorder.prepareToRecordAsync();
-        recorder.record();
+      const nativeStarted = await runVoiceSessionStart(
+        lease,
+        async () => {
+          await setAudioModeAsync({
+            allowsRecording: true,
+            playsInSilentMode: true,
+          });
+          try {
+            attachVoiceHandlers();
+            await Voice.start('zh-CN');
+            usingFallbackRef.current = false;
+          } catch {
+            // 端上识别不可用(系统听写被关等)→ 降级旧链路:录音 + 云端转写
+            usingFallbackRef.current = true;
+            await recorder.prepareToRecordAsync();
+            if (startSeqRef.current === seq && !cancelledRef.current) recorder.record();
+          }
+        },
+        async () => {
+          if (usingFallbackRef.current) {
+            try { await recorder.stop(); } catch {}
+          } else {
+            try { await Voice.cancel(); } catch {}
+          }
+          await releaseAudioSession();
+        },
+      );
+      if (!nativeStarted) {
+        readyRef.current = false;
+        releaseVoiceSession(lease);
+        return false;
+      }
+      if (!isCurrentStart()) {
+        readyRef.current = false;
+        await runVoiceSessionCommand(lease, async () => {
+          if (usingFallbackRef.current) {
+            try { await recorder.stop(); } catch {}
+          } else {
+            try { await Voice.cancel(); } catch {}
+          }
+          await releaseAudioSession();
+        });
+        releaseVoiceSession(lease);
+        return false;
       }
 
       if (cancelledRef.current) {
@@ -144,9 +230,12 @@ export function useVoiceRecording(opts?: {
         if (usingFallbackRef.current) {
           try { recorder.stop(); } catch {}
         } else {
-          Voice.cancel().catch(() => {});
+          await runVoiceSessionCommand(lease, async () => {
+            try { await Voice.cancel(); } catch {}
+          });
         }
         await releaseAudioSession();
+        releaseVoiceSession(lease);
         return;
       }
       readyRef.current = true;
@@ -159,44 +248,79 @@ export function useVoiceRecording(opts?: {
       }, 200);
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      return true;
     } catch (err: any) {
-      try { await setAudioModeAsync({ allowsRecording: false }); } catch {}
+      await runVoiceSessionCommand(lease, async () => {
+        try { await Voice.cancel(); } catch {}
+        try { await setAudioModeAsync({ allowsRecording: false }); } catch {}
+      });
+      releaseVoiceSession(lease);
+      readyRef.current = false;
       setIsRecording(false);
       clearTimer();
       const msg = err?.message || String(err);
+      emitTerminal('failed', 'recording_start_failed');
       Alert.alert('录音启动失败', msg);
+      return false;
     }
-  }, [attachVoiceHandlers, clearTimer, recorder, releaseAudioSession]);
+  }, [attachVoiceHandlers, clearTimer, emitTerminal, recorder, releaseAudioSession]);
 
   const stopAndTranscribe = useCallback(async () => {
-    if (!readyRef.current) return;
+    const lease = voiceLeaseRef.current;
+    if (!readyRef.current) {
+      startSeqRef.current += 1;
+      clearTimer();
+      setIsRecording(false);
+      void runVoiceSessionCommand(lease, async () => {
+        if (usingFallbackRef.current) {
+          try { await recorder.stop(); } catch {}
+        } else {
+          try { await Voice.cancel(); } catch {}
+        }
+        await releaseAudioSession();
+      }).finally(() => releaseVoiceSession(lease));
+      emitTerminal('cancelled', 'released_before_ready');
+      return;
+    }
     clearTimer();
     setIsRecording(false);
 
     if (cancelledRef.current) {
-      if (usingFallbackRef.current) {
-        try { await recorder.stop(); } catch {}
-      } else {
-        Voice.cancel().catch(() => {});
-      }
+      await runVoiceSessionCommand(lease, async () => {
+        if (usingFallbackRef.current) {
+          try { await recorder.stop(); } catch {}
+        } else {
+          try { await Voice.cancel(); } catch {}
+        }
+        await releaseAudioSession();
+      });
       setPartialText('');
-      await releaseAudioSession();  // 释放录音 session, 否则语音后键盘弹不出。
+      readyRef.current = false;
+      releaseVoiceSession(lease);
+      emitTerminal('cancelled');
       return;
     }
 
+    const transcriptionSeq = transcriptionSeqRef.current + 1;
+    transcriptionSeqRef.current = transcriptionSeq;
     setIsTranscribing(true);
     try {
       let text = '';
       if (usingFallbackRef.current) {
         // 备胎:旧链路 录音 → base64 → 后端 Whisper
-        await recorder.stop();
+        await runVoiceSessionCommand(lease, async () => {
+          await recorder.stop();
+          await releaseAudioSession();
+        });
+        releaseVoiceSession(lease);
         // 停录音后立刻放回 session (在转写网络请求之前) —— 转写可能耗时几秒,
         // 期间键盘/输入应已可用, 不必等转写回来才释放麦克风占用。
-        await releaseAudioSession();
         const uri = recorder.uri;
-        if (uri) {
-          text = await transcribeAudio(uri);
+        if (!uri) {
+          emitTerminal('failed', 'recording_uri_missing');
+          return;
         }
+        text = await transcribeAudio(uri);
       } else {
         // 端上:识别已实时完成,stop 后最终结果通常 <300ms 就位。
         // 1.2s 兜底超时拿最新 partial 交卷,绝不让用户干等。
@@ -208,41 +332,83 @@ export function useVoiceRecording(opts?: {
             resolve(t || '');
           };
           finalizeRef.current = finish;
-          Voice.stop().catch(() => finish(latestTextRef.current));
+          void runVoiceSessionCommand(lease, async () => {
+            await Voice.stop();
+          }).then((ran) => {
+            if (!ran) finish(latestTextRef.current);
+          }).catch(() => finish(latestTextRef.current));
           setTimeout(() => finish(latestTextRef.current), 1200);
         });
         finalizeRef.current = null;
+      }
+      readyRef.current = false;
+
+      if (transcriptionSeqRef.current !== transcriptionSeq || cancelledRef.current) {
+        return;
       }
 
       const trimmed = (text || '').trim();
       if (trimmed) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         opts?.onTranscript?.(trimmed);
+        emitTerminal('completed');
       } else {
+        emitTerminal('failed', 'empty_transcript');
         Alert.alert('未识别到语音', '请靠近麦克风重试');
       }
     } catch {
-      Alert.alert('语音识别失败', '请稍后再试');
+      readyRef.current = false;
+      if (transcriptionSeqRef.current === transcriptionSeq && !cancelledRef.current) {
+        emitTerminal('failed', 'transcription_failed');
+        Alert.alert('语音识别失败', '请稍后再试');
+      }
     } finally {
-      setIsTranscribing(false);
+      if (transcriptionSeqRef.current === transcriptionSeq) {
+        setIsTranscribing(false);
+      }
       setPartialText('');
-      await releaseAudioSession();
+      await runVoiceSessionCommand(lease, releaseAudioSession);
+      releaseVoiceSession(lease);
     }
-  }, [opts, clearTimer, recorder, releaseAudioSession]);
+  }, [opts, clearTimer, emitTerminal, recorder, releaseAudioSession]);
 
   const cancelRecording = useCallback(async () => {
+    const lease = voiceLeaseRef.current;
     cancelledRef.current = true;
+    transcriptionSeqRef.current += 1;
+    setIsTranscribing(false);
+    if (!readyRef.current) {
+      startSeqRef.current += 1;
+      clearTimer();
+      setIsRecording(false);
+      void runVoiceSessionCommand(lease, async () => {
+        if (usingFallbackRef.current) {
+          try { await recorder.stop(); } catch {}
+        } else {
+          try { await Voice.cancel(); } catch {}
+        }
+        await releaseAudioSession();
+      }).finally(() => releaseVoiceSession(lease));
+      emitTerminal('cancelled');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
+    }
     clearTimer();
     setIsRecording(false);
     setPartialText('');
-    if (usingFallbackRef.current) {
-      try { await recorder.stop(); } catch {}
-    } else {
-      Voice.cancel().catch(() => {});
-    }
-    await releaseAudioSession();  // 取消同样要释放, 否则语音后键盘弹不出。
+    await runVoiceSessionCommand(lease, async () => {
+      if (usingFallbackRef.current) {
+        try { await recorder.stop(); } catch {}
+      } else {
+        try { await Voice.cancel(); } catch {}
+      }
+      await releaseAudioSession();
+    });
+    readyRef.current = false;
+    releaseVoiceSession(lease);
+    emitTerminal('cancelled');
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-  }, [clearTimer, recorder, releaseAudioSession]);
+  }, [clearTimer, emitTerminal, recorder, releaseAudioSession]);
 
   return {
     isRecording,

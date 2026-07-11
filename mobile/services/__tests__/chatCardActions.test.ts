@@ -23,14 +23,14 @@ import { dispatchChatCardAction } from '../chatCardActions';
 describe('dispatchChatCardAction', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockApiPost.mockResolvedValue({ data: { ok: true } });
+    mockApiPost.mockResolvedValue({ data: { event_id: 71, agenda_status: 'completed' } });
     mockApiPut.mockResolvedValue({ data: { ok: true } });
-    mockConfirmWriteIntent.mockResolvedValue({ status: 'executed' });
+    mockConfirmWriteIntent.mockResolvedValue({ id: 42, status: 'executed', executed_ref: 'smart_reminder:18' });
     mockDismissWriteIntent.mockResolvedValue({ status: 'dismissed' });
   });
 
   it('completes agenda actions only through the allowed manual-confirm endpoint', async () => {
-    await dispatchChatCardAction({
+    await expect(dispatchChatCardAction({
       label: '完成',
       action: 'agenda.complete',
       endpoint: '/agenda/complete',
@@ -38,7 +38,15 @@ describe('dispatchChatCardAction', () => {
       payload: {
         source: { object_type: 'health_protocol', object_id: 7 },
       },
-    });
+    })).resolves.toEqual(expect.objectContaining({
+      status: 'completed',
+      receipt: expect.objectContaining({
+        status: 'verified',
+        resourceType: 'agenda_event',
+        resourceId: '71',
+        verified: true,
+      }),
+    }));
 
     expect(mockApiPost).toHaveBeenCalledWith('/agenda/complete', {
       object_type: 'health_protocol',
@@ -77,15 +85,47 @@ describe('dispatchChatCardAction', () => {
   });
 
   it('confirms write-intent actions by id', async () => {
-    await dispatchChatCardAction({
+    await expect(dispatchChatCardAction({
       label: '确认写入',
       action: 'write_intent.confirm',
       endpoint: '/write-intents/42/confirm',
       requires_manual_confirm: true,
       payload: { write_intent_id: 42 },
-    });
+    })).resolves.toEqual(expect.objectContaining({
+      status: 'completed',
+      receipt: expect.objectContaining({
+        executedRef: 'smart_reminder:18',
+        resourceType: 'smart_reminder',
+        resourceId: '18',
+        verified: true,
+      }),
+    }));
 
     expect(mockConfirmWriteIntent).toHaveBeenCalledWith(42);
+  });
+
+  it('uses the persisted WriteIntent as the receipt when execution is acknowledged without a downstream ref', async () => {
+    mockConfirmWriteIntent.mockResolvedValueOnce({
+      id: 42,
+      status: 'executed',
+      executed_ref: 'acknowledged',
+    });
+
+    await expect(dispatchChatCardAction({
+      label: '确认写入',
+      action: 'write_intent.confirm',
+      endpoint: '/write-intents/42/confirm',
+      requires_manual_confirm: true,
+      payload: { write_intent_id: 42 },
+    })).resolves.toEqual(expect.objectContaining({
+      status: 'completed',
+      receipt: expect.objectContaining({
+        executedRef: 'acknowledged',
+        resourceType: 'write_intent',
+        resourceId: '42',
+        verified: true,
+      }),
+    }));
   });
 
   it('opens only app-local route actions', async () => {
@@ -136,7 +176,9 @@ describe('dispatchChatCardAction', () => {
   });
 
   it('creates diet records only through the manual-confirm diet endpoint', async () => {
-    await dispatchChatCardAction({
+    mockApiPost.mockResolvedValueOnce({ data: { id: 77 } });
+
+    await expect(dispatchChatCardAction({
       label: '确认记录',
       action: 'diet_record.create',
       endpoint: '/diet/records',
@@ -151,20 +193,33 @@ describe('dispatchChatCardAction', () => {
           fat: 17,
         },
       },
-    });
-
-    expect(mockApiPost).toHaveBeenCalledWith('/diet/records', expect.objectContaining({
-      food_items: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
-      meal_type: 'lunch',
-      calories: 770,
-      protein: 30,
-      carbs: 70,
-      fat: 17,
-      record_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    }, 'diet-card-lunch-77')).resolves.toEqual(expect.objectContaining({
+      status: 'completed',
+      receipt: expect.objectContaining({
+        resourceType: 'diet_record',
+        resourceId: '77',
+        verified: true,
+      }),
     }));
+
+    expect(mockApiPost).toHaveBeenCalledWith(
+      '/diet/records',
+      expect.objectContaining({
+        food_items: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
+        meal_type: 'lunch',
+        calories: 770,
+        protein: 30,
+        carbs: 70,
+        fat: 17,
+        record_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+      { headers: { 'Idempotency-Key': 'diet-card-lunch-77' } },
+    );
   });
 
   it('normalizes structured food arrays before creating diet records', async () => {
+    mockApiPost.mockResolvedValueOnce({ data: { id: 78 } });
+
     await dispatchChatCardAction({
       label: '确认记录',
       action: 'diet_record.create',
@@ -187,6 +242,8 @@ describe('dispatchChatCardAction', () => {
   });
 
   it('does not treat words containing nac as NAC supplement intake', async () => {
+    mockApiPost.mockResolvedValueOnce({ data: { id: 79 } });
+
     await dispatchChatCardAction({
       label: '确认记录',
       action: 'diet_record.create',
@@ -204,6 +261,27 @@ describe('dispatchChatCardAction', () => {
       food_items: '测试snack',
       meal_type: 'snack',
     }));
+  });
+
+  it('fails diet card confirmation when the backend does not return a record id', async () => {
+    mockApiPost.mockResolvedValueOnce({ data: { ok: true } });
+
+    await expect(dispatchChatCardAction({
+      label: '确认记录',
+      action: 'diet_record.create',
+      endpoint: '/diet/records',
+      requires_manual_confirm: true,
+      payload: {
+        record: {
+          food_items: '牛肉面',
+          meal_type: 'lunch',
+          calories: 620,
+          protein: 28,
+          carbs: 78,
+          fat: 18,
+        },
+      },
+    })).rejects.toThrow('diet_record_missing_id');
   });
 
   it('estimates, backfills, and returns the saved diet record after confirming a diet record without macros', async () => {
@@ -242,9 +320,14 @@ describe('dispatchChatCardAction', () => {
           meal_type: 'lunch',
         },
       },
-    })).resolves.toEqual({
+    })).resolves.toEqual(expect.objectContaining({
       status: 'completed',
       nutrition_status: 'estimated',
+      receipt: expect.objectContaining({
+        resourceType: 'diet_record',
+        resourceId: '88',
+        verified: true,
+      }),
       record: expect.objectContaining({
         id: 88,
         record_date: '2026-07-09',
@@ -255,7 +338,7 @@ describe('dispatchChatCardAction', () => {
         carbs: 78,
         fat: 18,
       }),
-    });
+    }));
 
     expect(mockApiPost).toHaveBeenNthCalledWith(1, '/diet/records', expect.objectContaining({
       food_items: '牛肉面',
@@ -286,7 +369,11 @@ describe('dispatchChatCardAction', () => {
           meal_type: 'breakfast',
         },
       },
-    })).resolves.toEqual({ status: 'completed', nutrition_status: 'estimate_failed' });
+    })).resolves.toEqual(expect.objectContaining({
+      status: 'completed',
+      nutrition_status: 'estimate_failed',
+      receipt: expect.objectContaining({ resourceType: 'diet_record', resourceId: '89', verified: true }),
+    }));
 
     expect(mockApiPost).toHaveBeenNthCalledWith(1, '/diet/records', expect.objectContaining({
       food_items: '鸡蛋 2 个',

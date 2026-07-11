@@ -96,7 +96,10 @@ describe('WriteIntentCard', () => {
     expect(queryByLabelText('确认:复查到期:空腹血糖 / 糖化血红蛋白')).toBeNull();
     expect(mockConfirmWriteIntent).toHaveBeenCalledTimes(1);
 
-    resolveConfirm({ status: 'executed', executed_ref: 'smart_reminder:55' });
+    await act(async () => {
+      resolveConfirm({ status: 'executed', executed_ref: 'smart_reminder:55' });
+      await Promise.resolve();
+    });
 
     await waitFor(() => {
       expect(queryByText('复查到期:空腹血糖 / 糖化血红蛋白')).toBeNull();

@@ -4,7 +4,7 @@
  * 契约枚举 photo_meal | record_weight | connect_device 是唯一真源:
  * chat.tsx 的开场气泡 quick reply 与 EmptyStateHome 的 Quick Start 卡共用此表,
  * 避免两处路由漂移。所有目标都是 grep 核实过的既有路由:
- * - photo_meal      → /diet?capture=photo (既有拍照记饮食路由)
+ * - photo_meal      → /diet?capture=photo&return_to=chat (既有拍照记饮食路由,确认后回小巴)
  * - record_weight   → /body-measurements  (体重腰围录入屏; today.tsx/record.tsx 已用)
  * - connect_device  → /settings           (数据连接 hub: Garmin 绑定 + Apple Health + 连接授权)
  */
@@ -19,7 +19,7 @@ export const QUICK_ACTION_LABEL: Record<QuickReplyAction, string> = {
 };
 
 const QUICK_ACTION_ROUTE: Record<QuickReplyAction, string> = {
-  photo_meal: '/diet?capture=photo',
+  photo_meal: '/diet?capture=photo&return_to=chat',
   record_weight: '/body-measurements',
   connect_device: '/settings',
 };

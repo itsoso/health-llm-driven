@@ -2,7 +2,10 @@
 import os
 import json
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query
+import uuid
+from urllib.parse import urlsplit
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from typing import List, Optional
@@ -28,13 +31,22 @@ from app.schemas.diet import (
 )
 from statistics import median
 from app.services.ai.food_recognition import food_recognition_service
-from app.services.intake_intent_classifier import classify_intake_intent
+from app.services.intake_intent_classifier import (
+    classify_intake_intent,
+    looks_like_food_ui_text,
+)
+from app.services.private_uploads import refresh_private_upload_url
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
 def _assert_diet_food_items_allowed(food_items: str) -> None:
+    if looks_like_food_ui_text(food_items):
+        raise HTTPException(
+            status_code=400,
+            detail="界面文案或按钮文字不能作为饮食记录写入，请填写真实食物名称和份量。",
+        )
     intent = classify_intake_intent(food_items)
     if intent.kind == "diet_management":
         raise HTTPException(
@@ -48,14 +60,134 @@ def _assert_diet_food_items_allowed(food_items: str) -> None:
         )
 
 
+def _remove_diet_image_file(filepath: str | None) -> None:
+    if not filepath:
+        return
+    try:
+        os.remove(filepath)
+    except FileNotFoundError:
+        return
+
+
+def _persist_diet_image(
+    image_base64: str,
+    image_type: str | None,
+    owner_id: int,
+) -> tuple[str, str]:
+    """Validate and atomically publish a private, owner-scoped diet image."""
+    import base64 as b64
+
+    from app.api.upload import (
+        ALLOWED_EXTENSIONS,
+        UPLOAD_DIR,
+        ensure_upload_dir,
+        generate_filename,
+        validate_image_content,
+    )
+
+    normalized_type = (image_type or "jpeg").lower()
+    if normalized_type == "jpg":
+        normalized_type = "jpeg"
+    if normalized_type not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="不支持的饮食图片类型")
+
+    encoded = image_base64.split(",", 1)[1] if "," in image_base64 else image_base64
+    try:
+        image_data = b64.b64decode(encoded, validate=True)
+    except (ValueError, b64.binascii.Error) as exc:
+        raise HTTPException(status_code=400, detail="饮食图片编码无效") from exc
+    validate_image_content(image_data)
+
+    ensure_upload_dir()
+    filename = generate_filename(normalized_type, "diet", owner_id)
+    filepath = os.path.join(UPLOAD_DIR, filename)
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    temporary = f"{filepath}.uploading-{uuid.uuid4().hex}"
+    try:
+        with open(temporary, "wb") as image_file:
+            image_file.write(image_data)
+        os.replace(temporary, filepath)
+    except Exception:
+        _remove_diet_image_file(temporary)
+        raise
+    return f"/api/v1/upload/files/{filename}", filepath
+
+
+def _diet_image_file_path(image_url: str | None, owner_id: int) -> str | None:
+    if not image_url:
+        return None
+    from app.api.upload import UPLOAD_DIR
+
+    path = urlsplit(str(image_url)).path
+    canonical_prefix = f"/api/v1/upload/files/diet/{int(owner_id)}/"
+    legacy_prefix = "/api/v1/upload/files/diet/"
+    if path.startswith(canonical_prefix):
+        owner_root = os.path.realpath(os.path.join(UPLOAD_DIR, "diet", str(int(owner_id))))
+        filename = os.path.basename(path.removeprefix(canonical_prefix))
+    elif path.startswith(legacy_prefix):
+        # Legacy files share a global directory and do not encode ownership in
+        # their path. Keep them for the migration/cleanup job rather than risk
+        # deleting another user's image from a forged or stale record.
+        return None
+    else:
+        return None
+    candidate = os.path.realpath(os.path.join(owner_root, filename))
+    if not filename or not candidate.startswith(f"{owner_root}{os.sep}"):
+        return None
+    return candidate
+
+
+def _diet_response_image_url(image_url: str | None, owner_id: int) -> str | None:
+    """Sign only canonical paths whose owner is encoded in the path itself."""
+    if not image_url:
+        return None
+    path = urlsplit(str(image_url)).path
+    canonical_prefix = f"/api/v1/upload/files/diet/{int(owner_id)}/"
+    if not path.startswith(canonical_prefix):
+        return None
+    return refresh_private_upload_url(image_url, "diet", owner_id)
+
+
+def _assert_diet_user_access(user_id: int, current_user: User) -> None:
+    if int(user_id) != int(current_user.id) and not bool(current_user.is_admin):
+        raise HTTPException(status_code=403, detail="无权读取他人的饮食记录")
+
+
+def _stage_diet_image_delete(
+    image_url: str | None,
+    owner_id: int,
+) -> tuple[str, str] | None:
+    original = _diet_image_file_path(image_url, owner_id)
+    if not original or not os.path.isfile(original):
+        return None
+    staged = f"{original}.deleting-{uuid.uuid4().hex}"
+    os.replace(original, staged)
+    return original, staged
+
+
 @router.post("/records", response_model=DietRecordResponse)
 def create_diet_record(
     record: DietRecordCreate,
     current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    idempotency_key: Optional[str] = Header(
+        default=None,
+        alias="Idempotency-Key",
+        min_length=8,
+        max_length=160,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    ),
 ):
     """创建饮食记录（需要登录）"""
     _assert_diet_food_items_allowed(record.food_items)
+    if idempotency_key:
+        existing = db.query(DietRecordModel).filter(
+            DietRecordModel.user_id == current_user.id,
+            DietRecordModel.client_action_id == idempotency_key,
+        ).first()
+        if existing:
+            return _convert_to_response(existing)
+    created_image_path: str | None = None
     try:
         logger.info(f"用户 {current_user.id} 创建饮食记录: {record.meal_type}, {record.food_items[:50] if record.food_items else ''}")
 
@@ -78,34 +210,14 @@ def create_diet_record(
             record_dict['record_date'] = server_today
 
         # 处理图片上传
-        image_url = record_dict.get('image_url')
+        image_url = None
         if record_dict.get('image_base64'):
-            try:
-                from app.api.upload import ensure_upload_dir, generate_filename, UPLOAD_DIR
-                import base64 as b64
-
-                ensure_upload_dir()
-                image_type = (record_dict.get('image_type') or 'jpeg').lower()
-                if image_type == "jpg":
-                    image_type = "jpeg"
-
-                # 解码并保存图片
-                base64_data = record_dict['image_base64']
-                if "," in base64_data:
-                    base64_data = base64_data.split(",", 1)[1]
-
-                image_data = b64.b64decode(base64_data)
-                filename = generate_filename(image_type, "diet")
-                filepath = os.path.join(UPLOAD_DIR, filename)
-                os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-                with open(filepath, "wb") as f:
-                    f.write(image_data)
-
-                image_url = f"/api/v1/upload/files/{filename}"
-                logger.info(f"保存饮食图片: {filename}")
-            except Exception as e:
-                logger.warning(f"保存图片失败: {e}")
+            image_url, created_image_path = _persist_diet_image(
+                record_dict['image_base64'],
+                record_dict.get('image_type'),
+                current_user.id,
+            )
+            logger.info("保存饮食图片: %s", image_url)
 
         # 确保 meal_type 是字符串
         meal_type_value = record_dict['meal_type']
@@ -116,6 +228,9 @@ def create_diet_record(
         food_name = record_dict['food_items']
         if food_name and len(food_name) > 100:
             food_name = food_name[:100]  # 截断过长的名称
+        ai_raw_result = record_dict.get('ai_raw_result')
+        if ai_raw_result is not None and not isinstance(ai_raw_result, str):
+            ai_raw_result = json.dumps(ai_raw_result, ensure_ascii=False)
 
         db_record = DietRecordModel(
             user_id=current_user.id,
@@ -133,12 +248,28 @@ def create_diet_record(
             alcohol_units=record_dict.get('alcohol_units'),
             notes=record_dict.get('notes'),
             image_url=image_url,
+            client_action_id=idempotency_key,
             ai_recognized=bool(record_dict.get('ai_recognized')),
             ai_confidence=record_dict.get('ai_confidence'),
+            ai_raw_result=ai_raw_result,
             health_tips=record_dict.get('health_tips'),
         )
         db.add(db_record)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            if idempotency_key:
+                existing = db.query(DietRecordModel).filter(
+                    DietRecordModel.user_id == current_user.id,
+                    DietRecordModel.client_action_id == idempotency_key,
+                ).first()
+                if existing:
+                    _remove_diet_image_file(created_image_path)
+                    created_image_path = None
+                    return _convert_to_response(existing)
+            raise
+        created_image_path = None
         db.refresh(db_record)
 
         logger.info(f"饮食记录创建成功: id={db_record.id}")
@@ -163,9 +294,20 @@ def create_diet_record(
             )
         return _convert_to_response(db_record)
 
+    except HTTPException:
+        db.rollback()
+        try:
+            _remove_diet_image_file(created_image_path)
+        except OSError as cleanup_error:
+            logger.error("饮食图片失败回滚清理失败: %s", cleanup_error)
+        raise
     except Exception as e:
         logger.error(f"创建饮食记录失败: {e}", exc_info=True)
         db.rollback()
+        try:
+            _remove_diet_image_file(created_image_path)
+        except OSError as cleanup_error:
+            logger.error("饮食图片失败回滚清理失败: %s", cleanup_error)
         raise HTTPException(status_code=500, detail=f"创建记录失败: {str(e)}")
 
 
@@ -196,7 +338,10 @@ def _convert_to_response(record) -> DietRecordResponse:
         fat=record.fat,
         fiber=record.fiber,
         notes=record.notes,
-        image_url=getattr(record, 'image_url', None),
+        image_url=_diet_response_image_url(
+            getattr(record, 'image_url', None),
+            record.user_id,
+        ),
         ai_recognized=getattr(record, 'ai_recognized', 0),
         ai_confidence=getattr(record, 'ai_confidence', None),
         health_tips=getattr(record, 'health_tips', None),
@@ -217,6 +362,7 @@ def get_user_diet_records(
     db: Session = Depends(get_db)
 ):
     """获取用户饮食记录"""
+    _assert_diet_user_access(user_id, current_user)
     query = db.query(DietRecordModel).filter(DietRecordModel.user_id == user_id)
 
     if start_date:
@@ -238,6 +384,7 @@ def get_daily_diet_summary(
     db: Session = Depends(get_db)
 ):
     """获取某日饮食汇总"""
+    _assert_diet_user_access(user_id, current_user)
     records = db.query(DietRecordModel).filter(
         DietRecordModel.user_id == user_id,
         DietRecordModel.record_date == record_date
@@ -269,6 +416,7 @@ def get_diet_stats(
     db: Session = Depends(get_db)
 ):
     """获取饮食统计"""
+    _assert_diet_user_access(user_id, current_user)
     start_date = date.today() - timedelta(days=days)
 
     records = db.query(DietRecordModel).filter(
@@ -497,9 +645,30 @@ def delete_diet_record(
     if record.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权删除他人的饮食记录")
 
-    db.delete(record)
-    db.commit()
-    return {"message": "Record deleted successfully"}
+    staged_image = _stage_diet_image_delete(record.image_url, current_user.id)
+    try:
+        db.delete(record)
+        db.commit()
+    except Exception:
+        db.rollback()
+        if staged_image:
+            original, staged = staged_image
+            try:
+                os.replace(staged, original)
+            except OSError as restore_error:
+                logger.error("饮食记录删除失败后图片恢复失败: %s", restore_error)
+        raise
+    if staged_image:
+        try:
+            _remove_diet_image_file(staged_image[1])
+        except OSError as cleanup_error:
+            logger.error("饮食记录删除后图片清理失败: %s", cleanup_error)
+    return {
+        "message": "Record deleted successfully",
+        "id": record_id,
+        "record_id": record_id,
+        "resource_type": "diet_record",
+    }
 
 
 # ========== AI食物识别端点 ==========
@@ -602,6 +771,7 @@ async def recognize_and_save_diet(
             detail="智能食物识别服务不可用"
         )
 
+    created_image_path: str | None = None
     try:
         # AI识别
         result = await food_recognition_service.recognize_food_from_base64(
@@ -625,6 +795,7 @@ async def recognize_and_save_diet(
         # 组合食物名称
         food_names = [f.get("name", "") for f in foods if f.get("name")]
         food_items = ", ".join([f.get("name", "") + (f" ({f.get('quantity', '')})" if f.get('quantity') else "") for f in foods])
+        _assert_diet_food_items_allowed(food_items)
 
         # 取第一个食物名称作为主名称（兼容旧字段）
         primary_food_name = food_names[0] if food_names else "智能识别食物"
@@ -636,32 +807,12 @@ async def recognize_and_save_diet(
         # 保存图片（如果有）
         image_url = None
         if request.image_base64:
-            try:
-                from app.api.upload import ensure_upload_dir, generate_filename, UPLOAD_DIR
-                import base64 as b64
-
-                ensure_upload_dir()
-                image_type = request.image_type.lower()
-                if image_type == "jpg":
-                    image_type = "jpeg"
-
-                # 解码并保存图片
-                base64_data = request.image_base64
-                if "," in base64_data:
-                    base64_data = base64_data.split(",", 1)[1]
-
-                image_data = b64.b64decode(base64_data)
-                filename = generate_filename(image_type, "diet")
-                filepath = os.path.join(UPLOAD_DIR, filename)
-                os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-                with open(filepath, "wb") as f:
-                    f.write(image_data)
-
-                image_url = f"/api/v1/upload/files/{filename}"
-                logger.info(f"保存饮食图片: {filename}")
-            except Exception as e:
-                logger.warning(f"保存图片失败: {e}")
+            image_url, created_image_path = _persist_diet_image(
+                request.image_base64,
+                request.image_type,
+                current_user.id,
+            )
+            logger.info("保存饮食图片: %s", image_url)
 
         # 创建饮食记录
         db_record = DietRecordModel(
@@ -684,6 +835,7 @@ async def recognize_and_save_diet(
 
         db.add(db_record)
         db.commit()
+        created_image_path = None
         db.refresh(db_record)
 
         logger.info(f"用户 {current_user.id} 通过AI识别创建饮食记录: {food_items}")
@@ -691,9 +843,19 @@ async def recognize_and_save_diet(
         return _convert_to_response(db_record)
 
     except HTTPException:
+        db.rollback()
+        try:
+            _remove_diet_image_file(created_image_path)
+        except OSError as cleanup_error:
+            logger.error("AI 饮食图片失败回滚清理失败: %s", cleanup_error)
         raise
     except Exception as e:
-        logger.error(f"AI识别并保存失败: {e}")
+        db.rollback()
+        try:
+            _remove_diet_image_file(created_image_path)
+        except OSError as cleanup_error:
+            logger.error("AI 饮食图片失败回滚清理失败: %s", cleanup_error)
+        logger.error(f"AI识别并保存失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"保存失败: {str(e)}")
 
 

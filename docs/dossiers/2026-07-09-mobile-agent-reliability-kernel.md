@@ -4,10 +4,10 @@
 |---|---|
 | slug | `mobile-agent-reliability-kernel` |
 | 创建日期 | 2026-07-09 |
-| 当前阶段 | S4 分解 |
-| 状态 | building |
+| 当前阶段 | S6 部署 |
+| 状态 | releasing |
 | 负责 | Codex |
-| 反馈环 | Mobile Jest / TypeScript / backend pytest / iOS Simulator / Mobile OTA |
+| 反馈环 | Mobile Jest / TypeScript / backend pytest / EAS production build / TestFlight |
 
 ## Correct Course
 
@@ -68,7 +68,7 @@
 - 实施：`docs/plans/2026-07-09-mobile-agent-reliability-kernel.md`
 - Feature Spec：`docs/specs/active/2026-07-09-mobile-agent-reliability-kernel.md`
 - 顺序：P0 AgentTurn -> WriteReceipt -> Composer -> 附件/上下文；P1 密度/启动/等待；P2 人格/记忆/指标。
-- 发布路由：后端 contract 先部署，再发布 Mobile OTA；没有 native 改动时不走 EAS/TestFlight。
+- 发布路由：后端 contract 先部署；本轮虽以 JS/TS 为主，但用户于 2026-07-10 明确要求 TestFlight，因此走 EAS production build + auto-submit，不以 OTA 代替正式测试包。
 
 ## G2 · 可行性 + 安全压测
 
@@ -84,33 +84,48 @@
 
 ## S4 · 研发任务分解
 
-- [ ] T1 AgentTurn reducer、持久化快照与 `useChatEngine` 集成（OTA）
-- [ ] T2 WriteReceipt client contract、卡片 action 资源回执与 fail-closed（OTA）
-- [ ] T3 Agent tool_result additive receipt（backend deploy + OTA）
-- [ ] T4 Composer reducer、两条语音互斥、AppState cleanup（OTA）
-- [ ] T5 输入草稿和未发送图片 App 私有目录恢复（OTA）
-- [ ] T6 回复动作收敛、Today Focus 自适应折叠和等待态（OTA）
-- [ ] T7 小巴记忆可见性和关键体验埋点（backend deploy + OTA）
-- [ ] T8 G3/G4、模拟器视觉与发布闸
-- 并发检查：当前 `main...origin/main [ahead 1, behind 108]` 且存在大量并发 WIP；继续当前工作区以保留前置修改，只编辑/提交本 feature 文件，部署必须另用干净主干 worktree。
+- [x] T1 AgentTurn reducer、持久化快照与 `useChatEngine` 集成（OTA）
+- [x] T2 WriteReceipt client contract、卡片 action 资源回执与 fail-closed（OTA）
+- [x] T3 Agent tool_result additive receipt（backend deploy + OTA）
+- [x] T4 Composer reducer、两条语音互斥、AppState cleanup（OTA）
+- [x] T5 输入草稿和未发送图片 App 私有目录恢复（OTA）
+- [x] T6 回复动作收敛、Today Focus 自适应折叠和等待态（OTA）
+- [x] T7 小巴记忆可见性和关键体验埋点（backend deploy + OTA）
+- [x] T8 G3/G4、构建链与发布前自动化闸
+- 并发检查：发布在独立集成 worktree `codex/mobile-agent-reliability-kernel` 完成；原始 `main` 工作区的并发 WIP 不纳入暂存或部署。
 
 ## S5 · 实现
 
 - 委托：health-harness-orchestrator（Codex 在当前 session 顺序执行；共享状态任务不并行写同一文件）。
 - 分支 / commit：当前项目约定直接在 `main`；提交与 push 需在完成 G3/G4 后评估远端差异。
+- 已落地：统一 AgentTurn / Composer 状态机、写入回执、账户隔离、请求 ACK 与断流恢复、输入草稿和图片恢复、双语音入口互斥、提交后停听、Today Focus 和来源可见性。
+- 第二轮加固：server-side `client_turn_id` 幂等、未最终落盘回复禁止回放、软写失败 fail-closed、跨天卡片回执身份、私有健康图片签名访问、部分图片失败回滚、语音最终文本与 hydration 竞态防护。
+- 发布前加固：单个模型响应的完整写计划在任何工具执行前封存；恢复时 `planned / in_flight / uncertain` 一律 fail-closed；会话图片引用、删除和 tombstone 清理使用跨线程/跨进程生命周期锁并在文件锁后读取最新 DB 引用；非持久化 Agent 请求在 HTTP 与 Mobile 消息终态上统一为可重试中断。
 
 ## G3 · 测试闸
 
-- 待执行。
+- Backend 受影响回归：`597 passed`，覆盖 Agent 幂等/恢复、饮食权威写入、私有图片生命周期和用户隔离、迁移、GenUI、医疗记录与工具校验。
+- Mobile 全量 Jest：`228 suites / 1587 passed / 1 skipped`；现有 Jest runner 仍需 `--forceExit` 才能返回，作为非阻塞测试基建债跟踪。
+- 发布阻断定向回归：Mobile `4 suites / 68 passed`；Backend 饮食与上传 `47 passed`。覆盖账号切换持久化、共享 Voice session、识别并保存事务、legacy 图片 capability 和跨用户读取。
+- 静态检查：Mobile `tsc --noEmit`、Backend `ruff` / `py_compile`、`git diff --check` 均通过。
+- 构建链：全新 `npm ci` 成功，`expo-modules-autolinking` patch 真实应用；修复了旧 patch 非标准空白上下文导致 `patch-package` 解析失败且被 `|| true` 掩盖的问题。
+- 真实 PostgreSQL：主业务连接池保持未占用；turn lock 专用池 `pool_size=8 / max_overflow=0`；跨 worker 全局槽上限 `16`，超限 fail-closed。
+- 文档闸：43 份 Dossier 一致性通过；system-map/doc drift 检查通过，代码派生 service roster 更新为 `324`。
+- App Store 提交预检：bundle `life.executor.health`、ASC app `6763569720`、EAS production profile 与 auto-submit 脚本通过。
+- **裁决：PASS**。锁屏状态下无法完成本轮模拟器截图和真实麦克风验证；真机音频、键盘遮挡和前后台切换仍归入 G6，不以自动化测试代替。
 
 ## G4 · 安全闸
 
 - 触发：写路径、用药/补剂记录反馈、麦克风和健康图片隐私。
-- 待实现后独立审查。
+- 发布复审继续发现并关闭同帧重复提交、账号 scope 延迟解析、双 Voice hook 全局单例竞态、`recognize-and-save` 绕过 guard / 图片 fail-open、client-controlled `image_url`、legacy capability 重签名和旧 user-id 查询缺少隔离等阻断问题。
+- 最终独立复审结论：所有前述 Critical/Important 均 CLOSED；canonical owner-scoped 图片仍可签名读取，legacy 饮食图片不再签发 capability 或参与自动删除，旧 user-id 查询仅允许本人或管理员。
+- 依赖审计例外：`npm audit --omit=dev` 仍报告旧 Voice/HealthKit Expo config plugin 的 build-time XML 依赖，以及 `react-native-markdown-display` 无上游修复的复杂度告警。EAS 只处理仓库内受控 plist/XML，运行时 Markdown 长度受 Agent 输出上限约束；本轮不以强制降级原生语音或跨 Expo 版本升级换取表面绿灯，后续替换弃用插件并升级 Expo patch line。
+- 已知非阻断残余：worker 若在图片原子落盘后、数据库引用提交前被 `SIGKILL`，异常清理来不及执行，可能留下仅当前用户可访问的无引用私有文件；不造成重复写或跨用户损坏，后续应增加按 DB 引用集合清扫的回收任务。
+- **裁决：PASS**。
 
 ## S6 · 部署
 
-- 待 G3/G4 通过。
+- 自动化与构建链闸已通过；准备提交、推送、通过 `deploy.sh` 部署 backend，再触发 EAS production build + auto-submit。
 
 ## G5 · 部署健康闸
 
@@ -118,7 +133,7 @@
 
 ## S7 · 上线验证
 
-- 待模拟器与生产 anchor 路径验证。
+- iPhone 17 Pro Simulator 原生构建、安装和启动成功（0 errors，9 warnings）；macOS 当前锁屏，截图、键盘遮挡、前后台恢复和双语音交互仍待解锁后验证。
 
 ## G6 · 验证闸
 

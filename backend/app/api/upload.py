@@ -4,14 +4,22 @@ import uuid
 import logging
 import base64
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from urllib.parse import urlsplit
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import FileResponse
 from typing import Optional
 from pydantic import BaseModel
 
 from app.models.user import User
-from app.api.deps import get_current_user_required
-from app.utils.image_compression import compress_image, should_compress, get_image_info
+from app.api.deps import get_current_user, get_current_user_required
+from app.database import get_db
+from app.services.private_uploads import (
+    PRIVATE_UPLOAD_CATEGORIES,
+    build_signed_private_upload_url,
+    verify_signed_private_upload_url,
+)
+from app.utils.image_compression import compress_image, should_compress
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -19,6 +27,9 @@ logger = logging.getLogger(__name__)
 # 上传目录配置
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp"}
+ALLOWED_CATEGORIES = {"diet", "medical", "avatar", "other"}
+PRIVATE_CATEGORIES = set(PRIVATE_UPLOAD_CATEGORIES) - {"chat"}
+PUBLIC_CATEGORIES = {"avatar"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 COMPRESSION_THRESHOLD_KB = 500  # 超过500KB自动压缩
 COMPRESSION_QUALITY = 85  # 压缩质量
@@ -58,11 +69,34 @@ def get_file_extension(filename: str) -> str:
     return ""
 
 
-def generate_filename(extension: str, category: str = "other") -> str:
+def normalize_category(category: str) -> str:
+    normalized = str(category or "").strip().lower()
+    if normalized not in ALLOWED_CATEGORIES:
+        raise HTTPException(status_code=400, detail="不支持的图片分类")
+    return normalized
+
+
+def generate_filename(
+    extension: str,
+    category: str = "other",
+    owner_id: int | None = None,
+) -> str:
     """生成唯一文件名"""
+    normalized_category = normalize_category(category)
+    if normalized_category in PRIVATE_CATEGORIES and owner_id is None:
+        raise ValueError("private_upload_owner_required")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     unique_id = uuid.uuid4().hex[:8]
-    return f"{category}/{timestamp}_{unique_id}.{extension}"
+    if normalized_category in PRIVATE_CATEGORIES:
+        return f"{normalized_category}/{int(owner_id)}/{timestamp}_{unique_id}.{extension}"
+    return f"{normalized_category}/{timestamp}_{unique_id}.{extension}"
+
+
+def _uploaded_file_url(filename: str, category: str, owner_id: int) -> str:
+    safe_filename = os.path.basename(filename)
+    if category in PRIVATE_CATEGORIES:
+        return build_signed_private_upload_url(category, owner_id, safe_filename)
+    return f"/api/v1/upload/files/{category}/{safe_filename}"
 
 
 def validate_image_content(content: bytes) -> None:
@@ -74,6 +108,24 @@ def validate_image_content(content: bytes) -> None:
     is_webp = header[:4] == b'RIFF' and header[8:12] == b'WEBP'
     if not (is_jpeg or is_png or is_gif or is_webp):
         raise HTTPException(status_code=400, detail="文件内容不是有效图片")
+
+
+def _legacy_medical_file_belongs_to_user(
+    db: Session,
+    user_id: int,
+    relative_url: str,
+) -> bool:
+    from app.models.family_health import MedicalReport
+
+    rows = db.query(MedicalReport.image_urls).filter(
+        MedicalReport.user_id == user_id,
+    ).all()
+    for (raw_urls,) in rows:
+        values = raw_urls if isinstance(raw_urls, list) else [raw_urls]
+        for value in values:
+            if isinstance(value, str) and urlsplit(value).path == relative_url:
+                return True
+    return False
 
 
 @router.post("/image", response_model=UploadResponse)
@@ -89,6 +141,7 @@ async def upload_image(
     - **category**: 分类 (diet/medical/avatar/other)
     """
     ensure_upload_dir()
+    category = normalize_category(category)
 
     # 检查文件类型
     extension = get_file_extension(file.filename or "")
@@ -146,7 +199,7 @@ async def upload_image(
         logger.info(f"图片大小 {original_size / 1024:.1f}KB，无需压缩")
 
     # 生成文件名并保存
-    filename = generate_filename(extension, category)
+    filename = generate_filename(extension, category, current_user.id)
     filepath = os.path.join(UPLOAD_DIR, filename)
 
     # 确保目录存在
@@ -156,7 +209,7 @@ async def upload_image(
         f.write(content)
 
     # 返回相对URL
-    url = f"/api/v1/upload/files/{filename}"
+    url = _uploaded_file_url(filename, category, current_user.id)
 
     logger.info(f"用户 {current_user.id} 上传图片: {filename} (最终大小: {len(content) / 1024:.1f}KB)")
 
@@ -180,6 +233,7 @@ async def upload_image_base64(
     - **category**: 分类 (diet/medical/avatar/other)
     """
     ensure_upload_dir()
+    category = normalize_category(request.category)
 
     # 验证图片类型
     image_type = request.image_type.lower()
@@ -246,7 +300,7 @@ async def upload_image_base64(
             logger.info(f"图片大小 {original_size / 1024:.1f}KB，无需压缩")
 
         # 生成文件名并保存
-        filename = generate_filename(image_type, request.category)
+        filename = generate_filename(image_type, category, current_user.id)
         filepath = os.path.join(UPLOAD_DIR, filename)
 
         # 确保目录存在
@@ -256,7 +310,7 @@ async def upload_image_base64(
             f.write(image_data)
 
         # 返回相对URL
-        url = f"/api/v1/upload/files/{filename}"
+        url = _uploaded_file_url(filename, category, current_user.id)
 
         logger.info(f"用户 {current_user.id} 上传Base64图片: {filename} (最终大小: {len(image_data) / 1024:.1f}KB)")
 
@@ -271,24 +325,185 @@ async def upload_image_base64(
         raise HTTPException(status_code=400, detail=f"图片处理失败: {str(e)}")
 
 
+@router.get("/files/chat/{owner_id}/{filename}")
+async def get_private_chat_image(
+    owner_id: int,
+    filename: str,
+    expires: Optional[int] = Query(default=None),
+    signature: Optional[str] = Query(default=None),
+    current_user: Optional[User] = Depends(get_current_user),
+):
+    from app.services.chat_utils import verify_signed_chat_image_url
+
+    owner_authenticated = bool(
+        current_user
+        and current_user.id == owner_id
+        and current_user.is_active
+        and current_user.is_approved
+    )
+    capability_authenticated = verify_signed_chat_image_url(
+        owner_id, filename, expires, signature,
+    )
+    if not owner_authenticated and not capability_authenticated:
+        status_code = 403 if current_user else 401
+        raise HTTPException(status_code=status_code, detail="访问被拒绝")
+    owner_root = os.path.realpath(os.path.join(UPLOAD_DIR, "chat", str(owner_id)))
+    filepath = os.path.realpath(os.path.join(owner_root, os.path.basename(filename)))
+    if not filepath.startswith(f"{owner_root}{os.sep}"):
+        raise HTTPException(status_code=403, detail="访问被拒绝")
+    if not os.path.isfile(filepath):
+        raise HTTPException(status_code=404, detail="文件不存在")
+    return FileResponse(filepath)
+
+
+@router.get("/files/chat/{filename}")
+async def get_legacy_private_chat_image(
+    filename: str,
+    owner_id: Optional[int] = Query(default=None),
+    expires: Optional[int] = Query(default=None),
+    signature: Optional[str] = Query(default=None),
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Protect legacy chat files by checking ownership through message history."""
+    from app.models.agent_conversation import AgentConversation, AgentMessage
+
+    from app.services.chat_utils import verify_signed_chat_image_url
+
+    safe_filename = os.path.basename(filename)
+    capability_authenticated = bool(
+        owner_id is not None
+        and verify_signed_chat_image_url(
+            owner_id, safe_filename, expires, signature, legacy=True,
+        )
+    )
+    owner_authenticated = False
+    if current_user and current_user.is_active and current_user.is_approved:
+        relative_url = f"/api/v1/upload/files/chat/{safe_filename}"
+        owner_authenticated = (
+            db.query(AgentMessage.id)
+            .join(AgentConversation, AgentConversation.id == AgentMessage.conversation_id)
+            .filter(
+                AgentConversation.user_id == current_user.id,
+                AgentMessage.image_url.contains(relative_url),
+            )
+            .first()
+        ) is not None
+    if not owner_authenticated and not capability_authenticated:
+        status_code = 404 if current_user else 401
+        raise HTTPException(status_code=status_code, detail="文件不存在")
+    chat_root = os.path.realpath(os.path.join(UPLOAD_DIR, "chat"))
+    filepath = os.path.realpath(os.path.join(chat_root, safe_filename))
+    if not filepath.startswith(f"{chat_root}{os.sep}"):
+        raise HTTPException(status_code=403, detail="访问被拒绝")
+    if not os.path.isfile(filepath):
+        raise HTTPException(status_code=404, detail="文件不存在")
+    return FileResponse(filepath)
+
+
+@router.get("/files/{category}/{owner_id}/{filename}")
+async def get_private_uploaded_file(
+    category: str,
+    owner_id: int,
+    filename: str,
+    expires: Optional[int] = Query(default=None),
+    signature: Optional[str] = Query(default=None),
+    current_user: Optional[User] = Depends(get_current_user),
+):
+    normalized_category = str(category or "").strip().lower()
+    if normalized_category not in PRIVATE_CATEGORIES:
+        raise HTTPException(status_code=404, detail="文件不存在")
+    owner_authenticated = bool(
+        current_user
+        and current_user.id == owner_id
+        and current_user.is_active
+        and current_user.is_approved
+    )
+    capability_authenticated = verify_signed_private_upload_url(
+        normalized_category,
+        owner_id,
+        filename,
+        expires,
+        signature,
+    )
+    if not owner_authenticated and not capability_authenticated:
+        status_code = 403 if current_user else 401
+        raise HTTPException(status_code=status_code, detail="访问被拒绝")
+    owner_root = os.path.realpath(
+        os.path.join(UPLOAD_DIR, normalized_category, str(owner_id))
+    )
+    filepath = os.path.realpath(os.path.join(owner_root, os.path.basename(filename)))
+    if not filepath.startswith(f"{owner_root}{os.sep}"):
+        raise HTTPException(status_code=403, detail="访问被拒绝")
+    if not os.path.isfile(filepath):
+        raise HTTPException(status_code=404, detail="文件不存在")
+    return FileResponse(filepath)
+
+
 @router.get("/files/{category}/{filename}")
 async def get_uploaded_file(
     category: str,
-    filename: str
+    filename: str,
+    owner_id: Optional[int] = Query(default=None),
+    expires: Optional[int] = Query(default=None),
+    signature: Optional[str] = Query(default=None),
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
-    获取上传的文件（公开访问，无需认证）
-
-    图片文件应该可以公开访问，以便在小程序和网页中显示
+    获取上传的文件。只有头像公开；历史健康图片必须证明 owner。
     """
-    filepath = os.path.join(UPLOAD_DIR, category, filename)
+    if category == "chat":
+        raise HTTPException(status_code=403, detail="聊天健康图片需要认证")
+    normalized_category = str(category or "").strip().lower()
+    if normalized_category in PRIVATE_CATEGORIES:
+        safe_filename = os.path.basename(filename)
+        capability_authenticated = bool(
+            owner_id is not None
+            and verify_signed_private_upload_url(
+                normalized_category,
+                owner_id,
+                safe_filename,
+                expires,
+                signature,
+                legacy=True,
+            )
+        )
+        owner_authenticated = False
+        if (
+            current_user
+            and current_user.is_active
+            and current_user.is_approved
+        ):
+            relative_url = (
+                f"/api/v1/upload/files/{normalized_category}/{safe_filename}"
+            )
+            if normalized_category == "diet":
+                # Legacy diet paths do not carry an owner id. A DietRecord row
+                # alone is not an ownership proof because image_url was
+                # historically client writable. Record responses issue a
+                # short-lived capability URL for legitimate legacy images.
+                owner_authenticated = False
+            elif normalized_category == "medical":
+                owner_authenticated = _legacy_medical_file_belongs_to_user(
+                    db,
+                    current_user.id,
+                    relative_url,
+                )
+        if not owner_authenticated and not capability_authenticated:
+            status_code = 404 if current_user else 401
+            raise HTTPException(status_code=status_code, detail="文件不存在")
+    elif normalized_category not in PUBLIC_CATEGORIES:
+        raise HTTPException(status_code=404, detail="文件不存在")
+    filepath = os.path.join(UPLOAD_DIR, normalized_category, os.path.basename(filename))
 
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="文件不存在")
 
     # 安全检查：确保路径在上传目录内
     real_path = os.path.realpath(filepath)
-    if not real_path.startswith(os.path.realpath(UPLOAD_DIR)):
+    category_root = os.path.realpath(os.path.join(UPLOAD_DIR, normalized_category))
+    if not real_path.startswith(f"{category_root}{os.sep}"):
         raise HTTPException(status_code=403, detail="访问被拒绝")
 
     return FileResponse(filepath)

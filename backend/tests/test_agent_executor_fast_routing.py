@@ -9,7 +9,6 @@ turns almost always call a tool (health_record/health_query/health_manage), and 
 fast model that can't tool-call would silently break them.
 """
 import json
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -18,11 +17,104 @@ from app.services.agent_executor import (
     AgentExecutor,
     _build_fast_record_messages,
     _is_fast_eligible_turn,
+    _looks_like_medical_report_image_context,
+    _record_write_failed_user_message,
 )
 from app.services.llm import model_registry as reg
 
 
 # ──── registry: pick_fast_tool_model_id ────
+
+def test_generic_or_food_photo_prompts_skip_medical_report_ocr():
+    assert _looks_like_medical_report_image_context("请分析这些图片") is False
+    assert _looks_like_medical_report_image_context("记录午餐") is False
+    assert _looks_like_medical_report_image_context("吃了一个黄桃") is False
+    assert _looks_like_medical_report_image_context("请分析这张胃镜报告") is True
+    assert _looks_like_medical_report_image_context("体检化验单指标导入") is True
+
+
+def test_record_write_fail_closed_message_is_user_visible():
+    assert "没有成功写入数据库" in _record_write_failed_user_message("午餐吃了牛肉面")
+    assert "请重新提交" in _record_write_failed_user_message("")
+
+
+@pytest.mark.parametrize(
+    ("result", "expected_id"),
+    [
+        ('{"id":701,"message":"已记录晚餐"}', "701"),
+        ('{"record_id":"702","message":"已记录"}', "702"),
+        ('{"resource":{"type":"diet_record","id":703}}', "703"),
+    ],
+)
+def test_write_receipt_uses_structured_tool_result_identity(result, expected_id):
+    receipt = ae._write_receipt_from_tool_result("health_record", "diet", result)
+
+    assert receipt == {
+        "operation_id": f"health_record:diet_record:{expected_id}",
+        "status": "verified",
+        "resource_type": "diet_record",
+        "resource_id": expected_id,
+        "completed_at": receipt["completed_at"],
+        "verified": True,
+    }
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        "not-json",
+        "Error: API 返回 500",
+        "[NEEDS_CONFIRMATION] 请确认后再写入",
+        '{"success":false,"message":"记录失败"}',
+        '{"id":701,"error":"database timeout"}',
+        '{"id":701,"ok":false}',
+        '{"id":701,"status":"rejected"}',
+        '{"message":"已记录，但缺少资源标识"}',
+    ],
+)
+def test_write_receipt_rejects_malformed_soft_failed_or_identityless_results(result):
+    assert ae._write_receipt_from_tool_result("health_record", "diet", result) is None
+
+
+def test_write_completion_distinguishes_confirmation_and_read_only_operations():
+    assert ae._write_tool_attempted(
+        "health_record",
+        {"record_type": "diet"},
+    ) is True
+    assert ae._write_tool_attempted(
+        "health_manage",
+        {"record_type": "diet", "operation": "list"},
+    ) is False
+    assert ae._write_tool_attempted(
+        "health_manage",
+        {"record_type": "diet", "operation": "delete"},
+    ) is True
+    assert ae._write_tool_completed(
+        "health_record",
+        {"record_type": "diet"},
+        '{"id":701}',
+    ) is True
+    assert ae._write_tool_completed(
+        "health_record",
+        {"record_type": "medication"},
+        "[NEEDS_CONFIRMATION] 请确认用药记录",
+    ) is False
+    assert ae._write_tool_completed(
+        "health_manage",
+        {"record_type": "diet", "operation": "list"},
+        '[{"id":701}]',
+    ) is False
+    assert ae._write_tool_completed(
+        "health_record",
+        {"record_type": "diet"},
+        '{"id":701,"error":"database timeout"}',
+    ) is False
+    assert ae._write_tool_completed(
+        "health_record",
+        {"record_type": "diet"},
+        "记录成功",
+    ) is False
+
 
 def test_pick_fast_tool_model_is_reliable_tool_caller():
     """The fast model chosen must be reliable_tool_calling=True (env-agnostic)."""
@@ -150,12 +242,12 @@ class _FakeProvider:
     def __init__(self, model_id):
         self.model = model_id
 
-    async def chat(self, **kwargs):  # noqa: ARG002
-        return "OK"
-
     async def chat_stream(self, **kwargs):  # noqa: ARG002
         yield {"type": "content", "text": "OK"}
         yield {"type": "finish", "finish_reason": "stop"}
+
+    async def chat(self, **kwargs):  # noqa: ARG002
+        return {"content": "OK", "finish_reason": "stop"}
 
 
 def _wire_common(executor, monkeypatch, provider_factory):

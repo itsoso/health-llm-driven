@@ -24,6 +24,7 @@ export interface DietRecordCreate {
   record_date: string;
   meal_type: MealType;
   food_items: string;
+  source?: string;
   calories?: number;
   protein?: number;
   carbs?: number;
@@ -31,6 +32,12 @@ export interface DietRecordCreate {
   fiber?: number;
   alcohol_units?: number;
   notes?: string;
+  image_base64?: string;
+  image_type?: string;
+  ai_recognized?: number;
+  ai_confidence?: number;
+  ai_raw_result?: FoodRecognitionResponse;
+  health_tips?: string;
 }
 
 export interface DailyDietSummary {
@@ -132,6 +139,9 @@ export async function getFrequentFoods(limit = 8, days = 30): Promise<FrequentFo
 
 export async function createDietRecord(record: DietRecordCreate): Promise<DietRecord> {
   const { data } = await api.post<DietRecord>('/diet/records', record);
+  if (!data?.id || !Number.isFinite(data.id)) {
+    throw new Error('diet_record_missing_id');
+  }
   return data;
 }
 

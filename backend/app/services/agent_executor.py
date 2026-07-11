@@ -9,6 +9,8 @@
   4. 将 tool_result 返回模型 → 循环直到无更多 tool_call
   5. 最终回答通过 SSE 流式输出
 """
+import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -41,6 +43,7 @@ ANSWER_MAX_TOKENS = 8000
 # 从不需要 8000, 长尾解码本身就是延迟的一部分 —— 只对 fast-routed turn 收紧到 2000,
 # 其它一切 (建议/分析/复盘/长方案) 仍用 ANSWER_MAX_TOKENS。
 FAST_ROUTE_ANSWER_MAX_TOKENS = 2000
+CLIENT_TURN_REPLAY_WAIT_SECONDS = 5.0
 INTERRUPTED_COMPLETION_NOTICE = "\n\n[回复因长度限制中断，请让我接着上文继续。]"
 AGENT_MODEL = "NousResearch/Hermes-3-Llama-3.1-8B"
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -1068,10 +1071,13 @@ def _build_fast_record_messages(messages: List[Dict[str, Any]]) -> List[Dict[str
                 "必须调用 health_record 或 health_manage 工具。不要做健康分析，"
                 "不要输出长建议。若用户提到多条记录，尽量一次性发起多个 tool_call；"
                 "信息不足时只用一句中文追问。"
-                "用户查询全天饮食/热量/吃了什么时，调用 health_query(dimension='diet')。"
-                "用户说修改晚餐/午餐/早餐/加餐的实际摄入时，先调用 health_manage("
-                "record_type='diet', operation='list', meal_type='dinner/lunch/breakfast/snack') "
-                "查询候选记录；拿到真实 ID 后再 health_manage(update)。"
+                "查询今天/全天饮食、吃了什么、摄入热量或营养时，必须调用 "
+                "health_query(dimension='diet')；如果同一句还问全天热量消耗、步数或活动，"
+                "再调用 health_query(dimension='activity', days=1)。"
+                "修改/调整饮食记录时，先用 health_manage(record_type='diet', operation='list') 查候选；"
+                "用户明确说早餐/午餐/晚餐/加餐时，list 必须带 date=今天 和 meal_type，"
+                "例如晚餐用 meal_type='dinner'，不能拿加餐或其他餐次直接更新。"
+                "执行 update 时，若用户明确餐次，data.meal_type 也要保留对应英文枚举。"
                 "**若用户的回复是对上一轮助手提问的简短确认/回应**(消息里带「[上一轮助手问我:…]」"
                 "且回复是「记录」「好」「嗯」之类),结合上一轮助手的提问判断要记录什么,不要重新泛问。"
             ),
@@ -1128,6 +1134,227 @@ def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
     if s("illness_name") is not None or (s("name") is not None and "start_date" in record):
         return f"已记录：{record.get('illness_name') or record.get('name')}"
     return "✅ 已记录"
+
+
+_WRITE_RECEIPT_TOOL_NAMES = {"health_record", "health_manage", "intervention_cycle"}
+_WRITE_RESULT_FAILURE_MARKERS = (
+    "Error:",
+    "[NEEDS_CONFIRMATION]",
+    "暂时没成功",
+    "没成功",
+    "记录失败",
+    "未找到",
+)
+_UNVERIFIED_WRITE_USER_MESSAGE = (
+    "本次操作没有取得可验证的写入回执，我不能确认已经完成。"
+    "为避免重复写入，请先查询现有记录；确认缺失后再重试。"
+)
+
+
+class _UnverifiedWriteResult(RuntimeError):
+    pass
+_RESOURCE_TYPE_BY_RECORD_TYPE = {
+    "bp": "blood_pressure_record",
+    "blood_pressure": "blood_pressure_record",
+    "diet": "diet_record",
+    "exercise": "exercise_record",
+    "excretion": "excretion_record",
+    "goal": "goal",
+    "illness": "illness_episode",
+    "medication": "medication_log",
+    "mood": "mood_record",
+    "reminder": "smart_reminder",
+    "rhinitis": "illness_episode",
+    "sleep": "sleep_record",
+    "supplement": "supplement_log",
+    "supplement_group": "supplement_log",
+    "symptom": "symptom_record",
+    "waist": "waist_record",
+    "water": "water_record",
+    "weight": "weight_record",
+}
+
+
+def _write_result_payload(result: Any) -> Optional[Dict[str, Any]]:
+    if isinstance(result, dict):
+        payload = result
+    elif isinstance(result, str):
+        text = result.strip()
+        if not text or any(marker in text for marker in _WRITE_RESULT_FAILURE_MARKERS):
+            return None
+        try:
+            payload = json.loads(text)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return None
+    else:
+        return None
+    if (
+        not isinstance(payload, dict)
+        or payload.get("success") is False
+        or payload.get("ok") is False
+    ):
+        return None
+    error = payload.get("error")
+    if error not in (None, "", False, {}, []):
+        return None
+    status = str(payload.get("status") or "").strip().lower()
+    if status in {
+        "error", "failed", "pending", "needs_confirmation", "rejected",
+        "cancelled", "canceled", "not_found", "denied",
+    }:
+        return None
+    message = str(payload.get("message") or "")
+    if any(marker in message for marker in _WRITE_RESULT_FAILURE_MARKERS):
+        return None
+    return payload
+
+
+def _write_checkpoint_status_after_dispatch(
+    result: Any,
+    receipt: Optional[Dict[str, Any]],
+) -> str:
+    """Classify a write only after execution crossed the dispatch boundary."""
+    if receipt:
+        return "verified"
+    if str(result).startswith("[NEEDS_CONFIRMATION]"):
+        return "failed"
+    return "uncertain"
+
+
+def _write_operation_fingerprint(
+    tool_name: str,
+    parsed_args: Dict[str, Any],
+) -> str:
+    fingerprint_payload = json.dumps(
+        {"tool": tool_name, "args": parsed_args},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(fingerprint_payload.encode()).hexdigest()
+
+
+def _receipt_resource_identity(payload: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
+    id_keys = ("id", "record_id", "event_id", "log_id", "cycle_id")
+
+    def read_id(source: Dict[str, Any]) -> Optional[str]:
+        for key in id_keys:
+            value = source.get(key)
+            if isinstance(value, bool) or value in (None, ""):
+                continue
+            normalized = str(value).strip()
+            if normalized:
+                return normalized
+        return None
+
+    resource_id = read_id(payload)
+    resource_type = str(payload.get("resource_type") or "").strip() or None
+    if resource_id:
+        return resource_type, resource_id
+    for container_name in ("resource", "record", "data", "result"):
+        nested = payload.get(container_name)
+        if not isinstance(nested, dict):
+            continue
+        resource_id = read_id(nested)
+        if not resource_id:
+            continue
+        nested_type = nested.get("resource_type")
+        if container_name == "resource" and not nested_type:
+            nested_type = nested.get("type")
+        return str(nested_type or "").strip() or resource_type, resource_id
+    return resource_type, None
+
+
+def _write_receipt_from_tool_result(
+    tool_name: str,
+    record_type: Any,
+    result: Any,
+) -> Optional[Dict[str, Any]]:
+    """Build a persistence receipt from structured tool output only."""
+    if tool_name not in _WRITE_RECEIPT_TOOL_NAMES:
+        return None
+    payload = _write_result_payload(result)
+    if payload is None:
+        return None
+    result_resource_type, resource_id = _receipt_resource_identity(payload)
+    if not resource_id:
+        return None
+    normalized_record_type = str(record_type or "").strip().lower()
+    resource_type = result_resource_type
+    if not resource_type:
+        if tool_name == "intervention_cycle":
+            resource_type = "intervention_cycle"
+        else:
+            resource_type = _RESOURCE_TYPE_BY_RECORD_TYPE.get(normalized_record_type)
+            if not resource_type and normalized_record_type:
+                resource_type = (
+                    normalized_record_type
+                    if normalized_record_type.endswith(("_record", "_log"))
+                    else f"{normalized_record_type}_record"
+                )
+    if not resource_type:
+        return None
+    completed_at = (
+        payload.get("completed_at")
+        or payload.get("updated_at")
+        or payload.get("created_at")
+        or datetime.now(UTC).isoformat()
+    )
+    operation_id = str(
+        payload.get("operation_id")
+        or f"{tool_name}:{resource_type}:{resource_id}"
+    )
+    return {
+        "operation_id": operation_id,
+        "status": "verified",
+        "resource_type": resource_type,
+        "resource_id": resource_id,
+        "completed_at": str(completed_at),
+        "verified": True,
+    }
+
+
+def _write_tool_completed(tool_name: str, args: Any, result: Any) -> bool:
+    if tool_name not in _WRITE_RECEIPT_TOOL_NAMES:
+        return False
+    try:
+        parsed_args = json.loads(args) if isinstance(args, str) else dict(args or {})
+    except (json.JSONDecodeError, TypeError, ValueError):
+        parsed_args = {}
+    if tool_name == "health_manage" and parsed_args.get("operation") not in {"update", "delete"}:
+        return False
+    if tool_name == "intervention_cycle" and parsed_args.get("action") not in {"start", "update", "cancel"}:
+        return False
+    if isinstance(result, str):
+        text = result.strip()
+        if not text or any(marker in text for marker in _WRITE_RESULT_FAILURE_MARKERS):
+            return False
+        try:
+            json.loads(text)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            # A write without structured identity cannot be verified. Treat legacy
+            # prose as incomplete so old clients and telemetry also fail closed.
+            return False
+    record_type = parsed_args.get("record_type") or parsed_args.get("type")
+    return _write_receipt_from_tool_result(tool_name, record_type, result) is not None
+
+
+def _write_tool_attempted(tool_name: str, args: Any) -> bool:
+    """Return whether this invocation crossed a write boundary, even if it failed."""
+    if tool_name not in _WRITE_RECEIPT_TOOL_NAMES:
+        return False
+    try:
+        parsed_args = json.loads(args) if isinstance(args, str) else dict(args or {})
+    except (json.JSONDecodeError, TypeError, ValueError):
+        parsed_args = {}
+    if tool_name == "health_record":
+        return True
+    if tool_name == "health_manage":
+        return parsed_args.get("operation") in {"update", "delete"}
+    if tool_name == "intervention_cycle":
+        return parsed_args.get("action") in {"start", "update", "cancel"}
+    return False
 
 
 def _safety_warning_suffix_from_tool_results(messages: List[Dict[str, Any]]) -> str:
@@ -1546,30 +1773,73 @@ _MEAL_TYPE_ALIASES = {
     "早餐": "breakfast",
     "早饭": "breakfast",
     "上午": "breakfast",
+    "早上": "breakfast",
     "lunch": "lunch",
     "午餐": "lunch",
     "午饭": "lunch",
     "中餐": "lunch",
+    "中饭": "lunch",
+    "中午": "lunch",
     "dinner": "dinner",
     "晚餐": "dinner",
     "晚饭": "dinner",
     "正餐晚": "dinner",
     "supper": "dinner",
+    "晚上": "dinner",
     "snack": "snack",
+    "extra": "extra",
     "加餐": "snack",
     "零食": "snack",
     "点心": "snack",
     "夜宵": "snack",
+    "其他": "extra",
 }
 
 
+_MEDICAL_REPORT_IMAGE_KEYWORDS = (
+    "体检",
+    "报告",
+    "化验",
+    "检验",
+    "检查单",
+    "化验单",
+    "胃镜",
+    "肠镜",
+    "内镜",
+    "超声",
+    "b超",
+    "心电",
+    "病理",
+    "影像",
+    "ct",
+    "mri",
+    "血常规",
+    "生化",
+    "血脂",
+    "指标",
+)
+
+
+def _looks_like_medical_report_image_context(text: str) -> bool:
+    """Only route images through medical OCR when the user explicitly asks for reports."""
+    normalized = (text or "").strip().lower()
+    if not normalized:
+        return False
+    return any(keyword in normalized for keyword in _MEDICAL_REPORT_IMAGE_KEYWORDS)
+
+
+def _record_write_failed_user_message(record_text: str) -> str:
+    text = (record_text or "").strip()
+    if text:
+        return f"我识别到你想记录：{text}。但这次没有成功写入数据库，请重新提交或点确认记录。"
+    return "我识别到你想记录健康数据，但这次没有成功写入数据库，请重新提交或点确认记录。"
+
+
 def _normalize_diet_meal_type(value: Any) -> Optional[str]:
-    if value is None:
+    if value in (None, "", []):
         return None
     key = str(value).strip().lower()
-    if not key:
-        return None
-    return _MEAL_TYPE_ALIASES.get(key, key)
+    return _MEAL_TYPE_ALIASES.get(key)
 
 
 def _summarize_record_data(kind: str, record_data: Any) -> str:
@@ -1927,6 +2197,19 @@ _TOOL_TO_SOURCE_LABEL = {
     "knowledge_search": "得到 wiki 知识库",
     "garmin_sync": "Garmin 实时同步",
 }
+
+
+def _source_labels_from_system_prompt(system_content: str) -> list[str]:
+    """Return deterministic source labels for structured context actually injected."""
+    if not system_content:
+        return []
+    labels: list[str] = []
+    if (
+        re.search(r"(?m)^## 用户记忆\s*$", system_content)
+        or re.search(r"(?m)^用户历史记忆\s*[:：]\s*$", system_content)
+    ):
+        labels.append("用户记忆")
+    return labels
 
 
 # 工具 → 思考过程 status 事件里展示的**短**中文名 (mac 端"正在……"胶囊)。
@@ -2391,6 +2674,254 @@ class AgentExecutor:
             else ANSWER_MAX_TOKENS
         )
 
+    async def _replay_client_turn(
+        self,
+        svc,
+        user_id: int,
+        user_message,
+        client_turn_id: str,
+    ) -> AsyncGenerator[Dict, None]:
+        """Replay a claimed client turn without running its tools a second time."""
+        yield {"event": "request_persisted", "data": {
+            "conversation_id": user_message.conversation_id,
+            "user_message_id": user_message.id,
+            "client_turn_id": client_turn_id,
+            "replayed": True,
+        }}
+        assistant = svc.find_assistant_message_by_client_turn(user_id, client_turn_id)
+        if assistant is not None and not (assistant.meta or {}).get("client_turn_finalized"):
+            assistant = None
+        deadline = time.monotonic() + CLIENT_TURN_REPLAY_WAIT_SECONDS
+        while assistant is None and time.monotonic() < deadline:
+            yield self._status_event("accepted", detail="同一请求仍在处理中")
+            await asyncio.sleep(0.25)
+            self.db.expire_all()
+            assistant = svc.find_assistant_message_by_client_turn(user_id, client_turn_id)
+            if assistant is not None and not (assistant.meta or {}).get("client_turn_finalized"):
+                assistant = None
+        if assistant is None:
+            yield {"event": "done", "data": {
+                "conversation_id": user_message.conversation_id,
+                "message_id": None,
+                "completion_status": "interrupted",
+                "client_turn_id": client_turn_id,
+                "replayed": True,
+            }}
+            return
+        if assistant.content:
+            yield {"event": "token", "data": {"content": assistant.content}}
+        done_data = dict(assistant.meta or {})
+        done_data.update({
+            "conversation_id": assistant.conversation_id,
+            "message_id": assistant.id,
+            "completion_status": done_data.get("completion_status") or "complete",
+            "client_turn_id": client_turn_id,
+            "replayed": True,
+        })
+        yield {"event": "done", "data": done_data}
+
+    def _persist_turn_write_state(
+        self,
+        user_message,
+        *,
+        status: str,
+        tool_name: str,
+        parsed_args: Dict[str, Any],
+        receipt: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Checkpoint a write boundary on the durable user turn.
+
+        Only a fingerprint is stored, never raw health arguments. The in-flight
+        checkpoint is committed before the external write is invoked, so a
+        replacement worker can fail closed instead of repeating the write.
+        """
+        fingerprint = _write_operation_fingerprint(tool_name, parsed_args)
+        meta = dict(user_message.meta or {})
+        existing_receipts = [
+            dict(item)
+            for item in (meta.get("write_receipts") or [])
+            if isinstance(item, dict)
+        ]
+        if receipt and not any(
+            item.get("operation_id") == receipt.get("operation_id")
+            for item in existing_receipts
+        ):
+            existing_receipts.append(dict(receipt))
+        meta["write_state"] = {
+            "status": status,
+            "tool": tool_name,
+            "fingerprint": fingerprint,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+        operations = dict(meta.get("write_operations") or {})
+        operation = dict(operations.get(fingerprint) or {})
+        operation.update({
+            "status": status,
+            "tool": tool_name,
+            "updated_at": meta["write_state"]["updated_at"],
+        })
+        if receipt:
+            operation["receipt_operation_id"] = receipt.get("operation_id")
+        operations[fingerprint] = operation
+        meta["write_operations"] = operations
+        meta["write_receipts"] = existing_receipts
+        user_message.meta = meta
+        try:
+            self.db.commit()
+            self.db.refresh(user_message)
+        except Exception as error:
+            self.db.rollback()
+            raise RuntimeError("write_checkpoint_persistence_failed") from error
+
+    def _persist_turn_expected_writes(
+        self,
+        user_message,
+        expected_writes: List[tuple[str, Dict[str, Any]]],
+    ) -> None:
+        """Seal every write in one model response before dispatching any tool."""
+        if not expected_writes:
+            return
+        meta = dict(user_message.meta or {})
+        operations = dict(meta.get("write_operations") or {})
+        write_plan = dict(meta.get("write_plan") or {})
+        planned_fingerprints = {
+            str(fingerprint)
+            for fingerprint in (write_plan.get("fingerprints") or [])
+            if fingerprint
+        }
+        updated_at = datetime.now(UTC).isoformat()
+        for tool_name, parsed_args in expected_writes:
+            fingerprint = _write_operation_fingerprint(tool_name, parsed_args)
+            planned_fingerprints.add(fingerprint)
+            if fingerprint not in operations:
+                operations[fingerprint] = {
+                    "status": "planned",
+                    "tool": tool_name,
+                    "updated_at": updated_at,
+                }
+        meta["write_operations"] = operations
+        meta["write_plan"] = {
+            "fingerprints": sorted(planned_fingerprints),
+            "sealed": True,
+            "updated_at": updated_at,
+        }
+        user_message.meta = meta
+        try:
+            self.db.commit()
+            self.db.refresh(user_message)
+        except Exception as error:
+            self.db.rollback()
+            raise RuntimeError("write_plan_persistence_failed") from error
+
+    async def _recover_client_turn_write_checkpoint(
+        self,
+        svc,
+        user_id: int,
+        user_message,
+        client_turn_id: str,
+    ) -> AsyncGenerator[Dict, None]:
+        """Finalize an orphaned write turn without executing its tools again."""
+        meta = dict(user_message.meta or {})
+        write_state = dict(meta.get("write_state") or {})
+        receipts = [
+            dict(item)
+            for item in (meta.get("write_receipts") or [])
+            if isinstance(item, dict) and item.get("verified") is True
+        ]
+        raw_operations = meta.get("write_operations") or {}
+        if not isinstance(raw_operations, dict):
+            raw_operations = {}
+        operations = {
+            str(fingerprint): dict(operation)
+            for fingerprint, operation in raw_operations.items()
+            if isinstance(operation, dict)
+        }
+        write_plan = meta.get("write_plan") or {}
+        if not isinstance(write_plan, dict):
+            write_plan = {}
+        planned_fingerprints = [
+            str(fingerprint)
+            for fingerprint in (write_plan.get("fingerprints") or [])
+            if fingerprint
+        ]
+        receipt_ids = {
+            str(item.get("operation_id"))
+            for item in receipts
+            if item.get("operation_id")
+        }
+        if write_plan.get("sealed") is True and planned_fingerprints:
+            fully_verified = all(
+                fingerprint in operations
+                and operations[fingerprint].get("status") == "verified"
+                and str(
+                    operations[fingerprint].get("receipt_operation_id") or ""
+                ) in receipt_ids
+                for fingerprint in planned_fingerprints
+            )
+            partially_verified = bool(receipts) or any(
+                operation.get("status") == "verified"
+                for operation in operations.values()
+            )
+        elif operations:
+            # A legacy checkpoint has no durable proof of the complete write
+            # set returned by the model. Even one verified operation may have
+            # been followed by another write that crashed before checkpoint.
+            fully_verified = False
+            partially_verified = bool(receipts) or any(
+                operation.get("status") == "verified"
+                for operation in operations.values()
+            )
+        else:
+            fully_verified = False
+            partially_verified = bool(receipts) or write_state.get("status") == "verified"
+        if fully_verified:
+            content = "写入已完成，已从持久化回执恢复本轮结果，没有重复执行写入。"
+            completion_status = "complete"
+            recovery_reason = "write_checkpoint_verified"
+        elif partially_verified:
+            content = (
+                "本轮已有部分写入获得回执，但中断时另一次写入状态未知。"
+                "为避免重复写入，我没有自动重试；请先查询现有记录后再决定是否补录。"
+            )
+            completion_status = "error"
+            recovery_reason = "write_checkpoint_partially_verified"
+        else:
+            content = (
+                "上一次处理在写入过程中中断，结果状态未知。为避免重复写入，"
+                "我没有自动重试；请先查询现有记录，确认后再补录。"
+            )
+            completion_status = "error"
+            recovery_reason = "write_checkpoint_uncertain"
+
+        assistant_meta = {
+            "mode": "agent",
+            "completion_status": completion_status,
+            "write_receipts": receipts,
+            "write_recovery": recovery_reason,
+            "client_turn_finalized": True,
+            "client_turn_id": client_turn_id,
+        }
+        assistant = svc.save_message(
+            user_message.conversation_id,
+            "assistant",
+            content,
+            meta=assistant_meta,
+            client_turn_id=client_turn_id,
+            client_turn_user_id=user_id,
+        )
+        yield {"event": "request_persisted", "data": {
+            "conversation_id": user_message.conversation_id,
+            "user_message_id": user_message.id,
+            "client_turn_id": client_turn_id,
+            "recovered": True,
+        }}
+        yield {"event": "token", "data": {"content": content}}
+        yield {"event": "done", "data": {
+            **assistant_meta,
+            "conversation_id": assistant.conversation_id,
+            "message_id": assistant.id,
+        }}
+
     def _resolved_answer_model_is_non_streaming(self) -> bool:
         """本回合答案是否由一个**结构性非流式**模型生成 (整段一次返回, ttft≈total)。
 
@@ -2464,6 +2995,8 @@ class AgentExecutor:
         conversation_id: Optional[int],
         user_auth_token: Optional[str],
         extra_context: Optional[str],
+        client_turn_id: Optional[str] = None,
+        recovered_user_message: Any = None,
     ) -> AsyncGenerator[Dict, None]:
         """多模型综合分析 (商用三强 panel)。
 
@@ -2487,18 +3020,42 @@ class AgentExecutor:
         self._tool_dead_provider_model_ids = set()
         self._last_effective_model_id = None
         sources_used: list = ["多模型综合 (Claude Opus 4.7 · GPT-5.5 · Gemini 3.1 Pro)"]
+        write_receipts: list[Dict[str, Any]] = []
+        write_results_by_fingerprint: dict[str, str] = {}
         model_label = "Claude Opus 4.7 + GPT-5.5 + Gemini 3.1 Pro (综合)"
 
         from app.services.agent_conversation_service import AgentConversationService
         svc = AgentConversationService(self.db)
-        conv = svc.get_or_create_conversation(user_id, conversation_id, title=message)
-        svc.save_message(conv.id, "user", message)
+        if recovered_user_message is not None:
+            conv = svc.get_or_create_conversation(
+                user_id,
+                recovered_user_message.conversation_id,
+                title=message,
+            )
+            user_msg = recovered_user_message
+        else:
+            conv = svc.get_or_create_conversation(user_id, conversation_id, title=message)
+            user_msg, _ = svc.save_user_message_once(
+                conv.id,
+                user_id,
+                message,
+                client_turn_id=client_turn_id,
+                meta={"client_turn_id": client_turn_id} if client_turn_id else None,
+            )
+
+        yield {"event": "request_persisted", "data": {
+            "conversation_id": conv.id,
+            "user_message_id": user_msg.id,
+            "client_turn_id": client_turn_id,
+            "recovered": recovered_user_message is not None,
+        }}
 
         yield {"event": "agent_start", "data": {"message": "多模型综合分析中…", "conversation_id": conv.id}}
 
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
         tools = get_health_tools()
         full_reply = ""
+        completion_status = "complete"
 
         def _progress(tool: str, text: str) -> Dict:
             return {"event": "tool_result", "data": {"tool": tool, "success": True, "preview": text, "result": text}}
@@ -2535,18 +3092,109 @@ class AgentExecutor:
                         continue
                     content = _strip_text_tool_call(content)
                 if tool_calls:
+                    planned_writes: List[tuple[str, Dict[str, Any]]] = []
+                    for tc in tool_calls:
+                        fn = tc["function"]["name"]
+                        fa = tc["function"]["arguments"]
+                        try:
+                            parsed_args = (
+                                json.loads(fa)
+                                if isinstance(fa, str)
+                                else dict(fa or {})
+                            )
+                        except (json.JSONDecodeError, TypeError, ValueError):
+                            parsed_args = {}
+                        if (
+                            fn in _WRITE_RECEIPT_TOOL_NAMES
+                            and _write_tool_attempted(fn, parsed_args)
+                        ):
+                            planned_writes.append((fn, parsed_args))
+                    self._persist_turn_expected_writes(user_msg, planned_writes)
                     lead_messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
                     for tc in tool_calls:
                         fn = tc["function"]["name"]
                         fa = tc["function"]["arguments"]
-                        result = await self._execute_tool(fn, fa, user_auth_token)
+                        try:
+                            parsed_args = json.loads(fa) if isinstance(fa, str) else dict(fa or {})
+                        except (json.JSONDecodeError, TypeError, ValueError):
+                            parsed_args = {}
+                        write_attempted = (
+                            fn in _WRITE_RECEIPT_TOOL_NAMES
+                            and _write_tool_attempted(fn, parsed_args)
+                        )
+                        write_fingerprint = (
+                            _write_operation_fingerprint(fn, parsed_args)
+                            if write_attempted else None
+                        )
+                        replayed_write = bool(
+                            write_fingerprint
+                            and write_fingerprint in write_results_by_fingerprint
+                        )
+                        if write_attempted and not replayed_write:
+                            self._persist_turn_write_state(
+                                user_msg,
+                                status="in_flight",
+                                tool_name=fn,
+                                parsed_args=parsed_args,
+                            )
+                        if replayed_write:
+                            result = write_results_by_fingerprint[write_fingerprint]
+                        else:
+                            result = await self._execute_tool(fn, fa, user_auth_token)
+                            if write_fingerprint:
+                                write_results_by_fingerprint[write_fingerprint] = result
                         lead_messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
                         lbl = _TOOL_TO_SOURCE_LABEL.get(fn)
                         if lbl and lbl not in sources_used:
                             sources_used.append(lbl)
-                        yield {"event": "tool_result", "data": {
-                            "tool": fn, "success": not result.startswith("Error"),
-                            "preview": result[:200], "result": result}}
+                        tool_event_data = {
+                            "tool": fn,
+                            "success": not result.startswith("Error"),
+                            "preview": result[:200],
+                            "result": result,
+                        }
+                        if replayed_write:
+                            tool_event_data["replayed"] = True
+                        if fn in _WRITE_RECEIPT_TOOL_NAMES:
+                            write_completed = _write_tool_completed(fn, parsed_args, result)
+                            tool_event_data["write_attempted"] = write_attempted
+                            tool_event_data["write_completed"] = write_completed
+                            if write_attempted and not write_completed:
+                                tool_event_data["success"] = False
+                            if write_completed:
+                                receipt = _write_receipt_from_tool_result(
+                                    fn,
+                                    parsed_args.get("record_type") or parsed_args.get("type"),
+                                    result,
+                                )
+                                if receipt:
+                                    tool_event_data["receipt"] = receipt
+                                    if not any(
+                                        item.get("operation_id") == receipt.get("operation_id")
+                                        for item in write_receipts
+                                    ):
+                                        write_receipts.append(receipt)
+                            else:
+                                receipt = None
+                            if write_attempted and not replayed_write:
+                                checkpoint_status = _write_checkpoint_status_after_dispatch(
+                                    result,
+                                    receipt,
+                                )
+                                self._persist_turn_write_state(
+                                    user_msg,
+                                    status=checkpoint_status,
+                                    tool_name=fn,
+                                    parsed_args=parsed_args,
+                                    receipt=receipt,
+                                )
+                        yield {"event": "tool_result", "data": tool_event_data}
+                        if (
+                            write_attempted
+                            and receipt is None
+                            and not str(result).startswith("[NEEDS_CONFIRMATION]")
+                        ):
+                            raise _UnverifiedWriteResult()
                     continue
                 # 兜底:内联标记(括号 / XML `<invoke>`)未恢复成 tool_call(name 不在白名单等)时,
                 # 绝不能把裸工具语法当 lead 分析落进 final_text / 喂给下游多方分析。cheap-precheck no-op。
@@ -2600,6 +3248,7 @@ class AgentExecutor:
                 final_text = (synth_resp.get("content") if isinstance(synth_resp, dict) else str(synth_resp)) or ""
             except Exception as e:  # noqa: BLE001
                 logger.error("[multi_model] synthesis failed: %s", e)
+                completion_status = "error"
                 final_text = lead_text or "多模型综合分析未能生成最终结论，请重试或改用单模型。"
 
             if not final_text.strip():
@@ -2607,8 +3256,14 @@ class AgentExecutor:
             for i in range(0, len(final_text), 24):
                 yield {"event": "token", "data": {"content": final_text[i:i + 24]}}
             full_reply = final_text
+        except _UnverifiedWriteResult:
+            completion_status = "error"
+            full_reply = _UNVERIFIED_WRITE_USER_MESSAGE
+            for i in range(0, len(full_reply), 24):
+                yield {"event": "token", "data": {"content": full_reply[i:i + 24]}}
         except Exception as e:  # noqa: BLE001
             logger.error("多模型综合执行异常: %s", e, exc_info=True)
+            completion_status = "error"
             full_reply = f"多模型综合分析遇到问题: {e}"
             yield {"event": "token", "data": {"content": full_reply}}
         finally:
@@ -2618,7 +3273,13 @@ class AgentExecutor:
 
         # 确定性护栏 (R4): 多模型综合是 LLM 生成文本 → 剥掉任何伪造的 reva-ui block。
         full_reply = _strip_reva_ui_from_llm_text(full_reply)
-        ai_msg = svc.save_message(conv.id, "assistant", full_reply)
+        ai_msg = svc.save_message(
+            conv.id,
+            "assistant",
+            full_reply,
+            client_turn_id=client_turn_id,
+            client_turn_user_id=user_id,
+        )
         conv.updated_at = datetime.now(UTC)
         elapsed_ms = int((time.time() - start_time) * 1000)
         # P1 数字锚定核验(shadow, additive; fail-soft 见 helper)。
@@ -2634,6 +3295,10 @@ class AgentExecutor:
                 "sources_used": sources_used,
                 "mode": "multi_model",
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
+                "write_receipts": write_receipts,
+                "completion_status": completion_status,
+                "client_turn_finalized": True,
+                **({"client_turn_id": client_turn_id} if client_turn_id else {}),
             }
         except Exception as e:  # noqa: BLE001
             logger.warning("[multi_model] write meta 失败: %s", e)
@@ -2651,6 +3316,10 @@ class AgentExecutor:
             "sources_used": sources_used,
             "mode": "multi_model",
             **({"citation_anchor": citation_anchor} if citation_anchor else {}),
+            "write_receipts": write_receipts,
+            "completion_status": completion_status,
+            "client_turn_finalized": True,
+            **({"client_turn_id": client_turn_id} if client_turn_id else {}),
         }}
 
     async def run_stream(
@@ -2664,14 +3333,169 @@ class AgentExecutor:
         file_name: Optional[str] = None,
         extra_context: Optional[str] = None,
         channel: Optional[str] = None,
+        client_turn_id: Optional[str] = None,
+    ) -> AsyncGenerator[Dict, None]:
+        """Run one durable client turn, taking over an ACKed turn after worker loss."""
+        yield self._progress_event("accepted")
+        recovered_user_message = None
+        claimed_turn = False
+        turn_service = None
+
+        if client_turn_id:
+            from app.services.agent_conversation_service import AgentConversationService
+
+            turn_service = AgentConversationService(self.db)
+            existing_turn = turn_service.find_user_message_by_client_turn(user_id, client_turn_id)
+            assistant = turn_service.find_assistant_message_by_client_turn(user_id, client_turn_id)
+            if (
+                existing_turn is not None
+                and assistant is not None
+                and (assistant.meta or {}).get("client_turn_finalized")
+            ):
+                async for replay_event in self._replay_client_turn(
+                    turn_service, user_id, existing_turn, client_turn_id,
+                ):
+                    yield replay_event
+                return
+
+            claimed_turn = turn_service.try_acquire_client_turn_execution(
+                user_id,
+                client_turn_id,
+            )
+            if not claimed_turn:
+                deadline = time.monotonic() + CLIENT_TURN_REPLAY_WAIT_SECONDS
+                while not claimed_turn and time.monotonic() < deadline:
+                    self.db.expire_all()
+                    existing_turn = turn_service.find_user_message_by_client_turn(
+                        user_id,
+                        client_turn_id,
+                    )
+                    if existing_turn is not None:
+                        break
+                    claimed_turn = turn_service.try_acquire_client_turn_execution(
+                        user_id,
+                        client_turn_id,
+                    )
+                    if claimed_turn:
+                        break
+                    await asyncio.sleep(0.05)
+                if existing_turn is not None:
+                    async for replay_event in self._replay_client_turn(
+                        turn_service, user_id, existing_turn, client_turn_id,
+                    ):
+                        yield replay_event
+                    return
+                if not claimed_turn:
+                    yield {"event": "done", "data": {
+                        "conversation_id": conversation_id,
+                        "message_id": None,
+                        "completion_status": "interrupted",
+                        "client_turn_id": client_turn_id,
+                        "replayed": True,
+                        "request_persisted": False,
+                    }}
+                    return
+
+            try:
+                self.db.expire_all()
+                existing_turn = turn_service.find_user_message_by_client_turn(
+                    user_id,
+                    client_turn_id,
+                )
+                assistant = turn_service.find_assistant_message_by_client_turn(
+                    user_id,
+                    client_turn_id,
+                )
+                if (
+                    existing_turn is not None
+                    and assistant is not None
+                    and (assistant.meta or {}).get("client_turn_finalized")
+                ):
+                    async for replay_event in self._replay_client_turn(
+                        turn_service, user_id, existing_turn, client_turn_id,
+                    ):
+                        yield replay_event
+                    turn_service.release_client_turn_execution(user_id, client_turn_id)
+                    claimed_turn = False
+                    return
+                if existing_turn is not None:
+                    turn_service.discard_unfinalized_assistant_by_client_turn(
+                        user_id,
+                        client_turn_id,
+                    )
+                    recovered_user_message = existing_turn
+            except BaseException:
+                if claimed_turn:
+                    turn_service.release_client_turn_execution(user_id, client_turn_id)
+                    claimed_turn = False
+                raise
+
+        try:
+            if recovered_user_message is not None:
+                recovered_meta = dict(recovered_user_message.meta or {})
+                recovered_write_state = dict(recovered_meta.get("write_state") or {})
+                recovered_write_operations = recovered_meta.get("write_operations") or {}
+                recovered_operation_blocks_retry = (
+                    isinstance(recovered_write_operations, dict)
+                    and any(
+                        isinstance(operation, dict)
+                        and operation.get("status") in {
+                            "in_flight", "uncertain", "verified",
+                        }
+                        for operation in recovered_write_operations.values()
+                    )
+                )
+                recovered_receipts = recovered_meta.get("write_receipts") or []
+                if (
+                    recovered_write_state.get("status") in {
+                        "in_flight", "uncertain", "verified",
+                    }
+                    or recovered_operation_blocks_retry
+                    or bool(recovered_receipts)
+                ):
+                    async for event in self._recover_client_turn_write_checkpoint(
+                        turn_service,
+                        user_id,
+                        recovered_user_message,
+                        client_turn_id,
+                    ):
+                        yield event
+                    return
+            async for event in self._run_stream_impl(
+                user_id=user_id,
+                message=message,
+                conversation_id=conversation_id,
+                user_auth_token=user_auth_token,
+                images=images,
+                file_base64=file_base64,
+                file_name=file_name,
+                extra_context=extra_context,
+                channel=channel,
+                client_turn_id=client_turn_id,
+                recovered_user_message=recovered_user_message,
+            ):
+                yield event
+        finally:
+            if claimed_turn and turn_service is not None and client_turn_id:
+                turn_service.release_client_turn_execution(user_id, client_turn_id)
+
+    async def _run_stream_impl(
+        self,
+        user_id: int,
+        message: str,
+        conversation_id: Optional[int] = None,
+        user_auth_token: Optional[str] = None,
+        images: Optional[List[dict]] = None,
+        file_base64: Optional[str] = None,
+        file_name: Optional[str] = None,
+        extra_context: Optional[str] = None,
+        channel: Optional[str] = None,
+        client_turn_id: Optional[str] = None,
+        recovered_user_message: Any = None,
     ) -> AsyncGenerator[Dict, None]:
         """运行 Agent 循环，SSE 流式输出"""
         from app.services.llm.usage_tracker import set_caller
         set_caller("agent_executor.run_stream", user_id=user_id)
-        # 2026-07-05 P0-1: 流式进度事件 —— 流一打开立刻发 accepted (任何 LLM/会话
-        # 组装之前, 目标 <100ms)。纯附加, 让客户端首 token 前 8s 有确定性反馈。
-        # 多模型分支也在此点之后, 所以 accepted 恒为任何路径的第一个 wire 事件。
-        yield self._progress_event("accepted")
         # 输入通道(客户端传输层声明,typed/voice/siri):症状类记录的确认策略依赖它。
         # 非法/未声明一律 None → fail-closed(症状保留确认)。
         self._turn_channel = channel if channel in ("typed", "voice", "siri") else None
@@ -2679,7 +3503,13 @@ class AgentExecutor:
         # 带图片/附件时回退普通单模型路径 (panel 是文本综合, 不处理多模态)。
         if _extract_multi_model_flag(extra_context) and not images and not file_base64:
             async for evt in self._run_multi_model_stream(
-                user_id, message, conversation_id, user_auth_token, extra_context
+                user_id,
+                message,
+                conversation_id,
+                user_auth_token,
+                extra_context,
+                client_turn_id,
+                recovered_user_message,
             ):
                 yield evt
             return
@@ -2750,22 +3580,137 @@ class AgentExecutor:
         _t_stage = time.time()
         from app.services.agent_conversation_service import AgentConversationService
         svc = AgentConversationService(self.db)
-        conv = svc.get_or_create_conversation(user_id, conversation_id, title=message)
+        conv = svc.get_or_create_conversation(
+            user_id,
+            (
+                recovered_user_message.conversation_id
+                if recovered_user_message is not None
+                else conversation_id
+            ),
+            title=message,
+        )
 
-        # 保存用户消息（含图片标记）
+        # 先 claim 用户消息，再落图片。这样 DB claim 失败时不会产生孤儿文件；
+        # worker 在 ACK 前退出时，新 worker 也能沿同一 turn 继续补齐图片。
         user_content = message
-        saved_image_urls: List[str] = []
         if images:
             user_content += f"\n[附图: {len(images)}张]"
-            for img in images:
-                url = self._upload_chat_image(img["base64"], img.get("type", "jpeg"))
-                if url:
-                    saved_image_urls.append(url)
         if file_base64 and file_name:
             user_content += f"\n[附件: {file_name}]"
+
+        created_user_message = False
+        if recovered_user_message is not None:
+            user_msg = recovered_user_message
+        else:
+            user_msg, created_user_message = svc.save_user_message_once(
+                conv.id,
+                user_id,
+                user_content,
+                client_turn_id=client_turn_id,
+                image_url=None,
+                meta={"client_turn_id": client_turn_id} if client_turn_id else None,
+            )
+
+        saved_image_urls: List[str] = []
+        if user_msg.image_url:
+            try:
+                parsed_image_urls = json.loads(user_msg.image_url)
+                if isinstance(parsed_image_urls, list):
+                    saved_image_urls = [
+                        str(url) for url in parsed_image_urls if isinstance(url, str) and url
+                    ]
+                elif isinstance(parsed_image_urls, str) and parsed_image_urls:
+                    saved_image_urls = [parsed_image_urls]
+            except (json.JSONDecodeError, TypeError):
+                if isinstance(user_msg.image_url, str) and user_msg.image_url:
+                    saved_image_urls = [user_msg.image_url]
+
+        new_image_urls: List[str] = []
+        if images:
+            try:
+                for index, img in enumerate(images[len(saved_image_urls):], start=len(saved_image_urls)):
+                    object_key = None
+                    if client_turn_id:
+                        object_key = hashlib.sha256(
+                            f"{int(user_id)}:{client_turn_id}:{index}".encode()
+                        ).hexdigest()
+                    url = self._upload_chat_image(
+                        img["base64"],
+                        img.get("type", "jpeg"),
+                        user_id,
+                        object_key,
+                    )
+                    if not url:
+                        raise RuntimeError("chat_image_persistence_failed")
+                    saved_image_urls.append(url)
+                    new_image_urls.append(url)
+            except Exception as error:
+                from app.services.chat_utils import delete_chat_image
+
+                for saved_url in new_image_urls:
+                    try:
+                        delete_chat_image(saved_url, user_id)
+                    except Exception:
+                        logger.warning("Failed to clean partial chat image upload", exc_info=True)
+                if created_user_message:
+                    try:
+                        self.db.delete(user_msg)
+                        self.db.commit()
+                    except Exception:
+                        self.db.rollback()
+                        logger.error("Failed to roll back image turn claim", exc_info=True)
+                raise RuntimeError("chat_image_persistence_failed") from error
         image_url_value = json.dumps(saved_image_urls) if saved_image_urls else None
-        svc.save_message(conv.id, "user", user_content, image_url=image_url_value)
+        try:
+            if image_url_value or user_msg.image_url:
+                updated_user_msg = svc.update_user_message_after_image_upload(
+                    user_id,
+                    user_msg.id,
+                    content=user_content,
+                    image_url=image_url_value or user_msg.image_url,
+                    meta=(
+                        {"client_turn_id": client_turn_id}
+                        if client_turn_id else None
+                    ),
+                )
+                if updated_user_msg is None:
+                    raise RuntimeError("chat_image_message_missing")
+                user_msg = updated_user_msg
+            else:
+                user_msg.content = user_content
+                user_msg.meta = {
+                    **(user_msg.meta or {}),
+                    **({"client_turn_id": client_turn_id} if client_turn_id else {}),
+                }
+                self.db.commit()
+                self.db.refresh(user_msg)
+        except Exception:
+            self.db.rollback()
+            from app.services.chat_utils import delete_chat_image
+
+            for saved_url in new_image_urls:
+                try:
+                    delete_chat_image(saved_url, user_id)
+                except Exception:
+                    logger.warning("Failed to clean uncommitted chat image", exc_info=True)
+            if created_user_message:
+                try:
+                    claimed = self.db.get(type(user_msg), user_msg.id)
+                    if claimed is not None:
+                        self.db.delete(claimed)
+                        self.db.commit()
+                except Exception:
+                    self.db.rollback()
+                    logger.error("Failed to remove uncommitted image turn", exc_info=True)
+            raise
         pre_stages["conv_ms"] = _pre_stage(_t_stage)
+
+        yield {"event": "request_persisted", "data": {
+            "conversation_id": conv.id,
+            "user_message_id": user_msg.id,
+            "client_turn_id": client_turn_id,
+            "recovered": recovered_user_message is not None,
+        }}
 
         _t_stage = time.time()
         opener_quick_reply_note = None
@@ -2791,6 +3736,9 @@ class AgentExecutor:
             user_id, conv.id, user_auth_token, lite=self._fast_route_simple_turn,
             intent_query=message,
         )
+        for source_label in _source_labels_from_system_prompt(system_content):
+            if source_label not in sources_used:
+                sources_used.append(source_label)
         pre_stages["system_prompt_ms"] = _pre_stage(_t_stage)
         if self._fast_route_simple_turn:
             # 可观测性: 记录 lite prompt 的实际字符数, 用来看 prefill 削减 (对比 full)。
@@ -2866,7 +3814,8 @@ class AgentExecutor:
                 # 真实思考过程: 图片/视觉预处理 (4–20s 的 vision_ms 块) 即将开始。
                 # 仅在会真的跑独立 vision 预处理时发 (原图直传多模态模型时无此阶段)。
                 yield self._status_event("vision", detail=None)
-                vision_description = await self._try_import_medical_report_images(user_id, images)
+                if _looks_like_medical_report_image_context(message):
+                    vision_description = await self._try_import_medical_report_images(user_id, images)
                 if not vision_description:
                     vision_description = await self._analyze_image_with_vision(message, images)
 
@@ -2930,6 +3879,9 @@ class AgentExecutor:
         # 本轮 agent 实际调用过的工具/Skill 名, 去重、按首次调用顺序。供 mac/mobile
         # 展示"调用了哪些 Skills"。与 sources_used (引用了哪些数据源) 独立。
         tools_used: List[str] = []
+        write_receipts: List[Dict[str, Any]] = []
+        write_results_by_fingerprint: Dict[str, tuple[str, str]] = {}
+        unverified_write_tools: List[str] = []
 
         # 诚实的非流式 UX: 若本回合答案模型结构性非流式 (langbridge 商用模型, 上游无 SSE,
         # 整段一次返回), mac 端「正在思考…」的 token 滚动是误导 —— 在每轮 LLM 调用前多发一条
@@ -3147,6 +4099,36 @@ class AgentExecutor:
                     tool_calls = response["tool_calls"]
                     text_content = response.get("content") or ""
 
+                    planned_writes: List[tuple[str, Dict[str, Any]]] = []
+                    for tc in tool_calls:
+                        planned_name = tc["function"]["name"]
+                        planned_args = tc["function"]["arguments"]
+                        if self._prefer_fast_record_model:
+                            planned_args = _auto_confirm_fast_record_args(
+                                planned_name,
+                                planned_args,
+                                channel=self._turn_channel,
+                            )
+                        try:
+                            parsed_planned_args = (
+                                json.loads(planned_args)
+                                if isinstance(planned_args, str)
+                                else dict(planned_args or {})
+                            )
+                        except (json.JSONDecodeError, TypeError, ValueError):
+                            parsed_planned_args = {}
+                        if (
+                            planned_name in _WRITE_RECEIPT_TOOL_NAMES
+                            and _write_tool_attempted(
+                                planned_name,
+                                parsed_planned_args,
+                            )
+                        ):
+                            planned_writes.append(
+                                (planned_name, parsed_planned_args)
+                            )
+                    self._persist_turn_expected_writes(user_msg, planned_writes)
+
                     # 思考过程: 真流式下已逐 delta 下发过, 这里只补 full_reply,
                     # 不重复 yield token (避免客户端看到双份)。inline-recovery 路径
                     # 会把 content 置空 → text_content 为空也不发。
@@ -3179,6 +4161,26 @@ class AgentExecutor:
                             func_args = _auto_confirm_fast_record_args(
                                 func_name, func_args, channel=self._turn_channel
                             )
+                        try:
+                            parsed_tool_args = (
+                                json.loads(func_args)
+                                if isinstance(func_args, str)
+                                else dict(func_args or {})
+                            )
+                        except (json.JSONDecodeError, TypeError, ValueError):
+                            parsed_tool_args = {}
+                        write_attempted = (
+                            func_name in _WRITE_RECEIPT_TOOL_NAMES
+                            and _write_tool_attempted(func_name, parsed_tool_args)
+                        )
+                        write_fingerprint = (
+                            _write_operation_fingerprint(func_name, parsed_tool_args)
+                            if write_attempted else None
+                        )
+                        replayed_write = bool(
+                            write_fingerprint
+                            and write_fingerprint in write_results_by_fingerprint
+                        )
                         tool_id = tc["id"]
 
                         # 通知前端正在执行工具
@@ -3209,20 +4211,27 @@ class AgentExecutor:
                         # 执行工具
                         # 2026-07-01: 若本工具是 health_analysis(type=orchestrator) → 捕获其
                         # 单工具壁钟给 orchestrator_tool_ms; best-effort 从 result JSON 透传 perf。
-                        _is_orch_tool = False
-                        try:
-                            if func_name == "health_analysis":
-                                _parsed = json.loads(func_args) if isinstance(func_args, str) else func_args
-                                _is_orch_tool = (
-                                    isinstance(_parsed, dict)
-                                    and _parsed.get("analysis_type") == "orchestrator"
-                                )
-                        except Exception:  # noqa: BLE001
-                            _is_orch_tool = False
-                        _tool_call_start = time.time()
-                        result = await self._execute_tool(
-                            func_name, func_args, user_auth_token
+                        _is_orch_tool = (
+                            func_name == "health_analysis"
+                            and parsed_tool_args.get("analysis_type") == "orchestrator"
                         )
+                        if write_attempted and not replayed_write:
+                            self._persist_turn_write_state(
+                                user_msg,
+                                status="in_flight",
+                                tool_name=func_name,
+                                parsed_args=parsed_tool_args,
+                            )
+                        _tool_call_start = time.time()
+                        if replayed_write:
+                            result, result_for_record_card = (
+                                write_results_by_fingerprint[write_fingerprint]
+                            )
+                        else:
+                            result = await self._execute_tool(
+                                func_name, func_args, user_auth_token
+                            )
+                            result_for_record_card = result
                         if _is_orch_tool:
                             try:
                                 orchestrator_tool_ms = int((time.time() - _tool_call_start) * 1000)
@@ -3234,12 +4243,12 @@ class AgentExecutor:
                                     orchestrator_perf = _orch_json.get("perf")
                             except Exception:  # noqa: BLE001
                                 pass
-                        result_for_record_card = result
                         safety_cards: list[dict] = []
-                        tool_executed_count += 1
-                        # 旁路给 _maybe_fast_route_tool_round: 一旦跑过工具, 后续 (合成) 轮
-                        # 即便仍带 tools 也不再降 fast (留在强模型产出医疗正文)。
-                        self._turn_any_tool_executed = True
+                        if not replayed_write:
+                            tool_executed_count += 1
+                            # 旁路给 _maybe_fast_route_tool_round: 一旦跑过工具, 后续 (合成) 轮
+                            # 即便仍带 tools 也不再降 fast (留在强模型产出医疗正文)。
+                            self._turn_any_tool_executed = True
 
                         # 写操作成功后内联安全检查。
                         # 注意: 软失败(如"未找到…"/"暂时没成功")不含 "Error" 字样, 旧逻辑会把
@@ -3247,6 +4256,8 @@ class AgentExecutor:
                         # 故显式排除软失败。
                         _soft_fail = any(m in result for m in ("未找到", "暂时没成功", "没成功", "记录失败"))
                         if (
+                            not replayed_write
+                            and
                             func_name == "health_record"
                             and "Error" not in result
                             and not result.startswith("[NEEDS_CONFIRMATION]")
@@ -3270,6 +4281,11 @@ class AgentExecutor:
                                     result += f"\n\n⚠️ 安全提示: {alert_msgs}"
                             except Exception as e:
                                 logger.warning(f"Safety check after write failed: {e}")
+                        if write_fingerprint and not replayed_write:
+                            write_results_by_fingerprint[write_fingerprint] = (
+                                result,
+                                result_for_record_card,
+                            )
 
                         # 追加 tool_result 到 messages
                         messages.append({
@@ -3286,13 +4302,62 @@ class AgentExecutor:
                             "preview": result[:200],
                             "result": result,
                         }
+                        if replayed_write:
+                            tool_event_data["replayed"] = True
+                        if func_name in _WRITE_RECEIPT_TOOL_NAMES:
+                            write_completed = _write_tool_completed(
+                                func_name,
+                                parsed_tool_args,
+                                result_for_record_card,
+                            )
+                            tool_event_data["write_attempted"] = write_attempted
+                            tool_event_data["write_completed"] = write_completed
+                            if write_attempted and not write_completed:
+                                tool_event_data["success"] = False
+                            if write_completed:
+                                receipt = _write_receipt_from_tool_result(
+                                    func_name,
+                                    parsed_tool_args.get("record_type") or parsed_tool_args.get("type"),
+                                    result_for_record_card,
+                                )
+                                if receipt:
+                                    tool_event_data["receipt"] = receipt
+                                    if not any(
+                                        item.get("operation_id") == receipt.get("operation_id")
+                                        for item in write_receipts
+                                    ):
+                                        write_receipts.append(receipt)
+                            else:
+                                receipt = None
+                            if write_attempted and not replayed_write:
+                                checkpoint_status = _write_checkpoint_status_after_dispatch(
+                                    result_for_record_card,
+                                    receipt,
+                                )
+                                self._persist_turn_write_state(
+                                    user_msg,
+                                    status=checkpoint_status,
+                                    tool_name=func_name,
+                                    parsed_args=parsed_tool_args,
+                                    receipt=receipt,
+                                )
+                                if (
+                                    receipt is None
+                                    and not str(result_for_record_card).startswith(
+                                        "[NEEDS_CONFIRMATION]"
+                                    )
+                                    and func_name not in unverified_write_tools
+                                ):
+                                    unverified_write_tools.append(func_name)
                         record_card = None
                         quality_cards: list[dict] = []
-                        if func_name == "health_record":
+                        if func_name == "health_record" and not replayed_write:
                             try:
-                                parsed_args = json.loads(func_args) if isinstance(func_args, str) else func_args
-                                tool_event_data["record_type"] = parsed_args.get("record_type")
-                                tool_event_data["record_data"] = parsed_args.get("data") or {}
+                                tool_event_data["record_type"] = (
+                                    parsed_tool_args.get("record_type")
+                                    or parsed_tool_args.get("type")
+                                )
+                                tool_event_data["record_data"] = parsed_tool_args.get("data") or {}
                                 quality_response = _post_record_quality_response(
                                     tool_event_data["record_type"],
                                     tool_event_data["record_data"],
@@ -3364,6 +4429,18 @@ class AgentExecutor:
                         "tool_exec_ms": _round_tool_exec_ms,
                         "tools": list(_round_tool_names),
                     })
+
+                    if unverified_write_tools:
+                        final_finish_reason = "error"
+                        for i in range(0, len(_UNVERIFIED_WRITE_USER_MESSAGE), 20):
+                            yield {
+                                "event": "token",
+                                "data": {
+                                    "content": _UNVERIFIED_WRITE_USER_MESSAGE[i:i + 20]
+                                },
+                            }
+                        full_reply += _UNVERIFIED_WRITE_USER_MESSAGE
+                        break
 
                     # 硬门(诚实不变量):确定性"已记录…"回复只允许在本轮**真的执行过写工具**
                     # 后出现 —— 只读工具(health_query 等)成功≠写入,谎报"已记录"比慢更糟。
@@ -3518,6 +4595,9 @@ class AgentExecutor:
                                 )
                         if not final_text.strip():
                             final_text = "我这次没有收到模型的有效回复，请稍后重试或切换模型。"
+                    if self._prefer_fast_record_model and tool_executed_count == 0:
+                        final_text = _record_write_failed_user_message(message)
+                        streamed_to_client = False
                     if streamed_to_client and final_text.startswith(streamed_text):
                         # 正文已实时下发,只补 interrupted notice 等未流式的后缀。
                         tail = final_text[len(streamed_text):]
@@ -3600,7 +4680,26 @@ class AgentExecutor:
         # 确定性护栏 (R4, 防御纵深): full_reply 是 LLM 生成文本 —— 剥掉任何伪造的
         # reva-ui 图表 block (数值只能来自确定性 genui 短路; 短路走独立路径不经此处)。
         full_reply = _strip_reva_ui_from_llm_text(full_reply)
-        ai_msg = svc.save_message(conv.id, "assistant", full_reply)
+        record_intent_no_tool = bool(
+            self._prefer_fast_record_model and tool_executed_count == 0
+        )
+        if record_intent_no_tool:
+            fail_closed_reply = _record_write_failed_user_message(message)
+            if full_reply.strip() != fail_closed_reply:
+                full_reply = fail_closed_reply
+            logger.warning(
+                "[agent_executor] RECORD INTENT but 0 tools executed — possible silent "
+                "data loss (model may have claimed success without writing). user=%s msg=%r",
+                user_id,
+                (message or "")[:80],
+            )
+        ai_msg = svc.save_message(
+            conv.id,
+            "assistant",
+            full_reply,
+            client_turn_id=client_turn_id,
+            client_turn_user_id=user_id,
+        )
         conv.updated_at = datetime.now(UTC)
 
         elapsed_ms = int((time.time() - start_time) * 1000)
@@ -3639,39 +4738,33 @@ class AgentExecutor:
         tool_models = list(self._tool_model_names)
         fallback_reasons = list(self._model_fallback_reasons)
         evidence_cards = []
-        try:
-            evidence_card = self._build_system_knowledge_evidence_card(user_id, message)
-            if evidence_card:
-                evidence_cards.append(evidence_card)
-                before = len(streamed_cards)
-                streamed_cards = _merge_agent_card_descriptors(streamed_cards, [evidence_card])
-                if len(streamed_cards) > before:
-                    yield {
-                        "event": "card",
-                        "data": {
-                            "anchor": "system_knowledge_evidence",
-                            "descriptor": evidence_card,
-                        },
-                    }
-                if "系统知识库" not in sources_used:
-                    sources_used.append("系统知识库")
-        except Exception as e:
-            logger.warning(f"[agent_executor] system knowledge evidence card failed: {e}")
-        response_cards = _merge_agent_card_descriptors(streamed_cards, evidence_cards)
-
-        # 后置校验 (#3 护栏): record 意图的 turn 却 0 次工具执行 = 很可能模型只是嘴上
-        # 说"已记录"但没真写库(弱模型把 tool-call JSON 当正文吐出、提取失败的静默丢数据)。
-        # 把这种"假装成功"从不可见变成 WARNING 日志 + message.meta 标记, 可被监控/告警捕获。
-        record_intent_no_tool = bool(
-            self._prefer_fast_record_model and tool_executed_count == 0
+        if completion_status == "complete":
+            try:
+                evidence_card = self._build_system_knowledge_evidence_card(user_id, message)
+                if evidence_card:
+                    evidence_cards.append(evidence_card)
+                    before = len(streamed_cards)
+                    streamed_cards = _merge_agent_card_descriptors(streamed_cards, [evidence_card])
+                    if len(streamed_cards) > before:
+                        yield {
+                            "event": "card",
+                            "data": {
+                                "anchor": "system_knowledge_evidence",
+                                "descriptor": evidence_card,
+                            },
+                        }
+                    if "系统知识库" not in sources_used:
+                        sources_used.append("系统知识库")
+            except Exception as e:
+                logger.warning(f"[agent_executor] system knowledge evidence card failed: {e}")
+        response_cards = (
+            _merge_agent_card_descriptors(streamed_cards, evidence_cards)
+            if completion_status == "complete"
+            else []
         )
-        if record_intent_no_tool:
-            logger.warning(
-                "[agent_executor] RECORD INTENT but 0 tools executed — possible silent "
-                "data loss (model may have claimed success without writing). user=%s msg=%r",
-                user_id,
-                (message or "")[:80],
-            )
+
+        # 后置校验 (#3 护栏): record 意图的 turn 却 0 次工具执行时,前面已改写为
+        # 用户可见的 fail-closed 文案;这里继续把标记写入 meta/done 供监控使用。
 
         # P1 数字锚定核验(shadow): 观测最终答案里的个人数值能否锚定到 Twin。additive
         # 摘要进 meta + done, 客户端不读不炸。内部全 fail-soft, 绝不打死回合。
@@ -3691,12 +4784,15 @@ class AgentExecutor:
                 "fallback_reasons": fallback_reasons,
                 "sources_used": sources_used,
                 "tools_used": tools_used,
+                "write_receipts": write_receipts,
                 "cards": response_cards,
                 "finish_reason": final_finish_reason,
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
                 "perf": perf,
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
+                "client_turn_finalized": True,
+                **({"client_turn_id": client_turn_id} if client_turn_id else {}),
             }
         except Exception as e:
             logger.warning(f"[agent_executor] write meta 失败: {e}")
@@ -3718,6 +4814,7 @@ class AgentExecutor:
                 "fallback_reasons": fallback_reasons,
                 "sources_used": sources_used,
                 "tools_used": tools_used,
+                "write_receipts": write_receipts,
                 "mode": "agent",
                 "cards": response_cards,
                 "finish_reason": final_finish_reason,
@@ -3725,13 +4822,25 @@ class AgentExecutor:
                 "record_intent_no_tool": record_intent_no_tool,
                 "perf": perf,
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
+                "client_turn_finalized": True,
+                **({"client_turn_id": client_turn_id} if client_turn_id else {}),
             },
         }
 
     @staticmethod
-    def _upload_chat_image(image_base64: str, image_type: str) -> Optional[str]:
+    def _upload_chat_image(
+        image_base64: str,
+        image_type: str,
+        user_id: int,
+        object_key: str | None = None,
+    ) -> str:
         from app.services.chat_utils import upload_chat_image
-        return upload_chat_image(image_base64, image_type)
+        return upload_chat_image(
+            image_base64,
+            user_id,
+            image_type,
+            object_key=object_key,
+        )
 
     def _should_send_raw_images_to_primary_model(self, user_id: int) -> bool:
         """Return True when the active chat model should receive image parts directly."""
@@ -4778,6 +5887,10 @@ class AgentExecutor:
 
     async def _analyze_image_with_vision(self, user_message: str, images: List[dict]) -> Optional[str]:
         """用 vision 模型预分析图片内容，返回文字描述"""
+        structured_food = await self._analyze_food_images_with_structured_vision(user_message, images)
+        if structured_food:
+            return structured_food
+
         if not settings.llm_vision_base_url or not settings.llm_vision_api_key:
             return None
 
@@ -4829,7 +5942,7 @@ class AgentExecutor:
             return None
 
     async def _analyze_food_images_with_structured_vision(self, user_message: str, images: List[dict]) -> Optional[str]:
-        """Prefer strict food-recognition JSON over free-form vision prose."""
+        """Prefer strict food-recognition JSON over free-form vision prose for diet photos."""
         if not images:
             return None
         try:
@@ -4857,7 +5970,8 @@ class AgentExecutor:
             logger.warning("[Vision] structured food recognition failed, fallback to generic vision: %s", e)
         return None
 
-    def _food_recognition_found_no_food(self, errors: List[str]) -> bool:
+    @staticmethod
+    def _food_recognition_found_no_food(errors: List[str]) -> bool:
         joined = " ".join(errors)
         return bool(re.search(r"未识别到(?:可记录的)?食物|重新拍摄餐食|不是食物|not food", joined, re.I))
 
@@ -4883,6 +5997,7 @@ class AgentExecutor:
             "protein": result.get("total_protein"),
             "carbs": result.get("total_carbs"),
             "fat": result.get("total_fat"),
+            "fiber": result.get("total_fiber"),
         }
         total_text = ", ".join(
             f"{key}={value}"
@@ -4892,19 +6007,22 @@ class AgentExecutor:
         return (
             "结构化餐食识别结果: "
             f"meal_type={meal_type}; foods={' + '.join(foods)}; totals({total_text}). "
-            "如果用户意图是记录饮食, 请调用 health_record(record_type='diet', data={meal_type, food_items, calories, protein, carbs, fat, fiber, record_date})。"
+            "如果用户意图是记录饮食, 请调用 health_record(record_type='diet', "
+            "data={meal_type, food_items, calories, protein, carbs, fat, fiber, "
+            "source:'chat_photo', ai_recognized:1, record_date})。"
             "food_items 只能使用真实食物名称和份量, 绝对不要包含营养卡、保存并确认、今日饮食等界面文案。"
         )
 
-    def _infer_meal_type_for_food_image(self, user_message: str) -> str:
+    @staticmethod
+    def _infer_meal_type_for_food_image(user_message: str) -> str:
         text = (user_message or "").lower()
-        if re.search(r"早餐|早饭|breakfast", text):
+        if re.search(r"早餐|早饭|早上|breakfast", text):
             return "breakfast"
-        if re.search(r"午餐|午饭|中饭|lunch", text):
+        if re.search(r"午餐|午饭|中饭|中午|lunch", text):
             return "lunch"
-        if re.search(r"晚餐|晚饭|dinner", text):
+        if re.search(r"晚餐|晚饭|晚上|dinner", text):
             return "dinner"
-        if re.search(r"加餐|零食|snack", text):
+        if re.search(r"加餐|零食|下午茶|夜宵|snack", text):
             return "snack"
         hour = datetime.now(BEIJING_TZ).hour
         if hour < 10:
@@ -5892,8 +7010,25 @@ class AgentExecutor:
 
         if operation == "delete":
             result = await self._api_delete(f"{base}{path}", headers)
+            if str(result).startswith("Error:"):
+                return result
+            if result:
+                try:
+                    payload = json.loads(result)
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    payload = {"message": str(result)}
+                if not isinstance(payload, dict) or _write_result_payload(payload) is None:
+                    return result
+            else:
+                payload = {"message": "删除成功"}
+            payload.setdefault("record_id", record_id)
+            payload.setdefault("id", record_id)
+            normalized_record_type = str(record_type or "").strip().lower()
+            resource_type = _RESOURCE_TYPE_BY_RECORD_TYPE.get(normalized_record_type)
+            if resource_type:
+                payload.setdefault("resource_type", resource_type)
             self._invalidate_twin_after_mutation()
-            return result or json.dumps({"message": "删除成功", "record_id": record_id}, ensure_ascii=False)
+            return json.dumps(payload, ensure_ascii=False)
 
         if operation == "update":
             if record_type not in update_supported:

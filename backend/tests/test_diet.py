@@ -82,6 +82,28 @@ class TestDietAPI:
         assert data["food_items"] == "米饭,青菜"
         assert data["calories"] is None
 
+    def test_create_diet_record_reuses_user_scoped_idempotency_key(
+        self, client, db, auth_headers, sample_diet_data
+    ):
+        headers = {**auth_headers, "Idempotency-Key": "chat-card-lunch-77"}
+
+        first = client.post(
+            "/api/v1/diet/records",
+            json=sample_diet_data,
+            headers=headers,
+        )
+        second = client.post(
+            "/api/v1/diet/records",
+            json=sample_diet_data,
+            headers=headers,
+        )
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert second.json()["id"] == first.json()["id"]
+        assert db.query(DietRecord).count() == 1
+        assert db.query(DietRecord).one().client_action_id == "chat-card-lunch-77"
+
     def test_create_diet_record_invalid_meal_type(self, client, auth_headers):
         """测试创建饮食记录（无效的餐类型）"""
         invalid_data = {
@@ -118,11 +140,31 @@ class TestDietAPI:
         )
         assert response.status_code == 401
 
+    def test_create_diet_record_ignores_client_controlled_image_url(
+        self, client, db, auth_headers, sample_diet_data
+    ):
+        response = client.post(
+            "/api/v1/diet/records",
+            json={
+                **sample_diet_data,
+                "image_url": "/api/v1/upload/files/diet/victim.jpg",
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["image_url"] is None
+        assert db.query(DietRecord).one().image_url is None
+
     @pytest.mark.parametrize("food_items", [
         "我刚才不小心删除了",
         "删除这一餐",
         "替普瑞酮胶囊（施维舒）",
         "鱼油",
+        "和午餐食品营养卡",
+        "保存并确认",
+        "沃克",
+        "伏诺拉生",
     ])
     def test_create_diet_record_rejects_non_food_items(self, client, auth_headers, food_items):
         """REST API 防御纵深: 管理意图/药物/补剂不能直接落成 DietRecord。"""
@@ -138,6 +180,150 @@ class TestDietAPI:
 
         assert response.status_code == 400
         assert "不能作为饮食记录" in response.json()["detail"]
+
+    def test_image_persistence_failure_fails_the_write_without_creating_a_record(
+        self, client, db, auth_headers, sample_diet_data, tmp_path, monkeypatch
+    ):
+        from app.api import upload as upload_api
+
+        blocked_root = tmp_path / "not-a-directory"
+        blocked_root.write_text("occupied")
+        monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(blocked_root))
+
+        response = client.post(
+            "/api/v1/diet/records",
+            json={
+                **sample_diet_data,
+                "image_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
+                "image_type": "png",
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 500
+        assert db.query(DietRecord).count() == 0
+
+    def test_idempotency_conflict_removes_the_losing_private_image(
+        self, db, test_user, sample_diet_data, tmp_path, monkeypatch
+    ):
+        from sqlalchemy.exc import IntegrityError
+
+        from app.api import upload as upload_api
+        from app.api.diet import create_diet_record
+        from app.schemas.diet import DietRecordCreate
+
+        key = "diet-card-conflict-1"
+        existing = DietRecord(
+            user_id=test_user.id,
+            record_date=date.today(),
+            meal_type="lunch",
+            food_name="既有午餐",
+            food_items="既有午餐",
+            client_action_id=key,
+        )
+        db.add(existing)
+        db.commit()
+        db.refresh(existing)
+
+        upload_root = tmp_path / "uploads"
+        monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(upload_root))
+        real_query = db.query
+        diet_query_count = 0
+
+        class QueryResult:
+            def __init__(self, value):
+                self.value = value
+
+            def filter(self, *args, **kwargs):
+                return self
+
+            def first(self):
+                return self.value
+
+        def query(model, *args, **kwargs):
+            nonlocal diet_query_count
+            if model is DietRecord:
+                diet_query_count += 1
+                return QueryResult(None if diet_query_count == 1 else existing)
+            return real_query(model, *args, **kwargs)
+
+        def conflicting_commit():
+            raise IntegrityError("insert", {}, Exception("duplicate"))
+
+        monkeypatch.setattr(db, "query", query)
+        monkeypatch.setattr(db, "commit", conflicting_commit)
+        result = create_diet_record(
+            DietRecordCreate(
+                **sample_diet_data,
+                image_base64="iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
+                image_type="png",
+            ),
+            current_user=test_user,
+            db=db,
+            idempotency_key=key,
+        )
+
+        assert result.id == existing.id
+        assert list((upload_root / "diet" / str(test_user.id)).glob("*")) == []
+
+    def test_delete_diet_record_removes_its_private_image(
+        self, client, auth_headers, test_user, sample_diet_data, tmp_path, monkeypatch
+    ):
+        from app.api import upload as upload_api
+
+        upload_root = tmp_path / "uploads"
+        monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(upload_root))
+        created = client.post(
+            "/api/v1/diet/records",
+            json={
+                **sample_diet_data,
+                "image_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
+                "image_type": "png",
+            },
+            headers=auth_headers,
+        )
+        assert created.status_code == 200
+        files = list((upload_root / "diet" / str(test_user.id)).glob("*"))
+        assert len(files) == 1
+
+        deleted = client.delete(
+            f"/api/v1/diet/records/{created.json()['id']}",
+            headers=auth_headers,
+        )
+
+        assert deleted.status_code == 200
+        assert not files[0].exists()
+
+    def test_delete_diet_record_never_deletes_a_legacy_global_image(
+        self, client, db, auth_headers, test_user, tmp_path, monkeypatch
+    ):
+        from app.api import upload as upload_api
+
+        upload_root = tmp_path / "uploads"
+        legacy_dir = upload_root / "diet"
+        legacy_dir.mkdir(parents=True)
+        legacy_file = legacy_dir / "shared-legacy.jpg"
+        legacy_file.write_bytes(b"legacy-private-image")
+        monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(upload_root))
+        record = DietRecord(
+            user_id=test_user.id,
+            record_date=date.today(),
+            meal_type="lunch",
+            food_name="旧午餐",
+            food_items="旧午餐",
+            image_url="/api/v1/upload/files/diet/shared-legacy.jpg",
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+
+        deleted = client.delete(
+            f"/api/v1/diet/records/{record.id}",
+            headers=auth_headers,
+        )
+
+        assert deleted.status_code == 200
+        assert legacy_file.exists()
 
     def test_implausible_past_record_date_is_clamped_to_server_today(
         self, client, auth_headers, caplog
@@ -212,6 +398,34 @@ class TestDietAPI:
         data = response.json()
         assert isinstance(data, list)
         assert len(data) >= 1
+
+    @pytest.mark.parametrize("path_suffix", [
+        "",
+        f"/date/{date.today()}",
+        "/stats",
+    ])
+    def test_user_scoped_diet_routes_reject_cross_user_reads(
+        self, client, db, auth_headers, path_suffix
+    ):
+        identity = (path_suffix or "list").replace("/", "-")
+        other_user = User(
+            username=f"other-diet-user{identity}",
+            email=f"other-diet-user{identity}@example.com",
+            hashed_password="hashed_password",
+            name="其他用户",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(other_user)
+        db.commit()
+        db.refresh(other_user)
+
+        response = client.get(
+            f"/api/v1/diet/records/user/{other_user.id}{path_suffix}",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 403
 
     def test_get_my_daily_summary(self, client, auth_headers, sample_diet_data):
         """测试获取我的每日饮食汇总"""
@@ -319,6 +533,127 @@ class TestDietAPI:
 
         assert update_response.status_code == 400
         assert "不能作为饮食记录" in update_response.json()["detail"]
+
+    def test_update_diet_record_ignores_client_controlled_image_url(
+        self, client, db, auth_headers, sample_diet_data
+    ):
+        created = client.post(
+            "/api/v1/diet/records",
+            json=sample_diet_data,
+            headers=auth_headers,
+        )
+
+        updated = client.put(
+            f"/api/v1/diet/records/{created.json()['id']}",
+            json={"image_url": "/api/v1/upload/files/diet/victim.jpg"},
+            headers=auth_headers,
+        )
+
+        assert updated.status_code == 200
+        assert updated.json()["image_url"] is None
+        assert db.query(DietRecord).one().image_url is None
+
+    @pytest.mark.parametrize("recognized_name", ["沃克", "伏诺拉生", "保存并确认"])
+    def test_recognize_and_save_rejects_non_food_model_output(
+        self, client, db, auth_headers, tmp_path, monkeypatch, recognized_name
+    ):
+        from app.api import upload as upload_api
+        from app.services.ai.food_recognition import food_recognition_service
+
+        async def recognize(*_args, **_kwargs):
+            return {
+                "success": True,
+                "foods": [{"name": recognized_name, "confidence": 0.9}],
+                "total_calories": 10,
+            }
+
+        monkeypatch.setattr(food_recognition_service, "is_available", lambda: True)
+        monkeypatch.setattr(food_recognition_service, "recognize_food_from_base64", recognize)
+        monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(tmp_path / "uploads"))
+
+        response = client.post(
+            "/api/v1/diet/recognize-and-save",
+            json={
+                "image_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
+                "image_type": "png",
+                "record_date": str(date.today()),
+                "meal_type": "lunch",
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400
+        assert db.query(DietRecord).count() == 0
+        assert list((tmp_path / "uploads").rglob("*")) == []
+
+    def test_recognize_and_save_image_failure_creates_no_record(
+        self, client, db, auth_headers, tmp_path, monkeypatch
+    ):
+        from app.api import upload as upload_api
+        from app.services.ai.food_recognition import food_recognition_service
+
+        async def recognize(*_args, **_kwargs):
+            return {
+                "success": True,
+                "foods": [{"name": "鸡胸肉", "confidence": 0.9}],
+                "total_calories": 180,
+            }
+
+        blocked_root = tmp_path / "not-a-directory"
+        blocked_root.write_text("occupied")
+        monkeypatch.setattr(food_recognition_service, "is_available", lambda: True)
+        monkeypatch.setattr(food_recognition_service, "recognize_food_from_base64", recognize)
+        monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(blocked_root))
+
+        response = client.post(
+            "/api/v1/diet/recognize-and-save",
+            json={
+                "image_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
+                "image_type": "png",
+                "record_date": str(date.today()),
+                "meal_type": "lunch",
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 500
+        assert db.query(DietRecord).count() == 0
+
+    def test_recognize_and_save_db_failure_removes_written_image(
+        self, client, db, auth_headers, tmp_path, monkeypatch
+    ):
+        from app.api import upload as upload_api
+        from app.services.ai.food_recognition import food_recognition_service
+
+        async def recognize(*_args, **_kwargs):
+            return {
+                "success": True,
+                "foods": [{"name": "鸡胸肉", "confidence": 0.9}],
+                "total_calories": 180,
+            }
+
+        upload_root = tmp_path / "uploads"
+        monkeypatch.setattr(food_recognition_service, "is_available", lambda: True)
+        monkeypatch.setattr(food_recognition_service, "recognize_food_from_base64", recognize)
+        monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(upload_root))
+
+        def fail_commit():
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr(db, "commit", fail_commit)
+        response = client.post(
+            "/api/v1/diet/recognize-and-save",
+            json={
+                "image_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
+                "image_type": "png",
+                "record_date": str(date.today()),
+                "meal_type": "lunch",
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 500
+        assert list(upload_root.rglob("*.png")) == []
 
 
 class TestDietValidation:

@@ -55,7 +55,7 @@ def _statuses(events):
     return out
 
 
-async def _run(executor, message, images=None, extra_context=None, user_id=1):
+async def _run(executor, message, images=None, extra_context=None, user_id=1, client_turn_id=None):
     return [
         event
         async for event in executor.run_stream(
@@ -64,8 +64,630 @@ async def _run(executor, message, images=None, extra_context=None, user_id=1):
             user_auth_token="test-token",
             images=images,
             extra_context=extra_context,
+            client_turn_id=client_turn_id,
         )
     ]
+
+
+@pytest.mark.asyncio
+async def test_request_persisted_event_and_messages_keep_client_turn_identity(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+
+    async def fake_stream(messages, round_tools):
+        yield {"type": "content", "text": "已经保存本轮请求。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+    events = await _run(
+        executor,
+        "记录本轮身份",
+        user_id=user.id,
+        client_turn_id="turn-mobile-42",
+    )
+
+    persisted = next(event for event in events if event.get("event") == "request_persisted")
+    assert persisted["data"]["conversation_id"] > 0
+    assert persisted["data"]["user_message_id"] > 0
+    assert persisted["data"]["client_turn_id"] == "turn-mobile-42"
+
+    from app.models.agent_conversation import AgentMessage
+
+    saved = (
+        db.query(AgentMessage)
+        .filter(AgentMessage.conversation_id == persisted["data"]["conversation_id"])
+        .order_by(AgentMessage.id.asc())
+        .all()
+    )
+    assert [message.role for message in saved] == ["user", "assistant"]
+    assert saved[0].meta["client_turn_id"] == "turn-mobile-42"
+    assert saved[1].meta["client_turn_id"] == "turn-mobile-42"
+
+
+@pytest.mark.asyncio
+async def test_repeated_client_turn_replays_without_executing_the_agent_twice(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+    calls = 0
+
+    async def fake_stream(messages, round_tools):
+        nonlocal calls
+        calls += 1
+        yield {"type": "content", "text": "只执行一次。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+    first = await _run(
+        executor,
+        "记录本轮身份",
+        user_id=user.id,
+        client_turn_id="turn-idempotent-42",
+    )
+    second = await _run(
+        executor,
+        "记录本轮身份",
+        user_id=user.id,
+        client_turn_id="turn-idempotent-42",
+    )
+
+    first_done = next(event for event in first if event.get("event") == "done")
+    second_done = next(event for event in second if event.get("event") == "done")
+    assert calls == 1
+    assert second_done["data"]["conversation_id"] == first_done["data"]["conversation_id"]
+    assert second_done["data"]["message_id"] == first_done["data"]["message_id"]
+    second_text = "".join(
+        event["data"].get("content", "")
+        for event in second
+        if event.get("event") == "token"
+    )
+    assert "没有成功写入数据库" in second_text
+    assert "只执行一次" not in second_text
+
+
+@pytest.mark.asyncio
+async def test_same_client_turn_id_is_isolated_between_accounts(
+    db, auth_user_and_headers, monkeypatch
+):
+    from tests.conftest import create_authenticated_user
+
+    first_user, _ = auth_user_and_headers
+    second_user, _ = create_authenticated_user(db)
+    first_executor = AgentExecutor(db)
+    second_executor = AgentExecutor(db)
+    _wire_min(first_executor, monkeypatch)
+    _wire_min(second_executor, monkeypatch)
+    calls = []
+
+    async def first_stream(messages, round_tools):
+        calls.append(first_user.id)
+        yield {"type": "content", "text": "账号一"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def second_stream(messages, round_tools):
+        calls.append(second_user.id)
+        yield {"type": "content", "text": "账号二"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(first_executor, "_call_llm_stream", first_stream)
+    monkeypatch.setattr(second_executor, "_call_llm_stream", second_stream)
+    await _run(
+        first_executor,
+        "查询今天状态",
+        user_id=first_user.id,
+        client_turn_id="turn-shared-name",
+    )
+    await _run(
+        second_executor,
+        "查询今天状态",
+        user_id=second_user.id,
+        client_turn_id="turn-shared-name",
+    )
+
+    assert calls == [first_user.id, second_user.id]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_turn_never_replays_an_unfinalized_assistant(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    service = AgentConversationService(db)
+    conv = service.get_or_create_conversation(user.id, None, title="并发回放")
+    service.save_user_message_once(
+        conv.id,
+        user.id,
+        "记录午餐",
+        client_turn_id="turn-unfinalized",
+        meta={"client_turn_id": "turn-unfinalized"},
+    )
+    service.save_message(
+        conv.id,
+        "assistant",
+        "尚未写完回执 metadata",
+        client_turn_id="turn-unfinalized",
+        client_turn_user_id=user.id,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_executor.CLIENT_TURN_REPLAY_WAIT_SECONDS",
+        0,
+    )
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+
+    async def fake_stream(messages, round_tools):
+        yield {"type": "content", "text": "恢复后完成"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+    events = await _run(
+        executor,
+        "记录午餐",
+        user_id=user.id,
+        client_turn_id="turn-unfinalized",
+    )
+
+    replayed_text = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    assert "尚未写完回执 metadata" not in replayed_text
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["completion_status"] == "complete"
+
+
+@pytest.mark.asyncio
+async def test_orphaned_acknowledged_turn_is_taken_over_without_duplicate_user_message(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.models.agent_conversation import AgentMessage
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    service = AgentConversationService(db)
+    conv = service.get_or_create_conversation(user.id, None, title="崩溃恢复")
+    service.save_user_message_once(
+        conv.id,
+        user.id,
+        "记录午餐",
+        client_turn_id="turn-worker-crashed",
+        meta={"client_turn_id": "turn-worker-crashed"},
+    )
+    service.save_message(
+        conv.id,
+        "assistant",
+        "旧 worker 只写了一半",
+        client_turn_id="turn-worker-crashed",
+        client_turn_user_id=user.id,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_executor.CLIENT_TURN_REPLAY_WAIT_SECONDS",
+        0,
+    )
+
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+    calls = 0
+
+    async def fake_stream(messages, round_tools):
+        nonlocal calls
+        calls += 1
+        yield {"type": "content", "text": "新 worker 已接管并完成。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+    events = await _run(
+        executor,
+        "记录午餐",
+        user_id=user.id,
+        client_turn_id="turn-worker-crashed",
+    )
+
+    assert calls == 1
+    assert "新 worker 已接管并完成。" in "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    saved = (
+        db.query(AgentMessage)
+        .filter(AgentMessage.conversation_id == conv.id)
+        .order_by(AgentMessage.id.asc())
+        .all()
+    )
+    assert [message.role for message in saved] == ["user", "assistant"]
+    assert saved[-1].meta["client_turn_finalized"] is True
+    assert saved[-1].content != "旧 worker 只写了一半"
+
+
+@pytest.mark.asyncio
+async def test_orphaned_turn_with_in_flight_write_is_not_executed_again(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    service = AgentConversationService(db)
+    conv = service.get_or_create_conversation(user.id, None, title="写入状态未知")
+    service.save_user_message_once(
+        conv.id,
+        user.id,
+        "记录午餐",
+        client_turn_id="turn-write-in-flight",
+        meta={
+            "client_turn_id": "turn-write-in-flight",
+            "write_state": {
+                "status": "in_flight",
+                "tool": "health_record",
+                "fingerprint": "write-1",
+            },
+        },
+    )
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+
+    async def must_not_call_llm(*args, **kwargs):
+        raise AssertionError("an uncertain write must not be executed again")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(executor, "_call_llm_stream", must_not_call_llm)
+    events = await _run(
+        executor,
+        "记录午餐",
+        user_id=user.id,
+        client_turn_id="turn-write-in-flight",
+    )
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    assert "避免重复写入" in rendered
+    assert "先查询" in rendered
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["completion_status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_orphaned_turn_with_verified_write_recovers_its_receipt_without_reexecution(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    receipt = {
+        "operation_id": "health_record:diet_record:701",
+        "status": "verified",
+        "resource_type": "diet_record",
+        "resource_id": "701",
+        "completed_at": "2026-07-10T12:00:00+00:00",
+        "verified": True,
+    }
+    service = AgentConversationService(db)
+    conv = service.get_or_create_conversation(user.id, None, title="恢复写入回执")
+    user_message, _ = service.save_user_message_once(
+        conv.id,
+        user.id,
+        "记录午餐",
+        client_turn_id="turn-write-verified",
+        meta={"client_turn_id": "turn-write-verified"},
+    )
+    executor = AgentExecutor(db)
+    write_args = {
+        "record_type": "diet",
+        "data": {"food_items": "午餐"},
+    }
+    executor._persist_turn_expected_writes(
+        user_message,
+        [("health_record", write_args)],
+    )
+    executor._persist_turn_write_state(
+        user_message,
+        status="verified",
+        tool_name="health_record",
+        parsed_args=write_args,
+        receipt=receipt,
+    )
+    _wire_min(executor, monkeypatch)
+
+    async def must_not_call_llm(*args, **kwargs):
+        raise AssertionError("a verified write must not be executed again")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(executor, "_call_llm_stream", must_not_call_llm)
+    events = await _run(
+        executor,
+        "记录午餐",
+        user_id=user.id,
+        client_turn_id="turn-write-verified",
+    )
+
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["write_receipts"] == [receipt]
+    assert "写入已完成" in "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+
+
+@pytest.mark.asyncio
+async def test_lock_contender_reclaims_turn_when_owner_dies_before_user_message(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+    attempts = 0
+    releases = 0
+
+    def fake_acquire(self, user_id, client_turn_id):
+        nonlocal attempts
+        attempts += 1
+        return attempts >= 2
+
+    def fake_release(self, user_id, client_turn_id):
+        nonlocal releases
+        releases += 1
+
+    monkeypatch.setattr(
+        AgentConversationService,
+        "try_acquire_client_turn_execution",
+        fake_acquire,
+    )
+    monkeypatch.setattr(
+        AgentConversationService,
+        "release_client_turn_execution",
+        fake_release,
+    )
+    monkeypatch.setattr(
+        "app.services.agent_executor.CLIENT_TURN_REPLAY_WAIT_SECONDS",
+        0.2,
+    )
+
+    async def fake_stream(messages, round_tools):
+        yield {"type": "content", "text": "已恢复处理。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+    events = await _run(
+        executor,
+        "记录午餐",
+        user_id=user.id,
+        client_turn_id="turn-owner-died-before-claim",
+    )
+
+    assert attempts >= 2
+    assert releases == 1
+    assert any(event.get("event") == "request_persisted" for event in events)
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["message_id"] is not None
+
+
+@pytest.mark.asyncio
+async def test_write_state_is_persisted_before_execution_and_verified_with_receipt(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.models.agent_conversation import AgentMessage
+
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+    rounds = 0
+
+    async def fake_stream(messages, round_tools):
+        nonlocal rounds
+        rounds += 1
+        if rounds == 1:
+            yield {
+                "type": "tool_calls",
+                "tool_calls": [{
+                    "id": "write-1",
+                    "function": {
+                        "name": "health_record",
+                        "arguments": '{"record_type":"diet","data":{"food_items":"鸡胸肉"}}',
+                    },
+                }],
+            }
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+            return
+        yield {"type": "content", "text": "午餐已记录。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    async def fake_execute_tool(name, args, token):
+        db.expire_all()
+        user_message = (
+            db.query(AgentMessage)
+            .filter(AgentMessage.role == "user")
+            .one()
+        )
+        assert user_message.meta["write_state"]["status"] == "in_flight"
+        assert user_message.meta["write_state"]["tool"] == "health_record"
+        assert user_message.meta["write_state"]["fingerprint"]
+        return '{"id":701,"food_items":"鸡胸肉","created_at":"2026-07-10T12:00:00Z"}'
+
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+    monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
+    monkeypatch.setattr(
+        "app.services.agent_executor._post_record_quality_response",
+        lambda *args, **kwargs: None,
+    )
+
+    events = await _run(
+        executor,
+        "写状态测试",
+        user_id=user.id,
+        client_turn_id="turn-write-checkpoint",
+    )
+
+    db.expire_all()
+    user_message = db.query(AgentMessage).filter(AgentMessage.role == "user").one()
+    assert user_message.meta["write_state"]["status"] == "verified"
+    assert user_message.meta["write_receipts"][0]["resource_id"] == "701"
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["write_receipts"] == user_message.meta["write_receipts"]
+
+
+@pytest.mark.asyncio
+async def test_image_persistence_failure_emits_no_durable_ack_or_message(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+    uploads = iter(["/api/v1/upload/files/chat/1/first.jpg", None])
+    monkeypatch.setattr(executor, "_upload_chat_image", lambda *args: next(uploads))
+
+    with pytest.raises(RuntimeError, match="chat_image_persistence_failed"):
+        await _run(
+            executor,
+            "分析两张午餐照片",
+            images=[
+                {"base64": "AA==", "type": "jpeg"},
+                {"base64": "AA==", "type": "jpeg"},
+            ],
+            user_id=user.id,
+            client_turn_id="turn-image-failure",
+        )
+
+    from app.models.agent_conversation import AgentMessage
+
+    assert db.query(AgentMessage).count() == 0
+
+
+@pytest.mark.asyncio
+async def test_image_reference_attach_failure_cleans_uploaded_private_file(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+    uploaded_url = f"/api/v1/upload/files/chat/{user.id}/orphan-after-delete.jpg"
+    cleaned: list[str] = []
+    monkeypatch.setattr(executor, "_upload_chat_image", lambda *args: uploaded_url)
+    monkeypatch.setattr(
+        AgentConversationService,
+        "update_user_message_after_image_upload",
+        lambda *args, **kwargs: None,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.services.chat_utils.delete_chat_image",
+        lambda url, owner_id: cleaned.append(url),
+    )
+
+    async def fake_stream(messages, round_tools):
+        yield {"type": "content", "text": "不应执行到这里。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+
+    with pytest.raises(RuntimeError, match="chat_image_message_missing"):
+        await _run(
+            executor,
+            "分析午餐照片",
+            images=[{"base64": "AA==", "type": "jpeg"}],
+            user_id=user.id,
+            client_turn_id="turn-image-deleted-before-attach",
+        )
+
+    assert cleaned == [uploaded_url]
+
+
+@pytest.mark.asyncio
+async def test_user_message_insert_failure_happens_before_chat_image_upload(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+    uploaded_url = f"/api/v1/upload/files/chat/{user.id}/orphan.jpg"
+    uploaded: list[str] = []
+    cleaned: list[str] = []
+    monkeypatch.setattr(
+        executor,
+        "_upload_chat_image",
+        lambda *args: uploaded.append(uploaded_url) or uploaded_url,
+    )
+    monkeypatch.setattr(
+        AgentConversationService,
+        "save_user_message_once",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("db insert failed")),
+    )
+    monkeypatch.setattr(
+        "app.services.chat_utils.delete_chat_image",
+        lambda url, owner_id: cleaned.append(url),
+    )
+
+    with pytest.raises(RuntimeError, match="db insert failed"):
+        await _run(
+            executor,
+            "分析午餐照片",
+            images=[{"base64": "AA==", "type": "jpeg"}],
+            user_id=user.id,
+            client_turn_id="turn-image-db-failure",
+        )
+
+    assert uploaded == []
+    assert cleaned == []
+
+
+@pytest.mark.asyncio
+async def test_recovered_turn_reuses_its_already_persisted_chat_images(
+    db, auth_user_and_headers, monkeypatch
+):
+    from app.services.agent_conversation_service import AgentConversationService
+
+    user, _ = auth_user_and_headers
+    service = AgentConversationService(db)
+    conv = service.get_or_create_conversation(user.id, None, title="图片恢复")
+    stored_url = f"/api/v1/upload/files/chat/{user.id}/persisted.jpg"
+    service.save_user_message_once(
+        conv.id,
+        user.id,
+        "分析午餐照片\n[附图: 1张]",
+        client_turn_id="turn-image-recovered",
+        image_url=f'["{stored_url}"]',
+        meta={"client_turn_id": "turn-image-recovered"},
+    )
+    executor = AgentExecutor(db)
+    _wire_min(executor, monkeypatch)
+    monkeypatch.setattr(
+        executor,
+        "_upload_chat_image",
+        lambda *args: (_ for _ in ()).throw(AssertionError("must reuse persisted image")),
+    )
+
+    async def fake_stream(messages, round_tools):
+        yield {"type": "content", "text": "图片已恢复。"}
+        yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr(executor, "_call_llm_stream", fake_stream)
+    events = await _run(
+        executor,
+        "分析午餐照片",
+        images=[{"base64": "AA==", "type": "jpeg"}],
+        user_id=user.id,
+        client_turn_id="turn-image-recovered",
+    )
+
+    assert any(event.get("event") == "done" for event in events)
 
 
 def _wire_min(executor, monkeypatch):

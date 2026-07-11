@@ -64,6 +64,7 @@
       "expo-router",
       "expo-secure-store",
       "expo-document-picker",
+      "expo-asset",
       "expo-audio",
       [
         "@react-native-voice/voice",

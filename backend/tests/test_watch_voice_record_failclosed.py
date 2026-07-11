@@ -78,7 +78,7 @@ def test_fast_record_strips_confirmed_inside_json_string_data_for_never_types():
 
 
 def test_fast_record_unknown_type_keeps_manual_confirmation_gate():
-    original = {"record_type": "sleep", "data": {"duration": 480}}
+    original = {"record_type": "unknown_metric", "data": {"value": 480}}
 
     out = _auto_confirm_fast_record_args("health_record", original)
 

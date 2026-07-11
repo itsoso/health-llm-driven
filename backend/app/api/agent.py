@@ -141,7 +141,18 @@ def _merge_card_descriptors(*groups: list | None) -> list:
     return out
 
 
-def _persist_done_cards(db: Session, message_id: int | None, cards: list) -> None:
+def _done_event_may_expose_cards(data: dict | None) -> bool:
+    """Action cards are valid only for a durable, completed assistant turn."""
+    if not isinstance(data, dict):
+        return False
+    return (
+        data.get("request_persisted") is not False
+        and data.get("completion_status") == "complete"
+        and isinstance(data.get("message_id"), int)
+    )
+
+
+def _persist_done_cards(db: Session, message_id: int | None, cards: list) -> bool:
     """Persist cards appended by the API wrapper into AgentMessage.meta.
 
     AgentExecutor already writes its own metadata before yielding `done`. The
@@ -151,19 +162,22 @@ def _persist_done_cards(db: Session, message_id: int | None, cards: list) -> Non
     """
 
     if not message_id or not cards:
-        return
+        return False
     try:
         from app.models.agent_conversation import AgentMessage
 
         msg = db.query(AgentMessage).filter(AgentMessage.id == message_id).first()
         if not msg:
-            return
+            return False
         meta = dict(msg.meta or {})
         meta["cards"] = _merge_card_descriptors(meta.get("cards"), cards)
         msg.meta = meta
         db.commit()
+        return True
     except Exception as e:  # noqa: BLE001
+        db.rollback()
         logger.debug("[agent.stream] persist done cards skipped: %s", e)
+        return False
 
 
 def _persist_done_llm_usage(db: Session, message_id: int | None, usage: dict | None) -> None:
@@ -268,7 +282,12 @@ _GENUI_RANGE_LABEL = {"7d": "最近一周", "1m": "近一个月", "3m": "近三�
 
 
 def _maybe_genui_chart_events(
-    db: Session, user_id: int, message: str, conversation_id: int | None, caps: list[str]
+    db: Session,
+    user_id: int,
+    message: str,
+    conversation_id: int | None,
+    caps: list[str],
+    client_turn_id: str | None = None,
 ) -> Optional[tuple[list[dict], int, int]]:
     """确定性构建 reva-ui 图表组件, 持久化 assistant 消息, 返回要 emit 的 SSE 事件。
 
@@ -340,38 +359,136 @@ def _maybe_genui_chart_events(
     from app.services.agent_conversation_service import AgentConversationService
 
     svc = AgentConversationService(db)
-    conv = svc.get_or_create_conversation(user_id, conversation_id, title=message)
-    svc.save_message(conv.id, "user", message)
-    ai_msg = svc.save_message(conv.id, "assistant", full_reply)
-    thinking_steps = ["正在理解你的问题", "整理回复中"]
+    def _replay(existing_user, existing_assistant=None):
+        replay_events = [{"event": "request_persisted", "data": {
+            "conversation_id": existing_user.conversation_id,
+            "user_message_id": existing_user.id,
+            "client_turn_id": client_turn_id,
+            "replayed": True,
+        }}]
+        if existing_assistant and (existing_assistant.meta or {}).get("client_turn_finalized"):
+            replay_events.append({"event": "token", "data": {"content": existing_assistant.content}})
+            done_data = dict(existing_assistant.meta or {})
+            done_data.update({
+                "conversation_id": existing_assistant.conversation_id,
+                "message_id": existing_assistant.id,
+                "completion_status": done_data.get("completion_status") or "complete",
+                "client_turn_id": client_turn_id,
+                "replayed": True,
+            })
+            replay_events.append({"event": "done", "data": done_data})
+            return replay_events, existing_user.conversation_id, existing_assistant.id
+        replay_events.append({"event": "done", "data": {
+            "conversation_id": existing_user.conversation_id,
+            "message_id": None,
+            "completion_status": "interrupted",
+            "client_turn_id": client_turn_id,
+            "replayed": True,
+        }})
+        return replay_events, existing_user.conversation_id, 0
+
+    claimed_turn = False
+    existing_user = None
+    if client_turn_id:
+        existing_user = svc.find_user_message_by_client_turn(user_id, client_turn_id)
+        existing_assistant = svc.find_assistant_message_by_client_turn(user_id, client_turn_id)
+        if (
+            existing_user
+            and existing_assistant
+            and (existing_assistant.meta or {}).get("client_turn_finalized")
+        ):
+            return _replay(existing_user, existing_assistant)
+        claimed_turn = svc.try_acquire_client_turn_execution(user_id, client_turn_id)
+        if not claimed_turn:
+            # Let AgentExecutor's async durable-turn wrapper wait/reclaim/replay.
+            # Returning an interrupted done here used to look like an ACK even
+            # when no user row had been committed yet.
+            return None
+
     try:
-        ai_msg.meta = {
+        recovered = False
+        if client_turn_id:
+            db.expire_all()
+            existing_user = svc.find_user_message_by_client_turn(user_id, client_turn_id)
+            existing_assistant = svc.find_assistant_message_by_client_turn(user_id, client_turn_id)
+            if (
+                existing_user
+                and existing_assistant
+                and (existing_assistant.meta or {}).get("client_turn_finalized")
+            ):
+                return _replay(existing_user, existing_assistant)
+            if existing_user:
+                svc.discard_unfinalized_assistant_by_client_turn(user_id, client_turn_id)
+                recovered = True
+
+        if existing_user:
+            conv = svc.get_or_create_conversation(
+                user_id,
+                existing_user.conversation_id,
+                title=message,
+            )
+            user_msg = existing_user
+        else:
+            conv = svc.get_or_create_conversation(user_id, conversation_id, title=message)
+            user_msg, _ = svc.save_user_message_once(
+                conv.id,
+                user_id,
+                message,
+                client_turn_id=client_turn_id,
+                meta={"client_turn_id": client_turn_id} if client_turn_id else None,
+            )
+
+        thinking_steps = ["正在理解你的问题", "整理回复中"]
+        assistant_meta = {
             "mode": "agent",
             "genui": True,
             "sources_used": ["设备数据"],
             "thinking_steps": thinking_steps,
             "thinking_steps_kind": _THINKING_STEPS_KIND,
+            "completion_status": "complete",
+            "client_turn_finalized": True,
+            **({"client_turn_id": client_turn_id} if client_turn_id else {}),
         }
-        db.commit()
-    except Exception as e:  # noqa: BLE001
-        logger.debug("[agent.stream] genui meta write skipped: %s", e)
+        ai_msg = svc.save_message(
+            conv.id,
+            "assistant",
+            full_reply,
+            meta=assistant_meta,
+            client_turn_id=client_turn_id,
+            client_turn_user_id=user_id,
+        )
 
-    events = [
-        {"event": "agent_start", "data": {"message": "正在绘制图表…", "conversation_id": conv.id}},
-        {"event": "token", "data": {"content": full_reply}},
-        {
-            "event": "done",
-            "data": {
-                "conversation_id": conv.id,
-                "message_id": ai_msg.id,
-                "elapsed_ms": 0,
-                "mode": "agent",
-                "genui": True,
-                "thinking_steps": thinking_steps,
+        events = [
+            {
+                "event": "request_persisted",
+                "data": {
+                    "conversation_id": conv.id,
+                    "user_message_id": user_msg.id,
+                    "client_turn_id": client_turn_id,
+                    "recovered": recovered,
+                },
             },
-        },
-    ]
-    return events, conv.id, ai_msg.id
+            {"event": "agent_start", "data": {"message": "正在绘制图表…", "conversation_id": conv.id}},
+            {"event": "token", "data": {"content": full_reply}},
+            {
+                "event": "done",
+                "data": {
+                    "conversation_id": conv.id,
+                    "message_id": ai_msg.id,
+                    "elapsed_ms": 0,
+                    "mode": "agent",
+                    "genui": True,
+                    "thinking_steps": thinking_steps,
+                    "completion_status": "complete",
+                    "client_turn_id": client_turn_id,
+                    "client_turn_finalized": True,
+                },
+            },
+        ]
+        return events, conv.id, ai_msg.id
+    finally:
+        if claimed_turn and client_turn_id:
+            svc.release_client_turn_execution(user_id, client_turn_id)
 
 
 class ImageItem(BaseModel):
@@ -393,6 +510,12 @@ class AgentRequest(BaseModel):
     # 输入通道(传输层声明,typed=打字 / voice=语音转写 / siri):症状类记录的
     # 确认策略依赖它 —— typed 免二次确认,语音/未声明 fail-closed 保留确认。
     channel: Optional[str] = Field(default=None, max_length=16)
+    # 客户端生成的单轮幂等/恢复标识。只用于绑定本轮持久化消息，不包含用户内容。
+    client_turn_id: Optional[str] = Field(
+        default=None,
+        max_length=80,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    )
 
     @field_validator("image_base64")
     @classmethod
@@ -457,7 +580,7 @@ async def agent_stream(
     # 防双发 (用户反馈批 4): 客户端 silence_timer + onSpeechEnd 偶发同一 message 发 2 次
     # 后端用 in-memory 短期缓存 (3s 窗) 拒同一用户重复 message, 避免 LLM 重试浪费 + 撞 OpenAI proxy 限流.
     # 不持久化也 OK — 短期防护即可.
-    _reject = _check_recent_dup(current_user.id, req.message)
+    _reject = not req.client_turn_id and _check_recent_dup(current_user.id, req.message)
     if _reject:
         raise HTTPException(
             status_code=429,
@@ -483,6 +606,7 @@ async def agent_stream(
     file_nm = req.file_name
     extra_ctx = req.extra_context
     chan = req.channel
+    client_turn_id = req.client_turn_id
 
     # GenUI 短路: caps=genui-v1 + 图表意图 + 无图片/附件 → 确定性出 reva-ui block,
     # 跳过 AgentExecutor/LLM (R4: 数值只来自 DB)。命中即持久化消息并直接 SSE 回放。
@@ -493,7 +617,14 @@ async def agent_stream(
     genui_events: Optional[list[dict]] = None
     if not has_images and not file_b64:
         try:
-            hit = _maybe_genui_chart_events(db, user_id, msg_text, conv_id, caps)
+            hit = _maybe_genui_chart_events(
+                db,
+                user_id,
+                msg_text,
+                conv_id,
+                caps,
+                client_turn_id=client_turn_id,
+            )
             if hit is not None:
                 genui_events, _conv, _mid = hit
                 logger.info(
@@ -564,6 +695,7 @@ async def agent_stream(
                     file_name=file_nm,
                     extra_context=extra_ctx,
                     channel=chan,
+                    client_turn_id=client_turn_id,
                 ):
                     if event.get("event") == "token":
                         tc = event.get("data", {}).get("content")
@@ -578,40 +710,51 @@ async def agent_stream(
                         event.setdefault("data", {})["run_id"] = run_id
                         if thinking_steps:
                             event.setdefault("data", {})["thinking_steps"] = thinking_steps
-                        try:
-                            from app.services.inline_cards import (
-                                build_cards,
-                                extract_inline_card_blocks,
-                                recorded_intake_kinds,
-                            )
-                            existing = event.get("data", {}).get("cards")
-                            inline = extract_inline_card_blocks("".join(full_text_buf))
-                            # 本轮已写入的摄入类记录 → 压制同 kind 的 query 派生草稿,
-                            # 防「已记录+再确认」重复写入(油桃加餐双卡实锤)。
-                            # 且只要 health_record 已接手(含待确认态):对话流拥有该
-                            # 任务,草稿卡的"去 X 页记录"主按钮会把用户引离"说'是的'
-                            # 即完成"的确认流(实锤:打卡替普瑞酮 → 确认问句与
-                            # medication_draft 双路互搏;mac 上该按钮还曾是静默死键)。
-                            suppress = recorded_intake_kinds(existing, inline)
-                            if "health_record" in (event.get("data", {}).get("tools_used") or []):
-                                suppress = set(suppress) | {"medication", "supplement", "diet"}
-                            cards = build_cards(
-                                bg_db, user_id, msg_text,
-                                suppress_intake_kinds=suppress,
-                            )
-                            # LLM 主动输出的卡片优先，其次保留 AgentExecutor 已写入的
-                            # system-KB evidence，再追加 query 派生卡片。历史恢复依赖
-                            # message.meta.cards，所以合并后回写同一 assistant message。
-                            merged = _merge_card_descriptors(inline, existing, cards)
-                            if merged:
-                                event.setdefault("data", {})["cards"] = merged
-                                _persist_done_cards(
-                                    bg_db,
-                                    event.get("data", {}).get("message_id"),
-                                    merged,
+                        done_data = event.setdefault("data", {})
+                        if not _done_event_may_expose_cards(done_data):
+                            done_data.pop("cards", None)
+                        else:
+                            try:
+                                from app.services.inline_cards import (
+                                    build_cards,
+                                    extract_inline_card_blocks,
+                                    recorded_intake_kinds,
                                 )
-                        except Exception as e:
-                            logger.debug(f"inline_cards 失败: {e}")
+                                existing = done_data.get("cards")
+                                inline = extract_inline_card_blocks("".join(full_text_buf))
+                                # 本轮已写入的摄入类记录 → 压制同 kind 的 query 派生草稿,
+                                # 防「已记录+再确认」重复写入(油桃加餐双卡实锤)。
+                                # 且只要 health_record 已接手(含待确认态):对话流拥有该
+                                # 任务,草稿卡的"去 X 页记录"主按钮会把用户引离"说'是的'
+                                # 即完成"的确认流(实锤:打卡替普瑞酮 → 确认问句与
+                                # medication_draft 双路互搏;mac 上该按钮还曾是静默死键)。
+                                suppress = recorded_intake_kinds(existing, inline)
+                                if "health_record" in (done_data.get("tools_used") or []):
+                                    suppress = set(suppress) | {
+                                        "medication", "supplement", "diet",
+                                    }
+                                cards = build_cards(
+                                    bg_db,
+                                    user_id,
+                                    msg_text,
+                                    suppress_intake_kinds=suppress,
+                                )
+                                # LLM 主动输出的卡片优先，其次保留 AgentExecutor 已写入的
+                                # system-KB evidence，再追加 query 派生卡片。历史恢复依赖
+                                # message.meta.cards，所以合并后回写同一 assistant message。
+                                merged = _merge_card_descriptors(inline, existing, cards)
+                                if merged:
+                                    persisted = _persist_done_cards(
+                                        bg_db,
+                                        done_data.get("message_id"),
+                                        merged,
+                                    )
+                                    if persisted:
+                                        done_data["cards"] = merged
+                                    else:
+                                        done_data.pop("cards", None)
+                            except Exception as e:
+                                logger.debug(f"inline_cards 失败: {e}")
                         try:
                             usage = summarize_usage_capture()
                             if usage:
@@ -740,7 +883,7 @@ async def agent_send(
     if not req.message.strip() and not has_images and not req.file_base64:
         raise HTTPException(status_code=400, detail="消息不能为空")
 
-    if _check_recent_dup(current_user.id, req.message):
+    if not req.client_turn_id and _check_recent_dup(current_user.id, req.message):
         raise HTTPException(
             status_code=429,
             detail="请求过于频繁，请稍候。（同一消息 3 秒内已发送）",
@@ -789,6 +932,7 @@ async def agent_send(
                 file_name=req.file_name,
                 extra_context=req.extra_context,
                 channel=req.channel,
+                client_turn_id=req.client_turn_id,
             ):
                 if event.get("event") == "token":
                     content = event.get("data", {}).get("content")
@@ -803,6 +947,16 @@ async def agent_send(
                     raise _AgentTurnError(safe_llm_error_message(data.get("message")))
             if not done_data:
                 raise _AgentTurnError("Agent 未返回完成状态")
+            if done_data.get("request_persisted") is False:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Agent 请求未被持久化，请重试",
+                )
+            if done_data.get("completion_status") == "interrupted":
+                raise HTTPException(
+                    status_code=503,
+                    detail="Agent 请求已保存但尚未完成，请稍后重试",
+                )
 
             # summarize 必须在 capture 上下文仍活着时取(end 之后 contextvar 被重置)。
             usage_summary = None
@@ -876,6 +1030,8 @@ async def agent_send(
                     payload = agg_task.result()
                 except _AgentTurnError as e:
                     payload = _send_error_envelope(str(e))
+                except HTTPException as e:
+                    payload = _send_error_envelope(str(e.detail))
                 except Exception as e:  # noqa: BLE001
                     logger.exception("[agent.send] streaming turn failed: %s", e)
                     payload = _send_error_envelope(safe_llm_error_message(str(e)))
@@ -989,6 +1145,8 @@ async def get_conversation(
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         msgs = [m for m in msgs if m.created_at and _msg_dt(m.created_at) >= cutoff]
 
+    from app.services.chat_utils import refresh_chat_image_url_value
+
     return {
         "id": conv.id,
         "title": conv.title,
@@ -999,7 +1157,7 @@ async def get_conversation(
                 "id": m.id,
                 "role": m.role,
                 "content": m.content,
-                "image_url": m.image_url,
+                "image_url": refresh_chat_image_url_value(m.image_url, current_user.id),
                 "rating": m.rating,
                 "created_at": str(m.created_at),
                 "meta": getattr(m, "meta", None),

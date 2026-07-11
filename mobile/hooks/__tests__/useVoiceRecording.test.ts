@@ -13,6 +13,7 @@ import { Alert } from 'react-native';
 import Voice from '@react-native-voice/voice';
 import { useVoiceRecording } from '../useVoiceRecording';
 import { transcribeAudio } from '../../services/transcribe';
+import { resetVoiceSessionCoordinatorForTests } from '../../services/voiceSessionCoordinator';
 
 const mockVoiceStart = jest.fn();
 const mockVoiceStop = jest.fn().mockResolvedValue(undefined);
@@ -32,17 +33,20 @@ const mockRequestRecordingPermissionsAsync = jest.fn().mockResolvedValue({ grant
 const mockPrepare = jest.fn().mockResolvedValue(undefined);
 const mockRecord = jest.fn();
 const mockRecorderStop = jest.fn().mockResolvedValue(undefined);
+const mockEmitClientEvent = jest.fn().mockResolvedValue(undefined);
+const mockDurationBucket = jest.fn().mockReturnValue('3_10s');
+const mockRecorder = {
+  prepareToRecordAsync: (...args: any[]) => mockPrepare(...args),
+  record: (...args: any[]) => mockRecord(...args),
+  stop: (...args: any[]) => mockRecorderStop(...args),
+  uri: 'file://fallback.m4a',
+};
 
 jest.mock('expo-audio', () => ({
   RecordingPresets: { HIGH_QUALITY: {} },
   setAudioModeAsync: (...args: any[]) => mockSetAudioModeAsync(...args),
   requestRecordingPermissionsAsync: (...args: any[]) => mockRequestRecordingPermissionsAsync(...args),
-  useAudioRecorder: () => ({
-    prepareToRecordAsync: (...args: any[]) => mockPrepare(...args),
-    record: (...args: any[]) => mockRecord(...args),
-    stop: (...args: any[]) => mockRecorderStop(...args),
-    uri: 'file://fallback.m4a',
-  }),
+  useAudioRecorder: () => mockRecorder,
 }));
 
 jest.mock('expo-haptics', () => ({
@@ -62,6 +66,10 @@ const voiceHandlers = Voice as unknown as {
   onSpeechEnd?: (e?: any) => void;
   onSpeechError?: (e?: any) => void;
 };
+jest.mock('../../services/clientEvents', () => ({
+  emitClientEvent: (...args: any[]) => mockEmitClientEvent(...args),
+  durationBucket: (...args: any[]) => mockDurationBucket(...args),
+}));
 
 function releasedRecordingSession(): boolean {
   return mockSetAudioModeAsync.mock.calls.some(
@@ -71,8 +79,12 @@ function releasedRecordingSession(): boolean {
 
 describe('useVoiceRecording', () => {
   beforeEach(() => {
+    resetVoiceSessionCoordinatorForTests();
     jest.clearAllMocks();
     mockVoiceStart.mockResolvedValue(undefined);
+    mockRequestRecordingPermissionsAsync.mockResolvedValue({ granted: true });
+    mockPrepare.mockResolvedValue(undefined);
+    mockRecorderStop.mockResolvedValue(undefined);
     (transcribeAudio as jest.Mock).mockResolvedValue('云端转写结果');
     jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   });
@@ -107,7 +119,7 @@ describe('useVoiceRecording', () => {
     expect(onTranscript).toHaveBeenCalledWith('喝了一杯水');
     expect(transcribeAudio).not.toHaveBeenCalled();
     expect(result.current.partialText).toBe('');
-    expect(releasedRecordingSession()).toBe(true);
+    await waitFor(() => expect(releasedRecordingSession()).toBe(true));
   });
 
   it('备胎: Voice.start 抛错 → 降级录音 + 云端转写, 并在网络转写前释放 session', async () => {
@@ -130,6 +142,22 @@ describe('useVoiceRecording', () => {
     expect(transcribeAudio).toHaveBeenCalledWith('file://fallback.m4a');
     expect(onTranscript).toHaveBeenCalledWith('云端转写结果');
     expect(releasedRecordingSession()).toBe(true);
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
+      phase: 'completed',
+      duration_bucket: '3_10s',
+      action_type: 'hold',
+    });
+  });
+
+  it('reports whether native recording actually became ready', async () => {
+    const { result } = renderHook(() => useVoiceRecording({ onTranscript: jest.fn() }));
+    let started: boolean | undefined;
+
+    await act(async () => {
+      started = await result.current.startRecording();
+    });
+
+    expect(started).toBe(true);
   });
 
   it('兜底: 最终结果不来 → 1.2s 超时拿最新 partial 交卷', async () => {
@@ -156,7 +184,7 @@ describe('useVoiceRecording', () => {
   it('极速轻点: start 在途中就被取消 → 不进入录音态, 且释放 session', async () => {
     const { result } = renderHook(() => useVoiceRecording());
 
-    let startPromise: Promise<void>;
+    let startPromise: Promise<boolean | undefined>;
     await act(async () => {
       startPromise = result.current.startRecording();
       await result.current.cancelRecording();
@@ -164,8 +192,12 @@ describe('useVoiceRecording', () => {
     });
 
     expect(result.current.isRecording).toBe(false);
-    expect(mockVoiceCancel).toHaveBeenCalled();
-    expect(releasedRecordingSession()).toBe(true);
+    await waitFor(() => expect(releasedRecordingSession()).toBe(true));
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
+      phase: 'cancelled',
+      duration_bucket: '3_10s',
+      action_type: 'hold',
+    });
   });
 
   it('取消: 上滑取消后不产出任何转写, 且释放 session', async () => {
@@ -184,6 +216,42 @@ describe('useVoiceRecording', () => {
     expect(onTranscript).not.toHaveBeenCalled();
     expect(releasedRecordingSession()).toBe(true);
     await waitFor(() => expect(result.current.isRecording).toBe(false));
+    expect(transcribeAudio).not.toHaveBeenCalled();
+    expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
+      phase: 'cancelled',
+      duration_bucket: '3_10s',
+      action_type: 'hold',
+    });
+  });
+
+  it('drops a late transcription result after cancellation or background cleanup', async () => {
+    let resolveTranscription!: (text: string) => void;
+    mockVoiceStart.mockRejectedValueOnce(new Error('dictation disabled'));
+    (transcribeAudio as jest.Mock).mockImplementationOnce(() => new Promise<string>((resolve) => {
+      resolveTranscription = resolve;
+    }));
+    const onTranscript = jest.fn();
+    const { result } = renderHook(() => useVoiceRecording({ onTranscript }));
+
+    await act(async () => {
+      await result.current.startRecording();
+    });
+    let stopPromise!: Promise<void>;
+    act(() => {
+      stopPromise = result.current.stopAndTranscribe();
+    });
+    await waitFor(() => expect(transcribeAudio).toHaveBeenCalled());
+
+    await act(async () => {
+      await result.current.cancelRecording();
+    });
+    resolveTranscription('这条迟到结果不应写回输入框');
+    await act(async () => {
+      await stopPromise;
+    });
+
+    expect(onTranscript).not.toHaveBeenCalled();
+    expect(result.current.isTranscribing).toBe(false);
   });
 
   it('云端转写无文本时仍释放 session', async () => {
@@ -199,6 +267,60 @@ describe('useVoiceRecording', () => {
       await result.current.stopAndTranscribe();
     });
 
+    expect(releasedRecordingSession()).toBe(true);
+  });
+
+  it('aborts a pending recording start when the user releases before the recorder is ready', async () => {
+    mockVoiceStart.mockRejectedValueOnce(new Error('dictation disabled'));
+    let resolvePrepare!: () => void;
+    mockPrepare.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolvePrepare = resolve;
+    }));
+    const { result } = renderHook(() => useVoiceRecording({ onTranscript: jest.fn() }));
+    let startPromise!: Promise<boolean | undefined>;
+
+    act(() => {
+      startPromise = result.current.startRecording();
+    });
+    await waitFor(() => expect(mockPrepare).toHaveBeenCalled());
+
+    await act(async () => {
+      await result.current.stopAndTranscribe();
+    });
+    expect(transcribeAudio).not.toHaveBeenCalled();
+
+    resolvePrepare();
+    await act(async () => {
+      await startPromise;
+    });
+
+    expect(mockRecord).not.toHaveBeenCalled();
+    expect(transcribeAudio).not.toHaveBeenCalled();
+    expect(releasedRecordingSession()).toBe(true);
+  });
+
+  it('cancels native recognition when start finishes after the user already released', async () => {
+    let resolveStart!: () => void;
+    mockVoiceStart.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveStart = resolve;
+    }));
+    const { result } = renderHook(() => useVoiceRecording({ onTranscript: jest.fn() }));
+    let startPromise!: Promise<boolean | undefined>;
+
+    act(() => {
+      startPromise = result.current.startRecording();
+    });
+    await waitFor(() => expect(mockVoiceStart).toHaveBeenCalled());
+    await act(async () => {
+      await result.current.stopAndTranscribe();
+    });
+    resolveStart();
+    await act(async () => {
+      await startPromise;
+    });
+
+    expect(mockVoiceCancel).toHaveBeenCalled();
+    expect(result.current.isRecording).toBe(false);
     expect(releasedRecordingSession()).toBe(true);
   });
 });

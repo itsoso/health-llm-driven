@@ -1,9 +1,10 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 // 只引类型(编译期擦除,不产生 runtime require)—— 运行时用下面的 guarded require 探测。
 import type { Action } from 'expo-image-manipulator';
+import { deleteDraftImage, materializeDraftImages } from '../services/chatDraftStorage';
 
 const MAX_IMAGES = 9;
 
@@ -33,6 +34,7 @@ export interface PendingImage {
   uri: string;
   base64: string;
   type: string;
+  draftCreatedAt?: number;
 }
 
 // 旧二进制兜底路径用:从 asset 元信息推断真实图片格式(与历史行为一致)。
@@ -100,25 +102,60 @@ function warnSkipped(count: number) {
 }
 
 export function useMediaPicker() {
-  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const [pendingImages, setPendingImagesState] = useState<PendingImage[]>([]);
+  const pendingImagesRef = useRef<PendingImage[]>([]);
   const [pickedFileName, setPickedFileName] = useState<string | null>(null);
 
-  const addImages = useCallback((newImages: PendingImage[]) => {
-    setPendingImages(prev => {
-      const combined = [...prev, ...newImages];
-      if (combined.length > MAX_IMAGES) {
-        Alert.alert('最多选择 9 张', `已保留前 ${MAX_IMAGES} 张`);
-        return combined.slice(0, MAX_IMAGES);
-      }
-      return combined;
-    });
+  pendingImagesRef.current = pendingImages;
+
+  const setPendingImages = useCallback((images: PendingImage[]) => {
+    const next = images.slice(0, MAX_IMAGES);
+    pendingImagesRef.current = next;
+    setPendingImagesState(next);
   }, []);
 
-  const removeImage = useCallback((index: number) => {
-    setPendingImages(prev => prev.filter((_, i) => i !== index));
-  }, []);
+  const addImages = useCallback(async (newImages: PendingImage[]) => {
+    const remaining = MAX_IMAGES - pendingImagesRef.current.length;
+    if (remaining <= 0) {
+      Alert.alert('已达上限', `最多选择 ${MAX_IMAGES} 张图片`);
+      return [];
+    }
+    if (newImages.length > remaining) {
+      Alert.alert('最多选择 9 张', `已保留前 ${MAX_IMAGES} 张`);
+    }
+    const durableImages = await materializeDraftImages(newImages.slice(0, remaining));
+    setPendingImages([...pendingImagesRef.current, ...durableImages]);
+    return durableImages;
+  }, [setPendingImages]);
 
-  const clearImages = useCallback(() => setPendingImages([]), []);
+  const removeImage = useCallback(async (index: number) => {
+    const removed = pendingImagesRef.current[index];
+    setPendingImages(pendingImagesRef.current.filter((_, i) => i !== index));
+    if (removed) await deleteDraftImage(removed);
+  }, [setPendingImages]);
+
+  const clearImages = useCallback(async () => {
+    const removed = pendingImagesRef.current;
+    setPendingImages([]);
+    await Promise.all(removed.map(image => deleteDraftImage(image)));
+  }, [setPendingImages]);
+
+  // 服务端已持久化请求后，当前消息气泡仍引用这些本地文件。这里只释放输入框状态，
+  // 文件由草稿目录的过期清理回收；显式移除/取消仍走 clearImages 并立即删除。
+  const releaseImagesAfterSend = useCallback(() => {
+    setPendingImages([]);
+  }, [setPendingImages]);
+
+  const setPendingImage = useCallback(async (img: PendingImage | null) => {
+    if (!img) {
+      await clearImages();
+      return;
+    }
+    const [durable] = await materializeDraftImages([img]);
+    const removed = pendingImagesRef.current;
+    setPendingImages(durable ? [durable] : []);
+    await Promise.all(removed.map(image => deleteDraftImage(image)));
+  }, [clearImages, setPendingImages]);
 
   const pickImage = useCallback(async () => {
     try {
@@ -146,7 +183,7 @@ export function useMediaPicker() {
         const picked = processed.filter((img): img is PendingImage => !!img);
         warnSkipped(result.assets.length - picked.length);
         if (picked.length === 0) return;
-        addImages(picked);
+        await addImages(picked);
       }
     } catch (e) {
       Alert.alert('选择图片失败', String(e));
@@ -175,7 +212,7 @@ export function useMediaPicker() {
           warnSkipped(1);
           return;
         }
-        addImages([image]);
+        await addImages([image]);
       }
     } catch (e) {
       Alert.alert('拍照失败', String(e));
@@ -198,13 +235,10 @@ export function useMediaPicker() {
 
   // Backward-compatible single-image API
   const pendingImage = pendingImages.length > 0 ? pendingImages[0] : null;
-  const setPendingImage = useCallback((img: PendingImage | null) => {
-    setPendingImages(img ? [img] : []);
-  }, []);
 
   return {
     pendingImage, setPendingImage,
-    pendingImages, setPendingImages, addImages, removeImage, clearImages,
+    pendingImages, setPendingImages, addImages, removeImage, clearImages, releaseImagesAfterSend,
     pickedFileName, pickImage, takePhoto, pickFile,
   };
 }

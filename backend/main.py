@@ -4,13 +4,10 @@ import os
 import time
 import uuid
 import asyncio
-import traceback
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-
-logger = logging.getLogger(__name__)
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -19,6 +16,7 @@ from app.api.main import api_router
 from app.scheduler import start_scheduler
 from app.utils.logging_config import setup_beijing_logging
 from app.config import settings
+from app.services.garmin_cffi_patch import patch_garth_with_cffi
 import app.models.smart_reminder  # noqa: F401 - ensure table creation
 import app.models.interaction_feedback  # noqa: F401 - Agent 反馈系统
 import app.models.genetic_data  # noqa: F401 - 基因数据表
@@ -31,6 +29,8 @@ import app.models.health_kg  # noqa: F401 - 知识图谱 entities + relations
 import app.models.system_knowledge  # noqa: F401 - System LLM Wiki v2 KB docs + graph
 import app.models.monthly_report  # noqa: F401 - 月度复盘报告
 import app.api.nfc  # noqa: F401 - ensure BowelTimer table creation
+
+logger = logging.getLogger(__name__)
 
 # 设置日志，使用北京时间
 setup_beijing_logging()
@@ -59,7 +59,6 @@ if settings.sentry_dsn:
     logger.info(f"[Sentry] 错误监控已启用，环境={settings.sentry_environment}")
 
 # Patch garth 使用 Chrome TLS 指纹（绕过 Cloudflare bot 检测）
-from app.services.garmin_cffi_patch import patch_garth_with_cffi
 patch_garth_with_cffi()
 
 # 创建数据库表(SKIP_DB_INIT=1 时跳过 —— 供 OpenAPI dump / 纯 import 用,不连 DB,
@@ -140,6 +139,27 @@ async def startup_event():
     import app.models.family  # noqa: F401 — 确保家庭管理表被创建
     import app.models.family_health  # noqa: F401 — 确保体检报告/用药/复查表被创建
     settings.validate_required_security()
+    try:
+        from app.database import SessionLocal as _ChatCleanupSession
+        from app.services.agent_conversation_service import AgentConversationService
+
+        cleanup_db = _ChatCleanupSession()
+        try:
+            removed_tombstones = AgentConversationService(
+                cleanup_db,
+            ).retry_staged_chat_image_deletions()
+        finally:
+            cleanup_db.close()
+        if removed_tombstones:
+            logger.info(
+                "[startup] retried %s staged private chat image deletions",
+                removed_tombstones,
+            )
+    except Exception:
+        logger.error(
+            "[startup] private chat image tombstone cleanup failed",
+            exc_info=True,
+        )
     # 中文分词器启动探针: System KB 检索依赖 jieba(硬依赖)。在启动时一次性 warm
     # (付掉字典构建 + userdict 成本, 而非每次查询), 并在缺失时 fail-loud(ERROR 级),
     # 不静默退化到未分词的坏检索行为。缺失不 crash 启动(检索层会降级到 bigram), 但日志

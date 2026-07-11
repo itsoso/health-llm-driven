@@ -37,6 +37,8 @@ DIET_MANAGEMENT_MARKERS = (
 )
 
 MEDICATION_MARKERS = (
+    "沃克",
+    "伏诺拉生",
     "替普瑞酮",
     "施维舒",
     "奥美拉唑",
@@ -50,6 +52,17 @@ MEDICATION_MARKERS = (
     "孟鲁司特",
     "二甲双胍",
     "美沙拉嗪",
+)
+
+FOOD_UI_TEXT_MARKERS = (
+    "营养卡",
+    "保存并确认",
+    "确认记录",
+    "今日饮食",
+    "待确认",
+    "完成修正",
+    "去饮食页修正",
+    "看下一餐建议",
 )
 
 SUPPLEMENT_MARKERS = (
@@ -168,6 +181,16 @@ def classify_intake_intent(query: Any) -> IntakeIntent:
         )
 
     return IntakeIntent("unknown", 0.35, "ambiguous", raw)
+
+
+def looks_like_food_ui_text(value: Any) -> bool:
+    """Reject OCR/card chrome before it reaches any authoritative diet write."""
+    normalized = _normalize(_flatten_text(value))
+    if not normalized:
+        return False
+    if re.fullmatch(r"(?:和)?(?:早餐|午餐|晚餐|加餐|餐食)?(?:食品?)?营养卡", normalized):
+        return True
+    return any(marker in normalized for marker in FOOD_UI_TEXT_MARKERS)
 
 
 def _flatten_text(value: Any) -> str:

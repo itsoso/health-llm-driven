@@ -1,6 +1,6 @@
 """饮食记录模式"""
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Any
 from datetime import date, datetime, time
 import enum
 
@@ -28,9 +28,9 @@ class DietRecordBase(BaseModel):
     fiber: Optional[float] = None  # 膳食纤维 (g)
     alcohol_units: Optional[float] = None  # 酒精标准杯数 (1 unit ≈ 14g 纯酒精)
     notes: Optional[str] = None
-    image_url: Optional[str] = None  # 食物图片URL
     ai_recognized: Optional[int] = 0  # 是否AI识别
     ai_confidence: Optional[float] = None  # AI/语音解析置信度
+    ai_raw_result: Optional[Any] = None  # AI识别原始 JSON (创建时落库,响应暂不回传)
     health_tips: Optional[str] = None  # AI健康提示
 
 
@@ -55,7 +55,6 @@ class DietRecordUpdate(BaseModel):
     fiber: Optional[float] = None
     alcohol_units: Optional[float] = None
     notes: Optional[str] = None
-    image_url: Optional[str] = None
     health_tips: Optional[str] = None
 
 
@@ -72,6 +71,7 @@ class DietRecordResponse(DietRecordBase):
     """饮食记录响应"""
     id: int
     user_id: int
+    image_url: Optional[str] = None
     ai_confidence: Optional[float] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

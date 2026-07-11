@@ -1,13 +1,14 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
   TextStyle,
-  Alert, Modal, Pressable, useWindowDimensions,
+  ActivityIndicator, Alert, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
 import { deleteConversation, getConversationsPage, updateConversationTitle } from '../../services/chat';
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
 import ChatInputBar, { type ChatInputSendOptions } from '../../components/chat/ChatInputBar';
@@ -15,13 +16,15 @@ import ChatBubble from '../../components/chat/ChatBubble';
 import type { ChatCardActionDescriptor, ServerCardDescriptor } from '../../components/chat/cards/types';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import ChatHeader from '../../components/chat/ChatHeader';
-import BriefingStrip from '../../components/chat/BriefingStrip';
-import TodayContent from '../../components/home/TodayContent';
+import ChatTodayFocusCard from '../../components/chat/ChatTodayFocusCard';
+import {
+  buildTodayFocusModel,
+  type TodayFocusPrimary,
+} from '../../components/chat/todayFocus';
 import EmptyStateHome, {
   greetingForHour,
   formatMemoryOpenerText,
   type EmptyStateSuggestion,
-  type EmptyStateTodayFocus,
 } from '../../components/chat/EmptyStateHome';
 import ComposerSuggestionsRow from '../../components/chat/ComposerSuggestionsRow';
 import { formatOpenerText } from '../../components/chat/OpenerCard';
@@ -36,11 +39,12 @@ import {
 import { navigateForQuickReplyAction } from '../../utils/quickReplyAction';
 import { emitClientEvent } from '../../services/clientEvents';
 import { fetchMemoryOpener, type MemoryOpenerItem } from '../../services/memoryOpener';
-import { getLlmPreference, updateLlmPreference, type ModelOption } from '../../services/llmPreference';
+import { updateLlmPreference, type ModelOption } from '../../services/llmPreference';
 import { recordCardAdherence, recordCardDecision } from '../../services/actionCards';
 import { useChatKeyboardDock } from '../../hooks/useChatKeyboardDock';
 import { useTodayTimeline } from '../../hooks/useTodayTimeline';
-import type { TodayTimelineResponse } from '../../services/todayTimeline';
+import { getDailyOperatingPlan } from '../../services/dailyPlan';
+import { getTodayDynamicView } from '../../services/todayDynamicView';
 import {
   revaColors as C,
   revaRadii,
@@ -53,6 +57,9 @@ import { sharePlainText } from '../../utils/share';
 import { buildSelectedChatShareMessage, isShareableChatMessage } from '../../utils/chatShareSelection';
 import type { ChatMedicalExamImportSkillResult } from '../../services/chatMedicalExamImportSkill';
 import type { ChatCardActionResult } from '../../services/chatCardActions';
+import { loadAgentHomeBootstrap } from '../../services/agentHomeBootstrap';
+import { useAuth } from '../../hooks/useAuth';
+import { buildChatImageSource } from '../../utils/chatImageSource';
 
 type SuggestionCard = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -70,7 +77,7 @@ const SUGGESTIONS: SuggestionCard[] = [
 
 // 悬浮输入栏: home indicator 安全区之上再抬起, 不贴屏幕最下缘。
 // founder 2026-07-05: 12 太贴底(拇指要够到屏幕最下缘反而累), 抬进舒适拇指弧区。
-const CHAT_BOTTOM_BREATHING_SPACE = 28;
+const CHAT_BOTTOM_BREATHING_SPACE = 12;
 
 // 对话历史无限下拉每页条数 (后端 limit 上限 100)
 const HISTORY_PAGE_SIZE = 20;
@@ -125,31 +132,13 @@ function buildOpeningContinuityText(
   return null;
 }
 
-function buildEmptyStateTodayFocus(
-  timeline: TodayTimelineResponse | undefined,
-): EmptyStateTodayFocus | null {
-  if (!timeline?.now || !Array.isArray(timeline.items)) return null;
-  const item = timeline.items.find(candidate => candidate.id === timeline.now);
-  if (!item?.title) return null;
-  const overdue = Math.max(0, timeline.counts?.overdue ?? 0);
-  const actionable = Math.max(0, timeline.counts?.actionable ?? 0);
-  const urgencyLabel = overdue > 0
-    ? `${overdue} 件已逾期`
-    : actionable > 0
-      ? `${actionable} 件待确认`
-      : null;
-  return {
-    title: item.title,
-    subtitle: item.subtitle,
-    urgencyLabel,
-  };
-}
-
 export default function ChatScreen() {
+  const { token: authToken } = useAuth();
   const chat = useChatEngine();
   const {
     messages,
     isStreaming,
+    activeTurn,
     conversationId,
     sendMessage,
     newChat,
@@ -160,8 +149,31 @@ export default function ChatScreen() {
   } = chat;
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
-  // 今日简报条：真实数字来自 /timeline/today（待办 / 已完成计数），不伪造指标。
+  // 今日焦点：优先 dynamic Today / daily plan, 退化到 /timeline/today; 不伪造指标。
   const todayTimeline = useTodayTimeline();
+  const todayDynamicViewQuery = useQuery({
+    queryKey: ['today-dynamic-view', 'mobile.today'],
+    queryFn: () => getTodayDynamicView({
+      trigger: 'open',
+      clientContext: { surface: 'mobile.chat', entry: 'today_focus' },
+    }),
+    staleTime: 30 * 1000,
+    retry: 1,
+  });
+  const dailyPlanQuery = useQuery({
+    queryKey: ['daily-plan', 'me'],
+    queryFn: getDailyOperatingPlan,
+    staleTime: 60 * 1000,
+    retry: 1,
+  });
+  const todayFocusModel = useMemo(
+    () => buildTodayFocusModel({
+      dynamicView: todayDynamicViewQuery.data,
+      dailyPlan: dailyPlanQuery.data,
+      timeline: todayTimeline.data,
+    }),
+    [dailyPlanQuery.data, todayDynamicViewQuery.data, todayTimeline.data],
+  );
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
@@ -199,6 +211,7 @@ export default function ChatScreen() {
   const [opener, setOpener] = useState<ConversationOpener | null>(null);
   const [starterSuggestions, setStarterSuggestions] = useState<SuggestionCard[]>(SUGGESTIONS);
   const [startersReady, setStartersReady] = useState(false);
+  const [bootstrapReady, setBootstrapReady] = useState(false);
   // 冷启动 (零信号新用户): 后端带 onboarding=true。此时禁止把 starters 回落成
   // DEFAULT_SUGGESTIONS(那些假设有历史数据)——原样渲染后端返回的 onboarding chips。
   const [startersOnboarding, setStartersOnboarding] = useState(false);
@@ -229,12 +242,6 @@ export default function ChatScreen() {
     void emitClientEvent('starter_chips_shown', { keys, source: 'chat' });
   }, [startersReady, messages.length, starterSuggestions]);
 
-  useEffect(() => {
-    let cancelled = false;
-    void refreshConversationStarters(() => cancelled);
-    return () => { cancelled = true; };
-  }, [refreshConversationStarters]);
-
   // P3-3: 拉 top 1-2 条 memory, 显示在 opener 上方"我记得你: <X>"
   const [memoryOpener, setMemoryOpener] = useState<MemoryOpenerItem[]>([]);
   const refreshMemoryOpener = useCallback(async (shouldSkip?: () => boolean) => {
@@ -260,25 +267,28 @@ export default function ChatScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    void refreshMemoryOpener(() => cancelled);
-    return () => { cancelled = true; };
-  }, [refreshMemoryOpener]);
-
-  useEffect(() => {
-    let cancelled = false;
-    getLlmPreference().then(pref => {
+    void loadAgentHomeBootstrap({ loadLatestConversation }).then(snapshot => {
       if (cancelled) return;
-      setLlmModelId(pref.model_id);
-      setLlmOptions(pref.options || []);
-      setLlmError(null);
-      // 选择器显示什么模型, 消息就用什么模型: 恢复的档案选择也按显式 model_id
-      // 逐条消息下发 (显式选择不被快路由覆盖); null=系统默认(智能路由)。
-      setPerMessageModelId(pref.model_id);
+      setOpener(snapshot.opener);
+      setStartersOnboarding(snapshot.onboarding);
+      const decorated = decorateSuggestions(snapshot.suggestions);
+      setStarterSuggestions(decorated || (snapshot.onboarding ? [] : SUGGESTIONS));
+      setMemoryOpener(snapshot.memory);
+      setLlmModelId(snapshot.llmPreference.model_id);
+      setLlmOptions(snapshot.llmPreference.options || []);
+      setLlmError(snapshot.errors.includes('llm_preference') ? '模型列表加载失败' : null);
+      // 选择器显示什么模型, 消息就用什么模型；null 仍表示系统智能路由。
+      setPerMessageModelId(snapshot.llmPreference.model_id);
+      setStartersReady(true);
+      setBootstrapReady(true);
     }).catch(() => {
-      if (!cancelled) setLlmError('模型列表加载失败');
+      if (cancelled) return;
+      setStartersReady(true);
+      setBootstrapReady(true);
+      setLlmError('模型列表加载失败');
     });
     return () => { cancelled = true; };
-  }, [setPerMessageModelId]);
+  }, [loadLatestConversation, setPerMessageModelId]);
 
   const handleSelectModel = useCallback(async (modelId: string | null) => {
     if (llmSaving || llmModelId === modelId) return;
@@ -333,8 +343,6 @@ export default function ChatScreen() {
     }
   }, [newChat, params.prompt, params.badge, params.autoSend, params.context, params.newChat, params.promptNonce, sendMessage]);
 
-  useEffect(() => { loadLatestConversation(); }, [loadLatestConversation]);
-
   // 点"小巴" tab 进来时滚到对话最后, 方便看最新消息.
   // useFocusEffect 在每次 tab 获得 focus 时触发 (包括首次 mount).
   // 用 setTimeout 推迟一帧, 等 FlatList 排版完才能滚到正确位置.
@@ -374,16 +382,29 @@ export default function ChatScreen() {
 
   const handleSend = useCallback((text: string, images?: any, options?: ChatInputSendOptions) => {
     isNearBottom.current = true;
-    setBriefingExpanded(false); // 发消息即收起今日面板,回到对话流
     injectOpeningContinuity(openerRef.current);
     const pendingCardContext = pendingCardActionContextRef.current;
     const extraContext = mergeExtraContext(options?.extraContext, pendingCardContext);
-    sendMessage(text, images, extraContext ? { extraContext } : undefined);
-    pendingCardActionContextRef.current = null;
-    setContextBadge(null);
-    setContextPayload(null);
-    setContextInspectorVisible(false);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const resolveOnce = (accepted: boolean) => {
+        if (settled) return;
+        settled = true;
+        if (accepted) {
+          pendingCardActionContextRef.current = null;
+          setContextBadge(null);
+          setContextPayload(null);
+          setContextInspectorVisible(false);
+        }
+        resolve(accepted);
+      };
+      void Promise.resolve(sendMessage(text, images, {
+        ...(extraContext ? { extraContext } : {}),
+        ...(options?.channel ? { channel: options.channel } : {}),
+        onAccepted: resolveOnce,
+      })).then(resolveOnce).catch(() => resolveOnce(false));
+    });
   }, [injectOpeningContinuity, sendMessage]);
 
   const handleStarterPress = useCallback((s: EmptyStateSuggestion, position: number) => {
@@ -540,11 +561,6 @@ export default function ChatScreen() {
     setSelectedMessageIds(new Set());
   }, []);
 
-  // 今日简报条可见性: 冷启显示; 用户点 X 或新建对话后隐藏(founder: 新窗口要干净画布)。
-  const [briefingHidden, setBriefingHidden] = useState(false);
-  // agent-native:今日在对话页内联展开(动态 UI 面板),不跳独立 sheet 页。
-  const [briefingExpanded, setBriefingExpanded] = useState(false);
-
   const handleNewChat = useCallback(() => {
     setToolMenuVisible(false);
     exitSelectionMode();
@@ -552,11 +568,26 @@ export default function ChatScreen() {
     setContextBadge(null);
     setContextPayload(null);
     setContextInspectorVisible(false);
-    setBriefingHidden(true);
     setComposerFocusToken((n) => n + 1);
     newChat();
     void refreshCoachHomeState();
   }, [exitSelectionMode, newChat, refreshCoachHomeState]);
+
+  const handleTodayFocusExecute = useCallback((primary: TodayFocusPrimary) => {
+    const target = primary.deepLink || '/(tabs)/today';
+    router.navigate(target as any);
+  }, []);
+
+  const handleTodayFocusAsk = useCallback((primary: TodayFocusPrimary) => {
+    setInitialInput(`围绕「${primary.title}」帮我拆成今天可执行的一步，并说明依据。`);
+    setInitialInputKey(key => key + 1);
+    setContextBadge('今日重点');
+    setComposerFocusToken((n) => n + 1);
+  }, []);
+
+  const handleOpenToday = useCallback(() => {
+    router.navigate('/(tabs)/today');
+  }, []);
 
   const handleDeleteCurrentConversation = useCallback(() => {
     setToolMenuVisible(false);
@@ -684,6 +715,7 @@ export default function ChatScreen() {
       <ChatBubble
         item={item}
         onViewImage={setViewingImage}
+        imageAuthToken={authToken}
         selectionMode={selectionMode && shareable}
         selected={selectedMessageIds.has(item.id)}
         onToggleSelected={toggleMessageSelection}
@@ -691,7 +723,7 @@ export default function ChatScreen() {
         onCardActionCompleted={handleCardActionCompleted}
       />
     );
-  }, [selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith, handleCardActionCompleted]);
+  }, [authToken, selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith, handleCardActionCompleted]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -700,7 +732,7 @@ export default function ChatScreen() {
   }, []);
   // 小巴是 agent-native 主屏,没有底部 Tab Bar。键盘弹起时用 overlap spacer 对齐键盘
   // 上沿;收起时 = 底部安全区(SafeAreaView 只包 top, home indicator 由这里补)+ 呼吸空间。
-  const { bottomSpacerHeight } = useChatKeyboardDock({
+  const { bottomSpacerHeight, keyboardVisible } = useChatKeyboardDock({
     bottomInset: insets.bottom,
     restingSpace: CHAT_BOTTOM_BREATHING_SPACE,
     onKeyboardShown: handleKeyboardShown,
@@ -708,8 +740,44 @@ export default function ChatScreen() {
   const activeLlmLabel = llmModelId
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
-  const emptyStateTodayFocus = buildEmptyStateTodayFocus(todayTimeline.data);
   const hasSavedDietContext = isSavedDietContextPayload(contextPayload);
+  const activeTurnVisible = activeTurn.phase !== 'idle' && activeTurn.phase !== 'completed';
+  const lastRetryableUserMessage = [...messages].reverse().find(message => (
+    message.role === 'user'
+    && !!message.content?.trim()
+    && message.content !== '(图片)'
+    && (!message.imageUris || message.imageUris.length === 0)
+  ));
+  const todayFocusVariant = messages.length === 0 && !keyboardVisible && !activeTurnVisible
+    ? 'full'
+    : 'compact';
+  const turnStatus = activeTurnVisible
+    ? {
+        label: activeTurn.label || (
+          activeTurn.phase === 'failed' || activeTurn.phase === 'interrupted'
+            ? '上一轮未完成，内容已保留'
+            : '小巴正在处理…'
+        ),
+        tone: activeTurn.phase === 'failed' || activeTurn.phase === 'interrupted'
+          ? 'error' as const
+          : 'active' as const,
+        retryable: !!(
+          activeTurn.recoverable
+          && lastRetryableUserMessage
+          && !isStreaming
+          && (activeTurn.phase === 'failed' || activeTurn.phase === 'interrupted')
+        ),
+      }
+    : undefined;
+  const todayFocusInitialLoading = Boolean(
+    todayDynamicViewQuery.isLoading
+    || dailyPlanQuery.isLoading
+    || todayTimeline.isLoading
+  );
+  const retryLastTextTurn = () => {
+    if (!lastRetryableUserMessage || isStreaming) return;
+    void sendMessage(lastRetryableUserMessage.content, null);
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -726,23 +794,21 @@ export default function ChatScreen() {
         onOpenToolMenu={() => setToolMenuVisible(true)}
       />
 
-      {/* 今日简报条(agent-native):点按在对话页内联展开「今日」动态 UI 面板，不跳独立页。 */}
-      {!briefingHidden && (
-        <BriefingStrip
-          timeline={todayTimeline.data}
-          expanded={briefingExpanded}
-          onPress={() => setBriefingExpanded(v => !v)}
-          onDismiss={briefingExpanded ? undefined : () => setBriefingHidden(true)}
+      {todayFocusInitialLoading ? (
+        <ChatTodayFocusLoading />
+      ) : (
+        <ChatTodayFocusCard
+          model={todayFocusModel}
+          variant={todayFocusVariant}
+          turnStatus={turnStatus}
+          onRetry={turnStatus?.retryable ? retryLastTextTurn : undefined}
+          onExecute={handleTodayFocusExecute}
+          onAsk={handleTodayFocusAsk}
+          onOpenToday={handleOpenToday}
         />
       )}
 
       <View style={styles.keyboardAvoidingBody}>
-        {/* 展开态：今日以内联面板呈现在对话页（占据消息区），composer 仍在下方；收起回到对话。 */}
-        {briefingExpanded ? (
-          <View testID="chat-today-inline-panel" style={{ flex: 1 }}>
-            <TodayContent mode="inline" />
-          </View>
-        ) : (
         <FlatList
           ref={flatListRef}
           data={messages}
@@ -755,19 +821,18 @@ export default function ChatScreen() {
           onScroll={(e) => { const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent; isNearBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 120; }}
           scrollEventThrottle={100}
           ListEmptyComponent={
-            <EmptyStateHome
-              memoryOpener={memoryOpener}
-              opener={opener}
-              onOpenMemory={() => router.push('/memory')}
-              onOpenerQuickReply={handleOpenerQuickReply}
-              onboarding={startersOnboarding}
-              onQuickAction={handleQuickAction}
-              todayFocus={emptyStateTodayFocus}
-              onOpenToday={() => setBriefingExpanded(true)}
-            />
+            bootstrapReady ? (
+              <EmptyStateHome
+                memoryOpener={memoryOpener}
+                opener={opener}
+                onOpenMemory={() => router.push('/memory')}
+                onOpenerQuickReply={handleOpenerQuickReply}
+                onboarding={startersOnboarding}
+                onQuickAction={handleQuickAction}
+              />
+            ) : <AgentHomeBootstrapLoading />
           }
         />
-        )}
 
         {contextBadge && (
           <View style={styles.contextBanner}>
@@ -845,11 +910,12 @@ export default function ChatScreen() {
             </TouchableOpacity>
           </View>
         )}
-        {messages.length === 0 && !selectionMode && (
+        {bootstrapReady && messages.length === 0 && !selectionMode && (
           <ComposerSuggestionsRow
             suggestions={starterSuggestions}
-            onCapturePhoto={() => router.push('/diet?capture=photo' as any)}
+            onCapturePhoto={() => router.push('/diet?capture=photo&return_to=chat' as any)}
             onSuggestionPress={handleStarterPress}
+            showCapturePhoto={!startersOnboarding}
           />
         )}
         {!selectionMode && (
@@ -869,7 +935,11 @@ export default function ChatScreen() {
       <Modal visible={!!viewingImage} transparent animationType="fade" onRequestClose={() => setViewingImage(null)}>
         <Pressable style={styles.imageViewerOverlay} onPress={() => setViewingImage(null)}>
           {viewingImage && (
-            <Image source={{ uri: viewingImage }} style={{ width: windowWidth - 32, height: windowHeight * 0.7 }} contentFit="contain" />
+            <Image
+              source={buildChatImageSource(viewingImage, authToken)}
+              style={{ width: windowWidth - 32, height: windowHeight * 0.7 }}
+              contentFit="contain"
+            />
           )}
           <TouchableOpacity style={styles.imageViewerClose} onPress={() => setViewingImage(null)}>
             <Ionicons name="close-circle" size={32} color="#fff" />
@@ -979,6 +1049,31 @@ export default function ChatScreen() {
         onSearchChange={onHistorySearchChange}
       />
     </SafeAreaView>
+  );
+}
+
+function ChatTodayFocusLoading() {
+  return (
+    <View
+      testID="chat-today-focus-loading"
+      accessibilityLabel="正在加载今日重点"
+      style={styles.focusLoading}
+    >
+      <View style={styles.loadingIcon} />
+      <View style={styles.loadingCopy}>
+        <View style={[styles.loadingLine, { width: 76 }]} />
+        <View style={[styles.loadingLine, { width: '72%' }]} />
+      </View>
+    </View>
+  );
+}
+
+function AgentHomeBootstrapLoading() {
+  return (
+    <View accessibilityLabel="正在准备小巴" style={styles.bootstrapLoading}>
+      <ActivityIndicator size="small" color={C.green500} />
+      <Text style={txt.bootstrapLoading}>正在准备小巴…</Text>
+    </View>
   );
 }
 
@@ -1179,6 +1274,38 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
   keyboardAvoidingBody: { flex: 1 },
   messageList: { padding: revaSpacing.s4, paddingBottom: 8 },
+  focusLoading: {
+    minHeight: 64,
+    marginHorizontal: revaSpacing.s3,
+    marginTop: 2,
+    marginBottom: revaSpacing.s2,
+    paddingHorizontal: revaSpacing.s3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: revaSpacing.s2,
+    borderRadius: revaRadii.lg,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
+  loadingIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: C.green50,
+  },
+  loadingCopy: { flex: 1, gap: 7 },
+  loadingLine: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: C.paper2,
+  },
+  bootstrapLoading: {
+    minHeight: 112,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: revaSpacing.s2,
+  },
   imageViewerOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.9)',
     justifyContent: 'center', alignItems: 'center',
@@ -1323,6 +1450,7 @@ const styles = StyleSheet.create({
 });
 
 const txt = {
+  bootstrapLoading: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, fontWeight: '700' } as TextStyle,
   contextBanner: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green500, flex: 1, fontWeight: '500' } as TextStyle,
   contextQuickAction: { fontFamily: revaFonts.sans, fontSize: 11.5, color: C.green600, fontWeight: '800' } as TextStyle,
   contextSheetTitle: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '900', color: C.ink1 } as TextStyle,

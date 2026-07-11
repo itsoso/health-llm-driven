@@ -14,16 +14,18 @@ import { setAudioModeAsync } from 'expo-audio';
 import Markdown from 'react-native-markdown-display';
 import BrandCircle from './BrandCircle';
 import { getCardActionRuntimeKey, renderCard } from './cards';
-import InterventionDraftSheet from '../actions/InterventionDraftSheet';
 import { createMdStylesChat } from '../../constants/markdownStyles';
 import type { ColorPalette } from '../../hooks/useTheme';
 import type { UIMessage } from '../../hooks/useChatEngine';
-import { invalidateQueryKeys, queryKeys } from '../../applib/queryKeys';
-import { createInterventionDraft } from '../../services/actionCards';
-import { createRecordFromAssistantReply, saveAssistantReplyAsMemory } from '../../services/chatResultActions';
-import { buildInterventionDraft, type InterventionDraft } from '../../services/interventionDraft';
 import { speakWithUserVoice, type SpeakHandle } from '../../services/speakWithUserVoice';
 import { dispatchChatCardAction, type ChatCardActionResult } from '../../services/chatCardActions';
+import { rememberVerifiedWriteReceipt } from '../../services/conversationContinuity';
+import {
+  buildCardActionReceiptIdentity,
+  loadCardActionCompletion,
+  saveCardActionReceipt,
+} from '../../services/cardActionReceiptStorage';
+import { durationBucket, emitClientEvent } from '../../services/clientEvents';
 import AttributionChips from './AttributionChips';
 import type { ChatCardActionDescriptor, ChatCardActionRuntimeState, ServerCardDescriptor } from './cards/types';
 import {
@@ -36,6 +38,7 @@ import {
 import { useToast } from '../../hooks/useToast';
 import { sharePlainText } from '../../utils/share';
 import { buildAiShareMessage } from '../../utils/aiShareText';
+import { buildChatImageSource } from '../../utils/chatImageSource';
 import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/markdownTables';
 import { extractRevaUiBlocks } from '../../utils/revaUiBlocks';
 import {
@@ -44,16 +47,6 @@ import {
   type AgentTransparencyBand,
   type AgentTransparencyProfile,
 } from '../../utils/chatTransparency';
-import {
-  deriveChatResultActions,
-  type ChatResultActionKey,
-  type ChatResultActionHint,
-} from '../../utils/chatResultActionHints';
-
-// 结果操作按钮的装饰性 hue (加入计划绿/保存记忆紫/生成记录青/继续追问蓝) ——
-// 「是哪个动作」的色码, 非临床好坏, 保留 Reva 亮色调色板字面量.
-const ACTION_PURPLE = '#7C5CBF';
-const ACTION_TEAL = '#2F9E8F';
 
 /**
  * 诚实的「思考中」不定量进度条(2026-07-07 修:原本恒 4/4 + 写死 78% 是 UI 谎报,
@@ -86,8 +79,7 @@ function ThinkingIndeterminateBar() {
   );
 }
 
-type ResultActionKey = ChatResultActionKey;
-type ResultActionDoneLabels = Partial<Record<ResultActionKey, string>>;
+type WriteReceipt = NonNullable<ChatCardActionResult['receipt']>;
 
 // Markdown 样式走共享 factory (constants/markdownStyles, 4 个屏共用, 不动它的 ColorPalette 契约).
 // Reva light-first → 用映射到 reva token 的精简调色板算一次, 模块级静态 (无 dark 实例态).
@@ -104,6 +96,7 @@ const MD_STYLES = createMdStylesChat(MD_PALETTE);
 interface Props {
   item: UIMessage;
   onViewImage?: (uri: string) => void;
+  imageAuthToken?: string | null;
   selectionMode?: boolean;
   selected?: boolean;
   onToggleSelected?: (id: string) => void;
@@ -119,6 +112,7 @@ interface Props {
 function ChatBubbleInner({
   item,
   onViewImage,
+  imageAuthToken,
   selectionMode = false,
   selected = false,
   onToggleSelected,
@@ -128,13 +122,12 @@ function ChatBubbleInner({
   const qc = useQueryClient();
   const toast = useToast();
   const isUser = item.role === 'user';
-  const [draft, setDraft] = useState<InterventionDraft | null>(null);
-  const [savingDraft, setSavingDraft] = useState(false);
   const [showActions, setShowActions] = useState(false);  // 长按显示操作
   const [speaking, setSpeaking] = useState(false);
-  const [resultActionBusy, setResultActionBusy] = useState<ResultActionKey | null>(null);
-  const [resultActionDoneLabels, setResultActionDoneLabels] = useState<ResultActionDoneLabels>({});
   const [cardActionStateByKey, setCardActionStateByKey] = useState<Record<string, ChatCardActionRuntimeState>>({});
+  const [cardReceiptByKey, setCardReceiptByKey] = useState<Record<string, WriteReceipt>>({});
+  const [cardReceiptPersistenceWarning, setCardReceiptPersistenceWarning] = useState(false);
+  const cardActionLocksRef = useRef(new Set<string>());
   const speechTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechActiveRef = useRef(false);
   const speechHandleRef = useRef<SpeakHandle | null>(null);
@@ -180,14 +173,6 @@ function ChatBubbleInner({
       : visibleMarkdown
   );
   const assistantTextForActions = assistantText.trim();
-  const resultActions = useMemo(
-    () => deriveChatResultActions({
-      text: assistantTextForActions,
-      toolsUsed: item.toolsUsed,
-      sourcesUsed: item.sourcesUsed,
-    }),
-    [assistantTextForActions, item.toolsUsed, item.sourcesUsed],
-  );
   // 流式期间故意不跑 preprocessMarkdownTables + <Markdown> 整树渲染:
   // visibleMarkdown 每个 token 批次都变, memo 会失效 → 每秒 10-20 次全量
   // markdown 预处理 + react-native-markdown-display 整树重渲, 长回复打满 JS 线程,
@@ -253,19 +238,114 @@ function ChatBubbleInner({
     };
   }, [clearSpeechTimeout]);
 
+  useEffect(() => {
+    const cardType = item.cardType;
+    if (!cardType || !item.cardActions?.length) return;
+    let cancelled = false;
+    void Promise.all(item.cardActions.map(async (action) => {
+      const actionKey = getCardActionRuntimeKey(action, { type: cardType });
+      const identity = buildCardActionReceiptIdentity(
+        action,
+        cardType,
+        item.sourceTurnId ?? item.sourceMessageId ?? item.id,
+      );
+      const completion = await loadCardActionCompletion(identity);
+      return completion ? { actionKey, completion } : undefined;
+    })).then((restored) => {
+      if (cancelled) return;
+      const valid = restored.filter((entry): entry is {
+        actionKey: string;
+        completion: { verified: true; receipt?: WriteReceipt };
+      } => !!entry);
+      if (valid.length === 0) return;
+      setCardActionStateByKey(prev => ({
+        ...prev,
+        ...Object.fromEntries(valid.map(entry => [entry.actionKey, 'done' as const])),
+      }));
+      const restoredReceipts = valid.filter((entry): entry is {
+        actionKey: string;
+        completion: { verified: true; receipt: WriteReceipt };
+      } => !!entry.completion.receipt);
+      if (restoredReceipts.length > 0) {
+        setCardReceiptByKey(prev => ({
+          ...prev,
+          ...Object.fromEntries(restoredReceipts.map(entry => [entry.actionKey, entry.completion.receipt])),
+        }));
+      }
+      valid.forEach(entry => cardActionLocksRef.current.add(entry.actionKey));
+    }).catch(() => {
+      if (__DEV__) console.warn('[chat] card receipt restore failed');
+    });
+    return () => { cancelled = true; };
+  }, [item.cardActions, item.cardType, item.id, item.sourceMessageId, item.sourceTurnId]);
+
   const handleCardAction = useCallback(async (
     action: ChatCardActionDescriptor,
     descriptor: ServerCardDescriptor,
   ) => {
     const actionKey = getCardActionRuntimeKey(action, descriptor);
-    if (cardActionStateByKey[actionKey] === 'running' || cardActionStateByKey[actionKey] === 'done') {
+    if (
+      cardActionLocksRef.current.has(actionKey)
+      || cardActionStateByKey[actionKey] === 'running'
+      || cardActionStateByKey[actionKey] === 'done'
+    ) {
       return;
     }
+    cardActionLocksRef.current.add(actionKey);
+    const receiptIdentity = buildCardActionReceiptIdentity(
+      action,
+      descriptor.type,
+      item.sourceTurnId ?? item.sourceMessageId ?? item.id,
+    );
     const execute = async () => {
+      const actionStartedAt = Date.now();
+      const writeAction = isWriteCardAction(action);
+      let writeTerminalSent = false;
+      const emitWriteTerminal = (
+        phase: 'verified' | 'unverified' | 'failed',
+        verified: boolean,
+        errorCode?: string,
+      ) => {
+        if (!writeAction || writeTerminalSent) return;
+        writeTerminalSent = true;
+        void emitClientEvent('write_receipt_terminal', {
+          phase,
+          duration_bucket: durationBucket(actionStartedAt),
+          action_type: action.action,
+          verified,
+          ...(errorCode ? { error_code: errorCode } : {}),
+        });
+      };
       setCardActionStateByKey(prev => ({ ...prev, [actionKey]: 'running' }));
       try {
-        const result = await dispatchChatCardAction(action);
-        await Promise.all([
+        const result = await dispatchChatCardAction(action, receiptIdentity);
+        if (writeAction && result.receipt?.verified !== true) {
+          emitWriteTerminal('unverified', false, 'write_receipt_missing_identity');
+          throw new Error('write_receipt_missing_identity');
+        }
+        let receiptPersistenceFailed = false;
+        if (result.receipt) {
+          const persisted = await Promise.allSettled([
+            rememberVerifiedWriteReceipt(result.receipt),
+            saveCardActionReceipt(receiptIdentity, result.receipt),
+          ]);
+          const cardDuplicateGuardSaved = persisted[1]?.status === 'fulfilled';
+          if (!cardDuplicateGuardSaved) {
+            receiptPersistenceFailed = true;
+            setCardReceiptPersistenceWarning(true);
+            console.warn('[chat] card write receipt persistence failed');
+          } else {
+            setCardReceiptByKey(prev => ({ ...prev, [actionKey]: result.receipt as WriteReceipt }));
+          }
+        }
+        if (writeAction) {
+          emitWriteTerminal(
+            receiptPersistenceFailed ? 'unverified' : 'verified',
+            !receiptPersistenceFailed,
+            receiptPersistenceFailed ? 'card_receipt_persistence_failed' : undefined,
+          );
+        }
+        const refreshResults = await Promise.allSettled([
           qc.invalidateQueries({ queryKey: ['timeline', 'today'] }),
           qc.invalidateQueries({ queryKey: ['agenda', 'today'] }),
           qc.invalidateQueries({ queryKey: ['daily-artifact', 'me'] }),
@@ -276,12 +356,22 @@ function ChatBubbleInner({
         ]);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         setCardActionStateByKey(prev => ({ ...prev, [actionKey]: 'done' }));
-        toast.show(getCardActionSuccessMessage(action, result), getCardActionSuccessType(action, result));
+        const refreshFailed = refreshResults.some(refresh => refresh.status === 'rejected');
+        if (receiptPersistenceFailed) {
+          toast.show('已写入，但本机未保存防重复凭证', 'error');
+        } else {
+          toast.show(
+            refreshFailed ? '已写入，页面数据稍后刷新' : getCardActionSuccessMessage(action, result),
+            refreshFailed ? 'info' : getCardActionSuccessType(action, result),
+          );
+        }
         onCardActionCompleted?.({ action, descriptor, result });
         if (result.route) {
           router.push(result.route as any);
         }
       } catch {
+        cardActionLocksRef.current.delete(actionKey);
+        emitWriteTerminal('failed', false, 'card_action_failed');
         setCardActionStateByKey(prev => ({ ...prev, [actionKey]: 'error' }));
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
         toast.show('操作失败，请稍后重试', 'error');
@@ -297,6 +387,7 @@ function ChatBubbleInner({
           {
             text: action.confirmation.cancel_label || '取消',
             style: 'cancel',
+            onPress: () => { cardActionLocksRef.current.delete(actionKey); },
           },
           {
             text: action.confirmation.confirm_label || action.label,
@@ -308,7 +399,13 @@ function ChatBubbleInner({
     }
 
     await execute();
-  }, [cardActionStateByKey, onCardActionCompleted, qc, toast]);
+  }, [cardActionStateByKey, item.id, item.sourceMessageId, item.sourceTurnId, onCardActionCompleted, qc, toast]);
+
+  const cardReceipts = Object.values(cardReceiptByKey);
+  const latestCardReceipt = cardReceipts.length > 0 ? cardReceipts[cardReceipts.length - 1] : null;
+  const directWriteReceipts = item.writeReceipts || [];
+  const latestWriteReceipt = latestCardReceipt
+    || (directWriteReceipts.length > 0 ? directWriteReceipts[directWriteReceipts.length - 1] : null);
 
   if (item.cardType && item.cardData) {
     const rendered = renderCard(
@@ -321,6 +418,8 @@ function ChatBubbleInner({
           <View style={{ width: 36 }} />
           <View testID="assistant-card-frame" style={styles.cardFrame}>
             {rendered}
+            {latestWriteReceipt ? <WriteReceiptLine receipt={latestWriteReceipt} /> : null}
+            {cardReceiptPersistenceWarning ? <WriteReceiptPersistenceWarning /> : null}
           </View>
         </View>
       );
@@ -358,139 +457,6 @@ function ChatBubbleInner({
       return;
     }
     handleCopy();
-  };
-
-  const openDraft = () => {
-    setShowActions(false);
-    setDraft(buildInterventionDraft({
-      title: inferActionTitle(assistantTextForActions),
-      advice: assistantTextForActions,
-      sourceType: 'chat',
-      sourceId: item.id,
-    }));
-  };
-
-  const markResultActionDone = (key: ResultActionKey, label: string) => {
-    setResultActionDoneLabels(prev => ({ ...prev, [key]: label }));
-  };
-
-  const handleAddToTodayPlan = async () => {
-    if (!assistantTextForActions || resultActionBusy) return;
-    setResultActionBusy('plan');
-    try {
-      const nextDraft = buildInterventionDraft({
-        title: inferActionTitle(assistantTextForActions),
-        advice: assistantTextForActions,
-        sourceType: 'chat',
-        sourceId: item.id,
-      });
-      await createInterventionDraft(nextDraft);
-      await invalidateQueryKeys(qc, [
-        queryKeys.actionCards,
-        queryKeys.todayCoachRoot,
-        queryKeys.agentAgendaRoot,
-        ['agenda', 'today'],
-        ['daily-artifact', 'me'],
-        ['today-dynamic-view', 'mobile.today'],
-      ]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      markResultActionDone('plan', '已加入');
-      toast.show('已加入今日计划', 'success');
-    } catch {
-      toast.show('加入今日计划失败，请稍后重试', 'error');
-    } finally {
-      setResultActionBusy(null);
-    }
-  };
-
-  const handleSaveMemory = async () => {
-    if (!assistantTextForActions || resultActionBusy) return;
-    setResultActionBusy('memory');
-    try {
-      await saveAssistantReplyAsMemory(assistantTextForActions);
-      await invalidateQueryKeys(qc, [['memory-facts'], ['memory-stats']]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      markResultActionDone('memory', '已保存');
-      toast.show('已保存到记忆', 'success');
-    } catch {
-      toast.show('保存记忆失败，请稍后重试', 'error');
-    } finally {
-      setResultActionBusy(null);
-    }
-  };
-
-  const handleCreateRecord = async () => {
-    if (!assistantTextForActions || resultActionBusy) return;
-    setResultActionBusy('record');
-    try {
-      const result = await createRecordFromAssistantReply(assistantTextForActions);
-      await invalidateQueryKeys(qc, [
-        queryKeys.dashboard,
-        queryKeys.dataHealth,
-        queryKeys.todayCoachRoot,
-        queryKeys.agentAgendaRoot,
-        ['timeline', 'today'],
-        ['agenda', 'today'],
-        ['daily-artifact', 'me'],
-        ['diet'],
-        ['today-dynamic-view', 'mobile.today'],
-      ]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      if (result.status === 'created') {
-        markResultActionDone('record', '已生成');
-        toast.show(result.message || '已生成记录', 'success');
-      } else {
-        markResultActionDone('record', '去记录页');
-        toast.show(result.message, 'info');
-        router.push(result.route as any);
-      }
-    } catch {
-      toast.show('生成记录失败，请稍后重试', 'error');
-    } finally {
-      setResultActionBusy(null);
-    }
-  };
-
-  const handleContinueFollowUp = () => {
-    if (resultActionBusy) return;
-    setResultActionBusy('followup');
-    const title = inferActionTitle(assistantTextForActions);
-    const params = {
-      prompt: `请基于「${title}」继续追问，先问我一个最关键的确认问题，再细化成今天能执行的一步。`,
-      promptNonce: String(Date.now()),
-    };
-    try {
-      if (typeof (router as any).setParams === 'function') {
-        (router as any).setParams(params);
-      } else {
-        router.push({ pathname: '/(tabs)/chat', params } as any);
-      }
-    } catch {
-      router.push({ pathname: '/(tabs)/chat', params } as any);
-    }
-    Promise.resolve(Haptics.selectionAsync()).catch(() => {});
-    markResultActionDone('followup', '已放入输入框');
-    toast.show('已放入输入框', 'info');
-    setTimeout(() => setResultActionBusy(null), 250);
-  };
-
-  const submitDraft = async (nextDraft: InterventionDraft) => {
-    setSavingDraft(true);
-    try {
-      await createInterventionDraft(nextDraft);
-      await invalidateQueryKeys(qc, [
-        queryKeys.actionCards,
-        queryKeys.todayCoachRoot,
-        queryKeys.agentAgendaRoot,
-      ]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setDraft(null);
-      Alert.alert('已加入行动', '可以在行动页继续跟踪和复盘。');
-    } catch {
-      Alert.alert('保存失败', '健康行动保存失败，请稍后重试。');
-    } finally {
-      setSavingDraft(false);
-    }
   };
 
   // 播报当前 AI 气泡内容. 同 bubble 再点 = 停; 切其他气泡播报会接管 (Speech 是单例, 自动 stop 旧的).
@@ -597,11 +563,13 @@ function ChatBubbleInner({
               <View style={styles.imageGrid}>
                 {images.map((uri, i) => (
                   <TouchableOpacity key={i} onPress={() => onViewImage?.(uri)} activeOpacity={0.85}>
-                    <Image
-                      source={{ uri }}
-                      style={images.length === 1 ? styles.msgImageSingle : styles.msgImageGrid}
-                      contentFit="cover"
-                    />
+                    {buildChatImageSource(uri, imageAuthToken) ? (
+                      <Image
+                        source={buildChatImageSource(uri, imageAuthToken)}
+                        style={images.length === 1 ? styles.msgImageSingle : styles.msgImageGrid}
+                        contentFit="cover"
+                      />
+                    ) : null}
                   </TouchableOpacity>
                 ))}
               </View>
@@ -643,47 +611,20 @@ function ChatBubbleInner({
                 })}
               </View>
             ) : null}
-            {/* P4: 显式归因 chips — 仅当 LLM 在回答里加了"(基于你的 X)" 等 marker 才渲染.
-                 markdown 渲染完后, 流式结束才出 (避免提取不全的 marker 闪现) */}
-            {assistantTextForActions && !item.streaming ? (
-              <AttributionChips text={assistantTextForActions} />
-            ) : null}
-            {!item.streaming && assistantTextForActions && resultActions.length > 0 ? (
-              <View style={styles.resultActionGrid}>
-                {resultActions.map((action, index) => (
-                  <ResultActionButton
-                    key={action.key}
-                    action={action}
-                    icon={getResultActionIcon(action.key, resultActionDoneLabels)}
-                    label={resultActionDoneLabels[action.key] || getResultActionLabel(action.key)}
-                    color={getResultActionColor(action.key)}
-                    onPress={getResultActionHandler(action.key, {
-                      plan: handleAddToTodayPlan,
-                      memory: handleSaveMemory,
-                      record: handleCreateRecord,
-                      followup: handleContinueFollowUp,
-                    })}
-                    loading={resultActionBusy === action.key}
-                    disabled={!!resultActionBusy}
-                    wide={resultActions.length === 1 || (index === 0 && action.priority === 'primary')}
-                  />
-                ))}
-              </View>
+            {latestWriteReceipt ? <WriteReceiptLine receipt={latestWriteReceipt} /> : null}
+            {cardReceiptPersistenceWarning ? <WriteReceiptPersistenceWarning /> : null}
+            {/* 只消费后端 sources_used；不从 assistant 正文推断来源。 */}
+            {!item.streaming && item.sourcesUsed?.length ? (
+              <AttributionChips
+                sources={item.sourcesUsed}
+                onOpenMemory={() => router.push('/memory')}
+              />
             ) : null}
             {!item.streaming && assistantTextForActions && transparency.visible ? (
               <AgentTransparencyPanel profile={transparency} />
             ) : null}
             {assistantTextForActions && showActions ? (
               <View style={styles.actionsRow}>
-                <Pressable
-                  style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
-                  onPress={openDraft}
-                  accessibilityRole="button"
-                  accessibilityLabel="加入健康行动"
-                >
-                  <Ionicons name="add-circle-outline" size={14} color={C.green500} />
-                  <Text style={txt.actionBtn}>加入行动</Text>
-                </Pressable>
                 <Pressable
                   style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
                   onPress={handleCopy}
@@ -731,106 +672,59 @@ function ChatBubbleInner({
           </TouchableOpacity>
         )}
       </View>
-      <InterventionDraftSheet
-        visible={!!draft}
-        draft={draft}
-        isSaving={savingDraft}
-        onClose={() => setDraft(null)}
-        onSubmit={submitDraft}
-      />
     </>
   );
 }
 
-function ResultActionButton({
-  action,
-  icon,
-  label,
-  color,
-  onPress,
-  loading,
-  disabled,
-  wide,
-}: {
-  action: ChatResultActionHint;
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  color: string;
-  onPress: () => void;
-  loading?: boolean;
-  disabled?: boolean;
-  wide?: boolean;
-}) {
-  const primary = action.priority === 'primary';
+function WriteReceiptLine({ receipt }: { receipt: WriteReceipt }) {
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={({ pressed }) => [
-        resultActionStyles.button,
-        wide && resultActionStyles.buttonWide,
-        primary && resultActionStyles.buttonPrimary,
-        pressed && !disabled && resultActionStyles.pressed,
-        disabled && resultActionStyles.disabled,
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled: !!disabled, busy: !!loading }}
+    <View
+      testID="write-receipt"
+      style={styles.writeReceipt}
+      accessibilityRole="text"
+      accessibilityLabel={formatWriteReceipt(receipt)}
     >
-      {loading ? (
-        <ActivityIndicator size="small" color={color} />
-      ) : (
-        <Ionicons name={icon} size={13} color={color} />
-      )}
-      <Text style={[resultActionStyles.label, primary && resultActionStyles.labelPrimary, { color }]} numberOfLines={1}>
-        {label}
-      </Text>
-    </Pressable>
+      <Ionicons name="checkmark-circle" size={14} color={C.green600} />
+      <Text style={styles.writeReceiptText}>{formatWriteReceipt(receipt)}</Text>
+    </View>
   );
 }
 
-function getResultActionLabel(key: ResultActionKey): string {
-  switch (key) {
-    case 'plan': return '加入今日计划';
-    case 'memory': return '保存记忆';
-    case 'record': return '生成记录';
-    case 'followup':
-    default:
-      return '继续追问';
-  }
+function WriteReceiptPersistenceWarning() {
+  return (
+    <View
+      testID="write-receipt-warning"
+      style={styles.writeReceiptWarning}
+      accessibilityRole="alert"
+    >
+      <Ionicons name="warning-outline" size={14} color={revaSemantic.caution.fg} />
+      <Text style={styles.writeReceiptWarningText}>
+        已写入，但本机未保存防重复凭证
+      </Text>
+    </View>
+  );
 }
 
-function getResultActionIcon(
-  key: ResultActionKey,
-  doneLabels: ResultActionDoneLabels,
-): keyof typeof Ionicons.glyphMap {
-  if (doneLabels[key]) return 'checkmark-circle-outline';
-  switch (key) {
-    case 'plan': return 'add-circle-outline';
-    case 'memory': return 'bookmark-outline';
-    case 'record': return 'create-outline';
-    case 'followup':
-    default:
-      return 'chatbubble-ellipses-outline';
-  }
+function isWriteCardAction(action: ChatCardActionDescriptor): boolean {
+  return [
+    'agenda.complete',
+    'diet_record.create',
+    'write_intent.confirm',
+    'write_intent.dismiss',
+  ].includes(action.action);
 }
 
-function getResultActionColor(key: ResultActionKey): string {
-  switch (key) {
-    case 'plan': return C.green500;
-    case 'memory': return ACTION_PURPLE;
-    case 'record': return ACTION_TEAL;
-    case 'followup':
-    default:
-      return C.blue500;
-  }
-}
-
-function getResultActionHandler(
-  key: ResultActionKey,
-  handlers: Record<ResultActionKey, () => void>,
-): () => void {
-  return handlers[key];
+function formatWriteReceipt(receipt: WriteReceipt): string {
+  const resourceLabels: Record<string, string> = {
+    agenda_event: '今日行动',
+    diet_record: '饮食记录',
+    write_intent: '待确认项',
+    smart_reminder: '提醒',
+    health_record: '健康记录',
+  };
+  const verb = receipt.status === 'dismissed' ? '已忽略' : '已写入';
+  const resourceLabel = resourceLabels[receipt.resourceType] || '健康数据';
+  return `${verb} · ${resourceLabel} #${receipt.resourceId}`;
 }
 
 function getCardActionSuccessMessage(
@@ -855,15 +749,6 @@ function getCardActionSuccessType(
     return 'info';
   }
   return 'success';
-}
-
-function inferActionTitle(text: string): string {
-  const firstLine = text
-    .split('\n')
-    .map(line => line.replace(/^#+\s*/, '').replace(/^[-*]\s*/, '').trim())
-    .find(Boolean);
-  if (!firstLine) return '健康行动';
-  return firstLine.length > 18 ? firstLine.slice(0, 18) : firstLine;
 }
 
 /**
@@ -1184,40 +1069,6 @@ function StructuredSummaryCard({
 const ChatBubble = React.memo(ChatBubbleInner);
 export default ChatBubble;
 
-const resultActionStyles = StyleSheet.create({
-  button: {
-    width: '48%',
-    minHeight: 32,
-    borderRadius: revaRadii.pill,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    backgroundColor: C.paper2,
-    paddingHorizontal: 9,
-  },
-  buttonWide: {
-    width: '100%',
-  },
-  buttonPrimary: {
-    minHeight: 36,
-    backgroundColor: C.green50,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.green100,
-  },
-  pressed: { opacity: 0.78 },
-  disabled: { opacity: 0.58 },
-  label: {
-    fontFamily: revaFonts.sans,
-    fontSize: 11,
-    fontWeight: '800',
-  } as TextStyle,
-  labelPrimary: {
-    fontSize: 12,
-    fontWeight: '900',
-  } as TextStyle,
-});
-
 const summaryStyles = StyleSheet.create({
   card: {
     borderRadius: 14,
@@ -1300,6 +1151,52 @@ const styles = StyleSheet.create({
   msgRowAI: { justifyContent: 'flex-start' },
   cardFrame: { flex: 1, minWidth: 0, maxWidth: '100%' },
   inlineCardStack: { marginTop: 10, gap: 8 },
+  writeReceipt: {
+    minHeight: 28,
+    marginTop: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: revaRadii.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    backgroundColor: C.green50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+  },
+  writeReceiptText: {
+    flexShrink: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    lineHeight: 16,
+    color: C.green700,
+    fontWeight: '600',
+  } as TextStyle,
+  writeReceiptWarning: {
+    minHeight: 28,
+    marginTop: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: revaRadii.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: revaSemantic.caution.line,
+    backgroundColor: revaSemantic.caution.bg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+  },
+  writeReceiptWarningText: {
+    flexShrink: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    lineHeight: 16,
+    color: revaSemantic.caution.fg,
+    fontWeight: '600',
+  } as TextStyle,
   bubble: { maxWidth: '88%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
   bubbleUser: { backgroundColor: C.green500, borderBottomRightRadius: 4 },
   bubbleSelected: {
@@ -1397,29 +1294,29 @@ const styles = StyleSheet.create({
   },
   // 完成态: 低干扰内联状态行, 展开时在下方补步骤列表.
   thinkingPill: {
-    alignSelf: 'stretch',
-    width: '100%',
-    marginBottom: 8,
-    paddingBottom: 7,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: C.line,
-    backgroundColor: 'transparent',
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    marginBottom: 7,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    overflow: 'hidden',
   },
   thinkingPillHeader: {
     minHeight: 22,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 0,
-    paddingVertical: 0,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
   },
   thinkingPillList: {
     gap: 6,
-    paddingHorizontal: 0,
-    paddingBottom: 0,
+    minWidth: 240,
+    paddingHorizontal: 9,
+    paddingBottom: 8,
     paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.line,
+    borderTopColor: C.green100,
   },
   thinkingHeader: {
     flexDirection: 'row',
@@ -1494,15 +1391,6 @@ const styles = StyleSheet.create({
     backgroundColor: C.green50,
     paddingHorizontal: 10,
     paddingVertical: 6,
-  },
-  resultActionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 7,
-    marginTop: 10,
-    paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.line,
   },
   actionBtnPressed: { opacity: 0.82 },
   speakBtn: {

@@ -34,6 +34,13 @@ jest.mock('expo-image-manipulator', () => ({
   SaveFormat: { JPEG: 'jpeg', PNG: 'png', WEBP: 'webp' },
 }));
 
+const mockMaterializeDraftImages = jest.fn();
+const mockDeleteDraftImage = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../services/chatDraftStorage', () => ({
+  materializeDraftImages: (...args: any[]) => mockMaterializeDraftImages(...args),
+  deleteDraftImage: (...args: any[]) => mockDeleteDraftImage(...args),
+}));
+
 jest.spyOn(Alert, 'alert').mockImplementation(() => {});
 
 import { useMediaPicker } from '../useMediaPicker';
@@ -51,6 +58,8 @@ describe('useMediaPicker', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockManipulatorOk();
+    mockMaterializeDraftImages.mockImplementation(async (images: any[]) => images);
+    mockDeleteDraftImage.mockResolvedValue(undefined);
   });
 
   // ── pickImage ──
@@ -106,6 +115,9 @@ describe('useMediaPicker', () => {
         base64: 'tiny-jpeg',
         type: 'jpeg',
       });
+      expect(mockMaterializeDraftImages).toHaveBeenCalledWith([
+        expect.objectContaining({ uri: 'file:///small.jpg', base64: 'tiny-jpeg', type: 'jpeg' }),
+      ]);
     });
 
     it('resizes by the LONGER edge — portrait photo resizes by height', async () => {
@@ -330,8 +342,27 @@ describe('useMediaPicker', () => {
       await act(async () => { await result.current.takePhoto(); });
       expect(result.current.pendingImage).not.toBeNull();
 
-      act(() => { result.current.clearImages(); });
+      await act(async () => { await result.current.clearImages(); });
       expect(result.current.pendingImage).toBeNull();
+      expect(mockDeleteDraftImage).toHaveBeenCalledWith(
+        expect.objectContaining({ uri: 'file:///manip-out.jpg' }),
+      );
+    });
+
+    it('releases accepted images from composer state without deleting their display files', async () => {
+      mockRequestCameraPermissions.mockResolvedValue({ granted: true });
+      mockLaunchCamera.mockResolvedValue({
+        canceled: false,
+        assets: [{ uri: 'file:///accepted.jpg', base64: 'data', mimeType: 'image/jpeg' }],
+      });
+
+      const { result } = renderHook(() => useMediaPicker());
+      await act(async () => { await result.current.takePhoto(); });
+
+      act(() => { result.current.releaseImagesAfterSend(); });
+
+      expect(result.current.pendingImage).toBeNull();
+      expect(mockDeleteDraftImage).not.toHaveBeenCalled();
     });
   });
 });

@@ -2,7 +2,7 @@ import React, { useCallback, useRef, useState } from 'react';
 import {
   View, TextInput, TouchableOpacity, StyleSheet, Text,
   Modal, Pressable, ActivityIndicator, TextStyle, ScrollView,
-  Alert, Keyboard,
+  Alert, AppState, Keyboard,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,9 +14,23 @@ import { useMediaPicker, type PendingImage } from '../../hooks/useMediaPicker';
 import { useVoiceRecording } from '../../hooks/useVoiceRecording';
 import { useRealtimeDictation } from '../../hooks/useRealtimeDictation';
 import {
+  canStartDictation,
+  canStartHold,
+  createInitialComposerState,
+  reduceComposerState,
+  shouldShowDisabledMic,
+} from './composerState';
+import {
   executeMedicalExamImportSkillForDocumentAsset,
   type ChatMedicalExamImportSkillResult,
 } from '../../services/chatMedicalExamImportSkill';
+import {
+  cleanupAbandonedChatDraftFiles,
+  clearPersistedChatDraft,
+  hydrateDraftImagesForSend,
+  loadChatDraft,
+  persistChatDraft,
+} from '../../services/chatDraftStorage';
 import {
   revaColors as C,
   revaRadii,
@@ -32,14 +46,19 @@ const COMPOSER_HIT_SLOP = { top: 6, right: 6, bottom: 6, left: 6 };
 const RECORDING_OVERLAY_TOP_INSET = 64;
 // 2026-07-07 founder「这个按钮不协调」:深色 #1F1F1F 输入栏贴在暖奶油页上割裂,
 // 且微信真实输入栏本就是浅灰(不是深色)。收回 revaTheme 暖白语言,与页面同调。
-const COMPOSER_BAR_BG = C.surface2;        // 输入栏底:微微抬起的暖白
-const COMPOSER_INPUT_BG = C.surface;       // 输入框:纯白卡
-const COMPOSER_INPUT_BG_ACTIVE = C.green50; // 听写中:暖绿提示
-const COMPOSER_ICON = C.ink2;              // 图标:次级墨色
+const COMPOSER_BAR_BG = C.paper;
+const COMPOSER_INPUT_BG = C.surface;
+const COMPOSER_INPUT_BG_PRESSED = C.surface2;
+const COMPOSER_INPUT_BG_ACTIVE = C.green50;
+const COMPOSER_BUTTON_BG = C.surface2;
+const COMPOSER_BUTTON_BG_ACTIVE = C.green50;
+const COMPOSER_ICON = C.ink2;
+const COMPOSER_ICON_MUTED = C.ink3;
 const VOICE_WAVE_BARS = Array.from({ length: 28 }, (_, i) => i);
 
 export interface ChatInputSendOptions {
   extraContext?: string;
+  channel?: 'typed' | 'voice' | 'siri';
 }
 
 // 2026-07-05 founder: 删掉「日常/深思/识图」三模式段。日常=无操作(默认);
@@ -48,11 +67,6 @@ export interface ChatInputSendOptions {
 // 「别重新生成方案」——与深思本意相反, 效果garbled;识图更是冗余(带图自动走
 // 视觉路径)。深浅由 agent 从问题判断, 不靠藏在附件菜单里的隐藏开关。
 const COMPOSER_PLACEHOLDER = '问小巴';
-
-// 2026-07-06 founder: 完全按微信输入栏复刻。左侧喇叭先切到「按住说话」,
-// 语音模式左侧变键盘;文本模式框内右侧麦克风负责实时听写。
-type ComposerInputMode = 'text' | 'voice';
-type ComposerVisualMode = 'keyboard' | 'holdToTalk' | 'dictating' | 'dictationDisabled';
 
 function PulsingRing() {
   const scale = useSharedValue(1);
@@ -84,7 +98,11 @@ function WeChatKeyboardIcon() {
 }
 
 interface Props {
-  onSend: (text: string, images?: PendingImage[] | null, options?: ChatInputSendOptions) => void;
+  onSend: (
+    text: string,
+    images?: PendingImage[] | null,
+    options?: ChatInputSendOptions,
+  ) => boolean | void | Promise<boolean | void>;
   isStreaming: boolean;
   /** Prefills the composer when callers deep-link into chat with a prompt. */
   initialText?: string;
@@ -103,12 +121,21 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const [showMedicalImportMenu, setShowMedicalImportMenu] = useState(false);
   const [medicalImportBusy, setMedicalImportBusy] = useState(false);
   const [cancelHint, setCancelHint] = useState(false);
-  const [inputMode, setInputMode] = useState<ComposerInputMode>('text');
-  const [realtimeMicIntent, setRealtimeMicIntent] = useState<'idle' | 'starting' | 'stopping'>('idle');
-  const [realtimeMicDisabled, setRealtimeMicDisabled] = useState(false);
-  const [voiceGesture, setVoiceGesture] = useState<'send' | 'text' | 'cancel' | null>(null);
+  const [composer, dispatchComposer] = React.useReducer(
+    reduceComposerState,
+    undefined,
+    createInitialComposerState,
+  );
+  const [draftHydrated, setDraftHydrated] = useState(false);
   const [justSent, setJustSent] = useState(false);  // 刚发送, 按钮停留 1s 避免误切 mic
-  const { pendingImages, removeImage, clearImages, pickImage, takePhoto } = useMediaPicker();
+  const {
+    pendingImages,
+    setPendingImages,
+    removeImage,
+    releaseImagesAfterSend,
+    pickImage,
+    takePhoto,
+  } = useMediaPicker();
   const textInputRef = useRef<TextInput>(null);
   const lastKeyboardSubmitAtRef = useRef(0);
   const holdStartXRef = useRef(0);
@@ -117,20 +144,76 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const voiceDraftBaseRef = useRef('');
   const voiceDraftPreviewRef = useRef('');
   const realtimeBaseInputRef = useRef('');
-  const canSend = (!!input.trim() || pendingImages.length > 0) && !isStreaming;
+  const inputChannelRef = useRef<'typed' | 'voice'>('typed');
+  const composerRef = useRef(composer);
+  const stopDictationRef = useRef<() => Promise<string>>(async () => '');
+  const cancelDictationRef = useRef<() => Promise<void>>(async () => {});
+  const cancelVoiceRef = useRef<() => Promise<void>>(async () => {});
+  const dictationNativeActiveRef = useRef(false);
+  const voiceNativeActiveRef = useRef(false);
+  const draftPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const justSentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  composerRef.current = composer;
+  const canSend = (!!input.trim() || pendingImages.length > 0)
+    && !isStreaming
+    && composer.phase !== 'submitting';
 
   React.useEffect(() => {
     if (initialText == null) return;
-    setInputMode('text');
+    inputChannelRef.current = 'typed';
     setInput(prev => (prev === initialText ? prev : initialText));
   }, [initialText, initialTextKey]);
+
+  React.useEffect(() => {
+    let mounted = true;
+    void (async () => {
+      try {
+        const draft = await loadChatDraft();
+        if (!mounted) return;
+        if (initialText == null) {
+          inputChannelRef.current = 'typed';
+          setInput(prev => prev || draft.text);
+        }
+        setPendingImages(draft.images);
+        void cleanupAbandonedChatDraftFiles(draft.images.map(image => image.uri));
+      } catch (e) {
+        if (__DEV__) console.warn('[ChatInputBar] draft restore failed:', e);
+      } finally {
+        if (mounted) setDraftHydrated(true);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+    // Draft restoration is mount-only. Later deep-link prefills use the initialText effect above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  React.useEffect(() => {
+    if (!draftHydrated) return;
+    if (draftPersistTimerRef.current) clearTimeout(draftPersistTimerRef.current);
+    draftPersistTimerRef.current = setTimeout(() => {
+      draftPersistTimerRef.current = null;
+      void persistChatDraft(input, pendingImages).catch((e) => {
+        if (__DEV__) console.warn('[ChatInputBar] draft persistence failed:', e);
+      });
+    }, 250);
+    return () => {
+      if (draftPersistTimerRef.current) {
+        clearTimeout(draftPersistTimerRef.current);
+        draftPersistTimerRef.current = null;
+      }
+    };
+  }, [draftHydrated, input, pendingImages]);
 
   // 明确用户动作触发的聚焦:默认进入页面不拉键盘,避免首屏被键盘占掉。
   // 延迟等 tab 过渡完成;流式时不抢焦点。
   React.useEffect(() => {
     if (!autoFocusToken) return;
     if (isStreaming) return;
-    setInputMode('text');
+    if (composerRef.current.mode === 'hold') {
+      dispatchComposer({ type: 'toggle_mode' });
+    }
     const t = setTimeout(() => {
       textInputRef.current?.focus();
     }, 380);
@@ -138,102 +221,121 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoFocusToken]);
 
-  const handleSend = useCallback((text?: string) => {
-    const msg = (text || input).trim();
+  const handleSend = useCallback(async (text?: string, sendOptions?: ChatInputSendOptions) => {
+    let msg = (text || input).trim();
     if (!msg && pendingImages.length === 0) return;
-    onSend(
-      msg || '请分析这些图片',
-      pendingImages.length > 0 ? pendingImages : null,
-    );
+    const phase = composerRef.current.phase;
+    dispatchComposer({ type: 'submit' });
+    try {
+      if (phase === 'live_dictating' || dictationNativeActiveRef.current) {
+        const finalTranscript = String(await stopDictationRef.current() || '').trim();
+        if (!text && finalTranscript) {
+          const base = realtimeBaseInputRef.current.trim();
+          msg = base ? `${base} ${finalTranscript}` : finalTranscript;
+        }
+      } else if (phase === 'hold_starting' || phase === 'hold_recording') {
+        await cancelVoiceRef.current();
+      }
+      const sendImages = pendingImages.length > 0
+        ? await hydrateDraftImagesForSend(pendingImages)
+        : pendingImages;
+      const effectiveChannel = sendOptions?.channel ?? inputChannelRef.current;
+      const outboundOptions: ChatInputSendOptions = {
+        ...(sendOptions || {}),
+        ...(effectiveChannel !== 'typed' ? { channel: effectiveChannel } : {}),
+      };
+      const sendResult = onSend(
+        msg || '请分析这些图片',
+        sendImages.length > 0 ? sendImages : null,
+        Object.keys(outboundOptions).length > 0 ? outboundOptions : undefined,
+      );
+      const accepted = await Promise.resolve(sendResult);
+      if (accepted === false) {
+        dispatchComposer({ type: 'fail', errorCode: 'send_not_accepted' });
+        Alert.alert('发送失败', '消息和图片草稿已保留，请检查网络后重试。');
+        return;
+      }
+    } catch (e) {
+      dispatchComposer({ type: 'fail', errorCode: 'send_rejected' });
+      Alert.alert('发送失败', '消息和图片草稿已保留，请检查网络后重试。');
+      if (__DEV__) console.warn('[ChatInputBar] send rejected:', e);
+      return;
+    }
+
+    if (draftPersistTimerRef.current) {
+      clearTimeout(draftPersistTimerRef.current);
+      draftPersistTimerRef.current = null;
+    }
     setInput('');
-    clearImages();
+    inputChannelRef.current = 'typed';
+    releaseImagesAfterSend();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setJustSent(true);
-    setTimeout(() => setJustSent(false), 1000);
-  }, [input, pendingImages, onSend, clearImages]);
+    if (justSentTimerRef.current) clearTimeout(justSentTimerRef.current);
+    justSentTimerRef.current = setTimeout(() => {
+      justSentTimerRef.current = null;
+      setJustSent(false);
+    }, 1000);
+    dispatchComposer({ type: 'submit_complete' });
+    try {
+      await clearPersistedChatDraft();
+    } catch (e) {
+      if (__DEV__) console.warn('[ChatInputBar] sent draft cleanup failed:', e);
+    }
+  }, [input, pendingImages, onSend, releaseImagesAfterSend]);
 
   const handleRealtimeTranscript = useCallback((text: string) => {
     const clean = text.trim();
     const base = realtimeBaseInputRef.current.trim();
+    inputChannelRef.current = 'voice';
     setInput(base ? `${base} ${clean}` : clean);
   }, []);
 
   const realtimeDictation = useRealtimeDictation({
     onTranscript: handleRealtimeTranscript,
+    onEnd: () => dispatchComposer({ type: 'dictation_end' }),
+    onError: (message) => dispatchComposer({ type: 'fail', errorCode: message || 'dictation_failed' }),
   });
-  const isRealtimeMicActive = realtimeMicIntent === 'starting'
-    ? true
-    : realtimeMicIntent === 'stopping'
-      ? false
-      : realtimeDictation.isDictating;
-  const composerVisualMode: ComposerVisualMode = inputMode === 'voice'
-    ? 'holdToTalk'
-    : isRealtimeMicActive
-      ? 'dictating'
-      : realtimeMicDisabled
-        ? 'dictationDisabled'
-        : 'keyboard';
-  const isHoldToTalkMode = composerVisualMode === 'holdToTalk';
-  const isDictationDisabled = composerVisualMode === 'dictationDisabled';
-  const isDictatingVisual = composerVisualMode === 'dictating';
-  const inlineMicAccessibilityLabel = isDictatingVisual
-    ? '停止实时语音转文字'
-    : isDictationDisabled
-      ? '语音监听已关闭'
-      : '听写到输入框';
-  const inlineMicAccessibilityHint = isDictatingVisual
-    ? '停止后输入框会保留已经听写的文字'
-    : isDictationDisabled
-      ? '再次点击开启实时语音转文字'
-      : '点击后实时语音转文字到输入框';
-  const shouldHideInlineMicAfterSend = justSent && !input.trim() && pendingImages.length === 0;
+
+  stopDictationRef.current = realtimeDictation.stopDictation;
+  cancelDictationRef.current = realtimeDictation.cancelDictation;
+  dictationNativeActiveRef.current = realtimeDictation.isDictating;
 
   React.useEffect(() => {
-    if (realtimeMicIntent === 'starting' && realtimeDictation.isDictating) {
-      setRealtimeMicIntent('idle');
-      return;
+    if (
+      realtimeDictation.isDictating
+      && composerRef.current.mode === 'text'
+      && composerRef.current.phase === 'idle'
+    ) {
+      dispatchComposer({ type: 'dictation_start' });
     }
-    if (realtimeMicIntent === 'stopping' && !realtimeDictation.isDictating) {
-      setRealtimeMicIntent('idle');
-    }
-  }, [realtimeDictation.isDictating, realtimeMicIntent]);
+  }, [realtimeDictation.isDictating]);
 
-  React.useEffect(() => {
-    if (realtimeDictation.error) {
-      setRealtimeMicIntent('idle');
-      setRealtimeMicDisabled(false);
-    }
-  }, [realtimeDictation.error]);
-
-  const stopRealtimeDictation = useCallback((options?: { markDisabled?: boolean }) => {
-    setRealtimeMicIntent('stopping');
-    setRealtimeMicDisabled(options?.markDisabled === true);
-    void realtimeDictation.stopDictation();
-  }, [realtimeDictation]);
-
-  const handleRealtimeMicPress = useCallback(() => {
+  const handleRealtimeMicPress = useCallback(async () => {
     if (isStreaming) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (isRealtimeMicActive) {
-      stopRealtimeDictation({ markDisabled: true });
+    const state = composerRef.current;
+    if (state.phase === 'live_dictating' || realtimeDictation.isDictating) {
+      dispatchComposer({ type: 'dictation_stop' });
+      await realtimeDictation.stopDictation();
       return;
     }
+    if (!canStartDictation(state)) return;
     realtimeBaseInputRef.current = input.trim();
-    setRealtimeMicDisabled(false);
-    setRealtimeMicIntent('starting');
-    void realtimeDictation.startDictation();
-  }, [input, isRealtimeMicActive, isStreaming, realtimeDictation, stopRealtimeDictation]);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    dispatchComposer({ type: 'dictation_start' });
+    const started = await realtimeDictation.startDictation();
+    if (started === false) {
+      dispatchComposer({ type: 'fail', errorCode: realtimeDictation.error || 'dictation_start_failed' });
+    }
+  }, [input, isStreaming, realtimeDictation]);
 
   const handleSubmitComposer = useCallback(() => {
     if (!canSend) return;
     const now = Date.now();
     if (now - lastKeyboardSubmitAtRef.current < 250) return;
     lastKeyboardSubmitAtRef.current = now;
-    if (isRealtimeMicActive) {
-      stopRealtimeDictation({ markDisabled: true });
-    }
-    handleSend();
-  }, [canSend, handleSend, isRealtimeMicActive, stopRealtimeDictation]);
+    void handleSend();
+  }, [canSend, handleSend]);
 
   const handleTextInputKeyPress = useCallback((event: any) => {
     const key = event?.nativeEvent?.key;
@@ -242,20 +344,40 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     }
   }, [handleSubmitComposer]);
 
+  const realtimeActive = composer.phase === 'live_dictating' || realtimeDictation.isDictating;
+  const realtimeDictationDisabled = shouldShowDisabledMic(composer);
+  const realtimeMicLabel = realtimeActive
+    ? '停止实时语音转文字'
+    : realtimeDictationDisabled
+      ? '语音监听已禁用'
+      : '实时语音转文字';
+  const realtimeMicHint = realtimeActive
+    ? '点击停止语音监听并切换到非语音输入'
+    : realtimeDictationDisabled
+      ? '点击重新开启语音监听'
+      : '点击开启语音监听并实时转文字';
+  const realtimeMicIcon = realtimeDictationDisabled ? 'mic-off' : 'mic';
+  const isVoiceMode = composer.mode === 'hold';
+  const voiceGesture = composer.gesture;
+  const voiceModeToggleLabel = isVoiceMode ? '切换到键盘输入' : '切换到语音输入';
+  const shouldHideInlineMicAfterSend = justSent && !input.trim() && pendingImages.length === 0;
+
   const voice = useVoiceRecording({
     onTranscript: (text) => {
       const clean = text.trim();
       if (!clean) return;
-      if (!isStreaming && voiceCommitModeRef.current === 'send') {
+      if (voiceCommitModeRef.current === 'send') {
         voiceDraftPreviewRef.current = '';
-        handleSend(clean);
+        void handleSend(clean, { channel: 'voice' });
         return;
       }
-      setInputMode('text');
+      dispatchComposer({ type: 'hold_transcribed' });
+      inputChannelRef.current = 'voice';
+      const hadDraftPreview = Boolean(voiceDraftPreviewRef.current);
+      const draftBase = voiceDraftBaseRef.current.trim();
       setInput(prev => {
-        if (voiceDraftPreviewRef.current) {
-          const base = voiceDraftBaseRef.current.trim();
-          return base ? `${base} ${clean}` : clean;
+        if (hadDraftPreview) {
+          return draftBase ? `${draftBase} ${clean}` : clean;
         }
         return prev ? `${prev.trim()} ${clean}` : clean;
       });
@@ -273,13 +395,16 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     setInput(base ? `${base} ${clean}` : clean);
   }, [voice.partialText, voice.isRecording, voiceGesture]);
 
+  cancelVoiceRef.current = voice.cancelRecording;
+  voiceNativeActiveRef.current = voice.isRecording || voice.isTranscribing;
+  const holdRecordingActive = composer.phase === 'hold_recording' || voice.isRecording;
+  const holdTranscribing = composer.phase === 'hold_transcribing' || voice.isTranscribing;
+
   const cancelledRef = useRef(false);
   const startYRef = useRef(0);
 
-  const handleHoldStart = useCallback((pageX: number, pageY: number) => {
-    if (isRealtimeMicActive) {
-      stopRealtimeDictation();
-    }
+  const handleHoldStart = useCallback(async (pageX: number, pageY: number) => {
+    if (isStreaming || !canStartHold(composerRef.current) || dictationNativeActiveRef.current) return;
     cancelledRef.current = false;
     voiceGestureActiveRef.current = true;
     voiceCommitModeRef.current = 'send';
@@ -287,10 +412,18 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     voiceDraftPreviewRef.current = '';
     holdStartXRef.current = pageX;
     startYRef.current = pageY;
-    setVoiceGesture('send');
+    dispatchComposer({ type: 'hold_start' });
     setCancelHint(false);
-    voice.startRecording();
-  }, [isRealtimeMicActive, stopRealtimeDictation, voice]);
+    const started = await voice.startRecording();
+    if (started === false) {
+      voiceGestureActiveRef.current = false;
+      if (composerRef.current.phase === 'hold_starting') {
+        dispatchComposer({ type: 'fail', errorCode: 'hold_recording_start_failed' });
+      }
+      return;
+    }
+    dispatchComposer({ type: 'hold_ready' });
+  }, [input, isStreaming, voice]);
 
   const handleHoldMove = useCallback((pageX: number, pageY: number) => {
     if (!voiceGestureActiveRef.current || cancelledRef.current) return;
@@ -300,49 +433,115 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
       cancelledRef.current = true;
       voiceGestureActiveRef.current = false;
       voiceDraftPreviewRef.current = '';
-      setVoiceGesture('cancel');
+      dispatchComposer({ type: 'hold_move', gesture: 'cancel' });
       setCancelHint(false);
-      void voice.cancelRecording();
+      void Promise.resolve(voice.cancelRecording())
+        .finally(() => dispatchComposer({ type: 'hold_cancel' }));
     } else if (dx > VOICE_SLIDE_THRESHOLD) {
       voiceCommitModeRef.current = 'text';
-      setVoiceGesture('text');
+      dispatchComposer({ type: 'hold_move', gesture: 'text' });
       setCancelHint(false);
     } else {
       voiceCommitModeRef.current = 'send';
       voiceDraftPreviewRef.current = '';
-      setVoiceGesture('send');
+      dispatchComposer({ type: 'hold_move', gesture: 'send' });
       setCancelHint(dy > 30);
     }
   }, [voice]);
 
   const handleHoldEnd = useCallback(() => {
     setCancelHint(false);
-    setVoiceGesture(null);
     if (cancelledRef.current) return;
     if (!voiceGestureActiveRef.current) return;
     voiceGestureActiveRef.current = false;
-    void voice.stopAndTranscribe();
+    dispatchComposer({ type: 'hold_release' });
+    void Promise.resolve(voice.stopAndTranscribe())
+      .finally(() => dispatchComposer({ type: 'hold_transcribed' }));
   }, [voice]);
 
-  const switchToVoiceMode = useCallback(() => {
-    if (isRealtimeMicActive) {
-      stopRealtimeDictation();
-    }
-    textInputRef.current?.blur();
-    Keyboard.dismiss();
-    setInputMode('voice');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [isRealtimeMicActive, stopRealtimeDictation]);
+  const handleHoldTerminate = useCallback(() => {
+    if (!voiceGestureActiveRef.current) return;
+    cancelledRef.current = true;
+    voiceGestureActiveRef.current = false;
+    setCancelHint(false);
+    dispatchComposer({ type: 'hold_move', gesture: 'cancel' });
+    void Promise.resolve(voice.cancelRecording())
+      .finally(() => dispatchComposer({ type: 'hold_cancel' }));
+  }, [voice]);
 
-  const switchToTextMode = useCallback(() => {
-    setInputMode('text');
+  const handleHoldStartEvent = useCallback((event: any) => {
+    handleHoldStart(event.nativeEvent.pageX ?? 0, event.nativeEvent.pageY ?? 0);
+  }, [handleHoldStart]);
+
+  const handleHoldMoveEvent = useCallback((event: any) => {
+    handleHoldMove(event.nativeEvent.pageX ?? 0, event.nativeEvent.pageY ?? 0);
+  }, [handleHoldMove]);
+
+  const handleVoiceModeToggle = useCallback(async () => {
+    const state = composerRef.current;
+    if (
+      isStreaming
+      || state.phase === 'hold_starting'
+      || state.phase === 'hold_recording'
+      || state.phase === 'hold_transcribing'
+      || state.phase === 'submitting'
+    ) return;
+    if (state.phase === 'live_dictating' && !dictationNativeActiveRef.current) {
+      return;
+    }
+    if (state.phase === 'live_dictating' || dictationNativeActiveRef.current) {
+      await stopDictationRef.current();
+      dispatchComposer({ type: 'dictation_stop' });
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setTimeout(() => textInputRef.current?.focus(), 30);
+    dispatchComposer({ type: 'toggle_mode' });
+    if (state.mode === 'text') {
+      textInputRef.current?.blur();
+      Keyboard.dismiss();
+    } else {
+      setTimeout(() => textInputRef.current?.focus(), 30);
+    }
+  }, [isStreaming]);
+
+  React.useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'background' && nextState !== 'inactive') return;
+      const phase = composerRef.current.phase;
+      cancelledRef.current = true;
+      voiceGestureActiveRef.current = false;
+      setCancelHint(false);
+      dispatchComposer({ type: 'background' });
+      void (async () => {
+        if (phase === 'live_dictating' || dictationNativeActiveRef.current) {
+          await cancelDictationRef.current();
+        }
+        if (
+          phase === 'hold_starting'
+          || phase === 'hold_recording'
+          || phase === 'hold_transcribing'
+          || voiceNativeActiveRef.current
+        ) {
+          await cancelVoiceRef.current();
+        }
+      })();
+    });
+    return () => subscription.remove();
+  }, []);
+
+  React.useEffect(() => () => {
+    if (justSentTimerRef.current) clearTimeout(justSentTimerRef.current);
   }, []);
 
   const focusTextInput = useCallback(() => {
-    setInputMode('text');
+    if (composerRef.current.mode === 'hold') {
+      dispatchComposer({ type: 'toggle_mode' });
+    }
     textInputRef.current?.focus();
+  }, []);
+
+  const handleInputChange = useCallback((text: string) => {
+    inputChannelRef.current = 'typed';
+    setInput(text);
   }, []);
 
   const handlePickImage = useCallback(async () => { setShowMenu(false); await pickImage(); }, [pickImage]);
@@ -351,7 +550,10 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     setShowMenu(false);
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
-      if (!result.canceled && result.assets[0]) setInput(`请分析文件：${result.assets[0].name}`);
+      if (!result.canceled && result.assets[0]) {
+        inputChannelRef.current = 'typed';
+        setInput(`请分析文件：${result.assets[0].name}`);
+      }
     } catch (e) {
       if (__DEV__) console.warn('[chat] DocumentPicker failed:', e);
     }
@@ -454,7 +656,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
           {pendingImages.map((img, i) => (
             <View key={img.uri} style={styles.previewItem}>
               <Image source={{ uri: img.uri }} style={styles.previewImg} />
-              <TouchableOpacity style={styles.previewRemove} onPress={() => removeImage(i)} hitSlop={6}>
+              <TouchableOpacity style={styles.previewRemove} onPress={() => { void removeImage(i); }} hitSlop={6}>
                 <Ionicons name="close-circle" size={18} color={revaSemantic.risk.fg} />
               </TouchableOpacity>
             </View>
@@ -469,7 +671,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
       )}
 
       {/* 录音中全屏蒙层 */}
-      {voice.isRecording && (
+      {holdRecordingActive && (
         <View testID="wechat-recording-overlay" style={styles.recordingOverlay}>
           <View style={styles.wechatVoiceBubble}>
             {voice.partialText.trim() ? (
@@ -522,7 +724,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
       )}
 
       {/* 识别中提示 */}
-      {voice.isTranscribing && (
+      {holdTranscribing && (
         <View style={styles.transcribingBar}>
           <ActivityIndicator size="small" color={C.green500} />
           <Text style={styles.transcribingText}>语音识别中...</Text>
@@ -540,38 +742,39 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
         {/* 输入栏 */}
         <View style={styles.inputBar}>
           <Pressable
-            onPress={inputMode === 'text' ? switchToVoiceMode : switchToTextMode}
+            onPress={handleVoiceModeToggle}
             style={({ pressed }) => [
               styles.voiceModeBtn,
-              pressed && styles.voiceModeBtnPressed,
+              (pressed || isVoiceMode) && styles.voiceModeBtnActive,
             ]}
             hitSlop={COMPOSER_HIT_SLOP}
             accessibilityRole="button"
-            accessibilityLabel={inputMode === 'text' ? '语音消息' : '键盘输入'}
-            accessibilityHint={inputMode === 'text' ? '切换后按住发送语音消息' : '回到文字输入'}
+            accessibilityLabel={voiceModeToggleLabel}
+            accessibilityHint={isVoiceMode ? '切换回键盘文字输入' : '切换到按住说话'}
           >
-            {inputMode === 'text' ? (
-              <Ionicons name="volume-medium-outline" size={25} color={COMPOSER_ICON} />
-            ) : (
+            {isVoiceMode ? (
               <WeChatKeyboardIcon />
+            ) : (
+              <Ionicons name="volume-medium-outline" size={25} color={COMPOSER_ICON} />
             )}
           </Pressable>
 
-          {isHoldToTalkMode ? (
+          {isVoiceMode ? (
             <Pressable
               testID="wechat-hold-to-talk-surface"
-              onPressIn={(e) => handleHoldStart(e.nativeEvent.pageX, e.nativeEvent.pageY)}
+              onPressIn={(event) => handleHoldStartEvent(event)}
               onMoveShouldSetResponder={() => true}
-              onResponderMove={(e) => handleHoldMove(e.nativeEvent.pageX, e.nativeEvent.pageY)}
-              onTouchMove={(e) => handleHoldMove(e.nativeEvent.pageX, e.nativeEvent.pageY)}
+              onResponderMove={handleHoldMoveEvent}
+              onTouchMove={handleHoldMoveEvent}
               onPressOut={handleHoldEnd}
+              onTouchCancel={handleHoldTerminate}
               style={({ pressed }) => [
                 styles.holdToTalkSurface,
                 (pressed || voiceGesture != null) && styles.holdToTalkSurfaceActive,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="按住发送语音消息"
-              accessibilityHint="按住录音，松开发送；右滑转文字，左滑取消"
+              accessibilityLabel="按住说话"
+              accessibilityHint="按住开始语音输入，左滑取消，右滑转文字"
             >
               <Text style={styles.holdToTalkText}>按住 说话</Text>
             </Pressable>
@@ -580,13 +783,13 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
               testID="wechat-composer-input"
               style={({ pressed }) => [
                 styles.inputWrap,
-                isDictatingVisual && styles.inputWrapDictating,
+                realtimeActive && styles.inputWrapDictating,
                 pressed && styles.inputWrapPressed,
               ]}
               onPress={focusTextInput}
               accessibilityRole="button"
               accessibilityLabel="消息输入框容器"
-              accessibilityHint="点击输入文字；右侧麦克风会听写到输入框"
+              accessibilityHint="点击输入文字，点右侧麦克风实时转文字"
             >
               <TextInput
                 ref={textInputRef}
@@ -594,7 +797,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
                 placeholder={COMPOSER_PLACEHOLDER}
                 placeholderTextColor={C.ink3}
                 value={input}
-                onChangeText={setInput}
+                onChangeText={handleInputChange}
                 onKeyPress={handleTextInputKeyPress}
                 onSubmitEditing={handleSubmitComposer}
                 returnKeyType="send"
@@ -604,7 +807,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
                 maxLength={2000}
                 accessibilityLabel="消息输入框"
               />
-              {!shouldHideInlineMicAfterSend && isDictatingVisual && (
+              {!shouldHideInlineMicAfterSend && realtimeActive && (
                 <View style={styles.dictationStatusPill}>
                   <Text
                     style={styles.dictationStatusText}
@@ -615,7 +818,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
                   </Text>
                 </View>
               )}
-              {!shouldHideInlineMicAfterSend && isDictationDisabled && (
+              {!shouldHideInlineMicAfterSend && realtimeDictationDisabled && (
                 <View style={[styles.dictationStatusPill, styles.dictationStatusPillDisabled]}>
                   <Text
                     style={[styles.dictationStatusText, styles.dictationStatusTextDisabled]}
@@ -628,30 +831,34 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
               {!shouldHideInlineMicAfterSend && (
                 <TouchableOpacity
                   onPress={handleRealtimeMicPress}
-                  style={[styles.inlineMicBtn, isDictatingVisual && styles.inlineMicBtnActive]}
+                  style={[
+                    styles.inlineMicBtn,
+                    realtimeActive && styles.inlineMicBtnActive,
+                    realtimeDictationDisabled && !realtimeActive && styles.inlineMicBtnDisabled,
+                  ]}
                   hitSlop={COMPOSER_HIT_SLOP}
                   activeOpacity={0.72}
                   accessibilityRole="button"
-                  accessibilityState={{ selected: isDictatingVisual }}
-                  accessibilityLabel={inlineMicAccessibilityLabel}
-                  accessibilityHint={inlineMicAccessibilityHint}
+                  accessibilityState={{ selected: realtimeActive }}
+                  accessibilityLabel={realtimeMicLabel}
+                  accessibilityHint={realtimeMicHint}
                 >
-                  {isDictatingVisual && <PulsingRing />}
+                  {realtimeActive && <PulsingRing />}
                   <Ionicons
-                    name={isDictationDisabled ? 'mic-off' : 'mic'}
+                    name={realtimeMicIcon}
                     size={21}
-                    color={isDictatingVisual ? '#FFFFFF' : isDictationDisabled ? C.ink3 : COMPOSER_ICON}
+                    color={realtimeActive ? '#FFFFFF' : realtimeDictationDisabled ? COMPOSER_ICON_MUTED : COMPOSER_ICON}
                   />
                 </TouchableOpacity>
               )}
             </Pressable>
           )}
 
-          {inputMode === 'text' && canSend ? (
+          {!isVoiceMode && canSend ? (
             <TouchableOpacity onPress={handleSubmitComposer} style={styles.sendBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="发送消息">
               <Ionicons name="arrow-up" size={20} color="#fff" />
             </TouchableOpacity>
-          ) : inputMode === 'text' && justSent ? (
+          ) : !isVoiceMode && justSent ? (
             <View style={[styles.sendBtn, { opacity: 0.4 }]}>
               <Ionicons name="checkmark" size={20} color="#fff" />
             </View>
@@ -769,12 +976,12 @@ const styles = StyleSheet.create({
   voiceModeBtn: {
     width: 42, height: 42, borderRadius: 21,
     borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
-    backgroundColor: C.paper2,
+    backgroundColor: COMPOSER_BUTTON_BG,
     alignItems: 'center', justifyContent: 'center',
   },
-  voiceModeBtnPressed: {
-    backgroundColor: C.line,
-    borderColor: C.lineStrong,
+  voiceModeBtnActive: {
+    borderColor: C.green500,
+    backgroundColor: COMPOSER_BUTTON_BG_ACTIVE,
   },
   wechatKeyboardIcon: {
     width: 22,
@@ -819,7 +1026,9 @@ const styles = StyleSheet.create({
   },
   plusBtn: {
     width: 42, height: 42, borderRadius: 21,
-    backgroundColor: C.paper2, borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
+    backgroundColor: COMPOSER_BUTTON_BG,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.lineStrong,
     alignItems: 'center', justifyContent: 'center',
   },
   inputWrap: {
@@ -830,7 +1039,7 @@ const styles = StyleSheet.create({
     paddingLeft: 16, paddingRight: 5, paddingVertical: 4,
   },
   inputWrapPressed: {
-    backgroundColor: C.surface2,
+    backgroundColor: COMPOSER_INPUT_BG_PRESSED,
     borderColor: C.lineStrong,
   },
   inputWrapDictating: {
@@ -896,6 +1105,11 @@ const styles = StyleSheet.create({
   inlineMicBtnActive: {
     backgroundColor: C.green500,
     ...revaShadows.sm,
+  },
+  inlineMicBtnDisabled: {
+    backgroundColor: C.paper2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.lineStrong,
   },
   sendBtn: {
     width: 40, height: 40, borderRadius: 20,

@@ -14,11 +14,15 @@ const mockRecordCardDecision = jest.fn();
 const mockNewChat = jest.fn();
 const mockSetMessages = jest.fn();
 const mockSetParams = jest.fn();
+const mockLoadLatestConversation = jest.fn();
 let mockRouteParams: Record<string, string | undefined> = {};
 let mockLlmPreference: any = { model_id: null, options: [] };
 let mockMessages: any[] = [];
 let mockIsStreaming = false;
+let mockActiveTurn: any = { phase: 'idle', recoverable: false, label: undefined };
 let mockTodayTimelineData: any = undefined;
+let mockTodayDynamicViewData: any = undefined;
+let mockDailyPlanData: any = undefined;
 
 jest.mock('expo-router', () => ({
   router: {
@@ -30,7 +34,20 @@ jest.mock('expo-router', () => ({
   useFocusEffect: (cb: any) => cb(),
 }));
 
-// 今日简报条走 React Query 的 useTodayTimeline;测试无 QueryClientProvider,mock 掉。
+jest.mock('@tanstack/react-query', () => ({
+  useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
+    const key = JSON.stringify(queryKey);
+    if (key.includes('today-dynamic-view')) {
+      return { data: mockTodayDynamicViewData, isLoading: false, isSuccess: Boolean(mockTodayDynamicViewData) };
+    }
+    if (key.includes('daily-plan')) {
+      return { data: mockDailyPlanData, isLoading: false, isSuccess: Boolean(mockDailyPlanData) };
+    }
+    return { data: undefined, isLoading: false, isSuccess: false };
+  },
+}));
+
+// 今日焦点走 React Query 的 useTodayTimeline;测试无 QueryClientProvider,mock 掉。
 jest.mock('../../../hooks/useTodayTimeline', () => ({
   useTodayTimeline: () => ({ data: mockTodayTimelineData }),
 }));
@@ -39,10 +56,11 @@ jest.mock('../../../hooks/useChatEngine', () => ({
   useChatEngine: () => ({
     messages: mockMessages,
     isStreaming: mockIsStreaming,
+    activeTurn: mockActiveTurn,
     conversationId: undefined,
     sendMessage: mockSendMessage,
     newChat: mockNewChat,
-    loadLatestConversation: jest.fn(),
+    loadLatestConversation: mockLoadLatestConversation,
     loadConversation: jest.fn(),
     setMessages: mockSetMessages,
   }),
@@ -179,7 +197,53 @@ describe('ChatScreen', () => {
     mockLlmPreference = { model_id: null, options: [] };
     mockMessages = [];
     mockIsStreaming = false;
+    mockActiveTurn = { phase: 'idle', recoverable: false, label: undefined };
     mockTodayTimelineData = undefined;
+    mockTodayDynamicViewData = undefined;
+    mockDailyPlanData = undefined;
+    mockLoadLatestConversation.mockResolvedValue(undefined);
+  });
+
+  it('keeps one stable bootstrap shell until history, opener, and memory settle', async () => {
+    let resolveStarters!: (value: any) => void;
+    let resolveMemory!: (value: any[]) => void;
+    let resolveHistory!: () => void;
+    mockFetchConversationStarters.mockReturnValueOnce(new Promise(resolve => { resolveStarters = resolve; }));
+    mockFetchMemoryOpener.mockReturnValueOnce(new Promise(resolve => { resolveMemory = resolve; }));
+    mockLoadLatestConversation.mockReturnValueOnce(new Promise<void>(resolve => { resolveHistory = resolve; }));
+
+    const view = render(<ChatScreen />);
+
+    expect(view.getByLabelText('正在准备小巴')).toBeTruthy();
+    expect(view.queryByText('今天的健康状况如何？')).toBeNull();
+    expect(view.queryByText(/今天先确认午餐记录/)).toBeNull();
+
+    await act(async () => {
+      resolveStarters({
+        opener: {
+          text: '今天先确认午餐记录。',
+          source: 'daily_focus',
+          quick_replies: [],
+          priority: 10,
+        },
+        suggestions: [{ text: '查询全天饮食', key: 'diet', priority: 10 }],
+        onboarding: false,
+      });
+      resolveMemory([{ id: 1, type: 'diet', type_label: '饮食', content: '关注晚餐时间' }]);
+      await Promise.resolve();
+    });
+    expect(view.getByLabelText('正在准备小巴')).toBeTruthy();
+    expect(view.queryByText(/今天先确认午餐记录/)).toBeNull();
+
+    await act(async () => {
+      resolveHistory();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(view.queryByLabelText('正在准备小巴')).toBeNull();
+      expect(view.getByText(/今天先确认午餐记录/)).toBeTruthy();
+      expect(view.getByText('查询全天饮食')).toBeTruthy();
+    });
   });
 
   it('does NOT auto-summon the keyboard when an empty chat opens with no opener', async () => {
@@ -224,30 +288,265 @@ describe('ChatScreen', () => {
     expect(bar().props.autoFocusToken).toBe(0);
   });
 
-  it('briefing strip hides on dismiss and stays hidden after 新建对话', async () => {
-    const { UNSAFE_getAllByType, UNSAFE_queryAllByType, getByLabelText } = render(<ChatScreen />);
+  it('shows Today Focus from the real timeline current action', async () => {
+    mockTodayTimelineData = {
+      date: '2026-07-08',
+      current_window: 'afternoon',
+      now: 'timeline-1',
+      items: [{
+        id: 'timeline-1',
+        kind: 'action',
+        time_window: 'afternoon',
+        title: '餐后步行 10 分钟',
+        subtitle: '现在可以做',
+        icon: 'walk-outline',
+        color: '#1F8A5B',
+        status: 'pending',
+        priority: 9,
+        can_complete: true,
+        complete_ref: null,
+        deep_link: '/agenda',
+        severity: null,
+        proof: null,
+      }],
+      past: { completed_count: 1, events: [] },
+      counts: { actionable: 2, overdue: 0, info: 0 },
+    };
 
-    // 冷启可见(mock 成字符串组件 'BriefingStrip')
-    const strips = UNSAFE_getAllByType('BriefingStrip' as any);
-    expect(strips.length).toBe(1);
-    expect(typeof strips[0].props.onDismiss).toBe('function');
+    const { getByText } = render(<ChatScreen />);
 
-    // 点 X → 隐藏
-    await act(async () => {
-      strips[0].props.onDismiss();
-    });
-    expect(UNSAFE_queryAllByType('BriefingStrip' as any).length).toBe(0);
+    expect(getByText('现在最重要')).toBeTruthy();
+    expect(getByText('餐后步行 10 分钟')).toBeTruthy();
+    expect(getByText('接下来 1')).toBeTruthy();
+    expect(getByText('已完成 1')).toBeTruthy();
   });
 
-  it('新建对话 hides the briefing strip by default', async () => {
-    const { UNSAFE_getAllByType, UNSAFE_queryAllByType, getByLabelText } = render(<ChatScreen />);
-    expect(UNSAFE_getAllByType('BriefingStrip' as any).length).toBe(1);
+  it('collapses Today Focus for messages and restores it after the empty-state keyboard hides', async () => {
+    const keyboardListeners: Record<string, (event: any) => void> = {};
+    jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
+      keyboardListeners[String(eventName)] = callback;
+      return { remove: jest.fn() } as any;
+    });
+    mockTodayTimelineData = {
+      items: [{
+        id: 'timeline-1', kind: 'action', title: '餐后步行 10 分钟', subtitle: '现在可以做',
+        status: 'pending', priority: 9, can_complete: true, deep_link: '/agenda',
+      }],
+      past: { completed_count: 0, events: [] },
+      counts: { actionable: 1, overdue: 0, info: 0 },
+    };
+    mockMessages = [{ id: 'u1', role: 'user', content: '今天怎么安排？' }];
+    const view = render(<ChatScreen />);
+
+    expect(view.getByLabelText('今日重点，已收起')).toBeTruthy();
+
+    mockMessages = [];
+    view.rerender(<ChatScreen />);
+    expect(view.getByLabelText('今日重点，已展开')).toBeTruthy();
+
+    act(() => keyboardListeners.keyboardDidShow({ endCoordinates: { height: 320 } }));
+    expect(view.getByLabelText('今日重点，已收起')).toBeTruthy();
+
+    act(() => keyboardListeners.keyboardDidHide({}));
+    expect(view.getByLabelText('今日重点，已展开')).toBeTruthy();
+  });
+
+  it('shows a recoverable Agent failure and retries only the latest text message', async () => {
+    mockTodayTimelineData = {
+      items: [{ id: 'timeline-1', kind: 'action', title: '补水', status: 'pending', priority: 9 }],
+      past: { completed_count: 0, events: [] },
+      counts: { actionable: 1, overdue: 0, info: 0 },
+    };
+    mockMessages = [{ id: 'u1', role: 'user', content: '查询今天饮食' }];
+    mockActiveTurn = {
+      phase: 'failed',
+      recoverable: true,
+      label: '网络中断，已保留内容',
+      errorCode: 'stream_request_failed',
+    };
+
+    const { getByText, getByLabelText } = render(<ChatScreen />);
+
+    expect(getByText('网络中断，已保留内容')).toBeTruthy();
+    fireEvent.press(getByLabelText('重试上一轮'));
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledWith('查询今天饮食', null));
+  });
+
+  it('keeps Today Focus visible after 新建对话', async () => {
+    mockTodayTimelineData = {
+      date: '2026-07-08',
+      current_window: 'morning',
+      now: 'timeline-1',
+      items: [{
+        id: 'timeline-1',
+        kind: 'action',
+        time_window: 'morning',
+        title: '晨起补水并看今日重点',
+        subtitle: '先补水',
+        icon: 'water-outline',
+        color: '#1F8A5B',
+        status: 'pending',
+        priority: 10,
+        can_complete: true,
+        complete_ref: null,
+        deep_link: '/agenda',
+        severity: null,
+        proof: null,
+      }],
+      past: { completed_count: 0, events: [] },
+      counts: { actionable: 1, overdue: 0, info: 0 },
+    };
+
+    const { getByLabelText, getByText } = render(<ChatScreen />);
+    expect(getByText('晨起补水并看今日重点')).toBeTruthy();
 
     await act(async () => {
       fireEvent.press(getByLabelText('新建对话'));
     });
     expect(mockNewChat).toHaveBeenCalled();
-    expect(UNSAFE_queryAllByType('BriefingStrip' as any).length).toBe(0);
+    expect(getByText('晨起补水并看今日重点')).toBeTruthy();
+  });
+
+  it('routes Today Focus execute and ask actions through the chat shell', async () => {
+    mockTodayTimelineData = {
+      date: '2026-07-08',
+      current_window: 'afternoon',
+      now: 'timeline-1',
+      items: [{
+        id: 'timeline-1',
+        kind: 'action',
+        time_window: 'afternoon',
+        title: '餐后步行 10 分钟',
+        subtitle: '现在可以做',
+        icon: 'walk-outline',
+        color: '#1F8A5B',
+        status: 'pending',
+        priority: 9,
+        can_complete: true,
+        complete_ref: null,
+        deep_link: '/agenda',
+        severity: null,
+        proof: null,
+      }],
+      past: { completed_count: 1, events: [] },
+      counts: { actionable: 2, overdue: 0, info: 0 },
+    };
+
+    const { UNSAFE_getAllByType, getByLabelText } = render(<ChatScreen />);
+    const bar = () => UNSAFE_getAllByType('ChatInputBar' as any)[0];
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('执行今日重点：餐后步行 10 分钟'));
+    });
+    expect(mockPush).toHaveBeenCalledWith('/agenda');
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('问小巴：餐后步行 10 分钟'));
+    });
+    expect(bar().props.initialText).toContain('餐后步行 10 分钟');
+    expect(bar().props.autoFocusToken).toBeGreaterThan(0);
+  });
+
+  it('prefers dynamic Today action over daily plan and timeline in Today Focus', async () => {
+    mockTodayDynamicViewData = {
+      view_id: 'v1',
+      surface: 'mobile.today',
+      trigger: 'open',
+      generated_by: 'test',
+      context_hash: 'hash',
+      sections: [{
+        slot: 'primary',
+        priority: 10,
+        cards: [{
+          id: 'dynamic-1',
+          type: 'agent_atom',
+          render: { atom: 'daily_artifact' },
+          data: {
+            title: '暂停高强度训练',
+            why_now: '睡眠恢复偏弱。',
+            next_action: { title: '暂停高强度训练', deep_link: '/fitness-plan' },
+          },
+        }],
+      }],
+    };
+    mockDailyPlanData = {
+      plan_date: '2026-07-08',
+      primary_goal: 'metabolic_health',
+      status: 'active',
+      state_summary: {},
+      actions: [{ action_key: 'water', domain: 'nutrition', title: '补水并轻活动', why: '训练负荷偏高。' }],
+    };
+    mockTodayTimelineData = {
+      date: '2026-07-08',
+      current_window: 'afternoon',
+      now: 'timeline-1',
+      items: [{
+        id: 'timeline-1',
+        kind: 'action',
+        time_window: 'afternoon',
+        title: '餐后步行 10 分钟',
+        subtitle: '现在可以做',
+        icon: 'walk-outline',
+        color: '#1F8A5B',
+        status: 'pending',
+        priority: 9,
+        can_complete: true,
+        complete_ref: null,
+        deep_link: '/agenda',
+        severity: null,
+        proof: null,
+      }],
+      past: { completed_count: 1, events: [] },
+      counts: { actionable: 2, overdue: 0, info: 0 },
+    };
+
+    const { getByText, queryByText, getByLabelText } = render(<ChatScreen />);
+
+    expect(getByText('暂停高强度训练')).toBeTruthy();
+    expect(queryByText('补水并轻活动')).toBeNull();
+    expect(queryByText('餐后步行 10 分钟')).toBeNull();
+    await act(async () => {
+      fireEvent.press(getByLabelText('执行今日重点：暂停高强度训练'));
+    });
+    expect(mockPush).toHaveBeenCalledWith('/fitness-plan');
+  });
+
+  it('falls back to daily plan when dynamic Today has no action', async () => {
+    mockDailyPlanData = {
+      plan_date: '2026-07-08',
+      primary_goal: 'metabolic_health',
+      status: 'active',
+      state_summary: {},
+      actions: [{ action_key: 'water', domain: 'nutrition', title: '补水并轻活动', why: '训练负荷偏高。' }],
+    };
+    mockTodayTimelineData = {
+      date: '2026-07-08',
+      current_window: 'afternoon',
+      now: 'timeline-1',
+      items: [{
+        id: 'timeline-1',
+        kind: 'action',
+        time_window: 'afternoon',
+        title: '餐后步行 10 分钟',
+        subtitle: '现在可以做',
+        icon: 'walk-outline',
+        color: '#1F8A5B',
+        status: 'pending',
+        priority: 9,
+        can_complete: true,
+        complete_ref: null,
+        deep_link: '/agenda',
+        severity: null,
+        proof: null,
+      }],
+      past: { completed_count: 1, events: [] },
+      counts: { actionable: 2, overdue: 0, info: 0 },
+    };
+
+    const { getByText, queryByText } = render(<ChatScreen />);
+
+    expect(getByText('补水并轻活动')).toBeTruthy();
+    expect(queryByText('餐后步行 10 分钟')).toBeNull();
   });
 
   it('shows a visible history entry on the private coach page', async () => {
@@ -577,19 +876,23 @@ describe('ChatScreen', () => {
 
     const { getByLabelText } = render(<ChatScreen />);
 
-    // Fixed 拍照记一餐 chip 存在 → 点击走 proven route push('/diet?capture=photo')。
+    // Fixed 拍照记一餐 chip 存在 → 点击走 proven route,并在确认后回小巴。
     await waitFor(() => {
       expect(getByLabelText('拍照记一餐')).toBeTruthy();
     });
     fireEvent.press(getByLabelText('拍照记一餐'));
-    expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo');
+    expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo&return_to=chat');
 
     // 动态 starter suggestion 也进 composer 行, 点击走既有发送。
     await waitFor(() => {
       expect(getByLabelText('向小巴提问: 分析我的睡眠质量')).toBeTruthy();
     });
     fireEvent.press(getByLabelText('向小巴提问: 分析我的睡眠质量'));
-    expect(mockSendMessage).toHaveBeenCalledWith('分析我的睡眠质量', null, undefined);
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      '分析我的睡眠质量',
+      null,
+      expect.objectContaining({ onAccepted: expect.any(Function) }),
+    );
   });
 
   it('lets users inspect and remove the context attached to the chat', async () => {
@@ -824,16 +1127,17 @@ describe('ChatScreen', () => {
     const { getByText, getByLabelText, getByTestId } = render(<ChatScreen />);
 
     await waitFor(() => {
-      expect(getByText('今日操作台')).toBeTruthy();
+      expect(getByText('现在最重要')).toBeTruthy();
       expect(getByText('晚餐后步行 12 分钟')).toBeTruthy();
-      expect(getByText('1 件已逾期')).toBeTruthy();
+      expect(getByText('已过时段 1')).toBeTruthy();
+      expect(getByTestId('chat-today-focus-card')).toBeTruthy();
     });
 
     await act(async () => {
-      fireEvent.press(getByLabelText('打开今日操作台'));
+      fireEvent.press(getByLabelText('查看今日重点依据'));
     });
 
-    expect(getByTestId('chat-today-inline-panel')).toBeTruthy();
+    expect(getByText('依据')).toBeTruthy();
   });
 
   // ── 冷启动包 (P0-3) ─────────────────────────────────────────────────────
@@ -904,7 +1208,7 @@ describe('ChatScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/settings');
 
     fireEvent.press(getByLabelText('一键回复: 拍照记一餐'));
-    expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo');
+    expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo&return_to=chat');
     // 三个 action 全程零发送。
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
@@ -993,9 +1297,8 @@ describe('ChatScreen', () => {
     const { getByTestId } = render(<ChatScreen />);
     await waitFor(() => expect(mockFetchConversationStarters).toHaveBeenCalled());
 
-    // No global tab bar: closed keyboard spacer = insets.bottom (jest mock 为 0) + 28 舒适呼吸区;
-    // 真机 = home indicator 安全区 + 28 —— 输入栏悬浮在拇指舒适弧区,不贴底。
-    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 28 });
+    // 键盘收起时只保留 12pt 呼吸区，避免大块空白遮住对话内容。
+    expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 12 });
 
     act(() => {
       keyboardListeners.keyboardDidShow({
@@ -1034,7 +1337,7 @@ describe('ChatScreen', () => {
       act(() => {
         keyboardListeners.keyboardDidHide({});
       });
-      expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 28 });
+      expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 12 });
 
       act(() => {
         appStateHandler?.('active');

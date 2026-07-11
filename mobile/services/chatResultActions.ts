@@ -33,6 +33,14 @@ export async function saveAssistantReplyAsMemory(text: string): Promise<void> {
 export async function createRecordFromAssistantReply(text: string): Promise<AssistantRecordActionResult> {
   const quickRecordText = buildQuickRecordTextFromAssistantReply(text);
   if (!quickRecordText) {
+    const medicationRoute = buildMedicationDraftRouteFromAssistantReply(text);
+    if (medicationRoute) {
+      return {
+        status: 'needs_manual',
+        message: '已识别到用药草稿，请确认后写入',
+        route: medicationRoute,
+      };
+    }
     return manualRecordFallback();
   }
 
@@ -110,6 +118,51 @@ function readDietLine(line: string): string | null {
     if (food) return `${meal}${food}`;
   }
   return null;
+}
+
+function buildMedicationDraftRouteFromAssistantReply(text: string): string | null {
+  const value = normalizeAssistantText(text);
+  if (!value) return null;
+  for (const candidate of medicationCandidateTexts(value)) {
+    const parsed = parseMedicationCandidate(candidate);
+    if (!parsed) continue;
+    const params = new URLSearchParams({
+      draft: 'medication',
+      name: parsed.name,
+    });
+    if (parsed.dose) params.set('dose', parsed.dose);
+    return `/medications?${params.toString()}`;
+  }
+  return null;
+}
+
+function medicationCandidateTexts(value: string): string[] {
+  const candidates: string[] = [];
+  const patterns = [
+    /(?:用药|药物|药品)\s*[:：]\s*([^。\n；;，,]+)/gi,
+    /(?:服用了?|吃了|用了|已服用|已记录用药)\s*([^。\n；;，,]+)/gi,
+  ];
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    // eslint-disable-next-line no-cond-assign
+    while ((match = pattern.exec(value)) != null) {
+      if (match[1]) candidates.push(match[1]);
+    }
+  }
+  return candidates.slice(0, 8);
+}
+
+function parseMedicationCandidate(value: string): { name: string; dose?: string } | null {
+  const dose = value.match(/\d+(?:\.\d+)?\s*(?:mg|毫克|μg|ug|iu|单位)/i)?.[0]?.replace(/\s+/g, '');
+  const name = value
+    .replace(/\d+(?:\.\d+)?\s*(?:mg|毫克|μg|ug|iu|单位)/ig, ' ')
+    .replace(/^(?:我|你|用户|刚才|刚|今天|已经|已|准备记录|记录)\s*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[：:，,；;\s]+|[：:，,；;\s]+$/g, '');
+  if (!name || name.length < 2 || name.length > 80) return null;
+  if (!isMedicationRecordItem({ name })) return null;
+  return { name, dose };
 }
 
 function sanitizeFoodText(value: string): string | null {

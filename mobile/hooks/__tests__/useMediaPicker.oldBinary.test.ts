@@ -28,6 +28,11 @@ jest.mock('expo-document-picker', () => ({
   getDocumentAsync: jest.fn(),
 }));
 
+jest.mock('../../services/chatDraftStorage', () => ({
+  materializeDraftImages: async (images: any[]) => images,
+  deleteDraftImage: jest.fn().mockResolvedValue(undefined),
+}));
+
 // 复现旧二进制:require 该包即抛(等价于 requireNativeModule 找不到 native 模块)。
 jest.mock('expo-image-manipulator', () => {
   throw new Error('requireNativeModule: ExpoImageManipulator could not be found');
