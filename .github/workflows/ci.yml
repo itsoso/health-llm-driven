@@ -39,7 +39,12 @@ jobs:
           pip install ruff
           ruff check app/ --select F821,F822,E9 --output-format=github
 
-      - name: Run tests
+      # Keep each shard in a fresh pytest process. The suite is now 5,800+ tests;
+      # one process accumulates asyncio/global state and has repeatedly stalled the
+      # Linux runner for hours even though the same tests pass in isolation.
+      - name: Run tests (A-F)
+        id: backend_tests_af
+        continue-on-error: true
         working-directory: backend
         env:
           SECRET_KEY: test-secret-key-32-chars-minimum!!
@@ -54,13 +59,53 @@ jobs:
           # 同时成立 —— 与生产服务器时区一致。钉到 Asia/Shanghai 让 CI 与生产同基准,消除该类
           # boundary flake(不改任何断言)。
           TZ: Asia/Shanghai
-        # --maxfail=5 而非 -x:-x 第一个红就停,会掩盖同时存在的多个真红,
-        # 分支保护下导致"修一个又冒一个"的死锁(见 memory 教训)。允许暴露最多 5 个。
-        # --timeout=120(thread):repo 偶发 asyncio 事件循环污染会让某个 @pytest.mark.asyncio
-        # 测试永久 hang,以前直接撞 6h job 上限(单 commit attempt 1 挂、attempt 2 不挂 =
-        # 非确定性)。120s per-test 超时把"6h 挂死"变成"几分钟红 + 打印 hang 在哪个测试",
-        # 可快速重试 + 定位污染源。全套 ~8min/2954 测试,无单测接近 120s,不误伤。
-        run: pytest tests/ -q --no-cov --tb=short --maxfail=5 --timeout=120 --timeout-method=thread
+        run: pytest tests/test_[a-f]*.py -q --no-cov --tb=short --maxfail=5 --timeout=120 --timeout-method=thread
+
+      - name: Run tests (G-M)
+        id: backend_tests_gm
+        continue-on-error: true
+        working-directory: backend
+        env:
+          SECRET_KEY: test-secret-key-32-chars-minimum!!
+          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
+          DATABASE_URL: "sqlite:///:memory:"
+          TZ: Asia/Shanghai
+        run: pytest tests/test_[g-m]*.py -q --no-cov --tb=short --maxfail=5 --timeout=120 --timeout-method=thread
+
+      - name: Run tests (N-S)
+        id: backend_tests_ns
+        continue-on-error: true
+        working-directory: backend
+        env:
+          SECRET_KEY: test-secret-key-32-chars-minimum!!
+          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
+          DATABASE_URL: "sqlite:///:memory:"
+          TZ: Asia/Shanghai
+        run: pytest tests/test_[n-s]*.py -q --no-cov --tb=short --maxfail=5 --timeout=120 --timeout-method=thread
+
+      - name: Run tests (T-Z + nested suites)
+        id: backend_tests_tz
+        continue-on-error: true
+        working-directory: backend
+        env:
+          SECRET_KEY: test-secret-key-32-chars-minimum!!
+          GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
+          DATABASE_URL: "sqlite:///:memory:"
+          TZ: Asia/Shanghai
+        run: pytest tests/test_[t-z]*.py tests/services/ -q --no-cov --tb=short --maxfail=5 --timeout=120 --timeout-method=thread
+
+      - name: Enforce backend test shards
+        if: always()
+        env:
+          TESTS_AF: ${{ steps.backend_tests_af.outcome }}
+          TESTS_GM: ${{ steps.backend_tests_gm.outcome }}
+          TESTS_NS: ${{ steps.backend_tests_ns.outcome }}
+          TESTS_TZ: ${{ steps.backend_tests_tz.outcome }}
+        run: |
+          printf 'backend test shards: A-F=%s G-M=%s N-S=%s T-Z=%s\n' "$TESTS_AF" "$TESTS_GM" "$TESTS_NS" "$TESTS_TZ"
+          if [[ "$TESTS_AF" != success || "$TESTS_GM" != success || "$TESTS_NS" != success || "$TESTS_TZ" != success ]]; then
+            exit 1
+          fi
 
       - name: Check CLAUDE.md doc drift
         env:
