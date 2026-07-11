@@ -27,6 +27,7 @@ import EmptyStateHome, {
   type EmptyStateSuggestion,
 } from '../../components/chat/EmptyStateHome';
 import ComposerSuggestionsRow from '../../components/chat/ComposerSuggestionsRow';
+import TaskLedgerPanel from '../../components/chat/TaskLedgerPanel';
 import { formatOpenerText } from '../../components/chat/OpenerCard';
 import {
   buildConversationOpenerReplyContext,
@@ -193,6 +194,8 @@ export default function ChatScreen() {
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
   const [sharing, setSharing] = useState(false);
   const [toolMenuVisible, setToolMenuVisible] = useState(false);
+  // 「小巴的任务」统一任务账本(Slice 4):agent-native 在对话页内联展开,不跳独立页。
+  const [taskLedgerExpanded, setTaskLedgerExpanded] = useState(false);
 
   // Context from alert / push / Siri deep-link. Read ONCE on first mount, then cleared.
   // autoSend=1 (from Siri HealthAnalysisOpenIntent) → directly send instead of prefilling.
@@ -382,6 +385,7 @@ export default function ChatScreen() {
 
   const handleSend = useCallback((text: string, images?: any, options?: ChatInputSendOptions) => {
     isNearBottom.current = true;
+    setTaskLedgerExpanded(false); // 发消息即收起任务面板,回到对话流
     injectOpeningContinuity(openerRef.current);
     const pendingCardContext = pendingCardActionContextRef.current;
     const extraContext = mergeExtraContext(options?.extraContext, pendingCardContext);
@@ -563,6 +567,7 @@ export default function ChatScreen() {
 
   const handleNewChat = useCallback(() => {
     setToolMenuVisible(false);
+    setTaskLedgerExpanded(false);
     exitSelectionMode();
     pendingCardActionContextRef.current = null;
     setContextBadge(null);
@@ -809,6 +814,12 @@ export default function ChatScreen() {
       )}
 
       <View style={styles.keyboardAvoidingBody}>
+        {/* 展开态:任务账本以内联面板呈现在对话页(占据消息区),composer 仍在下方;收起回到对话。 */}
+        {taskLedgerExpanded ? (
+          <View testID="chat-task-ledger-inline-panel" style={{ flex: 1 }}>
+            <TaskLedgerPanel onClose={() => setTaskLedgerExpanded(false)} />
+          </View>
+        ) : (
         <FlatList
           ref={flatListRef}
           data={messages}
@@ -833,6 +844,7 @@ export default function ChatScreen() {
             ) : <AgentHomeBootstrapLoading />
           }
         />
+        )}
 
         {contextBadge && (
           <View style={styles.contextBanner}>
@@ -1004,6 +1016,15 @@ export default function ChatScreen() {
               onPress={() => {
                 setToolMenuVisible(false);
                 router.navigate('/voice-chat');
+              }}
+            />
+            <ToolMenuRow
+              icon="list-circle-outline"
+              label="小巴的任务"
+              onPress={() => {
+                // agent-native:对话页内联展开任务账本,不跳独立页。
+                setToolMenuVisible(false);
+                setTaskLedgerExpanded(true);
               }}
             />
             {messages.some(isShareableChatMessage) && (

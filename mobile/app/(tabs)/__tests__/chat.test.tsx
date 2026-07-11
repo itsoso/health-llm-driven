@@ -177,6 +177,8 @@ jest.mock('../../../components/chat/ChatInputBar', () => 'ChatInputBar');
 // 它们的内部行为各自有专属测试, 这里 mock 掉避免 provider 依赖。ChatHeader 保留真实 (断言其 DOM)。
 jest.mock('../../../components/chat/BriefingStrip', () => 'BriefingStrip');
 jest.mock('../../../components/home/TodayContent', () => 'TodayContent');
+// 任务账本面板拉真网(services/taskLedger);面板内部行为有专属测试, 这里 mock 掉。
+jest.mock('../../../components/chat/TaskLedgerPanel', () => 'TaskLedgerPanel');
 
 import ChatScreen from '../chat';
 
@@ -1448,6 +1450,36 @@ describe('ChatScreen', () => {
     expect(queryByText('新建对话')).toBeNull();
     expect(queryByText('对话历史')).toBeNull();
     expect(getByText('会诊工具')).toBeTruthy();
+  });
+
+  it('opens 小巴的任务 as an inline panel inside the chat page (no page navigation)', async () => {
+    const { getByLabelText, getByTestId, queryByTestId, UNSAFE_getAllByType } = render(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(getByLabelText('更多会诊操作')).toBeTruthy();
+    });
+    expect(queryByTestId('chat-task-ledger-inline-panel')).toBeNull();
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('更多会诊操作'));
+    });
+    await act(async () => {
+      fireEvent.press(getByLabelText('小巴的任务'));
+    });
+
+    // 内联面板占据消息区;composer 仍在下方;不跳独立页。
+    expect(getByTestId('chat-task-ledger-inline-panel')).toBeTruthy();
+    expect(UNSAFE_getAllByType('ChatInputBar' as any).length).toBe(1);
+    expect(mockPush).not.toHaveBeenCalled();
+
+    // 发消息自动收起面板, 回到对话流。
+    await act(async () => {
+      UNSAFE_getAllByType('ChatInputBar' as any)[0].props.onSend('今天状态如何?', null);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(queryByTestId('chat-task-ledger-inline-panel')).toBeNull();
+    });
   });
 
   it('keeps continuous voice as a clearly named low-frequency voice entry', async () => {

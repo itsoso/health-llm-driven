@@ -1443,3 +1443,15 @@ def list_agent_tools(
         "count": len(tools),
         "model": "Hermes-3 (OpenAI-compatible)",
     }
+
+
+@router.get("/tasks", summary="统一任务账本 — 小巴的任务(五源只读聚合)")
+def agent_tasks(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Slice 4 v1:write_intents / desktop_jobs / agenda / heartbeat / recipes
+    五源只读聚合成统一 shape ``{kind, title, status, when, source}``。
+    单源失败计入 ``failed_sources``(fail-loud,不整包 500);取消/重试留 v2。"""
+    from app.services.task_ledger_service import build_ledger
+    return build_ledger(current_user.id, db)
