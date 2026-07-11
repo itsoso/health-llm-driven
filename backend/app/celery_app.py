@@ -53,6 +53,7 @@ celery_app = Celery(
         "app.tasks.checkup_plan_materialize",
         "app.tasks.write_autonomy_worker",
         "app.tasks.twin_snapshot",
+        "app.tasks.contextual_heartbeat",
     ]
 )
 
@@ -427,6 +428,15 @@ celery_app.conf.beat_schedule = {
     "write-autonomy-sweep": {
         "task": "app.tasks.write_autonomy_worker.run_write_autonomy_sweep",
         "schedule": crontab(minute="*/30"),  # 每 30 分钟(Asia/Shanghai)
+    },
+
+    # 情境心跳(Slice 2, v1 零 LLM):每 30 分钟一 tick。beat 时区是 Asia/Shanghai,
+    # 无条件 fire;白天窗(08–22)按**用户时区**在任务内 get_user_now → is_daytime 收口,
+    # 夜间用户自动跳过。每 tick 读 Twin(缓存) → 4 条确定性触发规则 → 过打扰预算硬闸 → push。
+    # 全天 fire 以覆盖非中国时区用户;绝大多数夜间 tick 在白天门前即跳过(不建 Twin)。
+    "contextual-heartbeat": {
+        "task": "app.tasks.contextual_heartbeat.contextual_heartbeat",
+        "schedule": crontab(minute="0,30"),  # 每 30 分钟(Asia/Shanghai)
     },
 }
 
