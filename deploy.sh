@@ -390,6 +390,8 @@ deploy_backend() {
         pip install -r requirements.txt -q && \
         echo '执行受控数据库迁移...' && \
         python scripts/apply_managed_migrations.py && \
+        echo '补齐审核食物营养基准...' && \
+        python scripts/seed_food_nutrition.py && \
         echo '写入系统知识库 Phase 0 种子...' && \
         python scripts/seed_system_kb_phase0.py && \
         echo '导入系统知识库 V2 扩展 artifacts...' && \

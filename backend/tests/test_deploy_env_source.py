@@ -38,6 +38,19 @@ def test_deploy_script_backs_up_remote_env_before_syncing():
     assert deploy_script.index("backup_remote_env") < deploy_script.index("scp \"$TEMP_ENV\"")
 
 
+def test_backend_deploy_seeds_curated_food_nutrition_before_restart():
+    deploy_script = (REPO_ROOT / "deploy.sh").read_text()
+    deploy_start = deploy_script.index("deploy_backend() {")
+    deploy_end = deploy_script.index("# 查看服务状态", deploy_start)
+    deploy_backend = deploy_script[deploy_start:deploy_end]
+
+    migrations = deploy_backend.index("python scripts/apply_managed_migrations.py")
+    food_seed = deploy_backend.index("python scripts/seed_food_nutrition.py")
+    restart = deploy_backend.index("systemctl restart health-backend")
+
+    assert migrations < food_seed < restart
+
+
 def test_secret_management_docs_cover_remote_env_backup_and_long_term_plan():
     docs = (REPO_ROOT / "docs/ops/secrets-management.md").read_text()
 
