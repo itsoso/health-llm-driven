@@ -1,13 +1,14 @@
 /**
- * AI 记忆页 — 让用户看到 / 改 / 删 AI 关于他的笔记.
+ * 「小巴对你的了解」— 记忆透明可纠 (Slice 5, 2026-07-07).
  *
- * P5 (2026-05-04): 用户有 69 个 memory_facts 但没地方看. 信任建立的关键是
- * "AI 不是黑盒, 我能管教". 这个页让用户:
- * - 看见 AI 记得他什么 (按主题分组)
- * - 一键 "这条不对" → soft-delete (后端 superseded_at 写入)
- * - 看到 confidence (低置信度 chip 颜色不同, 提示用户审视)
+ * 让用户看见小巴根据对话/数据记住了什么, 并能一键纠正:
+ * - 每条记忆 = 人读句子 + 视觉弱化的置信度 + 「不对」(dismiss) / 「确认」(reinforce)
+ *   双动作, 乐观更新 + 失败回滚 toast.
+ * - 低置信 (effective_confidence < 0.4) 默认折叠, 防"满屏噪音事实"
+ *   (简报记忆过度抽取的历史坑).
+ * - 进屏推导矛盾对 (同 subject、谓词方向互斥) → 顶部横幅并排让用户裁决, 走 supersede.
  *
- * 默认显示 semantic + episodic (长期 + 近期). working/procedural 折叠 (噪声).
+ * 人格 = 小巴 (忠实的边牧参谋): 忠实呈现它记住的, 不臆造; 你说不对就改。
  */
 import React, { useMemo, useState } from 'react';
 import {
@@ -21,82 +22,143 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 
 import {
-  listMemoryFacts,
-  dismissMemoryFact,
-  getMemoryStats,
-  predicateLabel,
-  groupByPredicate,
-  tierLabel,
+  listMyFacts,
+  getMyStats,
+  dismissFact,
+  reinforceFact,
+  supersedeFact,
+  findContradictionPairs,
+  effectiveConfidence,
+  factSentence,
+  primarySourceType,
+  sourceTypeLabel,
+  LOW_CONFIDENCE_THRESHOLD,
   type MemoryFact,
-} from '../services/memory';
+  type ContradictionPair,
+} from '../services/memoryFacts';
 import { spacing, radii, shadows } from '../constants/theme';
-import { ColorPalette, useTheme } from '../hooks/useTheme';
+import { ColorPalette, SemanticPalette, useTheme } from '../hooks/useTheme';
 import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
 import { createMemoryAgentContext } from '../utils/agentContext';
+
+const FACTS_KEY = ['memory-facts', 'transparency'] as const;
+const STATS_KEY = ['memory-facts', 'stats'] as const;
+
+function splitByConfidence(facts: MemoryFact[]): { high: MemoryFact[]; low: MemoryFact[] } {
+  const sorted = [...facts].sort((a, b) => effectiveConfidence(b) - effectiveConfidence(a));
+  return {
+    high: sorted.filter(f => effectiveConfidence(f) >= LOW_CONFIDENCE_THRESHOLD),
+    low: sorted.filter(f => effectiveConfidence(f) < LOW_CONFIDENCE_THRESHOLD),
+  };
+}
+
+// optional-call short-circuits arg evaluation when the fn is absent (test mocks),
+// so this never throws even if the haptics module is partially mocked.
+function hapticSuccess() {
+  try { Haptics.notificationAsync?.(Haptics.NotificationFeedbackType.Success); } catch { /* noop */ }
+}
+function hapticError() {
+  try { Haptics.notificationAsync?.(Haptics.NotificationFeedbackType.Error); } catch { /* noop */ }
+}
 
 export default function MemoryScreen() {
   const router = useRouter();
   const qc = useQueryClient();
-  const { c, isDark } = useTheme();
+  const { c, s, isDark } = useTheme();
   const styles = useMemo(() => createStyles(c, isDark), [c, isDark]);
   const txt = useMemo(() => createTxt(c), [c]);
-  const [showWorking, setShowWorking] = useState(false);
+  const [showLow, setShowLow] = useState(false);
+  const [bannerCollapsed, setBannerCollapsed] = useState(false);
 
   const factsQuery = useQuery({
-    queryKey: ['memory-facts', showWorking ? 'all' : 'main'],
-    queryFn: () => listMemoryFacts(
-      showWorking ? { limit: 200 } : { limit: 200, min_confidence: 0.3 },
-    ),
+    queryKey: FACTS_KEY,
+    queryFn: () => listMyFacts({ limit: 200 }),
     staleTime: 30_000,
   });
   const statsQuery = useQuery({
-    queryKey: ['memory-stats'],
-    queryFn: getMemoryStats,
+    queryKey: STATS_KEY,
+    queryFn: getMyStats,
     staleTime: 60_000,
   });
 
-  const dismissMutation = useMutation({
-    mutationFn: ({ id, reason }: { id: number; reason: string }) =>
-      dismissMemoryFact(id, reason),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['memory-facts'] });
-      qc.invalidateQueries({ queryKey: ['memory-stats'] });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    },
-    onError: () => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('删除失败', '请稍后重试');
-    },
-  });
-
   const facts = factsQuery.data ?? [];
-
-  // 按 predicate 分组. working tier 的 fact 单独走折叠区
-  const mainFacts = useMemo(
-    () => facts.filter(f => showWorking || f.tier !== 'working'),
-    [facts, showWorking],
-  );
-  const grouped = useMemo(() => groupByPredicate(mainFacts), [mainFacts]);
+  const { high, low } = useMemo(() => splitByConfidence(facts), [facts]);
+  const pairs = useMemo(() => findContradictionPairs(facts), [facts]);
 
   const totalAll = useMemo(
-    () => statsQuery.data?.by_tier.reduce((s, r) => s + r.total, 0) ?? 0,
-    [statsQuery.data],
+    () => statsQuery.data?.by_tier.reduce((sum, r) => sum + r.total, 0) ?? facts.length,
+    [statsQuery.data, facts.length],
   );
 
-  const handleDismiss = (fact: MemoryFact) => {
-    Alert.alert(
-      '这条记忆不对？',
-      `"${fact.object_value}"\n\n标记后 AI 之后不会再用这条信息。这个动作不会撤销。`,
-      [
-        { text: '取消', style: 'cancel' },
-        {
-          text: '不对，删除',
-          style: 'destructive',
-          onPress: () => dismissMutation.mutate({ id: fact.id, reason: 'user_dismissed' }),
-        },
-      ],
-    );
+  const notifyError = (title: string, msg: string) => {
+    hapticError();
+    Alert.alert(title, msg);
   };
+
+  const invalidateAll = () => {
+    qc.invalidateQueries({ queryKey: FACTS_KEY });
+    qc.invalidateQueries({ queryKey: STATS_KEY });
+  };
+
+  // ── 「不对」— dismiss (乐观移除 + 失败回滚) ──
+  const dismissMutation = useMutation({
+    mutationFn: (id: number) => dismissFact(id),
+    onMutate: async (id: number) => {
+      await qc.cancelQueries({ queryKey: FACTS_KEY });
+      const prev = qc.getQueryData<MemoryFact[]>(FACTS_KEY);
+      qc.setQueryData<MemoryFact[]>(FACTS_KEY, (old) => (old ?? []).filter(f => f.id !== id));
+      return { prev };
+    },
+    onError: (_e, _id, ctx) => {
+      if (ctx?.prev) qc.setQueryData(FACTS_KEY, ctx.prev);
+      notifyError('没保存成功', '这条记忆还留着，稍后再试一次。');
+    },
+    onSuccess: hapticSuccess,
+    onSettled: invalidateAll,
+  });
+
+  // ── 「确认」— reinforce (乐观提升置信度 + 失败回滚) ──
+  const reinforceMutation = useMutation({
+    mutationFn: (id: number) => reinforceFact(id),
+    onMutate: async (id: number) => {
+      await qc.cancelQueries({ queryKey: FACTS_KEY });
+      const prev = qc.getQueryData<MemoryFact[]>(FACTS_KEY);
+      qc.setQueryData<MemoryFact[]>(FACTS_KEY, (old) => (old ?? []).map(f => f.id === id ? {
+        ...f,
+        reinforcement_count: (f.reinforcement_count ?? 0) + 1,
+        confidence: Math.min(1, f.confidence + 0.05),
+        effective_confidence: Math.min(1, effectiveConfidence(f) + 0.05),
+      } : f));
+      return { prev };
+    },
+    onError: (_e, _id, ctx) => {
+      if (ctx?.prev) qc.setQueryData(FACTS_KEY, ctx.prev);
+      notifyError('没确认成功', '稍后再试一次。');
+    },
+    onSuccess: hapticSuccess,
+    onSettled: invalidateAll,
+  });
+
+  // ── 矛盾裁决 — supersede (保留一条, 归档另一条) ──
+  const supersedeMutation = useMutation({
+    mutationFn: ({ keepId, dropId }: { keepId: number; dropId: number }) =>
+      supersedeFact(keepId, dropId),
+    onMutate: async ({ dropId }) => {
+      await qc.cancelQueries({ queryKey: FACTS_KEY });
+      const prev = qc.getQueryData<MemoryFact[]>(FACTS_KEY);
+      qc.setQueryData<MemoryFact[]>(FACTS_KEY, (old) => (old ?? []).filter(f => f.id !== dropId));
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(FACTS_KEY, ctx.prev);
+      notifyError('没保存成功', '两条记忆都还在，稍后再试。');
+    },
+    onSuccess: hapticSuccess,
+    onSettled: invalidateAll,
+  });
+
+  const busy = dismissMutation.isPending || reinforceMutation.isPending || supersedeMutation.isPending;
+  const showBanner = pairs.length > 0 && !bannerCollapsed;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -104,7 +166,7 @@ export default function MemoryScreen() {
         <Pressable onPress={() => router.back()} hitSlop={8} accessibilityLabel="返回">
           <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </Pressable>
-        <Text style={txt.title}>AI 关于你的笔记</Text>
+        <Text style={txt.title}>小巴对你的了解</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -118,32 +180,32 @@ export default function MemoryScreen() {
           />
         }
       >
-        {/* Stats header */}
-        <View style={styles.statCard}>
-          <Text style={txt.statHero}>
-            AI 记得你 {totalAll} 条笔记
-          </Text>
-          {statsQuery.data?.by_tier.length ? (
-            <View style={styles.statRow}>
-              {statsQuery.data.by_tier.map(t => (
-                <View key={t.tier} style={styles.statPill}>
-                  <Text style={txt.statPillLabel}>{tierLabel(t.tier)}</Text>
-                  <Text style={txt.statPillValue}>{t.total}</Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
+        {/* 矛盾裁决横幅 */}
+        {showBanner ? (
+          <ContradictionBanner
+            pairs={pairs}
+            onKeep={(keepId, dropId) => supersedeMutation.mutate({ keepId, dropId })}
+            onCollapse={() => setBannerCollapsed(true)}
+            disabled={busy}
+            c={c}
+            s={s}
+          />
+        ) : null}
+
+        {/* Hero */}
+        <View style={styles.heroCard}>
+          <Text style={txt.heroTitle}>小巴记住了你 {totalAll} 条</Text>
           <Text style={txt.heroHint}>
-            点 "这条不对" AI 之后不会再用这条信息
+            这些是小巴从你的对话和数据里记下的。看到不对的，点「不对」它就不再用；点「确认」让它记得更牢。
           </Text>
         </View>
 
         <AgentFeedbackLink
-          label="跟小巴校准这些记忆"
-          accessibilityLabel="跟小巴校准这些记忆"
-          prompt="请基于 AI 当前关于我的记忆，帮我找出可能不准确、过期或需要补充的内容，并说明这些记忆会怎样影响健康建议。"
-          context={createMemoryAgentContext({ facts: mainFacts as any, stats: statsQuery.data as any })}
-          badge={`AI 记忆 ${totalAll} 条`}
+          label="跟小巴聊聊这些记忆"
+          accessibilityLabel="跟小巴聊聊这些记忆"
+          prompt="请基于你当前关于我的记忆，帮我找出可能不准确、过期或需要补充的内容，并说明这些记忆会怎样影响你给我的健康建议。"
+          context={createMemoryAgentContext({ facts: high as any, stats: statsQuery.data as any })}
+          badge={`记忆 ${totalAll} 条`}
         />
 
         {/* Loading / Empty */}
@@ -153,167 +215,284 @@ export default function MemoryScreen() {
           </View>
         ) : null}
 
-        {!factsQuery.isLoading && grouped.length === 0 ? (
+        {!factsQuery.isLoading && facts.length === 0 ? (
           <View style={styles.emptyWrap}>
-            <Ionicons name="bookmark-outline" size={36} color={c.labelTertiary} />
+            <Ionicons name="sparkles-outline" size={34} color={c.labelTertiary} />
             <Text style={txt.empty}>
-              AI 还没记下你的事实{'\n'}
-              多对话几次，AI 会自动从聊天里提炼"过敏 / 偏好 / 病史"等长期记忆
+              小巴还没记下关于你的事{'\n'}
+              多聊几次，它会自动记住你的过敏、偏好、病史这类长期信息
             </Text>
           </View>
         ) : null}
 
-        {/* Grouped facts */}
-        {grouped.map(group => (
-          <View key={group.predicate} style={styles.groupCard}>
-            <Text style={txt.groupTitle}>{group.label}</Text>
-            {group.facts.map(fact => (
+        {/* 高置信事实列表 */}
+        {high.length > 0 ? (
+          <View style={styles.listCard}>
+            {high.map((fact, idx) => (
               <FactRow
                 key={fact.id}
                 fact={fact}
-                onDismiss={() => handleDismiss(fact)}
-                disabled={dismissMutation.isPending}
+                isLast={idx === high.length - 1}
+                onDismiss={() => dismissMutation.mutate(fact.id)}
+                onConfirm={() => reinforceMutation.mutate(fact.id)}
+                disabled={busy}
                 c={c}
+                s={s}
               />
             ))}
           </View>
-        ))}
+        ) : null}
 
-        {/* Toggle working tier */}
-        <Pressable
-          style={({ pressed }) => [styles.toggleBtn, pressed && { opacity: 0.6 }]}
-          onPress={() => setShowWorking(v => !v)}
-          accessibilityRole="button"
-        >
-          <Ionicons
-            name={showWorking ? 'eye-off-outline' : 'eye-outline'}
-            size={14}
-            color={c.labelSecondary}
-          />
-          <Text style={txt.toggleText}>
-            {showWorking ? '隐藏临时记忆' : '查看临时记忆 (噪声大)'}
-          </Text>
-        </Pressable>
+        {/* 低置信折叠 */}
+        {low.length > 0 ? (
+          <View>
+            <Pressable
+              style={({ pressed }) => [styles.toggleBtn, pressed && { opacity: 0.6 }]}
+              onPress={() => setShowLow(v => !v)}
+              accessibilityRole="button"
+              accessibilityLabel={showLow ? '收起低置信记忆' : '展开低置信记忆'}
+            >
+              <Ionicons
+                name={showLow ? 'chevron-up' : 'chevron-down'}
+                size={15}
+                color={c.labelSecondary}
+              />
+              <Text style={txt.toggleText}>
+                {showLow ? '收起' : `低置信记忆 ${low.length} 条`}
+              </Text>
+            </Pressable>
+            {showLow ? (
+              <View style={styles.listCard}>
+                {low.map((fact, idx) => (
+                  <FactRow
+                    key={fact.id}
+                    fact={fact}
+                    isLast={idx === low.length - 1}
+                    onDismiss={() => dismissMutation.mutate(fact.id)}
+                    onConfirm={() => reinforceMutation.mutate(fact.id)}
+                    disabled={busy}
+                    c={c}
+                    s={s}
+                  />
+                ))}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+// ─────────────────────────── FactRow ───────────────────────────
+
 interface FactRowProps {
   fact: MemoryFact;
+  isLast: boolean;
   onDismiss: () => void;
+  onConfirm: () => void;
   disabled: boolean;
   c: ColorPalette;
+  s: SemanticPalette;
 }
 
-function FactRow({ fact, onDismiss, disabled, c }: FactRowProps) {
+function FactRow({ fact, isLast, onDismiss, onConfirm, disabled, c, s }: FactRowProps) {
   const txt = createTxt(c);
-  const conf = fact.effective_confidence ?? fact.confidence;
-  const confColor =
-    conf >= 0.7 ? c.brand :
-    conf >= 0.4 ? c.amber :
-    c.labelTertiary;
+  const conf = effectiveConfidence(fact);
+  const pct = Math.round(conf * 100);
+  const srcType = primarySourceType(fact);
+  const srcLabel = srcType && srcType !== 'manual' ? sourceTypeLabel(srcType) : null;
+
   return (
-    <View style={factRowStyles.row}>
-      <View style={factRowStyles.main}>
-        <Text style={txt.factValue} numberOfLines={3}>
-          {fact.object_value}
-          {fact.object_unit ? ` ${fact.object_unit}` : ''}
-        </Text>
-        <View style={factRowStyles.meta}>
-          <View style={[factRowStyles.confDot, { backgroundColor: confColor }]} />
-          <Text style={[txt.factMeta, { color: confColor }]}>
-            置信度 {Math.round(conf * 100)}%
-          </Text>
-          {fact.reinforcement_count > 1 ? (
-            <Text style={txt.factMeta}> · 强化 {fact.reinforcement_count} 次</Text>
-          ) : null}
+    <View
+      style={[
+        factRowStyles.row,
+        !isLast && { borderBottomColor: c.separator, borderBottomWidth: StyleSheet.hairlineWidth },
+      ]}
+    >
+      <Text style={txt.factSentence}>{factSentence(fact)}</Text>
+
+      {/* 视觉弱化的置信度: 细条 + 百分比 */}
+      <View style={factRowStyles.confRow}>
+        <View style={[factRowStyles.confTrack, { backgroundColor: c.fill }]}>
+          <View
+            style={[
+              factRowStyles.confFill,
+              { width: `${Math.max(4, pct)}%`, backgroundColor: c.brand, opacity: 0.55 },
+            ]}
+          />
         </View>
+        <Text style={txt.confPct}>{pct}%</Text>
+        {srcLabel ? <Text style={txt.srcChip}>· 来自{srcLabel}</Text> : null}
+        {fact.reinforcement_count > 1 ? (
+          <Text style={txt.srcChip}>· 确认{fact.reinforcement_count}次</Text>
+        ) : null}
       </View>
+
+      <View style={factRowStyles.actions}>
+        <Pressable
+          testID={`memory-confirm-${fact.id}`}
+          onPress={onConfirm}
+          disabled={disabled}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel="确认这条记忆"
+          style={({ pressed }) => [
+            factRowStyles.confirmBtn,
+            { borderColor: s.success.solid },
+            pressed && { opacity: 0.6 },
+            disabled && { opacity: 0.4 },
+          ]}
+        >
+          <Ionicons name="checkmark" size={14} color={s.success.fg} />
+          <Text style={[txt.confirmText, { color: s.success.fg }]}>确认</Text>
+        </Pressable>
+        <Pressable
+          testID={`memory-dismiss-${fact.id}`}
+          onPress={onDismiss}
+          disabled={disabled}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel="标记这条不对"
+          style={({ pressed }) => [
+            factRowStyles.dismissBtn,
+            pressed && { opacity: 0.6 },
+            disabled && { opacity: 0.4 },
+          ]}
+        >
+          <Text style={[txt.dismissText, { color: c.labelSecondary }]}>不对</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+// ──────────────────── ContradictionBanner ────────────────────
+
+interface BannerProps {
+  pairs: ContradictionPair[];
+  onKeep: (keepId: number, dropId: number) => void;
+  onCollapse: () => void;
+  disabled: boolean;
+  c: ColorPalette;
+  s: SemanticPalette;
+}
+
+function ContradictionBanner({ pairs, onKeep, onCollapse, disabled, c, s }: BannerProps) {
+  const txt = createTxt(c);
+  const tone = s.warning;
+  return (
+    <View style={[bannerStyles.card, { backgroundColor: tone.bg, borderColor: tone.solid }]}>
+      <View style={bannerStyles.headerRow}>
+        <Ionicons name="git-compare-outline" size={16} color={tone.fg} />
+        <Text style={[txt.bannerTitle, { color: tone.fg }]}>
+          发现 {pairs.length} 处可能矛盾的记忆
+        </Text>
+        <Pressable onPress={onCollapse} hitSlop={8} accessibilityLabel="暂时收起矛盾提示">
+          <Ionicons name="close" size={16} color={tone.fg} />
+        </Pressable>
+      </View>
+      <Text style={[txt.bannerHint, { color: tone.fg }]}>
+        小巴对同一件事记了两个说法，帮它留下对的那个。
+      </Text>
+      {pairs.map((pair) => (
+        <View key={`${pair.a.id}:${pair.b.id}`} style={[bannerStyles.pairWrap, { borderTopColor: tone.solid }]}>
+          <ConflictOption
+            fact={pair.a}
+            onKeep={() => onKeep(pair.a.id, pair.b.id)}
+            disabled={disabled}
+            c={c}
+            s={s}
+          />
+          <Text style={txt.vsText}>对</Text>
+          <ConflictOption
+            fact={pair.b}
+            onKeep={() => onKeep(pair.b.id, pair.a.id)}
+            disabled={disabled}
+            c={c}
+            s={s}
+          />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function ConflictOption({ fact, onKeep, disabled, c, s }: {
+  fact: MemoryFact; onKeep: () => void; disabled: boolean; c: ColorPalette; s: SemanticPalette;
+}) {
+  const txt = createTxt(c);
+  return (
+    <View style={bannerStyles.option}>
+      <Text style={txt.optionText} numberOfLines={3}>{factSentence(fact)}</Text>
       <Pressable
+        testID={`memory-keep-${fact.id}`}
+        onPress={onKeep}
+        disabled={disabled}
         style={({ pressed }) => [
-          factRowStyles.dismissBtn,
-          pressed && { opacity: 0.6 },
+          bannerStyles.keepBtn,
+          { backgroundColor: s.success.solid },
+          pressed && { opacity: 0.7 },
           disabled && { opacity: 0.4 },
         ]}
-        onPress={onDismiss}
-        disabled={disabled}
         accessibilityRole="button"
-        accessibilityLabel="标记这条不对"
+        accessibilityLabel="保留这条记忆"
       >
-        <Text style={[txt.dismissText, { color: c.red }]}>不对</Text>
+        <Text style={bannerStyles.keepText}>保留这条</Text>
       </Pressable>
     </View>
   );
 }
 
+// ─────────────────────────── styles ───────────────────────────
+
 const factRowStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.sm + 2,
-    gap: spacing.sm,
+  row: { paddingVertical: spacing.md, gap: 8 },
+  confRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  confTrack: { flex: 1, minWidth: 60, maxWidth: 120, height: 4, borderRadius: 2, overflow: 'hidden' },
+  confFill: { height: 4, borderRadius: 2 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  confirmBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: spacing.md, paddingVertical: 6,
+    borderRadius: radii.full, borderWidth: StyleSheet.hairlineWidth,
   },
-  main: { flex: 1, gap: 4 },
-  meta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  confDot: { width: 6, height: 6, borderRadius: 3 },
-  dismissBtn: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    borderRadius: radii.full,
-  },
+  dismissBtn: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radii.full },
 });
 
-function createStyles(c: ColorPalette, isDark: boolean) {
+const bannerStyles = StyleSheet.create({
+  card: { borderRadius: radii.md, borderWidth: 1, padding: spacing.md, gap: spacing.sm },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  pairWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    paddingTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  option: { flex: 1, gap: 6 },
+  keepBtn: { paddingVertical: 6, borderRadius: radii.full, alignItems: 'center' },
+  keepText: { fontSize: 12, fontWeight: '600', color: '#FFFFFF' },
+});
+
+function createStyles(c: ColorPalette, _isDark: boolean) {
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: c.bgPrimary },
     header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: spacing.lg,
-      paddingVertical: spacing.md,
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
     },
     content: { padding: spacing.lg, paddingTop: 0, gap: spacing.md, paddingBottom: 40 },
-    statCard: {
-      backgroundColor: c.bgCard,
-      borderRadius: radii.lg,
-      padding: spacing.lg,
-      gap: spacing.sm,
+    heroCard: {
+      backgroundColor: c.bgCard, borderRadius: radii.lg, padding: spacing.lg, gap: 6,
       ...shadows.subtle,
     },
-    statRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-    statPill: {
-      flexDirection: 'row',
-      gap: 4,
-      paddingHorizontal: spacing.md,
-      paddingVertical: 5,
-      borderRadius: radii.full,
-      backgroundColor: c.bgPrimary,
-      alignItems: 'center',
-    },
-    groupCard: {
-      backgroundColor: c.bgCard,
-      borderRadius: radii.md,
-      paddingHorizontal: spacing.lg,
-      paddingTop: spacing.md,
-      paddingBottom: 4,
-      ...shadows.subtle,
+    listCard: {
+      backgroundColor: c.bgCard, borderRadius: radii.md,
+      paddingHorizontal: spacing.lg, ...shadows.subtle,
     },
     loadingWrap: { paddingVertical: 30, alignItems: 'center' },
-    emptyWrap: {
-      paddingVertical: 60,
-      paddingHorizontal: 30,
-      alignItems: 'center',
-      gap: 12,
-    },
+    emptyWrap: { paddingVertical: 60, paddingHorizontal: 30, alignItems: 'center', gap: 12 },
     toggleBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      alignSelf: 'center',
-      paddingVertical: spacing.sm,
-      paddingHorizontal: spacing.md,
+      flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'center',
+      paddingVertical: spacing.sm, paddingHorizontal: spacing.md,
     },
   });
 }
@@ -321,21 +500,18 @@ function createStyles(c: ColorPalette, isDark: boolean) {
 function createTxt(c: ColorPalette) {
   return {
     title: { fontSize: 17, fontWeight: '600', color: c.labelPrimary } as TextStyle,
-    statHero: { fontSize: 18, fontWeight: '700', color: c.labelPrimary } as TextStyle,
-    statPillLabel: { fontSize: 12, color: c.labelSecondary } as TextStyle,
-    statPillValue: { fontSize: 13, fontWeight: '600', color: c.labelPrimary } as TextStyle,
-    heroHint: { fontSize: 12, color: c.labelTertiary, lineHeight: 18 } as TextStyle,
-    groupTitle: {
-      fontSize: 12,
-      fontWeight: '600',
-      color: c.labelSecondary,
-      letterSpacing: 0.5,
-      marginBottom: 4,
-    } as TextStyle,
-    factValue: { fontSize: 15, color: c.labelPrimary, lineHeight: 21 } as TextStyle,
-    factMeta: { fontSize: 11, color: c.labelTertiary } as TextStyle,
+    heroTitle: { fontSize: 18, fontWeight: '700', color: c.labelPrimary } as TextStyle,
+    heroHint: { fontSize: 13, color: c.labelSecondary, lineHeight: 19 } as TextStyle,
+    factSentence: { fontSize: 15, color: c.labelPrimary, lineHeight: 21 } as TextStyle,
+    confPct: { fontSize: 11, color: c.labelTertiary, fontVariant: ['tabular-nums'] } as TextStyle,
+    srcChip: { fontSize: 11, color: c.labelTertiary } as TextStyle,
+    confirmText: { fontSize: 13, fontWeight: '500' } as TextStyle,
     dismissText: { fontSize: 13, fontWeight: '500' } as TextStyle,
     empty: { fontSize: 13, color: c.labelTertiary, textAlign: 'center', lineHeight: 19 } as TextStyle,
     toggleText: { fontSize: 13, color: c.labelSecondary } as TextStyle,
+    bannerTitle: { flex: 1, fontSize: 14, fontWeight: '700' } as TextStyle,
+    bannerHint: { fontSize: 12, lineHeight: 17 } as TextStyle,
+    optionText: { fontSize: 13, color: c.labelPrimary, lineHeight: 18 } as TextStyle,
+    vsText: { fontSize: 11, color: c.labelTertiary } as TextStyle,
   };
 }
