@@ -10,7 +10,7 @@
                         ┌───────────────────────────────────────────┐
                         │  iPhone App (健康助理 / 生产)             │
  Voice ⇄ Siri ──▶       │   Expo SDK 55 + RN 0.83 + expo-router     │──────┐
-                        │   mobile/app/*.tsx (118 路由)              │      │
+                        │   mobile/app/*.tsx (119 路由)              │      │
                         └───────────────────────────────────────────┘      │
                                                                            │ HTTPS (JWT Bearer)
                         ┌───────────────────────────────────────────┐      │
@@ -21,7 +21,7 @@
                                                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │                              Backend: FastAPI (Python 3.12)                          │
-│                  health-api.executor.life · 161 API 路由 · 324 services            │
+│                  health-api.executor.life · 161 API 路由 · 325 services            │
 │  ┌───────────┐  ┌──────────┐  ┌─────────────────┐  ┌────────────────────┐            │
 │  │ Auth+JWT  │  │ Router   │  │ Orchestrator    │  │ Agent Executor     │            │
 │  │           │  │ dispatch │  │ (13 specialist) │  │ (tool-calling LLM) │            │
@@ -63,10 +63,10 @@
 
 | 端 | Stack | 位置 | 规模 |
 |---|---|---|---|
-| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 161 API 路由, 324 services, 106 models, 66 Celery 任务 |
-| **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 118 路由 |
+| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 161 API 路由, 325 services, 106 models, 66 Celery 任务 |
+| **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 119 路由 |
 | **Mac Desktop** | Swift 6 + SwiftUI + URLSession async/await + Keychain + MenuBarExtra | `apps/mac/` | 原生桌面 P0: Today / Agent / Record / Import / Jobs / Trace |
-| **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 70 页 |
+| **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 72 页 |
 | **WeChat 小程序** | uni-app (pnpm workspace) | `packages/mini-program/` | 独立发布 |
 | **MCP Server** | Python (独立) | `mcp-server/` | 受控外部工具入口 |
 | **Agent Skills** | Markdown | `backend/skills/` (随后端部署) | 第一方 Agent 运行时技能 |
@@ -115,11 +115,11 @@
 | 目录 | 职责 |
 |------|------|
 | `backend/app/api/*.py` | 161 条 API 路由 |
-| `backend/app/services/*.py` | 324 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/` / `genui/`;多源去重见 `device_source_priority` + `garmin_daily_merged`) |
+| `backend/app/services/*.py` | 325 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/` / `genui/`;多源去重见 `device_source_priority` + `garmin_daily_merged`) |
 | `backend/app/tasks/*.py` | 66 Celery 异步任务 |
-| `frontend/src/app/*/page.tsx` | 70 Web 页 |
+| `frontend/src/app/*/page.tsx` | 72 Web 页 |
 | `frontend/src/components/*.tsx` | Web 组件 |
-| `mobile/app/` | 118 RN 路由 + Tab 导航 |
+| `mobile/app/` | 119 RN 路由 + Tab 导航 |
 | `mobile/components/` | RN 组件(按领域) |
 | `mobile/services/` + `mobile/hooks/` | RN API + React Query hooks |
 

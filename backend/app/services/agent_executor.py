@@ -2217,6 +2217,7 @@ def _source_labels_from_system_prompt(system_content: str) -> list[str]:
 # 未映射的工具 → 原始名 (见 _tool_status_label)。
 _TOOL_TO_STATUS_LABEL = {
     "health_query": "查询健康数据",
+    "health_query_batch": "批量查询健康数据",
     "health_record": "写入记录",
     "health_manage": "管理记录",
     "health_analysis": "深度分析",
@@ -2241,6 +2242,7 @@ def _tool_status_label(func_name: Optional[str]) -> str:
 _TOOL_PROGRESS_LABEL = {
     # 核心工具 (tool_schema_registry.HEALTH_TOOLS)
     "health_query": "查看健康数据…",
+    "health_query_batch": "汇总健康数据…",
     "health_record": "正在记录…",
     "health_manage": "整理健康记录…",
     "health_analysis": "深度分析中…",

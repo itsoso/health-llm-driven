@@ -25,6 +25,7 @@ from app.services.agent_executor import (
 
 @pytest.mark.parametrize("name,label", [
     ("health_query", "查看健康数据…"),
+    ("health_query_batch", "汇总健康数据…"),
     ("health_record", "正在记录…"),
     ("health_manage", "整理健康记录…"),
     ("health_analysis", "深度分析中…"),
