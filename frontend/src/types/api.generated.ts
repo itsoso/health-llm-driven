@@ -10408,6 +10408,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/upload/files/chat/{owner_id}/{filename}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Private Chat Image */
+        get: operations["get_private_chat_image_api_v1_upload_files_chat__owner_id___filename__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/upload/files/chat/{filename}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Legacy Private Chat Image
+         * @description Protect legacy chat files by checking ownership through message history.
+         */
+        get: operations["get_legacy_private_chat_image_api_v1_upload_files_chat__filename__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/upload/files/{category}/{owner_id}/{filename}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Private Uploaded File */
+        get: operations["get_private_uploaded_file_api_v1_upload_files__category___owner_id___filename__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/upload/files/{category}/{filename}": {
         parameters: {
             query?: never;
@@ -10417,9 +10471,7 @@ export interface paths {
         };
         /**
          * Get Uploaded File
-         * @description 获取上传的文件（公开访问，无需认证）
-         *
-         *     图片文件应该可以公开访问，以便在小程序和网页中显示
+         * @description 获取上传的文件。只有头像公开；历史健康图片必须证明 owner。
          */
         get: operations["get_uploaded_file_api_v1_upload_files__category___filename__get"];
         put?: never;
@@ -10762,6 +10814,7 @@ export interface paths {
          * @description List current user's Agent conversations (paginated).
          *
          *     返回 {items, total, limit, offset} —— 前端历史记录用 offset 做上一页/下一页翻页。
+         *     `search` 同时匹配标题与消息正文;`title_like` 保留旧的仅标题过滤。
          *     AgentExecutor persists conversations through AgentConversationService so mobile/web
          *     can resume interrupted streams from the same durable message store.
          */
@@ -18961,6 +19014,8 @@ export interface components {
             extra_context?: string | null;
             /** Channel */
             channel?: string | null;
+            /** Client Turn Id */
+            client_turn_id?: string | null;
         };
         /** AmbientAudioInputResponse */
         AmbientAudioInputResponse: {
@@ -21870,8 +21925,6 @@ export interface components {
             alcohol_units?: number | null;
             /** Notes */
             notes?: string | null;
-            /** Image Url */
-            image_url?: string | null;
             /**
              * Ai Recognized
              * @default 0
@@ -21879,12 +21932,16 @@ export interface components {
             ai_recognized: number | null;
             /** Ai Confidence */
             ai_confidence?: number | null;
+            /** Ai Raw Result */
+            ai_raw_result?: unknown | null;
             /** Health Tips */
             health_tips?: string | null;
             /** Id */
             id: number;
             /** User Id */
             user_id: number;
+            /** Image Url */
+            image_url?: string | null;
             /** Created At */
             created_at?: string | null;
             /** Updated At */
@@ -21923,8 +21980,6 @@ export interface components {
             alcohol_units?: number | null;
             /** Notes */
             notes?: string | null;
-            /** Image Url */
-            image_url?: string | null;
             /** Health Tips */
             health_tips?: string | null;
         };
@@ -31822,8 +31877,6 @@ export interface components {
             alcohol_units?: number | null;
             /** Notes */
             notes?: string | null;
-            /** Image Url */
-            image_url?: string | null;
             /**
              * Ai Recognized
              * @default 0
@@ -31831,6 +31884,8 @@ export interface components {
             ai_recognized: number | null;
             /** Ai Confidence */
             ai_confidence?: number | null;
+            /** Ai Raw Result */
+            ai_raw_result?: unknown | null;
             /** Health Tips */
             health_tips?: string | null;
             /** User Id */
@@ -40857,7 +40912,9 @@ export interface operations {
     create_diet_record_api_v1_diet_records_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -48585,9 +48642,119 @@ export interface operations {
             };
         };
     };
+    get_private_chat_image_api_v1_upload_files_chat__owner_id___filename__get: {
+        parameters: {
+            query?: {
+                expires?: number | null;
+                signature?: string | null;
+            };
+            header?: never;
+            path: {
+                owner_id: number;
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_legacy_private_chat_image_api_v1_upload_files_chat__filename__get: {
+        parameters: {
+            query?: {
+                owner_id?: number | null;
+                expires?: number | null;
+                signature?: string | null;
+            };
+            header?: never;
+            path: {
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_private_uploaded_file_api_v1_upload_files__category___owner_id___filename__get: {
+        parameters: {
+            query?: {
+                expires?: number | null;
+                signature?: string | null;
+            };
+            header?: never;
+            path: {
+                category: string;
+                owner_id: number;
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_uploaded_file_api_v1_upload_files__category___filename__get: {
         parameters: {
-            query?: never;
+            query?: {
+                owner_id?: number | null;
+                expires?: number | null;
+                signature?: string | null;
+            };
             header?: never;
             path: {
                 category: string;
@@ -49070,8 +49237,10 @@ export interface operations {
                 limit?: number;
                 /** @description 分页偏移(翻页用) */
                 offset?: number;
-                /** @description 按标题模糊过滤 */
+                /** @description 按标题模糊过滤(旧参数,仅标题) */
                 title_like?: string | null;
+                /** @description 按标题和消息内容搜索 */
+                search?: string | null;
             };
             header?: never;
             path?: never;

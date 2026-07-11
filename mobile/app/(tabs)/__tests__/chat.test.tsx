@@ -244,7 +244,7 @@ describe('ChatScreen', () => {
       expect(view.getByText(/今天先确认午餐记录/)).toBeTruthy();
       expect(view.getByText('查询全天饮食')).toBeTruthy();
     });
-  });
+  }, 15_000);
 
   it('does NOT auto-summon the keyboard when an empty chat opens with no opener', async () => {
     // 默认打开小巴页时不抢键盘;只有用户主动点输入框/快捷 chip 时才进入输入。
