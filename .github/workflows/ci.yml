@@ -26,8 +26,15 @@ jobs:
             paths: "tests/test_[k-m]*.py"
           - label: n-r
             paths: "tests/test_[n-r]*.py"
-          - label: s-u
-            paths: "tests/test_[s-u]*.py"
+          # Keep telegram and timeline families in separate pytest processes.
+          # A Linux-only teardown leak between them can otherwise stall the
+          # combined shard after test_telegram_webhook.py completes.
+          - label: s
+            paths: "tests/test_s*.py"
+          - label: t-a-e
+            paths: "tests/test_t[a-e]*.py"
+          - label: t-f-z-u
+            paths: "tests/test_t[f-z]*.py tests/test_u*.py"
           - label: v-z
             paths: "tests/test_[v-z]*.py tests/services/"
     steps:
