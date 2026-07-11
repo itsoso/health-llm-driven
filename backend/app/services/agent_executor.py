@@ -6204,6 +6204,8 @@ class AgentExecutor:
             if tool_name == "health_query":
                 result = await self._exec_health_query(base_url, headers, args)
                 return annotate_if_implausible(result)
+            elif tool_name == "health_query_batch":
+                return await self._exec_health_query_batch(base_url, headers, args)
             elif tool_name == "health_record":
                 return await self._exec_health_record(base_url, headers, args)
             elif tool_name == "health_manage":
@@ -6482,6 +6484,34 @@ class AgentExecutor:
                     pass
 
         return await self._api_get(f"{base}{path}", headers)
+
+
+    async def _exec_health_query_batch(
+        self, base: str, headers: dict, args: dict
+    ) -> str:
+        """声明式批查询: 一次执行多条只读子查询 + 聚合 (Slice 1, 零代码执行)。
+
+        薄接线 —— 校验/聚合/对比逻辑全在 services/health_query_batch.py (纯函数,
+        单测覆盖)。这里只注入数据面 fetch: 可穿戴日指标走 GarminData 多源合并
+        (复用既有取数, 产出数值序列), 其余维度复用 _exec_health_query 的紧凑原文。
+        """
+        from app.services import health_query_batch as hqb
+
+        async def _fetch(dimension: str, days: int) -> hqb.BatchFetchResult:
+            if dimension in hqb.SERIES_DIMENSIONS:
+                series, unit, raw = hqb.build_wearable_series(
+                    self.db, self._current_user_id, dimension, days
+                )
+                return hqb.BatchFetchResult(
+                    series=series, unit=unit, raw=raw, aggregatable=True
+                )
+            # 非数值序列维度: 复用既有 health_query 数据面取紧凑原文, 不重写取数。
+            raw = await self._exec_health_query(
+                base, headers, {"dimension": dimension, "days": days}
+            )
+            return hqb.BatchFetchResult(series=[], raw=raw, aggregatable=False)
+
+        return await hqb.execute_batch(args, _fetch)
 
 
     async def _exec_health_record(

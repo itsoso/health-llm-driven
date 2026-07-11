@@ -376,6 +376,8 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
     "health_query": {
         # 共享只读分析面(task #43 (d)):不属于单一对象的聚合/可穿戴分析维度挂这里。
         # wearable/garmin 是 canonical 读层(health_read._WEARABLE_DIMS)的别名维度。
+        # 声明式批查询 health_query_batch(Slice 1)复用同一套 dimension + 数据面
+        # (services/health_query_batch.py),只读、无新对象/新维度,故不单列条目。
         "create": {"opt_out": "聚合分析视图,只读"},
         "read": {"tool": "health_query",
                  "dimensions": ("comprehensive", "heart_rate", "hrv", "activity",

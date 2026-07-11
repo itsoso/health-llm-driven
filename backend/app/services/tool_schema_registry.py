@@ -109,6 +109,82 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
     {
         "type": "function",
         "function": {
+            "name": "health_query_batch",
+            "description": """一次声明式批查询: 用户一句话问**多个指标 / 要对比 / 要平均·最值·趋势**时,
+用本工具一次产出全部子查询, 后端确定性取数 + 聚合, **1 轮完成** —— 不要连发多次 health_query。
+
+何时用本工具 (而非 health_query):
+- 用户同时问 ≥2 个指标 ("这周的睡眠、HRV、步数怎么样")
+- 要对比两个时间窗 ("这周和上周的 HRV")
+- 要某指标的平均 / 最大 / 最小 / 趋势 ("最近一个月步数平均多少", "HRV 是升还是降")
+单个指标的简单当前值查询仍用 health_query。
+
+plan 结构:
+- queries: 1-6 条子查询, 每条 = {dimension, days, agg?}
+    - dimension: 与 health_query 同一套维度枚举 (sleep/hrv/activity/heart_rate/
+      blood_pressure/weight/diet/medication/medical_exam/...)。
+    - days: 最近几天 (默认 7)。注意: 是"最近 N 天窗口", 不是任意日期区间。
+    - agg (可选): latest | avg | min | max | trend。trend = 首尾差 (最新 - 最早)。
+      **数值聚合仅对可穿戴日指标有效**: activity(步数) / heart_rate / hrv /
+      sleep(睡眠评分) / body_battery / stress / spo2。其他维度 agg 会被忽略, 返回原始数据。
+- compare (可选): 对比两条子查询的标量。{a:<下标>, b:<下标>, op:'diff'|'ratio'}。diff=a-b, ratio=a/b。
+
+完整示例 (近7天 vs 近14天平均 HRV 之差 + 本周睡眠评分趋势 + 本周步数均值):
+{
+  "queries": [
+    {"dimension": "hrv", "days": 7, "agg": "avg"},
+    {"dimension": "hrv", "days": 14, "agg": "avg"},
+    {"dimension": "sleep", "days": 7, "agg": "trend"},
+    {"dimension": "activity", "days": 7, "agg": "avg"}
+  ],
+  "compare": {"a": 0, "b": 1, "op": "diff"}
+}
+→ 每条回 {dimension, days, agg, value, unit, n}; compare 回 {op:'diff', value:<近7天均值 - 近14天均值>}。
+
+只读, 无写入, 无需确认。未知 dimension / 未知 agg / 超过 6 条 → 返回带合法值清单的报错 (下一轮改正)。""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "queries": {
+                        "type": "array",
+                        "description": "1-6 条只读子查询。每条 {dimension, days, agg?}。",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "dimension": {
+                                    "type": "string",
+                                    "description": "数据维度 (同 health_query 枚举), 如 sleep/hrv/activity/heart_rate/blood_pressure/weight/diet/medication/medical_exam",
+                                },
+                                "days": {
+                                    "type": "integer",
+                                    "description": "最近几天窗口, 默认 7",
+                                },
+                                "agg": {
+                                    "type": "string",
+                                    "enum": ["latest", "avg", "min", "max", "trend"],
+                                    "description": "聚合方式; 省略=返回原始数据。仅可穿戴日指标可数值聚合。trend=首尾差(最新-最早)",
+                                },
+                            },
+                            "required": ["dimension"],
+                        },
+                    },
+                    "compare": {
+                        "type": "object",
+                        "description": "可选: 对比两条子查询的标量值。diff=a-b, ratio=a/b。",
+                        "properties": {
+                            "a": {"type": "integer", "description": "第一条子查询下标 (从 0 开始)"},
+                            "b": {"type": "integer", "description": "第二条子查询下标"},
+                            "op": {"type": "string", "enum": ["diff", "ratio"]},
+                        },
+                    },
+                },
+                "required": ["queries"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "health_record",
             "description": """记录用户的健康数据. 记录后会真正写入数据库, 所以必须确保必填字段齐全.
 
