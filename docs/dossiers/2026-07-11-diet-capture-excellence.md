@@ -109,6 +109,7 @@
 - T5.1 发布回归：Mobile 全量 `233 suites / 1626 tests`、受影响 focused `66 tests`、TypeScript 通过；Backend 饮食/营养/事件联合回归 `112 tests` 通过；lint `0 errors`（保留全仓 97 条既有 warnings）；pre-commit、doc drift 与 Dossier consistency 全绿。
 - T5.2 发布前回归：Backend 识别清洗/营养校准/Diet API/Agent vision 联合 `74 tests` 通过；Mobile focused `24 tests` 与全量 `233 suites / 1626 tests` 通过；TypeScript 通过，OpenAPI 生成仅新增 4 行份量字段；lint `0 errors`（97 条既有 warnings）；带项目 venv 的全部 pre-commit、doc drift 与 Dossier consistency 通过。独立审查另以 RED 测试修复“益生菌酸奶”被补剂规则误删的假阳性。
 - T5.3 原生存储回归：先以严格 SecureStore 键校验得到 15 个 RED 失败，并以 2 个 RED 用例锁定遗留清理失败不得阻断新存储；最终 focused `5 suites / 114 tests`、全量 `233 suites / 1632 tests` 通过；TypeScript 通过，lint `0 errors`（97 条既有 warnings）。iPhone 17 Pro 模拟器连续重载仅保留无定位能力的 GPS 警告，不再出现 `[ChatInputBar] draft restore failed`、`draft persistence failed` 或非法 SecureStore 键错误。
+- T5.3 Linux 权威闸门：GitHub Actions run `29170917830` SUCCESS，24/24 作业完成；`t-f-v` 首次尝试按 600 秒截止时间终止，干净进程重试后 `266 passed`，最终 Backend tests enforcement 通过。head commit 为 `401ec2810e2073e84ac571d108c44bbe3c8f5216`。
 - T5.2 首次 CI run `29164922239` 中 type drift 在补齐 Frontend 生成类型后通过，但 Linux `a-b` 分片连续两次远超历史绿灯的 4 分 23 秒，并在 `test_agent_health_manage.py` 与 `test_agent_intervention_cycle_tool.py` 边界失去输出；该边界组合本机 `30/30` 通过，`c-d` 重跑也在 3 分 36 秒通过。判定为既有进程级顺序污染而非饮食断言回归，将 86 个 `a-b` 测试文件拆为非 Agent、`agent_[a-h]`、`agent_[i-z]` 三个互斥进程；文件覆盖校验为 `86 -> 86`、差集 0。
 - T5.2 CI run `29166225719` 验证上述三个新分片分别在 3 分 2 秒、2 分 15 秒和 1 分 24 秒通过；同轮旧 `t[f-z]+u` 分片在 69% 处进入 `test_twin_builder.py` 后冻结，并被 20 分钟上限终止，其他 16 个作业均通过。本机同命令 `392/392` 在 31.23 秒通过；据逐用例日志将其拆为 `t[f-v]`、`t[w-z]`、`u` 三个干净进程，原 24 个文件覆盖校验仍为 `24 -> 24`、差集 0。
 - T5.2 CI run `29166933157` 中 `t[f-v]`、`t[w-z]`、`u` 已分别在 1 分 44 秒、1 分 25 秒和 1 分 28 秒通过；唯一剩余的旧 `s` 大分片进入 `test_schedule_into_agenda.py` 后失去输出，其他 18 个作业均通过。本机同一 643 项命令也在该模块首个用例后停住，但该模块单跑 `8/8`、与前一模块配对 `26/26`、`s[c-k]` 分组 `55/55` 均通过，确认是更长前序造成的进程状态污染；将 58 个 `s` 文件拆为 `s[a-b]`、`s[c-k]`、`s[l-z]`，覆盖校验为 `58 -> 58`、差集 0。
@@ -133,6 +134,7 @@
 - T5.2 后端从干净且与 `origin/main` 一致的 worktree 通过 `./deploy.sh -b` 增量部署，生产 commit 更新为 `c6d3d3f4942fee7a1f92730f33d9326d600be4c0`；本轮无新迁移。
 - T5.2 部署前 PostgreSQL 备份：`/opt/health-app/backups/health_db_2026-07-12_05-12.sql.gz`，38 MB，权限 `0600`，两张 force-RLS 表的数据段完整性检查通过。
 - T5.2 production OTA：runtime `1.3.1`，update group `2f5f9559-9838-404a-a03c-ebdfb3c334c9`，iOS update `019f530b-0ec6-7838-aaa3-721414a37189`；EAS `update:view` 复核 branch=`production`、commit、runtime 与 `isRollBackToEmbedded=false` 一致。
+- T5.3 production OTA：runtime `1.3.1`，update group `2a6f06a0-2e83-454e-a98f-a10fc0b11e9f`，iOS update `019f5364-6518-7807-b4d9-c8433f7c8c59`；EAS `update:view` 复核 branch=`production`、commit=`401ec2810e2073e84ac571d108c44bbe3c8f5216`、runtime 与 `isRollBackToEmbedded=false` 一致。
 
 ## G5 · 部署健康闸
 
