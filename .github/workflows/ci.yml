@@ -80,7 +80,10 @@ jobs:
           GARMIN_ENCRYPTION_KEY: mI4nYXirjGlbHD7sFogYlqPQJzirU04mUsS5LyDS0SU=
           DATABASE_URL: "sqlite:///:memory:"
           TZ: Asia/Shanghai
-        run: pytest ${{ matrix.paths }} -q --no-cov --tb=short --maxfail=5 --timeout=120 --timeout-method=signal ${{ matrix.extra_args }}
+        run: >-
+          python scripts/run_ci_pytest_shard.py ${{ matrix.paths }} --
+          -q --no-cov --tb=short --maxfail=5
+          --timeout=120 --timeout-method=signal ${{ matrix.extra_args }}
 
   backend-quality:
     runs-on: ubuntu-latest
