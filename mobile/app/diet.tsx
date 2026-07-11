@@ -1165,7 +1165,7 @@ function QuickDietDraftCard({
           ))}
         </View>
       ) : null}
-      <Text style={txt.quickHint}>确认后写入今天饮食;需要改餐次或营养再点修正。</Text>
+      <Text style={txt.quickHint}>先核对食物和份量；确认后才写入今天饮食。</Text>
 
       <View style={styles.quickActions}>
         <TouchableOpacity
@@ -1211,15 +1211,39 @@ function QuickDietDraftCard({
 function RecognizedFoodRow({ food, index }: { food: FoodItem; index: number }) {
   const isTableCalibrated = food.nutrition_basis === 'food_table';
   const isMixed = food.nutrition_basis === 'mixed';
+  const hasQuantity = Boolean(food.quantity?.trim());
+  const hasTrustedPortion = food.portion_basis === 'measured' || food.portion_basis === 'label';
+  const isEstimatedPortion = hasQuantity && !hasTrustedPortion;
   const basisLabel = isTableCalibrated
-    ? '营养表校准'
+    ? isEstimatedPortion
+      ? '表值 × 估算份量'
+      : '营养表校准'
     : isMixed
-      ? '部分表值校准'
+      ? isEstimatedPortion
+        ? '部分表值 × 估算'
+        : '部分表值校准'
       : '视觉估算';
   const confidence = typeof food.confidence === 'number' && Number.isFinite(food.confidence)
     ? Math.round(food.confidence * 100)
     : null;
-  const shouldVerify = !isTableCalibrated || (confidence !== null && confidence < 70);
+  const portionConfidence = typeof food.portion_confidence === 'number' && Number.isFinite(food.portion_confidence)
+    ? Math.round(food.portion_confidence * 100)
+    : null;
+  const identitySignal = confidence === null
+    ? null
+    : confidence >= 85
+      ? '识别较稳'
+      : confidence >= 70
+        ? '识别一般'
+        : '识别待核对';
+  const portionSignal = !hasQuantity
+    ? '份量待确认'
+    : (portionConfidence !== null && portionConfidence < 70) || (confidence !== null && confidence < 70)
+      ? '请核对份量'
+      : isEstimatedPortion
+        ? '份量为估算'
+        : null;
+  const basisIsFullyTrusted = isTableCalibrated && hasTrustedPortion;
   const portion = food.quantity?.trim() || '份量待确认';
   const calories = typeof food.calories === 'number' && Number.isFinite(food.calories)
     ? `${Math.round(food.calories)} kcal`
@@ -1234,27 +1258,27 @@ function RecognizedFoodRow({ food, index }: { food: FoodItem; index: number }) {
         </View>
         <View style={[
           styles.recognitionBasisChip,
-          isTableCalibrated ? styles.recognitionBasisTable : styles.recognitionBasisEstimate,
+          basisIsFullyTrusted ? styles.recognitionBasisTable : styles.recognitionBasisEstimate,
         ]}>
           <Ionicons
-            name={isTableCalibrated ? 'shield-checkmark-outline' : 'scan-outline'}
+            name={basisIsFullyTrusted ? 'shield-checkmark-outline' : 'scan-outline'}
             size={13}
-            color={isTableCalibrated ? C.green600 : revaSemantic.caution.fg}
+            color={basisIsFullyTrusted ? C.green600 : revaSemantic.caution.fg}
           />
           <Text style={[
             txt.recognitionBasisText,
-            { color: isTableCalibrated ? C.green600 : revaSemantic.caution.fg },
+            { color: basisIsFullyTrusted ? C.green600 : revaSemantic.caution.fg },
           ]}>
             {basisLabel}
           </Text>
         </View>
       </View>
       <View style={styles.recognizedFoodSignals}>
-        {confidence !== null ? <Text style={txt.recognizedConfidence}>置信 {confidence}%</Text> : null}
-        {shouldVerify ? (
+        {identitySignal ? <Text style={txt.recognizedConfidence}>{identitySignal}</Text> : null}
+        {portionSignal ? (
           <View style={styles.verifyPortionRow}>
             <Ionicons name="alert-circle-outline" size={13} color={revaSemantic.caution.fg} />
-            <Text style={txt.verifyPortionText}>请核对份量</Text>
+            <Text style={txt.verifyPortionText}>{portionSignal}</Text>
           </View>
         ) : null}
       </View>

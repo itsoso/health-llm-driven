@@ -621,6 +621,7 @@ describe('DietScreen capture deeplink', () => {
           calories: 330, protein: 62, carbs: 0, fat: 7.2, fiber: 0,
           confidence: 0.91, food_id: 'cfc:chicken_breast',
           source: 'china_food_composition', nutrition_basis: 'food_table',
+          portion_basis: 'vision_estimate', portion_confidence: 0.74,
         },
         {
           name: '杂粮饭', quantity: '1碗', calories: 230, protein: 5,
@@ -644,12 +645,13 @@ describe('DietScreen capture deeplink', () => {
     });
     expect(getByText('鸡胸肉')).toBeTruthy();
     expect(getByText('200g · 330 kcal')).toBeTruthy();
-    expect(getByText('营养表校准')).toBeTruthy();
-    expect(getByText('置信 91%')).toBeTruthy();
+    expect(getByText('表值 × 估算份量')).toBeTruthy();
+    expect(getByText('识别较稳')).toBeTruthy();
     expect(getByText('杂粮饭')).toBeTruthy();
     expect(getByText('1碗 · 230 kcal')).toBeTruthy();
     expect(getByText('视觉估算')).toBeTruthy();
-    expect(getByText('置信 62%')).toBeTruthy();
+    expect(getByText('识别待核对')).toBeTruthy();
+    expect(getAllByText('份量为估算').length).toBeGreaterThan(0);
     expect(getAllByText('请核对份量').length).toBeGreaterThan(0);
   });
 

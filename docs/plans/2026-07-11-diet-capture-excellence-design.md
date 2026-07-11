@@ -2,7 +2,7 @@
 
 ## 架构决策
 
-视觉模型输出保持“候选事实”：食物名、显示份量、单项营养和视觉置信度。后端清洗 UI/OCR 文案并生成 canonical meal description；若食物名命中 reviewed food table 的显式 `calibration_names`，且份量能确定为 g/kg/克/斤，则使用存在的表字段重新计算单项营养与总量，并附 `food_id` / `source`。表字段不完整时来源为 `mixed`，不能标成完全校准；没有被 curator 明确批准的泛化 canonical 或 alias 不自动命中。不满足条件时保留模型估算，但 UI 显示“图片估算”而不是伪装精确。Agent 的食物照片和默认纯图片提示即使由商业多模态模型处理，也必须先经过同一确定性清洗与校准链路；普通图片 fallback 不具备饮食写入资格。
+视觉模型输出保持“候选事实”：食物名、显示份量、单项营养、身份置信度和份量置信度。后端把模型输出当作不可信输入，白名单清洗 UI/OCR 文案、药物、补剂、重复项、异常数值和无界字段，并生成 canonical meal description；若食物名命中 reviewed food table 的显式 `calibration_names`，且视觉份量能换算为 g/kg/克/斤，则使用存在的表字段重新计算单项营养与总量，并附 `food_id` / `source`。表字段不完整时来源为 `mixed`，不能标成完全校准；没有被 curator 明确批准的泛化 canonical 或 alias 不自动命中。营养表只校准单位重量营养密度，不证明照片份量准确，因此所有照片克重仍保留 `portion_basis=vision_estimate`，UI 显示“表值 × 估算份量”；无法可靠判断份量时为 `unknown`，不能编造精确值。Agent 的食物照片和默认纯图片提示即使由商业多模态模型处理，也必须先经过同一确定性清洗与校准链路；普通图片 fallback 不具备饮食写入资格。
 
 Mobile 把草稿呈现为分项清单，不再只显示一句合并描述。主按钮仍是“确认记录”，修正进入已有 MealForm；确认前不存在正式 DietRecord。下一阶段把图片先落成 owner-scoped server draft，返回短期 draft token；确认只发送 token 和结构化数据，从而避免同一 base64 上传两次，并通过 Idempotency-Key 防止崩溃重试重复写。
 
@@ -25,14 +25,15 @@ persisted -> rendering_share -> share_ready -> shared|cancelled
 ## 错误与降级
 
 - 食物为空或仅 UI 文案：拒绝草稿，提示重拍餐食本身。
+- 模型输出药物、补剂、重复项或异常营养值：在草稿前剔除或置为未知；识别正文和食物名不得进入服务日志。
 - 表匹配失败：保留模型估算和低/中置信标记，不阻塞用户修正。
-- 识别超时：保留照片草稿，允许改用文字，不自动重试多次扣费。
+- 识别超时或限流：保留真实可操作错误，不得误报成“图片没有食物”；允许改用文字，不自动重试多次扣费。
 - 确认超时：同一 idempotency key 查询/重试，不创建第二条记录。
 - 图片 5 秒内未加载：切换为无照片指标卡继续生成；图片分享不可用时退回不含私有图片 URL、用户标识或健康详情的简短文本系统分享。分享 Promise 结束后释放临时 PNG。
 
 ## 测试
 
-- 纯函数测试：quantity parser、canonical description、table calibration、totals。
+- 纯函数测试：quantity parser、canonical description、table calibration、portion provenance、非食物拒绝、异常值、去重上限和 totals。
 - API 测试：recognize、create/confirm、owner isolation、idempotency、失败清理。
 - Mobile 测试：状态机、分项 UI、低置信、修正、分享状态。
 - 视觉测试：模拟器 390x844 与 430x932；分享图 1080x1440 像素检查。

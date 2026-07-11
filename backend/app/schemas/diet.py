@@ -163,6 +163,8 @@ class FoodItem(BaseModel):
     source: Optional[str] = None
     quantity_grams: Optional[float] = None
     nutrition_basis: Optional[str] = None
+    portion_basis: Optional[str] = None
+    portion_confidence: Optional[float] = None
 
 
 class FoodRecognitionRequest(BaseModel):

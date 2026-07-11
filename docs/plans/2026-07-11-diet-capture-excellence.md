@@ -94,7 +94,25 @@
 4. Aggregate p50/p95 from completed events only; expose attempts, failures, cancellations, preparation latency, payload size and privacy-safe correction rate.
 5. Run affected Mobile/Backend regressions and commit.
 
-### Task 6: Measurement and release
+### Task 6: Truthful portion and untrusted-model boundary
+
+**Files:**
+- Modify: `backend/app/services/ai/food_recognition.py`
+- Modify: `backend/app/schemas/diet.py`
+- Modify: `mobile/services/diet.ts`
+- Modify: `mobile/types/api.generated.ts`
+- Modify: `mobile/app/diet.tsx`
+- Test: `backend/tests/test_food_recognition_sanitizer.py`
+- Test: `backend/tests/test_food_nutrition_lookup.py`
+- Test: `mobile/app/__tests__/dietCapture.test.tsx`
+
+1. Add RED tests for medication/supplement rejection, invalid values, duplicate/model item bounds, portion provenance, operational error preservation and privacy-safe logs.
+2. Treat model JSON as untrusted input; whitelist fields, bound values and item count, and recompute totals only from sanitized values.
+3. Mark every photo quantity as `vision_estimate` or `unknown`; table calibration must preserve that provenance.
+4. Render “表值 × 估算份量” and qualitative identity signals instead of presenting model confidence as a precise probability.
+5. Regenerate OpenAPI types and run affected Backend/Mobile regressions before deployment and OTA.
+
+### Task 7: Measurement and release
 
 **Files:**
 - Modify: `backend/app/api/diet.py`

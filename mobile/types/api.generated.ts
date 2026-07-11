@@ -23253,6 +23253,10 @@ export interface components {
             quantity_grams?: number | null;
             /** Nutrition Basis */
             nutrition_basis?: string | null;
+            /** Portion Basis */
+            portion_basis?: string | null;
+            /** Portion Confidence */
+            portion_confidence?: number | null;
         };
         /**
          * FoodRecognitionRequest

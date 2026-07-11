@@ -99,6 +99,8 @@ export interface FoodItem {
   source?: string | null;
   quantity_grams?: number | null;
   nutrition_basis?: 'food_table' | 'vision_estimate' | string | null;
+  portion_basis?: 'vision_estimate' | 'unknown' | 'measured' | 'label' | string | null;
+  portion_confidence?: number | null;
 }
 
 export interface FoodRecognitionResponse {

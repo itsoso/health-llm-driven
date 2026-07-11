@@ -2,49 +2,146 @@
 AI 食物识别服务
 使用 LLM Provider 识别食物图片并估算营养信息
 """
-import base64
 import json
 import logging
+import math
 import re
 from typing import Dict, Any, List, Optional
-from app.config import settings
+from app.services.intake_intent_classifier import (
+    classify_intake_intent,
+    looks_like_food_ui_text,
+)
 from app.services.llm import get_vision_provider
 
 logger = logging.getLogger(__name__)
 
+MAX_RECOGNIZED_FOODS = 12
+_NON_FOOD_INTENT_KINDS = {"diet_management", "medication", "supplement"}
+_FOOD_CONTEXT_SUFFIX_RE = re.compile(
+    r"(?:酸奶|饮料|果汁|茶|咖啡|牛奶|豆奶|沙拉|水果|坚果|面包|麦片|粥|饭|面|菜|汤|蛋|肉)$",
+    re.I,
+)
+_SAFE_OPERATIONAL_ERRORS = {
+    "智能识别服务不可用",
+    "AI返回空内容，请重试",
+    "图片中未识别到食物，请确保图片清晰且包含食物内容",
+    "图片中未识别到食物，请重新拍照或选择包含食物的图片",
+    "AI响应格式错误，请重试",
+    "服务繁忙，请稍后重试",
+    "AI服务配置错误，请联系管理员",
+    "识别超时，请重试",
+    "识别失败，请重试",
+}
+_NUTRIENT_LIMITS = {
+    "calories": 5000.0,
+    "protein": 1000.0,
+    "carbs": 1000.0,
+    "fat": 500.0,
+    "fiber": 200.0,
+}
 
-def _as_number(value: Any) -> Optional[float]:
+FOOD_RECOGNITION_SYSTEM_PROMPT = """你是专业的食物识别与营养估算助手。只分析照片中清晰可见、可食用的餐食，不把界面文字、包装文案、药物或补剂识别成食物，也不要猜测被遮挡的配料。
+
+请严格只返回以下 JSON，不要附加说明：
+{
+  "foods": [
+    {
+      "name": "中文食物名称",
+      "quantity": "约1碗",
+      "calories": 320,
+      "protein": 18.0,
+      "carbs": 42.0,
+      "fat": 9.0,
+      "fiber": 4.0,
+      "confidence": 0.86,
+      "portion_confidence": 0.68
+    }
+  ],
+  "meal_description": "餐食简述",
+  "health_tips": "简短营养提示"
+}
+
+规则：
+1. 只列出照片中确实可见的食物，最多 12 项；没有食物时 foods 返回空数组。
+2. 份量永远是视觉估算，不是测量值。没有清晰参照物时宁可返回 null，不编造精确克数。
+3. 无法确认食物身份或营养值时使用 null，不用 0 代替未知。
+4. 不输出药品、补剂、餐食卡片文字、按钮文字或其他界面元素。
+5. 同一种食物合并为一个条目，quantity 写用户这一餐可见的总份量。
+6. 只返回合法 JSON。"""
+
+
+def _as_number(value: Any, maximum: Optional[float] = None) -> Optional[float]:
     if value is None:
         return None
     try:
         number = float(value)
     except (TypeError, ValueError):
         return None
-    if number < 0:
+    if not math.isfinite(number) or number < 0:
+        return None
+    if maximum is not None and number > maximum:
         return None
     return round(number, 1)
 
 
-def _looks_like_food_ui_text(value: Any) -> bool:
-    normalized = re.sub(r"\s+", "", str(value or "")).lower()
-    if not normalized:
+def _as_probability(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or number < 0 or number > 1:
+        return None
+    return round(number, 3)
+
+
+def _clean_text(value: Any, maximum_length: int) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()[:maximum_length]
+
+
+def _looks_like_non_food_intake(name: str) -> bool:
+    intent = classify_intake_intent(name)
+    if intent.kind == "supplement" and _FOOD_CONTEXT_SUFFIX_RE.search(name):
         return False
-    if re.fullmatch(r"(?:和)?(?:早餐|午餐|晚餐|加餐|餐食)?(?:食品?)?营养卡", normalized):
-        return True
-    return any(marker in normalized for marker in (
-        "营养卡",
-        "保存并确认",
-        "确认记录",
-        "今日饮食",
-        "待确认",
-        "完成修正",
-        "去饮食页修正",
-        "看下一餐建议",
-    ))
+    return intent.kind in _NON_FOOD_INTENT_KINDS
+
+
+def _sanitize_food_item(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    name = _clean_text(raw.get("name"), 80)
+    if not name or looks_like_food_ui_text(name):
+        return None
+    if _looks_like_non_food_intake(name):
+        return None
+
+    quantity = _clean_text(raw.get("quantity"), 40) or None
+    item: Dict[str, Any] = {
+        "name": name,
+        "quantity": quantity,
+        "confidence": _as_probability(raw.get("confidence")),
+        "portion_basis": "vision_estimate" if quantity else "unknown",
+        "portion_confidence": _as_probability(raw.get("portion_confidence")) if quantity else None,
+    }
+    for field, maximum in _NUTRIENT_LIMITS.items():
+        item[field] = _as_number(raw.get(field), maximum=maximum)
+
+    quantity_grams = _as_number(raw.get("quantity_grams"), maximum=10000.0)
+    if quantity_grams is not None:
+        item["quantity_grams"] = quantity_grams
+    for field, maximum_length in (
+        ("food_id", 120),
+        ("source", 80),
+        ("nutrition_basis", 40),
+        ("unit", 20),
+    ):
+        value = _clean_text(raw.get(field), maximum_length)
+        if value:
+            item[field] = value
+    return item
 
 
 def sanitize_food_recognition_result(result: Dict[str, Any]) -> Dict[str, Any]:
-    """Drop OCR/UI copy that a vision model mis-labeled as food."""
+    """Normalize untrusted vision output into the public recognition contract."""
     if not isinstance(result, dict):
         return {
             "success": False,
@@ -57,27 +154,45 @@ def sanitize_food_recognition_result(result: Dict[str, Any]) -> Dict[str, Any]:
         foods = []
 
     cleaned: List[Dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
     for raw in foods:
         if not isinstance(raw, dict):
             continue
-        name = str(raw.get("name") or "").strip()
-        if not name or _looks_like_food_ui_text(name):
+        item = _sanitize_food_item(raw)
+        if item is None:
             continue
-        item = dict(raw)
-        item["name"] = name[:80]
+        dedupe_key = (
+            re.sub(r"\s+", "", item["name"]).lower(),
+            re.sub(r"\s+", "", item.get("quantity") or "").lower(),
+        )
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
         cleaned.append(item)
+        if len(cleaned) >= MAX_RECOGNIZED_FOODS:
+            break
 
-    result["foods"] = cleaned
+    sanitized: Dict[str, Any] = {
+        "foods": cleaned,
+        "health_tips": _clean_text(result.get("health_tips"), 300) or None,
+    }
     if not cleaned:
-        result["success"] = False
-        result["error"] = "图片中未识别到可记录的食物，请重新拍摄餐食本身。"
-        result["meal_description"] = "未识别到可记录的食物"
-        result["total_calories"] = None
-        result["total_protein"] = None
-        result["total_carbs"] = None
-        result["total_fat"] = None
-        result["total_fiber"] = None
-        return result
+        operational_error = _clean_text(result.get("error"), 120)
+        if result.get("success") is False:
+            error = operational_error if operational_error in _SAFE_OPERATIONAL_ERRORS else "识别失败，请重试"
+        else:
+            error = "图片中未识别到可记录的食物，请重新拍摄餐食本身。"
+        sanitized.update({
+            "success": False,
+            "error": error,
+            "meal_description": "未识别到可记录的食物",
+            "total_calories": None,
+            "total_protein": None,
+            "total_carbs": None,
+            "total_fat": None,
+            "total_fiber": None,
+        })
+        return sanitized
 
     mapping = {
         "calories": "total_calories",
@@ -89,18 +204,18 @@ def sanitize_food_recognition_result(result: Dict[str, Any]) -> Dict[str, Any]:
     for source_key, total_key in mapping.items():
         values = [_as_number(food.get(source_key)) for food in cleaned]
         if any(value is None for value in values):
-            result[total_key] = None
+            sanitized[total_key] = None
             continue
         total = sum(value for value in values if value is not None)
-        result[total_key] = int(round(total)) if total_key == "total_calories" else round(total, 1)
+        sanitized[total_key] = int(round(total)) if total_key == "total_calories" else round(total, 1)
 
     descriptions = []
     for food in cleaned:
         quantity = str(food.get("quantity") or "").strip()
         descriptions.append(f"{food['name']} {quantity}".strip())
-    result["meal_description"] = "、".join(descriptions)[:300]
-    result["success"] = True
-    return result
+    sanitized["meal_description"] = "、".join(descriptions)[:300]
+    sanitized["success"] = True
+    return sanitized
 
 
 def extract_json_from_text(text: str) -> str:
@@ -153,7 +268,7 @@ class FoodRecognitionService:
             try:
                 self._provider = get_vision_provider()
             except Exception as e:
-                logger.error(f"获取 LLM Provider 失败: {e}")
+                logger.error("获取 LLM Provider 失败 error_type=%s", type(e).__name__)
         return self._provider
 
     def is_available(self) -> bool:
@@ -190,47 +305,17 @@ class FoodRecognitionService:
             data_url = f"data:image/{image_type};base64,{image_base64}"
             logger.info(f"调用 LLM Vision API 识别食物")
 
-            system_prompt = """你是一个专业的营养师和食物识别专家。请分析用户上传的食物图片，识别出所有食物并估算营养信息。
-
-请严格按照以下JSON格式返回结果，不要有任何其他文字：
-{
-    "foods": [
-        {
-            "name": "食物名称（中文）",
-            "quantity": "估算的份量，如: 1碗、200g、1个",
-            "calories": 估算的热量（整数，单位kcal）,
-            "protein": 估算的蛋白质（浮点数，单位g）,
-            "carbs": 估算的碳水化合物（浮点数，单位g）,
-            "fat": 估算的脂肪（浮点数，单位g）,
-            "fiber": 估算的膳食纤维（浮点数，单位g，可选）,
-            "confidence": 识别置信度（0-1之间的浮点数）
-        }
-    ],
-    "meal_description": "对这顿餐食的简短描述",
-    "health_tips": "营养建议或健康提示",
-    "total_calories": 总热量估算（整数）,
-    "total_protein": 总蛋白质（浮点数）,
-    "total_carbs": 总碳水（浮点数）,
-    "total_fat": 总脂肪（浮点数）
-}
-
-注意：
-1. 如果图片中没有食物，返回空的foods数组并在meal_description中说明
-2. 营养估算基于中国常见食物的营养成分表
-3. 份量估算要尽可能准确，参考常见餐具大小
-4. 只返回JSON，不要有任何额外说明文字"""
-
             provider = self._get_provider()
             from app.services.llm.usage_tracker import set_caller
             set_caller("food_recognition.from_base64")
             raw_content = await provider.chat_with_vision(
                 messages=[
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": FOOD_RECOGNITION_SYSTEM_PROMPT},
                     {"role": "user", "content": "请识别这张图片中的食物，并估算营养信息。"},
                 ],
                 image_url=data_url,
-                temperature=0.3,
-                max_tokens=1500,
+                temperature=0.1,
+                max_tokens=2000,
             )
             if not raw_content:
                 logger.error("AI返回空内容")
@@ -241,29 +326,31 @@ class FoodRecognitionService:
                 }
 
             content = raw_content.strip()
-            logger.info(f"AI原始响应长度: {len(content)}, 前100字符: {content[:100]}")
+            logger.info("AI原始响应已接收 response_length=%s", len(content))
 
             # 检查是否是拒绝识别的回复
             refuse_keywords = ["无法识别", "抱歉", "不是食物", "cannot identify", "sorry", "not food", "看不清", "无法分析"]
             if any(keyword in content.lower() for keyword in refuse_keywords):
-                logger.warning(f"AI无法识别图片内容: {content[:200]}")
+                logger.warning("AI无法识别图片内容 response_length=%s", len(content))
                 return {
                     "success": False,
                     "error": "图片中未识别到食物，请确保图片清晰且包含食物内容",
                     "foods": [],
-                    "ai_message": content[:200]
                 }
 
             # 使用改进的JSON提取函数
             json_content = extract_json_from_text(content)
-            logger.info(f"提取的JSON内容长度: {len(json_content)}, 前100字符: {json_content[:100]}")
+            logger.info("已提取识别JSON json_length=%s", len(json_content))
 
             try:
                 result = json.loads(json_content)
             except json.JSONDecodeError as e:
-                logger.error(f"JSON解析失败: {e}")
-                logger.error(f"尝试解析的内容: {json_content[:500]}")
-                logger.error(f"原始AI响应: {content[:500]}")
+                logger.error(
+                    "食物识别JSON解析失败 line=%s column=%s response_length=%s",
+                    e.lineno,
+                    e.colno,
+                    len(content),
+                )
 
                 # 检查是否是拒绝识别的情况
                 if any(keyword in content.lower() for keyword in refuse_keywords):
@@ -271,13 +358,11 @@ class FoodRecognitionService:
                         "success": False,
                         "error": "图片中未识别到食物，请重新拍照或选择包含食物的图片",
                         "foods": [],
-                        "ai_message": content[:200]
                     }
                 return {
                     "success": False,
                     "error": "AI响应格式错误，请重试",
                     "foods": [],
-                    "raw_response": content[:500]
                 }
 
             result["success"] = True
@@ -290,17 +375,11 @@ class FoodRecognitionService:
             foods_count = len(result.get('foods', []))
             logger.info(f"食物识别完成: success={result.get('success')} foods={foods_count}")
 
-            if foods_count > 0:
-                food_names = [f.get('name', '未知') for f in result['foods']]
-                logger.info(f"识别到的食物: {', '.join(food_names)}")
-
             return result
 
         except Exception as e:
-            import traceback
             error_msg = str(e)
-            logger.error(f"食物识别失败: {error_msg}")
-            logger.error(f"详细错误: {traceback.format_exc()}")
+            logger.error("食物识别失败 error_type=%s", type(e).__name__)
 
             # 检查是否是OpenAI API相关错误
             if "rate limit" in error_msg.lower():
@@ -324,7 +403,7 @@ class FoodRecognitionService:
 
             return {
                 "success": False,
-                "error": f"识别失败: {error_msg[:100]}",
+                "error": "识别失败，请重试",
                 "foods": []
             }
 
@@ -346,41 +425,17 @@ class FoodRecognitionService:
             }
 
         try:
-            system_prompt = """你是一个专业的营养师和食物识别专家。请分析用户上传的食物图片，识别出所有食物并估算营养信息。
-
-请严格按照以下JSON格式返回结果：
-{
-    "foods": [
-        {
-            "name": "食物名称（中文）",
-            "quantity": "估算的份量",
-            "calories": 热量（整数，kcal）,
-            "protein": 蛋白质（浮点数，g）,
-            "carbs": 碳水化合物（浮点数，g）,
-            "fat": 脂肪（浮点数，g）,
-            "fiber": 膳食纤维（浮点数，g，可选）,
-            "confidence": 识别置信度（0-1）
-        }
-    ],
-    "meal_description": "餐食描述",
-    "health_tips": "健康提示",
-    "total_calories": 总热量,
-    "total_protein": 总蛋白质,
-    "total_carbs": 总碳水,
-    "total_fat": 总脂肪
-}"""
-
             provider = self._get_provider()
             from app.services.llm.usage_tracker import set_caller
             set_caller("food_recognition.from_url")
             raw_content = await provider.chat_with_vision(
                 messages=[
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": FOOD_RECOGNITION_SYSTEM_PROMPT},
                     {"role": "user", "content": "请识别这张图片中的食物，并估算营养信息。"},
                 ],
                 image_url=image_url,
-                temperature=0.3,
-                max_tokens=1500,
+                temperature=0.1,
+                max_tokens=2000,
             )
 
             if not raw_content:
@@ -402,19 +457,23 @@ class FoodRecognitionService:
                 result["success"] = True
                 return sanitize_food_recognition_result(result)
             except json.JSONDecodeError as e:
-                logger.error(f"JSON解析失败: {e}, 内容: {json_content[:500]}")
+                logger.error(
+                    "URL食物识别JSON解析失败 line=%s column=%s response_length=%s",
+                    e.lineno,
+                    e.colno,
+                    len(content),
+                )
                 return {
                     "success": False,
                     "error": "AI响应格式错误，请重试",
                     "foods": [],
-                    "raw_response": content[:500]
                 }
 
         except Exception as e:
-            logger.error(f"从URL识别食物失败: {e}")
+            logger.error("从URL识别食物失败 error_type=%s", type(e).__name__)
             return {
                 "success": False,
-                "error": str(e)[:100],
+                "error": "识别失败，请重试",
                 "foods": []
             }
 
@@ -499,10 +558,10 @@ class FoodRecognitionService:
             return result
 
         except Exception as e:
-            logger.error(f"文字营养估算失败: {e}")
+            logger.error("文字营养估算失败 error_type=%s", type(e).__name__)
             return {
                 "success": False,
-                "error": str(e),
+                "error": "营养估算失败，请重试",
                 "foods": []
             }
 

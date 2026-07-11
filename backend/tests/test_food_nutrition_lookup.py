@@ -51,6 +51,8 @@ def test_calibrate_recognized_foods_uses_table_for_explicit_weight(db):
     foods = [{
         "name": "鸡胸肉",
         "quantity": "200g",
+        "portion_basis": "vision_estimate",
+        "portion_confidence": 0.73,
         "calories": 999,
         "protein": 1,
         "carbs": 50,
@@ -74,6 +76,8 @@ def test_calibrate_recognized_foods_uses_table_for_explicit_weight(db):
         "food_id": "cfc:chicken_breast",
         "source": "china_food_composition",
         "nutrition_basis": "food_table",
+        "portion_basis": "vision_estimate",
+        "portion_confidence": 0.73,
     }
 
 

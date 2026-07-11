@@ -29,7 +29,7 @@ RequirementAdmission:
   prescription_or_causal_verdict: false
   autonomy_tier: manual_confirm
   evidence_provenance: per-food source and confidence
-  claim_hedging: nutrition values remain estimates unless table-calibrated for explicit weight
+  claim_hedging: reviewed tables calibrate nutrient density, while photo portions remain visual estimates until user confirmation
   verification_window: immediate write receipt plus 7-day p50/p95 observation
   success_metric: correctable drafts, no duplicate writes, measured latency, successful image share
   added_user_burden: one confirmation or correction action
@@ -87,6 +87,8 @@ fields:
   - FoodItem.food_id
   - FoodItem.source
   - FoodItem.calibration_names
+  - FoodItem.portion_basis
+  - FoodItem.portion_confidence
   - FoodRecognitionResponse.total_fiber
   - diet_photo_recognition_terminal.client_prepare_ms
   - diet_photo_recognition_terminal.payload_bytes
@@ -99,18 +101,26 @@ migrations:
 
 ## 9. Safety, Privacy, And Medical Boundary
 
-Diet images and nutrition are sensitive health data. Every image path and draft token is owner-scoped. Low-confidence or unweighted results remain labeled estimates. The system never diagnoses, prescribes, or claims scale-grade precision. Sharing requires explicit user action and omits identity, conditions, medication and genetics by default.
+Diet images and nutrition are sensitive health data. Every image path and draft token is owner-scoped. Recognition model content and food names are excluded from service logs. Low-confidence or unweighted results remain labeled estimates; a reviewed-table nutrient match never promotes a visual portion into a measured value. The system never diagnoses, prescribes, or claims scale-grade precision. Sharing requires explicit user action and omits identity, conditions, medication and genetics by default.
 
 ## 10. AI Behavior
 
-Vision may propose food identity, display quantity and visual confidence. It must not include UI text as food, invent exact values when uncertain, or directly write records. Deterministic sanitation runs first; reviewed table calibration runs only on matched names with explicit convertible weight; the user confirms last.
+Vision may propose food identity, display quantity, identity confidence and portion confidence. It must not include UI text, medication or supplements as food, invent exact values when uncertain, or directly write records. Deterministic sanitation bounds fields, values and item count before reviewed-table calibration; calibration runs only on matched names with explicit convertible weight and preserves `portion_basis=vision_estimate`; the user confirms last.
 
 ## 11. Acceptance Criteria
 
 ```gherkin
 Given a recognized chicken breast with quantity "200g" and a reviewed table match
 When the draft is built
-Then macros use the reviewed 200g values and expose the table source
+Then macros use the reviewed 200g values, expose the table source and still label the 200g portion as a visual estimate
+
+Given a model returns medication, supplements, duplicate foods or invalid negative nutrients
+When deterministic sanitation runs
+Then non-food and duplicate items are removed, invalid values become unknown and no model content appears in service logs
+
+Given a provider timeout or rate limit occurs before foods are returned
+When the API sanitizes the failure response
+Then the actionable retry error is preserved and is not replaced with a false no-food message
 
 Given an image whose only detected text is a UI nutrition card
 When recognition finishes
@@ -185,3 +195,4 @@ Deploy backend additive response fields before Mobile. Preserve legacy create pa
 |---|---|---|
 | 2026-07-11 | Initial active spec | Begin P0 accuracy and explainability implementation |
 | 2026-07-12 | Bound camera payload and correct latency semantics | Prevent raw-photo memory/network cost and misleading p50/p95 |
+| 2026-07-12 | Separate nutrient calibration from portion truth | Prevent table matches and model confidence from implying measured-photo precision |

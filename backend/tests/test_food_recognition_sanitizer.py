@@ -1,4 +1,12 @@
-from app.services.ai.food_recognition import sanitize_food_recognition_result
+import json
+import logging
+
+import pytest
+
+from app.services.ai.food_recognition import (
+    FoodRecognitionService,
+    sanitize_food_recognition_result,
+)
 
 
 def test_sanitize_food_recognition_rejects_ui_card_copy():
@@ -24,6 +32,17 @@ def test_sanitize_food_recognition_rejects_ui_card_copy():
     assert result["success"] is False
     assert result["foods"] == []
     assert "未识别到可记录的食物" in result["error"]
+
+
+def test_sanitize_food_recognition_preserves_safe_operational_error():
+    result = sanitize_food_recognition_result({
+        "success": False,
+        "error": "识别超时，请重试",
+        "foods": [],
+    })
+
+    assert result["success"] is False
+    assert result["error"] == "识别超时，请重试"
 
 
 def test_sanitize_food_recognition_keeps_real_food_and_recomputes_totals():
@@ -57,6 +76,7 @@ def test_sanitize_food_recognition_keeps_real_food_and_recomputes_totals():
     assert result["total_fat"] == 7
     assert result["total_fiber"] == 2.4
     assert result["meal_description"] == "鸡胸肉 200g"
+    assert result["foods"][0]["portion_basis"] == "vision_estimate"
 
 
 def test_sanitize_food_recognition_does_not_keep_stale_totals_for_unknown_nutrients():
@@ -82,3 +102,133 @@ def test_sanitize_food_recognition_does_not_keep_stale_totals_for_unknown_nutrie
     assert result["total_protein"] is None
     assert result["total_carbs"] == 0
     assert result["total_fat"] == 7
+
+
+def test_sanitize_food_recognition_rejects_non_food_intake_but_keeps_meal_items():
+    result = sanitize_food_recognition_result({
+        "success": True,
+        "foods": [
+            {"name": "牛肉面", "quantity": "1碗", "calories": 620},
+            {"name": "奥美拉唑肠溶片", "quantity": "1片", "calories": 0},
+            {"name": "鱼油", "quantity": "2粒", "calories": 18},
+        ],
+    })
+
+    assert result["success"] is True
+    assert [food["name"] for food in result["foods"]] == ["牛肉面"]
+    assert result["meal_description"] == "牛肉面 1碗"
+
+
+def test_sanitize_food_recognition_keeps_food_with_supplement_like_name():
+    result = sanitize_food_recognition_result({
+        "success": True,
+        "foods": [{
+            "name": "益生菌酸奶",
+            "quantity": "1杯",
+            "calories": 130,
+        }],
+    })
+
+    assert result["success"] is True
+    assert [food["name"] for food in result["foods"]] == ["益生菌酸奶"]
+
+
+def test_sanitize_food_recognition_normalizes_untrusted_numbers_and_portion_truth():
+    result = sanitize_food_recognition_result({
+        "success": True,
+        "foods": [
+            {
+                "name": "鸡胸肉",
+                "quantity": "200g",
+                "calories": 330,
+                "protein": -4,
+                "carbs": "not-a-number",
+                "fat": 7.2,
+                "fiber": 0,
+                "confidence": 1.4,
+                "portion_confidence": "0.72",
+            },
+            {
+                "name": "西兰花",
+                "quantity": None,
+                "calories": 50,
+                "protein": 4,
+                "carbs": 8,
+                "fat": 0.5,
+                "fiber": 4,
+                "confidence": 0.88,
+                "portion_confidence": -1,
+            },
+        ],
+    })
+
+    chicken, broccoli = result["foods"]
+    assert chicken["protein"] is None
+    assert chicken["carbs"] is None
+    assert chicken["confidence"] is None
+    assert chicken["portion_basis"] == "vision_estimate"
+    assert chicken["portion_confidence"] == 0.72
+    assert broccoli["portion_basis"] == "unknown"
+    assert broccoli["portion_confidence"] is None
+    assert result["total_protein"] is None
+    assert result["total_carbs"] is None
+
+
+def test_sanitize_food_recognition_deduplicates_and_caps_model_items():
+    foods = [
+        {"name": "鸡胸肉", "quantity": "200g", "calories": 330},
+        {"name": " 鸡胸肉 ", "quantity": " 200g ", "calories": 999},
+    ]
+    foods.extend(
+        {"name": f"配菜{i}", "quantity": "1份", "calories": i}
+        for i in range(20)
+    )
+
+    result = sanitize_food_recognition_result({"success": True, "foods": foods})
+
+    assert len(result["foods"]) == 12
+    assert [food["name"] for food in result["foods"]].count("鸡胸肉") == 1
+    assert result["foods"][0]["calories"] == 330
+
+
+@pytest.mark.asyncio
+async def test_food_recognition_does_not_log_model_content_or_food_names(caplog):
+    private_food_name = "仅用于隐私测试的私密餐食"
+
+    class FakeProvider:
+        async def chat_with_vision(self, **_kwargs):
+            return json.dumps({
+                "foods": [{
+                    "name": private_food_name,
+                    "quantity": "1份",
+                    "calories": 420,
+                }],
+            }, ensure_ascii=False)
+
+    service = FoodRecognitionService()
+    service._provider = FakeProvider()
+
+    with caplog.at_level(logging.INFO, logger="app.services.ai.food_recognition"):
+        result = await service.recognize_food_from_base64("aW1hZ2U=")
+
+    assert result["success"] is True
+    assert private_food_name not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_food_recognition_does_not_expose_provider_error_content(caplog):
+    private_error = "provider-error-containing-private-meal"
+
+    class FailingProvider:
+        async def chat_with_vision(self, **_kwargs):
+            raise RuntimeError(private_error)
+
+    service = FoodRecognitionService()
+    service._provider = FailingProvider()
+
+    with caplog.at_level(logging.ERROR, logger="app.services.ai.food_recognition"):
+        result = await service.recognize_food_from_base64("aW1hZ2U=")
+
+    assert result["success"] is False
+    assert private_error not in result["error"]
+    assert private_error not in caplog.text
