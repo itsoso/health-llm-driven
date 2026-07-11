@@ -3839,6 +3839,33 @@ class AgentExecutor:
             "recovered": recovered_user_message is not None,
         }}
 
+        # ── Slice 3 程序性配方: 触发短语精确匹配 (先于 fast-path/LLM)。
+        # strip 后等值才命中 (不做模糊匹配, 控误触发); 命中 → 确定性逐步重放,
+        # 每步确认策略沿用该 kind 既有 confirm tier (typed_only/never_auto 原样
+        # 生效, 配方不绕任何确认门)。匹配失败/异常绝不断主链路 (fail-soft 回
+        # 正常 LLM 路径, 但记 warning 可观测)。
+        if not images and not file_base64:
+            matched_recipe = None
+            try:
+                from app.services.procedure_recipe_service import match_trigger
+
+                matched_recipe = match_trigger(self.db, user_id, message)
+            except Exception as e:  # noqa: BLE001 — 匹配层失败回退 LLM, 不吞成静默
+                logger.warning("[agent_executor] recipe match_trigger failed: %s", e)
+            if matched_recipe is not None:
+                async for evt in self._run_recipe_replay(
+                    matched_recipe,
+                    svc,
+                    conv,
+                    user_msg,
+                    user_id,
+                    user_auth_token,
+                    client_turn_id,
+                    start_time,
+                ):
+                    yield evt
+                return
+
         _t_stage = time.time()
         opener_quick_reply_note = None
         try:
@@ -4017,6 +4044,10 @@ class AgentExecutor:
         write_receipts: List[Dict[str, Any]] = []
         write_results_by_fingerprint: Dict[str, tuple[str, str]] = {}
         unverified_write_tools: List[str] = []
+        # Slice 3 配方候选: 本轮**成功完成**的 health_record 写步骤 (sanitize 掉
+        # 一次性确认标志 + 日期模板化)。≥2 步时 done 附 save_recipe 描述符
+        # (仅描述符, 移动端渲染"存为配方"入口; 存不存由用户点)。
+        recipe_candidate_steps: List[Dict[str, Any]] = []
 
         # 诚实的非流式 UX: 若本回合答案模型结构性非流式 (langbridge 商用模型, 上游无 SSE,
         # 整段一次返回), mac 端「正在思考…」的 token 滚动是误导 —— 在每轮 LLM 调用前多发一条
@@ -4481,6 +4512,19 @@ class AgentExecutor:
                             tool_event_data["write_completed"] = write_completed
                             if write_attempted and not write_completed:
                                 tool_event_data["success"] = False
+                            if write_completed and func_name == "health_record" and not replayed_write:
+                                # Slice 3: 收集配方候选步骤 (只收成功写入的;
+                                # sanitize 剥 confirmed — 一次性确认绝不进模板)。
+                                try:
+                                    from app.services import procedure_recipe_service as _recipe_svc
+                                    recipe_candidate_steps.append({
+                                        "tool": func_name,
+                                        "args_template": _recipe_svc.template_step_args(
+                                            _recipe_svc.sanitize_step_args(parsed_tool_args)
+                                        ),
+                                    })
+                                except Exception as e:  # noqa: BLE001 — 候选收集失败不影响写主链路
+                                    logger.warning(f"[agent_executor] recipe candidate 收集失败: {e}")
                             if write_completed:
                                 receipt = _write_receipt_from_tool_result(
                                     func_name,
@@ -4930,6 +4974,44 @@ class AgentExecutor:
             else []
         )
 
+        # Slice 3: 一轮完成 ≥2 个写类工具 → done 附 save_recipe 描述符 (仅描述符,
+        # 移动端渲染"存为配方"入口)。候选步骤持久化到 message.meta.recipe_candidate,
+        # save-from-conversation 端点从这里反推 —— 不重放对话、不经 LLM。
+        recipe_candidate_meta: Optional[Dict[str, Any]] = None
+        if completion_status == "complete" and len(recipe_candidate_steps) >= 2:
+            try:
+                from app.services import procedure_recipe_service as _recipe_svc
+
+                recipe_candidate_meta = {
+                    "steps": recipe_candidate_steps,
+                    "step_count": len(recipe_candidate_steps),
+                }
+                save_recipe_card = {
+                    "type": "save_recipe",
+                    "data": {
+                        "conversation_id": conv.id,
+                        "step_count": len(recipe_candidate_steps),
+                        "steps_preview": [
+                            _recipe_svc.step_label(step)
+                            for step in recipe_candidate_steps
+                        ],
+                    },
+                    "actions": [],
+                }
+                response_cards = _merge_agent_card_descriptors(
+                    response_cards, [save_recipe_card]
+                )
+                yield {
+                    "event": "card",
+                    "data": {
+                        "anchor": "save_recipe",
+                        "descriptor": save_recipe_card,
+                    },
+                }
+            except Exception as e:  # noqa: BLE001 — 配方入口失败不影响回合收尾
+                logger.warning(f"[agent_executor] save_recipe 描述符构建失败: {e}")
+                recipe_candidate_meta = None
+
         # 后置校验 (#3 护栏): record 意图的 turn 却 0 次工具执行时,前面已改写为
         # 用户可见的 fail-closed 文案;这里继续把标记写入 meta/done 供监控使用。
 
@@ -4958,6 +5040,7 @@ class AgentExecutor:
                 "record_intent_no_tool": record_intent_no_tool,
                 "perf": perf,
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
+                **({"recipe_candidate": recipe_candidate_meta} if recipe_candidate_meta else {}),
                 "client_turn_finalized": True,
                 **({"client_turn_id": client_turn_id} if client_turn_id else {}),
             }
@@ -4993,6 +5076,224 @@ class AgentExecutor:
                 **({"client_turn_id": client_turn_id} if client_turn_id else {}),
             },
         }
+
+    async def _run_recipe_replay(
+        self,
+        recipe,
+        svc,
+        conv,
+        user_msg,
+        user_id: int,
+        user_auth_token: Optional[str],
+        client_turn_id: Optional[str],
+        start_time: float,
+    ) -> AsyncGenerator[Dict, None]:
+        """Slice 3: 配方确定性重放 — 存好的工具序列逐步执行, 零 LLM。
+
+        R4 不变量 (与直接调用完全一致, 见 procedure_recipe_service.replay):
+        - 每步过 _auto_confirm_fast_record_args 同一确认门 (AUTO/typed_only/
+          never_auto 原样生效); never_auto kind 重放返回 [NEEDS_CONFIRMATION]
+          且**不写库**, 回复里如实告知 —— 绝不静默注入 confirmed。
+        - args_template 只做确定性填充 ({{today}} → 当天), 无 LLM 改参。
+        - 写步骤沿用主路径的 write checkpoint (in_flight → dispatch 状态),
+          replacement worker 不会重复写。
+        """
+        from app.services import procedure_recipe_service as recipe_svc
+
+        yield {"event": "agent_start", "data": {
+            "message": f"按配方「{recipe.name}」执行...",
+            "conversation_id": conv.id,
+        }}
+
+        tools_used: List[str] = []
+        write_receipts: List[Dict[str, Any]] = []
+        step_lines: List[str] = []
+        record_cards: list[dict] = []
+        needs_confirmation_labels: List[str] = []
+        any_write_completed = False
+        step_meta: List[Dict[str, Any]] = []
+
+        self._http_client = httpx.AsyncClient(timeout=90.0)
+        try:
+            async for outcome in recipe_svc.replay(
+                recipe, self,
+                user_auth_token=user_auth_token,
+                channel=self._turn_channel,
+            ):
+                tool = outcome.get("tool") or ""
+                args = outcome.get("args") or {}
+                index = outcome.get("step_index")
+                if outcome.get("phase") == "start":
+                    if tool and tool not in tools_used:
+                        tools_used.append(tool)
+                    yield {"event": "tool_call", "data": {
+                        "tool": tool,
+                        "args": json.dumps(args, ensure_ascii=False),
+                        "round": 1,
+                    }}
+                    yield self._status_event(
+                        "tool", detail=_tool_status_label(tool), round=1
+                    )
+                    yield self._progress_event(
+                        "tool", round=1, label=_tool_progress_label(tool)
+                    )
+                    if _write_tool_attempted(tool, args):
+                        self._persist_turn_write_state(
+                            user_msg,
+                            status="in_flight",
+                            tool_name=tool,
+                            parsed_args=args,
+                        )
+                    continue
+
+                # phase == "result"
+                result = outcome.get("result") or ""
+                needs_confirmation = bool(outcome.get("needs_confirmation"))
+                step_failed = bool(outcome.get("error"))
+                label = recipe_svc.step_label({"tool": tool, "args_template": args})
+                write_attempted = _write_tool_attempted(tool, args)
+                write_completed = _write_tool_completed(tool, args, result)
+                receipt = None
+                if write_completed:
+                    any_write_completed = True
+                    receipt = _write_receipt_from_tool_result(
+                        tool,
+                        args.get("record_type") or args.get("type"),
+                        result,
+                    )
+                    if receipt and not any(
+                        item.get("operation_id") == receipt.get("operation_id")
+                        for item in write_receipts
+                    ):
+                        write_receipts.append(receipt)
+                    card = _health_record_card_descriptor(
+                        args.get("record_type") or args.get("type"),
+                        args.get("data") or {},
+                        result,
+                    )
+                    if card:
+                        record_cards.append(card)
+                if write_attempted:
+                    self._persist_turn_write_state(
+                        user_msg,
+                        status=_write_checkpoint_status_after_dispatch(result, receipt),
+                        tool_name=tool,
+                        parsed_args=args,
+                        receipt=receipt,
+                    )
+
+                tool_event_data: Dict[str, Any] = {
+                    "tool": tool,
+                    "success": not result.startswith("Error"),
+                    "preview": result[:200],
+                    "result": result,
+                    "write_attempted": write_attempted,
+                    "write_completed": write_completed,
+                    "recipe_step": index,
+                }
+                if receipt:
+                    tool_event_data["receipt"] = receipt
+                if write_attempted and not write_completed:
+                    tool_event_data["success"] = False
+                yield {"event": "tool_result", "data": tool_event_data}
+
+                if needs_confirmation:
+                    needs_confirmation_labels.append(label)
+                    step_lines.append(f"⏸ 第{index}步 {label} — 需要你确认后才能写入")
+                elif step_failed or (write_attempted and not write_completed):
+                    step_lines.append(f"❌ 第{index}步 {label} — 没有成功写入")
+                else:
+                    step_lines.append(f"✅ 第{index}步 {label} — 已记录")
+                step_meta.append({
+                    "step_index": index,
+                    "tool": tool,
+                    "needs_confirmation": needs_confirmation,
+                    "write_completed": write_completed,
+                })
+        except Exception as e:  # noqa: BLE001 — 重放异常 fail-loud 呈现, 不装成功
+            logger.error(f"[agent_executor] recipe replay failed: {e}", exc_info=True)
+            step_lines.append("❌ 配方执行中断: 出现内部错误, 未完成的步骤没有写入")
+        finally:
+            if self._http_client:
+                await self._http_client.aclose()
+                self._http_client = None
+
+        # 写后安全检查 (与主路径同源: 确定性 SafetyGuardian, 与模型无关)
+        safety_suffix = ""
+        safety_cards: list[dict] = []
+        if any_write_completed:
+            try:
+                from app.twin.builder import build_twin
+                from app.agents.safety_guardian import evaluate_safety
+
+                twin = build_twin(self.db, user_id, use_cache=True)
+                report = evaluate_safety(twin)
+                critical = [a for a in report.alerts if int(a.severity) >= 3]
+                if critical:
+                    alert_msgs = "; ".join(a.title for a in critical[:3])
+                    safety_suffix = f"\n\n⚠️ 安全提示: {alert_msgs}"
+                    safety_cards = [
+                        card for card in (
+                            _safety_alert_card_descriptor(a) for a in critical[:3]
+                        )
+                        if card
+                    ]
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Safety check after recipe replay failed: {e}")
+
+        reply_parts = [f"按配方「{recipe.name}」执行了 {len(step_lines)} 步:"]
+        reply_parts.extend(step_lines)
+        if needs_confirmation_labels:
+            reply_parts.append(
+                "需要确认的步骤没有写入。想补上的话, 请把那条记录单独发给我确认一次。"
+            )
+        full_reply = "\n".join(reply_parts) + safety_suffix
+
+        try:
+            recipe_svc.increment_use_count(self.db, recipe)
+        except Exception as e:  # noqa: BLE001 — 计数失败不打死回合, 但可观测
+            logger.warning(f"[agent_executor] recipe use_count 更新失败: {e}")
+
+        yield {"event": "token", "data": {"content": full_reply}}
+
+        ai_msg = svc.save_message(
+            conv.id,
+            "assistant",
+            full_reply,
+            client_turn_id=client_turn_id,
+            client_turn_user_id=user_id,
+        )
+        conv.updated_at = datetime.now(UTC)
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        response_cards = _merge_agent_card_descriptors(record_cards, safety_cards)
+        meta_payload: Dict[str, Any] = {
+            "elapsed_ms": elapsed_ms,
+            "llm_ms": 0,
+            "llm_rounds": 0,
+            "llm_rounds_ms": [],
+            "model": None,
+            "mode": "recipe_replay",
+            "recipe": {"id": recipe.id, "name": recipe.name},
+            "recipe_steps": step_meta,
+            "sources_used": ["程序性配方"],
+            "tools_used": tools_used,
+            "write_receipts": write_receipts,
+            "cards": response_cards,
+            "completion_status": "complete",
+            "client_turn_finalized": True,
+            **({"client_turn_id": client_turn_id} if client_turn_id else {}),
+        }
+        try:
+            ai_msg.meta = meta_payload
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[agent_executor] recipe replay meta 写入失败: {e}")
+        self.db.commit()
+
+        yield {"event": "done", "data": {
+            "conversation_id": conv.id,
+            "message_id": ai_msg.id,
+            **meta_payload,
+        }}
 
     @staticmethod
     def _upload_chat_image(

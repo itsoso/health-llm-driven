@@ -6,7 +6,7 @@
 2. desktop_jobs — active(queued/running)
 3. agenda — 未来 48h 的排期项(复用 agenda_service.range_view,不自写 SQL)
 4. heartbeat — 最近 emitted 的情境心跳提示(Slice 2 遥测源未落库,见 TODO)
-5. recipes — 已存的程序性配方(Slice 3 ProcedureRecipe 未落库,恒空源)
+5. recipes — 已存的程序性配方(Slice 3 ProcedureRecipe,status 恒 saved)
 
 v1 只读:不提供取消/重试(留 v2)。单源查询抛错 fail-loud 计入返回体
 ``failed_sources``(不整包 500、不静默吞),其余源照常返回。
@@ -126,8 +126,23 @@ def _heartbeat_items(db: Session, user_id: int) -> List[LedgerItem]:
 
 
 def _recipe_items(db: Session, user_id: int) -> List[LedgerItem]:
-    """程序性配方(Slice 3 ProcedureRecipe)未落库 → 恒空源。模型落库后改为查已存配方。"""
-    return []
+    """程序性配方(Slice 3 ProcedureRecipe):已存配方,status 恒 saved(随叫随用)。"""
+    from app.models.procedure_recipe import ProcedureRecipe
+
+    recipes = (
+        db.query(ProcedureRecipe)
+        .filter(ProcedureRecipe.user_id == user_id)
+        .order_by(ProcedureRecipe.created_at.desc())
+        .limit(PER_SOURCE_CAP)
+        .all()
+    )
+    return [{
+        "kind": "recipe",
+        "title": r.name,
+        "status": "saved",
+        "when": _iso(r.created_at),
+        "source": "recipe",
+    } for r in recipes]
 
 
 _SOURCES: List[Tuple[str, Callable[[Session, int], List[LedgerItem]]]] = [

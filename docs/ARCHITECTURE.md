@@ -21,7 +21,7 @@
                                                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │                              Backend: FastAPI (Python 3.12)                          │
-│                  health-api.executor.life · 161 API 路由 · 327 services            │
+│                  health-api.executor.life · 161 API 路由 · 328 services            │
 │  ┌───────────┐  ┌──────────┐  ┌─────────────────┐  ┌────────────────────┐            │
 │  │ Auth+JWT  │  │ Router   │  │ Orchestrator    │  │ Agent Executor     │            │
 │  │           │  │ dispatch │  │ (13 specialist) │  │ (tool-calling LLM) │            │
@@ -63,7 +63,7 @@
 
 | 端 | Stack | 位置 | 规模 |
 |---|---|---|---|
-| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 161 API 路由, 327 services, 106 models, 67 Celery 任务 |
+| **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 161 API 路由, 328 services, 107 models, 67 Celery 任务 |
 | **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 119 路由 |
 | **Mac Desktop** | Swift 6 + SwiftUI + URLSession async/await + Keychain + MenuBarExtra | `apps/mac/` | 原生桌面 P0: Today / Agent / Record / Import / Jobs / Trace |
 | **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 72 页 |
@@ -85,7 +85,7 @@
 |------|------|
 | `backend/app/database.py` | 数据库连接、`get_db` 依赖 |
 | `backend/app/config.py` | Pydantic Settings, 所有 env 定义 |
-| `backend/app/models/*.py` | 106 个 SQLAlchemy ORM 模型 |
+| `backend/app/models/*.py` | 107 个 SQLAlchemy ORM 模型 |
 | `backend/app/twin/schema.py` | HealthTwin 15 分区 Pydantic schema |
 | `backend/main.py` 中间件 | 安全头 / CORS / 限流 / request context |
 | `backend/tests/conftest.py` | 测试基础设施 |
@@ -115,7 +115,7 @@
 | 目录 | 职责 |
 |------|------|
 | `backend/app/api/*.py` | 161 条 API 路由 |
-| `backend/app/services/*.py` | 325 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/` / `genui/`;多源去重见 `device_source_priority` + `garmin_daily_merged`) |
+| `backend/app/services/*.py` | 326 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/` / `genui/`;多源去重见 `device_source_priority` + `garmin_daily_merged`) |
 | `backend/app/tasks/*.py` | 67 Celery 异步任务 |
 | `frontend/src/app/*/page.tsx` | 72 Web 页 |
 | `frontend/src/components/*.tsx` | Web 组件 |

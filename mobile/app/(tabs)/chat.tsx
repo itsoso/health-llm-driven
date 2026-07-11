@@ -28,6 +28,7 @@ import EmptyStateHome, {
 } from '../../components/chat/EmptyStateHome';
 import ComposerSuggestionsRow from '../../components/chat/ComposerSuggestionsRow';
 import TaskLedgerPanel from '../../components/chat/TaskLedgerPanel';
+import RecipeManagerSheet from '../../components/chat/RecipeManagerSheet';
 import { formatOpenerText } from '../../components/chat/OpenerCard';
 import {
   buildConversationOpenerReplyContext,
@@ -196,6 +197,8 @@ export default function ChatScreen() {
   const [toolMenuVisible, setToolMenuVisible] = useState(false);
   // 「小巴的任务」统一任务账本(Slice 4):agent-native 在对话页内联展开,不跳独立页。
   const [taskLedgerExpanded, setTaskLedgerExpanded] = useState(false);
+  // 「我的配方」程序性记忆管理(Slice 3):列表 + 删除。
+  const [recipeManagerVisible, setRecipeManagerVisible] = useState(false);
 
   // Context from alert / push / Siri deep-link. Read ONCE on first mount, then cleared.
   // autoSend=1 (from Siri HealthAnalysisOpenIntent) → directly send instead of prefilling.
@@ -1027,6 +1030,14 @@ export default function ChatScreen() {
                 setTaskLedgerExpanded(true);
               }}
             />
+            <ToolMenuRow
+              icon="bookmark-outline"
+              label="我的配方"
+              onPress={() => {
+                setToolMenuVisible(false);
+                setRecipeManagerVisible(true);
+              }}
+            />
             {messages.some(isShareableChatMessage) && (
               <ToolMenuRow
                 icon={selectionMode ? 'close' : 'checkbox-outline'}
@@ -1049,6 +1060,10 @@ export default function ChatScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+      <RecipeManagerSheet
+        visible={recipeManagerVisible}
+        onClose={() => setRecipeManagerVisible(false)}
+      />
       <ConversationSheet
         visible={historyVisible}
         onClose={() => setHistoryVisible(false)}

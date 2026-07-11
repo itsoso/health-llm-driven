@@ -10947,6 +10947,87 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 统一任务账本 — 小巴的任务(五源只读聚合)
+         * @description Slice 4 v1:write_intents / desktop_jobs / agenda / heartbeat / recipes
+         *     五源只读聚合成统一 shape ``{kind, title, status, when, source}``。
+         *     单源失败计入 ``failed_sources``(fail-loud,不整包 500);取消/重试留 v2。
+         */
+        get: operations["agent_tasks_api_v1_agent_tasks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/recipes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出我的程序性配方 */
+        get: operations["list_agent_recipes_api_v1_agent_recipes_get"];
+        put?: never;
+        /** 创建程序性配方 */
+        post: operations["create_agent_recipe_api_v1_agent_recipes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/recipes/{recipe_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 删除程序性配方 */
+        delete: operations["delete_agent_recipe_api_v1_agent_recipes__recipe_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/recipes/{conversation_id}/save-from-conversation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 从对话最近一轮工具序列存配方
+         * @description 从该对话最近一条带 recipe_candidate 的助手消息反推工具序列存为配方。
+         *
+         *     候选步骤由 agent_executor 在「一轮完成 ≥2 个写类工具」时落到 message.meta
+         *     (已剥 confirmed + 日期模板化);这里**不重放对话、不经 LLM**,只是把已
+         *     持久化的确定性序列命名保存。归属校验 fail-closed:别人的对话 → 404。
+         */
+        post: operations["save_agent_recipe_from_conversation_api_v1_agent_recipes__conversation_id__save_from_conversation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/dynamic-views/today": {
         parameters: {
             query?: never;
@@ -27653,6 +27734,31 @@ export interface components {
             brand?: string | null;
             /** Manufacturer */
             manufacturer?: string | null;
+        };
+        /** RecipeCreatePayload */
+        RecipeCreatePayload: {
+            /** Name */
+            name: string;
+            /** Trigger Phrases */
+            trigger_phrases: string[];
+            /** Steps */
+            steps: components["schemas"]["RecipeStepPayload"][];
+            /** Created From Conversation Id */
+            created_from_conversation_id?: number | null;
+        };
+        /** RecipeSaveFromConversationPayload */
+        RecipeSaveFromConversationPayload: {
+            /** Name */
+            name: string;
+            /** Trigger Phrases */
+            trigger_phrases: string[];
+        };
+        /** RecipeStepPayload */
+        RecipeStepPayload: {
+            /** Tool */
+            tool: string;
+            /** Args Template */
+            args_template: Record<string, never>;
         };
         /** RecognitionResponse */
         RecognitionResponse: {
@@ -49459,6 +49565,145 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    agent_tasks_api_v1_agent_tasks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_agent_recipes_api_v1_agent_recipes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_agent_recipe_api_v1_agent_recipes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecipeCreatePayload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_agent_recipe_api_v1_agent_recipes__recipe_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_agent_recipe_from_conversation_api_v1_agent_recipes__conversation_id__save_from_conversation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecipeSaveFromConversationPayload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

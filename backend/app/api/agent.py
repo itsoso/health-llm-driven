@@ -1455,3 +1455,108 @@ def agent_tasks(
     单源失败计入 ``failed_sources``(fail-loud,不整包 500);取消/重试留 v2。"""
     from app.services.task_ledger_service import build_ledger
     return build_ledger(current_user.id, db)
+
+
+# ──────────────────── 程序性记忆/配方 (Harness Slice 3) ────────────────────
+# 配方 = 确定性重放的工具序列;触发短语精确匹配;每步确认门原样生效。
+# 见 app/services/procedure_recipe_service.py 模块 docstring 的四条不变量。
+
+
+class RecipeStepPayload(BaseModel):
+    tool: str
+    args_template: dict
+
+
+class RecipeCreatePayload(BaseModel):
+    name: str = Field(..., max_length=200)
+    trigger_phrases: List[str] = Field(..., min_length=1, max_length=10)
+    steps: List[RecipeStepPayload] = Field(..., min_length=1, max_length=20)
+    created_from_conversation_id: Optional[int] = None
+
+
+class RecipeSaveFromConversationPayload(BaseModel):
+    name: str = Field(..., max_length=200)
+    trigger_phrases: List[str] = Field(..., min_length=1, max_length=10)
+
+
+@router.post("/recipes", summary="创建程序性配方")
+def create_agent_recipe(
+    payload: RecipeCreatePayload,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    from app.services import procedure_recipe_service as recipe_svc
+
+    try:
+        recipe = recipe_svc.create_recipe(
+            db,
+            current_user.id,
+            name=payload.name,
+            trigger_phrases=payload.trigger_phrases,
+            steps=[step.model_dump() for step in payload.steps],
+            created_from_conversation_id=payload.created_from_conversation_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return recipe_svc.serialize(recipe)
+
+
+@router.get("/recipes", summary="列出我的程序性配方")
+def list_agent_recipes(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    from app.services import procedure_recipe_service as recipe_svc
+
+    recipes = recipe_svc.list_recipes(db, current_user.id)
+    return {"recipes": [recipe_svc.serialize(r) for r in recipes], "count": len(recipes)}
+
+
+@router.delete("/recipes/{recipe_id}", summary="删除程序性配方")
+def delete_agent_recipe(
+    recipe_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    from app.services import procedure_recipe_service as recipe_svc
+
+    if not recipe_svc.delete_recipe(db, current_user.id, recipe_id):
+        raise HTTPException(status_code=404, detail="配方不存在")
+    return {"deleted": True, "id": recipe_id}
+
+
+@router.post(
+    "/recipes/{conversation_id}/save-from-conversation",
+    summary="从对话最近一轮工具序列存配方",
+)
+def save_agent_recipe_from_conversation(
+    conversation_id: int,
+    payload: RecipeSaveFromConversationPayload,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """从该对话最近一条带 recipe_candidate 的助手消息反推工具序列存为配方。
+
+    候选步骤由 agent_executor 在「一轮完成 ≥2 个写类工具」时落到 message.meta
+    (已剥 confirmed + 日期模板化);这里**不重放对话、不经 LLM**,只是把已
+    持久化的确定性序列命名保存。归属校验 fail-closed:别人的对话 → 404。
+    """
+    from app.services import procedure_recipe_service as recipe_svc
+
+    candidate = recipe_svc.recipe_candidate_from_conversation(
+        db, current_user.id, conversation_id
+    )
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="该对话没有可保存的配方候选")
+    try:
+        recipe = recipe_svc.create_recipe(
+            db,
+            current_user.id,
+            name=payload.name,
+            trigger_phrases=payload.trigger_phrases,
+            steps=candidate["steps"],
+            created_from_conversation_id=conversation_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return recipe_svc.serialize(recipe)

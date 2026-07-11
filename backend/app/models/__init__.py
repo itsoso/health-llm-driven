@@ -159,9 +159,12 @@ from app.models.ambient_wearable import (
 from app.models.rokid_operation import RokidOperation
 from app.models.rokid_pushup import RokidPushupEvent, RokidPushupSession
 from app.models.fitness_plan import FitnessPlan
+# 程序性记忆/配方 (Harness Slice 3 — 确定性重放的工具序列)
+from app.models.procedure_recipe import ProcedureRecipe
 
 __all__ = [
     "FitnessPlan",
+    "ProcedureRecipe",
     "User",
     "PhoneAuthCode",
     "BasicHealthData",

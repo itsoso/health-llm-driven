@@ -45,6 +45,7 @@ import { OperatingReviewCardSpec } from './OperatingReviewCard';
 import { MetricChartCardSpec, MetricEmptyStateCardSpec, MetricLineChartCardSpec, RevaUiLineChartCardSpec } from './MetricChartCard';
 import { DiscoveryCardSpec } from './DiscoveryCard';
 import { SafetyCardSpec } from './SafetyCard';
+import { SaveRecipeCardSpec } from './SaveRecipeCard';
 
 /** 全量卡片注册表. 数组前面的优先级越高时越靠前 (便于可读), 实际按 match() 返回值排序 */
 export const CARD_REGISTRY: CardSpec[] = [
@@ -71,6 +72,7 @@ export const CARD_REGISTRY: CardSpec[] = [
   DiscoveryCardSpec,
   SafetyCardSpec,
   MenuShareCardSpec,   // 不本地匹配, 仅接受后端下发
+  SaveRecipeCardSpec,  // 不本地匹配, 仅接受后端下发 (Slice 3 存为配方入口)
   WeatherCardSpec,
   ScoreCardSpec,
   VitalsCardSpec,      // 最通用的兜底

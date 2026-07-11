@@ -37,6 +37,7 @@ const STATUS_LABELS: Record<string, string> = {
   executed: '已执行',
   dismissed: '已忽略',
   failed: '失败',
+  saved: '已就绪',
 };
 
 const SOURCE_LABELS: Record<string, string> = {
