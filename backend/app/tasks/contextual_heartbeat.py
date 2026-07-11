@@ -156,6 +156,7 @@ def _write_tick_snapshot(db, user_id: int, now_utc: datetime, steps_now: Optiona
         "emitted": counts.get("emitted", 0),
         "suppressed_by_budget": counts.get("suppressed_by_budget", 0),
         "deferred": counts.get("deferred", 0),
+        "push_failed": counts.get("push_failed", 0),
         "failed_rules": counts.get("failed_rules", 0),
     }
     try:
@@ -166,7 +167,8 @@ def _write_tick_snapshot(db, user_id: int, now_utc: datetime, steps_now: Optiona
             result_summary=(
                 f"heartbeat considered={detail['considered']} emitted={detail['emitted']} "
                 f"suppressed_by_budget={detail['suppressed_by_budget']} "
-                f"deferred={detail['deferred']} failed_rules={detail['failed_rules']}"
+                f"deferred={detail['deferred']} push_failed={detail['push_failed']} "
+                f"failed_rules={detail['failed_rules']}"
             ),
             result_detail=detail,
         ))
@@ -181,7 +183,7 @@ def _write_tick_snapshot(db, user_id: int, now_utc: datetime, steps_now: Optiona
 
 def _emit_candidate(db, push_service: PushService, user_id: int,
                     cand: chb.HeartbeatCandidate) -> str:
-    """过打扰预算硬闸 → 推送 / 抑制 / 延后。返回 'emitted' | 'suppressed_by_budget' | 'deferred'。"""
+    """过打扰预算硬闸 → 推送 / 抑制 / 延后。返回 'emitted' | 'push_failed' | 'suppressed_by_budget' | 'deferred'。"""
     from app.agents.audit import log_proactive_trigger
 
     decision = proactive_notification_decision(
@@ -189,19 +191,28 @@ def _emit_candidate(db, push_service: PushService, user_id: int,
         reason=cand.reason, action=cand.action, fallback_surface=_FALLBACK_SURFACE,
     )
     if decision["allowed"]:
-        run_async(push_service.send_notification(
+        result = run_async(push_service.send_notification(
             user_id=user_id,
             notification_type="reminder",
             title=cand.title,
             content=cand.body,
-            data={"kind": "heartbeat", "rule_id": cand.rule_id},
+            # push_data 只进 App 内 data payload,不上锁屏(§5:药名等敏感属性)
+            data={"kind": "heartbeat", "rule_id": cand.rule_id, **(cand.push_data or {})},
             severity="info",
         ))
+        # 安全评审 #3:notified 反映真实送达 —— 失败不消耗打扰预算,且 fail-loud。
+        sent_ok = bool(isinstance(result, dict) and result.get("success"))
+        if not sent_ok:
+            logger.error(
+                "[heartbeat] push 发送失败 user=%s rule=%s reason=%r",
+                user_id, cand.rule_id,
+                (result or {}).get("reason") if isinstance(result, dict) else result,
+            )
         log_proactive_trigger(
             db, user_id, agent_type=_AGENT_TYPE, metric=cand.metric,
-            kind=cand.rule_id, delta=0.0, notable=True, notified=True, tier=cand.tier,
+            kind=cand.rule_id, delta=0.0, notable=True, notified=sent_ok, tier=cand.tier,
         )
-        return "emitted"
+        return "emitted" if sent_ok else "push_failed"
 
     # 被挡:全局/tier 预算 = 硬压制;静默/忙碌窗 = 延后折进简报。两种都不推,都记 notified=False。
     log_proactive_trigger(
@@ -219,6 +230,7 @@ def run_contextual_heartbeat(db) -> Dict[str, int]:
         "users_scanned": 0,
         "considered": 0,
         "emitted": 0,
+        "push_failed": 0,
         "suppressed_by_budget": 0,
         "deferred": 0,
         "failed_rules": 0,
@@ -242,6 +254,7 @@ def run_contextual_heartbeat(db) -> Dict[str, int]:
             per_user = {
                 "considered": result.considered,
                 "emitted": 0,
+                "push_failed": 0,
                 "suppressed_by_budget": 0,
                 "deferred": 0,
                 "failed_rules": result.failed_rules,
@@ -262,9 +275,10 @@ def run_contextual_heartbeat(db) -> Dict[str, int]:
                 pass
 
     logger.info(
-        "[heartbeat] 完成:扫描 %s 人,考量 %s,推送 %s,预算压制 %s,延后 %s,规则异常 %s",
+        "[heartbeat] 完成:扫描 %s 人,考量 %s,推送 %s,发送失败 %s,预算压制 %s,延后 %s,规则异常 %s",
         totals["users_scanned"], totals["considered"], totals["emitted"],
-        totals["suppressed_by_budget"], totals["deferred"], totals["failed_rules"],
+        totals["push_failed"], totals["suppressed_by_budget"], totals["deferred"],
+        totals["failed_rules"],
     )
     return totals
 

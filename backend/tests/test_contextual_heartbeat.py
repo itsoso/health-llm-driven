@@ -206,7 +206,9 @@ def _push_recorder(monkeypatch):
             coro.close()
         except Exception:  # noqa: BLE001
             pass
-        return None
+        # 模拟真实 push_service.send_notification 成功返回;
+        # notified 回写以此为准(安全评审 #3)。失败路径见 test_push_failure_*。
+        return {"success": True}
 
     monkeypatch.setattr(task, "run_async", fake_run_async)
     return calls
@@ -245,6 +247,37 @@ def test_budget_exhausted_zero_push(db, monkeypatch, _awake, _push_recorder):
     assert res["emitted"] == 0                    # 预算耗尽 = 0 push
     assert res["suppressed_by_budget"] >= 1
     assert _push_recorder == []                    # 真没调推送
+
+
+def test_push_failure_not_counted_as_notified(db, monkeypatch, _awake):
+    """安全评审 #3:APNs 发送失败 → notified=False(不消耗打扰预算)+ push_failed 计数。"""
+    u = _mk_user(db)
+    _seed_active_med(db, u.id)
+
+    twin = _craft_twin(water_ml=500, water_pct=25.0)
+    monkeypatch.setattr(task, "build_twin", lambda *a, **k: twin)
+    monkeypatch.setattr(task, "get_user_now",
+                        lambda d, uid: datetime(2026, 7, 11, 16, 0, tzinfo=CHINA_TIMEZONE))
+
+    def failing_run_async(coro):
+        try:
+            coro.close()
+        except Exception:  # noqa: BLE001
+            pass
+        return {"success": False, "reason": "no_token"}
+
+    monkeypatch.setattr(task, "run_async", failing_run_async)
+
+    res = task.run_contextual_heartbeat(db)
+    assert res["emitted"] == 0
+    assert res["push_failed"] >= 1
+    # 失败不得写 notified=True(否则虚耗全局预算)
+    notified = db.query(AgentAuditLog).filter(
+        AgentAuditLog.user_id == u.id,
+        AgentAuditLog.action == "proactive_trigger",
+        AgentAuditLog.agent_type == task._AGENT_TYPE,
+    ).all()
+    assert all(not (r.result_detail or {}).get("notified") for r in notified)
 
 
 def test_emit_when_budget_available(db, monkeypatch, _awake, _push_recorder):

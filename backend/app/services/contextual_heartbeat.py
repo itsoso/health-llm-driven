@@ -53,8 +53,10 @@ class HeartbeatCandidate:
     reason: str         # 打扰契约:为什么现在提醒
     action: str         # 打扰契约:建议动作
     title: str          # push 标题
-    body: str           # push 正文
+    body: str           # push 正文(锁屏可见 → 不得含药名等 §5 敏感属性)
     tier: str = HEARTBEAT_TIER
+    # 仅进 push data payload(App 内可用,不上锁屏):如 medication_name
+    push_data: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -117,6 +119,9 @@ def _hhmm_to_minutes(hhmm: Any) -> Optional[int]:
         h, m = str(hhmm).strip().split(":")
         return int(h) * 60 + int(m)
     except Exception:  # noqa: BLE001 — 脏 reminder_time 跳过该窗,不崩
+        # fail-loud(安全评审 #2):静默剔除 = 该药窗悄悄退出漏服判定(under-alarm),
+        # 留可观测痕迹让数据质量问题能被发现。
+        logger.warning("[heartbeat] 无法解析 reminder_time=%r,该用药窗跳过漏服判定", hhmm)
         return None
 
 
@@ -155,10 +160,13 @@ def rule_medication_missed(
         reason=f"{name} 的用药窗已过 30 分钟仍无今日记录",
         action="已服请打卡;是否补服按医嘱",
         title="用药提醒",
+        # 隐私(安全评审 #1):锁屏可见的 body 不带药名(药名≈诊断,§5 Tier 敏感);
+        # 药名走 push_data 只进 App 内。reason 不持久化不进 push,保留药名供预算门上下文。
         body=(
-            f"{name} 到点超过半小时还没记录。已经服了就点一下打卡;"
-            f"忘了的话,是否补服请按医嘱决定。"
+            "有一项用药到点超过半小时还没记录。已经服了就点一下打卡;"
+            "忘了的话,是否补服请按医嘱决定。"
         ),
+        push_data={"medication_name": name},
     )
 
 
