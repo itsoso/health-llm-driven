@@ -56,14 +56,15 @@ def scan_reorder_nudges():
                 do_notify = can_notify_proactively(db, user_id, tier="P1")
                 if do_notify:
                     n = len(low_items)
-                    if n == 1:
-                        it = low_items[0]
-                        title = "补剂快用完了"
-                        content = f"{it['name']} 库存不多了,看看要不要补货。"
-                    else:
-                        title = "几种补剂快用完了"
-                        content = f"有 {n} 种补剂库存不多了,看看要不要补货。"
-                    data = {"kind": "reorder", "low_count": n}
+                    # §5 推送隐私:补剂名不进锁屏可见文案(名称可泄露健康属性),
+                    # 只走 data.item_names,App 解锁后应用内渲染。
+                    title = "补剂快用完了" if n == 1 else "几种补剂快用完了"
+                    content = f"有 {n} 种补剂库存不多了,看看要不要补货。"
+                    data = {
+                        "kind": "reorder",
+                        "low_count": n,
+                        "item_names": [it["name"] for it in low_items[:5]],
+                    }
                     deep_link = deeplink_for("reorder")
                     if deep_link:
                         data["deep_link"] = deep_link

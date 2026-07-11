@@ -22,6 +22,8 @@
 医疗边界:措辞 hedged,只提示"该做某事",不给剂量/处方/因果断言。
 隐私:会议提醒推给**用户本人设备**,可带标题(本人通知,非 LLM 路径,
 calendar_event_for_llm 脱敏门不适用);标题绝不进任何 LLM/agent 路径。
+§5 推送隐私:药名/补剂名**不进锁屏可见的 title/body**(iOS 默认锁屏渲染,
+药名可反推诊断),只走 data.item_title,App 解锁后应用内渲染。
 
 fail-soft:单个用户失败不影响整批,记日志。
 """
@@ -109,10 +111,12 @@ def _push_body(kind: str, title: str, lead: int, template_key: str | None = None
     """
     if kind == "meeting":
         return ("📅 日程提醒", f"「{title}」{lead} 分钟后开始,可以开始收尾了。")
+    # §5 推送隐私:药名/补剂名不进锁屏可见文本(药名可反推诊断)。
+    # 具体名称走 data.item_title,App 解锁后应用内渲染。
     if kind == "medication":
-        return ("💊 用药提醒", f"{title} 大约 {lead} 分钟后到点,可以准备一下。")
+        return ("💊 用药提醒", f"有一次用药大约 {lead} 分钟后到点,可以准备一下。")
     if kind == "supplement":
-        return ("🌿 补剂提醒", f"{title} 大约 {lead} 分钟后到点,可以准备一下。")
+        return ("🌿 补剂提醒", f"有一项补剂大约 {lead} 分钟后到点,可以准备一下。")
     if kind == "movement":
         return ("🏃 运动提醒", f"{title} 计划在 {lead} 分钟后开始,留点时间热身。")
     if kind == "protocol":
@@ -466,6 +470,11 @@ def scan_event_reminders():
                         "reminder_type": "pre_event",
                         "kind": kind,
                         "item_key": it["item_key"],
+                        # §5:药/补剂名只进 data(锁屏文案已泛化),App 解锁后渲染
+                        "item_title": it["title"],
+                        # 泛化后同 kind 的 title 全同;dedup 改走 rule_id(per 项×日),
+                        # 否则同日第二条同类提醒会被 PushService 的 title 去重吞掉。
+                        "rule_id": f"pre_event.{it['item_key']}.{today.isoformat()}",
                     }
                     if complete_ref:
                         data["complete_ref"] = complete_ref

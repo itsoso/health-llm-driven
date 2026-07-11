@@ -24,6 +24,13 @@ def mock_celery():
     if needs_mock:
         sys.modules["celery"] = MagicMock()
 
+    # 保存原 module 对象:结束时必须"放回原对象"而不是删掉。
+    # 只 del 的话,下一个 import 会造出全新 module dict,但 @celery_app.task
+    # 按名字返回 registry 里缓存的旧 task 对象——其 run.__globals__ 仍指向
+    # 这里被孤儿化的旧 dict,于是后续测试 patch("app.tasks.notifications.X")
+    # 全部打空(曾让 test_push_privacy 的任务打到真 Postgres)。
+    orig_notifications = sys.modules.get("app.tasks.notifications")
+
     # Ensure app.celery_app module has a proper celery_app with task decorator
     with patch.dict(sys.modules, {
         "app.celery_app": MagicMock(celery_app=celery_mock),
@@ -33,8 +40,10 @@ def mock_celery():
             del sys.modules["app.tasks.notifications"]
         yield
 
-    # Clean up
-    if "app.tasks.notifications" in sys.modules:
+    # Clean up: 恢复原 module 对象(如本来就没加载过,则清掉本 fixture 期间的临时导入)
+    if orig_notifications is not None:
+        sys.modules["app.tasks.notifications"] = orig_notifications
+    elif "app.tasks.notifications" in sys.modules:
         del sys.modules["app.tasks.notifications"]
 
 

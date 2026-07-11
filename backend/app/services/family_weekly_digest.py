@@ -212,11 +212,18 @@ async def send_weekly_digest(db: Session, owner_user_id: int):
     try:
         from app.services.notification.push_service import PushService
         push = PushService(db)
+        # §5 推送隐私:digest_text 含"体检异常: {指标名}"(化验/体检项目名可泄露
+        # 诊断线索),锁屏推送只给计数级摘要;全文在应用内周报页解锁后查看。
+        total_concerns = digest.get("total_concerns", 0)
+        if total_concerns > 0:
+            push_content = f"本周家庭健康周报已生成,共 {total_concerns} 项需关注,打开查看详情。"
+        else:
+            push_content = "本周家庭健康周报已生成,全家健康状况良好,打开查看详情。"
         await push.send_notification(
             user_id=owner_user_id,
             notification_type="family_weekly_digest",
             title="家庭健康周报",
-            content=digest["digest_text"][:200],
+            content=push_content,
         )
         logger.info(f"家庭周报已推送 owner={owner_user_id}, concerns={digest['total_concerns']}")
     except Exception as e:

@@ -394,6 +394,17 @@ async def export_health_data(
     ...
 ```
 
+### 5.6 推送隐私（锁屏面）
+
+iOS 默认在**锁屏**渲染推送 title/body，且 payload 途经 APNs（第三方）。具体药名可反推诊断（二甲双胍→糖尿病、舍曲林→抑郁症），因此：
+
+- **推送的 title/content 禁止携带具体药名/补剂名/化验项目名/诊断名**，锁屏可见文案只到类别级（「用药提醒」「补剂提醒」「化验指标提醒」）
+- 具体标识（`medication_name` / `dosage` / 补剂名 / 复查项目名）只放 `data` payload，App 解锁后应用内渲染
+- Safety Guardian 告警推送统一走 `app/services/notification/push_privacy.safety_alert_push_text`（ddi/dsi/pgx/labs/problem_red_lines 泛化；vitals/cgm/symptoms 等急性类原文透传——数值/症状措辞是时效安全信息）
+- 用户**自拟**文本（SmartReminder、日历标题、自定义打卡名）推给本人设备可透传；但系统代成文案时不得把药名拼进可见文本
+- 泛化会让同类推送 title 相同：生产者必须在 `data.rule_id` 提供去重键（per 项×日×时点），否则 PushService 的 title 去重会吞掉同日第二条合法提醒
+- 已知残余风险：LLM 生成的推送文案（briefing / agent_loop）无确定性护栏，新增此类出口需安全评审
+
 ---
 
 ## 6. 代码提交规范 📋

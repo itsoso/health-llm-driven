@@ -14,6 +14,7 @@ from app.models.notification import UserNotificationSetting
 from app.models.smart_plan import WeeklyPlan
 from app.services.notification.deeplinks import deeplink_for
 from app.services.notification.evidence_policy import build_notification_evidence_data
+from app.services.notification.push_privacy import safety_alert_push_text
 from app.services.notification.push_service import PushService
 from app.utils.timezone import get_china_now
 from app.utils.async_helpers import run_async
@@ -747,11 +748,14 @@ def daily_anomaly_check():
                             push_service = PushService(db2)
                             for alert in report.alerts:
                                 if alert.severity.value >= 3:  # HIGH=3, CRITICAL=4
+                                    # §5 推送隐私:ddi/dsi/pgx/labs/problem_red_lines
+                                    # 的 title/message 带药名/化验项/诊断 → 锁屏泛化
+                                    push_title, push_content = safety_alert_push_text(alert)
                                     run_async(push_service.send_notification(
                                         user_id=user_id,
                                         notification_type="health_alert",
-                                        title=f"⚠️ {alert.title}",
-                                        content=alert.message[:120],
+                                        title=push_title,
+                                        content=push_content,
                                         data={
                                             "screen": "alerts",  # legacy fallback
                                             "deep_link": deeplink_for("health_alert"),
@@ -1169,11 +1173,14 @@ def evaluate_and_push_safety(user_id: int):
                                 f"&badge={quote(alert.title)}"
                             )
 
+                        # §5 推送隐私:敏感类别锁屏泛化(deep_link 里的预填 prompt 属
+                        # data payload,不上锁屏,保留原文)
+                        push_title, push_content = safety_alert_push_text(alert)
                         run_async(push_service.send_notification(
                             user_id=user_id,
                             notification_type="health_alert",
-                            title=f"⚠️ {alert.title}",
-                            content=alert.message[:120],
+                            title=push_title,
+                            content=push_content,
                             data={
                                 "screen": "alerts",  # legacy fallback
                                 "deep_link": deep_link,
@@ -1689,8 +1696,9 @@ def check_action_card_followups():
                 continue
 
             days_ago = (now - card.created_at.replace(tzinfo=None)).days if card.created_at else 0
+            # §5 推送隐私:ActionCard 标题可能带补剂/药名,锁屏正文不引卡片标题
             title = f"随访提醒 · 卡片#{card.id}"
-            content = f"「{card.title}」已创建 {days_ago} 天，还有未完成的待办事项。打开查看进度。"
+            content = f"你的一张行动卡已创建 {days_ago} 天，还有未完成的待办事项。打开查看进度。"
 
             try:
                 asyncio.run(push_svc.send_notification(
@@ -2000,13 +2008,16 @@ def scan_medication_reminders():
                 if cur_hhmm not in times:
                     continue
 
-                title = f"💊 用药提醒：{med.name}"
-                body_parts = [med.dosage] if med.dosage else []
-                # 相对吃饭的时点(空腹/饭前/饭后) —— 复杂方案无脑化的关键:用户不用再自己查怎么吃
+                # 隐私(§5 推送隐私):锁屏可见的 title/content 绝不带药名/剂量 ——
+                # iOS 默认在锁屏渲染推送标题,药名可反推诊断(二甲双胍→糖尿病)。
+                # 药名/剂量只进 data payload,App 解锁后应用内渲染。
+                # timing(空腹/饭前/饭后)不指认具体药物,保留在正文维持"照做"价值。
+                title = "💊 用药提醒"
+                body_parts = []
                 timing = medication_timing_label(med.timing_relation, med.meal_anchor)
                 if timing:
                     body_parts.append(timing)
-                body_parts.append(f"现在 {cur_hhmm}，点「已服用」自动打卡。")
+                body_parts.append(f"现在 {cur_hhmm} 有一次用药到点了，点「已服用」自动打卡。")
                 body = "，".join(body_parts)
 
                 run_async(push_service.send_notification(
@@ -2019,8 +2030,13 @@ def scan_medication_reminders():
                         "reminder_type": "medication",
                         "medication_id": med.id,
                         "medication_name": med.name,
+                        "dosage": med.dosage,
+                        "timing": timing,
                         "scheduled_time": cur_hhmm,
                         "deep_link": "/(tabs)/record",
+                        # title 泛化后所有药共享同一 title;dedup 必须改走 rule_id
+                        # (per 药×日×时点),否则同日第二种药/第二剂会被 title 去重吞掉。
+                        "rule_id": f"medication_reminder.{med.id}.{today_date}.{cur_hhmm}",
                     },
                 ))
                 sent += 1

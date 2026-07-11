@@ -131,10 +131,10 @@ def _push_action_reminder(db, action) -> bool:
     if not episode:
         return False
 
-    title = f"⏰ {action.title[:40]}"
-    body_pieces: list[str] = []
-    if action.body:
-        body_pieces.append(action.body[:120])
+    # §5 推送隐私:Episode action 的 title/body 常带补剂名/剂量(12 周 N-of-1),
+    # 不进锁屏可见文本;原文走 data.action_title,App 解锁后在 /episode 页渲染。
+    title = "⏰ 方案行动提醒"
+    body_pieces: list[str] = ["有一项方案行动到点了"]
     if action.time_window_end:
         # 让用户知道还剩多久
         try:
@@ -145,7 +145,8 @@ def _push_action_reminder(db, action) -> bool:
                 body_pieces.append(f"窗口还剩 {mins_left} 分钟")
         except Exception:
             pass
-    body = " · ".join(body_pieces) if body_pieces else "点击打开方案查看完成步骤"
+    body_pieces.append("点击打开方案查看完成步骤")
+    body = " · ".join(body_pieces)
 
     push_svc = PushService(db)
     try:
@@ -159,6 +160,7 @@ def _push_action_reminder(db, action) -> bool:
                 "kind": "episode_action_reminder",
                 "episode_id": episode.id,
                 "action_id": action.id,
+                "action_title": (action.title or "")[:60],
                 "rule_id": f"action_reminder_{action.id}",
             },
             severity="low",
