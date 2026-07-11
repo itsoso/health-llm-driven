@@ -4,8 +4,8 @@
 |---|---|
 | slug | `diet-capture-excellence` |
 | 创建日期 | 2026-07-11 |
-| 当前阶段 | S5 实现 |
-| 状态 | building |
+| 当前阶段 | S7 上线验证 |
+| 状态 | device_validation_pending |
 | 负责 | Codex |
 | 反馈环 | Backend pytest / Mobile Jest + TypeScript / Simulator / backend deploy / EAS TestFlight |
 
@@ -85,6 +85,7 @@
 - T3：识别成功返回 owner-scoped `photo_draft_token`，确认不再重复上传 Base64；确认、取消和过期清理用行锁串行化，成功确认后由 DietRecord 接管图片并删除草稿行，取消/过期擦除识别正文且在图片删除成功后删行，删除失败保留最小重试句柄并显式报错。正式记录删除采用可恢复 tombstone，每日任务按数据库引用恢复或物理删除。Mobile 以用户隔离的 SecureStore 保存 24 小时紧凑快照，不保存 Base64 或无界模型正文，进程重启后可恢复并继续确认或取消；缓存写入失败不阻断服务端确认，App 启动即执行过期物理清理。
 - T4：新增固定 3:4 饮食故事卡；iOS 以 point/PixelRatio、Android 以 bitmap pixel 分别请求，模拟器实测输出 1080x1440 PNG。等待受保护图片加载，5 秒无终态自动使用指标版卡片；图片或原生捕获不可用时降级为不含私有 URL/标识的文本系统分享，系统分享结束后释放临时 PNG。分享图不含用户名或其他健康数据。
 - T5：新增无正文的识别/确认/分享终态事件，观测聚合直接输出各阶段样本数、失败数、p50、p95；识别响应另带 vision/calibration/photo_draft/total 分段耗时。
+- 上线前复核发现生产 `food_items` 为空，原校准迁移只能更新既有行，导致营养表校准在生产无法命中。标准部署现于受控迁移后幂等执行 `seed_food_nutrition.py`，并以测试锁定 6 项审核食物、6 项营养值和严格 `calibration_names`，不允许泛化“鸡肉”进入鸡胸肉校准范围。
 
 ## G3 · 测试闸
 
@@ -95,7 +96,9 @@
 - iPhone 17 Pro 模拟器原生构建成功；430x932 页面和分享预览无重叠，系统分享面板成功接收 PNG；像素检查为 1080x1440、非空图像。
 - LLM live-change regression gate：invariants 12/12、health_agent_core 50/50、真实 orchestrator 5/5，平均分 0.94；原始证据保存在本机 `/tmp/harness-live-final-20260711.log`。闸门同时修正两项既有误报：空数据回答允许提及待补指标但仍禁止串入其他 case 的具体数值；LLM judge 现在可见该 case 的 Twin / specialist 证据，不再把有来源的个性化数据误判为编造。
 - Linux CI 的原 `s-u` 大分片连续两次在 `test_telegram_webhook.py` 完成后、进入 `test_timeline_agenda_lifecycle.py` 前停住；同命令本机 1090/1090 在 133.21 秒通过。为隔离进程级顺序污染且保持覆盖完整，将该分片拆成 `s`、`t[a-e]`、`t[f-z]+u` 三个独立 pytest 进程。第三次 run 中 `s` 和 `t[a-e]` 已通过，但新进程的 `t[f-z]+u` 仍超出 12 分钟；因此 Linux pytest timeout 改用可中断主线程的 `signal` 模式，该诊断分片开启逐测试输出，并为所有后端 shard 增加 20 分钟 job 上限，确保后续失败能给出具体栈而非无限等待。
-- 待执行：真机微信/小红书目标应用投递与生产验证。Backend 全仓本地测试仍保留既有跨用例污染问题，Linux CI 为全仓权威闸门。
+- 营养目录部署补丁 focused regression：32 passed；`bash -n deploy.sh` 与全部 pre-commit hooks passed。
+- Linux 全仓权威闸门：GitHub Actions run `29159958346` attempt 3 SUCCESS；四个首轮冻结分片均通过失败作业重跑恢复，最终 Backend tests enforcement 通过。
+- 待执行：真机微信/小红书目标应用投递。Backend 全仓本地测试仍保留既有跨用例污染问题，Linux CI 为全仓权威闸门。
 
 ## G4 · 安全闸
 
@@ -107,19 +110,32 @@
 ## S6 · 部署
 
 - 路由：backend deploy -> type sync -> TestFlight。因新增原生分享依赖，本版本不向缺少该模块的旧二进制发送 OTA。
+- Backend 已从干净的 `origin/main` 部署两次：先发布完整功能与迁移，再发布营养目录部署不变量；最终生产 commit 为 `285dd666d13cd85d7624712f0f0b6098d3aeafd0`。
+- 第二次部署前 PostgreSQL 备份：`/opt/health-app/backups/health_db_2026-07-12_01-07.sql.gz`，38 MB，权限 `0600`，完整性与 force-RLS 检查通过。
+- TestFlight 构建：版本 `1.3.1 (221)`，EAS build `a6886f1c-d94f-4463-8a2e-90aeb12bce4c`；submission `4e54e7b1-1a9c-498c-8569-83deb950514a` 已成功上传 App Store Connect。
 
 ## G5 · 部署健康闸
 
-- 待执行。
+- 生产受控迁移状态正常：`20260711_200000_create_diet_photo_drafts` 与 `20260711_201000_add_food_calibration_names` 已应用，本轮无重复迁移。
+- 部署内营养目录 seed 明确输出 `6 food_items, 6 food_nutrients`；部署后只读 SQL 复核为 6/6，豆腐校准名仅 `北豆腐/老豆腐`，鸡胸肉校准名不含泛化“鸡肉”。
+- `health-backend`、`celery-worker`、`celery-beat` 均为 active；部署健康分 `60/60 PASS`；skills manifest 本地/线上均为 22。
+- 公网及服务器本机 `/api/v1/health` 均返回 healthy，API、PostgreSQL、Redis、Celery 全部 connected/running。
+- **裁决：PASS**。
 
 ## S7 · 上线验证
 
-- 待执行。
+- iPhone 17 Pro 模拟器已验证照片确认、固定 1080x1440 分享图、系统分享面板与无重叠布局。
+- Backend 生产迁移、营养目录、服务状态和公网健康检查已验证。
+- TestFlight `1.3.1 (221)` 已成功上传 App Store Connect；Apple 处理完成状态尚未单独核实，因此不宣称当前已可安装。
+- 待真机验证：相机实拍 -> 识别 -> 修正 -> 确认单次写入，以及分享图分别投递微信和小红书。
 
 ## G6 · 验证闸
 
-- 待真机确认。
+- 模拟器与生产后端验证通过；真机目标应用投递尚缺证据。
+- **裁决：PENDING**。保持 `device_validation_pending`，不进入完成态。
 
 ## S8 · 沉淀
 
-- 待完成。
+- 决策 1：审核营养目录是校准链路的运行时前置条件，必须由标准部署幂等补齐，不能只依赖可选手工 seed。
+- 决策 2：新增原生分享依赖必须发新二进制；旧二进制禁止接收会引用缺失原生模块的 OTA。
+- 决策 3：社交分享验收必须覆盖目标应用真机接收，不以系统分享面板出现代替微信/小红书成功投递。
