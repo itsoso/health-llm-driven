@@ -8,13 +8,15 @@ import * as Haptics from 'expo-haptics';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useDailyDiet } from '../hooks/useDiet';
 import { useDietEstimate, type EstimateSource } from '../hooks/useDietEstimate';
-import { createDietRecord, updateDietRecord, deleteDietRecord, getFrequentFoods, recognizeFood, type DietRecord, type DietRecordCreate, type FrequentFood } from '../services/diet';
+import { createDietRecord, updateDietRecord, deleteDietRecord, discardDietPhotoDraft, getFrequentFoods, recognizeFood, type DietRecord, type DietRecordCreate, type FoodItem, type FrequentFood } from '../services/diet';
 import { computeDietTotals, isPendingNutrition } from '../utils/dietTotals';
 import * as ImagePicker from 'expo-image-picker';
 import MealForm from '../components/diet/MealForm';
 import DietFAB from '../components/diet/DietFAB';
 import FrequentFoodsRow from '../components/diet/FrequentFoodsRow';
+import { DietShareSheet } from '../components/diet/DietShareCard';
 import { useToast } from '../hooks/useToast';
+import { useAuth } from '../hooks/useAuth';
 import {
   revaColors as C,
   revaRadii,
@@ -26,6 +28,9 @@ import {
 import { createDietAgentContext, pushChatWithContext } from '../utils/agentContext';
 import { todayStr, offsetDate } from '../utils/dietDate';
 import { assertDietFoodItemsAllowed } from '../utils/dietIntakeGuard';
+import { buildChatImageSource } from '../utils/chatImageSource';
+import { BASE_URL } from '../services/api';
+import { emitClientEvent } from '../services/clientEvents';
 
 const MEAL_LABEL: Record<string, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' };
 const VALID_MEAL_TYPES = new Set(['breakfast', 'lunch', 'dinner', 'snack']);
@@ -100,6 +105,7 @@ function buildDietDraft(defaults: Partial<DietRecordCreate>, recordDate = todayS
     record_date: defaults.record_date ?? recordDate,
     meal_type: defaults.meal_type ?? guessMealType(),
     food_items: defaults.food_items?.trim() || '未命名餐食',
+    food_id: defaults.food_id,
     source: defaults.source,
     calories: defaults.calories,
     protein: defaults.protein,
@@ -110,6 +116,8 @@ function buildDietDraft(defaults: Partial<DietRecordCreate>, recordDate = todayS
     notes: defaults.notes,
     image_base64: defaults.image_base64,
     image_type: defaults.image_type,
+    photo_draft_token: defaults.photo_draft_token,
+    idempotency_key: defaults.idempotency_key,
     ai_recognized: defaults.ai_recognized,
     ai_confidence: defaults.ai_confidence,
     ai_raw_result: defaults.ai_raw_result,
@@ -131,6 +139,17 @@ function averageRecognitionConfidence(foods: { confidence: number | null }[] | u
   return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 1000) / 1000;
 }
 
+function recognitionNutritionSource(foods: FoodItem[] | undefined): string {
+  const sources = new Set(
+    (foods ?? [])
+      .map(food => food.source?.trim())
+      .filter((source): source is string => Boolean(source)),
+  );
+  if (sources.size === 1) return [...sources][0];
+  if (sources.size > 1) return 'mixed';
+  return 'ai_estimate';
+}
+
 function assertPersistedDietRecord(record: DietRecord): DietRecord {
   if (!record?.id || !Number.isFinite(record.id)) {
     throw new Error('diet_record_missing_id');
@@ -138,8 +157,17 @@ function assertPersistedDietRecord(record: DietRecord): DietRecord {
   return record;
 }
 
+function absoluteApiAssetUrl(url: string | null | undefined): string | null {
+  const value = String(url ?? '').trim();
+  if (!value) return null;
+  if (/^https?:\/\//i.test(value)) return value;
+  const origin = BASE_URL.replace(/\/api\/?$/i, '');
+  return `${origin}${value.startsWith('/') ? value : `/${value}`}`;
+}
+
 export default function DietScreen() {
   const router = useRouter();
+  const { token: authToken } = useAuth();
   const params = useLocalSearchParams<DietRouteParams>();
   const returnToChatAfterConfirm = firstParam(params.return_to) === 'chat';
   const captureConsumedRef = useRef(false);
@@ -164,6 +192,7 @@ export default function DietScreen() {
   const [quickDraft, setQuickDraft] = useState<DietQuickDraft | null>(null);
   const [photoCaptureStage, setPhotoCaptureStage] = useState<PhotoCaptureStage>('idle');
   const [quickDraftSaving, setQuickDraftSaving] = useState(false);
+  const [shareRecord, setShareRecord] = useState<DietRecord | null>(null);
   const quickDraftSavingRef = useRef(false);
 
   const openDietDraft = useCallback((
@@ -180,7 +209,11 @@ export default function DietScreen() {
         return;
       }
     }
-    const record = buildDietDraft(defaults);
+    const idempotencyKey = defaults.idempotency_key
+      ?? (defaults.photo_draft_token
+        ? `diet-photo:${defaults.photo_draft_token}`
+        : `diet-draft:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`);
+    const record = buildDietDraft({ ...defaults, idempotency_key: idempotencyKey });
     setDate(record.record_date);
     setEditingRecord(null);
     setDraftEstimateSource(source);
@@ -198,7 +231,7 @@ export default function DietScreen() {
     const created = assertPersistedDietRecord(await createDietRecord(record));
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     qc.invalidateQueries({ queryKey: ['diet'] });
-    if (created?.id && source && needsNutritionBackfill(record)) {
+    if (created?.id && source && source.kind !== 'photo' && needsNutritionBackfill(record)) {
       sourceMapRef.current.set(created.id, source);
       toast.show('已保存 · 营养后台估算中', 'success');
       estimate(created.id, source);
@@ -222,7 +255,7 @@ export default function DietScreen() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         qc.invalidateQueries({ queryKey: ['diet'] });
       } else {
-        await saveNewDietRecord(record, draftEstimateSource);
+        await saveNewDietRecord({ ...formDefaults, ...record }, draftEstimateSource);
       }
       setShowForm(false);
       setEditingRecord(null);
@@ -232,18 +265,26 @@ export default function DietScreen() {
     } catch {
       Alert.alert(editingRecord ? '更新失败' : '保存失败', '请稍后再试');
     }
-  }, [draftEstimateSource, editingRecord, qc, saveNewDietRecord]);
+  }, [draftEstimateSource, editingRecord, formDefaults, qc, saveNewDietRecord]);
 
   const handleConfirmQuickDraft = useCallback(async () => {
     if (!quickDraft) return;
     if (quickDraftSavingRef.current) return;
     quickDraftSavingRef.current = true;
     setQuickDraftSaving(true);
+    const confirmationStartedAt = Date.now();
+    const isPhotoDraft = quickDraft.source?.kind === 'photo' || Boolean(quickDraft.record.photo_draft_token);
     try {
       const draftRecord = quickDraft.record;
-      const isPhotoDraft = quickDraft.source?.kind === 'photo' || draftRecord.source === 'photo';
       if (isPhotoDraft) setPhotoCaptureStage('saving');
       const created = await saveNewDietRecord(draftRecord, quickDraft.source);
+      if (isPhotoDraft) {
+        void emitClientEvent('diet_photo_confirmation_terminal', {
+          phase: 'completed',
+          duration_ms: Date.now() - confirmationStartedAt,
+          verified: true,
+        });
+      }
       const recordContext = {
         record_date: draftRecord.record_date,
         meal_type: draftRecord.meal_type,
@@ -274,8 +315,14 @@ export default function DietScreen() {
         });
       }
     } catch {
-      if (quickDraft.source?.kind === 'photo' || quickDraft.record.source === 'photo') {
+      if (isPhotoDraft) {
         setPhotoCaptureStage('failed');
+        void emitClientEvent('diet_photo_confirmation_terminal', {
+          phase: 'failed',
+          duration_ms: Date.now() - confirmationStartedAt,
+          verified: false,
+          error_code: 'record_write_failed',
+        });
       }
       Alert.alert('保存失败', '请稍后再试');
     } finally {
@@ -299,6 +346,12 @@ export default function DietScreen() {
 
   const handleCancelQuickDraft = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const photoDraftToken = quickDraft?.record.photo_draft_token;
+    if (photoDraftToken) {
+      void discardDietPhotoDraft(photoDraftToken).catch(() => {
+        toast.show('草稿已在本机关闭，服务器图片将自动过期清理', 'info');
+      });
+    }
     setQuickDraft(null);
     setFormDefaults({});
     setDraftEstimateSource(null);
@@ -306,7 +359,7 @@ export default function DietScreen() {
     quickDraftSavingRef.current = false;
     setQuickDraftSaving(false);
     toast.show('已取消草稿', 'info');
-  }, [toast]);
+  }, [quickDraft, toast]);
 
   // P1-b: 点「常吃」chip → 直接入库(用历史营养素中位数)+ 5s undo. 失败要让用户感知 (rule#1).
   // 「常吃」也是「我现在又吃了这个」= 现在, 同 recordThenEstimate 在 submit 时现取 todayStr(),
@@ -401,12 +454,17 @@ export default function DietScreen() {
   }, [openDietDraft]);
 
   const handlePhoto = useCallback(async () => {
+    const recognitionStartedAt = Date.now();
     try {
       setPhotoCaptureStage('capturing');
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
         setPhotoCaptureStage('idle');
         Alert.alert('需要相机权限', '请在设置中开启相机权限');
+        void emitClientEvent('diet_photo_recognition_terminal', {
+          phase: 'cancelled', duration_ms: Date.now() - recognitionStartedAt,
+          food_count: 0, table_calibrated_count: 0, error_code: 'camera_permission_denied',
+        });
         return;
       }
       const result = await ImagePicker.launchCameraAsync({
@@ -416,6 +474,10 @@ export default function DietScreen() {
       });
       if (result.canceled || !result.assets[0]?.base64) {
         setPhotoCaptureStage('idle');
+        void emitClientEvent('diet_photo_recognition_terminal', {
+          phase: 'cancelled', duration_ms: Date.now() - recognitionStartedAt,
+          food_count: 0, table_calibrated_count: 0,
+        });
         return;
       }
       const imageBase64 = result.assets[0].base64;
@@ -424,6 +486,11 @@ export default function DietScreen() {
       if (!recognized.success) {
         setPhotoCaptureStage('failed');
         Alert.alert('识别失败', recognized.error || '没有识别出可记录的餐食,请重拍或改用文字记录。');
+        void emitClientEvent('diet_photo_recognition_terminal', {
+          phase: 'failed', duration_ms: Date.now() - recognitionStartedAt,
+          server_total_ms: recognized.timing_ms?.total,
+          food_count: 0, table_calibrated_count: 0, error_code: 'recognition_failed',
+        });
         return;
       }
       const description = recognized.meal_description
@@ -431,19 +498,36 @@ export default function DietScreen() {
       if (!description) {
         setPhotoCaptureStage('failed');
         Alert.alert('识别失败', '没有识别出可记录的餐食,请重拍或改用文字记录。');
+        void emitClientEvent('diet_photo_recognition_terminal', {
+          phase: 'failed', duration_ms: Date.now() - recognitionStartedAt,
+          server_total_ms: recognized.timing_ms?.total,
+          food_count: 0, table_calibrated_count: 0, error_code: 'empty_recognition',
+        });
         return;
       }
+      void emitClientEvent('diet_photo_recognition_terminal', {
+        phase: 'completed',
+        duration_ms: Date.now() - recognitionStartedAt,
+        server_total_ms: recognized.timing_ms?.total,
+        food_count: recognized.foods.length,
+        table_calibrated_count: recognized.foods.filter(food => food.nutrition_basis === 'food_table').length,
+      });
       openDietDraft({
         meal_type: guessMealType(),
         food_items: description,
-        source: 'photo',
+        food_id: recognized.foods.length === 1 ? recognized.foods[0].food_id ?? undefined : undefined,
+        source: recognitionNutritionSource(recognized.foods),
         calories: recognized.total_calories ?? undefined,
         protein: recognized.total_protein ?? undefined,
         carbs: recognized.total_carbs ?? undefined,
         fat: recognized.total_fat ?? undefined,
         fiber: recognized.total_fiber ?? undefined,
-        image_base64: imageBase64,
+        image_base64: recognized.photo_draft_token ? undefined : imageBase64,
         image_type: 'jpeg',
+        photo_draft_token: recognized.photo_draft_token ?? undefined,
+        idempotency_key: recognized.photo_draft_token
+          ? `diet-photo:${recognized.photo_draft_token}`
+          : undefined,
         ai_recognized: 1,
         ai_confidence: averageRecognitionConfidence(recognized.foods),
         ai_raw_result: recognized,
@@ -452,6 +536,10 @@ export default function DietScreen() {
       setPhotoCaptureStage('draft_ready');
     } catch {
       setPhotoCaptureStage('failed');
+      void emitClientEvent('diet_photo_recognition_terminal', {
+        phase: 'failed', duration_ms: Date.now() - recognitionStartedAt,
+        food_count: 0, table_calibrated_count: 0, error_code: 'capture_pipeline_failed',
+      });
       Alert.alert('拍照失败', '请稍后重试');
     }
   }, [openDietDraft]);
@@ -679,7 +767,18 @@ export default function DietScreen() {
                       </View>
                     )
                   ) : (
-                    <Text style={txt.mealCal}>{r.calories != null ? `${Math.round(r.calories)}kcal` : ''}</Text>
+                    <View style={styles.mealTail}>
+                      <Text style={txt.mealCal}>{r.calories != null ? `${Math.round(r.calories)}kcal` : ''}</Text>
+                      <TouchableOpacity
+                        style={styles.mealShareButton}
+                        onPress={() => setShareRecord(r)}
+                        activeOpacity={0.72}
+                        accessibilityRole="button"
+                        accessibilityLabel={`分享${MEAL_LABEL[r.meal_type] ?? '这餐'}饮食`}
+                      >
+                        <Ionicons name="share-outline" size={16} color={C.green600} />
+                      </TouchableOpacity>
+                    </View>
                   )}
                 </View>
               </ReanimatedSwipeable>
@@ -693,6 +792,21 @@ export default function DietScreen() {
       </ScrollView>
 
       <DietFAB onPhoto={handlePhoto} onText={handleText} onVoice={handleVoiceText} />
+      {shareRecord ? (
+        <DietShareSheet
+          visible
+          record={shareRecord}
+          dateLabel={`${shareRecord.record_date.replace(/-/g, '.')} · ${MEAL_LABEL[shareRecord.meal_type] ?? '餐食'}`}
+          imageSource={buildChatImageSource(
+            absoluteApiAssetUrl(shareRecord.image_url) ?? '',
+            authToken,
+          )}
+          onClose={() => setShareRecord(null)}
+          onShareTerminal={(meta) => {
+            void emitClientEvent('diet_share_terminal', meta);
+          }}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -752,6 +866,7 @@ function QuickDietDraftCard({
     carbs ? `碳水 ${carbs}g` : null,
     fat ? `脂肪 ${fat}g` : null,
   ].filter(Boolean).join(' · ');
+  const recognizedFoods = draft.ai_raw_result?.foods ?? [];
 
   return (
     <View style={styles.quickDraftCard}>
@@ -771,6 +886,17 @@ function QuickDietDraftCard({
       <Text style={txt.quickFood}>{draft.food_items}</Text>
       {primaryMetrics ? <Text style={txt.quickMacro}>{primaryMetrics}</Text> : null}
       {secondaryMetrics ? <Text style={txt.quickMacroMuted}>{secondaryMetrics}</Text> : null}
+      {recognizedFoods.length > 0 ? (
+        <View style={styles.recognitionDetail}>
+          <View style={styles.recognitionDetailHeader}>
+            <Text style={txt.recognitionDetailTitle}>识别明细</Text>
+            <Text style={txt.recognitionDetailCount}>{recognizedFoods.length} 项</Text>
+          </View>
+          {recognizedFoods.map((food, index) => (
+            <RecognizedFoodRow key={`${food.food_id ?? food.name}-${index}`} food={food} index={index} />
+          ))}
+        </View>
+      ) : null}
       <Text style={txt.quickHint}>确认后写入今天饮食;需要改餐次或营养再点修正。</Text>
 
       <View style={styles.quickActions}>
@@ -809,6 +935,54 @@ function QuickDietDraftCard({
         >
           <Text style={txt.quickGhostText}>取消</Text>
         </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function RecognizedFoodRow({ food, index }: { food: FoodItem; index: number }) {
+  const isTableCalibrated = food.nutrition_basis === 'food_table';
+  const confidence = typeof food.confidence === 'number' && Number.isFinite(food.confidence)
+    ? Math.round(food.confidence * 100)
+    : null;
+  const shouldVerify = !isTableCalibrated || (confidence !== null && confidence < 70);
+  const portion = food.quantity?.trim() || '份量待确认';
+  const calories = typeof food.calories === 'number' && Number.isFinite(food.calories)
+    ? `${Math.round(food.calories)} kcal`
+    : '热量待确认';
+
+  return (
+    <View style={[styles.recognizedFoodRow, index > 0 && styles.recognizedFoodRowDivided]}>
+      <View style={styles.recognizedFoodMain}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={txt.recognizedFoodName} numberOfLines={2}>{food.name}</Text>
+          <Text style={txt.recognizedFoodMeta}>{portion} · {calories}</Text>
+        </View>
+        <View style={[
+          styles.recognitionBasisChip,
+          isTableCalibrated ? styles.recognitionBasisTable : styles.recognitionBasisEstimate,
+        ]}>
+          <Ionicons
+            name={isTableCalibrated ? 'shield-checkmark-outline' : 'scan-outline'}
+            size={13}
+            color={isTableCalibrated ? C.green600 : revaSemantic.caution.fg}
+          />
+          <Text style={[
+            txt.recognitionBasisText,
+            { color: isTableCalibrated ? C.green600 : revaSemantic.caution.fg },
+          ]}>
+            {isTableCalibrated ? '营养表校准' : '视觉估算'}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.recognizedFoodSignals}>
+        {confidence !== null ? <Text style={txt.recognizedConfidence}>置信 {confidence}%</Text> : null}
+        {shouldVerify ? (
+          <View style={styles.verifyPortionRow}>
+            <Ionicons name="alert-circle-outline" size={13} color={revaSemantic.caution.fg} />
+            <Text style={txt.verifyPortionText}>请核对份量</Text>
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -882,6 +1056,12 @@ const styles = StyleSheet.create({
     ...revaShadows.sm,
   },
   quickDraftHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: revaSpacing.s3 },
+  mealTail: { alignItems: 'flex-end', justifyContent: 'center', gap: 7 },
+  mealShareButton: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.green50,
+  },
   quickIcon: {
     width: 32, height: 32, borderRadius: 16,
     backgroundColor: C.green50,
@@ -893,6 +1073,32 @@ const styles = StyleSheet.create({
     borderRadius: revaRadii.pill,
     backgroundColor: C.paper2,
   },
+  recognitionDetail: {
+    marginTop: revaSpacing.s3,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
+  recognitionDetailHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+  },
+  recognizedFoodRow: { paddingVertical: revaSpacing.s3 },
+  recognizedFoodRowDivided: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line },
+  recognizedFoodMain: { flexDirection: 'row', alignItems: 'flex-start', gap: revaSpacing.s2 },
+  recognizedFoodSignals: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6,
+  },
+  recognitionBasisChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 5, borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  recognitionBasisTable: { backgroundColor: C.green50, borderColor: C.green100 },
+  recognitionBasisEstimate: { backgroundColor: revaSemantic.caution.bg, borderColor: revaSemantic.caution.line },
+  verifyPortionRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   quickActions: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2, marginTop: revaSpacing.s4 },
   quickConfirmBtn: {
     flex: 1.5,
@@ -947,6 +1153,13 @@ const txt = {
   quickFood: { fontFamily: revaFonts.sans, fontSize: 16, lineHeight: 22, color: C.ink1, fontWeight: '700' } as TextStyle,
   quickMacro: { fontFamily: revaFonts.mono, fontSize: 14, color: C.ink1, fontWeight: '700', marginTop: revaSpacing.s2 } as TextStyle,
   quickMacroMuted: { fontFamily: revaFonts.mono, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,
+  recognitionDetailTitle: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, fontWeight: '800' } as TextStyle,
+  recognitionDetailCount: { fontFamily: revaFonts.mono, fontSize: 11, color: C.ink3 } as TextStyle,
+  recognizedFoodName: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 19, color: C.ink1, fontWeight: '700' } as TextStyle,
+  recognizedFoodMeta: { fontFamily: revaFonts.mono, fontSize: 11, color: C.ink3, marginTop: 3 } as TextStyle,
+  recognitionBasisText: { fontFamily: revaFonts.sans, fontSize: 10, fontWeight: '800' } as TextStyle,
+  recognizedConfidence: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3 } as TextStyle,
+  verifyPortionText: { fontFamily: revaFonts.sans, fontSize: 10, color: revaSemantic.caution.fg, fontWeight: '700' } as TextStyle,
   quickHint: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, color: C.ink3, marginTop: revaSpacing.s3 } as TextStyle,
   quickConfirmText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.greenOn, fontWeight: '800' } as TextStyle,
   quickSecondaryText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.green600, fontWeight: '800' } as TextStyle,

@@ -39,6 +39,12 @@ class DietRecordCreate(DietRecordBase):
     user_id: Optional[int] = None  # 可选，后端会使用当前登录用户ID
     image_base64: Optional[str] = None  # 可选，Base64编码的图片数据
     image_type: Optional[str] = "jpeg"  # 图片类型
+    photo_draft_token: Optional[str] = Field(
+        default=None,
+        min_length=24,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
 
 
 class DietRecordUpdate(BaseModel):
@@ -139,7 +145,7 @@ class FoodItem(BaseModel):
     """识别出的单个食物"""
     name: str
     quantity: Optional[str] = None
-    calories: Optional[int] = None
+    calories: Optional[float] = None
     protein: Optional[float] = None
     carbs: Optional[float] = None
     fat: Optional[float] = None
@@ -147,12 +153,25 @@ class FoodItem(BaseModel):
     confidence: Optional[float] = None
     food_id: Optional[str] = None
     source: Optional[str] = None
+    quantity_grams: Optional[float] = None
+    nutrition_basis: Optional[str] = None
 
 
 class FoodRecognitionRequest(BaseModel):
     """食物识别请求"""
     image_base64: str = Field(..., description="Base64编码的图片数据")
     image_type: str = Field(default="jpeg", description="图片类型: jpeg, png, gif, webp")
+    create_photo_draft: bool = Field(
+        default=False,
+        description="识别成功后保存一次图片并返回待确认草稿令牌",
+    )
+
+
+class FoodRecognitionTiming(BaseModel):
+    vision: int = 0
+    calibration: int = 0
+    photo_draft: int = 0
+    total: int = 0
 
 
 class FoodRecognitionResponse(BaseModel):
@@ -165,6 +184,9 @@ class FoodRecognitionResponse(BaseModel):
     total_protein: Optional[float] = None
     total_carbs: Optional[float] = None
     total_fat: Optional[float] = None
+    total_fiber: Optional[float] = None
+    photo_draft_token: Optional[str] = None
+    timing_ms: Optional[FoodRecognitionTiming] = None
     error: Optional[str] = None
 
 

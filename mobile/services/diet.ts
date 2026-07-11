@@ -9,6 +9,8 @@ export interface DietRecord {
   record_date: string;
   meal_type: MealType;
   food_items: string;
+  food_id?: string | null;
+  source?: string | null;
   calories: number | null;
   protein: number | null;
   carbs: number | null;
@@ -24,6 +26,7 @@ export interface DietRecordCreate {
   record_date: string;
   meal_type: MealType;
   food_items: string;
+  food_id?: string;
   source?: string;
   calories?: number;
   protein?: number;
@@ -34,6 +37,9 @@ export interface DietRecordCreate {
   notes?: string;
   image_base64?: string;
   image_type?: string;
+  photo_draft_token?: string;
+  /** Client-only. Sent as Idempotency-Key and removed from the JSON body. */
+  idempotency_key?: string;
   ai_recognized?: number;
   ai_confidence?: number;
   ai_raw_result?: FoodRecognitionResponse;
@@ -69,6 +75,10 @@ export interface FoodItem {
   fat: number | null;
   fiber: number | null;
   confidence: number | null;
+  food_id?: string | null;
+  source?: string | null;
+  quantity_grams?: number | null;
+  nutrition_basis?: 'food_table' | 'vision_estimate' | string | null;
 }
 
 export interface FoodRecognitionResponse {
@@ -81,6 +91,13 @@ export interface FoodRecognitionResponse {
   total_carbs: number | null;
   total_fat: number | null;
   total_fiber?: number | null;
+  photo_draft_token?: string | null;
+  timing_ms?: {
+    vision: number;
+    calibration: number;
+    photo_draft: number;
+    total: number;
+  } | null;
   error: string | null;
 }
 
@@ -138,7 +155,12 @@ export async function getFrequentFoods(limit = 8, days = 30): Promise<FrequentFo
 }
 
 export async function createDietRecord(record: DietRecordCreate): Promise<DietRecord> {
-  const { data } = await api.post<DietRecord>('/diet/records', record);
+  const { idempotency_key: idempotencyKey, ...payload } = record;
+  const { data } = await api.post<DietRecord>(
+    '/diet/records',
+    payload,
+    idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined,
+  );
   if (!data?.id || !Number.isFinite(data.id)) {
     throw new Error('diet_record_missing_id');
   }
@@ -158,8 +180,13 @@ export async function recognizeFood(imageBase64: string): Promise<FoodRecognitio
   const { data } = await api.post<FoodRecognitionResponse>('/diet/recognize', {
     image_base64: imageBase64,
     image_type: 'jpeg',
+    create_photo_draft: true,
   });
   return data;
+}
+
+export async function discardDietPhotoDraft(token: string): Promise<void> {
+  await api.delete(`/diet/photo-drafts/${encodeURIComponent(token)}`);
 }
 
 export async function estimateNutrition(description: string): Promise<FoodRecognitionResponse> {

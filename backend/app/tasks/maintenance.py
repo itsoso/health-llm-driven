@@ -20,6 +20,9 @@ def cleanup_expired_data():
     with SessionLocal() as db:
         now = get_china_now()
 
+        from app.api.diet import purge_expired_diet_photo_drafts
+        purged_diet_photo_drafts = purge_expired_diet_photo_drafts(db)
+
         # 清理90天前的已读通知
         from app.models.notification import NotificationLog
         cutoff_date = now - timedelta(days=90)
@@ -29,10 +32,15 @@ def cleanup_expired_data():
 
         db.commit()
 
-        logger.info(f"清理了 {deleted_notifications} 条过期通知")
+        logger.info(
+            "清理了 %s 条过期通知和 %s 张饮食草稿图片",
+            deleted_notifications,
+            purged_diet_photo_drafts,
+        )
 
     return {
         "deleted_notifications": deleted_notifications,
+        "purged_diet_photo_drafts": purged_diet_photo_drafts,
         "cleanup_time": now.isoformat()
     }
 

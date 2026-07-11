@@ -5824,6 +5824,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/diet/photo-drafts/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Discard Photo Draft */
+        delete: operations["discard_photo_draft_api_v1_diet_photo_drafts__token__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/diet/recognize-and-save": {
         parameters: {
             query?: never;
@@ -23199,6 +23216,10 @@ export interface components {
             food_id?: string | null;
             /** Source */
             source?: string | null;
+            /** Quantity Grams */
+            quantity_grams?: number | null;
+            /** Nutrition Basis */
+            nutrition_basis?: string | null;
         };
         /**
          * FoodRecognitionRequest
@@ -23216,6 +23237,12 @@ export interface components {
              * @default jpeg
              */
             image_type: string;
+            /**
+             * Create Photo Draft
+             * @description 识别成功后保存一次图片并返回待确认草稿令牌
+             * @default false
+             */
+            create_photo_draft: boolean;
         };
         /**
          * FoodRecognitionResponse
@@ -23241,8 +23268,36 @@ export interface components {
             total_carbs?: number | null;
             /** Total Fat */
             total_fat?: number | null;
+            /** Total Fiber */
+            total_fiber?: number | null;
+            /** Photo Draft Token */
+            photo_draft_token?: string | null;
+            timing_ms?: components["schemas"]["FoodRecognitionTiming"] | null;
             /** Error */
             error?: string | null;
+        };
+        /** FoodRecognitionTiming */
+        FoodRecognitionTiming: {
+            /**
+             * Vision
+             * @default 0
+             */
+            vision: number;
+            /**
+             * Calibration
+             * @default 0
+             */
+            calibration: number;
+            /**
+             * Photo Draft
+             * @default 0
+             */
+            photo_draft: number;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
         };
         /** FreeTextParseRequest */
         FreeTextParseRequest: {
@@ -32003,6 +32058,8 @@ export interface components {
              * @default jpeg
              */
             image_type: string | null;
+            /** Photo Draft Token */
+            photo_draft_token?: string | null;
         };
         /**
          * HeartRatePoint
@@ -41399,6 +41456,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["FoodRecognitionResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_photo_draft_api_v1_diet_photo_drafts__token__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

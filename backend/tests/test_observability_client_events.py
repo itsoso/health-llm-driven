@@ -76,3 +76,36 @@ def test_client_events_weekly_digest_task_runs(db, monkeypatch):
     result = observability_digest.client_events_weekly_digest(days=7)
     assert "deadgen" in result["dead_starter_keys"]
     assert result["starter_ctr"]["deadgen"]["clicks"] == 0
+
+
+def test_client_events_stats_computes_diet_capture_latency_and_failures(db):
+    from app.models.user import User
+    from app.services.observability_service import client_events_stats, utc_now
+
+    user = User(username="diet-obs", email="diet-obs@test.com", hashed_password="x", name="d")
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    for duration in (1200, 2400, 6200, 9100):
+        _seed(db, user.id, "diet_photo_recognition_terminal", {
+            "phase": "completed", "duration_ms": duration,
+            "food_count": 2, "table_calibrated_count": 1,
+        })
+    _seed(db, user.id, "diet_photo_recognition_terminal", {
+        "phase": "failed", "duration_ms": 3100, "error_code": "vision_timeout",
+        "food_count": 0, "table_calibrated_count": 0,
+    })
+    _seed(db, user.id, "diet_photo_confirmation_terminal", {
+        "phase": "completed", "duration_ms": 420, "verified": True,
+    })
+    db.commit()
+
+    stats = client_events_stats(db, utc_now() - timedelta(days=7), user_id=None)
+
+    recognition = stats["diet_capture_ms"]["recognition"]
+    assert recognition["n"] == 5
+    assert recognition["failures"] == 1
+    assert recognition["p50"] <= recognition["p95"]
+    assert stats["diet_capture_ms"]["confirmation"] == {
+        "n": 1, "p50": 420, "p95": 420, "failures": 0,
+    }

@@ -71,33 +71,34 @@ def sanitize_food_recognition_result(result: Dict[str, Any]) -> Dict[str, Any]:
     if not cleaned:
         result["success"] = False
         result["error"] = "图片中未识别到可记录的食物，请重新拍摄餐食本身。"
-        result.setdefault("meal_description", "未识别到可记录的食物")
-        result["total_calories"] = 0
-        result["total_protein"] = 0
-        result["total_carbs"] = 0
-        result["total_fat"] = 0
+        result["meal_description"] = "未识别到可记录的食物"
+        result["total_calories"] = None
+        result["total_protein"] = None
+        result["total_carbs"] = None
+        result["total_fat"] = None
+        result["total_fiber"] = None
         return result
 
-    totals = {
-        "total_calories": 0.0,
-        "total_protein": 0.0,
-        "total_carbs": 0.0,
-        "total_fat": 0.0,
-    }
     mapping = {
         "calories": "total_calories",
         "protein": "total_protein",
         "carbs": "total_carbs",
         "fat": "total_fat",
+        "fiber": "total_fiber",
     }
+    for source_key, total_key in mapping.items():
+        values = [_as_number(food.get(source_key)) for food in cleaned]
+        if any(value is None for value in values):
+            result[total_key] = None
+            continue
+        total = sum(value for value in values if value is not None)
+        result[total_key] = int(round(total)) if total_key == "total_calories" else round(total, 1)
+
+    descriptions = []
     for food in cleaned:
-        for src, dst in mapping.items():
-            value = _as_number(food.get(src))
-            if value is not None:
-                totals[dst] += value
-    if any(value > 0 for value in totals.values()):
-        for key, value in totals.items():
-            result[key] = int(round(value)) if key == "total_calories" else round(value, 1)
+        quantity = str(food.get("quantity") or "").strip()
+        descriptions.append(f"{food['name']} {quantity}".strip())
+    result["meal_description"] = "、".join(descriptions)[:300]
     result["success"] = True
     return result
 

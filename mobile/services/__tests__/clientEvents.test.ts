@@ -96,4 +96,22 @@ describe('client reliability events', () => {
     const meta = { source: 'chat', has_image: false };
     expect(sanitizeClientEventMeta('chat_message_sent', meta)).toBe(meta);
   });
+
+  it('removes meal content and bounds diet capture metrics', () => {
+    expect(sanitizeClientEventMeta('diet_photo_recognition_terminal', {
+      phase: 'completed',
+      duration_ms: 4321,
+      server_total_ms: 3890,
+      food_count: 2,
+      table_calibrated_count: 1,
+      food_items: 'private meal content',
+      image_uri: 'file:///private/meal.jpg',
+    })).toEqual({
+      phase: 'completed',
+      duration_ms: 4321,
+      server_total_ms: 3890,
+      food_count: 2,
+      table_calibrated_count: 1,
+    });
+  });
 });

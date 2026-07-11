@@ -402,6 +402,13 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
     clicks: Dict[str, int] = {}       # starter generator key → 点击次数
     cold_start_ms: list = []
     cold_start_incomplete = 0
+    diet_event_map = {
+        "diet_photo_recognition_terminal": "recognition",
+        "diet_photo_confirmation_terminal": "confirmation",
+        "diet_share_terminal": "share",
+    }
+    diet_durations: Dict[str, list] = {key: [] for key in diet_event_map.values()}
+    diet_failures: Dict[str, int] = {key: 0 for key in diet_event_map.values()}
 
     for name, meta in rows:
         by_event[name] = by_event.get(name, 0) + 1
@@ -420,6 +427,13 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
                 cold_start_ms.append(float(ms))
             if meta.get("incomplete"):
                 cold_start_incomplete += 1
+        elif name in diet_event_map:
+            stage = diet_event_map[name]
+            duration = meta.get("duration_ms")
+            if isinstance(duration, (int, float)) and not isinstance(duration, bool):
+                diet_durations[stage].append(float(duration))
+            if meta.get("phase") == "failed":
+                diet_failures[stage] += 1
 
     starter_ctr: Dict[str, dict] = {}
     for key in sorted(set(impressions) | set(clicks)):
@@ -433,6 +447,16 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
 
     p50 = _percentile(cold_start_ms, 50)
     p95 = _percentile(cold_start_ms, 95)
+    diet_capture_ms = {}
+    for stage, values in diet_durations.items():
+        stage_p50 = _percentile(values, 50)
+        stage_p95 = _percentile(values, 95)
+        diet_capture_ms[stage] = {
+            "n": len(values),
+            "p50": round(stage_p50) if stage_p50 is not None else None,
+            "p95": round(stage_p95) if stage_p95 is not None else None,
+            "failures": diet_failures[stage],
+        }
     return {
         "total": sum(by_event.values()),
         "by_event": by_event,
@@ -443,6 +467,7 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
             "p95": round(p95) if p95 is not None else None,
             "incomplete": cold_start_incomplete,
         },
+        "diet_capture_ms": diet_capture_ms,
     }
 
 

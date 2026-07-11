@@ -1,5 +1,5 @@
 """日常健康记录模型"""
-from sqlalchemy import Column, Integer, BigInteger, Float, String, DateTime, Date, ForeignKey, Text, Time, Boolean, Index, UniqueConstraint, text
+from sqlalchemy import CheckConstraint, Column, Integer, BigInteger, Float, String, DateTime, Date, ForeignKey, Text, Time, Boolean, Index, UniqueConstraint, text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -199,6 +199,37 @@ class DietRecord(Base):
             postgresql_where=text('client_action_id IS NOT NULL'),
             sqlite_where=text('client_action_id IS NOT NULL'),
         ),
+    )
+
+
+class DietPhotoDraft(Base):
+    """Owner-scoped, short-lived photo pending manual diet confirmation."""
+    __tablename__ = "diet_photo_drafts"
+
+    token = Column(String(64), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    image_url = Column(String, nullable=True)
+    image_type = Column(String(20), nullable=False)
+    recognition_result = Column(JSONColumn, nullable=False)
+    status = Column(String(20), nullable=False, default="pending")
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    consumed_record_id = Column(
+        Integer,
+        ForeignKey("diet_records.id", ondelete="SET NULL"),
+        nullable=True,
+        unique=True,
+    )
+    consumed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'consumed', 'cancelled', 'expired')",
+            name="ck_diet_photo_drafts_status",
+        ),
+        Index("idx_diet_photo_drafts_user_status", "user_id", "status"),
+        Index("idx_diet_photo_drafts_expires_at", "expires_at"),
     )
 
 

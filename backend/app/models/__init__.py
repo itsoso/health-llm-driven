@@ -8,6 +8,7 @@ from app.models.daily_health import (
     GarminData,
     ExerciseRecord,
     DietRecord,
+    DietPhotoDraft,
     WaterIntake,
     SupplementIntake,
     OutdoorActivity

@@ -2,7 +2,11 @@
 import pytest
 from datetime import date
 from app.models.user import User
-from app.models.daily_health import DietRecord
+from app.models.daily_health import DietPhotoDraft, DietRecord
+from app.models.food_nutrition import FoodItem, FoodNutrient
+
+
+VALID_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z/QAAAABJRU5ErkJggg=="
 
 
 @pytest.fixture
@@ -552,6 +556,241 @@ class TestDietAPI:
         assert updated.status_code == 200
         assert updated.json()["image_url"] is None
         assert db.query(DietRecord).one().image_url is None
+
+    def test_recognize_food_calibrates_explicit_weight_from_food_table(
+        self, client, db, auth_headers, monkeypatch
+    ):
+        from app.services.ai.food_recognition import food_recognition_service
+
+        db.add(FoodItem(
+            food_id="cfc:chicken_breast",
+            canonical_name="鸡胸肉",
+            aliases=["鸡肉"],
+            locale="zh-CN",
+            source="china_food_composition",
+            source_ref="test-fixture",
+        ))
+        db.add(FoodNutrient(
+            food_id="cfc:chicken_breast",
+            kcal_per_100g=165.0,
+            protein_g_per_100g=31.0,
+            carbs_g_per_100g=0.0,
+            fat_g_per_100g=3.6,
+            fiber_g_per_100g=0.0,
+            source="china_food_composition",
+            source_ref="test-fixture",
+        ))
+        db.commit()
+
+        async def recognize(*_args, **_kwargs):
+            return {
+                "success": True,
+                "foods": [{
+                    "name": "鸡胸肉",
+                    "quantity": "200g",
+                    "calories": 999,
+                    "protein": 1,
+                    "carbs": 50,
+                    "fat": 40,
+                    "fiber": 8,
+                    "confidence": 0.91,
+                }],
+                "meal_description": "今日饮食营养卡",
+                "total_calories": 999,
+                "total_protein": 1,
+                "total_carbs": 50,
+                "total_fat": 40,
+                "total_fiber": 8,
+            }
+
+        monkeypatch.setattr(food_recognition_service, "is_available", lambda: True)
+        monkeypatch.setattr(food_recognition_service, "recognize_food_from_base64", recognize)
+
+        response = client.post(
+            "/api/v1/diet/recognize",
+            json={"image_base64": "ZmFrZQ==", "image_type": "jpeg"},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["meal_description"] == "鸡胸肉 200g"
+        assert body["total_calories"] == 330
+        assert body["total_protein"] == 62.0
+        assert body["total_fiber"] == 0.0
+        assert body["foods"][0]["food_id"] == "cfc:chicken_breast"
+        assert body["foods"][0]["source"] == "china_food_composition"
+        assert body["foods"][0]["nutrition_basis"] == "food_table"
+        assert body["timing_ms"]["vision"] >= 0
+        assert body["timing_ms"]["calibration"] >= 0
+        assert body["timing_ms"]["total"] >= body["timing_ms"]["vision"]
+
+    def test_recognize_food_creates_single_upload_photo_draft(
+        self, client, db, auth_headers, tmp_path, monkeypatch
+    ):
+        from app.api import upload as upload_api
+        from app.services.ai.food_recognition import food_recognition_service
+
+        async def recognize(*_args, **_kwargs):
+            return {
+                "success": True,
+                "foods": [{
+                    "name": "牛肉面", "quantity": "1碗", "calories": 650,
+                    "protein": 28, "carbs": 80, "fat": 18, "fiber": 4,
+                    "confidence": 0.86,
+                }],
+                "total_calories": 650,
+                "total_protein": 28,
+                "total_carbs": 80,
+                "total_fat": 18,
+                "total_fiber": 4,
+            }
+
+        upload_root = tmp_path / "uploads"
+        monkeypatch.setattr(food_recognition_service, "is_available", lambda: True)
+        monkeypatch.setattr(food_recognition_service, "recognize_food_from_base64", recognize)
+        monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(upload_root))
+
+        response = client.post(
+            "/api/v1/diet/recognize",
+            json={
+                "image_base64": VALID_PNG_BASE64,
+                "image_type": "png",
+                "create_photo_draft": True,
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        token = response.json()["photo_draft_token"]
+        assert token and len(token) >= 24
+        draft = db.query(DietPhotoDraft).one()
+        assert draft.token == token
+        assert draft.status == "pending"
+        assert draft.image_url.startswith(f"/api/v1/upload/files/diet/{draft.user_id}/")
+        assert len(list(upload_root.rglob("*.png"))) == 1
+
+    def test_photo_draft_confirmation_reuses_image_and_is_idempotent(
+        self, client, db, auth_headers, tmp_path, monkeypatch
+    ):
+        from app.api import upload as upload_api
+        from app.services.ai.food_recognition import food_recognition_service
+
+        async def recognize(*_args, **_kwargs):
+            return {
+                "success": True,
+                "foods": [{
+                    "name": "牛肉面", "quantity": "1碗", "calories": 650,
+                    "protein": 28, "carbs": 80, "fat": 18, "fiber": 4,
+                    "confidence": 0.86,
+                }],
+                "total_calories": 650,
+                "total_protein": 28,
+                "total_carbs": 80,
+                "total_fat": 18,
+                "total_fiber": 4,
+            }
+
+        upload_root = tmp_path / "uploads"
+        monkeypatch.setattr(food_recognition_service, "is_available", lambda: True)
+        monkeypatch.setattr(food_recognition_service, "recognize_food_from_base64", recognize)
+        monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(upload_root))
+
+        recognized = client.post(
+            "/api/v1/diet/recognize",
+            json={
+                "image_base64": VALID_PNG_BASE64,
+                "image_type": "png",
+                "create_photo_draft": True,
+            },
+            headers=auth_headers,
+        )
+        token = recognized.json()["photo_draft_token"]
+        payload = {
+            "record_date": str(date.today()),
+            "meal_type": "lunch",
+            "food_items": "牛肉面 1碗",
+            "calories": 650,
+            "photo_draft_token": token,
+            "ai_recognized": 1,
+        }
+
+        first = client.post("/api/v1/diet/records", json=payload, headers=auth_headers)
+        second = client.post(
+            "/api/v1/diet/records",
+            json=payload,
+            headers={**auth_headers, "Idempotency-Key": "different-client-retry-key"},
+        )
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert second.json()["id"] == first.json()["id"]
+        assert first.json()["image_url"]
+        assert db.query(DietRecord).count() == 1
+        assert len(list(upload_root.rglob("*.png"))) == 1
+        draft = db.query(DietPhotoDraft).one()
+        assert draft.status == "consumed"
+        assert draft.consumed_record_id == first.json()["id"]
+
+    def test_photo_draft_is_owner_scoped_and_cancel_removes_image(
+        self, client, db, auth_headers, tmp_path, monkeypatch
+    ):
+        from app.api import upload as upload_api
+        from app.services.ai.food_recognition import food_recognition_service
+        from app.services.auth import auth_service
+
+        async def recognize(*_args, **_kwargs):
+            return {
+                "success": True,
+                "foods": [{"name": "苹果", "quantity": "1个", "calories": 80}],
+                "total_calories": 80,
+            }
+
+        upload_root = tmp_path / "uploads"
+        monkeypatch.setattr(food_recognition_service, "is_available", lambda: True)
+        monkeypatch.setattr(food_recognition_service, "recognize_food_from_base64", recognize)
+        monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(upload_root))
+        response = client.post(
+            "/api/v1/diet/recognize",
+            json={
+                "image_base64": VALID_PNG_BASE64,
+                "image_type": "png",
+                "create_photo_draft": True,
+            },
+            headers=auth_headers,
+        )
+        token = response.json()["photo_draft_token"]
+
+        other = User(
+            username="other-photo-user",
+            email="other-photo@example.com",
+            hashed_password="hashed",
+            name="Other",
+            is_active=True,
+            is_approved=True,
+        )
+        db.add(other)
+        db.commit()
+        db.refresh(other)
+        other_headers = {
+            "Authorization": f"Bearer {auth_service.create_access_token({'sub': str(other.id)})}"
+        }
+
+        forbidden = client.delete(
+            f"/api/v1/diet/photo-drafts/{token}",
+            headers=other_headers,
+        )
+        cancelled = client.delete(
+            f"/api/v1/diet/photo-drafts/{token}",
+            headers=auth_headers,
+        )
+
+        assert forbidden.status_code == 404
+        assert cancelled.status_code == 204
+        draft = db.query(DietPhotoDraft).one()
+        assert draft.status == "cancelled"
+        assert draft.image_url is None
+        assert list(upload_root.rglob("*.png")) == []
 
     @pytest.mark.parametrize("recognized_name", ["沃克", "伏诺拉生", "保存并确认"])
     def test_recognize_and_save_rejects_non_food_model_output(

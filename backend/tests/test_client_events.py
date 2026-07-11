@@ -100,6 +100,11 @@ def test_client_events_stats_empty(db):
         "by_event": {},
         "starter_ctr": {},
         "home_cold_start_ms": {"n": 0, "p50": None, "p95": None, "incomplete": 0},
+        "diet_capture_ms": {
+            "recognition": {"n": 0, "p50": None, "p95": None, "failures": 0},
+            "confirmation": {"n": 0, "p50": None, "p95": None, "failures": 0},
+            "share": {"n": 0, "p50": None, "p95": None, "failures": 0},
+        },
     }
 
 
@@ -291,6 +296,60 @@ def test_reliability_terminal_events_reject_invalid_contract(
         "/api/v1/client-events",
         headers=headers,
         json={"event_name": event_name, "meta": meta},
+    )
+
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize("event_name,meta", [
+    ("diet_photo_recognition_terminal", {
+        "phase": "completed",
+        "duration_ms": 4321,
+        "server_total_ms": 3890,
+        "food_count": 2,
+        "table_calibrated_count": 1,
+    }),
+    ("diet_photo_confirmation_terminal", {
+        "phase": "completed",
+        "duration_ms": 640,
+        "verified": True,
+    }),
+    ("diet_share_terminal", {
+        "phase": "completed",
+        "duration_ms": 920,
+        "has_photo": True,
+    }),
+])
+def test_diet_capture_events_accept_only_numeric_privacy_safe_metrics(
+    client, db, auth_user_and_headers, event_name, meta
+):
+    _, headers = auth_user_and_headers
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={"event_name": event_name, "meta": meta},
+    )
+
+    assert response.status_code == 202, response.text
+    row = db.query(ClientEvent).order_by(ClientEvent.id.desc()).first()
+    assert row.event_name == event_name
+    assert row.meta == meta
+
+
+@pytest.mark.parametrize("meta", [
+    {"phase": "completed", "duration_ms": -1, "food_count": 1, "table_calibrated_count": 0},
+    {"phase": "completed", "duration_ms": 100, "food_count": 1, "table_calibrated_count": 2},
+    {"phase": "completed", "duration_ms": 100, "food_count": 1, "table_calibrated_count": 0,
+     "food_items": "private meal"},
+])
+def test_diet_capture_events_reject_invalid_or_private_meta(
+    client, auth_user_and_headers, meta
+):
+    _, headers = auth_user_and_headers
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={"event_name": "diet_photo_recognition_terminal", "meta": meta},
     )
 
     assert response.status_code == 422, response.text

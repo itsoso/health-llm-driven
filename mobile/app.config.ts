@@ -63,6 +63,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: config.name ?? '小巴',
   slug: config.slug ?? 'health-pilot',
+  plugins: [
+    ...(config.plugins ?? []),
+    ...((config.plugins ?? []).some((plugin) => (
+      Array.isArray(plugin) ? plugin[0] === 'expo-sharing' : plugin === 'expo-sharing'
+    )) ? [] : ['expo-sharing'] as const),
+  ],
   ios: {
     ...(config.ios ?? {}),
     bundleIdentifier: bundleId,

@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.food_nutrition import FoodItem, FoodNutrient
@@ -31,8 +32,12 @@ class FoodNutritionMatch:
 
 def enrich_foods_from_table(db: Session, foods: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Attach food_id/source and fill missing nutrients from reviewed food tables."""
+    matches = find_food_matches(db, [food.get("name") for food in foods])
     for food in foods:
-        enrich_food_from_table(db, food)
+        name_key = normalize_food_key(food.get("name"))
+        match = matches.get(name_key)
+        if match is not None:
+            _enrich_food_with_match(food, match)
     return foods
 
 
@@ -45,10 +50,55 @@ def enrich_food_from_table(db: Session, food: dict[str, Any]) -> dict[str, Any]:
     if match is None:
         return food
 
+    return _enrich_food_with_match(food, match)
+
+
+def calibrate_recognized_foods(
+    db: Session,
+    foods: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Calibrate photo-recognition nutrients when a reviewed, weighted match exists.
+
+    Vision estimates remain visible when a portion cannot be converted to grams.
+    This avoids presenting a table source for nutrients that were not table-derived.
+    """
+    matches = find_food_matches(db, [food.get("name") for food in foods])
+    for food in foods:
+        match = matches.get(normalize_food_key(food.get("name")))
+        if match is None:
+            food.setdefault("source", "ai_estimate")
+            food["nutrition_basis"] = "vision_estimate"
+            continue
+
+        food["food_id"] = match.food_id
+        grams = quantity_as_grams(food.get("quantity"), food.get("unit"))
+        if grams is None:
+            food["source"] = "ai_estimate"
+            food["nutrition_basis"] = "vision_estimate"
+            food.pop("quantity_grams", None)
+            continue
+
+        food["quantity_grams"] = round(grams, 1)
+        food["source"] = match.source
+        food["nutrition_basis"] = "food_table"
+        for output_key, nutrient_key in _NUTRIENT_FIELDS:
+            table_value = _scale_nutrient(getattr(match.nutrient, nutrient_key), grams)
+            _log_divergence(food, output_key, table_value)
+            if table_value is not None:
+                food[output_key] = table_value
+
+    return foods
+
+
+def _enrich_food_with_match(
+    food: dict[str, Any],
+    match: FoodNutritionMatch,
+) -> dict[str, Any]:
+
     food["food_id"] = match.food_id
     food["source"] = match.source
 
-    grams = _quantity_as_grams(food.get("quantity"), food.get("unit"))
+    grams = quantity_as_grams(food.get("quantity"), food.get("unit"))
     if grams is None:
         return food
 
@@ -60,6 +110,46 @@ def enrich_food_from_table(db: Session, food: dict[str, Any]) -> dict[str, Any]:
             food[output_key] = table_value
 
     return food
+
+
+def find_food_matches(db: Session, names: list[Any]) -> dict[str, FoodNutritionMatch]:
+    """Resolve a batch of canonical names and aliases without N+1 queries."""
+    raw_names = sorted({str(name or "").strip() for name in names if str(name or "").strip()})
+    requested = {normalize_food_key(name) for name in raw_names}
+    requested.discard("")
+    if not requested:
+        return {}
+
+    candidate_filters = [FoodItem.canonical_name.in_(raw_names)]
+    if db.get_bind().dialect.name == "sqlite":
+        alias_values = func.json_each(FoodItem.aliases).table_valued("key", "value").alias("food_alias")
+        candidate_filters.append(
+            exists(
+                select(1)
+                .select_from(alias_values)
+                .where(alias_values.c.value.in_(raw_names))
+            )
+        )
+    else:
+        candidate_filters.extend(FoodItem.aliases.contains([name]) for name in raw_names)
+    rows = (
+        db.query(FoodItem, FoodNutrient)
+        .join(FoodNutrient, FoodNutrient.food_id == FoodItem.food_id)
+        .filter(FoodItem.is_active.is_(True), or_(*candidate_filters))
+        .order_by(FoodItem.food_id.asc())
+        .all()
+    )
+    matches: dict[str, FoodNutritionMatch] = {}
+    # Canonical identities win if an alias is shared by multiple catalog items.
+    for item, nutrient in rows:
+        canonical_key = normalize_food_key(item.canonical_name)
+        if canonical_key in requested:
+            matches[canonical_key] = _to_match(item, nutrient)
+    for item, nutrient in rows:
+        aliases = (item.aliases or []) if isinstance(item.aliases, list) else []
+        for key in requested.intersection({normalize_food_key(alias) for alias in aliases}):
+            matches.setdefault(key, _to_match(item, nutrient))
+    return matches
 
 
 def find_food_match(db: Session, name: str) -> FoodNutritionMatch | None:
@@ -103,16 +193,37 @@ def _to_match(item: FoodItem, nutrient: FoodNutrient) -> FoodNutritionMatch:
     )
 
 
-def _quantity_as_grams(quantity: Any, unit: Any) -> float | None:
+def quantity_as_grams(quantity: Any, unit: Any = None) -> float | None:
+    """Parse only explicit mass units; bowls, servings and pieces stay estimates."""
+    quantity_text = str(quantity or "").strip().lower()
+    compact = re.sub(r"\s+", "", quantity_text)
+
+    half_match = re.search(r"半(公斤|千克|kg|kilogram|kilograms|斤)", compact)
+    if half_match:
+        return 500.0 if half_match.group(1) != "斤" else 250.0
+
+    embedded = re.search(
+        r"(?P<amount>\d+(?:\.\d+)?)\s*(?P<unit>kilograms?|kg|公斤|千克|grams?|g|克|斤)",
+        quantity_text,
+    )
+    if embedded:
+        return _mass_to_grams(float(embedded.group("amount")), embedded.group("unit"))
+
     amount = _to_float(quantity)
     if amount is None or amount <= 0:
         return None
+    return _mass_to_grams(amount, str(unit or "").strip().lower())
 
-    unit_text = str(unit or "").strip().lower()
-    if unit_text in {"g", "gram", "grams", "克"}:
+
+def _mass_to_grams(amount: float, unit: str) -> float | None:
+    if amount <= 0:
+        return None
+    if unit in {"g", "gram", "grams", "克"}:
         return amount
-    if unit_text in {"kg", "kilogram", "kilograms", "公斤", "千克"}:
+    if unit in {"kg", "kilogram", "kilograms", "公斤", "千克"}:
         return amount * 1000
+    if unit == "斤":
+        return amount * 500
     return None
 
 

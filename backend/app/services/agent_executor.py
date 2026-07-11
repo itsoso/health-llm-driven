@@ -6329,10 +6329,6 @@ class AgentExecutor:
         if not settings.llm_vision_base_url or not settings.llm_vision_api_key:
             return None
 
-        structured_food = await self._analyze_food_images_with_structured_vision(user_message, images)
-        if structured_food:
-            return structured_food
-
         vision_model = settings.llm_vision_model or "qwen-vl-max"
         vision_messages: List[Dict[str, Any]] = [
             {"role": "system", "content": (
@@ -6381,7 +6377,12 @@ class AgentExecutor:
         if not images:
             return None
         try:
-            from app.services.ai.food_recognition import food_recognition_service
+            from app.services.ai.food_recognition import (
+                food_recognition_service,
+                sanitize_food_recognition_result,
+            )
+            from app.services.food_nutrition_lookup import calibrate_recognized_foods
+
             summaries: List[str] = []
             errors: List[str] = []
             for img in images[:3]:
@@ -6389,7 +6390,10 @@ class AgentExecutor:
                     img.get("base64") or "",
                     image_type=img.get("type", "jpeg"),
                 )
+                result = sanitize_food_recognition_result(result)
                 if result.get("success") and result.get("foods"):
+                    calibrate_recognized_foods(self.db, result["foods"])
+                    result = sanitize_food_recognition_result(result)
                     summaries.append(self._format_food_recognition_for_agent(user_message, result))
                 elif result.get("error"):
                     errors.append(str(result.get("error")))
@@ -6413,6 +6417,8 @@ class AgentExecutor:
     def _format_food_recognition_for_agent(self, user_message: str, result: Dict[str, Any]) -> str:
         meal_type = self._infer_meal_type_for_food_image(user_message)
         foods: List[str] = []
+        recognized_foods: List[Dict[str, Any]] = []
+        confidences: List[float] = []
         for food in result.get("foods") or []:
             if not isinstance(food, dict):
                 continue
@@ -6427,6 +6433,18 @@ class AgentExecutor:
             if isinstance(kcal, (int, float)):
                 parts.append(f"约{round(float(kcal))}kcal")
             foods.append(" ".join(parts))
+            recognized_foods.append({
+                key: food[key]
+                for key in (
+                    "name", "quantity", "quantity_grams", "calories", "protein",
+                    "carbs", "fat", "fiber", "confidence", "food_id", "source",
+                    "nutrition_basis",
+                )
+                if food.get(key) is not None
+            })
+            confidence = food.get("confidence")
+            if isinstance(confidence, (int, float)):
+                confidences.append(float(confidence))
         totals = {
             "calories": result.get("total_calories"),
             "protein": result.get("total_protein"),
@@ -6439,12 +6457,46 @@ class AgentExecutor:
             for key, value in totals.items()
             if isinstance(value, (int, float))
         )
+        record_data: Dict[str, Any] = {
+            "meal_type": meal_type,
+            "food_items": " + ".join(
+                " ".join(
+                    part for part in (
+                        str(food.get("name") or "").strip(),
+                        str(food.get("quantity") or "").strip(),
+                    )
+                    if part
+                )
+                for food in recognized_foods
+            ),
+            **{
+                key: value
+                for key, value in totals.items()
+                if isinstance(value, (int, float))
+            },
+            "ai_recognized": 1,
+            "ai_raw_result": {
+                "recognition_version": "food_table_calibration_v1",
+                "foods": recognized_foods,
+            },
+        }
+        if confidences:
+            record_data["ai_confidence"] = round(sum(confidences) / len(confidences), 3)
+        sources = {str(food.get("source")) for food in recognized_foods if food.get("source")}
+        if len(sources) == 1:
+            record_data["source"] = next(iter(sources))
+        elif sources:
+            record_data["source"] = "mixed"
+        if len(recognized_foods) == 1 and recognized_foods[0].get("food_id"):
+            record_data["food_id"] = recognized_foods[0]["food_id"]
+
+        record_json = json.dumps(record_data, ensure_ascii=False)
         return (
             "结构化餐食识别结果: "
             f"meal_type={meal_type}; foods={' + '.join(foods)}; totals({total_text}). "
+            f"准确写入参数: {record_json}。"
             "如果用户意图是记录饮食, 请调用 health_record(record_type='diet', "
-            "data={meal_type, food_items, calories, protein, carbs, fat, fiber, "
-            "source:'chat_photo', ai_recognized:1, record_date})。"
+            "data=准确写入参数), 仅按用户明确修正的内容改动。"
             "food_items 只能使用真实食物名称和份量, 绝对不要包含营养卡、保存并确认、今日饮食等界面文案。"
         )
 

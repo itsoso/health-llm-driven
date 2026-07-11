@@ -30,6 +30,9 @@ export type ClientEventName =
   | 'agent_turn_terminal'
   | 'voice_input_terminal'
   | 'write_receipt_terminal'
+  | 'diet_photo_recognition_terminal'
+  | 'diet_photo_confirmation_terminal'
+  | 'diet_share_terminal'
   // N-of-1 闭环北极星 (2026-06-17) — 已验证闭环数
   | 'verified_loop';              // meta: { cycle_id, verdict_count, total } 复查产出 ≥1 非 pending 裁决
 
@@ -39,6 +42,12 @@ const RELIABILITY_PHASES = {
   agent_turn_terminal: new Set(['completed', 'failed', 'interrupted']),
   voice_input_terminal: new Set(['completed', 'failed', 'cancelled']),
   write_receipt_terminal: new Set(['verified', 'unverified', 'failed']),
+} as const;
+
+const DIET_CAPTURE_PHASES = {
+  diet_photo_recognition_terminal: new Set(['completed', 'failed', 'cancelled']),
+  diet_photo_confirmation_terminal: new Set(['completed', 'failed']),
+  diet_share_terminal: new Set(['completed', 'failed']),
 } as const;
 
 type ReliabilityEventName = keyof typeof RELIABILITY_PHASES;
@@ -65,12 +74,47 @@ function isReliabilityEvent(name: ClientEventName): name is ReliabilityEventName
   return Object.prototype.hasOwnProperty.call(RELIABILITY_PHASES, name);
 }
 
+type DietCaptureEventName = keyof typeof DIET_CAPTURE_PHASES;
+
+function isDietCaptureEvent(name: ClientEventName): name is DietCaptureEventName {
+  return Object.prototype.hasOwnProperty.call(DIET_CAPTURE_PHASES, name);
+}
+
 /** Reliability events are deliberately content-free and identifier-free. */
 export function sanitizeClientEventMeta(
   name: ClientEventName,
   meta?: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
-  if (!isReliabilityEvent(name) || !meta) return meta;
+  if (!meta) return meta;
+  if (isDietCaptureEvent(name)) {
+    const phase = typeof meta.phase === 'string' && DIET_CAPTURE_PHASES[name].has(meta.phase as never)
+      ? meta.phase
+      : undefined;
+    const numberInRange = (value: unknown, max: number): number | undefined => (
+      typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= max
+        ? Math.round(value)
+        : undefined
+    );
+    const durationMs = numberInRange(meta.duration_ms, 300_000);
+    const foodCount = numberInRange(meta.food_count, 20);
+    const tableCount = numberInRange(meta.table_calibrated_count, 20);
+    const sanitized: Record<string, unknown> = {};
+    if (phase) sanitized.phase = phase;
+    if (durationMs !== undefined) sanitized.duration_ms = durationMs;
+    const serverTotalMs = numberInRange(meta.server_total_ms, 300_000);
+    if (serverTotalMs !== undefined) sanitized.server_total_ms = serverTotalMs;
+    if (foodCount !== undefined) sanitized.food_count = foodCount;
+    if (tableCount !== undefined && (foodCount === undefined || tableCount <= foodCount)) {
+      sanitized.table_calibrated_count = tableCount;
+    }
+    if (typeof meta.verified === 'boolean') sanitized.verified = meta.verified;
+    if (typeof meta.has_photo === 'boolean') sanitized.has_photo = meta.has_photo;
+    if (typeof meta.error_code === 'string' && SAFE_TOKEN.test(meta.error_code)) {
+      sanitized.error_code = meta.error_code;
+    }
+    return sanitized;
+  }
+  if (!isReliabilityEvent(name)) return meta;
 
   const sanitized: Record<string, unknown> = {};
   if (typeof meta.phase === 'string' && RELIABILITY_PHASES[name].has(meta.phase as never)) {

@@ -3,16 +3,17 @@ import os
 import json
 import logging
 import uuid
+from time import perf_counter
 from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 from typing import List, Optional
 from datetime import date, timedelta, datetime, time, timezone
 
 from app.database import get_db
-from app.models.daily_health import DietRecord as DietRecordModel
+from app.models.daily_health import DietPhotoDraft, DietRecord as DietRecordModel
 from app.models.user import User
 from app.api.deps import get_current_user_required
 from app.schemas.diet import (
@@ -30,7 +31,11 @@ from app.schemas.diet import (
     VoiceFoodParseResponse,
 )
 from statistics import median
-from app.services.ai.food_recognition import food_recognition_service
+from app.services.ai.food_recognition import (
+    food_recognition_service,
+    sanitize_food_recognition_result,
+)
+from app.services.food_nutrition_lookup import calibrate_recognized_foods
 from app.services.intake_intent_classifier import (
     classify_intake_intent,
     looks_like_food_ui_text,
@@ -39,6 +44,7 @@ from app.services.private_uploads import refresh_private_upload_url
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+PHOTO_DRAFT_TTL = timedelta(hours=24)
 
 
 def _assert_diet_food_items_allowed(food_items: str) -> None:
@@ -165,6 +171,93 @@ def _stage_diet_image_delete(
     return original, staged
 
 
+def _is_photo_draft_expired(draft: DietPhotoDraft) -> bool:
+    expires_at = draft.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at <= datetime.now(timezone.utc)
+
+
+def _create_diet_photo_draft(
+    db: Session,
+    user_id: int,
+    image_base64: str,
+    image_type: str,
+    recognition_result: dict,
+) -> DietPhotoDraft:
+    image_url, image_path = _persist_diet_image(image_base64, image_type, user_id)
+    draft = DietPhotoDraft(
+        token=uuid.uuid4().hex,
+        user_id=user_id,
+        image_url=image_url,
+        image_type=image_type,
+        recognition_result=recognition_result,
+        status="pending",
+        expires_at=datetime.now(timezone.utc) + PHOTO_DRAFT_TTL,
+    )
+    try:
+        db.add(draft)
+        db.commit()
+        db.refresh(draft)
+    except Exception:
+        db.rollback()
+        _remove_diet_image_file(image_path)
+        raise
+    return draft
+
+
+def _expire_photo_draft(db: Session, draft: DietPhotoDraft) -> None:
+    image_path = _diet_image_file_path(draft.image_url, draft.user_id)
+    draft.status = "expired"
+    draft.image_url = None
+    db.commit()
+    _remove_diet_image_file(image_path)
+
+
+def purge_expired_diet_photo_drafts(
+    db: Session,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Expire abandoned drafts and retry private-image deletion until cleared."""
+    cutoff = now or datetime.now(timezone.utc)
+    drafts = db.query(DietPhotoDraft).filter(
+        or_(
+            (
+                (DietPhotoDraft.status == "pending")
+                & (DietPhotoDraft.expires_at <= cutoff)
+            ),
+            (
+                (DietPhotoDraft.status == "expired")
+                & DietPhotoDraft.image_url.is_not(None)
+            ),
+        )
+    ).all()
+    if not drafts:
+        return 0
+
+    for draft in drafts:
+        draft.status = "expired"
+    db.commit()
+
+    purged = 0
+    failures: list[str] = []
+    for draft in drafts:
+        image_path = _diet_image_file_path(draft.image_url, draft.user_id)
+        try:
+            _remove_diet_image_file(image_path)
+            draft.image_url = None
+            purged += 1
+        except OSError as exc:
+            failures.append(f"{draft.token}:{exc}")
+    db.commit()
+    if failures:
+        raise RuntimeError(
+            "diet_photo_draft_image_purge_failed: " + "; ".join(failures[:5])
+        )
+    return purged
+
+
 @router.post("/records", response_model=DietRecordResponse)
 def create_diet_record(
     record: DietRecordCreate,
@@ -180,10 +273,15 @@ def create_diet_record(
 ):
     """创建饮食记录（需要登录）"""
     _assert_diet_food_items_allowed(record.food_items)
-    if idempotency_key:
+    effective_idempotency_key = (
+        f"diet-photo:{record.photo_draft_token}"
+        if record.photo_draft_token
+        else idempotency_key
+    )
+    if effective_idempotency_key:
         existing = db.query(DietRecordModel).filter(
             DietRecordModel.user_id == current_user.id,
-            DietRecordModel.client_action_id == idempotency_key,
+            DietRecordModel.client_action_id == effective_idempotency_key,
         ).first()
         if existing:
             return _convert_to_response(existing)
@@ -209,9 +307,31 @@ def create_diet_record(
             )
             record_dict['record_date'] = server_today
 
-        # 处理图片上传
-        image_url = None
-        if record_dict.get('image_base64'):
+        photo_draft: DietPhotoDraft | None = None
+        if record.photo_draft_token:
+            photo_draft = db.query(DietPhotoDraft).filter(
+                DietPhotoDraft.token == record.photo_draft_token,
+                DietPhotoDraft.user_id == current_user.id,
+            ).with_for_update().first()
+            if photo_draft is None:
+                raise HTTPException(status_code=404, detail="饮食照片草稿不存在或无权访问")
+            if photo_draft.status == "consumed" and photo_draft.consumed_record_id:
+                existing = db.query(DietRecordModel).filter(
+                    DietRecordModel.id == photo_draft.consumed_record_id,
+                    DietRecordModel.user_id == current_user.id,
+                ).first()
+                if existing:
+                    return _convert_to_response(existing)
+            if photo_draft.status != "pending":
+                raise HTTPException(status_code=409, detail="饮食照片草稿已不可用")
+            if _is_photo_draft_expired(photo_draft):
+                _expire_photo_draft(db, photo_draft)
+                raise HTTPException(status_code=410, detail="饮食照片草稿已过期，请重新拍照")
+            image_url = photo_draft.image_url
+        else:
+            image_url = None
+
+        if record_dict.get('image_base64') and photo_draft is None:
             image_url, created_image_path = _persist_diet_image(
                 record_dict['image_base64'],
                 record_dict.get('image_type'),
@@ -248,7 +368,7 @@ def create_diet_record(
             alcohol_units=record_dict.get('alcohol_units'),
             notes=record_dict.get('notes'),
             image_url=image_url,
-            client_action_id=idempotency_key,
+            client_action_id=effective_idempotency_key,
             ai_recognized=bool(record_dict.get('ai_recognized')),
             ai_confidence=record_dict.get('ai_confidence'),
             ai_raw_result=ai_raw_result,
@@ -256,13 +376,18 @@ def create_diet_record(
         )
         db.add(db_record)
         try:
+            db.flush()
+            if photo_draft is not None:
+                photo_draft.status = "consumed"
+                photo_draft.consumed_record_id = db_record.id
+                photo_draft.consumed_at = datetime.now(timezone.utc)
             db.commit()
         except IntegrityError:
             db.rollback()
-            if idempotency_key:
+            if effective_idempotency_key:
                 existing = db.query(DietRecordModel).filter(
                     DietRecordModel.user_id == current_user.id,
-                    DietRecordModel.client_action_id == idempotency_key,
+                    DietRecordModel.client_action_id == effective_idempotency_key,
                 ).first()
                 if existing:
                     _remove_diet_image_file(created_image_path)
@@ -712,7 +837,8 @@ async def parse_voice_food_endpoint(
 @router.post("/recognize", response_model=FoodRecognitionResponse)
 async def recognize_food(
     request: FoodRecognitionRequest,
-    current_user: User = Depends(get_current_user_required)
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
 ):
     """
     AI识别食物图片
@@ -725,18 +851,55 @@ async def recognize_food(
             detail="智能食物识别服务不可用"
         )
 
+    request_started = perf_counter()
+    vision_ms = 0
+    calibration_ms = 0
+    photo_draft_ms = 0
     try:
+        vision_started = perf_counter()
         result = await food_recognition_service.recognize_food_from_base64(
             request.image_base64,
             request.image_type
         )
+        vision_ms = round((perf_counter() - vision_started) * 1000)
+        result = sanitize_food_recognition_result(result)
 
         if not result.get("success"):
+            total_ms = round((perf_counter() - request_started) * 1000)
             return FoodRecognitionResponse(
                 success=False,
                 error=result.get("error", "识别失败"),
-                foods=[]
+                foods=[],
+                timing_ms={"vision": vision_ms, "total": total_ms},
             )
+
+        calibration_started = perf_counter()
+        calibrate_recognized_foods(db, result.get("foods", []))
+        result = sanitize_food_recognition_result(result)
+        calibration_ms = round((perf_counter() - calibration_started) * 1000)
+        photo_draft_token = None
+        if request.create_photo_draft:
+            photo_draft_started = perf_counter()
+            photo_draft = _create_diet_photo_draft(
+                db,
+                current_user.id,
+                request.image_base64,
+                request.image_type,
+                result,
+            )
+            photo_draft_token = photo_draft.token
+            photo_draft_ms = round((perf_counter() - photo_draft_started) * 1000)
+        total_ms = round((perf_counter() - request_started) * 1000)
+        logger.info(
+            "[diet_photo] recognition completed user_id=%s foods=%s vision_ms=%s "
+            "calibration_ms=%s draft_ms=%s total_ms=%s",
+            current_user.id,
+            len(result.get("foods", [])),
+            vision_ms,
+            calibration_ms,
+            photo_draft_ms,
+            total_ms,
+        )
 
         return FoodRecognitionResponse(
             success=True,
@@ -746,12 +909,49 @@ async def recognize_food(
             total_calories=result.get("total_calories"),
             total_protein=result.get("total_protein"),
             total_carbs=result.get("total_carbs"),
-            total_fat=result.get("total_fat")
+            total_fat=result.get("total_fat"),
+            total_fiber=result.get("total_fiber"),
+            photo_draft_token=photo_draft_token,
+            timing_ms={
+                "vision": vision_ms,
+                "calibration": calibration_ms,
+                "photo_draft": photo_draft_ms,
+                "total": total_ms,
+            },
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"食物识别失败: {e}")
+        logger.error(
+            "食物识别失败: %s total_ms=%s",
+            e,
+            round((perf_counter() - request_started) * 1000),
+        )
         raise HTTPException(status_code=500, detail=f"识别失败: {str(e)}")
+
+
+@router.delete("/photo-drafts/{token}", status_code=204)
+def discard_photo_draft(
+    token: str,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    draft = db.query(DietPhotoDraft).filter(
+        DietPhotoDraft.token == token,
+        DietPhotoDraft.user_id == current_user.id,
+    ).first()
+    if draft is None:
+        raise HTTPException(status_code=404, detail="饮食照片草稿不存在或无权访问")
+    if draft.status == "consumed":
+        raise HTTPException(status_code=409, detail="已确认的饮食照片不能取消")
+    if draft.status == "pending":
+        image_path = _diet_image_file_path(draft.image_url, current_user.id)
+        draft.status = "cancelled"
+        draft.image_url = None
+        db.commit()
+        _remove_diet_image_file(image_path)
+    return None
 
 
 @router.post("/recognize-and-save", response_model=DietRecordResponse)
@@ -778,6 +978,7 @@ async def recognize_and_save_diet(
             request.image_base64,
             request.image_type
         )
+        result = sanitize_food_recognition_result(result)
 
         if not result.get("success"):
             raise HTTPException(
@@ -791,6 +992,10 @@ async def recognize_and_save_diet(
                 status_code=400,
                 detail="未识别到任何食物，请重新拍照"
             )
+
+        calibrate_recognized_foods(db, foods)
+        result = sanitize_food_recognition_result(result)
+        foods = result.get("foods", [])
 
         # 组合食物名称
         food_names = [f.get("name", "") for f in foods if f.get("name")]

@@ -38,7 +38,39 @@ def test_sanitize_food_recognition_keeps_real_food_and_recomputes_totals():
                 "protein": 62,
                 "carbs": 0,
                 "fat": 7,
+                "fiber": 2.4,
             },
+        ],
+        "meal_description": "今日饮食营养卡",
+        "total_calories": 999,
+        "total_protein": 99,
+        "total_carbs": 88,
+        "total_fat": 77,
+        "total_fiber": 66,
+    })
+
+    assert result["success"] is True
+    assert [food["name"] for food in result["foods"]] == ["鸡胸肉"]
+    assert result["total_calories"] == 330
+    assert result["total_protein"] == 62
+    assert result["total_carbs"] == 0
+    assert result["total_fat"] == 7
+    assert result["total_fiber"] == 2.4
+    assert result["meal_description"] == "鸡胸肉 200g"
+
+
+def test_sanitize_food_recognition_does_not_keep_stale_totals_for_unknown_nutrients():
+    result = sanitize_food_recognition_result({
+        "success": True,
+        "foods": [
+            {
+                "name": "鸡胸肉",
+                "quantity": "200g",
+                "calories": 330,
+                "protein": None,
+                "carbs": 0,
+                "fat": 7,
+            }
         ],
         "total_calories": 999,
         "total_protein": 99,
@@ -46,9 +78,7 @@ def test_sanitize_food_recognition_keeps_real_food_and_recomputes_totals():
         "total_fat": 77,
     })
 
-    assert result["success"] is True
-    assert [food["name"] for food in result["foods"]] == ["鸡胸肉"]
     assert result["total_calories"] == 330
-    assert result["total_protein"] == 62
+    assert result["total_protein"] is None
     assert result["total_carbs"] == 0
     assert result["total_fat"] == 7
