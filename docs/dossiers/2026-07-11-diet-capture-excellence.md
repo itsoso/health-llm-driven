@@ -76,7 +76,7 @@
 - [x] T4 3:4 高质感饮食分享卡、图片生成和系统分享（EAS）
 - [x] T5 识别/确认/纠错/分享埋点与 p50/p95 看板（backend deploy + OTA）
 - [x] T5.1 端侧照片压缩、相机返回后计时、成功样本分位数与无正文纠错率（backend deploy + OTA）
-- [x] T5.2 模型输出边界、份量真实性、识别日志脱敏与可操作错误语义（待 backend deploy + OTA）
+- [x] T5.2 模型输出边界、份量真实性、识别日志脱敏与可操作错误语义（backend deploy + OTA）
 - [ ] T6 模拟器视觉、真机微信/小红书、生产数据闭环验收
 - 并发检查：2026-07-11 `origin/main` 与当前干净集成 worktree 一致；原始用户工作区不纳入暂存。
 
@@ -110,6 +110,7 @@
 - T5.2 CI run `29166225719` 验证上述三个新分片分别在 3 分 2 秒、2 分 15 秒和 1 分 24 秒通过；同轮旧 `t[f-z]+u` 分片在 69% 处进入 `test_twin_builder.py` 后冻结，并被 20 分钟上限终止，其他 16 个作业均通过。本机同命令 `392/392` 在 31.23 秒通过；据逐用例日志将其拆为 `t[f-v]`、`t[w-z]`、`u` 三个干净进程，原 24 个文件覆盖校验仍为 `24 -> 24`、差集 0。
 - T5.2 CI run `29166933157` 中 `t[f-v]`、`t[w-z]`、`u` 已分别在 1 分 44 秒、1 分 25 秒和 1 分 28 秒通过；唯一剩余的旧 `s` 大分片进入 `test_schedule_into_agenda.py` 后失去输出，其他 18 个作业均通过。本机同一 643 项命令也在该模块首个用例后停住，但该模块单跑 `8/8`、与前一模块配对 `26/26`、`s[c-k]` 分组 `55/55` 均通过，确认是更长前序造成的进程状态污染；将 58 个 `s` 文件拆为 `s[a-b]`、`s[c-k]`、`s[l-z]`，覆盖校验为 `58 -> 58`、差集 0。
 - T5.2 CI run `29167500244` 验证三个新 `s` 分片分别在 1 分 22 秒、1 分 32 秒和 3 分 34 秒通过；唯一剩余的旧 `n-r` 大分片超过 16 分钟无输出，其他 20 个作业均通过。本机同一 808 项命令也在 `protocol` 区域后停止输出，而独立 `p` 分片 `239/239` 在 69.61 秒通过；将原 87 个文件拆为 `n-o`、`p`、`q-r` 三个进程，文件覆盖校验为 `87 -> 87`、差集 0。
+- T5.2 最终 Linux 权威闸门：GitHub Actions run `29168150924` SUCCESS；18 个后端测试分片、backend quality、最终 Backend tests enforcement、type drift、Frontend、Mobile 与 macOS 全部通过，head commit 为 `c6d3d3f4942fee7a1f92730f33d9326d600be4c0`。
 - Linux 全仓权威闸门：GitHub Actions run `29163241845` SUCCESS；frontend、Mobile、macOS、type drift、backend quality、10 个后端测试分片及最终 backend enforcement 全部通过。
 
 ## G4 · 安全闸
@@ -126,6 +127,9 @@
 - 第三次部署前 PostgreSQL 备份：`/opt/health-app/backups/health_db_2026-07-12_02-27.sql.gz`，38 MB，权限 `0600`，完整性与 force-RLS 检查通过。
 - TestFlight 构建：版本 `1.3.1 (221)`，EAS build `a6886f1c-d94f-4463-8a2e-90aeb12bce4c`；submission `4e54e7b1-1a9c-498c-8569-83deb950514a` 已成功上传 App Store Connect。
 - production OTA：runtime `1.3.1`，update group `7a83e627-d87d-49df-8a83-de59c2867567`，iOS update `019f5272-ec99-760e-ad91-7097c018a0db`；EAS `update:view` 复核 branch、commit、runtime 与非回滚状态一致。
+- T5.2 后端从干净且与 `origin/main` 一致的 worktree 通过 `./deploy.sh -b` 增量部署，生产 commit 更新为 `c6d3d3f4942fee7a1f92730f33d9326d600be4c0`；本轮无新迁移。
+- T5.2 部署前 PostgreSQL 备份：`/opt/health-app/backups/health_db_2026-07-12_05-12.sql.gz`，38 MB，权限 `0600`，两张 force-RLS 表的数据段完整性检查通过。
+- T5.2 production OTA：runtime `1.3.1`，update group `2f5f9559-9838-404a-a03c-ebdfb3c334c9`，iOS update `019f530b-0ec6-7838-aaa3-721414a37189`；EAS `update:view` 复核 branch=`production`、commit、runtime 与 `isRollBackToEmbedded=false` 一致。
 
 ## G5 · 部署健康闸
 
@@ -134,6 +138,7 @@
 - `health-backend`、`celery-worker`、`celery-beat` 均为 active；部署健康分 `60/60 PASS`；skills manifest 本地/线上均为 22。
 - 公网及服务器本机 `/api/v1/health` 均返回 healthy，API、PostgreSQL、Redis、Celery 全部 connected/running。
 - T5.1 增量部署后 `health-backend` 为 active；公网 `/api/v1/health` 再次返回 healthy，production OTA 已绑定同一代码 commit。
+- T5.2 增量部署后 `health-backend`、`celery-worker`、`celery-beat` 均为 active，服务器 Git HEAD 为 `c6d3d3f49`，部署健康分 `60/60 PASS`；公网健康仍为 healthy，服务器本机 OpenAPI 的 `FoodItem` 已包含 `portion_basis` 与 `portion_confidence`。
 - **裁决：PASS**。
 
 ## S7 · 上线验证
@@ -142,6 +147,7 @@
 - Backend 生产迁移、营养目录、服务状态和公网健康检查已验证。
 - TestFlight `1.3.1 (221)` 已成功上传 App Store Connect；Apple 处理完成状态尚未单独核实，因此不宣称当前已可安装。
 - build 221 对应 runtime `1.3.1` 的 production OTA 已发布；设备冷启或后台超过 30 秒后可拉取。当前生产仍无新版终态样本，不宣称真实 p50/p95 或纠错率已达标。
+- T5.2 OTA 已绑定 build 221 的 runtime `1.3.1` 与生产 commit `c6d3d3f49`；当前仍不以模拟器、单测或模型自报置信度替代真机照片准确率与份量误差验收。
 - 待真机验证：相机实拍 -> 识别 -> 修正 -> 确认单次写入，以及分享图分别投递微信和小红书。
 
 ## G6 · 验证闸
