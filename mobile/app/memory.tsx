@@ -34,11 +34,11 @@ import {
   sourceTypeLabel,
   LOW_CONFIDENCE_THRESHOLD,
   type MemoryFact,
-  type ContradictionPair,
 } from '../services/memoryFacts';
 import { spacing, radii, shadows } from '../constants/theme';
 import { ColorPalette, SemanticPalette, useTheme } from '../hooks/useTheme';
 import AgentFeedbackLink from '../components/agent/AgentFeedbackLink';
+import ContradictionBanner from '../components/memory/ContradictionBanner';
 import { createMemoryAgentContext } from '../utils/agentContext';
 
 const FACTS_KEY = ['memory-facts', 'transparency'] as const;
@@ -367,83 +367,6 @@ function FactRow({ fact, isLast, onDismiss, onConfirm, disabled, c, s }: FactRow
   );
 }
 
-// ──────────────────── ContradictionBanner ────────────────────
-
-interface BannerProps {
-  pairs: ContradictionPair[];
-  onKeep: (keepId: number, dropId: number) => void;
-  onCollapse: () => void;
-  disabled: boolean;
-  c: ColorPalette;
-  s: SemanticPalette;
-}
-
-function ContradictionBanner({ pairs, onKeep, onCollapse, disabled, c, s }: BannerProps) {
-  const txt = createTxt(c);
-  const tone = s.warning;
-  return (
-    <View style={[bannerStyles.card, { backgroundColor: tone.bg, borderColor: tone.solid }]}>
-      <View style={bannerStyles.headerRow}>
-        <Ionicons name="git-compare-outline" size={16} color={tone.fg} />
-        <Text style={[txt.bannerTitle, { color: tone.fg }]}>
-          发现 {pairs.length} 处可能矛盾的记忆
-        </Text>
-        <Pressable onPress={onCollapse} hitSlop={8} accessibilityLabel="暂时收起矛盾提示">
-          <Ionicons name="close" size={16} color={tone.fg} />
-        </Pressable>
-      </View>
-      <Text style={[txt.bannerHint, { color: tone.fg }]}>
-        小巴对同一件事记了两个说法，帮它留下对的那个。
-      </Text>
-      {pairs.map((pair) => (
-        <View key={`${pair.a.id}:${pair.b.id}`} style={[bannerStyles.pairWrap, { borderTopColor: tone.solid }]}>
-          <ConflictOption
-            fact={pair.a}
-            onKeep={() => onKeep(pair.a.id, pair.b.id)}
-            disabled={disabled}
-            c={c}
-            s={s}
-          />
-          <Text style={txt.vsText}>对</Text>
-          <ConflictOption
-            fact={pair.b}
-            onKeep={() => onKeep(pair.b.id, pair.a.id)}
-            disabled={disabled}
-            c={c}
-            s={s}
-          />
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function ConflictOption({ fact, onKeep, disabled, c, s }: {
-  fact: MemoryFact; onKeep: () => void; disabled: boolean; c: ColorPalette; s: SemanticPalette;
-}) {
-  const txt = createTxt(c);
-  return (
-    <View style={bannerStyles.option}>
-      <Text style={txt.optionText} numberOfLines={3}>{factSentence(fact)}</Text>
-      <Pressable
-        testID={`memory-keep-${fact.id}`}
-        onPress={onKeep}
-        disabled={disabled}
-        style={({ pressed }) => [
-          bannerStyles.keepBtn,
-          { backgroundColor: s.success.solid },
-          pressed && { opacity: 0.7 },
-          disabled && { opacity: 0.4 },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel="保留这条记忆"
-      >
-        <Text style={bannerStyles.keepText}>保留这条</Text>
-      </Pressable>
-    </View>
-  );
-}
-
 // ─────────────────────────── styles ───────────────────────────
 
 const factRowStyles = StyleSheet.create({
@@ -458,18 +381,6 @@ const factRowStyles = StyleSheet.create({
     borderRadius: radii.full, borderWidth: StyleSheet.hairlineWidth,
   },
   dismissBtn: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radii.full },
-});
-
-const bannerStyles = StyleSheet.create({
-  card: { borderRadius: radii.md, borderWidth: 1, padding: spacing.md, gap: spacing.sm },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  pairWrap: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    paddingTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  option: { flex: 1, gap: 6 },
-  keepBtn: { paddingVertical: 6, borderRadius: radii.full, alignItems: 'center' },
-  keepText: { fontSize: 12, fontWeight: '600', color: '#FFFFFF' },
 });
 
 function createStyles(c: ColorPalette, _isDark: boolean) {
