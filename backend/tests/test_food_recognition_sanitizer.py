@@ -7,6 +7,11 @@ from app.services.ai.food_recognition import (
     FoodRecognitionService,
     sanitize_food_recognition_result,
 )
+from app.config import Settings
+
+
+def test_default_vision_model_uses_current_fast_food_recognition_model():
+    assert Settings.model_fields["llm_vision_model"].default == "qwen3-vl-flash"
 
 
 def test_sanitize_food_recognition_rejects_ui_card_copy():
@@ -213,6 +218,34 @@ async def test_food_recognition_does_not_log_model_content_or_food_names(caplog)
 
     assert result["success"] is True
     assert private_food_name not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_food_recognition_disables_thinking_for_qwen3_vision_models():
+    class FakeProvider:
+        model = "qwen3-vl-flash"
+
+        def __init__(self):
+            self.kwargs = None
+
+        async def chat_with_vision(self, **kwargs):
+            self.kwargs = kwargs
+            return json.dumps({
+                "foods": [{
+                    "name": "鸡肉块",
+                    "quantity": "1份",
+                    "calories": 320,
+                }],
+            }, ensure_ascii=False)
+
+    provider = FakeProvider()
+    service = FoodRecognitionService()
+    service._provider = provider
+
+    result = await service.recognize_food_from_base64("aW1hZ2U=")
+
+    assert result["success"] is True
+    assert provider.kwargs["extra_body"] == {"enable_thinking": False}
 
 
 @pytest.mark.asyncio

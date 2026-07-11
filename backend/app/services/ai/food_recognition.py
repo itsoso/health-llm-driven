@@ -255,6 +255,15 @@ def extract_json_from_text(text: str) -> str:
     logger.warning(f"无法提取JSON，返回原文, 长度: {len(text)}")
     return text
 
+
+def _vision_chat_options(provider: Any) -> Dict[str, Any]:
+    """Keep Qwen3 visual extraction on its low-latency deterministic path."""
+    model = str(getattr(provider, "model", "") or "").strip().lower()
+    if model.startswith("qwen3"):
+        return {"extra_body": {"enable_thinking": False}}
+    return {}
+
+
 class FoodRecognitionService:
     """AI食物识别服务"""
 
@@ -316,6 +325,7 @@ class FoodRecognitionService:
                 image_url=data_url,
                 temperature=0.1,
                 max_tokens=2000,
+                **_vision_chat_options(provider),
             )
             if not raw_content:
                 logger.error("AI返回空内容")
@@ -436,6 +446,7 @@ class FoodRecognitionService:
                 image_url=image_url,
                 temperature=0.1,
                 max_tokens=2000,
+                **_vision_chat_options(provider),
             )
 
             if not raw_content:

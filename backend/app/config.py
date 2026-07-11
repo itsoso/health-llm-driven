@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     llm_api_key: Optional[str] = None
     llm_base_url: Optional[str] = None
     llm_model: str = "gpt-4o-mini"
-    llm_vision_model: str = "qwen-vl-max"
+    llm_vision_model: str = "qwen3-vl-flash"
     agent_model: Optional[str] = None  # Hermes Agent 专用模型（默认复用 llm_model）
     agent_base_url: Optional[str] = None  # Agent 专用 LLM 端点
     agent_api_key: Optional[str] = None  # Agent 专用 API Key

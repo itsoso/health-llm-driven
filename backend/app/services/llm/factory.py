@@ -164,7 +164,7 @@ def get_vision_provider() -> LLMProvider:
     if _vision_provider_instance is None:
         vision_api_key = getattr(settings, "llm_vision_api_key", None)
         vision_base_url = getattr(settings, "llm_vision_base_url", None)
-        vision_model = getattr(settings, "llm_vision_model", "qwen-vl-max")
+        vision_model = getattr(settings, "llm_vision_model", "qwen3-vl-flash")
 
         if vision_api_key:
             from app.services.llm.providers.openai_provider import OpenAIProvider

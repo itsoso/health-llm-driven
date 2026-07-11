@@ -653,7 +653,7 @@ TOKENPLAN_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mo
 TOKENPLAN_MODEL=qwen3.6-plus
 MOONSHOT_API_KEY=<optional>  # Kimi
 ZHIPU_API_KEY=<optional>      # GLM 官方, 不是 TokenPlan 里的 GLM-5
-LLM_VISION_API_KEY=... LLM_VISION_BASE_URL=... LLM_VISION_MODEL=qwen-vl-max
+LLM_VISION_API_KEY=... LLM_VISION_BASE_URL=... LLM_VISION_MODEL=qwen3-vl-flash
 
 # Push
 APNS_TEAM_ID=... APNS_KEY_ID=... APNS_KEY_PATH=/opt/health-app/backend/keys/AuthKey_XXX.p8
