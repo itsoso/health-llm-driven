@@ -74,7 +74,7 @@ cases:
     twin: {}
     findings: []
     expected:
-      must_not_contain: ["HRV 28", "readiness 32", "血压"]
+      must_not_contain: ["HRV 28", "readiness 32", "145/95"]
       llm_judge_min_score: 2
 
   - id: sleep_quality_query

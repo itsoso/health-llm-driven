@@ -1863,7 +1863,7 @@ async def test_langbridge_commercial_model_receives_raw_image_parts(db, auth_use
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message="这张照片里是什么食物？",
+            message="这张照片里是什么建筑？",
             images=[{"base64": "YWJjMTIz", "type": "jpeg"}],
             user_auth_token=None,
         )
@@ -1873,6 +1873,6 @@ async def test_langbridge_commercial_model_receives_raw_image_parts(db, auth_use
     first_call = captured_messages[0]
     last_user = next(msg for msg in reversed(first_call) if msg.get("role") == "user")
     assert isinstance(last_user["content"], list)
-    assert last_user["content"][0] == {"type": "text", "text": "这张照片里是什么食物？"}
+    assert last_user["content"][0] == {"type": "text", "text": "这张照片里是什么建筑？"}
     assert last_user["content"][1]["type"] == "image_url"
     assert last_user["content"][1]["image_url"]["url"] == "data:image/jpeg;base64,YWJjMTIz"

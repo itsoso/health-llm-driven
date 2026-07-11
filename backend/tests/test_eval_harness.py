@@ -227,6 +227,9 @@ class TestOrchestratorRunner:
             return "建议蛋白摄入约 112g/d, 早午晚分配, 训练日加 20%."
 
         async def fake_judge(q, a, model=None):
+            assert "[评测可用证据]" in q
+            assert '"weight_kg": 70' in q
+            assert "蛋白目标 1.6g/kg/d = 112g" in q
             return {"score": 4, "reason": "ok"}
 
         from app.orchestrator import orchestrator as orc

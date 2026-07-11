@@ -202,7 +202,18 @@ def _score_orchestrator(case: GoldenCase, output: Dict[str, Any]) -> Dict[str, D
     query = output.get("query", "")
     results = {"keywords": score_keywords(text, case.expected)}
     if "llm_judge_min_score" in case.expected:
-        results["llm_judge"] = score_llm_judge(query, text, case.expected)
+        evidence = {
+            "health_twin": case.inputs.get("twin", {}),
+            "specialist_findings": case.inputs.get("findings", []),
+        }
+        judge_query = (
+            f"{query}\n\n"
+            "[评测可用证据]\n"
+            "以下结构化数据是回答生成前已提供给系统的证据。回答引用其中的值不算编造；"
+            "引用证据外的具体健康数据仍应扣分。\n"
+            f"{json.dumps(evidence, ensure_ascii=False, sort_keys=True)}"
+        )
+        results["llm_judge"] = score_llm_judge(judge_query, text, case.expected)
     return results
 
 

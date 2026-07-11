@@ -93,6 +93,7 @@
 - managed migration：SQLite 12 passed；PostgreSQL 实跑确认 `豆腐` 默认不校准、`北豆腐` 可校准、未知行默认关闭。
 - Dossier consistency、OpenAPI type generation、system-map generation、doc-drift checks passed。
 - iPhone 17 Pro 模拟器原生构建成功；430x932 页面和分享预览无重叠，系统分享面板成功接收 PNG；像素检查为 1080x1440、非空图像。
+- LLM live-change regression gate：invariants 12/12、health_agent_core 50/50、真实 orchestrator 5/5，平均分 0.94；原始证据保存在本机 `/tmp/harness-live-final-20260711.log`。闸门同时修正两项既有误报：空数据回答允许提及待补指标但仍禁止串入其他 case 的具体数值；LLM judge 现在可见该 case 的 Twin / specialist 证据，不再把有来源的个性化数据误判为编造。
 - 待执行：真机微信/小红书目标应用投递与生产验证。Backend 全仓本地测试仍保留既有跨用例污染问题，Linux CI 为全仓权威闸门。
 
 ## G4 · 安全闸

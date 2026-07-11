@@ -226,11 +226,12 @@ def test_once_daily_api_response_dict_unchanged(client, db, auth_user_and_header
 
 # ───────────────────── 4. 跨剂隔离 ─────────────────────
 
-def test_completing_morning_does_not_mark_evening(db, auth_user_and_headers):
+def test_completing_morning_does_not_mark_evening(db, auth_user_and_headers, monkeypatch):
     """完成 08:00 不会把 20:00 标 done(两剂独立议程行)。"""
     from app.services.today_timeline_service import build_today_spine
     from app.services import timeline_agenda_service as tas
 
+    _pin_morning_clock(monkeypatch)
     user, _ = auth_user_and_headers
     med = _seed_bid(db, user.id, reminder_times=["08:00", "20:00"])
 
