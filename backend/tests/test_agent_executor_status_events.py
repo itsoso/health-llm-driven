@@ -695,7 +695,7 @@ def _wire_min(executor, monkeypatch):
     monkeypatch.setattr("app.services.agent_executor.settings.llm_provider", "tokenplan")
     monkeypatch.setattr("app.services.agent_executor.settings.agent_base_url", None)
     monkeypatch.setattr("app.services.agent_executor.settings.agent_api_key", None)
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [{
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [{
         "type": "function",
         "function": {"name": "health_query", "description": "x",
                      "parameters": {"type": "object", "properties": {}}},

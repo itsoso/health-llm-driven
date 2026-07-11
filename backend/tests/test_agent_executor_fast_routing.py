@@ -254,7 +254,8 @@ def _wire_common(executor, monkeypatch, provider_factory):
     monkeypatch.setattr("app.services.agent_executor.settings.llm_provider", "tokenplan")
     monkeypatch.setattr("app.services.agent_executor.settings.agent_base_url", None)
     monkeypatch.setattr("app.services.agent_executor.settings.agent_api_key", None)
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [{
+    # subset 参数与生产签名对齐(fast 回合传 big-3 白名单;桩固定回 noop 工具)
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [{
         "type": "function",
         "function": {"name": "noop", "description": "x", "parameters": {"type": "object", "properties": {}}},
     }])

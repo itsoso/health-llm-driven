@@ -3,7 +3,7 @@
 供 Agent 执行器使用的结构化工具接口。覆盖所有健康数据的读/写/分析操作。
 """
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -710,13 +710,26 @@ action 选择:
 ]
 
 
-def get_health_tools() -> List[Dict[str, Any]]:
-    """获取所有健康工具定义。
+# fast(简单记录/查询)回合的固定工具白名单(2026-07-11 token 优化 #2)。
+# 实测全量 schema 18,064 chars,big-3 仅 ~6,700 —— fast 回合(最高频)砍 ~62% 工具
+# prefill。**固定**子集(不随消息内容变)以保持前缀字节稳定、不拆 provider 前缀缓存;
+# fast 模型若吐出子集外工具名 → agent 侧升级回全集重跑该轮(fail-open)。
+FAST_TURN_TOOL_NAMES: tuple = ("health_record", "health_query", "health_manage")
+
+
+def get_health_tools(subset: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """获取健康工具定义。
+
+    subset: 工具名白名单(如 FAST_TURN_TOOL_NAMES)。None = 全量。
+    subset 模式下不追加 specialist 工具(fast 简单回合与深分析互斥)。
 
     RFC 方向一 Phase A: 当 settings.agent_specialist_tools 开启时, 追加
     specialist 分析工具(analyze_recovery 等), 让 Agent 自主调用。默认关闭,
     行为与现状一致。
     """
+    if subset is not None:
+        wanted = set(subset)
+        return [t for t in HEALTH_TOOLS if t["function"]["name"] in wanted]
     try:
         from app.config import settings
         if getattr(settings, "agent_specialist_tools", False):

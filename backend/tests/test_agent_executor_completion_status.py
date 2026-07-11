@@ -126,7 +126,7 @@ async def test_identityless_write_result_cannot_render_or_finish_as_success(
         return '{"message":"Record deleted successfully"}'
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -183,7 +183,7 @@ async def test_http_500_after_dispatched_write_is_uncertain_and_orphan_retry_doe
         return "Error: upstream returned 500 after request dispatch"
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
     monkeypatch.setattr(executor, "_call_llm", first_llm_call)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(first_llm_call))
     monkeypatch.setattr(executor, "_execute_tool", committed_then_500)
@@ -282,7 +282,7 @@ async def test_duplicate_writes_in_one_model_response_execute_once(
         })
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
     monkeypatch.setattr(executor, "_call_llm", fake_llm_call)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm_call))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -525,7 +525,7 @@ async def test_sealed_planned_only_checkpoint_can_resume_before_any_dispatch(
         })
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
     monkeypatch.setattr(executor, "_call_llm", fake_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -605,7 +605,7 @@ async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
         return original_persist(user_message, **kwargs)
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
     monkeypatch.setattr(executor, "_call_llm", fake_llm_call)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm_call))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)

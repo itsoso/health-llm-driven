@@ -17,6 +17,10 @@ class LlmUsageLog(Base):
     prompt_tokens = Column(Integer, nullable=False, default=0)
     completion_tokens = Column(Integer, nullable=False, default=0)
     total_tokens = Column(Integer, nullable=False, default=0)
+    # provider 返回的缓存命中 prompt tokens(前缀缓存验收的唯一真值;估算时为 NULL)
+    cached_tokens = Column(Integer, nullable=True)
+    # 'api' = provider usage 真值 / 'estimate' = tiktoken/len 估算兜底(旧行 NULL)
+    token_source = Column(String(16), nullable=True)
     # 单次估算成本 (USD), 由 model 价格表算出
     cost_usd = Column(Float, nullable=False, default=0.0)
     latency_ms = Column(Integer, nullable=True)

@@ -23,7 +23,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.services.tool_schema_registry import get_health_tools
+from app.services.tool_schema_registry import FAST_TURN_TOOL_NAMES, get_health_tools
 from app.services.lab_plausibility import annotate_if_implausible
 from app.services.llm.error_messages import safe_llm_error_message
 from app.services.health_query_dimensions import normalize_health_query_args
@@ -153,6 +153,61 @@ def _extract_desktop_response_instruction(extra_context: Optional[str]) -> Optio
     if not instruction:
         return None
     return instruction[:1200]
+
+
+def _project_orchestrator_result(result: str) -> str:
+    """把 /orchestrator/chat 的完整 JSON 投影成二次合成真正需要的精简形。
+
+    2026-07-11 token 优化 #3(实测):完整返回 15,755 chars,其中 findings[] 的
+    per-specialist raw/富字段占 93%,而 agent 二次合成只需要 synthesis + 每个
+    specialist 的一句话概括。投影后 ~2,400 chars(-84%),同时降低弱模型把大段
+    JSON 回显进正文的风险。审计/前端要看全量走 orchestrator 自己的端点,不经
+    LLM 上下文。
+
+    保留契约字段:perf(round loop 4270 行透传给 done 事件)、synthesis 原文
+    (已过 advice_guard/R4)、intent、used_specialists。fail-open:解析失败
+    原样返回(宁可多花 token 不丢内容)。
+    """
+    try:
+        data = json.loads(result) if isinstance(result, str) else None
+        if not isinstance(data, dict) or "synthesis" not in data:
+            return result
+        compact_findings = []
+        for f in data.get("findings") or []:
+            if not isinstance(f, dict):
+                continue
+            item = {
+                "specialist": f.get("specialist_name"),
+                "category": f.get("category"),
+                "summary": f.get("summary"),
+            }
+            # 各 specialist 结构化 findings 只保留高信号小字段(severity/标题/行动),
+            # 丢 raw / 数值明细(synthesis 已消化过它们)。
+            compact_items = []
+            for fi in (f.get("findings") or [])[:5]:
+                if not isinstance(fi, dict):
+                    continue
+                kept = {
+                    k: fi[k]
+                    for k in ("severity", "level", "title", "name", "action", "suggestion")
+                    if k in fi and isinstance(fi[k], (str, int, float))
+                }
+                if kept:
+                    compact_items.append(kept)
+            if compact_items:
+                item["items"] = compact_items
+            compact_findings.append(item)
+        projected = {
+            "synthesis": data.get("synthesis"),
+            "intent": data.get("intent"),
+            "used_specialists": data.get("used_specialists"),
+            "findings": compact_findings,
+        }
+        if data.get("perf") is not None:
+            projected["perf"] = data.get("perf")
+        return json.dumps(projected, ensure_ascii=False)
+    except Exception:  # noqa: BLE001 — 投影失败宁可原样返回,不丢内容
+        return result
 
 
 def _completion_status_from_finish_reason(finish_reason: Optional[str]) -> str:
@@ -3839,8 +3894,16 @@ class AgentExecutor:
         except Exception:  # noqa: BLE001
             pre_llm_ms = 0
 
-        # 4. 工具定义
-        tools = get_health_tools()
+        # 4. 工具定义(2026-07-11 token 优化 #2)
+        # fast 简单回合(记录/简单查询)只发固定 big-3 白名单:实测工具 prefill
+        # 18,064→~6,700 chars(-62%),且缩短 flash 模型 prefill 时延。固定子集
+        # 保前缀字节稳定(不拆 provider 前缀缓存)。模型若吐出子集外工具名 →
+        # 下面 round loop 里升级回全集重跑该轮(fail-open,绝不静默丢调用)。
+        if self._fast_route_simple_turn:
+            tools = get_health_tools(subset=list(FAST_TURN_TOOL_NAMES))
+        else:
+            tools = get_health_tools()
+        fast_subset_active = self._fast_route_simple_turn
 
         # 5. Agent 循环
         full_reply = ""
@@ -4100,6 +4163,38 @@ class AgentExecutor:
                     self._record_tool_model_name(self._last_provider_model_name or model_name)
                     tool_calls = response["tool_calls"]
                     text_content = response.get("content") or ""
+
+                    # fast 子集守卫(token 优化 #2):模型想调的工具不在 big-3 白名单
+                    # (意图误判/幻觉工具名)→ 升级回全集重跑本轮。fail-open:
+                    # 绝不因裁剪静默丢调用或喂"未知工具"错误。fast 轮直答文本
+                    # 本就被丢弃重合成,重跑不会双发内容。
+                    if fast_subset_active:
+                        _sent_tool_names = {
+                            (t.get("function") or {}).get("name") for t in tools
+                        }
+                        _full_tool_names = {
+                            (t.get("function") or {}).get("name")
+                            for t in get_health_tools()
+                        }
+                        # 只对「全集里真有、但被子集扣下」的名字升级;幻觉工具名
+                        # (全集也没有)走原有未知工具错误路径,升级救不了它。
+                        _withheld = [
+                            name
+                            for name in (
+                                (tc.get("function") or {}).get("name")
+                                for tc in tool_calls
+                            )
+                            if name not in _sent_tool_names and name in _full_tool_names
+                        ]
+                        if _withheld:
+                            logger.info(
+                                "[agent_executor] fast 工具子集升级回全集重跑本轮 (模型请求: %s)",
+                                _withheld,
+                            )
+                            tools = get_health_tools()
+                            fast_subset_active = False
+                            self._record_model_fallback_reason("fast_subset_upgraded_full_tools")
+                            continue
 
                     planned_writes: List[tuple[str, Dict[str, Any]]] = []
                     for tc in tool_calls:
@@ -7094,7 +7189,7 @@ class AgentExecutor:
                 f"{base}/orchestrator/chat", headers,
                 {"query": question}
             )
-            return result
+            return _project_orchestrator_result(result)
 
         # supplement_effectiveness: 补剂效果评估
         if atype == "supplement_effectiveness":

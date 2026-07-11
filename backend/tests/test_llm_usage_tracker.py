@@ -293,3 +293,44 @@ def test_wrap_provider_recovers_quota_error_with_fallback_provider(
     assert rows[1].provider == "langbridge-proxy"
     assert summary["failed_calls"] == 1
     assert summary["items"][0]["recovery_action"] == "fallback_attempted"
+
+
+def test_record_usage_prefers_reported_api_truth(patch_session):
+    """provider 上报 API usage 后, record_usage 用真值(含 cached_tokens)而非估算。"""
+    from app.models.llm_usage import LlmUsageLog
+    from app.services.llm.usage_tracker import report_api_usage
+
+    report_api_usage(prompt_tokens=1234, completion_tokens=56, cached_tokens=1000)
+    record_usage("tokenplan", "qwen3.7-max", "很长的提示词" * 100, "回答", caller="t")
+
+    row = patch_session.query(LlmUsageLog).order_by(LlmUsageLog.id.desc()).first()
+    assert row.prompt_tokens == 1234          # API 真值, 不是 len 估算
+    assert row.completion_tokens == 56
+    assert row.cached_tokens == 1000
+    assert row.token_source == "api"
+
+
+def test_record_usage_falls_back_to_estimate_and_consumes_once(patch_session):
+    """无上报 → 估算 + token_source='estimate';上报只被消费一次, 不串到下一条。"""
+    from app.models.llm_usage import LlmUsageLog
+    from app.services.llm.usage_tracker import report_api_usage
+
+    report_api_usage(prompt_tokens=77, completion_tokens=8, cached_tokens=None)
+    record_usage("tokenplan", "qwen3.7-max", "p", "c", caller="t")
+    # 第二条没有新上报 → 必须回到估算, 绝不能复用上一条的 77/8
+    record_usage("tokenplan", "qwen3.7-max", "prompt text", "completion", caller="t")
+
+    rows = patch_session.query(LlmUsageLog).order_by(LlmUsageLog.id.asc()).all()[-2:]
+    assert rows[0].token_source == "api" and rows[0].prompt_tokens == 77
+    assert rows[0].cached_tokens is None
+    assert rows[1].token_source == "estimate"
+    assert rows[1].prompt_tokens != 77
+
+
+def test_report_api_usage_ignores_empty_and_never_raises():
+    from app.services.llm.usage_tracker import _consume_api_usage, report_api_usage
+
+    report_api_usage(prompt_tokens=None, completion_tokens=None)
+    assert _consume_api_usage() is None
+    report_api_usage(prompt_tokens="bad", completion_tokens=object())  # type: ignore[arg-type]
+    # fail-soft: 非法输入不抛, 也不留下半残条目被后续消费成错值

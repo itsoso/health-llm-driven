@@ -107,6 +107,40 @@ def _capture_usage_entry(entry: Dict[str, Any]) -> None:
     bucket.append(dict(entry))
 
 
+# ── provider 真值 usage 通道(2026-07-08 token 优化 #1)──────────────────
+# 历史:record_usage 永远用 tiktoken/len 估算,provider 返回的 usage 被丢弃 →
+# 缓存命中率与真实 token 全盲,一切缓存优化都无法验收。
+# 通道:provider 在拿到 API usage 后调 report_api_usage()(同一 asyncio task 的
+# ContextVar);record_usage 消费即用真值(token_source='api'),没有才退估算。
+_api_usage_ctx: ContextVar[Optional[Dict[str, Any]]] = ContextVar("llm_api_usage", default=None)
+
+
+def report_api_usage(
+    prompt_tokens: Optional[int],
+    completion_tokens: Optional[int],
+    cached_tokens: Optional[int] = None,
+) -> None:
+    """Provider 拿到 API 返回的 usage 后上报(fail-soft,绝不抛)。"""
+    try:
+        if prompt_tokens is None and completion_tokens is None:
+            return
+        _api_usage_ctx.set({
+            "prompt_tokens": int(prompt_tokens or 0),
+            "completion_tokens": int(completion_tokens or 0),
+            "cached_tokens": int(cached_tokens) if cached_tokens is not None else None,
+        })
+    except Exception:  # noqa: BLE001 — 观测层绝不断业务
+        pass
+
+
+def _consume_api_usage() -> Optional[Dict[str, Any]]:
+    """读取并清空本 task 的 API usage(一次调用一次消费,防串到下一次)。"""
+    usage = _api_usage_ctx.get()
+    if usage is not None:
+        _api_usage_ctx.set(None)
+    return usage
+
+
 def summarize_usage_capture() -> Optional[Dict[str, Any]]:
     """Return a privacy-safe summary of the current request's LLM calls."""
     items = _usage_capture_ctx.get()
@@ -380,9 +414,18 @@ def record_usage(
     recovery_model: Optional[str] = None,
     run_id: Optional[str] = None,
 ) -> None:
-    """写一条 LlmUsageLog (旁路, 失败只 log)."""
-    prompt_tokens = _estimate_tokens(prompt_text, model)
-    completion_tokens = _estimate_tokens(completion_text, model)
+    """写一条 LlmUsageLog (旁路, 失败只 log). API 真值优先, tiktoken 估算兜底."""
+    api_usage = _consume_api_usage()
+    cached_tokens: Optional[int] = None
+    if api_usage is not None:
+        prompt_tokens = api_usage["prompt_tokens"]
+        completion_tokens = api_usage["completion_tokens"]
+        cached_tokens = api_usage.get("cached_tokens")
+        token_source = "api"
+    else:
+        prompt_tokens = _estimate_tokens(prompt_text, model)
+        completion_tokens = _estimate_tokens(completion_text, model)
+        token_source = "estimate"
     cost = estimate_usage_cost(provider, model, prompt_tokens, completion_tokens)
     resolved_caller = caller or _caller_ctx.get() or "unknown"
     resolved_user_id = user_id if user_id is not None else _user_id_ctx.get()
@@ -396,6 +439,8 @@ def record_usage(
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
         "total_tokens": prompt_tokens + completion_tokens,
+        "cached_tokens": cached_tokens,
+        "token_source": token_source,
         "cost_usd": round(cost.cost_usd, 8),
         "cost_cny": round(cost.cost_cny, 6),
         "cost_estimated": cost.estimated,
@@ -434,6 +479,8 @@ def record_usage(
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 total_tokens=prompt_tokens + completion_tokens,
+                cached_tokens=cached_tokens,
+                token_source=token_source,
                 cost_usd=cost.cost_usd,
                 latency_ms=latency_ms,
                 success=1 if success else 0,
