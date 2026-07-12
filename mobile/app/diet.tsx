@@ -1429,7 +1429,12 @@ function QuickDietDraftCard({
             <Text style={txt.recognitionDetailCount}>{recognizedFoods.length} 项</Text>
           </View>
           {recognizedFoods.map((food, index) => (
-            <RecognizedFoodRow key={`${food.food_id ?? food.name}-${index}`} food={food} index={index} />
+            <RecognizedFoodRow
+              key={`${food.food_id ?? food.name}-${index}`}
+              food={food}
+              index={index}
+              onRevise={onRevise}
+            />
           ))}
         </View>
       ) : null}
@@ -1501,12 +1506,13 @@ function QuickDietDraftCard({
   );
 }
 
-function RecognizedFoodRow({ food, index }: { food: FoodItem; index: number }) {
+function RecognizedFoodRow({ food, index, onRevise }: { food: FoodItem; index: number; onRevise: () => void }) {
   const isTableCalibrated = food.nutrition_basis === 'food_table';
   const isMixed = food.nutrition_basis === 'mixed';
   const hasQuantity = Boolean(food.quantity?.trim());
   const hasTrustedPortion = food.portion_basis === 'measured' || food.portion_basis === 'label';
   const isEstimatedPortion = hasQuantity && !hasTrustedPortion;
+  const needsPortionReview = foodNeedsPortionReview(food);
   const basisLabel = isTableCalibrated
     ? isEstimatedPortion
       ? '表值 × 估算份量'
@@ -1542,8 +1548,8 @@ function RecognizedFoodRow({ food, index }: { food: FoodItem; index: number }) {
     ? `${Math.round(food.calories)} kcal`
     : '热量待确认';
 
-  return (
-    <View style={[styles.recognizedFoodRow, index > 0 && styles.recognizedFoodRowDivided]}>
+  const rowContent = (
+    <>
       <View style={styles.recognizedFoodMain}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={txt.recognizedFoodName} numberOfLines={2}>{food.name}</Text>
@@ -1572,9 +1578,39 @@ function RecognizedFoodRow({ food, index }: { food: FoodItem; index: number }) {
           <View style={styles.verifyPortionRow}>
             <Ionicons name="alert-circle-outline" size={13} color={revaSemantic.caution.fg} />
             <Text style={txt.verifyPortionText}>{portionSignal}</Text>
+            {needsPortionReview ? (
+              <Ionicons name="chevron-forward" size={13} color={revaSemantic.caution.fg} />
+            ) : null}
           </View>
         ) : null}
       </View>
+    </>
+  );
+
+  const rowStyle = [
+    styles.recognizedFoodRow,
+    needsPortionReview && styles.recognizedFoodRowAction,
+    index > 0 && styles.recognizedFoodRowDivided,
+  ];
+
+  if (needsPortionReview) {
+    return (
+      <TouchableOpacity
+        style={rowStyle}
+        onPress={onRevise}
+        activeOpacity={0.78}
+        accessibilityRole="button"
+        accessibilityLabel={`核对${food.name}份量`}
+        accessibilityHint="打开修正表单，优先核对这项食物的份量"
+      >
+        {rowContent}
+      </TouchableOpacity>
+    );
+  }
+
+  return (
+    <View style={rowStyle}>
+      {rowContent}
     </View>
   );
 }
@@ -1715,6 +1751,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   recognizedFoodRow: { paddingVertical: revaSpacing.s3 },
+  recognizedFoodRowAction: { borderRadius: revaRadii.md },
   recognizedFoodRowDivided: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line },
   recognizedFoodMain: { flexDirection: 'row', alignItems: 'flex-start', gap: revaSpacing.s2 },
   recognizedFoodSignals: {
