@@ -586,6 +586,57 @@ describe('DietScreen capture deeplink', () => {
     expect(mockClearDietPhotoDraft).toHaveBeenCalledWith(7);
   });
 
+  it('re-estimates nutrition from text when a corrected photo draft keeps old macro fields unchanged', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ base64: 'photo-base64' }],
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      foods: [{
+        name: '鸡胸肉', quantity: '200g', food_id: 'cfc:chicken_breast',
+        source: 'china_food_composition', nutrition_basis: 'food_table', confidence: 0.9,
+      }],
+      meal_description: '鸡胸肉 200g',
+      total_calories: 330,
+      total_protein: 62,
+      total_carbs: 0,
+      total_fat: 7,
+      photo_draft_token: 'photo-draft-text-corrected-90',
+      error: null,
+    });
+    dietService.createDietRecord.mockResolvedValueOnce({ id: 90 });
+
+    const { getByText, getByTestId, getByLabelText } = render(<DietScreen />);
+    await waitFor(() => expect(getByText('待确认饮食')).toBeTruthy());
+    fireEvent.press(getByLabelText('修正饮食草稿'));
+    await waitFor(() => expect(getByTestId('meal-form')).toBeTruthy());
+    const formProps = mockMealForm.mock.calls[mockMealForm.mock.calls.length - 1][0];
+    await act(async () => {
+      await formProps.onSubmit({
+        record_date: '2026-07-11', meal_type: 'lunch', food_items: '三文鱼 180g',
+        calories: 330, protein: 62, carbs: 0, fat: 7,
+      });
+    });
+
+    expect(dietService.createDietRecord).toHaveBeenCalledWith(expect.objectContaining({
+      food_items: '三文鱼 180g',
+      source: 'user_corrected',
+      calories: undefined,
+      protein: undefined,
+      carbs: undefined,
+      fat: undefined,
+      ai_raw_result: undefined,
+      ai_recognized: 0,
+    }));
+    expect(mockEstimate).toHaveBeenCalledWith(90, {
+      kind: 'text',
+      description: '三文鱼 180g',
+    });
+  });
+
   it('still confirms a corrected photo draft when SecureStore refresh fails', async () => {
     mockLoadDietPhotoDraft.mockResolvedValueOnce({
       version: 1,

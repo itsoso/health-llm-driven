@@ -520,7 +520,10 @@ export default function DietScreen() {
             toast.show('恢复缓存写入失败，仍继续确认记录', 'info');
           });
         }
-        await saveNewDietRecord(revised, draftEstimateSource);
+        const saveSource = corrected && needsNutritionBackfill(revised)
+          ? { kind: 'text' as const, description: revised.food_items }
+          : draftEstimateSource;
+        await saveNewDietRecord(revised, saveSource);
         if (isPhotoCorrection) {
           void emitClientEvent('diet_photo_confirmation_terminal', {
             phase: 'completed',
