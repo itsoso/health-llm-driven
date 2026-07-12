@@ -532,6 +532,57 @@ def test_weekly_invite_backstop_redacts_drug_script(db):
     assert kwargs["content"] == "本周的健康回顾准备好了,点开聊聊。"
 
 
+# ─────────────────── 出口 5:每日计划提醒(LLM 生成的计划项 title) ───────────────────
+
+@pytest.mark.parametrize("item_title,expect_generic", [
+    ("快走 30 分钟", False),
+    ("早餐后服用维生素D 2000IU", True),  # smart_plan LLM 可能生成点名补剂的条目
+])
+def test_plan_morning_reminder_backstop(db, item_title, expect_generic):
+    from datetime import date as _date, timedelta as _timedelta
+
+    from app.models.smart_plan import PlanItem, WeeklyPlan
+    from app.models.user import User
+    from app.tasks import notifications as notif
+
+    user = User(username=f"plan_{'g' if expect_generic else 'p'}",
+                email=f"plan_{'g' if expect_generic else 'p'}@example.com",
+                hashed_password="x", name="plan", is_active=True, is_approved=True)
+    db.add(user)
+    db.commit()
+
+    today = _date.today()
+    week_start = today - _timedelta(days=today.weekday())
+    plan = WeeklyPlan(user_id=user.id, week_start=week_start, status="active")
+    plan.items.append(PlanItem(day_of_week=today.weekday() + 1, category="health",
+                               title=item_title, is_completed=False))
+    db.add(plan)
+    db.commit()
+
+    @contextmanager
+    def _ctx():
+        yield db
+
+    _RecordingPushService.calls = []
+    task_fn = notif.send_plan_morning_reminder.run
+    with patch.dict(task_fn.__globals__, {
+        "SessionLocal": _ctx,
+        "run_async": _sync_run_async,
+        "PushService": _RecordingPushService,
+        "_today_weather_text": lambda _city: "",
+        "_get_user_city": lambda _db, _uid: None,
+    }):
+        result = task_fn()
+
+    assert result["sent_count"] == 1, "推送被丢弃(违反 TIGHTEN-only)"
+    kwargs = _RecordingPushService.calls[0]
+    if expect_generic:
+        assert "维生素" not in kwargs["content"]
+        assert "1 项计划待完成" in kwargs["content"]  # 计数级信息保留
+    else:
+        assert item_title in kwargs["content"]
+
+
 @pytest.mark.parametrize("aggregation,expect_generic", [
     ("今天步数达标,睡眠稍短,明天早点休息", False),
     ("血糖偏高,建议继续服用二甲双胍并控制主食", True),

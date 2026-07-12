@@ -386,6 +386,11 @@ def send_plan_morning_reminder():
                 body = f"今日 {len(today_items)} 项待完成：{', '.join(titles)}"
                 if len(today_items) > 3:
                     body += f" 等{len(today_items)}项"
+                # §5.6 backstop:计划项 title 是 LLM 生成(smart_plan),可能点名药/补剂
+                _, body, _ = llm_push_backstop(
+                    None, body,
+                    generic_content=f"今日 {len(today_items)} 项计划待完成,点开查看。",
+                )
                 run_async(push_service.send_notification(
                     user_id=plan.user_id,
                     notification_type="reminder",
@@ -439,6 +444,11 @@ def send_plan_evening_summary():
                     body = f"今日完成 {done}/{total} 项"
                     if undone:
                         body += f"，未完成：{', '.join(undone[:3])}"
+                # §5.6 backstop:未完成项 title 是 LLM 生成,可能点名药/补剂
+                _, body, _ = llm_push_backstop(
+                    None, body,
+                    generic_content=f"今日完成 {done}/{total} 项,点开查看详情。",
+                )
                 run_async(push_service.send_notification(
                     user_id=plan.user_id,
                     notification_type="reminder",

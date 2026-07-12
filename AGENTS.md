@@ -403,7 +403,7 @@ iOS 默认在**锁屏**渲染推送 title/body，且 payload 途经 APNs（第�
 - Safety Guardian 告警推送统一走 `app/services/notification/push_privacy.safety_alert_push_text`（ddi/dsi/pgx/labs/problem_red_lines 泛化；vitals/cgm/symptoms 等急性类原文透传——数值/症状措辞是时效安全信息）
 - 用户**自拟**文本（SmartReminder、日历标题、自定义打卡名）推给本人设备可透传；但系统代成文案时不得把药名拼进可见文本
 - 泛化会让同类推送 title 相同：生产者必须在 `data.rule_id` 提供去重键（per 项×日×时点），否则 PushService 的 title 去重会吞掉同日第二条合法提醒
-- **LLM 自由生成的推送文案**（agent_loop 主动通知 / 早安短稿 / 周聊稿 / 今日健康复盘）必须在出口过 `push_privacy.llm_push_backstop`：用 `drug_lexicon.sensitive_name_free_text_terms()`（药名/补剂名；ASCII 词带边界锚点防 iron⊂environment 类误配）+ 诊断可反推的治疗类别词（抗抑郁/化疗/HIV…）扫描**截断前**的 title/content，命中 → 锁屏降级泛化文案，原文只进 `data` payload / 应用内重取。判定 TIGHTEN-only：扫描异常 fail 到泛化文案，推送永不因护栏故障丢弃。新增 LLM 文案出口必须接同一 backstop，并配正反例测试（药名被泛化 / 良性文案逐字节透传，over-redaction 也是 bug）
+- **LLM 自由生成的推送文案**（agent_loop 主动通知 / 早安短稿 / 周聊稿 / 今日健康复盘 / 计划提醒里的 LLM 计划项 title）必须在出口过 `push_privacy.llm_push_backstop`：用 `drug_lexicon.sensitive_name_free_text_terms()`（药名/补剂名；ASCII 词带边界锚点防 iron⊂environment 类误配）+ 诊断可反推的治疗类别词（抗抑郁/化疗/HIV…）扫描**截断前**的 title/content，命中 → 锁屏降级泛化文案，原文只进 `data` payload / 应用内重取。判定 TIGHTEN-only：扫描异常 fail 到泛化文案，推送永不因护栏故障丢弃。新增 LLM 文案出口必须接同一 backstop，并配正反例测试（药名被泛化 / 良性文案逐字节透传，over-redaction 也是 bug）
 
 ---
 
