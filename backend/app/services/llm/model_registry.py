@@ -366,6 +366,26 @@ def is_reliable_tool_caller(model_id: Optional[str]) -> bool:
     return entry.reliable_tool_calling
 
 
+def _reliable_tool_models(only_available: bool) -> List[ModelEntry]:
+    """内部工具/回退路由的候选集: 可靠工具调用 + 能生成文本的模型。
+
+    必须 include_non_chat=True: 最快的可靠工具模型 (qwen3.6-flash) 故意
+    chat_selectable=False (不许用户当答案模型选), 但内部工具决策轮/回退要能用到它。
+    默认的 list_models() 会把它滤掉 → 快路由永远拿不到最快档, 只能落到次快的
+    deepseek-v4-flash (~7s vs qwen3.6-flash evaled ~1-2.6s), 白白丢一半收益。
+
+    能力护栏 "text_generation" in capabilities: include_non_chat=True 会同时放进
+    图片生成模型 (qwen-image / wan 系, image_generation-only)。这些既非文本模型、
+    也已标 reliable_tool_calling=False, 但这里显式再钉一道 —— 即使有谁误把某个
+    图片模型标成 reliable_tool_calling=True, 也绝不会被工具路由选中。
+    """
+    return [
+        m
+        for m in list_models(only_available=only_available, include_non_chat=True)
+        if "text_generation" in m.capabilities and m.reliable_tool_calling
+    ]
+
+
 def pick_reliable_tool_model_id(
     near_speed_tier: Optional[str] = None,
     only_available: bool = True,
@@ -374,7 +394,7 @@ def pick_reliable_tool_model_id(
 
     无任何可靠+可用模型时返回 None (调用方维持现状, 依赖兜底解析)。
     """
-    models = [m for m in list_models(only_available=only_available) if m.reliable_tool_calling]
+    models = _reliable_tool_models(only_available)
     if not models:
         return None
     if near_speed_tier:
@@ -392,16 +412,20 @@ _SPEED_TIER_ORDER = ("fast", "balanced", "reasoning")
 
 
 def pick_fast_tool_model_id(only_available: bool = True) -> Optional[str]:
-    """选**最快**的 reliable_tool_calling=True 可用聊天模型 id, 供简单回合快路由。
+    """选**最快**的 reliable_tool_calling=True 可用工具调用模型 id, 供简单回合快路由。
+
+    候选集来自 _reliable_tool_models (include_non_chat=True + text_generation 护栏):
+    最快档就是 chat_selectable=False 的 qwen3.6-flash —— 它不许当用户答案模型,
+    但内部快路由要能用到它 (否则只能落到次快的 deepseek-v4-flash, 丢一半延迟收益)。
 
     为什么必须 reliable_tool_calling=True: 简单记录/查询回合几乎一定要调工具
     (health_record/health_query/health_manage), 不会调工具的快模型会直接把这类
     回合搞坏 (吐文本冒充成功=静默丢数据)。所以先按 speed_tier (fast→balanced→
     reasoning) 找, 每档里只考虑 reliable_tool_calling 的模型, 命中最快那档的第一个。
 
-    无任何可靠+可用聊天模型时返回 None (调用方维持现状, 不做快路由)。
+    无任何可靠+可用工具调用模型时返回 None (调用方维持现状, 不做快路由)。
     """
-    models = [m for m in list_models(only_available=only_available) if m.reliable_tool_calling]
+    models = _reliable_tool_models(only_available)
     if not models:
         return None
     for tier in _SPEED_TIER_ORDER:

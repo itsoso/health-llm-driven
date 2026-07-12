@@ -33,7 +33,7 @@ def test_is_reliable_unknown_id_defaults_true():
 def test_pick_reliable_prefers_speed_tier(monkeypatch):
     monkeypatch.setattr(
         reg, "list_models",
-        lambda only_available=False: [
+        lambda only_available=False, include_non_chat=False: [
             reg.ModelEntry("fastrel", "f", "x", "m", "fast", reliable_tool_calling=True),
             reg.ModelEntry("balrel", "b", "x", "m", "balanced", reliable_tool_calling=True),
             reg.ModelEntry("badmodel", "bad", "x", "m", "balanced", reliable_tool_calling=False),
@@ -46,7 +46,7 @@ def test_pick_reliable_prefers_speed_tier(monkeypatch):
 def test_pick_reliable_none_when_no_reliable(monkeypatch):
     monkeypatch.setattr(
         reg, "list_models",
-        lambda only_available=False: [
+        lambda only_available=False, include_non_chat=False: [
             reg.ModelEntry("bad", "bad", "x", "m", "balanced", reliable_tool_calling=False),
         ],
     )

@@ -130,7 +130,7 @@ def test_pick_fast_prefers_fastest_reliable_tier(monkeypatch):
     """Prefer fast tier; skip a fast-but-unreliable model, fall to next reliable tier."""
     monkeypatch.setattr(
         reg, "list_models",
-        lambda only_available=False: [
+        lambda only_available=False, include_non_chat=False: [
             # fastest tier is unreliable → must be skipped
             reg.ModelEntry("fastbad", "fb", "x", "m", "fast", reliable_tool_calling=False),
             reg.ModelEntry("balrel", "b", "x", "m", "balanced", reliable_tool_calling=True),
@@ -144,7 +144,7 @@ def test_pick_fast_prefers_fastest_reliable_tier(monkeypatch):
 def test_pick_fast_picks_fastest_when_reliable(monkeypatch):
     monkeypatch.setattr(
         reg, "list_models",
-        lambda only_available=False: [
+        lambda only_available=False, include_non_chat=False: [
             reg.ModelEntry("balrel", "b", "x", "m", "balanced", reliable_tool_calling=True),
             reg.ModelEntry("fastrel", "f", "x", "m", "fast", reliable_tool_calling=True),
         ],
@@ -156,7 +156,7 @@ def test_pick_fast_none_when_no_reliable(monkeypatch):
     """No reliable model at all → None (caller keeps default, does not route)."""
     monkeypatch.setattr(
         reg, "list_models",
-        lambda only_available=False: [
+        lambda only_available=False, include_non_chat=False: [
             reg.ModelEntry("bad", "bad", "x", "m", "fast", reliable_tool_calling=False),
         ],
     )

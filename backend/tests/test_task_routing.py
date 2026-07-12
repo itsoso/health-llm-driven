@@ -67,3 +67,90 @@ def test_routing_skipped_when_flag_off():
         out = factory.create_provider_for_user(1, db, task_tier="high_stakes")
     pick.assert_not_called()        # flag 关 → 根本不调用路由
     assert out == "default-provider"
+
+
+# ─────────────────────────────────────────────────────────────
+# 内部工具路由 pick_* 必须能看到 chat_selectable=False 的最快可靠工具模型
+# (qwen3.6-flash)。回归 bug:pick_* 曾漏传 include_non_chat=True →
+# 只能落到次快的 deepseek-v4-flash (~7s vs qwen3.6-flash evaled ~1-2.6s),
+# 白白丢一半 tool-round 快路由收益。
+# ─────────────────────────────────────────────────────────────
+
+def test_pick_fast_returns_qwen_flash_in_real_registry():
+    """真实注册表 (env-agnostic):最快可靠工具模型 = qwen3.6-flash,
+    虽然它 chat_selectable=False (不进用户答案 picker),内部快路由仍必须选到它。"""
+    from app.services.llm.model_registry import pick_fast_tool_model_id, get_model
+    fast_id = pick_fast_tool_model_id(only_available=False)
+    assert fast_id == "qwen3.6-flash", f"期望 qwen3.6-flash, 实际 {fast_id}"
+    assert get_model(fast_id).speed_tier == "fast"
+
+
+def test_pick_reliable_near_fast_returns_qwen_flash_in_real_registry():
+    """pick_reliable_tool_model_id(near='fast') 也应命中 qwen3.6-flash
+    (注册顺序把它排在 deepseek-v4-flash 之前)。"""
+    from app.services.llm.model_registry import pick_reliable_tool_model_id
+    mid = pick_reliable_tool_model_id(near_speed_tier="fast", only_available=False)
+    assert mid == "qwen3.6-flash", f"期望 qwen3.6-flash, 实际 {mid}"
+
+
+def test_qwen_flash_registered_before_deepseek_flash():
+    """注册顺序不变量:qwen3.6-flash 必须排在 deepseek-v4-flash 前,
+    否则"最快档第一个"会退回 deepseek-v4-flash。"""
+    from app.services.llm.model_registry import MODELS
+    ids = [m.id for m in MODELS]
+    assert ids.index("qwen3.6-flash") < ids.index("deepseek-v4-flash")
+
+
+def test_pick_reliable_fast_returns_qwen_flash_with_env(monkeypatch):
+    """env-present 路径 (only_available=True + tokenplan key):同样返回 qwen3.6-flash。"""
+    from app.config import settings
+    from app.services.llm.model_registry import (
+        pick_fast_tool_model_id,
+        pick_reliable_tool_model_id,
+    )
+    monkeypatch.setattr(settings, "tokenplan_api_key", "test-key-present")
+    assert pick_fast_tool_model_id(only_available=True) == "qwen3.6-flash"
+    assert pick_reliable_tool_model_id(
+        near_speed_tier="fast", only_available=True
+    ) == "qwen3.6-flash"
+
+
+def test_pick_functions_never_return_non_text_model(monkeypatch):
+    """对抗:即便某图片生成模型被误标 reliable_tool_calling=True 且是 fast 档,
+    capability 护栏 (text_generation) 也绝不让它被工具路由选中。"""
+    from app.services.llm import model_registry as reg
+    fake = [
+        # 图片生成模型 — 故意误标 reliable + fast, 但只有 image_generation 能力
+        reg.ModelEntry(
+            "img-x", "img", "tokenplan", "img", "fast",
+            capabilities=("image_generation",),
+            chat_selectable=False, reliable_tool_calling=True,
+        ),
+        # 合法的文本快模型 — 唯一应被选中的
+        reg.ModelEntry(
+            "txt-fast", "t", "tokenplan", "t", "fast",
+            capabilities=("text_generation",),
+            chat_selectable=False, reliable_tool_calling=True,
+        ),
+    ]
+    monkeypatch.setattr(
+        reg, "list_models",
+        lambda only_available=False, include_non_chat=False: list(fake),
+    )
+    assert reg.pick_fast_tool_model_id(only_available=False) == "txt-fast"
+    assert reg.pick_reliable_tool_model_id(
+        near_speed_tier="fast", only_available=False
+    ) == "txt-fast"
+
+
+def test_non_chat_models_stay_hidden_from_default_list_models():
+    """用户 picker 不变量未被本次 fix 破坏:list_models() 默认输出仍不含
+    chat_selectable=False 的模型 (qwen3.6-flash / 图片生成模型)。
+    include_non_chat 只在内部 pick_* 里生效,不泄漏到用户可选目录。"""
+    from app.services.llm.model_registry import list_models
+    default_ids = {m.id for m in list_models()}
+    assert "qwen3.6-flash" not in default_ids
+    assert "qwen-image-2.0" not in default_ids
+    # 但内部工具路由能看到 (include_non_chat=True)
+    internal_ids = {m.id for m in list_models(include_non_chat=True)}
+    assert "qwen3.6-flash" in internal_ids
