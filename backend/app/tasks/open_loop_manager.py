@@ -379,12 +379,12 @@ def _is_in_quiet_hours_now(setting) -> bool:
     和 push_service.PushService.is_quiet_hours 同语义, 但不依赖 PushService 初始化
     (open_loop 的 push 链路一直走 ios_push 直连, 不经 push_service).
 
-    跨午夜情况: start > end 时 (如 22:00 - 08:30), 当前时间 >= start 或 < end 都算静默.
+    跨午夜情况: start > end 时 (如 22:00 - 09:00), 当前时间 >= start 或 < end 都算静默.
     """
     start = (setting.quiet_hours_start or "22:00").strip()
-    end = (setting.quiet_hours_end or "08:30").strip()
+    end = (setting.quiet_hours_end or "09:00").strip()
     now_cn = datetime.now(CHINA_TIMEZONE).strftime("%H:%M")
-    if start > end:  # 跨午夜: 22:00 ~ 08:30
+    if start > end:  # 跨午夜: 22:00 ~ 09:00
         return now_cn >= start or now_cn < end
     return start <= now_cn < end
 
@@ -543,7 +543,7 @@ def _push_loop(db, user_id: int, loop: OpenLoop) -> bool:
         if not setting.health_alert_enabled:
             return False
 
-        # Defense-in-depth: quiet hours 守门 — cron 已移到 08:45 避开默认 22:00-08:30,
+        # Defense-in-depth: quiet hours 守门 — cron 已移到 09:15 避开默认 22:00-09:00,
         # 但用户若把 quiet_hours 往后调 (例如 10:00) 或把结束设得更晚, 仍要尊重.
         # 严格不打扰睡眠: Open-Loop 直连 APNs 不允许按 score 穿透 quiet-hours,
         # 避免绕过 PushService 的统一静默策略。下次 cron 会重试, 不触发 dedup.

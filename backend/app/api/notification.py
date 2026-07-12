@@ -105,7 +105,7 @@ def get_notification_settings(
             "ai_advice_enabled": True,
             "workout_analysis_enabled": True,
             "quiet_hours_start": "22:00",
-            "quiet_hours_end": "08:30",
+            "quiet_hours_end": "09:00",
             "wechat_enabled": True,
             "wechat_bound": False,
             "ios_push_enabled": True,

@@ -96,7 +96,7 @@ export default function NotificationSettingsScreen() {
         <View style={styles.card}>
           <TimeRow label="开始" value={settings?.quiet_hours_start || '22:00'}
             onPress={() => setEditing('start')} />
-          <TimeRow label="结束" value={settings?.quiet_hours_end || '08:30'}
+          <TimeRow label="结束" value={settings?.quiet_hours_end || '09:00'}
             onPress={() => setEditing('end')} />
         </View>
 
@@ -169,7 +169,7 @@ export default function NotificationSettingsScreen() {
         options={editing === 'start' ? START_PRESETS : END_PRESETS}
         current={editing === 'start'
           ? (settings?.quiet_hours_start || '22:00')
-          : (settings?.quiet_hours_end || '08:30')}
+          : (settings?.quiet_hours_end || '09:00')}
         onPick={(v) => setQuietTime(
           editing === 'start' ? 'quiet_hours_start' : 'quiet_hours_end',
           v,

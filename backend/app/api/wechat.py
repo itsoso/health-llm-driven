@@ -438,7 +438,7 @@ async def get_subscribe_settings(
             ai_advice_enabled=True,
             morning_briefing_time="07:30",
             quiet_hours_start="22:00",
-            quiet_hours_end="07:00"
+            quiet_hours_end="09:00"
         )
 
     # 处理 JSON 字段（数据库中可能是字符串）

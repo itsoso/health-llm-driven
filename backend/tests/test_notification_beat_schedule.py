@@ -11,3 +11,13 @@ def test_sleep_reminder_runs_before_default_quiet_hours():
     assert entry is not None
     assert entry["task"] == "app.tasks.notifications.send_sleep_reminders"
     assert entry["schedule"] == crontab(hour=21, minute=30)
+
+
+def test_open_loop_manager_runs_after_default_quiet_hours():
+    """主动循环推送应在默认 22:00-09:00 静默结束后再扫描。"""
+    from app.celery_app import celery_app
+
+    entry = celery_app.conf.beat_schedule.get("open-loop-manager")
+    assert entry is not None
+    assert entry["task"] == "app.tasks.open_loop_manager.run_open_loop_check"
+    assert entry["schedule"] == crontab(hour=9, minute=15)
