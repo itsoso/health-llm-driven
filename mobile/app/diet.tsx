@@ -90,8 +90,8 @@ const NON_DIET_DRAFT_ALERT = {
 function guessMealType(): DietRecordCreate['meal_type'] {
   const h = new Date().getHours();
   if (h < 10) return 'breakfast';
-  if (h < 14) return 'lunch';
-  if (h < 20) return 'dinner';
+  if (h < 16) return 'lunch';
+  if (h < 22) return 'dinner';
   return 'snack';
 }
 

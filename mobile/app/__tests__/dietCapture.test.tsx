@@ -355,6 +355,66 @@ describe('DietScreen capture deeplink', () => {
     });
   });
 
+  it('keeps early-afternoon photo captures as lunch drafts', async () => {
+    const hourSpy = jest.spyOn(Date.prototype, 'getHours').mockReturnValue(14);
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ uri: 'file:///late-lunch.heic', width: 4032, height: 3024 }],
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      foods: [{ name: '牛肉饭', quantity: null }],
+      meal_description: '牛肉饭',
+      total_calories: 680,
+      total_protein: 32,
+      total_carbs: 78,
+      total_fat: 18,
+      error: null,
+    });
+
+    try {
+      const { getByText } = render(<DietScreen />);
+      await waitFor(() => {
+        expect(getByText('待确认饮食')).toBeTruthy();
+      });
+      expect(getByText('午餐')).toBeTruthy();
+    } finally {
+      hourSpy.mockRestore();
+    }
+  });
+
+  it('keeps evening photo captures as dinner drafts', async () => {
+    const hourSpy = jest.spyOn(Date.prototype, 'getHours').mockReturnValue(20);
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ uri: 'file:///late-dinner.heic', width: 4032, height: 3024 }],
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      foods: [{ name: '番茄鸡蛋面', quantity: null }],
+      meal_description: '番茄鸡蛋面',
+      total_calories: 520,
+      total_protein: 22,
+      total_carbs: 66,
+      total_fat: 14,
+      error: null,
+    });
+
+    try {
+      const { getByText } = render(<DietScreen />);
+      await waitFor(() => {
+        expect(getByText('待确认饮食')).toBeTruthy();
+      });
+      expect(getByText('晚餐')).toBeTruthy();
+    } finally {
+      hourSpy.mockRestore();
+    }
+  });
+
   it('persists a server-backed photo draft without persisting base64 bytes', async () => {
     const dietService = require('../../services/diet');
     mockRouteParams.capture = 'photo';
