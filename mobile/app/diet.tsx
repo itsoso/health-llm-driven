@@ -158,6 +158,11 @@ function formatDraftMetric(value: number | undefined, precision = 0): string | n
   return `${rounded}`;
 }
 
+function formatTimingSeconds(ms: number | null | undefined): string | null {
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) return null;
+  return `${Math.round(ms / 100) / 10}s`;
+}
+
 function foodNeedsPortionReview(food: FoodItem): boolean {
   const hasQuantity = Boolean(food.quantity?.trim());
   const hasTrustedPortion = food.portion_basis === 'measured' || food.portion_basis === 'label';
@@ -1379,6 +1384,9 @@ function QuickDietDraftCard({
     : '确认后先记录，营养后台估算';
   const reviewHint = buildQuickDraftReviewHint(draft);
   const reviseLabel = quickDraftReviseLabel(draft);
+  const recognitionTotalSeconds = formatTimingSeconds(draft.ai_raw_result?.timing_ms?.total);
+  const calibrationSeconds = formatTimingSeconds(draft.ai_raw_result?.timing_ms?.calibration);
+  const showRecognitionTiming = Boolean(recognitionTotalSeconds || calibrationSeconds);
 
   return (
     <View style={styles.quickDraftCard}>
@@ -1407,6 +1415,17 @@ function QuickDietDraftCard({
           {recognizedFoods.map((food, index) => (
             <RecognizedFoodRow key={`${food.food_id ?? food.name}-${index}`} food={food} index={index} />
           ))}
+        </View>
+      ) : null}
+      {showRecognitionTiming ? (
+        <View style={styles.recognitionTimingRow}>
+          <Ionicons name="speedometer-outline" size={14} color={C.green600} />
+          {recognitionTotalSeconds ? (
+            <Text style={txt.recognitionTimingText}>识别完成 · {recognitionTotalSeconds}</Text>
+          ) : null}
+          {calibrationSeconds ? (
+            <Text style={txt.recognitionTimingMuted}>营养校准 {calibrationSeconds}</Text>
+          ) : null}
         </View>
       ) : null}
       <View style={styles.quickTrustRow}>
@@ -1693,6 +1712,19 @@ const styles = StyleSheet.create({
   recognitionBasisTable: { backgroundColor: C.green50, borderColor: C.green100 },
   recognitionBasisEstimate: { backgroundColor: revaSemantic.caution.bg, borderColor: revaSemantic.caution.line },
   verifyPortionRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  recognitionTimingRow: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: revaSpacing.s2,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+  },
   quickTrustRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1777,6 +1809,8 @@ const txt = {
   recognitionBasisText: { fontFamily: revaFonts.sans, fontSize: 10, fontWeight: '800' } as TextStyle,
   recognizedConfidence: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3 } as TextStyle,
   verifyPortionText: { fontFamily: revaFonts.sans, fontSize: 10, color: revaSemantic.caution.fg, fontWeight: '700' } as TextStyle,
+  recognitionTimingText: { fontFamily: revaFonts.sans, fontSize: 11, color: C.green700, fontWeight: '900' } as TextStyle,
+  recognitionTimingMuted: { fontFamily: revaFonts.sans, fontSize: 10.5, color: C.ink3, fontWeight: '700' } as TextStyle,
   quickTrustText: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, fontWeight: '800' } as TextStyle,
   quickSharePromiseText: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, color: C.green700, fontWeight: '800' } as TextStyle,
   quickHint: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, color: C.ink3, marginTop: revaSpacing.s3 } as TextStyle,

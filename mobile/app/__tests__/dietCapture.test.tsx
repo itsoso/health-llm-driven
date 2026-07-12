@@ -897,6 +897,12 @@ describe('DietScreen capture deeplink', () => {
       total_carbs: 48,
       total_fat: 9.2,
       total_fiber: 3,
+      timing_ms: {
+        vision: 1800,
+        calibration: 420,
+        photo_draft: 150,
+        total: 2600,
+      },
       error: null,
     });
 
@@ -916,6 +922,8 @@ describe('DietScreen capture deeplink', () => {
     expect(getByText('识别待核对')).toBeTruthy();
     expect(getAllByText('份量为估算').length).toBeGreaterThan(0);
     expect(getAllByText('请核对份量').length).toBeGreaterThan(0);
+    expect(getByText('识别完成 · 2.6s')).toBeTruthy();
+    expect(getByText('营养校准 0.4s')).toBeTruthy();
     expect(getByText('小巴建议先核对：鸡胸肉、杂粮饭的份量；确认后才写入今天饮食。')).toBeTruthy();
     expect(getByText('修正份量')).toBeTruthy();
     fireEvent.press(getByLabelText('修正饮食草稿'));
