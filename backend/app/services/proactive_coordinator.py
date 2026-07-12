@@ -86,6 +86,15 @@ def _in_quiet_hours(db: Session, user_id: int) -> bool:
         return False
 
 
+def _in_morning_sleep_floor(db: Session, user_id: int) -> bool:
+    """09:00 前是硬睡眠保护窗口, P0/P1 都不能主动打扰。"""
+    try:
+        return get_user_now(db, user_id).time() < MORNING_SLEEP_FLOOR
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[proactive] morning sleep floor check failed user=%s: %s", user_id, e)
+        return False
+
+
 def _in_busy_window(db: Session, user_id: int) -> bool:
     """当前(北京时刻)是否落在今日某个日历忙碌块内 → 日程感知静默 P1/P2。
 
@@ -138,6 +147,11 @@ def proactive_notification_decision(
         else 0
     )
     in_quiet = _in_quiet_hours(db, user_id) if normalized_tier in {"P0", "P1"} else False
+    in_morning_floor = (
+        _in_morning_sleep_floor(db, user_id)
+        if normalized_tier in {"P0", "P1"}
+        else False
+    )
     in_busy = _in_busy_window(db, user_id) if normalized_tier == "P1" else False
     return evaluate_interruption(
         tier=normalized_tier,
@@ -146,6 +160,7 @@ def proactive_notification_decision(
         sent_tier=sent_tier,
         tier_budget=p0_budget if normalized_tier == "P0" else None,
         in_quiet_hours=in_quiet,
+        in_morning_sleep_floor=in_morning_floor,
         in_busy_window=in_busy,
         reason=reason,
         action=action,
