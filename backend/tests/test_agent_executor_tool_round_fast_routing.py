@@ -69,12 +69,36 @@ def test_flag_on_fast_routes_default_path(monkeypatch):
     assert "tool_round_fast_routed" in ex._model_fallback_reasons
 
 
-def test_flag_on_respects_explicit_model_pick(monkeypatch):
-    """显式 UI 选模型 (_request_model_id) → 不快路由 (尊重显式选择)。"""
+def test_flag_on_fast_routes_tool_round_even_with_explicit_model_pick(monkeypatch):
+    """A1: 显式 UI 选模型 (_request_model_id) → **工具决策轮**仍降 fast (不可见内部决策)。
+
+    「选择器显示什么就用什么」只约束答案轮 —— 那由 _turn_any_tool_executed 门守住,
+    此单元覆盖首个工具决策轮 (尚无工具执行) 被降 fast 的新行为。
+    """
+    monkeypatch.setattr("app.services.agent_executor.settings.task_tiered_routing", True)
+    monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **k: "qwen3.6-flash")
+    sentinel = MagicMock(name="fast_provider")
+    import app.services.llm.factory as factory
+    monkeypatch.setattr(factory, "create_provider_for_model_id", lambda mid: sentinel)
+
+    ex = _executor()
+    ex._request_model_id = "claude-opus-4.7"  # 显式选了强模型
+    out = ex._maybe_fast_route_tool_round("claude-opus-4.7")
+    assert out is not None
+    provider, fast_id = out
+    assert provider is sentinel
+    assert fast_id == "qwen3.6-flash"
+    assert ex._tool_round_fast_routed is True
+    assert "tool_round_fast_routed" in ex._model_fallback_reasons
+
+
+def test_flag_on_explicit_model_after_tool_executed_no_fast_route(monkeypatch):
+    """A1 安全门: 显式选模型 + 已跑过工具 → 合成/答案轮**不**降 fast (答案留在显式模型)。"""
     monkeypatch.setattr("app.services.agent_executor.settings.task_tiered_routing", True)
     monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **k: "qwen3.6-flash")
     ex = _executor()
     ex._request_model_id = "claude-opus-4.7"
+    ex._turn_any_tool_executed = True  # 工具后合成轮
     assert ex._maybe_fast_route_tool_round("claude-opus-4.7") is None
     assert ex._tool_round_fast_routed is False
 
@@ -386,4 +410,126 @@ async def test_fast_tool_round_direct_answer_discarded_and_resynthesized(
     assert "STRONG RESYNTH" in rendered
     # 观测: 记录了丢弃+重合成的原因
     done = events[-1]["data"]
+    assert "fast_tool_round_direct_answer_resynthesized" in done["fallback_reasons"]
+
+
+# ──────────────────────────────────────────────────────────────
+# A1: 显式 per-message 选模型时, 工具轮仍降 fast; 答案轮留在显式模型
+# (生产: mac/mobile 每条消息带 model_id → 190/231 回合此前完全无路由)
+# ──────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_explicit_model_tool_round_fast_answer_on_explicit(
+    db, auth_user_and_headers, monkeypatch
+):
+    """A1 核心: 显式选 qwen3.7-max → 首个工具决策轮降 fast(qwen3.6-flash),
+    工具后合成轮回到**显式选定的 qwen3.7-max** (答案模型 = 用户所选)。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    provider_calls = []
+
+    monkeypatch.setattr("app.services.agent_executor.settings.task_tiered_routing", True)
+    monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **k: "qwen3.6-flash")
+
+    class FakeProvider:
+        def __init__(self, model_id):
+            self.model = model_id
+
+        async def chat_stream(self, **kwargs):
+            provider_calls.append({"model": self.model, "has_tools": bool(kwargs.get("tools"))})
+            if self.model == "qwen3.6-flash":
+                yield {"type": "tool_calls", "tool_calls": [{
+                    "id": "r1", "type": "function",
+                    "function": {"name": "health_record",
+                                 "arguments": json.dumps({"record_type": "symptom",
+                                                          "data": {"description": "胃痛"}})},
+                }]}
+                yield {"type": "finish", "finish_reason": "tool_calls"}
+                return
+            yield {"type": "content", "text": "EXPLICIT SYNTHESIS"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+        async def chat(self, **kwargs):
+            provider_calls.append({"model": self.model, "has_tools": bool(kwargs.get("tools")),
+                                   "nonstream": True})
+            return {"content": "EXPLICIT SYNTHESIS", "finish_reason": "stop"}
+
+    async def fake_exec_tool(name, args, token):
+        return json.dumps({"id": 42, "resource_type": "symptom_record",
+                           "message": "已记录胃痛症状"}, ensure_ascii=False)
+
+    # user_provider = 显式选定的 qwen3.7-max (create_provider_for_model_id 也据 mid 建)。
+    _wire(executor, monkeypatch, lambda mid: FakeProvider(mid),
+          user_provider=FakeProvider("qwen3.7-max"))
+    monkeypatch.setattr(executor, "_execute_tool", fake_exec_tool)
+
+    events = await _run(
+        executor, "我胃还有点痛，怎么办？", user.id,
+        extra_context=json.dumps({"model_id": "qwen3.7-max"}),
+    )
+    rendered = "".join(
+        e["data"].get("content", "") for e in events if e.get("event") == "token"
+    )
+    done = events[-1]["data"]
+
+    # 首轮 = fast(qwen3.6-flash) 决策工具。
+    assert provider_calls[0] == {"model": "qwen3.6-flash", "has_tools": True}
+    # 工具后所有轮 = 显式选定的 qwen3.7-max —— 答案绝不来自 fast。
+    assert all(c["model"] == "qwen3.7-max" for c in provider_calls[1:]), provider_calls
+    assert rendered == "EXPLICIT SYNTHESIS"
+    assert done["answer_model"] == "qwen3.7-max"       # 面向用户答案 = 显式模型
+    assert "qwen3.6-flash" in done["tool_models"]        # 工具轮 = fast (可观测)
+    assert "tool_round_fast_routed" in done["fallback_reasons"]
+
+
+@pytest.mark.asyncio
+async def test_explicit_model_fast_direct_answer_resynthesized_on_explicit(
+    db, auth_user_and_headers, monkeypatch
+):
+    """A1 安全兜底: 显式选模型下, fast 工具轮直接答文本 → 丢弃 fast 文本,
+    在**显式选定的模型**上重合成; fast 文本从未下发。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    provider_calls = []
+
+    monkeypatch.setattr("app.services.agent_executor.settings.task_tiered_routing", True)
+    monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **k: "qwen3.6-flash")
+
+    class FakeProvider:
+        def __init__(self, model_id):
+            self.model = model_id
+
+        async def chat_stream(self, **kwargs):
+            provider_calls.append({"model": self.model, "has_tools": bool(kwargs.get("tools"))})
+            if self.model == "qwen3.6-flash":
+                yield {"type": "content", "text": "FAST MEDICAL PROSE (must not reach user)"}
+                yield {"type": "finish", "finish_reason": "stop"}
+                return
+            yield {"type": "content", "text": "EXPLICIT RESYNTH"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+        async def chat(self, **kwargs):
+            provider_calls.append({"model": self.model, "has_tools": bool(kwargs.get("tools")),
+                                   "nonstream": True})
+            return {"content": "EXPLICIT RESYNTH", "finish_reason": "stop"}
+
+    _wire(executor, monkeypatch, lambda mid: FakeProvider(mid),
+          user_provider=FakeProvider("qwen3.7-max"))
+
+    events = await _run(
+        executor, "我胃还有点痛，怎么办？", user.id,
+        extra_context=json.dumps({"model_id": "qwen3.7-max"}),
+    )
+    rendered = "".join(
+        e["data"].get("content", "") for e in events if e.get("event") == "token"
+    )
+    done = events[-1]["data"]
+
+    assert "FAST MEDICAL PROSE" not in rendered
+    assert "must not reach user" not in rendered
+    assert "EXPLICIT RESYNTH" in rendered
+    # 重合成落在显式选定的 qwen3.7-max, 从未在 fast 上产出用户可见正文。
+    resynth_calls = [c for c in provider_calls if c["model"] == "qwen3.7-max"]
+    assert resynth_calls, provider_calls
     assert "fast_tool_round_direct_answer_resynthesized" in done["fallback_reasons"]

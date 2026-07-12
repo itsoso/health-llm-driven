@@ -5805,21 +5805,28 @@ class AgentExecutor:
 
         触发条件 (全部满足):
           1. settings.task_tiered_routing 开 (flag off → 恒 None = 逐字节现状);
-          2. 无显式 UI 选模型 (_request_model_id): 用户/桌面显式选的模型自己拥有工具轮,
-             我们只优化**默认/偏好模型**这条会落到 qwen3.7-max reasoning 的路径;
-          3. 非既有整轮快路由 (_prefer_fast_record_model / _fast_route_simple_turn):
+          2. 非既有整轮快路由 (_prefer_fast_record_model / _fast_route_simple_turn):
              那两条已把整轮 (含合成) 降到 fast, 不再叠加;
-          4. task_routing 里 "tool_routing" 档确被授权降 fast (单一真源不变量);
-          5. 存在一个 fast 档的 reliable_tool_calling=True 可用模型。
+          3. task_routing 里 "tool_routing" 档确被授权降 fast (单一真源不变量);
+          4. 存在一个 fast 档的 reliable_tool_calling=True 可用模型。
         任一不满足 → None。这样 fast 模型吐坏工具调用时, 既有 tool-turn failover +
         #147/#161 三层兜底解析仍是安全网 (被换后的 fast 模型走同一 _call_llm/_stream 路径)。
+
+        A1 (2026-07-12, 生产 190/231 回合此前零路由): 显式 UI 选模型 (_request_model_id)
+        **不再豁免**本快路由。工具决策轮是不可见的内部决策 (mac/mobile 分别显示 回答/工具
+        两个模型), 「选择器显示什么就用什么」只约束**面向用户的答案轮**, 不约束工具轮。
+        安全边界仍由 _turn_any_tool_executed 门守住: 只有**首个工具决策轮** (尚无工具执行)
+        才降 fast; 一旦跑过工具, 后续合成/答案轮恒返回 None → 落在显式选定的强模型上产出
+        医疗正文。fast 轮若直接答文本 → 既有丢弃+强模型重合成兜底 (面向用户正文绝不来自 fast)。
         """
         from app.config import settings
 
         if not getattr(settings, "task_tiered_routing", False):
             return None
-        # 尊重显式选择 / 不叠加既有整轮快路由。
-        if self._request_model_id or self._prefer_fast_record_model or self._fast_route_simple_turn:
+        # 不叠加既有整轮快路由 (那两条已把含合成的整轮降 fast)。显式 UI 选模型不在此
+        # 豁免 —— 只有下面 _turn_any_tool_executed 门放行的**首个工具决策轮**会被降 fast,
+        # 答案轮由该门 + round_tools=[] 保证仍落在显式模型上。
+        if self._prefer_fast_record_model or self._fast_route_simple_turn:
             return None
         # 只降**首个工具决策轮**: 默认路径下合成轮仍带 tools, 一旦跑过工具就留强模型
         # (安全: 工具后那一轮多半是写医疗正文的合成轮)。首轮直接答文本→安全兜底丢弃重合成。
