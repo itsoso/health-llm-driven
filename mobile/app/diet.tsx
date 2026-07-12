@@ -535,7 +535,7 @@ export default function DietScreen() {
         const saveSource = corrected && needsNutritionBackfill(revised)
           ? { kind: 'text' as const, description: revised.food_items }
           : draftEstimateSource;
-        await saveNewDietRecord(revised, saveSource);
+        const created = await saveNewDietRecord(revised, saveSource);
         if (isPhotoCorrection) {
           void emitClientEvent('diet_photo_confirmation_terminal', {
             phase: 'completed',
@@ -543,6 +543,14 @@ export default function DietScreen() {
             verified: true,
             corrected,
           });
+        }
+        if (!returnToChatAfterConfirm) {
+          setShareImageUriOverride(
+            !created.image_url && draftEstimateSource?.kind === 'photo'
+              ? draftEstimateSource.imageUri ?? null
+              : null,
+          );
+          setShareRecord(buildShareRecordFromConfirmation(created, revised));
         }
       }
       setShowForm(false);
@@ -573,7 +581,7 @@ export default function DietScreen() {
       }
       Alert.alert(editingRecord ? '更新失败' : '保存失败', '请稍后再试');
     }
-  }, [authUserId, draftEstimateSource, editingRecord, formDefaults, qc, saveNewDietRecord, toast]);
+  }, [authUserId, draftEstimateSource, editingRecord, formDefaults, qc, returnToChatAfterConfirm, saveNewDietRecord, toast]);
 
   const handleConfirmQuickDraft = useCallback(async () => {
     if (!quickDraft) return;

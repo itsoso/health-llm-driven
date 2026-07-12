@@ -1040,6 +1040,57 @@ describe('DietScreen capture deeplink', () => {
     promptSpy.mockRestore();
   });
 
+  it('opens the premium share preview after submitting a new meal form', async () => {
+    const dietService = require('../../services/diet');
+    dietService.createDietRecord.mockResolvedValueOnce({
+      id: 188,
+      user_id: 7,
+      record_date: '2026-07-11',
+      meal_type: 'lunch',
+      food_items: '三文鱼 180g',
+      source: 'user_corrected',
+      calories: 360,
+      protein: 38,
+      carbs: 0,
+      fat: 22,
+      fiber: 2,
+      alcohol_units: null,
+      image_url: null,
+      notes: null,
+      health_tips: null,
+    });
+    mockRouteParams.draft = 'diet';
+    mockRouteParams.food_items = encodeURIComponent('三文鱼 180g');
+    mockRouteParams.meal_type = 'lunch';
+
+    const { getByTestId, getByText } = render(<DietScreen />);
+    await waitFor(() => {
+      expect(getByTestId('meal-form')).toBeTruthy();
+    });
+
+    const formProps = mockMealForm.mock.calls[mockMealForm.mock.calls.length - 1][0];
+    await act(async () => {
+      await formProps.onSubmit({
+        record_date: '2026-07-11',
+        meal_type: 'lunch',
+        food_items: '三文鱼 180g',
+        calories: 360,
+        protein: 38,
+        carbs: 0,
+        fat: 22,
+        fiber: 2,
+      });
+    });
+
+    await waitFor(() => {
+      expect(getByText('分享这一餐')).toBeTruthy();
+      expect(getByText('发微信/朋友圈')).toBeTruthy();
+      expect(getByText('发小红书')).toBeTruthy();
+      expect(getByText('三文鱼 180g')).toBeTruthy();
+    });
+    expect(mockPushChatWithContext).not.toHaveBeenCalled();
+  });
+
   it('keeps the just-captured meal photo in the immediate share preview when the confirm response has no image url', async () => {
     const dietService = require('../../services/diet');
     mockRouteParams.capture = 'photo';
