@@ -202,6 +202,13 @@ class Settings(BaseSettings):
     proactive_global_weekly_budget: int = 15
     # 任务分级模型路由(成本/延迟):开后按 task_tier 选模型;默认关=零行为变更
     task_tiered_routing: bool = False
+    # 并行工具调用(延迟, Phase-2 rank5):开后对**携带 tools 的** chat/chat_stream 请求
+    # 传 parallel_tool_calls=true, 让 DashScope 一轮回多个 tool_call(默认每响应只回一个,
+    # 而 fast-record prompt 早在索要 "一次性发起多个 tool_call")。多条目 record/query 回合
+    # 每折叠一轮省 1.5-3s。ships-OFF: 关=请求 payload 逐字节不变;开=仅当本轮携带 tools 时
+    # 才带该参数(无 tools 时带会 SDK 报错)。prod 翻开前先跑真网 eval:
+    #   python3 backend/scripts/smoke_fast_tool_model.py --parallel
+    llm_parallel_tool_calls: bool = False
     # 合成轮思考封顶(延迟):>0 时给**合成/答案轮**的 qwen 思考阶段封顶到 N 个 token
     # (仅 ModelEntry.supports_thinking_budget=True 的模型;绝不碰工具决策轮;深度分析/
     # health_analysis 轮 fail-closed 跳过=保留完整思考)。默认 0=关=零行为变更。

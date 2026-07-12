@@ -6426,6 +6426,10 @@ class AgentExecutor:
         }
         if pass_tools:
             chat_kwargs["tools"] = pass_tools
+            # 并行工具调用(rank5, ships-OFF): 仅当携带 tools 时才带该参数(无 tools 带会
+            # SDK 报错);flag 关时 payload 逐字节不变。
+            if getattr(settings, "llm_parallel_tool_calls", False):
+                chat_kwargs["parallel_tool_calls"] = True
         self._last_provider_model_name = (
             getattr(provider, "model", None)
             or getattr(provider, "default_model", None)
@@ -6489,6 +6493,10 @@ class AgentExecutor:
         }
         if pass_tools:
             stream_kwargs["tools"] = pass_tools
+            # 并行工具调用(rank5, ships-OFF): 仅当携带 tools 时才带(无 tools 带会 SDK
+            # 报错);flag 关时 payload 逐字节不变。
+            if getattr(settings, "llm_parallel_tool_calls", False):
+                stream_kwargs["parallel_tool_calls"] = True
         else:
             # 合成/答案轮(无 tools): 可选给 qwen 思考阶段封顶(flag 门控, fail-closed)。
             # 只在这里调=天然只碰无工具的合成轮, 绝不碰工具决策轮。
