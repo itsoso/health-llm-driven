@@ -263,6 +263,26 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
                    "via": "DELETE /illness/episodes/{id}"},
     },
 
+    "life_event": {
+        # 情景事件账本(2026-07-12,复用 HealthEpisode episode_type=life_event)。
+        # 设计初衷是 AUTO 档(非医疗),但 executor 未把 "event" 加进
+        # _FAST_RECORD_AUTO_CONFIRM_KINDS → 快路由 fail-closed 恒确认
+        # (=never_auto 语义,mood 同款)。本表登记现状;要真 AUTO 需同时
+        # 补 undo 通路(目前无 health_manage 删除映射,见下方 delete gap)。
+        "create": {
+            "tool": "health_record", "record_type": "event", "confirm": "never_auto",
+            "via": "health_record(event) → POST /episodes/life-event",
+        },
+        "read": {"tool": "health_query", "dimensions": ("events",),
+                 "via": "health_query(events) → GET /episodes/me/life-events?days={days}"},
+        "list": {"gap": True,
+                 "reason": "health_manage 无 life_event 列表映射;读走 health_query(events)"},
+        "update": {"gap": True,
+                   "reason": "无 agent 改通路;occurred_at 由确定性代码折算,改动走重新记录"},
+        "delete": {"gap": True,
+                   "reason": "无 agent 删通路(HealthEpisode 无 health_manage 映射)—— 也是 create 升 AUTO 的前置缺口"},
+    },
+
     # ── 医疗级(never_auto:恒确认前置,spec §3.2)────────────────────────
     "medication": {
         "create": {

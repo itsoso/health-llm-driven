@@ -1916,6 +1916,8 @@ _FAST_RECORD_KIND_ALIASES = {
     "bp": "blood_pressure",
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
+    "life_event": "event",
+    "life-event": "event",
 }
 def _normalize_fast_record_kind(raw: Any) -> str:
     kind = str(raw or "").strip().lower()
@@ -8056,10 +8058,11 @@ class AgentExecutor:
                 {"medication_id": matched["id"], "taken_time": taken_time, "status": "taken"}
             )
 
-        if rtype in ("event", "life_event"):
+        if rtype == "event":
             # 生活事件 → HealthEpisode 情景账本(2026-07-12):行程/落地/送达等
             # 带发生时间落库,时间线总结读结构化 occurred_at 而不是猜。
             # occurred_at 传用户原话("下午"/"刚才"/"21:07"),折算在后端确定性代码。
+            # life_event 是别名(_FAST_RECORD_KIND_ALIASES),canonical 名只有 event。
             title = str(data.get("title") or data.get("name") or data.get("event") or "").strip()
             if not title:
                 return "Error: event 必须提供 title (如 '落地北京' / '药品送达酒店')"
