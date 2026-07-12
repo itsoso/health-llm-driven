@@ -80,6 +80,14 @@ def test_default_quiet_hours_0830_is_quiet():
         assert _is_in_quiet_hours_now(s) is True
 
 
+def test_morning_sleep_floor_overrides_user_end_before_9am():
+    """即使老用户保存 quiet_end=08:00, 08:30 仍必须静默,避免影响睡眠."""
+    with patch("app.tasks.open_loop_manager.datetime") as mock_dt:
+        mock_dt.now.return_value = _at(8, 30)
+        s = _FakeSetting("22:00", "08:00")
+        assert _is_in_quiet_hours_now(s) is True
+
+
 def test_custom_non_crossing_window():
     """用户自定义 14:00-16:00 (午休), 不跨午夜."""
     with patch("app.tasks.open_loop_manager.datetime") as mock_dt:

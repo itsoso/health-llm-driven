@@ -371,6 +371,7 @@ def collect_open_loops(db, user_id: int) -> List[OpenLoop]:
 
 
 DEDUP_WINDOW_DAYS = 7  # 同一 (user, kind, signal_key) 在 7 天内不重复推
+MORNING_SLEEP_FLOOR = "09:00"
 
 
 def _is_in_quiet_hours_now(setting) -> bool:
@@ -384,6 +385,8 @@ def _is_in_quiet_hours_now(setting) -> bool:
     start = (setting.quiet_hours_start or "22:00").strip()
     end = (setting.quiet_hours_end or "09:00").strip()
     now_cn = datetime.now(CHINA_TIMEZONE).strftime("%H:%M")
+    if now_cn < MORNING_SLEEP_FLOOR:
+        return True
     if start > end:  # 跨午夜: 22:00 ~ 09:00
         return now_cn >= start or now_cn < end
     return start <= now_cn < end

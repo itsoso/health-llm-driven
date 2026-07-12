@@ -26,6 +26,7 @@ from app.services.interruption_budget import evaluate_interruption, normalize_ti
 from app.utils.timezone import get_china_now, get_user_now
 
 logger = logging.getLogger(__name__)
+MORNING_SLEEP_FLOOR = time(9, 0)
 
 
 def proactive_notifications_sent(
@@ -75,6 +76,8 @@ def _in_quiet_hours(db: Session, user_id: int) -> bool:
         start = _parse_hhmm(getattr(s, "quiet_hours_start", None) or "22:00", time(22, 0))
         end = _parse_hhmm(getattr(s, "quiet_hours_end", None) or "09:00", time(9, 0))
         now = get_user_now(db, user_id).time()
+        if now < MORNING_SLEEP_FLOOR:
+            return True
         if start <= end:
             return start <= now < end
         return now >= start or now < end  # 跨午夜

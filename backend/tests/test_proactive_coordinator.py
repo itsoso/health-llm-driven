@@ -4,9 +4,12 @@
 钉:P2 永不推;P1 静默时段不推 + 受全局周上限;P0 穿透静默 + 受 P0 周上限 + 全局封顶;
 旧埋点无 tier 记为 P1;tier 计数互不串。
 """
+from datetime import datetime
+
 import pytest
 
 import app.services.proactive_coordinator as pc
+from app.models.notification import UserNotificationSetting
 from app.services.proactive_coordinator import (
     can_notify_proactively,
     proactive_notifications_sent,
@@ -39,6 +42,25 @@ def test_p1_allowed_when_awake_and_under_global(db, awake):
 
 def test_p1_blocked_in_quiet_hours(db, monkeypatch):
     monkeypatch.setattr(pc, "_in_quiet_hours", lambda db, uid: True)
+    assert can_notify_proactively(db, 1, tier="P1") is False
+
+
+def test_morning_sleep_floor_overrides_user_quiet_end_before_9am(db, monkeypatch):
+    """08:30 仍算静默,即使老用户偏好保存的是 08:00 结束。"""
+    db.add(UserNotificationSetting(
+        user_id=1,
+        enabled=True,
+        quiet_hours_start="22:00",
+        quiet_hours_end="08:00",
+    ))
+    db.commit()
+    monkeypatch.setattr(
+        pc,
+        "get_user_now",
+        lambda _db, _user_id: datetime(2026, 5, 12, 8, 30, 0),
+    )
+
+    assert pc._in_quiet_hours(db, 1) is True
     assert can_notify_proactively(db, 1, tier="P1") is False
 
 
