@@ -172,6 +172,37 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('marks partially backfilled nutrition as still in progress instead of fully final', async () => {
+    const partialRecord: DietRecord = {
+      ...record,
+      source: 'ai_estimate',
+      calories: null,
+      protein: 42,
+      carbs: null,
+      fat: null,
+      fiber: null,
+    };
+    const { getByText, queryByText } = render(
+      <DietShareSheet
+        visible
+        record={partialRecord}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(getByText('热量估算中')).toBeTruthy();
+    expect(getByText('部分营养回填后用于复盘')).toBeTruthy();
+    expect(queryByText('营养数据以本次确认记录为准')).toBeNull();
+
+    fireEvent.press(getByText('复制朋友圈文案'));
+    await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('热量估算中'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养数据: 部分估算中，已确认部分可继续复盘'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('--'));
+    });
+  });
+
   it('captures exactly 1080x1440 and opens the system image share sheet', async () => {
     const onShareTerminal = jest.fn();
     const { getByText } = render(

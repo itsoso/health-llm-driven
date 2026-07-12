@@ -61,6 +61,14 @@ function hasAnyMacro(record: DietRecord): boolean {
   return [record.protein, record.carbs, record.fat].some(hasMetric);
 }
 
+function isNutritionComplete(record: DietRecord): boolean {
+  return [record.calories, record.protein, record.carbs, record.fat].every(hasMetric);
+}
+
+function hasAnyNutritionMetric(record: DietRecord): boolean {
+  return [record.calories, record.protein, record.carbs, record.fat].some(hasMetric);
+}
+
 function nutritionSourceLabel(source?: string | null): string {
   if (!source || source === 'ai_estimate' || source === 'photo') return '智能估算';
   if (source === 'manual' || source === 'user_corrected') return '手动确认';
@@ -96,10 +104,17 @@ function buildDietShareCaptionStatusLine(highlights: string[]): string {
 
 function buildDietShareDataDisclosure(record: DietRecord): string {
   const sourceLabel = nutritionSourceLabel(record.source);
-  if (!hasMetric(record.calories) && !hasAnyMacro(record)) return '营养数据: 估算中，稍后可继续复盘';
+  if (!hasAnyNutritionMetric(record)) return '营养数据: 估算中，稍后可继续复盘';
+  if (!isNutritionComplete(record)) return '营养数据: 部分估算中，已确认部分可继续复盘';
   if (sourceLabel === '智能估算') return '营养数据: 智能估算，已确认，可继续复盘';
   if (sourceLabel === '手动确认') return '营养数据: 手动确认，可继续复盘';
   return `营养数据: ${sourceLabel}，已确认，可继续复盘`;
+}
+
+function buildDietShareFooterSecondary(record: DietRecord): string {
+  if (!hasAnyNutritionMetric(record)) return '营养回填后用于复盘';
+  if (!isNutritionComplete(record)) return '部分营养回填后用于复盘';
+  return '营养数据以本次确认记录为准';
 }
 
 function buildDietShareMacroLine(record: DietRecord, style: 'compact' | 'sentence'): string {
@@ -110,9 +125,16 @@ function buildDietShareMacroLine(record: DietRecord, style: 'compact' | 'sentenc
     hasMetric(record.fat) ? `脂肪 ${metric(record.fat, 1)}g` : null,
   ].filter((part): part is string => Boolean(part));
   if (parts.length === 0) return '营养估算中，稍后可继续复盘';
+  const pendingParts = [
+    hasMetric(record.calories) ? null : '热量估算中',
+    hasMetric(record.protein) ? null : '蛋白质估算中',
+    hasMetric(record.carbs) ? null : '碳水估算中',
+    hasMetric(record.fat) ? null : '脂肪估算中',
+  ].filter((part): part is string => Boolean(part));
+  const allParts = parts.concat(pendingParts);
   return style === 'sentence'
-    ? `这一餐约 ${parts.join('，')}。`
-    : parts.join(' · ');
+    ? `这一餐约 ${allParts.join('，')}。`
+    : allParts.join(' · ');
 }
 
 export function buildDietShareCaption(record: DietRecord, dateLabel: string): string {
@@ -183,7 +205,6 @@ export default function DietShareCard({
   const calories = metric(record.calories);
   const hasCalories = hasMetric(record.calories);
   const hasMacros = hasAnyMacro(record);
-  const isNutritionPending = !hasCalories && !hasMacros;
   const sourceLabel = nutritionSourceLabel(record.source);
   const headline = buildDietShareHeadline(record);
   const highlights = buildDietShareHighlights(record);
@@ -225,7 +246,7 @@ export default function DietShareCard({
                 <Text style={styles.heroUnit}>kcal</Text>
               </View>
             ) : (
-              <Text style={styles.pendingHeroMetric}>营养估算中</Text>
+              <Text style={styles.pendingHeroMetric}>{hasMacros ? '热量估算中' : '营养估算中'}</Text>
             )}
           </View>
           <View style={styles.heroBars}>
@@ -289,9 +310,7 @@ export default function DietShareCard({
 
       <View style={styles.cardFooter}>
         <Text style={styles.footerPrimary}>认真记录，也认真生活</Text>
-        <Text style={styles.footerSecondary}>
-          {isNutritionPending ? '营养回填后用于复盘' : '营养数据以本次确认记录为准'}
-        </Text>
+        <Text style={styles.footerSecondary}>{buildDietShareFooterSecondary(record)}</Text>
       </View>
     </View>
   );
