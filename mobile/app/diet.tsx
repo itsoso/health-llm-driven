@@ -1387,6 +1387,7 @@ function QuickDietDraftCard({
   const recognitionTotalSeconds = formatTimingSeconds(draft.ai_raw_result?.timing_ms?.total);
   const calibrationSeconds = formatTimingSeconds(draft.ai_raw_result?.timing_ms?.calibration);
   const showRecognitionTiming = Boolean(recognitionTotalSeconds || calibrationSeconds);
+  const reviewItemCount = recognizedFoods.filter(foodNeedsPortionReview).length;
 
   return (
     <View style={styles.quickDraftCard}>
@@ -1406,6 +1407,13 @@ function QuickDietDraftCard({
       <Text style={txt.quickFood}>{draft.food_items}</Text>
       {primaryMetrics ? <Text style={txt.quickMacro}>{primaryMetrics}</Text> : null}
       {secondaryMetrics ? <Text style={txt.quickMacroMuted}>{secondaryMetrics}</Text> : null}
+      {reviewItemCount > 0 ? (
+        <View style={styles.quickReviewSummary}>
+          <Ionicons name="alert-circle-outline" size={14} color={revaSemantic.caution.fg} />
+          <Text style={txt.quickReviewSummaryStrong}>{reviewItemCount} 项需核对</Text>
+          <Text style={txt.quickReviewSummaryText}>重点核对份量</Text>
+        </View>
+      ) : null}
       {recognizedFoods.length > 0 ? (
         <View style={styles.recognitionDetail}>
           <View style={styles.recognitionDetailHeader}>
@@ -1704,6 +1712,19 @@ const styles = StyleSheet.create({
   recognizedFoodSignals: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6,
   },
+  quickReviewSummary: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: revaSpacing.s2,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: revaRadii.pill,
+    backgroundColor: revaSemantic.caution.bg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: revaSemantic.caution.line,
+  },
   recognitionBasisChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 8, paddingVertical: 5, borderRadius: revaRadii.pill,
@@ -1802,6 +1823,8 @@ const txt = {
   quickFood: { fontFamily: revaFonts.sans, fontSize: 16, lineHeight: 22, color: C.ink1, fontWeight: '700' } as TextStyle,
   quickMacro: { fontFamily: revaFonts.mono, fontSize: 14, color: C.ink1, fontWeight: '700', marginTop: revaSpacing.s2 } as TextStyle,
   quickMacroMuted: { fontFamily: revaFonts.mono, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,
+  quickReviewSummaryStrong: { fontFamily: revaFonts.sans, fontSize: 11, color: revaSemantic.caution.fg, fontWeight: '900' } as TextStyle,
+  quickReviewSummaryText: { fontFamily: revaFonts.sans, fontSize: 10.5, color: C.ink3, fontWeight: '800' } as TextStyle,
   recognitionDetailTitle: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, fontWeight: '800' } as TextStyle,
   recognitionDetailCount: { fontFamily: revaFonts.mono, fontSize: 11, color: C.ink3 } as TextStyle,
   recognizedFoodName: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 19, color: C.ink1, fontWeight: '700' } as TextStyle,

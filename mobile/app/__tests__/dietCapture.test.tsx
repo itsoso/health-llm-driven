@@ -912,6 +912,8 @@ describe('DietScreen capture deeplink', () => {
       expect(getByText('识别明细')).toBeTruthy();
     });
     expect(getByText('已带营养估算，确认后计入今日')).toBeTruthy();
+    expect(getByText('2 项需核对')).toBeTruthy();
+    expect(getByText('重点核对份量')).toBeTruthy();
     expect(getByText('鸡胸肉')).toBeTruthy();
     expect(getByText('200g · 330 kcal')).toBeTruthy();
     expect(getByText('表值 × 估算份量')).toBeTruthy();
