@@ -279,7 +279,7 @@ export default function RecordScreen() {
               label="拍一下"
               hint="餐食照片"
               color={CAT_HUES.orange}
-              onPress={() => router.push('/diet?capture=photo' as any)}
+              onPress={() => router.push('/diet?capture=photo&return_to=chat' as any)}
               accessibilityLabel="拍一下记录饮食"
             />
             <CaptureModeBtn

@@ -154,6 +154,6 @@ describe('RecordScreen import shortcuts', () => {
     expect(mockPush).toHaveBeenCalledWith('/voice-chat?intent=journal');
 
     fireEvent.press(getByLabelText('拍一下记录饮食'));
-    expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo');
+    expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo&return_to=chat');
   });
 });
