@@ -2,7 +2,7 @@ jest.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
 
 jest.mock('expo-notifications', () => ({
   __esModule: true,
-  SchedulableTriggerInputTypes: { DAILY: 'daily' },
+  SchedulableTriggerInputTypes: { DAILY: 'daily', DATE: 'date' },
   getPermissionsAsync: jest.fn(),
   getAllScheduledNotificationsAsync: jest.fn(),
   scheduleNotificationAsync: jest.fn(),
@@ -138,6 +138,18 @@ describe('buildInterventionCycleNotifications', () => {
     const recheck = specs[1];
     expect(recheck.trigger).toBeNull(); // 立即投递
     expect((recheck.content.data as any).deep_link).toBe('/intervention-cycle');
+  });
+
+  it('复查到期但仍在 09:00 前 → 复查提醒延迟到当天 09:00', () => {
+    const specs = buildInterventionCycleNotifications(
+      cycle({ planned_end_date: '2026-06-30' }),
+      new Date('2026-07-01T08:30:00'),
+    );
+    const recheck = specs[1];
+    expect(recheck.trigger).toEqual({
+      type: 'date',
+      date: new Date('2026-07-01T09:00:00'),
+    });
   });
 
   it('无周期 / 非 active → 空', () => {

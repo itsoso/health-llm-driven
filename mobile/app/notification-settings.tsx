@@ -92,7 +92,7 @@ export default function NotificationSettingsScreen() {
         </View>
 
         <Text style={txt.section}>安静时段</Text>
-        <Text style={txt.hintSmall}>此时段内非紧急推送会被抑制，只有危及生命的严重告警才会送达。</Text>
+        <Text style={txt.hintSmall}>09:00 前是睡眠保护窗口，所有提醒都会延后；白天仅危及生命的严重告警可穿透安静时段。</Text>
         <View style={styles.card}>
           <TimeRow label="开始" value={settings?.quiet_hours_start || '22:00'}
             onPress={() => setEditing('start')} />
@@ -181,7 +181,7 @@ export default function NotificationSettingsScreen() {
 }
 
 const START_PRESETS = ['21:00', '21:30', '22:00', '22:30', '23:00', '23:30', '00:00'];
-const END_PRESETS = ['06:00', '06:30', '07:00', '07:30', '08:00', '08:30', '09:00', '09:30', '10:00'];
+const END_PRESETS = ['09:00', '09:30', '10:00'];
 
 function TimePickerModal({
   visible, title, options, current, onPick, onClose,

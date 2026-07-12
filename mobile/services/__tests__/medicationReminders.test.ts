@@ -97,12 +97,13 @@ describe('scheduleMedicationReminders', () => {
     expect(mockNotif.scheduleNotificationAsync).toHaveBeenCalledTimes(2);
 
     const firstCall = mockNotif.scheduleNotificationAsync.mock.calls[0][0];
-    expect(firstCall.trigger).toEqual({ type: 'daily', hour: 8, minute: 0 });
+    expect(firstCall.trigger).toEqual({ type: 'daily', hour: 9, minute: 0 });
     expect(firstCall.content.categoryIdentifier).toBe('MEDICATION_REMINDER');
     expect(firstCall.content.data).toMatchObject({
       reminder_type: 'medication',
       medication_id: 1,
       taken_time: '08:00',
+      scheduled_time: '09:00',
     });
   });
 
