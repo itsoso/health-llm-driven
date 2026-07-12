@@ -202,6 +202,12 @@ class Settings(BaseSettings):
     proactive_global_weekly_budget: int = 15
     # 任务分级模型路由(成本/延迟):开后按 task_tier 选模型;默认关=零行为变更
     task_tiered_routing: bool = False
+    # 合成轮思考封顶(延迟):>0 时给**合成/答案轮**的 qwen 思考阶段封顶到 N 个 token
+    # (仅 ModelEntry.supports_thinking_budget=True 的模型;绝不碰工具决策轮;深度分析/
+    # health_analysis 轮 fail-closed 跳过=保留完整思考)。默认 0=关=零行为变更。
+    # 医疗正文相关 → ships-disabled,须过评测闸(invariant_judge + cadence family-drift)
+    # 才可开。探针实证见 scripts/probe_qwen_thinking_budget.py。
+    synthesis_thinking_budget: int = 0
     # 多模型 panel(高风险裁决多模型投票):primitive,默认关
     multi_model_panel: bool = False
 

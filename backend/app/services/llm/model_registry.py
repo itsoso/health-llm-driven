@@ -40,6 +40,12 @@ class ModelEntry:
     #   例如 langbridge-proxy 经万擎公网转发的商用模型: 网关无 SSE, 整段答案一次到。
     #   agent_executor 在答案轮据此发一条 thinking 状态 detail, 让 mac 端如实显示
     #   「需等待完整回答」而非误导性的 token 滚动。拿不准时保守标 True (走正常滚动)。
+    supports_thinking_budget: bool = False
+    # ↑ 该模型是否接受 DashScope/qwen 的思考控制参数 (enable_thinking / thinking_budget,
+    #   经 extra_body 顶层放置)。True 才允许 agent_executor 在合成轮给思考阶段封顶
+    #   (SYNTHESIS_THINKING_BUDGET, 砍 in-call TTFT)。fail-closed 默认 False: 只对
+    #   **真网络探针验证过**该参数的模型置 True (见 scripts/probe_qwen_thinking_budget.py),
+    #   未验证模型置 True 会让端点 400 打死合成轮。拿不准时保守留 False。
 
 
 # 注册表 — 加新模型只改这里
@@ -68,6 +74,10 @@ MODELS: List[ModelEntry] = [
         note="文本生成 / 推理",
         requires_env=("TOKENPLAN_API_KEY",),
         capabilities=("text_generation", "reasoning"),
+        # 探针实证 (probe_qwen_thinking_budget.py, 2026-07-12): enable_thinking=false /
+        # thinking_budget=N 经 extra_body 顶层放置生效, 合成轮 TTFT 从 ~36s 塌到 ~1.6s
+        # (关思考) / ~11s (封顶 512)。仅本模型验证过 → 其它 qwen 需各自跑探针再置 True。
+        supports_thinking_budget=True,
     ),
     ModelEntry(
         id="qwen3.6-plus",

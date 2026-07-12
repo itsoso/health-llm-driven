@@ -38,6 +38,32 @@ def _merge_include_usage(kwargs: Dict[str, Any]) -> Dict[str, Any]:
     return merged
 
 
+def _apply_thinking_controls(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """把 thinking_budget / enable_thinking(DashScope/qwen 思考控制)折进 extra_body。
+
+    OpenAI SDK 不认识这两个字段,当顶层 kwarg 传会 TypeError;必须走 extra_body
+    (compatible-mode 顶层放置,探针实证生效——见 scripts/probe_qwen_thinking_budget.py)。
+    kwargs 里没这两个键则原样返回(零影响)。原地 pop 掉这两个键,避免它们继续以
+    未知 kwarg 流进 client.chat.completions.create() 触发 TypeError。
+
+    调用方(agent_executor)已按 ModelEntry.supports_thinking_budget 门控,只对**探针
+    验证过**的 qwen 系 tokenplan 模型传入;非 qwen 模型永不带这两个 kwarg → extra_body
+    不受影响。thinking_budget 需要思考开着才谈得上封顶,故默认补 enable_thinking=True。
+    """
+    thinking_budget = kwargs.pop("thinking_budget", None)
+    enable_thinking = kwargs.pop("enable_thinking", None)
+    if thinking_budget is None and enable_thinking is None:
+        return kwargs
+    extra_body = dict(kwargs.get("extra_body") or {})
+    if enable_thinking is not None:
+        extra_body["enable_thinking"] = bool(enable_thinking)
+    if thinking_budget is not None:
+        extra_body.setdefault("enable_thinking", True)
+        extra_body["thinking_budget"] = int(thinking_budget)
+    kwargs["extra_body"] = extra_body
+    return kwargs
+
+
 class OpenAIProvider(LLMProvider):
     """
     OpenAI 兼容 Provider
@@ -94,6 +120,8 @@ class OpenAIProvider(LLMProvider):
         """
         use_model = model or self.model
         return_metadata = bool(kwargs.pop("return_metadata", False))
+        # thinking_budget / enable_thinking → extra_body(仅调用方门控过的 qwen 模型会带)
+        kwargs = _apply_thinking_controls(kwargs)
 
         if stream:
             return self._stream_chat(messages, use_model, temperature, max_tokens, **kwargs)
@@ -208,6 +236,8 @@ class OpenAIProvider(LLMProvider):
         use_model = model or self.model
         # return_metadata 是 chat() 的参数,流式不接受,丢弃避免传给 OpenAI SDK
         kwargs.pop("return_metadata", None)
+        # thinking_budget / enable_thinking → extra_body(仅调用方门控过的 qwen 模型会带)
+        kwargs = _apply_thinking_controls(kwargs)
         client = self._get_client()
 
         create_kwargs: Dict[str, Any] = {
