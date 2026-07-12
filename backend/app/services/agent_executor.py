@@ -2752,6 +2752,10 @@ class AgentExecutor:
         # 默认路径下合成轮仍带 tools, 靠这个把"首个工具决策轮"与"工具后合成轮"分开:
         # 只有**尚无工具执行**时才把带 tools 的轮降 fast; 一旦跑过工具, 后续 (合成) 轮留强模型。
         self._turn_any_tool_executed = False
+        # A3: fast 工具决策轮直接答文本被丢弃后, 置位 → 强制下一轮为**无 tools 的合成轮**,
+        # 复用主循环的流式路径在强/显式模型上重合成 (tokens 逐 delta 下发, 消除 ttft=total
+        # 空洞)。round_tools=[] → pass_tools falsy → 不再快路由 → 落在强/显式模型。
+        self._force_no_tools_synthesis = False
         self._last_provider_model_name: Optional[str] = None
         self._request_model_tool_fallback_used = False
         self._model_fallback_reasons: List[str] = []
@@ -3652,6 +3656,7 @@ class AgentExecutor:
         self._fast_route_simple_turn = False
         self._tool_round_fast_routed = False
         self._turn_any_tool_executed = False
+        self._force_no_tools_synthesis = False
         self._model_fallback_reasons = []
         self._tool_model_names = []
         self._dead_provider_model_ids = set()
@@ -4100,7 +4105,11 @@ class AgentExecutor:
                 # round_tools = 本轮**发给模型**的工具; _detect_tools = 扫描模型**输出**用的
                 # 完整词表 (A2 把合成轮 round_tools 置空只是不再重发 18KB schema, 输出侧的
                 # 文本式/内联工具调用抑制词表不能跟着消失 —— 见 _detect_tools 用法)。
-                if self._should_synthesize_with_requested_model_after_tools(tool_executed_count):
+                if self._force_no_tools_synthesis:
+                    # A3: fast 工具轮直接答文本被丢弃 → 本轮强制无 tools 合成 (强/显式模型),
+                    # 走主循环流式路径重合成 (tokens 逐 delta 下发)。
+                    round_tools = []
+                elif self._should_synthesize_with_requested_model_after_tools(tool_executed_count):
                     # 既有: 显式选的不可靠工具模型, 工具后由它自己产出最终答案 (不重发 tools)。
                     round_tools = []
                 elif tool_executed_count > 0 and not keep_tools_after_synthesis_miss:
@@ -4295,9 +4304,12 @@ class AgentExecutor:
                 # 到这里所有 tool-call 恢复 (结构化 / inline JSON / 文本式重试) 都已尝试完。
                 # 若本轮是 fast 工具决策轮却仍**没有** tool_calls 而是产出了用户可见正文,
                 # 那是 fast 模型在直接回答医疗问题 —— 安全不变量禁止 (面向用户医疗正文绝不
-                # 来自 fast 模型)。该 content 已被上面的下发门控抑制 (从未 live 发出), 这里
-                # 清空它: final_text 变空 → 走既有空回复重试链, 在**强模型** (_call_llm(msgs,[]),
-                # 无 tools → 不再快路由) 上重新生成答案。纯附加、fail-closed。
+                # 来自 fast 模型)。该 content 已被上面的下发门控抑制 (从未 live 发出)。
+                # A3 (2026-07-12): 不再清空 content 落到**非流式**空回复重试链 (ttft≈total 空洞:
+                # 生产 turn 5960 ttft 39.5s ≈ total) —— 改为置 _force_no_tools_synthesis + continue,
+                # 让主循环下一轮以**无 tools 合成轮**在强/显式模型上流式重合成 (round_tools=[] →
+                # pass_tools falsy → 不再快路由; _tool_round_fast_routed 在轮首重置 → tokens 不被
+                # 抑制; 主循环既有 leak 抑制照旧生效)。fast 正文从未进 messages/full_reply。
                 if (
                     self._tool_round_fast_routed
                     and isinstance(response, dict)
@@ -4306,10 +4318,17 @@ class AgentExecutor:
                 ):
                     logger.info(
                         "[agent_executor] fast tool-round answered directly (no tool_call); "
-                        "discarding fast-model text, will re-synthesize on strong model."
+                        "discarding fast-model text, streaming re-synthesis on strong/selected model."
                     )
                     self._record_model_fallback_reason("fast_tool_round_direct_answer_resynthesized")
-                    response = {**response, "content": ""}
+                    # 记本 fast 轮的 per-round split (纯埋点, 无工具执行)。
+                    rounds.append({
+                        "llm_gen_ms": _round_llm_gen_ms,
+                        "tool_exec_ms": 0,
+                        "tools": [],
+                    })
+                    self._force_no_tools_synthesis = True
+                    continue
 
                 # 检查是否有 tool_call
                 if isinstance(response, dict) and response.get("tool_calls"):
