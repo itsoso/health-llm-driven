@@ -282,8 +282,6 @@ REMOTE_ENV_BACKUP
 # 同步环境变量到服务器
 sync_env() {
     print_step "同步 .env 到服务器..."
-    validate_langbridge_env
-    backup_remote_env
 
     # ── env 守卫(2026-07-12 事故加固,机械拦截,勿删)──────────────────
     # 事故:从陈旧 checkout 跑 deploy,sync_env 把缺 12 个 key + APP_ENV=development
@@ -312,6 +310,9 @@ sync_env() {
         fi
         rm -f "$_GUARD_REMOTE"
     fi
+
+    validate_langbridge_env
+    backup_remote_env
 
     # 创建临时文件，过滤掉部署配置
     TEMP_ENV=$(mktemp)
