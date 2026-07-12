@@ -66,6 +66,15 @@ export function buildDietShareHeadline(record: DietRecord): string {
   return '这一餐，有据可查';
 }
 
+export function buildDietShareHighlights(record: DietRecord): string[] {
+  const tags: string[] = [];
+  if (typeof record.protein === 'number' && record.protein >= 30) tags.push('高蛋白');
+  if (typeof record.fat === 'number' && record.fat <= 12) tags.push('低脂');
+  if (typeof record.fiber === 'number' && record.fiber >= 5) tags.push('含纤维');
+  if (typeof record.calories === 'number' && record.calories <= 450) tags.push('轻负担');
+  return tags.slice(0, 3);
+}
+
 export function buildDietShareCaption(record: DietRecord, dateLabel: string): string {
   const mealLabel = MEAL_LABEL[record.meal_type] ?? '餐食';
   const lines = [
@@ -82,11 +91,13 @@ export function buildDietShareCaption(record: DietRecord, dateLabel: string): st
 export function buildDietShareMomentsCaption(record: DietRecord, dateLabel: string): string {
   const mealLabel = MEAL_LABEL[record.meal_type] ?? '餐食';
   const headline = buildDietShareHeadline(record);
+  const highlights = buildDietShareHighlights(record);
   const lines = [
     `${dateLabel}，${headline}。`,
     `${mealLabel}: ${record.food_items}`,
     `这一餐约 ${metric(record.calories)} kcal，蛋白质 ${metric(record.protein)}g，碳水 ${metric(record.carbs)}g，脂肪 ${metric(record.fat, 1)}g。`,
   ];
+  if (highlights.length > 0) lines.push(`亮点: ${highlights.join(' / ')}`);
   if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g。`);
   lines.push('小巴帮我把吃过的东西留成一张可复盘的记录。');
   return lines.join('\n');
@@ -112,6 +123,7 @@ export default function DietShareCard({
   const calories = metric(record.calories);
   const sourceLabel = nutritionSourceLabel(record.source);
   const headline = buildDietShareHeadline(record);
+  const highlights = buildDietShareHighlights(record);
 
   return (
     <View style={styles.card}>
@@ -161,6 +173,15 @@ export default function DietShareCard({
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.storyTitle}>{headline}</Text>
             <Text style={styles.foods} numberOfLines={3}>{record.food_items}</Text>
+            {highlights.length > 0 ? (
+              <View style={styles.highlightRow}>
+                {highlights.map((tag) => (
+                  <View key={tag} style={styles.highlightPill}>
+                    <Text style={styles.highlightText}>{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
           </View>
           {showImage ? (
             <View style={styles.calorieAside}>
@@ -470,6 +491,17 @@ const styles = StyleSheet.create({
   storyRow: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
   storyTitle: { fontFamily: revaFonts.sans, fontSize: 19, lineHeight: 24, color: C.ink1, fontWeight: '800' },
   foods: { fontFamily: revaFonts.sans, fontSize: 13, lineHeight: 19, color: C.ink2, marginTop: 7 },
+  highlightRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 9 },
+  highlightPill: {
+    minHeight: 20,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    backgroundColor: C.focusBg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.focusLine,
+    justifyContent: 'center',
+  },
+  highlightText: { fontFamily: revaFonts.sans, fontSize: 9, color: C.green600, fontWeight: '900' },
   calorieAside: { alignItems: 'flex-end', paddingTop: 2 },
   calorieAsideValue: { fontFamily: revaFonts.mono, fontSize: 26, lineHeight: 29, color: '#E45D3B', fontWeight: '600' },
   calorieAsideUnit: { fontFamily: revaFonts.mono, fontSize: 9, color: C.ink3, marginTop: 2 },

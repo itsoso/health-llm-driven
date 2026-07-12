@@ -92,6 +92,25 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('shows nutrition highlight tags on the share card and WeChat caption', async () => {
+    const { getByText } = render(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(getByText('高蛋白')).toBeTruthy();
+    expect(getByText('低脂')).toBeTruthy();
+    fireEvent.press(getByText('复制朋友圈文案'));
+
+    await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('亮点: 高蛋白 / 低脂'));
+    });
+  });
+
   it('labels user-corrected nutrition as manually confirmed', () => {
     const { getByText } = render(
       <DietShareCard record={{ ...record, source: 'user_corrected' }} dateLabel="7月11日 · 午餐" />,
