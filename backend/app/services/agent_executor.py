@@ -1283,6 +1283,58 @@ def _build_fast_record_messages(messages: List[Dict[str, Any]]) -> List[Dict[str
     ]
 
 
+def _build_lite_tool_round_messages(
+    lite_system: str, messages: List[Dict[str, Any]]
+) -> Optional[List[Dict[str, Any]]]:
+    """Compact prompt for the **fast-routed tool-decision round** (task_tiered_routing).
+
+    生产实测: advice/query 回合的**首个工具决策轮**已 fast-route 到 qwen3.6-flash,
+    但仍背着 ~14k-token 全量栈 (full system prompt 含 8 个分析 blob + 最后一条 user
+    里折进的 KB 证据 + 15 轮历史 + 18KB tool schema), flash 白付 6-8s prefill。
+    该轮只需从用户消息 + 最近上下文里**挑一个工具、填参数** —— 不需要分析 blob / KB。
+    把**这一轮**换成 lite 栈: lite system prompt (人格 + 记录/工具规则 + R4 + 基础画像,
+    见 _build_system_prompt(lite=True), 无分析 blob / 无 KB) + 只保留最新 user 消息
+    (调用方在 KB/turn-context 折进最后一条 user **之前**快照, 故 KB 天然缺席),
+    并把紧邻的上一条非空 assistant 折进 user 做消歧上下文。
+
+    合成/答案轮 (工具后, round_tools=[]) 与快路由失守时仍走**全量栈** —— 面向用户的
+    医疗正文永远来自强/显式模型的完整上下文 (见 _messages_for_round / 调用点)。
+
+    **跟进式回复必须保留紧邻的上一条助手回合** (见 _build_fast_record_messages 同款教训
+    [[feedback_fast_path_drops_followup_context]]): 助手刚问「要不要帮你分析今天的咖啡因?」
+    用户答「好, 顺便看看会不会超标」时, 只发最新 user 消息, 模型无从消歧。折进 user 消息
+    (而非发裸 assistant): fast 工具模型走弱代理 (qwen via tokenplan), [system, assistant,
+    user] 序列易被严格 OpenAI 兼容适配器拒;折进单条 user 保持 [system, user] 稳态。
+
+    返回 None = 无法安全构建 lite (如最新 user 是多模态 list content) → 调用方 fail-open
+    到全量栈, 绝不丢上下文。
+    """
+    user_messages = [m for m in messages if m.get("role") == "user"]
+    if not user_messages:
+        return None
+    user_content = user_messages[-1].get("content")
+    # 多模态 (图片直传) 的 list content 不做字符串折叠 —— fail-open 到全量栈, 由调用方处理。
+    if not isinstance(user_content, str):
+        return None
+
+    # 紧邻最新用户消息之前的最后一条非空 assistant 回合 —— 跟进式消歧上下文 (截断保持 compact)。
+    last_assistant = next(
+        (
+            m for m in reversed(messages)
+            if m.get("role") == "assistant" and str(m.get("content") or "").strip()
+        ),
+        None,
+    )
+    if last_assistant:
+        prior = str(last_assistant.get("content") or "").strip()[:400]
+        user_content = f"[上一轮助手问我：{prior}]\n我的回复：{user_content}"
+
+    return [
+        {"role": "system", "content": lite_system},
+        {"role": "user", "content": user_content},
+    ]
+
+
 def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
     """Turn a created-record JSON (which has no ``message`` field — it's the raw
     API response) into a short human line, so the fast-record reply never dumps
@@ -2823,6 +2875,11 @@ class AgentExecutor:
         # 直接答文本 (无 tool_calls), 丢弃并强制在**强模型**上重合成 (安全不变量:
         # 面向用户的医疗正文绝不来自 fast 模型)。
         self._tool_round_fast_routed = False
+        # fast-routed 工具决策轮专用的 lite 消息栈 (由 _run_stream_impl 在组装 full messages
+        # 时快照; 见 _build_lite_tool_round_messages)。仅当**本轮**被 fast-route
+        # (_tool_round_fast_routed=True) 时, _messages_for_round 才用它替换全量栈 —— 合成/
+        # 答案轮与快路由失守时仍走全量栈。None = 本回合不构建 (flag 关 / 整轮已 fast / 多模态)。
+        self._lite_tool_round_messages: Optional[List[Dict[str, Any]]] = None
         # 本轮之前是否已执行过任何工具 (旁路 tool_executed_count>0 给 _resolve_chat_provider)。
         # 默认路径下合成轮仍带 tools, 靠这个把"首个工具决策轮"与"工具后合成轮"分开:
         # 只有**尚无工具执行**时才把带 tools 的轮降 fast; 一旦跑过工具, 后续 (合成) 轮留强模型。
@@ -3736,6 +3793,7 @@ class AgentExecutor:
         self._request_model_tool_fallback_used = False
         self._fast_route_simple_turn = False
         self._tool_round_fast_routed = False
+        self._lite_tool_round_messages = None
         self._turn_any_tool_executed = False
         self._force_no_tools_synthesis = False
         self._turn_evidence_card = _TURN_CARD_UNSET
@@ -4084,6 +4142,33 @@ class AgentExecutor:
             else:
                 _attach_images_to_last_user_message(messages, message, images)
         pre_stages["vision_ms"] = _pre_stage(_t_stage) if images else 0
+
+        # ── fast-routed 工具决策轮的 lite 消息栈 (2026-07-12 token 优化: 首个工具决策轮
+        # 已 fast-route 到 qwen3.6-flash, 但仍背 ~14k-token 全量栈 → flash 白付 6-8s prefill)。
+        # **必须在 turn-context(KB 证据)折进最后一条 user 之前**快照 —— 此刻最后一条 user
+        # 只含用户原话(或 vision 增强), KB 天然缺席; 用 lite system prompt(无分析 blob)+
+        # 折进紧邻 assistant 做消歧。仅当**首个工具决策轮**真 fast-route 时才被消费(见
+        # _messages_for_round); 合成/答案轮与快路由失守时仍走下面组装的全量 messages。
+        # 只对可能命中快路由的回合构建(flag 开 + 非整轮快路由): _fast_route_simple_turn /
+        # _prefer_fast_record_model 已把整轮(含合成)降 fast, _maybe_fast_route_tool_round
+        # 对它们恒返回 None → 无需 lite 栈。fail-open: 构建失败/多模态 → None → 全量栈。
+        if (
+            getattr(settings, "task_tiered_routing", False)
+            and not self._fast_route_simple_turn
+            and not self._prefer_fast_record_model
+        ):
+            try:
+                lite_system = self._build_system_prompt(
+                    user_id, conv.id, user_auth_token, lite=True, intent_query=message,
+                )
+                self._lite_tool_round_messages = _build_lite_tool_round_messages(
+                    lite_system, messages,
+                )
+            except Exception as e:  # noqa: BLE001 — lite 栈构建失败绝不断主链路, 退回全量栈
+                logger.warning(
+                    "[agent_executor] lite tool-round messages build failed, keep full: %s", e
+                )
+                self._lite_tool_round_messages = None
 
         # turn-scoped 上下文注入最后一条 user 消息(#6,必须在 vision 重写之后,
         # 否则会被 enriched_message 覆盖)。上下文在前、用户原话在后(recency 保持
@@ -6292,6 +6377,26 @@ class AgentExecutor:
         self._last_provider_model_name = getattr(provider, "model", None) or "tokenplan(fallback)"
         return provider
 
+    def _messages_for_round(self, messages: List[Dict]) -> List[Dict]:
+        """本轮实际发给 LLM 的消息栈 (在 _resolve_chat_provider 之后调用)。
+
+        三条路径, 互斥、优先级从上到下:
+          1. _prefer_fast_record_model (整轮记录快路由) → _build_fast_record_messages (现状不变);
+          2. **本轮**被工具决策轮快路由 (_tool_round_fast_routed=True) 且已备好 lite 栈 →
+             用 lite 栈 (省 ~14k→<4k prefill; 见 _build_lite_tool_round_messages)。该分支与
+             (1) 互斥: _maybe_fast_route_tool_round 在 _prefer_fast_record_model 时恒返回 None,
+             故 _tool_round_fast_routed 不会与 _prefer_fast_record_model 同真;
+          3. 否则 → 全量栈 (合成/答案轮、非快路由轮、快路由失守时全走这条 = 逐字节现状)。
+
+        _tool_round_fast_routed 由 _resolve_chat_provider→_maybe_fast_route_tool_round 每轮设置,
+        并在主循环轮首重置 → 合成/答案轮 (round_tools=[] → 不触发快路由) 恒走全量栈。
+        """
+        if self._prefer_fast_record_model:
+            return _build_fast_record_messages(messages)
+        if self._tool_round_fast_routed and self._lite_tool_round_messages is not None:
+            return self._lite_tool_round_messages
+        return messages
+
     async def _call_llm(
         self, messages: List[Dict], tools: List[Dict],
     ) -> Any:
@@ -6309,8 +6414,10 @@ class AgentExecutor:
             return await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
 
         provider, pass_tools = self._resolve_chat_provider(tools)
+        # 消息栈选择 (fast-record 压缩 / fast 工具决策轮 lite / 全量) — 见 _messages_for_round。
+        # 必须在 _resolve_chat_provider 之后 (它设置 _tool_round_fast_routed)。
         chat_kwargs = {
-            "messages": messages,
+            "messages": self._messages_for_round(messages),
             "model": None,
             "temperature": 0.3,
             "max_tokens": ANSWER_MAX_TOKENS,
@@ -6319,8 +6426,6 @@ class AgentExecutor:
         }
         if pass_tools:
             chat_kwargs["tools"] = pass_tools
-        if self._prefer_fast_record_model:
-            chat_kwargs["messages"] = _build_fast_record_messages(messages)
         self._last_provider_model_name = (
             getattr(provider, "model", None)
             or getattr(provider, "default_model", None)
@@ -6372,9 +6477,10 @@ class AgentExecutor:
             return
 
         provider, pass_tools = self._resolve_chat_provider(tools)
+        # 消息栈选择 (fast-record 压缩 / fast 工具决策轮 lite / 全量) — 见 _messages_for_round。
+        # 必须在 _resolve_chat_provider 之后 (它设置 _tool_round_fast_routed)。
         stream_kwargs: Dict[str, Any] = {
-            "messages": _build_fast_record_messages(messages)
-            if self._prefer_fast_record_model else messages,
+            "messages": self._messages_for_round(messages),
             "model": None,
             "temperature": 0.3,
             # fast-routed 简单回合把答案 token 收紧到 2000 (长尾解码是延迟一部分),
