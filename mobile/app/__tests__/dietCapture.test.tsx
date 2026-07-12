@@ -978,6 +978,7 @@ describe('DietScreen capture deeplink', () => {
     expect(getByText('鸡胸肉')).toBeTruthy();
     expect(getByText('200g · 330 kcal')).toBeTruthy();
     expect(getByText('表值 × 估算份量')).toBeTruthy();
+    expect(getByText('视觉估份 74%')).toBeTruthy();
     expect(getByText('识别较稳')).toBeTruthy();
     expect(getByText('杂粮饭')).toBeTruthy();
     expect(getByText('1碗 · 230 kcal')).toBeTruthy();

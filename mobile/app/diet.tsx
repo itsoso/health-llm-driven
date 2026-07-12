@@ -1704,6 +1704,20 @@ function RecognizedFoodRow({ food, index, onRevise }: { food: FoodItem; index: n
       : isEstimatedPortion
         ? '份量为估算'
         : null;
+  const portionBasisLabel = food.portion_basis === 'vision_estimate'
+    ? '视觉估份'
+    : food.portion_basis === 'measured'
+      ? '称量份量'
+      : food.portion_basis === 'label'
+        ? '标签份量'
+        : food.portion_basis === 'unknown'
+          ? '份量来源待核对'
+          : null;
+  const portionEvidence = portionBasisLabel
+    ? portionConfidence !== null
+      ? `${portionBasisLabel} ${portionConfidence}%`
+      : portionBasisLabel
+    : null;
   const basisIsFullyTrusted = isTableCalibrated && hasTrustedPortion;
   const portion = food.quantity?.trim() || '份量待确认';
   const calories = typeof food.calories === 'number' && Number.isFinite(food.calories)
@@ -1736,6 +1750,12 @@ function RecognizedFoodRow({ food, index, onRevise }: { food: FoodItem; index: n
       </View>
       <View style={styles.recognizedFoodSignals}>
         {identitySignal ? <Text style={txt.recognizedConfidence}>{identitySignal}</Text> : null}
+        {portionEvidence ? (
+          <View style={styles.portionEvidenceRow}>
+            <Ionicons name="resize-outline" size={13} color={C.ink3} />
+            <Text style={txt.portionEvidenceText}>{portionEvidence}</Text>
+          </View>
+        ) : null}
         {portionSignal ? (
           <View style={styles.verifyPortionRow}>
             <Ionicons name="alert-circle-outline" size={13} color={revaSemantic.caution.fg} />
@@ -1948,7 +1968,7 @@ const styles = StyleSheet.create({
   recognizedFoodRowDivided: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line },
   recognizedFoodMain: { flexDirection: 'row', alignItems: 'flex-start', gap: revaSpacing.s2 },
   recognizedFoodSignals: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 6,
   },
   quickReviewSummary: {
     alignSelf: 'flex-start',
@@ -1970,6 +1990,7 @@ const styles = StyleSheet.create({
   },
   recognitionBasisTable: { backgroundColor: C.green50, borderColor: C.green100 },
   recognitionBasisEstimate: { backgroundColor: revaSemantic.caution.bg, borderColor: revaSemantic.caution.line },
+  portionEvidenceRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   verifyPortionRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   recognitionTimingRow: {
     alignSelf: 'flex-start',
@@ -2071,6 +2092,7 @@ const txt = {
   recognizedFoodMeta: { fontFamily: revaFonts.mono, fontSize: 11, color: C.ink3, marginTop: 3 } as TextStyle,
   recognitionBasisText: { fontFamily: revaFonts.sans, fontSize: 10, fontWeight: '800' } as TextStyle,
   recognizedConfidence: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3 } as TextStyle,
+  portionEvidenceText: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3, fontWeight: '700' } as TextStyle,
   verifyPortionText: { fontFamily: revaFonts.sans, fontSize: 10, color: revaSemantic.caution.fg, fontWeight: '700' } as TextStyle,
   recognitionTimingText: { fontFamily: revaFonts.sans, fontSize: 11, color: C.green700, fontWeight: '900' } as TextStyle,
   recognitionTimingMuted: { fontFamily: revaFonts.sans, fontSize: 10.5, color: C.ink3, fontWeight: '700' } as TextStyle,
