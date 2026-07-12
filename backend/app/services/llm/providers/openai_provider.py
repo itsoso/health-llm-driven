@@ -64,6 +64,24 @@ def _apply_thinking_controls(kwargs: Dict[str, Any]) -> Dict[str, Any]:
     return kwargs
 
 
+def _extract_reasoning_delta(delta: Any) -> Optional[str]:
+    """从流式 delta 取 reasoning_content(DashScope/qwen 思考流增量)。
+
+    OpenAI SDK 的 ChoiceDelta 不认识这个字段,会落到直接属性或 model_extra 上
+    (探针 scripts/probe_qwen_thinking_budget.py 实证两种形态都出现过)。非 qwen /
+    思考关时永远为 None → 调用方零行为变更。仅返回增量文本,绝不并入答案 content。
+    """
+    r = getattr(delta, "reasoning_content", None)
+    if r:
+        return r
+    extra = getattr(delta, "model_extra", None)
+    if isinstance(extra, dict):
+        r = extra.get("reasoning_content")
+        if r:
+            return r
+    return None
+
+
 class OpenAIProvider(LLMProvider):
     """
     OpenAI 兼容 Provider
@@ -281,6 +299,13 @@ class OpenAIProvider(LLMProvider):
             delta = choice.delta
             if choice.finish_reason:
                 finish_reason = choice.finish_reason
+
+            # 思考流(reasoning_content): qwen3.7-max 首个可见 token 前先吐 reasoning
+            # 增量(实证首个 reasoning delta @ ~1.7s vs 首个 content @ ~35.8s)。作为
+            # **独立**事件产出,供 executor 把死气变成活的思考进度。绝不并入答案 content。
+            reasoning = _extract_reasoning_delta(delta)
+            if reasoning:
+                yield {"type": "reasoning", "text": reasoning}
 
             content = getattr(delta, "content", None)
             if content:

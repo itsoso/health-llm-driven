@@ -816,6 +816,33 @@ def _streaming_leak_forming(text: str) -> bool:
     return len(hits) >= _TOOL_RESULT_MIN_FIELD_HITS
 
 
+# ──── 思考流可视化 (qwen reasoning_content → thinking status 事件) ────
+# 合成/答案轮首个可见 token 之前有 ~20-34s 纯 reasoning 死气 (探针实证:
+# scripts/probe_qwen_thinking_budget.py —— 首个 reasoning delta @ ~1.7s,
+# 首个可见 content @ ~35.8s)。把 reasoning_content 增量节流成既有 thinking status
+# 事件, 让那段死气变成活的思考进度。reasoning 文本绝不进 full_reply/messages/持久化答案。
+_REASONING_STATUS_MIN_INTERVAL_S = 1.5   # 两次思考 status 的最小时间间隔
+_REASONING_STATUS_MIN_CHARS = 120        # 两次之间最少新增 reasoning 字符数 (whichever later)
+_REASONING_SNIPPET_MAX_CHARS = 60        # detail 片段字符上限, 超出取尾部 + 前缀省略号
+# markdown 记号 / 列表符 / 方括号 —— 清成平实一行进度文案。
+_REASONING_SNIPPET_STRIP_RE = re.compile(r"[#*`>_~\-\[\]]+")
+
+
+def _clean_reasoning_snippet(text: str) -> str:
+    """把累积的 reasoning_content 清成一个短的 live 思考片段 (thinking status 的 detail)。
+
+    strip markdown 记号/换行, 折叠空白, 取**尾部** ~60 字 (模型当前思考位置);
+    截断则前缀省略号。纯 UI 死气填充的一次性快照 —— 绝不进入答案或持久化。
+    """
+    s = _REASONING_SNIPPET_STRIP_RE.sub(" ", text or "")
+    s = re.sub(r"\s+", " ", s).strip()
+    if not s:
+        return ""
+    if len(s) > _REASONING_SNIPPET_MAX_CHARS:
+        return "…" + s[-_REASONING_SNIPPET_MAX_CHARS:]
+    return s
+
+
 def _natural_language_from_tool_results(messages: List[Dict[str, Any]]) -> str:
     """QUERY 泄漏兜底:把工具结果转成一句中性人话,绝不裸露 JSON。
 
@@ -4152,6 +4179,11 @@ class AgentExecutor:
                     )
                 _round_start = time.time()
                 streamed_text = ""
+                # 思考流可视化 (qwen reasoning_content): 本轮首个可见 token 之前, 把
+                # reasoning 增量节流成 thinking status 事件填死气。纯 UI, 绝不进答案/持久化。
+                reasoning_buf = ""
+                reasoning_last_emit_at = _round_start
+                reasoning_last_emit_len = 0
                 streamed_tool_calls: List[Dict[str, Any]] = []
                 stream_finish_reason: Optional[str] = None
                 streamed_to_client = False
@@ -4213,6 +4245,37 @@ class AgentExecutor:
                                 first_token_at = time.time()
                             # 真流式:逐 delta 即时下发,不再切 20-char 假块。
                             yield {"event": "token", "data": {"content": delta}}
+                    elif etype == "reasoning":
+                        # 思考流可视化: 把 qwen 的 reasoning_content 增量节流成既有
+                        # thinking status 事件, 填掉首个可见 token 前的死气。
+                        # reasoning 文本绝不进 streamed_text/full_reply/messages/持久化答案 ——
+                        # 只塞进 status 事件的 detail (客户端已有的 live 思考通道)。
+                        # 门控 (全部满足才发一条):
+                        #   1. 本轮尚未产出任何可见 content —— 答案流一开始就交棒停发;
+                        #   2. 非 fast 工具决策轮 —— fast 模型内部文本不外 surface (安全不变量);
+                        #   3. 距上次发 ≥ 间隔 且 新增 reasoning ≥ 字符阈值 (whichever later);
+                        #   4. 累积 reasoning 未形成工具结果 JSON 泄漏 (复用 _streaming_leak_forming);
+                        #   5. 清洗后片段非空。
+                        if streamed_text or self._tool_round_fast_routed:
+                            continue
+                        rdelta = evt.get("text") or ""
+                        if not rdelta:
+                            continue
+                        reasoning_buf += rdelta
+                        _now = time.time()
+                        if (
+                            (_now - reasoning_last_emit_at) >= _REASONING_STATUS_MIN_INTERVAL_S
+                            and (len(reasoning_buf) - reasoning_last_emit_len)
+                            >= _REASONING_STATUS_MIN_CHARS
+                            and not _streaming_leak_forming(reasoning_buf)
+                        ):
+                            _snippet = _clean_reasoning_snippet(reasoning_buf)
+                            if _snippet:
+                                reasoning_last_emit_at = _now
+                                reasoning_last_emit_len = len(reasoning_buf)
+                                yield self._status_event(
+                                    "thinking", detail=_snippet, round=round_idx + 1
+                                )
                     elif etype == "tool_calls":
                         streamed_tool_calls = evt.get("tool_calls") or []
                     elif etype == "finish":
