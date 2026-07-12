@@ -906,6 +906,135 @@ describe('DietScreen capture deeplink', () => {
     });
   });
 
+  it('returns to chat with diet context after confirming a chat-originated library meal photo draft', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'library';
+    mockRouteParams.return_to = 'chat';
+    (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ uri: 'file:///chat-library-meal.jpg', width: 1568, height: 1176 }],
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      foods: [{ name: '三文鱼能量碗', quantity: null }],
+      meal_description: '三文鱼能量碗',
+      total_calories: 620,
+      total_protein: 34,
+      total_carbs: 58,
+      total_fat: 22,
+      photo_draft_token: 'library-draft-91',
+      error: null,
+    });
+    dietService.createDietRecord.mockResolvedValueOnce({ id: 91 });
+
+    const { getByText } = render(<DietScreen />);
+    await waitFor(() => {
+      expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalled();
+      expect(getByText('待确认饮食')).toBeTruthy();
+    });
+
+    fireEvent.press(getByText('确认记录'));
+
+    await waitFor(() => {
+      expect(dietService.createDietRecord).toHaveBeenCalledWith(expect.objectContaining({
+        photo_draft_token: 'library-draft-91',
+        idempotency_key: 'diet-photo:library-draft-91',
+        food_items: '三文鱼能量碗',
+      }));
+      expect(mockPushChatWithContext).toHaveBeenCalledWith(
+        expect.objectContaining({ push: expect.any(Function) }),
+        expect.objectContaining({
+          prompt: expect.stringContaining('刚记录了一餐'),
+          badge: '刚记录饮食',
+          context: expect.objectContaining({
+            from: 'diet/quick_capture',
+            created_id: 91,
+            record: expect.objectContaining({
+              food_items: '三文鱼能量碗',
+              calories: 620,
+              protein: 34,
+            }),
+          }),
+        }),
+      );
+    });
+  });
+
+  it('returns to chat with diet context after confirming a chat-originated text meal draft', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'text';
+    mockRouteParams.return_to = 'chat';
+    const promptSpy = jest.spyOn(Alert, 'prompt').mockImplementationOnce((_title, _message, callback) => {
+      if (typeof callback === 'function') callback('鸡胸肉 200g + 糙米饭一碗');
+    });
+    dietService.createDietRecord.mockResolvedValueOnce({ id: 92 });
+
+    const { getByText } = render(<DietScreen />);
+    await waitFor(() => {
+      expect(promptSpy).toHaveBeenCalled();
+      expect(getByText('待确认饮食')).toBeTruthy();
+    });
+
+    fireEvent.press(getByText('确认记录'));
+
+    await waitFor(() => {
+      expect(dietService.createDietRecord).toHaveBeenCalledWith(expect.objectContaining({
+        food_items: '鸡胸肉 200g + 糙米饭一碗',
+      }));
+      expect(mockPushChatWithContext).toHaveBeenCalledWith(
+        expect.objectContaining({ push: expect.any(Function) }),
+        expect.objectContaining({
+          prompt: expect.stringContaining('刚记录了一餐'),
+          context: expect.objectContaining({
+            from: 'diet/quick_capture',
+            created_id: 92,
+            record: expect.objectContaining({
+              food_items: '鸡胸肉 200g + 糙米饭一碗',
+            }),
+          }),
+        }),
+      );
+    });
+    promptSpy.mockRestore();
+  });
+
+  it('returns to chat with diet context after confirming a chat-originated voice meal draft', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'voice';
+    mockRouteParams.return_to = 'chat';
+    const promptSpy = jest.spyOn(Alert, 'prompt').mockImplementationOnce((_title, _message, callback) => {
+      if (typeof callback === 'function') callback('晚饭吃了牛肉面');
+    });
+    dietService.createDietRecord.mockResolvedValueOnce({ id: 93 });
+
+    const { getByText } = render(<DietScreen />);
+    await waitFor(() => {
+      expect(promptSpy).toHaveBeenCalled();
+      expect(getByText('待确认饮食')).toBeTruthy();
+    });
+
+    fireEvent.press(getByText('确认记录'));
+
+    await waitFor(() => {
+      expect(dietService.createDietRecord).toHaveBeenCalledWith(expect.objectContaining({
+        food_items: '晚饭吃了牛肉面',
+      }));
+      expect(mockPushChatWithContext).toHaveBeenCalledWith(
+        expect.objectContaining({ push: expect.any(Function) }),
+        expect.objectContaining({
+          context: expect.objectContaining({
+            from: 'diet/quick_capture',
+            created_id: 93,
+            record: expect.objectContaining({
+              food_items: '晚饭吃了牛肉面',
+            }),
+          }),
+        }),
+      );
+    });
+    promptSpy.mockRestore();
+  });
+
   it('keeps the photo draft open when confirmation does not return a persisted record id', async () => {
     const dietService = require('../../services/diet');
     mockRouteParams.capture = 'photo';

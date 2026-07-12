@@ -82,6 +82,7 @@
 - [x] T5.3 Agent 草稿、写入连续性和确认卡回执的 iOS SecureStore 兼容（OTA）
 - [x] T5.4 视觉模型升级、非思考结构化识别与延迟基准（backend deploy）
 - [x] T5.5 单图相册降级、照片清洗信任边界与空闲态 Capture FAB（OTA）
+- [x] T5.6 Agent Native Mobile capture deeplink：相机、相册、文字、语音确认后回小巴上下文（OTA）
 - [ ] T6 模拟器视觉、真机微信/小红书、生产数据闭环验收
 - Agent Native 验收约束：每个新增 Mobile 饮食入口都必须证明三件事：Agent 可引用 pending draft 或 confirmed DietRecord；确认成功必须有 `diet_record_id` 回执；用户能在小巴对话里继续追问、修正或查看全天影响。
 - 并发检查：2026-07-11 `origin/main` 与当前干净集成 worktree 一致；原始用户工作区不纳入暂存。
@@ -99,6 +100,7 @@
 - T5.3：iOS 原生模拟器暴露对话草稿、最新已验证写入回执和确认卡防重复回执使用了带冒号的非法 SecureStore 键，导致草稿恢复、跨轮饮食上下文和卡片回执静默降级。三类敏感值现使用仅含字母、数字、点、下划线和连字符的用户隔离键；AsyncStorage 元数据/索引键保持兼容，旧版 completion tombstone 继续可识别，且不再尝试删除从未能写入 Keychain 的非法旧键。
 - T5.4：生产视觉模型仍停留在官方已列为旧版的 `qwen-vl-max`。公开餐食样本对比确认，直连 DashScope 的 `qwen3-vl-flash` 在非思考模式下保持合法结构化结果，并避免把外观相似的裹酱鸡肉高置信猜成宫保鸡丁；食物识别服务现只对 Qwen3 视觉模型显式发送 `enable_thinking=false`，旧 provider 保持兼容。
 - T5.5：饮食 FAB 新增单图相册入口，相机与相册只在取图阶段分叉，后续共用 1568px/JPEG q0.7 预处理、识别、服务端草稿、SecureStore 恢复与人工确认。照片候选已通过 Backend 结构化食物清洗，Mobile 不再用把“片”视作药片的通用文字启发式二次拒绝“橙子片”等食物；文字、语音和外部草稿仍保留本地防护。Capture FAB 只在 `idle` 显示，选图、识别、待确认、修正和保存时隐藏，避免遮挡确认卡和并发取图。
+- T5.6：`/diet?capture=photo|library|text|voice&return_to=chat` 全部进入同一 quick draft 状态机；确认成功后统一把 `diet/quick_capture`、`diet_record_id` 和本餐结构化摘要推回小巴对话上下文。这样 Agent 对话可以继续回答“全天热量如何、下一餐怎么调、刚才那餐要不要修正”，Mobile 不再只有拍照入口能完成 Agent Native 闭环。已有草稿恢复或当前页面已有 quick draft 时不会再启动第二个 capture，避免从后台/重载回来重复弹相机、相册或输入框。
 
 ## G3 · 测试闸
 
@@ -121,6 +123,7 @@
 - T5.4 Linux 权威闸门：GitHub Actions run `29172663161` SUCCESS；backend quality、type drift、Frontend、Mobile、macOS、18 个后端分片与最终 Backend tests enforcement 全部通过。`agent-i-z` 与 `t-f-v` 首进程达到 600 秒截止线后由 CI 脚本终止，干净进程重试后分别在 11m27s / 11m40s 完成，未隐藏断言失败。
 - T5.5 先以 RED 锁定相册入口、单图识别和取消恢复，再以现场公开餐食图复现“橙子片”被误判成药片并增加 RED；模拟器首次实测发现预授权会主动弹出全图库权限，依据 Expo ImagePicker 当前纯图片契约删除预请求，并以 2 个 RED 锁定成功/取消路径都不请求全图库。最终相册/内容边界/FAB focused regression `3 suites / 40 tests`、Mobile 全量 `234 suites / 1636 tests` 与 TypeScript 通过。全量 Jest 断言完成后仍报告仓库既有 open handle，使用 `--forceExit` 取得明确 0 退出码；不把该警告表述为已修复。iPhone 17 Pro 模拟器完成相册 -> 生产识别 -> 3 项待确认草稿，进程重载后草稿恢复且 Capture FAB 不再遮挡卡片。
 - T5.5 Linux 权威闸门：GitHub Actions run `29174866840` 最终 SUCCESS；Mobile TypeScript/Jest、Frontend、macOS、type drift、backend quality、18 个后端分片与 Backend tests enforcement 全部通过。首轮仅既有 `test_exercise_dedup` 在高负载 runner 上跨过生产代码的 1 秒去重窗口而失败（测试文案仍写 5 秒），失败分片干净重跑通过；本轮没有后端代码改动。
+- T5.6 RED/GREEN：先用 RED 证明 `capture=library&return_to=chat`、`capture=text&return_to=chat` 和 `capture=voice&return_to=chat` 均不会触发对应入口；再补最小 switch 分发。最终 `mobile/app/__tests__/dietCapture.test.tsx` 完整回归 `30 passed`，覆盖四种入口确认后均通过 `pushChatWithContext` 带 `diet/quick_capture` 上下文回到小巴。聊天入口 focused regression `4 passed`；`npx tsc --noEmit` 通过；Mobile lint `0 errors / 97 existing warnings`；Mobile 全量 Jest `234 suites / 1639 tests` 通过，仍保留仓库既有 open handle warning，不表述为已修复。
 - T5.2 首次 CI run `29164922239` 中 type drift 在补齐 Frontend 生成类型后通过，但 Linux `a-b` 分片连续两次远超历史绿灯的 4 分 23 秒，并在 `test_agent_health_manage.py` 与 `test_agent_intervention_cycle_tool.py` 边界失去输出；该边界组合本机 `30/30` 通过，`c-d` 重跑也在 3 分 36 秒通过。判定为既有进程级顺序污染而非饮食断言回归，将 86 个 `a-b` 测试文件拆为非 Agent、`agent_[a-h]`、`agent_[i-z]` 三个互斥进程；文件覆盖校验为 `86 -> 86`、差集 0。
 - T5.2 CI run `29166225719` 验证上述三个新分片分别在 3 分 2 秒、2 分 15 秒和 1 分 24 秒通过；同轮旧 `t[f-z]+u` 分片在 69% 处进入 `test_twin_builder.py` 后冻结，并被 20 分钟上限终止，其他 16 个作业均通过。本机同命令 `392/392` 在 31.23 秒通过；据逐用例日志将其拆为 `t[f-v]`、`t[w-z]`、`u` 三个干净进程，原 24 个文件覆盖校验仍为 `24 -> 24`、差集 0。
 - T5.2 CI run `29166933157` 中 `t[f-v]`、`t[w-z]`、`u` 已分别在 1 分 44 秒、1 分 25 秒和 1 分 28 秒通过；唯一剩余的旧 `s` 大分片进入 `test_schedule_into_agenda.py` 后失去输出，其他 18 个作业均通过。本机同一 643 项命令也在该模块首个用例后停住，但该模块单跑 `8/8`、与前一模块配对 `26/26`、`s[c-k]` 分组 `55/55` 均通过，确认是更长前序造成的进程状态污染；将 58 个 `s` 文件拆为 `s[a-b]`、`s[c-k]`、`s[l-z]`，覆盖校验为 `58 -> 58`、差集 0。

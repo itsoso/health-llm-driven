@@ -866,11 +866,32 @@ export default function DietScreen() {
   }, [recognizeDietPhoto]);
 
   useEffect(() => {
-    if (!photoDraftRestoreReady || quickDraft?.record.photo_draft_token) return;
-    if (firstParam(params.capture) !== 'photo' || captureConsumedRef.current || firstParam(params.draft) === 'diet') return;
+    if (!photoDraftRestoreReady || quickDraft) return;
+    if (captureConsumedRef.current || firstParam(params.draft) === 'diet') return;
+    const captureMode = firstParam(params.capture);
+    if (!captureMode) return;
     captureConsumedRef.current = true;
-    handlePhoto();
-  }, [handlePhoto, params.capture, params.draft, photoDraftRestoreReady, quickDraft?.record.photo_draft_token]);
+    if (captureMode === 'photo') {
+      handlePhoto();
+    } else if (captureMode === 'library') {
+      handlePhotoLibrary();
+    } else if (captureMode === 'text') {
+      handleText();
+    } else if (captureMode === 'voice') {
+      handleVoiceText();
+    } else {
+      captureConsumedRef.current = false;
+    }
+  }, [
+    handlePhoto,
+    handlePhotoLibrary,
+    handleText,
+    handleVoiceText,
+    params.capture,
+    params.draft,
+    photoDraftRestoreReady,
+    quickDraft,
+  ]);
 
   useEffect(() => {
     if (firstParam(params.draft) !== 'diet' || draftConsumedRef.current) return;
