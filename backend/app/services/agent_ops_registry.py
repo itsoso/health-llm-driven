@@ -269,6 +269,9 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
         # 恒确认违背时间线账本低摩擦初衷;undo 通路(list/delete)同批补齐
         # (spec §3.3:auto 写入必须有 undo)。update 不开——occurred_at 由
         # 确定性代码折算,改动走删除后重记。
+        # 写入双路径:① agent 显式 health_record(event) ② 系统转后异步自动抽取
+        # (services/life_event_extractor.py + tasks/life_event_extraction.py,
+        #  派生写不算 agent 自由写;canonical record_type = "event")。
         "create": {
             "tool": "health_record", "record_type": "event", "confirm": "auto",
             "via": "health_record(event) → POST /episodes/life-event",
@@ -409,7 +412,6 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
         "update": {"opt_out": "聚合分析视图,只读"},
         "delete": {"opt_out": "聚合分析视图,只读"},
     },
-
     # ── 专属工具对象(通用三件套之外,如实登记)──────────────────────────
     "intervention_cycle": {
         "create": {

@@ -54,6 +54,7 @@ celery_app = Celery(
         "app.tasks.write_autonomy_worker",
         "app.tasks.twin_snapshot",
         "app.tasks.contextual_heartbeat",
+        "app.tasks.life_event_extraction",
     ]
 )
 

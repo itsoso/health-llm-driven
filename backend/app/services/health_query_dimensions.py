@@ -69,6 +69,12 @@ HEALTH_QUERY_DIM_ALIASES: Dict[str, str] = {
     "热量": "diet",
     "卡路里": "diet",
     "全天饮食": "diet",
+    # 生活事件时间线别名 → 既有 "events" 维度 (读 /episodes/me/life-events)。
+    "trip": "events",
+    "itinerary": "events",
+    "轨迹": "events",
+    "时间轴": "events",
+    "节点": "events",
 }
 
 HEALTH_QUERY_DIM_KEYS = ("dimension", "type", "query_type", "category", "kind")

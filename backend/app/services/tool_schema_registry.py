@@ -63,6 +63,14 @@ dimension 选择指南 (按场景):
   genetic_cognitive / genetic_personality / genetic_comprehensive — 整合性基因解读
   medication       — 用药清单 (非单次服药, 是长期用药列表)
 
+【生活事件时间线 / 行程 / 各节点几点】
+  events           — 用户日常生活事件的**真实时间戳**时间线 (出发/到达/购买/收货/症状起点/
+                     日常), 落 HealthEpisode 情景账本, 带诚实发生时间与精度 (精确/约/日期级).
+                     用户问"总结我下午从家到现在各节点几点"/"今天几点出的门"/"我的行程"/
+                     "刚才那些事分别几点" 走这里 —— 别去聊天记录里估算时间.
+                     数据来自 agent 记录 + 系统转后自动抽取, occurred_at 为后端确定性折算.
+                     worked example: 用户问"整理今天下午的时间线" → health_query(dimension='events', days=1)
+
 days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 问"这月" → days=30.
 """,
             "parameters": {
@@ -77,7 +85,7 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
                                  "body_battery", "stress",
                                  "medical_exam", "genetic",
                                  "genetic_cognitive", "genetic_personality", "genetic_comprehensive",
-                                 "medication"],
+                                 "medication", "events"],
                         "description": "数据维度. 见 function description 里的选择指南",
                     },
                     "days": {

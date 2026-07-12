@@ -247,6 +247,36 @@ def _check_recent_dup(user_id: int, message: str) -> bool:
     return False
 
 
+def _dispatch_life_event_extraction(db, user_id, conversation_id, assistant_message_id) -> None:
+    """转后异步接缝: 回合完成后入队, 从本回合用户消息抽生活事件写时间线。
+
+    镜像 memory 抽取先例 (系统侧派生写, 不经 LLM 工具自由写)。以助手消息 id 锚定
+    紧邻的 user 消息 (id 更小)。enqueue 失败旁路, 绝不阻断用户对话 (mirror live_run)。
+    """
+    if not conversation_id or not assistant_message_id:
+        return
+    try:
+        from app.models.agent_conversation import AgentMessage
+
+        row = (
+            db.query(AgentMessage.id)
+            .filter(
+                AgentMessage.conversation_id == conversation_id,
+                AgentMessage.role == "user",
+                AgentMessage.id < assistant_message_id,
+            )
+            .order_by(AgentMessage.id.desc())
+            .first()
+        )
+        if row is None:
+            return
+        from app.tasks.life_event_extraction import extract_life_events
+
+        extract_life_events.delay(int(user_id), int(row[0]))
+    except Exception as e:  # noqa: BLE001 — 入队失败不影响主链路
+        logger.warning(f"[life_event] enqueue extraction failed (bypass): {e}")
+
+
 # ---------------------------------------------------------------------------
 # GenUI 短路 (reva-ui chart components) — 与 orchestrator 同一确定性 builder。
 #
@@ -818,6 +848,13 @@ async def agent_stream(
                             )
                         except Exception as e:  # noqa: BLE001
                             logger.debug("[agent.stream] attach thinking steps skipped: %s", e)
+                        # 转后异步: 从本回合用户消息抽生活事件时间线 (旁路, 客户端断开也已跑到这)。
+                        _dispatch_life_event_extraction(
+                            bg_db,
+                            user_id,
+                            event.get("data", {}).get("conversation_id"),
+                            event.get("data", {}).get("message_id"),
+                        )
                     await chunk_queue.put(f"data: {json.dumps(event, ensure_ascii=False)}\n\n")
             except Exception as e:
                 logger.error(f"Agent bg 流式异常: {e}", exc_info=True)
@@ -1017,6 +1054,14 @@ async def agent_send(
             except Exception:  # noqa: BLE001 — 可观测性附加项,失败不影响回合
                 usage_summary = None
             meta = build_send_meta(done_data, usage_summary)
+
+            # 转后异步: 从本回合用户消息抽生活事件时间线 (旁路, 失败不影响返回)。
+            _dispatch_life_event_extraction(
+                db,
+                current_user.id,
+                done_data.get("conversation_id"),
+                done_data.get("message_id"),
+            )
 
             return {
                 "reply": "".join(reply_parts),

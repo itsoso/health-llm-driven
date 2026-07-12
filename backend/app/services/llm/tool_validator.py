@@ -375,7 +375,7 @@ _QUERY_DIMENSIONS = {
     "supplements", "water", "diet", "exercise", "workout", "manual_exercise",
     "body_battery", "stress",
     "medical_exam", "genetic", "genetic_cognitive", "genetic_personality",
-    "genetic_comprehensive", "medication",
+    "genetic_comprehensive", "medication", "events",
 }
 _ANALYSIS_TYPES = {
     "comprehensive", "sleep_insight", "heart_rate_insight",
