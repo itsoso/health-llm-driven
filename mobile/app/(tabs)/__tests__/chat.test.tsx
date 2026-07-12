@@ -1003,6 +1003,7 @@ describe('ChatScreen', () => {
     });
     expect(nextMessages[nextMessages.length - 1].content).toContain('已保存午餐 · 620 kcal');
     expect(nextMessages[nextMessages.length - 1].content).toContain('下条消息会基于这条记录和今日饮食记录回答');
+    expect(nextMessages[nextMessages.length - 1].content).toContain('去饮食页生成微信/小红书分享图');
   });
 
   it('shows saved diet context source after a diet card action completes', async () => {

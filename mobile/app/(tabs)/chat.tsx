@@ -1249,6 +1249,7 @@ function buildCardActionStatusMessage(event: {
   const details = [
     foodItems,
     '可在饮食页修正；下条消息会基于这条记录和今日饮食记录回答。',
+    '想晒这一餐，可以去饮食页生成微信/小红书分享图。',
   ].filter(Boolean);
   return {
     id: `card-action-status-${Date.now()}`,
