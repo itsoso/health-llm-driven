@@ -1419,6 +1419,10 @@ function QuickDietDraftCard({
           {nutritionStatusText}
         </Text>
       </View>
+      <View style={styles.quickSharePromiseRow}>
+        <Ionicons name="images-outline" size={14} color={C.green600} />
+        <Text style={txt.quickSharePromiseText}>确认后自动生成微信 / 小红书分享图</Text>
+      </View>
       <Text style={txt.quickHint}>{reviewHint}</Text>
 
       <View style={styles.quickActions}>
@@ -1695,6 +1699,19 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: revaSpacing.s3,
   },
+  quickSharePromiseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    marginTop: revaSpacing.s2,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+  },
   quickActions: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2, marginTop: revaSpacing.s4 },
   quickConfirmBtn: {
     flex: 1.5,
@@ -1761,6 +1778,7 @@ const txt = {
   recognizedConfidence: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3 } as TextStyle,
   verifyPortionText: { fontFamily: revaFonts.sans, fontSize: 10, color: revaSemantic.caution.fg, fontWeight: '700' } as TextStyle,
   quickTrustText: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, fontWeight: '800' } as TextStyle,
+  quickSharePromiseText: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, color: C.green700, fontWeight: '800' } as TextStyle,
   quickHint: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, color: C.ink3, marginTop: revaSpacing.s3 } as TextStyle,
   quickConfirmText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.greenOn, fontWeight: '800' } as TextStyle,
   quickSecondaryText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.green600, fontWeight: '800' } as TextStyle,

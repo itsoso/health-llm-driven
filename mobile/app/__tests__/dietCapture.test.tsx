@@ -333,6 +333,7 @@ describe('DietScreen capture deeplink', () => {
       expect(getByText('待确认饮食')).toBeTruthy();
     });
     expect(getByText('煎牛肉能量碗 + 姜黄鲜柠维C茶')).toBeTruthy();
+    expect(getByText('确认后自动生成微信 / 小红书分享图')).toBeTruthy();
     expect(getByText('770 kcal · 蛋白 30g')).toBeTruthy();
     expect(mockMealForm).not.toHaveBeenCalled();
     expect(dietService.createDietRecord).not.toHaveBeenCalled();
