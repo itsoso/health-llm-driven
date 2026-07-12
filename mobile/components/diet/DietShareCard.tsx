@@ -198,6 +198,14 @@ function buildDietShareConfidenceUi(record: DietRecord): { percent: number; deta
   };
 }
 
+function buildDietShareConfirmBadge(record: DietRecord): { primary: string; secondary: string; tone: 'confirmed' | 'caution' } {
+  const percent = normalizedAiConfidence(record.ai_confidence);
+  if (percent != null && percent < 60) {
+    return { primary: '待核对', secondary: '谨慎分享', tone: 'caution' };
+  }
+  return { primary: '已确认', secondary: '可分享', tone: 'confirmed' };
+}
+
 function buildDietShareFooterSecondary(record: DietRecord): string {
   if (!hasAnyNutritionMetric(record)) return '营养回填后用于复盘';
   if (!isNutritionComplete(record)) return '部分营养回填后用于复盘';
@@ -441,6 +449,7 @@ export default function DietShareCard({
   const balance = buildDietShareBalance(record);
   const macroSegments = buildDietShareMacroSegments(record);
   const confidence = buildDietShareConfidenceUi(record);
+  const confirmBadge = buildDietShareConfirmBadge(record);
 
   return (
     <View style={styles.card}>
@@ -449,9 +458,11 @@ export default function DietShareCard({
           <Ionicons name="sparkles" size={15} color={C.greenBright} />
         </View>
         <Text style={styles.brand}>小巴 / 今日饮食</Text>
-        <View style={styles.confirmBadge}>
-          <Text style={styles.confirmBadgePrimary}>已确认</Text>
-          <Text style={styles.confirmBadgeSecondary}>可分享</Text>
+        <View style={[styles.confirmBadge, confirmBadge.tone === 'caution' && styles.confirmBadgeCaution]}>
+          <Text style={[styles.confirmBadgePrimary, confirmBadge.tone === 'caution' && styles.confirmBadgePrimaryCaution]}>
+            {confirmBadge.primary}
+          </Text>
+          <Text style={styles.confirmBadgeSecondary}>{confirmBadge.secondary}</Text>
         </View>
         <Text style={styles.date}>{dateLabel}</Text>
       </View>
@@ -1069,6 +1080,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   confirmBadgePrimary: { fontFamily: revaFonts.sans, fontSize: 8, color: C.green600, fontWeight: '900' },
+  confirmBadgeCaution: {
+    backgroundColor: revaSemantic.caution.bg,
+    borderColor: revaSemantic.caution.line,
+  },
+  confirmBadgePrimaryCaution: { color: revaSemantic.caution.fg },
   confirmBadgeSecondary: { fontFamily: revaFonts.sans, fontSize: 7, color: C.focusInk2, fontWeight: '800', marginTop: -1 },
   date: { fontFamily: revaFonts.mono, fontSize: 10, color: C.focusInk2 },
   mealImage: { width: '100%', height: 136, backgroundColor: C.paper2 },

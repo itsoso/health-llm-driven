@@ -240,7 +240,7 @@ describe('DietShareCard', () => {
       ai_confidence: 0.42,
       food_items: '机场贵宾厅番茄鸡蛋面、鸭肉、生菜',
     };
-    const { getByText } = render(
+    const { getByText, queryByText } = render(
       <DietShareSheet
         visible
         record={lowConfidenceRecord}
@@ -251,6 +251,10 @@ describe('DietShareCard', () => {
 
     expect(getByText('识别置信度 42%')).toBeTruthy();
     expect(getByText('发布前建议核对食物和份量')).toBeTruthy();
+    expect(getByText('待核对')).toBeTruthy();
+    expect(getByText('谨慎分享')).toBeTruthy();
+    expect(queryByText('已确认')).toBeNull();
+    expect(queryByText('可分享')).toBeNull();
 
     fireEvent.press(getByText('复制小红书文案'));
     await waitFor(() => {
