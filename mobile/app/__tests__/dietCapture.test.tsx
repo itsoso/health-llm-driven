@@ -315,7 +315,7 @@ describe('DietScreen capture deeplink', () => {
     });
     dietService.recognizeFood.mockResolvedValueOnce({
       success: true,
-      foods: [{ name: '煎牛肉能量碗', quantity: null }],
+      foods: [{ name: '煎牛肉能量碗', quantity: '1份' }],
       meal_description: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
       total_calories: 770,
       total_protein: 30,
@@ -817,7 +817,7 @@ describe('DietScreen capture deeplink', () => {
 
     resolveRecognition({
       success: true,
-      foods: [{ name: '煎牛肉能量碗', quantity: null }],
+      foods: [{ name: '煎牛肉能量碗', quantity: '1份' }],
       meal_description: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
       total_calories: 770,
       total_protein: 30,
@@ -973,7 +973,7 @@ describe('DietScreen capture deeplink', () => {
       expect(getByText('识别明细')).toBeTruthy();
     });
     expect(getByText('已带营养估算，确认后计入今日')).toBeTruthy();
-    expect(getByText('2 项需核对')).toBeTruthy();
+    expect(getByText('1 项需核对')).toBeTruthy();
     expect(getByText('重点核对份量')).toBeTruthy();
     expect(getByText('鸡胸肉')).toBeTruthy();
     expect(getByText('200g · 330 kcal')).toBeTruthy();
@@ -984,10 +984,10 @@ describe('DietScreen capture deeplink', () => {
     expect(getByText('视觉估算')).toBeTruthy();
     expect(getByText('识别待核对')).toBeTruthy();
     expect(getAllByText('份量为估算').length).toBeGreaterThan(0);
-    expect(getAllByText('请核对份量').length).toBeGreaterThan(0);
+    expect(getAllByText('请核对份量').length).toBe(1);
     expect(getByText('识别完成 · 2.6s')).toBeTruthy();
     expect(getByText('营养校准 0.4s')).toBeTruthy();
-    expect(getByText('小巴建议先核对：鸡胸肉、杂粮饭的份量；确认后才写入今天饮食。')).toBeTruthy();
+    expect(getByText('小巴建议先核对：杂粮饭的份量；确认后才写入今天饮食。')).toBeTruthy();
     expect(getByText('核对后确认')).toBeTruthy();
     expect(getByText('修正份量')).toBeTruthy();
     fireEvent.press(getByLabelText('核对杂粮饭份量'));
@@ -996,6 +996,46 @@ describe('DietScreen capture deeplink', () => {
         assistiveHint: '优先核对食物份量；热量和三大营养会随份量一起修正。',
       }));
     });
+  });
+
+  it('routes uncertain photo drafts to revision when the primary action is tapped', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ base64: 'photo-base64' }],
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      foods: [
+        {
+          name: '杂粮饭', quantity: '1碗', calories: 230, protein: 5,
+          carbs: 48, fat: 2, fiber: 3, confidence: 0.62,
+          source: 'ai_estimate', nutrition_basis: 'vision_estimate',
+        },
+      ],
+      meal_description: '杂粮饭 1碗',
+      total_calories: 230,
+      total_protein: 5,
+      total_carbs: 48,
+      total_fat: 2,
+      total_fiber: 3,
+      error: null,
+    });
+
+    const { getByLabelText, getByText } = render(<DietScreen />);
+
+    await waitFor(() => {
+      expect(getByText('核对后确认')).toBeTruthy();
+    });
+    fireEvent.press(getByLabelText('核对后确认饮食'));
+
+    await waitFor(() => {
+      expect(mockMealForm).toHaveBeenCalledWith(expect.objectContaining({
+        assistiveHint: '优先核对食物份量；热量和三大营养会随份量一起修正。',
+      }));
+    });
+    expect(dietService.createDietRecord).not.toHaveBeenCalled();
   });
 
   it('turns text entry into a lightweight confirm card without auto-saving', async () => {
@@ -1302,7 +1342,7 @@ describe('DietScreen capture deeplink', () => {
     });
     dietService.recognizeFood.mockResolvedValueOnce({
       success: true,
-      foods: [{ name: '煎牛肉能量碗', quantity: null }],
+      foods: [{ name: '煎牛肉能量碗', quantity: '1份' }],
       meal_description: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
       total_calories: 770,
       total_protein: 30,
@@ -1366,7 +1406,7 @@ describe('DietScreen capture deeplink', () => {
     });
     dietService.recognizeFood.mockResolvedValueOnce({
       success: true,
-      foods: [{ name: '三文鱼能量碗', quantity: null }],
+      foods: [{ name: '三文鱼能量碗', quantity: '1份' }],
       meal_description: '三文鱼能量碗',
       total_calories: 620,
       total_protein: 34,
@@ -1495,7 +1535,7 @@ describe('DietScreen capture deeplink', () => {
     });
     dietService.recognizeFood.mockResolvedValueOnce({
       success: true,
-      foods: [{ name: '牛肉面', quantity: null }],
+      foods: [{ name: '牛肉面', quantity: '1碗' }],
       meal_description: '牛肉面',
       total_calories: 650,
       total_protein: 28,

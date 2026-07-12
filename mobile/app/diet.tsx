@@ -166,7 +166,6 @@ function formatTimingSeconds(ms: number | null | undefined): string | null {
 
 function foodNeedsPortionReview(food: FoodItem): boolean {
   const hasQuantity = Boolean(food.quantity?.trim());
-  const hasTrustedPortion = food.portion_basis === 'measured' || food.portion_basis === 'label';
   const identityConfidence = typeof food.confidence === 'number' && Number.isFinite(food.confidence)
     ? food.confidence
     : null;
@@ -174,7 +173,6 @@ function foodNeedsPortionReview(food: FoodItem): boolean {
     ? food.portion_confidence
     : null;
   return !hasQuantity
-    || !hasTrustedPortion
     || (identityConfidence !== null && identityConfidence < 0.7)
     || (portionConfidence !== null && portionConfidence < 0.7);
 }
@@ -1504,6 +1502,8 @@ function QuickDietDraftCard({
   const showRecognitionTiming = Boolean(recognitionTotalSeconds || calibrationSeconds);
   const reviewItemCount = recognizedFoods.filter(foodNeedsPortionReview).length;
   const confirmLabel = reviewItemCount > 0 ? '核对后确认' : '确认记录';
+  const primaryAction = reviewItemCount > 0 ? onRevise : onConfirm;
+  const primaryAccessibilityLabel = reviewItemCount > 0 ? '核对后确认饮食' : '确认记录饮食';
 
   return (
     <View style={styles.quickDraftCard}>
@@ -1583,11 +1583,11 @@ function QuickDietDraftCard({
       <View style={styles.quickActions}>
         <TouchableOpacity
           style={[styles.quickConfirmBtn, isSaving && styles.quickConfirmBtnDisabled]}
-          onPress={onConfirm}
+          onPress={primaryAction}
           disabled={isSaving}
           activeOpacity={0.82}
           accessibilityRole="button"
-          accessibilityLabel="确认记录饮食"
+          accessibilityLabel={primaryAccessibilityLabel}
         >
           {isSaving ? (
             <ActivityIndicator size="small" color={C.greenOn} />
