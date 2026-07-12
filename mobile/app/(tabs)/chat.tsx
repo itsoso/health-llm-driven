@@ -84,6 +84,7 @@ const CHAT_BOTTOM_BREATHING_SPACE = 12;
 // 对话历史无限下拉每页条数 (后端 limit 上限 100)
 const HISTORY_PAGE_SIZE = 20;
 const TODAY_DIET_CALORIE_QUERY = '请先查询今天数据库里的所有饮食记录，再结合刚保存的这条记录，汇总全天饮食、总热量和蛋白质/碳水/脂肪。不要只凭本轮对话猜测。';
+const TWO_DAY_DIET_REVIEW_QUERY = '请分别查询今天和昨天数据库里的所有饮食记录，再结合刚保存的这条记录，复盘两天拍照/对话记录的饮食、总热量、蛋白质/碳水/脂肪趋势和明显漏记风险。不要只凭本轮对话或截图猜测。';
 
 function guessSuggestionIcon(text: string): SuggestionCard['icon'] {
   if (/体检|化验|指标|LDL|HbA1c|尿酸|血压|血脂|血糖/i.test(text)) return 'document-text-outline';
@@ -632,6 +633,10 @@ export default function ChatScreen() {
     handleSend(TODAY_DIET_CALORIE_QUERY, null);
   }, [handleSend]);
 
+  const handleAskTwoDayDietReview = useCallback(() => {
+    handleSend(TWO_DAY_DIET_REVIEW_QUERY, null);
+  }, [handleSend]);
+
   const handleOpenDietCorrection = useCallback(() => {
     setContextInspectorVisible(false);
     router.push('/diet' as any);
@@ -889,6 +894,17 @@ export default function ChatScreen() {
               >
                 <Ionicons name="create-outline" size={12} color={C.green600} />
                 <Text style={txt.contextQuickAction} numberOfLines={1}>修正</Text>
+              </Pressable>
+            )}
+            {hasSavedDietContext && (
+              <Pressable
+                onPress={handleAskTwoDayDietReview}
+                style={({ pressed }) => [styles.contextQuickAction, pressed && styles.contextBannerPressed]}
+                accessibilityRole="button"
+                accessibilityLabel="基于刚保存饮食复盘昨天和今天"
+              >
+                <Ionicons name="calendar-outline" size={12} color={C.green600} />
+                <Text style={txt.contextQuickAction} numberOfLines={1}>复盘两天</Text>
               </Pressable>
             )}
             <Pressable

@@ -1106,6 +1106,45 @@ describe('ChatScreen', () => {
     expect(mockSendMessage.mock.calls[0][2].extraContext).toContain('牛肉面');
   });
 
+  it('asks for a two-day diet review with database-first context after saving diet', async () => {
+    mockMessages = [{
+      id: 'diet-card-4b',
+      role: 'assistant',
+      content: '',
+      cardType: 'diet_draft',
+      cardData: { food_items: '牛肉面', meal_type: 'lunch' },
+      cardActionResult: {
+        status: 'completed',
+        record: {
+          id: 88,
+          record_date: '2026-07-09',
+          meal_type: 'lunch',
+          food_items: '牛肉面',
+          calories: 620,
+        },
+      },
+    }];
+
+    const { getByLabelText } = render(<ChatScreen />);
+    await act(async () => {
+      fireEvent(getByLabelText('complete-card-action-diet-card-4b'), 'responderRelease');
+    });
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('基于刚保存饮食复盘昨天和今天'));
+    });
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      expect.stringContaining('分别查询今天和昨天数据库里的所有饮食记录'),
+      null,
+      expect.objectContaining({
+        extraContext: expect.stringContaining('diet_record_saved'),
+      }),
+    );
+    expect(mockSendMessage.mock.calls[0][0]).toContain('不要只凭本轮对话或截图猜测');
+    expect(mockSendMessage.mock.calls[0][2].extraContext).toContain('牛肉面');
+  });
+
   it('opens the diet record page to correct a saved diet record', async () => {
     mockMessages = [{
       id: 'diet-card-5',
