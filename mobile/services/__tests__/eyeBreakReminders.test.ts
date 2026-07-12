@@ -108,6 +108,20 @@ describe('buildEyeBreakNotifications', () => {
     }
   });
 
+  it('睡眠保护: 07:00/08:00 不排护眼提醒，最早从 09:00 开始', () => {
+    const specs = buildEyeBreakNotifications(
+      prefs({ windowStart: '07:00', windowEnd: '09:40', intervalMinutes: 20 }),
+      localDay(6, 50),
+    );
+
+    expect(specs.length).toBeGreaterThan(0);
+    const hours = specs.map((s) => ((s.trigger as any).date as Date).getHours());
+    expect(hours).not.toContain(7);
+    expect(hours).not.toContain(8);
+    expect(((specs[0].trigger as any).date as Date).getHours()).toBe(9);
+    expect(((specs[0].trigger as any).date as Date).getMinutes()).toBe(0);
+  });
+
   it('总条数不超过 EYE_BREAK_MAX_PENDING（64-cap 防护）', () => {
     // 06:00–23:00 / 20min ≈ 52 条/天 × 2 天 = 100+，必须截断到上限。
     const specs = buildEyeBreakNotifications(
