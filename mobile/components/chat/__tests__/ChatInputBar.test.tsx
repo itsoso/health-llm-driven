@@ -117,8 +117,11 @@ const flattenedStyle = (node: any) => {
 };
 
 describe('ChatInputBar', () => {
+  let consoleErrorSpy: jest.SpyInstance;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockStartRecording.mockResolvedValue(true);
     mockStopAndTranscribe.mockResolvedValue(undefined);
     mockCancelRecording.mockResolvedValue(undefined);
@@ -145,6 +148,11 @@ describe('ChatInputBar', () => {
   });
 
   afterEach(() => {
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('not wrapped in act'),
+      expect.anything(),
+      expect.anything(),
+    );
     jest.restoreAllMocks();
   });
 
