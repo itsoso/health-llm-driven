@@ -1237,6 +1237,11 @@ function QuickDietDraftCard({
     fat ? `脂肪 ${fat}g` : null,
   ].filter(Boolean).join(' · ');
   const recognizedFoods = draft.ai_raw_result?.foods ?? [];
+  const hasNutritionEstimate = [draft.calories, draft.protein, draft.carbs, draft.fat, draft.fiber]
+    .some((value) => typeof value === 'number' && Number.isFinite(value));
+  const nutritionStatusText = hasNutritionEstimate
+    ? '已带营养估算，确认后计入今日'
+    : '确认后先记录，营养后台估算';
 
   return (
     <View style={styles.quickDraftCard}>
@@ -1267,6 +1272,16 @@ function QuickDietDraftCard({
           ))}
         </View>
       ) : null}
+      <View style={styles.quickTrustRow}>
+        <Ionicons
+          name={hasNutritionEstimate ? 'analytics-outline' : 'time-outline'}
+          size={14}
+          color={hasNutritionEstimate ? C.green600 : C.ink3}
+        />
+        <Text style={[txt.quickTrustText, { color: hasNutritionEstimate ? C.green600 : C.ink3 }]}>
+          {nutritionStatusText}
+        </Text>
+      </View>
       <Text style={txt.quickHint}>先核对食物和份量；确认后才写入今天饮食。</Text>
 
       <View style={styles.quickActions}>
@@ -1499,6 +1514,12 @@ const styles = StyleSheet.create({
   recognitionBasisTable: { backgroundColor: C.green50, borderColor: C.green100 },
   recognitionBasisEstimate: { backgroundColor: revaSemantic.caution.bg, borderColor: revaSemantic.caution.line },
   verifyPortionRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  quickTrustRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: revaSpacing.s3,
+  },
   quickActions: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2, marginTop: revaSpacing.s4 },
   quickConfirmBtn: {
     flex: 1.5,
@@ -1560,6 +1581,7 @@ const txt = {
   recognitionBasisText: { fontFamily: revaFonts.sans, fontSize: 10, fontWeight: '800' } as TextStyle,
   recognizedConfidence: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3 } as TextStyle,
   verifyPortionText: { fontFamily: revaFonts.sans, fontSize: 10, color: revaSemantic.caution.fg, fontWeight: '700' } as TextStyle,
+  quickTrustText: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, fontWeight: '800' } as TextStyle,
   quickHint: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, color: C.ink3, marginTop: revaSpacing.s3 } as TextStyle,
   quickConfirmText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.greenOn, fontWeight: '800' } as TextStyle,
   quickSecondaryText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.green600, fontWeight: '800' } as TextStyle,

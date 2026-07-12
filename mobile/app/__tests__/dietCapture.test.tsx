@@ -741,6 +741,7 @@ describe('DietScreen capture deeplink', () => {
     await waitFor(() => {
       expect(getByText('识别明细')).toBeTruthy();
     });
+    expect(getByText('已带营养估算，确认后计入今日')).toBeTruthy();
     expect(getByText('鸡胸肉')).toBeTruthy();
     expect(getByText('200g · 330 kcal')).toBeTruthy();
     expect(getByText('表值 × 估算份量')).toBeTruthy();
@@ -765,6 +766,7 @@ describe('DietScreen capture deeplink', () => {
     await waitFor(() => {
       expect(getByText('待确认饮食')).toBeTruthy();
     });
+    expect(getByText('确认后先记录，营养后台估算')).toBeTruthy();
     expect(getByText('鸡胸肉 200g + 糙米饭一碗')).toBeTruthy();
     expect(mockMealForm).not.toHaveBeenCalled();
     expect(dietService.createDietRecord).not.toHaveBeenCalled();
@@ -783,6 +785,7 @@ describe('DietScreen capture deeplink', () => {
     await waitFor(() => {
       expect(getByText('待确认饮食')).toBeTruthy();
     });
+    expect(getByText('确认后先记录，营养后台估算')).toBeTruthy();
     expect(getByText('晚饭吃了鸡胸肉和一碗米饭')).toBeTruthy();
     expect(mockMealForm).not.toHaveBeenCalled();
     expect(dietService.createDietRecord).not.toHaveBeenCalled();
