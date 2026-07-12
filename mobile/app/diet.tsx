@@ -748,6 +748,8 @@ export default function DietScreen() {
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     qc.invalidateQueries({ queryKey: ['diet'] });
+    setShareImageUriOverride(null);
+    setShareRecord(created);
     toast.showUndoable(
       `已记录「${f.food_items.slice(0, 14)}」`,
       async () => {

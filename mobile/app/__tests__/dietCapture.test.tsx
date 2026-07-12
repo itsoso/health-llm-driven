@@ -16,6 +16,7 @@ const mockLoadDietPhotoDraft = jest.fn().mockResolvedValue(null);
 const mockSaveDietPhotoDraft = jest.fn().mockResolvedValue(undefined);
 const mockClearDietPhotoDraft = jest.fn().mockResolvedValue(undefined);
 const mockDailyMeals: any[] = [];
+const mockFrequentFoods: any[] = [];
 let mockAuthUserId: number | null = 7;
 
 jest.mock('expo-router', () => ({
@@ -25,7 +26,13 @@ jest.mock('expo-router', () => ({
 
 jest.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: jest.fn() }),
-  useQuery: () => ({ data: [], isLoading: false, isError: false, isRefetching: false }),
+  useQuery: (options: any) => {
+    const key = options?.queryKey;
+    if (Array.isArray(key) && key[0] === 'diet' && key[1] === 'frequent') {
+      return { data: mockFrequentFoods, isLoading: false, isError: false, isRefetching: false };
+    }
+    return { data: [], isLoading: false, isError: false, isRefetching: false };
+  },
 }));
 
 jest.mock('expo-haptics', () => ({
@@ -188,6 +195,7 @@ describe('DietScreen capture deeplink', () => {
     mockAuthUserId = 7;
     Object.keys(mockRouteParams).forEach((key) => { delete mockRouteParams[key]; });
     mockDailyMeals.splice(0, mockDailyMeals.length);
+    mockFrequentFoods.splice(0, mockFrequentFoods.length);
   });
 
   it('starts photo capture when opened with capture=photo', async () => {
@@ -1500,5 +1508,49 @@ describe('DietScreen capture deeplink', () => {
     expect(getByText('高清 3:4 图片 · 微信与小红书')).toBeTruthy();
     expect(getByText('蛋白质拉满的一餐')).toBeTruthy();
     await waitFor(() => expect(mockLoadDietPhotoDraft).toHaveBeenCalledWith(7));
+  });
+
+  it('opens the premium share preview after one-tap frequent food logging', async () => {
+    const dietService = require('../../services/diet');
+    mockFrequentFoods.push({
+      food_items: '希腊酸奶 + 蓝莓',
+      meal_type: 'breakfast',
+      calories: 310,
+      protein: 28,
+      carbs: 34,
+      fat: 7,
+      count: 6,
+    });
+    dietService.createDietRecord.mockResolvedValueOnce({
+      id: 178,
+      user_id: 7,
+      record_date: '2026-07-11',
+      meal_type: 'breakfast',
+      food_items: '希腊酸奶 + 蓝莓',
+      source: 'manual',
+      calories: 310,
+      protein: 28,
+      carbs: 34,
+      fat: 7,
+      fiber: 4,
+      alcohol_units: null,
+      image_url: null,
+      notes: null,
+      health_tips: null,
+    });
+
+    const { getAllByText, getByLabelText, getByText } = render(<DietScreen />);
+    fireEvent.press(getByLabelText('记录早餐：希腊酸奶 + 蓝莓，310kcal'));
+
+    await waitFor(() => {
+      expect(dietService.createDietRecord).toHaveBeenCalledWith(expect.objectContaining({
+        meal_type: 'breakfast',
+        food_items: '希腊酸奶 + 蓝莓',
+        calories: 310,
+      }));
+      expect(getByText('分享这一餐')).toBeTruthy();
+      expect(getAllByText('希腊酸奶 + 蓝莓').length).toBeGreaterThan(0);
+      expect(getByText('发小红书')).toBeTruthy();
+    });
   });
 });
