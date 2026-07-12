@@ -756,6 +756,7 @@ export default function DietScreen() {
         try {
           await deleteDietRecord(created.id);
           qc.invalidateQueries({ queryKey: ['diet'] });
+          setShareRecord((current) => (current?.id === created.id ? null : current));
         } catch {
           toast.show('撤销失败,请重试', 'error');
         }

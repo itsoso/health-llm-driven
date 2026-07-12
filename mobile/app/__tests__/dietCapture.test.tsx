@@ -15,6 +15,8 @@ const mockDeleteTemporaryImage = jest.fn().mockResolvedValue(undefined);
 const mockLoadDietPhotoDraft = jest.fn().mockResolvedValue(null);
 const mockSaveDietPhotoDraft = jest.fn().mockResolvedValue(undefined);
 const mockClearDietPhotoDraft = jest.fn().mockResolvedValue(undefined);
+const mockToastShow = jest.fn();
+const mockToastShowUndoable = jest.fn();
 const mockDailyMeals: any[] = [];
 const mockFrequentFoods: any[] = [];
 let mockAuthUserId: number | null = 7;
@@ -118,7 +120,7 @@ jest.mock('../../services/diet', () => ({
 }));
 
 jest.mock('../../hooks/useToast', () => ({
-  useToast: () => ({ show: jest.fn(), showUndoable: jest.fn() }),
+  useToast: () => ({ show: mockToastShow, showUndoable: mockToastShowUndoable }),
 }));
 
 jest.mock('../../hooks/useTheme', () => ({
@@ -176,6 +178,8 @@ describe('DietScreen capture deeplink', () => {
   beforeEach(() => {
     mockMealForm.mockClear();
     mockEstimate.mockClear();
+    mockToastShow.mockClear();
+    mockToastShowUndoable.mockClear();
     jest.clearAllMocks();
     (ImagePicker.requestCameraPermissionsAsync as jest.Mock).mockReset().mockResolvedValue({ granted: true });
     (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockReset().mockResolvedValue({ granted: true });
@@ -1551,6 +1555,59 @@ describe('DietScreen capture deeplink', () => {
       expect(getByText('分享这一餐')).toBeTruthy();
       expect(getAllByText('希腊酸奶 + 蓝莓').length).toBeGreaterThan(0);
       expect(getByText('发小红书')).toBeTruthy();
+    });
+  });
+
+  it('closes the frequent-food share preview when the just-created record is undone', async () => {
+    const dietService = require('../../services/diet');
+    mockFrequentFoods.push({
+      food_items: '希腊酸奶 + 蓝莓',
+      meal_type: 'breakfast',
+      calories: 310,
+      protein: 28,
+      carbs: 34,
+      fat: 7,
+      count: 6,
+    });
+    dietService.createDietRecord.mockResolvedValueOnce({
+      id: 178,
+      user_id: 7,
+      record_date: '2026-07-11',
+      meal_type: 'breakfast',
+      food_items: '希腊酸奶 + 蓝莓',
+      source: 'manual',
+      calories: 310,
+      protein: 28,
+      carbs: 34,
+      fat: 7,
+      fiber: 4,
+      alcohol_units: null,
+      image_url: null,
+      notes: null,
+      health_tips: null,
+    });
+    dietService.deleteDietRecord.mockResolvedValueOnce(undefined);
+
+    const { getByLabelText, getByText, queryByText } = render(<DietScreen />);
+    fireEvent.press(getByLabelText('记录早餐：希腊酸奶 + 蓝莓，310kcal'));
+
+    await waitFor(() => {
+      expect(getByText('分享这一餐')).toBeTruthy();
+      expect(mockToastShowUndoable).toHaveBeenCalledWith(
+        '已记录「希腊酸奶 + 蓝莓」',
+        expect.any(Function),
+        5000,
+      );
+    });
+
+    const undo = mockToastShowUndoable.mock.calls[0][1];
+    await act(async () => {
+      await undo();
+    });
+
+    await waitFor(() => {
+      expect(dietService.deleteDietRecord).toHaveBeenCalledWith(178);
+      expect(queryByText('分享这一餐')).toBeNull();
     });
   });
 });
