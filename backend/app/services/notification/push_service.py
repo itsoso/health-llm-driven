@@ -127,6 +127,15 @@ def _is_before_morning_floor(now: datetime) -> bool:
     return now.hour * 60 + now.minute < floor_min
 
 
+def normalize_morning_sleep_floor_time(value: Optional[str]) -> str:
+    """Clamp user-visible morning notification times to the 09:00 sleep floor."""
+    floor_min = _hhmm_to_minutes(MORNING_PUSH_FLOOR, "09:00")
+    minutes = _hhmm_to_minutes(value, MORNING_PUSH_FLOOR)
+    if minutes < floor_min:
+        minutes = floor_min
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
 def _morning_floor_at(now: datetime) -> datetime:
     floor_min = _hhmm_to_minutes(MORNING_PUSH_FLOOR, "09:00")
     return now.replace(
@@ -235,6 +244,11 @@ class PushService:
         settings: Dict[str, Any]
     ) -> UserNotificationSetting:
         """创建或更新用户推送设置"""
+        settings = dict(settings)
+        for key in ("morning_briefing_time", "quiet_hours_end"):
+            if key in settings and settings[key] is not None:
+                settings[key] = normalize_morning_sleep_floor_time(settings[key])
+
         existing = self.get_user_settings(user_id)
 
         if existing:

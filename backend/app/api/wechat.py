@@ -16,6 +16,7 @@ from app.models.user import User
 from app.models.notification import UserNotificationSetting
 from app.config import settings
 from app.api.deps import get_current_user_required
+from app.services.notification.push_service import normalize_morning_sleep_floor_time
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -436,7 +437,7 @@ async def get_subscribe_settings(
             reminder_enabled=True,
             health_alert_enabled=True,
             ai_advice_enabled=True,
-            morning_briefing_time="07:30",
+            morning_briefing_time="09:00",
             quiet_hours_start="22:00",
             quiet_hours_end="09:00"
         )
@@ -457,9 +458,13 @@ async def get_subscribe_settings(
         reminder_enabled=settings_record.reminder_enabled,
         health_alert_enabled=settings_record.health_alert_enabled,
         ai_advice_enabled=settings_record.ai_advice_enabled,
-        morning_briefing_time=settings_record.morning_briefing_time,
+        morning_briefing_time=normalize_morning_sleep_floor_time(
+            settings_record.morning_briefing_time
+        ),
         quiet_hours_start=settings_record.quiet_hours_start,
-        quiet_hours_end=settings_record.quiet_hours_end
+        quiet_hours_end=normalize_morning_sleep_floor_time(
+            settings_record.quiet_hours_end
+        )
     )
 
 
@@ -495,6 +500,9 @@ async def update_notification_settings(
 
     # 更新非空字段
     update_fields = request.dict(exclude_unset=True)
+    for key in ("morning_briefing_time", "quiet_hours_end"):
+        if key in update_fields and update_fields[key] is not None:
+            update_fields[key] = normalize_morning_sleep_floor_time(update_fields[key])
     for field, value in update_fields.items():
         if value is not None and hasattr(settings_record, field):
             setattr(settings_record, field, value)
