@@ -579,6 +579,12 @@ export default function DietScreen() {
         Alert.alert('照片草稿已失效', '请重新拍照识别这一餐。');
         return;
       }
+      if (!editingRecord && formDefaults.photo_draft_token && authUserId) {
+        const recoverable = mergeRevisedDraft(formDefaults, record);
+        await saveDietPhotoDraft(authUserId, recoverable).catch(() => {
+          toast.show('当前草稿仍在页面中，请不要退出后再试', 'info');
+        });
+      }
       Alert.alert(editingRecord ? '更新失败' : '保存失败', '请稍后再试');
     }
   }, [authUserId, draftEstimateSource, editingRecord, formDefaults, qc, returnToChatAfterConfirm, saveNewDietRecord, toast]);
@@ -659,12 +665,17 @@ export default function DietScreen() {
         Alert.alert('照片草稿已失效', '请重新拍照识别这一餐。');
         return;
       }
+      if (isPhotoDraft && authUserId) {
+        await saveDietPhotoDraft(authUserId, quickDraft.record).catch(() => {
+          toast.show('当前草稿仍在页面中，请不要退出后再试', 'info');
+        });
+      }
       Alert.alert('保存失败', '请稍后再试');
     } finally {
       quickDraftSavingRef.current = false;
       setQuickDraftSaving(false);
     }
-  }, [authUserId, quickDraft, returnToChatAfterConfirm, router, saveNewDietRecord]);
+  }, [authUserId, quickDraft, returnToChatAfterConfirm, router, saveNewDietRecord, toast]);
 
   const handleReviseQuickDraft = useCallback(() => {
     if (!quickDraft) return;

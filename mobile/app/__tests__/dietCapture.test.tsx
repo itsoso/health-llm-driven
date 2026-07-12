@@ -1418,6 +1418,54 @@ describe('DietScreen capture deeplink', () => {
     alertSpy.mockRestore();
   });
 
+  it('re-persists the current photo draft after a failed confirmation so the meal can be restored', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ uri: 'file:///recoverable-meal.heic', width: 4032, height: 3024 }],
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      foods: [{ name: '鸡胸肉糙米饭', quantity: '1份' }],
+      meal_description: '鸡胸肉糙米饭',
+      total_calories: 560,
+      total_protein: 44,
+      total_carbs: 62,
+      total_fat: 12,
+      photo_draft_token: 'recoverable-photo-draft-77',
+      error: null,
+    });
+    mockSaveDietPhotoDraft.mockRejectedValueOnce(new Error('secure store temporarily unavailable'));
+    dietService.createDietRecord.mockRejectedValueOnce(new Error('network down'));
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+
+    const { getByLabelText, getByText } = render(<DietScreen />);
+    await waitFor(() => {
+      expect(getByText('待确认饮食')).toBeTruthy();
+    });
+    expect(mockSaveDietPhotoDraft).toHaveBeenCalledTimes(1);
+
+    fireEvent.press(getByLabelText('确认记录饮食'));
+
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith('保存失败', '请稍后再试');
+    });
+    await waitFor(() => {
+      expect(mockSaveDietPhotoDraft).toHaveBeenCalledTimes(2);
+    });
+    expect(mockSaveDietPhotoDraft).toHaveBeenLastCalledWith(
+      7,
+      expect.objectContaining({
+        photo_draft_token: 'recoverable-photo-draft-77',
+        food_items: '鸡胸肉糙米饭',
+        image_base64: undefined,
+      }),
+    );
+    expect(getByText('待确认饮食')).toBeTruthy();
+    alertSpy.mockRestore();
+  });
+
   it('opens the full meal form only when users choose to revise a draft', async () => {
     const promptSpy = jest.spyOn(Alert, 'prompt').mockImplementationOnce((_title, _message, callback) => {
       if (typeof callback === 'function') callback('鸡胸肉 200g + 糙米饭一碗');
