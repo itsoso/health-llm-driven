@@ -1974,27 +1974,29 @@ def generate_doctor_weekly_report():
                     except Exception as e:  # noqa: BLE001
                         logger.info(f"[医生周报] 用户 {user_id} Telegram 异常: {e}")
 
-                # 4) Email + Telegram 都失败且有 iOS token → APNs 提示 "本周摘要已生成"
+                # 4) Email + Telegram 都失败 → 走统一 PushService 兜底提示。
+                # 不直连 IOSPushService: PushService 才会统一执行用户开关、quiet hours、
+                # 09:00 morning floor、去重与渠道选择，避免 07:00/08:00 补跑打扰睡眠。
                 if not tg_ok and not email_ok and soap_id:
                     try:
-                        from app.models.notification import UserNotificationSetting
-                        from app.services.notification.ios_push import IOSPushService
-                        setting = db.query(UserNotificationSetting).filter(
-                            UserNotificationSetting.user_id == user_id,
-                        ).first()
-                        if setting and setting.enabled and setting.ios_push_enabled and setting.ios_device_token:
-                            push = IOSPushService()
-                            if push.is_configured:
-                                asyncio.run(push.send_push(
-                                    device_token=setting.ios_device_token,
-                                    title="📊 本周数据摘要已生成",
-                                    body="进入 App 查看过去 7 天健康趋势 + 关注指标",
-                                    data={"type": "doctor_weekly_summary",
-                                          "journal_entry_id": str(soap_id)},
-                                ))
-                                logger.info(f"[医生周报] 用户 {user_id} APNs 提醒已发")
+                        from app.services.notification.push_service import PushService
+
+                        push_result = asyncio.run(PushService(db).send_notification(
+                            user_id=user_id,
+                            notification_type="doctor_weekly_summary",
+                            title="📊 本周数据摘要已生成",
+                            content="进入 App 查看过去 7 天健康趋势 + 关注指标",
+                            data={
+                                "type": "doctor_weekly_summary",
+                                "journal_entry_id": str(soap_id),
+                            },
+                            severity="info",
+                        ))
+                        logger.info(
+                            f"[医生周报] 用户 {user_id} PushService 兜底结果: {push_result}"
+                        )
                     except Exception as e:  # noqa: BLE001
-                        logger.debug(f"[医生周报] 用户 {user_id} APNs 提醒失败 (旁路): {e}")
+                        logger.debug(f"[医生周报] 用户 {user_id} PushService 兜底失败: {e}")
 
             except Exception as e:
                 logger.warning(f"[医生周报] 用户 {user_id} 生成失败: {e}")
