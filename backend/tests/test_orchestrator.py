@@ -370,6 +370,70 @@ async def test_run_orchestrator_monkeypatched_llm(monkeypatch, db):
     assert resp.total_ms >= 0
 
 
+@pytest.mark.asyncio
+async def test_broad_synthesis_not_replaced_by_refusal_template(monkeypatch, db):
+    """回归 (2026-07-12 prod 误杀, agent_messages 6186/6188):
+
+    宽泛综合分析问题 ("让所有健康专家会诊…直接给出综合结论") 的合成文本
+    带 R4 边界话术 ("就医确诊"/"不构成诊断"/"请勿自行停药") 时, 曾被
+    validate_text 黑名单无上下文子串匹配整篇替换成拒答模板。
+    修复后: synthesis 必须是 findings 的忠实合成 (≥2 specialist 引用保留),
+    边界话术可以带, 但绝不能整体拒答。
+    """
+    import uuid
+    from app.models.user import User
+    from app.services.episode.validator import _BLOCKED_FALLBACK
+
+    user = User(
+        username=f"orch_{uuid.uuid4().hex[:6]}",
+        email=f"orch_{uuid.uuid4().hex[:6]}@x.com",
+        hashed_password="x",
+        name="orch synth test",
+        is_active=True,
+        is_approved=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    from app.orchestrator import orchestrator as orch_mod
+
+    # 伪 LLM: 模拟真实合成形态 —— 引用 ≥2 个 specialist 的裁决 + 结尾边界话术。
+    # 边界话术含黑名单术语 (确诊/诊断/停药) 的否定/转诊用法, 这正是 prod 被
+    # 误杀的形态; 修复前本测试会拿到拒答模板而失败。
+    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False):
+        assert "【专家裁决】" in user_prompt
+        return (
+            "综合各专家会诊结论如下:\n"
+            "1. 恢复教练 (recovery_coach) 判定: 当前恢复度数据不足, "
+            "请先补齐睡眠与 HRV 数据。\n"
+            "2. 营养策略师 (fuel_strategist) 判定: 缺少体重与摄入记录, "
+            "无法计算热量缺口。\n"
+            "如已有在服药物, 请勿自行停药; 如症状持续请及时就医确诊, "
+            "本报告不构成诊断。"
+        )
+
+    monkeypatch.setattr(orch_mod, "_call_llm", fake_call_llm)
+
+    req = OrchestratorRequest(
+        query="让所有健康专家会诊一下我的当前状态,直接给出综合结论",
+        stream=False,
+        specialists=["recovery_coach", "fuel_strategist"],
+    )
+    resp = await orch_mod.run_orchestrator(db, user.id, req)
+
+    # 不是整篇拒答模板
+    assert _BLOCKED_FALLBACK not in resp.synthesis
+    assert "超出我作为健康助理的安全边界" not in resp.synthesis
+    # ≥2 个 specialist 的 finding 真实产出且被合成引用
+    assert len(resp.findings) >= 2
+    assert "recovery_coach" in resp.synthesis
+    assert "fuel_strategist" in resp.synthesis
+    # 边界话术被保留 (R4 话术可以带)
+    assert "请勿自行停药" in resp.synthesis
+    assert "就医确诊" in resp.synthesis
+
+
 # ─────────────────────── API shape ────────────────────
 
 
