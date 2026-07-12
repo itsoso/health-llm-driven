@@ -800,6 +800,7 @@ describe('DietScreen capture deeplink', () => {
     expect(getByText('识别待核对')).toBeTruthy();
     expect(getAllByText('份量为估算').length).toBeGreaterThan(0);
     expect(getAllByText('请核对份量').length).toBeGreaterThan(0);
+    expect(getByText('小巴建议先核对：鸡胸肉、杂粮饭的份量；确认后才写入今天饮食。')).toBeTruthy();
   });
 
   it('turns text entry into a lightweight confirm card without auto-saving', async () => {
