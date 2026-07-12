@@ -81,3 +81,8 @@ docs/fundraising/
 design/fixtures/*.json
 !design/fixtures/SAMPLE-*.json
 docs/release/app-store/demo-credentials.local.md
+
+# env 备份绝不入库 (含密钥)
+.env.backup*
+design/screenshots/
+artifacts/
