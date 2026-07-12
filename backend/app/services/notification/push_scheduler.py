@@ -73,8 +73,10 @@ def build_health_alert_evidence_contract(alert_type: str) -> Dict[str, Any]:
 def build_health_alert_push_data(alert: Dict[str, Any]) -> Dict[str, Any]:
     """Return push payload data with KB V2 policy fields."""
     alert_type = str(alert.get("type") or "unknown")
+    severity = str(alert.get("severity") or "warning").lower()
     return {
         "alert_type": alert_type,
+        "severity": severity,
         **build_health_alert_evidence_contract(alert_type),
     }
 
@@ -246,12 +248,14 @@ class PushScheduler:
                 if record.resting_heart_rate > 100:
                     alerts.append({
                         "type": "high_heart_rate",
+                        "severity": "high",
                         "title": "⚠️ 心率偏高",
                         "content": f"今日静息心率 {record.resting_heart_rate} bpm，高于正常范围。建议休息并观察。"
                     })
                 elif record.resting_heart_rate < 40:
                     alerts.append({
                         "type": "low_heart_rate",
+                        "severity": "critical",
                         "title": "⚠️ 心率偏低",
                         "content": f"今日静息心率 {record.resting_heart_rate} bpm，低于正常范围。如有不适请就医。"
                     })
@@ -260,24 +264,29 @@ class PushScheduler:
             if record.sleep_score and record.sleep_score < 50:
                 alerts.append({
                     "type": "poor_sleep",
+                    "severity": "warning",
                     "title": "😴 睡眠质量不佳",
                     "content": f"昨晚睡眠评分 {record.sleep_score}，建议今晚早点休息，改善睡眠环境。"
                 })
 
             # 检查身体电量过低
-            if record.body_battery_high and record.body_battery_high < 30:
+            body_battery_high = getattr(record, "body_battery_most_charged", None)
+            if body_battery_high and body_battery_high < 30:
                 alerts.append({
                     "type": "low_energy",
+                    "severity": "warning",
                     "title": "🔋 身体电量不足",
-                    "content": f"今日身体电量最高只有 {record.body_battery_high}%，身体需要休息恢复。"
+                    "content": f"今日身体电量最高只有 {body_battery_high}%，身体需要休息恢复。"
                 })
 
             # 检查压力过高
-            if record.stress_avg and record.stress_avg > 70:
+            stress_avg = getattr(record, "stress_level", None)
+            if stress_avg and stress_avg > 70:
                 alerts.append({
                     "type": "high_stress",
+                    "severity": "warning",
                     "title": "😰 压力水平较高",
-                    "content": f"今日平均压力值 {record.stress_avg}，建议做些放松活动，如深呼吸、冥想。"
+                    "content": f"今日平均压力值 {stress_avg}，建议做些放松活动，如深呼吸、冥想。"
                 })
 
             # 发送预警
@@ -296,13 +305,15 @@ class PushScheduler:
                         continue
 
                     alert_data = build_health_alert_push_data(alert)
+                    severity = str(alert.get("severity") or "warning").lower()
                     result = await push_service.send_notification(
                         user_id=record.user_id,
                         notification_type=NotificationType.HEALTH_ALERT.value,
                         title=alert["title"],
                         content=alert["content"],
                         data=alert_data,
-                        respect_quiet_hours=False  # 健康预警不受免打扰限制
+                        respect_quiet_hours=True,
+                        severity=severity,
                     )
 
                     if result.get("success"):
