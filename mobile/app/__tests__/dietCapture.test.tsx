@@ -769,10 +769,10 @@ describe('DietScreen capture deeplink', () => {
     const dietService = require('../../services/diet');
     dietService.createDietRecord.mockRejectedValueOnce({ response: { status: 410 } });
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-    const { getByText, queryByText } = render(<DietScreen />);
+    const { getByText, getByLabelText, queryByText } = render(<DietScreen />);
     await waitFor(() => expect(getByText('过期餐食')).toBeTruthy());
 
-    fireEvent.press(getByText('确认记录'));
+    fireEvent.press(getByLabelText('确认记录饮食'));
 
     await waitFor(() => {
       expect(mockClearDietPhotoDraft).toHaveBeenCalledWith(7);
@@ -927,6 +927,7 @@ describe('DietScreen capture deeplink', () => {
     expect(getByText('识别完成 · 2.6s')).toBeTruthy();
     expect(getByText('营养校准 0.4s')).toBeTruthy();
     expect(getByText('小巴建议先核对：鸡胸肉、杂粮饭的份量；确认后才写入今天饮食。')).toBeTruthy();
+    expect(getByText('核对后确认')).toBeTruthy();
     expect(getByText('修正份量')).toBeTruthy();
     fireEvent.press(getByLabelText('修正饮食草稿'));
     await waitFor(() => {
@@ -942,7 +943,7 @@ describe('DietScreen capture deeplink', () => {
       if (typeof callback === 'function') callback('鸡胸肉 200g + 糙米饭一碗');
     });
 
-    const { getByTestId, getByText } = render(<DietScreen />);
+    const { getByLabelText, getByTestId, getByText } = render(<DietScreen />);
     fireEvent.press(getByTestId('diet-fab-text'));
 
     await waitFor(() => {
@@ -961,7 +962,7 @@ describe('DietScreen capture deeplink', () => {
       if (typeof callback === 'function') callback('晚饭吃了鸡胸肉和一碗米饭');
     });
 
-    const { getByTestId, getByText } = render(<DietScreen />);
+    const { getByLabelText, getByTestId, getByText } = render(<DietScreen />);
     fireEvent.press(getByTestId('diet-fab-voice'));
 
     await waitFor(() => {
@@ -981,13 +982,13 @@ describe('DietScreen capture deeplink', () => {
       if (typeof callback === 'function') callback('鸡胸肉 200g + 糙米饭一碗');
     });
 
-    const { getByTestId, getByText } = render(<DietScreen />);
+    const { getByLabelText, getByTestId, getByText } = render(<DietScreen />);
     fireEvent.press(getByTestId('diet-fab-text'));
     await waitFor(() => {
       expect(getByText('待确认饮食')).toBeTruthy();
     });
 
-    fireEvent.press(getByText('确认记录'));
+    fireEvent.press(getByLabelText('确认记录饮食'));
 
     await waitFor(() => {
       expect(dietService.createDietRecord).toHaveBeenCalledWith(expect.objectContaining({
@@ -1022,13 +1023,13 @@ describe('DietScreen capture deeplink', () => {
       if (typeof callback === 'function') callback('鸡胸肉 200g + 糙米饭一碗');
     });
 
-    const { getByTestId, getByText } = render(<DietScreen />);
+    const { getByLabelText, getByTestId, getByText } = render(<DietScreen />);
     fireEvent.press(getByTestId('diet-fab-text'));
     await waitFor(() => {
       expect(getByText('待确认饮食')).toBeTruthy();
     });
 
-    fireEvent.press(getByText('确认记录'));
+    fireEvent.press(getByLabelText('确认记录饮食'));
 
     await waitFor(() => {
       expect(getByText('分享这一餐')).toBeTruthy();
@@ -1081,12 +1082,12 @@ describe('DietScreen capture deeplink', () => {
       health_tips: null,
     });
 
-    const { getByText, getByTestId } = render(<DietScreen />);
+    const { getByLabelText, getByText, getByTestId } = render(<DietScreen />);
     await waitFor(() => {
       expect(getByText('待确认饮食')).toBeTruthy();
     });
 
-    fireEvent.press(getByText('确认记录'));
+    fireEvent.press(getByLabelText('确认记录饮食'));
 
     await waitFor(() => {
       expect(getByText('分享这一餐')).toBeTruthy();
@@ -1106,13 +1107,13 @@ describe('DietScreen capture deeplink', () => {
       if (typeof callback === 'function') callback('鸡胸肉 200g + 糙米饭一碗');
     });
 
-    const { getByTestId, getByText } = render(<DietScreen />);
+    const { getByLabelText, getByTestId, getByText } = render(<DietScreen />);
     fireEvent.press(getByTestId('diet-fab-text'));
     await waitFor(() => {
       expect(getByText('待确认饮食')).toBeTruthy();
     });
 
-    const confirmButton = getByText('确认记录');
+    const confirmButton = getByLabelText('确认记录饮食');
     fireEvent.press(confirmButton);
     fireEvent.press(confirmButton);
 
@@ -1146,12 +1147,12 @@ describe('DietScreen capture deeplink', () => {
     });
     dietService.createDietRecord.mockResolvedValueOnce({ id: 88 });
 
-    const { getByText, queryByText } = render(<DietScreen />);
+    const { getByLabelText, getByText, queryByText } = render(<DietScreen />);
     await waitFor(() => {
       expect(getByText('待确认饮食')).toBeTruthy();
     });
 
-    fireEvent.press(getByText('确认记录'));
+    fireEvent.press(getByLabelText('确认记录饮食'));
 
     await waitFor(() => {
       expect(dietService.createDietRecord).toHaveBeenCalledWith(expect.objectContaining({
@@ -1210,13 +1211,13 @@ describe('DietScreen capture deeplink', () => {
     });
     dietService.createDietRecord.mockResolvedValueOnce({ id: 91 });
 
-    const { getByText } = render(<DietScreen />);
+    const { getByLabelText, getByText } = render(<DietScreen />);
     await waitFor(() => {
       expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalled();
       expect(getByText('待确认饮食')).toBeTruthy();
     });
 
-    fireEvent.press(getByText('确认记录'));
+    fireEvent.press(getByLabelText('确认记录饮食'));
 
     await waitFor(() => {
       expect(dietService.createDietRecord).toHaveBeenCalledWith(expect.objectContaining({
@@ -1252,13 +1253,13 @@ describe('DietScreen capture deeplink', () => {
     });
     dietService.createDietRecord.mockResolvedValueOnce({ id: 92 });
 
-    const { getByText } = render(<DietScreen />);
+    const { getByLabelText, getByText } = render(<DietScreen />);
     await waitFor(() => {
       expect(promptSpy).toHaveBeenCalled();
       expect(getByText('待确认饮食')).toBeTruthy();
     });
 
-    fireEvent.press(getByText('确认记录'));
+    fireEvent.press(getByLabelText('确认记录饮食'));
 
     await waitFor(() => {
       expect(dietService.createDietRecord).toHaveBeenCalledWith(expect.objectContaining({
@@ -1290,13 +1291,13 @@ describe('DietScreen capture deeplink', () => {
     });
     dietService.createDietRecord.mockResolvedValueOnce({ id: 93 });
 
-    const { getByText } = render(<DietScreen />);
+    const { getByLabelText, getByText } = render(<DietScreen />);
     await waitFor(() => {
       expect(promptSpy).toHaveBeenCalled();
       expect(getByText('待确认饮食')).toBeTruthy();
     });
 
-    fireEvent.press(getByText('确认记录'));
+    fireEvent.press(getByLabelText('确认记录饮食'));
 
     await waitFor(() => {
       expect(dietService.createDietRecord).toHaveBeenCalledWith(expect.objectContaining({
@@ -1339,12 +1340,12 @@ describe('DietScreen capture deeplink', () => {
     dietService.createDietRecord.mockResolvedValueOnce({ ok: true });
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
 
-    const { getByText } = render(<DietScreen />);
+    const { getByLabelText, getByText } = render(<DietScreen />);
     await waitFor(() => {
       expect(getByText('待确认饮食')).toBeTruthy();
     });
 
-    fireEvent.press(getByText('确认记录'));
+    fireEvent.press(getByLabelText('确认记录饮食'));
 
     await waitFor(() => {
       expect(alertSpy).toHaveBeenCalledWith('保存失败', '请稍后再试');

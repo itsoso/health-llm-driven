@@ -1388,6 +1388,7 @@ function QuickDietDraftCard({
   const calibrationSeconds = formatTimingSeconds(draft.ai_raw_result?.timing_ms?.calibration);
   const showRecognitionTiming = Boolean(recognitionTotalSeconds || calibrationSeconds);
   const reviewItemCount = recognizedFoods.filter(foodNeedsPortionReview).length;
+  const confirmLabel = reviewItemCount > 0 ? '核对后确认' : '确认记录';
 
   return (
     <View style={styles.quickDraftCard}>
@@ -1466,7 +1467,7 @@ function QuickDietDraftCard({
           ) : (
             <Ionicons name="checkmark" size={17} color={C.greenOn} />
           )}
-          <Text style={txt.quickConfirmText}>{isSaving ? '保存中' : '确认记录'}</Text>
+          <Text style={txt.quickConfirmText}>{isSaving ? '保存中' : confirmLabel}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.quickSecondaryBtn}
