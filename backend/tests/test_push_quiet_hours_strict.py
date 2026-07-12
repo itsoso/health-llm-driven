@@ -242,6 +242,46 @@ async def test_morning_floor_overrides_non_critical_bypass_before_9(db):
     assert delayed.scheduled_at.minute == 0
 
 
+@pytest.mark.parametrize(
+    "fake_now",
+    [
+        datetime(2026, 5, 12, 7, 0, 0),
+        datetime(2026, 5, 12, 8, 0, 0),
+    ],
+)
+@pytest.mark.asyncio
+async def test_morning_floor_delays_even_critical_bypass_at_7_and_8(db, fake_now):
+    """07:00/08:00 睡眠保护窗口内,critical/bypass 也必须延迟到 09:00。"""
+    user = _make_user(db, username=f"morning_floor_critical_{fake_now.hour}")
+    _set_quiet_hours(db, user.id, start="22:00", end="07:00")
+    svc = PushService(db)
+
+    with patch("app.services.notification.push_service.get_china_now", return_value=fake_now), \
+         patch.object(PushService, "_send_ios", new=AsyncMock(return_value={"success": True})):
+        result = await svc.send_notification(
+            user_id=user.id,
+            notification_type="health_alert",
+            title="晨间健康告警",
+            content="09:00 前不应发出。",
+            severity="critical",
+            quiet_hours_policy="bypass",
+            data={"rule_id": f"critical-morning-{fake_now.hour}"},
+        )
+
+    assert result["success"] is False
+    assert result["reason"] == "delayed_for_quiet_hours"
+    delayed = (
+        db.query(NotificationLog)
+        .filter(
+            NotificationLog.user_id == user.id,
+            NotificationLog.status == NotificationStatus.DELAYED.value,
+        )
+        .one()
+    )
+    assert delayed.scheduled_at.hour == 9
+    assert delayed.scheduled_at.minute == 0
+
+
 @pytest.mark.asyncio
 async def test_quiet_hours_critical_waits_until_morning_floor(db):
     """睡眠优先: critical 在 09:00 前也必须延迟,不能在 07:00/08:00 打扰。"""
