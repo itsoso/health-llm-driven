@@ -283,10 +283,12 @@ export function DietShareSheet({
   const [sharing, setSharing] = useState(false);
   const [imageReady, setImageReady] = useState(!imageSource);
   const [imageTimedOut, setImageTimedOut] = useState(false);
+  const [copiedCaption, setCopiedCaption] = useState<'moments' | 'xiaohongshu' | null>(null);
 
   React.useEffect(() => {
     setImageReady(!imageSource);
     setImageTimedOut(false);
+    setCopiedCaption(null);
   }, [imageSource, visible]);
 
   React.useEffect(() => {
@@ -312,6 +314,7 @@ export function DietShareSheet({
           ? buildDietShareMomentsCaption(record, dateLabel)
           : buildDietShareCaption(record, dateLabel),
       );
+      setCopiedCaption(kind);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       Alert.alert('复制失败', '请稍后重试');
@@ -476,7 +479,9 @@ export function DietShareSheet({
               accessibilityLabel="复制朋友圈文案"
             >
               <Ionicons name="chatbubble-ellipses-outline" size={17} color={C.green600} />
-              <Text style={styles.captionButtonText}>复制朋友圈文案</Text>
+              <Text style={styles.captionButtonText}>
+                {copiedCaption === 'moments' ? '已复制朋友圈文案' : '复制朋友圈文案'}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.captionButton}
@@ -487,7 +492,9 @@ export function DietShareSheet({
               accessibilityLabel="复制小红书文案"
             >
               <Ionicons name="copy-outline" size={17} color={C.green600} />
-              <Text style={styles.captionButtonText}>复制小红书文案</Text>
+              <Text style={styles.captionButtonText}>
+                {copiedCaption === 'xiaohongshu' ? '已复制小红书文案' : '复制小红书文案'}
+              </Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>

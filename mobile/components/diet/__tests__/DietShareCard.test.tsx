@@ -283,6 +283,7 @@ describe('DietShareCard', () => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#饮食打卡'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#小巴记录'));
     });
+    expect(getByText('已复制小红书文案')).toBeTruthy();
   });
 
   it('copies a WeChat Moments-ready caption without Xiaohongshu hashtags', async () => {
@@ -305,5 +306,6 @@ describe('DietShareCard', () => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('#小巴记录'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('#饮食打卡'));
     });
+    expect(getByText('已复制朋友圈文案')).toBeTruthy();
   });
 });
