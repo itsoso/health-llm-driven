@@ -34,7 +34,10 @@ describe('dietPhotoDraftStorage', () => {
           name: '鸡胸肉', quantity: '200g', calories: 330, protein: 62,
           carbs: 0, fat: 7.2, fiber: 0, confidence: 0.9,
           food_id: 'cfc:chicken_breast', source: 'china_food_composition',
-          quantity_grams: 200, nutrition_basis: 'food_table',
+          quantity_grams: 200,
+          nutrition_basis: 'food_table',
+          portion_basis: 'vision_estimate',
+          portion_confidence: 0.72,
         }],
         meal_description: '鸡胸肉 200g',
         health_tips: '这段不应持久化',
@@ -57,7 +60,12 @@ describe('dietPhotoDraftStorage', () => {
         food_items: '鸡胸肉 200g',
         photo_draft_token: 'photo-draft-token-1234567890',
         ai_raw_result: {
-          foods: [{ name: '鸡胸肉', nutrition_basis: 'food_table' }],
+          foods: [{
+            name: '鸡胸肉',
+            nutrition_basis: 'food_table',
+            portion_basis: 'vision_estimate',
+            portion_confidence: 0.72,
+          }],
         },
       },
     });
