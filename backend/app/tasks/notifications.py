@@ -14,7 +14,7 @@ from app.models.notification import UserNotificationSetting
 from app.models.smart_plan import WeeklyPlan
 from app.services.notification.deeplinks import deeplink_for
 from app.services.notification.evidence_policy import build_notification_evidence_data
-from app.services.notification.push_privacy import safety_alert_push_text
+from app.services.notification.push_privacy import llm_push_backstop, safety_alert_push_text
 from app.services.notification.push_service import PushService
 from app.utils.timezone import get_china_now
 from app.utils.async_helpers import run_async
@@ -657,9 +657,15 @@ def _generate_daily_insight_for_user(user_id: int, today: date):
         client = MultiModelAnalyzeClient()
         analysis = run_async(client.analyze(prompt))
 
-        # 推送通知
-        aggregation = (analysis.get("aggregation") or "")[:200]
-        content = aggregation or "今日健康数据已分析完成"
+        # 推送通知(§5.6 backstop:LLM 复盘文案点名药/补剂 → 锁屏泛化,原文进 data)
+        aggregation = analysis.get("aggregation") or ""
+        _, safe_content, redacted = llm_push_backstop(
+            None, aggregation, generic_content="今日健康复盘已生成,点开查看。"
+        )
+        content = (safe_content[:200] if safe_content else "") or "今日健康数据已分析完成"
+        data = {"source": "notifications.daily_insights"}
+        if redacted:
+            data["full_content"] = aggregation[:200]
         push_service = PushService(db)
         try:
             run_async(push_service.send_notification(
@@ -667,6 +673,7 @@ def _generate_daily_insight_for_user(user_id: int, today: date):
                 notification_type="daily_insights",
                 title="📊 今日健康复盘",
                 content=content,
+                data=data,
             ))
         except Exception as e:
             logger.warning(f"[健康复盘] 推送失败 user={user_id}: {e}")
@@ -892,11 +899,17 @@ def send_morning_health_summary():
                 if not script or len(script) < 10:
                     continue  # 短稿生成失败/兜底无意义, 跳过
 
+                # §5.6 backstop:LLM 蒸稿点名药/补剂 → 锁屏泛化;
+                # 点开 voice-chat 会重取同一份稿,原文不需进 payload
+                _, safe_script, _ = llm_push_backstop(
+                    None, script, generic_content="今天的健康早报准备好了,点开收听。"
+                )
+
                 run_async(push_service.send_notification(
                     user_id=user_id,
                     notification_type="morning_briefing",
                     title="🌅 早安",
-                    content=script[:200],
+                    content=safe_script[:200],
                     data=_morning_briefing_push_data(),
                     # 同一日只推一次
                     dedup_window_hours=20,
@@ -954,11 +967,16 @@ def send_weekly_review_invite():
                 if not script or len(script) < 10:
                     continue
 
+                # §5.6 backstop:周聊稿点名药/补剂 → 锁屏泛化(点开 voice-chat 重取原稿)
+                _, safe_script, _ = llm_push_backstop(
+                    None, script, generic_content="本周的健康回顾准备好了,点开聊聊。"
+                )
+
                 run_async(push_service.send_notification(
                     user_id=user_id,
                     notification_type="ai_advice",  # 复用 ai_advice 开关 (周聊偏建议性)
                     title="🗓️ 本周聊聊?",
-                    content=script[:200],
+                    content=safe_script[:200],
                     data=build_notification_evidence_data(
                         notification_type="ai_advice",
                         source="notifications.send_weekly_review_invite",

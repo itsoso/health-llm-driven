@@ -41,6 +41,8 @@ DRUG_CLASS_ALIASES: Dict[str, List[str]] = {
         "替尔泊肽", "tirzepatide", "司美格鲁肽", "semaglutide", "利拉鲁肽",
         "liraglutide", "杜拉糖肽", "dulaglutide", "艾塞那肽", "exenatide",
         "毕马西肽", "lixisenatide",
+        # 高知名度品牌名(用户/LLM 常直呼品牌;推送隐私对抗复审 2026-07-12 补)
+        "ozempic", "wegovy", "mounjaro", "诺和泰", "诺和盈", "穆峰达",
     ],
     "insulin": ["胰岛素", "insulin", "优泌林", "甘精", "门冬", "德谷", "赖脯"],
     "sulfonylurea": [
@@ -245,3 +247,29 @@ def prescriptive_free_text_terms() -> FrozenSet[str]:
         SUPPLEMENT_CLASS_ALIASES, exclude_classes=_FREE_TEXT_EXCLUDED_SUPPLEMENT_CLASSES
     )
     return frozenset(t for t in terms if t and t not in _FREE_TEXT_AMBIGUOUS_TERMS)
+
+
+def _has_cjk(s: str) -> bool:
+    return any("一" <= ch <= "鿿" for ch in s)
+
+
+@lru_cache(maxsize=1)
+def sensitive_name_free_text_terms() -> FrozenSet[str]:
+    """推送隐私 backstop 用的**名称类**敏感词(自由文本匹配,见 push_privacy)。
+
+    与 `prescriptive_free_text_terms()` 的区别:**只含药名/补剂名,不含用药动词**
+    (「记得按时服药」是 §5.6 允许的类别级文案,动词入集会把它误伤成 over-redaction)。
+
+    派生规则与 gate 同源:药物全量 + 补剂(去食物/草药类,饮食建议里点名大蒜/西柚
+    不泄露诊断)- `_FREE_TEXT_AMBIGUOUS_TERMS`。额外为 CJK+ASCII 混排别名补空格
+    折叠变体(lexicon 写「维生素 d」,LLM 文案常写「维生素D」)。
+    """
+    terms = set()
+    terms |= _flatten_aliases(DRUG_CLASS_ALIASES)
+    terms |= _flatten_aliases(COMMON_DRUG_ALIASES)
+    terms |= _flatten_aliases(
+        SUPPLEMENT_CLASS_ALIASES, exclude_classes=_FREE_TEXT_EXCLUDED_SUPPLEMENT_CLASSES
+    )
+    terms -= _FREE_TEXT_AMBIGUOUS_TERMS
+    collapsed = {t.replace(" ", "") for t in terms if " " in t and _has_cjk(t)}
+    return frozenset(t for t in (terms | collapsed) if t)

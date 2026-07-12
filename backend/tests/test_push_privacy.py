@@ -280,3 +280,299 @@ def test_escalation_genericizes_drug_sourced_card(db, patch_wscla_session):
     assert sensitive, f"敏感卡未泛化: {list(by_title)}"
     assert passthrough, f"vitals 卡被过度泛化: {list(by_title)}"
     assert DRUG not in by_title[sensitive[0]]["content"]
+
+
+# ═══════════════ LLM 文案出口的确定性 backstop(llm_push_backstop) ═══════════════
+
+from app.services.notification.push_privacy import (  # noqa: E402
+    GENERIC_LLM_PUSH_TITLE,
+    contains_sensitive_name,
+    llm_push_backstop,
+)
+
+
+@pytest.mark.parametrize("leaky", [
+    "记得服用二甲双胍 500mg",          # 中文药名(DRUG_CLASS_ALIASES)
+    "华法林与今天的化验结果有关",        # 中文药名
+    "Sertraline 已连续记录 14 天",      # 英文药名,大小写不敏感
+    "补充辅酶Q10 有助恢复",             # 补剂名(无空格变体已在 lexicon)
+    "今天别忘了维生素D",               # CJK+ASCII 混排空格折叠变体(lexicon 写「维生素 d」)
+    "圣约翰草可能影响情绪药物",          # 草药补剂(非食物类,保留在扫描集)
+    "早餐后吃氨氯地平,血压更平稳",       # COMMON_DRUG_ALIASES(无专属 safety 规则的常见药)
+    "记得吃抗抑郁药,别自行停",           # 诊断可反推的治疗类别词(无具体药名,Tier-5 域)
+    "化疗期间注意白细胞",               # 同上(肿瘤域)
+    "Ozempic 注射日到了",              # 高知名度品牌名(对抗复审补进 lexicon)
+])
+def test_llm_backstop_drug_name_genericized(leaky):
+    title, content, redacted = llm_push_backstop(
+        "健康提醒", leaky, generic_title=GENERIC_LLM_PUSH_TITLE
+    )
+    assert redacted
+    assert content == "有一条为你准备的健康建议,点开查看。"
+    for token in ("二甲双胍", "华法林", "ertraline", "辅酶", "维生素", "圣约翰", "氨氯地平"):
+        assert token not in title and token not in content
+
+
+def test_llm_backstop_drug_in_title_only_replaces_both():
+    """药名可能只在 title:任一命中,title/content 一起泛化。"""
+    title, content, redacted = llm_push_backstop(
+        f"{DRUG}用药提示", "详情点开查看", generic_title=GENERIC_LLM_PUSH_TITLE
+    )
+    assert redacted
+    assert DRUG not in title
+    assert title == GENERIC_LLM_PUSH_TITLE
+
+
+def test_llm_backstop_keeps_deterministic_title_when_generic_title_none():
+    """generic_title=None 表示 title 是确定性常量(🌅 早安),命中只换 content。"""
+    title, content, redacted = llm_push_backstop(
+        "🌅 早安", "记得吃二甲双胍", generic_content="今天的健康早报准备好了,点开收听。"
+    )
+    assert redacted
+    assert title == "🌅 早安"
+    assert content == "今天的健康早报准备好了,点开收听。"
+
+
+@pytest.mark.parametrize("benign", [
+    "今天步数 12000,睡眠 7.5 小时,状态不错,继续保持",
+    "地铁通勤 30 分钟,顺路买了大蒜和西柚",       # 铁⊂地铁(去歧义名单)+ 食物类补剂豁免
+    "记得按时服药,并在睡前完成拉伸",             # 类别级提及(动词不入名称集)
+    "复查编号 AB123 已登记,April 的体检安排出来了",  # ASCII 锚点:b12⊄AB123;pril 在去歧义名单
+    "环境湿度偏高,鼻炎症状可能加重,出门戴口罩",     # 症状措辞非药名
+    "HRV 52ms 恢复良好,今天适合中等强度训练",
+    "睡前一杯助眠茶,少刷手机",                   # 助眠茶⊅助眠药(类别词不误伤生活文案)
+    "周末去温泉放松疗养一下",                    # 放松疗养⊅放疗
+    "今天精神状态不错,继续保持",                  # 精神状态⊅精神科
+])
+def test_llm_backstop_benign_text_passes_through_unchanged(benign):
+    """防 over-redaction:不点名药/补剂的文案必须逐字节透传。"""
+    title, content, redacted = llm_push_backstop(
+        "健康提醒", benign, generic_title=GENERIC_LLM_PUSH_TITLE
+    )
+    assert not redacted
+    assert title == "健康提醒"
+    assert content == benign
+
+
+def test_llm_backstop_scan_failure_fails_closed_and_never_drops():
+    """TIGHTEN-only:扫描器炸了 → 泛化文案照发,绝不 raise / 丢推送。"""
+    import app.services.notification.push_privacy as pp
+
+    with patch.object(pp, "contains_sensitive_name", side_effect=RuntimeError("boom")):
+        title, content, redacted = pp.llm_push_backstop(
+            "标题", "任意内容", generic_title=GENERIC_LLM_PUSH_TITLE
+        )
+    assert redacted
+    assert title == GENERIC_LLM_PUSH_TITLE
+    assert content == pp.GENERIC_LLM_PUSH_CONTENT
+
+
+def test_contains_sensitive_name_empty_and_none():
+    assert not contains_sensitive_name(None)
+    assert not contains_sensitive_name("")
+
+
+# ─────────────────── 出口 1:agent_loop 主动通知 ───────────────────
+
+def _agent_loop_llm(json_text: str):
+    class _FakeProvider:
+        async def chat(self, **kwargs):
+            return json_text
+
+    return _FakeProvider()
+
+
+async def _run_agent_loop_notify(db, message: str, title: str = "健康提醒"):
+    import json as _json
+
+    from app.services import agent_loop
+    from app.services.notification.push_service import PushService
+
+    llm_json = _json.dumps(
+        {"action": "notify", "title": title, "message": message, "severity": "info"},
+        ensure_ascii=False,
+    )
+    fake_send = AsyncMock(return_value={"success": True})
+    with patch.object(agent_loop, "_build_context", return_value="ctx"), \
+            patch.object(agent_loop, "_check_push_limit", return_value=True), \
+            patch.object(agent_loop, "_increment_push_count"), \
+            patch("app.services.llm.factory.create_llm_provider",
+                  return_value=_agent_loop_llm(llm_json)), \
+            patch("app.services.notification.evidence_policy."
+                  "build_notification_evidence_data_for_user",
+                  side_effect=lambda _db, **kw: kw.get("existing_data") or {}), \
+            patch.object(PushService, "send_notification", new=fake_send):
+        result = await agent_loop.post_sync_reasoning(
+            db, user_id=1, twin=None, anomaly_alerts=[], safety_report=None
+        )
+    assert result["action"] == "notify"
+    assert fake_send.call_count == 1
+    return fake_send.call_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_notify_with_drug_name_redacted(db):
+    kwargs = await _run_agent_loop_notify(
+        db, "记得服用二甲双胍 500mg,晚饭后一次", title="二甲双胍提醒"
+    )
+    assert "二甲双胍" not in kwargs["title"]
+    assert "二甲双胍" not in kwargs["content"]
+    # 原文只进 data payload(App 解锁后应用内渲染)
+    assert kwargs["data"]["full_title"] == "二甲双胍提醒"
+    assert "二甲双胍" in kwargs["data"]["full_content"]
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_notify_benign_message_passes_through(db):
+    msg = "今天走了 12000 步,比过去一周平均多 20%,继续保持"
+    kwargs = await _run_agent_loop_notify(db, msg, title="步数进展")
+    assert kwargs["title"] == "步数进展"
+    assert kwargs["content"] == msg
+    assert "full_content" not in kwargs["data"]
+
+
+# ─────────────────── 出口 2/3/4:早安 / 周聊 / 今日健康复盘 ───────────────────
+
+def _sync_run_async(coro):
+    """无事件循环地驱动"不 await 真 IO"的协程(fake analyze / fake send)。"""
+    if not hasattr(coro, "send"):
+        return coro
+    try:
+        coro.send(None)
+    except StopIteration as exc:
+        return exc.value
+    raise AssertionError("fake coroutine awaited real IO")
+
+
+class _RecordingPushService:
+    calls: list = []
+
+    def __init__(self, _db):
+        pass
+
+    def send_notification(self, **kwargs):
+        _RecordingPushService.calls.append(kwargs)
+
+        async def _ok():
+            return {"success": True}
+
+        return _ok()
+
+
+def _mk_garmin_user(db, username: str):
+    from app.models.user import GarminCredential, User
+
+    user = User(username=username, email=f"{username}@example.com",
+                hashed_password="x", name=username, is_active=True, is_approved=True)
+    db.add(user)
+    db.commit()
+    cred = GarminCredential(user_id=user.id, garmin_email=f"{username}@g.com",
+                            encrypted_password="x", sync_enabled=True,
+                            credentials_valid=True)
+    db.add(cred)
+    db.commit()
+    return user
+
+
+@pytest.mark.parametrize("script,expect_generic", [
+    ("睡眠 7 小时 20 分,HRV 52ms,状态不错,今天适合轻松跑,加油", False),
+    ("血压平稳。记得早餐后服用氨氯地平,并观察是否头晕。", True),
+])
+def test_morning_summary_backstop(db, script, expect_generic):
+    from app.tasks.notifications import send_morning_health_summary
+
+    user = _mk_garmin_user(db, f"morning_{'g' if expect_generic else 'p'}")
+    _RecordingPushService.calls = []
+
+    @contextmanager
+    def _ctx():
+        yield db
+
+    task_fn = send_morning_health_summary.run
+    with patch.dict(task_fn.__globals__, {
+        "SessionLocal": _ctx,
+        "run_async": _sync_run_async,
+        "PushService": _RecordingPushService,
+    }), patch("app.services.briefing_voice_script.build_voice_script",
+              return_value=script):
+        result = task_fn()
+
+    assert result["sent_count"] == 1, f"推送被丢弃(违反 TIGHTEN-only): user={user.id}"
+    kwargs = _RecordingPushService.calls[0]
+    assert kwargs["title"] == "🌅 早安"  # 确定性 title 不动
+    if expect_generic:
+        assert kwargs["content"] == "今天的健康早报准备好了,点开收听。"
+        assert "氨氯地平" not in kwargs["content"]
+    else:
+        assert kwargs["content"] == script[:200]
+
+
+def test_weekly_invite_backstop_redacts_drug_script(db):
+    from app.tasks.notifications import send_weekly_review_invite
+
+    _mk_garmin_user(db, "weekly_g")
+    _RecordingPushService.calls = []
+
+    @contextmanager
+    def _ctx():
+        yield db
+
+    task_fn = send_weekly_review_invite.run
+    with patch.dict(task_fn.__globals__, {
+        "SessionLocal": _ctx,
+        "run_async": _sync_run_async,
+        "PushService": _RecordingPushService,
+    }), patch("app.services.weekly_review_voice_script.build_weekly_review_voice_script",
+              return_value=f"这周跑了 3 次。另外你开始记录{DRUG}了,下周继续。"):
+        result = task_fn()
+
+    assert result["sent_count"] == 1
+    kwargs = _RecordingPushService.calls[0]
+    assert DRUG not in kwargs["content"]
+    assert kwargs["content"] == "本周的健康回顾准备好了,点开聊聊。"
+
+
+@pytest.mark.parametrize("aggregation,expect_generic", [
+    ("今天步数达标,睡眠稍短,明天早点休息", False),
+    ("血糖偏高,建议继续服用二甲双胍并控制主食", True),
+])
+def test_daily_insight_backstop(db, aggregation, expect_generic):
+    from datetime import date as _date
+
+    from app.models.daily_health import GarminData
+    from app.tasks import notifications as notif
+
+    user = _mk_garmin_user(db, f"insight_{'g' if expect_generic else 'p'}")
+    today = _date(2026, 7, 12)
+    db.add(GarminData(user_id=user.id, record_date=today, steps=12000))
+    db.commit()
+
+    class _FakeAnalyzeClient:
+        def __init__(self):
+            pass
+
+        async def analyze(self, _prompt):
+            return {"aggregation": aggregation}
+
+    @contextmanager
+    def _ctx():
+        yield db
+
+    _RecordingPushService.calls = []
+    with patch.object(notif, "SessionLocal", new=_ctx), \
+            patch.object(notif, "run_async", new=_sync_run_async), \
+            patch.object(notif, "PushService", new=_RecordingPushService), \
+            patch("app.services.multi_model_analyze.MultiModelAnalyzeClient",
+                  new=_FakeAnalyzeClient):
+        notif._generate_daily_insight_for_user(user.id, today)
+
+    assert len(_RecordingPushService.calls) == 1, "推送被丢弃(违反 TIGHTEN-only)"
+    kwargs = _RecordingPushService.calls[0]
+    assert kwargs["title"] == "📊 今日健康复盘"
+    if expect_generic:
+        assert "二甲双胍" not in kwargs["content"]
+        assert kwargs["content"] == "今日健康复盘已生成,点开查看。"
+        assert "二甲双胍" in kwargs["data"]["full_content"]
+    else:
+        assert kwargs["content"] == aggregation
+        assert "full_content" not in kwargs["data"]
