@@ -19,6 +19,13 @@ from app.services.genui.chart_builder import (
     SUPPORTED_METRICS,
 )
 from app.services.genui.chart_rich import compute_chart_rich
+from app.services.genui.table_builder import (
+    build_table_from_tool_call,
+    build_tables_from_tool_calls,
+    GENUI_TABLE_CAP,
+    METRIC_TABLE_TYPE,
+    render_metric_table_block,
+)
 
 __all__ = [
     "build_line_chart",
@@ -31,4 +38,9 @@ __all__ = [
     "strip_reva_ui_blocks",
     "SUPPORTED_METRICS",
     "compute_chart_rich",
+    "build_table_from_tool_call",
+    "build_tables_from_tool_calls",
+    "render_metric_table_block",
+    "GENUI_TABLE_CAP",
+    "METRIC_TABLE_TYPE",
 ]
