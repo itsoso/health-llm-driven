@@ -207,6 +207,8 @@ function buildDietShareConfirmBadge(record: DietRecord): { primary: string; seco
 }
 
 function buildDietShareFooterSecondary(record: DietRecord): string {
+  const percent = normalizedAiConfidence(record.ai_confidence);
+  if (percent != null && percent < 60) return '识别待核对，发布前确认食物和份量';
   if (!hasAnyNutritionMetric(record)) return '营养回填后用于复盘';
   if (!isNutritionComplete(record)) return '部分营养回填后用于复盘';
   return '营养数据以本次确认记录为准';
