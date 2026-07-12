@@ -99,6 +99,10 @@ export default function DietShareCard({
           <Ionicons name="sparkles" size={15} color={C.greenBright} />
         </View>
         <Text style={styles.brand}>小巴 / 今日饮食</Text>
+        <View style={styles.confirmBadge}>
+          <Text style={styles.confirmBadgePrimary}>已确认</Text>
+          <Text style={styles.confirmBadgeSecondary}>可分享</Text>
+        </View>
         <Text style={styles.date}>{dateLabel}</Text>
       </View>
 
@@ -394,6 +398,19 @@ const styles = StyleSheet.create({
     borderColor: C.focusLine,
   },
   brand: { fontFamily: revaFonts.sans, fontSize: 12, color: C.focusInk1, fontWeight: '800', flex: 1 },
+  confirmBadge: {
+    minHeight: 25,
+    borderRadius: 7,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: 'rgba(255,255,255,0.64)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.focusLine,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmBadgePrimary: { fontFamily: revaFonts.sans, fontSize: 8, color: C.green600, fontWeight: '900' },
+  confirmBadgeSecondary: { fontFamily: revaFonts.sans, fontSize: 7, color: C.focusInk2, fontWeight: '800', marginTop: -1 },
   date: { fontFamily: revaFonts.mono, fontSize: 10, color: C.focusInk2 },
   mealImage: { width: '100%', height: 136, backgroundColor: C.paper2 },
   metricHero: {
