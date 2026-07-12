@@ -240,7 +240,7 @@ describe('DietShareCard', () => {
       />,
     );
 
-    fireEvent.press(getByText('分享图片'));
+    fireEvent.press(getByText('保存/分享图片'));
 
     await waitFor(() => {
       expect(mockCaptureRef).toHaveBeenCalledWith(
@@ -301,7 +301,24 @@ describe('DietShareCard', () => {
         phase: 'completed',
         share_target: 'xiaohongshu',
       }));
+      expect(getByText('小红书图片已生成，文案已复制')).toBeTruthy();
+      expect(getByText('去小红书选择图片后直接粘贴发布')).toBeTruthy();
     });
+  });
+
+  it('positions the generic action as save-or-share for screenshot workflows', () => {
+    const { getByText, getByLabelText } = render(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(getByText('保存/分享图片')).toBeTruthy();
+    expect(getByText('可在系统面板保存到相册')).toBeTruthy();
+    expect(getByLabelText('保存或分享饮食图片')).toBeTruthy();
   });
 
   it('uses native pixel units on Android and point units on iOS', () => {
@@ -320,11 +337,11 @@ describe('DietShareCard', () => {
       />,
     );
 
-    fireEvent.press(getByLabelText('分享饮食图片'));
+    fireEvent.press(getByLabelText('保存或分享饮食图片'));
     expect(mockCaptureRef).not.toHaveBeenCalled();
 
     fireEvent(getByTestId('diet-share-image'), 'load');
-    fireEvent.press(getByLabelText('分享饮食图片'));
+    fireEvent.press(getByLabelText('保存或分享饮食图片'));
     await waitFor(() => expect(mockCaptureRef).toHaveBeenCalled());
   });
 
@@ -342,7 +359,7 @@ describe('DietShareCard', () => {
     );
 
     fireEvent(getByTestId('diet-share-image'), 'load');
-    fireEvent.press(getByLabelText('分享饮食图片'));
+    fireEvent.press(getByLabelText('保存或分享饮食图片'));
 
     await waitFor(() => {
       expect(onShareTerminal).toHaveBeenCalledWith(expect.objectContaining({
@@ -366,7 +383,7 @@ describe('DietShareCard', () => {
       />,
     );
 
-    fireEvent.press(getByText('分享图片'));
+    fireEvent.press(getByText('保存/分享图片'));
 
     await waitFor(() => {
       expect(Share.share).toHaveBeenCalledWith(expect.objectContaining({
@@ -394,8 +411,8 @@ describe('DietShareCard', () => {
       jest.advanceTimersByTime(DIET_SHARE_IMAGE_TIMEOUT_MS);
     });
     expect(queryByTestId('diet-share-image')).toBeNull();
-    expect(getByText('分享图片')).toBeTruthy();
-    fireEvent.press(getByLabelText('分享饮食图片'));
+    expect(getByText('保存/分享图片')).toBeTruthy();
+    fireEvent.press(getByLabelText('保存或分享饮食图片'));
     await waitFor(() => expect(mockCaptureRef).toHaveBeenCalled());
     jest.useRealTimers();
   });

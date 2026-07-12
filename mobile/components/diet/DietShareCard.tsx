@@ -185,6 +185,25 @@ function dialogTitleForShareTarget(target: ShareTarget): string {
   return '分享饮食打卡';
 }
 
+function publishHintForShareTarget(target: ShareTarget): { title: string; detail: string } {
+  if (target === 'wechat') {
+    return {
+      title: '微信图片已生成，文案已复制',
+      detail: '去微信或朋友圈选择图片后直接粘贴发布',
+    };
+  }
+  if (target === 'xiaohongshu') {
+    return {
+      title: '小红书图片已生成，文案已复制',
+      detail: '去小红书选择图片后直接粘贴发布',
+    };
+  }
+  return {
+    title: '分享图已生成',
+    detail: '可在系统面板保存到相册或继续转发',
+  };
+}
+
 export type DietShareCardProps = {
   record: DietRecord;
   dateLabel: string;
@@ -357,12 +376,15 @@ export function DietShareSheet({
   const [imageReady, setImageReady] = useState(!imageSource);
   const [imageTimedOut, setImageTimedOut] = useState(false);
   const [copiedCaption, setCopiedCaption] = useState<'moments' | 'xiaohongshu' | null>(null);
+  const [lastSharedTarget, setLastSharedTarget] = useState<ShareTarget | null>(null);
   const shareHasPhoto = Boolean(imageSource) && !imageTimedOut;
+  const publishHint = lastSharedTarget ? publishHintForShareTarget(lastSharedTarget) : null;
 
   React.useEffect(() => {
     setImageReady(!imageSource);
     setImageTimedOut(false);
     setCopiedCaption(null);
+    setLastSharedTarget(null);
   }, [imageSource, visible]);
 
   React.useEffect(() => {
@@ -412,6 +434,7 @@ export function DietShareSheet({
           has_photo: false,
           share_target: target,
         });
+        setLastSharedTarget(target);
         return;
       }
       const dimensions = dietShareCaptureDimensions();
@@ -432,6 +455,7 @@ export function DietShareSheet({
         has_photo: shareHasPhoto,
         share_target: target,
       });
+      setLastSharedTarget(target);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       try {
@@ -442,7 +466,9 @@ export function DietShareSheet({
           has_photo: false,
           share_target: target,
         });
+        setLastSharedTarget(target);
       } catch {
+        setLastSharedTarget(null);
         onShareTerminal?.({
           phase: 'failed',
           duration_ms: Date.now() - startedAt,
@@ -532,20 +558,35 @@ export function DietShareSheet({
             </TouchableOpacity>
           </View>
 
+          {publishHint ? (
+            <View style={styles.publishHint} testID="diet-share-publish-hint">
+              <Ionicons name="checkmark-circle" size={18} color={C.green600} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.publishHintTitle}>{publishHint.title}</Text>
+                <Text style={styles.publishHintDetail}>{publishHint.detail}</Text>
+              </View>
+            </View>
+          ) : null}
+
           <TouchableOpacity
             style={[styles.shareButton, (sharing || !imageReady) && styles.shareButtonDisabled]}
             onPress={() => handleShare('generic')}
             disabled={sharing || !imageReady}
             activeOpacity={0.84}
             accessibilityRole="button"
-            accessibilityLabel="分享饮食图片"
+            accessibilityLabel="保存或分享饮食图片"
           >
             {sharing || !imageReady ? (
               <ActivityIndicator size="small" color={C.greenOn} />
             ) : (
               <Ionicons name="share-outline" size={19} color={C.greenOn} />
             )}
-            <Text style={styles.shareButtonText}>{!imageReady ? '图片加载中' : sharing ? '生成中' : '分享图片'}</Text>
+            <View style={styles.shareButtonCopy}>
+              <Text style={styles.shareButtonText}>{!imageReady ? '图片加载中' : sharing ? '生成中' : '保存/分享图片'}</Text>
+              {!sharing && imageReady ? (
+                <Text style={styles.shareButtonHint}>可在系统面板保存到相册</Text>
+              ) : null}
+            </View>
           </TouchableOpacity>
           <View style={styles.captionButtonRow}>
             <TouchableOpacity
@@ -757,9 +798,25 @@ const styles = StyleSheet.create({
   xhsShareButton: { backgroundColor: '#D95A45' },
   platformShareText: { fontFamily: revaFonts.sans, fontSize: 13, color: C.greenOn, fontWeight: '900' },
   platformShareHint: { fontFamily: revaFonts.sans, fontSize: 9.5, color: 'rgba(255,255,255,0.78)', marginTop: 1 },
+  publishHint: {
+    width: '100%',
+    minHeight: 46,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.focusBg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.focusLine,
+    marginTop: revaSpacing.s2,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  publishHintTitle: { fontFamily: revaFonts.sans, fontSize: 12.5, color: C.green600, fontWeight: '900' },
+  publishHintDetail: { fontFamily: revaFonts.sans, fontSize: 10.5, color: C.ink3, fontWeight: '700', marginTop: 1 },
   shareButton: {
     width: '100%',
-    minHeight: 48,
+    minHeight: 52,
     borderRadius: revaRadii.md,
     backgroundColor: C.ink2,
     marginTop: revaSpacing.s2,
@@ -769,7 +826,9 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   shareButtonDisabled: { opacity: 0.72 },
+  shareButtonCopy: { alignItems: 'center', justifyContent: 'center' },
   shareButtonText: { fontFamily: revaFonts.sans, fontSize: 15, color: C.greenOn, fontWeight: '800' },
+  shareButtonHint: { fontFamily: revaFonts.sans, fontSize: 10, color: 'rgba(255,255,255,0.72)', fontWeight: '700', marginTop: 1 },
   captionButtonRow: {
     width: '100%',
     flexDirection: 'row',
