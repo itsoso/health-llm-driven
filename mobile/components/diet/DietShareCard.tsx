@@ -77,11 +77,15 @@ export function buildDietShareHighlights(record: DietRecord): string[] {
 
 export function buildDietShareCaption(record: DietRecord, dateLabel: string): string {
   const mealLabel = MEAL_LABEL[record.meal_type] ?? '餐食';
+  const headline = buildDietShareHeadline(record);
+  const highlights = buildDietShareHighlights(record);
   const lines = [
     `今天这餐打卡: ${dateLabel}`,
+    headline,
     `${mealLabel}: ${record.food_items}`,
     `热量 ${metric(record.calories)} kcal · 蛋白质 ${metric(record.protein)}g · 碳水 ${metric(record.carbs)}g · 脂肪 ${metric(record.fat, 1)}g`,
   ];
+  if (highlights.length > 0) lines.push(`亮点: ${highlights.join(' / ')}`);
   if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g`);
   lines.push('认真记录，也认真生活。');
   lines.push('#饮食打卡 #健康生活 #小巴记录');

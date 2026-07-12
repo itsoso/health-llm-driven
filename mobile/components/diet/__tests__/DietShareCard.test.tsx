@@ -241,8 +241,10 @@ describe('DietShareCard', () => {
 
     await waitFor(() => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('今天这餐打卡'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('蛋白质拉满的一餐'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('鸡胸肉 200g、杂粮饭 1碗'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('蛋白质 67g'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('亮点: 高蛋白 / 低脂'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#饮食打卡'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#小巴记录'));
     });
