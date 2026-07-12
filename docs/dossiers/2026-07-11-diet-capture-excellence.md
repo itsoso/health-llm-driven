@@ -113,6 +113,7 @@
 - T5.3 原生存储回归：先以严格 SecureStore 键校验得到 15 个 RED 失败，并以 2 个 RED 用例锁定遗留清理失败不得阻断新存储；最终 focused `5 suites / 114 tests`、全量 `233 suites / 1632 tests` 通过；TypeScript 通过，lint `0 errors`（97 条既有 warnings）。iPhone 17 Pro 模拟器连续重载仅保留无定位能力的 GPS 警告，不再出现 `[ChatInputBar] draft restore failed`、`draft persistence failed` 或非法 SecureStore 键错误。
 - T5.3 Linux 权威闸门：GitHub Actions run `29170917830` SUCCESS，24/24 作业完成；`t-f-v` 首次尝试按 600 秒截止时间终止，干净进程重试后 `266 passed`，最终 Backend tests enforcement 通过。head commit 为 `401ec2810e2073e84ac571d108c44bbe3c8f5216`。
 - T5.4 本地只读基准：同一 Mobile 1568px/JPEG q0.7 输入下，旧 `qwen-vl-max` 两张餐食耗时 11.9s / 13.5s，新 `qwen3-vl-flash` 为 6.0s / 6.3s，平均从约 12.7s 降至约 6.2s；非餐食 App 截图在 1.7s 正确拒绝。TokenPlan 的 `qwen3.6-flash` 与 `qwen3.7-plus` 路径分别约 20s 和 13.6-17.9s，未采用。配置和请求契约先得到 2 个预期 RED，最终识别安全回归 `12 passed`；修改后真实服务复测成功。显式 live LLM gate 另通过 invariants `12/12`、health-agent-core `50/50`、真实 orchestrator `5/5`，平均分 `0.94`、无 regression。
+- T5.4 Linux 权威闸门：GitHub Actions run `29172663161` SUCCESS；backend quality、type drift、Frontend、Mobile、macOS、18 个后端分片与最终 Backend tests enforcement 全部通过。`agent-i-z` 与 `t-f-v` 首进程达到 600 秒截止线后由 CI 脚本终止，干净进程重试后分别在 11m27s / 11m40s 完成，未隐藏断言失败。
 - T5.2 首次 CI run `29164922239` 中 type drift 在补齐 Frontend 生成类型后通过，但 Linux `a-b` 分片连续两次远超历史绿灯的 4 分 23 秒，并在 `test_agent_health_manage.py` 与 `test_agent_intervention_cycle_tool.py` 边界失去输出；该边界组合本机 `30/30` 通过，`c-d` 重跑也在 3 分 36 秒通过。判定为既有进程级顺序污染而非饮食断言回归，将 86 个 `a-b` 测试文件拆为非 Agent、`agent_[a-h]`、`agent_[i-z]` 三个互斥进程；文件覆盖校验为 `86 -> 86`、差集 0。
 - T5.2 CI run `29166225719` 验证上述三个新分片分别在 3 分 2 秒、2 分 15 秒和 1 分 24 秒通过；同轮旧 `t[f-z]+u` 分片在 69% 处进入 `test_twin_builder.py` 后冻结，并被 20 分钟上限终止，其他 16 个作业均通过。本机同命令 `392/392` 在 31.23 秒通过；据逐用例日志将其拆为 `t[f-v]`、`t[w-z]`、`u` 三个干净进程，原 24 个文件覆盖校验仍为 `24 -> 24`、差集 0。
 - T5.2 CI run `29166933157` 中 `t[f-v]`、`t[w-z]`、`u` 已分别在 1 分 44 秒、1 分 25 秒和 1 分 28 秒通过；唯一剩余的旧 `s` 大分片进入 `test_schedule_into_agenda.py` 后失去输出，其他 18 个作业均通过。本机同一 643 项命令也在该模块首个用例后停住，但该模块单跑 `8/8`、与前一模块配对 `26/26`、`s[c-k]` 分组 `55/55` 均通过，确认是更长前序造成的进程状态污染；将 58 个 `s` 文件拆为 `s[a-b]`、`s[c-k]`、`s[l-z]`，覆盖校验为 `58 -> 58`、差集 0。
@@ -138,6 +139,8 @@
 - T5.2 部署前 PostgreSQL 备份：`/opt/health-app/backups/health_db_2026-07-12_05-12.sql.gz`，38 MB，权限 `0600`，两张 force-RLS 表的数据段完整性检查通过。
 - T5.2 production OTA：runtime `1.3.1`，update group `2f5f9559-9838-404a-a03c-ebdfb3c334c9`，iOS update `019f530b-0ec6-7838-aaa3-721414a37189`；EAS `update:view` 复核 branch=`production`、commit、runtime 与 `isRollBackToEmbedded=false` 一致。
 - T5.3 production OTA：runtime `1.3.1`，update group `2a6f06a0-2e83-454e-a98f-a10fc0b11e9f`，iOS update `019f5364-6518-7807-b4d9-c8433f7c8c59`；EAS `update:view` 复核 branch=`production`、commit=`401ec2810e2073e84ac571d108c44bbe3c8f5216`、runtime 与 `isRollBackToEmbedded=false` 一致。
+- T5.4 后端通过干净 worktree 的 `./deploy.sh -b -y` 部署，生产 Git HEAD 为 `087808dd3e45619f5fa2a6f052ed65c622ab551a`，环境已同步为 `LLM_VISION_MODEL=qwen3-vl-flash`；本轮无新迁移。
+- T5.4 部署前 PostgreSQL 备份：`/opt/health-app/backups/health_db_2026-07-12_07-59.sql.gz`，38 MB、权限 `0600`，两张 force-RLS 表的数据段完整性检查通过。
 
 ## G5 · 部署健康闸
 
@@ -147,6 +150,7 @@
 - 公网及服务器本机 `/api/v1/health` 均返回 healthy，API、PostgreSQL、Redis、Celery 全部 connected/running。
 - T5.1 增量部署后 `health-backend` 为 active；公网 `/api/v1/health` 再次返回 healthy，production OTA 已绑定同一代码 commit。
 - T5.2 增量部署后 `health-backend`、`celery-worker`、`celery-beat` 均为 active，服务器 Git HEAD 为 `c6d3d3f49`，部署健康分 `60/60 PASS`；公网健康仍为 healthy，服务器本机 OpenAPI 的 `FoodItem` 已包含 `portion_basis` 与 `portion_confidence`。
+- T5.4 增量部署后 `health-backend` 为 active，部署健康分 `60/60 PASS`，skills manifest 本地/线上均为 22；公网 `/api/v1/health` 返回 API、PostgreSQL、Redis、Celery 全部 healthy/connected。
 - **裁决：PASS**。
 
 ## S7 · 上线验证
@@ -156,6 +160,7 @@
 - TestFlight `1.3.1 (221)` 已成功上传 App Store Connect；Apple 处理完成状态尚未单独核实，因此不宣称当前已可安装。
 - build 221 对应 runtime `1.3.1` 的 production OTA 已发布；设备冷启或后台超过 30 秒后可拉取。当前生产仍无新版终态样本，不宣称真实 p50/p95 或纠错率已达标。
 - T5.2 OTA 已绑定 build 221 的 runtime `1.3.1` 与生产 commit `c6d3d3f49`；当前仍不以模拟器、单测或模型自报置信度替代真机照片准确率与份量误差验收。
+- T5.4 生产服务只读 smoke：同一公开 1568px 测试图在 8.755s 成功返回“甜酸口味鸡肉块、蛋炒饭、橙子片”等可见食物，未再误报为宫保鸡丁；测试图只临时写入服务器 `/tmp`，调用后已删除。该样本证明部署和模型路由生效，但不替代真实用户照片的 p50/p95 与纠错率。
 - 待真机验证：相机实拍 -> 识别 -> 修正 -> 确认单次写入，以及分享图分别投递微信和小红书。
 
 ## G6 · 验证闸
