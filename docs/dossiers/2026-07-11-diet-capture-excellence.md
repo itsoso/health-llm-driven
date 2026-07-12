@@ -152,6 +152,7 @@
 - T5.4 后端通过干净 worktree 的 `./deploy.sh -b -y` 部署，生产 Git HEAD 为 `087808dd3e45619f5fa2a6f052ed65c622ab551a`，环境已同步为 `LLM_VISION_MODEL=qwen3-vl-flash`；本轮无新迁移。
 - T5.4 部署前 PostgreSQL 备份：`/opt/health-app/backups/health_db_2026-07-12_07-59.sql.gz`，38 MB、权限 `0600`，两张 force-RLS 表的数据段完整性检查通过。
 - T5.5 production OTA：runtime `1.3.1`，update group `8831e015-4afd-4871-839f-741147b67776`，iOS update `019f53f4-ba80-7e83-9050-ccd6faeaa2ac`；EAS `update:view` 复核 branch=`production`、commit=`d8cdc1d1e3d69eaf962615ddead3e57ebaecfae0`、runtime 与 `isRollBackToEmbedded=false` 一致。
+- T5.6 production OTA：runtime `1.3.1`，update group `fd730fd7-22dd-4cd6-962a-260267e51f31`，iOS update `019f54d5-4bb7-7476-b49b-b9d5b95d837e`；EAS `update:view` 复核 branch=`production`、commit=`da579f055def97902f25c3a7edc3b0992d17df1d`、runtime 与 `isRollBackToEmbedded=false` 一致。
 
 ## G5 · 部署健康闸
 
@@ -174,6 +175,7 @@
 - T5.4 生产服务只读 smoke：同一公开 1568px 测试图在 8.755s 成功返回“甜酸口味鸡肉块、蛋炒饭、橙子片”等可见食物，未再误报为宫保鸡丁；测试图只临时写入服务器 `/tmp`，调用后已删除。该样本证明部署和模型路由生效，但不替代真实用户照片的 p50/p95 与纠错率。
 - T5.5 模拟器实链路：同一公开餐食图经 Mobile 相册入口和生产 API 返回“橙子鸡、咖喱炒饭、橙子片”3 项草稿；修复前被 Mobile 二次误判为用药/补剂，修复后正常进入待确认且没有写入正式 DietRecord。截图保存在本机 `/tmp/reva-library-draft-no-fab.png`。
 - T5.5 OTA 已绑定 build 221 的 runtime `1.3.1` 与代码提交 `d8cdc1d1e`；设备冷启或后台超过 30 秒后可拉取。真机相册权限体验、微信和小红书投递仍保持待验证，不以 EAS 发布成功替代终端验收。
+- T5.6 OTA 已绑定 build 221 的 runtime `1.3.1` 与代码提交 `da579f055`；设备冷启或后台超过 30 秒后可拉取。自动化已证明相机、相册、文字、语音四种 Mobile 入口确认后都会带 `diet/quick_capture` 上下文回到小巴；真实设备语音输入和真机目标应用分享仍需继续验收。
 - 待真机验证：相机实拍 -> 识别 -> 修正 -> 确认单次写入，以及分享图分别投递微信和小红书。
 
 ## G6 · 验证闸
