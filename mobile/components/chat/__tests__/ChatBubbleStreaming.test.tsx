@@ -212,6 +212,9 @@ describe('ChatBubble streaming degraded render', () => {
 
     // 点 pill 展开 → 步骤列表出现.
     fireEvent.press(getByLabelText('展开思考步骤'));
+    const expandedPanelStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
+    expect(expandedPanelStyle.borderRadius).toBeLessThanOrEqual(18);
+    expect(expandedPanelStyle.alignSelf).toBe('stretch');
     expect(getByText('正在理解你的问题')).toBeTruthy();
     expect(getByText('读取记录信息')).toBeTruthy();
     expect(getByText('整理回复中')).toBeTruthy();
@@ -220,6 +223,24 @@ describe('ChatBubble streaming degraded render', () => {
     // 再点收起 → 步骤列表重新隐藏.
     fireEvent.press(getByLabelText('收起思考步骤'));
     expect(queryByText('读取记录信息')).toBeNull();
+  });
+
+  it('does not expose native text selection handles inside chat bubbles', () => {
+    const userBubble = renderBubble({
+      id: 'user-native-selection',
+      role: 'user',
+      content: '口腔溃疡应该吃什么药',
+    });
+    expect(userBubble.getByText('口腔溃疡应该吃什么药').props.selectable).not.toBe(true);
+    userBubble.unmount();
+
+    const streamingBubble = renderBubble({
+      id: 'assistant-native-selection',
+      role: 'assistant',
+      content: '正在整理建议。',
+      streaming: true,
+    });
+    expect(streamingBubble.getByText('正在整理建议。').props.selectable).not.toBe(true);
   });
 
   // 流式期间跳过 sanitizeAiContent + extractRevaUiBlocks 两条重正则 (perf fix).

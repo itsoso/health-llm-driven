@@ -102,6 +102,17 @@ function buildDietShareCaptionStatusLine(highlights: string[]): string {
   return `今日状态: ${highlights.join(' / ')}`;
 }
 
+function buildDietShareHashtags(highlights: string[]): string {
+  const tags: string[] = [];
+  highlights.forEach((highlight) => {
+    if (highlight === '高蛋白') tags.push('#高蛋白饮食');
+    if (highlight === '低脂') tags.push('#低脂餐');
+    if (highlight === '含纤维') tags.push('#膳食纤维');
+    if (highlight === '轻负担') tags.push('#轻食打卡');
+  });
+  return [...tags, '#饮食打卡', '#健康生活', '#小巴记录'].join(' ');
+}
+
 function buildDietShareDataDisclosure(record: DietRecord): string {
   const sourceLabel = nutritionSourceLabel(record.source);
   if (!hasAnyNutritionMetric(record)) return '营养数据: 估算中，稍后可继续复盘';
@@ -142,8 +153,8 @@ export function buildDietShareCaption(record: DietRecord, dateLabel: string): st
   const headline = buildDietShareHeadline(record);
   const highlights = buildDietShareHighlights(record);
   const lines = [
+    `小巴饮食卡｜${headline}`,
     `今天这餐打卡: ${dateLabel}`,
-    headline,
     `${mealLabel}: ${record.food_items}`,
     buildDietShareCaptionStatusLine(highlights),
     buildDietShareMacroLine(record, 'compact'),
@@ -152,7 +163,7 @@ export function buildDietShareCaption(record: DietRecord, dateLabel: string): st
   if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g`);
   lines.push(buildDietShareDataDisclosure(record));
   lines.push('认真记录，也认真生活。');
-  lines.push('#饮食打卡 #健康生活 #小巴记录');
+  lines.push(buildDietShareHashtags(highlights));
   return lines.join('\n');
 }
 

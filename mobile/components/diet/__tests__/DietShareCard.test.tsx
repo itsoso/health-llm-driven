@@ -112,6 +112,25 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('writes a Xiaohongshu-native title and dynamic nutrition hashtags', async () => {
+    const { getByText } = render(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(getByText('复制小红书文案'));
+
+    await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('小巴饮食卡｜蛋白质拉满的一餐'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#高蛋白饮食'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#低脂餐'));
+    });
+  });
+
   it('labels user-corrected nutrition as manually confirmed', () => {
     const { getByText } = render(
       <DietShareCard record={{ ...record, source: 'user_corrected' }} dateLabel="7月11日 · 午餐" />,

@@ -574,7 +574,7 @@ function ChatBubbleInner({
                 ))}
               </View>
             )}
-            {displayText ? <Text selectable style={txt.bubbleUser}>{displayText}</Text> : null}
+            {displayText ? <Text style={txt.bubbleUser}>{displayText}</Text> : null}
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
@@ -597,7 +597,7 @@ function ChatBubbleInner({
             ) : null}
             {visibleAssistantMarkdown && isStreaming ? (
               // 流式降级: plain text, 保留换行, 不做 markdown 解析/整树渲染
-              <Text selectable style={txt.streaming}>{visibleAssistantMarkdown}</Text>
+              <Text style={txt.streaming}>{visibleAssistantMarkdown}</Text>
             ) : visibleAssistantMarkdown ? (
               <Markdown style={MD_STYLES}>{renderedMarkdown}</Markdown>
             ) : !item.streaming && !displayText ? (
@@ -1301,6 +1301,13 @@ const styles = StyleSheet.create({
     backgroundColor: C.green50,
     overflow: 'hidden',
   },
+  thinkingPillExpanded: {
+    alignSelf: 'stretch',
+    borderRadius: revaRadii.md,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
   thinkingPillHeader: {
     minHeight: 22,
     flexDirection: 'row',
@@ -1562,7 +1569,7 @@ function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?:
   if (!streaming) {
     const summary = `思考完成 · ${steps.length} 步`;
     return (
-      <View testID="assistant-thinking-panel" style={styles.thinkingPill}>
+      <View testID="assistant-thinking-panel" style={[styles.thinkingPill, expanded && styles.thinkingPillExpanded]}>
         <Pressable
           onPress={() => setExpanded((prev) => !prev)}
           style={({ pressed }) => [styles.thinkingPillHeader, pressed && styles.actionBtnPressed]}
