@@ -167,6 +167,30 @@ def _apply_thinking_controls(kwargs: Dict[str, Any]) -> Dict[str, Any]:
     return kwargs
 
 
+def _maybe_mark_prompt_cache(
+    messages: List[Dict[str, Any]], kwargs: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """DashScope 显式上下文缓存 (Phase-2 rank3): 按 role/position 在 append-only 边界注入
+    cache_control ephemeral 断点。
+
+    调用方 (agent_executor._maybe_apply_prompt_cache_markers) 已 flag + ModelEntry
+    .supports_explicit_cache 门控, 只对**探针验证过**的 DashScope 模型置 `prompt_cache_markers`;
+    OpenAI SDK 不认识该 kwarg, 当顶层传会 TypeError, 所以这里**必须 pop 掉**。没这个键
+    (= flag 关 / 模型未验证) 时原样返回 messages → payload 逐字节不变。
+
+    值可为 True (默认布局: system + history_prefix) 或 dict (显式 layout knobs, 供探针
+    实验静态前缀 / tail 断点)。变换是纯函数 (prompt_cache.apply_cache_markers), 返回**新**
+    list, 绝不改调用方的 messages。"""
+    layout = kwargs.pop("prompt_cache_markers", None)
+    if not layout:
+        return messages
+    from app.services.llm.prompt_cache import apply_cache_markers
+
+    if isinstance(layout, dict):
+        return apply_cache_markers(messages, **layout)
+    return apply_cache_markers(messages)
+
+
 def _extract_reasoning_delta(delta: Any) -> Optional[str]:
     """从流式 delta 取 reasoning_content(DashScope/qwen 思考流增量)。
 
@@ -248,6 +272,10 @@ class OpenAIProvider(LLMProvider):
         return_metadata = bool(kwargs.pop("return_metadata", False))
         # thinking_budget / enable_thinking → extra_body(仅调用方门控过的 qwen 模型会带)
         kwargs = _apply_thinking_controls(kwargs)
+        # 显式上下文缓存 (rank3): 门控过时在 append-only 边界打 cache_control 断点。
+        # 必须在 stream 分支前做 —— pop 掉 prompt_cache_markers, 并让 stream=True 下发已
+        # 标记的 messages 给 _stream_chat (它不再重复标: kwarg 已被 pop)。flag 关时透传。
+        messages = _maybe_mark_prompt_cache(messages, kwargs)
 
         if stream:
             return self._stream_chat(messages, use_model, temperature, max_tokens, **kwargs)
@@ -361,6 +389,9 @@ class OpenAIProvider(LLMProvider):
         kwargs.pop("return_metadata", None)
         # thinking_budget / enable_thinking → extra_body(仅调用方门控过的 qwen 模型会带)
         kwargs = _apply_thinking_controls(kwargs)
+        # 显式上下文缓存 (rank3): 门控过时在 append-only 边界打 cache_control 断点; pop 掉
+        # prompt_cache_markers 避免作为未知顶层 kwarg 流进 create()。flag 关时透传 (逐字节不变)。
+        messages = _maybe_mark_prompt_cache(messages, kwargs)
         # AsyncOpenAI + `async for`:合成/工具决策轮的 inter-chunk 网络等待不再阻塞
         # 整个 event loop(旧代码 to_thread 创建后同步 `for chunk in response`)。
         client = self._get_async_client()

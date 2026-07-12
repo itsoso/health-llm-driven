@@ -6527,6 +6527,9 @@ class AgentExecutor:
             # SDK 报错);flag 关时 payload 逐字节不变。
             if getattr(settings, "llm_parallel_tool_calls", False):
                 chat_kwargs["parallel_tool_calls"] = True
+        # 显式上下文缓存(rank3, ships-OFF): 工具决策轮 + 合成轮都受益(工具轮写 system 缓存、
+        # 合成轮命中), 故不分 tools 无条件门控。flag 关 / 模型未验证时不设 kwarg = 逐字节不变。
+        self._maybe_apply_prompt_cache_markers(chat_kwargs)
         self._last_provider_model_name = (
             getattr(provider, "model", None)
             or getattr(provider, "default_model", None)
@@ -6600,6 +6603,9 @@ class AgentExecutor:
             # 合成/答案轮(无 tools): 可选给 qwen 思考阶段封顶(flag 门控, fail-closed)。
             # 只在这里调=天然只碰无工具的合成轮, 绝不碰工具决策轮。
             self._maybe_apply_synthesis_thinking_budget(stream_kwargs)
+        # 显式上下文缓存(rank3, ships-OFF): 工具轮写 system 缓存、合成轮命中 → 两类轮都受益,
+        # 故不分 tools 无条件门控。flag 关 / 模型未验证时不设 kwarg = payload 逐字节不变。
+        self._maybe_apply_prompt_cache_markers(stream_kwargs)
         self._last_provider_model_name = (
             getattr(provider, "model", None)
             or getattr(provider, "default_model", None)
@@ -6689,6 +6695,40 @@ class AgentExecutor:
                 "[agent_executor] 合成轮思考封顶 model=%s thinking_budget=%d",
                 model_id,
                 budget,
+            )
+        except Exception:  # noqa: BLE001 — 延迟优化绝不断主链路
+            return
+
+    def _maybe_apply_prompt_cache_markers(self, call_kwargs: Dict[str, Any]) -> None:
+        """DashScope 显式上下文缓存(Phase-2 rank3, flag 门控, fail-closed)。
+
+        只在满足**全部**条件时给 call_kwargs 打显式缓存信号(否则 = 零行为变更, payload
+        逐字节不变):
+          1. settings.llm_explicit_prompt_cache(默认 False = 关);
+          2. 本回合 effective model 的 ModelEntry.supports_explicit_cache=True
+             (仅**真网络探针**验证过 cache_control 命中 + usage.cached_tokens 透传的
+             DashScope 模型;未验证模型不打标, 免端点拒/忽略无效断点)。
+        命中时只设 `prompt_cache_markers=True`(默认布局 = system + history_prefix 两断点);
+        真正的 cache_control 注入由 provider 侧 _maybe_mark_prompt_cache 按 role/position
+        在 append-only 边界完成(见 openai_provider + services/llm/prompt_cache.py)。
+        fail-soft: 任何判定异常都不打标(=现状), 绝不断链路。"""
+        try:
+            from app.config import settings
+
+            if not getattr(settings, "llm_explicit_prompt_cache", False):
+                return
+            model_id = self._last_effective_model_id
+            if not model_id:
+                return
+            from app.services.llm.model_registry import get_model
+
+            entry = get_model(model_id)
+            if entry is None or not getattr(entry, "supports_explicit_cache", False):
+                return
+            call_kwargs["prompt_cache_markers"] = True
+            logger.info(
+                "[agent_executor] 显式上下文缓存标记 model=%s (system+history_prefix 断点)",
+                model_id,
             )
         except Exception:  # noqa: BLE001 — 延迟优化绝不断主链路
             return
