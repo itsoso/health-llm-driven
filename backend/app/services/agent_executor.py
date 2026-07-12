@@ -4135,13 +4135,28 @@ class AgentExecutor:
             )
             if "ActionCard" not in sources_used:
                 sources_used.append("ActionCard")
-        desktop_response_instruction = _extract_desktop_response_instruction(extra_context)
-        if desktop_response_instruction:
+        if genui_table_on:
+            # GenUI metric_table (rank1): 客户端声明 genui-table-v1 → 数据由后端确定性
+            # 表格卡片直接呈现, 正文改走 ≤500字 结论先行契约。**服务端硬门**: 即便旧客户端
+            # 仍在 extra_context 里塞 mac "最高优先级要求生成大 markdown 表", 声明了 cap 就
+            # 以本契约为准并**覆盖**那条指令 —— 否则旧指令会一边索要 4000 字表格、一边又声明
+            # cap, 自伤 decode 税 (rank1 要消灭的正是这份税)。
             turn_context_parts.append(
-                "## 桌面端回复格式要求\n"
-                f"{desktop_response_instruction}\n"
-                "这是桌面端展示的最高优先级格式要求；除非用户明确要求纯文本，否则必须遵守。"
+                "## 数据回答格式要求（最高优先级）\n"
+                "本回合若涉及健康数据查询，系统已用表格卡片把数值直接呈现给用户。因此：\n"
+                "- 正文**不超过 500 字**；\n"
+                "- **结论先行**：先给 2-3 条关键要点，再给可执行的行动建议；\n"
+                "- **绝不逐行复述表格中的数值行**（用户已在卡片里看到），只做解读、趋势、对比与行动指引；\n"
+                "- 不确定性与安全边界照常表达。"
             )
+        else:
+            desktop_response_instruction = _extract_desktop_response_instruction(extra_context)
+            if desktop_response_instruction:
+                turn_context_parts.append(
+                    "## 桌面端回复格式要求\n"
+                    f"{desktop_response_instruction}\n"
+                    "这是桌面端展示的最高优先级格式要求；除非用户明确要求纯文本，否则必须遵守。"
+                )
         # 入口 deeplink 携带的结构化上下文 — 用户在 SNP/饮食/运动等页点"详细聊"时,
         # 把当前页正展示的具体方案条目透传过来, 让 LLM 不重新猜, 在已有方案上深化.
         if extra_context and extra_context.strip():
