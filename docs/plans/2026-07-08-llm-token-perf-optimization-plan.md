@@ -78,6 +78,27 @@
 - **省**:blob 门控真实用户推导 1,000–2,300 tokens/轮;历史摘要长对话推导 2,000–3,000 tokens/轮(且以摘要保住第 8 轮前被硬切的上下文)
 - **质量闸**:风险最高:evals/comparative 按血压/睡眠/化验分维度前后对比 judge 不降;run_xiaoba 加多轮跟进用例(第 N 轮引用第 1 轮结论);safety eval 零回归;最近 2-3 轮永不进摘要(fast path 丢跟进上下文的历史教训)
 
+### 11. [S] 合成轮思考封顶(qwen `thinking_budget` / `enable_thinking`)——**最大单杠杆,已接线 ships-flag-off**
+- **背景**:prod qwen3.7-max 合成轮 in-call TTFT p50 ~20-24s,是首个可见 token 前那段**沉默的思考阶段**;最终答案却只 ~373 real completion tokens。假说=隐藏思考吃掉墙钟。
+- **探针实证**(2026-07-12,真网络 `backend/scripts/probe_qwen_thinking_budget.py`,单样本决定性,Δ 达 20s+):
+
+  | variant | placement | ttft_content | total | completion | reasoning |
+  |---|---|---|---|---|---|
+  | qwen default(思考开) | n-a | **35.82s** | 52.64s | 2802 | 1898 |
+  | qwen `enable_thinking=false` | extra_body 顶层 | **1.61s** (↓95%) | 20.03s | 1024 | — |
+  | qwen `thinking_budget=512` | extra_body 顶层 | **10.99s** (↓69%) | 29.55s | 1541 | 512 |
+
+  - **Lever 1(封顶/关思考)= SUPPORTED**:`extra_body` **顶层**放置生效(`parameters` 嵌套不需要);TTFT 从 ~36s 塌到 1.6s(关)/ 11s(封顶 512)。
+  - **Lever 2(思考流可视化)= SUPPORTED**:流式**暴露** `reasoning_content` delta——首个 reasoning delta @ 1.67s,首个可见 content @ 35.82s → 那 ~34s 死气可用**真实思考流**填进现有「思考过程」UI(非破坏性,保留思考)。本 rank 只接了 Lever 1;Lever 2 是独立的未来 UI 项。
+- **已接线**(默认关,`SYNTHESIS_THINKING_BUDGET=0`):
+  - `ModelEntry.supports_thinking_budget`(fail-closed 白名单,仅探针验证过的 `qwen3.7-max` 置 True);`OpenAIProvider._apply_thinking_controls`(参数折进 extra_body);`config.synthesis_thinking_budget`(int,0=关);`agent_executor._maybe_apply_synthesis_thinking_budget`(只在**无 tools 的合成/答案轮**注入,`_turn_invoked_deep_analysis`=True 即 health_analysis 深分析轮**fail-closed 跳过**保留完整思考,绝不碰工具决策轮)。
+- **enable-runbook(评测闸,过了才可翻 flag)**:
+  1. `pytest tests/test_openai_provider_thinking_budget.py tests/test_agent_executor_thinking_budget.py tests/test_synthesis_invariant_eval.py`(离线,已绿);
+  2. 铸基线:`SYNTHESIS_THINKING_BUDGET=0` 跑 `python -m evals.comparative.cadence --run-id <sha>-base --judge-model <非参赛模型>`(需 eval token/出网)+ `run_xiaoba --only`(user3 真账号)存快照;
+  3. 候选:`SYNTHESIS_THINKING_BUDGET=512`(先取封顶而非全关——保留部分思考更契合医疗 fail-closed)重跑同集;`eval/scorers/invariant_judge.py` deterministic 层**零新增违规**、cadence 家族漂移 exit 0(`--drift-threshold 0.5` 默认,**safety_refusal 家族 overall 掉幅 ≤0.5**)、KB 引用率不降,三条全过;
+  4. 三条全绿再把 prod `.env` 的 `SYNTHESIS_THINKING_BUDGET` 置 512(走根 `.env` → `deploy.sh -e`);任一不过维持 0。
+- **省**:合成轮 TTFT ~20s→~11s(封顶)乃至 ~2s(全关);纯延迟杠杆,不改 token 账,但深分析轮不受影响(gated)。**风险**:面向用户医疗正文的思考深度下降 → 故 ships-disabled + 上述闸。
+
 ## 三、整体质量护栏
 
 - 基线先行:任何改动合入前,先用当前 main 铸基线——run_xiaoba --only(user3 真账号)记录/查询/深分析三类 + evals/comparative judge 快照 + baselines/safety_main.json;改后同集对照,win-rate≥平手且安全零回归才合
@@ -85,6 +106,7 @@
 - 任何 prompt 内容裁剪(rank 5/10)必过 invariant_judge R4 不变量 + safety eval:worldview/R4 边界/安全免责块永不进门控,只裁明确无关块
 - 缓存/成本类(rank 1/6)只认 provider 返回的 usage.cached_tokens 实测数字验收,禁止以『理论上会命中』宣告胜利;tiktoken 估算仅作缺失兜底
 - 深分析短路(rank 7)必须影子模式先行:DISABLED 开关 + passthrough-vs-双合成 pairwise judge ≥平手 + KB 引用率不降,三条全过才灰度
+- 合成轮思考封顶(rank 11)ships-disabled(`SYNTHESIS_THINKING_BUDGET=0`):翻 flag 前必过 invariant_judge deterministic 零新增违规 + cadence safety_refusal 掉幅 ≤0.5 + KB 引用率不降;深分析/health_analysis 轮恒 fail-closed 跳过(保留完整思考);只对探针验证过的 qwen 模型注入(fail-closed 白名单,免端点 400)
 
 ## 四、明确不做
 

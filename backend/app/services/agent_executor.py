@@ -2771,6 +2771,10 @@ class AgentExecutor:
         # (_call_llm_stream 判断 supports_streaming) 与死亡备忘复用。2-tuple 返回契约
         # 不变 (既有 test 依赖), 用实例属性旁路传递。
         self._last_effective_model_id: Optional[str] = None
+        # 本回合是否调用过 health_analysis(深度分析/orchestrator/安全裁决)。合成轮思考
+        # 封顶 (SYNTHESIS_THINKING_BUDGET) fail-closed 跳过这类回合——深度分析可能确实
+        # 需要长思考, 不该被封顶。每回合入口重置。
+        self._turn_invoked_deep_analysis = False
 
     def _display_model_name_for_id(self, model_id: Optional[str]) -> Optional[str]:
         if not model_id:
@@ -3653,6 +3657,7 @@ class AgentExecutor:
         self._dead_provider_model_ids = set()
         self._tool_dead_provider_model_ids = set()
         self._last_effective_model_id = None
+        self._turn_invoked_deep_analysis = False
         self._prefer_fast_record_model = (
             not images
             and not file_base64
@@ -6073,6 +6078,10 @@ class AgentExecutor:
         }
         if pass_tools:
             stream_kwargs["tools"] = pass_tools
+        else:
+            # 合成/答案轮(无 tools): 可选给 qwen 思考阶段封顶(flag 门控, fail-closed)。
+            # 只在这里调=天然只碰无工具的合成轮, 绝不碰工具决策轮。
+            self._maybe_apply_synthesis_thinking_budget(stream_kwargs)
         self._last_provider_model_name = (
             getattr(provider, "model", None)
             or getattr(provider, "default_model", None)
@@ -6127,6 +6136,44 @@ class AgentExecutor:
                 self._record_model_fallback_reason("selected_model_tool_stream_failed")
             async for evt in self._stream_via_stable_fallback(stream_kwargs, pass_tools):
                 yield evt
+
+    def _maybe_apply_synthesis_thinking_budget(self, stream_kwargs: Dict[str, Any]) -> None:
+        """合成/答案轮 → 给 qwen 思考阶段封顶(flag 门控, fail-closed)。
+
+        只在满足**全部**条件时给 stream_kwargs 注入 thinking_budget(否则 = 零行为变更):
+          1. settings.synthesis_thinking_budget > 0(默认 0 = 关);
+          2. 本回合 effective model 的 ModelEntry.supports_thinking_budget=True
+             (仅探针验证过该参数的 qwen 模型;未验证模型不传, 免端点 400 打死合成轮);
+          3. 本回合**未**调用 health_analysis(深度分析/安全裁决可能确实需要长思考 →
+             fail-closed 跳过, 保留完整思考)。
+        调用点已保证只在无 tools 的合成/答案轮触发, 故绝不碰工具决策轮。命中时
+        OpenAIProvider._apply_thinking_controls 把 thinking_budget 折进 extra_body。
+        fail-soft: 任何判定异常都不注入(=现状), 绝不断合成链路。
+        """
+        try:
+            from app.config import settings
+
+            budget = int(getattr(settings, "synthesis_thinking_budget", 0) or 0)
+            if budget <= 0:
+                return
+            if self._turn_invoked_deep_analysis:
+                return
+            model_id = self._last_effective_model_id
+            if not model_id:
+                return
+            from app.services.llm.model_registry import get_model
+
+            entry = get_model(model_id)
+            if entry is None or not getattr(entry, "supports_thinking_budget", False):
+                return
+            stream_kwargs["thinking_budget"] = budget
+            logger.info(
+                "[agent_executor] 合成轮思考封顶 model=%s thinking_budget=%d",
+                model_id,
+                budget,
+            )
+        except Exception:  # noqa: BLE001 — 延迟优化绝不断主链路
+            return
 
     def _effective_model_is_non_streaming(self) -> bool:
         """本回合 _resolve_chat_provider 解析出的 effective model 是否结构性非流式。
@@ -6732,6 +6779,9 @@ class AgentExecutor:
             elif tool_name == "health_manage":
                 return await self._exec_health_manage(base_url, headers, args)
             elif tool_name == "health_analysis":
+                # 深度分析/安全裁决路径: 标记本回合, 让后续合成轮不给思考封顶
+                # (SYNTHESIS_THINKING_BUDGET fail-closed 跳过, 保留完整思考)。
+                self._turn_invoked_deep_analysis = True
                 result = await self._exec_health_analysis(base_url, headers, args)
                 return annotate_if_implausible(result)
             elif tool_name == "knowledge_search":
