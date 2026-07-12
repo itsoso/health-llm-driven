@@ -144,4 +144,62 @@ describe('extractRevaUiBlocks', () => {
     expect(result.text).toBe('说明\n结束');
     expect(result.cards).toEqual([]);
   });
+
+  it('turns fenced reva-ui metric_table JSON into a metric_table card descriptor', () => {
+    const text = [
+      '近三次血压如下:',
+      '',
+      '```reva-ui',
+      '{"type":"metric_table","v":1,"title":"近三次血压","columns":[{"key":"date","label":"日期"},{"key":"sys","label":"收缩压"},{"key":"dia","label":"舒张压"}],"rows":[{"date":"07-11","sys":"128","dia":"82"},{"date":"07-12","sys":"124","dia":"79"}],"footnote":"仅供健康管理参考"}',
+      '```',
+      '',
+      '仅用于健康管理参考。',
+    ].join('\n');
+
+    const result = extractRevaUiBlocks(text);
+
+    expect(result.text).toBe('近三次血压如下:\n\n仅用于健康管理参考。');
+    expect(result.cards).toEqual([
+      {
+        type: 'metric_table',
+        data: {
+          title: '近三次血压',
+          columns: [
+            { key: 'date', label: '日期' },
+            { key: 'sys', label: '收缩压' },
+            { key: 'dia', label: '舒张压' },
+          ],
+          rows: [
+            { date: '07-11', sys: '128', dia: '82' },
+            { date: '07-12', sys: '124', dia: '79' },
+          ],
+          footnote: '仅供健康管理参考',
+        },
+      },
+    ]);
+  });
+
+  it('strips a future-version metric_table (v2) without leaking raw JSON', () => {
+    const result = extractRevaUiBlocks(
+      '前言\n```reva-ui\n{"type":"metric_table","v":2,"columns":[{"key":"a","label":"A"},{"key":"b","label":"B"}],"rows":[{"a":"1","b":"2"}]}\n```\n结尾',
+    );
+    expect(result.text).toBe('前言\n结尾');
+    expect(result.cards).toEqual([]);
+  });
+
+  it('strips an unknown reva-ui type without leaking raw JSON', () => {
+    const result = extractRevaUiBlocks(
+      '前言\n```reva-ui\n{"type":"pie_chart","v":1,"slices":[1,2,3]}\n```\n结尾',
+    );
+    expect(result.text).toBe('前言\n结尾');
+    expect(result.cards).toEqual([]);
+  });
+
+  it('strips a structurally-malformed metric_table (only one column) → no card', () => {
+    const result = extractRevaUiBlocks(
+      '前言\n```reva-ui\n{"type":"metric_table","v":1,"columns":[{"key":"a","label":"A"}],"rows":[{"a":"1"}]}\n```\n结尾',
+    );
+    expect(result.text).toBe('前言\n结尾');
+    expect(result.cards).toEqual([]);
+  });
 });

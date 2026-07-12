@@ -1,0 +1,408 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`MetricTableCardView matches snapshot for the fixture rows 1`] = `
+<View
+  style={
+    {
+      "backgroundColor": "#FFFFFF",
+      "borderColor": "#E7E5DE",
+      "borderRadius": 18,
+      "borderWidth": 0.5,
+      "elevation": 1,
+      "marginVertical": 6,
+      "minWidth": 240,
+      "paddingHorizontal": 12,
+      "paddingVertical": 10,
+      "shadowColor": "#142019",
+      "shadowOffset": {
+        "height": 1,
+        "width": 0,
+      },
+      "shadowOpacity": 0.06,
+      "shadowRadius": 2,
+    }
+  }
+>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "gap": 6,
+        "marginBottom": 8,
+      }
+    }
+  >
+    <View
+      color="#1F8A5B"
+      name="grid-outline"
+      size={14}
+      testID="icon-grid-outline"
+    />
+    <Text
+      maxFontSizeMultiplier={1.3}
+      numberOfLines={2}
+      style={
+        {
+          "color": "#5C6660",
+          "flexShrink": 1,
+          "fontFamily": "Manrope",
+          "fontSize": 12,
+          "fontWeight": "600",
+        }
+      }
+    >
+      近三次血压
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "borderTopColor": "#E7E5DE",
+        "borderTopWidth": 0.5,
+      }
+    }
+  >
+    <View
+      style={
+        [
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "gap": 8,
+            "paddingVertical": 7,
+          },
+          {
+            "paddingBottom": 6,
+            "paddingTop": 8,
+          },
+        ]
+      }
+    >
+      <Text
+        maxFontSizeMultiplier={1.2}
+        numberOfLines={2}
+        style={
+          [
+            {
+              "color": "#8A938D",
+              "fontFamily": "Manrope",
+              "fontSize": 11,
+              "fontWeight": "600",
+              "letterSpacing": 0.3,
+            },
+            {
+              "flex": 1.4,
+              "textAlign": "left",
+            },
+          ]
+        }
+      >
+        日期
+      </Text>
+      <Text
+        maxFontSizeMultiplier={1.2}
+        numberOfLines={2}
+        style={
+          [
+            {
+              "color": "#8A938D",
+              "fontFamily": "Manrope",
+              "fontSize": 11,
+              "fontWeight": "600",
+              "letterSpacing": 0.3,
+            },
+            {
+              "flex": 1,
+              "textAlign": "right",
+            },
+          ]
+        }
+      >
+        收缩压
+      </Text>
+      <Text
+        maxFontSizeMultiplier={1.2}
+        numberOfLines={2}
+        style={
+          [
+            {
+              "color": "#8A938D",
+              "fontFamily": "Manrope",
+              "fontSize": 11,
+              "fontWeight": "600",
+              "letterSpacing": 0.3,
+            },
+            {
+              "flex": 1,
+              "textAlign": "right",
+            },
+          ]
+        }
+      >
+        舒张压
+      </Text>
+    </View>
+    <View
+      style={
+        [
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "gap": 8,
+            "paddingVertical": 7,
+          },
+          {
+            "borderBottomColor": "#E7E5DE",
+            "borderBottomWidth": 0.5,
+          },
+        ]
+      }
+    >
+      <Text
+        maxFontSizeMultiplier={1.3}
+        numberOfLines={2}
+        style={
+          [
+            {
+              "color": "#16201B",
+              "fontFamily": "Manrope",
+              "fontSize": 13,
+              "fontWeight": "500",
+            },
+            {
+              "flex": 1.4,
+              "textAlign": "left",
+            },
+          ]
+        }
+      >
+        07-11
+      </Text>
+      <Text
+        maxFontSizeMultiplier={1.3}
+        numberOfLines={2}
+        style={
+          [
+            {
+              "color": "#16201B",
+              "fontFamily": "IBMPlexMono",
+              "fontSize": 13,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "500",
+            },
+            {
+              "flex": 1,
+              "textAlign": "right",
+            },
+          ]
+        }
+      >
+        128
+      </Text>
+      <Text
+        maxFontSizeMultiplier={1.3}
+        numberOfLines={2}
+        style={
+          [
+            {
+              "color": "#16201B",
+              "fontFamily": "IBMPlexMono",
+              "fontSize": 13,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "500",
+            },
+            {
+              "flex": 1,
+              "textAlign": "right",
+            },
+          ]
+        }
+      >
+        82
+      </Text>
+    </View>
+    <View
+      style={
+        [
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "gap": 8,
+            "paddingVertical": 7,
+          },
+          {
+            "borderBottomColor": "#E7E5DE",
+            "borderBottomWidth": 0.5,
+          },
+        ]
+      }
+    >
+      <Text
+        maxFontSizeMultiplier={1.3}
+        numberOfLines={2}
+        style={
+          [
+            {
+              "color": "#16201B",
+              "fontFamily": "Manrope",
+              "fontSize": 13,
+              "fontWeight": "500",
+            },
+            {
+              "flex": 1.4,
+              "textAlign": "left",
+            },
+          ]
+        }
+      >
+        07-12
+      </Text>
+      <Text
+        maxFontSizeMultiplier={1.3}
+        numberOfLines={2}
+        style={
+          [
+            {
+              "color": "#16201B",
+              "fontFamily": "IBMPlexMono",
+              "fontSize": 13,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "500",
+            },
+            {
+              "flex": 1,
+              "textAlign": "right",
+            },
+          ]
+        }
+      >
+        124
+      </Text>
+      <Text
+        maxFontSizeMultiplier={1.3}
+        numberOfLines={2}
+        style={
+          [
+            {
+              "color": "#16201B",
+              "fontFamily": "IBMPlexMono",
+              "fontSize": 13,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "500",
+            },
+            {
+              "flex": 1,
+              "textAlign": "right",
+            },
+          ]
+        }
+      >
+        79
+      </Text>
+    </View>
+    <View
+      style={
+        [
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "gap": 8,
+            "paddingVertical": 7,
+          },
+          null,
+        ]
+      }
+    >
+      <Text
+        maxFontSizeMultiplier={1.3}
+        numberOfLines={2}
+        style={
+          [
+            {
+              "color": "#16201B",
+              "fontFamily": "Manrope",
+              "fontSize": 13,
+              "fontWeight": "500",
+            },
+            {
+              "flex": 1.4,
+              "textAlign": "left",
+            },
+          ]
+        }
+      >
+        07-13
+      </Text>
+      <Text
+        maxFontSizeMultiplier={1.3}
+        numberOfLines={2}
+        style={
+          [
+            {
+              "color": "#16201B",
+              "fontFamily": "IBMPlexMono",
+              "fontSize": 13,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "500",
+            },
+            {
+              "flex": 1,
+              "textAlign": "right",
+            },
+          ]
+        }
+      >
+        121
+      </Text>
+      <Text
+        maxFontSizeMultiplier={1.3}
+        numberOfLines={2}
+        style={
+          [
+            {
+              "color": "#16201B",
+              "fontFamily": "IBMPlexMono",
+              "fontSize": 13,
+              "fontVariant": [
+                "tabular-nums",
+              ],
+              "fontWeight": "500",
+            },
+            {
+              "flex": 1,
+              "textAlign": "right",
+            },
+          ]
+        }
+      >
+        77
+      </Text>
+    </View>
+  </View>
+  <Text
+    maxFontSizeMultiplier={1.2}
+    style={
+      {
+        "color": "#8A938D",
+        "fontFamily": "Manrope",
+        "fontSize": 11,
+        "lineHeight": 15,
+        "marginTop": 8,
+      }
+    }
+  >
+    仅供健康管理参考
+  </Text>
+</View>
+`;
