@@ -167,8 +167,26 @@ def _apply_thinking_controls(kwargs: Dict[str, Any]) -> Dict[str, Any]:
     return kwargs
 
 
+def _model_supports_explicit_cache(model_name: Optional[str]) -> bool:
+    """按 model 字符串反查注册表是否支持显式缓存。fail-closed → False (未知/查不到即不贴)。
+
+    镜像 agent_executor._provider_is_non_streaming 的反查模式:直接遍历 MODELS, 匹配
+    entry.model 或 entry.id。绝不抛 (观测/门控层不断主链路)。"""
+    if not model_name:
+        return False
+    try:
+        from app.services.llm.model_registry import MODELS
+
+        for entry in MODELS:
+            if entry.model == model_name or entry.id == model_name:
+                return bool(getattr(entry, "supports_explicit_cache", False))
+        return False
+    except Exception:  # noqa: BLE001 — 查不到注册表宁可不贴 (纯降级, 无功能影响)
+        return False
+
+
 def _maybe_mark_prompt_cache(
-    messages: List[Dict[str, Any]], kwargs: Dict[str, Any]
+    messages: List[Dict[str, Any]], kwargs: Dict[str, Any], model: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """DashScope 显式上下文缓存 (Phase-2 rank3): 按 role/position 在 append-only 边界注入
     cache_control ephemeral 断点。
@@ -178,11 +196,20 @@ def _maybe_mark_prompt_cache(
     OpenAI SDK 不认识该 kwarg, 当顶层传会 TypeError, 所以这里**必须 pop 掉**。没这个键
     (= flag 关 / 模型未验证) 时原样返回 messages → payload 逐字节不变。
 
-    值可为 True (默认布局: system + history_prefix) 或 dict (显式 layout knobs, 供探针
-    实验静态前缀 / tail 断点)。变换是纯函数 (prompt_cache.apply_cache_markers), 返回**新**
-    list, 绝不改调用方的 messages。"""
+    **最后一英里 fail-closed (failover 残留洞根治):** executor 按**主选 effective model**
+    置 markers 信号, 但该 kwargs 可能被原样带给 failover 到的 **fallback provider (不同
+    model)**。这里按**本次实际调用的 model** (= chat/chat_stream 的 `use_model = model or
+    self.model`, 对主选 provider 和任何 fallback provider 都成立) 再查一次注册表 —— 不支持
+    显式缓存的模型 (含未知/查不到) 绝不贴 cache_control (贴到不支持的端点可能被拒, 恰好打断
+    兜底链)。这是覆盖 primary + 所有 fallback 路径的单一 chokepoint。
+
+    layout 值可为 True (默认布局: system + history_prefix) 或 dict (显式 layout knobs, 供
+    探针实验静态前缀 / tail 断点)。变换是纯函数 (prompt_cache.apply_cache_markers), 返回
+    **新** list, 绝不改调用方的 messages。"""
     layout = kwargs.pop("prompt_cache_markers", None)
     if not layout:
+        return messages
+    if not _model_supports_explicit_cache(model):
         return messages
     from app.services.llm.prompt_cache import apply_cache_markers
 
@@ -275,7 +302,7 @@ class OpenAIProvider(LLMProvider):
         # 显式上下文缓存 (rank3): 门控过时在 append-only 边界打 cache_control 断点。
         # 必须在 stream 分支前做 —— pop 掉 prompt_cache_markers, 并让 stream=True 下发已
         # 标记的 messages 给 _stream_chat (它不再重复标: kwarg 已被 pop)。flag 关时透传。
-        messages = _maybe_mark_prompt_cache(messages, kwargs)
+        messages = _maybe_mark_prompt_cache(messages, kwargs, use_model)
 
         if stream:
             return self._stream_chat(messages, use_model, temperature, max_tokens, **kwargs)
@@ -391,7 +418,7 @@ class OpenAIProvider(LLMProvider):
         kwargs = _apply_thinking_controls(kwargs)
         # 显式上下文缓存 (rank3): 门控过时在 append-only 边界打 cache_control 断点; pop 掉
         # prompt_cache_markers 避免作为未知顶层 kwarg 流进 create()。flag 关时透传 (逐字节不变)。
-        messages = _maybe_mark_prompt_cache(messages, kwargs)
+        messages = _maybe_mark_prompt_cache(messages, kwargs, use_model)
         # AsyncOpenAI + `async for`:合成/工具决策轮的 inter-chunk 网络等待不再阻塞
         # 整个 event loop(旧代码 to_thread 创建后同步 `for chunk in response`)。
         client = self._get_async_client()

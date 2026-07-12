@@ -86,6 +86,9 @@ MODELS: List[ModelEntry] = [
         # thinking_budget=N 经 extra_body 顶层放置生效, 合成轮 TTFT 从 ~36s 塌到 ~1.6s
         # (关思考) / ~11s (封顶 512)。仅本模型验证过 → 其它 qwen 需各自跑探针再置 True。
         supports_thinking_budget=True,
+        # 探针实证 (probe_explicit_cache.py, 2026-07-13): cache_control 被接受,
+        # callB cached_tokens=7282 钉死命中 (flash 隐式基线为 0,显式=纯增益)。
+        supports_explicit_cache=True,
     ),
     ModelEntry(
         id="qwen3.6-plus",
@@ -108,6 +111,9 @@ MODELS: List[ModelEntry] = [
         requires_env=("TOKENPLAN_API_KEY",),
         capabilities=("text_generation", "reasoning", "vision_understanding"),
         chat_selectable=False,
+        # 探针实证 (probe_explicit_cache.py, 2026-07-13): cache_control 被接受,
+        # callB cached_tokens=7282 钉死命中 (flash 隐式基线为 0,显式=纯增益)。
+        supports_explicit_cache=True,
     ),
     ModelEntry(
         id="qwen-image-2.0",
