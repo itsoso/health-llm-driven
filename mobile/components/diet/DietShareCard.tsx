@@ -159,6 +159,45 @@ function buildDietShareDataDisclosure(record: DietRecord): string {
   return `营养数据: ${sourceLabel}，已确认，可继续复盘`;
 }
 
+function normalizedAiConfidence(value: number | null | undefined): number | null {
+  if (!hasMetric(value)) return null;
+  const percent = value <= 1 ? value * 100 : value;
+  if (percent < 0 || percent > 100) return null;
+  return Math.round(percent);
+}
+
+function buildDietShareConfidenceDisclosure(record: DietRecord): string | null {
+  const percent = normalizedAiConfidence(record.ai_confidence);
+  if (percent == null) return null;
+  if (percent < 60) return `识别置信度: ${percent}%，发布前建议核对食物和份量`;
+  if (percent < 80) return `识别置信度: ${percent}%，建议复盘时留意份量`;
+  return `识别置信度: ${percent}%`;
+}
+
+function buildDietShareConfidenceUi(record: DietRecord): { percent: number; detail: string; tone: 'warning' | 'neutral' } | null {
+  const percent = normalizedAiConfidence(record.ai_confidence);
+  if (percent == null) return null;
+  if (percent < 60) {
+    return {
+      percent,
+      detail: '发布前建议核对食物和份量',
+      tone: 'warning',
+    };
+  }
+  if (percent < 80) {
+    return {
+      percent,
+      detail: '建议复盘时留意份量',
+      tone: 'neutral',
+    };
+  }
+  return {
+    percent,
+    detail: '识别结果已确认',
+    tone: 'neutral',
+  };
+}
+
 function buildDietShareFooterSecondary(record: DietRecord): string {
   if (!hasAnyNutritionMetric(record)) return '营养回填后用于复盘';
   if (!isNutritionComplete(record)) return '部分营养回填后用于复盘';
@@ -289,6 +328,8 @@ export function buildDietShareCaption(record: DietRecord, dateLabel: string): st
   if (highlights.length > 0) lines.push(`亮点: ${highlights.join(' / ')}`);
   if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g`);
   lines.push(buildDietShareDataDisclosure(record));
+  const confidenceDisclosure = buildDietShareConfidenceDisclosure(record);
+  if (confidenceDisclosure) lines.push(confidenceDisclosure);
   lines.push('不是节食，是把身体照顾得更有章法。');
   lines.push('晒得出，也复盘得清楚。');
   lines.push('适合截图留档，也适合发给认真生活的朋友。');
@@ -312,6 +353,8 @@ export function buildDietShareMomentsCaption(record: DietRecord, dateLabel: stri
   if (highlights.length > 0) lines.push(`亮点: ${highlights.join(' / ')}`);
   if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g。`);
   lines.push(buildDietShareDataDisclosure(record));
+  const confidenceDisclosure = buildDietShareConfidenceDisclosure(record);
+  if (confidenceDisclosure) lines.push(confidenceDisclosure);
   lines.push('小巴帮我把吃过的东西留成一张可复盘的记录。');
   return lines.join('\n');
 }
@@ -397,6 +440,7 @@ export default function DietShareCard({
   const statusLine = buildDietShareStatusLine(highlights);
   const balance = buildDietShareBalance(record);
   const macroSegments = buildDietShareMacroSegments(record);
+  const confidence = buildDietShareConfidenceUi(record);
 
   return (
     <View style={styles.card}>
@@ -554,6 +598,28 @@ export default function DietShareCard({
           ]}>{sourceLabel}</Text>
           {record.fiber != null ? <Text style={styles.fiberText}>膳食纤维 {metric(record.fiber, 1)}g</Text> : null}
         </View>
+
+        {confidence ? (
+          <View style={[
+            styles.confidencePanel,
+            confidence.tone === 'warning' && styles.confidencePanelWarning,
+          ]}>
+            <View style={styles.confidencePrimaryRow}>
+              <Ionicons
+                name={confidence.tone === 'warning' ? 'alert-circle-outline' : 'checkmark-circle-outline'}
+                size={13}
+                color={confidence.tone === 'warning' ? revaSemantic.caution.fg : C.green600}
+              />
+              <Text style={[
+                styles.confidencePrimary,
+                confidence.tone === 'warning' && styles.confidencePrimaryWarning,
+              ]}>
+                识别置信度 {confidence.percent}%
+              </Text>
+            </View>
+            <Text style={styles.confidenceDetail}>{confidence.detail}</Text>
+          </View>
+        ) : null}
 
         <View style={styles.lifestylePanel}>
           <View style={styles.lifestyleIcon}>
@@ -1142,6 +1208,36 @@ const styles = StyleSheet.create({
   sourceRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 11 },
   sourceText: { fontFamily: revaFonts.sans, fontSize: 10, fontWeight: '800' },
   fiberText: { fontFamily: revaFonts.mono, fontSize: 9, color: C.ink3, marginLeft: 'auto' },
+  confidencePanel: {
+    minHeight: 34,
+    borderRadius: 10,
+    backgroundColor: C.focusBg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.focusLine,
+    marginTop: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  confidencePanelWarning: {
+    backgroundColor: revaSemantic.caution.bg,
+    borderColor: revaSemantic.caution.line,
+  },
+  confidencePrimaryRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  confidencePrimary: { fontFamily: revaFonts.sans, fontSize: 9.5, color: C.green600, fontWeight: '900' },
+  confidencePrimaryWarning: { color: revaSemantic.caution.fg },
+  confidenceDetail: {
+    flexShrink: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 8.5,
+    lineHeight: 11,
+    color: C.ink3,
+    fontWeight: '800',
+    textAlign: 'right',
+  },
   lifestylePanel: {
     minHeight: 45,
     borderRadius: 12,
