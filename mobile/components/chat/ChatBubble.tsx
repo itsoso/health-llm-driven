@@ -40,6 +40,7 @@ import { useToast } from '../../hooks/useToast';
 import { sharePlainText } from '../../utils/share';
 import { buildAiShareMessage } from '../../utils/aiShareText';
 import { buildChatImageSource } from '../../utils/chatImageSource';
+import { saveChatImageToLibrary } from '../../utils/saveChatImageToLibrary';
 import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/markdownTables';
 import { extractRevaUiBlocks } from '../../utils/revaUiBlocks';
 import {
@@ -532,6 +533,37 @@ function ChatBubbleInner({
     handleLongPress();
   };
 
+  const handleImageLongPress = useCallback((uri: string, index: number) => {
+    if (selectionMode) return;
+    Haptics.selectionAsync();
+    Alert.alert(
+      '保存图片',
+      '保存到本地图像库？',
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '保存到相册',
+          onPress: () => {
+            void saveChatImageToLibrary(uri, { authToken: imageAuthToken, index })
+              .then(() => {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                toast.show('已保存到相册', 'success');
+              })
+              .catch((error) => {
+                const message = error instanceof Error ? error.message : String(error);
+                toast.show(
+                  message === 'photo_library_permission_denied'
+                    ? '没有相册权限，无法保存图片'
+                    : '保存失败，请稍后重试',
+                  'error',
+                );
+              });
+          },
+        },
+      ],
+    );
+  }, [imageAuthToken, selectionMode, toast]);
+
   // 播报当前 AI 气泡内容. 同 bubble 再点 = 停; 切其他气泡播报会接管 (Speech 是单例, 自动 stop 旧的).
   // 走 speakWithUserVoice → 按用户在"语音风格"页选的档位 (cloud / iOS) 播报,
   // 而不是直接 Speech.speak 走 iOS 默认嗓音.
@@ -635,7 +667,14 @@ function ChatBubbleInner({
             {images && images.length > 0 && (
               <View style={styles.imageGrid}>
                 {images.map((uri, i) => (
-                  <TouchableOpacity key={i} onPress={() => onViewImage?.(uri)} activeOpacity={0.85}>
+                  <TouchableOpacity
+                    key={i}
+                    onPress={() => onViewImage?.(uri)}
+                    onLongPress={() => handleImageLongPress(uri, i)}
+                    activeOpacity={0.85}
+                    accessibilityRole="imagebutton"
+                    accessibilityLabel={`图片 ${i + 1}，长按保存到相册`}
+                  >
                     {buildChatImageSource(uri, imageAuthToken) ? (
                       <Image
                         source={buildChatImageSource(uri, imageAuthToken)}

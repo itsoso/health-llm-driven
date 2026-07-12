@@ -1,6 +1,6 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
-import { fireEvent, render } from '@testing-library/react-native';
+import { Alert, StyleSheet } from 'react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import type { UIMessage } from '../../../hooks/useChatEngine';
@@ -17,6 +17,19 @@ jest.mock('expo-haptics', () => ({
 }));
 jest.mock('expo-clipboard', () => ({
   setStringAsync: jest.fn(),
+}));
+const mockDownloadAsync = jest.fn();
+jest.mock('expo-file-system/legacy', () => ({
+  cacheDirectory: 'file://cache/',
+  downloadAsync: (...args: any[]) => mockDownloadAsync(...args),
+  writeAsStringAsync: jest.fn(),
+  EncodingType: { Base64: 'base64' },
+}));
+const mockRequestMediaLibraryPermissionsAsync = jest.fn();
+const mockCreateAssetAsync = jest.fn();
+jest.mock('expo-media-library', () => ({
+  requestPermissionsAsync: (...args: any[]) => mockRequestMediaLibraryPermissionsAsync(...args),
+  createAssetAsync: (...args: any[]) => mockCreateAssetAsync(...args),
 }));
 jest.mock('../../../services/speakWithUserVoice', () => ({
   speakWithUserVoice: jest.fn(),
@@ -95,6 +108,9 @@ const CONTENT = '## 睡眠分析\n\n你昨晚睡了 7 小时。\n\n建议保持�
 describe('ChatBubble streaming degraded render', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRequestMediaLibraryPermissionsAsync.mockResolvedValue({ granted: true });
+    mockDownloadAsync.mockResolvedValue({ uri: 'file://cache/reva-chat-image.jpg' });
+    mockCreateAssetAsync.mockResolvedValue({ id: 'asset-1' });
   });
 
   it('renders plain text (no rich Markdown tree) while the assistant reply is streaming', () => {
@@ -368,6 +384,31 @@ describe('ChatBubble streaming degraded render', () => {
     expect(getByLabelText('复制全文')).toBeTruthy();
     fireEvent.press(getByLabelText('多选消息'));
     expect(onEnterSelection).toHaveBeenCalledWith('assistant-action-menu');
+  });
+
+  it('saves a chat image to the local photo library from long press', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+      const saveButton = buttons?.find(button => button.text === '保存到相册');
+      saveButton?.onPress?.();
+    });
+    const { getByLabelText } = renderBubble({
+      id: 'user-image-message',
+      role: 'user',
+      content: '请分析这张图片',
+      imageUris: ['https://health.executor.life/api/v1/files/chat-image.jpg'],
+    }, { imageAuthToken: 'token-123' });
+
+    fireEvent(getByLabelText('图片 1，长按保存到相册'), 'longPress');
+
+    await waitFor(() => {
+      expect(mockCreateAssetAsync).toHaveBeenCalledWith('file://cache/reva-chat-image.jpg');
+    });
+    expect(mockDownloadAsync).toHaveBeenCalledWith(
+      'https://health.executor.life/api/v1/files/chat-image.jpg',
+      expect.stringMatching(/^file:\/\/cache\/reva-chat-image-\d+-0\.jpg$/),
+      { headers: { Authorization: 'Bearer token-123' } },
+    );
+    alertSpy.mockRestore();
   });
 
   // Bug 1 regression: LLM 吐脏 markdown (无空格标题 / 黏连表头分隔) 时, done 首帧就应
