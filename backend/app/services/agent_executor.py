@@ -1539,7 +1539,7 @@ def _write_operation_fingerprint(
 
 
 def _receipt_resource_identity(payload: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
-    id_keys = ("id", "record_id", "event_id", "log_id", "cycle_id")
+    id_keys = ("id", "record_id", "event_id", "log_id", "cycle_id", "exam_id")
 
     def read_id(source: Dict[str, Any]) -> Optional[str]:
         for key in id_keys:
@@ -7929,8 +7929,23 @@ class AgentExecutor:
                 )
                 if tap_result.startswith("Error"):
                     return f"已把「{name}」加入补剂库(补剂号 {created['id']}),但今日打卡没成功({tap_result})。"
+                # 2026-07-12 生产实锤:此处曾只回 {"message": ...} 无任何 id → 回执身份
+                # 提取不到 → 整轮被诚实门判「不可确认」(四笔全成功仍报无回执,还诱导重试)。
+                # 回执必须带可验证身份:透传 tap 的 record_id + resource_type。
+                tap_record_id = None
+                try:
+                    tap_record_id = (json.loads(tap_result) or {}).get("record_id")
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    logger.warning("[health_record] supplement tap 响应不可解析: %r", tap_result[:120])
                 return json.dumps(
-                    {"message": f"已把「{name}」加入补剂库并完成今日打卡（补剂号 {created['id']}，说「撤销」可移除）"},
+                    {
+                        "message": f"已把「{name}」加入补剂库并完成今日打卡（补剂号 {created['id']}，说「撤销」可移除）",
+                        "id": tap_record_id,
+                        "record_id": tap_record_id,
+                        "resource_type": "supplement_log",
+                        "supplement_definition_id": created["id"],
+                        "status": "recorded",
+                    },
                     ensure_ascii=False,
                 )
             return "Error: 需要提供补剂名称（supplement_name）"
@@ -8580,7 +8595,9 @@ class AgentExecutor:
             return json.dumps(
                 {
                     "message": "化验指标已写入系统",
+                    "id": exam.id,
                     "exam_id": exam.id,
+                    "resource_type": "medical_exam",
                     "exam_date": exam.exam_date.isoformat() if exam.exam_date else None,
                     "items_count": len(exam.items or []),
                 },
