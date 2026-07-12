@@ -222,6 +222,14 @@ class Settings(BaseSettings):
     # 医疗正文相关 → ships-disabled,须过评测闸(invariant_judge + cadence family-drift)
     # 才可开。探针实证见 scripts/probe_qwen_thinking_budget.py。
     synthesis_thinking_budget: int = 0
+    # 显式上下文缓存(延迟, Phase-2 rank3):开后对 ModelEntry.supports_explicit_cache=True
+    # 的 DashScope 模型, 在 messages 的 append-only 边界(system + history_prefix)注入
+    # Anthropic 式 cache_control ephemeral 断点。工具决策轮写 ~7.3k-16k token 的 system
+    # 缓存、几秒后的合成轮命中 → 跳过整条 system 的 prefill, 合成轮 TTFT 省 1-3s, 缓存
+    # 前缀输入成本降 ~90%(命中计 10% 价)。ships-OFF: 关=请求 payload 逐字节不变;开需两侧
+    # 同时满足(flag + 该模型探针验证过 cache_control 命中且 usage.cached_tokens 透传)。
+    # prod 翻开前先跑真网探针: backend/scripts/probe_explicit_cache.py
+    llm_explicit_prompt_cache: bool = False
     # 深分析短路二次合成(计划 rank7):orchestrator 是本回合唯一实质工具、且它已产出过
     # R4/advice_guard 校验的 synthesis 时,可跳过对话 Agent 的第二次强模型合成,直接把
     # 那段 synthesis 透传流式下发(省一整次强模型调用,深分析回合时延 -5~15s)。

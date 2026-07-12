@@ -46,6 +46,14 @@ class ModelEntry:
     #   (SYNTHESIS_THINKING_BUDGET, 砍 in-call TTFT)。fail-closed 默认 False: 只对
     #   **真网络探针验证过**该参数的模型置 True (见 scripts/probe_qwen_thinking_budget.py),
     #   未验证模型置 True 会让端点 400 打死合成轮。拿不准时保守留 False。
+    supports_explicit_cache: bool = False
+    # ↑ 该模型是否支持 DashScope compatible-mode 的显式上下文缓存 (Anthropic 式
+    #   cache_control ephemeral 断点)。True 才允许 agent_executor 在 flag 开时给该模型
+    #   的请求在 append-only 边界注入缓存断点 (LLM_EXPLICIT_PROMPT_CACHE, 让合成轮跳过
+    #   重复 prefill 整条 system)。fail-closed 默认 False: 只对**真网络探针验证过**
+    #   cache_control 生效 (usage.prompt_tokens_details.cached_tokens 透传 + TTFT 下降) 的
+    #   DashScope 模型置 True (见 scripts/probe_explicit_cache.py)。未验证模型置 True 有被
+    #   端点拒/忽略无效断点的风险。拿不准时保守留 False。
 
 
 # 注册表 — 加新模型只改这里
