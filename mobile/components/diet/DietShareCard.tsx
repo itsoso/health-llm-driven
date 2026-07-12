@@ -51,7 +51,8 @@ type DietShareMacroSegment = {
 type ShareResult =
   | { target: ShareTarget; kind: 'completed' }
   | { target: ShareTarget; kind: 'caption_fallback' }
-  | { target: ShareTarget; kind: 'saved_to_library' };
+  | { target: ShareTarget; kind: 'saved_to_library' }
+  | { target: ShareTarget; kind: 'photo_library_permission_denied' };
 
 export function dietShareCaptureDimensions(
   platform = Platform.OS,
@@ -424,6 +425,14 @@ function publishHintForShareResult(result: ShareResult): { title: string; detail
       detail: '去微信或小红书选择这张图片，再粘贴文案发布',
       icon: 'checkmark-circle',
       tone: 'success',
+    };
+  }
+  if (result.kind === 'photo_library_permission_denied') {
+    return {
+      title: '需要相册权限',
+      detail: '允许访问相册后，再保存高清分享图',
+      icon: 'alert-circle',
+      tone: 'warning',
     };
   }
   return {
@@ -830,6 +839,18 @@ export function DietShareSheet({
     let captureUri: string | null = null;
     setSharing(true);
     try {
+      const permission = await MediaLibrary.requestPermissionsAsync();
+      if (!permission.granted && permission.status !== 'granted') {
+        onShareTerminal?.({
+          phase: 'failed',
+          duration_ms: Date.now() - startedAt,
+          has_photo: shareHasPhoto,
+          share_target: 'generic',
+          error_code: 'photo_library_permission_denied',
+        });
+        setShareResult({ target: 'generic', kind: 'photo_library_permission_denied' });
+        return;
+      }
       const dimensions = dietShareCaptureDimensions();
       captureUri = await captureRef(cardRef, {
         format: 'png',

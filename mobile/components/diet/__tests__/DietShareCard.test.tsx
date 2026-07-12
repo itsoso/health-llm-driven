@@ -7,6 +7,7 @@ const mockCaptureRef = jest.fn().mockResolvedValue('file:///meal-share.png');
 const mockReleaseCapture = jest.fn();
 const mockShareAsync = jest.fn().mockResolvedValue(undefined);
 const mockSaveToLibraryAsync = jest.fn().mockResolvedValue(undefined);
+const mockRequestPermissionsAsync = jest.fn().mockResolvedValue({ status: 'granted', granted: true });
 
 jest.mock('react-native-view-shot', () => ({
   captureRef: (...args: any[]) => mockCaptureRef(...args),
@@ -19,6 +20,7 @@ jest.mock('expo-sharing', () => ({
 }));
 
 jest.mock('expo-media-library', () => ({
+  requestPermissionsAsync: (...args: any[]) => mockRequestPermissionsAsync(...args),
   saveToLibraryAsync: (...args: any[]) => mockSaveToLibraryAsync(...args),
 }));
 
@@ -428,6 +430,7 @@ describe('DietShareCard', () => {
           height: 1440 / PixelRatio.get(),
         }),
       );
+      expect(mockRequestPermissionsAsync).toHaveBeenCalledTimes(1);
       expect(mockSaveToLibraryAsync).toHaveBeenCalledWith('file:///meal-share.png');
       expect(onShareTerminal).toHaveBeenCalledWith(expect.objectContaining({
         phase: 'completed',
@@ -437,6 +440,36 @@ describe('DietShareCard', () => {
       expect(mockReleaseCapture).toHaveBeenCalledWith('file:///meal-share.png');
       expect(getByText('图片已保存到相册')).toBeTruthy();
       expect(getByText('去微信或小红书选择这张图片，再粘贴文案发布')).toBeTruthy();
+    });
+  });
+
+  it('does not capture or save when photo library permission is denied', async () => {
+    mockRequestPermissionsAsync.mockResolvedValueOnce({ status: 'denied', granted: false });
+    const onShareTerminal = jest.fn();
+    const { getByText } = render(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+        onShareTerminal={onShareTerminal}
+      />,
+    );
+
+    fireEvent.press(getByText('保存到相册'));
+
+    await waitFor(() => {
+      expect(mockRequestPermissionsAsync).toHaveBeenCalledTimes(1);
+      expect(mockCaptureRef).not.toHaveBeenCalled();
+      expect(mockSaveToLibraryAsync).not.toHaveBeenCalled();
+      expect(onShareTerminal).toHaveBeenCalledWith(expect.objectContaining({
+        phase: 'failed',
+        has_photo: false,
+        share_target: 'generic',
+        error_code: 'photo_library_permission_denied',
+      }));
+      expect(getByText('需要相册权限')).toBeTruthy();
+      expect(getByText('允许访问相册后，再保存高清分享图')).toBeTruthy();
     });
   });
 
