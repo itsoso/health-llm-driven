@@ -1261,6 +1261,9 @@ def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
     return "✅ 已记录"
 
 
+# A4: 每回合系统知识库证据卡 memo 的未命中哨兵 (区别于 None = "算过, 无卡")。
+_TURN_CARD_UNSET = object()
+
 _WRITE_RECEIPT_TOOL_NAMES = {"health_record", "health_manage", "intervention_cycle"}
 _WRITE_RESULT_FAILURE_MARKERS = (
     "Error:",
@@ -2756,6 +2759,12 @@ class AgentExecutor:
         # 复用主循环的流式路径在强/显式模型上重合成 (tokens 逐 delta 下发, 消除 ttft=total
         # 空洞)。round_tools=[] → pass_tools falsy → 不再快路由 → 落在强/显式模型。
         self._force_no_tools_synthesis = False
+        # A4: 每回合系统知识库证据卡 memo —— pre-round-1 算一次, done 复用, 避免同回合
+        # 第二次 build_twin 全量重建 (拖慢 done/receipts 与 /send 回复)。若回合内发生写操作
+        # (_turn_twin_write_occurred), done 侧强制重算一次以反映写后 Twin。
+        self._turn_evidence_card: Any = _TURN_CARD_UNSET
+        self._turn_evidence_card_key: Optional[tuple] = None
+        self._turn_twin_write_occurred = False
         self._last_provider_model_name: Optional[str] = None
         self._request_model_tool_fallback_used = False
         self._model_fallback_reasons: List[str] = []
@@ -3657,6 +3666,9 @@ class AgentExecutor:
         self._tool_round_fast_routed = False
         self._turn_any_tool_executed = False
         self._force_no_tools_synthesis = False
+        self._turn_evidence_card = _TURN_CARD_UNSET
+        self._turn_evidence_card_key = None
+        self._turn_twin_write_occurred = False
         self._model_fallback_reasons = []
         self._tool_model_names = []
         self._dead_provider_model_ids = set()
@@ -4485,6 +4497,10 @@ class AgentExecutor:
                             and parsed_tool_args.get("analysis_type") == "orchestrator"
                         )
                         if write_attempted and not replayed_write:
+                            # A4: 本回合发生 Twin-mutating 写 (health_record/health_manage/
+                            # intervention_cycle) → done 侧 KB 证据卡强制重算 (反映写后 Twin,
+                            # 不复用 pre-round-1 memo)。保守: 即便写最终软失败也重算 (无害多一次)。
+                            self._turn_twin_write_occurred = True
                             self._persist_turn_write_state(
                                 user_msg,
                                 status="in_flight",
@@ -5650,7 +5666,33 @@ class AgentExecutor:
         return self._render_system_knowledge_evidence_card_for_prompt(evidence_card)
 
     def _build_system_knowledge_evidence_card(self, user_id: int, message: str) -> dict | None:
-        """Return the system-KB evidence card for this chat turn.
+        """Per-turn memoized system-KB evidence card (A4, plan rank9).
+
+        The card was computed twice per turn — pre-round-1 (prompt grounding) and
+        again at `done` (UI card) — each potentially triggering a full
+        build_twin(use_cache=False) rebuild that delays `done`/receipts and
+        `/send` replies. Memoize per (user_id, message): pre-round-1 computes and
+        caches; `done` reuses it. If a Twin-mutating write happened this turn
+        (_turn_twin_write_occurred), the cache is bypassed so the done-time card
+        reflects the post-write Twin (rebuilt once). The compute path keeps
+        use_cache=False, so the rebuild-on-write is always fresh regardless of
+        which write endpoints invalidate the Twin cache — see
+        _compute_system_knowledge_evidence_card.
+        """
+        key = (user_id, message)
+        if (
+            self._turn_evidence_card is not _TURN_CARD_UNSET
+            and self._turn_evidence_card_key == key
+            and not self._turn_twin_write_occurred
+        ):
+            return self._turn_evidence_card
+        card = self._compute_system_knowledge_evidence_card(user_id, message)
+        self._turn_evidence_card = card
+        self._turn_evidence_card_key = key
+        return card
+
+    def _compute_system_knowledge_evidence_card(self, user_id: int, message: str) -> dict | None:
+        """Compute the system-KB evidence card for this chat turn (no memo).
 
         Prefer explicit message mentions so direct gene questions produce the
         most relevant card. If the message has no explicit entity, fall back to
@@ -5680,8 +5722,14 @@ class AgentExecutor:
             from app.twin.builder import build_twin
 
             # Chat prompt grounding must reflect the latest imported labs/genes.
-            # Cached Twin can be stale immediately after upload/import and then
-            # the system KB evidence block silently disappears.
+            # Cached Twin can be stale immediately after upload/import (those
+            # endpoints do not all invalidate the Twin cache), and then the
+            # system KB evidence block silently disappears. A4 keeps use_cache=
+            # False here on purpose (the common health_record POST endpoints —
+            # water/weight/BP/diet/supplement — do NOT invalidate the Twin cache,
+            # so use_cache=True would serve a stale pre-write Twin). The A4 perf
+            # win comes from the per-turn memo above (dedup the double build), not
+            # from a cache flip; correctness is unconditional.
             twin = build_twin(self.db, user_id, use_cache=False)
             return build_evidence_card_for_twin(
                 self.db,
@@ -6734,6 +6782,9 @@ class AgentExecutor:
             if not imported:
                 return None
 
+            # A4: 聊天图片 OCR 导入了化验指标 → Twin 已变。此导入发生在 pre-round-1 KB
+            # 证据卡之后, 置位 → done 侧证据卡强制重算 (use_cache=False → 反映刚导入的指标)。
+            self._turn_twin_write_occurred = True
             try:
                 invalidate_twin(user_id)
             except Exception:
@@ -7725,6 +7776,9 @@ class AgentExecutor:
     def _invalidate_twin_after_mutation(self) -> None:
         if self._current_user_id is None:
             return
+        # A4: Twin 已变 → 本回合 done 侧 KB 证据卡强制重算 (belt-and-suspenders:
+        # health_manage 也走上面主循环的 write_attempted 标记, 这里覆盖任何未来直接调用者)。
+        self._turn_twin_write_occurred = True
         try:
             from app.twin.cache import invalidate_twin
             invalidate_twin(self._current_user_id)
@@ -8128,6 +8182,9 @@ class AgentExecutor:
                 exam_date=exam_date,
                 source="agent_text",
             )
+            # A4: upload_medical_exam_text 不在 _WRITE_RECEIPT_TOOL_NAMES → 主循环 write 标记
+            # 不覆盖它; 这里显式置位, 让 done 侧 KB 证据卡重算反映刚写入的化验指标。
+            self._turn_twin_write_occurred = True
             try:
                 invalidate_twin(self._current_user_id)
             except Exception:
