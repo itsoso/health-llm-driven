@@ -421,8 +421,8 @@ function publishHintForShareResult(result: ShareResult): { title: string; detail
   }
   if (result.kind === 'saved_to_library') {
     return {
-      title: '图片已保存到相册',
-      detail: '去微信或小红书选择这张图片，再粘贴文案发布',
+      title: '图片已保存到相册，文案已复制',
+      detail: '去微信或小红书选择这张图片，再直接粘贴发布',
       icon: 'checkmark-circle',
       tone: 'success',
     };
@@ -859,6 +859,8 @@ export function DietShareSheet({
         result: 'tmpfile',
       });
       await MediaLibrary.saveToLibraryAsync(captureUri);
+      await Clipboard.setStringAsync(buildDietShareCaption(record, dateLabel));
+      setCopiedCaption('xiaohongshu');
       onShareTerminal?.({
         phase: 'completed',
         duration_ms: Date.now() - startedAt,

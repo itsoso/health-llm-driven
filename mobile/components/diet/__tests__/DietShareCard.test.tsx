@@ -444,8 +444,9 @@ describe('DietShareCard', () => {
         share_target: 'generic',
       }));
       expect(mockReleaseCapture).toHaveBeenCalledWith('file:///meal-share.png');
-      expect(getByText('图片已保存到相册')).toBeTruthy();
-      expect(getByText('去微信或小红书选择这张图片，再粘贴文案发布')).toBeTruthy();
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#小巴记录'));
+      expect(getByText('图片已保存到相册，文案已复制')).toBeTruthy();
+      expect(getByText('去微信或小红书选择这张图片，再直接粘贴发布')).toBeTruthy();
     });
   });
 
