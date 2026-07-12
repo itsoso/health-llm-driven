@@ -100,11 +100,14 @@ describe('DietShareCard', () => {
   });
 
   it('derives macro energy structure for a more premium share image', () => {
-    expect(buildDietShareMacroSegments(record)).toEqual([
-      expect.objectContaining({ key: 'protein', label: '蛋白', grams: 67, percent: 49 }),
+    const segments = buildDietShareMacroSegments(record);
+
+    expect(segments).toEqual([
+      expect.objectContaining({ key: 'protein', label: '蛋白', grams: 67, percent: 50 }),
       expect.objectContaining({ key: 'carbs', label: '碳水', grams: 48, percent: 35 }),
       expect.objectContaining({ key: 'fat', label: '脂肪', grams: 9.2, percent: 15 }),
     ]);
+    expect(segments.reduce((sum, segment) => sum + segment.percent, 0)).toBe(100);
   });
 
   it('renders macro energy structure on the share card', () => {
@@ -113,7 +116,7 @@ describe('DietShareCard', () => {
     );
 
     expect(getByText('能量结构')).toBeTruthy();
-    expect(getByText('蛋白 49%')).toBeTruthy();
+    expect(getByText('蛋白 50%')).toBeTruthy();
     expect(getByText('碳水 35%')).toBeTruthy();
     expect(getByText('脂肪 15%')).toBeTruthy();
   });
@@ -171,7 +174,7 @@ describe('DietShareCard', () => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('小巴饮食卡｜蛋白质拉满的一餐'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('不是节食，是把身体照顾得更有章法'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('晒得出，也复盘得清楚'));
-      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('能量结构: 蛋白 49% / 碳水 35% / 脂肪 15%'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('能量结构: 蛋白 50% / 碳水 35% / 脂肪 15%'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('适合截图留档，也适合发给认真生活的朋友'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#高蛋白饮食'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#低脂餐'));
@@ -627,7 +630,7 @@ describe('DietShareCard', () => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('鸡胸肉 200g、杂粮饭 1碗'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('今日状态: 高蛋白 / 低脂'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('蛋白质 67g'));
-      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('能量结构: 蛋白 49% / 碳水 35% / 脂肪 15%'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('能量结构: 蛋白 50% / 碳水 35% / 脂肪 15%'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('亮点: 高蛋白 / 低脂'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#饮食打卡'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#小巴记录'));
@@ -652,7 +655,7 @@ describe('DietShareCard', () => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('鸡胸肉 200g、杂粮饭 1碗'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('今日状态: 高蛋白 / 低脂'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('560 kcal'));
-      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('能量结构: 蛋白 49% / 碳水 35% / 脂肪 15%'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('能量结构: 蛋白 50% / 碳水 35% / 脂肪 15%'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('#小巴记录'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('#饮食打卡'));
     });

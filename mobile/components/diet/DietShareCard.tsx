@@ -221,9 +221,29 @@ export function buildDietShareMacroSegments(record: DietRecord): DietShareMacroS
   const totalKcal = rawSegments.reduce((sum, segment) => sum + segment.kcal, 0);
   if (totalKcal <= 0) return [];
 
-  return rawSegments.map(({ kcal, ...segment }) => ({
-    ...segment,
-    percent: Math.round((kcal / totalKcal) * 100),
+  const normalized = rawSegments.map((segment) => {
+    const exactPercent = (segment.kcal / totalKcal) * 100;
+    return {
+      ...segment,
+      percent: Math.floor(exactPercent),
+      remainder: exactPercent - Math.floor(exactPercent),
+    };
+  });
+  let remainingPercent = 100 - normalized.reduce((sum, segment) => sum + segment.percent, 0);
+  [...normalized]
+    .sort((a, b) => b.remainder - a.remainder)
+    .forEach((segment) => {
+      if (remainingPercent <= 0) return;
+      segment.percent += 1;
+      remainingPercent -= 1;
+    });
+
+  return normalized.map((segment) => ({
+    key: segment.key,
+    label: segment.label,
+    grams: segment.grams,
+    percent: segment.percent,
+    color: segment.color,
   }));
 }
 
