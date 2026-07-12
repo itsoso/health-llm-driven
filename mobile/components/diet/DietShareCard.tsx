@@ -30,6 +30,7 @@ import {
   revaSpacing,
 } from '../../constants/revaTheme';
 import type { DietRecord } from '../../services/diet';
+import { MACRO_HUES } from '../chat/cards/mealCardVisuals';
 
 const MEAL_LABEL: Record<string, string> = {
   breakfast: '早餐',
@@ -39,6 +40,14 @@ const MEAL_LABEL: Record<string, string> = {
 };
 export const DIET_SHARE_IMAGE_TIMEOUT_MS = 5_000;
 type ShareTarget = 'generic' | 'wechat' | 'xiaohongshu';
+type MacroSegmentKey = 'protein' | 'carbs' | 'fat';
+type DietShareMacroSegment = {
+  key: MacroSegmentKey;
+  label: string;
+  grams: number;
+  percent: number;
+  color: string;
+};
 type ShareResult =
   | { target: ShareTarget; kind: 'completed' }
   | { target: ShareTarget; kind: 'caption_fallback' }
@@ -174,6 +183,42 @@ function buildDietShareMacroLine(record: DietRecord, style: 'compact' | 'sentenc
   return style === 'sentence'
     ? `这一餐约 ${allParts.join('，')}。`
     : allParts.join(' · ');
+}
+
+const SHARE_MACRO_DEFS: Array<{
+  key: MacroSegmentKey;
+  field: 'protein' | 'carbs' | 'fat';
+  label: string;
+  kcalPerGram: number;
+  color: string;
+}> = [
+  { key: 'protein', field: 'protein', label: '蛋白', kcalPerGram: 4, color: MACRO_HUES.protein },
+  { key: 'carbs', field: 'carbs', label: '碳水', kcalPerGram: 4, color: MACRO_HUES.carbs },
+  { key: 'fat', field: 'fat', label: '脂肪', kcalPerGram: 9, color: MACRO_HUES.fat },
+];
+
+export function buildDietShareMacroSegments(record: DietRecord): DietShareMacroSegment[] {
+  const rawSegments = SHARE_MACRO_DEFS
+    .map((def) => {
+      const grams = record[def.field];
+      if (!hasMetric(grams) || grams <= 0) return null;
+      return {
+        key: def.key,
+        label: def.label,
+        grams,
+        kcal: grams * def.kcalPerGram,
+        color: def.color,
+      };
+    })
+    .filter((segment): segment is DietShareMacroSegment & { kcal: number } => Boolean(segment));
+
+  const totalKcal = rawSegments.reduce((sum, segment) => sum + segment.kcal, 0);
+  if (totalKcal <= 0) return [];
+
+  return rawSegments.map(({ kcal, ...segment }) => ({
+    ...segment,
+    percent: Math.round((kcal / totalKcal) * 100),
+  }));
 }
 
 export function compactDietShareFoodItems(foodItems: string, maxChars = 35): string {
@@ -315,6 +360,7 @@ export default function DietShareCard({
   const highlights = buildDietShareHighlights(record);
   const statusLine = buildDietShareStatusLine(highlights);
   const balance = buildDietShareBalance(record);
+  const macroSegments = buildDietShareMacroSegments(record);
 
   return (
     <View style={styles.card}>
@@ -394,10 +440,45 @@ export default function DietShareCard({
         </View>
 
         {hasMacros ? (
-          <View style={styles.macroGrid}>
-            <ShareMacro label="蛋白质" value={hasMetric(record.protein) ? `${metric(record.protein)}g` : '估算中'} color="#E34F6F" />
-            <ShareMacro label="碳水" value={hasMetric(record.carbs) ? `${metric(record.carbs)}g` : '估算中'} color={C.blue500} />
-            <ShareMacro label="脂肪" value={hasMetric(record.fat) ? `${metric(record.fat, 1)}g` : '估算中'} color="#D18B1D" />
+          <View style={styles.macroSection}>
+            <View style={styles.macroGrid}>
+              <ShareMacro label="蛋白质" value={hasMetric(record.protein) ? `${metric(record.protein)}g` : '估算中'} color={MACRO_HUES.protein} />
+              <ShareMacro label="碳水" value={hasMetric(record.carbs) ? `${metric(record.carbs)}g` : '估算中'} color={MACRO_HUES.carbs} />
+              <ShareMacro label="脂肪" value={hasMetric(record.fat) ? `${metric(record.fat, 1)}g` : '估算中'} color={MACRO_HUES.fat} />
+            </View>
+            {macroSegments.length > 0 ? (
+              <View style={styles.macroStructure}>
+                <View style={styles.macroStructureHeader}>
+                  <Text style={styles.macroStructureTitle}>能量结构</Text>
+                  <Text style={styles.macroStructureMeta}>按三大营养热量占比</Text>
+                </View>
+                <View style={styles.macroStructureTrack}>
+                  {macroSegments.map((segment, index) => (
+                    <View
+                      key={segment.key}
+                      style={[
+                        styles.macroStructureFill,
+                        {
+                          flexGrow: Math.max(segment.percent, 6),
+                          backgroundColor: segment.color,
+                          marginRight: index < macroSegments.length - 1 ? 1 : 0,
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+                <View style={styles.macroStructureLegend}>
+                  {macroSegments.map((segment) => (
+                    <View key={segment.key} style={styles.macroStructureLegendItem}>
+                      <View style={[styles.macroStructureDot, { backgroundColor: segment.color }]} />
+                      <Text style={styles.macroStructureLegendText}>
+                        {segment.label} {segment.percent}%
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
           </View>
         ) : (
           <View style={styles.pendingMacroPanel}>
@@ -933,18 +1014,57 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     textAlign: 'right',
   },
-  macroGrid: {
-    flexDirection: 'row',
+  macroSection: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
-    marginTop: 14,
-    paddingVertical: 12,
+    marginTop: 12,
+    paddingTop: 10,
+    paddingBottom: 9,
+  },
+  macroGrid: {
+    flexDirection: 'row',
   },
   macroItem: { flex: 1, paddingHorizontal: 8, position: 'relative' },
   macroAccent: { width: 18, height: 3, borderRadius: 2, marginBottom: 6 },
   macroValue: { fontFamily: revaFonts.mono, fontSize: 15, color: C.ink1, fontWeight: '600' },
   macroLabel: { fontFamily: revaFonts.sans, fontSize: 9, color: C.ink3, marginTop: 2 },
+  macroStructure: {
+    marginTop: 9,
+    borderRadius: 10,
+    backgroundColor: '#F7F7F2',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E4DA',
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+  },
+  macroStructureHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  macroStructureTitle: { fontFamily: revaFonts.sans, fontSize: 10, color: C.ink1, fontWeight: '900' },
+  macroStructureMeta: { fontFamily: revaFonts.sans, fontSize: 8, color: C.ink3, fontWeight: '800' },
+  macroStructureTrack: {
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: C.paper2,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    marginTop: 6,
+  },
+  macroStructureFill: { height: '100%', flexBasis: 0 },
+  macroStructureLegend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 5,
+    marginTop: 6,
+  },
+  macroStructureLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  macroStructureDot: { width: 5, height: 5, borderRadius: 2.5 },
+  macroStructureLegendText: { fontFamily: revaFonts.mono, fontSize: 8.5, color: C.ink2, fontWeight: '700' },
   pendingMacroPanel: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,

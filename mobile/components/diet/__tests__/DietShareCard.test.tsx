@@ -37,6 +37,7 @@ import DietShareCard, {
   buildDietShareCaption,
   buildDietShareMomentsCaption,
   buildDietShareBalance,
+  buildDietShareMacroSegments,
   dietShareCaptureDimensions,
 } from '../DietShareCard';
 import type { DietRecord } from '../../../services/diet';
@@ -96,6 +97,25 @@ describe('DietShareCard', () => {
     expect(getByText('均衡度')).toBeTruthy();
     expect(getByText('96')).toBeTruthy();
     expect(getByText('高蛋白稳态餐')).toBeTruthy();
+  });
+
+  it('derives macro energy structure for a more premium share image', () => {
+    expect(buildDietShareMacroSegments(record)).toEqual([
+      expect.objectContaining({ key: 'protein', label: '蛋白', grams: 67, percent: 49 }),
+      expect.objectContaining({ key: 'carbs', label: '碳水', grams: 48, percent: 35 }),
+      expect.objectContaining({ key: 'fat', label: '脂肪', grams: 9.2, percent: 15 }),
+    ]);
+  });
+
+  it('renders macro energy structure on the share card', () => {
+    const { getByText } = render(
+      <DietShareCard record={record} dateLabel="7月11日 · 午餐" />,
+    );
+
+    expect(getByText('能量结构')).toBeTruthy();
+    expect(getByText('蛋白 49%')).toBeTruthy();
+    expect(getByText('碳水 35%')).toBeTruthy();
+    expect(getByText('脂肪 15%')).toBeTruthy();
   });
 
   it('turns confirmed high-protein meals into a shareable nutrition headline', async () => {
