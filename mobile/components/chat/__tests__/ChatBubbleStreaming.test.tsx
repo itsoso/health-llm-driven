@@ -9,9 +9,14 @@ import type { UIMessage } from '../../../hooks/useChatEngine';
 jest.mock('expo-speech', () => ({ stop: jest.fn() }));
 jest.mock('expo-audio', () => ({ setAudioModeAsync: jest.fn() }));
 jest.mock('expo-haptics', () => ({
+  impactAsync: jest.fn(),
   selectionAsync: jest.fn(),
   notificationAsync: jest.fn(),
+  ImpactFeedbackStyle: { Medium: 'medium' },
   NotificationFeedbackType: { Success: 'success' },
+}));
+jest.mock('expo-clipboard', () => ({
+  setStringAsync: jest.fn(),
 }));
 jest.mock('../../../services/speakWithUserVoice', () => ({
   speakWithUserVoice: jest.fn(),
@@ -27,11 +32,14 @@ jest.mock('expo-router', () => ({
 }));
 // Spy on the markdown component so we can assert it is NOT mounted while streaming.
 const mockMarkdownMount = jest.fn();
+const mockMarkdownProps = jest.fn();
 jest.mock('react-native-markdown-display', () => {
   const React = require('react');
   const { Text } = require('react-native');
-  const MockMarkdown = ({ children }: { children: string }) => {
+  const MockMarkdown = (props: { children: string; rules?: Record<string, Function> }) => {
+    const { children } = props;
     mockMarkdownMount(children);
+    mockMarkdownProps(props);
     return <Text testID="rich-markdown">{children}</Text>;
   };
   MockMarkdown.displayName = 'MockMarkdown';
@@ -73,11 +81,11 @@ jest.mock('../../actions/InterventionDraftSheet', () => {
 
 const ChatBubble = require('../ChatBubble').default;
 
-function renderBubble(message: UIMessage) {
+function renderBubble(message: UIMessage, props: Record<string, unknown> = {}) {
   const qc = new QueryClient();
   return render(
     <QueryClientProvider client={qc}>
-      <ChatBubble item={message} />
+      <ChatBubble item={message} {...props} />
     </QueryClientProvider>,
   );
 }
@@ -323,6 +331,43 @@ describe('ChatBubble streaming degraded render', () => {
     // Terminal state goes through the rich markdown path.
     expect(getByTestId('rich-markdown')).toBeTruthy();
     expect(mockMarkdownMount).toHaveBeenCalled();
+  });
+
+  it('disables native text selection inside completed Markdown replies', () => {
+    renderBubble({
+      id: 'assistant-done-markdown-selection',
+      role: 'assistant',
+      content: '### 今日建议\n\n- 喷剂\n- 贴片',
+      streaming: false,
+    });
+
+    const props = mockMarkdownProps.mock.calls[mockMarkdownProps.mock.calls.length - 1][0];
+    expect(props.rules).toBeTruthy();
+    const textNode = { key: 'text-1', content: '喷剂' };
+    const renderedText = props.rules.text(textNode, [], [], { text: {} }, {});
+    expect(renderedText.props.selectable).toBe(false);
+    const groupNode = { key: 'group-1' };
+    const renderedGroup = props.rules.textgroup(groupNode, ['喷剂'], [], { textgroup: {} });
+    expect(renderedGroup.props.selectable).toBe(false);
+  });
+
+  it('opens an in-bubble action row before entering multi-select', () => {
+    const onEnterSelection = jest.fn();
+    const { getByLabelText, getByTestId, queryByTestId } = renderBubble({
+      id: 'assistant-action-menu',
+      role: 'assistant',
+      content: '今天建议补水并早点休息。',
+      streaming: false,
+      completionStatus: 'complete',
+    }, { onEnterSelection });
+
+    expect(queryByTestId('message-actions-row')).toBeNull();
+    fireEvent(getByLabelText('AI: 今天建议补水并早点休息。'), 'longPress');
+
+    expect(getByTestId('message-actions-row')).toBeTruthy();
+    expect(getByLabelText('复制全文')).toBeTruthy();
+    fireEvent.press(getByLabelText('多选消息'));
+    expect(onEnterSelection).toHaveBeenCalledWith('assistant-action-menu');
   });
 
   // Bug 1 regression: LLM 吐脏 markdown (无空格标题 / 黏连表头分隔) 时, done 首帧就应

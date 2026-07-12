@@ -12,6 +12,7 @@ import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import { setAudioModeAsync } from 'expo-audio';
 import Markdown from 'react-native-markdown-display';
+import type { RenderRules } from 'react-native-markdown-display';
 import BrandCircle from './BrandCircle';
 import { getCardActionRuntimeKey, renderCard } from './cards';
 import { createMdStylesChat } from '../../constants/markdownStyles';
@@ -92,6 +93,80 @@ const MD_PALETTE = {
   separator: C.line,
 } as unknown as ColorPalette;
 const MD_STYLES = createMdStylesChat(MD_PALETTE);
+const CHAT_MARKDOWN_RULES: RenderRules = {
+  text: (node, children, parent, styles, inheritedStyles = {}) => (
+    <Text key={node.key} selectable={false} style={[inheritedStyles, styles.text]}>
+      {node.content}
+    </Text>
+  ),
+  textgroup: (node, children, parent, styles) => (
+    <Text key={node.key} selectable={false} style={styles.textgroup}>
+      {children}
+    </Text>
+  ),
+  strong: (node, children, parent, styles) => (
+    <Text key={node.key} selectable={false} style={styles.strong}>
+      {children}
+    </Text>
+  ),
+  em: (node, children, parent, styles) => (
+    <Text key={node.key} selectable={false} style={styles.em}>
+      {children}
+    </Text>
+  ),
+  s: (node, children, parent, styles) => (
+    <Text key={node.key} selectable={false} style={styles.s}>
+      {children}
+    </Text>
+  ),
+  code_inline: (node, children, parent, styles, inheritedStyles = {}) => (
+    <Text key={node.key} selectable={false} style={[inheritedStyles, styles.code_inline]}>
+      {node.content}
+    </Text>
+  ),
+  code_block: (node, children, parent, styles, inheritedStyles = {}) => {
+    let { content } = node;
+    if (typeof content === 'string' && content.endsWith('\n')) {
+      content = content.slice(0, -1);
+    }
+    return (
+      <Text key={node.key} selectable={false} style={[inheritedStyles, styles.code_block]}>
+        {content}
+      </Text>
+    );
+  },
+  fence: (node, children, parent, styles, inheritedStyles = {}) => {
+    let { content } = node;
+    if (typeof content === 'string' && content.endsWith('\n')) {
+      content = content.slice(0, -1);
+    }
+    return (
+      <Text key={node.key} selectable={false} style={[inheritedStyles, styles.fence]}>
+        {content}
+      </Text>
+    );
+  },
+  hardbreak: (node, children, parent, styles) => (
+    <Text key={node.key} selectable={false} style={styles.hardbreak}>
+      {'\n'}
+    </Text>
+  ),
+  softbreak: (node, children, parent, styles) => (
+    <Text key={node.key} selectable={false} style={styles.softbreak}>
+      {'\n'}
+    </Text>
+  ),
+  inline: (node, children, parent, styles) => (
+    <Text key={node.key} selectable={false} style={styles.inline}>
+      {children}
+    </Text>
+  ),
+  span: (node, children, parent, styles) => (
+    <Text key={node.key} selectable={false} style={styles.span}>
+      {children}
+    </Text>
+  ),
+};
 
 interface Props {
   item: UIMessage;
@@ -431,7 +506,8 @@ function ChatBubbleInner({
   const handleCopy = () => {
     Clipboard.setStringAsync(item.content);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert('已复制');
+    setShowActions(false);
+    toast.show('已复制', 'success');
   };
 
   const handleLongPress = () => {
@@ -439,24 +515,21 @@ function ChatBubbleInner({
       onToggleSelected?.(item.id);
       return;
     }
-    // 微信式: 长按可分享的消息直接进入多选模式并选中该条.
-    if (onEnterSelection) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      onEnterSelection(item.id);
-      return;
-    }
     Haptics.selectionAsync();
     setShowActions(prev => !prev);
   };
 
-  // 用户气泡长按: 可进多选则进多选 (微信式), 否则保留复制.
-  const handleUserLongPress = () => {
+  const handleEnterSelectionFromActions = () => {
+    setShowActions(false);
     if (onEnterSelection) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       onEnterSelection(item.id);
-      return;
     }
-    handleCopy();
+  };
+
+  // 用户气泡长按: 先显示本地操作条,复制/多选都在气泡内完成,避免 iOS 原生菜单漂到顶部.
+  const handleUserLongPress = () => {
+    handleLongPress();
   };
 
   // 播报当前 AI 气泡内容. 同 bubble 再点 = 停; 切其他气泡播报会接管 (Speech 是单例, 自动 stop 旧的).
@@ -575,6 +648,12 @@ function ChatBubbleInner({
               </View>
             )}
             {displayText ? <Text style={txt.bubbleUser}>{displayText}</Text> : null}
+            {showActions ? (
+              <MessageActionsRow
+                onCopy={handleCopy}
+                onEnterSelection={onEnterSelection ? handleEnterSelectionFromActions : undefined}
+              />
+            ) : null}
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
@@ -599,7 +678,7 @@ function ChatBubbleInner({
               // 流式降级: plain text, 保留换行, 不做 markdown 解析/整树渲染
               <Text style={txt.streaming}>{visibleAssistantMarkdown}</Text>
             ) : visibleAssistantMarkdown ? (
-              <Markdown style={MD_STYLES}>{renderedMarkdown}</Markdown>
+              <Markdown style={MD_STYLES} rules={CHAT_MARKDOWN_RULES}>{renderedMarkdown}</Markdown>
             ) : !item.streaming && !displayText ? (
               <Text style={txt.fallback}>抱歉，这条回复没能送达。你可以重新提问。</Text>
             ) : null}
@@ -624,17 +703,10 @@ function ChatBubbleInner({
               <AgentTransparencyPanel profile={transparency} />
             ) : null}
             {assistantTextForActions && showActions ? (
-              <View style={styles.actionsRow}>
-                <Pressable
-                  style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
-                  onPress={handleCopy}
-                  accessibilityRole="button"
-                  accessibilityLabel="复制全文"
-                >
-                  <Ionicons name="copy-outline" size={14} color={C.green500} />
-                  <Text style={txt.actionBtn}>复制</Text>
-                </Pressable>
-              </View>
+              <MessageActionsRow
+                onCopy={handleCopy}
+                onEnterSelection={onEnterSelection ? handleEnterSelectionFromActions : undefined}
+              />
             ) : null}
             {item.streaming && thinkingSteps.length === 0 && !currentStatus ? (
               <ActivityIndicator size="small" color={C.green500} style={{ marginTop: 4 }} />
@@ -673,6 +745,39 @@ function ChatBubbleInner({
         )}
       </View>
     </>
+  );
+}
+
+function MessageActionsRow({
+  onCopy,
+  onEnterSelection,
+}: {
+  onCopy: () => void;
+  onEnterSelection?: () => void;
+}) {
+  return (
+    <View testID="message-actions-row" style={styles.actionsRow}>
+      <Pressable
+        style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
+        onPress={onCopy}
+        accessibilityRole="button"
+        accessibilityLabel="复制全文"
+      >
+        <Ionicons name="copy-outline" size={14} color={C.green500} />
+        <Text style={txt.actionBtn}>复制</Text>
+      </Pressable>
+      {onEnterSelection ? (
+        <Pressable
+          style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
+          onPress={onEnterSelection}
+          accessibilityRole="button"
+          accessibilityLabel="多选消息"
+        >
+          <Ionicons name="checkbox-outline" size={14} color={C.green500} />
+          <Text style={txt.actionBtn}>多选</Text>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
