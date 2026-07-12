@@ -362,6 +362,15 @@ function ShareMacro({ label, value, color }: { label: string; value: string; col
   );
 }
 
+function ShareReadyItem({ icon, label }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string }) {
+  return (
+    <View style={styles.shareReadyItem}>
+      <Ionicons name={icon} size={14} color={C.green600} />
+      <Text style={styles.shareReadyText}>{label}</Text>
+    </View>
+  );
+}
+
 export type DietShareSheetProps = DietShareCardProps & {
   visible: boolean;
   onClose: () => void;
@@ -536,6 +545,12 @@ export function DietShareSheet({
                 forceImageFallback={imageTimedOut}
               />
             </View>
+          </View>
+
+          <View style={styles.shareReadyStrip} accessibilityLabel="分享素材已准备完成">
+            <ShareReadyItem icon="image-outline" label="3:4 高清图" />
+            <ShareReadyItem icon="chatbubble-ellipses-outline" label="朋友圈文案" />
+            <ShareReadyItem icon="sparkles-outline" label="小红书话题" />
           </View>
 
           <View style={styles.platformShareRow}>
@@ -789,11 +804,40 @@ const styles = StyleSheet.create({
     ...revaShadows.md,
   },
   captureSurface: { width: '100%', height: '100%', backgroundColor: C.surface },
+  shareReadyStrip: {
+    width: '100%',
+    minHeight: 38,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.focusBg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.focusLine,
+    marginTop: revaSpacing.s3,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  shareReadyItem: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  shareReadyText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    color: C.focusInk1,
+    fontWeight: '800',
+  },
   platformShareRow: {
     width: '100%',
     flexDirection: 'row',
     gap: 10,
-    marginTop: revaSpacing.s4,
+    marginTop: revaSpacing.s3,
   },
   platformShareButton: {
     flex: 1,

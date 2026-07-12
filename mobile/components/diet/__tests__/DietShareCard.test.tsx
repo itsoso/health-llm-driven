@@ -340,6 +340,21 @@ describe('DietShareCard', () => {
     expect(getByLabelText('保存或分享饮食图片')).toBeTruthy();
   });
 
+  it('shows a platform-ready checklist before sharing', () => {
+    const { getByText } = render(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(getByText('3:4 高清图')).toBeTruthy();
+    expect(getByText('朋友圈文案')).toBeTruthy();
+    expect(getByText('小红书话题')).toBeTruthy();
+  });
+
   it('uses native pixel units on Android and point units on iOS', () => {
     expect(dietShareCaptureDimensions('android', 3)).toEqual({ width: 1080, height: 1440 });
     expect(dietShareCaptureDimensions('ios', 3)).toEqual({ width: 360, height: 480 });
