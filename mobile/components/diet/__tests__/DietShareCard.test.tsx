@@ -161,6 +161,8 @@ describe('DietShareCard', () => {
     );
 
     expect(getAllByText('营养估算中').length).toBeGreaterThan(0);
+    expect(getByText('营养回填后用于复盘')).toBeTruthy();
+    expect(queryByText('营养数据以本次确认记录为准')).toBeNull();
     expect(queryByText('--')).toBeNull();
 
     fireEvent.press(getByText('复制小红书文案'));

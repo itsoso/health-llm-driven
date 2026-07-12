@@ -183,6 +183,7 @@ export default function DietShareCard({
   const calories = metric(record.calories);
   const hasCalories = hasMetric(record.calories);
   const hasMacros = hasAnyMacro(record);
+  const isNutritionPending = !hasCalories && !hasMacros;
   const sourceLabel = nutritionSourceLabel(record.source);
   const headline = buildDietShareHeadline(record);
   const highlights = buildDietShareHighlights(record);
@@ -288,7 +289,9 @@ export default function DietShareCard({
 
       <View style={styles.cardFooter}>
         <Text style={styles.footerPrimary}>认真记录，也认真生活</Text>
-        <Text style={styles.footerSecondary}>营养数据以本次确认记录为准</Text>
+        <Text style={styles.footerSecondary}>
+          {isNutritionPending ? '营养回填后用于复盘' : '营养数据以本次确认记录为准'}
+        </Text>
       </View>
     </View>
   );
