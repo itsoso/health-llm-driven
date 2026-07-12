@@ -1,5 +1,6 @@
 import React from 'react';
 import { PixelRatio, Share } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockCaptureRef = jest.fn().mockResolvedValue('file:///meal-share.png');
@@ -14,6 +15,10 @@ jest.mock('react-native-view-shot', () => ({
 jest.mock('expo-sharing', () => ({
   isAvailableAsync: jest.fn().mockResolvedValue(true),
   shareAsync: (...args: any[]) => mockShareAsync(...args),
+}));
+
+jest.mock('expo-clipboard', () => ({
+  setStringAsync: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('expo-haptics', () => ({
@@ -181,5 +186,26 @@ describe('DietShareCard', () => {
     fireEvent.press(getByLabelText('分享饮食图片'));
     await waitFor(() => expect(mockCaptureRef).toHaveBeenCalled());
     jest.useRealTimers();
+  });
+
+  it('copies a Xiaohongshu-ready caption from the meal share sheet', async () => {
+    const { getByText } = render(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(getByText('复制小红书文案'));
+
+    await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('今天这餐打卡'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('鸡胸肉 200g、杂粮饭 1碗'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('蛋白质 67g'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#饮食打卡'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#小巴记录'));
+    });
   });
 });

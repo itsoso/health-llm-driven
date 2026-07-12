@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
 import { captureRef, releaseCapture } from 'react-native-view-shot';
@@ -56,6 +57,19 @@ function nutritionSourceLabel(source?: string | null): string {
   if (source === 'manual' || source === 'user_corrected') return '手动确认';
   if (source === 'mixed') return '多来源校准';
   return '营养表校准';
+}
+
+export function buildDietShareCaption(record: DietRecord, dateLabel: string): string {
+  const mealLabel = MEAL_LABEL[record.meal_type] ?? '餐食';
+  const lines = [
+    `今天这餐打卡: ${dateLabel}`,
+    `${mealLabel}: ${record.food_items}`,
+    `热量 ${metric(record.calories)} kcal · 蛋白质 ${metric(record.protein)}g · 碳水 ${metric(record.carbs)}g · 脂肪 ${metric(record.fat, 1)}g`,
+  ];
+  if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g`);
+  lines.push('认真记录，也认真生活。');
+  lines.push('#饮食打卡 #健康生活 #小巴记录');
+  return lines.join('\n');
 }
 
 export type DietShareCardProps = {
@@ -210,13 +224,17 @@ export function DietShareSheet({
   const shareTextFallback = async () => {
     await Share.share({
       title: '分享饮食打卡',
-      message: [
-        `${dateLabel} · ${MEAL_LABEL[record.meal_type] ?? '餐食'}`,
-        record.food_items,
-        `${metric(record.calories)} kcal · 蛋白质 ${metric(record.protein)}g · 碳水 ${metric(record.carbs)}g · 脂肪 ${metric(record.fat, 1)}g`,
-        '来自小巴饮食记录',
-      ].join('\n'),
+      message: buildDietShareCaption(record, dateLabel),
     });
+  };
+
+  const copyCaption = async () => {
+    try {
+      await Clipboard.setStringAsync(buildDietShareCaption(record, dateLabel));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      Alert.alert('复制失败', '请稍后重试');
+    }
   };
 
   const handleShare = async () => {
@@ -332,6 +350,17 @@ export function DietShareSheet({
               <Ionicons name="share-outline" size={19} color={C.greenOn} />
             )}
             <Text style={styles.shareButtonText}>{!imageReady ? '图片加载中' : sharing ? '生成中' : '分享图片'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.captionButton}
+            onPress={copyCaption}
+            disabled={sharing}
+            activeOpacity={0.78}
+            accessibilityRole="button"
+            accessibilityLabel="复制小红书文案"
+          >
+            <Ionicons name="copy-outline" size={17} color={C.green600} />
+            <Text style={styles.captionButtonText}>复制小红书文案</Text>
           </TouchableOpacity>
         </SafeAreaView>
       </View>
@@ -464,4 +493,18 @@ const styles = StyleSheet.create({
   },
   shareButtonDisabled: { opacity: 0.72 },
   shareButtonText: { fontFamily: revaFonts.sans, fontSize: 15, color: C.greenOn, fontWeight: '800' },
+  captionButton: {
+    width: '100%',
+    minHeight: 44,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.surface,
+    marginTop: revaSpacing.s2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.focusLine,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  captionButtonText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.green600, fontWeight: '800' },
 });
