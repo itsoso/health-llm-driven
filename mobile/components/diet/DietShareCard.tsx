@@ -102,6 +102,29 @@ function buildDietShareStatusLine(highlights: string[]): string {
   return `今日状态：${highlights.join(' · ')}`;
 }
 
+export function buildDietShareBalance(record: DietRecord): { score: number | null; label: string } {
+  if (!isNutritionComplete(record)) {
+    return { score: null, label: '营养回填后生成均衡度' };
+  }
+
+  let score = 58;
+  if ((record.protein ?? 0) >= 30) score += (record.protein ?? 0) > 45 ? 14 : 16;
+  else if ((record.protein ?? 0) >= 18) score += 9;
+  if ((record.fat ?? 0) <= 12) score += 12;
+  else if ((record.fat ?? 0) <= 20) score += 10;
+  if ((record.fiber ?? 0) >= 5) score += 10;
+  else if ((record.fiber ?? 0) >= 3) score += 6;
+  if ((record.calories ?? 0) >= 350 && (record.calories ?? 0) <= 750) score += 10;
+  else if ((record.calories ?? 0) >= 250 && (record.calories ?? 0) <= 850) score += 6;
+  if ((record.carbs ?? 0) >= 25 && (record.carbs ?? 0) <= 90) score += 8;
+
+  const normalized = Math.min(96, Math.max(62, score));
+  if (normalized >= 90 && (record.protein ?? 0) >= 30) return { score: normalized, label: '高蛋白稳态餐' };
+  if (normalized >= 88) return { score: normalized, label: '结构很在线' };
+  if (normalized >= 78) return { score: normalized, label: '均衡感不错' };
+  return { score: normalized, label: '已记录，可复盘' };
+}
+
 function buildDietShareCaptionStatusLine(highlights: string[]): string {
   if (highlights.length === 0) return '今日状态: 认真记录';
   return `今日状态: ${highlights.join(' / ')}`;
@@ -188,6 +211,7 @@ export function buildDietShareCaption(record: DietRecord, dateLabel: string): st
   if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g`);
   lines.push(buildDietShareDataDisclosure(record));
   lines.push('不是节食，是把身体照顾得更有章法。');
+  lines.push('晒得出，也复盘得清楚。');
   lines.push('适合截图留档，也适合发给认真生活的朋友。');
   lines.push(buildDietShareHashtags(highlights));
   return lines.join('\n');
@@ -290,6 +314,7 @@ export default function DietShareCard({
   const headline = buildDietShareHeadline(record);
   const highlights = buildDietShareHighlights(record);
   const statusLine = buildDietShareStatusLine(highlights);
+  const balance = buildDietShareBalance(record);
 
   return (
     <View style={styles.card}>
@@ -380,6 +405,25 @@ export default function DietShareCard({
             <Text style={styles.pendingMacroText}>确认记录已保存，热量和三大营养会回填后用于复盘。</Text>
           </View>
         )}
+
+        <View style={styles.balancePanel}>
+          <View style={styles.balanceCopy}>
+            <Text style={styles.balanceLabel}>均衡度</Text>
+            <Text style={styles.balanceTitle}>{balance.label}</Text>
+          </View>
+          <View style={styles.balanceScoreWrap}>
+            {balance.score == null ? (
+              <Text style={styles.balancePending}>待回填</Text>
+            ) : (
+              <>
+                <Text style={styles.balanceScore}>{balance.score}</Text>
+                <View style={styles.balanceTrack}>
+                  <View style={[styles.balanceFill, { width: `${balance.score}%` }]} />
+                </View>
+              </>
+            )}
+          </View>
+        </View>
 
         <View style={styles.sourceRow}>
           <Ionicons
@@ -910,6 +954,35 @@ const styles = StyleSheet.create({
   },
   pendingMacroTitle: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink1, fontWeight: '900' },
   pendingMacroText: { fontFamily: revaFonts.sans, fontSize: 10, lineHeight: 15, color: C.ink3, marginTop: 4 },
+  balancePanel: {
+    minHeight: 46,
+    borderRadius: 12,
+    backgroundColor: '#F8F4EC',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E9D9BE',
+    marginTop: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  balanceCopy: { flex: 1, minWidth: 0 },
+  balanceLabel: { fontFamily: revaFonts.sans, fontSize: 8.5, color: '#B87921', fontWeight: '900' },
+  balanceTitle: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 16, color: C.ink1, fontWeight: '900', marginTop: 1 },
+  balanceScoreWrap: { width: 72, alignItems: 'flex-end' },
+  balanceScore: { fontFamily: revaFonts.mono, fontSize: 23, lineHeight: 25, color: '#C66A23', fontWeight: '700' },
+  balancePending: { fontFamily: revaFonts.sans, fontSize: 10, color: revaSemantic.caution.fg, fontWeight: '900' },
+  balanceTrack: {
+    width: 66,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(198,106,35,0.16)',
+    overflow: 'hidden',
+    marginTop: 3,
+  },
+  balanceFill: { height: '100%', borderRadius: 2, backgroundColor: '#C66A23' },
   sourceRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 11 },
   sourceText: { fontFamily: revaFonts.sans, fontSize: 10, fontWeight: '800' },
   fiberText: { fontFamily: revaFonts.mono, fontSize: 9, color: C.ink3, marginLeft: 'auto' },

@@ -36,6 +36,7 @@ import DietShareCard, {
   DietShareSheet,
   buildDietShareCaption,
   buildDietShareMomentsCaption,
+  buildDietShareBalance,
   dietShareCaptureDimensions,
 } from '../DietShareCard';
 import type { DietRecord } from '../../../services/diet';
@@ -82,6 +83,19 @@ describe('DietShareCard', () => {
     expect(getByText('不是节食，是把身体照顾得更有章法')).toBeTruthy();
     expect(getByText('不含体重 / 用户 ID / 私密健康数据')).toBeTruthy();
     expect(queryByText('user_id')).toBeNull();
+  });
+
+  it('adds a share-native balance score to make the card feel worth posting', () => {
+    const balance = buildDietShareBalance(record);
+    const { getByText } = render(
+      <DietShareCard record={record} dateLabel="7月11日 · 午餐" />,
+    );
+
+    expect(balance.score).toBe(96);
+    expect(balance.label).toBe('高蛋白稳态餐');
+    expect(getByText('均衡度')).toBeTruthy();
+    expect(getByText('96')).toBeTruthy();
+    expect(getByText('高蛋白稳态餐')).toBeTruthy();
   });
 
   it('turns confirmed high-protein meals into a shareable nutrition headline', async () => {
@@ -136,6 +150,7 @@ describe('DietShareCard', () => {
     await waitFor(() => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('小巴饮食卡｜蛋白质拉满的一餐'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('不是节食，是把身体照顾得更有章法'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('晒得出，也复盘得清楚'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('适合截图留档，也适合发给认真生活的朋友'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#高蛋白饮食'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#低脂餐'));
