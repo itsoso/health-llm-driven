@@ -28,6 +28,21 @@ export interface MealPlanData {
   shopping_list?: string[];
 }
 
+// ```reva-ui ... ``` GenUI 围栏块 (chart / metric_empty_state / metric_table):
+// 这些由 MarkdownRenderer 直接抽取渲染成卡片, 预处理的 JSON 探测必须绕开它们,
+// 否则围栏里的 JSON 会被当成"裸吐 JSON"pretty 成 ```json 块, 卡片渲染直接崩。
+const REVA_UI_FENCE_CLOSED_RE = /```reva-ui[\s\S]*?```/g;
+const REVA_UI_FENCE_OPEN_RE = /```reva-ui[\s\S]*$/g;
+
+/**
+ * 把 reva-ui 围栏 (含流式中途未闭合的尾块) 替换成等长空白 —— 长度不变, 后续
+ * splice 用的原文索引仍然对齐; JSON 探测只在非 reva-ui 区域生效。
+ */
+function maskRevaUiFences(s: string): string {
+  const blank = (m: string) => ' '.repeat(m.length);
+  return s.replace(REVA_UI_FENCE_CLOSED_RE, blank).replace(REVA_UI_FENCE_OPEN_RE, blank);
+}
+
 // [claim:c_xxx] / [claim: c_xxx] / claim:c_xxx (无方括号兜底), 连同前导空白一起去掉.
 const CLAIM_MARKER_RE = /\s*\[?claim[:：]\s*[^\]\s][^\]]*\]?/gi;
 // [工具调用: ...] / [工具调用：...] —— 整段去掉 (web 的内联 tool chip 已由 toolCallParse 处理,
@@ -145,7 +160,13 @@ export function preprocessAssistantContent(content: string): PreprocessedContent
   if (!stripped.includes('{')) {
     return { text: stripped, mealPlan: null };
   }
-  const block = findFirstJsonObject(stripped);
+  // reva-ui 围栏区域屏蔽成等长空白后再找 JSON —— 索引与 stripped 对齐, splice 仍用 stripped。
+  const searchable = maskRevaUiFences(stripped);
+  if (!searchable.includes('{')) {
+    // 所有 { 都在 reva-ui 围栏里 → 交给 MarkdownRenderer, 预处理不动正文。
+    return { text: stripped, mealPlan: null };
+  }
+  const block = findFirstJsonObject(searchable);
   if (!block) {
     return { text: stripped, mealPlan: null };
   }

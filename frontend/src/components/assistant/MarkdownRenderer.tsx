@@ -2,18 +2,23 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import MetricTableCard, { coerceMetricTable, type RevaUiMetricTableData } from './MetricTableCard';
+import MetricEmptyStateCard, { type RevaUiMetricEmptyStateData } from './MetricEmptyStateCard';
 
 const DISPLAY_FONT = '"Iowan Old Style", "Noto Serif SC", "Songti SC", serif';
 // warm (Claude 设计语言) 标题用 CJK 衬线优先, 让中文标题也拿到编辑感。
 const WARM_SERIF_FONT = '"Songti SC", "Noto Serif SC", "Iowan Old Style", Georgia, serif';
 const REVA_UI_FENCE_RE = /\n?```reva-ui\s*\n([\s\S]*?)\n?```\n?/g;
+// 未闭合的 reva-ui 开头 (流式中途还没等到收尾 fence): 用于 strip-partial。
+const REVA_UI_OPENER_RE = /```reva-ui/;
 const CHART_COLORS = ['#0f9f7a', '#2563eb', '#7c3aed', '#d97706', '#dc2626'];
 
 type Variant = 'dark' | 'light' | 'warm';
 type MarkdownSegment =
   | { kind: 'markdown'; text: string }
   | { kind: 'chart'; data: RevaUiLineChartData }
-  | { kind: 'empty'; data: RevaUiMetricEmptyStateData };
+  | { kind: 'empty'; data: RevaUiMetricEmptyStateData }
+  | { kind: 'table'; data: RevaUiMetricTableData };
 
 interface RevaUiLineChartSeries {
   name?: string;
@@ -40,18 +45,6 @@ interface RevaUiLineChartData {
   annotations?: RevaUiLineChartAnnotation[];
   source?: string;
   data_note?: string;
-}
-
-interface RevaUiMetricEmptyStateData {
-  v: 1;
-  component: 'metric_empty_state';
-  schema?: string;
-  metric?: string;
-  range?: string;
-  title?: string;
-  message?: string;
-  suggestions?: string[];
-  boundary?: string;
 }
 
 const styles: Record<Variant, {
@@ -165,25 +158,30 @@ function ToolStep({ name, status }: { name?: string; status?: string }) {
 export default function MarkdownRenderer({ content, variant = 'light' }: { content: string; variant?: Variant }) {
   const s = styles[variant];
   const segments = splitRevaUiSegments(content);
-  if (segments.length > 1 || segments[0]?.kind !== 'markdown') {
-    return (
-      <>
-        {segments.map((segment, index) => {
-          if (segment.kind === 'chart') {
-            return <RevaUiLineChartCard key={`chart-${index}`} data={segment.data} variant={variant} />;
-          }
-          if (segment.kind === 'empty') {
-            return <RevaUiMetricEmptyStateCard key={`empty-${index}`} data={segment.data} variant={variant} />;
-          }
-          if (!segment.text.trim()) return null;
-          return (
-            <MarkdownRendererBase key={`md-${index}`} content={segment.text} variant={variant} stylesForVariant={s} />
-          );
-        })}
-      </>
-    );
+  // 快路径: 单一 markdown 段 (可能已被 strip 掉未闭合的 partial fence, 所以渲染
+  // segment.text 而非原始 content, 否则 partial JSON 会漏进正文)。
+  if (segments.length === 1 && segments[0].kind === 'markdown') {
+    return <MarkdownRendererBase content={segments[0].text} variant={variant} stylesForVariant={s} />;
   }
-  return <MarkdownRendererBase content={content} variant={variant} stylesForVariant={s} />;
+  return (
+    <>
+      {segments.map((segment, index) => {
+        if (segment.kind === 'chart') {
+          return <RevaUiLineChartCard key={`chart-${index}`} data={segment.data} variant={variant} />;
+        }
+        if (segment.kind === 'empty') {
+          return <MetricEmptyStateCard key={`empty-${index}`} data={segment.data} variant={variant} />;
+        }
+        if (segment.kind === 'table') {
+          return <MetricTableCard key={`table-${index}`} data={segment.data} variant={variant} />;
+        }
+        if (!segment.text.trim()) return null;
+        return (
+          <MarkdownRendererBase key={`md-${index}`} content={segment.text} variant={variant} stylesForVariant={s} />
+        );
+      })}
+    </>
+  );
 }
 
 function MarkdownRendererBase({
@@ -232,25 +230,38 @@ function MarkdownRendererBase({
   );
 }
 
-function splitRevaUiSegments(content: string): MarkdownSegment[] {
+export function splitRevaUiSegments(content: string): MarkdownSegment[] {
   const segments: MarkdownSegment[] = [];
   let cursor = 0;
+  let touched = false; // 是否碰过任何 reva-ui 围栏 (闭合被解析/strip, 或未闭合被 strip)
   REVA_UI_FENCE_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = REVA_UI_FENCE_RE.exec(content)) !== null) {
+    touched = true;
     const start = match.index ?? 0;
     const before = content.slice(cursor, start);
     if (before) segments.push({ kind: 'markdown', text: before });
+    // 解析失败/未知类型 → block 为 null → 整段围栏被 strip (不 push, cursor 照常前进)。
     const block = parseRevaUiBlock(match[1]);
     if (block) segments.push(block);
     cursor = start + match[0].length;
   }
-  const rest = content.slice(cursor);
+  let rest = content.slice(cursor);
+  // 流式中途: 剩余文本里若还有 ```reva-ui 开头, 必是未闭合块 (闭合的已被上面消费),
+  // strip 掉避免半截 JSON 以代码块形式闪现; fence 收尾后下一帧正常解析。
+  const openerIdx = rest.search(REVA_UI_OPENER_RE);
+  if (openerIdx !== -1) {
+    touched = true;
+    rest = rest.slice(0, openerIdx);
+  }
   if (rest) segments.push({ kind: 'markdown', text: rest });
-  return segments.length ? segments : [{ kind: 'markdown', text: content }];
+  if (segments.length) return segments;
+  // 碰过 reva-ui 但啥也没剩 (整条消息就是一个被 strip 的围栏) → 渲染空, 不回退裸内容
+  // (否则原始 JSON 会泄漏)。没碰过 reva-ui → 保持原样走快路径。
+  return touched ? [] : [{ kind: 'markdown', text: content }];
 }
 
-function parseRevaUiBlock(payload: string): Extract<MarkdownSegment, { kind: 'chart' | 'empty' }> | null {
+function parseRevaUiBlock(payload: string): Exclude<MarkdownSegment, { kind: 'markdown' }> | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(payload.trim());
@@ -258,64 +269,24 @@ function parseRevaUiBlock(payload: string): Extract<MarkdownSegment, { kind: 'ch
     return null;
   }
   if (!parsed || typeof parsed !== 'object') return null;
-  const block = parsed as RevaUiLineChartData | RevaUiMetricEmptyStateData;
+  const block = parsed as { v?: unknown; type?: unknown; component?: unknown } & Record<string, unknown>;
   if (block.v !== 1) return null;
-  if (block.component === 'line_chart' || block.component === 'metric_line_chart') {
-    const chart = block as RevaUiLineChartData;
+  // 判别键: metric_table 走 type, 图表/空态历史上走 component —— 两者都读, type 优先。
+  const kind =
+    typeof block.type === 'string' ? block.type : typeof block.component === 'string' ? block.component : '';
+  if (kind === 'line_chart' || kind === 'metric_line_chart') {
+    const chart = block as unknown as RevaUiLineChartData;
     if (!Array.isArray(chart.x) || !Array.isArray(chart.series)) return null;
     return { kind: 'chart', data: chart };
   }
-  if (block.component === 'metric_empty_state') {
-    return { kind: 'empty', data: block as RevaUiMetricEmptyStateData };
+  if (kind === 'metric_empty_state') {
+    return { kind: 'empty', data: block as unknown as RevaUiMetricEmptyStateData };
+  }
+  if (kind === 'metric_table') {
+    const table = coerceMetricTable(block as unknown as RevaUiMetricTableData);
+    return table ? { kind: 'table', data: table } : null;
   }
   return null;
-}
-
-function RevaUiMetricEmptyStateCard({ data, variant }: { data: RevaUiMetricEmptyStateData; variant: Variant }) {
-  const dark = variant === 'dark';
-  const suggestions = Array.isArray(data.suggestions) ? data.suggestions.filter(Boolean).slice(0, 4) : [];
-  return (
-    <div
-      className={[
-        'my-4 overflow-hidden rounded-2xl border p-4 shadow-sm',
-        dark
-          ? 'border-white/10 bg-white/[0.06] text-zinc-100'
-          : 'border-amber-100 bg-white text-slate-900',
-      ].join(' ')}
-      data-testid="reva-ui-empty-state-card"
-    >
-      <div className="mb-2 flex items-start justify-between gap-3">
-        <div>
-          <div className={dark ? 'text-sm font-semibold text-white' : 'text-sm font-semibold text-slate-950'}>
-            {data.title || '数据不足'}
-          </div>
-          <div className={dark ? 'mt-1 text-sm leading-6 text-zinc-300' : 'mt-1 text-sm leading-6 text-slate-600'}>
-            {data.message || '暂无足够数据生成趋势图。'}
-          </div>
-        </div>
-        <div className={dark ? 'rounded-full bg-amber-300/10 px-2.5 py-1 text-xs text-amber-200' : 'rounded-full bg-amber-50 px-2.5 py-1 text-xs text-amber-700'}>
-          待补齐
-        </div>
-      </div>
-      {suggestions.length ? (
-        <div className="mt-3 grid gap-2">
-          {suggestions.map((item, index) => (
-            <div
-              key={`${item}-${index}`}
-              className={dark ? 'rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-zinc-300' : 'rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-700'}
-            >
-              {item}
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {data.boundary ? (
-        <div className={dark ? 'mt-3 text-xs leading-5 text-zinc-500' : 'mt-3 text-xs leading-5 text-slate-500'}>
-          {data.boundary}
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 function RevaUiLineChartCard({ data, variant }: { data: RevaUiLineChartData; variant: Variant }) {

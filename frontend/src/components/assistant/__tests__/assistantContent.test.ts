@@ -106,3 +106,35 @@ describe('preprocessAssistantContent — non-meal-plan JSON', () => {
     expect(mealPlan).toBeNull();
   });
 });
+
+describe('preprocessAssistantContent — reva-ui GenUI fences pass through intact', () => {
+  // 回归护栏: reva-ui 围栏里的 JSON 不能被当成"裸吐 JSON"pretty 成 ```json,
+  // 否则 MarkdownRenderer 抽卡片直接崩 (charts/metric_table 在真实 ChatView 路径全废)。
+  it('leaves a metric_table reva-ui block untouched (not rewritten as ```json)', () => {
+    const table = '{"type":"metric_table","v":1,"title":"近3天","columns":[{"key":"m","label":"指标"}],"rows":[{"m":"睡眠"}]}';
+    const content = `这是你的概览:\n\n\`\`\`reva-ui\n${table}\n\`\`\``;
+    const { text, mealPlan } = preprocessAssistantContent(content);
+    expect(mealPlan).toBeNull();
+    expect(text).toContain('```reva-ui');
+    expect(text).toContain(table);
+    expect(text).not.toContain('```json');
+  });
+
+  it('leaves a metric_line_chart reva-ui block untouched', () => {
+    const chart = '{"v":1,"component":"metric_line_chart","x":["1","2"],"series":[{"name":"v","points":[5.8,8.3]}]}';
+    const content = `睡眠趋势:\n\n\`\`\`reva-ui\n${chart}\n\`\`\``;
+    const { text } = preprocessAssistantContent(content);
+    expect(text).toContain('```reva-ui');
+    expect(text).not.toContain('```json');
+  });
+
+  it('still extracts a real meal plan that sits alongside a reva-ui block', () => {
+    const chart = '{"v":1,"component":"metric_line_chart","x":["1"],"series":[{"name":"v","points":[1]}]}';
+    const meal = JSON.stringify({ title: '午餐', items: [{ name: '鸡胸肉' }] });
+    const content = `\`\`\`reva-ui\n${chart}\n\`\`\`\n\n${meal}`;
+    const { text, mealPlan } = preprocessAssistantContent(content);
+    expect(mealPlan?.title).toBe('午餐');
+    expect(text).toContain('```reva-ui'); // 图表围栏保留
+    expect(text).not.toContain('鸡胸肉'); // meal plan 已抽走
+  });
+});
