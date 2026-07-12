@@ -72,6 +72,18 @@ export function buildDietShareCaption(record: DietRecord, dateLabel: string): st
   return lines.join('\n');
 }
 
+export function buildDietShareMomentsCaption(record: DietRecord, dateLabel: string): string {
+  const mealLabel = MEAL_LABEL[record.meal_type] ?? '餐食';
+  const lines = [
+    `${dateLabel}，认真记录这一餐。`,
+    `${mealLabel}: ${record.food_items}`,
+    `这一餐约 ${metric(record.calories)} kcal，蛋白质 ${metric(record.protein)}g，碳水 ${metric(record.carbs)}g，脂肪 ${metric(record.fat, 1)}g。`,
+  ];
+  if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g。`);
+  lines.push('小巴帮我把吃过的东西留成一张可复盘的记录。');
+  return lines.join('\n');
+}
+
 export type DietShareCardProps = {
   record: DietRecord;
   dateLabel: string;
@@ -232,9 +244,13 @@ export function DietShareSheet({
     });
   };
 
-  const copyCaption = async () => {
+  const copyCaption = async (kind: 'moments' | 'xiaohongshu') => {
     try {
-      await Clipboard.setStringAsync(buildDietShareCaption(record, dateLabel));
+      await Clipboard.setStringAsync(
+        kind === 'moments'
+          ? buildDietShareMomentsCaption(record, dateLabel)
+          : buildDietShareCaption(record, dateLabel),
+      );
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       Alert.alert('复制失败', '请稍后重试');
@@ -355,17 +371,30 @@ export function DietShareSheet({
             )}
             <Text style={styles.shareButtonText}>{!imageReady ? '图片加载中' : sharing ? '生成中' : '分享图片'}</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.captionButton}
-            onPress={copyCaption}
-            disabled={sharing}
-            activeOpacity={0.78}
-            accessibilityRole="button"
-            accessibilityLabel="复制小红书文案"
-          >
-            <Ionicons name="copy-outline" size={17} color={C.green600} />
-            <Text style={styles.captionButtonText}>复制小红书文案</Text>
-          </TouchableOpacity>
+          <View style={styles.captionButtonRow}>
+            <TouchableOpacity
+              style={styles.captionButton}
+              onPress={() => copyCaption('moments')}
+              disabled={sharing}
+              activeOpacity={0.78}
+              accessibilityRole="button"
+              accessibilityLabel="复制朋友圈文案"
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={17} color={C.green600} />
+              <Text style={styles.captionButtonText}>复制朋友圈文案</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.captionButton}
+              onPress={() => copyCaption('xiaohongshu')}
+              disabled={sharing}
+              activeOpacity={0.78}
+              accessibilityRole="button"
+              accessibilityLabel="复制小红书文案"
+            >
+              <Ionicons name="copy-outline" size={17} color={C.green600} />
+              <Text style={styles.captionButtonText}>复制小红书文案</Text>
+            </TouchableOpacity>
+          </View>
         </SafeAreaView>
       </View>
     </Modal>
@@ -510,18 +539,24 @@ const styles = StyleSheet.create({
   },
   shareButtonDisabled: { opacity: 0.72 },
   shareButtonText: { fontFamily: revaFonts.sans, fontSize: 15, color: C.greenOn, fontWeight: '800' },
-  captionButton: {
+  captionButtonRow: {
     width: '100%',
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: revaSpacing.s2,
+  },
+  captionButton: {
+    flex: 1,
     minHeight: 44,
     borderRadius: revaRadii.md,
     backgroundColor: C.surface,
-    marginTop: revaSpacing.s2,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.focusLine,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 7,
+    paddingHorizontal: 8,
   },
-  captionButtonText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.green600, fontWeight: '800' },
+  captionButtonText: { fontFamily: revaFonts.sans, fontSize: 13, color: C.green600, fontWeight: '800' },
 });

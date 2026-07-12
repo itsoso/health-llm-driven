@@ -210,4 +210,25 @@ describe('DietShareCard', () => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#小巴记录'));
     });
   });
+
+  it('copies a WeChat Moments-ready caption without Xiaohongshu hashtags', async () => {
+    const { getByText } = render(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(getByText('复制朋友圈文案'));
+
+    await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('7月11日 · 午餐'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('鸡胸肉 200g、杂粮饭 1碗'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('560 kcal'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('#小巴记录'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('#饮食打卡'));
+    });
+  });
 });
