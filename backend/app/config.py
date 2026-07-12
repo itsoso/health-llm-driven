@@ -208,6 +208,19 @@ class Settings(BaseSettings):
     # 医疗正文相关 → ships-disabled,须过评测闸(invariant_judge + cadence family-drift)
     # 才可开。探针实证见 scripts/probe_qwen_thinking_budget.py。
     synthesis_thinking_budget: int = 0
+    # 深分析短路二次合成(计划 rank7):orchestrator 是本回合唯一实质工具、且它已产出过
+    # R4/advice_guard 校验的 synthesis 时,可跳过对话 Agent 的第二次强模型合成,直接把
+    # 那段 synthesis 透传流式下发(省一整次强模型调用,深分析回合时延 -5~15s)。
+    #   'off'    = 默认,零行为变更(ships-off);
+    #   'shadow' = 用户可见行为逐字节不变(双合成照跑),但把 would-be passthrough 文本 +
+    #              计时落到 assistant message.meta.shadow_passthrough,供离线 pairwise judge;
+    #   'on'     = 单工具深分析回合短路二次合成;任何"还需融合其它工具结果(记录/查询/二次
+    #              分析)"的回合 fail-closed 保留二次合成(passthrough 仅当 orchestrator 输出
+    #              本身即完整答案)。透传文本仍过与二次合成**同一条**出站护栏链
+    #              (bracket/xml marker strip + tool-result leak 抑制 + reva-ui strip +
+    #              消费层 menu_share 提取 + thinking_steps),降级/兜底路径不逃 R4。
+    # 未知值 fail-closed 归一到 'off'(见 agent_executor._resolve_synthesis_passthrough_mode)。
+    orchestrator_synthesis_passthrough: str = "off"
     # 多模型 panel(高风险裁决多模型投票):primitive,默认关
     multi_model_panel: bool = False
 

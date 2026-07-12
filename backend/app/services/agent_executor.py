@@ -869,6 +869,51 @@ def _natural_language_from_tool_results(messages: List[Dict[str, Any]]) -> str:
     return ""
 
 
+def _resolve_synthesis_passthrough_mode() -> str:
+    """读 settings.orchestrator_synthesis_passthrough,fail-closed 归一到 {off,shadow,on}。
+
+    任何未知/拼错的 env 值(以及缺失)→ 'off',绝不因配置漂移意外改变用户可见行为。
+    """
+    mode = (getattr(settings, "orchestrator_synthesis_passthrough", "off") or "off")
+    mode = str(mode).strip().lower()
+    return mode if mode in ("shadow", "on") else "off"
+
+
+def _apply_passthrough_outbound_guards(
+    text: str, messages: List[Dict[str, Any]]
+) -> str:
+    """把二次合成出站路径上的确定性护栏,同样施加到深分析 passthrough 文本上。
+
+    rank7 passthrough 跳过了 agent 第二次合成轮 —— 那条 else 分支里对 final_text 施加的
+    marker strip / leak 抑制护栏就被绕过了(降级/兜底路径逃 R4 是已知雷)。本函数复用**同一批**
+    谓词/剥离器,保证 passthrough 文本与二次合成答案受同一条链约束:
+      1. `_strip_bracket_tool_markers` —— 裸 ``[工具调用: ...]`` 标记;
+      2. `_strip_xml_tool_markers` —— ``<invoke>…</invoke>`` / ``<minimax:tool_call>``;
+      3. 裸工具结果 JSON(整条)→ 用工具结果里现成人话兜底;
+      4. 短前言 + 内嵌工具结果 JSON 数组(`_leaks_tool_result_json`)→ 同样兜底。
+    orchestrator 的 synthesis 本是已过 R4/advice_guard 的散文,正常不会命中任何一条 ——
+    这些护栏是防御纵深,不是热路径。fenced ```menu_share/```reva-ui 块被 leak 谓词豁免,
+    原样保留给消费层(api/agent.py)提取(与二次合成答案行为一致)。post-loop 的
+    `_strip_reva_ui_from_llm_text` 与消费层 menu_share 提取/thinking_steps 对两条路径一视同仁,
+    不在此重复。
+    """
+    stripped = _strip_bracket_tool_markers(text)
+    if stripped != text:
+        text = stripped
+    stripped_xml = _strip_xml_tool_markers(text)
+    if stripped_xml != text:
+        text = stripped_xml
+    if _looks_like_bare_tool_json(text):
+        text = _natural_language_from_tool_results(messages) or (
+            "已查到相关数据,但这轮没能整理成回答;请再问一次或换个问法。"
+        )
+    elif _leaks_tool_result_json(text):
+        text = _natural_language_from_tool_results(messages) or (
+            "已查到相关数据,但这轮没能整理成回答;请再问一次或换个问法。"
+        )
+    return text
+
+
 _SMART_DOUBLE_QUOTES = "“”„‟″＂"  # “ ” „ ‟ ″ ＂
 _SMART_SINGLE_QUOTES = "‘’‚‛′＇"  # ‘ ’ ‚ ‛ ′ ＇
 _QUOTE_NORMALIZE_TABLE = str.maketrans(
@@ -4112,6 +4157,13 @@ class AgentExecutor:
         rounds: List[Dict[str, Any]] = []  # 每轮 {llm_gen_ms, tool_exec_ms, tools:[...]}
         orchestrator_tool_ms: Optional[int] = None  # health_analysis(type=orchestrator) 壁钟
         orchestrator_perf: Optional[Any] = None  # /orchestrator/chat 若回传 perf 则透传
+        # rank7 深分析短路二次合成(passthrough,ships-off,见 config.orchestrator_synthesis_passthrough)。
+        # 关时全零开销(capture 受 mode!='off' 门控);shadow 记 meta 不改行为;on 单工具回合短路。
+        passthrough_mode = _resolve_synthesis_passthrough_mode()
+        passthrough_orch_text: Optional[str] = None   # orchestrator 自产 synthesis(已过 R4)
+        passthrough_orch_calls = 0                     # 本回合捕获到 synthesis 的 orchestrator 次数
+        passthrough_synthesis_round_ms: Optional[int] = None  # shadow: 二次合成轮壁钟(=可省时延)
+        passthrough_taken = False                      # on: 本回合是否真短路了二次合成
         # 后置校验: record 意图的 turn 必须真的执行了写工具。0 次 = 模型可能只是
         # 嘴上说"已记录"却没调工具(弱模型把 tool-call 当正文吐出 → 静默丢数据)。
         tool_executed_count = 0
@@ -4177,6 +4229,36 @@ class AgentExecutor:
                         detail="该模型整段生成,需等待完整回答",
                         round=round_idx + 1,
                     )
+                # rank7 passthrough(on): 本轮是二次合成轮(前面已跑工具、本轮不带 tools),且本回合
+                # 唯一实质工具就是那一次 orchestrator health_analysis —— 直接把它已过 R4 的 synthesis
+                # 过同一条出站护栏后流式下发,跳过第二次强模型合成。fail-closed:tool_executed_count>1
+                # (还需融合记录/查询/二次分析的回合)或非 orchestrator → 落到下面正常二次合成分支。
+                if (
+                    passthrough_mode == "on"
+                    and not round_tools
+                    and tool_executed_count == 1
+                    and passthrough_orch_calls == 1
+                    and passthrough_orch_text
+                ):
+                    passthrough_final = _apply_passthrough_outbound_guards(
+                        passthrough_orch_text, messages
+                    )
+                    if passthrough_final.strip():
+                        if first_token_at is None:
+                            first_token_at = time.time()
+                        # 内层调用整段一次返回 → 切成 20-char token 让端逐块渲染
+                        # (镜像既有非流式兜底口径 4827/5024)。
+                        for i in range(0, len(passthrough_final), 20):
+                            yield {"event": "token", "data": {"content": passthrough_final[i:i + 20]}}
+                        full_reply += passthrough_final
+                        passthrough_taken = True
+                        # 透传答案是一段完整回答(非待决工具调用)→ finish_reason 与二次合成
+                        # 答案路径对齐为 'stop'(completion_status → complete),不留 round1 的
+                        # 'tool_calls' 陈值。
+                        final_finish_reason = "stop"
+                        rounds.append({"llm_gen_ms": 0, "tool_exec_ms": 0, "tools": []})
+                        break
+                    # 护栏把文本清空(异常)→ 不短路, 落到正常二次合成兜底(下方 else 分支)。
                 _round_start = time.time()
                 streamed_text = ""
                 # 思考流可视化 (qwen reasoning_content): 本轮首个可见 token 之前, 把
@@ -4587,8 +4669,16 @@ class AgentExecutor:
                                 orchestrator_tool_ms = None
                             try:
                                 _orch_json = json.loads(result) if isinstance(result, str) else None
-                                if isinstance(_orch_json, dict) and _orch_json.get("perf") is not None:
-                                    orchestrator_perf = _orch_json.get("perf")
+                                if isinstance(_orch_json, dict):
+                                    if _orch_json.get("perf") is not None:
+                                        orchestrator_perf = _orch_json.get("perf")
+                                    # rank7: 捕获 orchestrator 自产 synthesis(已过 _safety_wrap/R4)
+                                    # 供 shadow 记录 / on 短路。仅在 flag 非 off 时捕获(off 零开销)。
+                                    if passthrough_mode != "off":
+                                        _synth = _orch_json.get("synthesis")
+                                        if isinstance(_synth, str) and _synth.strip():
+                                            passthrough_orch_text = _synth
+                                            passthrough_orch_calls += 1
                             except Exception:  # noqa: BLE001
                                 pass
                         safety_cards: list[dict] = []
@@ -4973,6 +5063,15 @@ class AgentExecutor:
                                 first_token_at = time.time()
                             yield {"event": "token", "data": {"content": final_text}}
                     full_reply += final_text
+                    # rank7 shadow: 本轮就是被短路的目标(单次 orchestrator 深分析回合的二次合成)——
+                    # 记下这次二次合成轮壁钟 = passthrough 可省的时延。shadow 下行为不变(照跑),只观测。
+                    if (
+                        passthrough_mode == "shadow"
+                        and tool_executed_count == 1
+                        and passthrough_orch_calls == 1
+                        and passthrough_orch_text
+                    ):
+                        passthrough_synthesis_round_ms = _round_llm_gen_ms
                     # 2026-07-01: 无工具的最终答案轮 — per-round split (tool_exec_ms=0)。
                     rounds.append({
                         "llm_gen_ms": _round_llm_gen_ms,
@@ -5169,6 +5268,26 @@ class AgentExecutor:
         # 摘要进 meta + done, 客户端不读不炸。内部全 fail-soft, 绝不打死回合。
         citation_anchor = _citation_anchor_shadow_meta(self.db, user_id, full_reply)
 
+        # rank7: passthrough 观测/标记进 meta(offline judge 读)。shadow 落 would-be
+        # passthrough 文本(截 4000 char)+ 两侧壁钟;on 落一个轻量 taken 标记。
+        shadow_passthrough_meta: Optional[Dict[str, Any]] = None
+        if (
+            passthrough_mode == "shadow"
+            and passthrough_synthesis_round_ms is not None
+            and passthrough_orch_text
+        ):
+            shadow_passthrough_meta = {
+                "orchestrator_text": passthrough_orch_text[:4000],
+                "orchestrator_ms": orchestrator_tool_ms,
+                "final_text_ms": passthrough_synthesis_round_ms,
+            }
+        synthesis_passthrough_meta: Optional[Dict[str, Any]] = None
+        if passthrough_taken:
+            synthesis_passthrough_meta = {
+                "taken": True,
+                "orchestrator_ms": orchestrator_tool_ms,
+            }
+
         # 2026-05-14 FIX-7: 把性能 + 可解释性写到 message.meta, 用户回来 reload 能恢复 footer
         try:
             ai_msg.meta = {
@@ -5191,6 +5310,8 @@ class AgentExecutor:
                 "perf": perf,
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
                 **({"recipe_candidate": recipe_candidate_meta} if recipe_candidate_meta else {}),
+                **({"shadow_passthrough": shadow_passthrough_meta} if shadow_passthrough_meta else {}),
+                **({"synthesis_passthrough": synthesis_passthrough_meta} if synthesis_passthrough_meta else {}),
                 "client_turn_finalized": True,
                 **({"client_turn_id": client_turn_id} if client_turn_id else {}),
             }
@@ -5222,6 +5343,7 @@ class AgentExecutor:
                 "record_intent_no_tool": record_intent_no_tool,
                 "perf": perf,
                 **({"citation_anchor": citation_anchor} if citation_anchor else {}),
+                **({"synthesis_passthrough": synthesis_passthrough_meta} if synthesis_passthrough_meta else {}),
                 "client_turn_finalized": True,
                 **({"client_turn_id": client_turn_id} if client_turn_id else {}),
             },
