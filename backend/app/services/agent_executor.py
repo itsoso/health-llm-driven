@@ -34,6 +34,57 @@ from app.services.post_record_quality import (
 
 logger = logging.getLogger(__name__)
 
+
+def _sha12(text: str) -> str:
+    """sha256 的前 12 hex (可观测性用短指纹, 非安全哈希)。"""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+
+
+def _stringify_message_content(content: Any) -> str:
+    """把一条消息的 content 稳定序列化成字符串 (字符串原样;list/dict → 排序 JSON)。"""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    try:
+        return json.dumps(content, ensure_ascii=False, sort_keys=True, default=str)
+    except Exception:  # noqa: BLE001
+        return str(content)
+
+
+def _prompt_prefix_signature(messages: List[Dict]) -> Dict[str, Any]:
+    """内容无泄漏的前缀可观测性 (Phase-2 rank3 第0步)。
+
+    对本次 LLM 调用取:
+      - system_hash: 所有 system 消息 content 拼接的 sha12;
+      - prefix_hash: **最后一条 user 之前**的 messages 序列 (含角色/工具调用) 的 sha12
+        —— 这段是 provider 前缀缓存想命中的稳定前缀 (turn 内容落在最后一条 user 尾部);
+      - prefix_chars / total_chars / approx_tokens: token-ish 长度。
+    只出 hash 不出内容, 用来从 journalctl 量测跨轮/跨回合前缀分歧, 给显式缓存 (rank3)
+    定 marker 布局。纯函数, 可单测。"""
+    system_blob = "\n".join(
+        _stringify_message_content(m.get("content"))
+        for m in messages
+        if m.get("role") == "system"
+    )
+    last_user_idx = -1
+    for i, m in enumerate(messages):
+        if m.get("role") == "user":
+            last_user_idx = i
+    prefix_msgs = messages[:last_user_idx] if last_user_idx >= 0 else list(messages)
+    prefix_blob = json.dumps(prefix_msgs, ensure_ascii=False, sort_keys=True, default=str)
+    total_chars = sum(
+        len(_stringify_message_content(m.get("content"))) for m in messages
+    )
+    return {
+        "system_hash": _sha12(system_blob),
+        "prefix_hash": _sha12(prefix_blob),
+        "prefix_chars": len(prefix_blob),
+        "total_chars": total_chars,
+        "approx_tokens": total_chars // 4,
+    }
+
+
 MAX_TOOL_ROUNDS = 8
 # 最终用户回复的 token 上限。健康养护/操作清单类回复常 >4000 token,
 # 旧值 4000 会把 Opus 4.7 的长回复硬截断(用户需手动点"继续")。
@@ -6397,6 +6448,24 @@ class AgentExecutor:
             return self._lite_tool_round_messages
         return messages
 
+    def _log_prompt_prefix_signature(self, round_messages: List[Dict], provider: Any) -> None:
+        """每次 LLM 调用记一行前缀指纹 (Phase-2 rank3 第0步, 仅观测, 绝不断业务)。"""
+        try:
+            sig = _prompt_prefix_signature(round_messages)
+            model_name = (
+                getattr(provider, "model", None)
+                or getattr(provider, "provider_name", None)
+                or "unknown"
+            )
+            logger.info(
+                "[agent_executor] llm_prefix model=%s sys_hash=%s prefix_hash=%s "
+                "prefix_chars=%d total_chars=%d approx_tokens=%d",
+                model_name, sig["system_hash"], sig["prefix_hash"],
+                sig["prefix_chars"], sig["total_chars"], sig["approx_tokens"],
+            )
+        except Exception:  # noqa: BLE001 — 观测层绝不断业务
+            pass
+
     async def _call_llm(
         self, messages: List[Dict], tools: List[Dict],
     ) -> Any:
@@ -6416,8 +6485,10 @@ class AgentExecutor:
         provider, pass_tools = self._resolve_chat_provider(tools)
         # 消息栈选择 (fast-record 压缩 / fast 工具决策轮 lite / 全量) — 见 _messages_for_round。
         # 必须在 _resolve_chat_provider 之后 (它设置 _tool_round_fast_routed)。
+        round_messages = self._messages_for_round(messages)
+        self._log_prompt_prefix_signature(round_messages, provider)
         chat_kwargs = {
-            "messages": self._messages_for_round(messages),
+            "messages": round_messages,
             "model": None,
             "temperature": 0.3,
             "max_tokens": ANSWER_MAX_TOKENS,
@@ -6483,8 +6554,10 @@ class AgentExecutor:
         provider, pass_tools = self._resolve_chat_provider(tools)
         # 消息栈选择 (fast-record 压缩 / fast 工具决策轮 lite / 全量) — 见 _messages_for_round。
         # 必须在 _resolve_chat_provider 之后 (它设置 _tool_round_fast_routed)。
+        round_messages = self._messages_for_round(messages)
+        self._log_prompt_prefix_signature(round_messages, provider)
         stream_kwargs: Dict[str, Any] = {
-            "messages": self._messages_for_round(messages),
+            "messages": round_messages,
             "model": None,
             "temperature": 0.3,
             # fast-routed 简单回合把答案 token 收紧到 2000 (长尾解码是延迟一部分),
