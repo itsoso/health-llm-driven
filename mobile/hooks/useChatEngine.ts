@@ -55,6 +55,7 @@ export interface UIMessage extends ChatMessage {
   sourceTurnId?: string;
   createdAt?: string;
   fromSiri?: boolean;
+  retryChannel?: 'typed' | 'voice' | 'siri';
   // 2026-05-13: 性能可观测 — done 事件的耗时 + 模型名, 渲染在 assistant 气泡底部
   elapsedMs?: number;
   llmMs?: number;
@@ -801,9 +802,19 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     } catch {
       if (__DEV__) console.warn('[chat] network status probe failed; attempting request');
     }
+    const inputChannel: 'typed' | 'voice' | 'siri' = sendOpts?.fromSiri
+      ? 'siri'
+      : (sendOpts?.channel ?? 'typed');
     if (isConnected === false) {
       const errMsg: UIMessage = { id: nextId(), role: 'assistant', content: '⚠️ 网络不可用，请检查网络连接后重试' };
-      setMessages(prev => [...prev, { id: nextId(), role: 'user', content: msg || '(图片)', imageUris: hasImages ? pendingImages.map(i => i.uri) : undefined, fromSiri: sendOpts?.fromSiri }, errMsg]);
+      setMessages(prev => [...prev, {
+        id: nextId(),
+        role: 'user',
+        content: msg || '(图片)',
+        imageUris: hasImages ? pendingImages.map(i => i.uri) : undefined,
+        fromSiri: sendOpts?.fromSiri,
+        retryChannel: inputChannel,
+      }, errMsg]);
       dispatchAgentTurn({
         type: 'fail',
         at: Date.now(),
@@ -820,9 +831,6 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     // Phase 0.4: 埋点 — 用户实际发出的对话, 区分入口 (siri vs chat)
-    const inputChannel: 'typed' | 'voice' | 'siri' = sendOpts?.fromSiri
-      ? 'siri'
-      : (sendOpts?.channel ?? 'typed');
     try {
       emitClientEvent('chat_message_sent', {
         source: inputChannel === 'typed' ? 'chat' : inputChannel,
@@ -839,7 +847,14 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     }
 
     const uris = hasImages ? pendingImages.map(i => i.uri) : undefined;
-    const userMsg: UIMessage = { id: nextId(), role: 'user', content: finalMsg, imageUris: uris, fromSiri: sendOpts?.fromSiri };
+    const userMsg: UIMessage = {
+      id: nextId(),
+      role: 'user',
+      content: finalMsg,
+      imageUris: uris,
+      fromSiri: sendOpts?.fromSiri,
+      retryChannel: inputChannel,
+    };
     const aId = nextId();
     const aiMsg: UIMessage = {
       id: aId,

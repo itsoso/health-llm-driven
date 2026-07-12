@@ -353,13 +353,18 @@ describe('ChatScreen', () => {
     expect(view.getByLabelText('今日重点，已展开')).toBeTruthy();
   });
 
-  it('shows a recoverable Agent failure and retries only the latest text message', async () => {
+  it('shows a recoverable Agent failure and retries the failed voice turn with its original channel', async () => {
     mockTodayTimelineData = {
       items: [{ id: 'timeline-1', kind: 'action', title: '补水', status: 'pending', priority: 9 }],
       past: { completed_count: 0, events: [] },
       counts: { actionable: 1, overdue: 0, info: 0 },
     };
-    mockMessages = [{ id: 'u1', role: 'user', content: '查询今天饮食' }];
+    mockMessages = [{
+      id: 'u1',
+      role: 'user',
+      content: '午餐吃了鸡胸肉',
+      retryChannel: 'voice',
+    }];
     mockActiveTurn = {
       phase: 'failed',
       recoverable: true,
@@ -371,7 +376,40 @@ describe('ChatScreen', () => {
 
     expect(getByText('网络中断，已保留内容')).toBeTruthy();
     fireEvent.press(getByLabelText('重试上一轮'));
-    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledWith('查询今天饮食', null));
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledWith(
+      '午餐吃了鸡胸肉',
+      null,
+      { channel: 'voice' },
+    ));
+  });
+
+  it('does not retry an earlier text message when the failed turn contained images that cannot be restored', async () => {
+    mockTodayTimelineData = {
+      items: [{ id: 'timeline-1', kind: 'action', title: '补水', status: 'pending', priority: 9 }],
+      past: { completed_count: 0, events: [] },
+      counts: { actionable: 1, overdue: 0, info: 0 },
+    };
+    mockMessages = [
+      { id: 'u0', role: 'user', content: '我喝了一杯水' },
+      {
+        id: 'u1',
+        role: 'user',
+        content: '请分析这些图片',
+        imageUris: ['file:///meal.jpg'],
+      },
+    ];
+    mockActiveTurn = {
+      phase: 'failed',
+      recoverable: true,
+      label: '图片上传失败，请重新选择图片',
+      errorCode: 'image_upload_failed',
+    };
+
+    const { getByText, queryByLabelText } = render(<ChatScreen />);
+
+    expect(getByText('图片上传失败，请重新选择图片')).toBeTruthy();
+    expect(queryByLabelText('重试上一轮')).toBeNull();
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it('keeps Today Focus visible after 新建对话', async () => {

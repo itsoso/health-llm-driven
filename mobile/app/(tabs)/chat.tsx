@@ -750,12 +750,13 @@ export default function ChatScreen() {
     : '系统默认';
   const hasSavedDietContext = isSavedDietContextPayload(contextPayload);
   const activeTurnVisible = activeTurn.phase !== 'idle' && activeTurn.phase !== 'completed';
-  const lastRetryableUserMessage = [...messages].reverse().find(message => (
+  const lastUserMessage = [...messages].reverse().find(message => (
     message.role === 'user'
     && !!message.content?.trim()
-    && message.content !== '(图片)'
-    && (!message.imageUris || message.imageUris.length === 0)
   ));
+  const lastRetryableUserMessage = lastUserMessage && (!lastUserMessage.imageUris || lastUserMessage.imageUris.length === 0)
+    ? lastUserMessage
+    : undefined;
   const todayFocusVariant = messages.length === 0 && !keyboardVisible && !activeTurnVisible
     ? 'full'
     : 'compact';
@@ -784,6 +785,11 @@ export default function ChatScreen() {
   );
   const retryLastTextTurn = () => {
     if (!lastRetryableUserMessage || isStreaming) return;
+    const retryChannel = lastRetryableUserMessage.retryChannel;
+    if (retryChannel && retryChannel !== 'typed') {
+      void sendMessage(lastRetryableUserMessage.content, null, { channel: retryChannel });
+      return;
+    }
     void sendMessage(lastRetryableUserMessage.content, null);
   };
 
