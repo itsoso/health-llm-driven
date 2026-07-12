@@ -243,15 +243,12 @@ async def test_morning_floor_overrides_non_critical_bypass_before_9(db):
 
 
 @pytest.mark.asyncio
-async def test_quiet_hours_critical_bypasses_immediately(db):
-    """critical 健康告警穿透静默时段立即推送 (2026-05-30 反转"严格不打扰").
-
-    致命药物交互 / 急性阈值不应压到早上 09:00 —— 原计划的"紧急联系人穿透"从未落地.
-    """
-    user = _make_user(db, username="strict_critical_bypass")
+async def test_quiet_hours_critical_waits_until_morning_floor(db):
+    """睡眠优先: critical 在 09:00 前也必须延迟,不能在 07:00/08:00 打扰。"""
+    user = _make_user(db, username="strict_critical_until_9")
     svc = PushService(db)
 
-    fake_now = datetime(2026, 5, 12, 3, 0, 0)  # 凌晨静默时段
+    fake_now = datetime(2026, 5, 12, 8, 0, 0)
     with patch("app.services.notification.push_service.get_china_now", return_value=fake_now), \
          patch.object(PushService, "_send_ios", new=AsyncMock(return_value={"success": True})):
         result = await svc.send_notification(
@@ -263,18 +260,18 @@ async def test_quiet_hours_critical_bypasses_immediately(db):
             data={"rule_id": "ddi.fatal"},
         )
 
-    # 立即发送, 不进延迟队列
-    assert result.get("success") is True
-    assert result.get("reason") != "delayed_for_quiet_hours"
+    assert result["success"] is False
+    assert result["reason"] == "delayed_for_quiet_hours"
     delayed = (
         db.query(NotificationLog)
         .filter(
             NotificationLog.user_id == user.id,
             NotificationLog.status == NotificationStatus.DELAYED.value,
         )
-        .count()
+        .one()
     )
-    assert delayed == 0
+    assert delayed.scheduled_at.hour == 9
+    assert delayed.scheduled_at.minute == 0
 
 
 @pytest.mark.asyncio
@@ -462,8 +459,8 @@ def test_next_quiet_hours_end_after_morning(db):
 
 
 @pytest.mark.asyncio
-async def test_flush_delayed_pushes_waits_until_morning_floor_for_non_critical(db):
-    """旧 delayed row 即使 scheduled_at 被排到 07:00,08:00 flush 也不能释放普通通知。"""
+async def test_flush_delayed_pushes_waits_until_morning_floor(db):
+    """旧 delayed row 即使 scheduled_at 被排到 07:00,08:00,flush 也不能释放任何通知。"""
     user = _make_user(db, username="flush_waits_until_floor")
     svc = PushService(db)
 
@@ -474,7 +471,7 @@ async def test_flush_delayed_pushes_waits_until_morning_floor_for_non_critical(d
         channel="multi",
         title="08:00 前不要发",
         content="should wait",
-        data={"severity": "info"},
+        data={"severity": "critical"},
         status=NotificationStatus.DELAYED.value,
         scheduled_at=fake_now - timedelta(hours=1),
     )
@@ -595,12 +592,13 @@ async def test_flush_delayed_pushes_dedups_same_title(db):
 
 
 @pytest.mark.asyncio
-async def test_flush_does_not_re_delay(db):
-    """flush 时已经过了静默时段, 但若被 mock 到静默时段, respect_quiet_hours=False 应不再延迟."""
+async def test_flush_does_not_re_delay_after_morning_floor(db):
+    """flush 已过 09:00 后即使命中用户静默窗, respect_quiet_hours=False 也不再延迟。"""
     user = _make_user(db, username="flush_no_redelay")
     svc = PushService(db)
 
-    fake_now = datetime(2026, 5, 12, 3, 0, 0)  # 静默时段
+    fake_now = datetime(2026, 5, 12, 9, 30, 0)
+    _set_quiet_hours(db, user.id, start="22:00", end="10:00")
 
     log = NotificationLog(
         user_id=user.id,

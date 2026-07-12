@@ -60,10 +60,9 @@ def resolve_quiet_hours_policy(
 
     基线: 显式 quiet_hours_policy 优先; 否则 respect_quiet_hours=True→delay, False→bypass.
 
-    2026-05-30 (反转 2026-05-11 的"严格不打扰"): **critical 健康告警穿透静默时段**.
-    致命药物交互 (DDI/PGx) / 急性阈值不应压到早上 09:00 —— 原计划的"紧急联系人穿透
-    系统"从未落地, 不穿透等于半夜致命告警无任何投递路径. 故 critical 一律 bypass.
-    其余 severity 仍尊重 quiet-hours.
+    2026-05-30 (反转 2026-05-11 的"严格不打扰"): critical 健康告警可穿透普通
+    quiet-hours. 但 09:00 前的晨间睡眠地板在 send_notification 顶层统一兜住,
+    避免 07:00/08:00 影响睡眠.
     """
     policy: QuietHoursPolicy = quiet_hours_policy or (
         "delay" if respect_quiet_hours else "bypass"
@@ -346,7 +345,8 @@ class PushService:
         # 注: 静默时段不再在 can_send_notification 里检查.
         # is_quiet_hours 不是"拒绝", 而是"延迟"语义 — 由 send_notification 顶层处理:
         # 命中静默时段 → 写 status='delayed' log + scheduled_at, 由 Celery flush 任务后续 fire.
-        # 2026-05-30: critical 健康告警穿透静默 (resolve_quiet_hours_policy), 其余 severity 延迟.
+        # 2026-05-30: critical 健康告警穿透普通静默 (resolve_quiet_hours_policy);
+        # 09:00 前的晨间睡眠地板仍在 send_notification 顶层统一拦截。
 
         # 检查具体类型开关
         type_switches = {
@@ -399,15 +399,15 @@ class PushService:
             发送结果 {"success": bool, "channels": {...}}
         """
         rule_id = (data or {}).get("rule_id") if data else None
-        # critical 穿透静默 (见 resolve_quiet_hours_policy docstring); 其余尊重 quiet-hours.
+        # critical 可穿透普通静默 (见 resolve_quiet_hours_policy docstring);
+        # 09:00 前的晨间睡眠地板优先级更高。
         effective_quiet_policy: QuietHoursPolicy = resolve_quiet_hours_policy(
             severity, quiet_hours_policy, respect_quiet_hours
         )
         # 用户明确要求 09:00 前不要 push。这里比普通 quiet-hours 更硬:
-        # 非 critical 即使显式 bypass, 也先延迟到 morning floor; critical 仍保留安全穿透。
+        # 即使 critical / 显式 bypass, 也先延迟到 morning floor。
         if (
             effective_quiet_policy == "bypass"
-            and _severity_rank(severity) < _severity_rank("critical")
             and _is_before_morning_floor(get_china_now())
         ):
             effective_quiet_policy = "delay"
@@ -473,9 +473,9 @@ class PushService:
                 )
                 return {"success": False, "reason": "dedup"}
 
-        # 静默时段: critical 已在 resolve_quiet_hours_policy 里被改成 bypass (穿透立即推);
-        # 其余 severity 仍写 status='delayed' log + scheduled_at, 由 Celery 任务
-        # flush_delayed_pushes 在 quiet_hours_end 后再 fire.
+        # 静默时段: critical 可穿透普通 quiet-hours; 但 09:00 前已被上方晨间地板
+        # 改回 delay。delay 写 status='delayed' log + scheduled_at, 由 Celery 任务
+        # flush_delayed_pushes 在 quiet_hours_end / morning floor 后再 fire.
         if effective_quiet_policy != "bypass" and self.is_quiet_hours(user_id):
             if effective_quiet_policy == "drop":
                 logger.info(
@@ -861,16 +861,13 @@ class PushService:
             )
             rescheduled = 0
             for log in early_logs:
-                severity = (log.data or {}).get("severity", "info")
-                if _severity_rank(severity) >= _severity_rank("critical"):
-                    continue
                 if log.scheduled_at is None or log.scheduled_at < floor_at:
                     log.scheduled_at = floor_at
                     rescheduled += 1
             if rescheduled:
                 self.db.commit()
                 logger.info(
-                    "[flush_delayed_pushes] 09:00 前重排非 critical delayed=%s 到 %s",
+                    "[flush_delayed_pushes] 09:00 前重排 delayed=%s 到 %s",
                     rescheduled,
                     floor_at.isoformat(),
                 )
