@@ -72,6 +72,8 @@ describe('DietShareCard', () => {
     expect(getByText('今日状态：高蛋白 · 低脂')).toBeTruthy();
     expect(getByText('已确认')).toBeTruthy();
     expect(getByText('可分享')).toBeTruthy();
+    expect(getByText('不是节食，是把身体照顾得更有章法')).toBeTruthy();
+    expect(getByText('不含体重 / 用户 ID / 私密健康数据')).toBeTruthy();
     expect(queryByText('user_id')).toBeNull();
   });
 
@@ -126,6 +128,8 @@ describe('DietShareCard', () => {
 
     await waitFor(() => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('小巴饮食卡｜蛋白质拉满的一餐'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('不是节食，是把身体照顾得更有章法'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('适合截图留档，也适合发给认真生活的朋友'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#高蛋白饮食'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#低脂餐'));
     });

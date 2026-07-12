@@ -162,7 +162,8 @@ export function buildDietShareCaption(record: DietRecord, dateLabel: string): st
   if (highlights.length > 0) lines.push(`亮点: ${highlights.join(' / ')}`);
   if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g`);
   lines.push(buildDietShareDataDisclosure(record));
-  lines.push('认真记录，也认真生活。');
+  lines.push('不是节食，是把身体照顾得更有章法。');
+  lines.push('适合截图留档，也适合发给认真生活的朋友。');
   lines.push(buildDietShareHashtags(highlights));
   return lines.join('\n');
 }
@@ -341,6 +342,16 @@ export default function DietShareCard({
             { color: sourceLabel === '智能估算' ? revaSemantic.caution.fg : C.green600 },
           ]}>{sourceLabel}</Text>
           {record.fiber != null ? <Text style={styles.fiberText}>膳食纤维 {metric(record.fiber, 1)}g</Text> : null}
+        </View>
+
+        <View style={styles.lifestylePanel}>
+          <View style={styles.lifestyleIcon}>
+            <Ionicons name="leaf-outline" size={13} color={C.green600} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.lifestyleTitle}>不是节食，是把身体照顾得更有章法</Text>
+            <Text style={styles.lifestyleMeta}>不含体重 / 用户 ID / 私密健康数据</Text>
+          </View>
         </View>
       </View>
 
@@ -757,6 +768,29 @@ const styles = StyleSheet.create({
   sourceRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 11 },
   sourceText: { fontFamily: revaFonts.sans, fontSize: 10, fontWeight: '800' },
   fiberText: { fontFamily: revaFonts.mono, fontSize: 9, color: C.ink3, marginLeft: 'auto' },
+  lifestylePanel: {
+    minHeight: 45,
+    borderRadius: 12,
+    backgroundColor: C.focusBg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.focusLine,
+    marginTop: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  lifestyleIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lifestyleTitle: { fontFamily: revaFonts.sans, fontSize: 10.5, lineHeight: 14, color: C.focusInk1, fontWeight: '900' },
+  lifestyleMeta: { fontFamily: revaFonts.sans, fontSize: 8.5, lineHeight: 12, color: C.focusInk2, fontWeight: '800', marginTop: 2 },
   cardFooter: {
     height: 42,
     paddingHorizontal: 18,
