@@ -1409,11 +1409,18 @@ function QuickDietDraftCard({
       {primaryMetrics ? <Text style={txt.quickMacro}>{primaryMetrics}</Text> : null}
       {secondaryMetrics ? <Text style={txt.quickMacroMuted}>{secondaryMetrics}</Text> : null}
       {reviewItemCount > 0 ? (
-        <View style={styles.quickReviewSummary}>
+        <TouchableOpacity
+          style={styles.quickReviewSummary}
+          onPress={onRevise}
+          activeOpacity={0.78}
+          accessibilityRole="button"
+          accessibilityLabel="核对饮食份量"
+          accessibilityHint="打开修正表单，优先核对食物份量"
+        >
           <Ionicons name="alert-circle-outline" size={14} color={revaSemantic.caution.fg} />
           <Text style={txt.quickReviewSummaryStrong}>{reviewItemCount} 项需核对</Text>
           <Text style={txt.quickReviewSummaryText}>重点核对份量</Text>
-        </View>
+        </TouchableOpacity>
       ) : null}
       {recognizedFoods.length > 0 ? (
         <View style={styles.recognitionDetail}>

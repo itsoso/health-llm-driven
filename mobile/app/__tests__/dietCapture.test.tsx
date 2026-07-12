@@ -929,7 +929,7 @@ describe('DietScreen capture deeplink', () => {
     expect(getByText('小巴建议先核对：鸡胸肉、杂粮饭的份量；确认后才写入今天饮食。')).toBeTruthy();
     expect(getByText('核对后确认')).toBeTruthy();
     expect(getByText('修正份量')).toBeTruthy();
-    fireEvent.press(getByLabelText('修正饮食草稿'));
+    fireEvent.press(getByLabelText('核对饮食份量'));
     await waitFor(() => {
       expect(mockMealForm).toHaveBeenCalledWith(expect.objectContaining({
         assistiveHint: '优先核对食物份量；热量和三大营养会随份量一起修正。',
