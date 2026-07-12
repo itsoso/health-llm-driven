@@ -144,13 +144,18 @@ task #43 已落地:
 8. **per-op confirm 只在 create 有执行机制**(快路由 gate);§3.1 示例里
    delete 的 `typed_only` 档位尚无 executor 执行点,注册表如实只在 create
    登记 confirm。
+9. **life_event(情景事件账本,2026-07-12)**:create(`health_record(event)`)
+   + read(`health_query(events)`)已登记;list/update/delete 无 health_manage
+   映射,gap 挂账。设计初衷 AUTO 档但 executor 未把 `event` 加进 AUTO 集 →
+   实际 fail-closed 恒确认(never_auto 语义);升 AUTO 需同时补 undo(删除)通路。
 
 ### 确认档位现状(镜像 executor 活集合,CI 强制)
 
 - `auto`:water / weight / blood_pressure / diet / exercise / reminder / supplement
 - `typed_only`:symptom / rhinitis / goal
 - `never_auto`:illness / medication(executor NEVER 集∩注册面)+ fail-closed
-  兜底(mood / supplement_group / garmin_sync / intervention_cycle)
+  兜底(mood / supplement_group / garmin_sync / intervention_cycle /
+  life_event 的 event)
 
 ### opt_out 登记
 
