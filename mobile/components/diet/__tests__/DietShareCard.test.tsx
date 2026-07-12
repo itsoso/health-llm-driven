@@ -119,6 +119,28 @@ describe('DietShareCard', () => {
     expect(getByText('手动确认')).toBeTruthy();
   });
 
+  it('adds a careful estimate disclosure to platform captions when nutrition is AI-estimated', async () => {
+    const estimatedRecord = { ...record, source: 'ai_estimate' };
+    const { getByText } = render(
+      <DietShareSheet
+        visible
+        record={estimatedRecord}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(getByText('复制小红书文案'));
+    await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养数据: 智能估算，已确认，可继续复盘'));
+    });
+
+    fireEvent.press(getByText('复制朋友圈文案'));
+    await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养数据: 智能估算，已确认，可继续复盘'));
+    });
+  });
+
   it('captures exactly 1080x1440 and opens the system image share sheet', async () => {
     const onShareTerminal = jest.fn();
     const { getByText } = render(

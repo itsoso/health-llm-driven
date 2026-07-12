@@ -86,6 +86,13 @@ function buildDietShareCaptionStatusLine(highlights: string[]): string {
   return `今日状态: ${highlights.join(' / ')}`;
 }
 
+function buildDietShareDataDisclosure(record: DietRecord): string {
+  const sourceLabel = nutritionSourceLabel(record.source);
+  if (sourceLabel === '智能估算') return '营养数据: 智能估算，已确认，可继续复盘';
+  if (sourceLabel === '手动确认') return '营养数据: 手动确认，可继续复盘';
+  return `营养数据: ${sourceLabel}，已确认，可继续复盘`;
+}
+
 export function buildDietShareCaption(record: DietRecord, dateLabel: string): string {
   const mealLabel = MEAL_LABEL[record.meal_type] ?? '餐食';
   const headline = buildDietShareHeadline(record);
@@ -99,6 +106,7 @@ export function buildDietShareCaption(record: DietRecord, dateLabel: string): st
   ];
   if (highlights.length > 0) lines.push(`亮点: ${highlights.join(' / ')}`);
   if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g`);
+  lines.push(buildDietShareDataDisclosure(record));
   lines.push('认真记录，也认真生活。');
   lines.push('#饮食打卡 #健康生活 #小巴记录');
   return lines.join('\n');
@@ -116,6 +124,7 @@ export function buildDietShareMomentsCaption(record: DietRecord, dateLabel: stri
   ];
   if (highlights.length > 0) lines.push(`亮点: ${highlights.join(' / ')}`);
   if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g。`);
+  lines.push(buildDietShareDataDisclosure(record));
   lines.push('小巴帮我把吃过的东西留成一张可复盘的记录。');
   return lines.join('\n');
 }
