@@ -880,6 +880,55 @@ describe('DietScreen capture deeplink', () => {
     }
   });
 
+  it('keeps recovery actions visible when photo recognition fails', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock)
+      .mockResolvedValueOnce({
+        canceled: false,
+        assets: [{ base64: 'unclear-photo' }],
+      })
+      .mockResolvedValueOnce({
+        canceled: false,
+        assets: [{ base64: 'retry-photo' }],
+      });
+    dietService.recognizeFood
+      .mockResolvedValueOnce({
+        success: false,
+        foods: [],
+        error: '照片太暗,没有识别出可记录的餐食',
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        foods: [{ name: '番茄鸡蛋面', quantity: null }],
+        meal_description: '番茄鸡蛋面',
+        total_calories: 480,
+        total_protein: 22,
+        total_carbs: 58,
+        total_fat: 14,
+        error: null,
+      });
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+
+    const { getByLabelText, getByText } = render(<DietScreen />);
+
+    await waitFor(() => {
+      expect(getByText('照片识别失败')).toBeTruthy();
+    });
+    expect(getByText('换一张照片、从相册选择，或直接手动录入，不会重复提交。')).toBeTruthy();
+    expect(getByLabelText('重新拍照记录饮食')).toBeTruthy();
+    expect(getByLabelText('从相册重新选择饮食照片')).toBeTruthy();
+    expect(getByLabelText('手动录入饮食')).toBeTruthy();
+
+    fireEvent.press(getByLabelText('重新拍照记录饮食'));
+
+    await waitFor(() => {
+      expect(getByText('待确认饮食')).toBeTruthy();
+    });
+    expect(ImagePicker.launchCameraAsync).toHaveBeenCalledTimes(2);
+    alertSpy.mockRestore();
+  });
+
   it('shows explainable per-food sources and flags uncertain photo portions', async () => {
     const dietService = require('../../services/diet');
     mockRouteParams.capture = 'photo';

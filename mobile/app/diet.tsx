@@ -1074,7 +1074,8 @@ export default function DietScreen() {
   const isToday = date === todayStr();
   const dateLabel = isToday ? '今天' : new Date(date).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', weekday: 'short' });
   const photoCaptureBusy = BUSY_PHOTO_CAPTURE_STAGES.has(photoCaptureStage);
-  const showDietFab = !showForm && !quickDraft && !photoCaptureBusy;
+  const showPhotoCaptureStatus = !showForm && !quickDraft && (photoCaptureBusy || photoCaptureStage === 'failed');
+  const showDietFab = !showForm && !quickDraft && !photoCaptureBusy && photoCaptureStage !== 'failed';
   const shareImageSource = shareRecord
     ? buildChatImageSource(
       absoluteApiAssetUrl(shareRecord.image_url) ?? shareImageUriOverride ?? '',
@@ -1184,8 +1185,14 @@ export default function DietScreen() {
           />
         )}
 
-        {!showForm && !quickDraft && photoCaptureBusy && (
-          <PhotoCaptureStatusCard stage={photoCaptureStage} slowRecognition={photoRecognitionSlow} />
+        {showPhotoCaptureStatus && (
+          <PhotoCaptureStatusCard
+            stage={photoCaptureStage}
+            slowRecognition={photoRecognitionSlow}
+            onRetryPhoto={handlePhoto}
+            onPickLibrary={handlePhotoLibrary}
+            onManualText={handleText}
+          />
         )}
 
         {quickDraft && !showForm && (
@@ -1335,12 +1342,21 @@ function NutriPill({ label, value, unit, color }: { label: string; value: string
 function PhotoCaptureStatusCard({
   stage,
   slowRecognition = false,
+  onRetryPhoto,
+  onPickLibrary,
+  onManualText,
 }: {
   stage: PhotoCaptureStage;
   slowRecognition?: boolean;
+  onRetryPhoto?: () => void;
+  onPickLibrary?: () => void;
+  onManualText?: () => void;
 }) {
+  const failed = stage === 'failed';
   const label = stage === 'saving'
     ? '正在保存饮食'
+    : failed
+      ? '照片识别失败'
     : stage === 'capturing'
       ? '正在打开相机'
       : stage === 'selecting'
@@ -1350,6 +1366,8 @@ function PhotoCaptureStatusCard({
         : '正在识别餐食';
   const detail = stage === 'saving'
     ? '保存成功后会立即更新今日饮食进度。'
+    : failed
+      ? '换一张照片、从相册选择，或直接手动录入，不会重复提交。'
     : slowRecognition && stage === 'recognizing'
       ? '仍在识别照片；完成后会先给你确认草稿，不会自动写入。'
     : '识别完成后先给你确认草稿，不会自动写入。';
@@ -1362,43 +1380,84 @@ function PhotoCaptureStatusCard({
       : 0;
   return (
     <View style={styles.photoStatusCard}>
-      <ActivityIndicator size="small" color={C.green500} />
+      {failed ? (
+        <View style={styles.photoStatusFailedIcon}>
+          <Ionicons name="refresh" size={16} color={revaSemantic.caution.fg} />
+        </View>
+      ) : (
+        <ActivityIndicator size="small" color={C.green500} />
+      )}
       <View style={{ flex: 1 }}>
         <Text style={txt.photoStatusTitle}>{label}</Text>
         <Text style={txt.photoStatusDetail}>{detail}</Text>
-        <View style={styles.photoStatusSteps}>
-          {PHOTO_CAPTURE_STEPS.map((step, index) => {
-            const completed = activeIndex > index;
-            const active = activeIndex === index;
-            return (
-              <View
-                key={step.key}
-                style={[
-                  styles.photoStatusStep,
-                  completed && styles.photoStatusStepDone,
-                  active && styles.photoStatusStepActive,
-                ]}
-              >
+        {!failed ? (
+          <View style={styles.photoStatusSteps}>
+            {PHOTO_CAPTURE_STEPS.map((step, index) => {
+              const completed = activeIndex > index;
+              const active = activeIndex === index;
+              return (
                 <View
+                  key={step.key}
                   style={[
-                    styles.photoStatusStepDot,
-                    completed && styles.photoStatusStepDotDone,
-                    active && styles.photoStatusStepDotActive,
-                  ]}
-                />
-                <Text
-                  style={[
-                    txt.photoStatusStepText,
-                    completed && txt.photoStatusStepTextDone,
-                    active && txt.photoStatusStepTextActive,
+                    styles.photoStatusStep,
+                    completed && styles.photoStatusStepDone,
+                    active && styles.photoStatusStepActive,
                   ]}
                 >
-                  {step.label}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
+                  <View
+                    style={[
+                      styles.photoStatusStepDot,
+                      completed && styles.photoStatusStepDotDone,
+                      active && styles.photoStatusStepDotActive,
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      txt.photoStatusStepText,
+                      completed && txt.photoStatusStepTextDone,
+                      active && txt.photoStatusStepTextActive,
+                    ]}
+                  >
+                    {step.label}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        ) : (
+          <View style={styles.photoRecoveryRow}>
+            <TouchableOpacity
+              style={[styles.photoRecoveryBtn, styles.photoRecoveryBtnPrimary]}
+              onPress={onRetryPhoto}
+              activeOpacity={0.78}
+              accessibilityRole="button"
+              accessibilityLabel="重新拍照记录饮食"
+            >
+              <Ionicons name="camera-outline" size={14} color={C.surface} />
+              <Text style={txt.photoRecoveryPrimaryText}>重新拍照</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.photoRecoveryBtn}
+              onPress={onPickLibrary}
+              activeOpacity={0.78}
+              accessibilityRole="button"
+              accessibilityLabel="从相册重新选择饮食照片"
+            >
+              <Ionicons name="images-outline" size={14} color={C.green700} />
+              <Text style={txt.photoRecoveryText}>相册</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.photoRecoveryBtn}
+              onPress={onManualText}
+              activeOpacity={0.78}
+              accessibilityRole="button"
+              accessibilityLabel="手动录入饮食"
+            >
+              <Ionicons name="create-outline" size={14} color={C.green700} />
+              <Text style={txt.photoRecoveryText}>手动录入</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         {slowRecognition && stage === 'recognizing' ? (
           <Text style={txt.photoStatusTrust}>深度识别中，不会重复提交</Text>
         ) : null}
@@ -1738,6 +1797,14 @@ const styles = StyleSheet.create({
     borderColor: C.line,
     ...revaShadows.sm,
   },
+  photoStatusFailedIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: revaSemantic.caution.bg,
+  },
   photoStatusSteps: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1775,6 +1842,29 @@ const styles = StyleSheet.create({
   },
   photoStatusStepDotDone: {
     backgroundColor: C.green300,
+  },
+  photoRecoveryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: revaSpacing.s3,
+  },
+  photoRecoveryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    minHeight: 34,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+  },
+  photoRecoveryBtnPrimary: {
+    backgroundColor: C.green600,
+    borderColor: C.green600,
   },
   quickDraftHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: revaSpacing.s3 },
   mealTail: { alignItems: 'flex-end', justifyContent: 'center', gap: 7 },
@@ -1918,6 +2008,8 @@ const txt = {
   photoStatusStepTextActive: { color: C.green700 } as TextStyle,
   photoStatusStepTextDone: { color: C.green600 } as TextStyle,
   photoStatusTrust: { fontFamily: revaFonts.sans, fontSize: 11, color: C.green700, fontWeight: '700', marginTop: 8 } as TextStyle,
+  photoRecoveryText: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green700, fontWeight: '800' } as TextStyle,
+  photoRecoveryPrimaryText: { fontFamily: revaFonts.sans, fontSize: 12, color: C.surface, fontWeight: '900' } as TextStyle,
   quickOverline: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, fontWeight: '700' } as TextStyle,
   quickTitle: { fontFamily: revaFonts.sans, fontSize: 17, color: C.ink1, fontWeight: '800', marginTop: 2 } as TextStyle,
   quickMealChipText: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, fontWeight: '700' } as TextStyle,
