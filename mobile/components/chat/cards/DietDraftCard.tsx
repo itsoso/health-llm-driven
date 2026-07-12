@@ -137,6 +137,11 @@ function macroRows(data: DietDraftData) {
   ].filter((row) => row.value != null && row.value >= 0);
 }
 
+function hasNutritionEstimate(data: DietDraftData): boolean {
+  return [data.calories, data.protein, data.carbs, data.fat, data.fiber]
+    .some((value) => numberValue(value) != null);
+}
+
 function confidenceLabel(value: unknown): string | undefined {
   const confidence = numberValue(value);
   if (confidence == null) return undefined;
@@ -195,6 +200,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const mealLabel = MEAL_LABELS[mealType] || '餐食';
   const macros = macroRows(data);
   const caloriesValue = numberValue(data.calories);
+  const nutritionEstimated = hasNutritionEstimate(data);
   const timeLabel = mealTimeLabel(data);
   const meta = [confidenceLabel(data.confidence), sourceLabel(data.source)].filter(Boolean).join(' · ');
   const suggestions = listText(data.suggestions);
@@ -274,6 +280,25 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
 
       {/* 食材 chips */}
       <IngredientChips items={chips} fallback="待确认餐食" style={styles.chipsWrap} />
+
+      {!isRecorded ? (
+        <View style={styles.nutritionStatusRow}>
+          <Ionicons
+            name={nutritionEstimated ? 'analytics-outline' : 'time-outline'}
+            size={13}
+            color={nutritionEstimated ? C.green600 : C.ink3}
+          />
+          <Text
+            maxFontSizeMultiplier={1.15}
+            style={[
+              styles.nutritionStatusText,
+              { color: nutritionEstimated ? C.green600 : C.ink3 },
+            ]}
+          >
+            {nutritionEstimated ? '已带营养估算，确认后计入今日' : '确认后先记录，营养后台估算'}
+          </Text>
+        </View>
+      ) : null}
 
       {!isRecorded ? (
         <View style={styles.inlineHeader}>
@@ -621,6 +646,19 @@ const styles = StyleSheet.create({
   chipsWrap: {
     marginTop: 10,
   },
+  nutritionStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 9,
+  },
+  nutritionStatusText: {
+    flex: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 11.5,
+    lineHeight: 16,
+    fontWeight: '800',
+  } as TextStyle,
   inlineHeader: {
     flexDirection: 'row',
     alignItems: 'center',

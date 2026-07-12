@@ -269,6 +269,7 @@ describe('renderCard 安全降级', () => {
     expect(getByText('蛋白质')).toBeTruthy();
     expect(getByText('30g')).toBeTruthy();
     expect(getByText('置信度 82% · 来源: 对话/图片')).toBeTruthy();
+    expect(getByText('已带营养估算，确认后计入今日')).toBeTruthy();
     expect(getByText('餐后轻走 10 分钟')).toBeTruthy();
     expect(getByText('营养为估算值,确认后写入今日饮食记录。')).toBeTruthy();
 
@@ -515,6 +516,39 @@ describe('renderCard 安全降级', () => {
     expect(getByText('晚餐 · 待确认')).toBeTruthy();
     expect(getByText('蛋白质')).toBeTruthy();
     expect(getByText('46g')).toBeTruthy();
+    expect(getByText('已带营养估算，确认后计入今日')).toBeTruthy();
+  });
+
+  it('marks incomplete agent diet drafts as pending nutrition backfill', () => {
+    const element = renderCard({
+      type: 'diet_draft',
+      data: {
+        meal_type: 'lunch',
+        food_items: '鸡胸肉 200g + 糙米饭一碗',
+        source: 'voice',
+      },
+      actions: [
+        {
+          id: 'confirm-diet-draft',
+          label: '确认记录',
+          action: 'diet_record.create',
+          endpoint: '/diet/records',
+          requires_manual_confirm: true,
+          style: 'primary',
+          payload: {
+            record: {
+              meal_type: 'lunch',
+              food_items: '鸡胸肉 200g + 糙米饭一碗',
+            },
+          },
+        },
+      ],
+    } as any);
+
+    expect(element).not.toBeNull();
+    const { getByText } = render(element!);
+    expect(getByText('午餐 · 待确认')).toBeTruthy();
+    expect(getByText('确认后先记录，营养后台估算')).toBeTruthy();
   });
 
   it('does not render diet drafts built from captured UI copy instead of food', () => {
