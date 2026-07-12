@@ -106,8 +106,9 @@ def _sensitive_name_re() -> "re.Pattern[str]":
 
     ASCII 词边缘加 (?<![a-z0-9]) / (?![a-z0-9]) 锚点 —— 自由文本裸子串会误配
     (历史教训 iron⊂environment / pril⊂April;那批词已在 lexicon 去歧义名单里,
-    锚点兜的是剩余 ASCII 词,如 b12 不应命中工单号 AB123)。CJK 无词边界,子串即匹配
-    (歧义 CJK 短词同样已被 lexicon 剔除)。长词优先,避免 alternation 短词抢先截断。
+    锚点兜的是剩余 ASCII 词,如 b12 不应命中工单号 AB123)。ASCII 尾词允许可选
+    复数 s(statins/opioids 不因锚点漏检)。CJK 无词边界,子串即匹配(歧义 CJK
+    短词同样已被 lexicon 剔除)。长词优先,避免 alternation 短词抢先截断。
     """
     from app.services.drug_lexicon import sensitive_name_free_text_terms
 
@@ -118,7 +119,7 @@ def _sensitive_name_re() -> "re.Pattern[str]":
         if term[0].isascii():
             pat = r"(?<![a-z0-9])" + pat
         if term[-1].isascii():
-            pat = pat + r"(?![a-z0-9])"
+            pat = pat + r"s?(?![a-z0-9])"
         parts.append(pat)
     return re.compile("|".join(parts), re.IGNORECASE)
 

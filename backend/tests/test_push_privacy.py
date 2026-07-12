@@ -302,6 +302,7 @@ from app.services.notification.push_privacy import (  # noqa: E402
     "记得吃抗抑郁药,别自行停",           # 诊断可反推的治疗类别词(无具体药名,Tier-5 域)
     "化疗期间注意白细胞",               # 同上(肿瘤域)
     "Ozempic 注射日到了",              # 高知名度品牌名(对抗复审补进 lexicon)
+    "Keep taking your statins daily",   # 英文复数(ASCII 尾词可选 s,评审残余补修)
 ])
 def test_llm_backstop_drug_name_genericized(leaky):
     title, content, redacted = llm_push_backstop(
@@ -579,6 +580,59 @@ def test_plan_morning_reminder_backstop(db, item_title, expect_generic):
     if expect_generic:
         assert "维生素" not in kwargs["content"]
         assert "1 项计划待完成" in kwargs["content"]  # 计数级信息保留
+    else:
+        assert item_title in kwargs["content"]
+
+
+@pytest.mark.parametrize("item_title,expect_generic", [
+    ("午餐多吃蔬菜", False),
+    ("补充辅酶Q10 一粒", True),
+])
+def test_plan_item_reminders_backstop(db, item_title, expect_generic):
+    """分时提醒(第三个消费 LLM 计划项 title 的任务)同样必须过 backstop。"""
+    from datetime import date as _date, datetime as _datetime, timedelta as _timedelta
+
+    from app.models.smart_plan import PlanItem, WeeklyPlan
+    from app.models.user import User
+    from app.tasks import notifications as notif
+
+    user = User(username=f"pitem_{'g' if expect_generic else 'p'}",
+                email=f"pitem_{'g' if expect_generic else 'p'}@example.com",
+                hashed_password="x", name="pitem", is_active=True, is_approved=True)
+    db.add(user)
+    db.commit()
+
+    today = _date.today()
+    week_start = today - _timedelta(days=today.weekday())
+    plan = WeeklyPlan(user_id=user.id, week_start=week_start, status="active")
+    # diet 类别在 09:00 无档期,用 health(09:00)
+    plan.items.append(PlanItem(day_of_week=today.weekday() + 1, category="health",
+                               title=item_title, is_completed=False))
+    db.add(plan)
+    db.commit()
+
+    @contextmanager
+    def _ctx():
+        yield db
+
+    fixed_now = _datetime(today.year, today.month, today.day, 9, 0)
+    _RecordingPushService.calls = []
+    task_fn = notif.send_plan_item_reminders.run
+    with patch.dict(task_fn.__globals__, {
+        "SessionLocal": _ctx,
+        "run_async": _sync_run_async,
+        "PushService": _RecordingPushService,
+        "get_china_now": lambda: fixed_now,
+        "_today_weather_text": lambda _city: "",
+        "_get_user_city": lambda _db, _uid: None,
+    }):
+        result = task_fn()
+
+    assert result["sent_count"] == 1, "推送被丢弃(违反 TIGHTEN-only)"
+    kwargs = _RecordingPushService.calls[0]
+    if expect_generic:
+        assert "辅酶" not in kwargs["content"]
+        assert "1 项计划待完成" in kwargs["content"]
     else:
         assert item_title in kwargs["content"]
 

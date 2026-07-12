@@ -525,6 +525,11 @@ def send_plan_item_reminders():
                 body = f"{', '.join(titles)}"
                 if len(items) > 3:
                     body += f" 等{len(items)}项"
+                # §5.6 backstop:计划项 title 是 LLM 生成(smart_plan),可能点名药/补剂
+                _, body, _ = llm_push_backstop(
+                    None, body,
+                    generic_content=f"你有 {len(items)} 项计划待完成,点开查看。",
+                )
 
                 run_async(push_service.send_notification(
                     user_id=plan.user_id,
