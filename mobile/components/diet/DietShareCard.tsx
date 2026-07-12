@@ -218,6 +218,11 @@ function buildDietShareFooterSecondary(record: DietRecord): string {
   return '营养数据以本次确认记录为准';
 }
 
+function isLowConfidenceDietShare(record: DietRecord): boolean {
+  const percent = normalizedAiConfidence(record.ai_confidence);
+  return percent != null && percent < 60;
+}
+
 function buildDietShareMacroLine(record: DietRecord, style: 'compact' | 'sentence'): string {
   const parts = [
     hasMetric(record.calories) ? `热量 ${metric(record.calories)} kcal` : null,
@@ -706,6 +711,7 @@ export function DietShareSheet({
   const [shareResult, setShareResult] = useState<ShareResult | null>(null);
   const shareHasPhoto = Boolean(imageSource) && !imageTimedOut;
   const publishHint = shareResult ? publishHintForShareResult(shareResult) : null;
+  const lowConfidenceShare = isLowConfidenceDietShare(record);
 
   React.useEffect(() => {
     setImageReady(!imageSource);
@@ -901,8 +907,14 @@ export function DietShareSheet({
 
           <View style={styles.shareReadyStrip} accessibilityLabel="分享素材已准备完成">
             <ShareReadyItem icon="image-outline" label="3:4 高清图" />
-            <ShareReadyItem icon="chatbubble-ellipses-outline" label="朋友圈文案" />
-            <ShareReadyItem icon="sparkles-outline" label="小红书话题" />
+            <ShareReadyItem
+              icon="chatbubble-ellipses-outline"
+              label={lowConfidenceShare ? '核对后朋友圈文案' : '朋友圈文案'}
+            />
+            <ShareReadyItem
+              icon="sparkles-outline"
+              label={lowConfidenceShare ? '核对后小红书文案' : '小红书话题'}
+            />
           </View>
 
           <View style={styles.platformShareRow}>
@@ -917,7 +929,9 @@ export function DietShareSheet({
               <Ionicons name="chatbubble-ellipses-outline" size={18} color={C.greenOn} />
               <View>
                 <Text style={styles.platformShareText}>发微信/朋友圈</Text>
-                <Text style={styles.platformShareHint}>自动复制朋友圈文案</Text>
+                <Text style={styles.platformShareHint}>
+                  {lowConfidenceShare ? '先核对食物和份量' : '自动复制朋友圈文案'}
+                </Text>
               </View>
             </TouchableOpacity>
             <TouchableOpacity
@@ -931,7 +945,9 @@ export function DietShareSheet({
               <Ionicons name="sparkles-outline" size={18} color="#fff" />
               <View>
                 <Text style={styles.platformShareText}>发小红书</Text>
-                <Text style={styles.platformShareHint}>自动复制带话题文案</Text>
+                <Text style={styles.platformShareHint}>
+                  {lowConfidenceShare ? '核对后复制带话题文案' : '自动复制带话题文案'}
+                </Text>
               </View>
             </TouchableOpacity>
           </View>

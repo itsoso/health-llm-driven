@@ -257,6 +257,10 @@ describe('DietShareCard', () => {
     expect(queryByText('可分享')).toBeNull();
     expect(getByText('识别待核对，发布前确认食物和份量')).toBeTruthy();
     expect(queryByText('营养数据以本次确认记录为准')).toBeNull();
+    expect(getByText('核对后朋友圈文案')).toBeTruthy();
+    expect(getByText('核对后小红书文案')).toBeTruthy();
+    expect(queryByText('自动复制朋友圈文案')).toBeNull();
+    expect(queryByText('自动复制带话题文案')).toBeNull();
 
     fireEvent.press(getByText('复制小红书文案'));
     await waitFor(() => {
