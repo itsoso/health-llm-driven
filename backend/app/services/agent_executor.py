@@ -1460,6 +1460,7 @@ _RESOURCE_TYPE_BY_RECORD_TYPE = {
     "bp": "blood_pressure_record",
     "blood_pressure": "blood_pressure_record",
     "diet": "diet_record",
+    "event": "health_episode",
     "exercise": "exercise_record",
     "excretion": "excretion_record",
     "goal": "goal",
@@ -1889,6 +1890,10 @@ _FAST_RECORD_AUTO_CONFIRM_KINDS = {
     # 每条症状都二次询问被用户明确否决(2026-07-02)。
     "symptom",
     "rhinitis",
+    # event(生活事件账本):founder 2026-07-13 裁决 AUTO·全通道 —— 非医疗、
+    # L0、纯时间打点,写错顶多时间锚偏(可删重记);undo 通路=
+    # health_manage(delete event {id}) → DELETE /episodes/life-event/{id}。
+    "event",
 }
 # 症状类仅打字通道免确认;语音/未声明通道保留确认前置(转写失真 + Siri 单轮
 # 无法撤销)。channel 由客户端传输层声明(AgentRequest.channel),绝不读 LLM
@@ -8174,6 +8179,7 @@ class AgentExecutor:
             "reminder": "/reminders/me?status=all&limit=50",
             "goal": "/goals/me",
             "medical_exam": f"/medical-exams/me/reports?limit={limit}",
+            "event": "/episodes/me/life-events?days=30",
         }
         record_paths = {
             "diet": "/diet/records/{id}",
@@ -8193,6 +8199,9 @@ class AgentExecutor:
             "supplement_definition": "/supplements/definitions/{id}",
             "reminder": "/reminders/{id}",
             "goal": "/goals/{id}",
+            # event 只开 list/delete(undo 通路);update 不开——occurred_at 由
+            # 确定性代码折算,改动走删除后重记(registry update 格 gap 挂账)。
+            "event": "/episodes/life-event/{id}",
         }
         update_supported = {
             "diet", "water", "weight", "waist", "blood_pressure",

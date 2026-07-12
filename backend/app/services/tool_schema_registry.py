@@ -294,6 +294,7 @@ goal:             {"title": "每日快走30分钟", "goal_type": "exercise|diet|
 - illness, medication, supplement_definition: 支持 list/update/delete
 - exercise, symptom, medication_log, reminder, goal: 支持 list/update/delete
 - medical_exam: 仅支持 list, 返回体检/影像/病理/胃镜等报告级摘要清单;指标时间线请用 health_query(dimension=medical_exam)
+- event: 生活事件(出发/落地/送达等), 支持 list/delete;不支持 update, 时间记错请删除后重新记录
 """,
             "parameters": {
                 "type": "object",
@@ -305,7 +306,7 @@ goal:             {"title": "每日快走30分钟", "goal_type": "exercise|diet|
                             "sleep", "mood", "excretion", "exercise", "illness",
                             "symptom", "medication", "medication_log",
                             "supplement", "supplement_definition", "reminder",
-                            "goal", "medical_exam",
+                            "goal", "medical_exam", "event",
                         ],
                         "description": "要管理的数据类型",
                     },
