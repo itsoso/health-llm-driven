@@ -557,9 +557,9 @@ describe('DietScreen capture deeplink', () => {
     });
     dietService.createDietRecord.mockResolvedValueOnce({ id: 88 });
 
-    const { getByText, getByTestId } = render(<DietScreen />);
+    const { getByText, getByTestId, getByLabelText } = render(<DietScreen />);
     await waitFor(() => expect(getByText('待确认饮食')).toBeTruthy());
-    fireEvent.press(getByText('修正'));
+    fireEvent.press(getByLabelText('修正饮食草稿'));
     await waitFor(() => expect(getByTestId('meal-form')).toBeTruthy());
     const formProps = mockMealForm.mock.calls[mockMealForm.mock.calls.length - 1][0];
     await act(async () => {
@@ -599,9 +599,9 @@ describe('DietScreen capture deeplink', () => {
     mockSaveDietPhotoDraft.mockRejectedValueOnce(new Error('keychain unavailable'));
     const dietService = require('../../services/diet');
     dietService.createDietRecord.mockResolvedValueOnce({ id: 89 });
-    const { getByText, getByTestId } = render(<DietScreen />);
+    const { getByText, getByTestId, getByLabelText } = render(<DietScreen />);
     await waitFor(() => expect(getByText('鸡胸肉 200g')).toBeTruthy());
-    fireEvent.press(getByText('修正'));
+    fireEvent.press(getByLabelText('修正饮食草稿'));
     await waitFor(() => expect(getByTestId('meal-form')).toBeTruthy());
     const formProps = mockMealForm.mock.calls[mockMealForm.mock.calls.length - 1][0];
 
@@ -629,9 +629,9 @@ describe('DietScreen capture deeplink', () => {
       },
     });
     const dietService = require('../../services/diet');
-    const { getByText, getByTestId } = render(<DietScreen />);
+    const { getByText, getByTestId, getByLabelText } = render(<DietScreen />);
     await waitFor(() => expect(getByText('待确认饮食')).toBeTruthy());
-    fireEvent.press(getByText('修正'));
+    fireEvent.press(getByLabelText('修正饮食草稿'));
     await waitFor(() => expect(getByTestId('meal-form')).toBeTruthy());
     const formProps = mockMealForm.mock.calls[mockMealForm.mock.calls.length - 1][0];
     await act(async () => {
@@ -801,6 +801,7 @@ describe('DietScreen capture deeplink', () => {
     expect(getAllByText('份量为估算').length).toBeGreaterThan(0);
     expect(getAllByText('请核对份量').length).toBeGreaterThan(0);
     expect(getByText('小巴建议先核对：鸡胸肉、杂粮饭的份量；确认后才写入今天饮食。')).toBeTruthy();
+    expect(getByText('修正份量')).toBeTruthy();
   });
 
   it('turns text entry into a lightweight confirm card without auto-saving', async () => {

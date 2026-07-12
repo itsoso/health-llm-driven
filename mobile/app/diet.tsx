@@ -152,23 +152,25 @@ function formatDraftMetric(value: number | undefined, precision = 0): string | n
   return `${rounded}`;
 }
 
+function foodNeedsPortionReview(food: FoodItem): boolean {
+  const hasQuantity = Boolean(food.quantity?.trim());
+  const hasTrustedPortion = food.portion_basis === 'measured' || food.portion_basis === 'label';
+  const identityConfidence = typeof food.confidence === 'number' && Number.isFinite(food.confidence)
+    ? food.confidence
+    : null;
+  const portionConfidence = typeof food.portion_confidence === 'number' && Number.isFinite(food.portion_confidence)
+    ? food.portion_confidence
+    : null;
+  return !hasQuantity
+    || !hasTrustedPortion
+    || (identityConfidence !== null && identityConfidence < 0.7)
+    || (portionConfidence !== null && portionConfidence < 0.7);
+}
+
 function buildQuickDraftReviewHint(draft: DietRecordCreate): string {
   const foods = draft.ai_raw_result?.foods ?? [];
   const portionCheckNames = foods
-    .filter((food) => {
-      const hasQuantity = Boolean(food.quantity?.trim());
-      const hasTrustedPortion = food.portion_basis === 'measured' || food.portion_basis === 'label';
-      const identityConfidence = typeof food.confidence === 'number' && Number.isFinite(food.confidence)
-        ? food.confidence
-        : null;
-      const portionConfidence = typeof food.portion_confidence === 'number' && Number.isFinite(food.portion_confidence)
-        ? food.portion_confidence
-        : null;
-      return !hasQuantity
-        || !hasTrustedPortion
-        || (identityConfidence !== null && identityConfidence < 0.7)
-        || (portionConfidence !== null && portionConfidence < 0.7);
-    })
+    .filter(foodNeedsPortionReview)
     .map(food => food.name?.trim())
     .filter((name): name is string => Boolean(name));
   if (portionCheckNames.length > 0) {
@@ -180,6 +182,11 @@ function buildQuickDraftReviewHint(draft: DietRecordCreate): string {
     return `小巴已拆出 ${foods.length} 项食物；确认后才写入今天饮食。`;
   }
   return '先核对食物和份量；确认后才写入今天饮食。';
+}
+
+function quickDraftReviseLabel(draft: DietRecordCreate): string {
+  const foods = draft.ai_raw_result?.foods ?? [];
+  return foods.some(foodNeedsPortionReview) ? '修正份量' : '修正';
 }
 
 function averageRecognitionConfidence(foods: { confidence: number | null }[] | undefined): number | undefined {
@@ -1299,6 +1306,7 @@ function QuickDietDraftCard({
     ? '已带营养估算，确认后计入今日'
     : '确认后先记录，营养后台估算';
   const reviewHint = buildQuickDraftReviewHint(draft);
+  const reviseLabel = quickDraftReviseLabel(draft);
 
   return (
     <View style={styles.quickDraftCard}>
@@ -1365,7 +1373,7 @@ function QuickDietDraftCard({
           accessibilityRole="button"
           accessibilityLabel="修正饮食草稿"
         >
-          <Text style={txt.quickSecondaryText}>修正</Text>
+          <Text style={txt.quickSecondaryText}>{reviseLabel}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.quickGhostBtn}
