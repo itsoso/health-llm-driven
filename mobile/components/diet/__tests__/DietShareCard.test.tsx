@@ -384,6 +384,24 @@ describe('DietShareCard', () => {
     expect(getByText('小红书话题')).toBeTruthy();
   });
 
+  it('shows an optional Agent review CTA for post-confirmation flow', () => {
+    const onAskReva = jest.fn();
+    const { getByText, getByLabelText } = render(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+        onAskReva={onAskReva}
+      />,
+    );
+
+    expect(getByText('问小巴复盘今日饮食')).toBeTruthy();
+    expect(getByText('先查数据库，再看全天热量和下一餐')).toBeTruthy();
+    fireEvent.press(getByLabelText('问小巴复盘今日饮食'));
+    expect(onAskReva).toHaveBeenCalledTimes(1);
+  });
+
   it('uses native pixel units on Android and point units on iOS', () => {
     expect(dietShareCaptureDimensions('android', 3)).toEqual({ width: 1080, height: 1440 });
     expect(dietShareCaptureDimensions('ios', 3)).toEqual({ width: 360, height: 480 });

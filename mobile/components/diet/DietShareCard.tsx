@@ -425,6 +425,7 @@ function ShareReadyItem({ icon, label }: { icon: React.ComponentProps<typeof Ion
 export type DietShareSheetProps = DietShareCardProps & {
   visible: boolean;
   onClose: () => void;
+  onAskReva?: () => void;
   onShareTerminal?: (meta: {
     phase: 'completed' | 'failed';
     duration_ms: number;
@@ -440,6 +441,7 @@ export function DietShareSheet({
   dateLabel,
   imageSource,
   onClose,
+  onAskReva,
   onShareTerminal,
 }: DietShareSheetProps) {
   const cardRef = useRef<View>(null);
@@ -635,6 +637,26 @@ export function DietShareSheet({
               </View>
             </TouchableOpacity>
           </View>
+
+          {onAskReva ? (
+            <TouchableOpacity
+              style={styles.agentReviewButton}
+              onPress={onAskReva}
+              disabled={sharing}
+              activeOpacity={0.82}
+              accessibilityRole="button"
+              accessibilityLabel="问小巴复盘今日饮食"
+            >
+              <View style={styles.agentReviewIcon}>
+                <Ionicons name="chatbubble-ellipses-outline" size={17} color={C.green600} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.agentReviewTitle}>问小巴复盘今日饮食</Text>
+                <Text style={styles.agentReviewSubtitle}>先查数据库，再看全天热量和下一餐</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={C.ink3} />
+            </TouchableOpacity>
+          ) : null}
 
           {publishHint ? (
             <View style={styles.publishHint} testID="diet-share-publish-hint">
@@ -935,6 +957,30 @@ const styles = StyleSheet.create({
   xhsShareButton: { backgroundColor: '#D95A45' },
   platformShareText: { fontFamily: revaFonts.sans, fontSize: 13, color: C.greenOn, fontWeight: '900' },
   platformShareHint: { fontFamily: revaFonts.sans, fontSize: 9.5, color: 'rgba(255,255,255,0.78)', marginTop: 1 },
+  agentReviewButton: {
+    width: '100%',
+    minHeight: 52,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.focusLine,
+    marginTop: revaSpacing.s2,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  agentReviewIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: C.focusBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  agentReviewTitle: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink1, fontWeight: '900' },
+  agentReviewSubtitle: { fontFamily: revaFonts.sans, fontSize: 10.5, color: C.ink3, fontWeight: '700', marginTop: 1 },
   publishHint: {
     width: '100%',
     minHeight: 46,

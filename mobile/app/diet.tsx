@@ -76,6 +76,7 @@ const BUSY_PHOTO_CAPTURE_STAGES = new Set<PhotoCaptureStage>([
 ]);
 const PHOTO_RECOGNITION_SLOW_MS = 6000;
 const PORTION_REVIEW_ASSISTIVE_HINT = '优先核对食物份量；热量和三大营养会随份量一起修正。';
+const POST_CONFIRM_DIET_REVIEW_PROMPT = '请先查询今天数据库里的所有饮食记录，再结合这条刚保存的饮食记录，汇总全天饮食、总热量和蛋白质/碳水/脂肪，并给出下一餐最小调整建议。不要只凭本页缓存或本轮对话猜测。';
 const PHOTO_CAPTURE_STEPS = [
   { key: 'preparing', label: '优化照片' },
   { key: 'recognizing', label: '识别食物' },
@@ -1090,6 +1091,38 @@ export default function DietScreen() {
     });
   }, [daily, dateLabel, router]);
 
+  const handleAskRevaFromShare = useCallback((record: DietRecord) => {
+    const baseContext = daily
+      ? createDietAgentContext(daily)
+      : {
+        from: `diet/${record.record_date}`,
+        date: record.record_date,
+        totals: null,
+        meals: [],
+      };
+    pushChatWithContext(router, {
+      prompt: POST_CONFIRM_DIET_REVIEW_PROMPT,
+      context: {
+        ...baseContext,
+        just_recorded: {
+          id: record.id,
+          record_date: record.record_date,
+          meal_type: record.meal_type,
+          food_items: record.food_items,
+          calories: record.calories ?? null,
+          protein: record.protein ?? null,
+          carbs: record.carbs ?? null,
+          fat: record.fat ?? null,
+          fiber: record.fiber ?? null,
+          source: record.source ?? null,
+        },
+      },
+      badge: '今日饮食复盘',
+    });
+    setShareRecord(null);
+    setShareImageUriOverride(null);
+  }, [daily, router]);
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
@@ -1279,6 +1312,7 @@ export default function DietScreen() {
             setShareRecord(null);
             setShareImageUriOverride(null);
           }}
+          onAskReva={() => handleAskRevaFromShare(shareRecord)}
           onShareTerminal={(meta) => {
             void emitClientEvent('diet_share_terminal', meta);
           }}

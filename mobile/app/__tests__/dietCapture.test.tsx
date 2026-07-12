@@ -1052,6 +1052,60 @@ describe('DietScreen capture deeplink', () => {
     promptSpy.mockRestore();
   });
 
+  it('can jump from the post-confirmation share preview into an Agent diet review', async () => {
+    const dietService = require('../../services/diet');
+    dietService.createDietRecord.mockResolvedValueOnce({
+      id: 89,
+      user_id: 1,
+      record_date: '2026-07-11',
+      meal_type: 'lunch',
+      food_items: '鸡胸肉 200g + 糙米饭一碗',
+      source: 'ai_estimate',
+      calories: 560,
+      protein: 67,
+      carbs: 48,
+      fat: 9.2,
+      fiber: 3,
+      alcohol_units: null,
+      image_url: null,
+      notes: null,
+      health_tips: null,
+    });
+    const promptSpy = jest.spyOn(Alert, 'prompt').mockImplementationOnce((_title, _message, callback) => {
+      if (typeof callback === 'function') callback('鸡胸肉 200g + 糙米饭一碗');
+    });
+
+    const { getByLabelText, getByTestId, getByText } = render(<DietScreen />);
+    fireEvent.press(getByTestId('diet-fab-text'));
+    await waitFor(() => {
+      expect(getByText('待确认饮食')).toBeTruthy();
+    });
+
+    fireEvent.press(getByLabelText('确认记录饮食'));
+    await waitFor(() => expect(getByText('分享这一餐')).toBeTruthy());
+
+    fireEvent.press(getByLabelText('问小巴复盘今日饮食'));
+
+    await waitFor(() => {
+      expect(mockPushChatWithContext).toHaveBeenCalledWith(
+        expect.objectContaining({ push: expect.any(Function) }),
+        expect.objectContaining({
+          prompt: expect.stringContaining('请先查询今天数据库里的所有饮食记录'),
+          badge: '今日饮食复盘',
+          context: expect.objectContaining({
+            just_recorded: expect.objectContaining({
+              id: 89,
+              food_items: '鸡胸肉 200g + 糙米饭一碗',
+              calories: 560,
+              protein: 67,
+            }),
+          }),
+        }),
+      );
+    });
+    promptSpy.mockRestore();
+  });
+
   it('opens the premium share preview after submitting a new meal form', async () => {
     const dietService = require('../../services/diet');
     dietService.createDietRecord.mockResolvedValueOnce({
