@@ -202,6 +202,11 @@ class Settings(BaseSettings):
     proactive_global_weekly_budget: int = 15
     # 任务分级模型路由(成本/延迟):开后按 task_tier 选模型;默认关=零行为变更
     task_tiered_routing: bool = False
+    # GenUI metric_table 卡片(延迟, Phase-2 rank1)服务端 kill-switch:关=后端绝不发
+    # metric_table 卡片、也不注入 ≤500字 契约(逐字节现状)。**主门是 caps 协商**
+    # (客户端声明 genui-table-v1);本 flag 只是无需客户端发版即可服务端全局停用的开关。
+    # 默认开:声明了 cap 的客户端才受影响,旧端不声明 → 零行为变更。
+    genui_table_enabled: bool = True
     # 并行工具调用(延迟, Phase-2 rank5):开后对**携带 tools 的** chat/chat_stream 请求
     # 传 parallel_tool_calls=true, 让 DashScope 一轮回多个 tool_call(默认每响应只回一个,
     # 而 fast-record prompt 早在索要 "一次性发起多个 tool_call")。多条目 record/query 回合
