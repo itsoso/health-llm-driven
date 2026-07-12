@@ -69,6 +69,11 @@ def _assert_diet_food_items_allowed(food_items: str) -> None:
             status_code=400,
             detail="药物或补剂摄入不能作为饮食记录写入，请使用用药或补剂记录。",
         )
+    if intent.kind == "health_metric":
+        raise HTTPException(
+            status_code=400,
+            detail="运动、睡眠、体重、血压或血糖不能作为饮食记录写入，请使用对应健康记录入口。",
+        )
 
 
 def _remove_diet_image_file(filepath: str | None) -> None:

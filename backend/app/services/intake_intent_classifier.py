@@ -83,6 +83,15 @@ _MEDICATION_ACTION_RE = re.compile(r"服药|吃药|用药|药物|药品|处方�
 _MEDICATION_FORM_RE = re.compile(r"(?:胶囊|缓释片|肠溶片|分散片|口服液|滴剂|喷雾|吸入剂|颗粒)")
 _MEDICATION_DOSE_RE = re.compile(r"\d+(?:\.\d+)?(?:mg|毫克|μg|ug|iu|单位)", re.I)
 _MEDICATION_SUFFIX_RE = re.compile(r"(?:拉唑|瑞酮|霉素|沙星|洛芬|司特|他汀|地平|沙坦|普利|格列|替丁)")
+_HEALTH_METRIC_RE = re.compile(
+    r"(?:跑步|晨跑|夜跑|快走|步数|运动|训练|健身|游泳|骑行)\d*(?:分钟|分|步|公里|km|千米)?"
+    r"|(?:体重|腰围|臀围|体脂|bmi)\d+(?:\.\d+)?(?:kg|公斤|斤|cm|厘米|%)?"
+    r"|(?:睡了|睡眠|入睡|起床|醒来|午睡|小睡)\d+(?:\.\d+)?(?:小时|h|分钟|分)?"
+    r"|(?:血压|收缩压|舒张压)\d{2,3}/\d{2,3}"
+    r"|(?:血糖|空腹血糖|餐后血糖)\d+(?:\.\d+)?"
+    r"|(?:心率|静息心率|rhr)\d{2,3}",
+    re.I,
+)
 
 _MEAL_LABELS = {
     "breakfast": ("早餐", "早饭", "早上"),
@@ -141,6 +150,9 @@ def classify_intake_intent(query: Any) -> IntakeIntent:
 
     if _has_any(normalized, DIET_MANAGEMENT_MARKERS):
         return IntakeIntent("diet_management", 0.95, "diet_management", raw)
+
+    if _looks_like_health_metric(normalized):
+        return IntakeIntent("health_metric", 0.88, "health_metric", raw)
 
     water_amount = _extract_water_amount(normalized)
     if _looks_like_water(normalized):
@@ -214,6 +226,10 @@ def _looks_like_water(normalized: str) -> bool:
         re.search(r"(喝水|饮水|温水|白水|矿泉水|纯净水)", normalized)
         or re.search(r"喝了?\d+(?:\.\d+)?(?:ml|毫升).{0,4}水", normalized, re.I)
     )
+
+
+def _looks_like_health_metric(normalized: str) -> bool:
+    return bool(_HEALTH_METRIC_RE.search(normalized))
 
 
 def _extract_water_amount(normalized: str) -> int | None:

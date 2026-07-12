@@ -1,6 +1,7 @@
 import {
   assertDietFoodItemsAllowed,
   looksLikeDietManagementIntent,
+  looksLikeHealthMetricIntent,
   looksLikeDietUiText,
   looksLikeNonDietIntake,
 } from '../dietIntakeGuard';
@@ -31,6 +32,17 @@ describe('dietIntakeGuard', () => {
   ])('rejects leaked card UI copy as food intake: %s', (text) => {
     expect(looksLikeDietUiText(text)).toBe(true);
     expect(() => assertDietFoodItemsAllowed(text)).toThrow('invalid_diet_food_items_ui_text');
+  });
+
+  it.each([
+    ['晨跑 30 分钟'],
+    ['今天步数 5370'],
+    ['体重 73.1kg 腰围 84cm'],
+    ['昨晚睡了 6 小时'],
+    ['血压 130/85 血糖 6.2'],
+  ])('detects health metrics, not diet intake: %s', (text) => {
+    expect(looksLikeHealthMetricIntent(text)).toBe(true);
+    expect(() => assertDietFoodItemsAllowed(text)).toThrow('invalid_diet_food_items_health_metric');
   });
 
   it.each([
