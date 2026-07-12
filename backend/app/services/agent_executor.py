@@ -5056,6 +5056,32 @@ class AgentExecutor:
                             full_reply += final_text
                             break
 
+                    # 确定性查询直出 (Phase-2 rank2, flag 门控, ships-OFF): 镜像上面记录路径的
+                    # "确定性回复 + 跳过合成轮 break"。只对 fast-route 的**只读**查询回合 (非记录):
+                    # 本轮无写工具、执行过工具, 且本回合所有 health_query 结果都能被 top-5 维度
+                    # 格式化器覆盖 (且无安全告警后缀) → 从真实 tool result 渲染人话读数并 break,
+                    # 跳过强模型合成轮。任一未覆盖维度/写工具/安全后缀 → 短路返回 None,
+                    # fall-open 落到下方 continue 走正常合成 (fail-open: 宁可慢而对)。
+                    if (
+                        settings.deterministic_query_reply
+                        and self._fast_route_simple_turn
+                        and not self._prefer_fast_record_model
+                        and not _round_executed_write_tool
+                        and tool_executed_count > 0
+                    ):
+                        from app.services import query_readouts
+
+                        deterministic_query_text = query_readouts.deterministic_query_reply(messages)
+                        if deterministic_query_text:
+                            for i in range(0, len(deterministic_query_text), 20):
+                                chunk = deterministic_query_text[i:i + 20]
+                                yield {"event": "token", "data": {"content": chunk}}
+                            full_reply += deterministic_query_text
+                            # 最终答案路径 → finish_reason 对齐 'stop' (completion_status → complete),
+                            # 不留工具轮的 'tool_calls' 陈值 (镜像 rank7 passthrough 收尾)。
+                            final_finish_reason = "stop"
+                            break
+
                     # 继续循环让模型处理 tool_result
                     continue
 
