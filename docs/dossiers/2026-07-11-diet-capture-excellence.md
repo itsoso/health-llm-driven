@@ -22,6 +22,7 @@
 
 ## S1 · Discovery（现状勘察）
 
+- 研发方式锁定：本改造必须按 Agent Native、Mobile First 进行。Mobile 是小巴对话链路里的高频 capture surface，不是独立饮食管理应用；相机、相册、文字、语音最终都要回到同一个 pending draft / confirmed DietRecord / Agent follow-up 链路。
 - 已有可复用：
   - `mobile/app/diet.tsx` 已有拍照 -> 识别 -> 草稿 -> 人工确认 -> 写入状态流。
   - `backend/app/services/ai/food_recognition.py` 已输出结构化食物、份量、宏量营养和视觉置信度。
@@ -52,6 +53,7 @@
 - 链接：`docs/prd/2026-07-11-diet-capture-excellence.md`
 - 引用权威：R5 Food Voice Capture、R10 Mobile 主体验、R4 确定性写入边界。
 - 边界：不做诊断、处方、自动写入、食物秤级精度承诺或微信私有 SDK。
+- Agent Native / Mobile First：端上只做一拍/一选/一句话到可解释草稿和确认；确认后的结构化事实进入小巴上下文，由 Agent 负责全天饮食、热量差额、下一餐建议、睡眠/运动联动和分享解释。禁止新增脱离小巴上下文的并行分析或并行写入路径。
 - 未决问题：无阻塞问题；外部食物数据库和分享模版 A/B 属后续增量。
 
 ## S3 · 规划
@@ -81,6 +83,7 @@
 - [x] T5.4 视觉模型升级、非思考结构化识别与延迟基准（backend deploy）
 - [x] T5.5 单图相册降级、照片清洗信任边界与空闲态 Capture FAB（OTA）
 - [ ] T6 模拟器视觉、真机微信/小红书、生产数据闭环验收
+- Agent Native 验收约束：每个新增 Mobile 饮食入口都必须证明三件事：Agent 可引用 pending draft 或 confirmed DietRecord；确认成功必须有 `diet_record_id` 回执；用户能在小巴对话里继续追问、修正或查看全天影响。
 - 并发检查：2026-07-11 `origin/main` 与当前干净集成 worktree 一致；原始用户工作区不纳入暂存。
 
 ## S5 · 实现

@@ -10,6 +10,8 @@
 
 Build one explainable, manual-confirm, idempotent meal capture pipeline and a privacy-safe 3:4 image share artifact.
 
+This feature is an Agent Native, Mobile First capture path. Camera, library, text and voice are input modalities for the same Xiaoba conversation chain, not separate product silos. A valid implementation must leave the Agent with enough confirmed context to explain the meal, answer follow-up questions, update daily progress and propose the next action.
+
 ## 2. Problem
 
 Photo recognition currently exposes a merged summary and model-estimated macros without applying the existing reviewed food table. The same photo payload can be transferred twice, production has no usable recognition latency samples, and social sharing is plain text rather than a desirable image artifact.
@@ -67,7 +69,8 @@ camera/library/text/voice -> candidate foods -> deterministic calibration -> vis
 
 | Surface | Responsibility | Contract |
 |---|---|---|
-| Mobile | Capture, explain, correct, confirm and share | Never show persisted success without record id |
+| Mobile | Capture, explain, correct, confirm and share | Never show persisted success without record id; no standalone analysis path detached from Xiaoba |
+| Agent Conversation | Preserve context, follow up, compare against today/yesterday and suggest next action | Must consume confirmed DietRecord facts or pending draft context, not unconfirmed guesses as truth |
 | Backend | Sanitize, calibrate, persist and measure | Owner isolation and idempotency required |
 | Watch/Rokid | Reuse structured draft later | No automatic write |
 
@@ -177,6 +180,10 @@ Then it does not request broad photo-library access before the user explicitly s
 Given a backend-sanitized photo candidate contains a food name such as "橙子片"
 When Mobile opens the photo draft
 Then the generic character "片" is not reclassified as medication while text, voice and external drafts keep the Mobile intake guard
+
+Given any diet entry starts from camera, library, text or voice on Mobile
+When the user confirms or asks a follow-up
+Then the Agent conversation can reference the pending draft or confirmed DietRecord, and Mobile does not create a second detached analysis or record source
 
 Given photo selection, recognition, correction, confirmation or saving is active
 When the diet screen renders capture controls
