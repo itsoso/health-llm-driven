@@ -430,7 +430,7 @@ describe('DietShareCard', () => {
           height: 1440 / PixelRatio.get(),
         }),
       );
-      expect(mockRequestPermissionsAsync).toHaveBeenCalledTimes(1);
+      expect(mockRequestPermissionsAsync).toHaveBeenCalledWith(true);
       expect(mockSaveToLibraryAsync).toHaveBeenCalledWith('file:///meal-share.png');
       expect(onShareTerminal).toHaveBeenCalledWith(expect.objectContaining({
         phase: 'completed',
@@ -459,7 +459,7 @@ describe('DietShareCard', () => {
     fireEvent.press(getByText('保存到相册'));
 
     await waitFor(() => {
-      expect(mockRequestPermissionsAsync).toHaveBeenCalledTimes(1);
+      expect(mockRequestPermissionsAsync).toHaveBeenCalledWith(true);
       expect(mockCaptureRef).not.toHaveBeenCalled();
       expect(mockSaveToLibraryAsync).not.toHaveBeenCalled();
       expect(onShareTerminal).toHaveBeenCalledWith(expect.objectContaining({

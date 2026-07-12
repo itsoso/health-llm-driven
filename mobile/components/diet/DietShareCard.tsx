@@ -839,7 +839,7 @@ export function DietShareSheet({
     let captureUri: string | null = null;
     setSharing(true);
     try {
-      const permission = await MediaLibrary.requestPermissionsAsync();
+      const permission = await MediaLibrary.requestPermissionsAsync(true);
       if (!permission.granted && permission.status !== 'granted') {
         onShareTerminal?.({
           phase: 'failed',
