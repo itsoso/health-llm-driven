@@ -141,6 +141,35 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('keeps pending nutrition share cards and captions polished without placeholder dashes', async () => {
+    const pendingRecord: DietRecord = {
+      ...record,
+      source: 'ai_estimate',
+      calories: null,
+      protein: null,
+      carbs: null,
+      fat: null,
+      fiber: null,
+    };
+    const { getAllByText, getByText, queryByText } = render(
+      <DietShareSheet
+        visible
+        record={pendingRecord}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(getAllByText('营养估算中').length).toBeGreaterThan(0);
+    expect(queryByText('--')).toBeNull();
+
+    fireEvent.press(getByText('复制小红书文案'));
+    await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养估算中，稍后可继续复盘'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('--'));
+    });
+  });
+
   it('captures exactly 1080x1440 and opens the system image share sheet', async () => {
     const onShareTerminal = jest.fn();
     const { getByText } = render(

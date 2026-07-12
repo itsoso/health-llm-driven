@@ -53,6 +53,14 @@ function metric(value: number | null | undefined, precision = 0): string {
   return `${Math.round(value * factor) / factor}`;
 }
 
+function hasMetric(value: number | null | undefined): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function hasAnyMacro(record: DietRecord): boolean {
+  return [record.protein, record.carbs, record.fat].some(hasMetric);
+}
+
 function nutritionSourceLabel(source?: string | null): string {
   if (!source || source === 'ai_estimate' || source === 'photo') return '智能估算';
   if (source === 'manual' || source === 'user_corrected') return '手动确认';
@@ -88,9 +96,23 @@ function buildDietShareCaptionStatusLine(highlights: string[]): string {
 
 function buildDietShareDataDisclosure(record: DietRecord): string {
   const sourceLabel = nutritionSourceLabel(record.source);
+  if (!hasMetric(record.calories) && !hasAnyMacro(record)) return '营养数据: 估算中，稍后可继续复盘';
   if (sourceLabel === '智能估算') return '营养数据: 智能估算，已确认，可继续复盘';
   if (sourceLabel === '手动确认') return '营养数据: 手动确认，可继续复盘';
   return `营养数据: ${sourceLabel}，已确认，可继续复盘`;
+}
+
+function buildDietShareMacroLine(record: DietRecord, style: 'compact' | 'sentence'): string {
+  const parts = [
+    hasMetric(record.calories) ? `热量 ${metric(record.calories)} kcal` : null,
+    hasMetric(record.protein) ? `蛋白质 ${metric(record.protein)}g` : null,
+    hasMetric(record.carbs) ? `碳水 ${metric(record.carbs)}g` : null,
+    hasMetric(record.fat) ? `脂肪 ${metric(record.fat, 1)}g` : null,
+  ].filter((part): part is string => Boolean(part));
+  if (parts.length === 0) return '营养估算中，稍后可继续复盘';
+  return style === 'sentence'
+    ? `这一餐约 ${parts.join('，')}。`
+    : parts.join(' · ');
 }
 
 export function buildDietShareCaption(record: DietRecord, dateLabel: string): string {
@@ -102,7 +124,7 @@ export function buildDietShareCaption(record: DietRecord, dateLabel: string): st
     headline,
     `${mealLabel}: ${record.food_items}`,
     buildDietShareCaptionStatusLine(highlights),
-    `热量 ${metric(record.calories)} kcal · 蛋白质 ${metric(record.protein)}g · 碳水 ${metric(record.carbs)}g · 脂肪 ${metric(record.fat, 1)}g`,
+    buildDietShareMacroLine(record, 'compact'),
   ];
   if (highlights.length > 0) lines.push(`亮点: ${highlights.join(' / ')}`);
   if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g`);
@@ -120,7 +142,7 @@ export function buildDietShareMomentsCaption(record: DietRecord, dateLabel: stri
     `${dateLabel}，${headline}。`,
     `${mealLabel}: ${record.food_items}`,
     buildDietShareCaptionStatusLine(highlights),
-    `这一餐约 ${metric(record.calories)} kcal，蛋白质 ${metric(record.protein)}g，碳水 ${metric(record.carbs)}g，脂肪 ${metric(record.fat, 1)}g。`,
+    buildDietShareMacroLine(record, 'sentence'),
   ];
   if (highlights.length > 0) lines.push(`亮点: ${highlights.join(' / ')}`);
   if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g。`);
@@ -159,6 +181,8 @@ export default function DietShareCard({
   const [imageFailed, setImageFailed] = useState(false);
   const showImage = Boolean(imageSource) && !imageFailed && !forceImageFallback;
   const calories = metric(record.calories);
+  const hasCalories = hasMetric(record.calories);
+  const hasMacros = hasAnyMacro(record);
   const sourceLabel = nutritionSourceLabel(record.source);
   const headline = buildDietShareHeadline(record);
   const highlights = buildDietShareHighlights(record);
@@ -194,10 +218,14 @@ export default function DietShareCard({
         <View style={styles.metricHero}>
           <View>
             <Text style={styles.heroLabel}>{MEAL_LABEL[record.meal_type] ?? '餐食'}能量</Text>
-            <View style={styles.heroMetricRow}>
-              <Text style={styles.heroMetric}>{calories}</Text>
-              <Text style={styles.heroUnit}>kcal</Text>
-            </View>
+            {hasCalories ? (
+              <View style={styles.heroMetricRow}>
+                <Text style={styles.heroMetric}>{calories}</Text>
+                <Text style={styles.heroUnit}>kcal</Text>
+              </View>
+            ) : (
+              <Text style={styles.pendingHeroMetric}>营养估算中</Text>
+            )}
           </View>
           <View style={styles.heroBars}>
             <View style={[styles.heroBar, { backgroundColor: '#F26945', width: '92%' }]} />
@@ -231,11 +259,18 @@ export default function DietShareCard({
           ) : null}
         </View>
 
-        <View style={styles.macroGrid}>
-          <ShareMacro label="蛋白质" value={`${metric(record.protein)}g`} color="#E34F6F" />
-          <ShareMacro label="碳水" value={`${metric(record.carbs)}g`} color={C.blue500} />
-          <ShareMacro label="脂肪" value={`${metric(record.fat, 1)}g`} color="#D18B1D" />
-        </View>
+        {hasMacros ? (
+          <View style={styles.macroGrid}>
+            <ShareMacro label="蛋白质" value={hasMetric(record.protein) ? `${metric(record.protein)}g` : '估算中'} color="#E34F6F" />
+            <ShareMacro label="碳水" value={hasMetric(record.carbs) ? `${metric(record.carbs)}g` : '估算中'} color={C.blue500} />
+            <ShareMacro label="脂肪" value={hasMetric(record.fat) ? `${metric(record.fat, 1)}g` : '估算中'} color="#D18B1D" />
+          </View>
+        ) : (
+          <View style={styles.pendingMacroPanel}>
+            <Text style={styles.pendingMacroTitle}>营养估算中</Text>
+            <Text style={styles.pendingMacroText}>确认记录已保存，热量和三大营养会回填后用于复盘。</Text>
+          </View>
+        )}
 
         <View style={styles.sourceRow}>
           <Ionicons
@@ -566,6 +601,7 @@ const styles = StyleSheet.create({
   heroMetricRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 7, marginTop: 4 },
   heroMetric: { fontFamily: revaFonts.mono, fontSize: 48, lineHeight: 52, color: C.focusInk1, fontWeight: '600' },
   heroUnit: { fontFamily: revaFonts.mono, fontSize: 12, color: '#F6A184', marginBottom: 8 },
+  pendingHeroMetric: { fontFamily: revaFonts.sans, fontSize: 24, lineHeight: 31, color: C.focusInk1, fontWeight: '900', marginTop: 10 },
   heroBars: { width: 80, gap: 9, alignItems: 'flex-end' },
   heroBar: { height: 5, borderRadius: 2 },
   cardBody: { flex: 1, paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12 },
@@ -599,6 +635,15 @@ const styles = StyleSheet.create({
   macroAccent: { width: 18, height: 3, borderRadius: 2, marginBottom: 6 },
   macroValue: { fontFamily: revaFonts.mono, fontSize: 15, color: C.ink1, fontWeight: '600' },
   macroLabel: { fontFamily: revaFonts.sans, fontSize: 9, color: C.ink3, marginTop: 2 },
+  pendingMacroPanel: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    marginTop: 14,
+    paddingVertical: 12,
+  },
+  pendingMacroTitle: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink1, fontWeight: '900' },
+  pendingMacroText: { fontFamily: revaFonts.sans, fontSize: 10, lineHeight: 15, color: C.ink3, marginTop: 4 },
   sourceRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 11 },
   sourceText: { fontFamily: revaFonts.sans, fontSize: 10, fontWeight: '800' },
   fiberText: { fontFamily: revaFonts.mono, fontSize: 9, color: C.ink3, marginLeft: 'auto' },
