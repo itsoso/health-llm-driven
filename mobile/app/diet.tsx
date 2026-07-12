@@ -74,6 +74,7 @@ const BUSY_PHOTO_CAPTURE_STAGES = new Set<PhotoCaptureStage>([
   'recognizing',
   'saving',
 ]);
+const PHOTO_RECOGNITION_SLOW_MS = 6000;
 
 const NON_DIET_DRAFT_ALERT = {
   title: '这不是饮食记录',
@@ -316,6 +317,8 @@ export default function DietScreen() {
   const [draftEstimateSource, setDraftEstimateSource] = useState<EstimateSource | null>(null);
   const [quickDraft, setQuickDraft] = useState<DietQuickDraft | null>(null);
   const [photoCaptureStage, setPhotoCaptureStage] = useState<PhotoCaptureStage>('idle');
+  const [photoRecognitionSlow, setPhotoRecognitionSlow] = useState(false);
+  const photoRecognitionSlowRef = useRef(false);
   const [quickDraftSaving, setQuickDraftSaving] = useState(false);
   const [shareRecord, setShareRecord] = useState<DietRecord | null>(null);
   const [photoDraftRestoreReady, setPhotoDraftRestoreReady] = useState(false);
@@ -359,6 +362,21 @@ export default function DietScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     toast.show(toastMessage, 'success');
   }, [authUserId, toast]);
+
+  useEffect(() => {
+    if (photoCaptureStage !== 'recognizing') {
+      if (photoRecognitionSlowRef.current) {
+        photoRecognitionSlowRef.current = false;
+        setPhotoRecognitionSlow(false);
+      }
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      photoRecognitionSlowRef.current = true;
+      setPhotoRecognitionSlow(true);
+    }, PHOTO_RECOGNITION_SLOW_MS);
+    return () => clearTimeout(timer);
+  }, [photoCaptureStage]);
 
   useEffect(() => {
     let active = true;
@@ -1045,7 +1063,7 @@ export default function DietScreen() {
         )}
 
         {!showForm && !quickDraft && photoCaptureBusy && (
-          <PhotoCaptureStatusCard stage={photoCaptureStage} />
+          <PhotoCaptureStatusCard stage={photoCaptureStage} slowRecognition={photoRecognitionSlow} />
         )}
 
         {quickDraft && !showForm && (
@@ -1187,7 +1205,13 @@ function NutriPill({ label, value, unit, color }: { label: string; value: string
   );
 }
 
-function PhotoCaptureStatusCard({ stage }: { stage: PhotoCaptureStage }) {
+function PhotoCaptureStatusCard({
+  stage,
+  slowRecognition = false,
+}: {
+  stage: PhotoCaptureStage;
+  slowRecognition?: boolean;
+}) {
   const label = stage === 'saving'
     ? '正在保存饮食'
     : stage === 'capturing'
@@ -1199,6 +1223,8 @@ function PhotoCaptureStatusCard({ stage }: { stage: PhotoCaptureStage }) {
         : '正在识别餐食';
   const detail = stage === 'saving'
     ? '保存成功后会立即更新今日饮食进度。'
+    : slowRecognition && stage === 'recognizing'
+      ? '仍在识别照片；完成后会先给你确认草稿，不会自动写入。'
     : '识别完成后先给你确认草稿，不会自动写入。';
   return (
     <View style={styles.photoStatusCard}>

@@ -704,6 +704,54 @@ describe('DietScreen capture deeplink', () => {
     });
   });
 
+  it('reassures the user when meal photo recognition takes longer', async () => {
+    jest.useFakeTimers();
+    try {
+      const dietService = require('../../services/diet');
+      mockRouteParams.capture = 'photo';
+      let resolveRecognition: (value: any) => void = () => {};
+      const recognitionPromise = new Promise((resolve) => {
+        resolveRecognition = resolve;
+      });
+      (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
+        canceled: false,
+        assets: [{ base64: 'photo-base64' }],
+      });
+      dietService.recognizeFood.mockReturnValueOnce(recognitionPromise);
+
+      const { getByText } = render(<DietScreen />);
+
+      await waitFor(() => {
+        expect(getByText('正在识别餐食')).toBeTruthy();
+      });
+
+      act(() => {
+        jest.advanceTimersByTime(6500);
+      });
+
+      await waitFor(() => {
+        expect(getByText('仍在识别照片；完成后会先给你确认草稿，不会自动写入。')).toBeTruthy();
+      });
+
+      resolveRecognition({
+        success: true,
+        foods: [{ name: '煎牛肉能量碗', quantity: null }],
+        meal_description: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
+        total_calories: 770,
+        total_protein: 30,
+        total_carbs: 70,
+        total_fat: 17,
+        error: null,
+      });
+
+      await waitFor(() => {
+        expect(getByText('待确认饮食')).toBeTruthy();
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('shows explainable per-food sources and flags uncertain photo portions', async () => {
     const dietService = require('../../services/diet');
     mockRouteParams.capture = 'photo';
