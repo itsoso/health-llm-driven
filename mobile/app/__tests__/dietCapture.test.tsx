@@ -1246,6 +1246,37 @@ describe('DietScreen capture deeplink', () => {
     expect(mockPushChatWithContext).not.toHaveBeenCalled();
   });
 
+  it('opens the premium share preview for a saved record deep linked from Agent chat', async () => {
+    mockRouteParams.share_record_id = '88';
+    mockRouteParams.return_to = 'chat';
+    mockDailyMeals.push({
+      id: 88,
+      user_id: 1,
+      record_date: '2026-07-11',
+      meal_type: 'lunch',
+      food_items: '牛肉面',
+      source: 'ai_estimate',
+      calories: 620,
+      protein: 28,
+      carbs: 78,
+      fat: 18,
+      fiber: 4,
+      alcohol_units: null,
+      image_url: null,
+      notes: null,
+      health_tips: null,
+    });
+
+    const { getAllByText, getByText } = render(<DietScreen />);
+
+    await waitFor(() => {
+      expect(getByText('分享这一餐')).toBeTruthy();
+      expect(getByText('发微信/朋友圈')).toBeTruthy();
+      expect(getByText('发小红书')).toBeTruthy();
+      expect(getAllByText('牛肉面').length).toBeGreaterThan(0);
+    });
+  });
+
   it('keeps the just-captured meal photo in the immediate share preview when the confirm response has no image url', async () => {
     const dietService = require('../../services/diet');
     mockRouteParams.capture = 'photo';

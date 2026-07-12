@@ -1003,7 +1003,41 @@ describe('ChatScreen', () => {
     });
     expect(nextMessages[nextMessages.length - 1].content).toContain('已保存午餐 · 620 kcal');
     expect(nextMessages[nextMessages.length - 1].content).toContain('下条消息会基于这条记录和今日饮食记录回答');
-    expect(nextMessages[nextMessages.length - 1].content).toContain('去饮食页生成微信/小红书分享图');
+    expect(nextMessages[nextMessages.length - 1].content).toContain('可直接晒图到微信/小红书');
+  });
+
+  it('opens the saved diet share image from the agent context banner', async () => {
+    mockMessages = [{
+      id: 'diet-card-share',
+      role: 'assistant',
+      content: '',
+      cardType: 'diet_draft',
+      cardData: { food_items: '牛肉面', meal_type: 'lunch' },
+      cardActionResult: {
+        status: 'completed',
+        nutrition_status: 'estimated',
+        record: {
+          id: 88,
+          record_date: '2026-07-09',
+          meal_type: 'lunch',
+          food_items: '牛肉面',
+          calories: 620,
+          protein: 28,
+          carbs: 78,
+          fat: 18,
+        },
+      },
+    }];
+
+    const { getByLabelText, getByText } = render(<ChatScreen />);
+    await act(async () => {
+      fireEvent(getByLabelText('complete-card-action-diet-card-share'), 'responderRelease');
+    });
+
+    expect(getByText('晒图')).toBeTruthy();
+    fireEvent.press(getByText('晒图'));
+
+    expect(mockPush).toHaveBeenCalledWith('/diet?share_record_id=88&return_to=chat&date=2026-07-09');
   });
 
   it('shows saved diet context source after a diet card action completes', async () => {

@@ -52,6 +52,8 @@ const EMPTY_MEALS: DietRecord[] = [];
 type DietRouteParams = {
   capture?: string | string[];
   return_to?: string | string[];
+  date?: string | string[];
+  share_record_id?: string | string[];
   draft?: string | string[];
   meal_type?: string | string[];
   food_items?: string | string[];
@@ -121,6 +123,18 @@ function readRouteNumber(value: string | string[] | undefined): number | undefin
 function readRouteMealType(value: string | string[] | undefined): DietRecordCreate['meal_type'] | undefined {
   const raw = readRouteText(value);
   return raw && VALID_MEAL_TYPES.has(raw) ? raw as DietRecordCreate['meal_type'] : undefined;
+}
+
+function readRouteDate(value: string | string[] | undefined): string | undefined {
+  const raw = readRouteText(value);
+  return raw && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : undefined;
+}
+
+function readRoutePositiveInt(value: string | string[] | undefined): number | undefined {
+  const raw = readRouteText(value);
+  if (!raw || !/^\d+$/.test(raw)) return undefined;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function needsNutritionBackfill(record: Partial<DietRecordCreate>): boolean {
@@ -400,6 +414,7 @@ export default function DietScreen() {
   const [quickDraftSaving, setQuickDraftSaving] = useState(false);
   const [shareRecord, setShareRecord] = useState<DietRecord | null>(null);
   const [shareImageUriOverride, setShareImageUriOverride] = useState<string | null>(null);
+  const shareRecordParamConsumedRef = useRef<string | null>(null);
   const [photoDraftRestoreReady, setPhotoDraftRestoreReady] = useState(false);
   const quickDraftSavingRef = useRef(false);
   const activeDraftRef = useRef(false);
@@ -1065,6 +1080,13 @@ export default function DietScreen() {
     params.protein,
   ]);
 
+  useEffect(() => {
+    const routeDate = readRouteDate(params.date);
+    if (routeDate && routeDate !== date) {
+      setDate(routeDate);
+    }
+  }, [date, params.date]);
+
   // 进入/刷新时对账: 任何 calories==null 的当日记录 (含上次中途退出卡住的),
   // 若本会话尚未跑过 → 用已知来源或文字兜底自动重试一次. 不让一餐永远空着.
   useEffect(() => {
@@ -1081,6 +1103,17 @@ export default function DietScreen() {
   }, [daily?.meals, date, estimate, pendingIds, failedIds]);
 
   const meals = daily?.meals ?? EMPTY_MEALS;
+
+  useEffect(() => {
+    const targetId = readRoutePositiveInt(params.share_record_id);
+    if (!targetId || shareRecordParamConsumedRef.current === String(targetId)) return;
+    const record = meals.find(item => item.id === targetId);
+    if (!record) return;
+    shareRecordParamConsumedRef.current = String(targetId);
+    setShareImageUriOverride(null);
+    setShareRecord(record);
+  }, [meals, params.share_record_id]);
+
   const totals = useMemo(() => computeDietTotals(meals), [meals]);
   const isToday = date === todayStr();
   const dateLabel = isToday ? '今天' : new Date(date).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', weekday: 'short' });
