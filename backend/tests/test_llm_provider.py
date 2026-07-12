@@ -289,6 +289,11 @@ class TestOpenAIProvider:
 
     def test_lazy_client_init(self):
         """懒加载 OpenAI 客户端"""
+        # module 级连接复用池 (Phase-2 rank4) 现在跨 provider 实例 memoize 底层客户端;
+        # 先清空以让本用例对 "构造只发生一次" 的断言不受其它用例污染。
+        from app.services.llm.providers.openai_provider import reset_client_cache
+        reset_client_cache()
+
         p = OpenAIProvider(api_key="sk-test", base_url="https://proxy.com/v1")
         assert p._client is None
 

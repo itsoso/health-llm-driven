@@ -1,11 +1,59 @@
 """OpenAI 兼容 Provider - 支持 OpenAI、DeepSeek、vLLM 等 OpenAI API 兼容服务"""
 import asyncio
 import logging
+import threading
 from typing import AsyncIterator, Dict, Any, List, Optional, Union
 
 from app.services.llm.base import LLMProvider
 
 logger = logging.getLogger(__name__)
+
+
+# ── 底层 client 连接复用池 (Phase-2 rank4: 消灭 per-round TLS 握手税) ──────────────
+# create_provider_for_user 每回合新建 provider → 过去每回合也新建一个 OpenAI 客户端 →
+# 新 httpx 连接池 → 每轮付一次 TCP+TLS 握手 (~50-300ms × 2-3 轮/回合)。这里把**原始
+# 客户端 / 连接池**按 client 级 kwarg (base_url + api_key + 未来任何差异项) 做 module
+# 级 memoize:同 (base_url, api_key) 的 provider 复用同一个底层客户端和连接池,握手只付
+# 一次。provider WRAPPER (usage_tracker/pii_scrub/per-user 参数) 仍 per-call 创建,
+# 路由在**请求参数** (model=) 不在连接层 —— "用户切换立即生效" 契约不动。
+# OpenAI / AsyncOpenAI 客户端跨协程/线程共享是安全的 (官方保证)。
+_SYNC_CLIENT_CACHE: Dict[tuple, Any] = {}
+_CLIENT_CACHE_LOCK = threading.Lock()
+
+
+def _client_cache_key(client_kwargs: Dict[str, Any]) -> tuple:
+    """稳定 memo key:client 级 kwarg 全参与 (排序去顺序敏感)。
+
+    只有构造底层客户端的参数进 key (api_key / base_url / 任何未来 client 级 kwarg)。
+    `model` 不是 client 级参数 (它随每次请求传),故同 key 的不同模型共享连接。
+    """
+    return tuple(sorted((str(k), str(v)) for k, v in client_kwargs.items()))
+
+
+def _get_shared_sync_client(client_kwargs: Dict[str, Any]):
+    """按 client_kwargs memoize 一个共享的同步 OpenAI 客户端 (含 httpx 连接池)。"""
+    key = _client_cache_key(client_kwargs)
+    client = _SYNC_CLIENT_CACHE.get(key)
+    if client is not None:
+        return client
+    with _CLIENT_CACHE_LOCK:
+        client = _SYNC_CLIENT_CACHE.get(key)
+        if client is None:
+            from openai import OpenAI
+
+            client = OpenAI(**client_kwargs)
+            _SYNC_CLIENT_CACHE[key] = client
+            logger.info(
+                "[OpenAI Provider] 新建共享同步客户端 base_url=%s (连接池复用)",
+                client_kwargs.get("base_url", "default"),
+            )
+    return client
+
+
+def reset_client_cache() -> None:
+    """清空 module 级 client 复用池 (测试隔离用;生产无需调用)。"""
+    with _CLIENT_CACHE_LOCK:
+        _SYNC_CLIENT_CACHE.clear()
 
 
 def _report_usage_from_response(usage: Any) -> None:
@@ -106,19 +154,17 @@ class OpenAIProvider(LLMProvider):
         self.model = model
         self._client = None  # 懒加载
 
-    def _get_client(self):
-        """懒加载 OpenAI 客户端"""
-        if self._client is None:
-            from openai import OpenAI
+    def _client_kwargs(self) -> Dict[str, Any]:
+        """构造底层客户端的 kwarg (进 memo key 的全部 client 级参数)。"""
+        client_kwargs: Dict[str, Any] = {"api_key": self.api_key}
+        if self.base_url:
+            client_kwargs["base_url"] = self.base_url
+        return client_kwargs
 
-            client_kwargs = {"api_key": self.api_key}
-            if self.base_url:
-                client_kwargs["base_url"] = self.base_url
-            self._client = OpenAI(**client_kwargs)
-            logger.info(
-                f"[OpenAI Provider] 客户端初始化完成, "
-                f"base_url={self.base_url or 'default'}, model={self.model}"
-            )
+    def _get_client(self):
+        """懒加载 OpenAI 客户端 (module 级按 base_url+api_key 复用底层连接池)。"""
+        if self._client is None:
+            self._client = _get_shared_sync_client(self._client_kwargs())
         return self._client
 
     async def chat(
