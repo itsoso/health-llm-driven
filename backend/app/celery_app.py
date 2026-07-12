@@ -185,10 +185,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=4, minute=0),  # 凌晨4点
     },
 
-    # 每日 08:00 推送今日计划提醒
+    # 每日 09:10 推送今日计划提醒: 09:00 quiet-hours floor 后再启动,
+    # 避免 07:00/08:00 附近任何用户可见通知影响睡眠。
     "plan-morning-reminder": {
         "task": "app.tasks.notifications.send_plan_morning_reminder",
-        "schedule": crontab(hour=8, minute=0),
+        "schedule": crontab(hour=9, minute=10),
     },
 
     # 每日 20:00 推送计划进度总结
@@ -221,10 +222,10 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=22, minute=0),
     },
 
-    # 每日 08:30 趋势摘要推送
+    # 每日 09:25 趋势摘要推送: 避开 07:00/08:00 睡眠保护窗口。
     "trend-morning-push": {
         "task": "app.tasks.notifications.send_trend_morning_push",
-        "schedule": crontab(hour=8, minute=30),
+        "schedule": crontab(hour=9, minute=25),
     },
 
     # 每日 09:30 早安健康摘要(等 Garmin 09:01 同步完成后推送)

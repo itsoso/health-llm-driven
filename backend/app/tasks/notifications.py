@@ -357,7 +357,7 @@ def send_custom_notification(user_id: int, title: str, body: str):
 @celery_app.task
 def send_plan_morning_reminder():
     """
-    发送今日计划提醒（每天 08:00 执行）
+    发送今日计划提醒（每天 09:10 执行）
     """
     logger.info("开始发送今日计划提醒")
 
@@ -835,7 +835,7 @@ def daily_trend_analysis():
 @celery_app.task
 def send_trend_morning_push():
     """
-    早间趋势摘要推送（08:30执行）
+    早间趋势摘要推送（09:25 执行）
     推送昨日生成的趋势报告摘要。
     """
     from app.models.health_trend import HealthTrendReport
