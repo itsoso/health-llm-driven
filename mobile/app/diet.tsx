@@ -76,7 +76,7 @@ const BUSY_PHOTO_CAPTURE_STAGES = new Set<PhotoCaptureStage>([
 ]);
 const PHOTO_RECOGNITION_SLOW_MS = 6000;
 const PORTION_REVIEW_ASSISTIVE_HINT = '优先核对食物份量；热量和三大营养会随份量一起修正。';
-const POST_CONFIRM_DIET_REVIEW_PROMPT = '请先查询今天数据库里的所有饮食记录，再结合这条刚保存的饮食记录，汇总全天饮食、总热量和蛋白质/碳水/脂肪，并给出下一餐最小调整建议。不要只凭本页缓存或本轮对话猜测。';
+const POST_CONFIRM_DIET_REVIEW_PROMPT = '请先查询今天数据库里的所有饮食记录，并核验 created_id 对应的刚保存记录是否存在；再结合这条刚保存的饮食记录，汇总全天饮食、总热量和蛋白质/碳水/脂肪，并给出下一餐最小调整建议。如果数据库里查不到这条记录，请明确提示同步失败，不要只凭本页缓存或本轮对话猜测。';
 const PHOTO_CAPTURE_STEPS = [
   { key: 'preparing', label: '优化照片' },
   { key: 'recognizing', label: '识别食物' },
@@ -248,6 +248,34 @@ function buildShareRecordFromConfirmation(created: DietRecord, draft: DietRecord
     health_tips: created.health_tips ?? draft.health_tips ?? null,
     ai_recognized: created.ai_recognized ?? draft.ai_recognized ?? null,
     ai_confidence: created.ai_confidence ?? draft.ai_confidence ?? null,
+  };
+}
+
+function buildPostConfirmDietReviewContext(record: DietRecord) {
+  return {
+    from: 'diet/post_confirm',
+    must_query_database: true,
+    created_id: record.id,
+    verify_record_id: record.id,
+    expected_record: {
+      id: record.id,
+      record_date: record.record_date,
+      meal_type: record.meal_type,
+      food_items: record.food_items,
+    },
+    record: {
+      record_date: record.record_date,
+      meal_type: record.meal_type,
+      food_items: record.food_items,
+      calories: record.calories ?? null,
+      protein: record.protein ?? null,
+      carbs: record.carbs ?? null,
+      fat: record.fat ?? null,
+      fiber: record.fiber ?? null,
+      alcohol_units: record.alcohol_units ?? null,
+      notes: record.notes ?? null,
+      source: record.source ?? null,
+    },
   };
 }
 
@@ -599,6 +627,7 @@ export default function DietScreen() {
       const draftRecord = quickDraft.record;
       if (isPhotoDraft) setPhotoCaptureStage('saving');
       const created = await saveNewDietRecord(draftRecord, quickDraft.source);
+      const confirmedRecord = buildShareRecordFromConfirmation(created, draftRecord);
       if (isPhotoDraft) {
         void emitClientEvent('diet_photo_confirmation_terminal', {
           phase: 'completed',
@@ -607,18 +636,6 @@ export default function DietScreen() {
           corrected: false,
         });
       }
-      const recordContext = {
-        record_date: draftRecord.record_date,
-        meal_type: draftRecord.meal_type,
-        food_items: draftRecord.food_items,
-        calories: draftRecord.calories ?? null,
-        protein: draftRecord.protein ?? null,
-        carbs: draftRecord.carbs ?? null,
-        fat: draftRecord.fat ?? null,
-        fiber: draftRecord.fiber ?? null,
-        alcohol_units: draftRecord.alcohol_units ?? null,
-        notes: draftRecord.notes ?? null,
-      };
       activeDraftRef.current = false;
       setQuickDraft(null);
       setShowForm(false);
@@ -628,12 +645,8 @@ export default function DietScreen() {
       if (isPhotoDraft) setPhotoCaptureStage('saved');
       if (returnToChatAfterConfirm) {
         pushChatWithContext(router, {
-          prompt: '我刚记录了一餐, 请更新今天饮食进度, 并给出下一餐最小建议。',
-          context: {
-            from: 'diet/quick_capture',
-            created_id: created?.id ?? null,
-            record: recordContext,
-          },
+          prompt: POST_CONFIRM_DIET_REVIEW_PROMPT,
+          context: buildPostConfirmDietReviewContext(confirmedRecord),
           badge: '刚记录饮食',
         });
       } else {
@@ -642,7 +655,7 @@ export default function DietScreen() {
             ? quickDraft.source.imageUri ?? null
             : null,
         );
-        setShareRecord(buildShareRecordFromConfirmation(created, draftRecord));
+        setShareRecord(confirmedRecord);
       }
     } catch (error) {
       if (isPhotoDraft) {
@@ -1103,6 +1116,7 @@ export default function DietScreen() {
       prompt: POST_CONFIRM_DIET_REVIEW_PROMPT,
       context: {
         ...baseContext,
+        ...buildPostConfirmDietReviewContext(record),
         just_recorded: {
           id: record.id,
           record_date: record.record_date,

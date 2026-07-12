@@ -1375,11 +1375,13 @@ describe('DietScreen capture deeplink', () => {
       expect(mockPushChatWithContext).toHaveBeenCalledWith(
         expect.objectContaining({ push: expect.any(Function) }),
         expect.objectContaining({
-          prompt: expect.stringContaining('刚记录了一餐'),
+          prompt: expect.stringContaining('请先查询今天数据库里的所有饮食记录'),
           badge: expect.stringContaining('刚记录饮食'),
           context: expect.objectContaining({
-            from: 'diet/quick_capture',
+            from: 'diet/post_confirm',
+            must_query_database: true,
             created_id: 88,
+            verify_record_id: 88,
             record: expect.objectContaining({
               food_items: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
               calories: 770,
@@ -1434,11 +1436,13 @@ describe('DietScreen capture deeplink', () => {
       expect(mockPushChatWithContext).toHaveBeenCalledWith(
         expect.objectContaining({ push: expect.any(Function) }),
         expect.objectContaining({
-          prompt: expect.stringContaining('刚记录了一餐'),
+          prompt: expect.stringContaining('请先查询今天数据库里的所有饮食记录'),
           badge: '刚记录饮食',
           context: expect.objectContaining({
-            from: 'diet/quick_capture',
+            from: 'diet/post_confirm',
+            must_query_database: true,
             created_id: 91,
+            verify_record_id: 91,
             record: expect.objectContaining({
               food_items: '三文鱼能量碗',
               calories: 620,
@@ -1474,10 +1478,12 @@ describe('DietScreen capture deeplink', () => {
       expect(mockPushChatWithContext).toHaveBeenCalledWith(
         expect.objectContaining({ push: expect.any(Function) }),
         expect.objectContaining({
-          prompt: expect.stringContaining('刚记录了一餐'),
+          prompt: expect.stringContaining('请先查询今天数据库里的所有饮食记录'),
           context: expect.objectContaining({
-            from: 'diet/quick_capture',
+            from: 'diet/post_confirm',
+            must_query_database: true,
             created_id: 92,
+            verify_record_id: 92,
             record: expect.objectContaining({
               food_items: '鸡胸肉 200g + 糙米饭一碗',
             }),
@@ -1512,9 +1518,12 @@ describe('DietScreen capture deeplink', () => {
       expect(mockPushChatWithContext).toHaveBeenCalledWith(
         expect.objectContaining({ push: expect.any(Function) }),
         expect.objectContaining({
+          prompt: expect.stringContaining('请先查询今天数据库里的所有饮食记录'),
           context: expect.objectContaining({
-            from: 'diet/quick_capture',
+            from: 'diet/post_confirm',
+            must_query_database: true,
             created_id: 93,
+            verify_record_id: 93,
             record: expect.objectContaining({
               food_items: '晚饭吃了牛肉面',
             }),
