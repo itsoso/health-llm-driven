@@ -814,6 +814,46 @@ describe('DietScreen capture deeplink', () => {
     promptSpy.mockRestore();
   });
 
+  it('opens the premium share preview immediately after a direct quick diet confirmation', async () => {
+    const dietService = require('../../services/diet');
+    dietService.createDietRecord.mockResolvedValueOnce({
+      id: 88,
+      user_id: 1,
+      record_date: '2026-07-11',
+      meal_type: 'lunch',
+      food_items: '鸡胸肉 200g + 糙米饭一碗',
+      source: 'ai_estimate',
+      calories: 560,
+      protein: 67,
+      carbs: 48,
+      fat: 9.2,
+      fiber: 3,
+      alcohol_units: null,
+      image_url: null,
+      notes: null,
+      health_tips: null,
+    });
+    const promptSpy = jest.spyOn(Alert, 'prompt').mockImplementationOnce((_title, _message, callback) => {
+      if (typeof callback === 'function') callback('鸡胸肉 200g + 糙米饭一碗');
+    });
+
+    const { getByTestId, getByText } = render(<DietScreen />);
+    fireEvent.press(getByTestId('diet-fab-text'));
+    await waitFor(() => {
+      expect(getByText('待确认饮食')).toBeTruthy();
+    });
+
+    fireEvent.press(getByText('确认记录'));
+
+    await waitFor(() => {
+      expect(getByText('分享这一餐')).toBeTruthy();
+      expect(getByText('高清 3:4 图片 · 微信与小红书')).toBeTruthy();
+      expect(getByText('复制小红书文案')).toBeTruthy();
+    });
+    expect(mockPushChatWithContext).not.toHaveBeenCalled();
+    promptSpy.mockRestore();
+  });
+
   it('does not submit the same quick draft twice while saving', async () => {
     const dietService = require('../../services/diet');
     let resolveSave: (value: any) => void = () => {};
@@ -864,7 +904,7 @@ describe('DietScreen capture deeplink', () => {
     });
     dietService.createDietRecord.mockResolvedValueOnce({ id: 88 });
 
-    const { getByText } = render(<DietScreen />);
+    const { getByText, queryByText } = render(<DietScreen />);
     await waitFor(() => {
       expect(getByText('待确认饮食')).toBeTruthy();
     });
@@ -904,6 +944,7 @@ describe('DietScreen capture deeplink', () => {
         expect.objectContaining({ phase: 'completed', verified: true, corrected: false }),
       );
     });
+    expect(queryByText('分享这一餐')).toBeNull();
   });
 
   it('returns to chat with diet context after confirming a chat-originated library meal photo draft', async () => {

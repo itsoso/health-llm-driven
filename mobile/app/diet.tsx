@@ -177,6 +177,29 @@ function assertPersistedDietRecord(record: DietRecord): DietRecord {
   return record;
 }
 
+function buildShareRecordFromConfirmation(created: DietRecord, draft: DietRecordCreate): DietRecord {
+  return {
+    id: created.id,
+    user_id: created.user_id ?? 0,
+    record_date: created.record_date ?? draft.record_date,
+    meal_type: created.meal_type ?? draft.meal_type,
+    food_items: created.food_items ?? draft.food_items,
+    food_id: created.food_id ?? draft.food_id ?? null,
+    source: created.source ?? draft.source ?? null,
+    calories: created.calories ?? draft.calories ?? null,
+    protein: created.protein ?? draft.protein ?? null,
+    carbs: created.carbs ?? draft.carbs ?? null,
+    fat: created.fat ?? draft.fat ?? null,
+    fiber: created.fiber ?? draft.fiber ?? null,
+    alcohol_units: created.alcohol_units ?? draft.alcohol_units ?? null,
+    image_url: created.image_url ?? null,
+    notes: created.notes ?? draft.notes ?? null,
+    health_tips: created.health_tips ?? draft.health_tips ?? null,
+    ai_recognized: created.ai_recognized ?? draft.ai_recognized ?? null,
+    ai_confidence: created.ai_confidence ?? draft.ai_confidence ?? null,
+  };
+}
+
 function mergeRevisedDraft(
   original: Partial<DietRecordCreate>,
   revision: DietRecordCreate,
@@ -526,6 +549,8 @@ export default function DietScreen() {
           },
           badge: '刚记录饮食',
         });
+      } else {
+        setShareRecord(buildShareRecordFromConfirmation(created, draftRecord));
       }
     } catch (error) {
       if (isPhotoDraft) {
