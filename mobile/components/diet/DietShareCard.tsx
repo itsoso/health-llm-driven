@@ -148,14 +148,34 @@ function buildDietShareMacroLine(record: DietRecord, style: 'compact' | 'sentenc
     : allParts.join(' · ');
 }
 
+export function compactDietShareFoodItems(foodItems: string, maxChars = 35): string {
+  const normalized = foodItems.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxChars) return normalized;
+
+  const parts = normalized
+    .split(/[、,，]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  let compacted = '';
+  for (const part of parts) {
+    const candidate = compacted ? `${compacted}、${part}` : part;
+    if (candidate.length > maxChars) break;
+    compacted = candidate;
+  }
+
+  if (!compacted) compacted = normalized.slice(0, maxChars).trim();
+  return `${compacted.replace(/[、,，\s]+$/, '')}…`;
+}
+
 export function buildDietShareCaption(record: DietRecord, dateLabel: string): string {
   const mealLabel = MEAL_LABEL[record.meal_type] ?? '餐食';
   const headline = buildDietShareHeadline(record);
   const highlights = buildDietShareHighlights(record);
+  const foodItems = compactDietShareFoodItems(record.food_items);
   const lines = [
     `小巴饮食卡｜${headline}`,
     `今天这餐打卡: ${dateLabel}`,
-    `${mealLabel}: ${record.food_items}`,
+    `${mealLabel}: ${foodItems}`,
     buildDietShareCaptionStatusLine(highlights),
     buildDietShareMacroLine(record, 'compact'),
   ];
@@ -172,9 +192,10 @@ export function buildDietShareMomentsCaption(record: DietRecord, dateLabel: stri
   const mealLabel = MEAL_LABEL[record.meal_type] ?? '餐食';
   const headline = buildDietShareHeadline(record);
   const highlights = buildDietShareHighlights(record);
+  const foodItems = compactDietShareFoodItems(record.food_items);
   const lines = [
     `${dateLabel}，${headline}。`,
-    `${mealLabel}: ${record.food_items}`,
+    `${mealLabel}: ${foodItems}`,
     buildDietShareCaptionStatusLine(highlights),
     buildDietShareMacroLine(record, 'sentence'),
   ];

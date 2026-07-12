@@ -29,6 +29,8 @@ jest.mock('expo-haptics', () => ({
 import DietShareCard, {
   DIET_SHARE_IMAGE_TIMEOUT_MS,
   DietShareSheet,
+  buildDietShareCaption,
+  buildDietShareMomentsCaption,
   dietShareCaptureDimensions,
 } from '../DietShareCard';
 import type { DietRecord } from '../../../services/diet';
@@ -133,6 +135,29 @@ describe('DietShareCard', () => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#高蛋白饮食'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#低脂餐'));
     });
+  });
+
+  it('keeps short meal descriptions unchanged in platform captions', () => {
+    const xhsCaption = buildDietShareCaption(record, '7月11日 · 午餐');
+    const momentsCaption = buildDietShareMomentsCaption(record, '7月11日 · 午餐');
+
+    expect(xhsCaption).toContain('午餐: 鸡胸肉 200g、杂粮饭 1碗');
+    expect(momentsCaption).toContain('午餐: 鸡胸肉 200g、杂粮饭 1碗');
+  });
+
+  it('compacts long meal descriptions for publish-ready captions', () => {
+    const longRecord: DietRecord = {
+      ...record,
+      food_items: '机场国航贵宾厅番茄鸡蛋面一小份、鸭肉三小块、生菜30克、酸奶三分之二杯、蛋黄酥三分之二块、咖啡半杯',
+    };
+
+    const xhsCaption = buildDietShareCaption(longRecord, '7月11日 · 午餐');
+    const momentsCaption = buildDietShareMomentsCaption(longRecord, '7月11日 · 午餐');
+
+    expect(xhsCaption).toContain('午餐: 机场国航贵宾厅番茄鸡蛋面一小份、鸭肉三小块、生菜30克、酸奶三分之二杯…');
+    expect(xhsCaption).not.toContain('蛋黄酥三分之二块');
+    expect(momentsCaption).toContain('午餐: 机场国航贵宾厅番茄鸡蛋面一小份、鸭肉三小块、生菜30克、酸奶三分之二杯…');
+    expect(momentsCaption).not.toContain('咖啡半杯');
   });
 
   it('labels user-corrected nutrition as manually confirmed', () => {
