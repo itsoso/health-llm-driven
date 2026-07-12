@@ -1559,6 +1559,10 @@ public final class AgentChatViewModel {
         case "vision":
             return "识别图片中"
         case "thinking":
+            // 新后端在首 token 前把模型实时推理的清洗片段作为 detail 下发(每 ~1.5s 一条);
+            // 有片段就原样作为 live step(镜像 tool 阶段对 detail 的处理),不加 正在 前缀。
+            // 空 detail(老后端)→ 回退到 round 分级的固定标签(向后兼容)。
+            if !trimmedDetail.isEmpty { return trimmedDetail }
             if let round, round >= 2 { return "整理思路" }
             return "正在思考"
         case "tool":

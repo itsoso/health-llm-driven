@@ -312,6 +312,37 @@ final class AgentStreamClientTests: XCTestCase {
     }
 
     @MainActor
+    func testLiveReasoningSnippetsRollingWindowStaysWithinCap() async {
+        // 新后端在首 token 前把模型实时推理片段作为 thinking.detail 每 ~1.5s 下发一条 ——
+        // 片段每条都不同,会一路 append。滚动窗必须把 live trace 收在 maxLiveThinkingSteps
+        // 以内(丢最旧、留最新),否则长推理流会把列表撑爆。
+        var events: [AgentStreamEvent] = [.start(conversationID: 9)]
+        for i in 1...12 {
+            events.append(.status(stage: "thinking", detail: "推理片段\(i)", round: 1))
+        }
+        // done 不带 thinking_steps(老后端路径)→ 完成时把已封顶的 liveThinkingSteps
+        // 回填进消息,便于在 done 后观测最终封顶结果。
+        events.append(.done(
+            conversationID: 9, messageID: 1,
+            completionStatus: "complete", model: "m", sourcesUsed: [],
+            toolsUsed: [], elapsedMs: nil, llmRounds: nil
+        ))
+        let stream = AsyncThrowingStream<AgentStreamEvent, Error> { continuation in
+            for event in events { continuation.yield(event) }
+            continuation.finish()
+        }
+        let model = AgentChatViewModel(streamService: StaticAgentStreamService(stream: stream))
+        await model.send("分析")
+
+        let steps = model.messages.last(where: { $0.role == .assistant })?.thinkingSteps ?? []
+        XCTAssertEqual(steps.count, AgentChatViewModel.maxLiveThinkingSteps, "12 条片段被滚动窗收到 cap 内")
+        XCTAssertLessThanOrEqual(steps.count, AgentChatViewModel.maxLiveThinkingSteps)
+        XCTAssertEqual(steps.last, "推理片段12", "保留最新片段")
+        XCTAssertEqual(steps.first, "推理片段5", "丢最旧:12 条留最后 8 条 → 从第 5 条起")
+        XCTAssertFalse(steps.contains("推理片段1"), "最旧片段已被滚动窗淘汰")
+    }
+
+    @MainActor
     func testViewModelHoldsToolStatusBeforeFirstToken() async throws {
         // 在 stream 尚未收到首 token / done 之前观测:tool 阶段的 status 已被映射到
         // liveStatusText(证明 status 立即生效、未被 60ms token 节流吞掉)。用一个

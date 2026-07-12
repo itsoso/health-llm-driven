@@ -104,6 +104,24 @@ final class ThinkingProcessTraceTests: XCTestCase {
         XCTAssertNil(AgentChatViewModel.liveThinkingStep(stage: "unknown_stage", detail: nil, round: nil))
     }
 
+    func testLiveThinkingStepThinkingUsesRealtimeReasoningDetail() {
+        // 新后端在首 token 前把模型实时推理的清洗片段作为 thinking.detail 下发(每 ~1.5s
+        // 一条)。有片段就原样作为 live step —— 镜像 tool 阶段对 detail 的处理,verbatim,
+        // 不加 正在 前缀(片段本身已是完整短语)。
+        XCTAssertEqual(
+            AgentChatViewModel.liveThinkingStep(stage: "thinking", detail: "先看最近的睡眠与压力趋势", round: 1),
+            "先看最近的睡眠与压力趋势"
+        )
+        // round≥2 也优先用片段(有真实推理就显示真实推理,不退回固定「整理思路」)。
+        XCTAssertEqual(
+            AgentChatViewModel.liveThinkingStep(stage: "thinking", detail: "再对比训练负荷", round: 2),
+            "再对比训练负荷"
+        )
+        // 空白 / nil detail(老后端)→ 回退到 round 分级的固定标签(向后兼容,行为不变)。
+        XCTAssertEqual(AgentChatViewModel.liveThinkingStep(stage: "thinking", detail: "   ", round: 1), "正在思考")
+        XCTAssertEqual(AgentChatViewModel.liveThinkingStep(stage: "thinking", detail: nil, round: 2), "整理思路")
+    }
+
     // MARK: - renderedTranscript wiring (live streaming + persisted finished)
 
     @MainActor
