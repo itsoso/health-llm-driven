@@ -322,6 +322,30 @@ describe('DietShareCard', () => {
     await waitFor(() => expect(mockCaptureRef).toHaveBeenCalled());
   });
 
+  it('reports successful local-photo shares as photo shares even before the server image url arrives', async () => {
+    const onShareTerminal = jest.fn();
+    const { getByLabelText, getByTestId } = render(
+      <DietShareSheet
+        visible
+        record={{ ...record, image_url: null }}
+        dateLabel="7月11日 · 午餐"
+        imageSource={{ uri: 'file:///fresh-camera-meal.heic' }}
+        onClose={jest.fn()}
+        onShareTerminal={onShareTerminal}
+      />,
+    );
+
+    fireEvent(getByTestId('diet-share-image'), 'load');
+    fireEvent.press(getByLabelText('分享饮食图片'));
+
+    await waitFor(() => {
+      expect(onShareTerminal).toHaveBeenCalledWith(expect.objectContaining({
+        phase: 'completed',
+        has_photo: true,
+      }));
+    });
+  });
+
   it('falls back to privacy-safe text sharing when image sharing is unavailable', async () => {
     const Sharing = require('expo-sharing');
     Sharing.isAvailableAsync.mockResolvedValueOnce(false);

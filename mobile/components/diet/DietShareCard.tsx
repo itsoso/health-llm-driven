@@ -356,6 +356,7 @@ export function DietShareSheet({
   const [imageReady, setImageReady] = useState(!imageSource);
   const [imageTimedOut, setImageTimedOut] = useState(false);
   const [copiedCaption, setCopiedCaption] = useState<'moments' | 'xiaohongshu' | null>(null);
+  const shareHasPhoto = Boolean(imageSource) && !imageTimedOut;
 
   React.useEffect(() => {
     setImageReady(!imageSource);
@@ -426,7 +427,7 @@ export function DietShareSheet({
       onShareTerminal?.({
         phase: 'completed',
         duration_ms: Date.now() - startedAt,
-        has_photo: Boolean(record.image_url),
+        has_photo: shareHasPhoto,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
@@ -441,7 +442,7 @@ export function DietShareSheet({
         onShareTerminal?.({
           phase: 'failed',
           duration_ms: Date.now() - startedAt,
-          has_photo: Boolean(record.image_url),
+          has_photo: shareHasPhoto,
           error_code: 'image_share_failed',
         });
         Alert.alert('分享失败', '图片和文字分享均不可用，请稍后重试');
