@@ -458,6 +458,37 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('labels image-share failures as caption fallback instead of completed image share', async () => {
+    mockShareAsync.mockRejectedValueOnce(new Error('share sheet failed'));
+    const onShareTerminal = jest.fn();
+    const { getByText } = render(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+        onShareTerminal={onShareTerminal}
+      />,
+    );
+
+    fireEvent.press(getByText('发小红书'));
+
+    await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#小巴记录'));
+      expect(Share.share).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('鸡胸肉 200g、杂粮饭 1碗'),
+      }));
+      expect(onShareTerminal).toHaveBeenCalledWith(expect.objectContaining({
+        phase: 'failed',
+        has_photo: false,
+        share_target: 'xiaohongshu',
+        error_code: 'image_share_fell_back_to_caption',
+      }));
+      expect(getByText('图片没生成，文案已复制')).toBeTruthy();
+      expect(getByText('先发文案，或点“保存/分享图片”重试生成高清图')).toBeTruthy();
+    });
+  });
+
   it('falls back to the metric card when a protected image never settles', async () => {
     jest.useFakeTimers();
     const { getByLabelText, getByText, queryByTestId } = render(

@@ -38,6 +38,9 @@ const MEAL_LABEL: Record<string, string> = {
 };
 export const DIET_SHARE_IMAGE_TIMEOUT_MS = 5_000;
 type ShareTarget = 'generic' | 'wechat' | 'xiaohongshu';
+type ShareResult =
+  | { target: ShareTarget; kind: 'completed' }
+  | { target: ShareTarget; kind: 'caption_fallback' };
 
 export function dietShareCaptureDimensions(
   platform = Platform.OS,
@@ -237,6 +240,22 @@ function publishHintForShareTarget(target: ShareTarget): { title: string; detail
   };
 }
 
+function publishHintForShareResult(result: ShareResult): { title: string; detail: string; icon: keyof typeof Ionicons.glyphMap; tone: 'success' | 'warning' } {
+  if (result.kind === 'caption_fallback') {
+    return {
+      title: '图片没生成，文案已复制',
+      detail: '先发文案，或点“保存/分享图片”重试生成高清图',
+      icon: 'alert-circle',
+      tone: 'warning',
+    };
+  }
+  return {
+    ...publishHintForShareTarget(result.target),
+    icon: 'checkmark-circle',
+    tone: 'success',
+  };
+}
+
 export type DietShareCardProps = {
   record: DietRecord;
   dateLabel: string;
@@ -428,15 +447,15 @@ export function DietShareSheet({
   const [imageReady, setImageReady] = useState(!imageSource);
   const [imageTimedOut, setImageTimedOut] = useState(false);
   const [copiedCaption, setCopiedCaption] = useState<'moments' | 'xiaohongshu' | null>(null);
-  const [lastSharedTarget, setLastSharedTarget] = useState<ShareTarget | null>(null);
+  const [shareResult, setShareResult] = useState<ShareResult | null>(null);
   const shareHasPhoto = Boolean(imageSource) && !imageTimedOut;
-  const publishHint = lastSharedTarget ? publishHintForShareTarget(lastSharedTarget) : null;
+  const publishHint = shareResult ? publishHintForShareResult(shareResult) : null;
 
   React.useEffect(() => {
     setImageReady(!imageSource);
     setImageTimedOut(false);
     setCopiedCaption(null);
-    setLastSharedTarget(null);
+    setShareResult(null);
   }, [imageSource, visible]);
 
   React.useEffect(() => {
@@ -486,7 +505,7 @@ export function DietShareSheet({
           has_photo: false,
           share_target: target,
         });
-        setLastSharedTarget(target);
+        setShareResult({ target, kind: 'caption_fallback' });
         return;
       }
       const dimensions = dietShareCaptureDimensions();
@@ -507,20 +526,21 @@ export function DietShareSheet({
         has_photo: shareHasPhoto,
         share_target: target,
       });
-      setLastSharedTarget(target);
+      setShareResult({ target, kind: 'completed' });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       try {
         await shareTextFallback(target);
         onShareTerminal?.({
-          phase: 'completed',
+          phase: 'failed',
           duration_ms: Date.now() - startedAt,
           has_photo: false,
           share_target: target,
+          error_code: 'image_share_fell_back_to_caption',
         });
-        setLastSharedTarget(target);
+        setShareResult({ target, kind: 'caption_fallback' });
       } catch {
-        setLastSharedTarget(null);
+        setShareResult(null);
         onShareTerminal?.({
           phase: 'failed',
           duration_ms: Date.now() - startedAt,
@@ -618,9 +638,16 @@ export function DietShareSheet({
 
           {publishHint ? (
             <View style={styles.publishHint} testID="diet-share-publish-hint">
-              <Ionicons name="checkmark-circle" size={18} color={C.green600} />
+              <Ionicons
+                name={publishHint.icon}
+                size={18}
+                color={publishHint.tone === 'success' ? C.green600 : revaSemantic.caution.fg}
+              />
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.publishHintTitle}>{publishHint.title}</Text>
+                <Text style={[
+                  styles.publishHintTitle,
+                  publishHint.tone === 'warning' && styles.publishHintTitleWarning,
+                ]}>{publishHint.title}</Text>
                 <Text style={styles.publishHintDetail}>{publishHint.detail}</Text>
               </View>
             </View>
@@ -923,6 +950,7 @@ const styles = StyleSheet.create({
     gap: 9,
   },
   publishHintTitle: { fontFamily: revaFonts.sans, fontSize: 12.5, color: C.green600, fontWeight: '900' },
+  publishHintTitleWarning: { color: revaSemantic.caution.fg },
   publishHintDetail: { fontFamily: revaFonts.sans, fontSize: 10.5, color: C.ink3, fontWeight: '700', marginTop: 1 },
   shareButton: {
     width: '100%',
