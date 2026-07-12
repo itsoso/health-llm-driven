@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import { captureRef, releaseCapture } from 'react-native-view-shot';
 
@@ -40,7 +41,8 @@ export const DIET_SHARE_IMAGE_TIMEOUT_MS = 5_000;
 type ShareTarget = 'generic' | 'wechat' | 'xiaohongshu';
 type ShareResult =
   | { target: ShareTarget; kind: 'completed' }
-  | { target: ShareTarget; kind: 'caption_fallback' };
+  | { target: ShareTarget; kind: 'caption_fallback' }
+  | { target: ShareTarget; kind: 'saved_to_library' };
 
 export function dietShareCaptureDimensions(
   platform = Platform.OS,
@@ -247,6 +249,14 @@ function publishHintForShareResult(result: ShareResult): { title: string; detail
       detail: '先发文案，或点“保存/分享图片”重试生成高清图',
       icon: 'alert-circle',
       tone: 'warning',
+    };
+  }
+  if (result.kind === 'saved_to_library') {
+    return {
+      title: '图片已保存到相册',
+      detail: '去微信或小红书选择这张图片，再粘贴文案发布',
+      icon: 'checkmark-circle',
+      tone: 'success',
     };
   }
   return {
@@ -564,6 +574,50 @@ export function DietShareSheet({
     }
   };
 
+  const handleSaveToLibrary = async () => {
+    if (sharing || !imageReady || !cardRef.current) return;
+    const startedAt = Date.now();
+    let captureUri: string | null = null;
+    setSharing(true);
+    try {
+      const dimensions = dietShareCaptureDimensions();
+      captureUri = await captureRef(cardRef, {
+        format: 'png',
+        quality: 1,
+        ...dimensions,
+        result: 'tmpfile',
+      });
+      await MediaLibrary.saveToLibraryAsync(captureUri);
+      onShareTerminal?.({
+        phase: 'completed',
+        duration_ms: Date.now() - startedAt,
+        has_photo: shareHasPhoto,
+        share_target: 'generic',
+      });
+      setShareResult({ target: 'generic', kind: 'saved_to_library' });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      setShareResult(null);
+      onShareTerminal?.({
+        phase: 'failed',
+        duration_ms: Date.now() - startedAt,
+        has_photo: shareHasPhoto,
+        share_target: 'generic',
+        error_code: 'image_save_failed',
+      });
+      Alert.alert('保存失败', '请检查相册权限，或先使用“保存/分享图片”。');
+    } finally {
+      if (captureUri) {
+        try {
+          releaseCapture(captureUri);
+        } catch {
+          // Temporary-file cleanup is best effort after the image is saved.
+        }
+      }
+      setSharing(false);
+    }
+  };
+
   return (
     <Modal
       visible={visible}
@@ -674,6 +728,27 @@ export function DietShareSheet({
               </View>
             </View>
           ) : null}
+
+          <TouchableOpacity
+            style={[styles.saveLibraryButton, (sharing || !imageReady) && styles.shareButtonDisabled]}
+            onPress={handleSaveToLibrary}
+            disabled={sharing || !imageReady}
+            activeOpacity={0.84}
+            accessibilityRole="button"
+            accessibilityLabel="保存饮食图片到相册"
+          >
+            {sharing || !imageReady ? (
+              <ActivityIndicator size="small" color={C.green600} />
+            ) : (
+              <Ionicons name="download-outline" size={19} color={C.green600} />
+            )}
+            <View style={styles.shareButtonCopy}>
+              <Text style={styles.saveLibraryButtonText}>{!imageReady ? '图片加载中' : sharing ? '保存中' : '保存到相册'}</Text>
+              {!sharing && imageReady ? (
+                <Text style={styles.saveLibraryButtonHint}>发布前先存图，微信 / 小红书直接选</Text>
+              ) : null}
+            </View>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.shareButton, (sharing || !imageReady) && styles.shareButtonDisabled]}
@@ -998,6 +1073,21 @@ const styles = StyleSheet.create({
   publishHintTitle: { fontFamily: revaFonts.sans, fontSize: 12.5, color: C.green600, fontWeight: '900' },
   publishHintTitleWarning: { color: revaSemantic.caution.fg },
   publishHintDetail: { fontFamily: revaFonts.sans, fontSize: 10.5, color: C.ink3, fontWeight: '700', marginTop: 1 },
+  saveLibraryButton: {
+    width: '100%',
+    minHeight: 52,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    marginTop: revaSpacing.s2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  saveLibraryButtonText: { fontFamily: revaFonts.sans, fontSize: 15, color: C.green700, fontWeight: '900' },
+  saveLibraryButtonHint: { fontFamily: revaFonts.sans, fontSize: 10, color: C.green600, fontWeight: '700', marginTop: 1 },
   shareButton: {
     width: '100%',
     minHeight: 52,

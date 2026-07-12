@@ -6,6 +6,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 const mockCaptureRef = jest.fn().mockResolvedValue('file:///meal-share.png');
 const mockReleaseCapture = jest.fn();
 const mockShareAsync = jest.fn().mockResolvedValue(undefined);
+const mockSaveToLibraryAsync = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('react-native-view-shot', () => ({
   captureRef: (...args: any[]) => mockCaptureRef(...args),
@@ -15,6 +16,10 @@ jest.mock('react-native-view-shot', () => ({
 jest.mock('expo-sharing', () => ({
   isAvailableAsync: jest.fn().mockResolvedValue(true),
   shareAsync: (...args: any[]) => mockShareAsync(...args),
+}));
+
+jest.mock('expo-media-library', () => ({
+  saveToLibraryAsync: (...args: any[]) => mockSaveToLibraryAsync(...args),
 }));
 
 jest.mock('expo-clipboard', () => ({
@@ -310,6 +315,42 @@ describe('DietShareCard', () => {
         has_photo: false,
       }));
       expect(mockReleaseCapture).toHaveBeenCalledWith('file:///meal-share.png');
+    });
+  });
+
+  it('saves the 1080x1440 share image directly to the photo library', async () => {
+    const onShareTerminal = jest.fn();
+    const { getByText } = render(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+        onShareTerminal={onShareTerminal}
+      />,
+    );
+
+    fireEvent.press(getByText('保存到相册'));
+
+    await waitFor(() => {
+      expect(mockCaptureRef).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          format: 'png',
+          quality: 1,
+          width: 1080 / PixelRatio.get(),
+          height: 1440 / PixelRatio.get(),
+        }),
+      );
+      expect(mockSaveToLibraryAsync).toHaveBeenCalledWith('file:///meal-share.png');
+      expect(onShareTerminal).toHaveBeenCalledWith(expect.objectContaining({
+        phase: 'completed',
+        has_photo: false,
+        share_target: 'generic',
+      }));
+      expect(mockReleaseCapture).toHaveBeenCalledWith('file:///meal-share.png');
+      expect(getByText('图片已保存到相册')).toBeTruthy();
+      expect(getByText('去微信或小红书选择这张图片，再粘贴文案发布')).toBeTruthy();
     });
   });
 
