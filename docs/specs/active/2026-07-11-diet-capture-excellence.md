@@ -2,7 +2,7 @@
 
 > Status: active
 > Owner: Codex
-> Updated: 2026-07-11
+> Updated: 2026-07-12
 > Related PRD/PDD: `docs/prd/2026-07-11-diet-capture-excellence.md`
 > Related code: `backend/app/api/diet.py`, `backend/app/services/ai/food_recognition.py`, `mobile/app/diet.tsx`
 
@@ -58,7 +58,7 @@ RequirementAdmission:
 ## 6. User Flow
 
 ```text
-photo/text/voice -> candidate foods -> deterministic calibration -> visible draft
+camera/library/text/voice -> candidate foods -> deterministic calibration -> visible draft
   -> user corrects or confirms -> idempotent DietRecord receipt
   -> optional privacy-safe image render -> system share sheet
 ```
@@ -165,6 +165,22 @@ Then the app resizes the longest edge to 1568px, encodes JPEG at q0.7 and sends 
 Given recognition events include completed, failed and cancelled attempts
 When the observation dashboard computes latency
 Then p50/p95 use completed events only while attempts, failures and cancellations remain separately visible
+
+Given the camera is unavailable or a meal photo already exists
+When the user selects one image from the diet photo library action
+Then it uses the same bounded preparation, recognition, recoverable draft and manual-confirm pipeline as the camera
+
+Given the user opens the image-only system photo picker
+When Mobile starts library selection
+Then it does not request broad photo-library access before the user explicitly selects one image
+
+Given a backend-sanitized photo candidate contains a food name such as "橙子片"
+When Mobile opens the photo draft
+Then the generic character "片" is not reclassified as medication while text, voice and external drafts keep the Mobile intake guard
+
+Given photo selection, recognition, correction, confirmation or saving is active
+When the diet screen renders capture controls
+Then the floating add action is hidden so content stays visible and a second capture cannot start concurrently
 ```
 
 ## 12. Verification Plan
@@ -196,3 +212,4 @@ Deploy backend additive response fields before Mobile. Preserve legacy create pa
 | 2026-07-11 | Initial active spec | Begin P0 accuracy and explainability implementation |
 | 2026-07-12 | Bound camera payload and correct latency semantics | Prevent raw-photo memory/network cost and misleading p50/p95 |
 | 2026-07-12 | Separate nutrient calibration from portion truth | Prevent table matches and model confidence from implying measured-photo precision |
+| 2026-07-12 | Add a single-photo library path and idle-only capture controls | Make fallback actionable without duplicate pipelines or overlapping concurrent capture UI |

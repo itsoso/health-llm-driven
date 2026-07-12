@@ -79,6 +79,7 @@
 - [x] T5.2 模型输出边界、份量真实性、识别日志脱敏与可操作错误语义（backend deploy + OTA）
 - [x] T5.3 Agent 草稿、写入连续性和确认卡回执的 iOS SecureStore 兼容（OTA）
 - [x] T5.4 视觉模型升级、非思考结构化识别与延迟基准（backend deploy）
+- [x] T5.5 单图相册降级、照片清洗信任边界与空闲态 Capture FAB（OTA）
 - [ ] T6 模拟器视觉、真机微信/小红书、生产数据闭环验收
 - 并发检查：2026-07-11 `origin/main` 与当前干净集成 worktree 一致；原始用户工作区不纳入暂存。
 
@@ -94,6 +95,7 @@
 - T5.2：视觉 JSON 现在经过字段白名单、有限数值、最多 12 项、重复项和 intake intent 清洗；药物、补剂、卡片文字不会进入饮食草稿，负值/非数字/越界置信度转为未知。照片份量新增 `portion_basis` / `portion_confidence`，营养表校准后仍保持视觉估算；Mobile 显示“表值 × 估算份量”和定性识别信号，不再把模型自报置信度展示为精确百分比。正常与异常识别日志只记录长度、计数和错误类型，供应商正文、食物名和异常正文不写日志或回传。
 - T5.3：iOS 原生模拟器暴露对话草稿、最新已验证写入回执和确认卡防重复回执使用了带冒号的非法 SecureStore 键，导致草稿恢复、跨轮饮食上下文和卡片回执静默降级。三类敏感值现使用仅含字母、数字、点、下划线和连字符的用户隔离键；AsyncStorage 元数据/索引键保持兼容，旧版 completion tombstone 继续可识别，且不再尝试删除从未能写入 Keychain 的非法旧键。
 - T5.4：生产视觉模型仍停留在官方已列为旧版的 `qwen-vl-max`。公开餐食样本对比确认，直连 DashScope 的 `qwen3-vl-flash` 在非思考模式下保持合法结构化结果，并避免把外观相似的裹酱鸡肉高置信猜成宫保鸡丁；食物识别服务现只对 Qwen3 视觉模型显式发送 `enable_thinking=false`，旧 provider 保持兼容。
+- T5.5：饮食 FAB 新增单图相册入口，相机与相册只在取图阶段分叉，后续共用 1568px/JPEG q0.7 预处理、识别、服务端草稿、SecureStore 恢复与人工确认。照片候选已通过 Backend 结构化食物清洗，Mobile 不再用把“片”视作药片的通用文字启发式二次拒绝“橙子片”等食物；文字、语音和外部草稿仍保留本地防护。Capture FAB 只在 `idle` 显示，选图、识别、待确认、修正和保存时隐藏，避免遮挡确认卡和并发取图。
 
 ## G3 · 测试闸
 
@@ -114,6 +116,7 @@
 - T5.3 Linux 权威闸门：GitHub Actions run `29170917830` SUCCESS，24/24 作业完成；`t-f-v` 首次尝试按 600 秒截止时间终止，干净进程重试后 `266 passed`，最终 Backend tests enforcement 通过。head commit 为 `401ec2810e2073e84ac571d108c44bbe3c8f5216`。
 - T5.4 本地只读基准：同一 Mobile 1568px/JPEG q0.7 输入下，旧 `qwen-vl-max` 两张餐食耗时 11.9s / 13.5s，新 `qwen3-vl-flash` 为 6.0s / 6.3s，平均从约 12.7s 降至约 6.2s；非餐食 App 截图在 1.7s 正确拒绝。TokenPlan 的 `qwen3.6-flash` 与 `qwen3.7-plus` 路径分别约 20s 和 13.6-17.9s，未采用。配置和请求契约先得到 2 个预期 RED，最终识别安全回归 `12 passed`；修改后真实服务复测成功。显式 live LLM gate 另通过 invariants `12/12`、health-agent-core `50/50`、真实 orchestrator `5/5`，平均分 `0.94`、无 regression。
 - T5.4 Linux 权威闸门：GitHub Actions run `29172663161` SUCCESS；backend quality、type drift、Frontend、Mobile、macOS、18 个后端分片与最终 Backend tests enforcement 全部通过。`agent-i-z` 与 `t-f-v` 首进程达到 600 秒截止线后由 CI 脚本终止，干净进程重试后分别在 11m27s / 11m40s 完成，未隐藏断言失败。
+- T5.5 先以 RED 锁定相册入口、单图识别和取消恢复，再以现场公开餐食图复现“橙子片”被误判成药片并增加 RED；模拟器首次实测发现预授权会主动弹出全图库权限，依据 Expo ImagePicker 当前纯图片契约删除预请求，并以 2 个 RED 锁定成功/取消路径都不请求全图库。最终相册/内容边界/FAB focused regression `3 suites / 40 tests`、Mobile 全量 `234 suites / 1636 tests` 与 TypeScript 通过。全量 Jest 断言完成后仍报告仓库既有 open handle，使用 `--forceExit` 取得明确 0 退出码；不把该警告表述为已修复。iPhone 17 Pro 模拟器完成相册 -> 生产识别 -> 3 项待确认草稿，进程重载后草稿恢复且 Capture FAB 不再遮挡卡片。
 - T5.2 首次 CI run `29164922239` 中 type drift 在补齐 Frontend 生成类型后通过，但 Linux `a-b` 分片连续两次远超历史绿灯的 4 分 23 秒，并在 `test_agent_health_manage.py` 与 `test_agent_intervention_cycle_tool.py` 边界失去输出；该边界组合本机 `30/30` 通过，`c-d` 重跑也在 3 分 36 秒通过。判定为既有进程级顺序污染而非饮食断言回归，将 86 个 `a-b` 测试文件拆为非 Agent、`agent_[a-h]`、`agent_[i-z]` 三个互斥进程；文件覆盖校验为 `86 -> 86`、差集 0。
 - T5.2 CI run `29166225719` 验证上述三个新分片分别在 3 分 2 秒、2 分 15 秒和 1 分 24 秒通过；同轮旧 `t[f-z]+u` 分片在 69% 处进入 `test_twin_builder.py` 后冻结，并被 20 分钟上限终止，其他 16 个作业均通过。本机同命令 `392/392` 在 31.23 秒通过；据逐用例日志将其拆为 `t[f-v]`、`t[w-z]`、`u` 三个干净进程，原 24 个文件覆盖校验仍为 `24 -> 24`、差集 0。
 - T5.2 CI run `29166933157` 中 `t[f-v]`、`t[w-z]`、`u` 已分别在 1 分 44 秒、1 分 25 秒和 1 分 28 秒通过；唯一剩余的旧 `s` 大分片进入 `test_schedule_into_agenda.py` 后失去输出，其他 18 个作业均通过。本机同一 643 项命令也在该模块首个用例后停住，但该模块单跑 `8/8`、与前一模块配对 `26/26`、`s[c-k]` 分组 `55/55` 均通过，确认是更长前序造成的进程状态污染；将 58 个 `s` 文件拆为 `s[a-b]`、`s[c-k]`、`s[l-z]`，覆盖校验为 `58 -> 58`、差集 0。
@@ -161,6 +164,7 @@
 - build 221 对应 runtime `1.3.1` 的 production OTA 已发布；设备冷启或后台超过 30 秒后可拉取。当前生产仍无新版终态样本，不宣称真实 p50/p95 或纠错率已达标。
 - T5.2 OTA 已绑定 build 221 的 runtime `1.3.1` 与生产 commit `c6d3d3f49`；当前仍不以模拟器、单测或模型自报置信度替代真机照片准确率与份量误差验收。
 - T5.4 生产服务只读 smoke：同一公开 1568px 测试图在 8.755s 成功返回“甜酸口味鸡肉块、蛋炒饭、橙子片”等可见食物，未再误报为宫保鸡丁；测试图只临时写入服务器 `/tmp`，调用后已删除。该样本证明部署和模型路由生效，但不替代真实用户照片的 p50/p95 与纠错率。
+- T5.5 模拟器实链路：同一公开餐食图经 Mobile 相册入口和生产 API 返回“橙子鸡、咖喱炒饭、橙子片”3 项草稿；修复前被 Mobile 二次误判为用药/补剂，修复后正常进入待确认且没有写入正式 DietRecord。截图保存在本机 `/tmp/reva-library-draft-no-fab.png`。
 - 待真机验证：相机实拍 -> 识别 -> 修正 -> 确认单次写入，以及分享图分别投递微信和小红书。
 
 ## G6 · 验证闸

@@ -37,7 +37,9 @@ jest.mock('expo-haptics', () => ({
 
 jest.mock('expo-image-picker', () => ({
   requestCameraPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
+  requestMediaLibraryPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
   launchCameraAsync: jest.fn().mockResolvedValue({ canceled: true, assets: [] }),
+  launchImageLibraryAsync: jest.fn().mockResolvedValue({ canceled: true, assets: [] }),
 }));
 
 jest.mock('expo-image-manipulator', () => ({
@@ -144,9 +146,10 @@ jest.mock('../../components/diet/MealForm', () => {
 jest.mock('../../components/diet/DietFAB', () => {
   const React = require('react');
   const { Text, TouchableOpacity, View } = require('react-native');
-  const MockDietFAB = ({ onPhoto, onText, onVoice }: any) => (
+  const MockDietFAB = ({ onPhoto, onLibrary, onText, onVoice }: any) => (
     <View>
       <TouchableOpacity testID="diet-fab-photo" onPress={onPhoto}><Text>拍照</Text></TouchableOpacity>
+      <TouchableOpacity testID="diet-fab-library" onPress={onLibrary}><Text>相册</Text></TouchableOpacity>
       <TouchableOpacity testID="diet-fab-text" onPress={onText}><Text>文字</Text></TouchableOpacity>
       <TouchableOpacity testID="diet-fab-voice" onPress={onVoice}><Text>语音</Text></TouchableOpacity>
     </View>
@@ -167,9 +170,15 @@ describe('DietScreen capture deeplink', () => {
     mockMealForm.mockClear();
     mockEstimate.mockClear();
     jest.clearAllMocks();
+    (ImagePicker.requestCameraPermissionsAsync as jest.Mock).mockReset().mockResolvedValue({ granted: true });
+    (ImagePicker.requestMediaLibraryPermissionsAsync as jest.Mock).mockReset().mockResolvedValue({ granted: true });
+    (ImagePicker.launchCameraAsync as jest.Mock).mockReset().mockResolvedValue({ canceled: true, assets: [] });
+    (ImagePicker.launchImageLibraryAsync as jest.Mock).mockReset().mockResolvedValue({ canceled: true, assets: [] });
+    require('../../services/diet').recognizeFood.mockReset();
     mockLoadDietPhotoDraft.mockResolvedValue(null);
     mockSaveDietPhotoDraft.mockResolvedValue(undefined);
     mockClearDietPhotoDraft.mockResolvedValue(undefined);
+    mockManipulateAsync.mockReset();
     mockManipulateAsync.mockResolvedValue({
       uri: 'file:///diet-photo-small.jpg',
       width: 1568,
@@ -188,6 +197,95 @@ describe('DietScreen capture deeplink', () => {
     await waitFor(() => {
       expect(ImagePicker.requestCameraPermissionsAsync).toHaveBeenCalled();
     });
+  });
+
+  it('recognizes one meal photo selected from the library without opening the camera', async () => {
+    const dietService = require('../../services/diet');
+    (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ uri: 'file:///library-meal.heic', width: 3024, height: 4032 }],
+    });
+    mockManipulateAsync.mockResolvedValueOnce({
+      uri: 'file:///library-meal-small.jpg',
+      width: 1176,
+      height: 1568,
+      base64: 'TElCUkFSWQ==',
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      foods: [{ name: '三文鱼能量碗', quantity: null }],
+      meal_description: '三文鱼能量碗',
+      total_calories: 620,
+      total_protein: 34,
+      total_carbs: 58,
+      total_fat: 24,
+      error: null,
+    });
+
+    const { getByTestId, getByText, getAllByText } = render(<DietScreen />);
+    fireEvent.press(getByTestId('diet-fab-library'));
+
+    await waitFor(() => {
+      expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalledWith(expect.objectContaining({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: false,
+        base64: false,
+      }));
+      expect(dietService.recognizeFood).toHaveBeenCalledWith('TElCUkFSWQ==');
+    });
+    expect(ImagePicker.requestMediaLibraryPermissionsAsync).not.toHaveBeenCalled();
+    expect(ImagePicker.requestCameraPermissionsAsync).not.toHaveBeenCalled();
+    expect(getByText('待确认饮食')).toBeTruthy();
+    expect(getAllByText('三文鱼能量碗').length).toBeGreaterThan(0);
+  });
+
+  it('returns to idle without recognition when the system photo picker is cancelled', async () => {
+    const dietService = require('../../services/diet');
+
+    const { getByTestId } = render(<DietScreen />);
+    fireEvent.press(getByTestId('diet-fab-library'));
+
+    await waitFor(() => {
+      expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalled();
+    });
+    expect(ImagePicker.requestMediaLibraryPermissionsAsync).not.toHaveBeenCalled();
+    expect(dietService.recognizeFood).not.toHaveBeenCalled();
+    expect(getByTestId('diet-fab-photo')).toBeTruthy();
+  });
+
+  it('keeps backend-sanitized meal photos when a food name contains the generic character 片', async () => {
+    const dietService = require('../../services/diet');
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ uri: 'file:///orange-chicken-rice.jpg', width: 1568, height: 1176 }],
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      foods: [
+        { name: '橙子片', quantity: '3片' },
+        { name: '鸡肉块（甜酸口味）', quantity: null },
+        { name: '蛋炒饭', quantity: '1份' },
+        { name: '青豆', quantity: null },
+        { name: '红辣椒', quantity: null },
+      ],
+      meal_description: '橙子片、鸡肉块（甜酸口味）、蛋炒饭、青豆、红辣椒',
+      total_calories: 920,
+      error: null,
+    });
+
+    const { getByText, queryByTestId } = render(<DietScreen />);
+
+    await waitFor(() => {
+      expect(getByText('待确认饮食')).toBeTruthy();
+    });
+    expect(queryByTestId('diet-fab-photo')).toBeNull();
+    expect(alertSpy).not.toHaveBeenCalledWith(
+      '这不是饮食记录',
+      expect.stringContaining('用药或补剂'),
+    );
+    alertSpy.mockRestore();
   });
 
   it('turns photo capture into a lightweight confirm card without auto-saving', async () => {

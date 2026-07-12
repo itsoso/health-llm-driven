@@ -124,3 +124,4 @@
 3. Deploy backend, verify health score and production aggregate samples.
 4. Build/submit TestFlight because Task 4 adds a native module.
 5. Validate build on a physical iPhone with WeChat and Xiaohongshu.
+6. Keep camera and single-photo library capture on one state machine; hide capture controls outside idle and verify the real library path in Simulator.
