@@ -61,6 +61,7 @@ _ALLOWED_EVENTS = frozenset({
 
 _DURATION_BUCKETS = frozenset({"lt_1s", "1_3s", "3_10s", "10_30s", "gte_30s"})
 _SAFE_TOKEN = re.compile(r"^[a-z0-9][a-z0-9_.:-]{0,63}$")
+_DIET_SHARE_TARGETS = frozenset({"generic", "wechat", "xiaohongshu"})
 _RELIABILITY_EVENT_SCHEMAS = {
     "agent_turn_terminal": {
         "allowed": frozenset({"phase", "duration_bucket", "error_code"}),
@@ -101,7 +102,9 @@ _DIET_CAPTURE_EVENT_SCHEMAS = {
         "phases": frozenset({"completed", "failed"}),
     },
     "diet_share_terminal": {
-        "allowed": frozenset({"phase", "duration_ms", "has_photo", "error_code"}),
+        "allowed": frozenset({
+            "phase", "duration_ms", "has_photo", "share_target", "error_code",
+        }),
         "required": frozenset({"phase", "duration_ms", "has_photo"}),
         "phases": frozenset({"completed", "failed"}),
     },
@@ -192,6 +195,10 @@ class EventIn(BaseModel):
         for key in ("verified", "corrected", "has_photo"):
             if key in self.meta and type(self.meta[key]) is not bool:
                 raise ValueError(f"invalid diet capture event {key}")
+        if self.event_name == "diet_share_terminal":
+            share_target = self.meta.get("share_target")
+            if share_target is not None and share_target not in _DIET_SHARE_TARGETS:
+                raise ValueError("invalid diet share target")
         error_code = self.meta.get("error_code")
         if error_code is not None and (
             not isinstance(error_code, str) or _SAFE_TOKEN.fullmatch(error_code) is None

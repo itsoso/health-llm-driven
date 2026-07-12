@@ -266,12 +266,14 @@ describe('DietShareCard', () => {
   });
 
   it('offers platform-first image sharing with matching captions', async () => {
+    const onShareTerminal = jest.fn();
     const { getByText } = render(
       <DietShareSheet
         visible
         record={record}
         dateLabel="7月11日 · 午餐"
         onClose={jest.fn()}
+        onShareTerminal={onShareTerminal}
       />,
     );
 
@@ -295,6 +297,10 @@ describe('DietShareCard', () => {
         'file:///meal-share.png',
         expect.objectContaining({ dialogTitle: '发小红书' }),
       );
+      expect(onShareTerminal).toHaveBeenCalledWith(expect.objectContaining({
+        phase: 'completed',
+        share_target: 'xiaohongshu',
+      }));
     });
   });
 

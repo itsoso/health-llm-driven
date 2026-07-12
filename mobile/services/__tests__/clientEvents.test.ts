@@ -134,4 +134,31 @@ describe('client reliability events', () => {
       corrected: true,
     });
   });
+
+  it('keeps only allowlisted share target metadata for diet share events', () => {
+    expect(sanitizeClientEventMeta('diet_share_terminal', {
+      phase: 'completed',
+      duration_ms: 920,
+      has_photo: true,
+      share_target: 'xiaohongshu',
+      platform_url: 'xhs://private-share',
+      caption: 'private meal caption',
+    })).toEqual({
+      phase: 'completed',
+      duration_ms: 920,
+      has_photo: true,
+      share_target: 'xiaohongshu',
+    });
+
+    expect(sanitizeClientEventMeta('diet_share_terminal', {
+      phase: 'completed',
+      duration_ms: 920,
+      has_photo: true,
+      share_target: 'private-platform',
+    })).toEqual({
+      phase: 'completed',
+      duration_ms: 920,
+      has_photo: true,
+    });
+  });
 });

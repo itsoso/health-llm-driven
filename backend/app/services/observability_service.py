@@ -414,6 +414,11 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
     diet_corrections = 0
     diet_prepare_ms: list[float] = []
     diet_payload_kb: list[float] = []
+    diet_share_targets = ("generic", "wechat", "xiaohongshu")
+    diet_share_by_target: Dict[str, dict] = {
+        target: {"attempts": 0, "completed": 0, "with_photo": 0, "failures": 0}
+        for target in diet_share_targets
+    }
 
     for name, meta in rows:
         by_event[name] = by_event.get(name, 0) + 1
@@ -447,6 +452,17 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
                 diet_failures[stage] += 1
             elif phase == "cancelled":
                 diet_cancelled[stage] += 1
+            if name == "diet_share_terminal":
+                share_target = meta.get("share_target")
+                if share_target in diet_share_by_target:
+                    target_stats = diet_share_by_target[share_target]
+                    target_stats["attempts"] += 1
+                    if phase == "completed":
+                        target_stats["completed"] += 1
+                        if meta.get("has_photo") is True:
+                            target_stats["with_photo"] += 1
+                    elif phase == "failed":
+                        target_stats["failures"] += 1
             if (
                 name == "diet_photo_confirmation_terminal"
                 and phase == "completed"
@@ -503,6 +519,7 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
             if completed_confirmations else None
         ),
     })
+    diet_capture_ms["share"]["by_target"] = diet_share_by_target
     return {
         "total": sum(by_event.values()),
         "by_event": by_event,

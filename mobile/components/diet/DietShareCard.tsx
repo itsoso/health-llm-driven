@@ -339,6 +339,7 @@ export type DietShareSheetProps = DietShareCardProps & {
     phase: 'completed' | 'failed';
     duration_ms: number;
     has_photo: boolean;
+    share_target?: ShareTarget;
     error_code?: string;
   }) => void;
 };
@@ -409,6 +410,7 @@ export function DietShareSheet({
           phase: 'completed',
           duration_ms: Date.now() - startedAt,
           has_photo: false,
+          share_target: target,
         });
         return;
       }
@@ -428,6 +430,7 @@ export function DietShareSheet({
         phase: 'completed',
         duration_ms: Date.now() - startedAt,
         has_photo: shareHasPhoto,
+        share_target: target,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
@@ -437,12 +440,14 @@ export function DietShareSheet({
           phase: 'completed',
           duration_ms: Date.now() - startedAt,
           has_photo: false,
+          share_target: target,
         });
       } catch {
         onShareTerminal?.({
           phase: 'failed',
           duration_ms: Date.now() - startedAt,
           has_photo: shareHasPhoto,
+          share_target: target,
           error_code: 'image_share_failed',
         });
         Alert.alert('分享失败', '图片和文字分享均不可用，请稍后重试');

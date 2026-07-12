@@ -115,6 +115,17 @@ def test_client_events_stats_empty(db):
             "share": {
                 "n": 0, "attempts": 0, "p50": None, "p95": None,
                 "failures": 0, "cancelled": 0,
+                "by_target": {
+                    "generic": {
+                        "attempts": 0, "completed": 0, "with_photo": 0, "failures": 0,
+                    },
+                    "wechat": {
+                        "attempts": 0, "completed": 0, "with_photo": 0, "failures": 0,
+                    },
+                    "xiaohongshu": {
+                        "attempts": 0, "completed": 0, "with_photo": 0, "failures": 0,
+                    },
+                },
             },
         },
     }
@@ -333,6 +344,7 @@ def test_reliability_terminal_events_reject_invalid_contract(
         "phase": "completed",
         "duration_ms": 920,
         "has_photo": True,
+        "share_target": "xiaohongshu",
     }),
 ])
 def test_diet_capture_events_accept_only_numeric_privacy_safe_metrics(
@@ -349,6 +361,23 @@ def test_diet_capture_events_accept_only_numeric_privacy_safe_metrics(
     row = db.query(ClientEvent).order_by(ClientEvent.id.desc()).first()
     assert row.event_name == event_name
     assert row.meta == meta
+
+
+@pytest.mark.parametrize("meta", [
+    {"phase": "completed", "duration_ms": 920, "has_photo": True, "share_target": "wechat-private"},
+    {"phase": "completed", "duration_ms": 920, "has_photo": True, "share_target": "xiaohongshu", "caption": "private meal"},
+])
+def test_diet_share_events_reject_invalid_or_private_target_meta(
+    client, auth_user_and_headers, meta
+):
+    _, headers = auth_user_and_headers
+    response = client.post(
+        "/api/v1/client-events",
+        headers=headers,
+        json={"event_name": "diet_share_terminal", "meta": meta},
+    )
+
+    assert response.status_code == 422, response.text
 
 
 @pytest.mark.parametrize("meta", [

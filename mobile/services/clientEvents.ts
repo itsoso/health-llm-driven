@@ -49,6 +49,7 @@ const DIET_CAPTURE_PHASES = {
   diet_photo_confirmation_terminal: new Set(['completed', 'failed']),
   diet_share_terminal: new Set(['completed', 'failed']),
 } as const;
+const DIET_SHARE_TARGETS = new Set(['generic', 'wechat', 'xiaohongshu']);
 
 type ReliabilityEventName = keyof typeof RELIABILITY_PHASES;
 
@@ -118,6 +119,13 @@ export function sanitizeClientEventMeta(
       sanitized.corrected = meta.corrected;
     }
     if (typeof meta.has_photo === 'boolean') sanitized.has_photo = meta.has_photo;
+    if (
+      name === 'diet_share_terminal'
+      && typeof meta.share_target === 'string'
+      && DIET_SHARE_TARGETS.has(meta.share_target)
+    ) {
+      sanitized.share_target = meta.share_target;
+    }
     if (typeof meta.error_code === 'string' && SAFE_TOKEN.test(meta.error_code)) {
       sanitized.error_code = meta.error_code;
     }

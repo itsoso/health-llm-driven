@@ -105,6 +105,22 @@ def test_client_events_stats_computes_diet_capture_latency_and_failures(db):
         "phase": "completed", "duration_ms": 420, "verified": True,
         "corrected": True,
     })
+    _seed(db, user.id, "diet_share_terminal", {
+        "phase": "completed", "duration_ms": 900, "has_photo": True,
+        "share_target": "wechat",
+    })
+    _seed(db, user.id, "diet_share_terminal", {
+        "phase": "completed", "duration_ms": 1200, "has_photo": True,
+        "share_target": "xiaohongshu",
+    })
+    _seed(db, user.id, "diet_share_terminal", {
+        "phase": "completed", "duration_ms": 600, "has_photo": False,
+        "share_target": "generic",
+    })
+    _seed(db, user.id, "diet_share_terminal", {
+        "phase": "failed", "duration_ms": 800, "has_photo": True,
+        "share_target": "wechat",
+    })
     db.commit()
 
     stats = client_events_stats(db, utc_now() - timedelta(days=7), user_id=None)
@@ -126,4 +142,9 @@ def test_client_events_stats_computes_diet_capture_latency_and_failures(db):
         "n": 1, "attempts": 1, "p50": 420, "p95": 420,
         "failures": 0, "cancelled": 0,
         "corrected": 1, "correction_rate_pct": 100.0,
+    }
+    assert stats["diet_capture_ms"]["share"]["by_target"] == {
+        "generic": {"attempts": 1, "completed": 1, "with_photo": 0, "failures": 0},
+        "wechat": {"attempts": 2, "completed": 1, "with_photo": 1, "failures": 1},
+        "xiaohongshu": {"attempts": 1, "completed": 1, "with_photo": 1, "failures": 0},
     }
