@@ -76,6 +76,11 @@ const BUSY_PHOTO_CAPTURE_STAGES = new Set<PhotoCaptureStage>([
 ]);
 const PHOTO_RECOGNITION_SLOW_MS = 6000;
 const PORTION_REVIEW_ASSISTIVE_HINT = '优先核对食物份量；热量和三大营养会随份量一起修正。';
+const PHOTO_CAPTURE_STEPS = [
+  { key: 'preparing', label: '优化照片' },
+  { key: 'recognizing', label: '识别食物' },
+  { key: 'draft', label: '生成草稿' },
+] as const;
 
 const NON_DIET_DRAFT_ALERT = {
   title: '这不是饮食记录',
@@ -1287,12 +1292,55 @@ function PhotoCaptureStatusCard({
     : slowRecognition && stage === 'recognizing'
       ? '仍在识别照片；完成后会先给你确认草稿，不会自动写入。'
     : '识别完成后先给你确认草稿，不会自动写入。';
+  const activeIndex = stage === 'saving'
+    ? PHOTO_CAPTURE_STEPS.length
+    : stage === 'recognizing'
+      ? 1
+    : stage === 'preparing'
+      ? 0
+      : 0;
   return (
     <View style={styles.photoStatusCard}>
       <ActivityIndicator size="small" color={C.green500} />
       <View style={{ flex: 1 }}>
         <Text style={txt.photoStatusTitle}>{label}</Text>
         <Text style={txt.photoStatusDetail}>{detail}</Text>
+        <View style={styles.photoStatusSteps}>
+          {PHOTO_CAPTURE_STEPS.map((step, index) => {
+            const completed = activeIndex > index;
+            const active = activeIndex === index;
+            return (
+              <View
+                key={step.key}
+                style={[
+                  styles.photoStatusStep,
+                  completed && styles.photoStatusStepDone,
+                  active && styles.photoStatusStepActive,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.photoStatusStepDot,
+                    completed && styles.photoStatusStepDotDone,
+                    active && styles.photoStatusStepDotActive,
+                  ]}
+                />
+                <Text
+                  style={[
+                    txt.photoStatusStepText,
+                    completed && txt.photoStatusStepTextDone,
+                    active && txt.photoStatusStepTextActive,
+                  ]}
+                >
+                  {step.label}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+        {slowRecognition && stage === 'recognizing' ? (
+          <Text style={txt.photoStatusTrust}>深度识别中，不会重复提交</Text>
+        ) : null}
       </View>
     </View>
   );
@@ -1559,6 +1607,44 @@ const styles = StyleSheet.create({
     borderColor: C.line,
     ...revaShadows.sm,
   },
+  photoStatusSteps: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: revaSpacing.s3,
+  },
+  photoStatusStep: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: C.paper2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
+  photoStatusStepActive: {
+    backgroundColor: C.green50,
+    borderColor: C.green100,
+  },
+  photoStatusStepDone: {
+    backgroundColor: C.surface,
+    borderColor: C.green100,
+  },
+  photoStatusStepDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: C.ink4,
+  },
+  photoStatusStepDotActive: {
+    backgroundColor: C.green500,
+  },
+  photoStatusStepDotDone: {
+    backgroundColor: C.green300,
+  },
   quickDraftHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: revaSpacing.s3 },
   mealTail: { alignItems: 'flex-end', justifyContent: 'center', gap: 7 },
   mealShareButton: {
@@ -1657,6 +1743,10 @@ const txt = {
   agentLinkText: { fontFamily: revaFonts.sans, fontSize: 14, fontWeight: '600' } as TextStyle,
   photoStatusTitle: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '800', color: C.ink1 } as TextStyle,
   photoStatusDetail: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,
+  photoStatusStepText: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, fontWeight: '700' } as TextStyle,
+  photoStatusStepTextActive: { color: C.green700 } as TextStyle,
+  photoStatusStepTextDone: { color: C.green600 } as TextStyle,
+  photoStatusTrust: { fontFamily: revaFonts.sans, fontSize: 11, color: C.green700, fontWeight: '700', marginTop: 8 } as TextStyle,
   quickOverline: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, fontWeight: '700' } as TextStyle,
   quickTitle: { fontFamily: revaFonts.sans, fontSize: 17, color: C.ink1, fontWeight: '800', marginTop: 2 } as TextStyle,
   quickMealChipText: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, fontWeight: '700' } as TextStyle,

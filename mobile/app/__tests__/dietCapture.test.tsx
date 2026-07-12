@@ -738,6 +738,9 @@ describe('DietScreen capture deeplink', () => {
     await waitFor(() => {
       expect(getByText('正在识别餐食')).toBeTruthy();
     });
+    expect(getByText('优化照片')).toBeTruthy();
+    expect(getByText('识别食物')).toBeTruthy();
+    expect(getByText('生成草稿')).toBeTruthy();
 
     resolveRecognition({
       success: true,
@@ -783,6 +786,7 @@ describe('DietScreen capture deeplink', () => {
       await waitFor(() => {
         expect(getByText('仍在识别照片；完成后会先给你确认草稿，不会自动写入。')).toBeTruthy();
       });
+      expect(getByText('深度识别中，不会重复提交')).toBeTruthy();
 
       resolveRecognition({
         success: true,
