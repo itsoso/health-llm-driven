@@ -547,3 +547,87 @@ async def test_llm_synthesis_raise_tables_still_build(db, auth_user_and_headers,
     events = await _run(executor, "看看 HRV", client_caps=[GENUI_TABLE_CAP], user_id=user.id)
     rendered = _tokens(events)
     assert '"type":"metric_table"' in rendered and "58 ms" in rendered
+
+
+# ---------------------------------------------------------------------------
+# E. Condition 1 — crisis-value carve-out reaches prose contract (safety review)
+# ---------------------------------------------------------------------------
+
+def _bp_crisis_result():
+    """BP tool result carrying a server-computed high-grade category (185/122→高血压3级)。
+
+    "高血压3级" 是 classify_blood_pressure 的真实天花板输出 (无"危象"档), 用它而非合成词。
+    """
+    return json.dumps([
+        {"record_date": "2026-07-01", "systolic": 185, "diastolic": 122,
+         "pulse": 92, "category": "高血压3级"},
+    ], ensure_ascii=False)
+
+
+def _bp_round_stream(captured):
+    """round1 → health_query blood_pressure tool_call; round2 → synthesis text。"""
+    state = {"n": 0}
+
+    async def fake_stream(messages, round_tools):
+        state["n"] += 1
+        captured.append([m.get("content") for m in messages])
+        if state["n"] == 1:
+            yield {"type": "tool_calls", "tool_calls": [{
+                "id": "bp1",
+                "function": {"name": "health_query",
+                             "arguments": '{"dimension":"blood_pressure"}'},
+            }]}
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+        else:
+            yield {"type": "content", "text": "结论：你的血压处于高血压3级水平，请及时就医。"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+    return fake_stream
+
+
+# 安全例外的判别性片段 (仅本 carve-out 产出, 不会被 safety alert / mac 指令巧合命中)。
+_CARVEOUT_MARKER = "必须在正文中明确说出具体数值"
+
+
+@pytest.mark.asyncio
+async def test_cap_on_crisis_bp_injects_carveout(db, auth_user_and_headers, monkeypatch):
+    """Condition 1: cap on + BP 高分级结果 → ≤500字 契约携带"危急值必须复述"安全例外,
+    且既有"不复述数值行"与"安全边界照常表达"两行未被削弱; BP 路径仍确定性出卡片。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire(executor, monkeypatch)
+    captured: list = []
+    monkeypatch.setattr(executor, "_call_llm_stream", _bp_round_stream(captured))
+    monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_bp_crisis_result()))
+
+    events = await _run(executor, "看看我的血压", client_caps=[GENUI_TABLE_CAP], user_id=user.id)
+
+    prompt = "\n".join(c for msgs in captured for c in msgs if isinstance(c, str))
+    assert "数据回答格式要求" in prompt and "不超过 500 字" in prompt
+    assert _CARVEOUT_MARKER in prompt and "安全例外" in prompt        # 安全例外落进 prompt
+    assert "高血压2-3级" in prompt                                    # 例外示例用真实分级词
+    # 既有边界不被削弱: 两行原样保留
+    assert "绝不逐行复述表格中的数值行" in prompt
+    assert "不确定性与安全边界照常表达" in prompt
+    # "以系统标注为准"锚句在场 (防模型对系统判正常的数值自加危急判断)
+    assert "以系统安全提示" in prompt and "不要给系统标注为正常的数值自行加危急判断" in prompt
+    # BP 高分级结果确实经确定性建表路径出卡片 (卡片内 category relay 由 Condition 2 单测覆盖)
+    assert '"type":"metric_table"' in _tokens(events)
+
+
+@pytest.mark.asyncio
+async def test_cap_off_no_carveout(db, auth_user_and_headers, monkeypatch):
+    """对称: cap 缺失 → ≤500字 契约整体不注入, 因此安全例外碎片也不存在。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire(executor, monkeypatch)
+    captured: list = []
+    monkeypatch.setattr(executor, "_call_llm_stream", _bp_round_stream(captured))
+    monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_bp_crisis_result()))
+
+    await _run(executor, "看看我的血压", client_caps=[], user_id=user.id)
+
+    prompt = "\n".join(c for msgs in captured for c in msgs if isinstance(c, str))
+    assert "数据回答格式要求" not in prompt
+    assert _CARVEOUT_MARKER not in prompt        # 契约缺失 → 无安全例外碎片
+    assert "高血压2-3级" not in prompt            # 例外示例词也随契约整体缺席 (present iff cap on)
