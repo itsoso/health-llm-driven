@@ -964,6 +964,63 @@ describe('DietScreen capture deeplink', () => {
     promptSpy.mockRestore();
   });
 
+  it('keeps the just-captured meal photo in the immediate share preview when the confirm response has no image url', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ uri: 'file:///fresh-camera-meal.heic', width: 4032, height: 3024 }],
+    });
+    mockManipulateAsync.mockResolvedValueOnce({
+      uri: 'file:///fresh-camera-meal-small.jpg',
+      width: 1568,
+      height: 1176,
+      base64: 'Q0FNRVJB',
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      foods: [{ name: '三文鱼能量碗', quantity: '1份' }],
+      meal_description: '三文鱼能量碗',
+      total_calories: 620,
+      total_protein: 34,
+      total_carbs: 58,
+      total_fat: 22,
+      photo_draft_token: 'photo-draft-share-91',
+      error: null,
+    });
+    dietService.createDietRecord.mockResolvedValueOnce({
+      id: 91,
+      user_id: 1,
+      record_date: '2026-07-11',
+      meal_type: 'lunch',
+      food_items: '三文鱼能量碗',
+      source: 'ai_estimate',
+      calories: 620,
+      protein: 34,
+      carbs: 58,
+      fat: 22,
+      fiber: null,
+      alcohol_units: null,
+      image_url: null,
+      notes: null,
+      health_tips: null,
+    });
+
+    const { getByText, getByTestId } = render(<DietScreen />);
+    await waitFor(() => {
+      expect(getByText('待确认饮食')).toBeTruthy();
+    });
+
+    fireEvent.press(getByText('确认记录'));
+
+    await waitFor(() => {
+      expect(getByText('分享这一餐')).toBeTruthy();
+      expect(getByTestId('diet-share-image').props.source).toEqual({
+        uri: 'file:///fresh-camera-meal.heic',
+      });
+    });
+  });
+
   it('does not submit the same quick draft twice while saving', async () => {
     const dietService = require('../../services/diet');
     let resolveSave: (value: any) => void = () => {};

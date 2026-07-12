@@ -362,6 +362,7 @@ export default function DietScreen() {
   const photoRecognitionSlowRef = useRef(false);
   const [quickDraftSaving, setQuickDraftSaving] = useState(false);
   const [shareRecord, setShareRecord] = useState<DietRecord | null>(null);
+  const [shareImageUriOverride, setShareImageUriOverride] = useState<string | null>(null);
   const [photoDraftRestoreReady, setPhotoDraftRestoreReady] = useState(false);
   const quickDraftSavingRef = useRef(false);
   const activeDraftRef = useRef(false);
@@ -435,6 +436,7 @@ export default function DietScreen() {
       setFormDefaults({});
       setDraftEstimateSource(null);
       setShareRecord(null);
+      setShareImageUriOverride(null);
       setPhotoCaptureStage('idle');
     }
     if (!authUserId) {
@@ -612,6 +614,11 @@ export default function DietScreen() {
           badge: '刚记录饮食',
         });
       } else {
+        setShareImageUriOverride(
+          !created.image_url && quickDraft.source?.kind === 'photo'
+            ? quickDraft.source.imageUri ?? null
+            : null,
+        );
         setShareRecord(buildShareRecordFromConfirmation(created, draftRecord));
       }
     } catch (error) {
@@ -872,7 +879,7 @@ export default function DietScreen() {
         ai_confidence: averageRecognitionConfidence(recognized.foods),
         ai_raw_result: recognized,
         health_tips: recognized.health_tips ?? undefined,
-      }, { kind: 'photo', imageBase64 }, '已识别餐食,确认后写入');
+      }, { kind: 'photo', imageBase64, imageUri: asset.uri ?? preparedImage.uri }, '已识别餐食,确认后写入');
       setPhotoCaptureStage('draft_ready');
     } catch {
       setPhotoCaptureStage('failed');
@@ -1035,6 +1042,12 @@ export default function DietScreen() {
   const dateLabel = isToday ? '今天' : new Date(date).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', weekday: 'short' });
   const photoCaptureBusy = BUSY_PHOTO_CAPTURE_STAGES.has(photoCaptureStage);
   const showDietFab = !showForm && !quickDraft && !photoCaptureBusy;
+  const shareImageSource = shareRecord
+    ? buildChatImageSource(
+      absoluteApiAssetUrl(shareRecord.image_url) ?? shareImageUriOverride ?? '',
+      authToken,
+    )
+    : undefined;
 
   const handleChatDiet = useCallback(() => {
     if (!daily) return;
@@ -1198,7 +1211,10 @@ export default function DietScreen() {
                       <Text style={txt.mealCal}>{r.calories != null ? `${Math.round(r.calories)}kcal` : ''}</Text>
                       <TouchableOpacity
                         style={styles.mealShareButton}
-                        onPress={() => setShareRecord(r)}
+                        onPress={() => {
+                          setShareImageUriOverride(null);
+                          setShareRecord(r);
+                        }}
                         activeOpacity={0.72}
                         accessibilityRole="button"
                         accessibilityLabel={`分享${MEAL_LABEL[r.meal_type] ?? '这餐'}饮食`}
@@ -1226,11 +1242,11 @@ export default function DietScreen() {
           visible
           record={shareRecord}
           dateLabel={`${shareRecord.record_date.replace(/-/g, '.')} · ${MEAL_LABEL[shareRecord.meal_type] ?? '餐食'}`}
-          imageSource={buildChatImageSource(
-            absoluteApiAssetUrl(shareRecord.image_url) ?? '',
-            authToken,
-          )}
-          onClose={() => setShareRecord(null)}
+          imageSource={shareImageSource}
+          onClose={() => {
+            setShareRecord(null);
+            setShareImageUriOverride(null);
+          }}
           onShareTerminal={(meta) => {
             void emitClientEvent('diet_share_terminal', meta);
           }}

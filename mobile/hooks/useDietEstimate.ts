@@ -21,7 +21,7 @@ export interface NutritionPatch {
 /** 一条待估算任务: 记录已入库 (有 id), 用 source 决定走哪条 LLM 估算. */
 export type EstimateSource =
   | { kind: 'text'; description: string }
-  | { kind: 'photo'; imageBase64?: string }
+  | { kind: 'photo'; imageBase64?: string; imageUri?: string }
   | { kind: 'voice'; rawText: string };
 
 function hasValue(p: NutritionPatch): boolean {
