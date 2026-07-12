@@ -68,6 +68,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ...((config.plugins ?? []).some((plugin) => (
       Array.isArray(plugin) ? plugin[0] === 'expo-sharing' : plugin === 'expo-sharing'
     )) ? [] : ['expo-sharing'] as const),
+    ...((config.plugins ?? []).some((plugin) => (
+      Array.isArray(plugin) ? plugin[0] === 'expo-media-library' : plugin === 'expo-media-library'
+    )) ? [] : [[
+      'expo-media-library',
+      {
+        photosPermission: PHOTO_LIBRARY_USAGE_DESCRIPTION,
+        savePhotosPermission: PHOTO_LIBRARY_ADD_USAGE_DESCRIPTION,
+        granularPermissions: ['photo'],
+      },
+    ] as [string, any]]),
   ],
   ios: {
     ...(config.ios ?? {}),
