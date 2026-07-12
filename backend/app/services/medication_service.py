@@ -1,7 +1,7 @@
 """用药管理服务"""
 import logging
 from typing import Dict, Any, List, Optional
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
@@ -10,6 +10,47 @@ from sqlalchemy.exc import IntegrityError
 from app.models.medication import Medication, MedicationLog, medication_timing_label
 
 logger = logging.getLogger(__name__)
+
+_BEIJING_TZ = timezone(timedelta(hours=8))
+
+
+def normalize_taken_time(raw: Any) -> Optional[str]:
+    """把任意 taken_time 输入归一成列语义的 "HH:MM"(单一真源)。
+
+    背景(2026-07-12 生产实锤):executor 默认值曾是带微秒+时区的完整 ISO
+    (32 字符)→ 溢出 medication_logs.taken_time varchar → 500 → 无写回执,
+    用药确认流看似"指令没遵循"。列语义本就是短时刻 "08:00"(依从性幂等
+    去重按该槽位撞;剂次槽解析 _resolve_dose_slot 也按 HH:MM 匹配),
+    正解是归一化,不是加宽列。
+
+    接受:"HH:MM" / "HH:MM:SS" / 完整 ISO(含微秒/时区,tz-aware 折算北京时)。
+    None/空 → None(调用方自定默认)。解析不了 → ValueError(fail-loud,
+    400 而不是数据库 500)。
+    """
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    # 完整 ISO 日期时间(含 T 或 空格分隔)
+    if "T" in s or (" " in s and "-" in s):
+        try:
+            dt = datetime.fromisoformat(s.replace(" ", "T", 1))
+        except ValueError as exc:
+            raise ValueError(f"无法解析 taken_time: {s!r}") from exc
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(_BEIJING_TZ)
+        return dt.strftime("%H:%M")
+    # "HH:MM" / "HH:MM:SS"
+    parts = s.split(":")
+    if len(parts) >= 2:
+        try:
+            h, m = int(parts[0]), int(parts[1])
+        except ValueError as exc:
+            raise ValueError(f"无法解析 taken_time: {s!r}") from exc
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            return f"{h:02d}:{m:02d}"
+    raise ValueError(f"无法解析 taken_time: {s!r}")
 
 
 class MedicationService:

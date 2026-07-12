@@ -3905,9 +3905,15 @@ class AgentExecutor:
                 "[agent_executor] fast-route lite system prompt user=%s chars=%d",
                 user_id, len(system_content),
             )
+        # ── turn-scoped 上下文(2026-07-11 token 优化 #6:前缀缓存排布)────────
+        # 这四块(入口动作/桌面格式/入口上下文/KB 证据)逐回合变化,曾拼在 system
+        # 尾部 → system 每回合字节不同,拆掉 provider 前缀缓存(生产实测基线命中率
+        # 29.2%)。改为注入**最后一条 user 消息**:前缀 = system+tools+旧历史 保持
+        # 字节稳定,turn 内容落在增长尾部,天然不破坏前缀匹配。块文本逐字保留。
+        turn_context_parts: List[str] = []
         if opener_quick_reply_note:
-            system_content += (
-                "\n\n## 入口动作处理结果\n"
+            turn_context_parts.append(
+                "## 入口动作处理结果\n"
                 f"{opener_quick_reply_note}\n"
                 "请先用一句话确认这次验证/反馈已经接上了对应行动卡片，再给出下一步。"
             )
@@ -3915,16 +3921,16 @@ class AgentExecutor:
                 sources_used.append("ActionCard")
         desktop_response_instruction = _extract_desktop_response_instruction(extra_context)
         if desktop_response_instruction:
-            system_content += (
-                "\n\n## 桌面端回复格式要求\n"
+            turn_context_parts.append(
+                "## 桌面端回复格式要求\n"
                 f"{desktop_response_instruction}\n"
                 "这是桌面端展示的最高优先级格式要求；除非用户明确要求纯文本，否则必须遵守。"
             )
         # 入口 deeplink 携带的结构化上下文 — 用户在 SNP/饮食/运动等页点"详细聊"时,
         # 把当前页正展示的具体方案条目透传过来, 让 LLM 不重新猜, 在已有方案上深化.
         if extra_context and extra_context.strip():
-            system_content += (
-                "\n\n## 入口上下文 (用户正在看的具体方案)\n"
+            turn_context_parts.append(
+                "## 入口上下文 (用户正在看的具体方案)\n"
                 "用户从下面这个上下文点过来跟你详细聊, 请在**这些已展示的具体条目**上深化, "
                 "不要重新生成方案; 引用条目名称时跟用户已看见的一致.\n"
                 f"```\n{extra_context.strip()[:4000]}\n```"
@@ -3938,7 +3944,7 @@ class AgentExecutor:
         )
         pre_stages["kb_ms"] = _pre_stage(_t_stage)
         if system_kb_context:
-            system_content += f"\n\n{system_kb_context}"
+            turn_context_parts.append(system_kb_context)
             if "系统知识库" not in sources_used:
                 sources_used.append("系统知识库")
         # 2026-05-14: 用户数据源 inspection — 不依赖 system_prompt 实际用了什么,
@@ -3989,6 +3995,27 @@ class AgentExecutor:
             else:
                 _attach_images_to_last_user_message(messages, message, images)
         pre_stages["vision_ms"] = _pre_stage(_t_stage) if images else 0
+
+        # turn-scoped 上下文注入最后一条 user 消息(#6,必须在 vision 重写之后,
+        # 否则会被 enriched_message 覆盖)。上下文在前、用户原话在后(recency 保持
+        # 问题主导);标注来源=系统,防止模型当成用户自述。
+        if turn_context_parts:
+            _turn_ctx = "\n\n".join(turn_context_parts)
+            _injected = False
+            for _i in range(len(messages) - 1, -1, -1):
+                if messages[_i].get("role") == "user":
+                    _existing = messages[_i].get("content")
+                    if isinstance(_existing, str):
+                        messages[_i]["content"] = (
+                            f"[系统附注 — 本回合参考上下文,非用户输入]\n{_turn_ctx}\n"
+                            f"[用户消息]\n{_existing}"
+                        )
+                        _injected = True
+                    break
+            if not _injected:
+                # 兜底:带图多段 content 或无 user 消息 → 退回旧行为拼 system 尾,
+                # 宁可损失缓存也绝不丢上下文(fail-open)。
+                messages[0]["content"] = f"{messages[0]['content']}\n\n{_turn_ctx}"
 
         # pre_llm_ms: system-prompt 组装 + KB 检索 + history + vision 到本点的总壁钟。
         # 直接取 start_time delta (最准, 不受漏计阶段影响)。fail-soft。
@@ -7462,7 +7489,17 @@ class AgentExecutor:
                     logger.warning(f"[health_record] medication 自动登记失败: {cerr}")
                     return f"用药记录暂时没成功(自动登记 '{med_name}' 时{cerr or '未知错误'}),你可以稍后再试一次。"
                 matched = created
-            taken_time = data.get("taken_time", datetime.now(BEIJING_TZ).isoformat())
+            # 归一到列语义 "HH:MM"(2026-07-12 生产实锤:此处默认值曾是带微秒+时区的
+            # 完整 ISO → 溢出 varchar → 500 → 无写回执,确认流看似失灵)。
+            # 解析不了的脏输入回退"现在",fail-soft 但记 warning(写入本身不该因时刻串死)。
+            from app.services.medication_service import normalize_taken_time
+            try:
+                taken_time = normalize_taken_time(data.get("taken_time"))
+            except ValueError:
+                logger.warning("[health_record] taken_time 无法解析,回退当前时刻: %r", data.get("taken_time"))
+                taken_time = None
+            if not taken_time:
+                taken_time = datetime.now(BEIJING_TZ).strftime("%H:%M")
             return await self._api_post(
                 f"{base}/medication/logs", headers,
                 {"medication_id": matched["id"], "taken_time": taken_time, "status": "taken"}

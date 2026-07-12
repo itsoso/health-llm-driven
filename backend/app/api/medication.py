@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from datetime import UTC, datetime
 
@@ -62,6 +62,17 @@ class MedicationLogCreate(BaseModel):
     actual_dosage: Optional[str] = None
     notes: Optional[str] = None
 
+    @field_validator("taken_time")
+    @classmethod
+    def _normalize_taken_time(cls, v: str) -> str:
+        # 边界归一化(单一真源在 service):完整 ISO/带秒 → "HH:MM";
+        # 解析不了 → 422(fail-loud),绝不让 varchar 溢出变 500。
+        from app.services.medication_service import normalize_taken_time
+        normalized = normalize_taken_time(v)
+        if normalized is None:
+            raise ValueError("taken_time 不能为空")
+        return normalized
+
 
 class MedicationLogUpdate(BaseModel):
     medication_id: Optional[int] = None
@@ -70,6 +81,14 @@ class MedicationLogUpdate(BaseModel):
     skip_reason: Optional[str] = None
     actual_dosage: Optional[str] = None
     notes: Optional[str] = None
+
+    @field_validator("taken_time")
+    @classmethod
+    def _normalize_taken_time(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        from app.services.medication_service import normalize_taken_time
+        return normalize_taken_time(v)
 
 
 @router.post("/medications")

@@ -203,3 +203,60 @@ class TestMedicationService:
             db=med_db, medication_id=sample_medication.id, user_id=999,
         )
         assert result is False
+
+
+class TestTakenTimeNormalization:
+    """2026-07-12 生产实锤回归:完整 ISO(微秒+时区,32 字符)曾溢出
+    medication_logs.taken_time varchar → 500 → 无写回执 → 用药确认流看似失灵。
+    列语义 = "HH:MM"(幂等去重槽 + 剂次槽解析都按它),归一化是单一正解。"""
+
+    def test_normalize_full_iso_with_microseconds_tz(self):
+        from app.services.medication_service import normalize_taken_time
+        # 生产事故原始 payload(32 字符)→ 北京时刻 HH:MM
+        assert normalize_taken_time("2026-07-12T14:14:23.101115+08:00") == "14:14"
+
+    def test_normalize_tz_conversion_to_beijing(self):
+        from app.services.medication_service import normalize_taken_time
+        # UTC 06:14 = 北京 14:14
+        assert normalize_taken_time("2026-07-12T06:14:23+00:00") == "14:14"
+
+    def test_normalize_short_forms(self):
+        from app.services.medication_service import normalize_taken_time
+        assert normalize_taken_time("08:00") == "08:00"
+        assert normalize_taken_time("8:5") == "08:05"
+        assert normalize_taken_time("14:14:23") == "14:14"
+        assert normalize_taken_time(None) is None
+        assert normalize_taken_time("  ") is None
+
+    def test_normalize_garbage_fail_loud(self):
+        import pytest as _pytest
+        from app.services.medication_service import normalize_taken_time
+        with _pytest.raises(ValueError):
+            normalize_taken_time("昨天早上")
+        with _pytest.raises(ValueError):
+            normalize_taken_time("25:99")
+
+    def test_api_accepts_full_iso_and_stores_hhmm(self, client, db, auth_user_and_headers, sample_medication_payload=None):
+        user, headers = auth_user_and_headers
+        med = client.post("/api/v1/medication/medications", headers=headers, json={
+            "name": "回归测试药", "frequency": "qd",
+        }).json()
+        res = client.post("/api/v1/medication/logs", headers=headers, json={
+            "medication_id": med["id"],
+            "taken_time": "2026-07-12T14:14:23.101115+08:00",  # 事故原始形状
+            "status": "taken",
+        })
+        assert res.status_code == 200, res.text
+        assert res.json()["taken_time"] == "14:14"
+
+    def test_api_garbage_taken_time_is_422_not_500(self, client, db, auth_user_and_headers):
+        user, headers = auth_user_and_headers
+        med = client.post("/api/v1/medication/medications", headers=headers, json={
+            "name": "回归测试药2", "frequency": "qd",
+        }).json()
+        res = client.post("/api/v1/medication/logs", headers=headers, json={
+            "medication_id": med["id"],
+            "taken_time": "昨天早上",
+            "status": "taken",
+        })
+        assert res.status_code == 422
