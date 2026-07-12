@@ -285,6 +285,34 @@ sync_env() {
     validate_langbridge_env
     backup_remote_env
 
+    # ── env 守卫(2026-07-12 事故加固,机械拦截,勿删)──────────────────
+    # 事故:从陈旧 checkout 跑 deploy,sync_env 把缺 12 个 key + APP_ENV=development
+    # 的本地 .env 推上 prod → 短信密钥丢失 + dev_code 回显洞重开。
+    # 守卫1:本地 .env 必须是 prod 形态(APP_ENV=production + DEBUG=False)。
+    # 守卫2:prod 现有的 key 本地缺失 → 说明本地 .env 陈旧,推送会删 prod 配置,硬退。
+    # 逃生口:DEPLOY_ENV_FORCE=1(明知故犯,比如刻意删 key)。
+    if [ "${DEPLOY_ENV_FORCE:-0}" != "1" ]; then
+        if ! grep -q "^APP_ENV=production" "$ENV_FILE" || ! grep -q "^DEBUG=False" "$ENV_FILE"; then
+            print_error "env 守卫:本地 .env 不是 prod 形态(需 APP_ENV=production + DEBUG=False)。"
+            print_error "你可能在用 dev/陈旧 .env。修正后重试,或 DEPLOY_ENV_FORCE=1 强制。"
+            exit 1
+        fi
+        _GUARD_REMOTE=$(mktemp)
+        if scp -q "$SERVER:$REMOTE_PATH/backend/.env" "$_GUARD_REMOTE" 2>/dev/null; then
+            _MISSING_KEYS=$(comm -13 \
+                <(grep -vE '^#|^$' "$ENV_FILE" | sed -E 's/=.*//' | sort -u) \
+                <(grep -vE '^#|^$' "$_GUARD_REMOTE" | sed -E 's/=.*//' | sort -u) | head -20)
+            if [ -n "$_MISSING_KEYS" ]; then
+                print_error "env 守卫:prod 上存在但本地 .env 缺失的 key(推送会把它们从 prod 删掉):"
+                echo "$_MISSING_KEYS"
+                print_error "先把这些 key 收敛进本地根 .env(scp prod 值回来),或 DEPLOY_ENV_FORCE=1 强制。"
+                rm -f "$_GUARD_REMOTE"
+                exit 1
+            fi
+        fi
+        rm -f "$_GUARD_REMOTE"
+    fi
+
     # 创建临时文件，过滤掉部署配置
     TEMP_ENV=$(mktemp)
     grep -v "^DEPLOY_SERVER=" "$ENV_FILE" | grep -v "^DEPLOY_PATH=" | grep -v "^#.*服务器信息" | grep -v "^# -.*deploy.sh" > "$TEMP_ENV"
