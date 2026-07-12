@@ -155,6 +155,39 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('offers platform-first image sharing with matching captions', async () => {
+    const { getByText } = render(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(getByText('发微信/朋友圈')).toBeTruthy();
+    expect(getByText('发小红书')).toBeTruthy();
+
+    fireEvent.press(getByText('发小红书'));
+
+    await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#小巴记录'));
+      expect(mockCaptureRef).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          format: 'png',
+          quality: 1,
+          width: 1080 / PixelRatio.get(),
+          height: 1440 / PixelRatio.get(),
+        }),
+      );
+      expect(mockShareAsync).toHaveBeenCalledWith(
+        'file:///meal-share.png',
+        expect.objectContaining({ dialogTitle: '发小红书' }),
+      );
+    });
+  });
+
   it('uses native pixel units on Android and point units on iOS', () => {
     expect(dietShareCaptureDimensions('android', 3)).toEqual({ width: 1080, height: 1440 });
     expect(dietShareCaptureDimensions('ios', 3)).toEqual({ width: 360, height: 480 });

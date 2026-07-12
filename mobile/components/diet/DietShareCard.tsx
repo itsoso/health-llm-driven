@@ -37,6 +37,7 @@ const MEAL_LABEL: Record<string, string> = {
   snack: '加餐',
 };
 export const DIET_SHARE_IMAGE_TIMEOUT_MS = 5_000;
+type ShareTarget = 'generic' | 'wechat' | 'xiaohongshu';
 
 export function dietShareCaptureDimensions(
   platform = Platform.OS,
@@ -105,6 +106,18 @@ export function buildDietShareMomentsCaption(record: DietRecord, dateLabel: stri
   if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g。`);
   lines.push('小巴帮我把吃过的东西留成一张可复盘的记录。');
   return lines.join('\n');
+}
+
+function captionForShareTarget(record: DietRecord, dateLabel: string, target: ShareTarget): string {
+  return target === 'wechat'
+    ? buildDietShareMomentsCaption(record, dateLabel)
+    : buildDietShareCaption(record, dateLabel);
+}
+
+function dialogTitleForShareTarget(target: ShareTarget): string {
+  if (target === 'wechat') return '发微信/朋友圈';
+  if (target === 'xiaohongshu') return '发小红书';
+  return '分享饮食打卡';
 }
 
 export type DietShareCardProps = {
@@ -271,10 +284,10 @@ export function DietShareSheet({
     return () => clearTimeout(timeout);
   }, [imageReady, imageSource, visible]);
 
-  const shareTextFallback = async () => {
+  const shareTextFallback = async (target: ShareTarget = 'generic') => {
     await Share.share({
-      title: '分享饮食打卡',
-      message: buildDietShareCaption(record, dateLabel),
+      title: dialogTitleForShareTarget(target),
+      message: captionForShareTarget(record, dateLabel, target),
     });
   };
 
@@ -291,14 +304,17 @@ export function DietShareSheet({
     }
   };
 
-  const handleShare = async () => {
+  const handleShare = async (target: ShareTarget = 'generic') => {
     if (sharing || !imageReady || !cardRef.current) return;
     const startedAt = Date.now();
     let captureUri: string | null = null;
     setSharing(true);
     try {
+      if (target !== 'generic') {
+        await Clipboard.setStringAsync(captionForShareTarget(record, dateLabel, target));
+      }
       if (!await Sharing.isAvailableAsync()) {
-        await shareTextFallback();
+        await shareTextFallback(target);
         onShareTerminal?.({
           phase: 'completed',
           duration_ms: Date.now() - startedAt,
@@ -316,7 +332,7 @@ export function DietShareSheet({
       await Sharing.shareAsync(captureUri, {
         mimeType: 'image/png',
         UTI: 'public.png',
-        dialogTitle: '分享饮食打卡',
+        dialogTitle: dialogTitleForShareTarget(target),
       });
       onShareTerminal?.({
         phase: 'completed',
@@ -326,7 +342,7 @@ export function DietShareSheet({
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       try {
-        await shareTextFallback();
+        await shareTextFallback(target);
         onShareTerminal?.({
           phase: 'completed',
           duration_ms: Date.now() - startedAt,
@@ -390,9 +406,40 @@ export function DietShareSheet({
             </View>
           </View>
 
+          <View style={styles.platformShareRow}>
+            <TouchableOpacity
+              style={[styles.platformShareButton, styles.wechatShareButton, (sharing || !imageReady) && styles.shareButtonDisabled]}
+              onPress={() => handleShare('wechat')}
+              disabled={sharing || !imageReady}
+              activeOpacity={0.84}
+              accessibilityRole="button"
+              accessibilityLabel="发微信或朋友圈"
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={18} color={C.greenOn} />
+              <View>
+                <Text style={styles.platformShareText}>发微信/朋友圈</Text>
+                <Text style={styles.platformShareHint}>自动复制朋友圈文案</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.platformShareButton, styles.xhsShareButton, (sharing || !imageReady) && styles.shareButtonDisabled]}
+              onPress={() => handleShare('xiaohongshu')}
+              disabled={sharing || !imageReady}
+              activeOpacity={0.84}
+              accessibilityRole="button"
+              accessibilityLabel="发小红书"
+            >
+              <Ionicons name="sparkles-outline" size={18} color="#fff" />
+              <View>
+                <Text style={styles.platformShareText}>发小红书</Text>
+                <Text style={styles.platformShareHint}>自动复制带话题文案</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
           <TouchableOpacity
             style={[styles.shareButton, (sharing || !imageReady) && styles.shareButtonDisabled]}
-            onPress={handleShare}
+            onPress={() => handleShare('generic')}
             disabled={sharing || !imageReady}
             activeOpacity={0.84}
             accessibilityRole="button"
@@ -571,12 +618,32 @@ const styles = StyleSheet.create({
     ...revaShadows.md,
   },
   captureSurface: { width: '100%', height: '100%', backgroundColor: C.surface },
+  platformShareRow: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: revaSpacing.s4,
+  },
+  platformShareButton: {
+    flex: 1,
+    minHeight: 54,
+    borderRadius: revaRadii.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 10,
+  },
+  wechatShareButton: { backgroundColor: C.green500 },
+  xhsShareButton: { backgroundColor: '#D95A45' },
+  platformShareText: { fontFamily: revaFonts.sans, fontSize: 13, color: C.greenOn, fontWeight: '900' },
+  platformShareHint: { fontFamily: revaFonts.sans, fontSize: 9.5, color: 'rgba(255,255,255,0.78)', marginTop: 1 },
   shareButton: {
     width: '100%',
     minHeight: 48,
     borderRadius: revaRadii.md,
-    backgroundColor: C.green500,
-    marginTop: revaSpacing.s4,
+    backgroundColor: C.ink2,
+    marginTop: revaSpacing.s2,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
