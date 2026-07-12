@@ -881,6 +881,69 @@
     color: var(--secondary);
   }
 
+  /* GenUI reva-ui metric_table(rank1):暖色调数据表卡片,与 dynamic-card 同族。
+     JS 端 buildRevaMetricTableHTML 自绘;确定性布局(table-layout:fixed)+ 横向溢出滚动。
+     ink-2/ink-3 在本渲染系统里都收敛到 --secondary(此处只有 --text / --secondary 两档)。 */
+  .reva-ui-table-card {
+    margin: 2px 0 10px;
+    padding: 12px 12px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(48, 176, 112, 0.24);
+    background: linear-gradient(180deg, rgba(48, 176, 112, 0.12), rgba(48, 176, 112, 0.05));
+  }
+  .reva-ui-table-title {
+    font-family: ui-serif, "New York", Georgia, "Songti SC", "Times New Roman", serif;
+    font-size: 0.98em;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: 0.01em;
+    margin-bottom: 9px;
+  }
+  /* 横向溢出滚动:窄气泡里宽表不撑破页面,自己滚。 */
+  .reva-ui-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .reva-ui-table {
+    border-collapse: collapse;
+    width: 100%;
+    table-layout: fixed;          /* 确定性列宽,不受内容做二次布局协商 */
+    font-size: 0.9em;
+  }
+  .reva-ui-table thead th {
+    text-align: left;
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;    /* small caps 观感 */
+    letter-spacing: 0.045em;
+    color: var(--secondary);      /* ink-2 */
+    padding: 3px 10px 7px;
+    border-bottom: 1px solid var(--hr);
+    white-space: nowrap;
+  }
+  .reva-ui-table tbody td {
+    padding: 7px 10px;
+    border-bottom: 1px solid rgba(120, 120, 128, 0.16);  /* 发丝级行分隔 */
+    vertical-align: top;
+    color: var(--text);
+    line-height: 1.45;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .reva-ui-table tbody tr:last-child td { border-bottom: none; }
+  .reva-ui-td-label { font-weight: 650; }               /* 首列 = 行标签,略强调 */
+  .reva-ui-td-value {
+    font-variant-numeric: tabular-nums;                 /* 数值等宽对齐 */
+    font-feature-settings: "tnum" 1;
+  }
+  .reva-ui-table-foot {
+    margin-top: 9px;
+    font-size: 11px;                                     /* footnote 11px, ink-3 */
+    color: var(--secondary);
+    line-height: 1.45;
+    opacity: 0.9;
+  }
+  @media (prefers-color-scheme: dark) {
+    .reva-ui-table tbody td { border-bottom-color: rgba(255, 255, 255, 0.10); }
+  }
+
   /* 流式光标:仅在流式文本非空时,把闪烁的 caret 拼在已流出的文本尾部。
      防御:pre-first-token 的空气泡由 Swift 侧 renderedTranscript 直接不发出
      (ThinkingStatusLine 是唯一等待提示),这里再加一道 —— caret 只挂在
@@ -995,6 +1058,13 @@
   }
   function revaIsMetricEmptyState(spec) {
     return !!spec && spec.component === "metric_empty_state";
+  }
+  // rank1 metric_table:契约用 `type`(折线用 `component`)。也容忍 `component` 写法,
+  // 防后端作者沿用折线的 key 造成静默降级。列/行齐备才算,缺则交回降级。
+  function revaIsMetricTable(spec) {
+    if (!spec) return false;
+    if (spec.type !== "metric_table" && spec.component !== "metric_table") return false;
+    return Array.isArray(spec.columns) && Array.isArray(spec.rows);
   }
 
   // 计算 y 轴范围:优先 y_hint(min/max 各自可缺),否则从所有非空点自动 + 内边距。
@@ -1149,6 +1219,49 @@
     return html;
   }
 
+  // rank1 metric_table → 暖色调 <table> 卡片(纯字符串,可在 node 里测)。
+  // 契约:{type:"metric_table", v, title≤20字, columns[{key,label}]×2-4, rows[{col-key:str}]×1-12, footnote?}
+  // 防御:列裁到 ≤4、行裁到 ≤12;无有效列或零行 → 返回 null 交回降级(不画空表)。
+  // 单元格一律 String() + revaEscapeXML(与折线/空态同一 XSS 防线);缺值渲染空串。
+  function buildRevaMetricTableHTML(spec) {
+    if (!revaIsMetricTable(spec)) return null;
+    var cols = [];
+    for (var i = 0; i < spec.columns.length && cols.length < 4; i++) {
+      var c = spec.columns[i];
+      if (!c || typeof c.key !== "string" || !c.key) continue;
+      cols.push({ key: c.key, label: (typeof c.label === "string" && c.label) ? c.label : c.key });
+    }
+    if (cols.length === 0) return null;
+    var rows = [];
+    for (var r = 0; r < spec.rows.length && rows.length < 12; r++) {
+      if (spec.rows[r] && typeof spec.rows[r] === "object") rows.push(spec.rows[r]);
+    }
+    if (rows.length === 0) return null;
+
+    var html = '<div class="reva-ui-table-card">';
+    if (spec.title) html += '<div class="reva-ui-table-title">' + revaEscapeXML(spec.title) + '</div>';
+    html += '<div class="reva-ui-table-scroll"><table class="reva-ui-table"><thead><tr>';
+    for (var h = 0; h < cols.length; h++) {
+      html += '<th>' + revaEscapeXML(cols[h].label) + '</th>';
+    }
+    html += '</tr></thead><tbody>';
+    for (var ri = 0; ri < rows.length; ri++) {
+      html += '<tr>';
+      for (var k = 0; k < cols.length; k++) {
+        var cell = rows[ri][cols[k].key];
+        var text = (cell === null || cell === undefined) ? "" : String(cell);
+        // 首列 = 行标签(略强调),其余 = 数值(等宽 tabular-nums)。
+        var cls = k === 0 ? "reva-ui-td-label" : "reva-ui-td-value";
+        html += '<td class="' + cls + '">' + revaEscapeXML(text) + '</td>';
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table></div>';
+    if (spec.footnote) html += '<div class="reva-ui-table-foot">' + revaEscapeXML(spec.footnote) + '</div>';
+    html += '</div>';
+    return html;
+  }
+
   function revaFmtNum(v) {
     if (!revaIsFiniteNum(v)) return "";
     if (Math.abs(v) >= 100 || Number.isInteger(v)) return String(Math.round(v));
@@ -1249,6 +1362,15 @@
       return;
     }
 
+    // rank1 metric_table(type-routed;与折线 component 不冲突)。
+    var tableHTML = null;
+    try { tableHTML = buildRevaMetricTableHTML(spec); } catch (e5) { tableHTML = null; }
+    if (tableHTML) {
+      el.classList.add("rendered");
+      el.innerHTML = tableHTML;
+      return;
+    }
+
     var svg = null;
     try { svg = buildRevaLineChartSVG(spec); } catch (e4) { svg = null; }
 
@@ -1322,6 +1444,7 @@
   }
   // 暴露供 headless(node)与调试使用。
   window.buildRevaLineChartSVG = buildRevaLineChartSVG;
+  window.buildRevaMetricTableHTML = buildRevaMetricTableHTML;
   window.renderRevaCharts = renderRevaCharts;
   // ===================================================================
 

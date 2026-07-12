@@ -1874,8 +1874,23 @@ public final class AgentChatViewModel {
 
     private static let medicalExamImportSafetyNote = "OCR/AI 解析结果需要复核后再用于判断。"
 
-    private static let desktopMarkdownResponseInstruction = """
+    /// 桌面回复指令:`RevaUIFeatureFlags.tableCapEnabled` 暗开关决定用哪版。
+    /// - false(默认/当前):存量「表格 + 分段」指令,行为零变化。
+    /// - true(GenUI-first):简洁契约——结论先行 + ≤500字 + 不复述卡片数值(数值由 metric_table 卡片呈现)。
+    /// 后端服务端另有 gate 兜底(belt and suspenders),此处只是客户端一侧的意图收窄。
+    private static var desktopMarkdownResponseInstruction: String {
+        RevaUIFeatureFlags.tableCapEnabled
+            ? desktopMarkdownResponseInstructionConcise
+            : desktopMarkdownResponseInstructionLegacy
+    }
+
+    private static let desktopMarkdownResponseInstructionLegacy = """
     请用适合桌面阅读的中文 Markdown 回复：先给 2-3 条关键结论；再用二级/三级标题分段；比较或分项判断优先用表格；行动建议用编号列表；关键数值和结论加粗。每段最多 3 行，标题、段落、列表之间必须留空行。不要输出密集长段落，不要用长破折号把所有判断串成一段。最后必须包含「不确定性边界」和「下一步」；不要把基因风险当诊断，不要直接给用药决定。若需要执行结构化动作，自然语言说明后再给可确认动作。
+    """
+
+    /// GenUI-first 简洁指令:卡片承载数值,正文只做解读与取舍。
+    private static let desktopMarkdownResponseInstructionConcise = """
+    请用简洁的中文 Markdown 回复，面向桌面阅读：先给 2-3 条结论先行的关键要点（关键词加粗）；正文控制在 500 字以内，只做解读与取舍，不要逐格复述卡片里已经呈现的数值；必须保留「不确定性边界」与「下一步」两节。不要把基因风险当诊断，不要直接给用药决定；若需要执行结构化动作，自然语言说明后再给可确认动作。
     """
 
     private static func visibleDraft(text: String, contextItems: [AgentContextItem]) -> String {

@@ -101,6 +101,22 @@ public final class AgentStreamClient: AgentStreamServicing, @unchecked Sendable 
     /// or a single tool call trips a spurious "请求超时" (the shared default is 60s).
     private static let streamGapTimeout: TimeInterval = 300
 
+    /// GenUI 能力协商基线(契约 v0 §3.3):Mac 能原生渲染 reva-ui 折线图 + 空态组件块。
+    /// 这一段永远声明——它是本端稳定支持的既有能力。
+    static let baseClientCapsHeader = "genui-v1, genui-components-v1"
+
+    /// `X-Reva-Client-Caps` 头值。`tableCapEnabled` 为 true 才追加 `genui-table-v1`
+    /// (rank1 metric_table),后端据此才对本端发结构化表格块。默认 false ⇒ 与历史逐字节一致。
+    /// 拆成纯函数便于两分支各自确定性测试(编译期常量翻不了,测 builder)。
+    static func clientCapsHeaderValue(tableCapEnabled: Bool) -> String {
+        tableCapEnabled ? baseClientCapsHeader + ", genui-table-v1" : baseClientCapsHeader
+    }
+
+    /// 当前生效头值:读编译期暗开关 `RevaUIFeatureFlags.tableCapEnabled`。
+    static var clientCapsHeaderValue: String {
+        clientCapsHeaderValue(tableCapEnabled: RevaUIFeatureFlags.tableCapEnabled)
+    }
+
     private let baseURL: URL
     private let tokenProvider: AuthTokenProviding
     private let session: URLSession
@@ -190,8 +206,8 @@ public final class AgentStreamClient: AgentStreamServicing, @unchecked Sendable 
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         // GenUI 能力协商(契约 v0 §3.3):声明 Mac 能原生渲染 `reva-ui` 图表与空态组件块,
-        // 后端仅对声明者发结构化块,旧端零回归。
-        request.setValue("genui-v1, genui-components-v1", forHTTPHeaderField: "X-Reva-Client-Caps")
+        // 后端仅对声明者发结构化块,旧端零回归。metric_table cap 走 `RevaUIFeatureFlags` 暗开关。
+        request.setValue(Self.clientCapsHeaderValue, forHTTPHeaderField: "X-Reva-Client-Caps")
         request.httpBody = try encoder.encode(body)
         if let token = await tokenProvider.getToken(), !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
