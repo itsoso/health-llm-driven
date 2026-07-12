@@ -260,12 +260,16 @@ describe('DietShareCard', () => {
 
     fireEvent.press(getByText('复制小红书文案'));
     await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养数据: 智能估算，待核对后再发布'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('识别置信度: 42%，发布前建议核对食物和份量'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('营养数据: 智能估算，已确认，可继续复盘'));
     });
 
     fireEvent.press(getByText('复制朋友圈文案'));
     await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养数据: 智能估算，待核对后再发布'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('识别置信度: 42%，发布前建议核对食物和份量'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('营养数据: 智能估算，已确认，可继续复盘'));
     });
   });
 
