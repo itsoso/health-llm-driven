@@ -76,6 +76,11 @@ export function buildDietShareHighlights(record: DietRecord): string[] {
   return tags.slice(0, 3);
 }
 
+function buildDietShareStatusLine(highlights: string[]): string {
+  if (highlights.length === 0) return '今日状态：认真记录';
+  return `今日状态：${highlights.join(' · ')}`;
+}
+
 export function buildDietShareCaption(record: DietRecord, dateLabel: string): string {
   const mealLabel = MEAL_LABEL[record.meal_type] ?? '餐食';
   const headline = buildDietShareHeadline(record);
@@ -141,6 +146,7 @@ export default function DietShareCard({
   const sourceLabel = nutritionSourceLabel(record.source);
   const headline = buildDietShareHeadline(record);
   const highlights = buildDietShareHighlights(record);
+  const statusLine = buildDietShareStatusLine(highlights);
 
   return (
     <View style={styles.card}>
@@ -199,6 +205,7 @@ export default function DietShareCard({
                 ))}
               </View>
             ) : null}
+            <Text style={styles.statusLine}>{statusLine}</Text>
           </View>
           {showImage ? (
             <View style={styles.calorieAside}>
@@ -553,6 +560,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   highlightText: { fontFamily: revaFonts.sans, fontSize: 9, color: C.green600, fontWeight: '900' },
+  statusLine: { fontFamily: revaFonts.sans, fontSize: 10, lineHeight: 15, color: C.ink2, fontWeight: '800', marginTop: 9 },
   calorieAside: { alignItems: 'flex-end', paddingTop: 2 },
   calorieAsideValue: { fontFamily: revaFonts.mono, fontSize: 26, lineHeight: 29, color: '#E45D3B', fontWeight: '600' },
   calorieAsideUnit: { fontFamily: revaFonts.mono, fontSize: 9, color: C.ink3, marginTop: 2 },

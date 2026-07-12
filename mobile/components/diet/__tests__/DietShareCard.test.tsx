@@ -69,6 +69,7 @@ describe('DietShareCard', () => {
     expect(getByText('蛋白质')).toBeTruthy();
     expect(getByText('67g')).toBeTruthy();
     expect(getByText('营养表校准')).toBeTruthy();
+    expect(getByText('今日状态：高蛋白 · 低脂')).toBeTruthy();
     expect(getByText('已确认')).toBeTruthy();
     expect(getByText('可分享')).toBeTruthy();
     expect(queryByText('user_id')).toBeNull();
