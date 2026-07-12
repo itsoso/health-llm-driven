@@ -4088,16 +4088,30 @@ class AgentExecutor:
         # 流式模型 detail 恒为 None (不发此附加事件), mac 走正常滚动。fail-soft (解析异常=不发)。
         answer_model_non_streaming = self._resolved_answer_model_is_non_streaming()
 
+        # A2 (plan rank4) 自纠开关: 若合成轮被置空 tools 后模型其实还想再调工具
+        # (下面 botched 文本式工具调用被识别), 置位 → 本回合后续轮重新带上工具。
+        # 正确性 > 省 token: 多轮链式工具回合 (orchestrator 后还想 knowledge_search 等) 不被裁掉。
+        keep_tools_after_synthesis_miss = False
         self._http_client = httpx.AsyncClient(timeout=90.0)
         try:
             for round_idx in range(MAX_TOOL_ROUNDS):
                 # 真流式调用 LLM：content delta 实时 yield 给客户端,同时累积 tool_calls。
                 # _call_llm_stream 内部已做 provider 路由 + failover (镜像 _call_llm)。
-                round_tools = (
-                    []
-                    if self._should_synthesize_with_requested_model_after_tools(tool_executed_count)
-                    else tools
-                )
+                # round_tools = 本轮**发给模型**的工具; _detect_tools = 扫描模型**输出**用的
+                # 完整词表 (A2 把合成轮 round_tools 置空只是不再重发 18KB schema, 输出侧的
+                # 文本式/内联工具调用抑制词表不能跟着消失 —— 见 _detect_tools 用法)。
+                if self._should_synthesize_with_requested_model_after_tools(tool_executed_count):
+                    # 既有: 显式选的不可靠工具模型, 工具后由它自己产出最终答案 (不重发 tools)。
+                    round_tools = []
+                elif tool_executed_count > 0 and not keep_tools_after_synthesis_miss:
+                    # A2: 上一轮已执行过工具 → 本轮实际是合成轮, 对**所有**模型置空 tools,
+                    # 省 ~5k tokens/轮 prefill (18,064-char schema)。2+-round 回合 = 55% 的回合。
+                    round_tools = []
+                else:
+                    round_tools = tools
+                # 扫描输出的工具词表: round_tools 非空则用它, 否则回退本回合完整 tools
+                # (合成轮词表稳定, 默认路径历来带非空 tools, 这层保护逐字节不变)。
+                _detect_tools = round_tools or tools
                 # 真实思考过程: 本轮 LLM prefill/decide 等待即将开始 (TTFT 主来源)。
                 # synthesis = 前面轮已执行过工具 且 本轮不再带工具 (模型正在写最终答案);
                 # 否则 thinking (还在决策/可能再调工具)。纯附加、fail-soft (dict 构造不会抛)。
@@ -4138,9 +4152,9 @@ class AgentExecutor:
                         if (
                             not inline_suppressed
                             and not streamed_tool_calls
-                            and round_tools
+                            and _detect_tools
                             and (
-                                _extract_inline_tool_call(streamed_text, round_tools)
+                                _extract_inline_tool_call(streamed_text, _detect_tools)
                                 # 括号标记 `[工具调用: ...` 可能正在逐 token 形成,`)` 还没到
                                 # → 上面的精确解析此刻 match 不到。一旦看到标记前缀就提前抑制,
                                 # 避免裸标记被逐 delta 泄漏(即便最终参数解析不出也不外漏)。
@@ -4233,7 +4247,7 @@ class AgentExecutor:
                     )
                     inline_tool_call = (
                         None if _is_result_echo
-                        else _extract_inline_tool_call(_resp_content, round_tools)
+                        else _extract_inline_tool_call(_resp_content, _detect_tools)
                     )
                     if inline_tool_call:
                         logger.warning(
@@ -4253,10 +4267,15 @@ class AgentExecutor:
                 if (
                     isinstance(response, dict)
                     and not response.get("tool_calls")
-                    and _is_botched_text_tool_call(response.get("content") or "", round_tools)
+                    and _is_botched_text_tool_call(response.get("content") or "", _detect_tools)
                 ):
                     botched = response.get("content") or ""
                     if round_idx < MAX_TOOL_ROUNDS - 1:
+                        if not round_tools:
+                            # A2 自纠: 本轮已被 A2/合成条件置空 tools, 但模型仍想调工具
+                            # (文本式)。重开工具, 让重提示轮真能结构化调用 (否则重提示后
+                            # 仍无 tools = 空转)。正确性 > 省 token。
+                            keep_tools_after_synthesis_miss = True
                         logger.warning(
                             "[agent_executor] 文本式工具调用未结构化, 重提示重试 (round %d). preview=%s",
                             round_idx + 1, botched[:120],
