@@ -213,6 +213,12 @@ describe('DietShareCard', () => {
     expect(getByText('手动确认')).toBeTruthy();
   });
 
+  it('uses manually reviewed wording in platform captions for user-corrected meals', () => {
+    const correctedRecord = { ...record, source: 'user_corrected' };
+    expect(buildDietShareCaption(correctedRecord, '7月11日 · 午餐')).toContain('营养数据: 手动核对，可继续复盘');
+    expect(buildDietShareMomentsCaption(correctedRecord, '7月11日 · 午餐')).toContain('营养数据: 手动核对，可继续复盘');
+  });
+
   it('adds a careful estimate disclosure to platform captions when nutrition is AI-estimated', async () => {
     const estimatedRecord = { ...record, source: 'ai_estimate' };
     const { getByText } = render(

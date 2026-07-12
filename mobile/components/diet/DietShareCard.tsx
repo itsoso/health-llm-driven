@@ -160,7 +160,7 @@ function buildDietShareDataDisclosure(record: DietRecord): string {
   if (!hasAnyNutritionMetric(record)) return '营养数据: 估算中，稍后可继续复盘';
   if (!isNutritionComplete(record)) return '营养数据: 部分估算中，已确认部分可继续复盘';
   if (sourceLabel === '智能估算') return '营养数据: 智能估算，已确认，可继续复盘';
-  if (sourceLabel === '手动确认') return '营养数据: 手动确认，可继续复盘';
+  if (sourceLabel === '手动确认') return '营养数据: 手动核对，可继续复盘';
   return `营养数据: ${sourceLabel}，已确认，可继续复盘`;
 }
 
