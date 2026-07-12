@@ -7511,6 +7511,8 @@ class AgentExecutor:
             # /exercise/me?days=N 是 ExerciseRecord (手动录入)
             # 默认用 workout (真实运动数据); 用户说"我做了 20 个俯卧撑"那种才走 exercise
             "exercise": f"/workout/me?days={days}",
+            # 生活事件时间线(情景账本):行程/落地/送达等带 occurred_at+精度
+            "events": f"/episodes/me/life-events?days={days}",
             "workout": f"/workout/me?days={days}",
             "manual_exercise": f"/daily-health/exercise/me?days={days}",
             # medical_exam 维度在上面已短路到 MedicalIndicator 表, 不经过此 map.
@@ -7972,6 +7974,20 @@ class AgentExecutor:
                 f"{base}/medication/logs", headers,
                 {"medication_id": matched["id"], "taken_time": taken_time, "status": "taken"}
             )
+
+        if rtype in ("event", "life_event"):
+            # 生活事件 → HealthEpisode 情景账本(2026-07-12):行程/落地/送达等
+            # 带发生时间落库,时间线总结读结构化 occurred_at 而不是猜。
+            # occurred_at 传用户原话("下午"/"刚才"/"21:07"),折算在后端确定性代码。
+            title = str(data.get("title") or data.get("name") or data.get("event") or "").strip()
+            if not title:
+                return "Error: event 必须提供 title (如 '落地北京' / '药品送达酒店')"
+            payload = {"title": title[:80]}
+            if data.get("occurred_at"):
+                payload["occurred_at"] = str(data["occurred_at"])[:64]
+            if data.get("notes"):
+                payload["notes"] = str(data["notes"])[:500]
+            return await self._api_post(f"{base}/episodes/life-event", headers, payload)
 
         if rtype == "illness":
             payload = dict(data)

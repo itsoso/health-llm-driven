@@ -24,7 +24,7 @@ from app.models.agent_audit_log import JSONColumn
 # 枚举常量 (字符串, 避免 ENUM 类型 + 跨库兼容)
 # ─────────────────────────────────────────────────────────
 
-EPISODE_TYPES = {"run", "sleep", "meal", "weight", "symptom", "bp", "glucose", "manual"}
+EPISODE_TYPES = {"run", "sleep", "meal", "weight", "symptom", "bp", "glucose", "manual", "life_event"}
 
 # 风险分层 L0-L4: L0/L1 高 Agent 自主权; L4 熔断 emergency template.
 RISK_LEVELS = {"L0", "L1", "L2", "L3", "L4"}

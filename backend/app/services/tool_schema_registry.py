@@ -227,7 +227,8 @@ plan 结构:
 - symptom: 身体症状记录 (咳嗽/嗓子疼/鼻塞/流涕/眼痒/膝盖痛/皮肤起疹 等). **不需要慢病档案**, 任何偶发症状都走这个；感冒相关症状用 body_part=respiratory/general
 - garmin_sync: 触发 Garmin 数据立即同步
 - reminder: 设置提醒
-- goal: 设置健康目标 ("从今天开始每天快走30分钟" / "90天把腰围降到82cm")""",
+- goal: 设置健康目标 ("从今天开始每天快走30分钟" / "90天把腰围降到82cm")
+- event: 生活事件/行程节点 (出发/落地/到店/药品送达/发现症状的时刻)。**带发生时间**,时间线总结靠它;occurred_at 直接放用户原话("下午"/"刚才"/"21:07"/ISO),后端确定性折算,绝不自己编时刻""",
                     },
                     "data": {
                         "type": "object",
@@ -247,6 +248,7 @@ blood_pressure:   {"systolic": 120, "diastolic": 80, "record_date": "..."}
 waist:            {"waist_cm": 88.5, "record_date": "2026-05-05"} // 腰围厘米数
 sleep:            {"record_date": "2026-05-05", "bedtime": "2026-05-04T23:00:00+08:00",
                    "wake_time": "2026-05-05T07:00:00+08:00", "sleep_quality": 4}
+event:            {"title": "落地北京", "occurred_at": "21:07"}  // 或 "下午"/"刚才";空=此刻
 excretion:        {"type": "bowel|urine", "record_date": "2026-05-05",
                    "record_time": "08:30:00", "stool_type": 4, "notes": "正常"}
 exercise:         {"exercise_type": "俯卧撑", "reps": 10, "sets": 1}

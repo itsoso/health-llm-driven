@@ -245,3 +245,97 @@ def submit_feedback(
     db.commit()
     db.refresh(fb)
     return FeedbackOut.model_validate(fb)
+
+
+# ──────────────── 生活事件(情景记忆账本,2026-07-12) ────────────────
+# 对话里的行程/生活事件(出发/落地/送达/发现症状)落成 HealthEpisode 行,
+# 让时间线总结读结构化 occurred_at 而不是从聊天上下文猜时间。
+# 复用既有表(episode_type="life_event"),不建新表;时间解析唯一真源
+# 在 services/occurred_time.py(R4:LLM 只传原话,折算在确定性代码)。
+
+class LifeEventCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=80)
+    # 原话时间表达:"下午" / "刚才" / "21:07" / ISO;空 = 此刻
+    occurred_at: Optional[str] = Field(None, max_length=64)
+    notes: Optional[str] = Field(None, max_length=500)
+
+
+class LifeEventOut(BaseModel):
+    id: int
+    title: str
+    occurred_at: datetime
+    occurred_precision: str
+    occurred_display: str
+    notes: Optional[str] = None
+
+
+def _life_event_out(ep: HealthEpisode) -> LifeEventOut:
+    from app.services.occurred_time import precision_display
+
+    snap = ep.context_snapshot or {}
+    precision = str(snap.get("occurred_precision") or "exact")
+    raw = snap.get("occurred_raw")
+    return LifeEventOut(
+        id=ep.id,
+        title=ep.headline or "",
+        occurred_at=ep.occurred_at,
+        occurred_precision=precision,
+        occurred_display=precision_display(ep.occurred_at, precision, raw),
+        notes=snap.get("notes"),
+    )
+
+
+@router.post("/life-event", response_model=LifeEventOut, summary="记录生活事件(带发生时间)")
+def create_life_event(
+    payload: LifeEventCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    from app.services.occurred_time import resolve_occurred_at
+
+    try:
+        occurred, precision = resolve_occurred_at(payload.occurred_at)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    ep = HealthEpisode(
+        user_id=current_user.id,
+        episode_type="life_event",
+        source_type="chat",
+        occurred_at=occurred,
+        # 生活事件不是开环闭环流程,落地即闭合
+        status="closed",
+        closed_at=datetime.now(timezone.utc),
+        risk_level="L0",
+        headline=payload.title.strip(),
+        context_snapshot={
+            "occurred_raw": (payload.occurred_at or "").strip() or None,
+            "occurred_precision": precision,
+            "notes": (payload.notes or "").strip() or None,
+        },
+    )
+    db.add(ep)
+    db.commit()
+    db.refresh(ep)
+    return _life_event_out(ep)
+
+
+@router.get("/me/life-events", response_model=List[LifeEventOut], summary="我的生活事件时间线")
+def list_life_events(
+    days: int = Query(1, ge=1, le=30),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = (
+        db.query(HealthEpisode)
+        .filter(
+            HealthEpisode.user_id == current_user.id,
+            HealthEpisode.episode_type == "life_event",
+            HealthEpisode.occurred_at >= since,
+        )
+        .order_by(HealthEpisode.occurred_at.asc())
+        .limit(200)
+        .all()
+    )
+    return [_life_event_out(ep) for ep in rows]

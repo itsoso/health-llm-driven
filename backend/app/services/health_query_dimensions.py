@@ -6,6 +6,14 @@ from typing import Any, Dict
 
 
 HEALTH_QUERY_DIM_ALIASES: Dict[str, str] = {
+    # 生活事件时间线(情景记忆账本,2026-07-12)
+    "timeline": "events",
+    "life_events": "events",
+    "life_event": "events",
+    "时间线": "events",
+    "行程": "events",
+    "生活事件": "events",
+    "今日行程": "events",
     "lab_results": "medical_exam",
     "lab_result": "medical_exam",
     "lab": "medical_exam",
