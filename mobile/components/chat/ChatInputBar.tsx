@@ -818,16 +818,6 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
                   </Text>
                 </View>
               )}
-              {!shouldHideInlineMicAfterSend && realtimeDictationDisabled && (
-                <View style={[styles.dictationStatusPill, styles.dictationStatusPillDisabled]}>
-                  <Text
-                    style={[styles.dictationStatusText, styles.dictationStatusTextDisabled]}
-                    numberOfLines={1}
-                  >
-                    已关闭
-                  </Text>
-                </View>
-              )}
               {!shouldHideInlineMicAfterSend && (
                 <TouchableOpacity
                   onPress={handleRealtimeMicPress}

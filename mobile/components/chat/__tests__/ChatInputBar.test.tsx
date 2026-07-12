@@ -563,7 +563,7 @@ describe('ChatInputBar', () => {
   it('keeps realtime dictation explicitly disabled after tapping the active microphone again', () => {
     const onSend = jest.fn();
     mockRealtimeDictationState = { isDictating: true, error: null };
-    const { getByLabelText, rerender } = render(
+    const { getByLabelText, queryByText, rerender } = render(
       <ChatInputBar onSend={onSend} isStreaming={false} />,
     );
 
@@ -574,6 +574,7 @@ describe('ChatInputBar', () => {
     rerender(<ChatInputBar onSend={onSend} isStreaming={false} />);
 
     const disabledMic = getByLabelText('语音监听已禁用');
+    expect(queryByText('已关闭')).toBeNull();
     expect(disabledMic.props.accessibilityState).toEqual(expect.objectContaining({ selected: false }));
     const disabledMicStyle = StyleSheet.flatten(disabledMic.props.style);
     expect(disabledMicStyle.backgroundColor).toBe(revaColors.paper2);
