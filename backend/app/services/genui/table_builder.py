@@ -163,6 +163,21 @@ def _reference_note(item: Dict[str, Any]) -> str:
     return " · ".join(parts)
 
 
+def _status_note(record: Dict[str, Any]) -> str:
+    """状态/危险列: 逐字透传服务端已算好的分级 (如血压 ACC/AHA `category`) 或异常旗标。
+
+    铁律 (R4): builder **绝不自行判定**医学等级 —— 只 relay 工具结果里已有的字段。
+    无 `category`/`is_abnormal` → 返回 ""(不编造, 由调用方决定是否落列)。
+    """
+    parts: List[str] = []
+    cat = record.get("category")
+    if isinstance(cat, str) and cat.strip():
+        parts.append(cat.strip())
+    if record.get("is_abnormal") is True:
+        parts.append("异常")
+    return " · ".join(parts)
+
+
 # ---------------------------------------------------------------------------
 # 形状提取器 (每个 fail-open: 形状不符 / 无可落行 → None)
 # ---------------------------------------------------------------------------
@@ -186,6 +201,11 @@ def _table_from_batch(payload: Any) -> Optional[dict]:
         dim = str(q.get("dimension") or "")
         metric = _DIMENSION_LABEL.get(dim, dim) or dim
         note_parts: List[str] = []
+        # 危险 affordance: 工具结果若已带服务端分级/异常旗标 (category / is_abnormal),
+        # 领起说明列 (逐字 relay, 不发明阈值)。当前可穿戴批查询多不带此字段 → 空跳过。
+        status = _status_note(q)
+        if status:
+            note_parts.append(status)
         agg = q.get("agg")
         if isinstance(agg, str) and agg in _AGG_LABEL:
             days = q.get("days")
@@ -299,13 +319,19 @@ def _table_from_weight(payload: Any) -> Optional[dict]:
 
 
 def _table_from_blood_pressure(payload: Any) -> Optional[dict]:
-    """health_query(blood_pressure): [{record_date, systolic, diastolic, pulse}]。"""
+    """health_query(blood_pressure): [{record_date, systolic, diastolic, pulse, category}]。
+
+    `category` 是 API 端 `classify_blood_pressure` 已算好的 ACC/AHA 分级 (正常 / 高血压1-3级
+    / 危象 …), builder 逐字透传到"状态"列 (危险 affordance), 不自行判定 (见 `_status_note`)。
+    """
     if not isinstance(payload, list) or not payload:
         return None
     records = [r for r in payload if isinstance(r, dict)]
     if not records:
         return None
     has_pulse = all(r.get("pulse") is not None for r in records)
+    # 任一记录带服务端分级/异常旗标 → 加"状态"列; 全无则不加 (fail-closed 不编造)。
+    has_status = any(_status_note(r) for r in records)
     rows: List[Dict[str, str]] = []
     for r in records:
         sys_v, dia_v = r.get("systolic"), r.get("diastolic")
@@ -314,12 +340,16 @@ def _table_from_blood_pressure(payload: Any) -> Optional[dict]:
         row = {"date": str(r.get("record_date") or ""), "bp": f"{sys_v}/{dia_v} mmHg"}
         if has_pulse:
             row["pulse"] = _fmt_value(r.get("pulse"), "bpm") or ""
+        if has_status:
+            row["status"] = _status_note(r)
         rows.append(row)
     if not rows:
         return None
     columns = [("date", "日期"), ("bp", "血压")]
     if has_pulse:
         columns.append(("pulse", "脉搏"))
+    if has_status:
+        columns.append(("status", "状态"))
     return _make_block("血压记录", columns, rows)
 
 

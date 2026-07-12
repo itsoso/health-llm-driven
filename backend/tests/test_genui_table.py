@@ -135,6 +135,33 @@ def test_batch_all_null_builds_nothing():
     assert build_table_from_tool_call("health_query_batch", {}, result) is None
 
 
+def test_batch_relays_abnormal_flag_when_present():
+    """Condition 2 (batch vitals): 工具结果若带 category/is_abnormal 旗标 → 领起说明列。
+
+    R4: 只 relay 结果里已有的字段, 不发明阈值。旗标领先其他说明片段以提升 salience。
+    """
+    result = json.dumps({"queries": [
+        {"dimension": "spo2", "days": 1, "agg": "min", "value": 84, "unit": "%",
+         "n": 1, "is_abnormal": True, "category": "偏低"},
+    ]}, ensure_ascii=False)
+    block = build_table_from_tool_call("health_query_batch", {}, result)
+    assert block is not None
+    note = block["rows"][0]["note"]
+    # 分级/异常旗标逐字透传, 且领起说明 (在 agg/天数说明之前)
+    assert "偏低" in note and "异常" in note
+    assert note.index("偏低") < note.index("最低")
+
+
+def test_batch_no_flag_no_invented_status_adversarial():
+    """对抗: 批查询不带 category/is_abnormal (可穿戴常态) → 说明列无编造的分级/异常字样。"""
+    result = json.dumps({"queries": [
+        {"dimension": "hrv", "days": 7, "agg": "avg", "value": 58, "unit": "ms", "n": 7},
+    ]}, ensure_ascii=False)
+    block = build_table_from_tool_call("health_query_batch", {}, result)
+    assert block is not None
+    assert "异常" not in block["rows"][0]["note"]  # 无旗标 → 不发明
+
+
 def test_lab_single_history_table():
     block = build_table_from_tool_call("query_lab_indicators", {}, _lab_single_result())
     assert block is not None
@@ -197,6 +224,57 @@ def test_bp_row_missing_systolic_skipped():
         {"record_date": "2026-07-01", "systolic": None, "diastolic": 80},
     ], ensure_ascii=False)
     assert build_table_from_tool_call("health_query", {"dimension": "blood_pressure"}, result) is None
+
+
+def test_bp_status_column_relays_server_category_verbatim():
+    """危险 affordance: 服务端 classify_blood_pressure 已算好的 `category` 逐字进"状态"列。
+
+    Condition 2: builder 引用服务端分级, 绝不自行判定血压等级。用真实分级器输出
+    (185/122→高血压3级, 158/99→高血压2级; 分级器天花板=高血压3级, 无"危象"档) 逐字透传。
+    """
+    result = json.dumps([
+        {"record_date": "2026-07-01", "systolic": 185, "diastolic": 122,
+         "pulse": 88, "category": "高血压3级"},
+        {"record_date": "2026-06-30", "systolic": 158, "diastolic": 99,
+         "pulse": 80, "category": "高血压2级"},
+    ], ensure_ascii=False)
+    block = build_table_from_tool_call("health_query", {"dimension": "blood_pressure"}, result)
+    assert block is not None
+    assert [c["key"] for c in block["columns"]] == ["date", "bp", "pulse", "status"]
+    # 服务端分级字符串逐字透传, builder 未改写/未重判
+    assert block["rows"][0]["status"] == "高血压3级"
+    assert block["rows"][1]["status"] == "高血压2级"
+    assert block["rows"][0]["bp"] == "185/122 mmHg"
+
+
+def test_bp_status_column_absent_without_category_adversarial():
+    """对抗: 工具结果不带 category → 绝不发明状态列 (builder 不自行判血压等级)。"""
+    result = json.dumps([
+        {"record_date": "2026-07-01", "systolic": 185, "diastolic": 122, "pulse": 88},
+        {"record_date": "2026-06-30", "systolic": 158, "diastolic": 99, "pulse": 80},
+    ], ensure_ascii=False)
+    block = build_table_from_tool_call("health_query", {"dimension": "blood_pressure"}, result)
+    assert block is not None
+    # 无 category → 保持存量形状, 无 "status" 列, 无编造分级
+    assert [c["key"] for c in block["columns"]] == ["date", "bp", "pulse"]
+    assert "status" not in block["rows"][0]
+
+
+def test_bp_status_partial_category_still_column_but_blank_where_absent():
+    """部分记录带 category → 加"状态"列; 缺 category 的行留空 (诚实空值, 非编造)。
+
+    这里用一个**分级器永不产出**的合成字符串 (自定义分级ZZ) 证明 relay 的普适性:
+    builder 不做白名单/校验, 忠实透传字段里出现的任意分级串 (来源若换/加档也不丢)。
+    """
+    result = json.dumps([
+        {"record_date": "2026-07-01", "systolic": 185, "diastolic": 122, "category": "自定义分级ZZ"},
+        {"record_date": "2026-06-30", "systolic": 118, "diastolic": 76},  # 无 category
+    ], ensure_ascii=False)
+    block = build_table_from_tool_call("health_query", {"dimension": "blood_pressure"}, result)
+    assert block is not None
+    assert [c["key"] for c in block["columns"]] == ["date", "bp", "status"]
+    assert block["rows"][0]["status"] == "自定义分级ZZ"  # 任意串逐字透传, 无白名单
+    assert block["rows"][1]["status"] == ""  # 缺分级留空, 不借用上一行
 
 
 def test_water_table():
