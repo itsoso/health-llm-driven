@@ -75,6 +75,7 @@ const BUSY_PHOTO_CAPTURE_STAGES = new Set<PhotoCaptureStage>([
   'saving',
 ]);
 const PHOTO_RECOGNITION_SLOW_MS = 6000;
+const PORTION_REVIEW_ASSISTIVE_HINT = '优先核对食物份量；热量和三大营养会随份量一起修正。';
 
 const NON_DIET_DRAFT_ALERT = {
   title: '这不是饮食记录',
@@ -167,6 +168,10 @@ function foodNeedsPortionReview(food: FoodItem): boolean {
     || (portionConfidence !== null && portionConfidence < 0.7);
 }
 
+function quickDraftNeedsPortionReview(draft: Partial<DietRecordCreate>): boolean {
+  return (draft.ai_raw_result?.foods ?? []).some(foodNeedsPortionReview);
+}
+
 function buildQuickDraftReviewHint(draft: DietRecordCreate): string {
   const foods = draft.ai_raw_result?.foods ?? [];
   const portionCheckNames = foods
@@ -185,8 +190,7 @@ function buildQuickDraftReviewHint(draft: DietRecordCreate): string {
 }
 
 function quickDraftReviseLabel(draft: DietRecordCreate): string {
-  const foods = draft.ai_raw_result?.foods ?? [];
-  return foods.some(foodNeedsPortionReview) ? '修正份量' : '修正';
+  return quickDraftNeedsPortionReview(draft) ? '修正份量' : '修正';
 }
 
 function averageRecognitionConfidence(foods: { confidence: number | null }[] | undefined): number | undefined {
@@ -1118,6 +1122,7 @@ export default function DietScreen() {
           <MealForm date={date}
             initialRecord={editingRecord || undefined}
             initialMealType={formDefaults.meal_type}
+            assistiveHint={quickDraftNeedsPortionReview(formDefaults) ? PORTION_REVIEW_ASSISTIVE_HINT : undefined}
             onSubmit={handleSave}
             onCancel={handleCancelForm}
             initialDescription={formDefaults.food_items}

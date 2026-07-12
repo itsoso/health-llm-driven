@@ -21,6 +21,7 @@ interface Props {
   initialProtein?: number;
   initialCarbs?: number;
   initialFat?: number;
+  assistiveHint?: string;
 }
 
 const MEAL_TYPES = [
@@ -30,7 +31,7 @@ const MEAL_TYPES = [
   { key: 'snack' as const, label: '加餐' },
 ];
 
-export default function MealForm({ date, onSubmit, onCancel, initialRecord, initialMealType, initialDescription, initialCalories, initialProtein, initialCarbs, initialFat }: Props) {
+export default function MealForm({ date, onSubmit, onCancel, initialRecord, initialMealType, initialDescription, initialCalories, initialProtein, initialCarbs, initialFat, assistiveHint }: Props) {
   const isEdit = !!initialRecord;
   const [mealType, setMealType] = useState<'breakfast' | 'lunch' | 'dinner' | 'snack'>(
     (initialRecord?.meal_type as any) || initialMealType || 'lunch'
@@ -76,6 +77,11 @@ export default function MealForm({ date, onSubmit, onCancel, initialRecord, init
           </TouchableOpacity>
         ))}
       </View>
+      {assistiveHint ? (
+        <View style={styles.assistiveHint}>
+          <Text style={styles.assistiveHintText}>{assistiveHint}</Text>
+        </View>
+      ) : null}
       <TextInput style={styles.input} placeholder="食物描述（如：鸡胸肉200g、米饭一碗）" placeholderTextColor={C.ink3}
         value={desc} onChangeText={setDesc} multiline />
       <View style={styles.nutriRow}>
@@ -130,6 +136,22 @@ const styles = StyleSheet.create({
   typeRow: { flexDirection: 'row', gap: 8, marginBottom: revaSpacing.s3 },
   typeChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: revaRadii.pill, backgroundColor: C.paper2 },
   typeChipActive: { backgroundColor: C.green500 },
+  assistiveHint: {
+    borderRadius: revaRadii.md,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: revaSpacing.s3,
+  },
+  assistiveHintText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    lineHeight: 17,
+    color: C.green700,
+    fontWeight: '700',
+  },
   input: {
     backgroundColor: C.paper2, borderRadius: revaRadii.md,
     paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, fontFamily: revaFonts.sans,

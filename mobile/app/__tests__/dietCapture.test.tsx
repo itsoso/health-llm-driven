@@ -784,7 +784,7 @@ describe('DietScreen capture deeplink', () => {
       error: null,
     });
 
-    const { getByText, getAllByText } = render(<DietScreen />);
+    const { getByText, getAllByText, getByLabelText } = render(<DietScreen />);
 
     await waitFor(() => {
       expect(getByText('识别明细')).toBeTruthy();
@@ -802,6 +802,12 @@ describe('DietScreen capture deeplink', () => {
     expect(getAllByText('请核对份量').length).toBeGreaterThan(0);
     expect(getByText('小巴建议先核对：鸡胸肉、杂粮饭的份量；确认后才写入今天饮食。')).toBeTruthy();
     expect(getByText('修正份量')).toBeTruthy();
+    fireEvent.press(getByLabelText('修正饮食草稿'));
+    await waitFor(() => {
+      expect(mockMealForm).toHaveBeenCalledWith(expect.objectContaining({
+        assistiveHint: '优先核对食物份量；热量和三大营养会随份量一起修正。',
+      }));
+    });
   });
 
   it('turns text entry into a lightweight confirm card without auto-saving', async () => {
