@@ -462,6 +462,39 @@ def test_next_quiet_hours_end_after_morning(db):
 
 
 @pytest.mark.asyncio
+async def test_flush_delayed_pushes_waits_until_morning_floor_for_non_critical(db):
+    """旧 delayed row 即使 scheduled_at 被排到 07:00,08:00 flush 也不能释放普通通知。"""
+    user = _make_user(db, username="flush_waits_until_floor")
+    svc = PushService(db)
+
+    fake_now = datetime(2026, 5, 12, 8, 0, 0)
+    log = NotificationLog(
+        user_id=user.id,
+        notification_type="reminder",
+        channel="multi",
+        title="08:00 前不要发",
+        content="should wait",
+        data={"severity": "info"},
+        status=NotificationStatus.DELAYED.value,
+        scheduled_at=fake_now - timedelta(hours=1),
+    )
+    db.add(log)
+    db.commit()
+
+    with patch("app.services.notification.push_service.get_china_now", return_value=fake_now), \
+         patch.object(PushService, "_send_ios", new=AsyncMock(return_value={"success": True})) as send_mock:
+        result = await svc.flush_delayed_pushes()
+
+    assert result["flushed"] == 0
+    assert result["succeeded"] == 0
+    assert send_mock.await_count == 0
+    db.refresh(log)
+    assert log.status == NotificationStatus.DELAYED.value
+    assert log.scheduled_at.hour == 9
+    assert log.scheduled_at.minute == 0
+
+
+@pytest.mark.asyncio
 async def test_flush_delayed_pushes_processes_due(db):
     """flush 处理 scheduled_at <= now 的, 跳过未到点的."""
     user = _make_user(db, username="flush_user")

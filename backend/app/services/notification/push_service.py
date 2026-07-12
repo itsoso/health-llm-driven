@@ -128,6 +128,16 @@ def _is_before_morning_floor(now: datetime) -> bool:
     return now.hour * 60 + now.minute < floor_min
 
 
+def _morning_floor_at(now: datetime) -> datetime:
+    floor_min = _hhmm_to_minutes(MORNING_PUSH_FLOOR, "09:00")
+    return now.replace(
+        hour=floor_min // 60,
+        minute=floor_min % 60,
+        second=0,
+        microsecond=0,
+    )
+
+
 def _advice_candidate_from_push(
     *,
     user_id: int,
@@ -837,6 +847,34 @@ class PushService:
         返回: {"flushed": N, "succeeded": K, "failed": M}
         """
         now = get_china_now()
+        if _is_before_morning_floor(now):
+            floor_at = _morning_floor_at(now)
+            early_logs = (
+                self.db.query(NotificationLog)
+                .filter(
+                    NotificationLog.status == NotificationStatus.DELAYED.value,
+                    NotificationLog.scheduled_at <= now,
+                )
+                .order_by(NotificationLog.scheduled_at.asc())
+                .limit(batch_limit)
+                .all()
+            )
+            rescheduled = 0
+            for log in early_logs:
+                severity = (log.data or {}).get("severity", "info")
+                if _severity_rank(severity) >= _severity_rank("critical"):
+                    continue
+                if log.scheduled_at is None or log.scheduled_at < floor_at:
+                    log.scheduled_at = floor_at
+                    rescheduled += 1
+            if rescheduled:
+                self.db.commit()
+                logger.info(
+                    "[flush_delayed_pushes] 09:00 前重排非 critical delayed=%s 到 %s",
+                    rescheduled,
+                    floor_at.isoformat(),
+                )
+
         delayed_logs = (
             self.db.query(NotificationLog)
             .filter(
