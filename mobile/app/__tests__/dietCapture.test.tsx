@@ -1039,6 +1039,50 @@ describe('DietScreen capture deeplink', () => {
     expect(dietService.createDietRecord).not.toHaveBeenCalled();
   });
 
+  it('routes low whole-photo confidence drafts to revision before saving', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ base64: 'photo-base64' }],
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      ai_confidence: 0.52,
+      foods: [
+        {
+          name: '番茄鸡蛋面', quantity: '1小碗', calories: 360, protein: 14,
+          carbs: 52, fat: 9, fiber: 3, confidence: null,
+          source: 'ai_estimate', nutrition_basis: 'vision_estimate',
+          portion_basis: 'vision_estimate', portion_confidence: 0.82,
+        },
+      ],
+      meal_description: '番茄鸡蛋面 1小碗',
+      total_calories: 360,
+      total_protein: 14,
+      total_carbs: 52,
+      total_fat: 9,
+      total_fiber: 3,
+      error: null,
+    });
+
+    const { getByLabelText, getByText } = render(<DietScreen />);
+
+    await waitFor(() => {
+      expect(getByText('整体识别待核对')).toBeTruthy();
+    });
+    expect(getByText('核对后确认')).toBeTruthy();
+
+    fireEvent.press(getByLabelText('核对后确认饮食'));
+
+    await waitFor(() => {
+      expect(mockMealForm).toHaveBeenCalledWith(expect.objectContaining({
+        assistiveHint: '优先核对食物份量；热量和三大营养会随份量一起修正。',
+      }));
+    });
+    expect(dietService.createDietRecord).not.toHaveBeenCalled();
+  });
+
   it('turns text entry into a lightweight confirm card without auto-saving', async () => {
     const dietService = require('../../services/diet');
     const promptSpy = jest.spyOn(Alert, 'prompt').mockImplementationOnce((_title, _message, callback) => {

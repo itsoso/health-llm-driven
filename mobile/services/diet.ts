@@ -108,6 +108,8 @@ export interface FoodRecognitionResponse {
   foods: FoodItem[];
   meal_description: string | null;
   health_tips: string | null;
+  ai_confidence?: number | null;
+  confidence?: number | null;
   total_calories: number | null;
   total_protein: number | null;
   total_carbs: number | null;

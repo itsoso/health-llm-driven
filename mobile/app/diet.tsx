@@ -191,8 +191,23 @@ function foodNeedsPortionReview(food: FoodItem): boolean {
     || (portionConfidence !== null && portionConfidence < 0.7);
 }
 
+function normalizedDraftConfidence(value: number | null | undefined): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const normalized = value > 1 ? value / 100 : value;
+  return normalized >= 0 && normalized <= 1 ? normalized : null;
+}
+
+function quickDraftNeedsWholeReview(draft: Partial<DietRecordCreate>): boolean {
+  const confidence = normalizedDraftConfidence(draft.ai_confidence);
+  return confidence !== null && confidence < 0.7;
+}
+
 function quickDraftNeedsPortionReview(draft: Partial<DietRecordCreate>): boolean {
   return (draft.ai_raw_result?.foods ?? []).some(foodNeedsPortionReview);
+}
+
+function quickDraftNeedsReview(draft: Partial<DietRecordCreate>): boolean {
+  return quickDraftNeedsPortionReview(draft) || quickDraftNeedsWholeReview(draft);
 }
 
 function buildQuickDraftReviewHint(draft: DietRecordCreate): string {
@@ -205,6 +220,9 @@ function buildQuickDraftReviewHint(draft: DietRecordCreate): string {
     const visibleNames = portionCheckNames.slice(0, 2).join('、');
     const suffix = portionCheckNames.length > 2 ? `等 ${portionCheckNames.length} 项` : '';
     return `小巴建议先核对：${visibleNames}${suffix}的份量；确认后才写入今天饮食。`;
+  }
+  if (quickDraftNeedsWholeReview(draft)) {
+    return '小巴建议先核对整餐识别结果和份量；确认后才写入今天饮食。';
   }
   if (foods.length > 0) {
     return `小巴已拆出 ${foods.length} 项食物；确认后才写入今天饮食。`;
@@ -935,7 +953,8 @@ export default function DietScreen() {
           ? `diet-photo:${recognized.photo_draft_token}`
           : undefined,
         ai_recognized: 1,
-        ai_confidence: averageRecognitionConfidence(recognized.foods),
+        ai_confidence: normalizedDraftConfidence(recognized.ai_confidence ?? recognized.confidence)
+          ?? averageRecognitionConfidence(recognized.foods),
         ai_raw_result: recognized,
         health_tips: recognized.health_tips ?? undefined,
       }, { kind: 'photo', imageBase64, imageUri: asset.uri ?? preparedImage.uri }, '已识别餐食,确认后写入');
@@ -1255,7 +1274,7 @@ export default function DietScreen() {
           <MealForm date={date}
             initialRecord={editingRecord || undefined}
             initialMealType={formDefaults.meal_type}
-            assistiveHint={quickDraftNeedsPortionReview(formDefaults) ? PORTION_REVIEW_ASSISTIVE_HINT : undefined}
+            assistiveHint={quickDraftNeedsReview(formDefaults) ? PORTION_REVIEW_ASSISTIVE_HINT : undefined}
             onSubmit={handleSave}
             onCancel={handleCancelForm}
             initialDescription={formDefaults.food_items}
@@ -1548,9 +1567,11 @@ function QuickDietDraftCard({
   const calibrationSeconds = formatTimingSeconds(draft.ai_raw_result?.timing_ms?.calibration);
   const showRecognitionTiming = Boolean(recognitionTotalSeconds || calibrationSeconds);
   const reviewItemCount = recognizedFoods.filter(foodNeedsPortionReview).length;
-  const confirmLabel = reviewItemCount > 0 ? '核对后确认' : '确认记录';
-  const primaryAction = reviewItemCount > 0 ? onRevise : onConfirm;
-  const primaryAccessibilityLabel = reviewItemCount > 0 ? '核对后确认饮食' : '确认记录饮食';
+  const needsWholeReview = quickDraftNeedsWholeReview(draft);
+  const needsReview = reviewItemCount > 0 || needsWholeReview;
+  const confirmLabel = needsReview ? '核对后确认' : '确认记录';
+  const primaryAction = needsReview ? onRevise : onConfirm;
+  const primaryAccessibilityLabel = needsReview ? '核对后确认饮食' : '确认记录饮食';
 
   return (
     <View style={styles.quickDraftCard}>
@@ -1582,6 +1603,19 @@ function QuickDietDraftCard({
           <Ionicons name="alert-circle-outline" size={14} color={revaSemantic.caution.fg} />
           <Text style={txt.quickReviewSummaryStrong}>{reviewItemCount} 项需核对</Text>
           <Text style={txt.quickReviewSummaryText}>重点核对份量</Text>
+        </TouchableOpacity>
+      ) : needsWholeReview ? (
+        <TouchableOpacity
+          style={styles.quickReviewSummary}
+          onPress={onRevise}
+          activeOpacity={0.78}
+          accessibilityRole="button"
+          accessibilityLabel="核对整餐识别结果"
+          accessibilityHint="打开修正表单，核对整餐识别结果和份量"
+        >
+          <Ionicons name="alert-circle-outline" size={14} color={revaSemantic.caution.fg} />
+          <Text style={txt.quickReviewSummaryStrong}>整体识别待核对</Text>
+          <Text style={txt.quickReviewSummaryText}>先核对食物和份量</Text>
         </TouchableOpacity>
       ) : null}
       {recognizedFoods.length > 0 ? (
