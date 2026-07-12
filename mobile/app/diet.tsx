@@ -321,7 +321,8 @@ function mergeRevisedDraft(
   const foodChanged = normalized(original.food_items) !== normalized(revision.food_items);
   const nutritionChanged = (['calories', 'protein', 'carbs', 'fat'] as const)
     .some(key => original[key] !== revision[key]);
-  if (!foodChanged && !nutritionChanged) return merged;
+  const reviewedRiskyDraft = quickDraftNeedsReview(original);
+  if (!foodChanged && !nutritionChanged && !reviewedRiskyDraft) return merged;
   const corrected: DietRecordCreate = {
     ...merged,
     food_id: foodChanged ? undefined : original.food_id,

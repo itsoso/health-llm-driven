@@ -1083,6 +1083,72 @@ describe('DietScreen capture deeplink', () => {
     expect(dietService.createDietRecord).not.toHaveBeenCalled();
   });
 
+  it('marks reviewed low-confidence photo drafts as user-corrected even without field edits', async () => {
+    const dietService = require('../../services/diet');
+    mockRouteParams.capture = 'photo';
+    (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ base64: 'photo-base64' }],
+    });
+    dietService.recognizeFood.mockResolvedValueOnce({
+      success: true,
+      ai_confidence: 0.52,
+      foods: [
+        {
+          name: '番茄鸡蛋面', quantity: '1小碗', calories: 360, protein: 14,
+          carbs: 52, fat: 9, fiber: 3, confidence: null,
+          source: 'ai_estimate', nutrition_basis: 'vision_estimate',
+          portion_basis: 'vision_estimate', portion_confidence: 0.82,
+        },
+      ],
+      meal_description: '番茄鸡蛋面 1小碗',
+      total_calories: 360,
+      total_protein: 14,
+      total_carbs: 52,
+      total_fat: 9,
+      total_fiber: 3,
+      photo_draft_token: 'draft-low-confidence-1',
+      error: null,
+    });
+    dietService.createDietRecord.mockResolvedValueOnce({ id: 188 });
+
+    const { getByLabelText, getByText } = render(<DietScreen />);
+
+    await waitFor(() => {
+      expect(getByText('整体识别待核对')).toBeTruthy();
+    });
+    fireEvent.press(getByLabelText('核对后确认饮食'));
+
+    await waitFor(() => {
+      expect(mockMealForm).toHaveBeenCalledWith(expect.objectContaining({
+        initialDescription: '番茄鸡蛋面 1小碗',
+      }));
+    });
+    const formProps = mockMealForm.mock.calls.at(-1)?.[0];
+    await act(async () => {
+      await formProps.onSubmit({
+        record_date: '2026-07-12',
+        meal_type: 'dinner',
+        food_items: '番茄鸡蛋面 1小碗',
+        calories: 360,
+        protein: 14,
+        carbs: 52,
+        fat: 9,
+        fiber: 3,
+      });
+    });
+
+    await waitFor(() => {
+      expect(dietService.createDietRecord).toHaveBeenCalledWith(expect.objectContaining({
+        food_items: '番茄鸡蛋面 1小碗',
+        source: 'user_corrected',
+        ai_recognized: 0,
+        ai_confidence: undefined,
+        ai_raw_result: undefined,
+      }));
+    });
+  });
+
   it('turns text entry into a lightweight confirm card without auto-saving', async () => {
     const dietService = require('../../services/diet');
     const promptSpy = jest.spyOn(Alert, 'prompt').mockImplementationOnce((_title, _message, callback) => {
