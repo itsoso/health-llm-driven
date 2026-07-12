@@ -28,6 +28,24 @@ def _stream_from(fake_call_llm):
     return fake_call_llm_stream
 
 
+def _last_user_content(messages) -> str:
+    """The last user message content, where rank #6 (prefix-cache layout) routes
+    turn-scoped context (system-KB evidence) — no longer the system prompt tail."""
+    for m in reversed(messages):
+        if m.get("role") == "user":
+            c = m.get("content")
+            return c if isinstance(c, str) else str(c)
+    return ""
+
+
+def _joined_messages(messages) -> str:
+    """All message content joined — for asserting a block is absent everywhere."""
+    return "\n".join(
+        (m.get("content") if isinstance(m.get("content"), str) else str(m.get("content")))
+        for m in messages
+    )
+
+
 def _seed_9p21_knowledge(db):
     entity = KBDocument(
         doc_id="entity:gene:9p21",
@@ -101,12 +119,16 @@ async def test_agent_stream_injects_system_knowledge_into_model_prompt(db, auth_
     ]
 
     assert events[-1]["event"] == "done"
+    # rank #6 (prefix-cache layout): turn-scoped KB evidence lands in the last
+    # user message, NOT the byte-stable system prompt.
     system_prompt = captured_messages[0]["content"]
-    assert "## 系统知识库相关条目" in system_prompt
-    assert "claim:c_mthfr_c677t_hcy_folate_boundary" in system_prompt
-    assert "具体饮食/补剂/运动建议" in system_prompt
-    assert "claim_id" in system_prompt
-    assert "不替代医生诊断" in system_prompt
+    turn_msg = _last_user_content(captured_messages)
+    assert "## 系统知识库相关条目" not in system_prompt
+    assert "## 系统知识库相关条目" in turn_msg
+    assert "claim:c_mthfr_c677t_hcy_folate_boundary" in turn_msg
+    assert "具体饮食/补剂/运动建议" in turn_msg
+    assert "claim_id" in turn_msg
+    assert "不替代医生诊断" in turn_msg
     assert "系统知识库" in events[-1]["data"]["sources_used"]
 
 
@@ -157,9 +179,11 @@ async def test_agent_stream_injects_system_knowledge_from_user_twin(db, auth_use
     ]
 
     assert events[-1]["event"] == "done"
-    system_prompt = captured_messages[0]["content"]
-    assert "## 系统知识库相关条目" in system_prompt
-    assert "claim:c_mthfr_c677t_hcy_folate_boundary" in system_prompt
+    # rank #6: KB evidence in the last user message, not the system prompt.
+    assert "## 系统知识库相关条目" not in captured_messages[0]["content"]
+    turn_msg = _last_user_content(captured_messages)
+    assert "## 系统知识库相关条目" in turn_msg
+    assert "claim:c_mthfr_c677t_hcy_folate_boundary" in turn_msg
     assert "系统知识库" in events[-1]["data"]["sources_used"]
     cards = events[-1]["data"]["cards"]
     assert cards
@@ -220,7 +244,9 @@ async def test_agent_stream_does_not_attach_twin_kb_card_for_pure_record_intent(
     ]
 
     assert events[-1]["event"] == "done"
-    assert "## 系统知识库相关条目" not in captured_messages[0]["content"]
+    # No KB for a pure record intent — absent from EVERY message (system + user),
+    # not merely the system prompt (rank #6 moved KB into the user message).
+    assert "## 系统知识库相关条目" not in _joined_messages(captured_messages)
     assert "系统知识库" not in events[-1]["data"]["sources_used"]
     assert events[-1]["data"]["cards"] == []
 
@@ -275,7 +301,8 @@ async def test_agent_stream_does_not_attach_unrelated_twin_kb_card_for_diet_reco
     ]
 
     assert events[-1]["event"] == "done"
-    assert "claim:c_mthfr_c677t_hcy_folate_boundary" not in captured_messages[0]["content"]
+    # Unrelated KB claim must not leak anywhere (system or user message).
+    assert "claim:c_mthfr_c677t_hcy_folate_boundary" not in _joined_messages(captured_messages)
     assert "系统知识库" not in events[-1]["data"]["sources_used"]
     assert events[-1]["data"]["cards"] == []
 
@@ -303,9 +330,11 @@ async def test_agent_stream_9p21_supplement_question_injects_boundary_claim(db, 
         )
     ]
 
-    system_prompt = captured_messages[0]["content"]
-    assert "claim:c_9p21_cardiovascular_labs_lifestyle_boundary" in system_prompt
-    assert "不能只凭基因给出确定补剂方案" in system_prompt
-    assert "claim_id" in system_prompt
+    # rank #6: KB evidence in the last user message, not the system prompt.
+    assert "claim:c_9p21_cardiovascular_labs_lifestyle_boundary" not in captured_messages[0]["content"]
+    turn_msg = _last_user_content(captured_messages)
+    assert "claim:c_9p21_cardiovascular_labs_lifestyle_boundary" in turn_msg
+    assert "不能只凭基因给出确定补剂方案" in turn_msg
+    assert "claim_id" in turn_msg
     cards = events[-1]["data"]["cards"]
     assert cards[0]["data"]["claims"][0]["doc_id"] == "claim:c_9p21_cardiovascular_labs_lifestyle_boundary"

@@ -169,12 +169,18 @@ async def test_agent_stream_applies_opener_quick_reply_before_llm(db):
 
     captured_system = {}
 
-    async def _fake_call_llm(self, messages, tools):
+    def _record(messages):
         captured_system["text"] = messages[0]["content"]
+        captured_system["last_user"] = next(
+            m["content"] for m in reversed(messages) if m.get("role") == "user"
+        )
+
+    async def _fake_call_llm(self, messages, tools):
+        _record(messages)
         return "已接上这张行动卡片并完成验证。"
 
     async def _fake_call_llm_stream(self, messages, tools):
-        captured_system["text"] = messages[0]["content"]
+        _record(messages)
         yield {"type": "content", "text": "已接上这张行动卡片并完成验证。"}
         yield {"type": "finish", "finish_reason": "stop"}
 
@@ -201,8 +207,11 @@ async def test_agent_stream_applies_opener_quick_reply_before_llm(db):
     assert card.adherence_confidence == 70
     assert card.graded_at is not None
     assert card.actual_value == "71.2"
-    assert "入口动作处理结果" in captured_system["text"]
-    assert f"ActionCard #{card.id}" in captured_system["text"]
+    # rank #6 (prefix-cache layout): the opener quick-reply note is turn-scoped →
+    # last user message, not the byte-stable system prompt.
+    assert "入口动作处理结果" not in captured_system["text"]
+    assert "入口动作处理结果" in captured_system["last_user"]
+    assert f"ActionCard #{card.id}" in captured_system["last_user"]
     # e.get: 流里混有 P0-1 扁平 status 进度事件 (无 "event" 键), 安全跳过
     done = [e for e in events if e.get("event") == "done"][-1]
     assert "ActionCard" in done["data"]["sources_used"]

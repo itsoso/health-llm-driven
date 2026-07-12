@@ -1374,9 +1374,14 @@ async def test_agent_stream_injects_mac_desktop_markdown_instruction(db, auth_us
         )
     ]
 
-    system_prompt = calls[0]["messages"][0]["content"]
-    assert "## 桌面端回复格式要求" in system_prompt
-    assert "请用 Markdown 分段" in system_prompt
+    # rank #6 (prefix-cache layout): the mac desktop markdown instruction is
+    # turn-scoped → last user message, not the byte-stable system prompt.
+    msgs = calls[0]["messages"]
+    system_prompt = msgs[0]["content"]
+    last_user = next(m["content"] for m in reversed(msgs) if m.get("role") == "user")
+    assert "## 桌面端回复格式要求" not in system_prompt
+    assert "## 桌面端回复格式要求" in last_user
+    assert "请用 Markdown 分段" in last_user
     assert events[-1]["event"] == "done"
 
 
