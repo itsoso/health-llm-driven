@@ -62,7 +62,7 @@ def _assert_diet_food_items_allowed(food_items: str) -> None:
     if intent.kind == "diet_management":
         raise HTTPException(
             status_code=400,
-            detail="删除、撤销或恢复饮食记录不能作为饮食记录写入，请使用饮食记录管理操作。",
+            detail="查询、保存状态、删除、撤销或恢复饮食记录不能作为饮食记录写入，请使用饮食记录管理操作。",
         )
     if intent.kind in {"medication", "supplement"}:
         raise HTTPException(
@@ -983,6 +983,7 @@ async def parse_voice_food_endpoint(
     from app.services.diet_voice_parser import parse_voice_food
     from app.services.ambient_wearables import create_audio_input_event
 
+    _assert_diet_food_items_allowed(request.raw_text)
     result = await parse_voice_food(db, current_user.id, request.raw_text, request.meal_type)
     create_audio_input_event(
         db,
