@@ -203,6 +203,31 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('keeps photo share cards polished when calories are still pending', () => {
+    const partialPhotoRecord: DietRecord = {
+      ...record,
+      source: 'ai_estimate',
+      calories: null,
+      protein: 42,
+      carbs: null,
+      fat: null,
+      fiber: null,
+      image_url: '/api/v1/upload/files/diet/1/meal.png',
+    };
+
+    const { getByTestId, getByText, queryByText } = render(
+      <DietShareCard
+        record={partialPhotoRecord}
+        dateLabel="7月11日 · 午餐"
+        imageSource={{ uri: 'https://health.executor.life/private-meal.png' }}
+      />,
+    );
+
+    expect(getByTestId('diet-share-image')).toBeTruthy();
+    expect(getByText('热量估算中')).toBeTruthy();
+    expect(queryByText('--')).toBeNull();
+  });
+
   it('captures exactly 1080x1440 and opens the system image share sheet', async () => {
     const onShareTerminal = jest.fn();
     const { getByText } = render(

@@ -275,8 +275,14 @@ export default function DietShareCard({
           </View>
           {showImage ? (
             <View style={styles.calorieAside}>
-              <Text style={styles.calorieAsideValue}>{calories}</Text>
-              <Text style={styles.calorieAsideUnit}>kcal</Text>
+              {hasCalories ? (
+                <>
+                  <Text style={styles.calorieAsideValue}>{calories}</Text>
+                  <Text style={styles.calorieAsideUnit}>kcal</Text>
+                </>
+              ) : (
+                <Text style={styles.calorieAsidePending}>{hasMacros ? '热量估算中' : '营养估算中'}</Text>
+              )}
             </View>
           ) : null}
         </View>
@@ -645,6 +651,15 @@ const styles = StyleSheet.create({
   calorieAside: { alignItems: 'flex-end', paddingTop: 2 },
   calorieAsideValue: { fontFamily: revaFonts.mono, fontSize: 26, lineHeight: 29, color: '#E45D3B', fontWeight: '600' },
   calorieAsideUnit: { fontFamily: revaFonts.mono, fontSize: 9, color: C.ink3, marginTop: 2 },
+  calorieAsidePending: {
+    maxWidth: 58,
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    lineHeight: 15,
+    color: revaSemantic.caution.fg,
+    fontWeight: '900',
+    textAlign: 'right',
+  },
   macroGrid: {
     flexDirection: 'row',
     borderTopWidth: StyleSheet.hairlineWidth,
