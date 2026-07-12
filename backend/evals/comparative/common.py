@@ -103,7 +103,13 @@ def http_get_json(
 
 
 def bearer_headers() -> Dict[str, str]:
-    return {"Authorization": f"Bearer {eval_token()}"}
+    headers = {"Authorization": f"Bearer {eval_token()}"}
+    # 评测臂可选声明客户端能力(如 genui-table-v1),用于 A/B 卡片化叙事契约;
+    # 不设 REVA_EVAL_CAPS 时不携带该头 = 与历史评测请求逐字节一致。
+    caps = os.environ.get("REVA_EVAL_CAPS", "").strip()
+    if caps:
+        headers["X-Reva-Client-Caps"] = caps
+    return headers
 
 
 def write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> Path:
