@@ -1,5 +1,6 @@
 """OpenAI 兼容 Provider - 支持 OpenAI、DeepSeek、vLLM 等 OpenAI API 兼容服务"""
 import asyncio
+import inspect
 import logging
 import threading
 from typing import AsyncIterator, Dict, Any, List, Optional, Union
@@ -18,6 +19,9 @@ logger = logging.getLogger(__name__)
 # 路由在**请求参数** (model=) 不在连接层 —— "用户切换立即生效" 契约不动。
 # OpenAI / AsyncOpenAI 客户端跨协程/线程共享是安全的 (官方保证)。
 _SYNC_CLIENT_CACHE: Dict[tuple, Any] = {}
+# 流式路径 (Phase-2 rank6) 用 AsyncOpenAI + `async for`,不再同步迭代阻塞 event loop;
+# 异步客户端同样按 (base_url, api_key) memoize (与同步池共用同一把锁)。
+_ASYNC_CLIENT_CACHE: Dict[tuple, Any] = {}
 _CLIENT_CACHE_LOCK = threading.Lock()
 
 
@@ -50,10 +54,61 @@ def _get_shared_sync_client(client_kwargs: Dict[str, Any]):
     return client
 
 
+def _get_shared_async_client(client_kwargs: Dict[str, Any]):
+    """按 client_kwargs memoize 一个共享的异步 AsyncOpenAI 客户端 (含 httpx 连接池)。
+
+    流式合成/工具轮走异步客户端 + `async for`,让 inter-chunk 网络等待 (~80ms @
+    12-13 tok/s) 不再霸占 event loop —— 一条在飞流不再拖住其它回合的 SSE flush。
+    """
+    key = _client_cache_key(client_kwargs)
+    client = _ASYNC_CLIENT_CACHE.get(key)
+    if client is not None:
+        return client
+    with _CLIENT_CACHE_LOCK:
+        client = _ASYNC_CLIENT_CACHE.get(key)
+        if client is None:
+            from openai import AsyncOpenAI
+
+            client = AsyncOpenAI(**client_kwargs)
+            _ASYNC_CLIENT_CACHE[key] = client
+            logger.info(
+                "[OpenAI Provider] 新建共享异步客户端 base_url=%s (连接池复用)",
+                client_kwargs.get("base_url", "default"),
+            )
+    return client
+
+
+async def _create_stream(create, create_kwargs: Dict[str, Any]):
+    """调 chat.completions.create(stream=True) 并统一 await:
+
+    - AsyncOpenAI: create(...) 返回 coroutine → await 得 AsyncStream;
+    - 测试 fake / 老式同步 client: create(...) 直接返回同步迭代器 → 原样返回。
+    """
+    result = create(**create_kwargs)
+    if inspect.isawaitable(result):
+        return await result
+    return result
+
+
+async def _aiter_stream(response) -> AsyncIterator[Any]:
+    """把底层 stream 统一成 async 迭代。
+
+    生产恒 AsyncStream (走 __aiter__ = 非阻塞异步迭代);同步迭代器 (测试 fake) 走
+    普通 for —— 测试里 chunk 已全部物化,无网络等待,不会阻塞。
+    """
+    if hasattr(response, "__aiter__"):
+        async for chunk in response:
+            yield chunk
+    else:
+        for chunk in response:
+            yield chunk
+
+
 def reset_client_cache() -> None:
-    """清空 module 级 client 复用池 (测试隔离用;生产无需调用)。"""
+    """清空 module 级 client 复用池 (同步 + 异步;测试隔离用,生产无需调用)。"""
     with _CLIENT_CACHE_LOCK:
         _SYNC_CLIENT_CACHE.clear()
+        _ASYNC_CLIENT_CACHE.clear()
 
 
 def _report_usage_from_response(usage: Any) -> None:
@@ -152,7 +207,8 @@ class OpenAIProvider(LLMProvider):
         self.api_key = api_key
         self.base_url = base_url
         self.model = model
-        self._client = None  # 懒加载
+        self._client = None  # 懒加载 (同步 — 非流式 chat/vision)
+        self._async_client = None  # 懒加载 (异步 — 流式 chat_stream/_stream_chat)
 
     def _client_kwargs(self) -> Dict[str, Any]:
         """构造底层客户端的 kwarg (进 memo key 的全部 client 级参数)。"""
@@ -162,10 +218,16 @@ class OpenAIProvider(LLMProvider):
         return client_kwargs
 
     def _get_client(self):
-        """懒加载 OpenAI 客户端 (module 级按 base_url+api_key 复用底层连接池)。"""
+        """懒加载同步 OpenAI 客户端 (module 级按 base_url+api_key 复用底层连接池)。"""
         if self._client is None:
             self._client = _get_shared_sync_client(self._client_kwargs())
         return self._client
+
+    def _get_async_client(self):
+        """懒加载异步 AsyncOpenAI 客户端 (流式路径专用, 同样按 base_url+api_key 复用)。"""
+        if self._async_client is None:
+            self._async_client = _get_shared_async_client(self._client_kwargs())
+        return self._async_client
 
     async def chat(
         self,
@@ -238,20 +300,23 @@ class OpenAIProvider(LLMProvider):
         **kwargs,
     ) -> AsyncIterator[str]:
         """流式调用，逐 token yield"""
-        client = self._get_client()
-
-        # OpenAI SDK 的 streaming 是同步迭代器，需要在线程中运行。
-        # include_usage:让最后一个 chunk 带回 usage 真值(不兼容的代理→重试一次不带)。
+        # AsyncOpenAI + `async for`:inter-chunk 网络等待不再霸占 event loop(旧代码
+        # 用 asyncio.to_thread 创建后 `for chunk in response` 同步迭代,每个 ~80ms 等待
+        # 阻塞整个 loop)。include_usage:让最后一个 chunk 带回 usage 真值(不兼容代理→
+        # 重试一次不带)。
+        client = self._get_async_client()
+        base_kwargs = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
         auto_usage = "stream_options" not in kwargs
         try:
-            response = await asyncio.to_thread(
+            response = await _create_stream(
                 client.chat.completions.create,
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=True,
-                **_merge_include_usage(kwargs),
+                {**base_kwargs, **_merge_include_usage(kwargs)},
             )
         except Exception as e:  # noqa: BLE001
             # 只在 stream_options 是我们自动加的情况下退回重试(不带它=与历史请求
@@ -259,18 +324,12 @@ class OpenAIProvider(LLMProvider):
             if not auto_usage:
                 raise
             logger.info("[OpenAI Provider] 带 stream_options 创建失败,退回无 usage 流式: %s", e)
-            response = await asyncio.to_thread(
+            response = await _create_stream(
                 client.chat.completions.create,
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=True,
-                **kwargs,
+                {**base_kwargs, **kwargs},
             )
 
-        # response 是一个同步迭代器 (Stream)，包装为异步
-        for chunk in response:
+        async for chunk in _aiter_stream(response):
             usage = getattr(chunk, "usage", None)
             if usage is not None:
                 _report_usage_from_response(usage)
@@ -302,7 +361,9 @@ class OpenAIProvider(LLMProvider):
         kwargs.pop("return_metadata", None)
         # thinking_budget / enable_thinking → extra_body(仅调用方门控过的 qwen 模型会带)
         kwargs = _apply_thinking_controls(kwargs)
-        client = self._get_client()
+        # AsyncOpenAI + `async for`:合成/工具决策轮的 inter-chunk 网络等待不再阻塞
+        # 整个 event loop(旧代码 to_thread 创建后同步 `for chunk in response`)。
+        client = self._get_async_client()
 
         create_kwargs: Dict[str, Any] = {
             "model": use_model,
@@ -317,25 +378,21 @@ class OpenAIProvider(LLMProvider):
         create_kwargs.update(_merge_include_usage(kwargs))
 
         try:
-            response = await asyncio.to_thread(
-                client.chat.completions.create, **create_kwargs
-            )
+            response = await _create_stream(client.chat.completions.create, create_kwargs)
         except Exception as e:  # noqa: BLE001
             # 同 _stream_chat:只在 stream_options 为自动附加时退回(与历史请求一致)。
             if not auto_usage:
                 raise
             logger.info("[OpenAI Provider] 带 stream_options 创建失败,退回无 usage 流式: %s", e)
             create_kwargs.pop("stream_options", None)
-            response = await asyncio.to_thread(
-                client.chat.completions.create, **create_kwargs
-            )
+            response = await _create_stream(client.chat.completions.create, create_kwargs)
 
         # tool_calls 分片按 index 累积: 同一个 tool_call 的 id / name / arguments
         # 会跨多个 chunk 到达,arguments 是字符串拼接。
         tool_acc: Dict[int, Dict[str, Any]] = {}
         finish_reason: Optional[str] = None
 
-        for chunk in response:
+        async for chunk in _aiter_stream(response):
             usage = getattr(chunk, "usage", None)
             if usage is not None:
                 _report_usage_from_response(usage)

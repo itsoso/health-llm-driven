@@ -55,7 +55,7 @@ async def test_chat_stream_emits_content_deltas_in_real_time():
         _chunk(finish_reason="stop"),
     ]
     provider = OpenAIProvider(api_key="k", model="gpt-test")
-    provider._client = _FakeOpenAIClient(chunks)
+    provider._async_client = _FakeOpenAIClient(chunks)
 
     events = [evt async for evt in provider.chat_stream([{"role": "user", "content": "hi"}])]
 
@@ -75,7 +75,7 @@ async def test_chat_stream_reassembles_tool_calls_by_index():
         _chunk(finish_reason="tool_calls"),
     ]
     provider = OpenAIProvider(api_key="k", model="gpt-test")
-    provider._client = _FakeOpenAIClient(chunks)
+    provider._async_client = _FakeOpenAIClient(chunks)
 
     events = [evt async for evt in provider.chat_stream([{"role": "user", "content": "记录喝水"}], tools=[{"x": 1}])]
 
@@ -91,8 +91,34 @@ async def test_chat_stream_reassembles_tool_calls_by_index():
     assert tcs[0]["function"]["arguments"] == '{"record_type":"water"}'
     assert json.loads(tcs[0]["function"]["arguments"]) == {"record_type": "water"}
     # tools 透传给底层 create()
-    assert provider._client.create_kwargs["tools"] == [{"x": 1}]
-    assert provider._client.create_kwargs["stream"] is True
+    assert provider._async_client.create_kwargs["tools"] == [{"x": 1}]
+    assert provider._async_client.create_kwargs["stream"] is True
+    assert events[-1]["finish_reason"] == "tool_calls"
+
+
+async def test_chat_stream_reassembles_two_parallel_tool_calls_by_index():
+    """Phase-2 rank6 回归: 切到 AsyncOpenAI + async for 后, **多个** index 的 tool_call
+    分片仍各自按 index 累积 (parallel_tool_calls=true / rank5 依赖这个)。两个 tool_call
+    的 arguments 分片交错到达, 必须按 index 分别拼接、按 index 升序产出。"""
+    chunks = [
+        _chunk(tool_calls=[_tc_fragment(0, id="c0", name="health_record", type="function", arguments='{"record_type":"water",')]),
+        _chunk(tool_calls=[_tc_fragment(1, id="c1", name="health_record", type="function", arguments='{"record_type":')]),
+        _chunk(tool_calls=[_tc_fragment(0, arguments='"data":{"amount":500}}')]),
+        _chunk(tool_calls=[_tc_fragment(1, arguments='"diet","data":{"food":"苹果"}}')]),
+        _chunk(finish_reason="tool_calls"),
+    ]
+    provider = OpenAIProvider(api_key="k", model="gpt-test")
+    provider._async_client = _FakeOpenAIClient(chunks)
+
+    events = [evt async for evt in provider.chat_stream([{"role": "user", "content": "喝了500ml水又吃了个苹果"}], tools=[{"x": 1}])]
+
+    tc_events = [e for e in events if e["type"] == "tool_calls"]
+    assert len(tc_events) == 1
+    tcs = tc_events[0]["tool_calls"]
+    # 两个 tool_call, 按 index 升序。
+    assert [tc["id"] for tc in tcs] == ["c0", "c1"]
+    assert json.loads(tcs[0]["function"]["arguments"]) == {"record_type": "water", "data": {"amount": 500}}
+    assert json.loads(tcs[1]["function"]["arguments"]) == {"record_type": "diet", "data": {"food": "苹果"}}
     assert events[-1]["finish_reason"] == "tool_calls"
 
 

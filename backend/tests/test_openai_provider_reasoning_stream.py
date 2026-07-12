@@ -77,7 +77,7 @@ async def test_reasoning_deltas_yield_separate_events_before_content():
     ]
     mock_client = MagicMock()
     mock_client.chat.completions.create = MagicMock(return_value=iter(chunks))
-    with patch.object(provider, "_get_client", return_value=mock_client):
+    with patch.object(provider, "_get_async_client", return_value=mock_client):
         events = await _collect(provider)
 
     types = [e["type"] for e in events]
@@ -100,7 +100,7 @@ async def test_reasoning_from_model_extra_is_surfaced():
     ]
     mock_client = MagicMock()
     mock_client.chat.completions.create = MagicMock(return_value=iter(chunks))
-    with patch.object(provider, "_get_client", return_value=mock_client):
+    with patch.object(provider, "_get_async_client", return_value=mock_client):
         events = await _collect(provider)
     assert {"type": "reasoning", "text": "extra 里的思考"} in events
     assert {"type": "content", "text": "答案"} in events
@@ -117,7 +117,7 @@ async def test_no_reasoning_stream_yields_zero_reasoning_events():
     ]
     mock_client = MagicMock()
     mock_client.chat.completions.create = MagicMock(return_value=iter(chunks))
-    with patch.object(provider, "_get_client", return_value=mock_client):
+    with patch.object(provider, "_get_async_client", return_value=mock_client):
         events = await _collect(provider)
     assert all(e["type"] != "reasoning" for e in events)
     assert [e["type"] for e in events] == ["content", "content", "finish"]

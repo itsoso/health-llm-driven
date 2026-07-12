@@ -121,7 +121,8 @@ async def test_chat_stream_threads_thinking_budget_into_extra_body():
 
     mock_client = MagicMock()
     mock_client.chat.completions.create = MagicMock(return_value=iter([_mk_chunk("答案")]))
-    with patch.object(provider, "_get_client", return_value=mock_client):
+    # chat_stream 走异步客户端 (Phase-2 rank6);patch _get_async_client。
+    with patch.object(provider, "_get_async_client", return_value=mock_client):
         events = [
             evt
             async for evt in provider.chat_stream(
