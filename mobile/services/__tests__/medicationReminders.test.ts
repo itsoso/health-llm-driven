@@ -106,6 +106,24 @@ describe('scheduleMedicationReminders', () => {
     });
   });
 
+  it('§5 推送隐私: 锁屏可见 title/body 不带药名/剂量, 名称只进 data', async () => {
+    mockNotif.getPermissionsAsync.mockResolvedValue({ status: 'granted' });
+    mockNotif.getAllScheduledNotificationsAsync.mockResolvedValue([]);
+
+    await scheduleMedicationReminders([
+      { id: 9, name: '二甲双胍', dosage: '500mg', reminder_times: ['08:00'] },
+    ]);
+
+    const call = mockNotif.scheduleNotificationAsync.mock.calls[0][0];
+    expect(call.content.title).not.toContain('二甲双胍');
+    expect(call.content.body).not.toContain('二甲双胍');
+    expect(call.content.body).not.toContain('500mg');
+    expect(call.content.data).toMatchObject({
+      medication_name: '二甲双胍',
+      dosage: '500mg',
+    });
+  });
+
   it('无权限时: 不排新的 (返回 0)', async () => {
     mockNotif.getPermissionsAsync.mockResolvedValue({ status: 'denied' });
     const n = await scheduleMedicationReminders([med(1, ['08:00'])]);

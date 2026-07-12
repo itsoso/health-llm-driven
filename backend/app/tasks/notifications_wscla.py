@@ -19,6 +19,7 @@ from app.database import SessionLocal
 from app.models.action_card import ActionCard
 from app.models.daily_health import GarminData
 from app.models.user import User
+from app.services.notification.push_privacy import is_sensitive_alert
 from app.services.notification.push_service import PushService
 from app.services.weekly_advisor import generate_weekly_advice
 from app.utils.async_helpers import run_async
@@ -91,11 +92,20 @@ def escalate_critical_unresolved_impl():
                     pass
 
             try:
+                # §5 推送隐私:ddi/dsi/pgx/labs/problem_red_lines 来源的卡片
+                # title/content 带药名/化验项/诊断 → 锁屏泛化;其余急性类
+                # (vitals/cgm/symptoms)原文透传(时效安全信息)。
+                if is_sensitive_alert(rule_id=card.source_id):
+                    esc_title = "⚠️ 仍有一条紧急健康告警未处理"
+                    esc_content = "24 小时前的重要告警还没确认,点开查看详情并处理。"
+                else:
+                    esc_title = f"⚠️ 仍未处理: {card.title}"
+                    esc_content = card.content
                 run_async(push_service.send_notification(
                     user_id=card.user_id,
                     notification_type="health_alert",
-                    title=f"⚠️ 仍未处理: {card.title}",
-                    content=card.content,
+                    title=esc_title,
+                    content=esc_content,
                     severity="critical",
                     data={
                         "rule_id": card.source_id,

@@ -75,15 +75,19 @@ def at_risk_cards(cards: List[Any], now: datetime) -> List[AtRiskCard]:
 
 
 def nudge_text(card: AtRiskCard) -> tuple[str, str]:
-    """(title, message)。温和、给可执行下一步,不报警化。"""
+    """(title, message)。温和、给可执行下一步,不报警化。
+
+    §5 推送隐私:ActionCard 标题可能带补剂/药名/化验项,不进锁屏可见文本;
+    标题走 push data.card_title,App 解锁后应用内渲染。
+    """
     if card.kind == "overdue":
         return (
             "你的计划周期到了 ⏰",
-            f"「{card.title}」周期已满(逾期 {card.days_left} 天)。去复检/记一次数据,"
+            f"有一个健康计划周期已满(逾期 {card.days_left} 天)。去复检/记一次数据,"
             "让 AI 帮你看看这轮有没有效果。",
         )
     return (
         "坚持一下,快到验证点了 💪",
-        f"「{card.title}」已进行 {card.progress_pct}%,还有 {card.days_left} 天到验证点。"
+        f"有一个健康计划已进行 {card.progress_pct}%,还有 {card.days_left} 天到验证点。"
         "保持节奏,到点就能看到结果。",
     )

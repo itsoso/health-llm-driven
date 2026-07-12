@@ -78,7 +78,9 @@ def adherence_watch():
                         notification_type="reminder",
                         title=title,
                         content=msg,
-                        data={"kind": "adherence", "card_id": top.card_id, "risk": top.kind},
+                        # §5:卡片标题只进 data(锁屏文案已泛化),App 解锁后渲染
+                        data={"kind": "adherence", "card_id": top.card_id,
+                              "card_title": top.title, "risk": top.kind},
                         severity="info",
                     ))
                     notified += 1

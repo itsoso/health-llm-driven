@@ -239,8 +239,11 @@ def test_plan_deviation_medicine_higher_severity(db):
     assert len(loops) == 1
     assert loops[0].score == 70
     assert "用药" in loops[0].body
-    # P2 (2026-05-04) 故事化: medication 名移到 title 避免 title+body 重复
-    assert "二甲双胍" in loops[0].title
+    # §5 推送隐私 (2026-07-11): 药名不进锁屏可见的 title/body(药名可反推诊断),
+    # 只留在 metadata.template_name, App 解锁后应用内渲染。
+    assert "二甲双胍" not in loops[0].title
+    assert "二甲双胍" not in loops[0].body
+    assert loops[0].metadata["template_name"] == "二甲双胍"
 
 
 def test_plan_deviation_score_grows_with_days(db):

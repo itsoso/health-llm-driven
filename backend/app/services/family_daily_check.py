@@ -15,6 +15,36 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+# §5 推送隐私:这些行前缀标记"带具体药名/复查项目名"的报告行。
+# 报告本体(API /family/daily-check,应用内解锁后查看)保留全量细节;
+# 推送(锁屏可见)前用 _push_safe_lines 把命中行折叠成计数行。
+# 前缀常量与构造点共用同一字面量,防止两处漂移。
+_MED_TODO_PREFIX = "服药: "
+_REVIEW_OVERDUE_PREFIX = "复查过期"
+_REVIEW_UPCOMING_PREFIX = "复查将到期"
+
+
+def _push_safe_lines(lines: List[str]) -> List[str]:
+    """把带药名/复查项目名的行折叠成计数行(锁屏可见文本用,§5 推送隐私)。"""
+    med = over = up = 0
+    out: List[str] = []
+    for line in lines:
+        if line.startswith(_MED_TODO_PREFIX):
+            med += 1
+        elif line.startswith(_REVIEW_OVERDUE_PREFIX):
+            over += 1
+        elif line.startswith(_REVIEW_UPCOMING_PREFIX):
+            up += 1
+        else:
+            out.append(line)
+    if med:
+        out.append(f"今天还有 {med} 项用药待记录")
+    if over:
+        out.append(f"有 {over} 项复查已过期")
+    if up:
+        out.append(f"有 {up} 项复查即将到期")
+    return out
+
 
 def run_family_daily_check(db: Session, owner_user_id: int) -> Dict[str, Any]:
     """
@@ -39,6 +69,8 @@ def run_family_daily_check(db: Session, owner_user_id: int) -> Dict[str, Any]:
 
     member_reports = []
     admin_alerts = []
+    # 推送版管理员告警(§5:不带复查项目名等敏感标识;指标类告警两边同文)
+    admin_push_alerts = []
 
     for m in members:
         user = db.query(User).filter(User.id == m.user_id).first()
@@ -70,16 +102,19 @@ def run_family_daily_check(db: Session, owner_user_id: int) -> Dict[str, Any]:
                     alert = f"血氧 {latest.spo2_avg}% 偏低"
                     report["alerts"].append(alert)
                     admin_alerts.append(f"{name}: {alert}")
+                    admin_push_alerts.append(f"{name}: {alert}")
 
                 if latest.resting_heart_rate and latest.resting_heart_rate > 90:
                     alert = f"静息心率 {latest.resting_heart_rate} 偏高"
                     report["alerts"].append(alert)
                     admin_alerts.append(f"{name}: {alert}")
+                    admin_push_alerts.append(f"{name}: {alert}")
 
                 if latest.sleep_score and latest.sleep_score < 50:
                     alert = f"睡眠评分仅 {latest.sleep_score}"
                     report["alerts"].append(alert)
                     admin_alerts.append(f"{name}: {alert}")
+                    admin_push_alerts.append(f"{name}: {alert}")
 
                 if latest.hrv and latest.hrv_status == "low":
                     alert = f"HRV {latest.hrv:.0f}ms 偏低"
@@ -102,7 +137,7 @@ def run_family_daily_check(db: Session, owner_user_id: int) -> Dict[str, Any]:
                     MedicationLog.status == "taken",
                 ).first()
                 if not taken:
-                    report["todos"].append(f"服药: {med.name} {med.dosage or ''}")
+                    report["todos"].append(f"{_MED_TODO_PREFIX}{med.name} {med.dosage or ''}")
         except Exception as e:
             logger.warning(f"检查 {name} 用药失败: {e}")
 
@@ -126,13 +161,15 @@ def run_family_daily_check(db: Session, owner_user_id: int) -> Dict[str, Any]:
 
             for r in overdue:
                 days = (today - r.next_due_date).days
-                alert = f"复查过期 {days} 天: {r.item_name}"
+                alert = f"{_REVIEW_OVERDUE_PREFIX} {days} 天: {r.item_name}"
                 report["alerts"].append(alert)
                 admin_alerts.append(f"{name}: {alert}")
+                # 推送版不带复查项目名(项目名可泄露诊断,如"胃镜复查")
+                admin_push_alerts.append(f"{name}: 有复查项目过期 {days} 天")
 
             for r in upcoming:
                 days = (r.next_due_date - today).days
-                report["todos"].append(f"复查将到期({days}天后): {r.item_name}")
+                report["todos"].append(f"{_REVIEW_UPCOMING_PREFIX}({days}天后): {r.item_name}")
         except Exception as e:
             logger.warning(f"检查 {name} 复查日历失败: {e}")
 
@@ -167,14 +204,18 @@ def run_family_daily_check(db: Session, owner_user_id: int) -> Dict[str, Any]:
 
         member_reports.append(report)
 
-    # 生成管理员汇总
+    # 生成管理员汇总(admin_summary 供应用内 API 查看;admin_push_summary 供锁屏推送,
+    # 不带复查项目名等敏感标识,§5 推送隐私)
     if admin_alerts:
         admin_summary = f"⚠️ 今日家庭健康提醒（{len(admin_alerts)} 项需关注）:\n" + "\n".join(f"• {a}" for a in admin_alerts)
+        admin_push_summary = f"⚠️ 今日家庭健康提醒（{len(admin_push_alerts)} 项需关注）:\n" + "\n".join(f"• {a}" for a in admin_push_alerts)
     else:
         admin_summary = "✅ 今日家庭成员健康状况良好，无异常。"
+        admin_push_summary = admin_summary
 
     return {
         "admin_summary": admin_summary,
+        "admin_push_summary": admin_push_summary,
         "admin_alert_count": len(admin_alerts),
         "member_reports": member_reports,
         "check_date": str(today),
@@ -182,10 +223,14 @@ def run_family_daily_check(db: Session, owner_user_id: int) -> Dict[str, Any]:
 
 
 def generate_member_message(report: Dict) -> Optional[str]:
-    """为单个家庭成员生成口语化提醒消息（发微信用）"""
+    """为单个家庭成员生成口语化提醒消息(推送用,锁屏可见)。
+
+    §5 推送隐私:药名/复查项目名折叠成计数行(_push_safe_lines),
+    全量细节在应用内报告(API /family/daily-check)解锁后查看。
+    """
     name = report["name"]
-    alerts = report.get("alerts", [])
-    todos = report.get("todos", [])
+    alerts = _push_safe_lines(report.get("alerts", []))
+    todos = _push_safe_lines(report.get("todos", []))
 
     if not alerts and not todos:
         return None
@@ -218,12 +263,12 @@ async def send_family_daily_brief(db: Session, owner_user_id: int):
         from app.services.notification.push_service import PushService
         push = PushService(db)
 
-        # 1. 给管理员推送汇总
+        # 1. 给管理员推送汇总(§5:推送版摘要,不带复查项目名等敏感标识)
         await push.send_notification(
             user_id=owner_user_id,
             notification_type="family_daily_brief",
             title="家庭健康日报",
-            content=report["admin_summary"][:200],
+            content=report.get("admin_push_summary", report["admin_summary"])[:200],
         )
         logger.info(f"家庭日报已推送给管理员 user_id={owner_user_id}")
 

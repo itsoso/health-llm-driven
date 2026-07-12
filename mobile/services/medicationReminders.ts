@@ -106,12 +106,16 @@ export async function scheduleMedicationReminders(meds: ReminderSource[]): Promi
       await Notifications.scheduleNotificationAsync({
         content: {
           title: '吃药提醒',
-          body: e.dosage ? `该服用 ${e.name}（${e.dosage}）了` : `该服用 ${e.name} 了`,
+          // §5 推送隐私 (AGENTS.md §5.6): 锁屏可见的 body 不带药名/剂量 ——
+          // 药名可反推诊断 (二甲双胍→糖尿病)。名称/剂量只进 data, 解锁后应用内渲染。
+          body: `有一次用药到点了（${e.time}），点开查看`,
           categoryIdentifier: 'MEDICATION_REMINDER',
           data: {
             kind: MED_REMINDER_KIND,
             reminder_type: 'medication',
             medication_id: e.medicationId,
+            medication_name: e.name,
+            dosage: e.dosage,
             taken_time: e.time,
             screen: 'home',
           },

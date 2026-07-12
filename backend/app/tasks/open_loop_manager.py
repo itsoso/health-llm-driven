@@ -276,7 +276,9 @@ def _detect_plan_deviation(db, user_id: int) -> List[OpenLoop]:
         icon = t.icon or ("💊" if t.category == "medicine" else "🏃")
         # P2 故事化: 不"重建节奏从今天开始" 那种命令式, 改"今天 X 分钟也算"减负担
         if t.category == "medicine":
-            title = f"{icon} {t.name} 漏了 {days_since} 天"
+            # §5 推送隐私:用药打卡模板名往往就是药名,不进锁屏 title;
+            # 名称走 metadata.template_name,App 解锁后应用内渲染。
+            title = f"💊 用药打卡漏了 {days_since} 天"
             body = (
                 f"已经 {days_since} 天没记打卡。漏一次用药对慢病管理影响最大 — "
                 f"今天补一次，往后我们一起跟。"

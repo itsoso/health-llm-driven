@@ -195,6 +195,10 @@ async def post_sync_reasoning(
             from app.services.notification.push_service import PushService
             from app.services.notification.evidence_policy import build_notification_evidence_data_for_user
             from app.services.notification.deeplinks import deeplink_for
+            from app.services.notification.push_privacy import (
+                GENERIC_LLM_PUSH_TITLE,
+                llm_push_backstop,
+            )
 
             # 点 ai_advice 推送时按内容落到饮食 / 健身页 (判不出领域则省略, 回首页)。
             blob = f"{title}\n{message}"
@@ -209,12 +213,20 @@ async def post_sync_reasoning(
             if advice_link:
                 existing_data["deep_link"] = advice_link
 
+            # §5.6 backstop:LLM 文案点名药/补剂 → 锁屏降级泛化,原文只进 data
+            safe_title, safe_message, redacted = llm_push_backstop(
+                title, message, generic_title=GENERIC_LLM_PUSH_TITLE
+            )
+            if redacted:
+                existing_data["full_title"] = title
+                existing_data["full_content"] = message
+
             push_svc = PushService(db)
             await push_svc.send_notification(
                 user_id=user_id,
                 notification_type="ai_advice",
-                title=title,
-                content=message,
+                title=safe_title,
+                content=safe_message,
                 data=build_notification_evidence_data_for_user(
                     db,
                     user_id=user_id,
@@ -224,7 +236,7 @@ async def post_sync_reasoning(
                 ),
             )
             _increment_push_count(user_id)
-            logger.info(f"[agent_loop] user={user_id} → notify: {title}")
+            logger.info(f"[agent_loop] user={user_id} → notify: {safe_title} (redacted={redacted})")
 
         else:
             logger.debug(f"[agent_loop] user={user_id} → silent")
