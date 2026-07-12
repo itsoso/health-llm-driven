@@ -63,7 +63,7 @@ describe('DietShareCard', () => {
     );
 
     expect(getByText('小巴 / 今日饮食')).toBeTruthy();
-    expect(getByText('这一餐，有据可查')).toBeTruthy();
+    expect(getByText('蛋白质拉满的一餐')).toBeTruthy();
     expect(getByText('鸡胸肉 200g、杂粮饭 1碗')).toBeTruthy();
     expect(getByText('560')).toBeTruthy();
     expect(getByText('蛋白质')).toBeTruthy();
@@ -72,6 +72,24 @@ describe('DietShareCard', () => {
     expect(getByText('已确认')).toBeTruthy();
     expect(getByText('可分享')).toBeTruthy();
     expect(queryByText('user_id')).toBeNull();
+  });
+
+  it('turns confirmed high-protein meals into a shareable nutrition headline', async () => {
+    const { getByText } = render(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(getByText('蛋白质拉满的一餐')).toBeTruthy();
+    fireEvent.press(getByText('复制朋友圈文案'));
+
+    await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('蛋白质拉满的一餐'));
+    });
   });
 
   it('labels user-corrected nutrition as manually confirmed', () => {

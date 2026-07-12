@@ -59,6 +59,13 @@ function nutritionSourceLabel(source?: string | null): string {
   return '营养表校准';
 }
 
+export function buildDietShareHeadline(record: DietRecord): string {
+  if (typeof record.protein === 'number' && record.protein >= 35) return '蛋白质拉满的一餐';
+  if (typeof record.fiber === 'number' && record.fiber >= 6) return '膳食纤维在线的一餐';
+  if (typeof record.calories === 'number' && record.calories <= 450) return '轻负担的一餐';
+  return '这一餐，有据可查';
+}
+
 export function buildDietShareCaption(record: DietRecord, dateLabel: string): string {
   const mealLabel = MEAL_LABEL[record.meal_type] ?? '餐食';
   const lines = [
@@ -74,8 +81,9 @@ export function buildDietShareCaption(record: DietRecord, dateLabel: string): st
 
 export function buildDietShareMomentsCaption(record: DietRecord, dateLabel: string): string {
   const mealLabel = MEAL_LABEL[record.meal_type] ?? '餐食';
+  const headline = buildDietShareHeadline(record);
   const lines = [
-    `${dateLabel}，认真记录这一餐。`,
+    `${dateLabel}，${headline}。`,
     `${mealLabel}: ${record.food_items}`,
     `这一餐约 ${metric(record.calories)} kcal，蛋白质 ${metric(record.protein)}g，碳水 ${metric(record.carbs)}g，脂肪 ${metric(record.fat, 1)}g。`,
   ];
@@ -103,6 +111,7 @@ export default function DietShareCard({
   const showImage = Boolean(imageSource) && !imageFailed && !forceImageFallback;
   const calories = metric(record.calories);
   const sourceLabel = nutritionSourceLabel(record.source);
+  const headline = buildDietShareHeadline(record);
 
   return (
     <View style={styles.card}>
@@ -150,7 +159,7 @@ export default function DietShareCard({
       <View style={styles.cardBody}>
         <View style={styles.storyRow}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.storyTitle}>这一餐，有据可查</Text>
+            <Text style={styles.storyTitle}>{headline}</Text>
             <Text style={styles.foods} numberOfLines={3}>{record.food_items}</Text>
           </View>
           {showImage ? (

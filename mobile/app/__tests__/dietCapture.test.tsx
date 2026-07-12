@@ -1204,7 +1204,7 @@ describe('DietScreen capture deeplink', () => {
 
     expect(getByText('分享这一餐')).toBeTruthy();
     expect(getByText('高清 3:4 图片 · 微信与小红书')).toBeTruthy();
-    expect(getByText('这一餐，有据可查')).toBeTruthy();
+    expect(getByText('蛋白质拉满的一餐')).toBeTruthy();
     await waitFor(() => expect(mockLoadDietPhotoDraft).toHaveBeenCalledWith(7));
   });
 });
