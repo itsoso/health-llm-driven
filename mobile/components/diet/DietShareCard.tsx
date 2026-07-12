@@ -81,6 +81,11 @@ function buildDietShareStatusLine(highlights: string[]): string {
   return `今日状态：${highlights.join(' · ')}`;
 }
 
+function buildDietShareCaptionStatusLine(highlights: string[]): string {
+  if (highlights.length === 0) return '今日状态: 认真记录';
+  return `今日状态: ${highlights.join(' / ')}`;
+}
+
 export function buildDietShareCaption(record: DietRecord, dateLabel: string): string {
   const mealLabel = MEAL_LABEL[record.meal_type] ?? '餐食';
   const headline = buildDietShareHeadline(record);
@@ -89,6 +94,7 @@ export function buildDietShareCaption(record: DietRecord, dateLabel: string): st
     `今天这餐打卡: ${dateLabel}`,
     headline,
     `${mealLabel}: ${record.food_items}`,
+    buildDietShareCaptionStatusLine(highlights),
     `热量 ${metric(record.calories)} kcal · 蛋白质 ${metric(record.protein)}g · 碳水 ${metric(record.carbs)}g · 脂肪 ${metric(record.fat, 1)}g`,
   ];
   if (highlights.length > 0) lines.push(`亮点: ${highlights.join(' / ')}`);
@@ -105,6 +111,7 @@ export function buildDietShareMomentsCaption(record: DietRecord, dateLabel: stri
   const lines = [
     `${dateLabel}，${headline}。`,
     `${mealLabel}: ${record.food_items}`,
+    buildDietShareCaptionStatusLine(highlights),
     `这一餐约 ${metric(record.calories)} kcal，蛋白质 ${metric(record.protein)}g，碳水 ${metric(record.carbs)}g，脂肪 ${metric(record.fat, 1)}g。`,
   ];
   if (highlights.length > 0) lines.push(`亮点: ${highlights.join(' / ')}`);
