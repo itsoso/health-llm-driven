@@ -221,6 +221,12 @@ export function buildDietShareMacroSegments(record: DietRecord): DietShareMacroS
   }));
 }
 
+function buildDietShareMacroStructureLine(record: DietRecord): string | null {
+  const segments = buildDietShareMacroSegments(record);
+  if (segments.length === 0) return null;
+  return `能量结构: ${segments.map((segment) => `${segment.label} ${segment.percent}%`).join(' / ')}`;
+}
+
 export function compactDietShareFoodItems(foodItems: string, maxChars = 35): string {
   const normalized = foodItems.replace(/\s+/g, ' ').trim();
   if (normalized.length <= maxChars) return normalized;
@@ -252,6 +258,8 @@ export function buildDietShareCaption(record: DietRecord, dateLabel: string): st
     buildDietShareCaptionStatusLine(highlights),
     buildDietShareMacroLine(record, 'compact'),
   ];
+  const macroStructureLine = buildDietShareMacroStructureLine(record);
+  if (macroStructureLine) lines.push(macroStructureLine);
   if (highlights.length > 0) lines.push(`亮点: ${highlights.join(' / ')}`);
   if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g`);
   lines.push(buildDietShareDataDisclosure(record));
@@ -273,6 +281,8 @@ export function buildDietShareMomentsCaption(record: DietRecord, dateLabel: stri
     buildDietShareCaptionStatusLine(highlights),
     buildDietShareMacroLine(record, 'sentence'),
   ];
+  const macroStructureLine = buildDietShareMacroStructureLine(record);
+  if (macroStructureLine) lines.push(macroStructureLine);
   if (highlights.length > 0) lines.push(`亮点: ${highlights.join(' / ')}`);
   if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g。`);
   lines.push(buildDietShareDataDisclosure(record));
