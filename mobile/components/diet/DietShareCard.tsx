@@ -799,6 +799,11 @@ export function DietShareSheet({
   const estimatedShare = isAiEstimatedNutritionSource(record.source);
   const shareReviewTone: ShareReviewTone = lowConfidenceShare ? 'low-confidence' : estimatedShare ? 'estimate' : 'none';
   const publishHint = shareResult ? publishHintForShareResult(shareResult, shareReviewTone) : null;
+  const sheetSubtitle = lowConfidenceShare
+    ? '核对 3:4 图片 · 微信与小红书'
+    : estimatedShare
+      ? '复盘 3:4 图片 · 微信与小红书'
+      : '高清 3:4 图片 · 微信与小红书';
   const momentsReadyLabel = lowConfidenceShare
     ? '核对后朋友圈文案'
     : estimatedShare
@@ -1072,7 +1077,7 @@ export function DietShareSheet({
           <View style={styles.sheetHeader}>
             <View>
               <Text style={styles.sheetTitle}>分享这一餐</Text>
-              <Text style={styles.sheetSubtitle}>高清 3:4 图片 · 微信与小红书</Text>
+              <Text style={styles.sheetSubtitle}>{sheetSubtitle}</Text>
             </View>
             <TouchableOpacity
               style={styles.closeButton}

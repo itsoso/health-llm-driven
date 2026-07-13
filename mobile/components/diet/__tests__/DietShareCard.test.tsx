@@ -379,6 +379,8 @@ describe('DietShareCard', () => {
     );
 
     expect(getByText('识别置信度 42%')).toBeTruthy();
+    expect(getByText('核对 3:4 图片 · 微信与小红书')).toBeTruthy();
+    expect(queryByText('高清 3:4 图片 · 微信与小红书')).toBeNull();
     expect(getByText('发布前建议核对食物和份量')).toBeTruthy();
     expect(getAllByText('待核对').length).toBeGreaterThan(0);
     expect(getByText('谨慎分享')).toBeTruthy();
