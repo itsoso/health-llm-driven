@@ -68,6 +68,9 @@ MODELS: List[ModelEntry] = [
         label="Qwen3.7 Plus · 千问",
         provider="tokenplan",
         model="qwen3.7-plus",
+        # 2026-07-13 真网探针: enable_thinking=false 14-15.7s→2.2-2.4s (-85%), 正文长度不变
+        # (rank11 段落调用实测被 intent 分层路由到本模型, 无此 flag 则 fail-closed 不折控制)。
+        supports_thinking_budget=True,
         speed_tier="balanced",
         note="文本生成 / 推理 / 视觉理解",
         requires_env=("TOKENPLAN_API_KEY",),
