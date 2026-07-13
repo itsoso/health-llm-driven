@@ -121,6 +121,7 @@ def test_diet_quality_response_uses_today_totals_and_actionable_routes(db, auth_
     reply = response["reply"]
     assert reply.startswith("已记录午餐：")
     assert "770 kcal" in reply and "蛋白 30g" in reply
+    assert "今日累计 1040 kcal / 2 餐" in reply
     # 墙里的宏量标签行 / 逐条宏量 / 进度句不再复述进文本(卡承载)。
     assert "碳水" not in reply and "脂肪" not in reply and "纤维" not in reply
     assert "今日蛋白" not in reply

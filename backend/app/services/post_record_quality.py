@@ -335,7 +335,11 @@ def _diet_primary_judgement(record_data: dict, totals: Optional[DietDayTotals]) 
     return base + "。"
 
 
-def _diet_headline_sentence(meal: str, record_data: dict) -> str:
+def _diet_headline_sentence(
+    meal: str,
+    record_data: dict,
+    totals: Optional[DietDayTotals] = None,
+) -> str:
     """一句话确认 + 单个头条数字(热量/蛋白)。
 
     移动端已用结构化饮食卡渲染完整食材/宏量/进度 —— 这行文本只为无卡客户端
@@ -350,6 +354,8 @@ def _diet_headline_sentence(meal: str, record_data: dict) -> str:
         bits.append(f"{kcal:.0f} kcal")
     if protein is not None:
         bits.append(f"蛋白 {protein:.0f}g")
+    if totals:
+        bits.append(f"今日累计 {totals.calories:.0f} kcal / {totals.meals_count} 餐")
     if bits:
         return f"已记录{meal}：{'，'.join(bits)}。"
     return f"已记录{meal}。"
@@ -623,7 +629,7 @@ def build_post_record_quality_response(
         # 用个人提醒(过敏/慢病更值得无卡客户端听见),否则用确定性的下一步建议;两者
         # 皆为当前代码已确定性产出的字段,并同样在卡上呈现,不新增/不臆造。
         note = cautions[0] if cautions else next_action
-        headline = _diet_headline_sentence(meal, record_data)
+        headline = _diet_headline_sentence(meal, record_data, totals)
         reply = f"{headline}{note}" if note else headline
         card_data: dict[str, Any] = {
             "domain": "diet",
