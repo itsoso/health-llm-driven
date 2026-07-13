@@ -65,13 +65,12 @@ export function buildAdjudicationPayload(form: AdjudicationFormState): Adjudicat
 }
 
 export function canFinalizeReleaseReview({
-  total,
   unresolvedCount,
 }: {
   total: number;
   unresolvedCount: number;
 }): boolean {
-  return total > 0 && unresolvedCount === 0;
+  return unresolvedCount === 0;
 }
 
 export function isStaleWorkspaceError(error: unknown): boolean {

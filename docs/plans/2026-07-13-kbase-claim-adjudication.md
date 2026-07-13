@@ -209,4 +209,3 @@ If architecture drift is reported, run the project system-map generator and comm
 **Step 4: Review and release**
 
 Request independent code review. Resolve every Critical/High/Medium finding, rerun all gates, update the Dossier with exact evidence, then create a PR. After CI and merge, deploy through the standard backend/frontend path and verify authenticated production reads, one non-publishing dry-run path, service health, and workspace persistence. Do not adjudicate current medical claims or publish them as part of deployment verification.
-

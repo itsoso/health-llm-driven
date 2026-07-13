@@ -59,7 +59,7 @@ describe('Dedao Release Review helpers', () => {
   it('only enables finalization after every release claim is resolved', () => {
     expect(canFinalizeReleaseReview({ total: 5, unresolvedCount: 1 })).toBe(false);
     expect(canFinalizeReleaseReview({ total: 5, unresolvedCount: 0 })).toBe(true);
-    expect(canFinalizeReleaseReview({ total: 0, unresolvedCount: 0 })).toBe(false);
+    expect(canFinalizeReleaseReview({ total: 0, unresolvedCount: 0 })).toBe(true);
   });
 
   it('labels decisions and recognizes stale fingerprint conflicts', () => {

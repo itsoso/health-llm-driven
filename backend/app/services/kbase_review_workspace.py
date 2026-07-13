@@ -165,7 +165,11 @@ def list_review_claims(
         for item in items:
             bucket = str(item["decision"] or "unresolved")
             decision_counts[bucket] = decision_counts.get(bucket, 0) + 1
-        unresolved_count = sum(1 for item in items if item["review_status"] == "draft")
+        unresolved_count = sum(
+            1
+            for item in items
+            if item["review_status"] != "reviewed" or item["decision"] != "approve"
+        )
         return {
             "workspace_fingerprint": workspace_content_fingerprint(root),
             "total": len(items),
@@ -310,11 +314,16 @@ def finalize_review_workspace(
         if current_fingerprint != expected_workspace_fingerprint:
             raise ValueError("dedao-kbase review workspace changed since preview; reload before approval")
 
-        unresolved = [
-            str(claim.get("doc_id") or "")
-            for claim in _read_jsonl(root / "claims.jsonl")
-            if (claim.get("metadata") or {}).get("review_status") == "draft"
-        ]
+        latest = _latest_adjudications(root)
+        unresolved = []
+        for claim in _read_jsonl(root / "claims.jsonl"):
+            metadata = claim.get("metadata") if isinstance(claim.get("metadata"), dict) else {}
+            doc_id = str(claim.get("doc_id") or "")
+            decision = (latest.get(doc_id) or {}).get("decision")
+            if metadata.get("review_status") == "draft" or (
+                metadata.get("release_id") and decision != "approve"
+            ):
+                unresolved.append(doc_id)
         if unresolved:
             raise ValueError(f"unresolved claim decisions remain: {len(unresolved)}")
 

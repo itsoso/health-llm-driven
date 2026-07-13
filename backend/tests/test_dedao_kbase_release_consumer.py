@@ -692,6 +692,37 @@ def test_finalize_review_workspace_rejects_unresolved_claim_without_mutation(tmp
     assert workspace_content_fingerprint(workspace) == before
 
 
+def test_finalize_review_workspace_rejects_legacy_reviewed_claim_without_adjudication(tmp_path):
+    from app.services.kbase_review_workspace import (
+        finalize_review_workspace,
+        list_review_claims,
+        workspace_content_fingerprint,
+    )
+
+    workspace = tmp_path / "review-workspace"
+    _write_release_review_workspace(workspace)
+    claims = [json.loads(line) for line in (workspace / "claims.jsonl").read_text().splitlines()]
+    claims[-1]["metadata"]["review_status"] = "reviewed"
+    (workspace / "claims.jsonl").write_text(
+        "".join(json.dumps(claim, ensure_ascii=False) + "\n" for claim in claims),
+        encoding="utf-8",
+    )
+    before = workspace_content_fingerprint(workspace)
+
+    projection = list_review_claims(workspace, offset=0, limit=20)
+    assert projection["items"][0]["review_status"] == "reviewed"
+    assert projection["items"][0]["decision"] is None
+    assert projection["unresolved_count"] == 1
+    with pytest.raises(ValueError, match="unresolved claim decisions"):
+        finalize_review_workspace(
+            workspace,
+            reviewer="admin:7",
+            expected_workspace_fingerprint=before,
+        )
+
+    assert workspace_content_fingerprint(workspace) == before
+
+
 def test_finalize_review_workspace_rejects_needs_evidence_claim(tmp_path):
     from app.services.kbase_review_workspace import (
         adjudicate_review_claim,
@@ -716,6 +747,34 @@ def test_finalize_review_workspace_rejects_needs_evidence_claim(tmp_path):
             reviewer="admin:7",
             expected_workspace_fingerprint=first["workspace_fingerprint"],
         )
+
+
+def test_finalize_review_workspace_allows_all_release_claims_to_be_excluded(tmp_path):
+    from app.services.kbase_review_workspace import (
+        adjudicate_review_claim,
+        finalize_review_workspace,
+        workspace_content_fingerprint,
+    )
+
+    workspace = tmp_path / "review-workspace"
+    _write_release_review_workspace(workspace)
+    adjudicated = adjudicate_review_claim(
+        workspace,
+        doc_id="claim:release-abc-claim-1",
+        decision="reject",
+        reviewer="admin:7",
+        expected_workspace_fingerprint=workspace_content_fingerprint(workspace),
+        note="not suitable for Health serving",
+    )
+
+    result = finalize_review_workspace(
+        workspace,
+        reviewer="admin:7",
+        expected_workspace_fingerprint=adjudicated["workspace_fingerprint"],
+    )
+
+    assert result["gate"]["serving_allowed"] is True
+    assert (workspace / "claims.jsonl").read_text(encoding="utf-8") == ""
 
 
 def test_finalize_review_workspace_resolves_containers_relations_and_gate(tmp_path):
