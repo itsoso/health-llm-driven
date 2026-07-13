@@ -369,7 +369,8 @@ describe('DietShareCard', () => {
     fireEvent.press(getByText('复制朋友圈文案'));
     await waitFor(() => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('热量估算中'));
-      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养数据: 部分估算中，已确认部分可继续复盘'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养数据: 部分估算中，可继续复盘'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('已确认部分'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('能量结构'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('--'));
     });
