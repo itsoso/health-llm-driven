@@ -5,7 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import shutil
-from threading import Thread
+from threading import Event, Thread
 from unittest.mock import patch
 
 import pytest
@@ -315,6 +315,39 @@ def test_review_bundle_uses_dedicated_release_workspace(tmp_path, monkeypatch):
 
     assert bundle["artifact_dir"] == str(workspace)
     assert bundle["preview"]["pages"][0]["title"] == "persistent-review"
+
+
+def test_workspace_lock_serializes_concurrent_writers(tmp_path):
+    from app.tasks.system_knowledge_lifecycle import _workspace_lock
+
+    workspace = tmp_path / "review-workspace"
+    first_acquired = Event()
+    release_first = Event()
+    order: list[str] = []
+
+    def first_writer() -> None:
+        with _workspace_lock(workspace):
+            order.append("first-enter")
+            first_acquired.set()
+            release_first.wait(timeout=2)
+            order.append("first-exit")
+
+    def second_writer() -> None:
+        first_acquired.wait(timeout=2)
+        with _workspace_lock(workspace):
+            order.append("second-enter")
+
+    first = Thread(target=first_writer)
+    second = Thread(target=second_writer)
+    first.start()
+    second.start()
+    assert first_acquired.wait(timeout=2)
+    assert order == ["first-enter"]
+    release_first.set()
+    first.join(timeout=2)
+    second.join(timeout=2)
+
+    assert order == ["first-enter", "first-exit", "second-enter"]
 
 
 def _write_canonical_artifacts(root: Path, *, marker: str) -> None:

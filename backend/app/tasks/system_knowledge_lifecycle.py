@@ -8,7 +8,9 @@ claims are never imported automatically; they remain review candidates.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import UTC, datetime
+import fcntl
 import hashlib
 import json
 import logging
@@ -82,6 +84,20 @@ def _workspace_base_fingerprint(artifact_dir: str | Path) -> str:
     except (OSError, json.JSONDecodeError):
         return ""
     return str(payload.get("base_fingerprint") or "") if isinstance(payload, dict) else ""
+
+
+@contextmanager
+def _workspace_lock(artifact_dir: str | Path):
+    target = Path(artifact_dir)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = target.parent / f".{target.name}.lock"
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    with os.fdopen(descriptor, "a+") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def _replace_workspace(candidate: Path, target: Path) -> None:
@@ -222,6 +238,33 @@ def sync_dedao_kbase_export_draft_once(
 
 
 def sync_dedao_kbase_releases_draft_once(
+    db: Session,
+    *,
+    base_url: str | None,
+    auth_token: str | None,
+    artifact_dir: str | Path,
+    base_artifact_dir: str | Path | None = None,
+    source_root: str | Path,
+    actor: str = "system",
+    now: datetime | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Serialize cursor reads and workspace replacement for one review path."""
+    with _workspace_lock(artifact_dir):
+        return _sync_dedao_kbase_releases_draft_locked(
+            db,
+            base_url=base_url,
+            auth_token=auth_token,
+            artifact_dir=artifact_dir,
+            base_artifact_dir=base_artifact_dir,
+            source_root=source_root,
+            actor=actor,
+            now=now,
+            limit=limit,
+        )
+
+
+def _sync_dedao_kbase_releases_draft_locked(
     db: Session,
     *,
     base_url: str | None,
