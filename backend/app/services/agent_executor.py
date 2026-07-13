@@ -1803,7 +1803,10 @@ def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
         stripped = content.lstrip()
         looks_structured = bool(stripped) and stripped[0] in "{["
         if _leaks_tool_result_json(content) or _streaming_leak_forming(content) or looks_structured:
-            replies.append("已查到相关记录，但这轮没能整理成回答；请再说一次要改哪一条")
+            # 中性、不预设意图:旧文案"请再说一次要改哪一条"是记录**修改**味,对分析/查询
+            # 语境是废话(2026-07-13 turn 6334 violation #2)。这里只表达"这条结果没整理出来",
+            # 绝不谎称已写入,也不假设用户在改记录。
+            replies.append("这条结果暂时没能整理成文字。")
             append_safety_warning()
             continue
         # Plain-text tool result (already human-readable) — show as-is.
@@ -5079,13 +5082,21 @@ class AgentExecutor:
                         full_reply += _UNVERIFIED_WRITE_USER_MESSAGE
                         break
 
-                    # 硬门(诚实不变量):确定性"已记录…"回复只允许在本轮**真的执行过写工具**
-                    # 后出现 —— 只读工具(health_query 等)成功≠写入,谎报"已记录"比慢更糟。
-                    # 非写回合 fall through 到 continue,让下一轮 LLM 用工具结果作答。
+                    # 硬门(诚实不变量):确定性"已记录…"回复只允许在本轮产生了**可验证的写入回执**
+                    # (write_receipts,由 _write_tool_attempted / _write_receipt_from_tool_result 判定)
+                    # 后出现。名字级判断(工具名 ∈ {health_record, health_manage})会把 health_manage
+                    # 的 list/query(读,用来找记录 ID)误判为写 —— 2026-07-13 prod turn 6334 实锤:
+                    # 分析问句「从 HRV 记录…推断胃溃疡根因」被 _prefer_fast_record_model 误判为记录意图
+                    # (记录=名词命中 _RECORD_INTENT_RE),本轮只调 health_query×5 + health_manage(list),
+                    # 无任何写入(write_receipts=[]),却吐出假"✅ 已记录"+记录味兜底("请再说一次要改哪一条")。
+                    # 上面 unverified_write_tools 已先行拦掉"尝试写但无回执"的情形,故走到这里时
+                    # write_receipts 非空 ⟺ 本轮确有可验证写入。无回执 → fall through 到 continue,
+                    # 让下一轮 LLM 用工具结果作答(合成/查询直出),绝不谎报写入。
                     _round_executed_write_tool = any(
                         t in ("health_record", "health_manage") for t in _round_tool_names
                     )
-                    if self._prefer_fast_record_model and _round_executed_write_tool:
+                    _turn_had_verified_write = bool(write_receipts)
+                    if self._prefer_fast_record_model and _turn_had_verified_write:
                         combined_post_record_quality = combine_post_record_quality_responses(post_record_qualities)
                         final_text = (
                             str(combined_post_record_quality.get("reply") or "").strip()
@@ -5166,12 +5177,10 @@ class AgentExecutor:
                     # 回显(用户截图:记录后正文是 {"id":231,...} / {"record_date":...})。
                     # 整条是裸 JSON 且本轮确有工具结果 → 用工具结果合成"已记录…",绝不裸露。
                     if _looks_like_bare_tool_json(final_text):
-                        # 按本轮实际执行过的工具选兜底口径:有写工具 → "已记录…";
-                        # 只读回合 → 查询味自然语言(绝不能对查询谎报"✅ 已记录")。
-                        _turn_had_write_tool = any(
-                            t in ("health_record", "health_manage") for t in (tools_used or [])
-                        )
-                        if _turn_had_write_tool:
+                        # 按本轮兜底口径:**可验证写入回执**(write_receipts)才允许合成"已记录…";
+                        # 只读回合(含 health_manage 的 list/query)→ 查询味自然语言,绝不谎报"✅ 已记录"。
+                        # 名字级 tools_used ∋ health_manage 会把查 ID 的 list 误判为写(同 turn 6334 病根)。
+                        if write_receipts:
                             synthesized = _fast_record_reply_from_tool_results(messages)
                         else:
                             # 查询回合:绝不谎报"已记录"。工具结果无现成人话字段时给

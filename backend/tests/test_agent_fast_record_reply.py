@@ -138,7 +138,9 @@ def test_bare_single_key_truncated_dict_becomes_neutral_line_not_raw_dump():
             pass
         reply = _fast_record_reply_from_tool_results([{"role": "tool", "content": content}])
         assert reply.strip()  # 非空承重
-        assert reply == "已查到相关记录，但这轮没能整理成回答；请再说一次要改哪一条"
+        assert reply == "这条结果暂时没能整理成文字。"
+        # 中性收口:不谎称写入、不预设"改记录"意图(turn 6334 violation #2 修复)。
+        assert "已记录" not in reply and "已修改" not in reply and "要改哪一条" not in reply
         assert forbidden not in reply
         assert "{" not in reply and "[" not in reply
 
