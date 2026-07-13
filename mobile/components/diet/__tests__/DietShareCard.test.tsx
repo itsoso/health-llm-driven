@@ -281,8 +281,13 @@ describe('DietShareCard', () => {
     expect(getByText('复盘小红书文案')).toBeTruthy();
     expect(getByText('复制复盘朋友圈文案')).toBeTruthy();
     expect(getByText('复制带话题复盘文案')).toBeTruthy();
+    expect(getByText('保存复盘图到相册')).toBeTruthy();
+    expect(getByText('用于复盘或核对，确认后再发布')).toBeTruthy();
+    expect(getByText('保存/分享复盘图')).toBeTruthy();
+    expect(getByText('系统面板里保存或发给自己复盘')).toBeTruthy();
     expect(queryByText('自动复制朋友圈文案')).toBeNull();
     expect(queryByText('自动复制带话题文案')).toBeNull();
+    expect(queryByText('发布前先存图，微信 / 小红书直接选')).toBeNull();
   });
 
   it('surfaces low AI recognition confidence before users share externally', async () => {

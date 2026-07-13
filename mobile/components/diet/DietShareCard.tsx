@@ -765,6 +765,18 @@ export function DietShareSheet({
     : estimatedShare
       ? '复制带话题复盘文案'
       : '自动复制带话题文案';
+  const saveLibraryLabel = estimatedShare ? '保存复盘图到相册' : '保存到相册';
+  const saveLibraryHint = lowConfidenceShare
+    ? '核对后再存图发布'
+    : estimatedShare
+      ? '用于复盘或核对，确认后再发布'
+      : '发布前先存图，微信 / 小红书直接选';
+  const genericShareLabel = estimatedShare ? '保存/分享复盘图' : '保存/分享图片';
+  const genericShareHint = lowConfidenceShare
+    ? '系统面板里先保存，核对后再发'
+    : estimatedShare
+      ? '系统面板里保存或发给自己复盘'
+      : '可在系统面板保存到相册';
 
   React.useEffect(() => {
     setImageReady(!imageSource);
@@ -1086,9 +1098,9 @@ export function DietShareSheet({
               <Ionicons name="download-outline" size={19} color={C.green600} />
             )}
             <View style={styles.shareButtonCopy}>
-              <Text style={styles.saveLibraryButtonText}>{!imageReady ? '图片加载中' : sharing ? '保存中' : '保存到相册'}</Text>
+              <Text style={styles.saveLibraryButtonText}>{!imageReady ? '图片加载中' : sharing ? '保存中' : saveLibraryLabel}</Text>
               {!sharing && imageReady ? (
-                <Text style={styles.saveLibraryButtonHint}>发布前先存图，微信 / 小红书直接选</Text>
+                <Text style={styles.saveLibraryButtonHint}>{saveLibraryHint}</Text>
               ) : null}
             </View>
           </TouchableOpacity>
@@ -1107,9 +1119,9 @@ export function DietShareSheet({
               <Ionicons name="share-outline" size={19} color={C.greenOn} />
             )}
             <View style={styles.shareButtonCopy}>
-              <Text style={styles.shareButtonText}>{!imageReady ? '图片加载中' : sharing ? '生成中' : '保存/分享图片'}</Text>
+              <Text style={styles.shareButtonText}>{!imageReady ? '图片加载中' : sharing ? '生成中' : genericShareLabel}</Text>
               {!sharing && imageReady ? (
-                <Text style={styles.shareButtonHint}>可在系统面板保存到相册</Text>
+                <Text style={styles.shareButtonHint}>{genericShareHint}</Text>
               ) : null}
             </View>
           </TouchableOpacity>
