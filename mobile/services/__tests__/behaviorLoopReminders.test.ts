@@ -130,7 +130,7 @@ describe('buildInterventionCycleNotifications', () => {
   it('复查到期 → 周期提醒 + 复查提醒 (2 条)', () => {
     const specs = buildInterventionCycleNotifications(
       cycle({ planned_end_date: '2026-06-30' }),
-      new Date('2026-07-01T00:00:00Z'),
+      new Date('2026-07-01T12:00:00'),
     );
     expect(specs).toHaveLength(2);
     const kinds = specs.map((s) => (s.content.data as any).kind);

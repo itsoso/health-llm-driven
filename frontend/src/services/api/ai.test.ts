@@ -24,11 +24,11 @@ describe('agentApi.streamMessage', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({
-      'X-Reva-Client-Caps': 'genui-v1, genui-components-v1',
+      'X-Reva-Client-Caps': 'genui-v1, genui-components-v1, genui-table-v1',
     });
   });
 
-  it('keeps the metric_table cap dark until eval passes (no genui-table-v1 token)', async () => {
+  it('declares the metric_table capability after the eval gate passed', async () => {
     localStorage.setItem('auth_token', 'tok_test');
     const stream = new ReadableStream({ start(controller) { controller.close(); } });
     const fetchMock = vi.fn().mockResolvedValue(new Response(stream, { status: 200 }));
@@ -38,6 +38,6 @@ describe('agentApi.streamMessage', () => {
     await iterator.next();
 
     const caps = (fetchMock.mock.calls[0][1]?.headers as Record<string, string>)['X-Reva-Client-Caps'];
-    expect(caps).not.toContain('genui-table-v1');
+    expect(caps).toContain('genui-table-v1');
   });
 });
