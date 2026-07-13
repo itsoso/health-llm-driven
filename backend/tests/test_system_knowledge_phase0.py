@@ -1511,7 +1511,8 @@ def test_admin_dedao_kbase_verification_packet_generate_read_and_audit_are_body_
     assert listed.json()["items"][0]["packet_id"] == packet["packet_id"]
     assert listed.json()["items"][0]["stale"] is False
 
-    audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_verification_packet_generated").one()
+    audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_verification_generated").one()
+    assert len(audit.op) <= 40
     assert audit.doc_id == "claim:release-abc-claim-1"
     assert audit.diff["packet_id"] == packet["packet_id"]
     assert "summary" not in json.dumps(audit.diff, ensure_ascii=False)
@@ -1539,7 +1540,7 @@ def test_admin_dedao_kbase_verification_packet_returns_conflict_for_stale_finger
 
     assert response.status_code == 409
     assert "reload" in response.json()["detail"]
-    assert db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_verification_packet_generated").count() == 0
+    assert db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_verification_generated").count() == 0
 
 
 def test_admin_dedao_kbase_applies_only_ready_current_verification_packet(
@@ -1574,7 +1575,8 @@ def test_admin_dedao_kbase_applies_only_ready_current_verification_packet(
     assert applied.status_code == 200
     assert applied.json()["decision"] == "needs_evidence"
     assert applied.json()["packet_id"] == generated["packet"]["packet_id"]
-    audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_verification_packet_applied").one()
+    audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_verification_applied").one()
+    assert len(audit.op) <= 40
     assert audit.diff["decision"] == "needs_evidence"
     assert "晚间咖啡因" not in json.dumps(audit.diff, ensure_ascii=False)
 
