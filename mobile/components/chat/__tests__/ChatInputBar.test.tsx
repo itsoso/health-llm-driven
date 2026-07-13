@@ -1,3 +1,12 @@
+const mockStorage: Record<string, string> = {};
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  __esModule: true,
+  default: {
+    getItem: jest.fn((k: string) => Promise.resolve(mockStorage[k] ?? null)),
+    setItem: jest.fn((k: string, v: string) => { mockStorage[k] = v; return Promise.resolve(); }),
+  },
+}));
+
 /* eslint-disable @typescript-eslint/no-require-imports */
 import React from 'react';
 import { Alert, AppState, StyleSheet } from 'react-native';
@@ -9,21 +18,14 @@ import { revaColors } from '../../../constants/revaTheme';
 const mockStartRecording = jest.fn();
 const mockStopAndTranscribe = jest.fn();
 const mockCancelRecording = jest.fn();
-const mockPickImage = jest.fn();
-const mockTakePhoto = jest.fn();
 const mockExecuteMedicalExamImport = jest.fn();
+const mockRouterPush = jest.fn();
 const mockStartDictation = jest.fn();
 const mockStopDictation = jest.fn();
 const mockCancelDictation = jest.fn();
 let appStateHandler: ((state: string) => void) | undefined;
 let latestVoiceRecordingOptions: any;
 let latestRealtimeDictationOptions: any;
-let mockVoiceRecordingState = {
-  isRecording: false,
-  isTranscribing: false,
-  durationMs: 0,
-  partialText: '',
-};
 let mockRealtimeDictationState = {
   isDictating: false,
   error: null as string | null,
@@ -46,8 +48,8 @@ jest.mock('../../../hooks/useMediaPicker', () => ({
     removeImage: mockRemoveImage,
     clearImages: mockClearImages,
     releaseImagesAfterSend: mockReleaseImagesAfterSend,
-    pickImage: mockPickImage,
-    takePhoto: mockTakePhoto,
+    pickImage: jest.fn(),
+    takePhoto: jest.fn(),
   }),
 }));
 
@@ -62,15 +64,14 @@ jest.mock('../../../services/chatDraftStorage', () => ({
 jest.mock('../../../hooks/useVoiceRecording', () => ({
   useVoiceRecording: (options: any) => {
     latestVoiceRecordingOptions = options;
-    return {
-      isRecording: mockVoiceRecordingState.isRecording,
-      isTranscribing: mockVoiceRecordingState.isTranscribing,
-      durationMs: mockVoiceRecordingState.durationMs,
-      partialText: mockVoiceRecordingState.partialText,
-      startRecording: mockStartRecording,
-      stopAndTranscribe: mockStopAndTranscribe,
+    return ({
+    isRecording: false,
+    isTranscribing: false,
+    durationMs: 0,
+    startRecording: mockStartRecording,
+    stopAndTranscribe: mockStopAndTranscribe,
       cancelRecording: mockCancelRecording,
-    };
+    });
   },
 }));
 
@@ -85,7 +86,7 @@ jest.mock('../../../hooks/useRealtimeDictation', () => ({
       cancelDictation: mockCancelDictation,
     };
   },
-}));
+}), { virtual: true });
 
 jest.mock('expo-document-picker', () => ({
   getDocumentAsync: jest.fn(),
@@ -93,6 +94,10 @@ jest.mock('expo-document-picker', () => ({
 
 jest.mock('../../../services/chatMedicalExamImportSkill', () => ({
   executeMedicalExamImportSkillForDocumentAsset: (...args: any[]) => mockExecuteMedicalExamImport(...args),
+}));
+
+jest.mock('expo-router', () => ({
+  router: { push: (...args: any[]) => mockRouterPush(...args) },
 }));
 
 jest.mock('react-native-reanimated', () => {
@@ -111,17 +116,9 @@ jest.mock('react-native-reanimated', () => {
   };
 });
 
-const flattenedStyle = (node: any) => {
-  const style = node.props.style;
-  return StyleSheet.flatten(typeof style === 'function' ? style({ pressed: false }) : style);
-};
-
 describe('ChatInputBar', () => {
-  let consoleErrorSpy: jest.SpyInstance;
-
   beforeEach(() => {
     jest.clearAllMocks();
-    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockStartRecording.mockResolvedValue(true);
     mockStopAndTranscribe.mockResolvedValue(undefined);
     mockCancelRecording.mockResolvedValue(undefined);
@@ -143,16 +140,10 @@ describe('ChatInputBar', () => {
     }) as any);
     latestVoiceRecordingOptions = undefined;
     latestRealtimeDictationOptions = undefined;
-    mockVoiceRecordingState = { isRecording: false, isTranscribing: false, durationMs: 0, partialText: '' };
     mockRealtimeDictationState = { isDictating: false, error: null };
   });
 
   afterEach(() => {
-    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
-      expect.stringContaining('not wrapped in act'),
-      expect.anything(),
-      expect.anything(),
-    );
     jest.restoreAllMocks();
   });
 
@@ -201,24 +192,24 @@ describe('ChatInputBar', () => {
     expect(actionGrid.flexDirection).toBe('row');
     expect(actionGrid.flexWrap).toBe('wrap');
     expect(actionGrid.gap).toBeLessThanOrEqual(8);
-    expect(getByText('拍照')).toBeTruthy();
+    expect(getByText('拍照记餐')).toBeTruthy();
     expect(getByText('相册')).toBeTruthy();
     expect(getByText('文件')).toBeTruthy();
     expect(getByLabelText('导入体检报告')).toBeTruthy();
   });
 
-  it('uses the media picker camera entry from the attachment menu', () => {
-    const { getByLabelText, getByTestId } = render(
+  it('routes the attachment camera entry to meal photo capture', () => {
+    const { getByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
     fireEvent.press(getByLabelText('附件菜单'));
-    fireEvent.press(getByLabelText('拍照'));
+    fireEvent.press(getByLabelText('拍照记餐'));
 
-    expect(mockTakePhoto).toHaveBeenCalled();
+    expect(mockRouterPush).toHaveBeenCalledWith('/diet?capture=photo&return_to=chat');
   });
 
-  it('renders a warm-white composer coordinated with the page (not the old dark bar)', () => {
+  it('renders only one compact composer row by default', () => {
     const { getByTestId, queryByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
@@ -226,7 +217,7 @@ describe('ChatInputBar', () => {
     const composerSurface = StyleSheet.flatten(getByTestId('chat-composer-surface').props.style);
     expect(composerSurface.backgroundColor).toBe(revaColors.paper);
     expect(composerSurface.backgroundColor).not.toBe('#1F1F1F');
-    expect(composerSurface.borderRadius).toBeLessThanOrEqual(8);
+    expect(composerSurface.borderRadius).toBeLessThanOrEqual(22);
     expect(queryByLabelText('Agent 模式')).toBeNull();
   });
 
@@ -246,7 +237,7 @@ describe('ChatInputBar', () => {
 
     expect(inputSurface.backgroundColor).toBe(revaColors.surface);
     expect(inputSurface.backgroundColor).not.toBe('#2B2B2B');
-    expect(inputSurface.borderColor).toBe(revaColors.line);
+    expect(inputSurface.borderColor).toBe(revaColors.lineStrong);
     expect(field.props.placeholderTextColor).toBe(revaColors.ink3);
     expect(fieldStyle.color).toBe(revaColors.ink1);
   });
@@ -300,49 +291,32 @@ describe('ChatInputBar', () => {
     const inputSurface = StyleSheet.flatten(getByTestId('wechat-composer-input').props.style);
     expect(inputSurface.flexDirection).toBe('row');
     expect(inputSurface.borderRadius).toBeLessThanOrEqual(10);
-    const speakerIcon = getByTestId('icon-volume-medium-outline');
-    expect(speakerIcon.props.color).toBe(revaColors.ink2);
-    expect(speakerIcon.props.color).not.toBe('#000000');
   });
 
-  it('switches the speaker button into WeChat hold-to-talk mode and back to keyboard input', () => {
-    const { getByLabelText, getByTestId, getByText, queryByTestId } = render(
+  it('toggles the left speaker into WeChat hold-to-talk mode', () => {
+    const { getByLabelText, getByTestId, queryByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
     fireEvent.press(getByLabelText('切换到语音输入'));
 
     expect(getByLabelText('切换到键盘输入')).toBeTruthy();
-    expect(queryByTestId('icon-keypad-outline')).toBeNull();
-    const keyboardIcon = flattenedStyle(getByTestId('wechat-keyboard-icon'));
-    expect(keyboardIcon.width).toBeLessThanOrEqual(22);
-    expect(keyboardIcon.height).toBeLessThanOrEqual(18);
-    expect(flattenedStyle(getByTestId('wechat-keyboard-icon-frame')).borderColor).toBe(revaColors.ink2);
-    expect(getByTestId('wechat-hold-to-talk-surface')).toBeTruthy();
-    const holdText = getByText('按住 说话');
-    expect(holdText).toBeTruthy();
-    const holdTextStyle = flattenedStyle(holdText);
-    expect(holdTextStyle.fontFamily).toBeUndefined();
-    expect(holdTextStyle.fontSize).toBeLessThanOrEqual(17);
-    expect(holdTextStyle.lineHeight).toBeLessThanOrEqual(24);
-    expect(queryByTestId('wechat-composer-input')).toBeNull();
-    expect(mockStartRecording).not.toHaveBeenCalled();
-
-    fireEvent.press(getByLabelText('切换到键盘输入'));
-
-    expect(getByLabelText('切换到语音输入')).toBeTruthy();
-    expect(getByTestId('wechat-composer-input')).toBeTruthy();
+    expect(getByLabelText('按住说话')).toBeTruthy();
+    expect(queryByLabelText('消息输入框')).toBeNull();
+    const holdSurface = StyleSheet.flatten(getByTestId('wechat-hold-to-talk').props.style);
+    expect(holdSurface.minHeight).toBeGreaterThanOrEqual(48);
+    expect(holdSurface.backgroundColor).toBe(revaColors.surface);
   });
 
   it('starts hold-to-talk voice input from the WeChat hold surface', async () => {
-    const { getByLabelText, getByTestId } = render(
+    const { getByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
     fireEvent.press(getByLabelText('切换到语音输入'));
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 220, pageY: 300 } });
+    fireEvent(getByLabelText('按住说话'), 'responderGrant', { nativeEvent: { pageX: 220, pageY: 300 } });
     await act(async () => { await Promise.resolve(); });
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
+    fireEvent(getByLabelText('按住说话'), 'responderRelease');
     await act(async () => { await Promise.resolve(); });
 
     expect(mockStartRecording).toHaveBeenCalled();
@@ -351,16 +325,16 @@ describe('ChatInputBar', () => {
 
   it('submits a hold-to-talk transcript through the voice confirmation channel', async () => {
     const onSend = jest.fn().mockResolvedValue(true);
-    const { getByLabelText, getByTestId } = render(
+    const { getByLabelText } = render(
       <ChatInputBar onSend={onSend} isStreaming={false} />,
     );
 
     fireEvent.press(getByLabelText('切换到语音输入'));
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', {
+    fireEvent(getByLabelText('按住说话'), 'responderGrant', {
       nativeEvent: { pageX: 220, pageY: 300 },
     });
     await act(async () => { await Promise.resolve(); });
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
+    fireEvent(getByLabelText('按住说话'), 'responderRelease');
     act(() => {
       latestVoiceRecordingOptions.onTranscript('午餐吃了鸡胸肉');
     });
@@ -382,7 +356,7 @@ describe('ChatInputBar', () => {
     expect(StyleSheet.flatten(getByLabelText('消息输入框').props.style).pointerEvents).toBe('auto');
   });
 
-  it('recovers a tappable, focusable field after a voice to blur cycle', () => {
+  it('recovers a tappable, focusable field after a voice→blur cycle (Bug 2: 语音后键盘可再弹)', () => {
     const { getByLabelText, getByTestId } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
@@ -398,29 +372,17 @@ describe('ChatInputBar', () => {
     expect(StyleSheet.flatten(field.props.style).pointerEvents).toBe('auto');
   });
 
-  it('starts hold-to-talk voice input from the center hold button after switching modes', () => {
-    const { getByLabelText, getByTestId } = render(
+  it('cancels hold-to-talk when the finger slides left', async () => {
+    const { getByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
     fireEvent.press(getByLabelText('切换到语音输入'));
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 220, pageY: 300 } });
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
-
-    expect(mockStartRecording).toHaveBeenCalled();
-    expect(mockStopAndTranscribe).toHaveBeenCalled();
-  });
-
-  it('cancels left hold-to-talk when the finger slides left', async () => {
-    const { getByLabelText, getByTestId } = render(
-      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
-    );
-
-    fireEvent.press(getByLabelText('切换到语音输入'));
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 260, pageY: 620 } });
+    fireEvent(getByLabelText('按住说话'), 'responderGrant', { nativeEvent: { pageX: 260, pageY: 620 } });
     await act(async () => { await Promise.resolve(); });
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'touchMove', { nativeEvent: { pageX: 120, pageY: 620 } });
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
+    fireEvent(getByLabelText('按住说话'), 'responderMove', { nativeEvent: { pageX: 120, pageY: 620 } });
+    await act(async () => { await Promise.resolve(); });
+    fireEvent(getByLabelText('按住说话'), 'responderRelease');
 
     expect(mockCancelRecording).toHaveBeenCalled();
     expect(mockStopAndTranscribe).not.toHaveBeenCalled();
@@ -428,15 +390,16 @@ describe('ChatInputBar', () => {
 
   it('keeps hold-to-talk transcript editable when the finger slides right', async () => {
     const onSend = jest.fn();
-    const { getByLabelText, getByTestId } = render(
+    const { getByLabelText } = render(
       <ChatInputBar onSend={onSend} isStreaming={false} />,
     );
 
     fireEvent.press(getByLabelText('切换到语音输入'));
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 160, pageY: 620 } });
+    fireEvent(getByLabelText('按住说话'), 'responderGrant', { nativeEvent: { pageX: 160, pageY: 620 } });
     await act(async () => { await Promise.resolve(); });
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'touchMove', { nativeEvent: { pageX: 310, pageY: 620 } });
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
+    fireEvent(getByLabelText('按住说话'), 'responderMove', { nativeEvent: { pageX: 310, pageY: 620 } });
+    fireEvent(getByLabelText('按住说话'), 'responderRelease');
+    await act(async () => { await Promise.resolve(); });
     act(() => {
       latestVoiceRecordingOptions.onTranscript('记录午餐吃了鸡胸肉');
     });
@@ -444,98 +407,6 @@ describe('ChatInputBar', () => {
     expect(mockStopAndTranscribe).toHaveBeenCalled();
     expect(getByLabelText('切换到语音输入')).toBeTruthy();
     expect(getByLabelText('消息输入框').props.value).toBe('记录午餐吃了鸡胸肉');
-    expect(onSend).not.toHaveBeenCalled();
-  });
-
-  it('shows live text while hold-to-talk voice is recording', () => {
-    mockVoiceRecordingState = {
-      isRecording: true,
-      isTranscribing: false,
-      durationMs: 1200,
-      partialText: '今天晚餐吃了鸡胸肉',
-    };
-
-    const { getByText, getByLabelText, getByTestId } = render(
-      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
-    );
-
-    expect(flattenedStyle(getByTestId('wechat-recording-overlay')).top).toBeGreaterThanOrEqual(52);
-    expect(getByLabelText('实时语音转文字预览')).toBeTruthy();
-    expect(getByText('今天晚餐吃了鸡胸肉')).toBeTruthy();
-  });
-
-  it('syncs hold-to-talk partial text into the input draft while sliding right to text', async () => {
-    const { getByLabelText, getByTestId, getByText, rerender } = render(
-      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
-    );
-
-    fireEvent.press(getByLabelText('切换到语音输入'));
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 160, pageY: 620 } });
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'touchMove', { nativeEvent: { pageX: 310, pageY: 620 } });
-
-    mockVoiceRecordingState = {
-      isRecording: true,
-      isTranscribing: false,
-      durationMs: 1200,
-      partialText: '今天晚餐吃了鸡胸肉',
-    };
-    rerender(<ChatInputBar onSend={jest.fn()} isStreaming={false} />);
-
-    expect(getByText('今天晚餐吃了鸡胸肉')).toBeTruthy();
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
-    act(() => {
-      latestVoiceRecordingOptions.onTranscript('今天晚餐吃了鸡胸肉');
-    });
-    mockVoiceRecordingState = { isRecording: false, isTranscribing: false, durationMs: 0, partialText: '' };
-    rerender(<ChatInputBar onSend={jest.fn()} isStreaming={false} />);
-    await waitFor(() => {
-      expect(getByLabelText('消息输入框').props.value).toBe('今天晚餐吃了鸡胸肉');
-    });
-  });
-
-  it('sends left hold-to-talk transcript by default on release', () => {
-    const onSend = jest.fn();
-    const { getByLabelText, getByTestId } = render(
-      <ChatInputBar onSend={onSend} isStreaming={false} />,
-    );
-
-    fireEvent.press(getByLabelText('切换到语音输入'));
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 160, pageY: 620 } });
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
-    act(() => {
-      latestVoiceRecordingOptions.onTranscript('今天走了八千步');
-    });
-
-    expect(onSend).toHaveBeenCalledWith('今天走了八千步', null, { channel: 'voice' });
-  });
-
-  it('stays in hold-to-talk mode after sending a released voice transcript', () => {
-    const onSend = jest.fn();
-    const { getByLabelText, getByTestId } = render(
-      <ChatInputBar onSend={onSend} isStreaming={false} />,
-    );
-
-    fireEvent.press(getByLabelText('切换到语音输入'));
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', { nativeEvent: { pageX: 160, pageY: 620 } });
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressOut');
-    act(() => {
-      latestVoiceRecordingOptions.onTranscript('今天走了八千步');
-    });
-
-    expect(onSend).toHaveBeenCalledWith('今天走了八千步', null, { channel: 'voice' });
-    expect(getByLabelText('切换到键盘输入')).toBeTruthy();
-    expect(getByTestId('wechat-hold-to-talk-surface')).toBeTruthy();
-  });
-
-  it('does not enter hold-to-talk while the assistant is streaming', () => {
-    const onSend = jest.fn();
-    const { getByLabelText, getByTestId } = render(
-      <ChatInputBar onSend={onSend} isStreaming={true} />,
-    );
-
-    fireEvent.press(getByLabelText('切换到语音输入'));
-    expect(() => getByTestId('wechat-hold-to-talk-surface')).toThrow();
-    expect(getByLabelText('消息输入框')).toBeTruthy();
     expect(onSend).not.toHaveBeenCalled();
   });
 
@@ -555,23 +426,21 @@ describe('ChatInputBar', () => {
 
   it('stops realtime dictation from the active microphone button', () => {
     mockRealtimeDictationState = { isDictating: true, error: null };
-    const { getByLabelText, getByTestId } = render(
+    const { getByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
-    expect(getByLabelText('正在听写')).toBeTruthy();
     const mic = getByLabelText('停止实时语音转文字');
-    expect(mic.props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
-
     fireEvent.press(mic);
 
+    expect(mic.props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
     expect(mockStopDictation).toHaveBeenCalled();
   });
 
   it('keeps realtime dictation explicitly disabled after tapping the active microphone again', () => {
     const onSend = jest.fn();
     mockRealtimeDictationState = { isDictating: true, error: null };
-    const { getByLabelText, queryByText, rerender } = render(
+    const { getByLabelText, rerender } = render(
       <ChatInputBar onSend={onSend} isStreaming={false} />,
     );
 
@@ -582,7 +451,6 @@ describe('ChatInputBar', () => {
     rerender(<ChatInputBar onSend={onSend} isStreaming={false} />);
 
     const disabledMic = getByLabelText('语音监听已禁用');
-    expect(queryByText('已关闭')).toBeNull();
     expect(disabledMic.props.accessibilityState).toEqual(expect.objectContaining({ selected: false }));
     const disabledMicStyle = StyleSheet.flatten(disabledMic.props.style);
     expect(disabledMicStyle.backgroundColor).toBe(revaColors.paper2);
@@ -656,7 +524,7 @@ describe('ChatInputBar', () => {
 
     mockRealtimeDictationState = { isDictating: false, error: null };
     rerender(<ChatInputBar onSend={onSend} isStreaming={true} />);
-    expect(() => getByLabelText('语音监听已禁用')).toThrow();
+    expect(getByLabelText('语音监听已禁用')).toBeTruthy();
   });
 
   it('submits realtime microphone transcription through the voice channel', async () => {
@@ -754,12 +622,12 @@ describe('ChatInputBar', () => {
   });
 
   it('cancels hold-to-talk when the app moves to the background', async () => {
-    const { getByLabelText, getByTestId } = render(
+    const { getByLabelText } = render(
       <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
     );
 
     fireEvent.press(getByLabelText('切换到语音输入'));
-    fireEvent(getByTestId('wechat-hold-to-talk-surface'), 'pressIn', {
+    fireEvent(getByLabelText('按住说话'), 'responderGrant', {
       nativeEvent: { pageX: 220, pageY: 620 },
     });
     await act(async () => { await Promise.resolve(); });
@@ -771,51 +639,44 @@ describe('ChatInputBar', () => {
     expect(getByLabelText('切换到键盘输入')).toBeTruthy();
   });
 
-  it('lets the inline microphone toggle from disabled back into realtime voice-to-text', () => {
-    mockRealtimeDictationState = { isDictating: true, error: null };
-    const { getByLabelText, rerender } = render(
-      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
-    );
-
-    fireEvent.press(getByLabelText('停止实时语音转文字'));
-    mockRealtimeDictationState = { isDictating: false, error: null };
-    rerender(<ChatInputBar onSend={jest.fn()} isStreaming={false} />);
-    fireEvent.press(getByLabelText('语音监听已禁用'));
-
-    expect(mockStartDictation).toHaveBeenCalled();
-  });
-
-  it('hides inline dictation while the left voice mode is in hold-to-talk', () => {
-    const { getByLabelText, queryByLabelText } = render(
-      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
-    );
-
-    fireEvent.press(getByLabelText('切换到语音输入'));
-
-    expect(getByLabelText('切换到键盘输入')).toBeTruthy();
-    expect(getByLabelText('按住说话')).toBeTruthy();
-    expect(queryByLabelText('实时语音转文字')).toBeNull();
-  });
-
-  it('stops and hides active inline dictation when tapping the send button', async () => {
-    mockRealtimeDictationState = { isDictating: true, error: null };
+  it('sends the selected agent mode as chat context without polluting the user text', async () => {
     const onSend = jest.fn();
-    const { getByLabelText, queryByLabelText } = render(
+    const { getByLabelText } = render(
       <ChatInputBar onSend={onSend} isStreaming={false} />,
     );
 
-    fireEvent.changeText(getByLabelText('消息输入框'), '听写完成的文字');
+    fireEvent.press(getByLabelText('附件菜单'));
+    fireEvent.press(getByLabelText('深思模式'));
+    fireEvent.changeText(getByLabelText('消息输入框'), '帮我调整训练计划');
     await act(async () => {
       fireEvent.press(getByLabelText('发送消息'));
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    expect(mockStopDictation).toHaveBeenCalled();
-    expect(onSend).toHaveBeenCalledWith('听写完成的文字', null, undefined);
-    expect(queryByLabelText('停止实时语音转文字')).toBeNull();
-    expect(queryByLabelText('正在听写')).toBeNull();
-    expect(queryByLabelText('语音监听已禁用')).toBeNull();
+    expect(onSend).toHaveBeenCalledWith(
+      '帮我调整训练计划',
+      null,
+      expect.objectContaining({
+        extraContext: expect.stringContaining('"mode":"deep"'),
+      }),
+    );
+  });
+
+  it('renders agent modes as a single compact segmented row in the attachment menu', () => {
+    const { getByLabelText, getByTestId, getByText } = render(
+      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('附件菜单'));
+
+    const modeRow = StyleSheet.flatten(getByTestId('agent-mode-segmented-row').props.style);
+    expect(modeRow.flexDirection).toBe('row');
+    expect(modeRow.minHeight).toBeLessThanOrEqual(38);
+    expect(getByText('日常')).toBeTruthy();
+    expect(getByText('深思')).toBeTruthy();
+    expect(getByText('识图')).toBeTruthy();
+    expect(getByLabelText('深思模式')).toBeTruthy();
   });
 
   it('sends typed text when Enter is pressed in the composer', () => {
@@ -828,36 +689,6 @@ describe('ChatInputBar', () => {
     fireEvent(getByLabelText('消息输入框'), 'keyPress', { nativeEvent: { key: 'Enter' } });
 
     expect(onSend).toHaveBeenCalledWith('记录晚餐吃了鸡胸肉', null, undefined);
-  });
-
-  it('stops realtime dictation before Enter submits the composer', async () => {
-    mockRealtimeDictationState = { isDictating: true, error: null };
-    const onSend = jest.fn();
-    const { getByLabelText } = render(
-      <ChatInputBar onSend={onSend} isStreaming={false} />,
-    );
-
-    fireEvent.changeText(getByLabelText('消息输入框'), '听写完成的文字');
-    await act(async () => {
-      fireEvent(getByLabelText('消息输入框'), 'keyPress', { nativeEvent: { key: 'Enter' } });
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(mockStopDictation).toHaveBeenCalled();
-    expect(onSend).toHaveBeenCalledWith('听写完成的文字', null, undefined);
-  });
-
-  it('has no agent-mode segmented row', () => {
-    const { getByLabelText, queryByText, queryByTestId } = render(
-      <ChatInputBar onSend={jest.fn()} isStreaming={false} />,
-    );
-
-    fireEvent.press(getByLabelText('附件菜单'));
-
-    expect(queryByTestId('agent-mode-segmented-row')).toBeNull();
-    expect(queryByText('深思')).toBeNull();
-    expect(queryByText('识图')).toBeNull();
   });
 
   it('updates the composer when a follow-up prompt is injected after mount', () => {

@@ -48,10 +48,6 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
     /// 每回复级阶段耗时(后端 done.perf,持久化在 message.meta.perf)。用于渲染延迟瀑布图。
     /// 老消息缺失 → nil → footer 行为不变(完整向后兼容)。
     public var perf: MessagePerf?
-    /// 「思考过程」步骤(后端 done.thinking_steps,持久化在 message.meta.thinking_steps)。
-    /// 每项是一条短的安全进度摘要(kind=safe_progress_summary,后端上限 8 条)。用于在
-    /// 完成的回复上渲染可折叠的「思考过程」披露。老消息缺失 → 空数组 → 不渲染该披露。
-    public var thinkingSteps: [String]
 
     /// 是否有任何可展示的 meta(footer 是否需要渲染)。
     public var hasMeta: Bool {
@@ -79,7 +75,6 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         toolsUsed: [String] = [],
         completionStatus: String? = nil,
         perf: MessagePerf? = nil,
-        thinkingSteps: [String] = [],
         cardType: String? = nil,
         cardRender: AgentDynamicCardRenderDescriptor? = nil,
         cardData: AgentDynamicCardValue? = nil,
@@ -106,12 +101,11 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.toolsUsed = toolsUsed
         self.completionStatus = completionStatus
         self.perf = perf
-        self.thinkingSteps = thinkingSteps
     }
 
     // 显式 Codable:历史快照(老版本无这些字段)用 decodeIfPresent 容错;数组缺失 → 空。
     private enum CodingKeys: String, CodingKey {
-        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, llmUsage, sourcesUsed, toolsUsed, completionStatus, perf, thinkingSteps, cardType, cardRender, cardData, cardActions
+        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, llmUsage, sourcesUsed, toolsUsed, completionStatus, perf, cardType, cardRender, cardData, cardActions
         case cardTypeSnake = "card_type"
         case cardRenderSnake = "card_render"
         case cardDataSnake = "card_data"
@@ -136,7 +130,6 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.toolsUsed = try c.decodeIfPresent([String].self, forKey: .toolsUsed) ?? []
         self.completionStatus = try c.decodeIfPresent(String.self, forKey: .completionStatus)
         self.perf = try c.decodeIfPresent(MessagePerf.self, forKey: .perf)
-        self.thinkingSteps = try c.decodeIfPresent([String].self, forKey: .thinkingSteps) ?? []
         self.cardType = try c.decodeIfPresent(String.self, forKey: .cardType)
             ?? c.decodeIfPresent(String.self, forKey: .cardTypeSnake)
         self.cardRender = try c.decodeIfPresent(AgentDynamicCardRenderDescriptor.self, forKey: .cardRender)
@@ -166,7 +159,6 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         try c.encode(toolsUsed, forKey: .toolsUsed)
         try c.encodeIfPresent(completionStatus, forKey: .completionStatus)
         try c.encodeIfPresent(perf, forKey: .perf)
-        try c.encode(thinkingSteps, forKey: .thinkingSteps)
         try c.encodeIfPresent(cardType, forKey: .cardType)
         try c.encodeIfPresent(cardRender, forKey: .cardRender)
         try c.encodeIfPresent(cardData, forKey: .cardData)
@@ -267,21 +259,9 @@ public enum AgentStructuredCommandParser {
         // 闭合 ``` 行当成 legacy 命令围栏删掉,导致 RevaUIBlock.split 把它判为「未闭合」而退回
         // 纯文本,图表占位永远生不出来(线上首个 reva-ui 块只渲染成裸文本的根因)。
         // 用同一个 split 作为围栏识别的唯一真源:reva-ui 段照搬,普通段才走清洗。
-        //
-        // menu_share:同一个 split 已把 ```menu_share fenced block **整段剥离**(不产段)。
-        // 菜单的规范表示是后端结构化 dynamic card(done 事件),prose 里的原始 JSON 只会重复
-        // 且泄漏——所以走 segment 分段路径把它删干净。分段路径同时兜住 reva-ui 保留 +
-        // menu_share 剥离;两者任一命中即启用(否则退回旧的整段清洗,行为零变化)。
         let segments = RevaUIBlock.split(from: result)
-        let hasRevaUI = segments.contains(where: { if case .revaUI = $0 { return true } else { return false } })
-        let markdownJoined = segments.compactMap { segment -> String? in
-            if case .markdown(let text) = segment { return text } else { return nil }
-        }.joined(separator: "\n")
-        let normalizedResult = result.replacingOccurrences(of: "\r\n", with: "\n")
-        // 无 reva-ui 但 split 拼回的 markdown 与原文不一致 → 说明剥掉了 menu_share fence。
-        let strippedMenuShare = !hasRevaUI && markdownJoined != normalizedResult
         let out: String
-        if hasRevaUI || strippedMenuShare {
+        if segments.contains(where: { if case .revaUI = $0 { return true } else { return false } }) {
             var pieces: [String] = []
             for segment in segments {
                 switch segment {
@@ -289,15 +269,13 @@ public enum AgentStructuredCommandParser {
                     // 原样重建闭合围栏(split 切掉了围栏标记本身,这里补回)。
                     pieces.append("```reva-ui\n" + rawJSON + "\n```")
                 case .markdown(let text):
-                    // 兜住未被围栏包裹的 menu_share 残片(inline / 裸文本畸形形态)。
-                    let deremnant = RevaUIBlock.stripInlineMenuShareRemnants(text)
-                    let cleaned = cleanDisplayLines(deremnant)
+                    let cleaned = cleanDisplayLines(text)
                     if !cleaned.isEmpty { pieces.append(cleaned) }
                 }
             }
             out = pieces.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         } else {
-            out = cleanDisplayLines(RevaUIBlock.stripInlineMenuShareRemnants(result))
+            out = cleanDisplayLines(result)
         }
         displayTextCache.setObject(StringBox(out), forKey: key)
         return out
@@ -657,6 +635,47 @@ public struct AgentToolActivity: Equatable, Identifiable, Sendable {
     }
 }
 
+/// One visible step in the accumulating "thinking process" trace shown while 小巴
+/// streams. Unlike `liveStatusText` (a single line that each new `status` event
+/// overwrites), steps accumulate so the user sees the *sequence* of what the
+/// agent did. The label is stored as a localization **key** + optional detail
+/// (same shape as `AgentChatViewModel.statusText`), so the View resolves it
+/// through `appText`/`L10n` and never has raw zh baked into the model.
+public enum ThinkingStepState: Equatable, Sendable {
+    case running
+    case done
+}
+
+public struct ThinkingStep: Equatable, Identifiable, Sendable {
+    public let id: UUID
+    /// L10n key OR, for the `thinking` server-phrase / `tool` detail path, a
+    /// verbatim string the View renders as-is (L10n pass-through).
+    public let labelKey: String
+    /// Chinese tool label spliced into `labelKey` when it is the `"Working: %@…"`
+    /// format string; nil for plain (non-format) keys.
+    public let labelDetail: String?
+    public var state: ThinkingStepState
+
+    public init(
+        id: UUID = UUID(),
+        labelKey: String,
+        labelDetail: String? = nil,
+        state: ThinkingStepState = .running
+    ) {
+        self.id = id
+        self.labelKey = labelKey
+        self.labelDetail = labelDetail
+        self.state = state
+    }
+
+    /// Two steps represent "the same activity" when their resolved label pair
+    /// matches — used to suppress consecutive duplicate `status` events so the
+    /// trace doesn't flicker the same line repeatedly.
+    func hasSameLabel(as other: ThinkingStep) -> Bool {
+        labelKey == other.labelKey && labelDetail == other.labelDetail
+    }
+}
+
 @Observable
 @MainActor
 public final class AgentChatViewModel {
@@ -686,17 +705,19 @@ public final class AgentChatViewModel {
     public var liveStatusText: String?
     /// tool 阶段的中文工具名(后端 `status.detail`);仅当 `liveStatusText` 是格式串时有值。
     public var liveStatusDetail: String?
-    /// 本轮流式中已累积的「思考过程」步骤(从 `status` / `tool` SSE 事件即时派生,镜像
-    /// 后端 `_thought_step_from_agent_event`)。这是 LIVE 视图的数据源:每来一个阶段就追加
-    /// 一条,最后一条为「进行中」。`done` 到达后由 `done.thinking_steps` 回填进消息、清空此处。
-    /// 下一轮 send() 开头清空。空 = 尚无阶段信号(老后端 / 首步之前)。
-    public var liveThinkingSteps: [String] = []
     public var lastPrompt: String?
     public var preparedDraft: String?
     public var contextItems: [AgentContextItem] = []
     public var savedContextBundles: [AgentContextBundle] = []
     public var conversationHistory: [AgentConversationSnapshot] = []
     public var toolActivities: [AgentToolActivity] = []
+    /// Accumulating "thinking process" trace (vision/thinking/tool/synthesis steps
+    /// from the backend `status` SSE stream). Unlike `liveStatusText` — a single
+    /// line each new status overwrites — steps are kept so the user sees the full
+    /// sequence. Preserved through the first token (NOT wiped like `liveStatusText`)
+    /// so the trace stays visible during content streaming; cleared only when a new
+    /// turn starts (`send()` / `startNewConversation()` / `cancelStreaming()`).
+    public var thinkingSteps: [ThinkingStep] = []
     public var proposedActions: [AgentProposedAction] = []
 
     // MARK: transcript 渲染缓存(按键热点)
@@ -709,10 +730,15 @@ public final class AgentChatViewModel {
     @ObservationIgnored private var _transcriptCacheMessages: [AgentChatMessage] = []
     @ObservationIgnored private var _transcriptCacheStreaming = false
     @ObservationIgnored private var _transcriptCacheProposed: [AgentProposedAction] = []
+    @ObservationIgnored private var _transcriptCacheThinkingSteps: [ThinkingStep] = []
     @ObservationIgnored private var _transcriptCacheLanguage = ""
-    // Live 思考过程 steps drive the streaming bubble's trace; include them in the
-    // cache key so an accumulating step repaints even when message content is empty.
-    @ObservationIgnored private var _transcriptCacheLiveThinking: [String] = []
+    /// Per-message snapshot of the finished thinking trace, so a completed answer
+    /// keeps a collapsible, reviewable "思考过程" (mobile-style) instead of it
+    /// vanishing when the answer streams in. Keyed by assistant message id; session
+    /// -only (backend doesn't persist it, so replayed old conversations simply have
+    /// none). Not observed — set at turn completion, coincident with a `messages`
+    /// change that already invalidates the transcript cache.
+    @ObservationIgnored private var _completedThinkingSteps: [UUID: [ThinkingStep]] = [:]
 
     /// Set when the backend history list/detail fetch fell back to the local
     /// cache (offline / 401 / server error). The UI surfaces this so a stale
@@ -872,6 +898,10 @@ public final class AgentChatViewModel {
         streamingTask = nil
         isStreaming = false
         clearLiveStatus()
+        // User pressed Stop: settle the trace (mark running steps done) rather than
+        // wiping it, so any partial content stays paired with a completed-looking
+        // trace. The next send() clears it wholesale.
+        settleThinkingSteps()
     }
 
     public func send(_ text: String) async {
@@ -883,7 +913,7 @@ public final class AgentChatViewModel {
         errorMessage = nil
         toolActivities = []
         clearLiveStatus()
-        liveThinkingSteps = []
+        clearThinkingSteps()
         isStreaming = true
         runState = .preparing
         lastPrompt = message
@@ -908,7 +938,7 @@ public final class AgentChatViewModel {
         }
 
         do {
-            let importedReports = await importLabReportAttachmentsIfNeeded()
+            let importedReports = try await importLabReportAttachmentsIfNeeded()
             if let firstImport = importedReports.first {
                 attachDynamicCard(
                     medicalExamImportDynamicCard(for: firstImport),
@@ -916,15 +946,10 @@ public final class AgentChatViewModel {
                     toolName: "medical_exam_import"
                 )
             }
-            // Attach photo bytes so the agent's multimodal/vision path can run
-            // (food recognition for 「记录午餐」, etc). Lab reports already imported
-            // above are excluded — they surface as a structured exam card instead.
-            let chatImages = buildChatImages(excludingImportedHashes: Set(importedReports.map(\.sourceHash)))
             for try await event in streamService.stream(
                 message: message,
                 conversationID: conversationID,
-                extraContext: buildExtraContext(),
-                images: chatImages
+                extraContext: buildExtraContext()
             ) {
                 switch event {
                 case .start(let id):
@@ -937,17 +962,24 @@ public final class AgentChatViewModel {
                     let mapped = Self.statusText(stage: stage, detail: detail, round: round)
                     liveStatusText = mapped.key
                     liveStatusDetail = mapped.detail
-                    // Accumulate the live 思考过程 trace. The step string mirrors the
-                    // backend's persisted label (see `_status_stage_thought`) so the
-                    // live list and the final `done.thinking_steps` stay identical.
-                    appendLiveThinkingStep(Self.liveThinkingStep(stage: stage, detail: detail, round: round))
+                    // Accumulate into the visible trace (kept across the first token,
+                    // unlike the single-line liveStatusText above). Consecutive same
+                    // stage/label is de-duped inside appendThinkingStep.
+                    appendThinkingStep(labelKey: mapped.key, labelDetail: mapped.detail)
                 case .token(let content):
+                    let isFirstToken = runState != .streaming
                     runState = .streaming
-                    // First real token → drop the transient status line; the
-                    // transcript now streams actual content and the trace disclosure
-                    // takes over. The accumulated `liveThinkingSteps` stay visible in
-                    // the streaming bubble until `done` backfills them into the message.
+                    // First real token → drop the single live status line, but KEEP the
+                    // accumulated trace visible during content streaming. Mark any
+                    // in-flight step done and add a running "composing" step so the
+                    // trace reflects that the model is now writing the answer.
                     clearLiveStatus()
+                    if isFirstToken {
+                        settleThinkingSteps()
+                        if !thinkingSteps.isEmpty {
+                            appendThinkingStep(labelKey: "Reva is composing a reply…", labelDetail: nil)
+                        }
+                    }
                     guard messages.contains(where: { $0.id == assistantID }) else {
                         isStreaming = false
                         return
@@ -973,7 +1005,7 @@ public final class AgentChatViewModel {
                     // 中途 perf 提示:仅暂存(prompt 组装刚完成,首 token 前)。主瀑布图从
                     // 最终 done.perf 渲染;这里让「组装中…」等实时提示未来有据可依。
                     livePreLLMPerf = MessagePerf(preLLMMs: preLLMMs, preLLMStages: stages)
-                case .done(let id, _, let completionStatus, let model, let selectedModel, let answerModel, let toolModels, let fallbackReasons, let sourcesUsed, let toolsUsed, let elapsedMs, let llmRounds, let cards, let perf, let llmUsage, let thinkingSteps):
+                case .done(let id, _, let completionStatus, let model, let selectedModel, let answerModel, let toolModels, let fallbackReasons, let sourcesUsed, let toolsUsed, let elapsedMs, let llmRounds, let cards, let perf, let llmUsage):
                     conversationID = id ?? conversationID
                     lastCompletionStatus = completionStatus
                     lastModel = answerModel ?? model
@@ -998,10 +1030,6 @@ public final class AgentChatViewModel {
                         messages[idx].completionStatus = completionStatus
                         // perf 缺失(老后端)→ 保留 nil,footer 行为不变。
                         if let perf { messages[idx].perf = perf }
-                        // 思考过程:优先用后端 done.thinking_steps(权威、已持久化);
-                        // 缺失(老后端)→ 回退到本轮 live 累积,保证完成后仍可折叠回看。
-                        let finalSteps = !thinkingSteps.isEmpty ? thinkingSteps : liveThinkingSteps
-                        messages[idx].thinkingSteps = finalSteps
                         if messages[idx].cardType == nil, let firstCard = cards.first {
                             messages[idx].cardType = firstCard.type
                             messages[idx].cardRender = firstCard.render
@@ -1011,14 +1039,15 @@ public final class AgentChatViewModel {
                     }
                     livePreLLMPerf = nil
                     clearLiveStatus()
-                    // Steps are now backfilled into the message → clear the live list
-                    // so the (still-streaming) bubble stops rendering its own copy and
-                    // the finished message shows the single collapsed disclosure.
-                    liveThinkingSteps = []
+                    settleThinkingSteps()
+                    // 快照本轮思考轨迹到 side-store,完成后折叠可回溯(mobile 同款;
+                    // live thinkingSteps 要下一轮 send 才清,此处仍在)。
+                    if !thinkingSteps.isEmpty { _completedThinkingSteps[assistantID] = thinkingSteps }
                     runState = .completed
                 case .error(let message):
                     errorMessage = message
                     clearLiveStatus()
+                    settleThinkingSteps()
                 }
             }
         } catch is CancellationError {
@@ -1060,11 +1089,13 @@ public final class AgentChatViewModel {
         }
         persistCurrentConversation()
         clearLiveStatus()
+        settleThinkingSteps()
         isStreaming = false
     }
 
     public func startNewConversation() {
         messages = []
+        _completedThinkingSteps = [:]
         conversationID = nil
         errorMessage = nil
         lastCompletionStatus = nil
@@ -1079,7 +1110,7 @@ public final class AgentChatViewModel {
         contextItems = []
         preparedDraft = nil
         clearLiveStatus()
-        liveThinkingSteps = []
+        clearThinkingSteps()
     }
 
     /// Refreshes the history list from the backend (`GET /agent/conversations`),
@@ -1088,12 +1119,12 @@ public final class AgentChatViewModel {
     /// 401 / 5xx) the existing cache is kept and `historyNotice` is set so the UI
     /// can tell the user it's showing a possibly-stale local copy — never silently
     /// cleared. No-op when no remote source is wired (e.g. unit tests, previews).
-    public func refreshConversationHistory(limit: Int = 30, search: String? = nil) async {
+    public func refreshConversationHistory(limit: Int = 30) async {
         guard let remoteSource else { return }
         isLoadingHistory = true
         defer { isLoadingHistory = false }
         do {
-            let remote = try await remoteSource.fetchConversations(limit: limit, offset: 0, search: search)
+            let remote = try await remoteSource.fetchConversations(limit: limit, offset: 0)
             // The backend list carries no messages. Don't let it wipe transcripts
             // we already have cached: keep the open chat's live messages, and keep
             // any previously-cached transcript for the rest (so offline-open still
@@ -1112,13 +1143,8 @@ public final class AgentChatViewModel {
                 return snapshot
             }
             conversationHistory = merged
-            let isSearching = (search?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
-            // 搜索结果是过滤子集,不能覆盖离线全量缓存;也不 auto-open(用户在筛选)。
-            if !isSearching {
-                conversationStore?.saveConversations(merged)
-            }
+            conversationStore?.saveConversations(merged)
             historyNotice = nil
-            if isSearching { return }
 
             // Keep the visible transcript in sync with other devices. The list
             // endpoint intentionally omits messages, so after reconciling the
@@ -1370,12 +1396,12 @@ public final class AgentChatViewModel {
         if isStreaming == _transcriptCacheStreaming
             && messages == _transcriptCacheMessages
             && proposedActions == _transcriptCacheProposed
-            && language == _transcriptCacheLanguage
-            && liveThinkingSteps == _transcriptCacheLiveThinking {
+            && thinkingSteps == _transcriptCacheThinkingSteps
+            && language == _transcriptCacheLanguage {
             return _transcriptCache
         }
         let lastID = messages.last?.id
-        let rendered = messages.compactMap { message -> ChatTranscriptHTML.RenderedMessage? in
+        let rendered = messages.map { message -> ChatTranscriptHTML.RenderedMessage in
             let isStreamingThis = isStreaming && message.id == lastID && message.role == .assistant
             let content = displayContent(for: message)
             let cardHTML = message.role == .assistant
@@ -1386,38 +1412,34 @@ public final class AgentChatViewModel {
                     actions: message.cardActions
                 ) ?? ""
                 : ""
-            // Live 思考过程 trace for the streaming bubble (accumulating steps, last
-            // one running). Only the currently-streaming assistant message shows it.
-            let liveTraceHTML = isStreamingThis
-                ? ChatTranscriptHTML.thinkingTraceHTML(steps: liveThinkingSteps, language: language, live: true)
-                : ""
-            // Pre-first-token: while the streaming reply has no text, no card, AND no
-            // live thinking step yet, skip the bubble so the WebView shows nothing —
-            // the SwiftUI ThinkingStatusLine is the sole waiting cue for that brief
-            // gap. Once a status/thinking step arrives, the live trace renders here and
-            // ThinkingStatusLine is suppressed (see nativeTranscriptFooter) so exactly
-            // one thinking indicator shows. Completed messages are unaffected.
-            if isStreamingThis && content.isEmpty && cardHTML.isEmpty && liveTraceHTML.isEmpty {
-                return nil
-            }
             let bodyHTML: String
             if message.role == .user {
                 // 用户消息纯文本:转义 + 换行保留,不解析 markdown。
                 bodyHTML = "<p class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</p>"
                     + ChatTranscriptHTML.imageGalleryHTML(urls: message.remoteImageURLs)
             } else if isStreamingThis {
-                // 流式态:plain 文本(避免每 60ms 用更长全文重 parse markdown 的 O(n²))。
-                // 思考过程 trace 置于顶部,内容气泡在下。
-                bodyHTML = liveTraceHTML + cardHTML + "<div class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</div>"
+                if content.isEmpty {
+                    // 等待首 token:在气泡内渲染展开的"思考过程"轨迹,跟随气泡位置(短对话在顶、
+                    // 滚动长对话在底),而不是钉在输入框上方。有 status 步骤 → 累积轨迹;老后端
+                    // 无步骤 → 单行兜底。首 token 到达后 content 非空,自动切到下面的折叠态 + 正文。
+                    let trace = ChatTranscriptHTML.thinkingTraceHTML(steps: thinkingSteps, language: language, open: true)
+                    let thinkingBody = trace.isEmpty
+                        ? ChatTranscriptHTML.thinkingLineHTML(
+                            L10n.text("Reva is thinking…", language: AppLanguage(rawValue: language) ?? .defaultLanguage))
+                        : trace
+                    bodyHTML = cardHTML + thinkingBody
+                } else {
+                    // 答案流式中:轨迹折叠到正文上方(想看过程可点开),plain 文本避免重 parse。
+                    let trace = ChatTranscriptHTML.thinkingTraceHTML(steps: thinkingSteps, language: language, open: false)
+                    bodyHTML = cardHTML + trace + "<div class=\"streaming-text\">" + ChatTranscriptHTML.escape(content) + "</div>"
+                }
             } else {
-                // Finished assistant message: a collapsed (default) reviewable trace on
-                // top of the rendered answer. Reads persisted `message.thinkingSteps`
-                // so it survives conversation reload/scrollback. Empty → "" (no trace).
-                let traceHTML = message.role == .assistant
-                    ? ChatTranscriptHTML.thinkingTraceHTML(steps: message.thinkingSteps, language: language, live: false)
-                    : ""
+                // 已完成:把本条回答的思考轨迹以折叠态留在正文上方,用户可展开回溯(mobile 同款)。
+                let trace = _completedThinkingSteps[message.id].map {
+                    ChatTranscriptHTML.thinkingTraceHTML(steps: $0, language: language, open: false)
+                } ?? ""
                 let textHTML = content.isEmpty ? "" : ChatTranscriptHTML.renderMessageBody(markdown: content)
-                bodyHTML = traceHTML + cardHTML + textHTML
+                bodyHTML = cardHTML + trace + textHTML
             }
             let showCopy = message.role == .assistant && !isStreamingThis && !content.isEmpty
             let footerHTML: String
@@ -1450,8 +1472,8 @@ public final class AgentChatViewModel {
         _transcriptCacheMessages = messages
         _transcriptCacheStreaming = isStreaming
         _transcriptCacheProposed = proposedActions
+        _transcriptCacheThinkingSteps = thinkingSteps
         _transcriptCacheLanguage = language
-        _transcriptCacheLiveThinking = liveThinkingSteps
         _transcriptCache = rendered
         return rendered
     }
@@ -1530,48 +1552,41 @@ public final class AgentChatViewModel {
         liveStatusDetail = nil
     }
 
-    /// Appends a live 思考过程 step, mirroring the backend's dedup/cap semantics
-    /// (`_append_thinking_step`): trim, skip empties, skip an exact repeat of the
-    /// last step, and keep at most the most-recent `maxLiveThinkingSteps`.
-    private func appendLiveThinkingStep(_ step: String?) {
-        let normalized = (step ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else { return }
-        if liveThinkingSteps.last == normalized { return }
-        liveThinkingSteps.append(normalized)
-        if liveThinkingSteps.count > Self.maxLiveThinkingSteps {
-            liveThinkingSteps.removeFirst(liveThinkingSteps.count - Self.maxLiveThinkingSteps)
+    /// Appends a new running step to the trace, first marking the previously
+    /// running step done. Consecutive events that resolve to the same label are
+    /// suppressed (the last step just stays running) so the trace never flickers
+    /// the same line repeatedly. Called from the `.status` handler.
+    private func appendThinkingStep(labelKey: String, labelDetail: String?) {
+        let candidate = ThinkingStep(labelKey: labelKey, labelDetail: labelDetail, state: .running)
+        if let last = thinkingSteps.last, last.hasSameLabel(as: candidate) {
+            // Same activity as the current tail — keep it running, don't duplicate.
+            if last.state != .running {
+                thinkingSteps[thinkingSteps.index(before: thinkingSteps.endIndex)].state = .running
+            }
+            return
+        }
+        markRunningThinkingStepsDone()
+        thinkingSteps.append(candidate)
+    }
+
+    /// Flips every still-running step to done (leaves order/labels intact).
+    private func markRunningThinkingStepsDone() {
+        for index in thinkingSteps.indices where thinkingSteps[index].state == .running {
+            thinkingSteps[index].state = .done
         }
     }
 
-    /// Matches the backend's `_MAX_THINKING_STEPS` (8) so the live trace never
-    /// grows past what the persisted list would show.
-    static let maxLiveThinkingSteps = 8
+    /// First token / completion: keep the trace visible but stop showing any step
+    /// as in-flight. The trace is NOT cleared here — it persists through content
+    /// streaming until the next turn resets it.
+    private func settleThinkingSteps() {
+        markRunningThinkingStepsDone()
+    }
 
-    /// Live step label for a `status` stage, mirroring backend `_status_stage_thought`
-    /// so the live trace and the persisted `done.thinking_steps` read identically.
-    /// Returns nil for unknown stages (no step appended). `nonisolated` so it can be
-    /// called without main-actor hops, same as `statusText`.
-    nonisolated static func liveThinkingStep(stage: String, detail: String?, round: Int?) -> String? {
-        let trimmedDetail = (detail ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        switch stage {
-        case "accepted":
-            return "正在理解你的问题"
-        case "vision":
-            return "识别图片中"
-        case "thinking":
-            // 新后端在首 token 前把模型实时推理的清洗片段作为 detail 下发(每 ~1.5s 一条);
-            // 有片段就原样作为 live step(镜像 tool 阶段对 detail 的处理),不加 正在 前缀。
-            // 空 detail(老后端)→ 回退到 round 分级的固定标签(向后兼容)。
-            if !trimmedDetail.isEmpty { return trimmedDetail }
-            if let round, round >= 2 { return "整理思路" }
-            return "正在思考"
-        case "tool":
-            return trimmedDetail.isEmpty ? "调用工具中" : "正在\(trimmedDetail)"
-        case "synthesis":
-            return "整理回复中"
-        default:
-            return nil
-        }
+    /// New turn boundary only (`send()` / `startNewConversation()` /
+    /// `cancelStreaming()`): drop the whole trace.
+    private func clearThinkingSteps() {
+        thinkingSteps = []
     }
 
     private func updateProposedAction(_ action: AgentProposedAction, status: AgentProposedActionStatus) {
@@ -1634,55 +1649,8 @@ public final class AgentChatViewModel {
         return String(data: data, encoding: .utf8)
     }
 
-    /// Attempts a medical-exam import ONLY for genuinely-medical attachments
-    /// (`.medicalFile`, i.e. PDFs / documents dropped as lab reports). Plain photos
-    /// classify as `.image` and are intentionally excluded — a food photo must NOT
-    /// be force-routed to lab-report OCR; it flows to the agent's multimodal path.
-    ///
-    /// Import is best-effort and NEVER fatal: a report that the backend cannot OCR
-    /// (「无法识别」 / 422) is skipped rather than aborting the whole chat turn, so the
-    /// attached image still reaches `/agent/stream`. It does not `throw`.
-    /// Base64-encodes attached photos for the agent's multimodal path. Only true
-    /// image files (`.image`) are sent; PDFs / documents (`.medicalFile`) go through
-    /// lab-report import, not vision. Reports already imported this turn are skipped
-    /// (their hash is in `excludingImportedHashes`) so a lab photo isn't double-fed.
-    /// Backend caps at 9 images and ~7.5MB each; we mirror that defensively.
-    func buildChatImages(excludingImportedHashes: Set<String>) -> [AgentChatImage] {
-        let maxImages = 9
-        let maxBytesPerImage = 7_500_000
-        var built: [AgentChatImage] = []
-        for attachment in attachments {
-            guard attachment.sourceKind == .image else { continue }
-            guard !excludingImportedHashes.contains(attachment.sha256) else { continue }
-            guard let data = try? Data(contentsOf: attachment.url), !data.isEmpty else {
-                AppLogger.agent.info("chat image skipped: unreadable attachment")
-                continue
-            }
-            guard data.count <= maxBytesPerImage else {
-                AppLogger.agent.info("chat image skipped: exceeds size cap")
-                continue
-            }
-            let type = Self.imageSubtype(forExtension: attachment.url.pathExtension)
-            built.append(AgentChatImage(base64: data.base64EncodedString(), type: type))
-            if built.count >= maxImages { break }
-        }
-        return built
-    }
-
-    /// Maps a file extension to the bare image subtype the backend `ImageItem`
-    /// expects (no `image/` prefix), matching mobile's client. Unknown → "jpeg".
-    static func imageSubtype(forExtension ext: String) -> String {
-        switch ext.lowercased() {
-        case "png": return "png"
-        case "webp": return "webp"
-        case "heic": return "heic"
-        case "jpg", "jpeg": return "jpeg"
-        default: return "jpeg"
-        }
-    }
-
     @discardableResult
-    private func importLabReportAttachmentsIfNeeded() async -> [LabReportImportContext] {
+    private func importLabReportAttachmentsIfNeeded() async throws -> [LabReportImportContext] {
         guard let labUploadService else { return [] }
         let medicalAttachments = attachments.filter {
             $0.sourceKind == .medicalFile && LabReportUploadMime.isSupported(forExtension: $0.url.pathExtension)
@@ -1694,24 +1662,15 @@ public final class AgentChatViewModel {
             guard !labReportImports.contains(where: { $0.sourceHash == attachment.sha256 }) else {
                 continue
             }
-            do {
-                let result = try await labUploadService.importReport(fileURL: attachment.url)
-                let item = LabReportImportContext(
-                    fileName: attachment.name,
-                    sourceHash: attachment.sha256,
-                    sourceKind: attachment.sourceKind,
-                    result: result
-                )
-                labReportImports.append(item)
-                imported.append(item)
-            } catch {
-                // Not a recognizable lab report (or a transient upload failure) —
-                // skip this attachment's lab-import and let it flow to the agent as a
-                // normal chat image/document. Never abort the turn.
-                AppLogger.agent.info(
-                    "lab-report import skipped for attachment (non-fatal): \(error.localizedDescription, privacy: .public)"
-                )
-            }
+            let result = try await labUploadService.importReport(fileURL: attachment.url)
+            let item = LabReportImportContext(
+                fileName: attachment.name,
+                sourceHash: attachment.sha256,
+                sourceKind: attachment.sourceKind,
+                result: result
+            )
+            labReportImports.append(item)
+            imported.append(item)
         }
         return imported
     }
@@ -1874,23 +1833,8 @@ public final class AgentChatViewModel {
 
     private static let medicalExamImportSafetyNote = "OCR/AI 解析结果需要复核后再用于判断。"
 
-    /// 桌面回复指令:`RevaUIFeatureFlags.tableCapEnabled` 暗开关决定用哪版。
-    /// - false(默认/当前):存量「表格 + 分段」指令,行为零变化。
-    /// - true(GenUI-first):简洁契约——结论先行 + ≤500字 + 不复述卡片数值(数值由 metric_table 卡片呈现)。
-    /// 后端服务端另有 gate 兜底(belt and suspenders),此处只是客户端一侧的意图收窄。
-    private static var desktopMarkdownResponseInstruction: String {
-        RevaUIFeatureFlags.tableCapEnabled
-            ? desktopMarkdownResponseInstructionConcise
-            : desktopMarkdownResponseInstructionLegacy
-    }
-
-    private static let desktopMarkdownResponseInstructionLegacy = """
+    private static let desktopMarkdownResponseInstruction = """
     请用适合桌面阅读的中文 Markdown 回复：先给 2-3 条关键结论；再用二级/三级标题分段；比较或分项判断优先用表格；行动建议用编号列表；关键数值和结论加粗。每段最多 3 行，标题、段落、列表之间必须留空行。不要输出密集长段落，不要用长破折号把所有判断串成一段。最后必须包含「不确定性边界」和「下一步」；不要把基因风险当诊断，不要直接给用药决定。若需要执行结构化动作，自然语言说明后再给可确认动作。
-    """
-
-    /// GenUI-first 简洁指令:卡片承载数值,正文只做解读与取舍。
-    private static let desktopMarkdownResponseInstructionConcise = """
-    请用简洁的中文 Markdown 回复，面向桌面阅读：先给 2-3 条结论先行的关键要点（关键词加粗）；正文控制在 500 字以内，只做解读与取舍，不要逐格复述卡片里已经呈现的数值；必须保留「不确定性边界」与「下一步」两节。不要把基因风险当诊断，不要直接给用药决定；若需要执行结构化动作，自然语言说明后再给可确认动作。
     """
 
     private static func visibleDraft(text: String, contextItems: [AgentContextItem]) -> String {

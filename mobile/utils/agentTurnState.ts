@@ -82,9 +82,7 @@ export function agentTurnPhaseFromStatus(_stage?: string): AgentTurnPhase {
 
 export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): AgentTurnState {
   if (event.type === 'reset') return createIdleAgentTurn();
-  if (event.type === 'hydrate') {
-    return state.phase === 'idle' && !state.turnId ? event.snapshot : state;
-  }
+  if (event.type === 'hydrate') return event.snapshot;
   if (event.type === 'submit') {
     return {
       version: 1,

@@ -13,7 +13,6 @@ export interface ChatCardActionResult {
   route?: string;
   nutrition_status?: DietNutritionStatus;
   patch?: Record<string, unknown>;
-  record?: Record<string, unknown>;
   receipt?: WriteReceipt;
 }
 
@@ -35,9 +34,8 @@ export async function dispatchChatCardAction(
       {
         const result = await createDietRecordFromCard(action, idempotencyKey);
         return {
-          status: 'completed',
+        status: 'completed',
           nutrition_status: result.nutritionStatus,
-          record: result.record,
           receipt: createVerifiedWriteReceipt({
             operationId: action.id || `diet_record.create:${result.recordId}`,
             resourceType: 'diet_record',
@@ -144,7 +142,6 @@ async function createDietRecordFromCard(
 ): Promise<{
   nutritionStatus: DietNutritionStatus;
   recordId: number;
-  record?: Record<string, unknown>;
 }> {
   const record = readDietRecord(action);
   const normalizedKey = normalizeIdempotencyKey(idempotencyKey);
@@ -156,13 +153,8 @@ async function createDietRecordFromCard(
   const { data } = response;
   const recordId = readOptionalNumericId(data?.id);
   if (!recordId) throw new Error('diet_record_missing_id');
-  let savedRecord = normalizeSavedDietRecord(data);
-  if (!needsNutritionEstimate(record)) {
-    return { nutritionStatus: 'not_needed', recordId, record: savedRecord };
-  }
-  const estimated = await backfillEstimatedNutrition(recordId, record);
-  if (estimated.record) savedRecord = estimated.record;
-  return { nutritionStatus: estimated.status, recordId, record: savedRecord };
+  if (!needsNutritionEstimate(record)) return { nutritionStatus: 'not_needed', recordId };
+  return { nutritionStatus: await backfillEstimatedNutrition(recordId, record), recordId };
 }
 
 function normalizeIdempotencyKey(raw: string | undefined): string | undefined {
@@ -269,26 +261,16 @@ function needsNutritionEstimate(record: Record<string, unknown>): boolean {
   return ['calories', 'protein', 'carbs', 'fat'].some((key) => !isUsableNutritionNumber(record[key]));
 }
 
-async function backfillEstimatedNutrition(
-  recordId: number,
-  record: Record<string, unknown>,
-): Promise<{ status: DietNutritionStatus; record?: Record<string, unknown> }> {
+async function backfillEstimatedNutrition(recordId: number, record: Record<string, unknown>): Promise<DietNutritionStatus> {
   try {
     const foodItems = readFoodItems(record.food_items);
     const { data } = await api.post(`/diet/estimate-nutrition?food_description=${encodeURIComponent(foodItems)}`);
     const patch = readNutritionPatch(data, record);
-    if (!Object.keys(patch).length) return { status: 'estimate_failed' };
-    const updated = await api.put(`/diet/records/${recordId}`, patch);
-    return {
-      status: 'estimated',
-      record: normalizeSavedDietRecord(updated?.data) ?? {
-        id: recordId,
-        ...record,
-        ...patch,
-      },
-    };
+    if (!Object.keys(patch).length) return 'estimate_failed';
+    await api.put(`/diet/records/${recordId}`, patch);
+    return 'estimated';
   } catch {
-    return { status: 'estimate_failed' };
+    return 'estimate_failed';
   }
 }
 
@@ -342,28 +324,6 @@ function readFoodItems(raw: unknown): string {
   return foodItems;
 }
 
-function normalizeSavedDietRecord(raw: unknown): Record<string, unknown> | undefined {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
-  const source = raw as Record<string, unknown>;
-  const id = readOptionalNumericId(source.id);
-  if (!id) return undefined;
-  const hasDietShape = Boolean(
-    optionalText(source.food_items) ||
-    optionalText(source.meal_type) ||
-    optionalText(source.record_date),
-  );
-  if (!hasDietShape) return undefined;
-  const out: Record<string, unknown> = { id };
-  for (const key of ['record_date', 'meal_type', 'food_items', 'notes'] as const) {
-    const value = optionalText(source[key]);
-    if (value) out[key] = value;
-  }
-  for (const key of ['calories', 'protein', 'carbs', 'fat', 'fiber', 'alcohol_units'] as const) {
-    const value = normalizeOptionalNutritionNumber(source[key]);
-    if (value != null) out[key] = value;
-  }
-  return out;
-}
 function optionalText(raw: unknown): string | undefined {
   if (typeof raw !== 'string') return undefined;
   const value = raw.trim();

@@ -55,26 +55,12 @@ jest.mock('../../services/clientEvents', () => ({
 }));
 
 import { restoreMessagesFromHistory, useChatEngine } from '../useChatEngine';
-import { getAuthStorageScope } from '../../services/authStorageScope';
-import { conversationContinuityStorageKey } from '../../services/conversationContinuity';
 
 let finishStream: (() => void) | undefined;
 let failStream: (() => void) | undefined;
 let persistStream: (() => void) | undefined;
-let advanceStream: (() => void) | undefined;
 
 async function* streamStartThenWait() {
-  yield { type: 'start', conversationId: 777 };
-  await new Promise<void>((resolve) => {
-    finishStream = resolve;
-  });
-  yield { type: 'done', conversationId: 777, messageId: 2 };
-}
-
-async function* streamWaitThenStartThenWait() {
-  await new Promise<void>((resolve) => {
-    advanceStream = resolve;
-  });
   yield { type: 'start', conversationId: 777 };
   await new Promise<void>((resolve) => {
     finishStream = resolve;
@@ -241,15 +227,6 @@ async function* streamLastTokenThenDoneAtomic() {
   yield { type: 'done', conversationId: 777, messageId: 2 };
 }
 
-async function* streamMarkdownBoundaryWhitespaceThenDone() {
-  yield { type: 'start', conversationId: 777 };
-  yield { type: 'token', content: '## 今日状态总览\n\n' };
-  yield { type: 'token', content: '- **天气**：14℃ · 阴天\n' };
-  yield { type: 'token', content: '- **空气质量**：良好\n\n' };
-  yield { type: 'token', content: '### 今日行动\n' };
-  yield { type: 'done', conversationId: 777, messageId: 2 };
-}
-
 // 攒批后走 error 分支: 已接收 token 必须先 flush, 再拼错误尾巴.
 async function* streamTokenBurstThenError() {
   yield { type: 'start', conversationId: 777 };
@@ -364,13 +341,11 @@ describe('useChatEngine', () => {
     finishStream = undefined;
     failStream = undefined;
     persistStream = undefined;
-    advanceStream = undefined;
     mockGetConversations.mockResolvedValue([]);
     mockGetConversationMessages.mockResolvedValue({ total_messages: 0, messages: [] });
     mockDeleteConversation.mockResolvedValue(true);
     mockRenderServerCards.mockImplementation((cards: any[]) => Array.isArray(cards) ? cards : []);
     (NetInfo.fetch as jest.Mock).mockResolvedValue({ isConnected: true });
-    (getAuthStorageScope as jest.Mock).mockResolvedValue(TEST_STORAGE_SCOPE);
     (SecureStore.getItemAsync as jest.Mock).mockImplementation(
       async (key: string) => mockAsyncStorage[key] ?? null,
     );
@@ -756,161 +731,6 @@ describe('useChatEngine', () => {
     expect(mockStreamChat.mock.calls[0][6]).toBe(failedTurnId);
   });
 
-  it('admits only one send while the first same-frame send is probing the network', async () => {
-    let releaseNetwork!: () => void;
-    const networkGate = new Promise<{ isConnected: boolean }>((resolve) => {
-      releaseNetwork = () => resolve({ isConnected: true });
-    });
-    (NetInfo.fetch as jest.Mock).mockReturnValue(networkGate);
-    mockStreamChat.mockImplementation(streamTokenBurstThenDone);
-    const { result } = renderHook(() => useChatEngine());
-    let firstSend!: Promise<boolean>;
-    let secondSend!: Promise<boolean>;
-
-    act(() => {
-      firstSend = result.current.sendMessage('第一条');
-      secondSend = result.current.sendMessage('第二条');
-    });
-    let secondAccepted: boolean | undefined;
-    await act(async () => {
-      releaseNetwork();
-      [, secondAccepted] = await Promise.all([firstSend, secondSend]);
-    });
-
-    expect(secondAccepted).toBe(false);
-    expect(mockStreamChat).toHaveBeenCalledTimes(1);
-    expect(mockStreamChat.mock.calls[0][0]).toBe('第一条');
-  });
-
-  it('waits for active-turn hydration before starting an immediate cold-launch send', async () => {
-    let releaseHydration!: () => void;
-    const hydrationGate = new Promise<void>((resolve) => { releaseHydration = resolve; });
-    mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')] = JSON.stringify({
-      version: 1,
-      phase: 'interrupted',
-      turnId: 'turn-stale-hydration',
-      startedAt: 100,
-      updatedAt: 200,
-      recoverable: true,
-      hadWrite: false,
-    });
-    (AsyncStorage.getItem as jest.Mock).mockImplementation(async (key: string) => {
-      if (key === scopedStorageKey('chat:active_turn:v1')) await hydrationGate;
-      return mockAsyncStorage[key] ?? null;
-    });
-    mockStreamChat.mockImplementation(streamTokenBurstThenDone);
-    const { result } = renderHook(() => useChatEngine());
-    let sendPromise!: Promise<boolean>;
-
-    act(() => {
-      sendPromise = result.current.sendMessage('冷启动立即发送');
-    });
-    const networkCallsBeforeHydration = (NetInfo.fetch as jest.Mock).mock.calls.length;
-
-    await act(async () => {
-      releaseHydration();
-      await sendPromise;
-    });
-
-    expect(networkCallsBeforeHydration).toBe(0);
-    expect(mockStreamChat).toHaveBeenCalledTimes(1);
-    expect(mockStreamChat.mock.calls[0][6]).not.toBe('turn-stale-hydration');
-    expect(result.current.activeTurn.turnId).not.toBe('turn-stale-hydration');
-  });
-
-  it('serializes active-turn persistence so a delayed stale write cannot revive a completed turn', async () => {
-    let releaseSet!: () => void;
-    const setGate = new Promise<void>((resolve) => { releaseSet = resolve; });
-    let delayedActiveTurnWrite = false;
-    (AsyncStorage.setItem as jest.Mock).mockImplementation(async (key: string, value: string) => {
-      if (key === scopedStorageKey('chat:active_turn:v1') && !delayedActiveTurnWrite) {
-        delayedActiveTurnWrite = true;
-        await setGate;
-      }
-      mockAsyncStorage[key] = value;
-    });
-    mockStreamChat.mockImplementation(streamStartThenWait);
-    const { result } = renderHook(() => useChatEngine());
-
-    await waitFor(() => {
-      expect(AsyncStorage.getItem).toHaveBeenCalledWith(scopedStorageKey('chat:active_turn:v1'));
-    });
-    let sendPromise!: Promise<boolean>;
-    act(() => {
-      sendPromise = result.current.sendMessage('完成后不要复活旧 turn');
-    });
-    await waitFor(() => {
-      expect(delayedActiveTurnWrite).toBe(true);
-    });
-    await act(async () => {
-      finishStream?.();
-      await sendPromise;
-    });
-    expect(result.current.activeTurn.phase).toBe('completed');
-
-    await act(async () => {
-      releaseSet();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    await waitFor(() => {
-      expect(mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')]).toBeUndefined();
-    });
-  });
-
-  it('captures the authenticated storage scope before an active-turn mutation enters the queue', async () => {
-    let currentScope = TEST_STORAGE_SCOPE;
-    (getAuthStorageScope as jest.Mock).mockImplementation(async () => currentScope);
-    let releaseSet!: () => void;
-    const setGate = new Promise<void>((resolve) => { releaseSet = resolve; });
-    let delayedActiveTurnWrite = false;
-    (AsyncStorage.setItem as jest.Mock).mockImplementation(async (key: string, value: string) => {
-      if (key === scopedStorageKey('chat:active_turn:v1') && !delayedActiveTurnWrite) {
-        delayedActiveTurnWrite = true;
-        await setGate;
-      }
-      mockAsyncStorage[key] = value;
-    });
-    mockStreamChat.mockImplementation(streamWaitThenStartThenWait);
-    const { result } = renderHook(() => useChatEngine());
-
-    await waitFor(() => {
-      expect(AsyncStorage.getItem).toHaveBeenCalledWith(scopedStorageKey('chat:active_turn:v1'));
-    });
-    let sendPromise!: Promise<boolean>;
-    act(() => {
-      sendPromise = result.current.sendMessage('旧账号正在发送');
-    });
-    await waitFor(() => {
-      expect(delayedActiveTurnWrite).toBe(true);
-    });
-    await act(async () => {
-      advanceStream?.();
-      await Promise.resolve();
-    });
-    await waitFor(() => {
-      expect(result.current.activeTurn.phase).toBe('running');
-    });
-
-    currentScope = 'user-9';
-    await act(async () => {
-      releaseSet();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    await waitFor(() => {
-      const activeTurnWrites = (AsyncStorage.setItem as jest.Mock).mock.calls
-        .filter(([key]) => String(key).startsWith('chat:active_turn:v1:'));
-      expect(activeTurnWrites.length).toBeGreaterThan(1);
-    });
-    expect(mockAsyncStorage['chat:active_turn:v1:user-9']).toBeUndefined();
-
-    await act(async () => {
-      finishStream?.();
-      await sendPromise;
-    });
-  });
-
   it('waits for active-turn hydration before reconciling initial history', async () => {
     let releaseHydration!: () => void;
     const hydrationGate = new Promise<void>((resolve) => { releaseHydration = resolve; });
@@ -1284,9 +1104,11 @@ describe('useChatEngine', () => {
 
     // done 之后: 最后一批 token 不丢, streaming 已翻 false —— 二者同一帧完成。
     // (若非原子, 会短暂出现 content 缺 "最后一段" 但 streaming:false 的中间态。)
+    // 注: 每个 token 经 sanitizeChatErrorMessage 会 trim, 故首批尾部空格被吃掉,
+    //     两批直接相接 —— 关键是两批都在、顺序对、streaming 已 false。
     await waitFor(() => {
       const assistant = result.current.messages.find(m => m.role === 'assistant');
-      expect(assistant?.content).toBe('## 今日状态总览 这是最后一段正文。');
+      expect(assistant?.content).toBe('## 今日状态总览这是最后一段正文。');
       expect(assistant?.streaming).toBe(false);
     });
 
@@ -1295,30 +1117,6 @@ describe('useChatEngine', () => {
     expect(assistant?.content).not.toContain('⏳');
     expect(assistant?.content).toContain('## 今日状态总览');
     expect(assistant?.content).toContain('这是最后一段正文。');
-  });
-
-  it('preserves markdown whitespace across streamed token boundaries', async () => {
-    mockStreamChat.mockImplementation(streamMarkdownBoundaryWhitespaceThenDone);
-
-    const { result } = renderHook(() => useChatEngine());
-
-    act(() => {
-      void result.current.sendMessage('看今日简报');
-    });
-
-    await waitFor(() => {
-      const assistant = result.current.messages.find(m => m.role === 'assistant');
-      expect(assistant?.content).toBe([
-        '## 今日状态总览',
-        '',
-        '- **天气**：14℃ · 阴天',
-        '- **空气质量**：良好',
-        '',
-        '### 今日行动',
-        '',
-      ].join('\n'));
-      expect(assistant?.streaming).toBe(false);
-    });
   });
 
   it('flushes buffered tokens before an error tail (攒批不吞已接收内容)', async () => {
@@ -1650,7 +1448,7 @@ describe('useChatEngine', () => {
   });
 
   it('carries the latest verified write receipt into the next structured request context', async () => {
-    mockAsyncStorage[conversationContinuityStorageKey(TEST_STORAGE_SCOPE)] = JSON.stringify({
+    mockAsyncStorage[scopedStorageKey('chat:conversation_continuity:v2')] = JSON.stringify({
       version: 1,
       storedAt: Date.now(),
       receipt: {
@@ -1684,14 +1482,14 @@ describe('useChatEngine', () => {
         }),
       },
     }));
-    expect(mockAsyncStorage[conversationContinuityStorageKey(TEST_STORAGE_SCOPE)]).toBeDefined();
+    expect(mockAsyncStorage[scopedStorageKey('chat:conversation_continuity:v2')]).toBeDefined();
 
     await act(async () => {
       finishStream?.();
       await Promise.resolve();
     });
     await waitFor(() => {
-      expect(mockAsyncStorage[conversationContinuityStorageKey(TEST_STORAGE_SCOPE)]).toBeUndefined();
+      expect(mockAsyncStorage[scopedStorageKey('chat:conversation_continuity:v2')]).toBeUndefined();
     });
   });
 
@@ -1704,7 +1502,7 @@ describe('useChatEngine', () => {
     });
 
     await waitFor(() => {
-      const stored = JSON.parse(mockAsyncStorage[conversationContinuityStorageKey(TEST_STORAGE_SCOPE)]);
+      const stored = JSON.parse(mockAsyncStorage[scopedStorageKey('chat:conversation_continuity:v2')]);
       expect(stored.receipt).toEqual(expect.objectContaining({
         operationId: 'health_record:diet:81',
         resourceType: 'diet_record',

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports, import/first */
 import React from 'react';
-import { AppState, Keyboard, StyleSheet } from 'react-native';
+import { Keyboard, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockOpenHistory = jest.fn();
@@ -124,15 +124,8 @@ jest.mock('../../../hooks/useTheme', () => ({
 
 jest.mock('../../../components/chat/ChatBubble', () => {
   const React = require('react');
-  const { Pressable, Text, View } = require('react-native');
-  const MockChatBubble = ({
-    item,
-    selectionMode,
-    selected,
-    onToggleSelected,
-    onEnterSelection,
-    onCardActionCompleted,
-  }: any) => (
+  const { Pressable, Text } = require('react-native');
+  const MockChatBubble = ({ item, selectionMode, selected, onToggleSelected, onEnterSelection }: any) => (
     <Pressable
       accessibilityLabel={`message-${item.id}`}
       accessibilityState={selectionMode ? { selected } : undefined}
@@ -141,28 +134,6 @@ jest.mock('../../../components/chat/ChatBubble', () => {
     >
       <Text>{item.content}</Text>
       <Text>{selectionMode ? (selected ? 'selected' : 'unselected') : 'normal'}</Text>
-      {item.cardType === 'diet_draft' ? (
-        <View
-          accessibilityRole="button"
-          accessibilityLabel={`complete-card-action-${item.id}`}
-          onStartShouldSetResponder={() => true}
-          onResponderRelease={() => onCardActionCompleted?.({
-            action: {
-              action: 'diet_record.create',
-              label: '确认记录',
-              endpoint: '/diet/records',
-              requires_manual_confirm: true,
-            },
-            descriptor: {
-              type: 'diet_draft',
-              data: item.cardData,
-            },
-            result: item.cardActionResult,
-          })}
-        >
-          <Text>complete-card-action</Text>
-        </View>
-      ) : null}
     </Pressable>
   );
   MockChatBubble.displayName = 'MockChatBubble';
@@ -173,12 +144,6 @@ jest.mock('../../../components/chat/ConversationSheet', () => 'ConversationSheet
 // EmptyStateHome renders real (opening bubble + quick-reply chips). It pulls
 // formatOpenerText from the real OpenerCard module, so we do NOT mock OpenerCard.
 jest.mock('../../../components/chat/ChatInputBar', () => 'ChatInputBar');
-// BriefingStrip 走 React Query, 本 suite 无 provider;
-// 它们的内部行为各自有专属测试, 这里 mock 掉避免 provider 依赖。ChatHeader 保留真实 (断言其 DOM)。
-jest.mock('../../../components/chat/BriefingStrip', () => 'BriefingStrip');
-jest.mock('../../../components/home/TodayContent', () => 'TodayContent');
-// 任务账本面板拉真网(services/taskLedger);面板内部行为有专属测试, 这里 mock 掉。
-jest.mock('../../../components/chat/TaskLedgerPanel', () => 'TaskLedgerPanel');
 
 import ChatScreen from '../chat';
 
@@ -246,21 +211,28 @@ describe('ChatScreen', () => {
       expect(view.getByText(/今天先确认午餐记录/)).toBeTruthy();
       expect(view.getByText('查询全天饮食')).toBeTruthy();
     });
-  }, 15_000);
+  });
 
-  it('does NOT auto-summon the keyboard when an empty chat opens with no opener', async () => {
-    // 默认打开小巴页时不抢键盘;只有用户主动点输入框/快捷 chip 时才进入输入。
+  it('empty chat with nothing to say auto-summons keyboard once opener fetch settles, and bumps on 新建对话', async () => {
+    // 小巴没话可说(opener 缺席 + 无记忆) → fetch 落定后才唤起键盘。
     mockFetchConversationStarters.mockResolvedValue({ opener: null, suggestions: null, onboarding: false });
     mockFetchMemoryOpener.mockResolvedValue([]);
 
-    const { UNSAFE_getAllByType } = render(<ChatScreen />);
+    const { UNSAFE_getAllByType, getByLabelText } = render(<ChatScreen />);
 
     const bar = () => UNSAFE_getAllByType('ChatInputBar' as any)[0];
+    // opener fetch 落定后 → token 递增(>0), 键盘唤起。
+    let initial = 0;
     await waitFor(() => {
-      expect(mockFetchConversationStarters).toHaveBeenCalled();
-      expect(mockFetchMemoryOpener).toHaveBeenCalled();
+      initial = bar().props.autoFocusToken;
+      expect(initial).toBeGreaterThan(0);
     });
-    expect(bar().props.autoFocusToken).toBe(0);
+
+    // 新建对话 → 再次递增(新窗口也唤起)
+    await act(async () => {
+      fireEvent.press(getByLabelText('新建对话'));
+    });
+    expect(bar().props.autoFocusToken).toBeGreaterThan(initial);
   });
 
   it('does NOT summon the keyboard when 小巴 has an opening message (opener present)', async () => {
@@ -353,18 +325,13 @@ describe('ChatScreen', () => {
     expect(view.getByLabelText('今日重点，已展开')).toBeTruthy();
   });
 
-  it('shows a recoverable Agent failure and retries the failed voice turn with its original channel', async () => {
+  it('shows a recoverable Agent failure and retries only the latest text message', async () => {
     mockTodayTimelineData = {
       items: [{ id: 'timeline-1', kind: 'action', title: '补水', status: 'pending', priority: 9 }],
       past: { completed_count: 0, events: [] },
       counts: { actionable: 1, overdue: 0, info: 0 },
     };
-    mockMessages = [{
-      id: 'u1',
-      role: 'user',
-      content: '午餐吃了鸡胸肉',
-      retryChannel: 'voice',
-    }];
+    mockMessages = [{ id: 'u1', role: 'user', content: '查询今天饮食' }];
     mockActiveTurn = {
       phase: 'failed',
       recoverable: true,
@@ -376,40 +343,7 @@ describe('ChatScreen', () => {
 
     expect(getByText('网络中断，已保留内容')).toBeTruthy();
     fireEvent.press(getByLabelText('重试上一轮'));
-    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledWith(
-      '午餐吃了鸡胸肉',
-      null,
-      { channel: 'voice' },
-    ));
-  });
-
-  it('does not retry an earlier text message when the failed turn contained images that cannot be restored', async () => {
-    mockTodayTimelineData = {
-      items: [{ id: 'timeline-1', kind: 'action', title: '补水', status: 'pending', priority: 9 }],
-      past: { completed_count: 0, events: [] },
-      counts: { actionable: 1, overdue: 0, info: 0 },
-    };
-    mockMessages = [
-      { id: 'u0', role: 'user', content: '我喝了一杯水' },
-      {
-        id: 'u1',
-        role: 'user',
-        content: '请分析这些图片',
-        imageUris: ['file:///meal.jpg'],
-      },
-    ];
-    mockActiveTurn = {
-      phase: 'failed',
-      recoverable: true,
-      label: '图片上传失败，请重新选择图片',
-      errorCode: 'image_upload_failed',
-    };
-
-    const { getByText, queryByLabelText } = render(<ChatScreen />);
-
-    expect(getByText('图片上传失败，请重新选择图片')).toBeTruthy();
-    expect(queryByLabelText('重试上一轮')).toBeNull();
-    expect(mockSendMessage).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledWith('查询今天饮食', null));
   });
 
   it('keeps Today Focus visible after 新建对话', async () => {
@@ -656,11 +590,10 @@ describe('ChatScreen', () => {
       );
     };
 
-    // 2026-07-06 重设计:平铺 header + 无边框图标钮,36pt 触达友好上限。
     expect(styleOf(getByTestId('chat-header-surface')).minHeight).toBeLessThanOrEqual(40);
-    expect(styleOf(getByLabelText('新建对话')).width).toBeLessThanOrEqual(40);
-    expect(styleOf(getByLabelText('对话历史')).width).toBeLessThanOrEqual(40);
-    expect(styleOf(getByLabelText('更多会诊操作')).width).toBeLessThanOrEqual(40);
+    expect(styleOf(getByLabelText('新建对话')).width).toBeLessThanOrEqual(28);
+    expect(styleOf(getByLabelText('对话历史')).width).toBeLessThanOrEqual(28);
+    expect(styleOf(getByLabelText('更多会诊操作')).width).toBeLessThanOrEqual(28);
     expect(minHitSlop(getByLabelText('新建对话'))).toBeGreaterThanOrEqual(8);
     expect(minHitSlop(getByLabelText('对话历史'))).toBeGreaterThanOrEqual(8);
     expect(minHitSlop(getByLabelText('更多会诊操作'))).toBeGreaterThanOrEqual(8);
@@ -753,12 +686,10 @@ describe('ChatScreen', () => {
     });
     const headerSurface = StyleSheet.flatten(getByTestId('chat-header-surface').props.style);
     expect(headerSurface.minHeight).toBeLessThanOrEqual(42);
-    // 平铺 header 无外壳边框(founder 2026-07-06:去掉紧贴状态栏的卡片外壳)。
-    expect(headerSurface.borderWidth ?? 0).toBe(0);
-    expect(headerSurface.backgroundColor).toBeUndefined();
-    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style).width).toBeLessThanOrEqual(40);
-    expect(StyleSheet.flatten(getByLabelText('对话历史').props.style).width).toBeLessThanOrEqual(40);
-    expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style).width).toBeLessThanOrEqual(40);
+    expect(headerSurface.paddingVertical).toBeLessThanOrEqual(2);
+    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style).width).toBeLessThanOrEqual(30);
+    expect(StyleSheet.flatten(getByLabelText('对话历史').props.style).width).toBeLessThanOrEqual(30);
+    expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style).width).toBeLessThanOrEqual(30);
   });
 
   it('starts a new chat from a first-level header action', async () => {
@@ -935,281 +866,6 @@ describe('ChatScreen', () => {
     );
   });
 
-  it('lets users inspect and remove the context attached to the chat', async () => {
-    mockRouteParams = {
-      badge: '体检报告',
-      context: JSON.stringify({
-        source: 'medical_exam',
-        highlights: ['HbA1c 5.8%', 'LDL-C 3.4 mmol/L'],
-      }),
-    };
-
-    const { getByLabelText, getByText, queryByText } = render(<ChatScreen />);
-
-    await waitFor(() => {
-      expect(getByText('基于 体检报告')).toBeTruthy();
-    });
-
-    await act(async () => {
-      fireEvent.press(getByLabelText('查看上下文：体检报告'));
-    });
-
-    expect(getByText('本轮上下文')).toBeTruthy();
-    expect(getByText('来源：体检报告')).toBeTruthy();
-    expect(getByText(/HbA1c 5.8%/)).toBeTruthy();
-
-    await act(async () => {
-      fireEvent.press(getByLabelText('移除上下文'));
-    });
-
-    expect(queryByText('基于 体检报告')).toBeNull();
-  });
-
-  it('shows a local saved diet confirmation after a diet card action completes', async () => {
-    mockMessages = [{
-      id: 'diet-card-1',
-      role: 'assistant',
-      content: '',
-      cardType: 'diet_draft',
-      cardData: { food_items: '牛肉面', meal_type: 'lunch' },
-      cardActionResult: {
-        status: 'completed',
-        nutrition_status: 'estimated',
-        record: {
-          id: 88,
-          record_date: '2026-07-09',
-          meal_type: 'lunch',
-          food_items: '牛肉面',
-          calories: 620,
-          protein: 28,
-          carbs: 78,
-          fat: 18,
-        },
-      },
-    }];
-
-    const { getByLabelText } = render(<ChatScreen />);
-    await act(async () => {
-      fireEvent(getByLabelText('complete-card-action-diet-card-1'), 'responderRelease');
-    });
-
-    expect(mockSetMessages).toHaveBeenCalledWith(expect.any(Function));
-    const updater = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
-    const nextMessages = updater(mockMessages);
-    expect(nextMessages[nextMessages.length - 1]).toMatchObject({
-      role: 'assistant',
-      localOnly: true,
-      completionStatus: 'complete',
-    });
-    expect(nextMessages[nextMessages.length - 1].content).toContain('已保存午餐 · 620 kcal');
-    expect(nextMessages[nextMessages.length - 1].content).toContain('下条消息会基于这条记录和今日饮食记录回答');
-    expect(nextMessages[nextMessages.length - 1].content).toContain('可直接晒图到微信/小红书');
-  });
-
-  it('opens the saved diet share image from the agent context banner', async () => {
-    mockMessages = [{
-      id: 'diet-card-share',
-      role: 'assistant',
-      content: '',
-      cardType: 'diet_draft',
-      cardData: { food_items: '牛肉面', meal_type: 'lunch' },
-      cardActionResult: {
-        status: 'completed',
-        nutrition_status: 'estimated',
-        record: {
-          id: 88,
-          record_date: '2026-07-09',
-          meal_type: 'lunch',
-          food_items: '牛肉面',
-          calories: 620,
-          protein: 28,
-          carbs: 78,
-          fat: 18,
-        },
-      },
-    }];
-
-    const { getByLabelText, getByText } = render(<ChatScreen />);
-    await act(async () => {
-      fireEvent(getByLabelText('complete-card-action-diet-card-share'), 'responderRelease');
-    });
-
-    expect(getByText('晒图')).toBeTruthy();
-    fireEvent.press(getByText('晒图'));
-
-    expect(mockPush).toHaveBeenCalledWith('/diet?share_record_id=88&return_to=chat&date=2026-07-09');
-  });
-
-  it('shows saved diet context source after a diet card action completes', async () => {
-    mockMessages = [{
-      id: 'diet-card-2',
-      role: 'assistant',
-      content: '',
-      cardType: 'diet_draft',
-      cardData: { food_items: '牛肉面', meal_type: 'lunch' },
-      cardActionResult: {
-        status: 'completed',
-        record: {
-          id: 88,
-          record_date: '2026-07-09',
-          meal_type: 'lunch',
-          food_items: '牛肉面',
-          calories: 620,
-        },
-      },
-    }];
-
-    const { getByLabelText, getByText } = render(<ChatScreen />);
-    await act(async () => {
-      fireEvent(getByLabelText('complete-card-action-diet-card-2'), 'responderRelease');
-    });
-
-    expect(getByText('基于 刚保存午餐 + 今日饮食记录')).toBeTruthy();
-  });
-
-  it('shows readable saved diet context details instead of raw JSON', async () => {
-    mockMessages = [{
-      id: 'diet-card-3',
-      role: 'assistant',
-      content: '',
-      cardType: 'diet_draft',
-      cardData: { food_items: '牛肉面', meal_type: 'lunch' },
-      cardActionResult: {
-        status: 'completed',
-        record: {
-          id: 88,
-          record_date: '2026-07-09',
-          meal_type: 'lunch',
-          food_items: '牛肉面',
-          calories: 620,
-        },
-      },
-    }];
-
-    const { getByLabelText, getByText } = render(<ChatScreen />);
-    await act(async () => {
-      fireEvent(getByLabelText('complete-card-action-diet-card-3'), 'responderRelease');
-    });
-
-    await act(async () => {
-      fireEvent.press(getByLabelText('查看上下文：刚保存午餐 + 今日饮食记录'));
-    });
-
-    expect(getByText(/数据源/)).toBeTruthy();
-    expect(getByText(/刚保存的午餐记录/)).toBeTruthy();
-    expect(getByText(/今日饮食数据库/)).toBeTruthy();
-    expect(getByText(/午餐 · 牛肉面 · 620 kcal/)).toBeTruthy();
-  });
-
-  it('asks today diet calories with the saved diet context attached', async () => {
-    mockMessages = [{
-      id: 'diet-card-4',
-      role: 'assistant',
-      content: '',
-      cardType: 'diet_draft',
-      cardData: { food_items: '牛肉面', meal_type: 'lunch' },
-      cardActionResult: {
-        status: 'completed',
-        record: {
-          id: 88,
-          record_date: '2026-07-09',
-          meal_type: 'lunch',
-          food_items: '牛肉面',
-          calories: 620,
-        },
-      },
-    }];
-
-    const { getByLabelText } = render(<ChatScreen />);
-    await act(async () => {
-      fireEvent(getByLabelText('complete-card-action-diet-card-4'), 'responderRelease');
-    });
-
-    await act(async () => {
-      fireEvent.press(getByLabelText('基于刚保存饮食查询今日热量'));
-    });
-
-    expect(mockSendMessage).toHaveBeenCalledWith(
-      expect.stringContaining('请先查询今天数据库里的所有饮食记录'),
-      null,
-      expect.objectContaining({
-        extraContext: expect.stringContaining('diet_record_saved'),
-      }),
-    );
-    expect(mockSendMessage.mock.calls[0][0]).toContain('结合刚保存的这条记录');
-    expect(mockSendMessage.mock.calls[0][2].extraContext).toContain('牛肉面');
-  });
-
-  it('asks for a two-day diet review with database-first context after saving diet', async () => {
-    mockMessages = [{
-      id: 'diet-card-4b',
-      role: 'assistant',
-      content: '',
-      cardType: 'diet_draft',
-      cardData: { food_items: '牛肉面', meal_type: 'lunch' },
-      cardActionResult: {
-        status: 'completed',
-        record: {
-          id: 88,
-          record_date: '2026-07-09',
-          meal_type: 'lunch',
-          food_items: '牛肉面',
-          calories: 620,
-        },
-      },
-    }];
-
-    const { getByLabelText } = render(<ChatScreen />);
-    await act(async () => {
-      fireEvent(getByLabelText('complete-card-action-diet-card-4b'), 'responderRelease');
-    });
-
-    await act(async () => {
-      fireEvent.press(getByLabelText('基于刚保存饮食复盘昨天和今天'));
-    });
-
-    expect(mockSendMessage).toHaveBeenCalledWith(
-      expect.stringContaining('分别查询今天和昨天数据库里的所有饮食记录'),
-      null,
-      expect.objectContaining({
-        extraContext: expect.stringContaining('diet_record_saved'),
-      }),
-    );
-    expect(mockSendMessage.mock.calls[0][0]).toContain('不要只凭本轮对话或截图猜测');
-    expect(mockSendMessage.mock.calls[0][2].extraContext).toContain('牛肉面');
-  });
-
-  it('opens the diet record page to correct a saved diet record', async () => {
-    mockMessages = [{
-      id: 'diet-card-5',
-      role: 'assistant',
-      content: '',
-      cardType: 'diet_draft',
-      cardData: { food_items: '牛肉面', meal_type: 'lunch' },
-      cardActionResult: {
-        status: 'completed',
-        record: {
-          id: 88,
-          record_date: '2026-07-09',
-          meal_type: 'lunch',
-          food_items: '牛肉面',
-          calories: 620,
-        },
-      },
-    }];
-
-    const { getByLabelText } = render(<ChatScreen />);
-    await act(async () => {
-      fireEvent(getByLabelText('complete-card-action-diet-card-5'), 'responderRelease');
-    });
-
-    await act(async () => {
-      fireEvent.press(getByLabelText('去饮食页修正刚保存的记录'));
-    });
-
-    expect(mockPush).toHaveBeenCalledWith('/diet');
-  });
-
   it('hides the composer chips row once the conversation has messages', async () => {
     mockMessages = [
       { id: 'u-1', role: 'user', content: '早餐吃了鸡蛋' },
@@ -1221,37 +877,6 @@ describe('ChatScreen', () => {
     await waitFor(() => expect(mockFetchConversationStarters).toHaveBeenCalled());
     // messages 非空 → composer chips row 不渲染。
     expect(queryByLabelText('拍照记一餐')).toBeNull();
-  });
-
-  it('promotes the current timeline focus into the empty chat cockpit', async () => {
-    mockTodayTimelineData = {
-      now: 'walk-after-dinner',
-      items: [
-        {
-          id: 'walk-after-dinner',
-          title: '晚餐后步行 12 分钟',
-          subtitle: '餐后血糖风险窗口',
-          status: 'due',
-        },
-      ],
-      counts: { actionable: 2, overdue: 1, info: 0 },
-      past: { completed_count: 0, events: [] },
-    };
-
-    const { getByText, getByLabelText, getByTestId } = render(<ChatScreen />);
-
-    await waitFor(() => {
-      expect(getByText('现在最重要')).toBeTruthy();
-      expect(getByText('晚餐后步行 12 分钟')).toBeTruthy();
-      expect(getByText('已过时段 1')).toBeTruthy();
-      expect(getByTestId('chat-today-focus-card')).toBeTruthy();
-    });
-
-    await act(async () => {
-      fireEvent.press(getByLabelText('查看今日重点依据'));
-    });
-
-    expect(getByText('依据')).toBeTruthy();
   });
 
   // ── 冷启动包 (P0-3) ─────────────────────────────────────────────────────
@@ -1401,7 +1026,7 @@ describe('ChatScreen', () => {
     expect(queryByLabelText('连接设备')).toBeNull();
   });
 
-  it('keeps the agent-native chat composer aligned to the keyboard with a keyboard-overlap spacer', async () => {
+  it('keeps the agent-native chat composer compact and above the iOS keyboard', async () => {
     const keyboardListeners: Record<string, (event: any) => void> = {};
     jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
       keyboardListeners[String(eventName)] = callback;
@@ -1411,7 +1036,8 @@ describe('ChatScreen', () => {
     const { getByTestId } = render(<ChatScreen />);
     await waitFor(() => expect(mockFetchConversationStarters).toHaveBeenCalled());
 
-    // 键盘收起时只保留 12pt 呼吸区，避免大块空白遮住对话内容。
+    // No global tab bar: spacer = insets.bottom (jest mock 为 0) + 12 呼吸;
+    // 真机 = home indicator 安全区 + 12 —— 输入栏悬浮不贴底 (阿福式)。
     expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 12 });
 
     act(() => {
@@ -1420,47 +1046,7 @@ describe('ChatScreen', () => {
       });
     });
 
-    // iOS 键盘覆盖页面;手动 spacer 等于键盘 overlap,把输入栏锚到键盘上沿,不再依赖
-    // KeyboardAvoidingView 的内部 padding。
     expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 336 });
-  });
-
-  it('resyncs the composer position when returning from another app with the keyboard still visible', async () => {
-    const keyboardListeners: Record<string, (event: any) => void> = {};
-    let appStateHandler: ((state: string) => void) | null = null;
-    jest.spyOn(Keyboard, 'addListener').mockImplementation((eventName: any, callback: any) => {
-      keyboardListeners[String(eventName)] = callback;
-      return { remove: jest.fn() } as any;
-    });
-    jest.spyOn(AppState, 'addEventListener').mockImplementation(((_type: string, callback: (state: string) => void) => {
-      appStateHandler = callback;
-      return { remove: jest.fn() };
-    }) as never);
-    const originalMetrics = (Keyboard as any).metrics;
-    (Keyboard as any).metrics = jest.fn(() => ({ height: 336 }));
-
-    try {
-      const { getByTestId } = render(<ChatScreen />);
-      await waitFor(() => expect(mockFetchConversationStarters).toHaveBeenCalled());
-
-      act(() => {
-        keyboardListeners.keyboardDidShow({
-          endCoordinates: { height: 336 },
-        });
-      });
-      act(() => {
-        keyboardListeners.keyboardDidHide({});
-      });
-      expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 12 });
-
-      act(() => {
-        appStateHandler?.('active');
-      });
-
-      expect(getByTestId('chat-bottom-spacer')).toHaveStyle({ height: 336 });
-    } finally {
-      (Keyboard as any).metrics = originalMetrics;
-    }
   });
 
   it('shows a visible cancel action after long-pressing a message into multi-select', async () => {
@@ -1510,38 +1096,6 @@ describe('ChatScreen', () => {
     });
   });
 
-  it('lets the multi-select action rail replace the composer while selecting messages', async () => {
-    mockMessages = [
-      { id: 'u-1', role: 'user', content: '早餐吃了鸡蛋和咖啡' },
-      { id: 'a-1', role: 'assistant', content: '建议今天午后散步 10 分钟。', completionStatus: 'complete' },
-    ];
-
-    const { UNSAFE_queryAllByType, getByLabelText, getByTestId, getByText } = render(<ChatScreen />);
-
-    await waitFor(() => expect(getByLabelText('message-u-1')).toBeTruthy());
-    expect(UNSAFE_queryAllByType('ChatInputBar' as any).length).toBe(1);
-
-    await act(async () => {
-      fireEvent(getByLabelText('message-u-1'), 'longPress');
-    });
-
-    expect(UNSAFE_queryAllByType('ChatInputBar' as any).length).toBe(0);
-    expect(getByText('分享选中内容')).toBeTruthy();
-    expect(getByTestId('chat-selection-rail')).toHaveStyle({
-      marginHorizontal: 0,
-      borderRadius: 0,
-      borderTopWidth: StyleSheet.hairlineWidth,
-    });
-
-    await act(async () => {
-      fireEvent.press(getByLabelText('取消多选'));
-    });
-
-    await waitFor(() => {
-      expect(UNSAFE_queryAllByType('ChatInputBar' as any).length).toBe(1);
-    });
-  });
-
   it('keeps new chat out of the low-frequency more sheet', async () => {
     mockFetchConversationStarters
       .mockResolvedValueOnce({
@@ -1562,54 +1116,6 @@ describe('ChatScreen', () => {
     expect(queryByText('新建对话')).toBeNull();
     expect(queryByText('对话历史')).toBeNull();
     expect(getByText('会诊工具')).toBeTruthy();
-  });
-
-  it('opens 小巴的任务 as an inline panel inside the chat page (no page navigation)', async () => {
-    const { getByLabelText, getByTestId, queryByTestId, UNSAFE_getAllByType } = render(<ChatScreen />);
-
-    await waitFor(() => {
-      expect(getByLabelText('更多会诊操作')).toBeTruthy();
-    });
-    expect(queryByTestId('chat-task-ledger-inline-panel')).toBeNull();
-
-    await act(async () => {
-      fireEvent.press(getByLabelText('更多会诊操作'));
-    });
-    await act(async () => {
-      fireEvent.press(getByLabelText('小巴的任务'));
-    });
-
-    // 内联面板占据消息区;composer 仍在下方;不跳独立页。
-    expect(getByTestId('chat-task-ledger-inline-panel')).toBeTruthy();
-    expect(UNSAFE_getAllByType('ChatInputBar' as any).length).toBe(1);
-    expect(mockPush).not.toHaveBeenCalled();
-
-    // 发消息自动收起面板, 回到对话流。
-    await act(async () => {
-      UNSAFE_getAllByType('ChatInputBar' as any)[0].props.onSend('今天状态如何?', null);
-      await Promise.resolve();
-    });
-    await waitFor(() => {
-      expect(queryByTestId('chat-task-ledger-inline-panel')).toBeNull();
-    });
-  });
-
-  it('keeps continuous voice as a clearly named low-frequency voice entry', async () => {
-    const { getByLabelText, queryByLabelText } = render(<ChatScreen />);
-
-    await waitFor(() => {
-      expect(getByLabelText('更多会诊操作')).toBeTruthy();
-    });
-    expect(queryByLabelText('开始语音对话')).toBeNull();
-
-    await act(async () => {
-      fireEvent.press(getByLabelText('更多会诊操作'));
-    });
-    await act(async () => {
-      fireEvent.press(getByLabelText('连续语音对话'));
-    });
-
-    expect(mockPush).toHaveBeenCalledWith('/voice-chat');
   });
 
   it('starts a new conversation when opened from an Agent context entry', async () => {

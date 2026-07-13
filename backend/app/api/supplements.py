@@ -493,6 +493,35 @@ def copy_day_records(
     }
 
 
+@router.put("/records/{record_id}", response_model=SupplementRecordResponse)
+def update_supplement_record(
+    record_id: int,
+    update_data: SupplementRecordUpdate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """更新当前用户的单条补剂打卡记录。"""
+    record = _get_owned_supplement_record(db, current_user.id, record_id)
+    for key, value in update_data.model_dump(exclude_unset=True).items():
+        setattr(record, key, value)
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+@router.delete("/records/{record_id}")
+def delete_supplement_record(
+    record_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """删除当前用户的单条补剂打卡记录。"""
+    record = _get_owned_supplement_record(db, current_user.id, record_id)
+    db.delete(record)
+    db.commit()
+    return {"message": "删除成功", "record_id": record_id}
+
+
 @router.get("/me/date/{record_date}", response_model=List[SupplementWithRecord])
 def get_my_supplements_with_records(
     record_date: date,

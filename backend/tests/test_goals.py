@@ -27,6 +27,60 @@ def test_create_goal(client, auth_user_and_headers):
     assert data["target_value"] == goal_data["target_value"]
 
 
+def test_update_goal(client, auth_user_and_headers):
+    """目标本体可修改,供小巴执行'把目标改成...'。"""
+    user, headers = auth_user_and_headers
+
+    goal_data = {
+        "user_id": user.id,
+        "goal_type": "exercise",
+        "goal_period": "daily",
+        "title": "每日运动30分钟",
+        "target_value": 30.0,
+        "target_unit": "分钟",
+        "start_date": date.today().isoformat(),
+        "priority": 7,
+    }
+    create_response = client.post("/api/v1/goals", json=goal_data, headers=headers)
+    goal_id = create_response.json()["id"]
+
+    response = client.put(
+        f"/api/v1/goals/{goal_id}",
+        json={"title": "每日运动40分钟", "target_value": 40.0, "priority": 6},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == goal_id
+    assert data["title"] == "每日运动40分钟"
+    assert data["target_value"] == 40.0
+    assert data["priority"] == 6
+
+
+def test_delete_goal(client, auth_user_and_headers):
+    """目标本体可删除,供 agent 撤销误建目标。"""
+    user, headers = auth_user_and_headers
+
+    goal_data = {
+        "user_id": user.id,
+        "goal_type": "water",
+        "goal_period": "daily",
+        "title": "每天喝水2000ml",
+        "target_value": 2000.0,
+        "target_unit": "ml",
+        "start_date": date.today().isoformat(),
+    }
+    create_response = client.post("/api/v1/goals", json=goal_data, headers=headers)
+    goal_id = create_response.json()["id"]
+
+    response = client.delete(f"/api/v1/goals/{goal_id}", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["goal_id"] == goal_id
+    assert client.get("/api/v1/goals/me", headers=headers).json() == []
+
+
 def test_get_user_goals(client, auth_user_and_headers):
     """测试获取用户目标"""
     user, headers = auth_user_and_headers

@@ -1,7 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import Voice from '@react-native-voice/voice';
 import { useRealtimeDictation } from '../useRealtimeDictation';
-import { resetVoiceSessionCoordinatorForTests } from '../../services/voiceSessionCoordinator';
 
 const mockVoiceStart = jest.fn().mockResolvedValue(undefined);
 const mockVoiceStop = jest.fn().mockResolvedValue(undefined);
@@ -38,7 +37,6 @@ const mockedVoice = Voice as any;
 
 describe('useRealtimeDictation', () => {
   beforeEach(() => {
-    resetVoiceSessionCoordinatorForTests();
     jest.clearAllMocks();
     mockVoiceIsAvailable.mockResolvedValue(1);
     mockedVoice.onSpeechPartialResults = undefined;
@@ -59,23 +57,6 @@ describe('useRealtimeDictation', () => {
     );
     expect(mockVoiceStart).toHaveBeenCalledWith('zh-CN');
     expect(result.current.isDictating).toBe(true);
-  });
-
-  it('reclaims the shared Voice callbacks when dictation starts after hold-to-talk', async () => {
-    const onTranscript = jest.fn();
-    const foreignPartialHandler = jest.fn();
-    const { result } = renderHook(() => useRealtimeDictation({ onTranscript }));
-    mockedVoice.onSpeechPartialResults = foreignPartialHandler;
-
-    await act(async () => {
-      await result.current.startDictation();
-    });
-    act(() => {
-      mockedVoice.onSpeechPartialResults({ value: ['右侧听写重新接管回调'] });
-    });
-
-    expect(foreignPartialHandler).not.toHaveBeenCalled();
-    expect(onTranscript).toHaveBeenCalledWith('右侧听写重新接管回调');
   });
 
   it('cancels a pending native start so a second mic tap cannot re-enable listening', async () => {
@@ -211,7 +192,6 @@ describe('useRealtimeDictation', () => {
       stopPromise = result.current.stopDictation();
       void stopPromise.then(value => { finalTranscript = value; });
     });
-    await waitFor(() => expect(mockVoiceStop).toHaveBeenCalled());
     await act(async () => {
       mockedVoice.onSpeechResults({ value: ['停止前补齐的最终文字'] });
       resolveStop();
@@ -289,7 +269,7 @@ describe('useRealtimeDictation', () => {
     });
 
     expect(startResult).toBe(false);
-    await waitFor(() => expect(mockVoiceCancel).toHaveBeenCalled());
+    expect(mockVoiceStop).toHaveBeenCalled();
     expect(result.current.isDictating).toBe(false);
   });
 
@@ -305,11 +285,9 @@ describe('useRealtimeDictation', () => {
     });
 
     expect(mockVoiceCancel).toHaveBeenCalled();
-    await waitFor(() => {
-      expect(mockSetAudioModeAsync).toHaveBeenCalledWith(
-        expect.objectContaining({ allowsRecording: false }),
-      );
-    });
+    expect(mockSetAudioModeAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ allowsRecording: false }),
+    );
     expect(result.current.isDictating).toBe(false);
     expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {
       phase: 'cancelled',
@@ -352,11 +330,9 @@ describe('useRealtimeDictation', () => {
       mockedVoice.onSpeechError({ error: { message: 'speech denied' } });
     });
 
-    await waitFor(() => {
-      expect(mockSetAudioModeAsync).toHaveBeenCalledWith(
-        expect.objectContaining({ allowsRecording: false }),
-      );
-    });
+    expect(mockSetAudioModeAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ allowsRecording: false }),
+    );
     expect(result.current.error).toBe('speech denied');
     expect(result.current.isDictating).toBe(false);
     expect(mockEmitClientEvent).toHaveBeenCalledWith('voice_input_terminal', {

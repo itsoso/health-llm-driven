@@ -3,7 +3,7 @@
 供 Agent 执行器使用的结构化工具接口。覆盖所有健康数据的读/写/分析操作。
 """
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -63,14 +63,6 @@ dimension 选择指南 (按场景):
   genetic_cognitive / genetic_personality / genetic_comprehensive — 整合性基因解读
   medication       — 用药清单 (非单次服药, 是长期用药列表)
 
-【生活事件时间线 / 行程 / 各节点几点】
-  events           — 用户日常生活事件的**真实时间戳**时间线 (出发/到达/购买/收货/症状起点/
-                     日常), 落 HealthEpisode 情景账本, 带诚实发生时间与精度 (精确/约/日期级).
-                     用户问"总结我下午从家到现在各节点几点"/"今天几点出的门"/"我的行程"/
-                     "刚才那些事分别几点" 走这里 —— 别去聊天记录里估算时间.
-                     数据来自 agent 记录 + 系统转后自动抽取, occurred_at 为后端确定性折算.
-                     worked example: 用户问"整理今天下午的时间线" → health_query(dimension='events', days=1)
-
 days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 问"这月" → days=30.
 """,
             "parameters": {
@@ -85,7 +77,7 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
                                  "body_battery", "stress",
                                  "medical_exam", "genetic",
                                  "genetic_cognitive", "genetic_personality", "genetic_comprehensive",
-                                 "medication", "events"],
+                                 "medication"],
                         "description": "数据维度. 见 function description 里的选择指南",
                     },
                     "days": {
@@ -117,82 +109,6 @@ days 参数: 默认 7. 问"昨天" → days=1; 问"最近 / 这周" → days=7; 
     {
         "type": "function",
         "function": {
-            "name": "health_query_batch",
-            "description": """一次声明式批查询: 用户一句话问**多个指标 / 要对比 / 要平均·最值·趋势**时,
-用本工具一次产出全部子查询, 后端确定性取数 + 聚合, **1 轮完成** —— 不要连发多次 health_query。
-
-何时用本工具 (而非 health_query):
-- 用户同时问 ≥2 个指标 ("这周的睡眠、HRV、步数怎么样")
-- 要对比两个时间窗 ("这周和上周的 HRV")
-- 要某指标的平均 / 最大 / 最小 / 趋势 ("最近一个月步数平均多少", "HRV 是升还是降")
-单个指标的简单当前值查询仍用 health_query。
-
-plan 结构:
-- queries: 1-6 条子查询, 每条 = {dimension, days, agg?}
-    - dimension: 与 health_query 同一套维度枚举 (sleep/hrv/activity/heart_rate/
-      blood_pressure/weight/diet/medication/medical_exam/...)。
-    - days: 最近几天 (默认 7)。注意: 是"最近 N 天窗口", 不是任意日期区间。
-    - agg (可选): latest | avg | min | max | trend。trend = 首尾差 (最新 - 最早)。
-      **数值聚合仅对可穿戴日指标有效**: activity(步数) / heart_rate / hrv /
-      sleep(睡眠评分) / body_battery / stress / spo2。其他维度 agg 会被忽略, 返回原始数据。
-- compare (可选): 对比两条子查询的标量。{a:<下标>, b:<下标>, op:'diff'|'ratio'}。diff=a-b, ratio=a/b。
-
-完整示例 (近7天 vs 近14天平均 HRV 之差 + 本周睡眠评分趋势 + 本周步数均值):
-{
-  "queries": [
-    {"dimension": "hrv", "days": 7, "agg": "avg"},
-    {"dimension": "hrv", "days": 14, "agg": "avg"},
-    {"dimension": "sleep", "days": 7, "agg": "trend"},
-    {"dimension": "activity", "days": 7, "agg": "avg"}
-  ],
-  "compare": {"a": 0, "b": 1, "op": "diff"}
-}
-→ 每条回 {dimension, days, agg, value, unit, n}; compare 回 {op:'diff', value:<近7天均值 - 近14天均值>}。
-
-只读, 无写入, 无需确认。未知 dimension / 未知 agg / 超过 6 条 → 返回带合法值清单的报错 (下一轮改正)。""",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "queries": {
-                        "type": "array",
-                        "description": "1-6 条只读子查询。每条 {dimension, days, agg?}。",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "dimension": {
-                                    "type": "string",
-                                    "description": "数据维度 (同 health_query 枚举), 如 sleep/hrv/activity/heart_rate/blood_pressure/weight/diet/medication/medical_exam",
-                                },
-                                "days": {
-                                    "type": "integer",
-                                    "description": "最近几天窗口, 默认 7",
-                                },
-                                "agg": {
-                                    "type": "string",
-                                    "enum": ["latest", "avg", "min", "max", "trend"],
-                                    "description": "聚合方式; 省略=返回原始数据。仅可穿戴日指标可数值聚合。trend=首尾差(最新-最早)",
-                                },
-                            },
-                            "required": ["dimension"],
-                        },
-                    },
-                    "compare": {
-                        "type": "object",
-                        "description": "可选: 对比两条子查询的标量值。diff=a-b, ratio=a/b。",
-                        "properties": {
-                            "a": {"type": "integer", "description": "第一条子查询下标 (从 0 开始)"},
-                            "b": {"type": "integer", "description": "第二条子查询下标"},
-                            "op": {"type": "string", "enum": ["diff", "ratio"]},
-                        },
-                    },
-                },
-                "required": ["queries"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "health_record",
             "description": """记录用户的健康数据. 记录后会真正写入数据库, 所以必须确保必填字段齐全.
 
@@ -203,7 +119,6 @@ plan 结构:
 - "删除这一餐/撤销这顿/我刚才不小心删除了" 是管理已有饮食记录, 不要作为 diet.food_items 写入; 改用 health_manage
 - record_date 如果用户没明说具体日期, 默认填今天 (不要填未来日期)
 - 中文日期/时间要转成 ISO 格式 (例: "昨天早上 8 点" → record_date='YYYY-MM-DD', taken_time='08:00')
-- 创建/调整长期健康目标用 goal；查询/修改/删除已有目标用 health_manage(record_type=goal)
 
 完整参数示例见 data 字段描述.
 """,
@@ -223,11 +138,11 @@ plan 结构:
 - supplement: 单个补剂打卡 ("吃了鱼油")
 - supplement_group: 按时段批量打卡 ("早上的药都吃了")
 - weight: 体重
+- waist: 腰围
 - blood_pressure: 血压
-- waist: 腰围厘米数
-- sleep: 手动补录睡眠 (必须有入睡/醒来时间和质量)
-- excretion: 排便/排尿记录
+- sleep: 手动补录睡眠
 - exercise: 用户手动录的简单锻炼 (俯卧撑/瑜伽等). 注意: Garmin 跑步手表自动同步, 不要让用户走这个
+- excretion: 排便/排尿
 - rhinitis: 鼻炎症状 (喷嚏/鼻塞/流涕)
 - mood: 情绪
 - medication: 服药一次
@@ -235,8 +150,7 @@ plan 结构:
 - symptom: 身体症状记录 (咳嗽/嗓子疼/鼻塞/流涕/眼痒/膝盖痛/皮肤起疹 等). **不需要慢病档案**, 任何偶发症状都走这个；感冒相关症状用 body_part=respiratory/general
 - garmin_sync: 触发 Garmin 数据立即同步
 - reminder: 设置提醒
-- goal: 设置健康目标 ("从今天开始每天快走30分钟" / "90天把腰围降到82cm")
-- event: 生活事件/行程节点 (出发/落地/到店/药品送达/发现症状的时刻)。**带发生时间**,时间线总结靠它;occurred_at 直接放用户原话("下午"/"刚才"/"21:07"/ISO),后端确定性折算,绝不自己编时刻""",
+- goal: 设置健康目标 ("每天运动40分钟", "90天腰围降到82cm")""",
                     },
                     "data": {
                         "type": "object",
@@ -252,15 +166,13 @@ diet:  {"meal_type": "breakfast|lunch|dinner|snack",  // 用英文枚举
 supplement:       {"supplement_name": "鱼油"}          // 按名字匹配用户已定义的补剂
 supplement_group: {"timing": "morning|noon|evening|bedtime"}
 weight:           {"weight": 72.2, "record_date": "2026-05-05"}  // weight 必须在 data 里, 不能放顶层!
+waist:            {"waist_cm": 82, "record_date": "2026-05-05"}   // cm, 可用 waist/value 别名但优先 waist_cm
 blood_pressure:   {"systolic": 120, "diastolic": 80, "record_date": "..."}
-waist:            {"waist_cm": 88.5, "record_date": "2026-05-05"} // 腰围厘米数
-sleep:            {"record_date": "2026-05-05", "bedtime": "2026-05-04T23:00:00+08:00",
-                   "wake_time": "2026-05-05T07:00:00+08:00", "sleep_quality": 4}
-event:            {"title": "落地北京", "occurred_at": "21:07"}  // 或 "下午"/"刚才";空=此刻
-excretion:        {"type": "bowel|urine", "record_date": "2026-05-05",
-                   "record_time": "08:30:00", "stool_type": 4, "notes": "正常"}
+sleep:            {"duration_hours": 7.5, "wake_time": "2026-05-05T07:30:00+08:00", "sleep_quality": 4}
+                  或 {"bedtime": "2026-05-04T23:30:00+08:00", "wake_time": "2026-05-05T07:00:00+08:00", "sleep_quality": 4}
 exercise:         {"exercise_type": "俯卧撑", "reps": 10, "sets": 1}
                   或 {"exercise_type": "running", "duration": 30, "distance": 5.0}
+excretion:        {"type": "bowel|urine", "stool_type": 4, "record_time": "08:10:00"}  // 大便/小便会归一化
 rhinitis:         {"sneezing": 2, "congestion": 1, "runny_nose": 0}  // 0-3 级
 mood:             {"score": 7, "notes": "心情不错"}    // score 1-10
 medication:       {"medication_name": "布洛芬", "taken_time": "08:00"}
@@ -273,10 +185,11 @@ garmin_sync:      {}
 reminder:         {"title": "臀中肌训练", "message": "蚌式开合、侧卧抬腿、臀桥",
                    "remind_at": "2026-06-30T10:30:00+08:00",
                    "recurrence": "daily", "priority": "normal"}
-goal:             {"title": "每日快走30分钟", "goal_type": "exercise|diet|sleep|water|supplement|outdoor|weight|other",
-                   "goal_period": "daily|weekly|monthly|yearly", "target_value": 30,
-                   "target_unit": "分钟", "start_date": "2026-07-05",
-                   "implementation_steps": "1. 晚饭后快走\\n2. 心率保持轻中等强度"}""",
+goal:             {"goal_type": "exercise|diet|sleep|water|supplement|outdoor|weight|other",
+                   "goal_period": "daily|weekly|monthly|yearly",
+                   "title": "每日运动40分钟",
+                   "target_value": 40, "target_unit": "分钟",
+                   "start_date": "2026-07-06"}""",
                     },
                 },
                 "required": ["record_type", "data"],
@@ -298,11 +211,10 @@ goal:             {"title": "每日快走30分钟", "goal_type": "exercise|diet|
 不能回答"没有删除功能"。如果用户只说"删除一条"但有多条候选, 先用 list 查出 ID 并让用户确认。
 
 支持 record_type:
-- diet, water, weight, waist, blood_pressure, sleep, mood, excretion, supplement: 支持 list/update/delete
-- illness, medication, supplement_definition: 支持 list/update/delete
+- diet, water, weight, waist, blood_pressure, sleep, mood, excretion: 支持 list/update/delete
+- illness, medication, supplement, supplement_definition: 支持 list/update/delete
 - exercise, symptom, medication_log, reminder, goal: 支持 list/update/delete
-- medical_exam: 仅支持 list, 返回体检/影像/病理/胃镜等报告级摘要清单;指标时间线请用 health_query(dimension=medical_exam)
-- event: 生活事件(出发/落地/送达等), 支持 list/delete;不支持 update, 时间记错请删除后重新记录
+- medical_exam: 仅支持 list 报告级列表;指标级读取继续用 health_query(medical_exam)
 """,
             "parameters": {
                 "type": "object",
@@ -313,8 +225,8 @@ goal:             {"title": "每日快走30分钟", "goal_type": "exercise|diet|
                             "diet", "water", "weight", "waist", "blood_pressure",
                             "sleep", "mood", "excretion", "exercise", "illness",
                             "symptom", "medication", "medication_log",
-                            "supplement", "supplement_definition", "reminder",
-                            "goal", "medical_exam", "event",
+                            "supplement", "supplement_definition", "goal",
+                            "medical_exam", "reminder",
                         ],
                         "description": "要管理的数据类型",
                     },
@@ -331,15 +243,10 @@ goal:             {"title": "每日快走30分钟", "goal_type": "exercise|diet|
                         "type": "string",
                         "description": "list 可选日期 YYYY-MM-DD。饮食支持按日期汇总; 其他类型走最近列表。",
                     },
-                    "limit": {
-                        "type": "integer",
-                        "default": 20,
-                        "description": "list 返回条数上限, 默认 20, 最大 100。",
-                    },
                     "meal_type": {
                         "type": "string",
-                        "enum": ["breakfast", "lunch", "dinner", "snack"],
-                        "description": "diet list/update 可选餐次。用户说早餐/早饭=breakfast, 午餐/午饭=lunch, 晚餐/晚饭=dinner, 加餐/夜宵=snack。",
+                        "enum": ["breakfast", "lunch", "dinner", "snack", "extra", "早餐", "午餐", "晚餐", "加餐", "夜宵"],
+                        "description": "仅 record_type=diet 且 operation=list 时使用。用户明确说早餐/午餐/晚餐/加餐时必须带上, 用于只列该餐次候选, 避免把晚餐误改成加餐。",
                     },
                     "data": {
                         "type": "object",
@@ -350,13 +257,13 @@ weight: {"weight":71.2}
 blood_pressure: {"systolic":120,"diastolic":78}
 illness: {"status":"resolved","severity":2}
 medication: {"name":"二甲双胍","dosage":"500mg"}
+supplement: {"taken":false,"notes":"误点,已撤销"}
 supplement_definition: {"name":"维生素D","dosage":"2000IU"}
-supplement: {"taken":false,"notes":"误记,撤回"}
+goal: {"title":"每日运动40分钟","target_value":40}
 exercise: {"reps":20,"sets":2}
 symptom: {"severity":2,"notes":"洗鼻后缓解"}
 medication_log: {"status":"skipped","skip_reason":"医生要求暂停"}
 reminder: {"title":"明早复查血压","priority":"high"}
-goal: {"title":"每日快走 30 分钟","status":"paused","notes":"膝盖恢复期暂停"}
 """,
                     },
                 },
@@ -586,14 +493,14 @@ action 选择:
           (met 达标 / improving 改善中 / worsening 变差 / flat 持平 / pending 待复查)。
           **没有进行中的周期时如实说"目前没有进行中的干预周期", 不要编造。**
           用户问"我的干预周期怎么样 / 这阵子调理有没有效 / 降 LDL 进展" 走这个。
-- list: 列出干预周期历史,含 active/completed/abandoned,用于用户问"之前做过哪些周期/历史干预"。
 - start: 为用户开启一个新的代谢干预周期 (锁基线 Twin 快照 + 基线化验 + 目标指标)。
           **写操作 → 必须先确认**: 第一次调用 (不带 confirmed) 会返回需要向用户复述确认的提示,
           用户明确同意后**重新调用并带 confirmed=true** 才真正建周期。
           目标指标由当前异常的代谢/血脂/血糖/肝指标自动推导 (如 LDL/尿酸/HbA1c 偏高)。
           用户说"开个周期验证下 / 我想系统调理代谢三个月 / 帮我跟踪降 LDL 的效果" 走这个。
-- update: 调整进行中周期的计划天数、目标指标或停止条件。**写操作 → 必须先确认**。
-- cancel: 取消进行中周期,状态改为 abandoned,保留历史记录。**写操作 → 必须先确认**。
+- list: 查询历史干预周期列表。
+- update: 调整周期元数据/目标参数, 需 confirmed=true; 不得修改药物、剂量或医疗建议。
+- cancel: 取消周期, 标记 abandoned, 需 confirmed=true; 不做物理删除。
 
 注意:
 - 这是健康自我管理工具, 不是医疗诊断或处方。提议/解读时措辞要"非诊断、建议结合医生"。
@@ -603,46 +510,34 @@ action 选择:
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["status", "list", "start", "update", "cancel"],
-                        "description": "status 报当前周期进展; list 列历史; start/update/cancel 是写操作, 需确认",
+                        "enum": ["status", "start", "list", "update", "cancel"],
+                        "description": "status 报当前周期进展; start 开启新周期; list 查历史; update 调整; cancel 取消",
                     },
                     "cycle_id": {
                         "type": "integer",
-                        "description": "仅 update/cancel 可选: 指定周期 ID。不传则默认当前 active 周期。",
+                        "description": "update/cancel 必填。必须来自 list/status/API 返回的真实周期 ID。",
                     },
                     "days": {
                         "type": "integer",
                         "default": 90,
-                        "description": "start/update: 周期天数, 默认 90 天; update 会重算 planned_end_date。",
+                        "description": "仅 start: 周期天数, 默认 90 天",
                     },
                     "status": {
                         "type": "string",
-                        "enum": ["all", "active", "completed", "abandoned"],
-                        "default": "all",
-                        "description": "仅 list: 历史周期状态过滤。",
+                        "description": "仅 list: 可选 active/completed/abandoned 过滤。",
                     },
                     "limit": {
                         "type": "integer",
                         "default": 20,
-                        "description": "仅 list: 最多返回多少个周期。",
+                        "description": "仅 list: 最多返回多少条。",
                     },
-                    "target_specs": {
-                        "type": "array",
-                        "items": {"type": "object"},
-                        "description": "start/update 可选目标指标数组 [{code,target,direction}]。慎用,用户确认后再改。",
-                    },
-                    "stop_conditions": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "update 可选停止/升级条件列表。",
-                    },
-                    "reason": {
-                        "type": "string",
-                        "description": "cancel 可选取消原因,仅用于本次回复说明。",
+                    "data": {
+                        "type": "object",
+                        "description": "仅 update: 允许 status、planned_end_date、target_metrics、stop_conditions。",
                     },
                     "confirmed": {
                         "type": "boolean",
-                        "description": "start/update/cancel: 用户已明确同意后置 true。首次提议不要带, 让确认流程走一遍。",
+                        "description": "start/update/cancel 写操作: 用户已明确同意后置 true。首次提议不要带, 让确认流程走一遍。",
                     },
                 },
                 "required": ["action"],
@@ -721,26 +616,13 @@ action 选择:
 ]
 
 
-# fast(简单记录/查询)回合的固定工具白名单(2026-07-11 token 优化 #2)。
-# 实测全量 schema 18,064 chars,big-3 仅 ~6,700 —— fast 回合(最高频)砍 ~62% 工具
-# prefill。**固定**子集(不随消息内容变)以保持前缀字节稳定、不拆 provider 前缀缓存;
-# fast 模型若吐出子集外工具名 → agent 侧升级回全集重跑该轮(fail-open)。
-FAST_TURN_TOOL_NAMES: tuple = ("health_record", "health_query", "health_manage")
-
-
-def get_health_tools(subset: Optional[List[str]] = None) -> List[Dict[str, Any]]:
-    """获取健康工具定义。
-
-    subset: 工具名白名单(如 FAST_TURN_TOOL_NAMES)。None = 全量。
-    subset 模式下不追加 specialist 工具(fast 简单回合与深分析互斥)。
+def get_health_tools() -> List[Dict[str, Any]]:
+    """获取所有健康工具定义。
 
     RFC 方向一 Phase A: 当 settings.agent_specialist_tools 开启时, 追加
     specialist 分析工具(analyze_recovery 等), 让 Agent 自主调用。默认关闭,
     行为与现状一致。
     """
-    if subset is not None:
-        wanted = set(subset)
-        return [t for t in HEALTH_TOOLS if t["function"]["name"] in wanted]
     try:
         from app.config import settings
         if getattr(settings, "agent_specialist_tools", False):

@@ -6,7 +6,6 @@
 import asyncio
 import json
 import logging
-import time
 import uuid
 from typing import Optional, List
 
@@ -245,36 +244,6 @@ def _check_recent_dup(user_id: int, message: str) -> bool:
 
     _RECENT_DUP_CACHE[key] = now + _DUP_WINDOW_SECONDS
     return False
-
-
-def _dispatch_life_event_extraction(db, user_id, conversation_id, assistant_message_id) -> None:
-    """转后异步接缝: 回合完成后入队, 从本回合用户消息抽生活事件写时间线。
-
-    镜像 memory 抽取先例 (系统侧派生写, 不经 LLM 工具自由写)。以助手消息 id 锚定
-    紧邻的 user 消息 (id 更小)。enqueue 失败旁路, 绝不阻断用户对话 (mirror live_run)。
-    """
-    if not conversation_id or not assistant_message_id:
-        return
-    try:
-        from app.models.agent_conversation import AgentMessage
-
-        row = (
-            db.query(AgentMessage.id)
-            .filter(
-                AgentMessage.conversation_id == conversation_id,
-                AgentMessage.role == "user",
-                AgentMessage.id < assistant_message_id,
-            )
-            .order_by(AgentMessage.id.desc())
-            .first()
-        )
-        if row is None:
-            return
-        from app.tasks.life_event_extraction import extract_life_events
-
-        extract_life_events.delay(int(user_id), int(row[0]))
-    except Exception as e:  # noqa: BLE001 — 入队失败不影响主链路
-        logger.warning(f"[life_event] enqueue extraction failed (bypass): {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -685,49 +654,6 @@ async def agent_stream(
             },
         )
 
-    # Starter pregen serve (rank7): if this message EXACTLY matches a still-FRESH
-    # pre-generated starter answer, replay it as SSE instead of running a live
-    # ~30-40s turn. try_serve is fail-CLOSED on any staleness (recomputes
-    # signals_hash, checks TTL) → None falls through to the live path below. Only
-    # runs when the flag is on and there are no attachments (starters are text).
-    from app.config import settings as _pregen_settings
-
-    if (
-        getattr(_pregen_settings, "starter_pregen_enabled", False)
-        and not has_images
-        and not file_b64
-    ):
-        pregen_hit = None
-        try:
-            from app.services import starter_pregen
-
-            pregen_hit = starter_pregen.try_serve(
-                db, user_id, msg_text,
-                conversation_id=conv_id, client_turn_id=client_turn_id,
-            )
-        except Exception as e:  # noqa: BLE001 — never break chat; fall through to live
-            logger.warning("[agent.stream] pregen serve failed, fall through: %s", e)
-            pregen_hit = None
-        if pregen_hit is not None:
-            pregen_events, _pc, _pm, _pr = pregen_hit
-            logger.info(
-                "[agent.stream] pregen serve hit user=%s conv=%s msg_id=%s", user_id, _pc, _pm,
-            )
-
-            async def pregen_generate():
-                for event in pregen_events:
-                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-
-            return StreamingResponse(
-                pregen_generate(),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "X-Accel-Buffering": "no",
-                },
-            )
-
     async def generate():
         """G-W9 同模式 (FIX-5, 2026-05-14): bg task + asyncio.Queue.
 
@@ -769,7 +695,6 @@ async def agent_stream(
                     extra_context=extra_ctx,
                     channel=chan,
                     client_turn_id=client_turn_id,
-                    client_caps=caps,
                 ):
                     if event.get("event") == "token":
                         tc = event.get("data", {}).get("content")
@@ -848,13 +773,6 @@ async def agent_stream(
                             )
                         except Exception as e:  # noqa: BLE001
                             logger.debug("[agent.stream] attach thinking steps skipped: %s", e)
-                        # 转后异步: 从本回合用户消息抽生活事件时间线 (旁路, 客户端断开也已跑到这)。
-                        _dispatch_life_event_extraction(
-                            bg_db,
-                            user_id,
-                            event.get("data", {}).get("conversation_id"),
-                            event.get("data", {}).get("message_id"),
-                        )
                     await chunk_queue.put(f"data: {json.dumps(event, ensure_ascii=False)}\n\n")
             except Exception as e:
                 logger.error(f"Agent bg 流式异常: {e}", exc_info=True)
@@ -911,54 +829,18 @@ async def agent_stream(
     )
 
 
-# /send 保活流式聚合(2026-07-06):重量级深分析单回合可远超 60s,而 main.py 的
-# asyncio.wait_for 只计到 response start —— 非流式 JSON 要到回合结束才发出 start,
-# 必被杀成 504(评测实锤:补剂互作全查 / 胃溃疡根因多源推理)。
-# 修法:快窗内完成仍走历史非流式路径(错误保持 4xx/5xx);超窗切 chunked 响应,
-# 周期吐一个空格(RFC 8259 合法 JSON 前导空白)同时重置三层 idle 计时器 ——
-# 服务端 wait_for(response start 已发出)、nginx proxy_read_timeout(每次读重置,
-# 配 X-Accel-Buffering: no 不缓冲)、客户端 urllib/URLSession(socket idle 语义)。
-# 缓冲整个 body 再 json.loads 的客户端零契约变化。教训:有效超时=min(服务端,客户端),
-# 保活字节是唯一同时重置两端的方式(见 memory: llm-import-timeout-three-caps)。
-AGENT_SEND_KEEPALIVE_SECONDS = 10.0
-# 保底硬上限:流式豁免不能让真卡死的回合永远吊着 worker(main.py LONG_REQUEST_PATHS
-# 同款顾虑)。超限 → 取消回合 + in-body error,fail-loud。
-AGENT_SEND_HARD_CAP_SECONDS = 300.0
-
-
-class _AgentTurnError(Exception):
-    """Agent 回合级失败(error 事件 / 未返回 done)。携带已过 safe_llm_error_message 的安全文案。"""
-
-
-def _send_error_envelope(message: str) -> dict:
-    """流已开始(200 已发出)后的错误载体:形状与成功响应一致 + error 字段。"""
-    return {
-        "reply": "",
-        "conversation_id": None,
-        "message_id": None,
-        "mode": "agent",
-        "elapsed_ms": None,
-        "error": message,
-    }
-
-
 @router.post("/send", summary="统一健康助理非流式对话")
 async def agent_send(
     request: Request,
     req: AgentRequest,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
-    x_reva_client_caps: str | None = Header(default=None),
 ):
     """Non-streaming wrapper for clients that cannot consume SSE reliably.
 
     This endpoint intentionally reuses the first-party AgentExecutor instead of
     any external gateway. It collects token events into one reply and returns
     the durable conversation/message ids written by the executor.
-
-    长回合(> AGENT_SEND_KEEPALIVE_SECONDS)返回 chunked JSON:前导空白是保活
-    字节,末尾才是完整 JSON 对象。流一旦开始,状态码已定格 200,错误改为
-    body.error 字段(消费方判 error 非空 = 失败)。快回合行为与历史完全一致。
     """
 
     has_images = bool(req.image_base64 or req.images)
@@ -980,229 +862,74 @@ async def agent_send(
     auth_header = request.headers.get("authorization", "")
     user_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
 
-    # GenUI 能力协商 (与 /stream 同一解析口径): 客户端声明的 caps 透传给 executor,
-    # metric_table 卡片只在声明 genui-table-v1 时发 (无 cap → 逐字节现状)。
-    from app.api._client_caps import parse_client_caps
-
-    send_caps = parse_client_caps(x_reva_client_caps)
-
     from app.services.agent_executor import AgentExecutor
 
-    async def _aggregate() -> dict:
-        # 可观测性 (P4): 在 usage capture 上下文内跑 executor,回合结束汇总 token/cost。
-        # 与 /stream bg 路径同模式 —— 没这层 summarize_usage_capture() 恒为 None,
-        # 评测就永远记不到 model/cost。fail-soft:capture 出问题绝不打死回合。
-        from app.services.agent_send_meta import build_send_meta
-        from app.services.llm.usage_tracker import (
-            begin_usage_capture,
-            clear_run_id,
-            end_usage_capture,
-            set_caller,
-            set_run_id,
-            summarize_usage_capture,
+    reply_parts: list[str] = []
+    done_data: dict = {}
+    try:
+        executor = AgentExecutor(db)
+        async for event in executor.run_stream(
+            user_id=current_user.id,
+            message=req.message.strip(),
+            conversation_id=req.conversation_id,
+            user_auth_token=user_token,
+            images=all_images or None,
+            file_base64=req.file_base64,
+            file_name=req.file_name,
+            extra_context=req.extra_context,
+            channel=req.channel,
+            client_turn_id=req.client_turn_id,
+        ):
+            if event.get("event") == "token":
+                content = event.get("data", {}).get("content")
+                if isinstance(content, str):
+                    reply_parts.append(content)
+            elif event.get("event") == "done":
+                data = event.get("data")
+                if isinstance(data, dict):
+                    done_data = data
+            elif event.get("event") == "error":
+                data = event.get("data") if isinstance(event.get("data"), dict) else {}
+                raise HTTPException(status_code=500, detail=safe_llm_error_message(data.get("message")))
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.exception("[agent.send] failed: %s", e)
+        raise HTTPException(status_code=500, detail=safe_llm_error_message(str(e))) from e
+
+    if not done_data:
+        raise HTTPException(status_code=500, detail="Agent 未返回完成状态")
+    if done_data.get("request_persisted") is False:
+        raise HTTPException(
+            status_code=503,
+            detail="Agent 请求未被持久化，请重试",
+        )
+    if done_data.get("completion_status") == "interrupted":
+        raise HTTPException(
+            status_code=503,
+            detail="Agent 请求已保存但尚未完成，请稍后重试",
         )
 
-        reply_parts: list[str] = []
-        done_data: dict = {}
-        run_id = f"send_{uuid.uuid4().hex[:16]}"
-        usage_capture_token = begin_usage_capture()
-        run_id_token = set_run_id(run_id)
-        set_caller("agent.send", user_id=current_user.id)
-        try:
-            executor = AgentExecutor(db)
-            async for event in executor.run_stream(
-                user_id=current_user.id,
-                message=req.message.strip(),
-                conversation_id=req.conversation_id,
-                user_auth_token=user_token,
-                images=all_images or None,
-                file_base64=req.file_base64,
-                file_name=req.file_name,
-                extra_context=req.extra_context,
-                channel=req.channel,
-                client_turn_id=req.client_turn_id,
-                client_caps=send_caps,
-            ):
-                if event.get("event") == "token":
-                    content = event.get("data", {}).get("content")
-                    if isinstance(content, str):
-                        reply_parts.append(content)
-                elif event.get("event") == "done":
-                    data = event.get("data")
-                    if isinstance(data, dict):
-                        done_data = data
-                elif event.get("event") == "error":
-                    data = event.get("data") if isinstance(event.get("data"), dict) else {}
-                    raise _AgentTurnError(safe_llm_error_message(data.get("message")))
-            if not done_data:
-                raise _AgentTurnError("Agent 未返回完成状态")
-            if done_data.get("request_persisted") is False:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Agent 请求未被持久化，请重试",
-                )
-            if done_data.get("completion_status") == "interrupted":
-                raise HTTPException(
-                    status_code=503,
-                    detail="Agent 请求已保存但尚未完成，请稍后重试",
-                )
-
-            # summarize 必须在 capture 上下文仍活着时取(end 之后 contextvar 被重置)。
-            usage_summary = None
-            try:
-                usage_summary = summarize_usage_capture()
-            except Exception:  # noqa: BLE001 — 可观测性附加项,失败不影响回合
-                usage_summary = None
-            meta = build_send_meta(done_data, usage_summary)
-
-            # 转后异步: 从本回合用户消息抽生活事件时间线 (旁路, 失败不影响返回)。
-            _dispatch_life_event_extraction(
-                db,
-                current_user.id,
-                done_data.get("conversation_id"),
-                done_data.get("message_id"),
-            )
-
-            return {
-                "reply": "".join(reply_parts),
-                "conversation_id": done_data.get("conversation_id"),
-                "message_id": done_data.get("message_id"),
-                "mode": "agent",
-                "elapsed_ms": done_data.get("elapsed_ms"),
-                # 纯附加:老客户端不读 meta 不受影响。
-                "meta": meta,
-            }
-        finally:
-            try:
-                end_usage_capture(usage_capture_token)
-            except Exception:  # noqa: BLE001
-                pass
-            try:
-                clear_run_id(run_id_token)
-            except Exception:  # noqa: BLE001
-                pass
-
-    # Starter pregen serve (rank7): non-streaming twin of the /stream hook. An exact
-    # match to a still-FRESH pregen'd starter returns its stored answer instantly
-    # (fail-CLOSED on staleness → falls through to the live executor below). Text-only.
-    from app.config import settings as _pregen_settings
-
-    if (
-        getattr(_pregen_settings, "starter_pregen_enabled", False)
-        and not has_images
-        and not req.file_base64
-    ):
-        try:
-            from app.services import starter_pregen
-
-            pregen_hit = starter_pregen.try_serve(
-                db, current_user.id, req.message.strip(),
-                conversation_id=req.conversation_id, client_turn_id=req.client_turn_id,
-            )
-        except Exception as e:  # noqa: BLE001 — never break /send; fall through to live
-            logger.warning("[agent.send] pregen serve failed, fall through: %s", e)
-            pregen_hit = None
-        if pregen_hit is not None:
-            _pe, _pconv, _pmsg, _preply = pregen_hit
-            logger.info(
-                "[agent.send] pregen serve hit user=%s conv=%s msg_id=%s",
-                current_user.id, _pconv, _pmsg,
-            )
-            return {
-                "reply": _preply,
-                "conversation_id": _pconv,
-                "message_id": _pmsg,
-                "mode": "agent",
-                "elapsed_ms": 0,
-                "meta": {"pregen_served": True},
-            }
-
-    agg_task = asyncio.create_task(_aggregate())
-
-    # 快窗:绝大多数回合在这里完成,走历史非流式路径 + 原状态码语义。
-    finished, _ = await asyncio.wait({agg_task}, timeout=AGENT_SEND_KEEPALIVE_SECONDS)
-    if finished:
-        try:
-            return agg_task.result()
-        except _AgentTurnError as e:
-            raise HTTPException(status_code=500, detail=str(e)) from e
-        except HTTPException:
-            raise
-        except Exception as e:  # noqa: BLE001
-            logger.exception("[agent.send] failed: %s", e)
-            raise HTTPException(status_code=500, detail=safe_llm_error_message(str(e))) from e
-
-    started_at = time.monotonic()
-
-    async def _keepalive_body():
-        try:
-            while True:
-                if time.monotonic() - started_at > AGENT_SEND_HARD_CAP_SECONDS:
-                    logger.error(
-                        "[agent.send] turn exceeded hard cap %.0fs, cancelling",
-                        AGENT_SEND_HARD_CAP_SECONDS,
-                    )
-                    agg_task.cancel()
-                    try:
-                        await agg_task
-                    except (asyncio.CancelledError, Exception):  # noqa: BLE001 — 只等 unwind 完成
-                        pass
-                    yield json.dumps(
-                        _send_error_envelope("请求处理超时，请稍后重试"),
-                        ensure_ascii=False,
-                    )
-                    return
-                done_set, _ = await asyncio.wait(
-                    {agg_task}, timeout=AGENT_SEND_KEEPALIVE_SECONDS
-                )
-                if not done_set:
-                    yield " "  # JSON 合法前导空白 → 三层 idle 计时器全部重置
-                    continue
-                try:
-                    payload = agg_task.result()
-                except _AgentTurnError as e:
-                    payload = _send_error_envelope(str(e))
-                except HTTPException as e:
-                    payload = _send_error_envelope(str(e.detail))
-                except Exception as e:  # noqa: BLE001
-                    logger.exception("[agent.send] streaming turn failed: %s", e)
-                    payload = _send_error_envelope(safe_llm_error_message(str(e)))
-                yield json.dumps(payload, ensure_ascii=False)
-                return
-        finally:
-            if not agg_task.done():
-                # 客户端断开:与历史行为一致(整请求被杀),取消回合,
-                # 不留孤儿任务占用请求级 db session。
-                agg_task.cancel()
-                try:
-                    await agg_task
-                except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                    pass
-
-    return StreamingResponse(
-        _keepalive_body(),
-        media_type="application/json",
-        headers={
-            "Cache-Control": "no-cache",
-            # nginx 不缓冲:保活字节必须实时到达客户端才能重置其 idle 计时器
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return {
+        "reply": "".join(reply_parts),
+        "conversation_id": done_data.get("conversation_id"),
+        "message_id": done_data.get("message_id"),
+        "mode": "agent",
+        "elapsed_ms": done_data.get("elapsed_ms"),
+    }
 
 
 @router.get("/conversations", summary="统一健康助理对话列表")
 async def list_conversations(
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0, description="分页偏移(翻页用)"),
-    title_like: Optional[str] = Query(None, description="按标题模糊过滤(旧参数,仅标题)"),
-    search: Optional[str] = Query(None, description="按标题和消息内容搜索"),
+    title_like: Optional[str] = Query(None, description="按标题模糊过滤"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
     """List current user's Agent conversations (paginated).
 
     返回 {items, total, limit, offset} —— 前端历史记录用 offset 做上一页/下一页翻页。
-    `search` 同时匹配标题与消息正文;`title_like` 保留旧的仅标题过滤。
     AgentExecutor persists conversations through AgentConversationService so mobile/web
     can resume interrupted streams from the same durable message store.
     """
@@ -1211,10 +938,8 @@ async def list_conversations(
     from app.services.agent_conversation_service import AgentConversationService
 
     service = AgentConversationService(db)
-    total = service.count_conversations(current_user.id, title_like=title_like, search=search)
-    convs = service.get_conversations(
-        current_user.id, limit, title_like=title_like, offset=offset, search=search
-    )
+    total = service.count_conversations(current_user.id, title_like=title_like)
+    convs = service.get_conversations(current_user.id, limit, title_like=title_like, offset=offset)
     conv_ids = [c.id for c in convs]
     last_msgs = {}
     if conv_ids:
@@ -1405,7 +1130,6 @@ def conversation_opener(
 
 @router.get("/conversation-starters", summary="新对话页 prompts — 动态建议 chip")
 def conversation_starters(
-    request: Request,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
@@ -1465,28 +1189,6 @@ def conversation_starters(
     suggestions = _resolve_starter_suggestions(
         cards, current_user.id, background_tasks, settings
     )
-
-    # Starter answer pre-generation (rank7): off the response path, pre-warm the
-    # top-N SERVED chips' answers so a later tap serves instantly. Deduped + budget
-    # capped inside enqueue_pregen; default-off. The served suggestion TEXT (polished
-    # if polish is on) is exactly what the client will send on tap. Fail-soft.
-    if getattr(settings, "starter_pregen_enabled", False) and not cold_start:
-        try:
-            from app.services.starter_pregen_producer import enqueue_pregen
-
-            auth_header = request.headers.get("authorization", "")
-            starter_token = (
-                auth_header[7:] if auth_header.startswith("Bearer ") else None
-            )
-            enqueue_pregen(
-                background_tasks,
-                db,
-                current_user.id,
-                [s.get("text", "") for s in suggestions],
-                starter_token,
-            )
-        except Exception as e:  # noqa: BLE001 — pregen scheduling must never break starters
-            logger.warning(f"[conversation_starters] pregen enqueue bypass: {e}")
 
     payload = {
         "opener": asdict(opener) if opener else None,
@@ -1598,121 +1300,3 @@ def list_agent_tools(
         "count": len(tools),
         "model": "Hermes-3 (OpenAI-compatible)",
     }
-
-
-@router.get("/tasks", summary="统一任务账本 — 小巴的任务(五源只读聚合)")
-def agent_tasks(
-    current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db),
-):
-    """Slice 4 v1:write_intents / desktop_jobs / agenda / heartbeat / recipes
-    五源只读聚合成统一 shape ``{kind, title, status, when, source}``。
-    单源失败计入 ``failed_sources``(fail-loud,不整包 500);取消/重试留 v2。"""
-    from app.services.task_ledger_service import build_ledger
-    return build_ledger(current_user.id, db)
-
-
-# ──────────────────── 程序性记忆/配方 (Harness Slice 3) ────────────────────
-# 配方 = 确定性重放的工具序列;触发短语精确匹配;每步确认门原样生效。
-# 见 app/services/procedure_recipe_service.py 模块 docstring 的四条不变量。
-
-
-class RecipeStepPayload(BaseModel):
-    tool: str
-    args_template: dict
-
-
-class RecipeCreatePayload(BaseModel):
-    # 上限与 service 常量对齐(name 100 / phrases 5 / steps 10),错误信息一致。
-    # created_from_conversation_id 不收:手建配方无来源对话;
-    # save-from-conversation 端点会在 ownership 校验后正确回填(安全评审次要项)。
-    name: str = Field(..., max_length=100)
-    trigger_phrases: List[str] = Field(..., min_length=1, max_length=5)
-    steps: List[RecipeStepPayload] = Field(..., min_length=1, max_length=10)
-
-
-class RecipeSaveFromConversationPayload(BaseModel):
-    name: str = Field(..., max_length=100)
-    trigger_phrases: List[str] = Field(..., min_length=1, max_length=5)
-
-
-@router.post("/recipes", summary="创建程序性配方")
-def create_agent_recipe(
-    payload: RecipeCreatePayload,
-    current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db),
-):
-    from app.services import procedure_recipe_service as recipe_svc
-
-    try:
-        recipe = recipe_svc.create_recipe(
-            db,
-            current_user.id,
-            name=payload.name,
-            trigger_phrases=payload.trigger_phrases,
-            steps=[step.model_dump() for step in payload.steps],
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return recipe_svc.serialize(recipe)
-
-
-@router.get("/recipes", summary="列出我的程序性配方")
-def list_agent_recipes(
-    current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db),
-):
-    from app.services import procedure_recipe_service as recipe_svc
-
-    recipes = recipe_svc.list_recipes(db, current_user.id)
-    return {"recipes": [recipe_svc.serialize(r) for r in recipes], "count": len(recipes)}
-
-
-@router.delete("/recipes/{recipe_id}", summary="删除程序性配方")
-def delete_agent_recipe(
-    recipe_id: int,
-    current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db),
-):
-    from app.services import procedure_recipe_service as recipe_svc
-
-    if not recipe_svc.delete_recipe(db, current_user.id, recipe_id):
-        raise HTTPException(status_code=404, detail="配方不存在")
-    return {"deleted": True, "id": recipe_id}
-
-
-@router.post(
-    "/recipes/{conversation_id}/save-from-conversation",
-    summary="从对话最近一轮工具序列存配方",
-)
-def save_agent_recipe_from_conversation(
-    conversation_id: int,
-    payload: RecipeSaveFromConversationPayload,
-    current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db),
-):
-    """从该对话最近一条带 recipe_candidate 的助手消息反推工具序列存为配方。
-
-    候选步骤由 agent_executor 在「一轮完成 ≥2 个写类工具」时落到 message.meta
-    (已剥 confirmed + 日期模板化);这里**不重放对话、不经 LLM**,只是把已
-    持久化的确定性序列命名保存。归属校验 fail-closed:别人的对话 → 404。
-    """
-    from app.services import procedure_recipe_service as recipe_svc
-
-    candidate = recipe_svc.recipe_candidate_from_conversation(
-        db, current_user.id, conversation_id
-    )
-    if candidate is None:
-        raise HTTPException(status_code=404, detail="该对话没有可保存的配方候选")
-    try:
-        recipe = recipe_svc.create_recipe(
-            db,
-            current_user.id,
-            name=payload.name,
-            trigger_phrases=payload.trigger_phrases,
-            steps=candidate["steps"],
-            created_from_conversation_id=conversation_id,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return recipe_svc.serialize(recipe)

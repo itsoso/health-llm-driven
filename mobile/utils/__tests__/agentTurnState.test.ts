@@ -188,26 +188,6 @@ describe('agentTurnState', () => {
     })).toEqual(snapshot);
   });
 
-  it('ignores a late hydration snapshot after a new turn has started', () => {
-    const submitted = reduceAgentTurn(createIdleAgentTurn(), {
-      type: 'submit', turnId: 'turn-current', at: 300,
-    });
-    const staleSnapshot = {
-      version: 1 as const,
-      phase: 'interrupted' as const,
-      turnId: 'turn-stale',
-      startedAt: 100,
-      updatedAt: 200,
-      recoverable: true,
-      hadWrite: false,
-    };
-
-    expect(reduceAgentTurn(submitted, {
-      type: 'hydrate',
-      snapshot: staleSnapshot,
-    })).toEqual(submitted);
-  });
-
   it('does not let late stream events overwrite a terminal turn', () => {
     const submitted = reduceAgentTurn(createIdleAgentTurn(), {
       type: 'submit', turnId: 'turn-terminal', at: 10,

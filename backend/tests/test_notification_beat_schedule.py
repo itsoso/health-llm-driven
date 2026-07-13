@@ -13,41 +13,22 @@ def test_sleep_reminder_runs_before_default_quiet_hours():
     assert entry["schedule"] == crontab(hour=21, minute=30)
 
 
-def test_open_loop_manager_runs_after_default_quiet_hours():
-    """主动循环推送应在默认 22:00-09:00 静默结束后再扫描。"""
+def test_user_visible_morning_pushes_are_not_scheduled_before_quiet_hours_end():
+    """09:00 前是睡眠保护窗口, 面向用户的早晨推送不能由 beat 直接触发."""
     from app.celery_app import celery_app
 
-    entry = celery_app.conf.beat_schedule.get("open-loop-manager")
-    assert entry is not None
-    assert entry["task"] == "app.tasks.open_loop_manager.run_open_loop_check"
-    assert entry["schedule"] == crontab(hour=9, minute=15)
-
-
-def test_user_visible_morning_pushes_do_not_run_before_quiet_hours_end():
-    """7 点和 8 点附近不启动用户可见推送任务,避免影响睡眠。"""
-    from app.celery_app import celery_app
-
-    expected = {
-        "plan-morning-reminder": {
-            "task": "app.tasks.notifications.send_plan_morning_reminder",
-            "schedule": crontab(hour=9, minute=10),
-        },
-        "trend-morning-push": {
-            "task": "app.tasks.notifications.send_trend_morning_push",
-            "schedule": crontab(hour=9, minute=25),
-        },
-        "morning-health-summary": {
-            "task": "app.tasks.notifications.send_morning_health_summary",
-            "schedule": crontab(hour=9, minute=30),
-        },
-        "monthly-report-generate": {
-            "task": "app.tasks.monthly_report.generate_previous_month_reports",
-            "schedule": crontab(hour=9, minute=12, day_of_month=1),
-        },
+    protected_entries = {
+        "plan-morning-reminder": "app.tasks.notifications.send_plan_morning_reminder",
+        "trend-morning-push": "app.tasks.notifications.send_trend_morning_push",
+        "morning-health-summary": "app.tasks.notifications.send_morning_health_summary",
+        "daily-briefing-message": "app.tasks.notifications.generate_daily_briefing_message",
+        "open-loop-manager": "app.tasks.open_loop_manager.run_open_loop_check",
+        "monthly-report-generate": "app.tasks.monthly_report.generate_previous_month_reports",
     }
 
-    for name, expectation in expected.items():
+    for name, task in protected_entries.items():
         entry = celery_app.conf.beat_schedule.get(name)
         assert entry is not None
-        assert entry["task"] == expectation["task"]
-        assert entry["schedule"] == expectation["schedule"]
+        assert entry["task"] == task
+        schedule = entry["schedule"]
+        assert schedule.hour == {9}

@@ -10,6 +10,10 @@ const mockEmitClientEvent = jest.fn().mockResolvedValue(undefined);
 const mockDurationBucket = jest.fn().mockReturnValue('1_3s');
 const mockLoadCardActionReceipt = jest.fn().mockResolvedValue(undefined);
 const mockSaveCardActionReceipt = jest.fn().mockResolvedValue(undefined);
+const mockSaveChatImageToLibrary = jest.fn().mockResolvedValue(undefined);
+const mockShareLocalImage = jest.fn().mockResolvedValue(undefined);
+const mockCaptureRefCalls: Array<{ testID?: string; options: unknown }> = [];
+let mockCaptureRefResult = 'file:///tmp/diet-card.png';
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 jest.mock('expo-speech', () => ({ stop: jest.fn() }));
@@ -75,6 +79,16 @@ jest.mock('../cards', () => {
 });
 jest.mock('../../../utils/share', () => ({
   sharePlainText: jest.fn(),
+  shareLocalImage: (...args: any[]) => mockShareLocalImage(...args),
+}));
+jest.mock('react-native-view-shot', () => ({
+  captureRef: (target: any, options: unknown) => {
+    mockCaptureRefCalls.push({ testID: target?.props?.testID, options });
+    return Promise.resolve(mockCaptureRefResult);
+  },
+}));
+jest.mock('../../../services/chatImageSave', () => ({
+  saveChatImageToLibrary: (...args: any[]) => mockSaveChatImageToLibrary(...args),
 }));
 
 const ChatBubble = require('../ChatBubble').default;
@@ -119,6 +133,12 @@ describe('ChatBubble structured summary', () => {
     mockLoadCardActionReceipt.mockResolvedValue(undefined);
     mockSaveCardActionReceipt.mockReset();
     mockSaveCardActionReceipt.mockResolvedValue(undefined);
+    mockCaptureRefCalls.length = 0;
+    mockCaptureRefResult = 'file:///tmp/diet-card.png';
+    mockSaveChatImageToLibrary.mockReset();
+    mockSaveChatImageToLibrary.mockResolvedValue(undefined);
+    mockShareLocalImage.mockReset();
+    mockShareLocalImage.mockResolvedValue(undefined);
   });
 
   it('summarizes markdown metric tables and today advice for mobile scanning', () => {
@@ -158,7 +178,7 @@ describe('ChatBubble structured summary', () => {
     expect(queryByText(/###/)).toBeNull();
   });
 
-  it('does not render generic write actions for a normal completed reply', () => {
+  it('renders explicit WeChat and Xiaohongshu share actions for a normal completed reply', () => {
     const { queryByText, getByLabelText } = renderBubble(
       '建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。',
     );
@@ -167,7 +187,9 @@ describe('ChatBubble structured summary', () => {
     expect(queryByText('保存记忆')).toBeNull();
     expect(queryByText('生成记录')).toBeNull();
     expect(queryByText('继续追问')).toBeNull();
-    expect(getByLabelText('分享')).toBeTruthy();
+    expect(getByLabelText('发微信分享这条回复')).toBeTruthy();
+    expect(getByLabelText('发小红书分享这条回复')).toBeTruthy();
+    expect(getByLabelText('更多分享')).toBeTruthy();
     expect(getByLabelText('语音播报')).toBeTruthy();
   });
 
@@ -199,11 +221,45 @@ describe('ChatBubble structured summary', () => {
 
     const { getByLabelText } = renderBubble('今天先补水 300ml, 晚饭后散步 15 分钟。');
 
-    fireEvent.press(getByLabelText('分享'));
+    fireEvent.press(getByLabelText('发微信分享这条回复'));
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
         title: '小巴 · 建议',
+      }));
+    });
+  });
+
+  it('shares assistant replies from the Xiaohongshu action too', async () => {
+    sharePlainText.mockResolvedValueOnce(undefined);
+
+    const { getByLabelText } = renderBubble('今天午餐记录完成，晚饭少油并补 30g 蛋白。');
+
+    fireEvent.press(getByLabelText('发小红书分享这条回复'));
+
+    await waitFor(() => {
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        title: '小巴 · 建议',
+      }));
+    });
+  });
+
+  it('shares completed diet records with a polished social note', async () => {
+    sharePlainText.mockResolvedValueOnce(undefined);
+
+    const { getByLabelText } = renderBubble([
+      '✅ 已记录午餐 — 煎牛肉能量碗 + 姜黄鲜柠维C茶，770 kcal（蛋白 30g / 碳水 70g / 脂肪 17g）',
+      '晚餐建议：优先补 40g 蛋白，少油少刺激。',
+    ].join('\n'));
+
+    fireEvent.press(getByLabelText('更多分享'));
+
+    await waitFor(() => {
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('今天这餐被小巴认真记下来了'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('#饮食记录 #健康管理 #小巴'),
       }));
     });
   });
@@ -270,6 +326,182 @@ describe('ChatBubble structured summary', () => {
       flex: 1,
       minWidth: 0,
       maxWidth: '100%',
+    });
+  });
+
+  it('shares a card-only diet draft as a polished meal note', async () => {
+    sharePlainText.mockResolvedValueOnce(undefined);
+    renderCard.mockReturnValueOnce(__mockCard);
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-card-diet-share',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'diet_draft',
+      writeReceipts: [verifiedReceipt('diet_record', '770')],
+      cardData: {
+        meal_type: 'lunch',
+        food_items: '煎牛肉能量碗 + 姜黄鲜柠维C茶',
+        calories: 770,
+        protein: 30,
+        carbs: 70,
+        fat: 17,
+        suggestions: ['晚餐优先补 40g 蛋白'],
+      },
+    };
+
+    const { getByLabelText, getByTestId, getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(getByTestId('assistant-card-capture-frame')).toBeTruthy();
+    expect(getByTestId('assistant-card-share-actions')).toHaveStyle({
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+    });
+    expect(getByText('发微信')).toBeTruthy();
+    expect(getByText('发小红书')).toBeTruthy();
+    expect(getByText('更多')).toBeTruthy();
+    expect(getByText('保存截图')).toBeTruthy();
+    expect(getByText('截图可直接发微信 / 小红书')).toBeTruthy();
+    fireEvent.press(getByLabelText('保存餐食截图'));
+
+    await waitFor(() => {
+      expect(mockCaptureRefCalls).toHaveLength(1);
+      expect(mockSaveChatImageToLibrary).toHaveBeenCalledWith({ uri: 'file:///tmp/diet-card.png' });
+      expect(mockToastShow).toHaveBeenCalledWith('已保存到照片', 'success');
+    });
+    expect(mockCaptureRefCalls[0]).toEqual({
+      testID: 'assistant-card-capture-frame',
+      options: {
+        format: 'png',
+        quality: 1,
+        result: 'tmpfile',
+      },
+    });
+
+    fireEvent.press(getByLabelText('发微信分享餐食图片'));
+    await waitFor(() => {
+      expect(mockCaptureRefCalls).toHaveLength(2);
+      expect(mockShareLocalImage).toHaveBeenCalledWith('file:///tmp/diet-card.png');
+    });
+
+    fireEvent.press(getByLabelText('发小红书分享餐食图片'));
+    await waitFor(() => {
+      expect(mockCaptureRefCalls).toHaveLength(3);
+      expect(mockShareLocalImage).toHaveBeenCalledTimes(2);
+    });
+
+    fireEvent.press(getByLabelText('分享餐食记录正文'));
+
+    await waitFor(() => {
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        title: '小巴 · 饮食记录',
+        message: expect.stringContaining('今天这餐被小巴认真记下来了'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('今日饮食打卡'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('今日策略'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('#小红书饮食日记 #朋友圈打卡 #小巴'),
+      }));
+    });
+  });
+
+  it('does not share an unconfirmed diet draft as a completed meal record', () => {
+    renderCard.mockReturnValueOnce(__mockCard);
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-card-diet-draft-unconfirmed',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'diet_draft',
+      cardData: {
+        meal_type: 'lunch',
+        food_items: '待确认午餐',
+        calories: 650,
+      },
+      cardActions: [{
+        id: 'confirm-diet-draft',
+        label: '确认记录',
+        action: 'diet_record.create',
+        endpoint: '/diet/records',
+        requires_manual_confirm: true,
+        payload: { record: { meal_type: 'lunch', food_items: '待确认午餐' } },
+      }],
+    };
+
+    const { queryByLabelText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(queryByLabelText('分享餐食记录正文')).toBeNull();
+  });
+
+  it('shares a card-only diet quality result with progress and next action', async () => {
+    sharePlainText.mockResolvedValueOnce(undefined);
+    renderCard.mockReturnValueOnce(__mockCard);
+    const qc = new QueryClient();
+    const message: UIMessage = {
+      id: 'assistant-card-diet-quality-share',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      cardType: 'record_quality',
+      cardData: {
+        domain: 'diet',
+        title: '午餐已记录',
+        summary: '770 kcal · 蛋白 30g · 碳水 70g',
+        progress: {
+          calories_total: 1040,
+          meals_count: 2,
+          protein_total_g: 37,
+          protein_target_g: 112,
+          remaining_protein_g: 75,
+        },
+        next_action: '晚餐优先 40g 蛋白，少油少刺激。',
+      },
+    };
+
+    const { getByLabelText, getByText } = render(
+      <QueryClientProvider client={qc}>
+        <ChatBubble item={message} />
+      </QueryClientProvider>,
+    );
+
+    expect(getByText('更多')).toBeTruthy();
+    expect(getByText('截图可直接发微信 / 小红书')).toBeTruthy();
+    fireEvent.press(getByLabelText('分享餐食记录正文'));
+
+    await waitFor(() => {
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        title: '小巴 · 饮食记录',
+        message: expect.stringContaining('今日摄入 1040 kcal'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('蛋白进度 37/112g'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('下一步：晚餐优先 40g 蛋白，少油少刺激。'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('今日饮食打卡'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('今日策略'),
+      }));
+      expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining('#小红书饮食日记 #朋友圈打卡 #小巴'),
+      }));
     });
   });
 
@@ -460,7 +692,7 @@ describe('ChatBubble structured summary', () => {
     );
 
     expect(getByTestId('write-receipt')).toBeTruthy();
-    expect(getByText('已写入 · 饮食记录 #701')).toBeTruthy();
+    expect(getByText('已保存到今日饮食 · 记录 #701')).toBeTruthy();
   });
 
   it('blocks two same-frame presses before React state has time to update', async () => {
@@ -594,18 +826,7 @@ describe('ChatBubble structured summary', () => {
   });
 
   it('shows diet-specific success feedback after confirming a diet card', async () => {
-    const onCardActionCompleted = jest.fn();
-    dispatchChatCardAction.mockResolvedValueOnce({
-      status: 'completed',
-      receipt: verifiedReceipt('diet_record', '91'),
-      record: {
-        id: 91,
-        record_date: '2026-07-09',
-        food_items: '鸡胸肉 200g',
-        meal_type: 'lunch',
-        calories: 280,
-      },
-    });
+    dispatchChatCardAction.mockResolvedValueOnce({ status: 'completed', receipt: verifiedReceipt() });
     renderCard.mockImplementationOnce((descriptor: any, options: any) => {
       const { Pressable, Text } = require('react-native');
       return (
@@ -633,7 +854,7 @@ describe('ChatBubble structured summary', () => {
 
     const { getByText } = render(
       <QueryClientProvider client={qc}>
-        <ChatBubble item={message} onCardActionCompleted={onCardActionCompleted} />
+        <ChatBubble item={message} />
       </QueryClientProvider>,
     );
 
@@ -642,19 +863,6 @@ describe('ChatBubble structured summary', () => {
     await waitFor(() => {
       expect(mockToastShow).toHaveBeenCalledWith('已记录饮食', 'success');
     });
-    expect(onCardActionCompleted).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: expect.objectContaining({ action: 'diet_record.create' }),
-        descriptor: expect.objectContaining({ type: 'diet_draft' }),
-        result: expect.objectContaining({
-          record: expect.objectContaining({
-            id: 91,
-            meal_type: 'lunch',
-            food_items: '鸡胸肉 200g',
-          }),
-        }),
-      }),
-    );
   });
 
   it('shows nutrition estimation feedback after confirming an incomplete diet card', async () => {

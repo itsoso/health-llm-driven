@@ -4,23 +4,12 @@ export function assertDietFoodItemsAllowed(foodItems: string): void {
   if (looksLikeDietManagementIntent(foodItems)) {
     throw new Error('invalid_diet_food_items_management');
   }
-  if (looksLikeDietUiText(foodItems)) {
-    throw new Error('invalid_diet_food_items_ui_text');
-  }
   if (looksLikeNonDietIntake(foodItems)) {
     throw new Error('invalid_diet_food_items_non_diet');
   }
   if (looksLikeHealthMetricIntent(foodItems)) {
     throw new Error('invalid_diet_food_items_health_metric');
   }
-}
-
-export function looksLikeDietUiText(value: string): boolean {
-  const normalized = value.replace(/\s+/g, '');
-  return (
-    /^(?:和)?(?:早餐|午餐|晚餐|加餐)?食品营养卡$/.test(normalized)
-    || /^(?:保存并确认|确认记录|完成修正|保存|确认)$/.test(normalized)
-  );
 }
 
 export function looksLikeDietManagementIntent(value: string): boolean {

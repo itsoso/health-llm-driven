@@ -51,33 +51,6 @@ describe('EmptyStateHome', () => {
     expect(onOpenMemory).toHaveBeenCalled();
   });
 
-  it('renders a compact today cockpit from the current timeline focus', () => {
-    const onOpenToday = jest.fn();
-    const { getByText, getByLabelText } = render(
-      <EmptyStateHome
-        memoryOpener={[]}
-        opener={null}
-        onOpenMemory={jest.fn()}
-        onOpenerQuickReply={jest.fn()}
-        todayFocus={{
-          title: '晚餐后步行 12 分钟',
-          subtitle: '餐后血糖风险窗口',
-          urgencyLabel: '2 件待确认',
-        }}
-        onOpenToday={onOpenToday}
-      />,
-    );
-
-    expect(getByText('今日操作台')).toBeTruthy();
-    expect(getByText('现在该做')).toBeTruthy();
-    expect(getByText('晚餐后步行 12 分钟')).toBeTruthy();
-    expect(getByText('餐后血糖风险窗口')).toBeTruthy();
-    expect(getByText('2 件待确认')).toBeTruthy();
-
-    fireEvent.press(getByLabelText('打开今日操作台'));
-    expect(onOpenToday).toHaveBeenCalled();
-  });
-
   it('renders 小巴 as a branded assistant avatar in the opening bubble', () => {
     const opener = {
       text: '今天就是「提前晚餐」的检验日，做到了吗？',

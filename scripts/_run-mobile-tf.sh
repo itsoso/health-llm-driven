@@ -10,9 +10,8 @@
 #   device";cocoapods 也在 ruby 4.0.3 下 Unicode 崩。本地原生 xcodebuild archive
 #   能编译,但 app-store 的 export 又撞 App-Manager API key 的 cloud-signing 权限。
 #   ⇒ 这台机器上真正端到端跑通(build 110/111 进 TestFlight)的就是远端 EAS。
-#   远端 EAS 在它服务器上用对的工具链构建+签名(含 watch),--auto-submit 自动提交。
-#   不在 eas.json 里绑定内部测试组:2026-07-08 实测 Apple/fastlane 会在上传成功后拒绝
-#   "Cannot add internal group to a build",导致 EAS submission 假失败。
+#   远端 EAS 在它服务器上用对的工具链构建+签名(含 watch),--auto-submit 自动提交,
+#   并自动分发进已配好的内部测试组「内部测试」(panbaokun@gmail.com 是测试员)。
 #
 # 用法:
 #   ./scripts/_run-mobile-tf.sh                # 远端 production 构建 + 自动提交 TestFlight(默认,最稳)
@@ -45,8 +44,8 @@ case "${MODE}" in
       echo "⚠️  工作树非干净:远端 EAS 用 git 已提交状态(committed HEAD)构建,未提交改动不会进包。"
       echo "    当前 HEAD = $(git -C "${ROOT}" rev-parse --short HEAD)"
     fi
-    echo "→ 远端 EAS production 构建 + 自动提交(含 watch;不自动绑定内部测试组)…"
-    npx eas-cli build --platform ios --profile production --non-interactive --auto-submit 2>&1 | tee "${LOG}"
+    echo "→ 远端 EAS production 构建 + 自动提交(含 watch,自动分发进内部测试组)…"
+    npx eas-cli build --platform ios --profile production --non-interactive --auto-submit-with-profile production-no-groups 2>&1 | tee "${LOG}"
     echo
     echo "✓ 完成。构建/提交详情见上方 expo.dev 链接;Apple 处理 ~5-10 分钟后 TestFlight 可装。"
     ;;

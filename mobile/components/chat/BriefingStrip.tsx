@@ -45,7 +45,7 @@ export default function BriefingStrip({
   return (
     <TouchableOpacity
       style={[styles.briefingStrip, expanded && styles.briefingStripExpanded]}
-      onPress={onPress ?? (() => router.navigate('/today-sheet'))}
+      onPress={onPress ?? (() => router.navigate('/today-sheet' as any))}
       activeOpacity={0.75}
       accessibilityRole="button"
       accessibilityState={{ expanded }}

@@ -479,11 +479,16 @@ async def get_uploaded_file(
                 f"/api/v1/upload/files/{normalized_category}/{safe_filename}"
             )
             if normalized_category == "diet":
-                # Legacy diet paths do not carry an owner id. A DietRecord row
-                # alone is not an ownership proof because image_url was
-                # historically client writable. Record responses issue a
-                # short-lived capability URL for legitimate legacy images.
-                owner_authenticated = False
+                from app.models.daily_health import DietRecord as DietRecordModel
+
+                owner_authenticated = (
+                    db.query(DietRecordModel.id)
+                    .filter(
+                        DietRecordModel.user_id == current_user.id,
+                        DietRecordModel.image_url == relative_url,
+                    )
+                    .first()
+                ) is not None
             elif normalized_category == "medical":
                 owner_authenticated = _legacy_medical_file_belongs_to_user(
                     db,

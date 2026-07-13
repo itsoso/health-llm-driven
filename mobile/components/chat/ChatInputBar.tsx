@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
+import { router } from 'expo-router';
 import ReAnimated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
 import { useMediaPicker, type PendingImage } from '../../hooks/useMediaPicker';
 import { useVoiceRecording } from '../../hooks/useVoiceRecording';
@@ -43,9 +44,6 @@ import {
 const CANCEL_THRESHOLD = 80;
 const VOICE_SLIDE_THRESHOLD = 88;
 const COMPOSER_HIT_SLOP = { top: 6, right: 6, bottom: 6, left: 6 };
-const RECORDING_OVERLAY_TOP_INSET = 64;
-// 2026-07-07 founder「这个按钮不协调」:深色 #1F1F1F 输入栏贴在暖奶油页上割裂,
-// 且微信真实输入栏本就是浅灰(不是深色)。收回 revaTheme 暖白语言,与页面同调。
 const COMPOSER_BAR_BG = C.paper;
 const COMPOSER_INPUT_BG = C.surface;
 const COMPOSER_INPUT_BG_PRESSED = C.surface2;
@@ -56,17 +54,42 @@ const COMPOSER_ICON = C.ink2;
 const COMPOSER_ICON_MUTED = C.ink3;
 const VOICE_WAVE_BARS = Array.from({ length: 28 }, (_, i) => i);
 
+type ChatAgentMode = 'daily' | 'deep' | 'vision';
+
 export interface ChatInputSendOptions {
   extraContext?: string;
   channel?: 'typed' | 'voice' | 'siri';
 }
 
-// 2026-07-05 founder: 删掉「日常/深思/识图」三模式段。日常=无操作(默认);
-// 深思/识图的 instruction 之前经 extra_context 落到后端「入口上下文(用户正在
-// 看的具体方案)」注入点(那是给 SNP/饮食 deeplink「详细聊」用的),被错误框成
-// 「别重新生成方案」——与深思本意相反, 效果garbled;识图更是冗余(带图自动走
-// 视觉路径)。深浅由 agent 从问题判断, 不靠藏在附件菜单里的隐藏开关。
-const COMPOSER_PLACEHOLDER = '问小巴';
+const AGENT_MODES: {
+  id: ChatAgentMode;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}[] = [
+  { id: 'daily', label: '日常', icon: 'flash-outline' },
+  { id: 'deep', label: '深思', icon: 'diamond-outline' },
+  { id: 'vision', label: '识图', icon: 'image-outline' },
+];
+
+const MODE_PLACEHOLDER: Record<ChatAgentMode, string> = {
+  daily: '问小巴，或按住说话',
+  deep: '让小巴深思一个计划',
+  vision: '拍照/报告后问小巴',
+};
+
+function buildAgentModeOptions(mode: ChatAgentMode): ChatInputSendOptions | undefined {
+  if (mode === 'daily') return undefined;
+  const instruction = mode === 'deep'
+    ? '先梳理目标、约束和健康风险边界，再给出可执行计划、验证信号和下一步确认动作。'
+    : '优先理解图片、报告或饮食运动线索，输出可确认的记录、复核卡片或下一步补充信息。';
+  return {
+    extraContext: JSON.stringify({
+      source: 'mobile_chat_composer',
+      mode,
+      instruction,
+    }),
+  };
+}
 
 function PulsingRing() {
   const scale = useSharedValue(1);
@@ -78,23 +101,6 @@ function PulsingRing() {
     opacity: 2 - scale.value,
   }));
   return <ReAnimated.View style={[styles.pulsingRing, animStyle]} />;
-}
-
-function WeChatKeyboardIcon() {
-  return (
-    <View testID="wechat-keyboard-icon" style={styles.wechatKeyboardIcon}>
-      <View testID="wechat-keyboard-icon-frame" style={styles.wechatKeyboardIconFrame}>
-        <View style={styles.wechatKeyboardGrid}>
-          {Array.from({ length: 9 }, (_, index) => (
-            <View key={index} style={styles.wechatKeyboardKey} />
-          ))}
-        </View>
-        <View style={styles.wechatKeyboardBottomRow}>
-          <View style={styles.wechatKeyboardSpaceKey} />
-        </View>
-      </View>
-    </View>
-  );
 }
 
 interface Props {
@@ -111,7 +117,7 @@ interface Props {
   /** Reserved for callers that keep composer API aligned with chat-level voice entry. */
   conversationId?: number;
   onMedicalExamImportResult?: (result: ChatMedicalExamImportSkillResult) => void;
-  /** 变化(>0)即请求聚焦输入框;默认打开页面不会自动递增。 */
+  /** 变化(>0)即请求聚焦输入框 — GPT/Gemini 式默认唤起键盘;空对话进入时由 chat.tsx 递增。 */
   autoFocusToken?: number;
 }
 
@@ -120,6 +126,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const [showMenu, setShowMenu] = useState(false);
   const [showMedicalImportMenu, setShowMedicalImportMenu] = useState(false);
   const [medicalImportBusy, setMedicalImportBusy] = useState(false);
+  const [agentMode, setAgentMode] = useState<ChatAgentMode>('daily');
   const [cancelHint, setCancelHint] = useState(false);
   const [composer, dispatchComposer] = React.useReducer(
     reduceComposerState,
@@ -132,17 +139,15 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     pendingImages,
     setPendingImages,
     removeImage,
+    clearImages,
     releaseImagesAfterSend,
     pickImage,
-    takePhoto,
   } = useMediaPicker();
   const textInputRef = useRef<TextInput>(null);
   const lastKeyboardSubmitAtRef = useRef(0);
   const holdStartXRef = useRef(0);
   const voiceGestureActiveRef = useRef(false);
   const voiceCommitModeRef = useRef<'send' | 'text'>('send');
-  const voiceDraftBaseRef = useRef('');
-  const voiceDraftPreviewRef = useRef('');
   const realtimeBaseInputRef = useRef('');
   const inputChannelRef = useRef<'typed' | 'voice'>('typed');
   const composerRef = useRef(composer);
@@ -206,14 +211,12 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     };
   }, [draftHydrated, input, pendingImages]);
 
-  // 明确用户动作触发的聚焦:默认进入页面不拉键盘,避免首屏被键盘占掉。
-  // 延迟等 tab 过渡完成;流式时不抢焦点。
+  // GPT/Gemini 式默认唤起键盘: chat.tsx 在「空对话获得焦点」时递增 token。
+  // (2026-07-04 founder 拍板反转旧「不 auto-focus」设计 — 仅限空对话, 回到有
+  //  历史的对话不弹, 不打断阅读。)延迟等 tab 过渡完成; 流式/语音时不抢焦点。
   React.useEffect(() => {
     if (!autoFocusToken) return;
     if (isStreaming) return;
-    if (composerRef.current.mode === 'hold') {
-      dispatchComposer({ type: 'toggle_mode' });
-    }
     const t = setTimeout(() => {
       textInputRef.current?.focus();
     }, 380);
@@ -239,8 +242,10 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
       const sendImages = pendingImages.length > 0
         ? await hydrateDraftImagesForSend(pendingImages)
         : pendingImages;
+      const modeOptions = buildAgentModeOptions(agentMode);
       const effectiveChannel = sendOptions?.channel ?? inputChannelRef.current;
       const outboundOptions: ChatInputSendOptions = {
+        ...(modeOptions || {}),
         ...(sendOptions || {}),
         ...(effectiveChannel !== 'typed' ? { channel: effectiveChannel } : {}),
       };
@@ -282,7 +287,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     } catch (e) {
       if (__DEV__) console.warn('[ChatInputBar] sent draft cleanup failed:', e);
     }
-  }, [input, pendingImages, onSend, releaseImagesAfterSend]);
+  }, [agentMode, input, pendingImages, onSend, releaseImagesAfterSend]);
 
   const handleRealtimeTranscript = useCallback((text: string) => {
     const clean = text.trim();
@@ -329,7 +334,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     }
   }, [input, isStreaming, realtimeDictation]);
 
-  const handleSubmitComposer = useCallback(() => {
+  const handleKeyboardSubmit = useCallback(() => {
     if (!canSend) return;
     const now = Date.now();
     if (now - lastKeyboardSubmitAtRef.current < 250) return;
@@ -340,9 +345,9 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const handleTextInputKeyPress = useCallback((event: any) => {
     const key = event?.nativeEvent?.key;
     if (key === 'Enter' || key === 'Return' || key === '\n') {
-      handleSubmitComposer();
+      handleKeyboardSubmit();
     }
-  }, [handleSubmitComposer]);
+  }, [handleKeyboardSubmit]);
 
   const realtimeActive = composer.phase === 'live_dictating' || realtimeDictation.isDictating;
   const realtimeDictationDisabled = shouldShowDisabledMic(composer);
@@ -360,40 +365,21 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const isVoiceMode = composer.mode === 'hold';
   const voiceGesture = composer.gesture;
   const voiceModeToggleLabel = isVoiceMode ? '切换到键盘输入' : '切换到语音输入';
-  const shouldHideInlineMicAfterSend = justSent && !input.trim() && pendingImages.length === 0;
 
   const voice = useVoiceRecording({
     onTranscript: (text) => {
       const clean = text.trim();
       if (!clean) return;
       if (voiceCommitModeRef.current === 'send') {
-        voiceDraftPreviewRef.current = '';
         void handleSend(clean, { channel: 'voice' });
         return;
       }
       dispatchComposer({ type: 'hold_transcribed' });
       inputChannelRef.current = 'voice';
-      const hadDraftPreview = Boolean(voiceDraftPreviewRef.current);
-      const draftBase = voiceDraftBaseRef.current.trim();
-      setInput(prev => {
-        if (hadDraftPreview) {
-          return draftBase ? `${draftBase} ${clean}` : clean;
-        }
-        return prev ? `${prev.trim()} ${clean}` : clean;
-      });
-      voiceDraftPreviewRef.current = '';
+      setInput(prev => prev ? `${prev.trim()} ${clean}` : clean);
       setTimeout(() => textInputRef.current?.focus(), 30);
     },
   });
-
-  React.useEffect(() => {
-    if (voiceGesture !== 'text' || !voice.isRecording) return;
-    const clean = voice.partialText.trim();
-    if (!clean || clean === voiceDraftPreviewRef.current) return;
-    const base = voiceDraftBaseRef.current.trim();
-    voiceDraftPreviewRef.current = clean;
-    setInput(base ? `${base} ${clean}` : clean);
-  }, [voice.partialText, voice.isRecording, voiceGesture]);
 
   cancelVoiceRef.current = voice.cancelRecording;
   voiceNativeActiveRef.current = voice.isRecording || voice.isTranscribing;
@@ -408,8 +394,6 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     cancelledRef.current = false;
     voiceGestureActiveRef.current = true;
     voiceCommitModeRef.current = 'send';
-    voiceDraftBaseRef.current = input.trim();
-    voiceDraftPreviewRef.current = '';
     holdStartXRef.current = pageX;
     startYRef.current = pageY;
     dispatchComposer({ type: 'hold_start' });
@@ -423,7 +407,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
       return;
     }
     dispatchComposer({ type: 'hold_ready' });
-  }, [input, isStreaming, voice]);
+  }, [isStreaming, voice]);
 
   const handleHoldMove = useCallback((pageX: number, pageY: number) => {
     if (!voiceGestureActiveRef.current || cancelledRef.current) return;
@@ -432,7 +416,6 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     if (dy > CANCEL_THRESHOLD || dx < -VOICE_SLIDE_THRESHOLD) {
       cancelledRef.current = true;
       voiceGestureActiveRef.current = false;
-      voiceDraftPreviewRef.current = '';
       dispatchComposer({ type: 'hold_move', gesture: 'cancel' });
       setCancelHint(false);
       void Promise.resolve(voice.cancelRecording())
@@ -443,7 +426,6 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
       setCancelHint(false);
     } else {
       voiceCommitModeRef.current = 'send';
-      voiceDraftPreviewRef.current = '';
       dispatchComposer({ type: 'hold_move', gesture: 'send' });
       setCancelHint(dy > 30);
     }
@@ -533,9 +515,6 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   }, []);
 
   const focusTextInput = useCallback(() => {
-    if (composerRef.current.mode === 'hold') {
-      dispatchComposer({ type: 'toggle_mode' });
-    }
     textInputRef.current?.focus();
   }, []);
 
@@ -545,7 +524,11 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   }, []);
 
   const handlePickImage = useCallback(async () => { setShowMenu(false); await pickImage(); }, [pickImage]);
-  const handleTakePhoto = useCallback(async () => { setShowMenu(false); await takePhoto(); }, [takePhoto]);
+  const handleCaptureMealPhoto = useCallback(() => {
+    setShowMenu(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/diet?capture=photo&return_to=chat' as any);
+  }, []);
   const handlePickFile = useCallback(async () => {
     setShowMenu(false);
     try {
@@ -672,32 +655,20 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
 
       {/* 录音中全屏蒙层 */}
       {holdRecordingActive && (
-        <View testID="wechat-recording-overlay" style={styles.recordingOverlay}>
+        <View style={styles.recordingOverlay}>
           <View style={styles.wechatVoiceBubble}>
-            {voice.partialText.trim() ? (
-              <View
-                style={styles.wechatVoiceTextPreview}
-                accessible
-                accessibilityLabel="实时语音转文字预览"
-              >
-                <Text style={styles.wechatVoiceTextPreviewText} numberOfLines={2}>
-                  {voice.partialText.trim()}
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.wechatWaveRow}>
-                {VOICE_WAVE_BARS.map((bar) => (
-                  <View
-                    key={bar}
-                    style={[
-                      styles.wechatWaveBar,
-                      { height: 8 + ((bar * 7) % 18) },
-                      bar > 18 && styles.wechatWaveBarLoud,
-                    ]}
-                  />
-                ))}
-              </View>
-            )}
+            <View style={styles.wechatWaveRow}>
+              {VOICE_WAVE_BARS.map((bar) => (
+                <View
+                  key={bar}
+                  style={[
+                    styles.wechatWaveBar,
+                    { height: 8 + ((bar * 7) % 18) },
+                    bar > 18 && styles.wechatWaveBarLoud,
+                  ]}
+                />
+              ))}
+            </View>
             <View style={styles.wechatBubbleTail} />
           </View>
           <Text style={styles.recordingDuration}>
@@ -752,32 +723,29 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
             accessibilityLabel={voiceModeToggleLabel}
             accessibilityHint={isVoiceMode ? '切换回键盘文字输入' : '切换到按住说话'}
           >
-            {isVoiceMode ? (
-              <WeChatKeyboardIcon />
-            ) : (
-              <Ionicons name="volume-medium-outline" size={25} color={COMPOSER_ICON} />
-            )}
+            <Ionicons name={isVoiceMode ? 'keypad-outline' : 'volume-medium-outline'} size={25} color={COMPOSER_ICON} />
           </Pressable>
 
           {isVoiceMode ? (
-            <Pressable
-              testID="wechat-hold-to-talk-surface"
-              onPressIn={(event) => handleHoldStartEvent(event)}
-              onMoveShouldSetResponder={() => true}
-              onResponderMove={handleHoldMoveEvent}
-              onTouchMove={handleHoldMoveEvent}
-              onPressOut={handleHoldEnd}
-              onTouchCancel={handleHoldTerminate}
-              style={({ pressed }) => [
-                styles.holdToTalkSurface,
-                (pressed || voiceGesture != null) && styles.holdToTalkSurfaceActive,
+            <View
+              testID="wechat-hold-to-talk"
+              style={[
+                styles.inputWrap,
+                styles.holdToTalk,
+                voiceGesture != null && styles.holdToTalkActive,
               ]}
+              onStartShouldSetResponder={() => !isStreaming}
+              onMoveShouldSetResponder={() => true}
+              onResponderGrant={handleHoldStartEvent}
+              onResponderMove={handleHoldMoveEvent}
+              onResponderRelease={handleHoldEnd}
+              onResponderTerminate={handleHoldTerminate}
               accessibilityRole="button"
               accessibilityLabel="按住说话"
               accessibilityHint="按住开始语音输入，左滑取消，右滑转文字"
             >
               <Text style={styles.holdToTalkText}>按住 说话</Text>
-            </Pressable>
+            </View>
           ) : (
             <Pressable
               testID="wechat-composer-input"
@@ -794,12 +762,12 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
               <TextInput
                 ref={textInputRef}
                 style={[styles.textInput, { pointerEvents: 'auto' }]}
-                placeholder={COMPOSER_PLACEHOLDER}
+                placeholder={MODE_PLACEHOLDER[agentMode]}
                 placeholderTextColor={C.ink3}
                 value={input}
                 onChangeText={handleInputChange}
                 onKeyPress={handleTextInputKeyPress}
-                onSubmitEditing={handleSubmitComposer}
+                onSubmitEditing={handleKeyboardSubmit}
                 returnKeyType="send"
                 submitBehavior="submit"
                 selectionColor={C.greenBright}
@@ -807,48 +775,35 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
                 maxLength={2000}
                 accessibilityLabel="消息输入框"
               />
-              {!shouldHideInlineMicAfterSend && realtimeActive && (
-                <View style={styles.dictationStatusPill}>
-                  <Text
-                    style={styles.dictationStatusText}
-                    numberOfLines={1}
-                    accessibilityLabel="正在听写"
-                  >
-                    正在听写
-                  </Text>
-                </View>
-              )}
-              {!shouldHideInlineMicAfterSend && (
-                <TouchableOpacity
-                  onPress={handleRealtimeMicPress}
-                  style={[
-                    styles.inlineMicBtn,
-                    realtimeActive && styles.inlineMicBtnActive,
-                    realtimeDictationDisabled && !realtimeActive && styles.inlineMicBtnDisabled,
-                  ]}
-                  hitSlop={COMPOSER_HIT_SLOP}
-                  activeOpacity={0.72}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: realtimeActive }}
-                  accessibilityLabel={realtimeMicLabel}
-                  accessibilityHint={realtimeMicHint}
-                >
-                  {realtimeActive && <PulsingRing />}
-                  <Ionicons
-                    name={realtimeMicIcon}
-                    size={21}
-                    color={realtimeActive ? '#FFFFFF' : realtimeDictationDisabled ? COMPOSER_ICON_MUTED : COMPOSER_ICON}
-                  />
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity
+                onPress={handleRealtimeMicPress}
+                style={[
+                  styles.inlineMicBtn,
+                  realtimeActive && styles.inlineMicBtnActive,
+                  realtimeDictationDisabled && !realtimeActive && styles.inlineMicBtnDisabled,
+                ]}
+                hitSlop={COMPOSER_HIT_SLOP}
+                activeOpacity={0.72}
+                accessibilityRole="button"
+                accessibilityState={{ selected: realtimeActive }}
+                accessibilityLabel={realtimeMicLabel}
+                accessibilityHint={realtimeMicHint}
+              >
+                {realtimeActive && <PulsingRing />}
+                <Ionicons
+                  name={realtimeMicIcon}
+                  size={21}
+                  color={realtimeActive ? '#FFFFFF' : realtimeDictationDisabled ? COMPOSER_ICON_MUTED : COMPOSER_ICON}
+                />
+              </TouchableOpacity>
             </Pressable>
           )}
 
-          {!isVoiceMode && canSend ? (
-            <TouchableOpacity onPress={handleSubmitComposer} style={styles.sendBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="发送消息">
+          {canSend ? (
+            <TouchableOpacity onPress={() => handleSend()} style={styles.sendBtn} hitSlop={COMPOSER_HIT_SLOP} accessibilityLabel="发送消息">
               <Ionicons name="arrow-up" size={20} color="#fff" />
             </TouchableOpacity>
-          ) : !isVoiceMode && justSent ? (
+          ) : justSent ? (
             <View style={[styles.sendBtn, { opacity: 0.4 }]}>
               <Ionicons name="checkmark" size={20} color="#fff" />
             </View>
@@ -870,7 +825,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
           >
             <View testID="attachment-menu-handle" style={styles.menuHandle} />
             <View testID="attachment-action-grid" style={styles.attachmentGrid}>
-              <AttachmentGridItem icon="camera-outline" label="拍照" desc="食物/数据" onPress={handleTakePhoto} />
+              <AttachmentGridItem icon="camera-outline" label="拍照记餐" desc="确认后写入" onPress={handleCaptureMealPhoto} />
               <AttachmentGridItem icon="image-outline" label="相册" desc="最多9张" onPress={handlePickImage} />
               <AttachmentGridItem icon="document-outline" label="文件" desc="文档/报告" onPress={handlePickFile} />
               <AttachmentGridItem
@@ -882,6 +837,23 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
                   setShowMedicalImportMenu(true);
                 }}
               />
+            </View>
+            <Text style={styles.menuSectionTitle}>模式</Text>
+            <View testID="agent-mode-segmented-row" style={styles.modeSegmentedRow}>
+              {AGENT_MODES.map(mode => (
+                <ModeSegmentItem
+                  key={mode.id}
+                  icon={mode.icon}
+                  label={mode.label}
+                  accessibilityLabel={`${mode.label}模式`}
+                  selected={agentMode === mode.id}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setAgentMode(mode.id);
+                    setShowMenu(false);
+                  }}
+                />
+              ))}
             </View>
           </Pressable>
         </Pressable>
@@ -906,6 +878,34 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
         </Pressable>
       </Modal>
     </>
+  );
+}
+
+function ModeSegmentItem({
+  icon,
+  label,
+  accessibilityLabel,
+  selected,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  accessibilityLabel: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.modeMenuItem, selected && styles.modeMenuItemActive]}
+      onPress={onPress}
+      activeOpacity={0.68}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      accessibilityLabel={accessibilityLabel}
+    >
+      <Ionicons name={icon} size={15} color={selected ? C.green500 : C.ink2} />
+      <Text style={[styles.modeMenuLabel, selected && styles.modeMenuLabelActive]}>{label}</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -965,7 +965,7 @@ const styles = StyleSheet.create({
   },
   voiceModeBtn: {
     width: 42, height: 42, borderRadius: 21,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
+    borderWidth: 2, borderColor: C.lineStrong,
     backgroundColor: COMPOSER_BUTTON_BG,
     alignItems: 'center', justifyContent: 'center',
   },
@@ -973,59 +973,16 @@ const styles = StyleSheet.create({
     borderColor: C.green500,
     backgroundColor: COMPOSER_BUTTON_BG_ACTIVE,
   },
-  wechatKeyboardIcon: {
-    width: 22,
-    height: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  wechatKeyboardIconFrame: {
-    width: 19,
-    height: 15,
-    borderWidth: 1.8,
-    borderColor: COMPOSER_ICON,
-    borderRadius: 2.5,
-    paddingHorizontal: 2,
-    paddingTop: 2,
-    paddingBottom: 1.5,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  wechatKeyboardGrid: {
-    width: 13,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: 1.5,
-  },
-  wechatKeyboardKey: {
-    width: 2.6,
-    height: 2.6,
-    borderRadius: 0.5,
-    backgroundColor: COMPOSER_ICON,
-  },
-  wechatKeyboardBottomRow: {
-    width: 13,
-    alignItems: 'center',
-  },
-  wechatKeyboardSpaceKey: {
-    width: 8,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: COMPOSER_ICON,
-  },
   plusBtn: {
     width: 42, height: 42, borderRadius: 21,
-    backgroundColor: COMPOSER_BUTTON_BG,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.lineStrong,
+    backgroundColor: COMPOSER_BUTTON_BG, borderWidth: 2, borderColor: C.lineStrong,
     alignItems: 'center', justifyContent: 'center',
   },
   inputWrap: {
     minHeight: 48,
     flex: 1, flexDirection: 'row', alignItems: 'center',
     backgroundColor: COMPOSER_INPUT_BG, borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: C.line,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: C.lineStrong,
     paddingLeft: 16, paddingRight: 5, paddingVertical: 4,
   },
   inputWrapPressed: {
@@ -1034,57 +991,28 @@ const styles = StyleSheet.create({
   },
   inputWrapDictating: {
     backgroundColor: COMPOSER_INPUT_BG_ACTIVE,
-    borderColor: C.greenBright,
+    borderColor: C.green500,
   },
-  holdToTalkSurface: {
-    minHeight: 48,
-    flex: 1,
-    alignItems: 'center',
+  holdToTalk: {
     justifyContent: 'center',
-    backgroundColor: COMPOSER_INPUT_BG,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
   },
-  holdToTalkSurfaceActive: {
-    backgroundColor: C.green50,
+  holdToTalkActive: {
+    backgroundColor: COMPOSER_INPUT_BG_ACTIVE,
     borderColor: C.green500,
   },
   holdToTalkText: {
-    fontSize: 17,
-    lineHeight: 22,
-    fontWeight: '600',
+    flex: 1,
+    textAlign: 'center',
+    fontFamily: revaFonts.sans,
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '800',
     color: C.ink1,
-    letterSpacing: 0,
-  },
+  } as TextStyle,
   textInput: {
     flex: 1, fontFamily: revaFonts.sans, fontSize: 16, maxHeight: 96, color: C.ink1,
     paddingTop: 8, paddingBottom: 8,
-  },
-  dictationStatusPill: {
-    minWidth: 62,
-    minHeight: 28,
-    borderRadius: 14,
-    paddingHorizontal: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.green100,
-    marginLeft: 6,
-  },
-  dictationStatusPillDisabled: {
-    backgroundColor: C.surface2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-  },
-  dictationStatusText: {
-    fontSize: 12,
-    lineHeight: 15,
-    fontWeight: '600',
-    color: C.green700,
-  },
-  dictationStatusTextDisabled: {
-    color: C.ink3,
   },
   inlineMicBtn: {
     width: 38, height: 38, borderRadius: 19,
@@ -1110,7 +1038,7 @@ const styles = StyleSheet.create({
 
   /* ── 录音中蒙层 ── */
   recordingOverlay: {
-    position: 'absolute', top: RECORDING_OVERLAY_TOP_INSET, left: 0, right: 0, bottom: 0,
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.78)',
     zIndex: 100,
     alignItems: 'center',
@@ -1132,21 +1060,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 30,
     marginBottom: 18,
   },
-  wechatVoiceTextPreview: {
-    maxWidth: 280,
-    minWidth: 190,
-    minHeight: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  wechatVoiceTextPreviewText: {
-    fontFamily: revaFonts.sans,
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: '700',
-    color: '#115738',
-    textAlign: 'center',
-  } as TextStyle,
   wechatBubbleTail: {
     position: 'absolute',
     bottom: -10,
@@ -1270,6 +1183,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingBottom: 8,
   },
+  menuSectionTitle: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    fontWeight: '800',
+    color: C.ink3,
+    marginTop: 12,
+    marginBottom: 6,
+    paddingHorizontal: 4,
+  } as TextStyle,
   menuItem: {
     flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line,
@@ -1320,6 +1242,39 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: C.ink3,
     marginTop: 1,
+  } as TextStyle,
+  modeSegmentedRow: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    padding: 3,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.paper2,
+  },
+  modeMenuItem: {
+    flex: 1,
+    minHeight: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    borderRadius: revaRadii.pill,
+    paddingHorizontal: 8,
+  },
+  modeMenuItemActive: {
+    backgroundColor: C.paper,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: revaSemantic.normal.line,
+  },
+  modeMenuLabel: {
+    fontFamily: revaFonts.sans,
+    fontSize: 13,
+    color: C.ink2,
+    fontWeight: '700',
+  } as TextStyle,
+  modeMenuLabelActive: {
+    color: C.green500,
   } as TextStyle,
   menuLabel: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '500', color: C.ink1 } as TextStyle,
   menuDesc: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, marginTop: 1 } as TextStyle,

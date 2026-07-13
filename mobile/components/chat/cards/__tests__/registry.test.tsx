@@ -193,10 +193,10 @@ describe('renderCard 安全降级', () => {
     const element = renderCard(descriptor, { onAction });
     expect(element).not.toBeNull();
 
-    const { getByText } = render(element!);
+    const { getAllByText, getByText } = render(element!);
     expect(getByText('午餐已记录')).toBeTruthy();
     expect(getByText('770 kcal · 蛋白 30g · 碳水 70g')).toBeTruthy();
-    expect(getByText('37/112g')).toBeTruthy();
+    expect(getAllByText('37/112g').length).toBeGreaterThanOrEqual(1);
     expect(getByText('已记 1040 kcal · 2 餐 · 还差约 75g 蛋白')).toBeTruthy();
     expect(getByText('胃溃疡记录在案，冷饮/酸性饮品可能刺激胃，建议观察耐受。')).toBeTruthy();
 
@@ -820,6 +820,12 @@ describe('renderCard 安全降级', () => {
     expect(getByText('午餐已记录')).toBeTruthy();
     expect(getByText('kcal', { exact: false })).toBeTruthy();
     expect(getByText('蛋白质')).toBeTruthy();
+    expect(getByText('已进入今日饮食进度')).toBeTruthy();
+    expect(getByText('可截图分享')).toBeTruthy();
+    expect(getByText('#饮食记录 #小巴')).toBeTruthy();
+    expect(getByText('今日饮食打卡')).toBeTruthy();
+    expect(getByText('小巴生成')).toBeTruthy();
+    expect(getByText('适合微信 / 小红书截图分享')).toBeTruthy();
     expect(getByText('下一步: 餐后轻走 10 分钟')).toBeTruthy();
     expect(getByText('可在记录页继续修正,小巴会把这餐纳入今日饮食进度。')).toBeTruthy();
   });

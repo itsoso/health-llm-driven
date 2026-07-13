@@ -1,7 +1,7 @@
 """
 Open-Loop Manager — 主动循环管理 (vertical health agent 的灵魂).
 
-每天 7:00 (北京) 跑一次, 扫所有用户的 "开放健康循环",
+每天早上定时跑一次, 扫所有用户的 "开放健康循环",
 按严重度+到期度评分, 给每个用户最多推 2 条 APNs.
 
 什么是"开放循环":
@@ -276,9 +276,7 @@ def _detect_plan_deviation(db, user_id: int) -> List[OpenLoop]:
         icon = t.icon or ("💊" if t.category == "medicine" else "🏃")
         # P2 故事化: 不"重建节奏从今天开始" 那种命令式, 改"今天 X 分钟也算"减负担
         if t.category == "medicine":
-            # §5 推送隐私:用药打卡模板名往往就是药名,不进锁屏 title;
-            # 名称走 metadata.template_name,App 解锁后应用内渲染。
-            title = f"💊 用药打卡漏了 {days_since} 天"
+            title = f"{icon} {t.name} 漏了 {days_since} 天"
             body = (
                 f"已经 {days_since} 天没记打卡。漏一次用药对慢病管理影响最大 — "
                 f"今天补一次，往后我们一起跟。"
@@ -371,7 +369,6 @@ def collect_open_loops(db, user_id: int) -> List[OpenLoop]:
 
 
 DEDUP_WINDOW_DAYS = 7  # 同一 (user, kind, signal_key) 在 7 天内不重复推
-MORNING_SLEEP_FLOOR = "09:00"
 
 
 def _is_in_quiet_hours_now(setting) -> bool:
@@ -385,7 +382,7 @@ def _is_in_quiet_hours_now(setting) -> bool:
     start = (setting.quiet_hours_start or "22:00").strip()
     end = (setting.quiet_hours_end or "09:00").strip()
     now_cn = datetime.now(CHINA_TIMEZONE).strftime("%H:%M")
-    if now_cn < MORNING_SLEEP_FLOOR:
+    if now_cn < "09:00":
         return True
     if start > end:  # 跨午夜: 22:00 ~ 09:00
         return now_cn >= start or now_cn < end
@@ -546,7 +543,7 @@ def _push_loop(db, user_id: int, loop: OpenLoop) -> bool:
         if not setting.health_alert_enabled:
             return False
 
-        # Defense-in-depth: quiet hours 守门 — cron 已移到 09:15 避开默认 22:00-09:00,
+        # Defense-in-depth: quiet hours 守门 — 默认 22:00-09:00, 且 09:00 前硬静默。
         # 但用户若把 quiet_hours 往后调 (例如 10:00) 或把结束设得更晚, 仍要尊重.
         # 严格不打扰睡眠: Open-Loop 直连 APNs 不允许按 score 穿透 quiet-hours,
         # 避免绕过 PushService 的统一静默策略。下次 cron 会重试, 不触发 dedup.
@@ -650,7 +647,7 @@ def _push_via_telegram(loop: OpenLoop) -> tuple[bool, str]:
 @celery_app.task(time_limit=600, name="app.tasks.open_loop_manager.run_open_loop_check")
 def run_open_loop_check(max_per_user: int = 2):
     """
-    每天 7:00 (北京) 扫所有 active 用户的开放循环, 推送 top N.
+    每天早上定时扫所有 active 用户的开放循环, 推送 top N.
 
     返回 {users_scanned, total_loops, pushed}.
     """

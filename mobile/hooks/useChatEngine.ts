@@ -8,10 +8,8 @@ import { streamChat, getConversations, getConversationMessages, deleteConversati
 import { dispatchCard, renderServerCards } from '../components/chat/cards';
 import type { ChatCardActionDescriptor, ServerCardDescriptor } from '../components/chat/cards/types';
 import api, { BASE_URL } from '../services/api';
-import { emitClientEvent } from '../services/clientEvents';
-import { sanitizeChatErrorMessage, sanitizeChatStreamToken } from '../utils/chatErrorMessage';
-import { mergeModelIntoExtraContext } from '../utils/chatExtraContext';
-import { durationBucket } from '../services/clientEvents';
+import { durationBucket, emitClientEvent } from '../services/clientEvents';
+import { sanitizeChatErrorMessage } from '../utils/chatErrorMessage';
 import {
   createIdleAgentTurn,
   isAgentTurnTerminal,
@@ -55,7 +53,6 @@ export interface UIMessage extends ChatMessage {
   sourceTurnId?: string;
   createdAt?: string;
   fromSiri?: boolean;
-  retryChannel?: 'typed' | 'voice' | 'siri';
   // 2026-05-13: 性能可观测 — done 事件的耗时 + 模型名, 渲染在 assistant 气泡底部
   elapsedMs?: number;
   llmMs?: number;
@@ -69,8 +66,6 @@ export interface UIMessage extends ChatMessage {
   // 2026-06-12: 本轮调用的 Skill / 工具名 (后端 done.tools_used / meta.tools_used), 对齐 mac/web
   toolsUsed?: string[];
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
-  // 2026-07-06: 模型路由透明化 — done.fallback_reasons / meta.fallback_reasons
-  fallbackReasons?: string[];
   writeReceipts?: WriteReceipt[];
 }
 
@@ -114,9 +109,6 @@ function applyMeta(msg: any): Partial<UIMessage> {
     sourcesUsed: Array.isArray(meta.sources_used) ? meta.sources_used : undefined,
     toolsUsed: Array.isArray(meta.tools_used) ? meta.tools_used : undefined,
     completionStatus: typeof meta.completion_status === 'string' ? meta.completion_status : undefined,
-    fallbackReasons: Array.isArray(meta.fallback_reasons)
-      ? meta.fallback_reasons.filter((r: unknown): r is string => typeof r === 'string' && !!r)
-      : undefined,
     thinkingSteps: normalizeThinkingSteps(meta.thinking_steps ?? meta.thought_steps),
     writeReceipts: normalizeWriteReceipts(meta.write_receipts),
   };
@@ -395,8 +387,6 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     });
   }, []);
   const hydrationGateRef = useRef<{ promise: Promise<void>; resolve: () => void } | null>(null);
-  const activeTurnPersistenceQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const sendLeaseRef = useRef(false);
   if (!hydrationGateRef.current) {
     let resolve!: () => void;
     const promise = new Promise<void>((ready) => { resolve = ready; });
@@ -414,33 +404,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const briefingInjected = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
-  // 2026-07-06: 会话级显式模型选择 (聊天头部 LlmModelPicker)。null = 系统默认(智能路由)。
-  // 用 ref 而非 state: sendMessage 闭包无需因切模型而重建, 发送时读当前值即可。
-  const perMessageModelIdRef = useRef<string | null>(null);
-  const setPerMessageModelId = useCallback((modelId: string | null) => {
-    perMessageModelIdRef.current = (modelId || '').trim() || null;
-  }, []);
   useEffect(() => { activeTurnRef.current = activeTurn; }, [activeTurn]);
-
-  const enqueueActiveTurnPersistence = useCallback((snapshot: AgentTurnState | null) => {
-    // Resolve the account scope at enqueue time. A queued mutation may execute after
-    // logout/login; looking up the key inside the queue can write an old turn into
-    // the newly authenticated account.
-    const scopedKey = currentChatStorageKey(ACTIVE_TURN_KEY);
-    void scopedKey.catch(() => undefined);
-    activeTurnPersistenceQueueRef.current = activeTurnPersistenceQueueRef.current
-      .catch(() => undefined)
-      .then(async () => {
-        const key = await scopedKey;
-        if (snapshot?.turnId && snapshot.recoverable && snapshot.phase !== 'completed') {
-          await AsyncStorage.setItem(key, JSON.stringify(snapshot));
-          return;
-        }
-        await AsyncStorage.removeItem(key);
-      });
-    void activeTurnPersistenceQueueRef.current.catch(() => undefined);
-    return activeTurnPersistenceQueueRef.current;
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -466,8 +430,13 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
 
   useEffect(() => {
     if (!activeTurnHydrated) return;
-    void enqueueActiveTurnPersistence(activeTurn);
-  }, [activeTurn, activeTurnHydrated, enqueueActiveTurnPersistence]);
+    void currentChatStorageKey(ACTIVE_TURN_KEY).then((key) => {
+      if (activeTurn.turnId && activeTurn.recoverable && activeTurn.phase !== 'completed') {
+        return AsyncStorage.setItem(key, JSON.stringify(activeTurn));
+      }
+      return AsyncStorage.removeItem(key);
+    }).catch(() => undefined);
+  }, [activeTurn, activeTurnHydrated]);
   // 2026-05-14: 标记是否有正在进行的 stream — 离开页面回来时, 如果还在 stream
   // 后端 G-W9 bg task 还在跑), 重新 fetch 拉服务端最新消息.
   const streamingRef = useRef(false);
@@ -764,12 +733,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       settleAcceptance(false);
       return false;
     }
-    if (sendLeaseRef.current || isStreaming) {
+    if (isStreaming) {
       settleAcceptance(false);
       return false;
     }
-    sendLeaseRef.current = true;
-    await hydrationGateRef.current?.promise;
 
     const finalMsg = msg || (hasImages ? '请分析这些图片' : '');
     const requestFingerprint = buildTurnRequestFingerprint(finalMsg, pendingImages);
@@ -802,19 +769,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     } catch {
       if (__DEV__) console.warn('[chat] network status probe failed; attempting request');
     }
-    const inputChannel: 'typed' | 'voice' | 'siri' = sendOpts?.fromSiri
-      ? 'siri'
-      : (sendOpts?.channel ?? 'typed');
     if (isConnected === false) {
       const errMsg: UIMessage = { id: nextId(), role: 'assistant', content: '⚠️ 网络不可用，请检查网络连接后重试' };
-      setMessages(prev => [...prev, {
-        id: nextId(),
-        role: 'user',
-        content: msg || '(图片)',
-        imageUris: hasImages ? pendingImages.map(i => i.uri) : undefined,
-        fromSiri: sendOpts?.fromSiri,
-        retryChannel: inputChannel,
-      }, errMsg]);
+      setMessages(prev => [...prev, { id: nextId(), role: 'user', content: msg || '(图片)', imageUris: hasImages ? pendingImages.map(i => i.uri) : undefined, fromSiri: sendOpts?.fromSiri }, errMsg]);
       dispatchAgentTurn({
         type: 'fail',
         at: Date.now(),
@@ -824,13 +781,15 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       });
       emitAgentTerminal('failed', 'network_unavailable');
       settleAcceptance(false);
-      sendLeaseRef.current = false;
       return false;
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     // Phase 0.4: 埋点 — 用户实际发出的对话, 区分入口 (siri vs chat)
+    const inputChannel: 'typed' | 'voice' | 'siri' = sendOpts?.fromSiri
+      ? 'siri'
+      : (sendOpts?.channel ?? 'typed');
     try {
       emitClientEvent('chat_message_sent', {
         source: inputChannel === 'typed' ? 'chat' : inputChannel,
@@ -847,14 +806,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     }
 
     const uris = hasImages ? pendingImages.map(i => i.uri) : undefined;
-    const userMsg: UIMessage = {
-      id: nextId(),
-      role: 'user',
-      content: finalMsg,
-      imageUris: uris,
-      fromSiri: sendOpts?.fromSiri,
-      retryChannel: inputChannel,
-    };
+    const userMsg: UIMessage = { id: nextId(), role: 'user', content: finalMsg, imageUris: uris, fromSiri: sendOpts?.fromSiri };
     const aId = nextId();
     const aiMsg: UIMessage = {
       id: aId,
@@ -873,12 +825,6 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     const ac = new AbortController();
     abortRef.current = ac;
 
-    // 逐条消息显式模型选择: 单点合并进 extraContext (Siri/opener/输入条所有路径统一走这里)。
-    // 显式 model_id 后端绝不被快路由/工具门控覆盖; null = 系统默认(保留快路由延迟优化)。
-    const extraContextWithModel = mergeModelIntoExtraContext(
-      sendOpts?.extraContext,
-      perMessageModelIdRef.current,
-    );
     let pendingContinuityReceipt: Awaited<ReturnType<typeof loadPendingWriteReceipt>>;
     try {
       pendingContinuityReceipt = await loadPendingWriteReceipt();
@@ -886,7 +832,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       console.warn('[chat] continuity receipt restore failed');
     }
     const outboundExtraContext = mergeConversationContinuity(
-      extraContextWithModel,
+      sendOpts?.extraContext,
       pendingContinuityReceipt,
     );
     let continuityAcknowledged = false;
@@ -1072,7 +1018,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               });
             }
           }
-          const incoming = sanitizeChatStreamToken(evt.content || '');
+          const incoming = sanitizeChatErrorMessage(evt.content || '', '');
           if (incoming) {
             if (!gotFirstToken) {
               gotFirstToken = true;
@@ -1181,7 +1127,6 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
               sourcesUsed: evt.sourcesUsed,
               toolsUsed: evt.toolsUsed,
               completionStatus: effectiveCompletionStatus,
-              fallbackReasons: evt.fallbackReasons,
               thinkingSteps: evt.thinkingSteps?.length ? evt.thinkingSteps : m.thinkingSteps,
               writeReceipts: evt.writeReceipts,
             } : m));
@@ -1319,7 +1264,6 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       // 终态: 停 streaming + 兜底清 status 行 (无论 done/error/interrupt 都不残留状态行)。
       setMessages(prev => prev.map(m => m.id === aId ? { ...m, streaming: false, currentStatus: undefined } : m));
       setIsStreaming(false);
-      sendLeaseRef.current = false;
     }
     return acceptedByServer;
   }, [isStreaming, conversationId, opts.contextData, recoverConversationFromServer]);
@@ -1330,9 +1274,11 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     dispatchAgentTurn({ type: 'reset' });
     void forgetConversationId();
     void clearPendingStream();
-    void enqueueActiveTurnPersistence(null);
+    void currentChatStorageKey(ACTIVE_TURN_KEY)
+      .then(key => AsyncStorage.removeItem(key))
+      .catch(() => undefined);
     briefingInjected.current = false;
-  }, [enqueueActiveTurnPersistence]);
+  }, []);
 
   const deleteCurrentConversation = useCallback(async () => {
     if (!conversationId) return;
@@ -1353,6 +1299,5 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     hasMoreHistory,
     deleteCurrentConversation,
     setMessages,
-    setPerMessageModelId,
   };
 }

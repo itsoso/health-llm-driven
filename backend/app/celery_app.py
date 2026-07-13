@@ -53,8 +53,6 @@ celery_app = Celery(
         "app.tasks.checkup_plan_materialize",
         "app.tasks.write_autonomy_worker",
         "app.tasks.twin_snapshot",
-        "app.tasks.contextual_heartbeat",
-        "app.tasks.life_event_extraction",
     ]
 )
 
@@ -186,11 +184,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=4, minute=0),  # 凌晨4点
     },
 
-    # 每日 09:10 推送今日计划提醒: 09:00 quiet-hours floor 后再启动,
-    # 避免 07:00/08:00 附近任何用户可见通知影响睡眠。
+    # 每日 09:05 推送今日计划提醒。
+    # 睡眠保护: 默认 quiet_hours 到 09:00, 面向用户的早晨推送不得排在 09:00 前。
     "plan-morning-reminder": {
         "task": "app.tasks.notifications.send_plan_morning_reminder",
-        "schedule": crontab(hour=9, minute=10),
+        "schedule": crontab(hour=9, minute=5),
     },
 
     # 每日 20:00 推送计划进度总结
@@ -223,7 +221,7 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=22, minute=0),
     },
 
-    # 每日 09:25 趋势摘要推送: 避开 07:00/08:00 睡眠保护窗口。
+    # 每日 09:25 趋势摘要推送: 避开 22:00-09:00 睡眠保护窗口。
     "trend-morning-push": {
         "task": "app.tasks.notifications.send_trend_morning_push",
         "schedule": crontab(hour=9, minute=25),
@@ -430,15 +428,6 @@ celery_app.conf.beat_schedule = {
     "write-autonomy-sweep": {
         "task": "app.tasks.write_autonomy_worker.run_write_autonomy_sweep",
         "schedule": crontab(minute="*/30"),  # 每 30 分钟(Asia/Shanghai)
-    },
-
-    # 情境心跳(Slice 2, v1 零 LLM):每 30 分钟一 tick。beat 时区是 Asia/Shanghai,
-    # 无条件 fire;白天窗(08–22)按**用户时区**在任务内 get_user_now → is_daytime 收口,
-    # 夜间用户自动跳过。每 tick 读 Twin(缓存) → 4 条确定性触发规则 → 过打扰预算硬闸 → push。
-    # 全天 fire 以覆盖非中国时区用户;绝大多数夜间 tick 在白天门前即跳过(不建 Twin)。
-    "contextual-heartbeat": {
-        "task": "app.tasks.contextual_heartbeat.contextual_heartbeat",
-        "schedule": crontab(minute="0,30"),  # 每 30 分钟(Asia/Shanghai)
     },
 }
 

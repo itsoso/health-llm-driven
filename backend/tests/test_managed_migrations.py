@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 import pytest
@@ -77,46 +76,6 @@ def test_diet_card_idempotency_migration_adds_user_scoped_unique_key(tmp_path: P
                 "INSERT INTO diet_records (id, user_id, client_action_id) "
                 "VALUES (3, 7, 'card-1')"
             ))
-
-
-def test_food_calibration_names_migration_defaults_closed_and_curates_known_rows(tmp_path: Path):
-    migrations_dir = Path(__file__).resolve().parents[1] / "migrations" / "managed"
-    sqlite_file = migrations_dir / "20260711_201000_add_food_calibration_names.sqlite.sql"
-    postgres_file = migrations_dir / "20260711_201000_add_food_calibration_names.postgresql.sql"
-    assert sqlite_file.exists()
-    assert postgres_file.exists()
-
-    isolated = tmp_path / "managed"
-    isolated.mkdir()
-    (isolated / sqlite_file.name).write_text(
-        sqlite_file.read_text(encoding="utf-8"),
-        encoding="utf-8",
-    )
-    engine = create_engine("sqlite:///:memory:")
-    with engine.begin() as conn:
-        conn.execute(text(
-            "CREATE TABLE food_items (food_id VARCHAR(120) PRIMARY KEY, "
-            "canonical_name VARCHAR(200) NOT NULL, aliases JSON NOT NULL DEFAULT '[]')"
-        ))
-        conn.execute(text(
-            "INSERT INTO food_items (food_id, canonical_name) VALUES "
-            "('cfc:tofu_firm', '豆腐'), ('custom:unknown', '自定义食物')"
-        ))
-
-    result = apply_managed_migrations(engine, isolated)
-
-    assert [migration.id for migration in result.applied] == [
-        "20260711_201000_add_food_calibration_names"
-    ]
-    with engine.connect() as conn:
-        tofu = conn.execute(text(
-            "SELECT calibration_names FROM food_items WHERE food_id='cfc:tofu_firm'"
-        )).scalar_one()
-        unknown = conn.execute(text(
-            "SELECT calibration_names FROM food_items WHERE food_id='custom:unknown'"
-        )).scalar_one()
-    assert json.loads(tofu) == ["北豆腐", "老豆腐"]
-    assert json.loads(unknown) == []
 
 
 def test_split_sql_statements_keeps_postgres_dollar_quoted_blocks_intact():

@@ -44,8 +44,8 @@
 | Watch | 腕上快速记录、短答、执行反馈 | Watch summary/quick record/voice food draft/ask endpoint 与测试存在 | 部分完成 | 真机签名验证;不承诺第三方 App 长按表冠唤醒,改为 complication/AppIntent/快捷入口 |
 | Phone-first auth | 手机号登录注册,可改密码 | 后端 phone code、Aliyun SMS、Mobile login/settings、测试存在 | 基本完成 | 生产 SMS 配置、账号绑定和 App/Mac/Web 登录入口 smoke |
 | LLM 成本与性能 | Admin 全局监控 + 每次 token + 端上透视 | Dossier shipped;Admin `/admin/llm-performance`;Mac/Web/Mobile profile 存在 | 已完成 | 继续加预算策略和异常告警,不是本批阻塞 |
-| Agent 操作面 | 每个一等对象默认 Agent 可操作 | registry 与 CI 已有;本批已补 waist/sleep/excretion create、supplement 打卡 list/update/delete/undo、goal CRUD、medical_exam 报告级 list 与 intervention_cycle 历史/调整/取消 | 基本完成 | 继续补慢路径确认门与端上 action 闭环校验 |
-| 7 天健康运行时 | 未来 7 天日程化编排,低打扰执行 | rolling runtime spec 和部分 agenda/watch/today 实现存在;已补今日日内 time_driven 时间骨架 | 部分完成 | 继续推进日历/位置/药品/NFC/环境 IoT/失败原因自纠偏 |
+| Agent 操作面 | 每个一等对象默认 Agent 可操作 | registry 与 CI 已有;spec 已挂账 waist/sleep/excretion create、supplement undo、goal、medical_exam list 等缺口 | 部分完成 | 排入 P1/P2,按对象补 CRUD/opt_out |
+| 7 天健康运行时 | 未来 7 天日程化编排,低打扰执行 | rolling runtime spec 和部分 agenda/watch/today 实现存在 | 长期未闭环 | 日历/位置/药品/NFC/环境 IoT/失败原因自纠偏分阶段推进 |
 
 ## 新计划
 
@@ -118,18 +118,17 @@
 ### P2:长期规划继续推进
 
 12. **Agent 操作面补洞**
-    - [x] 补 `waist/sleep/excretion` create。
-    - [x] 补 supplement 打卡 list/update/delete/undo。
-    - [x] 补 goal Agent CRUD。
-    - [x] 补 medical_exam 报告级 list。
-    - [x] 补 intervention_cycle 历史/调整/取消。
+    - 补 `waist/sleep/excretion` create。
+    - 补 supplement 打卡 list/update/delete/undo。
+    - 补 goal Agent CRUD。
+    - 补 medical_exam 报告级 list。
+    - 补 intervention_cycle 历史/调整/取消。
 
 13. **扩展 Dynamic UI 组件目录**
     - `metric_grid`、`table`、`timeline`、`comparison`、`alert_list`、`action_card`。
     - 规则:LLM 只选组件/叙事,数据仍由确定性代码填充。
 
 14. **滚动 7 天健康运行时**
-    - 已完成 Slice: 今日时间线补晨起/午间/下午/晚间/睡前 `time_driven` 低打扰系统时刻卡;已有同窗口同域真实项时自动让位。
     - Calendar-aware 工作间歇、饮水、午休、运动、晚间建议。
     - 药品/NFC/固定位置确认先做 spec + 可行性验证,不直接承诺。
     - 失败原因驱动自纠偏,减少打扰而不是增加提醒。
@@ -176,12 +175,23 @@ python3 scripts/check_doc_drift.py
 - P0-3 已完成:App Store release gate 不再要求 `今日 / 小巴 / 记录 / 我`;发布文案改为“打开即进入小巴,今日简报、记录和个人中心从对话内进入”。
 - P0-4/P0-5 已完成:摄入 classifier 保持 diet/medication/supplement/water/diet_management 分流;用药草稿 route 携带 `dose`;Mobile 用药页支持从小巴草稿确认写入用药清单并记录一次已服用。
 - P0-6 已核对完成:当前 Chat 卡片 action 集合仍为 `agenda.complete`、`diet_record.create`、`route.open`、`ui.inline.expand` 等既有受控动作,Mobile dispatcher/registry 测试通过。
-- P1-7/P1-8 已完成代码闸验证:小巴首屏保留无底部 Tab 的 compact composer、空对话固定“拍照记一餐”chip;记录页“拍一下”直达 `/diet?capture=photo`;饮食页 `capture=photo` 生成待确认饮食草稿且不自动入库。移动端 smoke: `chat.test.tsx`、`recordEntry.test.tsx`、`dietCapture.test.tsx` 通过。
-- P1-9 已完成二维码 RC:release pack、iOS App Store preflight、doc drift、移动端 focused smoke、TypeScript 均通过;基于 `f4ac7f14` 构建 `20260705-124315-f4ac7f14`。ad-hoc 导出因 `life.executor.health`、Watch app、Watch extension 缺 ad-hoc profiles 失败,脚本回退 development 导出成功并上传。公开安装页: `https://health.executor.life/mobile-install/ios/20260705-124315-f4ac7f14/install.html`;manifest/IPA 均 HTTP 200,manifest bundle id 为 `life.executor.health`。本批未补拍 App Store-ready 截图集,final-submit 截图 gate 仍需单独跑。
-- 2026-07-06 已刷新二维码安装包并补推最新 Mobile OTA:基于 `b14a5ce4c` 构建 `20260705-222341-b14a5ce4c`,ad-hoc 仍因主 app/Watch app/Watch extension 缺导出 profile 失败,脚本回退 development export 成功并上传。公开安装页: `https://health.executor.life/mobile-install/ios/20260705-222341-b14a5ce4c/install.html`;install.html/manifest/IPA 均 HTTP 200,manifest bundle id 为 `life.executor.health`,display name 为 `小巴`。构建期间 `origin/main` 新增 `2f401de87` 输入栏双模态重设计,已随后向 production channel 发 iOS OTA:update group `2be5ec9f-bb55-4956-a90d-78588dec89d9`,runtime `1.3.1`,commit `2f401de87650fe6760fb6d0467adc143f185057c`。
-- P1-10/P1-11 已完成自动化与只读生产验证:后端 HealthKit/Watch/手机号登录 focused tests `136 passed`;Mobile HealthKit foreground sync + auth/login tests `33 passed`;Watch Swift core tests `61 passed`;QR IPA 内主 bundle 为 `life.executor.health`、display name `小巴`、包含 `com.apple.developer.healthkit=true`,并嵌入 `life.executor.health.watchkitapp` 与 `life.executor.health.watchkitapp.watchkitextension`。生产只读检查显示 SMS dev echo 关闭、PNVS 通道已配置,user id=3 同时绑定 `itsoso@126.com` 与 `+8613486176286`,手机号已验证且账号 active/approved。未擅自触发真实短信;真机 HealthKit 授权/撤权、Watch 表上操作和短信实发仍需设备交互验收。
-- P2-12 第一批已完成:Agent 操作面补齐 `waist/sleep/excretion` create 与 supplement 打卡 `list/update/delete/undo`;同步 tool schema、tool validator、ops registry、executor 和补剂 API,并回写操作面契约。验证:`test_agent_ops_registry.py`、`test_agent_health_manage.py`、`test_health_record_amount_regression.py`、`test_supplements.py`、`test_supplement_record_autocreate.py`、`test_waist_and_daily_plan.py`、`test_sleep_record.py`、`test_excretion.py` 合计 `115 passed`。
-- P2-12 第二批已完成:Agent 操作面补齐 `goal` create/read/list/update/delete;新增 `/goals/{id}` 详情/更新/删除 API 并按当前用户隔离;同步 tool schema、tool validator、ops registry、executor 和目标 API,并回写操作面契约。聚焦验证:`test_agent_health_manage.py::test_health_record_creates_goal`、`test_health_manage_lists_updates_and_deletes_goals`、`test_agent_ops_registry.py::test_p2_goal_agent_crud_is_exposed`、`test_goals.py::test_goal_detail_update_delete_are_user_scoped` 通过。
-- P2-12 第三批已完成:Agent 操作面补齐 `medical_exam` 报告级 list;新增 `/medical-exams/me/reports` 紧凑报告摘要列表,只返回报告 ID/日期/类型/医院/摘要/项目数/异常项数,不把全量 item 明细塞进 Agent 上下文;`medical_exam` update/delete 继续由 validator 明确拒绝并保留人工核对边界。聚焦验证:`test_health_manage_lists_medical_exam_report_summaries`、`test_health_manage_rejects_medical_exam_mutation`、`test_get_my_medical_exam_report_summaries_is_compact_and_user_scoped`、`test_p2_medical_exam_report_list_is_exposed_without_mutation` 通过。
-- P2-12 第四批已完成:Agent 操作面补齐 `intervention_cycle` 历史/调整/取消;新增 `GET /intervention-cycles`、`PATCH /intervention-cycles/{id}`、`POST /intervention-cycles/{id}/cancel`,并让专属 `intervention_cycle` tool 支持 `list/update/cancel`。`update/cancel` 均保留 `[NEEDS_CONFIRMATION]` 双段确认门,取消只置 `abandoned` 并保留历史。聚焦验证:`test_intervention_cycle_list_update_cancel_api_flow`、`test_list_cycles_returns_history`、`test_update_cycle_requires_confirmation_then_adjusts_days`、`test_cancel_cycle_requires_confirmation_then_abandons`、`test_p2_intervention_cycle_history_update_cancel_are_exposed` 通过。
-- 待继续:App Store final-submit 截图集补拍与人工审核;真机 HealthKit/Watch/SMS 实操验收;P2 慢路径确认门与端上 action 闭环继续收敛。
+- 待继续:P1 小巴首屏动线真机/模拟器审计、拍照记餐 smoke、二维码 RC、HealthKit/Watch/手机号生产验证。
+
+## 2026-07-06 Codex 执行回写
+
+- P0-4 继续加固:摄入 classifier 已补胃药/促胃动力药别名(`沃克`、`伏诺拉生`、`加斯清`、`伊托必利` 等),避免“刚吃了胃药”落入饮食或 unknown 路径。
+- P0-6 继续加固:`生成记录` 对用药型助手回复不再 fallback 到记录页;Mobile 会带 `draft=medication&name=...&dose=...` 打开用药确认页,维持 manual-confirm 写入边界。
+- P1-7 UI 继续收敛:小巴回复完成后的思考状态从整宽分隔条改为低干扰胶囊,默认折叠,展开才显示步骤,避免覆盖正文或形成难看的大块状态 UI。
+- P0-4/P1-8 饮食链路继续加固:新增客户端共享 `dietIntakeGuard`,卡片写入和 `/diet?draft=diet` 深链都会拒绝“删除这一餐”管理意图、药物和补剂文本;`姜黄鲜柠维C茶` 等真实饮品继续允许。
+- P1-8 继续加固:小巴输入栏 `+` 菜单里的相机入口改为明确的“拍照记餐”,直接进入 `/diet?capture=photo` 饮食拍照确认流,不再作为通用图片附件入口误导用户。
+- P1-7 UI 回归修复:小巴底部 composer 收起键盘时的呼吸空间恢复为 `12`,避免输入区/底部留白重新变高;键盘弹起时仍按键盘高度让位。
+- P1-8 回路闭合:从小巴输入栏、冷启动 chip、quick reply 发起拍照记餐时统一携带 `return_to=chat`;饮食草稿确认成功后携带 `diet/quick_capture` 上下文回到小巴,让对话可继续更新饮食进度和下一餐建议。
+- P1-9 QR RC 入口补齐:Web 首页新增“扫码安装 iPhone 版”入口,指向稳定地址 `/mobile-install/ios/latest/install.html`;`scripts/mobile-local-qr.sh` 上传 build-id 目录时同步更新 `latest` 别名,并修复复用同目录 IPA 时 `cp` 自复制失败的问题。已用现有 `20260703-ota-9daf1113` IPA 同步一次 latest。
+- 测试基础设施:Mobile Jest 排除 `ios/Pods`,避免 Hermes Pods 旧 snapshot 让单测本体通过但进程返回 1。
+- P1-10/P1-11 RC 验证入口补齐:新增 `scripts/mobile_rc_readiness.sh`,把 App Store release pack、iOS latest QR、手机号登录、HealthKit 导入、Watch 后端安全动作、Mobile HealthKit/auth/login、Watch Swift core 串成只读检查;脚本测试明确禁止真实短信副作用。2026-07-06 已完整跑通。
+- 手机号测试隔离加固:`test_phone_code_send_fails_loud_when_delivery_is_not_configured` 显式清空企业短信、PNVS 和通用 Aliyun fallback key,避免本地/生产环境变量污染导致测试误打真实阿里云。
+- P2-12 Agent 操作面补洞(第一刀):`waist`/`sleep`/`excretion` 已从 `agent_ops_registry` 的 create gap 变成真实 `health_record` 通路;tool schema、validator、executor、registry 和回归测试同步。现在可以从小巴说一句记录腰围、手动补录睡眠、记录排便/排尿,并保留 `health_manage(delete ...)` 撤销通路。
+- P2-12 Agent 操作面补洞(第二刀):补剂打卡(intake)从 registry gap 变成真实 `health_manage(record_type="supplement")` 通路;后端新增 `PUT/DELETE /supplements/records/{id}`,小巴可先 list 查当天补剂打卡,再修正误点、删除误打或撤销 NFC/自动打卡返回的 `record_id`。
+- P2-12 Agent 操作面补洞(第三刀):`goal` 从整对象 gap 变成真实 `health_record(goal)` + `health_manage(goal)` CRUD;后端 `/goals` 新增目标本体 `PUT/DELETE`,小巴可设置健康目标、查询目标列表、修改目标数值/标题并撤销误建目标。
+- P2-12 Agent 操作面补洞(第四刀):`medical_exam` 报告级列表从 gap 变成 `health_manage(record_type="medical_exam", operation="list")` 只读通路,小巴可以先列出报告 ID/日期/类型再追问某份报告;报告数值校正和删除仍保持人工核对/不开放 agent。
+- P2-12 Agent 操作面补洞(第五刀):`intervention_cycle` 专属工具新增 `list/update/cancel`;历史周期可列表,周期元数据/目标参数调整必须 `confirmed=true`,取消只标记 `abandoned` 不物理删除,继续保持医疗/处方调整边界。

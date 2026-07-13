@@ -2,7 +2,6 @@ import {
   assertDietFoodItemsAllowed,
   looksLikeDietManagementIntent,
   looksLikeHealthMetricIntent,
-  looksLikeDietUiText,
   looksLikeNonDietIntake,
 } from '../dietIntakeGuard';
 
@@ -24,14 +23,6 @@ describe('dietIntakeGuard', () => {
   ])('detects medication or supplement intake, not diet: %s', (text) => {
     expect(looksLikeNonDietIntake(text)).toBe(true);
     expect(() => assertDietFoodItemsAllowed(text)).toThrow('invalid_diet_food_items_non_diet');
-  });
-
-  it.each([
-    ['和午餐食品营养卡'],
-    ['保存并确认'],
-  ])('rejects leaked card UI copy as food intake: %s', (text) => {
-    expect(looksLikeDietUiText(text)).toBe(true);
-    expect(() => assertDietFoodItemsAllowed(text)).toThrow('invalid_diet_food_items_ui_text');
   });
 
   it.each([

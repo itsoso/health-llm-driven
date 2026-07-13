@@ -53,7 +53,7 @@
 
 **简述**:
 - 单租户 AI 健康管理平台(目前)。iPhone App 是**口袋执行入口**, Mac App 是**桌面执行与导入工作台**, Web 是辅助(计划重定位为家庭/医生视图, 见 FUTURE_ROADMAP.md)。
-- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 13 个 Specialist + Safety Guardian (11 类 64 条规则) + Digital Twin (15 分区状态视图). **主分析 Agent 的完整结构(两个大脑:对话 Agent 委托深度分析 Orchestrator)、请求生命周期、确定性/安全边界、AS-IS 时延优化点,见专文 [`docs/ARCHITECTURE_ANALYSIS_AGENT.md`](ARCHITECTURE_ANALYSIS_AGENT.md)。**
+- 核心是**Agent-Native**: 一个 Agent Executor (tool-calling LLM) 统一处理对话, 背后是一套 Orchestrator 调度 13 个 Specialist + Safety Guardian (11 类 64 条规则) + Digital Twin (15 分区状态视图).
 - 数据源: Garmin 腕表为主, 加 Withings / CGM / 化验 / 基因 / 环境 / 补剂 / 药物 / Telegram 语音入口.
 - Swift 原生 Mac P0 方案见 `docs/plans/2026-05-23-swift-native-mac-health-agent.md`; Mac 只做原生 UX、文件导入、任务和 trace 查看, 后端仍是唯一健康推理与数据源。
 
@@ -66,7 +66,7 @@
 | **Backend** | FastAPI + SQLAlchemy + Celery + Redis + Postgres + pytest | `backend/` | 161 API 路由, 337 services, 107 models, 68 Celery 任务 |
 | **Mobile** | Expo SDK 55 + RN 0.83 + expo-router + React Query + expo-audio + react-native-maps + @react-native-voice/voice | `mobile/` | 119 路由 |
 | **Mac Desktop** | Swift 6 + SwiftUI + URLSession async/await + Keychain + MenuBarExtra | `apps/mac/` | 原生桌面 P0: Today / Agent / Record / Import / Jobs / Trace |
-| **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 72 页 |
+| **Web** | Next.js 14 App Router + React 18 + Tailwind + Vitest | `frontend/` | 70 页 |
 | **WeChat 小程序** | uni-app (pnpm workspace) | `packages/mini-program/` | 独立发布 |
 | **MCP Server** | Python (独立) | `mcp-server/` | 受控外部工具入口 |
 | **Agent Skills** | Markdown | `backend/skills/` (随后端部署) | 第一方 Agent 运行时技能 |
@@ -85,7 +85,7 @@
 |------|------|
 | `backend/app/database.py` | 数据库连接、`get_db` 依赖 |
 | `backend/app/config.py` | Pydantic Settings, 所有 env 定义 |
-| `backend/app/models/*.py` | 107 个 SQLAlchemy ORM 模型 |
+| `backend/app/models/*.py` | 106 个 SQLAlchemy ORM 模型 |
 | `backend/app/twin/schema.py` | HealthTwin 15 分区 Pydantic schema |
 | `backend/main.py` 中间件 | 安全头 / CORS / 限流 / request context |
 | `backend/tests/conftest.py` | 测试基础设施 |
@@ -115,9 +115,9 @@
 | 目录 | 职责 |
 |------|------|
 | `backend/app/api/*.py` | 161 条 API 路由 |
-| `backend/app/services/*.py` | 326 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/` / `genui/`;多源去重见 `device_source_priority` + `garmin_daily_merged`) |
+| `backend/app/services/*.py` | 321 个服务(含 `cgm/` / `data_collection/` / `notification/` / `environment/` / `llm/` / `genui/`;多源去重见 `device_source_priority` + `garmin_daily_merged`) |
 | `backend/app/tasks/*.py` | 68 Celery 异步任务 |
-| `frontend/src/app/*/page.tsx` | 72 Web 页 |
+| `frontend/src/app/*/page.tsx` | 70 Web 页 |
 | `frontend/src/components/*.tsx` | Web 组件 |
 | `mobile/app/` | 119 RN 路由 + Tab 导航 |
 | `mobile/components/` | RN 组件(按领域) |
@@ -453,7 +453,6 @@ APNs topic 用 `ios_bundle_id` per-device (绑定 token 时上报), 防 `DeviceT
 | 周一 09:00 | `weekly_report.generate_for_all` | 周报 |
 | 周日 20:00 | `weekly_voice_invite.send_for_all` | 周聊语音邀请 |
 | 周日 10:50 | `protocol_learning.protocol_learning_watch` | P6 学习闭环: 聚合每用户协议 14d 完成/跳过/逾期 → 人体工学调参建议(时间窗/冷却/曝光面/节奏)落审计(`protocol_learning_watch`), **SUGGEST-ONLY 不推送/不改协议/不调药量**; 节流由 `event_reminders` 按需读 |
-| 每 30 分钟 | `contextual_heartbeat.contextual_heartbeat` | 情境心跳(Slice 2, v1 零 LLM): 白天(08–22 **用户时区**)每 tick 读 Twin(缓存不重建) → 4 条确定性触发规则(饮水缺口/用药窗错过/复查到期/久坐) → 候选提示全部过 `proactive_coordinator` 打扰预算**硬闸**(耗尽=0 push) → push 或折进简报; **R4 只提示不写库**, 规则抛错计入 `failed_rules` fail-loud |
 | 其他 | 各服务自定义 | 见 `celery_app.py` `beat_schedule` |
 
 **幂等与 dedup**: 每个推送调用 `PushService.send_notification(data={"rule_id": X})`, `dedup_window_hours` 内相同 rule 不重推。
@@ -653,7 +652,7 @@ TOKENPLAN_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mo
 TOKENPLAN_MODEL=qwen3.6-plus
 MOONSHOT_API_KEY=<optional>  # Kimi
 ZHIPU_API_KEY=<optional>      # GLM 官方, 不是 TokenPlan 里的 GLM-5
-LLM_VISION_API_KEY=... LLM_VISION_BASE_URL=... LLM_VISION_MODEL=qwen3-vl-flash
+LLM_VISION_API_KEY=... LLM_VISION_BASE_URL=... LLM_VISION_MODEL=qwen-vl-max
 
 # Push
 APNS_TEAM_ID=... APNS_KEY_ID=... APNS_KEY_PATH=/opt/health-app/backend/keys/AuthKey_XXX.p8

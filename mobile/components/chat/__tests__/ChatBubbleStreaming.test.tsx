@@ -9,27 +9,9 @@ import type { UIMessage } from '../../../hooks/useChatEngine';
 jest.mock('expo-speech', () => ({ stop: jest.fn() }));
 jest.mock('expo-audio', () => ({ setAudioModeAsync: jest.fn() }));
 jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(),
   selectionAsync: jest.fn(),
   notificationAsync: jest.fn(),
-  ImpactFeedbackStyle: { Medium: 'medium' },
   NotificationFeedbackType: { Success: 'success' },
-}));
-jest.mock('expo-clipboard', () => ({
-  setStringAsync: jest.fn(),
-}));
-const mockDownloadAsync = jest.fn();
-jest.mock('expo-file-system/legacy', () => ({
-  cacheDirectory: 'file://cache/',
-  downloadAsync: (...args: any[]) => mockDownloadAsync(...args),
-  writeAsStringAsync: jest.fn(),
-  EncodingType: { Base64: 'base64' },
-}));
-const mockRequestMediaLibraryPermissionsAsync = jest.fn();
-const mockCreateAssetAsync = jest.fn();
-jest.mock('expo-media-library', () => ({
-  requestPermissionsAsync: (...args: any[]) => mockRequestMediaLibraryPermissionsAsync(...args),
-  createAssetAsync: (...args: any[]) => mockCreateAssetAsync(...args),
 }));
 jest.mock('../../../services/speakWithUserVoice', () => ({
   speakWithUserVoice: jest.fn(),
@@ -45,14 +27,11 @@ jest.mock('expo-router', () => ({
 }));
 // Spy on the markdown component so we can assert it is NOT mounted while streaming.
 const mockMarkdownMount = jest.fn();
-const mockMarkdownProps = jest.fn();
 jest.mock('react-native-markdown-display', () => {
   const React = require('react');
   const { Text } = require('react-native');
-  const MockMarkdown = (props: { children: string; rules?: Record<string, Function> }) => {
-    const { children } = props;
+  const MockMarkdown = ({ children }: { children: string }) => {
     mockMarkdownMount(children);
-    mockMarkdownProps(props);
     return <Text testID="rich-markdown">{children}</Text>;
   };
   MockMarkdown.displayName = 'MockMarkdown';
@@ -84,6 +63,10 @@ jest.mock('../../../services/interventionDraft', () => ({
 jest.mock('../../../utils/share', () => ({
   sharePlainText: jest.fn(),
 }));
+const mockSaveChatImageToLibrary = jest.fn();
+jest.mock('../../../services/chatImageSave', () => ({
+  saveChatImageToLibrary: (...args: any[]) => mockSaveChatImageToLibrary(...args),
+}));
 jest.mock('../../actions/InterventionDraftSheet', () => {
   const React = require('react');
   const { View } = require('react-native');
@@ -94,11 +77,11 @@ jest.mock('../../actions/InterventionDraftSheet', () => {
 
 const ChatBubble = require('../ChatBubble').default;
 
-function renderBubble(message: UIMessage, props: Record<string, unknown> = {}) {
+function renderBubble(message: UIMessage) {
   const qc = new QueryClient();
   return render(
     <QueryClientProvider client={qc}>
-      <ChatBubble item={message} {...props} />
+      <ChatBubble item={message} />
     </QueryClientProvider>,
   );
 }
@@ -108,9 +91,6 @@ const CONTENT = '## 睡眠分析\n\n你昨晚睡了 7 小时。\n\n建议保持�
 describe('ChatBubble streaming degraded render', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockRequestMediaLibraryPermissionsAsync.mockResolvedValue({ granted: true });
-    mockDownloadAsync.mockResolvedValue({ uri: 'file://cache/reva-chat-image.jpg' });
-    mockCreateAssetAsync.mockResolvedValue({ id: 'asset-1' });
   });
 
   it('renders plain text (no rich Markdown tree) while the assistant reply is streaming', () => {
@@ -126,6 +106,38 @@ describe('ChatBubble streaming degraded render', () => {
     expect(mockMarkdownMount).not.toHaveBeenCalled();
     // Raw content shows as plain text, newlines preserved (literal markdown markers visible).
     expect(getByText(CONTENT)).toBeTruthy();
+  });
+
+  it('does not enable native text selection inside bubbles, so long press stays on the custom message menu', () => {
+    const { getByText, rerender } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChatBubble
+          item={{
+            id: 'user-selectable-regression',
+            role: 'user',
+            content: '口腔溃疡应该吃什么药',
+            streaming: false,
+          }}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(getByText('口腔溃疡应该吃什么药').props.selectable).not.toBe(true);
+
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChatBubble
+          item={{
+            id: 'assistant-streaming-selectable-regression',
+            role: 'assistant',
+            content: '正在整理建议。',
+            streaming: true,
+          }}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(getByText('正在整理建议。').props.selectable).not.toBe(true);
   });
 
   it('renders a slim status line (not a panel) before the first token', () => {
@@ -144,23 +156,6 @@ describe('ChatBubble streaming degraded render', () => {
     expect(queryByTestId('assistant-thinking-panel')).toBeNull();
     // 未出正文 → 不走富 markdown。
     expect(queryByTestId('rich-markdown')).toBeNull();
-  });
-
-  it('renders the streaming status as a compact process strip', () => {
-    const { getByText, getByTestId } = renderBubble({
-      id: 'assistant-progress-strip',
-      role: 'assistant',
-      content: '⏳ AI 正在思考中...',
-      streaming: true,
-      currentStatus: '查看步数数据…',
-    });
-
-    expect(getByTestId('assistant-progress-strip')).toBeTruthy();
-    expect(getByText('理解')).toBeTruthy();
-    expect(getByText('查数据')).toBeTruthy();
-    expect(getByText('生成建议')).toBeTruthy();
-    expect(getByText('安全检查')).toBeTruthy();
-    expect(getByText('查看步数数据…')).toBeTruthy();
   });
 
   it('hides the status line once the assistant text is present (first token cleared it)', () => {
@@ -191,7 +186,7 @@ describe('ChatBubble streaming degraded render', () => {
   });
 
   it('renders streaming thinking steps above the assistant text', () => {
-    const { getByLabelText, getByTestId, getByText, queryByTestId, queryByText } = renderBubble({
+    const { getByLabelText, getByTestId, getByText, queryByTestId } = renderBubble({
       id: 'assistant-streaming-thinking',
       role: 'assistant',
       content: '今晚优先固定睡眠时间。',
@@ -201,15 +196,15 @@ describe('ChatBubble streaming degraded render', () => {
 
     expect(queryByTestId('rich-markdown')).toBeNull();
     expect(getByText('小巴正在思考')).toBeTruthy();
-    // 2026-07-07:诚实计数「第 N 步」,不再编造 N/N 分母(总步数未知=假进度)。
-    expect(getByText('第 2 步')).toBeTruthy();
-    expect(queryByText('2/2')).toBeNull();
+    expect(getByText('2/2')).toBeTruthy();
     expect(getByText('正在理解你的问题')).toBeTruthy();
     expect(getByText('读取健康数据')).toBeTruthy();
     expect(getByLabelText('当前步骤:读取健康数据')).toBeTruthy();
     const panelStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
     expect(panelStyle.alignSelf).toBe('stretch');
-    expect(panelStyle.minWidth).toBeGreaterThanOrEqual(260);
+    expect(panelStyle.width).toBe('100%');
+    expect(panelStyle.maxWidth).toBe('100%');
+    expect(panelStyle.minWidth ?? 0).toBe(0);
     expect(getByText('今晚优先固定睡眠时间。')).toBeTruthy();
   });
 
@@ -236,9 +231,6 @@ describe('ChatBubble streaming degraded render', () => {
 
     // 点 pill 展开 → 步骤列表出现.
     fireEvent.press(getByLabelText('展开思考步骤'));
-    const expandedPanelStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
-    expect(expandedPanelStyle.borderRadius).toBeLessThanOrEqual(18);
-    expect(expandedPanelStyle.alignSelf).toBe('stretch');
     expect(getByText('正在理解你的问题')).toBeTruthy();
     expect(getByText('读取记录信息')).toBeTruthy();
     expect(getByText('整理回复中')).toBeTruthy();
@@ -247,24 +239,6 @@ describe('ChatBubble streaming degraded render', () => {
     // 再点收起 → 步骤列表重新隐藏.
     fireEvent.press(getByLabelText('收起思考步骤'));
     expect(queryByText('读取记录信息')).toBeNull();
-  });
-
-  it('does not expose native text selection handles inside chat bubbles', () => {
-    const userBubble = renderBubble({
-      id: 'user-native-selection',
-      role: 'user',
-      content: '口腔溃疡应该吃什么药',
-    });
-    expect(userBubble.getByText('口腔溃疡应该吃什么药').props.selectable).not.toBe(true);
-    userBubble.unmount();
-
-    const streamingBubble = renderBubble({
-      id: 'assistant-native-selection',
-      role: 'assistant',
-      content: '正在整理建议。',
-      streaming: true,
-    });
-    expect(streamingBubble.getByText('正在整理建议。').props.selectable).not.toBe(true);
   });
 
   // 流式期间跳过 sanitizeAiContent + extractRevaUiBlocks 两条重正则 (perf fix).
@@ -309,33 +283,6 @@ describe('ChatBubble streaming degraded render', () => {
     expect(queryByText(CONTENT_WITH_MARKERS)).toBeNull();
   });
 
-  it('strips leaked menu JSON fragments from completed assistant replies', () => {
-    const content = [
-      '### 🛒 购物清单',
-      '- 鲈鱼或鳕鱼 200g（让鱼摊处理好，回家直接蒸）',
-      '- 糙米 1 杯（提前泡 30 分钟更好煮）',
-      '{“name”:“清蒸鲈鱼/鳕鱼”,“qty”:“200g”,“kcal”:200,“protein”:40},{“name”:“糙米饭”,“qty”:“100g熟重”,“kcal”:110,“carbs”:23},{“name”:“西兰花”,“qty”:“150g”,“kcal”:70,“fiber”:4},{“name”:“鸡蛋羹”,“qty”:“1个蛋”,“kcal”:70,“protein”:6}]',
-      ',“totals”:{“kcal”:450,“protein”:52,“carbs”:25,“fat”:14},“shopping_list”:[“鲈鱼或鳕鱼 200g”,“糙米 1 杯”,“西兰花 1 颗”,“鸡蛋 1 个”]}',
-      '```',
-      '',
-      '吃完后跟我说一声，我帮你记录并启动夜间禁食倒计时。',
-    ].join('\n');
-
-    const { getByText, queryByText } = renderBubble({
-      id: 'assistant-done-menu-json-leak',
-      role: 'assistant',
-      content,
-      streaming: false,
-    });
-
-    expect(getByText(/购物清单/)).toBeTruthy();
-    expect(getByText(/鲈鱼或鳕鱼 200g/)).toBeTruthy();
-    expect(getByText(/吃完后跟我说一声/)).toBeTruthy();
-    expect(queryByText(/shopping_list/)).toBeNull();
-    expect(queryByText(/“qty”/)).toBeNull();
-    expect(queryByText(/```/)).toBeNull();
-  });
-
   it('renders rich Markdown once streaming has finished (terminal state unchanged)', () => {
     const { getByTestId } = renderBubble({
       id: 'assistant-done',
@@ -349,65 +296,26 @@ describe('ChatBubble streaming degraded render', () => {
     expect(mockMarkdownMount).toHaveBeenCalled();
   });
 
-  it('disables native text selection inside completed Markdown replies', () => {
-    renderBubble({
-      id: 'assistant-done-markdown-selection',
-      role: 'assistant',
-      content: '### 今日建议\n\n- 喷剂\n- 贴片',
-      streaming: false,
-    });
-
-    const props = mockMarkdownProps.mock.calls[mockMarkdownProps.mock.calls.length - 1][0];
-    expect(props.rules).toBeTruthy();
-    const textNode = { key: 'text-1', content: '喷剂' };
-    const renderedText = props.rules.text(textNode, [], [], { text: {} }, {});
-    expect(renderedText.props.selectable).toBe(false);
-    const groupNode = { key: 'group-1' };
-    const renderedGroup = props.rules.textgroup(groupNode, ['喷剂'], [], { textgroup: {} });
-    expect(renderedGroup.props.selectable).toBe(false);
-  });
-
-  it('opens an in-bubble action row before entering multi-select', () => {
-    const onEnterSelection = jest.fn();
-    const { getByLabelText, getByTestId, queryByTestId } = renderBubble({
-      id: 'assistant-action-menu',
-      role: 'assistant',
-      content: '今天建议补水并早点休息。',
-      streaming: false,
-      completionStatus: 'complete',
-    }, { onEnterSelection });
-
-    expect(queryByTestId('message-actions-row')).toBeNull();
-    fireEvent(getByLabelText('AI: 今天建议补水并早点休息。'), 'longPress');
-
-    expect(getByTestId('message-actions-row')).toBeTruthy();
-    expect(getByLabelText('复制全文')).toBeTruthy();
-    fireEvent.press(getByLabelText('多选消息'));
-    expect(onEnterSelection).toHaveBeenCalledWith('assistant-action-menu');
-  });
-
-  it('saves a chat image to the local photo library from long press', async () => {
+  it('offers saving attached chat images to Photos from a long press', async () => {
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
-      const saveButton = buttons?.find(button => button.text === '保存到相册');
-      saveButton?.onPress?.();
+      buttons?.find(button => button.text === '保存到相册')?.onPress?.();
     });
-    const { getByLabelText } = renderBubble({
-      id: 'user-image-message',
-      role: 'user',
-      content: '请分析这张图片',
-      imageUris: ['https://health.executor.life/api/v1/files/chat-image.jpg'],
-    }, { imageAuthToken: 'token-123' });
+    mockSaveChatImageToLibrary.mockResolvedValueOnce(undefined);
 
-    fireEvent(getByLabelText('图片 1，长按保存到相册'), 'longPress');
+    const { getByLabelText } = renderBubble({
+      id: 'user-image',
+      role: 'user',
+      content: '',
+      imageUris: ['file:///tmp/lunch.jpg'],
+      streaming: false,
+    });
+
+    fireEvent(getByLabelText('打开图片 1'), 'longPress');
 
     await waitFor(() => {
-      expect(mockCreateAssetAsync).toHaveBeenCalledWith('file://cache/reva-chat-image.jpg');
+      expect(mockSaveChatImageToLibrary).toHaveBeenCalledWith({ uri: 'file:///tmp/lunch.jpg' });
     });
-    expect(mockDownloadAsync).toHaveBeenCalledWith(
-      'https://health.executor.life/api/v1/files/chat-image.jpg',
-      expect.stringMatching(/^file:\/\/cache\/reva-chat-image-\d+-0\.jpg$/),
-      { headers: { Authorization: 'Bearer token-123' } },
-    );
+
     alertSpy.mockRestore();
   });
 

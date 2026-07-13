@@ -5,8 +5,7 @@ import type { ChatCardActionDescriptor } from '../components/chat/cards/types';
 import { getAuthStorageScope } from './authStorageScope';
 import { normalizeWriteReceipt, type WriteReceipt } from './writeReceipt';
 
-const STORAGE_KEY_PREFIX = 'chat_card_action_receipt_v2';
-const LEGACY_STORAGE_KEY_PREFIX = 'chat:card_action_receipt:v2';
+const STORAGE_KEY_PREFIX = 'chat:card_action_receipt:v2';
 const INDEX_KEY_PREFIX = 'chat:card_action_receipt_index:v2';
 const STORAGE_VERSION = 2;
 const RECEIPT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
@@ -37,11 +36,7 @@ export interface CardActionCompletion {
 let mutationQueue: Promise<void> = Promise.resolve();
 
 export function cardActionReceiptStorageKey(scope: string, identity: string): string {
-  return `${STORAGE_KEY_PREFIX}_${scope}_${digest(identity)}`;
-}
-
-function legacyCardActionReceiptStorageKey(scope: string, identity: string): string {
-  return `${LEGACY_STORAGE_KEY_PREFIX}:${scope}:${digest(identity)}`;
+  return `${STORAGE_KEY_PREFIX}:${scope}:${digest(identity)}`;
 }
 
 function cardActionReceiptIndexKey(scope: string): string {
@@ -145,11 +140,7 @@ function enqueueMutation(operation: () => Promise<void>): Promise<void> {
   return pending;
 }
 
-async function removeIndexedReceipt(
-  scope: string,
-  storageKey: string,
-  legacyStorageKey?: string,
-): Promise<void> {
+async function removeIndexedReceipt(scope: string, storageKey: string): Promise<void> {
   await enqueueMutation(async () => {
     try {
       await SecureStore.deleteItemAsync(storageKey);
@@ -158,9 +149,8 @@ async function removeIndexedReceipt(
     }
     const indexKey = cardActionReceiptIndexKey(scope);
     const index = parseIndex(await AsyncStorage.getItem(indexKey));
-    const indexedKeys = [storageKey, legacyStorageKey].filter((key): key is string => Boolean(key));
-    if (!indexedKeys.some(key => key in index.entries)) return;
-    indexedKeys.forEach(key => delete index.entries[key]);
+    if (!(storageKey in index.entries)) return;
+    delete index.entries[storageKey];
     await AsyncStorage.setItem(indexKey, JSON.stringify(index));
   });
 }
@@ -212,11 +202,7 @@ export async function saveCardActionReceipt(
     } catch {
       throw new Error('card_action_receipt_index_persistence_failed');
     }
-    await Promise.allSettled(
-      discardedKeys
-        .filter(key => /^[a-zA-Z0-9._-]+$/.test(key))
-        .map(key => SecureStore.deleteItemAsync(key)),
-    );
+    await Promise.allSettled(discardedKeys.map(key => SecureStore.deleteItemAsync(key)));
   });
 }
 
@@ -227,7 +213,6 @@ export async function loadCardActionCompletion(
   if (!identity) return undefined;
   const scope = await getAuthStorageScope();
   const storageKey = cardActionReceiptStorageKey(scope, identity);
-  const legacyStorageKey = legacyCardActionReceiptStorageKey(scope, identity);
   let secureRaw: string | null = null;
   let secureReadFailed = false;
   try {
@@ -241,11 +226,11 @@ export async function loadCardActionCompletion(
     if (envelope.storedAt <= now + 60_000 && now - envelope.storedAt <= RECEIPT_TTL_MS) {
       return { verified: true, receipt: envelope.receipt };
     }
-    await removeIndexedReceipt(scope, storageKey, legacyStorageKey);
+    await removeIndexedReceipt(scope, storageKey);
     return undefined;
   }
   const index = parseIndex(await AsyncStorage.getItem(cardActionReceiptIndexKey(scope)));
-  const fallback = index.entries[storageKey] ?? index.entries[legacyStorageKey];
+  const fallback = index.entries[storageKey];
   if (
     fallback
     && (fallback.completionOnly === true || secureReadFailed)
@@ -254,9 +239,7 @@ export async function loadCardActionCompletion(
   ) {
     return { verified: true, receipt: undefined };
   }
-  if (secureRaw || fallback) {
-    await removeIndexedReceipt(scope, storageKey, legacyStorageKey);
-  }
+  if (secureRaw || fallback) await removeIndexedReceipt(scope, storageKey);
   return undefined;
 }
 

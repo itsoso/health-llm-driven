@@ -5,14 +5,6 @@ import Voice, {
 } from '@react-native-voice/voice';
 import { setAudioModeAsync } from 'expo-audio';
 import { durationBucket, emitClientEvent } from '../services/clientEvents';
-import {
-  claimVoiceSession,
-  isVoiceSessionOwner,
-  releaseVoiceSession,
-  runVoiceSessionCommand,
-  runVoiceSessionStart,
-  type VoiceSessionLease,
-} from '../services/voiceSessionCoordinator';
 
 interface UseRealtimeDictationOptions {
   onTranscript: (text: string) => void;
@@ -44,7 +36,6 @@ export function useRealtimeDictation({
   const onTranscriptRef = useRef(onTranscript);
   const onEndRef = useRef(onEnd);
   const onErrorRef = useRef(onError);
-  const voiceLeaseRef = useRef<VoiceSessionLease | null>(null);
 
   const emitTerminal = useCallback((
     phase: 'completed' | 'failed' | 'cancelled',
@@ -118,18 +109,14 @@ export function useRealtimeDictation({
     if (final) finalResultFinishRef.current?.();
   }, []);
 
-  const attachVoiceHandlers = useCallback(() => {
+  useEffect(() => {
     Voice.onSpeechPartialResults = (event: SpeechResultsEvent) => {
-      if (!isVoiceSessionOwner(voiceLeaseRef.current)) return;
       emitTranscript(event.value?.[0]);
     };
     Voice.onSpeechResults = (event: SpeechResultsEvent) => {
-      if (!isVoiceSessionOwner(voiceLeaseRef.current)) return;
       emitTranscript(event.value?.[0], true);
     };
     Voice.onSpeechEnd = () => {
-      const lease = voiceLeaseRef.current;
-      if (!isVoiceSessionOwner(lease)) return;
       if (!activeRef.current) return;
       activeRef.current = false;
       setIsDictating(false);
@@ -139,14 +126,11 @@ export function useRealtimeDictation({
         if (manualStopRef.current) return;
         acceptingFinalResultsRef.current = false;
         emitTerminal('completed');
-        await runVoiceSessionCommand(lease, releaseRecordingMode);
-        releaseVoiceSession(lease);
+        await releaseRecordingMode();
         onEndRef.current?.();
       });
     };
     Voice.onSpeechError = (event: SpeechErrorEvent) => {
-      const lease = voiceLeaseRef.current;
-      if (!isVoiceSessionOwner(lease)) return;
       if (!activeRef.current && !acceptingFinalResultsRef.current) return;
       const message = event.error?.message || '语音识别失败';
       activeRef.current = false;
@@ -155,15 +139,8 @@ export function useRealtimeDictation({
       setError(message);
       setIsDictating(false);
       emitTerminal('failed', 'speech_recognition_failed');
-      void runVoiceSessionCommand(lease, releaseRecordingMode).finally(() => {
-        releaseVoiceSession(lease);
-        onErrorRef.current?.(message);
-      });
+      void releaseRecordingMode().finally(() => onErrorRef.current?.(message));
     };
-  }, [emitTerminal, emitTranscript, releaseRecordingMode, waitForFinalResult]);
-
-  useEffect(() => {
-    attachVoiceHandlers();
 
     return () => {
       const wasStarting = startingRef.current;
@@ -174,18 +151,18 @@ export function useRealtimeDictation({
       acceptingFinalResultsRef.current = false;
       manualStopRef.current = false;
       finalResultFinishRef.current?.();
-      const lease = voiceLeaseRef.current;
-      void runVoiceSessionCommand(lease, async () => {
-        try { await Voice.stop(); } catch {}
-        await releaseRecordingMode();
-      }).finally(() => releaseVoiceSession(lease));
+      try {
+        Voice.stop().catch(() => undefined);
+      } catch {
+        // Some native shims throw synchronously when no session exists.
+      }
+      Voice.destroy().then(() => Voice.removeAllListeners()).catch(() => undefined);
+      void releaseRecordingMode();
     };
-  }, [attachVoiceHandlers, emitTerminal, releaseRecordingMode]);
+  }, [emitTerminal, emitTranscript, releaseRecordingMode, waitForFinalResult]);
 
   const startDictation = useCallback(async () => {
     if (activeRef.current || startingRef.current) return false;
-    const lease = claimVoiceSession('dictation');
-    voiceLeaseRef.current = lease;
     const generation = startGenerationRef.current + 1;
     startGenerationRef.current = generation;
     startingRef.current = true;
@@ -197,9 +174,8 @@ export function useRealtimeDictation({
     setError(null);
     try {
       const available = await Voice.isAvailable();
-      if (generation !== startGenerationRef.current || !isVoiceSessionOwner(lease)) {
-        await runVoiceSessionCommand(lease, releaseRecordingMode);
-        releaseVoiceSession(lease);
+      if (generation !== startGenerationRef.current) {
+        await releaseRecordingMode();
         return false;
       }
       if (!available) {
@@ -207,57 +183,38 @@ export function useRealtimeDictation({
         setError(message);
         emitTerminal('failed', 'speech_recognition_unavailable');
         onErrorRef.current?.(message);
-        releaseVoiceSession(lease);
         return false;
       }
-      const nativeStarted = await runVoiceSessionStart(
-        lease,
-        async () => {
-          await setRecordingMode(true);
-          attachVoiceHandlers();
-          activeRef.current = true;
-          setIsDictating(true);
-          await Voice.start(locale);
-        },
-        async () => {
-          try { await Voice.stop(); } catch {}
-          activeRef.current = false;
-          setIsDictating(false);
-          await releaseRecordingMode();
-        },
-      );
-      if (!nativeStarted) {
-        activeRef.current = false;
-        setIsDictating(false);
-        releaseVoiceSession(lease);
-        return false;
-      }
+      await setRecordingMode(true);
       if (generation !== startGenerationRef.current) {
-        await runVoiceSessionCommand(lease, async () => {
-          try { await Voice.stop(); } catch {}
-          await releaseRecordingMode();
-        });
+        await releaseRecordingMode();
+        return false;
+      }
+      activeRef.current = true;
+      setIsDictating(true);
+      await Voice.start(locale);
+      if (generation !== startGenerationRef.current) {
+        try {
+          await Voice.stop();
+        } catch {
+          // Cancellation already owns the user-visible terminal state.
+        }
         activeRef.current = false;
         setIsDictating(false);
-        releaseVoiceSession(lease);
+        await releaseRecordingMode();
         return false;
       }
       return true;
     } catch (e: any) {
       activeRef.current = false;
       setIsDictating(false);
-      if (generation !== startGenerationRef.current || !isVoiceSessionOwner(lease)) {
-        await runVoiceSessionCommand(lease, releaseRecordingMode);
-        releaseVoiceSession(lease);
+      if (generation !== startGenerationRef.current) {
+        await releaseRecordingMode();
         return false;
       }
       const message = e?.message || String(e);
       setError(message);
-      await runVoiceSessionCommand(lease, async () => {
-        try { await Voice.cancel(); } catch {}
-        await releaseRecordingMode();
-      });
-      releaseVoiceSession(lease);
+      await releaseRecordingMode();
       emitTerminal('failed', 'speech_recognition_start_failed');
       onErrorRef.current?.(message);
       return false;
@@ -266,23 +223,13 @@ export function useRealtimeDictation({
         startingRef.current = false;
       }
     }
-  }, [attachVoiceHandlers, emitTerminal, locale, releaseRecordingMode, setRecordingMode]);
+  }, [emitTerminal, locale, releaseRecordingMode, setRecordingMode]);
 
   const stopDictation = useCallback(async (): Promise<string> => {
-    const lease = voiceLeaseRef.current;
     const wasStarting = startingRef.current;
     if (wasStarting) {
       startGenerationRef.current += 1;
       startingRef.current = false;
-      activeRef.current = false;
-      acceptingFinalResultsRef.current = false;
-      setIsDictating(false);
-      void runVoiceSessionCommand(lease, async () => {
-        try { await Voice.cancel(); } catch {}
-        await releaseRecordingMode();
-      }).finally(() => releaseVoiceSession(lease));
-      emitTerminal('cancelled', 'start_cancelled');
-      return latestTextRef.current;
     }
     const wasActive = activeRef.current;
     const wasAwaitingFinal = acceptingFinalResultsRef.current;
@@ -293,12 +240,7 @@ export function useRealtimeDictation({
         manualStopRef.current = true;
         acceptingFinalResultsRef.current = true;
         finalResultPromise = waitForFinalResult();
-        if (wasActive) {
-          const stopped = await runVoiceSessionCommand(lease, async () => {
-            await Voice.stop();
-          });
-          if (!stopped) finalResultFinishRef.current?.();
-        }
+        if (wasActive) await Voice.stop();
         await finalResultPromise;
       }
     } catch (e) {
@@ -310,9 +252,10 @@ export function useRealtimeDictation({
       acceptingFinalResultsRef.current = false;
       manualStopRef.current = false;
       setIsDictating(false);
-      await runVoiceSessionCommand(lease, releaseRecordingMode);
-      releaseVoiceSession(lease);
-      if (wasActive || wasAwaitingFinal) {
+      await releaseRecordingMode();
+      if (wasStarting) {
+        emitTerminal('cancelled', 'start_cancelled');
+      } else if (wasActive || wasAwaitingFinal) {
         emitTerminal(
           stopFailed ? 'failed' : 'completed',
           stopFailed ? 'speech_recognition_stop_failed' : undefined,
@@ -323,22 +266,10 @@ export function useRealtimeDictation({
   }, [emitTerminal, releaseRecordingMode, waitForFinalResult]);
 
   const cancelDictation = useCallback(async () => {
-    const lease = voiceLeaseRef.current;
     const wasStarting = startingRef.current;
     if (wasStarting) {
       startGenerationRef.current += 1;
       startingRef.current = false;
-      activeRef.current = false;
-      acceptingFinalResultsRef.current = false;
-      manualStopRef.current = false;
-      finalResultFinishRef.current?.();
-      setIsDictating(false);
-      void runVoiceSessionCommand(lease, async () => {
-        try { await Voice.cancel(); } catch {}
-        await releaseRecordingMode();
-      }).finally(() => releaseVoiceSession(lease));
-      emitTerminal('cancelled', 'start_cancelled');
-      return;
     }
     const wasActive = activeRef.current;
     activeRef.current = false;
@@ -347,19 +278,16 @@ export function useRealtimeDictation({
     finalResultFinishRef.current?.();
     try {
       if (wasActive) {
-        await runVoiceSessionCommand(lease, async () => {
-          await Voice.cancel();
-        });
+        await Voice.cancel();
       }
     } catch (e) {
       if (__DEV__) console.warn('[useRealtimeDictation] cancel failed:', e);
     } finally {
       latestTextRef.current = '';
       setIsDictating(false);
-      await runVoiceSessionCommand(lease, releaseRecordingMode);
-      releaseVoiceSession(lease);
-      if (wasActive) {
-        emitTerminal('cancelled');
+      await releaseRecordingMode();
+      if (wasStarting || wasActive) {
+        emitTerminal('cancelled', wasStarting ? 'start_cancelled' : undefined);
       }
     }
   }, [emitTerminal, releaseRecordingMode]);

@@ -284,9 +284,9 @@ describe('dispatchChatCardAction', () => {
     })).rejects.toThrow('diet_record_missing_id');
   });
 
-  it('estimates, backfills, and returns the saved diet record after confirming a diet record without macros', async () => {
+  it('estimates and backfills nutrition after confirming a diet record without macros', async () => {
     mockApiPost
-      .mockResolvedValueOnce({ data: { id: 88, food_items: '牛肉面', meal_type: 'lunch', record_date: '2026-07-09' } })
+      .mockResolvedValueOnce({ data: { id: 88, food_items: '牛肉面', meal_type: 'lunch' } })
       .mockResolvedValueOnce({
         data: {
           success: true,
@@ -296,18 +296,6 @@ describe('dispatchChatCardAction', () => {
           total_fat: 18,
         },
       });
-    mockApiPut.mockResolvedValueOnce({
-      data: {
-        id: 88,
-        record_date: '2026-07-09',
-        food_items: '牛肉面',
-        meal_type: 'lunch',
-        calories: 620,
-        protein: 28,
-        carbs: 78,
-        fat: 18,
-      },
-    });
 
     await expect(dispatchChatCardAction({
       label: '确认记录',
@@ -323,21 +311,7 @@ describe('dispatchChatCardAction', () => {
     })).resolves.toEqual(expect.objectContaining({
       status: 'completed',
       nutrition_status: 'estimated',
-      receipt: expect.objectContaining({
-        resourceType: 'diet_record',
-        resourceId: '88',
-        verified: true,
-      }),
-      record: expect.objectContaining({
-        id: 88,
-        record_date: '2026-07-09',
-        food_items: '牛肉面',
-        meal_type: 'lunch',
-        calories: 620,
-        protein: 28,
-        carbs: 78,
-        fat: 18,
-      }),
+      receipt: expect.objectContaining({ resourceType: 'diet_record', resourceId: '88', verified: true }),
     }));
 
     expect(mockApiPost).toHaveBeenNthCalledWith(1, '/diet/records', expect.objectContaining({
@@ -402,8 +376,6 @@ describe('dispatchChatCardAction', () => {
     ['我刚才不小心删除了', 'invalid_diet_food_items_management'],
     ['替普瑞酮胶囊（施维舒）', 'invalid_diet_food_items_non_diet'],
     ['鱼油', 'invalid_diet_food_items_non_diet'],
-    ['和午餐食品营养卡', 'invalid_diet_food_items_ui_text'],
-    ['保存并确认', 'invalid_diet_food_items_ui_text'],
     ['晨跑 30 分钟', 'invalid_diet_food_items_health_metric'],
     ['体重 73.1kg 腰围 84cm', 'invalid_diet_food_items_health_metric'],
     ['昨晚睡了 6 小时', 'invalid_diet_food_items_health_metric'],

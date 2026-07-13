@@ -14,7 +14,6 @@ from app.models.notification import UserNotificationSetting
 from app.models.smart_plan import WeeklyPlan
 from app.services.notification.deeplinks import deeplink_for
 from app.services.notification.evidence_policy import build_notification_evidence_data
-from app.services.notification.push_privacy import llm_push_backstop, safety_alert_push_text
 from app.services.notification.push_service import PushService
 from app.utils.timezone import get_china_now
 from app.utils.async_helpers import run_async
@@ -357,7 +356,7 @@ def send_custom_notification(user_id: int, title: str, body: str):
 @celery_app.task
 def send_plan_morning_reminder():
     """
-    发送今日计划提醒（每天 09:10 执行）
+    发送今日计划提醒（每天 09:05 执行）
     """
     logger.info("开始发送今日计划提醒")
 
@@ -386,11 +385,6 @@ def send_plan_morning_reminder():
                 body = f"今日 {len(today_items)} 项待完成：{', '.join(titles)}"
                 if len(today_items) > 3:
                     body += f" 等{len(today_items)}项"
-                # §5.6 backstop:计划项 title 是 LLM 生成(smart_plan),可能点名药/补剂
-                _, body, _ = llm_push_backstop(
-                    None, body,
-                    generic_content=f"今日 {len(today_items)} 项计划待完成,点开查看。",
-                )
                 run_async(push_service.send_notification(
                     user_id=plan.user_id,
                     notification_type="reminder",
@@ -444,11 +438,6 @@ def send_plan_evening_summary():
                     body = f"今日完成 {done}/{total} 项"
                     if undone:
                         body += f"，未完成：{', '.join(undone[:3])}"
-                # §5.6 backstop:未完成项 title 是 LLM 生成,可能点名药/补剂
-                _, body, _ = llm_push_backstop(
-                    None, body,
-                    generic_content=f"今日完成 {done}/{total} 项,点开查看详情。",
-                )
                 run_async(push_service.send_notification(
                     user_id=plan.user_id,
                     notification_type="reminder",
@@ -525,27 +514,14 @@ def send_plan_item_reminders():
                 body = f"{', '.join(titles)}"
                 if len(items) > 3:
                     body += f" 等{len(items)}项"
-                # §5.6 backstop:计划项 title 是 LLM 生成(smart_plan),可能点名药/补剂
-                _, body, _ = llm_push_backstop(
-                    None, body,
-                    generic_content=f"你有 {len(items)} 项计划待完成,点开查看。",
-                )
 
-                result = run_async(push_service.send_notification(
+                run_async(push_service.send_notification(
                     user_id=plan.user_id,
                     notification_type="plan_reminder",
                     title=f"{emoji} 计划提醒",
                     content=body,
                 ))
-                if result.get("success"):
-                    sent_count += 1
-                else:
-                    logger.info(
-                        "[分时提醒] 未实际发送 user=%s categories=%s reason=%s",
-                        plan.user_id,
-                        matched_categories,
-                        result.get("reason"),
-                    )
+                sent_count += 1
             except Exception as e:
                 logger.error(f"[分时提醒] 发送失败 (user_id={plan.user_id}): {e}")
 
@@ -680,15 +656,9 @@ def _generate_daily_insight_for_user(user_id: int, today: date):
         client = MultiModelAnalyzeClient()
         analysis = run_async(client.analyze(prompt))
 
-        # 推送通知(§5.6 backstop:LLM 复盘文案点名药/补剂 → 锁屏泛化,原文进 data)
-        aggregation = analysis.get("aggregation") or ""
-        _, safe_content, redacted = llm_push_backstop(
-            None, aggregation, generic_content="今日健康复盘已生成,点开查看。"
-        )
-        content = (safe_content[:200] if safe_content else "") or "今日健康数据已分析完成"
-        data = {"source": "notifications.daily_insights"}
-        if redacted:
-            data["full_content"] = aggregation[:200]
+        # 推送通知
+        aggregation = (analysis.get("aggregation") or "")[:200]
+        content = aggregation or "今日健康数据已分析完成"
         push_service = PushService(db)
         try:
             run_async(push_service.send_notification(
@@ -696,7 +666,6 @@ def _generate_daily_insight_for_user(user_id: int, today: date):
                 notification_type="daily_insights",
                 title="📊 今日健康复盘",
                 content=content,
-                data=data,
             ))
         except Exception as e:
             logger.warning(f"[健康复盘] 推送失败 user={user_id}: {e}")
@@ -778,14 +747,11 @@ def daily_anomaly_check():
                             push_service = PushService(db2)
                             for alert in report.alerts:
                                 if alert.severity.value >= 3:  # HIGH=3, CRITICAL=4
-                                    # §5 推送隐私:ddi/dsi/pgx/labs/problem_red_lines
-                                    # 的 title/message 带药名/化验项/诊断 → 锁屏泛化
-                                    push_title, push_content = safety_alert_push_text(alert)
                                     run_async(push_service.send_notification(
                                         user_id=user_id,
                                         notification_type="health_alert",
-                                        title=push_title,
-                                        content=push_content,
+                                        title=f"⚠️ {alert.title}",
+                                        content=alert.message[:120],
                                         data={
                                             "screen": "alerts",  # legacy fallback
                                             "deep_link": deeplink_for("health_alert"),
@@ -892,7 +858,7 @@ def send_trend_morning_push():
 @celery_app.task
 def send_morning_health_summary():
     """
-    每日早安健康摘要推送（07:30执行）— 升级版.
+    每日早安健康摘要推送（09:30 执行）— 升级版.
 
     输出:
       - title: '🌅 早安'
@@ -922,17 +888,11 @@ def send_morning_health_summary():
                 if not script or len(script) < 10:
                     continue  # 短稿生成失败/兜底无意义, 跳过
 
-                # §5.6 backstop:LLM 蒸稿点名药/补剂 → 锁屏泛化;
-                # 点开 voice-chat 会重取同一份稿,原文不需进 payload
-                _, safe_script, _ = llm_push_backstop(
-                    None, script, generic_content="今天的健康早报准备好了,点开收听。"
-                )
-
                 run_async(push_service.send_notification(
                     user_id=user_id,
                     notification_type="morning_briefing",
                     title="🌅 早安",
-                    content=safe_script[:200],
+                    content=script[:200],
                     data=_morning_briefing_push_data(),
                     # 同一日只推一次
                     dedup_window_hours=20,
@@ -990,16 +950,11 @@ def send_weekly_review_invite():
                 if not script or len(script) < 10:
                     continue
 
-                # §5.6 backstop:周聊稿点名药/补剂 → 锁屏泛化(点开 voice-chat 重取原稿)
-                _, safe_script, _ = llm_push_backstop(
-                    None, script, generic_content="本周的健康回顾准备好了,点开聊聊。"
-                )
-
                 run_async(push_service.send_notification(
                     user_id=user_id,
                     notification_type="ai_advice",  # 复用 ai_advice 开关 (周聊偏建议性)
                     title="🗓️ 本周聊聊?",
-                    content=safe_script[:200],
+                    content=script[:200],
                     data=build_notification_evidence_data(
                         notification_type="ai_advice",
                         source="notifications.send_weekly_review_invite",
@@ -1135,7 +1090,7 @@ def _status_emoji(value, good_threshold, bad_threshold, higher_is_better=True):
 def regenerate_briefing_for_user(user_id: int):
     """
     Garmin 同步完成后为单个用户重新生成今日简报。
-    确保简报包含最新同步数据，而不是 07:35 时的旧数据。
+    确保简报包含最新同步数据，而不是早于 09:00 睡眠保护窗口时的旧数据。
     """
     from app.utils.timezone import get_china_today
     today = get_china_today()
@@ -1214,14 +1169,11 @@ def evaluate_and_push_safety(user_id: int):
                                 f"&badge={quote(alert.title)}"
                             )
 
-                        # §5 推送隐私:敏感类别锁屏泛化(deep_link 里的预填 prompt 属
-                        # data payload,不上锁屏,保留原文)
-                        push_title, push_content = safety_alert_push_text(alert)
                         run_async(push_service.send_notification(
                             user_id=user_id,
                             notification_type="health_alert",
-                            title=push_title,
-                            content=push_content,
+                            title=f"⚠️ {alert.title}",
+                            content=alert.message[:120],
                             data={
                                 "screen": "alerts",  # legacy fallback
                                 "deep_link": deep_link,
@@ -1239,7 +1191,7 @@ def evaluate_and_push_safety(user_id: int):
 @celery_app.task(time_limit=600)
 def generate_daily_briefing_message():
     """
-    每日健康简报（07:35 执行）
+    每日健康简报（09:32 执行）
     为有 Garmin 设备的活跃用户生成简报并写入 Agent 对话。
     """
     from app.models.user import GarminCredential
@@ -1737,9 +1689,8 @@ def check_action_card_followups():
                 continue
 
             days_ago = (now - card.created_at.replace(tzinfo=None)).days if card.created_at else 0
-            # §5 推送隐私:ActionCard 标题可能带补剂/药名,锁屏正文不引卡片标题
             title = f"随访提醒 · 卡片#{card.id}"
-            content = f"你的一张行动卡已创建 {days_ago} 天，还有未完成的待办事项。打开查看进度。"
+            content = f"「{card.title}」已创建 {days_ago} 天，还有未完成的待办事项。打开查看进度。"
 
             try:
                 asyncio.run(push_svc.send_notification(
@@ -1982,29 +1933,27 @@ def generate_doctor_weekly_report():
                     except Exception as e:  # noqa: BLE001
                         logger.info(f"[医生周报] 用户 {user_id} Telegram 异常: {e}")
 
-                # 4) Email + Telegram 都失败 → 走统一 PushService 兜底提示。
-                # 不直连 IOSPushService: PushService 才会统一执行用户开关、quiet hours、
-                # 09:00 morning floor、去重与渠道选择，避免 07:00/08:00 补跑打扰睡眠。
+                # 4) Email + Telegram 都失败且有 iOS token → APNs 提示 "本周摘要已生成"
                 if not tg_ok and not email_ok and soap_id:
                     try:
-                        from app.services.notification.push_service import PushService
-
-                        push_result = asyncio.run(PushService(db).send_notification(
-                            user_id=user_id,
-                            notification_type="doctor_weekly_summary",
-                            title="📊 本周数据摘要已生成",
-                            content="进入 App 查看过去 7 天健康趋势 + 关注指标",
-                            data={
-                                "type": "doctor_weekly_summary",
-                                "journal_entry_id": str(soap_id),
-                            },
-                            severity="info",
-                        ))
-                        logger.info(
-                            f"[医生周报] 用户 {user_id} PushService 兜底结果: {push_result}"
-                        )
+                        from app.models.notification import UserNotificationSetting
+                        from app.services.notification.ios_push import IOSPushService
+                        setting = db.query(UserNotificationSetting).filter(
+                            UserNotificationSetting.user_id == user_id,
+                        ).first()
+                        if setting and setting.enabled and setting.ios_push_enabled and setting.ios_device_token:
+                            push = IOSPushService()
+                            if push.is_configured:
+                                asyncio.run(push.send_push(
+                                    device_token=setting.ios_device_token,
+                                    title="📊 本周数据摘要已生成",
+                                    body="进入 App 查看过去 7 天健康趋势 + 关注指标",
+                                    data={"type": "doctor_weekly_summary",
+                                          "journal_entry_id": str(soap_id)},
+                                ))
+                                logger.info(f"[医生周报] 用户 {user_id} APNs 提醒已发")
                     except Exception as e:  # noqa: BLE001
-                        logger.debug(f"[医生周报] 用户 {user_id} PushService 兜底失败: {e}")
+                        logger.debug(f"[医生周报] 用户 {user_id} APNs 提醒失败 (旁路): {e}")
 
             except Exception as e:
                 logger.warning(f"[医生周报] 用户 {user_id} 生成失败: {e}")
@@ -2051,16 +2000,13 @@ def scan_medication_reminders():
                 if cur_hhmm not in times:
                     continue
 
-                # 隐私(§5 推送隐私):锁屏可见的 title/content 绝不带药名/剂量 ——
-                # iOS 默认在锁屏渲染推送标题,药名可反推诊断(二甲双胍→糖尿病)。
-                # 药名/剂量只进 data payload,App 解锁后应用内渲染。
-                # timing(空腹/饭前/饭后)不指认具体药物,保留在正文维持"照做"价值。
-                title = "💊 用药提醒"
-                body_parts = []
+                title = f"💊 用药提醒：{med.name}"
+                body_parts = [med.dosage] if med.dosage else []
+                # 相对吃饭的时点(空腹/饭前/饭后) —— 复杂方案无脑化的关键:用户不用再自己查怎么吃
                 timing = medication_timing_label(med.timing_relation, med.meal_anchor)
                 if timing:
                     body_parts.append(timing)
-                body_parts.append(f"现在 {cur_hhmm} 有一次用药到点了，点「已服用」自动打卡。")
+                body_parts.append(f"现在 {cur_hhmm}，点「已服用」自动打卡。")
                 body = "，".join(body_parts)
 
                 run_async(push_service.send_notification(
@@ -2073,13 +2019,8 @@ def scan_medication_reminders():
                         "reminder_type": "medication",
                         "medication_id": med.id,
                         "medication_name": med.name,
-                        "dosage": med.dosage,
-                        "timing": timing,
                         "scheduled_time": cur_hhmm,
                         "deep_link": "/(tabs)/record",
-                        # title 泛化后所有药共享同一 title;dedup 必须改走 rule_id
-                        # (per 药×日×时点),否则同日第二种药/第二剂会被 title 去重吞掉。
-                        "rule_id": f"medication_reminder.{med.id}.{today_date}.{cur_hhmm}",
                     },
                 ))
                 sent += 1

@@ -146,6 +146,7 @@ export function RecordQualityCardView(props: RecordQualityViewProps) {
   const judgement = text(data.primary_judgement);
   const cautions = textList(data.personal_cautions);
   const nextAction = text(data.next_action);
+  const showDietShareStrip = text(data.domain) !== 'exercise' && Boolean(caloriesTotal || hasProgress || nextAction);
   const nextMealDetail = objectValue(data.next_meal_detail);
   const showNextMealDetail = Boolean(hasExpandedSection(data.expanded_sections, 'next_meal') && nextMealDetail);
   const adjustRecord = objectValue(data.adjust_record);
@@ -231,6 +232,45 @@ export function RecordQualityCardView(props: RecordQualityViewProps) {
           <Text maxFontSizeMultiplier={1.2} style={styles.nextActionText}>
             {nextAction}
           </Text>
+        </View>
+      ) : null}
+
+      {showDietShareStrip ? (
+        <View style={styles.shareStrip}>
+          <View style={styles.shareStripHeader}>
+            <Text maxFontSizeMultiplier={1.1} style={styles.shareStripEyebrow}>
+              可截图分享
+            </Text>
+            <Text maxFontSizeMultiplier={1.1} style={styles.shareStripTag}>
+              #饮食记录 #小巴
+            </Text>
+          </View>
+          <View style={styles.shareMetricRow}>
+            {caloriesTotal ? (
+              <View style={styles.shareMetric}>
+                <Text maxFontSizeMultiplier={1.05} style={styles.shareMetricLabel}>今日摄入</Text>
+                <Text maxFontSizeMultiplier={1.1} style={styles.shareMetricValue}>
+                  {caloriesTotal} kcal
+                </Text>
+              </View>
+            ) : null}
+            {hasProgress ? (
+              <View style={styles.shareMetric}>
+                <Text maxFontSizeMultiplier={1.05} style={styles.shareMetricLabel}>蛋白进度</Text>
+                <Text maxFontSizeMultiplier={1.1} style={styles.shareMetricValue}>
+                  {proteinTotal}/{proteinTarget}g
+                </Text>
+              </View>
+            ) : null}
+          </View>
+          {nextAction ? (
+            <View style={styles.shareNextRow}>
+              <Text maxFontSizeMultiplier={1.05} style={styles.shareNextLabel}>下一餐</Text>
+              <Text maxFontSizeMultiplier={1.12} style={styles.shareNextText}>
+                {nextAction}
+              </Text>
+            </View>
+          ) : null}
         </View>
       ) : null}
 
@@ -645,6 +685,89 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: C.green700,
+    lineHeight: 17,
+  } as TextStyle,
+  shareStrip: {
+    marginTop: 10,
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: revaRadii.md,
+    backgroundColor: 'rgba(255,255,255,0.82)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E8D6C0',
+  },
+  shareStripHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  shareStripEyebrow: {
+    fontFamily: revaFonts.sans,
+    fontSize: 10,
+    fontWeight: '800',
+    color: ADJUST_ACCENT,
+    letterSpacing: 0,
+    lineHeight: 14,
+  } as TextStyle,
+  shareStripTag: {
+    flexShrink: 1,
+    textAlign: 'right',
+    fontFamily: revaFonts.sans,
+    fontSize: 10,
+    fontWeight: '700',
+    color: C.ink3,
+    lineHeight: 14,
+  } as TextStyle,
+  shareMetricRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  shareMetric: {
+    flex: 1,
+    minHeight: 48,
+    justifyContent: 'center',
+    gap: 3,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderRadius: revaRadii.sm,
+    backgroundColor: C.paper,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+  },
+  shareMetricLabel: {
+    fontFamily: revaFonts.sans,
+    fontSize: 10,
+    fontWeight: '700',
+    color: C.ink3,
+    lineHeight: 14,
+  } as TextStyle,
+  shareMetricValue: {
+    fontFamily: revaFonts.mono,
+    fontSize: 13,
+    fontWeight: '900',
+    color: C.ink1,
+    lineHeight: 17,
+  } as TextStyle,
+  shareNextRow: {
+    gap: 3,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E8D6C0',
+  },
+  shareNextLabel: {
+    fontFamily: revaFonts.sans,
+    fontSize: 10,
+    fontWeight: '800',
+    color: ADJUST_ACCENT,
+    lineHeight: 14,
+  } as TextStyle,
+  shareNextText: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    fontWeight: '800',
+    color: C.ink1,
     lineHeight: 17,
   } as TextStyle,
   nextMealPanel: {

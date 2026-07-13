@@ -114,7 +114,74 @@ function normalizeFlattenedAgentContent(content: string): string {
   return structureFlattenedGeneralAdvice(flattened);
 }
 
+function stripInlineMarkdown(value: string): string {
+  return value
+    .replace(/[*_`~#]/g, '')
+    .replace(/[✅✔️]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractFirst(pattern: RegExp, text: string): string | null {
+  const match = text.match(pattern);
+  return match?.[1]?.trim() || null;
+}
+
+function normalizeMealLabel(value: string | null): string | null {
+  if (!value) return null;
+  const v = value.trim();
+  if (/早餐/.test(v)) return '早餐';
+  if (/午餐/.test(v)) return '午餐';
+  if (/晚餐/.test(v)) return '晚餐';
+  if (/加餐|零食|夜宵/.test(v)) return '加餐';
+  return v.length <= 4 ? v : null;
+}
+
+function buildDietShareMessage(content: string): string | null {
+  const flattened = content.replace(/\s+/g, ' ').trim();
+  const hasDietSignal = /(?:已记录|今日饮食|饮食记录|早餐|午餐|晚餐|加餐).*(?:kcal|千卡|蛋白|碳水|脂肪)/iu
+    .test(flattened);
+  if (!hasDietSignal) return null;
+
+  const meal = normalizeMealLabel(extractFirst(/已记录\s*([^—\-，,。；;\s]{1,6})/u, flattened)
+    || extractFirst(/(早餐|午餐|晚餐|加餐|夜宵)/u, flattened));
+  const food = stripInlineMarkdown(extractFirst(/(?:已记录[^—\-]*[—-]\s*)(.+?)(?=[，,。；;]\s*\d|，?\s*\d+(?:\.\d+)?\s*(?:kcal|千卡)|$)/iu, flattened)
+    || extractFirst(/(?:食物|餐食|内容)[:：]\s*(.+?)(?=[，,。；;]|$)/iu, flattened)
+    || '');
+  const kcal = extractFirst(/(\d+(?:\.\d+)?)\s*(?:kcal|千卡)/iu, flattened);
+  const protein = extractFirst(/蛋白(?:质)?\s*(\d+(?:\.\d+)?)\s*g/iu, flattened);
+  const carbs = extractFirst(/碳水(?:化合物)?\s*(\d+(?:\.\d+)?)\s*g/iu, flattened);
+  const fat = extractFirst(/脂肪\s*(\d+(?:\.\d+)?)\s*g/iu, flattened);
+  const nextMatch = flattened.match(/(下一步|下一餐建议|早餐建议|午餐建议|晚餐建议|加餐建议|建议)[:：]\s*(.+?)(?:\s*(?:#|— 小巴)|$)/iu);
+  const nextPrefix = nextMatch?.[1] || '';
+  const nextBody = stripInlineMarkdown(nextMatch?.[2] || '');
+  const nextAction = nextBody && /^(早餐|午餐|晚餐|加餐)建议$/u.test(nextPrefix)
+    ? `${nextPrefix.replace('建议', '')}${nextBody}`
+    : nextBody;
+
+  if (!meal && !food && !kcal) return null;
+
+  const lines = ['今天这餐被小巴认真记下来了', ''];
+  const mealLine = [meal, food].filter(Boolean).join(' · ');
+  if (mealLine) lines.push(mealLine, '');
+
+  const metricLine = [
+    kcal ? `${Number(kcal)} kcal` : null,
+    protein ? `蛋白 ${Number(protein)}g` : null,
+    carbs ? `碳水 ${Number(carbs)}g` : null,
+    fat ? `脂肪 ${Number(fat)}g` : null,
+  ].filter(Boolean).join(' · ');
+  if (metricLine) lines.push(metricLine, '');
+
+  if (nextAction) lines.push(`下一步：${nextAction}`, '');
+  lines.push('#饮食记录 #健康管理 #小巴', '', '— 小巴');
+  return lines.join('\n');
+}
+
 export function buildAiShareMessage(content: string): string {
+  const dietShare = buildDietShareMessage(content);
+  if (dietShare) return dietShare;
+
   const text = normalizeFlattenedAgentContent(content);
   return text ? `${text}\n\n— 小巴` : '';
 }

@@ -126,7 +126,7 @@ async def test_identityless_write_result_cannot_render_or_finish_as_success(
         return '{"message":"Record deleted successfully"}'
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
     monkeypatch.setattr(executor, "_call_llm", fake_call_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_call_llm))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -183,7 +183,7 @@ async def test_http_500_after_dispatched_write_is_uncertain_and_orphan_retry_doe
         return "Error: upstream returned 500 after request dispatch"
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
     monkeypatch.setattr(executor, "_call_llm", first_llm_call)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(first_llm_call))
     monkeypatch.setattr(executor, "_execute_tool", committed_then_500)
@@ -282,7 +282,7 @@ async def test_duplicate_writes_in_one_model_response_execute_once(
         })
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
     monkeypatch.setattr(executor, "_call_llm", fake_llm_call)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm_call))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -525,7 +525,7 @@ async def test_sealed_planned_only_checkpoint_can_resume_before_any_dispatch(
         })
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
     monkeypatch.setattr(executor, "_call_llm", fake_llm)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -605,7 +605,7 @@ async def test_all_planned_writes_are_checkpointed_before_first_dispatch(
         return original_persist(user_message, **kwargs)
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
     monkeypatch.setattr(executor, "_call_llm", fake_llm_call)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(fake_llm_call))
     monkeypatch.setattr(executor, "_execute_tool", fake_execute_tool)
@@ -1374,14 +1374,9 @@ async def test_agent_stream_injects_mac_desktop_markdown_instruction(db, auth_us
         )
     ]
 
-    # rank #6 (prefix-cache layout): the mac desktop markdown instruction is
-    # turn-scoped → last user message, not the byte-stable system prompt.
-    msgs = calls[0]["messages"]
-    system_prompt = msgs[0]["content"]
-    last_user = next(m["content"] for m in reversed(msgs) if m.get("role") == "user")
-    assert "## 桌面端回复格式要求" not in system_prompt
-    assert "## 桌面端回复格式要求" in last_user
-    assert "请用 Markdown 分段" in last_user
+    system_prompt = calls[0]["messages"][0]["content"]
+    assert "## 桌面端回复格式要求" in system_prompt
+    assert "请用 Markdown 分段" in system_prompt
     assert events[-1]["event"] == "done"
 
 
@@ -1868,7 +1863,7 @@ async def test_langbridge_commercial_model_receives_raw_image_parts(db, auth_use
         event
         async for event in executor.run_stream(
             user_id=user.id,
-            message="这张照片里是什么建筑？",
+            message="这张照片里是什么食物？",
             images=[{"base64": "YWJjMTIz", "type": "jpeg"}],
             user_auth_token=None,
         )
@@ -1878,6 +1873,6 @@ async def test_langbridge_commercial_model_receives_raw_image_parts(db, auth_use
     first_call = captured_messages[0]
     last_user = next(msg for msg in reversed(first_call) if msg.get("role") == "user")
     assert isinstance(last_user["content"], list)
-    assert last_user["content"][0] == {"type": "text", "text": "这张照片里是什么建筑？"}
+    assert last_user["content"][0] == {"type": "text", "text": "这张照片里是什么食物？"}
     assert last_user["content"][1]["type"] == "image_url"
     assert last_user["content"][1]["image_url"]["url"] == "data:image/jpeg;base64,YWJjMTIz"

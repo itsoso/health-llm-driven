@@ -17,12 +17,11 @@ vi.mock('next/navigation', () => ({
 
 const getConversation = vi.fn();
 const getConversations = vi.fn();
-const streamMessage = vi.fn();
 vi.mock('@/services/api/ai', () => ({
   agentApi: {
     getConversation: (...a: unknown[]) => getConversation(...a),
     getConversations: (...a: unknown[]) => getConversations(...a),
-    streamMessage: (...a: unknown[]) => streamMessage(...a),
+    streamMessage: vi.fn(),
     deleteConversation: vi.fn(),
     updateConversationTitle: vi.fn(),
   },
@@ -46,10 +45,6 @@ beforeEach(() => {
   apiGet.mockResolvedValue({ data: {} });
   getConversations.mockResolvedValue({ data: { items: [], total: 0 } });
   getConversation.mockResolvedValue({ data: { messages: [] } });
-  // 默认: 空的 async 迭代, 让 sendMessage 的 for-await 循环干净结束。
-  streamMessage.mockImplementation(async function* () {
-    /* no events */
-  });
 });
 
 describe('ai-assistant URL state', () => {
@@ -73,49 +68,22 @@ describe('ai-assistant URL state', () => {
     expect(getConversation).not.toHaveBeenCalled();
   });
 
-  it('prefills the composer from ?prompt= for a cross-page 提问 entry (fresh conversation)', async () => {
-    const question = '结合我的疾病风险基因位点（共 3 个），给我个性化建议。';
-    searchParamsGet.mockImplementation((key: string) =>
-      key === 'prompt' ? encodeURIComponent(question) : null,
-    );
-    render(<AIAssistantPage />);
-    // input 预填成解码后的问题, 且不自动发送 (streamMessage 未被调用)。
-    expect(await screen.findByDisplayValue(question)).toBeInTheDocument();
-    expect(streamMessage).not.toHaveBeenCalled();
-    // 跨页提问 = 全新对话: 不恢复任何旧对话 (无 getConversation 调用),
-    // 停在 empty-state 空态 (「今天想了解什么？」 标题可见)。
-    expect(getConversation).not.toHaveBeenCalled();
-    expect(screen.getByText('今天想了解什么？')).toBeInTheDocument();
-    // 消费后清掉 ?prompt=, 刷新不重复注入。
-    await waitFor(() => expect(routerReplace).toHaveBeenCalledWith('/ai-assistant', { scroll: false }));
-  });
-
-  it('does not prefill from ?prompt= when ?c= conversation restore wins', async () => {
-    searchParamsGet.mockImplementation((key: string) => {
-      if (key === 'c') return '42';
-      if (key === 'prompt') return encodeURIComponent('不应出现的预填');
-      return null;
-    });
-    render(<AIAssistantPage />);
-    await waitFor(() => expect(getConversation).toHaveBeenCalledWith(42));
-    expect(screen.queryByDisplayValue('不应出现的预填')).toBeNull();
-  });
-
-  it('sends opener text quick replies with the opener context so verification has a target', async () => {
+  it('renders structured opener quick replies by label', async () => {
     searchParamsGet.mockReturnValue(null);
-    apiGet.mockImplementation((url: string) => {
-      if (typeof url === 'string' && url.includes('/agent/conversation-starters')) {
+    apiGet.mockImplementation((path: string) => {
+      if (path === '/agent/conversation-starters') {
         return Promise.resolve({
           data: {
             opener: {
-              text: '今天就是「AI 预测：7 天体重保持 ≤ 71.3kg」的检验日，做到了吗？',
-              source: 'action_card_due',
-              source_id: 88,
-              quick_replies: [{ text: '做到了 ✅' }, { text: '没做 ❌' }, { text: '调整下计划' }],
-              deep_link: '/action-cards/88',
-              priority: 100,
+              text: '我们从记录一件小事开始吧',
+              source: 'cold_start',
+              quick_replies: [
+                { label: '拍一张今天的饭', action: 'photo_meal' },
+                { label: '记一下体重', action: 'record_weight' },
+              ],
             },
-            suggestions: null,
+            suggestions: [],
+            onboarding: true,
           },
         });
       }
@@ -124,23 +92,8 @@ describe('ai-assistant URL state', () => {
 
     render(<AIAssistantPage />);
 
-    const chip = await screen.findByRole('button', { name: '做到了 ✅' });
-    fireEvent.click(chip);
-
-    await waitFor(() => expect(streamMessage).toHaveBeenCalled());
-    const call = streamMessage.mock.calls[0];
-    // sendMessage(text, extraContext) → streamMessage(text, convId, u, u, u, u, extraContext)
-    const messageText = call[0] as string;
-    const extraContext = call[6] as string;
-    expect(messageText).toContain('AI 预测：7 天体重保持 ≤ 71.3kg');
-    expect(messageText).toContain('做到了 ✅');
-    expect(JSON.parse(extraContext)).toMatchObject({
-      entry: 'conversation_opener_quick_reply',
-      user_reply: '做到了 ✅',
-      source: 'action_card_due',
-      source_id: 88,
-      action_card_id: 88,
-    });
+    expect(await screen.findByText('拍一张今天的饭')).toBeInTheDocument();
+    expect(screen.getByText('记一下体重')).toBeInTheDocument();
   });
 
   it('imports a medical exam file from the composer and renders a result card', async () => {

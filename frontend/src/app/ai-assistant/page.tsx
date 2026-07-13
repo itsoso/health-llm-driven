@@ -11,8 +11,6 @@
  */
 
 import { Suspense, useEffect, useRef, useState } from 'react';
-import Image from 'next/image';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowUp,
@@ -40,14 +38,24 @@ import {
 import { executeMedicalExamImportSkillForFile } from '@/services/chatMedicalExamImportSkill';
 import { pickPastedMedicalImportFile } from '@/services/pastedMedicalImportFile';
 import { statusStagePhrase } from '@/components/assistant/statusStagePhrase';
-import {
-  ConversationOpener,
-  QuickReply,
-  buildConversationOpenerReplyContext,
-  buildConversationOpenerReplyMessage,
-  normalizeOpener,
-  routeForQuickReplyAction,
-} from '@/components/assistant/conversationOpener';
+
+// Reva 暖色亮色系 —— 照抄 mobile/constants/revaTheme.ts (founder 已认可)。
+// 局部定义, 不引全局 token 文件; 值就近用 Tailwind arbitrary values 引用下面这张表。
+const REVA = {
+  paper: '#F7F6F2', // 页面背景 (暖白)
+  surface: '#FFFFFF', // 卡片 / 输入框表面
+  ink1: '#16201B', // 主文字
+  ink2: '#5C6660', // 次要文字
+  ink3: '#8A938D', // placeholder / caption
+  line: '#E7E5DE', // 发丝边框
+  lineStrong: '#D7D5CC', // 输入框等强边框
+  green50: '#E8F2EC', // opener 柔和绿底 / hover 底
+  green100: '#CDE6D8', // opener 绿边
+  green500: '#1F8A5B', // 主强调 / 发送键
+  green600: '#176F49', // press / hover-dark
+  green700: '#115738', // opener 标签文字
+  greenOn: '#FFFFFF', // 绿底上文字
+} as const;
 
 const DEFAULT_SUGGESTIONS = [
   '分析我最近的代谢健康',
@@ -56,6 +64,22 @@ const DEFAULT_SUGGESTIONS = [
   '帮我复盘最近的睡眠质量',
 ];
 
+type OpenerQuickReplyAction = 'photo_meal' | 'record_weight' | 'connect_device';
+
+interface OpenerQuickReply {
+  text: string;
+  action?: OpenerQuickReplyAction;
+}
+
+interface ConversationOpener {
+  text: string;
+  source: string;
+  source_id?: number | null;
+  quick_replies?: OpenerQuickReply[];
+  deep_link?: string | null;
+  priority?: number;
+}
+
 const OPENER_SOURCE_LABEL: Record<string, string> = {
   action_card_due: '今日检验',
   anomaly: '数据异常',
@@ -63,43 +87,41 @@ const OPENER_SOURCE_LABEL: Record<string, string> = {
   memory_fact: '记忆回顾',
 };
 
-const CONV_PAGE_SIZE = 20; // 历史记录每页条数
+const OPENER_QUICK_REPLY_ACTIONS = new Set<OpenerQuickReplyAction>([
+  'photo_meal',
+  'record_weight',
+  'connect_device',
+]);
 
-/**
- * 页面级暖色主题 (Claude / Anthropic 设计语言, 2026-07-05 重设计).
- *
- * 作用域严格限定在本页 —— 变量只挂在 .ai-assistant-theme 包裹层, 不改
- * globals.css / tailwind.config, 其他路由外观零影响。颜色直接用 mockup hex,
- * 组件里的 arbitrary-value class 也读同一批 hex (rail/picker/chat/markdown warm)。
- */
-const THEME_CSS = `
-.ai-assistant-theme{
-  --rd-paper:#F7F5EF; --rd-rail:#F0EDE4; --rd-card:#FCFBF7;
-  --rd-hair:#E5E1D5; --rd-hair-strong:#D8D3C4;
-  --rd-ink:#29261F; --rd-ink-2:#6B665A; --rd-ink-3:#948F80;
-  --rd-clay:#C96442; --rd-clay-soft:#F3E4DC;
-  --rd-amber:#B8791F; --rd-amber-soft:#F5EBD6;
-  --rd-sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI","Microsoft YaHei",sans-serif;
-  --rd-serif:"Songti SC","Noto Serif SC","Iowan Old Style",Georgia,"Times New Roman",serif;
-  background:var(--rd-paper); color:var(--rd-ink); font-family:var(--rd-sans);
+function normalizeOpenerQuickReply(reply: unknown): OpenerQuickReply | null {
+  if (typeof reply === 'string') {
+    const text = reply.trim();
+    return text ? { text } : null;
+  }
+  if (!reply || typeof reply !== 'object') return null;
+  const raw = reply as Record<string, unknown>;
+  const text =
+    typeof raw.text === 'string' && raw.text.trim()
+      ? raw.text.trim()
+      : typeof raw.label === 'string' && raw.label.trim()
+        ? raw.label.trim()
+        : '';
+  if (!text) return null;
+  const action = typeof raw.action === 'string' && OPENER_QUICK_REPLY_ACTIONS.has(raw.action as OpenerQuickReplyAction)
+    ? (raw.action as OpenerQuickReplyAction)
+    : undefined;
+  return action ? { text, action } : { text };
 }
-.ai-assistant-theme ::-webkit-scrollbar{width:9px;height:9px}
-.ai-assistant-theme ::-webkit-scrollbar-thumb{background:var(--rd-hair-strong);border-radius:8px}
-.ai-assistant-theme ::-webkit-scrollbar-track{background:transparent}
-.rd-serif{font-family:var(--rd-serif)}
-.rd-num{font-variant-numeric:tabular-nums}
-`;
+
+const CONV_PAGE_SIZE = 20; // 历史记录每页条数
 
 export default function AIAssistantPage() {
   // useSearchParams 需要 Suspense 边界, 否则 Next.js 14 build 报
   // "useSearchParams() should be wrapped in a suspense boundary".
   return (
-    <>
-      <style dangerouslySetInnerHTML={{ __html: THEME_CSS }} />
-      <Suspense fallback={<div className="fixed inset-0 z-40 bg-[#F7F5EF]" />}>
-        <AIAssistantInner />
-      </Suspense>
-    </>
+    <Suspense fallback={<div className="fixed inset-0 z-40 bg-[#F7F6F2]" />}>
+      <AIAssistantInner />
+    </Suspense>
   );
 }
 
@@ -111,7 +133,6 @@ function AIAssistantInner() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [convPage, setConvPage] = useState(1);   // 历史记录当前页(1-based)
   const [convTotal, setConvTotal] = useState(0); // 全部对话条数(翻页用)
-  const [convSearch, setConvSearch] = useState(''); // 历史记录搜索词(标题+内容)
   const [historyOpen, setHistoryOpen] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [input, setInput] = useState('');
@@ -178,11 +199,11 @@ function AIAssistantInner() {
     }
   };
 
-  const refreshConversations = async (targetPage: number = convPage, search: string = convSearch) => {
+  const refreshConversations = async (targetPage: number = convPage) => {
     setHistoryLoading(true);
     try {
       const offset = (targetPage - 1) * CONV_PAGE_SIZE;
-      const res = await agentApi.getConversations(CONV_PAGE_SIZE, offset, search);
+      const res = await agentApi.getConversations(CONV_PAGE_SIZE, offset);
       setConversations(res.data.items || []);
       setConvTotal(res.data.total || 0);
       setConvPage(targetPage);
@@ -193,25 +214,9 @@ function AIAssistantInner() {
     }
   };
 
-  const convSearchMounted = useRef(false);
   useEffect(() => {
     refreshConversations();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // 搜索防抖:输入变化 300ms 后回到第 1 页重新拉取(标题+内容)。
-  // 跳过挂载首跑 —— 上面的 mount effect 已做首屏拉取,避免双拉。
-  useEffect(() => {
-    if (!convSearchMounted.current) {
-      convSearchMounted.current = true;
-      return;
-    }
-    const t = setTimeout(() => {
-      refreshConversations(1, convSearch);
-    }, 300);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [convSearch]);
 
   // 把当前 conversation id 写进 URL (?c=<id>), 用 replace 不污染历史栈.
   // id 为空 → 回到无 ?c 的干净 URL (新对话未发消息).
@@ -225,11 +230,6 @@ function AIAssistantInner() {
 
   // 页面 mount: 若 URL 带 ?c=<id> 则自动加载该对话 (支持刷新/直达/分享).
   // 只跑一次 — 后续 URL 变更由用户操作 (load/new/stream done) 主动触发.
-  //
-  // 跨页「提问」入口: 其他页 (如 /genetic 的基因卡) 点提问会带 ?prompt=<encoded>
-  // 跳过来, 把问题预填进输入框 (不自动发送)。契约名 `prompt` 与 Mac / 后端
-  // 动态卡 `chat?prompt=...` 一致。仅在新/空对话生效, ?c= 会话恢复优先; 消费后
-  // 清掉该 param, 刷新不重复注入。
   const bootstrappedRef = useRef(false);
   useEffect(() => {
     if (bootstrappedRef.current) return;
@@ -242,24 +242,6 @@ function AIAssistantInner() {
         startNewConversation();
         syncConvUrl(undefined);
       });
-      return;
-    }
-    const prefill = searchParams.get('prompt');
-    if (prefill && prefill.trim()) {
-      // searchParams 已是解码后的值; 再兜一层 decode 容忍双重编码, 失败保底原值。
-      let text = prefill;
-      try {
-        text = decodeURIComponent(prefill);
-      } catch {
-        text = prefill;
-      }
-      // 跨页提问强制开新对话: 不接着上一条老对话续写 (省 context/token)。
-      // 页面 mount 时 activeConvId 本就是 undefined, 这里显式清空 messages 兜底,
-      // 保证 empty-state 新会话空态 + 预填输入, 用户直接回车即发。
-      setActiveConvId(undefined);
-      setMessages([]);
-      setInput(text);
-      syncConvUrl(undefined); // 清掉 ?prompt=, 回到干净 /ai-assistant
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -284,9 +266,22 @@ function AIAssistantInner() {
       } else {
         setStarterSuggestions(DEFAULT_SUGGESTIONS);
       }
-      // normalizeOpener 保留 source_id + 把 quick_replies 归一成 {text, action?}
-      // (镜像 mobile), 让带 action 的 chip 走本地导航、文本 chip 带 opener 上下文发送。
-      setOpener(normalizeOpener(res.data?.opener));
+      const op = res.data?.opener;
+      const quickReplies = Array.isArray(op?.quick_replies)
+        ? (op.quick_replies.map(normalizeOpenerQuickReply).filter(Boolean) as OpenerQuickReply[]).slice(0, 3)
+        : [];
+      setOpener(
+        op && typeof op.text === 'string' && op.text.trim()
+          ? {
+              text: op.text,
+              source: typeof op.source === 'string' ? op.source : '',
+              source_id: op.source_id ?? null,
+              quick_replies: quickReplies,
+              deep_link: typeof op.deep_link === 'string' ? op.deep_link : null,
+              priority: typeof op.priority === 'number' ? op.priority : 0,
+            }
+          : null,
+      );
     } catch {
       setStarterSuggestions(DEFAULT_SUGGESTIONS);
       setOpener(null);
@@ -300,7 +295,7 @@ function AIAssistantInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeConvId]);
 
-  const sendMessage = async (overrideText?: string, extraContext?: string) => {
+  const sendMessage = async (overrideText?: string) => {
     const text = (overrideText ?? input).trim();
     if (!text || streaming) return;
     setInput('');
@@ -322,15 +317,7 @@ function AIAssistantInner() {
     statusRef.current = null;
 
     try {
-      for await (const evt of agentApi.streamMessage(
-        text,
-        activeConvId,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        extraContext,
-      )) {
+      for await (const evt of agentApi.streamMessage(text, activeConvId)) {
         if (!evt) continue;
         // /agent/stream event shape: { event, data: {content, conversation_id, ...} }
         const type = evt.event ?? evt.type;
@@ -467,30 +454,6 @@ function AIAssistantInner() {
     sendMessage(text);
   };
 
-  // opener 一键回复。镜像 mobile 的两路分流:
-  //  - 带 action 的 chip (photo_meal/record_weight/connect_device, 冷启动包) →
-  //    本地导航, 不发消息。
-  //  - 纯文本 chip (做到了 / 没做 / 调整下计划) → 带 opener 上下文发送, 让后端
-  //    apply_opener_quick_reply_context 把回复绑定到具体 ActionCard (自报依从 /
-  //    调整请求 → 确定性写库), 而非当孤立文本。
-  const submitOpenerQuickReply = (reply: QuickReply) => {
-    if (streaming) return;
-    const activeOpener = opener;
-    if (reply.action) {
-      // 本地导航路: 与 mobile navigateForQuickReplyAction 一致, 只跳路由不发文本。
-      router.push(routeForQuickReplyAction(reply.action));
-      return;
-    }
-    if (!activeOpener) {
-      sendMessage(reply.text);
-      return;
-    }
-    const extraContext = buildConversationOpenerReplyContext(activeOpener, reply.text);
-    const messageText = buildConversationOpenerReplyMessage(activeOpener, reply.text);
-    setOpener(null); // 一次性开场, 点后收起 chip 组
-    sendMessage(messageText, extraContext);
-  };
-
   const toggleMessageSelection = (messageId: number) => {
     setSelectedMessageIds(prev => {
       const next = new Set(prev);
@@ -588,26 +551,17 @@ function AIAssistantInner() {
   };
 
   return (
-    <main className="ai-assistant-theme fixed inset-0 z-40 flex flex-col overflow-hidden text-[#29261F]">
-      <header className="relative z-[70] shrink-0 overflow-visible border-b border-[#E5E1D5] bg-[#F7F5EF]/95 px-4 py-2.5 backdrop-blur sm:px-6">
-        {/* 通栏:品牌钉在窗口真·最左(千问式)。曾套 max-w-3xl mx-auto,
-            宽窗口下"最左"漂到屏幕中间(founder 红框实锤)。 */}
-        <div className="flex items-center gap-3">
-          {/* 千问式:品牌位在最左(founder 2026-07-06 定稿),开关在其右 */}
-          <Link href="/" title="回到首页" className="flex shrink-0 items-center gap-2 transition-opacity hover:opacity-80">
-            <Image src="/logo.png" alt="小巴" width={32} height={32} className="h-8 w-8" />
-            <span className="rd-serif hidden text-[17px] font-semibold tracking-[0.01em] text-[#29261F] sm:inline">
-              小巴
-            </span>
-          </Link>
-          <button
-            onClick={() => setHistoryOpen(open => !open)}
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-[#948F80] transition-colors hover:bg-[#EFEADD] hover:text-[#29261F]"
-            title="打开/收起历史记录"
-          >
-            <PanelLeft className="h-[1.05rem] w-[1.05rem]" />
-          </button>
-          <div className="min-w-0">
+    <main className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-[#F7F6F2] text-[#16201B]">
+      <header className="relative z-[70] shrink-0 overflow-visible border-b border-[#E7E5DE] bg-[#F7F6F2]/95 px-3 py-2.5 backdrop-blur">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-1">
+            <button
+              onClick={() => setHistoryOpen(open => !open)}
+              className="mr-1 flex h-9 w-9 items-center justify-center rounded-xl text-[#8A938D] transition-colors hover:bg-[#E8F2EC] hover:text-[#16201B]"
+              title="打开/收起历史记录"
+            >
+              <PanelLeft className="h-4.5 w-4.5" />
+            </button>
             <LlmModelPicker
               currentLabel={llmPref.label || '系统默认'}
               currentModelId={llmPref.model_id}
@@ -618,10 +572,9 @@ function AIAssistantInner() {
               onSelect={selectModel}
             />
           </div>
-          <div className="flex-1" />
           <button
             onClick={startNewConversation}
-            className="inline-flex h-9 items-center gap-2 rounded-[9px] border border-[#D8D3C4] px-3 text-[13px] font-medium text-[#6B665A] transition-colors hover:bg-[#FCFBF7] hover:text-[#29261F]"
+            className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#D7D5CC] bg-[#FFFFFF] px-3 text-sm font-medium text-[#16201B] transition-colors hover:border-[#1F8A5B] hover:bg-[#E8F2EC]"
           >
             <MessageSquarePlus className="h-4 w-4" />
             <span className="hidden sm:inline">新对话</span>
@@ -632,7 +585,7 @@ function AIAssistantInner() {
                 if (shareSelectionMode) exitShareSelection();
                 else setShareSelectionMode(true);
               }}
-              className="inline-flex h-9 items-center gap-2 rounded-[9px] border border-[#C96442] px-3 text-[13px] font-medium text-[#C96442] transition-colors hover:bg-[#F3E4DC]"
+              className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#CDE6D8] bg-[#E8F2EC] px-3 text-sm font-medium text-[#115738] transition-colors hover:border-[#1F8A5B] hover:bg-[#CDE6D8]"
             >
               {shareSelectionMode ? <X className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}
               <span className="hidden sm:inline">{shareSelectionMode ? '取消选择' : '选择分享'}</span>
@@ -657,17 +610,17 @@ function AIAssistantInner() {
             onNextPage={() => {
               if (convPage < Math.ceil(convTotal / CONV_PAGE_SIZE)) refreshConversations(convPage + 1);
             }}
-            searchValue={convSearch}
-            onSearchChange={setConvSearch}
           />
         )}
 
         <div className="relative flex min-w-0 flex-1 flex-col">
-          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 pb-32 pt-8 sm:px-6">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 pb-32 pt-8 sm:px-6">
             {messages.length === 0 && !streaming ? (
               <div className="mx-auto flex min-h-[60vh] max-w-3xl flex-col items-center justify-center text-center">
-                <Image src="/logo.png" alt="小巴" width={64} height={64} className="h-16 w-16" />
-                <h1 className="rd-serif mt-5 pb-1 text-2xl font-semibold leading-[1.3] tracking-[0.01em] text-[#29261F] sm:text-[28px] sm:leading-[1.25]">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#E8F2EC] text-[#1F8A5B] ring-1 ring-[#CDE6D8]">
+                  <Sparkles className="h-7 w-7" />
+                </div>
+                <h1 className="mt-5 text-2xl font-semibold tracking-tight text-[#16201B] sm:text-3xl">
                   今天想了解什么？
                 </h1>
                 {opener && (
@@ -675,24 +628,24 @@ function AIAssistantInner() {
                     <button
                       type="button"
                       onClick={() => submitSuggestion(opener.text)}
-                      className="group w-full rounded-2xl border border-[#EDD9CF] bg-[#FBF3EE] px-5 py-4 text-left transition-colors hover:border-[#C96442]"
+                      className="group w-full rounded-2xl border border-[#CDE6D8] bg-[#E8F2EC] px-5 py-4 text-left transition-colors hover:border-[#1F8A5B] hover:bg-[#CDE6D8]"
                     >
                       <div className="mb-1.5 flex items-center gap-2">
-                        <Sparkles className="h-3.5 w-3.5 text-[#C96442]" />
-                        <span className="text-[11px] font-semibold uppercase tracking-[0.11em] text-[#C96442]">
+                        <Sparkles className="h-3.5 w-3.5 text-[#1F8A5B]" />
+                        <span className="text-[11px] font-medium uppercase tracking-wider text-[#115738]">
                           {OPENER_SOURCE_LABEL[opener.source] ?? 'AI 续接'}
                         </span>
                       </div>
-                      <div className="text-[15px] leading-6 text-[#29261F]">{opener.text}</div>
+                      <div className="text-[15px] leading-6 text-[#16201B]">{opener.text}</div>
                     </button>
                     {opener.quick_replies && opener.quick_replies.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {opener.quick_replies.map(reply => (
                           <button
-                            key={reply.text}
+                            key={`${reply.action ?? 'text'}:${reply.text}`}
                             type="button"
-                            onClick={() => submitOpenerQuickReply(reply)}
-                            className="rounded-full border border-[#EDD9CF] bg-[#F3E4DC] px-3 py-1.5 text-xs font-medium text-[#C96442] transition-colors hover:bg-[#EFD6CB]"
+                            onClick={() => submitSuggestion(reply.text)}
+                            className="rounded-full border border-[#CDE6D8] bg-[#FFFFFF] px-3 py-1.5 text-xs font-medium text-[#115738] transition-colors hover:border-[#1F8A5B] hover:bg-[#E8F2EC]"
                           >
                             {reply.text}
                           </button>
@@ -706,7 +659,7 @@ function AIAssistantInner() {
                     <button
                       key={item}
                       onClick={() => submitSuggestion(item)}
-                      className="rounded-2xl border border-[#E5E1D5] bg-[#FCFBF7] px-4 py-3 text-left text-sm text-[#6B665A] transition-colors hover:border-[#C96442] hover:text-[#29261F]"
+                      className="rounded-2xl border border-[#E7E5DE] bg-[#FFFFFF] px-4 py-3 text-left text-sm text-[#5C6660] transition-colors hover:border-[#1F8A5B] hover:bg-[#E8F2EC] hover:text-[#16201B]"
                     >
                       {item}
                     </button>
@@ -731,16 +684,16 @@ function AIAssistantInner() {
           </div>
 
           {shareSelectionMode && (
-            <div className="pointer-events-auto absolute inset-x-4 bottom-28 z-20 mx-auto flex max-w-3xl items-center justify-between gap-3 rounded-2xl border border-[#D8D3C4] bg-[#FCFBF7]/97 px-4 py-3 shadow-xl shadow-[#29261F]/10 backdrop-blur sm:inset-x-6">
+            <div className="pointer-events-auto absolute inset-x-3 bottom-28 z-20 mx-auto flex max-w-3xl items-center justify-between gap-3 rounded-2xl border border-[#E7E5DE] bg-[#FFFFFF]/95 px-4 py-3 shadow-2xl shadow-[#142019]/12 backdrop-blur sm:inset-x-6">
               <div className="min-w-0">
-                <div className="text-sm font-medium text-[#29261F]">已选择 {selectedMessageIds.size} 条</div>
-                <div className="text-xs text-[#948F80]">按对话顺序生成一个可分享链接</div>
+                <div className="text-sm font-medium text-[#16201B]">已选择 {selectedMessageIds.size} 条</div>
+                <div className="text-xs text-[#8A938D]">按对话顺序生成一个可分享链接</div>
               </div>
               <button
                 type="button"
                 disabled={selectedMessageIds.size === 0 || sharing}
                 onClick={() => shareMessages()}
-                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-[#C96442] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#B4573A] disabled:bg-[#E5E1D5] disabled:text-[#948F80]"
+                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-[#1F8A5B] px-4 text-sm font-semibold text-[#FFFFFF] transition-colors hover:bg-[#176F49] disabled:bg-[#E7E5DE] disabled:text-[#8A938D]"
               >
                 <Share2 className="h-4 w-4" />
                 {sharing ? '生成中…' : '分享'}
@@ -749,14 +702,14 @@ function AIAssistantInner() {
           )}
 
           {/* 输入区 */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-[#F7F5EF] via-[#F7F5EF] to-transparent px-4 pb-4 pt-10 sm:px-6">
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-[#F7F6F2] via-[#F7F6F2] to-transparent px-3 pb-4 pt-10 sm:px-6">
             <form
               id="ai-assistant-composer"
               onSubmit={e => {
                 e.preventDefault();
                 sendMessage();
               }}
-              className="pointer-events-auto mx-auto flex max-w-3xl items-end gap-2 rounded-[1.5rem] border border-[#D8D3C4] bg-[#FCFBF7] p-2 shadow-[0_1px_0_rgba(41,38,31,0.03),0_8px_24px_-12px_rgba(41,38,31,0.14)] focus-within:border-[#C96442]"
+              className="group pointer-events-auto mx-auto flex max-w-3xl items-end gap-2 rounded-[1.75rem] border border-[#D7D5CC] bg-[#FFFFFF] p-2.5 shadow-lg shadow-[#142019]/8 transition-colors focus-within:border-[#1F8A5B] focus-within:ring-2 focus-within:ring-[#1F8A5B]/25"
             >
               <input
                 ref={medicalExamInputRef}
@@ -770,7 +723,7 @@ function AIAssistantInner() {
                 type="button"
                 disabled={streaming || medicalExamImporting}
                 onClick={() => medicalExamInputRef.current?.click()}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#948F80] transition-colors hover:bg-[#F0EDE4] hover:text-[#29261F] disabled:cursor-not-allowed disabled:text-[#C7C2B4]"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#8A938D] transition-colors hover:bg-[#E8F2EC] hover:text-[#1F8A5B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F8A5B]/40 disabled:cursor-not-allowed disabled:text-[#B7BDB7]"
                 title="导入体检报告"
                 aria-label="导入体检报告"
               >
@@ -802,23 +755,23 @@ function AIAssistantInner() {
                 placeholder={streaming ? '回答中…' : '发消息 (Enter 发送, Shift+Enter 换行)'}
                 disabled={streaming}
                 rows={1}
-                className="max-h-36 min-h-10 flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] leading-6 text-[#29261F] placeholder:text-[#948F80] focus:outline-none disabled:opacity-50"
+                className="max-h-36 min-h-10 flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] leading-6 text-[#16201B] placeholder:text-[#8A938D] focus:outline-none disabled:opacity-50"
               />
               <button
                 type="submit"
                 disabled={!input.trim() || streaming}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#C96442] text-white transition-colors hover:bg-[#B4573A] disabled:bg-[#E5E1D5] disabled:text-[#B4AF9F]"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1F8A5B] text-[#FFFFFF] transition-colors hover:bg-[#176F49] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F8A5B]/40 disabled:bg-[#E7E5DE] disabled:text-[#B7BDB7]"
                 title="发送"
               >
                 <ArrowUp className="h-5 w-5" />
               </button>
             </form>
             {medicalExamImportError && (
-              <p role="alert" className="pointer-events-auto mx-auto mt-2 max-w-3xl text-center text-[11px] text-[#B4573A]">
+              <p role="alert" className="pointer-events-auto mx-auto mt-2 max-w-3xl text-center text-[11px] text-[#D5503A]">
                 {medicalExamImportError}
               </p>
             )}
-            <p className="pointer-events-none mx-auto mt-2 max-w-3xl text-center text-[11px] text-[#948F80]">
+            <p className="pointer-events-none mx-auto mt-2 max-w-3xl text-center text-[11px] text-[#8A938D]">
               健康建议不能替代医生诊断；紧急或明显异常请及时就医。
             </p>
           </div>

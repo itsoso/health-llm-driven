@@ -3,12 +3,6 @@ import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { deleteDraftImage, materializeDraftImages } from '../services/chatDraftStorage';
-import {
-  cleanupPreparedUploadImages,
-  imagePickerEncodingOptions,
-  prepareImageForUploadSafe,
-} from '../utils/imageUpload';
-import type { PreparedUploadImage } from '../utils/imageUpload';
 
 const MAX_IMAGES = 9;
 
@@ -17,15 +11,6 @@ export interface PendingImage {
   base64: string;
   type: string;
   draftCreatedAt?: number;
-}
-
-function warnSkipped(count: number) {
-  if (count <= 0) return;
-  Alert.alert('该图片无法读取，已跳过', count > 1 ? `共跳过 ${count} 张` : '请重试或换一张图片');
-}
-
-function toPendingImage(image: PreparedUploadImage): PendingImage {
-  return { uri: image.uri, base64: image.base64, type: image.type };
 }
 
 export function useMediaPicker() {
@@ -98,20 +83,18 @@ export function useMediaPicker() {
       }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
+        base64: true,
+        quality: 0.8,
         allowsMultipleSelection: true,
         selectionLimit: remaining,
-        ...imagePickerEncodingOptions(),
       });
       if (!result.canceled && result.assets.length > 0) {
-        const processed = await Promise.all(result.assets.map(prepareImageForUploadSafe));
-        const picked = processed.filter((img): img is PreparedUploadImage => !!img);
-        warnSkipped(result.assets.length - picked.length);
-        if (picked.length === 0) return;
-        try {
-          await addImages(picked.map(toPendingImage));
-        } finally {
-          await cleanupPreparedUploadImages(picked);
-        }
+        const picked: PendingImage[] = result.assets.map(a => ({
+          uri: a.uri,
+          base64: a.base64 || '',
+          type: a.mimeType?.split('/')[1] || 'jpeg',
+        }));
+        await addImages(picked);
       }
     } catch (e) {
       Alert.alert('选择图片失败', String(e));
@@ -130,20 +113,16 @@ export function useMediaPicker() {
         return;
       }
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
-        ...imagePickerEncodingOptions(),
+        base64: true,
+        quality: 0.8,
       });
       if (!result.canceled && result.assets[0]) {
-        const image = await prepareImageForUploadSafe(result.assets[0]);
-        if (!image) {
-          warnSkipped(1);
-          return;
-        }
-        try {
-          await addImages([toPendingImage(image)]);
-        } finally {
-          await cleanupPreparedUploadImages([image]);
-        }
+        const a = result.assets[0];
+        await addImages([{
+          uri: a.uri,
+          base64: a.base64 || '',
+          type: a.mimeType?.split('/')[1] || 'jpeg',
+        }]);
       }
     } catch (e) {
       Alert.alert('拍照失败', String(e));

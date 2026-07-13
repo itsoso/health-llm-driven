@@ -521,6 +521,12 @@ export default function DietScreen() {
   useEffect(() => {
     let active = true;
     setPhotoDraftRestoreReady(false);
+    const captureMode = firstParam(params.capture);
+    const hasCaptureDeepLink = Boolean(captureMode && firstParam(params.draft) !== 'diet');
+    if (hasCaptureDeepLink) {
+      setPhotoDraftRestoreReady(true);
+      return () => { active = false; };
+    }
     if (authLoading) return () => { active = false; };
     const nextOwnerScope = authUserId ? `user:${authUserId}` : 'anonymous';
     const ownerChanged = authOwnerScopeRef.current !== null
@@ -571,7 +577,7 @@ export default function DietScreen() {
       });
     return () => { active = false; };
   // Restore exactly when the authenticated owner changes.
-  }, [authLoading, authUserId]);
+  }, [authLoading, authUserId, params.capture, params.draft]);
 
   const saveNewDietRecord = useCallback(async (
     record: DietRecordCreate,
@@ -1606,7 +1612,6 @@ function QuickDietDraftCard({
   const calibrationSeconds = formatTimingSeconds(draft.ai_raw_result?.timing_ms?.calibration);
   const showRecognitionTiming = Boolean(recognitionTotalSeconds || calibrationSeconds);
   const confirmLabel = needsReview ? '核对后确认' : '确认记录';
-  const primaryAction = needsReview ? onRevise : onConfirm;
   const primaryAccessibilityLabel = needsReview ? '核对后确认饮食' : '确认记录饮食';
   const sharePromiseText = needsReview
     ? '核对后自动生成微信 / 小红书分享图'
@@ -1709,7 +1714,7 @@ function QuickDietDraftCard({
       <View style={styles.quickActions}>
         <TouchableOpacity
           style={[styles.quickConfirmBtn, isSaving && styles.quickConfirmBtnDisabled]}
-          onPress={primaryAction}
+          onPress={onConfirm}
           disabled={isSaving}
           activeOpacity={0.82}
           accessibilityRole="button"
@@ -1720,7 +1725,7 @@ function QuickDietDraftCard({
           ) : (
             <Ionicons name="checkmark" size={17} color={C.greenOn} />
           )}
-          <Text style={txt.quickConfirmText}>{isSaving ? '写入中' : confirmLabel}</Text>
+          <Text style={txt.quickConfirmText}>{isSaving ? '保存中' : confirmLabel}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.quickSecondaryBtn}

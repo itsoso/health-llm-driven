@@ -20,8 +20,6 @@ struct AgentChatView: View {
     @State private var contextBundleName = ""
     @State private var selectedToolActivity: AgentToolActivity?
     @State private var historyPage = 0
-    @State private var historySearchText = ""
-    @State private var historySearchTask: Task<Void, Never>?
     @State private var composerTextHeight: CGFloat = 0
 
     private static let historyPageSize = 6
@@ -91,14 +89,11 @@ struct AgentChatView: View {
         .padding(.bottom, 18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(
-            // Warm paper backdrop the transparent chat WebView sits on top of
-            // (WKWebView drawsBackground=false), so bubbles read on warm paper —
-            // not the old window-gray + system-blue tint.
             LinearGradient(
                 colors: [
-                    WarmPalette.paper,
-                    WarmPalette.claySoft.opacity(0.35),
-                    WarmPalette.paper
+                    Color(nsColor: .windowBackgroundColor),
+                    Color.accentColor.opacity(0.05),
+                    Color(nsColor: .windowBackgroundColor)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -296,10 +291,10 @@ struct AgentChatView: View {
             // `.textBackgroundColor` is the system text-field white and stays
             // correct in dark mode; a slightly stronger border keeps the white
             // box legible against the composer card.
-            .background(WarmPalette.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(WarmPalette.hair2, lineWidth: 1)
+                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
             }
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil, perform: handleFileDrop)
 
@@ -316,10 +311,10 @@ struct AgentChatView: View {
             composerStatusLine
         }
         .padding(18)
-        .background(WarmPalette.card2, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(WarmPalette.hair, lineWidth: 1)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
         }
         .fileImporter(
             isPresented: $isAttachImporterPresented,
@@ -361,7 +356,7 @@ struct AgentChatView: View {
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 30, height: 30)
-                    .background(canSend ? WarmPalette.clay : WarmPalette.ink3.opacity(0.45), in: Circle())
+                    .background(canSend ? Color.accentColor : Color.secondary.opacity(0.35), in: Circle())
             }
             .buttonStyle(.plain)
             .disabled(!canSend)
@@ -430,11 +425,11 @@ struct AgentChatView: View {
                 Text(appText("Web Search", appLanguageRaw))
             }
             .font(.caption.weight(.medium))
-            .foregroundStyle(viewModel.webSearchEnabled ? WarmPalette.clay : WarmPalette.ink2)
+            .foregroundStyle(viewModel.webSearchEnabled ? Color.accentColor : .secondary)
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
             .background(
-                (viewModel.webSearchEnabled ? WarmPalette.claySoft : WarmPalette.card2),
+                (viewModel.webSearchEnabled ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.08)),
                 in: Capsule()
             )
         }
@@ -644,28 +639,12 @@ struct AgentChatView: View {
         if let last = viewModel.messages.last, last.role == .assistant {
             let actions = viewModel.proposedActions(for: last)
             let showChips = shouldShowFollowUpChips(for: last)
-            // Show the single-line ThinkingStatusLine ONLY in the brief pre-first-step
-            // gap. Once the live 思考过程 trace has ≥1 step, the trace (rendered inside
-            // the WebView bubble) is the sole thinking indicator — never stack both.
-            let showSpinner = viewModel.isStreaming
-                && last.content.isEmpty
-                && viewModel.liveThinkingSteps.isEmpty
-            if !actions.isEmpty || showChips || showSpinner {
+            // The "thinking process" trace now renders INSIDE the streaming assistant
+            // bubble (see renderedTranscript / ChatTranscriptHTML.thinkingTraceHTML) so
+            // it follows the bubble instead of being stranded above the composer. The
+            // footer keeps only post-answer affordances: proposed-action cards + chips.
+            if !actions.isEmpty || showChips {
                 VStack(alignment: .leading, spacing: 8) {
-                    if showSpinner {
-                        // Pre-first-token affordance: an informative animated status
-                        // line instead of a bare spinner (小巴 TTFT is 2–14s, longer
-                        // on a silent tool round). Purely presentational — no stream,
-                        // parse, or network behavior changes. `isToolTurn` only flips
-                        // the copy when a tool activity has already surfaced, so we
-                        // never overclaim "checking records" on a plain analysis turn.
-                        ThinkingStatusLine(
-                            language: appLanguageRaw,
-                            isToolTurn: !viewModel.toolActivities.isEmpty,
-                            liveStatusKey: viewModel.liveStatusText,
-                            liveStatusDetail: viewModel.liveStatusDetail
-                        )
-                    }
                     ForEach(actions) { action in
                         AgentProposedActionCard(
                             action: action,
@@ -739,8 +718,8 @@ struct AgentChatView: View {
                             .padding(.vertical, 7)
                     }
                     .buttonStyle(.plain)
-                    .background(WarmPalette.claySoft, in: Capsule())
-                    .foregroundStyle(WarmPalette.clayInk)
+                    .background(Color.accentColor.opacity(0.10), in: Capsule())
+                    .foregroundStyle(Color.accentColor)
                     .help(chip.prompt)
                 }
             }
@@ -771,7 +750,7 @@ struct AgentChatView: View {
                 systemImage: "point.3.connected.trianglepath.dotted"
             )
 
-            if !viewModel.conversationHistory.isEmpty || viewModel.historyNotice != nil || viewModel.isLoadingHistory || !historySearchText.isEmpty {
+            if !viewModel.conversationHistory.isEmpty || viewModel.historyNotice != nil || viewModel.isLoadingHistory {
                 Divider()
 
                 HStack {
@@ -790,7 +769,7 @@ struct AgentChatView: View {
                             .background(Color.secondary.opacity(0.10), in: Capsule())
                     }
                     Button {
-                        Task { await viewModel.refreshConversationHistory(search: historySearchText) }
+                        Task { await viewModel.refreshConversationHistory() }
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
@@ -800,38 +779,6 @@ struct AgentChatView: View {
                     .help(appText("Refresh", appLanguageRaw))
                 }
 
-                // 搜索框(标题+内容);300ms 防抖后按 search 重拉,清空回全量。
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    TextField(appText("Search title or content", appLanguageRaw), text: $historySearchText)
-                        .textFieldStyle(.plain)
-                        .font(.callout)
-                    if !historySearchText.isEmpty {
-                        Button {
-                            historySearchText = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help(appText("Clear search", appLanguageRaw))
-                    }
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .onChange(of: historySearchText) { _, newValue in
-                    historyPage = 0
-                    historySearchTask?.cancel()
-                    historySearchTask = Task {
-                        try? await Task.sleep(nanoseconds: 300_000_000)
-                        if Task.isCancelled { return }
-                        await viewModel.refreshConversationHistory(search: newValue)
-                    }
-                }
-
                 // Offline / 401 / server-error: the list below is the local cache,
                 // not the live backend. Say so instead of pretending it's current.
                 if let notice = viewModel.historyNotice {
@@ -839,13 +786,6 @@ struct AgentChatView: View {
                         .font(.caption2)
                         .foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if viewModel.conversationHistory.isEmpty && !historySearchText.isEmpty && !viewModel.isLoadingHistory {
-                    Text(appText("No conversations match your search", appLanguageRaw))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 8)
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -1063,10 +1003,10 @@ struct AgentChatView: View {
             Spacer()
         }
         .padding(16)
-        .background(WarmPalette.rail, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(WarmPalette.hair, lineWidth: 1)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
         }
     }
 
@@ -1092,7 +1032,7 @@ struct AgentChatView: View {
                 .font(.callout)
                 .foregroundStyle(.white)
                 .frame(width: 28, height: 28)
-                .background(WarmPalette.clay, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .background(Color.accentColor.opacity(0.85), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(title)
@@ -1109,7 +1049,7 @@ struct AgentChatView: View {
             }
         }
         .padding(10)
-        .background(WarmPalette.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func toolActivityText(_ status: AgentToolActivityStatus) -> String {
@@ -1338,6 +1278,78 @@ struct AgentChatView: View {
     }
 }
 
+/// Accumulating "thinking process" trace: a left-aligned vertical list of the
+/// steps 小巴 went through this turn (from the backend `status` SSE stream).
+/// Running step = mini spinner + emphasized text; done steps = checkmark +
+/// dimmed. Unlike `ThinkingStatusLine` (a single overwriting line) the whole
+/// sequence stays visible through content streaming until the turn resets.
+///
+/// Layout is deliberately a plain header + `VStack`/`ForEach` over stable step
+/// ids with a fixed-width leading gutter — NO `ViewThatFits`/`fixedSize` probing
+/// (that path caused an exponential `sizeThatFits` layout freeze historically).
+private struct ThinkingProcessTrace: View {
+    let steps: [ThinkingStep]
+    let language: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Image(systemName: "brain")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Text(appText("Thinking process", language))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(steps) { step in
+                    row(for: step)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func row(for step: ThinkingStep) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            // Fixed-width leading gutter keeps rows aligned and gives the layout a
+            // deterministic width (no measurement feedback loop).
+            leadingGlyph(for: step.state)
+                .frame(width: 16, alignment: .center)
+            Text(label(for: step))
+                .font(.caption)
+                .foregroundStyle(step.state == .running ? Color.primary : .secondary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+        }
+    }
+
+    @ViewBuilder
+    private func leadingGlyph(for state: ThinkingStepState) -> some View {
+        if state == .running {
+            ProgressView()
+                .controlSize(.mini)
+        } else {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    /// Resolves a step's L10n key (+ optional detail) exactly like
+    /// `ThinkingStatusLine.statusText`: `"Working: %@…"` splices the backend's
+    /// Chinese tool label verbatim; other keys are a straight `appText` lookup
+    /// (server-phrase keys pass through unchanged in zh).
+    private func label(for step: ThinkingStep) -> String {
+        let template = appText(step.labelKey, language)
+        if let detail = step.labelDetail {
+            return String(format: template, detail)
+        }
+        return template
+    }
+}
+
 /// Pre-first-token "thinking" affordance shown in the empty assistant bubble
 /// while 小巴's TTFT (2–14s, longer on a silent tool round) elapses. Purely
 /// presentational: a small spinner + a caption that cycles copy after ~6s so a
@@ -1406,7 +1418,7 @@ private struct AgentContextItemCard: View {
                 Image(systemName: iconName)
                     .foregroundStyle(.white)
                     .frame(width: 24, height: 24)
-                    .background(WarmPalette.clay, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background(Color.accentColor.opacity(0.82), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.title)
                         .font(.caption.weight(.semibold))
@@ -1431,10 +1443,10 @@ private struct AgentContextItemCard: View {
             }
         }
         .padding(10)
-        .background(WarmPalette.claySoft.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(WarmPalette.clay.opacity(0.22), lineWidth: 1)
+                .stroke(Color.accentColor.opacity(0.12), lineWidth: 1)
         }
     }
 
@@ -1480,7 +1492,6 @@ private struct AttachmentChip: View {
         case .dedaoFolder: "folder"
         case .appleHealthExport: "heart.text.square"
         case .medicalFile: "doc.richtext"
-        case .image: "photo"
         case .unknown: "doc"
         }
     }
@@ -1590,6 +1601,121 @@ private struct AgentProposedActionCard: View {
         case .confirmed: .green
         case .dismissed: .secondary
         }
+    }
+}
+
+private struct MarkdownMessageText: View {
+    @AppStorage(AppFontScale.defaultsKey) private var appFontScaleLevel = AppFontScale.defaultLevel
+
+    // ⚠️ 结构性防卡死(2026-06-11,第 6 轮根因战):整条消息渲染为**单个 Text(AttributedString)**。
+    // 之前的「VStack 多块 + 嵌套 HStack(bullet/numbered/表格行)」结构在 macOS 26.4 SwiftUI 下
+    // 反复指数级 sizeThatFits 卡死(100% CPU,sample 实锤 5 次;修掉 GeometryReader 反馈环/
+    // fixedSize/表格弹性列后爆点仍转移)。单个 Text 无嵌套 stack、无 frame 协商,布局线性,
+    // 数学上不可能组合爆炸。代价:表格从网格降级为「 · 」分隔的文本行 —— 不卡死 > 好看。
+    private let markdown: String
+    private let contentWidth: CGFloat
+
+    init(markdown: String, contentWidth: CGFloat) {
+        self.markdown = markdown
+        self.contentWidth = contentWidth
+    }
+
+    var body: some View {
+        // merged 经全局 NSCache:首次 O(n) 解析合并,之后(布局重建/滚动)O(1) 命中。
+        Text(Self.mergedAttributed(markdown: markdown, scaleLevel: appFontScaleLevel))
+            .lineSpacing(3)
+            .frame(width: contentWidth > 0 ? contentWidth : nil, alignment: .leading)
+    }
+
+    // ── 解析 + 合并(全部静态缓存,线程安全 NSCache;Swift 6 nonisolated(unsafe) 同
+    //    MarkdownRenderSupport.blocksCache 先例)──
+    private final class AttrBox { let value: AttributedString; init(_ v: AttributedString) { self.value = v } }
+    nonisolated(unsafe) private static let inlineAttrCache: NSCache<NSString, AttrBox> = {
+        let c = NSCache<NSString, AttrBox>(); c.countLimit = 2048; return c
+    }()
+    nonisolated(unsafe) private static let mergedCache: NSCache<NSString, AttrBox> = {
+        let c = NSCache<NSString, AttrBox>(); c.countLimit = 128; return c
+    }()
+
+    private static func cachedInlineAttributed(_ text: String) -> AttributedString {
+        let key = text as NSString
+        if let hit = inlineAttrCache.object(forKey: key) { return hit.value }
+        let cleaned = MarkdownRenderSupport.sanitizedForSwiftUI(text)
+        let attributed = (try? AttributedString(
+            markdown: cleaned,
+            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )) ?? AttributedString(MarkdownRenderSupport.readableFallback(text))
+        inlineAttrCache.setObject(AttrBox(attributed), forKey: key)
+        return attributed
+    }
+
+    private static func mergedAttributed(markdown: String, scaleLevel: Int) -> AttributedString {
+        let key = "\(scaleLevel)|\(markdown)" as NSString
+        if let hit = mergedCache.object(forKey: key) { return hit.value }
+
+        let scale = AppFontScale(level: scaleLevel)
+        let bodyFont = Font.system(size: scale.pointSize(base: 10.5))
+        let src = markdown.isEmpty ? " " : markdown
+        let parsed = MarkdownRenderSupport.blocks(from: src)
+        let blocks: [MarkdownRenderBlock] = parsed.isEmpty
+            ? [.paragraph(MarkdownRenderSupport.readableFallback(src))]
+            : parsed
+
+        var out = AttributedString()
+        var isFirst = true
+        for block in blocks {
+            if !isFirst { out += AttributedString("\n") }
+            isFirst = false
+            switch block {
+            case .heading(let level, let text):
+                var a = cachedInlineAttributed(text)
+                a.font = .system(
+                    size: scale.pointSize(base: level <= 2 ? 13 : 11.5),
+                    weight: level <= 2 ? .bold : .semibold
+                )
+                // 标题前空行(非首块时)抬一点呼吸感
+                if out.characters.count > 1 { out += AttributedString("\n") }
+                out += a
+            case .paragraph(let text):
+                var a = cachedInlineAttributed(text)
+                a.font = bodyFont
+                out += a
+            case .bullet(let text):
+                var dot = AttributedString("•  ")
+                dot.font = .system(size: scale.pointSize(base: 10.5), weight: .bold)
+                dot.foregroundColor = .accentColor
+                var a = cachedInlineAttributed(text)
+                a.font = bodyFont
+                out += dot + a
+            case .numbered(let index, let text):
+                var num = AttributedString("\(index). ")
+                num.font = .system(size: scale.pointSize(base: 10.5), weight: .bold)
+                num.foregroundColor = .accentColor
+                var a = cachedInlineAttributed(text)
+                a.font = bodyFont
+                out += num + a
+            case .tableRow(let columns):
+                // 表格降级为分隔文本行(单 Text 内不可能做网格;不卡死优先)。
+                var row = AttributedString()
+                for (i, col) in columns.enumerated() {
+                    if i > 0 {
+                        var sep = AttributedString("  ·  ")
+                        sep.foregroundColor = .secondary
+                        row += sep
+                    }
+                    var c = cachedInlineAttributed(col)
+                    c.font = i == 0 ? .system(size: scale.pointSize(base: 10.5), weight: .semibold) : bodyFont
+                    row += c
+                }
+                out += row
+            case .divider:
+                var d = AttributedString("────────────")
+                d.foregroundColor = .secondary
+                out += d
+            }
+        }
+        mergedCache.setObject(AttrBox(out), forKey: key)
+        return out
     }
 }
 
@@ -1712,8 +1838,6 @@ private struct AgentConversationHistoryRow: View {
     @State private var isSharing = false
     @State private var sharedURL: URL?
     @State private var showShareConfirm = false
-    // 删除是毁灭性动作,一键直删太危险(web/mobile 都有确认步;mac 曾缺失)
-    @State private var showDeleteConfirm = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -1776,23 +1900,13 @@ private struct AgentConversationHistoryRow: View {
                 .help(appText("Rename", appLanguageRaw))
 
                 Button {
-                    showDeleteConfirm = true
+                    onDelete()
                 } label: {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .help(appText("Delete", appLanguageRaw))
-                .confirmationDialog(
-                    appText("Delete this conversation?", appLanguageRaw),
-                    isPresented: $showDeleteConfirm,
-                    titleVisibility: .visible
-                ) {
-                    Button(appText("Delete", appLanguageRaw), role: .destructive) {
-                        onDelete()
-                    }
-                    Button(appText("Cancel", appLanguageRaw), role: .cancel) {}
-                }
             }
         }
         .padding(10)
@@ -2007,6 +2121,27 @@ private final class CommandReturnTextView: NSTextView {
             break
         }
         super.paste(sender)
+    }
+
+    // 纯图片剪贴板(如 ⌘⇧⌃4 截图,只有位图、无文本)时,基类 isRichText=false 只声明
+    // 文本可读类型 → 系统在调用上面的 paste() 前就把 paste: 判为无效:右键"粘贴"置灰、
+    // ⌘V 无响应,处理图片的 paste() 覆写永远进不去(实测:之前只有"图+URL文本"的浏览器
+    // 拷图能贴,就是因为那时剪贴板有文本让 paste: 有效)。这里补声明图片/文件可读类型 +
+    // 显式放行 paste:,让纯图剪贴板下粘贴也生效。
+    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        super.readablePasteboardTypes + [.tiff, .png, .fileURL]
+    }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(NSTextView.paste(_:)) {
+            let pb = NSPasteboard.general
+            if pb.canReadObject(forClasses: [NSImage.self], options: nil) { return true }
+            if pb.canReadObject(
+                forClasses: [NSURL.self],
+                options: [.urlReadingFileURLsOnly: true]
+            ) { return true }
+        }
+        return super.validateUserInterfaceItem(item)
     }
 
     override func keyDown(with event: NSEvent) {
@@ -3511,10 +3646,7 @@ struct RecordHubView: View {
 
         do {
             let intakeItem = try await FileIntakeService.inspect(url: url)
-            // This is the explicit "import lab report" UI, so a plain photo here IS
-            // meant as a lab report — accept `.image` (jpg/png) as well as `.medicalFile`
-            // (pdf). The MIME allowlist is the real gate on what the backend can OCR.
-            guard intakeItem.sourceKind == .medicalFile || intakeItem.sourceKind == .image,
+            guard intakeItem.sourceKind == .medicalFile,
                   LabReportUploadMime.isSupported(forExtension: url.pathExtension) else {
                 labUploadStatus = appText("Please choose a supported lab PDF or image.", appLanguageRaw)
                 return
@@ -3890,7 +4022,7 @@ struct ImportCenterView: View {
         switch kind {
         case .genomeText:
             return "新基因数据已入库。等解析完成后，结合最近化验和补剂清单，告诉我哪些 SNP 现在最该关注，以及对应的生活方式/补剂调整。"
-        case .medicalFile, .image:
+        case .medicalFile:
             return "刚导入的化验/医疗文件解析完后，列出偏离参考范围的指标，按风险排序，每条给一段解释和下一步行动。"
         case .appleHealthExport:
             return "Apple Health 数据导入完毕后，给我最近 30 天的活动、睡眠、心率趋势综合摘要，并指出与基线的明显偏差。"
@@ -3905,7 +4037,7 @@ struct ImportCenterView: View {
         switch kind {
         case .genomeText: "gene_reanalysis"
         case .dedaoFolder: "dedao_compile"
-        case .medicalFile, .image, .appleHealthExport: "medical_import"
+        case .medicalFile, .appleHealthExport: "medical_import"
         case .unknown: "medical_import"
         }
     }

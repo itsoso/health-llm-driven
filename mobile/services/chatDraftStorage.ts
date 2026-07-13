@@ -3,9 +3,9 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as SecureStore from 'expo-secure-store';
 import { getAuthStorageScope } from './authStorageScope';
 
-const LEGACY_CHAT_DRAFT_METADATA_KEY = 'chat:composer_draft:v1';
+const LEGACY_CHAT_DRAFT_STORAGE_KEY = 'chat:composer_draft:v1';
 const CHAT_DRAFT_STORAGE_KEY_PREFIX = 'chat:composer_draft:v2';
-const CHAT_DRAFT_TEXT_KEY_PREFIX = 'chat_composer_draft_text_v1';
+const CHAT_DRAFT_TEXT_KEY_PREFIX = 'chat:composer_draft_text:v1';
 const CHAT_DRAFT_VERSION = 2;
 const CHAT_DRAFT_DIRECTORY_ROOT = `${FileSystem.documentDirectory ?? ''}chat-drafts/`;
 const MAX_DRAFT_IMAGES = 9;
@@ -49,7 +49,7 @@ export function chatDraftStorageKey(scope: string): string {
 }
 
 export function chatDraftTextStorageKey(scope: string): string {
-  return `${CHAT_DRAFT_TEXT_KEY_PREFIX}_${scope}`;
+  return `${CHAT_DRAFT_TEXT_KEY_PREFIX}:${scope}`;
 }
 
 export function chatDraftDirectory(scope: string): string {
@@ -164,10 +164,9 @@ export async function persistChatDraft(
 
 export async function loadChatDraft(): Promise<ChatDraft> {
   const context = await currentStorageContext();
-  // The legacy value only ever lived in AsyncStorage. Its colon-delimited key
-  // is invalid for SecureStore and therefore was never persistable there.
   await Promise.allSettled([
-    AsyncStorage.removeItem(LEGACY_CHAT_DRAFT_METADATA_KEY),
+    AsyncStorage.removeItem(LEGACY_CHAT_DRAFT_STORAGE_KEY),
+    SecureStore.deleteItemAsync(LEGACY_CHAT_DRAFT_STORAGE_KEY),
   ]);
   const [raw, protectedText] = await Promise.all([
     AsyncStorage.getItem(context.metadataKey),

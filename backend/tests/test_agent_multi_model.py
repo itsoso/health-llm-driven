@@ -55,7 +55,7 @@ async def test_multi_model_stream_lead_tools_once_then_synthesizes(db, auth_user
     executor = AgentExecutor(db)
 
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
 
     # Lead loop: round 1 → one write tool call; round 2 → final analysis text.
     lead_calls = {"n": 0}
@@ -164,7 +164,7 @@ async def test_multi_model_identityless_write_fails_closed_before_panel_synthesi
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
 
     async def fake_call_llm(messages, tools):
         return {
@@ -231,7 +231,7 @@ async def test_multi_model_http_500_write_is_uncertain_and_retry_bypasses_panel(
     message = "记录午餐并综合分析"
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
 
     async def first_llm_call(messages, tools):
         return {
@@ -315,7 +315,7 @@ async def test_multi_model_duplicate_writes_execute_once(
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
     arguments = json.dumps({
         "record_type": "diet",
         "data": {"food_items": "鸡胸肉", "meal_type": "lunch"},
@@ -390,7 +390,7 @@ async def test_multi_model_checkpoints_all_planned_writes_before_dispatch(
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *args, **kwargs: "SYS")
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [])
     arguments = [
         json.dumps({"record_type": "diet", "operation": "delete", "record_id": 1201}),
         json.dumps({"record_type": "diet", "operation": "delete", "record_id": 1202}),

@@ -1,10 +1,11 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
-  TextStyle,
-  ActivityIndicator, Alert, Modal, Pressable, useWindowDimensions,
+  Platform, TextStyle,
+  ActivityIndicator, Alert, Keyboard, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
@@ -13,7 +14,6 @@ import { deleteConversation, getConversationsPage, updateConversationTitle } fro
 import { useChatEngine, type UIMessage } from '../../hooks/useChatEngine';
 import ChatInputBar, { type ChatInputSendOptions } from '../../components/chat/ChatInputBar';
 import ChatBubble from '../../components/chat/ChatBubble';
-import type { ChatCardActionDescriptor, ServerCardDescriptor } from '../../components/chat/cards/types';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import ChatHeader from '../../components/chat/ChatHeader';
 import ChatTodayFocusCard from '../../components/chat/ChatTodayFocusCard';
@@ -27,8 +27,6 @@ import EmptyStateHome, {
   type EmptyStateSuggestion,
 } from '../../components/chat/EmptyStateHome';
 import ComposerSuggestionsRow from '../../components/chat/ComposerSuggestionsRow';
-import TaskLedgerPanel from '../../components/chat/TaskLedgerPanel';
-import RecipeManagerSheet from '../../components/chat/RecipeManagerSheet';
 import { formatOpenerText } from '../../components/chat/OpenerCard';
 import {
   buildConversationOpenerReplyContext,
@@ -43,7 +41,6 @@ import { emitClientEvent } from '../../services/clientEvents';
 import { fetchMemoryOpener, type MemoryOpenerItem } from '../../services/memoryOpener';
 import { updateLlmPreference, type ModelOption } from '../../services/llmPreference';
 import { recordCardAdherence, recordCardDecision } from '../../services/actionCards';
-import { useChatKeyboardDock } from '../../hooks/useChatKeyboardDock';
 import { useTodayTimeline } from '../../hooks/useTodayTimeline';
 import { getDailyOperatingPlan } from '../../services/dailyPlan';
 import { getTodayDynamicView } from '../../services/todayDynamicView';
@@ -58,7 +55,6 @@ import {
 import { sharePlainText } from '../../utils/share';
 import { buildSelectedChatShareMessage, isShareableChatMessage } from '../../utils/chatShareSelection';
 import type { ChatMedicalExamImportSkillResult } from '../../services/chatMedicalExamImportSkill';
-import type { ChatCardActionResult } from '../../services/chatCardActions';
 import { loadAgentHomeBootstrap } from '../../services/agentHomeBootstrap';
 import { useAuth } from '../../hooks/useAuth';
 import { buildChatImageSource } from '../../utils/chatImageSource';
@@ -83,8 +79,6 @@ const CHAT_BOTTOM_BREATHING_SPACE = 12;
 
 // 对话历史无限下拉每页条数 (后端 limit 上限 100)
 const HISTORY_PAGE_SIZE = 20;
-const TODAY_DIET_CALORIE_QUERY = '请先查询今天数据库里的所有饮食记录，再结合刚保存的这条记录，汇总全天饮食、总热量和蛋白质/碳水/脂肪。不要只凭本轮对话猜测。';
-const TWO_DAY_DIET_REVIEW_QUERY = '请分别查询今天和昨天数据库里的所有饮食记录，再结合刚保存的这条记录，复盘两天拍照/对话记录的饮食、总热量、蛋白质/碳水/脂肪趋势和明显漏记风险。不要只凭本轮对话或截图猜测。';
 
 function guessSuggestionIcon(text: string): SuggestionCard['icon'] {
   if (/体检|化验|指标|LDL|HbA1c|尿酸|血压|血脂|血糖/i.test(text)) return 'document-text-outline';
@@ -148,7 +142,6 @@ export default function ChatScreen() {
     loadLatestConversation,
     loadConversation,
     setMessages,
-    setPerMessageModelId,
   } = chat;
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
@@ -177,6 +170,8 @@ export default function ChatScreen() {
     }),
     [dailyPlanQuery.data, todayDynamicViewQuery.data, todayTimeline.data],
   );
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
@@ -185,9 +180,6 @@ export default function ChatScreen() {
   const [historyTotal, setHistoryTotal] = useState(0);
   const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
   const [historyLoadMoreError, setHistoryLoadMoreError] = useState(false);
-  const [historySearch, setHistorySearch] = useState(''); // 会话搜索词(标题+内容)
-  // fetch 回调用 ref 读到最新搜索词(避免 stale 闭包 + 反复重建 callback)
-  const historySearchRef = useRef('');
   const [llmModelId, setLlmModelId] = useState<string | null>(null);
   const [llmOptions, setLlmOptions] = useState<ModelOption[]>([]);
   const [llmSaving, setLlmSaving] = useState<string | null>(null);
@@ -196,19 +188,12 @@ export default function ChatScreen() {
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
   const [sharing, setSharing] = useState(false);
   const [toolMenuVisible, setToolMenuVisible] = useState(false);
-  // 「小巴的任务」统一任务账本(Slice 4):agent-native 在对话页内联展开,不跳独立页。
-  const [taskLedgerExpanded, setTaskLedgerExpanded] = useState(false);
-  // 「我的配方」程序性记忆管理(Slice 3):列表 + 删除。
-  const [recipeManagerVisible, setRecipeManagerVisible] = useState(false);
 
   // Context from alert / push / Siri deep-link. Read ONCE on first mount, then cleared.
   // autoSend=1 (from Siri HealthAnalysisOpenIntent) → directly send instead of prefilling.
   // context (JSON string) → 注入到 LLM system prompt 作为深化基础, 不展示在 user 消息里
   const params = useLocalSearchParams<{ prompt?: string; badge?: string; autoSend?: string; context?: string; newChat?: string; promptNonce?: string }>();
   const [contextBadge, setContextBadge] = useState<string | null>(null);
-  const [contextPayload, setContextPayload] = useState<string | null>(null);
-  const [contextInspectorVisible, setContextInspectorVisible] = useState(false);
-  const pendingCardActionContextRef = useRef<string | null>(null);
   const [initialInput, setInitialInput] = useState<string | undefined>(undefined);
   const [initialInputKey, setInitialInputKey] = useState(0);
   const lastContextKey = useRef<string | null>(null);
@@ -284,8 +269,6 @@ export default function ChatScreen() {
       setLlmModelId(snapshot.llmPreference.model_id);
       setLlmOptions(snapshot.llmPreference.options || []);
       setLlmError(snapshot.errors.includes('llm_preference') ? '模型列表加载失败' : null);
-      // 选择器显示什么模型, 消息就用什么模型；null 仍表示系统智能路由。
-      setPerMessageModelId(snapshot.llmPreference.model_id);
       setStartersReady(true);
       setBootstrapReady(true);
     }).catch(() => {
@@ -295,7 +278,7 @@ export default function ChatScreen() {
       setLlmError('模型列表加载失败');
     });
     return () => { cancelled = true; };
-  }, [loadLatestConversation, setPerMessageModelId]);
+  }, [loadLatestConversation]);
 
   const handleSelectModel = useCallback(async (modelId: string | null) => {
     if (llmSaving || llmModelId === modelId) return;
@@ -305,13 +288,12 @@ export default function ChatScreen() {
       const pref = await updateLlmPreference(modelId);
       setLlmModelId(pref.model_id);
       setLlmOptions(pref.options || []);
-      setPerMessageModelId(pref.model_id);
     } catch (e: any) {
       setLlmError(e?.response?.data?.detail || e?.message || '模型切换失败');
     } finally {
       setLlmSaving(null);
     }
-  }, [llmModelId, llmSaving, setPerMessageModelId]);
+  }, [llmModelId, llmSaving]);
 
   useEffect(() => {
     if (params.prompt || params.badge || params.context) {
@@ -329,10 +311,7 @@ export default function ChatScreen() {
       if (forceNewConversation) {
         newChat();
       }
-      if (params.badge || params.context) {
-        setContextBadge(params.badge || '上下文');
-        setContextPayload(params.context || null);
-      }
+      if (params.badge) setContextBadge(params.badge);
       if (params.prompt) {
         if (params.autoSend === '1') {
           sendMessage(params.prompt, null, { fromSiri: true, extraContext: params.context, forceNewConversation });
@@ -362,9 +341,59 @@ export default function ChatScreen() {
     }, [])
   );
 
-  // 输入框聚焦只由明确用户动作触发。默认打开小巴页不拉起系统键盘,
-  // 避免截图里的首屏被键盘占掉;点输入框/chip/新建对话仍可进入输入。
+  // 「小巴先开口」键盘礼仪 (State A, 2026-07):
+  // 只在小巴没话可说时(无 opener 且无记忆)才默认唤起键盘 —— 小巴有开场消息时
+  // 不抢键盘, 让话先被看见(点输入框/chip 照常唤起)。有历史的对话也不弹。
+  // opener fetch 是异步的: 首次 focus 时可能还没落定, 用 startersReady flag 推迟 bump 决定;
+  // fetch 出错 → treat as blank → 照旧 bump。键盘已弹起后 opener 才到达 → 不回收(无 dismiss jank)。
   const [composerFocusToken, setComposerFocusToken] = useState(0);
+  // startersReady 镜像成 ref, 供 focus 回调读(空依赖)。opener/memory/messages-empty
+  // refs 已在上方声明。
+  const startersReadyRef = useRef(false);
+  startersReadyRef.current = startersReady;
+  // 单次触发守卫: 每个 focus 会话只 bump 一次(blur 清理时复位)。
+  // 也防测试环境 useFocusEffect mock 每渲染重跑导致 setState 死循环。
+  const focusBumpedRef = useRef(false);
+  // 有话可说(opener 或记忆)→ 抑制键盘; 没话(空 + fetch 已落定)→ 唤起。
+  const shouldBumpKeyboard = useCallback(() => {
+    if (!messagesEmptyRef.current) return false;
+    if (openerRef.current) return false;
+    if (memoryOpenerRef.current.length > 0) return false;
+    return true;
+  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      // fetch 还没落定 → 先不决定, 等 startersReady 那个 effect 补 bump。
+      if (!focusBumpedRef.current && startersReadyRef.current && shouldBumpKeyboard()) {
+        focusBumpedRef.current = true;
+        setComposerFocusToken((n) => n + 1);
+      }
+      return () => { focusBumpedRef.current = false; };
+    }, [shouldBumpKeyboard])
+  );
+
+  // opener fetch 落定后补一次 bump 决定: 若 focus 时 fetch 还没回、这里落定后
+  // 判定小巴确实没话 → 唤起键盘。落定后有 opener/记忆 → 保持不弹。
+  useEffect(() => {
+    if (!startersReady) return;
+    if (!focusBumpedRef.current && shouldBumpKeyboard()) {
+      focusBumpedRef.current = true;
+      setComposerFocusToken((n) => n + 1);
+    }
+  }, [startersReady, shouldBumpKeyboard]);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', (event) => {
+      setKeyboardVisible(true);
+      setKeyboardHeight(event.endCoordinates?.height || 0);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+    });
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
 
   // State A: 用户发第一条消息时(空状态 + 有可见开场气泡), 把开场文本作为
   // 合成 assistant 消息注入到流顶, 让被回答的那句话不随空状态卸载而消失。
@@ -389,26 +418,18 @@ export default function ChatScreen() {
 
   const handleSend = useCallback((text: string, images?: any, options?: ChatInputSendOptions) => {
     isNearBottom.current = true;
-    setTaskLedgerExpanded(false); // 发消息即收起任务面板,回到对话流
     injectOpeningContinuity(openerRef.current);
-    const pendingCardContext = pendingCardActionContextRef.current;
-    const extraContext = mergeExtraContext(options?.extraContext, pendingCardContext);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
     return new Promise<boolean>((resolve) => {
       let settled = false;
       const resolveOnce = (accepted: boolean) => {
         if (settled) return;
         settled = true;
-        if (accepted) {
-          pendingCardActionContextRef.current = null;
-          setContextBadge(null);
-          setContextPayload(null);
-          setContextInspectorVisible(false);
-        }
+        if (accepted) setContextBadge(null);
         resolve(accepted);
       };
       void Promise.resolve(sendMessage(text, images, {
-        ...(extraContext ? { extraContext } : {}),
+        ...(options?.extraContext ? { extraContext: options.extraContext } : {}),
         ...(options?.channel ? { channel: options.channel } : {}),
         onAccepted: resolveOnce,
       })).then(resolveOnce).catch(() => resolveOnce(false));
@@ -500,9 +521,7 @@ export default function ChatScreen() {
     setHistoryError(null);
     setHistoryLoadMoreError(false);
     try {
-      const { items, total } = await getConversationsPage({
-        offset: 0, limit: HISTORY_PAGE_SIZE, search: historySearchRef.current,
-      });
+      const { items, total } = await getConversationsPage({ offset: 0, limit: HISTORY_PAGE_SIZE });
       setConversations(items);
       setHistoryTotal(total);
     } catch {
@@ -525,7 +544,6 @@ export default function ChatScreen() {
       const { items, total } = await getConversationsPage({
         offset: currentLen,
         limit: HISTORY_PAGE_SIZE,
-        search: historySearchRef.current,
       });
       setHistoryTotal(total);
       setConversations(prev => {
@@ -542,27 +560,9 @@ export default function ChatScreen() {
 
   const openHistory = useCallback(() => {
     setToolMenuVisible(false);
-    // 每次打开清空搜索,始终从全量历史开始(ref 同步清,openHistory 拉取读到空)
-    historySearchRef.current = '';
-    setHistorySearch('');
     setHistoryVisible(true);
     loadConversationHistory();
   }, [loadConversationHistory]);
-
-  // 搜索词变化:同步更新 ref(fetch 回调读它)+ 受控 state。
-  const onHistorySearchChange = useCallback((v: string) => {
-    historySearchRef.current = v;
-    setHistorySearch(v);
-  }, []);
-
-  // 搜索防抖:仅 historySearch 变化触发(不依赖 historyVisible,避免开 sheet 时
-  // 与 openHistory 的即时拉取双拉)。sheet 未开时早退。
-  useEffect(() => {
-    if (!historyVisible) return;
-    const t = setTimeout(() => { loadConversationHistory(); }, 300);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historySearch]);
 
   const exitSelectionMode = useCallback(() => {
     setSelectionMode(false);
@@ -571,12 +571,8 @@ export default function ChatScreen() {
 
   const handleNewChat = useCallback(() => {
     setToolMenuVisible(false);
-    setTaskLedgerExpanded(false);
     exitSelectionMode();
-    pendingCardActionContextRef.current = null;
     setContextBadge(null);
-    setContextPayload(null);
-    setContextInspectorVisible(false);
     setComposerFocusToken((n) => n + 1);
     newChat();
     void refreshCoachHomeState();
@@ -613,62 +609,11 @@ export default function ChatScreen() {
   const handleSelectConversation = useCallback(async (id: number) => {
     await loadConversation(id);
     isNearBottom.current = true;
-    pendingCardActionContextRef.current = null;
     setContextBadge(null);
-    setContextPayload(null);
-    setContextInspectorVisible(false);
     setSelectionMode(false);
     setSelectedMessageIds(new Set());
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 120);
   }, [loadConversation]);
-
-  const clearContext = useCallback(() => {
-    pendingCardActionContextRef.current = null;
-    setContextBadge(null);
-    setContextPayload(null);
-    setContextInspectorVisible(false);
-  }, []);
-
-  const handleAskTodayDietCalories = useCallback(() => {
-    handleSend(TODAY_DIET_CALORIE_QUERY, null);
-  }, [handleSend]);
-
-  const handleAskTwoDayDietReview = useCallback(() => {
-    handleSend(TWO_DAY_DIET_REVIEW_QUERY, null);
-  }, [handleSend]);
-
-  const handleOpenDietCorrection = useCallback(() => {
-    setContextInspectorVisible(false);
-    router.push('/diet' as any);
-  }, []);
-
-  const handleOpenDietShare = useCallback(() => {
-    const route = buildSavedDietShareRoute(contextPayload);
-    if (!route) {
-      router.push('/diet' as any);
-      return;
-    }
-    router.push(route as any);
-  }, [contextPayload]);
-
-  const handleCardActionCompleted = useCallback((event: {
-    action: ChatCardActionDescriptor;
-    descriptor: ServerCardDescriptor;
-    result: ChatCardActionResult;
-  }) => {
-    const statusMessage = buildCardActionStatusMessage(event);
-    if (statusMessage) {
-      isNearBottom.current = true;
-      setMessages(prev => [...prev, statusMessage]);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
-    }
-    const context = buildCardActionExtraContext(event);
-    if (!context) return;
-    pendingCardActionContextRef.current = context.payload;
-    setContextBadge(context.badge);
-    setContextPayload(context.payload);
-    setContextInspectorVisible(false);
-  }, [setMessages]);
 
   const handleDeleteConversation = useCallback(async (id: number) => {
     const ok = await deleteConversation(id);
@@ -742,35 +687,28 @@ export default function ChatScreen() {
         selected={selectedMessageIds.has(item.id)}
         onToggleSelected={toggleMessageSelection}
         onEnterSelection={!selectionMode && shareable ? enterSelectionWith : undefined}
-        onCardActionCompleted={handleCardActionCompleted}
       />
     );
-  }, [authToken, selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith, handleCardActionCompleted]);
+  }, [authToken, selectedMessageIds, selectionMode, toggleMessageSelection, enterSelectionWith]);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const handleKeyboardShown = useCallback(() => {
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-  }, []);
-  // 小巴是 agent-native 主屏,没有底部 Tab Bar。键盘弹起时用 overlap spacer 对齐键盘
-  // 上沿;收起时 = 底部安全区(SafeAreaView 只包 top, home indicator 由这里补)+ 呼吸空间。
-  const { bottomSpacerHeight, keyboardVisible } = useChatKeyboardDock({
-    bottomInset: insets.bottom,
-    restingSpace: CHAT_BOTTOM_BREATHING_SPACE,
-    onKeyboardShown: handleKeyboardShown,
-  });
+  // 小巴是 agent-native 主屏,没有底部 Tab Bar。键盘弹起时直接为键盘留位;
+  // 收起时 = 底部安全区(SafeAreaView 只包 top, home indicator 由这里补) + 呼吸空间,
+  // 输入栏悬浮在 home indicator 之上而非压进去(founder 2026-07-05: 参考阿福)。
+  const bottomSpacerHeight = keyboardVisible
+    ? (Platform.OS === 'ios' ? keyboardHeight : 0)
+    : insets.bottom + CHAT_BOTTOM_BREATHING_SPACE;
   const activeLlmLabel = llmModelId
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
-  const hasSavedDietContext = isSavedDietContextPayload(contextPayload);
   const activeTurnVisible = activeTurn.phase !== 'idle' && activeTurn.phase !== 'completed';
-  const lastUserMessage = [...messages].reverse().find(message => (
+  const lastRetryableUserMessage = [...messages].reverse().find(message => (
     message.role === 'user'
     && !!message.content?.trim()
+    && message.content !== '(图片)'
+    && (!message.imageUris || message.imageUris.length === 0)
   ));
-  const lastRetryableUserMessage = lastUserMessage && (!lastUserMessage.imageUris || lastUserMessage.imageUris.length === 0)
-    ? lastUserMessage
-    : undefined;
   const todayFocusVariant = messages.length === 0 && !keyboardVisible && !activeTurnVisible
     ? 'full'
     : 'compact';
@@ -799,16 +737,12 @@ export default function ChatScreen() {
   );
   const retryLastTextTurn = () => {
     if (!lastRetryableUserMessage || isStreaming) return;
-    const retryChannel = lastRetryableUserMessage.retryChannel;
-    if (retryChannel && retryChannel !== 'typed') {
-      void sendMessage(lastRetryableUserMessage.content, null, { channel: retryChannel });
-      return;
-    }
     void sendMessage(lastRetryableUserMessage.content, null);
   };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <StatusBar style="dark" backgroundColor={C.paper} translucent={false} />
       <ChatHeader
         activeLlmLabel={activeLlmLabel}
         llmModelId={llmModelId}
@@ -836,13 +770,7 @@ export default function ChatScreen() {
         />
       )}
 
-      <View style={styles.keyboardAvoidingBody}>
-        {/* 展开态:任务账本以内联面板呈现在对话页(占据消息区),composer 仍在下方;收起回到对话。 */}
-        {taskLedgerExpanded ? (
-          <View testID="chat-task-ledger-inline-panel" style={{ flex: 1 }}>
-            <TaskLedgerPanel onClose={() => setTaskLedgerExpanded(false)} />
-          </View>
-        ) : (
+      <View style={{ flex: 1 }}>
         <FlatList
           ref={flatListRef}
           data={messages}
@@ -867,80 +795,21 @@ export default function ChatScreen() {
             ) : <AgentHomeBootstrapLoading />
           }
         />
-        )}
 
         {contextBadge && (
           <View style={styles.contextBanner}>
-            <Pressable
-              onPress={() => setContextInspectorVisible(true)}
-              style={({ pressed }) => [styles.contextBannerButton, pressed && styles.contextBannerPressed]}
-              accessibilityRole="button"
-              accessibilityLabel={`查看上下文：${contextBadge}`}
-            >
-              <Ionicons name="link-outline" size={13} color={C.green500} />
-              <Text style={txt.contextBanner} numberOfLines={1}>
-                基于 {contextBadge}
-              </Text>
-              <Ionicons name="chevron-up-outline" size={13} color={C.ink3} />
-            </Pressable>
-            {hasSavedDietContext && (
-              <Pressable
-                onPress={handleAskTodayDietCalories}
-                style={({ pressed }) => [styles.contextQuickAction, pressed && styles.contextBannerPressed]}
-                accessibilityRole="button"
-                accessibilityLabel="基于刚保存饮食查询今日热量"
-              >
-                <Ionicons name="analytics-outline" size={12} color={C.green600} />
-                <Text style={txt.contextQuickAction} numberOfLines={1}>查今日热量</Text>
-              </Pressable>
-            )}
-            {hasSavedDietContext && (
-              <Pressable
-                onPress={handleOpenDietShare}
-                style={({ pressed }) => [styles.contextQuickAction, pressed && styles.contextBannerPressed]}
-                accessibilityRole="button"
-                accessibilityLabel="生成刚保存饮食的微信小红书分享图"
-              >
-                <Ionicons name="images-outline" size={12} color={C.green600} />
-                <Text style={txt.contextQuickAction} numberOfLines={1}>晒图</Text>
-              </Pressable>
-            )}
-            {hasSavedDietContext && (
-              <Pressable
-                onPress={handleOpenDietCorrection}
-                style={({ pressed }) => [styles.contextQuickAction, pressed && styles.contextBannerPressed]}
-                accessibilityRole="button"
-                accessibilityLabel="去饮食页修正刚保存的记录"
-              >
-                <Ionicons name="create-outline" size={12} color={C.green600} />
-                <Text style={txt.contextQuickAction} numberOfLines={1}>修正</Text>
-              </Pressable>
-            )}
-            {hasSavedDietContext && (
-              <Pressable
-                onPress={handleAskTwoDayDietReview}
-                style={({ pressed }) => [styles.contextQuickAction, pressed && styles.contextBannerPressed]}
-                accessibilityRole="button"
-                accessibilityLabel="基于刚保存饮食复盘昨天和今天"
-              >
-                <Ionicons name="calendar-outline" size={12} color={C.green600} />
-                <Text style={txt.contextQuickAction} numberOfLines={1}>复盘两天</Text>
-              </Pressable>
-            )}
-            <Pressable
-              onPress={clearContext}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="清除上下文"
-              style={({ pressed }) => [styles.contextClearButton, pressed && styles.contextBannerPressed]}
-            >
+            <Ionicons name="link-outline" size={13} color={C.green500} />
+            <Text style={txt.contextBanner} numberOfLines={1}>
+              基于 {contextBadge}
+            </Text>
+            <TouchableOpacity onPress={() => setContextBadge(null)} hitSlop={8}>
               <Ionicons name="close" size={14} color={C.ink3} />
-            </Pressable>
+            </TouchableOpacity>
           </View>
         )}
 
         {selectionMode && (
-          <View testID="chat-selection-rail" style={styles.shareBar}>
+          <View style={styles.shareBar}>
             <TouchableOpacity
               onPress={exitSelectionMode}
               hitSlop={8}
@@ -953,17 +822,17 @@ export default function ChatScreen() {
             </TouchableOpacity>
             <View style={{ flex: 1 }}>
               <Text style={txt.shareBarTitle}>已选择 {selectedMessageIds.size} 条</Text>
-              <Text style={txt.shareBarSub}>按当前对话顺序生成分享内容</Text>
+              <Text style={txt.shareBarSub}>按当前对话顺序生成分享链接</Text>
             </View>
             <TouchableOpacity
               onPress={shareSelectedMessages}
               disabled={selectedMessageIds.size === 0 || sharing}
               style={[styles.shareButton, (selectedMessageIds.size === 0 || sharing) && styles.shareButtonDisabled]}
-              accessibilityLabel="分享选中内容"
+              accessibilityLabel="分享已选消息"
               accessibilityRole="button"
             >
               <Ionicons name="share-outline" size={16} color="#fff" />
-              <Text style={txt.shareButton}>{sharing ? '生成中' : '分享选中内容'}</Text>
+              <Text style={txt.shareButton}>{sharing ? '生成中' : '分享'}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -975,17 +844,15 @@ export default function ChatScreen() {
             showCapturePhoto={!startersOnboarding}
           />
         )}
-        {!selectionMode && (
-          <ChatInputBar
-            onSend={handleSend}
-            isStreaming={isStreaming}
-            initialText={initialInput}
-            initialTextKey={initialInputKey}
-            conversationId={conversationId}
-            onMedicalExamImportResult={handleMedicalExamImportResult}
-            autoFocusToken={composerFocusToken}
-          />
-        )}
+        <ChatInputBar
+          onSend={handleSend}
+          isStreaming={isStreaming}
+          initialText={initialInput}
+          initialTextKey={initialInputKey}
+          conversationId={conversationId}
+          onMedicalExamImportResult={handleMedicalExamImportResult}
+          autoFocusToken={composerFocusToken}
+        />
         <View testID="chat-bottom-spacer" style={{ height: bottomSpacerHeight }} />
       </View>
 
@@ -1001,38 +868,6 @@ export default function ChatScreen() {
           <TouchableOpacity style={styles.imageViewerClose} onPress={() => setViewingImage(null)}>
             <Ionicons name="close-circle" size={32} color="#fff" />
           </TouchableOpacity>
-        </Pressable>
-      </Modal>
-      <Modal visible={!!contextBadge && contextInspectorVisible} transparent animationType="fade" onRequestClose={() => setContextInspectorVisible(false)}>
-        <Pressable style={styles.contextModalOverlay} onPress={() => setContextInspectorVisible(false)}>
-          <Pressable style={styles.contextSheet}>
-            <View style={styles.contextSheetHeader}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={txt.contextSheetTitle}>本轮上下文</Text>
-                <Text style={txt.contextSheetSub} numberOfLines={1}>来源：{contextBadge}</Text>
-              </View>
-              <Pressable
-                onPress={() => setContextInspectorVisible(false)}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="关闭上下文详情"
-              >
-                <Ionicons name="close" size={20} color={C.ink2} />
-              </Pressable>
-            </View>
-            <Text selectable style={txt.contextPayload} numberOfLines={10}>
-              {formatContextPayload(contextPayload)}
-            </Text>
-            <Pressable
-              onPress={clearContext}
-              style={({ pressed }) => [styles.contextRemoveButton, pressed && styles.contextBannerPressed]}
-              accessibilityRole="button"
-              accessibilityLabel="移除上下文"
-            >
-              <Ionicons name="unlink-outline" size={15} color={revaSemantic.risk.fg} />
-              <Text style={txt.contextRemoveButton}>移除上下文</Text>
-            </Pressable>
-          </Pressable>
         </Pressable>
       </Modal>
       <Modal visible={toolMenuVisible} transparent animationType="fade" onRequestClose={() => setToolMenuVisible(false)}>
@@ -1053,31 +888,6 @@ export default function ChatScreen() {
               onPress={() => {
                 setToolMenuVisible(false);
                 router.navigate('/(tabs)/me');
-              }}
-            />
-            <ToolMenuRow
-              icon="mic-circle-outline"
-              label="连续语音对话"
-              onPress={() => {
-                setToolMenuVisible(false);
-                router.navigate('/voice-chat');
-              }}
-            />
-            <ToolMenuRow
-              icon="list-circle-outline"
-              label="小巴的任务"
-              onPress={() => {
-                // agent-native:对话页内联展开任务账本,不跳独立页。
-                setToolMenuVisible(false);
-                setTaskLedgerExpanded(true);
-              }}
-            />
-            <ToolMenuRow
-              icon="bookmark-outline"
-              label="我的配方"
-              onPress={() => {
-                setToolMenuVisible(false);
-                setRecipeManagerVisible(true);
               }}
             />
             {messages.some(isShareableChatMessage) && (
@@ -1102,10 +912,6 @@ export default function ChatScreen() {
           </Pressable>
         </Pressable>
       </Modal>
-      <RecipeManagerSheet
-        visible={recipeManagerVisible}
-        onClose={() => setRecipeManagerVisible(false)}
-      />
       <ConversationSheet
         visible={historyVisible}
         onClose={() => setHistoryVisible(false)}
@@ -1123,8 +929,6 @@ export default function ChatScreen() {
         loadMoreError={historyLoadMoreError}
         onLoadMore={loadMoreConversations}
         total={historyTotal}
-        searchValue={historySearch}
-        onSearchChange={onHistorySearchChange}
       />
     </SafeAreaView>
   );
@@ -1182,193 +986,9 @@ function ToolMenuRow({
   );
 }
 
-function formatContextPayload(value: string | null): string {
-  const raw = String(value || '').trim();
-  if (!raw) return '没有附加详情。';
-  try {
-    const parsed = JSON.parse(raw);
-    return formatKnownContextPayload(parsed) || JSON.stringify(parsed, null, 2);
-  } catch {
-    return raw;
-  }
-}
-
-function formatKnownContextPayload(value: unknown): string | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const source = value as Record<string, unknown>;
-  if (source.source !== 'chat_card_action' || source.event !== 'diet_record_saved') return null;
-
-  const sources = Array.isArray(source.sources)
-    ? source.sources.map(textValue).filter((item): item is string => Boolean(item))
-    : [];
-  const record = normalizeDietContextRecord(source.record);
-  const lines: string[] = [];
-
-  if (sources.length > 0) {
-    lines.push('数据源');
-    sources.forEach(item => lines.push(`- ${item}`));
-  }
-
-  if (record) {
-    const meal = mealTypeLabel(String(record.meal_type || ''));
-    const foodItems = textValue(record.food_items);
-    const calories = normalizeNumberValue(record.calories);
-    const pieces = [
-      meal,
-      foodItems,
-      calories != null ? `${Math.round(calories)} kcal` : undefined,
-    ].filter((item): item is string => Boolean(item));
-    if (pieces.length > 0) {
-      if (lines.length > 0) lines.push('');
-      lines.push('记录摘要');
-      lines.push(pieces.join(' · '));
-    }
-  }
-
-  return lines.length > 0 ? lines.join('\n') : null;
-}
-
-function isSavedDietContextPayload(value: string | null): boolean {
-  const parsed = parseJsonObject(String(value || '').trim());
-  return parsed?.source === 'chat_card_action' && parsed?.event === 'diet_record_saved';
-}
-
-function buildSavedDietShareRoute(value: string | null): string | null {
-  const parsed = parseJsonObject(String(value || '').trim());
-  if (parsed?.source !== 'chat_card_action' || parsed?.event !== 'diet_record_saved') return null;
-  const record = normalizeDietContextRecord(parsed.record);
-  const id = normalizeNumberValue(record?.id);
-  if (id == null || id <= 0) return null;
-  const params = new URLSearchParams({
-    share_record_id: String(Math.round(id)),
-    return_to: 'chat',
-  });
-  const recordDate = textValue(record?.record_date);
-  if (recordDate && /^\d{4}-\d{2}-\d{2}$/.test(recordDate)) {
-    params.set('date', recordDate);
-  }
-  return `/diet?${params.toString()}`;
-}
-
-function mergeExtraContext(primary?: string, secondary?: string | null): string | undefined {
-  const first = String(primary || '').trim();
-  const second = String(secondary || '').trim();
-  if (!first) return second || undefined;
-  if (!second) return first || undefined;
-  const firstObject = parseJsonObject(first);
-  const secondObject = parseJsonObject(second);
-  if (firstObject && secondObject) {
-    return JSON.stringify({ ...secondObject, ...firstObject });
-  }
-  return JSON.stringify({
-    extra_context: first,
-    recent_card_action_context: secondObject || second,
-  });
-}
-
-function buildCardActionExtraContext(event: {
-  action: ChatCardActionDescriptor;
-  descriptor: ServerCardDescriptor;
-  result: ChatCardActionResult;
-}): { badge: string; payload: string } | null {
-  if (event.action.action !== 'diet_record.create' || event.descriptor.type !== 'diet_draft') return null;
-  const record = normalizeDietContextRecord(event.result.record);
-  if (!record) return null;
-  const mealLabel = mealTypeLabel(String(record.meal_type || ''));
-  return {
-    badge: `刚保存${mealLabel} + 今日饮食记录`,
-    payload: JSON.stringify({
-      source: 'chat_card_action',
-      event: 'diet_record_saved',
-      sources: [`刚保存的${mealLabel}记录`, '今日饮食数据库'],
-      instruction: '用户刚刚在对话卡片里确认保存了这条饮食记录。下一轮如果用户询问是否保存、今天/本餐饮食或热量，必须先查询今日饮食数据库，再结合这条记录回答，不要重新询问这顿饭吃了什么，也不要只凭对话猜测。',
-      record,
-    }),
-  };
-}
-
-function buildCardActionStatusMessage(event: {
-  action: ChatCardActionDescriptor;
-  descriptor: ServerCardDescriptor;
-  result: ChatCardActionResult;
-}): UIMessage | null {
-  if (event.action.action !== 'diet_record.create' || event.descriptor.type !== 'diet_draft') return null;
-  const record = normalizeDietContextRecord(event.result.record);
-  if (!record) return null;
-  const mealLabel = mealTypeLabel(String(record.meal_type || ''));
-  const calories = normalizeNumberValue(record.calories);
-  const foodItems = textValue(record.food_items);
-  const title = `已保存${mealLabel}${calories != null ? ` · ${Math.round(calories)} kcal` : ''}`;
-  const details = [
-    foodItems,
-    '可在饮食页修正；下条消息会基于这条记录和今日饮食记录回答。',
-    '想晒这一餐，可直接晒图到微信/小红书。',
-  ].filter(Boolean);
-  return {
-    id: `card-action-status-${Date.now()}`,
-    role: 'assistant',
-    content: [title, ...details].join('\n'),
-    localOnly: true,
-    completionStatus: 'complete',
-    toolsUsed: ['card_action'],
-  };
-}
-
-function normalizeDietContextRecord(raw: unknown): Record<string, unknown> | null {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const source = raw as Record<string, unknown>;
-  const foodItems = textValue(source.food_items);
-  const mealType = textValue(source.meal_type);
-  if (!foodItems && !mealType) return null;
-  const out: Record<string, unknown> = {};
-  for (const key of ['id', 'record_date', 'meal_type', 'food_items', 'notes'] as const) {
-    const value = source[key];
-    if (typeof value === 'number' && Number.isFinite(value)) out[key] = value;
-    if (typeof value === 'string' && value.trim()) out[key] = value.trim();
-  }
-  for (const key of ['calories', 'protein', 'carbs', 'fat', 'fiber', 'alcohol_units'] as const) {
-    const value = normalizeNumberValue(source[key]);
-    if (value != null) out[key] = value;
-  }
-  return out;
-}
-
-function parseJsonObject(value: string): Record<string, unknown> | null {
-  try {
-    const parsed = JSON.parse(value);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    return parsed as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-function textValue(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  const out = value.trim();
-  return out || undefined;
-}
-
-function normalizeNumberValue(value: unknown): number | undefined {
-  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.trim()) : NaN;
-  if (!Number.isFinite(parsed) || parsed < 0) return undefined;
-  return Math.round(parsed * 10) / 10;
-}
-
-function mealTypeLabel(mealType: string): string {
-  switch (mealType) {
-    case 'breakfast': return '早餐';
-    case 'lunch': return '午餐';
-    case 'dinner': return '晚餐';
-    case 'snack': return '加餐';
-    default: return '饮食';
-  }
-}
-
 // Reva 设计语言: 暖白 paper 屏底 / surface 卡 / green500 主色 / r-lg 18 / 软阴影. 文字走 Manrope.
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.paper },
-  keyboardAvoidingBody: { flex: 1 },
   messageList: { padding: revaSpacing.s4, paddingBottom: 8 },
   focusLoading: {
     minHeight: 64,
@@ -1440,85 +1060,21 @@ const styles = StyleSheet.create({
   contextBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     marginHorizontal: revaSpacing.s4, marginBottom: 4,
-    paddingHorizontal: 6, paddingVertical: 5,
+    paddingHorizontal: revaSpacing.s3, paddingVertical: 6,
     backgroundColor: C.green50, borderRadius: revaRadii.md,
-  },
-  contextBannerButton: {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 28,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 7,
-    borderRadius: revaRadii.sm,
-  },
-  contextBannerPressed: {
-    opacity: 0.75,
-  },
-  contextQuickAction: {
-    minHeight: 28,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    borderRadius: revaRadii.pill,
-    backgroundColor: '#fff',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(31,138,91,0.18)',
-  },
-  contextClearButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.55)',
-  },
-  contextModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(16,24,20,0.26)',
-    justifyContent: 'flex-end',
-    paddingHorizontal: revaSpacing.s3,
-    paddingBottom: revaSpacing.s4,
-  },
-  contextSheet: {
-    backgroundColor: C.paper,
-    borderRadius: revaRadii.xl,
-    padding: revaSpacing.s4,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    gap: revaSpacing.s3,
-    ...revaShadows.lg,
-  },
-  contextSheetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: revaSpacing.s3,
-  },
-  contextRemoveButton: {
-    minHeight: 38,
-    borderRadius: revaRadii.pill,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: C.paper2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
   },
   shareBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: revaSpacing.s3,
-    marginHorizontal: 0,
-    marginBottom: 0,
-    paddingHorizontal: revaSpacing.s4,
-    paddingVertical: 10,
-    borderRadius: 0,
+    marginHorizontal: revaSpacing.s4,
+    marginBottom: 8,
+    padding: revaSpacing.s3,
+    borderRadius: revaRadii.lg,
     backgroundColor: C.surface,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
+    ...revaShadows.sm,
   },
   cancelSelectionButton: {
     flexDirection: 'row',
@@ -1535,7 +1091,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 13,
+    paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: revaRadii.pill,
     backgroundColor: C.green500,
@@ -1548,11 +1104,6 @@ const styles = StyleSheet.create({
 const txt = {
   bootstrapLoading: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, fontWeight: '700' } as TextStyle,
   contextBanner: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green500, flex: 1, fontWeight: '500' } as TextStyle,
-  contextQuickAction: { fontFamily: revaFonts.sans, fontSize: 11.5, color: C.green600, fontWeight: '800' } as TextStyle,
-  contextSheetTitle: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '900', color: C.ink1 } as TextStyle,
-  contextSheetSub: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink3, marginTop: 2 } as TextStyle,
-  contextPayload: { fontFamily: revaFonts.mono, fontSize: 11.5, lineHeight: 17, color: C.ink2, backgroundColor: C.paper2, borderRadius: revaRadii.md, padding: revaSpacing.s3 } as TextStyle,
-  contextRemoveButton: { fontFamily: revaFonts.sans, fontSize: 13, color: revaSemantic.risk.fg, fontWeight: '800' } as TextStyle,
   shareBarTitle: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink1, fontWeight: '700' } as TextStyle,
   shareBarSub: { fontFamily: revaFonts.sans, fontSize: 11, color: C.ink3, marginTop: 2 } as TextStyle,
   cancelSelectionButton: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, fontWeight: '700' } as TextStyle,

@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, TextStyle,
-  Alert, ActivityIndicator, Pressable, Animated, Easing,
+  Alert, ActivityIndicator, Pressable,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,8 +11,8 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import { setAudioModeAsync } from 'expo-audio';
+import { captureRef } from 'react-native-view-shot';
 import Markdown from 'react-native-markdown-display';
-import type { RenderRules } from 'react-native-markdown-display';
 import BrandCircle from './BrandCircle';
 import { getCardActionRuntimeKey, renderCard } from './cards';
 import { createMdStylesChat } from '../../constants/markdownStyles';
@@ -37,49 +37,18 @@ import {
   revaFonts,
 } from '../../constants/revaTheme';
 import { useToast } from '../../hooks/useToast';
-import { sharePlainText } from '../../utils/share';
+import { shareLocalImage, sharePlainText } from '../../utils/share';
 import { buildAiShareMessage } from '../../utils/aiShareText';
 import { buildChatImageSource } from '../../utils/chatImageSource';
-import { saveChatImageToLibrary } from '../../utils/saveChatImageToLibrary';
 import { containsMarkdownTable, preprocessMarkdownTables } from '../../utils/markdownTables';
 import { extractRevaUiBlocks } from '../../utils/revaUiBlocks';
+import { saveChatImageToLibrary } from '../../services/chatImageSave';
 import {
   buildAgentTransparency,
   formatDurationMs,
   type AgentTransparencyBand,
   type AgentTransparencyProfile,
 } from '../../utils/chatTransparency';
-
-/**
- * 诚实的「思考中」不定量进度条(2026-07-07 修:原本恒 4/4 + 写死 78% 是 UI 谎报,
- * 与小巴「忠实」人格 + 仓库 fail-loud 铁律冲突)。LLM 不知道总步数,任何百分比/分母
- * 都是编的;改成一段来回滑动的 indeterminate 段,只诚实表达「在做」,不谎报进度。
- */
-function ThinkingIndeterminateBar() {
-  const anim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.timing(anim, {
-        toValue: 1,
-        duration: 1100,
-        easing: Easing.inOut(Easing.ease),
-        useNativeDriver: true,
-      }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [anim]);
-  // 段宽 ~38% 轨道;translateX 从 -40% 滑到 +140%(轨道自身 overflow:hidden 裁掉两端)
-  const translateX = anim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['-110%', '260%'],
-  });
-  return (
-    <View style={styles.thinkingProgressTrack} accessibilityElementsHidden>
-      <Animated.View style={[styles.thinkingProgressFill, { width: '38%', transform: [{ translateX }] }]} />
-    </View>
-  );
-}
 
 type WriteReceipt = NonNullable<ChatCardActionResult['receipt']>;
 
@@ -94,80 +63,6 @@ const MD_PALETTE = {
   separator: C.line,
 } as unknown as ColorPalette;
 const MD_STYLES = createMdStylesChat(MD_PALETTE);
-const CHAT_MARKDOWN_RULES: RenderRules = {
-  text: (node, children, parent, styles, inheritedStyles = {}) => (
-    <Text key={node.key} selectable={false} style={[inheritedStyles, styles.text]}>
-      {node.content}
-    </Text>
-  ),
-  textgroup: (node, children, parent, styles) => (
-    <Text key={node.key} selectable={false} style={styles.textgroup}>
-      {children}
-    </Text>
-  ),
-  strong: (node, children, parent, styles) => (
-    <Text key={node.key} selectable={false} style={styles.strong}>
-      {children}
-    </Text>
-  ),
-  em: (node, children, parent, styles) => (
-    <Text key={node.key} selectable={false} style={styles.em}>
-      {children}
-    </Text>
-  ),
-  s: (node, children, parent, styles) => (
-    <Text key={node.key} selectable={false} style={styles.s}>
-      {children}
-    </Text>
-  ),
-  code_inline: (node, children, parent, styles, inheritedStyles = {}) => (
-    <Text key={node.key} selectable={false} style={[inheritedStyles, styles.code_inline]}>
-      {node.content}
-    </Text>
-  ),
-  code_block: (node, children, parent, styles, inheritedStyles = {}) => {
-    let { content } = node;
-    if (typeof content === 'string' && content.endsWith('\n')) {
-      content = content.slice(0, -1);
-    }
-    return (
-      <Text key={node.key} selectable={false} style={[inheritedStyles, styles.code_block]}>
-        {content}
-      </Text>
-    );
-  },
-  fence: (node, children, parent, styles, inheritedStyles = {}) => {
-    let { content } = node;
-    if (typeof content === 'string' && content.endsWith('\n')) {
-      content = content.slice(0, -1);
-    }
-    return (
-      <Text key={node.key} selectable={false} style={[inheritedStyles, styles.fence]}>
-        {content}
-      </Text>
-    );
-  },
-  hardbreak: (node, children, parent, styles) => (
-    <Text key={node.key} selectable={false} style={styles.hardbreak}>
-      {'\n'}
-    </Text>
-  ),
-  softbreak: (node, children, parent, styles) => (
-    <Text key={node.key} selectable={false} style={styles.softbreak}>
-      {'\n'}
-    </Text>
-  ),
-  inline: (node, children, parent, styles) => (
-    <Text key={node.key} selectable={false} style={styles.inline}>
-      {children}
-    </Text>
-  ),
-  span: (node, children, parent, styles) => (
-    <Text key={node.key} selectable={false} style={styles.span}>
-      {children}
-    </Text>
-  ),
-};
 
 interface Props {
   item: UIMessage;
@@ -178,23 +73,9 @@ interface Props {
   onToggleSelected?: (id: string) => void;
   /** 微信式: 长按这条消息进入多选模式 (仅可分享的消息才传). 进入后默认选中该条. */
   onEnterSelection?: (id: string) => void;
-  onCardActionCompleted?: (event: {
-    action: ChatCardActionDescriptor;
-    descriptor: ServerCardDescriptor;
-    result: ChatCardActionResult;
-  }) => void;
 }
 
-function ChatBubbleInner({
-  item,
-  onViewImage,
-  imageAuthToken,
-  selectionMode = false,
-  selected = false,
-  onToggleSelected,
-  onEnterSelection,
-  onCardActionCompleted,
-}: Props) {
+function ChatBubbleInner({ item, onViewImage, imageAuthToken, selectionMode = false, selected = false, onToggleSelected, onEnterSelection }: Props) {
   const qc = useQueryClient();
   const toast = useToast();
   const isUser = item.role === 'user';
@@ -204,6 +85,7 @@ function ChatBubbleInner({
   const [cardReceiptByKey, setCardReceiptByKey] = useState<Record<string, WriteReceipt>>({});
   const [cardReceiptPersistenceWarning, setCardReceiptPersistenceWarning] = useState(false);
   const cardActionLocksRef = useRef(new Set<string>());
+  const cardFrameRef = useRef<View | null>(null);
   const speechTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechActiveRef = useRef(false);
   const speechHandleRef = useRef<SpeakHandle | null>(null);
@@ -270,7 +152,6 @@ function ChatBubbleInner({
       sourcesUsed: item.sourcesUsed,
       toolsUsed: item.toolsUsed,
       perf: item.perf,
-      fallbackReasons: item.fallbackReasons,
     }),
     [
       item.elapsedMs,
@@ -281,7 +162,6 @@ function ChatBubbleInner({
       item.sourcesUsed,
       item.toolsUsed,
       item.perf,
-      item.fallbackReasons,
     ],
   );
 
@@ -441,7 +321,6 @@ function ChatBubbleInner({
             refreshFailed ? 'info' : getCardActionSuccessType(action, result),
           );
         }
-        onCardActionCompleted?.({ action, descriptor, result });
         if (result.route) {
           router.push(result.route as any);
         }
@@ -475,13 +354,54 @@ function ChatBubbleInner({
     }
 
     await execute();
-  }, [cardActionStateByKey, item.id, item.sourceMessageId, item.sourceTurnId, onCardActionCompleted, qc, toast]);
+  }, [cardActionStateByKey, item.id, item.sourceMessageId, item.sourceTurnId, qc, toast]);
 
   const cardReceipts = Object.values(cardReceiptByKey);
   const latestCardReceipt = cardReceipts.length > 0 ? cardReceipts[cardReceipts.length - 1] : null;
   const directWriteReceipts = item.writeReceipts || [];
   const latestWriteReceipt = latestCardReceipt
     || (directWriteReceipts.length > 0 ? directWriteReceipts[directWriteReceipts.length - 1] : null);
+  const cardSharePayload = useMemo(
+    () => buildCardSharePayload(item.cardType, item.cardData, latestWriteReceipt),
+    [item.cardData, item.cardType, latestWriteReceipt],
+  );
+  const handleCardShare = useCallback(async () => {
+    if (!cardSharePayload) return;
+    try { Haptics.selectionAsync(); } catch {}
+    try {
+      await sharePlainText(cardSharePayload);
+    } catch { /* 用户取消分享也会走这里, 不打扰 */ }
+  }, [cardSharePayload]);
+  const captureCardScreenshot = useCallback(async () => {
+    if (!cardFrameRef.current) return;
+    return captureRef(cardFrameRef.current, {
+      format: 'png',
+      quality: 1,
+      result: 'tmpfile',
+    });
+  }, []);
+  const handleSaveCardScreenshot = useCallback(async () => {
+    try { Haptics.selectionAsync(); } catch {}
+    try {
+      const uri = await captureCardScreenshot();
+      if (!uri) return;
+      await saveChatImageToLibrary({ uri });
+      toast.show('已保存到照片', 'success');
+    } catch {
+      toast.show('保存截图失败，请稍后重试', 'error');
+    }
+  }, [captureCardScreenshot, toast]);
+  const handleShareCardImage = useCallback(async (target: 'wechat' | 'xiaohongshu' | 'more' = 'more') => {
+    try { Haptics.selectionAsync(); } catch {}
+    try {
+      const uri = await captureCardScreenshot();
+      if (!uri) return;
+      await shareLocalImage(uri);
+    } catch {
+      const targetName = target === 'wechat' ? '微信' : target === 'xiaohongshu' ? '小红书' : '图片';
+      toast.show(`分享${targetName}失败，请稍后重试`, 'error');
+    }
+  }, [captureCardScreenshot, toast]);
 
   if (item.cardType && item.cardData) {
     const rendered = renderCard(
@@ -493,9 +413,60 @@ function ChatBubbleInner({
         <View style={[styles.msgRow, styles.msgRowAI]}>
           <View style={{ width: 36 }} />
           <View testID="assistant-card-frame" style={styles.cardFrame}>
-            {rendered}
-            {latestWriteReceipt ? <WriteReceiptLine receipt={latestWriteReceipt} /> : null}
-            {cardReceiptPersistenceWarning ? <WriteReceiptPersistenceWarning /> : null}
+            <View ref={cardFrameRef} testID="assistant-card-capture-frame" collapsable={false}>
+              {rendered}
+              {latestWriteReceipt ? <WriteReceiptLine receipt={latestWriteReceipt} /> : null}
+              {cardReceiptPersistenceWarning ? <WriteReceiptPersistenceWarning /> : null}
+            </View>
+            {cardSharePayload && !selectionMode ? (
+              <View style={styles.cardMetaRow}>
+                <Text style={txt.cardShareHint} numberOfLines={1}>
+                  截图可直接发微信 / 小红书
+                </Text>
+                <View testID="assistant-card-share-actions" style={styles.cardShareActions}>
+                  <Pressable
+                    onPress={handleSaveCardScreenshot}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    accessibilityLabel="保存餐食截图"
+                    style={({ pressed }) => [styles.cardSaveButton, pressed && styles.actionBtnPressed]}
+                  >
+                    <Ionicons name="image-outline" size={13} color={C.ink3} />
+                    <Text style={txt.cardSaveButton}>保存截图</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => handleShareCardImage('wechat')}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    accessibilityLabel="发微信分享餐食图片"
+                    style={({ pressed }) => [styles.cardWechatShareButton, pressed && styles.actionBtnPressed]}
+                  >
+                    <Ionicons name="logo-wechat" size={13} color="#fff" />
+                    <Text style={txt.cardWechatShareButton}>发微信</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => handleShareCardImage('xiaohongshu')}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    accessibilityLabel="发小红书分享餐食图片"
+                    style={({ pressed }) => [styles.cardXhsShareButton, pressed && styles.actionBtnPressed]}
+                  >
+                    <Ionicons name="book-outline" size={13} color={C.green700} />
+                    <Text style={txt.cardImageShareButton}>发小红书</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={handleCardShare}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    accessibilityLabel="分享餐食记录正文"
+                    style={({ pressed }) => [styles.cardShareButton, pressed && styles.actionBtnPressed]}
+                  >
+                    <Ionicons name="share-social-outline" size={13} color={C.green700} />
+                    <Text style={txt.cardShareButton}>更多</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
           </View>
         </View>
       );
@@ -507,8 +478,68 @@ function ChatBubbleInner({
   const handleCopy = () => {
     Clipboard.setStringAsync(item.content);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setShowActions(false);
-    toast.show('已复制', 'success');
+    Alert.alert('已复制');
+  };
+
+  const handleSaveImage = async (uri: string) => {
+    const source = buildChatImageSource(uri, imageAuthToken);
+    if (!source) {
+      toast.show('图片需要登录后才能保存', 'info');
+      return;
+    }
+    try {
+      await saveChatImageToLibrary(source);
+      try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
+      toast.show('已保存到相册', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || '');
+      if (message === 'photo_permission_denied') {
+        Alert.alert('需要照片权限', '请在 iPhone 设置中允许小巴添加照片。');
+        return;
+      }
+      toast.show('保存失败，请稍后重试', 'error');
+      if (__DEV__) console.warn('[chat] save image failed', error);
+    }
+  };
+
+  const handleImageLongPress = (uri: string) => {
+    if (selectionMode) {
+      onToggleSelected?.(item.id);
+      return;
+    }
+    try { Haptics.selectionAsync(); } catch {}
+    Alert.alert('图片', undefined, [
+      { text: '保存到相册', onPress: () => { void handleSaveImage(uri); } },
+      { text: '取消', style: 'cancel' },
+    ]);
+  };
+
+  const renderMessageImages = () => {
+    if (!images || images.length === 0) return null;
+    return (
+      <View style={styles.imageGrid}>
+        {images.map((uri, i) => {
+          const source = buildChatImageSource(uri, imageAuthToken);
+          if (!source) return null;
+          return (
+            <TouchableOpacity
+              key={`${uri}-${i}`}
+              onPress={() => onViewImage?.(uri)}
+              onLongPress={() => handleImageLongPress(uri)}
+              activeOpacity={0.85}
+              accessibilityRole="imagebutton"
+              accessibilityLabel={`打开图片 ${i + 1}`}
+            >
+              <Image
+                source={source}
+                style={images.length === 1 ? styles.msgImageSingle : styles.msgImageGrid}
+                contentFit="cover"
+              />
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
   };
 
   const handleLongPress = () => {
@@ -516,52 +547,24 @@ function ChatBubbleInner({
       onToggleSelected?.(item.id);
       return;
     }
+    // 微信式: 长按可分享的消息直接进入多选模式并选中该条.
+    if (onEnterSelection) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      onEnterSelection(item.id);
+      return;
+    }
     Haptics.selectionAsync();
     setShowActions(prev => !prev);
   };
 
-  const handleEnterSelectionFromActions = () => {
-    setShowActions(false);
+  // 用户气泡长按: 可进多选则进多选 (微信式), 否则保留复制.
+  const handleUserLongPress = () => {
     if (onEnterSelection) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       onEnterSelection(item.id);
+      return;
     }
-  };
-
-  // 用户气泡长按: 先显示本地操作条,复制/多选都在气泡内完成,避免 iOS 原生菜单漂到顶部.
-  const handleUserLongPress = () => {
-    handleLongPress();
-  };
-
-  const handleImageLongPress = (uri: string, index: number) => {
-    if (selectionMode) return;
-    Haptics.selectionAsync();
-    Alert.alert(
-      '保存图片',
-      '保存到本地图像库？',
-      [
-        { text: '取消', style: 'cancel' },
-        {
-          text: '保存到相册',
-          onPress: () => {
-            void saveChatImageToLibrary(uri, { authToken: imageAuthToken, index })
-              .then(() => {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                toast.show('已保存到相册', 'success');
-              })
-              .catch((error) => {
-                const message = error instanceof Error ? error.message : String(error);
-                toast.show(
-                  message === 'photo_library_permission_denied'
-                    ? '没有相册权限，无法保存图片'
-                    : '保存失败，请稍后重试',
-                  'error',
-                );
-              });
-          },
-        },
-      ],
-    );
+    handleCopy();
   };
 
   // 播报当前 AI 气泡内容. 同 bubble 再点 = 停; 切其他气泡播报会接管 (Speech 是单例, 自动 stop 旧的).
@@ -609,7 +612,7 @@ function ChatBubbleInner({
 
   // 分享当前 AI 气泡 — 系统分享菜单, 微信/群/朋友圈/短信都走这里.
   // 不引 native WeChat SDK (破坏 OTA 反馈环), 复用 RN Share 已够用.
-  const handleShare = async () => {
+  const handleShare = async (_target: 'wechat' | 'xiaohongshu' | 'more' = 'more') => {
     if (item.completionStatus === 'interrupted' || item.completionStatus === 'error') {
       toast.show('这条回复没有完整结束，暂不能分享。', 'info');
       return;
@@ -664,35 +667,8 @@ function ChatBubbleInner({
                 <Ionicons name="sparkles" size={11} color="#fff" />
               </View>
             )}
-            {images && images.length > 0 && (
-              <View style={styles.imageGrid}>
-                {images.map((uri, i) => (
-                  <TouchableOpacity
-                    key={i}
-                    onPress={() => onViewImage?.(uri)}
-                    onLongPress={() => handleImageLongPress(uri, i)}
-                    activeOpacity={0.85}
-                    accessibilityRole="imagebutton"
-                    accessibilityLabel={`图片 ${i + 1}，长按保存到相册`}
-                  >
-                    {buildChatImageSource(uri, imageAuthToken) ? (
-                      <Image
-                        source={buildChatImageSource(uri, imageAuthToken)}
-                        style={images.length === 1 ? styles.msgImageSingle : styles.msgImageGrid}
-                        contentFit="cover"
-                      />
-                    ) : null}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
+            {renderMessageImages()}
             {displayText ? <Text style={txt.bubbleUser}>{displayText}</Text> : null}
-            {showActions ? (
-              <MessageActionsRow
-                onCopy={handleCopy}
-                onEnterSelection={onEnterSelection ? handleEnterSelectionFromActions : undefined}
-              />
-            ) : null}
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
@@ -707,6 +683,7 @@ function ChatBubbleInner({
             {currentStatus ? (
               <StatusLine label={currentStatus} />
             ) : null}
+            {renderMessageImages()}
             {thinkingSteps.length > 0 ? (
               <ThinkingStepsPanel steps={thinkingSteps} streaming={item.streaming} />
             ) : null}
@@ -717,7 +694,7 @@ function ChatBubbleInner({
               // 流式降级: plain text, 保留换行, 不做 markdown 解析/整树渲染
               <Text style={txt.streaming}>{visibleAssistantMarkdown}</Text>
             ) : visibleAssistantMarkdown ? (
-              <Markdown style={MD_STYLES} rules={CHAT_MARKDOWN_RULES}>{renderedMarkdown}</Markdown>
+              <Markdown style={MD_STYLES}>{renderedMarkdown}</Markdown>
             ) : !item.streaming && !displayText ? (
               <Text style={txt.fallback}>抱歉，这条回复没能送达。你可以重新提问。</Text>
             ) : null}
@@ -742,10 +719,17 @@ function ChatBubbleInner({
               <AgentTransparencyPanel profile={transparency} />
             ) : null}
             {assistantTextForActions && showActions ? (
-              <MessageActionsRow
-                onCopy={handleCopy}
-                onEnterSelection={onEnterSelection ? handleEnterSelectionFromActions : undefined}
-              />
+              <View style={styles.actionsRow}>
+                <Pressable
+                  style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
+                  onPress={handleCopy}
+                  accessibilityRole="button"
+                  accessibilityLabel="复制全文"
+                >
+                  <Ionicons name="copy-outline" size={14} color={C.green500} />
+                  <Text style={txt.actionBtn}>复制</Text>
+                </Pressable>
+              </View>
             ) : null}
             {item.streaming && thinkingSteps.length === 0 && !currentStatus ? (
               <ActivityIndicator size="small" color={C.green500} style={{ marginTop: 4 }} />
@@ -755,15 +739,38 @@ function ChatBubbleInner({
               <View style={styles.metaRow}>
                 <View style={{ flex: 1 }} />
                 {!selectionMode ? (
-                  <Pressable
-                    onPress={handleShare}
-                    hitSlop={6}
-                    accessibilityRole="button"
-                    accessibilityLabel="分享"
-                    style={({ pressed }) => [styles.speakBtn, pressed && styles.actionBtnPressed]}
-                  >
-                    <Ionicons name="share-outline" size={14} color={C.ink2} />
-                  </Pressable>
+                  <View style={styles.assistantShareActions}>
+                    <Pressable
+                      onPress={() => handleShare('wechat')}
+                      hitSlop={6}
+                      accessibilityRole="button"
+                      accessibilityLabel="发微信分享这条回复"
+                      style={({ pressed }) => [styles.assistantWechatShareButton, pressed && styles.actionBtnPressed]}
+                    >
+                      <Ionicons name="logo-wechat" size={13} color="#fff" />
+                      <Text style={txt.assistantWechatShareButton}>微信</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => handleShare('xiaohongshu')}
+                      hitSlop={6}
+                      accessibilityRole="button"
+                      accessibilityLabel="发小红书分享这条回复"
+                      style={({ pressed }) => [styles.assistantXhsShareButton, pressed && styles.actionBtnPressed]}
+                    >
+                      <Ionicons name="book-outline" size={13} color={C.green700} />
+                      <Text style={txt.assistantShareButton}>小红书</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => handleShare('more')}
+                      hitSlop={6}
+                      accessibilityRole="button"
+                      accessibilityLabel="更多分享"
+                      style={({ pressed }) => [styles.assistantMoreShareButton, pressed && styles.actionBtnPressed]}
+                    >
+                      <Ionicons name="share-social-outline" size={13} color={C.ink2} />
+                      <Text style={txt.assistantMoreShareButton}>更多</Text>
+                    </Pressable>
+                  </View>
                 ) : null}
                 <Pressable
                   onPress={handleSpeak}
@@ -784,39 +791,6 @@ function ChatBubbleInner({
         )}
       </View>
     </>
-  );
-}
-
-function MessageActionsRow({
-  onCopy,
-  onEnterSelection,
-}: {
-  onCopy: () => void;
-  onEnterSelection?: () => void;
-}) {
-  return (
-    <View testID="message-actions-row" style={styles.actionsRow}>
-      <Pressable
-        style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
-        onPress={onCopy}
-        accessibilityRole="button"
-        accessibilityLabel="复制全文"
-      >
-        <Ionicons name="copy-outline" size={14} color={C.green500} />
-        <Text style={txt.actionBtn}>复制</Text>
-      </Pressable>
-      {onEnterSelection ? (
-        <Pressable
-          style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
-          onPress={onEnterSelection}
-          accessibilityRole="button"
-          accessibilityLabel="多选消息"
-        >
-          <Ionicons name="checkbox-outline" size={14} color={C.green500} />
-          <Text style={txt.actionBtn}>多选</Text>
-        </Pressable>
-      ) : null}
-    </View>
   );
 }
 
@@ -849,6 +823,115 @@ function WriteReceiptPersistenceWarning() {
   );
 }
 
+function cardText(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || undefined;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (Array.isArray(value)) {
+    const joined = value.map(cardText).filter(Boolean).join(' + ');
+    return joined || undefined;
+  }
+  return undefined;
+}
+
+function cardNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function cardMealLabel(value: unknown): string {
+  const raw = cardText(value);
+  if (raw === 'breakfast' || raw === '早餐') return '早餐';
+  if (raw === 'lunch' || raw === '午餐') return '午餐';
+  if (raw === 'dinner' || raw === '晚餐') return '晚餐';
+  if (raw === 'snack' || raw === '加餐' || raw === '夜宵') return '加餐';
+  return '这餐';
+}
+
+function buildCardSharePayload(
+  cardType?: string,
+  cardData?: unknown,
+  latestWriteReceipt?: WriteReceipt | null,
+): { title: string; message: string } | null {
+  if (!cardData || typeof cardData !== 'object' || Array.isArray(cardData)) {
+    return null;
+  }
+  const data = cardData as Record<string, unknown>;
+  if (cardType === 'record_quality') return buildDietQualitySharePayload(data);
+  if (cardType !== 'diet_draft') return null;
+  if (latestWriteReceipt?.resourceType !== 'diet_record' || latestWriteReceipt.status !== 'verified') return null;
+  return buildDietDraftSharePayload(data);
+}
+
+function buildDietDraftSharePayload(data: Record<string, unknown>): { title: string; message: string } {
+  const meal = cardMealLabel(data.meal_type);
+  const food = cardText(data.food_items);
+  const calories = cardNumber(data.calories);
+  const protein = cardNumber(data.protein);
+  const carbs = cardNumber(data.carbs);
+  const fat = cardNumber(data.fat);
+  const suggestions = Array.isArray(data.suggestions)
+    ? data.suggestions.map(cardText).filter((item): item is string => Boolean(item))
+    : [];
+
+  const lines = ['今日饮食打卡', '今天这餐被小巴认真记下来了', ''];
+  lines.push(food ? `${meal} · ${food}` : meal);
+
+  const macroParts = [
+    calories != null ? `${Math.round(calories)} kcal` : null,
+    protein != null ? `蛋白 ${Math.round(protein)}g` : null,
+    carbs != null ? `碳水 ${Math.round(carbs)}g` : null,
+    fat != null ? `脂肪 ${Math.round(fat)}g` : null,
+  ].filter(Boolean);
+  if (macroParts.length > 0) lines.push('', '营养概览', macroParts.join(' · '));
+  if (suggestions[0]) lines.push('', '今日策略', `下一步：${suggestions[0]}`);
+  lines.push('', '#小红书饮食日记 #朋友圈打卡 #小巴', '', '— 小巴');
+
+  return {
+    title: '小巴 · 饮食记录',
+    message: lines.join('\n'),
+  };
+}
+
+function buildDietQualitySharePayload(data: Record<string, unknown>): { title: string; message: string } | null {
+  if (cardText(data.domain) !== 'diet') return null;
+  const progress = data.progress && typeof data.progress === 'object' && !Array.isArray(data.progress)
+    ? data.progress as Record<string, unknown>
+    : {};
+  const title = cardText(data.title);
+  const summary = cardText(data.summary);
+  const caloriesTotal = cardNumber(progress.calories_total);
+  const mealsCount = cardNumber(progress.meals_count);
+  const proteinTotal = cardNumber(progress.protein_total_g);
+  const proteinTarget = cardNumber(progress.protein_target_g);
+  const remainingProtein = cardNumber(progress.remaining_protein_g);
+  const nextAction = cardText(data.next_action);
+
+  const lines = ['今日饮食打卡', '今天这餐被小巴认真记下来了', ''];
+  if (title) lines.push(title);
+  if (summary) lines.push(summary);
+  if (caloriesTotal != null) {
+    lines.push('', '营养概览', `今日摄入 ${Math.round(caloriesTotal)} kcal${mealsCount != null ? ` · ${Math.round(mealsCount)} 餐` : ''}`);
+  }
+  if (proteinTotal != null && proteinTarget != null) {
+    const remaining = remainingProtein != null ? ` · 还差约 ${Math.round(remainingProtein)}g` : '';
+    lines.push(`蛋白进度 ${Math.round(proteinTotal)}/${Math.round(proteinTarget)}g${remaining}`);
+  }
+  if (nextAction) lines.push('', '今日策略', `下一步：${nextAction}`);
+  lines.push('', '#小红书饮食日记 #朋友圈打卡 #小巴', '', '— 小巴');
+
+  return {
+    title: '小巴 · 饮食记录',
+    message: lines.join('\n'),
+  };
+}
+
 function isWriteCardAction(action: ChatCardActionDescriptor): boolean {
   return [
     'agenda.complete',
@@ -859,6 +942,11 @@ function isWriteCardAction(action: ChatCardActionDescriptor): boolean {
 }
 
 function formatWriteReceipt(receipt: WriteReceipt): string {
+  if (receipt.resourceType === 'diet_record') {
+    return receipt.status === 'dismissed'
+      ? `已忽略 · 饮食记录 #${receipt.resourceId}`
+      : `已保存到今日饮食 · 记录 #${receipt.resourceId}`;
+  }
   const resourceLabels: Record<string, string> = {
     agenda_event: '今日行动',
     diet_record: '饮食记录',
@@ -911,85 +999,7 @@ function sanitizeAiContent(raw: string): string {
   // LLM 主动输出的 fenced ```menu_share/```card_xxx JSON 块 — 后端会解析成结构化卡片,
   // 文本里要剥掉, 不然用户看到一坨 JSON 源码
   s = s.replace(/```(?:menu_share|card_[a-z_]+)\s*\n[\s\S]*?\n```\s*/g, '');
-  s = stripLeakedStructuredJsonFragments(s);
   return s.trim();
-}
-
-const LEAKED_STRUCTURED_JSON_KEY_RE = /["“](items|name|qty|kcal|protein|carbs|fat|fiber|totals|shopping_list|component|schema|v)["”]\s*[:：]/;
-const LEAKED_STRUCTURED_JSON_KEY_SCAN_RE = /["“](items|name|qty|kcal|protein|carbs|fat|fiber|totals|shopping_list|component|schema|v)["”]\s*[:：]/g;
-const JSONISH_LINE_START_RE = /^\s*[\{\[]/;
-const JSONISH_CONTINUATION_RE = /^\s*[\]},]/;
-const FENCE_LINE_RE = /^\s*```/;
-
-function stripLeakedStructuredJsonFragments(raw: string): string {
-  const lines = raw.split('\n');
-  const out: string[] = [];
-  let inFence = false;
-  let skipDanglingFence = false;
-
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    const trimmed = line.trim();
-
-    if (skipDanglingFence) {
-      if (!trimmed) continue;
-      if (FENCE_LINE_RE.test(trimmed)) {
-        skipDanglingFence = false;
-        continue;
-      }
-      skipDanglingFence = false;
-    }
-
-    if (FENCE_LINE_RE.test(trimmed)) {
-      inFence = !inFence;
-      out.push(line);
-      continue;
-    }
-
-    if (!inFence && JSONISH_LINE_START_RE.test(line)) {
-      const candidate = collectJsonishFragment(lines, i);
-      if (candidate && isLeakedStructuredJsonFragment(candidate.text)) {
-        i = candidate.end;
-        skipDanglingFence = true;
-        continue;
-      }
-    }
-
-    out.push(line);
-  }
-
-  return out.join('\n');
-}
-
-function collectJsonishFragment(lines: string[], start: number): { text: string; end: number } | null {
-  const chunk: string[] = [];
-  let end = start;
-
-  for (let i = start; i < Math.min(lines.length, start + 32); i += 1) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    if (!trimmed || FENCE_LINE_RE.test(trimmed)) break;
-    if (i > start && !JSONISH_CONTINUATION_RE.test(line) && !LEAKED_STRUCTURED_JSON_KEY_RE.test(line)) break;
-    chunk.push(line);
-    end = i;
-  }
-
-  return chunk.length > 0 ? { text: chunk.join('\n'), end } : null;
-}
-
-function isLeakedStructuredJsonFragment(fragment: string): boolean {
-  const keys = new Set<string>();
-  for (const match of fragment.matchAll(LEAKED_STRUCTURED_JSON_KEY_SCAN_RE)) {
-    keys.add(match[1]);
-  }
-
-  const hasMenuShape = (
-    (keys.has('shopping_list') || keys.has('totals'))
-    && (keys.has('items') || keys.has('name'))
-    && ['qty', 'kcal', 'protein', 'carbs', 'fat', 'fiber'].some(key => keys.has(key))
-  );
-  const hasRevaUiShape = keys.has('component') && (keys.has('v') || keys.has('schema'));
-  return hasMenuShape || hasRevaUiShape;
 }
 
 /** 把 markdown 文本剥成"能给 TTS 念"的纯文本 — 去标题/粗斜/列表标记/链接/表格管道. */
@@ -1294,6 +1304,75 @@ const styles = StyleSheet.create({
   msgRowUser: { justifyContent: 'flex-end' },
   msgRowAI: { justifyContent: 'flex-start' },
   cardFrame: { flex: 1, minWidth: 0, maxWidth: '100%' },
+  cardMetaRow: {
+    marginTop: 6,
+    gap: 6,
+  },
+  cardShareActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cardShareButton: {
+    minHeight: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    backgroundColor: C.green50,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  cardSaveButton: {
+    minHeight: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    backgroundColor: C.paper,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  cardImageShareButton: {
+    minHeight: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    backgroundColor: C.green50,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  cardWechatShareButton: {
+    minHeight: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green500,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    ...revaShadows.sm,
+  },
+  cardXhsShareButton: {
+    minHeight: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    backgroundColor: C.green50,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
   inlineCardStack: { marginTop: 10, gap: 8 },
   writeReceipt: {
     minHeight: 28,
@@ -1392,49 +1471,18 @@ const styles = StyleSheet.create({
     marginBottom: 2,
     minHeight: 20,
   },
-  progressStrip: {
-    alignSelf: 'stretch',
-    gap: 7,
-    marginBottom: 8,
-    paddingBottom: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: C.line,
-  },
-  progressStages: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  progressStage: {
-    flex: 1,
-    minHeight: 22,
-    borderRadius: revaRadii.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.paper2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    paddingHorizontal: 4,
-  },
-  progressStageActive: {
-    backgroundColor: C.green50,
-    borderColor: C.green100,
-  },
-  progressStageDone: {
-    backgroundColor: C.surface,
-    borderColor: C.green100,
-  },
   thinkingPanel: {
     alignSelf: 'stretch',
-    minWidth: 260,
+    width: '100%',
+    maxWidth: '100%',
     gap: 8,
     marginBottom: 10,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.green100,
-    backgroundColor: C.paper2,
-    paddingHorizontal: 11,
-    paddingVertical: 10,
+    borderColor: C.line,
+    backgroundColor: C.paper,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
   },
   // 完成态: 低干扰内联状态行, 展开时在下方补步骤列表.
   thinkingPill: {
@@ -1444,13 +1492,6 @@ const styles = StyleSheet.create({
     borderRadius: revaRadii.pill,
     backgroundColor: C.green50,
     overflow: 'hidden',
-  },
-  thinkingPillExpanded: {
-    alignSelf: 'stretch',
-    borderRadius: revaRadii.md,
-    backgroundColor: C.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
   },
   thinkingPillHeader: {
     minHeight: 22,
@@ -1508,7 +1549,7 @@ const styles = StyleSheet.create({
   },
   thinkingStepRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 8,
   },
   thinkingStepIndex: {
@@ -1544,6 +1585,48 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   actionBtnPressed: { opacity: 0.82 },
+  assistantShareActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 5,
+    flexShrink: 1,
+  },
+  assistantWechatShareButton: {
+    minHeight: 26,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green600,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  assistantXhsShareButton: {
+    minHeight: 26,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    backgroundColor: C.green50,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  assistantMoreShareButton: {
+    minHeight: 26,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.line,
+    backgroundColor: C.paper,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
   speakBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1557,27 +1640,19 @@ const styles = StyleSheet.create({
   },
   transparencyPanel: {
     marginTop: 9,
+    borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
     backgroundColor: C.paper2,
     overflow: 'hidden',
   },
-  transparencyPanelCollapsed: {
-    alignSelf: 'flex-start',
-    maxWidth: '100%',
-    borderRadius: revaRadii.pill,
-  },
-  transparencyPanelOpen: {
-    alignSelf: 'stretch',
-    borderRadius: 14,
-  },
   transparencyHeader: {
-    minHeight: 30,
+    minHeight: 34,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 7,
   },
   transparencyBody: {
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -1623,8 +1698,6 @@ const txt = {
   // 与 markdownStyles body (fontSize 15 / lineHeight 23) 对齐, 流式→终态切 markdown 时无跳动
   streaming: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 23, color: C.ink1 } as TextStyle,
   statusLine: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 12.5, lineHeight: 17, fontWeight: '700', color: C.ink3 } as TextStyle,
-  progressStage: { fontFamily: revaFonts.sans, fontSize: 10.5, lineHeight: 13, fontWeight: '800', color: C.ink3 } as TextStyle,
-  progressStageActive: { color: C.green700 } as TextStyle,
   thinkingPillLabel: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 16, fontWeight: '800', color: C.ink3 } as TextStyle,
   thinkingTitle: { fontFamily: revaFonts.sans, fontSize: 12.5, lineHeight: 17, fontWeight: '900', color: C.ink1 } as TextStyle,
   thinkingSubtitle: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, color: C.ink3 } as TextStyle,
@@ -1633,6 +1706,14 @@ const txt = {
   thinkingStepIndexActive: { color: C.greenOn } as TextStyle,
   thinkingStep: { flex: 1, fontFamily: revaFonts.sans, fontSize: 12.2, lineHeight: 18, color: C.ink2, fontWeight: '600' } as TextStyle,
   actionBtn: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '700', color: C.green500 } as TextStyle,
+  cardShareButton: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 15, fontWeight: '900', color: C.green700 } as TextStyle,
+  cardSaveButton: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 15, fontWeight: '900', color: C.ink3 } as TextStyle,
+  cardWechatShareButton: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 15, fontWeight: '900', color: '#fff' } as TextStyle,
+  cardImageShareButton: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 15, fontWeight: '900', color: C.green700 } as TextStyle,
+  cardShareHint: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 10.5, lineHeight: 14, fontWeight: '700', color: C.ink3 } as TextStyle,
+  assistantShareButton: { fontFamily: revaFonts.sans, fontSize: 10.8, lineHeight: 14, fontWeight: '900', color: C.green700 } as TextStyle,
+  assistantWechatShareButton: { fontFamily: revaFonts.sans, fontSize: 10.8, lineHeight: 14, fontWeight: '900', color: '#fff' } as TextStyle,
+  assistantMoreShareButton: { fontFamily: revaFonts.sans, fontSize: 10.8, lineHeight: 14, fontWeight: '800', color: C.ink2 } as TextStyle,
   fallback: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 20, color: C.ink2, fontStyle: 'italic' } as TextStyle,
   meta: { fontFamily: revaFonts.mono, fontSize: 10, color: C.ink3 } as TextStyle,
   transparencyTitle: { flex: 1, fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 16, fontWeight: '800', color: C.ink2 } as TextStyle,
@@ -1644,60 +1725,16 @@ const txt = {
 
 // P0-1 渐进渲染 (刀⑤): 首 token 前的"细状态行" —— 单行进度 + 小 spinner, 低干扰。
 // 例: "正在理解…" → "查看步数数据…" → "正在整理回答…"。首 token 到达后由上游清空 → 消失。
-const STREAMING_PROCESS_STAGES = [
-  { label: '理解', match: /理解|问题|意图/ },
-  { label: '查数据', match: /查|查看|读取|数据|记录|步数|指标|健康|工具/ },
-  { label: '生成建议', match: /整理|生成|建议|回答|回复|总结/ },
-  { label: '安全检查', match: /安全|检查|核对|边界|风险/ },
-];
-
-function inferStreamingStage(label: string): number {
-  const index = STREAMING_PROCESS_STAGES.findIndex(stage => stage.match.test(label));
-  if (index >= 0) return index;
-  return 0;
-}
-
 function StatusLine({ label }: { label: string }) {
-  const activeIndex = inferStreamingStage(label);
   return (
     <View
-      testID="assistant-progress-strip"
-      style={styles.progressStrip}
+      testID="assistant-status-line"
+      style={styles.statusLine}
       accessibilityLiveRegion="polite"
       accessibilityLabel={`小巴${label}`}
     >
-      <View testID="assistant-status-line" style={styles.statusLine}>
-        <ActivityIndicator size="small" color={C.green500} />
-        <Text style={txt.statusLine} numberOfLines={1}>{label}</Text>
-      </View>
-      <View style={styles.progressStages}>
-        {STREAMING_PROCESS_STAGES.map((stage, index) => {
-          const active = index === activeIndex;
-          const done = index < activeIndex;
-          return (
-            <View
-              key={stage.label}
-              style={[
-                styles.progressStage,
-                done && styles.progressStageDone,
-                active && styles.progressStageActive,
-              ]}
-            >
-              <Text
-                style={[
-                  txt.progressStage,
-                  (active || done) && txt.progressStageActive,
-                ]}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.78}
-              >
-                {stage.label}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
+      <ActivityIndicator size="small" color={C.green500} />
+      <Text style={txt.statusLine} numberOfLines={1}>{label}</Text>
     </View>
   );
 }
@@ -1713,7 +1750,7 @@ function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?:
   if (!streaming) {
     const summary = `思考完成 · ${steps.length} 步`;
     return (
-      <View testID="assistant-thinking-panel" style={[styles.thinkingPill, expanded && styles.thinkingPillExpanded]}>
+      <View testID="assistant-thinking-panel" style={styles.thinkingPill}>
         <Pressable
           onPress={() => setExpanded((prev) => !prev)}
           style={({ pressed }) => [styles.thinkingPillHeader, pressed && styles.actionBtnPressed]}
@@ -1745,9 +1782,8 @@ function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?:
     );
   }
 
-  // 流式态: 实时进度面板 (header + indeterminate 条 + 步骤列表).
-  // 诚实计数:只显示「已进行 N 步」,不编造 N/N 分母(总步数未知)。
-  const progressText = `第 ${steps.length} 步`;
+  // 流式态: 实时进度面板 (header + 进度条 + 步骤列表), 保持不变.
+  const progressText = `${steps.length}/${steps.length}`;
   return (
     <View
       testID="assistant-thinking-panel"
@@ -1766,7 +1802,9 @@ function ThinkingStepsPanel({ steps, streaming }: { steps: string[]; streaming?:
           <Text style={txt.thinkingProgressText}>{progressText}</Text>
         </View>
       </View>
-      <ThinkingIndeterminateBar />
+      <View style={styles.thinkingProgressTrack}>
+        <View style={[styles.thinkingProgressFill, { width: '78%' }]} />
+      </View>
       <View style={styles.thinkingList}>
         {steps.map((step, index) => {
           const active = index === steps.length - 1;
@@ -1811,13 +1849,7 @@ function AgentTransparencyPanel({ profile }: { profile: AgentTransparencyProfile
     ...(profile.traceLine ? [{ label: '追踪', value: profile.traceLine }] : []),
   ];
   return (
-    <View
-      testID="agent-transparency-panel"
-      style={[
-        styles.transparencyPanel,
-        open ? styles.transparencyPanelOpen : styles.transparencyPanelCollapsed,
-      ]}
-    >
+    <View style={styles.transparencyPanel}>
       <Pressable
         onPress={() => setOpen(o => !o)}
         style={({ pressed }) => [styles.transparencyHeader, pressed && styles.actionBtnPressed]}
@@ -1871,18 +1903,6 @@ function AgentTransparencyPanel({ profile }: { profile: AgentTransparencyProfile
               <View style={{ flex: 1, gap: 3 }}>
                 {profile.sources.slice(0, 8).map(source => (
                   <Text key={source} style={txt.transparencyValue}>· {source}</Text>
-                ))}
-              </View>
-            </View>
-          ) : null}
-          {profile.routing.length > 0 ? (
-            <View style={styles.transparencyRow}>
-              <Text style={txt.transparencyLabel}>路由</Text>
-              <View style={[styles.transparencyChipRow, { flex: 1 }]}>
-                {profile.routing.map(reason => (
-                  <View key={reason} style={styles.transparencyChip}>
-                    <Text style={txt.transparencyChip}>{reason}</Text>
-                  </View>
                 ))}
               </View>
             </View>

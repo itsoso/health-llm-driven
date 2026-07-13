@@ -35,10 +35,6 @@ public enum L10n {
         "Health Agent": "小巴",
         "Daily": "每日",
         "Insights": "洞察",
-        // 洞察 hub(.healthExtras 承载)行标签 + 三个标签页标签。
-        "Health Insights": "健康洞察",
-        "Advanced Abilities": "进阶能力",
-        "Organ Trends": "器官趋势",
         "Resources": "资料",
         "Schedule": "日程",
         "Timeline": "时间线",
@@ -305,10 +301,6 @@ public enum L10n {
         "Rename": "重命名",
         "Rename conversation": "重命名对话",
         "New title": "新标题",
-        "Delete this conversation?": "删除这条对话？",
-        "Search title or content": "搜索标题或内容",
-        "Clear search": "清除搜索",
-        "No conversations match your search": "未找到匹配的对话",
         "Share": "分享",
         "Share link copied": "分享链接已复制到剪贴板",
         "Open in browser": "在浏览器打开",
@@ -339,7 +331,7 @@ public enum L10n {
         "Working: %@…": "正在%@…",
         "Calling a tool…": "正在调用工具…",
         "Reva is composing a reply…": "正在整理回答…",
-        // Collapsible reviewable thinking-process trace header (thinking_steps).
+        // Accumulating thinking-process trace (ThinkingProcessTrace) header.
         "Thinking process": "思考过程",
         "Completed": "已完成",
         "Partial": "部分完成",

@@ -3,7 +3,6 @@ import { BASE_URL } from './api';
 import { sanitizeChatErrorMessage } from '../utils/chatErrorMessage';
 import type { AgentPerfProfileLike } from '../utils/chatTransparency';
 import { normalizeWriteReceipt, type WriteReceipt } from './writeReceipt';
-import { buildClientCapsHeader } from './clientCaps';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -104,8 +103,6 @@ export interface StreamEvent {
   // 2026-06-12: 本轮调用的 Skill / 工具名 (后端 done.tools_used; 去重保序, 空 [])
   toolsUsed?: string[];
   completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
-  // 2026-07-06: 模型路由透明化 — done.fallback_reasons (如 fast_route_simple_turn)
-  fallbackReasons?: string[];
   // SSE done 事件里的动态卡片，由 useChatEngine 交给 card registry 渲染
   cards?: StreamCardDescriptor[];
   writeReceipts?: WriteReceipt[];
@@ -220,7 +217,7 @@ export async function* streamChat(
   xhr.open('POST', `${BASE_URL}/agent/stream`);
   xhr.setRequestHeader('Content-Type', 'application/json');
   if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-  xhr.setRequestHeader('X-Reva-Client-Caps', buildClientCapsHeader());
+  xhr.setRequestHeader('X-Reva-Client-Caps', 'genui-v1, genui-components-v1, genui-record-quality-v1');
   xhr.responseType = 'text';
 
   // Wire up abort signal
@@ -392,9 +389,6 @@ export async function* streamChat(
           sourcesUsed: Array.isArray(parsed.data?.sources_used) ? parsed.data.sources_used : undefined,
           toolsUsed: Array.isArray(parsed.data?.tools_used) ? parsed.data.tools_used : undefined,
           completionStatus: parsed.data?.completion_status,
-          fallbackReasons: Array.isArray(parsed.data?.fallback_reasons)
-            ? parsed.data.fallback_reasons.filter((r: unknown) => typeof r === 'string' && r)
-            : undefined,
           thinkingSteps: normalizeThinkingSteps(parsed.data?.thinking_steps),
           cards: Array.isArray(parsed.data?.cards) ? parsed.data.cards : undefined,
           writeReceipts: writeReceipts?.length ? writeReceipts : undefined,
@@ -479,13 +473,10 @@ export async function getConversationsPage({
   offset = 0,
   limit = 20,
   titleLike,
-  search,
-}: { offset?: number; limit?: number; titleLike?: string; search?: string } = {}): Promise<ConversationsPage> {
+}: { offset?: number; limit?: number; titleLike?: string } = {}): Promise<ConversationsPage> {
   const token = await getToken();
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (titleLike) params.set('title_like', titleLike);
-  // search 同时匹配标题与消息内容(后端 EXISTS 子查询)
-  if (search && search.trim()) params.set('search', search.trim());
   const res = await fetch(`${BASE_URL}/agent/conversations?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
   });

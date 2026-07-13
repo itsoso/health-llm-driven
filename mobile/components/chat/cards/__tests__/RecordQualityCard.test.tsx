@@ -38,6 +38,32 @@ function baseAdjustCard(overrides?: Record<string, unknown>) {
 describe('RecordQualityCard inline diet adjuster', () => {
   beforeEach(() => jest.clearAllMocks());
 
+  it('renders a screenshot-ready diet share strip when progress data is available', () => {
+    const { getAllByText, getByText } = render(
+      <RecordQualityCardView
+        {...(baseAdjustCard({
+          expanded_sections: [],
+          progress: {
+            protein_total_g: 37,
+            protein_target_g: 112,
+            remaining_protein_g: 75,
+            calories_total: 1040,
+            meals_count: 2,
+          },
+          next_action: '晚餐优先 40g 蛋白，少油少刺激。',
+        }) as any)}
+      />,
+    );
+
+    expect(getByText('今日摄入')).toBeTruthy();
+    expect(getByText('1040 kcal')).toBeTruthy();
+    expect(getByText('蛋白进度')).toBeTruthy();
+    expect(getAllByText('37/112g').length).toBeGreaterThanOrEqual(1);
+    expect(getByText('下一餐')).toBeTruthy();
+    expect(getAllByText('晚餐优先 40g 蛋白，少油少刺激。').length).toBeGreaterThanOrEqual(1);
+    expect(getByText('#饮食记录 #小巴')).toBeTruthy();
+  });
+
   it('renders the inline editor seeded from adjust_record when expanded', () => {
     const { getByLabelText, getByText } = render(
       <RecordQualityCardView {...(baseAdjustCard() as any)} onCardDataChange={jest.fn()} />,

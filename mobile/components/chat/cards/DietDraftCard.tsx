@@ -137,11 +137,6 @@ function macroRows(data: DietDraftData) {
   ].filter((row) => row.value != null && row.value >= 0);
 }
 
-function hasNutritionEstimate(data: DietDraftData): boolean {
-  return [data.calories, data.protein, data.carbs, data.fat, data.fiber]
-    .some((value) => numberValue(value) != null);
-}
-
 function confidenceLabel(value: unknown): string | undefined {
   const confidence = numberValue(value);
   if (confidence == null) return undefined;
@@ -154,27 +149,6 @@ function sourceLabel(value: unknown): string | undefined {
   const source = text(value);
   if (!source) return undefined;
   return `来源: ${SOURCE_LABELS[source] || source}`;
-}
-
-function isPhotoSource(value: unknown): boolean {
-  const source = text(value)?.toLowerCase();
-  return Boolean(source && (source.includes('photo') || source.includes('image') || source.includes('vision')));
-}
-
-function nutritionStatusText(data: DietDraftData): string {
-  if (!hasNutritionEstimate(data)) {
-    return '确认后先记录，营养后台估算';
-  }
-  return isPhotoSource(data.source) ? '已带营养估算，核对后计入今日' : '已带营养估算，确认后计入今日';
-}
-
-function boundaryText(data: DietDraftData): string {
-  const boundary = text(data.boundary) || '营养为估算值,确认后写入今日饮食记录。';
-  return isPhotoSource(data.source) ? boundary.replace('确认后写入', '核对后写入') : boundary;
-}
-
-function editHintText(data: DietDraftData): string {
-  return isPhotoSource(data.source) ? '核对前可修正餐次、食物和营养估算' : '确认前可修正餐次、食物和营养估算';
 }
 
 /** 仅当 data 里有明确时点 (time / recorded_at 的 HH:MM) 才回显, 不伪造。 */
@@ -221,8 +195,6 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const mealLabel = MEAL_LABELS[mealType] || '餐食';
   const macros = macroRows(data);
   const caloriesValue = numberValue(data.calories);
-  const nutritionEstimated = hasNutritionEstimate(data);
-  const nutritionStatus = nutritionStatusText(data);
   const timeLabel = mealTimeLabel(data);
   const meta = [confidenceLabel(data.confidence), sourceLabel(data.source)].filter(Boolean).join(' · ');
   const suggestions = listText(data.suggestions);
@@ -231,8 +203,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const showNextMealDetail = Boolean(
     nextMealDetail && hasExpandedSection(data.expanded_sections, 'next_meal'),
   );
-  const boundary = boundaryText(data);
-  const editHint = editHintText(data);
+  const boundary = text(data.boundary) || '营养为估算值,确认后写入今日饮食记录。';
   const isRecorded = data.confirmActionState === 'done';
   const canConfirmFromEditor = Boolean(data.confirmAction && data.onConfirmAction && !data.confirmAction.disabled_reason);
   const recordedNextStep = walkText || suggestions[0] || '下一餐按目标补足蛋白和蔬菜';
@@ -301,32 +272,45 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
         style={styles.macroBar}
       />
 
-      {/* 食材 chips */}
-      <IngredientChips items={chips} fallback="待确认餐食" style={styles.chipsWrap} />
-
-      {!isRecorded ? (
-        <View style={styles.nutritionStatusRow}>
-          <Ionicons
-            name={nutritionEstimated ? 'analytics-outline' : 'time-outline'}
-            size={13}
-            color={nutritionEstimated ? C.green600 : C.ink3}
-          />
-          <Text
-            maxFontSizeMultiplier={1.15}
-            style={[
-              styles.nutritionStatusText,
-              { color: nutritionEstimated ? C.green600 : C.ink3 },
-            ]}
-          >
-            {nutritionStatus}
+      {isRecorded ? (
+        <View style={styles.recordedProgressPill}>
+          <Ionicons name="checkmark-done-circle" size={13} color={C.green600} />
+          <Text maxFontSizeMultiplier={1.12} style={styles.recordedProgressText}>
+            已进入今日饮食进度
           </Text>
         </View>
       ) : null}
 
+      {isRecorded ? (
+        <View style={styles.shareReadyRow}>
+          <Text maxFontSizeMultiplier={1.1} style={styles.shareReadyLabel}>可截图分享</Text>
+          <Text maxFontSizeMultiplier={1.1} style={styles.shareReadyTag}>#饮食记录 #小巴</Text>
+        </View>
+      ) : null}
+
+      {isRecorded ? (
+        <View style={styles.socialShareFooter}>
+          <View style={styles.socialTitleRow}>
+            <Text maxFontSizeMultiplier={1.08} style={styles.socialTitle}>
+              今日饮食打卡
+            </Text>
+            <Text maxFontSizeMultiplier={1.05} style={styles.socialBadge}>
+              小巴生成
+            </Text>
+          </View>
+          <Text maxFontSizeMultiplier={1.08} style={styles.socialHint}>
+            适合微信 / 小红书截图分享
+          </Text>
+        </View>
+      ) : null}
+
+      {/* 食材 chips */}
+      <IngredientChips items={chips} fallback="待确认餐食" style={styles.chipsWrap} />
+
       {!isRecorded ? (
         <View style={styles.inlineHeader}>
           <Text maxFontSizeMultiplier={1.15} style={styles.inlineHint}>
-            {editHint}
+            确认前可修正餐次、食物和营养估算
           </Text>
           <Pressable
             onPress={() => setEditing((prev) => !prev)}
@@ -669,18 +653,99 @@ const styles = StyleSheet.create({
   chipsWrap: {
     marginTop: 10,
   },
-  nutritionStatusRow: {
+  recordedProgressPill: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    minHeight: 26,
+    marginTop: 9,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    marginTop: 9,
+    borderRadius: revaRadii.pill,
+    backgroundColor: C.green50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    paddingHorizontal: 9,
   },
-  nutritionStatusText: {
-    flex: 1,
+  recordedProgressText: {
+    flexShrink: 1,
     fontFamily: revaFonts.sans,
     fontSize: 11.5,
-    lineHeight: 16,
+    lineHeight: 15,
+    color: C.green700,
+    fontWeight: '900',
+  } as TextStyle,
+  shareReadyRow: {
+    marginTop: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    borderRadius: revaRadii.sm,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E8D6C0',
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+  },
+  shareReadyLabel: {
+    flexShrink: 0,
+    fontFamily: revaFonts.sans,
+    fontSize: 10.5,
+    lineHeight: 14,
+    color: DIET_ACCENT,
+    fontWeight: '900',
+  } as TextStyle,
+  shareReadyTag: {
+    flex: 1,
+    minWidth: 0,
+    textAlign: 'right',
+    fontFamily: revaFonts.sans,
+    fontSize: 10.5,
+    lineHeight: 14,
+    color: C.ink3,
     fontWeight: '800',
+  } as TextStyle,
+  socialShareFooter: {
+    marginTop: 8,
+    borderRadius: revaRadii.md,
+    backgroundColor: 'rgba(255,255,255,0.82)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E8D6C0',
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+  },
+  socialTitleRow: {
+    minHeight: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  socialTitle: {
+    flex: 1,
+    minWidth: 0,
+    fontFamily: revaFonts.sans,
+    fontSize: 13.5,
+    lineHeight: 18,
+    color: C.ink1,
+    fontWeight: '900',
+  } as TextStyle,
+  socialBadge: {
+    flexShrink: 0,
+    fontFamily: revaFonts.sans,
+    fontSize: 10.5,
+    lineHeight: 14,
+    color: DIET_ACCENT,
+    fontWeight: '900',
+  } as TextStyle,
+  socialHint: {
+    marginTop: 2,
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    lineHeight: 15,
+    color: C.ink3,
+    fontWeight: '700',
   } as TextStyle,
   inlineHeader: {
     flexDirection: 'row',

@@ -25,7 +25,6 @@ LLM Tool Call 守门 — 所有 health_record / record_type=X 的参数过这一
 from __future__ import annotations
 
 import logging
-import re
 from datetime import datetime, date, timedelta, timezone
 from typing import Any, Dict, Optional
 
@@ -56,25 +55,6 @@ def _looks_like_non_diet_intake(value: Any) -> bool:
     return classify_intake_intent(_flatten_text(value)).kind in {"medication", "supplement"}
 
 
-def _looks_like_food_ui_text(value: Any) -> bool:
-    """OCR/vision 偶尔把卡片 UI 文案当食物名, 写库前硬拦截."""
-    normalized = re.sub(r"\s+", "", _flatten_text(value)).lower()
-    if not normalized:
-        return False
-    if re.fullmatch(r"(?:和)?(?:早餐|午餐|晚餐|加餐|餐食)?(?:食品?)?营养卡", normalized):
-        return True
-    return any(marker in normalized for marker in (
-        "营养卡",
-        "保存并确认",
-        "确认记录",
-        "今日饮食",
-        "待确认",
-        "完成修正",
-        "去饮食页修正",
-        "看下一餐建议",
-    ))
-
-
 # ─────────────────────── 数值范围白名单 ──────────────────────
 # (low, high, default_if_missing)
 # default_if_missing=None 表示该字段必填, 缺了不补
@@ -89,6 +69,9 @@ NUMERIC_RANGES: Dict[str, Dict[str, tuple]] = {
     "water": {
         "amount": (10, 5000, None),            # ml; missing amount must stay visible
     },
+    "waist": {
+        "waist_cm": (30.0, 200.0, None),       # cm
+    },
     "diet": {
         "calories": (0, 10000, None),          # kcal — None 不强制
         "protein": (0, 500, None),
@@ -100,6 +83,23 @@ NUMERIC_RANGES: Dict[str, Dict[str, tuple]] = {
         "duration": (1, 720, None),            # 分钟
         "distance": (0.0, 200.0, None),        # km
         "calories_burned": (0, 5000, None),
+    },
+    "goal": {
+        "target_value": (0.0, 100000.0, None),
+        "current_value": (0.0, 100000.0, None),
+        "priority": (1, 10, 5),
+    },
+    "sleep": {
+        "duration_minutes": (1, 1440, None),
+        "duration_hours": (0.1, 24.0, None),
+        "sleep_quality": (1, 5, 3),
+        "wake_count": (0, 50, 0),
+    },
+    "excretion": {
+        "stool_type": (1, 7, None),
+        "duration_minutes": (0, 180, None),
+        "urgency": (1, 5, None),
+        "pain_level": (0, 5, None),
     },
     "rhinitis": {
         "sneezing": (0, 200, 0),
@@ -246,74 +246,28 @@ def _validate_required(
         "diet": ["food_items"],
         "water": ["amount"],
         "weight": ["weight"],
+        "waist": ["waist_cm"],
         "blood_pressure": ["systolic", "diastolic"],
         "exercise": ["exercise_type"],
+        "goal": ["goal_type", "goal_period", "title"],
+        "excretion": ["type"],
         "medication": [],  # medication_id 或 medication_name 二选一, 由 API 层判
         "illness": ["name"],
-        "goal": ["title"],
     }
+    if rtype == "sleep":
+        has_times = data.get("bedtime") and data.get("wake_time")
+        has_duration = data.get("duration_minutes") or data.get("duration_hours") or data.get("duration")
+        if not (has_times or has_duration):
+            return (
+                "Error: sleep 记录必须包含 bedtime+wake_time 或 duration_minutes/duration_hours。"
+                "请补充睡眠时长或入睡/醒来时间后重新调用 health_record."
+            )
     needs = required.get(rtype, [])
     missing = [f for f in needs if not data.get(f)]
     if missing:
         return (f"Error: {rtype} 记录必须包含 {missing}. "
                 f"请补充后重新调用 health_record.")
     return None
-
-
-_TIME_ONLY_RE = re.compile(
-    r"^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(?:[+-]\d{2}:?\d{2}|Z)?$"
-)
-
-
-def _normalize_sleep_clock_fields(data: Dict[str, Any], warnings: list, today: date) -> None:
-    """把 sleep.bedtime / sleep.wake_time 的「纯时间」值确定性拼成 ISO datetime。
-
-    只处理无歧义情形 (HH:MM[:SS][±TZ]);完整 datetime / 非法值不动 (后者交给
-    Pydantic fail-loud 422, 不猜)。跨夜: 两者都是纯时间且 wake<=bed → bedtime
-    记到 record_date 前一天 (晚睡过夜), 与 schemas/sleep_record 的 wake>bed 校验一致。
-    """
-    base_raw = str(data.get("record_date") or today.strftime("%Y-%m-%d"))[:10]
-    try:
-        base = datetime.strptime(base_raw, "%Y-%m-%d").date()
-    except (ValueError, TypeError):
-        base = today
-
-    def _parse_clock(value: Any) -> Optional[tuple]:
-        if not isinstance(value, str):
-            return None
-        m = _TIME_ONLY_RE.match(value.strip())
-        if not m:
-            return None
-        hh, mm, ss = int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)
-        if hh > 23 or mm > 59 or ss > 59:
-            return None
-        return (hh, mm, ss)
-
-    bed_clock = _parse_clock(data.get("bedtime"))
-    wake_clock = _parse_clock(data.get("wake_time"))
-    if bed_clock is None and wake_clock is None:
-        return
-
-    def _iso(day: date, clock: tuple) -> str:
-        return f"{day.strftime('%Y-%m-%d')}T{clock[0]:02d}:{clock[1]:02d}:{clock[2]:02d}+08:00"
-
-    bed_day = base
-    if bed_clock is not None and wake_clock is not None and wake_clock <= bed_clock:
-        bed_day = base - timedelta(days=1)  # 跨夜: 前晚入睡, record_date 早晨醒
-    if bed_clock is not None:
-        fixed = _iso(bed_day, bed_clock)
-        msg = f"[tool_validator] sleep.bedtime={data.get('bedtime')!r} 纯时间 → {fixed}"
-        warnings.append(msg)
-        logger.warning(msg)
-        _metric("sleep", "bedtime", "time_only_normalized")
-        data["bedtime"] = fixed
-    if wake_clock is not None:
-        fixed = _iso(base, wake_clock)
-        msg = f"[tool_validator] sleep.wake_time={data.get('wake_time')!r} 纯时间 → {fixed}"
-        warnings.append(msg)
-        logger.warning(msg)
-        _metric("sleep", "wake_time", "time_only_normalized")
-        data["wake_time"] = fixed
 
 
 def validate_health_record(
@@ -334,19 +288,37 @@ def validate_health_record(
     warnings: list = []
     today = datetime.now(BEIJING_TZ).date()
 
+    if rtype == "waist" and "waist_cm" not in data:
+        for alias in ("waist", "value", "cm", "腰围"):
+            if data.get(alias) is not None:
+                data["waist_cm"] = data[alias]
+                break
+
+    if rtype == "excretion":
+        raw_type = data.get("type") or data.get("excretion_type") or data.get("kind")
+        if raw_type is not None:
+            normalized_type = str(raw_type).strip().lower()
+            type_aliases = {
+                "stool": "bowel",
+                "poop": "bowel",
+                "feces": "bowel",
+                "便便": "bowel",
+                "大便": "bowel",
+                "排便": "bowel",
+                "bowel_movement": "bowel",
+                "pee": "urine",
+                "urination": "urine",
+                "小便": "urine",
+                "尿": "urine",
+                "排尿": "urine",
+            }
+            data["type"] = type_aliases.get(normalized_type, normalized_type)
+
     if rtype == "illness" and "name" not in data and data.get("illness_name"):
         data["name"] = data["illness_name"]
 
     # 1. 日期守门 (record_date 通用)
     _validate_date(rtype, data, warnings, today)
-
-    # 1.5 sleep 时刻字段归一: 弱模型常把 bedtime/wake_time 发成**纯时间**
-    # ("12:50:00+08:00"), /sleep/records 的 Pydantic datetime 解析直接 422
-    # (2026-07-13 实锤: 『中午睡了60分钟』整单写入失败)。纯时间语义无歧义
-    # → 与 record_date 确定性拼成 ISO datetime; 跨夜 (wake<=bed) 时 bedtime
-    # 回退一天。完整 datetime 原样不动。
-    if rtype == "sleep":
-        _normalize_sleep_clock_fields(data, warnings, today)
 
     # 2. 数值范围
     _validate_numeric(rtype, data, warnings)
@@ -354,27 +326,7 @@ def validate_health_record(
     # 3. 引用 ID 存在性 + 越权
     _validate_reference_id(rtype, data, warnings, db, user_id)
 
-    # 4. 食物识别 UI 文案硬阻断:
-    # 截图/卡片里出现的「午餐食品营养卡」「保存并确认」不是食物,
-    # 不能写成 0 kcal 的 DietRecord。
-    if rtype == "diet" and _looks_like_food_ui_text(data.get("food_items")):
-        msg = "[tool_validator] diet.food_items 疑似界面文案, 阻止作为新饮食写入"
-        warnings.append(msg)
-        logger.warning("%s: %r", msg, data.get("food_items"))
-        _metric(rtype, "food_items", "ui_text", action="rejected")
-        error = (
-            "Error: diet.food_items 疑似界面文案/按钮文字, 不能作为饮食记录写入。"
-            "请重新识别真实食物名称和份量; 如果图片中只有卡片或文字, 应请用户补充餐食内容。"
-        )
-        if warnings:
-            logger.info(f"[tool_validator] {rtype} 守门触发 {len(warnings)} 条")
-        return {
-            "data": data,
-            "warnings": warnings,
-            "error": error,
-        }
-
-    # 5. 饮食记录的管理意图硬阻断:
+    # 4. 饮食记录的管理意图硬阻断:
     # "我刚才不小心删除了/删除这一餐/撤销这顿" 是 health_manage 语义,
     # 绝不能被上下文带偏写成一条 0 kcal 晚餐。
     if rtype == "diet" and _looks_like_diet_management_intent(data.get("food_items")):
@@ -395,7 +347,7 @@ def validate_health_record(
             "error": error,
         }
 
-    # 6. 药物/补剂摄入硬阻断:
+    # 5. 药物/补剂摄入硬阻断:
     # "刚吃了替普瑞酮/奥美拉唑20mg" 是 medication 语义,
     # 绝不能被"吃了"这个词带偏写成饮食。
     if rtype == "diet" and _looks_like_non_diet_intake(data.get("food_items")):
@@ -416,7 +368,7 @@ def validate_health_record(
             "error": error,
         }
 
-    # 7. 必填检查 (返回 error)
+    # 6. 必填检查 (返回 error)
     error = _validate_required(rtype, data, warnings)
 
     if warnings:
@@ -439,7 +391,7 @@ _QUERY_DIMENSIONS = {
     "supplements", "water", "diet", "exercise", "workout", "manual_exercise",
     "body_battery", "stress",
     "medical_exam", "genetic", "genetic_cognitive", "genetic_personality",
-    "genetic_comprehensive", "medication", "events",
+    "genetic_comprehensive", "medication",
 }
 _ANALYSIS_TYPES = {
     "comprehensive", "sleep_insight", "heart_rate_insight",
@@ -451,8 +403,8 @@ _PLAN_ACTIONS = {"generate_weekly", "complete_item", "save_to_card"}
 _MANAGE_RECORD_TYPES = {
     "diet", "water", "weight", "waist", "blood_pressure",
     "sleep", "mood", "excretion", "exercise", "illness", "symptom",
-    "medication", "medication_log", "supplement", "supplement_definition", "reminder",
-    "goal", "medical_exam", "event",
+    "medication", "medication_log", "supplement", "supplement_definition",
+    "goal", "medical_exam", "reminder",
 }
 _MANAGE_OPERATIONS = {"list", "update", "delete"}
 _CARD_TYPES = {"plan", "insight", "recommendation"}
@@ -640,14 +592,6 @@ def _validate_health_manage(
         return f"Error: health_manage.record_type 必须是 {sorted(_MANAGE_RECORD_TYPES)} 之一."
     if not operation:
         return f"Error: health_manage.operation 必须是 {sorted(_MANAGE_OPERATIONS)} 之一."
-
-    if rtype == "medical_exam" and operation != "list":
-        return (
-            "Error: medical_exam 只支持 list 查询报告级清单; "
-            "体检报告/化验指标的创建、修改、删除必须走导入与人工核对管线。"
-        )
-
-    _coerce_int_range("health_manage", args, "limit", 1, 100, 20, warnings)
 
     if operation in {"update", "delete"}:
         record_id = args.get("record_id")

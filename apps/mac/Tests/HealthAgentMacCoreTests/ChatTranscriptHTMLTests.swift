@@ -98,17 +98,11 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertTrue(html.contains("start=\"3\""), "第三个顶级条目应从 3 起: \(html)")
     }
 
-    func testDecimalNotRenderedAsOrderedList() {
-        // "3.5 mmol/L 属于正常" 是小数,点后无空格 → 不该被当有序列表项拆成 "3. 5 mmol/L…"。
-        let html = ChatTranscriptHTML.renderMessageBody(markdown: "3.5 mmol/L 属于正常")
-        XCTAssertFalse(html.contains("<ol"), "小数不应渲染成有序列表: \(html)")
-        XCTAssertTrue(html.contains("3.5 mmol/L"), "小数原文应保留: \(html)")
-    }
-
-    func testYearPrefixNotRenderedAsOrderedList() {
-        // "2024. 年度报告" 的 4 位年份前缀不该被当序号(前缀长度 ≤3 守卫)。
-        let html = ChatTranscriptHTML.renderMessageBody(markdown: "2024. 年度报告")
-        XCTAssertFalse(html.contains("<ol"), "4 位年份前缀不应渲染成有序列表: \(html)")
+    func testOrderedListResetsAfterHeading() {
+        // 标题分界后是新的逻辑列表,应重新从 1 起(不带 start="2"/"3")。
+        let md = "1. a\n1. b\n## 新段\n1. c"
+        let html = ChatTranscriptHTML.renderMessageBody(markdown: md)
+        XCTAssertFalse(html.contains("start=\"3\""), "标题后应重置计数,不应把 c 编成第 3 项: \(html)")
     }
 
     // MARK: - JS string injection safety
@@ -152,23 +146,6 @@ final class ChatTranscriptHTMLTests: XCTestCase {
         XCTAssertTrue(html.contains("回答 commercial/Claude-Opus-4.7"))
         XCTAssertTrue(html.contains("工具 qwen3.7-max"))
         XCTAssertTrue(html.contains("工具调用临时切到可靠模型"))
-    }
-
-    func testMetaFooterRendersFastRouteReasonInChinese() {
-        // 快路由(简单查询自动切快模型)的 reason 必须渲染成中文,不能漏成 snake_case 原文
-        let html = ChatTranscriptHTML.metaFooterHTML(
-            model: "deepseek-v4-flash",
-            selectedModel: nil,
-            answerModel: "deepseek-v4-flash",
-            toolModels: [],
-            fallbackReasons: ["fast_route_simple_turn"],
-            elapsedMs: 2000,
-            llmRounds: 2,
-            sourcesUsed: [],
-            toolsUsed: []
-        )
-        XCTAssertTrue(html.contains("简单查询·自动用快模型"))
-        XCTAssertFalse(html.contains("fast_route_simple_turn"))
     }
 
     func testMetaFooterOmitsSingleRound() {
@@ -639,121 +616,5 @@ extension ChatTranscriptHTMLTests {
         }
         XCTAssertFalse(html.contains("去神秘页"), "mac 执行不了的路由不该渲染按钮(死键)")
         XCTAssertTrue(html.contains("去用药页记录"), "已映射路由的按钮应保留")
-    }
-}
-
-// MARK: - menu_share 结构化菜单卡(2026-07-06)
-
-extension ChatTranscriptHTMLTests {
-
-    /// 完整 menu_share 结构化卡:header=title(绝不显示 "menu_share")、reason 副标、
-    /// 菜品表、总计、买菜清单;绝不是 generic key-value dump。
-    func testDynamicCardRendersMenuShareCardNotGenericDump() throws {
-        let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
-            type: "menu_share",
-            data: .object([
-                "title": .string("今晚养胃晚餐"),
-                "reason": .string("你有胃溃疡记录，选清淡易消化、蛋白到位的一餐。"),
-                "items": .array([
-                    .object([
-                        "name": .string("小米南瓜粥"),
-                        "qty": .string("1碗"),
-                        "kcal": .int(180),
-                        "protein": .double(4.5),
-                        "carbs": .int(38)
-                    ]),
-                    .object([
-                        "name": .string("清蒸鲈鱼"),
-                        "qty": .string("120g"),
-                        "kcal": .int(150),
-                        "protein": .int(26)
-                    ]),
-                    .object([
-                        "name": .string("水煮西兰花"),
-                        "qty": .string("100g")
-                    ])
-                ]),
-                "totals": .object([
-                    "kcal": .int(430),
-                    "protein": .double(33.5),
-                    "carbs": .int(46),
-                    "fat": .int(9)
-                ]),
-                "shopping_list": .array([
-                    .string("小米"),
-                    .string("南瓜"),
-                    .string("鲈鱼"),
-                    .string("西兰花")
-                ])
-            ])
-        ))
-
-        // header = title,不是类型名 "menu_share"
-        XCTAssertTrue(html.contains("menu-share-card"))
-        XCTAssertTrue(html.contains("今晚养胃晚餐"))
-        XCTAssertFalse(html.contains("dynamic-card-title\">menu_share"),
-                       "标题绝不应显示原始类型名 menu_share")
-        XCTAssertFalse(html.contains("generic-card"), "不应回退到 generic key-value dump")
-        // 不应出现 generic dump 的字段行(items: 3 项 等)
-        XCTAssertFalse(html.contains("dynamic-card-summary-row"))
-
-        // reason 副标
-        XCTAssertTrue(html.contains("你有胃溃疡记录"))
-        // 菜品与营养
-        XCTAssertTrue(html.contains("小米南瓜粥"))
-        XCTAssertTrue(html.contains("清蒸鲈鱼"))
-        XCTAssertTrue(html.contains("水煮西兰花"))
-        XCTAssertTrue(html.contains("180kcal"))
-        XCTAssertTrue(html.contains("蛋白4.5g"))
-        XCTAssertTrue(html.contains("蛋白26g"))
-        // 总计
-        XCTAssertTrue(html.contains("menu-share-totals"))
-        XCTAssertTrue(html.contains("430kcal"))
-        XCTAssertTrue(html.contains("33.5g"))
-        // 买菜清单
-        XCTAssertTrue(html.contains("买菜清单"))
-        XCTAssertTrue(html.contains("menu-share-chip"))
-        XCTAssertTrue(html.contains("鲈鱼"))
-        // 分享 affordance(纯展示,无 action)
-        XCTAssertTrue(html.contains("可分享给家人"))
-    }
-
-    /// 缺失所有可选字段(仅 items)也稳:不崩、不显类型名、无空表头列。
-    func testDynamicCardMenuShareToleratesMissingOptionalFields() throws {
-        let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
-            type: "menu_share",
-            data: .object([
-                "items": .array([
-                    .object(["name": .string("白粥")])
-                ])
-            ])
-        ))
-        XCTAssertTrue(html.contains("menu-share-card"))
-        XCTAssertTrue(html.contains("今日菜单")) // title 缺省
-        XCTAssertTrue(html.contains("白粥"))
-        XCTAssertFalse(html.contains("menu-share-totals"))
-        XCTAssertFalse(html.contains("买菜清单"))
-        // 无 qty / 营养 → 不画对应表头
-        XCTAssertFalse(html.contains("<th>分量</th>"))
-        XCTAssertFalse(html.contains("<th>营养</th>"))
-    }
-
-    /// XSS:menu_share 里的注入内容全部转义。
-    func testDynamicCardMenuShareEscapesInjection() throws {
-        let html = try XCTUnwrap(ChatTranscriptHTML.dynamicCardHTML(
-            type: "menu_share",
-            data: .object([
-                "title": .string("晚餐<script>alert(1)</script>"),
-                "items": .array([
-                    .object(["name": .string("<img src=x onerror=alert(2)>")])
-                ]),
-                "shopping_list": .array([.string("<b>盐</b>")])
-            ])
-        ))
-        XCTAssertFalse(html.contains("<script"))
-        XCTAssertFalse(html.contains("<img"))
-        XCTAssertTrue(html.contains("&lt;script&gt;"))
-        XCTAssertTrue(html.contains("&lt;img"))
-        XCTAssertTrue(html.contains("&lt;b&gt;盐&lt;/b&gt;"))
     }
 }

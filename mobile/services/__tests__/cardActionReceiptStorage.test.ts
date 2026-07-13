@@ -5,9 +5,6 @@ let mockFailSecureReads = false;
 let mockFailAsyncWrites = false;
 const secureValues: Record<string, string> = {};
 const asyncValues: Record<string, string> = {};
-const assertSecureStoreKey = (key: string) => {
-  if (!/^[a-zA-Z0-9._-]+$/.test(key)) throw new Error('invalid secure-store key');
-};
 
 jest.mock('../authStorageScope', () => ({
   getAuthStorageScope: jest.fn(async () => mockScope),
@@ -15,19 +12,14 @@ jest.mock('../authStorageScope', () => ({
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async (key: string) => {
-    assertSecureStoreKey(key);
     if (mockFailSecureReads) throw new Error('keychain read unavailable');
     return secureValues[key] ?? null;
   }),
   setItemAsync: jest.fn(async (key: string, value: string) => {
-    assertSecureStoreKey(key);
     if (mockFailSecureWrites) throw new Error('keychain unavailable');
     secureValues[key] = value;
   }),
-  deleteItemAsync: jest.fn(async (key: string) => {
-    assertSecureStoreKey(key);
-    delete secureValues[key];
-  }),
+  deleteItemAsync: jest.fn(async (key: string) => { delete secureValues[key]; }),
 }));
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -64,11 +56,6 @@ describe('cardActionReceiptStorage', () => {
     mockFailAsyncWrites = false;
     Object.keys(secureValues).forEach(key => delete secureValues[key]);
     Object.keys(asyncValues).forEach(key => delete asyncValues[key]);
-  });
-
-  it('uses a SecureStore-compatible account-scoped receipt key', () => {
-    expect(cardActionReceiptStorageKey('user-7', 'confirm-lunch-77'))
-      .toMatch(/^[a-zA-Z0-9._-]+$/);
   });
 
   it('restores a verified card receipt from account-scoped secure storage', async () => {
@@ -158,25 +145,6 @@ describe('cardActionReceiptStorage', () => {
       receipt: undefined,
     });
     expect(asyncValues).toBeDefined();
-  });
-
-  it('keeps a legacy completion tombstone valid after the SecureStore key migration', async () => {
-    const identity = 'legacy-completed-action';
-    const digest = cardActionReceiptStorageKey('user-7', identity)
-      .match(/([a-f0-9]{16}-\d+)$/)?.[1];
-    expect(digest).toBeDefined();
-    const legacyStorageKey = `chat:card_action_receipt:v2:user-7:${digest}`;
-    asyncValues['chat:card_action_receipt_index:v2:user-7'] = JSON.stringify({
-      version: 2,
-      entries: {
-        [legacyStorageKey]: { storedAt: 1_000, completionOnly: true },
-      },
-    });
-
-    await expect(loadCardActionCompletion(identity, 2_000)).resolves.toEqual({
-      verified: true,
-      receipt: undefined,
-    });
   });
 
   it('fails loudly when the duplicate-guard index cannot be persisted', async () => {
