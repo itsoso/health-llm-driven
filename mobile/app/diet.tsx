@@ -89,6 +89,21 @@ const NON_DIET_DRAFT_ALERT = {
   title: '这不是饮食记录',
   message: '这条内容更像用药或补剂,请从用药/补剂入口确认。',
 };
+const HEALTH_METRIC_DRAFT_ALERT = {
+  title: '这不是饮食记录',
+  message: '这条内容更像体重、运动、睡眠或血压等健康指标,请从对应记录入口确认。',
+};
+const NON_FOOD_DRAFT_ALERT = {
+  title: '这不是饮食记录',
+  message: '这条内容不像具体食物,请重新描述这一餐吃了什么。',
+};
+
+function alertForDietFoodItemsError(error: unknown): typeof NON_DIET_DRAFT_ALERT {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  if (message === 'invalid_diet_food_items_health_metric') return HEALTH_METRIC_DRAFT_ALERT;
+  if (message === 'invalid_diet_food_items_non_diet') return NON_DIET_DRAFT_ALERT;
+  return NON_FOOD_DRAFT_ALERT;
+}
 
 function guessMealType(): DietRecordCreate['meal_type'] {
   const h = new Date().getHours();
@@ -452,8 +467,9 @@ export default function DietScreen() {
     if (foodItems && source?.kind !== 'photo') {
       try {
         assertDietFoodItemsAllowed(foodItems);
-      } catch {
-        Alert.alert(NON_DIET_DRAFT_ALERT.title, NON_DIET_DRAFT_ALERT.message);
+      } catch (error) {
+        const alert = alertForDietFoodItemsError(error);
+        Alert.alert(alert.title, alert.message);
         return;
       }
     }
@@ -1079,8 +1095,9 @@ export default function DietScreen() {
     draftConsumedRef.current = true;
     try {
       assertDietFoodItemsAllowed(foodItems);
-    } catch {
-      Alert.alert(NON_DIET_DRAFT_ALERT.title, NON_DIET_DRAFT_ALERT.message);
+    } catch (error) {
+      const alert = alertForDietFoodItemsError(error);
+      Alert.alert(alert.title, alert.message);
       return;
     }
     setDate(todayStr());

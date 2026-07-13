@@ -1865,6 +1865,27 @@ describe('DietScreen capture deeplink', () => {
     alertSpy.mockRestore();
   });
 
+  it('rejects health-metric diet draft deeplinks with the right destination hint', async () => {
+    mockRouteParams.draft = 'diet';
+    mockRouteParams.meal_type = 'lunch';
+    mockRouteParams.food_items = '体重 73.1kg 腰围 84cm';
+
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    render(<DietScreen />);
+
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith(
+        '这不是饮食记录',
+        '这条内容更像体重、运动、睡眠或血压等健康指标,请从对应记录入口确认。',
+      );
+    });
+    expect(mockMealForm).not.toHaveBeenCalled();
+    const dietService = require('../../services/diet');
+    expect(dietService.createDietRecord).not.toHaveBeenCalled();
+    expect(ImagePicker.requestCameraPermissionsAsync).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
   it('opens a premium share preview from a confirmed meal row', async () => {
     mockDailyMeals.push({
       id: 88,
