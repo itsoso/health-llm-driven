@@ -864,6 +864,40 @@ describe('DietShareCard', () => {
     }));
   });
 
+  it('keeps low-confidence copied captions framed as review copy', async () => {
+    const lowConfidenceRecord = {
+      ...record,
+      source: 'ai_estimate',
+      ai_confidence: 0.42,
+      food_items: '机场贵宾厅番茄鸡蛋面、鸭肉、生菜',
+    };
+    const onShareFeedback = jest.fn();
+    const { getByText } = render(
+      <DietShareSheet
+        visible
+        record={lowConfidenceRecord}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+        onShareFeedback={onShareFeedback}
+      />,
+    );
+
+    fireEvent.press(getByText('核对后复制小红书文案'));
+
+    await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养数据: 智能估算，待核对后再发布'));
+      expect(getByText('已复制核对小红书文案')).toBeTruthy();
+      expect(onShareFeedback).toHaveBeenCalledWith(expect.objectContaining({
+        title: '核对文案已复制',
+        detail: '先核对食物和份量，再去小红书正文框粘贴',
+        tone: 'warning',
+      }));
+      expect(onShareFeedback).not.toHaveBeenCalledWith(expect.objectContaining({
+        detail: '去小红书正文框直接粘贴发布',
+      }));
+    });
+  });
+
   it('copies a WeChat Moments-ready caption without Xiaohongshu hashtags', async () => {
     const onShareFeedback = jest.fn();
     const { getByText } = render(

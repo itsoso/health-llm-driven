@@ -870,14 +870,23 @@ export function DietShareSheet({
           : buildDietShareCaption(record, dateLabel),
       );
       setCopiedCaption(kind);
+      const isMoments = kind === 'moments';
       onShareFeedback?.({
-        title: kind === 'moments' ? '朋友圈文案已复制' : '小红书文案已复制',
-        detail: kind === 'moments'
-          ? '去微信或朋友圈直接粘贴发布'
-          : '去小红书正文框直接粘贴发布',
-        tone: 'success',
+        title: lowConfidenceShare
+          ? '核对文案已复制'
+          : isMoments
+            ? '朋友圈文案已复制'
+            : '小红书文案已复制',
+        detail: lowConfidenceShare
+          ? isMoments
+            ? '先核对食物和份量，再去微信或朋友圈粘贴'
+            : '先核对食物和份量，再去小红书正文框粘贴'
+          : isMoments
+            ? '去微信或朋友圈直接粘贴发布'
+            : '去小红书正文框直接粘贴发布',
+        tone: lowConfidenceShare ? 'warning' : 'success',
         result: {
-          target: kind === 'moments' ? 'wechat' : 'xiaohongshu',
+          target: isMoments ? 'wechat' : 'xiaohongshu',
           kind: 'completed',
         },
       });
