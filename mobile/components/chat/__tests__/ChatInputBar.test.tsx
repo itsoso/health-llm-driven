@@ -345,8 +345,42 @@ describe('ChatInputBar', () => {
       expect(onSend).toHaveBeenCalledWith(
         '午餐吃了鸡胸肉',
         null,
-        { channel: 'voice' },
+        expect.objectContaining({ channel: 'voice' }),
       );
+    });
+  });
+
+  it('normalizes hold-to-talk transcript and sends voice draft context to the Agent', async () => {
+    const onSend = jest.fn().mockResolvedValue(true);
+    const { getByLabelText } = render(
+      <ChatInputBar onSend={onSend} isStreaming={false} />,
+    );
+
+    fireEvent.press(getByLabelText('切换到语音输入'));
+    fireEvent(getByLabelText('按住说话'), 'responderGrant', {
+      nativeEvent: { pageX: 220, pageY: 300 },
+    });
+    await act(async () => { await Promise.resolve(); });
+    fireEvent(getByLabelText('按住说话'), 'responderRelease');
+    await act(async () => {
+      latestVoiceRecordingOptions.onTranscript('今天 h r v 下降 体重 73.1 公斤');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      const [, , options] = onSend.mock.calls[0];
+      expect(onSend).toHaveBeenCalledWith(
+        '今天 HRV 下降 体重 73.1kg',
+        null,
+        expect.objectContaining({ channel: 'voice', extraContext: expect.any(String) }),
+      );
+      const context = JSON.parse(options.extraContext);
+      expect(context.voice_draft).toMatchObject({
+        source: 'hold_to_talk',
+        raw: '今天 h r v 下降 体重 73.1 公斤',
+        normalized: '今天 HRV 下降 体重 73.1kg',
+      });
     });
   });
 
@@ -373,7 +407,7 @@ describe('ChatInputBar', () => {
       expect(onSend).toHaveBeenCalledWith(
         '机场贵宾厅吃了番茄鸡蛋面',
         null,
-        { channel: 'voice' },
+        expect.objectContaining({ channel: 'voice' }),
       );
       expect(queryByLabelText('按住说话')).toBeNull();
       expect(getByLabelText('消息输入框').props.value).toBe('机场贵宾厅吃了番茄鸡蛋面');
@@ -455,7 +489,7 @@ describe('ChatInputBar', () => {
     });
 
     expect(mockStartDictation).toHaveBeenCalled();
-    expect(getByLabelText('消息输入框').props.value).toBe('记录今天喝水 500 毫升');
+    expect(getByLabelText('消息输入框').props.value).toBe('记录今天喝水 500ml');
   });
 
   it('stops realtime dictation from the active microphone button', () => {
@@ -581,9 +615,9 @@ describe('ChatInputBar', () => {
 
     await waitFor(() => {
       expect(onSend).toHaveBeenCalledWith(
-        '记录今天喝水 500 毫升',
+        '记录今天喝水 500ml',
         null,
-        { channel: 'voice' },
+        expect.objectContaining({ channel: 'voice', extraContext: expect.any(String) }),
       );
     });
   });
@@ -608,9 +642,9 @@ describe('ChatInputBar', () => {
     });
 
     expect(onSend).toHaveBeenCalledWith(
-      '记录今天喝水 500 毫升',
+      '记录今天喝水 500ml',
       null,
-      { channel: 'voice' },
+      expect.objectContaining({ channel: 'voice', extraContext: expect.any(String) }),
     );
   });
 

@@ -40,6 +40,13 @@ import {
   revaSemantic,
   revaFonts,
 } from '../../constants/revaTheme';
+import {
+  buildVoiceDraft,
+  buildVoiceDraftExtraContext,
+  mergeExtraContext,
+  type VoiceDraft,
+  type VoiceInputSource,
+} from '../../services/voiceDraft';
 
 const CANCEL_THRESHOLD = 80;
 const VOICE_SLIDE_THRESHOLD = 88;
@@ -156,6 +163,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const cancelVoiceRef = useRef<() => Promise<void>>(async () => {});
   const dictationNativeActiveRef = useRef(false);
   const voiceNativeActiveRef = useRef(false);
+  const voiceDraftRef = useRef<VoiceDraft | null>(null);
   const draftPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const justSentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   composerRef.current = composer;
@@ -214,10 +222,23 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const restoreVoiceTranscriptDraft = useCallback((text: string) => {
     const clean = text.trim();
     if (!clean) return;
+    const draft = buildVoiceDraft({
+      source: voiceDraftRef.current?.source ?? 'hold_to_talk',
+      rawTranscript: voiceDraftRef.current?.rawTranscript || clean,
+    });
+    voiceDraftRef.current = { ...draft, normalizedText: clean };
     inputChannelRef.current = 'voice';
     setInput(clean);
     dispatchComposer({ type: 'voice_draft_ready' });
     setTimeout(() => textInputRef.current?.focus(), 30);
+  }, []);
+
+  const applyVoiceTranscript = useCallback((source: VoiceInputSource, rawTranscript: string) => {
+    const draft = buildVoiceDraft({ source, rawTranscript });
+    voiceDraftRef.current = draft;
+    inputChannelRef.current = 'voice';
+    setInput(draft.normalizedText);
+    return draft;
   }, []);
 
   // GPT/Gemini 式默认唤起键盘: chat.tsx 在「空对话获得焦点」时递增 token。
@@ -239,11 +260,14 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     const phase = composerRef.current.phase;
     dispatchComposer({ type: 'submit' });
     try {
+      let voiceDraftForSend: VoiceDraft | null = null;
       if (phase === 'live_dictating' || dictationNativeActiveRef.current) {
         const finalTranscript = String(await stopDictationRef.current() || '').trim();
         if (!text && finalTranscript) {
           const base = realtimeBaseInputRef.current.trim();
-          msg = base ? `${base} ${finalTranscript}` : finalTranscript;
+          const raw = base ? `${base} ${finalTranscript}` : finalTranscript;
+          voiceDraftForSend = applyVoiceTranscript('realtime_mic', raw);
+          msg = voiceDraftForSend.normalizedText;
         }
       } else if (phase === 'hold_starting' || phase === 'hold_recording') {
         await cancelVoiceRef.current();
@@ -253,11 +277,30 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
         : pendingImages;
       const modeOptions = buildAgentModeOptions(agentMode);
       const effectiveChannel = sendOptions?.channel ?? inputChannelRef.current;
+      if (effectiveChannel === 'voice') {
+        if (!voiceDraftForSend && voiceDraftRef.current?.normalizedText === msg) {
+          voiceDraftForSend = voiceDraftRef.current;
+        }
+        if (!voiceDraftForSend && msg) {
+          voiceDraftForSend = buildVoiceDraft({
+            source: phase === 'live_dictating' || dictationNativeActiveRef.current ? 'realtime_mic' : 'hold_to_talk',
+            rawTranscript: msg,
+          });
+          msg = voiceDraftForSend.normalizedText;
+          voiceDraftRef.current = voiceDraftForSend;
+        }
+      }
       const outboundOptions: ChatInputSendOptions = {
         ...(modeOptions || {}),
         ...(sendOptions || {}),
         ...(effectiveChannel !== 'typed' ? { channel: effectiveChannel } : {}),
       };
+      if (voiceDraftForSend) {
+        outboundOptions.extraContext = mergeExtraContext(
+          sendOptions?.extraContext ?? modeOptions?.extraContext,
+          buildVoiceDraftExtraContext(voiceDraftForSend),
+        );
+      }
       const sendResult = onSend(
         msg || '请分析这些图片',
         sendImages.length > 0 ? sendImages : null,
@@ -293,6 +336,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     }
     setInput('');
     inputChannelRef.current = 'typed';
+    voiceDraftRef.current = null;
     releaseImagesAfterSend();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setJustSent(true);
@@ -312,9 +356,8 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
   const handleRealtimeTranscript = useCallback((text: string) => {
     const clean = text.trim();
     const base = realtimeBaseInputRef.current.trim();
-    inputChannelRef.current = 'voice';
-    setInput(base ? `${base} ${clean}` : clean);
-  }, []);
+    applyVoiceTranscript('realtime_mic', base ? `${base} ${clean}` : clean);
+  }, [applyVoiceTranscript]);
 
   const realtimeDictation = useRealtimeDictation({
     onTranscript: handleRealtimeTranscript,
@@ -390,13 +433,15 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
     onTranscript: (text) => {
       const clean = text.trim();
       if (!clean) return;
+      const draft = buildVoiceDraft({ source: 'hold_to_talk', rawTranscript: clean });
+      voiceDraftRef.current = draft;
       if (voiceCommitModeRef.current === 'send') {
-        void handleSend(clean, { channel: 'voice' });
+        void handleSend(draft.normalizedText, { channel: 'voice' });
         return;
       }
       dispatchComposer({ type: 'hold_transcribed' });
-      inputChannelRef.current = 'voice';
-      setInput(prev => prev ? `${prev.trim()} ${clean}` : clean);
+      const previous = input.trim();
+      applyVoiceTranscript('hold_to_talk', previous ? `${previous} ${clean}` : clean);
       setTimeout(() => textInputRef.current?.focus(), 30);
     },
   });
@@ -540,6 +585,7 @@ export default function ChatInputBar({ onSend, isStreaming, initialText, initial
 
   const handleInputChange = useCallback((text: string) => {
     inputChannelRef.current = 'typed';
+    voiceDraftRef.current = null;
     setInput(text);
   }, []);
 
