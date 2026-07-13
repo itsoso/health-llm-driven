@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | slug | `kbase-claim-adjudication` |
-| stage | S3 planned |
+| stage | S5 implemented |
 | status | active |
 | owner | Codex |
 
@@ -29,9 +29,20 @@ an exact fingerprint. Rejected/background claims cannot enter Health serving;
 
 ## Delivery Gates
 
-- G3 tests: **PENDING.** Backend decision/finalization/API tests and frontend
-  interaction/build checks have not run yet.
-- G4 review: **PENDING.** Independent review is required after implementation.
+- G3 tests: **PASS.** `75` Release consumer and System KB API tests pass; `10`
+  frontend helper and interaction tests pass. The Next.js production build,
+  full pre-commit suite, and `git diff --check` pass. The build reports only
+  pre-existing configuration, browser-data, lint, and image optimization
+  warnings outside this feature. The repository has no
+  `scripts/privacy-smoke.sh`, so changed files were manually scanned for
+  credentials, machine paths, and copyrighted content.
+- G4 review: **PASS.** Independent review first found stale claim-specific
+  evidence fields when switching claims; the next pass found hidden legacy
+  export claims and a prematurely enabled impact preview. Each finding received
+  a regression test and fix. Final independent re-review reported no discrete
+  correctness issue. Claim decisions remain fingerprint-bound and fail closed,
+  legacy export drafts remain reviewable, preview requires a finalized gate,
+  and the admin UI still exposes no serving publish action.
 - G5 deployment health: **PENDING.** No deployment has occurred.
 - G6 production verification: **PENDING.** Production verification must not
   adjudicate or publish the current medical claims.

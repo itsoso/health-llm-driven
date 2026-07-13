@@ -200,7 +200,7 @@ Expected: PASS.
 
 **Step 3: Run repository gates**
 
-Run: `PATH=/Users/liqiuhua/work/personal/health-llm-driven/backend/venv/bin:$PATH pre-commit run --all-files`
+Run: `PATH="$PWD/backend/venv/bin:$PATH" pre-commit run --all-files`
 
 Run: `git diff --check`
 
