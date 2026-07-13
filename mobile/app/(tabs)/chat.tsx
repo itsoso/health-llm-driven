@@ -5,6 +5,7 @@ import {
   ActivityIndicator, Alert, Keyboard, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
@@ -741,6 +742,7 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <StatusBar style="dark" backgroundColor={C.paper} translucent={false} />
       <ChatHeader
         activeLlmLabel={activeLlmLabel}
         llmModelId={llmModelId}

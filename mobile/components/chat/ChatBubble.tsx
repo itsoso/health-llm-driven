@@ -1472,7 +1472,8 @@ const styles = StyleSheet.create({
     minHeight: 20,
   },
   thinkingPanel: {
-    alignSelf: 'flex-start',
+    alignSelf: 'stretch',
+    width: '100%',
     maxWidth: '100%',
     gap: 8,
     marginBottom: 10,
@@ -1548,7 +1549,7 @@ const styles = StyleSheet.create({
   },
   thinkingStepRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 8,
   },
   thinkingStepIndex: {

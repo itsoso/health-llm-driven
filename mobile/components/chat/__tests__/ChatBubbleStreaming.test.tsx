@@ -201,7 +201,8 @@ describe('ChatBubble streaming degraded render', () => {
     expect(getByText('读取健康数据')).toBeTruthy();
     expect(getByLabelText('当前步骤:读取健康数据')).toBeTruthy();
     const panelStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
-    expect(panelStyle.alignSelf).toBe('flex-start');
+    expect(panelStyle.alignSelf).toBe('stretch');
+    expect(panelStyle.width).toBe('100%');
     expect(panelStyle.maxWidth).toBe('100%');
     expect(panelStyle.minWidth ?? 0).toBe(0);
     expect(getByText('今晚优先固定睡眠时间。')).toBeTruthy();
