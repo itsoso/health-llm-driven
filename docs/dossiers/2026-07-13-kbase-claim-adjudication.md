@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | slug | `kbase-claim-adjudication` |
-| stage | S5 implemented |
-| status | active |
+| stage | S8 complete |
+| status | complete |
 | owner | Codex |
 
 ## Intake
@@ -43,9 +43,21 @@ an exact fingerprint. Rejected/background claims cannot enter Health serving;
   correctness issue. Claim decisions remain fingerprint-bound and fail closed,
   legacy export drafts remain reviewable, preview requires a finalized gate,
   and the admin UI still exposes no serving publish action.
-- G5 deployment health: **PENDING.** No deployment has occurred.
-- G6 production verification: **PENDING.** Production verification must not
-  adjudicate or publish the current medical claims.
+- G5 deployment health: **PASS.** PR `#240` merged and final main commit
+  `81903c48d` passed all `24` CI jobs, including client type drift, frontend,
+  Mobile, Mac, backend quality, and every backend test shard. The standard full
+  deploy backed up PostgreSQL, synchronized the guarded production environment,
+  deployed that exact commit, rebuilt frontend and System KB indexes, and
+  finished at health score `60/60`. Frontend, backend, Celery worker, and Celery
+  beat are active; the public health and admin pages return HTTP 200; the skills
+  manifest matches all `22` deployed skills.
+- G6 production verification: **PASS.** A short-lived server-local admin token
+  performed a read-only claim-list request after service restart and received
+  HTTP 200. The persistent workspace reports `460` claims, `5` unresolved,
+  a valid content fingerprint, and `serving_allowed=false`. A non-publishing
+  impact-preview request returned HTTP 400 because the review gate remains
+  closed. No production claim was adjudicated, no workspace was finalized, and
+  no artifact was published during verification.
 
 ## Artifacts
 
