@@ -760,11 +760,14 @@ export function DietShareSheet({
     : estimatedShare
       ? '复制复盘朋友圈文案'
       : '自动复制朋友圈文案';
+  const wechatShareLabel = lowConfidenceShare ? '核对后发微信/朋友圈' : '发微信/朋友圈';
+  const wechatShareA11yLabel = lowConfidenceShare ? '核对后发微信或朋友圈' : '发微信或朋友圈';
   const xhsShareHint = lowConfidenceShare
     ? '核对后复制带话题文案'
     : estimatedShare
       ? '复制带话题复盘文案'
       : '自动复制带话题文案';
+  const xhsShareLabel = lowConfidenceShare ? '核对后发小红书' : '发小红书';
   const saveLibraryLabel = estimatedShare ? '保存复盘图到相册' : '保存到相册';
   const saveLibraryHint = lowConfidenceShare
     ? '核对后再存图发布'
@@ -1043,11 +1046,11 @@ export function DietShareSheet({
               disabled={sharing || !imageReady}
               activeOpacity={0.84}
               accessibilityRole="button"
-              accessibilityLabel="发微信或朋友圈"
+              accessibilityLabel={wechatShareA11yLabel}
             >
               <Ionicons name="chatbubble-ellipses-outline" size={18} color={C.greenOn} />
               <View>
-                <Text style={styles.platformShareText}>发微信/朋友圈</Text>
+                <Text style={styles.platformShareText}>{wechatShareLabel}</Text>
                 <Text style={styles.platformShareHint}>{wechatShareHint}</Text>
               </View>
             </TouchableOpacity>
@@ -1057,11 +1060,11 @@ export function DietShareSheet({
               disabled={sharing || !imageReady}
               activeOpacity={0.84}
               accessibilityRole="button"
-              accessibilityLabel="发小红书"
+              accessibilityLabel={xhsShareLabel}
             >
               <Ionicons name="sparkles-outline" size={18} color="#fff" />
               <View>
-                <Text style={styles.platformShareText}>发小红书</Text>
+                <Text style={styles.platformShareText}>{xhsShareLabel}</Text>
                 <Text style={styles.platformShareHint}>{xhsShareHint}</Text>
               </View>
             </TouchableOpacity>
