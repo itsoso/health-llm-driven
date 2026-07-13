@@ -191,6 +191,19 @@ def verify_advice(
         personal_matrix or {},
     )
     if lab_report_boundary_changes:
+        medical_changes: list[str] = []
+        if "rewrite_lab_fact_without_diagnosis" in lab_report_boundary_changes:
+            medical_changes.append("rewrite_without_diagnosis_or_treatment")
+        if "remove_prescription_or_self_medication_plan" in lab_report_boundary_changes:
+            medical_changes.append("remove_self_medication_change")
+        if medical_changes:
+            return AdviceVerification(
+                allowed=False,
+                decision="blocked",
+                reason="medical_boundary_violation",
+                required_changes=medical_changes,
+                audit_tags=["medical_boundary_violation", "lab_report_boundary"],
+            )
         return AdviceVerification(
             allowed=False,
             decision="blocked",

@@ -283,6 +283,21 @@ async def test_run_stream_with_extra_context_does_not_crash_before_first_event(d
         def save_message(self, *args, **kwargs):
             return None
 
+        def save_user_message_once(self, conv_id, user_id, content, **kwargs):
+            from app.models.agent_conversation import AgentMessage
+
+            msg = AgentMessage(
+                conversation_id=conv_id,
+                role="user",
+                content=content,
+                image_url=None,
+                meta=kwargs.get("meta") or {},
+            )
+            self.db.add(msg)
+            self.db.commit()
+            self.db.refresh(msg)
+            return msg, True
+
         def build_messages(self, conv_id, limit=15):
             return [{"role": "user", "content": "今天怎么安排"}]
 
@@ -296,12 +311,14 @@ async def test_run_stream_with_extra_context_does_not_crash_before_first_event(d
         )
         first = await anext(stream)
         second = await anext(stream)
+        third = await anext(stream)
         await stream.aclose()
 
     # P0-1 契约: 扁平 accepted 进度事件恒为流的首个事件 (<100ms, 任何 LLM 调用前),
-    # agent_start 紧随其后 —— extra_context 解析仍不得在这两个事件前崩。
+    # request_persisted/agent_start 紧随其后 —— extra_context 解析仍不得在这些事件前崩。
     assert first == {"type": "status", "stage": "accepted"}
-    assert second["event"] == "agent_start"
+    assert second["event"] == "request_persisted"
+    assert third["event"] == "agent_start"
 
 
 # === Regression (2026-06): _api_get 字符截断损坏 JSON → 用药/补剂查找崩溃并把原始错误泄漏给用户 ===
