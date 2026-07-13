@@ -6,12 +6,16 @@ from datetime import UTC, datetime, timedelta
 import hashlib
 import json
 import re
-from typing import Any
+from typing import Any, Callable
 
 
 VERIFICATION_PACKET_CONTRACT = "kbase_claim_verification_packet_v1"
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _STALE_AFTER = timedelta(days=730)
+_MODEL_DECISIONS = frozenset({"approve", "needs_evidence", "reject", "background_only"})
+_MODEL_REQUIRED_FIELDS = frozenset(
+    {"decision", "confidence", "rationale", "citation_ids", "missing_evidence"}
+)
 
 
 def claim_content_hash(claim: dict[str, Any]) -> str:
@@ -128,6 +132,132 @@ def build_deterministic_verification_packet(
         "generator": "deterministic:kbase-claim-verification-v1",
         "generated_at": now.astimezone(UTC).isoformat(),
     }
+
+
+def enrich_verification_packet_with_model(
+    packet: dict[str, Any],
+    *,
+    claim: dict[str, Any],
+    model_adapter: Callable[[dict[str, Any]], dict[str, Any] | str],
+) -> dict[str, Any]:
+    """Add a strict model proposal without relaxing deterministic findings."""
+    result = dict(packet)
+    if result.get("status") == "blocked":
+        result["model_status"] = "skipped_deterministic_blocker"
+        return result
+
+    request = _model_request(claim, result)
+    try:
+        raw_response = model_adapter(request)
+        proposal = _validate_model_proposal(raw_response, result)
+    except Exception:
+        result.update(
+            {
+                "status": "blocked",
+                "model_status": "error",
+                "model_error": "model_adapter_failed",
+            }
+        )
+        return result
+
+    if isinstance(proposal, str):
+        result.update(
+            {
+                "status": "blocked",
+                "model_status": "blocked",
+                "model_error": proposal,
+            }
+        )
+        return result
+
+    result["model_status"] = "ready"
+    result["model_proposal"] = proposal
+    current_decision = str(result.get("proposed_decision") or "needs_evidence")
+    proposed_decision = str(proposal["decision"])
+    if current_decision == "approve" or proposed_decision != "approve":
+        result["proposed_decision"] = proposed_decision
+    result["missing_evidence"] = list(
+        dict.fromkeys([*(result.get("missing_evidence") or []), *proposal["missing_evidence"]])
+    )
+    result["rationale"] = proposal["rationale"]
+    return result
+
+
+def _model_request(claim: dict[str, Any], packet: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "contract": "kbase_claim_verification_model_request_v1",
+        "claim": {
+            "doc_id": str(claim.get("doc_id") or ""),
+            "statement": str(claim.get("summary") or claim.get("body") or claim.get("title") or ""),
+            "evidence_level": claim.get("evidence_level"),
+            "confidence": claim.get("confidence"),
+        },
+        "citation_ids": list(packet.get("citation_ids") or []),
+        "checks": list(packet.get("checks") or []),
+        "allowed_decisions": sorted(_MODEL_DECISIONS),
+        "response_contract": {
+            "required": sorted(_MODEL_REQUIRED_FIELDS),
+            "minimum_confidence": 0.7,
+        },
+    }
+
+
+def _validate_model_proposal(
+    raw_response: dict[str, Any] | str,
+    packet: dict[str, Any],
+) -> dict[str, Any] | str:
+    if isinstance(raw_response, str):
+        try:
+            payload = json.loads(raw_response)
+        except json.JSONDecodeError:
+            return "invalid_model_json"
+    else:
+        payload = raw_response
+    if not isinstance(payload, dict) or set(payload) != _MODEL_REQUIRED_FIELDS:
+        return "invalid_model_schema"
+
+    decision = str(payload.get("decision") or "")
+    if decision not in _MODEL_DECISIONS:
+        return "invalid_model_decision"
+    confidence = payload.get("confidence")
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        return "invalid_model_confidence"
+    if not 0 <= float(confidence) <= 1:
+        return "invalid_model_confidence"
+    if float(confidence) < 0.7:
+        return "low_model_confidence"
+    rationale = str(payload.get("rationale") or "").strip()
+    if not rationale or len(rationale) > 2000:
+        return "invalid_model_rationale"
+
+    citation_ids = _string_list(payload.get("citation_ids"))
+    if citation_ids is None:
+        return "invalid_model_citations"
+    if not citation_ids:
+        return "missing_model_citations"
+    supported_citations = set(str(item) for item in packet.get("citation_ids") or [])
+    if not set(citation_ids).issubset(supported_citations):
+        return "unsupported_model_citations"
+    missing_evidence = _string_list(payload.get("missing_evidence"))
+    if missing_evidence is None:
+        return "invalid_model_missing_evidence"
+
+    return {
+        "decision": decision,
+        "confidence": float(confidence),
+        "rationale": rationale,
+        "citation_ids": citation_ids,
+        "missing_evidence": missing_evidence,
+    }
+
+
+def _string_list(value: Any) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    normalized = [str(item).strip() for item in value]
+    if any(not item for item in normalized):
+        return None
+    return list(dict.fromkeys(normalized))
 
 
 def _check(code: str, status: str, message: str) -> dict[str, str]:

@@ -266,6 +266,171 @@ def test_generate_workspace_packet_preserves_workspace_on_candidate_failure(tmp_
     assert not (workspace / "verification_packets.jsonl").exists()
 
 
+def test_model_adapter_adds_strict_cited_recommendation_without_relaxing_checks():
+    from app.services.kbase_claim_verification import (
+        build_deterministic_verification_packet,
+        enrich_verification_packet_with_model,
+    )
+
+    claim = _claim(
+        evidence_level="B",
+        metadata={
+            **_claim()["metadata"],
+            "external_sources": [{"source": "guideline:sleep-2025"}],
+            "last_confirmed": "2026-03-01T00:00:00Z",
+        },
+    )
+    packet = build_deterministic_verification_packet(
+        claim,
+        workspace_fingerprint="1" * 64,
+        generated_at=NOW,
+    )
+    requests = []
+
+    result = enrich_verification_packet_with_model(
+        packet,
+        claim=claim,
+        model_adapter=lambda request: requests.append(request)
+        or {
+            "decision": "needs_evidence",
+            "confidence": 0.86,
+            "rationale": "需要确认剂量和摄入时点是否适用于目标人群。",
+            "citation_ids": ["citation-1"],
+            "missing_evidence": ["dose_and_timing_scope"],
+        },
+    )
+
+    assert result["status"] == "ready"
+    assert result["proposed_decision"] == "needs_evidence"
+    assert result["model_proposal"]["confidence"] == 0.86
+    assert result["model_proposal"]["citation_ids"] == ["citation-1"]
+    assert requests[0]["claim"]["statement"] == claim["summary"]
+    assert "body" not in requests[0]
+
+
+@pytest.mark.parametrize(
+    "response,error_code",
+    [
+        (
+            {
+                "decision": "auto_publish",
+                "confidence": 0.9,
+                "rationale": "invalid",
+                "citation_ids": ["citation-1"],
+                "missing_evidence": [],
+            },
+            "invalid_model_decision",
+        ),
+        (
+            {
+                "decision": "approve",
+                "confidence": 0.9,
+                "rationale": "missing citations",
+                "citation_ids": [],
+                "missing_evidence": [],
+            },
+            "missing_model_citations",
+        ),
+        (
+            {
+                "decision": "approve",
+                "confidence": 0.9,
+                "rationale": "unknown citation",
+                "citation_ids": ["citation-unknown"],
+                "missing_evidence": [],
+            },
+            "unsupported_model_citations",
+        ),
+        (
+            {
+                "decision": "approve",
+                "confidence": 0.69,
+                "rationale": "low confidence",
+                "citation_ids": ["citation-1"],
+                "missing_evidence": [],
+            },
+            "low_model_confidence",
+        ),
+    ],
+)
+def test_model_adapter_blocks_invalid_or_untrusted_output(response, error_code):
+    from app.services.kbase_claim_verification import (
+        build_deterministic_verification_packet,
+        enrich_verification_packet_with_model,
+    )
+
+    claim = _claim()
+    packet = build_deterministic_verification_packet(
+        claim,
+        workspace_fingerprint="2" * 64,
+        generated_at=NOW,
+    )
+
+    result = enrich_verification_packet_with_model(
+        packet,
+        claim=claim,
+        model_adapter=lambda _request: response,
+    )
+
+    assert result["status"] == "blocked"
+    assert result["model_status"] == "blocked"
+    assert result["model_error"] == error_code
+
+
+def test_model_adapter_error_fails_closed():
+    from app.services.kbase_claim_verification import (
+        build_deterministic_verification_packet,
+        enrich_verification_packet_with_model,
+    )
+
+    claim = _claim()
+    packet = build_deterministic_verification_packet(
+        claim,
+        workspace_fingerprint="3" * 64,
+        generated_at=NOW,
+    )
+
+    def fail(_request):
+        raise TimeoutError("provider timeout")
+
+    result = enrich_verification_packet_with_model(packet, claim=claim, model_adapter=fail)
+
+    assert result["status"] == "blocked"
+    assert result["model_status"] == "error"
+    assert result["model_error"] == "model_adapter_failed"
+    assert "provider timeout" not in json.dumps(result)
+
+
+def test_deterministic_blocker_overrides_model_approval():
+    from app.services.kbase_claim_verification import (
+        build_deterministic_verification_packet,
+        enrich_verification_packet_with_model,
+    )
+
+    claim = _claim(sources=[])
+    packet = build_deterministic_verification_packet(
+        claim,
+        workspace_fingerprint="4" * 64,
+        generated_at=NOW,
+    )
+
+    result = enrich_verification_packet_with_model(
+        packet,
+        claim=claim,
+        model_adapter=lambda _request: {
+            "decision": "approve",
+            "confidence": 0.99,
+            "rationale": "approve",
+            "citation_ids": ["citation-1"],
+            "missing_evidence": [],
+        },
+    )
+
+    assert result["status"] == "blocked"
+    assert result["proposed_decision"] == "reject"
+    assert result["blocking_reasons"] == ["missing_source_references"]
+
+
 def _write_workspace(root):
     from app.services.system_knowledge_ingest import ARTIFACT_FILES
 
