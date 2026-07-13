@@ -266,6 +266,25 @@ describe('DietShareCard', () => {
     expect(queryByText('营养数据以本次确认记录为准')).toBeNull();
   });
 
+  it('labels high-confidence AI share actions as review copy instead of automatic posting', () => {
+    const estimatedRecord = { ...record, source: 'ai_estimate', ai_confidence: 0.84 };
+    const { getByText, queryByText } = render(
+      <DietShareSheet
+        visible
+        record={estimatedRecord}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(getByText('复盘朋友圈文案')).toBeTruthy();
+    expect(getByText('复盘小红书文案')).toBeTruthy();
+    expect(getByText('复制复盘朋友圈文案')).toBeTruthy();
+    expect(getByText('复制带话题复盘文案')).toBeTruthy();
+    expect(queryByText('自动复制朋友圈文案')).toBeNull();
+    expect(queryByText('自动复制带话题文案')).toBeNull();
+  });
+
   it('surfaces low AI recognition confidence before users share externally', async () => {
     const lowConfidenceRecord = {
       ...record,

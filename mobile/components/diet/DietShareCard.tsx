@@ -744,6 +744,27 @@ export function DietShareSheet({
   const shareHasPhoto = Boolean(imageSource) && !imageTimedOut;
   const publishHint = shareResult ? publishHintForShareResult(shareResult) : null;
   const lowConfidenceShare = isLowConfidenceDietShare(record);
+  const estimatedShare = isAiEstimatedNutritionSource(record.source);
+  const momentsReadyLabel = lowConfidenceShare
+    ? '核对后朋友圈文案'
+    : estimatedShare
+      ? '复盘朋友圈文案'
+      : '朋友圈文案';
+  const xhsReadyLabel = lowConfidenceShare
+    ? '核对后小红书文案'
+    : estimatedShare
+      ? '复盘小红书文案'
+      : '小红书话题';
+  const wechatShareHint = lowConfidenceShare
+    ? '先核对食物和份量'
+    : estimatedShare
+      ? '复制复盘朋友圈文案'
+      : '自动复制朋友圈文案';
+  const xhsShareHint = lowConfidenceShare
+    ? '核对后复制带话题文案'
+    : estimatedShare
+      ? '复制带话题复盘文案'
+      : '自动复制带话题文案';
 
   React.useEffect(() => {
     setImageReady(!imageSource);
@@ -975,11 +996,11 @@ export function DietShareSheet({
             <ShareReadyItem icon="image-outline" label="3:4 高清图" />
             <ShareReadyItem
               icon="chatbubble-ellipses-outline"
-              label={lowConfidenceShare ? '核对后朋友圈文案' : '朋友圈文案'}
+              label={momentsReadyLabel}
             />
             <ShareReadyItem
               icon="sparkles-outline"
-              label={lowConfidenceShare ? '核对后小红书文案' : '小红书话题'}
+              label={xhsReadyLabel}
             />
           </View>
 
@@ -995,9 +1016,7 @@ export function DietShareSheet({
               <Ionicons name="chatbubble-ellipses-outline" size={18} color={C.greenOn} />
               <View>
                 <Text style={styles.platformShareText}>发微信/朋友圈</Text>
-                <Text style={styles.platformShareHint}>
-                  {lowConfidenceShare ? '先核对食物和份量' : '自动复制朋友圈文案'}
-                </Text>
+                <Text style={styles.platformShareHint}>{wechatShareHint}</Text>
               </View>
             </TouchableOpacity>
             <TouchableOpacity
@@ -1011,9 +1030,7 @@ export function DietShareSheet({
               <Ionicons name="sparkles-outline" size={18} color="#fff" />
               <View>
                 <Text style={styles.platformShareText}>发小红书</Text>
-                <Text style={styles.platformShareHint}>
-                  {lowConfidenceShare ? '核对后复制带话题文案' : '自动复制带话题文案'}
-                </Text>
+                <Text style={styles.platformShareHint}>{xhsShareHint}</Text>
               </View>
             </TouchableOpacity>
           </View>
