@@ -105,6 +105,16 @@ def sync_user_garmin_data(self, user_id: int, days: int = 1):
             except Exception as e:
                 logger.warning(f"用户 {user_id} 运动活动同步失败: {e}", exc_info=True)
 
+            # rank7: passive Garmin sync just wrote daily health + workout data →
+            # drop the stale twin cache (also fixes the pre-existing ≤60s staleness
+            # on passive syncs) and any pre-generated starter answers. Fail-soft.
+            if success_count or synced_activities:
+                try:
+                    from app.twin.cache import invalidate_twin
+                    invalidate_twin(user_id)
+                except Exception:  # noqa: BLE001 — never fail the sync task
+                    pass
+
             # 检测新同步的运动并触发自动分析
             try:
                 twelve_hours_ago = datetime.now(UTC) - timedelta(hours=12)

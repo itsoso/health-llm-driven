@@ -22,6 +22,15 @@ from app.services.period_goal_service import PeriodGoalService
 router = APIRouter()
 
 
+def _invalidate_twin(user_id: int) -> None:
+    """Fail-soft twin-cache invalidation after a write (rank7: also drops pregen)."""
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(user_id)
+    except Exception:  # noqa: BLE001 — a Redis error must never fail the write
+        pass
+
+
 def _sync_weight_to_profile(db: Session, user_id: int, weight_record: WeightRecord):
     """同步体重数据到用户画像"""
     profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
@@ -92,6 +101,7 @@ def create_weight_record(
 
         # 自动更新阶段性目标指标
         _auto_update_goal_metrics(db, user_id, existing)
+        _invalidate_twin(user_id)
 
         return existing
 
@@ -114,6 +124,7 @@ def create_weight_record(
 
     # 自动更新阶段性目标指标
     _auto_update_goal_metrics(db, user_id, db_record)
+    _invalidate_twin(user_id)
 
     return db_record
 

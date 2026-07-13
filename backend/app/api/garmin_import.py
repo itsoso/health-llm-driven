@@ -149,6 +149,14 @@ async def bulk_import(
 
     db.commit()
 
+    # rank7: passive bulk import wrote daily/workout data → drop stale twin cache
+    # and any pre-generated starter answers. Fail-soft (never fail the import).
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(current_user.id)
+    except Exception:  # noqa: BLE001
+        pass
+
     return {
         "success": True,
         "daily_imported": daily_imported,

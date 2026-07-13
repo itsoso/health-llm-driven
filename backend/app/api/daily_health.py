@@ -34,6 +34,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _invalidate_twin(user_id) -> None:
+    """Fail-soft twin-cache invalidation after a write (rank7: also drops pregen)."""
+    if not user_id:
+        return
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(user_id)
+    except Exception:  # noqa: BLE001 — a Redis error must never fail the write
+        pass
+
+
 # Garmin数据
 @router.post("/garmin", response_model=GarminDataResponse)
 def create_garmin_data(
@@ -57,6 +68,7 @@ def create_garmin_data(
                 setattr(existing, key, value)
         db.commit()
         db.refresh(existing)
+        _invalidate_twin(user_id)
         return existing
 
     # 创建新记录，使用当前用户ID
@@ -66,6 +78,7 @@ def create_garmin_data(
     db.add(db_data)
     db.commit()
     db.refresh(db_data)
+    _invalidate_twin(user_id)
     return db_data
 
 
@@ -223,6 +236,7 @@ def create_exercise_record(
     db.add(db_exercise)
     db.commit()
     db.refresh(db_exercise)
+    _invalidate_twin(current_user.id)
     return db_exercise
 
 
@@ -260,6 +274,7 @@ def update_exercise_record(
         setattr(record, key, value)
     db.commit()
     db.refresh(record)
+    _invalidate_twin(current_user.id)
     return record
 
 
@@ -278,6 +293,7 @@ def delete_exercise_record(
         raise HTTPException(status_code=404, detail="记录不存在")
     db.delete(record)
     db.commit()
+    _invalidate_twin(current_user.id)
     return {"message": "已删除", "id": exercise_id}
 
 
@@ -308,6 +324,7 @@ def create_diet_record(
     db.add(db_diet)
     db.commit()
     db.refresh(db_diet)
+    _invalidate_twin(getattr(db_diet, "user_id", None))
     return {"message": "创建成功", "id": db_diet.id}
 
 
@@ -322,6 +339,7 @@ def create_water_intake(
     db.add(db_water)
     db.commit()
     db.refresh(db_water)
+    _invalidate_twin(getattr(db_water, "user_id", None))
     return {"message": "创建成功", "id": db_water.id}
 
 
@@ -336,6 +354,7 @@ def create_supplement_intake(
     db.add(db_supplement)
     db.commit()
     db.refresh(db_supplement)
+    _invalidate_twin(getattr(db_supplement, "user_id", None))
     return {"message": "创建成功", "id": db_supplement.id}
 
 
@@ -350,4 +369,5 @@ def create_outdoor_activity(
     db.add(db_activity)
     db.commit()
     db.refresh(db_activity)
+    _invalidate_twin(getattr(db_activity, "user_id", None))
     return {"message": "创建成功", "id": db_activity.id}

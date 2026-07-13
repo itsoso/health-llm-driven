@@ -27,6 +27,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _invalidate_twin(user_id: int) -> None:
+    """Fail-soft twin-cache invalidation after a passive health-data sync/import.
+
+    rank7: also drops any pre-generated starter answers so they can't serve on
+    freshly-synced data. A Redis error must never fail the sync endpoint.
+    """
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(user_id)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 @router.get("/compare", summary="双设备一致性对比(如 Apple Watch + Garmin 同指标)")
 def compare_devices(
     days: int = Query(7, ge=1, le=90),
@@ -453,6 +466,8 @@ async def sync_huawei_data(
         "huawei",
         request.days
     )
+    if result.get("success"):
+        _invalidate_twin(current_user.id)
     return DeviceSyncResult(
         success=result["success"],
         device="huawei",
@@ -507,6 +522,8 @@ async def sync_device(
         device_type,
         request.days
     )
+    if result.get("success"):
+        _invalidate_twin(current_user.id)
 
     return DeviceSyncResult(
         success=result["success"],
@@ -529,6 +546,8 @@ async def sync_all_devices(
         current_user.id,
         request.days
     )
+    if results:
+        _invalidate_twin(current_user.id)
 
     return {
         "success": True,
@@ -681,6 +700,7 @@ async def import_apple_health(
                 failed += 1
 
         db.commit()
+        _invalidate_twin(current_user.id)
 
         return {
             "success": True,
@@ -792,6 +812,7 @@ async def sync_apple_data(
     credential.update_sync_time()
     credential.mark_valid()
     db.commit()
+    _invalidate_twin(current_user.id)
 
     return DeviceSyncResult(
         success=True,
@@ -1191,6 +1212,7 @@ async def healthkit_import(
         connection_id=connection.id,
         success=True,
     )
+    _invalidate_twin(current_user.id)
 
     logger.info(
         f"[healthkit_import] user={current_user.id} batch={len(records)} "

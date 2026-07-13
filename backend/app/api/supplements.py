@@ -39,6 +39,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _invalidate_twin(user_id: int) -> None:
+    """Fail-soft twin-cache invalidation after a write (rank7: also drops pregen)."""
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(user_id)
+    except Exception:  # noqa: BLE001 — a Redis error must never fail the write
+        pass
+
+
 def _ensure_self_or_admin(current_user: User, user_id: int) -> None:
     """Legacy /user/{user_id} routes must not leak another user's health data."""
     if current_user.id != user_id and not getattr(current_user, "is_admin", False):
@@ -82,6 +91,7 @@ def create_supplement(
     db.add(db_supplement)
     db.commit()
     db.refresh(db_supplement)
+    _invalidate_twin(current_user.id)
     return db_supplement
 
 
@@ -120,6 +130,7 @@ def update_supplement(
 
     db.commit()
     db.refresh(supplement)
+    _invalidate_twin(current_user.id)
     return supplement
 
 
@@ -139,6 +150,7 @@ def delete_supplement(
 
     db.delete(supplement)
     db.commit()
+    _invalidate_twin(current_user.id)
     return {"message": "删除成功"}
 
 
@@ -167,6 +179,7 @@ def create_supplement_record(
         existing.notes = record.notes
         db.commit()
         db.refresh(existing)
+        _invalidate_twin(user_id)
         return existing
 
     record_data = record.model_dump()
@@ -191,8 +204,10 @@ def create_supplement_record(
         existing.notes = record.notes
         db.commit()
         db.refresh(existing)
+        _invalidate_twin(user_id)
         return existing
     db.refresh(db_record)
+    _invalidate_twin(user_id)
     return db_record
 
 
@@ -235,6 +250,7 @@ def batch_checkin(
             results.append({"supplement_id": supplement_id, "action": "created"})
 
     db.commit()
+    _invalidate_twin(user_id)
     return {"message": "批量打卡成功", "results": results}
 
 
@@ -360,6 +376,7 @@ def update_supplement_record(
         setattr(record, key, value)
     db.commit()
     db.refresh(record)
+    _invalidate_twin(current_user.id)
     return record
 
 
@@ -373,6 +390,7 @@ def delete_supplement_record(
     record = _get_owned_supplement_record(db, current_user.id, record_id)
     db.delete(record)
     db.commit()
+    _invalidate_twin(current_user.id)
     return {"message": "删除成功", "record_id": record_id}
 
 
@@ -467,6 +485,7 @@ def copy_day_records(
             results.append({"supplement_id": src.supplement_id, "action": "created"})
 
     db.commit()
+    _invalidate_twin(current_user.id)
     return {
         "message": f"已将 {request.from_date} 的 {len(results)} 条记录复制到 {request.to_date}",
         "copied_count": len(results),

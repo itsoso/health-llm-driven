@@ -53,6 +53,15 @@ class _FakeRedis:
             if match is None or fnmatch.fnmatch(k, match):
                 yield k
 
+    def sadd(self, key, *members):
+        s = self.store.setdefault(key, set())
+        before = len(s)
+        s.update(members)
+        return len(s) - before
+
+    def smembers(self, key):
+        return set(self.store.get(key, set()))
+
     def incr(self, key):
         self.store[key] = int(self.store.get(key, 0)) + 1
         return self.store[key]
@@ -229,7 +238,7 @@ def test_non_starter_message_misses_cheaply(db, fake_redis, pregen_on, monkeypat
 # ── Safety #1 (write belt) + invalidate ─────────────────────────────────
 
 
-def test_invalidate_drops_all_user_entries(db, fake_redis):
+def test_invalidate_drops_all_user_entries(db, fake_redis, pregen_on):
     user = _make_user(db)
     _store_fresh(db, user.id, "分析我最近的代谢健康")
     _store_fresh(db, user.id, "今天怎么安排训练和恢复")
@@ -239,6 +248,16 @@ def test_invalidate_drops_all_user_entries(db, fake_redis):
     assert n == 2
     assert starter_pregen.read_pregen(user.id, "分析我最近的代谢健康") is None
     assert starter_pregen.read_pregen(user.id, "今天怎么安排训练和恢复") is None
+
+
+def test_invalidate_noop_when_flag_off(db, fake_redis):
+    """C3: with the feature OFF, invalidate touches Redis zero times (no scan)."""
+    user = _make_user(db)
+    _store_fresh(db, user.id, "分析我最近的代谢健康")
+    # Flag defaults False → early return, entry left intact (harmless: try_serve is
+    # also gated off, so nothing stale can serve).
+    assert starter_pregen.invalidate_pregen(user.id) == 0
+    assert starter_pregen.read_pregen(user.id, "分析我最近的代谢健康") is not None
 
 
 # ── Safety #4: dedupe / single-attempt ──────────────────────────────────
@@ -398,6 +417,64 @@ def test_data_signals_hash_flips_on_real_write(db):
     h2 = starter_pregen.data_signals_hash(db, user.id)
     assert h2
     assert h1 != h2, "signals_hash must flip when underlying starter data changes"
+
+
+# ── C1 write belt: passive writers drop pregen (negative-space adversarial) ──
+#
+# These are exactly the gaps signals_hash can't see: a CGM reading and a device
+# (Garmin) data sync change data a deep answer uses but leave the starter cards
+# unchanged. Post-C1 those writers call invalidate_twin → invalidate_pregen. conftest
+# no-ops the real invalidate_twin, so we install a spy that calls through to the real
+# invalidate_pregen and assert BOTH that the writer reaches the choke and that the
+# stored answer is dropped.
+
+
+def _wire_belt_spy(monkeypatch) -> list:
+    import app.twin.cache as tc
+
+    calls: list = []
+
+    def _spy(uid):
+        calls.append(uid)
+        starter_pregen.invalidate_pregen(uid)
+
+    monkeypatch.setattr(tc, "invalidate_twin", _spy)
+    return calls
+
+
+def test_cgm_write_drops_pregen_via_belt(
+    client, db, auth_user_and_headers, fake_redis, pregen_on, monkeypatch
+):
+    user, headers = auth_user_and_headers
+    _store_fresh(db, user.id, "分析我最近的代谢健康")
+    assert starter_pregen.read_pregen(user.id, "分析我最近的代谢健康") is not None
+    calls = _wire_belt_spy(monkeypatch)
+
+    resp = client.post(
+        "/api/v1/cgm/readings", json={"glucose_mg_dl": 110}, headers=headers
+    )
+    assert resp.status_code in (200, 201), resp.text
+    assert user.id in calls, "CGM write did not reach invalidate_twin (C1 gap)"
+    assert starter_pregen.read_pregen(user.id, "分析我最近的代谢健康") is None
+
+
+def test_device_sync_write_drops_pregen_via_belt(
+    client, db, auth_user_and_headers, fake_redis, pregen_on, monkeypatch
+):
+    from datetime import date
+
+    user, headers = auth_user_and_headers
+    _store_fresh(db, user.id, "分析我最近的代谢健康")
+    calls = _wire_belt_spy(monkeypatch)
+
+    resp = client.post(
+        "/api/v1/daily-health/garmin",
+        json={"user_id": user.id, "record_date": str(date.today()), "hrv": 55.0},
+        headers=headers,
+    )
+    assert resp.status_code in (200, 201), resp.text
+    assert user.id in calls, "device-data write did not reach invalidate_twin (C1 gap)"
+    assert starter_pregen.read_pregen(user.id, "分析我最近的代谢健康") is None
 
 
 # ── Producer: same pipeline, read-only, aborts on write, cleans scratch ──

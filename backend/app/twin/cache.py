@@ -1,9 +1,9 @@
 """
 Twin 缓存层 —— 简单版。
 
-MVP 设计：单 key 5 分钟 TTL，命中率优先于精细度。
-下一阶段 (Phase 0.5) 再做分层 TTL：
-  - physiological 5 min    (Garmin 高频更新)
+MVP 设计：单 key 60 秒 TTL（见 TWIN_CACHE_TTL_SECONDS，同步后希望尽快看到新数据），
+命中率优先于精细度。下一阶段 (Phase 0.5) 再做分层 TTL：
+  - physiological 短 TTL   (Garmin 高频更新)
   - labs/genetic  24 h     (很少变)
   - environment   1 h      (天气/AQI)
 """
@@ -82,12 +82,15 @@ def invalidate_twin(user_id: int) -> None:
     except Exception as e:
         logger.warning(f"[twin.cache] invalidate 失败: {e}")
 
-    # rank7: this is the universal post-write choke point (every mutation route —
-    # exams / labs / genetics / CGM / meds / symptoms / agent writes — calls it),
-    # so it's also where pre-generated starter answers must be dropped fail-closed:
-    # ANY write since generation → discard pregen → tap falls through to a live
-    # turn. A pre-generated medical answer must NEVER serve on changed data. Lazy +
-    # guarded so a missing/failed pregen module can never break twin invalidation.
+    # rank7: this is the write choke every mutation route must call to keep the twin
+    # fresh — active writes (exams / labs / genetics / CGM / meds / symptoms / agent
+    # writes) AND passive syncs (device/healthkit/garmin/cgm ingest, daily_health /
+    # weight / blood_pressure / medication / supplement writers), all wired in the
+    # same rank7 change. So it is also where pre-generated starter answers must be
+    # dropped fail-closed: ANY write since generation → discard pregen → tap falls
+    # through to a live turn (a pre-generated medical answer must NEVER serve on
+    # changed data). invalidate_pregen is a no-op when the flag is off (touches Redis
+    # zero times); lazy + guarded so it can never break twin invalidation.
     try:
         from app.services.starter_pregen import invalidate_pregen
 

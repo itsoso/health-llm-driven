@@ -21,6 +21,16 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/medication", tags=["用药管理"])
 
+
+def _invalidate_twin(user_id: int) -> None:
+    """Fail-soft twin-cache invalidation after a write (rank7: also drops pregen)."""
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(user_id)
+    except Exception:  # noqa: BLE001 — a Redis error must never fail the write
+        pass
+
+
 _MEDICATION_SAFETY_CATEGORIES = {"pgx", "ddi", "dsi"}
 
 
@@ -110,6 +120,7 @@ async def add_medication(
         db.rollback()
         logger.warning(f"[MedAPI] KG extract 失败 (旁路): {e}")
 
+    _invalidate_twin(current_user.id)
     body = _serialize_medication(med)
     body["safety_alerts"] = _medication_safety_alerts(db, current_user.id)
     return body
@@ -151,6 +162,7 @@ async def update_medication(
     med = medication_service.update_medication(db, medication_id, current_user.id, data.model_dump(exclude_none=True))
     if not med:
         raise HTTPException(status_code=404, detail="药品不存在")
+    _invalidate_twin(current_user.id)
     body = _serialize_medication(med)
     body["safety_alerts"] = _medication_safety_alerts(db, current_user.id)
     return body
@@ -166,6 +178,7 @@ async def deactivate_medication(
     success = medication_service.deactivate_medication(db, medication_id, current_user.id)
     if not success:
         raise HTTPException(status_code=404, detail="药品不存在")
+    _invalidate_twin(current_user.id)
     return {"message": "药品已停用"}
 
 
@@ -179,6 +192,7 @@ async def restore_medication(
     success = medication_service.reactivate_medication(db, medication_id, current_user.id)
     if not success:
         raise HTTPException(status_code=404, detail="药品不存在或不属于当前用户")
+    _invalidate_twin(current_user.id)
     return {"message": "药品已恢复"}
 
 
@@ -272,6 +286,7 @@ async def log_medication(
     med = medication_service.get_medication(db, data.medication_id, current_user.id)
     if med is not None:
         _writeback_agenda_completion(db, current_user.id, med, data)
+    _invalidate_twin(current_user.id)
     return {
         "id": log.id,
         "medication_id": log.medication_id,
@@ -296,6 +311,7 @@ async def delete_medication_log(
         raise HTTPException(status_code=404, detail="记录不存在")
     db.delete(log)
     db.commit()
+    _invalidate_twin(current_user.id)
     logger.info(f"[MedAPI] 用户 {current_user.id} 删除服药日志 {log_id}")
     return {"message": "已删除", "id": log_id}
 
@@ -332,6 +348,7 @@ async def update_medication_log(
         setattr(log, key, value)
     db.commit()
     db.refresh(log)
+    _invalidate_twin(current_user.id)
     logger.info(f"[MedAPI] 用户 {current_user.id} 更新服药日志 {log_id}")
     return _serialize_medication_log(log)
 
@@ -439,6 +456,7 @@ async def create_regimen(
             "disclaimer": result["disclaimer"],
             "can_override": True,
         })
+    _invalidate_twin(current_user.id)
     return result
 
 

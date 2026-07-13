@@ -23,6 +23,15 @@ from app.services.cgm import CgmService
 router = APIRouter(prefix="/cgm", tags=["cgm"])
 
 
+def _invalidate_twin(user_id: int) -> None:
+    """Fail-soft twin-cache invalidation after a write (rank7: also drops pregen)."""
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(user_id)
+    except Exception:  # noqa: BLE001 — a Redis error must never fail the write
+        pass
+
+
 # 与 models/cgm_reading.py 的 mmol property 及 rules/cgm.py 同口径(round-trip 自洽)
 _MMOL_TO_MGDL = 18.0
 
@@ -92,6 +101,7 @@ def create_reading(
         raw_id=body.raw_id,
         notes=body.notes,
     )
+    _invalidate_twin(current_user.id)
     return CgmReadingOut(
         id=reading.id,
         measured_at=reading.measured_at,
@@ -111,6 +121,7 @@ def create_readings_batch(
     """批量录入（幂等 by raw_id）。"""
     svc = CgmService()
     result = svc.ingest_batch(db, current_user.id, [r.model_dump() for r in body.readings])
+    _invalidate_twin(current_user.id)
     return result
 
 

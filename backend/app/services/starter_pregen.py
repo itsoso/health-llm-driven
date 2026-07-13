@@ -41,6 +41,11 @@ logger = logging.getLogger(__name__)
 _ENTRY_PREFIX = "starter_pregen:v1"
 _INFLIGHT_PREFIX = "starter_pregen:inflight:v1"
 _METRIC_PREFIX = "starter_pregen:metric:v1"
+# Per-user index SET of a user's live entry keys — invalidate_pregen clears via
+# SMEMBERS+DEL rather than a full-keyspace scan_iter (C3: scans are O(keyspace)
+# and ran on EVERY mutation). The index self-expires well beyond any entry TTL.
+_INDEX_PREFIX = "starter_pregen:idx:v1"
+_INDEX_TTL_SECONDS = 24 * 60 * 60
 # An in-flight claim self-expires so a crashed pregen can't wedge a chip forever.
 _INFLIGHT_TTL_SECONDS = 120
 # Metrics counters live long enough to eyeball hit-rate before expansion.
@@ -75,6 +80,10 @@ def _entry_key(user_id: int, starter_text: str) -> str:
 
 def _inflight_key(user_id: int, starter_text: str) -> str:
     return f"{_INFLIGHT_PREFIX}:{user_id}:{_text_digest(starter_text)}"
+
+
+def _index_key(user_id: int) -> str:
+    return f"{_INDEX_PREFIX}:{user_id}"
 
 
 def _incr_metric(name: str) -> None:
@@ -192,16 +201,18 @@ def write_pregen(
     *,
     ttl_seconds: int,
 ) -> None:
-    """Persist a pregen entry for `ttl_seconds`. Never raises."""
+    """Persist a pregen entry for `ttl_seconds` + index it. Never raises."""
     try:
         client = _redis()
         if client is None:
             return
-        client.setex(
-            _entry_key(user_id, starter_text),
-            ttl_seconds,
-            json.dumps(payload, ensure_ascii=False),
-        )
+        entry_key = _entry_key(user_id, starter_text)
+        client.setex(entry_key, ttl_seconds, json.dumps(payload, ensure_ascii=False))
+        # Track this key in the user's index set so invalidate can DEL by membership
+        # (no keyspace scan). The index self-expires so it can't leak indefinitely.
+        idx = _index_key(user_id)
+        client.sadd(idx, entry_key)
+        client.expire(idx, _INDEX_TTL_SECONDS)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[starter_pregen] write failed (bypassing): %s", exc)
 
@@ -209,19 +220,35 @@ def write_pregen(
 def invalidate_pregen(user_id: int) -> int:
     """Drop ALL pregen entries for a user (called on ANY write). Fail-soft → count.
 
-    This is the write belt for freshness invariant (1d): the universal post-write
-    choke twin.cache.invalidate_twin calls this so a pre-generated answer can never
+    Write belt for freshness invariant (1d): a pre-generated answer can never
     survive a data mutation, even one the signals_hash wouldn't reflect.
+
+    C3: this runs from twin.cache.invalidate_twin on EVERY mutation, so it must be
+    cheap and gated. When the feature is OFF there are no entries to drop — return
+    immediately, touching Redis zero times. When ON, clear by index-set membership
+    (SMEMBERS + DEL), never a full-keyspace scan.
     """
+    try:
+        from app.config import settings
+
+        if not getattr(settings, "starter_pregen_enabled", False):
+            return 0
+    except Exception:  # noqa: BLE001 — can't read flag → treat as off (belt is best-effort)
+        return 0
+
     deleted = 0
     try:
         client = _redis()
         if client is None:
             return 0
-        keys = list(client.scan_iter(match=f"{_ENTRY_PREFIX}:{user_id}:*"))
+        idx = _index_key(user_id)
+        members = client.smembers(idx)
+        keys = [
+            (m.decode("utf-8") if isinstance(m, bytes) else m) for m in (members or [])
+        ]
         if keys:
-            client.delete(*keys)
-            deleted = len(keys)
+            deleted = client.delete(*keys) or 0
+        client.delete(idx)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[starter_pregen] invalidate failed (bypassing): %s", exc)
     return deleted

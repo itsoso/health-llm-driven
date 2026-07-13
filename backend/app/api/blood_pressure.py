@@ -26,6 +26,15 @@ from app.utils.health_record import (
 router = APIRouter()
 
 
+def _invalidate_twin(user_id: int) -> None:
+    """Fail-soft twin-cache invalidation after a write (rank7: also drops pregen)."""
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(user_id)
+    except Exception:  # noqa: BLE001 — a Redis error must never fail the write
+        pass
+
+
 def classify_blood_pressure(systolic: int, diastolic: int) -> str:
     """血压分类"""
     if systolic < 120 and diastolic < 80:
@@ -77,6 +86,7 @@ def create_blood_pressure_record(
     db.add(db_record)
     db.commit()
     db.refresh(db_record)
+    _invalidate_twin(current_user.id)
 
     # 添加血压分类
     response = BloodPressureRecordResponse.model_validate(db_record)
@@ -286,6 +296,7 @@ def update_blood_pressure_record(
 
     db.commit()
     db.refresh(record)
+    _invalidate_twin(current_user.id)
 
     response = BloodPressureRecordResponse.model_validate(record)
     response.category = classify_blood_pressure(record.systolic, record.diastolic)
@@ -305,4 +316,5 @@ def delete_blood_pressure_record(
 
     db.delete(record)
     db.commit()
+    _invalidate_twin(current_user.id)
     return {"message": "Record deleted successfully"}
