@@ -101,6 +101,7 @@ export function buildDietShareHeadline(record: DietRecord): string {
 }
 
 export function buildDietShareHighlights(record: DietRecord): string[] {
+  if (isLowConfidenceDietShare(record)) return ['待核对'];
   const tags: string[] = [];
   if (typeof record.protein === 'number' && record.protein >= 30) tags.push('高蛋白');
   if (typeof record.fat === 'number' && record.fat <= 12) tags.push('低脂');

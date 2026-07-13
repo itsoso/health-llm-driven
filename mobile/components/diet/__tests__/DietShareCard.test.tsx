@@ -104,14 +104,14 @@ describe('DietShareCard', () => {
   it('does not show a high balance score before low-confidence estimates are reviewed', () => {
     const lowConfidenceRecord = { ...record, source: 'ai_estimate', ai_confidence: 0.42 };
     const balance = buildDietShareBalance(lowConfidenceRecord);
-    const { getByText, queryByText } = render(
+    const { getAllByText, getByText, queryByText } = render(
       <DietShareCard record={lowConfidenceRecord} dateLabel="7月11日 · 午餐" />,
     );
 
     expect(balance.score).toBeNull();
     expect(balance.label).toBe('核对后生成均衡度');
     expect(getByText('均衡度')).toBeTruthy();
-    expect(getByText('待核对')).toBeTruthy();
+    expect(getAllByText('待核对').length).toBeGreaterThan(0);
     expect(getByText('核对后生成均衡度')).toBeTruthy();
     expect(queryByText('96')).toBeNull();
     expect(queryByText('高蛋白稳态餐')).toBeNull();
@@ -346,7 +346,7 @@ describe('DietShareCard', () => {
       ai_confidence: 0.42,
       food_items: '机场贵宾厅番茄鸡蛋面、鸭肉、生菜',
     };
-    const { getByText, queryByText } = render(
+    const { getAllByText, getByText, queryByText } = render(
       <DietShareSheet
         visible
         record={lowConfidenceRecord}
@@ -357,7 +357,7 @@ describe('DietShareCard', () => {
 
     expect(getByText('识别置信度 42%')).toBeTruthy();
     expect(getByText('发布前建议核对食物和份量')).toBeTruthy();
-    expect(getByText('待核对')).toBeTruthy();
+    expect(getAllByText('待核对').length).toBeGreaterThan(0);
     expect(getByText('谨慎分享')).toBeTruthy();
     expect(queryByText('已确认')).toBeNull();
     expect(queryByText('可分享')).toBeNull();
@@ -410,6 +410,36 @@ describe('DietShareCard', () => {
     await waitFor(() => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('小巴饮食卡｜待核对的一餐'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('小巴饮食卡｜蛋白质拉满的一餐'));
+    });
+  });
+
+  it('does not surface nutrition highlight tags before low-confidence estimates are reviewed', async () => {
+    const lowConfidenceRecord = {
+      ...record,
+      source: 'ai_estimate',
+      ai_confidence: 0.42,
+      food_items: '机场贵宾厅番茄鸡蛋面、鸭肉、生菜',
+    };
+    const { getByText, queryByText } = render(
+      <DietShareSheet
+        visible
+        record={lowConfidenceRecord}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(getByText('今日状态：待核对')).toBeTruthy();
+    expect(queryByText('高蛋白')).toBeNull();
+    expect(queryByText('低脂')).toBeNull();
+    expect(queryByText('今日状态：高蛋白 · 低脂')).toBeNull();
+
+    fireEvent.press(getByText('核对后复制小红书文案'));
+    await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('今日状态: 待核对'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('亮点: 高蛋白 / 低脂'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('#高蛋白饮食'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('#低脂餐'));
     });
   });
 
