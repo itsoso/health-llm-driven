@@ -1720,7 +1720,7 @@ function QuickDietDraftCard({
           ) : (
             <Ionicons name="checkmark" size={17} color={C.greenOn} />
           )}
-          <Text style={txt.quickConfirmText}>{isSaving ? '保存中' : confirmLabel}</Text>
+          <Text style={txt.quickConfirmText}>{isSaving ? '写入中' : confirmLabel}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.quickSecondaryBtn}
