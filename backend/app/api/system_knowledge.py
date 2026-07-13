@@ -45,6 +45,11 @@ admin_router = APIRouter(
     dependencies=[Depends(get_admin_user)],
 )
 
+# KBAudit.op is VARCHAR(40). Keep these explicit and schema-safe so a successful
+# filesystem write cannot be reported as a 500 solely while recording metadata.
+DEDAO_KBASE_VERIFICATION_GENERATED_OP = "dedao_kbase_verification_generated"
+DEDAO_KBASE_VERIFICATION_APPLIED_OP = "dedao_kbase_verification_applied"
+
 
 class TwinLookupRequest(BaseModel):
     genetics: dict[str, Any] = Field(default_factory=dict)
@@ -737,7 +742,7 @@ def generate_dedao_kbase_verification_packet(
     _record_audit(
         db,
         doc_id=doc_id,
-        op="dedao_kbase_verification_packet_generated",
+        op=DEDAO_KBASE_VERIFICATION_GENERATED_OP,
         actor=f"admin:{admin_user.id}",
         diff={
             "packet_id": packet["packet_id"],
@@ -780,7 +785,7 @@ def apply_dedao_kbase_verification_packet(
     _record_audit(
         db,
         doc_id=doc_id,
-        op="dedao_kbase_verification_packet_applied",
+        op=DEDAO_KBASE_VERIFICATION_APPLIED_OP,
         actor=f"admin:{admin_user.id}",
         diff={
             "packet_id": request.packet_id,
