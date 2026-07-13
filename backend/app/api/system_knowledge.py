@@ -14,7 +14,9 @@ from app.models.user import User
 from app.services.system_knowledge_eval import run_system_kb_eval_cases
 from app.services.system_knowledge_service import (
     adjudicate_dedao_kbase_review_claim,
+    apply_dedao_kbase_review_verification_packet,
     approve_dedao_kbase_draft_review,
+    generate_dedao_kbase_review_verification_packet,
     get_dedao_kbase_draft_review_bundle,
     get_claim_bundle,
     get_entity_bundle,
@@ -23,6 +25,7 @@ from app.services.system_knowledge_service import (
     get_knowledge_review_queue,
     lint_knowledge_base,
     list_dedao_kbase_review_claims,
+    list_dedao_kbase_review_verification_packets,
     lookup_for_twin,
     preview_dedao_kbase_reviewed_artifacts_publish,
     publish_dedao_kbase_reviewed_artifacts,
@@ -96,6 +99,16 @@ class DedaoKbaseClaimAdjudicationRequest(BaseModel):
     evidence: DedaoKbaseClaimEvidence | None = None
     evidence_level: Literal["A", "B", "C", "D"] | None = None
     confidence: float | None = Field(default=None, ge=0, le=1)
+
+
+class DedaoKbaseVerificationPacketRequest(BaseModel):
+    workspace_fingerprint: str = Field(..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+
+class DedaoKbaseVerificationPacketApplyRequest(BaseModel):
+    workspace_fingerprint: str = Field(..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    packet_id: str = Field(..., min_length=1, max_length=160)
+    note: str | None = Field(default=None, max_length=1000)
 
 
 class DedaoKbaseDraftReviewFinalizeRequest(BaseModel):
@@ -686,6 +699,97 @@ def get_dedao_kbase_draft_review_items(
         return list_dedao_kbase_review_claims(offset=offset, limit=limit, decision=decision)
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@admin_router.get(
+    "/dedao_kbase/draft_review/items/{doc_id}/verification",
+    summary="查看 dedao-kbase claim verification packets",
+)
+def get_dedao_kbase_verification_packets(
+    doc_id: str,
+    admin_user: User = Depends(get_admin_user),
+):
+    try:
+        return list_dedao_kbase_review_verification_packets(doc_id=doc_id)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@admin_router.post(
+    "/dedao_kbase/draft_review/items/{doc_id}/verification",
+    summary="生成 dedao-kbase claim verification packet",
+)
+def generate_dedao_kbase_verification_packet(
+    doc_id: str,
+    request: DedaoKbaseVerificationPacketRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        result = generate_dedao_kbase_review_verification_packet(
+            doc_id=doc_id,
+            expected_workspace_fingerprint=request.workspace_fingerprint,
+        )
+    except (OSError, ValueError) as exc:
+        status_code = 409 if "changed since preview" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    packet = result["packet"]
+    _record_audit(
+        db,
+        doc_id=doc_id,
+        op="dedao_kbase_verification_packet_generated",
+        actor=f"admin:{admin_user.id}",
+        diff={
+            "packet_id": packet["packet_id"],
+            "status": packet["status"],
+            "proposed_decision": packet["proposed_decision"],
+            "workspace_fingerprint": result["workspace_fingerprint"],
+            "check_statuses": {
+                item["code"]: item["status"]
+                for item in packet.get("checks") or []
+            },
+            "citation_ids": packet.get("citation_ids") or [],
+            "generator": packet.get("generator"),
+        },
+    )
+    return result
+
+
+@admin_router.post(
+    "/dedao_kbase/draft_review/items/{doc_id}/verification/apply",
+    summary="采纳 dedao-kbase claim verification packet 建议",
+)
+def apply_dedao_kbase_verification_packet(
+    doc_id: str,
+    request: DedaoKbaseVerificationPacketApplyRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        result = apply_dedao_kbase_review_verification_packet(
+            doc_id=doc_id,
+            packet_id=request.packet_id,
+            reviewer=f"admin:{admin_user.id}",
+            expected_workspace_fingerprint=request.workspace_fingerprint,
+            note=request.note,
+        )
+    except (OSError, ValueError) as exc:
+        message = str(exc)
+        status_code = 409 if "changed since preview" in message or "is stale" in message else 400
+        raise HTTPException(status_code=status_code, detail=message) from exc
+    _record_audit(
+        db,
+        doc_id=doc_id,
+        op="dedao_kbase_verification_packet_applied",
+        actor=f"admin:{admin_user.id}",
+        diff={
+            "packet_id": request.packet_id,
+            "decision": result["decision"],
+            "note": request.note,
+            "workspace_fingerprint": result["workspace_fingerprint"],
+        },
+    )
+    return result
 
 
 @admin_router.patch("/dedao_kbase/draft_review/items/{doc_id}", summary="裁决一个 dedao-kbase draft claim")

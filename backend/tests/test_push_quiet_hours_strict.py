@@ -205,12 +205,9 @@ async def test_morning_floor_overrides_non_critical_bypass_before_9(db):
 
 
 @pytest.mark.asyncio
-async def test_quiet_hours_critical_bypasses_immediately(db):
-    """critical 健康告警穿透静默时段立即推送 (2026-05-30 反转"严格不打扰").
-
-    致命药物交互 / 急性阈值不应压到早上 09:00 —— 原计划的"紧急联系人穿透"从未落地.
-    """
-    user = _make_user(db, username="strict_critical_bypass")
+async def test_morning_floor_delays_critical_before_9(db):
+    """09:00 睡眠地板优先于 critical 穿透，避免 07:00/08:00 打扰睡眠。"""
+    user = _make_user(db, username="strict_critical_morning_floor")
     svc = PushService(db)
 
     fake_now = datetime(2026, 5, 12, 3, 0, 0)  # 凌晨静默时段
@@ -225,18 +222,18 @@ async def test_quiet_hours_critical_bypasses_immediately(db):
             data={"rule_id": "ddi.fatal"},
         )
 
-    # 立即发送, 不进延迟队列
-    assert result.get("success") is True
-    assert result.get("reason") != "delayed_for_quiet_hours"
+    assert result.get("success") is False
+    assert result.get("reason") == "delayed_for_quiet_hours"
     delayed = (
         db.query(NotificationLog)
         .filter(
             NotificationLog.user_id == user.id,
             NotificationLog.status == NotificationStatus.DELAYED.value,
         )
-        .count()
+        .one()
     )
-    assert delayed == 0
+    assert delayed.scheduled_at.hour == 9
+    assert delayed.scheduled_at.minute == 0
 
 
 @pytest.mark.asyncio
@@ -527,8 +524,8 @@ async def test_flush_delayed_pushes_dedups_same_title(db):
 
 
 @pytest.mark.asyncio
-async def test_flush_does_not_re_delay(db):
-    """flush 时已经过了静默时段, 但若被 mock 到静默时段, respect_quiet_hours=False 应不再延迟."""
+async def test_flush_keeps_delayed_pushes_behind_morning_floor(db):
+    """09:00 前 flush 已到期 delayed push 时，仍要重排到睡眠地板之后。"""
     user = _make_user(db, username="flush_no_redelay")
     svc = PushService(db)
 
@@ -549,9 +546,10 @@ async def test_flush_does_not_re_delay(db):
 
     with patch("app.services.notification.push_service.get_china_now", return_value=fake_now), \
          patch.object(PushService, "_send_ios", new=AsyncMock(return_value={"success": True})):
-        # 这里 get_china_now 返回静默, 但 flush 内部传 respect_quiet_hours=False, 应该 sent
         result = await svc.flush_delayed_pushes()
 
-    assert result["succeeded"] >= 1
+    assert result["rescheduled"] >= 1
     db.refresh(log)
-    assert log.status == NotificationStatus.SENT.value
+    assert log.status == NotificationStatus.DELAYED.value
+    assert log.scheduled_at.hour == 9
+    assert log.scheduled_at.minute == 0

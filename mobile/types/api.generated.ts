@@ -5875,40 +5875,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/diet/photo-drafts/{token}/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Photo Draft Status */
-        get: operations["get_photo_draft_status_api_v1_diet_photo_drafts__token__status_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/diet/photo-drafts/{token}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Discard Photo Draft */
-        delete: operations["discard_photo_draft_api_v1_diet_photo_drafts__token__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/diet/recognize-and-save": {
         parameters: {
             query?: never;
@@ -6403,13 +6369,13 @@ export interface paths {
         get?: never;
         /**
          * Update Supplement Record
-         * @description 更新当前用户的一条补剂打卡记录。
+         * @description 更新当前用户的单条补剂打卡记录。
          */
         put: operations["update_supplement_record_api_v1_supplements_records__record_id__put"];
         post?: never;
         /**
          * Delete Supplement Record
-         * @description 删除当前用户的一条补剂打卡记录。
+         * @description 删除当前用户的单条补剂打卡记录。
          */
         delete: operations["delete_supplement_record_api_v1_supplements_records__record_id__delete"];
         options?: never;
@@ -10875,10 +10841,6 @@ export interface paths {
          *     This endpoint intentionally reuses the first-party AgentExecutor instead of
          *     any external gateway. It collects token events into one reply and returns
          *     the durable conversation/message ids written by the executor.
-         *
-         *     长回合(> AGENT_SEND_KEEPALIVE_SECONDS)返回 chunked JSON:前导空白是保活
-         *     字节,末尾才是完整 JSON 对象。流一旦开始,状态码已定格 200,错误改为
-         *     body.error 字段(消费方判 error 非空 = 失败)。快回合行为与历史完全一致。
          */
         post: operations["agent_send_api_v1_agent_send_post"];
         delete?: never;
@@ -10899,7 +10861,6 @@ export interface paths {
          * @description List current user's Agent conversations (paginated).
          *
          *     返回 {items, total, limit, offset} —— 前端历史记录用 offset 做上一页/下一页翻页。
-         *     `search` 同时匹配标题与消息正文;`title_like` 保留旧的仅标题过滤。
          *     AgentExecutor persists conversations through AgentConversationService so mobile/web
          *     can resume interrupted streams from the same durable message store.
          */
@@ -11026,87 +10987,6 @@ export interface paths {
         get: operations["list_agent_tools_api_v1_agent_tools_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/agent/tasks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * 统一任务账本 — 小巴的任务(五源只读聚合)
-         * @description Slice 4 v1:write_intents / desktop_jobs / agenda / heartbeat / recipes
-         *     五源只读聚合成统一 shape ``{kind, title, status, when, source}``。
-         *     单源失败计入 ``failed_sources``(fail-loud,不整包 500);取消/重试留 v2。
-         */
-        get: operations["agent_tasks_api_v1_agent_tasks_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/agent/recipes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 列出我的程序性配方 */
-        get: operations["list_agent_recipes_api_v1_agent_recipes_get"];
-        put?: never;
-        /** 创建程序性配方 */
-        post: operations["create_agent_recipe_api_v1_agent_recipes_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/agent/recipes/{recipe_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** 删除程序性配方 */
-        delete: operations["delete_agent_recipe_api_v1_agent_recipes__recipe_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/agent/recipes/{conversation_id}/save-from-conversation": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * 从对话最近一轮工具序列存配方
-         * @description 从该对话最近一条带 recipe_candidate 的助手消息反推工具序列存为配方。
-         *
-         *     候选步骤由 agent_executor 在「一轮完成 ≥2 个写类工具」时落到 message.meta
-         *     (已剥 confirmed + 日期模板化);这里**不重放对话、不经 LLM**,只是把已
-         *     持久化的确定性序列命名保存。归属校验 fail-closed:别人的对话 → 404。
-         */
-        post: operations["save_agent_recipe_from_conversation_api_v1_agent_recipes__conversation_id__save_from_conversation_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -14270,6 +14150,41 @@ export interface paths {
         get: operations["get_dedao_kbase_draft_review_items_api_v1_admin_knowledge_dedao_kbase_draft_review_items_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/{doc_id}/verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看 dedao-kbase claim verification packets */
+        get: operations["get_dedao_kbase_verification_packets_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_get"];
+        put?: never;
+        /** 生成 dedao-kbase claim verification packet */
+        post: operations["generate_dedao_kbase_verification_packet_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/{doc_id}/verification/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 采纳 dedao-kbase claim verification packet 建议 */
+        post: operations["apply_dedao_kbase_verification_packet_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_apply_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -18570,20 +18485,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get Goal
-         * @description 获取当前用户的单个目标
-         */
-        get: operations["get_goal_api_v1_goals__goal_id__get"];
+        get?: never;
         /**
          * Update Goal
-         * @description 更新当前用户的目标
+         * @description 更新当前用户的目标本体。
          */
         put: operations["update_goal_api_v1_goals__goal_id__put"];
         post?: never;
         /**
          * Delete Goal
-         * @description 删除当前用户的目标
+         * @description 删除当前用户的目标本体。
          */
         delete: operations["delete_goal_api_v1_goals__goal_id__delete"];
         options?: never;
@@ -22004,6 +21915,20 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /** DedaoKbaseVerificationPacketApplyRequest */
+        DedaoKbaseVerificationPacketApplyRequest: {
+            /** Workspace Fingerprint */
+            workspace_fingerprint: string;
+            /** Packet Id */
+            packet_id: string;
+            /** Note */
+            note?: string | null;
+        };
+        /** DedaoKbaseVerificationPacketRequest */
+        DedaoKbaseVerificationPacketRequest: {
+            /** Workspace Fingerprint */
+            workspace_fingerprint: string;
+        };
         /**
          * DeleteBySourceInput
          * @description 按来源删除
@@ -22167,16 +22092,6 @@ export interface components {
              * @description 设备 IANA 时区,如 Asia/Shanghai / America/Los_Angeles
              */
             timezone: string;
-        };
-        /** DietPhotoDraftStatusResponse */
-        DietPhotoDraftStatusResponse: {
-            /** Status */
-            status: string;
-            /**
-             * Expires At
-             * Format: date-time
-             */
-            expires_at: string;
         };
         /**
          * DietRecordResponse
@@ -28014,29 +27929,6 @@ export interface components {
             brand?: string | null;
             /** Manufacturer */
             manufacturer?: string | null;
-        };
-        /** RecipeCreatePayload */
-        RecipeCreatePayload: {
-            /** Name */
-            name: string;
-            /** Trigger Phrases */
-            trigger_phrases: string[];
-            /** Steps */
-            steps: components["schemas"]["RecipeStepPayload"][];
-        };
-        /** RecipeSaveFromConversationPayload */
-        RecipeSaveFromConversationPayload: {
-            /** Name */
-            name: string;
-            /** Trigger Phrases */
-            trigger_phrases: string[];
-        };
-        /** RecipeStepPayload */
-        RecipeStepPayload: {
-            /** Tool */
-            tool: string;
-            /** Args Template */
-            args_template: Record<string, never>;
         };
         /** RecognitionResponse */
         RecognitionResponse: {
@@ -41786,66 +41678,6 @@ export interface operations {
             };
         };
     };
-    get_photo_draft_status_api_v1_diet_photo_drafts__token__status_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                token: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DietPhotoDraftStatusResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    discard_photo_draft_api_v1_diet_photo_drafts__token__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                token: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     recognize_and_save_diet_api_v1_diet_recognize_and_save_post: {
         parameters: {
             query?: never;
@@ -49742,9 +49574,7 @@ export interface operations {
     agent_send_api_v1_agent_send_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-reva-client-caps"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -49780,10 +49610,8 @@ export interface operations {
                 limit?: number;
                 /** @description 分页偏移(翻页用) */
                 offset?: number;
-                /** @description 按标题模糊过滤(旧参数,仅标题) */
+                /** @description 按标题模糊过滤 */
                 title_like?: string | null;
-                /** @description 按标题和消息内容搜索 */
-                search?: string | null;
             };
             header?: never;
             path?: never;
@@ -50002,145 +49830,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-        };
-    };
-    agent_tasks_api_v1_agent_tasks_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    list_agent_recipes_api_v1_agent_recipes_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    create_agent_recipe_api_v1_agent_recipes_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RecipeCreatePayload"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_agent_recipe_api_v1_agent_recipes__recipe_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                recipe_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    save_agent_recipe_from_conversation_api_v1_agent_recipes__conversation_id__save_from_conversation_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                conversation_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RecipeSaveFromConversationPayload"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -54955,6 +54644,107 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dedao_kbase_verification_packets_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_dedao_kbase_verification_packet_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DedaoKbaseVerificationPacketRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_dedao_kbase_verification_packet_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DedaoKbaseVerificationPacketApplyRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -62009,37 +61799,6 @@ export interface operations {
             };
         };
     };
-    get_goal_api_v1_goals__goal_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                goal_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GoalResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     update_goal_api_v1_goals__goal_id__put: {
         parameters: {
             query?: never;
@@ -62092,7 +61851,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

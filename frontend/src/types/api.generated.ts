@@ -3063,6 +3063,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/medical-exams/me/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Medical Exam Report Summaries
+         * @description 获取当前用户的体检/检查报告级摘要列表,不返回全量指标明细。
+         */
+        get: operations["get_my_medical_exam_report_summaries_api_v1_medical_exams_me_reports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/medical-exams/{exam_id}/explain": {
         parameters: {
             query?: never;
@@ -5572,6 +5592,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/episodes/life-event": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 记录生活事件(带发生时间) */
+        post: operations["create_life_event_api_v1_episodes_life_event_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/episodes/life-event/{event_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 删除生活事件(auto 写入的 undo 通路) */
+        delete: operations["delete_life_event_api_v1_episodes_life_event__event_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/episodes/me/life-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的生活事件时间线 */
+        get: operations["list_life_events_api_v1_episodes_me_life_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/diet/records": {
         parameters: {
             query?: never;
@@ -6288,6 +6359,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/supplements/records/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Supplement Record
+         * @description 更新当前用户的单条补剂打卡记录。
+         */
+        put: operations["update_supplement_record_api_v1_supplements_records__record_id__put"];
+        post?: never;
+        /**
+         * Delete Supplement Record
+         * @description 删除当前用户的单条补剂打卡记录。
+         */
+        delete: operations["delete_supplement_record_api_v1_supplements_records__record_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/supplements/me/frequent": {
         parameters: {
             query?: never;
@@ -6326,30 +6421,6 @@ export interface paths {
          */
         post: operations["copy_day_records_api_v1_supplements_records_copy_day_post"];
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/supplements/records/{record_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Update Supplement Record
-         * @description 更新当前用户的单条补剂打卡记录。
-         */
-        put: operations["update_supplement_record_api_v1_supplements_records__record_id__put"];
-        post?: never;
-        /**
-         * Delete Supplement Record
-         * @description 删除当前用户的单条补剂打卡记录。
-         */
-        delete: operations["delete_supplement_record_api_v1_supplements_records__record_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -10388,6 +10459,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/upload/files/chat/{owner_id}/{filename}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Private Chat Image */
+        get: operations["get_private_chat_image_api_v1_upload_files_chat__owner_id___filename__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/upload/files/chat/{filename}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Legacy Private Chat Image
+         * @description Protect legacy chat files by checking ownership through message history.
+         */
+        get: operations["get_legacy_private_chat_image_api_v1_upload_files_chat__filename__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/upload/files/{category}/{owner_id}/{filename}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Private Uploaded File */
+        get: operations["get_private_uploaded_file_api_v1_upload_files__category___owner_id___filename__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/upload/files/{category}/{filename}": {
         parameters: {
             query?: never;
@@ -10397,9 +10522,7 @@ export interface paths {
         };
         /**
          * Get Uploaded File
-         * @description 获取上传的文件（公开访问，无需认证）
-         *
-         *     图片文件应该可以公开访问，以便在小程序和网页中显示
+         * @description 获取上传的文件。只有头像公开；历史健康图片必须证明 owner。
          */
         get: operations["get_uploaded_file_api_v1_upload_files__category___filename__get"];
         put?: never;
@@ -10642,6 +10765,10 @@ export interface paths {
          * @description 非流式综合分析。
          *
          *     返回完整 OrchestratorResponse（intent + findings + synthesis）。
+         *
+         *     长回合(> ORCH_CHAT_KEEPALIVE_SECONDS)返回 chunked JSON:前导空白是保活
+         *     字节,末尾才是完整 JSON 对象。流一旦开始,状态码已定格 200,错误改为
+         *     body.error 字段(消费方判 error 非空 = 失败)。快回合行为与历史完全一致。
          */
         post: operations["chat_api_v1_orchestrator_chat_post"];
         delete?: never;
@@ -13207,7 +13334,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Cycles
+         * @description 列出当前用户干预周期历史,用于 Agent 和端上回顾。
+         */
+        get: operations["list_cycles_api_v1_intervention_cycles_get"];
         put?: never;
         /**
          * Start Cycle
@@ -13248,6 +13379,30 @@ export interface paths {
         get: operations["get_cycle_api_v1_intervention_cycles__cycle_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Cycle
+         * @description 调整进行中周期的窗口、目标或停止条件;不改历史基线。
+         */
+        patch: operations["update_cycle_api_v1_intervention_cycles__cycle_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/intervention-cycles/{cycle_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Cycle
+         * @description 取消进行中的干预周期;保留历史记录,状态置为 abandoned。
+         */
+        post: operations["cancel_cycle_api_v1_intervention_cycles__cycle_id__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13984,6 +14139,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/knowledge/dedao_kbase/draft_review/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页查看 dedao-kbase draft claims */
+        get: operations["get_dedao_kbase_draft_review_items_api_v1_admin_knowledge_dedao_kbase_draft_review_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/{doc_id}/verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看 dedao-kbase claim verification packets */
+        get: operations["get_dedao_kbase_verification_packets_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_get"];
+        put?: never;
+        /** 生成 dedao-kbase claim verification packet */
+        post: operations["generate_dedao_kbase_verification_packet_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/{doc_id}/verification/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 采纳 dedao-kbase claim verification packet 建议 */
+        post: operations["apply_dedao_kbase_verification_packet_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/{doc_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 裁决一个 dedao-kbase draft claim */
+        patch: operations["adjudicate_dedao_kbase_draft_review_item_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/dedao_kbase/draft_review/finalize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 最终确认已逐条裁决的 dedao-kbase review */
+        post: operations["finalize_dedao_kbase_draft_review_endpoint_api_v1_admin_knowledge_dedao_kbase_draft_review_finalize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/knowledge/dedao_kbase/draft_review/approve": {
         parameters: {
             query?: never;
@@ -13995,6 +14236,23 @@ export interface paths {
         put?: never;
         /** 批准 dedao-kbase draft artifacts */
         post: operations["approve_dedao_kbase_draft_review_endpoint_api_v1_admin_knowledge_dedao_kbase_draft_review_approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/dedao_kbase/reviewed_artifacts/publish/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 预演发布已审核 dedao-kbase artifacts */
+        post: operations["preview_dedao_kbase_reviewed_artifacts_publish_endpoint_api_v1_admin_knowledge_dedao_kbase_reviewed_artifacts_publish_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -18901,6 +19159,8 @@ export interface components {
             extra_context?: string | null;
             /** Channel */
             channel?: string | null;
+            /** Client Turn Id */
+            client_turn_id?: string | null;
         };
         /** AmbientAudioInputResponse */
         AmbientAudioInputResponse: {
@@ -19694,6 +19954,11 @@ export interface components {
              * @description 应用专用密码(非主密码)
              */
             password: string;
+        };
+        /** CancelCycleRequest */
+        CancelCycleRequest: {
+            /** Reason */
+            reason?: string | null;
         };
         /** CaptureOut */
         CaptureOut: {
@@ -21588,8 +21853,38 @@ export interface components {
             /** Rationale */
             rationale: string;
         };
+        /** DedaoKbaseClaimAdjudicationRequest */
+        DedaoKbaseClaimAdjudicationRequest: {
+            /** Workspace Fingerprint */
+            workspace_fingerprint: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "approve" | "needs_evidence" | "reject" | "background_only";
+            /** Note */
+            note?: string | null;
+            evidence?: components["schemas"]["DedaoKbaseClaimEvidence"] | null;
+            /** Evidence Level */
+            evidence_level?: ("A" | "B" | "C" | "D") | null;
+            /** Confidence */
+            confidence?: number | null;
+        };
+        /** DedaoKbaseClaimEvidence */
+        DedaoKbaseClaimEvidence: {
+            /** Kind */
+            kind?: string | null;
+            /** Source */
+            source: string;
+            /** Title */
+            title?: string | null;
+            /** Url */
+            url?: string | null;
+        };
         /** DedaoKbaseDraftReviewApproveRequest */
         DedaoKbaseDraftReviewApproveRequest: {
+            /** Workspace Fingerprint */
+            workspace_fingerprint: string;
             /** Note */
             note?: string | null;
             /**
@@ -21603,10 +21898,36 @@ export interface components {
              */
             dry_run_publish: boolean;
         };
+        /** DedaoKbaseDraftReviewFinalizeRequest */
+        DedaoKbaseDraftReviewFinalizeRequest: {
+            /** Workspace Fingerprint */
+            workspace_fingerprint: string;
+            /** Note */
+            note?: string | null;
+        };
+        /** DedaoKbasePublishPreviewRequest */
+        DedaoKbasePublishPreviewRequest: {
+            /** Note */
+            note?: string | null;
+        };
         /** DedaoKbaseReviewedArtifactsPublishRequest */
         DedaoKbaseReviewedArtifactsPublishRequest: {
             /** Note */
             note?: string | null;
+        };
+        /** DedaoKbaseVerificationPacketApplyRequest */
+        DedaoKbaseVerificationPacketApplyRequest: {
+            /** Workspace Fingerprint */
+            workspace_fingerprint: string;
+            /** Packet Id */
+            packet_id: string;
+            /** Note */
+            note?: string | null;
+        };
+        /** DedaoKbaseVerificationPacketRequest */
+        DedaoKbaseVerificationPacketRequest: {
+            /** Workspace Fingerprint */
+            workspace_fingerprint: string;
         };
         /**
          * DeleteBySourceInput
@@ -21805,8 +22126,6 @@ export interface components {
             alcohol_units?: number | null;
             /** Notes */
             notes?: string | null;
-            /** Image Url */
-            image_url?: string | null;
             /**
              * Ai Recognized
              * @default 0
@@ -21814,12 +22133,16 @@ export interface components {
             ai_recognized: number | null;
             /** Ai Confidence */
             ai_confidence?: number | null;
+            /** Ai Raw Result */
+            ai_raw_result?: unknown | null;
             /** Health Tips */
             health_tips?: string | null;
             /** Id */
             id: number;
             /** User Id */
             user_id: number;
+            /** Image Url */
+            image_url?: string | null;
             /** Created At */
             created_at?: string | null;
             /** Updated At */
@@ -21858,10 +22181,14 @@ export interface components {
             alcohol_units?: number | null;
             /** Notes */
             notes?: string | null;
-            /** Image Url */
-            image_url?: string | null;
             /** Health Tips */
             health_tips?: string | null;
+            /** Ai Recognized */
+            ai_recognized?: number | null;
+            /** Ai Confidence */
+            ai_confidence?: number | null;
+            /** Ai Raw Result */
+            ai_raw_result?: unknown | null;
         };
         /**
          * DietStats
@@ -22998,6 +23325,14 @@ export interface components {
             food_id?: string | null;
             /** Source */
             source?: string | null;
+            /** Quantity Grams */
+            quantity_grams?: number | null;
+            /** Nutrition Basis */
+            nutrition_basis?: string | null;
+            /** Portion Basis */
+            portion_basis?: string | null;
+            /** Portion Confidence */
+            portion_confidence?: number | null;
         };
         /**
          * FoodRecognitionRequest
@@ -23015,6 +23350,12 @@ export interface components {
              * @default jpeg
              */
             image_type: string;
+            /**
+             * Create Photo Draft
+             * @description 识别成功后保存一次图片并返回待确认草稿令牌
+             * @default false
+             */
+            create_photo_draft: boolean;
         };
         /**
          * FoodRecognitionResponse
@@ -23040,8 +23381,36 @@ export interface components {
             total_carbs?: number | null;
             /** Total Fat */
             total_fat?: number | null;
+            /** Total Fiber */
+            total_fiber?: number | null;
+            /** Photo Draft Token */
+            photo_draft_token?: string | null;
+            timing_ms?: components["schemas"]["FoodRecognitionTiming"] | null;
             /** Error */
             error?: string | null;
+        };
+        /** FoodRecognitionTiming */
+        FoodRecognitionTiming: {
+            /**
+             * Vision
+             * @default 0
+             */
+            vision: number;
+            /**
+             * Calibration
+             * @default 0
+             */
+            calibration: number;
+            /**
+             * Photo Draft
+             * @default 0
+             */
+            photo_draft: number;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
         };
         /** FreeTextParseRequest */
         FreeTextParseRequest: {
@@ -25173,6 +25542,33 @@ export interface components {
             /** Evidence */
             evidence?: string[];
         };
+        /** LifeEventCreate */
+        LifeEventCreate: {
+            /** Title */
+            title: string;
+            /** Occurred At */
+            occurred_at?: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** LifeEventOut */
+        LifeEventOut: {
+            /** Id */
+            id: number;
+            /** Title */
+            title: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Occurred Precision */
+            occurred_precision: string;
+            /** Occurred Display */
+            occurred_display: string;
+            /** Notes */
+            notes?: string | null;
+        };
         /** LiveRunEndRequest */
         LiveRunEndRequest: {
             /** Total Distance M */
@@ -25667,6 +26063,46 @@ export interface components {
             is_abnormal?: string | null;
             /** Notes */
             notes?: string | null;
+        };
+        /**
+         * MedicalExamReportSummary
+         * @description 体检/检查报告级列表摘要,用于 Agent 报告清单,不包含全量 item 明细。
+         */
+        MedicalExamReportSummary: {
+            /** Id */
+            id: number;
+            /**
+             * Exam Date
+             * Format: date
+             */
+            exam_date: string;
+            /** Exam Type */
+            exam_type?: string | null;
+            /** Body System */
+            body_system?: string | null;
+            /** Hospital Name */
+            hospital_name?: string | null;
+            /** Doctor Name */
+            doctor_name?: string | null;
+            /** Overall Assessment */
+            overall_assessment?: string | null;
+            /**
+             * Conclusions Count
+             * @default 0
+             */
+            conclusions_count: number;
+            /**
+             * Items Count
+             * @default 0
+             */
+            items_count: number;
+            /**
+             * Abnormal Items Count
+             * @default 0
+             */
+            abnormal_items_count: number;
+            /** Created At */
+            created_at?: string | null;
         };
         /**
          * MedicalExamResponse
@@ -29848,6 +30284,15 @@ export interface components {
             /** Goals */
             goals?: Record<string, never>;
         };
+        /** UpdateCycleRequest */
+        UpdateCycleRequest: {
+            /** Days */
+            days?: number | null;
+            /** Target Specs */
+            target_specs?: unknown[] | null;
+            /** Stop Conditions */
+            stop_conditions?: unknown[] | null;
+        };
         /** UpdateMetricRequest */
         UpdateMetricRequest: {
             /** Current Value */
@@ -31708,8 +32153,6 @@ export interface components {
             alcohol_units?: number | null;
             /** Notes */
             notes?: string | null;
-            /** Image Url */
-            image_url?: string | null;
             /**
              * Ai Recognized
              * @default 0
@@ -31717,6 +32160,8 @@ export interface components {
             ai_recognized: number | null;
             /** Ai Confidence */
             ai_confidence?: number | null;
+            /** Ai Raw Result */
+            ai_raw_result?: unknown | null;
             /** Health Tips */
             health_tips?: string | null;
             /** User Id */
@@ -31728,6 +32173,8 @@ export interface components {
              * @default jpeg
              */
             image_type: string | null;
+            /** Photo Draft Token */
+            photo_draft_token?: string | null;
         };
         /**
          * HeartRatePoint
@@ -36289,6 +36736,38 @@ export interface operations {
             };
         };
     };
+    get_my_medical_exam_report_summaries_api_v1_medical_exams_me_reports_get: {
+        parameters: {
+            query?: {
+                skip?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MedicalExamReportSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_exam_explain_api_v1_medical_exams__exam_id__explain_get: {
         parameters: {
             query?: never;
@@ -40708,10 +41187,107 @@ export interface operations {
             };
         };
     };
-    create_diet_record_api_v1_diet_records_post: {
+    create_life_event_api_v1_episodes_life_event_post: {
         parameters: {
             query?: never;
             header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LifeEventCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifeEventOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_life_event_api_v1_episodes_life_event__event_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_life_events_api_v1_episodes_me_life_events_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifeEventOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_diet_record_api_v1_diet_records_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -41926,71 +42502,6 @@ export interface operations {
             };
         };
     };
-    get_my_frequent_supplements_api_v1_supplements_me_frequent_get: {
-        parameters: {
-            query?: {
-                days?: number;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FrequentSupplement"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    copy_day_records_api_v1_supplements_records_copy_day_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CopyDayRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     update_supplement_record_api_v1_supplements_records__record_id__put: {
         parameters: {
             query?: never;
@@ -42036,6 +42547,71 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_frequent_supplements_api_v1_supplements_me_frequent_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FrequentSupplement"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    copy_day_records_api_v1_supplements_records_copy_day_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CopyDayRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -48439,9 +49015,119 @@ export interface operations {
             };
         };
     };
+    get_private_chat_image_api_v1_upload_files_chat__owner_id___filename__get: {
+        parameters: {
+            query?: {
+                expires?: number | null;
+                signature?: string | null;
+            };
+            header?: never;
+            path: {
+                owner_id: number;
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_legacy_private_chat_image_api_v1_upload_files_chat__filename__get: {
+        parameters: {
+            query?: {
+                owner_id?: number | null;
+                expires?: number | null;
+                signature?: string | null;
+            };
+            header?: never;
+            path: {
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_private_uploaded_file_api_v1_upload_files__category___owner_id___filename__get: {
+        parameters: {
+            query?: {
+                expires?: number | null;
+                signature?: string | null;
+            };
+            header?: never;
+            path: {
+                category: string;
+                owner_id: number;
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_uploaded_file_api_v1_upload_files__category___filename__get: {
         parameters: {
-            query?: never;
+            query?: {
+                owner_id?: number | null;
+                expires?: number | null;
+                signature?: string | null;
+            };
             header?: never;
             path: {
                 category: string;
@@ -52471,6 +53157,38 @@ export interface operations {
             };
         };
     };
+    list_cycles_api_v1_intervention_cycles_get: {
+        parameters: {
+            query?: {
+                status?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     start_cycle_api_v1_intervention_cycles_post: {
         parameters: {
             query?: never;
@@ -52534,6 +53252,76 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_cycle_api_v1_intervention_cycles__cycle_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cycle_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCycleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_cycle_api_v1_intervention_cycles__cycle_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cycle_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CancelCycleRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -53844,6 +54632,208 @@ export interface operations {
             };
         };
     };
+    get_dedao_kbase_draft_review_items_api_v1_admin_knowledge_dedao_kbase_draft_review_items_get: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+                decision?: ("approve" | "needs_evidence" | "reject" | "background_only") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dedao_kbase_verification_packets_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_dedao_kbase_verification_packet_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DedaoKbaseVerificationPacketRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_dedao_kbase_verification_packet_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DedaoKbaseVerificationPacketApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adjudicate_dedao_kbase_draft_review_item_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DedaoKbaseClaimAdjudicationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finalize_dedao_kbase_draft_review_endpoint_api_v1_admin_knowledge_dedao_kbase_draft_review_finalize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DedaoKbaseDraftReviewFinalizeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     approve_dedao_kbase_draft_review_endpoint_api_v1_admin_knowledge_dedao_kbase_draft_review_approve_post: {
         parameters: {
             query?: never;
@@ -53854,6 +54844,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DedaoKbaseDraftReviewApproveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_dedao_kbase_reviewed_artifacts_publish_endpoint_api_v1_admin_knowledge_dedao_kbase_reviewed_artifacts_publish_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DedaoKbasePublishPreviewRequest"];
             };
         };
         responses: {
