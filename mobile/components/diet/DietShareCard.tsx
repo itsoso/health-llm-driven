@@ -239,6 +239,11 @@ function isLowConfidenceDietShare(record: DietRecord): boolean {
 }
 
 function buildDietShareMacroLine(record: DietRecord, style: 'compact' | 'sentence'): string {
+  if (isLowConfidenceDietShare(record)) {
+    return style === 'sentence'
+      ? '这一餐营养估算待核对，确认后再生成热量和三大营养。'
+      : '营养估算待核对，确认后再生成热量和三大营养';
+  }
   const parts = [
     hasMetric(record.calories) ? `热量 ${metric(record.calories)} kcal` : null,
     hasMetric(record.protein) ? `蛋白质 ${metric(record.protein)}g` : null,
@@ -321,9 +326,14 @@ export function buildDietShareMacroSegments(record: DietRecord): DietShareMacroS
 }
 
 function buildDietShareMacroStructureLine(record: DietRecord): string | null {
+  if (isLowConfidenceDietShare(record)) return null;
   const segments = buildDietShareMacroSegments(record);
   if (segments.length === 0) return null;
   return `能量结构: ${segments.map((segment) => `${segment.label} ${segment.percent}%`).join(' / ')}`;
+}
+
+function shouldRenderHighlightCopy(highlights: string[]): boolean {
+  return highlights.length > 0 && !highlights.includes('待核对');
 }
 
 export function compactDietShareFoodItems(foodItems: string, maxChars = 35): string {
@@ -359,8 +369,8 @@ export function buildDietShareCaption(record: DietRecord, dateLabel: string): st
   ];
   const macroStructureLine = buildDietShareMacroStructureLine(record);
   if (macroStructureLine) lines.push(macroStructureLine);
-  if (highlights.length > 0) lines.push(`亮点: ${highlights.join(' / ')}`);
-  if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g`);
+  if (shouldRenderHighlightCopy(highlights)) lines.push(`亮点: ${highlights.join(' / ')}`);
+  if (record.fiber != null && !isLowConfidenceDietShare(record)) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g`);
   lines.push(buildDietShareDataDisclosure(record));
   const confidenceDisclosure = buildDietShareConfidenceDisclosure(record);
   if (confidenceDisclosure) lines.push(confidenceDisclosure);
@@ -384,8 +394,8 @@ export function buildDietShareMomentsCaption(record: DietRecord, dateLabel: stri
   ];
   const macroStructureLine = buildDietShareMacroStructureLine(record);
   if (macroStructureLine) lines.push(macroStructureLine);
-  if (highlights.length > 0) lines.push(`亮点: ${highlights.join(' / ')}`);
-  if (record.fiber != null) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g。`);
+  if (shouldRenderHighlightCopy(highlights)) lines.push(`亮点: ${highlights.join(' / ')}`);
+  if (record.fiber != null && !isLowConfidenceDietShare(record)) lines.push(`膳食纤维 ${metric(record.fiber, 1)}g。`);
   lines.push(buildDietShareDataDisclosure(record));
   const confidenceDisclosure = buildDietShareConfidenceDisclosure(record);
   if (confidenceDisclosure) lines.push(confidenceDisclosure);

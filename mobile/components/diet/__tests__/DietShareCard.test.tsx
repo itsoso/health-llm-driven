@@ -443,6 +443,33 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('keeps low-confidence copied captions from publishing exact macro claims', async () => {
+    const lowConfidenceRecord = {
+      ...record,
+      source: 'ai_estimate',
+      ai_confidence: 0.42,
+      food_items: '机场贵宾厅番茄鸡蛋面、鸭肉、生菜',
+    };
+    const { getByText } = render(
+      <DietShareSheet
+        visible
+        record={lowConfidenceRecord}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(getByText('核对后复制小红书文案'));
+    await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养估算待核对，确认后再生成热量和三大营养'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('热量 560 kcal'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('蛋白质 67g'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('能量结构: 蛋白 50%'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('亮点: 待核对'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('膳食纤维 3g'));
+    });
+  });
+
   it('keeps pending nutrition share cards and captions polished without placeholder dashes', async () => {
     const pendingRecord: DietRecord = {
       ...record,
