@@ -283,20 +283,42 @@ def test_bp_status_column_relays_server_category_verbatim():
     """危险 affordance: 服务端 classify_blood_pressure 已算好的 `category` 逐字进"状态"列。
 
     Condition 2: builder 引用服务端分级, 绝不自行判定血压等级。用真实分级器输出
-    (185/122→高血压3级, 158/99→高血压2级; 分级器天花板=高血压3级, 无"危象"档) 逐字透传。
+    (185/122→高血压急症, 168/100→高血压2级) 逐字透传 —— fixture 直接调分级器,
+    分级词表演进时本测试自动跟随 (不再手打分级串钉旧词)。
     """
+    from app.utils.blood_pressure import classify_blood_pressure
+
+    assert classify_blood_pressure(185, 122) == "高血压急症"
+    assert classify_blood_pressure(168, 100) == "高血压2级"
     result = json.dumps([
         {"record_date": "2026-07-01", "systolic": 185, "diastolic": 122,
-         "pulse": 88, "category": "高血压3级"},
-        {"record_date": "2026-06-30", "systolic": 158, "diastolic": 99,
-         "pulse": 80, "category": "高血压2级"},
+         "pulse": 88, "category": classify_blood_pressure(185, 122)},
+        {"record_date": "2026-06-30", "systolic": 168, "diastolic": 100,
+         "pulse": 80, "category": classify_blood_pressure(168, 100)},
     ], ensure_ascii=False)
     block = build_table_from_tool_call("health_query", {"dimension": "blood_pressure"}, result)
     assert block is not None
     assert [c["key"] for c in block["columns"]] == ["date", "bp", "pulse", "status"]
     # 服务端分级字符串逐字透传, builder 未改写/未重判
-    assert block["rows"][0]["status"] == "高血压3级"
+    assert block["rows"][0]["status"] == "高血压急症"
     assert block["rows"][1]["status"] == "高血压2级"
+    assert block["rows"][0]["bp"] == "185/122 mmHg"
+
+
+def test_bp_table_survives_read_path_safety_warning_suffix():
+    """读路径急症提示后缀与表格并存 (加层不减层): marker 后缀剥掉后 JSON 照常
+    建表, 急症分级进状态列; 提示文本本身仍在 tool result 里进强模型答案。"""
+    from app.utils.blood_pressure import append_bp_crisis_read_warning
+
+    raw = json.dumps([
+        {"record_date": "2026-07-01", "systolic": 185, "diastolic": 122,
+         "pulse": 88, "category": "高血压急症"},
+    ], ensure_ascii=False)
+    suffixed = append_bp_crisis_read_warning(raw)
+    assert suffixed != raw  # 前置: 提示确实追加了
+    block = build_table_from_tool_call("health_query", {"dimension": "blood_pressure"}, suffixed)
+    assert block is not None
+    assert block["rows"][0]["status"] == "高血压急症"
     assert block["rows"][0]["bp"] == "185/122 mmHg"
 
 
@@ -870,13 +892,14 @@ async def test_llm_synthesis_raise_tables_still_build(db, auth_user_and_headers,
 # ---------------------------------------------------------------------------
 
 def _bp_crisis_result():
-    """BP tool result carrying a server-computed high-grade category (185/122→高血压3级)。
+    """BP tool result carrying a server-computed high-grade category (185/122→高血压急症)。
 
-    "高血压3级" 是 classify_blood_pressure 的真实天花板输出 (无"危象"档), 用它而非合成词。
+    "高血压急症" 是 classify_blood_pressure 的真实天花板输出 (2026-07 起新增急症档,
+    阈值同源 Safety Guardian ≥180/120), 用真实分级词而非合成词。
     """
     return json.dumps([
         {"record_date": "2026-07-01", "systolic": 185, "diastolic": 122,
-         "pulse": 92, "category": "高血压3级"},
+         "pulse": 92, "category": "高血压急症"},
     ], ensure_ascii=False)
 
 

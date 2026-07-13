@@ -146,22 +146,30 @@ class TestBloodPressureCommand:
         assert result["data"]["category"] == "正常"
 
     def test_bp_elevated(self, db, test_user, service):
-        """'血压120/80' -> 正常偏高"""
+        """'血压120/80' -> 高血压前期 (canonical 分级: 舒张压 80 落 ACC/AHA 80-89 带;
+        旧内联副本给"正常偏高"是降档 under-alarm)"""
         result = service.try_execute("血压120/80")
         assert result is not None
         assert result["data"]["systolic"] == 120
         assert result["data"]["diastolic"] == 80
-        assert result["data"]["category"] == "正常偏高"
+        assert result["data"]["category"] == "高血压前期"
 
         record = db.query(BloodPressureRecord).filter(BloodPressureRecord.user_id == test_user.id).first()
         assert record is not None
         assert record.systolic == 120
 
     def test_bp_high(self, db, test_user, service):
-        """'血压145/95' -> 高血压"""
+        """'血压145/95' -> 高血压1级 (canonical 分级, 不再是粗粒度"高血压")"""
         result = service.try_execute("血压145/95")
         assert result is not None
-        assert result["data"]["category"] == "高血压"
+        assert result["data"]["category"] == "高血压1级"
+
+    def test_bp_crisis_labeled(self, db, test_user, service):
+        """'血压185/122' -> 高血压急症 (旧内联副本只会说"高血压")"""
+        result = service.try_execute("血压185/122")
+        assert result is not None
+        assert result["data"]["category"] == "高血压急症"
+        assert "高血压急症" in result["message"]
 
     def test_bp_text_format(self, db, test_user, service):
         """'高压130低压85' -> 130/85"""

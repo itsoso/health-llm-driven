@@ -173,6 +173,34 @@ def test_bp_missing_systolic_falls_open():
     assert qr._format_blood_pressure(json.dumps([{"record_date": "2026-07-12", "diastolic": 80}])) == "还没有血压记录。"
 
 
+def test_bp_crisis_latest_never_short_circuits():
+    """急症双门: 最新记录达急症级 → 绝不确定性短路 (交强模型 + 安全提示作答)。
+
+    独立于不变量 3 的 marker 检测 —— 即便读路径提示注入失效, 185/122 也不会
+    被 2 秒短路轻描淡写带过 (fail-closed)。
+    """
+    records = [
+        {"record_date": "2026-07-12", "systolic": 185, "diastolic": 122,
+         "category": "高血压急症"},
+    ]
+    assert qr._format_blood_pressure(json.dumps(records)) is None
+
+
+def test_bp_crisis_in_history_never_short_circuits():
+    """任一返回记录 (非最新) 达急症级也不短路 —— 强模型需看到完整上下文。"""
+    records = [
+        {"record_date": "2026-07-12", "systolic": 128, "diastolic": 82, "category": "正常偏高"},
+        {"record_date": "2026-07-08", "systolic": 190, "diastolic": 96},
+    ]
+    assert qr._format_blood_pressure(json.dumps(records)) is None
+
+
+def test_bp_crisis_numeric_only_without_category_never_short_circuits():
+    """category 缺失但数字过阈值 (≥180 或 ≥120) 同样拦截 (双判 fail-closed)。"""
+    records = [{"record_date": "2026-07-12", "systolic": 118, "diastolic": 121}]
+    assert qr._format_blood_pressure(json.dumps(records)) is None
+
+
 # ──────────────────────── sleep ────────────────────────
 
 def _sleep_payload():

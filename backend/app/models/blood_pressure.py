@@ -53,14 +53,7 @@ class BloodPressureRecord(Base):
 
     @property
     def category(self):
-        """血压分类"""
-        if self.systolic < 120 and self.diastolic < 80:
-            return "正常"
-        elif 120 <= self.systolic < 130 and self.diastolic < 80:
-            return "正常偏高"
-        elif (130 <= self.systolic < 140) or (80 <= self.diastolic < 90):
-            return "高血压前期"
-        elif self.systolic >= 140 or self.diastolic >= 90:
-            return "高血压"
-        else:
-            return "未知"
+        """血压分类 —— 委托 utils 单一事实源(急症档 + 取高档),不再维护粗粒度副本"""
+        from app.utils.blood_pressure import classify_blood_pressure
+
+        return classify_blood_pressure(self.systolic, self.diastolic)

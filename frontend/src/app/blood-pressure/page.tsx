@@ -126,6 +126,7 @@ function BloodPressureContent() {
     if (category === '正常') return 'bg-green-100 text-green-800';
     if (category === '正常偏高') return 'bg-yellow-100 text-yellow-800';
     if (category?.includes('前期')) return 'bg-orange-100 text-orange-800';
+    if (category?.includes('急症')) return 'bg-red-600 text-white font-semibold';
     return 'bg-red-100 text-red-800';
   };
 
@@ -277,6 +278,7 @@ function BloodPressureContent() {
             <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded">正常偏高: 120-129/&lt;80</span>
             <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded">高血压前期: 130-139/80-89</span>
             <span className="px-2 py-1 bg-red-100 text-red-800 rounded">高血压: ≥140/90</span>
+            <span className="px-2 py-1 bg-red-600 text-white rounded font-semibold">急症: ≥180/120 立即就医</span>
           </div>
         </div>
 

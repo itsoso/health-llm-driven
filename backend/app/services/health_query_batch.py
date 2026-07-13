@@ -252,7 +252,19 @@ def _round(v: float) -> float:
 
 def _cap(text: Any, limit: int = 600) -> str:
     t = str(text)
-    return t if len(t) <= limit else t[:limit].rstrip() + "…"
+    if len(t) <= limit:
+        return t
+    # 安全提示后缀绝不被截丢 (读路径急症提示挂在 raw 末尾, 朴素截断恰好砍它):
+    # 保住 ⚠️ 后缀, 只截前部数据 (安全评审裁定的 under-alarm 残留修复)。
+    from app.utils.blood_pressure import SAFETY_WARNING_MARKER
+
+    idx = t.find(SAFETY_WARNING_MARKER)
+    if idx != -1:
+        suffix = t[idx:]
+        head = t[: max(0, limit - len(suffix))].rstrip()
+        # head 为空也保留完整 marker (含前导换行), 下游子串检测依赖原样 marker
+        return (head + "…" + suffix) if head else suffix
+    return t[:limit].rstrip() + "…"
 
 
 # ── 编排 (async; fetch 注入数据面) ─────────────────────────────────────────

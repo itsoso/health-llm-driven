@@ -37,6 +37,7 @@ import json
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.genui.chart_builder import render_reva_ui_block
+from app.utils.blood_pressure import SAFETY_WARNING_MARKER
 
 # 客户端在 X-Reva-Client-Caps 声明本 token 才发 metric_table (与图表的 genui-v1 并列)。
 GENUI_TABLE_CAP = "genui-table-v1"
@@ -114,12 +115,23 @@ def _fmt_num(value: Any, unit: Any = None) -> Optional[str]:
 
 
 def _load_json_lenient(result: str) -> Optional[Any]:
-    """严格 json.loads; 失败则剥掉 _api_get 的显示截断尾注再试。全失败 → None。"""
+    """严格 json.loads; 失败则剥掉安全提示后缀 / _api_get 显示截断尾注再试。全失败 → None。
+
+    安全提示后缀: 读路径急症检查 (utils/blood_pressure.append_bp_crisis_read_warning)
+    会在血压查询结果 JSON 后追加 ``⚠️ 安全提示`` 文本。剥掉只为让表格照常渲染
+    (分级列本来就带"高血压急症"), 提示文本本身仍在 tool result 里进强模型答案 ——
+    加层不减层, 表格与告警并存而非二选一。
+    """
     if not isinstance(result, str):
         return None
     text = result.strip()
     if not text or text.startswith("Error"):
         return None
+    marker_idx = text.find(SAFETY_WARNING_MARKER)
+    if marker_idx != -1:
+        text = text[:marker_idx].rstrip()
+        if not text:
+            return None
     try:
         return json.loads(text)
     except (json.JSONDecodeError, ValueError):

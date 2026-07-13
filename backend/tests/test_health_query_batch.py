@@ -322,3 +322,59 @@ def test_build_wearable_series_real_rows_ascending(db, batch_user):
 def test_series_dimensions_are_subset_of_known():
     """可聚合维度必须都是合法 health_query 维度 (防漂移)。"""
     assert hqb.SERIES_DIMENSIONS <= hqb.known_dimensions()
+
+
+class TestCapPreservesSafetyWarning:
+    """_cap 截断绝不丢安全提示后缀 (读路径急症提示挂 raw 末尾, 朴素截断恰好砍它;
+    安全评审裁定的 under-alarm 残留修复)。"""
+
+    def test_cap_keeps_marker_suffix_when_truncating(self):
+        from app.utils.blood_pressure import SAFETY_WARNING_MARKER
+
+        suffix = f"{SAFETY_WARNING_MARKER} 查询结果中最近一次达到高血压急症水平的血压为 190/125 mmHg, 请立即就医。"
+        long_data = "x" * 2000
+        out = hqb._cap(long_data + suffix, 600)
+        assert SAFETY_WARNING_MARKER in out
+        assert out.endswith("请立即就医。")
+        assert len(out) <= 600 + len(suffix)  # 头部被截, 后缀完整
+
+    def test_cap_without_marker_unchanged_behavior(self):
+        out = hqb._cap("y" * 2000, 600)
+        assert len(out) <= 601  # 600 + 省略号
+        assert out.endswith("…")
+        assert hqb._cap("short", 600) == "short"
+
+    def test_cap_suffix_longer_than_limit_still_kept_whole(self):
+        """极端: 后缀本身超过 limit → 宁超限也不截安全文本 (fail-closed)。"""
+        from app.utils.blood_pressure import SAFETY_WARNING_MARKER
+
+        suffix = f"{SAFETY_WARNING_MARKER} " + "危急提示" * 200
+        out = hqb._cap("z" * 1000 + suffix, 600)
+        assert SAFETY_WARNING_MARKER in out
+        assert out.endswith("危急提示")
+
+    @pytest.mark.asyncio
+    async def test_batch_bp_raw_over_cap_still_carries_marker(self):
+        """端到端: 血压子查询 raw 超 600 字符且含急症提示 → 批结果 JSON 仍含 marker 文本。"""
+        import json as _json
+
+        from app.utils.blood_pressure import append_bp_crisis_read_warning
+
+        records = [
+            {"record_date": f"2026-06-{d:02d}", "systolic": 190 if d == 30 else 128,
+             "diastolic": 125 if d == 30 else 82, "pulse": 70 + d,
+             "category": "高血压急症" if d == 30 else "高血压前期",
+             "notes": "早晨静坐五分钟后测量,左臂,坐姿" * 3}
+            for d in range(30, 20, -1)
+        ]
+        raw = append_bp_crisis_read_warning(_json.dumps(records, ensure_ascii=False))
+        assert len(raw) > 600  # 前置: 确实会触发截断
+
+        async def fetch(dimension, days):
+            return hqb.BatchFetchResult(series=[], raw=raw, aggregatable=False)
+
+        out = await hqb.execute_batch(
+            {"queries": [{"dimension": "blood_pressure", "days": 30}]}, fetch
+        )
+        assert "安全提示" in out
+        assert "190/125" in out

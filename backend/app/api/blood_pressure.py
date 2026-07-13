@@ -22,24 +22,10 @@ from app.utils.health_record import (
     apply_date_filter,
     get_records_in_days,
 )
+# 分级单一事实源在 utils(急症档 + 取高档语义);此处 re-export 保持旧导入路径可用。
+from app.utils.blood_pressure import classify_blood_pressure  # noqa: F401
 
 router = APIRouter()
-
-
-def classify_blood_pressure(systolic: int, diastolic: int) -> str:
-    """血压分类"""
-    if systolic < 120 and diastolic < 80:
-        return "正常"
-    elif systolic < 130 and diastolic < 80:
-        return "正常偏高"
-    elif systolic < 140 or diastolic < 90:
-        return "高血压前期"
-    elif systolic < 160 or diastolic < 100:
-        return "高血压1级"
-    elif systolic < 180 or diastolic < 110:
-        return "高血压2级"
-    else:
-        return "高血压3级"
 
 
 @router.post("/records", response_model=BloodPressureRecordResponse)

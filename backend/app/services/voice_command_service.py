@@ -237,15 +237,10 @@ class VoiceCommandService:
         self.db.add(record)
         self.db.commit()
 
-        # 简单分类
-        if systolic < 120 and diastolic < 80:
-            category = "正常"
-        elif systolic <= 129 and diastolic <= 84:
-            category = "正常偏高"
-        elif systolic >= 140 or diastolic >= 90:
-            category = "高血压"
-        else:
-            category = "高血压前期"
+        # 分级走 utils 单一事实源(含急症档;此前内联副本把 185/122 报成"高血压")
+        from app.utils.blood_pressure import classify_blood_pressure
+
+        category = classify_blood_pressure(systolic, diastolic)
 
         return {
             "command_type": "blood_pressure",

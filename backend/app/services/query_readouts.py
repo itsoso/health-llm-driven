@@ -185,6 +185,13 @@ def _format_blood_pressure(content: str) -> Optional[str]:
     dia = _as_int(latest.get("diastolic"))
     if sys is None or dia is None:
         return None
+    # 急症双门 (belt-and-suspenders): 任一返回记录达急症级 → 绝不确定性短路,
+    # 交强模型作答。独立于不变量 3 的 marker 检测 —— 即便读路径提示注入失效,
+    # 急症读数也不会被 2 秒短路轻描淡写地带过 (fail-closed)。
+    from app.utils.blood_pressure import is_crisis_record
+
+    if any(is_crisis_record(r) for r in records):
+        return None
     line = f"最新血压 {sys}/{dia} mmHg"
     pulse = _as_int(latest.get("pulse"))
     if pulse:

@@ -129,6 +129,32 @@ if check is not None:
 
 **已应用 type**: `weight`, `blood_pressure`, `illness`。新增高确定性 type 必须接入。
 
+### 2.5 读路径确定性安全后缀（2026-07-13）
+
+写后安全评估（`evaluate_safety` 挂在 `health_record` 成功之后）覆盖不到**纯查询**回合：
+用户问「看看我的血压」，库里躺着 185/122 也不会有任何 ⚠️ 提示（under-alarm 缺口，
+GenUI metric_table 复审时安全评审发现）。
+
+**实现**：`app/utils/blood_pressure.py::append_bp_crisis_read_warning`，挂在
+`_exec_health_query` 的 `blood_pressure` 维度出口。纯文本/JSON 扫描（零 LLM、零
+Twin 构建，不拖慢查询回合），双判 fail-closed（原始数字 ≥180/≥120 **或** 分级字段
+已是"高血压急症"），命中即在 tool result 追加 `⚠️ 安全提示:` 后缀。阈值与
+Safety Guardian `vitals.bp_hypertensive_crisis` 同源（测试钉死）。
+
+**下游协同**（加层不减层）：
+- `query_readouts` 不变量 3：带 marker 的 tool result 绝不确定性短路 → 提示必然进
+  强模型答案。另有独立急症双门（`_format_blood_pressure` 见急症记录直接返回 None），
+  marker 注入失效时也不会被 2 秒短路轻描淡写带过。
+- `genui/table_builder._load_json_lenient` 剥 marker 后缀再解析 → 表格与告警并存。
+
+新增读维度的确定性安全检查时沿用此模式：utils 纯函数 + `_exec_health_query` 出口
+接线 + readouts 双门 + table_builder 兼容,四处同 PR 落地。
+
+已知漂移面（2026-07-13 安全评审记录）：`services/inline_cards.py::_build_bp` 与
+`mobile/components/chat/cards/BPCard.tsx` 各有一份**客户端展示用**分级副本
+（ACC/AHA 分期词表 + 卡片配色,含 canonical 没有的"偏低"档）。急症阈值(≥180/120)
+与 canonical 一致,无 under-alarm 风险;若日后统一词表/阈值,这两处随动。
+
 ---
 
 ## 3. Tool Schema 描述加厚

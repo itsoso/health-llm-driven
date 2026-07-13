@@ -4154,7 +4154,7 @@ class AgentExecutor:
                 "- 正文**不超过 500 字**；\n"
                 "- **结论先行**：先给 2-3 条关键要点，再给可执行的行动建议；\n"
                 "- **绝不逐行复述表格中的数值行**（用户已在卡片里看到），只做解读、趋势、对比与行动指引；\n"
-                "- **安全例外**：异常或危急数值（如血压达高血压2-3级、血氧过低、血糖过高或过低、"
+                "- **安全例外**：异常或危急数值（如血压达高血压2-3级或高血压急症、血氧过低、血糖过高或过低、"
                 "化验危急值等）**必须在正文中明确说出具体数值**并给出对应行动建议，不受上面"
                 "\"不复述表格数值\"约束；是否异常/危急以系统安全提示（⚠️ 安全提示）与卡片中的"
                 "分级/异常标注为准，不要给系统标注为正常的数值自行加危急判断；\n"
@@ -7688,7 +7688,16 @@ class AgentExecutor:
                 except Exception:
                     pass
 
-        return await self._api_get(f"{base}{path}", headers)
+        result = await self._api_get(f"{base}{path}", headers)
+        if dim == "blood_pressure":
+            # 读路径急症提示(under-alarm 缺口): 写后 evaluate_safety 只覆盖
+            # health_record, 纯查询「看看我的血压」时库里 185/122 不会有任何告警。
+            # 确定性扫描零 LLM/零 Twin 构建; 追加的 marker 令 query_readouts
+            # 不变量 3 禁用短路 → 提示必然进强模型答案。
+            from app.utils.blood_pressure import append_bp_crisis_read_warning
+
+            result = append_bp_crisis_read_warning(result)
+        return result
 
 
     async def _exec_health_query_batch(
@@ -8863,20 +8872,26 @@ class AgentExecutor:
                     names.append(s)
             names = names[: self._MAX_LAB_BATCH_NAMES]
             if names:
+                # 血压桥接项含 systolic/diastolic → 与 health_query 读路径同款
+                # 急症提示 (确定性, 非血压指标零命中零开销)。
+                from app.utils.blood_pressure import append_bp_crisis_read_warning
+
                 by_name = {n: self._query_one_lab_indicator(n, since, limit) for n in names}
                 total = sum(v.get("count", 0) for v in by_name.values())
                 truncated = len([x for x in raw_names if str(x or "").strip()]) > self._MAX_LAB_BATCH_NAMES
-                return json.dumps(
+                return append_bp_crisis_read_warning(json.dumps(
                     {"batch": True, "count": total, "queried": names,
                      "by_name": by_name, "truncated": truncated},
                     ensure_ascii=False,
-                )
+                ))
 
-        # 单指标(向后兼容:返回原 shape)
-        return json.dumps(
+        # 单指标(向后兼容:返回原 shape)。血压桥接项同款急症提示, 见批量路径注释。
+        from app.utils.blood_pressure import append_bp_crisis_read_warning
+
+        return append_bp_crisis_read_warning(json.dumps(
             self._query_one_lab_indicator(args.get("name"), since, limit),
             ensure_ascii=False,
-        )
+        ))
 
     async def _api_get_json(self, url: str, headers: dict):
         """HTTP GET, 返回解析后的 JSON (list/dict)。
