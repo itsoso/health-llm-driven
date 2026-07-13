@@ -55,6 +55,7 @@ type ShareResult =
   | { target: ShareTarget; kind: 'saved_to_library' }
   | { target: ShareTarget; kind: 'photo_library_permission_denied' };
 type ShareReviewTone = 'none' | 'estimate' | 'low-confidence';
+type ShareInFlight = ShareTarget | 'library';
 
 export function dietShareCaptureDimensions(
   platform = Platform.OS,
@@ -812,11 +813,12 @@ export function DietShareSheet({
   onShareTerminal,
 }: DietShareSheetProps) {
   const cardRef = useRef<View>(null);
-  const [sharing, setSharing] = useState(false);
+  const [sharingAction, setSharingAction] = useState<ShareInFlight | null>(null);
   const [imageReady, setImageReady] = useState(!imageSource);
   const [imageTimedOut, setImageTimedOut] = useState(false);
   const [copiedCaption, setCopiedCaption] = useState<'moments' | 'xiaohongshu' | null>(null);
   const [shareResult, setShareResult] = useState<ShareResult | null>(null);
+  const sharing = sharingAction !== null;
   const shareHasPhoto = Boolean(imageSource) && !imageTimedOut;
   const lowConfidenceShare = isLowConfidenceDietShare(record);
   const estimatedShare = isAiEstimatedNutritionSource(record.source);
@@ -961,7 +963,7 @@ export function DietShareSheet({
     if (sharing || !imageReady || !cardRef.current) return;
     const startedAt = Date.now();
     let captureUri: string | null = null;
-    setSharing(true);
+    setSharingAction(target);
     try {
       await Clipboard.setStringAsync(captionForShareTarget(record, dateLabel, target));
       if (!await Sharing.isAvailableAsync()) {
@@ -1025,7 +1027,7 @@ export function DietShareSheet({
           // Temporary-file cleanup is best effort after the system share promise settles.
         }
       }
-      setSharing(false);
+      setSharingAction(null);
     }
   };
 
@@ -1033,7 +1035,7 @@ export function DietShareSheet({
     if (sharing || !imageReady || !cardRef.current) return;
     const startedAt = Date.now();
     let captureUri: string | null = null;
-    setSharing(true);
+    setSharingAction('library');
     try {
       const permission = await MediaLibrary.requestPermissionsAsync(true);
       if (!permission.granted && permission.status !== 'granted') {
@@ -1083,7 +1085,7 @@ export function DietShareSheet({
           // Temporary-file cleanup is best effort after the image is saved.
         }
       }
-      setSharing(false);
+      setSharingAction(null);
     }
   };
 
@@ -1224,13 +1226,13 @@ export function DietShareSheet({
             accessibilityRole="button"
             accessibilityLabel="保存饮食图片到相册"
           >
-            {sharing || !imageReady ? (
+            {sharingAction === 'library' || !imageReady ? (
               <ActivityIndicator size="small" color={C.green600} />
             ) : (
               <Ionicons name="download-outline" size={19} color={C.green600} />
             )}
             <View style={styles.shareButtonCopy}>
-              <Text style={styles.saveLibraryButtonText}>{!imageReady ? '图片加载中' : sharing ? '存图中' : saveLibraryLabel}</Text>
+              <Text style={styles.saveLibraryButtonText}>{!imageReady ? '图片加载中' : sharingAction === 'library' ? '存图中' : saveLibraryLabel}</Text>
               {!sharing && imageReady ? (
                 <Text style={styles.saveLibraryButtonHint}>{saveLibraryHint}</Text>
               ) : null}
@@ -1245,13 +1247,13 @@ export function DietShareSheet({
             accessibilityRole="button"
             accessibilityLabel="保存或分享饮食图片"
           >
-            {sharing || !imageReady ? (
+            {sharingAction === 'generic' || !imageReady ? (
               <ActivityIndicator size="small" color={C.greenOn} />
             ) : (
               <Ionicons name="share-outline" size={19} color={C.greenOn} />
             )}
             <View style={styles.shareButtonCopy}>
-              <Text style={styles.shareButtonText}>{!imageReady ? '图片加载中' : sharing ? '生成中' : genericShareLabel}</Text>
+              <Text style={styles.shareButtonText}>{!imageReady ? '图片加载中' : sharingAction === 'generic' ? '生成中' : genericShareLabel}</Text>
               {!sharing && imageReady ? (
                 <Text style={styles.shareButtonHint}>{genericShareHint}</Text>
               ) : null}

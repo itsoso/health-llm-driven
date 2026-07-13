@@ -676,6 +676,32 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('keeps generic share progress separate from photo-library saving progress', async () => {
+    let resolveShare: (() => void) | undefined;
+    mockShareAsync.mockImplementationOnce(() => new Promise<void>(resolve => {
+      resolveShare = resolve;
+    }));
+    const { getByText, queryByText } = render(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(getByText('保存/分享图片'));
+
+    await waitFor(() => {
+      expect(getByText('生成中')).toBeTruthy();
+      expect(queryByText('存图中')).toBeNull();
+    });
+
+    await act(async () => {
+      resolveShare?.();
+    });
+  });
+
   it('saves the 1080x1440 share image directly to the photo library', async () => {
     const onShareTerminal = jest.fn();
     const onShareFeedback = jest.fn();
@@ -725,7 +751,7 @@ describe('DietShareCard', () => {
     mockSaveToLibraryAsync.mockImplementationOnce(() => new Promise<void>(resolve => {
       resolveSave = resolve;
     }));
-    const { getByText } = render(
+    const { getByText, queryByText } = render(
       <DietShareSheet
         visible
         record={record}
@@ -738,6 +764,7 @@ describe('DietShareCard', () => {
 
     await waitFor(() => {
       expect(getByText('存图中')).toBeTruthy();
+      expect(queryByText('生成中')).toBeNull();
     });
 
     await act(async () => {
