@@ -1388,6 +1388,9 @@ export default function DietScreen() {
           onShareTerminal={(meta) => {
             void emitClientEvent('diet_share_terminal', meta);
           }}
+          onShareFeedback={(hint) => {
+            toast.show(hint.title, hint.tone === 'success' ? 'success' : 'error');
+          }}
         />
       ) : null}
     </SafeAreaView>

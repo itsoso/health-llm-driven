@@ -694,6 +694,12 @@ export type DietShareSheetProps = DietShareCardProps & {
   visible: boolean;
   onClose: () => void;
   onAskReva?: () => void;
+  onShareFeedback?: (hint: {
+    title: string;
+    detail: string;
+    tone: 'success' | 'warning';
+    result: ShareResult;
+  }) => void;
   onShareTerminal?: (meta: {
     phase: 'completed' | 'failed';
     duration_ms: number;
@@ -710,6 +716,7 @@ export function DietShareSheet({
   imageSource,
   onClose,
   onAskReva,
+  onShareFeedback,
   onShareTerminal,
 }: DietShareSheetProps) {
   const cardRef = useRef<View>(null);
@@ -745,6 +752,17 @@ export function DietShareSheet({
     });
   };
 
+  const publishShareResult = (result: ShareResult) => {
+    setShareResult(result);
+    const hint = publishHintForShareResult(result);
+    onShareFeedback?.({
+      title: hint.title,
+      detail: hint.detail,
+      tone: hint.tone,
+      result,
+    });
+  };
+
   const copyCaption = async (kind: 'moments' | 'xiaohongshu') => {
     try {
       await Clipboard.setStringAsync(
@@ -774,7 +792,7 @@ export function DietShareSheet({
           has_photo: false,
           share_target: target,
         });
-        setShareResult({ target, kind: 'caption_fallback' });
+        publishShareResult({ target, kind: 'caption_fallback' });
         return;
       }
       const dimensions = dietShareCaptureDimensions();
@@ -795,7 +813,7 @@ export function DietShareSheet({
         has_photo: shareHasPhoto,
         share_target: target,
       });
-      setShareResult({ target, kind: 'completed' });
+      publishShareResult({ target, kind: 'completed' });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       try {
@@ -807,7 +825,7 @@ export function DietShareSheet({
           share_target: target,
           error_code: 'image_share_fell_back_to_caption',
         });
-        setShareResult({ target, kind: 'caption_fallback' });
+        publishShareResult({ target, kind: 'caption_fallback' });
       } catch {
         setShareResult(null);
         onShareTerminal?.({
@@ -846,7 +864,7 @@ export function DietShareSheet({
           share_target: 'generic',
           error_code: 'photo_library_permission_denied',
         });
-        setShareResult({ target: 'generic', kind: 'photo_library_permission_denied' });
+        publishShareResult({ target: 'generic', kind: 'photo_library_permission_denied' });
         return;
       }
       const dimensions = dietShareCaptureDimensions();
@@ -865,7 +883,7 @@ export function DietShareSheet({
         has_photo: shareHasPhoto,
         share_target: 'generic',
       });
-      setShareResult({ target: 'generic', kind: 'saved_to_library' });
+      publishShareResult({ target: 'generic', kind: 'saved_to_library' });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       setShareResult(null);

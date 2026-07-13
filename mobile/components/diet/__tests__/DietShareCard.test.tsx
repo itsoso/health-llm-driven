@@ -415,6 +415,7 @@ describe('DietShareCard', () => {
 
   it('saves the 1080x1440 share image directly to the photo library', async () => {
     const onShareTerminal = jest.fn();
+    const onShareFeedback = jest.fn();
     const { getByText } = render(
       <DietShareSheet
         visible
@@ -422,6 +423,7 @@ describe('DietShareCard', () => {
         dateLabel="7月11日 · 午餐"
         onClose={jest.fn()}
         onShareTerminal={onShareTerminal}
+        onShareFeedback={onShareFeedback}
       />,
     );
 
@@ -448,12 +450,17 @@ describe('DietShareCard', () => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#小巴记录'));
       expect(getByText('图片已保存到相册，文案已复制')).toBeTruthy();
       expect(getByText('去微信或小红书选择这张图片，再直接粘贴发布')).toBeTruthy();
+      expect(onShareFeedback).toHaveBeenCalledWith(expect.objectContaining({
+        title: '图片已保存到相册，文案已复制',
+        tone: 'success',
+      }));
     });
   });
 
   it('does not capture or save when photo library permission is denied', async () => {
     mockRequestPermissionsAsync.mockResolvedValueOnce({ status: 'denied', granted: false });
     const onShareTerminal = jest.fn();
+    const onShareFeedback = jest.fn();
     const { getByText } = render(
       <DietShareSheet
         visible
@@ -461,6 +468,7 @@ describe('DietShareCard', () => {
         dateLabel="7月11日 · 午餐"
         onClose={jest.fn()}
         onShareTerminal={onShareTerminal}
+        onShareFeedback={onShareFeedback}
       />,
     );
 
@@ -478,6 +486,10 @@ describe('DietShareCard', () => {
       }));
       expect(getByText('需要相册权限')).toBeTruthy();
       expect(getByText('允许访问相册后，再保存高清分享图')).toBeTruthy();
+      expect(onShareFeedback).toHaveBeenCalledWith(expect.objectContaining({
+        title: '需要相册权限',
+        tone: 'warning',
+      }));
     });
   });
 
