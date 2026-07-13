@@ -4,8 +4,8 @@
 |---|---|
 | slug | `kbase-knowledge-release-consumer` |
 | 创建日期 | 2026-07-12 |
-| 当前阶段 | S5 实现 |
-| 状态 | implementation_complete |
+| 当前阶段 | S8 沉淀 |
+| 状态 | production_verified |
 | 负责 | Codex |
 | 反馈环 | KBase Release API / System KB draft review / KBAudit |
 
@@ -58,7 +58,7 @@
 - [x] T2 Release 到 System KB 草稿映射。
 - [x] T3 KBAudit 增量游标与定时入口复用。
 - [x] T4 fail-closed 与回归测试。
-- [ ] T5 生产配置、真实同步和审核包验证。
+- [x] T5 生产配置、真实同步和审核包验证。
 
 ## S5 · 实现
 
@@ -84,20 +84,30 @@
 
 ## S6 · 部署
 
-- 尚未部署；需要配置生产 KBase URL 与 bearer token 后走标准发布入口。
+- 消费端合并提交：`1ece62f04e9517d6a7ad8186dc183c8a59ddad14`。
+- 生产已配置 KBase Release URL 与 bearer token；档案只记录配置存在，不记录凭据值。
+- 标准部署入口完成数据库备份、System KB 重建和服务重启。
 
 ## G5 · 部署健康闸
 
-- **裁决：PENDING**。等待合并、部署和任务健康检查。
+- 部署健康检查：`60/60 PASS`。
+- `health-backend`、`celery-worker`、`celery-beat` 均为 `active`。
+- 服务器侧健康接口确认 API、数据库、Redis 和 Celery 均已连接。
+- **裁决：PASS**。
 
 ## S7 · 上线验证
 
-- 待验证真实 Release 被拉取、审核包可见、serving 未自动改变、第二次同步返回 up-to-date。
+- 首次生产同步拉取 1 个 Release：`release-43a7dbb5062e51e383597c1452dfe5b187a2ce8b78690915f18cb1bc8819bcbb`。
+- 首次结果为 `draft_written`，游标推进到该 Release；审核门返回 `serving_allowed=false`。
+- 阻断原因包含 `draft_artifacts_present`、`unreviewed_artifacts_present` 和 `manifest_not_reviewed`，未自动进入 serving。
+- 紧接着第二次同步返回 `up_to_date`、`release_count=0`，验证增量游标和幂等行为。
 
 ## G6 · 验证闸
 
-- **裁决：PENDING**。不能以本地模拟服务代替线上认证链路。
+- 已通过线上认证链路拉取真实 Release，并验证草稿门和二次同步。
+- **裁决：PASS**。
 
 ## S8 · 沉淀
 
-- 实施与回滚边界已记录；上线验证后补充真实 release ID 和审计证据。
+- 实施、回滚边界、真实 Release 游标和生产门禁证据均已记录。
+- 后续由人工审核草稿；在审核通过前不得将该 Release 用于健康 serving。
