@@ -185,8 +185,8 @@ describe('ChatBubble streaming degraded render', () => {
     expect(queryByTestId('assistant-status-line')).toBeNull();
   });
 
-  it('renders streaming thinking steps above the assistant text', () => {
-    const { getByLabelText, getByTestId, getByText, queryByTestId } = renderBubble({
+  it('renders streaming thinking steps as a compact expandable row above the assistant text', () => {
+    const { getByLabelText, getByTestId, getByText, queryByText, queryByTestId } = renderBubble({
       id: 'assistant-streaming-thinking',
       role: 'assistant',
       content: '今晚优先固定睡眠时间。',
@@ -195,17 +195,21 @@ describe('ChatBubble streaming degraded render', () => {
     });
 
     expect(queryByTestId('rich-markdown')).toBeNull();
-    expect(getByText('小巴正在思考')).toBeTruthy();
-    expect(getByText('2/2')).toBeTruthy();
-    expect(getByText('正在理解你的问题')).toBeTruthy();
+    expect(getByText('正在思考 · 2 步')).toBeTruthy();
     expect(getByText('读取健康数据')).toBeTruthy();
-    expect(getByLabelText('当前步骤:读取健康数据')).toBeTruthy();
+    expect(queryByText('小巴正在思考')).toBeNull();
+    expect(queryByText('2/2')).toBeNull();
+    expect(queryByText('正在理解你的问题')).toBeNull();
+    expect(getByLabelText(/当前步骤:读取健康数据/)).toBeTruthy();
     const panelStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
-    expect(panelStyle.alignSelf).toBe('stretch');
-    expect(panelStyle.width).toBe('100%');
+    expect(panelStyle.alignSelf).toBe('flex-start');
+    expect(panelStyle.width).toBeUndefined();
     expect(panelStyle.maxWidth).toBe('100%');
     expect(panelStyle.minWidth ?? 0).toBe(0);
     expect(getByText('今晚优先固定睡眠时间。')).toBeTruthy();
+
+    fireEvent.press(getByLabelText('展开思考步骤'));
+    expect(getByText('正在理解你的问题')).toBeTruthy();
   });
 
   it('collapses completed thinking steps into an inline status row (expand to reveal steps)', () => {
