@@ -255,6 +255,104 @@ def _extract_database_verification_instruction(extra_context: Optional[str]) -> 
     )
 
 
+def _format_diet_number(value: Any) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:.1f}".rstrip("0").rstrip(".")
+
+
+def _build_database_verification_snapshot(
+    db: Session,
+    user_id: int,
+    extra_context: Optional[str],
+) -> Optional[str]:
+    """Build deterministic DB facts for post-confirm diet review turns."""
+
+    if not extra_context:
+        return None
+    try:
+        payload = json.loads(extra_context)
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    verification = payload.get("database_verification")
+    if not isinstance(verification, dict) or verification.get("required") is not True:
+        return None
+    if verification.get("query_scope") != "daily_diet_records":
+        return None
+    if verification.get("totals_source") != "database":
+        return None
+
+    raw_date = verification.get("date")
+    if not isinstance(raw_date, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_date.strip()):
+        return None
+    target_date = datetime.strptime(raw_date.strip(), "%Y-%m-%d").date()
+
+    try:
+        verify_record_id = int(verification.get("verify_record_id"))
+    except (TypeError, ValueError):
+        return None
+    if verify_record_id <= 0:
+        return None
+
+    from app.models.daily_health import DietRecord
+
+    records = (
+        db.query(DietRecord)
+        .filter(
+            DietRecord.user_id == user_id,
+            DietRecord.record_date == target_date,
+        )
+        .order_by(DietRecord.created_at, DietRecord.id)
+        .all()
+    )
+    total_calories = sum(record.calories or 0 for record in records)
+    total_protein = sum(record.protein or 0 for record in records)
+    total_carbs = sum(record.carbs or 0 for record in records)
+    total_fat = sum(record.fat or 0 for record in records)
+    total_fiber = sum(record.fiber or 0 for record in records)
+    record_found = any(record.id == verify_record_id for record in records)
+    meal_lines = [
+        (
+            f"- id={record.id} | {record.meal_type or '-'} | "
+            f"{(record.food_items or record.food_name or '').strip() or '-'} | "
+            f"{_format_diet_number(record.calories)} kcal | "
+            f"P {_format_diet_number(record.protein)}g / "
+            f"C {_format_diet_number(record.carbs)}g / "
+            f"F {_format_diet_number(record.fat)}g"
+        )
+        for record in records[:20]
+    ]
+    if not meal_lines:
+        meal_lines.append("- 当日数据库没有饮食记录")
+
+    missing_note = (
+        "\n- ⚠️ 同步失败: 数据库中未找到本次确认记录。请直接告诉用户同步失败，"
+        "不要根据入口上下文或页面缓存回答已保存。"
+        if not record_found else ""
+    )
+    return (
+        "## 已读取数据库饮食记录（确定性快照）\n"
+        f"日期: {target_date.isoformat()}\n"
+        f"verify_record_id={verify_record_id} 存在: {'yes' if record_found else 'no'}\n"
+        f"餐次数量: {len(records)}\n"
+        "数据库汇总: "
+        f"总热量 {_format_diet_number(total_calories)} kcal; "
+        f"蛋白质 {_format_diet_number(total_protein)} g; "
+        f"碳水 {_format_diet_number(total_carbs)} g; "
+        f"脂肪 {_format_diet_number(total_fat)} g; "
+        f"膳食纤维 {_format_diet_number(total_fiber)} g\n"
+        "数据库餐次:\n"
+        + "\n".join(meal_lines)
+        + missing_note
+    )
+
+
 # ── 意图专属 prompt 块门控(2026-07-11 token 优化 #5)─────────────────────
 # menu_share(739 chars)只在餐食/菜单类问题有用;基因解读规则(356 chars)只在
 # 基因/补剂类回合有用 —— 二者曾无条件每轮全发(占空用户 full prompt 20%)。
@@ -4262,6 +4360,15 @@ class AgentExecutor:
         database_verification_instruction = _extract_database_verification_instruction(extra_context)
         if database_verification_instruction:
             turn_context_parts.append(database_verification_instruction)
+            try:
+                database_verification_snapshot = _build_database_verification_snapshot(
+                    self.db, user_id, extra_context
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[agent_executor] database verification snapshot failed: %s", e)
+                database_verification_snapshot = None
+            if database_verification_snapshot:
+                turn_context_parts.append(database_verification_snapshot)
         # 入口 deeplink 携带的结构化上下文 — 用户在 SNP/饮食/运动等页点"详细聊"时,
         # 把当前页正展示的具体方案条目透传过来, 让 LLM 不重新猜, 在已有方案上深化.
         if extra_context and extra_context.strip():
