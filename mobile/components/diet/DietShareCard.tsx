@@ -115,6 +115,9 @@ function buildDietShareStatusLine(highlights: string[]): string {
 }
 
 export function buildDietShareBalance(record: DietRecord): { score: number | null; label: string } {
+  if (isLowConfidenceDietShare(record)) {
+    return { score: null, label: '核对后生成均衡度' };
+  }
   if (!isNutritionComplete(record)) {
     return { score: null, label: '营养回填后生成均衡度' };
   }

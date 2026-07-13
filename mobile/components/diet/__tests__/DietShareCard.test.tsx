@@ -101,6 +101,22 @@ describe('DietShareCard', () => {
     expect(getByText('高蛋白稳态餐')).toBeTruthy();
   });
 
+  it('does not show a high balance score before low-confidence estimates are reviewed', () => {
+    const lowConfidenceRecord = { ...record, source: 'ai_estimate', ai_confidence: 0.42 };
+    const balance = buildDietShareBalance(lowConfidenceRecord);
+    const { getByText, queryByText } = render(
+      <DietShareCard record={lowConfidenceRecord} dateLabel="7月11日 · 午餐" />,
+    );
+
+    expect(balance.score).toBeNull();
+    expect(balance.label).toBe('核对后生成均衡度');
+    expect(getByText('均衡度')).toBeTruthy();
+    expect(getByText('待核对')).toBeTruthy();
+    expect(getByText('核对后生成均衡度')).toBeTruthy();
+    expect(queryByText('96')).toBeNull();
+    expect(queryByText('高蛋白稳态餐')).toBeNull();
+  });
+
   it('derives macro energy structure for a more premium share image', () => {
     const segments = buildDietShareMacroSegments(record);
 
