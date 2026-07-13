@@ -55,6 +55,29 @@ const reviewData = {
   ],
 };
 
+const verificationPacket = {
+  contract: 'kbase_claim_verification_packet_v1',
+  packet_id: 'vp_123',
+  doc_id: 'claim:release-abc-claim-1',
+  workspace_fingerprint: 'a'.repeat(64),
+  claim_content_hash: 'c'.repeat(64),
+  status: 'ready',
+  stale: false,
+  proposed_decision: 'needs_evidence',
+  confidence: 1,
+  rationale: 'Independent evidence is still required.',
+  checks: [
+    { code: 'source_completeness', status: 'pass', message: 'Claim has source references.' },
+    { code: 'external_evidence', status: 'warn', message: 'Independent external evidence is missing.' },
+  ],
+  blocking_reasons: [],
+  missing_evidence: ['independent_external_source'],
+  citation_ids: ['citation-1'],
+  related_claim_ids: [],
+  generator: 'deterministic:kbase-claim-verification-v1',
+  generated_at: '2026-07-13T12:00:00+00:00',
+};
+
 function renderPanel() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -69,7 +92,10 @@ function renderPanel() {
 describe('DedaoReleaseReviewPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(api.get).mockResolvedValue({ data: reviewData });
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.includes('/verification')) return { data: { items: [] } };
+      return { data: reviewData };
+    });
     vi.mocked(api.patch).mockResolvedValue({
       data: { decision: 'needs_evidence', workspace_fingerprint: 'b'.repeat(64) },
     });
@@ -163,6 +189,86 @@ describe('DedaoReleaseReviewPanel', () => {
 
     expect(await screen.findByText('工作区已更新，请重新加载后再裁决。')).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole('button', { name: '重新加载' }).at(-1)!);
-    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(2));
+    await waitFor(() => {
+      const reviewCalls = vi.mocked(api.get).mock.calls.filter(([url]) =>
+        String(url).includes('/draft_review/items?'),
+      );
+      expect(reviewCalls).toHaveLength(2);
+    });
+  });
+
+  it('loads and displays the latest verification packet for the selected claim', async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.includes('/verification')) return { data: { items: [verificationPacket] } };
+      return { data: reviewData };
+    });
+
+    renderPanel();
+
+    expect(await screen.findByText('机器验证')).toBeInTheDocument();
+    expect(screen.getByText('建议：待补证据')).toBeInTheDocument();
+    expect(screen.getByText('来源完整性')).toBeInTheDocument();
+    expect(screen.getByText('外部证据')).toBeInTheDocument();
+    expect(screen.getByText('citation-1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '采纳验证建议' })).toBeEnabled();
+  });
+
+  it('generates a verification packet explicitly without adjudicating the claim', async () => {
+    vi.mocked(api.post).mockImplementation(async (url: string) => {
+      if (url.endsWith('/verification')) {
+        return { data: { workspace_fingerprint: 'a'.repeat(64), packet: verificationPacket } };
+      }
+      return { data: { dry_run: true } };
+    });
+
+    renderPanel();
+    await screen.findByRole('button', { name: /咖啡因与睡眠窗口/ });
+    fireEvent.click(screen.getByRole('button', { name: '生成验证包' }));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        '/admin/knowledge/dedao_kbase/draft_review/items/claim%3Arelease-abc-claim-1/verification',
+        { workspace_fingerprint: 'a'.repeat(64) },
+      );
+    });
+    expect(api.patch).not.toHaveBeenCalled();
+    expect(await screen.findByText('建议：待补证据')).toBeInTheDocument();
+  });
+
+  it('applies only a current ready packet through the explicit review action', async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.includes('/verification')) return { data: { items: [verificationPacket] } };
+      return { data: reviewData };
+    });
+
+    renderPanel();
+    await screen.findByText('建议：待补证据');
+    fireEvent.change(screen.getByLabelText('裁决说明'), { target: { value: '采纳机器核验结果' } });
+    fireEvent.click(screen.getByRole('button', { name: '采纳验证建议' }));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        '/admin/knowledge/dedao_kbase/draft_review/items/claim%3Arelease-abc-claim-1/verification/apply',
+        {
+          workspace_fingerprint: 'a'.repeat(64),
+          packet_id: 'vp_123',
+          note: '采纳机器核验结果',
+        },
+      );
+    });
+  });
+
+  it('blocks applying a stale verification packet', async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.includes('/verification')) {
+        return { data: { items: [{ ...verificationPacket, stale: true, status: 'stale' }] } };
+      }
+      return { data: reviewData };
+    });
+
+    renderPanel();
+
+    expect(await screen.findByText('验证包已过期，请重新生成。')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '采纳验证建议' })).toBeDisabled();
   });
 });

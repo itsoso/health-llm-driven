@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Ban,
+  Bot,
   CheckCircle2,
   FileCheck2,
   FlaskConical,
@@ -52,6 +53,31 @@ interface ReviewResponse {
   items: ReleaseClaim[];
 }
 
+interface VerificationCheck {
+  code: string;
+  status: 'pass' | 'warn' | 'block' | string;
+  message: string;
+}
+
+interface VerificationPacket {
+  packet_id: string;
+  status: 'ready' | 'blocked' | 'stale' | string;
+  stale?: boolean;
+  proposed_decision: DedaoClaimDecision;
+  confidence: number;
+  rationale: string;
+  checks: VerificationCheck[];
+  blocking_reasons: string[];
+  missing_evidence: string[];
+  citation_ids: string[];
+  generator: string;
+  generated_at: string;
+}
+
+interface VerificationResponse {
+  items: VerificationPacket[];
+}
+
 interface DedaoReleaseReviewPanelProps {
   enabled: boolean;
 }
@@ -88,6 +114,23 @@ export function DedaoReleaseReviewPanel({ enabled }: DedaoReleaseReviewPanelProp
     const items = reviewQuery.data?.items ?? [];
     return items.find((item) => item.doc_id === selectedId) ?? items[0] ?? null;
   }, [reviewQuery.data?.items, selectedId]);
+
+  const verificationQuery = useQuery<VerificationResponse>({
+    queryKey: ['dedao-kbase-verification', selected?.doc_id],
+    queryFn: async () => {
+      if (!selected) return { items: [] };
+      const response = await api.get(
+        `/admin/knowledge/dedao_kbase/draft_review/items/${encodeURIComponent(selected.doc_id)}/verification`,
+      );
+      return response.data;
+    },
+    enabled: enabled && Boolean(selected),
+    retry: false,
+  });
+
+  const verificationPacket = verificationQuery.data?.items?.find(
+    (item) => typeof item?.packet_id === 'string' && item.packet_id.length > 0,
+  ) ?? null;
 
   useEffect(() => {
     if (!selected) {
@@ -149,6 +192,71 @@ export function DedaoReleaseReviewPanel({ enabled }: DedaoReleaseReviewPanelProp
     },
   });
 
+  const generateVerificationMutation = useMutation({
+    mutationFn: async () => {
+      if (!selected || !reviewQuery.data) throw new Error('审核工作区未加载');
+      const response = await api.post(
+        `/admin/knowledge/dedao_kbase/draft_review/items/${encodeURIComponent(selected.doc_id)}/verification`,
+        { workspace_fingerprint: reviewQuery.data.workspace_fingerprint },
+      );
+      return response.data as { packet: VerificationPacket };
+    },
+    onSuccess: (result) => {
+      setError(null);
+      if (!selected) return;
+      queryClient.setQueryData<VerificationResponse>(
+        ['dedao-kbase-verification', selected.doc_id],
+        (current) => ({
+          items: [
+            result.packet,
+            ...(current?.items ?? []).filter((item) => item.packet_id !== result.packet.packet_id),
+          ],
+        }),
+      );
+    },
+    onError: (mutationError: unknown) => {
+      if (isStaleWorkspaceError(mutationError)) {
+        setError('工作区已更新，请重新加载后再生成验证包。');
+        return;
+      }
+      const detail = (mutationError as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(detail || '验证包生成失败。');
+    },
+  });
+
+  const applyVerificationMutation = useMutation({
+    mutationFn: async () => {
+      if (!selected || !reviewQuery.data || !verificationPacket) {
+        throw new Error('没有可采纳的验证包');
+      }
+      const response = await api.post(
+        `/admin/knowledge/dedao_kbase/draft_review/items/${encodeURIComponent(selected.doc_id)}/verification/apply`,
+        {
+          workspace_fingerprint: reviewQuery.data.workspace_fingerprint,
+          packet_id: verificationPacket.packet_id,
+          note: note.trim() || undefined,
+        },
+      );
+      return response.data;
+    },
+    onSuccess: async () => {
+      setError(null);
+      setNote('');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['dedao-kbase-release-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['dedao-kbase-verification', selected?.doc_id] }),
+      ]);
+    },
+    onError: (mutationError: unknown) => {
+      if (isStaleWorkspaceError(mutationError)) {
+        setError('验证包或工作区已过期，请重新加载后再操作。');
+        return;
+      }
+      const detail = (mutationError as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(detail || '验证建议采纳失败。');
+    },
+  });
+
   const finalizeMutation = useMutation({
     mutationFn: async () => {
       if (!reviewQuery.data) throw new Error('审核工作区未加载');
@@ -196,7 +304,11 @@ export function DedaoReleaseReviewPanel({ enabled }: DedaoReleaseReviewPanelProp
     ? canFinalizeReleaseReview({ total: data.total, unresolvedCount: data.unresolved_count })
     : false;
   const isFinalized = data?.gate?.serving_allowed === true;
-  const isMutating = adjudicationMutation.isPending || finalizeMutation.isPending || previewMutation.isPending;
+  const isMutating = adjudicationMutation.isPending
+    || generateVerificationMutation.isPending
+    || applyVerificationMutation.isPending
+    || finalizeMutation.isPending
+    || previewMutation.isPending;
 
   return (
     <section className="mt-6 overflow-hidden rounded-lg border border-slate-800 bg-[#111820]">
@@ -311,6 +423,15 @@ export function DedaoReleaseReviewPanel({ enabled }: DedaoReleaseReviewPanelProp
                 <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">{selected.summary}</p>
               </div>
 
+              <VerificationPacketPanel
+                packet={verificationPacket}
+                isLoading={verificationQuery.isLoading}
+                isGenerating={generateVerificationMutation.isPending}
+                isApplying={applyVerificationMutation.isPending}
+                onGenerate={() => generateVerificationMutation.mutate()}
+                onApply={() => applyVerificationMutation.mutate()}
+              />
+
               <div className="grid gap-3 sm:grid-cols-3">
                 <label className="text-xs text-slate-400">
                   证据等级
@@ -371,6 +492,98 @@ export function DedaoReleaseReviewPanel({ enabled }: DedaoReleaseReviewPanelProp
         </div>
         {preview && <span className="basis-full text-xs text-teal-300">影响预演已完成，未修改 serving 数据。</span>}
       </footer>
+    </section>
+  );
+}
+
+const CHECK_LABELS: Record<string, string> = {
+  source_completeness: '来源完整性',
+  external_evidence: '外部证据',
+  freshness: '时效性',
+  duplicate: '重复项',
+  contradiction: '冲突检查',
+};
+
+function VerificationPacketPanel({
+  packet,
+  isLoading,
+  isGenerating,
+  isApplying,
+  onGenerate,
+  onApply,
+}: {
+  packet: VerificationPacket | null;
+  isLoading: boolean;
+  isGenerating: boolean;
+  isApplying: boolean;
+  onGenerate: () => void;
+  onApply: () => void;
+}) {
+  const canApply = Boolean(packet && packet.status === 'ready' && !packet.stale);
+  return (
+    <section className="rounded border border-slate-700 bg-slate-950/40 p-3" aria-label="机器验证">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-medium text-slate-100">
+          <Bot className="h-4 w-4 text-teal-300" />
+          机器验证
+        </div>
+        <button
+          type="button"
+          onClick={onGenerate}
+          disabled={isGenerating}
+          className="rounded border border-teal-500/40 px-3 py-1.5 text-xs text-teal-200 hover:bg-teal-500/10 disabled:opacity-40"
+        >
+          {isGenerating ? '生成中...' : packet ? '重新生成' : '生成验证包'}
+        </button>
+      </div>
+
+      {isLoading && <p className="mt-3 text-xs text-slate-500">读取验证记录...</p>}
+      {!isLoading && !packet && <p className="mt-3 text-xs text-slate-500">尚未生成验证包，不会自动裁决。</p>}
+      {packet && (
+        <div className="mt-3 space-y-3">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded border border-slate-700 px-2 py-1 text-slate-300">
+              建议：{decisionLabel(packet.proposed_decision)}
+            </span>
+            <span className="text-slate-500">置信度 {Math.round(packet.confidence * 100)}%</span>
+          </div>
+          {packet.stale && <p className="text-xs text-amber-300">验证包已过期，请重新生成。</p>}
+          {packet.status === 'blocked' && (
+            <p className="text-xs text-rose-300">存在确定性阻塞项，不能采纳。</p>
+          )}
+          <div className="grid gap-2 sm:grid-cols-2">
+            {packet.checks.map((check) => (
+              <div key={check.code} className="rounded border border-slate-800 px-3 py-2 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-slate-200">{CHECK_LABELS[check.code] ?? check.code}</span>
+                  <span className={check.status === 'pass' ? 'text-emerald-300' : check.status === 'block' ? 'text-rose-300' : 'text-amber-300'}>
+                    {check.status}
+                  </span>
+                </div>
+                <p className="mt-1 text-slate-500">{check.message}</p>
+              </div>
+            ))}
+          </div>
+          {packet.citation_ids.length > 0 && (
+            <div className="flex flex-wrap gap-2 text-xs">
+              {packet.citation_ids.map((citationId) => (
+                <code key={citationId} className="rounded bg-slate-900 px-2 py-1 text-slate-300">{citationId}</code>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3 border-t border-slate-800 pt-3">
+            <p className="text-xs text-slate-500">采纳后仍由审核员承担裁决责任。</p>
+            <button
+              type="button"
+              onClick={onApply}
+              disabled={!canApply || isApplying}
+              className="rounded bg-teal-500 px-3 py-2 text-xs font-medium text-slate-950 hover:bg-teal-400 disabled:opacity-40"
+            >
+              {isApplying ? '采纳中...' : '采纳验证建议'}
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

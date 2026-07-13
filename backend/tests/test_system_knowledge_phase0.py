@@ -1479,6 +1479,116 @@ def test_admin_dedao_kbase_claim_adjudication_returns_conflict_for_stale_fingerp
     assert db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_claim_adjudicated").count() == 0
 
 
+def test_admin_dedao_kbase_verification_packet_generate_read_and_audit_are_body_free(
+    client,
+    db,
+    auth_user_and_headers,
+    tmp_path,
+    monkeypatch,
+):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    artifact_dir = tmp_path / "dedao-review"
+    _write_dedao_review_workspace(artifact_dir)
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(artifact_dir))
+    fingerprint = workspace_content_fingerprint(artifact_dir)
+
+    generated = client.post(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/claim%3Arelease-abc-claim-1/verification",
+        headers=headers,
+        json={"workspace_fingerprint": fingerprint},
+    )
+
+    assert generated.status_code == 200
+    packet = generated.json()["packet"]
+    assert packet["proposed_decision"] == "needs_evidence"
+    assert generated.json()["workspace_fingerprint"] == fingerprint
+    listed = client.get(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/claim%3Arelease-abc-claim-1/verification",
+        headers=headers,
+    )
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["packet_id"] == packet["packet_id"]
+    assert listed.json()["items"][0]["stale"] is False
+
+    audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_verification_packet_generated").one()
+    assert audit.doc_id == "claim:release-abc-claim-1"
+    assert audit.diff["packet_id"] == packet["packet_id"]
+    assert "summary" not in json.dumps(audit.diff, ensure_ascii=False)
+    assert "晚间咖啡因" not in json.dumps(audit.diff, ensure_ascii=False)
+
+
+def test_admin_dedao_kbase_verification_packet_returns_conflict_for_stale_fingerprint(
+    client,
+    db,
+    auth_user_and_headers,
+    tmp_path,
+    monkeypatch,
+):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    artifact_dir = tmp_path / "dedao-review"
+    _write_dedao_review_workspace(artifact_dir)
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(artifact_dir))
+
+    response = client.post(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/claim%3Arelease-abc-claim-1/verification",
+        headers=headers,
+        json={"workspace_fingerprint": "0" * 64},
+    )
+
+    assert response.status_code == 409
+    assert "reload" in response.json()["detail"]
+    assert db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_verification_packet_generated").count() == 0
+
+
+def test_admin_dedao_kbase_applies_only_ready_current_verification_packet(
+    client,
+    db,
+    auth_user_and_headers,
+    tmp_path,
+    monkeypatch,
+):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    artifact_dir = tmp_path / "dedao-review"
+    _write_dedao_review_workspace(artifact_dir)
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(artifact_dir))
+    fingerprint = workspace_content_fingerprint(artifact_dir)
+    generated = client.post(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/claim%3Arelease-abc-claim-1/verification",
+        headers=headers,
+        json={"workspace_fingerprint": fingerprint},
+    ).json()
+
+    applied = client.post(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/claim%3Arelease-abc-claim-1/verification/apply",
+        headers=headers,
+        json={
+            "workspace_fingerprint": fingerprint,
+            "packet_id": generated["packet"]["packet_id"],
+            "note": "采纳验证包建议",
+        },
+    )
+
+    assert applied.status_code == 200
+    assert applied.json()["decision"] == "needs_evidence"
+    assert applied.json()["packet_id"] == generated["packet"]["packet_id"]
+    audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_verification_packet_applied").one()
+    assert audit.diff["decision"] == "needs_evidence"
+    assert "晚间咖啡因" not in json.dumps(audit.diff, ensure_ascii=False)
+
+    stale_apply = client.post(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/claim%3Arelease-abc-claim-1/verification/apply",
+        headers=headers,
+        json={
+            "workspace_fingerprint": applied.json()["workspace_fingerprint"],
+            "packet_id": generated["packet"]["packet_id"],
+        },
+    )
+    assert stale_apply.status_code == 409
+
+
 def test_admin_dedao_kbase_finalize_requires_resolved_claims_then_allows_dry_run_preview(
     client,
     db,

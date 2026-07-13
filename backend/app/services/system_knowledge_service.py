@@ -25,7 +25,9 @@ from app.services.system_knowledge_ingest import validate_artifact_review_gate
 from app.services.kbase_review_workspace import (
     adjudicate_review_claim,
     finalize_review_workspace,
+    generate_review_verification_packet,
     list_review_claims,
+    list_review_verification_packets,
     review_workspace_lock,
     workspace_artifacts_valid,
     workspace_content_fingerprint,
@@ -1676,6 +1678,70 @@ def adjudicate_dedao_kbase_review_claim(
         evidence_level=evidence_level,
         confidence=confidence,
     )
+
+
+def generate_dedao_kbase_review_verification_packet(
+    *,
+    doc_id: str,
+    expected_workspace_fingerprint: str,
+    artifact_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    root = _configured_system_kb_artifact_dir(artifact_dir)
+    _require_system_kb_artifact_dir(root)
+    return generate_review_verification_packet(
+        root,
+        doc_id=doc_id,
+        expected_workspace_fingerprint=expected_workspace_fingerprint,
+    )
+
+
+def list_dedao_kbase_review_verification_packets(
+    *,
+    doc_id: str,
+    artifact_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    root = _configured_system_kb_artifact_dir(artifact_dir)
+    _require_system_kb_artifact_dir(root)
+    return list_review_verification_packets(root, doc_id=doc_id)
+
+
+def apply_dedao_kbase_review_verification_packet(
+    *,
+    doc_id: str,
+    packet_id: str,
+    reviewer: str,
+    expected_workspace_fingerprint: str,
+    note: str | None = None,
+    artifact_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    root = _configured_system_kb_artifact_dir(artifact_dir)
+    _require_system_kb_artifact_dir(root)
+    packet_list = list_review_verification_packets(root, doc_id=doc_id)
+    if packet_list["workspace_fingerprint"] != expected_workspace_fingerprint:
+        raise ValueError("dedao-kbase review workspace changed since preview; reload before approval")
+    packet = next(
+        (item for item in packet_list["items"] if item.get("packet_id") == packet_id),
+        None,
+    )
+    if packet is None:
+        raise ValueError("verification packet not found")
+    if packet.get("stale"):
+        raise ValueError("verification packet is stale; reload before approval")
+    if packet.get("status") != "ready":
+        raise ValueError("verification packet is not eligible for application")
+    decision = str(packet.get("proposed_decision") or "")
+    if decision not in {"approve", "needs_evidence", "reject", "background_only"}:
+        raise ValueError("verification packet has an invalid proposed decision")
+    result = adjudicate_review_claim(
+        root,
+        doc_id=doc_id,
+        decision=decision,
+        reviewer=reviewer,
+        expected_workspace_fingerprint=expected_workspace_fingerprint,
+        note=note,
+    )
+    result["packet_id"] = packet_id
+    return result
 
 
 def approve_dedao_kbase_draft_review(

@@ -13,6 +13,10 @@ import shutil
 import tempfile
 from typing import Any, Iterator
 
+from app.services.kbase_claim_verification import (
+    build_deterministic_verification_packet,
+    claim_content_hash,
+)
 from app.services.system_knowledge_ingest import (
     ARTIFACT_FILES,
     review_draft_artifacts,
@@ -21,6 +25,8 @@ from app.services.system_knowledge_ingest import (
 
 
 ADJUDICATION_LEDGER = "adjudications.jsonl"
+VERIFICATION_PACKET_LEDGER = "verification_packets.jsonl"
+VERIFICATION_PACKET_READ_LIMIT = 50
 CLAIM_DECISIONS = frozenset({"approve", "needs_evidence", "reject", "background_only"})
 
 
@@ -96,7 +102,9 @@ def workspace_artifacts_valid(artifact_dir: str | Path) -> bool:
         if any(counts.get(name) != count for name, count in actual_counts.items()):
             return False
         ledger_path = root / ADJUDICATION_LEDGER
-        if ledger_path.exists():
+        for ledger_path in (root / ADJUDICATION_LEDGER, root / VERIFICATION_PACKET_LEDGER):
+            if not ledger_path.exists():
+                continue
             for line in ledger_path.read_text(encoding="utf-8").splitlines():
                 if line.strip() and not isinstance(json.loads(line), dict):
                     return False
@@ -292,6 +300,103 @@ def adjudicate_review_claim(
             "decision": decision,
             "workspace_fingerprint": workspace_content_fingerprint(root),
             "gate": validate_artifact_review_gate(root),
+        }
+
+
+def generate_review_verification_packet(
+    artifact_dir: str | Path,
+    *,
+    doc_id: str,
+    expected_workspace_fingerprint: str,
+    generated_at: datetime | None = None,
+) -> dict[str, Any]:
+    """Generate and atomically persist an advisory packet for one claim."""
+    doc_id = doc_id.strip()
+    if not doc_id:
+        raise ValueError("claim doc_id is required")
+
+    root = Path(artifact_dir)
+    with review_workspace_lock(root):
+        if not workspace_artifacts_valid(root):
+            raise ValueError("dedao-kbase review workspace is incomplete or corrupt")
+        current_fingerprint = workspace_content_fingerprint(root)
+        if current_fingerprint != expected_workspace_fingerprint:
+            raise ValueError("dedao-kbase review workspace changed since preview; reload before approval")
+        claims = _read_jsonl(root / "claims.jsonl")
+        claim = next((row for row in claims if row.get("doc_id") == doc_id), None)
+        if claim is None:
+            raise ValueError(f"claim not found in review workspace: {doc_id}")
+        packet = build_deterministic_verification_packet(
+            claim,
+            workspace_fingerprint=current_fingerprint,
+            peer_claims=claims,
+            generated_at=generated_at,
+        )
+
+        candidate = Path(tempfile.mkdtemp(prefix=f".{root.name}.candidate-", dir=root.parent))
+        try:
+            shutil.copytree(root, candidate, dirs_exist_ok=True)
+            _append_jsonl(candidate / VERIFICATION_PACKET_LEDGER, packet)
+            if not workspace_artifacts_valid(candidate):
+                raise ValueError("review workspace candidate validation failed")
+            _replace_workspace(candidate, root)
+        finally:
+            if candidate.exists():
+                shutil.rmtree(candidate)
+
+        return {
+            "artifact_dir": str(root),
+            "workspace_fingerprint": workspace_content_fingerprint(root),
+            "packet": packet,
+        }
+
+
+def list_review_verification_packets(
+    artifact_dir: str | Path,
+    *,
+    doc_id: str | None = None,
+) -> dict[str, Any]:
+    """Return verification packets with staleness derived from live claim content."""
+    root = Path(artifact_dir)
+    with review_workspace_lock(root):
+        if not workspace_artifacts_valid(root):
+            raise ValueError("dedao-kbase review workspace is incomplete or corrupt")
+        current_fingerprint = workspace_content_fingerprint(root)
+        claims = {
+            str(claim.get("doc_id") or ""): claim
+            for claim in _read_jsonl(root / "claims.jsonl")
+        }
+        candidates = []
+        for stored in _read_jsonl(root / VERIFICATION_PACKET_LEDGER):
+            packet_doc_id = str(stored.get("doc_id") or "")
+            if doc_id is not None and packet_doc_id != doc_id:
+                continue
+            claim = claims.get(packet_doc_id)
+            stale = (
+                claim is None
+                or stored.get("workspace_fingerprint") != current_fingerprint
+                or stored.get("claim_content_hash") != claim_content_hash(claim)
+            )
+            packet = dict(stored)
+            packet["stale"] = stale
+            if stale:
+                packet["status"] = "stale"
+            candidates.append(packet)
+        candidates.sort(key=lambda item: (str(item.get("generated_at") or ""), str(item.get("packet_id") or "")), reverse=True)
+        items = []
+        seen_packet_ids: set[str] = set()
+        for packet in candidates:
+            packet_id = str(packet.get("packet_id") or "")
+            if not packet_id or packet_id in seen_packet_ids:
+                continue
+            seen_packet_ids.add(packet_id)
+            items.append(packet)
+            if len(items) >= VERIFICATION_PACKET_READ_LIMIT:
+                break
+        return {
+            "workspace_fingerprint": current_fingerprint,
+            "total": len(items),
+            "items": items,
         }
 
 

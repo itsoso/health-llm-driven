@@ -14276,6 +14276,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/{doc_id}/verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看 dedao-kbase claim verification packets */
+        get: operations["get_dedao_kbase_verification_packets_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_get"];
+        put?: never;
+        /** 生成 dedao-kbase claim verification packet */
+        post: operations["generate_dedao_kbase_verification_packet_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/{doc_id}/verification/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 采纳 dedao-kbase claim verification packet 建议 */
+        post: operations["apply_dedao_kbase_verification_packet_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/{doc_id}": {
         parameters: {
             query?: never;
@@ -22003,6 +22038,20 @@ export interface components {
         DedaoKbaseReviewedArtifactsPublishRequest: {
             /** Note */
             note?: string | null;
+        };
+        /** DedaoKbaseVerificationPacketApplyRequest */
+        DedaoKbaseVerificationPacketApplyRequest: {
+            /** Workspace Fingerprint */
+            workspace_fingerprint: string;
+            /** Packet Id */
+            packet_id: string;
+            /** Note */
+            note?: string | null;
+        };
+        /** DedaoKbaseVerificationPacketRequest */
+        DedaoKbaseVerificationPacketRequest: {
+            /** Workspace Fingerprint */
+            workspace_fingerprint: string;
         };
         /**
          * DeleteBySourceInput
@@ -54955,6 +55004,107 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dedao_kbase_verification_packets_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_dedao_kbase_verification_packet_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DedaoKbaseVerificationPacketRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_dedao_kbase_verification_packet_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__verification_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DedaoKbaseVerificationPacketApplyRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
