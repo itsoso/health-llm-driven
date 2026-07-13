@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | slug | `kbase-persistent-review-workspace` |
-| stage | S6 verification |
-| status | active |
+| stage | S8 complete |
+| status | complete |
 | owner | Codex |
 
 ## Intake
@@ -40,8 +40,22 @@ replacement.
   workspace and KBAudit cursors, recovers interrupted replacement, validates
   artifact counts at every review surface, binds approval to the previewed
   content fingerprint, and rejects overlapping canonical/review path trees.
-- G5 deployment health: PENDING
-- G6 production persistence verification: PENDING
+- G5 deployment health: **PASS.** PR `#238` merged as `9f9c23183`; the
+  standard backend deployment backed up PostgreSQL, synchronized the guarded
+  production environment, deployed that merge commit, rebuilt the serving KB,
+  and finished at health score `60/60`. Backend, Celery worker, and Celery beat
+  were active; the public and local health endpoints returned HTTP 200; the
+  skills manifest matched all deployed skills.
+- G6 production persistence verification: **PASS.** The first post-deploy sync
+  rebuilt one immutable Release into `/var/lib/health-app/dedao-kbase-review`
+  with cursor `release-43a7dbb5062e51e383597c1452dfe5b187a2ce8b78690915f18cb1bc8819bcbb`.
+  The valid 11-file workspace retained content fingerprint
+  `e137209a552fa54c1a2515a808af4c2ae8b975c7616abeafffe3f773911d4934`
+  across backend and Celery restarts. A second sync returned `up_to_date`,
+  `mode=incremental`, and zero new Releases without changing the fingerprint.
+  The review gate remains fail-closed with `serving_allowed=false` and blockers
+  `draft_artifacts_present` plus `manifest_not_reviewed`; no approval or publish
+  action was performed.
 
 ## Artifacts
 
