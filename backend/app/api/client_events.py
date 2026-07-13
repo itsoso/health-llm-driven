@@ -52,12 +52,16 @@ _ALLOWED_EVENTS = frozenset({
     "agent_turn_terminal",
     "voice_input_terminal",
     "write_receipt_terminal",
+    "diet_photo_recognition_terminal",
+    "diet_photo_confirmation_terminal",
+    "diet_share_terminal",
     # N-of-1 闭环北极星 (2026-06-17) — 已验证闭环数 (verified closed loops)
     "verified_loop",              # meta: { cycle_id, verdict_count, total } 复查产出 ≥1 个非 pending 裁决
 })
 
 _DURATION_BUCKETS = frozenset({"lt_1s", "1_3s", "3_10s", "10_30s", "gte_30s"})
 _SAFE_TOKEN = re.compile(r"^[a-z0-9][a-z0-9_.:-]{0,63}$")
+_DIET_SHARE_TARGETS = frozenset({"generic", "wechat", "xiaohongshu"})
 _RELIABILITY_EVENT_SCHEMAS = {
     "agent_turn_terminal": {
         "allowed": frozenset({"phase", "duration_bucket", "error_code"}),
@@ -75,6 +79,34 @@ _RELIABILITY_EVENT_SCHEMAS = {
         }),
         "required": frozenset({"phase", "duration_bucket", "action_type", "verified"}),
         "phases": frozenset({"verified", "unverified", "failed"}),
+    },
+}
+
+_DIET_CAPTURE_EVENT_SCHEMAS = {
+    "diet_photo_recognition_terminal": {
+        "allowed": frozenset({
+            "phase", "duration_ms", "server_total_ms", "food_count",
+            "table_calibrated_count", "client_prepare_ms", "payload_bytes",
+            "error_code",
+        }),
+        "required": frozenset({
+            "phase", "duration_ms", "food_count", "table_calibrated_count",
+        }),
+        "phases": frozenset({"completed", "failed", "cancelled"}),
+    },
+    "diet_photo_confirmation_terminal": {
+        "allowed": frozenset({
+            "phase", "duration_ms", "verified", "corrected", "error_code",
+        }),
+        "required": frozenset({"phase", "duration_ms", "verified"}),
+        "phases": frozenset({"completed", "failed"}),
+    },
+    "diet_share_terminal": {
+        "allowed": frozenset({
+            "phase", "duration_ms", "has_photo", "share_target", "error_code",
+        }),
+        "required": frozenset({"phase", "duration_ms", "has_photo"}),
+        "phases": frozenset({"completed", "failed"}),
     },
 }
 
@@ -98,35 +130,80 @@ class EventIn(BaseModel):
     @model_validator(mode="after")
     def _validate_reliability_meta(self):
         schema = _RELIABILITY_EVENT_SCHEMAS.get(self.event_name)
-        if schema is None:
+        if schema is not None:
+            if self.meta is None:
+                raise ValueError("reliability event meta is required")
+
+            keys = set(self.meta)
+            extra = keys - schema["allowed"]
+            missing = schema["required"] - keys
+            if extra:
+                raise ValueError(f"reliability event meta has forbidden fields: {sorted(extra)}")
+            if missing:
+                raise ValueError(f"reliability event meta missing fields: {sorted(missing)}")
+            if self.meta.get("phase") not in schema["phases"]:
+                raise ValueError("invalid reliability event phase")
+            if self.meta.get("duration_bucket") not in _DURATION_BUCKETS:
+                raise ValueError("invalid reliability event duration_bucket")
+
+            for key in ("action_type", "error_code"):
+                value = self.meta.get(key)
+                if value is not None and (
+                    not isinstance(value, str) or _SAFE_TOKEN.fullmatch(value) is None
+                ):
+                    raise ValueError(f"invalid reliability event {key}")
+            if "verified" in self.meta and type(self.meta["verified"]) is not bool:
+                raise ValueError("invalid reliability event verified")
+            if self.event_name == "write_receipt_terminal":
+                expected_verified = self.meta.get("phase") == "verified"
+                if self.meta.get("verified") is not expected_verified:
+                    raise ValueError("write receipt phase contradicts verified")
+            return self
+
+        diet_schema = _DIET_CAPTURE_EVENT_SCHEMAS.get(self.event_name)
+        if diet_schema is None:
             return self
         if self.meta is None:
-            raise ValueError("reliability event meta is required")
-
+            raise ValueError("diet capture event meta is required")
         keys = set(self.meta)
-        extra = keys - schema["allowed"]
-        missing = schema["required"] - keys
+        extra = keys - diet_schema["allowed"]
+        missing = diet_schema["required"] - keys
         if extra:
-            raise ValueError(f"reliability event meta has forbidden fields: {sorted(extra)}")
+            raise ValueError(f"diet capture event meta has forbidden fields: {sorted(extra)}")
         if missing:
-            raise ValueError(f"reliability event meta missing fields: {sorted(missing)}")
-        if self.meta.get("phase") not in schema["phases"]:
-            raise ValueError("invalid reliability event phase")
-        if self.meta.get("duration_bucket") not in _DURATION_BUCKETS:
-            raise ValueError("invalid reliability event duration_bucket")
+            raise ValueError(f"diet capture event meta missing fields: {sorted(missing)}")
+        if self.meta.get("phase") not in diet_schema["phases"]:
+            raise ValueError("invalid diet capture event phase")
 
-        for key in ("action_type", "error_code"):
+        for key in ("duration_ms", "server_total_ms", "client_prepare_ms"):
             value = self.meta.get(key)
             if value is not None and (
-                not isinstance(value, str) or _SAFE_TOKEN.fullmatch(value) is None
+                type(value) not in {int, float} or not 0 <= value <= 300_000
             ):
-                raise ValueError(f"invalid reliability event {key}")
-        if "verified" in self.meta and type(self.meta["verified"]) is not bool:
-            raise ValueError("invalid reliability event verified")
-        if self.event_name == "write_receipt_terminal":
-            expected_verified = self.meta.get("phase") == "verified"
-            if self.meta.get("verified") is not expected_verified:
-                raise ValueError("write receipt phase contradicts verified")
+                raise ValueError(f"invalid diet capture event {key}")
+        payload_bytes = self.meta.get("payload_bytes")
+        if payload_bytes is not None and (
+            type(payload_bytes) is not int or not 0 <= payload_bytes <= 20 * 1024 * 1024
+        ):
+            raise ValueError("invalid diet capture event payload_bytes")
+        for key in ("food_count", "table_calibrated_count"):
+            value = self.meta.get(key)
+            if value is not None and (type(value) is not int or not 0 <= value <= 20):
+                raise ValueError(f"invalid diet capture event {key}")
+        if self.meta.get("table_calibrated_count", 0) > self.meta.get("food_count", 0):
+            raise ValueError("table calibrated count exceeds food count")
+        for key in ("verified", "corrected", "has_photo"):
+            if key in self.meta and type(self.meta[key]) is not bool:
+                raise ValueError(f"invalid diet capture event {key}")
+        if self.event_name == "diet_share_terminal":
+            share_target = self.meta.get("share_target")
+            if share_target is not None and share_target not in _DIET_SHARE_TARGETS:
+                raise ValueError("invalid diet share target")
+        error_code = self.meta.get("error_code")
+        if error_code is not None and (
+            not isinstance(error_code, str) or _SAFE_TOKEN.fullmatch(error_code) is None
+        ):
+            raise ValueError("invalid diet capture event error_code")
         return self
 
 

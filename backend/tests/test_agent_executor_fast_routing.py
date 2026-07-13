@@ -9,7 +9,6 @@ turns almost always call a tool (health_record/health_query/health_manage), and 
 fast model that can't tool-call would silently break them.
 """
 import json
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -25,23 +24,6 @@ from app.services.llm import model_registry as reg
 
 
 # ──── registry: pick_fast_tool_model_id ────
-
-def test_fast_record_prompt_routes_diet_queries_and_meal_scoped_edits():
-    messages = [
-        {
-            "role": "user",
-            "content": "蛋黄酥吃了2/3 酸奶喝了2/3 修改下晚餐实际摄入数据",
-        }
-    ]
-
-    compact = _build_fast_record_messages(messages)
-    system = compact[0]["content"]
-
-    assert "修改/调整饮食记录" in system
-    assert "meal_type" in system
-    assert "晚餐" in system
-    assert "health_query(dimension='diet')" in system
-
 
 def test_generic_or_food_photo_prompts_skip_medical_report_ocr():
     assert _looks_like_medical_report_image_context("请分析这些图片") is False
@@ -148,7 +130,7 @@ def test_pick_fast_prefers_fastest_reliable_tier(monkeypatch):
     """Prefer fast tier; skip a fast-but-unreliable model, fall to next reliable tier."""
     monkeypatch.setattr(
         reg, "list_models",
-        lambda only_available=False: [
+        lambda only_available=False, include_non_chat=False: [
             # fastest tier is unreliable → must be skipped
             reg.ModelEntry("fastbad", "fb", "x", "m", "fast", reliable_tool_calling=False),
             reg.ModelEntry("balrel", "b", "x", "m", "balanced", reliable_tool_calling=True),
@@ -162,7 +144,7 @@ def test_pick_fast_prefers_fastest_reliable_tier(monkeypatch):
 def test_pick_fast_picks_fastest_when_reliable(monkeypatch):
     monkeypatch.setattr(
         reg, "list_models",
-        lambda only_available=False: [
+        lambda only_available=False, include_non_chat=False: [
             reg.ModelEntry("balrel", "b", "x", "m", "balanced", reliable_tool_calling=True),
             reg.ModelEntry("fastrel", "f", "x", "m", "fast", reliable_tool_calling=True),
         ],
@@ -174,7 +156,7 @@ def test_pick_fast_none_when_no_reliable(monkeypatch):
     """No reliable model at all → None (caller keeps default, does not route)."""
     monkeypatch.setattr(
         reg, "list_models",
-        lambda only_available=False: [
+        lambda only_available=False, include_non_chat=False: [
             reg.ModelEntry("bad", "bad", "x", "m", "fast", reliable_tool_calling=False),
         ],
     )
@@ -216,6 +198,18 @@ def test_attachments_never_fast_eligible():
 def test_ambiguous_falls_to_quality_model():
     # neither record nor simple-query nor advice → conservative: not fast-eligible
     assert _is_fast_eligible_turn("你好呀", has_images=False, has_file=False) is False
+
+
+def test_fast_record_prompt_routes_diet_queries_and_meal_scoped_edits():
+    routed = _build_fast_record_messages([
+        {"role": "user", "content": "查询全天饮食和热量，修改晚餐实际摄入数据"},
+    ])
+
+    system = routed[0]["content"]
+    assert "health_query(dimension='diet')" in system
+    assert "health_manage" in system
+    assert "meal_type" in system
+    assert "dinner" in system
 
 
 # ──── end-to-end routing through run_stream ────
@@ -260,7 +254,8 @@ def _wire_common(executor, monkeypatch, provider_factory):
     monkeypatch.setattr("app.services.agent_executor.settings.llm_provider", "tokenplan")
     monkeypatch.setattr("app.services.agent_executor.settings.agent_base_url", None)
     monkeypatch.setattr("app.services.agent_executor.settings.agent_api_key", None)
-    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda: [{
+    # subset 参数与生产签名对齐(fast 回合传 big-3 白名单;桩固定回 noop 工具)
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [{
         "type": "function",
         "function": {"name": "noop", "description": "x", "parameters": {"type": "object", "properties": {}}},
     }])

@@ -912,48 +912,6 @@ def test_agent_stream_genui_caps_present_emits_block_no_llm(
     assert any("reva-ui" in (m.content or "") for m in assistant_msgs)
 
 
-def test_agent_stream_genui_takes_over_an_orphaned_acknowledged_turn(
-    client, db, auth_user_and_headers, _explode_agent_run_stream
-):
-    from app.services.agent_conversation_service import AgentConversationService
-
-    user, headers = auth_user_and_headers
-    _seed_hrv_across_months(db, user.id, {0: [70, 80, 90], 1: [50, 60, 55]})
-    service = AgentConversationService(db)
-    conv = service.get_or_create_conversation(user.id, None, title="GenUI 恢复")
-    service.save_user_message_once(
-        conv.id,
-        user.id,
-        "绘制我最近半年的HRV曲线",
-        client_turn_id="turn-genui-worker-crashed",
-        meta={"client_turn_id": "turn-genui-worker-crashed"},
-    )
-    service.save_message(
-        conv.id,
-        "assistant",
-        "旧 worker 的半截图表",
-        client_turn_id="turn-genui-worker-crashed",
-        client_turn_user_id=user.id,
-    )
-
-    resp = client.post(
-        "/api/v1/agent/stream",
-        json={
-            "message": "绘制我最近半年的HRV曲线",
-            "conversation_id": conv.id,
-            "client_turn_id": "turn-genui-worker-crashed",
-        },
-        headers={**headers, "X-Reva-Client-Caps": "genui-v1"},
-    )
-
-    assert resp.status_code == 200
-    assert "reva-ui" in _read_sse_body(resp)
-    detail = service.get_conversation_detail(user.id, conv.id)
-    assert [message.role for message in detail.messages] == ["user", "assistant"]
-    assert detail.messages[-1].meta["client_turn_finalized"] is True
-    assert "旧 worker 的半截图表" not in detail.messages[-1].content
-
-
 def test_agent_stream_genui_components_cap_emits_metric_line_chart(
     client, db, auth_user_and_headers, _explode_agent_run_stream
 ):

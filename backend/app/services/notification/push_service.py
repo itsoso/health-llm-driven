@@ -867,7 +867,6 @@ class PushService:
         返回: {"flushed": N, "succeeded": K, "failed": M}
         """
         now = get_china_now()
-        rescheduled = 0
         if _is_before_morning_floor(now):
             floor_at = _morning_floor_at(now)
             early_logs = (
@@ -880,6 +879,7 @@ class PushService:
                 .limit(batch_limit)
                 .all()
             )
+            rescheduled = 0
             for log in early_logs:
                 if log.scheduled_at is None or log.scheduled_at < floor_at:
                     log.scheduled_at = floor_at
@@ -973,13 +973,7 @@ class PushService:
                 f"[flush_delayed_pushes] flushed={flushed} ok={succeeded} "
                 f"fail={failed} deduped={deduped}"
             )
-        return {
-            "flushed": flushed,
-            "succeeded": succeeded,
-            "failed": failed,
-            "deduped": deduped,
-            "rescheduled": rescheduled,
-        }
+        return {"flushed": flushed, "succeeded": succeeded, "failed": failed, "deduped": deduped}
 
     def get_notification_logs(
         self,

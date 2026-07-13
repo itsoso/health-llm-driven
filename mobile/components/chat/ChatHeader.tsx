@@ -77,7 +77,7 @@ export default function ChatHeader({
             accessibilityLabel="新建对话"
             accessibilityRole="button"
           >
-            <Ionicons name="create-outline" size={22} color={C.ink2} />
+            <Ionicons name="create-outline" size={19} color={C.ink2} />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={onOpenHistory}
@@ -88,7 +88,7 @@ export default function ChatHeader({
             accessibilityHint="查看和切换历史对话"
             accessibilityRole="button"
           >
-            <Ionicons name="time-outline" size={22} color={C.ink2} />
+            <Ionicons name="time-outline" size={19} color={C.ink2} />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={onOpenToolMenu}
@@ -98,7 +98,7 @@ export default function ChatHeader({
             accessibilityLabel="更多会诊操作"
             accessibilityRole="button"
           >
-            <Ionicons name="ellipsis-horizontal" size={22} color={C.ink2} />
+            <Ionicons name="ellipsis-horizontal" size={19} color={C.ink2} />
           </TouchableOpacity>
         </View>
       </View>
@@ -117,6 +117,7 @@ const styles = StyleSheet.create({
   // 时钟显得挤、且和奶油底色打架。标题与操作直接落在 paper 背景上,更干净。
   headerSurface: {
     minHeight: 40,
+    paddingVertical: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -129,9 +130,9 @@ const styles = StyleSheet.create({
   // 三个动作统一为无边框图标钮(founder:加号/历史两个按钮不好看 → 去掉不一致的
   // 绿色底 + 描边圆圈,归一为极简同款,靠 hitSlop 保证触达)。
   headerAction: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },

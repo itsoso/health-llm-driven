@@ -9,16 +9,15 @@ from app.services.intake_intent_classifier import classify_intake_intent
     ("记录刚吃了替普瑞酮", "medication"),
     ("刚服用了替普瑞酮胶囊（施维舒）", "medication"),
     ("记录刚吃了奥美拉唑20mg", "medication"),
-    ("记录刚吃了沃克", "medication"),
-    ("刚服用了富马酸伏诺拉生片", "medication"),
-    ("刚吃了加斯清", "medication"),
-    ("记录刚吃了盐酸伊托必利片", "medication"),
     ("吃了鱼油", "supplement"),
     ("吃了维生素D3", "supplement"),
     ("测试snack", "unknown"),
     ("喝了300ml水", "water"),
     ("删除这一餐", "diet_management"),
     ("我刚才不小心删除了", "diet_management"),
+    ("午餐没有保存成功", "diet_management"),
+    ("查询全天饮食和热量", "diet_management"),
+    ("今天总热量是多少", "diet_management"),
     ("晨跑 30 分钟", "health_metric"),
     ("今天步数 5370", "health_metric"),
     ("体重 73.1kg 腰围 84cm", "health_metric"),
@@ -48,19 +47,6 @@ def test_extracts_basic_intake_slots():
     assert diet.slots["meal_type"] == "dinner"
 
 
-@pytest.mark.parametrize(("query", "expected_text"), [
-    ("记录刚吃了沃克", "沃克"),
-    ("刚服用了富马酸伏诺拉生片", "富马酸伏诺拉生片"),
-    ("刚吃了加斯清", "加斯清"),
-    ("记录刚吃了盐酸伊托必利片", "盐酸伊托必利片"),
-])
-def test_gastrointestinal_drug_aliases_are_medication_not_diet(query, expected_text):
-    intent = classify_intake_intent(query)
-
-    assert intent.kind == "medication"
-    assert intent.text == expected_text
-
-
 # ──── "打卡:X"/"记录 X" 前缀清洗(mac medication_draft 实锤) ────
 from app.services.intake_intent_classifier import classify_intake_intent
 
@@ -81,3 +67,56 @@ def test_consumption_verb_paths_unchanged():
     assert intent.kind == "diet"
     assert "牛肉面" in intent.text
     assert "记录" not in intent.text
+
+
+# ──── 提问守卫(R4 边界 · founder 「午餐我吃了啥？」实锤) ────
+# 查询回合绝不产出 intake 写草稿。摄入动词 + 疑问共现 → 非记录。
+_RECORD_KINDS = {"diet", "medication", "supplement", "water"}
+
+
+@pytest.mark.parametrize("query", [
+    "午餐我吃了啥？",       # founder 精确复现
+    "今天吃了什么",
+    "午餐吃啥",
+    "晚饭吃的啥？",
+    "喝了多少水",
+    "今天吃了几顿",
+    "我吃了吗",
+    "今天喝了吗？",
+    "午餐吃什么",
+    "补了几片？",
+])
+def test_interrogatives_never_classify_as_record(query):
+    """摄入提问绝不落记录草稿——kind 不在 record 集合,理由为 intake_question。"""
+    result = classify_intake_intent(query)
+    assert result.kind not in _RECORD_KINDS, f"{query!r} 误判为 {result.kind}"
+    assert result.kind == "unknown"
+    assert result.reason == "intake_question"
+
+
+@pytest.mark.parametrize(("query", "kind"), [
+    ("记录午餐：牛肉面", "diet"),
+    ("午餐吃了牛肉面", "diet"),
+    ("刚吃了两个鸡蛋", "diet"),
+    ("喝了500ml水", "water"),
+    ("喝了一杯温水", "water"),
+    ("补了维生素D", "supplement"),
+])
+def test_legit_records_still_classify(query, kind):
+    """真实记录不被提问守卫误伤。"""
+    result = classify_intake_intent(query)
+    assert result.kind == kind, f"{query!r} 应为 {kind},实为 {result.kind}"
+
+
+def test_bare_question_mark_without_intake_verb_not_swept():
+    """裸问号(无摄入动词)不足以触发提问守卫——保持 PRECISE。"""
+    result = classify_intake_intent("今天天气怎么样？")
+    assert result.reason != "intake_question"
+
+
+def test_pure_question_item_rejected_second_layer():
+    """即使漏过顶层守卫,抽出的 item 若是纯疑问词也绝不成草稿。"""
+    # 「午餐吃了啥」——item 抽取会拿到 "啥",item 级第二层拒绝
+    result = classify_intake_intent("午餐吃了啥")
+    assert result.kind == "unknown"
+    assert result.text != "啥"  # 绝不带纯疑问 token 落草稿

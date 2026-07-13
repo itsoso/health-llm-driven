@@ -192,6 +192,7 @@ def _craft_twin(*, water_ml=500, water_goal=2000, water_pct=25.0, steps=None, me
 def _awake(monkeypatch):
     """隔离挂钟:非静默、非忙碌窗 —— 让预算成为唯一变量。"""
     monkeypatch.setattr(pc, "_in_quiet_hours", lambda db, uid: False)
+    monkeypatch.setattr(pc, "_in_morning_sleep_floor", lambda db, uid: False)
     monkeypatch.setattr(pc, "_in_busy_window", lambda db, uid: False)
 
 

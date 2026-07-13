@@ -110,20 +110,6 @@ class TestRequiredFields:
         assert v["error"] is not None
         assert "amount" in v["error"]
 
-    def test_waist_missing_waist_cm_is_required(self):
-        v = validate_health_record("waist", {})
-        assert v["error"] is not None
-        assert "waist_cm" in v["error"]
-
-    def test_sleep_accepts_duration_hours_without_times(self):
-        v = validate_health_record("sleep", {"duration_hours": 7.5})
-        assert v["error"] is None
-
-    def test_excretion_missing_type_is_required(self):
-        v = validate_health_record("excretion", {})
-        assert v["error"] is not None
-        assert "type" in v["error"]
-
 
 class TestDietManagementIntentGuard:
     @pytest.mark.parametrize("food_items", [
@@ -198,6 +184,44 @@ class TestDietMedicationGuard:
                 "meal_type": "snack",
                 "food_items": "瑞士卷一小块",
                 "calories": 120,
+            },
+        })
+
+        assert v["error"] is None
+
+
+class TestDietUiTextGuard:
+    @pytest.mark.parametrize("food_items", [
+        "和午餐食品营养卡",
+        "午餐食品营养卡",
+        "保存并确认",
+        "确认记录",
+        ["今日饮食", "待确认"],
+    ])
+    def test_ui_copy_never_becomes_diet_food_items(self, food_items):
+        v = validate_tool_call("health_record", {
+            "record_type": "diet",
+            "data": {
+                "meal_type": "lunch",
+                "food_items": food_items,
+                "calories": 0,
+                "protein": 0,
+                "carbs": 0,
+                "fat": 0,
+            },
+        })
+
+        assert v["error"] is not None
+        assert "界面文案" in v["error"]
+        assert any("界面文案" in warning for warning in v["warnings"])
+
+    def test_real_lunch_food_still_passes(self):
+        v = validate_tool_call("health_record", {
+            "record_type": "diet",
+            "data": {
+                "meal_type": "lunch",
+                "food_items": "鸡胸肉 200g + 糙米饭 100g",
+                "calories": 520,
             },
         })
 
@@ -290,7 +314,6 @@ class TestDispatcher:
         schemas = {t["function"]["name"]: t["function"]["parameters"]["properties"]
                    for t in HEALTH_TOOLS}
         assert set(schemas["health_query"]["dimension"]["enum"]) == _QUERY_DIMENSIONS
-        assert {"waist", "sleep", "excretion"} <= set(schemas["health_record"]["record_type"]["enum"])
         assert set(schemas["health_manage"]["record_type"]["enum"]) == _MANAGE_RECORD_TYPES
         assert set(schemas["health_manage"]["operation"]["enum"]) == _MANAGE_OPERATIONS
         assert set(schemas["health_analysis"]["analysis_type"]["enum"]) == _ANALYSIS_TYPES
@@ -328,16 +351,10 @@ class TestQueryGuard:
         v = validate_tool_call("health_query", {"dimension": "mri"})
         assert v["data"]["dimension"] == "medical_exam"
 
-    @pytest.mark.parametrize(
-        "raw_dimension",
-        ["饮食", "今日饮食", "全天饮食", "diet_records", "nutrition", "calorie_intake", "热量摄入"],
-    )
-    def test_diet_query_dimension_aliases_are_normalized(self, raw_dimension):
-        v = validate_tool_call("health_query", {"dimension": raw_dimension, "days": 1})
-
-        assert v["error"] is None
+    @pytest.mark.parametrize("alias", ["food", "calories", "饮食", "热量", "全天饮食"])
+    def test_diet_query_dimension_aliases_are_normalized(self, alias):
+        v = validate_tool_call("health_query", {"dimension": alias})
         assert v["data"]["dimension"] == "diet"
-        assert v["data"]["days"] == 1
 
     def test_valid_dimension_kept(self):
         v = validate_tool_call("health_query", {"dimension": "hrv", "days": 14})
@@ -516,3 +533,54 @@ class TestBypassSafe:
         v = tv.validate_tool_call("health_query", {"dimension": "sleep"})
         assert v["error"] is None
         assert v["warnings"] == []
+
+
+def test_sleep_time_only_bedtime_normalized_to_record_date():
+    """2026-07-13 实锤: flash 把 bedtime 发成 '12:50:00+08:00' 纯时间 → 422 整单失败。
+    纯时间语义无歧义 → 确定性拼 record_date, 午睡 (wake>bed) 同日。"""
+    from app.services.llm.tool_validator import validate_health_record
+    from datetime import datetime as _dt
+    from app.services.llm.tool_validator import BEIJING_TZ
+    today = _dt.now(BEIJING_TZ).date().strftime("%Y-%m-%d")
+
+    data = {"record_date": today, "bedtime": "12:50:00+08:00", "wake_time": "13:50"}
+    out = validate_health_record("sleep", data)
+    assert out["error"] is None if "error" in out else True
+    assert data["bedtime"] == f"{today}T12:50:00+08:00"
+    assert data["wake_time"] == f"{today}T13:50:00+08:00"
+    assert any("纯时间" in w for w in out["warnings"])
+
+
+def test_sleep_overnight_time_only_puts_bedtime_previous_day():
+    from app.services.llm.tool_validator import validate_health_record
+    data = {"record_date": "2026-07-13", "bedtime": "23:00", "wake_time": "07:00"}
+    validate_health_record("sleep", data)
+    assert data["bedtime"] == "2026-07-12T23:00:00+08:00"  # 跨夜回退一天
+    assert data["wake_time"] == "2026-07-13T07:00:00+08:00"
+
+
+def test_sleep_full_datetime_untouched_and_garbage_left_for_pydantic():
+    from app.services.llm.tool_validator import validate_health_record
+    data = {
+        "record_date": "2026-07-13",
+        "bedtime": "2026-07-13T12:50:00+08:00",
+        "wake_time": "乱七八糟",
+    }
+    validate_health_record("sleep", data)
+    assert data["bedtime"] == "2026-07-13T12:50:00+08:00"  # 完整 datetime 不动
+    assert data["wake_time"] == "乱七八糟"  # 非法值不猜, 交给 Pydantic fail-loud
+
+
+def test_unverified_write_message_names_partial_success():
+    """走路已写入(#262)时不得一刀切说全部无回执 — 点名成功项。"""
+    from app.services.agent_executor import (
+        _UNVERIFIED_WRITE_USER_MESSAGE,
+        _unverified_write_message,
+    )
+    assert _unverified_write_message(None) == _UNVERIFIED_WRITE_USER_MESSAGE
+    assert _unverified_write_message([]) == _UNVERIFIED_WRITE_USER_MESSAGE
+    msg = _unverified_write_message([
+        {"resource_type": "exercise_record", "resource_id": 262},
+    ])
+    assert "已确认写入" in msg and "运动(#262)" in msg
+    assert "不能确认" in msg  # 失败项仍诚实

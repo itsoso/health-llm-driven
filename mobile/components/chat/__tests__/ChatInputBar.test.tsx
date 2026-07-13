@@ -363,8 +363,10 @@ describe('ChatInputBar', () => {
     });
     await act(async () => { await Promise.resolve(); });
     fireEvent(getByLabelText('按住说话'), 'responderRelease');
-    act(() => {
+    await act(async () => {
       latestVoiceRecordingOptions.onTranscript('机场贵宾厅吃了番茄鸡蛋面');
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
     await waitFor(() => {

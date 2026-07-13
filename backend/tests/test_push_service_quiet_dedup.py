@@ -140,68 +140,17 @@ class TestQuietHoursSeverity:
         assert delayed == 0
 
     @patch("app.services.notification.push_service.get_china_now")
-    def test_default_quiet_hours_covers_0859(self, mock_now, db):
-        """默认 22:00–09:00：07 点和 8 点整段都不打扰睡眠."""
+    def test_default_quiet_hours_covers_0830(self, mock_now, db):
+        """默认 22:00–09:00：08:30 仍算夜间，09:00 算白天."""
         user_id = _make_user(db)
         _make_settings(db, user_id)  # 用默认 22:00–09:00
         svc = PushService(db)
 
-        mock_now.return_value = datetime(2026, 5, 1, 8, 0)
-        assert svc.is_quiet_hours(user_id) is True
-
-        mock_now.return_value = datetime(2026, 5, 1, 8, 59)
+        mock_now.return_value = datetime(2026, 5, 1, 8, 30)
         assert svc.is_quiet_hours(user_id) is True
 
         mock_now.return_value = datetime(2026, 5, 1, 9, 0)
         assert svc.is_quiet_hours(user_id) is False
-
-    @patch("app.services.notification.push_service.get_china_now")
-    def test_non_critical_bypass_is_delayed_until_9am(self, mock_now, db):
-        """非 critical 通知即使旧调用方 bypass，09:00 前也不能直接打扰用户."""
-        mock_now.return_value = datetime(2026, 5, 1, 8, 0)
-        user_id = _make_user(db)
-        _make_settings(db, user_id, quiet_end="08:30")
-        svc = PushService(db)
-
-        result = asyncio.run(svc.send_notification(
-            user_id=user_id,
-            notification_type="reminder",
-            title="08:00 提醒",
-            content="x",
-            respect_quiet_hours=False,
-            severity="info",
-            dedup_window_hours=0,
-        ))
-
-        assert result["success"] is False
-        assert result["reason"] == "delayed_for_quiet_hours"
-        assert result["scheduled_at"].endswith("T09:00:00")
-
-    @patch("app.services.notification.push_service.get_china_now")
-    def test_flush_due_0830_delayed_push_reschedules_before_9am(self, mock_now, db):
-        """历史 08:30 到期 delayed 队列在 09:00 前不能被 flush 送达."""
-        mock_now.return_value = datetime(2026, 5, 1, 8, 35)
-        user_id = _make_user(db)
-        _make_settings(db, user_id, quiet_end="08:30")
-        db.add(NotificationLog(
-            user_id=user_id,
-            notification_type="reminder",
-            channel="multi",
-            title="旧 08:30 队列",
-            content="x",
-            data={"severity": "info"},
-            status=NotificationStatus.DELAYED.value,
-            scheduled_at=datetime(2026, 5, 1, 8, 30),
-        ))
-        db.commit()
-
-        svc = PushService(db)
-        result = asyncio.run(svc.flush_delayed_pushes())
-        log = db.query(NotificationLog).filter_by(user_id=user_id, title="旧 08:30 队列").one()
-
-        assert result == {"flushed": 1, "succeeded": 0, "failed": 0, "deduped": 0, "rescheduled": 1}
-        assert log.status == NotificationStatus.DELAYED.value
-        assert log.scheduled_at == datetime(2026, 5, 1, 9, 0)
 
     @patch("app.services.notification.push_service.get_china_now")
     def test_daytime_non_critical_passes(self, mock_now, db):

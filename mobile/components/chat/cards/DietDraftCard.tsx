@@ -137,6 +137,11 @@ function macroRows(data: DietDraftData) {
   ].filter((row) => row.value != null && row.value >= 0);
 }
 
+function hasNutritionEstimate(data: DietDraftData): boolean {
+  return [data.calories, data.protein, data.carbs, data.fat, data.fiber]
+    .some((value) => numberValue(value) != null);
+}
+
 function confidenceLabel(value: unknown): string | undefined {
   const confidence = numberValue(value);
   if (confidence == null) return undefined;
@@ -149,6 +154,27 @@ function sourceLabel(value: unknown): string | undefined {
   const source = text(value);
   if (!source) return undefined;
   return `来源: ${SOURCE_LABELS[source] || source}`;
+}
+
+function isPhotoSource(value: unknown): boolean {
+  const source = text(value)?.toLowerCase();
+  return Boolean(source && (source.includes('photo') || source.includes('image') || source.includes('vision')));
+}
+
+function nutritionStatusText(data: DietDraftData): string {
+  if (!hasNutritionEstimate(data)) {
+    return '确认后先记录，营养后台估算';
+  }
+  return isPhotoSource(data.source) ? '已带营养估算，核对后计入今日' : '已带营养估算，确认后计入今日';
+}
+
+function boundaryText(data: DietDraftData): string {
+  const boundary = text(data.boundary) || '营养为估算值,确认后写入今日饮食记录。';
+  return isPhotoSource(data.source) ? boundary.replace('确认后写入', '核对后写入') : boundary;
+}
+
+function editHintText(data: DietDraftData): string {
+  return isPhotoSource(data.source) ? '核对前可修正餐次、食物和营养估算' : '确认前可修正餐次、食物和营养估算';
 }
 
 /** 仅当 data 里有明确时点 (time / recorded_at 的 HH:MM) 才回显, 不伪造。 */
@@ -195,6 +221,8 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const mealLabel = MEAL_LABELS[mealType] || '餐食';
   const macros = macroRows(data);
   const caloriesValue = numberValue(data.calories);
+  const nutritionEstimated = hasNutritionEstimate(data);
+  const nutritionStatus = nutritionStatusText(data);
   const timeLabel = mealTimeLabel(data);
   const meta = [confidenceLabel(data.confidence), sourceLabel(data.source)].filter(Boolean).join(' · ');
   const suggestions = listText(data.suggestions);
@@ -203,7 +231,8 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const showNextMealDetail = Boolean(
     nextMealDetail && hasExpandedSection(data.expanded_sections, 'next_meal'),
   );
-  const boundary = text(data.boundary) || '营养为估算值,确认后写入今日饮食记录。';
+  const boundary = boundaryText(data);
+  const editHint = editHintText(data);
   const isRecorded = data.confirmActionState === 'done';
   const canConfirmFromEditor = Boolean(data.confirmAction && data.onConfirmAction && !data.confirmAction.disabled_reason);
   const recordedNextStep = walkText || suggestions[0] || '下一餐按目标补足蛋白和蔬菜';
@@ -308,9 +337,28 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
       <IngredientChips items={chips} fallback="待确认餐食" style={styles.chipsWrap} />
 
       {!isRecorded ? (
+        <View style={styles.nutritionStatusRow}>
+          <Ionicons
+            name={nutritionEstimated ? 'analytics-outline' : 'time-outline'}
+            size={13}
+            color={nutritionEstimated ? C.green600 : C.ink3}
+          />
+          <Text
+            maxFontSizeMultiplier={1.15}
+            style={[
+              styles.nutritionStatusText,
+              { color: nutritionEstimated ? C.green600 : C.ink3 },
+            ]}
+          >
+            {nutritionStatus}
+          </Text>
+        </View>
+      ) : null}
+
+      {!isRecorded ? (
         <View style={styles.inlineHeader}>
           <Text maxFontSizeMultiplier={1.15} style={styles.inlineHint}>
-            确认前可修正餐次、食物和营养估算
+            {editHint}
           </Text>
           <Pressable
             onPress={() => setEditing((prev) => !prev)}
@@ -653,6 +701,19 @@ const styles = StyleSheet.create({
   chipsWrap: {
     marginTop: 10,
   },
+  nutritionStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 9,
+  },
+  nutritionStatusText: {
+    flex: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 11.5,
+    lineHeight: 16,
+    fontWeight: '800',
+  } as TextStyle,
   recordedProgressPill: {
     alignSelf: 'flex-start',
     maxWidth: '100%',
