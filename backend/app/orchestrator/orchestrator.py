@@ -1506,6 +1506,24 @@ async def _shadow_parallel_synthesis_worker(
         # 与 mega 同一条出站护栏(加层不减层), 使影子样本与服务文本可比。
         text = _strip_llm_reva_ui(text)
         text = _safety_wrap(text, source="orchestrator.shadow_parallel").safe_text
+        # GenUI-first (deep-report milestone-1): 确定性数据卡承载精确数值(零 LLM, R4), 段落只写
+        # 定性结论。**必须在 _strip_llm_reva_ui 之后 prepend** —— 否则卡的 reva-ui fence 会被 R4
+        # 剥除; 卡是结构化确定性数据, 不过 LLM free-text safety_wrap(与 table_builder 已服务的
+        # 确定性卡片同纪律)。卡在前、段落在后 = 切 'on' 后服务的完整形态, 供 pairwise judge 看到
+        # 卡里的数字。卡片纯增益, 生成失败 fail-soft(不拖垮 shadow 样本)。
+        try:
+            from app.orchestrator import report_cards
+            _card_blocks = report_cards.build_report_cards(findings)
+        except Exception as _card_err:  # noqa: BLE001 — 旁路增益, 失败绝不影响 shadow 落库
+            _card_blocks = []
+            logger.warning("[orchestrator.shadow] report_cards 生成失败 (旁路): %s", _card_err)
+        if _card_blocks:
+            cards_text = "\n\n".join(
+                report_cards.render_metric_table_block(b) for b in _card_blocks
+            )
+            text = cards_text + "\n\n" + text
+            meta["report_cards"] = len(_card_blocks)
+            meta["report_card_labels"] = [b.get("title", "") for b in _card_blocks]
         meta["wall_ms"] = int((time.monotonic() - t_start) * 1000)
         meta["section_thinking"] = _section_ctrl.get("thinking")
         meta["cached_tokens_total"] = sum_captured_cached_tokens()
