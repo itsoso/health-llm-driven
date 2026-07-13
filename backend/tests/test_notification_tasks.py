@@ -1,6 +1,6 @@
 """通知任务单元测试"""
 import pytest
-from datetime import date
+from datetime import date, datetime
 import sys
 from unittest.mock import AsyncMock, patch, MagicMock
 
@@ -283,6 +283,53 @@ class TestSendPlanEveningSummary:
         assert kwargs["title"] == "📊 今日进度"
         assert "content" in kwargs
         assert "body" not in kwargs
+        mock_run_async.assert_called_once_with("awaitable")
+
+
+class TestSendPlanItemReminders:
+    """测试分时计划提醒任务"""
+
+    @patch("app.tasks.notifications.llm_push_backstop", side_effect=lambda _title, body, generic_content: (None, body, False))
+    @patch("app.tasks.notifications._get_user_city", return_value=None)
+    @patch("app.tasks.notifications._today_weather_text", return_value="")
+    @patch("app.tasks.notifications.get_china_now", return_value=datetime(2026, 7, 13, 7, 30, 0))
+    @patch("app.tasks.notifications.SessionLocal")
+    @patch("app.tasks.notifications.PushService")
+    @patch("app.tasks.notifications.run_async", return_value={
+        "success": False,
+        "reason": "delayed_for_quiet_hours",
+        "scheduled_at": "2026-07-13T09:00:00",
+    })
+    def test_does_not_count_morning_quiet_delayed_push_as_sent(
+        self,
+        mock_run_async,
+        mock_push_cls,
+        mock_session_cls,
+        mock_now,
+        mock_weather,
+        mock_city,
+        mock_backstop,
+    ):
+        """07:30/08:00 命中静默延迟时,任务结果不能误报已发送。"""
+        mock_db = MagicMock()
+        mock_session_cls.return_value.__enter__ = MagicMock(return_value=mock_db)
+        mock_session_cls.return_value.__exit__ = MagicMock(return_value=False)
+        mock_item = MagicMock(
+            day_of_week=date.today().weekday() + 1,
+            is_completed=False,
+            category="diet",
+            title="早餐打卡",
+            weather_condition_tag=None,
+        )
+        mock_plan = MagicMock(user_id=3, items=[mock_item])
+        mock_db.query.return_value.filter.return_value.all.return_value = [mock_plan]
+        mock_push_cls.return_value.send_notification.return_value = "awaitable"
+
+        from app.tasks.notifications import send_plan_item_reminders
+        result = send_plan_item_reminders()
+
+        assert result["matched_categories"] == ["diet"]
+        assert result["sent_count"] == 0
         mock_run_async.assert_called_once_with("awaitable")
 
 

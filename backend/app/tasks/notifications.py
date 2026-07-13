@@ -531,13 +531,21 @@ def send_plan_item_reminders():
                     generic_content=f"你有 {len(items)} 项计划待完成,点开查看。",
                 )
 
-                run_async(push_service.send_notification(
+                result = run_async(push_service.send_notification(
                     user_id=plan.user_id,
                     notification_type="plan_reminder",
                     title=f"{emoji} 计划提醒",
                     content=body,
                 ))
-                sent_count += 1
+                if result.get("success"):
+                    sent_count += 1
+                else:
+                    logger.info(
+                        "[分时提醒] 未实际发送 user=%s categories=%s reason=%s",
+                        plan.user_id,
+                        matched_categories,
+                        result.get("reason"),
+                    )
             except Exception as e:
                 logger.error(f"[分时提醒] 发送失败 (user_id={plan.user_id}): {e}")
 
