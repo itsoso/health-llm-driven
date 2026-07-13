@@ -1624,6 +1624,44 @@ _UNVERIFIED_WRITE_USER_MESSAGE = (
     "为避免重复写入，请先查询现有记录；确认缺失后再重试。"
 )
 
+_RECEIPT_TYPE_LABELS = {
+    "exercise_record": "运动",
+    "sleep_record": "睡眠",
+    "diet_record": "饮食",
+    "water": "饮水",
+    "weight_record": "体重",
+    "blood_pressure_record": "血压",
+    "medication_log": "用药",
+    "supplement_log": "补剂",
+    "mood_record": "心情",
+    "smart_reminder": "提醒",
+}
+
+
+def _unverified_write_message(verified_receipts: Optional[List[Dict[str, Any]]] = None) -> str:
+    """部分成功时如实点名已写入项,只对失败项说「无法确认」。
+
+    一刀切否定会让用户以为全部丢失(2026-07-13 实锤:『中午睡了60分钟 走路10分钟』
+    走路已写入 exercise#262,睡眠 422 失败,回复却宣称整单无回执 → founder 报
+    「没有写入到我的活动」)。诚实 = 既不谎报成功,也不抹掉真实成功。"""
+    if not verified_receipts:
+        return _UNVERIFIED_WRITE_USER_MESSAGE
+    labels: List[str] = []
+    for r in verified_receipts[:4]:
+        if not isinstance(r, dict):
+            continue
+        rt = str(r.get("resource_type") or "").strip()
+        rid = r.get("resource_id")
+        label = _RECEIPT_TYPE_LABELS.get(rt, rt or "记录")
+        labels.append(f"{label}(#{rid})" if rid else label)
+    if not labels:
+        return _UNVERIFIED_WRITE_USER_MESSAGE
+    return (
+        f"已确认写入:{'、'.join(labels)}。"
+        "但另有一项写入没有取得可验证的回执,我不能确认它已完成;"
+        "为避免重复写入,请先查询该项现有记录,确认缺失后再重试。"
+    )
+
 
 class _UnverifiedWriteResult(RuntimeError):
     pass
@@ -5270,14 +5308,16 @@ class AgentExecutor:
 
                     if unverified_write_tools:
                         final_finish_reason = "error"
-                        for i in range(0, len(_UNVERIFIED_WRITE_USER_MESSAGE), 20):
+                        # 部分成功要点名(write_receipts=本轮已验证写入),不一刀切否定
+                        _unverified_msg = _unverified_write_message(write_receipts)
+                        for i in range(0, len(_unverified_msg), 20):
                             yield {
                                 "event": "token",
                                 "data": {
-                                    "content": _UNVERIFIED_WRITE_USER_MESSAGE[i:i + 20]
+                                    "content": _unverified_msg[i:i + 20]
                                 },
                             }
-                        full_reply += _UNVERIFIED_WRITE_USER_MESSAGE
+                        full_reply += _unverified_msg
                         break
 
                     # 硬门(诚实不变量):确定性"已记录…"回复只允许在本轮产生了**可验证的写入回执**

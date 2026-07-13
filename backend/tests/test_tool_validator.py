@@ -533,3 +533,54 @@ class TestBypassSafe:
         v = tv.validate_tool_call("health_query", {"dimension": "sleep"})
         assert v["error"] is None
         assert v["warnings"] == []
+
+
+def test_sleep_time_only_bedtime_normalized_to_record_date():
+    """2026-07-13 实锤: flash 把 bedtime 发成 '12:50:00+08:00' 纯时间 → 422 整单失败。
+    纯时间语义无歧义 → 确定性拼 record_date, 午睡 (wake>bed) 同日。"""
+    from app.services.llm.tool_validator import validate_health_record
+    from datetime import datetime as _dt
+    from app.services.llm.tool_validator import BEIJING_TZ
+    today = _dt.now(BEIJING_TZ).date().strftime("%Y-%m-%d")
+
+    data = {"record_date": today, "bedtime": "12:50:00+08:00", "wake_time": "13:50"}
+    out = validate_health_record("sleep", data)
+    assert out["error"] is None if "error" in out else True
+    assert data["bedtime"] == f"{today}T12:50:00+08:00"
+    assert data["wake_time"] == f"{today}T13:50:00+08:00"
+    assert any("纯时间" in w for w in out["warnings"])
+
+
+def test_sleep_overnight_time_only_puts_bedtime_previous_day():
+    from app.services.llm.tool_validator import validate_health_record
+    data = {"record_date": "2026-07-13", "bedtime": "23:00", "wake_time": "07:00"}
+    validate_health_record("sleep", data)
+    assert data["bedtime"] == "2026-07-12T23:00:00+08:00"  # 跨夜回退一天
+    assert data["wake_time"] == "2026-07-13T07:00:00+08:00"
+
+
+def test_sleep_full_datetime_untouched_and_garbage_left_for_pydantic():
+    from app.services.llm.tool_validator import validate_health_record
+    data = {
+        "record_date": "2026-07-13",
+        "bedtime": "2026-07-13T12:50:00+08:00",
+        "wake_time": "乱七八糟",
+    }
+    validate_health_record("sleep", data)
+    assert data["bedtime"] == "2026-07-13T12:50:00+08:00"  # 完整 datetime 不动
+    assert data["wake_time"] == "乱七八糟"  # 非法值不猜, 交给 Pydantic fail-loud
+
+
+def test_unverified_write_message_names_partial_success():
+    """走路已写入(#262)时不得一刀切说全部无回执 — 点名成功项。"""
+    from app.services.agent_executor import (
+        _UNVERIFIED_WRITE_USER_MESSAGE,
+        _unverified_write_message,
+    )
+    assert _unverified_write_message(None) == _UNVERIFIED_WRITE_USER_MESSAGE
+    assert _unverified_write_message([]) == _UNVERIFIED_WRITE_USER_MESSAGE
+    msg = _unverified_write_message([
+        {"resource_type": "exercise_record", "resource_id": 262},
+    ])
+    assert "已确认写入" in msg and "运动(#262)" in msg
+    assert "不能确认" in msg  # 失败项仍诚实

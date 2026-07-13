@@ -260,6 +260,62 @@ def _validate_required(
     return None
 
 
+_TIME_ONLY_RE = re.compile(
+    r"^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(?:[+-]\d{2}:?\d{2}|Z)?$"
+)
+
+
+def _normalize_sleep_clock_fields(data: Dict[str, Any], warnings: list, today: date) -> None:
+    """把 sleep.bedtime / sleep.wake_time 的「纯时间」值确定性拼成 ISO datetime。
+
+    只处理无歧义情形 (HH:MM[:SS][±TZ]);完整 datetime / 非法值不动 (后者交给
+    Pydantic fail-loud 422, 不猜)。跨夜: 两者都是纯时间且 wake<=bed → bedtime
+    记到 record_date 前一天 (晚睡过夜), 与 schemas/sleep_record 的 wake>bed 校验一致。
+    """
+    base_raw = str(data.get("record_date") or today.strftime("%Y-%m-%d"))[:10]
+    try:
+        base = datetime.strptime(base_raw, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        base = today
+
+    def _parse_clock(value: Any) -> Optional[tuple]:
+        if not isinstance(value, str):
+            return None
+        m = _TIME_ONLY_RE.match(value.strip())
+        if not m:
+            return None
+        hh, mm, ss = int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)
+        if hh > 23 or mm > 59 or ss > 59:
+            return None
+        return (hh, mm, ss)
+
+    bed_clock = _parse_clock(data.get("bedtime"))
+    wake_clock = _parse_clock(data.get("wake_time"))
+    if bed_clock is None and wake_clock is None:
+        return
+
+    def _iso(day: date, clock: tuple) -> str:
+        return f"{day.strftime('%Y-%m-%d')}T{clock[0]:02d}:{clock[1]:02d}:{clock[2]:02d}+08:00"
+
+    bed_day = base
+    if bed_clock is not None and wake_clock is not None and wake_clock <= bed_clock:
+        bed_day = base - timedelta(days=1)  # 跨夜: 前晚入睡, record_date 早晨醒
+    if bed_clock is not None:
+        fixed = _iso(bed_day, bed_clock)
+        msg = f"[tool_validator] sleep.bedtime={data.get('bedtime')!r} 纯时间 → {fixed}"
+        warnings.append(msg)
+        logger.warning(msg)
+        _metric("sleep", "bedtime", "time_only_normalized")
+        data["bedtime"] = fixed
+    if wake_clock is not None:
+        fixed = _iso(base, wake_clock)
+        msg = f"[tool_validator] sleep.wake_time={data.get('wake_time')!r} 纯时间 → {fixed}"
+        warnings.append(msg)
+        logger.warning(msg)
+        _metric("sleep", "wake_time", "time_only_normalized")
+        data["wake_time"] = fixed
+
+
 def validate_health_record(
     rtype: str,
     data: Dict[str, Any],
@@ -283,6 +339,14 @@ def validate_health_record(
 
     # 1. 日期守门 (record_date 通用)
     _validate_date(rtype, data, warnings, today)
+
+    # 1.5 sleep 时刻字段归一: 弱模型常把 bedtime/wake_time 发成**纯时间**
+    # ("12:50:00+08:00"), /sleep/records 的 Pydantic datetime 解析直接 422
+    # (2026-07-13 实锤: 『中午睡了60分钟』整单写入失败)。纯时间语义无歧义
+    # → 与 record_date 确定性拼成 ISO datetime; 跨夜 (wake<=bed) 时 bedtime
+    # 回退一天。完整 datetime 原样不动。
+    if rtype == "sleep":
+        _normalize_sleep_clock_fields(data, warnings, today)
 
     # 2. 数值范围
     _validate_numeric(rtype, data, warnings)
