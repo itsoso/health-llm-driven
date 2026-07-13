@@ -117,6 +117,22 @@ describe('DietShareCard', () => {
     expect(queryByText('高蛋白稳态餐')).toBeNull();
   });
 
+  it('does not render exact macro values on low-confidence share images', () => {
+    const lowConfidenceRecord = { ...record, source: 'ai_estimate', ai_confidence: 0.42 };
+    const { getByText, queryByText } = render(
+      <DietShareCard record={lowConfidenceRecord} dateLabel="7月11日 · 午餐" />,
+    );
+
+    expect(getByText('营养估算待核对')).toBeTruthy();
+    expect(getByText('确认后再显示热量和三大营养')).toBeTruthy();
+    expect(queryByText('560')).toBeNull();
+    expect(queryByText('67g')).toBeNull();
+    expect(queryByText('48g')).toBeNull();
+    expect(queryByText('9.2g')).toBeNull();
+    expect(queryByText('能量结构')).toBeNull();
+    expect(queryByText('蛋白 50%')).toBeNull();
+  });
+
   it('derives macro energy structure for a more premium share image', () => {
     const segments = buildDietShareMacroSegments(record);
 

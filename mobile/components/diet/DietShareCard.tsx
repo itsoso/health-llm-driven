@@ -516,6 +516,7 @@ export default function DietShareCard({
   const calories = metric(record.calories);
   const hasCalories = hasMetric(record.calories);
   const hasMacros = hasAnyMacro(record);
+  const lowConfidenceShare = isLowConfidenceDietShare(record);
   const sourceLabel = nutritionSourceLabel(record.source);
   const headline = buildDietShareHeadline(record);
   const highlights = buildDietShareHighlights(record);
@@ -565,13 +566,13 @@ export default function DietShareCard({
         <View style={styles.metricHero}>
           <View>
             <Text style={styles.heroLabel}>{MEAL_LABEL[record.meal_type] ?? '餐食'}能量</Text>
-            {hasCalories ? (
+            {hasCalories && !lowConfidenceShare ? (
               <View style={styles.heroMetricRow}>
                 <Text style={styles.heroMetric}>{calories}</Text>
                 <Text style={styles.heroUnit}>kcal</Text>
               </View>
             ) : (
-              <Text style={styles.pendingHeroMetric}>{hasMacros ? '热量估算中' : '营养估算中'}</Text>
+              <Text style={styles.pendingHeroMetric}>{lowConfidenceShare ? '营养待核对' : hasMacros ? '热量估算中' : '营养估算中'}</Text>
             )}
           </View>
           <View style={styles.heroBars}>
@@ -600,7 +601,7 @@ export default function DietShareCard({
           </View>
           {showImage ? (
             <View style={styles.calorieAside}>
-              {hasCalories ? (
+              {hasCalories && !lowConfidenceShare ? (
                 <>
                   <Text style={styles.calorieAsideValue}>{calories}</Text>
                   <Text style={styles.calorieAsideUnit}>kcal</Text>
@@ -612,7 +613,7 @@ export default function DietShareCard({
           ) : null}
         </View>
 
-        {hasMacros ? (
+        {hasMacros && !lowConfidenceShare ? (
           <View style={styles.macroSection}>
             <View style={styles.macroGrid}>
               <ShareMacro label="蛋白质" value={hasMetric(record.protein) ? `${metric(record.protein)}g` : '估算中'} color={MACRO_HUES.protein} />
@@ -655,8 +656,12 @@ export default function DietShareCard({
           </View>
         ) : (
           <View style={styles.pendingMacroPanel}>
-            <Text style={styles.pendingMacroTitle}>营养估算中</Text>
-            <Text style={styles.pendingMacroText}>确认记录已保存，热量和三大营养会回填后用于复盘。</Text>
+            <Text style={styles.pendingMacroTitle}>{lowConfidenceShare ? '营养估算待核对' : '营养估算中'}</Text>
+            <Text style={styles.pendingMacroText}>
+              {lowConfidenceShare
+                ? '确认后再显示热量和三大营养'
+                : '确认记录已保存，热量和三大营养会回填后用于复盘。'}
+            </Text>
           </View>
         )}
 
@@ -689,7 +694,7 @@ export default function DietShareCard({
             styles.sourceText,
             { color: sourceLabel === '智能估算' ? revaSemantic.caution.fg : C.green600 },
           ]}>{sourceLabel}</Text>
-          {record.fiber != null ? <Text style={styles.fiberText}>膳食纤维 {metric(record.fiber, 1)}g</Text> : null}
+          {record.fiber != null && !lowConfidenceShare ? <Text style={styles.fiberText}>膳食纤维 {metric(record.fiber, 1)}g</Text> : null}
         </View>
 
         {confidence ? (
