@@ -270,6 +270,18 @@ class Settings(BaseSettings):
     #              _safety_wrap 出站护栏,R4 加层不减层)。分段流式是后续 seam(现只出拼接文本)。
     # 未知值 fail-closed 归一到 'off'(见 orchestrator.parallel_synthesis.resolve_mode)。
     orchestrator_parallel_synthesis: str = "off"
+    # rank11 分段合成 —— 段落 LLM 调用的思考控制(SHADOW 候选,仅作用于分段路径,MEGA 不受影响)。
+    # 深分析分段是**单个确定性 specialist finding 的轻量复述**(≤180字,实质在 finding 里,不在
+    # 模型思考里),却每段各付 qwen3.7-max ~20s 静默思考 TTFT。对段落关思考是省 in-call TTFT 的
+    # 首选候选。取值:
+    #   'off'      = 默认(本候选):段落调用 enable_thinking=false(探针实证 TTFT ~36s→~1.6s);
+    #   'budget512'= 段落调用 thinking_budget=512(封顶思考,~11s);
+    #   'on'       = 不加思考控制(段落思考照旧,= 存量行为)。
+    # 仅作用于 orchestrator._call_llm 的**段落**调用(经 _section_synthesis_ctx),且再经
+    # ModelEntry.supports_thinking_budget 门控(仅探针验证过的 qwen 系置 True;非支持模型 → 不加
+    # 控制,payload 逐字节不变)。MEGA synthesis 从不带思考控制(那条实验已被服务答案否决)。
+    # 未知值 fail-closed 归一到 'on'(= 不改思考,见 parallel_synthesis.resolve_section_thinking)。
+    parallel_synthesis_section_thinking: str = "off"
     # 多模型 panel(高风险裁决多模型投票):primitive,默认关
     multi_model_panel: bool = False
 

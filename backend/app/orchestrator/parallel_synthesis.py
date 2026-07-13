@@ -72,6 +72,72 @@ def resolve_mode(raw: Any) -> str:
     return mode if mode in ("off", "shadow", "on") else "off"
 
 
+# 段落调用思考控制的合法档 + 'budget512' 的封顶值。
+SECTION_THINKING_MODES = ("off", "budget512", "on")
+_SECTION_THINKING_BUDGET = 512
+
+
+def resolve_section_thinking(raw: Any) -> str:
+    """归一化段落思考档(见 settings.parallel_synthesis_section_thinking)。
+
+    'off' = 关思考(本候选默认)、'budget512' = 封顶 512、'on' = 不加控制(存量行为)。
+    未知/非法值 fail-closed 归到 'on'(= 不动思考,对存量段落零行为变更);仅当 config 显式
+    落在合法档时才会真正给段落调用加思考控制。
+    """
+    mode = str(raw or "").strip().lower()
+    return mode if mode in SECTION_THINKING_MODES else "on"
+
+
+def _lookup_model_entry(model_name: Any):
+    """按 model 字符串反查 ModelEntry(匹配 entry.model 或 entry.id)。fail-closed → None。
+
+    镜像 openai_provider._model_supports_explicit_cache 的反查模式:观测/门控层绝不抛,
+    查不到即返回 None(调用方据此不加任何控制,payload 逐字节不变)。
+    """
+    if not model_name:
+        return None
+    try:
+        from app.services.llm.model_registry import MODELS
+
+        for entry in MODELS:
+            if entry.model == model_name or entry.id == model_name:
+                return entry
+    except Exception:  # noqa: BLE001 — 查不到注册表宁可不加控制(纯降级)
+        return None
+    return None
+
+
+def build_section_llm_kwargs(model_name: Any, ctrl: Dict[str, Any]) -> Dict[str, Any]:
+    """构造**段落**调用要透传给 provider.chat 的思考/缓存控制 kwargs(纯函数,registry 门控)。
+
+    ctrl = {"thinking": <'off'|'budget512'|'on'>, "cache": <bool>}(orchestrator 从 settings
+    算出后经 _section_synthesis_ctx 传入)。门控与 provider 侧 fail-closed 一致:
+      - 思考控制:仅当本次实际调用的 model 的 ModelEntry.supports_thinking_budget=True 才加
+        (探针验证过的 qwen 系,如 qwen3.7-max);'off'→enable_thinking=False、
+        'budget512'→thinking_budget=512、'on'→不加。非支持/未知 model → 不加(免端点 400)。
+      - 显式缓存:仅当 ctrl['cache'] 且 model.supports_explicit_cache=True 才置
+        prompt_cache_markers=True(默认布局 = 前导 system 断点;provider 侧 _maybe_mark_prompt_cache
+        再按本次真实 model 复核一次,不支持则 strip → 覆盖 primary + 任何 failover)。
+
+    未查到 model(failover 到未注册/非 qwen provider,如 openai vision)→ 返回 {} → 段落 payload
+    与存量逐字节相同。MEGA 路径永不进本函数(orchestrator 只对段落调用 set ctx)。
+    """
+    out: Dict[str, Any] = {}
+    entry = _lookup_model_entry(model_name)
+    if entry is None:
+        return out
+    thinking = str(ctrl.get("thinking") or "on")
+    if getattr(entry, "supports_thinking_budget", False):
+        if thinking == "off":
+            out["enable_thinking"] = False
+        elif thinking == "budget512":
+            out["thinking_budget"] = _SECTION_THINKING_BUDGET
+        # 'on' → 不加(思考照旧)
+    if ctrl.get("cache") and getattr(entry, "supports_explicit_cache", False):
+        out["prompt_cache_markers"] = True
+    return out
+
+
 def specialist_cn_label(name: str) -> str:
     key = (name or "").strip().lower()
     return _SPECIALIST_CN.get(key, name or "分析")

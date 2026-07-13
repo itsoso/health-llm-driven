@@ -191,6 +191,18 @@ def summarize_usage_capture() -> Optional[Dict[str, Any]]:
     }
 
 
+def sum_captured_cached_tokens() -> Optional[int]:
+    """当前 capture 桶内所有调用的 cached_tokens 之和(无桶 → None)。
+
+    仅统计 provider 真值上报的 cached_tokens(token_source='api';估算调用为 None,记 0)。
+    供 rank11 shadow worker 观测分段调用的显式缓存命中(begin_usage_capture 起一个隔离桶,
+    分段 gather 子任务按引用共享该 list 就地 append,gather 后本函数汇总)。纯读,绝不抛。"""
+    items = _usage_capture_ctx.get()
+    if items is None:
+        return None
+    return sum(int(item.get("cached_tokens") or 0) for item in items)
+
+
 def _estimate_tokens(text: str, model: str = "gpt-4o-mini") -> int:
     """tiktoken 估算 token 数, 失败回退到 len(text) / 4."""
     if not text:

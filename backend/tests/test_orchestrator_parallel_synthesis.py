@@ -407,3 +407,193 @@ async def test_non_report_shaped_uses_mega_even_when_on(monkeypatch, db):
     # 单专家 → 非报告形 → mega
     assert any(_MEGA_MARK in u for u in seen)
     assert "## " not in resp.synthesis
+
+
+# ════════════════ rank11 SHADOW 升级: 段落思考关 + 显式缓存 + shadow meta 富化 ════════════════
+# 段落调用(非 MEGA)按本次真实 model 门控加 thinking/cache 控制;shadow audit result_detail
+# 富化 section_thinking / cached_tokens_total / mega_ms 供离线 pairwise judge 自洽读数。
+
+
+class TestResolveSectionThinking:
+    def test_known_values(self):
+        assert ps.resolve_section_thinking("off") == "off"
+        assert ps.resolve_section_thinking("budget512") == "budget512"
+        assert ps.resolve_section_thinking("on") == "on"
+
+    def test_case_and_whitespace(self):
+        assert ps.resolve_section_thinking("  OFF ") == "off"
+        assert ps.resolve_section_thinking("Budget512") == "budget512"
+
+    def test_unknown_fail_closed_to_on_noop(self):
+        # 未知/空 → 'on'(不加思考控制 = 存量行为), 与 resolve_mode 的 'off' 语义不同:
+        # 这里的 no-op 是"思考照旧", 对应档就是 'on'。
+        assert ps.resolve_section_thinking("garbage") == "on"
+        assert ps.resolve_section_thinking(None) == "on"
+        assert ps.resolve_section_thinking("") == "on"
+
+
+class TestBuildSectionLLMKwargs:
+    def test_supported_thinking_off_and_cache(self):
+        # qwen3.7-max: supports_thinking_budget + supports_explicit_cache 双支持
+        out = ps.build_section_llm_kwargs("qwen3.7-max", {"thinking": "off", "cache": True})
+        assert out == {"enable_thinking": False, "prompt_cache_markers": True}
+
+    def test_supported_budget512(self):
+        out = ps.build_section_llm_kwargs("qwen3.7-max", {"thinking": "budget512", "cache": False})
+        assert out == {"thinking_budget": 512}
+
+    def test_thinking_on_adds_no_control(self):
+        out = ps.build_section_llm_kwargs("qwen3.7-max", {"thinking": "on", "cache": False})
+        assert out == {}
+
+    def test_cache_only_model_thinking_gated_out(self):
+        # qwen3.6-flash: supports_explicit_cache=True 但 supports_thinking_budget=False
+        # → 思考控制被逐 flag 门控掉, 只留 cache marker
+        out = ps.build_section_llm_kwargs("qwen3.6-flash", {"thinking": "off", "cache": True})
+        assert out == {"prompt_cache_markers": True}
+
+    def test_unsupported_model_clean(self):
+        # deepseek-v4-pro: 两个 flag 都 False → 空(段落 payload 逐字节不变)
+        assert ps.build_section_llm_kwargs("deepseek-v4-pro", {"thinking": "off", "cache": True}) == {}
+
+    def test_unknown_model_clean(self):
+        assert ps.build_section_llm_kwargs("nonexistent-model", {"thinking": "off", "cache": True}) == {}
+        assert ps.build_section_llm_kwargs(None, {"thinking": "off", "cache": True}) == {}
+
+    def test_cache_flag_off_no_markers(self):
+        out = ps.build_section_llm_kwargs("qwen3.7-max", {"thinking": "off", "cache": False})
+        assert out == {"enable_thinking": False}
+
+    def test_lookup_by_id_string(self):
+        # entry.id 命中(与 entry.model 同名, 但显式验证反查按 id 也成立)
+        assert ps.build_section_llm_kwargs("qwen3.7-max", {"thinking": "off", "cache": False}) == {
+            "enable_thinking": False
+        }
+
+
+def test_section_messages_marker_compatible():
+    """段落 messages([system, user])对显式缓存断点契约兼容:前导 system 被标, user 不动。"""
+    from app.services.llm.prompt_cache import apply_cache_markers
+
+    spec = ps.SectionSpec([_mk("recovery_coach")], "恢复", 3)
+    system, user = ps.build_section_prompt(spec, "综合分析", "twin blob 内容", "")
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    marked = apply_cache_markers(messages)
+    assert isinstance(marked[0]["content"], list)
+    assert marked[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+    assert marked[0]["content"][0]["text"] == system
+    # 只标前导 system;user(带 twin blob + finding)原样不动
+    assert marked[1]["content"] == user
+
+
+def test_sum_captured_cached_tokens_contract():
+    """usage_tracker.sum_captured_cached_tokens:无桶→None;有桶→汇总(None 记 0)。"""
+    from app.services.llm import usage_tracker as ut
+
+    tok_none = ut._usage_capture_ctx.set(None)
+    try:
+        assert ut.sum_captured_cached_tokens() is None
+    finally:
+        ut._usage_capture_ctx.reset(tok_none)
+
+    tok = ut.begin_usage_capture()
+    try:
+        bucket = ut._usage_capture_ctx.get()
+        bucket.append({"cached_tokens": 100})
+        bucket.append({"cached_tokens": None})
+        bucket.append({"cached_tokens": 50})
+        assert ut.sum_captured_cached_tokens() == 150
+    finally:
+        ut.end_usage_capture(tok)
+
+
+class _SpyProvider:
+    """记录传给 chat 的 **kwargs(观测思考/缓存控制是否落到 provider 调用)。"""
+
+    provider_name = "spy"
+
+    def __init__(self, model):
+        self.model = model
+        self.chat_kwargs = []
+
+    async def chat(self, messages, model=None, temperature=0.7, max_tokens=2000, stream=False, **kwargs):
+        self.chat_kwargs.append(kwargs)
+        return "分项结论占位文本, 足够长以通过安全校验的中文文本内容。"
+
+
+@pytest.mark.asyncio
+async def test_call_llm_mega_clean_section_controlled(monkeypatch):
+    """对抗:MEGA 调用(无 section ctx)provider.chat kwargs 恒 clean;段落调用(有 ctx)按支持
+    model 带 enable_thinking=False + prompt_cache_markers。"""
+    spy = _SpyProvider("qwen3.7-max")
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_user", lambda *a, **k: spy
+    )
+    tok = orch_mod._user_pref_ctx.set((1, None))
+    try:
+        # MEGA: 无 section ctx → provider.chat 无思考/缓存 kwarg
+        await orch_mod._call_llm("sys", "usr")
+        assert spy.chat_kwargs[-1] == {}
+
+        # SECTION: thinking=off + cache=on, 支持 model → 双控制落到 provider
+        sec = orch_mod._section_synthesis_ctx.set({"thinking": "off", "cache": True})
+        try:
+            await orch_mod._call_llm("sys", "usr")
+        finally:
+            orch_mod._section_synthesis_ctx.reset(sec)
+        assert spy.chat_kwargs[-1] == {"enable_thinking": False, "prompt_cache_markers": True}
+
+        # ctx 复位后再调 → 又是 clean(证明 ctx 不泄漏到后续 mega)
+        await orch_mod._call_llm("sys", "usr")
+        assert spy.chat_kwargs[-1] == {}
+    finally:
+        orch_mod._user_pref_ctx.reset(tok)
+
+
+@pytest.mark.asyncio
+async def test_call_llm_section_unsupported_model_clean(monkeypatch):
+    """段落调用命中不支持思考/缓存的 model → fail-closed clean payload。"""
+    spy = _SpyProvider("deepseek-v4-pro")  # 两个 flag 都 False
+    monkeypatch.setattr(
+        "app.services.llm.factory.create_provider_for_user", lambda *a, **k: spy
+    )
+    tok = orch_mod._user_pref_ctx.set((1, None))
+    sec = orch_mod._section_synthesis_ctx.set({"thinking": "off", "cache": True})
+    try:
+        await orch_mod._call_llm("sys", "usr")
+        assert spy.chat_kwargs[-1] == {}
+    finally:
+        orch_mod._section_synthesis_ctx.reset(sec)
+        orch_mod._user_pref_ctx.reset(tok)
+
+
+@pytest.mark.asyncio
+async def test_shadow_meta_enriched_thinking_cache_mega(monkeypatch, db):
+    """shadow audit result_detail 富化 section_thinking / cached_tokens_total / mega_ms。"""
+    monkeypatch.setattr(orch_mod.settings, "orchestrator_parallel_synthesis", "shadow", raising=False)
+    monkeypatch.setattr(orch_mod.settings, "parallel_synthesis_section_thinking", "off", raising=False)
+    captured = {}
+
+    def fake_log(db, *, user_id, query, text, meta):
+        captured["meta"] = meta
+        return 1
+
+    monkeypatch.setattr("app.agents.audit.log_shadow_synthesis", fake_log)
+
+    async def fake_call_llm(system_prompt, user_prompt, *, lite_mode=False):
+        if _MEGA_MARK in user_prompt:
+            return "MEGA服务文本, 足够长的占位以通过校验。"
+        return "分项结论文本占位。"
+
+    monkeypatch.setattr(orch_mod, "_call_llm", fake_call_llm)
+    user = _make_user(db)
+    await orch_mod.run_orchestrator(db, user.id, _forced_report_req())
+    await asyncio.gather(*list(orch_mod._BACKGROUND_STREAM_TASKS), return_exceptions=True)
+
+    meta = captured["meta"]
+    assert meta["section_thinking"] == "off"
+    # fake _call_llm 不过 provider/usage_tracker → 隔离桶为空 → 汇总 0(非 None)
+    assert meta["cached_tokens_total"] == 0
+    assert isinstance(meta["mega_ms"], int)
+    # 既有字段仍在
+    assert meta["sections"] >= 2

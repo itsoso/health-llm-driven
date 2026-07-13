@@ -42,6 +42,24 @@ _user_pref_ctx: ContextVar[Optional[Tuple[int, Session]]] = ContextVar(
 # 成本/延迟分级路由(Tier 4):按 intent 设任务档,_call_llm 读取传给 factory。
 # flag(settings.task_tiered_routing)默认关 → task_tier 被忽略 = 零行为变更。
 _task_tier_ctx: ContextVar[Optional[str]] = ContextVar("orch_task_tier", default=None)
+# rank11 分段合成:仅在**段落**调用期间(run_parallel_sectioned 的 gather 子任务)置位,
+# _call_llm 读到即按本次真实 model 加思考/缓存控制(build_section_llm_kwargs 门控)。
+# MEGA synthesis 调用不在此 ctx 内 → 永不带控制。default None = 存量行为逐字节不变。
+_section_synthesis_ctx: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
+    "orch_section_synthesis", default=None
+)
+
+
+def _section_synthesis_controls() -> Dict[str, Any]:
+    """从 settings 算出段落调用的思考/缓存控制意图(不含 model 门控 —— 那在 _call_llm 里按
+    本次真实 model 决定)。thinking 档见 parallel_synthesis.resolve_section_thinking;cache 复用
+    rank3 的 llm_explicit_prompt_cache flag(默认关),让思考与缓存两个变量可独立开关。"""
+    return {
+        "thinking": parallel_synthesis.resolve_section_thinking(
+            getattr(settings, "parallel_synthesis_section_thinking", "off")
+        ),
+        "cache": bool(getattr(settings, "llm_explicit_prompt_cache", False)),
+    }
 
 # 高风险类别 → reasoning 强模型;其余 → balanced。
 # 安全不变量(fail-closed):orchestrator 合成永远产出面向用户的医疗内容(即便 intent
@@ -1253,8 +1271,19 @@ async def _call_llm(
                     provider = create_provider_for_user(uid, _db, task_tier=_task_tier_ctx.get())
                 else:
                     provider = get_llm_provider()
+            # rank11 段落调用:在 ctx 内则按本次真实 model 加思考/缓存控制(门控 fail-closed;
+            # MEGA 调用不在 ctx 内 → extra 恒空,payload 逐字节不变)。failover 到不同 model 时
+            # 按该 provider 的 model 再各自门控,不会把控制误带给不支持的兜底端点。
+            _section_ctrl = _section_synthesis_ctx.get()
+            extra_kwargs: Dict[str, Any] = (
+                parallel_synthesis.build_section_llm_kwargs(
+                    getattr(provider, "model", None), _section_ctrl
+                )
+                if _section_ctrl
+                else {}
+            )
             result = await provider.chat(
-                messages=messages, temperature=0.3, max_tokens=max_toks
+                messages=messages, temperature=0.3, max_tokens=max_toks, **extra_kwargs
             )
             if isinstance(result, dict):
                 return (result.get("content") or "").strip() or None
@@ -1412,11 +1441,14 @@ def _launch_shadow_parallel_synthesis(
     arb_block: str,
     *,
     task_tier: Optional[str] = None,
+    mega_ms: Optional[int] = None,
 ) -> None:
     """rank11 shadow: 把并行分段合成丢后台跑, 落 audit。绝不阻塞/影响服务回合。
 
     mega-synthesis 已服务用户(调用方在 launch 前 await 完毕)。本 bg task 是纯旁路影子样本,
     供离线 pairwise judge。持 task 引用防 GC(与 G-W9 stream bg task 共用集合), 完成即清理。
+    `mega_ms` = 本回合 mega synthesis 墙钟, 落进 shadow meta 让 pairwise 数据自洽(段落 wall
+    vs mega wall 同一回合可比)。
     """
     try:
         loop = asyncio.get_running_loop()
@@ -1424,7 +1456,9 @@ def _launch_shadow_parallel_synthesis(
         logger.debug("[orchestrator.shadow] 无运行中的事件循环, 跳过 shadow parallel synthesis")
         return
     task = loop.create_task(
-        _shadow_parallel_synthesis_worker(user_id, query, twin, findings, arb_block, task_tier)
+        _shadow_parallel_synthesis_worker(
+            user_id, query, twin, findings, arb_block, task_tier, mega_ms
+        )
     )
     _BACKGROUND_STREAM_TASKS.add(task)
     task.add_done_callback(_BACKGROUND_STREAM_TASKS.discard)
@@ -1437,19 +1471,33 @@ async def _shadow_parallel_synthesis_worker(
     findings: List[SpecialistFinding],
     arb_block: str,
     task_tier: Optional[str],
+    mega_ms: Optional[int] = None,
 ) -> None:
     """rank11 shadow worker: fresh SessionLocal + 独立 provider 作用域, 落 audit。fail-soft。
 
     DB 会话纪律(镜像 rank8 in-process 模式): 用**独立 fresh SessionLocal**, 不复用请求 db
     (请求可能已在 shadow 完成前 close)。provider 作用域也切到 fresh db(override _user_pref_ctx),
     与请求生命周期完全解耦。任何异常/超时只落日志, 绝不影响已返回的服务回合。
+
+    shadow meta 富化(供 pairwise judge 自洽读数):section_thinking(段落思考档)、
+    cached_tokens_total(段落调用显式缓存命中真值,经隔离 usage capture 桶汇总)、
+    mega_ms(同回合 mega 墙钟)。段落调用经 _section_synthesis_ctx 携带思考/缓存控制。
     """
     from app.database import SessionLocal
+    from app.services.llm.usage_tracker import (
+        begin_usage_capture,
+        end_usage_capture,
+        sum_captured_cached_tokens,
+    )
 
     t_start = time.monotonic()
     shadow_db = SessionLocal()
     tok_pref = _user_pref_ctx.set((user_id, shadow_db))
     tok_tier = _task_tier_ctx.set(task_tier)
+    _section_ctrl = _section_synthesis_controls()
+    tok_section = _section_synthesis_ctx.set(_section_ctrl)
+    # 隔离 usage capture 桶: gather 子任务按引用共享该 list 就地 append, gather 后本任务汇总。
+    tok_cap = begin_usage_capture()
     try:
         text, meta = await parallel_synthesis.run_parallel_sectioned(
             call_llm=_call_llm, query=query, twin=twin,
@@ -1459,6 +1507,9 @@ async def _shadow_parallel_synthesis_worker(
         text = _strip_llm_reva_ui(text)
         text = _safety_wrap(text, source="orchestrator.shadow_parallel").safe_text
         meta["wall_ms"] = int((time.monotonic() - t_start) * 1000)
+        meta["section_thinking"] = _section_ctrl.get("thinking")
+        meta["cached_tokens_total"] = sum_captured_cached_tokens()
+        meta["mega_ms"] = mega_ms
         from app.agents.audit import log_shadow_synthesis
         log_shadow_synthesis(shadow_db, user_id=user_id, query=query, text=text, meta=meta)
     except Exception as e:  # noqa: BLE001 — shadow 是旁路, 绝不影响服务回合
@@ -1468,6 +1519,8 @@ async def _shadow_parallel_synthesis_worker(
         except Exception:  # noqa: BLE001
             pass
     finally:
+        end_usage_capture(tok_cap)
+        _section_synthesis_ctx.reset(tok_section)
         _user_pref_ctx.reset(tok_pref)
         _task_tier_ctx.reset(tok_tier)
         shadow_db.close()
@@ -1557,10 +1610,15 @@ async def run_orchestrator(
     t_llm = time.monotonic()
     if _synth_mode == "on" and _sectioned_ok:
         # 'on': 并行分段结果直接服务用户。全段失败(空产出)→ fail-closed 回落 mega。
-        synthesis, _sec_meta = await parallel_synthesis.run_parallel_sectioned(
-            call_llm=_call_llm, query=req.query, twin=twin,
-            findings=findings, arb_block=conflict_arb_block,
-        )
+        # ctx 只包住段落 gather —— 回落 mega(下方)在 finally 复位之后,恒不带段落控制。
+        _sec_tok = _section_synthesis_ctx.set(_section_synthesis_controls())
+        try:
+            synthesis, _sec_meta = await parallel_synthesis.run_parallel_sectioned(
+                call_llm=_call_llm, query=req.query, twin=twin,
+                findings=findings, arb_block=conflict_arb_block,
+            )
+        finally:
+            _section_synthesis_ctx.reset(_sec_tok)
         perf["parallel_synthesis"] = _sec_meta
         if not (synthesis or "").strip():
             logger.warning("[orchestrator] parallel synthesis 空产出, 回落 mega-synthesis")
@@ -1583,6 +1641,7 @@ async def run_orchestrator(
         _launch_shadow_parallel_synthesis(
             user_id, req.query, twin, list(findings), conflict_arb_block,
             task_tier=_task_tier_ctx.get(),
+            mega_ms=perf.get("llm_full_ms"),
         )
 
     # 旁路观测: KB 证据引用率 —— 提供给 LLM 的 claim 里有多少在终稿里显现 (cheap substring).
