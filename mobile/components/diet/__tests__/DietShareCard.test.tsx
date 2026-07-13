@@ -898,7 +898,9 @@ describe('DietShareCard', () => {
     );
 
     expect(getByText('问小巴复盘今日饮食')).toBeTruthy();
-    expect(getByText('先查数据库，再看全天热量和下一餐')).toBeTruthy();
+    expect(getByText('数据库已保存')).toBeTruthy();
+    expect(getByText('复盘会读取数据库快照')).toBeTruthy();
+    expect(getByText('读取数据库记录，再看全天热量和下一餐')).toBeTruthy();
     fireEvent.press(getByLabelText('问小巴复盘今日饮食'));
     expect(onAskReva).toHaveBeenCalledTimes(1);
   });

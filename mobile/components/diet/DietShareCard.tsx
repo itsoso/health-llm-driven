@@ -1158,23 +1158,32 @@ export function DietShareSheet({
           </View>
 
           {onAskReva ? (
-            <TouchableOpacity
-              style={styles.agentReviewButton}
-              onPress={onAskReva}
-              disabled={sharing}
-              activeOpacity={0.82}
-              accessibilityRole="button"
-              accessibilityLabel="问小巴复盘今日饮食"
-            >
-              <View style={styles.agentReviewIcon}>
-                <Ionicons name="chatbubble-ellipses-outline" size={17} color={C.green600} />
+            <>
+              <View style={styles.databaseSavedStrip}>
+                <View style={styles.databaseSavedItem}>
+                  <Ionicons name="checkmark-circle" size={15} color={C.green600} />
+                  <Text style={styles.databaseSavedTitle}>数据库已保存</Text>
+                </View>
+                <Text style={styles.databaseSavedText}>复盘会读取数据库快照</Text>
               </View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.agentReviewTitle}>问小巴复盘今日饮食</Text>
-                <Text style={styles.agentReviewSubtitle}>先查数据库，再看全天热量和下一餐</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={C.ink3} />
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.agentReviewButton}
+                onPress={onAskReva}
+                disabled={sharing}
+                activeOpacity={0.82}
+                accessibilityRole="button"
+                accessibilityLabel="问小巴复盘今日饮食"
+              >
+                <View style={styles.agentReviewIcon}>
+                  <Ionicons name="chatbubble-ellipses-outline" size={17} color={C.green600} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.agentReviewTitle}>问小巴复盘今日饮食</Text>
+                  <Text style={styles.agentReviewSubtitle}>读取数据库记录，再看全天热量和下一餐</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={C.ink3} />
+              </TouchableOpacity>
+            </>
           ) : null}
 
           {publishHint ? (
@@ -1605,6 +1614,41 @@ const styles = StyleSheet.create({
   xhsShareButton: { backgroundColor: '#D95A45' },
   platformShareText: { fontFamily: revaFonts.sans, fontSize: 13, color: C.greenOn, fontWeight: '900' },
   platformShareHint: { fontFamily: revaFonts.sans, fontSize: 9.5, color: 'rgba(255,255,255,0.78)', marginTop: 1 },
+  databaseSavedStrip: {
+    width: '100%',
+    minHeight: 34,
+    borderRadius: revaRadii.sm,
+    backgroundColor: '#F0F8F3',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.focusLine,
+    marginTop: revaSpacing.s2,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  databaseSavedItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    minWidth: 0,
+  },
+  databaseSavedTitle: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    color: C.green700,
+    fontWeight: '900',
+  },
+  databaseSavedText: {
+    flexShrink: 1,
+    fontFamily: revaFonts.sans,
+    fontSize: 11,
+    color: C.ink3,
+    fontWeight: '700',
+    textAlign: 'right',
+  },
   agentReviewButton: {
     width: '100%',
     minHeight: 52,
