@@ -645,7 +645,10 @@ final class AgentStreamClientTests: XCTestCase {
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/v1/agent/stream")
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer token")
-            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Reva-Client-Caps"), "genui-v1, genui-components-v1")
+            XCTAssertEqual(
+                request.value(forHTTPHeaderField: "X-Reva-Client-Caps"),
+                "genui-v1, genui-components-v1, genui-table-v1"
+            )
             let body = try JSONSerialization.jsonObject(with: request.bodyDataForTesting ?? Data()) as? [String: Any]
             XCTAssertEqual(body?["message"] as? String, "分析今天状态")
             XCTAssertEqual(body?["conversation_id"] as? Int, 7)
@@ -1214,7 +1217,7 @@ final class AgentStreamClientTests: XCTestCase {
         XCTAssertEqual(json["response_format"] as? String, "markdown")
         let instruction = try XCTUnwrap(json["desktop_markdown_response_instruction"] as? String)
         XCTAssertTrue(instruction.contains("Markdown"))
-        XCTAssertTrue(instruction.contains("不要输出密集长段落"))
+        XCTAssertTrue(instruction.contains("正文控制在 500 字以内"))
         XCTAssertTrue(instruction.contains("不确定性边界"))
     }
 

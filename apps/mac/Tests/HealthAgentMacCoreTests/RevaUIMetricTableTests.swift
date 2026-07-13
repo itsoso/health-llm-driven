@@ -84,13 +84,15 @@ final class RevaUIMetricTableTests: XCTestCase {
             AgentStreamClient.clientCapsHeaderValue(tableCapEnabled: false),
             "genui-v1, genui-components-v1"
         )
-        // 当前渲染器随包发布但 cap 必须暗着(prose eval gate 过后才翻)。
-        XCTAssertFalse(
+        // eval gate 已通过，当前构建应声明 table capability。
+        XCTAssertTrue(
             RevaUIFeatureFlags.tableCapEnabled,
-            "metric_table cap 必须默认暗，翻开是 gate 过后的独立一行提交"
+            "metric_table eval gate 通过后必须声明 capability"
         )
-        // 生效头值(读编译期常量)= 历史值,零回归。
-        XCTAssertEqual(AgentStreamClient.clientCapsHeaderValue, "genui-v1, genui-components-v1")
+        XCTAssertEqual(
+            AgentStreamClient.clientCapsHeaderValue,
+            "genui-v1, genui-components-v1, genui-table-v1"
+        )
     }
 
     func testClientCapsHeaderDeclaresTableCapWhenEnabled() {

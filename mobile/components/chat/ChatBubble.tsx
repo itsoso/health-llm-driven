@@ -533,7 +533,7 @@ function ChatBubbleInner({
     handleLongPress();
   };
 
-  const handleImageLongPress = useCallback((uri: string, index: number) => {
+  const handleImageLongPress = (uri: string, index: number) => {
     if (selectionMode) return;
     Haptics.selectionAsync();
     Alert.alert(
@@ -562,7 +562,7 @@ function ChatBubbleInner({
         },
       ],
     );
-  }, [imageAuthToken, selectionMode, toast]);
+  };
 
   // 播报当前 AI 气泡内容. 同 bubble 再点 = 停; 切其他气泡播报会接管 (Speech 是单例, 自动 stop 旧的).
   // 走 speakWithUserVoice → 按用户在"语音风格"页选的档位 (cloud / iOS) 播报,
