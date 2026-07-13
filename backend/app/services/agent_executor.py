@@ -1409,6 +1409,9 @@ def _fallback_text_from_tool_results(
     结构化残片/manage-list 数组)就返回空串交回重试链,链有界(compact retry →
     fallback provider → 硬兜底文案),不会重试风暴。默认 False = fail-closed:
     新调用点忘了传参也绝不凭空宣称写入。
+
+    数据泄漏护栏(双模):结构化残片(首字符 { / [)任何模式都不回显给用户 ——
+    有回执退中性"已完成记录。",无回执退空串;"已完成操作：…"只承载人话文本。
     """
     for message in reversed(messages):
         if message.get("role") != "tool":
@@ -1442,12 +1445,13 @@ def _fallback_text_from_tool_results(
 
         preview = content.replace("\n", " ").strip()
         if preview:
+            if preview[0] in "{[":
+                # 结构化残片(含 manage-list 的记录数组)对用户既不可读又泄漏
+                # 工具结果 —— 真写入回合退中性确认(与 id-only 字典分支同口径),
+                # 查询回合不展示,交回重试链。两个模式都绝不回显裸 JSON。
+                return "已完成记录。" if has_verified_write else ""
             if has_verified_write:
                 return f"已完成操作：{preview[:120]}"
-            if preview[0] in "{[":
-                # 结构化残片(含 manage-list 的记录数组)在查询回合既不可读又
-                # 泄漏工具结果 —— 不展示,交回重试链。
-                return ""
             return f"查到：{preview[:120]}"
 
     return ""

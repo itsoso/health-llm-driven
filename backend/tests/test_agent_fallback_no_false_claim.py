@@ -15,8 +15,11 @@ write_receipts(可验证写入回执,与 turn 6334 修复同一权威判定)传�
   - 无回执: food_items/summary/preview → "查到：…"(查询味,不宣称写入);
     id-only 字典 / 结构化残片(含 manage-list 数组)→ 空串交回重试链
     (链有界: compact retry → fallback provider → 硬兜底文案,不会重试风暴);
-  - 有回执: 与旧行为逐字节一致("已完成记录：…" / "已完成记录。" / "已完成操作：…"),
-    不 over-suppress(memory「加固一道闸后必对加固本身跑对抗复审」的双向钉死)。
+  - 有回执: 人话字段与旧行为逐字节一致("已完成记录：…" / "已完成记录。" /
+    "已完成操作：…"),不 over-suppress(memory「加固一道闸后必对加固本身跑对抗
+    复审」的双向钉死);唯一例外是结构化残片(首字符 { / [)—— 旧行为会
+    "已完成操作：{…" 回显裸 JSON 前 120 字,现镜像无回执分支的护栏改中性
+    "已完成记录。"(safety-privacy-reviewer 2026-07-13 GO 裁决的可选跟进项)。
 """
 import json
 
@@ -100,6 +103,44 @@ def test_unit_verified_write_keeps_legacy_confirmations():
     )
     assert text == "已完成记录。"
 
+    text = _fallback_text_from_tool_results(
+        [{"role": "tool", "content": "OK saved row 701"}],
+        has_verified_write=True,
+    )
+    assert text == "已完成操作：OK saved row 701"
+
+
+def test_unit_verified_write_structured_preview_neutral_no_json_leak():
+    """有回执 + 结构化残片(首字符 { / [): 绝不 "已完成操作：{…" 回显裸 JSON,
+    改用与 id-only 字典分支同口径的中性 "已完成记录。"(镜像无回执分支的
+    preview[0] in "{[" 护栏)。泄的是用户本轮自己写的数据,但裸 JSON 前缀
+    对用户既不可读也不该出现在对话里。"""
+    structured_fragments = [
+        # 合法 JSON 数组(批量写入回执形状) —— payload 是 list 非 dict,落到 preview 分支。
+        json.dumps([{"id": 35, "food_items": "牛排"}, {"id": 34}], ensure_ascii=False),
+        # 合法 JSON dict 但无 message/food_items/summary/preview/id/record_id —— 穿过
+        # dict 分支落到 preview 分支。
+        json.dumps({"ok": True, "rows_affected": 1}, ensure_ascii=False),
+        # 截断/非法 JSON 残片(json.loads 失败),首字符仍是 {。
+        '{"id": 702, "resource_type": "diet_rec',
+        # 首字符是 [ 的非法残片。
+        '[{"id": 35}, {"id":',
+    ]
+    for fragment in structured_fragments:
+        text = _fallback_text_from_tool_results(
+            [{"role": "tool", "content": fragment}],
+            has_verified_write=True,
+        )
+        assert text == "已完成记录。", (fragment, text)
+        assert "{" not in text and "[" not in text, (fragment, text)
+
+        # 镜像对照: 同残片无回执仍是空串(本修复只动有回执分支,不放松查询侧)。
+        assert _fallback_text_from_tool_results(
+            [{"role": "tool", "content": fragment}],
+            has_verified_write=False,
+        ) == ""
+
+    # 反向钉死(不 over-suppress): 人话文本的 "已完成操作：…" 不受影响。
     text = _fallback_text_from_tool_results(
         [{"role": "tool", "content": "OK saved row 701"}],
         has_verified_write=True,
