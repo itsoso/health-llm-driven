@@ -138,8 +138,6 @@ def list_review_claims(
         items = []
         for claim in _read_jsonl(root / "claims.jsonl"):
             metadata = claim.get("metadata") if isinstance(claim.get("metadata"), dict) else {}
-            if not metadata.get("release_id"):
-                continue
             claim_decision = (latest.get(str(claim.get("doc_id") or "")) or {}).get("decision")
             if decision is not None and claim_decision != decision:
                 continue
@@ -168,10 +166,13 @@ def list_review_claims(
         unresolved_count = sum(
             1
             for item in items
-            if item["review_status"] != "reviewed" or item["decision"] != "approve"
+            if item["review_status"] == "draft" or (
+                item["release_id"] and item["decision"] != "approve"
+            )
         )
         return {
             "workspace_fingerprint": workspace_content_fingerprint(root),
+            "gate": validate_artifact_review_gate(root),
             "total": len(items),
             "unresolved_count": unresolved_count,
             "decision_counts": dict(sorted(decision_counts.items())),

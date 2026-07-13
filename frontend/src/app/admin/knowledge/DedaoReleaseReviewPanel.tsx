@@ -40,6 +40,10 @@ interface ReleaseClaim {
 
 interface ReviewResponse {
   workspace_fingerprint: string;
+  gate: {
+    serving_allowed: boolean;
+    blocking_reasons?: string[];
+  };
   total: number;
   unresolved_count: number;
   decision_counts: Record<string, number>;
@@ -191,6 +195,7 @@ export function DedaoReleaseReviewPanel({ enabled }: DedaoReleaseReviewPanelProp
   const canFinalize = data
     ? canFinalizeReleaseReview({ total: data.total, unresolvedCount: data.unresolved_count })
     : false;
+  const isFinalized = data?.gate?.serving_allowed === true;
   const isMutating = adjudicationMutation.isPending || finalizeMutation.isPending || previewMutation.isPending;
 
   return (
@@ -350,7 +355,7 @@ export function DedaoReleaseReviewPanel({ enabled }: DedaoReleaseReviewPanelProp
           <button
             type="button"
             onClick={() => previewMutation.mutate()}
-            disabled={!canFinalize || isMutating}
+            disabled={!isFinalized || isMutating}
             className="rounded border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-40"
           >
             影响预演
@@ -358,7 +363,7 @@ export function DedaoReleaseReviewPanel({ enabled }: DedaoReleaseReviewPanelProp
           <button
             type="button"
             onClick={() => finalizeMutation.mutate()}
-            disabled={!canFinalize || isMutating}
+            disabled={!canFinalize || isFinalized || isMutating}
             className="rounded bg-teal-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-teal-400 disabled:opacity-40"
           >
             最终确认 Release

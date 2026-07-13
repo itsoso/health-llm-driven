@@ -540,6 +540,27 @@ def test_list_review_claims_returns_bounded_release_claims(tmp_path):
     ]
 
 
+def test_list_review_claims_includes_legacy_export_claim_without_release_id(tmp_path):
+    from app.services.kbase_review_workspace import list_review_claims
+
+    workspace = tmp_path / "review-workspace"
+    _write_release_review_workspace(workspace)
+    claims = [json.loads(line) for line in (workspace / "claims.jsonl").read_text().splitlines()]
+    claims[0]["metadata"].pop("release_id", None)
+    (workspace / "claims.jsonl").write_text(
+        "".join(json.dumps(claim, ensure_ascii=False) + "\n" for claim in claims),
+        encoding="utf-8",
+    )
+
+    result = list_review_claims(workspace, offset=0, limit=20)
+
+    assert result["total"] == 1
+    assert result["unresolved_count"] == 1
+    assert result["items"][0]["doc_id"] == "claim:release-abc-claim-1"
+    assert result["items"][0]["release_id"] is None
+    assert result["gate"]["serving_allowed"] is False
+
+
 def test_adjudicate_review_claim_approves_with_structured_evidence(tmp_path):
     from app.services.kbase_review_workspace import (
         adjudicate_review_claim,

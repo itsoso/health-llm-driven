@@ -22,6 +22,7 @@ const reviewData = {
   decision_counts: { approve: 1, unresolved: 1 },
   offset: 0,
   limit: 50,
+  gate: { serving_allowed: false, blocking_reasons: ['draft artifacts require review'] },
   items: [
     {
       doc_id: 'claim:release-abc-claim-1',
@@ -131,6 +132,26 @@ describe('DedaoReleaseReviewPanel', () => {
 
     expect(screen.getByRole('button', { name: '最终确认 Release' })).toBeDisabled();
     expect(screen.getByText('仍有 1 条未决')).toBeInTheDocument();
+  });
+
+  it('keeps impact preview disabled until the review gate is finalized', async () => {
+    vi.mocked(api.get).mockResolvedValue({
+      data: {
+        ...reviewData,
+        unresolved_count: 0,
+        decision_counts: { approve: 2 },
+        items: reviewData.items.map((item) => ({
+          ...item,
+          review_status: 'reviewed',
+          decision: 'approve',
+        })),
+      },
+    });
+    renderPanel();
+    await screen.findByRole('button', { name: /咖啡因与睡眠窗口/ });
+
+    expect(screen.getByRole('button', { name: '最终确认 Release' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '影响预演' })).toBeDisabled();
   });
 
   it('surfaces stale fingerprint conflicts and offers a reload', async () => {
