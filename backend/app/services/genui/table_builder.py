@@ -14,6 +14,15 @@ LLM 不参与数据路径 —— 请用 `grep -n "llm\|LLM\|_call_llm" table_bui
   - query_lab_indicators —— 单指标 {count,items:[...]} / 批量 {batch,by_name:{...}}
                             (MedicalIndicator + 血压桥接, json.dumps 干净)。
   - health_query(weight / blood_pressure / water) —— 原始 API JSON list/dict。
+  - health_query(sleep) —— analyze_sleep_quality dict {daily_data:[{date,sleep_score,
+                            total_sleep_duration,deep_sleep_duration,…}]} (逐日结构化 JSON)。
+  - health_query(diet)  —— DailyDietSummary dict {meals:[{meal_type,food_items,calories,
+                            protein,…}], total_*} (逐餐结构化 JSON)。
+
+刻意跳过 (只文本, 绝不 regex-scrape): health_query(activity/steps/heart_rate/hrv/
+body_battery/stress) 走 canonical `read_wearable_daily` 返回紧凑 LLM 文本 (非 JSON);
+health_query(medical_exam) 走 `read_medical_indicators` 也是文本 —— 结构化化验/异常
+清单只从 query_lab_indicators 出 (上面已覆盖)。
 
 设计:
   - 纯函数 (无 DB / 无 HTTP / 无 LLM): 输入 (tool_name, args, result_str), 输出 block dict。
@@ -94,6 +103,14 @@ def _fmt_value(value: Any, unit: Any = None) -> Optional[str]:
         return None
     u = str(unit).strip() if unit is not None else ""
     return f"{text} {u}".strip() if u else text
+
+
+def _fmt_num(value: Any, unit: Any = None) -> Optional[str]:
+    """数值单元格: 整数值浮点去掉多余 '.0' (350.0→'350', float 与 int 同值, 非换算/判定),
+    其余交给 _fmt_value 逐字。供饮食 kcal/g 等常来自 DB float 的列用, 避免 "350.0" 噪声。"""
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return _fmt_value(value, unit)
 
 
 def _load_json_lenient(result: str) -> Optional[Any]:
@@ -368,6 +385,93 @@ def _table_from_water(payload: Any) -> Optional[dict]:
     return _make_block("饮水概览", columns, rows)
 
 
+def _table_from_sleep(payload: Any) -> Optional[dict]:
+    """health_query(sleep): analyze_sleep_quality dict, 逐日行来自 daily_data。
+
+    daily_data[]: {date, sleep_score, total_sleep_duration(分钟), deep_sleep_duration(分钟), …}。
+    R4: 只 relay daily_data 里的 raw 字段 (sleep_score 是设备端评分, 逐字透传); 绝不读
+    quality_assessment (服务端质量判定), 也不自行判睡眠好坏或把分钟换算成小时。
+    """
+    if not isinstance(payload, dict):
+        return None
+    daily = payload.get("daily_data")
+    if not isinstance(daily, list) or not daily:
+        return None
+    records = [d for d in daily if isinstance(d, dict)]
+    # 条件列: 任一天带该字段才建列 (全缺不建列, 绝不占位)。
+    has_dur = any(r.get("total_sleep_duration") is not None for r in records)
+    has_deep = any(r.get("deep_sleep_duration") is not None for r in records)
+    has_score = any(r.get("sleep_score") is not None for r in records)
+    rows: List[Dict[str, str]] = []
+    for r in records:
+        dur = _fmt_num(r.get("total_sleep_duration"), "分钟")
+        deep = _fmt_num(r.get("deep_sleep_duration"), "分钟")
+        score = _fmt_num(r.get("sleep_score"))
+        if dur is None and deep is None and score is None:
+            continue  # 仅日期无任何指标 → 不落空行 (绝不编造)
+        row = {"date": str(r.get("date") or "")}
+        if has_dur:
+            row["dur"] = dur or ""
+        if has_deep:
+            row["deep"] = deep or ""
+        if has_score:
+            row["score"] = score or ""
+        rows.append(row)
+    if not rows:
+        return None
+    columns = [("date", "日期")]
+    if has_dur:
+        columns.append(("dur", "时长"))
+    if has_deep:
+        columns.append(("deep", "深睡"))
+    if has_score:
+        columns.append(("score", "评分"))
+    return _make_block("睡眠记录", columns, rows)
+
+
+# meal_type → 中文餐次 (确定性映射, 对齐 schemas/diet.MEAL_TYPE_ZH; 非 LLM 文案)。
+_MEAL_LABEL: Dict[str, str] = {
+    "breakfast": "早餐", "lunch": "午餐", "dinner": "晚餐", "snack": "加餐", "extra": "其他",
+}
+
+
+def _table_from_diet(payload: Any) -> Optional[dict]:
+    """health_query(diet): DailyDietSummary dict, 逐餐行来自 meals。
+
+    meals[]: {meal_type, food_items, calories, protein, …}。R4: 只 relay summary 携带的
+    字段 (餐次/内容/热量/蛋白); 未识别营养 → 空单元格 (非 0/占位), 绝不重算或判吃得好坏。
+    合计不入表 (顶层 total_* 用 None→0 求和, 部分缺项会被误读为真总量; 交给正文叙事说)。
+    """
+    if not isinstance(payload, dict):
+        return None
+    meals = payload.get("meals")
+    if not isinstance(meals, list) or not meals:
+        return None
+    entries = [m for m in meals if isinstance(m, dict)]
+    has_cal = any(m.get("calories") is not None for m in entries)
+    has_pro = any(m.get("protein") is not None for m in entries)
+    rows: List[Dict[str, str]] = []
+    for m in entries:
+        food = str(m.get("food_items") or "").strip()
+        if not food:
+            continue  # 内容 (锚点字段) 缺失 → 跳过该餐
+        mt = str(m.get("meal_type") or "").strip().lower()
+        row = {"meal": _MEAL_LABEL.get(mt, mt) or mt, "food": food}
+        if has_cal:
+            row["cal"] = _fmt_num(m.get("calories"), "kcal") or ""
+        if has_pro:
+            row["pro"] = _fmt_num(m.get("protein"), "g") or ""
+        rows.append(row)
+    if not rows:
+        return None
+    columns = [("meal", "餐次"), ("food", "内容")]
+    if has_cal:
+        columns.append(("cal", "热量"))
+    if has_pro:
+        columns.append(("pro", "蛋白"))
+    return _make_block("今日饮食", columns, rows)
+
+
 # ---------------------------------------------------------------------------
 # 分发 + 聚合
 # ---------------------------------------------------------------------------
@@ -376,6 +480,8 @@ _SINGLE_QUERY_TABLE = {
     "weight": _table_from_weight,
     "blood_pressure": _table_from_blood_pressure,
     "water": _table_from_water,
+    "sleep": _table_from_sleep,
+    "diet": _table_from_diet,
 }
 
 

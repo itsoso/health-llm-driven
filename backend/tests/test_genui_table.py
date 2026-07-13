@@ -94,6 +94,59 @@ def _lab_batch_result():
     )
 
 
+def _sleep_result():
+    """analyze_sleep_quality dict (health_query dimension=sleep 的真实返回形状)。
+
+    durations 全部为分钟整数 (见 models/daily_health 注释); quality_assessment 是服务端
+    质量判定, builder 绝不消费。
+    """
+    return json.dumps(
+        {
+            "status": "success",
+            "days_analyzed": 2,
+            "average_sleep_score": 80.5,
+            "average_sleep_duration_minutes": 442.5,
+            "average_sleep_duration_hours": 7.4,
+            "average_deep_sleep_minutes": 95.0,
+            "quality_assessment": {"level": "良好", "summary": "整体睡眠质量良好"},
+            "recommendations": ["保持规律作息"],
+            "daily_data": [
+                {"date": "2026-07-12", "sleep_score": 82, "total_sleep_duration": 445,
+                 "deep_sleep_duration": 98, "rem_sleep_duration": 110, "awake_duration": 20},
+                {"date": "2026-07-11", "sleep_score": 79, "total_sleep_duration": 440,
+                 "deep_sleep_duration": 92, "rem_sleep_duration": 105, "awake_duration": 25},
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+
+def _diet_result():
+    """DailyDietSummary dict (health_query dimension=diet 的真实返回形状)。
+
+    meal_type 是 MealType str-enum → JSON 序列化为值 ("breakfast" 等);
+    per-meal calories/protein 是 float (可能带 .0)。
+    """
+    return json.dumps(
+        {
+            "record_date": "2026-07-13",
+            "total_calories": 830,
+            "total_protein": 60.5,
+            "total_carbs": 70.0,
+            "total_fat": 30.0,
+            "total_fiber": 12.0,
+            "meals_count": 2,
+            "meals": [
+                {"record_date": "2026-07-13", "meal_type": "breakfast", "food_items": "燕麦粥, 水煮蛋",
+                 "calories": 350.0, "protein": 18.0, "carbs": 40.0, "fat": 10.0},
+                {"record_date": "2026-07-13", "meal_type": "lunch", "food_items": "鸡胸肉沙拉",
+                 "calories": 480.0, "protein": 42.5, "carbs": 30.0, "fat": 20.0},
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+
 # ---------------------------------------------------------------------------
 # A. builder determinism — every cell traces to a tool-result field
 # ---------------------------------------------------------------------------
@@ -292,6 +345,147 @@ def test_water_table():
 def test_water_missing_total_builds_nothing():
     result = json.dumps({"record_date": "2026-07-13", "records": []}, ensure_ascii=False)
     assert build_table_from_tool_call("health_query", {"dimension": "water"}, result) is None
+
+
+# ---------------------------------------------------------------------------
+# A1a. sleep — daily_data rows, verbatim, server-scored relay only
+# ---------------------------------------------------------------------------
+
+def test_sleep_real_shape_rows_verbatim():
+    block = build_table_from_tool_call("health_query", {"dimension": "sleep"}, _sleep_result())
+    assert block is not None
+    assert block["type"] == "metric_table" and block["v"] == 1
+    assert [c["key"] for c in block["columns"]] == ["date", "dur", "deep", "score"]
+    assert len(block["rows"]) == 2
+    # 每格逐字来自 daily_data 字段 (分钟单位, sleep_score 逐字)
+    assert block["rows"][0] == {"date": "2026-07-12", "dur": "445 分钟",
+                                "deep": "98 分钟", "score": "82"}
+    assert block["rows"][1]["score"] == "79"
+
+
+def test_sleep_no_quality_judgment_leaked():
+    """R4: builder 只 relay daily_data raw 字段, 不碰 quality_assessment (服务端质量判定)。"""
+    block = build_table_from_tool_call("health_query", {"dimension": "sleep"}, _sleep_result())
+    blob = json.dumps(block, ensure_ascii=False)
+    # quality_assessment 的判定词/键均不进卡片; 也不出现均值字段 (卡片只逐日 daily_data)
+    assert "良好" not in blob and "quality" not in blob
+    assert "average" not in blob
+
+
+def test_sleep_no_data_builds_nothing():
+    result = json.dumps(
+        {"status": "no_data", "message": "没有足够的睡眠数据", "days_analyzed": 0},
+        ensure_ascii=False,
+    )
+    assert build_table_from_tool_call("health_query", {"dimension": "sleep"}, result) is None
+
+
+def test_sleep_deep_column_dropped_when_all_absent():
+    """所有天都缺 deep_sleep_duration → 不建深睡列 (绝不占位)。"""
+    result = json.dumps({"status": "success", "daily_data": [
+        {"date": "2026-07-12", "sleep_score": 82, "total_sleep_duration": 445},
+        {"date": "2026-07-11", "sleep_score": 79, "total_sleep_duration": 440},
+    ]}, ensure_ascii=False)
+    block = build_table_from_tool_call("health_query", {"dimension": "sleep"}, result)
+    assert [c["key"] for c in block["columns"]] == ["date", "dur", "score"]
+    assert "deep" not in block["rows"][0]
+
+
+def test_sleep_partial_column_blank_where_absent():
+    """部分天缺 deep → 列在, 缺的行留空 (诚实空值, 非借上一行)。"""
+    result = json.dumps({"status": "success", "daily_data": [
+        {"date": "2026-07-12", "sleep_score": 82, "total_sleep_duration": 445, "deep_sleep_duration": 98},
+        {"date": "2026-07-11", "sleep_score": 79, "total_sleep_duration": 440},  # 无 deep
+    ]}, ensure_ascii=False)
+    block = build_table_from_tool_call("health_query", {"dimension": "sleep"}, result)
+    assert [c["key"] for c in block["columns"]] == ["date", "dur", "deep", "score"]
+    assert block["rows"][0]["deep"] == "98 分钟"
+    assert block["rows"][1]["deep"] == ""
+
+
+def test_sleep_row_all_metrics_none_skipped():
+    """对抗: daily_data 条目有 date 但所有指标 None → 跳过该行 (不落空行, 不编造)。"""
+    result = json.dumps({"status": "success", "daily_data": [
+        {"date": "2026-07-12", "sleep_score": None, "total_sleep_duration": None,
+         "deep_sleep_duration": None},
+        {"date": "2026-07-11", "sleep_score": 79, "total_sleep_duration": 440},
+    ]}, ensure_ascii=False)
+    block = build_table_from_tool_call("health_query", {"dimension": "sleep"}, result)
+    assert len(block["rows"]) == 1
+    assert block["rows"][0]["date"] == "2026-07-11"
+
+
+def test_sleep_empty_daily_data_builds_nothing():
+    result = json.dumps({"status": "success", "daily_data": []}, ensure_ascii=False)
+    assert build_table_from_tool_call("health_query", {"dimension": "sleep"}, result) is None
+
+
+# ---------------------------------------------------------------------------
+# A1b. diet — DailyDietSummary meal rows, R4 no-invention on missing nutrients
+# ---------------------------------------------------------------------------
+
+def test_diet_real_shape_rows_verbatim():
+    block = build_table_from_tool_call("health_query", {"dimension": "diet"}, _diet_result())
+    assert block is not None
+    assert [c["key"] for c in block["columns"]] == ["meal", "food", "cal", "pro"]
+    assert len(block["rows"]) == 2
+    # 餐次映射中文, 内容/热量/蛋白逐字 (整数浮点去 .0, 小数逐字)
+    assert block["rows"][0] == {"meal": "早餐", "food": "燕麦粥, 水煮蛋",
+                                "cal": "350 kcal", "pro": "18 g"}
+    assert block["rows"][1] == {"meal": "午餐", "food": "鸡胸肉沙拉",
+                                "cal": "480 kcal", "pro": "42.5 g"}
+
+
+def test_diet_missing_calorie_no_fabrication():
+    """对抗: 一餐未识别热量 (calories None) → 该格留空, 绝不编造/借总量。"""
+    result = json.dumps({"record_date": "2026-07-13", "total_calories": 480,
+                         "total_protein": 82.5, "meals": [
+        {"meal_type": "lunch", "food_items": "鸡胸肉沙拉", "calories": None, "protein": 42.5},
+        {"meal_type": "dinner", "food_items": "牛排", "calories": 480.0, "protein": 40.0},
+    ]}, ensure_ascii=False)
+    block = build_table_from_tool_call("health_query", {"dimension": "diet"}, result)
+    # dinner 有 calories → 建热量列; lunch 该格空 (非 0/非编造), protein 逐字
+    assert [c["key"] for c in block["columns"]] == ["meal", "food", "cal", "pro"]
+    assert block["rows"][0]["cal"] == "" and block["rows"][0]["pro"] == "42.5 g"
+    assert block["rows"][1]["cal"] == "480 kcal"
+
+
+def test_diet_no_nutrient_columns_when_all_absent():
+    """无一餐带 calories/protein → 只 餐次/内容 两列 (绝不补 0 冒充营养)。"""
+    result = json.dumps({"record_date": "2026-07-13", "total_calories": 0, "total_protein": 0,
+                         "meals": [
+        {"meal_type": "snack", "food_items": "苹果"},
+        {"meal_type": "extra", "food_items": "黑咖啡"},
+    ]}, ensure_ascii=False)
+    block = build_table_from_tool_call("health_query", {"dimension": "diet"}, result)
+    assert [c["key"] for c in block["columns"]] == ["meal", "food"]
+    assert block["rows"][0] == {"meal": "加餐", "food": "苹果"}
+
+
+def test_diet_meal_without_food_skipped():
+    """内容 (锚点字段) 空 → 跳过该餐行。"""
+    result = json.dumps({"meals": [
+        {"meal_type": "breakfast", "food_items": "", "calories": 100.0},
+        {"meal_type": "lunch", "food_items": "米饭", "calories": 300.0},
+    ]}, ensure_ascii=False)
+    block = build_table_from_tool_call("health_query", {"dimension": "diet"}, result)
+    assert len(block["rows"]) == 1
+    assert block["rows"][0]["food"] == "米饭"
+
+
+def test_diet_empty_meals_builds_nothing():
+    result = json.dumps({"record_date": "2026-07-13", "total_calories": 0, "meals": []},
+                        ensure_ascii=False)
+    assert build_table_from_tool_call("health_query", {"dimension": "diet"}, result) is None
+
+
+def test_diet_unknown_meal_type_passthrough():
+    """未知 meal_type → 逐字透传 (无白名单丢弃, 与血压 category relay 同纪律)。"""
+    result = json.dumps({"meals": [
+        {"meal_type": "brunch", "food_items": "培根蛋", "calories": 400.0},
+    ]}, ensure_ascii=False)
+    block = build_table_from_tool_call("health_query", {"dimension": "diet"}, result)
+    assert block["rows"][0]["meal"] == "brunch"
 
 
 # ---------------------------------------------------------------------------
@@ -531,6 +725,50 @@ async def test_cap_on_emits_metric_table_after_synthesis(db, auth_user_and_heade
         .order_by(AgentMessage.id.desc()).first()
     )
     assert "```reva-ui" in (assistant.content or "")
+
+
+def _sleep_round_stream(captured):
+    """round1 → health_query(sleep) tool_call; round2 → synthesis text (新形状 e2e)。"""
+    state = {"n": 0}
+
+    async def fake_stream(messages, round_tools):
+        state["n"] += 1
+        captured.append([m.get("content") for m in messages])
+        if state["n"] == 1:
+            yield {"type": "tool_calls", "tool_calls": [{
+                "id": "s1",
+                "function": {"name": "health_query", "arguments": '{"dimension":"sleep"}'},
+            }]}
+            yield {"type": "finish", "finish_reason": "tool_calls"}
+        else:
+            yield {"type": "content", "text": "结论：你近两晚睡眠评分稳定在个人常态区间。"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+    return fake_stream
+
+
+@pytest.mark.asyncio
+async def test_cap_on_emits_sleep_metric_table(db, auth_user_and_headers, monkeypatch):
+    """新形状 e2e: health_query(sleep) → 叙事后确定性追加睡眠 metric_table (真数值来自工具结果)。"""
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    _wire(executor, monkeypatch)
+    captured: list = []
+    monkeypatch.setattr(executor, "_call_llm_stream", _sleep_round_stream(captured))
+    monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_sleep_result()))
+
+    events = await _run(executor, "看看我最近睡眠", client_caps=[GENUI_TABLE_CAP], user_id=user.id)
+    rendered = _tokens(events)
+
+    # 叙事在前、卡片在后
+    assert "结论：你近两晚" in rendered
+    assert "```reva-ui" in rendered and '"type":"metric_table"' in rendered
+    assert "睡眠记录" in rendered
+    assert rendered.index("结论") < rendered.index("reva-ui")
+    # 数值来自工具结果 daily_data (时长 445 分钟 / 评分 82), 不来自 LLM 文本
+    assert "445 分钟" in rendered and '"score":"82"' in rendered
+    # quality_assessment (服务端质量判定) 不泄漏进卡片
+    assert "良好" not in rendered
 
 
 @pytest.mark.asyncio
