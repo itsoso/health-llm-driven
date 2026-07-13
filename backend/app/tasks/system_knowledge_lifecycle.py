@@ -23,6 +23,11 @@ from app.services.dedao_kbase_export_importer import (
     compile_dedao_kbase_export_payload_artifacts,
     fetch_dedao_kbase_export_payload,
 )
+from app.integrations.dedao_kbase_release_consumer import (
+    DedaoKBaseReleaseClient,
+    combine_release_results,
+    compile_knowledge_release_artifacts,
+)
 from app.services.system_knowledge_crystallize import draft_crystallized_claim_candidates
 from app.services.system_knowledge_eval import run_system_kb_eval_cases
 from app.services.system_knowledge_ingest import validate_artifact_review_gate, write_draft_artifacts
@@ -115,6 +120,71 @@ def sync_dedao_kbase_export_draft_once(
     return report
 
 
+def sync_dedao_kbase_releases_draft_once(
+    db: Session,
+    *,
+    base_url: str | None,
+    auth_token: str | None,
+    artifact_dir: str | Path,
+    source_root: str | Path,
+    actor: str = "system",
+    now: datetime | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Incrementally write immutable releases to draft artifacts without serving mutation."""
+    base_url = (base_url or "").strip()
+    if not base_url:
+        return {"status": "skipped", "reason": "missing_release_base_url", "artifact_dir": str(artifact_dir)}
+    latest = (
+        db.query(KBAudit)
+        .filter(KBAudit.op == "dedao_kbase_release_sync_draft")
+        .order_by(KBAudit.ts.desc(), KBAudit.id.desc())
+        .first()
+    )
+    previous_cursor = str((latest.diff or {}).get("cursor") or "") if latest else ""
+    client = DedaoKBaseReleaseClient(base_url, auth_token=auth_token)
+    records = client.list_releases(after=previous_cursor, limit=limit)
+    if not records:
+        return {"status": "up_to_date", "cursor": previous_cursor, "release_count": 0}
+
+    current_time = now or datetime.now(UTC)
+    releases = [client.get_release(str(record.get("release_id") or "")) for record in records]
+    results = [
+        compile_knowledge_release_artifacts(
+            release=release,
+            base_artifact_dir=artifact_dir,
+            source_root=source_root,
+            now=current_time,
+        )
+        for release in releases
+    ]
+    combined = combine_release_results(results)
+    cursor = str(records[-1]["release_id"])
+    draft_manifest = write_draft_artifacts(
+        combined,
+        artifact_dir,
+        extractor=f"dedao-kbase-release:{base_url}",
+        created_at=current_time,
+        note="immutable dedao-kbase releases synced as draft; requires review before serving.",
+    )
+    gate = validate_artifact_review_gate(artifact_dir)
+    report = {
+        "status": "draft_written",
+        "base_url": base_url,
+        "artifact_dir": str(artifact_dir),
+        "previous_cursor": previous_cursor,
+        "cursor": cursor,
+        "release_count": len(releases),
+        "release_ids": [release["release_id"] for release in releases],
+        "diff": combined.diff,
+        "draft_manifest": draft_manifest,
+        "gate": gate,
+    }
+    db.add(KBAudit(doc_id=None, op="dedao_kbase_release_sync_draft", actor=actor, diff=report))
+    db.commit()
+    return report
+
+
 def run_system_kb_lifecycle_once(
     db: Session,
     *,
@@ -188,13 +258,24 @@ def sync_dedao_kbase_export_draft() -> dict[str, Any]:
     logger.info("[dedao_kbase_export_sync] start")
     artifact_dir = _default_system_kb_artifact_dir()
     with SessionLocal() as db:
-        result = sync_dedao_kbase_export_draft_once(
-            db,
-            export_url=settings.dedao_kbase_export_url,
-            auth_token=settings.dedao_kbase_auth_token,
-            artifact_dir=artifact_dir,
-            source_root=settings.dedao_kbase_source_root,
-            actor="celery:dedao_kbase_export_sync",
-        )
+        if settings.dedao_kbase_release_base_url:
+            result = sync_dedao_kbase_releases_draft_once(
+                db,
+                base_url=settings.dedao_kbase_release_base_url,
+                auth_token=settings.dedao_kbase_auth_token,
+                artifact_dir=artifact_dir,
+                source_root=settings.dedao_kbase_source_root,
+                actor="celery:dedao_kbase_release_sync",
+                limit=settings.dedao_kbase_release_batch_size,
+            )
+        else:
+            result = sync_dedao_kbase_export_draft_once(
+                db,
+                export_url=settings.dedao_kbase_export_url,
+                auth_token=settings.dedao_kbase_auth_token,
+                artifact_dir=artifact_dir,
+                source_root=settings.dedao_kbase_source_root,
+                actor="celery:dedao_kbase_export_sync",
+            )
     logger.info("[dedao_kbase_export_sync] done: %s", result.get("status"))
     return result
