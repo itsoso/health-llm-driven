@@ -254,6 +254,18 @@ describe('DietShareCard', () => {
     expect(queryByText('可分享')).toBeNull();
   });
 
+  it('keeps high-confidence AI share cards careful on the image itself', () => {
+    const estimatedRecord = { ...record, source: 'ai_estimate', ai_confidence: 0.84 };
+    const { getByText, queryByText } = render(
+      <DietShareCard record={estimatedRecord} dateLabel="7月11日 · 午餐" />,
+    );
+
+    expect(getByText('识别结果较稳定')).toBeTruthy();
+    expect(getByText('智能估算用于复盘，核对后更准确')).toBeTruthy();
+    expect(queryByText('识别结果已确认')).toBeNull();
+    expect(queryByText('营养数据以本次确认记录为准')).toBeNull();
+  });
+
   it('surfaces low AI recognition confidence before users share externally', async () => {
     const lowConfidenceRecord = {
       ...record,

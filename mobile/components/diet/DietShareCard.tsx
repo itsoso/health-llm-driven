@@ -179,6 +179,10 @@ function buildDietShareConfidenceDisclosure(record: DietRecord): string | null {
   return `识别置信度: ${percent}%`;
 }
 
+function isAiEstimatedNutritionSource(source?: string | null): boolean {
+  return !source || source === 'ai_estimate' || source === 'photo';
+}
+
 function buildDietShareConfidenceUi(record: DietRecord): { percent: number; detail: string; tone: 'warning' | 'neutral' } | null {
   const percent = normalizedAiConfidence(record.ai_confidence);
   if (percent == null) return null;
@@ -198,13 +202,9 @@ function buildDietShareConfidenceUi(record: DietRecord): { percent: number; deta
   }
   return {
     percent,
-    detail: '识别结果已确认',
+    detail: isAiEstimatedNutritionSource(record.source) ? '识别结果较稳定' : '识别结果已确认',
     tone: 'neutral',
   };
-}
-
-function isAiEstimatedNutritionSource(source?: string | null): boolean {
-  return !source || source === 'ai_estimate' || source === 'photo';
 }
 
 function buildDietShareConfirmBadge(record: DietRecord): { primary: string; secondary: string; tone: 'confirmed' | 'estimate' | 'caution' } {
@@ -223,6 +223,7 @@ function buildDietShareFooterSecondary(record: DietRecord): string {
   if (percent != null && percent < 60) return '识别待核对，发布前确认食物和份量';
   if (!hasAnyNutritionMetric(record)) return '营养回填后用于复盘';
   if (!isNutritionComplete(record)) return '部分营养回填后用于复盘';
+  if (isAiEstimatedNutritionSource(record.source)) return '智能估算用于复盘，核对后更准确';
   return '营养数据以本次确认记录为准';
 }
 
