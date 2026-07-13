@@ -4,7 +4,7 @@
 |---|---|
 | slug | `kbase-verification-packets` |
 | stage | S5 release |
-| status | blocked |
+| status | complete |
 | owner | Codex |
 
 ## Intake
@@ -38,20 +38,18 @@ would create a competing ingestion path.
   finalizes, or publishes.
 - Contract and drift gates: **PASS.** Web and mobile OpenAPI clients include the
   verification routes; all pre-commit hooks and `git diff --check` pass.
-- G5 deployment health: **PASS.** Production deployed merge commit `368cbfff`;
-  the deployment score was `60/60`, the frontend and backend were online, and
-  the local/remote Skills manifests matched at `22/22`.
-- G6 production verification: **BLOCKED.** One shadow packet was generated for
-  an unresolved claim and remained `ready`, current (`stale=false`), and
-  non-serving with two citation IDs. No apply, finalization, or publication was
-  invoked. The request returned 500 after the packet write because the audit op
-  `dedao_kbase_verification_packet_generated` is 41 characters while
-  `kb_audit.op` is `VARCHAR(40)`; therefore no audit row was written. Hotfix PR
-  #245 shortens and bounds both verification audit operation names and passes
-  the focused verification API suite, but cannot proceed while the latest
-  unrelated Agent Native merge on `main` has failing CI shards. Production was
-  intentionally left on the healthy `368cbfff` release rather than deploying a
-  red main branch.
+- G5 deployment health: **PASS.** PR #246 restored the pre-merge backend
+  contracts and PR #245 bounded the verification audit operation names. Both
+  PRs passed the full CI matrix before merge. Production deployed merge commit
+  `bf8b02875`; the deployment score was `60/60`, the frontend and backend were
+  online, and the local/remote Skills manifests matched at `22/22`.
+- G6 production verification: **PASS.** The original shadow packet was reused,
+  not regenerated. It remains the only packet for the unresolved claim and is
+  `ready`, current (`stale=false`), and non-serving with two citation IDs. The
+  missing metadata audit was reconciled idempotently with the schema-safe
+  `dedao_kbase_verification_generated` operation (34 characters). Production
+  now has exactly one matching generated audit and zero applied audits. No
+  packet application, claim finalization, or publication was invoked.
 
 ## Artifacts
 
