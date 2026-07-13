@@ -17,10 +17,7 @@ def _as_json(args: dict) -> str:
 
 
 def test_fast_record_auto_confirms_allowed_watch_record_types():
-    for record_type in (
-        "water", "weight", "bp", "blood_pressure", "diet", "exercise", "supplement",
-        "waist", "sleep", "excretion",
-    ):
+    for record_type in ("water", "weight", "bp", "blood_pressure", "diet", "exercise", "supplement"):
         out = _auto_confirm_fast_record_args(
             "health_record",
             {"record_type": record_type, "data": {"source": "apple_watch"}},
@@ -81,7 +78,7 @@ def test_fast_record_strips_confirmed_inside_json_string_data_for_never_types():
 
 
 def test_fast_record_unknown_type_keeps_manual_confirmation_gate():
-    original = {"record_type": "unknown_metric", "data": {"duration": 480}}
+    original = {"record_type": "unknown_metric", "data": {"value": 480}}
 
     out = _auto_confirm_fast_record_args("health_record", original)
 

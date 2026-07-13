@@ -267,8 +267,18 @@ public enum AgentStructuredCommandParser {
         // 纯文本,图表占位永远生不出来(线上首个 reva-ui 块只渲染成裸文本的根因)。
         // 用同一个 split 作为围栏识别的唯一真源:reva-ui 段照搬,普通段才走清洗。
         let segments = RevaUIBlock.split(from: result)
+        let hasRevaUI = segments.contains { segment in
+            if case .revaUI = segment { return true }
+            return false
+        }
+        let markdownJoined = segments.compactMap { segment -> String? in
+            if case .markdown(let text) = segment { return text }
+            return nil
+        }.joined(separator: "\n")
+        let normalizedResult = result.replacingOccurrences(of: "\r\n", with: "\n")
+        let strippedMenuShare = !hasRevaUI && markdownJoined != normalizedResult
         let out: String
-        if segments.contains(where: { if case .revaUI = $0 { return true } else { return false } }) {
+        if hasRevaUI || strippedMenuShare {
             var pieces: [String] = []
             for segment in segments {
                 switch segment {
@@ -276,13 +286,13 @@ public enum AgentStructuredCommandParser {
                     // 原样重建闭合围栏(split 切掉了围栏标记本身,这里补回)。
                     pieces.append("```reva-ui\n" + rawJSON + "\n```")
                 case .markdown(let text):
-                    let cleaned = cleanDisplayLines(text)
+                    let cleaned = cleanDisplayLines(RevaUIBlock.stripInlineMenuShareRemnants(text))
                     if !cleaned.isEmpty { pieces.append(cleaned) }
                 }
             }
             out = pieces.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         } else {
-            out = cleanDisplayLines(result)
+            out = cleanDisplayLines(RevaUIBlock.stripInlineMenuShareRemnants(result))
         }
         displayTextCache.setObject(StringBox(out), forKey: key)
         return out
@@ -1509,7 +1519,10 @@ public final class AgentChatViewModel {
             )
         }
         let visibleRendered = rendered.filter { message in
-            !(message.role == "assistant" && message.bodyHTML.isEmpty && message.footerHTML.isEmpty)
+            !(message.isStreaming
+                && message.role == "assistant"
+                && message.bodyHTML.isEmpty
+                && message.footerHTML.isEmpty)
         }
         _transcriptCacheMessages = messages
         _transcriptCacheStreaming = isStreaming

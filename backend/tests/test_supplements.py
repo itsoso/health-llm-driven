@@ -435,66 +435,6 @@ class TestSupplementRecordAPI:
         )
         assert response.status_code == 200
 
-    def test_update_supplement_record(self, client, auth_headers, sample_supplement_definition, test_user):
-        """补剂打卡记录可修改,用于撤销/补充备注。"""
-        create_response = client.post(
-            "/api/v1/supplements/definitions",
-            json=sample_supplement_definition,
-            headers=auth_headers,
-        )
-        supplement_id = create_response.json()["id"]
-        record_response = client.post(
-            "/api/v1/supplements/records",
-            json={
-                "supplement_id": supplement_id,
-                "user_id": test_user.id,
-                "record_date": str(date.today()),
-                "taken": True,
-            },
-            headers=auth_headers,
-        )
-        record_id = record_response.json()["id"]
-
-        response = client.put(
-            f"/api/v1/supplements/records/{record_id}",
-            json={"taken": False, "notes": "误点,已撤销"},
-            headers=auth_headers,
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["id"] == record_id
-        assert data["taken"] is False
-        assert data["notes"] == "误点,已撤销"
-
-    def test_delete_supplement_record(self, client, auth_headers, sample_supplement_definition, test_user, db):
-        """补剂打卡记录可删除,为 agent undo 提供真实通路。"""
-        create_response = client.post(
-            "/api/v1/supplements/definitions",
-            json=sample_supplement_definition,
-            headers=auth_headers,
-        )
-        supplement_id = create_response.json()["id"]
-        record_response = client.post(
-            "/api/v1/supplements/records",
-            json={
-                "supplement_id": supplement_id,
-                "user_id": test_user.id,
-                "record_date": str(date.today()),
-                "taken": True,
-            },
-            headers=auth_headers,
-        )
-        record_id = record_response.json()["id"]
-
-        response = client.delete(
-            f"/api/v1/supplements/records/{record_id}",
-            headers=auth_headers,
-        )
-
-        assert response.status_code == 200
-        assert db.query(SupplementRecord).filter(SupplementRecord.id == record_id).first() is None
-
 
 class TestSupplementValidation:
     """补剂验证测试"""

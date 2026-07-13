@@ -16,14 +16,14 @@ import logging
 import re
 import time
 from datetime import UTC, datetime, timezone, timedelta
-from typing import AsyncGenerator, Dict, Any, List, Optional
+from typing import AsyncGenerator, Dict, Any, List, Optional, Tuple
 from urllib.parse import urlencode
 
 import httpx
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.services.tool_schema_registry import get_health_tools
+from app.services.tool_schema_registry import FAST_TURN_TOOL_NAMES, get_health_tools
 from app.services.lab_plausibility import annotate_if_implausible
 from app.services.llm.error_messages import safe_llm_error_message
 from app.services.health_query_dimensions import normalize_health_query_args
@@ -33,6 +33,57 @@ from app.services.post_record_quality import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _sha12(text: str) -> str:
+    """sha256 的前 12 hex (可观测性用短指纹, 非安全哈希)。"""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+
+
+def _stringify_message_content(content: Any) -> str:
+    """把一条消息的 content 稳定序列化成字符串 (字符串原样;list/dict → 排序 JSON)。"""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    try:
+        return json.dumps(content, ensure_ascii=False, sort_keys=True, default=str)
+    except Exception:  # noqa: BLE001
+        return str(content)
+
+
+def _prompt_prefix_signature(messages: List[Dict]) -> Dict[str, Any]:
+    """内容无泄漏的前缀可观测性 (Phase-2 rank3 第0步)。
+
+    对本次 LLM 调用取:
+      - system_hash: 所有 system 消息 content 拼接的 sha12;
+      - prefix_hash: **最后一条 user 之前**的 messages 序列 (含角色/工具调用) 的 sha12
+        —— 这段是 provider 前缀缓存想命中的稳定前缀 (turn 内容落在最后一条 user 尾部);
+      - prefix_chars / total_chars / approx_tokens: token-ish 长度。
+    只出 hash 不出内容, 用来从 journalctl 量测跨轮/跨回合前缀分歧, 给显式缓存 (rank3)
+    定 marker 布局。纯函数, 可单测。"""
+    system_blob = "\n".join(
+        _stringify_message_content(m.get("content"))
+        for m in messages
+        if m.get("role") == "system"
+    )
+    last_user_idx = -1
+    for i, m in enumerate(messages):
+        if m.get("role") == "user":
+            last_user_idx = i
+    prefix_msgs = messages[:last_user_idx] if last_user_idx >= 0 else list(messages)
+    prefix_blob = json.dumps(prefix_msgs, ensure_ascii=False, sort_keys=True, default=str)
+    total_chars = sum(
+        len(_stringify_message_content(m.get("content"))) for m in messages
+    )
+    return {
+        "system_hash": _sha12(system_blob),
+        "prefix_hash": _sha12(prefix_blob),
+        "prefix_chars": len(prefix_blob),
+        "total_chars": total_chars,
+        "approx_tokens": total_chars // 4,
+    }
+
 
 MAX_TOOL_ROUNDS = 8
 # 最终用户回复的 token 上限。健康养护/操作清单类回复常 >4000 token,
@@ -153,6 +204,278 @@ def _extract_desktop_response_instruction(extra_context: Optional[str]) -> Optio
     if not instruction:
         return None
     return instruction[:1200]
+
+
+def _extract_database_verification_instruction(extra_context: Optional[str]) -> Optional[str]:
+    """Return a hard turn instruction for mobile contexts that require DB verification."""
+
+    if not extra_context:
+        return None
+    try:
+        payload = json.loads(extra_context)
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    verification = payload.get("database_verification")
+    if not isinstance(verification, dict) or verification.get("required") is not True:
+        return None
+    if verification.get("query_scope") != "daily_diet_records":
+        return None
+    if verification.get("totals_source") != "database":
+        return None
+
+    raw_date = verification.get("date")
+    date_text = raw_date.strip() if isinstance(raw_date, str) else ""
+    if date_text and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_text):
+        date_text = ""
+
+    raw_record_id = verification.get("verify_record_id")
+    try:
+        record_id = int(raw_record_id)
+    except (TypeError, ValueError):
+        record_id = 0
+    if record_id <= 0:
+        return None
+
+    missing_instruction = verification.get("missing_record_instruction")
+    if not isinstance(missing_instruction, str) or not missing_instruction.strip():
+        missing_instruction = "如果数据库里查不到该记录，明确提示同步失败，不要根据入口上下文猜测。"
+    missing_instruction = missing_instruction.strip()[:300]
+
+    date_clause = f"，日期限定为 {date_text}" if date_text else ""
+    return (
+        "## 数据库校验要求（最高优先级）\n"
+        "本回合来自饮食确认后的复盘入口。回答前必须先调用 "
+        "health_query(dimension='diet') 查询数据库中的饮食记录"
+        f"{date_clause}，并核对结果里是否包含 diet_record id={record_id}。\n"
+        "- 不要使用入口上下文里的 totals、meals 或 cached totals 作为全天饮食/热量依据；\n"
+        "- 全天热量、餐次列表和下一餐建议只能基于 health_query 返回的数据库结果；\n"
+        f"- {missing_instruction}"
+    )
+
+
+def _format_diet_number(value: Any) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:.1f}".rstrip("0").rstrip(".")
+
+
+def _build_database_verification_snapshot(
+    db: Session,
+    user_id: int,
+    extra_context: Optional[str],
+) -> Optional[str]:
+    """Build deterministic DB facts for post-confirm diet review turns."""
+
+    if not extra_context:
+        return None
+    try:
+        payload = json.loads(extra_context)
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    verification = payload.get("database_verification")
+    if not isinstance(verification, dict) or verification.get("required") is not True:
+        return None
+    if verification.get("query_scope") != "daily_diet_records":
+        return None
+    if verification.get("totals_source") != "database":
+        return None
+
+    raw_date = verification.get("date")
+    if not isinstance(raw_date, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_date.strip()):
+        return None
+    target_date = datetime.strptime(raw_date.strip(), "%Y-%m-%d").date()
+
+    try:
+        verify_record_id = int(verification.get("verify_record_id"))
+    except (TypeError, ValueError):
+        return None
+    if verify_record_id <= 0:
+        return None
+
+    from app.models.daily_health import DietRecord
+
+    records = (
+        db.query(DietRecord)
+        .filter(
+            DietRecord.user_id == user_id,
+            DietRecord.record_date == target_date,
+        )
+        .order_by(DietRecord.created_at, DietRecord.id)
+        .all()
+    )
+    total_calories = sum(record.calories or 0 for record in records)
+    total_protein = sum(record.protein or 0 for record in records)
+    total_carbs = sum(record.carbs or 0 for record in records)
+    total_fat = sum(record.fat or 0 for record in records)
+    total_fiber = sum(record.fiber or 0 for record in records)
+    record_found = any(record.id == verify_record_id for record in records)
+    meal_lines = [
+        (
+            f"- id={record.id} | {record.meal_type or '-'} | "
+            f"{(record.food_items or record.food_name or '').strip() or '-'} | "
+            f"{_format_diet_number(record.calories)} kcal | "
+            f"P {_format_diet_number(record.protein)}g / "
+            f"C {_format_diet_number(record.carbs)}g / "
+            f"F {_format_diet_number(record.fat)}g"
+        )
+        for record in records[:20]
+    ]
+    if not meal_lines:
+        meal_lines.append("- 当日数据库没有饮食记录")
+
+    missing_note = (
+        "\n- ⚠️ 同步失败: 数据库中未找到本次确认记录。请直接告诉用户同步失败，"
+        "不要根据入口上下文或页面缓存回答已保存。"
+        if not record_found else ""
+    )
+    return (
+        "## 已读取数据库饮食记录（确定性快照）\n"
+        f"日期: {target_date.isoformat()}\n"
+        f"verify_record_id={verify_record_id} 存在: {'yes' if record_found else 'no'}\n"
+        f"餐次数量: {len(records)}\n"
+        "数据库汇总: "
+        f"总热量 {_format_diet_number(total_calories)} kcal; "
+        f"蛋白质 {_format_diet_number(total_protein)} g; "
+        f"碳水 {_format_diet_number(total_carbs)} g; "
+        f"脂肪 {_format_diet_number(total_fat)} g; "
+        f"膳食纤维 {_format_diet_number(total_fiber)} g\n"
+        "数据库餐次:\n"
+        + "\n".join(meal_lines)
+        + missing_note
+    )
+
+
+# ── 意图专属 prompt 块门控(2026-07-11 token 优化 #5)─────────────────────
+# menu_share(739 chars)只在餐食/菜单类问题有用;基因解读规则(356 chars)只在
+# 基因/补剂类回合有用 —— 二者曾无条件每轮全发(占空用户 full prompt 20%)。
+# fail-open:intent_query 缺失(如多模型路径未传)→ 照旧全发,行为零变化。
+# 二者均非安全块(安全/R4/worldview 恒发,不进任何门控)。
+_MENU_INTENT_RE = re.compile(
+    r"吃啥|吃什么|吃点什么|怎么吃|菜单|食谱|餐食|餐单|早餐|午餐|晚餐|加餐|三餐|夜宵|带饭|做什么菜"
+)
+# 补剂/保健品也放行:补剂建议是基因解读的主要相邻流(FADS1/优势基因误判风险在此)。
+_GENE_INTENT_RE = re.compile(
+    r"基因|遗传|SNP|位点|rs\d+|甲基化|MTHFR|APOE|FADS|COMT|CYP|SLCO|补剂|保健品|鱼油|维生素",
+    re.IGNORECASE,
+)
+
+
+def _wants_menu_share_block(intent_query: Optional[str]) -> bool:
+    if intent_query is None:
+        return True
+    return bool(_MENU_INTENT_RE.search(intent_query))
+
+
+def _wants_gene_rules_block(intent_query: Optional[str]) -> bool:
+    if intent_query is None:
+        return True
+    return bool(_GENE_INTENT_RE.search(intent_query))
+
+
+_GENE_RULES_PROMPT_BLOCK = (
+    "## 基因解读规则（必须遵守）",
+    "- 标记为[优势]的基因是保护性基因，不要误判为需要干预的风险基因",
+    "- FADS1 TT = 东亚高效转化型，植物源Omega-3转化能力强，是优势基因",
+    "- SOD2 AA(Ala/Ala) = MnSOD线粒体转运效率高，是优势基因",
+    "- GPX1 GG = 谷胱甘肽过氧化物酶活性正常，不需要额外干预",
+    "- ⚠️用药安全基因必须优先展示和警告（CYP2D6慢代谢→止痛药危险、SLCO1B1 CT→他汀肌病风险）",
+    "- 补剂推荐必须交叉参考体检历史（肾结石→维D/钙谨慎、肝功异常→某些补剂禁忌）",
+    "- 补剂剂量不能简单按mg数比较不同剂型（如MitoQ 5mg ≈ 线粒体内CoQ10 200-500mg）",
+    "- 补剂受法规限制剂量时（如钾99mg/粒），优先推荐饮食策略而非加量",
+    "",
+)
+
+_MENU_SHARE_PROMPT_BLOCK = (
+    "## 菜单输出 (可分享卡片)",
+    "用户问'今晚吃啥/明天早餐/给我个晚餐建议/三餐怎么吃'类问题时,",
+    "在正常文字回复**之外**, 额外附一段 fenced JSON 代码块, 标识为 menu_share,",
+    "前端会自动渲染成可分享给家人的卡片 (微信/朋友圈分享):",
+    "",
+    "```menu_share",
+    "{",
+    '  "title": "今晚晚餐建议",',
+    '  "reason": "晚上控碳, 蛋白 50g+ 帮助 HRV 恢复",',
+    '  "items": [',
+    '    {"name": "鸡胸肉", "qty": "200g", "kcal": 220, "protein": 46},',
+    '    {"name": "糙米饭", "qty": "150g", "kcal": 175, "carbs": 38},',
+    '    {"name": "西兰花", "qty": "200g", "kcal": 70, "fiber": 5}',
+    "  ],",
+    '  "totals": {"kcal": 465, "protein": 52, "carbs": 48, "fat": 12},',
+    '  "shopping_list": ["鸡胸肉 200g", "糙米 1 杯", "西兰花 1 颗"]',
+    "}",
+    "```",
+    "",
+    "约束:",
+    "- title 必填 8 字以内 (如'今晚晚餐建议'/'明天早餐')",
+    "- items 必填 3-6 个食材, 每项 name 必填, qty/kcal 尽量给",
+    "- totals 给当餐总和, shopping_list 是给家人买菜的清单",
+    "- 只在用户明确要餐食/菜单建议时输出, 普通营养咨询不要输出",
+    "- JSON 必须 valid, 不要 trailing comma, 不要注释",
+    "",
+)
+
+
+def _project_orchestrator_result(result: str) -> str:
+    """把 /orchestrator/chat 的完整 JSON 投影成二次合成真正需要的精简形。
+
+    2026-07-11 token 优化 #3(实测):完整返回 15,755 chars,其中 findings[] 的
+    per-specialist raw/富字段占 93%,而 agent 二次合成只需要 synthesis + 每个
+    specialist 的一句话概括。投影后 ~2,400 chars(-84%),同时降低弱模型把大段
+    JSON 回显进正文的风险。审计/前端要看全量走 orchestrator 自己的端点,不经
+    LLM 上下文。
+
+    保留契约字段:perf(round loop 4270 行透传给 done 事件)、synthesis 原文
+    (已过 advice_guard/R4)、intent、used_specialists。fail-open:解析失败
+    原样返回(宁可多花 token 不丢内容)。
+    """
+    try:
+        data = json.loads(result) if isinstance(result, str) else None
+        if not isinstance(data, dict) or "synthesis" not in data:
+            return result
+        compact_findings = []
+        for f in data.get("findings") or []:
+            if not isinstance(f, dict):
+                continue
+            item = {
+                "specialist": f.get("specialist_name"),
+                "category": f.get("category"),
+                "summary": f.get("summary"),
+            }
+            # 各 specialist 结构化 findings 只保留高信号小字段(severity/标题/行动),
+            # 丢 raw / 数值明细(synthesis 已消化过它们)。
+            compact_items = []
+            for fi in (f.get("findings") or [])[:5]:
+                if not isinstance(fi, dict):
+                    continue
+                kept = {
+                    k: fi[k]
+                    for k in ("severity", "level", "title", "name", "action", "suggestion")
+                    if k in fi and isinstance(fi[k], (str, int, float))
+                }
+                if kept:
+                    compact_items.append(kept)
+            if compact_items:
+                item["items"] = compact_items
+            compact_findings.append(item)
+        projected = {
+            "synthesis": data.get("synthesis"),
+            "intent": data.get("intent"),
+            "used_specialists": data.get("used_specialists"),
+            "findings": compact_findings,
+        }
+        if data.get("perf") is not None:
+            projected["perf"] = data.get("perf")
+        return json.dumps(projected, ensure_ascii=False)
+    except Exception:  # noqa: BLE001 — 投影失败宁可原样返回,不丢内容
+        return result
 
 
 def _completion_status_from_finish_reason(finish_reason: Optional[str]) -> str:
@@ -520,6 +843,11 @@ def _strip_xml_tool_markers(text: str) -> str:
     return stripped.strip()
 
 
+# GenUI metric_table (rank1): 这些只读数据查询工具的结果可确定性打成表格卡片。
+# 其余工具结果不建表 (fail-open 回散文)。
+_GENUI_TABLE_TOOLS = frozenset({"health_query", "health_query_batch", "query_lab_indicators"})
+
+
 def _strip_reva_ui_from_llm_text(text: str) -> str:
     """剥掉 LLM 生成文本里伪造的 ```reva-ui``` 图表 block (确定性护栏, 防御纵深)。
 
@@ -691,6 +1019,33 @@ def _streaming_leak_forming(text: str) -> bool:
     return len(hits) >= _TOOL_RESULT_MIN_FIELD_HITS
 
 
+# ──── 思考流可视化 (qwen reasoning_content → thinking status 事件) ────
+# 合成/答案轮首个可见 token 之前有 ~20-34s 纯 reasoning 死气 (探针实证:
+# scripts/probe_qwen_thinking_budget.py —— 首个 reasoning delta @ ~1.7s,
+# 首个可见 content @ ~35.8s)。把 reasoning_content 增量节流成既有 thinking status
+# 事件, 让那段死气变成活的思考进度。reasoning 文本绝不进 full_reply/messages/持久化答案。
+_REASONING_STATUS_MIN_INTERVAL_S = 1.5   # 两次思考 status 的最小时间间隔
+_REASONING_STATUS_MIN_CHARS = 120        # 两次之间最少新增 reasoning 字符数 (whichever later)
+_REASONING_SNIPPET_MAX_CHARS = 60        # detail 片段字符上限, 超出取尾部 + 前缀省略号
+# markdown 记号 / 列表符 / 方括号 —— 清成平实一行进度文案。
+_REASONING_SNIPPET_STRIP_RE = re.compile(r"[#*`>_~\-\[\]]+")
+
+
+def _clean_reasoning_snippet(text: str) -> str:
+    """把累积的 reasoning_content 清成一个短的 live 思考片段 (thinking status 的 detail)。
+
+    strip markdown 记号/换行, 折叠空白, 取**尾部** ~60 字 (模型当前思考位置);
+    截断则前缀省略号。纯 UI 死气填充的一次性快照 —— 绝不进入答案或持久化。
+    """
+    s = _REASONING_SNIPPET_STRIP_RE.sub(" ", text or "")
+    s = re.sub(r"\s+", " ", s).strip()
+    if not s:
+        return ""
+    if len(s) > _REASONING_SNIPPET_MAX_CHARS:
+        return "…" + s[-_REASONING_SNIPPET_MAX_CHARS:]
+    return s
+
+
 def _natural_language_from_tool_results(messages: List[Dict[str, Any]]) -> str:
     """QUERY 泄漏兜底:把工具结果转成一句中性人话,绝不裸露 JSON。
 
@@ -715,6 +1070,51 @@ def _natural_language_from_tool_results(messages: List[Dict[str, Any]]) -> str:
         # 有工具结果但无现成人话字段 → 交给空回复重试链让模型自然语言重答。
         return ""
     return ""
+
+
+def _resolve_synthesis_passthrough_mode() -> str:
+    """读 settings.orchestrator_synthesis_passthrough,fail-closed 归一到 {off,shadow,on}。
+
+    任何未知/拼错的 env 值(以及缺失)→ 'off',绝不因配置漂移意外改变用户可见行为。
+    """
+    mode = (getattr(settings, "orchestrator_synthesis_passthrough", "off") or "off")
+    mode = str(mode).strip().lower()
+    return mode if mode in ("shadow", "on") else "off"
+
+
+def _apply_passthrough_outbound_guards(
+    text: str, messages: List[Dict[str, Any]]
+) -> str:
+    """把二次合成出站路径上的确定性护栏,同样施加到深分析 passthrough 文本上。
+
+    rank7 passthrough 跳过了 agent 第二次合成轮 —— 那条 else 分支里对 final_text 施加的
+    marker strip / leak 抑制护栏就被绕过了(降级/兜底路径逃 R4 是已知雷)。本函数复用**同一批**
+    谓词/剥离器,保证 passthrough 文本与二次合成答案受同一条链约束:
+      1. `_strip_bracket_tool_markers` —— 裸 ``[工具调用: ...]`` 标记;
+      2. `_strip_xml_tool_markers` —— ``<invoke>…</invoke>`` / ``<minimax:tool_call>``;
+      3. 裸工具结果 JSON(整条)→ 用工具结果里现成人话兜底;
+      4. 短前言 + 内嵌工具结果 JSON 数组(`_leaks_tool_result_json`)→ 同样兜底。
+    orchestrator 的 synthesis 本是已过 R4/advice_guard 的散文,正常不会命中任何一条 ——
+    这些护栏是防御纵深,不是热路径。fenced ```menu_share/```reva-ui 块被 leak 谓词豁免,
+    原样保留给消费层(api/agent.py)提取(与二次合成答案行为一致)。post-loop 的
+    `_strip_reva_ui_from_llm_text` 与消费层 menu_share 提取/thinking_steps 对两条路径一视同仁,
+    不在此重复。
+    """
+    stripped = _strip_bracket_tool_markers(text)
+    if stripped != text:
+        text = stripped
+    stripped_xml = _strip_xml_tool_markers(text)
+    if stripped_xml != text:
+        text = stripped_xml
+    if _looks_like_bare_tool_json(text):
+        text = _natural_language_from_tool_results(messages) or (
+            "已查到相关数据,但这轮没能整理成回答;请再问一次或换个问法。"
+        )
+    elif _leaks_tool_result_json(text):
+        text = _natural_language_from_tool_results(messages) or (
+            "已查到相关数据,但这轮没能整理成回答;请再问一次或换个问法。"
+        )
+    return text
 
 
 _SMART_DOUBLE_QUOTES = "“”„‟″＂"  # “ ” „ ‟ ″ ＂
@@ -995,8 +1395,24 @@ def _build_compact_empty_retry_messages(messages: List[Dict[str, Any]]) -> List[
     return compact_messages
 
 
-def _fallback_text_from_tool_results(messages: List[Dict[str, Any]]) -> str:
-    """Use the latest successful tool result when the model fails synthesis."""
+def _fallback_text_from_tool_results(
+    messages: List[Dict[str, Any]],
+    *,
+    has_verified_write: bool = False,
+) -> str:
+    """Use the latest successful tool result when the model fails synthesis.
+
+    诚实不变量(turn 6334 同病根的第三个宣称面):"已完成记录/已完成操作"只允许在
+    本轮产生了**可验证写入回执**(调用点按 write_receipts 传 has_verified_write)时
+    出现。纯查询/分析回合走到空回复重试链时,工具结果里有 food_items/id 不代表
+    写过任何东西 —— 无回执一律查询味口径("查到：…");没有人话可展示(id-only 字典、
+    结构化残片/manage-list 数组)就返回空串交回重试链,链有界(compact retry →
+    fallback provider → 硬兜底文案),不会重试风暴。默认 False = fail-closed:
+    新调用点忘了传参也绝不凭空宣称写入。
+
+    数据泄漏护栏(双模):结构化残片(首字符 { / [)任何模式都不回显给用户 ——
+    有回执退中性"已完成记录。",无回执退空串;"已完成操作：…"只承载人话文本。
+    """
     for message in reversed(messages):
         if message.get("role") != "tool":
             continue
@@ -1018,14 +1434,25 @@ def _fallback_text_from_tool_results(messages: List[Dict[str, Any]]) -> str:
             for key in ("food_items", "summary", "preview"):
                 value = payload.get(key)
                 if isinstance(value, str) and value.strip():
-                    return f"已完成记录：{value.strip()}"
+                    if has_verified_write:
+                        return f"已完成记录：{value.strip()}"
+                    return f"查到：{value.strip()}"
 
             if payload.get("id") or payload.get("record_id"):
-                return "已完成记录。"
+                # 只读回合返回的 id 字典没有可展示的人话字段 —— 绝不因"结果里有
+                # id"就宣称写入,交回重试链让模型重答。
+                return "已完成记录。" if has_verified_write else ""
 
         preview = content.replace("\n", " ").strip()
         if preview:
-            return f"已完成操作：{preview[:120]}"
+            if preview[0] in "{[":
+                # 结构化残片(含 manage-list 的记录数组)对用户既不可读又泄漏
+                # 工具结果 —— 真写入回合退中性确认(与 id-only 字典分支同口径),
+                # 查询回合不展示,交回重试链。两个模式都绝不回显裸 JSON。
+                return "已完成记录。" if has_verified_write else ""
+            if has_verified_write:
+                return f"已完成操作：{preview[:120]}"
+            return f"查到：{preview[:120]}"
 
     return ""
 
@@ -1086,6 +1513,58 @@ def _build_fast_record_messages(messages: List[Dict[str, Any]]) -> List[Dict[str
     ]
 
 
+def _build_lite_tool_round_messages(
+    lite_system: str, messages: List[Dict[str, Any]]
+) -> Optional[List[Dict[str, Any]]]:
+    """Compact prompt for the **fast-routed tool-decision round** (task_tiered_routing).
+
+    生产实测: advice/query 回合的**首个工具决策轮**已 fast-route 到 qwen3.6-flash,
+    但仍背着 ~14k-token 全量栈 (full system prompt 含 8 个分析 blob + 最后一条 user
+    里折进的 KB 证据 + 15 轮历史 + 18KB tool schema), flash 白付 6-8s prefill。
+    该轮只需从用户消息 + 最近上下文里**挑一个工具、填参数** —— 不需要分析 blob / KB。
+    把**这一轮**换成 lite 栈: lite system prompt (人格 + 记录/工具规则 + R4 + 基础画像,
+    见 _build_system_prompt(lite=True), 无分析 blob / 无 KB) + 只保留最新 user 消息
+    (调用方在 KB/turn-context 折进最后一条 user **之前**快照, 故 KB 天然缺席),
+    并把紧邻的上一条非空 assistant 折进 user 做消歧上下文。
+
+    合成/答案轮 (工具后, round_tools=[]) 与快路由失守时仍走**全量栈** —— 面向用户的
+    医疗正文永远来自强/显式模型的完整上下文 (见 _messages_for_round / 调用点)。
+
+    **跟进式回复必须保留紧邻的上一条助手回合** (见 _build_fast_record_messages 同款教训
+    [[feedback_fast_path_drops_followup_context]]): 助手刚问「要不要帮你分析今天的咖啡因?」
+    用户答「好, 顺便看看会不会超标」时, 只发最新 user 消息, 模型无从消歧。折进 user 消息
+    (而非发裸 assistant): fast 工具模型走弱代理 (qwen via tokenplan), [system, assistant,
+    user] 序列易被严格 OpenAI 兼容适配器拒;折进单条 user 保持 [system, user] 稳态。
+
+    返回 None = 无法安全构建 lite (如最新 user 是多模态 list content) → 调用方 fail-open
+    到全量栈, 绝不丢上下文。
+    """
+    user_messages = [m for m in messages if m.get("role") == "user"]
+    if not user_messages:
+        return None
+    user_content = user_messages[-1].get("content")
+    # 多模态 (图片直传) 的 list content 不做字符串折叠 —— fail-open 到全量栈, 由调用方处理。
+    if not isinstance(user_content, str):
+        return None
+
+    # 紧邻最新用户消息之前的最后一条非空 assistant 回合 —— 跟进式消歧上下文 (截断保持 compact)。
+    last_assistant = next(
+        (
+            m for m in reversed(messages)
+            if m.get("role") == "assistant" and str(m.get("content") or "").strip()
+        ),
+        None,
+    )
+    if last_assistant:
+        prior = str(last_assistant.get("content") or "").strip()[:400]
+        user_content = f"[上一轮助手问我：{prior}]\n我的回复：{user_content}"
+
+    return [
+        {"role": "system", "content": lite_system},
+        {"role": "user", "content": user_content},
+    ]
+
+
 def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
     """Turn a created-record JSON (which has no ``message`` field — it's the raw
     API response) into a short human line, so the fast-record reply never dumps
@@ -1136,7 +1615,29 @@ def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
     return "✅ 已记录"
 
 
+# A4: 每回合系统知识库证据卡 memo 的未命中哨兵 (区别于 None = "算过, 无卡")。
+_TURN_CARD_UNSET = object()
+
 _WRITE_RECEIPT_TOOL_NAMES = {"health_record", "health_manage", "intervention_cycle"}
+
+# Read-only-turn allowlist (starter answer pre-generation · rank7). A pregen turn
+# runs the FULL pipeline but must never mutate user data — starter chips are
+# analysis/query prompts, never records. Enforcement is fail-CLOSED: only tools on
+# this allowlist (plus specialist analysis tools, checked separately) may execute
+# in a read-only turn; ANY other tool name (health_record/health_manage/
+# intervention_cycle/upload_*/manage_plan/supplement_guide/unknown/future) is
+# blocked at the single _execute_tool dispatch choke, so a new write tool is
+# denied by default rather than needing to be added to a denylist.
+_READ_ONLY_TURN_ALLOWED_TOOLS = {
+    "health_query",
+    "health_query_batch",
+    "knowledge_search",
+    "realtime_search",
+    "environment_check",
+    "query_genetic_profile",
+    "query_lab_indicators",
+    "health_analysis",
+}
 _WRITE_RESULT_FAILURE_MARKERS = (
     "Error:",
     "[NEEDS_CONFIRMATION]",
@@ -1150,6 +1651,44 @@ _UNVERIFIED_WRITE_USER_MESSAGE = (
     "为避免重复写入，请先查询现有记录；确认缺失后再重试。"
 )
 
+_RECEIPT_TYPE_LABELS = {
+    "exercise_record": "运动",
+    "sleep_record": "睡眠",
+    "diet_record": "饮食",
+    "water": "饮水",
+    "weight_record": "体重",
+    "blood_pressure_record": "血压",
+    "medication_log": "用药",
+    "supplement_log": "补剂",
+    "mood_record": "心情",
+    "smart_reminder": "提醒",
+}
+
+
+def _unverified_write_message(verified_receipts: Optional[List[Dict[str, Any]]] = None) -> str:
+    """部分成功时如实点名已写入项,只对失败项说「无法确认」。
+
+    一刀切否定会让用户以为全部丢失(2026-07-13 实锤:『中午睡了60分钟 走路10分钟』
+    走路已写入 exercise#262,睡眠 422 失败,回复却宣称整单无回执 → founder 报
+    「没有写入到我的活动」)。诚实 = 既不谎报成功,也不抹掉真实成功。"""
+    if not verified_receipts:
+        return _UNVERIFIED_WRITE_USER_MESSAGE
+    labels: List[str] = []
+    for r in verified_receipts[:4]:
+        if not isinstance(r, dict):
+            continue
+        rt = str(r.get("resource_type") or "").strip()
+        rid = r.get("resource_id")
+        label = _RECEIPT_TYPE_LABELS.get(rt, rt or "记录")
+        labels.append(f"{label}(#{rid})" if rid else label)
+    if not labels:
+        return _UNVERIFIED_WRITE_USER_MESSAGE
+    return (
+        f"已确认写入:{'、'.join(labels)}。"
+        "但另有一项写入没有取得可验证的回执,我不能确认它已完成;"
+        "为避免重复写入,请先查询该项现有记录,确认缺失后再重试。"
+    )
+
 
 class _UnverifiedWriteResult(RuntimeError):
     pass
@@ -1157,6 +1696,7 @@ _RESOURCE_TYPE_BY_RECORD_TYPE = {
     "bp": "blood_pressure_record",
     "blood_pressure": "blood_pressure_record",
     "diet": "diet_record",
+    "event": "health_episode",
     "exercise": "exercise_record",
     "excretion": "excretion_record",
     "goal": "goal",
@@ -1236,7 +1776,7 @@ def _write_operation_fingerprint(
 
 
 def _receipt_resource_identity(payload: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
-    id_keys = ("id", "record_id", "event_id", "log_id", "cycle_id")
+    id_keys = ("id", "record_id", "event_id", "log_id", "cycle_id", "exam_id")
 
     def read_id(source: Dict[str, Any]) -> Optional[str]:
         for key in id_keys:
@@ -1378,6 +1918,42 @@ def _safety_warning_suffix_from_tool_results(messages: List[Dict[str, Any]]) -> 
     return "\n\n".join(warnings)
 
 
+def _recover_tool_result_payload(content: str) -> Any:
+    """严格 json.loads 失败后,尽力把工具结果 content 救回成 list/dict。
+
+    _api_get 的返回不保证严格可解析(它自己在 docstring 里写明"可能被字符截断,
+    不可直接 json.loads"):list/dict 会被加尾注("...(仅显示前10条)"/"...(数据已截断)")
+    或硬字符截断。这些是**结构化工具结果**,不是人话纯文本 —— 不救回就会掉进裸 dump。
+
+    逐级救:
+      (1) 从第一个 `[`/`{` 起 raw_decode —— 吃掉尾部杂质,救回合法 JSON 前缀
+          (Path A:合法数组 + "...(仅显示前10条)" 尾注)。
+      (2) _loads_lenient —— 救弯/全角引号 + 可修复的截断(与 leak 护栏同一解析器)。
+    仍救不回(如硬截断到半个 token)返回 None,调用方走锚定 leak 探测兜底。
+    """
+    s = (content or "").strip()
+    if not s:
+        return None
+    lb = s.find("[")
+    ob = s.find("{")
+    starts = [i for i in (lb, ob) if i != -1]
+    if starts:
+        start = min(starts)
+        try:
+            payload, _ = json.JSONDecoder().raw_decode(s[start:])
+            if isinstance(payload, (list, dict)):
+                return payload
+        except json.JSONDecodeError:
+            pass
+    try:
+        payload = _loads_lenient(s)
+        if isinstance(payload, (list, dict)):
+            return payload
+    except json.JSONDecodeError:
+        pass
+    return None
+
+
 def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
     """Build a final user-visible reply directly from record tool results."""
 
@@ -1414,6 +1990,13 @@ def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
             payload = json.loads(content)
         except json.JSONDecodeError:
             payload = None
+        if payload is None:
+            # 严格 json.loads 失败,但 _api_get 会给 list/dict 加尾注
+            # ("...(仅显示前10条)" / "...(数据已截断)") 或硬字符截断 —— 这些都不是
+            # "人话纯文本",而是**结构化工具结果**。先按泄漏护栏用的宽松/前缀解析救回,
+            # 让它落进下面 dict/list 分支给出「查到 N 条」/友好确认,绝不裸 dump。
+            # (raw_decode 吃掉尾部杂质救回合法前缀;_loads_lenient 救弯引号+可修复的截断。)
+            payload = _recover_tool_result_payload(content)
         if isinstance(payload, dict):
             tool_message = payload.get("message")
             if isinstance(tool_message, str) and tool_message.strip():
@@ -1435,6 +2018,26 @@ def _fast_record_reply_from_tool_results(messages: List[Dict[str, Any]]) -> str:
                 ids = [str(it.get("id")) for it in payload if isinstance(it, dict) and it.get("id")]
                 id_part = f"（记录号: {', '.join(ids[:5])}）" if ids else ""
                 replies.append(f"查到 {len(payload)} 条记录{id_part}")
+            append_safety_warning()
+            continue
+        # 到这里 payload 仍非 dict/list(连宽松/前缀解析都救不回,如硬字符截断到半个
+        # token 的 `[{"…"calories":`)。若 content 长得就是一段工具结果原始 JSON dump,
+        # **绝不**裸 dump[:160](founder 复现:那正是泄漏的来源)——改吐一句非空中性人话。
+        # 非空是承重的(memory:空兜底→重试风暴→更多泄漏)。真人话纯文本(无 JSON 结构)
+        # 仍原样透出。三层锚定,fail-closed 收口:
+        #   (1) _leaks_tool_result_json —— 整段可宽松解析的 dump;
+        #   (2) _streaming_leak_forming —— `[{"<白名单键>":` 数组签名(救截断到半 token 的);
+        #   (3) 结构起手 —— 去空白后以 `{`/`[` 开头 = 未救回的结构化载荷。补 (1)(2) 的洞:
+        #       裸对象 `{"food_items":` 截断在**单个**白名单键后,(1)(2) 都判不出((2) 对
+        #       非 `[{` 的裸对象要求 ≥2 键),但真人话工具结果永远以中文/字母起手
+        #       (已更新记录 / 你今天喝了… / 没有找到…),绝不以裸 `{`/`[` 开头 → 不误伤。
+        stripped = content.lstrip()
+        looks_structured = bool(stripped) and stripped[0] in "{["
+        if _leaks_tool_result_json(content) or _streaming_leak_forming(content) or looks_structured:
+            # 中性、不预设意图:旧文案"请再说一次要改哪一条"是记录**修改**味,对分析/查询
+            # 语境是废话(2026-07-13 turn 6334 violation #2)。这里只表达"这条结果没整理出来",
+            # 绝不谎称已写入,也不假设用户在改记录。
+            replies.append("这条结果暂时没能整理成文字。")
             append_safety_warning()
             continue
         # Plain-text tool result (already human-readable) — show as-is.
@@ -1516,22 +2119,26 @@ _FAST_RECORD_AUTO_CONFIRM_KINDS = {
     "exercise",
     "reminder",
     "supplement",
-    "goal",
     "waist",
     "sleep",
     "excretion",
+    "goal",
     # symptom/rhinitis:确认后置(回显+可撤销)替代确认前置 —— 记录可逆、
     # 非医疗级(≠用药/剂量),写错方向顶多 over-alarm(安全方向);缺
     # body_part/description 会 fail-loud 自然追问,不是复述式确认。
     # 每条症状都二次询问被用户明确否决(2026-07-02)。
     "symptom",
     "rhinitis",
+    # event(生活事件账本):founder 2026-07-13 裁决 AUTO·全通道 —— 非医疗、
+    # L0、纯时间打点,写错顶多时间锚偏(可删重记);undo 通路=
+    # health_manage(delete event {id}) → DELETE /episodes/life-event/{id}。
+    "event",
 }
 # 症状类仅打字通道免确认;语音/未声明通道保留确认前置(转写失真 + Siri 单轮
 # 无法撤销)。channel 由客户端传输层声明(AgentRequest.channel),绝不读 LLM
 # 工具参数——对抗评审证伪过 arg-based 守卫(schema 无 source 字段,模型是该
 # 字段唯一可能作者=不可信=生产死代码)。
-_TYPED_ONLY_AUTO_CONFIRM_KINDS = {"symptom", "rhinitis"}
+_TYPED_ONLY_AUTO_CONFIRM_KINDS = {"symptom", "rhinitis", "goal"}
 
 
 # 医疗级/不可逆/资金类:永远确认前置。unknown kind 也走确认(fail-closed,
@@ -1553,6 +2160,8 @@ _FAST_RECORD_KIND_ALIASES = {
     "bp": "blood_pressure",
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
+    "life_event": "event",
+    "life-event": "event",
 }
 def _normalize_fast_record_kind(raw: Any) -> str:
     kind = str(raw or "").strip().lower()
@@ -1712,20 +2321,25 @@ _MEAL_TYPE_ALIASES = {
     "breakfast": "breakfast",
     "早餐": "breakfast",
     "早饭": "breakfast",
+    "上午": "breakfast",
     "早上": "breakfast",
     "lunch": "lunch",
     "午餐": "lunch",
     "午饭": "lunch",
+    "中餐": "lunch",
     "中饭": "lunch",
     "中午": "lunch",
     "dinner": "dinner",
     "晚餐": "dinner",
     "晚饭": "dinner",
+    "正餐晚": "dinner",
+    "supper": "dinner",
     "晚上": "dinner",
     "snack": "snack",
     "extra": "extra",
     "加餐": "snack",
     "零食": "snack",
+    "点心": "snack",
     "夜宵": "snack",
     "其他": "extra",
 }
@@ -1788,7 +2402,7 @@ def _summarize_record_data(kind: str, record_data: Any) -> str:
         return ""
     if kind == "diet":
         food = str(record_data.get("food_items") or record_data.get("food") or "").strip()
-        meal = _MEAL_TYPE_ZH.get(str(record_data.get("meal_type") or "").strip().lower(), "")
+        meal = _MEAL_TYPE_ZH.get(_normalize_diet_meal_type(record_data.get("meal_type")) or "", "")
         if food:
             return f"已记录{meal + '：' if meal else '饮食 '}{food}"
     elif kind == "water":
@@ -2152,6 +2766,7 @@ def _source_labels_from_system_prompt(system_content: str) -> list[str]:
 # 未映射的工具 → 原始名 (见 _tool_status_label)。
 _TOOL_TO_STATUS_LABEL = {
     "health_query": "查询健康数据",
+    "health_query_batch": "批量查询健康数据",
     "health_record": "写入记录",
     "health_manage": "管理记录",
     "health_analysis": "深度分析",
@@ -2176,6 +2791,7 @@ def _tool_status_label(func_name: Optional[str]) -> str:
 _TOOL_PROGRESS_LABEL = {
     # 核心工具 (tool_schema_registry.HEALTH_TOOLS)
     "health_query": "查看健康数据…",
+    "health_query_batch": "汇总健康数据…",
     "health_record": "正在记录…",
     "health_manage": "整理健康记录…",
     "health_analysis": "深度分析中…",
@@ -2469,6 +3085,74 @@ def _confirm_or_describe(args: dict, data: dict, *, preview: str) -> str | None:
     )
 
 
+def _citation_anchor_shadow_meta(db, user_id: int, answer_text: str) -> Optional[Dict[str, Any]]:
+    """P1 数字锚定核验(shadow)。核验最终答案里引用的个人数值能否锚定到 Twin,
+    只观测不干预:返回一个可放进 done.meta 的 additive 摘要 dict(客户端不读不炸)。
+
+    观测层铁律:**绝不打死回合**。任何异常吞掉并 log warning,把失败计数暴露到日志
+    (failed_count),不做静默 —— "捕获后静默返回" 是违规。开关关或答案为空返回 None。
+
+    Returns:
+        {total, anchored, unanchored_count, anchored_ratio, failed_count} 或 None。
+        unanchored 明细只进日志(可能含数值上下文),done.meta 只带计数,不外泄片段。
+    """
+    from app.config import settings
+
+    if not getattr(settings, "citation_anchor_shadow", False):
+        return None
+    if not answer_text or not answer_text.strip():
+        return None
+
+    failed_count = 0
+    try:
+        from app.twin.builder import build_twin
+        from app.services.citation_anchor import anchor_report
+
+        twin = build_twin(db, user_id, use_cache=True)
+        report = anchor_report(answer_text, twin)
+    except Exception as e:  # noqa: BLE001 — 观测层不打死回合, 但吞点必须计数+告警(非静默)
+        failed_count += 1
+        logger.warning(
+            "[citation_anchor] shadow eval failed user=%s failed_count=%s err=%s",
+            user_id, failed_count, e,
+        )
+        return {
+            "total": 0,
+            "anchored": 0,
+            "unanchored_count": 0,
+            "anchored_ratio": None,
+            "failed_count": failed_count,
+        }
+
+    unanchored = report.get("unanchored") or []
+    try:
+        logger.info(
+            "[citation_anchor] user=%s ratio=%s anchored=%s/%s unanchored=%s",
+            user_id,
+            report.get("anchored_ratio"),
+            report.get("anchored"),
+            report.get("total"),
+            len(unanchored),
+        )
+        # unanchored 明细(值 + 上下文片段)只进日志, 供 shadow 期人工核样本;
+        # 上限 5 条防日志膨胀。
+        for u in unanchored[:5]:
+            logger.info(
+                "[citation_anchor]   unanchored user=%s value=%s ctx=%r",
+                user_id, u.get("value"), (u.get("context_snippet") or "")[:60],
+            )
+    except Exception:  # noqa: BLE001 — 连日志都不能打死回合
+        failed_count += 1
+
+    return {
+        "total": report.get("total", 0),
+        "anchored": report.get("anchored", 0),
+        "unanchored_count": len(unanchored),
+        "anchored_ratio": report.get("anchored_ratio"),
+        "failed_count": failed_count,
+    }
+
+
 class AgentExecutor:
     """统一健康 Agent 执行器"""
 
@@ -2482,6 +3166,31 @@ class AgentExecutor:
         # 本回合是否被 fast-route 到快模型 (简单记录/查询)。仅用于把答案 max_tokens
         # 从 ANSWER_MAX_TOKENS 收紧到 FAST_ROUTE_ANSWER_MAX_TOKENS —— 见 _answer_max_tokens。
         self._fast_route_simple_turn = False
+        # 本**轮**是否被工具决策轮快路由到 fast 模型 (task_tiered_routing, 见
+        # _maybe_fast_route_tool_round)。仅在带 tools 的轮为 True, 每轮入口重置。
+        # 作用: 该轮的模型输出**只**当作工具决策 —— content 不 live 下发; 若该轮
+        # 直接答文本 (无 tool_calls), 丢弃并强制在**强模型**上重合成 (安全不变量:
+        # 面向用户的医疗正文绝不来自 fast 模型)。
+        self._tool_round_fast_routed = False
+        # fast-routed 工具决策轮专用的 lite 消息栈 (由 _run_stream_impl 在组装 full messages
+        # 时快照; 见 _build_lite_tool_round_messages)。仅当**本轮**被 fast-route
+        # (_tool_round_fast_routed=True) 时, _messages_for_round 才用它替换全量栈 —— 合成/
+        # 答案轮与快路由失守时仍走全量栈。None = 本回合不构建 (flag 关 / 整轮已 fast / 多模态)。
+        self._lite_tool_round_messages: Optional[List[Dict[str, Any]]] = None
+        # 本轮之前是否已执行过任何工具 (旁路 tool_executed_count>0 给 _resolve_chat_provider)。
+        # 默认路径下合成轮仍带 tools, 靠这个把"首个工具决策轮"与"工具后合成轮"分开:
+        # 只有**尚无工具执行**时才把带 tools 的轮降 fast; 一旦跑过工具, 后续 (合成) 轮留强模型。
+        self._turn_any_tool_executed = False
+        # A3: fast 工具决策轮直接答文本被丢弃后, 置位 → 强制下一轮为**无 tools 的合成轮**,
+        # 复用主循环的流式路径在强/显式模型上重合成 (tokens 逐 delta 下发, 消除 ttft=total
+        # 空洞)。round_tools=[] → pass_tools falsy → 不再快路由 → 落在强/显式模型。
+        self._force_no_tools_synthesis = False
+        # A4: 每回合系统知识库证据卡 memo —— pre-round-1 算一次, done 复用, 避免同回合
+        # 第二次 build_twin 全量重建 (拖慢 done/receipts 与 /send 回复)。若回合内发生写操作
+        # (_turn_twin_write_occurred), done 侧强制重算一次以反映写后 Twin。
+        self._turn_evidence_card: Any = _TURN_CARD_UNSET
+        self._turn_evidence_card_key: Optional[tuple] = None
+        self._turn_twin_write_occurred = False
         self._last_provider_model_name: Optional[str] = None
         self._request_model_tool_fallback_used = False
         self._model_fallback_reasons: List[str] = []
@@ -2501,6 +3210,17 @@ class AgentExecutor:
         # (_call_llm_stream 判断 supports_streaming) 与死亡备忘复用。2-tuple 返回契约
         # 不变 (既有 test 依赖), 用实例属性旁路传递。
         self._last_effective_model_id: Optional[str] = None
+        # 本回合是否调用过 health_analysis(深度分析/orchestrator/安全裁决)。合成轮思考
+        # 封顶 (SYNTHESIS_THINKING_BUDGET) fail-closed 跳过这类回合——深度分析可能确实
+        # 需要长思考, 不该被封顶。每回合入口重置。
+        self._turn_invoked_deep_analysis = False
+        # Read-only turn (starter answer pre-generation · rank7). When True, the
+        # single tool-dispatch choke (_execute_tool) blocks any tool NOT on
+        # _READ_ONLY_TURN_ALLOWED_TOOLS (fail-closed) and raises
+        # _read_only_turn_write_attempted so the pregen orchestrator can ABORT and
+        # store nothing. Default False = zero behavior change for live turns.
+        self._read_only_turn = False
+        self._read_only_turn_write_attempted = False
 
     def _display_model_name_for_id(self, model_id: Optional[str]) -> Optional[str]:
         if not model_id:
@@ -3139,6 +3859,8 @@ class AgentExecutor:
         )
         conv.updated_at = datetime.now(UTC)
         elapsed_ms = int((time.time() - start_time) * 1000)
+        # P1 数字锚定核验(shadow, additive; fail-soft 见 helper)。
+        citation_anchor = _citation_anchor_shadow_meta(self.db, user_id, full_reply)
         try:
             ai_msg.meta = {
                 "elapsed_ms": elapsed_ms,
@@ -3149,6 +3871,7 @@ class AgentExecutor:
                 "fallback_reasons": [],
                 "sources_used": sources_used,
                 "mode": "multi_model",
+                **({"citation_anchor": citation_anchor} if citation_anchor else {}),
                 "write_receipts": write_receipts,
                 "completion_status": completion_status,
                 "client_turn_finalized": True,
@@ -3169,6 +3892,7 @@ class AgentExecutor:
             "fallback_reasons": [],
             "sources_used": sources_used,
             "mode": "multi_model",
+            **({"citation_anchor": citation_anchor} if citation_anchor else {}),
             "write_receipts": write_receipts,
             "completion_status": completion_status,
             "client_turn_finalized": True,
@@ -3187,8 +3911,15 @@ class AgentExecutor:
         extra_context: Optional[str] = None,
         channel: Optional[str] = None,
         client_turn_id: Optional[str] = None,
+        client_caps: Optional[List[str]] = None,
+        read_only_tools: bool = False,
     ) -> AsyncGenerator[Dict, None]:
-        """Run one durable client turn, taking over an ACKed turn after worker loss."""
+        """Run one durable client turn, taking over an ACKed turn after worker loss.
+
+        read_only_tools: starter answer pre-generation (rank7). When True, write
+        tools are refused at the dispatch choke (fail-closed) — the pregen turn
+        runs the same synthesis pipeline but can never mutate user data.
+        """
         yield self._progress_event("accepted")
         recovered_user_message = None
         claimed_turn = False
@@ -3326,6 +4057,8 @@ class AgentExecutor:
                 channel=channel,
                 client_turn_id=client_turn_id,
                 recovered_user_message=recovered_user_message,
+                client_caps=client_caps,
+                read_only_tools=read_only_tools,
             ):
                 yield event
         finally:
@@ -3345,6 +4078,8 @@ class AgentExecutor:
         channel: Optional[str] = None,
         client_turn_id: Optional[str] = None,
         recovered_user_message: Any = None,
+        client_caps: Optional[List[str]] = None,
+        read_only_tools: bool = False,
     ) -> AsyncGenerator[Dict, None]:
         """运行 Agent 循环，SSE 流式输出"""
         from app.services.llm.usage_tracker import set_caller
@@ -3352,6 +4087,16 @@ class AgentExecutor:
         # 输入通道(客户端传输层声明,typed/voice/siri):症状类记录的确认策略依赖它。
         # 非法/未声明一律 None → fail-closed(症状保留确认)。
         self._turn_channel = channel if channel in ("typed", "voice", "siri") else None
+        # GenUI metric_table (rank1): 客户端声明 genui-table-v1 且未被 kill-switch 关闭时,
+        # 工具结果确定性打成表格卡片 (合成后追加 fence) + 正文改走 ≤500字 契约。
+        # 无 cap / flag 关 → 逐字节现状 (不追踪、不注入、不追加)。fail-open。
+        from app.services.genui import GENUI_TABLE_CAP as _GENUI_TABLE_CAP
+        genui_table_on = (
+            getattr(settings, "genui_table_enabled", True)
+            and _GENUI_TABLE_CAP in (client_caps or [])
+        )
+        # 本回合已执行的只读数据查询工具 (name, args, result) —— 供合成后确定性建表。
+        genui_tool_calls: List[Tuple[str, Optional[dict], str]] = []
         # 多模型综合分析 (商用三强 panel)。仅纯文本分析回合走此路径;
         # 带图片/附件时回退普通单模型路径 (panel 是文本综合, 不处理多模态)。
         if _extract_multi_model_flag(extra_context) and not images and not file_base64:
@@ -3372,11 +4117,24 @@ class AgentExecutor:
         self._request_model_id = _extract_model_id_from_extra_context(extra_context)
         self._request_model_tool_fallback_used = False
         self._fast_route_simple_turn = False
+        self._tool_round_fast_routed = False
+        self._lite_tool_round_messages = None
+        self._turn_any_tool_executed = False
+        self._force_no_tools_synthesis = False
+        self._turn_evidence_card = _TURN_CARD_UNSET
+        self._turn_evidence_card_key = None
+        self._turn_twin_write_occurred = False
         self._model_fallback_reasons = []
         self._tool_model_names = []
         self._dead_provider_model_ids = set()
         self._tool_dead_provider_model_ids = set()
         self._last_effective_model_id = None
+        self._turn_invoked_deep_analysis = False
+        # Read-only pregen turn (rank7): reset per-turn. When set, _execute_tool
+        # fail-closed-blocks any non-allowlisted tool and flags a write attempt so
+        # the pregen orchestrator discards the answer instead of serving it.
+        self._read_only_turn = bool(read_only_tools)
+        self._read_only_turn_write_attempted = False
         self._prefer_fast_record_model = (
             not images
             and not file_base64
@@ -3563,6 +4321,33 @@ class AgentExecutor:
             "recovered": recovered_user_message is not None,
         }}
 
+        # ── Slice 3 程序性配方: 触发短语精确匹配 (先于 fast-path/LLM)。
+        # strip 后等值才命中 (不做模糊匹配, 控误触发); 命中 → 确定性逐步重放,
+        # 每步确认策略沿用该 kind 既有 confirm tier (typed_only/never_auto 原样
+        # 生效, 配方不绕任何确认门)。匹配失败/异常绝不断主链路 (fail-soft 回
+        # 正常 LLM 路径, 但记 warning 可观测)。
+        if not images and not file_base64:
+            matched_recipe = None
+            try:
+                from app.services.procedure_recipe_service import match_trigger
+
+                matched_recipe = match_trigger(self.db, user_id, message)
+            except Exception as e:  # noqa: BLE001 — 匹配层失败回退 LLM, 不吞成静默
+                logger.warning("[agent_executor] recipe match_trigger failed: %s", e)
+            if matched_recipe is not None:
+                async for evt in self._run_recipe_replay(
+                    matched_recipe,
+                    svc,
+                    conv,
+                    user_msg,
+                    user_id,
+                    user_auth_token,
+                    client_turn_id,
+                    start_time,
+                ):
+                    yield evt
+                return
+
         _t_stage = time.time()
         opener_quick_reply_note = None
         try:
@@ -3584,7 +4369,8 @@ class AgentExecutor:
         # 非快路由回合 lite=False → prompt 逐字节不变。
         _t_stage = time.time()
         system_content = self._build_system_prompt(
-            user_id, conv.id, user_auth_token, lite=self._fast_route_simple_turn
+            user_id, conv.id, user_auth_token, lite=self._fast_route_simple_turn,
+            intent_query=message,
         )
         for source_label in _source_labels_from_system_prompt(system_content):
             if source_label not in sources_used:
@@ -3596,26 +4382,63 @@ class AgentExecutor:
                 "[agent_executor] fast-route lite system prompt user=%s chars=%d",
                 user_id, len(system_content),
             )
+        # ── turn-scoped 上下文(2026-07-11 token 优化 #6:前缀缓存排布)────────
+        # 这四块(入口动作/桌面格式/入口上下文/KB 证据)逐回合变化,曾拼在 system
+        # 尾部 → system 每回合字节不同,拆掉 provider 前缀缓存(生产实测基线命中率
+        # 29.2%)。改为注入**最后一条 user 消息**:前缀 = system+tools+旧历史 保持
+        # 字节稳定,turn 内容落在增长尾部,天然不破坏前缀匹配。块文本逐字保留。
+        turn_context_parts: List[str] = []
         if opener_quick_reply_note:
-            system_content += (
-                "\n\n## 入口动作处理结果\n"
+            turn_context_parts.append(
+                "## 入口动作处理结果\n"
                 f"{opener_quick_reply_note}\n"
                 "请先用一句话确认这次验证/反馈已经接上了对应行动卡片，再给出下一步。"
             )
             if "ActionCard" not in sources_used:
                 sources_used.append("ActionCard")
-        desktop_response_instruction = _extract_desktop_response_instruction(extra_context)
-        if desktop_response_instruction:
-            system_content += (
-                "\n\n## 桌面端回复格式要求\n"
-                f"{desktop_response_instruction}\n"
-                "这是桌面端展示的最高优先级格式要求；除非用户明确要求纯文本，否则必须遵守。"
+        if genui_table_on:
+            # GenUI metric_table (rank1): 客户端声明 genui-table-v1 → 数据由后端确定性
+            # 表格卡片直接呈现, 正文改走 ≤500字 结论先行契约。**服务端硬门**: 即便旧客户端
+            # 仍在 extra_context 里塞 mac "最高优先级要求生成大 markdown 表", 声明了 cap 就
+            # 以本契约为准并**覆盖**那条指令 —— 否则旧指令会一边索要 4000 字表格、一边又声明
+            # cap, 自伤 decode 税 (rank1 要消灭的正是这份税)。
+            turn_context_parts.append(
+                "## 数据回答格式要求（最高优先级）\n"
+                "本回合若涉及健康数据查询，系统已用表格卡片把数值直接呈现给用户。因此：\n"
+                "- 正文**不超过 500 字**；\n"
+                "- **结论先行**：先给 2-3 条关键要点，再给可执行的行动建议；\n"
+                "- **绝不逐行复述表格中的数值行**（用户已在卡片里看到），只做解读、趋势、对比与行动指引；\n"
+                "- **安全例外**：异常或危急数值（如血压达高血压2-3级、血氧过低、血糖过高或过低、"
+                "化验危急值等）**必须在正文中明确说出具体数值**并给出对应行动建议，不受上面"
+                "\"不复述表格数值\"约束；是否异常/危急以系统安全提示（⚠️ 安全提示）与卡片中的"
+                "分级/异常标注为准，不要给系统标注为正常的数值自行加危急判断；\n"
+                "- 不确定性与安全边界照常表达。"
             )
+        else:
+            desktop_response_instruction = _extract_desktop_response_instruction(extra_context)
+            if desktop_response_instruction:
+                turn_context_parts.append(
+                    "## 桌面端回复格式要求\n"
+                    f"{desktop_response_instruction}\n"
+                    "这是桌面端展示的最高优先级格式要求；除非用户明确要求纯文本，否则必须遵守。"
+                )
+        database_verification_instruction = _extract_database_verification_instruction(extra_context)
+        if database_verification_instruction:
+            turn_context_parts.append(database_verification_instruction)
+            try:
+                database_verification_snapshot = _build_database_verification_snapshot(
+                    self.db, user_id, extra_context
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[agent_executor] database verification snapshot failed: %s", e)
+                database_verification_snapshot = None
+            if database_verification_snapshot:
+                turn_context_parts.append(database_verification_snapshot)
         # 入口 deeplink 携带的结构化上下文 — 用户在 SNP/饮食/运动等页点"详细聊"时,
         # 把当前页正展示的具体方案条目透传过来, 让 LLM 不重新猜, 在已有方案上深化.
         if extra_context and extra_context.strip():
-            system_content += (
-                "\n\n## 入口上下文 (用户正在看的具体方案)\n"
+            turn_context_parts.append(
+                "## 入口上下文 (用户正在看的具体方案)\n"
                 "用户从下面这个上下文点过来跟你详细聊, 请在**这些已展示的具体条目**上深化, "
                 "不要重新生成方案; 引用条目名称时跟用户已看见的一致.\n"
                 f"```\n{extra_context.strip()[:4000]}\n```"
@@ -3629,7 +4452,7 @@ class AgentExecutor:
         )
         pre_stages["kb_ms"] = _pre_stage(_t_stage)
         if system_kb_context:
-            system_content += f"\n\n{system_kb_context}"
+            turn_context_parts.append(system_kb_context)
             if "系统知识库" not in sources_used:
                 sources_used.append("系统知识库")
         # 2026-05-14: 用户数据源 inspection — 不依赖 system_prompt 实际用了什么,
@@ -3654,13 +4477,14 @@ class AgentExecutor:
         messages.insert(0, {"role": "system", "content": system_content})
         pre_stages["history_ms"] = _pre_stage(_t_stage)
 
-        # 如果有图片：LangBridge 商用模型自身支持多模态，必须直接传原图；
-        # 其它模型保留原来的"先用独立 vision 识别，再降级直传"路径。
+        # 如果有图片：明确的普通图片可直传商用多模态模型；食物语境和
+        # Mobile 的默认纯图片提示必须先走结构化识别，避免 provider 选择
+        # 绕过饮食清洗、校准与写入边界。
         _t_stage = time.time()
         if images:
-            should_send_raw_images = self._should_send_raw_images_to_primary_model(user_id)
+            should_preprocess_images = self._should_preprocess_attached_images(user_id, message)
             vision_description = None
-            if not should_send_raw_images:
+            if should_preprocess_images:
                 # 真实思考过程: 图片/视觉预处理 (4–20s 的 vision_ms 块) 即将开始。
                 # 仅在会真的跑独立 vision 预处理时发 (原图直传多模态模型时无此阶段)。
                 yield self._status_event("vision", detail=None)
@@ -3680,6 +4504,54 @@ class AgentExecutor:
                 _attach_images_to_last_user_message(messages, message, images)
         pre_stages["vision_ms"] = _pre_stage(_t_stage) if images else 0
 
+        # ── fast-routed 工具决策轮的 lite 消息栈 (2026-07-12 token 优化: 首个工具决策轮
+        # 已 fast-route 到 qwen3.6-flash, 但仍背 ~14k-token 全量栈 → flash 白付 6-8s prefill)。
+        # **必须在 turn-context(KB 证据)折进最后一条 user 之前**快照 —— 此刻最后一条 user
+        # 只含用户原话(或 vision 增强), KB 天然缺席; 用 lite system prompt(无分析 blob)+
+        # 折进紧邻 assistant 做消歧。仅当**首个工具决策轮**真 fast-route 时才被消费(见
+        # _messages_for_round); 合成/答案轮与快路由失守时仍走下面组装的全量 messages。
+        # 只对可能命中快路由的回合构建(flag 开 + 非整轮快路由): _fast_route_simple_turn /
+        # _prefer_fast_record_model 已把整轮(含合成)降 fast, _maybe_fast_route_tool_round
+        # 对它们恒返回 None → 无需 lite 栈。fail-open: 构建失败/多模态 → None → 全量栈。
+        if (
+            getattr(settings, "task_tiered_routing", False)
+            and not self._fast_route_simple_turn
+            and not self._prefer_fast_record_model
+        ):
+            try:
+                lite_system = self._build_system_prompt(
+                    user_id, conv.id, user_auth_token, lite=True, intent_query=message,
+                )
+                self._lite_tool_round_messages = _build_lite_tool_round_messages(
+                    lite_system, messages,
+                )
+            except Exception as e:  # noqa: BLE001 — lite 栈构建失败绝不断主链路, 退回全量栈
+                logger.warning(
+                    "[agent_executor] lite tool-round messages build failed, keep full: %s", e
+                )
+                self._lite_tool_round_messages = None
+
+        # turn-scoped 上下文注入最后一条 user 消息(#6,必须在 vision 重写之后,
+        # 否则会被 enriched_message 覆盖)。上下文在前、用户原话在后(recency 保持
+        # 问题主导);标注来源=系统,防止模型当成用户自述。
+        if turn_context_parts:
+            _turn_ctx = "\n\n".join(turn_context_parts)
+            _injected = False
+            for _i in range(len(messages) - 1, -1, -1):
+                if messages[_i].get("role") == "user":
+                    _existing = messages[_i].get("content")
+                    if isinstance(_existing, str):
+                        messages[_i]["content"] = (
+                            f"[系统附注 — 本回合参考上下文,非用户输入]\n{_turn_ctx}\n"
+                            f"[用户消息]\n{_existing}"
+                        )
+                        _injected = True
+                    break
+            if not _injected:
+                # 兜底:带图多段 content 或无 user 消息 → 退回旧行为拼 system 尾,
+                # 宁可损失缓存也绝不丢上下文(fail-open)。
+                messages[0]["content"] = f"{messages[0]['content']}\n\n{_turn_ctx}"
+
         # pre_llm_ms: system-prompt 组装 + KB 检索 + history + vision 到本点的总壁钟。
         # 直接取 start_time delta (最准, 不受漏计阶段影响)。fail-soft。
         try:
@@ -3687,8 +4559,16 @@ class AgentExecutor:
         except Exception:  # noqa: BLE001
             pre_llm_ms = 0
 
-        # 4. 工具定义
-        tools = get_health_tools()
+        # 4. 工具定义(2026-07-11 token 优化 #2)
+        # fast 简单回合(记录/简单查询)只发固定 big-3 白名单:实测工具 prefill
+        # 18,064→~6,700 chars(-62%),且缩短 flash 模型 prefill 时延。固定子集
+        # 保前缀字节稳定(不拆 provider 前缀缓存)。模型若吐出子集外工具名 →
+        # 下面 round loop 里升级回全集重跑该轮(fail-open,绝不静默丢调用)。
+        if self._fast_route_simple_turn:
+            tools = get_health_tools(subset=list(FAST_TURN_TOOL_NAMES))
+        else:
+            tools = get_health_tools()
+        fast_subset_active = self._fast_route_simple_turn
 
         # 5. Agent 循环
         full_reply = ""
@@ -3723,6 +4603,13 @@ class AgentExecutor:
         rounds: List[Dict[str, Any]] = []  # 每轮 {llm_gen_ms, tool_exec_ms, tools:[...]}
         orchestrator_tool_ms: Optional[int] = None  # health_analysis(type=orchestrator) 壁钟
         orchestrator_perf: Optional[Any] = None  # /orchestrator/chat 若回传 perf 则透传
+        # rank7 深分析短路二次合成(passthrough,ships-off,见 config.orchestrator_synthesis_passthrough)。
+        # 关时全零开销(capture 受 mode!='off' 门控);shadow 记 meta 不改行为;on 单工具回合短路。
+        passthrough_mode = _resolve_synthesis_passthrough_mode()
+        passthrough_orch_text: Optional[str] = None   # orchestrator 自产 synthesis(已过 R4)
+        passthrough_orch_calls = 0                     # 本回合捕获到 synthesis 的 orchestrator 次数
+        passthrough_synthesis_round_ms: Optional[int] = None  # shadow: 二次合成轮壁钟(=可省时延)
+        passthrough_taken = False                      # on: 本回合是否真短路了二次合成
         # 后置校验: record 意图的 turn 必须真的执行了写工具。0 次 = 模型可能只是
         # 嘴上说"已记录"却没调工具(弱模型把 tool-call 当正文吐出 → 静默丢数据)。
         tool_executed_count = 0
@@ -3732,6 +4619,10 @@ class AgentExecutor:
         write_receipts: List[Dict[str, Any]] = []
         write_results_by_fingerprint: Dict[str, tuple[str, str]] = {}
         unverified_write_tools: List[str] = []
+        # Slice 3 配方候选: 本轮**成功完成**的 health_record 写步骤 (sanitize 掉
+        # 一次性确认标志 + 日期模板化)。≥2 步时 done 附 save_recipe 描述符
+        # (仅描述符, 移动端渲染"存为配方"入口; 存不存由用户点)。
+        recipe_candidate_steps: List[Dict[str, Any]] = []
 
         # 诚实的非流式 UX: 若本回合答案模型结构性非流式 (langbridge 商用模型, 上游无 SSE,
         # 整段一次返回), mac 端「正在思考…」的 token 滚动是误导 —— 在每轮 LLM 调用前多发一条
@@ -3739,16 +4630,34 @@ class AgentExecutor:
         # 流式模型 detail 恒为 None (不发此附加事件), mac 走正常滚动。fail-soft (解析异常=不发)。
         answer_model_non_streaming = self._resolved_answer_model_is_non_streaming()
 
+        # A2 (plan rank4) 自纠开关: 若合成轮被置空 tools 后模型其实还想再调工具
+        # (下面 botched 文本式工具调用被识别), 置位 → 本回合后续轮重新带上工具。
+        # 正确性 > 省 token: 多轮链式工具回合 (orchestrator 后还想 knowledge_search 等) 不被裁掉。
+        keep_tools_after_synthesis_miss = False
         self._http_client = httpx.AsyncClient(timeout=90.0)
         try:
             for round_idx in range(MAX_TOOL_ROUNDS):
                 # 真流式调用 LLM：content delta 实时 yield 给客户端,同时累积 tool_calls。
                 # _call_llm_stream 内部已做 provider 路由 + failover (镜像 _call_llm)。
-                round_tools = (
-                    []
-                    if self._should_synthesize_with_requested_model_after_tools(tool_executed_count)
-                    else tools
-                )
+                # round_tools = 本轮**发给模型**的工具; _detect_tools = 扫描模型**输出**用的
+                # 完整词表 (A2 把合成轮 round_tools 置空只是不再重发 18KB schema, 输出侧的
+                # 文本式/内联工具调用抑制词表不能跟着消失 —— 见 _detect_tools 用法)。
+                if self._force_no_tools_synthesis:
+                    # A3: fast 工具轮直接答文本被丢弃 → 本轮强制无 tools 合成 (强/显式模型),
+                    # 走主循环流式路径重合成 (tokens 逐 delta 下发)。
+                    round_tools = []
+                elif self._should_synthesize_with_requested_model_after_tools(tool_executed_count):
+                    # 既有: 显式选的不可靠工具模型, 工具后由它自己产出最终答案 (不重发 tools)。
+                    round_tools = []
+                elif tool_executed_count > 0 and not keep_tools_after_synthesis_miss:
+                    # A2: 上一轮已执行过工具 → 本轮实际是合成轮, 对**所有**模型置空 tools,
+                    # 省 ~5k tokens/轮 prefill (18,064-char schema)。2+-round 回合 = 55% 的回合。
+                    round_tools = []
+                else:
+                    round_tools = tools
+                # 扫描输出的工具词表: round_tools 非空则用它, 否则回退本回合完整 tools
+                # (合成轮词表稳定, 默认路径历来带非空 tools, 这层保护逐字节不变)。
+                _detect_tools = round_tools or tools
                 # 真实思考过程: 本轮 LLM prefill/decide 等待即将开始 (TTFT 主来源)。
                 # synthesis = 前面轮已执行过工具 且 本轮不再带工具 (模型正在写最终答案);
                 # 否则 thinking (还在决策/可能再调工具)。纯附加、fail-soft (dict 构造不会抛)。
@@ -3766,11 +4675,49 @@ class AgentExecutor:
                         detail="该模型整段生成,需等待完整回答",
                         round=round_idx + 1,
                     )
+                # rank7 passthrough(on): 本轮是二次合成轮(前面已跑工具、本轮不带 tools),且本回合
+                # 唯一实质工具就是那一次 orchestrator health_analysis —— 直接把它已过 R4 的 synthesis
+                # 过同一条出站护栏后流式下发,跳过第二次强模型合成。fail-closed:tool_executed_count>1
+                # (还需融合记录/查询/二次分析的回合)或非 orchestrator → 落到下面正常二次合成分支。
+                if (
+                    passthrough_mode == "on"
+                    and not round_tools
+                    and tool_executed_count == 1
+                    and passthrough_orch_calls == 1
+                    and passthrough_orch_text
+                ):
+                    passthrough_final = _apply_passthrough_outbound_guards(
+                        passthrough_orch_text, messages
+                    )
+                    if passthrough_final.strip():
+                        if first_token_at is None:
+                            first_token_at = time.time()
+                        # 内层调用整段一次返回 → 切成 20-char token 让端逐块渲染
+                        # (镜像既有非流式兜底口径 4827/5024)。
+                        for i in range(0, len(passthrough_final), 20):
+                            yield {"event": "token", "data": {"content": passthrough_final[i:i + 20]}}
+                        full_reply += passthrough_final
+                        passthrough_taken = True
+                        # 透传答案是一段完整回答(非待决工具调用)→ finish_reason 与二次合成
+                        # 答案路径对齐为 'stop'(completion_status → complete),不留 round1 的
+                        # 'tool_calls' 陈值。
+                        final_finish_reason = "stop"
+                        rounds.append({"llm_gen_ms": 0, "tool_exec_ms": 0, "tools": []})
+                        break
+                    # 护栏把文本清空(异常)→ 不短路, 落到正常二次合成兜底(下方 else 分支)。
                 _round_start = time.time()
                 streamed_text = ""
+                # 思考流可视化 (qwen reasoning_content): 本轮首个可见 token 之前, 把
+                # reasoning 增量节流成 thinking status 事件填死气。纯 UI, 绝不进答案/持久化。
+                reasoning_buf = ""
+                reasoning_last_emit_at = _round_start
+                reasoning_last_emit_len = 0
                 streamed_tool_calls: List[Dict[str, Any]] = []
                 stream_finish_reason: Optional[str] = None
                 streamed_to_client = False
+                # 每轮入口重置工具决策轮快路由标记; _call_llm_stream → _resolve_chat_provider
+                # → _maybe_fast_route_tool_round 会在本轮命中时置 True (仅带 tools 的轮可能命中)。
+                self._tool_round_fast_routed = False
                 # 弱模型会把 tool-call JSON 当正文吐出(无结构化 tool_calls)。一旦累积
                 # 文本可被 _extract_inline_tool_call 识别成工具调用,立刻停止 live 下发
                 # 并撤回已发标记 —— 这段 JSON 后面会被恢复成真正的 tool_call (content 置空),
@@ -3786,9 +4733,9 @@ class AgentExecutor:
                         if (
                             not inline_suppressed
                             and not streamed_tool_calls
-                            and round_tools
+                            and _detect_tools
                             and (
-                                _extract_inline_tool_call(streamed_text, round_tools)
+                                _extract_inline_tool_call(streamed_text, _detect_tools)
                                 # 括号标记 `[工具调用: ...` 可能正在逐 token 形成,`)` 还没到
                                 # → 上面的精确解析此刻 match 不到。一旦看到标记前缀就提前抑制,
                                 # 避免裸标记被逐 delta 泄漏(即便最终参数解析不出也不外漏)。
@@ -3816,13 +4763,47 @@ class AgentExecutor:
                         ):
                             inline_suppressed = True
                             streamed_to_client = False
-                        if not inline_suppressed:
+                        # 工具决策轮快路由 (fast 模型): 本轮输出只当工具决策, content 绝不
+                        # live 下发 —— 若最终是直接答文本 (无 tool_calls), 会被丢弃并在强模型
+                        # 重合成 (安全不变量: 面向用户的医疗正文绝不来自 fast 模型)。
+                        if not inline_suppressed and not self._tool_round_fast_routed:
                             streamed_to_client = True
                             # 2026-07-01: TTFT — 第一个真正下发给客户端的 token 时刻 (纯埋点)。
                             if first_token_at is None:
                                 first_token_at = time.time()
                             # 真流式:逐 delta 即时下发,不再切 20-char 假块。
                             yield {"event": "token", "data": {"content": delta}}
+                    elif etype == "reasoning":
+                        # 思考流可视化: 把 qwen 的 reasoning_content 增量节流成既有
+                        # thinking status 事件, 填掉首个可见 token 前的死气。
+                        # reasoning 文本绝不进 streamed_text/full_reply/messages/持久化答案 ——
+                        # 只塞进 status 事件的 detail (客户端已有的 live 思考通道)。
+                        # 门控 (全部满足才发一条):
+                        #   1. 本轮尚未产出任何可见 content —— 答案流一开始就交棒停发;
+                        #   2. 非 fast 工具决策轮 —— fast 模型内部文本不外 surface (安全不变量);
+                        #   3. 距上次发 ≥ 间隔 且 新增 reasoning ≥ 字符阈值 (whichever later);
+                        #   4. 累积 reasoning 未形成工具结果 JSON 泄漏 (复用 _streaming_leak_forming);
+                        #   5. 清洗后片段非空。
+                        if streamed_text or self._tool_round_fast_routed:
+                            continue
+                        rdelta = evt.get("text") or ""
+                        if not rdelta:
+                            continue
+                        reasoning_buf += rdelta
+                        _now = time.time()
+                        if (
+                            (_now - reasoning_last_emit_at) >= _REASONING_STATUS_MIN_INTERVAL_S
+                            and (len(reasoning_buf) - reasoning_last_emit_len)
+                            >= _REASONING_STATUS_MIN_CHARS
+                            and not _streaming_leak_forming(reasoning_buf)
+                        ):
+                            _snippet = _clean_reasoning_snippet(reasoning_buf)
+                            if _snippet:
+                                reasoning_last_emit_at = _now
+                                reasoning_last_emit_len = len(reasoning_buf)
+                                yield self._status_event(
+                                    "thinking", detail=_snippet, round=round_idx + 1
+                                )
                     elif etype == "tool_calls":
                         streamed_tool_calls = evt.get("tool_calls") or []
                     elif etype == "finish":
@@ -3878,7 +4859,7 @@ class AgentExecutor:
                     )
                     inline_tool_call = (
                         None if _is_result_echo
-                        else _extract_inline_tool_call(_resp_content, round_tools)
+                        else _extract_inline_tool_call(_resp_content, _detect_tools)
                     )
                     if inline_tool_call:
                         logger.warning(
@@ -3898,10 +4879,15 @@ class AgentExecutor:
                 if (
                     isinstance(response, dict)
                     and not response.get("tool_calls")
-                    and _is_botched_text_tool_call(response.get("content") or "", round_tools)
+                    and _is_botched_text_tool_call(response.get("content") or "", _detect_tools)
                 ):
                     botched = response.get("content") or ""
                     if round_idx < MAX_TOOL_ROUNDS - 1:
+                        if not round_tools:
+                            # A2 自纠: 本轮已被 A2/合成条件置空 tools, 但模型仍想调工具
+                            # (文本式)。重开工具, 让重提示轮真能结构化调用 (否则重提示后
+                            # 仍无 tools = 空转)。正确性 > 省 token。
+                            keep_tools_after_synthesis_miss = True
                         logger.warning(
                             "[agent_executor] 文本式工具调用未结构化, 重提示重试 (round %d). preview=%s",
                             round_idx + 1, botched[:120],
@@ -3917,11 +4903,73 @@ class AgentExecutor:
                     # 轮次用尽仍是文本式 → 剥掉标记避免泄漏(用户至少不看到裸 "Tool calls:")。
                     response = {**response, "content": _strip_text_tool_call(botched)}
 
+                # ──── 工具决策轮快路由安全兜底: fast 模型直接答文本时丢弃, 强模型重合成 ────
+                # 到这里所有 tool-call 恢复 (结构化 / inline JSON / 文本式重试) 都已尝试完。
+                # 若本轮是 fast 工具决策轮却仍**没有** tool_calls 而是产出了用户可见正文,
+                # 那是 fast 模型在直接回答医疗问题 —— 安全不变量禁止 (面向用户医疗正文绝不
+                # 来自 fast 模型)。该 content 已被上面的下发门控抑制 (从未 live 发出)。
+                # A3 (2026-07-12): 不再清空 content 落到**非流式**空回复重试链 (ttft≈total 空洞:
+                # 生产 turn 5960 ttft 39.5s ≈ total) —— 改为置 _force_no_tools_synthesis + continue,
+                # 让主循环下一轮以**无 tools 合成轮**在强/显式模型上流式重合成 (round_tools=[] →
+                # pass_tools falsy → 不再快路由; _tool_round_fast_routed 在轮首重置 → tokens 不被
+                # 抑制; 主循环既有 leak 抑制照旧生效)。fast 正文从未进 messages/full_reply。
+                if (
+                    self._tool_round_fast_routed
+                    and isinstance(response, dict)
+                    and not response.get("tool_calls")
+                    and (response.get("content") or "").strip()
+                ):
+                    logger.info(
+                        "[agent_executor] fast tool-round answered directly (no tool_call); "
+                        "discarding fast-model text, streaming re-synthesis on strong/selected model."
+                    )
+                    self._record_model_fallback_reason("fast_tool_round_direct_answer_resynthesized")
+                    # 记本 fast 轮的 per-round split (纯埋点, 无工具执行)。
+                    rounds.append({
+                        "llm_gen_ms": _round_llm_gen_ms,
+                        "tool_exec_ms": 0,
+                        "tools": [],
+                    })
+                    self._force_no_tools_synthesis = True
+                    continue
+
                 # 检查是否有 tool_call
                 if isinstance(response, dict) and response.get("tool_calls"):
                     self._record_tool_model_name(self._last_provider_model_name or model_name)
                     tool_calls = response["tool_calls"]
                     text_content = response.get("content") or ""
+
+                    # fast 子集守卫(token 优化 #2):模型想调的工具不在 big-3 白名单
+                    # (意图误判/幻觉工具名)→ 升级回全集重跑本轮。fail-open:
+                    # 绝不因裁剪静默丢调用或喂"未知工具"错误。fast 轮直答文本
+                    # 本就被丢弃重合成,重跑不会双发内容。
+                    if fast_subset_active:
+                        _sent_tool_names = {
+                            (t.get("function") or {}).get("name") for t in tools
+                        }
+                        _full_tool_names = {
+                            (t.get("function") or {}).get("name")
+                            for t in get_health_tools()
+                        }
+                        # 只对「全集里真有、但被子集扣下」的名字升级;幻觉工具名
+                        # (全集也没有)走原有未知工具错误路径,升级救不了它。
+                        _withheld = [
+                            name
+                            for name in (
+                                (tc.get("function") or {}).get("name")
+                                for tc in tool_calls
+                            )
+                            if name not in _sent_tool_names and name in _full_tool_names
+                        ]
+                        if _withheld:
+                            logger.info(
+                                "[agent_executor] fast 工具子集升级回全集重跑本轮 (模型请求: %s)",
+                                _withheld,
+                            )
+                            tools = get_health_tools()
+                            fast_subset_active = False
+                            self._record_model_fallback_reason("fast_subset_upgraded_full_tools")
+                            continue
 
                     planned_writes: List[tuple[str, Dict[str, Any]]] = []
                     for tc in tool_calls:
@@ -3956,7 +5004,9 @@ class AgentExecutor:
                     # 思考过程: 真流式下已逐 delta 下发过, 这里只补 full_reply,
                     # 不重复 yield token (避免客户端看到双份)。inline-recovery 路径
                     # 会把 content 置空 → text_content 为空也不发。
-                    if text_content:
+                    # fast 工具决策轮: 该轮 content (工具调用前的 preamble) 也来自 fast 模型,
+                    # 不下发、不计入 full_reply —— 最终医疗正文由后续合成轮的强模型产出。
+                    if text_content and not self._tool_round_fast_routed:
                         if not streamed_to_client:
                             yield {"event": "token", "data": {"content": text_content}}
                         full_reply += text_content
@@ -4038,6 +5088,10 @@ class AgentExecutor:
                             and parsed_tool_args.get("analysis_type") == "orchestrator"
                         )
                         if write_attempted and not replayed_write:
+                            # A4: 本回合发生 Twin-mutating 写 (health_record/health_manage/
+                            # intervention_cycle) → done 侧 KB 证据卡强制重算 (反映写后 Twin,
+                            # 不复用 pre-round-1 memo)。保守: 即便写最终软失败也重算 (无害多一次)。
+                            self._turn_twin_write_occurred = True
                             self._persist_turn_write_state(
                                 user_msg,
                                 status="in_flight",
@@ -4061,13 +5115,24 @@ class AgentExecutor:
                                 orchestrator_tool_ms = None
                             try:
                                 _orch_json = json.loads(result) if isinstance(result, str) else None
-                                if isinstance(_orch_json, dict) and _orch_json.get("perf") is not None:
-                                    orchestrator_perf = _orch_json.get("perf")
+                                if isinstance(_orch_json, dict):
+                                    if _orch_json.get("perf") is not None:
+                                        orchestrator_perf = _orch_json.get("perf")
+                                    # rank7: 捕获 orchestrator 自产 synthesis(已过 _safety_wrap/R4)
+                                    # 供 shadow 记录 / on 短路。仅在 flag 非 off 时捕获(off 零开销)。
+                                    if passthrough_mode != "off":
+                                        _synth = _orch_json.get("synthesis")
+                                        if isinstance(_synth, str) and _synth.strip():
+                                            passthrough_orch_text = _synth
+                                            passthrough_orch_calls += 1
                             except Exception:  # noqa: BLE001
                                 pass
                         safety_cards: list[dict] = []
                         if not replayed_write:
                             tool_executed_count += 1
+                            # 旁路给 _maybe_fast_route_tool_round: 一旦跑过工具, 后续 (合成) 轮
+                            # 即便仍带 tools 也不再降 fast (留在强模型产出医疗正文)。
+                            self._turn_any_tool_executed = True
 
                         # 写操作成功后内联安全检查。
                         # 注意: 软失败(如"未找到…"/"暂时没成功")不含 "Error" 字样, 旧逻辑会把
@@ -4113,6 +5178,12 @@ class AgentExecutor:
                             "content": result,
                         })
 
+                        # GenUI metric_table (rank1): 记下只读数据查询工具的
+                        # (name, args, result), 合成后确定性建表 (零 LLM)。仅在客户端
+                        # 声明 genui-table-v1 时追踪 (无 cap → 零开销)。
+                        if genui_table_on and func_name in _GENUI_TABLE_TOOLS:
+                            genui_tool_calls.append((func_name, parsed_tool_args, result))
+
                         # tool_result 事件给前端用. health_record 时附 args 让前端能识别
                         # 是哪种 record + 提取关键内容显示 summary 卡 (I Phase 2).
                         tool_event_data = {
@@ -4133,6 +5204,19 @@ class AgentExecutor:
                             tool_event_data["write_completed"] = write_completed
                             if write_attempted and not write_completed:
                                 tool_event_data["success"] = False
+                            if write_completed and func_name == "health_record" and not replayed_write:
+                                # Slice 3: 收集配方候选步骤 (只收成功写入的;
+                                # sanitize 剥 confirmed — 一次性确认绝不进模板)。
+                                try:
+                                    from app.services import procedure_recipe_service as _recipe_svc
+                                    recipe_candidate_steps.append({
+                                        "tool": func_name,
+                                        "args_template": _recipe_svc.template_step_args(
+                                            _recipe_svc.sanitize_step_args(parsed_tool_args)
+                                        ),
+                                    })
+                                except Exception as e:  # noqa: BLE001 — 候选收集失败不影响写主链路
+                                    logger.warning(f"[agent_executor] recipe candidate 收集失败: {e}")
                             if write_completed:
                                 receipt = _write_receipt_from_tool_result(
                                     func_name,
@@ -4251,23 +5335,33 @@ class AgentExecutor:
 
                     if unverified_write_tools:
                         final_finish_reason = "error"
-                        for i in range(0, len(_UNVERIFIED_WRITE_USER_MESSAGE), 20):
+                        # 部分成功要点名(write_receipts=本轮已验证写入),不一刀切否定
+                        _unverified_msg = _unverified_write_message(write_receipts)
+                        for i in range(0, len(_unverified_msg), 20):
                             yield {
                                 "event": "token",
                                 "data": {
-                                    "content": _UNVERIFIED_WRITE_USER_MESSAGE[i:i + 20]
+                                    "content": _unverified_msg[i:i + 20]
                                 },
                             }
-                        full_reply += _UNVERIFIED_WRITE_USER_MESSAGE
+                        full_reply += _unverified_msg
                         break
 
-                    # 硬门(诚实不变量):确定性"已记录…"回复只允许在本轮**真的执行过写工具**
-                    # 后出现 —— 只读工具(health_query 等)成功≠写入,谎报"已记录"比慢更糟。
-                    # 非写回合 fall through 到 continue,让下一轮 LLM 用工具结果作答。
+                    # 硬门(诚实不变量):确定性"已记录…"回复只允许在本轮产生了**可验证的写入回执**
+                    # (write_receipts,由 _write_tool_attempted / _write_receipt_from_tool_result 判定)
+                    # 后出现。名字级判断(工具名 ∈ {health_record, health_manage})会把 health_manage
+                    # 的 list/query(读,用来找记录 ID)误判为写 —— 2026-07-13 prod turn 6334 实锤:
+                    # 分析问句「从 HRV 记录…推断胃溃疡根因」被 _prefer_fast_record_model 误判为记录意图
+                    # (记录=名词命中 _RECORD_INTENT_RE),本轮只调 health_query×5 + health_manage(list),
+                    # 无任何写入(write_receipts=[]),却吐出假"✅ 已记录"+记录味兜底("请再说一次要改哪一条")。
+                    # 上面 unverified_write_tools 已先行拦掉"尝试写但无回执"的情形,故走到这里时
+                    # write_receipts 非空 ⟺ 本轮确有可验证写入。无回执 → fall through 到 continue,
+                    # 让下一轮 LLM 用工具结果作答(合成/查询直出),绝不谎报写入。
                     _round_executed_write_tool = any(
                         t in ("health_record", "health_manage") for t in _round_tool_names
                     )
-                    if self._prefer_fast_record_model and _round_executed_write_tool:
+                    _turn_had_verified_write = bool(write_receipts)
+                    if self._prefer_fast_record_model and _turn_had_verified_write:
                         combined_post_record_quality = combine_post_record_quality_responses(post_record_qualities)
                         final_text = (
                             str(combined_post_record_quality.get("reply") or "").strip()
@@ -4286,6 +5380,32 @@ class AgentExecutor:
                                 chunk = final_text[i:i + 20]
                                 yield {"event": "token", "data": {"content": chunk}}
                             full_reply += final_text
+                            break
+
+                    # 确定性查询直出 (Phase-2 rank2, flag 门控, ships-OFF): 镜像上面记录路径的
+                    # "确定性回复 + 跳过合成轮 break"。只对 fast-route 的**只读**查询回合 (非记录):
+                    # 本轮无写工具、执行过工具, 且本回合所有 health_query 结果都能被 top-5 维度
+                    # 格式化器覆盖 (且无安全告警后缀) → 从真实 tool result 渲染人话读数并 break,
+                    # 跳过强模型合成轮。任一未覆盖维度/写工具/安全后缀 → 短路返回 None,
+                    # fall-open 落到下方 continue 走正常合成 (fail-open: 宁可慢而对)。
+                    if (
+                        settings.deterministic_query_reply
+                        and self._fast_route_simple_turn
+                        and not self._prefer_fast_record_model
+                        and not _round_executed_write_tool
+                        and tool_executed_count > 0
+                    ):
+                        from app.services import query_readouts
+
+                        deterministic_query_text = query_readouts.deterministic_query_reply(messages)
+                        if deterministic_query_text:
+                            for i in range(0, len(deterministic_query_text), 20):
+                                chunk = deterministic_query_text[i:i + 20]
+                                yield {"event": "token", "data": {"content": chunk}}
+                            full_reply += deterministic_query_text
+                            # 最终答案路径 → finish_reason 对齐 'stop' (completion_status → complete),
+                            # 不留工具轮的 'tool_calls' 陈值 (镜像 rank7 passthrough 收尾)。
+                            final_finish_reason = "stop"
                             break
 
                     # 继续循环让模型处理 tool_result
@@ -4322,12 +5442,10 @@ class AgentExecutor:
                     # 回显(用户截图:记录后正文是 {"id":231,...} / {"record_date":...})。
                     # 整条是裸 JSON 且本轮确有工具结果 → 用工具结果合成"已记录…",绝不裸露。
                     if _looks_like_bare_tool_json(final_text):
-                        # 按本轮实际执行过的工具选兜底口径:有写工具 → "已记录…";
-                        # 只读回合 → 查询味自然语言(绝不能对查询谎报"✅ 已记录")。
-                        _turn_had_write_tool = any(
-                            t in ("health_record", "health_manage") for t in (tools_used or [])
-                        )
-                        if _turn_had_write_tool:
+                        # 按本轮兜底口径:**可验证写入回执**(write_receipts)才允许合成"已记录…";
+                        # 只读回合(含 health_manage 的 list/query)→ 查询味自然语言,绝不谎报"✅ 已记录"。
+                        # 名字级 tools_used ∋ health_manage 会把查 ID 的 list 误判为写(同 turn 6334 病根)。
+                        if write_receipts:
                             synthesized = _fast_record_reply_from_tool_results(messages)
                         else:
                             # 查询回合:绝不谎报"已记录"。工具结果无现成人话字段时给
@@ -4372,7 +5490,11 @@ class AgentExecutor:
                         if isinstance(retry_response, dict):
                             final_text = _append_interrupted_notice(final_text, retry_response.get("finish_reason"))
                         if not final_text.strip():
-                            final_text = _fallback_text_from_tool_results(messages)
+                            # 诚实不变量:兜底的"已完成记录/操作"口径只在本轮有可验证
+                            # 写入回执时允许;查询/分析回合(write_receipts 空)用查询味。
+                            final_text = _fallback_text_from_tool_results(
+                                messages, has_verified_write=bool(write_receipts),
+                            )
                         if not final_text.strip():
                             compact_messages = _build_compact_empty_retry_messages(messages)
                             logger.warning(
@@ -4431,6 +5553,15 @@ class AgentExecutor:
                                 first_token_at = time.time()
                             yield {"event": "token", "data": {"content": final_text}}
                     full_reply += final_text
+                    # rank7 shadow: 本轮就是被短路的目标(单次 orchestrator 深分析回合的二次合成)——
+                    # 记下这次二次合成轮壁钟 = passthrough 可省的时延。shadow 下行为不变(照跑),只观测。
+                    if (
+                        passthrough_mode == "shadow"
+                        and tool_executed_count == 1
+                        and passthrough_orch_calls == 1
+                        and passthrough_orch_text
+                    ):
+                        passthrough_synthesis_round_ms = _round_llm_gen_ms
                     # 2026-07-01: 无工具的最终答案轮 — per-round split (tool_exec_ms=0)。
                     rounds.append({
                         "llm_gen_ms": _round_llm_gen_ms,
@@ -4512,6 +5643,27 @@ class AgentExecutor:
                 user_id,
                 (message or "")[:80],
             )
+        # GenUI metric_table (rank1): 合成完成后, 把本回合只读数据查询结果确定性打成
+        # reva-ui 表格卡片, 追加到答案末尾 (镜像图表 "叙事在前、卡片在后" 的顺序)。
+        # 数值全部来自工具结果具名字段 (R4); 在 _strip_reva_ui_from_llm_text **之后**追加
+        # → 确定性 fence 不会被防伪造剥离器吃掉。fail-open: 无表/任何异常 → 逐字节现状。
+        if genui_table_on and genui_tool_calls:
+            try:
+                from app.services.genui import (
+                    build_tables_from_tool_calls,
+                    render_metric_table_block,
+                )
+                for _tbl in build_tables_from_tool_calls(genui_tool_calls):
+                    _fence = render_metric_table_block(_tbl)
+                    _chunk = f"\n\n{_fence}" if full_reply.strip() else _fence
+                    if first_token_at is None:
+                        first_token_at = time.time()
+                    yield {"event": "token", "data": {"content": _chunk}}
+                    full_reply += _chunk
+            except Exception as e:  # noqa: BLE001 — 建表/emit 失败绝不断回合
+                logger.warning(
+                    "[agent_executor] GenUI metric_table build/emit failed: %s", e
+                )
         ai_msg = svc.save_message(
             conv.id,
             "assistant",
@@ -4582,8 +5734,70 @@ class AgentExecutor:
             else []
         )
 
+        # Slice 3: 一轮完成 ≥2 个写类工具 → done 附 save_recipe 描述符 (仅描述符,
+        # 移动端渲染"存为配方"入口)。候选步骤持久化到 message.meta.recipe_candidate,
+        # save-from-conversation 端点从这里反推 —— 不重放对话、不经 LLM。
+        recipe_candidate_meta: Optional[Dict[str, Any]] = None
+        if completion_status == "complete" and len(recipe_candidate_steps) >= 2:
+            try:
+                from app.services import procedure_recipe_service as _recipe_svc
+
+                recipe_candidate_meta = {
+                    "steps": recipe_candidate_steps,
+                    "step_count": len(recipe_candidate_steps),
+                }
+                save_recipe_card = {
+                    "type": "save_recipe",
+                    "data": {
+                        "conversation_id": conv.id,
+                        "step_count": len(recipe_candidate_steps),
+                        "steps_preview": [
+                            _recipe_svc.step_label(step)
+                            for step in recipe_candidate_steps
+                        ],
+                    },
+                    "actions": [],
+                }
+                response_cards = _merge_agent_card_descriptors(
+                    response_cards, [save_recipe_card]
+                )
+                yield {
+                    "event": "card",
+                    "data": {
+                        "anchor": "save_recipe",
+                        "descriptor": save_recipe_card,
+                    },
+                }
+            except Exception as e:  # noqa: BLE001 — 配方入口失败不影响回合收尾
+                logger.warning(f"[agent_executor] save_recipe 描述符构建失败: {e}")
+                recipe_candidate_meta = None
+
         # 后置校验 (#3 护栏): record 意图的 turn 却 0 次工具执行时,前面已改写为
         # 用户可见的 fail-closed 文案;这里继续把标记写入 meta/done 供监控使用。
+
+        # P1 数字锚定核验(shadow): 观测最终答案里的个人数值能否锚定到 Twin。additive
+        # 摘要进 meta + done, 客户端不读不炸。内部全 fail-soft, 绝不打死回合。
+        citation_anchor = _citation_anchor_shadow_meta(self.db, user_id, full_reply)
+
+        # rank7: passthrough 观测/标记进 meta(offline judge 读)。shadow 落 would-be
+        # passthrough 文本(截 4000 char)+ 两侧壁钟;on 落一个轻量 taken 标记。
+        shadow_passthrough_meta: Optional[Dict[str, Any]] = None
+        if (
+            passthrough_mode == "shadow"
+            and passthrough_synthesis_round_ms is not None
+            and passthrough_orch_text
+        ):
+            shadow_passthrough_meta = {
+                "orchestrator_text": passthrough_orch_text[:4000],
+                "orchestrator_ms": orchestrator_tool_ms,
+                "final_text_ms": passthrough_synthesis_round_ms,
+            }
+        synthesis_passthrough_meta: Optional[Dict[str, Any]] = None
+        if passthrough_taken:
+            synthesis_passthrough_meta = {
+                "taken": True,
+                "orchestrator_ms": orchestrator_tool_ms,
+            }
 
         # 2026-05-14 FIX-7: 把性能 + 可解释性写到 message.meta, 用户回来 reload 能恢复 footer
         try:
@@ -4605,6 +5819,10 @@ class AgentExecutor:
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
                 "perf": perf,
+                **({"citation_anchor": citation_anchor} if citation_anchor else {}),
+                **({"recipe_candidate": recipe_candidate_meta} if recipe_candidate_meta else {}),
+                **({"shadow_passthrough": shadow_passthrough_meta} if shadow_passthrough_meta else {}),
+                **({"synthesis_passthrough": synthesis_passthrough_meta} if synthesis_passthrough_meta else {}),
                 "client_turn_finalized": True,
                 **({"client_turn_id": client_turn_id} if client_turn_id else {}),
             }
@@ -4635,10 +5853,230 @@ class AgentExecutor:
                 "completion_status": completion_status,
                 "record_intent_no_tool": record_intent_no_tool,
                 "perf": perf,
+                **({"citation_anchor": citation_anchor} if citation_anchor else {}),
+                **({"synthesis_passthrough": synthesis_passthrough_meta} if synthesis_passthrough_meta else {}),
                 "client_turn_finalized": True,
                 **({"client_turn_id": client_turn_id} if client_turn_id else {}),
             },
         }
+
+    async def _run_recipe_replay(
+        self,
+        recipe,
+        svc,
+        conv,
+        user_msg,
+        user_id: int,
+        user_auth_token: Optional[str],
+        client_turn_id: Optional[str],
+        start_time: float,
+    ) -> AsyncGenerator[Dict, None]:
+        """Slice 3: 配方确定性重放 — 存好的工具序列逐步执行, 零 LLM。
+
+        R4 不变量 (与直接调用完全一致, 见 procedure_recipe_service.replay):
+        - 每步过 _auto_confirm_fast_record_args 同一确认门 (AUTO/typed_only/
+          never_auto 原样生效); never_auto kind 重放返回 [NEEDS_CONFIRMATION]
+          且**不写库**, 回复里如实告知 —— 绝不静默注入 confirmed。
+        - args_template 只做确定性填充 ({{today}} → 当天), 无 LLM 改参。
+        - 写步骤沿用主路径的 write checkpoint (in_flight → dispatch 状态),
+          replacement worker 不会重复写。
+        """
+        from app.services import procedure_recipe_service as recipe_svc
+
+        yield {"event": "agent_start", "data": {
+            "message": f"按配方「{recipe.name}」执行...",
+            "conversation_id": conv.id,
+        }}
+
+        tools_used: List[str] = []
+        write_receipts: List[Dict[str, Any]] = []
+        step_lines: List[str] = []
+        record_cards: list[dict] = []
+        needs_confirmation_labels: List[str] = []
+        any_write_completed = False
+        step_meta: List[Dict[str, Any]] = []
+
+        self._http_client = httpx.AsyncClient(timeout=90.0)
+        try:
+            async for outcome in recipe_svc.replay(
+                recipe, self,
+                user_auth_token=user_auth_token,
+                channel=self._turn_channel,
+            ):
+                tool = outcome.get("tool") or ""
+                args = outcome.get("args") or {}
+                index = outcome.get("step_index")
+                if outcome.get("phase") == "start":
+                    if tool and tool not in tools_used:
+                        tools_used.append(tool)
+                    yield {"event": "tool_call", "data": {
+                        "tool": tool,
+                        "args": json.dumps(args, ensure_ascii=False),
+                        "round": 1,
+                    }}
+                    yield self._status_event(
+                        "tool", detail=_tool_status_label(tool), round=1
+                    )
+                    yield self._progress_event(
+                        "tool", round=1, label=_tool_progress_label(tool)
+                    )
+                    if _write_tool_attempted(tool, args):
+                        self._persist_turn_write_state(
+                            user_msg,
+                            status="in_flight",
+                            tool_name=tool,
+                            parsed_args=args,
+                        )
+                    continue
+
+                # phase == "result"
+                result = outcome.get("result") or ""
+                needs_confirmation = bool(outcome.get("needs_confirmation"))
+                step_failed = bool(outcome.get("error"))
+                label = recipe_svc.step_label({"tool": tool, "args_template": args})
+                write_attempted = _write_tool_attempted(tool, args)
+                write_completed = _write_tool_completed(tool, args, result)
+                receipt = None
+                if write_completed:
+                    any_write_completed = True
+                    receipt = _write_receipt_from_tool_result(
+                        tool,
+                        args.get("record_type") or args.get("type"),
+                        result,
+                    )
+                    if receipt and not any(
+                        item.get("operation_id") == receipt.get("operation_id")
+                        for item in write_receipts
+                    ):
+                        write_receipts.append(receipt)
+                    card = _health_record_card_descriptor(
+                        args.get("record_type") or args.get("type"),
+                        args.get("data") or {},
+                        result,
+                    )
+                    if card:
+                        record_cards.append(card)
+                if write_attempted:
+                    self._persist_turn_write_state(
+                        user_msg,
+                        status=_write_checkpoint_status_after_dispatch(result, receipt),
+                        tool_name=tool,
+                        parsed_args=args,
+                        receipt=receipt,
+                    )
+
+                tool_event_data: Dict[str, Any] = {
+                    "tool": tool,
+                    "success": not result.startswith("Error"),
+                    "preview": result[:200],
+                    "result": result,
+                    "write_attempted": write_attempted,
+                    "write_completed": write_completed,
+                    "recipe_step": index,
+                }
+                if receipt:
+                    tool_event_data["receipt"] = receipt
+                if write_attempted and not write_completed:
+                    tool_event_data["success"] = False
+                yield {"event": "tool_result", "data": tool_event_data}
+
+                if needs_confirmation:
+                    needs_confirmation_labels.append(label)
+                    step_lines.append(f"⏸ 第{index}步 {label} — 需要你确认后才能写入")
+                elif step_failed or (write_attempted and not write_completed):
+                    step_lines.append(f"❌ 第{index}步 {label} — 没有成功写入")
+                else:
+                    step_lines.append(f"✅ 第{index}步 {label} — 已记录")
+                step_meta.append({
+                    "step_index": index,
+                    "tool": tool,
+                    "needs_confirmation": needs_confirmation,
+                    "write_completed": write_completed,
+                })
+        except Exception as e:  # noqa: BLE001 — 重放异常 fail-loud 呈现, 不装成功
+            logger.error(f"[agent_executor] recipe replay failed: {e}", exc_info=True)
+            step_lines.append("❌ 配方执行中断: 出现内部错误, 未完成的步骤没有写入")
+        finally:
+            if self._http_client:
+                await self._http_client.aclose()
+                self._http_client = None
+
+        # 写后安全检查 (与主路径同源: 确定性 SafetyGuardian, 与模型无关)
+        safety_suffix = ""
+        safety_cards: list[dict] = []
+        if any_write_completed:
+            try:
+                from app.twin.builder import build_twin
+                from app.agents.safety_guardian import evaluate_safety
+
+                twin = build_twin(self.db, user_id, use_cache=True)
+                report = evaluate_safety(twin)
+                critical = [a for a in report.alerts if int(a.severity) >= 3]
+                if critical:
+                    alert_msgs = "; ".join(a.title for a in critical[:3])
+                    safety_suffix = f"\n\n⚠️ 安全提示: {alert_msgs}"
+                    safety_cards = [
+                        card for card in (
+                            _safety_alert_card_descriptor(a) for a in critical[:3]
+                        )
+                        if card
+                    ]
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Safety check after recipe replay failed: {e}")
+
+        reply_parts = [f"按配方「{recipe.name}」执行了 {len(step_lines)} 步:"]
+        reply_parts.extend(step_lines)
+        if needs_confirmation_labels:
+            reply_parts.append(
+                "需要确认的步骤没有写入。想补上的话, 请把那条记录单独发给我确认一次。"
+            )
+        full_reply = "\n".join(reply_parts) + safety_suffix
+
+        try:
+            recipe_svc.increment_use_count(self.db, recipe)
+        except Exception as e:  # noqa: BLE001 — 计数失败不打死回合, 但可观测
+            logger.warning(f"[agent_executor] recipe use_count 更新失败: {e}")
+
+        yield {"event": "token", "data": {"content": full_reply}}
+
+        ai_msg = svc.save_message(
+            conv.id,
+            "assistant",
+            full_reply,
+            client_turn_id=client_turn_id,
+            client_turn_user_id=user_id,
+        )
+        conv.updated_at = datetime.now(UTC)
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        response_cards = _merge_agent_card_descriptors(record_cards, safety_cards)
+        meta_payload: Dict[str, Any] = {
+            "elapsed_ms": elapsed_ms,
+            "llm_ms": 0,
+            "llm_rounds": 0,
+            "llm_rounds_ms": [],
+            "model": None,
+            "mode": "recipe_replay",
+            "recipe": {"id": recipe.id, "name": recipe.name},
+            "recipe_steps": step_meta,
+            "sources_used": ["程序性配方"],
+            "tools_used": tools_used,
+            "write_receipts": write_receipts,
+            "cards": response_cards,
+            "completion_status": "complete",
+            "client_turn_finalized": True,
+            **({"client_turn_id": client_turn_id} if client_turn_id else {}),
+        }
+        try:
+            ai_msg.meta = meta_payload
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[agent_executor] recipe replay meta 写入失败: {e}")
+        self.db.commit()
+
+        yield {"event": "done", "data": {
+            "conversation_id": conv.id,
+            "message_id": ai_msg.id,
+            **meta_payload,
+        }}
 
     @staticmethod
     def _upload_chat_image(
@@ -4679,8 +6117,23 @@ class AgentExecutor:
             logger.debug(f"[Vision] primary model image capability check skipped: {e}")
             return False
 
+    def _should_preprocess_attached_images(self, user_id: int, message: str) -> bool:
+        """Keep food-photo sanitation/calibration ahead of every primary model.
+
+        Commercial multimodal models may receive general images directly, but
+        diet writes require the same deterministic structured path as every
+        other provider so provider choice cannot change persistence accuracy.
+        """
+        return (
+            not self._should_send_raw_images_to_primary_model(user_id)
+            or self._looks_like_food_photo_context(message)
+            or self._is_default_image_analysis_prompt(message)
+            or self._looks_like_image_record_intent(message)
+        )
+
     def _build_system_prompt(
-        self, user_id: int, conv_id: int, user_auth_token: Optional[str], lite: bool = False
+        self, user_id: int, conv_id: int, user_auth_token: Optional[str],
+        lite: bool = False, intent_query: Optional[str] = None,
     ) -> str:
         """构建统一 Agent 的 system prompt。
 
@@ -4733,42 +6186,9 @@ class AgentExecutor:
             "- 严重异常（HRV持续偏低、SpO2<92%、血压异常）→ 建议就医",
             "- 涉及药物的建议：附加'请咨询医生'免责声明",
             "",
-            "## 基因解读规则（必须遵守）",
-            "- 标记为[优势]的基因是保护性基因，不要误判为需要干预的风险基因",
-            "- FADS1 TT = 东亚高效转化型，植物源Omega-3转化能力强，是优势基因",
-            "- SOD2 AA(Ala/Ala) = MnSOD线粒体转运效率高，是优势基因",
-            "- GPX1 GG = 谷胱甘肽过氧化物酶活性正常，不需要额外干预",
-            "- ⚠️用药安全基因必须优先展示和警告（CYP2D6慢代谢→止痛药危险、SLCO1B1 CT→他汀肌病风险）",
-            "- 补剂推荐必须交叉参考体检历史（肾结石→维D/钙谨慎、肝功异常→某些补剂禁忌）",
-            "- 补剂剂量不能简单按mg数比较不同剂型（如MitoQ 5mg ≈ 线粒体内CoQ10 200-500mg）",
-            "- 补剂受法规限制剂量时（如钾99mg/粒），优先推荐饮食策略而非加量",
-            "",
-            "## 菜单输出 (可分享卡片)",
-            "用户问'今晚吃啥/明天早餐/给我个晚餐建议/三餐怎么吃'类问题时,",
-            "在正常文字回复**之外**, 额外附一段 fenced JSON 代码块, 标识为 menu_share,",
-            "前端会自动渲染成可分享给家人的卡片 (微信/朋友圈分享):",
-            "",
-            "```menu_share",
-            "{",
-            '  "title": "今晚晚餐建议",',
-            '  "reason": "晚上控碳, 蛋白 50g+ 帮助 HRV 恢复",',
-            '  "items": [',
-            '    {"name": "鸡胸肉", "qty": "200g", "kcal": 220, "protein": 46},',
-            '    {"name": "糙米饭", "qty": "150g", "kcal": 175, "carbs": 38},',
-            '    {"name": "西兰花", "qty": "200g", "kcal": 70, "fiber": 5}',
-            "  ],",
-            '  "totals": {"kcal": 465, "protein": 52, "carbs": 48, "fat": 12},',
-            '  "shopping_list": ["鸡胸肉 200g", "糙米 1 杯", "西兰花 1 颗"]',
-            "}",
-            "```",
-            "",
-            "约束:",
-            "- title 必填 8 字以内 (如'今晚晚餐建议'/'明天早餐')",
-            "- items 必填 3-6 个食材, 每项 name 必填, qty/kcal 尽量给",
-            "- totals 给当餐总和, shopping_list 是给家人买菜的清单",
-            "- 只在用户明确要餐食/菜单建议时输出, 普通营养咨询不要输出",
-            "- JSON 必须 valid, 不要 trailing comma, 不要注释",
-            "",
+            # 意图门控(token 优化 #5):命中/未知才发,与旧行为逐字节一致
+            *(_GENE_RULES_PROMPT_BLOCK if _wants_gene_rules_block(intent_query) else ()),
+            *(_MENU_SHARE_PROMPT_BLOCK if _wants_menu_share_block(intent_query) else ()),
             "## 安全与边界 (R4 — 必须严格遵守)",
             "- 解读异常指标/给健康建议时,先调用 knowledge_search 取依据;无命中就如实说明依据来自通用知识,**绝不编造引用或具体研究**。",
             "- **不得把补剂/保健品作为针对某指标异常的治疗或\"护X\"方案推荐**(例:不得说\"姜黄素/NAC 护肝\")。补剂相关一律表述为\"是否需要请医生评估\";任何剂量数字必须注明\"须医生确认\"。",
@@ -4796,7 +6216,9 @@ class AgentExecutor:
             from app.services.health_context_lite_service import (
                 build_lite_health_context, _get_time_period,
             )
-            health_ctx = build_lite_health_context(self.db, user_id)
+            # P2 意图分级: intent_query 存在时按纯知识 vs 个人判读裁剪个人上下文预算;
+            # None (默认 / 多模型综合入口) → 全量注入, 零回归。
+            health_ctx = build_lite_health_context(self.db, user_id, intent=intent_query)
             if health_ctx:
                 parts.append("\n## 用户健康档案")
                 parts.append(health_ctx)
@@ -4884,15 +6306,9 @@ class AgentExecutor:
             except Exception as e:
                 logger.warning(f"Agent 干预效应估计注入失败: {e}")
 
-            # 注入记忆
-            try:
-                from app.services.conversation_memory_service import get_relevant_memories
-                memories = get_relevant_memories(self.db, user_id, limit=5)
-                if memories:
-                    parts.append("\n## 用户记忆")
-                    parts.append(memories)
-            except Exception:
-                pass
+            # 记忆已由 build_lite_health_context(lite/full 都调,见 health_context_lite_service
+            # 的「用户历史记忆」段)注入一次,自带 "用户历史记忆:" 标签 —— 此处曾重复注入 limit=5,
+            # 造成同一批记忆进 prompt 两遍 + 一次冗余 DB 往返。去重(零信息损失,记忆仍在)。
 
         # 告诉 LLM 自己是哪个模型 — 用户问 "你是什么模型" 时如实答
         try:
@@ -4940,7 +6356,33 @@ class AgentExecutor:
         return self._render_system_knowledge_evidence_card_for_prompt(evidence_card)
 
     def _build_system_knowledge_evidence_card(self, user_id: int, message: str) -> dict | None:
-        """Return the system-KB evidence card for this chat turn.
+        """Per-turn memoized system-KB evidence card (A4, plan rank9).
+
+        The card was computed twice per turn — pre-round-1 (prompt grounding) and
+        again at `done` (UI card) — each potentially triggering a full
+        build_twin(use_cache=False) rebuild that delays `done`/receipts and
+        `/send` replies. Memoize per (user_id, message): pre-round-1 computes and
+        caches; `done` reuses it. If a Twin-mutating write happened this turn
+        (_turn_twin_write_occurred), the cache is bypassed so the done-time card
+        reflects the post-write Twin (rebuilt once). The compute path keeps
+        use_cache=False, so the rebuild-on-write is always fresh regardless of
+        which write endpoints invalidate the Twin cache — see
+        _compute_system_knowledge_evidence_card.
+        """
+        key = (user_id, message)
+        if (
+            self._turn_evidence_card is not _TURN_CARD_UNSET
+            and self._turn_evidence_card_key == key
+            and not self._turn_twin_write_occurred
+        ):
+            return self._turn_evidence_card
+        card = self._compute_system_knowledge_evidence_card(user_id, message)
+        self._turn_evidence_card = card
+        self._turn_evidence_card_key = key
+        return card
+
+    def _compute_system_knowledge_evidence_card(self, user_id: int, message: str) -> dict | None:
+        """Compute the system-KB evidence card for this chat turn (no memo).
 
         Prefer explicit message mentions so direct gene questions produce the
         most relevant card. If the message has no explicit entity, fall back to
@@ -4970,8 +6412,14 @@ class AgentExecutor:
             from app.twin.builder import build_twin
 
             # Chat prompt grounding must reflect the latest imported labs/genes.
-            # Cached Twin can be stale immediately after upload/import and then
-            # the system KB evidence block silently disappears.
+            # Cached Twin can be stale immediately after upload/import (those
+            # endpoints do not all invalidate the Twin cache), and then the
+            # system KB evidence block silently disappears. A4 keeps use_cache=
+            # False here on purpose (the common health_record POST endpoints —
+            # water/weight/BP/diet/supplement — do NOT invalidate the Twin cache,
+            # so use_cache=True would serve a stale pre-write Twin). The A4 perf
+            # win comes from the per-turn memo above (dedup the double build), not
+            # from a cache flip; correctness is unconditional.
             twin = build_twin(self.db, user_id, use_cache=False)
             return build_evidence_card_for_twin(
                 self.db,
@@ -5100,6 +6548,19 @@ class AgentExecutor:
         # a tool-mode request and can return content="" with finish_reason="stop".
         pass_tools = tools
 
+        # ──── 工具决策轮快路由 (延迟优化, flag 门控, fail-closed) ────
+        # 只把**工具决策轮** (本回合带 tools) 降到一个 fast + reliable_tool_calling 模型;
+        # 合成/答案轮 (round_tools=[] → pass_tools falsy) 恒不命中, 仍由质量模型生成医疗正文。
+        # 生产实测: 「我胃还有点痛,怎么办?」的 tool 轮 34s (qwen3.7-max reasoning) 主导时延,
+        # 但该轮只需吐一个 health_record 结构化 tool_call —— 不需要重推理模型。
+        # 该分支只改**默认/偏好模型**路径 (无显式 UI 选模型), 且 fail-closed:命中新档一律
+        # 换成 reliable_tool_calling 的 fast 模型, 无则维持现状。命中后 effective_model_id
+        # 更新为该 fast 模型, 下方工具门控/非流式判定据此运作。
+        if pass_tools:
+            fast_tool = self._maybe_fast_route_tool_round(effective_model_id)
+            if fast_tool is not None:
+                provider, effective_model_id = fast_tool
+
         # ──── 工具调用能力门控 (从源头减少弱模型吐坏工具调用; #147/#161 兜底解析仍在) ────
         # 仅当本回合确实要传 tools 且已确定的 effective_model 不可靠时, 才换一个可靠模型。
         # 拿不准 (effective_model_id=None / 未注册) → 保守不动, 依赖兜底解析。
@@ -5112,6 +6573,83 @@ class AgentExecutor:
 
         self._last_effective_model_id = effective_model_id
         return provider, pass_tools
+
+    def _maybe_fast_route_tool_round(self, effective_model_id: Optional[str]):
+        """工具决策轮 → fast + reliable_tool_calling 模型 (flag 门控, fail-closed)。
+
+        命中时返回 (fast_provider, fast_model_id);不命中 → None (维持现状,零变更)。
+
+        触发条件 (全部满足):
+          1. settings.task_tiered_routing 开 (flag off → 恒 None = 逐字节现状);
+          2. 非既有整轮快路由 (_prefer_fast_record_model / _fast_route_simple_turn):
+             那两条已把整轮 (含合成) 降到 fast, 不再叠加;
+          3. task_routing 里 "tool_routing" 档确被授权降 fast (单一真源不变量);
+          4. 存在一个 fast 档的 reliable_tool_calling=True 可用模型。
+        任一不满足 → None。这样 fast 模型吐坏工具调用时, 既有 tool-turn failover +
+        #147/#161 三层兜底解析仍是安全网 (被换后的 fast 模型走同一 _call_llm/_stream 路径)。
+
+        A1 (2026-07-12, 生产 190/231 回合此前零路由): 显式 UI 选模型 (_request_model_id)
+        **不再豁免**本快路由。工具决策轮是不可见的内部决策 (mac/mobile 分别显示 回答/工具
+        两个模型), 「选择器显示什么就用什么」只约束**面向用户的答案轮**, 不约束工具轮。
+        安全边界仍由 _turn_any_tool_executed 门守住: 只有**首个工具决策轮** (尚无工具执行)
+        才降 fast; 一旦跑过工具, 后续合成/答案轮恒返回 None → 落在显式选定的强模型上产出
+        医疗正文。fast 轮若直接答文本 → 既有丢弃+强模型重合成兜底 (面向用户正文绝不来自 fast)。
+        """
+        from app.config import settings
+
+        if not getattr(settings, "task_tiered_routing", False):
+            return None
+        # 不叠加既有整轮快路由 (那两条已把含合成的整轮降 fast)。显式 UI 选模型不在此
+        # 豁免 —— 只有下面 _turn_any_tool_executed 门放行的**首个工具决策轮**会被降 fast,
+        # 答案轮由该门 + round_tools=[] 保证仍落在显式模型上。
+        if self._prefer_fast_record_model or self._fast_route_simple_turn:
+            return None
+        # 只降**首个工具决策轮**: 默认路径下合成轮仍带 tools, 一旦跑过工具就留强模型
+        # (安全: 工具后那一轮多半是写医疗正文的合成轮)。首轮直接答文本→安全兜底丢弃重合成。
+        if self._turn_any_tool_executed:
+            return None
+        try:
+            from app.services.llm.task_routing import _FAST_ELIGIBLE_TIERS
+            from app.services.llm.model_registry import (
+                pick_reliable_tool_model_id,
+                get_model,
+            )
+        except Exception:  # noqa: BLE001 — 快路由不可用绝不断主链路
+            return None
+        # 单一真源不变量:该内部档必须被显式授权降 fast, 否则不走 (防有人偷偷去授权后此处失守)。
+        if "tool_routing" not in _FAST_ELIGIBLE_TIERS:
+            return None
+        # 具体模型必须 reliable_tool_calling=True (tool 轮几乎必调工具, 不会调工具的快模型
+        # 会静默丢数据) 且真是 fast 档。pick_reliable_tool_model_id(near="fast") 优先 fast 档
+        # 的可靠模型;拿到后再核 speed_tier=="fast", 不是则视为无可用 fast → 维持现状。
+        try:
+            fast_id = pick_reliable_tool_model_id(near_speed_tier="fast")
+        except Exception:  # noqa: BLE001
+            return None
+        if not fast_id or fast_id == effective_model_id:
+            return None
+        entry = get_model(fast_id)
+        if entry is None or entry.speed_tier != "fast" or not entry.reliable_tool_calling:
+            # 无 fast 档可靠模型 (只回退到 balanced/reasoning) → 不做快路由, fail-open 现状。
+            return None
+        try:
+            from app.services.llm.factory import create_provider_for_model_id
+            provider = create_provider_for_model_id(fast_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "[agent_executor] tool-round fast route %s unavailable, keep default: %s",
+                fast_id, e,
+            )
+            return None
+        # 标记本轮为 fast 工具决策轮: 调用方 (run_stream 主循环) 据此
+        # (a) 不 live 下发该轮 content; (b) 该轮无 tool_calls 直接答文本时丢弃并在强模型重合成。
+        self._tool_round_fast_routed = True
+        self._record_model_fallback_reason("tool_round_fast_routed")
+        logger.info(
+            "[agent_executor] tool-round fast route: %s -> %s (user=%s)",
+            effective_model_id, fast_id, self._current_user_id,
+        )
+        return provider, fast_id
 
     def _user_effective_model_id(self) -> Optional[str]:
         """复算 create_provider_for_user 选中的 model_id (admin global / user pref),
@@ -5259,6 +6797,44 @@ class AgentExecutor:
         self._last_provider_model_name = getattr(provider, "model", None) or "tokenplan(fallback)"
         return provider
 
+    def _messages_for_round(self, messages: List[Dict]) -> List[Dict]:
+        """本轮实际发给 LLM 的消息栈 (在 _resolve_chat_provider 之后调用)。
+
+        三条路径, 互斥、优先级从上到下:
+          1. _prefer_fast_record_model (整轮记录快路由) → _build_fast_record_messages (现状不变);
+          2. **本轮**被工具决策轮快路由 (_tool_round_fast_routed=True) 且已备好 lite 栈 →
+             用 lite 栈 (省 ~14k→<4k prefill; 见 _build_lite_tool_round_messages)。该分支与
+             (1) 互斥: _maybe_fast_route_tool_round 在 _prefer_fast_record_model 时恒返回 None,
+             故 _tool_round_fast_routed 不会与 _prefer_fast_record_model 同真;
+          3. 否则 → 全量栈 (合成/答案轮、非快路由轮、快路由失守时全走这条 = 逐字节现状)。
+
+        _tool_round_fast_routed 由 _resolve_chat_provider→_maybe_fast_route_tool_round 每轮设置,
+        并在主循环轮首重置 → 合成/答案轮 (round_tools=[] → 不触发快路由) 恒走全量栈。
+        """
+        if self._prefer_fast_record_model:
+            return _build_fast_record_messages(messages)
+        if self._tool_round_fast_routed and self._lite_tool_round_messages is not None:
+            return self._lite_tool_round_messages
+        return messages
+
+    def _log_prompt_prefix_signature(self, round_messages: List[Dict], provider: Any) -> None:
+        """每次 LLM 调用记一行前缀指纹 (Phase-2 rank3 第0步, 仅观测, 绝不断业务)。"""
+        try:
+            sig = _prompt_prefix_signature(round_messages)
+            model_name = (
+                getattr(provider, "model", None)
+                or getattr(provider, "provider_name", None)
+                or "unknown"
+            )
+            logger.info(
+                "[agent_executor] llm_prefix model=%s sys_hash=%s prefix_hash=%s "
+                "prefix_chars=%d total_chars=%d approx_tokens=%d",
+                model_name, sig["system_hash"], sig["prefix_hash"],
+                sig["prefix_chars"], sig["total_chars"], sig["approx_tokens"],
+            )
+        except Exception:  # noqa: BLE001 — 观测层绝不断业务
+            pass
+
     async def _call_llm(
         self, messages: List[Dict], tools: List[Dict],
     ) -> Any:
@@ -5276,8 +6852,12 @@ class AgentExecutor:
             return await self._call_llm_direct(messages, tools, model, agent_base, agent_key)
 
         provider, pass_tools = self._resolve_chat_provider(tools)
+        # 消息栈选择 (fast-record 压缩 / fast 工具决策轮 lite / 全量) — 见 _messages_for_round。
+        # 必须在 _resolve_chat_provider 之后 (它设置 _tool_round_fast_routed)。
+        round_messages = self._messages_for_round(messages)
+        self._log_prompt_prefix_signature(round_messages, provider)
         chat_kwargs = {
-            "messages": messages,
+            "messages": round_messages,
             "model": None,
             "temperature": 0.3,
             "max_tokens": ANSWER_MAX_TOKENS,
@@ -5286,8 +6866,13 @@ class AgentExecutor:
         }
         if pass_tools:
             chat_kwargs["tools"] = pass_tools
-        if self._prefer_fast_record_model:
-            chat_kwargs["messages"] = _build_fast_record_messages(messages)
+            # 并行工具调用(rank5, ships-OFF): 仅当携带 tools 时才带该参数(无 tools 带会
+            # SDK 报错);flag 关时 payload 逐字节不变。
+            if getattr(settings, "llm_parallel_tool_calls", False):
+                chat_kwargs["parallel_tool_calls"] = True
+        # 显式上下文缓存(rank3, ships-OFF): 工具决策轮 + 合成轮都受益(工具轮写 system 缓存、
+        # 合成轮命中), 故不分 tools 无条件门控。flag 关 / 模型未验证时不设 kwarg = 逐字节不变。
+        self._maybe_apply_prompt_cache_markers(chat_kwargs)
         self._last_provider_model_name = (
             getattr(provider, "model", None)
             or getattr(provider, "default_model", None)
@@ -5339,9 +6924,12 @@ class AgentExecutor:
             return
 
         provider, pass_tools = self._resolve_chat_provider(tools)
+        # 消息栈选择 (fast-record 压缩 / fast 工具决策轮 lite / 全量) — 见 _messages_for_round。
+        # 必须在 _resolve_chat_provider 之后 (它设置 _tool_round_fast_routed)。
+        round_messages = self._messages_for_round(messages)
+        self._log_prompt_prefix_signature(round_messages, provider)
         stream_kwargs: Dict[str, Any] = {
-            "messages": _build_fast_record_messages(messages)
-            if self._prefer_fast_record_model else messages,
+            "messages": round_messages,
             "model": None,
             "temperature": 0.3,
             # fast-routed 简单回合把答案 token 收紧到 2000 (长尾解码是延迟一部分),
@@ -5350,6 +6938,17 @@ class AgentExecutor:
         }
         if pass_tools:
             stream_kwargs["tools"] = pass_tools
+            # 并行工具调用(rank5, ships-OFF): 仅当携带 tools 时才带(无 tools 带会 SDK
+            # 报错);flag 关时 payload 逐字节不变。
+            if getattr(settings, "llm_parallel_tool_calls", False):
+                stream_kwargs["parallel_tool_calls"] = True
+        else:
+            # 合成/答案轮(无 tools): 可选给 qwen 思考阶段封顶(flag 门控, fail-closed)。
+            # 只在这里调=天然只碰无工具的合成轮, 绝不碰工具决策轮。
+            self._maybe_apply_synthesis_thinking_budget(stream_kwargs)
+        # 显式上下文缓存(rank3, ships-OFF): 工具轮写 system 缓存、合成轮命中 → 两类轮都受益,
+        # 故不分 tools 无条件门控。flag 关 / 模型未验证时不设 kwarg = payload 逐字节不变。
+        self._maybe_apply_prompt_cache_markers(stream_kwargs)
         self._last_provider_model_name = (
             getattr(provider, "model", None)
             or getattr(provider, "default_model", None)
@@ -5404,6 +7003,78 @@ class AgentExecutor:
                 self._record_model_fallback_reason("selected_model_tool_stream_failed")
             async for evt in self._stream_via_stable_fallback(stream_kwargs, pass_tools):
                 yield evt
+
+    def _maybe_apply_synthesis_thinking_budget(self, stream_kwargs: Dict[str, Any]) -> None:
+        """合成/答案轮 → 给 qwen 思考阶段封顶(flag 门控, fail-closed)。
+
+        只在满足**全部**条件时给 stream_kwargs 注入 thinking_budget(否则 = 零行为变更):
+          1. settings.synthesis_thinking_budget > 0(默认 0 = 关);
+          2. 本回合 effective model 的 ModelEntry.supports_thinking_budget=True
+             (仅探针验证过该参数的 qwen 模型;未验证模型不传, 免端点 400 打死合成轮);
+          3. 本回合**未**调用 health_analysis(深度分析/安全裁决可能确实需要长思考 →
+             fail-closed 跳过, 保留完整思考)。
+        调用点已保证只在无 tools 的合成/答案轮触发, 故绝不碰工具决策轮。命中时
+        OpenAIProvider._apply_thinking_controls 把 thinking_budget 折进 extra_body。
+        fail-soft: 任何判定异常都不注入(=现状), 绝不断合成链路。
+        """
+        try:
+            from app.config import settings
+
+            budget = int(getattr(settings, "synthesis_thinking_budget", 0) or 0)
+            if budget <= 0:
+                return
+            if self._turn_invoked_deep_analysis:
+                return
+            model_id = self._last_effective_model_id
+            if not model_id:
+                return
+            from app.services.llm.model_registry import get_model
+
+            entry = get_model(model_id)
+            if entry is None or not getattr(entry, "supports_thinking_budget", False):
+                return
+            stream_kwargs["thinking_budget"] = budget
+            logger.info(
+                "[agent_executor] 合成轮思考封顶 model=%s thinking_budget=%d",
+                model_id,
+                budget,
+            )
+        except Exception:  # noqa: BLE001 — 延迟优化绝不断主链路
+            return
+
+    def _maybe_apply_prompt_cache_markers(self, call_kwargs: Dict[str, Any]) -> None:
+        """DashScope 显式上下文缓存(Phase-2 rank3, flag 门控, fail-closed)。
+
+        只在满足**全部**条件时给 call_kwargs 打显式缓存信号(否则 = 零行为变更, payload
+        逐字节不变):
+          1. settings.llm_explicit_prompt_cache(默认 False = 关);
+          2. 本回合 effective model 的 ModelEntry.supports_explicit_cache=True
+             (仅**真网络探针**验证过 cache_control 命中 + usage.cached_tokens 透传的
+             DashScope 模型;未验证模型不打标, 免端点拒/忽略无效断点)。
+        命中时只设 `prompt_cache_markers=True`(默认布局 = system + history_prefix 两断点);
+        真正的 cache_control 注入由 provider 侧 _maybe_mark_prompt_cache 按 role/position
+        在 append-only 边界完成(见 openai_provider + services/llm/prompt_cache.py)。
+        fail-soft: 任何判定异常都不打标(=现状), 绝不断链路。"""
+        try:
+            from app.config import settings
+
+            if not getattr(settings, "llm_explicit_prompt_cache", False):
+                return
+            model_id = self._last_effective_model_id
+            if not model_id:
+                return
+            from app.services.llm.model_registry import get_model
+
+            entry = get_model(model_id)
+            if entry is None or not getattr(entry, "supports_explicit_cache", False):
+                return
+            call_kwargs["prompt_cache_markers"] = True
+            logger.info(
+                "[agent_executor] 显式上下文缓存标记 model=%s (system+history_prefix 断点)",
+                model_id,
+            )
+        except Exception:  # noqa: BLE001 — 延迟优化绝不断主链路
+            return
 
     def _effective_model_is_non_streaming(self) -> bool:
         """本回合 _resolve_chat_provider 解析出的 effective model 是否结构性非流式。
@@ -5624,11 +7295,9 @@ class AgentExecutor:
         vision_model = settings.llm_vision_model or "qwen-vl-max"
         vision_messages: List[Dict[str, Any]] = [
             {"role": "system", "content": (
-                "你是一个食物识别助手。用户会发送食物照片，请你：\n"
-                "1. 识别图片中所有食物的名称和大致份量\n"
-                "2. 估算每种食物的热量(kcal)\n"
-                "3. 估算这顿饭的总热量\n"
-                "用简洁的中文回复，格式如：三文鱼150g(约250kcal)、黑米饭200g(约230kcal)、蔬菜100g(约30kcal)，总计约510kcal。"
+                "你是普通图片内容分析助手。客观描述图片中的主要对象、文字和场景。"
+                "不要估算食物热量或宏量营养，不要生成任何健康数据写入参数；"
+                "餐食的结构化识别由独立且可校准的链路负责。用简洁中文回复。"
             )},
             {"role": "user", "content": [
                 {"type": "text", "text": user_message or "请识别这张图片中的食物"},
@@ -5656,7 +7325,10 @@ class AgentExecutor:
             resp = await client.post(url, headers=headers, json=payload)
             if resp.status_code == 200:
                 data = resp.json()
-                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                description = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                if not description:
+                    return None
+                return f"普通图片描述（非结构化，不得据此写入饮食记录）: {description}"
             else:
                 logger.warning(f"[Vision] 图片分析失败: HTTP {resp.status_code} {resp.text[:200]}")
                 return None
@@ -5669,7 +7341,11 @@ class AgentExecutor:
         if not images:
             return None
         try:
-            from app.services.ai.food_recognition import food_recognition_service
+            from app.services.ai.food_recognition import (
+                food_recognition_service,
+                sanitize_food_recognition_result,
+            )
+            from app.services.food_nutrition_lookup import calibrate_recognized_foods
 
             summaries: List[str] = []
             errors: List[str] = []
@@ -5678,13 +7354,16 @@ class AgentExecutor:
                     img.get("base64") or "",
                     image_type=img.get("type", "jpeg"),
                 )
+                result = sanitize_food_recognition_result(result)
                 if result.get("success") and result.get("foods"):
+                    calibrate_recognized_foods(self.db, result["foods"])
+                    result = sanitize_food_recognition_result(result)
                     summaries.append(self._format_food_recognition_for_agent(user_message, result))
                 elif result.get("error"):
                     errors.append(str(result.get("error")))
             if summaries:
                 return "\n".join(summaries)
-            if self._food_recognition_found_no_food(errors):
+            if self._looks_like_food_photo_context(user_message) and self._food_recognition_found_no_food(errors):
                 return (
                     "结构化餐食识别结果: 图片中未识别到可记录的食物。"
                     "不要把截图里的营养卡、按钮、输入框或界面文字当作 food_items。"
@@ -5702,6 +7381,8 @@ class AgentExecutor:
     def _format_food_recognition_for_agent(self, user_message: str, result: Dict[str, Any]) -> str:
         meal_type = self._infer_meal_type_for_food_image(user_message)
         foods: List[str] = []
+        recognized_foods: List[Dict[str, Any]] = []
+        confidences: List[float] = []
         for food in result.get("foods") or []:
             if not isinstance(food, dict):
                 continue
@@ -5716,6 +7397,18 @@ class AgentExecutor:
             if isinstance(kcal, (int, float)):
                 parts.append(f"约{round(float(kcal))}kcal")
             foods.append(" ".join(parts))
+            recognized_foods.append({
+                key: food[key]
+                for key in (
+                    "name", "quantity", "quantity_grams", "calories", "protein",
+                    "carbs", "fat", "fiber", "confidence", "food_id", "source",
+                    "nutrition_basis",
+                )
+                if food.get(key) is not None
+            })
+            confidence = food.get("confidence")
+            if isinstance(confidence, (int, float)):
+                confidences.append(float(confidence))
         totals = {
             "calories": result.get("total_calories"),
             "protein": result.get("total_protein"),
@@ -5728,12 +7421,47 @@ class AgentExecutor:
             for key, value in totals.items()
             if isinstance(value, (int, float))
         )
+        record_data: Dict[str, Any] = {
+            "meal_type": meal_type,
+            "food_items": " + ".join(
+                " ".join(
+                    part for part in (
+                        str(food.get("name") or "").strip(),
+                        str(food.get("quantity") or "").strip(),
+                    )
+                    if part
+                )
+                for food in recognized_foods
+            ),
+            **{
+                key: value
+                for key, value in totals.items()
+                if isinstance(value, (int, float))
+            },
+            "ai_recognized": 1,
+            "ai_raw_result": {
+                "recognition_version": "food_table_calibration_v1",
+                "foods": recognized_foods,
+            },
+        }
+        if confidences:
+            record_data["ai_confidence"] = round(sum(confidences) / len(confidences), 3)
+        sources = {str(food.get("source")) for food in recognized_foods if food.get("source")}
+        if len(sources) == 1:
+            record_data["source"] = next(iter(sources))
+        elif sources:
+            record_data["source"] = "mixed"
+        if len(recognized_foods) == 1 and recognized_foods[0].get("food_id"):
+            record_data["food_id"] = recognized_foods[0]["food_id"]
+
+        record_json = json.dumps(record_data, ensure_ascii=False)
         return (
             "结构化餐食识别结果: "
             f"meal_type={meal_type}; foods={' + '.join(foods)}; totals({total_text}). "
+            f"准确写入参数: {record_json}。"
             "如果用户意图是记录饮食, 请调用 health_record(record_type='diet', "
-            "data={meal_type, food_items, calories, protein, carbs, fat, fiber, "
-            "source:'chat_photo', ai_recognized:1})。"
+            "data=准确写入参数), 仅按用户明确修正的内容改动。"
+            "food_items 只能使用真实食物名称和份量, 绝对不要包含营养卡、保存并确认、今日饮食等界面文案。"
         )
 
     @staticmethod
@@ -5755,6 +7483,30 @@ class AgentExecutor:
         if hour < 20:
             return "dinner"
         return "snack"
+
+    def _looks_like_food_photo_context(self, user_message: str) -> bool:
+        text = user_message or ""
+        if not text.strip():
+            return True
+        return bool(re.search(r"食物|饮食|餐|饭|吃|热量|卡路里|蛋白|碳水|脂肪|kcal|calorie", text, re.I))
+
+    @staticmethod
+    def _is_default_image_analysis_prompt(user_message: str) -> bool:
+        normalized = re.sub(r"[\s。.!！?？]+", "", user_message or "").lower()
+        return normalized in {
+            "请分析这些图片",
+            "请分析这张图片",
+            "分析这些图片",
+            "分析这张图片",
+        }
+
+    @staticmethod
+    def _looks_like_image_record_intent(user_message: str) -> bool:
+        return bool(re.search(
+            r"记录(?:一下|下)?|帮我记(?:一下|下)?|记下来|打卡|录入|保存(?:一下|下)?|\b(?:log|record|save)\b",
+            user_message or "",
+            re.I,
+        ))
 
     async def _try_import_medical_report_images(self, user_id: int, images: List[dict]) -> Optional[str]:
         """Detect lab-report images in chat, persist recognized indicators, and summarize.
@@ -5811,6 +7563,9 @@ class AgentExecutor:
             if not imported:
                 return None
 
+            # A4: 聊天图片 OCR 导入了化验指标 → Twin 已变。此导入发生在 pre-round-1 KB
+            # 证据卡之后, 置位 → done 侧证据卡强制重算 (use_cache=False → 反映刚导入的指标)。
+            self._turn_twin_write_occurred = True
             try:
                 invalidate_twin(user_id)
             except Exception:
@@ -5914,6 +7669,23 @@ class AgentExecutor:
             return v["error"]
         args = v["data"]
 
+        # === Read-only pregen guard (rank7) — fail-CLOSED single choke ===
+        # In a starter-answer pre-generation turn ONLY read-only analysis tools may
+        # run. Any tool not on the allowlist (write tools, uploads, unknown, future)
+        # is refused HERE, before any _exec_* runs, so no user data is ever mutated
+        # during pregen. We flag the attempt so the orchestrator aborts pregen and
+        # stores nothing (starter chips are analysis prompts — a write attempt means
+        # the answer must not be pre-served; the tap falls through to a live turn).
+        if getattr(self, "_read_only_turn", False):
+            from app.services.specialist_tools import is_specialist_tool
+            if tool_name not in _READ_ONLY_TURN_ALLOWED_TOOLS and not is_specialist_tool(tool_name):
+                self._read_only_turn_write_attempted = True
+                logger.warning(
+                    "[agent_executor] read-only pregen turn blocked non-read tool=%s user=%s",
+                    tool_name, self._current_user_id,
+                )
+                return f"Error: 只读预生成回合不执行写入/变更操作（{tool_name}）"
+
         base_url = settings.health_api_base_url or "http://localhost:8000/api/v1"
         headers = {"Authorization": f"Bearer {user_token}"} if user_token else {}
 
@@ -5921,11 +7693,16 @@ class AgentExecutor:
             if tool_name == "health_query":
                 result = await self._exec_health_query(base_url, headers, args)
                 return annotate_if_implausible(result)
+            elif tool_name == "health_query_batch":
+                return await self._exec_health_query_batch(base_url, headers, args)
             elif tool_name == "health_record":
                 return await self._exec_health_record(base_url, headers, args)
             elif tool_name == "health_manage":
                 return await self._exec_health_manage(base_url, headers, args)
             elif tool_name == "health_analysis":
+                # 深度分析/安全裁决路径: 标记本回合, 让后续合成轮不给思考封顶
+                # (SYNTHESIS_THINKING_BUDGET fail-closed 跳过, 保留完整思考)。
+                self._turn_invoked_deep_analysis = True
                 result = await self._exec_health_analysis(base_url, headers, args)
                 return annotate_if_implausible(result)
             elif tool_name == "knowledge_search":
@@ -6160,6 +7937,8 @@ class AgentExecutor:
             # /exercise/me?days=N 是 ExerciseRecord (手动录入)
             # 默认用 workout (真实运动数据); 用户说"我做了 20 个俯卧撑"那种才走 exercise
             "exercise": f"/workout/me?days={days}",
+            # 生活事件时间线(情景账本):行程/落地/送达等带 occurred_at+精度
+            "events": f"/episodes/me/life-events?days={days}",
             "workout": f"/workout/me?days={days}",
             "manual_exercise": f"/daily-health/exercise/me?days={days}",
             # medical_exam 维度在上面已短路到 MedicalIndicator 表, 不经过此 map.
@@ -6199,6 +7978,34 @@ class AgentExecutor:
                     pass
 
         return await self._api_get(f"{base}{path}", headers)
+
+
+    async def _exec_health_query_batch(
+        self, base: str, headers: dict, args: dict
+    ) -> str:
+        """声明式批查询: 一次执行多条只读子查询 + 聚合 (Slice 1, 零代码执行)。
+
+        薄接线 —— 校验/聚合/对比逻辑全在 services/health_query_batch.py (纯函数,
+        单测覆盖)。这里只注入数据面 fetch: 可穿戴日指标走 GarminData 多源合并
+        (复用既有取数, 产出数值序列), 其余维度复用 _exec_health_query 的紧凑原文。
+        """
+        from app.services import health_query_batch as hqb
+
+        async def _fetch(dimension: str, days: int) -> hqb.BatchFetchResult:
+            if dimension in hqb.SERIES_DIMENSIONS:
+                series, unit, raw = hqb.build_wearable_series(
+                    self.db, self._current_user_id, dimension, days
+                )
+                return hqb.BatchFetchResult(
+                    series=series, unit=unit, raw=raw, aggregatable=True
+                )
+            # 非数值序列维度: 复用既有 health_query 数据面取紧凑原文, 不重写取数。
+            raw = await self._exec_health_query(
+                base, headers, {"dimension": dimension, "days": days}
+            )
+            return hqb.BatchFetchResult(series=[], raw=raw, aggregatable=False)
+
+        return await hqb.execute_batch(args, _fetch)
 
 
     async def _exec_health_record(
@@ -6324,128 +8131,6 @@ class AgentExecutor:
             if check:
                 return check
 
-        if rtype == "waist":
-            data.setdefault("record_date", today)
-            for src in ("waist_cm", "waist", "value", "cm", "腰围"):
-                if data.get(src) is not None:
-                    data["waist_cm"] = data[src]
-                    break
-            if data.get("waist_cm") is None:
-                return (
-                    "Error: waist 记录必须提供 waist_cm（腰围数值，单位 cm）。例如 "
-                    '{"record_type":"waist","data":{"waist_cm":82}}'
-                )
-            data.setdefault("source", "agent")
-            check = _confirm_or_describe(
-                args, data,
-                preview=f"腰围 {data['waist_cm']} cm, 日期 {data.get('record_date', today)}",
-            )
-            if check:
-                return check
-
-        if rtype == "sleep":
-            def _parse_sleep_dt(value: Any) -> Optional[datetime]:
-                if value is None:
-                    return None
-                if isinstance(value, datetime):
-                    return value
-                try:
-                    raw = str(value).strip()
-                    if re.fullmatch(r"\d{1,2}:\d{2}", raw):
-                        return datetime.fromisoformat(f"{data.get('record_date', today)}T{raw}:00+08:00")
-                    return datetime.fromisoformat(raw.replace("Z", "+00:00"))
-                except Exception:
-                    return None
-
-            wake_dt = _parse_sleep_dt(data.get("wake_time") or data.get("wakeup_time") or data.get("end_time"))
-            bedtime_dt = _parse_sleep_dt(data.get("bedtime") or data.get("sleep_time") or data.get("start_time"))
-            duration_minutes = data.get("duration_minutes") or data.get("duration")
-            if duration_minutes is None and data.get("duration_hours") is not None:
-                try:
-                    duration_minutes = float(data["duration_hours"]) * 60
-                except (TypeError, ValueError):
-                    duration_minutes = None
-            if bedtime_dt is None and duration_minutes is not None:
-                try:
-                    minutes = float(duration_minutes)
-                except (TypeError, ValueError):
-                    return f"Error: sleep duration 必须是分钟或小时数 (got {duration_minutes!r})"
-                if minutes <= 0 or minutes > 1440:
-                    return f"Error: sleep duration={minutes} 分钟不合理 (1-1440)"
-                wake_dt = wake_dt or datetime.now(BEIJING_TZ)
-                bedtime_dt = wake_dt - timedelta(minutes=minutes)
-            if bedtime_dt is None or wake_dt is None:
-                return (
-                    "Error: sleep 记录必须提供 bedtime+wake_time 或 duration_minutes/duration_hours。"
-                    "例如 {\"record_type\":\"sleep\",\"data\":{\"duration_hours\":7.5,\"wake_time\":\"2026-07-06T07:30:00+08:00\"}}"
-                )
-            if wake_dt <= bedtime_dt:
-                return "Error: sleep wake_time 必须晚于 bedtime"
-            data["record_date"] = str(data.get("record_date") or wake_dt.date().isoformat())
-            data["bedtime"] = bedtime_dt.isoformat()
-            data["wake_time"] = wake_dt.isoformat()
-            data["sleep_quality"] = int(data.get("sleep_quality") or data.get("quality") or 3)
-            check = _confirm_or_describe(
-                args, data,
-                preview=(
-                    f"睡眠 {data['bedtime']} 到 {data['wake_time']}, "
-                    f"质量 {data['sleep_quality']}/5"
-                ),
-            )
-            if check:
-                return check
-
-        if rtype == "excretion":
-            data.setdefault("record_date", today)
-            data.setdefault("record_time", datetime.now(BEIJING_TZ).strftime("%H:%M:%S"))
-            raw_type = data.get("type") or data.get("excretion_type") or data.get("kind")
-            if raw_type is not None:
-                normalized_type = str(raw_type).strip().lower()
-                type_aliases = {
-                    "stool": "bowel",
-                    "poop": "bowel",
-                    "feces": "bowel",
-                    "便便": "bowel",
-                    "大便": "bowel",
-                    "排便": "bowel",
-                    "bowel_movement": "bowel",
-                    "pee": "urine",
-                    "urination": "urine",
-                    "小便": "urine",
-                    "尿": "urine",
-                    "排尿": "urine",
-                }
-                data["type"] = type_aliases.get(normalized_type, normalized_type)
-            elif data.get("stool_type") is not None:
-                data["type"] = "bowel"
-            elif data.get("urine_color") or data.get("urine_amount"):
-                data["type"] = "urine"
-            if data.get("type") not in ("bowel", "urine"):
-                return (
-                    "Error: excretion 记录必须提供 type='bowel' 或 'urine'。例如 "
-                    '{"record_type":"excretion","data":{"type":"bowel","stool_type":4}}'
-                )
-            check = _confirm_or_describe(
-                args, data,
-                preview=f"{'排便' if data['type'] == 'bowel' else '排尿'}记录, 日期 {data.get('record_date', today)}",
-            )
-            if check:
-                return check
-
-        if rtype == "goal":
-            data.setdefault("start_date", today)
-            data.setdefault("goal_period", "daily")
-            data.setdefault("status", "active")
-            data.setdefault("priority", 5)
-            for src in ("goal_type", "type", "category"):
-                if data.get(src) is not None:
-                    data["goal_type"] = data[src]
-                    break
-            if not data.get("goal_type"):
-                data["goal_type"] = "other"
-            if not data.get("title"):
-                data["title"] = data.get("name") or data.get("description") or "健康目标"
-
         # illness 急性症状记录 — 影响疾病追踪, 必须先确认
         if rtype == "illness":
             data.setdefault("start_date", today)
@@ -6482,9 +8167,122 @@ class AgentExecutor:
             if not data.get("exercise_type"):
                 data["exercise_type"] = data.get("type") or data.get("name") or "其他"
 
+        # waist: 手动腰围记录。代谢闭环里腰围是关键指标,不能只靠 UI 手填。
+        if rtype == "waist":
+            data.setdefault("record_date", today)
+            for src in ("waist_cm", "waist", "value", "腰围"):
+                if src in args and "waist_cm" not in data:
+                    data["waist_cm"] = args[src]
+                    break
+                if src in data and src != "waist_cm" and "waist_cm" not in data:
+                    data["waist_cm"] = data.pop(src)
+                    break
+            if "waist_cm" not in data:
+                return (
+                    "Error: waist 记录必须提供 waist_cm（腰围厘米数）。例如 "
+                    '{"record_type":"waist","data":{"waist_cm":88.5}}'
+                )
+
+        # sleep: 手动睡眠补录。不要代猜入睡/醒来时间;缺字段 fail-loud 让模型追问。
+        if rtype == "sleep":
+            data.setdefault("record_date", today)
+            if "quality" in data and "sleep_quality" not in data:
+                data["sleep_quality"] = data.pop("quality")
+            missing = [
+                field for field in ("bedtime", "wake_time", "sleep_quality")
+                if data.get(field) in (None, "")
+            ]
+            if missing:
+                return (
+                    "Error: sleep 记录必须提供 bedtime、wake_time、sleep_quality(1-5). "
+                    f"缺少: {', '.join(missing)}. 例如 "
+                    '{"record_type":"sleep","data":{"record_date":"YYYY-MM-DD",'
+                    '"bedtime":"YYYY-MM-DDT23:00:00+08:00",'
+                    '"wake_time":"YYYY-MM-DDT07:00:00+08:00","sleep_quality":4}}'
+                )
+
+        # excretion: 排便/排尿记录。type 是下游统计的关键,缺失时明确追问。
+        if rtype == "excretion":
+            data.setdefault("record_date", today)
+            type_map = {
+                "大便": "bowel", "排便": "bowel", "便便": "bowel", "stool": "bowel",
+                "小便": "urine", "排尿": "urine", "尿": "urine", "pee": "urine",
+            }
+            raw_type = data.get("type") or data.get("excretion_type") or args.get("type")
+            if raw_type in type_map:
+                raw_type = type_map[raw_type]
+            if raw_type not in ("bowel", "urine"):
+                return (
+                    "Error: excretion 记录必须提供 type=bowel 或 urine. "
+                    "如果用户没说清楚,请先问是排便还是排尿。"
+                )
+            data["type"] = raw_type
+
         if rtype == "reminder":
             data = _normalize_reminder_record_data(data)
             args["data"] = data
+
+        if rtype == "goal":
+            data.setdefault("start_date", today)
+            title = data.get("title") or data.get("name") or args.get("title")
+            if not title:
+                return (
+                    "Error: goal 记录必须提供 title. 例如 "
+                    '{"record_type":"goal","data":{"title":"每日快走30分钟",'
+                    '"goal_type":"exercise","goal_period":"daily","start_date":"YYYY-MM-DD"}}'
+                )
+            data["title"] = str(title).strip()
+
+            if "target" in data and "target_value" not in data:
+                data["target_value"] = data.pop("target")
+            if "unit" in data and "target_unit" not in data:
+                data["target_unit"] = data.pop("unit")
+            if "period" in data and "goal_period" not in data:
+                data["goal_period"] = data.pop("period")
+            if "type" in data and "goal_type" not in data:
+                data["goal_type"] = data.pop("type")
+            if isinstance(data.get("implementation_steps"), list):
+                data["implementation_steps"] = "\n".join(
+                    f"{idx + 1}. {step}" for idx, step in enumerate(data["implementation_steps"])
+                )
+
+            goal_type_map = {
+                "饮食": "diet",
+                "吃饭": "diet",
+                "运动": "exercise",
+                "锻炼": "exercise",
+                "睡眠": "sleep",
+                "喝水": "water",
+                "饮水": "water",
+                "补剂": "supplement",
+                "户外": "outdoor",
+                "体重": "weight",
+                "腰围": "weight",
+                "其他": "other",
+            }
+            goal_period_map = {
+                "每天": "daily",
+                "每日": "daily",
+                "日": "daily",
+                "每周": "weekly",
+                "周": "weekly",
+                "每月": "monthly",
+                "月": "monthly",
+                "每年": "yearly",
+                "年": "yearly",
+            }
+            allowed_goal_types = {"diet", "exercise", "sleep", "water", "supplement", "outdoor", "weight", "other"}
+            allowed_goal_periods = {"daily", "weekly", "monthly", "yearly"}
+            raw_goal_type = str(data.get("goal_type") or "other").strip()
+            raw_goal_period = str(data.get("goal_period") or "daily").strip()
+            data["goal_type"] = goal_type_map.get(raw_goal_type, raw_goal_type).lower()
+            data["goal_period"] = goal_period_map.get(raw_goal_period, raw_goal_period).lower()
+            if data["goal_type"] not in allowed_goal_types:
+                data["goal_type"] = "other"
+            if data["goal_period"] not in allowed_goal_periods:
+                data["goal_period"] = "daily"
+            data.setdefault("status", "active")
+            data.setdefault("priority", 5)
 
         # rhinitis: 症状计数转 illness_episode (复用 illness 流程, 跟 rhinitis-tracker skill 对齐)
         if rtype == "rhinitis":
@@ -6557,8 +8355,23 @@ class AgentExecutor:
                 )
                 if tap_result.startswith("Error"):
                     return f"已把「{name}」加入补剂库(补剂号 {created['id']}),但今日打卡没成功({tap_result})。"
+                # 2026-07-12 生产实锤:此处曾只回 {"message": ...} 无任何 id → 回执身份
+                # 提取不到 → 整轮被诚实门判「不可确认」(四笔全成功仍报无回执,还诱导重试)。
+                # 回执必须带可验证身份:透传 tap 的 record_id + resource_type。
+                tap_record_id = None
+                try:
+                    tap_record_id = (json.loads(tap_result) or {}).get("record_id")
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    logger.warning("[health_record] supplement tap 响应不可解析: %r", tap_result[:120])
                 return json.dumps(
-                    {"message": f"已把「{name}」加入补剂库并完成今日打卡（补剂号 {created['id']}，说「撤销」可移除）"},
+                    {
+                        "message": f"已把「{name}」加入补剂库并完成今日打卡（补剂号 {created['id']}，说「撤销」可移除）",
+                        "id": tap_record_id,
+                        "record_id": tap_record_id,
+                        "resource_type": "supplement_log",
+                        "supplement_definition_id": created["id"],
+                        "status": "recorded",
+                    },
                     ensure_ascii=False,
                 )
             return "Error: 需要提供补剂名称（supplement_name）"
@@ -6587,11 +8400,36 @@ class AgentExecutor:
                     logger.warning(f"[health_record] medication 自动登记失败: {cerr}")
                     return f"用药记录暂时没成功(自动登记 '{med_name}' 时{cerr or '未知错误'}),你可以稍后再试一次。"
                 matched = created
-            taken_time = data.get("taken_time", datetime.now(BEIJING_TZ).isoformat())
+            # 归一到列语义 "HH:MM"(2026-07-12 生产实锤:此处默认值曾是带微秒+时区的
+            # 完整 ISO → 溢出 varchar → 500 → 无写回执,确认流看似失灵)。
+            # 解析不了的脏输入回退"现在",fail-soft 但记 warning(写入本身不该因时刻串死)。
+            from app.services.medication_service import normalize_taken_time
+            try:
+                taken_time = normalize_taken_time(data.get("taken_time"))
+            except ValueError:
+                logger.warning("[health_record] taken_time 无法解析,回退当前时刻: %r", data.get("taken_time"))
+                taken_time = None
+            if not taken_time:
+                taken_time = datetime.now(BEIJING_TZ).strftime("%H:%M")
             return await self._api_post(
                 f"{base}/medication/logs", headers,
                 {"medication_id": matched["id"], "taken_time": taken_time, "status": "taken"}
             )
+
+        if rtype == "event":
+            # 生活事件 → HealthEpisode 情景账本(2026-07-12):行程/落地/送达等
+            # 带发生时间落库,时间线总结读结构化 occurred_at 而不是猜。
+            # occurred_at 传用户原话("下午"/"刚才"/"21:07"),折算在后端确定性代码。
+            # life_event 是别名(_FAST_RECORD_KIND_ALIASES),canonical 名只有 event。
+            title = str(data.get("title") or data.get("name") or data.get("event") or "").strip()
+            if not title:
+                return "Error: event 必须提供 title (如 '落地北京' / '药品送达酒店')"
+            payload = {"title": title[:80]}
+            if data.get("occurred_at"):
+                payload["occurred_at"] = str(data["occurred_at"])[:64]
+            if data.get("notes"):
+                payload["notes"] = str(data["notes"])[:500]
+            return await self._api_post(f"{base}/episodes/life-event", headers, payload)
 
         if rtype == "illness":
             payload = dict(data)
@@ -6605,18 +8443,18 @@ class AgentExecutor:
 
         record_map = {
             "weight": ("/weight/records", "POST", data),
-            "waist": ("/waist/records", "POST", data),
             "blood_pressure": ("/blood-pressure/records", "POST", data),
-            "sleep": ("/sleep/records", "POST", data),
             "exercise": ("/daily-health/exercise", "POST", data),
-            "excretion": ("/excretion/records", "POST", data),
-            "goal": ("/goals/", "POST", data),
             "diet": ("/diet/records", "POST", data),
             "supplement": ("/supplements/records", "POST", data),
+            "waist": ("/waist/records", "POST", data),
+            "sleep": ("/sleep/records", "POST", data),
+            "excretion": ("/excretion/records", "POST", data),
             # rhinitis 走 special case (见上方 rtype=="rhinitis" 分支), 不在 record_map 里
             "mood": ("/mood/records", "POST", data),
             "garmin_sync": ("/data-collection/garmin/me/sync?days=1", "POST", {}),
             "reminder": ("/reminders/me", "POST", data),
+            "goal": ("/goals/", "POST", data),
         }
 
         # symptom: 通用身体症状 (眼痒/嗓子疼 ...). 不再需要 profile_id (新 /symptoms 表,
@@ -6660,28 +8498,23 @@ class AgentExecutor:
         record_id = args.get("record_id")
         data = args.get("data") or {}
         target_date = args.get("date")
-        target_meal_type = _normalize_diet_meal_type(args.get("meal_type"))
-        if record_type == "diet" and isinstance(data, dict):
-            normalized_patch_meal_type = _normalize_diet_meal_type(data.get("meal_type"))
-            if normalized_patch_meal_type:
-                data["meal_type"] = normalized_patch_meal_type
-        today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
-
-        diet_list_path = f"/diet/records/me/date/{target_date or today}" if target_date else "/diet/records/me?limit=20"
+        target_meal_type = _normalize_diet_meal_type(args.get("meal_type") or data.get("meal_type"))
         if record_type == "diet" and target_meal_type:
-            if target_date:
-                query = urlencode({
-                    "start_date": target_date,
-                    "end_date": target_date,
-                    "meal_type": target_meal_type,
-                    "limit": 50,
-                })
-            else:
-                query = urlencode({"meal_type": target_meal_type, "limit": 50})
-            diet_list_path = f"/diet/records/me?{query}"
+            data["meal_type"] = target_meal_type
+        try:
+            limit = int(args.get("limit") or 20)
+        except (TypeError, ValueError):
+            limit = 20
+        limit = max(1, min(limit, 100))
+        diet_query: dict[str, Any] = {"limit": limit}
+        if target_date:
+            diet_query["start_date"] = target_date
+            diet_query["end_date"] = target_date
+        if target_meal_type:
+            diet_query["meal_type"] = target_meal_type
 
         list_paths = {
-            "diet": diet_list_path,
+            "diet": f"/diet/records/me?{urlencode(diet_query)}",
             "water": "/water/records/me?limit=20",
             "weight": "/weight/records/me?limit=20",
             "waist": "/waist/records/me?limit=20",
@@ -6694,15 +8527,12 @@ class AgentExecutor:
             "symptom": "/symptoms/me?limit=20",
             "medication": "/medication/medications/me?active_only=false",
             "medication_log": "/medication/today/me",
-            "supplement": (
-                f"/supplements/me/records?start_date={target_date}&end_date={target_date}&limit=50"
-                if target_date
-                else "/supplements/me/records?limit=50"
-            ),
+            "supplement": "/supplements/me/records?limit=20",
             "supplement_definition": "/supplements/me/definitions?active_only=false",
-            "goal": "/goals/me",
-            "medical_exam": "/medical-exams/me?limit=20",
             "reminder": "/reminders/me?status=all&limit=50",
+            "goal": "/goals/me",
+            "medical_exam": f"/medical-exams/me/reports?limit={limit}",
+            "event": "/episodes/me/life-events?days=30",
         }
         record_paths = {
             "diet": "/diet/records/{id}",
@@ -6720,14 +8550,17 @@ class AgentExecutor:
             "medication_log": "/medication/logs/{id}",
             "supplement": "/supplements/records/{id}",
             "supplement_definition": "/supplements/definitions/{id}",
-            "goal": "/goals/{id}",
             "reminder": "/reminders/{id}",
+            "goal": "/goals/{id}",
+            # event 只开 list/delete(undo 通路);update 不开——occurred_at 由
+            # 确定性代码折算,改动走删除后重记(registry update 格 gap 挂账)。
+            "event": "/episodes/life-event/{id}",
         }
         update_supported = {
             "diet", "water", "weight", "waist", "blood_pressure",
             "sleep", "mood", "excretion", "illness", "medication",
-            "supplement", "supplement_definition", "goal", "exercise", "symptom", "medication_log",
-            "reminder",
+            "supplement", "supplement_definition", "exercise", "symptom", "medication_log",
+            "reminder", "goal",
         }
 
         if operation == "list":
@@ -6777,6 +8610,9 @@ class AgentExecutor:
     def _invalidate_twin_after_mutation(self) -> None:
         if self._current_user_id is None:
             return
+        # A4: Twin 已变 → 本回合 done 侧 KB 证据卡强制重算 (belt-and-suspenders:
+        # health_manage 也走上面主循环的 write_attempted 标记, 这里覆盖任何未来直接调用者)。
+        self._turn_twin_write_occurred = True
         try:
             from app.twin.cache import invalidate_twin
             invalidate_twin(self._current_user_id)
@@ -6793,11 +8629,18 @@ class AgentExecutor:
 
         # orchestrator: 多专家协作深度分析
         if atype == "orchestrator" and question:
-            result = await self._api_post(
-                f"{base}/orchestrator/chat", headers,
-                {"query": question}
-            )
-            return result
+            # rank8: 默认进程内直调 run_orchestrator, 绕开 localhost HTTP + 全 FastAPI 中间件
+            # 重入 (含 main.py 60s 请求超时中间件 —— 历史"内层 60s 连杀"故障类的根)。
+            # kill-switch orchestrator_in_process=False 回退旧 HTTP 路径 (保留一个 release)。
+            # 两条路径都过 _project_orchestrator_result: 进程内返回值与 HTTP 响应体 shape 一致。
+            if getattr(settings, "orchestrator_in_process", True):
+                result = await self._run_orchestrator_in_process(question)
+            else:
+                result = await self._api_post(
+                    f"{base}/orchestrator/chat", headers,
+                    {"query": question}
+                )
+            return _project_orchestrator_result(result)
 
         # supplement_effectiveness: 补剂效果评估
         if atype == "supplement_effectiveness":
@@ -6818,6 +8661,78 @@ class AgentExecutor:
 
         path = analysis_map.get(atype, analysis_map["comprehensive"])
         return await self._api_get(f"{base}{path}", headers)
+
+    # rank8: 内层深分析进程内直调超时 (秒)。旧 localhost HTTP 路径的有效预算是
+    # min(main.py 60s 请求中间件, httpx 90s 读) = 60s —— 中间件先杀, 正是"内层 60s 连杀"
+    # 故障类。进程内不再经中间件, 由本 wait_for 独占超时所有权。取 120s: 覆盖 prod 深分析
+    # 最坏 115-187s 里的绝大多数完成回合 (旧路径这些全部被 60s 中间件误杀成 500), 又不让
+    # 真卡死的回合无限期吃 /agent/send 的 300s 硬帽预算。超时 → 抛 TimeoutError → 落到
+    # 既有工具失败处理 (返回 "Error: ..." 字符串), 回合存活。
+    ORCHESTRATOR_IN_PROCESS_TIMEOUT_S: float = 120.0
+
+    async def _run_orchestrator_in_process(self, question: str) -> str:
+        """进程内直调 run_orchestrator, 替换 localhost POST /orchestrator/chat (rank8)。
+
+        返回值 = OrchestratorResponse.model_dump(mode="json") 的 JSON 字符串, 与旧
+        _api_post(/orchestrator/chat) 响应体 SHAPE-IDENTICAL (synthesis / intent /
+        used_specialists / findings)。上层 _project_orchestrator_result 与 rank7 shadow
+        捕获 (json.loads → 读 synthesis/perf) 零改动。
+
+        DB 会话: 用**独立的 fresh SessionLocal**, 不复用 self.db —— 忠实复刻 HTTP 边界的
+        会话隔离 (旧路径 /orchestrator/chat 走自己 request-scoped get_db session, 与 /agent
+        请求的 session 完全隔离)。理由: run_orchestrator 会向传入 db 写副作用 (ActionCard
+        落地 / clinical journal / memory extract / audit, 各自内部 commit)。复用 self.db 会
+        (a) 把这些写与 executor 未提交的 user_message 事务纠缠、(b) 内部 commit 提前提交
+        executor 的 pending 事务、(c) autoflush 意外推未提交对象。深分析只读已提交的健康数据
+        (question 携带意图, 不依赖本回合未提交写), fresh session 安全且正确。契约同 get_db:
+        不显式 commit (副作用写各自内部 commit), finally close, 异常 rollback。
+
+        用户作用域: user_id 显式传 self._current_user_id (== 旧 HTTP 路径 JWT 解出的
+        current_user.id), per-user 隔离一字不差 (health_read.canonical_read 先例)。
+
+        超时所有权: 中间件已不在链路, 由 asyncio.wait_for 接管; 超时/异常 → 返回
+        "Error: ..." 字符串 (与其余 _exec_* 失败契约一致), 回合存活。
+
+        NOTE (rank11 seam): 流式 stream_orchestrator 的进程内分段流式改造是 rank11 的活,
+        本方法只做非流式 run_orchestrator; 那里会在 caps=genui-v1 深报告路径切进程内 SSE。
+        """
+        from app.database import SessionLocal
+        from app.orchestrator import OrchestratorRequest, run_orchestrator
+
+        user_id = self._current_user_id
+        if user_id is None:
+            return "Error: 缺少用户身份, 无法执行深度分析"
+
+        # 与旧 HTTP body {"query": question} 逐字节等价: source 不传 (默认 None), 不触发
+        # source=='siri' 的 fast 短路; client_caps/specialists 用默认 (旧路径未带 caps 头)。
+        req = OrchestratorRequest(query=question)
+        orch_db = SessionLocal()
+        try:
+            response = await asyncio.wait_for(
+                run_orchestrator(orch_db, user_id, req),
+                timeout=self.ORCHESTRATOR_IN_PROCESS_TIMEOUT_S,
+            )
+            return json.dumps(
+                response.model_dump(mode="json"), ensure_ascii=False, default=str
+            )
+        except asyncio.TimeoutError:
+            orch_db.rollback()
+            logger.error(
+                "[agent_executor] in-process orchestrator timed out after %.0fs user=%s",
+                self.ORCHESTRATOR_IN_PROCESS_TIMEOUT_S, user_id,
+            )
+            return (
+                f"Error: 深度分析超时（>{int(self.ORCHESTRATOR_IN_PROCESS_TIMEOUT_S)}s），"
+                "请稍后重试"
+            )
+        except Exception as e:  # noqa: BLE001 — 任何失败降级为工具错误字符串, 回合存活
+            orch_db.rollback()
+            logger.exception(
+                "[agent_executor] in-process orchestrator failed user=%s: %s", user_id, e
+            )
+            return f"Error: 深度分析执行失败: {safe_llm_error_message(str(e))}"
+        finally:
+            orch_db.close()
 
     async def _exec_environment(
         self, base: str, headers: dict, args: dict
@@ -6866,7 +8781,7 @@ class AgentExecutor:
         return f"Error: 不支持的计划操作 {action}"
 
     async def _exec_intervention_cycle(self, args: dict) -> str:
-        """N-of-1 干预结局闭环工具 — status 报进展 / start 开周期 (写操作需确认).
+        """N-of-1 干预结局闭环工具 — status/list/start/update/cancel.
 
         直接复用 intervention_cycle_service (不重写 SQL/不重算 delta), 用户隔离靠
         self._current_user_id。service 是同步, 丢线程池避免阻塞事件循环。
@@ -6881,14 +8796,12 @@ class AgentExecutor:
         if action == "status":
             return await _aio.to_thread(self._intervention_status, user_id)
 
-        if action == "list":
-            status = args.get("status")
-            limit = args.get("limit", 20)
+        if action in {"list", "history"}:
+            status = str(args.get("status") or "all")
             try:
-                limit = int(limit)
-            except (ValueError, TypeError):
+                limit = int(args.get("limit") or 20)
+            except (TypeError, ValueError):
                 limit = 20
-            limit = max(1, min(limit, 100))
             return await _aio.to_thread(self._intervention_list, user_id, status, limit)
 
         if action == "start":
@@ -6913,120 +8826,128 @@ class AgentExecutor:
             return await _aio.to_thread(self._intervention_start, user_id, days)
 
         if action == "update":
-            cycle_id = args.get("cycle_id") or args.get("id")
-            if not cycle_id:
-                return "Error: intervention_cycle update 必须提供 cycle_id"
             confirmed = args.get("confirmed") is True or args.get("confirm") is True
             if not confirmed:
                 return (
-                    "[NEEDS_CONFIRMATION] 我准备调整这个干预周期的元数据/目标参数。"
-                    "这不会修改药物、剂量或医生建议, 但会影响后续效果追踪口径。"
-                    "请向用户复述并问一次'确认这样调整吗？', "
-                    "用户确认后重新调用 intervention_cycle(action='update', confirmed=true)。"
+                    "[NEEDS_CONFIRMATION] 我准备调整你的干预周期参数。"
+                    "这会影响后续的计划窗口、目标指标或停止条件, 但不会改历史基线和已记录复查。"
+                    "请向用户复述要调整的内容并确认; 用户明确同意后重新调用 "
+                    "intervention_cycle(action='update', confirmed=true)。"
                 )
-            data = args.get("data") if isinstance(args.get("data"), dict) else {}
-            return await _aio.to_thread(self._intervention_update, user_id, int(cycle_id), data)
+            return await _aio.to_thread(self._intervention_update, user_id, args)
 
-        if action == "cancel":
-            cycle_id = args.get("cycle_id") or args.get("id")
-            if not cycle_id:
-                return "Error: intervention_cycle cancel 必须提供 cycle_id"
+        if action in {"cancel", "delete"}:
             confirmed = args.get("confirmed") is True or args.get("confirm") is True
             if not confirmed:
                 return (
-                    "[NEEDS_CONFIRMATION] 我准备取消这个干预周期并标记为 abandoned, "
-                    "不会删除历史数据。请向用户确认后重新调用 "
+                    "[NEEDS_CONFIRMATION] 我准备取消当前干预周期。"
+                    "取消后会保留历史记录, 状态改为 abandoned, 不会删除既有数据。"
+                    "请向用户确认是否取消; 用户明确同意后重新调用 "
                     "intervention_cycle(action='cancel', confirmed=true)。"
                 )
-            return await _aio.to_thread(self._intervention_cancel, user_id, int(cycle_id))
+            return await _aio.to_thread(self._intervention_cancel, user_id, args)
 
         return f"Error: 不支持的干预周期操作 {action}"
 
-    @staticmethod
-    def _intervention_cycle_dict(c, *, include_outcomes: bool = False) -> dict:
-        payload = {
-            "id": c.id,
-            "cycle_type": c.cycle_type,
-            "status": c.status,
-            "start_date": c.start_date.isoformat() if c.start_date else None,
-            "planned_end_date": c.planned_end_date.isoformat() if c.planned_end_date else None,
-            "baseline_snapshot_id": c.baseline_snapshot_id,
-            "latest_snapshot_id": c.latest_snapshot_id,
-            "target_metrics": c.target_metrics,
-            "stop_conditions": c.stop_conditions,
-        }
-        if include_outcomes:
-            payload["outcomes"] = [
-                {
-                    "metric_code": om.metric_code,
-                    "status": om.status,
-                    "baseline_value": om.baseline_value,
-                    "target_value": om.target_value,
-                    "latest_value": om.latest_value,
-                    "delta": om.delta,
-                    "delta_pct": om.delta_pct,
-                }
-                for om in c.outcomes
-            ]
-        return payload
+    def _intervention_list(self, user_id: int, status: str, limit: int) -> str:
+        """列出当前用户干预周期历史。"""
+        from app.services import intervention_cycle_service as ics
 
-    def _get_owned_intervention_cycle(self, user_id: int, cycle_id: int):
+        if status not in {"all", "active", "completed", "abandoned"}:
+            status = "all"
+        cycles = ics.list_cycles(self.db, user_id, status=status, limit=limit)
+        if not cycles:
+            return "暂无干预周期历史。"
+
+        lines = []
+        for c in cycles:
+            start = c.start_date.isoformat() if c.start_date else "?"
+            end = c.planned_end_date.isoformat() if c.planned_end_date else "?"
+            target_count = len(c.target_metrics or [])
+            outcome_count = len(c.outcomes or [])
+            lines.append(
+                f"- #{c.id}: {c.status} · {c.cycle_type} · {start}→{end} · "
+                f"目标 {target_count} 项 · 结局 {outcome_count} 项"
+            )
+        return "干预周期历史:\n" + "\n".join(lines)
+
+    def _owned_intervention_cycle(self, user_id: int, cycle_id=None):
         from app.models.intervention_cycle import InterventionCycle
+        from app.services import intervention_cycle_service as ics
 
-        cycle = self.db.query(InterventionCycle).filter(
-            InterventionCycle.id == cycle_id,
-            InterventionCycle.user_id == user_id,
-        ).first()
+        if cycle_id is None:
+            return ics.get_active_cycle(self.db, user_id)
+        try:
+            cid = int(cycle_id)
+        except (TypeError, ValueError):
+            return None
+        if cid <= 0:
+            return None
+        return (
+            self.db.query(InterventionCycle)
+            .filter(InterventionCycle.id == cid, InterventionCycle.user_id == user_id)
+            .first()
+        )
+
+    def _intervention_update(self, user_id: int, args: dict) -> str:
+        """调整 active cycle 参数; 不修改历史基线。"""
+        from app.services import intervention_cycle_service as ics
+
+        cycle = self._owned_intervention_cycle(user_id, args.get("cycle_id"))
         if cycle is None:
-            raise ValueError(f"周期不存在或不属于当前用户: {cycle_id}")
-        return cycle
+            return "Error: 没有找到可调整的干预周期。请先 list/status 确认周期。"
 
-    def _intervention_list(self, user_id: int, status: Optional[str], limit: int) -> str:
-        from app.models.intervention_cycle import InterventionCycle
-
-        query = self.db.query(InterventionCycle).filter(InterventionCycle.user_id == user_id)
-        if status:
-            query = query.filter(InterventionCycle.status == str(status))
-        cycles = (
-            query.order_by(InterventionCycle.start_date.desc(), InterventionCycle.id.desc())
-            .limit(limit)
-            .all()
+        days = args.get("days")
+        if days is not None:
+            try:
+                days = int(days)
+            except (TypeError, ValueError):
+                return "Error: days 必须是整数。"
+        target_specs = args.get("target_specs") if isinstance(args.get("target_specs"), list) else None
+        stop_conditions = (
+            args.get("stop_conditions") if isinstance(args.get("stop_conditions"), list) else None
         )
-        return json.dumps(
-            [self._intervention_cycle_dict(c, include_outcomes=False) for c in cycles],
-            ensure_ascii=False,
-            default=str,
+        if days is None and target_specs is None and stop_conditions is None:
+            return "Error: update 需要提供 days、target_specs 或 stop_conditions。"
+
+        try:
+            cycle = ics.update_cycle_params(
+                self.db,
+                cycle,
+                days=days,
+                target_specs=target_specs,
+                stop_conditions=stop_conditions,
+            )
+        except ValueError as exc:
+            return f"Error: {exc}"
+        except Exception:
+            self.db.rollback()
+            raise
+
+        end = cycle.planned_end_date.isoformat() if cycle.planned_end_date else "未设置"
+        return (
+            f"已调整干预周期 #{cycle.id}: 计划结束日 {end}, "
+            f"目标 {len(cycle.target_metrics or [])} 项, 停止条件 {len(cycle.stop_conditions or [])} 条。"
         )
 
-    def _intervention_update(self, user_id: int, cycle_id: int, data: dict) -> str:
-        from app.models.intervention_cycle import CYCLE_STATUS
+    def _intervention_cancel(self, user_id: int, args: dict) -> str:
+        """取消 active cycle; 保留历史记录。"""
+        from app.services import intervention_cycle_service as ics
 
-        cycle = self._get_owned_intervention_cycle(user_id, cycle_id)
-        allowed = {"status", "planned_end_date", "target_metrics", "stop_conditions"}
-        for key, value in (data or {}).items():
-            if key not in allowed:
-                continue
-            if key == "status":
-                if value not in CYCLE_STATUS:
-                    raise ValueError(f"非法周期状态: {value}")
-                cycle.status = value
-            elif key == "planned_end_date":
-                if value:
-                    cycle.planned_end_date = datetime.fromisoformat(str(value)).date()
-            elif key in ("target_metrics", "stop_conditions"):
-                if value is not None and not isinstance(value, list):
-                    raise ValueError(f"{key} 必须是列表")
-                setattr(cycle, key, value)
-        self.db.commit()
-        self.db.refresh(cycle)
-        return json.dumps(self._intervention_cycle_dict(cycle, include_outcomes=True), ensure_ascii=False, default=str)
+        cycle = self._owned_intervention_cycle(user_id, args.get("cycle_id"))
+        if cycle is None:
+            return "Error: 没有找到可取消的干预周期。请先 list/status 确认周期。"
+        if cycle.status != "active":
+            return "Error: 只能取消进行中的干预周期。"
 
-    def _intervention_cancel(self, user_id: int, cycle_id: int) -> str:
-        cycle = self._get_owned_intervention_cycle(user_id, cycle_id)
-        cycle.status = "abandoned"
-        self.db.commit()
-        self.db.refresh(cycle)
-        return json.dumps(self._intervention_cycle_dict(cycle, include_outcomes=True), ensure_ascii=False, default=str)
+        try:
+            cycle = ics.complete_cycle(self.db, cycle, status="abandoned")
+        except Exception:
+            self.db.rollback()
+            raise
+        reason = str(args.get("reason") or "").strip()
+        reason_text = f" 原因: {reason}" if reason else ""
+        return f"已取消干预周期 #{cycle.id}, 历史记录已保留。{reason_text}"
 
     def _intervention_status(self, user_id: int) -> str:
         """组织当前 active 周期的人话进展摘要 (无周期则友好提示)。"""
@@ -7174,6 +9095,9 @@ class AgentExecutor:
                 exam_date=exam_date,
                 source="agent_text",
             )
+            # A4: upload_medical_exam_text 不在 _WRITE_RECEIPT_TOOL_NAMES → 主循环 write 标记
+            # 不覆盖它; 这里显式置位, 让 done 侧 KB 证据卡重算反映刚写入的化验指标。
+            self._turn_twin_write_occurred = True
             try:
                 invalidate_twin(self._current_user_id)
             except Exception:
@@ -7181,7 +9105,9 @@ class AgentExecutor:
             return json.dumps(
                 {
                     "message": "化验指标已写入系统",
+                    "id": exam.id,
                     "exam_id": exam.id,
+                    "resource_type": "medical_exam",
                     "exam_date": exam.exam_date.isoformat() if exam.exam_date else None,
                     "items_count": len(exam.items or []),
                 },

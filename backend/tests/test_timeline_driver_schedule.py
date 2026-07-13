@@ -167,6 +167,7 @@ def _set_busy(monkeypatch, busy: bool):
 
 def test_p1_silenced_in_busy_window(db, monkeypatch):
     monkeypatch.setattr(pc, "_in_quiet_hours", lambda db, uid: False)
+    monkeypatch.setattr(pc, "_in_morning_sleep_floor", lambda db, uid: False)
     _set_busy(monkeypatch, True)
     assert can_notify_proactively(db, 1, tier="P1") is False
 
@@ -178,14 +179,16 @@ def test_p2_silenced_in_busy_window(db, monkeypatch):
 
 
 def test_p0_punches_through_busy_window(db, monkeypatch):
-    """安全重点对抗用例:在忙碌窗 + 静默时段,P0 安全告警仍必须穿透。"""
+    """安全重点对抗用例:不在睡眠保护窗时,P0 安全告警穿透忙碌窗。"""
     monkeypatch.setattr(pc, "_in_quiet_hours", lambda db, uid: True)
+    monkeypatch.setattr(pc, "_in_morning_sleep_floor", lambda db, uid: False)
     _set_busy(monkeypatch, True)
     assert can_notify_proactively(db, 1, tier="P0") is True
 
 
 def test_p1_normal_when_not_busy(db, monkeypatch):
     monkeypatch.setattr(pc, "_in_quiet_hours", lambda db, uid: False)
+    monkeypatch.setattr(pc, "_in_morning_sleep_floor", lambda db, uid: False)
     _set_busy(monkeypatch, False)
     assert can_notify_proactively(db, 1, tier="P1") is True
 

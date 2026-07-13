@@ -15,10 +15,7 @@ describe('Home mobile install link', () => {
 
     render(<Home />);
 
-    const installLink = screen.getByRole('link', { name: /扫码安装小巴 iOS/i });
-    expect(installLink).toHaveAttribute(
-      'href',
-      'https://health.executor.life/mobile-install/ios/20260705-124315-f4ac7f14/install.html',
-    );
+    const installLink = screen.getByRole('link', { name: /扫码安装 iPhone 版/i });
+    expect(installLink).toHaveAttribute('href', '/mobile-install/ios/latest/install.html');
   });
 });

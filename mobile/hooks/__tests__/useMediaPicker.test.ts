@@ -1,3 +1,13 @@
+/**
+ * useMediaPicker — 拍照/选图发送前的图片承重路径。
+ *
+ * 核心不变量(2026-07 加固):
+ * 1. 每张图都经 expo-image-manipulator 缩放(最长边 ≤1568px)+ JPEG q0.7 重压缩,
+ *    再取 base64 —— 绝不把 12MP 原图 base64 直接塞进请求(卡 JS 线程 + 413/超时);
+ * 2. manipulator 未回 base64 / 抛异常 → 排除该图 + 弹「该图片无法读取，已跳过」,
+ *    绝不下发 base64:''(假成功);
+ * 3. 对外契约不变:pendingImage / pendingImages 仍是 { uri, base64, type }。
+ */
 import { renderHook, act } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 
@@ -18,6 +28,17 @@ jest.mock('expo-document-picker', () => ({
   getDocumentAsync: (...args: any[]) => mockGetDocument(...args),
 }));
 
+const mockManipulateAsync = jest.fn();
+jest.mock('expo-image-manipulator', () => ({
+  manipulateAsync: (...args: any[]) => mockManipulateAsync(...args),
+  SaveFormat: { JPEG: 'jpeg', PNG: 'png', WEBP: 'webp' },
+}));
+
+const mockDeleteTemporaryImage = jest.fn().mockResolvedValue(undefined);
+jest.mock('expo-file-system/legacy', () => ({
+  deleteAsync: (...args: any[]) => mockDeleteTemporaryImage(...args),
+}));
+
 const mockMaterializeDraftImages = jest.fn();
 const mockDeleteDraftImage = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../services/chatDraftStorage', () => ({
@@ -25,13 +46,23 @@ jest.mock('../../services/chatDraftStorage', () => ({
   deleteDraftImage: (...args: any[]) => mockDeleteDraftImage(...args),
 }));
 
-jest.spyOn(Alert, 'alert');
+jest.spyOn(Alert, 'alert').mockImplementation(() => {});
 
 import { useMediaPicker } from '../useMediaPicker';
+
+// 默认:manipulator 回一张压好的小图。测试可覆写。
+function mockManipulatorOk(base64 = 'compressed-base64', uri = 'file:///manip-out.jpg') {
+  mockManipulateAsync.mockResolvedValue({ uri, width: 1568, height: 1176, base64 });
+}
+
+function alertTitles(): string[] {
+  return (Alert.alert as jest.Mock).mock.calls.map(c => String(c[0]));
+}
 
 describe('useMediaPicker', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockManipulatorOk();
     mockMaterializeDraftImages.mockImplementation(async (images: any[]) => images);
     mockDeleteDraftImage.mockResolvedValue(undefined);
   });
@@ -50,24 +81,123 @@ describe('useMediaPicker', () => {
       expect(mockLaunchImageLibrary).toHaveBeenCalledTimes(1);
     });
 
-    it('sets pendingImage when user picks an image', async () => {
+    it('does NOT ask the picker for inline base64/quality (manipulator owns encoding)', async () => {
+      mockRequestMediaLibraryPermissions.mockResolvedValue({ granted: true });
+      mockLaunchImageLibrary.mockResolvedValue({ canceled: true });
+
+      const { result } = renderHook(() => useMediaPicker());
+      await act(async () => { await result.current.pickImage(); });
+
+      const opts = mockLaunchImageLibrary.mock.calls[0][0];
+      // manipulator 可用时探针为真 → base64:false(picker 不内联),不设 quality(不预压)
+      expect(opts.base64).toBe(false);
+      expect(opts.quality).toBeUndefined();
+      expect(opts).toEqual(expect.objectContaining({ mediaTypes: ['images'], allowsMultipleSelection: true }));
+    });
+
+    it('runs the picked asset through manipulateAsync (resize + JPEG compress) and returns the manipulated base64', async () => {
       mockRequestMediaLibraryPermissions.mockResolvedValue({ granted: true });
       mockLaunchImageLibrary.mockResolvedValue({
         canceled: false,
-        assets: [{ uri: 'file:///photo.jpg', base64: 'abc123', mimeType: 'image/png' }],
+        // 4032x3024 → 最长边远超 1568,应触发按 width 缩放
+        assets: [{ uri: 'file:///photo.heic', width: 4032, height: 3024 }],
+      });
+      mockManipulateAsync.mockResolvedValue({ uri: 'file:///small.jpg', width: 1568, height: 1176, base64: 'tiny-jpeg' });
+
+      const { result } = renderHook(() => useMediaPicker());
+      await act(async () => { await result.current.pickImage(); });
+
+      // 命中 manipulator:resize(最长边→1568,横图按 width) + compress 0.7 + JPEG + base64
+      expect(mockManipulateAsync).toHaveBeenCalledTimes(1);
+      const [uri, actions, saveOptions] = mockManipulateAsync.mock.calls[0];
+      expect(uri).toBe('file:///photo.heic');
+      expect(actions).toEqual([{ resize: { width: 1568 } }]);
+      expect(saveOptions).toEqual({ compress: 0.7, format: 'jpeg', base64: true });
+
+      // 返回的是 manipulator 产出的小图 base64 + uri,type 恒为 jpeg
+      expect(result.current.pendingImage).toEqual({
+        uri: 'file:///small.jpg',
+        base64: 'tiny-jpeg',
+        type: 'jpeg',
+      });
+      expect(mockMaterializeDraftImages).toHaveBeenCalledWith([
+        expect.objectContaining({ uri: 'file:///small.jpg', base64: 'tiny-jpeg', type: 'jpeg' }),
+      ]);
+      expect(mockDeleteTemporaryImage).toHaveBeenCalledWith(
+        'file:///small.jpg',
+        { idempotent: true },
+      );
+    });
+
+    it('resizes by the LONGER edge — portrait photo resizes by height', async () => {
+      mockRequestMediaLibraryPermissions.mockResolvedValue({ granted: true });
+      mockLaunchImageLibrary.mockResolvedValue({
+        canceled: false,
+        assets: [{ uri: 'file:///portrait.jpg', width: 3024, height: 4032 }],
       });
 
       const { result } = renderHook(() => useMediaPicker());
       await act(async () => { await result.current.pickImage(); });
 
-      expect(result.current.pendingImage).toEqual({
-        uri: 'file:///photo.jpg',
-        base64: 'abc123',
-        type: 'png',
+      const [, actions] = mockManipulateAsync.mock.calls[0];
+      expect(actions).toEqual([{ resize: { height: 1568 } }]);
+    });
+
+    it('does NOT upscale — a small image gets recompressed with no resize action', async () => {
+      mockRequestMediaLibraryPermissions.mockResolvedValue({ granted: true });
+      mockLaunchImageLibrary.mockResolvedValue({
+        canceled: false,
+        assets: [{ uri: 'file:///small.png', width: 800, height: 600 }],
       });
-      expect(mockMaterializeDraftImages).toHaveBeenCalledWith([
-        expect.objectContaining({ uri: 'file:///photo.jpg', base64: 'abc123', type: 'png' }),
+
+      const { result } = renderHook(() => useMediaPicker());
+      await act(async () => { await result.current.pickImage(); });
+
+      const [, actions, saveOptions] = mockManipulateAsync.mock.calls[0];
+      expect(actions).toEqual([]);
+      expect(saveOptions).toEqual({ compress: 0.7, format: 'jpeg', base64: true });
+    });
+
+    it('EXCLUDES an asset whose manipulation yields empty base64 and never emits base64:""', async () => {
+      mockRequestMediaLibraryPermissions.mockResolvedValue({ granted: true });
+      mockLaunchImageLibrary.mockResolvedValue({
+        canceled: false,
+        assets: [{ uri: 'file:///broken.jpg', width: 4000, height: 3000 }],
+      });
+      // manipulator "成功" 但没回 base64 —— 旧代码会静默下发空图
+      mockManipulateAsync.mockResolvedValue({ uri: 'file:///out.jpg', width: 1568, height: 1176, base64: '' });
+
+      const { result } = renderHook(() => useMediaPicker());
+      await act(async () => { await result.current.pickImage(); });
+
+      expect(result.current.pendingImage).toBeNull();
+      expect(result.current.pendingImages).toEqual([]);
+      expect(alertTitles()).toContain('该图片无法读取，已跳过');
+    });
+
+    it('EXCLUDES an asset when manipulateAsync throws, keeps the good ones, and warns once', async () => {
+      mockRequestMediaLibraryPermissions.mockResolvedValue({ granted: true });
+      mockLaunchImageLibrary.mockResolvedValue({
+        canceled: false,
+        assets: [
+          { uri: 'file:///bad.jpg', width: 4000, height: 3000 },
+          { uri: 'file:///good.jpg', width: 4000, height: 3000 },
+        ],
+      });
+      mockManipulateAsync
+        .mockRejectedValueOnce(new Error('decode failed'))
+        .mockResolvedValueOnce({ uri: 'file:///good-out.jpg', width: 1568, height: 1176, base64: 'good-b64' });
+
+      const { result } = renderHook(() => useMediaPicker());
+      await act(async () => { await result.current.pickImage(); });
+
+      // 坏图被排除,好图保留
+      expect(result.current.pendingImages).toEqual([
+        { uri: 'file:///good-out.jpg', base64: 'good-b64', type: 'jpeg' },
       ]);
+      // 一次性提示跳过,且不是把整批当「选择图片失败」
+      expect(alertTitles()).toContain('该图片无法读取，已跳过');
+      expect(alertTitles()).not.toContain('选择图片失败');
     });
 
     it('does not set pendingImage when user cancels', async () => {
@@ -78,6 +208,7 @@ describe('useMediaPicker', () => {
       await act(async () => { await result.current.pickImage(); });
 
       expect(result.current.pendingImage).toBeNull();
+      expect(mockManipulateAsync).not.toHaveBeenCalled();
     });
 
     it('shows alert when permission denied', async () => {
@@ -98,32 +229,6 @@ describe('useMediaPicker', () => {
 
       expect(Alert.alert).toHaveBeenCalledWith('选择图片失败', expect.stringContaining('Native module error'));
     });
-
-    it('defaults to jpeg when mimeType is missing', async () => {
-      mockRequestMediaLibraryPermissions.mockResolvedValue({ granted: true });
-      mockLaunchImageLibrary.mockResolvedValue({
-        canceled: false,
-        assets: [{ uri: 'file:///photo.jpg', base64: 'data', mimeType: undefined }],
-      });
-
-      const { result } = renderHook(() => useMediaPicker());
-      await act(async () => { await result.current.pickImage(); });
-
-      expect(result.current.pendingImage?.type).toBe('jpeg');
-    });
-
-    it('defaults to empty string when base64 is null', async () => {
-      mockRequestMediaLibraryPermissions.mockResolvedValue({ granted: true });
-      mockLaunchImageLibrary.mockResolvedValue({
-        canceled: false,
-        assets: [{ uri: 'file:///p.jpg', base64: null, mimeType: 'image/jpeg' }],
-      });
-
-      const { result } = renderHook(() => useMediaPicker());
-      await act(async () => { await result.current.pickImage(); });
-
-      expect(result.current.pendingImage?.base64).toBe('');
-    });
   });
 
   // ── takePhoto ──
@@ -140,21 +245,42 @@ describe('useMediaPicker', () => {
       expect(mockLaunchCamera).toHaveBeenCalledTimes(1);
     });
 
-    it('sets pendingImage when photo is taken', async () => {
+    it('manipulates the photo and returns the compressed base64, keeping the { uri, base64, type } shape', async () => {
       mockRequestCameraPermissions.mockResolvedValue({ granted: true });
       mockLaunchCamera.mockResolvedValue({
         canceled: false,
-        assets: [{ uri: 'file:///camera.jpg', base64: 'camdata', mimeType: 'image/jpeg' }],
+        assets: [{ uri: 'file:///camera.jpg', width: 4032, height: 3024 }],
       });
+      mockManipulateAsync.mockResolvedValue({ uri: 'file:///cam-small.jpg', width: 1568, height: 1176, base64: 'cam-b64' });
 
       const { result } = renderHook(() => useMediaPicker());
       await act(async () => { await result.current.takePhoto(); });
 
       expect(result.current.pendingImage).toEqual({
-        uri: 'file:///camera.jpg',
-        base64: 'camdata',
+        uri: 'file:///cam-small.jpg',
+        base64: 'cam-b64',
         type: 'jpeg',
       });
+      // 相机也不再向 picker 要 base64 —— 交给 manipulator
+      const camOpts = mockLaunchCamera.mock.calls[0][0];
+      expect(camOpts.base64).toBe(false);
+      expect(camOpts.quality).toBeUndefined();
+      expect(camOpts).toEqual(expect.objectContaining({ mediaTypes: ['images'] }));
+    });
+
+    it('EXCLUDES the photo and alerts when manipulation yields no base64 (no empty image sent)', async () => {
+      mockRequestCameraPermissions.mockResolvedValue({ granted: true });
+      mockLaunchCamera.mockResolvedValue({
+        canceled: false,
+        assets: [{ uri: 'file:///camera.jpg', width: 4032, height: 3024 }],
+      });
+      mockManipulateAsync.mockResolvedValue({ uri: 'file:///out.jpg', width: 1568, height: 1176, base64: undefined });
+
+      const { result } = renderHook(() => useMediaPicker());
+      await act(async () => { await result.current.takePhoto(); });
+
+      expect(result.current.pendingImage).toBeNull();
+      expect(alertTitles()).toContain('该图片无法读取，已跳过');
     });
 
     it('shows alert when camera permission denied', async () => {
@@ -211,14 +337,14 @@ describe('useMediaPicker', () => {
     });
   });
 
-  // ── clearPendingImage ──
+  // ── clearImages ──
 
-  describe('clearPendingImage', () => {
+  describe('clearImages', () => {
     it('clears pending image state', async () => {
       mockRequestCameraPermissions.mockResolvedValue({ granted: true });
       mockLaunchCamera.mockResolvedValue({
         canceled: false,
-        assets: [{ uri: 'file:///x.jpg', base64: 'data', mimeType: 'image/jpeg' }],
+        assets: [{ uri: 'file:///x.jpg', width: 4000, height: 3000 }],
       });
 
       const { result } = renderHook(() => useMediaPicker());
@@ -228,7 +354,7 @@ describe('useMediaPicker', () => {
       await act(async () => { await result.current.clearImages(); });
       expect(result.current.pendingImage).toBeNull();
       expect(mockDeleteDraftImage).toHaveBeenCalledWith(
-        expect.objectContaining({ uri: 'file:///x.jpg' }),
+        expect.objectContaining({ uri: 'file:///manip-out.jpg' }),
       );
     });
 

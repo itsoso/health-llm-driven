@@ -1662,6 +1662,15 @@ const styles = StyleSheet.create({
     backgroundColor: C.paper2,
     overflow: 'hidden',
   },
+  transparencyPanelCollapsed: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    borderRadius: revaRadii.pill,
+  },
+  transparencyPanelOpen: {
+    alignSelf: 'stretch',
+    borderRadius: 14,
+  },
   transparencyHeader: {
     minHeight: 34,
     flexDirection: 'row',
@@ -1869,7 +1878,13 @@ function AgentTransparencyPanel({ profile }: { profile: AgentTransparencyProfile
     ...(profile.traceLine ? [{ label: '追踪', value: profile.traceLine }] : []),
   ];
   return (
-    <View style={styles.transparencyPanel}>
+    <View
+      testID="agent-transparency-panel"
+      style={[
+        styles.transparencyPanel,
+        open ? styles.transparencyPanelOpen : styles.transparencyPanelCollapsed,
+      ]}
+    >
       <Pressable
         onPress={() => setOpen(o => !o)}
         style={({ pressed }) => [styles.transparencyHeader, pressed && styles.actionBtnPressed]}

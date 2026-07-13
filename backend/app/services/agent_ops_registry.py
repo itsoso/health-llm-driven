@@ -168,7 +168,7 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
                    "via": "DELETE /mood/records/{id}"},
     },
 
-    # ── manage-only 对象(create 空洞:UI 有录入口,agent 建不了)──────────
+    # ── 手动身体记录:Agent 可新增,并复用 manage 做改删撤销 ──────────────
     "waist": {
         "create": {
             "tool": "health_record", "record_type": "waist", "confirm": "auto",
@@ -263,6 +263,30 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
                    "via": "DELETE /illness/episodes/{id}"},
     },
 
+    "life_event": {
+        # 情景事件账本(2026-07-12,复用 HealthEpisode episode_type=life_event)。
+        # 2026-07-13 founder 裁决升 AUTO·全通道:非医疗、L0、可逆的纯时间打点,
+        # 恒确认违背时间线账本低摩擦初衷;undo 通路(list/delete)同批补齐
+        # (spec §3.3:auto 写入必须有 undo)。update 不开——occurred_at 由
+        # 确定性代码折算,改动走删除后重记。
+        # 写入双路径:① agent 显式 health_record(event) ② 系统转后异步自动抽取
+        # (services/life_event_extractor.py + tasks/life_event_extraction.py,
+        #  派生写不算 agent 自由写;canonical record_type = "event")。
+        "create": {
+            "tool": "health_record", "record_type": "event", "confirm": "auto",
+            "via": "health_record(event) → POST /episodes/life-event",
+            "undo": "health_manage(delete event {record_id})",
+        },
+        "read": {"tool": "health_query", "dimensions": ("events",),
+                 "via": "health_query(events) → GET /episodes/me/life-events?days={days}"},
+        "list": {"tool": "health_manage", "record_type": "event",
+                 "via": "GET /episodes/me/life-events?days=30"},
+        "update": {"gap": True,
+                   "reason": "无 agent 改通路;occurred_at 由确定性代码折算,改动走删除后重记"},
+        "delete": {"tool": "health_manage", "record_type": "event",
+                   "via": "DELETE /episodes/life-event/{id}(user_id + episode_type=life_event 双过滤 fail-closed)"},
+    },
+
     # ── 医疗级(never_auto:恒确认前置,spec §3.2)────────────────────────
     "medication": {
         "create": {
@@ -298,7 +322,6 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
 
     # ── 补剂三兄弟 ─────────────────────────────────────────────────────────
     "supplement": {
-        # 补剂打卡(intake 记录)。NFC 单个打卡会返回 record_id, 可直接撤销。
         "create": {
             "tool": "health_record", "record_type": "supplement", "confirm": "auto",
             "via": "health_record(supplement) 名称匹配活跃定义 → POST /nfc/tap(action=supplement)",
@@ -359,7 +382,7 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
         "read": {"tool": "health_query", "dimensions": ("medical_exam",),
                  "via": "health_query(medical_exam) → canonical MedicalIndicator 读层"},
         "list": {"tool": "health_manage", "record_type": "medical_exam",
-                 "via": "GET /medical-exams/me"},
+                 "via": "GET /medical-exams/me/reports"},
         "update": {"opt_out": "数值修正走人工核对管线,不开放 agent 改"},
         "delete": {"opt_out": "体检报告不开放 agent 删除"},
     },
@@ -377,6 +400,8 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
     "health_query": {
         # 共享只读分析面(task #43 (d)):不属于单一对象的聚合/可穿戴分析维度挂这里。
         # wearable/garmin 是 canonical 读层(health_read._WEARABLE_DIMS)的别名维度。
+        # 声明式批查询 health_query_batch(Slice 1)复用同一套 dimension + 数据面
+        # (services/health_query_batch.py),只读、无新对象/新维度,故不单列条目。
         "create": {"opt_out": "聚合分析视图,只读"},
         "read": {"tool": "health_query",
                  "dimensions": ("comprehensive", "heart_rate", "hrv", "activity",
@@ -387,7 +412,6 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
         "update": {"opt_out": "聚合分析视图,只读"},
         "delete": {"opt_out": "聚合分析视图,只读"},
     },
-
     # ── 专属工具对象(通用三件套之外,如实登记)──────────────────────────
     "intervention_cycle": {
         "create": {
@@ -397,22 +421,25 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
         "read": {"tool": "intervention_cycle",
                  "via": "intervention_cycle(action=status)"},
         "list": {"tool": "intervention_cycle",
-                 "via": "intervention_cycle(action=list)"},
-        "update": {"tool": "intervention_cycle",
-                   "via": "intervention_cycle(action=update, confirmed=true)"},
-        "delete": {"tool": "intervention_cycle",
-                   "via": "intervention_cycle(action=cancel, confirmed=true) — 标记 abandoned, 不物理删除"},
+                 "via": "intervention_cycle(action=list) / GET /intervention-cycles"},
+        "update": {
+            "tool": "intervention_cycle", "confirm": "never_auto",
+            "via": "intervention_cycle(action=update) / PATCH /intervention-cycles/{id}",
+        },
+        "delete": {
+            "tool": "intervention_cycle", "confirm": "never_auto",
+            "via": "intervention_cycle(action=cancel) / POST /intervention-cycles/{id}/cancel",
+        },
     },
 
-    # ── 整对象空洞(有 UI 面,agent 三件套零通路)────────────────────────
     "goal": {
         "create": {
-            "tool": "health_record", "record_type": "goal", "confirm": "auto",
-            "via": "health_record(goal) → POST /goals/",
+            "tool": "health_record", "record_type": "goal", "confirm": "typed_only",
+            "via": "health_record(goal) → POST /goals",
             "undo": "health_manage(delete goal {record_id})",
         },
         "read": {"tool": "health_manage", "record_type": "goal",
-                 "via": "health_manage(list goal)"},
+                 "via": "health_manage(list goal) / GET /goals/{id}"},
         "list": {"tool": "health_manage", "record_type": "goal",
                  "via": "GET /goals/me"},
         "update": {"tool": "health_manage", "record_type": "goal",

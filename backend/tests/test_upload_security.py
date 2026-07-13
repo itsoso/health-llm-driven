@@ -98,6 +98,46 @@ def test_diet_image_requires_owner_or_short_lived_capability(
     assert signed_response.content == b"private-diet-image"
 
 
+def test_legacy_diet_image_requires_server_issued_capability_even_with_a_record(
+    client, db, auth_user_and_headers, tmp_path, monkeypatch
+):
+    from datetime import date
+
+    from app.api import upload as upload_api
+    from app.models.daily_health import DietRecord
+    from app.services.private_uploads import build_signed_private_upload_url
+
+    owner, owner_headers = auth_user_and_headers
+    monkeypatch.setattr(upload_api, "UPLOAD_DIR", str(tmp_path))
+    legacy_dir = tmp_path / "diet"
+    legacy_dir.mkdir(parents=True)
+    (legacy_dir / "legacy-meal.jpg").write_bytes(b"legacy-private-diet-image")
+    legacy_url = "/api/v1/upload/files/diet/legacy-meal.jpg"
+    db.add(DietRecord(
+        user_id=owner.id,
+        record_date=date.today(),
+        meal_type="lunch",
+        food_name="旧午餐",
+        food_items="旧午餐",
+        image_url=legacy_url,
+    ))
+    db.commit()
+
+    assert client.get(legacy_url, headers=owner_headers).status_code == 404
+    records_response = client.get("/api/v1/diet/records/me", headers=owner_headers)
+    assert records_response.status_code == 200
+    assert records_response.json()[0]["image_url"] is None
+    signed_url = build_signed_private_upload_url(
+        "diet",
+        owner.id,
+        "legacy-meal.jpg",
+        legacy=True,
+    )
+    signed_response = client.get(signed_url)
+    assert signed_response.status_code == 200
+    assert signed_response.content == b"legacy-private-diet-image"
+
+
 def test_legacy_medical_image_uses_report_ownership_and_other_uses_capability(
     client, db, auth_user_and_headers, tmp_path, monkeypatch
 ):

@@ -5,7 +5,7 @@ from typing import List, Optional, Dict, Any
 from datetime import date
 from pydantic import BaseModel
 from app.database import get_db
-from app.schemas.goal import GoalCreate, GoalUpdate, GoalResponse, GoalProgressCreate
+from app.schemas.goal import GoalCreate, GoalResponse, GoalProgressCreate, GoalUpdate
 from app.models.goal import Goal, GoalProgress, GoalStatus, GoalType, GoalPeriod
 from app.models.user import User
 from app.services.goal_management import GoalManagementService
@@ -22,16 +22,6 @@ class GoalGuidanceRequest(BaseModel):
     goal_type: str  # 接受字符串，如 RUNNING, WEIGHT_LOSS, CARDIO 等
     goal_description: Optional[str] = ""
     target_value: Optional[float] = None
-
-
-def _get_owned_goal(db: Session, user_id: int, goal_id: int) -> Goal:
-    goal = db.query(Goal).filter(
-        Goal.id == goal_id,
-        Goal.user_id == user_id,
-    ).first()
-    if not goal:
-        raise HTTPException(status_code=404, detail="目标不存在")
-    return goal
 
 
 @router.post("/", response_model=GoalResponse)
@@ -122,33 +112,48 @@ def get_user_goals(
         raise HTTPException(status_code=400, detail=f"无效的参数: {str(e)}")
 
 
-@router.put("/{goal_id}", response_model=GoalResponse)
-def update_goal(
+@router.get("/{goal_id}", response_model=GoalResponse)
+def get_goal(
     goal_id: int,
-    goal_data: GoalUpdate,
     current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db)
 ):
-    """更新当前用户的目标本体。"""
-    goal = _get_owned_goal(db, current_user.id, goal_id)
-    for key, value in goal_data.model_dump(exclude_unset=True).items():
-        setattr(goal, key, value)
-    db.commit()
-    db.refresh(goal)
+    """获取当前用户的单个目标"""
+    service = GoalManagementService()
+    goal = service.get_goal_for_user(db, current_user.id, goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="目标不存在")
     return goal
 
 
-@router.delete("/{goal_id}")
+@router.put("/{goal_id}", response_model=GoalResponse)
+def update_goal(
+    goal_id: int,
+    goal_update: GoalUpdate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """更新当前用户的目标"""
+    update_data = goal_update.model_dump(exclude_unset=True)
+    service = GoalManagementService()
+    goal = service.update_goal_for_user(db, current_user.id, goal_id, update_data)
+    if not goal:
+        raise HTTPException(status_code=404, detail="目标不存在")
+    return goal
+
+
+@router.delete("/{goal_id}", response_model=dict)
 def delete_goal(
     goal_id: int,
     current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db)
 ):
-    """删除当前用户的目标本体。"""
-    goal = _get_owned_goal(db, current_user.id, goal_id)
-    db.delete(goal)
-    db.commit()
-    return {"message": "目标已删除", "goal_id": goal_id}
+    """删除当前用户的目标"""
+    service = GoalManagementService()
+    deleted = service.delete_goal_for_user(db, current_user.id, goal_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="目标不存在")
+    return {"message": "删除成功", "record_id": goal_id}
 
 
 @router.post("/{goal_id}/progress", response_model=dict)

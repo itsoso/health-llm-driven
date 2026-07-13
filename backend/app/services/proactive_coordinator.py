@@ -26,6 +26,7 @@ from app.services.interruption_budget import evaluate_interruption, normalize_ti
 from app.utils.timezone import get_china_now, get_user_now
 
 logger = logging.getLogger(__name__)
+MORNING_SLEEP_FLOOR = time(9, 0)
 
 
 def proactive_notifications_sent(
@@ -75,13 +76,22 @@ def _in_quiet_hours(db: Session, user_id: int) -> bool:
         start = _parse_hhmm(getattr(s, "quiet_hours_start", None) or "22:00", time(22, 0))
         end = _parse_hhmm(getattr(s, "quiet_hours_end", None) or "09:00", time(9, 0))
         now = get_user_now(db, user_id).time()
-        if now < time(9, 0):
+        if now < MORNING_SLEEP_FLOOR:
             return True
         if start <= end:
             return start <= now < end
         return now >= start or now < end  # 跨午夜
     except Exception as e:  # noqa: BLE001
         logger.warning("[proactive] quiet-hours check failed user=%s: %s", user_id, e)
+        return False
+
+
+def _in_morning_sleep_floor(db: Session, user_id: int) -> bool:
+    """09:00 前是硬睡眠保护窗口, P0/P1 都不能主动打扰。"""
+    try:
+        return get_user_now(db, user_id).time() < MORNING_SLEEP_FLOOR
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[proactive] morning sleep floor check failed user=%s: %s", user_id, e)
         return False
 
 
@@ -137,6 +147,11 @@ def proactive_notification_decision(
         else 0
     )
     in_quiet = _in_quiet_hours(db, user_id) if normalized_tier in {"P0", "P1"} else False
+    in_morning_floor = (
+        _in_morning_sleep_floor(db, user_id)
+        if normalized_tier in {"P0", "P1"}
+        else False
+    )
     in_busy = _in_busy_window(db, user_id) if normalized_tier == "P1" else False
     return evaluate_interruption(
         tier=normalized_tier,
@@ -145,6 +160,7 @@ def proactive_notification_decision(
         sent_tier=sent_tier,
         tier_budget=p0_budget if normalized_tier == "P0" else None,
         in_quiet_hours=in_quiet,
+        in_morning_sleep_floor=in_morning_floor,
         in_busy_window=in_busy,
         reason=reason,
         action=action,
