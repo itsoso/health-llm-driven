@@ -243,6 +243,35 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('frames copied AI-estimated captions as review copy in feedback', async () => {
+    const estimatedRecord = { ...record, source: 'ai_estimate', ai_confidence: 0.84 };
+    const onShareFeedback = jest.fn();
+    const { getByText } = render(
+      <DietShareSheet
+        visible
+        record={estimatedRecord}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+        onShareFeedback={onShareFeedback}
+      />,
+    );
+
+    fireEvent.press(getByText('复制小红书复盘文案'));
+
+    await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养数据: 智能估算，可继续复盘'));
+      expect(getByText('已复制小红书复盘文案')).toBeTruthy();
+      expect(onShareFeedback).toHaveBeenCalledWith(expect.objectContaining({
+        title: '复盘文案已复制',
+        detail: '可继续核对后，再去小红书正文框粘贴',
+        tone: 'success',
+      }));
+      expect(onShareFeedback).not.toHaveBeenCalledWith(expect.objectContaining({
+        detail: '去小红书正文框直接粘贴发布',
+      }));
+    });
+  });
+
   it('does not overstate AI-estimated meals as fully share-ready on the card badge', () => {
     const estimatedRecord = { ...record, source: 'ai_estimate', ai_confidence: 0.84 };
     const { getAllByText, getByText, queryByText } = render(

@@ -874,13 +874,19 @@ export function DietShareSheet({
       onShareFeedback?.({
         title: lowConfidenceShare
           ? '核对文案已复制'
-          : isMoments
-            ? '朋友圈文案已复制'
-            : '小红书文案已复制',
+          : estimatedShare
+            ? '复盘文案已复制'
+            : isMoments
+              ? '朋友圈文案已复制'
+              : '小红书文案已复制',
         detail: lowConfidenceShare
           ? isMoments
             ? '先核对食物和份量，再去微信或朋友圈粘贴'
             : '先核对食物和份量，再去小红书正文框粘贴'
+          : estimatedShare
+            ? isMoments
+              ? '可继续核对后，再去微信或朋友圈粘贴'
+              : '可继续核对后，再去小红书正文框粘贴'
           : isMoments
             ? '去微信或朋友圈直接粘贴发布'
             : '去小红书正文框直接粘贴发布',
