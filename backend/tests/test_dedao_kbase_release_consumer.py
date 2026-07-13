@@ -517,6 +517,8 @@ def test_list_review_claims_returns_bounded_release_claims(tmp_path):
     result = list_review_claims(workspace, offset=0, limit=20)
 
     assert result["total"] == 1
+    assert result["unresolved_count"] == 1
+    assert result["decision_counts"] == {"unresolved": 1}
     assert result["offset"] == 0
     assert result["limit"] == 20
     assert len(result["workspace_fingerprint"]) == 64

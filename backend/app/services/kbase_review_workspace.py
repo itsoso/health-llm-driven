@@ -138,6 +138,8 @@ def list_review_claims(
         items = []
         for claim in _read_jsonl(root / "claims.jsonl"):
             metadata = claim.get("metadata") if isinstance(claim.get("metadata"), dict) else {}
+            if not metadata.get("release_id"):
+                continue
             claim_decision = (latest.get(str(claim.get("doc_id") or "")) or {}).get("decision")
             if decision is not None and claim_decision != decision:
                 continue
@@ -159,9 +161,16 @@ def list_review_claims(
                 }
             )
         items.sort(key=lambda item: item["doc_id"])
+        decision_counts: dict[str, int] = {}
+        for item in items:
+            bucket = str(item["decision"] or "unresolved")
+            decision_counts[bucket] = decision_counts.get(bucket, 0) + 1
+        unresolved_count = sum(1 for item in items if item["review_status"] == "draft")
         return {
             "workspace_fingerprint": workspace_content_fingerprint(root),
             "total": len(items),
+            "unresolved_count": unresolved_count,
+            "decision_counts": dict(sorted(decision_counts.items())),
             "offset": offset,
             "limit": limit,
             "items": items[offset : offset + limit],
