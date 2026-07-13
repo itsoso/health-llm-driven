@@ -21876,6 +21876,8 @@ export interface components {
         };
         /** DedaoKbaseDraftReviewApproveRequest */
         DedaoKbaseDraftReviewApproveRequest: {
+            /** Workspace Fingerprint */
+            workspace_fingerprint: string;
             /** Note */
             note?: string | null;
             /**

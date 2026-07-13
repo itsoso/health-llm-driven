@@ -22,6 +22,11 @@ from app.config import settings
 from app.models.system_knowledge import KBAudit, KBDocument, KBDocumentVector, KBEdge
 from app.services.retrieval_guard import guard_retrieval_query
 from app.services.system_knowledge_ingest import review_draft_artifacts, validate_artifact_review_gate
+from app.services.kbase_review_workspace import (
+    review_workspace_lock,
+    workspace_artifacts_valid,
+    workspace_content_fingerprint,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -1610,38 +1615,50 @@ def get_dedao_kbase_draft_review_bundle(
 ) -> dict[str, Any]:
     """Return a bounded review preview for configured dedao-kbase draft artifacts."""
     root = _configured_system_kb_artifact_dir(artifact_dir)
-    gate = validate_artifact_review_gate(root)
-    manifest = _read_json_file(root / "manifest.json")
-    return {
-        "artifact_dir": str(root),
-        "gate": gate,
-        "draft_manifest": _read_json_file(root / "draft_manifest.json"),
-        "manifest": {
-            "ingest": manifest.get("ingest") if isinstance(manifest.get("ingest"), dict) else None,
-            "draft_gate": manifest.get("draft_gate") if isinstance(manifest.get("draft_gate"), dict) else None,
-            "review": manifest.get("review") if isinstance(manifest.get("review"), dict) else None,
-            "counts": manifest.get("counts") if isinstance(manifest.get("counts"), dict) else None,
-            "diff": manifest.get("diff") if isinstance(manifest.get("diff"), dict) else None,
-        },
-        "preview": _artifact_preview(root, limit=preview_limit),
-    }
+    with review_workspace_lock(root):
+        _require_system_kb_artifact_dir(root)
+        _require_valid_review_workspace(root)
+        gate = validate_artifact_review_gate(root)
+        manifest = _read_json_file(root / "manifest.json")
+        return {
+            "artifact_dir": str(root),
+            "workspace_fingerprint": workspace_content_fingerprint(root),
+            "gate": gate,
+            "draft_manifest": _read_json_file(root / "draft_manifest.json"),
+            "manifest": {
+                "ingest": manifest.get("ingest") if isinstance(manifest.get("ingest"), dict) else None,
+                "draft_gate": manifest.get("draft_gate") if isinstance(manifest.get("draft_gate"), dict) else None,
+                "review": manifest.get("review") if isinstance(manifest.get("review"), dict) else None,
+                "counts": manifest.get("counts") if isinstance(manifest.get("counts"), dict) else None,
+                "diff": manifest.get("diff") if isinstance(manifest.get("diff"), dict) else None,
+            },
+            "preview": _artifact_preview(root, limit=preview_limit),
+        }
 
 
 def approve_dedao_kbase_draft_review(
     *,
     artifact_dir: str | Path | None = None,
     reviewer: str,
+    expected_workspace_fingerprint: str,
 ) -> dict[str, Any]:
     """Promote configured dedao-kbase draft artifacts after human review."""
     root = _configured_system_kb_artifact_dir(artifact_dir)
-    review = review_draft_artifacts(root, reviewer=reviewer)
-    gate = validate_artifact_review_gate(root)
-    return {
-        "artifact_dir": str(root),
-        "review": review,
-        "gate": gate,
-        "draft_manifest": _read_json_file(root / "draft_manifest.json"),
-    }
+    with review_workspace_lock(root):
+        _require_system_kb_artifact_dir(root)
+        _require_valid_review_workspace(root)
+        current_fingerprint = workspace_content_fingerprint(root)
+        if current_fingerprint != expected_workspace_fingerprint:
+            raise ValueError("dedao-kbase review workspace changed since preview; reload before approval")
+        review = review_draft_artifacts(root, reviewer=reviewer)
+        gate = validate_artifact_review_gate(root)
+        return {
+            "artifact_dir": str(root),
+            "approved_workspace_fingerprint": current_fingerprint,
+            "review": review,
+            "gate": gate,
+            "draft_manifest": _read_json_file(root / "draft_manifest.json"),
+        }
 
 
 def publish_dedao_kbase_reviewed_artifacts(
@@ -1653,20 +1670,23 @@ def publish_dedao_kbase_reviewed_artifacts(
     """Import reviewed dedao-kbase artifacts into serving KB and refresh indexes."""
 
     root = _configured_system_kb_artifact_dir(artifact_dir)
-    gate = validate_artifact_review_gate(root)
-    if not gate.get("serving_allowed"):
-        reasons = ", ".join(str(reason) for reason in gate.get("blocking_reasons") or [])
-        raise ValueError(f"dedao-kbase artifacts are not reviewed for serving: {reasons}")
+    with review_workspace_lock(root):
+        _require_system_kb_artifact_dir(root)
+        _require_valid_review_workspace(root)
+        gate = validate_artifact_review_gate(root)
+        if not gate.get("serving_allowed"):
+            reasons = ", ".join(str(reason) for reason in gate.get("blocking_reasons") or [])
+            raise ValueError(f"dedao-kbase artifacts are not reviewed for serving: {reasons}")
 
-    from app.services.system_knowledge_importer import import_system_kb_artifacts
+        from app.services.system_knowledge_importer import import_system_kb_artifacts
 
-    import_report = import_system_kb_artifacts(db, root, actor=actor)
-    reindex_report = run_system_kb_reindex_report(db, actor=actor)
-    return {
-        "artifact_dir": str(root),
-        "import": import_report,
-        "reindex": reindex_report,
-    }
+        import_report = import_system_kb_artifacts(db, root, actor=actor)
+        reindex_report = run_system_kb_reindex_report(db, actor=actor)
+        return {
+            "artifact_dir": str(root),
+            "import": import_report,
+            "reindex": reindex_report,
+        }
 
 
 def preview_dedao_kbase_reviewed_artifacts_publish(
@@ -1677,28 +1697,31 @@ def preview_dedao_kbase_reviewed_artifacts_publish(
     """Preview reviewed dedao-kbase artifact import/reindex impact without serving mutation."""
 
     root = _configured_system_kb_artifact_dir(artifact_dir)
-    gate = validate_artifact_review_gate(root)
-    if not gate.get("serving_allowed"):
-        reasons = ", ".join(str(reason) for reason in gate.get("blocking_reasons") or [])
-        raise ValueError(f"dedao-kbase artifacts are not reviewed for serving: {reasons}")
+    with review_workspace_lock(root):
+        _require_system_kb_artifact_dir(root)
+        _require_valid_review_workspace(root)
+        gate = validate_artifact_review_gate(root)
+        if not gate.get("serving_allowed"):
+            reasons = ", ".join(str(reason) for reason in gate.get("blocking_reasons") or [])
+            raise ValueError(f"dedao-kbase artifacts are not reviewed for serving: {reasons}")
 
-    import_preview = _preview_reviewed_artifact_import(db, root)
-    pgvector = get_system_kb_pgvector_health(db)
-    return {
-        "dry_run": True,
-        "artifact_dir": str(root),
-        "gate": gate,
-        "import": import_preview,
-        "reindex": {
-            "would_run": True,
-            "current": {
-                "expected_documents": pgvector.get("expected_documents"),
-                "embedding_rows": pgvector.get("embedding_rows"),
-                "current_vector_backend": pgvector.get("current_vector_backend"),
-                "latest_reindex_report": pgvector.get("latest_reindex_report"),
+        import_preview = _preview_reviewed_artifact_import(db, root)
+        pgvector = get_system_kb_pgvector_health(db)
+        return {
+            "dry_run": True,
+            "artifact_dir": str(root),
+            "gate": gate,
+            "import": import_preview,
+            "reindex": {
+                "would_run": True,
+                "current": {
+                    "expected_documents": pgvector.get("expected_documents"),
+                    "embedding_rows": pgvector.get("embedding_rows"),
+                    "current_vector_backend": pgvector.get("current_vector_backend"),
+                    "latest_reindex_report": pgvector.get("latest_reindex_report"),
+                },
             },
-        },
-    }
+        }
 
 
 def apply_confidence_decay(
@@ -4021,14 +4044,23 @@ def _latest_lifecycle_report(db: Session) -> dict[str, Any] | None:
 def _configured_system_kb_artifact_dir(artifact_dir: str | Path | None = None) -> Path:
     if artifact_dir is not None:
         root = Path(artifact_dir)
+    elif settings.dedao_kbase_review_artifact_dir:
+        root = Path(settings.dedao_kbase_review_artifact_dir)
     elif settings.system_kb_artifact_dir:
         root = Path(settings.system_kb_artifact_dir)
     else:
         root = Path(__file__).resolve().parents[2] / "data" / "system_kb_v2_seed"
-    root = root.expanduser()
+    return root.expanduser()
+
+
+def _require_system_kb_artifact_dir(root: Path) -> None:
     if not root.exists():
         raise ValueError(f"system KB artifact dir does not exist: {root}")
-    return root
+
+
+def _require_valid_review_workspace(root: Path) -> None:
+    if not workspace_artifacts_valid(root):
+        raise ValueError(f"dedao-kbase review workspace is incomplete or corrupt: {root}")
 
 
 def _read_json_file(path: Path) -> dict[str, Any]:

@@ -7,6 +7,7 @@ from app.config import settings
 from app.models.agent_audit_log import AgentAuditLog
 from app.models.notification import NotificationLog
 from app.models.system_knowledge import KBAudit, KBDocument, KBEdge
+from app.services.kbase_review_workspace import workspace_content_fingerprint
 from app.services.system_knowledge_service import (
     _build_postgres_reindex_statement,
     apply_confidence_decay,
@@ -21,6 +22,14 @@ def _write_artifact_jsonl(path, rows):
         "".join(json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n" for row in rows),
         encoding="utf-8",
     )
+
+
+def _artifact_counts(artifact_dir):
+    names = ("pages", "entities", "claims", "protocols", "contraindications", "eval_cases", "relations")
+    return {
+        name: len([line for line in (artifact_dir / f"{name}.jsonl").read_text().splitlines() if line.strip()])
+        for name in names
+    }
 
 
 def _seed_phase0_knowledge(db):
@@ -1275,6 +1284,7 @@ def test_admin_dedao_kbase_draft_review_bundle_reads_configured_artifacts(
             {
                 "ingest": {"review_status": "draft"},
                 "draft_gate": {"status": "draft", "requires_review": True, "serving_allowed": False},
+                "counts": _artifact_counts(artifact_dir),
             },
             ensure_ascii=False,
         )
@@ -1294,6 +1304,7 @@ def test_admin_dedao_kbase_draft_review_bundle_reads_configured_artifacts(
     assert payload["gate"]["serving_allowed"] is False
     assert payload["gate"]["blocking_reasons"] == ["draft_artifacts_present", "manifest_not_reviewed"]
     assert payload["draft_manifest"]["status"] == "draft"
+    assert payload["workspace_fingerprint"] == workspace_content_fingerprint(artifact_dir)
     assert payload["preview"]["counts"]["claims"] == 1
     assert payload["preview"]["claims"][0]["doc_id"] == "claim:c_sleep_caffeine_window"
     assert payload["preview"]["claims"][0]["review_status"] == "draft"
@@ -1341,7 +1352,11 @@ def test_admin_dedao_kbase_draft_review_approve_promotes_configured_artifacts(
         ],
     )
     (artifact_dir / "manifest.json").write_text(
-        json.dumps({"ingest": {"review_status": "draft"}}, ensure_ascii=False) + "\n",
+        json.dumps(
+            {"ingest": {"review_status": "draft"}, "counts": _artifact_counts(artifact_dir)},
+            ensure_ascii=False,
+        )
+        + "\n",
         encoding="utf-8",
     )
     (artifact_dir / "draft_manifest.json").write_text(
@@ -1352,7 +1367,10 @@ def test_admin_dedao_kbase_draft_review_approve_promotes_configured_artifacts(
     response = client.post(
         "/api/v1/admin/knowledge/dedao_kbase/draft_review/approve",
         headers=headers,
-        json={"note": "结构化摘要已人工核对"},
+        json={
+            "workspace_fingerprint": workspace_content_fingerprint(artifact_dir),
+            "note": "结构化摘要已人工核对",
+        },
     )
 
     assert response.status_code == 200
@@ -1422,7 +1440,11 @@ def test_admin_dedao_kbase_draft_review_approve_can_publish_to_serving_kb(
         ],
     )
     (artifact_dir / "manifest.json").write_text(
-        json.dumps({"ingest": {"review_status": "draft"}}, ensure_ascii=False) + "\n",
+        json.dumps(
+            {"ingest": {"review_status": "draft"}, "counts": _artifact_counts(artifact_dir)},
+            ensure_ascii=False,
+        )
+        + "\n",
         encoding="utf-8",
     )
     (artifact_dir / "draft_manifest.json").write_text(
@@ -1433,7 +1455,11 @@ def test_admin_dedao_kbase_draft_review_approve_can_publish_to_serving_kb(
     response = client.post(
         "/api/v1/admin/knowledge/dedao_kbase/draft_review/approve",
         headers=headers,
-        json={"note": "审核后直接发布", "publish": True},
+        json={
+            "workspace_fingerprint": workspace_content_fingerprint(artifact_dir),
+            "note": "审核后直接发布",
+            "publish": True,
+        },
     )
 
     assert response.status_code == 200
@@ -1503,7 +1529,11 @@ def test_admin_dedao_kbase_draft_review_approve_can_preview_publish_without_serv
         ],
     )
     (artifact_dir / "manifest.json").write_text(
-        json.dumps({"ingest": {"review_status": "draft"}}, ensure_ascii=False) + "\n",
+        json.dumps(
+            {"ingest": {"review_status": "draft"}, "counts": _artifact_counts(artifact_dir)},
+            ensure_ascii=False,
+        )
+        + "\n",
         encoding="utf-8",
     )
     (artifact_dir / "draft_manifest.json").write_text(
@@ -1514,7 +1544,11 @@ def test_admin_dedao_kbase_draft_review_approve_can_preview_publish_without_serv
     response = client.post(
         "/api/v1/admin/knowledge/dedao_kbase/draft_review/approve",
         headers=headers,
-        json={"note": "先预检发布影响", "dry_run_publish": True},
+        json={
+            "workspace_fingerprint": workspace_content_fingerprint(artifact_dir),
+            "note": "先预检发布影响",
+            "dry_run_publish": True,
+        },
     )
 
     assert response.status_code == 200
@@ -1591,6 +1625,7 @@ def test_admin_dedao_kbase_reviewed_artifacts_publish_imports_without_reapprovin
             {
                 "ingest": {"review_status": "reviewed"},
                 "review": {"review_status": "reviewed"},
+                "counts": _artifact_counts(artifact_dir),
             },
             ensure_ascii=False,
         )

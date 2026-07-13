@@ -4,7 +4,9 @@ from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
-from threading import Thread
+import shutil
+from threading import Event, Thread
+from unittest.mock import patch
 
 import pytest
 
@@ -133,6 +135,7 @@ def test_incremental_release_sync_writes_draft_and_advances_cursor_without_false
             artifact_dir=tmp_path / "artifacts",
             source_root=tmp_path / "source",
             actor="test:release-sync",
+            limit=1,
             now=datetime(2026, 7, 12, 13, tzinfo=UTC),
         )
         resumed = sync_dedao_kbase_releases_draft_once(
@@ -142,6 +145,7 @@ def test_incremental_release_sync_writes_draft_and_advances_cursor_without_false
             artifact_dir=tmp_path / "artifacts",
             source_root=tmp_path / "source",
             actor="test:release-sync",
+            limit=1,
             now=datetime(2026, 7, 12, 14, tzinfo=UTC),
         )
     finally:
@@ -155,9 +159,409 @@ def test_incremental_release_sync_writes_draft_and_advances_cursor_without_false
     assert result["gate"]["serving_allowed"] is False
     audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_release_sync_draft").one()
     assert audit.diff["cursor"] == "release-abc"
-    assert resumed == {"status": "up_to_date", "cursor": "release-abc", "release_count": 0}
+    assert resumed["status"] == "up_to_date"
+    assert resumed["mode"] == "incremental"
+    assert resumed["cursor"] == "release-abc"
+    assert resumed["release_count"] == 0
     assert any("after=release-abc" in path for method, path, _ in requests if method == "GET")
     assert not any(method == "POST" for method, _, _ in requests)
+
+
+def test_release_sync_replays_when_persistent_workspace_is_lost(tmp_path, db):
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_releases_draft_once
+
+    release = _release_payload()
+    requests: list[tuple[str, str, dict | None]] = []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _release_handler(release, requests))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    canonical = tmp_path / "canonical"
+    workspace = tmp_path / "review-workspace"
+    _write_canonical_artifacts(canonical, marker="base-v1")
+    try:
+        first = sync_dedao_kbase_releases_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+            actor="test:release-sync",
+            limit=1,
+        )
+        shutil.rmtree(workspace)
+        replayed = sync_dedao_kbase_releases_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+            actor="test:release-sync",
+            limit=1,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert first["mode"] == "rebuild"
+    assert replayed["status"] == "draft_written"
+    assert replayed["mode"] == "rebuild"
+    assert replayed["previous_cursor"] == "release-abc"
+    assert (workspace / "draft_manifest.json").exists()
+    assert sum("after=&" in path for method, path, _ in requests if method == "GET") == 2
+    assert sum("after=release-abc" in path for method, path, _ in requests if method == "GET") == 2
+
+
+def test_release_sync_rebuilds_when_canonical_base_changes(tmp_path, db):
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_releases_draft_once
+    from app.services.system_knowledge_ingest import review_draft_artifacts
+
+    release = _release_payload()
+    requests: list[tuple[str, str, dict | None]] = []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _release_handler(release, requests))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    canonical = tmp_path / "canonical"
+    workspace = tmp_path / "review-workspace"
+    _write_canonical_artifacts(canonical, marker="base-v1")
+    try:
+        first = sync_dedao_kbase_releases_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+        )
+        _write_canonical_artifacts(canonical, marker="base-v2")
+        rebuilt = sync_dedao_kbase_releases_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert rebuilt["mode"] == "rebuild"
+    assert rebuilt["base_fingerprint"] != first["base_fingerprint"]
+    pages = [json.loads(line) for line in (workspace / "pages.jsonl").read_text().splitlines()]
+    assert any(page.get("title") == "base-v2" for page in pages)
+    assert rebuilt["gate"]["relations"]["missing"] == 0
+    review = review_draft_artifacts(workspace, reviewer="test:reviewer")
+    assert review["serving_allowed"] is True
+
+
+def test_release_sync_failed_rebuild_preserves_previous_workspace_and_cursor(tmp_path, db):
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_releases_draft_once
+
+    release = _release_payload()
+    requests: list[tuple[str, str, dict | None]] = []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _release_handler(release, requests))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    canonical = tmp_path / "canonical"
+    workspace = tmp_path / "review-workspace"
+    _write_canonical_artifacts(canonical, marker="base-v1")
+    try:
+        sync_dedao_kbase_releases_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+        )
+        before = (workspace / "pages.jsonl").read_bytes()
+        _write_canonical_artifacts(canonical, marker="base-v2")
+        with patch(
+            "app.tasks.system_knowledge_lifecycle.write_draft_artifacts",
+            side_effect=RuntimeError("injected rebuild failure"),
+        ), pytest.raises(RuntimeError, match="injected rebuild failure"):
+            sync_dedao_kbase_releases_draft_once(
+                db,
+                base_url=f"http://127.0.0.1:{server.server_port}",
+                auth_token="secret-token",
+                artifact_dir=workspace,
+                base_artifact_dir=canonical,
+                source_root=tmp_path / "source",
+            )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert (workspace / "pages.jsonl").read_bytes() == before
+    audits = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_release_sync_draft").all()
+    assert len(audits) == 1
+    assert audits[0].diff["cursor"] == "release-abc"
+
+
+@pytest.mark.parametrize("damage", ["stale_cursor", "missing_artifact", "count_mismatch"])
+def test_release_sync_rebuilds_when_workspace_state_disagrees_with_audit(tmp_path, db, damage):
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_releases_draft_once
+
+    release = _release_payload()
+    requests: list[tuple[str, str, dict | None]] = []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _release_handler(release, requests))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    canonical = tmp_path / "canonical"
+    workspace = tmp_path / "review-workspace"
+    _write_canonical_artifacts(canonical, marker="base-v1")
+    try:
+        sync_dedao_kbase_releases_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+        )
+        if damage == "stale_cursor":
+            manifest_path = workspace / "draft_manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["cursor"] = "release-old"
+            manifest_path.write_text(json.dumps(manifest))
+        else:
+            if damage == "missing_artifact":
+                (workspace / "claims.jsonl").unlink()
+            else:
+                manifest_path = workspace / "manifest.json"
+                manifest = json.loads(manifest_path.read_text())
+                manifest["counts"]["claims"] += 1
+                manifest_path.write_text(json.dumps(manifest))
+        repaired = sync_dedao_kbase_releases_draft_once(
+            db,
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert repaired["mode"] == "rebuild"
+    assert repaired["status"] == "draft_written"
+    assert (workspace / "claims.jsonl").exists()
+
+
+@pytest.mark.parametrize("layout", ["equal", "review_inside_base", "base_inside_review"])
+def test_release_sync_rejects_review_workspace_overlapping_canonical_seed(tmp_path, db, layout):
+    from app.tasks.system_knowledge_lifecycle import sync_dedao_kbase_releases_draft_once
+
+    if layout == "equal":
+        canonical = workspace = tmp_path / "canonical"
+    elif layout == "review_inside_base":
+        canonical = tmp_path / "canonical"
+        workspace = canonical / "review-workspace"
+    else:
+        workspace = tmp_path / "review-workspace"
+        canonical = workspace / "canonical"
+    _write_canonical_artifacts(canonical, marker="base-v1")
+
+    with pytest.raises(ValueError, match="must not overlap canonical"):
+        sync_dedao_kbase_releases_draft_once(
+            db,
+            base_url="https://kbase.example.test",
+            auth_token="secret-token",
+            artifact_dir=workspace,
+            base_artifact_dir=canonical,
+            source_root=tmp_path / "source",
+        )
+
+
+def test_review_bundle_uses_dedicated_release_workspace(tmp_path, monkeypatch):
+    from app.config import settings
+    from app.services.system_knowledge_service import get_dedao_kbase_draft_review_bundle
+
+    workspace = tmp_path / "review-workspace"
+    _write_canonical_artifacts(workspace, marker="persistent-review")
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(workspace))
+
+    bundle = get_dedao_kbase_draft_review_bundle()
+
+    assert bundle["artifact_dir"] == str(workspace)
+    assert bundle["preview"]["pages"][0]["title"] == "persistent-review"
+    assert len(bundle["workspace_fingerprint"]) == 64
+
+
+def test_review_approval_rejects_workspace_changed_after_preview(tmp_path, monkeypatch):
+    from app.config import settings
+    from app.services.system_knowledge_service import (
+        approve_dedao_kbase_draft_review,
+        get_dedao_kbase_draft_review_bundle,
+    )
+
+    workspace = tmp_path / "review-workspace"
+    _write_canonical_artifacts(workspace, marker="reviewed-version")
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(workspace))
+    bundle = get_dedao_kbase_draft_review_bundle()
+    with (workspace / "pages.jsonl").open("a", encoding="utf-8") as stream:
+        stream.write("\n")
+
+    with pytest.raises(ValueError, match="changed since preview"):
+        approve_dedao_kbase_draft_review(
+            reviewer="reviewer:test",
+            expected_workspace_fingerprint=bundle["workspace_fingerprint"],
+        )
+
+
+def test_review_bundle_rejects_manifest_count_mismatch(tmp_path, monkeypatch):
+    from app.config import settings
+    from app.services.system_knowledge_service import get_dedao_kbase_draft_review_bundle
+
+    workspace = tmp_path / "review-workspace"
+    _write_canonical_artifacts(workspace, marker="truncated-review")
+    manifest_path = workspace / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["counts"]["pages"] = 2
+    manifest_path.write_text(json.dumps(manifest))
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(workspace))
+
+    with pytest.raises(ValueError, match="incomplete or corrupt"):
+        get_dedao_kbase_draft_review_bundle()
+
+
+def test_workspace_lock_serializes_concurrent_writers(tmp_path):
+    from app.tasks.system_knowledge_lifecycle import _workspace_lock
+
+    workspace = tmp_path / "review-workspace"
+    first_acquired = Event()
+    release_first = Event()
+    order: list[str] = []
+
+    def first_writer() -> None:
+        with _workspace_lock(workspace):
+            order.append("first-enter")
+            first_acquired.set()
+            release_first.wait(timeout=2)
+            order.append("first-exit")
+
+    def second_writer() -> None:
+        first_acquired.wait(timeout=2)
+        with _workspace_lock(workspace):
+            order.append("second-enter")
+
+    first = Thread(target=first_writer)
+    second = Thread(target=second_writer)
+    first.start()
+    second.start()
+    assert first_acquired.wait(timeout=2)
+    assert order == ["first-enter"]
+    release_first.set()
+    first.join(timeout=2)
+    second.join(timeout=2)
+
+    assert order == ["first-enter", "first-exit", "second-enter"]
+
+
+def test_review_bundle_recovers_workspace_backup_before_read(tmp_path, monkeypatch):
+    from app.config import settings
+    from app.services.kbase_review_workspace import workspace_backup_path
+    from app.services.system_knowledge_service import get_dedao_kbase_draft_review_bundle
+
+    workspace = tmp_path / "review-workspace"
+    backup = workspace_backup_path(workspace)
+    _write_canonical_artifacts(backup, marker="recovered-review")
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(workspace))
+
+    bundle = get_dedao_kbase_draft_review_bundle()
+
+    assert workspace.exists()
+    assert not backup.exists()
+    assert bundle["preview"]["pages"][0]["title"] == "recovered-review"
+
+
+def test_review_bundle_waits_for_active_workspace_sync(tmp_path, monkeypatch):
+    from app.config import settings
+    from app.services.kbase_review_workspace import review_workspace_lock
+    from app.services.system_knowledge_service import get_dedao_kbase_draft_review_bundle
+
+    workspace = tmp_path / "review-workspace"
+    _write_canonical_artifacts(workspace, marker="serialized-review")
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(workspace))
+    review_started = Event()
+    review_finished = Event()
+
+    def read_review_bundle() -> None:
+        review_started.set()
+        get_dedao_kbase_draft_review_bundle()
+        review_finished.set()
+
+    with review_workspace_lock(workspace):
+        review = Thread(target=read_review_bundle)
+        review.start()
+        assert review_started.wait(timeout=2)
+        assert not review_finished.wait(timeout=0.1)
+
+    review.join(timeout=2)
+    assert review_finished.is_set()
+
+
+def _write_canonical_artifacts(root: Path, *, marker: str) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "pages.jsonl").write_text(
+        json.dumps(
+            {
+                "doc_id": "page:canonical",
+                "doc_type": "article",
+                "title": marker,
+                "summary": marker,
+                "metadata": {"review_status": "reviewed"},
+            }
+        )
+        + "\n"
+    )
+    for name in (
+        "entities.jsonl",
+        "claims.jsonl",
+        "protocols.jsonl",
+        "contraindications.jsonl",
+        "eval_cases.jsonl",
+    ):
+        (root / name).write_text("")
+    (root / "relations.jsonl").write_text(
+        json.dumps(
+            {
+                "src_doc_id": "page:canonical",
+                "dst_doc_id": "page:canonical",
+                "relation": "mentions",
+                "confidence": 1.0,
+            }
+        )
+        + "\n"
+    )
+    (root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "ingest": {"review_status": "reviewed"},
+                "marker": marker,
+                "counts": {
+                    "pages": 1,
+                    "entities": 0,
+                    "claims": 0,
+                    "protocols": 0,
+                    "contraindications": 0,
+                    "eval_cases": 0,
+                    "relations": 1,
+                },
+            }
+        )
+        + "\n"
+    )
+    (root / "draft_manifest.json").write_text(
+        json.dumps({"status": "reviewed", "requires_review": False, "serving_allowed": True}) + "\n"
+    )
 
 
 def _release_handler(release: dict, requests: list[tuple[str, str, dict | None]]):

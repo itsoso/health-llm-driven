@@ -304,6 +304,7 @@ class Settings(BaseSettings):
     dedao_kbase_release_batch_size: int = 50
     dedao_kbase_auth_token: Optional[str] = None
     dedao_kbase_source_root: str = "/Users/liqiuhua/work/personal/down-dedao"
+    dedao_kbase_review_artifact_dir: Optional[str] = None
     system_kb_artifact_dir: Optional[str] = None
     system_kb_pgvector_enabled: bool = True
     system_kb_embedding_api_key: Optional[str] = None
