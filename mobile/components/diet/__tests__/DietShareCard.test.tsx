@@ -686,6 +686,33 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('keeps AI-estimated platform share completion framed as review material', async () => {
+    const estimatedRecord = { ...record, source: 'ai_estimate', ai_confidence: 0.84 };
+    const onShareFeedback = jest.fn();
+    const { getByText, queryByText } = render(
+      <DietShareSheet
+        visible
+        record={estimatedRecord}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+        onShareFeedback={onShareFeedback}
+      />,
+    );
+
+    fireEvent.press(getByText('发小红书'));
+
+    await waitFor(() => {
+      expect(getByText('复盘素材已准备，文案已复制')).toBeTruthy();
+      expect(getByText('可继续核对后，再去小红书选择图片发布')).toBeTruthy();
+      expect(queryByText('小红书图片已生成，文案已复制')).toBeNull();
+      expect(queryByText('去小红书选择图片后直接粘贴发布')).toBeNull();
+      expect(onShareFeedback).toHaveBeenCalledWith(expect.objectContaining({
+        title: '复盘素材已准备，文案已复制',
+        tone: 'success',
+      }));
+    });
+  });
+
   it('positions the generic action as save-or-share for screenshot workflows', () => {
     const { getByText, getByLabelText } = render(
       <DietShareSheet

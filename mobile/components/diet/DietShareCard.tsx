@@ -53,6 +53,7 @@ type ShareResult =
   | { target: ShareTarget; kind: 'caption_fallback' }
   | { target: ShareTarget; kind: 'saved_to_library' }
   | { target: ShareTarget; kind: 'photo_library_permission_denied' };
+type ShareReviewTone = 'none' | 'estimate' | 'low-confidence';
 
 export function dietShareCaptureDimensions(
   platform = Platform.OS,
@@ -418,32 +419,35 @@ function publishHintForShareTarget(target: ShareTarget): { title: string; detail
   };
 }
 
-function publishHintForReviewResult(result: ShareResult): { title: string; detail: string; icon: keyof typeof Ionicons.glyphMap; tone: 'success' | 'warning' } | null {
+function publishHintForReviewResult(result: ShareResult, reviewTone: Exclude<ShareReviewTone, 'none'>): { title: string; detail: string; icon: keyof typeof Ionicons.glyphMap; tone: 'success' | 'warning' } | null {
+  const isLowConfidence = reviewTone === 'low-confidence';
   if (result.kind === 'saved_to_library') {
     return {
-      title: '核对素材已保存，文案已复制',
-      detail: '先核对食物和份量，再从相册选择图片发布',
+      title: isLowConfidence ? '核对素材已保存，文案已复制' : '复盘素材已保存，文案已复制',
+      detail: isLowConfidence
+        ? '先核对食物和份量，再从相册选择图片发布'
+        : '可继续核对后，再从相册选择图片发布',
       icon: 'alert-circle',
-      tone: 'warning',
+      tone: isLowConfidence ? 'warning' : 'success',
     };
   }
   if (result.kind !== 'completed') return null;
   const targetDetail = result.target === 'xiaohongshu'
-    ? '先核对食物和份量，再去小红书选择图片发布'
+    ? `${isLowConfidence ? '先核对食物和份量' : '可继续核对后'}，再去小红书选择图片发布`
     : result.target === 'wechat'
-      ? '先核对食物和份量，再去微信或朋友圈选择图片发布'
-      : '先核对食物和份量，再从系统面板保存或转发';
+      ? `${isLowConfidence ? '先核对食物和份量' : '可继续核对后'}，再去微信或朋友圈选择图片发布`
+      : `${isLowConfidence ? '先核对食物和份量' : '可继续核对后'}，再从系统面板保存或转发`;
   return {
-    title: '核对素材已准备，文案已复制',
+    title: isLowConfidence ? '核对素材已准备，文案已复制' : '复盘素材已准备，文案已复制',
     detail: targetDetail,
     icon: 'alert-circle',
-    tone: 'warning',
+    tone: isLowConfidence ? 'warning' : 'success',
   };
 }
 
-function publishHintForShareResult(result: ShareResult, needsReview = false): { title: string; detail: string; icon: keyof typeof Ionicons.glyphMap; tone: 'success' | 'warning' } {
-  if (needsReview) {
-    const reviewHint = publishHintForReviewResult(result);
+function publishHintForShareResult(result: ShareResult, reviewTone: ShareReviewTone = 'none'): { title: string; detail: string; icon: keyof typeof Ionicons.glyphMap; tone: 'success' | 'warning' } {
+  if (reviewTone !== 'none') {
+    const reviewHint = publishHintForReviewResult(result, reviewTone);
     if (reviewHint) return reviewHint;
   }
   if (result.kind === 'caption_fallback') {
@@ -770,8 +774,9 @@ export function DietShareSheet({
   const [shareResult, setShareResult] = useState<ShareResult | null>(null);
   const shareHasPhoto = Boolean(imageSource) && !imageTimedOut;
   const lowConfidenceShare = isLowConfidenceDietShare(record);
-  const publishHint = shareResult ? publishHintForShareResult(shareResult, lowConfidenceShare) : null;
   const estimatedShare = isAiEstimatedNutritionSource(record.source);
+  const shareReviewTone: ShareReviewTone = lowConfidenceShare ? 'low-confidence' : estimatedShare ? 'estimate' : 'none';
+  const publishHint = shareResult ? publishHintForShareResult(shareResult, shareReviewTone) : null;
   const momentsReadyLabel = lowConfidenceShare
     ? '核对后朋友圈文案'
     : estimatedShare
@@ -853,7 +858,7 @@ export function DietShareSheet({
 
   const publishShareResult = (result: ShareResult) => {
     setShareResult(result);
-    const hint = publishHintForShareResult(result, lowConfidenceShare);
+    const hint = publishHintForShareResult(result, shareReviewTone);
     onShareFeedback?.({
       title: hint.title,
       detail: hint.detail,
