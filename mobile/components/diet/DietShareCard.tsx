@@ -1094,8 +1094,11 @@ export function DietShareSheet({
             </View>
           </View>
 
-          <View style={styles.shareReadyStrip} accessibilityLabel="分享素材已准备完成">
-            <ShareReadyItem icon="image-outline" label="3:4 高清图" />
+          <View
+            style={styles.shareReadyStrip}
+            accessibilityLabel={lowConfidenceShare ? '核对素材已准备完成' : '分享素材已准备完成'}
+          >
+            <ShareReadyItem icon="image-outline" label={lowConfidenceShare ? '3:4 核对图' : '3:4 高清图'} />
             <ShareReadyItem
               icon="chatbubble-ellipses-outline"
               label={momentsReadyLabel}

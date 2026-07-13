@@ -859,6 +859,24 @@ describe('DietShareCard', () => {
     expect(getByText('小红书话题')).toBeTruthy();
   });
 
+  it('frames the ready strip as review material for low-confidence shares', () => {
+    const lowConfidenceRecord = { ...record, source: 'ai_estimate', ai_confidence: 0.42 };
+    const { getByLabelText, getByText, queryByText } = render(
+      <DietShareSheet
+        visible
+        record={lowConfidenceRecord}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(getByLabelText('核对素材已准备完成')).toBeTruthy();
+    expect(getByText('3:4 核对图')).toBeTruthy();
+    expect(getByText('核对后朋友圈文案')).toBeTruthy();
+    expect(getByText('核对后小红书文案')).toBeTruthy();
+    expect(queryByText('3:4 高清图')).toBeNull();
+  });
+
   it('shows an optional Agent review CTA for post-confirmation flow', () => {
     const onAskReva = jest.fn();
     const { getByText, getByLabelText } = render(
