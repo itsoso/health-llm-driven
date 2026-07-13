@@ -21,8 +21,9 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.system_knowledge import KBAudit, KBDocument, KBDocumentVector, KBEdge
 from app.services.retrieval_guard import guard_retrieval_query
-from app.services.system_knowledge_ingest import review_draft_artifacts, validate_artifact_review_gate
+from app.services.system_knowledge_ingest import validate_artifact_review_gate
 from app.services.kbase_review_workspace import (
+    finalize_review_workspace,
     review_workspace_lock,
     workspace_artifacts_valid,
     workspace_content_fingerprint,
@@ -1642,23 +1643,16 @@ def approve_dedao_kbase_draft_review(
     reviewer: str,
     expected_workspace_fingerprint: str,
 ) -> dict[str, Any]:
-    """Promote configured dedao-kbase draft artifacts after human review."""
+    """Finalize configured artifacts after every draft claim is adjudicated."""
     root = _configured_system_kb_artifact_dir(artifact_dir)
-    with review_workspace_lock(root):
-        _require_system_kb_artifact_dir(root)
-        _require_valid_review_workspace(root)
-        current_fingerprint = workspace_content_fingerprint(root)
-        if current_fingerprint != expected_workspace_fingerprint:
-            raise ValueError("dedao-kbase review workspace changed since preview; reload before approval")
-        review = review_draft_artifacts(root, reviewer=reviewer)
-        gate = validate_artifact_review_gate(root)
-        return {
-            "artifact_dir": str(root),
-            "approved_workspace_fingerprint": current_fingerprint,
-            "review": review,
-            "gate": gate,
-            "draft_manifest": _read_json_file(root / "draft_manifest.json"),
-        }
+    _require_system_kb_artifact_dir(root)
+    result = finalize_review_workspace(
+        root,
+        reviewer=reviewer,
+        expected_workspace_fingerprint=expected_workspace_fingerprint,
+    )
+    result["approved_workspace_fingerprint"] = result["previous_workspace_fingerprint"]
+    return result
 
 
 def publish_dedao_kbase_reviewed_artifacts(

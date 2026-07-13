@@ -13,7 +13,11 @@ import shutil
 import tempfile
 from typing import Any, Iterator
 
-from app.services.system_knowledge_ingest import ARTIFACT_FILES, validate_artifact_review_gate
+from app.services.system_knowledge_ingest import (
+    ARTIFACT_FILES,
+    review_draft_artifacts,
+    validate_artifact_review_gate,
+)
 
 
 ADJUDICATION_LEDGER = "adjudications.jsonl"
@@ -277,6 +281,65 @@ def adjudicate_review_claim(
         }
 
 
+def finalize_review_workspace(
+    artifact_dir: str | Path,
+    *,
+    reviewer: str,
+    expected_workspace_fingerprint: str,
+    reviewed_at: datetime | None = None,
+) -> dict[str, Any]:
+    """Finalize generated containers only after every draft claim is resolved."""
+    reviewer = reviewer.strip()
+    if not reviewer:
+        raise ValueError("reviewer is required")
+
+    root = Path(artifact_dir)
+    with review_workspace_lock(root):
+        if not workspace_artifacts_valid(root):
+            raise ValueError("dedao-kbase review workspace is incomplete or corrupt")
+        current_fingerprint = workspace_content_fingerprint(root)
+        if current_fingerprint != expected_workspace_fingerprint:
+            raise ValueError("dedao-kbase review workspace changed since preview; reload before approval")
+
+        unresolved = [
+            str(claim.get("doc_id") or "")
+            for claim in _read_jsonl(root / "claims.jsonl")
+            if (claim.get("metadata") or {}).get("review_status") == "draft"
+        ]
+        if unresolved:
+            raise ValueError(f"unresolved claim decisions remain: {len(unresolved)}")
+
+        candidate = Path(tempfile.mkdtemp(prefix=f".{root.name}.candidate-", dir=root.parent))
+        try:
+            shutil.copytree(root, candidate, dirs_exist_ok=True)
+            _remove_dangling_relations(candidate)
+            review = review_draft_artifacts(
+                candidate,
+                reviewer=reviewer,
+                reviewed_at=reviewed_at,
+            )
+            _refresh_manifest_counts(candidate)
+            gate = validate_artifact_review_gate(candidate)
+            if not gate.get("serving_allowed"):
+                reasons = ", ".join(str(reason) for reason in gate.get("blocking_reasons") or [])
+                raise ValueError(f"review workspace finalization remains blocked: {reasons}")
+            if not workspace_artifacts_valid(candidate):
+                raise ValueError("review workspace candidate validation failed")
+            _replace_workspace(candidate, root)
+        finally:
+            if candidate.exists():
+                shutil.rmtree(candidate)
+
+        return {
+            "artifact_dir": str(root),
+            "previous_workspace_fingerprint": current_fingerprint,
+            "workspace_fingerprint": workspace_content_fingerprint(root),
+            "review": review,
+            "gate": validate_artifact_review_gate(root),
+            "draft_manifest": json.loads((root / "draft_manifest.json").read_text(encoding="utf-8")),
+        }
+
+
 def _validate_external_evidence(evidence: dict[str, Any]) -> dict[str, str]:
     if not isinstance(evidence, dict):
         raise ValueError("external evidence must be an object")
@@ -335,6 +398,20 @@ def _refresh_manifest_counts(root: Path) -> None:
         json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+def _remove_dangling_relations(root: Path) -> None:
+    document_ids = {
+        str(row.get("doc_id") or "")
+        for name in ARTIFACT_FILES[:-1]
+        for row in _read_jsonl(root / name)
+    }
+    relations = [
+        row
+        for row in _read_jsonl(root / "relations.jsonl")
+        if row.get("src_doc_id") in document_ids and row.get("dst_doc_id") in document_ids
+    ]
+    _write_jsonl(root / "relations.jsonl", relations)
 
 
 def _replace_workspace(candidate: Path, target: Path) -> None:

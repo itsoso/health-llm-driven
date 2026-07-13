@@ -673,6 +673,101 @@ def test_adjudicate_review_claim_preserves_workspace_when_candidate_validation_f
     assert not (workspace / "adjudications.jsonl").exists()
 
 
+def test_finalize_review_workspace_rejects_unresolved_claim_without_mutation(tmp_path):
+    from app.services.kbase_review_workspace import finalize_review_workspace, workspace_content_fingerprint
+
+    workspace = tmp_path / "review-workspace"
+    _write_release_review_workspace(workspace)
+    before = workspace_content_fingerprint(workspace)
+
+    with pytest.raises(ValueError, match="unresolved claim decisions"):
+        finalize_review_workspace(
+            workspace,
+            reviewer="admin:7",
+            expected_workspace_fingerprint=before,
+        )
+
+    assert workspace_content_fingerprint(workspace) == before
+
+
+def test_finalize_review_workspace_rejects_needs_evidence_claim(tmp_path):
+    from app.services.kbase_review_workspace import (
+        adjudicate_review_claim,
+        finalize_review_workspace,
+        workspace_content_fingerprint,
+    )
+
+    workspace = tmp_path / "review-workspace"
+    _write_release_review_workspace(workspace)
+    first = adjudicate_review_claim(
+        workspace,
+        doc_id="claim:release-abc-claim-1",
+        decision="needs_evidence",
+        reviewer="admin:7",
+        expected_workspace_fingerprint=workspace_content_fingerprint(workspace),
+        note="awaiting independent source",
+    )
+
+    with pytest.raises(ValueError, match="unresolved claim decisions"):
+        finalize_review_workspace(
+            workspace,
+            reviewer="admin:7",
+            expected_workspace_fingerprint=first["workspace_fingerprint"],
+        )
+
+
+def test_finalize_review_workspace_resolves_containers_relations_and_gate(tmp_path):
+    from app.services.kbase_review_workspace import (
+        adjudicate_review_claim,
+        finalize_review_workspace,
+        workspace_content_fingerprint,
+    )
+
+    workspace = tmp_path / "review-workspace"
+    _write_release_review_workspace(workspace)
+    adjudicated = adjudicate_review_claim(
+        workspace,
+        doc_id="claim:release-abc-claim-1",
+        decision="approve",
+        reviewer="admin:7",
+        expected_workspace_fingerprint=workspace_content_fingerprint(workspace),
+    )
+
+    result = finalize_review_workspace(
+        workspace,
+        reviewer="admin:7",
+        expected_workspace_fingerprint=adjudicated["workspace_fingerprint"],
+        reviewed_at=datetime(2026, 7, 13, 15, tzinfo=UTC),
+    )
+
+    assert result["gate"]["serving_allowed"] is True
+    assert result["workspace_fingerprint"] != adjudicated["workspace_fingerprint"]
+    for name in ("pages.jsonl", "entities.jsonl", "claims.jsonl", "relations.jsonl"):
+        for row in [json.loads(line) for line in (workspace / name).read_text().splitlines()]:
+            assert row["metadata"]["review_status"] == "reviewed"
+    manifest = json.loads((workspace / "manifest.json").read_text())
+    assert manifest["review"]["status"] == "reviewed"
+    assert manifest["review"]["reviewer"] == "admin:7"
+    assert json.loads((workspace / "draft_manifest.json").read_text())["serving_allowed"] is True
+
+
+def test_finalize_review_workspace_rejects_stale_fingerprint(tmp_path):
+    from app.services.kbase_review_workspace import finalize_review_workspace, workspace_content_fingerprint
+
+    workspace = tmp_path / "review-workspace"
+    _write_release_review_workspace(workspace)
+    before = workspace_content_fingerprint(workspace)
+
+    with pytest.raises(ValueError, match="changed since preview"):
+        finalize_review_workspace(
+            workspace,
+            reviewer="admin:7",
+            expected_workspace_fingerprint="0" * 64,
+        )
+
+    assert workspace_content_fingerprint(workspace) == before
+
+
 def _write_release_review_workspace(root: Path) -> None:
     from app.integrations.dedao_kbase_release_consumer import compile_knowledge_release_artifacts
     from app.services.system_knowledge_ingest import write_draft_artifacts
