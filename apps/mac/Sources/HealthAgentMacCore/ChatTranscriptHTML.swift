@@ -1407,8 +1407,9 @@ public enum ChatTranscriptHTML {
         let title = escape(L10n.text("Thinking process", language: lang))
         let briefHTML = brief.isEmpty ? "" : "<span class=\"rv-tk-brief\"> · \(escape(brief))</span>"
         let openAttr = open ? " open" : ""
+        let classes = open ? "thinking-trace thinking-trace-live" : "thinking-trace"
         return thinkingStyle
-            + "<details class=\"rv-tk\"\(openAttr)><summary class=\"rv-tk-sum\">\(title)\(briefHTML)</summary><div class=\"rv-tk-body\">\(rowsHTML)</div></details>"
+            + "<details class=\"\(classes)\"\(openAttr)><summary class=\"rv-tk-sum\">\(title)\(briefHTML)</summary><div class=\"rv-tk-body\">\(rowsHTML)</div></details>"
     }
 
     /// Single-line fallback for backends that emit no `status` steps (thinkingSteps
@@ -1423,11 +1424,11 @@ public enum ChatTranscriptHTML {
     /// pure-CSS chevron (no emoji/brain icon) that rotates open↔closed.
     private static let thinkingStyle = """
     <style>
-    .rv-tk{font-size:12.5px;margin:2px 0 6px;border-left:2px solid rgba(140,143,152,.22);padding-left:10px}
+    .rv-tk,.thinking-trace{font-size:12.5px;margin:2px 0 6px;border-left:2px solid rgba(140,143,152,.22);padding-left:10px}
     .rv-tk-sum{list-style:none;cursor:pointer;color:#8a8f98;font-weight:600;display:flex;align-items:center;gap:6px;user-select:none;-webkit-user-select:none}
     .rv-tk-sum::-webkit-details-marker{display:none}
     .rv-tk-sum::before{content:"";width:5px;height:5px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .15s ease;display:inline-block;opacity:.7;margin-right:1px}
-    .rv-tk[open] .rv-tk-sum::before{transform:rotate(45deg)}
+    .rv-tk[open] .rv-tk-sum::before,.thinking-trace[open] .rv-tk-sum::before{transform:rotate(45deg)}
     .rv-tk-brief{font-weight:400;color:#9aa0a8}
     .rv-tk-body{margin-top:6px}
     .rv-tk-row{display:flex;align-items:flex-start;gap:8px;color:#8a8f98;line-height:1.5;margin:3px 0}

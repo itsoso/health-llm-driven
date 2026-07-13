@@ -48,6 +48,9 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
     /// 每回复级阶段耗时(后端 done.perf,持久化在 message.meta.perf)。用于渲染延迟瀑布图。
     /// 老消息缺失 → nil → footer 行为不变(完整向后兼容)。
     public var perf: MessagePerf?
+    /// Backend persisted thinking trace for this assistant message. Older cache
+    /// rows omit it; decode as empty so transcript replay stays compatible.
+    public var thinkingSteps: [String]
 
     /// 是否有任何可展示的 meta(footer 是否需要渲染)。
     public var hasMeta: Bool {
@@ -75,6 +78,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         toolsUsed: [String] = [],
         completionStatus: String? = nil,
         perf: MessagePerf? = nil,
+        thinkingSteps: [String] = [],
         cardType: String? = nil,
         cardRender: AgentDynamicCardRenderDescriptor? = nil,
         cardData: AgentDynamicCardValue? = nil,
@@ -101,11 +105,12 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.toolsUsed = toolsUsed
         self.completionStatus = completionStatus
         self.perf = perf
+        self.thinkingSteps = thinkingSteps
     }
 
     // 显式 Codable:历史快照(老版本无这些字段)用 decodeIfPresent 容错;数组缺失 → 空。
     private enum CodingKeys: String, CodingKey {
-        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, llmUsage, sourcesUsed, toolsUsed, completionStatus, perf, cardType, cardRender, cardData, cardActions
+        case id, role, content, remoteImageURLs, model, selectedModel, answerModel, toolModels, fallbackReasons, elapsedMs, llmRounds, llmUsage, sourcesUsed, toolsUsed, completionStatus, perf, thinkingSteps, cardType, cardRender, cardData, cardActions
         case cardTypeSnake = "card_type"
         case cardRenderSnake = "card_render"
         case cardDataSnake = "card_data"
@@ -130,6 +135,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         self.toolsUsed = try c.decodeIfPresent([String].self, forKey: .toolsUsed) ?? []
         self.completionStatus = try c.decodeIfPresent(String.self, forKey: .completionStatus)
         self.perf = try c.decodeIfPresent(MessagePerf.self, forKey: .perf)
+        self.thinkingSteps = try c.decodeIfPresent([String].self, forKey: .thinkingSteps) ?? []
         self.cardType = try c.decodeIfPresent(String.self, forKey: .cardType)
             ?? c.decodeIfPresent(String.self, forKey: .cardTypeSnake)
         self.cardRender = try c.decodeIfPresent(AgentDynamicCardRenderDescriptor.self, forKey: .cardRender)
@@ -159,6 +165,7 @@ public struct AgentChatMessage: Codable, Equatable, Identifiable, Sendable {
         try c.encode(toolsUsed, forKey: .toolsUsed)
         try c.encodeIfPresent(completionStatus, forKey: .completionStatus)
         try c.encodeIfPresent(perf, forKey: .perf)
+        try c.encode(thinkingSteps, forKey: .thinkingSteps)
         try c.encodeIfPresent(cardType, forKey: .cardType)
         try c.encodeIfPresent(cardRender, forKey: .cardRender)
         try c.encodeIfPresent(cardData, forKey: .cardData)
@@ -679,6 +686,8 @@ public struct ThinkingStep: Equatable, Identifiable, Sendable {
 @Observable
 @MainActor
 public final class AgentChatViewModel {
+    public static let maxLiveThinkingSteps = 8
+
     public var isStreaming = false
     private var streamingTask: Task<Void, Never>?
     public var runState: AgentRunState = .idle
@@ -718,6 +727,14 @@ public final class AgentChatViewModel {
     /// so the trace stays visible during content streaming; cleared only when a new
     /// turn starts (`send()` / `startNewConversation()` / `cancelStreaming()`).
     public var thinkingSteps: [ThinkingStep] = []
+    public var liveThinkingSteps: [String] {
+        get { thinkingSteps.map(Self.visibleThinkingStepText) }
+        set {
+            thinkingSteps = newValue.suffix(Self.maxLiveThinkingSteps).map {
+                ThinkingStep(labelKey: $0, labelDetail: nil, state: .done)
+            }
+        }
+    }
     public var proposedActions: [AgentProposedAction] = []
 
     // MARK: transcript 渲染缓存(按键热点)
@@ -838,6 +855,18 @@ public final class AgentChatViewModel {
         }
     }
 
+    public func buildChatImages(excludingImportedHashes importedHashes: Set<String> = []) -> [AgentChatImage] {
+        attachments.compactMap { item in
+            guard item.sourceKind == .image, !importedHashes.contains(item.sha256) else {
+                return nil
+            }
+            guard let data = try? Data(contentsOf: item.url) else {
+                return nil
+            }
+            return AgentChatImage(base64: data.base64EncodedString(), type: Self.chatImageType(for: item.url))
+        }
+    }
+
     public func removeAttachment(_ item: FileIntakeItem) {
         attachments.removeAll { $0.id == item.id }
     }
@@ -939,6 +968,8 @@ public final class AgentChatViewModel {
 
         do {
             let importedReports = try await importLabReportAttachmentsIfNeeded()
+            let importedHashes = Set(labReportImports.map(\.sourceHash))
+            let chatImages = buildChatImages(excludingImportedHashes: importedHashes)
             if let firstImport = importedReports.first {
                 attachDynamicCard(
                     medicalExamImportDynamicCard(for: firstImport),
@@ -949,7 +980,8 @@ public final class AgentChatViewModel {
             for try await event in streamService.stream(
                 message: message,
                 conversationID: conversationID,
-                extraContext: buildExtraContext()
+                extraContext: buildExtraContext(),
+                images: chatImages
             ) {
                 switch event {
                 case .start(let id):
@@ -1005,7 +1037,7 @@ public final class AgentChatViewModel {
                     // 中途 perf 提示:仅暂存(prompt 组装刚完成,首 token 前)。主瀑布图从
                     // 最终 done.perf 渲染;这里让「组装中…」等实时提示未来有据可依。
                     livePreLLMPerf = MessagePerf(preLLMMs: preLLMMs, preLLMStages: stages)
-                case .done(let id, _, let completionStatus, let model, let selectedModel, let answerModel, let toolModels, let fallbackReasons, let sourcesUsed, let toolsUsed, let elapsedMs, let llmRounds, let cards, let perf, let llmUsage):
+                case .done(let id, _, let completionStatus, let model, let selectedModel, let answerModel, let toolModels, let fallbackReasons, let sourcesUsed, let toolsUsed, let elapsedMs, let llmRounds, let cards, let perf, let llmUsage, let finalThinkingSteps):
                     conversationID = id ?? conversationID
                     lastCompletionStatus = completionStatus
                     lastModel = answerModel ?? model
@@ -1028,6 +1060,11 @@ public final class AgentChatViewModel {
                             incoming: toolsUsed
                         )
                         messages[idx].completionStatus = completionStatus
+                        if !finalThinkingSteps.isEmpty {
+                            messages[idx].thinkingSteps = finalThinkingSteps
+                        } else if !liveThinkingSteps.isEmpty {
+                            messages[idx].thinkingSteps = liveThinkingSteps
+                        }
                         // perf 缺失(老后端)→ 保留 nil,footer 行为不变。
                         if let perf { messages[idx].perf = perf }
                         if messages[idx].cardType == nil, let firstCard = cards.first {
@@ -1119,12 +1156,12 @@ public final class AgentChatViewModel {
     /// 401 / 5xx) the existing cache is kept and `historyNotice` is set so the UI
     /// can tell the user it's showing a possibly-stale local copy — never silently
     /// cleared. No-op when no remote source is wired (e.g. unit tests, previews).
-    public func refreshConversationHistory(limit: Int = 30) async {
+    public func refreshConversationHistory(limit: Int = 30, search: String? = nil) async {
         guard let remoteSource else { return }
         isLoadingHistory = true
         defer { isLoadingHistory = false }
         do {
-            let remote = try await remoteSource.fetchConversations(limit: limit, offset: 0)
+            let remote = try await remoteSource.fetchConversations(limit: limit, offset: 0, search: search)
             // The backend list carries no messages. Don't let it wipe transcripts
             // we already have cached: keep the open chat's live messages, and keep
             // any previously-cached transcript for the rest (so offline-open still
@@ -1143,7 +1180,9 @@ public final class AgentChatViewModel {
                 return snapshot
             }
             conversationHistory = merged
-            conversationStore?.saveConversations(merged)
+            if search?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true {
+                conversationStore?.saveConversations(merged)
+            }
             historyNotice = nil
 
             // Keep the visible transcript in sync with other devices. The list
@@ -1423,11 +1462,7 @@ public final class AgentChatViewModel {
                     // 滚动长对话在底),而不是钉在输入框上方。有 status 步骤 → 累积轨迹;老后端
                     // 无步骤 → 单行兜底。首 token 到达后 content 非空,自动切到下面的折叠态 + 正文。
                     let trace = ChatTranscriptHTML.thinkingTraceHTML(steps: thinkingSteps, language: language, open: true)
-                    let thinkingBody = trace.isEmpty
-                        ? ChatTranscriptHTML.thinkingLineHTML(
-                            L10n.text("Reva is thinking…", language: AppLanguage(rawValue: language) ?? .defaultLanguage))
-                        : trace
-                    bodyHTML = cardHTML + thinkingBody
+                    bodyHTML = trace.isEmpty ? cardHTML : cardHTML + trace
                 } else {
                     // 答案流式中:轨迹折叠到正文上方(想看过程可点开),plain 文本避免重 parse。
                     let trace = ChatTranscriptHTML.thinkingTraceHTML(steps: thinkingSteps, language: language, open: false)
@@ -1435,9 +1470,13 @@ public final class AgentChatViewModel {
                 }
             } else {
                 // 已完成:把本条回答的思考轨迹以折叠态留在正文上方,用户可展开回溯(mobile 同款)。
-                let trace = _completedThinkingSteps[message.id].map {
-                    ChatTranscriptHTML.thinkingTraceHTML(steps: $0, language: language, open: false)
-                } ?? ""
+                let persistedTrace = message.thinkingSteps.map {
+                    ThinkingStep(labelKey: $0, labelDetail: nil, state: .done)
+                }
+                let finishedTrace = _completedThinkingSteps[message.id] ?? persistedTrace
+                let trace = finishedTrace.isEmpty ? "" : {
+                    ChatTranscriptHTML.thinkingTraceHTML(steps: finishedTrace, language: language, open: false)
+                }()
                 let textHTML = content.isEmpty ? "" : ChatTranscriptHTML.renderMessageBody(markdown: content)
                 bodyHTML = cardHTML + trace + textHTML
             }
@@ -1469,13 +1508,16 @@ public final class AgentChatViewModel {
                 footerHTML: footerHTML
             )
         }
+        let visibleRendered = rendered.filter { message in
+            !(message.role == "assistant" && message.bodyHTML.isEmpty && message.footerHTML.isEmpty)
+        }
         _transcriptCacheMessages = messages
         _transcriptCacheStreaming = isStreaming
         _transcriptCacheProposed = proposedActions
         _transcriptCacheThinkingSteps = thinkingSteps
         _transcriptCacheLanguage = language
-        _transcriptCache = rendered
-        return rendered
+        _transcriptCache = visibleRendered
+        return visibleRendered
     }
 
     public func dismissProposedAction(_ action: AgentProposedAction) {
@@ -1567,6 +1609,9 @@ public final class AgentChatViewModel {
         }
         markRunningThinkingStepsDone()
         thinkingSteps.append(candidate)
+        if thinkingSteps.count > Self.maxLiveThinkingSteps {
+            thinkingSteps.removeFirst(thinkingSteps.count - Self.maxLiveThinkingSteps)
+        }
     }
 
     /// Flips every still-running step to done (leaves order/labels intact).
@@ -1662,7 +1707,12 @@ public final class AgentChatViewModel {
             guard !labReportImports.contains(where: { $0.sourceHash == attachment.sha256 }) else {
                 continue
             }
-            let result = try await labUploadService.importReport(fileURL: attachment.url)
+            let result: LabUploadResult
+            do {
+                result = try await labUploadService.importReport(fileURL: attachment.url)
+            } catch {
+                continue
+            }
             let item = LabReportImportContext(
                 fileName: attachment.name,
                 sourceHash: attachment.sha256,
@@ -1831,10 +1881,58 @@ public final class AgentChatViewModel {
         }
     }
 
+    public nonisolated static func liveThinkingStep(stage: String, detail: String?, round: Int?) -> String? {
+        let normalizedStage = stage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ["accepted", "vision", "thinking", "tool", "synthesis"].contains(normalizedStage) else {
+            return nil
+        }
+        return visibleThinkingStepText(statusText(stage: normalizedStage, detail: detail, round: round))
+    }
+
+    private nonisolated static func visibleThinkingStepText(_ step: ThinkingStep) -> String {
+        visibleThinkingStepText((key: step.labelKey, detail: step.labelDetail))
+    }
+
+    private nonisolated static func visibleThinkingStepText(_ mapped: (key: String, detail: String?)) -> String {
+        if mapped.key == "Working: %@…", let detail = mapped.detail {
+            return "正在\(detail)"
+        }
+        switch mapped.key {
+        case "Reva received your message…":
+            return "正在理解你的问题"
+        case "Recognizing image…":
+            return "识别图片中"
+        case "Reva is thinking…":
+            return "正在思考"
+        case "Reva is organizing thoughts…":
+            return "整理思路"
+        case "Calling a tool…":
+            return "调用工具中"
+        case "Reva is composing a reply…":
+            return "整理回复中"
+        default:
+            return mapped.key
+        }
+    }
+
+    private nonisolated static func chatImageType(for url: URL) -> String {
+        let ext = url.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch ext {
+        case "jpg", "jpeg":
+            return "jpeg"
+        case "heic":
+            return "heic"
+        case "webp":
+            return "webp"
+        default:
+            return ext.isEmpty ? "png" : ext
+        }
+    }
+
     private static let medicalExamImportSafetyNote = "OCR/AI 解析结果需要复核后再用于判断。"
 
     private static let desktopMarkdownResponseInstruction = """
-    请用适合桌面阅读的中文 Markdown 回复：先给 2-3 条关键结论；再用二级/三级标题分段；比较或分项判断优先用表格；行动建议用编号列表；关键数值和结论加粗。每段最多 3 行，标题、段落、列表之间必须留空行。不要输出密集长段落，不要用长破折号把所有判断串成一段。最后必须包含「不确定性边界」和「下一步」；不要把基因风险当诊断，不要直接给用药决定。若需要执行结构化动作，自然语言说明后再给可确认动作。
+    请用适合桌面阅读的中文 Markdown 回复：先给 2-3 条关键结论；正文控制在 500 字以内；再用二级/三级标题分段；比较或分项判断优先用表格；行动建议用编号列表；关键数值和结论加粗。每段最多 3 行，标题、段落、列表之间必须留空行。不要输出密集长段落，不要用长破折号把所有判断串成一段。最后必须包含「不确定性边界」和「下一步」；不要把基因风险当诊断，不要直接给用药决定。若需要执行结构化动作，自然语言说明后再给可确认动作。
     """
 
     private static func visibleDraft(text: String, contextItems: [AgentContextItem]) -> String {

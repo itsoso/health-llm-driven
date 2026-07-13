@@ -122,7 +122,8 @@ final class ScriptedStreamService: AgentStreamServicing, @unchecked Sendable {
     func stream(
         message: String,
         conversationID: Int?,
-        extraContext: String?
+        extraContext: String?,
+        images: [AgentChatImage]
     ) -> AsyncThrowingStream<AgentStreamEvent, Error> {
         lock.lock()
         let events = scripts.isEmpty ? [] : scripts.removeFirst()

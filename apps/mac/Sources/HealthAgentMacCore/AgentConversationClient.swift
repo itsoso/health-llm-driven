@@ -213,29 +213,31 @@ public final class AgentConversationClient: AgentConversationRemoteSourcing, @un
             // Skip system / tool rows the desktop transcript doesn't render.
             return nil
         }
-        let card = dto.meta?.firstCard
+        let meta = dto.meta
+        let card = meta?.firstCard
+        let remoteImageURLs = imageURLStrings(from: dto.image_url, baseURL: baseURL)
         return AgentChatMessage(
             id: deterministicID(forMessageID: dto.id),
             role: role,
             content: dto.content ?? "",
-            model: dto.meta?.model,
-            selectedModel: dto.meta?.selectedModel,
-            answerModel: dto.meta?.answerModel,
-            toolModels: dto.meta?.toolModels ?? [],
-            fallbackReasons: dto.meta?.fallbackReasons ?? [],
-            elapsedMs: dto.meta?.elapsedMs,
-            llmRounds: dto.meta?.llmRounds,
-            llmUsage: dto.meta?.llmUsage,
-            sourcesUsed: dto.meta?.sourcesUsed ?? [],
-            toolsUsed: dto.meta?.toolsUsed ?? [],
-            completionStatus: dto.meta?.completionStatus,
-            perf: dto.meta?.perf,
-            thinkingSteps: dto.meta?.thinkingSteps ?? [],
+            model: meta?.model,
+            selectedModel: meta?.selectedModel,
+            answerModel: meta?.answerModel,
+            toolModels: meta?.toolModels ?? [],
+            fallbackReasons: meta?.fallbackReasons ?? [],
+            elapsedMs: meta?.elapsedMs,
+            llmRounds: meta?.llmRounds,
+            llmUsage: meta?.llmUsage,
+            sourcesUsed: meta?.sourcesUsed ?? [],
+            toolsUsed: meta?.toolsUsed ?? [],
+            completionStatus: meta?.completionStatus,
+            perf: meta?.perf,
+            thinkingSteps: meta?.thinkingSteps ?? [],
             cardType: card?.type,
             cardRender: card?.render,
             cardData: card?.data,
             cardActions: card?.actions ?? [],
-            remoteImageURLs: imageURLStrings(from: dto.image_url, baseURL: baseURL)
+            remoteImageURLs: remoteImageURLs
         )
     }
 

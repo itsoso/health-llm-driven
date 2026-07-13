@@ -1492,6 +1492,7 @@ private struct AttachmentChip: View {
         case .dedaoFolder: "folder"
         case .appleHealthExport: "heart.text.square"
         case .medicalFile: "doc.richtext"
+        case .image: "photo"
         case .unknown: "doc"
         }
     }
@@ -2080,10 +2081,40 @@ private struct PromptCommandTextEditor: NSViewRepresentable {
     }
 }
 
-private final class CommandReturnTextView: NSTextView {
+final class CommandReturnTextView: NSTextView {
     var onCommandReturn: (() -> Void)?
     var onPasteImage: ((NSImage) -> Void)?
     var onPasteFileURLs: (([URL]) -> Void)?
+
+    private static let imagePasteboardTypes: [NSPasteboard.PasteboardType] = [
+        .png,
+        .tiff,
+        NSPasteboard.PasteboardType("public.jpeg"),
+        NSPasteboard.PasteboardType("public.heic"),
+        NSPasteboard.PasteboardType("com.apple.icns"),
+        NSPasteboard.PasteboardType("com.adobe.pdf"),
+    ]
+
+    static func image(from pasteboard: NSPasteboard) -> NSImage? {
+        if let images = pasteboard.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage],
+           let image = images.first {
+            return image
+        }
+        for type in imagePasteboardTypes {
+            if let data = pasteboard.data(forType: type), let image = NSImage(data: data) {
+                return image
+            }
+        }
+        return nil
+    }
+
+    static func canPasteAttachment(from pasteboard: NSPasteboard) -> Bool {
+        if image(from: pasteboard) != nil { return true }
+        return pasteboard.canReadObject(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        )
+    }
 
     // ⌘V 粘贴:判定交给 PastedContentClassifier(纯函数,单测覆盖)。
     // 首版"有文本就放弃图"挡掉了浏览器拷图(图+URL文本)和 Finder 拷文件(file-url+文件名),
@@ -2097,10 +2128,10 @@ private final class CommandReturnTextView: NSTextView {
         // 位图形态因来源而异:截屏=png/tiff;微信/照片=public.jpeg;预览选区=com.adobe.pdf;
         // 微信临时文件还可能是奇怪扩展名的 file-url(走不进 attachable 文件分支)。
         // 只认 png/tiff 会漏掉这些(实测用户"贴不进") → 放宽为"NSImage 能读的都算图"。
-        let hasBitmap = pb.canReadObject(forClasses: [NSImage.self], options: nil)
+        let bitmapImage = Self.image(from: pb)
         let decision = PastedContentClassifier.decide(
             pastedString: pb.string(forType: .string),
-            hasBitmapImage: hasBitmap,
+            hasBitmapImage: bitmapImage != nil,
             fileURLs: fileURLs
         )
         // 回调未接线或位图读取失败 → 回退 super.paste,绝不吞掉一次粘贴(Rule#1)。
@@ -2112,8 +2143,7 @@ private final class CommandReturnTextView: NSTextView {
             }
         case .attachBitmap:
             if let onPasteImage,
-               let images = pb.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage],
-               let image = images.first {
+               let image = bitmapImage {
                 onPasteImage(image)
                 return
             }
@@ -2129,17 +2159,12 @@ private final class CommandReturnTextView: NSTextView {
     // 拷图能贴,就是因为那时剪贴板有文本让 paste: 有效)。这里补声明图片/文件可读类型 +
     // 显式放行 paste:,让纯图剪贴板下粘贴也生效。
     override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
-        super.readablePasteboardTypes + [.tiff, .png, .fileURL]
+        super.readablePasteboardTypes + Self.imagePasteboardTypes + [.fileURL]
     }
 
     override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
         if item.action == #selector(NSTextView.paste(_:)) {
-            let pb = NSPasteboard.general
-            if pb.canReadObject(forClasses: [NSImage.self], options: nil) { return true }
-            if pb.canReadObject(
-                forClasses: [NSURL.self],
-                options: [.urlReadingFileURLsOnly: true]
-            ) { return true }
+            if Self.canPasteAttachment(from: .general) { return true }
         }
         return super.validateUserInterfaceItem(item)
     }
@@ -4026,6 +4051,8 @@ struct ImportCenterView: View {
             return "刚导入的化验/医疗文件解析完后，列出偏离参考范围的指标，按风险排序，每条给一段解释和下一步行动。"
         case .appleHealthExport:
             return "Apple Health 数据导入完毕后，给我最近 30 天的活动、睡眠、心率趋势综合摘要，并指出与基线的明显偏差。"
+        case .image:
+            return "请基于这张图片识别关键信息，先给结论，再说明不确定的地方和需要我补充的信息。"
         case .dedaoFolder:
             return "得到知识库索引完成后，告诉我新增了哪些主题，以及和我当前健康问题最相关的 3 条结论。"
         case .unknown:
@@ -4038,6 +4065,7 @@ struct ImportCenterView: View {
         case .genomeText: "gene_reanalysis"
         case .dedaoFolder: "dedao_compile"
         case .medicalFile, .appleHealthExport: "medical_import"
+        case .image: "medical_import"
         case .unknown: "medical_import"
         }
     }
