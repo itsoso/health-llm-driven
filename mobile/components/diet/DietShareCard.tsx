@@ -418,7 +418,26 @@ function publishHintForShareTarget(target: ShareTarget): { title: string; detail
   };
 }
 
-function publishHintForShareResult(result: ShareResult): { title: string; detail: string; icon: keyof typeof Ionicons.glyphMap; tone: 'success' | 'warning' } {
+function publishHintForReviewResult(result: ShareResult): { title: string; detail: string; icon: keyof typeof Ionicons.glyphMap; tone: 'success' | 'warning' } | null {
+  if (result.kind !== 'completed') return null;
+  const targetDetail = result.target === 'xiaohongshu'
+    ? '先核对食物和份量，再去小红书选择图片发布'
+    : result.target === 'wechat'
+      ? '先核对食物和份量，再去微信或朋友圈选择图片发布'
+      : '先核对食物和份量，再从系统面板保存或转发';
+  return {
+    title: '核对素材已准备，文案已复制',
+    detail: targetDetail,
+    icon: 'alert-circle',
+    tone: 'warning',
+  };
+}
+
+function publishHintForShareResult(result: ShareResult, needsReview = false): { title: string; detail: string; icon: keyof typeof Ionicons.glyphMap; tone: 'success' | 'warning' } {
+  if (needsReview) {
+    const reviewHint = publishHintForReviewResult(result);
+    if (reviewHint) return reviewHint;
+  }
   if (result.kind === 'caption_fallback') {
     return {
       title: '图片没生成，文案已复制',
@@ -742,8 +761,8 @@ export function DietShareSheet({
   const [copiedCaption, setCopiedCaption] = useState<'moments' | 'xiaohongshu' | null>(null);
   const [shareResult, setShareResult] = useState<ShareResult | null>(null);
   const shareHasPhoto = Boolean(imageSource) && !imageTimedOut;
-  const publishHint = shareResult ? publishHintForShareResult(shareResult) : null;
   const lowConfidenceShare = isLowConfidenceDietShare(record);
+  const publishHint = shareResult ? publishHintForShareResult(shareResult, lowConfidenceShare) : null;
   const estimatedShare = isAiEstimatedNutritionSource(record.source);
   const momentsReadyLabel = lowConfidenceShare
     ? '核对后朋友圈文案'
@@ -826,7 +845,7 @@ export function DietShareSheet({
 
   const publishShareResult = (result: ShareResult) => {
     setShareResult(result);
-    const hint = publishHintForShareResult(result);
+    const hint = publishHintForShareResult(result, lowConfidenceShare);
     onShareFeedback?.({
       title: hint.title,
       detail: hint.detail,
