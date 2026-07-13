@@ -20,6 +20,7 @@ import { CoverageMatrixView, CoverageMatrix } from './CoverageMatrixView';
 import { KnowledgeGraphView, GraphData, GraphNode } from './KnowledgeGraphView';
 import { BreakerStatus, ReconciliationQueueView, ReconQueueData, ReconScanResult } from './ReconciliationQueueView';
 import { ProvenanceLineageView, KBDocPayload } from './ProvenanceLineageView';
+import { DedaoReleaseReviewPanel } from './DedaoReleaseReviewPanel';
 
 interface CoverageReportResponse {
   coverage_matrix?: CoverageMatrix;
@@ -405,6 +406,8 @@ export default function KnowledgeAdminPage() {
             </div>
           </section>
         )}
+
+        <DedaoReleaseReviewPanel enabled={isAuthenticated && !!user?.is_admin} />
 
         {coverageQuery.data?.coverage_matrix && (
           <CoverageMatrixView data={coverageQuery.data.coverage_matrix} />
