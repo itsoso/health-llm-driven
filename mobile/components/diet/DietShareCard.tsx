@@ -771,6 +771,17 @@ export function DietShareSheet({
           : buildDietShareCaption(record, dateLabel),
       );
       setCopiedCaption(kind);
+      onShareFeedback?.({
+        title: kind === 'moments' ? '朋友圈文案已复制' : '小红书文案已复制',
+        detail: kind === 'moments'
+          ? '去微信或朋友圈直接粘贴发布'
+          : '去小红书正文框直接粘贴发布',
+        tone: 'success',
+        result: {
+          target: kind === 'moments' ? 'wechat' : 'xiaohongshu',
+          kind: 'completed',
+        },
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       Alert.alert('复制失败', '请稍后重试');

@@ -710,12 +710,14 @@ describe('DietShareCard', () => {
   });
 
   it('copies a Xiaohongshu-ready caption from the meal share sheet', async () => {
+    const onShareFeedback = jest.fn();
     const { getByText } = render(
       <DietShareSheet
         visible
         record={record}
         dateLabel="7月11日 · 午餐"
         onClose={jest.fn()}
+        onShareFeedback={onShareFeedback}
       />,
     );
 
@@ -733,15 +735,21 @@ describe('DietShareCard', () => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#小巴记录'));
     });
     expect(getByText('已复制小红书文案')).toBeTruthy();
+    expect(onShareFeedback).toHaveBeenCalledWith(expect.objectContaining({
+      title: '小红书文案已复制',
+      tone: 'success',
+    }));
   });
 
   it('copies a WeChat Moments-ready caption without Xiaohongshu hashtags', async () => {
+    const onShareFeedback = jest.fn();
     const { getByText } = render(
       <DietShareSheet
         visible
         record={record}
         dateLabel="7月11日 · 午餐"
         onClose={jest.fn()}
+        onShareFeedback={onShareFeedback}
       />,
     );
 
@@ -757,5 +765,9 @@ describe('DietShareCard', () => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('#饮食打卡'));
     });
     expect(getByText('已复制朋友圈文案')).toBeTruthy();
+    expect(onShareFeedback).toHaveBeenCalledWith(expect.objectContaining({
+      title: '朋友圈文案已复制',
+      tone: 'success',
+    }));
   });
 });
