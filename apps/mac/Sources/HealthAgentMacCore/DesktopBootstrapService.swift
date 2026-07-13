@@ -44,9 +44,17 @@ public final class TodayViewModel {
             bootstrap = payload
             topActions = await preferredMenuBarActions(fallback: payload.menuBarActions)
             activeJobs = payload.activeJobs
+        } catch is CancellationError {
+            // 视图生命周期取消(打开时 .task 被更新的刷新替换)不是错误——
+            // 静默保留旧数据,不给用户亮红横幅(2026-07-13 founder 实锤:-999 已取消 上屏)。
+            return
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            // URLSession 的 -999 (NSURLErrorCancelled) — 同一类良性取消(镜像 chat VM 处理)。
+            return
         } catch {
             AppLogger.dashboard.error("desktop bootstrap fetch failed: \(error.localizedDescription, privacy: .public)")
-            errorMessage = String(describing: error)
+            // 用户可见文案用人话 localizedDescription;NSError 全文只进日志。
+            errorMessage = error.localizedDescription
         }
     }
 

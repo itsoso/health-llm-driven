@@ -109,6 +109,39 @@ final class TodayViewModelTests: XCTestCase {
         XCTAssertEqual(view.menuBarActions.map(\.title), ["餐后步行"])
         XCTAssertEqual(view.sections.first?.cards.first?.render?.atom, "daily_artifact")
     }
+
+    @MainActor
+    func testCancelledRefreshIsSilentAndKeepsOldData() async {
+        // -999/CancellationError 是视图生命周期取消,不是错误:不亮红横幅、保留旧数据
+        // (2026-07-13 founder 实锤: 打开 mac app 即见 NSURLErrorDomain -999 已取消 横幅)。
+        let model = TodayViewModel(service: ThrowingBootstrapService(error: URLError(.cancelled)))
+        await model.refresh()
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(model.isLoading)
+
+        let cancelled = TodayViewModel(service: ThrowingBootstrapService(error: CancellationError()))
+        await cancelled.refresh()
+        XCTAssertNil(cancelled.errorMessage)
+    }
+
+    @MainActor
+    func testRealErrorSurfacesLocalizedDescriptionNotNSErrorDump() async {
+        let model = TodayViewModel(service: ThrowingBootstrapService(error: URLError(.notConnectedToInternet)))
+        await model.refresh()
+        let msg = model.errorMessage ?? ""
+        XCTAssertFalse(msg.isEmpty)
+        // 不再是 String(describing:) 的 NSError 全文 dump
+        XCTAssertFalse(msg.contains("UserInfo"))
+        XCTAssertFalse(msg.contains("NSErrorFailingURLKey"))
+    }
+}
+
+private struct ThrowingBootstrapService: DesktopBootstrapServicing {
+    let error: Error
+
+    func fetchBootstrap() async throws -> DesktopBootstrap {
+        throw error
+    }
 }
 
 private struct StaticBootstrapService: DesktopBootstrapServicing {
