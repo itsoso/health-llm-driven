@@ -777,6 +777,26 @@ export function DietShareSheet({
     : estimatedShare
       ? '系统面板里保存或发给自己复盘'
       : '可在系统面板保存到相册';
+  const copyMomentsLabel = lowConfidenceShare
+    ? '核对后复制朋友圈文案'
+    : estimatedShare
+      ? '复制朋友圈复盘文案'
+      : '复制朋友圈文案';
+  const copiedMomentsLabel = lowConfidenceShare
+    ? '已复制核对朋友圈文案'
+    : estimatedShare
+      ? '已复制朋友圈复盘文案'
+      : '已复制朋友圈文案';
+  const copyXhsLabel = lowConfidenceShare
+    ? '核对后复制小红书文案'
+    : estimatedShare
+      ? '复制小红书复盘文案'
+      : '复制小红书文案';
+  const copiedXhsLabel = lowConfidenceShare
+    ? '已复制核对小红书文案'
+    : estimatedShare
+      ? '已复制小红书复盘文案'
+      : '已复制小红书文案';
 
   React.useEffect(() => {
     setImageReady(!imageSource);
@@ -1136,7 +1156,7 @@ export function DietShareSheet({
             >
               <Ionicons name="chatbubble-ellipses-outline" size={17} color={C.green600} />
               <Text style={styles.captionButtonText}>
-                {copiedCaption === 'moments' ? '已复制朋友圈文案' : '复制朋友圈文案'}
+                {copiedCaption === 'moments' ? copiedMomentsLabel : copyMomentsLabel}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -1149,7 +1169,7 @@ export function DietShareSheet({
             >
               <Ionicons name="copy-outline" size={17} color={C.green600} />
               <Text style={styles.captionButtonText}>
-                {copiedCaption === 'xiaohongshu' ? '已复制小红书文案' : '复制小红书文案'}
+                {copiedCaption === 'xiaohongshu' ? copiedXhsLabel : copyXhsLabel}
               </Text>
             </TouchableOpacity>
           </View>

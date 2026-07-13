@@ -1255,7 +1255,7 @@ describe('DietScreen capture deeplink', () => {
     await waitFor(() => {
       expect(getByText('分享这一餐')).toBeTruthy();
       expect(getByText('高清 3:4 图片 · 微信与小红书')).toBeTruthy();
-      expect(getByText('复制小红书文案')).toBeTruthy();
+      expect(getByText('复制小红书复盘文案')).toBeTruthy();
     });
     expect(mockPushChatWithContext).not.toHaveBeenCalled();
     promptSpy.mockRestore();

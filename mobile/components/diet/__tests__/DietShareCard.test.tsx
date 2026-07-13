@@ -230,13 +230,13 @@ describe('DietShareCard', () => {
       />,
     );
 
-    fireEvent.press(getByText('复制小红书文案'));
+    fireEvent.press(getByText('复制小红书复盘文案'));
     await waitFor(() => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养数据: 智能估算，可继续复盘'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('营养数据: 智能估算，已确认'));
     });
 
-    fireEvent.press(getByText('复制朋友圈文案'));
+    fireEvent.press(getByText('复制朋友圈复盘文案'));
     await waitFor(() => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养数据: 智能估算，可继续复盘'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('营养数据: 智能估算，已确认'));
@@ -285,8 +285,12 @@ describe('DietShareCard', () => {
     expect(getByText('用于复盘或核对，确认后再发布')).toBeTruthy();
     expect(getByText('保存/分享复盘图')).toBeTruthy();
     expect(getByText('系统面板里保存或发给自己复盘')).toBeTruthy();
+    expect(getByText('复制朋友圈复盘文案')).toBeTruthy();
+    expect(getByText('复制小红书复盘文案')).toBeTruthy();
     expect(queryByText('自动复制朋友圈文案')).toBeNull();
     expect(queryByText('自动复制带话题文案')).toBeNull();
+    expect(queryByText('复制朋友圈文案')).toBeNull();
+    expect(queryByText('复制小红书文案')).toBeNull();
     expect(queryByText('发布前先存图，微信 / 小红书直接选')).toBeNull();
   });
 
@@ -319,14 +323,14 @@ describe('DietShareCard', () => {
     expect(queryByText('自动复制朋友圈文案')).toBeNull();
     expect(queryByText('自动复制带话题文案')).toBeNull();
 
-    fireEvent.press(getByText('复制小红书文案'));
+    fireEvent.press(getByText('核对后复制小红书文案'));
     await waitFor(() => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养数据: 智能估算，待核对后再发布'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('识别置信度: 42%，发布前建议核对食物和份量'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('营养数据: 智能估算，已确认，可继续复盘'));
     });
 
-    fireEvent.press(getByText('复制朋友圈文案'));
+    fireEvent.press(getByText('核对后复制朋友圈文案'));
     await waitFor(() => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养数据: 智能估算，待核对后再发布'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('识别置信度: 42%，发布前建议核对食物和份量'));
@@ -358,7 +362,7 @@ describe('DietShareCard', () => {
     expect(queryByText('营养数据以本次确认记录为准')).toBeNull();
     expect(queryByText('--')).toBeNull();
 
-    fireEvent.press(getByText('复制小红书文案'));
+    fireEvent.press(getByText('复制小红书复盘文案'));
     await waitFor(() => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养估算中，稍后可继续复盘'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('--'));
@@ -390,7 +394,7 @@ describe('DietShareCard', () => {
     expect(queryByText('能量结构')).toBeNull();
     expect(queryByText('营养数据以本次确认记录为准')).toBeNull();
 
-    fireEvent.press(getByText('复制朋友圈文案'));
+    fireEvent.press(getByText('复制朋友圈复盘文案'));
     await waitFor(() => {
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('热量估算中'));
       expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('营养数据: 部分估算中，可继续复盘'));
