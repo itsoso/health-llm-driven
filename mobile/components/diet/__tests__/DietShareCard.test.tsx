@@ -403,6 +403,7 @@ describe('DietShareCard', () => {
         'file:///meal-share.png',
         expect.objectContaining({ mimeType: 'image/png', UTI: 'public.png' }),
       );
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('#小巴记录'));
       expect(onShareTerminal).toHaveBeenCalledWith(expect.objectContaining({
         phase: 'completed',
         duration_ms: expect.any(Number),

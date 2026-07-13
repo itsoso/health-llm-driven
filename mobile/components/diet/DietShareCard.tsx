@@ -765,9 +765,7 @@ export function DietShareSheet({
     let captureUri: string | null = null;
     setSharing(true);
     try {
-      if (target !== 'generic') {
-        await Clipboard.setStringAsync(captionForShareTarget(record, dateLabel, target));
-      }
+      await Clipboard.setStringAsync(captionForShareTarget(record, dateLabel, target));
       if (!await Sharing.isAvailableAsync()) {
         await shareTextFallback(target);
         onShareTerminal?.({
