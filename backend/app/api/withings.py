@@ -31,6 +31,19 @@ router = APIRouter(prefix="/devices/withings", tags=["withings"])
 WEBHOOK_BASE = f"{settings.site_base_url}/api/devices/withings/webhook"
 
 
+def _invalidate_twin(user_id: int) -> None:
+    """Fail-soft twin-cache invalidation after a passive Withings weight/BP sync.
+
+    rank7: also drops pre-generated starter answers so they can't serve on
+    freshly-synced data. A Redis error must never fail the sync/webhook.
+    """
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(user_id)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # ========== OAuth 授权流程 ==========
 
 @router.get("/oauth/authorize", summary="获取 Withings 授权 URL")
@@ -226,6 +239,10 @@ async def withings_webhook(request: Request, db: Session = Depends(get_db)):
         else:
             logger.info(f"Withings webhook: unhandled appli={appli}")
 
+        # 仅在处理了数据类通知(体重/血压/睡眠)后才失效 twin 缓存 + 丢弃 pregen
+        if appli in (APPLI_WEIGHT, APPLI_PRESSURE, APPLI_SLEEP):
+            _invalidate_twin(target_credential.user_id)
+
         # 刷新 token 后保存回去（_api_request 可能刷新了 token）
         if adapter.access_token != target_credential.get_access_token():
             target_credential.set_oauth_tokens(
@@ -305,6 +322,10 @@ async def sync_withings_data(
 
         credential.update_sync_time()
         db.commit()
+
+        # 仅当确实写入了健康事件时才失效 twin 缓存 + 丢弃 pregen(guard like garmin_sync)
+        if events_created > 0:
+            _invalidate_twin(current_user.id)
 
         return {
             "success": True,

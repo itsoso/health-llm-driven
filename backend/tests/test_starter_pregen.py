@@ -477,6 +477,69 @@ def test_device_sync_write_drops_pregen_via_belt(
     assert starter_pregen.read_pregen(user.id, "分析我最近的代谢健康") is None
 
 
+def test_quick_record_weight_drops_pregen_via_belt(
+    client, db, auth_user_and_headers, fake_redis, pregen_on, monkeypatch
+):
+    """quick-record writes WeightRecord/BloodPressureRecord — only the ≤60s cached
+    twin caught these pre-fast-follow. A weight text must reach the belt choke."""
+    user, headers = auth_user_and_headers
+    _store_fresh(db, user.id, "分析我最近的代谢健康")
+    calls = _wire_belt_spy(monkeypatch)
+
+    resp = client.post(
+        "/api/v1/quick-record", json={"text": "体重71.5"}, headers=headers
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["type"] == "weight"
+    assert user.id in calls, "quick-record weight write did not reach invalidate_twin"
+    assert starter_pregen.read_pregen(user.id, "分析我最近的代谢健康") is None
+
+
+def test_withings_sync_write_drops_pregen_via_belt(
+    client, db, auth_user_and_headers, fake_redis, pregen_on, monkeypatch
+):
+    """Withings passive weight/BP sync — the one passive-device class C1 missed.
+
+    The endpoint needs OAuth-token'd credentials + live Withings HTTP, so we stub the
+    adapter (a fake client) and drive the real /sync endpoint. The belt is guarded on
+    events_created > 0, so a non-empty parse must reach invalidate_twin.
+    """
+    from app.api import withings as withings_api
+    from app.models.device_credential import DeviceCredential
+
+    user, headers = auth_user_and_headers
+    cred = DeviceCredential(
+        user_id=user.id, device_type="withings", auth_type="oauth2", is_valid=True
+    )
+    cred.set_oauth_tokens(access_token="at-test", refresh_token="rt-test")
+    db.add(cred)
+    db.commit()
+
+    class _FakeWithingsAdapter:
+        def __init__(self, **kwargs):
+            # Match the credential token so the endpoint's token-refresh branch skips.
+            self.access_token = kwargs.get("access_token")
+            self._refresh_token = kwargs.get("refresh_token")
+
+        async def get_measures_by_timestamp(self, start, end):
+            return {"measuregrps": []}  # opaque; parse (below) yields the records
+
+        @staticmethod
+        def parse_webhook_measures(measures):
+            return [{"weight": 71.5}, {"systolic": 120, "diastolic": 80}]
+
+    monkeypatch.setattr(withings_api, "WithingsHealthAdapter", _FakeWithingsAdapter)
+
+    _store_fresh(db, user.id, "分析我最近的代谢健康")
+    calls = _wire_belt_spy(monkeypatch)
+
+    resp = client.post("/api/v1/devices/withings/sync?days=7", headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["events_created"] == 2
+    assert user.id in calls, "withings sync write did not reach invalidate_twin"
+    assert starter_pregen.read_pregen(user.id, "分析我最近的代谢健康") is None
+
+
 # ── Producer: same pipeline, read-only, aborts on write, cleans scratch ──
 
 

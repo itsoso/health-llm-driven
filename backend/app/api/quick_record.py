@@ -20,6 +20,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _invalidate_twin(user_id: int) -> None:
+    """Fail-soft twin-cache invalidation after a write (rank7: also drops pregen)."""
+    try:
+        from app.twin.cache import invalidate_twin
+        invalidate_twin(user_id)
+    except Exception:  # noqa: BLE001 — a Redis error must never fail the write
+        pass
+
+
 class QuickRecordRequest(BaseModel):
     text: str
 
@@ -254,6 +263,7 @@ def quick_record(
             db.add(record)
             db.commit()
             db.refresh(record)
+            _invalidate_twin(current_user.id)
             nutrition_msg = f"，约 {nutrition[0]} kcal" if nutrition else ""
             return _quick_record_response(
                 record_type="diet",
@@ -272,6 +282,7 @@ def quick_record(
             db.add(record)
             db.commit()
             db.refresh(record)
+            _invalidate_twin(current_user.id)
             return _quick_record_response(
                 record_type="water",
                 message=f"已记录饮水 {data['amount']}ml",
@@ -289,6 +300,7 @@ def quick_record(
             db.add(record)
             db.commit()
             db.refresh(record)
+            _invalidate_twin(current_user.id)
             return _quick_record_response(
                 record_type="weight",
                 message=f"已记录体重 {data['weight']}kg",
@@ -307,6 +319,7 @@ def quick_record(
             db.add(record)
             db.commit()
             db.refresh(record)
+            _invalidate_twin(current_user.id)
             return _quick_record_response(
                 record_type="bp",
                 message=f"已记录血压 {data['systolic']}/{data['diastolic']} mmHg",
@@ -349,6 +362,7 @@ def quick_record(
                 record = existing
             db.commit()
             db.refresh(record)
+            _invalidate_twin(current_user.id)
             return _quick_record_response(
                 record_type="supplement",
                 message=f"已打卡补剂：{data['name']}",
