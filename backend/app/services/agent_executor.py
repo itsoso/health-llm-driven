@@ -8635,10 +8635,17 @@ class AgentExecutor:
 
         # orchestrator: 多专家协作深度分析
         if atype == "orchestrator" and question:
-            result = await self._api_post(
-                f"{base}/orchestrator/chat", headers,
-                {"query": question}
-            )
+            # rank8: 默认进程内直调 run_orchestrator, 绕开 localhost HTTP + 全 FastAPI 中间件
+            # 重入 (含 main.py 60s 请求超时中间件 —— 历史"内层 60s 连杀"故障类的根)。
+            # kill-switch orchestrator_in_process=False 回退旧 HTTP 路径 (保留一个 release)。
+            # 两条路径都过 _project_orchestrator_result: 进程内返回值与 HTTP 响应体 shape 一致。
+            if getattr(settings, "orchestrator_in_process", True):
+                result = await self._run_orchestrator_in_process(question)
+            else:
+                result = await self._api_post(
+                    f"{base}/orchestrator/chat", headers,
+                    {"query": question}
+                )
             return _project_orchestrator_result(result)
 
         # supplement_effectiveness: 补剂效果评估
@@ -8660,6 +8667,78 @@ class AgentExecutor:
 
         path = analysis_map.get(atype, analysis_map["comprehensive"])
         return await self._api_get(f"{base}{path}", headers)
+
+    # rank8: 内层深分析进程内直调超时 (秒)。旧 localhost HTTP 路径的有效预算是
+    # min(main.py 60s 请求中间件, httpx 90s 读) = 60s —— 中间件先杀, 正是"内层 60s 连杀"
+    # 故障类。进程内不再经中间件, 由本 wait_for 独占超时所有权。取 120s: 覆盖 prod 深分析
+    # 最坏 115-187s 里的绝大多数完成回合 (旧路径这些全部被 60s 中间件误杀成 500), 又不让
+    # 真卡死的回合无限期吃 /agent/send 的 300s 硬帽预算。超时 → 抛 TimeoutError → 落到
+    # 既有工具失败处理 (返回 "Error: ..." 字符串), 回合存活。
+    ORCHESTRATOR_IN_PROCESS_TIMEOUT_S: float = 120.0
+
+    async def _run_orchestrator_in_process(self, question: str) -> str:
+        """进程内直调 run_orchestrator, 替换 localhost POST /orchestrator/chat (rank8)。
+
+        返回值 = OrchestratorResponse.model_dump(mode="json") 的 JSON 字符串, 与旧
+        _api_post(/orchestrator/chat) 响应体 SHAPE-IDENTICAL (synthesis / intent /
+        used_specialists / findings)。上层 _project_orchestrator_result 与 rank7 shadow
+        捕获 (json.loads → 读 synthesis/perf) 零改动。
+
+        DB 会话: 用**独立的 fresh SessionLocal**, 不复用 self.db —— 忠实复刻 HTTP 边界的
+        会话隔离 (旧路径 /orchestrator/chat 走自己 request-scoped get_db session, 与 /agent
+        请求的 session 完全隔离)。理由: run_orchestrator 会向传入 db 写副作用 (ActionCard
+        落地 / clinical journal / memory extract / audit, 各自内部 commit)。复用 self.db 会
+        (a) 把这些写与 executor 未提交的 user_message 事务纠缠、(b) 内部 commit 提前提交
+        executor 的 pending 事务、(c) autoflush 意外推未提交对象。深分析只读已提交的健康数据
+        (question 携带意图, 不依赖本回合未提交写), fresh session 安全且正确。契约同 get_db:
+        不显式 commit (副作用写各自内部 commit), finally close, 异常 rollback。
+
+        用户作用域: user_id 显式传 self._current_user_id (== 旧 HTTP 路径 JWT 解出的
+        current_user.id), per-user 隔离一字不差 (health_read.canonical_read 先例)。
+
+        超时所有权: 中间件已不在链路, 由 asyncio.wait_for 接管; 超时/异常 → 返回
+        "Error: ..." 字符串 (与其余 _exec_* 失败契约一致), 回合存活。
+
+        NOTE (rank11 seam): 流式 stream_orchestrator 的进程内分段流式改造是 rank11 的活,
+        本方法只做非流式 run_orchestrator; 那里会在 caps=genui-v1 深报告路径切进程内 SSE。
+        """
+        from app.database import SessionLocal
+        from app.orchestrator import OrchestratorRequest, run_orchestrator
+
+        user_id = self._current_user_id
+        if user_id is None:
+            return "Error: 缺少用户身份, 无法执行深度分析"
+
+        # 与旧 HTTP body {"query": question} 逐字节等价: source 不传 (默认 None), 不触发
+        # source=='siri' 的 fast 短路; client_caps/specialists 用默认 (旧路径未带 caps 头)。
+        req = OrchestratorRequest(query=question)
+        orch_db = SessionLocal()
+        try:
+            response = await asyncio.wait_for(
+                run_orchestrator(orch_db, user_id, req),
+                timeout=self.ORCHESTRATOR_IN_PROCESS_TIMEOUT_S,
+            )
+            return json.dumps(
+                response.model_dump(mode="json"), ensure_ascii=False, default=str
+            )
+        except asyncio.TimeoutError:
+            orch_db.rollback()
+            logger.error(
+                "[agent_executor] in-process orchestrator timed out after %.0fs user=%s",
+                self.ORCHESTRATOR_IN_PROCESS_TIMEOUT_S, user_id,
+            )
+            return (
+                f"Error: 深度分析超时（>{int(self.ORCHESTRATOR_IN_PROCESS_TIMEOUT_S)}s），"
+                "请稍后重试"
+            )
+        except Exception as e:  # noqa: BLE001 — 任何失败降级为工具错误字符串, 回合存活
+            orch_db.rollback()
+            logger.exception(
+                "[agent_executor] in-process orchestrator failed user=%s: %s", user_id, e
+            )
+            return f"Error: 深度分析执行失败: {safe_llm_error_message(str(e))}"
+        finally:
+            orch_db.close()
 
     async def _exec_environment(
         self, base: str, headers: dict, args: dict

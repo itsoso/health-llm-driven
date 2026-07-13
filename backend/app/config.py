@@ -248,6 +248,14 @@ class Settings(BaseSettings):
     #              消费层 menu_share 提取 + thinking_steps),降级/兜底路径不逃 R4。
     # 未知值 fail-closed 归一到 'off'(见 agent_executor._resolve_synthesis_passthrough_mode)。
     orchestrator_synthesis_passthrough: str = "off"
+    # 深分析内层工具进程内直调(计划 rank8):对话 Agent 的 health_analysis(orchestrator)
+    # 工具原本 POST localhost /orchestrator/chat(非流式)拿深分析结果 —— 该 loopback 请求
+    # 重入整个 FastAPI 中间件栈,含 main.py 的 60s 请求超时中间件(历史"内层 60s 连杀"故障类
+    # 的根)。True = 直接进程内 await run_orchestrator(fresh SessionLocal, user_id 显式传),
+    # 绕开 HTTP + 中间件,超时改由 executor 内显式 asyncio.wait_for 接管;结果与旧 HTTP 响应体
+    # SHAPE-IDENTICAL(synthesis/intent/used_specialists/findings),上层投影/shadow 捕获零改动。
+    # False = 回退旧 localhost HTTP 路径(保留一个 release 后删)。
+    orchestrator_in_process: bool = True
     # 多模型 panel(高风险裁决多模型投票):primitive,默认关
     multi_model_panel: bool = False
 
