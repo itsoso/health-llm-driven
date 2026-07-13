@@ -371,6 +371,32 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('does not turn low-confidence estimates into a polished nutrition claim', async () => {
+    const lowConfidenceRecord = {
+      ...record,
+      source: 'ai_estimate',
+      ai_confidence: 0.42,
+      food_items: '机场贵宾厅番茄鸡蛋面、鸭肉、生菜',
+    };
+    const { getByText, queryByText } = render(
+      <DietShareSheet
+        visible
+        record={lowConfidenceRecord}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(getByText('待核对的一餐')).toBeTruthy();
+    expect(queryByText('蛋白质拉满的一餐')).toBeNull();
+
+    fireEvent.press(getByText('核对后复制小红书文案'));
+    await waitFor(() => {
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.stringContaining('小巴饮食卡｜待核对的一餐'));
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith(expect.not.stringContaining('小巴饮食卡｜蛋白质拉满的一餐'));
+    });
+  });
+
   it('keeps pending nutrition share cards and captions polished without placeholder dashes', async () => {
     const pendingRecord: DietRecord = {
       ...record,

@@ -93,6 +93,7 @@ function nutritionSourceLabel(source?: string | null): string {
 }
 
 export function buildDietShareHeadline(record: DietRecord): string {
+  if (isLowConfidenceDietShare(record)) return '待核对的一餐';
   if (typeof record.protein === 'number' && record.protein >= 35) return '蛋白质拉满的一餐';
   if (typeof record.fiber === 'number' && record.fiber >= 6) return '膳食纤维在线的一餐';
   if (typeof record.calories === 'number' && record.calories <= 450) return '轻负担的一餐';
