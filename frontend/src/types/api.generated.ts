@@ -14259,6 +14259,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/knowledge/dedao_kbase/draft_review/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页查看 dedao-kbase draft claims */
+        get: operations["get_dedao_kbase_draft_review_items_api_v1_admin_knowledge_dedao_kbase_draft_review_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/{doc_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 裁决一个 dedao-kbase draft claim */
+        patch: operations["adjudicate_dedao_kbase_draft_review_item_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/dedao_kbase/draft_review/finalize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 最终确认已逐条裁决的 dedao-kbase review */
+        post: operations["finalize_dedao_kbase_draft_review_endpoint_api_v1_admin_knowledge_dedao_kbase_draft_review_finalize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/knowledge/dedao_kbase/draft_review/approve": {
         parameters: {
             query?: never;
@@ -14270,6 +14321,23 @@ export interface paths {
         put?: never;
         /** 批准 dedao-kbase draft artifacts */
         post: operations["approve_dedao_kbase_draft_review_endpoint_api_v1_admin_knowledge_dedao_kbase_draft_review_approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/knowledge/dedao_kbase/reviewed_artifacts/publish/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 预演发布已审核 dedao-kbase artifacts */
+        post: operations["preview_dedao_kbase_reviewed_artifacts_publish_endpoint_api_v1_admin_knowledge_dedao_kbase_reviewed_artifacts_publish_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -21874,6 +21942,34 @@ export interface components {
             /** Rationale */
             rationale: string;
         };
+        /** DedaoKbaseClaimAdjudicationRequest */
+        DedaoKbaseClaimAdjudicationRequest: {
+            /** Workspace Fingerprint */
+            workspace_fingerprint: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "approve" | "needs_evidence" | "reject" | "background_only";
+            /** Note */
+            note?: string | null;
+            evidence?: components["schemas"]["DedaoKbaseClaimEvidence"] | null;
+            /** Evidence Level */
+            evidence_level?: ("A" | "B" | "C" | "D") | null;
+            /** Confidence */
+            confidence?: number | null;
+        };
+        /** DedaoKbaseClaimEvidence */
+        DedaoKbaseClaimEvidence: {
+            /** Kind */
+            kind?: string | null;
+            /** Source */
+            source: string;
+            /** Title */
+            title?: string | null;
+            /** Url */
+            url?: string | null;
+        };
         /** DedaoKbaseDraftReviewApproveRequest */
         DedaoKbaseDraftReviewApproveRequest: {
             /** Workspace Fingerprint */
@@ -21890,6 +21986,18 @@ export interface components {
              * @default false
              */
             dry_run_publish: boolean;
+        };
+        /** DedaoKbaseDraftReviewFinalizeRequest */
+        DedaoKbaseDraftReviewFinalizeRequest: {
+            /** Workspace Fingerprint */
+            workspace_fingerprint: string;
+            /** Note */
+            note?: string | null;
+        };
+        /** DedaoKbasePublishPreviewRequest */
+        DedaoKbasePublishPreviewRequest: {
+            /** Note */
+            note?: string | null;
         };
         /** DedaoKbaseReviewedArtifactsPublishRequest */
         DedaoKbaseReviewedArtifactsPublishRequest: {
@@ -54835,6 +54943,107 @@ export interface operations {
             };
         };
     };
+    get_dedao_kbase_draft_review_items_api_v1_admin_knowledge_dedao_kbase_draft_review_items_get: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+                decision?: ("approve" | "needs_evidence" | "reject" | "background_only") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adjudicate_dedao_kbase_draft_review_item_api_v1_admin_knowledge_dedao_kbase_draft_review_items__doc_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DedaoKbaseClaimAdjudicationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finalize_dedao_kbase_draft_review_endpoint_api_v1_admin_knowledge_dedao_kbase_draft_review_finalize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DedaoKbaseDraftReviewFinalizeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     approve_dedao_kbase_draft_review_endpoint_api_v1_admin_knowledge_dedao_kbase_draft_review_approve_post: {
         parameters: {
             query?: never;
@@ -54845,6 +55054,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DedaoKbaseDraftReviewApproveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_dedao_kbase_reviewed_artifacts_publish_endpoint_api_v1_admin_knowledge_dedao_kbase_reviewed_artifacts_publish_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DedaoKbasePublishPreviewRequest"];
             };
         };
         responses: {
