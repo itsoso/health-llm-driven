@@ -411,7 +411,7 @@ export default function DietScreen() {
   const draftConsumedRef = useRef(false);
   const qc = useQueryClient();
   const toast = useToast();
-  const [date, setDate] = useState(todayStr());
+  const [date, setDate] = useState(() => readRouteDate(params.date) ?? todayStr());
   const { data: daily, refetch, isRefetching } = useDailyDiet(date);
   const { estimate, pendingIds, failedIds } = useDietEstimate();
   // 记住每条记录的估算来源, 让「点重试」用同一来源 (photo/voice/text) 重跑.

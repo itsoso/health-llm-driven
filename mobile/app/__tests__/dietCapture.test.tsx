@@ -19,6 +19,7 @@ const mockToastShow = jest.fn();
 const mockToastShowUndoable = jest.fn();
 const mockDailyMeals: any[] = [];
 const mockFrequentFoods: any[] = [];
+const mockUseDailyDiet = jest.fn();
 let mockAuthUserId: number | null = 7;
 
 jest.mock('expo-router', () => ({
@@ -72,11 +73,7 @@ jest.mock('react-native-gesture-handler/ReanimatedSwipeable', () => {
 });
 
 jest.mock('../../hooks/useDiet', () => ({
-  useDailyDiet: () => ({
-    data: { meals: mockDailyMeals, meals_count: mockDailyMeals.length, total_calories: 0, total_protein: 0, total_carbs: 0, total_fat: 0 },
-    refetch: jest.fn(),
-    isRefetching: false,
-  }),
+  useDailyDiet: (...args: any[]) => mockUseDailyDiet(...args),
 }));
 
 jest.mock('../../hooks/useAuth', () => ({
@@ -186,6 +183,12 @@ describe('DietScreen capture deeplink', () => {
     (ImagePicker.launchCameraAsync as jest.Mock).mockReset().mockResolvedValue({ canceled: true, assets: [] });
     (ImagePicker.launchImageLibraryAsync as jest.Mock).mockReset().mockResolvedValue({ canceled: true, assets: [] });
     require('../../services/diet').recognizeFood.mockReset();
+    mockUseDailyDiet.mockReset();
+    mockUseDailyDiet.mockImplementation(() => ({
+      data: { meals: mockDailyMeals, meals_count: mockDailyMeals.length, total_calories: 0, total_protein: 0, total_carbs: 0, total_fat: 0 },
+      refetch: jest.fn(),
+      isRefetching: false,
+    }));
     mockLoadDietPhotoDraft.mockResolvedValue(null);
     mockSaveDietPhotoDraft.mockResolvedValue(undefined);
     mockClearDietPhotoDraft.mockResolvedValue(undefined);
@@ -1386,6 +1389,34 @@ describe('DietScreen capture deeplink', () => {
       expect(getByText('发小红书')).toBeTruthy();
       expect(getAllByText('牛肉面').length).toBeGreaterThan(0);
     });
+  });
+
+  it('loads a saved-record share deeplink with its route date on the first render', async () => {
+    mockRouteParams.share_record_id = '88';
+    mockRouteParams.return_to = 'chat';
+    mockRouteParams.date = '2026-07-09';
+    mockAuthUserId = null;
+    mockDailyMeals.push({
+      id: 88,
+      user_id: 1,
+      record_date: '2026-07-09',
+      meal_type: 'lunch',
+      food_items: '牛肉面',
+      source: 'ai_estimate',
+      calories: 620,
+      protein: 28,
+      carbs: 78,
+      fat: 18,
+      fiber: 4,
+      alcohol_units: null,
+      image_url: null,
+      notes: null,
+      health_tips: null,
+    });
+
+    render(<DietScreen />);
+
+    expect(mockUseDailyDiet.mock.calls[0][0]).toBe('2026-07-09');
   });
 
   it('keeps the just-captured meal photo in the immediate share preview when the confirm response has no image url', async () => {
