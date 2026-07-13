@@ -1217,7 +1217,7 @@ export function DietShareSheet({
               <Ionicons name="download-outline" size={19} color={C.green600} />
             )}
             <View style={styles.shareButtonCopy}>
-              <Text style={styles.saveLibraryButtonText}>{!imageReady ? '图片加载中' : sharing ? '保存中' : saveLibraryLabel}</Text>
+              <Text style={styles.saveLibraryButtonText}>{!imageReady ? '图片加载中' : sharing ? '存图中' : saveLibraryLabel}</Text>
               {!sharing && imageReady ? (
                 <Text style={styles.saveLibraryButtonHint}>{saveLibraryHint}</Text>
               ) : null}

@@ -668,6 +668,31 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('labels photo-library saving as image export progress', async () => {
+    let resolveSave: (() => void) | undefined;
+    mockSaveToLibraryAsync.mockImplementationOnce(() => new Promise<void>(resolve => {
+      resolveSave = resolve;
+    }));
+    const { getByText } = render(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(getByText('保存到相册'));
+
+    await waitFor(() => {
+      expect(getByText('存图中')).toBeTruthy();
+    });
+
+    await act(async () => {
+      resolveSave?.();
+    });
+  });
+
   it('keeps low-confidence saved share images framed as review material', async () => {
     const lowConfidenceRecord = {
       ...record,
