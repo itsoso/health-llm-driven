@@ -1254,7 +1254,7 @@ describe('DietScreen capture deeplink', () => {
 
     await waitFor(() => {
       expect(getByText('分享这一餐')).toBeTruthy();
-      expect(getByText('高清 3:4 图片 · 微信与小红书')).toBeTruthy();
+      expect(getByText('复盘 3:4 图片 · 微信与小红书')).toBeTruthy();
       expect(getByText('复制小红书复盘文案')).toBeTruthy();
     });
     expect(mockPushChatWithContext).not.toHaveBeenCalled();
@@ -1302,6 +1302,15 @@ describe('DietScreen capture deeplink', () => {
           prompt: expect.stringContaining('请先查询今天数据库里的所有饮食记录'),
           badge: '今日饮食复盘',
           context: expect.objectContaining({
+            database_verification: expect.objectContaining({
+              required: true,
+              date: '2026-07-11',
+              verify_record_id: 89,
+              query_scope: 'daily_diet_records',
+              totals_source: 'database',
+              forbid_cached_totals: true,
+              missing_record_instruction: expect.stringContaining('同步失败'),
+            }),
             just_recorded: expect.objectContaining({
               id: 89,
               food_items: '鸡胸肉 200g + 糙米饭一碗',

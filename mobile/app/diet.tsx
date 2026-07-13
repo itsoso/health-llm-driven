@@ -306,6 +306,15 @@ function buildPostConfirmDietReviewContext(record: DietRecord) {
     must_query_database: true,
     created_id: record.id,
     verify_record_id: record.id,
+    database_verification: {
+      required: true,
+      date: record.record_date,
+      verify_record_id: record.id,
+      query_scope: 'daily_diet_records',
+      totals_source: 'database',
+      forbid_cached_totals: true,
+      missing_record_instruction: '如果数据库里查不到 verify_record_id 对应记录，明确提示同步失败，不要凭本页缓存或对话内容猜测。',
+    },
     expected_record: {
       id: record.id,
       record_date: record.record_date,
