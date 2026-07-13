@@ -415,8 +415,8 @@ async def test_critical_still_immediate_outside_quiet_hours(db):
 
 
 @pytest.mark.asyncio
-async def test_quiet_hours_policy_bypass_sends_immediately(db):
-    """明确 bypass 的 bedtime/用户主动提醒不进入 delayed 队列."""
+async def test_quiet_hours_policy_bypass_still_delays_non_critical_at_night(db):
+    """非 critical 通知即使旧调用方显式 bypass, 22:00-09:00 内也不能打扰睡眠."""
     user = _make_user(db, username="qh_bypass")
     svc = PushService(db)
 
@@ -431,16 +431,19 @@ async def test_quiet_hours_policy_bypass_sends_immediately(db):
             quiet_hours_policy="bypass",
         )
 
-    assert result.get("success") is True
+    assert result["success"] is False
+    assert result["reason"] == "delayed_for_quiet_hours"
     delayed = (
         db.query(NotificationLog)
         .filter(
             NotificationLog.user_id == user.id,
             NotificationLog.status == NotificationStatus.DELAYED.value,
         )
-        .count()
+        .one()
     )
-    assert delayed == 0
+    assert delayed.scheduled_at.day == 13
+    assert delayed.scheduled_at.hour == 9
+    assert delayed.scheduled_at.minute == 0
 
 
 @pytest.mark.asyncio

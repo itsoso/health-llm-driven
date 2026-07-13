@@ -40,6 +40,10 @@ def test_user_visible_morning_pushes_do_not_run_before_quiet_hours_end():
             "task": "app.tasks.notifications.send_morning_health_summary",
             "schedule": crontab(hour=9, minute=30),
         },
+        "monthly-report-generate": {
+            "task": "app.tasks.monthly_report.generate_previous_month_reports",
+            "schedule": crontab(hour=9, minute=12, day_of_month=1),
+        },
     }
 
     for name, expectation in expected.items():

@@ -342,10 +342,10 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=3, minute=27, day_of_week=0),  # 周日凌晨 03:27
     },
 
-    # 月度复盘报告: 每月 1 日 08:10 生成上月报告
+    # 月度复盘报告: 每月 1 日 09:12 生成上月报告, 不在早晨静默窗口内触发用户提醒。
     "monthly-report-generate": {
         "task": "app.tasks.monthly_report.generate_previous_month_reports",
-        "schedule": crontab(hour=8, minute=10, day_of_month=1),
+        "schedule": crontab(hour=9, minute=12, day_of_month=1),
     },
 
     # Agent-Native v3 Increment 3 §3 — Episode action 时间窗扫描:

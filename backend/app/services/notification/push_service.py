@@ -418,6 +418,7 @@ class PushService:
         effective_quiet_policy: QuietHoursPolicy = resolve_quiet_hours_policy(
             severity, quiet_hours_policy, respect_quiet_hours
         )
+        is_non_critical = _severity_rank(severity) < _severity_rank("critical")
         # 用户明确要求 09:00 前不要 push。这里比普通 quiet-hours 更硬:
         # 即使 critical / 显式 bypass, 也先延迟到 morning floor。
         if (
@@ -443,6 +444,11 @@ class PushService:
                 "success": False,
                 "reason": "通知已禁用/低于阈值/规则已静音",
             }
+
+        # 设置页语义是"安静时段只允许 critical 级告警穿透"。历史调用方传
+        # respect_quiet_hours=False / quiet_hours_policy="bypass" 不能覆盖用户睡眠保护。
+        if effective_quiet_policy == "bypass" and is_non_critical and self.is_quiet_hours(user_id):
+            effective_quiet_policy = "delay"
 
         advice_candidate = _advice_candidate_from_push(
             user_id=user_id,
