@@ -256,7 +256,7 @@ describe('renderCard 安全降级', () => {
     const element = renderCard(descriptor, { onAction });
     expect(element).not.toBeNull();
 
-    const { getByText } = render(element!);
+    const { getByText, queryByText } = render(element!);
     // 结构化餐食卡: 标题带餐次 + 状态, 草稿态有「草稿」chip。
     expect(getByText('午餐 · 待确认')).toBeTruthy();
     expect(getByText('草稿')).toBeTruthy();
@@ -269,7 +269,8 @@ describe('renderCard 安全降级', () => {
     expect(getByText('蛋白质')).toBeTruthy();
     expect(getByText('30g')).toBeTruthy();
     expect(getByText('置信度 82% · 来源: 对话/图片')).toBeTruthy();
-    expect(getByText('已带营养估算，确认后计入今日')).toBeTruthy();
+    expect(getByText('已带营养估算，核对后计入今日')).toBeTruthy();
+    expect(queryByText('已带营养估算，确认后计入今日')).toBeNull();
     expect(getByText('餐后轻走 10 分钟')).toBeTruthy();
     expect(getByText('营养为估算值,确认后写入今日饮食记录。')).toBeTruthy();
 

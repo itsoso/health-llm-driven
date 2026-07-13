@@ -156,6 +156,18 @@ function sourceLabel(value: unknown): string | undefined {
   return `来源: ${SOURCE_LABELS[source] || source}`;
 }
 
+function isPhotoSource(value: unknown): boolean {
+  const source = text(value)?.toLowerCase();
+  return Boolean(source && (source.includes('photo') || source.includes('image') || source.includes('vision')));
+}
+
+function nutritionStatusText(data: DietDraftData): string {
+  if (!hasNutritionEstimate(data)) {
+    return '确认后先记录，营养后台估算';
+  }
+  return isPhotoSource(data.source) ? '已带营养估算，核对后计入今日' : '已带营养估算，确认后计入今日';
+}
+
 /** 仅当 data 里有明确时点 (time / recorded_at 的 HH:MM) 才回显, 不伪造。 */
 function mealTimeLabel(data: DietDraftData): string | undefined {
   const raw = text(data.time) ?? text(data.recorded_at);
@@ -201,6 +213,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const macros = macroRows(data);
   const caloriesValue = numberValue(data.calories);
   const nutritionEstimated = hasNutritionEstimate(data);
+  const nutritionStatus = nutritionStatusText(data);
   const timeLabel = mealTimeLabel(data);
   const meta = [confidenceLabel(data.confidence), sourceLabel(data.source)].filter(Boolean).join(' · ');
   const suggestions = listText(data.suggestions);
@@ -295,7 +308,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
               { color: nutritionEstimated ? C.green600 : C.ink3 },
             ]}
           >
-            {nutritionEstimated ? '已带营养估算，确认后计入今日' : '确认后先记录，营养后台估算'}
+            {nutritionStatus}
           </Text>
         </View>
       ) : null}
