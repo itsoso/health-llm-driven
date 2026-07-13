@@ -23,7 +23,9 @@ from app.models.system_knowledge import KBAudit, KBDocument, KBDocumentVector, K
 from app.services.retrieval_guard import guard_retrieval_query
 from app.services.system_knowledge_ingest import validate_artifact_review_gate
 from app.services.kbase_review_workspace import (
+    adjudicate_review_claim,
     finalize_review_workspace,
+    list_review_claims,
     review_workspace_lock,
     workspace_artifacts_valid,
     workspace_content_fingerprint,
@@ -1635,6 +1637,45 @@ def get_dedao_kbase_draft_review_bundle(
             },
             "preview": _artifact_preview(root, limit=preview_limit),
         }
+
+
+def list_dedao_kbase_review_claims(
+    *,
+    artifact_dir: str | Path | None = None,
+    offset: int = 0,
+    limit: int = 50,
+    decision: str | None = None,
+) -> dict[str, Any]:
+    root = _configured_system_kb_artifact_dir(artifact_dir)
+    _require_system_kb_artifact_dir(root)
+    return list_review_claims(root, offset=offset, limit=limit, decision=decision)
+
+
+def adjudicate_dedao_kbase_review_claim(
+    *,
+    doc_id: str,
+    decision: str,
+    reviewer: str,
+    expected_workspace_fingerprint: str,
+    note: str | None = None,
+    evidence: dict[str, Any] | None = None,
+    evidence_level: str | None = None,
+    confidence: float | None = None,
+    artifact_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    root = _configured_system_kb_artifact_dir(artifact_dir)
+    _require_system_kb_artifact_dir(root)
+    return adjudicate_review_claim(
+        root,
+        doc_id=doc_id,
+        decision=decision,
+        reviewer=reviewer,
+        expected_workspace_fingerprint=expected_workspace_fingerprint,
+        note=note,
+        evidence=evidence,
+        evidence_level=evidence_level,
+        confidence=confidence,
+    )
 
 
 def approve_dedao_kbase_draft_review(

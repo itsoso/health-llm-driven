@@ -13,6 +13,7 @@ from app.models.system_knowledge import KBAudit
 from app.models.user import User
 from app.services.system_knowledge_eval import run_system_kb_eval_cases
 from app.services.system_knowledge_service import (
+    adjudicate_dedao_kbase_review_claim,
     approve_dedao_kbase_draft_review,
     get_dedao_kbase_draft_review_bundle,
     get_claim_bundle,
@@ -21,6 +22,7 @@ from app.services.system_knowledge_service import (
     get_knowledge_operations_dashboard,
     get_knowledge_review_queue,
     lint_knowledge_base,
+    list_dedao_kbase_review_claims,
     lookup_for_twin,
     preview_dedao_kbase_reviewed_artifacts_publish,
     publish_dedao_kbase_reviewed_artifacts,
@@ -78,6 +80,31 @@ class DedaoKbaseDraftReviewApproveRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
     publish: bool = False
     dry_run_publish: bool = False
+
+
+class DedaoKbaseClaimEvidence(BaseModel):
+    kind: str | None = Field(default=None, max_length=80)
+    source: str = Field(..., min_length=1, max_length=300)
+    title: str | None = Field(default=None, max_length=500)
+    url: str | None = Field(default=None, max_length=1000)
+
+
+class DedaoKbaseClaimAdjudicationRequest(BaseModel):
+    workspace_fingerprint: str = Field(..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    decision: Literal["approve", "needs_evidence", "reject", "background_only"]
+    note: str | None = Field(default=None, max_length=1000)
+    evidence: DedaoKbaseClaimEvidence | None = None
+    evidence_level: Literal["A", "B", "C", "D"] | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
+
+
+class DedaoKbaseDraftReviewFinalizeRequest(BaseModel):
+    workspace_fingerprint: str = Field(..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class DedaoKbasePublishPreviewRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=1000)
 
 
 class DedaoKbaseReviewedArtifactsPublishRequest(BaseModel):
@@ -648,6 +675,88 @@ def get_dedao_kbase_draft_review(
     return result
 
 
+@admin_router.get("/dedao_kbase/draft_review/items", summary="分页查看 dedao-kbase draft claims")
+def get_dedao_kbase_draft_review_items(
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    decision: Literal["approve", "needs_evidence", "reject", "background_only"] | None = Query(default=None),
+    admin_user: User = Depends(get_admin_user),
+):
+    try:
+        return list_dedao_kbase_review_claims(offset=offset, limit=limit, decision=decision)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@admin_router.patch("/dedao_kbase/draft_review/items/{doc_id}", summary="裁决一个 dedao-kbase draft claim")
+def adjudicate_dedao_kbase_draft_review_item(
+    doc_id: str,
+    request: DedaoKbaseClaimAdjudicationRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    evidence = request.evidence.model_dump(exclude_none=True) if request.evidence else None
+    try:
+        result = adjudicate_dedao_kbase_review_claim(
+            doc_id=doc_id,
+            decision=request.decision,
+            reviewer=f"admin:{admin_user.id}",
+            expected_workspace_fingerprint=request.workspace_fingerprint,
+            note=request.note,
+            evidence=evidence,
+            evidence_level=request.evidence_level,
+            confidence=request.confidence,
+        )
+    except (OSError, ValueError) as exc:
+        status_code = 409 if "changed since preview" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+    _record_audit(
+        db,
+        doc_id=doc_id,
+        op="dedao_kbase_claim_adjudicated",
+        actor=f"admin:{admin_user.id}",
+        diff={
+            "decision": request.decision,
+            "note": request.note,
+            "evidence": evidence,
+            "evidence_level": request.evidence_level,
+            "confidence": request.confidence,
+            "workspace_fingerprint": result["workspace_fingerprint"],
+        },
+    )
+    return result
+
+
+@admin_router.post("/dedao_kbase/draft_review/finalize", summary="最终确认已逐条裁决的 dedao-kbase review")
+def finalize_dedao_kbase_draft_review_endpoint(
+    request: DedaoKbaseDraftReviewFinalizeRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        result = approve_dedao_kbase_draft_review(
+            reviewer=f"admin:{admin_user.id}",
+            expected_workspace_fingerprint=request.workspace_fingerprint,
+        )
+    except (OSError, ValueError) as exc:
+        status_code = 409 if "changed since preview" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    _record_audit(
+        db,
+        doc_id=None,
+        op="dedao_kbase_draft_review_finalized",
+        actor=f"admin:{admin_user.id}",
+        diff={
+            "note": request.note,
+            "serving_allowed": result["gate"]["serving_allowed"],
+            "blocking_reasons": result["gate"]["blocking_reasons"],
+            "workspace_fingerprint": result["workspace_fingerprint"],
+        },
+    )
+    return result
+
+
 @admin_router.post("/dedao_kbase/draft_review/approve", summary="批准 dedao-kbase draft artifacts")
 def approve_dedao_kbase_draft_review_endpoint(
     request: DedaoKbaseDraftReviewApproveRequest,
@@ -655,23 +764,14 @@ def approve_dedao_kbase_draft_review_endpoint(
     db: Session = Depends(get_db),
 ):
     try:
-        if request.publish and request.dry_run_publish:
-            raise ValueError("publish and dry_run_publish cannot both be true")
+        if request.publish or request.dry_run_publish:
+            raise ValueError(
+                "legacy draft approval no longer supports publish; finalize review and use the separate preview endpoint"
+            )
         result = approve_dedao_kbase_draft_review(
             reviewer=f"admin:{admin_user.id}",
             expected_workspace_fingerprint=request.workspace_fingerprint,
         )
-        publish_report = None
-        publish_preview = None
-        if request.publish:
-            publish_report = publish_dedao_kbase_reviewed_artifacts(
-                db,
-                actor=f"admin:{admin_user.id}",
-            )
-            result["publish"] = publish_report
-        elif request.dry_run_publish:
-            publish_preview = preview_dedao_kbase_reviewed_artifacts_publish(db)
-            result["publish_preview"] = publish_preview
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -688,10 +788,36 @@ def approve_dedao_kbase_draft_review_endpoint(
             "documents_reviewed": result["review"].get("documents_reviewed"),
             "relations_reviewed": result["review"].get("relations_reviewed"),
             "note": request.note,
-            "published": request.publish,
-            "publish_dry_run": request.dry_run_publish,
-            "publish": publish_report,
-            "publish_preview": publish_preview,
+            "published": False,
+            "publish_dry_run": False,
+        },
+    )
+    return result
+
+
+@admin_router.post(
+    "/dedao_kbase/reviewed_artifacts/publish/preview",
+    summary="预演发布已审核 dedao-kbase artifacts",
+)
+def preview_dedao_kbase_reviewed_artifacts_publish_endpoint(
+    request: DedaoKbasePublishPreviewRequest,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        result = preview_dedao_kbase_reviewed_artifacts_publish(db)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _record_audit(
+        db,
+        doc_id=None,
+        op="dedao_kbase_reviewed_artifacts_publish_preview",
+        actor=f"admin:{admin_user.id}",
+        diff={
+            "note": request.note,
+            "dry_run": True,
+            "import": result["import"],
+            "reindex": result["reindex"],
         },
     )
     return result

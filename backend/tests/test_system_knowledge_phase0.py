@@ -32,6 +32,79 @@ def _artifact_counts(artifact_dir):
     }
 
 
+def _write_dedao_review_workspace(artifact_dir):
+    artifact_dir.mkdir()
+    _write_artifact_jsonl(
+        artifact_dir / "pages.jsonl",
+        [
+            {
+                "doc_id": "page:release-abc",
+                "doc_type": "article",
+                "title": "睡眠与咖啡因",
+                "summary": "结构化来源摘要",
+                "metadata": {"review_status": "draft", "release_id": "release-abc"},
+            }
+        ],
+    )
+    _write_artifact_jsonl(
+        artifact_dir / "entities.jsonl",
+        [
+            {
+                "doc_id": "entity:knowledge_source:sleep",
+                "doc_type": "entity",
+                "title": "睡眠与咖啡因",
+                "metadata": {"review_status": "draft", "release_id": "release-abc"},
+            }
+        ],
+    )
+    _write_artifact_jsonl(
+        artifact_dir / "claims.jsonl",
+        [
+            {
+                "doc_id": "claim:release-abc-claim-1",
+                "doc_type": "claim",
+                "title": "晚间咖啡因可能延长睡眠潜伏期",
+                "summary": "晚间咖啡因可能延长睡眠潜伏期。",
+                "body": "不应写入审计的 claim 正文",
+                "evidence_level": "C",
+                "confidence": 0.68,
+                "sources": ["citation-1"],
+                "metadata": {
+                    "review_status": "draft",
+                    "release_id": "release-abc",
+                    "usage_policy": "evidence_only",
+                    "citation_ids": ["citation-1"],
+                },
+            }
+        ],
+    )
+    for name in ("protocols", "contraindications", "eval_cases"):
+        _write_artifact_jsonl(artifact_dir / f"{name}.jsonl", [])
+    _write_artifact_jsonl(
+        artifact_dir / "relations.jsonl",
+        [
+            {
+                "src_doc_id": "entity:knowledge_source:sleep",
+                "dst_doc_id": "claim:release-abc-claim-1",
+                "relation": "has_claim",
+                "metadata": {"review_status": "draft", "release_id": "release-abc"},
+            }
+        ],
+    )
+    (artifact_dir / "manifest.json").write_text(
+        json.dumps(
+            {"ingest": {"review_status": "draft"}, "counts": _artifact_counts(artifact_dir)},
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (artifact_dir / "draft_manifest.json").write_text(
+        json.dumps({"status": "draft", "requires_review": True, "serving_allowed": False}) + "\n",
+        encoding="utf-8",
+    )
+
+
 def _seed_phase0_knowledge(db):
     entity = KBDocument(
         doc_id="entity:gene:MTHFR",
@@ -1312,7 +1385,149 @@ def test_admin_dedao_kbase_draft_review_bundle_reads_configured_artifacts(
     assert db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_draft_review_bundle").count() == 1
 
 
-def test_admin_dedao_kbase_draft_review_approve_promotes_configured_artifacts(
+def test_admin_dedao_kbase_draft_review_items_are_bounded_and_body_free(
+    client,
+    auth_user_and_headers,
+    tmp_path,
+    monkeypatch,
+):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    artifact_dir = tmp_path / "dedao-review"
+    _write_dedao_review_workspace(artifact_dir)
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(artifact_dir))
+
+    response = client.get(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review/items?offset=0&limit=20",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["doc_id"] == "claim:release-abc-claim-1"
+    assert payload["items"][0]["source_count"] == 1
+    assert "body" not in payload["items"][0]
+
+
+def test_admin_dedao_kbase_claim_adjudication_records_metadata_only_audit(
+    client,
+    db,
+    auth_user_and_headers,
+    tmp_path,
+    monkeypatch,
+):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    artifact_dir = tmp_path / "dedao-review"
+    _write_dedao_review_workspace(artifact_dir)
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(artifact_dir))
+
+    response = client.patch(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/claim%3Arelease-abc-claim-1",
+        headers=headers,
+        json={
+            "workspace_fingerprint": workspace_content_fingerprint(artifact_dir),
+            "decision": "approve",
+            "note": "外部证据核验后通过",
+            "evidence_level": "B",
+            "confidence": 0.84,
+            "evidence": {
+                "kind": "research",
+                "source": "pubmed:12345",
+                "title": "Caffeine and sleep",
+                "url": "https://pubmed.ncbi.nlm.nih.gov/12345/",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["decision"] == "approve"
+    audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_claim_adjudicated").one()
+    assert audit.doc_id == "claim:release-abc-claim-1"
+    assert audit.diff["decision"] == "approve"
+    assert audit.diff["evidence"]["source"] == "pubmed:12345"
+    assert "body" not in json.dumps(audit.diff, ensure_ascii=False)
+    assert "不应写入审计" not in json.dumps(audit.diff, ensure_ascii=False)
+
+
+def test_admin_dedao_kbase_claim_adjudication_returns_conflict_for_stale_fingerprint(
+    client,
+    db,
+    auth_user_and_headers,
+    tmp_path,
+    monkeypatch,
+):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    artifact_dir = tmp_path / "dedao-review"
+    _write_dedao_review_workspace(artifact_dir)
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(artifact_dir))
+
+    response = client.patch(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/claim%3Arelease-abc-claim-1",
+        headers=headers,
+        json={
+            "workspace_fingerprint": "0" * 64,
+            "decision": "needs_evidence",
+            "note": "需要二源",
+        },
+    )
+
+    assert response.status_code == 409
+    assert "reload" in response.json()["detail"]
+    assert db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_claim_adjudicated").count() == 0
+
+
+def test_admin_dedao_kbase_finalize_requires_resolved_claims_then_allows_dry_run_preview(
+    client,
+    db,
+    auth_user_and_headers,
+    tmp_path,
+    monkeypatch,
+):
+    user, headers = auth_user_and_headers
+    user.is_admin = True
+    artifact_dir = tmp_path / "dedao-review"
+    _write_dedao_review_workspace(artifact_dir)
+    monkeypatch.setattr(settings, "dedao_kbase_review_artifact_dir", str(artifact_dir))
+    fingerprint = workspace_content_fingerprint(artifact_dir)
+
+    blocked = client.post(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review/finalize",
+        headers=headers,
+        json={"workspace_fingerprint": fingerprint, "note": "finalize"},
+    )
+    assert blocked.status_code == 400
+    assert "unresolved claim decisions" in blocked.json()["detail"]
+
+    approved = client.patch(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review/items/claim%3Arelease-abc-claim-1",
+        headers=headers,
+        json={"workspace_fingerprint": fingerprint, "decision": "approve"},
+    )
+    assert approved.status_code == 200
+    finalized = client.post(
+        "/api/v1/admin/knowledge/dedao_kbase/draft_review/finalize",
+        headers=headers,
+        json={"workspace_fingerprint": approved.json()["workspace_fingerprint"], "note": "finalize"},
+    )
+    assert finalized.status_code == 200
+    assert finalized.json()["gate"]["serving_allowed"] is True
+
+    preview = client.post(
+        "/api/v1/admin/knowledge/dedao_kbase/reviewed_artifacts/publish/preview",
+        headers=headers,
+        json={"note": "preview only"},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["dry_run"] is True
+    assert preview.json()["import"]["documents"] == 3
+    assert db.get(KBDocument, "claim:release-abc-claim-1") is None
+    assert db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_reviewed_artifacts_publish_preview").count() == 1
+
+
+def test_admin_dedao_kbase_legacy_approve_rejects_unresolved_claims(
     client,
     db,
     auth_user_and_headers,
@@ -1373,20 +1588,14 @@ def test_admin_dedao_kbase_draft_review_approve_promotes_configured_artifacts(
         },
     )
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["review"]["serving_allowed"] is True
-    assert payload["gate"]["serving_allowed"] is True
-    reviewed_claim = json.loads((artifact_dir / "claims.jsonl").read_text(encoding="utf-8").splitlines()[0])
-    reviewed_relation = json.loads((artifact_dir / "relations.jsonl").read_text(encoding="utf-8").splitlines()[0])
-    assert reviewed_claim["metadata"]["review_status"] == "reviewed"
-    assert reviewed_relation["metadata"]["review_status"] == "reviewed"
-    audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_draft_review_approved").one()
-    assert audit.diff["serving_allowed"] is True
-    assert audit.diff["note"] == "结构化摘要已人工核对"
+    assert response.status_code == 400
+    assert "unresolved claim decisions" in response.json()["detail"]
+    stored_claim = json.loads((artifact_dir / "claims.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert stored_claim["metadata"]["review_status"] == "draft"
+    assert db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_draft_review_approved").count() == 0
 
 
-def test_admin_dedao_kbase_draft_review_approve_can_publish_to_serving_kb(
+def test_admin_dedao_kbase_legacy_approve_rejects_direct_publish(
     client,
     db,
     auth_user_and_headers,
@@ -1462,20 +1671,14 @@ def test_admin_dedao_kbase_draft_review_approve_can_publish_to_serving_kb(
         },
     )
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["gate"]["serving_allowed"] is True
-    assert payload["publish"]["import"]["documents"] == 2
-    assert payload["publish"]["import"]["edges"] == 1
-    assert payload["publish"]["reindex"]["reindex"]["documents"] == 2
-    assert db.get(KBDocument, "claim:c_sleep_caffeine_window").metadata_json["review_status"] == "reviewed"
-    assert db.query(KBEdge).filter(KBEdge.dst_doc_id == "claim:c_sleep_caffeine_window").count() == 1
-    audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_draft_review_approved").one()
-    assert audit.diff["published"] is True
-    assert audit.diff["publish"]["import"]["documents"] == 2
+    assert response.status_code == 400
+    assert "no longer supports publish" in response.json()["detail"]
+    assert db.get(KBDocument, "claim:c_sleep_caffeine_window") is None
+    assert db.query(KBEdge).filter(KBEdge.dst_doc_id == "claim:c_sleep_caffeine_window").count() == 0
+    assert db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_draft_review_approved").count() == 0
 
 
-def test_admin_dedao_kbase_draft_review_approve_can_preview_publish_without_serving_mutation(
+def test_admin_dedao_kbase_legacy_approve_rejects_inline_publish_preview(
     client,
     db,
     auth_user_and_headers,
@@ -1551,20 +1754,12 @@ def test_admin_dedao_kbase_draft_review_approve_can_preview_publish_without_serv
         },
     )
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["gate"]["serving_allowed"] is True
-    assert payload["publish_preview"]["dry_run"] is True
-    assert payload["publish_preview"]["import"]["documents"] == 2
-    assert payload["publish_preview"]["import"]["edges"] == 1
-    assert payload["publish_preview"]["reindex"]["would_run"] is True
+    assert response.status_code == 400
+    assert "separate preview endpoint" in response.json()["detail"]
     assert db.get(KBDocument, "claim:c_sleep_caffeine_window") is None
     assert db.query(KBEdge).filter(KBEdge.dst_doc_id == "claim:c_sleep_caffeine_window").count() == 0
     assert db.query(KBAudit).filter(KBAudit.op == "system_kb_reindex_report").count() == 0
-    audit = db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_draft_review_approved").one()
-    assert audit.diff["published"] is False
-    assert audit.diff["publish_dry_run"] is True
-    assert audit.diff["publish_preview"]["import"]["documents"] == 2
+    assert db.query(KBAudit).filter(KBAudit.op == "dedao_kbase_draft_review_approved").count() == 0
 
 
 def test_admin_dedao_kbase_reviewed_artifacts_publish_imports_without_reapproving(
