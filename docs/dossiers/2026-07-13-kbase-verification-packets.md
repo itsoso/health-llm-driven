@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | slug | `kbase-verification-packets` |
-| stage | S4 implementation |
+| stage | S5 release |
 | status | in_progress |
 | owner | Codex |
 
@@ -29,8 +29,15 @@ would create a competing ingestion path.
 
 ## Delivery Gates
 
-- G3 tests: pending.
-- G4 review: pending.
+- G3 tests: **PASS.** `103 passed` across the KBase importer, immutable Release
+  consumer, verification domain, and admin API suites; `241 passed` across all
+  frontend Vitest suites; the Next.js production build completed successfully.
+- G4 review: **PASS.** Review found one medium-risk unbounded duplicate packet
+  read. It was fixed by returning only the latest unique packets with a hard
+  50-item response bound, with a regression test. No path auto-adjudicates,
+  finalizes, or publishes.
+- Contract and drift gates: **PASS.** Web and mobile OpenAPI clients include the
+  verification routes; all pre-commit hooks and `git diff --check` pass.
 - G5 deployment health: pending.
 - G6 production verification: pending; shadow generation only, with no apply,
   finalization, or publication.
@@ -39,3 +46,7 @@ would create a competing ingestion path.
 
 - Design: `docs/plans/2026-07-13-kbase-verification-packets-design.md`
 - Plan: `docs/plans/2026-07-13-kbase-verification-packets.md`
+- Domain and workspace: `backend/app/services/kbase_claim_verification.py`,
+  `backend/app/services/kbase_review_workspace.py`
+- Admin surface: `backend/app/api/system_knowledge.py`,
+  `frontend/src/app/admin/knowledge/DedaoReleaseReviewPanel.tsx`
