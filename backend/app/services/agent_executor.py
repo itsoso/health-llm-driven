@@ -1445,6 +1445,25 @@ def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
 _TURN_CARD_UNSET = object()
 
 _WRITE_RECEIPT_TOOL_NAMES = {"health_record", "health_manage", "intervention_cycle"}
+
+# Read-only-turn allowlist (starter answer pre-generation · rank7). A pregen turn
+# runs the FULL pipeline but must never mutate user data — starter chips are
+# analysis/query prompts, never records. Enforcement is fail-CLOSED: only tools on
+# this allowlist (plus specialist analysis tools, checked separately) may execute
+# in a read-only turn; ANY other tool name (health_record/health_manage/
+# intervention_cycle/upload_*/manage_plan/supplement_guide/unknown/future) is
+# blocked at the single _execute_tool dispatch choke, so a new write tool is
+# denied by default rather than needing to be added to a denylist.
+_READ_ONLY_TURN_ALLOWED_TOOLS = {
+    "health_query",
+    "health_query_batch",
+    "knowledge_search",
+    "realtime_search",
+    "environment_check",
+    "query_genetic_profile",
+    "query_lab_indicators",
+    "health_analysis",
+}
 _WRITE_RESULT_FAILURE_MARKERS = (
     "Error:",
     "[NEEDS_CONFIRMATION]",
@@ -2983,6 +3002,13 @@ class AgentExecutor:
         # 封顶 (SYNTHESIS_THINKING_BUDGET) fail-closed 跳过这类回合——深度分析可能确实
         # 需要长思考, 不该被封顶。每回合入口重置。
         self._turn_invoked_deep_analysis = False
+        # Read-only turn (starter answer pre-generation · rank7). When True, the
+        # single tool-dispatch choke (_execute_tool) blocks any tool NOT on
+        # _READ_ONLY_TURN_ALLOWED_TOOLS (fail-closed) and raises
+        # _read_only_turn_write_attempted so the pregen orchestrator can ABORT and
+        # store nothing. Default False = zero behavior change for live turns.
+        self._read_only_turn = False
+        self._read_only_turn_write_attempted = False
 
     def _display_model_name_for_id(self, model_id: Optional[str]) -> Optional[str]:
         if not model_id:
@@ -3674,8 +3700,14 @@ class AgentExecutor:
         channel: Optional[str] = None,
         client_turn_id: Optional[str] = None,
         client_caps: Optional[List[str]] = None,
+        read_only_tools: bool = False,
     ) -> AsyncGenerator[Dict, None]:
-        """Run one durable client turn, taking over an ACKed turn after worker loss."""
+        """Run one durable client turn, taking over an ACKed turn after worker loss.
+
+        read_only_tools: starter answer pre-generation (rank7). When True, write
+        tools are refused at the dispatch choke (fail-closed) — the pregen turn
+        runs the same synthesis pipeline but can never mutate user data.
+        """
         yield self._progress_event("accepted")
         recovered_user_message = None
         claimed_turn = False
@@ -3814,6 +3846,7 @@ class AgentExecutor:
                 client_turn_id=client_turn_id,
                 recovered_user_message=recovered_user_message,
                 client_caps=client_caps,
+                read_only_tools=read_only_tools,
             ):
                 yield event
         finally:
@@ -3834,6 +3867,7 @@ class AgentExecutor:
         client_turn_id: Optional[str] = None,
         recovered_user_message: Any = None,
         client_caps: Optional[List[str]] = None,
+        read_only_tools: bool = False,
     ) -> AsyncGenerator[Dict, None]:
         """运行 Agent 循环，SSE 流式输出"""
         from app.services.llm.usage_tracker import set_caller
@@ -3884,6 +3918,11 @@ class AgentExecutor:
         self._tool_dead_provider_model_ids = set()
         self._last_effective_model_id = None
         self._turn_invoked_deep_analysis = False
+        # Read-only pregen turn (rank7): reset per-turn. When set, _execute_tool
+        # fail-closed-blocks any non-allowlisted tool and flags a write attempt so
+        # the pregen orchestrator discards the answer instead of serving it.
+        self._read_only_turn = bool(read_only_tools)
+        self._read_only_turn_write_attempted = False
         self._prefer_fast_record_model = (
             not images
             and not file_base64
@@ -7405,6 +7444,23 @@ class AgentExecutor:
         if v["error"]:
             return v["error"]
         args = v["data"]
+
+        # === Read-only pregen guard (rank7) — fail-CLOSED single choke ===
+        # In a starter-answer pre-generation turn ONLY read-only analysis tools may
+        # run. Any tool not on the allowlist (write tools, uploads, unknown, future)
+        # is refused HERE, before any _exec_* runs, so no user data is ever mutated
+        # during pregen. We flag the attempt so the orchestrator aborts pregen and
+        # stores nothing (starter chips are analysis prompts — a write attempt means
+        # the answer must not be pre-served; the tap falls through to a live turn).
+        if getattr(self, "_read_only_turn", False):
+            from app.services.specialist_tools import is_specialist_tool
+            if tool_name not in _READ_ONLY_TURN_ALLOWED_TOOLS and not is_specialist_tool(tool_name):
+                self._read_only_turn_write_attempted = True
+                logger.warning(
+                    "[agent_executor] read-only pregen turn blocked non-read tool=%s user=%s",
+                    tool_name, self._current_user_id,
+                )
+                return f"Error: 只读预生成回合不执行写入/变更操作（{tool_name}）"
 
         base_url = settings.health_api_base_url or "http://localhost:8000/api/v1"
         headers = {"Authorization": f"Bearer {user_token}"} if user_token else {}

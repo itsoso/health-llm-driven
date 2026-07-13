@@ -269,6 +269,18 @@ class Settings(BaseSettings):
     # 润色用的便宜快模型 id(model_registry): fast 档 + 可靠 + 纯文本, 无 vision 开销。
     starter_llm_polish_model_id: str = "deepseek-v4-flash"
 
+    # 首页 starter chip 答案预生成(rank7 时延路线图)。默认关闭 —— safety-adjacent,
+    # 需先 founder/safety 评审再 flip。开时:starters 下发后在响应路径外为 top-N chip
+    # 预跑一个 **只读**(禁写工具)回合,把答案存进 Redis;tap 时 message 精确匹配 +
+    # signals_hash 新鲜 + 未过期 → 秒回放已存答案(否则 fail-closed 落回实时回合)。
+    # 关 = 逐字节现状(不预热、不服务、执行器 read-only 分支不触发)。
+    starter_pregen_enabled: bool = False
+    # 预生成答案的新鲜窗(秒)。过窗即 fail-closed 落回实时回合。短窗兜住
+    # signals_hash 覆盖不到的写(CGM / 用药值变)。默认 15 分钟。
+    starter_pregen_ttl_seconds: int = 900
+    # 每次 starters 下发最多预热几个 chip(投机 token 上限)。默认 top-2。
+    starter_pregen_max_chips: int = 2
+
     # Batch-1 token-perf(计划 #8):纯抽取/判重类内部 LLM 调用点从默认强模型降档到便宜快
     # 模型(deepseek-v4-flash)。这些调用点输出均为结构化字段/判重裁决,**不生成用户可见医疗
     # 建议正文**,零 R4 风险。每字段独立 env 可覆盖(同名大写)= 可逐点回滚;flash provider

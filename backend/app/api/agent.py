@@ -655,6 +655,49 @@ async def agent_stream(
             },
         )
 
+    # Starter pregen serve (rank7): if this message EXACTLY matches a still-FRESH
+    # pre-generated starter answer, replay it as SSE instead of running a live
+    # ~30-40s turn. try_serve is fail-CLOSED on any staleness (recomputes
+    # signals_hash, checks TTL) → None falls through to the live path below. Only
+    # runs when the flag is on and there are no attachments (starters are text).
+    from app.config import settings as _pregen_settings
+
+    if (
+        getattr(_pregen_settings, "starter_pregen_enabled", False)
+        and not has_images
+        and not file_b64
+    ):
+        pregen_hit = None
+        try:
+            from app.services import starter_pregen
+
+            pregen_hit = starter_pregen.try_serve(
+                db, user_id, msg_text,
+                conversation_id=conv_id, client_turn_id=client_turn_id,
+            )
+        except Exception as e:  # noqa: BLE001 — never break chat; fall through to live
+            logger.warning("[agent.stream] pregen serve failed, fall through: %s", e)
+            pregen_hit = None
+        if pregen_hit is not None:
+            pregen_events, _pc, _pm, _pr = pregen_hit
+            logger.info(
+                "[agent.stream] pregen serve hit user=%s conv=%s msg_id=%s", user_id, _pc, _pm,
+            )
+
+            async def pregen_generate():
+                for event in pregen_events:
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+            return StreamingResponse(
+                pregen_generate(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                },
+            )
+
     async def generate():
         """G-W9 同模式 (FIX-5, 2026-05-14): bg task + asyncio.Queue.
 
@@ -994,6 +1037,41 @@ async def agent_send(
             except Exception:  # noqa: BLE001
                 pass
 
+    # Starter pregen serve (rank7): non-streaming twin of the /stream hook. An exact
+    # match to a still-FRESH pregen'd starter returns its stored answer instantly
+    # (fail-CLOSED on staleness → falls through to the live executor below). Text-only.
+    from app.config import settings as _pregen_settings
+
+    if (
+        getattr(_pregen_settings, "starter_pregen_enabled", False)
+        and not has_images
+        and not req.file_base64
+    ):
+        try:
+            from app.services import starter_pregen
+
+            pregen_hit = starter_pregen.try_serve(
+                db, current_user.id, req.message.strip(),
+                conversation_id=req.conversation_id, client_turn_id=req.client_turn_id,
+            )
+        except Exception as e:  # noqa: BLE001 — never break /send; fall through to live
+            logger.warning("[agent.send] pregen serve failed, fall through: %s", e)
+            pregen_hit = None
+        if pregen_hit is not None:
+            _pe, _pconv, _pmsg, _preply = pregen_hit
+            logger.info(
+                "[agent.send] pregen serve hit user=%s conv=%s msg_id=%s",
+                current_user.id, _pconv, _pmsg,
+            )
+            return {
+                "reply": _preply,
+                "conversation_id": _pconv,
+                "message_id": _pmsg,
+                "mode": "agent",
+                "elapsed_ms": 0,
+                "meta": {"pregen_served": True},
+            }
+
     agg_task = asyncio.create_task(_aggregate())
 
     # 快窗:绝大多数回合在这里完成,走历史非流式路径 + 原状态码语义。
@@ -1282,6 +1360,7 @@ def conversation_opener(
 
 @router.get("/conversation-starters", summary="新对话页 prompts — 动态建议 chip")
 def conversation_starters(
+    request: Request,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
@@ -1341,6 +1420,28 @@ def conversation_starters(
     suggestions = _resolve_starter_suggestions(
         cards, current_user.id, background_tasks, settings
     )
+
+    # Starter answer pre-generation (rank7): off the response path, pre-warm the
+    # top-N SERVED chips' answers so a later tap serves instantly. Deduped + budget
+    # capped inside enqueue_pregen; default-off. The served suggestion TEXT (polished
+    # if polish is on) is exactly what the client will send on tap. Fail-soft.
+    if getattr(settings, "starter_pregen_enabled", False) and not cold_start:
+        try:
+            from app.services.starter_pregen_producer import enqueue_pregen
+
+            auth_header = request.headers.get("authorization", "")
+            starter_token = (
+                auth_header[7:] if auth_header.startswith("Bearer ") else None
+            )
+            enqueue_pregen(
+                background_tasks,
+                db,
+                current_user.id,
+                [s.get("text", "") for s in suggestions],
+                starter_token,
+            )
+        except Exception as e:  # noqa: BLE001 — pregen scheduling must never break starters
+            logger.warning(f"[conversation_starters] pregen enqueue bypass: {e}")
 
     payload = {
         "opener": asdict(opener) if opener else None,

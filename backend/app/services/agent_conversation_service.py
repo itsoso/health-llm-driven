@@ -17,6 +17,14 @@ from app.models.agent_conversation import AgentConversation, AgentMessage
 
 
 logger = logging.getLogger(__name__)
+
+# Starter answer pre-generation (rank7) runs a real turn into a throwaway scratch
+# conversation, captures the answer, then deletes it. Scratch conversations are
+# tagged with this session_key prefix and excluded from every user-facing listing
+# so the transient row can never leak into the user's conversation list (belt: the
+# pregen orchestrator also deletes it immediately after capture).
+PREGEN_SCRATCH_SESSION_PREFIX = "__reva_pregen_scratch__"
+
 _LOCAL_CLIENT_TURN_LOCK_GUARD = threading.Lock()
 _LOCAL_CLIENT_TURN_LOCKS: set[int] = set()
 _CLIENT_TURN_LOCK_ENGINE_GUARD = threading.Lock()
@@ -218,6 +226,7 @@ class AgentConversationService:
         search: Optional[str] = None,
     ) -> List[AgentConversation]:
         q = self.db.query(AgentConversation).filter(AgentConversation.user_id == user_id)
+        q = self._exclude_pregen_scratch(q)
         q = self._apply_search(q, title_like=title_like, search=search)
         return q.order_by(AgentConversation.updated_at.desc()).offset(offset).limit(limit).all()
 
@@ -228,8 +237,17 @@ class AgentConversationService:
         search: Optional[str] = None,
     ) -> int:
         q = self.db.query(AgentConversation).filter(AgentConversation.user_id == user_id)
+        q = self._exclude_pregen_scratch(q)
         q = self._apply_search(q, title_like=title_like, search=search)
         return q.count()
+
+    @staticmethod
+    def _exclude_pregen_scratch(q):
+        """Hide throwaway pregen scratch conversations from every user-facing list."""
+        return q.filter(
+            (AgentConversation.session_key.is_(None))
+            | (~AgentConversation.session_key.like(f"{PREGEN_SCRATCH_SESSION_PREFIX}%"))
+        )
 
     def get_conversation_detail(self, user_id: int, conversation_id: int) -> Optional[AgentConversation]:
         return (
