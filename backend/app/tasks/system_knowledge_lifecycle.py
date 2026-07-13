@@ -9,8 +9,13 @@ claims are never imported automatically; they remain review candidates.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import hashlib
+import json
 import logging
+import os
 from pathlib import Path
+import shutil
+import tempfile
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -30,7 +35,7 @@ from app.integrations.dedao_kbase_release_consumer import (
 )
 from app.services.system_knowledge_crystallize import draft_crystallized_claim_candidates
 from app.services.system_knowledge_eval import run_system_kb_eval_cases
-from app.services.system_knowledge_ingest import validate_artifact_review_gate, write_draft_artifacts
+from app.services.system_knowledge_ingest import ARTIFACT_FILES, validate_artifact_review_gate, write_draft_artifacts
 from app.services.system_knowledge_service import (
     apply_confidence_decay,
     lint_knowledge_base,
@@ -44,6 +49,102 @@ def _default_system_kb_artifact_dir() -> Path:
     if settings.system_kb_artifact_dir:
         return Path(settings.system_kb_artifact_dir).expanduser()
     return Path(__file__).resolve().parents[2] / "data" / "system_kb_v2_seed"
+
+
+def _dedao_kbase_review_artifact_dir() -> Path:
+    configured = (settings.dedao_kbase_review_artifact_dir or "").strip()
+    if not configured:
+        raise ValueError("DEDAO_KBASE_REVIEW_ARTIFACT_DIR is required for Release sync")
+    return Path(configured).expanduser()
+
+
+def _artifact_fingerprint(artifact_dir: str | Path) -> str:
+    root = Path(artifact_dir)
+    digest = hashlib.sha256()
+    for name in (*ARTIFACT_FILES, "manifest.json"):
+        path = root / name
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\x00")
+        if path.exists():
+            digest.update(path.read_bytes())
+        else:
+            digest.update(b"<missing>")
+        digest.update(b"\x00")
+    return digest.hexdigest()
+
+
+def _workspace_base_fingerprint(artifact_dir: str | Path) -> str:
+    path = Path(artifact_dir) / "draft_manifest.json"
+    if not path.exists():
+        return ""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    return str(payload.get("base_fingerprint") or "") if isinstance(payload, dict) else ""
+
+
+def _replace_workspace(candidate: Path, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    backup = target.with_name(f".{target.name}.backup")
+    if backup.exists():
+        shutil.rmtree(backup)
+    had_target = target.exists()
+    try:
+        if had_target:
+            os.replace(target, backup)
+        os.replace(candidate, target)
+    except Exception:
+        if had_target and backup.exists() and not target.exists():
+            os.replace(backup, target)
+        raise
+    if backup.exists():
+        shutil.rmtree(backup)
+
+
+def _normalize_canonical_review_status(artifact_dir: str | Path) -> None:
+    """Treat missing status in the trusted repository seed as reviewed.
+
+    Explicit draft or needs_review values remain untouched and continue to
+    block serving.
+    """
+    root = Path(artifact_dir)
+    for name in ARTIFACT_FILES:
+        path = root / name
+        if not path.exists():
+            continue
+        normalized: list[str] = []
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            if not raw_line.strip():
+                continue
+            row = json.loads(raw_line)
+            metadata = dict(row.get("metadata") or {})
+            metadata.setdefault("review_status", "reviewed")
+            row["metadata"] = metadata
+            normalized.append(json.dumps(row, ensure_ascii=False, sort_keys=True))
+        path.write_text(("\n".join(normalized) + "\n") if normalized else "", encoding="utf-8")
+
+
+def _list_release_records(
+    client: DedaoKBaseReleaseClient,
+    *,
+    after: str,
+    limit: int,
+    replay_all: bool,
+) -> list[dict[str, Any]]:
+    if not replay_all:
+        return client.list_releases(after=after, limit=limit)
+    records: list[dict[str, Any]] = []
+    cursor = ""
+    while True:
+        page = client.list_releases(after=cursor, limit=limit)
+        records.extend(page)
+        if len(page) < limit:
+            return records
+        next_cursor = str(page[-1].get("release_id") or "")
+        if not next_cursor or next_cursor == cursor:
+            raise ValueError("dedao-kbase release replay cursor did not advance")
+        cursor = next_cursor
 
 
 def sync_dedao_kbase_export_draft_once(
@@ -126,6 +227,7 @@ def sync_dedao_kbase_releases_draft_once(
     base_url: str | None,
     auth_token: str | None,
     artifact_dir: str | Path,
+    base_artifact_dir: str | Path | None = None,
     source_root: str | Path,
     actor: str = "system",
     now: datetime | None = None,
@@ -142,36 +244,83 @@ def sync_dedao_kbase_releases_draft_once(
         .first()
     )
     previous_cursor = str((latest.diff or {}).get("cursor") or "") if latest else ""
+    target = Path(artifact_dir)
+    has_separate_base = base_artifact_dir is not None
+    canonical = Path(base_artifact_dir) if base_artifact_dir is not None else target
+    base_fingerprint = _artifact_fingerprint(canonical)
+    recorded_fingerprint = _workspace_base_fingerprint(target)
+    workspace_valid = target.exists() and bool(recorded_fingerprint)
+    if has_separate_base:
+        workspace_valid = workspace_valid and recorded_fingerprint == base_fingerprint
+    mode = "incremental" if workspace_valid else "rebuild"
     client = DedaoKBaseReleaseClient(base_url, auth_token=auth_token)
-    records = client.list_releases(after=previous_cursor, limit=limit)
+    cursor_for_fetch = previous_cursor if mode == "incremental" else ""
+    records = _list_release_records(
+        client,
+        after=cursor_for_fetch,
+        limit=limit,
+        replay_all=mode == "rebuild",
+    )
     if not records:
-        return {"status": "up_to_date", "cursor": previous_cursor, "release_count": 0}
+        return {
+            "status": "up_to_date" if mode == "incremental" else "no_releases",
+            "mode": mode,
+            "cursor": previous_cursor,
+            "release_count": 0,
+            "base_fingerprint": base_fingerprint,
+        }
 
     current_time = now or datetime.now(UTC)
     releases = [client.get_release(str(record.get("release_id") or "")) for record in records]
-    results = [
-        compile_knowledge_release_artifacts(
-            release=release,
-            base_artifact_dir=artifact_dir,
-            source_root=source_root,
-            now=current_time,
+    target.parent.mkdir(parents=True, exist_ok=True)
+    candidate = Path(tempfile.mkdtemp(prefix=f".{target.name}.candidate-", dir=target.parent))
+    source = canonical if mode == "rebuild" else target
+    try:
+        if source.exists():
+            shutil.copytree(source, candidate, dirs_exist_ok=True)
+        if mode == "rebuild":
+            _normalize_canonical_review_status(candidate)
+        results = [
+            compile_knowledge_release_artifacts(
+                release=release,
+                base_artifact_dir=candidate,
+                source_root=source_root,
+                now=current_time,
+            )
+            for release in releases
+        ]
+        combined = combine_release_results(results)
+        cursor = str(records[-1]["release_id"])
+        draft_manifest = write_draft_artifacts(
+            combined,
+            candidate,
+            extractor=f"dedao-kbase-release:{base_url}",
+            created_at=current_time,
+            note="immutable dedao-kbase releases synced as draft; requires review before serving.",
         )
-        for release in releases
-    ]
-    combined = combine_release_results(results)
-    cursor = str(records[-1]["release_id"])
-    draft_manifest = write_draft_artifacts(
-        combined,
-        artifact_dir,
-        extractor=f"dedao-kbase-release:{base_url}",
-        created_at=current_time,
-        note="immutable dedao-kbase releases synced as draft; requires review before serving.",
-    )
-    gate = validate_artifact_review_gate(artifact_dir)
+        draft_manifest.update(
+            {
+                "base_fingerprint": base_fingerprint,
+                "cursor": cursor,
+                "sync_mode": mode,
+            }
+        )
+        (candidate / "draft_manifest.json").write_text(
+            json.dumps(draft_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        gate = validate_artifact_review_gate(candidate)
+        _replace_workspace(candidate, target)
+    finally:
+        if candidate.exists():
+            shutil.rmtree(candidate)
     report = {
         "status": "draft_written",
+        "mode": mode,
         "base_url": base_url,
-        "artifact_dir": str(artifact_dir),
+        "artifact_dir": str(target),
+        "base_artifact_dir": str(canonical),
+        "base_fingerprint": base_fingerprint,
         "previous_cursor": previous_cursor,
         "cursor": cursor,
         "release_count": len(releases),
@@ -256,19 +405,22 @@ def sync_dedao_kbase_export_draft() -> dict[str, Any]:
     review plus the normal release gate.
     """
     logger.info("[dedao_kbase_export_sync] start")
-    artifact_dir = _default_system_kb_artifact_dir()
+    canonical_artifact_dir = _default_system_kb_artifact_dir()
     with SessionLocal() as db:
         if settings.dedao_kbase_release_base_url:
+            artifact_dir = _dedao_kbase_review_artifact_dir()
             result = sync_dedao_kbase_releases_draft_once(
                 db,
                 base_url=settings.dedao_kbase_release_base_url,
                 auth_token=settings.dedao_kbase_auth_token,
                 artifact_dir=artifact_dir,
+                base_artifact_dir=canonical_artifact_dir,
                 source_root=settings.dedao_kbase_source_root,
                 actor="celery:dedao_kbase_release_sync",
                 limit=settings.dedao_kbase_release_batch_size,
             )
         else:
+            artifact_dir = canonical_artifact_dir
             result = sync_dedao_kbase_export_draft_once(
                 db,
                 export_url=settings.dedao_kbase_export_url,

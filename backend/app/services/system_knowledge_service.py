@@ -4021,6 +4021,8 @@ def _latest_lifecycle_report(db: Session) -> dict[str, Any] | None:
 def _configured_system_kb_artifact_dir(artifact_dir: str | Path | None = None) -> Path:
     if artifact_dir is not None:
         root = Path(artifact_dir)
+    elif settings.dedao_kbase_review_artifact_dir:
+        root = Path(settings.dedao_kbase_review_artifact_dir)
     elif settings.system_kb_artifact_dir:
         root = Path(settings.system_kb_artifact_dir)
     else:
