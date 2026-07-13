@@ -852,6 +852,8 @@ export function DietShareSheet({
       ? '复制带话题复盘文案'
       : '自动复制带话题文案';
   const xhsShareLabel = lowConfidenceShare ? '核对后发小红书' : '发小红书';
+  const wechatShareDisplayLabel = sharingAction === 'wechat' ? '生成微信图中' : wechatShareLabel;
+  const xhsShareDisplayLabel = sharingAction === 'xiaohongshu' ? '生成小红书图中' : xhsShareLabel;
   const saveLibraryLabel = estimatedShare ? '保存复盘图到相册' : '保存到相册';
   const saveLibraryHint = lowConfidenceShare
     ? '核对后再存图发布'
@@ -1152,7 +1154,7 @@ export function DietShareSheet({
             >
               <Ionicons name="chatbubble-ellipses-outline" size={18} color={C.greenOn} />
               <View>
-                <Text style={styles.platformShareText}>{wechatShareLabel}</Text>
+                <Text style={styles.platformShareText}>{wechatShareDisplayLabel}</Text>
                 <Text style={styles.platformShareHint}>{wechatShareHint}</Text>
               </View>
             </TouchableOpacity>
@@ -1166,7 +1168,7 @@ export function DietShareSheet({
             >
               <Ionicons name="sparkles-outline" size={18} color="#fff" />
               <View>
-                <Text style={styles.platformShareText}>{xhsShareLabel}</Text>
+                <Text style={styles.platformShareText}>{xhsShareDisplayLabel}</Text>
                 <Text style={styles.platformShareHint}>{xhsShareHint}</Text>
               </View>
             </TouchableOpacity>

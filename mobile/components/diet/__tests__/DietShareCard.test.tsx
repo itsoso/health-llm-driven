@@ -702,6 +702,33 @@ describe('DietShareCard', () => {
     });
   });
 
+  it('labels platform share progress without looking like photo-library saving', async () => {
+    let resolveShare: (() => void) | undefined;
+    mockShareAsync.mockImplementationOnce(() => new Promise<void>(resolve => {
+      resolveShare = resolve;
+    }));
+    const { getByText, queryByText } = render(
+      <DietShareSheet
+        visible
+        record={record}
+        dateLabel="7月11日 · 午餐"
+        onClose={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(getByText('发小红书'));
+
+    await waitFor(() => {
+      expect(getByText('生成小红书图中')).toBeTruthy();
+      expect(queryByText('生成中')).toBeNull();
+      expect(queryByText('存图中')).toBeNull();
+    });
+
+    await act(async () => {
+      resolveShare?.();
+    });
+  });
+
   it('saves the 1080x1440 share image directly to the photo library', async () => {
     const onShareTerminal = jest.fn();
     const onShareFeedback = jest.fn();
